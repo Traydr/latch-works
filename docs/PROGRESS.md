@@ -55,12 +55,15 @@ Phase 0 is complete because the open architecture questions have been answered a
 - Added single-user session helper primitives.
 - Added sync API token helper primitives.
 - Added initial Drizzle/Postgres schema draft for users, sessions, API tokens, media objects, library entries, folders, collections, thumbnails, sync runs, viewer state, and favorites.
+- Added Pane View Drizzle config and initial SQL migration.
+- Added a Postgres adapter and server-side library repository boundary.
 - Added sync API stubs for:
   - `/api/sync/runs`,
   - `/api/sync/upload-url`,
   - `/api/sync/complete-object`.
 - Added authenticated media delivery route scaffold for `/api/media/$mediaId/original`.
 - Added signed original delivery planning through content-addressed object keys.
+- Added S3-compatible storage adapter for signed GET/PUT URLs. This is intended to work with Railway Buckets first and can also fit S3/R2-style storage later.
 - Added placeholder app folders for future imports:
   - `apps/frame-view`,
   - `apps/gather-box`.
@@ -88,6 +91,7 @@ Phase 0 is complete because the open architecture questions have been answered a
 - Pane View auth/session helper tests pass.
 - Pane View sync API token helper tests pass.
 - Pane View media delivery helper tests pass.
+- Media storage S3 config helper tests pass.
 
 ## Archive Scan Result
 
@@ -143,16 +147,15 @@ pnpm lockstep -- plan --source "T:\cloud-desktop\media" --show-skipped
 
 1. Add fixture-backed route loaders/server functions to Pane View instead of keeping all fixture data in the route component.
 2. Replace auth API scaffold TODOs with Postgres-backed session persistence.
-3. Add a database adapter and migrations for the Drizzle schema.
-4. Replace Pane View fixture data with database-backed folder/media browsing.
-5. Implement Railway Bucket signed upload/download adapters.
+3. Replace Pane View fixture data with database-backed folder/media browsing.
+4. Implement real sync-run/object upserts in the sync API.
+5. Wire Lockstep `push` to the sync API once database and storage adapters are complete.
 6. Keep sidecar/ancillary file policy simple for now:
    - ingest `meta.json` as metadata,
    - associate `.srt` with videos,
    - decide whether `.txt`, `.zip`, `.vrm`, `.me`, and scripts become attachments or remain ignored.
    Current decision: ignore these files for first sync, except keep `meta.json` noted as future site-specific metadata.
-7. Wire Lockstep `push` to the sync API once database and storage adapters exist.
-8. Stop before Railway deployment and ask for deployment help.
+7. Stop before Railway deployment and ask for deployment help.
 
 ## Current Status
 

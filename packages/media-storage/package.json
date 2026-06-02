@@ -16,6 +16,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.955.0",
+    "@aws-sdk/s3-request-presigner": "^3.955.0",
     "@latch-works/media-domain": "workspace:*"
   },
   "devDependencies": {

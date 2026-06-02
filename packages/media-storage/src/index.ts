@@ -1,5 +1,7 @@
 import type { MediaType } from "@latch-works/media-domain";
 
+export * from "./s3.js";
+
 export interface ObjectKeyParts {
   extension: string;
   mediaType: MediaType;
