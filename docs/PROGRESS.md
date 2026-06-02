@@ -4,9 +4,9 @@ Last updated: 2026-06-03
 
 ## Current Phase
 
-The project is between **Phase 3: Pane View Prototype** and the moved-up auth/database work from **Phase 4: Auth and Database**.
+The project is now in **Phase 7: Feature Parity and Polish** for Pane View.
 
-Phase 0 is complete because the open architecture questions have been answered and recorded. Phase 1 is now materially complete because the monorepo foundation exists and Frame View/Gather Box have been imported under `apps/`. Phase 3 has started because Pane View already has a runnable browsing prototype. Auth has been moved up from Phase 4 so the website shell is protected before more viewer work lands.
+Phase 6 deployment work is being skipped in local implementation notes because deployment has already happened. The current focus is improving the DB-backed Pane View browsing/viewing experience after the auth, sync, storage, and ingest baseline.
 
 ## Work Completed
 
@@ -82,6 +82,23 @@ Phase 0 is complete because the open architecture questions have been answered a
 - Added an authenticated remote sync snapshot endpoint so Lockstep can compare local files with the current Pane View library before push.
 - Added authenticated media delivery route scaffold for `/api/media/$mediaId/original`.
 - Added signed original delivery planning through content-addressed object keys.
+- Replaced the original media route placeholder with DB-backed media lookup from `library_entries` and `media_objects`.
+- Added real selected-media rendering in Pane View for synced UUID media:
+  - images use the authenticated original route,
+  - videos use native browser controls,
+  - PDF/story entries use a framed browser viewer,
+  - fixture/prototype entries keep placeholder previews.
+- Added path/search browsing for DB-backed Pane View:
+  - `path` and `q` search params,
+  - clickable root/folder navigation,
+  - DB and fixture filtering by path/name,
+  - recursive media loading under the selected path.
+- Added selected media deep-linking through the `media` search param.
+- Added viewer resume-state plumbing:
+  - current session user lookup from stored DB sessions,
+  - viewer-state server functions over the existing `viewer_state` table,
+  - video position save/restore through native video events,
+  - read/view state display in the selected-media metadata panel.
 - Added S3-compatible storage adapter for signed GET/PUT URLs. This is intended to work with Railway Buckets first and can also fit S3/R2-style storage later.
 - Added a dedicated Pane View Vitest config so package unit tests run without loading the TanStack/Vite app plugin stack.
 - Added placeholder app folders for future imports:
@@ -128,6 +145,16 @@ Phase 0 is complete because the open architecture questions have been answered a
   - anonymous `/` redirects to `/login`,
   - valid login returns a session cookie and redirects to `/`,
   - authenticated `/` returns the protected Pane View shell with the sign-out control.
+- Local HTTP/browser verification after Phase 7 browsing work confirmed:
+  - `/api/health` returns OK,
+  - authenticated `/?path=...&q=...` renders the protected Pane View shell,
+  - the selected `media` search param is accepted without browser console errors,
+  - authenticated missing media originals return `404` instead of placeholder signed URLs.
+- Pane View focused checks pass after the Phase 7 updates:
+  - `pnpm --filter @latch-works/pane-view typecheck`,
+  - `pnpm --filter @latch-works/pane-view test`,
+  - `pnpm --filter @latch-works/pane-view build`,
+  - `pnpm lint`.
 
 ## Archive Scan Result
 
@@ -181,25 +208,25 @@ pnpm lockstep -- plan --source "T:\cloud-desktop\media" --show-skipped
 
 ## Next Planned Work
 
-1. Provision deployment resources for a first online prototype:
-   - Railway app service,
-   - Postgres database,
-   - Railway bucket or S3-compatible bucket,
-   - production env vars/secrets.
-2. Apply the initial Drizzle SQL migration to the deployed database.
-3. Run a small Lockstep push against the deployed endpoint with a limited test folder before pushing the full archive. Lockstep will fetch the deployed remote snapshot automatically for push planning.
-4. Add folder/path navigation routes or search params so the DB-backed Pane View browser can move beyond the hardcoded prototype path.
-5. Keep sidecar/ancillary file policy simple for now:
+1. Add thumbnail/preview support after the original-file viewing path is proven:
+   - thumbnail DB lookup,
+   - authenticated thumbnail route,
+   - grid poster image rendering,
+   - fallback states for missing derived assets.
+2. Improve mobile viewing ergonomics:
+   - touch-friendly selected-media viewer,
+   - swipe previous/next in the viewer,
+   - better small-screen toolbar behavior.
+3. Add sidecar/ancillary metadata support:
    - ingest `meta.json` as metadata,
    - associate `.srt` with videos,
    - decide whether `.txt`, `.zip`, `.vrm`, `.me`, and scripts become attachments or remain ignored.
    Current decision: ignore these files for first sync, except keep `meta.json` noted as future site-specific metadata.
-6. Add preview/thumbnail optimization after the first original-file sync path is proven.
-7. Harden auth beyond the current single-user/session baseline:
+4. Harden auth beyond the current single-user/session baseline:
    - add CSRF checks for non-GET web requests,
    - add login rate limiting,
    - add first-run credential setup or documented Railway secret requirements.
 
 ## Current Status
 
-The foundation is healthy and verified. Pane View has auth/session/storage/sync scaffolding, the website shell is now behind auth, and Lockstep can push to the sync API. Railway/resource setup is still the main step that needs user involvement.
+The foundation is healthy and verified. Pane View has auth/session/storage/sync scaffolding, the website shell is behind auth, Lockstep can push to the sync API, and Phase 7 work has started with DB-backed browsing, selected-media rendering, and resume-state plumbing.
