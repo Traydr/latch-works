@@ -116,6 +116,7 @@ Phase 0 is complete because the open architecture questions have been answered a
   - Pane View now has `src/env/server.ts`,
   - Drizzle imports `env` from that module,
   - migrations use `env.DATABASE_URL` as the only DB URL source.
+- Replaced the hand-written initial SQL file with a Drizzle-generated migration plus `drizzle/meta` journal/snapshot files so `drizzle-kit migrate` has the metadata it expects.
 
 ## Archive Scan Result
 
