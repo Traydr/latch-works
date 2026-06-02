@@ -1,0 +1,109 @@
+import type { GalleryImage } from "../shared/types";
+import { formatError } from "./errors";
+
+export const DOWNLOAD_CONCURRENCY = 4;
+
+export interface DownloadSummary {
+  saved: number;
+  failed: number;
+  failedItems: DownloadFailure[];
+}
+
+export interface DownloadFailure {
+  fileName: string;
+  reason: string;
+}
+
+export interface DownloadCallbacks {
+  onStart(total: number): void;
+  onProgress(completed: number, total: number): void;
+  onSaved(fileName: string): void;
+}
+
+export interface DownloadOptions {
+  credentials?: RequestCredentials;
+}
+
+export async function downloadImages(
+  images: GalleryImage[],
+  destinationDirectory: FileSystemDirectoryHandle,
+  callbacks: DownloadCallbacks,
+  options: DownloadOptions = {}
+): Promise<DownloadSummary> {
+  const summary: DownloadSummary = {
+    saved: 0,
+    failed: 0,
+    failedItems: []
+  };
+  let completed = 0;
+  const total = images.length;
+
+  callbacks.onStart(total);
+
+  await runPool(images, DOWNLOAD_CONCURRENCY, async (image) => {
+    try {
+      const response = await fetch(image.originalUrl, { credentials: options.credentials ?? "omit" });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const blob = await response.blob();
+      const fileHandle = await destinationDirectory.getFileHandle(image.fileName, { create: true });
+      const writable = await fileHandle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      summary.saved += 1;
+      callbacks.onSaved(image.fileName);
+    } catch (error) {
+      summary.failed += 1;
+      summary.failedItems.push({
+        fileName: image.fileName,
+        reason: formatError(error)
+      });
+    } finally {
+      completed += 1;
+      callbacks.onProgress(completed, total);
+    }
+  });
+
+  return summary;
+}
+
+export async function runPool<T>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<void>
+): Promise<void> {
+  if (items.length === 0) {
+    return;
+  }
+
+  let nextIndex = 0;
+  const runners = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (true) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+
+      if (currentIndex >= items.length) {
+        return;
+      }
+
+      await worker(items[currentIndex], currentIndex);
+    }
+  });
+
+  await Promise.all(runners);
+}
+
+export async function getOrCreateNestedDirectory(
+  rootDirectory: FileSystemDirectoryHandle,
+  segments: string[]
+): Promise<FileSystemDirectoryHandle> {
+  let currentDirectory = rootDirectory;
+
+  for (const segment of segments) {
+    currentDirectory = await currentDirectory.getDirectoryHandle(segment, { create: true });
+  }
+
+  return currentDirectory;
+}

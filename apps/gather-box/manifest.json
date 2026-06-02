@@ -1,0 +1,49 @@
+{
+  "manifest_version": 3,
+  "name": "Gather Box",
+  "description": "Download original images and story PDFs from supported content pages into a chosen local folder.",
+  "version": "0.1.0",
+  "action": {
+    "default_title": "Gather Box",
+    "default_popup": "popup/popup.html"
+  },
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://myhentaigallery.com/*",
+    "https://cdn.myhentaicomics.com/*",
+    "https://kemono.cr/*",
+    "https://*.kemono.cr/*",
+    "https://*.fanbox.cc/*",
+    "https://downloads.fanbox.cc/*",
+    "https://archiveofourown.org/*",
+    "https://download.archiveofourown.org/*",
+    "https://www.hentai-foundry.com/*",
+    "https://www.fanfiction.net/*"
+  ],
+  "icons": {
+    "16": "assets/icons/icon16.png",
+    "32": "assets/icons/icon32.png",
+    "48": "assets/icons/icon48.png",
+    "128": "assets/icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://myhentaigallery.com/a/*",
+        "https://kemono.cr/*/user/*/post/*",
+        "https://*.fanbox.cc/posts/*",
+        "https://archiveofourown.org/works/*",
+        "https://www.hentai-foundry.com/stories/user/*",
+        "https://www.fanfiction.net/s/*"
+      ],
+      "js": [
+        "content/gallery-collector.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}

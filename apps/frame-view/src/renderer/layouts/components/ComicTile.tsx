@@ -1,0 +1,68 @@
+import type { JSX } from 'react';
+
+import type { BrowserEntry } from '../../utils/browserEntries';
+import { toThumbnailUrl } from '../../utils/path';
+
+interface ComicTileProps {
+  cardHeight: number;
+  cardWidth: number;
+  entry: Extract<BrowserEntry, { kind: 'comic' }>;
+  left: number;
+  onActivate: (entry: BrowserEntry) => void;
+  onSelect: (entry: BrowserEntry) => void;
+  selected: boolean;
+  thumbPriority: 0 | 1 | 2;
+  thumbnailRequestSize: number;
+  top: number;
+}
+
+export function ComicTile({
+  cardHeight,
+  cardWidth,
+  entry,
+  left,
+  onActivate,
+  onSelect,
+  selected,
+  thumbPriority,
+  thumbnailRequestSize,
+  top,
+}: ComicTileProps): JSX.Element {
+  const comic = entry.comic;
+
+  return (
+    <button
+      type="button"
+      data-gallery-item="true"
+      data-gallery-item-id={entry.key}
+      className={`group absolute overflow-hidden rounded-2xl bg-zinc-200 text-left transition-all dark:bg-zinc-800 ${
+        selected
+          ? 'ring-2 ring-violet-500 ring-offset-2 ring-offset-zinc-50 dark:ring-offset-zinc-950'
+          : 'hover:shadow-lg'
+      }`}
+      onClick={() => onSelect(entry)}
+      onDoubleClick={() => onActivate(entry)}
+      style={{
+        width: `${cardWidth}px`,
+        height: `${cardHeight}px`,
+        left: `${left}px`,
+        top: `${top}px`,
+      }}
+      title={comic.folderPath}
+    >
+      <img
+        src={toThumbnailUrl(comic.cover.path, thumbnailRequestSize, thumbPriority)}
+        alt={comic.name}
+        loading="eager"
+        decoding="async"
+        className="h-full w-full object-cover"
+      />
+      <div className="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/75 via-black/10 to-transparent">
+        <div className="px-3 pb-3">
+          <p className="line-clamp-2 text-sm font-semibold text-white">{comic.name}</p>
+          <p className="text-[11px] text-white/75">{comic.pages.length} pages</p>
+        </div>
+      </div>
+    </button>
+  );
+}

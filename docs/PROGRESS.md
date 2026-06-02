@@ -6,7 +6,7 @@ Last updated: 2026-06-02
 
 The project is between **Phase 1: Latch Works Bootstrap** and **Phase 3: Pane View Prototype** from the architecture plan.
 
-Phase 0 is complete because the open architecture questions have been answered and recorded. Phase 1 is partially complete because the monorepo foundation exists, but Frame View and Gather Box have not yet been imported into `apps/frame-view` and `apps/gather-box`. Phase 3 has started because Pane View already has a runnable fixture-backed browsing prototype.
+Phase 0 is complete because the open architecture questions have been answered and recorded. Phase 1 is now materially complete because the monorepo foundation exists and Frame View/Gather Box have been imported under `apps/`. Phase 3 has started because Pane View already has a runnable fixture-backed browsing prototype.
 
 ## Work Completed
 
@@ -48,6 +48,9 @@ Phase 0 is complete because the open architecture questions have been answered a
 - Added placeholder app folders for future imports:
   - `apps/frame-view`,
   - `apps/gather-box`.
+- Imported Frame View from `C:\Users\Trayd\dev\frame-view` into `apps/frame-view`.
+- Imported Content Downloader from `C:\Users\Trayd\dev\comic-downloader` into `apps/gather-box`.
+- Renamed the imported extension surface to Gather Box without changing collector behavior.
 - Recorded Phase 0 decisions in `docs/decisions/0001-phase-0-answers.md`.
 - Added Lockstep usage notes in `docs/runbooks/lockstep.md`.
 - Updated the architecture plan open questions with the answered decisions.
@@ -64,6 +67,8 @@ Phase 0 is complete because the open architecture questions have been answered a
 - Browser DOM verification confirmed Pane View rendered the expected path-first UI content.
 - Browser console error check returned no errors.
 - Lockstep read-only scan against `T:\cloud-desktop\media` completed without writing to the archive.
+- Imported Gather Box `check` passes.
+- Imported Frame View typecheck, lint, and test suite pass. Frame View lint currently reports existing warnings but exits successfully.
 
 ## Archive Scan Result
 
@@ -117,19 +122,17 @@ pnpm lockstep -- plan --source "T:\cloud-desktop\media" --show-skipped
 
 ## Next Planned Work
 
-1. Import the existing Frame View working tree into `apps/frame-view` without refactoring it.
-2. Import the existing Content Downloader working tree into `apps/gather-box` and rename the app/package surface to Gather Box.
-3. Add fixture-backed route loaders/server functions to Pane View instead of keeping all fixture data in the route component.
-4. Add the first database schema draft with Drizzle/Postgres for users, sessions, media objects, library entries, folders, and sync runs.
-5. Add single-user auth around Pane View routes and every server function/media route.
-6. Add Lockstep remote API configuration and keep `push` disabled until ingest endpoints and token auth exist.
-7. Decide sidecar/ancillary file policy:
+1. Add fixture-backed route loaders/server functions to Pane View instead of keeping all fixture data in the route component.
+2. Add the first database schema draft with Drizzle/Postgres for users, sessions, media objects, library entries, folders, and sync runs.
+3. Add single-user auth around Pane View routes and every server function/media route.
+4. Add Lockstep remote API configuration and keep `push` disabled until ingest endpoints and token auth exist.
+5. Decide sidecar/ancillary file policy:
    - ingest `meta.json` as metadata,
    - associate `.srt` with videos,
    - decide whether `.txt`, `.zip`, `.vrm`, `.me`, and scripts become attachments or remain ignored.
-8. Replace Pane View fixture data with database-backed folder/media browsing.
-9. Add Railway bucket client wiring and signed URL media route prototypes.
+6. Replace Pane View fixture data with database-backed folder/media browsing.
+7. Add Railway bucket client wiring and signed URL media route prototypes.
 
 ## Current Status
 
-The foundation is healthy and verified. The project is ready for the first consolidation step: importing Frame View and Gather Box, while keeping the current scaffold green.
+The foundation is healthy and verified. The project is ready for Pane View backend/auth/storage scaffolding. Deployment is intentionally not started yet.

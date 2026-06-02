@@ -1,0 +1,20 @@
+{
+  "name": "@latch-works/gather-box",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "pnpm typecheck && pnpm build",
+    "typecheck": "tsc --noEmit",
+    "clean": "node scripts/clean.mjs"
+  },
+  "devDependencies": {
+    "@types/chrome": "latest",
+    "esbuild": "latest",
+    "typescript": "latest"
+  },
+  "dependencies": {
+    "@libpdf/core": "^0.3.4"
+  }
+}

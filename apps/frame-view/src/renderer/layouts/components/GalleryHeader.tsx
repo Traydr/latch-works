@@ -1,0 +1,108 @@
+import type { JSX } from 'react';
+
+interface GalleryHeaderProps {
+  browserEntryCount: number;
+  cacheStatusMessage: string | null;
+  canGoToNextFolder: boolean;
+  canGoToPreviousFolder: boolean;
+  canOpenParentFolder: boolean;
+  comicEntryCount: number;
+  currentFolderPathLabel: string;
+  folderEntryCount: number;
+  folderLabel: string;
+  isScanning: boolean;
+  mediaEntryCount: number;
+  onOpenNextFolder: () => void;
+  onOpenParentFolder: () => void;
+  onOpenPreviousFolder: () => void;
+  rootPath: string | null;
+  selectedBrowserEntryIndex: number;
+  topStatus: string | null;
+}
+
+export function GalleryHeader({
+  browserEntryCount,
+  cacheStatusMessage,
+  canGoToNextFolder,
+  canGoToPreviousFolder,
+  canOpenParentFolder,
+  comicEntryCount,
+  currentFolderPathLabel,
+  folderEntryCount,
+  folderLabel,
+  isScanning,
+  mediaEntryCount,
+  onOpenNextFolder,
+  onOpenParentFolder,
+  onOpenPreviousFolder,
+  rootPath,
+  selectedBrowserEntryIndex,
+  topStatus,
+}: GalleryHeaderProps): JSX.Element {
+  return (
+    <div className="pointer-events-none absolute left-1/2 top-4 z-20 w-[min(96vw,1120px)] -translate-x-1/2">
+      <header className="prism-surface pointer-events-auto flex flex-wrap items-center justify-between gap-3 px-4 py-2">
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold tracking-tight">{folderLabel}</p>
+          {rootPath ? (
+            <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">
+              {currentFolderPathLabel}
+            </p>
+          ) : null}
+        </div>
+        <div className="flex items-center gap-2">
+          {topStatus ? (
+            <span className="prism-pill">
+              {isScanning ? (
+                <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-amber-400" />
+              ) : null}
+              <span className="max-w-[28vw] truncate">{topStatus}</span>
+            </span>
+          ) : null}
+          {cacheStatusMessage ? <span className="prism-pill">{cacheStatusMessage}</span> : null}
+          {folderEntryCount > 0 ? (
+            <span className="prism-pill">{folderEntryCount} folders</span>
+          ) : null}
+          {comicEntryCount > 0 ? (
+            <span className="prism-pill">{comicEntryCount} comics</span>
+          ) : (
+            <span className="prism-pill">{mediaEntryCount} items</span>
+          )}
+          {selectedBrowserEntryIndex >= 0 ? (
+            <span className="prism-pill">
+              {selectedBrowserEntryIndex + 1}/{browserEntryCount}
+            </span>
+          ) : null}
+          {rootPath ? (
+            <>
+              <button
+                type="button"
+                className={`prism-btn ${canOpenParentFolder ? '' : 'pointer-events-none opacity-45'}`}
+                onClick={onOpenParentFolder}
+                disabled={!canOpenParentFolder}
+              >
+                Parent
+              </button>
+              <button
+                type="button"
+                className={`prism-btn ${canGoToPreviousFolder ? '' : 'pointer-events-none opacity-45'}`}
+                onClick={onOpenPreviousFolder}
+                disabled={!canGoToPreviousFolder}
+              >
+                Prev Folder
+              </button>
+              <button
+                type="button"
+                className={`prism-btn ${canGoToNextFolder ? '' : 'pointer-events-none opacity-45'}`}
+                onClick={onOpenNextFolder}
+                disabled={!canGoToNextFolder}
+              >
+                Next Folder
+              </button>
+            </>
+          ) : null}
+        </div>
+      </header>
+    </div>
+  );
+}

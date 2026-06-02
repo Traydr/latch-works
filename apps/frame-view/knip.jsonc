@@ -1,0 +1,20 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "forge.config.ts",
+    "vite.main.config.ts",
+    "vite.preload.config.ts",
+    "vite.renderer.config.ts",
+    "src/main.ts",
+    "src/preload.ts",
+    "src/main/catalog/catalog.worker.ts",
+    "src/main/thumbnail/thumbnail.worker.ts",
+    "tests/**/*.test.ts",
+    "tests/testUtils.ts"
+  ],
+  "project": ["src/**/*.ts", "src/**/*.tsx", "tests/**/*.ts", "*.ts", "*.cjs", "*.json"],
+  "ignoreDependencies": ["ffmpeg-static", "ffprobe-static"],
+  "ignoreIssues": {
+    "src/shared/types.ts": ["types"]
+  }
+}

@@ -2,7 +2,15 @@
   "$schema": "https://biomejs.dev/schemas/2.4.16/schema.json",
   "files": {
     "ignoreUnknown": true,
-    "includes": ["**", "!**/node_modules", "!**/dist", "!**/.output", "!**/routeTree.gen.ts"]
+    "includes": [
+      "**",
+      "!**/node_modules",
+      "!**/dist",
+      "!**/.output",
+      "!**/routeTree.gen.ts",
+      "!apps/frame-view",
+      "!apps/gather-box"
+    ]
   },
   "formatter": {
     "enabled": true,

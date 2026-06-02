@@ -1,0 +1,115 @@
+# AI Notes
+
+## User Implementation Preferences
+- Build target: cross-platform desktop app with Windows-first polish.
+- Stack preference: Electron + Vite + TypeScript + Tailwind CSS.
+- UX direction: native-feel desktop interactions and performance over minimal app size.
+- Core product: mixed image/video gallery with fullscreen/modal viewer.
+- Navigation expectations: keyboard-first navigation and smooth folder browsing.
+- Behavior preference: video thumbnails autoplay on hover (not globally).
+- Header preference: keep theme selection in Settings only (no duplicate header control).
+- Toggle preference: recursive mode should be a highlighted button state, not a checkbox.
+- Navigation preference: when recursive is off and a folder has no direct media, show its immediate subfolders inline with parent/sibling folder controls in the top bar.
+- Folder hotkey preference: use `Shift+W/A/D` for parent/previous/next folder and `Shift+S` to open the selected folder.
+- Media support preference: GIF files should be included even for older persisted settings.
+- State/data preference: lazy incremental scanning and persistent cache/indexing.
+- Planning preference: maintain a persistent implementation plan with explicit progress tracking.
+- Documentation preference: keep this file updated with important context and implementation-style preferences.
+- Branding preference: use `media/frame-view-icon` as the application icon asset.
+- Dev workflow preference: support one-command local build + install on Windows.
+- Documentation preference: maintain a root README and keep hotkeys listed in both README and Settings.
+- Testing preference: keep automated tests in a dedicated test directory rather than colocated with source files.
+- Settings preference: organize Preferences into tabbed sections for usability, storage, hotkeys, and debugging.
+- Diagnostics preference: expose a copyable local diagnostics snapshot suitable for sharing with an AI agent or bug report.
+- Maintainability preference: shared runtime validation should live in Zod schemas under `src/shared/contracts.ts`.
+- IPC preference: preload APIs should expose `better-result` Results instead of plain values, null sentinels, or thrown handler errors.
+- Tooling preference: Biome is the primary formatter/linter and Knip is used for dead-code and dependency checks.
+
+## Planning Artifacts
+- Main plan: `docs/plans/frame-view-v1-plan.md`
+- Next plan: `docs/plans/frame-view-v1.1-plan.md`
+- Refactor plan: `docs/plans/unified-folder-gallery-plan.md`
+- Source requirements docs:
+  - `docs/feature-specification.md`
+  - `docs/screen-breakdown.md`
+
+## Important Technical Notes
+- Use secure Electron defaults: `contextIsolation: true`, `nodeIntegration: false`.
+- Keep file-system/media access in main process; renderer uses typed preload bridge.
+- Preserve native OS window chrome in v1.
+- Persist app settings and window bounds between sessions.
+- Baseline implementation currently includes: folder scan IPC pipeline, sidebar tree, gallery grid, viewer modal, and preferences drawer.
+- Verification status: `pnpm run lint` and `pnpm exec tsc --noEmit` pass.
+- Validation status: manual runtime smoke test in Electron UI completed (user-confirmed).
+- Media URL strategy: renderer uses `frameview-media://` URLs; main process resolves them via `protocol.handle`, filesystem streaming, and byte-range support for stable video seeking.
+- Gallery performance strategy: thumbnails are served via `frameview-media://thumb?...`, generated through worker-backed `sharp`/ffmpeg pipelines, and cached in memory plus persistent WebP disk cache.
+- Sidebar UX rule: opened folder remains tree root; clicking sub-folders updates active content only.
+- Viewer stability fixes: guarded seek/skip logic based on valid duration and loop fallback on `ended`.
+- Folder browsing fallback: non-recursive empty folders now surface immediate subfolders in the main view, with top-bar actions for parent and same-level sibling navigation.
+- Folder navigation guard: parent navigation is capped to the originally opened root folder for the current browsing session.
+- Unified non-recursive browsing: immediate child folders and direct media now share one mixed grid, with folders rendered before media and viewer actions remaining media-only.
+- Added user preference for audio-enabled video hover previews.
+- Added user preference toggle for autoplaying videos in the fullscreen viewer.
+- Added user preference toggle for fullscreen viewer navigation wraparound only; gallery navigation still wraps independently.
+- Added user preference toggles for visible media types (images/videos) with rescan on change.
+- Sidebar layout guard: sidebar content scrolls internally and app viewport stays fixed even with very large folder trees.
+- Viewer volume persistence: stored under `localStorage` key `frameview.viewer.volume` and applied on each loaded video.
+- Gallery keyboard controls: Left/Right for selection and Enter to open current item.
+- One-hand keyboard alternatives: gallery uses `W/A/S/D` navigation with row-jump wrapping on `W/S` and `F` to open viewer; viewer uses `Q/E` previous/next, `1/2/3` for -5s, play/pause, +5s, and hold `4` for temporary `2x` speed.
+- Gallery sort preference: provide `Name (A-Z/Z-A)`, `Date (Newest/Oldest)`, and `Random`; random order stays stable until user-triggered shuffle and sort mode persists in settings.
+- Scan lifecycle hardening: scan events now carry `runId`, and renderer state ignores stale run events after cancel/restart.
+- Cache maintenance control: renderer can trigger thumbnail cache clear via `window.frameView.clearThumbnailCache()`.
+- SQLite metadata index: `media-index.sqlite` stores scan-run metadata and media rows with stale-row cleanup after completed scans.
+- Index maintenance controls: renderer can query index stats and clear the index via `window.frameView.getMediaIndexStats()` and `window.frameView.clearMediaIndex()`.
+- Sidecar tooling: `ffmpeg-static` and `ffprobe-static` are integrated; status is exposed to renderer via `window.frameView.getMediaToolsStatus()`.
+- Video metadata enrichment: ffprobe runs lazily after video tiles enter viewport, then patches metadata into renderer state without blocking scan throughput.
+- Video thumbnail generation: thumbnail pipeline uses ffmpeg for video files before falling back to native thumbnail generation.
+- Main/renderer command bridge: app-level commands are emitted on `app:command` and handled in renderer for open-folder, refresh, settings toggle, and scan-path actions.
+- Native menu shortcuts: Open Folder (`Ctrl/Cmd+O`), Refresh (`F5` or `Ctrl/Cmd+R`), Preferences (`Ctrl/Cmd+,`).
+- Desktop shell parity: supports `open-file` events and second-instance path forwarding to active window.
+- Settings migration behavior: ensure `gif` stays present in `filters.imageExtensions` when loading or updating persisted settings.
+- Performance preference: prioritize scan responsiveness by deferring video metadata probing until items are visible.
+- Scan throughput optimization: file stat work now runs with bounded parallelism per directory instead of full serial processing.
+- Renderer scan optimization: incoming scan batches append unsorted during loading, then apply one final sort pass on `done`.
+- Gallery scaling optimization: Prism grid now window-renders only visible rows (+ overscan) to reduce DOM load in large folders.
+- Thumbnail generation optimization: protocol thumbnail work runs through a global concurrency limiter to avoid ffmpeg/native thumbnail storms.
+- Thumbnail pipeline architecture: thumbnails now flow through `ThumbnailService`, use `sharp` for image decode/resize/WebP encoding, use ffmpeg only for video frame extraction, and cache `.webp` derivatives on disk with separate bounded image/video queues.
+- Thumbnail scheduling behavior: queued thumbnail work is now recency-prioritized so large scrollbar jumps prefer the newest visible requests, and aborted video requests no longer count as ffmpeg extraction failures.
+- Large-image responsiveness strategy: thumbnail generation now runs through a dedicated thumbnail worker pool instead of the Electron main process, and the renderer tags thumbnail requests with viewport priority while keeping the legacy `2x` request scale for image fidelity.
+- Packaged-runtime strategy: thumbnail/media runtime dependencies are staged into `resources/node_modules` for production builds, and worker/media tool resolution now probes packaged paths explicitly instead of assuming dev-style module layout.
+- Diagnostics strategy: persistent debug settings now control thumbnail-worker debug logging and lightweight timing collection, and the renderer can copy a structured diagnostics snapshot through the new Debug settings tab.
+- Catalog architecture: scan traversal and SQLite index updates now run in a dedicated catalog utility-process worker brokered by `CatalogService`.
+- Shared contract architecture: app, worker, and diagnostics payloads are now defined in `src/shared/contracts.ts` and consumed via Zod parsing instead of hand-written guard chains.
+- IPC result architecture: main-process handlers return serialized Results, preload deserializes them, and renderer code matches on explicit Result values.
+- Media-index schema architecture: Drizzle schema metadata now lives in `src/main/db/schema.ts`; runtime access uses the existing `node:sqlite` engine behind a Drizzle SQLite proxy adapter.
+- Renderer maintainability architecture: preload access is now centralized in `src/renderer/services/frameViewClient.ts`, `App.tsx` is reduced to composition/wiring, settings panel data/actions are split into focused hooks, and browser selection state is isolated in `useBrowserSelection`.
+- Settings UI architecture: `SettingsDrawer` now acts as a shell while per-tab content lives under `src/renderer/components/settings/`.
+- Layout maintainability architecture: `PrismLayout` now delegates virtualization to `useVirtualGridMetrics` and renders focused layout components under `src/renderer/layouts/components/`.
+- Renderer scan-state architecture: active scans accumulate `loadingChunks` and only flatten/sort once on `done`; opening the viewer during a scan snapshots the loaded items once for that session.
+- Settings persistence hardening: app settings and window state now use debounced dirty-state flushing with `flushNowSync()` for close/shutdown paths.
+- Settings persistence versioning: persisted settings state now writes a versioned payload through `src/main/services/settingsPersistence.ts`, with migration for older payloads that lacked a version field.
+- Window shutdown hardening: main-window close persistence now runs through `createMainWindowCloseHandler` and `persistWindowState`, preventing duplicate close handling and ensuring immediate final writes before destroy.
+- Thumbnail cache maintenance: runtime disk-cache pruning now re-enforces the configured file cap during long sessions instead of only at startup.
+- Catalog runtime maintainability: scan constants now live in `src/main/catalog/catalogScanConstants.ts`, and `CatalogRuntime` now isolates filter building, directory candidate listing, stat batching, indexed batch flushes, and throttled progress emission.
+- Tooling status: repo now includes `pnpm run typecheck` and `pnpm run check`.
+- Validation status: `pnpm run check` passes after the maintainability refactor and test expansion.
+- Bootstrap stability note: `useAppBootstrap` must stay mount-stable; wiring it to changing scan/settings callbacks can cancel remembered-folder scans during normal renderer updates and leave the gallery mounted with zero items.
+- Manual validation status: agent-browser Electron smoke testing is set up and was used to verify remembered-folder boot, Settings open/close, and Refresh behavior against the live app.
+- Large-gallery stability note: recursive folders with several thousand items exposed renderer update-depth warnings and thumbnail starvation when dragging the scrollbar; fixes included rAF-batched scan-event delivery, throttled worker progress events, row-window-based Prism scroll state, faster media-entry lookup, eager loading for already-windowed images, and abort-aware thumbnail generation queueing so stale offscreen requests do not dominate thumbnail work.
+- Gallery mode preference: per-root gallery preferences remember Comic mode and direct child recursive exclusions; Comic mode is a recursive image-folder library view with one tile per folder and a vertical reader.
+- Error architecture: main-process errors use `TaggedError` subclasses (`ValidationError`, `FileSystemError`, `DatabaseError`, `WorkerError`) from `src/main/errors.ts`; shared `RequestAbortError` for abort signaling across thumbnail pipeline; IPC transport serializes errors via `serializeAppResult` / `deserializeIpcResult`; renderer uses `getFrameViewValue` / `isFrameViewOk` helpers to unwrap.
+- IPC validation: `validateIpcInput` helper in `registerIpc.ts` replaces repetitive `parseWithSchema` + `Result.isError` check patterns.
+- Type guard helpers: `createTypeGuard` in `src/shared/contracts.ts` generates Zod-backed type guards, used by `isCatalogWorkerResponse`/`isCatalogWorkerEvent` and `isThumbnailWorkerResponse`/`isThumbnailWorkerEvent`.
+- Settings normalization: `normalizeAppSettings` uses Zod's `safeParse` with a merge-over-defaults fallback strategy, reducing manual `typeof` booleans per field.
+- Range parsing: `readRange` returns a discriminated union `{ ok: true, start, end } | { ok: false, reason }` instead of string sentinels.
+- Drizzle boolean mode: `recursive` column in `scanRunsTable` uses `integer('recursive', { mode: 'boolean' })` so the ORM handles 0/1 ↔ boolean conversion automatically.
+- Window bounds normalization: uses a `WindowBoundsSchema` (Zod) for validation, replacing manual `typeof`/`Number.isFinite` guards.
+- Library notes: `better-result` used consistently for Result types across IPC; Zod schemas drive all validation; renderer `frameViewResult.ts` deliberately unwraps Results to `T | null` with error logging (structured error info is logged but intentionally not surfaced to UI); `AppSettingsPatchSchema` is intentionally hand-written rather than derived from `.partial()` because the `thumbnailSize` field has a transform in the full schema that must not apply to patches.
+
+## Open Implementation Follow-ups
+- Expand cross-platform UX parity after Windows path is stable.
+- Implement v1.1 workflow upgrades: recent folders/pins, metadata side panel, and file watcher auto-refresh.
+- Future product ideas to keep out of the current technical quality pass: recent folders/pins, metadata side panel, and file watcher auto-refresh.
+
+## Active Technical Improvement Plan
+- Implement maintainability/performance improvements covering single-source IPC contracts, renderer store decomposition, thumbnail queue hardening, streaming catalog scans, structured renderer Result handling, performance regression tests, and thumbnail cache relocation to Electron's OS-managed `sessionData` cache path.

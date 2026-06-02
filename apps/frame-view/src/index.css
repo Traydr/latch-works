@@ -1,0 +1,78 @@
+@import "tailwindcss";
+@config "../tailwind.config.cjs";
+
+:root {
+  color-scheme: light dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: "Segoe UI", "SF Pro Text", "Inter", system-ui, -apple-system, sans-serif;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.45);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ---- Prism UI utility classes ---- */
+
+.prism-surface {
+  @apply rounded-2xl border border-zinc-300 bg-white/90 shadow-xl backdrop-blur-xl dark:border-zinc-700 dark:bg-zinc-900/90;
+}
+
+/* Prism: adaptive light/dark controls */
+.prism-btn {
+  @apply rounded-xl border border-zinc-300/90 bg-white/70 px-3 py-1.5 text-xs font-medium text-zinc-700 transition hover:border-zinc-400 hover:bg-white dark:border-zinc-600/90 dark:bg-zinc-900/70 dark:text-zinc-200 dark:hover:border-zinc-500 dark:hover:bg-zinc-900;
+}
+
+.prism-btn-active {
+  @apply border-violet-300 bg-violet-100 text-violet-700 hover:bg-violet-100 dark:border-violet-500/60 dark:bg-violet-500/20 dark:text-violet-200 dark:hover:bg-violet-500/20;
+}
+
+.prism-btn-excluded {
+  border-color: rgba(248, 113, 113, 0.55);
+  background-image: repeating-linear-gradient(
+    135deg,
+    rgba(248, 113, 113, 0.22) 0,
+    rgba(248, 113, 113, 0.22) 5px,
+    transparent 5px,
+    transparent 10px
+  );
+}
+
+.prism-pill {
+  @apply inline-flex items-center gap-2 rounded-xl border border-zinc-300/80 bg-white/70 px-2.5 py-1 text-[11px] text-zinc-600 dark:border-zinc-700/80 dark:bg-zinc-900/70 dark:text-zinc-300;
+}
+
+.prism-input {
+  @apply rounded-xl border border-zinc-300 bg-white/80 px-3 py-1.5 text-sm text-zinc-700 outline-none transition focus:border-violet-400 focus:ring-2 focus:ring-violet-300/40 dark:border-zinc-700 dark:bg-zinc-900/80 dark:text-zinc-200 dark:focus:border-violet-400 dark:focus:ring-violet-500/30;
+}
+
+.prism-select {
+  @apply rounded-xl border border-zinc-300 bg-white/80 px-3 py-1.5 text-sm text-zinc-700 outline-none transition focus:border-violet-400 focus:ring-2 focus:ring-violet-300/40 dark:border-zinc-700 dark:bg-zinc-900/80 dark:text-zinc-200 dark:focus:border-violet-400 dark:focus:ring-violet-500/30;
+}
+
+.prism-section {
+  @apply rounded-2xl border border-zinc-300/80 bg-white/70 p-3 dark:border-zinc-700/80 dark:bg-zinc-900/60;
+}
