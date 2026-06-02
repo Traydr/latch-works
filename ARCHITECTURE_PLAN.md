@@ -695,15 +695,17 @@ Create a tiny local fixture archive in the repo or ignored test data with:
 
 ## 23. Open Questions
 
-1. How large is the current archive, and how fast does it grow per month?
-2. Is this strictly single-user, or should the schema/UI assume a small allowlist of users?
-3. Are short-lived signed URLs acceptable, or do you want all media bytes proxied through the app?
-4. Do you need iPad offline access, or is online-only acceptable?
-5. Do you want Pane View to show local-folder-like paths exactly as they are today, or can Lockstep normalize names?
-6. Should deleted local files disappear remotely, be marked hidden, or remain forever unless manually pruned?
-7. Do you want source-site metadata/search to become important, or is folder/path browsing the main mental model?
-8. Should Pane View support every original video codec, or is generating web-compatible previews acceptable?
-9. Is Railway storage cost acceptable for the full archive, or should large originals stay in external S3/R2 while Railway hosts only the app/database?
+Answered in `docs/decisions/0001-phase-0-answers.md`.
+
+1. Current archive size is 35.9 GB, with assumed growth of roughly 1 GB per month.
+2. Pane View is strictly single-user.
+3. Short-lived signed URLs are acceptable and should be the default media delivery mode.
+4. iPad/iPhone offline access is out of scope for now; online-only is acceptable.
+5. Pane View and Lockstep should preserve local-folder-like paths exactly as stored today.
+6. Deleted local files should be removed remotely during sync, with deletions made visible in the Lockstep plan.
+7. Folder/path browsing is the main mental model; source-site metadata can become useful later.
+8. Web-compatible previews are acceptable for videos and oversized media.
+9. Prototype storage can live fully on Railway.
 
 ## 24. Near-Term Next Step
 

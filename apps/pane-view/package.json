@@ -1,0 +1,30 @@
+{
+  "name": "@latch-works/pane-view",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "check": "pnpm typecheck && pnpm build",
+    "dev": "vite dev --host 127.0.0.1",
+    "start": "node .output/server/index.mjs",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@latch-works/media-domain": "workspace:*",
+    "@tanstack/react-router": "^1.120.20",
+    "@tanstack/react-start": "^1.120.20",
+    "lucide-react": "^0.562.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "typescript": "^6.0.2",
+    "vite": "^8.0.7",
+    "vitest": "^4.1.3"
+  }
+}

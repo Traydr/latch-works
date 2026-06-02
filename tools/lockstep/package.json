@@ -1,0 +1,24 @@
+{
+  "name": "@latch-works/lockstep",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "lockstep": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "pnpm typecheck",
+    "start": "tsx src/cli.ts",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@latch-works/media-index": "workspace:*"
+  },
+  "devDependencies": {
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.3"
+  }
+}

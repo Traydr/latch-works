@@ -1,0 +1,12 @@
+node_modules/
+.pnpm-store/
+dist/
+.output/
+.tanstack/
+.vite/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+lockstep-cache.sqlite
+sync-manifest-*.jsonl
