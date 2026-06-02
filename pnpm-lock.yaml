@@ -160,12 +160,18 @@ importers:
       '@latch-works/media-domain':
         specifier: workspace:*
         version: link:../../packages/media-domain
+      '@latch-works/media-storage':
+        specifier: workspace:*
+        version: link:../../packages/media-storage
       '@tanstack/react-router':
         specifier: ^1.120.20
         version: 1.170.10(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@tanstack/react-start':
         specifier: ^1.120.20
         version: 1.168.18(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(vite@8.0.14(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))(webpack@5.107.2(esbuild@0.28.0))
+      drizzle-orm:
+        specifier: ^0.45.2
+        version: 0.45.2
       lucide-react:
         specifier: ^0.562.0
         version: 0.562.0(react@19.2.6)

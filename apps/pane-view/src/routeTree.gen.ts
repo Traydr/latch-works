@@ -9,9 +9,21 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiHealthRouteImport } from './routes/api.health'
+import { Route as ApiSyncUploadUrlRouteImport } from './routes/api.sync.upload-url'
+import { Route as ApiSyncRunsRouteImport } from './routes/api.sync.runs'
+import { Route as ApiSyncCompleteObjectRouteImport } from './routes/api.sync.complete-object'
+import { Route as ApiAuthLogoutRouteImport } from './routes/api.auth.logout'
+import { Route as ApiAuthLoginRouteImport } from './routes/api.auth.login'
+import { Route as ApiMediaMediaIdOriginalRouteImport } from './routes/api.media.$mediaId.original'
 
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -22,35 +34,128 @@ const ApiHealthRoute = ApiHealthRouteImport.update({
   path: '/api/health',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiSyncUploadUrlRoute = ApiSyncUploadUrlRouteImport.update({
+  id: '/api/sync/upload-url',
+  path: '/api/sync/upload-url',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSyncRunsRoute = ApiSyncRunsRouteImport.update({
+  id: '/api/sync/runs',
+  path: '/api/sync/runs',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSyncCompleteObjectRoute = ApiSyncCompleteObjectRouteImport.update({
+  id: '/api/sync/complete-object',
+  path: '/api/sync/complete-object',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAuthLogoutRoute = ApiAuthLogoutRouteImport.update({
+  id: '/api/auth/logout',
+  path: '/api/auth/logout',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAuthLoginRoute = ApiAuthLoginRouteImport.update({
+  id: '/api/auth/login',
+  path: '/api/auth/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiMediaMediaIdOriginalRoute = ApiMediaMediaIdOriginalRouteImport.update({
+  id: '/api/media/$mediaId/original',
+  path: '/api/media/$mediaId/original',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/login': typeof LoginRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/auth/login': typeof ApiAuthLoginRoute
+  '/api/auth/logout': typeof ApiAuthLogoutRoute
+  '/api/sync/complete-object': typeof ApiSyncCompleteObjectRoute
+  '/api/sync/runs': typeof ApiSyncRunsRoute
+  '/api/sync/upload-url': typeof ApiSyncUploadUrlRoute
+  '/api/media/$mediaId/original': typeof ApiMediaMediaIdOriginalRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/login': typeof LoginRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/auth/login': typeof ApiAuthLoginRoute
+  '/api/auth/logout': typeof ApiAuthLogoutRoute
+  '/api/sync/complete-object': typeof ApiSyncCompleteObjectRoute
+  '/api/sync/runs': typeof ApiSyncRunsRoute
+  '/api/sync/upload-url': typeof ApiSyncUploadUrlRoute
+  '/api/media/$mediaId/original': typeof ApiMediaMediaIdOriginalRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/login': typeof LoginRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/auth/login': typeof ApiAuthLoginRoute
+  '/api/auth/logout': typeof ApiAuthLogoutRoute
+  '/api/sync/complete-object': typeof ApiSyncCompleteObjectRoute
+  '/api/sync/runs': typeof ApiSyncRunsRoute
+  '/api/sync/upload-url': typeof ApiSyncUploadUrlRoute
+  '/api/media/$mediaId/original': typeof ApiMediaMediaIdOriginalRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/health'
+  fullPaths:
+    | '/'
+    | '/login'
+    | '/api/health'
+    | '/api/auth/login'
+    | '/api/auth/logout'
+    | '/api/sync/complete-object'
+    | '/api/sync/runs'
+    | '/api/sync/upload-url'
+    | '/api/media/$mediaId/original'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/health'
-  id: '__root__' | '/' | '/api/health'
+  to:
+    | '/'
+    | '/login'
+    | '/api/health'
+    | '/api/auth/login'
+    | '/api/auth/logout'
+    | '/api/sync/complete-object'
+    | '/api/sync/runs'
+    | '/api/sync/upload-url'
+    | '/api/media/$mediaId/original'
+  id:
+    | '__root__'
+    | '/'
+    | '/login'
+    | '/api/health'
+    | '/api/auth/login'
+    | '/api/auth/logout'
+    | '/api/sync/complete-object'
+    | '/api/sync/runs'
+    | '/api/sync/upload-url'
+    | '/api/media/$mediaId/original'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  LoginRoute: typeof LoginRoute
   ApiHealthRoute: typeof ApiHealthRoute
+  ApiAuthLoginRoute: typeof ApiAuthLoginRoute
+  ApiAuthLogoutRoute: typeof ApiAuthLogoutRoute
+  ApiSyncCompleteObjectRoute: typeof ApiSyncCompleteObjectRoute
+  ApiSyncRunsRoute: typeof ApiSyncRunsRoute
+  ApiSyncUploadUrlRoute: typeof ApiSyncUploadUrlRoute
+  ApiMediaMediaIdOriginalRoute: typeof ApiMediaMediaIdOriginalRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -65,12 +170,61 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiHealthRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/sync/upload-url': {
+      id: '/api/sync/upload-url'
+      path: '/api/sync/upload-url'
+      fullPath: '/api/sync/upload-url'
+      preLoaderRoute: typeof ApiSyncUploadUrlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/sync/runs': {
+      id: '/api/sync/runs'
+      path: '/api/sync/runs'
+      fullPath: '/api/sync/runs'
+      preLoaderRoute: typeof ApiSyncRunsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/sync/complete-object': {
+      id: '/api/sync/complete-object'
+      path: '/api/sync/complete-object'
+      fullPath: '/api/sync/complete-object'
+      preLoaderRoute: typeof ApiSyncCompleteObjectRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/auth/logout': {
+      id: '/api/auth/logout'
+      path: '/api/auth/logout'
+      fullPath: '/api/auth/logout'
+      preLoaderRoute: typeof ApiAuthLogoutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/auth/login': {
+      id: '/api/auth/login'
+      path: '/api/auth/login'
+      fullPath: '/api/auth/login'
+      preLoaderRoute: typeof ApiAuthLoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/media/$mediaId/original': {
+      id: '/api/media/$mediaId/original'
+      path: '/api/media/$mediaId/original'
+      fullPath: '/api/media/$mediaId/original'
+      preLoaderRoute: typeof ApiMediaMediaIdOriginalRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  LoginRoute: LoginRoute,
   ApiHealthRoute: ApiHealthRoute,
+  ApiAuthLoginRoute: ApiAuthLoginRoute,
+  ApiAuthLogoutRoute: ApiAuthLogoutRoute,
+  ApiSyncCompleteObjectRoute: ApiSyncCompleteObjectRoute,
+  ApiSyncRunsRoute: ApiSyncRunsRoute,
+  ApiSyncUploadUrlRoute: ApiSyncUploadUrlRoute,
+  ApiMediaMediaIdOriginalRoute: ApiMediaMediaIdOriginalRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

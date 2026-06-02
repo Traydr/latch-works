@@ -41,3 +41,15 @@ The snapshot format is a JSON array:
 ## Push
 
 `push` is scaffolded but intentionally stops before upload until the Pane View ingest API and Railway bucket credentials are wired.
+
+```powershell
+$env:LOCKSTEP_API_URL = "http://localhost:3000"
+$env:LOCKSTEP_API_TOKEN = "replace-me"
+pnpm lockstep -- push --source "T:\cloud-desktop\media"
+```
+
+The token environment variable can be changed:
+
+```powershell
+pnpm lockstep -- push --source "T:\cloud-desktop\media" --api-token-env "MY_LOCKSTEP_TOKEN"
+```

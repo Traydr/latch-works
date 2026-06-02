@@ -13,33 +13,41 @@ import {
   Shuffle,
 } from "lucide-react";
 import { useMemo, useState } from "react";
-import { fixtureFolders, fixtureMedia, libraryStats } from "../features/library/library-data";
+import { getLibrarySnapshot } from "../features/library/library-service";
 
 export const Route = createFileRoute("/")({
+  loader: () => getLibrarySnapshot(),
   component: PaneViewHome,
 });
 
 const sortModes = ["name-asc", "date-newest", "random"] as const;
 
 function PaneViewHome() {
+  const library = Route.useLoaderData();
   const [recursive, setRecursive] = useState(true);
   const [comicMode, setComicMode] = useState(false);
   const [sortMode, setSortMode] = useState<(typeof sortModes)[number]>("name-asc");
-  const [selectedId, setSelectedId] = useState<string | null>(fixtureMedia[0]?.id ?? null);
+  const [selectedId, setSelectedId] = useState<string | null>(library.media[0]?.id ?? null);
 
-  const sortedMedia = useMemo(() => sortMediaItems(fixtureMedia, sortMode, 42), [sortMode]);
-  const comics = useMemo(() => buildComicEntries(sortedMedia, "sfw/patreon"), [sortedMedia]);
+  const sortedMedia = useMemo(
+    () => sortMediaItems(library.media, sortMode, 42),
+    [library.media, sortMode],
+  );
+  const comics = useMemo(
+    () => buildComicEntries(sortedMedia, library.currentPath),
+    [library.currentPath, sortedMedia],
+  );
   const entries = useMemo(
     () =>
       buildBrowserEntries({
-        folders: fixtureFolders,
+        folders: library.folders,
         comics,
         items: sortedMedia,
         recursive,
         comicMode,
         sortMode,
       }),
-    [comicMode, comics, recursive, sortMode, sortedMedia],
+    [comicMode, comics, library.folders, recursive, sortMode, sortedMedia],
   );
   const selected = sortedMedia.find((item) => item.id === selectedId) ?? sortedMedia[0] ?? null;
 
@@ -57,9 +65,9 @@ function PaneViewHome() {
         </div>
 
         <nav className="path-list" aria-label="Known archive paths">
-          {["nsfw", "nsfw-stories", "sfw", "sfw/patreon"].map((path) => (
+          {library.roots.map((path) => (
             <button
-              className={path === "sfw/patreon" ? "path-item active" : "path-item"}
+              className={path === library.currentPath ? "path-item active" : "path-item"}
               key={path}
               type="button"
             >
@@ -70,8 +78,8 @@ function PaneViewHome() {
         </nav>
 
         <div className="sidebar-footer">
-          <span>{libraryStats.archiveSize}</span>
-          <span>{libraryStats.monthlyGrowth}</span>
+          <span>{library.stats.archiveSize}</span>
+          <span>{library.stats.monthlyGrowth}</span>
         </div>
       </aside>
 
@@ -79,9 +87,9 @@ function PaneViewHome() {
         <header className="toolbar">
           <nav className="crumbs" aria-label="Current path">
             <Archive size={17} />
-            <span>T:\cloud-desktop\media</span>
+            <span>{library.archiveRoot}</span>
             <ChevronRight size={15} />
-            <strong>sfw/patreon</strong>
+            <strong>{library.currentPath}</strong>
           </nav>
 
           <div className="toolbar-actions">
@@ -125,7 +133,7 @@ function PaneViewHome() {
           <section className="browser-panel" aria-label="Archive browser">
             <div className="browser-header">
               <div>
-                <h1>sfw/patreon</h1>
+                <h1>{library.currentPath}</h1>
                 <p>{entries.length} entries, path order preserved</p>
               </div>
               <select
@@ -215,7 +223,7 @@ function PaneViewHome() {
                   </div>
                   <div>
                     <span>Delivery</span>
-                    <strong>short-lived signed URL</strong>
+                    <strong>{library.mediaUrlMode}</strong>
                   </div>
                 </div>
               </>

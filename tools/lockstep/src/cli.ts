@@ -5,6 +5,8 @@ import { createSyncPlan, type RemoteEntrySnapshot, scanArchive } from "@latch-wo
 type Command = "plan" | "push" | "verify" | "doctor";
 
 interface CliOptions {
+  apiTokenEnv: string;
+  apiUrl?: string;
   command: Command;
   hashFiles: boolean;
   remoteSnapshot?: string;
@@ -19,12 +21,13 @@ Usage:
   lockstep plan --source "T:\\cloud-desktop\\media" [--hash] [--remote-snapshot snapshot.json]
   lockstep plan --source "T:\\cloud-desktop\\media" --show-skipped
   lockstep verify --source "T:\\cloud-desktop\\media" --remote-snapshot snapshot.json [--hash]
-  lockstep push --source "T:\\cloud-desktop\\media" [--hash]
+  lockstep push --source "T:\\cloud-desktop\\media" --api-url http://localhost:3000 [--hash]
   lockstep doctor
 
 Notes:
   plan and verify are read-only.
   push is scaffolded and currently stops before uploading until remote API settings are added.
+  API tokens are read from LOCKSTEP_API_TOKEN by default.
 `);
 }
 
@@ -38,6 +41,7 @@ function parseArgs(argv: string[]): CliOptions {
   }
 
   const options: CliOptions = {
+    apiTokenEnv: "LOCKSTEP_API_TOKEN",
     command,
     hashFiles: false,
     showSkipped: false,
@@ -52,6 +56,14 @@ function parseArgs(argv: string[]): CliOptions {
         break;
       case "--hash":
         options.hashFiles = true;
+        break;
+      case "--api-url":
+        options.apiUrl = rest[index + 1];
+        index += 1;
+        break;
+      case "--api-token-env":
+        options.apiTokenEnv = rest[index + 1] ?? options.apiTokenEnv;
+        index += 1;
         break;
       case "--show-skipped":
         options.showSkipped = true;
@@ -127,6 +139,8 @@ async function run(): Promise<void> {
     console.log(`Node: ${process.version}`);
     console.log("Archive writes: disabled");
     console.log("Remote deletes: planned when local paths disappear");
+    console.log(`API URL: ${process.env.LOCKSTEP_API_URL ?? "not configured"}`);
+    console.log(`API token: ${process.env.LOCKSTEP_API_TOKEN ? "configured" : "not configured"}`);
     return;
   }
 
@@ -178,7 +192,14 @@ async function run(): Promise<void> {
   }
 
   if (options.command === "push") {
+    const apiUrl = options.apiUrl ?? process.env.LOCKSTEP_API_URL;
+    const apiToken = process.env[options.apiTokenEnv];
+
     console.log("");
+    console.log(`Remote API URL: ${apiUrl ?? "not configured"}`);
+    console.log(
+      `Remote API token: ${apiToken ? `configured via ${options.apiTokenEnv}` : "not configured"}`,
+    );
     console.log("Push is not enabled yet. Add Pane View ingest API settings before uploads run.");
     process.exitCode = 2;
   }

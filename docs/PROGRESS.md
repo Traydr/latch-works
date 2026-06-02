@@ -45,6 +45,22 @@ Phase 0 is complete because the open architecture questions have been answered a
   - `doctor`,
   - guarded `push` placeholder,
   - `--show-skipped` reporting for skipped local files.
+- Added Lockstep remote configuration parsing:
+  - `--api-url`,
+  - `--api-token-env`,
+  - `LOCKSTEP_API_URL`,
+  - `LOCKSTEP_API_TOKEN`.
+- Added Pane View route-loader backed fixture library service.
+- Added Pane View login route and auth API route scaffolding.
+- Added single-user session helper primitives.
+- Added sync API token helper primitives.
+- Added initial Drizzle/Postgres schema draft for users, sessions, API tokens, media objects, library entries, folders, collections, thumbnails, sync runs, viewer state, and favorites.
+- Added sync API stubs for:
+  - `/api/sync/runs`,
+  - `/api/sync/upload-url`,
+  - `/api/sync/complete-object`.
+- Added authenticated media delivery route scaffold for `/api/media/$mediaId/original`.
+- Added signed original delivery planning through content-addressed object keys.
 - Added placeholder app folders for future imports:
   - `apps/frame-view`,
   - `apps/gather-box`.
@@ -69,6 +85,9 @@ Phase 0 is complete because the open architecture questions have been answered a
 - Lockstep read-only scan against `T:\cloud-desktop\media` completed without writing to the archive.
 - Imported Gather Box `check` passes.
 - Imported Frame View typecheck, lint, and test suite pass. Frame View lint currently reports existing warnings but exits successfully.
+- Pane View auth/session helper tests pass.
+- Pane View sync API token helper tests pass.
+- Pane View media delivery helper tests pass.
 
 ## Archive Scan Result
 
@@ -123,15 +142,17 @@ pnpm lockstep -- plan --source "T:\cloud-desktop\media" --show-skipped
 ## Next Planned Work
 
 1. Add fixture-backed route loaders/server functions to Pane View instead of keeping all fixture data in the route component.
-2. Add the first database schema draft with Drizzle/Postgres for users, sessions, media objects, library entries, folders, and sync runs.
-3. Add single-user auth around Pane View routes and every server function/media route.
-4. Add Lockstep remote API configuration and keep `push` disabled until ingest endpoints and token auth exist.
-5. Decide sidecar/ancillary file policy:
+2. Replace auth API scaffold TODOs with Postgres-backed session persistence.
+3. Add a database adapter and migrations for the Drizzle schema.
+4. Replace Pane View fixture data with database-backed folder/media browsing.
+5. Implement Railway Bucket signed upload/download adapters.
+6. Keep sidecar/ancillary file policy simple for now:
    - ingest `meta.json` as metadata,
    - associate `.srt` with videos,
    - decide whether `.txt`, `.zip`, `.vrm`, `.me`, and scripts become attachments or remain ignored.
-6. Replace Pane View fixture data with database-backed folder/media browsing.
-7. Add Railway bucket client wiring and signed URL media route prototypes.
+   Current decision: ignore these files for first sync, except keep `meta.json` noted as future site-specific metadata.
+7. Wire Lockstep `push` to the sync API once database and storage adapters exist.
+8. Stop before Railway deployment and ask for deployment help.
 
 ## Current Status
 
