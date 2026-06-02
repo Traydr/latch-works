@@ -11,9 +11,11 @@ export interface LibrarySnapshot {
 }
 
 export async function getLibrarySnapshot(): Promise<LibrarySnapshot> {
+  const currentPath = "sfw/patreon";
+
   return {
     archiveRoot: "T:\\cloud-desktop\\media",
-    currentPath: "sfw/patreon",
+    currentPath,
     folders: fixtureFolders,
     media: fixtureMedia,
     mediaUrlMode: "signed-url",

@@ -51,6 +51,7 @@ Phase 0 is complete because the open architecture questions have been answered a
   - `LOCKSTEP_API_URL`,
   - `LOCKSTEP_API_TOKEN`.
 - Added Pane View route-loader backed fixture library service.
+- Added a database repository for future Pane View library loading. The UI remains fixture-backed until this is routed through a server-only boundary.
 - Added Pane View login route and auth API route scaffolding.
 - Added single-user session helper primitives.
 - Added Postgres-aware session storage helpers for login, logout, and media-route session validation. These fall back to prototype cookie acceptance when `DATABASE_URL` is not configured.
@@ -147,7 +148,7 @@ pnpm lockstep -- plan --source "T:\cloud-desktop\media" --show-skipped
 ## Next Planned Work
 
 1. Add fixture-backed route loaders/server functions to Pane View instead of keeping all fixture data in the route component.
-2. Replace Pane View fixture data with database-backed folder/media browsing.
+2. Route Pane View library loading through a server-only database boundary.
 3. Implement real sync-run/object upserts in the sync API.
 4. Wire Lockstep `push` to the sync API once database and storage adapters are complete.
 6. Keep sidecar/ancillary file policy simple for now:
