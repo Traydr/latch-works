@@ -18,7 +18,13 @@ export interface ScanArchiveOptions {
 export interface ScanArchiveResult {
   items: MediaItem[];
   skipped: number;
+  skippedEntries: SkippedArchiveEntry[];
   sourceRoot: string;
+}
+
+export interface SkippedArchiveEntry {
+  path: string;
+  reason: "unsupported-extension" | "not-a-regular-file";
 }
 
 async function hashFile(filePath: string): Promise<string> {
@@ -38,7 +44,7 @@ export async function scanArchive({
 }: ScanArchiveOptions): Promise<ScanArchiveResult> {
   const root = path.resolve(sourceRoot);
   const items: MediaItem[] = [];
-  let skipped = 0;
+  const skippedEntries: SkippedArchiveEntry[] = [];
 
   async function walk(currentPath: string): Promise<void> {
     const entries = await readdir(currentPath, { withFileTypes: true });
@@ -51,18 +57,24 @@ export async function scanArchive({
       }
 
       if (!entry.isFile()) {
-        skipped += 1;
+        skippedEntries.push({
+          path: joinArchivePath(path.relative(root, absolutePath)),
+          reason: "not-a-regular-file",
+        });
         continue;
       }
 
+      const relativePath = joinArchivePath(path.relative(root, absolutePath));
       const mediaType = detectMediaType(entry.name);
       if (!mediaType) {
-        skipped += 1;
+        skippedEntries.push({
+          path: relativePath,
+          reason: "unsupported-extension",
+        });
         continue;
       }
 
       const fileStat = await stat(absolutePath);
-      const relativePath = joinArchivePath(path.relative(root, absolutePath));
       const parentPath = getParentPath(relativePath);
       const sha256 = hashFiles ? await hashFile(absolutePath) : undefined;
 
@@ -84,7 +96,8 @@ export async function scanArchive({
 
   return {
     items,
-    skipped,
+    skipped: skippedEntries.length,
+    skippedEntries,
     sourceRoot: root,
   };
 }

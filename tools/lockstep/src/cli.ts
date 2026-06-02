@@ -8,6 +8,7 @@ interface CliOptions {
   command: Command;
   hashFiles: boolean;
   remoteSnapshot?: string;
+  showSkipped: boolean;
   source?: string;
 }
 
@@ -16,6 +17,7 @@ function printHelp(): void {
 
 Usage:
   lockstep plan --source "T:\\cloud-desktop\\media" [--hash] [--remote-snapshot snapshot.json]
+  lockstep plan --source "T:\\cloud-desktop\\media" --show-skipped
   lockstep verify --source "T:\\cloud-desktop\\media" --remote-snapshot snapshot.json [--hash]
   lockstep push --source "T:\\cloud-desktop\\media" [--hash]
   lockstep doctor
@@ -38,6 +40,7 @@ function parseArgs(argv: string[]): CliOptions {
   const options: CliOptions = {
     command,
     hashFiles: false,
+    showSkipped: false,
   };
 
   for (let index = 0; index < rest.length; index += 1) {
@@ -49,6 +52,9 @@ function parseArgs(argv: string[]): CliOptions {
         break;
       case "--hash":
         options.hashFiles = true;
+        break;
+      case "--show-skipped":
+        options.showSkipped = true;
         break;
       case "--remote-snapshot":
         options.remoteSnapshot = rest[index + 1];
@@ -135,11 +141,26 @@ async function run(): Promise<void> {
   const remote = await readRemoteSnapshot(options.remoteSnapshot);
   const plan = createSyncPlan(scan.items, remote);
   const totalBytes = scan.items.reduce((sum, item) => sum + item.size, 0);
+  const skippedEntries = scan.skippedEntries ?? [];
 
   console.log(`Source: ${scan.sourceRoot}`);
   console.log(`Media files: ${scan.items.length}`);
   console.log(`Skipped files: ${scan.skipped}`);
   console.log(`Total size: ${formatBytes(totalBytes)}`);
+
+  if (options.showSkipped && skippedEntries.length > 0) {
+    console.log("");
+    console.log("Skipped files");
+    for (const skipped of skippedEntries) {
+      console.log(`  ${skipped.reason.padEnd(21)} ${skipped.path}`);
+    }
+  } else if (options.showSkipped && scan.skipped > 0) {
+    console.log("");
+    console.log(
+      "Skipped file details are unavailable. Rebuild @latch-works/media-index and retry.",
+    );
+  }
+
   console.log("");
   console.log("Plan");
   console.log(`  upload: ${plan.counts.upload}`);

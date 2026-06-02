@@ -14,6 +14,12 @@ Add `--hash` when the plan needs content hashes. Hashing a 35.9 GB archive will 
 pnpm lockstep -- plan --source "T:\cloud-desktop\media" --hash
 ```
 
+Show every skipped non-media file:
+
+```powershell
+pnpm lockstep -- plan --source "T:\cloud-desktop\media" --show-skipped
+```
+
 ## Verify Against a Snapshot
 
 ```powershell
