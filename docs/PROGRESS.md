@@ -112,6 +112,10 @@ Phase 0 is complete because the open architecture questions have been answered a
 - Lockstep push CLI typecheck passes.
 - Full workspace `pnpm check` passes after sync ingest/push wiring.
 - Full workspace `pnpm check` passes after adding the remote snapshot endpoint.
+- Pane View deployment config was fixed after the first Railway migration attempt:
+  - Drizzle migrations now read `DATABASE_URL`/Postgres env credentials,
+  - the app start script now points at `dist/server/server.js`,
+  - a deployment runbook records the required Railway variables.
 
 ## Archive Scan Result
 
@@ -170,7 +174,7 @@ pnpm lockstep -- plan --source "T:\cloud-desktop\media" --show-skipped
    - Postgres database,
    - Railway bucket or S3-compatible bucket,
    - production env vars/secrets.
-2. Apply the initial Drizzle SQL migration to the deployed database.
+2. Ensure the Pane View Railway service has `DATABASE_URL=${{Postgres.DATABASE_URL}}`, then apply the initial Drizzle SQL migration to the deployed database.
 3. Run a small Lockstep push against the deployed endpoint with a limited test folder before pushing the full archive. Lockstep will fetch the deployed remote snapshot automatically for push planning.
 4. Route Pane View library loading through a server-only database boundary so the UI reads synced records instead of fixtures.
 5. Keep sidecar/ancillary file policy simple for now:

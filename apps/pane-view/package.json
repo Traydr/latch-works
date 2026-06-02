@@ -9,7 +9,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "dev": "vite dev --host 127.0.0.1",
-    "start": "node .output/server/index.mjs",
+    "start": "node dist/server/server.js",
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
