@@ -13,17 +13,25 @@ import {
   Search,
   Shuffle,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { getLibrarySnapshot } from "../features/library/library-service";
 import { isCurrentWebSessionValid } from "../server/auth/web-session";
 
 export const Route = createFileRoute("/")({
-  loader: async () => {
+  validateSearch: (search): { path?: string; q?: string } => ({
+    path: normalizeSearchParam(search.path),
+    q: normalizeSearchParam(search.q),
+  }),
+  loaderDeps: ({ search }) => ({
+    path: search.path,
+    query: search.q,
+  }),
+  loader: async ({ deps }) => {
     if (!(await isCurrentWebSessionValid())) {
       throw redirect({ to: "/login" });
     }
 
-    return getLibrarySnapshot();
+    return getLibrarySnapshot({ data: deps });
   },
   component: PaneViewHome,
 });
@@ -32,32 +40,68 @@ const sortModes = ["name-asc", "date-newest", "random"] as const;
 
 function PaneViewHome() {
   const library = Route.useLoaderData();
+  const search = Route.useSearch();
+  const navigate = Route.useNavigate();
   const [recursive, setRecursive] = useState(true);
   const [comicMode, setComicMode] = useState(false);
   const [sortMode, setSortMode] = useState<(typeof sortModes)[number]>("name-asc");
   const [selectedId, setSelectedId] = useState<string | null>(library.media[0]?.id ?? null);
+  const [searchDraft, setSearchDraft] = useState(search.q ?? "");
+
+  useEffect(() => {
+    setSearchDraft(search.q ?? "");
+  }, [search.q]);
 
   const sortedMedia = useMemo(
     () => sortMediaItems(library.media, sortMode, 42),
     [library.media, sortMode],
   );
+  const visibleMedia = useMemo(
+    () =>
+      recursive
+        ? sortedMedia
+        : sortedMedia.filter((item) => item.parentPath === library.currentPath),
+    [library.currentPath, recursive, sortedMedia],
+  );
   const comics = useMemo(
-    () => buildComicEntries(sortedMedia, library.currentPath),
-    [library.currentPath, sortedMedia],
+    () => buildComicEntries(visibleMedia, library.currentPath),
+    [library.currentPath, visibleMedia],
   );
   const entries = useMemo(
     () =>
       buildBrowserEntries({
         folders: library.folders,
         comics,
-        items: sortedMedia,
+        items: visibleMedia,
         recursive,
         comicMode,
         sortMode,
       }),
-    [comicMode, comics, library.folders, recursive, sortMode, sortedMedia],
+    [comicMode, comics, library.folders, recursive, sortMode, visibleMedia],
   );
-  const selected = sortedMedia.find((item) => item.id === selectedId) ?? sortedMedia[0] ?? null;
+  const selected = visibleMedia.find((item) => item.id === selectedId) ?? visibleMedia[0] ?? null;
+
+  const navigateToPath = (path: string) => {
+    void navigate({
+      search: {
+        path,
+        q: search.q,
+      },
+      to: "/",
+    });
+  };
+
+  const submitSearch = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const nextQuery = searchDraft.trim();
+    void navigate({
+      search: {
+        path: library.currentPath,
+        q: nextQuery || undefined,
+      },
+      to: "/",
+    });
+  };
 
   return (
     <main className="app-shell">
@@ -77,6 +121,7 @@ function PaneViewHome() {
             <button
               className={path === library.currentPath ? "path-item active" : "path-item"}
               key={path}
+              onClick={() => navigateToPath(path)}
               type="button"
             >
               <Folder size={16} />
@@ -101,10 +146,16 @@ function PaneViewHome() {
           </nav>
 
           <div className="toolbar-actions">
-            <label className="search-box">
+            <form className="search-box" onSubmit={submitSearch}>
               <Search size={16} />
-              <input aria-label="Search archive" placeholder="Search paths" type="search" />
-            </label>
+              <input
+                aria-label="Search archive"
+                onChange={(event) => setSearchDraft(event.target.value)}
+                placeholder="Search paths"
+                type="search"
+                value={searchDraft}
+              />
+            </form>
             <button
               aria-pressed={recursive}
               className={recursive ? "tool-button active" : "tool-button"}
@@ -147,7 +198,10 @@ function PaneViewHome() {
             <div className="browser-header">
               <div>
                 <h1>{library.currentPath}</h1>
-                <p>{entries.length} entries, path order preserved</p>
+                <p>
+                  {entries.length} entries
+                  {search.q ? ` matching ${search.q}` : ", path order preserved"}
+                </p>
               </div>
               <select
                 aria-label="Sort mode"
@@ -164,7 +218,12 @@ function PaneViewHome() {
               {entries.map((entry) => {
                 if (entry.kind === "folder") {
                   return (
-                    <button className="tile folder-tile" key={entry.key} type="button">
+                    <button
+                      className="tile folder-tile"
+                      key={entry.key}
+                      onClick={() => navigateToPath(entry.path)}
+                      type="button"
+                    >
                       <Folder size={24} />
                       <strong>{entry.name}</strong>
                       <span>{entry.path}</span>
@@ -246,4 +305,8 @@ function PaneViewHome() {
       </section>
     </main>
   );
+}
+
+function normalizeSearchParam(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
