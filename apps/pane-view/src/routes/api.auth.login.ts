@@ -2,10 +2,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import {
   buildSessionCookie,
   createSessionToken,
-  hashSessionToken,
-  sessionExpiresAt,
   verifySingleUserCredentials,
 } from "../server/auth/session";
+import { createStoredSession } from "../server/auth/session-store";
 
 export const Route = createFileRoute("/api/auth/login")({
   server: {
@@ -20,14 +19,15 @@ export const Route = createFileRoute("/api/auth/login")({
         }
 
         const token = createSessionToken();
-        const expiresAt = sessionExpiresAt();
-
-        // TODO: Store hashSessionToken(token) in Postgres once the database adapter is wired.
-        hashSessionToken(token);
+        const session = await createStoredSession({
+          env: process.env,
+          token,
+          username,
+        });
 
         return new Response(null, {
           headers: {
-            "Set-Cookie": buildSessionCookie(token, expiresAt),
+            "Set-Cookie": buildSessionCookie(session.token, session.expiresAt),
             Location: "/",
           },
           status: 303,

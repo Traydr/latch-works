@@ -53,6 +53,7 @@ Phase 0 is complete because the open architecture questions have been answered a
 - Added Pane View route-loader backed fixture library service.
 - Added Pane View login route and auth API route scaffolding.
 - Added single-user session helper primitives.
+- Added Postgres-aware session storage helpers for login, logout, and media-route session validation. These fall back to prototype cookie acceptance when `DATABASE_URL` is not configured.
 - Added sync API token helper primitives.
 - Added initial Drizzle/Postgres schema draft for users, sessions, API tokens, media objects, library entries, folders, collections, thumbnails, sync runs, viewer state, and favorites.
 - Added Pane View Drizzle config and initial SQL migration.
@@ -146,10 +147,9 @@ pnpm lockstep -- plan --source "T:\cloud-desktop\media" --show-skipped
 ## Next Planned Work
 
 1. Add fixture-backed route loaders/server functions to Pane View instead of keeping all fixture data in the route component.
-2. Replace auth API scaffold TODOs with Postgres-backed session persistence.
-3. Replace Pane View fixture data with database-backed folder/media browsing.
-4. Implement real sync-run/object upserts in the sync API.
-5. Wire Lockstep `push` to the sync API once database and storage adapters are complete.
+2. Replace Pane View fixture data with database-backed folder/media browsing.
+3. Implement real sync-run/object upserts in the sync API.
+4. Wire Lockstep `push` to the sync API once database and storage adapters are complete.
 6. Keep sidecar/ancillary file policy simple for now:
    - ingest `meta.json` as metadata,
    - associate `.srt` with videos,

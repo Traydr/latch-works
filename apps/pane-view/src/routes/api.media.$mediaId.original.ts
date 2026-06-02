@@ -5,6 +5,7 @@ import {
 } from "@latch-works/media-storage";
 import { createFileRoute } from "@tanstack/react-router";
 import { readCookie, sessionCookieName } from "../server/auth/session";
+import { isStoredSessionValid } from "../server/auth/session-store";
 import { planSignedOriginalDelivery } from "../server/media/delivery";
 
 export const Route = createFileRoute("/api/media/$mediaId/original")({
@@ -12,7 +13,7 @@ export const Route = createFileRoute("/api/media/$mediaId/original")({
     handlers: {
       GET: async ({ params, request }: { params: { mediaId: string }; request: Request }) => {
         const sessionToken = readCookie(request.headers.get("Cookie"), sessionCookieName);
-        if (!sessionToken) {
+        if (!(await isStoredSessionValid({ env: process.env, token: sessionToken }))) {
           return new Response("Unauthorized", { status: 401 });
         }
 
