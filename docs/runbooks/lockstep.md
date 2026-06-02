@@ -40,7 +40,7 @@ The snapshot format is a JSON array:
 
 ## Push
 
-`push` is scaffolded but intentionally stops before upload until the Pane View ingest API and Railway bucket credentials are wired.
+`push` sends the current local plan to the Pane View sync API. It hashes files automatically, fetches the remote snapshot when `--remote-snapshot` is not provided, asks the API for upload targets, uploads originals when storage credentials are configured, and records deletes for local paths that disappeared.
 
 ```powershell
 $env:LOCKSTEP_API_URL = "http://localhost:3000"
@@ -53,3 +53,5 @@ The token environment variable can be changed:
 ```powershell
 pnpm lockstep -- push --source "T:\cloud-desktop\media" --api-token-env "MY_LOCKSTEP_TOKEN"
 ```
+
+For first deployment verification, run `push` against a small test folder before pointing it at the full `T:\cloud-desktop\media` archive.

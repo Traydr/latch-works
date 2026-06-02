@@ -254,6 +254,9 @@ importers:
 
   tools/lockstep:
     dependencies:
+      '@latch-works/media-domain':
+        specifier: workspace:*
+        version: link:../../packages/media-domain
       '@latch-works/media-index':
         specifier: workspace:*
         version: link:../../packages/media-index

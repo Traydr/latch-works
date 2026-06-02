@@ -1,9 +1,15 @@
 import { detectMediaType, getExtension } from "@latch-works/media-domain";
-import { originalObjectKey } from "@latch-works/media-storage";
+import {
+  createS3StorageClient,
+  createSignedPutUrl,
+  originalObjectKey,
+  readS3StorageConfig,
+} from "@latch-works/media-storage";
 import { createFileRoute } from "@tanstack/react-router";
 import { requireSyncApiToken } from "../server/auth/api-token";
 
 interface UploadUrlRequest {
+  contentType?: string;
   filename?: string;
   sha256?: string;
 }
@@ -27,14 +33,24 @@ export const Route = createFileRoute("/api/sync/upload-url")({
           return Response.json({ error: "unsupported media filename" }, { status: 400 });
         }
 
+        const objectKey = originalObjectKey({
+          extension: getExtension(body.filename),
+          mediaType,
+          sha256: body.sha256,
+        });
+        const storageConfig = readS3StorageConfig(process.env);
+        const uploadUrl = storageConfig
+          ? await createSignedPutUrl({
+              contentType: body.contentType ?? "application/octet-stream",
+              key: objectKey,
+              storage: createS3StorageClient(storageConfig),
+            })
+          : null;
+
         return Response.json({
-          objectKey: originalObjectKey({
-            extension: getExtension(body.filename),
-            mediaType,
-            sha256: body.sha256,
-          }),
-          status: "pending-storage-adapter",
-          uploadUrl: null,
+          objectKey,
+          status: storageConfig ? "signed-url-ready" : "pending-storage-adapter",
+          uploadUrl,
         });
       },
     },

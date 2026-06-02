@@ -6,7 +6,7 @@ Last updated: 2026-06-02
 
 The project is between **Phase 1: Latch Works Bootstrap** and **Phase 3: Pane View Prototype** from the architecture plan.
 
-Phase 0 is complete because the open architecture questions have been answered and recorded. Phase 1 is now materially complete because the monorepo foundation exists and Frame View/Gather Box have been imported under `apps/`. Phase 3 has started because Pane View already has a runnable fixture-backed browsing prototype.
+Phase 0 is complete because the open architecture questions have been answered and recorded. Phase 1 is now materially complete because the monorepo foundation exists and Frame View/Gather Box have been imported under `apps/`. Phase 3 has started because Pane View already has a runnable fixture-backed browsing prototype, and the backend sync/storage path is now ready for a real deployment environment.
 
 ## Work Completed
 
@@ -63,6 +63,20 @@ Phase 0 is complete because the open architecture questions have been answered a
   - `/api/sync/runs`,
   - `/api/sync/upload-url`,
   - `/api/sync/complete-object`.
+- Added database-backed sync ingest handling for:
+  - creating sync runs,
+  - upserting content-addressed media objects,
+  - upserting path-preserving library entries,
+  - marking missing local paths as remotely deleted,
+  - recording sync run item activity.
+- Wired Lockstep `push` to the Pane View sync API:
+  - creates a sync run,
+  - hashes files automatically,
+  - requests signed upload URLs,
+  - uploads originals when storage credentials are configured,
+  - completes uploaded objects through the ingest API,
+  - sends delete actions when local paths disappear.
+- Added an authenticated remote sync snapshot endpoint so Lockstep can compare local files with the current Pane View library before push.
 - Added authenticated media delivery route scaffold for `/api/media/$mediaId/original`.
 - Added signed original delivery planning through content-addressed object keys.
 - Added S3-compatible storage adapter for signed GET/PUT URLs. This is intended to work with Railway Buckets first and can also fit S3/R2-style storage later.
@@ -94,6 +108,10 @@ Phase 0 is complete because the open architecture questions have been answered a
 - Pane View sync API token helper tests pass.
 - Pane View media delivery helper tests pass.
 - Media storage S3 config helper tests pass.
+- Pane View sync ingest API build/typecheck passes.
+- Lockstep push CLI typecheck passes.
+- Full workspace `pnpm check` passes after sync ingest/push wiring.
+- Full workspace `pnpm check` passes after adding the remote snapshot endpoint.
 
 ## Archive Scan Result
 
@@ -147,17 +165,21 @@ pnpm lockstep -- plan --source "T:\cloud-desktop\media" --show-skipped
 
 ## Next Planned Work
 
-1. Add fixture-backed route loaders/server functions to Pane View instead of keeping all fixture data in the route component.
-2. Route Pane View library loading through a server-only database boundary.
-3. Implement real sync-run/object upserts in the sync API.
-4. Wire Lockstep `push` to the sync API once database and storage adapters are complete.
-6. Keep sidecar/ancillary file policy simple for now:
+1. Provision deployment resources for a first online prototype:
+   - Railway app service,
+   - Postgres database,
+   - Railway bucket or S3-compatible bucket,
+   - production env vars/secrets.
+2. Apply the initial Drizzle SQL migration to the deployed database.
+3. Run a small Lockstep push against the deployed endpoint with a limited test folder before pushing the full archive. Lockstep will fetch the deployed remote snapshot automatically for push planning.
+4. Route Pane View library loading through a server-only database boundary so the UI reads synced records instead of fixtures.
+5. Keep sidecar/ancillary file policy simple for now:
    - ingest `meta.json` as metadata,
    - associate `.srt` with videos,
    - decide whether `.txt`, `.zip`, `.vrm`, `.me`, and scripts become attachments or remain ignored.
    Current decision: ignore these files for first sync, except keep `meta.json` noted as future site-specific metadata.
-7. Stop before Railway deployment and ask for deployment help.
+6. Add preview/thumbnail optimization after the first original-file sync path is proven.
 
 ## Current Status
 
-The foundation is healthy and verified. The project is ready for Pane View backend/auth/storage scaffolding. Deployment is intentionally not started yet.
+The foundation is healthy and verified. Pane View has auth/session/storage/sync scaffolding, and Lockstep can now push to the sync API. This is at the deployment-prep boundary; Railway/resource setup should happen next with user involvement.

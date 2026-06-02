@@ -1,5 +1,8 @@
 #!/usr/bin/env node
+import { createReadStream } from "node:fs";
 import { readFile } from "node:fs/promises";
+import path from "node:path";
+import type { MediaItem } from "@latch-works/media-domain";
 import { createSyncPlan, type RemoteEntrySnapshot, scanArchive } from "@latch-works/media-index";
 
 type Command = "plan" | "push" | "verify" | "doctor";
@@ -26,7 +29,7 @@ Usage:
 
 Notes:
   plan and verify are read-only.
-  push is scaffolded and currently stops before uploading until remote API settings are added.
+  push uploads changed originals through the configured sync API.
   API tokens are read from LOCKSTEP_API_TOKEN by default.
 `);
 }
@@ -148,11 +151,17 @@ async function run(): Promise<void> {
     throw new Error("--source is required.");
   }
 
+  const apiUrl =
+    options.command === "push" ? (options.apiUrl ?? process.env.LOCKSTEP_API_URL) : undefined;
+  const apiToken = options.command === "push" ? process.env[options.apiTokenEnv] : undefined;
   const scan = await scanArchive({
-    hashFiles: options.hashFiles,
+    hashFiles: options.hashFiles || options.command === "push",
     sourceRoot: options.source,
   });
-  const remote = await readRemoteSnapshot(options.remoteSnapshot);
+  const remote =
+    options.command === "push" && !options.remoteSnapshot && apiUrl && apiToken
+      ? await fetchRemoteSnapshot(apiUrl, apiToken)
+      : await readRemoteSnapshot(options.remoteSnapshot);
   const plan = createSyncPlan(scan.items, remote);
   const totalBytes = scan.items.reduce((sum, item) => sum + item.size, 0);
   const skippedEntries = scan.skippedEntries ?? [];
@@ -192,16 +201,209 @@ async function run(): Promise<void> {
   }
 
   if (options.command === "push") {
-    const apiUrl = options.apiUrl ?? process.env.LOCKSTEP_API_URL;
-    const apiToken = process.env[options.apiTokenEnv];
-
     console.log("");
     console.log(`Remote API URL: ${apiUrl ?? "not configured"}`);
     console.log(
       `Remote API token: ${apiToken ? `configured via ${options.apiTokenEnv}` : "not configured"}`,
     );
-    console.log("Push is not enabled yet. Add Pane View ingest API settings before uploads run.");
-    process.exitCode = 2;
+    if (!apiUrl || !apiToken) {
+      console.log("Push requires a remote API URL and token.");
+      process.exitCode = 2;
+      return;
+    }
+
+    const syncRun = await postJson<{ syncRunId: string }>(apiUrl, "/api/sync/runs", apiToken, {
+      counts: plan.counts,
+      sourceRoot: scan.sourceRoot,
+    });
+
+    let pushed = 0;
+    for (const item of plan.items) {
+      if (item.action === "keep") {
+        continue;
+      }
+
+      if (item.action === "delete") {
+        await postJson(apiUrl, "/api/sync/complete-object", apiToken, {
+          action: "delete",
+          logicalPath: item.path,
+          syncRunId: syncRun.syncRunId,
+        });
+        pushed += 1;
+        continue;
+      }
+
+      if (!item.local) {
+        continue;
+      }
+
+      await pushMediaItem({
+        apiToken,
+        apiUrl,
+        item: item.local,
+        sourceRoot: scan.sourceRoot,
+        syncRunId: syncRun.syncRunId,
+      });
+      pushed += 1;
+    }
+
+    console.log(`Pushed changes: ${pushed}`);
+  }
+}
+
+async function pushMediaItem({
+  apiToken,
+  apiUrl,
+  item,
+  sourceRoot,
+  syncRunId,
+}: {
+  apiToken: string;
+  apiUrl: string;
+  item: MediaItem;
+  sourceRoot: string;
+  syncRunId: string;
+}): Promise<void> {
+  if (!item.sha256) {
+    throw new Error(`Cannot push without sha256: ${item.path}`);
+  }
+
+  const uploadTarget = await postJson<{
+    objectKey: string;
+    uploadUrl: string | null;
+  }>(apiUrl, "/api/sync/upload-url", apiToken, {
+    contentType: contentTypeFor(item),
+    filename: item.name,
+    sha256: item.sha256,
+  });
+
+  if (uploadTarget.uploadUrl) {
+    await uploadFile(
+      uploadTarget.uploadUrl,
+      localFilePath(sourceRoot, item.path),
+      contentTypeFor(item),
+    );
+  }
+
+  await postJson(apiUrl, "/api/sync/complete-object", apiToken, {
+    contentType: contentTypeFor(item),
+    extension: item.extension,
+    filename: item.name,
+    logicalPath: item.path,
+    mediaType: item.mediaType,
+    mtimeMs: item.mtimeMs,
+    objectKey: uploadTarget.objectKey,
+    sha256: item.sha256,
+    size: item.size,
+    syncRunId,
+  });
+}
+
+async function postJson<T = unknown>(
+  apiUrl: string,
+  route: string,
+  apiToken: string,
+  body: unknown,
+): Promise<T> {
+  const response = await fetch(new URL(route, apiUrl), {
+    body: JSON.stringify(body),
+    headers: {
+      Authorization: `Bearer ${apiToken}`,
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+  });
+
+  if (!response.ok) {
+    throw new Error(`${route} failed with ${response.status}: ${await response.text()}`);
+  }
+
+  return (await response.json()) as T;
+}
+
+async function fetchRemoteSnapshot(
+  apiUrl: string,
+  apiToken: string,
+): Promise<RemoteEntrySnapshot[]> {
+  const response = await fetch(new URL("/api/sync/snapshot", apiUrl), {
+    headers: {
+      Authorization: `Bearer ${apiToken}`,
+    },
+    method: "GET",
+  });
+
+  if (!response.ok) {
+    throw new Error(`/api/sync/snapshot failed with ${response.status}: ${await response.text()}`);
+  }
+
+  const parsed = (await response.json()) as { entries?: unknown };
+  if (!Array.isArray(parsed.entries)) {
+    throw new Error("Remote sync snapshot response must include an entries array.");
+  }
+
+  return parsed.entries.map((entry) => {
+    if (
+      typeof entry !== "object" ||
+      entry === null ||
+      !("path" in entry) ||
+      !("size" in entry) ||
+      typeof entry.path !== "string" ||
+      typeof entry.size !== "number"
+    ) {
+      throw new Error("Remote sync snapshot entries must include path and size.");
+    }
+
+    return {
+      path: entry.path,
+      sha256: "sha256" in entry && typeof entry.sha256 === "string" ? entry.sha256 : undefined,
+      size: entry.size,
+    };
+  });
+}
+
+async function uploadFile(uploadUrl: string, filePath: string, contentType: string): Promise<void> {
+  const response = await fetch(uploadUrl, {
+    body: createReadStream(filePath) as never,
+    duplex: "half",
+    headers: {
+      "Content-Type": contentType,
+    },
+    method: "PUT",
+  } as RequestInit & { duplex: "half" });
+
+  if (!response.ok) {
+    throw new Error(`Upload failed with ${response.status}: ${await response.text()}`);
+  }
+}
+
+function localFilePath(sourceRoot: string, archivePath: string): string {
+  return path.join(sourceRoot, ...archivePath.split("/"));
+}
+
+function contentTypeFor(item: MediaItem): string {
+  switch (item.extension) {
+    case "jpg":
+    case "jpeg":
+      return "image/jpeg";
+    case "png":
+      return "image/png";
+    case "webp":
+      return "image/webp";
+    case "gif":
+      return "image/gif";
+    case "avif":
+      return "image/avif";
+    case "mp4":
+    case "m4v":
+      return "video/mp4";
+    case "webm":
+      return "video/webm";
+    case "mov":
+      return "video/quicktime";
+    case "pdf":
+      return "application/pdf";
+    default:
+      return "application/octet-stream";
   }
 }
 
