@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { sessionCookieName } from "./session";
-import { isRequestSessionValid } from "./web-session-core";
+import { isRequestSessionValid, readRequestSessionUserId } from "./web-session-core";
 
 describe("web session guard", () => {
   it("rejects requests without the Pane View session cookie", async () => {
@@ -15,5 +15,13 @@ describe("web session guard", () => {
     });
 
     await expect(isRequestSessionValid({ env: {}, request })).resolves.toBe(true);
+  });
+
+  it("does not invent a user id for prototype sessions", async () => {
+    const request = new Request("https://pane-view.invalid/", {
+      headers: { Cookie: `${sessionCookieName}=prototype-token` },
+    });
+
+    await expect(readRequestSessionUserId({ env: {}, request })).resolves.toBeNull();
   });
 });

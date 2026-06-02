@@ -102,3 +102,36 @@ export async function isStoredSessionValid({
 
   return session.expiresAt.getTime() > Date.now();
 }
+
+export async function readStoredSessionUserId({
+  env,
+  token,
+}: {
+  env: NodeJS.ProcessEnv;
+  token: string | null;
+}): Promise<string | null> {
+  if (!token) {
+    return null;
+  }
+
+  const databaseUrl = readDatabaseUrl(env);
+  if (!databaseUrl) {
+    return null;
+  }
+
+  const db = createPaneViewDb(databaseUrl);
+  const [session] = await db
+    .select({
+      expiresAt: sessions.expiresAt,
+      userId: sessions.userId,
+    })
+    .from(sessions)
+    .where(and(eq(sessions.tokenHash, hashSessionToken(token)), isNull(sessions.revokedAt)))
+    .limit(1);
+
+  if (!session || session.expiresAt.getTime() <= Date.now()) {
+    return null;
+  }
+
+  return session.userId;
+}

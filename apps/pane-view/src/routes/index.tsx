@@ -18,12 +18,18 @@ import {
   Search,
   Shuffle,
 } from "lucide-react";
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, type SyntheticEvent, useEffect, useMemo, useRef, useState } from "react";
 import { getLibrarySnapshot } from "../features/library/library-service";
+import {
+  getViewerState,
+  saveViewerState,
+  type ViewerStateSnapshot,
+} from "../features/viewer/viewer-state-service";
 import { isCurrentWebSessionValid } from "../server/auth/web-session";
 
 export const Route = createFileRoute("/")({
-  validateSearch: (search): { path?: string; q?: string } => ({
+  validateSearch: (search): { media?: string; path?: string; q?: string } => ({
+    media: normalizeSearchParam(search.media),
     path: normalizeSearchParam(search.path),
     q: normalizeSearchParam(search.q),
   }),
@@ -50,12 +56,30 @@ function PaneViewHome() {
   const [recursive, setRecursive] = useState(true);
   const [comicMode, setComicMode] = useState(false);
   const [sortMode, setSortMode] = useState<(typeof sortModes)[number]>("name-asc");
-  const [selectedId, setSelectedId] = useState<string | null>(library.media[0]?.id ?? null);
+  const [selectedId, setSelectedId] = useState<string | null>(
+    search.media ?? library.media[0]?.id ?? null,
+  );
   const [searchDraft, setSearchDraft] = useState(search.q ?? "");
+  const [viewerState, setViewerState] = useState<ViewerStateSnapshot | null>(null);
 
   useEffect(() => {
     setSearchDraft(search.q ?? "");
   }, [search.q]);
+
+  useEffect(() => {
+    const selectedFromSearch = search.media
+      ? library.media.find((item) => item.id === search.media)
+      : null;
+    const nextSelectedId = selectedFromSearch?.id ?? library.media[0]?.id ?? null;
+
+    setSelectedId((currentId) => {
+      if (!search.media && currentId && library.media.some((item) => item.id === currentId)) {
+        return currentId;
+      }
+
+      return nextSelectedId;
+    });
+  }, [library.media, search.media]);
 
   const sortedMedia = useMemo(
     () => sortMediaItems(library.media, sortMode, 42),
@@ -88,9 +112,34 @@ function PaneViewHome() {
   const selectedOriginalUrl = selected ? `/api/media/${selected.id}/original` : null;
   const canRenderOriginal = selected ? isUuid(selected.id) : false;
 
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!selected || !isUuid(selected.id)) {
+      setViewerState(null);
+      return;
+    }
+
+    void getViewerState({
+      data: {
+        subjectId: selected.id,
+        subjectType: "media",
+      },
+    }).then((state) => {
+      if (!cancelled) {
+        setViewerState(state);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selected]);
+
   const navigateToPath = (path: string) => {
     void navigate({
       search: {
+        media: undefined,
         path,
         q: search.q,
       },
@@ -103,8 +152,21 @@ function PaneViewHome() {
     const nextQuery = searchDraft.trim();
     void navigate({
       search: {
+        media: undefined,
         path: library.currentPath,
         q: nextQuery || undefined,
+      },
+      to: "/",
+    });
+  };
+
+  const selectMedia = (mediaId: string) => {
+    setSelectedId(mediaId);
+    void navigate({
+      search: {
+        media: mediaId,
+        path: library.currentPath,
+        q: search.q,
       },
       to: "/",
     });
@@ -243,7 +305,7 @@ function PaneViewHome() {
                     <button
                       className="tile media-tile"
                       key={entry.key}
-                      onClick={() => setSelectedId(entry.comic.cover.id)}
+                      onClick={() => selectMedia(entry.comic.cover.id)}
                       type="button"
                     >
                       <div className="poster image-poster">
@@ -263,7 +325,7 @@ function PaneViewHome() {
                         : "tile media-tile"
                     }
                     key={entry.key}
-                    onClick={() => setSelectedId(entry.media.id)}
+                    onClick={() => selectMedia(entry.media.id)}
                     type="button"
                   >
                     <div className={`poster ${entry.media.mediaType}-poster`}>
@@ -284,7 +346,13 @@ function PaneViewHome() {
               <>
                 <div className={`viewer-stage ${selected.mediaType}-stage`}>
                   {canRenderOriginal && selectedOriginalUrl ? (
-                    <SelectedMediaPreview media={selected} src={selectedOriginalUrl} />
+                    <SelectedMediaPreview
+                      key={selected.id}
+                      media={selected}
+                      onStateSaved={setViewerState}
+                      resumeState={viewerState}
+                      src={selectedOriginalUrl}
+                    />
                   ) : (
                     <MediaPlaceholder mediaType={selected.mediaType} />
                   )}
@@ -306,6 +374,12 @@ function PaneViewHome() {
                     <span>Delivery</span>
                     <strong>{library.mediaUrlMode}</strong>
                   </div>
+                  {viewerState ? (
+                    <div>
+                      <span>Resume</span>
+                      <strong>{formatViewerState(selected, viewerState)}</strong>
+                    </div>
+                  ) : null}
                 </div>
               </>
             ) : null}
@@ -320,17 +394,87 @@ function normalizeSearchParam(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
-function SelectedMediaPreview({ media, src }: { media: MediaItem; src: string }) {
+function SelectedMediaPreview({
+  media,
+  onStateSaved,
+  resumeState,
+  src,
+}: {
+  media: MediaItem;
+  onStateSaved: (state: ViewerStateSnapshot | null) => void;
+  resumeState: ViewerStateSnapshot | null;
+  src: string;
+}) {
+  const lastSavedPositionMs = useRef(resumeState?.positionMs ?? 0);
+  const restoredPosition = useRef(false);
+
+  useEffect(() => {
+    lastSavedPositionMs.current = resumeState?.positionMs ?? 0;
+    restoredPosition.current = false;
+  }, [resumeState?.positionMs]);
+
   if (media.mediaType === "video") {
-    // biome-ignore lint/a11y/useMediaCaption: Caption sidecars are not ingested yet.
-    return <video className="viewer-media" controls preload="metadata" src={src} />;
+    const savePosition = (video: HTMLVideoElement) => {
+      const positionMs = Math.floor(video.currentTime * 1000);
+      if (
+        !Number.isFinite(positionMs) ||
+        Math.abs(positionMs - lastSavedPositionMs.current) < 5000
+      ) {
+        return;
+      }
+
+      lastSavedPositionMs.current = positionMs;
+      void saveViewerState({
+        data: {
+          positionMs,
+          subjectId: media.id,
+          subjectType: "media",
+        },
+      }).then(onStateSaved);
+    };
+
+    const restorePosition = (event: SyntheticEvent<HTMLVideoElement>) => {
+      if (restoredPosition.current || !resumeState?.positionMs) {
+        return;
+      }
+
+      const video = event.currentTarget;
+      const positionSeconds = resumeState.positionMs / 1000;
+      if (positionSeconds > 1 && positionSeconds < video.duration) {
+        video.currentTime = positionSeconds;
+      }
+      restoredPosition.current = true;
+    };
+
+    return (
+      // biome-ignore lint/a11y/useMediaCaption: Caption sidecars are not ingested yet.
+      <video
+        className="viewer-media"
+        controls
+        onLoadedMetadata={restorePosition}
+        onPause={(event) => savePosition(event.currentTarget)}
+        onTimeUpdate={(event) => savePosition(event.currentTarget)}
+        preload="metadata"
+        src={src}
+      />
+    );
   }
+
+  const markViewed = () => {
+    void saveViewerState({
+      data: {
+        page: media.mediaType === "story" ? (resumeState?.page ?? 1) : undefined,
+        subjectId: media.id,
+        subjectType: "media",
+      },
+    }).then(onStateSaved);
+  };
 
   if (media.mediaType === "story") {
-    return <iframe className="viewer-media" src={src} title={media.name} />;
+    return <iframe className="viewer-media" onLoad={markViewed} src={src} title={media.name} />;
   }
 
-  return <img alt={media.name} className="viewer-media" src={src} />;
+  return <img alt={media.name} className="viewer-media" onLoad={markViewed} src={src} />;
 }
 
 function MediaPlaceholder({ mediaType }: { mediaType: "image" | "story" | "video" }) {
@@ -347,4 +491,23 @@ function MediaPlaceholder({ mediaType }: { mediaType: "image" | "story" | "video
 
 function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function formatViewerState(media: MediaItem, state: ViewerStateSnapshot): string {
+  if (media.mediaType === "video" && state.positionMs) {
+    return `Resume at ${formatDuration(state.positionMs)}`;
+  }
+
+  if (media.mediaType === "story" && state.page) {
+    return `Page ${state.page}`;
+  }
+
+  return `Viewed ${state.updatedAt.slice(0, 16).replace("T", " ")}`;
+}
+
+function formatDuration(positionMs: number): string {
+  const totalSeconds = Math.floor(positionMs / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
