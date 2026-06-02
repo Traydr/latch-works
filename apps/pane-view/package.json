@@ -9,20 +9,22 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "dev": "vite dev --host 127.0.0.1",
-    "start": "node .output/server/index.mjs",
+    "start": "node dist/server/server.js",
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@latch-works/media-domain": "workspace:*",
     "@latch-works/media-storage": "workspace:*",
+    "@t3-oss/env-core": "^0.13.11",
     "@tanstack/react-router": "^1.120.20",
     "@tanstack/react-start": "^1.120.20",
     "drizzle-orm": "^0.45.2",
     "lucide-react": "^0.562.0",
     "postgres": "^3.4.7",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4"
+    "react-dom": "^19.2.4",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/react": "^19.2.14",

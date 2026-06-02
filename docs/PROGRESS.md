@@ -112,6 +112,10 @@ Phase 0 is complete because the open architecture questions have been answered a
 - Lockstep push CLI typecheck passes.
 - Full workspace `pnpm check` passes after sync ingest/push wiring.
 - Full workspace `pnpm check` passes after adding the remote snapshot endpoint.
+- The earlier custom DB env helper was reverted and replaced with the project-standard t3env pattern:
+  - Pane View now has `src/env/server.ts`,
+  - Drizzle imports `env` from that module,
+  - migrations use `env.DATABASE_URL` as the only DB URL source.
 
 ## Archive Scan Result
 
