@@ -1,4 +1,9 @@
-import { buildBrowserEntries, buildComicEntries, sortMediaItems } from "@latch-works/media-domain";
+import {
+  buildBrowserEntries,
+  buildComicEntries,
+  type MediaItem,
+  sortMediaItems,
+} from "@latch-works/media-domain";
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import {
   Archive,
@@ -80,6 +85,8 @@ function PaneViewHome() {
     [comicMode, comics, library.folders, recursive, sortMode, visibleMedia],
   );
   const selected = visibleMedia.find((item) => item.id === selectedId) ?? visibleMedia[0] ?? null;
+  const selectedOriginalUrl = selected ? `/api/media/${selected.id}/original` : null;
+  const canRenderOriginal = selected ? isUuid(selected.id) : false;
 
   const navigateToPath = (path: string) => {
     void navigate({
@@ -276,9 +283,11 @@ function PaneViewHome() {
             {selected ? (
               <>
                 <div className={`viewer-stage ${selected.mediaType}-stage`}>
-                  {selected.mediaType === "video" ? <Play size={42} /> : null}
-                  {selected.mediaType === "story" ? <FileText size={42} /> : null}
-                  {selected.mediaType === "image" ? <ImageIcon size={42} /> : null}
+                  {canRenderOriginal && selectedOriginalUrl ? (
+                    <SelectedMediaPreview media={selected} src={selectedOriginalUrl} />
+                  ) : (
+                    <MediaPlaceholder mediaType={selected.mediaType} />
+                  )}
                 </div>
                 <div className="metadata-list">
                   <div>
@@ -309,4 +318,33 @@ function PaneViewHome() {
 
 function normalizeSearchParam(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function SelectedMediaPreview({ media, src }: { media: MediaItem; src: string }) {
+  if (media.mediaType === "video") {
+    // biome-ignore lint/a11y/useMediaCaption: Caption sidecars are not ingested yet.
+    return <video className="viewer-media" controls preload="metadata" src={src} />;
+  }
+
+  if (media.mediaType === "story") {
+    return <iframe className="viewer-media" src={src} title={media.name} />;
+  }
+
+  return <img alt={media.name} className="viewer-media" src={src} />;
+}
+
+function MediaPlaceholder({ mediaType }: { mediaType: "image" | "story" | "video" }) {
+  if (mediaType === "video") {
+    return <Play size={42} />;
+  }
+
+  if (mediaType === "story") {
+    return <FileText size={42} />;
+  }
+
+  return <ImageIcon size={42} />;
+}
+
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }

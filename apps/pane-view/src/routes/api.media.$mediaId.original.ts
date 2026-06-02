@@ -7,6 +7,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { readCookie, sessionCookieName } from "../server/auth/session";
 import { isStoredSessionValid } from "../server/auth/session-store";
 import { planSignedOriginalDelivery } from "../server/media/delivery";
+import { readMediaDeliveryRequest } from "../server/media/repository";
 
 export const Route = createFileRoute("/api/media/$mediaId/original")({
   server: {
@@ -17,12 +18,16 @@ export const Route = createFileRoute("/api/media/$mediaId/original")({
           return new Response("Unauthorized", { status: 401 });
         }
 
-        // TODO: Resolve mediaId from Postgres instead of this placeholder object.
-        const delivery = planSignedOriginalDelivery({
-          extension: "jpg",
-          mediaType: "image",
-          sha256: "0000000000000000000000000000000000000000000000000000000000000000",
+        const media = await readMediaDeliveryRequest({
+          env: process.env,
+          mediaId: params.mediaId,
         });
+
+        if (!media) {
+          return new Response("Media not found", { status: 404 });
+        }
+
+        const delivery = planSignedOriginalDelivery(media);
         const storageConfig = readS3StorageConfig(process.env);
 
         if (storageConfig) {
