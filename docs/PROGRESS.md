@@ -1,12 +1,12 @@
 # Latch Works Progress
 
-Last updated: 2026-06-02
+Last updated: 2026-06-03
 
 ## Current Phase
 
-The project is between **Phase 1: Latch Works Bootstrap** and **Phase 3: Pane View Prototype** from the architecture plan.
+The project is between **Phase 3: Pane View Prototype** and the moved-up auth/database work from **Phase 4: Auth and Database**.
 
-Phase 0 is complete because the open architecture questions have been answered and recorded. Phase 1 is now materially complete because the monorepo foundation exists and Frame View/Gather Box have been imported under `apps/`. Phase 3 has started because Pane View already has a runnable fixture-backed browsing prototype, and the backend sync/storage path is now ready for a real deployment environment.
+Phase 0 is complete because the open architecture questions have been answered and recorded. Phase 1 is now materially complete because the monorepo foundation exists and Frame View/Gather Box have been imported under `apps/`. Phase 3 has started because Pane View already has a runnable browsing prototype. Auth has been moved up from Phase 4 so the website shell is protected before more viewer work lands.
 
 ## Work Completed
 
@@ -51,10 +51,13 @@ Phase 0 is complete because the open architecture questions have been answered a
   - `LOCKSTEP_API_URL`,
   - `LOCKSTEP_API_TOKEN`.
 - Added Pane View route-loader backed fixture library service.
-- Added a database repository for future Pane View library loading. The UI remains fixture-backed until this is routed through a server-only boundary.
+- Added a database repository for future Pane View library loading.
+- Routed the Pane View library loader through a server function that reads from the Postgres library repository when `DATABASE_URL` is configured and falls back to fixtures for local prototype use.
 - Added Pane View login route and auth API route scaffolding.
 - Added single-user session helper primitives.
 - Added Postgres-aware session storage helpers for login, logout, and media-route session validation. These fall back to prototype cookie acceptance when `DATABASE_URL` is not configured.
+- Added a server-side Pane View route guard so the website shell redirects unauthenticated users to `/login` before archive data loads.
+- Added a logout control in the protected Pane View toolbar that revokes the stored session and clears the session cookie.
 - Added sync API token helper primitives.
 - Added initial Drizzle/Postgres schema draft for users, sessions, API tokens, media objects, library entries, folders, collections, thumbnails, sync runs, viewer state, and favorites.
 - Added Pane View Drizzle config and initial SQL migration.
@@ -80,6 +83,7 @@ Phase 0 is complete because the open architecture questions have been answered a
 - Added authenticated media delivery route scaffold for `/api/media/$mediaId/original`.
 - Added signed original delivery planning through content-addressed object keys.
 - Added S3-compatible storage adapter for signed GET/PUT URLs. This is intended to work with Railway Buckets first and can also fit S3/R2-style storage later.
+- Added a dedicated Pane View Vitest config so package unit tests run without loading the TanStack/Vite app plugin stack.
 - Added placeholder app folders for future imports:
   - `apps/frame-view`,
   - `apps/gather-box`.
@@ -117,6 +121,13 @@ Phase 0 is complete because the open architecture questions have been answered a
   - Drizzle imports `env` from that module,
   - migrations use `env.DATABASE_URL` as the only DB URL source.
 - Replaced the hand-written initial SQL file with a Drizzle-generated migration plus `drizzle/meta` journal/snapshot files so `drizzle-kit migrate` has the metadata it expects.
+- Pane View auth route guard tests pass.
+- Pane View production build passes after moving the library loader behind a server function.
+- Full workspace `pnpm check` passes after moving Pane View behind auth.
+- Local HTTP verification confirmed:
+  - anonymous `/` redirects to `/login`,
+  - valid login returns a session cookie and redirects to `/`,
+  - authenticated `/` returns the protected Pane View shell with the sign-out control.
 
 ## Archive Scan Result
 
@@ -177,14 +188,18 @@ pnpm lockstep -- plan --source "T:\cloud-desktop\media" --show-skipped
    - production env vars/secrets.
 2. Apply the initial Drizzle SQL migration to the deployed database.
 3. Run a small Lockstep push against the deployed endpoint with a limited test folder before pushing the full archive. Lockstep will fetch the deployed remote snapshot automatically for push planning.
-4. Route Pane View library loading through a server-only database boundary so the UI reads synced records instead of fixtures.
+4. Add folder/path navigation routes or search params so the DB-backed Pane View browser can move beyond the hardcoded prototype path.
 5. Keep sidecar/ancillary file policy simple for now:
    - ingest `meta.json` as metadata,
    - associate `.srt` with videos,
    - decide whether `.txt`, `.zip`, `.vrm`, `.me`, and scripts become attachments or remain ignored.
    Current decision: ignore these files for first sync, except keep `meta.json` noted as future site-specific metadata.
 6. Add preview/thumbnail optimization after the first original-file sync path is proven.
+7. Harden auth beyond the current single-user/session baseline:
+   - add CSRF checks for non-GET web requests,
+   - add login rate limiting,
+   - add first-run credential setup or documented Railway secret requirements.
 
 ## Current Status
 
-The foundation is healthy and verified. Pane View has auth/session/storage/sync scaffolding, and Lockstep can now push to the sync API. This is at the deployment-prep boundary; Railway/resource setup should happen next with user involvement.
+The foundation is healthy and verified. Pane View has auth/session/storage/sync scaffolding, the website shell is now behind auth, and Lockstep can push to the sync API. Railway/resource setup is still the main step that needs user involvement.

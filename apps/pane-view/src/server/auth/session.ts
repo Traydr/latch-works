@@ -2,7 +2,7 @@ import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypt
 
 const sessionDurationMs = 1000 * 60 * 60 * 24 * 14;
 
-export const sessionCookieName = "__Host-pane_view_session";
+export const sessionCookieName = getSessionCookieName();
 
 export interface SingleUserCredentials {
   password: string;
@@ -47,6 +47,10 @@ export function hashSessionToken(token: string): string {
 
 export function sessionExpiresAt(now = new Date()): Date {
   return new Date(now.getTime() + sessionDurationMs);
+}
+
+export function getSessionCookieName(nodeEnv = process.env.NODE_ENV): string {
+  return nodeEnv === "production" ? "__Host-pane_view_session" : "pane_view_session";
 }
 
 export function buildSessionCookie(token: string, expiresAt = sessionExpiresAt()): string {

@@ -1,5 +1,5 @@
 import { buildBrowserEntries, buildComicEntries, sortMediaItems } from "@latch-works/media-domain";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import {
   Archive,
   ChevronRight,
@@ -7,6 +7,7 @@ import {
   Folder,
   ImageIcon,
   ListTree,
+  LogOut,
   Play,
   RefreshCcw,
   Search,
@@ -14,9 +15,16 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { getLibrarySnapshot } from "../features/library/library-service";
+import { isCurrentWebSessionValid } from "../server/auth/web-session";
 
 export const Route = createFileRoute("/")({
-  loader: () => getLibrarySnapshot(),
+  loader: async () => {
+    if (!(await isCurrentWebSessionValid())) {
+      throw redirect({ to: "/login" });
+    }
+
+    return getLibrarySnapshot();
+  },
   component: PaneViewHome,
 });
 
@@ -126,6 +134,11 @@ function PaneViewHome() {
             <button className="tool-button" title="Refresh" type="button">
               <RefreshCcw size={17} />
             </button>
+            <form action="/api/auth/logout" method="post">
+              <button className="tool-button" title="Sign out" type="submit">
+                <LogOut size={17} />
+              </button>
+            </form>
           </div>
         </header>
 

@@ -8,7 +8,7 @@
     "check": "pnpm typecheck && pnpm build",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "dev": "vite dev --host 127.0.0.1",
+    "dev": "node --env-file-if-exists=.env ./node_modules/vite/bin/vite.js dev --host 127.0.0.1",
     "start": "node --env-file-if-exists=.env .output/server/index.mjs",
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc -p tsconfig.json --noEmit"

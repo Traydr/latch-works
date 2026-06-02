@@ -178,6 +178,10 @@ button {
   gap: 7px;
 }
 
+.toolbar-actions form {
+  margin: 0;
+}
+
 .search-box {
   gap: 8px;
   width: 220px;
