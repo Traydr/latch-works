@@ -4,5 +4,6 @@ allowBuilds:
   esbuild: true
   ffmpeg-static: true
   sharp: true
+blockExoticSubdeps: false
 patchedDependencies:
   '@electron-forge/plugin-vite@7.11.1': patches/@electron-forge__plugin-vite@7.11.1.patch
