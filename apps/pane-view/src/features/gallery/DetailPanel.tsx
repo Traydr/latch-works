@@ -1,6 +1,7 @@
 import type { MediaItem } from "@latch-works/media-domain";
 import { ChevronLeft, ChevronRight, ImageIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { readMediaPreviewUrl } from "./media-preview-url";
 import { MediaPlaceholder } from "./MediaPlaceholder";
 
 interface DetailPanelProps {
@@ -10,16 +11,8 @@ interface DetailPanelProps {
   selected: MediaItem | null;
 }
 
-function readThumbnailUrl(media: MediaItem): string | undefined {
-  if (!("thumbnailUrl" in media) || typeof media.thumbnailUrl !== "string") {
-    return undefined;
-  }
-
-  return media.thumbnailUrl;
-}
-
 export function DetailPanel({ onNext, onOpenViewer, onPrev, selected }: DetailPanelProps) {
-  const thumbnailUrl = selected ? readThumbnailUrl(selected) : undefined;
+  const thumbnailUrl = selected ? readMediaPreviewUrl(selected) : undefined;
 
   return (
     <aside

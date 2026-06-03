@@ -103,10 +103,10 @@ function PaneViewHome() {
   );
   const visibleMedia = useMemo(
     () =>
-      recursive
+      recursive || search.q
         ? sortedMedia
         : sortedMedia.filter((item) => item.parentPath === library.currentPath),
-    [library.currentPath, recursive, sortedMedia],
+    [library.currentPath, recursive, search.q, sortedMedia],
   );
   const comics = useMemo(() => {
     const groupedComics = buildComicEntries(visibleMedia, null);
@@ -124,6 +124,16 @@ function PaneViewHome() {
       }),
     [comicMode, comics, library.folders, recursive, sortMode, visibleMedia],
   );
+
+  useEffect(() => {
+    setFocusedEntryIndex((currentIndex) => {
+      if (entries.length === 0) {
+        return 0;
+      }
+
+      return Math.min(currentIndex, entries.length - 1);
+    });
+  }, [entries]);
 
   const selected = visibleMedia.find((item) => item.id === selectedId) ?? visibleMedia[0] ?? null;
   const selectedIndex = selected ? visibleMedia.findIndex((item) => item.id === selected.id) : -1;
@@ -185,13 +195,41 @@ function PaneViewHome() {
 
     const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
 
+    // Folder navigation with Shift (check before plain WASD).
+    if (event.shiftKey) {
+      if (key === "w") {
+        event.preventDefault();
+        const parent = getParentPath(library.currentPath);
+        navigateToPath(parent ?? "");
+        return;
+      }
+      if (key === "s") {
+        event.preventDefault();
+        const entry = entries[focusedEntryIndex];
+        if (entry?.kind === "folder") {
+          navigateToPath(entry.path);
+        }
+        return;
+      }
+      if (key === "a") {
+        event.preventDefault();
+        navigateSiblingFolder(-1);
+        return;
+      }
+      if (key === "d") {
+        event.preventDefault();
+        navigateSiblingFolder(1);
+        return;
+      }
+    }
+
     // Navigation.
     if (key === "ArrowRight" || key === "d") {
       event.preventDefault();
       moveGridFocus(1, 0);
       return;
     }
-    if (key === "ArrowLeft" || key === "q") {
+    if (key === "ArrowLeft" || key === "a") {
       event.preventDefault();
       moveGridFocus(-1, 0);
       return;
@@ -215,34 +253,6 @@ function PaneViewHome() {
         handleActivateEntry(entry);
       }
       return;
-    }
-
-    // Folder navigation with Shift.
-    if (event.shiftKey) {
-      if (key === "W") {
-        event.preventDefault();
-        const parent = getParentPath(library.currentPath);
-        navigateToPath(parent ?? "");
-        return;
-      }
-      if (key === "S") {
-        event.preventDefault();
-        const entry = entries[focusedEntryIndex];
-        if (entry?.kind === "folder") {
-          navigateToPath(entry.path);
-        }
-        return;
-      }
-      if (key === "A") {
-        event.preventDefault();
-        navigateSiblingFolder(-1);
-        return;
-      }
-      if (key === "D") {
-        event.preventDefault();
-        navigateSiblingFolder(1);
-        return;
-      }
     }
   };
 
@@ -395,6 +405,11 @@ function PaneViewHome() {
   };
 
   const handleSelectEntry = (entry: BrowserEntry) => {
+    const entryIndex = entries.findIndex((candidate) => candidate.key === entry.key);
+    if (entryIndex >= 0) {
+      setFocusedEntryIndex(entryIndex);
+    }
+
     if (entry.kind === "folder") {
       navigateToPath(entry.path);
     } else if (entry.kind === "comic") {
@@ -431,8 +446,8 @@ function PaneViewHome() {
       defaultOpen
     >
       <ArchiveSidebar
-        allFolders={library.allFolders}
         currentPath={library.currentPath}
+        folders={library.folders}
         onNavigateToPath={navigateToPath}
       />
 

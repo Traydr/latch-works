@@ -15,16 +15,16 @@ import {
 import { cn } from "@/lib/utils";
 
 interface ArchiveSidebarProps {
-  allFolders: FolderNode[];
   currentPath: string;
+  folders: FolderNode[];
   onNavigateToPath: (path: string) => void;
 }
 
-export function ArchiveSidebar({ allFolders, currentPath, onNavigateToPath }: ArchiveSidebarProps) {
+export function ArchiveSidebar({ currentPath, folders, onNavigateToPath }: ArchiveSidebarProps) {
   const { state } = useSidebar();
   const isCollapsed = state === "collapsed";
-
-  const sortedFolders = [...allFolders].sort((a, b) => a.path.localeCompare(b.path));
+  const ancestors = buildAncestorItems(currentPath);
+  const childFolders = [...folders].sort((a, b) => a.name.localeCompare(b.name));
 
   return (
     <Sidebar
@@ -53,6 +53,7 @@ export function ArchiveSidebar({ allFolders, currentPath, onNavigateToPath }: Ar
             <SidebarMenu aria-label="Archive folders">
               <SidebarMenuItem>
                 <SidebarMenuButton
+                  className="rounded-none"
                   isActive={!currentPath}
                   onClick={() => onNavigateToPath("")}
                   title="Archive root"
@@ -62,31 +63,50 @@ export function ArchiveSidebar({ allFolders, currentPath, onNavigateToPath }: Ar
                   <span className="min-w-0 flex-1 truncate">Archive root</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
-              {sortedFolders.map((folder) => {
-                const isActive = folder.path === currentPath;
-                const isAncestor = currentPath.startsWith(`${folder.path}/`);
+
+              {ancestors.map((ancestor) => {
+                const depth = ancestor.path.split("/").filter(Boolean).length;
+
+                return (
+                  <SidebarMenuItem key={ancestor.path}>
+                    <SidebarMenuButton
+                      className={cn(
+                        "rounded-none",
+                        isCollapsed ? "" : "justify-start gap-1.5 px-2",
+                      )}
+                      isActive={ancestor.path === currentPath}
+                      onClick={() => onNavigateToPath(ancestor.path)}
+                      title={ancestor.path}
+                      tooltip={ancestor.path}
+                      style={isCollapsed ? undefined : { paddingLeft: `${12 + depth * 12}px` }}
+                    >
+                      <Folder className="size-3.5 shrink-0 text-amber-500" />
+                      <span className="min-w-0 flex-1 truncate text-xs">{ancestor.name}</span>
+                      {ancestor.path !== currentPath && !isCollapsed ? (
+                        <ChevronRight className="size-3 shrink-0 opacity-60" />
+                      ) : null}
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
+
+              {childFolders.map((folder) => {
                 const depth = folder.path.split("/").filter(Boolean).length;
-                const indent = depth * 12;
 
                 return (
                   <SidebarMenuItem key={folder.path}>
                     <SidebarMenuButton
-                      isActive={isActive}
+                      className={cn(
+                        "rounded-none",
+                        isCollapsed ? "" : "justify-start gap-1.5 px-2",
+                      )}
                       onClick={() => onNavigateToPath(folder.path)}
                       title={folder.path}
                       tooltip={folder.path}
-                      className={cn(
-                        isCollapsed ? "" : "justify-start gap-1.5 px-2",
-                        isActive && "bg-sidebar-accent text-sidebar-accent-foreground",
-                        isAncestor && !isActive && "text-sidebar-primary-foreground",
-                      )}
-                      style={isCollapsed ? undefined : { paddingLeft: `${12 + indent}px` }}
+                      style={isCollapsed ? undefined : { paddingLeft: `${12 + depth * 12}px` }}
                     >
                       <Folder className="size-3.5 shrink-0 text-amber-500" />
                       <span className="min-w-0 flex-1 truncate text-xs">{folder.name}</span>
-                      {isAncestor && !isCollapsed ? (
-                        <ChevronRight className="size-3 shrink-0 opacity-60" />
-                      ) : null}
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 );
@@ -99,4 +119,21 @@ export function ArchiveSidebar({ allFolders, currentPath, onNavigateToPath }: Ar
       <SidebarRail />
     </Sidebar>
   );
+}
+
+function buildAncestorItems(
+  currentPath: string,
+): Array<{ name: string; path: string }> {
+  if (!currentPath) {
+    return [];
+  }
+
+  const segments = currentPath.split("/").filter(Boolean);
+  return segments.map((segment, index) => {
+    const path = segments.slice(0, index + 1).join("/");
+    return {
+      name: segment,
+      path,
+    };
+  });
 }

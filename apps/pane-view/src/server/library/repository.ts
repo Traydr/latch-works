@@ -24,11 +24,7 @@ export async function readDatabaseLibrarySnapshot({
 }): Promise<DatabaseLibrarySnapshot> {
   const trimmedQuery = query?.trim();
   const mediaConditions: SQL[] = [isNull(libraryEntries.deletedAt)];
-  const folderConditions: SQL[] = [eq(folders.parentPath, currentPath)];
-
-  if (currentPath) {
-    mediaConditions.push(ilike(libraryEntries.logicalPath, `${escapeLikePattern(currentPath)}/%`));
-  }
+  const folderConditions: SQL[] = [isNull(folders.deletedAt)];
 
   if (trimmedQuery) {
     const queryPattern = `%${escapeLikePattern(trimmedQuery)}%`;
@@ -47,6 +43,14 @@ export async function readDatabaseLibrarySnapshot({
 
     if (folderQueryCondition) {
       folderConditions.push(folderQueryCondition);
+    }
+  } else {
+    folderConditions.push(eq(folders.parentPath, currentPath));
+
+    if (currentPath) {
+      mediaConditions.push(
+        ilike(libraryEntries.logicalPath, `${escapeLikePattern(currentPath)}/%`),
+      );
     }
   }
 
@@ -107,6 +111,8 @@ export async function readDatabaseLibrarySnapshot({
 
       if (thumbnail) {
         media.thumbnailUrl = `/api/media/${entry.id}/thumbnail?size=${thumbnail.size}`;
+      } else if (object.mediaType === "image" || object.mediaType === "gif") {
+        media.thumbnailUrl = `/api/media/${entry.id}/original`;
       }
 
       return media;

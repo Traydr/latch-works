@@ -1,17 +1,10 @@
 import type { MediaItem } from "@latch-works/media-domain";
 import { cn } from "@/lib/utils";
+import { readMediaPreviewUrl } from "./media-preview-url";
 import { MediaPlaceholder } from "./MediaPlaceholder";
 
-function readThumbnailUrl(media: MediaItem): string | undefined {
-  if (!("thumbnailUrl" in media) || typeof media.thumbnailUrl !== "string") {
-    return undefined;
-  }
-
-  return media.thumbnailUrl;
-}
-
 export function Poster({ media }: { media: MediaItem }) {
-  const thumbnailUrl = readThumbnailUrl(media);
+  const thumbnailUrl = readMediaPreviewUrl(media);
 
   return (
     <div

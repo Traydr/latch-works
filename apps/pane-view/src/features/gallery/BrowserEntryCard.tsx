@@ -107,9 +107,11 @@ function ComicCard({
   return (
     <div
       className={`group relative h-full w-full overflow-hidden rounded-2xl bg-zinc-800 text-left transition-all ${
-        selected || focused
+        selected
           ? "ring-2 ring-violet-500 ring-offset-2 ring-offset-zinc-950"
-          : "hover:shadow-lg"
+          : focused
+            ? "ring-2 ring-violet-400 ring-offset-2 ring-offset-zinc-950"
+            : "hover:shadow-lg"
       }`}
       title={comic.folderPath}
     >
@@ -138,9 +140,11 @@ function MediaCard({
   return (
     <div
       className={`group relative h-full w-full overflow-hidden rounded-2xl text-left transition-all ${
-        selected || focused
+        selected
           ? "ring-2 ring-violet-500 ring-offset-2 ring-offset-zinc-950"
-          : "hover:shadow-lg"
+          : focused
+            ? "ring-2 ring-violet-400 ring-offset-2 ring-offset-zinc-950"
+            : "hover:shadow-lg"
       }`}
       title={item.path}
     >
