@@ -14,6 +14,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@inquirer/prompts": "^7.5.3",
     "@latch-works/media-domain": "workspace:*",
     "@latch-works/media-index": "workspace:*"
   },

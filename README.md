@@ -34,7 +34,8 @@ Frame View and Gather Box are intentionally not copied into this repo yet. The n
 pnpm install
 pnpm check
 pnpm dev:pane
-pnpm lockstep -- plan --source "T:\cloud-desktop\media"
+pnpm start:lockstep
+pnpm start:lockstep -- plan --source "T:\cloud-desktop\media"
 ```
 
-`lockstep plan` only reads the source tree and prints a sync plan. It does not change the archive.
+Run `pnpm start:lockstep` with no arguments for interactive mode (TTY required). `lockstep plan` only reads the source tree and prints a sync plan. It does not change the archive.

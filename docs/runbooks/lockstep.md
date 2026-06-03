@@ -2,6 +2,47 @@
 
 Lockstep is the local archive to Pane View sync CLI.
 
+## Interactive Mode
+
+When run from a terminal with no arguments, Lockstep starts a guided wizard:
+
+```powershell
+pnpm start:lockstep
+```
+
+If you omit required flags on a command (for example `pnpm start:lockstep -- push`), Lockstep prompts for the missing values instead of failing immediately. Non-TTY environments (CI, pipes) keep the strict flag-based behavior.
+
+Lockstep remembers non-secret settings between runs in:
+
+```text
+%USERPROFILE%\.latch-works\lockstep.json
+```
+
+The file stores values such as your last source directory and API URL. API tokens are never written to disk; keep using `LOCKSTEP_API_TOKEN` (or `--api-token-env`).
+
+Optional environment overrides:
+
+- `LOCKSTEP_SOURCE` — default local archive path (overrides the config file)
+- `LOCKSTEP_API_URL` — default Pane View API URL
+- `LOCKSTEP_API_TOKEN` — sync API bearer token
+
+For scripted push without interactive confirmation, pass `--yes`:
+
+```powershell
+pnpm start:lockstep -- push --source "T:\cloud-desktop\media" --yes
+```
+
+## Doctor
+
+Check Node, env configuration, and API connectivity:
+
+```powershell
+pnpm start:lockstep -- doctor
+pnpm start:lockstep -- doctor --source "T:\cloud-desktop\media"
+```
+
+When `LOCKSTEP_API_URL` and `LOCKSTEP_API_TOKEN` are set, doctor requests `/api/sync/snapshot` and reports reachability.
+
 ## Read-Only Plan
 
 ```powershell
@@ -21,6 +62,8 @@ pnpm lockstep -- plan --source "T:\cloud-desktop\media" --show-skipped
 ```
 
 ## Verify Against a Snapshot
+
+`verify` requires `--remote-snapshot`. It exits with code `1` when any path differs from the snapshot (upload, update, or delete actions).
 
 ```powershell
 pnpm lockstep -- verify --source "T:\cloud-desktop\media" --remote-snapshot remote-snapshot.json --hash

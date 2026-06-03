@@ -118,6 +118,13 @@ Phase 6 deployment work is being skipped in local implementation notes because d
 - Renamed the imported extension surface to Gather Box without changing collector behavior.
 - Recorded Phase 0 decisions in `docs/decisions/0001-phase-0-answers.md`.
 - Added Lockstep usage notes in `docs/runbooks/lockstep.md`.
+- Added Lockstep interactive mode:
+  - zero-arg and missing-flag prompts via `@inquirer/prompts`,
+  - user config at `~/.latch-works/lockstep.json`,
+  - `LOCKSTEP_SOURCE` env override,
+  - `--yes` for non-interactive push,
+  - verify drift exit code and required `--remote-snapshot`,
+  - doctor API snapshot connectivity check.
 - Updated the architecture plan open questions with the answered decisions.
 
 ## Verification Completed
