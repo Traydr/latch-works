@@ -1,7 +1,7 @@
 import { getBaseName, getParentPath, type MediaType } from "@latch-works/media-domain";
 import { originalObjectKey } from "@latch-works/media-storage";
 import { eq, isNull } from "drizzle-orm";
-import { createPaneViewDb, readDatabaseUrl } from "../db/client";
+import { getPaneViewDb } from "../db/client";
 import { folders, libraryEntries, mediaObjects, syncRunItems, syncRuns } from "../db/schema";
 
 export interface StartSyncRunInput {
@@ -28,20 +28,11 @@ export interface RemoteSyncSnapshotEntry {
   size: number;
 }
 
-export async function listRemoteSyncSnapshot({
-  env,
-}: {
-  env: NodeJS.ProcessEnv;
-}): Promise<{ entries: RemoteSyncSnapshotEntry[]; status: "database" | "prototype" }> {
-  const databaseUrl = readDatabaseUrl(env);
-  if (!databaseUrl) {
-    return {
-      entries: [],
-      status: "prototype",
-    };
-  }
-
-  const db = createPaneViewDb(databaseUrl);
+export async function listRemoteSyncSnapshot(): Promise<{
+  entries: RemoteSyncSnapshotEntry[];
+  status: "database";
+}> {
+  const db = getPaneViewDb();
   const entries = await db
     .select({
       path: libraryEntries.logicalPath,
@@ -59,21 +50,11 @@ export async function listRemoteSyncSnapshot({
 }
 
 export async function startSyncRun({
-  env,
   input,
 }: {
-  env: NodeJS.ProcessEnv;
   input: StartSyncRunInput;
-}): Promise<{ status: "database" | "prototype"; syncRunId: string }> {
-  const databaseUrl = readDatabaseUrl(env);
-  if (!databaseUrl) {
-    return {
-      status: "prototype",
-      syncRunId: "prototype-sync-run",
-    };
-  }
-
-  const db = createPaneViewDb(databaseUrl);
+}): Promise<{ status: "database"; syncRunId: string }> {
+  const db = getPaneViewDb();
   const [syncRun] = await db
     .insert(syncRuns)
     .values({
@@ -94,18 +75,11 @@ export async function startSyncRun({
 }
 
 export async function completeSyncedObject({
-  env,
   input,
 }: {
-  env: NodeJS.ProcessEnv;
   input: CompleteObjectInput;
-}): Promise<{ status: "database" | "prototype" }> {
-  const databaseUrl = readDatabaseUrl(env);
-  if (!databaseUrl) {
-    return { status: "prototype" };
-  }
-
-  const db = createPaneViewDb(databaseUrl);
+}): Promise<{ status: "database" }> {
+  const db = getPaneViewDb();
   const parentPath = getParentPath(input.logicalPath);
   const objectKey =
     input.objectKey ??
@@ -141,7 +115,7 @@ export async function completeSyncedObject({
     throw new Error("Unable to upsert media object.");
   }
 
-  await upsertContainingFolders({ env, path: parentPath });
+  await upsertContainingFolders(parentPath);
 
   await db
     .insert(libraryEntries)
@@ -186,20 +160,13 @@ export async function completeSyncedObject({
 }
 
 export async function markRemoteDeleted({
-  env,
   logicalPath,
   syncRunId,
 }: {
-  env: NodeJS.ProcessEnv;
   logicalPath: string;
   syncRunId: string;
-}): Promise<{ status: "database" | "prototype" }> {
-  const databaseUrl = readDatabaseUrl(env);
-  if (!databaseUrl) {
-    return { status: "prototype" };
-  }
-
-  const db = createPaneViewDb(databaseUrl);
+}): Promise<{ status: "database" }> {
+  const db = getPaneViewDb();
   await db
     .update(libraryEntries)
     .set({ deletedAt: new Date() })
@@ -233,19 +200,12 @@ export function collectContainingFolderPaths(path: string): string[] {
   return folders;
 }
 
-async function upsertContainingFolders({
-  env,
-  path,
-}: {
-  env: NodeJS.ProcessEnv;
-  path: string;
-}): Promise<void> {
-  const databaseUrl = readDatabaseUrl(env);
-  if (!databaseUrl || !path) {
+async function upsertContainingFolders(path: string): Promise<void> {
+  if (!path) {
     return;
   }
 
-  const db = createPaneViewDb(databaseUrl);
+  const db = getPaneViewDb();
   for (const folderPath of collectContainingFolderPaths(path)) {
     await db
       .insert(folders)

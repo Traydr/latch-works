@@ -1,19 +1,10 @@
 import { drizzleAdapter } from "@better-auth/drizzle-adapter";
-import { memoryAdapter } from "@better-auth/memory-adapter";
 import { betterAuth } from "better-auth";
-import { hashPassword } from "better-auth/crypto";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
-import { and, eq } from "drizzle-orm";
-import { createPaneViewDb, readDatabaseUrl } from "../db/client";
+import { env } from "../../env/server";
+import { createPaneViewDb } from "../db/client";
 import * as schema from "../db/schema";
 import { readSingleUserCredentials, verifySingleUserCredentials } from "./session";
-
-const memoryDb: Record<string, unknown[]> = {
-  account: [],
-  sessions: [],
-  users: [],
-  verification: [],
-};
 
 export const auth = betterAuth({
   advanced: {
@@ -23,15 +14,16 @@ export const auth = betterAuth({
     },
   },
   appName: "Pane View",
-  baseURL: readBetterAuthUrl(process.env),
-  database: createAuthDatabase(process.env),
+  baseURL: env.BETTER_AUTH_URL,
+  database: createAuthDatabase(),
   emailAndPassword: {
+    disableSignUp: true,
     enabled: true,
     minPasswordLength: 1,
     requireEmailVerification: false,
   },
   plugins: [tanstackStartCookies()],
-  secret: readBetterAuthSecret(process.env),
+  secret: env.BETTER_AUTH_SECRET,
   session: {
     modelName: "sessions",
   },
@@ -40,16 +32,13 @@ export const auth = betterAuth({
   },
 });
 
-export function readConfiguredOwner(env: NodeJS.ProcessEnv): {
+export function readConfiguredOwner(): {
   email: string;
   name: string;
   password: string;
   username: string;
-} | null {
-  const credentials = readSingleUserCredentials(env);
-  if (!credentials) {
-    return null;
-  }
+} {
+  const credentials = readSingleUserCredentials();
 
   return {
     email: toOwnerEmail(credentials.username),
@@ -60,74 +49,67 @@ export function readConfiguredOwner(env: NodeJS.ProcessEnv): {
 }
 
 export function verifyConfiguredOwnerCredentials({
-  env,
   password,
   username,
 }: {
-  env: NodeJS.ProcessEnv;
   password: string;
   username: string;
-}): ReturnType<typeof readConfiguredOwner> {
-  if (!verifySingleUserCredentials({ env, password, username })) {
+}): ReturnType<typeof readConfiguredOwner> | null {
+  if (!verifySingleUserCredentials({ password, username })) {
     return null;
   }
 
-  return readConfiguredOwner(env);
+  return readConfiguredOwner();
 }
 
 export async function ensureConfiguredOwnerCredentialAccount(
-  owner: NonNullable<ReturnType<typeof readConfiguredOwner>>,
-  env: NodeJS.ProcessEnv,
+  owner: ReturnType<typeof readConfiguredOwner>,
 ): Promise<boolean> {
-  const databaseUrl = readDatabaseUrl(env);
-  if (!databaseUrl) {
-    return false;
-  }
+  const context = await auth.$context;
+  const passwordHash = await context.password.hash(owner.password);
+  const existingOwner = await context.internalAdapter.findUserByEmail(owner.email, {
+    includeAccounts: true,
+  });
 
-  const db = createPaneViewDb(databaseUrl);
-  const [user] = await db
-    .select({ id: schema.users.id })
-    .from(schema.users)
-    .where(eq(schema.users.email, owner.email))
-    .limit(1);
+  if (!existingOwner) {
+    const createdOwner = await context.internalAdapter.createUser({
+      email: owner.email,
+      emailVerified: true,
+      name: owner.name,
+    });
 
-  if (!user) {
-    return false;
-  }
+    await context.internalAdapter.linkAccount({
+      accountId: createdOwner.id,
+      password: passwordHash,
+      providerId: "credential",
+      userId: createdOwner.id,
+    });
 
-  const [existingAccount] = await db
-    .select({ id: schema.accounts.id })
-    .from(schema.accounts)
-    .where(
-      and(
-        eq(schema.accounts.userId, user.id),
-        eq(schema.accounts.providerId, "credential"),
-        eq(schema.accounts.accountId, user.id),
-      ),
-    )
-    .limit(1);
-
-  if (existingAccount) {
     return true;
   }
 
-  await db.insert(schema.accounts).values({
-    accountId: user.id,
-    password: await hashPassword(owner.password),
-    providerId: "credential",
-    userId: user.id,
-  });
+  const hasCredentialAccount = existingOwner.accounts.some(
+    (account) => account.providerId === "credential",
+  );
+
+  if (!hasCredentialAccount) {
+    await context.internalAdapter.linkAccount({
+      accountId: existingOwner.user.id,
+      password: passwordHash,
+      providerId: "credential",
+      userId: existingOwner.user.id,
+    });
+
+    return true;
+  }
+
+  await context.internalAdapter.updatePassword(existingOwner.user.id, passwordHash);
 
   return true;
 }
 
-function createAuthDatabase(env: NodeJS.ProcessEnv) {
-  const databaseUrl = readDatabaseUrl(env);
-  if (!databaseUrl) {
-    return memoryAdapter(memoryDb);
-  }
-
-  return drizzleAdapter(createPaneViewDb(databaseUrl), {
+function createAuthDatabase() {
+  return drizzleAdapter(createPaneViewDb(env.DATABASE_URL), {
     provider: "pg",
     schema: {
       ...schema,
@@ -137,23 +119,6 @@ function createAuthDatabase(env: NodeJS.ProcessEnv) {
       verification: schema.verifications,
     },
   });
-}
-
-function readBetterAuthSecret(env: NodeJS.ProcessEnv): string {
-  const secret = env.BETTER_AUTH_SECRET ?? env.SESSION_SECRET;
-  if (secret) {
-    return secret;
-  }
-
-  if (env.NODE_ENV === "production") {
-    throw new Error("BETTER_AUTH_SECRET or SESSION_SECRET must be configured in production.");
-  }
-
-  return "pane-view-development-better-auth-secret";
-}
-
-function readBetterAuthUrl(env: NodeJS.ProcessEnv): string {
-  return env.BETTER_AUTH_URL ?? env.APP_ORIGIN ?? "http://localhost:3000";
 }
 
 function toOwnerEmail(username: string): string {

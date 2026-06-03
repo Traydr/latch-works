@@ -6,12 +6,12 @@ export const Route = createFileRoute("/api/sync/snapshot")({
   server: {
     handlers: {
       GET: async ({ request }: { request: Request }) => {
-        const unauthorized = requireSyncApiToken(request, process.env);
+        const unauthorized = requireSyncApiToken(request);
         if (unauthorized) {
           return unauthorized;
         }
 
-        return Response.json(await listRemoteSyncSnapshot({ env: process.env }));
+        return Response.json(await listRemoteSyncSnapshot());
       },
     },
   },

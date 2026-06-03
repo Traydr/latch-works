@@ -1,4 +1,4 @@
-import type { FolderNode, MediaItem } from "@latch-works/media-domain";
+import type { FolderNode } from "@latch-works/media-domain";
 import { getParentPath, toArchivePath, trimTrailingSlash } from "@latch-works/media-domain";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
@@ -6,7 +6,7 @@ import {
   type LibraryMediaItem,
   readDatabaseLibrarySnapshot,
 } from "../../server/library/repository";
-import { fixtureFolders, fixtureMedia, libraryStats } from "./library-data";
+import { libraryStats } from "./library-data";
 
 const fixtureRoots = ["nsfw", "nsfw-stories", "sfw", "sfw/patreon"];
 const libraryRequestSchema = z.object({
@@ -31,18 +31,16 @@ export const getLibrarySnapshot = createServerFn({ method: "GET" })
     const query = normalizeQuery(data.query);
     const databaseSnapshot = await readDatabaseLibrarySnapshot({
       currentPath,
-      env: process.env,
       query,
     });
-    const fixtureSnapshot = readFixtureLibrarySnapshot({ currentPath, query });
 
     return {
-      archiveRoot: databaseSnapshot ? "Synced archive" : "T:\\cloud-desktop\\media",
+      archiveRoot: "Synced archive",
       currentPath,
-      folders: databaseSnapshot?.folders ?? fixtureSnapshot.folders,
-      media: databaseSnapshot?.media ?? fixtureSnapshot.media,
+      folders: databaseSnapshot.folders,
+      media: databaseSnapshot.media,
       mediaUrlMode: "signed-url",
-      roots: databaseSnapshot?.roots.length ? databaseSnapshot.roots : fixtureSnapshot.roots,
+      roots: databaseSnapshot.roots.length ? databaseSnapshot.roots : readFixtureRoots(currentPath),
       stats: libraryStats,
     };
   });
@@ -56,34 +54,11 @@ function normalizeQuery(query: string | undefined): string | undefined {
   return trimmed ? trimmed : undefined;
 }
 
-function readFixtureLibrarySnapshot({
-  currentPath,
-  query,
-}: {
-  currentPath: string;
-  query: string | undefined;
-}): Pick<LibrarySnapshot, "folders" | "media" | "roots"> {
-  const lowerQuery = query?.toLowerCase();
-  const isWithinPath = (path: string) =>
-    !currentPath || path === currentPath || path.startsWith(`${currentPath}/`);
-  const matchesQuery = (value: string) => !lowerQuery || value.toLowerCase().includes(lowerQuery);
-
-  return {
-    folders: fixtureFolders.filter(
-      (folder) =>
-        folder.parentPath === currentPath &&
-        (matchesQuery(folder.path) || matchesQuery(folder.name)),
-    ),
-    media: fixtureMedia.filter(
-      (media) =>
-        isWithinPath(media.parentPath) &&
-        (matchesQuery(media.path) || matchesQuery(media.name) || matchesQuery(media.parentPath)),
-    ) satisfies MediaItem[],
-    roots: fixtureRoots
-      .concat(currentPath, getParentPath(currentPath))
-      .filter((path) => path.length > 0)
-      .filter(dedupe),
-  };
+function readFixtureRoots(currentPath: string): string[] {
+  return fixtureRoots
+    .concat(currentPath, getParentPath(currentPath))
+    .filter((path) => path.length > 0)
+    .filter(dedupe);
 }
 
 function dedupe(value: string, index: number, values: string[]): boolean {

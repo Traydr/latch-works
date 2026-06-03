@@ -1,9 +1,9 @@
 import {
   createS3StorageClient,
   createSignedGetUrl,
-  readS3StorageConfig,
 } from "@latch-works/media-storage";
 import { createFileRoute } from "@tanstack/react-router";
+import { env } from "../env/server";
 import { isRequestSessionValid } from "../server/auth/web-session-core";
 import { planSignedOriginalDelivery } from "../server/media/delivery";
 import { readMediaDeliveryRequest } from "../server/media/repository";
@@ -17,7 +17,6 @@ export const Route = createFileRoute("/api/media/$mediaId/original")({
         }
 
         const media = await readMediaDeliveryRequest({
-          env: process.env,
           mediaId: params.mediaId,
         });
 
@@ -26,26 +25,21 @@ export const Route = createFileRoute("/api/media/$mediaId/original")({
         }
 
         const delivery = planSignedOriginalDelivery(media);
-        const storageConfig = readS3StorageConfig(process.env);
+        const signedUrl = await createSignedGetUrl({
+          expiresInSeconds: delivery.expiresInSeconds,
+          key: delivery.objectKey,
+          storage: createS3StorageClient({
+            accessKeyId: env.S3_ACCESS_KEY_ID,
+            bucket: env.S3_BUCKET,
+            endpoint: env.S3_ENDPOINT,
+            region: env.S3_REGION,
+            secretAccessKey: env.S3_SECRET_ACCESS_KEY,
+          }),
+        });
 
-        if (storageConfig) {
-          const storage = createS3StorageClient(storageConfig);
-          const signedUrl = await createSignedGetUrl({
-            expiresInSeconds: delivery.expiresInSeconds,
-            key: delivery.objectKey,
-            storage,
-          });
-
-          return new Response(null, {
-            headers: { Location: signedUrl },
-            status: 302,
-          });
-        }
-
-        return Response.json({
-          mediaId: params.mediaId,
-          ...delivery,
-          status: "pending-storage-adapter",
+        return new Response(null, {
+          headers: { Location: signedUrl },
+          status: 302,
         });
       },
     },

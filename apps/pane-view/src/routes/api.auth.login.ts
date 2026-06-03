@@ -13,12 +13,18 @@ export const Route = createFileRoute("/api/auth/login")({
         const username = String(formData.get("username") ?? "");
         const password = String(formData.get("password") ?? "");
         const owner = verifyConfiguredOwnerCredentials({
-          env: process.env,
           password,
           username,
         });
 
         if (!owner) {
+          return new Response(null, {
+            headers: { Location: "/login?error=invalid" },
+            status: 303,
+          });
+        }
+
+        if (!(await ensureConfiguredOwnerCredentialAccount(owner))) {
           return new Response(null, {
             headers: { Location: "/login?error=invalid" },
             status: 303,
@@ -33,33 +39,6 @@ export const Route = createFileRoute("/api/auth/login")({
 
         if (signInResponse.ok) {
           return redirectWithAuthCookies(signInResponse, "/");
-        }
-
-        const signUpResponse = await callBetterAuthEndpoint(request, "/api/auth/sign-up/email", {
-          email: owner.email,
-          name: owner.name,
-          password: owner.password,
-          rememberMe: true,
-        });
-
-        if (signUpResponse.ok) {
-          return redirectWithAuthCookies(signUpResponse, "/");
-        }
-
-        if (await ensureConfiguredOwnerCredentialAccount(owner, process.env)) {
-          const migratedSignInResponse = await callBetterAuthEndpoint(
-            request,
-            "/api/auth/sign-in/email",
-            {
-              email: owner.email,
-              password: owner.password,
-              rememberMe: true,
-            },
-          );
-
-          if (migratedSignInResponse.ok) {
-            return redirectWithAuthCookies(migratedSignInResponse, "/");
-          }
         }
 
         return new Response(null, {

@@ -22,7 +22,6 @@ export const getViewerState = createServerFn({ method: "GET" })
   .inputValidator(viewerStateSubjectSchema)
   .handler(async ({ data }): Promise<ViewerStateSnapshot | null> => {
     const userId = await readRequestSessionUserId({
-      env: process.env,
       request: getRequest(),
     });
 
@@ -31,7 +30,6 @@ export const getViewerState = createServerFn({ method: "GET" })
     }
 
     return readViewerState({
-      env: process.env,
       subjectId: data.subjectId,
       subjectType: data.subjectType,
       userId,
@@ -42,7 +40,6 @@ export const saveViewerState = createServerFn({ method: "POST" })
   .inputValidator(viewerStateWriteSchema)
   .handler(async ({ data }): Promise<ViewerStateSnapshot | null> => {
     const userId = await readRequestSessionUserId({
-      env: process.env,
       request: getRequest(),
     });
 
@@ -51,7 +48,6 @@ export const saveViewerState = createServerFn({ method: "POST" })
     }
 
     return upsertViewerState({
-      env: process.env,
       state: data,
       userId,
     });

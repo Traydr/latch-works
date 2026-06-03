@@ -1,35 +1,26 @@
 import { scryptSync, timingSafeEqual } from "node:crypto";
+import { env } from "../../env/server";
 
 export interface SingleUserCredentials {
   password: string;
   username: string;
 }
 
-export function readSingleUserCredentials(env: NodeJS.ProcessEnv): SingleUserCredentials | null {
+export function readSingleUserCredentials(): SingleUserCredentials {
   const username = env.PANE_VIEW_USERNAME;
   const password = env.PANE_VIEW_PASSWORD;
-
-  if (!username || !password) {
-    return null;
-  }
 
   return { username, password };
 }
 
 export function verifySingleUserCredentials({
-  env,
   password,
   username,
 }: {
-  env: NodeJS.ProcessEnv;
   password: string;
   username: string;
 }): boolean {
-  const configured = readSingleUserCredentials(env);
-  if (!configured) {
-    return false;
-  }
-
+  const configured = readSingleUserCredentials();
   return safeCompare(username, configured.username) && safeCompare(password, configured.password);
 }
 

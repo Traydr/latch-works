@@ -7,7 +7,7 @@ export const Route = createFileRoute("/api/sync/complete-object")({
   server: {
     handlers: {
       POST: async ({ request }: { request: Request }) => {
-        const unauthorized = requireSyncApiToken(request, process.env);
+        const unauthorized = requireSyncApiToken(request);
         if (unauthorized) {
           return unauthorized;
         }
@@ -24,7 +24,6 @@ export const Route = createFileRoute("/api/sync/complete-object")({
 
           return Response.json(
             await markRemoteDeleted({
-              env: process.env,
               logicalPath: body.logicalPath,
               syncRunId: body.syncRunId,
             }),
@@ -62,7 +61,6 @@ export const Route = createFileRoute("/api/sync/complete-object")({
 
         return Response.json(
           await completeSyncedObject({
-            env: process.env,
             input: {
               contentType: String(body.contentType),
               extension: String(body.extension),

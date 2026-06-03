@@ -1,5 +1,6 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
+import { env } from "../../env/server";
 import * as schema from "./schema";
 
 function createUncachedPaneViewDb(databaseUrl: string) {
@@ -30,6 +31,6 @@ export function createPaneViewDb(databaseUrl: string) {
   return db;
 }
 
-export function readDatabaseUrl(env: NodeJS.ProcessEnv): string | null {
-  return env.DATABASE_URL ?? null;
+export function getPaneViewDb() {
+  return createPaneViewDb(env.DATABASE_URL);
 }

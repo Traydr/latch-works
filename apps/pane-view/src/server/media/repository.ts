@@ -1,21 +1,14 @@
 import { and, eq, isNull } from "drizzle-orm";
-import { createPaneViewDb, readDatabaseUrl } from "../db/client";
+import { getPaneViewDb } from "../db/client";
 import { libraryEntries, mediaObjects, thumbnails } from "../db/schema";
 import type { MediaDeliveryRequest, StoredMediaDeliveryRequest } from "./delivery";
 
 export async function readMediaDeliveryRequest({
-  env,
   mediaId,
 }: {
-  env: NodeJS.ProcessEnv;
   mediaId: string;
 }): Promise<MediaDeliveryRequest | null> {
-  const databaseUrl = readDatabaseUrl(env);
-  if (!databaseUrl) {
-    return null;
-  }
-
-  const db = createPaneViewDb(databaseUrl);
+  const db = getPaneViewDb();
   const [media] = await db
     .select({
       extension: mediaObjects.extension,
@@ -31,20 +24,13 @@ export async function readMediaDeliveryRequest({
 }
 
 export async function readThumbnailDeliveryRequest({
-  env,
   mediaId,
   size,
 }: {
-  env: NodeJS.ProcessEnv;
   mediaId: string;
   size: number;
 }): Promise<StoredMediaDeliveryRequest | null> {
-  const databaseUrl = readDatabaseUrl(env);
-  if (!databaseUrl) {
-    return null;
-  }
-
-  const db = createPaneViewDb(databaseUrl);
+  const db = getPaneViewDb();
   const [thumbnail] = await db
     .select({
       objectKey: thumbnails.objectKey,

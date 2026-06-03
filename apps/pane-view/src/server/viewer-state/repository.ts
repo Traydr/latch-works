@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm";
-import { createPaneViewDb, readDatabaseUrl } from "../db/client";
+import { getPaneViewDb } from "../db/client";
 import { viewerState } from "../db/schema";
 
 export interface ViewerStateSnapshot {
@@ -18,22 +18,15 @@ export interface ViewerStateWrite {
 }
 
 export async function readViewerState({
-  env,
   subjectId,
   subjectType,
   userId,
 }: {
-  env: NodeJS.ProcessEnv;
   subjectId: string;
   subjectType: string;
   userId: string;
 }): Promise<ViewerStateSnapshot | null> {
-  const databaseUrl = readDatabaseUrl(env);
-  if (!databaseUrl) {
-    return null;
-  }
-
-  const db = createPaneViewDb(databaseUrl);
+  const db = getPaneViewDb();
   const [state] = await db
     .select()
     .from(viewerState)
@@ -50,20 +43,13 @@ export async function readViewerState({
 }
 
 export async function upsertViewerState({
-  env,
   state,
   userId,
 }: {
-  env: NodeJS.ProcessEnv;
   state: ViewerStateWrite;
   userId: string;
 }): Promise<ViewerStateSnapshot | null> {
-  const databaseUrl = readDatabaseUrl(env);
-  if (!databaseUrl) {
-    return null;
-  }
-
-  const db = createPaneViewDb(databaseUrl);
+  const db = getPaneViewDb();
   const [saved] = await db
     .insert(viewerState)
     .values({

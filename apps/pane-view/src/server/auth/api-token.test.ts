@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { env } from "../../env/server";
 import { hashApiToken, readBearerToken, verifySyncApiToken } from "./api-token";
 
 describe("sync api token helpers", () => {
@@ -11,10 +12,8 @@ describe("sync api token helpers", () => {
   });
 
   it("verifies the configured sync token", () => {
-    const env = { PANE_VIEW_SYNC_TOKEN: "sync-secret" };
-
-    expect(verifySyncApiToken({ env, token: "sync-secret" })).toBe(true);
-    expect(verifySyncApiToken({ env, token: "wrong" })).toBe(false);
-    expect(hashApiToken("sync-secret")).toHaveLength(64);
+    expect(verifySyncApiToken({ token: env.PANE_VIEW_SYNC_TOKEN })).toBe(true);
+    expect(verifySyncApiToken({ token: "wrong" })).toBe(false);
+    expect(hashApiToken(env.PANE_VIEW_SYNC_TOKEN)).toHaveLength(64);
   });
 });

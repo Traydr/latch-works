@@ -3,9 +3,9 @@ import {
   createS3StorageClient,
   createSignedPutUrl,
   originalObjectKey,
-  readS3StorageConfig,
 } from "@latch-works/media-storage";
 import { createFileRoute } from "@tanstack/react-router";
+import { env } from "../env/server";
 import { requireSyncApiToken } from "../server/auth/api-token";
 
 interface UploadUrlRequest {
@@ -18,7 +18,7 @@ export const Route = createFileRoute("/api/sync/upload-url")({
   server: {
     handlers: {
       POST: async ({ request }: { request: Request }) => {
-        const unauthorized = requireSyncApiToken(request, process.env);
+        const unauthorized = requireSyncApiToken(request);
         if (unauthorized) {
           return unauthorized;
         }
@@ -38,18 +38,21 @@ export const Route = createFileRoute("/api/sync/upload-url")({
           mediaType,
           sha256: body.sha256,
         });
-        const storageConfig = readS3StorageConfig(process.env);
-        const uploadUrl = storageConfig
-          ? await createSignedPutUrl({
-              contentType: body.contentType ?? "application/octet-stream",
-              key: objectKey,
-              storage: createS3StorageClient(storageConfig),
-            })
-          : null;
+        const uploadUrl = await createSignedPutUrl({
+          contentType: body.contentType ?? "application/octet-stream",
+          key: objectKey,
+          storage: createS3StorageClient({
+            accessKeyId: env.S3_ACCESS_KEY_ID,
+            bucket: env.S3_BUCKET,
+            endpoint: env.S3_ENDPOINT,
+            region: env.S3_REGION,
+            secretAccessKey: env.S3_SECRET_ACCESS_KEY,
+          }),
+        });
 
         return Response.json({
           objectKey,
-          status: storageConfig ? "signed-url-ready" : "pending-storage-adapter",
+          status: "signed-url-ready",
           uploadUrl,
         });
       },

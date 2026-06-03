@@ -1,4 +1,5 @@
 import { createHash, scryptSync, timingSafeEqual } from "node:crypto";
+import { env } from "../../env/server";
 
 export function readBearerToken(request: Request): string | null {
   const authorization = request.headers.get("Authorization");
@@ -15,10 +16,8 @@ export function hashApiToken(token: string): string {
 }
 
 export function verifySyncApiToken({
-  env,
   token,
 }: {
-  env: NodeJS.ProcessEnv;
   token: string | null;
 }): boolean {
   const configured = env.PANE_VIEW_SYNC_TOKEN;
@@ -31,8 +30,8 @@ export function verifySyncApiToken({
   return timingSafeEqual(tokenHash, configuredHash);
 }
 
-export function requireSyncApiToken(request: Request, env: NodeJS.ProcessEnv): Response | null {
-  if (verifySyncApiToken({ env, token: readBearerToken(request) })) {
+export function requireSyncApiToken(request: Request): Response | null {
+  if (verifySyncApiToken({ token: readBearerToken(request) })) {
     return null;
   }
 

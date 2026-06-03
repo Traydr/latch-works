@@ -15,7 +15,6 @@
   },
   "dependencies": {
     "@better-auth/drizzle-adapter": "^1.6.13",
-    "@better-auth/memory-adapter": "^1.6.13",
     "@fontsource-variable/geist": "^5.2.9",
     "@latch-works/media-domain": "workspace:*",
     "@latch-works/media-storage": "workspace:*",

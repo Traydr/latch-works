@@ -6,7 +6,7 @@ export const Route = createFileRoute("/api/sync/runs")({
   server: {
     handlers: {
       POST: async ({ request }: { request: Request }) => {
-        const unauthorized = requireSyncApiToken(request, process.env);
+        const unauthorized = requireSyncApiToken(request);
         if (unauthorized) {
           return unauthorized;
         }
@@ -16,7 +16,6 @@ export const Route = createFileRoute("/api/sync/runs")({
           sourceRoot?: string;
         };
         const syncRun = await startSyncRun({
-          env: process.env,
           input: {
             counts: body.counts,
             sourceRoot: body.sourceRoot ?? "unknown",
