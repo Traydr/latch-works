@@ -2,7 +2,10 @@ import type { FolderNode, MediaItem } from "@latch-works/media-domain";
 import { getParentPath, toArchivePath, trimTrailingSlash } from "@latch-works/media-domain";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { readDatabaseLibrarySnapshot } from "../../server/library/repository";
+import {
+  type LibraryMediaItem,
+  readDatabaseLibrarySnapshot,
+} from "../../server/library/repository";
 import { fixtureFolders, fixtureMedia, libraryStats } from "./library-data";
 
 const fixtureCurrentPath = "sfw/patreon";
@@ -16,7 +19,7 @@ export interface LibrarySnapshot {
   archiveRoot: string;
   currentPath: string;
   folders: FolderNode[];
-  media: MediaItem[];
+  media: LibraryMediaItem[];
   mediaUrlMode: "signed-url";
   roots: string[];
   stats: typeof libraryStats;
@@ -76,7 +79,7 @@ function readFixtureLibrarySnapshot({
       (media) =>
         isWithinPath(media.parentPath) &&
         (matchesQuery(media.path) || matchesQuery(media.name) || matchesQuery(media.parentPath)),
-    ),
+    ) satisfies MediaItem[],
     roots: fixtureRoots
       .concat(currentPath, getParentPath(currentPath))
       .filter((path) => path.length > 0)

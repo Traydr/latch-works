@@ -308,9 +308,7 @@ function PaneViewHome() {
                       onClick={() => selectMedia(entry.comic.cover.id)}
                       type="button"
                     >
-                      <div className="poster image-poster">
-                        <ImageIcon size={26} />
-                      </div>
+                      <Poster iconSize={26} media={entry.comic.cover} />
                       <strong>{entry.comic.name}</strong>
                       <span>{entry.comic.pages.length} pages</span>
                     </button>
@@ -328,11 +326,7 @@ function PaneViewHome() {
                     onClick={() => selectMedia(entry.media.id)}
                     type="button"
                   >
-                    <div className={`poster ${entry.media.mediaType}-poster`}>
-                      {entry.media.mediaType === "video" ? <Play size={28} /> : null}
-                      {entry.media.mediaType === "story" ? <FileText size={28} /> : null}
-                      {entry.media.mediaType === "image" ? <ImageIcon size={28} /> : null}
-                    </div>
+                    <Poster iconSize={28} media={entry.media} />
                     <strong>{entry.media.name}</strong>
                     <span>{entry.media.parentPath}</span>
                   </button>
@@ -477,20 +471,47 @@ function SelectedMediaPreview({
   return <img alt={media.name} className="viewer-media" onLoad={markViewed} src={src} />;
 }
 
-function MediaPlaceholder({ mediaType }: { mediaType: "image" | "story" | "video" }) {
+function MediaPlaceholder({
+  mediaType,
+  size = 42,
+}: {
+  mediaType: "image" | "story" | "video";
+  size?: number;
+}) {
   if (mediaType === "video") {
-    return <Play size={42} />;
+    return <Play size={size} />;
   }
 
   if (mediaType === "story") {
-    return <FileText size={42} />;
+    return <FileText size={size} />;
   }
 
-  return <ImageIcon size={42} />;
+  return <ImageIcon size={size} />;
+}
+
+function Poster({ iconSize, media }: { iconSize: number; media: MediaItem }) {
+  const thumbnailUrl = readThumbnailUrl(media);
+
+  return (
+    <div className={`poster ${media.mediaType}-poster`}>
+      {thumbnailUrl ? <img alt="" className="poster-image" src={thumbnailUrl} /> : null}
+      <span className={thumbnailUrl ? "poster-icon hidden" : "poster-icon"}>
+        <MediaPlaceholder mediaType={media.mediaType} size={iconSize} />
+      </span>
+    </div>
+  );
 }
 
 function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function readThumbnailUrl(media: MediaItem): string | undefined {
+  if (!("thumbnailUrl" in media) || typeof media.thumbnailUrl !== "string") {
+    return undefined;
+  }
+
+  return media.thumbnailUrl;
 }
 
 function formatViewerState(media: MediaItem, state: ViewerStateSnapshot): string {
