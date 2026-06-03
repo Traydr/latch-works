@@ -55,3 +55,9 @@ pnpm lockstep -- push --source "T:\cloud-desktop\media" --api-token-env "MY_LOCK
 ```
 
 For first deployment verification, run `push` against a small test folder before pointing it at the full `T:\cloud-desktop\media` archive.
+
+To test the full archive plan while uploading only the first small batch of changed files, cap the push:
+
+```powershell
+pnpm lockstep -- push --source "T:\cloud-desktop\media" --max-changes 25
+```

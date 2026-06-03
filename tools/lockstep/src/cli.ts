@@ -12,6 +12,7 @@ interface CliOptions {
   apiUrl?: string;
   command: Command;
   hashFiles: boolean;
+  maxChanges?: number;
   remoteSnapshot?: string;
   showSkipped: boolean;
   source?: string;
@@ -24,7 +25,7 @@ Usage:
   lockstep plan --source "T:\\cloud-desktop\\media" [--hash] [--remote-snapshot snapshot.json]
   lockstep plan --source "T:\\cloud-desktop\\media" --show-skipped
   lockstep verify --source "T:\\cloud-desktop\\media" --remote-snapshot snapshot.json [--hash]
-  lockstep push --source "T:\\cloud-desktop\\media" --api-url http://localhost:3000 [--hash]
+  lockstep push --source "T:\\cloud-desktop\\media" --api-url http://localhost:3000 [--hash] [--max-changes 25]
   lockstep doctor
 
 Notes:
@@ -35,6 +36,11 @@ Notes:
 }
 
 function parseArgs(argv: string[]): CliOptions {
+  if (argv[0] === "--help" || argv[0] === "-h") {
+    printHelp();
+    process.exit(0);
+  }
+
   const [rawCommand, ...rest] = argv;
   const command = rawCommand as Command | undefined;
 
@@ -68,6 +74,10 @@ function parseArgs(argv: string[]): CliOptions {
         options.apiTokenEnv = rest[index + 1] ?? options.apiTokenEnv;
         index += 1;
         break;
+      case "--max-changes":
+        options.maxChanges = parsePositiveInteger(rest[index + 1], "--max-changes");
+        index += 1;
+        break;
       case "--show-skipped":
         options.showSkipped = true;
         break;
@@ -89,6 +99,15 @@ function parseArgs(argv: string[]): CliOptions {
   }
 
   return options;
+}
+
+function parsePositiveInteger(value: string | undefined, name: string): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(`${name} must be a positive integer.`);
+  }
+
+  return parsed;
 }
 
 async function readRemoteSnapshot(filePath: string | undefined): Promise<RemoteEntrySnapshot[]> {
@@ -218,11 +237,18 @@ async function run(): Promise<void> {
     });
 
     let pushed = 0;
-    for (const item of plan.items) {
-      if (item.action === "keep") {
-        continue;
-      }
+    const changedItems = plan.items.filter((item) => item.action !== "keep");
+    const itemsToPush = options.maxChanges
+      ? changedItems.slice(0, options.maxChanges)
+      : changedItems;
 
+    if (options.maxChanges && changedItems.length > itemsToPush.length) {
+      console.log(
+        `Limiting push to first ${itemsToPush.length} of ${changedItems.length} changes.`,
+      );
+    }
+
+    for (const item of itemsToPush) {
       if (item.action === "delete") {
         await postJson(apiUrl, "/api/sync/complete-object", apiToken, {
           action: "delete",
