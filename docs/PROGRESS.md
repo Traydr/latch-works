@@ -99,6 +99,15 @@ Phase 6 deployment work is being skipped in local implementation notes because d
   - viewer-state server functions over the existing `viewer_state` table,
   - video position save/restore through native video events,
   - read/view state display in the selected-media metadata panel.
+- Improved sync-ingest folder creation so Lockstep-created library entries also upsert the full folder chain needed for path navigation.
+- Added authenticated thumbnail delivery:
+  - `/api/media/$mediaId/thumbnail`,
+  - DB lookup for ready thumbnail records,
+  - signed storage redirect when bucket credentials are configured,
+  - optional grid thumbnail rendering when the library snapshot includes a ready thumbnail URL.
+- Added a capped Lockstep push option for safer first sync testing:
+  - `--max-changes <count>`,
+  - documented in `docs/runbooks/lockstep.md`.
 - Added S3-compatible storage adapter for signed GET/PUT URLs. This is intended to work with Railway Buckets first and can also fit S3/R2-style storage later.
 - Added a dedicated Pane View Vitest config so package unit tests run without loading the TanStack/Vite app plugin stack.
 - Added placeholder app folders for future imports:
@@ -155,6 +164,11 @@ Phase 6 deployment work is being skipped in local implementation notes because d
   - `pnpm --filter @latch-works/pane-view test`,
   - `pnpm --filter @latch-works/pane-view build`,
   - `pnpm lint`.
+- Lockstep readiness checks:
+  - `pnpm lockstep -- doctor` runs locally,
+  - `pnpm lockstep -- plan --source "T:\cloud-desktop\media"` completed read-only,
+  - `pnpm lockstep -- --help` exits successfully,
+  - the local authenticated `/api/sync/snapshot` endpoint returned `200`.
 
 ## Archive Scan Result
 
@@ -208,21 +222,23 @@ pnpm lockstep -- plan --source "T:\cloud-desktop\media" --show-skipped
 
 ## Next Planned Work
 
-1. Add thumbnail/preview support after the original-file viewing path is proven:
-   - thumbnail DB lookup,
-   - authenticated thumbnail route,
-   - grid poster image rendering,
-   - fallback states for missing derived assets.
-2. Improve mobile viewing ergonomics:
+1. Run a capped Lockstep push against the deployed endpoint or a small test source before syncing the full archive:
+   - `pnpm lockstep -- push --source "T:\cloud-desktop\media" --max-changes 25`.
+2. Add actual thumbnail generation/upload during Lockstep sync or a derived-media worker:
+   - generate image thumbnails,
+   - generate video posters,
+   - generate PDF/story covers,
+   - insert rows into `thumbnails`.
+3. Improve mobile viewing ergonomics:
    - touch-friendly selected-media viewer,
    - swipe previous/next in the viewer,
    - better small-screen toolbar behavior.
-3. Add sidecar/ancillary metadata support:
+4. Add sidecar/ancillary metadata support:
    - ingest `meta.json` as metadata,
    - associate `.srt` with videos,
    - decide whether `.txt`, `.zip`, `.vrm`, `.me`, and scripts become attachments or remain ignored.
    Current decision: ignore these files for first sync, except keep `meta.json` noted as future site-specific metadata.
-4. Harden auth beyond the current single-user/session baseline:
+5. Harden auth beyond the current single-user/session baseline:
    - add CSRF checks for non-GET web requests,
    - add login rate limiting,
    - add first-run credential setup or documented Railway secret requirements.
