@@ -1,0 +1,44 @@
+# Repository Guidelines
+
+## Project Structure & Module Organization
+
+Latch Works is a private TypeScript pnpm workspace for collecting, syncing, and viewing a personal media archive. Workspace packages are declared in `pnpm-workspace.yaml`.
+
+- `apps/pane-view/`: TanStack Start web viewer, routes, server code, Drizzle config, and Vitest tests.
+- `apps/frame-view/`: Electron image/video viewer.
+- `apps/gather-box/`: browser-extension style collector build.
+- `packages/media-domain/`: shared media types, path logic, sorting, and domain tests.
+- `packages/media-index/`: archive scanning and sync-plan logic.
+- `packages/media-storage/`: storage key and S3 integration helpers.
+- `tools/lockstep/`: CLI for planning and running local archive sync work.
+- `docs/`: decisions and runbooks.
+
+Source lives in each package's `src/` directory. Tests are colocated as `*.test.ts`.
+
+## Build, Test, and Development Commands
+
+- `pnpm install`: install workspace dependencies.
+- `pnpm check`: build, test, and typecheck all recursive workspace packages.
+- `pnpm build`: run every package build script.
+- `pnpm test`: run all Vitest suites.
+- `pnpm typecheck`: run TypeScript checks across the workspace.
+- `pnpm lint`: run Biome checks from the repo root.
+- `pnpm format`: format the repo with Biome.
+
+## Coding Style & Naming Conventions
+
+This repo uses TypeScript ESM, pnpm 11.1.0, and Biome. Formatting is 2-space indentation, 100-column line width, organized imports, and recommended lint rules. Prefer named exports in shared packages and route public package APIs through `src/index.ts`. Use kebab-case directories and descriptive file names such as `sync-plan.ts`.
+
+## Testing Guidelines
+
+Vitest is the test runner. Keep tests close to the code they cover and name them after the module under test, for example `media.test.ts` or `store.test.ts`. Run focused tests with `pnpm --filter @latch-works/media-index test`, then run `pnpm check` before larger handoffs.
+
+## Commit & Pull Request Guidelines
+
+Recent commits use short imperative summaries, for example `Add authenticated thumbnail delivery` and `Fix Lockstep capped push progress and uploads`.
+
+Pull requests should include the purpose, affected app/package, verification commands, linked issues when applicable, and screenshots for visible UI changes.
+
+## Security & Configuration Tips
+
+Do not commit secrets. Keep local values in `.env` and document required keys in `.env.example`. Treat the local archive as the source of truth; commands that mutate archive or storage state should be explicit and documented in the PR.
