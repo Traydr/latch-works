@@ -16,9 +16,11 @@ DROP TYPE "public"."media_type";--> statement-breakpoint
 CREATE TYPE "public"."media_type" AS ENUM('image', 'gif', 'video', 'pdf', 'unknown');--> statement-breakpoint
 ALTER TABLE "media_objects" ALTER COLUMN "media_type" SET DATA TYPE "public"."media_type" USING "media_type"::"public"."media_type";--> statement-breakpoint
 DROP INDEX "media_objects_sha256_unique";--> statement-breakpoint
+UPDATE "favorites" SET "subject_type" = 'library_entry' WHERE "subject_type" = 'media';--> statement-breakpoint
 ALTER TABLE "favorites" ALTER COLUMN "subject_type" SET DATA TYPE "public"."subject_type" USING "subject_type"::"public"."subject_type";--> statement-breakpoint
 ALTER TABLE "thumbnails" ALTER COLUMN "status" SET DEFAULT 'pending'::"public"."thumbnail_status";--> statement-breakpoint
 ALTER TABLE "thumbnails" ALTER COLUMN "status" SET DATA TYPE "public"."thumbnail_status" USING "status"::"public"."thumbnail_status";--> statement-breakpoint
+UPDATE "viewer_state" SET "subject_type" = 'library_entry' WHERE "subject_type" = 'media';--> statement-breakpoint
 ALTER TABLE "viewer_state" ALTER COLUMN "subject_type" SET DATA TYPE "public"."subject_type" USING "subject_type"::"public"."subject_type";--> statement-breakpoint
 ALTER TABLE "collections" ADD COLUMN "slug" text;--> statement-breakpoint
 ALTER TABLE "collections" ADD COLUMN "description" text;--> statement-breakpoint
