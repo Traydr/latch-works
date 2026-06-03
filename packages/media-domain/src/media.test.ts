@@ -56,4 +56,33 @@ describe("media-domain", () => {
     expect(comics[0]?.folderPath).toBe("sfw/patreon/post-a");
     expect(comics[0]?.pages.map((page) => page.name)).toEqual(["001.jpg", "002.jpg"]);
   });
+
+  it("skips non-leaf folders when leafFoldersOnly is enabled", () => {
+    const items: MediaItem[] = [
+      {
+        ...baseItem,
+        id: "parent-cover",
+        name: "cover.jpg",
+        path: "comics/series/cover.jpg",
+        parentPath: "comics/series",
+        mtimeMs: 1,
+      },
+      {
+        ...baseItem,
+        id: "page-1",
+        name: "001.jpg",
+        path: "comics/series/chapter-1/001.jpg",
+        parentPath: "comics/series/chapter-1",
+        mtimeMs: 2,
+      },
+    ];
+
+    const comics = buildComicEntries(items, "comics", {
+      leafFoldersOnly: true,
+      folders: [{ parentPath: "comics" }, { parentPath: "comics/series" }],
+    });
+
+    expect(comics.map((comic) => comic.folderPath)).toEqual(["comics/series/chapter-1"]);
+    expect(comics[0]?.cover.name).toBe("001.jpg");
+  });
 });

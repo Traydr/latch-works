@@ -1,4 +1,4 @@
-import type { GallerySortMode, MediaItem } from "./media.js";
+import type { FolderNode, GallerySortMode, MediaItem } from "./media.js";
 import { displayNameFromPath, getParentPath, normalizePathForCompare } from "./paths.js";
 import { compareByName, sortMediaItems } from "./sort.js";
 
@@ -10,12 +10,27 @@ export interface ComicEntry {
   pages: MediaItem[];
 }
 
+export interface BuildComicEntriesOptions {
+  /** Skip folders that contain child folders; only leaf folders become comics. */
+  leafFoldersOnly?: boolean;
+  folders?: readonly Pick<FolderNode, "parentPath">[];
+}
+
 export function buildComicEntries(
   items: readonly MediaItem[],
   rootPath: string | null = null,
+  options: BuildComicEntriesOptions = {},
 ): ComicEntry[] {
   const pagesByFolder = new Map<string, MediaItem[]>();
   const normalizedRootPath = rootPath ? normalizePathForCompare(rootPath) : null;
+  const pathsWithChildFolders =
+    options.leafFoldersOnly && options.folders
+      ? new Set(
+          options.folders
+            .map((folder) => folder.parentPath)
+            .filter((parentPath): parentPath is string => Boolean(parentPath)),
+        )
+      : null;
 
   for (const item of items) {
     if (item.mediaType !== "image" && item.mediaType !== "gif") {
@@ -38,6 +53,10 @@ export function buildComicEntries(
 
   const comics: ComicEntry[] = [];
   for (const [folderPath, pages] of pagesByFolder) {
+    if (pathsWithChildFolders?.has(folderPath)) {
+      continue;
+    }
+
     const sortedPages = [...pages].sort(compareByName);
     const cover = sortedPages[0];
     if (!cover) {

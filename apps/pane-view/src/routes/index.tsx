@@ -4,6 +4,7 @@ import {
   buildComicEntries,
   createRandomSeed,
   type GallerySortMode,
+  type MediaItem,
   sortComicEntries,
   sortMediaItems,
 } from "@latch-works/media-domain";
@@ -65,6 +66,7 @@ function PaneViewHome() {
   );
   const [searchDraft, setSearchDraft] = useState(search.q ?? "");
   const [viewerOpen, setViewerOpen] = useState(false);
+  const [viewerItems, setViewerItems] = useState<MediaItem[] | null>(null);
   const [focusedEntryIndex, setFocusedEntryIndex] = useState(0);
 
   // Redirect to persisted path on first visit if URL has no path.
@@ -97,32 +99,41 @@ function PaneViewHome() {
     });
   }, [library.media, search.media]);
 
+  const effectiveRecursive = recursive || comicMode;
+
   const sortedMedia = useMemo(
     () => sortMediaItems(library.media, sortMode, randomSeed),
     [library.media, randomSeed, sortMode],
   );
   const visibleMedia = useMemo(
     () =>
-      recursive || search.q
+      effectiveRecursive || search.q
         ? sortedMedia
         : sortedMedia.filter((item) => item.parentPath === library.currentPath),
-    [library.currentPath, recursive, search.q, sortedMedia],
+    [effectiveRecursive, library.currentPath, search.q, sortedMedia],
   );
   const comics = useMemo(() => {
-    const groupedComics = buildComicEntries(visibleMedia, null);
+    if (!comicMode) {
+      return [];
+    }
+
+    const groupedComics = buildComicEntries(visibleMedia, library.currentPath || null, {
+      folders: library.allFolders,
+      leafFoldersOnly: true,
+    });
     return sortComicEntries(groupedComics, sortMode, randomSeed);
-  }, [randomSeed, sortMode, visibleMedia]);
+  }, [comicMode, library.allFolders, library.currentPath, randomSeed, sortMode, visibleMedia]);
   const entries = useMemo(
     () =>
       buildBrowserEntries({
         folders: library.folders,
         comics,
         items: visibleMedia,
-        recursive,
+        recursive: effectiveRecursive,
         comicMode,
         sortMode,
       }),
-    [comicMode, comics, library.folders, recursive, sortMode, visibleMedia],
+    [comicMode, comics, effectiveRecursive, library.folders, sortMode, visibleMedia],
   );
 
   useEffect(() => {
@@ -265,7 +276,7 @@ function PaneViewHome() {
 
     if (key === "Escape") {
       event.preventDefault();
-      setViewerOpen(false);
+      closeViewer();
       return;
     }
     if (key === "ArrowRight" || key === "e") {
@@ -419,19 +430,29 @@ function PaneViewHome() {
     }
   };
 
+  const openViewer = (items: MediaItem[], startMediaId: string) => {
+    const startIndex = items.findIndex((item) => item.id === startMediaId);
+    if (startIndex < 0) {
+      return;
+    }
+
+    setViewerItems(items);
+    setSelectedId(startMediaId);
+    setViewerOpen(true);
+  };
+
+  const closeViewer = () => {
+    setViewerOpen(false);
+    setViewerItems(null);
+  };
+
   const handleActivateEntry = (entry: BrowserEntry) => {
     if (entry.kind === "folder") {
       navigateToPath(entry.path);
     } else if (entry.kind === "comic") {
-      const idx = visibleMedia.findIndex((m) => m.id === entry.comic.cover.id);
-      if (idx >= 0) {
-        setViewerOpen(true);
-      }
+      openViewer(entry.comic.pages, entry.comic.cover.id);
     } else {
-      const idx = visibleMedia.findIndex((m) => m.id === entry.media.id);
-      if (idx >= 0) {
-        setViewerOpen(true);
-      }
+      openViewer(visibleMedia, entry.media.id);
     }
   };
 
@@ -525,7 +546,11 @@ function PaneViewHome() {
 
           <DetailPanel
             onNext={() => selectAdjacentMedia(1)}
-            onOpenViewer={() => setViewerOpen(true)}
+            onOpenViewer={() => {
+              if (selected) {
+                openViewer(visibleMedia, selected.id);
+              }
+            }}
             onPrev={() => selectAdjacentMedia(-1)}
             selected={selected}
           />
@@ -534,7 +559,15 @@ function PaneViewHome() {
         <FloatingToolbar
           comicMode={comicMode}
           onChangeSortMode={setSortMode}
-          onToggleComicMode={() => setComicMode((v) => !v)}
+          onToggleComicMode={() => {
+            setComicMode((current) => {
+              const next = !current;
+              if (next) {
+                setRecursive(true);
+              }
+              return next;
+            });
+          }}
           onToggleRecursive={() => setRecursive((v) => !v)}
           recursive={recursive}
           shuffle={shuffle}
@@ -544,9 +577,12 @@ function PaneViewHome() {
 
       {viewerOpen && selected ? (
         <MediaViewerModal
-          items={visibleMedia}
-          onClose={() => setViewerOpen(false)}
-          startIndex={selectedIndex >= 0 ? selectedIndex : 0}
+          items={viewerItems ?? visibleMedia}
+          onClose={closeViewer}
+          startIndex={Math.max(
+            0,
+            (viewerItems ?? visibleMedia).findIndex((item) => item.id === selected.id),
+          )}
         />
       ) : null}
     </SidebarProvider>
