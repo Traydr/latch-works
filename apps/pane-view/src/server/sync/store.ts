@@ -1,7 +1,7 @@
 import { getBaseName, getParentPath, type MediaType } from "@latch-works/media-domain";
 import { originalObjectKey } from "@latch-works/media-storage";
 import { eq, isNull } from "drizzle-orm";
-import { getPaneViewDb } from "../db/client";
+import { db } from "../db";
 import { folders, libraryEntries, mediaObjects, syncRunItems, syncRuns } from "../db/schema";
 
 export interface StartSyncRunInput {
@@ -32,7 +32,6 @@ export async function listRemoteSyncSnapshot(): Promise<{
   entries: RemoteSyncSnapshotEntry[];
   status: "database";
 }> {
-  const db = getPaneViewDb();
   const entries = await db
     .select({
       path: libraryEntries.logicalPath,
@@ -54,7 +53,6 @@ export async function startSyncRun({
 }: {
   input: StartSyncRunInput;
 }): Promise<{ status: "database"; syncRunId: string }> {
-  const db = getPaneViewDb();
   const [syncRun] = await db
     .insert(syncRuns)
     .values({
@@ -79,7 +77,6 @@ export async function completeSyncedObject({
 }: {
   input: CompleteObjectInput;
 }): Promise<{ status: "database" }> {
-  const db = getPaneViewDb();
   const parentPath = getParentPath(input.logicalPath);
   const objectKey =
     input.objectKey ??
@@ -166,7 +163,6 @@ export async function markRemoteDeleted({
   logicalPath: string;
   syncRunId: string;
 }): Promise<{ status: "database" }> {
-  const db = getPaneViewDb();
   await db
     .update(libraryEntries)
     .set({ deletedAt: new Date() })
@@ -205,7 +201,6 @@ async function upsertContainingFolders(path: string): Promise<void> {
     return;
   }
 
-  const db = getPaneViewDb();
   for (const folderPath of collectContainingFolderPaths(path)) {
     await db
       .insert(folders)

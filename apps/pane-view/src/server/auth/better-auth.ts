@@ -2,7 +2,7 @@ import { drizzleAdapter } from "@better-auth/drizzle-adapter";
 import { betterAuth } from "better-auth";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
 import { env } from "../../env/server";
-import { createPaneViewDb } from "../db/client";
+import { db } from "../db";
 import * as schema from "../db/schema";
 import { readSingleUserCredentials, verifySingleUserCredentials } from "./session";
 
@@ -109,7 +109,7 @@ export async function ensureConfiguredOwnerCredentialAccount(
 }
 
 function createAuthDatabase() {
-  return drizzleAdapter(createPaneViewDb(env.DATABASE_URL), {
+  return drizzleAdapter(db, {
     provider: "pg",
     schema: {
       ...schema,

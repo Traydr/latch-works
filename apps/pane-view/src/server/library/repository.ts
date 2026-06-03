@@ -1,7 +1,7 @@
 import type { FolderNode, MediaItem } from "@latch-works/media-domain";
 import { getBaseName } from "@latch-works/media-domain";
 import { and, eq, ilike, isNull, or, type SQL } from "drizzle-orm";
-import { getPaneViewDb } from "../db/client";
+import { db } from "../db";
 import { folders, libraryEntries, mediaObjects, thumbnails } from "../db/schema";
 
 export interface LibraryMediaItem extends MediaItem {
@@ -21,7 +21,6 @@ export async function readDatabaseLibrarySnapshot({
   currentPath: string;
   query?: string;
 }): Promise<DatabaseLibrarySnapshot> {
-  const db = getPaneViewDb();
   const trimmedQuery = query?.trim();
   const mediaConditions: SQL[] = [isNull(libraryEntries.deletedAt)];
   const folderConditions: SQL[] = [eq(folders.parentPath, currentPath)];

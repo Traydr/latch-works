@@ -1,5 +1,5 @@
 import { and, eq, isNull } from "drizzle-orm";
-import { getPaneViewDb } from "../db/client";
+import { db } from "../db";
 import { libraryEntries, mediaObjects, thumbnails } from "../db/schema";
 import type { MediaDeliveryRequest, StoredMediaDeliveryRequest } from "./delivery";
 
@@ -8,7 +8,6 @@ export async function readMediaDeliveryRequest({
 }: {
   mediaId: string;
 }): Promise<MediaDeliveryRequest | null> {
-  const db = getPaneViewDb();
   const [media] = await db
     .select({
       extension: mediaObjects.extension,
@@ -30,7 +29,6 @@ export async function readThumbnailDeliveryRequest({
   mediaId: string;
   size: number;
 }): Promise<StoredMediaDeliveryRequest | null> {
-  const db = getPaneViewDb();
   const [thumbnail] = await db
     .select({
       objectKey: thumbnails.objectKey,
