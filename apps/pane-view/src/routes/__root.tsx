@@ -2,6 +2,8 @@
 import { createRootRoute, HeadContent, Link, Outlet, Scripts } from "@tanstack/react-router";
 import { Home, SearchX } from "lucide-react";
 import type { ReactNode } from "react";
+import { Button } from "@/components/ui/button";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import appCss from "../styles.css?url";
 
 export const Route = createRootRoute({
@@ -34,12 +36,12 @@ function RootComponent() {
 
 function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
   return (
-    <html lang="en">
+    <html className="dark" lang="en">
       <head>
         <HeadContent />
       </head>
       <body>
-        {children}
+        <TooltipProvider>{children}</TooltipProvider>
         <Scripts />
       </body>
     </html>
@@ -66,13 +68,12 @@ function AppNotFound() {
         <span className="text-sm text-zinc-400">
           The page or media route you opened does not exist in Pane View.
         </span>
-        <Link
-          className="mt-1 inline-flex min-h-9 items-center gap-2 rounded-md border border-amber-500/70 bg-amber-300 px-3 text-sm font-semibold text-zinc-950"
-          to="/"
-        >
-          <Home size={16} />
-          <span>Back to archive</span>
-        </Link>
+        <Button asChild className="mt-1 gap-2" size="lg">
+          <Link to="/">
+            <Home size={16} />
+            <span>Back to archive</span>
+          </Link>
+        </Button>
       </section>
     </main>
   );

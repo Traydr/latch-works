@@ -4,7 +4,7 @@
     "baseUrl": ".",
     "noEmit": true,
     "paths": {
-      "~/*": ["./src/*"]
+      "@/*": ["./src/*"]
     }
   },
   "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts"]

@@ -21,7 +21,15 @@ import {
   Search,
   Shuffle,
 } from "lucide-react";
-import { type FormEvent, type SyntheticEvent, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type FormEvent,
+  Fragment,
+  type SyntheticEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -29,21 +37,35 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
-} from "../components/ui/breadcrumb";
+} from "@/components/ui/breadcrumb";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Sidebar,
   SidebarContent,
+  SidebarGroup,
+  SidebarGroupContent,
   SidebarHeader,
+  SidebarInset,
   SidebarMenu,
   SidebarMenuButton,
-} from "../components/ui/sidebar";
+  SidebarMenuItem,
+  SidebarProvider,
+} from "@/components/ui/sidebar";
+import { cn } from "@/lib/utils";
 import { getLibrarySnapshot } from "../features/library/library-service";
 import {
   getViewerState,
   saveViewerState,
   type ViewerStateSnapshot,
 } from "../features/viewer/viewer-state-service";
-import { cn } from "../lib/cn";
 import { isCurrentWebSessionValid } from "../server/auth/web-session";
 
 export const Route = createFileRoute("/")({
@@ -253,81 +275,114 @@ function PaneViewHome() {
   };
 
   return (
-    <main className="flex min-h-screen overflow-hidden bg-zinc-950 text-zinc-100">
-      <Sidebar className="hidden md:flex" aria-label="Archive roots">
+    <SidebarProvider
+      className="min-h-screen overflow-hidden bg-background text-foreground"
+      defaultOpen
+    >
+      <Sidebar
+        aria-label="Archive roots"
+        className="hidden border-r border-sidebar-border md:flex"
+        collapsible="none"
+      >
         <SidebarHeader>
           <div className="flex items-center gap-3">
             <div
-              className="grid size-9 place-items-center rounded-md border border-zinc-700 text-xs font-bold text-amber-300"
+              className="grid size-9 place-items-center rounded-md border border-sidebar-border text-xs font-bold text-primary"
               aria-hidden="true"
             >
               LW
             </div>
             <div className="min-w-0">
               <strong className="block truncate text-sm font-semibold">Pane View</strong>
-              <span className="block truncate text-xs text-zinc-400">Latch Works</span>
+              <span className="block truncate text-xs text-muted-foreground">Latch Works</span>
             </div>
           </div>
         </SidebarHeader>
 
         <SidebarContent>
-          <SidebarMenu aria-label="Known archive paths">
-            <SidebarMenuButton
-              isActive={!library.currentPath}
-              onClick={() => navigateToPath("")}
-              title="Archive root"
-            >
-              <Archive className="size-4 shrink-0" />
-              <span className="min-w-0 flex-1 truncate">Archive root</span>
-            </SidebarMenuButton>
-            {library.roots.map((path) => (
-              <SidebarMenuButton
-                isActive={path === library.currentPath}
-                key={path}
-                onClick={() => navigateToPath(path)}
-                title={path}
-              >
-                <Folder className="size-4 shrink-0" />
-                <span className="min-w-0 flex-1 truncate">{path}</span>
-              </SidebarMenuButton>
-            ))}
-          </SidebarMenu>
+          <SidebarGroup>
+            <SidebarGroupContent>
+              <SidebarMenu aria-label="Known archive paths">
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    isActive={!library.currentPath}
+                    onClick={() => navigateToPath("")}
+                    title="Archive root"
+                    tooltip="Archive root"
+                  >
+                    <Archive className="size-4 shrink-0" />
+                    <span className="min-w-0 flex-1 truncate">Archive root</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                {library.roots.map((path) => (
+                  <SidebarMenuItem key={path}>
+                    <SidebarMenuButton
+                      isActive={path === library.currentPath}
+                      onClick={() => navigateToPath(path)}
+                      title={path}
+                      tooltip={path}
+                    >
+                      <Folder className="size-4 shrink-0" />
+                      <span className="min-w-0 flex-1 truncate">{path}</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
         </SidebarContent>
       </Sidebar>
 
-      <section className="relative flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-zinc-800 bg-zinc-950 px-5">
+      <SidebarInset className="min-w-0 overflow-hidden">
+        <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border bg-background px-5">
           <Breadcrumb className="flex min-w-0 items-center gap-2">
-            <Archive className="size-4 shrink-0 text-zinc-500" />
-            <BreadcrumbList>
+            <Archive className="size-4 shrink-0 text-muted-foreground" />
+            <BreadcrumbList className="min-w-0 flex-nowrap overflow-hidden">
               <BreadcrumbItem>
-                <BreadcrumbLink onClick={() => navigateToPath("")}>
-                  {library.archiveRoot}
+                <BreadcrumbLink asChild>
+                  <button
+                    className="max-w-40 truncate"
+                    onClick={() => navigateToPath("")}
+                    type="button"
+                  >
+                    {library.archiveRoot}
+                  </button>
                 </BreadcrumbLink>
               </BreadcrumbItem>
               {breadcrumbs.map((crumb, index) => (
-                <BreadcrumbItem key={crumb.path}>
+                <Fragment key={crumb.path}>
                   <BreadcrumbSeparator />
-                  {index === breadcrumbs.length - 1 ? (
-                    <BreadcrumbPage title={crumb.path}>{crumb.label}</BreadcrumbPage>
-                  ) : (
-                    <BreadcrumbLink onClick={() => navigateToPath(crumb.path)} title={crumb.path}>
-                      {crumb.label}
-                    </BreadcrumbLink>
-                  )}
-                </BreadcrumbItem>
+                  <BreadcrumbItem className="min-w-0">
+                    {index === breadcrumbs.length - 1 ? (
+                      <BreadcrumbPage className="max-w-72 truncate" title={crumb.path}>
+                        {crumb.label}
+                      </BreadcrumbPage>
+                    ) : (
+                      <BreadcrumbLink asChild>
+                        <button
+                          className="max-w-40 truncate"
+                          onClick={() => navigateToPath(crumb.path)}
+                          title={crumb.path}
+                          type="button"
+                        >
+                          {crumb.label}
+                        </button>
+                      </BreadcrumbLink>
+                    )}
+                  </BreadcrumbItem>
+                </Fragment>
               ))}
             </BreadcrumbList>
           </Breadcrumb>
 
           <form
-            className="hidden h-9 w-72 shrink-0 items-center gap-2 rounded-md border border-zinc-800 bg-zinc-900 px-3 text-zinc-400 md:flex"
+            className="relative hidden w-72 shrink-0 items-center md:flex"
             onSubmit={submitSearch}
           >
-            <Search className="size-4" />
-            <input
+            <Search className="pointer-events-none absolute left-2.5 size-4 text-muted-foreground" />
+            <Input
               aria-label="Search archive"
-              className="min-w-0 flex-1 bg-transparent text-sm text-zinc-100 outline-none placeholder:text-zinc-500"
+              className="pl-8"
               onChange={(event) => setSearchDraft(event.target.value)}
               placeholder="Search paths"
               type="search"
@@ -347,18 +402,18 @@ function PaneViewHome() {
                 <span className="text-zinc-200">{currentPathLabel}</span>
                 {search.q ? <span> matching {search.q}</span> : null}
               </p>
-              <select
-                aria-label="Sort mode"
-                className="h-9 rounded-md border border-zinc-800 bg-zinc-900 px-2 text-sm text-zinc-100 outline-none"
-                onChange={(event) => setSortMode(event.target.value as SortMode)}
-                value={sortMode}
-              >
-                {sortModes.map((mode) => (
-                  <option key={mode} value={mode}>
-                    {sortLabels[mode]}
-                  </option>
-                ))}
-              </select>
+              <Select onValueChange={(value) => setSortMode(value as SortMode)} value={sortMode}>
+                <SelectTrigger aria-label="Sort mode" size="sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {sortModes.map((mode) => (
+                    <SelectItem key={mode} value={mode}>
+                      {sortLabels[mode]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             {entries.length ? (
@@ -470,22 +525,26 @@ function PaneViewHome() {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <button
-                    className="grid h-9 flex-1 place-items-center rounded-md border border-zinc-800 bg-zinc-900 text-zinc-300 hover:border-zinc-700"
+                  <Button
+                    className="flex-1"
+                    size="lg"
+                    variant="outline"
                     onClick={() => selectAdjacentMedia(-1)}
                     title="Previous"
                     type="button"
                   >
                     <ChevronLeft className="size-4" />
-                  </button>
-                  <button
-                    className="grid h-9 flex-1 place-items-center rounded-md border border-zinc-800 bg-zinc-900 text-zinc-300 hover:border-zinc-700"
+                  </Button>
+                  <Button
+                    className="flex-1"
+                    size="lg"
+                    variant="outline"
                     onClick={() => selectAdjacentMedia(1)}
                     title="Next"
                     type="button"
                   >
                     <ChevronRight className="size-4" />
-                  </button>
+                  </Button>
                 </div>
 
                 <dl className="grid gap-3 text-sm">
@@ -508,55 +567,69 @@ function PaneViewHome() {
 
         <div className="pointer-events-none fixed bottom-5 left-1/2 z-20 -translate-x-1/2">
           <div className="pointer-events-auto flex max-w-[96vw] items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-950/95 px-3 py-2 shadow-lg">
-            <button
+            <Button
               aria-pressed={recursive}
               className={toolButtonClass(recursive)}
               onClick={() => setRecursive((value) => !value)}
+              size="sm"
               title="Recursive browsing"
               type="button"
+              variant={recursive ? "default" : "outline"}
             >
               <ListTree className="size-4" />
               <span className="hidden sm:inline">Recursive</span>
-            </button>
-            <button
+            </Button>
+            <Button
               aria-pressed={comicMode}
               className={toolButtonClass(comicMode)}
               onClick={() => setComicMode((value) => !value)}
+              size="sm"
               title="Comic grouping"
               type="button"
+              variant={comicMode ? "default" : "outline"}
             >
               <ImageIcon className="size-4" />
               <span className="hidden sm:inline">Comic</span>
-            </button>
-            <button
+            </Button>
+            <Button
               aria-pressed={sortMode === "random"}
               className={toolButtonClass(sortMode === "random")}
               onClick={shuffle}
+              size="sm"
               title={sortMode === "random" ? "Shuffle again" : "Random sort"}
               type="button"
+              variant={sortMode === "random" ? "default" : "outline"}
             >
               <Shuffle className="size-4" />
               <span className="hidden sm:inline">Shuffle</span>
-            </button>
+            </Button>
             <div className="h-5 w-px bg-zinc-800" />
-            <button
+            <Button
               className={toolButtonClass(false)}
               onClick={() => void router.invalidate()}
+              size="sm"
               title="Refresh"
               type="button"
+              variant="outline"
             >
               <RefreshCcw className="size-4" />
               <span className="hidden sm:inline">Refresh</span>
-            </button>
+            </Button>
             <form action="/api/auth/logout" method="post">
-              <button className={toolButtonClass(false)} title="Sign out" type="submit">
+              <Button
+                className={toolButtonClass(false)}
+                size="sm"
+                title="Sign out"
+                type="submit"
+                variant="outline"
+              >
                 <LogOut className="size-4" />
-              </button>
+              </Button>
             </form>
           </div>
         </div>
-      </section>
-    </main>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }
 
@@ -717,10 +790,8 @@ function buildBreadcrumbItems(path: string): Array<{ label: string; path: string
 
 function toolButtonClass(active: boolean): string {
   return cn(
-    "inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-sm font-medium transition-colors",
-    active
-      ? "border-amber-300 bg-amber-300 text-zinc-950"
-      : "border-zinc-800 bg-zinc-900 text-zinc-300 hover:border-zinc-700 hover:text-zinc-50",
+    "h-9 gap-2 rounded-lg px-3",
+    active && "border-primary bg-primary text-primary-foreground",
   );
 }
 

@@ -1,4 +1,6 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { isCurrentWebSessionValid } from "../server/auth/web-session";
 
 export const Route = createFileRoute("/login")({
@@ -36,22 +38,16 @@ function LoginRoute() {
           </div>
         </div>
 
-        <label className="grid gap-1.5">
+        <label className="grid gap-1.5" htmlFor="username">
           <span className="text-xs text-zinc-400">Username</span>
-          <input
-            autoComplete="username"
-            className="h-9 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-sm outline-none focus:border-amber-300"
-            name="username"
-            required
-            type="text"
-          />
+          <Input autoComplete="username" id="username" name="username" required type="text" />
         </label>
 
-        <label className="grid gap-1.5">
+        <label className="grid gap-1.5" htmlFor="password">
           <span className="text-xs text-zinc-400">Password</span>
-          <input
+          <Input
             autoComplete="current-password"
-            className="h-9 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-sm outline-none focus:border-amber-300"
+            id="password"
             name="password"
             required
             type="password"
@@ -62,12 +58,9 @@ function LoginRoute() {
           <p className="m-0 text-sm text-red-300">Those credentials did not match Pane View.</p>
         ) : null}
 
-        <button
-          className="h-9 rounded-md border border-amber-500/70 bg-amber-300 text-sm font-semibold text-zinc-950"
-          type="submit"
-        >
+        <Button size="lg" type="submit">
           Sign in
-        </button>
+        </Button>
       </form>
     </main>
   );
