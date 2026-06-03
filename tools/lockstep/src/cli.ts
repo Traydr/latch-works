@@ -1,9 +1,15 @@
 #!/usr/bin/env node
+import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import type { MediaItem } from "@latch-works/media-domain";
-import { createSyncPlan, type RemoteEntrySnapshot, scanArchive } from "@latch-works/media-index";
+import {
+  createSyncPlan,
+  type RemoteEntrySnapshot,
+  type ScanArchiveProgress,
+  scanArchive,
+} from "@latch-works/media-index";
 
 type Command = "plan" | "push" | "verify" | "doctor";
 
@@ -153,6 +159,55 @@ function formatBytes(bytes: number): string {
   return `${value.toFixed(value >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
 }
 
+function createScanProgressReporter(): (progress: ScanArchiveProgress) => void {
+  let lastReport = 0;
+
+  return (progress) => {
+    const now = Date.now();
+    if (now - lastReport < 2000) {
+      return;
+    }
+
+    lastReport = now;
+    if (progress.stage === "hashing") {
+      console.error(
+        `Hashing ${progress.path} (${formatBytes(progress.bytesHashed)} / ${formatBytes(
+          progress.fileSize,
+        )}); found ${progress.filesFound} media, skipped ${progress.skipped}`,
+      );
+      return;
+    }
+
+    console.error(
+      `Scanning archive; found ${progress.filesFound} media, skipped ${progress.skipped}`,
+    );
+  };
+}
+
+async function hashLocalFile(filePath: string, label: string): Promise<string> {
+  const hash = createHash("sha256");
+  let bytesHashed = 0;
+  let lastReport = 0;
+
+  await new Promise<void>((resolve, reject) => {
+    const stream = createReadStream(filePath);
+    stream.on("data", (chunk) => {
+      hash.update(chunk);
+      bytesHashed += chunk.length;
+
+      const now = Date.now();
+      if (now - lastReport >= 2000) {
+        lastReport = now;
+        console.error(`Hashing selected file ${label}; hashed ${formatBytes(bytesHashed)}`);
+      }
+    });
+    stream.on("error", reject);
+    stream.on("end", resolve);
+  });
+
+  return hash.digest("hex");
+}
+
 async function run(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
 
@@ -173,14 +228,40 @@ async function run(): Promise<void> {
   const apiUrl =
     options.command === "push" ? (options.apiUrl ?? process.env.LOCKSTEP_API_URL) : undefined;
   const apiToken = options.command === "push" ? process.env[options.apiTokenEnv] : undefined;
-  const scan = await scanArchive({
-    hashFiles: options.hashFiles || options.command === "push",
-    sourceRoot: options.source,
-  });
+  if (options.command === "push") {
+    console.log(`Remote API URL: ${apiUrl ?? "not configured"}`);
+    console.log(
+      `Remote API token: ${apiToken ? `configured via ${options.apiTokenEnv}` : "not configured"}`,
+    );
+
+    if (!apiUrl || !apiToken) {
+      console.log("Push requires a remote API URL and token.");
+      process.exitCode = 2;
+      return;
+    }
+
+    if (!options.remoteSnapshot) {
+      console.error("Fetching remote sync snapshot...");
+    }
+  }
+
   const remote =
     options.command === "push" && !options.remoteSnapshot && apiUrl && apiToken
       ? await fetchRemoteSnapshot(apiUrl, apiToken)
       : await readRemoteSnapshot(options.remoteSnapshot);
+
+  console.error(
+    options.command === "push" && options.maxChanges
+      ? "Scanning local archive before capped push..."
+      : options.command === "push"
+        ? "Scanning and hashing local archive before push..."
+        : "Scanning local archive...",
+  );
+  const scan = await scanArchive({
+    hashFiles: options.hashFiles || (options.command === "push" && !options.maxChanges),
+    onProgress: createScanProgressReporter(),
+    sourceRoot: options.source,
+  });
   const plan = createSyncPlan(scan.items, remote);
   const totalBytes = scan.items.reduce((sum, item) => sum + item.size, 0);
   const skippedEntries = scan.skippedEntries ?? [];
@@ -221,20 +302,17 @@ async function run(): Promise<void> {
 
   if (options.command === "push") {
     console.log("");
-    console.log(`Remote API URL: ${apiUrl ?? "not configured"}`);
-    console.log(
-      `Remote API token: ${apiToken ? `configured via ${options.apiTokenEnv}` : "not configured"}`,
+    const requiredApiUrl = requireConfiguredValue(apiUrl, "Remote API URL");
+    const requiredApiToken = requireConfiguredValue(apiToken, "Remote API token");
+    const syncRun = await postJson<{ syncRunId: string }>(
+      requiredApiUrl,
+      "/api/sync/runs",
+      requiredApiToken,
+      {
+        counts: plan.counts,
+        sourceRoot: scan.sourceRoot,
+      },
     );
-    if (!apiUrl || !apiToken) {
-      console.log("Push requires a remote API URL and token.");
-      process.exitCode = 2;
-      return;
-    }
-
-    const syncRun = await postJson<{ syncRunId: string }>(apiUrl, "/api/sync/runs", apiToken, {
-      counts: plan.counts,
-      sourceRoot: scan.sourceRoot,
-    });
 
     let pushed = 0;
     const changedItems = plan.items.filter((item) => item.action !== "keep");
@@ -250,7 +328,7 @@ async function run(): Promise<void> {
 
     for (const item of itemsToPush) {
       if (item.action === "delete") {
-        await postJson(apiUrl, "/api/sync/complete-object", apiToken, {
+        await postJson(requiredApiUrl, "/api/sync/complete-object", requiredApiToken, {
           action: "delete",
           logicalPath: item.path,
           syncRunId: syncRun.syncRunId,
@@ -264,8 +342,8 @@ async function run(): Promise<void> {
       }
 
       await pushMediaItem({
-        apiToken,
-        apiUrl,
+        apiToken: requiredApiToken,
+        apiUrl: requiredApiUrl,
         item: item.local,
         sourceRoot: scan.sourceRoot,
         syncRunId: syncRun.syncRunId,
@@ -275,6 +353,14 @@ async function run(): Promise<void> {
 
     console.log(`Pushed changes: ${pushed}`);
   }
+}
+
+function requireConfiguredValue(value: string | undefined, name: string): string {
+  if (!value) {
+    throw new Error(`${name} is not configured.`);
+  }
+
+  return value;
 }
 
 async function pushMediaItem({
@@ -290,9 +376,8 @@ async function pushMediaItem({
   sourceRoot: string;
   syncRunId: string;
 }): Promise<void> {
-  if (!item.sha256) {
-    throw new Error(`Cannot push without sha256: ${item.path}`);
-  }
+  const filePath = localFilePath(sourceRoot, item.path);
+  const sha256 = item.sha256 ?? (await hashLocalFile(filePath, item.path));
 
   const uploadTarget = await postJson<{
     objectKey: string;
@@ -300,15 +385,11 @@ async function pushMediaItem({
   }>(apiUrl, "/api/sync/upload-url", apiToken, {
     contentType: contentTypeFor(item),
     filename: item.name,
-    sha256: item.sha256,
+    sha256,
   });
 
   if (uploadTarget.uploadUrl) {
-    await uploadFile(
-      uploadTarget.uploadUrl,
-      localFilePath(sourceRoot, item.path),
-      contentTypeFor(item),
-    );
+    await uploadFile(uploadTarget.uploadUrl, filePath, contentTypeFor(item));
   }
 
   await postJson(apiUrl, "/api/sync/complete-object", apiToken, {
@@ -319,7 +400,7 @@ async function pushMediaItem({
     mediaType: item.mediaType,
     mtimeMs: item.mtimeMs,
     objectKey: uploadTarget.objectKey,
-    sha256: item.sha256,
+    sha256,
     size: item.size,
     syncRunId,
   });
@@ -388,10 +469,12 @@ async function fetchRemoteSnapshot(
 }
 
 async function uploadFile(uploadUrl: string, filePath: string, contentType: string): Promise<void> {
+  const fileStat = await stat(filePath);
   const response = await fetch(uploadUrl, {
     body: createReadStream(filePath) as never,
     duplex: "half",
     headers: {
+      "Content-Length": String(fileStat.size),
       "Content-Type": contentType,
     },
     method: "PUT",

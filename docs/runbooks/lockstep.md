@@ -48,6 +48,16 @@ $env:LOCKSTEP_API_TOKEN = "replace-me"
 pnpm lockstep -- push --source "T:\cloud-desktop\media"
 ```
 
+For the deployed Pane View domain:
+
+```powershell
+$env:LOCKSTEP_API_URL = "https://pane-view.traydr.dev"
+$env:LOCKSTEP_API_TOKEN = "replace-me"
+pnpm lockstep -- push --source "T:\cloud-desktop\media" --max-changes 25
+```
+
+You can also pass `--api-url` instead of setting `LOCKSTEP_API_URL`, but the sync token must still be available through `LOCKSTEP_API_TOKEN` or the environment variable named by `--api-token-env`.
+
 The token environment variable can be changed:
 
 ```powershell

@@ -12,8 +12,24 @@ import {
 
 export interface ScanArchiveOptions {
   hashFiles?: boolean;
+  onProgress?: (progress: ScanArchiveProgress) => void;
   sourceRoot: string;
 }
+
+export type ScanArchiveProgress =
+  | {
+      filesFound: number;
+      skipped: number;
+      stage: "scanning";
+    }
+  | {
+      bytesHashed: number;
+      fileSize: number;
+      filesFound: number;
+      path: string;
+      skipped: number;
+      stage: "hashing";
+    };
 
 export interface ScanArchiveResult {
   items: MediaItem[];
@@ -27,11 +43,23 @@ export interface SkippedArchiveEntry {
   reason: "unsupported-extension" | "not-a-regular-file";
 }
 
-async function hashFile(filePath: string): Promise<string> {
+async function hashFile({
+  filePath,
+  onProgress,
+}: {
+  filePath: string;
+  onProgress?: (bytesHashed: number) => void;
+}): Promise<string> {
   const hash = createHash("sha256");
+  let bytesHashed = 0;
+
   await new Promise<void>((resolve, reject) => {
     const stream = createReadStream(filePath);
-    stream.on("data", (chunk) => hash.update(chunk));
+    stream.on("data", (chunk) => {
+      hash.update(chunk);
+      bytesHashed += chunk.length;
+      onProgress?.(bytesHashed);
+    });
     stream.on("error", reject);
     stream.on("end", resolve);
   });
@@ -40,6 +68,7 @@ async function hashFile(filePath: string): Promise<string> {
 
 export async function scanArchive({
   hashFiles = false,
+  onProgress,
   sourceRoot,
 }: ScanArchiveOptions): Promise<ScanArchiveResult> {
   const root = path.resolve(sourceRoot);
@@ -71,12 +100,30 @@ export async function scanArchive({
           path: relativePath,
           reason: "unsupported-extension",
         });
+        onProgress?.({
+          filesFound: items.length,
+          skipped: skippedEntries.length,
+          stage: "scanning",
+        });
         continue;
       }
 
       const fileStat = await stat(absolutePath);
       const parentPath = getParentPath(relativePath);
-      const sha256 = hashFiles ? await hashFile(absolutePath) : undefined;
+      const sha256 = hashFiles
+        ? await hashFile({
+            filePath: absolutePath,
+            onProgress: (bytesHashed) =>
+              onProgress?.({
+                bytesHashed,
+                fileSize: fileStat.size,
+                filesFound: items.length,
+                path: relativePath,
+                skipped: skippedEntries.length,
+                stage: "hashing",
+              }),
+          })
+        : undefined;
 
       items.push({
         id: sha256 ?? relativePath,
@@ -86,8 +133,13 @@ export async function scanArchive({
         extension: getExtension(entry.name),
         mediaType,
         size: fileStat.size,
-        mtimeMs: fileStat.mtimeMs,
+        mtimeMs: Math.trunc(fileStat.mtimeMs),
         sha256,
+      });
+      onProgress?.({
+        filesFound: items.length,
+        skipped: skippedEntries.length,
+        stage: "scanning",
       });
     }
   }

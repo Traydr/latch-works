@@ -51,6 +51,14 @@ export const Route = createFileRoute("/api/sync/complete-object")({
         if (!mediaType.success) {
           return Response.json({ error: "mediaType is invalid" }, { status: 400 });
         }
+        const mtimeMs = Math.trunc(Number(body.mtimeMs));
+        const size = Math.trunc(Number(body.size));
+        if (!Number.isSafeInteger(mtimeMs) || !Number.isSafeInteger(size) || size < 0) {
+          return Response.json(
+            { error: "mtimeMs and size must be valid integers" },
+            { status: 400 },
+          );
+        }
 
         return Response.json(
           await completeSyncedObject({
@@ -61,10 +69,10 @@ export const Route = createFileRoute("/api/sync/complete-object")({
               filename: String(body.filename),
               logicalPath: String(body.logicalPath),
               mediaType: mediaType.data,
-              mtimeMs: Number(body.mtimeMs),
+              mtimeMs,
               objectKey: typeof body.objectKey === "string" ? body.objectKey : undefined,
               sha256: String(body.sha256),
-              size: Number(body.size),
+              size,
               syncRunId: String(body.syncRunId),
             },
           }),
