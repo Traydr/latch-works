@@ -6,6 +6,8 @@ export const env = createEnv({
     DATABASE_URL: z.url(),
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
     APP_ORIGIN: z.url().optional(),
+    BETTER_AUTH_SECRET: z.string().optional(),
+    BETTER_AUTH_URL: z.url().optional(),
     SESSION_SECRET: z.string().optional(),
     S3_ENDPOINT: z.url().optional(),
     S3_REGION: z.string().optional(),

@@ -1,24 +1,27 @@
-import { readCookie, sessionCookieName } from "./session";
-import { isStoredSessionValid, readStoredSessionUserId } from "./session-store";
+import { auth } from "./better-auth";
 
 export async function isRequestSessionValid({
-  env,
   request,
 }: {
-  env: NodeJS.ProcessEnv;
+  env?: NodeJS.ProcessEnv;
   request: Request;
 }): Promise<boolean> {
-  const token = readCookie(request.headers.get("Cookie"), sessionCookieName);
-  return isStoredSessionValid({ env, token });
+  const session = await auth.api.getSession({
+    headers: request.headers,
+  });
+
+  return Boolean(session);
 }
 
 export async function readRequestSessionUserId({
-  env,
   request,
 }: {
-  env: NodeJS.ProcessEnv;
+  env?: NodeJS.ProcessEnv;
   request: Request;
 }): Promise<string | null> {
-  const token = readCookie(request.headers.get("Cookie"), sessionCookieName);
-  return readStoredSessionUserId({ env, token });
+  const session = await auth.api.getSession({
+    headers: request.headers,
+  });
+
+  return session?.user.id ?? null;
 }

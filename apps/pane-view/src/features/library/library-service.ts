@@ -8,8 +8,7 @@ import {
 } from "../../server/library/repository";
 import { fixtureFolders, fixtureMedia, libraryStats } from "./library-data";
 
-const fixtureCurrentPath = "sfw/patreon";
-const fixtureRoots = ["nsfw", "nsfw-stories", "sfw", fixtureCurrentPath];
+const fixtureRoots = ["nsfw", "nsfw-stories", "sfw", "sfw/patreon"];
 const libraryRequestSchema = z.object({
   path: z.string().optional(),
   query: z.string().optional(),
@@ -49,8 +48,7 @@ export const getLibrarySnapshot = createServerFn({ method: "GET" })
   });
 
 function normalizeLibraryPath(path: string | undefined): string {
-  const normalized = trimTrailingSlash(toArchivePath(path ?? fixtureCurrentPath));
-  return normalized || fixtureCurrentPath;
+  return trimTrailingSlash(toArchivePath(path ?? ""));
 }
 
 function normalizeQuery(query: string | undefined): string | undefined {
@@ -66,7 +64,8 @@ function readFixtureLibrarySnapshot({
   query: string | undefined;
 }): Pick<LibrarySnapshot, "folders" | "media" | "roots"> {
   const lowerQuery = query?.toLowerCase();
-  const isWithinPath = (path: string) => path === currentPath || path.startsWith(`${currentPath}/`);
+  const isWithinPath = (path: string) =>
+    !currentPath || path === currentPath || path.startsWith(`${currentPath}/`);
   const matchesQuery = (value: string) => !lowerQuery || value.toLowerCase().includes(lowerQuery);
 
   return {

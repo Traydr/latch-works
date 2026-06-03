@@ -18,6 +18,7 @@ import { Route as ApiSyncRunsRouteImport } from './routes/api.sync.runs'
 import { Route as ApiSyncCompleteObjectRouteImport } from './routes/api.sync.complete-object'
 import { Route as ApiAuthLogoutRouteImport } from './routes/api.auth.logout'
 import { Route as ApiAuthLoginRouteImport } from './routes/api.auth.login'
+import { Route as ApiAuthSplatRouteImport } from './routes/api.auth.$'
 import { Route as ApiMediaMediaIdThumbnailRouteImport } from './routes/api.media.$mediaId.thumbnail'
 import { Route as ApiMediaMediaIdOriginalRouteImport } from './routes/api.media.$mediaId.original'
 
@@ -66,6 +67,11 @@ const ApiAuthLoginRoute = ApiAuthLoginRouteImport.update({
   path: '/api/auth/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
+  id: '/api/auth/$',
+  path: '/api/auth/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiMediaMediaIdThumbnailRoute =
   ApiMediaMediaIdThumbnailRouteImport.update({
     id: '/api/media/$mediaId/thumbnail',
@@ -82,6 +88,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
   '/api/sync/complete-object': typeof ApiSyncCompleteObjectRoute
@@ -95,6 +102,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
   '/api/sync/complete-object': typeof ApiSyncCompleteObjectRoute
@@ -109,6 +117,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
   '/api/sync/complete-object': typeof ApiSyncCompleteObjectRoute
@@ -124,6 +133,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/api/health'
+    | '/api/auth/$'
     | '/api/auth/login'
     | '/api/auth/logout'
     | '/api/sync/complete-object'
@@ -137,6 +147,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/api/health'
+    | '/api/auth/$'
     | '/api/auth/login'
     | '/api/auth/logout'
     | '/api/sync/complete-object'
@@ -150,6 +161,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/api/health'
+    | '/api/auth/$'
     | '/api/auth/login'
     | '/api/auth/logout'
     | '/api/sync/complete-object'
@@ -164,6 +176,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LoginRoute: typeof LoginRoute
   ApiHealthRoute: typeof ApiHealthRoute
+  ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiAuthLoginRoute: typeof ApiAuthLoginRoute
   ApiAuthLogoutRoute: typeof ApiAuthLogoutRoute
   ApiSyncCompleteObjectRoute: typeof ApiSyncCompleteObjectRoute
@@ -239,6 +252,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthLoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/auth/$': {
+      id: '/api/auth/$'
+      path: '/api/auth/$'
+      fullPath: '/api/auth/$'
+      preLoaderRoute: typeof ApiAuthSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/media/$mediaId/thumbnail': {
       id: '/api/media/$mediaId/thumbnail'
       path: '/api/media/$mediaId/thumbnail'
@@ -260,6 +280,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LoginRoute: LoginRoute,
   ApiHealthRoute: ApiHealthRoute,
+  ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiAuthLoginRoute: ApiAuthLoginRoute,
   ApiAuthLogoutRoute: ApiAuthLogoutRoute,
   ApiSyncCompleteObjectRoute: ApiSyncCompleteObjectRoute,

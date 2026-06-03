@@ -117,6 +117,7 @@ export async function readDatabaseLibrarySnapshot({
     roots: rootRows
       .map((folder) => folder.path)
       .concat(currentPath)
+      .filter(Boolean)
       .filter(dedupe),
   };
 }

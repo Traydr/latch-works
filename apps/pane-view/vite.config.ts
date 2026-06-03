@@ -3,27 +3,29 @@ import viteReact from "@vitejs/plugin-react";
 import { nitro } from "nitro/vite";
 import { defineConfig } from "vite";
 
+const serverExternal = [
+  "@aws-sdk/client-s3",
+  "@aws-sdk/s3-request-presigner",
+  "@better-auth/drizzle-adapter",
+  "@better-auth/memory-adapter",
+  "@latch-works/media-storage",
+  "better-auth",
+  "better-auth/crypto",
+  "better-auth/tanstack-start",
+  "tslib",
+];
+
 export default defineConfig({
   build: {
     rollupOptions: {
-      external: [
-        "@aws-sdk/client-s3",
-        "@aws-sdk/s3-request-presigner",
-        "@latch-works/media-storage",
-        "tslib",
-      ],
+      external: serverExternal,
     },
   },
   resolve: {
     tsconfigPaths: true,
   },
   ssr: {
-    external: [
-      "@aws-sdk/client-s3",
-      "@aws-sdk/s3-request-presigner",
-      "@latch-works/media-storage",
-      "tslib",
-    ],
+    external: serverExternal,
   },
   server: {
     port: 3000,

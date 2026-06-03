@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
-import { createRootRoute, HeadContent, Outlet, Scripts } from "@tanstack/react-router";
+import { createRootRoute, HeadContent, Link, Outlet, Scripts } from "@tanstack/react-router";
+import { Home, SearchX } from "lucide-react";
 import type { ReactNode } from "react";
 import appCss from "../styles.css?url";
 
@@ -16,6 +17,7 @@ export const Route = createRootRoute({
     ],
     links: [{ rel: "stylesheet", href: appCss }],
   }),
+  notFoundComponent: AppNotFound,
   component: RootComponent,
 });
 
@@ -38,5 +40,24 @@ function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
         <Scripts />
       </body>
     </html>
+  );
+}
+
+function AppNotFound() {
+  return (
+    <main className="not-found-shell">
+      <section className="not-found-panel" aria-labelledby="not-found-title">
+        <div className="not-found-icon" aria-hidden="true">
+          <SearchX size={28} />
+        </div>
+        <p>404</p>
+        <h1 id="not-found-title">Archive path not found</h1>
+        <span>The page or media route you opened does not exist in Pane View.</span>
+        <Link className="primary-link" to="/">
+          <Home size={16} />
+          <span>Back to archive</span>
+        </Link>
+      </section>
+    </main>
   );
 }

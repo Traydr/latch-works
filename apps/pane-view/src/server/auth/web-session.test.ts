@@ -1,27 +1,46 @@
 import { describe, expect, it } from "vitest";
-import { sessionCookieName } from "./session";
+import { auth } from "./better-auth";
 import { isRequestSessionValid, readRequestSessionUserId } from "./web-session-core";
 
 describe("web session guard", () => {
-  it("rejects requests without the Pane View session cookie", async () => {
+  it("rejects requests without a Better Auth session cookie", async () => {
     const request = new Request("https://pane-view.invalid/");
 
-    await expect(isRequestSessionValid({ env: {}, request })).resolves.toBe(false);
+    await expect(isRequestSessionValid({ request })).resolves.toBe(false);
+    await expect(readRequestSessionUserId({ request })).resolves.toBeNull();
   });
 
-  it("accepts prototype sessions when database storage is not configured", async () => {
+  it("accepts Better Auth session cookies", async () => {
+    const response = await auth.handler(
+      new Request("https://pane-view.invalid/api/auth/sign-up/email", {
+        body: JSON.stringify({
+          email: "owner@pane-view.test",
+          name: "owner",
+          password: "secret",
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      }),
+    );
+    const cookie = readSetCookie(response.headers);
     const request = new Request("https://pane-view.invalid/", {
-      headers: { Cookie: `${sessionCookieName}=prototype-token` },
+      headers: { Cookie: cookie },
     });
 
-    await expect(isRequestSessionValid({ env: {}, request })).resolves.toBe(true);
-  });
-
-  it("does not invent a user id for prototype sessions", async () => {
-    const request = new Request("https://pane-view.invalid/", {
-      headers: { Cookie: `${sessionCookieName}=prototype-token` },
-    });
-
-    await expect(readRequestSessionUserId({ env: {}, request })).resolves.toBeNull();
+    await expect(isRequestSessionValid({ request })).resolves.toBe(true);
+    await expect(readRequestSessionUserId({ request })).resolves.toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    );
   });
 });
+
+function readSetCookie(headers: Headers): string {
+  const getSetCookie = (headers as Headers & { getSetCookie?: () => string[] }).getSetCookie;
+  const cookie = getSetCookie?.call(headers)[0] ?? headers.get("Set-Cookie");
+
+  if (!cookie) {
+    throw new Error("Expected Better Auth to set a session cookie.");
+  }
+
+  return cookie;
+}

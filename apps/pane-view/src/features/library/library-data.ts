@@ -7,6 +7,30 @@ export const libraryStats = {
 
 export const fixtureFolders: FolderNode[] = [
   {
+    path: "nsfw",
+    parentPath: "",
+    name: "nsfw",
+    hasChildren: true,
+    mediaCount: 0,
+    folderCount: 0,
+  },
+  {
+    path: "nsfw-stories",
+    parentPath: "",
+    name: "nsfw-stories",
+    hasChildren: true,
+    mediaCount: 1,
+    folderCount: 0,
+  },
+  {
+    path: "sfw",
+    parentPath: "",
+    name: "sfw",
+    hasChildren: true,
+    mediaCount: 4,
+    folderCount: 0,
+  },
+  {
     path: "sfw/patreon/example-creator",
     parentPath: "sfw/patreon",
     name: "example-creator",

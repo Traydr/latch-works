@@ -4,7 +4,7 @@ import {
   type MediaItem,
   sortMediaItems,
 } from "@latch-works/media-domain";
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute, redirect, useRouter } from "@tanstack/react-router";
 import {
   Archive,
   ChevronRight,
@@ -53,6 +53,7 @@ function PaneViewHome() {
   const library = Route.useLoaderData();
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
+  const router = useRouter();
   const [recursive, setRecursive] = useState(true);
   const [comicMode, setComicMode] = useState(false);
   const [sortMode, setSortMode] = useState<(typeof sortModes)[number]>("name-asc");
@@ -111,6 +112,7 @@ function PaneViewHome() {
   const selected = visibleMedia.find((item) => item.id === selectedId) ?? visibleMedia[0] ?? null;
   const selectedOriginalUrl = selected ? `/api/media/${selected.id}/original` : null;
   const canRenderOriginal = selected ? isUuid(selected.id) : false;
+  const currentPathLabel = library.currentPath || "Archive root";
 
   useEffect(() => {
     let cancelled = false;
@@ -186,6 +188,14 @@ function PaneViewHome() {
         </div>
 
         <nav className="path-list" aria-label="Known archive paths">
+          <button
+            className={library.currentPath ? "path-item" : "path-item active"}
+            onClick={() => navigateToPath("")}
+            type="button"
+          >
+            <Archive size={16} />
+            <span>Archive root</span>
+          </button>
           {library.roots.map((path) => (
             <button
               className={path === library.currentPath ? "path-item active" : "path-item"}
@@ -211,7 +221,7 @@ function PaneViewHome() {
             <Archive size={17} />
             <span>{library.archiveRoot}</span>
             <ChevronRight size={15} />
-            <strong>{library.currentPath}</strong>
+            <strong>{currentPathLabel}</strong>
           </nav>
 
           <div className="toolbar-actions">
@@ -251,7 +261,12 @@ function PaneViewHome() {
             >
               <Shuffle size={17} />
             </button>
-            <button className="tool-button" title="Refresh" type="button">
+            <button
+              className="tool-button"
+              onClick={() => void router.invalidate()}
+              title="Refresh"
+              type="button"
+            >
               <RefreshCcw size={17} />
             </button>
             <form action="/api/auth/logout" method="post">
@@ -266,7 +281,7 @@ function PaneViewHome() {
           <section className="browser-panel" aria-label="Archive browser">
             <div className="browser-header">
               <div>
-                <h1>{library.currentPath}</h1>
+                <h1>{currentPathLabel}</h1>
                 <p>
                   {entries.length} entries
                   {search.q ? ` matching ${search.q}` : ", path order preserved"}
@@ -283,56 +298,68 @@ function PaneViewHome() {
               </select>
             </div>
 
-            <div className="media-grid">
-              {entries.map((entry) => {
-                if (entry.kind === "folder") {
+            {entries.length ? (
+              <div className="media-grid">
+                {entries.map((entry) => {
+                  if (entry.kind === "folder") {
+                    return (
+                      <button
+                        className="tile folder-tile"
+                        key={entry.key}
+                        onClick={() => navigateToPath(entry.path)}
+                        type="button"
+                      >
+                        <Folder size={24} />
+                        <strong>{entry.name}</strong>
+                        <span>{entry.path}</span>
+                      </button>
+                    );
+                  }
+
+                  if (entry.kind === "comic") {
+                    return (
+                      <button
+                        className="tile media-tile"
+                        key={entry.key}
+                        onClick={() => selectMedia(entry.comic.cover.id)}
+                        type="button"
+                      >
+                        <Poster iconSize={26} media={entry.comic.cover} />
+                        <strong>{entry.comic.name}</strong>
+                        <span>{entry.comic.pages.length} pages</span>
+                      </button>
+                    );
+                  }
+
                   return (
                     <button
-                      className="tile folder-tile"
+                      className={
+                        entry.media.id === selected?.id
+                          ? "tile media-tile selected"
+                          : "tile media-tile"
+                      }
                       key={entry.key}
-                      onClick={() => navigateToPath(entry.path)}
+                      onClick={() => selectMedia(entry.media.id)}
                       type="button"
                     >
-                      <Folder size={24} />
-                      <strong>{entry.name}</strong>
-                      <span>{entry.path}</span>
+                      <Poster iconSize={28} media={entry.media} />
+                      <strong>{entry.media.name}</strong>
+                      <span>{entry.media.parentPath}</span>
                     </button>
                   );
-                }
-
-                if (entry.kind === "comic") {
-                  return (
-                    <button
-                      className="tile media-tile"
-                      key={entry.key}
-                      onClick={() => selectMedia(entry.comic.cover.id)}
-                      type="button"
-                    >
-                      <Poster iconSize={26} media={entry.comic.cover} />
-                      <strong>{entry.comic.name}</strong>
-                      <span>{entry.comic.pages.length} pages</span>
-                    </button>
-                  );
-                }
-
-                return (
-                  <button
-                    className={
-                      entry.media.id === selected?.id
-                        ? "tile media-tile selected"
-                        : "tile media-tile"
-                    }
-                    key={entry.key}
-                    onClick={() => selectMedia(entry.media.id)}
-                    type="button"
-                  >
-                    <Poster iconSize={28} media={entry.media} />
-                    <strong>{entry.media.name}</strong>
-                    <span>{entry.media.parentPath}</span>
-                  </button>
-                );
-              })}
-            </div>
+                })}
+              </div>
+            ) : (
+              <div className="empty-state">
+                <Archive size={24} />
+                <strong>No archive entries</strong>
+                <span>
+                  {search.q
+                    ? "No folders or media matched the current search."
+                    : "Sync media or choose another archive path."}
+                </span>
+              </div>
+            )}
           </section>
 
           <aside className="viewer-panel" aria-label="Selected media">
@@ -376,7 +403,13 @@ function PaneViewHome() {
                   ) : null}
                 </div>
               </>
-            ) : null}
+            ) : (
+              <div className="empty-viewer">
+                <ImageIcon size={32} />
+                <strong>No media selected</strong>
+                <span>Choose an image, video, or story from the browser.</span>
+              </div>
+            )}
           </aside>
         </div>
       </section>
