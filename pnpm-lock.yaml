@@ -12,7 +12,7 @@ importers:
         specifier: ^2.4.10
         version: 2.4.16
       '@types/node':
-        specifier: ^25.5.2
+        specifier: ^25.9.1
         version: 25.9.1
       knip:
         specifier: ^6.15.0
