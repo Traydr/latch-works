@@ -141,7 +141,7 @@ export async function completeSyncedObject({
     throw new Error("Unable to upsert media object.");
   }
 
-  await upsertContainingFolder({ env, path: parentPath });
+  await upsertContainingFolders({ env, path: parentPath });
 
   await db
     .insert(libraryEntries)
@@ -222,7 +222,18 @@ export async function markRemoteDeleted({
   return { status: "database" };
 }
 
-async function upsertContainingFolder({
+export function collectContainingFolderPaths(path: string): string[] {
+  const parts = path.split("/").filter(Boolean);
+  const folders: string[] = [];
+
+  for (let index = 0; index < parts.length; index += 1) {
+    folders.push(parts.slice(0, index + 1).join("/"));
+  }
+
+  return folders;
+}
+
+async function upsertContainingFolders({
   env,
   path,
 }: {
@@ -235,19 +246,21 @@ async function upsertContainingFolder({
   }
 
   const db = createPaneViewDb(databaseUrl);
-  await db
-    .insert(folders)
-    .values({
-      name: getBaseName(path),
-      parentPath: getParentPath(path),
-      path,
-    })
-    .onConflictDoUpdate({
-      set: {
-        name: getBaseName(path),
-        parentPath: getParentPath(path),
-        updatedAt: new Date(),
-      },
-      target: folders.path,
-    });
+  for (const folderPath of collectContainingFolderPaths(path)) {
+    await db
+      .insert(folders)
+      .values({
+        name: getBaseName(folderPath),
+        parentPath: getParentPath(folderPath),
+        path: folderPath,
+      })
+      .onConflictDoUpdate({
+        set: {
+          name: getBaseName(folderPath),
+          parentPath: getParentPath(folderPath),
+          updatedAt: new Date(),
+        },
+        target: folders.path,
+      });
+  }
 }
