@@ -13,8 +13,8 @@ describe("media-domain", () => {
   it("detects archive media types by extension", () => {
     expect(detectMediaType("cover.JPG")).toBe("image");
     expect(detectMediaType("clip.webm")).toBe("video");
-    expect(detectMediaType("story.pdf")).toBe("story");
-    expect(detectMediaType("notes.txt")).toBeNull();
+    expect(detectMediaType("story.pdf")).toBe("pdf");
+    expect(detectMediaType("notes.txt")).toBe("unknown");
   });
 
   it("sorts names with numeric collation", () => {

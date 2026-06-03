@@ -15,6 +15,13 @@
       "when": 1780472926543,
       "tag": "0001_melted_iron_patriot",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1780506971818,
+      "tag": "0002_sturdy_psynapse",
+      "breakpoints": true
     }
   ]
 }

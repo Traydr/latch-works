@@ -19,9 +19,9 @@ describe("media-storage", () => {
     expect(
       thumbnailObjectKey({ extension: "jpg", mediaType: "image", sha256: hash, size: 320 }),
     ).toBe(`thumbnails/sha256/01/23/${hash}-320.webp`);
-    expect(
-      previewObjectKey({ extension: "pdf", mediaType: "story", sha256: hash, size: 900 }),
-    ).toBe(`previews/pdf/sha256/01/23/${hash}-900.webp`);
+    expect(previewObjectKey({ extension: "pdf", mediaType: "pdf", sha256: hash, size: 900 })).toBe(
+      `previews/pdf/sha256/01/23/${hash}-900.webp`,
+    );
   });
 
   it("names sync manifests by run id", () => {

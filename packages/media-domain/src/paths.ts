@@ -33,3 +33,17 @@ export function normalizePathForCompare(path: string): string {
 export function displayNameFromPath(path: string): string {
   return getBaseName(path).replace(/[_-]/g, " ");
 }
+
+export function formatBytes(bytes: number): string {
+  if (bytes === 0) {
+    return "0 B";
+  }
+
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  const value = bytes / k ** i;
+  const decimals = i === 0 ? 0 : 1;
+
+  return `${value.toFixed(decimals)} ${sizes[i]}`;
+}

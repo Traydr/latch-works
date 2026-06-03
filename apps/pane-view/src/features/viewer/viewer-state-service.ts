@@ -10,7 +10,7 @@ import {
 
 const viewerStateSubjectSchema = z.object({
   subjectId: z.uuid(),
-  subjectType: z.enum(["media"]),
+  subjectType: z.enum(["library_entry"]),
 });
 
 const viewerStateWriteSchema = viewerStateSubjectSchema.extend({

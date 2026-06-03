@@ -1,35 +1,15 @@
+import type { GallerySortMode } from "@latch-works/media-domain";
 import {
+  type BrowserEntry,
   buildBrowserEntries,
   buildComicEntries,
   createRandomSeed,
-  type MediaItem,
   sortComicEntries,
   sortMediaItems,
 } from "@latch-works/media-domain";
-import { createFileRoute, redirect, useRouter } from "@tanstack/react-router";
-import {
-  Archive,
-  ChevronLeft,
-  ChevronRight,
-  FileText,
-  Folder,
-  ImageIcon,
-  ListTree,
-  LogOut,
-  Play,
-  RefreshCcw,
-  Search,
-  Shuffle,
-} from "lucide-react";
-import {
-  type FormEvent,
-  Fragment,
-  type SyntheticEvent,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { createFileRoute, redirect } from "@tanstack/react-router";
+import { Archive, Folder, Search } from "lucide-react";
+import { type FormEvent, Fragment, useEffect, useMemo, useState } from "react";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -38,15 +18,7 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Sidebar,
   SidebarContent,
@@ -59,13 +31,12 @@ import {
   SidebarMenuItem,
   SidebarProvider,
 } from "@/components/ui/sidebar";
-import { cn } from "@/lib/utils";
+import { BrowserGrid } from "@/features/gallery/BrowserGrid";
+import { DetailPanel } from "@/features/gallery/DetailPanel";
+import { FloatingToolbar } from "@/features/gallery/FloatingToolbar";
+import { MediaViewerModal } from "@/features/gallery/MediaViewerModal";
 import { getLibrarySnapshot } from "../features/library/library-service";
-import {
-  getViewerState,
-  saveViewerState,
-  type ViewerStateSnapshot,
-} from "../features/viewer/viewer-state-service";
+import { getViewerState, type ViewerStateSnapshot } from "../features/viewer/viewer-state-service";
 import { isCurrentWebSessionValid } from "../server/auth/web-session";
 
 export const Route = createFileRoute("/")({
@@ -88,31 +59,21 @@ export const Route = createFileRoute("/")({
   component: PaneViewHome,
 });
 
-const sortModes = ["name-asc", "name-desc", "date-newest", "date-oldest", "random"] as const;
-type SortMode = (typeof sortModes)[number];
-
-const sortLabels: Record<SortMode, string> = {
-  "date-newest": "Newest",
-  "date-oldest": "Oldest",
-  "name-asc": "A-Z",
-  "name-desc": "Z-A",
-  random: "Random",
-};
-
 function PaneViewHome() {
   const library = Route.useLoaderData();
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
-  const router = useRouter();
+
   const [recursive, setRecursive] = useState(true);
   const [comicMode, setComicMode] = useState(false);
-  const [sortMode, setSortMode] = useState<SortMode>("name-asc");
+  const [sortMode, setSortMode] = useState<GallerySortMode>("name-asc");
   const [randomSeed, setRandomSeed] = useState(() => createRandomSeed());
   const [selectedId, setSelectedId] = useState<string | null>(
     search.media ?? library.media[0]?.id ?? null,
   );
   const [searchDraft, setSearchDraft] = useState(search.q ?? "");
-  const [viewerState, setViewerState] = useState<ViewerStateSnapshot | null>(null);
+  const [, setViewerState] = useState<ViewerStateSnapshot | null>(null);
+  const [viewerOpen, setViewerOpen] = useState(false);
 
   useEffect(() => {
     setSearchDraft(search.q ?? "");
@@ -162,18 +123,11 @@ function PaneViewHome() {
   );
   const selected = visibleMedia.find((item) => item.id === selectedId) ?? visibleMedia[0] ?? null;
   const selectedIndex = selected ? visibleMedia.findIndex((item) => item.id === selected.id) : -1;
-  const selectedOriginalUrl = selected ? `/api/media/${selected.id}/original` : null;
-  const canRenderOriginal = selected ? isUuid(selected.id) : false;
-  const currentPathLabel = library.currentPath || "Archive root";
-  const breadcrumbs = useMemo(
-    () => buildBreadcrumbItems(library.currentPath),
-    [library.currentPath],
-  );
 
   useEffect(() => {
     let cancelled = false;
 
-    if (!selected || !isUuid(selected.id)) {
+    if (!selected) {
       setViewerState(null);
       return;
     }
@@ -181,7 +135,7 @@ function PaneViewHome() {
     void getViewerState({
       data: {
         subjectId: selected.id,
-        subjectType: "media",
+        subjectType: "library_entry",
       },
     }).then((state) => {
       if (!cancelled) {
@@ -273,6 +227,37 @@ function PaneViewHome() {
     setSortMode("random");
     setRandomSeed(createRandomSeed());
   };
+
+  const handleSelectEntry = (entry: BrowserEntry) => {
+    if (entry.kind === "folder") {
+      navigateToPath(entry.path);
+    } else if (entry.kind === "comic") {
+      selectMedia(entry.comic.cover.id);
+    } else {
+      selectMedia(entry.media.id);
+    }
+  };
+
+  const handleActivateEntry = (entry: BrowserEntry) => {
+    if (entry.kind === "folder") {
+      navigateToPath(entry.path);
+    } else if (entry.kind === "comic") {
+      const idx = visibleMedia.findIndex((m) => m.id === entry.comic.cover.id);
+      if (idx >= 0) {
+        setViewerOpen(true);
+      }
+    } else {
+      const idx = visibleMedia.findIndex((m) => m.id === entry.media.id);
+      if (idx >= 0) {
+        setViewerOpen(true);
+      }
+    }
+  };
+
+  const breadcrumbs = useMemo(
+    () => buildBreadcrumbItems(library.currentPath),
+    [library.currentPath],
+  );
 
   return (
     <SidebarProvider
@@ -392,388 +377,45 @@ function PaneViewHome() {
         </header>
 
         <div className="flex min-h-0 flex-1">
-          <section
-            className="min-w-0 flex-1 overflow-auto px-5 pb-28 pt-5"
-            aria-label="Archive browser"
-          >
-            <div className="mb-4 flex items-center justify-between gap-4">
-              <p className="m-0 min-w-0 truncate text-sm text-zinc-400">
-                <span className="font-medium text-zinc-100">{entries.length}</span> entries in{" "}
-                <span className="text-zinc-200">{currentPathLabel}</span>
-                {search.q ? <span> matching {search.q}</span> : null}
-              </p>
-              <Select onValueChange={(value) => setSortMode(value as SortMode)} value={sortMode}>
-                <SelectTrigger aria-label="Sort mode" size="sm">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {sortModes.map((mode) => (
-                    <SelectItem key={mode} value={mode}>
-                      {sortLabels[mode]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          <BrowserGrid
+            comicMode={comicMode}
+            entries={entries}
+            onActivateEntry={handleActivateEntry}
+            onSelectEntry={handleSelectEntry}
+            selectedId={selectedId}
+          />
 
-            {entries.length ? (
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3">
-                {entries.map((entry) => {
-                  if (entry.kind === "folder") {
-                    return (
-                      <button
-                        className="grid min-w-0 grid-cols-[28px_minmax(0,1fr)] items-center gap-x-2 gap-y-1 rounded-lg border border-zinc-800 bg-zinc-900 p-3 text-left transition-colors hover:border-zinc-700"
-                        key={entry.key}
-                        onClick={() => navigateToPath(entry.path)}
-                        title={entry.path}
-                        type="button"
-                      >
-                        <Folder className="size-5 text-zinc-400" />
-                        <strong className="min-w-0 truncate text-sm font-semibold">
-                          {entry.name}
-                        </strong>
-                        <span className="col-start-2 min-w-0 truncate text-xs text-zinc-500">
-                          {entry.path}
-                        </span>
-                      </button>
-                    );
-                  }
-
-                  if (entry.kind === "comic") {
-                    return (
-                      <button
-                        className={cn(
-                          "group min-w-0 overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900 text-left transition-colors hover:border-zinc-700",
-                          entry.comic.pages.some((page) => page.id === selected?.id) &&
-                            "border-amber-300",
-                        )}
-                        key={entry.key}
-                        onClick={() => selectMedia(entry.comic.cover.id)}
-                        title={entry.comic.folderPath}
-                        type="button"
-                      >
-                        <Poster media={entry.comic.cover} />
-                        <div className="grid gap-1 p-2.5">
-                          <strong className="min-w-0 truncate text-sm font-semibold">
-                            {entry.comic.name}
-                          </strong>
-                          <span className="text-xs text-zinc-500">
-                            {entry.comic.pages.length} pages
-                          </span>
-                        </div>
-                      </button>
-                    );
-                  }
-
-                  return (
-                    <button
-                      className={cn(
-                        "group min-w-0 overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900 text-left transition-colors hover:border-zinc-700",
-                        entry.media.id === selected?.id && "border-amber-300",
-                      )}
-                      key={entry.key}
-                      onClick={() => selectMedia(entry.media.id)}
-                      title={entry.media.path}
-                      type="button"
-                    >
-                      <Poster media={entry.media} />
-                      <div className="grid gap-1 p-2.5">
-                        <strong className="min-w-0 truncate text-sm font-semibold">
-                          {entry.media.name}
-                        </strong>
-                        <span className="min-w-0 truncate text-xs text-zinc-500">
-                          {entry.media.parentPath}
-                        </span>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="grid min-h-60 place-items-center rounded-lg border border-dashed border-zinc-800 text-center">
-                <div className="grid max-w-xs justify-items-center gap-2 text-sm text-zinc-400">
-                  <Archive className="size-6" />
-                  <strong className="text-zinc-100">No archive entries</strong>
-                  <span>
-                    {search.q
-                      ? "No folders or media matched the current search."
-                      : "Sync media or choose another archive path."}
-                  </span>
-                </div>
-              </div>
-            )}
-          </section>
-
-          <aside
-            className="hidden w-[360px] shrink-0 border-l border-zinc-800 bg-zinc-950 p-5 lg:block"
-            aria-label="Selected media"
-          >
-            {selected ? (
-              <div className="grid gap-4">
-                <div className="grid aspect-[4/5] w-full place-items-center overflow-hidden rounded-lg border border-zinc-700 bg-zinc-900">
-                  {canRenderOriginal && selectedOriginalUrl ? (
-                    <SelectedMediaPreview
-                      key={selected.id}
-                      media={selected}
-                      onStateSaved={setViewerState}
-                      resumeState={viewerState}
-                      src={selectedOriginalUrl}
-                    />
-                  ) : (
-                    <MediaPlaceholder mediaType={selected.mediaType} />
-                  )}
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <Button
-                    className="flex-1"
-                    size="lg"
-                    variant="outline"
-                    onClick={() => selectAdjacentMedia(-1)}
-                    title="Previous"
-                    type="button"
-                  >
-                    <ChevronLeft className="size-4" />
-                  </Button>
-                  <Button
-                    className="flex-1"
-                    size="lg"
-                    variant="outline"
-                    onClick={() => selectAdjacentMedia(1)}
-                    title="Next"
-                    type="button"
-                  >
-                    <ChevronRight className="size-4" />
-                  </Button>
-                </div>
-
-                <dl className="grid gap-3 text-sm">
-                  <MetadataItem label="Name" value={selected.name} />
-                  <MetadataItem label="Path" value={selected.path} />
-                  <MetadataItem label="Type" value={selected.mediaType} />
-                </dl>
-              </div>
-            ) : (
-              <div className="grid min-h-96 place-items-center rounded-lg border border-dashed border-zinc-800 text-center">
-                <div className="grid max-w-56 justify-items-center gap-2 text-sm text-zinc-400">
-                  <ImageIcon className="size-8" />
-                  <strong className="text-zinc-100">No media selected</strong>
-                  <span>Choose an image, video, or story from the browser.</span>
-                </div>
-              </div>
-            )}
-          </aside>
+          <DetailPanel
+            onNext={() => selectAdjacentMedia(1)}
+            onOpenViewer={() => setViewerOpen(true)}
+            onPrev={() => selectAdjacentMedia(-1)}
+            selected={selected}
+          />
         </div>
 
-        <div className="pointer-events-none fixed bottom-5 left-1/2 z-20 -translate-x-1/2">
-          <div className="pointer-events-auto flex max-w-[96vw] items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-950/95 px-3 py-2 shadow-lg">
-            <Button
-              aria-pressed={recursive}
-              className={toolButtonClass(recursive)}
-              onClick={() => setRecursive((value) => !value)}
-              size="sm"
-              title="Recursive browsing"
-              type="button"
-              variant={recursive ? "default" : "outline"}
-            >
-              <ListTree className="size-4" />
-              <span className="hidden sm:inline">Recursive</span>
-            </Button>
-            <Button
-              aria-pressed={comicMode}
-              className={toolButtonClass(comicMode)}
-              onClick={() => setComicMode((value) => !value)}
-              size="sm"
-              title="Comic grouping"
-              type="button"
-              variant={comicMode ? "default" : "outline"}
-            >
-              <ImageIcon className="size-4" />
-              <span className="hidden sm:inline">Comic</span>
-            </Button>
-            <Button
-              aria-pressed={sortMode === "random"}
-              className={toolButtonClass(sortMode === "random")}
-              onClick={shuffle}
-              size="sm"
-              title={sortMode === "random" ? "Shuffle again" : "Random sort"}
-              type="button"
-              variant={sortMode === "random" ? "default" : "outline"}
-            >
-              <Shuffle className="size-4" />
-              <span className="hidden sm:inline">Shuffle</span>
-            </Button>
-            <div className="h-5 w-px bg-zinc-800" />
-            <Button
-              className={toolButtonClass(false)}
-              onClick={() => void router.invalidate()}
-              size="sm"
-              title="Refresh"
-              type="button"
-              variant="outline"
-            >
-              <RefreshCcw className="size-4" />
-              <span className="hidden sm:inline">Refresh</span>
-            </Button>
-            <form action="/api/auth/logout" method="post">
-              <Button
-                className={toolButtonClass(false)}
-                size="sm"
-                title="Sign out"
-                type="submit"
-                variant="outline"
-              >
-                <LogOut className="size-4" />
-              </Button>
-            </form>
-          </div>
-        </div>
+        <FloatingToolbar
+          comicMode={comicMode}
+          onToggleComicMode={() => setComicMode((v) => !v)}
+          onToggleRecursive={() => setRecursive((v) => !v)}
+          recursive={recursive}
+          shuffle={shuffle}
+          sortMode={sortMode}
+        />
       </SidebarInset>
+
+      {viewerOpen && selected ? (
+        <MediaViewerModal
+          items={visibleMedia}
+          onClose={() => setViewerOpen(false)}
+          startIndex={selectedIndex >= 0 ? selectedIndex : 0}
+        />
+      ) : null}
     </SidebarProvider>
   );
 }
 
 function normalizeSearchParam(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
-function SelectedMediaPreview({
-  media,
-  onStateSaved,
-  resumeState,
-  src,
-}: {
-  media: MediaItem;
-  onStateSaved: (state: ViewerStateSnapshot | null) => void;
-  resumeState: ViewerStateSnapshot | null;
-  src: string;
-}) {
-  const lastSavedPositionMs = useRef(resumeState?.positionMs ?? 0);
-  const restoredPosition = useRef(false);
-
-  useEffect(() => {
-    lastSavedPositionMs.current = resumeState?.positionMs ?? 0;
-    restoredPosition.current = false;
-  }, [resumeState?.positionMs]);
-
-  if (media.mediaType === "video") {
-    const savePosition = (video: HTMLVideoElement) => {
-      const positionMs = Math.floor(video.currentTime * 1000);
-      if (
-        !Number.isFinite(positionMs) ||
-        Math.abs(positionMs - lastSavedPositionMs.current) < 5000
-      ) {
-        return;
-      }
-
-      lastSavedPositionMs.current = positionMs;
-      void saveViewerState({
-        data: {
-          positionMs,
-          subjectId: media.id,
-          subjectType: "media",
-        },
-      }).then(onStateSaved);
-    };
-
-    const restorePosition = (event: SyntheticEvent<HTMLVideoElement>) => {
-      if (restoredPosition.current || !resumeState?.positionMs) {
-        return;
-      }
-
-      const video = event.currentTarget;
-      const positionSeconds = resumeState.positionMs / 1000;
-      if (positionSeconds > 1 && positionSeconds < video.duration) {
-        video.currentTime = positionSeconds;
-      }
-      restoredPosition.current = true;
-    };
-
-    return (
-      // biome-ignore lint/a11y/useMediaCaption: Caption sidecars are not ingested yet.
-      <video
-        className="h-full w-full border-0 object-contain"
-        controls
-        onLoadedMetadata={restorePosition}
-        onPause={(event) => savePosition(event.currentTarget)}
-        onTimeUpdate={(event) => savePosition(event.currentTarget)}
-        preload="metadata"
-        src={src}
-      />
-    );
-  }
-
-  const markViewed = () => {
-    void saveViewerState({
-      data: {
-        page: media.mediaType === "story" ? (resumeState?.page ?? 1) : undefined,
-        subjectId: media.id,
-        subjectType: "media",
-      },
-    }).then(onStateSaved);
-  };
-
-  if (media.mediaType === "story") {
-    return (
-      <iframe
-        className="h-full w-full border-0 object-contain"
-        onLoad={markViewed}
-        src={src}
-        title={media.name}
-      />
-    );
-  }
-
-  return (
-    <img alt={media.name} className="h-full w-full object-contain" onLoad={markViewed} src={src} />
-  );
-}
-
-function MediaPlaceholder({
-  mediaType,
-  size = 42,
-}: {
-  mediaType: "image" | "story" | "video";
-  size?: number;
-}) {
-  if (mediaType === "video") {
-    return <Play size={size} />;
-  }
-
-  if (mediaType === "story") {
-    return <FileText size={size} />;
-  }
-
-  return <ImageIcon size={size} />;
-}
-
-function Poster({ media }: { media: MediaItem }) {
-  const thumbnailUrl = readThumbnailUrl(media);
-
-  return (
-    <div
-      className={cn(
-        "grid aspect-[4/3] place-items-center overflow-hidden border-b border-zinc-800 bg-zinc-900 text-zinc-500",
-        media.mediaType === "video" && "text-emerald-300",
-        media.mediaType === "story" && "text-red-300",
-      )}
-    >
-      {thumbnailUrl ? (
-        <img alt="" className="h-full w-full object-cover" loading="lazy" src={thumbnailUrl} />
-      ) : (
-        <MediaPlaceholder mediaType={media.mediaType} size={28} />
-      )}
-    </div>
-  );
-}
-
-function MetadataItem({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="grid gap-1 border-b border-zinc-800 pb-3">
-      <dt className="text-xs text-zinc-500">{label}</dt>
-      <dd className="m-0 break-words font-medium text-zinc-100">{value}</dd>
-    </div>
-  );
 }
 
 function buildBreadcrumbItems(path: string): Array<{ label: string; path: string }> {
@@ -786,23 +428,4 @@ function buildBreadcrumbItems(path: string): Array<{ label: string; path: string
     label: segment,
     path: segments.slice(0, index + 1).join("/"),
   }));
-}
-
-function toolButtonClass(active: boolean): string {
-  return cn(
-    "h-9 gap-2 rounded-lg px-3",
-    active && "border-primary bg-primary text-primary-foreground",
-  );
-}
-
-function isUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
-}
-
-function readThumbnailUrl(media: MediaItem): string | undefined {
-  if (!("thumbnailUrl" in media) || typeof media.thumbnailUrl !== "string") {
-    return undefined;
-  }
-
-  return media.thumbnailUrl;
 }

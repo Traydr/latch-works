@@ -39,7 +39,7 @@ export function thumbnailObjectKey({ sha256, size }: DerivedObjectKeyParts): str
 
 export function previewObjectKey({ mediaType, sha256, size }: DerivedObjectKeyParts): string {
   const normalizedHash = sha256.toLowerCase();
-  const previewType = mediaType === "story" ? "pdf" : mediaType;
+  const previewType = mediaType === "pdf" ? "pdf" : mediaType;
   return `previews/${previewType}/sha256/${shardPath(normalizedHash)}/${normalizedHash}-${size}.webp`;
 }
 

@@ -92,6 +92,7 @@ export async function completeSyncedObject({
       contentType: input.contentType,
       extension: input.extension,
       mediaType: input.mediaType,
+      metadata: {},
       objectKey,
       sha256: input.sha256,
       size: input.size,
@@ -104,7 +105,7 @@ export async function completeSyncedObject({
         objectKey,
         size: input.size,
       },
-      target: mediaObjects.sha256,
+      target: [mediaObjects.sha256, mediaObjects.size],
     })
     .returning({ id: mediaObjects.id });
 
@@ -121,8 +122,11 @@ export async function completeSyncedObject({
       lastSeenAt: new Date(),
       logicalPath: input.logicalPath,
       mediaObjectId: mediaObject.id,
+      metadata: {},
       mtimeMs: input.mtimeMs,
       parentPath,
+      sha256: input.sha256,
+      size: input.size,
     })
     .onConflictDoUpdate({
       set: {
@@ -130,8 +134,11 @@ export async function completeSyncedObject({
         filename: input.filename,
         lastSeenAt: new Date(),
         mediaObjectId: mediaObject.id,
+        metadata: {},
         mtimeMs: input.mtimeMs,
         parentPath,
+        sha256: input.sha256,
+        size: input.size,
       },
       target: libraryEntries.logicalPath,
     });

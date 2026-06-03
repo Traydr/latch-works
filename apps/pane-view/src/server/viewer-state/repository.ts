@@ -6,7 +6,7 @@ export interface ViewerStateSnapshot {
   page?: number;
   positionMs?: number;
   subjectId: string;
-  subjectType: string;
+  subjectType: "library_entry" | "collection";
   updatedAt: string;
 }
 
@@ -14,7 +14,7 @@ export interface ViewerStateWrite {
   page?: number;
   positionMs?: number;
   subjectId: string;
-  subjectType: string;
+  subjectType: "library_entry" | "collection";
 }
 
 export async function readViewerState({
@@ -23,7 +23,7 @@ export async function readViewerState({
   userId,
 }: {
   subjectId: string;
-  subjectType: string;
+  subjectType: "library_entry" | "collection";
   userId: string;
 }): Promise<ViewerStateSnapshot | null> {
   const [state] = await db

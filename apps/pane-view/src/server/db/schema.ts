@@ -1,3 +1,4 @@
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import {
   bigint,
   boolean,
@@ -13,7 +14,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
-export const mediaTypeEnum = pgEnum("media_type", ["image", "video", "story"]);
+export const mediaTypeEnum = pgEnum("media_type", ["image", "gif", "video", "pdf", "unknown"]);
 export const collectionTypeEnum = pgEnum("collection_type", [
   "comic",
   "story-series",
@@ -27,6 +28,20 @@ export const syncRunStatusEnum = pgEnum("sync_run_status", [
   "cancelled",
 ]);
 export const syncActionEnum = pgEnum("sync_action", ["upload", "update", "keep", "delete"]);
+export const thumbnailStatusEnum = pgEnum("thumbnail_status", [
+  "pending",
+  "processing",
+  "ready",
+  "failed",
+]);
+export const subjectTypeEnum = pgEnum("subject_type", ["library_entry", "collection"]);
+export const sourceTypeEnum = pgEnum("source_type", [
+  "cli",
+  "local",
+  "extension",
+  "tresorit",
+  "manual",
+]);
 
 export const users = pgTable(
   "users",
@@ -118,6 +133,36 @@ export const apiTokens = pgTable(
   }),
 );
 
+export const sources = pgTable(
+  "sources",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    type: sourceTypeEnum("type").notNull(),
+    name: text("name").notNull(),
+    basePath: text("base_path"),
+    config: jsonb("config").$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    nameUnique: uniqueIndex("sources_name_unique").on(table.name),
+  }),
+);
+
+export const syncRuns = pgTable("sync_runs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  sourceId: uuid("source_id").references(() => sources.id),
+  startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  sourceRoot: text("source_root").notNull(),
+  status: syncRunStatusEnum("status").notNull(),
+  counts: jsonb("counts").$type<Record<string, number>>().notNull().default({}),
+  manifestKey: text("manifest_key"),
+  error: text("error"),
+  cliVersion: text("cli_version"),
+  createdByTokenId: uuid("created_by_token_id").references(() => apiTokens.id),
+});
+
 export const mediaObjects = pgTable(
   "media_objects",
   {
@@ -132,10 +177,15 @@ export const mediaObjects = pgTable(
     durationMs: integer("duration_ms"),
     pageCount: integer("page_count"),
     objectKey: text("object_key").notNull(),
+    storageProvider: text("storage_provider").notNull().default("s3"),
+    bucket: text("bucket"),
+    etag: text("etag"),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    createdBySyncRunId: uuid("created_by_sync_run_id").references(() => syncRuns.id),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({
-    sha256Unique: uniqueIndex("media_objects_sha256_unique").on(table.sha256),
+    sha256SizeUnique: uniqueIndex("media_objects_sha256_size_unique").on(table.sha256, table.size),
   }),
 );
 
@@ -145,9 +195,14 @@ export const folders = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     path: text("path").notNull(),
     parentPath: text("parent_path").notNull().default(""),
+    parentId: uuid("parent_id").references((): AnyPgColumn => folders.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
+    depth: integer("depth").notNull().default(0),
     entryCount: integer("entry_count").notNull().default(0),
+    folderCount: integer("folder_count").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
   },
   (table) => ({
     pathUnique: uniqueIndex("folders_path_unique").on(table.path),
@@ -166,11 +221,19 @@ export const libraryEntries = pgTable(
     parentPath: text("parent_path").notNull().default(""),
     filename: text("filename").notNull(),
     mtimeMs: bigint("mtime_ms", { mode: "number" }).notNull(),
+    size: bigint("size", { mode: "number" }),
+    sha256: text("sha256"),
     source: text("source"),
     sourceId: text("source_id"),
+    sourceRefId: uuid("source_ref_id").references(() => sources.id),
+    lastSyncRunId: uuid("last_sync_run_id").references(() => syncRuns.id),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
     hidden: boolean("hidden").notNull().default(false),
     firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).defaultNow().notNull(),
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).defaultNow().notNull(),
+    changedAt: timestamp("changed_at", { withTimezone: true }),
+    contentChangedAt: timestamp("content_changed_at", { withTimezone: true }),
+    pathChangedAt: timestamp("path_changed_at", { withTimezone: true }),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
   },
   (table) => ({
@@ -186,10 +249,18 @@ export const collections = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     type: collectionTypeEnum("type").notNull(),
     name: text("name").notNull(),
+    slug: text("slug"),
+    description: text("description"),
     path: text("path").notNull(),
+    sourceId: uuid("source_id").references(() => sources.id),
+    externalSourceId: text("external_source_id"),
     coverEntryId: uuid("cover_entry_id").references(() => libraryEntries.id, {
       onDelete: "set null",
     }),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
   },
   (table) => ({
     pathTypeUnique: uniqueIndex("collections_path_type_unique").on(table.path, table.type),
@@ -213,6 +284,10 @@ export const collectionItems = pgTable(
       table.collectionId,
       table.position,
     ),
+    collectionPositionUnique: uniqueIndex("collection_items_collection_position_unique").on(
+      table.collectionId,
+      table.position,
+    ),
   }),
 );
 
@@ -226,22 +301,15 @@ export const thumbnails = pgTable(
     objectKey: text("object_key").notNull(),
     width: integer("width").notNull(),
     height: integer("height").notNull(),
-    status: text("status").notNull().default("ready"),
+    status: thumbnailStatusEnum("status").notNull().default("pending"),
+    error: text("error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({
     pk: primaryKey({ columns: [table.mediaObjectId, table.size] }),
   }),
 );
-
-export const syncRuns = pgTable("sync_runs", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
-  completedAt: timestamp("completed_at", { withTimezone: true }),
-  sourceRoot: text("source_root").notNull(),
-  status: syncRunStatusEnum("status").notNull(),
-  counts: jsonb("counts").$type<Record<string, number>>().notNull().default({}),
-  manifestKey: text("manifest_key"),
-});
 
 export const syncRunItems = pgTable(
   "sync_run_items",
@@ -253,6 +321,10 @@ export const syncRunItems = pgTable(
     mediaObjectId: uuid("media_object_id").references(() => mediaObjects.id, {
       onDelete: "set null",
     }),
+    previousMediaObjectId: uuid("previous_media_object_id").references(() => mediaObjects.id, {
+      onDelete: "set null",
+    }),
+    previousLogicalPath: text("previous_logical_path"),
     action: syncActionEnum("action").notNull(),
     error: text("error"),
   },
@@ -268,7 +340,7 @@ export const viewerState = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     subjectId: uuid("subject_id").notNull(),
-    subjectType: text("subject_type").notNull(),
+    subjectType: subjectTypeEnum("subject_type").notNull(),
     positionMs: integer("position_ms"),
     page: integer("page"),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
@@ -285,7 +357,7 @@ export const favorites = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     subjectId: uuid("subject_id").notNull(),
-    subjectType: text("subject_type").notNull(),
+    subjectType: subjectTypeEnum("subject_type").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({

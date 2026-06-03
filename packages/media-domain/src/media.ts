@@ -3,9 +3,9 @@ import { z } from "zod";
 export const ImageExtensions = ["jpg", "jpeg", "png", "webp", "gif", "bmp", "avif"] as const;
 
 export const VideoExtensions = ["mp4", "webm", "mov", "mkv", "m4v"] as const;
-export const StoryExtensions = ["pdf"] as const;
+export const PdfExtensions = ["pdf"] as const;
 
-export const MediaTypeSchema = z.enum(["image", "video", "story"]);
+export const MediaTypeSchema = z.enum(["image", "gif", "video", "pdf", "unknown"]);
 export type MediaType = z.infer<typeof MediaTypeSchema>;
 
 export const GallerySortModeSchema = z.enum([
@@ -48,7 +48,7 @@ export type FolderNode = z.infer<typeof FolderNodeSchema>;
 
 const imageExtensionSet = new Set<string>(ImageExtensions);
 const videoExtensionSet = new Set<string>(VideoExtensions);
-const storyExtensionSet = new Set<string>(StoryExtensions);
+const pdfExtensionSet = new Set<string>(PdfExtensions);
 
 export function getExtension(fileName: string): string {
   const dotIndex = fileName.lastIndexOf(".");
@@ -59,8 +59,12 @@ export function getExtension(fileName: string): string {
   return fileName.slice(dotIndex + 1).toLowerCase();
 }
 
-export function detectMediaType(fileName: string): MediaType | null {
+export function detectMediaType(fileName: string): MediaType {
   const extension = getExtension(fileName);
+
+  if (extension === "gif") {
+    return "gif";
+  }
 
   if (imageExtensionSet.has(extension)) {
     return "image";
@@ -70,13 +74,13 @@ export function detectMediaType(fileName: string): MediaType | null {
     return "video";
   }
 
-  if (storyExtensionSet.has(extension)) {
-    return "story";
+  if (pdfExtensionSet.has(extension)) {
+    return "pdf";
   }
 
-  return null;
+  return "unknown";
 }
 
 export function isSupportedMediaFile(fileName: string): boolean {
-  return detectMediaType(fileName) !== null;
+  return detectMediaType(fileName) !== "unknown";
 }

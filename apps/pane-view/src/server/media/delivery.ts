@@ -2,7 +2,7 @@ import { originalObjectKey } from "@latch-works/media-storage";
 
 export interface MediaDeliveryRequest {
   extension: string;
-  mediaType: "image" | "story" | "video";
+  mediaType: "image" | "gif" | "video" | "pdf" | "unknown";
   sha256: string;
 }
 
