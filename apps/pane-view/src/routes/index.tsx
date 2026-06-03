@@ -1,12 +1,15 @@
 import {
   buildBrowserEntries,
   buildComicEntries,
+  createRandomSeed,
   type MediaItem,
+  sortComicEntries,
   sortMediaItems,
 } from "@latch-works/media-domain";
 import { createFileRoute, redirect, useRouter } from "@tanstack/react-router";
 import {
   Archive,
+  ChevronLeft,
   ChevronRight,
   FileText,
   Folder,
@@ -19,12 +22,28 @@ import {
   Shuffle,
 } from "lucide-react";
 import { type FormEvent, type SyntheticEvent, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "../components/ui/breadcrumb";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+} from "../components/ui/sidebar";
 import { getLibrarySnapshot } from "../features/library/library-service";
 import {
   getViewerState,
   saveViewerState,
   type ViewerStateSnapshot,
 } from "../features/viewer/viewer-state-service";
+import { cn } from "../lib/cn";
 import { isCurrentWebSessionValid } from "../server/auth/web-session";
 
 export const Route = createFileRoute("/")({
@@ -47,7 +66,16 @@ export const Route = createFileRoute("/")({
   component: PaneViewHome,
 });
 
-const sortModes = ["name-asc", "date-newest", "random"] as const;
+const sortModes = ["name-asc", "name-desc", "date-newest", "date-oldest", "random"] as const;
+type SortMode = (typeof sortModes)[number];
+
+const sortLabels: Record<SortMode, string> = {
+  "date-newest": "Newest",
+  "date-oldest": "Oldest",
+  "name-asc": "A-Z",
+  "name-desc": "Z-A",
+  random: "Random",
+};
 
 function PaneViewHome() {
   const library = Route.useLoaderData();
@@ -56,7 +84,8 @@ function PaneViewHome() {
   const router = useRouter();
   const [recursive, setRecursive] = useState(true);
   const [comicMode, setComicMode] = useState(false);
-  const [sortMode, setSortMode] = useState<(typeof sortModes)[number]>("name-asc");
+  const [sortMode, setSortMode] = useState<SortMode>("name-asc");
+  const [randomSeed, setRandomSeed] = useState(() => createRandomSeed());
   const [selectedId, setSelectedId] = useState<string | null>(
     search.media ?? library.media[0]?.id ?? null,
   );
@@ -83,8 +112,8 @@ function PaneViewHome() {
   }, [library.media, search.media]);
 
   const sortedMedia = useMemo(
-    () => sortMediaItems(library.media, sortMode, 42),
-    [library.media, sortMode],
+    () => sortMediaItems(library.media, sortMode, randomSeed),
+    [library.media, randomSeed, sortMode],
   );
   const visibleMedia = useMemo(
     () =>
@@ -93,10 +122,10 @@ function PaneViewHome() {
         : sortedMedia.filter((item) => item.parentPath === library.currentPath),
     [library.currentPath, recursive, sortedMedia],
   );
-  const comics = useMemo(
-    () => buildComicEntries(visibleMedia, library.currentPath),
-    [library.currentPath, visibleMedia],
-  );
+  const comics = useMemo(() => {
+    const groupedComics = buildComicEntries(visibleMedia, null);
+    return sortComicEntries(groupedComics, sortMode, randomSeed);
+  }, [randomSeed, sortMode, visibleMedia]);
   const entries = useMemo(
     () =>
       buildBrowserEntries({
@@ -110,9 +139,14 @@ function PaneViewHome() {
     [comicMode, comics, library.folders, recursive, sortMode, visibleMedia],
   );
   const selected = visibleMedia.find((item) => item.id === selectedId) ?? visibleMedia[0] ?? null;
+  const selectedIndex = selected ? visibleMedia.findIndex((item) => item.id === selected.id) : -1;
   const selectedOriginalUrl = selected ? `/api/media/${selected.id}/original` : null;
   const canRenderOriginal = selected ? isUuid(selected.id) : false;
   const currentPathLabel = library.currentPath || "Archive root";
+  const breadcrumbs = useMemo(
+    () => buildBreadcrumbItems(library.currentPath),
+    [library.currentPath],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -137,6 +171,32 @@ function PaneViewHome() {
       cancelled = true;
     };
   }, [selected]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target;
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLSelectElement ||
+        target instanceof HTMLTextAreaElement
+      ) {
+        return;
+      }
+
+      if (event.key === "ArrowRight") {
+        event.preventDefault();
+        selectAdjacentMedia(1);
+      }
+
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        selectAdjacentMedia(-1);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  });
 
   const navigateToPath = (path: string) => {
     void navigate({
@@ -174,144 +234,152 @@ function PaneViewHome() {
     });
   };
 
+  const selectAdjacentMedia = (offset: -1 | 1) => {
+    if (!visibleMedia.length) {
+      return;
+    }
+
+    const currentIndex = selectedIndex >= 0 ? selectedIndex : 0;
+    const nextIndex = (currentIndex + offset + visibleMedia.length) % visibleMedia.length;
+    const next = visibleMedia[nextIndex];
+    if (next) {
+      selectMedia(next.id);
+    }
+  };
+
+  const shuffle = () => {
+    setSortMode("random");
+    setRandomSeed(createRandomSeed());
+  };
+
   return (
-    <main className="app-shell">
-      <aside className="sidebar" aria-label="Archive roots">
-        <div className="brand-row">
-          <div className="brand-mark" aria-hidden="true">
-            LW
+    <main className="flex min-h-screen overflow-hidden bg-zinc-950 text-zinc-100">
+      <Sidebar className="hidden md:flex" aria-label="Archive roots">
+        <SidebarHeader>
+          <div className="flex items-center gap-3">
+            <div
+              className="grid size-9 place-items-center rounded-md border border-zinc-700 text-xs font-bold text-amber-300"
+              aria-hidden="true"
+            >
+              LW
+            </div>
+            <div className="min-w-0">
+              <strong className="block truncate text-sm font-semibold">Pane View</strong>
+              <span className="block truncate text-xs text-zinc-400">Latch Works</span>
+            </div>
           </div>
-          <div>
-            <strong>Pane View</strong>
-            <span>Latch Works</span>
-          </div>
-        </div>
+        </SidebarHeader>
 
-        <nav className="path-list" aria-label="Known archive paths">
-          <button
-            className={library.currentPath ? "path-item" : "path-item active"}
-            onClick={() => navigateToPath("")}
-            type="button"
+        <SidebarContent>
+          <SidebarMenu aria-label="Known archive paths">
+            <SidebarMenuButton
+              isActive={!library.currentPath}
+              onClick={() => navigateToPath("")}
+              title="Archive root"
+            >
+              <Archive className="size-4 shrink-0" />
+              <span className="min-w-0 flex-1 truncate">Archive root</span>
+            </SidebarMenuButton>
+            {library.roots.map((path) => (
+              <SidebarMenuButton
+                isActive={path === library.currentPath}
+                key={path}
+                onClick={() => navigateToPath(path)}
+                title={path}
+              >
+                <Folder className="size-4 shrink-0" />
+                <span className="min-w-0 flex-1 truncate">{path}</span>
+              </SidebarMenuButton>
+            ))}
+          </SidebarMenu>
+        </SidebarContent>
+      </Sidebar>
+
+      <section className="relative flex min-w-0 flex-1 flex-col">
+        <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-zinc-800 bg-zinc-950 px-5">
+          <Breadcrumb className="flex min-w-0 items-center gap-2">
+            <Archive className="size-4 shrink-0 text-zinc-500" />
+            <BreadcrumbList>
+              <BreadcrumbItem>
+                <BreadcrumbLink onClick={() => navigateToPath("")}>
+                  {library.archiveRoot}
+                </BreadcrumbLink>
+              </BreadcrumbItem>
+              {breadcrumbs.map((crumb, index) => (
+                <BreadcrumbItem key={crumb.path}>
+                  <BreadcrumbSeparator />
+                  {index === breadcrumbs.length - 1 ? (
+                    <BreadcrumbPage title={crumb.path}>{crumb.label}</BreadcrumbPage>
+                  ) : (
+                    <BreadcrumbLink onClick={() => navigateToPath(crumb.path)} title={crumb.path}>
+                      {crumb.label}
+                    </BreadcrumbLink>
+                  )}
+                </BreadcrumbItem>
+              ))}
+            </BreadcrumbList>
+          </Breadcrumb>
+
+          <form
+            className="hidden h-9 w-72 shrink-0 items-center gap-2 rounded-md border border-zinc-800 bg-zinc-900 px-3 text-zinc-400 md:flex"
+            onSubmit={submitSearch}
           >
-            <Archive size={16} />
-            <span>Archive root</span>
-          </button>
-          {library.roots.map((path) => (
-            <button
-              className={path === library.currentPath ? "path-item active" : "path-item"}
-              key={path}
-              onClick={() => navigateToPath(path)}
-              type="button"
-            >
-              <Folder size={16} />
-              <span>{path}</span>
-            </button>
-          ))}
-        </nav>
-
-        <div className="sidebar-footer">
-          <span>{library.stats.archiveSize}</span>
-          <span>{library.stats.monthlyGrowth}</span>
-        </div>
-      </aside>
-
-      <section className="workspace">
-        <header className="toolbar">
-          <nav className="crumbs" aria-label="Current path">
-            <Archive size={17} />
-            <span>{library.archiveRoot}</span>
-            <ChevronRight size={15} />
-            <strong>{currentPathLabel}</strong>
-          </nav>
-
-          <div className="toolbar-actions">
-            <form className="search-box" onSubmit={submitSearch}>
-              <Search size={16} />
-              <input
-                aria-label="Search archive"
-                onChange={(event) => setSearchDraft(event.target.value)}
-                placeholder="Search paths"
-                type="search"
-                value={searchDraft}
-              />
-            </form>
-            <button
-              aria-pressed={recursive}
-              className={recursive ? "tool-button active" : "tool-button"}
-              onClick={() => setRecursive((value) => !value)}
-              title="Recursive browsing"
-              type="button"
-            >
-              <ListTree size={17} />
-            </button>
-            <button
-              aria-pressed={comicMode}
-              className={comicMode ? "tool-button active" : "tool-button"}
-              onClick={() => setComicMode((value) => !value)}
-              title="Comic grouping"
-              type="button"
-            >
-              <ImageIcon size={17} />
-            </button>
-            <button
-              className="tool-button"
-              onClick={() => setSortMode((value) => (value === "random" ? "name-asc" : "random"))}
-              title="Shuffle sort"
-              type="button"
-            >
-              <Shuffle size={17} />
-            </button>
-            <button
-              className="tool-button"
-              onClick={() => void router.invalidate()}
-              title="Refresh"
-              type="button"
-            >
-              <RefreshCcw size={17} />
-            </button>
-            <form action="/api/auth/logout" method="post">
-              <button className="tool-button" title="Sign out" type="submit">
-                <LogOut size={17} />
-              </button>
-            </form>
-          </div>
+            <Search className="size-4" />
+            <input
+              aria-label="Search archive"
+              className="min-w-0 flex-1 bg-transparent text-sm text-zinc-100 outline-none placeholder:text-zinc-500"
+              onChange={(event) => setSearchDraft(event.target.value)}
+              placeholder="Search paths"
+              type="search"
+              value={searchDraft}
+            />
+          </form>
         </header>
 
-        <div className="content-grid">
-          <section className="browser-panel" aria-label="Archive browser">
-            <div className="browser-header">
-              <div>
-                <h1>{currentPathLabel}</h1>
-                <p>
-                  {entries.length} entries
-                  {search.q ? ` matching ${search.q}` : ", path order preserved"}
-                </p>
-              </div>
+        <div className="flex min-h-0 flex-1">
+          <section
+            className="min-w-0 flex-1 overflow-auto px-5 pb-28 pt-5"
+            aria-label="Archive browser"
+          >
+            <div className="mb-4 flex items-center justify-between gap-4">
+              <p className="m-0 min-w-0 truncate text-sm text-zinc-400">
+                <span className="font-medium text-zinc-100">{entries.length}</span> entries in{" "}
+                <span className="text-zinc-200">{currentPathLabel}</span>
+                {search.q ? <span> matching {search.q}</span> : null}
+              </p>
               <select
                 aria-label="Sort mode"
-                onChange={(event) => setSortMode(event.target.value as (typeof sortModes)[number])}
+                className="h-9 rounded-md border border-zinc-800 bg-zinc-900 px-2 text-sm text-zinc-100 outline-none"
+                onChange={(event) => setSortMode(event.target.value as SortMode)}
                 value={sortMode}
               >
-                <option value="name-asc">Name</option>
-                <option value="date-newest">Newest</option>
-                <option value="random">Random</option>
+                {sortModes.map((mode) => (
+                  <option key={mode} value={mode}>
+                    {sortLabels[mode]}
+                  </option>
+                ))}
               </select>
             </div>
 
             {entries.length ? (
-              <div className="media-grid">
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3">
                 {entries.map((entry) => {
                   if (entry.kind === "folder") {
                     return (
                       <button
-                        className="tile folder-tile"
+                        className="grid min-w-0 grid-cols-[28px_minmax(0,1fr)] items-center gap-x-2 gap-y-1 rounded-lg border border-zinc-800 bg-zinc-900 p-3 text-left transition-colors hover:border-zinc-700"
                         key={entry.key}
                         onClick={() => navigateToPath(entry.path)}
+                        title={entry.path}
                         type="button"
                       >
-                        <Folder size={24} />
-                        <strong>{entry.name}</strong>
-                        <span>{entry.path}</span>
+                        <Folder className="size-5 text-zinc-400" />
+                        <strong className="min-w-0 truncate text-sm font-semibold">
+                          {entry.name}
+                        </strong>
+                        <span className="col-start-2 min-w-0 truncate text-xs text-zinc-500">
+                          {entry.path}
+                        </span>
                       </button>
                     );
                   }
@@ -319,53 +387,75 @@ function PaneViewHome() {
                   if (entry.kind === "comic") {
                     return (
                       <button
-                        className="tile media-tile"
+                        className={cn(
+                          "group min-w-0 overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900 text-left transition-colors hover:border-zinc-700",
+                          entry.comic.pages.some((page) => page.id === selected?.id) &&
+                            "border-amber-300",
+                        )}
                         key={entry.key}
                         onClick={() => selectMedia(entry.comic.cover.id)}
+                        title={entry.comic.folderPath}
                         type="button"
                       >
-                        <Poster iconSize={26} media={entry.comic.cover} />
-                        <strong>{entry.comic.name}</strong>
-                        <span>{entry.comic.pages.length} pages</span>
+                        <Poster media={entry.comic.cover} />
+                        <div className="grid gap-1 p-2.5">
+                          <strong className="min-w-0 truncate text-sm font-semibold">
+                            {entry.comic.name}
+                          </strong>
+                          <span className="text-xs text-zinc-500">
+                            {entry.comic.pages.length} pages
+                          </span>
+                        </div>
                       </button>
                     );
                   }
 
                   return (
                     <button
-                      className={
-                        entry.media.id === selected?.id
-                          ? "tile media-tile selected"
-                          : "tile media-tile"
-                      }
+                      className={cn(
+                        "group min-w-0 overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900 text-left transition-colors hover:border-zinc-700",
+                        entry.media.id === selected?.id && "border-amber-300",
+                      )}
                       key={entry.key}
                       onClick={() => selectMedia(entry.media.id)}
+                      title={entry.media.path}
                       type="button"
                     >
-                      <Poster iconSize={28} media={entry.media} />
-                      <strong>{entry.media.name}</strong>
-                      <span>{entry.media.parentPath}</span>
+                      <Poster media={entry.media} />
+                      <div className="grid gap-1 p-2.5">
+                        <strong className="min-w-0 truncate text-sm font-semibold">
+                          {entry.media.name}
+                        </strong>
+                        <span className="min-w-0 truncate text-xs text-zinc-500">
+                          {entry.media.parentPath}
+                        </span>
+                      </div>
                     </button>
                   );
                 })}
               </div>
             ) : (
-              <div className="empty-state">
-                <Archive size={24} />
-                <strong>No archive entries</strong>
-                <span>
-                  {search.q
-                    ? "No folders or media matched the current search."
-                    : "Sync media or choose another archive path."}
-                </span>
+              <div className="grid min-h-60 place-items-center rounded-lg border border-dashed border-zinc-800 text-center">
+                <div className="grid max-w-xs justify-items-center gap-2 text-sm text-zinc-400">
+                  <Archive className="size-6" />
+                  <strong className="text-zinc-100">No archive entries</strong>
+                  <span>
+                    {search.q
+                      ? "No folders or media matched the current search."
+                      : "Sync media or choose another archive path."}
+                  </span>
+                </div>
               </div>
             )}
           </section>
 
-          <aside className="viewer-panel" aria-label="Selected media">
+          <aside
+            className="hidden w-[360px] shrink-0 border-l border-zinc-800 bg-zinc-950 p-5 lg:block"
+            aria-label="Selected media"
+          >
             {selected ? (
-              <>
-                <div className={`viewer-stage ${selected.mediaType}-stage`}>
+              <div className="grid gap-4">
+                <div className="grid aspect-[4/5] w-full place-items-center overflow-hidden rounded-lg border border-zinc-700 bg-zinc-900">
                   {canRenderOriginal && selectedOriginalUrl ? (
                     <SelectedMediaPreview
                       key={selected.id}
@@ -378,39 +468,92 @@ function PaneViewHome() {
                     <MediaPlaceholder mediaType={selected.mediaType} />
                   )}
                 </div>
-                <div className="metadata-list">
-                  <div>
-                    <span>Name</span>
-                    <strong>{selected.name}</strong>
-                  </div>
-                  <div>
-                    <span>Path</span>
-                    <strong>{selected.path}</strong>
-                  </div>
-                  <div>
-                    <span>Type</span>
-                    <strong>{selected.mediaType}</strong>
-                  </div>
-                  <div>
-                    <span>Delivery</span>
-                    <strong>{library.mediaUrlMode}</strong>
-                  </div>
-                  {viewerState ? (
-                    <div>
-                      <span>Resume</span>
-                      <strong>{formatViewerState(selected, viewerState)}</strong>
-                    </div>
-                  ) : null}
+
+                <div className="flex items-center gap-2">
+                  <button
+                    className="grid h-9 flex-1 place-items-center rounded-md border border-zinc-800 bg-zinc-900 text-zinc-300 hover:border-zinc-700"
+                    onClick={() => selectAdjacentMedia(-1)}
+                    title="Previous"
+                    type="button"
+                  >
+                    <ChevronLeft className="size-4" />
+                  </button>
+                  <button
+                    className="grid h-9 flex-1 place-items-center rounded-md border border-zinc-800 bg-zinc-900 text-zinc-300 hover:border-zinc-700"
+                    onClick={() => selectAdjacentMedia(1)}
+                    title="Next"
+                    type="button"
+                  >
+                    <ChevronRight className="size-4" />
+                  </button>
                 </div>
-              </>
+
+                <dl className="grid gap-3 text-sm">
+                  <MetadataItem label="Name" value={selected.name} />
+                  <MetadataItem label="Path" value={selected.path} />
+                  <MetadataItem label="Type" value={selected.mediaType} />
+                </dl>
+              </div>
             ) : (
-              <div className="empty-viewer">
-                <ImageIcon size={32} />
-                <strong>No media selected</strong>
-                <span>Choose an image, video, or story from the browser.</span>
+              <div className="grid min-h-96 place-items-center rounded-lg border border-dashed border-zinc-800 text-center">
+                <div className="grid max-w-56 justify-items-center gap-2 text-sm text-zinc-400">
+                  <ImageIcon className="size-8" />
+                  <strong className="text-zinc-100">No media selected</strong>
+                  <span>Choose an image, video, or story from the browser.</span>
+                </div>
               </div>
             )}
           </aside>
+        </div>
+
+        <div className="pointer-events-none fixed bottom-5 left-1/2 z-20 -translate-x-1/2">
+          <div className="pointer-events-auto flex max-w-[96vw] items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-950/95 px-3 py-2 shadow-lg">
+            <button
+              aria-pressed={recursive}
+              className={toolButtonClass(recursive)}
+              onClick={() => setRecursive((value) => !value)}
+              title="Recursive browsing"
+              type="button"
+            >
+              <ListTree className="size-4" />
+              <span className="hidden sm:inline">Recursive</span>
+            </button>
+            <button
+              aria-pressed={comicMode}
+              className={toolButtonClass(comicMode)}
+              onClick={() => setComicMode((value) => !value)}
+              title="Comic grouping"
+              type="button"
+            >
+              <ImageIcon className="size-4" />
+              <span className="hidden sm:inline">Comic</span>
+            </button>
+            <button
+              aria-pressed={sortMode === "random"}
+              className={toolButtonClass(sortMode === "random")}
+              onClick={shuffle}
+              title={sortMode === "random" ? "Shuffle again" : "Random sort"}
+              type="button"
+            >
+              <Shuffle className="size-4" />
+              <span className="hidden sm:inline">Shuffle</span>
+            </button>
+            <div className="h-5 w-px bg-zinc-800" />
+            <button
+              className={toolButtonClass(false)}
+              onClick={() => void router.invalidate()}
+              title="Refresh"
+              type="button"
+            >
+              <RefreshCcw className="size-4" />
+              <span className="hidden sm:inline">Refresh</span>
+            </button>
+            <form action="/api/auth/logout" method="post">
+              <button className={toolButtonClass(false)} title="Sign out" type="submit">
+                <LogOut className="size-4" />
+              </button>
+            </form>
+          </div>
         </div>
       </section>
     </main>
@@ -476,7 +619,7 @@ function SelectedMediaPreview({
     return (
       // biome-ignore lint/a11y/useMediaCaption: Caption sidecars are not ingested yet.
       <video
-        className="viewer-media"
+        className="h-full w-full border-0 object-contain"
         controls
         onLoadedMetadata={restorePosition}
         onPause={(event) => savePosition(event.currentTarget)}
@@ -498,10 +641,19 @@ function SelectedMediaPreview({
   };
 
   if (media.mediaType === "story") {
-    return <iframe className="viewer-media" onLoad={markViewed} src={src} title={media.name} />;
+    return (
+      <iframe
+        className="h-full w-full border-0 object-contain"
+        onLoad={markViewed}
+        src={src}
+        title={media.name}
+      />
+    );
   }
 
-  return <img alt={media.name} className="viewer-media" onLoad={markViewed} src={src} />;
+  return (
+    <img alt={media.name} className="h-full w-full object-contain" onLoad={markViewed} src={src} />
+  );
 }
 
 function MediaPlaceholder({
@@ -522,16 +674,53 @@ function MediaPlaceholder({
   return <ImageIcon size={size} />;
 }
 
-function Poster({ iconSize, media }: { iconSize: number; media: MediaItem }) {
+function Poster({ media }: { media: MediaItem }) {
   const thumbnailUrl = readThumbnailUrl(media);
 
   return (
-    <div className={`poster ${media.mediaType}-poster`}>
-      {thumbnailUrl ? <img alt="" className="poster-image" src={thumbnailUrl} /> : null}
-      <span className={thumbnailUrl ? "poster-icon hidden" : "poster-icon"}>
-        <MediaPlaceholder mediaType={media.mediaType} size={iconSize} />
-      </span>
+    <div
+      className={cn(
+        "grid aspect-[4/3] place-items-center overflow-hidden border-b border-zinc-800 bg-zinc-900 text-zinc-500",
+        media.mediaType === "video" && "text-emerald-300",
+        media.mediaType === "story" && "text-red-300",
+      )}
+    >
+      {thumbnailUrl ? (
+        <img alt="" className="h-full w-full object-cover" loading="lazy" src={thumbnailUrl} />
+      ) : (
+        <MediaPlaceholder mediaType={media.mediaType} size={28} />
+      )}
     </div>
+  );
+}
+
+function MetadataItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="grid gap-1 border-b border-zinc-800 pb-3">
+      <dt className="text-xs text-zinc-500">{label}</dt>
+      <dd className="m-0 break-words font-medium text-zinc-100">{value}</dd>
+    </div>
+  );
+}
+
+function buildBreadcrumbItems(path: string): Array<{ label: string; path: string }> {
+  if (!path) {
+    return [{ label: "Archive root", path: "" }];
+  }
+
+  const segments = path.split("/").filter(Boolean);
+  return segments.map((segment, index) => ({
+    label: segment,
+    path: segments.slice(0, index + 1).join("/"),
+  }));
+}
+
+function toolButtonClass(active: boolean): string {
+  return cn(
+    "inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-sm font-medium transition-colors",
+    active
+      ? "border-amber-300 bg-amber-300 text-zinc-950"
+      : "border-zinc-800 bg-zinc-900 text-zinc-300 hover:border-zinc-700 hover:text-zinc-50",
   );
 }
 
@@ -545,23 +734,4 @@ function readThumbnailUrl(media: MediaItem): string | undefined {
   }
 
   return media.thumbnailUrl;
-}
-
-function formatViewerState(media: MediaItem, state: ViewerStateSnapshot): string {
-  if (media.mediaType === "video" && state.positionMs) {
-    return `Resume at ${formatDuration(state.positionMs)}`;
-  }
-
-  if (media.mediaType === "story" && state.page) {
-    return `Page ${state.page}`;
-  }
-
-  return `Viewed ${state.updatedAt.slice(0, 16).replace("T", " ")}`;
-}
-
-function formatDuration(positionMs: number): string {
-  const totalSeconds = Math.floor(positionMs / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }

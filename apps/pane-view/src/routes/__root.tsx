@@ -15,7 +15,10 @@ export const Route = createRootRoute({
         content: "Private web viewer for a path-preserving media archive.",
       },
     ],
-    links: [{ rel: "stylesheet", href: appCss }],
+    links: [
+      { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
+      { rel: "stylesheet", href: appCss },
+    ],
   }),
   notFoundComponent: AppNotFound,
   component: RootComponent,
@@ -45,15 +48,28 @@ function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
 
 function AppNotFound() {
   return (
-    <main className="not-found-shell">
-      <section className="not-found-panel" aria-labelledby="not-found-title">
-        <div className="not-found-icon" aria-hidden="true">
+    <main className="grid min-h-screen place-items-center bg-zinc-950 p-5 text-zinc-100">
+      <section
+        className="grid w-full max-w-md justify-items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-900 p-6 text-center"
+        aria-labelledby="not-found-title"
+      >
+        <div
+          className="grid size-12 place-items-center rounded-lg border border-zinc-700 text-amber-300"
+          aria-hidden="true"
+        >
           <SearchX size={28} />
         </div>
-        <p>404</p>
-        <h1 id="not-found-title">Archive path not found</h1>
-        <span>The page or media route you opened does not exist in Pane View.</span>
-        <Link className="primary-link" to="/">
+        <p className="m-0 text-sm font-semibold text-zinc-400">404</p>
+        <h1 className="m-0 text-xl font-semibold" id="not-found-title">
+          Archive path not found
+        </h1>
+        <span className="text-sm text-zinc-400">
+          The page or media route you opened does not exist in Pane View.
+        </span>
+        <Link
+          className="mt-1 inline-flex min-h-9 items-center gap-2 rounded-md border border-amber-500/70 bg-amber-300 px-3 text-sm font-semibold text-zinc-950"
+          to="/"
+        >
           <Home size={16} />
           <span>Back to archive</span>
         </Link>
