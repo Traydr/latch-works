@@ -208,21 +208,49 @@ async function upsertContainingFolders(path: string): Promise<void> {
     return;
   }
 
+  const parentIdByPath = new Map<string, string>();
+
   for (const folderPath of collectContainingFolderPaths(path)) {
-    await db
+    const parentPath = getParentPath(folderPath);
+    const depth = folderPath.split("/").filter(Boolean).length;
+    let parentId: string | null = null;
+
+    if (parentPath) {
+      parentId =
+        parentIdByPath.get(parentPath) ??
+        (
+          await db
+            .select({ id: folders.id })
+            .from(folders)
+            .where(eq(folders.path, parentPath))
+            .limit(1)
+        )[0]?.id ??
+        null;
+    }
+
+    const [folder] = await db
       .insert(folders)
       .values({
+        depth,
         name: getBaseName(folderPath),
-        parentPath: getParentPath(folderPath),
+        parentId,
+        parentPath,
         path: folderPath,
       })
       .onConflictDoUpdate({
         set: {
+          depth,
           name: getBaseName(folderPath),
-          parentPath: getParentPath(folderPath),
+          parentId,
+          parentPath,
           updatedAt: new Date(),
         },
         target: folders.path,
-      });
+      })
+      .returning({ id: folders.id });
+
+    if (folder) {
+      parentIdByPath.set(folderPath, folder.id);
+    }
   }
 }

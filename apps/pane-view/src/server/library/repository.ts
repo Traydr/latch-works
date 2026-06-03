@@ -85,6 +85,7 @@ export async function readDatabaseLibrarySnapshot({
     hasChildren: folder.entryCount > 0 || (folder.folderCount ?? 0) > 0,
     mediaCount: folder.entryCount ?? 0,
     name: folder.name,
+    parentId: folder.parentId,
     parentPath: folder.parentPath,
     path: folder.path,
   });

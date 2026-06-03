@@ -67,6 +67,8 @@ function PaneViewHome() {
   const [searchDraft, setSearchDraft] = useState(search.q ?? "");
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerItems, setViewerItems] = useState<MediaItem[] | null>(null);
+  /** When set, gallery selection stays on this id while the viewer pages through `viewerItems`. */
+  const [viewerLockedMediaId, setViewerLockedMediaId] = useState<string | null>(null);
   const [focusedEntryIndex, setFocusedEntryIndex] = useState(0);
 
   // Redirect to persisted path on first visit if URL has no path.
@@ -146,7 +148,10 @@ function PaneViewHome() {
     });
   }, [entries]);
 
-  const selected = visibleMedia.find((item) => item.id === selectedId) ?? visibleMedia[0] ?? null;
+  const selected =
+    visibleMedia.find((item) => item.id === (viewerLockedMediaId ?? selectedId)) ??
+    visibleMedia[0] ??
+    null;
   const selectedIndex = selected ? visibleMedia.findIndex((item) => item.id === selected.id) : -1;
 
   // Persist state changes.
@@ -281,12 +286,16 @@ function PaneViewHome() {
     }
     if (key === "ArrowRight" || key === "e") {
       event.preventDefault();
-      selectAdjacentMedia(1);
+      if (!viewerLockedMediaId) {
+        selectAdjacentMedia(1);
+      }
       return;
     }
     if (key === "ArrowLeft" || key === "q") {
       event.preventDefault();
-      selectAdjacentMedia(-1);
+      if (!viewerLockedMediaId) {
+        selectAdjacentMedia(-1);
+      }
       return;
     }
     if (key === " " || key === "2") {
@@ -398,7 +407,7 @@ function PaneViewHome() {
   };
 
   const selectAdjacentMedia = (offset: -1 | 1) => {
-    if (!visibleMedia.length) {
+    if (viewerLockedMediaId || !visibleMedia.length) {
       return;
     }
 
@@ -430,27 +439,35 @@ function PaneViewHome() {
     }
   };
 
-  const openViewer = (items: MediaItem[], startMediaId: string) => {
+  const openViewer = (
+    items: MediaItem[],
+    startMediaId: string,
+    options?: { lockSelectionToMediaId?: string },
+  ) => {
     const startIndex = items.findIndex((item) => item.id === startMediaId);
     if (startIndex < 0) {
       return;
     }
 
     setViewerItems(items);
-    setSelectedId(startMediaId);
+    setViewerLockedMediaId(options?.lockSelectionToMediaId ?? null);
+    setSelectedId(options?.lockSelectionToMediaId ?? startMediaId);
     setViewerOpen(true);
   };
 
   const closeViewer = () => {
     setViewerOpen(false);
     setViewerItems(null);
+    setViewerLockedMediaId(null);
   };
 
   const handleActivateEntry = (entry: BrowserEntry) => {
     if (entry.kind === "folder") {
       navigateToPath(entry.path);
     } else if (entry.kind === "comic") {
-      openViewer(entry.comic.pages, entry.comic.cover.id);
+      openViewer(entry.comic.pages, entry.comic.cover.id, {
+        lockSelectionToMediaId: entry.comic.cover.id,
+      });
     } else {
       openViewer(visibleMedia, entry.media.id);
     }
@@ -541,7 +558,7 @@ function PaneViewHome() {
             focusedIndex={focusedEntryIndex}
             onActivateEntry={handleActivateEntry}
             onSelectEntry={handleSelectEntry}
-            selectedId={selectedId}
+            selectedId={viewerLockedMediaId ?? selectedId}
           />
 
           <DetailPanel
