@@ -14,6 +14,9 @@ importers:
       '@types/node':
         specifier: ^25.5.2
         version: 25.9.1
+      knip:
+        specifier: ^6.15.0
+        version: 6.15.0
       typescript:
         specifier: ^6.0.2
         version: 6.0.3
@@ -214,9 +217,6 @@ importers:
       tailwind-merge:
         specifier: ^3.6.0
         version: 3.6.0
-      tslib:
-        specifier: ^2.8.1
-        version: 2.8.1
       tw-animate-css:
         specifier: ^1.4.0
         version: 1.4.0

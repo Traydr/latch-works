@@ -1,0 +1,26 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "tags": [
+    "-lintignore"
+  ],
+  "ignoreIssues": {
+    "apps/pane-view/src/components/ui/**": [
+      "exports",
+      "types"
+    ]
+  },
+  "workspaces": {
+    ".": {},
+    "apps/pane-view": {
+      "entry": [
+        "drizzle.config.ts",
+        "vite.config.ts",
+        "vitest.config.ts",
+        "src/router.tsx",
+        "src/routeTree.gen.ts",
+        "src/routes/**/*.{ts,tsx}"
+      ],
+      "drizzle": false
+    }
+  }
+}

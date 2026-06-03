@@ -12,11 +12,13 @@
     "lint": "biome check .",
     "lockstep": "pnpm --filter @latch-works/lockstep start",
     "test": "pnpm -r test",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "knip": "knip"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.10",
     "@types/node": "^25.5.2",
+    "knip": "^6.15.0",
     "typescript": "^6.0.2",
     "vitest": "^4.1.3"
   }

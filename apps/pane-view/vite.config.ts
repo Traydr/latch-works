@@ -13,7 +13,6 @@ const serverExternal = [
   "better-auth",
   "better-auth/crypto",
   "better-auth/tanstack-start",
-  "tslib",
 ];
 
 export default defineConfig({
