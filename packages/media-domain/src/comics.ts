@@ -18,7 +18,7 @@ export function buildComicEntries(
   const normalizedRootPath = rootPath ? normalizePathForCompare(rootPath) : null;
 
   for (const item of items) {
-    if (item.mediaType !== "image") {
+    if (item.mediaType !== "image" && item.mediaType !== "gif") {
       continue;
     }
 

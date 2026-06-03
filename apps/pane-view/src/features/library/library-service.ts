@@ -14,6 +14,7 @@ const libraryRequestSchema = z.object({
 });
 
 export interface LibrarySnapshot {
+  allFolders: FolderNode[];
   archiveRoot: string;
   currentPath: string;
   folders: FolderNode[];
@@ -33,6 +34,7 @@ export const getLibrarySnapshot = createServerFn({ method: "GET" })
     });
 
     return {
+      allFolders: databaseSnapshot.allFolders,
       archiveRoot: "Synced archive",
       currentPath,
       folders: databaseSnapshot.folders,

@@ -10,7 +10,17 @@ interface DetailPanelProps {
   selected: MediaItem | null;
 }
 
+function readThumbnailUrl(media: MediaItem): string | undefined {
+  if (!("thumbnailUrl" in media) || typeof media.thumbnailUrl !== "string") {
+    return undefined;
+  }
+
+  return media.thumbnailUrl;
+}
+
 export function DetailPanel({ onNext, onOpenViewer, onPrev, selected }: DetailPanelProps) {
+  const thumbnailUrl = selected ? readThumbnailUrl(selected) : undefined;
+
   return (
     <aside
       className="hidden w-[360px] shrink-0 border-l border-zinc-800 bg-zinc-950 p-5 lg:block"
@@ -19,7 +29,11 @@ export function DetailPanel({ onNext, onOpenViewer, onPrev, selected }: DetailPa
       {selected ? (
         <div className="grid gap-4">
           <div className="grid aspect-[4/5] w-full place-items-center overflow-hidden rounded-lg border border-zinc-700 bg-zinc-900">
-            <MediaPlaceholder mediaType={selected.mediaType} size={42} />
+            {thumbnailUrl ? (
+              <img alt={selected.name} className="h-full w-full object-cover" src={thumbnailUrl} />
+            ) : (
+              <MediaPlaceholder mediaType={selected.mediaType} size={42} />
+            )}
           </div>
 
           <Button

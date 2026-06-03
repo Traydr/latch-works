@@ -6,6 +6,7 @@ interface BrowserEntryCardProps {
   cardHeight: number;
   cardWidth: number;
   entry: BrowserEntry;
+  focused: boolean;
   left: number;
   onActivate: (entry: BrowserEntry) => void;
   onSelect: (entry: BrowserEntry) => void;
@@ -17,6 +18,7 @@ export function BrowserEntryCard({
   cardHeight,
   cardWidth,
   entry,
+  focused,
   left,
   onActivate,
   onSelect,
@@ -37,11 +39,11 @@ export function BrowserEntryCard({
       }}
     >
       {entry.kind === "folder" ? (
-        <FolderCard entry={entry} selected={selected} />
+        <FolderCard entry={entry} focused={focused} selected={selected} />
       ) : entry.kind === "comic" ? (
-        <ComicCard entry={entry} selected={selected} />
+        <ComicCard entry={entry} focused={focused} selected={selected} />
       ) : (
-        <MediaCard entry={entry} selected={selected} />
+        <MediaCard entry={entry} focused={focused} selected={selected} />
       )}
     </button>
   );
@@ -49,9 +51,11 @@ export function BrowserEntryCard({
 
 function FolderCard({
   entry,
+  focused,
   selected,
 }: {
   entry: Extract<BrowserEntry, { kind: "folder" }>;
+  focused: boolean;
   selected: boolean;
 }) {
   return (
@@ -59,7 +63,9 @@ function FolderCard({
       className={`flex h-full w-full flex-col justify-between overflow-hidden rounded-2xl border p-4 transition-all ${
         selected
           ? "border-violet-400 bg-violet-50/90 dark:border-violet-500 dark:bg-violet-500/15"
-          : "border-zinc-300/80 bg-white/75 hover:-translate-y-0.5 hover:border-zinc-400 hover:bg-white hover:shadow-lg dark:border-zinc-700/80 dark:bg-zinc-900/75 dark:hover:border-zinc-600 dark:hover:bg-zinc-900"
+          : focused
+            ? "ring-2 ring-violet-400 ring-offset-2 ring-offset-zinc-950"
+            : "border-zinc-300/80 bg-white/75 hover:-translate-y-0.5 hover:border-zinc-400 hover:bg-white hover:shadow-lg dark:border-zinc-700/80 dark:bg-zinc-900/75 dark:hover:border-zinc-600 dark:hover:bg-zinc-900"
       }`}
       title={entry.path}
     >
@@ -89,9 +95,11 @@ function FolderCard({
 
 function ComicCard({
   entry,
+  focused,
   selected,
 }: {
   entry: Extract<BrowserEntry, { kind: "comic" }>;
+  focused: boolean;
   selected: boolean;
 }) {
   const comic = entry.comic;
@@ -99,7 +107,9 @@ function ComicCard({
   return (
     <div
       className={`group relative h-full w-full overflow-hidden rounded-2xl bg-zinc-800 text-left transition-all ${
-        selected ? "ring-2 ring-violet-500 ring-offset-2 ring-offset-zinc-950" : "hover:shadow-lg"
+        selected || focused
+          ? "ring-2 ring-violet-500 ring-offset-2 ring-offset-zinc-950"
+          : "hover:shadow-lg"
       }`}
       title={comic.folderPath}
     >
@@ -116,9 +126,11 @@ function ComicCard({
 
 function MediaCard({
   entry,
+  focused,
   selected,
 }: {
   entry: Extract<BrowserEntry, { kind: "media" }>;
+  focused: boolean;
   selected: boolean;
 }) {
   const item = entry.media;
@@ -126,7 +138,9 @@ function MediaCard({
   return (
     <div
       className={`group relative h-full w-full overflow-hidden rounded-2xl text-left transition-all ${
-        selected ? "ring-2 ring-violet-500 ring-offset-2 ring-offset-zinc-950" : "hover:shadow-lg"
+        selected || focused
+          ? "ring-2 ring-violet-500 ring-offset-2 ring-offset-zinc-950"
+          : "hover:shadow-lg"
       }`}
       title={item.path}
     >

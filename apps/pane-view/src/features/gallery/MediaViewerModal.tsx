@@ -46,6 +46,7 @@ export function MediaViewerModal({
   const modalRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const isScrubbingRef = useRef(false);
+  const speedBoostHeldRef = useRef(false);
 
   const [playing, setPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
@@ -67,6 +68,7 @@ export function MediaViewerModal({
     setDuration(0);
     setPosition(0);
     setSpeed(1);
+    speedBoostHeldRef.current = false;
   }, [item]);
 
   const canStepBackward = index > 0;
@@ -80,24 +82,56 @@ export function MediaViewerModal({
     [index, items.length],
   );
 
+  const skip = useCallback((seconds: number): void => {
+    const video = videoRef.current;
+    if (!video) {
+      return;
+    }
+
+    const total = video.duration;
+    if (!Number.isFinite(total) || total <= 0) {
+      return;
+    }
+
+    const nextTime = video.currentTime + seconds;
+    const safeTotal = Math.max(0, total - 0.05);
+    const clamped = Math.max(0, Math.min(safeTotal, nextTime));
+    const wasPlaying = !video.paused;
+
+    video.currentTime = clamped;
+    setPosition(clamped);
+
+    if (wasPlaying) {
+      void video.play().catch(() => {
+        // Keep paused if resume cannot start.
+      });
+    }
+  }, []);
+
+  // Keyboard handling.
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
+      if (isTextInputTarget(event.target)) {
         return;
       }
 
-      if (event.key === "Escape") {
+      if (event.metaKey || event.ctrlKey || event.altKey) {
+        return;
+      }
+
+      const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+
+      if (key === "Escape") {
+        event.preventDefault();
         onClose();
         return;
       }
-
-      if (event.key === "ArrowRight") {
+      if (key === "ArrowRight" || key === "e") {
         event.preventDefault();
         step(1);
         return;
       }
-
-      if (event.key === "ArrowLeft") {
+      if (key === "ArrowLeft" || key === "q") {
         event.preventDefault();
         step(-1);
         return;
@@ -107,24 +141,64 @@ export function MediaViewerModal({
         return;
       }
 
-      if (event.code === "Space") {
+      if (key === " " || key === "2") {
         event.preventDefault();
         const video = videoRef.current;
         if (!video) {
           return;
         }
-
         if (video.paused) {
           void video.play();
         } else {
           video.pause();
         }
+        return;
+      }
+      if (key === "1") {
+        event.preventDefault();
+        skip(-5);
+        return;
+      }
+      if (key === "3") {
+        event.preventDefault();
+        skip(5);
+        return;
+      }
+      if (key === "4") {
+        event.preventDefault();
+        speedBoostHeldRef.current = true;
+        applySpeed(2);
+      }
+    };
+
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) {
+        return;
+      }
+
+      const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+      if (key === "4" && speedBoostHeldRef.current) {
+        speedBoostHeldRef.current = false;
+        applySpeed(1);
+      }
+    };
+
+    const resetHeldSpeed = () => {
+      if (speedBoostHeldRef.current) {
+        speedBoostHeldRef.current = false;
+        applySpeed(1);
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isVideoItem, onClose, step]);
+    window.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("blur", resetHeldSpeed);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("blur", resetHeldSpeed);
+    };
+  }, [applySpeed, isVideoItem, onClose, skip, step]);
 
   if (!item) {
     return null;
@@ -189,20 +263,6 @@ export function MediaViewerModal({
     } else {
       video.pause();
     }
-  };
-
-  const skip = (seconds: number): void => {
-    const video = videoRef.current;
-    if (!video) {
-      return;
-    }
-
-    const total = video.duration;
-    if (!Number.isFinite(total) || total <= 0) {
-      return;
-    }
-
-    commitSeek(video.currentTime + seconds);
   };
 
   const toggleFullscreen = async (): Promise<void> => {
@@ -416,5 +476,16 @@ export function MediaViewerModal({
         </div>
       ) : null}
     </div>
+  );
+}
+
+function isTextInputTarget(target: EventTarget | null): boolean {
+  const element = target as HTMLElement | null;
+  return (
+    !!element &&
+    (element.isContentEditable ||
+      element.tagName === "INPUT" ||
+      element.tagName === "TEXTAREA" ||
+      element.tagName === "SELECT")
   );
 }

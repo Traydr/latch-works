@@ -9,6 +9,7 @@ export interface LibraryMediaItem extends MediaItem {
 }
 
 export interface DatabaseLibrarySnapshot {
+  allFolders: FolderNode[];
   folders: FolderNode[];
   media: LibraryMediaItem[];
   roots: string[];
@@ -49,7 +50,7 @@ export async function readDatabaseLibrarySnapshot({
     }
   }
 
-  const [folderRows, mediaRows, rootRows] = await Promise.all([
+  const [folderRows, mediaRows, rootRows, allFolderRows] = await Promise.all([
     db
       .select()
       .from(folders)
@@ -72,17 +73,21 @@ export async function readDatabaseLibrarySnapshot({
       )
       .where(and(...mediaConditions)),
     db.select().from(folders).where(eq(folders.parentPath, "")),
+    db.select().from(folders).where(isNull(folders.deletedAt)),
   ]);
 
+  const mapFolderRow = (folder: (typeof allFolderRows)[number]): FolderNode => ({
+    folderCount: folder.folderCount ?? 0,
+    hasChildren: folder.entryCount > 0 || (folder.folderCount ?? 0) > 0,
+    mediaCount: folder.entryCount ?? 0,
+    name: folder.name,
+    parentPath: folder.parentPath,
+    path: folder.path,
+  });
+
   return {
-    folders: folderRows.map((folder) => ({
-      folderCount: 0,
-      hasChildren: folder.entryCount > 0,
-      mediaCount: folder.entryCount,
-      name: folder.name,
-      parentPath: folder.parentPath,
-      path: folder.path,
-    })),
+    allFolders: allFolderRows.map(mapFolderRow),
+    folders: folderRows.map(mapFolderRow),
     media: mediaRows.map(({ entry, object, thumbnail }) => {
       const media: LibraryMediaItem = {
         durationMs: object.durationMs ?? undefined,

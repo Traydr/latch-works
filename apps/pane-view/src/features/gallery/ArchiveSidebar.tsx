@@ -1,4 +1,5 @@
-import { Archive, Folder } from "lucide-react";
+import type { FolderNode } from "@latch-works/media-domain";
+import { Archive, ChevronRight, Folder } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -8,46 +9,48 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarRail,
+  useSidebar,
 } from "@/components/ui/sidebar";
+import { cn } from "@/lib/utils";
 
 interface ArchiveSidebarProps {
-  archiveRoot: string;
+  allFolders: FolderNode[];
   currentPath: string;
   onNavigateToPath: (path: string) => void;
-  roots: string[];
 }
 
-export function ArchiveSidebar({
-  archiveRoot,
-  currentPath,
-  onNavigateToPath,
-  roots,
-}: ArchiveSidebarProps) {
+export function ArchiveSidebar({ allFolders, currentPath, onNavigateToPath }: ArchiveSidebarProps) {
+  const { state } = useSidebar();
+  const isCollapsed = state === "collapsed";
+
+  const sortedFolders = [...allFolders].sort((a, b) => a.path.localeCompare(b.path));
+
   return (
     <Sidebar
-      aria-label="Archive roots"
-      className="hidden border-r border-sidebar-border md:flex"
-      collapsible="none"
+      aria-label="Archive folders"
+      className="border-r border-sidebar-border"
+      collapsible="icon"
     >
       <SidebarHeader>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 overflow-hidden px-2 py-1.5">
           <div
-            className="grid size-9 place-items-center rounded-md border border-sidebar-border text-xs font-bold text-primary"
+            className="grid size-8 shrink-0 place-items-center rounded-md border border-sidebar-border text-[10px] font-bold text-primary"
             aria-hidden="true"
           >
             LW
           </div>
-          <div className="min-w-0">
+          <div className={cn("min-w-0 transition-opacity", isCollapsed && "opacity-0")}>
             <strong className="block truncate text-sm font-semibold">Pane View</strong>
-            <span className="block truncate text-xs text-muted-foreground">Latch Works</span>
+            <span className="block truncate text-[11px] text-muted-foreground">Latch Works</span>
           </div>
         </div>
       </SidebarHeader>
 
-      <SidebarContent>
+      <SidebarContent className="overflow-y-auto">
         <SidebarGroup>
           <SidebarGroupContent>
-            <SidebarMenu aria-label="Known archive paths">
+            <SidebarMenu aria-label="Archive folders">
               <SidebarMenuItem>
                 <SidebarMenuButton
                   isActive={!currentPath}
@@ -56,26 +59,44 @@ export function ArchiveSidebar({
                   tooltip="Archive root"
                 >
                   <Archive className="size-4 shrink-0" />
-                  <span className="min-w-0 flex-1 truncate">{archiveRoot}</span>
+                  <span className="min-w-0 flex-1 truncate">Archive root</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
-              {roots.map((path) => (
-                <SidebarMenuItem key={path}>
-                  <SidebarMenuButton
-                    isActive={path === currentPath}
-                    onClick={() => onNavigateToPath(path)}
-                    title={path}
-                    tooltip={path}
-                  >
-                    <Folder className="size-4 shrink-0" />
-                    <span className="min-w-0 flex-1 truncate">{path}</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
+              {sortedFolders.map((folder) => {
+                const isActive = folder.path === currentPath;
+                const isAncestor = currentPath.startsWith(`${folder.path}/`);
+                const depth = folder.path.split("/").filter(Boolean).length;
+                const indent = depth * 12;
+
+                return (
+                  <SidebarMenuItem key={folder.path}>
+                    <SidebarMenuButton
+                      isActive={isActive}
+                      onClick={() => onNavigateToPath(folder.path)}
+                      title={folder.path}
+                      tooltip={folder.path}
+                      className={cn(
+                        isCollapsed ? "" : "justify-start gap-1.5 px-2",
+                        isActive && "bg-sidebar-accent text-sidebar-accent-foreground",
+                        isAncestor && !isActive && "text-sidebar-primary-foreground",
+                      )}
+                      style={isCollapsed ? undefined : { paddingLeft: `${12 + indent}px` }}
+                    >
+                      <Folder className="size-3.5 shrink-0 text-amber-500" />
+                      <span className="min-w-0 flex-1 truncate text-xs">{folder.name}</span>
+                      {isAncestor && !isCollapsed ? (
+                        <ChevronRight className="size-3 shrink-0 opacity-60" />
+                      ) : null}
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
+
+      <SidebarRail />
     </Sidebar>
   );
 }

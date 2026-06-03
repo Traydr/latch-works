@@ -1,15 +1,15 @@
-import type { GallerySortMode } from "@latch-works/media-domain";
 import {
   type BrowserEntry,
   buildBrowserEntries,
   buildComicEntries,
   createRandomSeed,
+  type GallerySortMode,
   sortComicEntries,
   sortMediaItems,
 } from "@latch-works/media-domain";
 import { createFileRoute, redirect } from "@tanstack/react-router";
-import { Archive, Folder, Search } from "lucide-react";
-import { type FormEvent, Fragment, useEffect, useMemo, useState } from "react";
+import { Archive, Search } from "lucide-react";
+import { type FormEvent, Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -19,24 +19,14 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import { Input } from "@/components/ui/input";
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarHeader,
-  SidebarInset,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarProvider,
-} from "@/components/ui/sidebar";
+import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import { ArchiveSidebar } from "@/features/gallery/ArchiveSidebar";
 import { BrowserGrid } from "@/features/gallery/BrowserGrid";
 import { DetailPanel } from "@/features/gallery/DetailPanel";
 import { FloatingToolbar } from "@/features/gallery/FloatingToolbar";
 import { MediaViewerModal } from "@/features/gallery/MediaViewerModal";
+import { useGalleryState } from "@/features/gallery/useGalleryState";
 import { getLibrarySnapshot } from "../features/library/library-service";
-import { getViewerState, type ViewerStateSnapshot } from "../features/viewer/viewer-state-service";
 import { isCurrentWebSessionValid } from "../server/auth/web-session";
 
 export const Route = createFileRoute("/")({
@@ -64,16 +54,29 @@ function PaneViewHome() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
 
-  const [recursive, setRecursive] = useState(true);
-  const [comicMode, setComicMode] = useState(false);
-  const [sortMode, setSortMode] = useState<GallerySortMode>("name-asc");
+  const persisted = useGalleryState();
+
+  const [recursive, setRecursive] = useState(persisted.recursive);
+  const [comicMode, setComicMode] = useState(persisted.comicMode);
+  const [sortMode, setSortMode] = useState<GallerySortMode>(persisted.sortMode);
   const [randomSeed, setRandomSeed] = useState(() => createRandomSeed());
   const [selectedId, setSelectedId] = useState<string | null>(
     search.media ?? library.media[0]?.id ?? null,
   );
   const [searchDraft, setSearchDraft] = useState(search.q ?? "");
-  const [, setViewerState] = useState<ViewerStateSnapshot | null>(null);
   const [viewerOpen, setViewerOpen] = useState(false);
+  const [focusedEntryIndex, setFocusedEntryIndex] = useState(0);
+
+  // Redirect to persisted path on first visit if URL has no path.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Only run once on mount to restore persisted path.
+  useEffect(() => {
+    if (!search.path && persisted.lastPath) {
+      void navigate({
+        search: { media: undefined, path: persisted.lastPath, q: search.q },
+        to: "/",
+      });
+    }
+  }, []);
 
   useEffect(() => {
     setSearchDraft(search.q ?? "");
@@ -121,68 +124,231 @@ function PaneViewHome() {
       }),
     [comicMode, comics, library.folders, recursive, sortMode, visibleMedia],
   );
+
   const selected = visibleMedia.find((item) => item.id === selectedId) ?? visibleMedia[0] ?? null;
   const selectedIndex = selected ? visibleMedia.findIndex((item) => item.id === selected.id) : -1;
 
+  // Persist state changes.
   useEffect(() => {
-    let cancelled = false;
+    persisted.setLastPath(library.currentPath);
+  }, [library.currentPath, persisted.setLastPath]);
 
-    if (!selected) {
-      setViewerState(null);
-      return;
-    }
+  useEffect(() => {
+    persisted.setLastSelectedId(selectedId);
+  }, [selectedId, persisted.setLastSelectedId]);
 
-    void getViewerState({
-      data: {
-        subjectId: selected.id,
-        subjectType: "library_entry",
-      },
-    }).then((state) => {
-      if (!cancelled) {
-        setViewerState(state);
-      }
-    });
+  useEffect(() => {
+    persisted.setRecursive(recursive);
+  }, [recursive, persisted.setRecursive]);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [selected]);
+  useEffect(() => {
+    persisted.setComicMode(comicMode);
+  }, [comicMode, persisted.setComicMode]);
 
+  useEffect(() => {
+    persisted.setSortMode(sortMode);
+  }, [sortMode, persisted.setSortMode]);
+
+  // Keyboard shortcuts.
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      const target = event.target;
-      if (
-        target instanceof HTMLInputElement ||
-        target instanceof HTMLSelectElement ||
-        target instanceof HTMLTextAreaElement
-      ) {
+      if (isTextInputTarget(event.target)) {
         return;
       }
 
-      if (event.key === "ArrowRight") {
-        event.preventDefault();
-        selectAdjacentMedia(1);
+      if (viewerOpen) {
+        handleViewerKeyDown(event);
+        return;
       }
 
-      if (event.key === "ArrowLeft") {
-        event.preventDefault();
-        selectAdjacentMedia(-1);
+      handleGalleryKeyDown(event);
+    };
+
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (viewerOpen) {
+        handleViewerKeyUp(event);
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+    };
   });
 
-  const navigateToPath = (path: string) => {
-    void navigate({
-      search: {
-        media: undefined,
-        path,
-        q: search.q,
-      },
-      to: "/",
-    });
+  const handleGalleryKeyDown = (event: KeyboardEvent) => {
+    if (event.metaKey || event.ctrlKey || event.altKey) {
+      return;
+    }
+
+    const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+
+    // Navigation.
+    if (key === "ArrowRight" || key === "d") {
+      event.preventDefault();
+      moveGridFocus(1, 0);
+      return;
+    }
+    if (key === "ArrowLeft" || key === "q") {
+      event.preventDefault();
+      moveGridFocus(-1, 0);
+      return;
+    }
+    if (key === "ArrowDown" || key === "s") {
+      event.preventDefault();
+      moveGridFocus(0, 1);
+      return;
+    }
+    if (key === "ArrowUp" || key === "w") {
+      event.preventDefault();
+      moveGridFocus(0, -1);
+      return;
+    }
+
+    // Activate.
+    if (key === "Enter" || key === "f") {
+      event.preventDefault();
+      const entry = entries[focusedEntryIndex];
+      if (entry) {
+        handleActivateEntry(entry);
+      }
+      return;
+    }
+
+    // Folder navigation with Shift.
+    if (event.shiftKey) {
+      if (key === "W") {
+        event.preventDefault();
+        const parent = getParentPath(library.currentPath);
+        navigateToPath(parent ?? "");
+        return;
+      }
+      if (key === "S") {
+        event.preventDefault();
+        const entry = entries[focusedEntryIndex];
+        if (entry?.kind === "folder") {
+          navigateToPath(entry.path);
+        }
+        return;
+      }
+      if (key === "A") {
+        event.preventDefault();
+        navigateSiblingFolder(-1);
+        return;
+      }
+      if (key === "D") {
+        event.preventDefault();
+        navigateSiblingFolder(1);
+        return;
+      }
+    }
+  };
+
+  const handleViewerKeyDown = (event: KeyboardEvent) => {
+    if (event.metaKey || event.ctrlKey || event.altKey) {
+      return;
+    }
+
+    const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+
+    if (key === "Escape") {
+      event.preventDefault();
+      setViewerOpen(false);
+      return;
+    }
+    if (key === "ArrowRight" || key === "e") {
+      event.preventDefault();
+      selectAdjacentMedia(1);
+      return;
+    }
+    if (key === "ArrowLeft" || key === "q") {
+      event.preventDefault();
+      selectAdjacentMedia(-1);
+      return;
+    }
+    if (key === " " || key === "2") {
+      event.preventDefault();
+      // Play/pause handled inside MediaViewerModal.
+      return;
+    }
+    if (key === "1") {
+      event.preventDefault();
+      // Seek backward handled inside MediaViewerModal.
+      return;
+    }
+    if (key === "3") {
+      event.preventDefault();
+      // Seek forward handled inside MediaViewerModal.
+      return;
+    }
+    if (key === "4") {
+      event.preventDefault();
+      // Temporary speed boost handled inside MediaViewerModal.
+      return;
+    }
+  };
+
+  const handleViewerKeyUp = (event: KeyboardEvent) => {
+    const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+    if (key === "4") {
+      // Release speed boost handled inside MediaViewerModal.
+    }
+  };
+
+  const columnCountRef = useRef(4);
+
+  const moveGridFocus = (dx: number, dy: number) => {
+    if (!entries.length) {
+      return;
+    }
+
+    const columnCount = columnCountRef.current;
+    const currentRow = Math.floor(focusedEntryIndex / columnCount);
+    const currentCol = focusedEntryIndex % columnCount;
+
+    const nextRow = currentRow + dy;
+    const nextCol = currentCol + dx;
+    const nextIndex = nextRow * columnCount + nextCol;
+
+    if (nextIndex >= 0 && nextIndex < entries.length) {
+      setFocusedEntryIndex(nextIndex);
+      const entry = entries[nextIndex];
+      if (entry?.kind === "media") {
+        selectMedia(entry.media.id);
+      } else if (entry?.kind === "comic") {
+        selectMedia(entry.comic.cover.id);
+      }
+    }
+  };
+
+  const navigateToPath = useCallback(
+    (path: string) => {
+      void navigate({
+        search: {
+          media: undefined,
+          path,
+          q: search.q,
+        },
+        to: "/",
+      });
+    },
+    [navigate, search.q],
+  );
+
+  const navigateSiblingFolder = (offset: -1 | 1) => {
+    const siblings = library.folders;
+    const currentIndex = siblings.findIndex((f) => f.path === library.currentPath);
+    if (currentIndex < 0) {
+      return;
+    }
+
+    const nextIndex = (currentIndex + offset + siblings.length) % siblings.length;
+    const next = siblings[nextIndex];
+    if (next) {
+      navigateToPath(next.path);
+    }
   };
 
   const submitSearch = (event: FormEvent<HTMLFormElement>) => {
@@ -264,101 +430,56 @@ function PaneViewHome() {
       className="min-h-screen overflow-hidden bg-background text-foreground"
       defaultOpen
     >
-      <Sidebar
-        aria-label="Archive roots"
-        className="hidden border-r border-sidebar-border md:flex"
-        collapsible="none"
-      >
-        <SidebarHeader>
-          <div className="flex items-center gap-3">
-            <div
-              className="grid size-9 place-items-center rounded-md border border-sidebar-border text-xs font-bold text-primary"
-              aria-hidden="true"
-            >
-              LW
-            </div>
-            <div className="min-w-0">
-              <strong className="block truncate text-sm font-semibold">Pane View</strong>
-              <span className="block truncate text-xs text-muted-foreground">Latch Works</span>
-            </div>
-          </div>
-        </SidebarHeader>
-
-        <SidebarContent>
-          <SidebarGroup>
-            <SidebarGroupContent>
-              <SidebarMenu aria-label="Known archive paths">
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    isActive={!library.currentPath}
-                    onClick={() => navigateToPath("")}
-                    title="Archive root"
-                    tooltip="Archive root"
-                  >
-                    <Archive className="size-4 shrink-0" />
-                    <span className="min-w-0 flex-1 truncate">Archive root</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-                {library.roots.map((path) => (
-                  <SidebarMenuItem key={path}>
-                    <SidebarMenuButton
-                      isActive={path === library.currentPath}
-                      onClick={() => navigateToPath(path)}
-                      title={path}
-                      tooltip={path}
-                    >
-                      <Folder className="size-4 shrink-0" />
-                      <span className="min-w-0 flex-1 truncate">{path}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        </SidebarContent>
-      </Sidebar>
+      <ArchiveSidebar
+        allFolders={library.allFolders}
+        currentPath={library.currentPath}
+        onNavigateToPath={navigateToPath}
+      />
 
       <SidebarInset className="min-w-0 overflow-hidden">
         <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border bg-background px-5">
-          <Breadcrumb className="flex min-w-0 items-center gap-2">
-            <Archive className="size-4 shrink-0 text-muted-foreground" />
-            <BreadcrumbList className="min-w-0 flex-nowrap overflow-hidden">
-              <BreadcrumbItem>
-                <BreadcrumbLink asChild>
-                  <button
-                    className="max-w-40 truncate"
-                    onClick={() => navigateToPath("")}
-                    type="button"
-                  >
-                    {library.archiveRoot}
-                  </button>
-                </BreadcrumbLink>
-              </BreadcrumbItem>
-              {breadcrumbs.map((crumb, index) => (
-                <Fragment key={crumb.path}>
-                  <BreadcrumbSeparator />
-                  <BreadcrumbItem className="min-w-0">
-                    {index === breadcrumbs.length - 1 ? (
-                      <BreadcrumbPage className="max-w-72 truncate" title={crumb.path}>
-                        {crumb.label}
-                      </BreadcrumbPage>
-                    ) : (
-                      <BreadcrumbLink asChild>
-                        <button
-                          className="max-w-40 truncate"
-                          onClick={() => navigateToPath(crumb.path)}
-                          title={crumb.path}
-                          type="button"
-                        >
+          <div className="flex items-center gap-2">
+            <SidebarTrigger />
+            <Breadcrumb className="flex min-w-0 items-center gap-2">
+              <Archive className="size-4 shrink-0 text-muted-foreground" />
+              <BreadcrumbList className="min-w-0 flex-nowrap overflow-hidden">
+                <BreadcrumbItem>
+                  <BreadcrumbLink asChild>
+                    <button
+                      className="max-w-40 truncate"
+                      onClick={() => navigateToPath("")}
+                      type="button"
+                    >
+                      {library.archiveRoot}
+                    </button>
+                  </BreadcrumbLink>
+                </BreadcrumbItem>
+                {breadcrumbs.map((crumb, index) => (
+                  <Fragment key={crumb.path}>
+                    <BreadcrumbSeparator />
+                    <BreadcrumbItem className="min-w-0">
+                      {index === breadcrumbs.length - 1 ? (
+                        <BreadcrumbPage className="max-w-72 truncate" title={crumb.path}>
                           {crumb.label}
-                        </button>
-                      </BreadcrumbLink>
-                    )}
-                  </BreadcrumbItem>
-                </Fragment>
-              ))}
-            </BreadcrumbList>
-          </Breadcrumb>
+                        </BreadcrumbPage>
+                      ) : (
+                        <BreadcrumbLink asChild>
+                          <button
+                            className="max-w-40 truncate"
+                            onClick={() => navigateToPath(crumb.path)}
+                            title={crumb.path}
+                            type="button"
+                          >
+                            {crumb.label}
+                          </button>
+                        </BreadcrumbLink>
+                      )}
+                    </BreadcrumbItem>
+                  </Fragment>
+                ))}
+              </BreadcrumbList>
+            </Breadcrumb>
+          </div>
 
           <form
             className="relative hidden w-72 shrink-0 items-center md:flex"
@@ -379,7 +500,9 @@ function PaneViewHome() {
         <div className="flex min-h-0 flex-1">
           <BrowserGrid
             comicMode={comicMode}
+            columnCountRef={columnCountRef}
             entries={entries}
+            focusedIndex={focusedEntryIndex}
             onActivateEntry={handleActivateEntry}
             onSelectEntry={handleSelectEntry}
             selectedId={selectedId}
@@ -395,6 +518,7 @@ function PaneViewHome() {
 
         <FloatingToolbar
           comicMode={comicMode}
+          onChangeSortMode={setSortMode}
           onToggleComicMode={() => setComicMode((v) => !v)}
           onToggleRecursive={() => setRecursive((v) => !v)}
           recursive={recursive}
@@ -428,4 +552,25 @@ function buildBreadcrumbItems(path: string): Array<{ label: string; path: string
     label: segment,
     path: segments.slice(0, index + 1).join("/"),
   }));
+}
+
+function isTextInputTarget(target: EventTarget | null): boolean {
+  const element = target as HTMLElement | null;
+  return (
+    !!element &&
+    (element.isContentEditable ||
+      element.tagName === "INPUT" ||
+      element.tagName === "TEXTAREA" ||
+      element.tagName === "SELECT")
+  );
+}
+
+function getParentPath(path: string): string {
+  const normalized = path
+    .replace(/\\/g, "/")
+    .replace(/^\/+/, "")
+    .replace(/\/+/g, "/")
+    .replace(/\/+$/, "");
+  const separatorIndex = normalized.lastIndexOf("/");
+  return separatorIndex >= 0 ? normalized.slice(0, separatorIndex) : "";
 }
