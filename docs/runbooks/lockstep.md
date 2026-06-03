@@ -43,6 +43,8 @@ pnpm start:lockstep -- doctor --source "T:\cloud-desktop\media"
 
 When `LOCKSTEP_API_URL` and `LOCKSTEP_API_TOKEN` are set, doctor requests `/api/sync/snapshot` and reports reachability.
 
+Lockstep prints live progress to stderr while it works: indexing paths, hash byte counts, and per-file push stages (`Hashing`, `Uploading`, `Registering`). In a TTY terminal the current step updates in place; in CI logs each update is written on its own line.
+
 ## Read-Only Plan
 
 ```powershell

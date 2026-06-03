@@ -19,6 +19,7 @@ export interface ScanArchiveOptions {
 export type ScanArchiveProgress =
   | {
       filesFound: number;
+      path?: string;
       skipped: number;
       stage: "scanning";
     }
@@ -138,6 +139,7 @@ export async function scanArchive({
       });
       onProgress?.({
         filesFound: items.length,
+        path: relativePath,
         skipped: skippedEntries.length,
         stage: "scanning",
       });
