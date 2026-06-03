@@ -6,7 +6,6 @@ import {
   type LibraryMediaItem,
   readDatabaseLibrarySnapshot,
 } from "../../server/library/repository";
-import { libraryStats } from "./library-data";
 
 const fixtureRoots = ["nsfw", "nsfw-stories", "sfw", "sfw/patreon"];
 const libraryRequestSchema = z.object({
@@ -21,7 +20,6 @@ export interface LibrarySnapshot {
   media: LibraryMediaItem[];
   mediaUrlMode: "signed-url";
   roots: string[];
-  stats: typeof libraryStats;
 }
 
 export const getLibrarySnapshot = createServerFn({ method: "GET" })
@@ -41,7 +39,6 @@ export const getLibrarySnapshot = createServerFn({ method: "GET" })
       media: databaseSnapshot.media,
       mediaUrlMode: "signed-url",
       roots: databaseSnapshot.roots.length ? databaseSnapshot.roots : readFixtureRoots(currentPath),
-      stats: libraryStats,
     };
   });
 
