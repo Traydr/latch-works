@@ -1,6 +1,6 @@
 import type { BrowserEntry } from "@latch-works/media-domain";
 import { Archive } from "lucide-react";
-import type { RefObject } from "react";
+import { type RefObject, useEffect } from "react";
 import { BrowserEntryCard } from "./BrowserEntryCard";
 import { useVirtualGridMetrics } from "./useVirtualGridMetrics";
 
@@ -11,6 +11,8 @@ interface BrowserGridProps {
   focusedIndex: number;
   onActivateEntry: (entry: BrowserEntry) => void;
   onSelectEntry: (entry: BrowserEntry) => void;
+  scrollFocusedIntoView: boolean;
+  onScrolledToFocus: () => void;
   selectedId: string | null;
 }
 
@@ -21,15 +23,61 @@ export function BrowserGrid({
   focusedIndex,
   onActivateEntry,
   onSelectEntry,
+  scrollFocusedIntoView,
+  onScrolledToFocus,
   selectedId,
 }: BrowserGridProps) {
-  const { cardHeight, cardWidth, columnCount, gridWidth, mainRef, totalGridHeight, windowedItems } =
-    useVirtualGridMetrics(entries.length, 220, comicMode ? "tall" : "wide");
+  const {
+    cardHeight,
+    cardWidth,
+    columnCount,
+    gridWidth,
+    mainRef,
+    rowStride,
+    totalGridHeight,
+    windowedItems,
+  } = useVirtualGridMetrics(entries.length, 220, comicMode ? "tall" : "wide");
 
   // Sync column count for keyboard navigation.
   if (columnCountRef.current !== columnCount) {
     columnCountRef.current = columnCount;
   }
+
+  useEffect(() => {
+    if (!scrollFocusedIntoView || entries.length === 0) {
+      return;
+    }
+
+    const element = mainRef.current;
+    if (!element) {
+      onScrolledToFocus();
+      return;
+    }
+
+    const row = Math.floor(focusedIndex / columnCount);
+    const itemTop = row * rowStride;
+    const itemBottom = itemTop + cardHeight;
+    const padding = 24;
+    const viewTop = element.scrollTop;
+    const viewBottom = viewTop + element.clientHeight;
+
+    if (itemTop < viewTop + padding) {
+      element.scrollTop = Math.max(0, itemTop - padding);
+    } else if (itemBottom > viewBottom - padding) {
+      element.scrollTop = itemBottom - element.clientHeight + padding;
+    }
+
+    onScrolledToFocus();
+  }, [
+    cardHeight,
+    columnCount,
+    entries.length,
+    focusedIndex,
+    mainRef,
+    onScrolledToFocus,
+    rowStride,
+    scrollFocusedIntoView,
+  ]);
 
   return (
     <section

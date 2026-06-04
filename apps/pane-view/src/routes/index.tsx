@@ -9,7 +9,7 @@ import {
   sortMediaItems,
 } from "@latch-works/media-domain";
 import { createFileRoute, redirect } from "@tanstack/react-router";
-import { Archive, Search } from "lucide-react";
+import { Archive, PanelRightClose, PanelRightOpen, Search } from "lucide-react";
 import { type FormEvent, Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Breadcrumb,
@@ -19,8 +19,10 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { ArchiveSidebar } from "@/features/gallery/ArchiveSidebar";
 import { BrowserGrid } from "@/features/gallery/BrowserGrid";
 import { DetailPanel } from "@/features/gallery/DetailPanel";
@@ -56,9 +58,11 @@ function PaneViewHome() {
   const navigate = Route.useNavigate();
 
   const persisted = useGalleryState();
+  const isMobile = useIsMobile();
 
   const [recursive, setRecursive] = useState(persisted.recursive);
   const [comicMode, setComicMode] = useState(persisted.comicMode);
+  const [detailPanelOpen, setDetailPanelOpen] = useState(persisted.detailPanelOpen);
   const [sortMode, setSortMode] = useState<GallerySortMode>(persisted.sortMode);
   const [randomSeed, setRandomSeed] = useState(() => createRandomSeed());
   const [selectedId, setSelectedId] = useState<string | null>(
@@ -70,6 +74,9 @@ function PaneViewHome() {
   /** When set, gallery selection stays on this id while the viewer pages through `viewerItems`. */
   const [viewerLockedMediaId, setViewerLockedMediaId] = useState<string | null>(null);
   const [focusedEntryIndex, setFocusedEntryIndex] = useState(0);
+  const [scrollFocusedIntoView, setScrollFocusedIntoView] = useState(false);
+
+  const showDetailPanel = !isMobile && detailPanelOpen;
 
   // Redirect to persisted path on first visit if URL has no path.
   // biome-ignore lint/correctness/useExhaustiveDependencies: Only run once on mount to restore persisted path.
@@ -174,6 +181,10 @@ function PaneViewHome() {
   useEffect(() => {
     persisted.setSortMode(sortMode);
   }, [sortMode, persisted.setSortMode]);
+
+  useEffect(() => {
+    persisted.setDetailPanelOpen(detailPanelOpen);
+  }, [detailPanelOpen, persisted.setDetailPanelOpen]);
 
   // Keyboard shortcuts.
   useEffect(() => {
@@ -344,6 +355,7 @@ function PaneViewHome() {
 
     if (nextIndex >= 0 && nextIndex < entries.length) {
       setFocusedEntryIndex(nextIndex);
+      setScrollFocusedIntoView(true);
       const entry = entries[nextIndex];
       if (entry?.kind === "media") {
         selectMedia(entry.media.id);
@@ -403,6 +415,8 @@ function PaneViewHome() {
         q: search.q,
       },
       to: "/",
+      replace: true,
+      resetScroll: false,
     });
   };
 
@@ -489,17 +503,17 @@ function PaneViewHome() {
         onNavigateToPath={navigateToPath}
       />
 
-      <SidebarInset className="min-w-0 overflow-hidden">
+      <SidebarInset className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border bg-background px-5">
           <div className="flex items-center gap-2">
-            <SidebarTrigger />
+            <SidebarTrigger className="-ml-1" />
             <Breadcrumb className="flex min-w-0 items-center gap-2">
               <Archive className="size-4 shrink-0 text-muted-foreground" />
               <BreadcrumbList className="min-w-0 flex-nowrap overflow-hidden">
                 <BreadcrumbItem>
                   <BreadcrumbLink asChild>
                     <button
-                      className="max-w-40 truncate"
+                      className="max-w-40 cursor-pointer truncate rounded-md px-2 py-1.5"
                       onClick={() => navigateToPath("")}
                       type="button"
                     >
@@ -512,13 +526,16 @@ function PaneViewHome() {
                     <BreadcrumbSeparator />
                     <BreadcrumbItem className="min-w-0">
                       {index === breadcrumbs.length - 1 ? (
-                        <BreadcrumbPage className="max-w-72 truncate" title={crumb.path}>
+                        <BreadcrumbPage
+                          className="max-w-72 truncate px-2 py-1.5"
+                          title={crumb.path}
+                        >
                           {crumb.label}
                         </BreadcrumbPage>
                       ) : (
                         <BreadcrumbLink asChild>
                           <button
-                            className="max-w-40 truncate"
+                            className="max-w-40 cursor-pointer truncate rounded-md px-2 py-1.5"
                             onClick={() => navigateToPath(crumb.path)}
                             title={crumb.path}
                             type="button"
@@ -534,43 +551,65 @@ function PaneViewHome() {
             </Breadcrumb>
           </div>
 
-          <form
-            className="relative hidden w-72 shrink-0 items-center md:flex"
-            onSubmit={submitSearch}
-          >
-            <Search className="pointer-events-none absolute left-2.5 size-4 text-muted-foreground" />
-            <Input
-              aria-label="Search archive"
-              className="pl-8"
-              onChange={(event) => setSearchDraft(event.target.value)}
-              placeholder="Search paths"
-              type="search"
-              value={searchDraft}
-            />
-          </form>
+          <div className="flex shrink-0 items-center gap-1">
+            <form
+              className="relative hidden w-72 items-center md:flex"
+              onSubmit={submitSearch}
+            >
+              <Search className="pointer-events-none absolute left-2.5 size-4 text-muted-foreground" />
+              <Input
+                aria-label="Search archive"
+                className="pl-8"
+                onChange={(event) => setSearchDraft(event.target.value)}
+                placeholder="Search paths"
+                type="search"
+                value={searchDraft}
+              />
+            </form>
+            <Button
+              aria-expanded={showDetailPanel}
+              aria-label={showDetailPanel ? "Hide preview panel" : "Show preview panel"}
+              className="hidden shrink-0 lg:inline-flex"
+              onClick={() => setDetailPanelOpen((open) => !open)}
+              size="icon"
+              title={showDetailPanel ? "Hide preview panel" : "Show preview panel"}
+              type="button"
+              variant="outline"
+            >
+              {showDetailPanel ? (
+                <PanelRightClose className="size-4" />
+              ) : (
+                <PanelRightOpen className="size-4" />
+              )}
+            </Button>
+          </div>
         </header>
 
-        <div className="flex min-h-0 flex-1">
+        <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
           <BrowserGrid
             comicMode={comicMode}
             columnCountRef={columnCountRef}
             entries={entries}
             focusedIndex={focusedEntryIndex}
             onActivateEntry={handleActivateEntry}
+            onScrolledToFocus={() => setScrollFocusedIntoView(false)}
             onSelectEntry={handleSelectEntry}
+            scrollFocusedIntoView={scrollFocusedIntoView}
             selectedId={viewerLockedMediaId ?? selectedId}
           />
 
-          <DetailPanel
-            onNext={() => selectAdjacentMedia(1)}
-            onOpenViewer={() => {
-              if (selected) {
-                openViewer(visibleMedia, selected.id);
-              }
-            }}
-            onPrev={() => selectAdjacentMedia(-1)}
-            selected={selected}
-          />
+          {showDetailPanel ? (
+            <DetailPanel
+              onNext={() => selectAdjacentMedia(1)}
+              onOpenViewer={() => {
+                if (selected) {
+                  openViewer(visibleMedia, selected.id);
+                }
+              }}
+              onPrev={() => selectAdjacentMedia(-1)}
+              selected={selected}
+            />
+          ) : null}
         </div>
 
         <FloatingToolbar
@@ -581,11 +620,21 @@ function PaneViewHome() {
               const next = !current;
               if (next) {
                 setRecursive(true);
+              } else {
+                setRecursive(false);
               }
               return next;
             });
           }}
-          onToggleRecursive={() => setRecursive((v) => !v)}
+          onToggleRecursive={() => {
+            setRecursive((current) => {
+              const next = !current;
+              if (!next) {
+                setComicMode(false);
+              }
+              return next;
+            });
+          }}
           recursive={recursive}
           shuffle={shuffle}
           sortMode={sortMode}

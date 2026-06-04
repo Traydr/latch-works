@@ -16,7 +16,7 @@ export function DetailPanel({ onNext, onOpenViewer, onPrev, selected }: DetailPa
 
   return (
     <aside
-      className="hidden w-[360px] shrink-0 border-l border-zinc-800 bg-zinc-950 p-5 lg:block"
+      className="hidden h-full min-h-0 w-full max-w-[360px] shrink-0 overflow-y-auto overflow-x-hidden border-l border-zinc-800 bg-zinc-950 p-5 lg:block"
       aria-label="Selected media"
     >
       {selected ? (

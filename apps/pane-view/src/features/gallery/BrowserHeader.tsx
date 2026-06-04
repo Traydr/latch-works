@@ -68,7 +68,7 @@ export function BrowserHeader({
           <BreadcrumbItem>
             <BreadcrumbLink asChild>
               <button
-                className="max-w-40 truncate"
+                className="max-w-40 cursor-pointer truncate rounded-md px-2 py-1.5"
                 onClick={() => onNavigateToPath("")}
                 type="button"
               >
@@ -87,7 +87,7 @@ export function BrowserHeader({
                 ) : (
                   <BreadcrumbLink asChild>
                     <button
-                      className="max-w-40 truncate"
+                      className="max-w-40 cursor-pointer truncate rounded-md px-2 py-1.5"
                       onClick={() => onNavigateToPath(crumb.path)}
                       title={crumb.path}
                       type="button"

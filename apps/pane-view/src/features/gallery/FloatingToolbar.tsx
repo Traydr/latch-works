@@ -98,7 +98,7 @@ export function FloatingToolbar({
                     role="menuitemradio"
                     aria-checked={selected}
                     className={cn(
-                      "flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-xs transition",
+                      "flex w-full cursor-pointer items-center justify-between rounded-lg px-2 py-1.5 text-left text-xs transition",
                       selected
                         ? "bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300"
                         : "text-zinc-300 hover:bg-zinc-800",

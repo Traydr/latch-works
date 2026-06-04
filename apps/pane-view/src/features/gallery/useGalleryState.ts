@@ -5,6 +5,7 @@ const STORAGE_KEY = "pane-view.state";
 
 interface PersistedState {
   comicMode: boolean;
+  detailPanelOpen: boolean;
   lastPath: string;
   lastSelectedId: string | null;
   recursive: boolean;
@@ -13,6 +14,7 @@ interface PersistedState {
 
 const DEFAULT_STATE: PersistedState = {
   comicMode: false,
+  detailPanelOpen: true,
   lastPath: "",
   lastSelectedId: null,
   recursive: true,
@@ -34,6 +36,10 @@ function readPersistedState(): PersistedState {
     const record = parsed as Record<string, unknown>;
     return {
       comicMode: typeof record.comicMode === "boolean" ? record.comicMode : DEFAULT_STATE.comicMode,
+      detailPanelOpen:
+        typeof record.detailPanelOpen === "boolean"
+          ? record.detailPanelOpen
+          : DEFAULT_STATE.detailPanelOpen,
       lastPath: typeof record.lastPath === "string" ? record.lastPath : DEFAULT_STATE.lastPath,
       lastSelectedId:
         typeof record.lastSelectedId === "string" || record.lastSelectedId === null
@@ -93,10 +99,15 @@ export function useGalleryState() {
 
   return {
     comicMode: state.comicMode,
+    detailPanelOpen: state.detailPanelOpen,
     lastPath: state.lastPath,
     lastSelectedId: state.lastSelectedId,
     recursive: state.recursive,
     setComicMode: useCallback((comicMode: boolean) => updateState({ comicMode }), [updateState]),
+    setDetailPanelOpen: useCallback(
+      (detailPanelOpen: boolean) => updateState({ detailPanelOpen }),
+      [updateState],
+    ),
     setLastPath: useCallback((lastPath: string) => updateState({ lastPath }), [updateState]),
     setLastSelectedId: useCallback(
       (lastSelectedId: string | null) => updateState({ lastSelectedId }),

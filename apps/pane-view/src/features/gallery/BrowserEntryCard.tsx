@@ -28,9 +28,10 @@ export function BrowserEntryCard({
   return (
     <button
       type="button"
-      className="absolute text-left transition-all"
+      className="absolute cursor-pointer text-left transition-all"
       onClick={() => onSelect(entry)}
       onDoubleClick={() => onActivate(entry)}
+      onMouseDown={(event) => event.preventDefault()}
       style={{
         width: `${cardWidth}px`,
         height: `${cardHeight}px`,

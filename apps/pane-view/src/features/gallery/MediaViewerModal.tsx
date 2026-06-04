@@ -290,14 +290,14 @@ export function MediaViewerModal({
           <div className="flex items-center gap-2 text-sm">
             <button
               type="button"
-              className="rounded-xl border border-zinc-300/90 bg-white/70 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-white dark:border-zinc-700/80 dark:bg-zinc-900/70 dark:text-zinc-200"
+              className="cursor-pointer rounded-xl border border-zinc-300/90 bg-white/70 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-white dark:border-zinc-700/80 dark:bg-zinc-900/70 dark:text-zinc-200"
               onClick={() => void toggleFullscreen()}
             >
               Fullscreen
             </button>
             <button
               type="button"
-              className="rounded-xl border border-zinc-300/90 bg-white/70 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-white dark:border-zinc-700/80 dark:bg-zinc-900/70 dark:text-zinc-200"
+              className="cursor-pointer rounded-xl border border-zinc-300/90 bg-white/70 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-white dark:border-zinc-700/80 dark:bg-zinc-900/70 dark:text-zinc-200"
               onClick={onClose}
             >
               Close
@@ -309,7 +309,7 @@ export function MediaViewerModal({
       {/* Side arrows */}
       <button
         type="button"
-        className={`absolute left-4 top-1/2 z-20 -translate-y-1/2 rounded-2xl border border-zinc-700/80 bg-zinc-900/90 p-3 text-xl shadow-xl backdrop-blur-xl ${canStepBackward ? "" : "pointer-events-none opacity-40"}`}
+        className={`absolute left-4 top-1/2 z-20 -translate-y-1/2 cursor-pointer rounded-2xl border border-zinc-700/80 bg-zinc-900/90 p-3 text-xl shadow-xl backdrop-blur-xl ${canStepBackward ? "" : "pointer-events-none opacity-40"}`}
         onClick={() => step(-1)}
         disabled={!canStepBackward}
       >
@@ -317,7 +317,7 @@ export function MediaViewerModal({
       </button>
       <button
         type="button"
-        className={`absolute right-4 top-1/2 z-20 -translate-y-1/2 rounded-2xl border border-zinc-700/80 bg-zinc-900/90 p-3 text-xl shadow-xl backdrop-blur-xl ${canStepForward ? "" : "pointer-events-none opacity-40"}`}
+        className={`absolute right-4 top-1/2 z-20 -translate-y-1/2 cursor-pointer rounded-2xl border border-zinc-700/80 bg-zinc-900/90 p-3 text-xl shadow-xl backdrop-blur-xl ${canStepForward ? "" : "pointer-events-none opacity-40"}`}
         onClick={() => step(1)}
         disabled={!canStepForward}
       >
@@ -410,21 +410,21 @@ export function MediaViewerModal({
             <div className="flex flex-wrap items-center gap-2 text-sm text-zinc-200">
               <button
                 type="button"
-                className="rounded-xl border border-zinc-300/90 bg-white/70 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-white dark:border-zinc-700/80 dark:bg-zinc-900/70 dark:text-zinc-200"
+                className="cursor-pointer rounded-xl border border-zinc-300/90 bg-white/70 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-white dark:border-zinc-700/80 dark:bg-zinc-900/70 dark:text-zinc-200"
                 onClick={toggleVideoPlayback}
               >
                 {playing ? "Pause" : "Play"}
               </button>
               <button
                 type="button"
-                className="rounded-xl border border-zinc-300/90 bg-white/70 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-white dark:border-zinc-700/80 dark:bg-zinc-900/70 dark:text-zinc-200"
+                className="cursor-pointer rounded-xl border border-zinc-300/90 bg-white/70 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-white dark:border-zinc-700/80 dark:bg-zinc-900/70 dark:text-zinc-200"
                 onClick={() => skip(-5)}
               >
                 -5s
               </button>
               <button
                 type="button"
-                className="rounded-xl border border-zinc-300/90 bg-white/70 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-white dark:border-zinc-700/80 dark:bg-zinc-900/70 dark:text-zinc-200"
+                className="cursor-pointer rounded-xl border border-zinc-300/90 bg-white/70 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-white dark:border-zinc-700/80 dark:bg-zinc-900/70 dark:text-zinc-200"
                 onClick={() => skip(5)}
               >
                 +5s
