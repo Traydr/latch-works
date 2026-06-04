@@ -3,6 +3,7 @@ import { getBaseName } from "@latch-works/media-domain";
 import { and, eq, ilike, isNull, or, type SQL } from "drizzle-orm";
 import { db } from "../db";
 import { folders, libraryEntries, mediaObjects, thumbnails } from "../db/schema";
+import { buildGalleryThumbnailUrl } from "../media/cdn-delivery";
 
 export interface LibraryMediaItem extends MediaItem {
   thumbnailUrl?: string;
@@ -110,11 +111,11 @@ export async function readDatabaseLibrarySnapshot({
         width: object.width ?? undefined,
       };
 
-      if (thumbnail) {
-        media.thumbnailUrl = `/api/media/${entry.id}/thumbnail?size=${thumbnail.size}`;
-      } else if (object.mediaType === "image" || object.mediaType === "gif") {
-        media.thumbnailUrl = `/api/media/${entry.id}/original`;
-      }
+      media.thumbnailUrl = buildGalleryThumbnailUrl({
+        entryId: entry.id,
+        mediaType: object.mediaType,
+        objectKey: thumbnail?.objectKey,
+      });
 
       return media;
     }),

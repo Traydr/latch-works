@@ -1,0 +1,348 @@
+import { spawn } from "node:child_process";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { snapThumbnailSize, type ThumbnailSize } from "@latch-works/media-delivery";
+import type { MediaType } from "@latch-works/media-domain";
+import {
+  headStoredObject,
+  originalObjectKey,
+  previewObjectKey,
+  putStoredObject,
+  readStoredObjectBytes,
+  thumbnailObjectKey,
+} from "@latch-works/media-storage";
+import { and, eq } from "drizzle-orm";
+import ffmpegPath from "ffmpeg-static";
+import sharp from "sharp";
+import { db } from "../db";
+import { thumbnails } from "../db/schema";
+import { readMediaThumbnailContext } from "./repository";
+import { createPaneViewStorageClient } from "./storage-client";
+
+const maxSourceBytes = 512 * 1024 * 1024;
+
+export type ThumbnailEnsureResult =
+  | {
+      status: "ready";
+      objectKey: string;
+      purpose: "thumbnail" | "preview";
+      width: number;
+      height: number;
+    }
+  | { status: "pending" }
+  | { status: "failed" }
+  | { status: "unsupported" };
+
+export async function ensureThumbnailDerivative({
+  mediaId,
+  requestedSize,
+}: {
+  mediaId: string;
+  requestedSize: number;
+}): Promise<ThumbnailEnsureResult> {
+  const size = snapThumbnailSize(requestedSize);
+  const context = await readMediaThumbnailContext({ mediaId });
+  if (!context) {
+    return { status: "failed" };
+  }
+
+  if (!supportsDerivative(context.mediaType)) {
+    return { status: "unsupported" };
+  }
+
+  const derivative = buildDerivativeDescriptor(context, size);
+  const [existing] = await db
+    .select()
+    .from(thumbnails)
+    .where(and(eq(thumbnails.mediaObjectId, context.mediaObjectId), eq(thumbnails.size, size)))
+    .limit(1);
+
+  if (existing?.status === "ready") {
+    return {
+      height: existing.height,
+      objectKey: existing.objectKey,
+      purpose: derivative.purpose,
+      status: "ready",
+      width: existing.width,
+    };
+  }
+
+  if (existing?.status === "pending" || existing?.status === "processing") {
+    return { status: "pending" };
+  }
+
+  if (!existing) {
+    await db.insert(thumbnails).values({
+      height: 0,
+      mediaObjectId: context.mediaObjectId,
+      objectKey: derivative.objectKey,
+      size,
+      status: "pending",
+      width: 0,
+    });
+  } else if (existing.status === "failed") {
+    await db
+      .update(thumbnails)
+      .set({
+        error: null,
+        objectKey: derivative.objectKey,
+        status: "pending",
+        updatedAt: new Date(),
+      })
+      .where(and(eq(thumbnails.mediaObjectId, context.mediaObjectId), eq(thumbnails.size, size)));
+  } else {
+    return { status: "pending" };
+  }
+
+  const [claimed] = await db
+    .update(thumbnails)
+    .set({ status: "processing", updatedAt: new Date() })
+    .where(
+      and(
+        eq(thumbnails.mediaObjectId, context.mediaObjectId),
+        eq(thumbnails.size, size),
+        eq(thumbnails.status, "pending"),
+      ),
+    )
+    .returning();
+
+  if (!claimed) {
+    return { status: "pending" };
+  }
+
+  try {
+    const storage = createPaneViewStorageClient();
+    const existingObject = await headStoredObject({ key: derivative.objectKey, storage });
+    if (existingObject) {
+      const metadata = await readWebpMetadataFromStorage(derivative.objectKey, storage);
+      await markThumbnailReady({
+        height: metadata.height,
+        mediaObjectId: context.mediaObjectId,
+        objectKey: derivative.objectKey,
+        size,
+        width: metadata.width,
+      });
+      return {
+        height: metadata.height,
+        objectKey: derivative.objectKey,
+        purpose: derivative.purpose,
+        status: "ready",
+        width: metadata.width,
+      };
+    }
+
+    const generated = await generateDerivativeBytes(context, size);
+    await putStoredObject({
+      body: generated.bytes,
+      contentType: "image/webp",
+      key: derivative.objectKey,
+      storage,
+    });
+    await markThumbnailReady({
+      height: generated.height,
+      mediaObjectId: context.mediaObjectId,
+      objectKey: derivative.objectKey,
+      size,
+      width: generated.width,
+    });
+
+    return {
+      height: generated.height,
+      objectKey: derivative.objectKey,
+      purpose: derivative.purpose,
+      status: "ready",
+      width: generated.width,
+    };
+  } catch (error) {
+    await db
+      .update(thumbnails)
+      .set({
+        error: error instanceof Error ? error.message : "thumbnail generation failed",
+        status: "failed",
+        updatedAt: new Date(),
+      })
+      .where(and(eq(thumbnails.mediaObjectId, context.mediaObjectId), eq(thumbnails.size, size)));
+
+    return { status: "failed" };
+  }
+}
+
+function supportsDerivative(mediaType: MediaType): boolean {
+  return mediaType === "image" || mediaType === "gif" || mediaType === "video";
+}
+
+function buildDerivativeDescriptor(
+  context: Awaited<ReturnType<typeof readMediaThumbnailContext>>,
+  size: ThumbnailSize,
+): { objectKey: string; purpose: "thumbnail" | "preview" } {
+  if (!context) {
+    throw new Error("missing media thumbnail context");
+  }
+
+  if (context.mediaType === "video") {
+    return {
+      objectKey: previewObjectKey({
+        extension: context.extension,
+        mediaType: "video",
+        sha256: context.sha256,
+        size,
+      }),
+      purpose: "preview",
+    };
+  }
+
+  return {
+    objectKey: thumbnailObjectKey({
+      extension: context.extension,
+      mediaType: context.mediaType,
+      sha256: context.sha256,
+      size,
+    }),
+    purpose: "thumbnail",
+  };
+}
+
+async function generateDerivativeBytes(
+  context: NonNullable<Awaited<ReturnType<typeof readMediaThumbnailContext>>>,
+  size: ThumbnailSize,
+): Promise<{ bytes: Buffer; height: number; width: number }> {
+  const storage = createPaneViewStorageClient();
+  const sourceKey =
+    context.originalObjectKey ??
+    originalObjectKey({
+      extension: context.extension,
+      mediaType: context.mediaType,
+      sha256: context.sha256,
+    });
+
+  const sourceBytes = await readStoredObjectBytes({ key: sourceKey, storage });
+  if (!sourceBytes) {
+    throw new Error(`original object missing: ${sourceKey}`);
+  }
+
+  if (sourceBytes.byteLength > maxSourceBytes) {
+    throw new Error(`original object exceeds ${maxSourceBytes} bytes`);
+  }
+
+  if (context.mediaType === "video") {
+    const posterFrame = await extractVideoPosterFrame(sourceBytes, context.extension);
+    return resizeImageToWebp(posterFrame, size);
+  }
+
+  return resizeImageToWebp(sourceBytes, size);
+}
+
+async function resizeImageToWebp(
+  input: Buffer,
+  size: ThumbnailSize,
+): Promise<{ bytes: Buffer; height: number; width: number }> {
+  const result = await sharp(input)
+    .rotate()
+    .resize(size, size, {
+      fit: "inside",
+      withoutEnlargement: true,
+    })
+    .webp({ quality: 82 })
+    .toBuffer({ resolveWithObject: true });
+
+  return {
+    bytes: result.data,
+    height: result.info.height,
+    width: result.info.width,
+  };
+}
+
+async function extractVideoPosterFrame(videoBytes: Buffer, extension: string): Promise<Buffer> {
+  if (!ffmpegPath) {
+    throw new Error("ffmpeg binary is not available");
+  }
+
+  const tempDir = await mkdtemp(path.join(tmpdir(), "pane-view-thumb-"));
+  const inputPath = path.join(tempDir, `source.${extension.replace(/^\./, "")}`);
+  const outputPath = path.join(tempDir, "poster.jpg");
+
+  try {
+    await writeFile(inputPath, videoBytes);
+    await runFfmpeg(ffmpegPath, [
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      "-ss",
+      "1",
+      "-i",
+      inputPath,
+      "-frames:v",
+      "1",
+      "-q:v",
+      "2",
+      outputPath,
+    ]);
+    return await readFile(outputPath);
+  } finally {
+    await rm(tempDir, { force: true, recursive: true });
+  }
+}
+
+function runFfmpeg(binaryPath: string, args: string[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(binaryPath, args, { stdio: ["ignore", "ignore", "pipe"] });
+    let stderr = "";
+
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+
+      reject(new Error(stderr.trim() || `ffmpeg exited with code ${String(code)}`));
+    });
+  });
+}
+
+async function readWebpMetadataFromStorage(
+  objectKey: string,
+  storage: ReturnType<typeof createPaneViewStorageClient>,
+): Promise<{ height: number; width: number }> {
+  const bytes = await readStoredObjectBytes({ key: objectKey, storage });
+  if (!bytes) {
+    throw new Error(`derivative object missing: ${objectKey}`);
+  }
+
+  const metadata = await sharp(bytes).metadata();
+  return {
+    height: metadata.height ?? 0,
+    width: metadata.width ?? 0,
+  };
+}
+
+async function markThumbnailReady({
+  height,
+  mediaObjectId,
+  objectKey,
+  size,
+  width,
+}: {
+  height: number;
+  mediaObjectId: string;
+  objectKey: string;
+  size: number;
+  width: number;
+}): Promise<void> {
+  await db
+    .update(thumbnails)
+    .set({
+      error: null,
+      height,
+      objectKey,
+      status: "ready",
+      updatedAt: new Date(),
+      width,
+    })
+    .where(and(eq(thumbnails.mediaObjectId, mediaObjectId), eq(thumbnails.size, size)));
+}

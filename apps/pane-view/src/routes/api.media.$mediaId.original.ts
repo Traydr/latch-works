@@ -5,6 +5,7 @@ import {
 import { createFileRoute } from "@tanstack/react-router";
 import { env } from "../env/server";
 import { isRequestSessionValid } from "../server/auth/web-session-core";
+import { API_PRIVATE_CACHE_CONTROL } from "../server/media/cdn-delivery";
 import { planSignedOriginalDelivery } from "../server/media/delivery";
 import { readMediaDeliveryRequest } from "../server/media/repository";
 
@@ -13,7 +14,10 @@ export const Route = createFileRoute("/api/media/$mediaId/original")({
     handlers: {
       GET: async ({ params, request }: { params: { mediaId: string }; request: Request }) => {
         if (!(await isRequestSessionValid({ request }))) {
-          return new Response("Unauthorized", { status: 401 });
+          return new Response("Unauthorized", {
+            headers: { "Cache-Control": API_PRIVATE_CACHE_CONTROL },
+            status: 401,
+          });
         }
 
         const media = await readMediaDeliveryRequest({
@@ -38,7 +42,10 @@ export const Route = createFileRoute("/api/media/$mediaId/original")({
         });
 
         return new Response(null, {
-          headers: { Location: signedUrl },
+          headers: {
+            "Cache-Control": API_PRIVATE_CACHE_CONTROL,
+            Location: signedUrl,
+          },
           status: 302,
         });
       },

@@ -1,7 +1,16 @@
+import type { MediaType } from "@latch-works/media-domain";
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "../db";
 import { libraryEntries, mediaObjects, thumbnails } from "../db/schema";
 import type { MediaDeliveryRequest, StoredMediaDeliveryRequest } from "./delivery";
+
+export interface MediaThumbnailContext {
+  extension: string;
+  mediaObjectId: string;
+  mediaType: MediaType;
+  originalObjectKey: string;
+  sha256: string;
+}
 
 export async function readMediaDeliveryRequest({
   mediaId,
@@ -47,4 +56,25 @@ export async function readThumbnailDeliveryRequest({
     .limit(1);
 
   return thumbnail ?? null;
+}
+
+export async function readMediaThumbnailContext({
+  mediaId,
+}: {
+  mediaId: string;
+}): Promise<MediaThumbnailContext | null> {
+  const [media] = await db
+    .select({
+      extension: mediaObjects.extension,
+      mediaObjectId: mediaObjects.id,
+      mediaType: mediaObjects.mediaType,
+      originalObjectKey: mediaObjects.objectKey,
+      sha256: mediaObjects.sha256,
+    })
+    .from(libraryEntries)
+    .innerJoin(mediaObjects, eq(libraryEntries.mediaObjectId, mediaObjects.id))
+    .where(and(eq(libraryEntries.id, mediaId), isNull(libraryEntries.deletedAt)))
+    .limit(1);
+
+  return media ?? null;
 }

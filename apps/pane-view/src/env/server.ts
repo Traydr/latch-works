@@ -12,6 +12,8 @@ export const env = createEnv({
     S3_BUCKET: z.string(),
     S3_ACCESS_KEY_ID: z.string(),
     S3_SECRET_ACCESS_KEY: z.string(),
+    MEDIA_DELIVERY_SECRET: z.string().min(32),
+    MEDIA_DELIVERY_TTL_SECONDS: z.coerce.number().int().positive().default(86_400),
     PANE_VIEW_USERNAME: z.string(),
     PANE_VIEW_PASSWORD: z.string(),
     PANE_VIEW_SYNC_TOKEN: z.string(),

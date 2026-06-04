@@ -8,7 +8,10 @@ const serverExternal = [
   "@aws-sdk/client-s3",
   "@aws-sdk/s3-request-presigner",
   "@better-auth/drizzle-adapter",
+  "@latch-works/media-delivery",
   "@latch-works/media-storage",
+  "ffmpeg-static",
+  "sharp",
   "better-auth",
   "better-auth/tanstack-start",
 ];

@@ -39,7 +39,7 @@ export type MediaItem = z.infer<typeof MediaItemSchema>;
 export const FolderNodeSchema = z.object({
   path: z.string(),
   parentPath: z.string(),
-  parentId: z.string().uuid().nullable().optional(),
+  parentId: z.uuid().nullable().optional(),
   name: z.string(),
   hasChildren: z.boolean(),
   mediaCount: z.number().int().nonnegative(),

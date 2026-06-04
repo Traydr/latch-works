@@ -1,5 +1,11 @@
-import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import {
+  GetObjectCommand,
+  HeadObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import type { Readable } from "node:stream";
 
 export interface S3StorageConfig {
   accessKeyId: string;
@@ -65,6 +71,139 @@ export async function createSignedGetUrl({
       Key: key,
     }),
     { expiresIn: expiresInSeconds },
+  );
+}
+
+export interface StoredObjectHead {
+  contentLength: number;
+  contentType: string | undefined;
+  etag: string | undefined;
+}
+
+export interface StoredObjectBody {
+  body: Readable;
+  contentLength: number | undefined;
+  contentRange: string | undefined;
+  contentType: string | undefined;
+  etag: string | undefined;
+  statusCode: number;
+}
+
+export async function headStoredObject({
+  key,
+  storage,
+}: {
+  key: string;
+  storage: S3StorageClient;
+}): Promise<StoredObjectHead | null> {
+  try {
+    const response = await storage.client.send(
+      new HeadObjectCommand({
+        Bucket: storage.bucket,
+        Key: key,
+      }),
+    );
+
+    return {
+      contentLength: Number(response.ContentLength ?? 0),
+      contentType: response.ContentType,
+      etag: response.ETag,
+    };
+  } catch (error) {
+    if (isNotFoundError(error)) {
+      return null;
+    }
+
+    throw error;
+  }
+}
+
+export async function getStoredObject({
+  key,
+  range,
+  storage,
+}: {
+  key: string;
+  range?: string;
+  storage: S3StorageClient;
+}): Promise<StoredObjectBody | null> {
+  try {
+    const response = await storage.client.send(
+      new GetObjectCommand({
+        Bucket: storage.bucket,
+        Key: key,
+        ...(range ? { Range: range } : {}),
+      }),
+    );
+
+    if (!response.Body) {
+      return null;
+    }
+
+    return {
+      body: response.Body as Readable,
+      contentLength: response.ContentLength,
+      contentRange: response.ContentRange,
+      contentType: response.ContentType,
+      etag: response.ETag,
+      statusCode: response.$metadata.httpStatusCode ?? (range ? 206 : 200),
+    };
+  } catch (error) {
+    if (isNotFoundError(error)) {
+      return null;
+    }
+
+    throw error;
+  }
+}
+
+export async function putStoredObject({
+  body,
+  contentType,
+  key,
+  storage,
+}: {
+  body: Buffer | Uint8Array;
+  contentType: string;
+  key: string;
+  storage: S3StorageClient;
+}): Promise<void> {
+  await storage.client.send(
+    new PutObjectCommand({
+      Body: body,
+      Bucket: storage.bucket,
+      ContentType: contentType,
+      Key: key,
+    }),
+  );
+}
+
+export async function readStoredObjectBytes({
+  key,
+  storage,
+}: {
+  key: string;
+  storage: S3StorageClient;
+}): Promise<Buffer | null> {
+  const object = await getStoredObject({ key, storage });
+  if (!object) {
+    return null;
+  }
+
+  const chunks: Buffer[] = [];
+  for await (const chunk of object.body) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+
+  return Buffer.concat(chunks);
+}
+
+function isNotFoundError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "name" in error &&
+    (error.name === "NotFound" || error.name === "NoSuchKey")
   );
 }
 

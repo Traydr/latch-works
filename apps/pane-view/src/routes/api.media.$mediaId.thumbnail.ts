@@ -1,12 +1,9 @@
-import {
-  createS3StorageClient,
-  createSignedGetUrl,
-} from "@latch-works/media-storage";
+import { snapThumbnailSize } from "@latch-works/media-delivery";
 import { createFileRoute } from "@tanstack/react-router";
-import { env } from "../env/server";
 import { isRequestSessionValid } from "../server/auth/web-session-core";
-import { planSignedStoredMediaDelivery } from "../server/media/delivery";
-import { readThumbnailDeliveryRequest } from "../server/media/repository";
+import { API_PRIVATE_CACHE_CONTROL, buildSignedCdnDeliveryUrl } from "../server/media/cdn-delivery";
+import { ensureThumbnailDerivative } from "../server/media/derivative-service";
+import { readMediaThumbnailContext } from "../server/media/repository";
 
 const defaultThumbnailSize = 320;
 
@@ -15,33 +12,53 @@ export const Route = createFileRoute("/api/media/$mediaId/thumbnail")({
     handlers: {
       GET: async ({ params, request }: { params: { mediaId: string }; request: Request }) => {
         if (!(await isRequestSessionValid({ request }))) {
-          return new Response("Unauthorized", { status: 401 });
+          return new Response("Unauthorized", {
+            headers: { "Cache-Control": API_PRIVATE_CACHE_CONTROL },
+            status: 401,
+          });
         }
 
-        const media = await readThumbnailDeliveryRequest({
+        const media = await readMediaThumbnailContext({ mediaId: params.mediaId });
+        if (!media) {
+          return new Response("Media not found", {
+            headers: { "Cache-Control": API_PRIVATE_CACHE_CONTROL },
+            status: 404,
+          });
+        }
+
+        const size = snapThumbnailSize(readThumbnailSize(request));
+        const result = await ensureThumbnailDerivative({
           mediaId: params.mediaId,
-          size: readThumbnailSize(request),
+          requestedSize: size,
         });
 
-        if (!media) {
-          return new Response("Thumbnail not found", { status: 404 });
+        if (result.status === "pending") {
+          return new Response("Thumbnail is being generated", {
+            headers: {
+              "Cache-Control": API_PRIVATE_CACHE_CONTROL,
+              "Retry-After": "1",
+            },
+            status: 503,
+          });
         }
 
-        const delivery = planSignedStoredMediaDelivery(media);
-        const signedUrl = await createSignedGetUrl({
-          expiresInSeconds: delivery.expiresInSeconds,
-          key: delivery.objectKey,
-          storage: createS3StorageClient({
-            accessKeyId: env.S3_ACCESS_KEY_ID,
-            bucket: env.S3_BUCKET,
-            endpoint: env.S3_ENDPOINT,
-            region: env.S3_REGION,
-            secretAccessKey: env.S3_SECRET_ACCESS_KEY,
-          }),
+        if (result.status === "failed" || result.status === "unsupported") {
+          return new Response("Thumbnail not found", {
+            headers: { "Cache-Control": API_PRIVATE_CACHE_CONTROL },
+            status: 404,
+          });
+        }
+
+        const deliveryUrl = buildSignedCdnDeliveryUrl({
+          objectKey: result.objectKey,
+          purpose: result.purpose,
         });
 
         return new Response(null, {
-          headers: { Location: signedUrl },
+          headers: {
+            "Cache-Control": API_PRIVATE_CACHE_CONTROL,
+            Location: deliveryUrl,
+          },
           status: 302,
         });
       },
