@@ -51,6 +51,10 @@ export function createS3StorageClient(config: S3StorageConfig): S3StorageClient 
       endpoint: config.endpoint,
       forcePathStyle: true,
       region: config.region,
+      // Avoid checksum query params on presigned PUT URLs. Lockstep (and browsers)
+      // upload with Content-Type only; automatic CRC32 signing breaks those clients.
+      requestChecksumCalculation: "WHEN_REQUIRED",
+      responseChecksumValidation: "WHEN_REQUIRED",
     }),
   };
 }

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
+import { Readable, Transform } from "node:stream";
 import type { MediaItem } from "@latch-works/media-domain";
 import {
   createSyncPlan,
@@ -218,8 +219,9 @@ export async function executeCommand(options: CliOptions): Promise<void> {
         reporter.log(`[${current}/${itemsToPush.length}] ${item.action} ${item.path}`);
       } catch (error) {
         failed += 1;
-        const message = error instanceof Error ? error.message : String(error);
-        reporter.log(`[${current}/${itemsToPush.length}] Failed ${item.path}: ${message}`);
+        reporter.log(
+          `[${current}/${itemsToPush.length}] Failed ${item.path}: ${formatPushError(error)}`,
+        );
       }
     }
 
@@ -501,21 +503,28 @@ async function uploadFile(
   let bytesUploaded = 0;
   let lastReport = 0;
 
-  const stream = createReadStream(filePath);
-  stream.on("data", (chunk) => {
-    bytesUploaded += chunk.length;
-    const now = Date.now();
-    if (onProgress && now - lastReport >= 100) {
-      lastReport = now;
-      onProgress(bytesUploaded, total);
-    }
-  });
+  // Count upload progress in a passthrough transform. Do not attach "data"
+  // listeners to the stream passed to fetch — that consumes bytes twice and
+  // breaks Content-Length matching in undici.
+  const body = createReadStream(filePath).pipe(
+    new Transform({
+      transform(chunk, _encoding, callback) {
+        bytesUploaded += chunk.length;
+        const now = Date.now();
+        if (onProgress && now - lastReport >= 100) {
+          lastReport = now;
+          onProgress(bytesUploaded, total);
+        }
+        callback(null, chunk);
+      },
+    }),
+  );
 
   const response = await fetch(uploadUrl, {
-    body: stream as never,
+    body: Readable.toWeb(body) as BodyInit,
     duplex: "half",
     headers: {
-      "Content-Length": String(fileStat.size),
+      "Content-Length": String(total),
       "Content-Type": contentType,
     },
     method: "PUT",
@@ -526,6 +535,19 @@ async function uploadFile(
   }
 
   onProgress?.(total, total);
+}
+
+function formatPushError(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return String(error);
+  }
+
+  const cause = error.cause;
+  if (cause instanceof Error) {
+    return `${error.message} (${cause.message})`;
+  }
+
+  return error.message;
 }
 
 function localFilePath(sourceRoot: string, archivePath: string): string {
