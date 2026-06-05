@@ -309,6 +309,16 @@ Issues that appear in both source docs are merged above. This matrix sorts **act
 
 ---
 
+## Follow-up docs
+
+| Doc | Purpose |
+| --- | --- |
+| [pane-view-issue-feedback.md](./pane-view-issue-feedback.md) | Product decisions per item |
+| [pane-view-issue-clarifications.md](./pane-view-issue-clarifications.md) | Expanded specs for unclear items |
+| [pane-view-approved-backlog.md](../plans/pane-view-approved-backlog.md) | Finalized implementation backlog |
+
+---
+
 ## Source references
 
 | Topic | Location |
