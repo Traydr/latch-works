@@ -26,7 +26,10 @@ export default defineConfig({
     tsconfigPaths: true,
   },
   ssr: {
-    external: serverExternal,
+    external: [...serverExternal, "pdfjs-dist"],
+  },
+  optimizeDeps: {
+    exclude: ["pdfjs-dist"],
   },
   server: {
     port: 3000,

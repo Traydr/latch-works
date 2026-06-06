@@ -3,8 +3,15 @@ import { getBaseName } from "@latch-works/media-domain";
 import { and, eq, ilike, isNull, or, type SQL } from "drizzle-orm";
 import { db } from "../db";
 import { folders, libraryEntries, mediaObjects, thumbnails } from "../db/schema";
-import { buildGalleryThumbnailUrl } from "../media/cdn-delivery";
 import { escapeLikePattern, resolveMediaScope } from "./query-helpers";
+
+function buildGalleryThumbnailApiUrl(entryId: string, mediaType: string): string | undefined {
+  if (mediaType !== "image" && mediaType !== "gif" && mediaType !== "video") {
+    return undefined;
+  }
+
+  return `/api/media/${entryId}/thumbnail?size=320`;
+}
 
 export interface LibraryMediaItem extends MediaItem {
   thumbnailUrl?: string;
@@ -132,11 +139,7 @@ export async function readDatabaseLibrarySnapshot({
         width: object.width ?? undefined,
       };
 
-      media.thumbnailUrl = buildGalleryThumbnailUrl({
-        entryId: entry.id,
-        mediaType: object.mediaType,
-        objectKey: thumbnail?.objectKey,
-      });
+      media.thumbnailUrl = buildGalleryThumbnailApiUrl(entry.id, object.mediaType);
 
       return media;
     }),

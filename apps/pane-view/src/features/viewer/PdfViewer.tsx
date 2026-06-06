@@ -1,8 +1,4 @@
-import { GlobalWorkerOptions, getDocument } from "pdfjs-dist";
-import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { type JSX, useEffect, useRef, useState } from "react";
-
-GlobalWorkerOptions.workerSrc = pdfWorker;
 
 interface PdfViewerProps {
   mediaId: string;
@@ -25,7 +21,18 @@ export function PdfViewer({ mediaId, title }: PdfViewerProps): JSX.Element {
 
     const render = async () => {
       try {
-        const loadingTask = getDocument({ url: `/api/media/${mediaId}/original` });
+        const [pdfjs, workerModule] = await Promise.all([
+          import("pdfjs-dist"),
+          import("pdfjs-dist/build/pdf.worker.min.mjs?url"),
+        ]);
+
+        if (cancelled) {
+          return;
+        }
+
+        pdfjs.GlobalWorkerOptions.workerSrc = workerModule.default;
+
+        const loadingTask = pdfjs.getDocument({ url: `/api/media/${mediaId}/original` });
         const pdf = await loadingTask.promise;
         if (cancelled) {
           return;

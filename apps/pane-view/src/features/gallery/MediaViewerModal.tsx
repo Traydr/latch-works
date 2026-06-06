@@ -1,8 +1,11 @@
 import type { MediaItem } from "@latch-works/media-domain";
 import { formatBytes } from "@latch-works/media-domain";
-import { type JSX, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type JSX, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { PdfViewer } from "@/features/viewer/PdfViewer";
+
+const PdfViewer = lazy(() =>
+  import("@/features/viewer/PdfViewer").then((module) => ({ default: module.PdfViewer })),
+);
 
 interface MediaViewerModalProps {
   autoplayVideos: boolean;
@@ -476,7 +479,9 @@ export function MediaViewerModal({
         onClick={(event) => event.stopPropagation()}
       >
         {item.mediaType === "pdf" ? (
-          <PdfViewer mediaId={item.id} title={item.name} />
+          <Suspense fallback={<p className="text-sm text-zinc-400">Loading PDF…</p>}>
+            <PdfViewer mediaId={item.id} title={item.name} />
+          </Suspense>
         ) : item.mediaType === "video" ? (
           <>
             {/* biome-ignore lint/a11y/useMediaCaption: Caption sidecars are not ingested yet. */}
