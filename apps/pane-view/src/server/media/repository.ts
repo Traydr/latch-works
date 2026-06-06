@@ -21,6 +21,7 @@ export async function readMediaDeliveryRequest({
     .select({
       extension: mediaObjects.extension,
       mediaType: mediaObjects.mediaType,
+      objectKey: mediaObjects.objectKey,
       sha256: mediaObjects.sha256,
     })
     .from(libraryEntries)

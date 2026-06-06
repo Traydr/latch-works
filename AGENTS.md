@@ -42,3 +42,12 @@ Pull requests should include the purpose, affected app/package, verification com
 ## Security & Configuration Tips
 
 Do not commit secrets. Keep local values in `.env` and document required keys in `.env.example`. Treat the local archive as the source of truth; commands that mutate archive or storage state should be explicit and documented in the PR.
+
+## Cursor Cloud specific instructions
+
+### pane-view local dev
+
+- Start Postgres and MinIO before `pnpm dev:pane` (see repo `.env.example`). Symlink `apps/pane-view/.env` to the repo root `.env` if needed.
+- Gallery thumbnails and viewer images resolve signed S3 URLs through the `resolveMediaDeliveryUrl` server function (`useResolvedMediaUrl` hook). Do not point `<img src>` at `/api/media/...` in dev: Vite returns 404 for those requests when `Sec-Fetch-Dest: image`.
+- API thumbnail/preview routes redirect to signed storage URLs via `delivery-redirect.ts`. CDN tokens use `~` as the payload/signature separator and the splat route `cdn.v1.$.ts`.
+- Verify image loading: log in at `/login`, browse `/?path=photos`, then run `pnpm --filter @latch-works/pane-view check`.

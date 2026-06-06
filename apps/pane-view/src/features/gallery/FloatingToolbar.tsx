@@ -1,16 +1,27 @@
 import type { GallerySortMode } from "@latch-works/media-domain";
 import { useRouter } from "@tanstack/react-router";
-import { ArrowUpDown, ImageIcon, ListTree, LogOut, RefreshCcw, Shuffle } from "lucide-react";
+import {
+  ArrowUpDown,
+  ImageIcon,
+  ListTree,
+  RefreshCcw,
+  Settings,
+  Shuffle,
+} from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 interface FloatingToolbarProps {
   comicMode: boolean;
+  currentPath: string;
+  isRefreshing: boolean;
   onChangeSortMode: (mode: GallerySortMode) => void;
+  onOpenSettings: () => void;
   onToggleComicMode: () => void;
   onToggleRecursive: () => void;
   recursive: boolean;
+  recursiveDisabled?: boolean;
   shuffle: () => void;
   sortMode: GallerySortMode;
 }
@@ -32,10 +43,14 @@ function toolButtonClass(active: boolean): string {
 
 export function FloatingToolbar({
   comicMode,
+  currentPath,
+  isRefreshing,
   onChangeSortMode,
+  onOpenSettings,
   onToggleComicMode,
   onToggleRecursive,
   recursive,
+  recursiveDisabled = false,
   shuffle,
   sortMode,
 }: FloatingToolbarProps) {
@@ -49,9 +64,14 @@ export function FloatingToolbar({
         <Button
           aria-pressed={recursive}
           className={toolButtonClass(recursive)}
+          disabled={recursiveDisabled}
           onClick={onToggleRecursive}
           size="sm"
-          title="Recursive browsing"
+          title={
+            recursiveDisabled
+              ? "Open a folder to enable recursive browsing"
+              : "Recursive browsing"
+          }
           type="button"
           variant={recursive ? "default" : "outline"}
         >
@@ -61,9 +81,10 @@ export function FloatingToolbar({
         <Button
           aria-pressed={comicMode}
           className={toolButtonClass(comicMode)}
+          disabled={currentPath === ""}
           onClick={onToggleComicMode}
           size="sm"
-          title="Comic grouping"
+          title={currentPath === "" ? "Open a folder for comic grouping" : "Comic grouping"}
           type="button"
           variant={comicMode ? "default" : "outline"}
         >
@@ -131,26 +152,26 @@ export function FloatingToolbar({
         <div className="h-5 w-px bg-zinc-800" />
         <Button
           className={toolButtonClass(false)}
+          disabled={isRefreshing}
           onClick={() => void router.invalidate()}
           size="sm"
           title="Refresh"
           type="button"
           variant="outline"
         >
-          <RefreshCcw className="size-4" />
-          <span className="hidden sm:inline">Refresh</span>
+          <RefreshCcw className={cn("size-4", isRefreshing && "animate-spin")} />
+          <span className="hidden sm:inline">{isRefreshing ? "Refreshing" : "Refresh"}</span>
         </Button>
-        <form action="/api/auth/logout" method="post">
-          <Button
-            className={toolButtonClass(false)}
-            size="sm"
-            title="Sign out"
-            type="submit"
-            variant="outline"
-          >
-            <LogOut className="size-4" />
-          </Button>
-        </form>
+        <Button
+          className={toolButtonClass(false)}
+          onClick={onOpenSettings}
+          size="sm"
+          title="Settings"
+          type="button"
+          variant="outline"
+        >
+          <Settings className="size-4" />
+        </Button>
       </div>
     </div>
   );

@@ -3,6 +3,7 @@ import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
 const GRID_GAP_PX = 12;
 const GRID_OVERSCAN_ROWS = 3;
 const MAIN_HORIZONTAL_PADDING_PX = 40;
+const DEFAULT_VIEWPORT_WIDTH = 1280;
 
 function areRowWindowsEqual(
   left: { start: number; end: number },
@@ -54,7 +55,8 @@ export function useVirtualGridMetrics(
   const mainRef = useRef<HTMLElement | null>(null);
 
   const columnWidth = thumbnailSize + 20;
-  const effectiveViewportWidth = mainClientWidth > 0 ? mainClientWidth : window.innerWidth;
+  const effectiveViewportWidth =
+    mainClientWidth > 0 ? mainClientWidth : DEFAULT_VIEWPORT_WIDTH;
   const columnCount = useMemo(() => {
     return Math.min(6, Math.max(2, Math.floor((effectiveViewportWidth - 40) / columnWidth)));
   }, [columnWidth, effectiveViewportWidth]);

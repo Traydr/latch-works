@@ -1,5 +1,6 @@
 import type { BrowserEntry } from "@latch-works/media-domain";
 import { formatBytes } from "@latch-works/media-domain";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { Poster } from "./Poster";
 
 interface BrowserEntryCardProps {
@@ -10,6 +11,7 @@ interface BrowserEntryCardProps {
   left: number;
   onActivate: (entry: BrowserEntry) => void;
   onSelect: (entry: BrowserEntry) => void;
+  priority?: boolean;
   selected: boolean;
   top: number;
 }
@@ -22,15 +24,27 @@ export function BrowserEntryCard({
   left,
   onActivate,
   onSelect,
+  priority = false,
   selected,
   top,
 }: BrowserEntryCardProps) {
+  const isMobile = useIsMobile();
+
+  const handleClick = () => {
+    if (isMobile) {
+      onActivate(entry);
+      return;
+    }
+
+    onSelect(entry);
+  };
+
   return (
     <button
       type="button"
       className="absolute cursor-pointer text-left transition-all"
-      onClick={() => onSelect(entry)}
-      onDoubleClick={() => onActivate(entry)}
+      onClick={handleClick}
+      onDoubleClick={isMobile ? undefined : () => onActivate(entry)}
       onMouseDown={(event) => event.preventDefault()}
       style={{
         width: `${cardWidth}px`,
@@ -42,9 +56,9 @@ export function BrowserEntryCard({
       {entry.kind === "folder" ? (
         <FolderCard entry={entry} focused={focused} selected={selected} />
       ) : entry.kind === "comic" ? (
-        <ComicCard entry={entry} focused={focused} selected={selected} />
+        <ComicCard cardWidth={cardWidth} entry={entry} focused={focused} priority={priority} selected={selected} />
       ) : (
-        <MediaCard entry={entry} focused={focused} selected={selected} />
+        <MediaCard cardWidth={cardWidth} entry={entry} focused={focused} priority={priority} selected={selected} />
       )}
     </button>
   );
@@ -95,12 +109,16 @@ function FolderCard({
 }
 
 function ComicCard({
+  cardWidth,
   entry,
   focused,
+  priority,
   selected,
 }: {
+  cardWidth: number;
   entry: Extract<BrowserEntry, { kind: "comic" }>;
   focused: boolean;
+  priority?: boolean;
   selected: boolean;
 }) {
   const comic = entry.comic;
@@ -116,7 +134,7 @@ function ComicCard({
       }`}
       title={comic.folderPath}
     >
-      <Poster media={comic.cover} />
+      <Poster cardWidth={cardWidth} media={comic.cover} priority={priority} />
       <div className="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/75 via-black/10 to-transparent">
         <div className="px-3 pb-3">
           <p className="line-clamp-2 text-sm font-semibold text-white">{comic.name}</p>
@@ -128,12 +146,16 @@ function ComicCard({
 }
 
 function MediaCard({
+  cardWidth,
   entry,
   focused,
+  priority,
   selected,
 }: {
+  cardWidth: number;
   entry: Extract<BrowserEntry, { kind: "media" }>;
   focused: boolean;
+  priority?: boolean;
   selected: boolean;
 }) {
   const item = entry.media;
@@ -149,7 +171,7 @@ function MediaCard({
       }`}
       title={item.path}
     >
-      <Poster media={item} />
+      <Poster cardWidth={cardWidth} media={item} priority={priority} />
       <div className="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 transition-opacity group-hover:opacity-100">
         <div className="px-3 pb-3">
           <p className="truncate text-sm font-semibold text-white">{item.name}</p>

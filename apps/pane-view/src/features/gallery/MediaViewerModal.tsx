@@ -1,9 +1,18 @@
 import type { MediaItem } from "@latch-works/media-domain";
 import { formatBytes } from "@latch-works/media-domain";
-import { type JSX, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type JSX, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { useResolvedMediaUrl } from "./useResolvedMediaUrl";
+
+const PdfViewer = lazy(() =>
+  import("@/features/viewer/PdfViewer").then((module) => ({ default: module.PdfViewer })),
+);
 
 interface MediaViewerModalProps {
+  autoplayVideos: boolean;
   items: MediaItem[];
+  loopNavigation: boolean;
+  loopVideos: boolean;
   onClose: () => void;
   startIndex: number;
 }
@@ -36,23 +45,45 @@ function formatDuration(ms: number): string {
 }
 
 export function MediaViewerModal({
+  autoplayVideos,
   items,
+  loopNavigation,
+  loopVideos,
   onClose,
   startIndex,
 }: MediaViewerModalProps): JSX.Element | null {
+  const isMobile = useIsMobile();
   const [index, setIndex] = useState(startIndex);
   const item = useMemo(() => items[index], [items, index]);
   const isVideoItem = item?.mediaType === "video";
   const modalRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const isScrubbingRef = useRef(false);
   const speedBoostHeldRef = useRef(false);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
 
   const [playing, setPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
   const [position, setPosition] = useState(0);
   const [volume, setVolume] = useState(() => readPersistedVolume());
   const [speed, setSpeed] = useState(1);
+  const [showOriginal, setShowOriginal] = useState(false);
+  const [chromeVisible, setChromeVisible] = useState(true);
+  const viewerPrimary = useResolvedMediaUrl({
+    mediaId: item && item.mediaType !== "video" && item.mediaType !== "pdf" ? item.id : undefined,
+    variant:
+      item && (showOriginal || item.mediaType !== "image") ? "original" : "preview",
+  });
+  const viewerFallback = useResolvedMediaUrl({
+    mediaId: viewerPrimary.failed ? item?.id : undefined,
+    variant: "original",
+  });
+  const viewerImageSrc = viewerPrimary.resolvedUrl ?? viewerFallback.resolvedUrl ?? null;
+  const videoDelivery = useResolvedMediaUrl({
+    mediaId: item?.mediaType === "video" ? item.id : undefined,
+    variant: "original",
+  });
 
   const applySpeed = useCallback((nextSpeed: number): void => {
     setSpeed(nextSpeed);
@@ -62,24 +93,56 @@ export function MediaViewerModal({
     }
   }, []);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: Intentionally reset video state when the active item changes.
   useEffect(() => {
     setPlaying(false);
     setDuration(0);
     setPosition(0);
     setSpeed(1);
+    setShowOriginal(false);
     speedBoostHeldRef.current = false;
   }, [item]);
 
-  const canStepBackward = index > 0;
-  const canStepForward = index < items.length - 1;
+  useEffect(() => {
+    previousFocusRef.current = document.activeElement as HTMLElement | null;
+    closeButtonRef.current?.focus();
+
+    return () => {
+      previousFocusRef.current?.focus();
+    };
+  }, []);
+
+  useEffect(() => {
+    const prefetch = (targetIndex: number) => {
+      const target = items[targetIndex];
+      if (!target || target.mediaType === "video" || target.mediaType === "pdf") {
+        return;
+      }
+
+      const link = document.createElement("link");
+      link.rel = "prefetch";
+      link.href = `/api/media/${target.id}/preview`;
+      document.head.append(link);
+    };
+
+    prefetch(index + 1);
+    prefetch(index - 1);
+  }, [index, items]);
 
   const step = useCallback(
     (delta: number) => {
-      const nextIndex = Math.max(0, Math.min(items.length - 1, index + delta));
-      setIndex(nextIndex);
+      setIndex((currentIndex) => {
+        if (items.length === 0) {
+          return 0;
+        }
+
+        const nextIndex = loopNavigation
+          ? (currentIndex + delta + items.length) % items.length
+          : Math.max(0, Math.min(items.length - 1, currentIndex + delta));
+
+        return nextIndex;
+      });
     },
-    [index, items.length],
+    [items.length, loopNavigation],
   );
 
   const skip = useCallback((seconds: number): void => {
@@ -278,27 +341,92 @@ export function MediaViewerModal({
     await modalRef.current.requestFullscreen();
   };
 
+  const canStepBackward = loopNavigation || index > 0;
+  const canStepForward = loopNavigation || index < items.length - 1;
+
+  const copyPath = async (): Promise<void> => {
+    await navigator.clipboard.writeText(item.path);
+  };
+
+  const downloadMedia = (): void => {
+    window.open(`/api/media/${item.id}/original`, "_blank", "noopener,noreferrer");
+  };
+
   return (
-    <div ref={modalRef} className="fixed inset-0 z-50 bg-zinc-950/95 text-zinc-100">
+    <div
+      ref={modalRef}
+      className="fixed inset-0 z-50 bg-zinc-950/95 text-zinc-100"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Viewer for ${item.name}`}
+      onClick={() => {
+        if (isMobile) {
+          setChromeVisible((visible) => !visible);
+        }
+      }}
+    >
       {/* Top info bar */}
-      <div className="pointer-events-none absolute left-1/2 top-4 z-20 w-[min(94vw,980px)] -translate-x-1/2">
+      <div
+        className={`pointer-events-none absolute left-1/2 top-4 z-20 w-[min(94vw,980px)] -translate-x-1/2 transition-opacity ${chromeVisible ? "opacity-100" : "opacity-0 md:opacity-100"}`}
+        style={{ paddingTop: "env(safe-area-inset-top)" }}
+      >
         <div className="pointer-events-auto flex items-center justify-between gap-3 rounded-2xl border border-zinc-700/80 bg-zinc-900/90 px-4 py-3 shadow-xl backdrop-blur-xl">
           <div className="min-w-0">
             <p className="truncate text-sm font-medium text-zinc-100">{item.name}</p>
-            <p className="text-xs text-zinc-300">{details.join(" | ")}</p>
+            <p className={`text-xs text-zinc-300 ${isMobile ? "truncate" : ""}`}>{details.join(" | ")}</p>
           </div>
           <div className="flex items-center gap-2 text-sm">
             <button
               type="button"
               className="cursor-pointer rounded-xl border border-zinc-300/90 bg-white/70 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-white dark:border-zinc-700/80 dark:bg-zinc-900/70 dark:text-zinc-200"
-              onClick={() => void toggleFullscreen()}
+              onClick={(event) => {
+                event.stopPropagation();
+                void copyPath();
+              }}
             >
-              Fullscreen
+              Copy path
             </button>
             <button
               type="button"
               className="cursor-pointer rounded-xl border border-zinc-300/90 bg-white/70 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-white dark:border-zinc-700/80 dark:bg-zinc-900/70 dark:text-zinc-200"
-              onClick={onClose}
+              onClick={(event) => {
+                event.stopPropagation();
+                downloadMedia();
+              }}
+            >
+              Download
+            </button>
+            {item.mediaType === "image" ? (
+              <button
+                type="button"
+                className="cursor-pointer rounded-xl border border-zinc-300/90 bg-white/70 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-white dark:border-zinc-700/80 dark:bg-zinc-900/70 dark:text-zinc-200"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setShowOriginal((current) => !current);
+                }}
+              >
+                {showOriginal ? "Preview" : "Original"}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="cursor-pointer rounded-xl border border-zinc-300/90 bg-white/70 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-white dark:border-zinc-700/80 dark:bg-zinc-900/70 dark:text-zinc-200"
+              onClick={(event) => {
+                event.stopPropagation();
+                void toggleFullscreen();
+              }}
+            >
+              Fullscreen
+            </button>
+            <button
+              ref={closeButtonRef}
+              type="button"
+              aria-label="Close viewer"
+              className="cursor-pointer rounded-xl border border-zinc-300/90 bg-white/70 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-white dark:border-zinc-700/80 dark:bg-zinc-900/70 dark:text-zinc-200"
+              onClick={(event) => {
+                event.stopPropagation();
+                onClose();
+              }}
             >
               Close
             </button>
@@ -306,32 +434,64 @@ export function MediaViewerModal({
         </div>
       </div>
 
+      <button
+        type="button"
+        aria-label="Previous item"
+        className={`absolute left-0 top-0 z-10 h-full w-1/2 ${canStepBackward ? "cursor-w-resize" : "cursor-default"} md:hidden`}
+        onClick={(event) => {
+          event.stopPropagation();
+          if (canStepBackward) {
+            step(-1);
+          }
+        }}
+      />
+      <button
+        type="button"
+        aria-label="Next item"
+        className={`absolute right-0 top-0 z-10 h-full w-1/2 ${canStepForward ? "cursor-e-resize" : "cursor-default"} md:hidden`}
+        onClick={(event) => {
+          event.stopPropagation();
+          if (canStepForward) {
+            step(1);
+          }
+        }}
+      />
+
       {/* Side arrows */}
       <button
         type="button"
-        className={`absolute left-4 top-1/2 z-20 -translate-y-1/2 cursor-pointer rounded-2xl border border-zinc-700/80 bg-zinc-900/90 p-3 text-xl shadow-xl backdrop-blur-xl ${canStepBackward ? "" : "pointer-events-none opacity-40"}`}
-        onClick={() => step(-1)}
+        aria-label="Previous item"
+        className={`absolute left-4 top-1/2 z-20 hidden -translate-y-1/2 cursor-pointer rounded-2xl border border-zinc-700/80 bg-zinc-900/90 p-3 text-xl shadow-xl backdrop-blur-xl md:block ${canStepBackward ? "" : "pointer-events-none opacity-40"}`}
+        onClick={(event) => {
+          event.stopPropagation();
+          step(-1);
+        }}
         disabled={!canStepBackward}
       >
         {"<"}
       </button>
       <button
         type="button"
-        className={`absolute right-4 top-1/2 z-20 -translate-y-1/2 cursor-pointer rounded-2xl border border-zinc-700/80 bg-zinc-900/90 p-3 text-xl shadow-xl backdrop-blur-xl ${canStepForward ? "" : "pointer-events-none opacity-40"}`}
-        onClick={() => step(1)}
+        aria-label="Next item"
+        className={`absolute right-4 top-1/2 z-20 hidden -translate-y-1/2 cursor-pointer rounded-2xl border border-zinc-700/80 bg-zinc-900/90 p-3 text-xl shadow-xl backdrop-blur-xl md:block ${canStepForward ? "" : "pointer-events-none opacity-40"}`}
+        onClick={(event) => {
+          event.stopPropagation();
+          step(1);
+        }}
         disabled={!canStepForward}
       >
         {">"}
       </button>
 
       {/* Center media */}
-      <div className="flex h-full items-center justify-center p-12 pt-24">
+      <div
+        className="flex h-full items-center justify-center px-3 pb-[env(safe-area-inset-bottom)] pt-[calc(env(safe-area-inset-top)+5rem)] md:p-12 md:pt-24"
+        onClick={(event) => event.stopPropagation()}
+      >
         {item.mediaType === "pdf" ? (
-          <iframe
-            className="h-full w-full border-0"
-            src={`/api/media/${item.id}/original`}
-            title={item.name}
-          />
+          <Suspense fallback={<p className="text-sm text-zinc-400">Loading PDF…</p>}>
+            <PdfViewer mediaId={item.id} title={item.name} />
+          </Suspense>
         ) : item.mediaType === "video" ? (
           <>
             {/* biome-ignore lint/a11y/useMediaCaption: Caption sidecars are not ingested yet. */}
@@ -341,12 +501,17 @@ export function MediaViewerModal({
               className="max-h-full max-w-full rounded bg-black"
               preload="auto"
               playsInline
+              autoPlay={autoplayVideos}
+              loop={loopVideos}
               onLoadedMetadata={(event) => {
                 const loadedDuration = event.currentTarget.duration;
                 event.currentTarget.volume = volume;
                 event.currentTarget.playbackRate = speed;
                 if (Number.isFinite(loadedDuration)) {
                   setDuration(loadedDuration);
+                }
+                if (autoplayVideos) {
+                  void event.currentTarget.play().catch(() => undefined);
                 }
               }}
               onDurationChange={(event) => {
@@ -365,21 +530,24 @@ export function MediaViewerModal({
               onEnded={() => {
                 setPlaying(false);
               }}
-              src={`/api/media/${item.id}/original`}
+              src={videoDelivery.resolvedUrl ?? undefined}
             />
           </>
-        ) : (
+        ) : viewerImageSrc ? (
           <img
-            src={`/api/media/${item.id}/original`}
             alt={item.name}
             className="max-h-full max-w-full rounded object-contain"
+            src={viewerImageSrc}
           />
-        )}
+        ) : null}
       </div>
 
       {/* Video controls */}
       {item.mediaType === "video" ? (
-        <div className="pointer-events-none absolute bottom-4 left-1/2 z-20 w-[min(94vw,980px)] -translate-x-1/2">
+        <div
+          className={`pointer-events-none absolute bottom-4 left-1/2 z-20 w-[min(94vw,980px)] -translate-x-1/2 transition-opacity ${chromeVisible ? "opacity-100" : "opacity-0 md:opacity-100"}`}
+          style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+        >
           <div className="pointer-events-auto space-y-2 rounded-2xl border border-zinc-700/80 bg-zinc-900/90 px-4 py-3 shadow-xl backdrop-blur-xl">
             <input
               type="range"

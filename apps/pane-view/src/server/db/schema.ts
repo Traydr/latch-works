@@ -207,6 +207,7 @@ export const folders = pgTable(
   (table) => ({
     pathUnique: uniqueIndex("folders_path_unique").on(table.path),
     parentIndex: index("folders_parent_path_idx").on(table.parentPath),
+    deletedAtIndex: index("folders_deleted_at_idx").on(table.deletedAt),
   }),
 );
 
@@ -240,6 +241,7 @@ export const libraryEntries = pgTable(
     logicalPathUnique: uniqueIndex("library_entries_logical_path_unique").on(table.logicalPath),
     parentIndex: index("library_entries_parent_path_idx").on(table.parentPath),
     mediaObjectIndex: index("library_entries_media_object_id_idx").on(table.mediaObjectId),
+    deletedAtIndex: index("library_entries_deleted_at_idx").on(table.deletedAt),
   }),
 );
 
@@ -308,6 +310,7 @@ export const thumbnails = pgTable(
   },
   (table) => ({
     pk: primaryKey({ columns: [table.mediaObjectId, table.size] }),
+    statusIndex: index("thumbnails_status_idx").on(table.mediaObjectId, table.size, table.status),
   }),
 );
 
