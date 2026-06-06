@@ -9,7 +9,7 @@ import {
   sortComicEntries,
   sortMediaItems,
 } from "@latch-works/media-domain";
-import { createFileRoute, redirect, useRouterState } from "@tanstack/react-router";
+import { createFileRoute, redirect, useRouter, useRouterState } from "@tanstack/react-router";
 import { Archive, ChevronUp, PanelRightClose, PanelRightOpen, Search } from "lucide-react";
 import { type FormEvent, Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -42,7 +42,9 @@ import { HotkeyOverlay } from "@/features/settings/HotkeyOverlay";
 import { SettingsDrawer } from "@/features/settings/SettingsDrawer";
 import { ThemeSync } from "@/features/settings/ThemeSync";
 import { useAppSettings, resolveRootKey, useRootPreferences } from "@/features/settings/useAppSettings";
-import { getLibrarySnapshot } from "../features/library/library-service";
+import { deleteLibraryEntry, getLibrarySnapshot } from "../features/library/library-service";
+import { regenerateMediaThumbnail } from "../features/media/media-delivery-service";
+import { DEFAULT_CARD_WIDTH } from "../features/gallery/thumbnail-size";
 import { isCurrentWebSessionValid } from "../server/auth/web-session";
 
 export const Route = createFileRoute("/")({
@@ -82,6 +84,7 @@ function PaneViewHome() {
   const rootKey = resolveRootKey(library.currentPath);
   const { savePreferences: saveRootPreferences } = useRootPreferences(rootKey);
   const isMobile = useIsMobile();
+  const router = useRouter();
   const isRefreshing = useRouterState({ select: (state) => state.isLoading });
 
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -630,6 +633,7 @@ function PaneViewHome() {
         currentPath={library.currentPath}
         folders={library.folders}
         onNavigateToPath={navigateToPath}
+        onOpenSettings={() => setSettingsOpen(true)}
       />
 
       <SidebarInset className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
@@ -789,6 +793,34 @@ function PaneViewHome() {
                   void navigator.clipboard.writeText(selected.path);
                 }
               }}
+              onDelete={() => {
+                if (!selected) {
+                  return;
+                }
+
+                const confirmed = window.confirm(
+                  `Delete "${selected.name}" from the archive? This cannot be undone.`,
+                );
+                if (!confirmed) {
+                  return;
+                }
+
+                void (async () => {
+                  const result = await deleteLibraryEntry({ data: { entryId: selected.id } });
+                  if (!result.deleted) {
+                    return;
+                  }
+
+                  setSelectedId(null);
+                  void navigate({
+                    search: buildBrowseSearch({ media: undefined }),
+                    to: "/",
+                    replace: true,
+                    resetScroll: false,
+                  });
+                  void router.invalidate();
+                })();
+              }}
               onDownload={() => {
                 if (selected) {
                   window.open(`/api/media/${selected.id}/original`, "_blank", "noopener,noreferrer");
@@ -801,7 +833,17 @@ function PaneViewHome() {
                 }
               }}
               onPrev={() => selectAdjacentMedia(-1)}
+              onRegenerateThumbnail={async () => {
+                if (!selected) {
+                  return;
+                }
+
+                await regenerateMediaThumbnail({
+                  data: { mediaId: selected.id, size: DEFAULT_CARD_WIDTH },
+                });
+              }}
               selected={selected}
+              showDelete
             />
           ) : null}
         </div>
@@ -811,7 +853,6 @@ function PaneViewHome() {
           currentPath={library.currentPath}
           isRefreshing={isRefreshing}
           onChangeSortMode={setSortMode}
-          onOpenSettings={() => setSettingsOpen(true)}
           onToggleComicMode={() => {
             if (library.currentPath === "") {
               return;

@@ -5,7 +5,6 @@ import {
   ImageIcon,
   ListTree,
   RefreshCcw,
-  Settings,
   Shuffle,
 } from "lucide-react";
 import { useState } from "react";
@@ -17,7 +16,6 @@ interface FloatingToolbarProps {
   currentPath: string;
   isRefreshing: boolean;
   onChangeSortMode: (mode: GallerySortMode) => void;
-  onOpenSettings: () => void;
   onToggleComicMode: () => void;
   onToggleRecursive: () => void;
   recursive: boolean;
@@ -46,7 +44,6 @@ export function FloatingToolbar({
   currentPath,
   isRefreshing,
   onChangeSortMode,
-  onOpenSettings,
   onToggleComicMode,
   onToggleRecursive,
   recursive,
@@ -60,7 +57,7 @@ export function FloatingToolbar({
 
   return (
     <div className="pointer-events-none fixed bottom-5 left-1/2 z-20 -translate-x-1/2">
-      <div className="pointer-events-auto flex max-w-[96vw] items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-950/95 px-3 py-2 shadow-lg">
+      <div className="pointer-events-auto flex max-w-[96vw] items-center gap-2 rounded-xl border border-border bg-background/95 px-3 py-2 shadow-lg backdrop-blur-sm">
         <Button
           aria-pressed={recursive}
           className={toolButtonClass(recursive)}
@@ -95,7 +92,7 @@ export function FloatingToolbar({
           <Button
             aria-expanded={sortMenuOpen}
             aria-haspopup="menu"
-            className={cn(toolButtonClass(false), sortMenuOpen && "bg-zinc-800")}
+            className={cn(toolButtonClass(false), sortMenuOpen && "bg-accent")}
             onClick={() => setSortMenuOpen((v) => !v)}
             size="sm"
             title="Sort"
@@ -107,7 +104,7 @@ export function FloatingToolbar({
           </Button>
           {sortMenuOpen ? (
             <div
-              className="absolute bottom-[calc(100%+0.5rem)] left-0 z-30 w-40 rounded-2xl border border-zinc-700/80 bg-zinc-900/90 p-1 shadow-xl backdrop-blur-xl"
+              className="absolute bottom-[calc(100%+0.5rem)] left-0 z-30 w-40 rounded-2xl border border-border bg-popover p-1 shadow-xl backdrop-blur-xl"
               role="menu"
             >
               {SORT_OPTIONS.map((option) => {
@@ -122,7 +119,7 @@ export function FloatingToolbar({
                       "flex w-full cursor-pointer items-center justify-between rounded-lg px-2 py-1.5 text-left text-xs transition",
                       selected
                         ? "bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300"
-                        : "text-zinc-300 hover:bg-zinc-800",
+                        : "text-foreground hover:bg-accent",
                     )}
                     onClick={() => {
                       onChangeSortMode(option.value);
@@ -149,7 +146,7 @@ export function FloatingToolbar({
           <Shuffle className="size-4" />
           <span className="hidden sm:inline">Shuffle</span>
         </Button>
-        <div className="h-5 w-px bg-zinc-800" />
+        <div className="h-5 w-px bg-border" />
         <Button
           className={toolButtonClass(false)}
           disabled={isRefreshing}
@@ -161,16 +158,6 @@ export function FloatingToolbar({
         >
           <RefreshCcw className={cn("size-4", isRefreshing && "animate-spin")} />
           <span className="hidden sm:inline">{isRefreshing ? "Refreshing" : "Refresh"}</span>
-        </Button>
-        <Button
-          className={toolButtonClass(false)}
-          onClick={onOpenSettings}
-          size="sm"
-          title="Settings"
-          type="button"
-          variant="outline"
-        >
-          <Settings className="size-4" />
         </Button>
       </div>
     </div>

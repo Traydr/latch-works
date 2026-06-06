@@ -4,7 +4,11 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { isCurrentWebSessionValid } from "../../server/auth/web-session";
 import { planSignedOriginalDelivery } from "../../server/media/delivery";
-import { ensurePreviewDerivative, ensureThumbnailDerivative } from "../../server/media/derivative-service";
+import {
+  ensurePreviewDerivative,
+  ensureThumbnailDerivative,
+  regenerateThumbnailDerivative,
+} from "../../server/media/derivative-service";
 import { redirectToSignedStoredObject } from "../../server/media/delivery-redirect";
 import { readMediaDeliveryRequest, readMediaThumbnailContext } from "../../server/media/repository";
 import { createPaneViewStorageClient } from "../../server/media/storage-client";
@@ -71,6 +75,26 @@ async function resolveDerivativeDeliveryUrl({
 
   return location;
 }
+
+const regenerateMediaThumbnailSchema = z.object({
+  mediaId: z.string().uuid(),
+  size: z.number().int().positive().optional(),
+});
+
+export const regenerateMediaThumbnail = createServerFn({ method: "POST" })
+  .inputValidator(regenerateMediaThumbnailSchema)
+  .handler(async ({ data }): Promise<{ status: string }> => {
+    if (!(await isCurrentWebSessionValid())) {
+      throw new Error("Unauthorized");
+    }
+
+    const result = await regenerateThumbnailDerivative({
+      mediaId: data.mediaId,
+      requestedSize: snapThumbnailSize(data.size ?? 320),
+    });
+
+    return { status: result.status };
+  });
 
 export const resolveMediaDeliveryUrl = createServerFn({ method: "GET" })
   .inputValidator(resolveMediaDeliveryRequestSchema)

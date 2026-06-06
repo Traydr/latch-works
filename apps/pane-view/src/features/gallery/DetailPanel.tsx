@@ -1,6 +1,15 @@
 import type { MediaItem } from "@latch-works/media-domain";
 import { formatBytes } from "@latch-works/media-domain";
-import { ChevronLeft, ChevronRight, Copy, Download, ImageIcon } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Copy,
+  Download,
+  ImageIcon,
+  RefreshCw,
+  Trash2,
+} from "lucide-react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { DEFAULT_CARD_WIDTH } from "./thumbnail-size";
 import { MediaPlaceholder } from "./MediaPlaceholder";
@@ -8,46 +17,89 @@ import { useResolvedMediaUrl } from "./useResolvedMediaUrl";
 
 interface DetailPanelProps {
   onCopyPath: () => void;
+  onDelete?: () => void;
   onDownload: () => void;
   onNext: () => void;
   onOpenViewer: () => void;
   onPrev: () => void;
+  onRegenerateThumbnail?: () => Promise<void>;
   selected: MediaItem | null;
+  showDelete?: boolean;
 }
 
 export function DetailPanel({
   onCopyPath,
+  onDelete,
   onDownload,
   onNext,
   onOpenViewer,
   onPrev,
+  onRegenerateThumbnail,
   selected,
+  showDelete = false,
 }: DetailPanelProps) {
+  const [thumbnailRefreshKey, setThumbnailRefreshKey] = useState(0);
+  const [regenerating, setRegenerating] = useState(false);
+  const supportsThumbnail =
+    selected?.mediaType === "image" ||
+    selected?.mediaType === "gif" ||
+    selected?.mediaType === "video";
+
   const preview = useResolvedMediaUrl({
     mediaId: selected?.id,
+    refreshKey: thumbnailRefreshKey,
     size: DEFAULT_CARD_WIDTH,
     variant: "thumbnail",
   });
   const original = useResolvedMediaUrl({
     mediaId: preview.failed ? selected?.id : undefined,
+    refreshKey: thumbnailRefreshKey,
     variant: "original",
   });
   const src = preview.resolvedUrl ?? original.resolvedUrl;
   const failed = !src && (preview.failed || original.failed);
 
+  const handleRegenerateThumbnail = async () => {
+    if (!onRegenerateThumbnail || regenerating) {
+      return;
+    }
+
+    setRegenerating(true);
+    try {
+      await onRegenerateThumbnail();
+      setThumbnailRefreshKey((current) => current + 1);
+    } finally {
+      setRegenerating(false);
+    }
+  };
+
   return (
     <aside
-      className="hidden h-full min-h-0 w-full max-w-[360px] shrink-0 overflow-y-auto overflow-x-hidden border-l border-zinc-800 bg-zinc-950 p-5 lg:block"
+      className="hidden h-full min-h-0 w-full max-w-[360px] shrink-0 overflow-y-auto overflow-x-hidden border-l border-border bg-background p-5 lg:block"
       aria-label="Selected media"
     >
       {selected ? (
         <div className="grid gap-4">
-          <div className="grid aspect-[4/5] w-full place-items-center overflow-hidden rounded-lg border border-zinc-700 bg-zinc-900">
+          <div className="relative grid aspect-[4/5] w-full place-items-center overflow-hidden rounded-lg border border-border bg-muted">
             {src && !failed ? (
               <img alt={selected.name} className="h-full w-full object-cover" src={src} />
             ) : (
               <MediaPlaceholder mediaType={selected.mediaType} size={42} />
             )}
+            {supportsThumbnail && onRegenerateThumbnail ? (
+              <Button
+                aria-label="Regenerate thumbnail"
+                className="absolute right-2 top-2"
+                disabled={regenerating}
+                onClick={() => void handleRegenerateThumbnail()}
+                size="icon"
+                title="Regenerate thumbnail"
+                type="button"
+                variant="secondary"
+              >
+                <RefreshCw className={regenerating ? "size-4 animate-spin" : "size-4"} />
+              </Button>
+            ) : null}
           </div>
 
           <Button
@@ -80,6 +132,18 @@ export function DetailPanel({
             </Button>
           </div>
 
+          {showDelete && onDelete ? (
+            <Button
+              className="w-full gap-2"
+              onClick={onDelete}
+              type="button"
+              variant="destructive"
+            >
+              <Trash2 className="size-4" />
+              Delete
+            </Button>
+          ) : null}
+
           <dl className="grid gap-3 text-sm">
             <MetadataItem label="Name" value={selected.name} />
             <MetadataItem label="Path" value={selected.path} />
@@ -95,10 +159,10 @@ export function DetailPanel({
           </dl>
         </div>
       ) : (
-        <div className="grid min-h-96 place-items-center rounded-lg border border-dashed border-zinc-800 text-center">
-          <div className="grid max-w-56 justify-items-center gap-2 text-sm text-zinc-400">
+        <div className="grid min-h-96 place-items-center rounded-lg border border-dashed border-border text-center">
+          <div className="grid max-w-56 justify-items-center gap-2 text-sm text-muted-foreground">
             <ImageIcon className="size-8" />
-            <strong className="text-zinc-100">No media selected</strong>
+            <strong className="text-foreground">No media selected</strong>
             <span>Choose an image, video, or PDF from the browser.</span>
           </div>
         </div>
@@ -109,9 +173,9 @@ export function DetailPanel({
 
 function MetadataItem({ label, value }: { label: string; value: string }) {
   return (
-    <div className="grid gap-1 border-b border-zinc-800 pb-3">
-      <dt className="text-xs text-zinc-500">{label}</dt>
-      <dd className="m-0 break-words font-medium text-zinc-100">{value}</dd>
+    <div className="grid gap-1 border-b border-border pb-3">
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd className="m-0 break-words font-medium text-foreground">{value}</dd>
     </div>
   );
 }

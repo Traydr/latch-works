@@ -162,6 +162,20 @@ export function folderFromPath(path: string): FolderNode {
   };
 }
 
+export async function softDeleteLibraryEntry({
+  entryId,
+}: {
+  entryId: string;
+}): Promise<boolean> {
+  const [deleted] = await db
+    .update(libraryEntries)
+    .set({ deletedAt: new Date() })
+    .where(and(eq(libraryEntries.id, entryId), isNull(libraryEntries.deletedAt)))
+    .returning({ id: libraryEntries.id });
+
+  return Boolean(deleted);
+}
+
 function dedupe(value: string, index: number, values: string[]): boolean {
   return values.indexOf(value) === index;
 }
