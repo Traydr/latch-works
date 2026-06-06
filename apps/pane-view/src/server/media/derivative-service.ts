@@ -34,6 +34,14 @@ export type ThumbnailEnsureResult =
   | { status: "failed" }
   | { status: "unsupported" };
 
+export async function ensurePreviewDerivative({
+  mediaId,
+}: {
+  mediaId: string;
+}): Promise<ThumbnailEnsureResult> {
+  return ensureThumbnailDerivative({ mediaId, requestedSize: 960 });
+}
+
 export async function ensureThumbnailDerivative({
   mediaId,
   requestedSize,

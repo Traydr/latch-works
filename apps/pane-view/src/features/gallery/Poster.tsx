@@ -1,10 +1,27 @@
 import type { MediaItem } from "@latch-works/media-domain";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import { readMediaPreviewUrl } from "./media-preview-url";
+import { buildThumbnailRequestUrl } from "./thumbnail-size";
 import { MediaPlaceholder } from "./MediaPlaceholder";
+import { readMediaPreviewUrl } from "./media-preview-url";
+import { useThumbnailUrl } from "./useThumbnailUrl";
 
-export function Poster({ media }: { media: MediaItem }) {
-  const thumbnailUrl = readMediaPreviewUrl(media);
+export function Poster({
+  cardWidth = 220,
+  media,
+  priority = false,
+}: {
+  cardWidth?: number;
+  media: MediaItem;
+  priority?: boolean;
+}) {
+  const fallbackUrl = readMediaPreviewUrl(media);
+  const requestUrl =
+    media.mediaType === "image" || media.mediaType === "gif" || media.mediaType === "video"
+      ? buildThumbnailRequestUrl(media.id, cardWidth)
+      : fallbackUrl;
+  const { failed, loading, resolvedUrl } = useThumbnailUrl(requestUrl ?? fallbackUrl);
+  const displayUrl = resolvedUrl ?? fallbackUrl;
 
   return (
     <div
@@ -14,8 +31,17 @@ export function Poster({ media }: { media: MediaItem }) {
         media.mediaType === "pdf" && "text-red-300",
       )}
     >
-      {thumbnailUrl ? (
-        <img alt="" className="h-full w-full object-cover" loading="lazy" src={thumbnailUrl} />
+      {loading ? <Skeleton className="absolute inset-0 rounded-none" /> : null}
+      {displayUrl && !failed ? (
+        <img
+          alt=""
+          className={cn("h-full w-full object-cover", loading && "opacity-0")}
+          decoding="async"
+          fetchPriority={priority ? "high" : "auto"}
+          loading={priority ? "eager" : "lazy"}
+          onLoad={() => undefined}
+          src={displayUrl}
+        />
       ) : (
         <div className="grid h-full w-full place-items-center text-zinc-500">
           <MediaPlaceholder mediaType={media.mediaType} size={28} />

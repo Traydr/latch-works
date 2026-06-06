@@ -5,7 +5,11 @@ export function readMediaPreviewUrl(media: MediaItem): string | undefined {
     return media.thumbnailUrl;
   }
 
-  if (media.mediaType === "image" || media.mediaType === "gif") {
+  if (media.mediaType === "gif") {
+    return `/api/media/${media.id}/thumbnail?size=320`;
+  }
+
+  if (media.mediaType === "image") {
     return `/api/media/${media.id}/original`;
   }
 

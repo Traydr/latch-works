@@ -4,6 +4,7 @@ import { and, eq, ilike, isNull, or, type SQL } from "drizzle-orm";
 import { db } from "../db";
 import { folders, libraryEntries, mediaObjects, thumbnails } from "../db/schema";
 import { buildGalleryThumbnailUrl } from "../media/cdn-delivery";
+import { escapeLikePattern, resolveMediaScope } from "./query-helpers";
 
 export interface LibraryMediaItem extends MediaItem {
   thumbnailUrl?: string;
@@ -18,16 +19,26 @@ export interface DatabaseLibrarySnapshot {
 
 export async function readDatabaseLibrarySnapshot({
   currentPath,
+  includeAllFolders = false,
+  limit,
+  offset = 0,
   query,
+  recursive = false,
 }: {
   currentPath: string;
+  includeAllFolders?: boolean;
+  limit?: number;
+  offset?: number;
   query?: string;
+  recursive?: boolean;
 }): Promise<DatabaseLibrarySnapshot> {
   const trimmedQuery = query?.trim();
+  const searching = Boolean(trimmedQuery);
+  const mediaScope = resolveMediaScope({ currentPath, recursive, searching });
   const mediaConditions: SQL[] = [isNull(libraryEntries.deletedAt)];
   const folderConditions: SQL[] = [isNull(folders.deletedAt)];
 
-  if (trimmedQuery) {
+  if (searching && trimmedQuery) {
     const queryPattern = `%${escapeLikePattern(trimmedQuery)}%`;
     const mediaQueryCondition = or(
       ilike(libraryEntries.logicalPath, queryPattern),
@@ -48,14 +59,16 @@ export async function readDatabaseLibrarySnapshot({
   } else {
     folderConditions.push(eq(folders.parentPath, currentPath));
 
-    if (currentPath) {
+    if (mediaScope.mode === "subtree") {
       mediaConditions.push(
-        ilike(libraryEntries.logicalPath, `${escapeLikePattern(currentPath)}/%`),
+        ilike(libraryEntries.logicalPath, `${escapeLikePattern(mediaScope.pathPrefix)}/%`),
       );
+    } else if (mediaScope.mode === "direct-children") {
+      mediaConditions.push(eq(libraryEntries.parentPath, mediaScope.parentPath));
     }
   }
 
-  const [folderRows, mediaRows, rootRows, allFolderRows] = await Promise.all([
+  const folderQueries = [
     db
       .select()
       .from(folders)
@@ -76,9 +89,17 @@ export async function readDatabaseLibrarySnapshot({
           eq(thumbnails.status, "ready"),
         ),
       )
-      .where(and(...mediaConditions)),
+      .where(and(...mediaConditions))
+      .limit(limit ?? 5000)
+      .offset(offset),
     db.select().from(folders).where(eq(folders.parentPath, "")),
-    db.select().from(folders).where(isNull(folders.deletedAt)),
+  ] as const;
+
+  const [folderRows, mediaRows, rootRows, allFolderRows] = await Promise.all([
+    ...folderQueries,
+    includeAllFolders
+      ? db.select().from(folders).where(isNull(folders.deletedAt))
+      : Promise.resolve([]),
   ]);
 
   const mapFolderRow = (folder: (typeof allFolderRows)[number]): FolderNode => ({
@@ -140,8 +161,4 @@ export function folderFromPath(path: string): FolderNode {
 
 function dedupe(value: string, index: number, values: string[]): boolean {
   return values.indexOf(value) === index;
-}
-
-function escapeLikePattern(value: string): string {
-  return value.replace(/[\\%_]/g, (match) => `\\${match}`);
 }

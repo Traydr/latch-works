@@ -1,8 +1,10 @@
 import type { FolderNode } from "@latch-works/media-domain";
-import { Archive, ChevronRight, Folder } from "lucide-react";
+import { Archive, ChevronRight, Folder, LogOut } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarHeader,
@@ -53,7 +55,7 @@ export function ArchiveSidebar({ currentPath, folders, onNavigateToPath }: Archi
             <SidebarMenu aria-label="Archive folders">
               <SidebarMenuItem>
                 <SidebarMenuButton
-                  className="rounded-none"
+                  className="rounded-none min-h-10 md:min-h-8 hover:bg-sidebar-accent"
                   isActive={!currentPath}
                   onClick={() => onNavigateToPath("")}
                   title="Archive root"
@@ -115,6 +117,15 @@ export function ArchiveSidebar({ currentPath, folders, onNavigateToPath }: Archi
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
+
+      <SidebarFooter className="border-t border-sidebar-border p-2">
+        <form action="/api/auth/logout" method="post">
+          <Button className="w-full justify-start gap-2" type="submit" variant="ghost">
+            <LogOut className="size-4" />
+            <span>Sign out</span>
+          </Button>
+        </form>
+      </SidebarFooter>
 
       <SidebarRail />
     </Sidebar>

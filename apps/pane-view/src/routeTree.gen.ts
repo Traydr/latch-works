@@ -20,6 +20,7 @@ import { Route as ApiSyncCompleteObjectRouteImport } from './routes/api.sync.com
 import { Route as ApiAuthLogoutRouteImport } from './routes/api.auth.logout'
 import { Route as ApiAuthLoginRouteImport } from './routes/api.auth.login'
 import { Route as ApiMediaMediaIdThumbnailRouteImport } from './routes/api.media.$mediaId.thumbnail'
+import { Route as ApiMediaMediaIdPreviewRouteImport } from './routes/api.media.$mediaId.preview'
 import { Route as ApiMediaMediaIdOriginalRouteImport } from './routes/api.media.$mediaId.original'
 
 const LoginRoute = LoginRouteImport.update({
@@ -78,6 +79,11 @@ const ApiMediaMediaIdThumbnailRoute =
     path: '/api/media/$mediaId/thumbnail',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiMediaMediaIdPreviewRoute = ApiMediaMediaIdPreviewRouteImport.update({
+  id: '/api/media/$mediaId/preview',
+  path: '/api/media/$mediaId/preview',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiMediaMediaIdOriginalRoute = ApiMediaMediaIdOriginalRouteImport.update({
   id: '/api/media/$mediaId/original',
   path: '/api/media/$mediaId/original',
@@ -96,6 +102,7 @@ export interface FileRoutesByFullPath {
   '/api/sync/upload-url': typeof ApiSyncUploadUrlRoute
   '/cdn/v1/$token': typeof CdnV1TokenRoute
   '/api/media/$mediaId/original': typeof ApiMediaMediaIdOriginalRoute
+  '/api/media/$mediaId/preview': typeof ApiMediaMediaIdPreviewRoute
   '/api/media/$mediaId/thumbnail': typeof ApiMediaMediaIdThumbnailRoute
 }
 export interface FileRoutesByTo {
@@ -110,6 +117,7 @@ export interface FileRoutesByTo {
   '/api/sync/upload-url': typeof ApiSyncUploadUrlRoute
   '/cdn/v1/$token': typeof CdnV1TokenRoute
   '/api/media/$mediaId/original': typeof ApiMediaMediaIdOriginalRoute
+  '/api/media/$mediaId/preview': typeof ApiMediaMediaIdPreviewRoute
   '/api/media/$mediaId/thumbnail': typeof ApiMediaMediaIdThumbnailRoute
 }
 export interface FileRoutesById {
@@ -125,6 +133,7 @@ export interface FileRoutesById {
   '/api/sync/upload-url': typeof ApiSyncUploadUrlRoute
   '/cdn/v1/$token': typeof CdnV1TokenRoute
   '/api/media/$mediaId/original': typeof ApiMediaMediaIdOriginalRoute
+  '/api/media/$mediaId/preview': typeof ApiMediaMediaIdPreviewRoute
   '/api/media/$mediaId/thumbnail': typeof ApiMediaMediaIdThumbnailRoute
 }
 export interface FileRouteTypes {
@@ -141,6 +150,7 @@ export interface FileRouteTypes {
     | '/api/sync/upload-url'
     | '/cdn/v1/$token'
     | '/api/media/$mediaId/original'
+    | '/api/media/$mediaId/preview'
     | '/api/media/$mediaId/thumbnail'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -155,6 +165,7 @@ export interface FileRouteTypes {
     | '/api/sync/upload-url'
     | '/cdn/v1/$token'
     | '/api/media/$mediaId/original'
+    | '/api/media/$mediaId/preview'
     | '/api/media/$mediaId/thumbnail'
   id:
     | '__root__'
@@ -169,6 +180,7 @@ export interface FileRouteTypes {
     | '/api/sync/upload-url'
     | '/cdn/v1/$token'
     | '/api/media/$mediaId/original'
+    | '/api/media/$mediaId/preview'
     | '/api/media/$mediaId/thumbnail'
   fileRoutesById: FileRoutesById
 }
@@ -184,6 +196,7 @@ export interface RootRouteChildren {
   ApiSyncUploadUrlRoute: typeof ApiSyncUploadUrlRoute
   CdnV1TokenRoute: typeof CdnV1TokenRoute
   ApiMediaMediaIdOriginalRoute: typeof ApiMediaMediaIdOriginalRoute
+  ApiMediaMediaIdPreviewRoute: typeof ApiMediaMediaIdPreviewRoute
   ApiMediaMediaIdThumbnailRoute: typeof ApiMediaMediaIdThumbnailRoute
 }
 
@@ -266,6 +279,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiMediaMediaIdThumbnailRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/media/$mediaId/preview': {
+      id: '/api/media/$mediaId/preview'
+      path: '/api/media/$mediaId/preview'
+      fullPath: '/api/media/$mediaId/preview'
+      preLoaderRoute: typeof ApiMediaMediaIdPreviewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/media/$mediaId/original': {
       id: '/api/media/$mediaId/original'
       path: '/api/media/$mediaId/original'
@@ -288,6 +308,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiSyncUploadUrlRoute: ApiSyncUploadUrlRoute,
   CdnV1TokenRoute: CdnV1TokenRoute,
   ApiMediaMediaIdOriginalRoute: ApiMediaMediaIdOriginalRoute,
+  ApiMediaMediaIdPreviewRoute: ApiMediaMediaIdPreviewRoute,
   ApiMediaMediaIdThumbnailRoute: ApiMediaMediaIdThumbnailRoute,
 }
 export const routeTree = rootRouteImport

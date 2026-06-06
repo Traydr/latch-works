@@ -5,6 +5,7 @@ import { BrowserEntryCard } from "./BrowserEntryCard";
 import { useVirtualGridMetrics } from "./useVirtualGridMetrics";
 
 interface BrowserGridProps {
+  cardWidth: number;
   columnCountRef: RefObject<number>;
   comicMode: boolean;
   entries: BrowserEntry[];
@@ -17,6 +18,7 @@ interface BrowserGridProps {
 }
 
 export function BrowserGrid({
+  cardWidth,
   columnCountRef,
   comicMode,
   entries,
@@ -29,14 +31,15 @@ export function BrowserGrid({
 }: BrowserGridProps) {
   const {
     cardHeight,
-    cardWidth,
+    cardWidth: measuredCardWidth,
     columnCount,
     gridWidth,
     mainRef,
     rowStride,
     totalGridHeight,
     windowedItems,
-  } = useVirtualGridMetrics(entries.length, 220, comicMode ? "tall" : "wide");
+  } = useVirtualGridMetrics(entries.length, cardWidth, comicMode ? "tall" : "wide");
+  const resolvedCardWidth = measuredCardWidth || cardWidth;
 
   // Sync column count for keyboard navigation.
   if (columnCountRef.current !== columnCount) {
@@ -119,12 +122,13 @@ export function BrowserGrid({
               <BrowserEntryCard
                 key={entry.key}
                 cardHeight={cardHeight}
-                cardWidth={cardWidth}
+                cardWidth={resolvedCardWidth}
                 entry={entry}
                 focused={focused}
                 left={slot.left}
                 onActivate={onActivateEntry}
                 onSelect={onSelectEntry}
+                priority={Math.abs(slot.index - focusedIndex) <= columnCount}
                 selected={selected}
                 top={slot.top}
               />

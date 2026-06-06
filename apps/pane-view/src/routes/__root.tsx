@@ -1,3 +1,4 @@
+import { ThemeProvider } from "next-themes";
 import { createRootRoute, HeadContent, Link, Outlet, Scripts } from "@tanstack/react-router";
 import { Home, SearchX } from "lucide-react";
 import type { ReactNode } from "react";
@@ -28,14 +29,16 @@ export const Route = createRootRoute({
 function RootComponent() {
   return (
     <RootDocument>
-      <Outlet />
+      <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+        <Outlet />
+      </ThemeProvider>
     </RootDocument>
   );
 }
 
 function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
   return (
-    <html className="dark" lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
         <HeadContent />
       </head>
