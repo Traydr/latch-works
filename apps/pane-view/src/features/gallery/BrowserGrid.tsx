@@ -8,6 +8,8 @@ interface BrowserGridProps {
   cardWidth: number;
   columnCountRef: RefObject<number>;
   comicMode: boolean;
+  deletedEntryIds: ReadonlySet<string>;
+  deletingEntryIds: ReadonlySet<string>;
   entries: BrowserEntry[];
   focusedIndex: number;
   onActivateEntry: (entry: BrowserEntry) => void;
@@ -21,6 +23,8 @@ export function BrowserGrid({
   cardWidth,
   columnCountRef,
   comicMode,
+  deletedEntryIds,
+  deletingEntryIds,
   entries,
   focusedIndex,
   onActivateEntry,
@@ -123,6 +127,8 @@ export function BrowserGrid({
                 key={entry.key}
                 cardHeight={cardHeight}
                 cardWidth={resolvedCardWidth}
+                deletedEntryIds={deletedEntryIds}
+                deletingEntryIds={deletingEntryIds}
                 entry={entry}
                 focused={focused}
                 left={slot.left}

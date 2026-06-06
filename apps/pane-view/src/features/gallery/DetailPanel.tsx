@@ -11,11 +11,14 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { DeleteOverlay } from "./DeleteOverlay";
 import { DEFAULT_CARD_WIDTH } from "./thumbnail-size";
 import { MediaPlaceholder } from "./MediaPlaceholder";
 import { useResolvedMediaUrl } from "./useResolvedMediaUrl";
 
 interface DetailPanelProps {
+  isDeleted?: boolean;
+  isDeleting?: boolean;
   onCopyPath: () => void;
   onDelete?: () => void;
   onDownload: () => void;
@@ -28,6 +31,8 @@ interface DetailPanelProps {
 }
 
 export function DetailPanel({
+  isDeleted = false,
+  isDeleting = false,
   onCopyPath,
   onDelete,
   onDownload,
@@ -75,17 +80,20 @@ export function DetailPanel({
 
   return (
     <aside
-      className="hidden h-full min-h-0 w-full max-w-[360px] shrink-0 overflow-y-auto overflow-x-hidden border-l border-border bg-background p-5 lg:block"
+      className="h-full min-h-0 w-full overflow-y-auto overflow-x-hidden border-l border-border bg-background p-5"
       aria-label="Selected media"
     >
       {selected ? (
-        <div className="grid gap-4">
-          <div className="relative grid aspect-[4/5] w-full place-items-center overflow-hidden rounded-lg border border-border bg-muted">
+        <div className="grid min-w-0 max-w-full gap-4">
+          <div className="relative grid aspect-[4/5] w-full min-w-0 place-items-center overflow-hidden rounded-lg border border-border bg-muted">
             {src && !failed ? (
               <img alt={selected.name} className="h-full w-full object-cover" src={src} />
             ) : (
               <MediaPlaceholder mediaType={selected.mediaType} size={42} />
             )}
+            {isDeleting || isDeleted ? (
+              <DeleteOverlay animated={isDeleting} className="rounded-lg" />
+            ) : null}
             {supportsThumbnail && onRegenerateThumbnail ? (
               <Button
                 aria-label="Regenerate thumbnail"
@@ -112,29 +120,30 @@ export function DetailPanel({
             Open Viewer
           </Button>
 
-          <div className="flex items-center gap-2">
-            <Button className="flex-1" size="lg" variant="outline" onClick={onPrev} title="Previous" type="button">
+          <div className="flex min-w-0 items-center gap-2">
+            <Button className="min-w-0 flex-1" size="lg" variant="outline" onClick={onPrev} title="Previous" type="button">
               <ChevronLeft className="size-4" />
             </Button>
-            <Button className="flex-1" size="lg" variant="outline" onClick={onNext} title="Next" type="button">
+            <Button className="min-w-0 flex-1" size="lg" variant="outline" onClick={onNext} title="Next" type="button">
               <ChevronRight className="size-4" />
             </Button>
           </div>
 
-          <div className="flex gap-2">
-            <Button className="flex-1 gap-2" onClick={onCopyPath} type="button" variant="outline">
-              <Copy className="size-4" />
-              Copy path
+          <div className="flex min-w-0 gap-2">
+            <Button className="min-w-0 flex-1 gap-2" onClick={onCopyPath} type="button" variant="outline">
+              <Copy className="size-4 shrink-0" />
+              <span className="truncate">Copy path</span>
             </Button>
-            <Button className="flex-1 gap-2" onClick={onDownload} type="button" variant="outline">
-              <Download className="size-4" />
-              Download
+            <Button className="min-w-0 flex-1 gap-2" onClick={onDownload} type="button" variant="outline">
+              <Download className="size-4 shrink-0" />
+              <span className="truncate">Download</span>
             </Button>
           </div>
 
           {showDelete && onDelete ? (
             <Button
-              className="w-full gap-2"
+              className="w-full min-w-0 gap-2"
+              disabled={isDeleting || isDeleted}
               onClick={onDelete}
               type="button"
               variant="destructive"
@@ -144,7 +153,7 @@ export function DetailPanel({
             </Button>
           ) : null}
 
-          <dl className="grid gap-3 text-sm">
+          <dl className="grid min-w-0 max-w-full gap-3 text-sm">
             <MetadataItem label="Name" value={selected.name} />
             <MetadataItem label="Path" value={selected.path} />
             <MetadataItem label="Type" value={selected.mediaType} />
@@ -173,9 +182,9 @@ export function DetailPanel({
 
 function MetadataItem({ label, value }: { label: string; value: string }) {
   return (
-    <div className="grid gap-1 border-b border-border pb-3">
+    <div className="grid min-w-0 max-w-full gap-1 border-b border-border pb-3">
       <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="m-0 break-words font-medium text-foreground">{value}</dd>
+      <dd className="m-0 max-w-full overflow-hidden break-all font-medium text-foreground">{value}</dd>
     </div>
   );
 }
