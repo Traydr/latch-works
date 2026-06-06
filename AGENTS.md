@@ -71,3 +71,9 @@ Do not pass `--` between `pnpm start:lockstep` and subcommands; use `pnpm exec t
 - `apps/frame-view` has a Windows-path unit test (`mediaProtocol.test.ts`) that fails on Linux; other frame-view tests may emit `window is not defined` noise in Node.
 - `tools/lockstep` tests expect `LOCKSTEP_API_URL` to be unset when asserting missing-field behavior; unset it or run tests in a clean env if those cases fail.
 - `pnpm lint` may report pre-existing Biome format/import issues unrelated to your changes.
+### pane-view local dev
+
+- Start Postgres and MinIO before `pnpm dev:pane` (see repo `.env.example`). Symlink `apps/pane-view/.env` to the repo root `.env` if needed.
+- Gallery thumbnails and viewer images resolve signed S3 URLs through the `resolveMediaDeliveryUrl` server function (`useResolvedMediaUrl` hook). Do not point `<img src>` at `/api/media/...` in dev: Vite returns 404 for those requests when `Sec-Fetch-Dest: image`.
+- API thumbnail/preview routes redirect to signed storage URLs via `delivery-redirect.ts`. CDN tokens use `~` as the payload/signature separator and the splat route `cdn.v1.$.ts`.
+- Verify image loading: log in at `/login`, browse `/?path=photos`, then run `pnpm --filter @latch-works/pane-view check`.

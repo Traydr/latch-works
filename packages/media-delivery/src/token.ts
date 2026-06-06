@@ -13,15 +13,23 @@ export interface DeliveryTokenSigner {
   verify(token: string): DeliveryTokenPayload | null;
 }
 
+const TOKEN_SEPARATOR = "~";
+
 export function createDeliveryTokenSigner(secret: string): DeliveryTokenSigner {
   return {
     sign(payload) {
       const encodedPayload = encodePayload(payload);
       const signature = signPayload(encodedPayload, secret);
-      return `${encodedPayload}.${signature}`;
+      return `${encodedPayload}${TOKEN_SEPARATOR}${signature}`;
     },
     verify(token) {
-      const [encodedPayload, signature] = token.split(".");
+      const separatorIndex = token.lastIndexOf(TOKEN_SEPARATOR);
+      if (separatorIndex <= 0) {
+        return null;
+      }
+
+      const encodedPayload = token.slice(0, separatorIndex);
+      const signature = token.slice(separatorIndex + TOKEN_SEPARATOR.length);
       if (!encodedPayload || !signature) {
         return null;
       }

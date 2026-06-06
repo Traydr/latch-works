@@ -1,14 +1,11 @@
-import { snapThumbnailSize } from "@latch-works/media-delivery";
 import { createFileRoute } from "@tanstack/react-router";
 import { isRequestSessionValid } from "../server/auth/web-session-core";
 import { API_PRIVATE_CACHE_CONTROL } from "../server/media/cdn-delivery";
 import { redirectToSignedStoredObject } from "../server/media/delivery-redirect";
-import { ensureThumbnailDerivative } from "../server/media/derivative-service";
+import { ensurePreviewDerivative } from "../server/media/derivative-service";
 import { readMediaThumbnailContext } from "../server/media/repository";
 
-const defaultThumbnailSize = 320;
-
-export const Route = createFileRoute("/api/media/$mediaId/thumbnail")({
+export const Route = createFileRoute("/api/media/$mediaId/preview")({
   server: {
     handlers: {
       GET: async ({ params, request }: { params: { mediaId: string }; request: Request }) => {
@@ -27,14 +24,9 @@ export const Route = createFileRoute("/api/media/$mediaId/thumbnail")({
           });
         }
 
-        const size = snapThumbnailSize(readThumbnailSize(request));
-        const result = await ensureThumbnailDerivative({
-          mediaId: params.mediaId,
-          requestedSize: size,
-        });
-
+        const result = await ensurePreviewDerivative({ mediaId: params.mediaId });
         if (result.status === "pending") {
-          return new Response("Thumbnail is being generated", {
+          return new Response("Preview is being generated", {
             headers: {
               "Cache-Control": API_PRIVATE_CACHE_CONTROL,
               "Retry-After": "1",
@@ -48,7 +40,7 @@ export const Route = createFileRoute("/api/media/$mediaId/thumbnail")({
             return redirectToOriginal(params.mediaId);
           }
 
-          return new Response("Thumbnail not found", {
+          return new Response("Preview not found", {
             headers: { "Cache-Control": API_PRIVATE_CACHE_CONTROL },
             status: 404,
           });
@@ -68,10 +60,4 @@ function redirectToOriginal(mediaId: string): Response {
     },
     status: 302,
   });
-}
-
-function readThumbnailSize(request: Request): number {
-  const rawSize = new URL(request.url).searchParams.get("size");
-  const size = rawSize ? Number(rawSize) : defaultThumbnailSize;
-  return Number.isInteger(size) && size > 0 ? size : defaultThumbnailSize;
 }

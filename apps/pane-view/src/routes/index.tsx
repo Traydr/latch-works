@@ -2,15 +2,22 @@ import {
   type BrowserEntry,
   buildBrowserEntries,
   buildComicEntries,
+  type ComicEntry,
   createRandomSeed,
   type GallerySortMode,
   type MediaItem,
   sortComicEntries,
   sortMediaItems,
 } from "@latch-works/media-domain";
-import { createFileRoute, redirect } from "@tanstack/react-router";
-import { Archive, PanelRightClose, PanelRightOpen, Search } from "lucide-react";
+import { createFileRoute, redirect, useRouterState } from "@tanstack/react-router";
+import { Archive, ChevronUp, PanelRightClose, PanelRightOpen, Search } from "lucide-react";
 import { type FormEvent, Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -27,20 +34,32 @@ import { ArchiveSidebar } from "@/features/gallery/ArchiveSidebar";
 import { BrowserGrid } from "@/features/gallery/BrowserGrid";
 import { DetailPanel } from "@/features/gallery/DetailPanel";
 import { FloatingToolbar } from "@/features/gallery/FloatingToolbar";
+import { GalleryPending } from "@/features/gallery/GalleryPending";
 import { MediaViewerModal } from "@/features/gallery/MediaViewerModal";
 import { useGalleryState } from "@/features/gallery/useGalleryState";
+import { ComicReader } from "@/features/comics/ComicReader";
+import { HotkeyOverlay } from "@/features/settings/HotkeyOverlay";
+import { SettingsDrawer } from "@/features/settings/SettingsDrawer";
+import { ThemeSync } from "@/features/settings/ThemeSync";
+import { useAppSettings, resolveRootKey, useRootPreferences } from "@/features/settings/useAppSettings";
 import { getLibrarySnapshot } from "../features/library/library-service";
 import { isCurrentWebSessionValid } from "../server/auth/web-session";
 
 export const Route = createFileRoute("/")({
-  validateSearch: (search): { media?: string; path?: string; q?: string } => ({
+  validateSearch: (
+    search,
+  ): { comic?: boolean; media?: string; path?: string; q?: string; recursive?: boolean } => ({
+    comic: normalizeBooleanSearchParam(search.comic),
     media: normalizeSearchParam(search.media),
     path: normalizeSearchParam(search.path),
     q: normalizeSearchParam(search.q),
+    recursive: normalizeBooleanSearchParam(search.recursive),
   }),
   loaderDeps: ({ search }) => ({
+    comicMode: search.comic ?? false,
     path: search.path,
     query: search.q,
+    recursive: search.recursive ?? false,
   }),
   loader: async ({ deps }) => {
     if (!(await isCurrentWebSessionValid())) {
@@ -49,6 +68,7 @@ export const Route = createFileRoute("/")({
 
     return getLibrarySnapshot({ data: deps });
   },
+  pendingComponent: GalleryPending,
   component: PaneViewHome,
 });
 
@@ -58,10 +78,20 @@ function PaneViewHome() {
   const navigate = Route.useNavigate();
 
   const persisted = useGalleryState();
+  const { settings, updateSettings } = useAppSettings();
+  const rootKey = resolveRootKey(library.currentPath);
+  const { savePreferences: saveRootPreferences } = useRootPreferences(rootKey);
   const isMobile = useIsMobile();
+  const isRefreshing = useRouterState({ select: (state) => state.isLoading });
 
-  const [recursive, setRecursive] = useState(persisted.recursive);
-  const [comicMode, setComicMode] = useState(persisted.comicMode);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [hotkeysOpen, setHotkeysOpen] = useState(false);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const [pathSheetOpen, setPathSheetOpen] = useState(false);
+  const [activeComic, setActiveComic] = useState<ComicEntry | null>(null);
+
+  const [recursive, setRecursive] = useState(search.recursive ?? persisted.recursive);
+  const [comicMode, setComicMode] = useState(search.comic ?? persisted.comicMode);
   const [detailPanelOpen, setDetailPanelOpen] = useState(persisted.detailPanelOpen);
   const [sortMode, setSortMode] = useState<GallerySortMode>(persisted.sortMode);
   const [randomSeed, setRandomSeed] = useState(() => createRandomSeed());
@@ -78,12 +108,32 @@ function PaneViewHome() {
 
   const showDetailPanel = !isMobile && detailPanelOpen;
 
+  const buildBrowseSearch = useCallback(
+    (patch: {
+      comic?: boolean;
+      media?: string;
+      path?: string;
+      q?: string;
+      recursive?: boolean;
+    }) => ({
+      comic: (patch.comic ?? comicMode) || undefined,
+      media: patch.media,
+      path: patch.path ?? library.currentPath,
+      q: patch.q ?? search.q,
+      recursive: (patch.recursive ?? recursive) || undefined,
+    }),
+    [comicMode, library.currentPath, recursive, search.q],
+  );
+
   // Redirect to persisted path on first visit if URL has no path.
   // biome-ignore lint/correctness/useExhaustiveDependencies: Only run once on mount to restore persisted path.
   useEffect(() => {
     if (!search.path && persisted.lastPath) {
       void navigate({
-        search: { media: undefined, path: persisted.lastPath, q: search.q },
+        search: buildBrowseSearch({
+          media: undefined,
+          path: persisted.lastPath,
+        }),
         to: "/",
       });
     }
@@ -109,18 +159,34 @@ function PaneViewHome() {
   }, [library.media, search.media]);
 
   const effectiveRecursive = recursive || comicMode;
+  const recursiveToggleDisabled = library.currentPath === "";
+
+  useEffect(() => {
+    if (library.currentPath === "" && recursive) {
+      setRecursive(false);
+    }
+  }, [library.currentPath, recursive]);
 
   const sortedMedia = useMemo(
     () => sortMediaItems(library.media, sortMode, randomSeed),
     [library.media, randomSeed, sortMode],
   );
-  const visibleMedia = useMemo(
+  const filteredMedia = useMemo(
     () =>
-      effectiveRecursive || search.q
-        ? sortedMedia
-        : sortedMedia.filter((item) => item.parentPath === library.currentPath),
-    [effectiveRecursive, library.currentPath, search.q, sortedMedia],
+      sortedMedia.filter((item) => {
+        if (item.mediaType === "video" && !settings.showVideos) {
+          return false;
+        }
+
+        if ((item.mediaType === "image" || item.mediaType === "gif") && !settings.showImages) {
+          return false;
+        }
+
+        return true;
+      }),
+    [settings.showImages, settings.showVideos, sortedMedia],
   );
+  const visibleMedia = filteredMedia;
   const comics = useMemo(() => {
     if (!comicMode) {
       return [];
@@ -175,6 +241,14 @@ function PaneViewHome() {
   }, [recursive, persisted.setRecursive]);
 
   useEffect(() => {
+    saveRootPreferences({
+      comicMode,
+      recursive,
+      sortMode,
+    });
+  }, [comicMode, recursive, saveRootPreferences, sortMode]);
+
+  useEffect(() => {
     persisted.setComicMode(comicMode);
   }, [comicMode, persisted.setComicMode]);
 
@@ -186,10 +260,41 @@ function PaneViewHome() {
     persisted.setDetailPanelOpen(detailPanelOpen);
   }, [detailPanelOpen, persisted.setDetailPanelOpen]);
 
+  useEffect(() => {
+    const urlRecursive = search.recursive ?? false;
+    const urlComic = search.comic ?? false;
+    if (urlRecursive === recursive && urlComic === comicMode) {
+      return;
+    }
+
+    void navigate({
+      search: buildBrowseSearch({}),
+      to: "/",
+      replace: true,
+      resetScroll: false,
+    });
+  }, [buildBrowseSearch, comicMode, navigate, recursive, search.comic, search.recursive]);
+
   // Keyboard shortcuts.
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (settingsOpen || hotkeysOpen || mobileSearchOpen || pathSheetOpen) {
+        if (event.key === "Escape") {
+          setSettingsOpen(false);
+          setHotkeysOpen(false);
+          setMobileSearchOpen(false);
+          setPathSheetOpen(false);
+        }
+        return;
+      }
+
       if (isTextInputTarget(event.target)) {
+        return;
+      }
+
+      if (event.key === "?") {
+        event.preventDefault();
+        setHotkeysOpen(true);
         return;
       }
 
@@ -353,6 +458,24 @@ function PaneViewHome() {
     const nextCol = currentCol + dx;
     const nextIndex = nextRow * columnCount + nextCol;
 
+    if (nextIndex < 0 || nextIndex >= entries.length) {
+      if (entries.length === 0) {
+        return;
+      }
+
+      const wrappedIndex =
+        nextIndex < 0 ? entries.length - 1 : nextIndex >= entries.length ? 0 : nextIndex;
+      setFocusedEntryIndex(wrappedIndex);
+      setScrollFocusedIntoView(true);
+      const wrappedEntry = entries[wrappedIndex];
+      if (wrappedEntry?.kind === "media") {
+        selectMedia(wrappedEntry.media.id);
+      } else if (wrappedEntry?.kind === "comic") {
+        selectMedia(wrappedEntry.comic.cover.id);
+      }
+      return;
+    }
+
     if (nextIndex >= 0 && nextIndex < entries.length) {
       setFocusedEntryIndex(nextIndex);
       setScrollFocusedIntoView(true);
@@ -367,16 +490,21 @@ function PaneViewHome() {
 
   const navigateToPath = useCallback(
     (path: string) => {
+      const nextRecursive = path === "" ? false : recursive;
+      if (path === "" && recursive) {
+        setRecursive(false);
+      }
+
       void navigate({
-        search: {
+        search: buildBrowseSearch({
           media: undefined,
           path,
-          q: search.q,
-        },
+          recursive: nextRecursive,
+        }),
         to: "/",
       });
     },
-    [navigate, search.q],
+    [buildBrowseSearch, comicMode, navigate, recursive, search.q],
   );
 
   const navigateSiblingFolder = (offset: -1 | 1) => {
@@ -397,11 +525,11 @@ function PaneViewHome() {
     event.preventDefault();
     const nextQuery = searchDraft.trim();
     void navigate({
-      search: {
+      search: buildBrowseSearch({
         media: undefined,
         path: library.currentPath,
         q: nextQuery || undefined,
-      },
+      }),
       to: "/",
     });
   };
@@ -409,11 +537,9 @@ function PaneViewHome() {
   const selectMedia = (mediaId: string) => {
     setSelectedId(mediaId);
     void navigate({
-      search: {
+      search: buildBrowseSearch({
         media: mediaId,
-        path: library.currentPath,
-        q: search.q,
-      },
+      }),
       to: "/",
       replace: true,
       resetScroll: false,
@@ -479,9 +605,7 @@ function PaneViewHome() {
     if (entry.kind === "folder") {
       navigateToPath(entry.path);
     } else if (entry.kind === "comic") {
-      openViewer(entry.comic.pages, entry.comic.cover.id, {
-        lockSelectionToMediaId: entry.comic.cover.id,
-      });
+      setActiveComic(entry.comic);
     } else {
       openViewer(visibleMedia, entry.media.id);
     }
@@ -492,11 +616,16 @@ function PaneViewHome() {
     [library.currentPath],
   );
 
+  const currentFolderName =
+    breadcrumbs[breadcrumbs.length - 1]?.label ?? library.archiveRoot;
+  const parentPath = getParentPath(library.currentPath);
+
   return (
     <SidebarProvider
       className="min-h-screen overflow-hidden bg-background text-foreground"
       defaultOpen
     >
+      <ThemeSync theme={settings.theme} />
       <ArchiveSidebar
         currentPath={library.currentPath}
         folders={library.folders}
@@ -504,54 +633,108 @@ function PaneViewHome() {
       />
 
       <SidebarInset className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border bg-background px-5">
-          <div className="flex items-center gap-2">
-            <SidebarTrigger className="-ml-1" />
-            <Breadcrumb className="flex min-w-0 items-center gap-2">
-              <Archive className="size-4 shrink-0 text-muted-foreground" />
-              <BreadcrumbList className="min-w-0 flex-nowrap overflow-hidden">
-                <BreadcrumbItem>
-                  <BreadcrumbLink asChild>
-                    <button
-                      className="max-w-40 cursor-pointer truncate rounded-md px-2 py-1.5"
-                      onClick={() => navigateToPath("")}
-                      type="button"
-                    >
-                      {library.archiveRoot}
-                    </button>
-                  </BreadcrumbLink>
-                </BreadcrumbItem>
-                {breadcrumbs.map((crumb, index) => (
-                  <Fragment key={crumb.path}>
-                    <BreadcrumbSeparator />
-                    <BreadcrumbItem className="min-w-0">
-                      {index === breadcrumbs.length - 1 ? (
-                        <BreadcrumbPage
-                          className="max-w-72 truncate px-2 py-1.5"
-                          title={crumb.path}
+        <header className="flex h-auto min-h-14 shrink-0 items-center justify-between gap-4 border-b border-border bg-background px-5 py-2">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <SidebarTrigger className="-ml-1 shrink-0" />
+            {isMobile ? (
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1">
+                  <Button
+                    disabled={!parentPath && library.currentPath === ""}
+                    onClick={() => navigateToPath(parentPath ?? "")}
+                    size="icon"
+                    type="button"
+                    variant="ghost"
+                  >
+                    <ChevronUp className="size-4" />
+                  </Button>
+                  <button
+                    className="min-w-0 flex-1 truncate text-left text-base font-semibold"
+                    onClick={() => setPathSheetOpen(true)}
+                    type="button"
+                  >
+                    {currentFolderName}
+                  </button>
+                </div>
+                {library.currentPath ? (
+                  <p className="truncate text-xs text-muted-foreground">{library.currentPath}</p>
+                ) : null}
+              </div>
+            ) : (
+              <>
+                <div className="hidden items-center gap-1 md:flex">
+                  <Button
+                    disabled={!library.currentPath}
+                    onClick={() => navigateToPath(parentPath ?? "")}
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    Parent
+                  </Button>
+                  <Button onClick={() => navigateSiblingFolder(-1)} size="sm" type="button" variant="outline">
+                    Prev folder
+                  </Button>
+                  <Button onClick={() => navigateSiblingFolder(1)} size="sm" type="button" variant="outline">
+                    Next folder
+                  </Button>
+                </div>
+                <Breadcrumb className="flex min-w-0 items-center gap-2">
+                  <Archive className="size-4 shrink-0 text-muted-foreground" />
+                  <BreadcrumbList className="min-w-0 flex-nowrap overflow-hidden">
+                    <BreadcrumbItem>
+                      <BreadcrumbLink asChild>
+                        <button
+                          className="max-w-40 cursor-pointer truncate rounded-md px-2 py-1.5"
+                          onClick={() => navigateToPath("")}
+                          type="button"
                         >
-                          {crumb.label}
-                        </BreadcrumbPage>
-                      ) : (
-                        <BreadcrumbLink asChild>
-                          <button
-                            className="max-w-40 cursor-pointer truncate rounded-md px-2 py-1.5"
-                            onClick={() => navigateToPath(crumb.path)}
-                            title={crumb.path}
-                            type="button"
-                          >
-                            {crumb.label}
-                          </button>
-                        </BreadcrumbLink>
-                      )}
+                          {library.archiveRoot}
+                        </button>
+                      </BreadcrumbLink>
                     </BreadcrumbItem>
-                  </Fragment>
-                ))}
-              </BreadcrumbList>
-            </Breadcrumb>
+                    {breadcrumbs.map((crumb, index) => (
+                      <Fragment key={crumb.path}>
+                        <BreadcrumbSeparator />
+                        <BreadcrumbItem className="min-w-0">
+                          {index === breadcrumbs.length - 1 ? (
+                            <BreadcrumbPage
+                              className="max-w-72 truncate px-2 py-1.5"
+                              title={crumb.path}
+                            >
+                              {crumb.label}
+                            </BreadcrumbPage>
+                          ) : (
+                            <BreadcrumbLink asChild>
+                              <button
+                                className="max-w-40 cursor-pointer truncate rounded-md px-2 py-1.5"
+                                onClick={() => navigateToPath(crumb.path)}
+                                title={crumb.path}
+                                type="button"
+                              >
+                                {crumb.label}
+                              </button>
+                            </BreadcrumbLink>
+                          )}
+                        </BreadcrumbItem>
+                      </Fragment>
+                    ))}
+                  </BreadcrumbList>
+                </Breadcrumb>
+              </>
+            )}
           </div>
 
           <div className="flex shrink-0 items-center gap-1">
+            <Button
+              className="md:hidden"
+              onClick={() => setMobileSearchOpen(true)}
+              size="icon"
+              type="button"
+              variant="outline"
+            >
+              <Search className="size-4" />
+            </Button>
             <form
               className="relative hidden w-72 items-center md:flex"
               onSubmit={submitSearch}
@@ -587,6 +770,7 @@ function PaneViewHome() {
 
         <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
           <BrowserGrid
+            cardWidth={settings.thumbnailSize}
             comicMode={comicMode}
             columnCountRef={columnCountRef}
             entries={entries}
@@ -600,6 +784,16 @@ function PaneViewHome() {
 
           {showDetailPanel ? (
             <DetailPanel
+              onCopyPath={() => {
+                if (selected) {
+                  void navigator.clipboard.writeText(selected.path);
+                }
+              }}
+              onDownload={() => {
+                if (selected) {
+                  window.open(`/api/media/${selected.id}/original`, "_blank", "noopener,noreferrer");
+                }
+              }}
               onNext={() => selectAdjacentMedia(1)}
               onOpenViewer={() => {
                 if (selected) {
@@ -614,8 +808,15 @@ function PaneViewHome() {
 
         <FloatingToolbar
           comicMode={comicMode}
+          currentPath={library.currentPath}
+          isRefreshing={isRefreshing}
           onChangeSortMode={setSortMode}
+          onOpenSettings={() => setSettingsOpen(true)}
           onToggleComicMode={() => {
+            if (library.currentPath === "") {
+              return;
+            }
+
             setComicMode((current) => {
               const next = !current;
               if (next) {
@@ -627,6 +828,10 @@ function PaneViewHome() {
             });
           }}
           onToggleRecursive={() => {
+            if (library.currentPath === "") {
+              return;
+            }
+
             setRecursive((current) => {
               const next = !current;
               if (!next) {
@@ -636,14 +841,81 @@ function PaneViewHome() {
             });
           }}
           recursive={recursive}
+          recursiveDisabled={recursiveToggleDisabled}
           shuffle={shuffle}
           sortMode={sortMode}
         />
       </SidebarInset>
 
+      <SettingsDrawer
+        onClose={() => setSettingsOpen(false)}
+        onUpdate={updateSettings}
+        onUpdateRecursiveDefault={setRecursive}
+        open={settingsOpen}
+        recursiveDefault={recursive}
+        settings={settings}
+      />
+
+      {hotkeysOpen ? <HotkeyOverlay onClose={() => setHotkeysOpen(false)} /> : null}
+
+      <Sheet onOpenChange={setMobileSearchOpen} open={mobileSearchOpen}>
+        <SheetContent className="p-5" side="bottom">
+          <SheetHeader>
+            <SheetTitle>Search archive</SheetTitle>
+          </SheetHeader>
+          <form className="mt-4 grid gap-3" onSubmit={submitSearch}>
+            <Input
+              aria-label="Search archive"
+              autoFocus
+              onChange={(event) => setSearchDraft(event.target.value)}
+              placeholder="Search paths"
+              type="search"
+              value={searchDraft}
+            />
+            <Button type="submit">Search</Button>
+          </form>
+        </SheetContent>
+      </Sheet>
+
+      <Sheet onOpenChange={setPathSheetOpen} open={pathSheetOpen}>
+        <SheetContent className="p-5" side="bottom">
+          <SheetHeader>
+            <SheetTitle>Folder path</SheetTitle>
+          </SheetHeader>
+          <div className="mt-4 grid gap-2">
+            <button
+              className="rounded-lg border border-border px-3 py-2 text-left text-sm"
+              onClick={() => {
+                navigateToPath("");
+                setPathSheetOpen(false);
+              }}
+              type="button"
+            >
+              {library.archiveRoot}
+            </button>
+            {breadcrumbs.map((crumb) => (
+              <button
+                key={crumb.path}
+                className="rounded-lg border border-border px-3 py-2 text-left text-sm"
+                onClick={() => {
+                  navigateToPath(crumb.path);
+                  setPathSheetOpen(false);
+                }}
+                type="button"
+              >
+                {crumb.label}
+              </button>
+            ))}
+          </div>
+        </SheetContent>
+      </Sheet>
+
       {viewerOpen && selected ? (
         <MediaViewerModal
+          autoplayVideos={settings.autoplayVideos}
           items={viewerItems ?? visibleMedia}
+          loopNavigation={settings.loopNavigation}
+          loopVideos={settings.loopVideos}
           onClose={closeViewer}
           startIndex={Math.max(
             0,
@@ -651,12 +923,26 @@ function PaneViewHome() {
           )}
         />
       ) : null}
+
+      {activeComic ? <ComicReader comic={activeComic} onClose={() => setActiveComic(null)} /> : null}
     </SidebarProvider>
   );
 }
 
 function normalizeSearchParam(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function normalizeBooleanSearchParam(value: unknown): boolean | undefined {
+  if (value === true || value === "true" || value === "1") {
+    return true;
+  }
+
+  if (value === false || value === "false" || value === "0") {
+    return false;
+  }
+
+  return undefined;
 }
 
 function buildBreadcrumbItems(path: string): Array<{ label: string; path: string }> {

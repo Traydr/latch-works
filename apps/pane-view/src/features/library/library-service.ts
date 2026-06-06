@@ -8,9 +8,14 @@ import {
 } from "../../server/library/repository";
 
 const fixtureRoots = ["nsfw", "nsfw-stories", "sfw", "sfw/patreon"];
+const SEARCH_RESULT_LIMIT = 200;
+
 const libraryRequestSchema = z.object({
+  comicMode: z.boolean().optional(),
   path: z.string().optional(),
   query: z.string().optional(),
+  recursive: z.boolean().optional(),
+  searchOffset: z.number().int().min(0).optional(),
 });
 
 export interface LibrarySnapshot {
@@ -28,9 +33,16 @@ export const getLibrarySnapshot = createServerFn({ method: "GET" })
   .handler(async ({ data }): Promise<LibrarySnapshot> => {
     const currentPath = normalizeLibraryPath(data.path);
     const query = normalizeQuery(data.query);
+    const comicMode = data.comicMode ?? false;
+    const recursive = (data.recursive ?? false) || comicMode;
+    const searchOffset = data.searchOffset ?? 0;
     const databaseSnapshot = await readDatabaseLibrarySnapshot({
       currentPath,
+      includeAllFolders: comicMode,
+      limit: query ? SEARCH_RESULT_LIMIT : undefined,
+      offset: query ? searchOffset : 0,
       query,
+      recursive,
     });
 
     return {

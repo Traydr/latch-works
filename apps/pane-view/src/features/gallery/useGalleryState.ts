@@ -17,7 +17,7 @@ const DEFAULT_STATE: PersistedState = {
   detailPanelOpen: true,
   lastPath: "",
   lastSelectedId: null,
-  recursive: true,
+  recursive: false,
   sortMode: "name-asc",
 };
 
