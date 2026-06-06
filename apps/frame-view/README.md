@@ -1,114 +1,140 @@
-# frame-view
+# Frame View
 
-Cross-platform desktop image and video viewer built with Electron, Vite, React, and TypeScript.
+> Cross-platform desktop image and video viewer — the local gallery north star for [Pane View](../pane-view).
+
+Frame View is part of the [Latch Works](../../README.md) monorepo. It browses folders on disk with a keyboard-first gallery, fullscreen viewer, comic mode, and a SQLite media index. Use it to organize and preview a local archive before syncing to Pane View via [Lockstep](../../tools/lockstep).
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ## Features
 
 - Mixed image + video gallery with virtualized rendering for large folders
-- Fullscreen-style viewer modal with playback controls for video
+- Fullscreen viewer modal with playback controls for video
+- Comic mode — image folders grouped and read as comics
 - Folder scanning with optional recursive mode and persistent settings
-- Sidebar tree + folder overlay browser for fast folder navigation
+- Sidebar tree + folder overlay browser for fast navigation
 - Thumbnail cache and SQLite media index maintenance tools
 - Native desktop menu integration and keyboard-first navigation
+- Sort modes: name, date, random
 
-## Tech Stack
+## Tech stack
 
-- Electron Forge + Vite
-- React 18 + TypeScript
-- Tailwind CSS
-- Zod shared contracts
-- better-result result-based IPC boundaries
-- Drizzle schema management for the SQLite media index
-- Biome + Knip for maintenance tooling
-- Pnpm package manager
-- ffmpeg / ffprobe sidecar tooling for video metadata and thumbnails
+| Layer | Choices |
+| --- | --- |
+| Desktop | Electron Forge + Vite |
+| UI | React 19, TypeScript, Tailwind CSS 4 |
+| State | Zustand |
+| Contracts | Zod + [better-result](https://github.com/better-auth/better-result) IPC boundaries |
+| Database | SQLite + Drizzle ORM |
+| Media | `sharp`, `ffmpeg-static`, `ffprobe-static` |
+| Tooling | Biome, Knip, Vitest |
 
-## Getting Started
+## Getting started
 
 ### Prerequisites
 
-- Pnpm installed
-- Node.js + npm available in PATH (required by Electron Forge packaging)
-
-### Install dependencies
-
-```bash
-pnpm install
-```
+- pnpm 11 (install from repo root: `pnpm install`)
+- Node.js + npm on `PATH` (required by Electron Forge packaging)
 
 ### Run in development
 
-```bash
-pnpm run start
+From the **repo root**:
+
+```powershell
+pnpm --filter @latch-works/frame-view start
+```
+
+Or from this directory:
+
+```powershell
+pnpm start
 ```
 
 ## Scripts
 
-- `pnpm run start`: run Electron Forge in dev mode
-- `pnpm run lint`: run Biome checks
-- `pnpm run format`: format the repo with Biome
-- `pnpm run knip`: detect unused files, exports, and dependencies
-- `pnpm run db:generate`: generate Drizzle migrations from the media-index schema
-- `pnpm run test`: run Vitest
-- `pnpm run package`: create packaged app output
-- `pnpm run make`: generate distributables (installer artifacts)
-- `pnpm run publish`: publish distributables via Forge publishers
+| Script | Description |
+| --- | --- |
+| `pnpm start` | Electron Forge dev mode |
+| `pnpm lint` | Biome checks |
+| `pnpm format` | Format with Biome |
+| `pnpm typecheck` | `tsc --noEmit` |
+| `pnpm test` | Vitest |
+| `pnpm knip` | Unused files, exports, and dependencies |
+| `pnpm db:generate` | Generate Drizzle migrations from schema |
+| `pnpm package` | Package app output |
+| `pnpm make` | Build distributables (installers) |
+| `pnpm publish` | Publish via Forge publishers |
 
-## Keyboard Shortcuts
+## Keyboard shortcuts
 
-### App / Menu
+### App / menu
 
-- `Ctrl/Cmd + O`: open folder dialog
-- `F5` (Windows/Linux) or `Cmd/Ctrl + R` (macOS): refresh current folder
-- `Ctrl/Cmd + ,`: open preferences
+| Key | Action |
+| --- | --- |
+| `Ctrl/Cmd + O` | Open folder dialog |
+| `F5` (Win/Linux) or `Cmd/Ctrl + R` (macOS) | Refresh current folder |
+| `Ctrl/Cmd + ,` | Open preferences |
 
 ### Gallery
 
-- `Arrow Left` / `Arrow Right`: move selection previous/next
-- `Arrow Up` / `Arrow Down`: move selection by one row
-- `A` / `D`: move selection previous/next (one-hand alternative)
-- `W` / `S`: move selection by one row (one-hand alternative)
-- `Enter` or `F`: open selected item in viewer
-- `Escape` (while sort menu is open): close sort menu
+| Key | Action |
+| --- | --- |
+| `←` / `→` or `A` / `D` | Previous / next item |
+| `↑` / `↓` or `W` / `S` | Move one row |
+| `Enter` or `F` | Open selected item in viewer |
+| `Escape` (sort menu open) | Close sort menu |
 
 ### Viewer
 
-- `Escape`: close viewer
-- `Arrow Left` or `Q`: previous item
-- `Arrow Right` or `E`: next item
-- `Space` or `2` (video): play/pause
-- `1` (video): seek back 5 seconds
-- `3` (video): seek forward 5 seconds
-- `Hold 4` (video): temporarily set viewer speed to `2x` until release
+| Key | Action |
+| --- | --- |
+| `Escape` | Close viewer |
+| `←` or `Q` | Previous item |
+| `→` or `E` | Next item |
+| `Space` or `2` (video) | Play / pause |
+| `1` (video) | Seek back 5 seconds |
+| `3` (video) | Seek forward 5 seconds |
+| Hold `4` (video) | Temporary `2×` speed until release |
 
-## Project Structure
+## Project structure
 
-- `src/main.ts`: Electron main process bootstrap
-- `src/main/`: main-process services, IPC handlers, database, menu
-- `src/preload.ts`: secure renderer bridge API
-- `src/renderer.tsx` + `src/renderer/`: React UI, components, state, utils
-- `src/shared/contracts.ts`: shared Zod schemas and serialized IPC contract definitions
-- `src/shared/types.ts`: shared type surface re-exported from the contracts
-- `src/main/db/schema.ts`: Drizzle schema for the media index
-- `docs/`: product notes, planning docs, and AI collaboration notes
+```text
+src/
+├── main.ts              # Electron main process bootstrap
+├── main/                # Services, IPC, database, menu
+├── preload.ts           # Secure renderer bridge API
+├── renderer.tsx
+├── renderer/            # React UI, components, state, utils
+├── shared/
+│   ├── contracts.ts     # Zod schemas and IPC contracts
+│   └── types.ts         # Shared type surface
+└── main/db/schema.ts    # Drizzle SQLite media index schema
+docs/                    # Product notes and planning docs
+```
 
-## Contract Notes
+## Contract notes
 
 - Main-process IPC handlers return serialized `better-result` payloads.
 - `src/preload.ts` deserializes those payloads back into `Result` values.
 - Renderer call sites explicitly unwrap success/error results instead of relying on `null` sentinels or thrown preload errors.
 
-## Open Source
+## Manual verification
 
-- License: `MIT` (see `LICENSE`)
-
-## Manual Verification
-
-Automated checks are available via `pnpm run lint`, `pnpm run test`, and `pnpm run knip`.
+Automated checks: `pnpm lint`, `pnpm test`, `pnpm knip`.
 
 After changes, verify manually by:
 
-- opening a folder and scanning media
-- navigating with gallery/viewer hotkeys
-- opening settings and changing preferences
-- confirming cache/index actions complete successfully
+1. Opening a folder and scanning media
+2. Navigating with gallery/viewer hotkeys
+3. Opening settings and changing preferences
+4. Confirming cache/index actions complete successfully
+
+## Related
+
+- [Pane View](../pane-view/README.md) — web viewer targeting feature parity
+- [Lockstep](../../tools/lockstep/README.md) — sync local archive to Pane View
+- [Root README](../../README.md) — monorepo overview
+
+## License
+
+MIT — see [LICENSE](LICENSE).

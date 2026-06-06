@@ -1,84 +1,120 @@
 # Gather Box
 
-Personal-use Chrome extension for downloading original comic images and story PDFs from supported content pages.
+> Chrome extension for downloading image galleries and story PDFs from supported sites into a local archive.
 
-## What It Does
+Gather Box is the **collection** step in [Latch Works](../../README.md): media enters the ecosystem here, gets organized on disk (often alongside [Frame View](../frame-view)), and can later be synced to [Pane View](../pane-view) via [Lockstep](../../tools/lockstep).
 
-- Validates the active tab is a supported MyHentaiGallery gallery, Kemono post, FANBOX post, AO3 work, Hentai Foundry story page, or fanfiction.net story page.
-- Lets you choose a destination folder with Chrome's directory picker and remembers it for later.
-- Collects images from supported page-specific selectors, including `ul.comics-grid.clear div.comic-thumb img[src]` on MyHentaiGallery, `div.post__files a.fileThumb.image-link[href]` on Kemono, and FANBOX image CDN anchors.
-- Collects story PDF download links from AO3 works and Hentai Foundry story pages.
-- Collects fanfiction.net chapter URLs and generates a local PDF from the chapter HTML.
-- Rewrites `/thumbnail/` URLs to `/original/` for MyHentaiGallery and downloads Kemono and FANBOX files directly from the `href`.
-- Downloads AO3 and Hentai Foundry story PDFs directly from the page's PDF link, including site cookies/session credentials for pages that are accessible in your browser session.
-- Fetches fanfiction.net chapters with your browser session and writes one generated PDF as `{author}-{story}.pdf`.
-- Saves files into inferred subfolders while preserving the original filenames.
-- Saves AO3, Hentai Foundry, and fanfiction.net story PDFs directly into the selected site folder as `{author}-{story}.pdf`.
-- Converts spaces in inferred folder names to underscores.
-- Converts spaces in inferred story PDF filenames to underscores.
-- For Kemono posts, infers nested folders as `<root>/<user_type>/<user_name>/<post_title>/` and converts spaces to underscores in each segment.
-- For FANBOX posts, infers nested folders as `<root>/<creator_name>/<post_title>-<post_id>/` from the creator subdomain, post title, and post id.
+## Supported sites
 
-## Project Structure
+| Site | Content |
+| --- | --- |
+| **MyHentaiGallery** | Gallery images (`/thumbnail/` → `/original/`) |
+| **Kemono** | Post image attachments |
+| **pixiv FANBOX** | Post image CDN files |
+| **Archive of Our Own** | Work PDF download |
+| **Hentai Foundry** | Story PDF download |
+| **fanfiction.net** | All chapters fetched and merged into one local PDF |
 
-- [manifest.json](./manifest.json)
-- [package.json](./package.json)
-- [tsconfig.json](./tsconfig.json)
-- [scripts/build.mjs](./scripts/build.mjs)
-- [src/](./src)
-- [popup/popup.html](./popup/popup.html)
-- [popup/popup.css](./popup/popup.css)
-- `assets/icons/*.png`
+Each site remembers its own destination folder. Folder and filename inference rules (underscores, nested paths for Kemono/FANBOX, `{author}-{story}.pdf` for stories) are implemented per collector in `src/content/collectors/`.
+
+## How it works
+
+1. Open a supported page in Chrome.
+2. Click the extension icon.
+3. Choose a writable destination folder (Chrome File System Access API).
+4. Click **Download Content**.
+5. The popup reports progress and any per-file failures.
+
+Downloads use your browser session cookies where needed (AO3, Hentai Foundry, fanfiction.net). Individual file failures do not stop the rest of the batch.
+
+## Project structure
+
+```text
+gather-box/
+├── manifest.json
+├── popup/               # Extension popup HTML/CSS
+├── src/
+│   ├── popup/           # Popup logic and UI state
+│   ├── content/         # Per-site collectors (injected scripts)
+│   └── shared/          # Site detection, path helpers
+├── scripts/
+│   ├── build.mjs        # esbuild bundle → dist/
+│   └── clean.mjs
+└── assets/icons/
+```
 
 ## Development
 
-Install dependencies:
+Install dependencies from the **repo root** (`pnpm install`), then:
 
 ```powershell
-pnpm install
+# Typecheck
+pnpm --filter @latch-works/gather-box typecheck
+
+# Build extension to dist/
+pnpm --filter @latch-works/gather-box build
+
+# Clean build output
+pnpm --filter @latch-works/gather-box clean
 ```
 
-Run the TypeScript checker:
+Source lives in `src/` and is bundled into `dist/`. Reload the unpacked extension in Chrome after every rebuild.
 
-```powershell
-pnpm typecheck
+## Load in Chrome
+
+1. Open `chrome://extensions`
+2. Enable **Developer mode**
+3. Click **Load unpacked**
+4. Select the `apps/gather-box/dist` directory
+
+## Usage example URLs
+
+- `https://myhentaigallery.com/a/20942`
+- `https://kemono.cr/fanbox/user/24921130/post/11471817`
+- `https://creator.fanbox.cc/posts/11929835`
+- `https://archiveofourown.org/works/18187196`
+- `https://www.hentai-foundry.com/stories/user/dotDelamora/70617/Taming-Guinevere`
+- `https://www.fanfiction.net/s/12620462/1/Taboo`
+
+## Folder layout examples
+
+**Kemono** — nested by user type, name, and post title:
+
+```text
+<root>/<user_type>/<user_name>/<post_title>/
 ```
 
-Build the extension:
+**FANBOX** — nested by creator and post:
 
-```powershell
-pnpm build
+```text
+<root>/<creator_name>/<post_title>-<post_id>/
 ```
 
-## Load In Chrome
+**Story PDFs** (AO3, Hentai Foundry, fanfiction.net):
 
-1. Open `chrome://extensions`.
-2. Enable `Developer mode`.
-3. Click `Load unpacked`.
-4. Select the generated `dist` directory.
+```text
+<site-folder>/Author_Name-Story_Title.pdf
+```
 
-## Usage
-
-1. Open a supported page, for example `https://myhentaigallery.com/a/20942`, `https://kemono.cr/fanbox/user/24921130/post/11471817`, `https://somebody.fanbox.cc/posts/11929835`, `https://archiveofourown.org/works/18187196`, `https://www.hentai-foundry.com/stories/user/dotDelamora/70617/Taming-Guinevere`, or `https://www.fanfiction.net/s/12620462/1/Taboo`.
-2. Click the extension icon.
-3. Click `Choose Folder` and select a writable destination.
-4. Click `Download Content`.
-5. Wait for the popup to report the save summary.
+Spaces in folder and PDF names are converted to underscores.
 
 ## Notes
 
-- Source code lives in `src/` and is bundled into `dist/` with `pnpm build`. Reload the unpacked extension in Chrome after rebuilding.
-- The popup shows the picked folder name only. Browsers do not expose the full absolute path through the File System Access API.
-- The extension remembers the last chosen folder separately for each supported site and asks Chrome to re-confirm access if needed.
-- Downloads continue after individual file failures and report failures in the popup log.
+- The popup shows the picked folder **name** only — browsers do not expose the full absolute path through the File System Access API.
+- The extension re-confirms folder access with Chrome when needed.
+- MyHentaiGallery collection targets `ul.comics-grid.clear div.comic-thumb img[src]` and ignores ad blocks outside that selector.
 
-## Manual Checks
+## Manual checks
 
-- Popup opens without console errors after loading the unpacked extension.
-- Unsupported pages keep the download action disabled.
-- The collector ignores ad blocks because it only reads `div.comic-thumb img[src]`.
-- Saved image files keep names like `001.webp`, `002.webp`, and so on.
-- Saved story PDFs use names like `GrandLeviathan-Eagle_Cafe.pdf` and `dotDelamora-Taming_Guinevere.pdf`.
-- fanfiction.net pages are detected, the collected chapter count matches the chapter selector, and the generated PDF opens with all chapters in order.
-- fanfiction.net generated PDFs preserve basic bold and italic text.
-- FANBOX creator subdomain pages are detected and image CDN anchors download into `<creator_name>/<post_title>-<post_id>/`.
+- [ ] Popup opens without console errors after loading unpacked
+- [ ] Unsupported pages keep the download action disabled
+- [ ] Image files keep sequential names (`001.webp`, `002.webp`, …)
+- [ ] Story PDFs use `{author}-{story}.pdf` naming
+- [ ] fanfiction.net: chapter count matches selector; generated PDF has all chapters in order with basic bold/italic preserved
+- [ ] FANBOX: files land in `<creator>/<post_title>-<post_id>/`
+
+## Related
+
+- [Frame View](../frame-view/README.md) — browse downloaded folders locally
+- [Lockstep](../../tools/lockstep/README.md) — publish archive to Pane View
+- [Root README](../../README.md) — monorepo overview
