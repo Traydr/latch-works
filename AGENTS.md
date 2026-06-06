@@ -72,6 +72,16 @@ Do not pass `--` between `pnpm start:lockstep` and subcommands; use `pnpm exec t
 
 ### Test caveats on Linux
 
-- `apps/frame-view` has a Windows-path unit test (`mediaProtocol.test.ts`) that fails on Linux; other frame-view tests may emit `window is not defined` noise in Node.
-- `tools/lockstep` tests expect `LOCKSTEP_API_URL` to be unset when asserting missing-field behavior; unset it or run tests in a clean env if those cases fail.
+- `pnpm check` fails on Linux because `apps/frame-view` has a Windows-path unit test (`mediaProtocol.test.ts`). Other frame-view tests may emit `window is not defined` noise in Node. Run workspace tests excluding frame-view, or accept this known failure for full `pnpm check`.
+- `tools/lockstep` tests expect `LOCKSTEP_API_URL` to be unset when asserting missing-field behavior. If repo-root `.env` is sourced, run `env -u LOCKSTEP_API_URL -u LOCKSTEP_API_TOKEN pnpm --filter @latch-works/lockstep test`.
 - `pnpm lint` may report pre-existing Biome format/import issues unrelated to your changes.
+
+### Service startup after VM boot
+
+PostgreSQL and MinIO are not started automatically. Before Pane View E2E:
+
+```bash
+sudo pg_ctlcluster 16 main start
+# MinIO (if /tmp/minio exists from a prior session; otherwise re-download from https://min.io/download)
+MINIO_ROOT_USER=minioadmin MINIO_ROOT_PASSWORD=minioadmin123 /tmp/minio server /tmp/minio-data --address 127.0.0.1:9000 --console-address 127.0.0.1:9001
+```
