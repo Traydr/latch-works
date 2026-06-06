@@ -43,6 +43,10 @@ export const Route = createFileRoute("/api/media/$mediaId/thumbnail")({
         }
 
         if (result.status === "failed" || result.status === "unsupported") {
+          if (media.mediaType === "image" || media.mediaType === "gif") {
+            return redirectToOriginal(params.mediaId);
+          }
+
           return new Response("Thumbnail not found", {
             headers: { "Cache-Control": API_PRIVATE_CACHE_CONTROL },
             status: 404,
@@ -65,6 +69,16 @@ export const Route = createFileRoute("/api/media/$mediaId/thumbnail")({
     },
   },
 });
+
+function redirectToOriginal(mediaId: string): Response {
+  return new Response(null, {
+    headers: {
+      "Cache-Control": API_PRIVATE_CACHE_CONTROL,
+      Location: `/api/media/${mediaId}/original`,
+    },
+    status: 302,
+  });
+}
 
 function readThumbnailSize(request: Request): number {
   const rawSize = new URL(request.url).searchParams.get("size");

@@ -139,6 +139,13 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
               alt={page.name}
               loading="lazy"
               decoding="async"
+              onError={(event) => {
+                const image = event.currentTarget;
+                const originalSrc = `/api/media/${page.id}/original`;
+                if (image.src !== new URL(originalSrc, window.location.origin).href) {
+                  image.src = originalSrc;
+                }
+              }}
               className="max-h-none w-full max-w-full rounded bg-zinc-900 object-contain"
             />
           ))}

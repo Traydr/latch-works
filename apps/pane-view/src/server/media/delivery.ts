@@ -3,6 +3,7 @@ import { originalObjectKey } from "@latch-works/media-storage";
 export interface MediaDeliveryRequest {
   extension: string;
   mediaType: "image" | "gif" | "video" | "pdf" | "unknown";
+  objectKey?: string | null;
   sha256: string;
 }
 
@@ -19,7 +20,7 @@ export interface StoredMediaDeliveryRequest {
 export function planSignedOriginalDelivery(request: MediaDeliveryRequest): MediaDeliveryPlan {
   return {
     expiresInSeconds: 60,
-    objectKey: originalObjectKey(request),
+    objectKey: request.objectKey ?? originalObjectKey(request),
     strategy: "signed-url",
   };
 }

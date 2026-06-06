@@ -19,9 +19,8 @@ function snapThumbnailSize(requestedSize: number): number {
   return closest;
 }
 
-export function resolveRequestedThumbnailSize(cardWidth: number): number {
-  const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
-  return snapThumbnailSize(Math.round(cardWidth * dpr));
+export function resolveRequestedThumbnailSize(cardWidth: number, devicePixelRatio = 1): number {
+  return snapThumbnailSize(Math.round(cardWidth * devicePixelRatio));
 }
 
 export function buildThumbnailRequestUrl(mediaId: string, cardWidth: number): string {
