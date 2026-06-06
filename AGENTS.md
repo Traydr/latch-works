@@ -42,3 +42,32 @@ Pull requests should include the purpose, affected app/package, verification com
 ## Security & Configuration Tips
 
 Do not commit secrets. Keep local values in `.env` and document required keys in `.env.example`. Treat the local archive as the source of truth; commands that mutate archive or storage state should be explicit and documented in the PR.
+
+## Cursor Cloud specific instructions
+
+### Local services (Pane View E2E)
+
+Pane View requires PostgreSQL and S3-compatible storage. There is no docker-compose in the repo; start services manually when testing sync or the web app:
+
+- **PostgreSQL**: `sudo pg_ctlcluster 16 main start` (database `latch_works`, user/password from `.env`).
+- **MinIO** (local S3): run in a tmux session, e.g. `MINIO_ROOT_USER=minioadmin MINIO_ROOT_PASSWORD=minioadmin123 /tmp/minio server /tmp/minio-data --address 127.0.0.1:9000 --console-address 127.0.0.1:9001`, then create bucket `latch-works-media` with the `mc` client.
+
+Copy `.env.example` to repo-root `.env`, symlink `apps/pane-view/.env` → `../../.env`, then migrate: `cd apps/pane-view && set -a && . ./.env && set +a && pnpm db:migrate`.
+
+### Build before dev
+
+`pnpm dev:pane` resolves workspace packages (`@latch-works/media-*`) from their built `dist/` output. Run `pnpm build` (or `pnpm -r --filter './packages/*' build`) before starting the dev server, or routes like `/api/health` will fail with package resolution errors.
+
+### Running Pane View and Lockstep
+
+- Web app: `pnpm dev:pane` → http://127.0.0.1:3000 (`GET /api/health` should return `{"ok":true,"service":"pane-view"}`).
+- Lockstep plan (read-only): `cd tools/lockstep && pnpm exec tsx src/cli.ts plan --source <archive-path>` with `.env` sourced.
+- Lockstep push: same, with `push --source <path> --api-url http://127.0.0.1:3000 --yes`.
+
+Do not pass `--` between `pnpm start:lockstep` and subcommands; use `pnpm exec tsx src/cli.ts plan ...` from `tools/lockstep` or `pnpm --filter @latch-works/lockstep start plan --source ...`.
+
+### Test caveats on Linux
+
+- `apps/frame-view` has a Windows-path unit test (`mediaProtocol.test.ts`) that fails on Linux; other frame-view tests may emit `window is not defined` noise in Node.
+- `tools/lockstep` tests expect `LOCKSTEP_API_URL` to be unset when asserting missing-field behavior; unset it or run tests in a clean env if those cases fail.
+- `pnpm lint` may report pre-existing Biome format/import issues unrelated to your changes.
