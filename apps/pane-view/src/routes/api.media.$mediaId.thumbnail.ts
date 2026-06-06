@@ -1,7 +1,8 @@
 import { snapThumbnailSize } from "@latch-works/media-delivery";
 import { createFileRoute } from "@tanstack/react-router";
 import { isRequestSessionValid } from "../server/auth/web-session-core";
-import { API_PRIVATE_CACHE_CONTROL, buildSignedCdnDeliveryUrl } from "../server/media/cdn-delivery";
+import { API_PRIVATE_CACHE_CONTROL } from "../server/media/cdn-delivery";
+import { redirectToSignedStoredObject } from "../server/media/delivery-redirect";
 import { ensureThumbnailDerivative } from "../server/media/derivative-service";
 import { readMediaThumbnailContext } from "../server/media/repository";
 
@@ -53,18 +54,7 @@ export const Route = createFileRoute("/api/media/$mediaId/thumbnail")({
           });
         }
 
-        const deliveryUrl = buildSignedCdnDeliveryUrl({
-          objectKey: result.objectKey,
-          purpose: result.purpose,
-        });
-
-        return new Response(null, {
-          headers: {
-            "Cache-Control": API_PRIVATE_CACHE_CONTROL,
-            Location: deliveryUrl,
-          },
-          status: 302,
-        });
+        return redirectToSignedStoredObject({ objectKey: result.objectKey });
       },
     },
   },

@@ -1,17 +1,25 @@
 import type { MediaItem } from "@latch-works/media-domain";
+import { buildThumbnailRequestUrl, DEFAULT_CARD_WIDTH } from "./thumbnail-size";
 
-export function readMediaPreviewUrl(media: MediaItem): string | undefined {
-  if ("thumbnailUrl" in media && typeof media.thumbnailUrl === "string" && media.thumbnailUrl) {
-    return media.thumbnailUrl;
-  }
-
-  if (media.mediaType === "gif") {
-    return `/api/media/${media.id}/thumbnail?size=320`;
-  }
-
-  if (media.mediaType === "image") {
-    return `/api/media/${media.id}/original`;
+export function readMediaPreviewUrl(
+  media: MediaItem,
+  cardWidth: number = DEFAULT_CARD_WIDTH,
+): string | undefined {
+  if (media.mediaType === "image" || media.mediaType === "gif" || media.mediaType === "video") {
+    return buildThumbnailRequestUrl(media.id, cardWidth);
   }
 
   return undefined;
+}
+
+export function readMediaOriginalUrl(media: MediaItem): string {
+  return `/api/media/${media.id}/original`;
+}
+
+export function readMediaViewerUrl(media: MediaItem): string {
+  if (media.mediaType === "image") {
+    return `/api/media/${media.id}/preview`;
+  }
+
+  return readMediaOriginalUrl(media);
 }

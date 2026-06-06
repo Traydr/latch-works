@@ -1,5 +1,6 @@
 import type { ComicEntry } from "@latch-works/media-domain";
 import { type JSX, useEffect, useRef, useState } from "react";
+import { ResolvedMediaImage } from "@/features/gallery/ResolvedMediaImage";
 
 interface ComicReaderProps {
   comic: ComicEntry;
@@ -8,7 +9,7 @@ interface ComicReaderProps {
 
 export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
   const readerRef = useRef<HTMLDivElement | null>(null);
-  const pageRefs = useRef<Array<HTMLImageElement | null>>([]);
+  const pageRefs = useRef<Array<HTMLDivElement | null>>([]);
   const currentPageIndexRef = useRef(0);
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
 
@@ -130,24 +131,20 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
       <div ref={readerRef} className="h-full overflow-auto px-3 pb-12 pt-24">
         <div className="mx-auto flex w-[min(100%,980px)] flex-col items-center gap-3">
           {comic.pages.map((page, index) => (
-            <img
+            <div
               key={page.id}
               ref={(element) => {
                 pageRefs.current[index] = element;
               }}
-              src={`/api/media/${page.id}/preview`}
-              alt={page.name}
-              loading="lazy"
-              decoding="async"
-              onError={(event) => {
-                const image = event.currentTarget;
-                const originalSrc = `/api/media/${page.id}/original`;
-                if (image.src !== new URL(originalSrc, window.location.origin).href) {
-                  image.src = originalSrc;
-                }
-              }}
-              className="max-h-none w-full max-w-full rounded bg-zinc-900 object-contain"
-            />
+            >
+              <ResolvedMediaImage
+                alt={page.name}
+                className="max-h-none w-full max-w-full rounded bg-zinc-900 object-contain"
+                mediaId={page.id}
+                mediaType={page.mediaType}
+                variant="preview"
+              />
+            </div>
           ))}
         </div>
       </div>

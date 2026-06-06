@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { isRequestSessionValid } from "../server/auth/web-session-core";
-import { API_PRIVATE_CACHE_CONTROL, buildSignedCdnDeliveryUrl } from "../server/media/cdn-delivery";
+import { API_PRIVATE_CACHE_CONTROL } from "../server/media/cdn-delivery";
+import { redirectToSignedStoredObject } from "../server/media/delivery-redirect";
 import { ensurePreviewDerivative } from "../server/media/derivative-service";
 import { readMediaThumbnailContext } from "../server/media/repository";
 
@@ -45,18 +46,7 @@ export const Route = createFileRoute("/api/media/$mediaId/preview")({
           });
         }
 
-        const deliveryUrl = buildSignedCdnDeliveryUrl({
-          objectKey: result.objectKey,
-          purpose: "preview",
-        });
-
-        return new Response(null, {
-          headers: {
-            "Cache-Control": API_PRIVATE_CACHE_CONTROL,
-            Location: deliveryUrl,
-          },
-          status: 302,
-        });
+        return redirectToSignedStoredObject({ objectKey: result.objectKey });
       },
     },
   },

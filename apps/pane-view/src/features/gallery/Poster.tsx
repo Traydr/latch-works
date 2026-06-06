@@ -1,10 +1,9 @@
 import type { MediaItem } from "@latch-works/media-domain";
-import { useEffect, useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import { buildThumbnailRequestUrl } from "./thumbnail-size";
+import { resolveRequestedThumbnailSize } from "./thumbnail-size";
 import { MediaPlaceholder } from "./MediaPlaceholder";
-import { readMediaPreviewUrl } from "./media-preview-url";
+import { useResolvedMediaUrl } from "./useResolvedMediaUrl";
 
 export function Poster({
   cardWidth = 220,
@@ -15,25 +14,21 @@ export function Poster({
   media: MediaItem;
   priority?: boolean;
 }) {
-  const previewUrl = readMediaPreviewUrl(media);
-  const primaryUrl =
-    previewUrl ??
-    (media.mediaType === "image" || media.mediaType === "gif" || media.mediaType === "video"
-      ? buildThumbnailRequestUrl(media.id, cardWidth)
-      : undefined);
-  const originalUrl = `/api/media/${media.id}/original`;
-  const canFallbackToOriginal =
+  const supportsThumbnail =
     media.mediaType === "image" || media.mediaType === "gif" || media.mediaType === "video";
-
-  const [src, setSrc] = useState(primaryUrl);
-  const [loading, setLoading] = useState(Boolean(primaryUrl));
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    setSrc(primaryUrl);
-    setLoading(Boolean(primaryUrl));
-    setFailed(false);
-  }, [media.id, primaryUrl]);
+  const thumbnailSize = resolveRequestedThumbnailSize(cardWidth);
+  const thumbnail = useResolvedMediaUrl({
+    mediaId: supportsThumbnail ? media.id : undefined,
+    size: thumbnailSize,
+    variant: "thumbnail",
+  });
+  const original = useResolvedMediaUrl({
+    mediaId: supportsThumbnail && thumbnail.failed ? media.id : undefined,
+    variant: "original",
+  });
+  const displayUrl = thumbnail.resolvedUrl ?? original.resolvedUrl;
+  const loading = thumbnail.loading || original.loading;
+  const failed = !displayUrl && (thumbnail.failed || original.failed);
 
   return (
     <div
@@ -44,25 +39,15 @@ export function Poster({
       )}
     >
       {loading ? <Skeleton className="absolute inset-0 rounded-none" /> : null}
-      {src && !failed ? (
+      {displayUrl && !failed ? (
         <img
           alt=""
           className={cn("h-full w-full object-cover", loading && "opacity-0")}
           decoding="async"
           fetchPriority={priority ? "high" : "auto"}
           loading={priority ? "eager" : "lazy"}
-          onError={() => {
-            if (canFallbackToOriginal && src !== originalUrl) {
-              setSrc(originalUrl);
-              setLoading(true);
-              return;
-            }
-
-            setFailed(true);
-            setLoading(false);
-          }}
-          onLoad={() => setLoading(false)}
-          src={src}
+          onLoad={() => undefined}
+          src={displayUrl}
         />
       ) : (
         <div className="grid h-full w-full place-items-center text-zinc-500">

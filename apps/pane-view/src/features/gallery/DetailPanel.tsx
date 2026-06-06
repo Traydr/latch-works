@@ -2,8 +2,9 @@ import type { MediaItem } from "@latch-works/media-domain";
 import { formatBytes } from "@latch-works/media-domain";
 import { ChevronLeft, ChevronRight, Copy, Download, ImageIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { readMediaPreviewUrl } from "./media-preview-url";
+import { DEFAULT_CARD_WIDTH } from "./thumbnail-size";
 import { MediaPlaceholder } from "./MediaPlaceholder";
+import { useResolvedMediaUrl } from "./useResolvedMediaUrl";
 
 interface DetailPanelProps {
   onCopyPath: () => void;
@@ -22,7 +23,17 @@ export function DetailPanel({
   onPrev,
   selected,
 }: DetailPanelProps) {
-  const thumbnailUrl = selected ? readMediaPreviewUrl(selected) : undefined;
+  const preview = useResolvedMediaUrl({
+    mediaId: selected?.id,
+    size: DEFAULT_CARD_WIDTH,
+    variant: "thumbnail",
+  });
+  const original = useResolvedMediaUrl({
+    mediaId: preview.failed ? selected?.id : undefined,
+    variant: "original",
+  });
+  const src = preview.resolvedUrl ?? original.resolvedUrl;
+  const failed = !src && (preview.failed || original.failed);
 
   return (
     <aside
@@ -32,8 +43,8 @@ export function DetailPanel({
       {selected ? (
         <div className="grid gap-4">
           <div className="grid aspect-[4/5] w-full place-items-center overflow-hidden rounded-lg border border-zinc-700 bg-zinc-900">
-            {thumbnailUrl ? (
-              <img alt={selected.name} className="h-full w-full object-cover" src={thumbnailUrl} />
+            {src && !failed ? (
+              <img alt={selected.name} className="h-full w-full object-cover" src={src} />
             ) : (
               <MediaPlaceholder mediaType={selected.mediaType} size={42} />
             )}

@@ -2,6 +2,7 @@ import type { MediaItem } from "@latch-works/media-domain";
 import { formatBytes } from "@latch-works/media-domain";
 import { type JSX, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useResolvedMediaUrl } from "./useResolvedMediaUrl";
 
 const PdfViewer = lazy(() =>
   import("@/features/viewer/PdfViewer").then((module) => ({ default: module.PdfViewer })),
@@ -69,6 +70,20 @@ export function MediaViewerModal({
   const [speed, setSpeed] = useState(1);
   const [showOriginal, setShowOriginal] = useState(false);
   const [chromeVisible, setChromeVisible] = useState(true);
+  const viewerPrimary = useResolvedMediaUrl({
+    mediaId: item && item.mediaType !== "video" && item.mediaType !== "pdf" ? item.id : undefined,
+    variant:
+      item && (showOriginal || item.mediaType !== "image") ? "original" : "preview",
+  });
+  const viewerFallback = useResolvedMediaUrl({
+    mediaId: viewerPrimary.failed ? item?.id : undefined,
+    variant: "original",
+  });
+  const viewerImageSrc = viewerPrimary.resolvedUrl ?? viewerFallback.resolvedUrl ?? null;
+  const videoDelivery = useResolvedMediaUrl({
+    mediaId: item?.mediaType === "video" ? item.id : undefined,
+    variant: "original",
+  });
 
   const applySpeed = useCallback((nextSpeed: number): void => {
     setSpeed(nextSpeed);
@@ -337,11 +352,6 @@ export function MediaViewerModal({
     window.open(`/api/media/${item.id}/original`, "_blank", "noopener,noreferrer");
   };
 
-  const imageSrc =
-    showOriginal || item.mediaType !== "image"
-      ? `/api/media/${item.id}/original`
-      : `/api/media/${item.id}/preview`;
-
   return (
     <div
       ref={modalRef}
@@ -520,16 +530,16 @@ export function MediaViewerModal({
               onEnded={() => {
                 setPlaying(false);
               }}
-              src={`/api/media/${item.id}/original`}
+              src={videoDelivery.resolvedUrl ?? undefined}
             />
           </>
-        ) : (
+        ) : viewerImageSrc ? (
           <img
-            src={imageSrc}
             alt={item.name}
             className="max-h-full max-w-full rounded object-contain"
+            src={viewerImageSrc}
           />
-        )}
+        ) : null}
       </div>
 
       {/* Video controls */}
