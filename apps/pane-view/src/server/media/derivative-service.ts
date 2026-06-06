@@ -5,6 +5,7 @@ import path from "node:path";
 import { snapThumbnailSize, type ThumbnailSize } from "@latch-works/media-delivery";
 import type { MediaType } from "@latch-works/media-domain";
 import {
+  deleteStoredObject,
   headStoredObject,
   originalObjectKey,
   previewObjectKey,
@@ -33,6 +34,60 @@ export type ThumbnailEnsureResult =
   | { status: "pending" }
   | { status: "failed" }
   | { status: "unsupported" };
+
+export async function invalidateThumbnailDerivatives({
+  mediaId,
+}: {
+  mediaId: string;
+}): Promise<{ status: "not_found" } | { status: "ok" } | { status: "unsupported" }> {
+  const context = await readMediaThumbnailContext({ mediaId });
+  if (!context) {
+    return { status: "not_found" };
+  }
+
+  if (!supportsDerivative(context.mediaType)) {
+    return { status: "unsupported" };
+  }
+
+  const storage = createPaneViewStorageClient();
+  const rows = await db
+    .select({ objectKey: thumbnails.objectKey })
+    .from(thumbnails)
+    .where(eq(thumbnails.mediaObjectId, context.mediaObjectId));
+
+  await Promise.all(
+    rows.map(async (row) => {
+      try {
+        await deleteStoredObject({ key: row.objectKey, storage });
+      } catch {
+        // Best effort: stale storage objects should not block regeneration.
+      }
+    }),
+  );
+
+  await db.delete(thumbnails).where(eq(thumbnails.mediaObjectId, context.mediaObjectId));
+
+  return { status: "ok" };
+}
+
+export async function regenerateThumbnailDerivative({
+  mediaId,
+  requestedSize,
+}: {
+  mediaId: string;
+  requestedSize: number;
+}): Promise<ThumbnailEnsureResult> {
+  const invalidated = await invalidateThumbnailDerivatives({ mediaId });
+  if (invalidated.status === "not_found") {
+    return { status: "failed" };
+  }
+
+  if (invalidated.status === "unsupported") {
+    return { status: "unsupported" };
+  }
+
+  return ensureThumbnailDerivative({ mediaId, requestedSize });
+}
 
 export async function ensurePreviewDerivative({
   mediaId,

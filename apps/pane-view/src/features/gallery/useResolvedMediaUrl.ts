@@ -5,10 +5,12 @@ const MAX_RETRIES = 12;
 
 export function useResolvedMediaUrl({
   mediaId,
+  refreshKey = 0,
   size,
   variant,
 }: {
   mediaId: string | undefined;
+  refreshKey?: number;
   size?: number;
   variant: "thumbnail" | "preview" | "original";
 }) {
@@ -71,7 +73,7 @@ export function useResolvedMediaUrl({
     return () => {
       cancelled = true;
     };
-  }, [mediaId, size, variant]);
+  }, [mediaId, refreshKey, size, variant]);
 
   return { failed, loading, resolvedUrl };
 }

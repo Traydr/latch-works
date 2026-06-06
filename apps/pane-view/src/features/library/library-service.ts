@@ -2,9 +2,11 @@ import type { FolderNode } from "@latch-works/media-domain";
 import { getParentPath, toArchivePath, trimTrailingSlash } from "@latch-works/media-domain";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { isCurrentWebSessionValid } from "../../server/auth/web-session";
 import {
   type LibraryMediaItem,
   readDatabaseLibrarySnapshot,
+  softDeleteLibraryEntry,
 } from "../../server/library/repository";
 
 const fixtureRoots = ["nsfw", "nsfw-stories", "sfw", "sfw/patreon"];
@@ -27,6 +29,21 @@ export interface LibrarySnapshot {
   mediaUrlMode: "signed-url";
   roots: string[];
 }
+
+const deleteLibraryEntrySchema = z.object({
+  entryId: z.string().uuid(),
+});
+
+export const deleteLibraryEntry = createServerFn({ method: "POST" })
+  .inputValidator(deleteLibraryEntrySchema)
+  .handler(async ({ data }): Promise<{ deleted: boolean }> => {
+    if (!(await isCurrentWebSessionValid())) {
+      throw new Error("Unauthorized");
+    }
+
+    const deleted = await softDeleteLibraryEntry({ entryId: data.entryId });
+    return { deleted };
+  });
 
 export const getLibrarySnapshot = createServerFn({ method: "GET" })
   .inputValidator(libraryRequestSchema)

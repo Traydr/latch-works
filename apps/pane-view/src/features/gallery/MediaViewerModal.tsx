@@ -1,6 +1,25 @@
 import type { MediaItem } from "@latch-works/media-domain";
 import { formatBytes } from "@latch-works/media-domain";
-import { type JSX, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Copy,
+  Download,
+  Image,
+  Maximize,
+  type LucideIcon,
+  X,
+} from "lucide-react";
+import {
+  forwardRef,
+  type JSX,
+  lazy,
+  type MouseEvent,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useResolvedMediaUrl } from "./useResolvedMediaUrl";
 
@@ -370,66 +389,65 @@ export function MediaViewerModal({
         className={`pointer-events-none absolute left-1/2 top-4 z-20 w-[min(94vw,980px)] -translate-x-1/2 transition-opacity ${chromeVisible ? "opacity-100" : "opacity-0 md:opacity-100"}`}
         style={{ paddingTop: "env(safe-area-inset-top)" }}
       >
-        <div className="pointer-events-auto flex items-center justify-between gap-3 rounded-2xl border border-zinc-700/80 bg-zinc-900/90 px-4 py-3 shadow-xl backdrop-blur-xl">
+        <div className="pointer-events-auto flex flex-col gap-2 rounded-2xl border border-zinc-700/80 bg-zinc-900/90 px-3 py-2 shadow-xl backdrop-blur-xl sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-4 sm:py-3">
           <div className="min-w-0">
             <p className="truncate text-sm font-medium text-zinc-100">{item.name}</p>
-            <p className={`text-xs text-zinc-300 ${isMobile ? "truncate" : ""}`}>{details.join(" | ")}</p>
+            <p className={`truncate text-xs text-zinc-300`}>{details.join(" | ")}</p>
           </div>
-          <div className="flex items-center gap-2 text-sm">
-            <button
-              type="button"
-              className="cursor-pointer rounded-xl border border-zinc-300/90 bg-white/70 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-white dark:border-zinc-700/80 dark:bg-zinc-900/70 dark:text-zinc-200"
+          <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+            <ViewerToolbarButton
+              ariaLabel="Copy path"
+              compact={isMobile}
+              icon={Copy}
+              label="Copy path"
               onClick={(event) => {
                 event.stopPropagation();
                 void copyPath();
               }}
-            >
-              Copy path
-            </button>
-            <button
-              type="button"
-              className="cursor-pointer rounded-xl border border-zinc-300/90 bg-white/70 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-white dark:border-zinc-700/80 dark:bg-zinc-900/70 dark:text-zinc-200"
+            />
+            <ViewerToolbarButton
+              ariaLabel="Download"
+              compact={isMobile}
+              icon={Download}
+              label="Download"
               onClick={(event) => {
                 event.stopPropagation();
                 downloadMedia();
               }}
-            >
-              Download
-            </button>
+            />
             {item.mediaType === "image" ? (
-              <button
-                type="button"
-                className="cursor-pointer rounded-xl border border-zinc-300/90 bg-white/70 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-white dark:border-zinc-700/80 dark:bg-zinc-900/70 dark:text-zinc-200"
+              <ViewerToolbarButton
+                ariaLabel={showOriginal ? "Show preview" : "Show original"}
+                compact={isMobile}
+                icon={Image}
+                label={showOriginal ? "Preview" : "Original"}
                 onClick={(event) => {
                   event.stopPropagation();
                   setShowOriginal((current) => !current);
                 }}
-              >
-                {showOriginal ? "Preview" : "Original"}
-              </button>
+              />
             ) : null}
-            <button
-              type="button"
-              className="cursor-pointer rounded-xl border border-zinc-300/90 bg-white/70 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-white dark:border-zinc-700/80 dark:bg-zinc-900/70 dark:text-zinc-200"
+            <ViewerToolbarButton
+              ariaLabel="Toggle fullscreen"
+              compact={isMobile}
+              icon={Maximize}
+              label="Fullscreen"
               onClick={(event) => {
                 event.stopPropagation();
                 void toggleFullscreen();
               }}
-            >
-              Fullscreen
-            </button>
-            <button
+            />
+            <ViewerToolbarButton
               ref={closeButtonRef}
-              type="button"
-              aria-label="Close viewer"
-              className="cursor-pointer rounded-xl border border-zinc-300/90 bg-white/70 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-white dark:border-zinc-700/80 dark:bg-zinc-900/70 dark:text-zinc-200"
+              ariaLabel="Close viewer"
+              compact={isMobile}
+              icon={X}
+              label="Close"
               onClick={(event) => {
                 event.stopPropagation();
                 onClose();
               }}
-            >
-              Close
-            </button>
+            />
           </div>
         </div>
       </div>
@@ -646,6 +664,35 @@ export function MediaViewerModal({
     </div>
   );
 }
+
+const ViewerToolbarButton = forwardRef<
+  HTMLButtonElement,
+  {
+    ariaLabel: string;
+    compact: boolean;
+    icon: LucideIcon;
+    label: string;
+    onClick: (event: MouseEvent<HTMLButtonElement>) => void;
+  }
+>(function ViewerToolbarButton({ ariaLabel, compact, icon: Icon, label, onClick }, ref) {
+  return (
+    <button
+      ref={ref}
+      type="button"
+      aria-label={ariaLabel}
+      title={label}
+      className="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-xl border border-zinc-300/90 bg-white/70 text-zinc-700 hover:bg-white sm:size-auto dark:border-zinc-700/80 dark:bg-zinc-900/70 dark:text-zinc-200"
+      onClick={onClick}
+    >
+      {compact ? (
+        <Icon className="size-4" />
+      ) : (
+        <span className="px-3 py-1.5 text-xs font-medium">{label}</span>
+      )}
+      {compact ? <span className="sr-only">{label}</span> : null}
+    </button>
+  );
+});
 
 function isTextInputTarget(target: EventTarget | null): boolean {
   const element = target as HTMLElement | null;

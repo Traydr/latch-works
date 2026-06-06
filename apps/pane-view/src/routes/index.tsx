@@ -42,7 +42,9 @@ import { HotkeyOverlay } from "@/features/settings/HotkeyOverlay";
 import { SettingsDrawer } from "@/features/settings/SettingsDrawer";
 import { ThemeSync } from "@/features/settings/ThemeSync";
 import { useAppSettings, resolveRootKey, useRootPreferences } from "@/features/settings/useAppSettings";
-import { getLibrarySnapshot } from "../features/library/library-service";
+import { deleteLibraryEntry, getLibrarySnapshot } from "../features/library/library-service";
+import { regenerateMediaThumbnail } from "../features/media/media-delivery-service";
+import { DEFAULT_CARD_WIDTH } from "../features/gallery/thumbnail-size";
 import { isCurrentWebSessionValid } from "../server/auth/web-session";
 
 export const Route = createFileRoute("/")({
@@ -105,6 +107,8 @@ function PaneViewHome() {
   const [viewerLockedMediaId, setViewerLockedMediaId] = useState<string | null>(null);
   const [focusedEntryIndex, setFocusedEntryIndex] = useState(0);
   const [scrollFocusedIntoView, setScrollFocusedIntoView] = useState(false);
+  const [deletingEntryIds, setDeletingEntryIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [deletedEntryIds, setDeletedEntryIds] = useState<ReadonlySet<string>>(() => new Set());
 
   const showDetailPanel = !isMobile && detailPanelOpen;
 
@@ -187,6 +191,10 @@ function PaneViewHome() {
     [settings.showImages, settings.showVideos, sortedMedia],
   );
   const visibleMedia = filteredMedia;
+  const navigableMedia = useMemo(
+    () => visibleMedia.filter((item) => !deletedEntryIds.has(item.id)),
+    [deletedEntryIds, visibleMedia],
+  );
   const comics = useMemo(() => {
     if (!comicMode) {
       return [];
@@ -223,9 +231,25 @@ function PaneViewHome() {
 
   const selected =
     visibleMedia.find((item) => item.id === (viewerLockedMediaId ?? selectedId)) ??
+    navigableMedia[0] ??
     visibleMedia[0] ??
     null;
-  const selectedIndex = selected ? visibleMedia.findIndex((item) => item.id === selected.id) : -1;
+  const selectedIndex = selected
+    ? navigableMedia.findIndex((item) => item.id === selected.id)
+    : -1;
+
+  useEffect(() => {
+    setDeletedEntryIds((current) => {
+      const liveIds = new Set(library.media.map((item) => item.id));
+      const next = new Set([...current].filter((id) => liveIds.has(id)));
+      return next.size === current.size ? current : next;
+    });
+    setDeletingEntryIds((current) => {
+      const liveIds = new Set(library.media.map((item) => item.id));
+      const next = new Set([...current].filter((id) => liveIds.has(id)));
+      return next.size === current.size ? current : next;
+    });
+  }, [library.media]);
 
   // Persist state changes.
   useEffect(() => {
@@ -547,16 +571,64 @@ function PaneViewHome() {
   };
 
   const selectAdjacentMedia = (offset: -1 | 1) => {
-    if (viewerLockedMediaId || !visibleMedia.length) {
+    if (viewerLockedMediaId || !navigableMedia.length) {
       return;
     }
 
     const currentIndex = selectedIndex >= 0 ? selectedIndex : 0;
-    const nextIndex = (currentIndex + offset + visibleMedia.length) % visibleMedia.length;
-    const next = visibleMedia[nextIndex];
+    const nextIndex =
+      (currentIndex + offset + navigableMedia.length) % navigableMedia.length;
+    const next = navigableMedia[nextIndex];
     if (next) {
       selectMedia(next.id);
     }
+  };
+
+  const deleteSelectedMedia = () => {
+    if (!selected || deletedEntryIds.has(selected.id) || deletingEntryIds.has(selected.id)) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete "${selected.name}" from the archive? This cannot be undone.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    const entryId = selected.id;
+    const currentNavigableIndex = navigableMedia.findIndex((item) => item.id === entryId);
+
+    setDeletingEntryIds((current) => new Set([...current, entryId]));
+
+    void (async () => {
+      try {
+        const result = await deleteLibraryEntry({ data: { entryId } });
+        if (!result.deleted) {
+          return;
+        }
+
+        setDeletedEntryIds((current) => new Set([...current, entryId]));
+
+        const remaining = navigableMedia.filter((item) => item.id !== entryId);
+        const nextIndex =
+          remaining.length > 0
+            ? currentNavigableIndex >= 0
+              ? Math.min(currentNavigableIndex, remaining.length - 1)
+              : 0
+            : -1;
+        const next = nextIndex >= 0 ? remaining[nextIndex] : undefined;
+        if (next) {
+          selectMedia(next.id);
+        }
+      } finally {
+        setDeletingEntryIds((current) => {
+          const next = new Set(current);
+          next.delete(entryId);
+          return next;
+        });
+      }
+    })();
   };
 
   const shuffle = () => {
@@ -630,6 +702,7 @@ function PaneViewHome() {
         currentPath={library.currentPath}
         folders={library.folders}
         onNavigateToPath={navigateToPath}
+        onOpenSettings={() => setSettingsOpen(true)}
       />
 
       <SidebarInset className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
@@ -773,6 +846,8 @@ function PaneViewHome() {
             cardWidth={settings.thumbnailSize}
             comicMode={comicMode}
             columnCountRef={columnCountRef}
+            deletedEntryIds={deletedEntryIds}
+            deletingEntryIds={deletingEntryIds}
             entries={entries}
             focusedIndex={focusedEntryIndex}
             onActivateEntry={handleActivateEntry}
@@ -783,12 +858,16 @@ function PaneViewHome() {
           />
 
           {showDetailPanel ? (
+            <div className="hidden min-h-0 min-w-0 max-w-[360px] shrink-0 lg:block">
             <DetailPanel
+              isDeleted={selected ? deletedEntryIds.has(selected.id) : false}
+              isDeleting={selected ? deletingEntryIds.has(selected.id) : false}
               onCopyPath={() => {
                 if (selected) {
                   void navigator.clipboard.writeText(selected.path);
                 }
               }}
+              onDelete={deleteSelectedMedia}
               onDownload={() => {
                 if (selected) {
                   window.open(`/api/media/${selected.id}/original`, "_blank", "noopener,noreferrer");
@@ -796,13 +875,24 @@ function PaneViewHome() {
               }}
               onNext={() => selectAdjacentMedia(1)}
               onOpenViewer={() => {
-                if (selected) {
-                  openViewer(visibleMedia, selected.id);
+                if (selected && !deletedEntryIds.has(selected.id)) {
+                  openViewer(navigableMedia, selected.id);
                 }
               }}
               onPrev={() => selectAdjacentMedia(-1)}
+              onRegenerateThumbnail={async () => {
+                if (!selected) {
+                  return;
+                }
+
+                await regenerateMediaThumbnail({
+                  data: { mediaId: selected.id, size: DEFAULT_CARD_WIDTH },
+                });
+              }}
               selected={selected}
+              showDelete
             />
+            </div>
           ) : null}
         </div>
 
@@ -811,7 +901,6 @@ function PaneViewHome() {
           currentPath={library.currentPath}
           isRefreshing={isRefreshing}
           onChangeSortMode={setSortMode}
-          onOpenSettings={() => setSettingsOpen(true)}
           onToggleComicMode={() => {
             if (library.currentPath === "") {
               return;

@@ -1,4 +1,5 @@
 import {
+  DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
   PutObjectCommand,
@@ -159,6 +160,21 @@ export async function getStoredObject({
 
     throw error;
   }
+}
+
+export async function deleteStoredObject({
+  key,
+  storage,
+}: {
+  key: string;
+  storage: S3StorageClient;
+}): Promise<void> {
+  await storage.client.send(
+    new DeleteObjectCommand({
+      Bucket: storage.bucket,
+      Key: key,
+    }),
+  );
 }
 
 export async function putStoredObject({

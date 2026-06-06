@@ -1,5 +1,5 @@
 import type { FolderNode } from "@latch-works/media-domain";
-import { Archive, ChevronRight, Folder, LogOut } from "lucide-react";
+import { Archive, ChevronRight, Folder, LogOut, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Sidebar,
@@ -20,9 +20,15 @@ interface ArchiveSidebarProps {
   currentPath: string;
   folders: FolderNode[];
   onNavigateToPath: (path: string) => void;
+  onOpenSettings: () => void;
 }
 
-export function ArchiveSidebar({ currentPath, folders, onNavigateToPath }: ArchiveSidebarProps) {
+export function ArchiveSidebar({
+  currentPath,
+  folders,
+  onNavigateToPath,
+  onOpenSettings,
+}: ArchiveSidebarProps) {
   const { state } = useSidebar();
   const isCollapsed = state === "collapsed";
   const ancestors = buildAncestorItems(currentPath);
@@ -119,12 +125,23 @@ export function ArchiveSidebar({ currentPath, folders, onNavigateToPath }: Archi
       </SidebarContent>
 
       <SidebarFooter className="border-t border-sidebar-border p-2">
-        <form action="/api/auth/logout" method="post">
-          <Button className="w-full justify-start gap-2" type="submit" variant="ghost">
-            <LogOut className="size-4" />
-            <span>Sign out</span>
+        <div className="grid gap-1">
+          <Button
+            className="w-full justify-start gap-2"
+            onClick={onOpenSettings}
+            type="button"
+            variant="ghost"
+          >
+            <Settings className="size-4" />
+            <span>Settings</span>
           </Button>
-        </form>
+          <form action="/api/auth/logout" method="post">
+            <Button className="w-full justify-start gap-2" type="submit" variant="ghost">
+              <LogOut className="size-4" />
+              <span>Sign out</span>
+            </Button>
+          </form>
+        </div>
       </SidebarFooter>
 
       <SidebarRail />

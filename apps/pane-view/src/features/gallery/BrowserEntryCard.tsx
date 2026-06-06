@@ -1,11 +1,14 @@
 import type { BrowserEntry } from "@latch-works/media-domain";
 import { formatBytes } from "@latch-works/media-domain";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { DeleteOverlay } from "./DeleteOverlay";
 import { Poster } from "./Poster";
 
 interface BrowserEntryCardProps {
   cardHeight: number;
   cardWidth: number;
+  deletedEntryIds: ReadonlySet<string>;
+  deletingEntryIds: ReadonlySet<string>;
   entry: BrowserEntry;
   focused: boolean;
   left: number;
@@ -19,6 +22,8 @@ interface BrowserEntryCardProps {
 export function BrowserEntryCard({
   cardHeight,
   cardWidth,
+  deletedEntryIds,
+  deletingEntryIds,
   entry,
   focused,
   left,
@@ -56,9 +61,25 @@ export function BrowserEntryCard({
       {entry.kind === "folder" ? (
         <FolderCard entry={entry} focused={focused} selected={selected} />
       ) : entry.kind === "comic" ? (
-        <ComicCard cardWidth={cardWidth} entry={entry} focused={focused} priority={priority} selected={selected} />
+        <ComicCard
+          cardWidth={cardWidth}
+          deletedEntryIds={deletedEntryIds}
+          deletingEntryIds={deletingEntryIds}
+          entry={entry}
+          focused={focused}
+          priority={priority}
+          selected={selected}
+        />
       ) : (
-        <MediaCard cardWidth={cardWidth} entry={entry} focused={focused} priority={priority} selected={selected} />
+        <MediaCard
+          cardWidth={cardWidth}
+          deletedEntryIds={deletedEntryIds}
+          deletingEntryIds={deletingEntryIds}
+          entry={entry}
+          focused={focused}
+          priority={priority}
+          selected={selected}
+        />
       )}
     </button>
   );
@@ -110,18 +131,24 @@ function FolderCard({
 
 function ComicCard({
   cardWidth,
+  deletedEntryIds,
+  deletingEntryIds,
   entry,
   focused,
   priority,
   selected,
 }: {
   cardWidth: number;
+  deletedEntryIds: ReadonlySet<string>;
+  deletingEntryIds: ReadonlySet<string>;
   entry: Extract<BrowserEntry, { kind: "comic" }>;
   focused: boolean;
   priority?: boolean;
   selected: boolean;
 }) {
   const comic = entry.comic;
+  const isDeleting = comic.pages.some((page) => deletingEntryIds.has(page.id));
+  const isDeleted = comic.pages.every((page) => deletedEntryIds.has(page.id));
 
   return (
     <div
@@ -135,6 +162,7 @@ function ComicCard({
       title={comic.folderPath}
     >
       <Poster cardWidth={cardWidth} media={comic.cover} priority={priority} />
+      {isDeleting || isDeleted ? <DeleteOverlay animated={isDeleting} /> : null}
       <div className="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/75 via-black/10 to-transparent">
         <div className="px-3 pb-3">
           <p className="line-clamp-2 text-sm font-semibold text-white">{comic.name}</p>
@@ -147,18 +175,24 @@ function ComicCard({
 
 function MediaCard({
   cardWidth,
+  deletedEntryIds,
+  deletingEntryIds,
   entry,
   focused,
   priority,
   selected,
 }: {
   cardWidth: number;
+  deletedEntryIds: ReadonlySet<string>;
+  deletingEntryIds: ReadonlySet<string>;
   entry: Extract<BrowserEntry, { kind: "media" }>;
   focused: boolean;
   priority?: boolean;
   selected: boolean;
 }) {
   const item = entry.media;
+  const isDeleting = deletingEntryIds.has(item.id);
+  const isDeleted = deletedEntryIds.has(item.id);
 
   return (
     <div
@@ -172,6 +206,7 @@ function MediaCard({
       title={item.path}
     >
       <Poster cardWidth={cardWidth} media={item} priority={priority} />
+      {isDeleting || isDeleted ? <DeleteOverlay animated={isDeleting} /> : null}
       <div className="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 transition-opacity group-hover:opacity-100">
         <div className="px-3 pb-3">
           <p className="truncate text-sm font-semibold text-white">{item.name}</p>
