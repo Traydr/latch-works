@@ -13,6 +13,7 @@
     "typecheck": "pnpm -r typecheck",
     "knip": "knip",
     "dev:pane": "pnpm --filter @latch-works/pane-view dev",
+    "dev:showcase": "pnpm --filter @latch-works/showcase dev",
     "start:lockstep": "pnpm --filter @latch-works/lockstep start"
   },
   "devDependencies": {

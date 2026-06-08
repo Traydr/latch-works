@@ -1,0 +1,32 @@
+{
+  "name": "@latch-works/showcase",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "check": "pnpm typecheck && pnpm build",
+    "dev": "vite dev --host 127.0.0.1",
+    "preview": "vite preview --host 127.0.0.1",
+    "screenshots": "node scripts/capture-screenshots.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@fontsource-variable/geist": "^5.2.9",
+    "lucide-react": "^0.562.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-router-dom": "^7.9.4"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "puppeteer-core": "24.8.1",
+    "tailwindcss": "^4.3.0",
+    "typescript": "^6.0.2",
+    "vite": "8.0.11"
+  },
+  "packageManager": "pnpm@11.1.0"
+}
