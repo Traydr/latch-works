@@ -4,12 +4,14 @@ const DB_NAME = "comic-downloader";
 const DB_VERSION = 1;
 const STORE_NAME = "handles";
 const DIRECTORY_KEY_PREFIX = "last-directory:";
+export const GLOBAL_DIRECTORY_KEY = `${DIRECTORY_KEY_PREFIX}global`;
 
 export async function saveDirectoryHandle(
   siteKey: SiteKey | null,
-  directoryHandle: FileSystemDirectoryHandle
+  directoryHandle: FileSystemDirectoryHandle,
+  useGlobalFolder: boolean
 ): Promise<void> {
-  const directoryKey = getDirectoryKey(siteKey);
+  const directoryKey = getDirectoryKey(siteKey, useGlobalFolder);
   if (!directoryKey) {
     return;
   }
@@ -21,9 +23,10 @@ export async function saveDirectoryHandle(
 }
 
 export async function loadDirectoryHandle(
-  siteKey: SiteKey | null
+  siteKey: SiteKey | null,
+  useGlobalFolder: boolean
 ): Promise<FileSystemDirectoryHandle | null> {
-  const directoryKey = getDirectoryKey(siteKey);
+  const directoryKey = getDirectoryKey(siteKey, useGlobalFolder);
   if (!directoryKey) {
     return null;
   }
@@ -32,6 +35,21 @@ export async function loadDirectoryHandle(
   return requestResult<FileSystemDirectoryHandle | undefined>(
     database.transaction(STORE_NAME, "readonly").objectStore(STORE_NAME).get(directoryKey)
   ).then((handle) => handle || null);
+}
+
+export async function clearDirectoryHandle(
+  siteKey: SiteKey | null,
+  useGlobalFolder: boolean
+): Promise<void> {
+  const directoryKey = getDirectoryKey(siteKey, useGlobalFolder);
+  if (!directoryKey) {
+    return;
+  }
+
+  const database = await openDatabase();
+  await requestResult(
+    database.transaction(STORE_NAME, "readwrite").objectStore(STORE_NAME).delete(directoryKey)
+  );
 }
 
 export async function ensureDirectoryPermission(
@@ -54,7 +72,15 @@ export async function ensureDirectoryPermission(
   return false;
 }
 
-function getDirectoryKey(siteKey: SiteKey | null): string | null {
+export function getDirectoryScopeLabel(useGlobalFolder: boolean): string {
+  return useGlobalFolder ? "all sites" : "this site";
+}
+
+function getDirectoryKey(siteKey: SiteKey | null, useGlobalFolder: boolean): string | null {
+  if (useGlobalFolder) {
+    return GLOBAL_DIRECTORY_KEY;
+  }
+
   return siteKey ? DIRECTORY_KEY_PREFIX + siteKey : null;
 }
 

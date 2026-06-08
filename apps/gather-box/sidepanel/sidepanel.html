@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Gather Box</title>
-    <link rel="stylesheet" href="popup.css">
+    <link rel="stylesheet" href="sidepanel.css">
   </head>
   <body>
     <main class="popup">
@@ -15,7 +15,6 @@
         </div>
         <div class="header-actions">
           <a class="btn btn-ghost btn-tiny header-link" href="../options/options.html" target="_blank" rel="noreferrer">Settings</a>
-          <button id="openSidePanel-mini" class="btn btn-ghost btn-tiny" type="button">Side panel</button>
           <span id="badge-mini" class="badge badge-idle">IDLE</span>
         </div>
       </header>
@@ -48,7 +47,7 @@
           <span class="label">Page</span>
           <span id="pageStatus-mini" class="value">Checking...</span>
         </div>
-        <p id="pageDetail-mini" class="sub">The active tab is checked when the popup opens.</p>
+        <p id="pageDetail-mini" class="sub">The active tab is checked when the side panel opens.</p>
       </section>
 
       <details id="logDetails-mini" class="log-details surface">
@@ -59,6 +58,6 @@
       </details>
     </main>
 
-    <script src="popup.js"></script>
+    <script src="sidepanel.js"></script>
   </body>
 </html>

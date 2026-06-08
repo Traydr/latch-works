@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Gather Box Settings</title>
+    <link rel="stylesheet" href="options.css">
+  </head>
+  <body>
+    <main class="page">
+      <header class="header">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <div>
+            <h1>Gather Box Settings</h1>
+            <p class="lede">Power-user controls for downloads, folders, and UI behavior.</p>
+          </div>
+        </div>
+      </header>
+
+      <form id="settingsForm" class="settings">
+        <section class="surface">
+          <h2>Downloads</h2>
+          <label class="field">
+            <span class="field-label">Download concurrency</span>
+            <input id="downloadConcurrency" name="downloadConcurrency" type="number" min="1" max="16" step="1">
+            <span class="field-hint">Parallel file fetches per batch (1–16).</span>
+          </label>
+
+          <label class="checkbox-row">
+            <input id="skipExistingFiles" name="skipExistingFiles" type="checkbox">
+            <span>Skip files that already exist in the destination folder</span>
+          </label>
+
+          <label class="checkbox-row">
+            <input id="verboseLogging" name="verboseLogging" type="checkbox">
+            <span>Verbose logging (include fetch URLs in the results log)</span>
+          </label>
+        </section>
+
+        <section class="surface">
+          <h2>Folders</h2>
+          <fieldset class="radio-group">
+            <legend>Folder memory</legend>
+            <label class="radio-row">
+              <input type="radio" name="folderMode" value="perSite">
+              <span>Remember a separate folder for each site</span>
+            </label>
+            <label class="radio-row">
+              <input type="radio" name="folderMode" value="global">
+              <span>Use one global archive folder for all sites</span>
+            </label>
+          </fieldset>
+        </section>
+
+        <section class="surface">
+          <h2>Credentials</h2>
+          <label class="field">
+            <span class="field-label">Cookie policy</span>
+            <select id="credentialsMode" name="credentialsMode">
+              <option value="auto">Auto (site defaults)</option>
+              <option value="always">Always include cookies</option>
+              <option value="never">Never include cookies</option>
+              <option value="perSite">Per-site overrides</option>
+            </select>
+          </label>
+
+          <div id="perSiteCredentials" class="per-site-grid" hidden>
+            <p class="field-hint">Override cookie behavior for individual sites.</p>
+          </div>
+        </section>
+
+        <section class="surface">
+          <h2>Interface</h2>
+          <fieldset class="radio-group">
+            <legend>Primary UI</legend>
+            <label class="radio-row">
+              <input type="radio" name="primaryUi" value="popup">
+              <span>Toolbar popup (default)</span>
+            </label>
+            <label class="radio-row">
+              <input type="radio" name="primaryUi" value="sidePanel">
+              <span>Side panel (persistent while browsing)</span>
+            </label>
+          </fieldset>
+          <p class="field-hint">Changing the primary UI reloads how the extension icon opens Gather Box.</p>
+        </section>
+
+        <section class="surface">
+          <h2>Shortcuts</h2>
+          <p class="field-hint">
+            Assign a keyboard shortcut in <code>chrome://extensions/shortcuts</code> for
+            <strong>Download content from the active tab</strong>.
+          </p>
+        </section>
+
+        <div class="actions">
+          <button id="saveSettings" class="btn btn-primary" type="submit">Save settings</button>
+          <p id="saveStatus" class="save-status" role="status" aria-live="polite"></p>
+        </div>
+      </form>
+    </main>
+
+    <script src="options.js"></script>
+  </body>
+</html>

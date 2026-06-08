@@ -2,15 +2,36 @@
   "manifest_version": 3,
   "name": "Gather Box",
   "description": "Download original images and story PDFs from supported content pages into a chosen local folder.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "action": {
     "default_title": "Gather Box",
     "default_popup": "popup/popup.html"
   },
+  "background": {
+    "service_worker": "background/service-worker.js"
+  },
+  "options_ui": {
+    "page": "options/options.html",
+    "open_in_tab": true
+  },
+  "commands": {
+    "download-active-tab": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+G",
+        "mac": "Command+Shift+G"
+      },
+      "description": "Download content from the active tab"
+    }
+  },
+  "side_panel": {
+    "default_path": "sidepanel/sidepanel.html"
+  },
   "permissions": [
     "activeTab",
     "scripting",
-    "storage"
+    "storage",
+    "contextMenus",
+    "sidePanel"
   ],
   "host_permissions": [
     "https://myhentaigallery.com/*",
