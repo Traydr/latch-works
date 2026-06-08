@@ -1,0 +1,137 @@
+@import url("../popup/popup.css");
+
+body {
+  min-width: 0;
+  padding: 24px;
+}
+
+.page {
+  max-width: 720px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.header .brand {
+  align-items: flex-start;
+}
+
+.lede {
+  margin: 4px 0 0;
+  color: var(--muted-foreground);
+  font-size: 13px;
+}
+
+.settings {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.surface h2 {
+  margin: 0 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.field-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--label);
+}
+
+.field input[type="number"],
+.field select {
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-md);
+  background: var(--input-bg);
+  color: var(--foreground);
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 10px;
+}
+
+.field input[type="number"]:focus-visible,
+.field select:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
+.field-hint {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.checkbox-row,
+.radio-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.checkbox-row input,
+.radio-row input {
+  margin-top: 2px;
+  accent-color: var(--accent);
+}
+
+.radio-group {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.radio-group legend {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--label);
+  margin-bottom: 8px;
+}
+
+.per-site-grid {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.per-site-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) 160px;
+  gap: 8px;
+  align-items: center;
+}
+
+.per-site-row label {
+  font-size: 12px;
+  color: var(--foreground);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-top: 4px;
+}
+
+.save-status {
+  margin: 0;
+  font-size: 12px;
+  color: var(--success);
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: var(--accent-hover);
+}

@@ -10,25 +10,20 @@ export interface PopupElements {
   folderName: HTMLElement;
   folderDetail: HTMLElement;
   chooseFolder: HTMLButtonElement;
+  clearFolder: HTMLButtonElement;
   downloadButton: HTMLButtonElement;
+  retryButton: HTMLButtonElement;
+  copyErrorsButton: HTMLButtonElement;
+  openSidePanelButton: HTMLButtonElement | null;
+  destinationPreview: HTMLElement;
   progressBar: HTMLProgressElement;
   progressText: HTMLElement;
   resultLog: HTMLElement;
+  logDetails: HTMLDetailsElement;
 }
 
-export function getPopupElements(document: Document): PopupElements {
-  return {
-    badge: requireElement(document, "badge-mini", HTMLElement),
-    pageStatus: requireElement(document, "pageStatus-mini", HTMLElement),
-    pageDetail: requireElement(document, "pageDetail-mini", HTMLElement),
-    folderName: requireElement(document, "folderName-mini", HTMLElement),
-    folderDetail: requireElement(document, "folderDetail-mini", HTMLElement),
-    chooseFolder: requireElement(document, "chooseFolder-mini", HTMLButtonElement),
-    downloadButton: requireElement(document, "downloadBtn-mini", HTMLButtonElement),
-    progressBar: requireElement(document, "progressBar-mini", HTMLProgressElement),
-    progressText: requireElement(document, "progressText-mini", HTMLElement),
-    resultLog: requireElement(document, "resultLog-mini", HTMLElement)
-  };
+export interface PopupElementOptions {
+  includeOpenSidePanel?: boolean;
 }
 
 const BADGE_STATUS_CLASSES = [
@@ -39,6 +34,32 @@ const BADGE_STATUS_CLASSES = [
   "badge-complete",
   "badge-error"
 ] as const;
+
+export function getPopupElements(
+  document: Document,
+  options: PopupElementOptions = {}
+): PopupElements {
+  return {
+    badge: requireElement(document, "badge-mini", HTMLElement),
+    pageStatus: requireElement(document, "pageStatus-mini", HTMLElement),
+    pageDetail: requireElement(document, "pageDetail-mini", HTMLElement),
+    folderName: requireElement(document, "folderName-mini", HTMLElement),
+    folderDetail: requireElement(document, "folderDetail-mini", HTMLElement),
+    chooseFolder: requireElement(document, "chooseFolder-mini", HTMLButtonElement),
+    clearFolder: requireElement(document, "clearFolder-mini", HTMLButtonElement),
+    downloadButton: requireElement(document, "downloadBtn-mini", HTMLButtonElement),
+    retryButton: requireElement(document, "retryBtn-mini", HTMLButtonElement),
+    copyErrorsButton: requireElement(document, "copyErrorsBtn-mini", HTMLButtonElement),
+    openSidePanelButton: options.includeOpenSidePanel
+      ? requireElement(document, "openSidePanel-mini", HTMLButtonElement)
+      : null,
+    destinationPreview: requireElement(document, "destinationPreview-mini", HTMLElement),
+    progressBar: requireElement(document, "progressBar-mini", HTMLProgressElement),
+    progressText: requireElement(document, "progressText-mini", HTMLElement),
+    resultLog: requireElement(document, "resultLog-mini", HTMLElement),
+    logDetails: requireElement(document, "logDetails-mini", HTMLDetailsElement)
+  };
+}
 
 export function setBadge(elements: PopupElements, status: PopupStatus): void {
   elements.badge.textContent = getStatusLabel(status);
@@ -56,10 +77,16 @@ export function setFolder(elements: PopupElements, name: string, detail: string)
   elements.folderDetail.textContent = detail;
 }
 
+export function setDestinationPreview(elements: PopupElements, preview: string): void {
+  elements.destinationPreview.textContent = preview;
+  elements.destinationPreview.hidden = preview.length === 0;
+}
+
 export function resetProgress(elements: PopupElements): void {
   elements.progressBar.max = 1;
   elements.progressBar.value = 0;
   elements.progressText.textContent = "Waiting for a supported page and folder.";
+  setDestinationPreview(elements, "");
 }
 
 export function setProgress(elements: PopupElements, value: number, max: number, text: string): void {
@@ -72,7 +99,28 @@ export function clearLog(elements: PopupElements): void {
   elements.resultLog.innerHTML = "";
 }
 
-export function addLog(elements: PopupElements, message: string, tone?: LogTone): void {
+export function restoreLog(
+  elements: PopupElements,
+  entries: Array<{ message: string; tone?: LogTone }>
+): void {
+  clearLog(elements);
+
+  if (entries.length === 0) {
+    elements.resultLog.innerHTML = '<p class="log-empty">No activity yet.</p>';
+    return;
+  }
+
+  for (const entry of entries) {
+    addLog(elements, entry.message, entry.tone, false);
+  }
+}
+
+export function addLog(
+  elements: PopupElements,
+  message: string,
+  tone?: LogTone,
+  scroll = true
+): void {
   if (elements.resultLog.querySelector(".log-empty")) {
     elements.resultLog.innerHTML = "";
   }
@@ -81,17 +129,29 @@ export function addLog(elements: PopupElements, message: string, tone?: LogTone)
   entry.className = tone ? `log-entry ${tone}` : "log-entry";
   entry.textContent = message;
   elements.resultLog.appendChild(entry);
-  elements.resultLog.scrollTop = elements.resultLog.scrollHeight;
+
+  if (scroll) {
+    elements.resultLog.scrollTop = elements.resultLog.scrollHeight;
+  }
+}
+
+export function setLogExpanded(elements: PopupElements, expanded: boolean): void {
+  elements.logDetails.open = expanded;
 }
 
 export function syncActions(
   elements: PopupElements,
   canDownload: boolean,
   running: boolean,
-  hasDirectoryHandle: boolean
+  hasDirectoryHandle: boolean,
+  canRetry: boolean,
+  hasErrors: boolean
 ): void {
   elements.downloadButton.disabled = !canDownload;
   elements.chooseFolder.disabled = running;
+  elements.clearFolder.disabled = running || !hasDirectoryHandle;
+  elements.retryButton.disabled = running || !canRetry;
+  elements.copyErrorsButton.disabled = running || !hasErrors;
 
   if (!hasDirectoryHandle && !running) {
     elements.folderName.textContent = "No folder selected";

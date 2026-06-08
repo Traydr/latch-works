@@ -82,6 +82,28 @@ body {
   padding: 2px 2px 4px;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.header-link {
+  text-decoration: none;
+}
+
+.action-row {
+  display: flex;
+  gap: 8px;
+}
+
+.destination-preview {
+  margin: 0 0 8px;
+  font-size: 11px;
+  color: var(--accent-hover);
+  word-break: break-all;
+}
+
 .brand {
   display: flex;
   align-items: center;

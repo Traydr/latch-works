@@ -1,27 +1,33 @@
 import type { GalleryImage } from "../shared/types";
 import { formatError } from "./errors";
 
-export const DOWNLOAD_CONCURRENCY = 4;
+export const DEFAULT_DOWNLOAD_CONCURRENCY = 4;
 
 export interface DownloadSummary {
   saved: number;
   failed: number;
+  skipped: number;
   failedItems: DownloadFailure[];
 }
 
 export interface DownloadFailure {
   fileName: string;
   reason: string;
+  originalUrl?: string;
 }
 
 export interface DownloadCallbacks {
   onStart(total: number): void;
   onProgress(completed: number, total: number): void;
   onSaved(fileName: string): void;
+  onSkipped?(fileName: string): void;
+  onVerbose?(message: string): void;
 }
 
 export interface DownloadOptions {
   credentials?: RequestCredentials;
+  concurrency?: number;
+  skipExistingFiles?: boolean;
 }
 
 export async function downloadImages(
@@ -33,15 +39,25 @@ export async function downloadImages(
   const summary: DownloadSummary = {
     saved: 0,
     failed: 0,
+    skipped: 0,
     failedItems: []
   };
   let completed = 0;
   const total = images.length;
+  const concurrency = options.concurrency ?? DEFAULT_DOWNLOAD_CONCURRENCY;
 
   callbacks.onStart(total);
 
-  await runPool(images, DOWNLOAD_CONCURRENCY, async (image) => {
+  await runPool(images, concurrency, async (image) => {
     try {
+      if (options.skipExistingFiles && (await fileExists(destinationDirectory, image.fileName))) {
+        summary.skipped += 1;
+        callbacks.onSkipped?.(image.fileName);
+        callbacks.onVerbose?.(`Skipped existing file ${image.fileName}`);
+        return;
+      }
+
+      callbacks.onVerbose?.(`Fetching ${image.originalUrl}`);
       const response = await fetch(image.originalUrl, { credentials: options.credentials ?? "omit" });
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
@@ -58,7 +74,8 @@ export async function downloadImages(
       summary.failed += 1;
       summary.failedItems.push({
         fileName: image.fileName,
-        reason: formatError(error)
+        reason: formatError(error),
+        originalUrl: image.originalUrl
       });
     } finally {
       completed += 1;
@@ -106,4 +123,16 @@ export async function getOrCreateNestedDirectory(
   }
 
   return currentDirectory;
+}
+
+async function fileExists(
+  destinationDirectory: FileSystemDirectoryHandle,
+  fileName: string
+): Promise<boolean> {
+  try {
+    await destinationDirectory.getFileHandle(fileName);
+    return true;
+  } catch {
+    return false;
+  }
 }

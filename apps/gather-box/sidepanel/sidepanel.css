@@ -1,0 +1,13 @@
+@import url("../popup/popup.css");
+
+body {
+  min-width: 0;
+}
+
+.popup {
+  min-height: 100vh;
+}
+
+.log {
+  max-height: 280px;
+}
