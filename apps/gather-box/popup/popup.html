@@ -9,29 +9,38 @@
   <body>
     <main class="popup">
       <header class="header">
-        <h1>Gather Box</h1>
-        <span id="badge-mini" class="badge">IDLE</span>
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <h1>Gather Box</h1>
+        </div>
+        <span id="badge-mini" class="badge badge-idle">IDLE</span>
       </header>
 
       <button id="downloadBtn-mini" class="btn btn-primary btn-huge btn-full" type="button" disabled>Download Content</button>
 
-      <div class="folder-row">
-        <span class="label">Folder</span>
-        <span id="folderName-mini" class="value truncate">No folder selected</span>
-        <button id="chooseFolder-mini" class="btn btn-ghost btn-tiny" type="button">Choose</button>
-      </div>
-      <p id="folderDetail-mini" class="sub">Choose a writable folder for this run.</p>
+      <section class="surface" aria-label="Destination folder">
+        <div class="folder-row">
+          <span class="label">Folder</span>
+          <span id="folderName-mini" class="value truncate">No folder selected</span>
+          <button id="chooseFolder-mini" class="btn btn-ghost btn-tiny" type="button">Choose</button>
+        </div>
+        <p id="folderDetail-mini" class="sub">Choose a writable folder for this run.</p>
+      </section>
 
-      <progress id="progressBar-mini" class="progress" max="1" value="0"></progress>
-      <p id="progressText-mini" class="sub center">Waiting for a supported page and folder.</p>
+      <section class="surface progress-block" aria-label="Download progress">
+        <progress id="progressBar-mini" class="progress" max="1" value="0"></progress>
+        <p id="progressText-mini" class="sub center">Waiting for a supported page and folder.</p>
+      </section>
 
-      <div class="status-row">
-        <span class="label">Page</span>
-        <span id="pageStatus-mini" class="value">Checking...</span>
-      </div>
-      <p id="pageDetail-mini" class="sub">The active tab is checked when the popup opens.</p>
+      <section class="surface" aria-label="Active page">
+        <div class="status-row">
+          <span class="label">Page</span>
+          <span id="pageStatus-mini" class="value">Checking...</span>
+        </div>
+        <p id="pageDetail-mini" class="sub">The active tab is checked when the popup opens.</p>
+      </section>
 
-      <details class="log-details">
+      <details class="log-details surface">
         <summary>Results</summary>
         <div id="resultLog-mini" class="log" role="log" aria-live="polite">
           <p class="log-empty">No activity yet.</p>

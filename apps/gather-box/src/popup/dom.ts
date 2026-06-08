@@ -31,8 +31,19 @@ export function getPopupElements(document: Document): PopupElements {
   };
 }
 
+const BADGE_STATUS_CLASSES = [
+  "badge-idle",
+  "badge-pickingFolder",
+  "badge-collecting",
+  "badge-downloading",
+  "badge-complete",
+  "badge-error"
+] as const;
+
 export function setBadge(elements: PopupElements, status: PopupStatus): void {
   elements.badge.textContent = getStatusLabel(status);
+  elements.badge.classList.remove(...BADGE_STATUS_CLASSES);
+  elements.badge.classList.add(`badge-${status}`);
 }
 
 export function updatePageStatus(elements: PopupElements, status: string, detail: string): void {
