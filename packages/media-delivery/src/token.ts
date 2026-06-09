@@ -65,6 +65,10 @@ export function buildCdnDeliveryPath(token: string): string {
   return `/cdn/v1/${token}`;
 }
 
+export function readDeliveryTokenExpiration(nowSeconds: number, ttlSeconds: number): number {
+  return (Math.floor(nowSeconds / ttlSeconds) + 1) * ttlSeconds;
+}
+
 function encodePayload(payload: DeliveryTokenPayload): string {
   return Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
 }

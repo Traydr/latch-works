@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildCdnDeliveryPath, createDeliveryTokenSigner } from "./token.js";
+import {
+  buildCdnDeliveryPath,
+  createDeliveryTokenSigner,
+  readDeliveryTokenExpiration,
+} from "./token.js";
 
 describe("delivery token", () => {
   const signer = createDeliveryTokenSigner("test-secret");
@@ -40,5 +44,20 @@ describe("delivery token", () => {
 
   it("builds a CDN delivery path", () => {
     expect(buildCdnDeliveryPath("abc.def")).toBe("/cdn/v1/abc.def");
+  });
+});
+
+describe("readDeliveryTokenExpiration", () => {
+  const ttlSeconds = 86_400;
+
+  it("keeps the same exp within a ttl bucket", () => {
+    expect(readDeliveryTokenExpiration(100_000, ttlSeconds)).toBe(
+      readDeliveryTokenExpiration(100_001, ttlSeconds),
+    );
+  });
+
+  it("advances exp across bucket boundaries", () => {
+    expect(readDeliveryTokenExpiration(172_799, ttlSeconds)).toBe(172_800);
+    expect(readDeliveryTokenExpiration(172_800, ttlSeconds)).toBe(259_200);
   });
 });
