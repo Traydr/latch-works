@@ -1,8 +1,47 @@
+import type { PDFPageProxy } from "pdfjs-dist";
 import { type JSX, useEffect, useRef, useState } from "react";
 
 interface PdfViewerProps {
   mediaId: string;
   title: string;
+}
+
+const MAX_PAGE_WIDTH_PX = 896;
+
+function getPageRenderWidth(container: HTMLElement): number {
+  const width = container.clientWidth;
+  if (width > 0) {
+    return Math.min(width, MAX_PAGE_WIDTH_PX);
+  }
+
+  const parentWidth = container.parentElement?.clientWidth ?? window.innerWidth;
+  return Math.min(Math.max(parentWidth - 24, 320), MAX_PAGE_WIDTH_PX);
+}
+
+async function renderPageToCanvas(
+  page: PDFPageProxy,
+  canvas: HTMLCanvasElement,
+  renderWidth: number,
+): Promise<void> {
+  const baseViewport = page.getViewport({ scale: 1 });
+  const scale = renderWidth / baseViewport.width;
+  const viewport = page.getViewport({ scale });
+  const outputScale = window.devicePixelRatio || 1;
+
+  canvas.width = Math.floor(viewport.width * outputScale);
+  canvas.height = Math.floor(viewport.height * outputScale);
+  canvas.style.width = `${Math.floor(viewport.width)}px`;
+  canvas.style.height = `${Math.floor(viewport.height)}px`;
+
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return;
+  }
+
+  const transform =
+    outputScale !== 1 ? ([outputScale, 0, 0, outputScale, 0, 0] as const) : undefined;
+
+  await page.render({ canvas, canvasContext: context, transform, viewport }).promise;
 }
 
 export function PdfViewer({ mediaId, title }: PdfViewerProps): JSX.Element {
@@ -17,6 +56,7 @@ export function PdfViewer({ mediaId, title }: PdfViewerProps): JSX.Element {
     }
 
     let cancelled = false;
+    let resizeObserver: ResizeObserver | undefined;
     container.replaceChildren();
 
     const render = async () => {
@@ -40,26 +80,47 @@ export function PdfViewer({ mediaId, title }: PdfViewerProps): JSX.Element {
 
         setPageCount(pdf.numPages);
 
-        for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+        const paintPages = async () => {
           if (cancelled) {
             return;
           }
 
-          const page = await pdf.getPage(pageNumber);
-          const viewport = page.getViewport({ scale: 1.2 });
-          const canvas = document.createElement("canvas");
-          canvas.width = viewport.width;
-          canvas.height = viewport.height;
-          canvas.className = "mx-auto w-full max-w-4xl rounded bg-white";
+          const renderWidth = getPageRenderWidth(container);
+          container.replaceChildren();
 
-          const context = canvas.getContext("2d");
-          if (!context) {
-            continue;
+          for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+            if (cancelled) {
+              return;
+            }
+
+            const page = await pdf.getPage(pageNumber);
+            const canvas = document.createElement("canvas");
+            canvas.className = "mx-auto max-w-full rounded bg-white";
+
+            await renderPageToCanvas(page, canvas, renderWidth);
+            container.append(canvas);
+          }
+        };
+
+        if (container.clientWidth === 0) {
+          await new Promise<void>((resolve) => {
+            requestAnimationFrame(() => resolve());
+          });
+        }
+
+        await paintPages();
+
+        let lastRenderWidth = getPageRenderWidth(container);
+        resizeObserver = new ResizeObserver(() => {
+          const nextRenderWidth = getPageRenderWidth(container);
+          if (Math.abs(nextRenderWidth - lastRenderWidth) < 8) {
+            return;
           }
 
-          await page.render({ canvas, canvasContext: context, viewport }).promise;
-          container.append(canvas);
-        }
+          lastRenderWidth = nextRenderWidth;
+          void paintPages();
+        });
+        resizeObserver.observe(container);
       } catch (cause) {
         if (!cancelled) {
           setError(cause instanceof Error ? cause.message : "Failed to load PDF");
@@ -71,6 +132,7 @@ export function PdfViewer({ mediaId, title }: PdfViewerProps): JSX.Element {
 
     return () => {
       cancelled = true;
+      resizeObserver?.disconnect();
     };
   }, [mediaId]);
 
