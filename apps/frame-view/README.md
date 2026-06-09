@@ -40,15 +40,34 @@ Frame View is part of the [Latch Works](../../README.md) monorepo. It browses fo
 
 From the **repo root**:
 
-```powershell
+```bash
 pnpm --filter @latch-works/frame-view start
 ```
 
 Or from this directory:
 
-```powershell
+```bash
 pnpm start
 ```
+
+If Electron fails to launch with a missing `Electron Framework.framework` error, repair the local binary install:
+
+```bash
+pnpm run ensure-electron
+```
+
+`pnpm start` runs this check automatically before launching Forge.
+
+### macOS packaging
+
+Build on a Mac with icon assets in `media/` (`frame-view-icon.icns`, `.png`, `.ico`):
+
+```bash
+pnpm --filter @latch-works/frame-view package   # .app in out/
+pnpm --filter @latch-works/frame-view make      # ZIP + DMG in out/make/
+```
+
+Unsigned builds require Gatekeeper override the first time (right-click the app → Open). To distribute outside your machine, sign and notarize the app with an Apple Developer ID certificate.
 
 ## Scripts
 

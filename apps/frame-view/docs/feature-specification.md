@@ -44,8 +44,8 @@
 - English language only.
 
 ## Platform Targets
-- Primary support: Windows.
-- macOS and Linux support stubbed in, implemented later.
+- Primary support: Windows and macOS.
+- Linux support stubbed in, implemented later.
 - No mobile support planned.
 
 ## Non-Functional Requirements

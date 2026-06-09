@@ -20,8 +20,29 @@ describe('mediaProtocol helpers', () => {
   it('checks whether a path is inside an authorized root', async () => {
     const { isPathWithinRoot } = await import('../../../src/main/services/mediaProtocol');
 
-    expect(isPathWithinRoot('C:\\gallery\\nested\\image.jpg', 'C:\\gallery')).toBe(true);
-    expect(isPathWithinRoot('C:\\gallery-other\\image.jpg', 'C:\\gallery')).toBe(false);
+    if (process.platform === 'win32') {
+      expect(isPathWithinRoot('C:\\gallery\\nested\\image.jpg', 'C:\\gallery')).toBe(true);
+      expect(isPathWithinRoot('C:\\gallery-other\\image.jpg', 'C:\\gallery')).toBe(false);
+      return;
+    }
+
+    expect(isPathWithinRoot('/tmp/gallery/nested/image.jpg', '/tmp/gallery')).toBe(true);
+    expect(isPathWithinRoot('/tmp/gallery-other/image.jpg', '/tmp/gallery')).toBe(false);
+  });
+
+  it('treats paths as case-insensitive on darwin and win32', async () => {
+    if (process.platform !== 'darwin' && process.platform !== 'win32') {
+      return;
+    }
+
+    const { isPathWithinRoot } = await import('../../../src/main/services/mediaProtocol');
+
+    if (process.platform === 'win32') {
+      expect(isPathWithinRoot('C:\\Gallery\\Nested\\image.jpg', 'C:\\gallery')).toBe(true);
+      return;
+    }
+
+    expect(isPathWithinRoot('/tmp/Gallery/Nested/image.jpg', '/tmp/gallery')).toBe(true);
   });
 
   it('clamps thumbnail priority hints', async () => {

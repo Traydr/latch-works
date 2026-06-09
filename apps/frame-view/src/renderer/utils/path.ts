@@ -13,6 +13,7 @@ export function getParentPath(inputPath: string | null): string | null {
     return null;
   }
 
+  const useBackslashes = /^[A-Za-z]:/.test(inputPath) || inputPath.includes('\\');
   const normalized = inputPath.replace(/\\/g, '/').replace(/\/+$/, '');
   if (!normalized || normalized === '/' || /^[A-Za-z]:$/.test(normalized)) {
     return null;
@@ -32,7 +33,7 @@ export function getParentPath(inputPath: string | null): string | null {
     return `${parent}\\`;
   }
 
-  return parent.replace(/\//g, '\\');
+  return useBackslashes ? parent.replace(/\//g, '\\') : parent;
 }
 
 export function toFileUrl(filePath: string): string {

@@ -25,9 +25,13 @@ async function toCanonicalPath(inputPath: string): Promise<string> {
   }
 }
 
+function isCaseInsensitiveFilesystem(): boolean {
+  return process.platform === 'win32' || process.platform === 'darwin';
+}
+
 function toComparablePath(inputPath: string): string {
   const resolved = path.resolve(inputPath);
-  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+  return isCaseInsensitiveFilesystem() ? resolved.toLowerCase() : resolved;
 }
 
 export function isPathWithinRoot(targetPath: string, rootPath: string): boolean {

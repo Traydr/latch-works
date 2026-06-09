@@ -2,6 +2,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { FuseV1Options, FuseVersion } from '@electron/fuses';
 import { MakerDeb } from '@electron-forge/maker-deb';
+import { MakerDMG } from '@electron-forge/maker-dmg';
 import { MakerRpm } from '@electron-forge/maker-rpm';
 import { MakerSquirrel } from '@electron-forge/maker-squirrel';
 import { MakerZIP } from '@electron-forge/maker-zip';
@@ -105,6 +106,12 @@ const config: ForgeConfig = {
       setupIcon: existsSync(windowsIconPath) ? windowsIconPath : undefined,
     }),
     new MakerZIP({}, ['darwin']),
+    new MakerDMG(
+      {
+        icon: existsSync(macIconPath) ? macIconPath : undefined,
+      },
+      ['darwin'],
+    ),
     new MakerRpm({}),
     new MakerDeb({}),
   ],
