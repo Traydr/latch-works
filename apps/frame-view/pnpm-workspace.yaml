@@ -8,3 +8,5 @@ allowBuilds:
   sharp: true
 blockExoticSubdeps: false
 nodeLinker: hoisted
+overrides:
+  yauzl: "3.3.1"

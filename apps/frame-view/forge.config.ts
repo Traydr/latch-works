@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { FuseV1Options, FuseVersion } from '@electron/fuses';
 import { MakerDeb } from '@electron-forge/maker-deb';
@@ -61,6 +61,22 @@ function copyRuntimePackage(packageName: string, visited: Set<string>): void {
   }
 }
 
+function trimFfprobeStaticToCurrentPlatform(): void {
+  const ffprobeBinPath = path.join(stagedRuntimeNodeModulesPath, 'ffprobe-static', 'bin');
+  if (!existsSync(ffprobeBinPath)) {
+    return;
+  }
+
+  const keepDir =
+    process.platform === 'darwin' ? 'darwin' : process.platform === 'win32' ? 'win32' : 'linux';
+
+  for (const entry of readdirSync(ffprobeBinPath)) {
+    if (entry !== keepDir) {
+      rmSync(path.join(ffprobeBinPath, entry), { recursive: true, force: true });
+    }
+  }
+}
+
 function stageRuntimeDependencies(): void {
   rmSync(path.resolve(__dirname, '.packaged-runtime'), { force: true, recursive: true });
   mkdirSync(stagedRuntimeNodeModulesPath, { recursive: true });
@@ -69,6 +85,8 @@ function stageRuntimeDependencies(): void {
   for (const dependencyName of runtimeDependencyRoots) {
     copyRuntimePackage(dependencyName, visited);
   }
+
+  trimFfprobeStaticToCurrentPlatform();
 }
 
 function getPackagerIconPath(): string | undefined {
@@ -88,11 +106,25 @@ const config: ForgeConfig = {
     asar: {
       unpack: '**/*.{exe,node,dll}',
     },
+    // Vite output lives in `.vite`; ffmpeg/ffprobe/sharp are staged via extraResource.
+    // Keep prune off so packager does not walk dev node_modules (galactus + native rebuild).
+    ignore: (file) => {
+      if (!file) {
+        return false;
+      }
+      if (file.startsWith('/.vite') || file === '/package.json') {
+        return false;
+      }
+      return true;
+    },
+    prune: false,
     extraResource: [stagedRuntimeNodeModulesPath],
     icon: getPackagerIconPath(),
     executableName: appName,
   },
-  rebuildConfig: {},
+  rebuildConfig: {
+    onlyModules: [],
+  },
   hooks: {
     prePackage: async () => {
       stageRuntimeDependencies();
