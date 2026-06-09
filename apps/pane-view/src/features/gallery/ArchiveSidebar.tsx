@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 interface ArchiveSidebarProps {
   currentPath: string;
   folders: FolderNode[];
+  isLoading?: boolean;
   onNavigateToPath: (path: string) => void;
   onOpenSettings: () => void;
 }
@@ -26,6 +27,7 @@ interface ArchiveSidebarProps {
 export function ArchiveSidebar({
   currentPath,
   folders,
+  isLoading = false,
   onNavigateToPath,
   onOpenSettings,
 }: ArchiveSidebarProps) {
@@ -55,7 +57,7 @@ export function ArchiveSidebar({
         </div>
       </SidebarHeader>
 
-      <SidebarContent className="overflow-y-auto">
+      <SidebarContent className={cn("overflow-y-auto", isLoading && "opacity-70")}>
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu aria-label="Archive folders">

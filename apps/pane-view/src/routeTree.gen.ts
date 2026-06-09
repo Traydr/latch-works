@@ -10,7 +10,8 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as LoginRouteImport } from './routes/login'
-import { Route as IndexRouteImport } from './routes/index'
+import { Route as GalleryRouteImport } from './routes/_gallery'
+import { Route as GalleryIndexRouteImport } from './routes/_gallery/index'
 import { Route as ApiHealthRouteImport } from './routes/api.health'
 import { Route as CdnV1SplatRouteImport } from './routes/cdn.v1.$'
 import { Route as ApiSyncUploadUrlRouteImport } from './routes/api.sync.upload-url'
@@ -28,10 +29,14 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
+const GalleryRoute = GalleryRouteImport.update({
+  id: '/_gallery',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GalleryIndexRoute = GalleryIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => GalleryRoute,
 } as any)
 const ApiHealthRoute = ApiHealthRouteImport.update({
   id: '/api/health',
@@ -91,7 +96,7 @@ const ApiMediaMediaIdOriginalRoute = ApiMediaMediaIdOriginalRouteImport.update({
 } as any)
 
 export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
+  '/': typeof GalleryIndexRoute
   '/login': typeof LoginRoute
   '/api/health': typeof ApiHealthRoute
   '/api/auth/login': typeof ApiAuthLoginRoute
@@ -106,9 +111,9 @@ export interface FileRoutesByFullPath {
   '/api/media/$mediaId/thumbnail': typeof ApiMediaMediaIdThumbnailRoute
 }
 export interface FileRoutesByTo {
-  '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/api/health': typeof ApiHealthRoute
+  '/': typeof GalleryIndexRoute
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
   '/api/sync/complete-object': typeof ApiSyncCompleteObjectRoute
@@ -122,9 +127,10 @@ export interface FileRoutesByTo {
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
-  '/': typeof IndexRoute
+  '/_gallery': typeof GalleryRouteWithChildren
   '/login': typeof LoginRoute
   '/api/health': typeof ApiHealthRoute
+  '/_gallery/': typeof GalleryIndexRoute
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
   '/api/sync/complete-object': typeof ApiSyncCompleteObjectRoute
@@ -154,9 +160,9 @@ export interface FileRouteTypes {
     | '/api/media/$mediaId/thumbnail'
   fileRoutesByTo: FileRoutesByTo
   to:
-    | '/'
     | '/login'
     | '/api/health'
+    | '/'
     | '/api/auth/login'
     | '/api/auth/logout'
     | '/api/sync/complete-object'
@@ -169,9 +175,10 @@ export interface FileRouteTypes {
     | '/api/media/$mediaId/thumbnail'
   id:
     | '__root__'
-    | '/'
+    | '/_gallery'
     | '/login'
     | '/api/health'
+    | '/_gallery/'
     | '/api/auth/login'
     | '/api/auth/logout'
     | '/api/sync/complete-object'
@@ -185,7 +192,7 @@ export interface FileRouteTypes {
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
+  GalleryRoute: typeof GalleryRouteWithChildren
   LoginRoute: typeof LoginRoute
   ApiHealthRoute: typeof ApiHealthRoute
   ApiAuthLoginRoute: typeof ApiAuthLoginRoute
@@ -209,12 +216,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
+    '/_gallery': {
+      id: '/_gallery'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof GalleryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_gallery/': {
+      id: '/_gallery/'
       path: '/'
       fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof GalleryIndexRouteImport
+      parentRoute: typeof GalleryRoute
     }
     '/api/health': {
       id: '/api/health'
@@ -296,8 +310,19 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface GalleryRouteChildren {
+  GalleryIndexRoute: typeof GalleryIndexRoute
+}
+
+const GalleryRouteChildren: GalleryRouteChildren = {
+  GalleryIndexRoute: GalleryIndexRoute,
+}
+
+const GalleryRouteWithChildren =
+  GalleryRoute._addFileChildren(GalleryRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
-  IndexRoute: IndexRoute,
+  GalleryRoute: GalleryRouteWithChildren,
   LoginRoute: LoginRoute,
   ApiHealthRoute: ApiHealthRoute,
   ApiAuthLoginRoute: ApiAuthLoginRoute,

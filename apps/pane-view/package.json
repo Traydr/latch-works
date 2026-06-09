@@ -8,7 +8,7 @@
     "check": "pnpm typecheck && pnpm build",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "dev": "node --env-file-if-exists=.env ./node_modules/vite/bin/vite.js dev --host 127.0.0.1",
+    "dev": "vite dev --port 3000",
     "start": "node --env-file-if-exists=.env .output/server/index.mjs",
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc -p tsconfig.json --noEmit"
@@ -20,6 +20,7 @@
     "@latch-works/media-domain": "workspace:*",
     "@latch-works/media-storage": "workspace:*",
     "@t3-oss/env-core": "^0.13.11",
+    "@tanstack/react-query": "^5.101.0",
     "@tanstack/react-router": "^1.120.20",
     "@tanstack/react-start": "^1.120.20",
     "better-auth": "^1.6.13",

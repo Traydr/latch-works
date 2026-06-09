@@ -9,9 +9,19 @@ import {
   sortComicEntries,
   sortMediaItems,
 } from "@latch-works/media-domain";
-import { createFileRoute, redirect, useRouterState } from "@tanstack/react-router";
+import { getRouteApi } from "@tanstack/react-router";
 import { Archive, ChevronUp, PanelRightClose, PanelRightOpen, Search } from "lucide-react";
-import { type FormEvent, Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type FormEvent,
+  Fragment,
+  type MutableRefObject,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Sheet,
   SheetContent,
@@ -28,63 +38,55 @@ import {
 } from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { ArchiveSidebar } from "@/features/gallery/ArchiveSidebar";
+import {
+  buildBreadcrumbItems,
+  displayPathFromSearch,
+  getParentPath,
+  isTextInputTarget,
+  type GalleryBrowseSearch,
+} from "@/features/gallery/browse-search";
+import { useGalleryShell } from "@/features/gallery/gallery-shell-context";
+import { GalleryGridSkeleton } from "@/features/gallery/GalleryGridSkeleton";
 import { BrowserGrid } from "@/features/gallery/BrowserGrid";
 import { DetailPanel } from "@/features/gallery/DetailPanel";
 import { FloatingToolbar } from "@/features/gallery/FloatingToolbar";
-import { GalleryPending } from "@/features/gallery/GalleryPending";
 import { MediaViewerModal } from "@/features/gallery/MediaViewerModal";
 import { useGalleryState } from "@/features/gallery/useGalleryState";
 import { ComicReader } from "@/features/comics/ComicReader";
 import { HotkeyOverlay } from "@/features/settings/HotkeyOverlay";
 import { SettingsDrawer } from "@/features/settings/SettingsDrawer";
-import { ThemeSync } from "@/features/settings/ThemeSync";
 import { useAppSettings, resolveRootKey, useRootPreferences } from "@/features/settings/useAppSettings";
-import { deleteLibraryEntry, getLibrarySnapshot } from "../features/library/library-service";
-import { regenerateMediaThumbnail } from "../features/media/media-delivery-service";
-import { DEFAULT_CARD_WIDTH } from "../features/gallery/thumbnail-size";
-import { isCurrentWebSessionValid } from "../server/auth/web-session";
+import {
+  toLibrarySnapshotRequest,
+  useDeleteLibraryEntryMutation,
+  useInvalidateLibrarySnapshot,
+  useLibrarySnapshotQuery,
+  useLibrarySnapshotSuspense,
+  type LibrarySnapshotRequest,
+} from "@/features/library/library-queries";
+import { regenerateMediaThumbnail } from "@/features/media/media-delivery-service";
+import { DEFAULT_CARD_WIDTH } from "@/features/gallery/thumbnail-size";
+import { cn } from "@/lib/utils";
 
-export const Route = createFileRoute("/")({
-  validateSearch: (
-    search,
-  ): { comic?: boolean; media?: string; path?: string; q?: string; recursive?: boolean } => ({
-    comic: normalizeBooleanSearchParam(search.comic),
-    media: normalizeSearchParam(search.media),
-    path: normalizeSearchParam(search.path),
-    q: normalizeSearchParam(search.q),
-    recursive: normalizeBooleanSearchParam(search.recursive),
-  }),
-  loaderDeps: ({ search }) => ({
-    comicMode: search.comic ?? false,
-    path: search.path,
-    query: search.q,
-    recursive: search.recursive ?? false,
-  }),
-  loader: async ({ deps }) => {
-    if (!(await isCurrentWebSessionValid())) {
-      throw redirect({ to: "/login" });
-    }
+const galleryIndexRoute = getRouteApi("/_gallery/");
 
-    return getLibrarySnapshot({ data: deps });
-  },
-  pendingComponent: GalleryPending,
-  component: PaneViewHome,
-});
-
-function PaneViewHome() {
-  const library = Route.useLoaderData();
-  const search = Route.useSearch();
-  const navigate = Route.useNavigate();
+export function GalleryPage() {
+  const search = galleryIndexRoute.useSearch();
+  const navigate = galleryIndexRoute.useNavigate();
+  const snapshotRequest = toLibrarySnapshotRequest(search);
+  const { data: library, isFetching } = useLibrarySnapshotQuery(snapshotRequest);
+  const invalidateLibrary = useInvalidateLibrarySnapshot();
+  const deleteEntryMutation = useDeleteLibraryEntryMutation();
+  const displayPath = displayPathFromSearch(search.path);
+  const { setOpenSettingsHandler } = useGalleryShell();
 
   const persisted = useGalleryState();
   const { settings, updateSettings } = useAppSettings();
-  const rootKey = resolveRootKey(library.currentPath);
+  const rootKey = resolveRootKey(displayPath);
   const { savePreferences: saveRootPreferences } = useRootPreferences(rootKey);
   const isMobile = useIsMobile();
-  const isRefreshing = useRouterState({ select: (state) => state.isLoading });
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [hotkeysOpen, setHotkeysOpen] = useState(false);
@@ -97,9 +99,7 @@ function PaneViewHome() {
   const [detailPanelOpen, setDetailPanelOpen] = useState(persisted.detailPanelOpen);
   const [sortMode, setSortMode] = useState<GallerySortMode>(persisted.sortMode);
   const [randomSeed, setRandomSeed] = useState(() => createRandomSeed());
-  const [selectedId, setSelectedId] = useState<string | null>(
-    search.media ?? library.media[0]?.id ?? null,
-  );
+  const [selectedId, setSelectedId] = useState<string | null>(search.media ?? null);
   const [searchDraft, setSearchDraft] = useState(search.q ?? "");
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerItems, setViewerItems] = useState<MediaItem[] | null>(null);
@@ -119,15 +119,20 @@ function PaneViewHome() {
       path?: string;
       q?: string;
       recursive?: boolean;
-    }) => ({
+    }): GalleryBrowseSearch => ({
       comic: (patch.comic ?? comicMode) || undefined,
       media: patch.media,
-      path: patch.path ?? library.currentPath,
+      path: patch.path ?? displayPath,
       q: patch.q ?? search.q,
       recursive: (patch.recursive ?? recursive) || undefined,
     }),
-    [comicMode, library.currentPath, recursive, search.q],
+    [comicMode, displayPath, recursive, search.q],
   );
+
+  useEffect(() => {
+    setOpenSettingsHandler(() => setSettingsOpen(true));
+    return () => setOpenSettingsHandler(null);
+  }, [setOpenSettingsHandler]);
 
   // Redirect to persisted path on first visit if URL has no path.
   // biome-ignore lint/correctness/useExhaustiveDependencies: Only run once on mount to restore persisted path.
@@ -148,6 +153,10 @@ function PaneViewHome() {
   }, [search.q]);
 
   useEffect(() => {
+    if (!library) {
+      return;
+    }
+
     const selectedFromSearch = search.media
       ? library.media.find((item) => item.id === search.media)
       : null;
@@ -160,20 +169,20 @@ function PaneViewHome() {
 
       return nextSelectedId;
     });
-  }, [library.media, search.media]);
+  }, [library, search.media]);
 
   const effectiveRecursive = recursive || comicMode;
-  const recursiveToggleDisabled = library.currentPath === "";
+  const recursiveToggleDisabled = displayPath === "";
 
   useEffect(() => {
-    if (library.currentPath === "" && recursive) {
+    if (displayPath === "" && recursive) {
       setRecursive(false);
     }
-  }, [library.currentPath, recursive]);
+  }, [displayPath, recursive]);
 
   const sortedMedia = useMemo(
-    () => sortMediaItems(library.media, sortMode, randomSeed),
-    [library.media, randomSeed, sortMode],
+    () => (library ? sortMediaItems(library.media, sortMode, randomSeed) : []),
+    [library, randomSeed, sortMode],
   );
   const filteredMedia = useMemo(
     () =>
@@ -196,27 +205,29 @@ function PaneViewHome() {
     [deletedEntryIds, visibleMedia],
   );
   const comics = useMemo(() => {
-    if (!comicMode) {
+    if (!comicMode || !library) {
       return [];
     }
 
-    const groupedComics = buildComicEntries(visibleMedia, library.currentPath || null, {
+    const groupedComics = buildComicEntries(visibleMedia, displayPath || null, {
       folders: library.allFolders,
       leafFoldersOnly: true,
     });
     return sortComicEntries(groupedComics, sortMode, randomSeed);
-  }, [comicMode, library.allFolders, library.currentPath, randomSeed, sortMode, visibleMedia]);
+  }, [comicMode, displayPath, library, randomSeed, sortMode, visibleMedia]);
   const entries = useMemo(
     () =>
-      buildBrowserEntries({
-        folders: library.folders,
-        comics,
-        items: visibleMedia,
-        recursive: effectiveRecursive,
-        comicMode,
-        sortMode,
-      }),
-    [comicMode, comics, effectiveRecursive, library.folders, sortMode, visibleMedia],
+      library
+        ? buildBrowserEntries({
+            folders: library.folders,
+            comics,
+            items: visibleMedia,
+            recursive: effectiveRecursive,
+            comicMode,
+            sortMode,
+          })
+        : [],
+    [comicMode, comics, effectiveRecursive, library, sortMode, visibleMedia],
   );
 
   useEffect(() => {
@@ -239,6 +250,10 @@ function PaneViewHome() {
     : -1;
 
   useEffect(() => {
+    if (!library) {
+      return;
+    }
+
     setDeletedEntryIds((current) => {
       const liveIds = new Set(library.media.map((item) => item.id));
       const next = new Set([...current].filter((id) => liveIds.has(id)));
@@ -249,12 +264,12 @@ function PaneViewHome() {
       const next = new Set([...current].filter((id) => liveIds.has(id)));
       return next.size === current.size ? current : next;
     });
-  }, [library.media]);
+  }, [library]);
 
   // Persist state changes.
   useEffect(() => {
-    persisted.setLastPath(library.currentPath);
-  }, [library.currentPath, persisted.setLastPath]);
+    persisted.setLastPath(displayPath);
+  }, [displayPath, persisted.setLastPath]);
 
   useEffect(() => {
     persisted.setLastSelectedId(selectedId);
@@ -355,7 +370,7 @@ function PaneViewHome() {
     if (event.shiftKey) {
       if (key === "w") {
         event.preventDefault();
-        const parent = getParentPath(library.currentPath);
+        const parent = getParentPath(displayPath);
         navigateToPath(parent ?? "");
         return;
       }
@@ -532,8 +547,12 @@ function PaneViewHome() {
   );
 
   const navigateSiblingFolder = (offset: -1 | 1) => {
+    if (!library) {
+      return;
+    }
+
     const siblings = library.folders;
-    const currentIndex = siblings.findIndex((f) => f.path === library.currentPath);
+    const currentIndex = siblings.findIndex((f) => f.path === displayPath);
     if (currentIndex < 0) {
       return;
     }
@@ -551,7 +570,7 @@ function PaneViewHome() {
     void navigate({
       search: buildBrowseSearch({
         media: undefined,
-        path: library.currentPath,
+        path: displayPath,
         q: nextQuery || undefined,
       }),
       to: "/",
@@ -603,7 +622,7 @@ function PaneViewHome() {
 
     void (async () => {
       try {
-        const result = await deleteLibraryEntry({ data: { entryId } });
+        const result = await deleteEntryMutation.mutateAsync(entryId);
         if (!result.deleted) {
           return;
         }
@@ -683,29 +702,13 @@ function PaneViewHome() {
     }
   };
 
-  const breadcrumbs = useMemo(
-    () => buildBreadcrumbItems(library.currentPath),
-    [library.currentPath],
-  );
-
-  const currentFolderName =
-    breadcrumbs[breadcrumbs.length - 1]?.label ?? library.archiveRoot;
-  const parentPath = getParentPath(library.currentPath);
+  const breadcrumbs = useMemo(() => buildBreadcrumbItems(displayPath), [displayPath]);
+  const archiveRoot = library?.archiveRoot ?? "Synced archive";
+  const currentFolderName = breadcrumbs[breadcrumbs.length - 1]?.label ?? archiveRoot;
+  const parentPath = getParentPath(displayPath);
 
   return (
-    <SidebarProvider
-      className="min-h-screen overflow-hidden bg-background text-foreground"
-      defaultOpen
-    >
-      <ThemeSync theme={settings.theme} />
-      <ArchiveSidebar
-        currentPath={library.currentPath}
-        folders={library.folders}
-        onNavigateToPath={navigateToPath}
-        onOpenSettings={() => setSettingsOpen(true)}
-      />
-
-      <SidebarInset className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+    <>
         <header className="flex h-auto min-h-14 shrink-0 items-center justify-between gap-4 border-b border-border bg-background px-5 py-2">
           <div className="flex min-w-0 flex-1 items-center gap-2">
             <SidebarTrigger className="-ml-1 shrink-0" />
@@ -713,7 +716,7 @@ function PaneViewHome() {
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1">
                   <Button
-                    disabled={!parentPath && library.currentPath === ""}
+                    disabled={!parentPath && displayPath === ""}
                     onClick={() => navigateToPath(parentPath ?? "")}
                     size="icon"
                     type="button"
@@ -729,15 +732,15 @@ function PaneViewHome() {
                     {currentFolderName}
                   </button>
                 </div>
-                {library.currentPath ? (
-                  <p className="truncate text-xs text-muted-foreground">{library.currentPath}</p>
+                {displayPath ? (
+                  <p className="truncate text-xs text-muted-foreground">{displayPath}</p>
                 ) : null}
               </div>
             ) : (
               <>
                 <div className="hidden items-center gap-1 md:flex">
                   <Button
-                    disabled={!library.currentPath}
+                    disabled={!displayPath}
                     onClick={() => navigateToPath(parentPath ?? "")}
                     size="sm"
                     type="button"
@@ -762,7 +765,7 @@ function PaneViewHome() {
                           onClick={() => navigateToPath("")}
                           type="button"
                         >
-                          {library.archiveRoot}
+                          {archiveRoot}
                         </button>
                       </BreadcrumbLink>
                     </BreadcrumbItem>
@@ -842,37 +845,18 @@ function PaneViewHome() {
         </header>
 
         <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-          <BrowserGrid
-            cardWidth={settings.thumbnailSize}
-            comicMode={comicMode}
-            columnCountRef={columnCountRef}
-            deletedEntryIds={deletedEntryIds}
-            deletingEntryIds={deletingEntryIds}
-            entries={entries}
-            focusedIndex={focusedEntryIndex}
-            onActivateEntry={handleActivateEntry}
-            onScrolledToFocus={() => setScrollFocusedIntoView(false)}
-            onSelectEntry={handleSelectEntry}
-            scrollFocusedIntoView={scrollFocusedIntoView}
-            selectedId={viewerLockedMediaId ?? selectedId}
-          />
-
-          {showDetailPanel ? (
-            <div className="hidden min-h-0 min-w-0 max-w-[360px] shrink-0 lg:block">
-            <DetailPanel
-              isDeleted={selected ? deletedEntryIds.has(selected.id) : false}
-              isDeleting={selected ? deletingEntryIds.has(selected.id) : false}
-              onCopyPath={() => {
-                if (selected) {
-                  void navigator.clipboard.writeText(selected.path);
-                }
-              }}
+          <Suspense fallback={<GalleryGridSkeleton />}>
+            <GalleryBrowsePane
+              columnCountRef={columnCountRef}
+              comicMode={comicMode}
+              deletedEntryIds={deletedEntryIds}
+              deletingEntryIds={deletingEntryIds}
+              displayPath={displayPath}
+              effectiveRecursive={effectiveRecursive}
+              focusedEntryIndex={focusedEntryIndex}
+              isFetching={isFetching}
+              onActivateEntry={handleActivateEntry}
               onDelete={deleteSelectedMedia}
-              onDownload={() => {
-                if (selected) {
-                  window.open(`/api/media/${selected.id}/original`, "_blank", "noopener,noreferrer");
-                }
-              }}
               onNext={() => selectAdjacentMedia(1)}
               onOpenViewer={() => {
                 if (selected && !deletedEntryIds.has(selected.id)) {
@@ -880,29 +864,28 @@ function PaneViewHome() {
                 }
               }}
               onPrev={() => selectAdjacentMedia(-1)}
-              onRegenerateThumbnail={async () => {
-                if (!selected) {
-                  return;
-                }
-
-                await regenerateMediaThumbnail({
-                  data: { mediaId: selected.id, size: DEFAULT_CARD_WIDTH },
-                });
-              }}
+              onScrolledToFocus={() => setScrollFocusedIntoView(false)}
+              onSelectEntry={handleSelectEntry}
+              randomSeed={randomSeed}
+              scrollFocusedIntoView={scrollFocusedIntoView}
               selected={selected}
-              showDelete
+              selectedId={viewerLockedMediaId ?? selectedId}
+              showDetailPanel={showDetailPanel}
+              snapshotRequest={snapshotRequest}
+              sortMode={sortMode}
+              thumbnailSize={settings.thumbnailSize}
             />
-            </div>
-          ) : null}
+          </Suspense>
         </div>
 
         <FloatingToolbar
           comicMode={comicMode}
-          currentPath={library.currentPath}
-          isRefreshing={isRefreshing}
+          currentPath={displayPath}
+          isRefreshing={isFetching}
           onChangeSortMode={setSortMode}
+          onRefresh={() => void invalidateLibrary()}
           onToggleComicMode={() => {
-            if (library.currentPath === "") {
+            if (displayPath === "") {
               return;
             }
 
@@ -917,7 +900,7 @@ function PaneViewHome() {
             });
           }}
           onToggleRecursive={() => {
-            if (library.currentPath === "") {
+            if (displayPath === "") {
               return;
             }
 
@@ -934,7 +917,6 @@ function PaneViewHome() {
           shuffle={shuffle}
           sortMode={sortMode}
         />
-      </SidebarInset>
 
       <SettingsDrawer
         onClose={() => setSettingsOpen(false)}
@@ -980,7 +962,7 @@ function PaneViewHome() {
               }}
               type="button"
             >
-              {library.archiveRoot}
+              {archiveRoot}
             </button>
             {breadcrumbs.map((crumb) => (
               <button
@@ -1014,55 +996,162 @@ function PaneViewHome() {
       ) : null}
 
       {activeComic ? <ComicReader comic={activeComic} onClose={() => setActiveComic(null)} /> : null}
-    </SidebarProvider>
+    </>
   );
 }
 
-function normalizeSearchParam(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+interface GalleryBrowsePaneProps {
+  columnCountRef: MutableRefObject<number>;
+  comicMode: boolean;
+  deletedEntryIds: ReadonlySet<string>;
+  deletingEntryIds: ReadonlySet<string>;
+  displayPath: string;
+  effectiveRecursive: boolean;
+  focusedEntryIndex: number;
+  isFetching: boolean;
+  onActivateEntry: (entry: BrowserEntry) => void;
+  onDelete: () => void;
+  onNext: () => void;
+  onOpenViewer: () => void;
+  onPrev: () => void;
+  onScrolledToFocus: () => void;
+  onSelectEntry: (entry: BrowserEntry) => void;
+  randomSeed: number;
+  scrollFocusedIntoView: boolean;
+  selected: MediaItem | null;
+  selectedId: string | null;
+  showDetailPanel: boolean;
+  snapshotRequest: LibrarySnapshotRequest;
+  sortMode: GallerySortMode;
+  thumbnailSize: number;
 }
 
-function normalizeBooleanSearchParam(value: unknown): boolean | undefined {
-  if (value === true || value === "true" || value === "1") {
-    return true;
-  }
+function GalleryBrowsePane({
+  columnCountRef,
+  comicMode,
+  deletedEntryIds,
+  deletingEntryIds,
+  displayPath,
+  effectiveRecursive,
+  focusedEntryIndex,
+  isFetching,
+  onActivateEntry,
+  onDelete,
+  onNext,
+  onOpenViewer,
+  onPrev,
+  onScrolledToFocus,
+  onSelectEntry,
+  randomSeed,
+  scrollFocusedIntoView,
+  selected,
+  selectedId,
+  showDetailPanel,
+  snapshotRequest,
+  sortMode,
+  thumbnailSize,
+}: GalleryBrowsePaneProps) {
+  const { data: library } = useLibrarySnapshotSuspense(snapshotRequest);
+  const { settings } = useAppSettings();
 
-  if (value === false || value === "false" || value === "0") {
-    return false;
-  }
+  const sortedMedia = useMemo(
+    () => sortMediaItems(library.media, sortMode, randomSeed),
+    [library.media, randomSeed, sortMode],
+  );
+  const visibleMedia = useMemo(
+    () =>
+      sortedMedia.filter((item) => {
+        if (item.mediaType === "video" && !settings.showVideos) {
+          return false;
+        }
 
-  return undefined;
-}
+        if ((item.mediaType === "image" || item.mediaType === "gif") && !settings.showImages) {
+          return false;
+        }
 
-function buildBreadcrumbItems(path: string): Array<{ label: string; path: string }> {
-  if (!path) {
-    return [{ label: "Archive root", path: "" }];
-  }
+        return true;
+      }),
+    [settings.showImages, settings.showVideos, sortedMedia],
+  );
+  const comics = useMemo(() => {
+    if (!comicMode) {
+      return [];
+    }
 
-  const segments = path.split("/").filter(Boolean);
-  return segments.map((segment, index) => ({
-    label: segment,
-    path: segments.slice(0, index + 1).join("/"),
-  }));
-}
+    const groupedComics = buildComicEntries(visibleMedia, displayPath || null, {
+      folders: library.allFolders,
+      leafFoldersOnly: true,
+    });
+    return sortComicEntries(groupedComics, sortMode, randomSeed);
+  }, [comicMode, displayPath, library.allFolders, randomSeed, sortMode, visibleMedia]);
+  const entries = useMemo(
+    () =>
+      buildBrowserEntries({
+        folders: library.folders,
+        comics,
+        items: visibleMedia,
+        recursive: effectiveRecursive,
+        comicMode,
+        sortMode,
+      }),
+    [comicMode, comics, effectiveRecursive, library.folders, sortMode, visibleMedia],
+  );
 
-function isTextInputTarget(target: EventTarget | null): boolean {
-  const element = target as HTMLElement | null;
   return (
-    !!element &&
-    (element.isContentEditable ||
-      element.tagName === "INPUT" ||
-      element.tagName === "TEXTAREA" ||
-      element.tagName === "SELECT")
-  );
-}
+    <div
+      className={cn(
+        "flex min-h-0 min-w-0 flex-1 overflow-hidden",
+        isFetching && "opacity-80 transition-opacity",
+      )}
+    >
+      <BrowserGrid
+        cardWidth={thumbnailSize}
+        comicMode={comicMode}
+        columnCountRef={columnCountRef}
+        deletedEntryIds={deletedEntryIds}
+        deletingEntryIds={deletingEntryIds}
+        entries={entries}
+        focusedIndex={focusedEntryIndex}
+        onActivateEntry={onActivateEntry}
+        onScrolledToFocus={onScrolledToFocus}
+        onSelectEntry={onSelectEntry}
+        scrollFocusedIntoView={scrollFocusedIntoView}
+        selectedId={selectedId}
+      />
 
-function getParentPath(path: string): string {
-  const normalized = path
-    .replace(/\\/g, "/")
-    .replace(/^\/+/, "")
-    .replace(/\/+/g, "/")
-    .replace(/\/+$/, "");
-  const separatorIndex = normalized.lastIndexOf("/");
-  return separatorIndex >= 0 ? normalized.slice(0, separatorIndex) : "";
+      {showDetailPanel ? (
+        <div className="hidden min-h-0 min-w-0 max-w-[360px] shrink-0 lg:block">
+          <DetailPanel
+            isDeleted={selected ? deletedEntryIds.has(selected.id) : false}
+            isDeleting={selected ? deletingEntryIds.has(selected.id) : false}
+            onCopyPath={() => {
+              if (selected) {
+                void navigator.clipboard.writeText(selected.path);
+              }
+            }}
+            onDelete={onDelete}
+            onDownload={() => {
+              if (selected) {
+                window.open(`/api/media/${selected.id}/original`, "_blank", "noopener,noreferrer");
+              }
+            }}
+            onNext={onNext}
+            onOpenViewer={onOpenViewer}
+            onPrev={onPrev}
+            onRegenerateThumbnail={async () => {
+              if (!selected) {
+                return;
+              }
+
+              await regenerateMediaThumbnail({
+                data: { mediaId: selected.id, size: DEFAULT_CARD_WIDTH },
+              });
+            }}
+            selected={selected}
+            showDelete
+          />
+        </div>
+      ) : null}
+    </div>
+  );
 }

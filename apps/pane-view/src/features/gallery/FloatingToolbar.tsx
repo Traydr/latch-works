@@ -1,5 +1,4 @@
 import type { GallerySortMode } from "@latch-works/media-domain";
-import { useRouter } from "@tanstack/react-router";
 import {
   ArrowUpDown,
   ImageIcon,
@@ -16,6 +15,7 @@ interface FloatingToolbarProps {
   currentPath: string;
   isRefreshing: boolean;
   onChangeSortMode: (mode: GallerySortMode) => void;
+  onRefresh: () => void;
   onToggleComicMode: () => void;
   onToggleRecursive: () => void;
   recursive: boolean;
@@ -44,6 +44,7 @@ export function FloatingToolbar({
   currentPath,
   isRefreshing,
   onChangeSortMode,
+  onRefresh,
   onToggleComicMode,
   onToggleRecursive,
   recursive,
@@ -51,7 +52,6 @@ export function FloatingToolbar({
   shuffle,
   sortMode,
 }: FloatingToolbarProps) {
-  const router = useRouter();
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
   const activeLabel = SORT_OPTIONS.find((o) => o.value === sortMode)?.label ?? "Sort";
 
@@ -150,7 +150,7 @@ export function FloatingToolbar({
         <Button
           className={toolButtonClass(false)}
           disabled={isRefreshing}
-          onClick={() => void router.invalidate()}
+          onClick={onRefresh}
           size="sm"
           title="Refresh"
           type="button"
