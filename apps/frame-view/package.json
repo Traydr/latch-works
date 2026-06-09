@@ -6,9 +6,7 @@
   "main": ".vite/build/main.js",
   "private": true,
   "scripts": {
-    "ensure-electron": "node scripts/ensure-electron.mjs",
-    "postinstall": "node scripts/ensure-electron.mjs",
-    "start": "node scripts/ensure-electron.mjs && electron-forge start",
+    "start": "electron-forge start",
     "package": "electron-forge package",
     "make": "electron-forge make",
     "publish": "electron-forge publish",
