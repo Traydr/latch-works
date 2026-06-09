@@ -1,24 +1,19 @@
-import { createSignedGetUrl } from "@latch-works/media-storage";
-import { API_PRIVATE_CACHE_CONTROL } from "./cdn-delivery";
-import { createPaneViewStorageClient } from "./storage-client";
+import {
+  API_PRIVATE_CACHE_CONTROL,
+  buildSignedCdnDeliveryUrl,
+  readDeliveryPurposeForObjectKey,
+} from "./cdn-delivery";
 
-export async function redirectToSignedStoredObject({
-  expiresInSeconds = 300,
-  objectKey,
-}: {
-  expiresInSeconds?: number;
-  objectKey: string;
-}): Promise<Response> {
-  const signedUrl = await createSignedGetUrl({
-    expiresInSeconds,
-    key: objectKey,
-    storage: createPaneViewStorageClient(),
+export function redirectToCdnDelivery({ objectKey }: { objectKey: string }): Response {
+  const location = buildSignedCdnDeliveryUrl({
+    objectKey,
+    purpose: readDeliveryPurposeForObjectKey(objectKey),
   });
 
   return new Response(null, {
     headers: {
       "Cache-Control": API_PRIVATE_CACHE_CONTROL,
-      Location: signedUrl,
+      Location: location,
     },
     status: 302,
   });

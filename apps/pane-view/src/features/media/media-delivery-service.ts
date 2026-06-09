@@ -9,7 +9,10 @@ import {
   ensureThumbnailDerivative,
   regenerateThumbnailDerivative,
 } from "../../server/media/derivative-service";
-import { redirectToSignedStoredObject } from "../../server/media/delivery-redirect";
+import {
+  buildSignedCdnDeliveryUrl,
+  readDeliveryPurposeForObjectKey,
+} from "../../server/media/cdn-delivery";
 import { readMediaDeliveryRequest, readMediaThumbnailContext } from "../../server/media/repository";
 import { createPaneViewStorageClient } from "../../server/media/storage-client";
 
@@ -67,13 +70,10 @@ async function resolveDerivativeDeliveryUrl({
     throw new Error("Derivative unavailable");
   }
 
-  const redirect = await redirectToSignedStoredObject({ objectKey: derivative.objectKey });
-  const location = redirect.headers.get("Location");
-  if (!location) {
-    throw new Error("Delivery redirect missing");
-  }
-
-  return location;
+  return buildSignedCdnDeliveryUrl({
+    objectKey: derivative.objectKey,
+    purpose: readDeliveryPurposeForObjectKey(derivative.objectKey),
+  });
 }
 
 const regenerateMediaThumbnailSchema = z.object({
