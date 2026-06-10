@@ -6,6 +6,8 @@ import {
   detectMediaType,
   getExtension,
   getParentPath,
+  isSystemJunkDirectory,
+  isSystemJunkFile,
   joinArchivePath,
   type MediaItem,
 } from "@latch-works/media-domain";
@@ -41,7 +43,7 @@ export interface ScanArchiveResult {
 
 export interface SkippedArchiveEntry {
   path: string;
-  reason: "unsupported-extension" | "not-a-regular-file";
+  reason: "system-file" | "unsupported-extension" | "not-a-regular-file";
 }
 
 async function hashFile({
@@ -82,6 +84,9 @@ export async function scanArchive({
       const absolutePath = path.join(currentPath, entry.name);
 
       if (entry.isDirectory()) {
+        if (isSystemJunkDirectory(entry.name)) {
+          continue;
+        }
         await walk(absolutePath);
         continue;
       }
@@ -95,6 +100,20 @@ export async function scanArchive({
       }
 
       const relativePath = joinArchivePath(path.relative(root, absolutePath));
+
+      if (isSystemJunkFile(entry.name)) {
+        skippedEntries.push({
+          path: relativePath,
+          reason: "system-file",
+        });
+        onProgress?.({
+          filesFound: items.length,
+          skipped: skippedEntries.length,
+          stage: "scanning",
+        });
+        continue;
+      }
+
       const mediaType = detectMediaType(entry.name);
       if (!mediaType) {
         skippedEntries.push({
