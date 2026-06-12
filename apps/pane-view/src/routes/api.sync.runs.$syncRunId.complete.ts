@@ -23,8 +23,15 @@ export const Route = createFileRoute("/api/sync/runs/$syncRunId/complete")({
           status?: string;
         };
 
-        if (body.status !== "completed" && body.status !== "failed") {
-          return Response.json({ error: "status must be completed or failed" }, { status: 400 });
+        if (
+          body.status !== "completed" &&
+          body.status !== "failed" &&
+          body.status !== "cancelled"
+        ) {
+          return Response.json(
+            { error: "status must be completed, failed, or cancelled" },
+            { status: 400 },
+          );
         }
 
         return Response.json(

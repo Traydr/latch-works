@@ -81,6 +81,7 @@ export async function pruneDeleted(
 
   let pruned = 0;
   let failed = 0;
+  let cancelled = false;
 
   try {
     for (const [index, item] of itemsToPrune.entries()) {
@@ -109,6 +110,7 @@ export async function pruneDeleted(
         });
       } catch (error) {
         if (signal?.aborted) {
+          cancelled = true;
           throw error;
         }
         failed += 1;
@@ -122,7 +124,14 @@ export async function pruneDeleted(
         });
       }
     }
+  } catch (error) {
+    if (signal?.aborted) {
+      cancelled = true;
+    } else {
+      throw error;
+    }
   } finally {
+    const wasCancelled = cancelled || (signal?.aborted ?? false);
     await postJson(
       options.apiUrl,
       `/api/sync/runs/${syncRun.syncRunId}/complete`,
@@ -135,16 +144,34 @@ export async function pruneDeleted(
           planned: changedItems.length,
           pushed: pruned,
         },
-        error: failed > 0 ? `${failed} delete(s) failed during prune` : undefined,
-        status: failed > 0 ? "failed" : "completed",
+        error: wasCancelled
+          ? "Run cancelled by user"
+          : failed > 0
+            ? `${failed} delete(s) failed during prune`
+            : undefined,
+        status: wasCancelled ? "cancelled" : failed > 0 ? "failed" : "completed",
       },
-      signal,
     ).catch((error) => {
       observer?.onEvent({
         type: "status",
         message: `Warning: failed to finalize sync run: ${formatPushError(error)}`,
       });
     });
+  }
+
+  if (cancelled) {
+    observer?.onEvent({
+      type: "complete",
+      summary: {
+        action: "prune",
+        completedAt: new Date().toISOString(),
+        failed,
+        planCounts: plan.counts,
+        pushed: pruned,
+        status: "cancelled",
+      },
+    });
+    throw signal?.reason ?? new DOMException("Aborted", "AbortError");
   }
 
   const summary = {

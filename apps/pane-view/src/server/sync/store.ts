@@ -26,7 +26,7 @@ export interface CompleteObjectInput {
 export interface FinalizeSyncRunInput {
   counts?: Record<string, number>;
   error?: string;
-  status: "completed" | "failed";
+  status: "cancelled" | "completed" | "failed";
   syncRunId: string;
 }
 
