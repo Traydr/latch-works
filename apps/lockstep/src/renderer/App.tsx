@@ -1,5 +1,5 @@
 import { Result } from "better-result";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
   DoctorResult,
@@ -42,6 +42,7 @@ export function App() {
   const [logs, setLogs] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [sessionToken, setSessionToken] = useState("");
+  const lastLoggedScanProgressRef = useRef<string | null>(null);
 
   const activeProfile = useMemo(() => {
     if (!settings?.activeProfileId) {
@@ -77,8 +78,15 @@ export function App() {
           event.progress.stage === "hashing"
             ? `Hashing ${event.progress.path ?? ""} (${event.progress.filesFound} files)`
             : `Scanning (${event.progress.filesFound} files, ${event.progress.skipped} skipped)`;
+        const logKey =
+          event.progress.stage === "hashing"
+            ? `hashing:${event.progress.path ?? ""}`
+            : `scanning:${event.progress.path ?? ""}`;
         setRunLabel(message);
-        setLogs((current) => [...current.slice(-200), message]);
+        if (lastLoggedScanProgressRef.current !== logKey) {
+          lastLoggedScanProgressRef.current = logKey;
+          setLogs((current) => [...current.slice(-200), message]);
+        }
       }
 
       if (event.type === "item-success") {
@@ -193,6 +201,7 @@ export function App() {
     setRunning(true);
     setRunLabel("Planning sync...");
     setLogs(["Planning sync..."]);
+    lastLoggedScanProgressRef.current = null;
     setScreen("run");
 
     const result = await window.lockstep.plan({ profileId: activeProfile.id });
@@ -221,6 +230,7 @@ export function App() {
     setRunning(true);
     setRunLabel("Pushing uploads and updates...");
     setLogs(["Pushing uploads and updates..."]);
+    lastLoggedScanProgressRef.current = null;
     setScreen("run");
 
     const result = await window.lockstep.push({ profileId: activeProfile.id });
@@ -252,6 +262,7 @@ export function App() {
     setRunning(true);
     setRunLabel("Applying remote deletes...");
     setLogs(["Applying remote deletes..."]);
+    lastLoggedScanProgressRef.current = null;
     setScreen("run");
 
     const result = await window.lockstep.prune({ profileId: activeProfile.id });
