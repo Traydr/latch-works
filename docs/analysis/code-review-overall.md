@@ -18,7 +18,8 @@ latch-works/
 ├── apps/
 │   ├── pane-view/      TanStack Start web viewer (primary product)
 │   ├── frame-view/     Electron desktop viewer
-│   └── gather-box/     Browser extension collector
+│   ├── gather-box/     Browser extension collector
+│   └── showcase/       Static marketing site (Vite + React)
 ├── packages/
 │   ├── media-domain/   Shared types, paths, sorting, comics
 │   ├── media-index/    Archive scanning, sync planning
@@ -40,6 +41,7 @@ flowchart BT
   PV[pane-view]
   FV[frame-view]
   GB[gather-box]
+  SC[showcase]
   LS[lockstep]
 
   MD --> MI
@@ -51,9 +53,16 @@ flowchart BT
   MI --> PV
 ```
 
-**Observation:** `frame-view` and `gather-box` do not depend on shared packages. `frame-view` duplicates domain logic; `gather-box` is fully standalone. This creates drift risk as pane-view evolves on shared packages.
+**Observation:** `frame-view`, `gather-box`, and `showcase` do not depend on shared workspace packages. `frame-view` duplicates domain logic; `gather-box` and `showcase` are fully standalone. This creates drift risk as pane-view evolves on shared packages.
 
-**Note:** Root `package.json` references `@latch-works/showcase` in `dev:showcase` script, but no `apps/showcase` directory exists in the workspace. Dead script.
+### Showcase (`apps/showcase/`)
+
+Static marketing site for the Latch Works ecosystem — home page plus product subpages for Pane View, Frame View, Gather Box, and Lockstep. It is a Vite + React + Tailwind app (port 3100) with no runtime dependency on `@latch-works/media-*` packages; product copy and screenshot paths live in `src/data/products.ts`.
+
+- **Dev:** `pnpm dev:showcase` (root `package.json` → `@latch-works/showcase`)
+- **Screenshots:** `pnpm --filter @latch-works/showcase screenshots` uses Puppeteer to capture pane-view, frame-view, gather-box, and lockstep UI from local services (`scripts/capture-screenshots.mjs`)
+- **Tests:** None (`check` is typecheck + build only)
+- **Doc gap:** `AGENTS.md` does not list `apps/showcase/` in the project structure section, though the root `dev:showcase` script is documented there
 
 ---
 
@@ -107,6 +116,7 @@ Single-user private archive. Owner authenticates to pane-view; Lockstep uses a b
 | pane-view | 1 | **Negligible** (6 test cases) |
 | frame-view | 21 | Good main-process coverage; renderer gaps |
 | gather-box | 0 | **None** |
+| showcase | 0 | **None** (marketing site; `check` is typecheck + build) |
 | lockstep | 3 | Config/options/progress only; no push tests |
 
 **Total:** 30 test files across the workspace.
@@ -194,7 +204,7 @@ README claims favorites support; implementation is incomplete. This creates conf
 - No CI configuration visible in repo (no `.github/workflows/`).
 - No pre-commit hooks configured.
 - `passWithNoTests` in pane-view and gather-box masks zero-coverage packages.
-- Dead `dev:showcase` script in root `package.json`.
+- `showcase` has no automated tests (acceptable for a static site, but screenshot script is untested).
 - Frame-view Windows test breaks Linux `pnpm check`.
 
 ---

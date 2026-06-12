@@ -333,12 +333,12 @@ Matches commands, env vars, `start:lockstep` usage. Minor: `--yes` semantics ove
 
 | | |
 |---|---|
-| **Status** | Current |
+| **Status** | Partially outdated |
 | **Purpose** | Agent and contributor guidelines |
 
-Accurate project structure, commands, Cloud-specific service startup, test caveats, media delivery notes.
+Accurate for pane-view, frame-view, gather-box, packages, and lockstep. Documents `pnpm dev:showcase` but does **not** list `apps/showcase/` in the project structure section.
 
-**Recommended actions:** Keep; add link to `docs/analysis/` code review reports.
+**Recommended actions:** Add `apps/showcase/` to project structure; add link to `docs/analysis/` code review reports.
 
 ---
 
@@ -362,6 +362,7 @@ Any doc telling clients to put `/api/media/...` directly in `<img src>` is outda
 |-------|-----|
 | `packages/media-delivery` | No README or architecture doc (package exists but not in AGENTS.md package list) |
 | Gather Box | No `docs/` entry; only app-level README |
+| Showcase | `apps/showcase/README.md` only; omitted from `AGENTS.md` structure list |
 | Security model | No dedicated threat model or security runbook |
 | CI/CD | No CI workflow docs |
 | Database schema | No schema documentation beyond Drizzle definitions |
