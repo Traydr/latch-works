@@ -18,6 +18,11 @@ import {
   type LineReporter,
   type PushStage,
 } from "./progress.js";
+import {
+  resolveHashFiles,
+  resolveLocalFilePath,
+  selectChangedItemsForPush,
+} from "./push-helpers.js";
 import type { CliOptions } from "./types.js";
 
 export async function executeCommand(options: CliOptions): Promise<void> {
@@ -67,8 +72,7 @@ export async function executeCommand(options: CliOptions): Promise<void> {
     remote = [];
   }
 
-  const willHash =
-    options.hashFiles || (options.command === "push" && !options.maxChanges);
+  const willHash = resolveHashFiles(options);
   reporter.setStatus(
     willHash ? "Indexing and hashing local archive..." : "Indexing local archive...",
   );
@@ -143,9 +147,10 @@ export async function executeCommand(options: CliOptions): Promise<void> {
   if (options.command === "push") {
     const requiredApiUrl = requireConfiguredValue(apiUrl, "Remote API URL");
     const requiredApiToken = requireConfiguredValue(apiToken, "Remote API token");
-    const itemsToPush = options.maxChanges
-      ? changedItems.slice(0, options.maxChanges)
-      : changedItems;
+    const { items: itemsToPush, omittedDeleteCount } = selectChangedItemsForPush(
+      changedItems,
+      options.maxChanges,
+    );
 
     if (itemsToPush.length === 0) {
       console.log("");
@@ -158,6 +163,11 @@ export async function executeCommand(options: CliOptions): Promise<void> {
       console.log(
         `Pushing ${itemsToPush.length} of ${changedItems.length} changes (capped by --max-changes).`,
       );
+      if (omittedDeleteCount > 0) {
+        console.log(
+          `Warning: ${omittedDeleteCount} delete(s) were delayed by the cap and were not pushed.`,
+        );
+      }
     } else {
       console.log(`Pushing ${itemsToPush.length} change(s).`);
     }
@@ -176,6 +186,7 @@ export async function executeCommand(options: CliOptions): Promise<void> {
     let pushed = 0;
     let failed = 0;
 
+    try {
     for (const [index, item] of itemsToPush.entries()) {
       const current = index + 1;
       const reportStage = (stage: PushStage, detail?: string) => {
@@ -223,6 +234,26 @@ export async function executeCommand(options: CliOptions): Promise<void> {
           `[${current}/${itemsToPush.length}] Failed ${item.path}: ${formatPushError(error)}`,
         );
       }
+    }
+    } finally {
+      await postJson(
+        requiredApiUrl,
+        `/api/sync/runs/${syncRun.syncRunId}/complete`,
+        requiredApiToken,
+        {
+          counts: {
+            ...plan.counts,
+            capped: itemsToPush.length,
+            failed,
+            planned: changedItems.length,
+            pushed,
+          },
+          error: failed > 0 ? `${failed} item(s) failed during push` : undefined,
+          status: failed > 0 ? "failed" : "completed",
+        },
+      ).catch((error) => {
+        reporter.log(`Warning: failed to finalize sync run: ${formatPushError(error)}`);
+      });
     }
 
     reporter.clear();
@@ -551,7 +582,7 @@ function formatPushError(error: unknown): string {
 }
 
 function localFilePath(sourceRoot: string, archivePath: string): string {
-  return path.join(sourceRoot, ...archivePath.split("/"));
+  return resolveLocalFilePath(sourceRoot, archivePath);
 }
 
 function contentTypeFor(item: MediaItem): string {

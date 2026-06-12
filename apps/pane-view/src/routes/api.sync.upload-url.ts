@@ -7,6 +7,7 @@ import {
 import { createFileRoute } from "@tanstack/react-router";
 import { env } from "../env/server";
 import { requireSyncApiToken } from "../server/auth/api-token";
+import { validateUploadFilename } from "../server/sync/validation";
 
 interface UploadUrlRequest {
   contentType?: string;
@@ -28,10 +29,12 @@ export const Route = createFileRoute("/api/sync/upload-url")({
           return Response.json({ error: "filename and sha256 are required" }, { status: 400 });
         }
 
-        const mediaType = detectMediaType(body.filename);
-        if (!mediaType) {
-          return Response.json({ error: "unsupported media filename" }, { status: 400 });
+        const filenameError = validateUploadFilename(body.filename);
+        if (filenameError) {
+          return Response.json({ error: filenameError }, { status: 400 });
         }
+
+        const mediaType = detectMediaType(body.filename);
 
         const objectKey = originalObjectKey({
           extension: getExtension(body.filename),

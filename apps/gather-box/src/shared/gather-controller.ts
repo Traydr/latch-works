@@ -27,6 +27,7 @@ import { formatError } from "../popup/errors";
 import { saveFanfictionStoryPdf } from "../popup/fanfiction-story";
 import type { PopupStatus } from "../popup/status";
 import { shouldIncludeCredentials } from "./credentials";
+import type { SiteKey } from "./sites";
 import {
   EMPTY_LAST_RUN,
   loadLastRun,
@@ -466,7 +467,8 @@ export class GatherController {
       {
         credentials: shouldIncludeCredentials(payload, this.state.settings) ? "include" : "omit",
         concurrency: this.state.settings.downloadConcurrency,
-        skipExistingFiles: this.state.settings.skipExistingFiles
+        site: payload.site,
+        skipExistingFiles: this.state.settings.skipExistingFiles,
       }
     );
 
@@ -665,6 +667,7 @@ export class GatherController {
   private getDownloadOptionsForRetry(): {
     credentials: RequestCredentials;
     concurrency: number;
+    site?: SiteKey;
     skipExistingFiles: boolean;
   } {
     const siteKey = this.state.lastRun.siteKey;
@@ -683,7 +686,8 @@ export class GatherController {
     return {
       credentials,
       concurrency: this.state.settings.downloadConcurrency,
-      skipExistingFiles: this.state.settings.skipExistingFiles
+      site: siteKey ?? undefined,
+      skipExistingFiles: this.state.settings.skipExistingFiles,
     };
   }
 

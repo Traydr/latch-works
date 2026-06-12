@@ -1,3 +1,5 @@
+import { prepareDownloadImage } from "../shared/download-policy";
+import type { SiteKey } from "../shared/sites";
 import type { GalleryImage } from "../shared/types";
 import { formatError } from "./errors";
 
@@ -27,6 +29,7 @@ export interface DownloadCallbacks {
 export interface DownloadOptions {
   credentials?: RequestCredentials;
   concurrency?: number;
+  site?: SiteKey;
   skipExistingFiles?: boolean;
 }
 
@@ -50,32 +53,44 @@ export async function downloadImages(
 
   await runPool(images, concurrency, async (image) => {
     try {
-      if (options.skipExistingFiles && (await fileExists(destinationDirectory, image.fileName))) {
+      const preparedImage = options.site ? prepareDownloadImage(options.site, image) : image;
+      if (!preparedImage) {
+        throw new Error("Download URL or filename is not allowed");
+      }
+
+      if (
+        options.skipExistingFiles &&
+        (await fileExists(destinationDirectory, preparedImage.fileName))
+      ) {
         summary.skipped += 1;
-        callbacks.onSkipped?.(image.fileName);
-        callbacks.onVerbose?.(`Skipped existing file ${image.fileName}`);
+        callbacks.onSkipped?.(preparedImage.fileName);
+        callbacks.onVerbose?.(`Skipped existing file ${preparedImage.fileName}`);
         return;
       }
 
-      callbacks.onVerbose?.(`Fetching ${image.originalUrl}`);
-      const response = await fetch(image.originalUrl, { credentials: options.credentials ?? "omit" });
+      callbacks.onVerbose?.(`Fetching ${preparedImage.originalUrl}`);
+      const response = await fetch(preparedImage.originalUrl, {
+        credentials: options.credentials ?? "omit",
+      });
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
 
       const blob = await response.blob();
-      const fileHandle = await destinationDirectory.getFileHandle(image.fileName, { create: true });
+      const fileHandle = await destinationDirectory.getFileHandle(preparedImage.fileName, {
+        create: true,
+      });
       const writable = await fileHandle.createWritable();
       await writable.write(blob);
       await writable.close();
       summary.saved += 1;
-      callbacks.onSaved(image.fileName);
+      callbacks.onSaved(preparedImage.fileName);
     } catch (error) {
       summary.failed += 1;
       summary.failedItems.push({
         fileName: image.fileName,
         reason: formatError(error),
-        originalUrl: image.originalUrl
+        originalUrl: image.originalUrl,
       });
     } finally {
       completed += 1;

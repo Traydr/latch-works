@@ -18,10 +18,13 @@ import ffmpegPath from "ffmpeg-static";
 import sharp from "sharp";
 import { db } from "../db";
 import { thumbnails } from "../db/schema";
+import { createConcurrencyLimiter } from "./concurrency-limiter";
+import { isDerivativeProcessingLeaseExpired } from "./derivative-lease";
 import { readMediaThumbnailContext } from "./repository";
 import { createPaneViewStorageClient } from "./storage-client";
 
 const maxSourceBytes = 512 * 1024 * 1024;
+const derivativeGenerationLimiter = createConcurrencyLimiter(2);
 
 export type ThumbnailEnsureResult =
   | {
@@ -131,7 +134,20 @@ export async function ensureThumbnailDerivative({
     };
   }
 
-  if (existing?.status === "pending" || existing?.status === "processing") {
+  if (existing?.status === "processing") {
+    if (!isDerivativeProcessingLeaseExpired(existing.updatedAt)) {
+      return { status: "pending" };
+    }
+
+    await db
+      .update(thumbnails)
+      .set({
+        error: null,
+        status: "pending",
+        updatedAt: new Date(),
+      })
+      .where(and(eq(thumbnails.mediaObjectId, context.mediaObjectId), eq(thumbnails.size, size)));
+  } else if (existing?.status === "pending") {
     return { status: "pending" };
   }
 
@@ -195,7 +211,9 @@ export async function ensureThumbnailDerivative({
       };
     }
 
-    const generated = await generateDerivativeBytes(context, size);
+    const generated = await derivativeGenerationLimiter.run(() =>
+      generateDerivativeBytes(context, size),
+    );
     await putStoredObject({
       body: generated.bytes,
       contentType: "image/webp",

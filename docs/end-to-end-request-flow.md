@@ -5,7 +5,7 @@ This document describes how media moves from a local archive into Pane View, and
 - **Lockstep** — CLI on the laptop that scans the local archive and pushes changes to Pane View.
 - **Pane View** — TanStack Start web app that stores catalog metadata in Postgres, originals in S3-compatible object storage, and serves a private gallery UI.
 
-The local archive remains the source of truth. Pane View is read-only in the browser; writes happen only through Lockstep sync APIs.
+The local archive remains the source of truth. Pane View catalog writes happen through Lockstep sync APIs. The browser UI is read-oriented, with signed-in soft delete available for library entries.
 
 ## System map
 
@@ -74,7 +74,7 @@ Typical command:
 ```powershell
 $env:LOCKSTEP_API_URL = "https://pane-view.example.com"
 $env:LOCKSTEP_API_TOKEN = "<sync-token>"
-pnpm lockstep -- push --source "D:\Archive"
+pnpm start:lockstep -- push --source "D:\Archive"
 ```
 
 Optional flags: `--remote-snapshot`, `--max-changes`, `--hash`. See [runbooks/lockstep.md](./runbooks/lockstep.md).
@@ -291,7 +291,7 @@ sequenceDiagram
 
 See [runbooks/pane-view-thumbnails.md](./runbooks/pane-view-thumbnails.md) and [runbooks/railway-cdn-pane-view.md](./runbooks/railway-cdn-pane-view.md).
 
-**Viewer state** (resume position) is implemented as server functions `getViewerState` / `saveViewerState` (`apps/pane-view/src/features/viewer/viewer-state-service.ts`) keyed by `library_entry` id. Wiring into the modal may be incremental; the API and `viewer_state` table exist for per-user playback/page persistence.
+**Viewer state** (resume position) has server functions `getViewerState` / `saveViewerState` (`apps/pane-view/src/features/viewer/viewer-state-service.ts`) and a `viewer_state` table, but modal wiring is still incomplete. Treat resume persistence as planned rather than a shipped gallery feature.
 
 ### Logout
 

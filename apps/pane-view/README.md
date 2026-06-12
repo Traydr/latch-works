@@ -2,7 +2,7 @@
 
 > Private web viewer for a synced personal media archive — responsive on desktop, tablet, and phone.
 
-Pane View is the **web counterpart** to [Frame View](../frame-view). It serves an authenticated, read-only gallery backed by PostgreSQL metadata and S3 object storage. Content reaches Pane View through [Lockstep](../../tools/lockstep), which scans a local archive and pushes originals to the sync API.
+Pane View is the **web counterpart** to [Frame View](../frame-view). It serves an authenticated gallery backed by PostgreSQL metadata and S3 object storage. The browser UI is read-oriented: catalog writes happen through Lockstep sync APIs, while signed-in users can soft-delete entries from the gallery UI. Content reaches Pane View through [Lockstep](../../tools/lockstep), which scans a local archive and pushes originals to the sync API.
 
 ## Features
 
@@ -13,7 +13,8 @@ Pane View is the **web counterpart** to [Frame View](../frame-view). It serves a
 - Fullscreen media viewer for images, GIFs, video, and PDFs
 - Video playback controls (play/pause, seek, speed)
 - Sort modes: name, date, random
-- Search, detail panel, favorites, and per-user viewer state (resume position)
+- Search and detail panel
+- Planned: favorites and per-user viewer resume state (schema hooks exist; UI wiring is incomplete)
 - Signed CDN delivery for thumbnails; presigned redirects for originals
 - Sync API for Lockstep push/plan/verify workflows
 

@@ -1,5 +1,7 @@
 # Latch Works Architecture Plan
 
+> Historical planning document. Use package READMEs, `docs/runbooks/`, and `docs/end-to-end-request-flow.md` for the current implemented state.
+
 Last updated: 2026-06-02
 
 ## 1. Goal

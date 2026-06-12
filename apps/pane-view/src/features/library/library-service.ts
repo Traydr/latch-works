@@ -45,32 +45,45 @@ export const deleteLibraryEntry = createServerFn({ method: "POST" })
     return { deleted };
   });
 
+export async function assertWebSessionAuthorized(): Promise<void> {
+  if (!(await isCurrentWebSessionValid())) {
+    throw new Error("Unauthorized");
+  }
+}
+
+export async function readLibrarySnapshotRequest(
+  data: z.infer<typeof libraryRequestSchema>,
+): Promise<LibrarySnapshot> {
+  const currentPath = normalizeLibraryPath(data.path);
+  const query = normalizeQuery(data.query);
+  const comicMode = data.comicMode ?? false;
+  const recursive = (data.recursive ?? false) || comicMode;
+  const searchOffset = data.searchOffset ?? 0;
+  const databaseSnapshot = await readDatabaseLibrarySnapshot({
+    currentPath,
+    includeAllFolders: comicMode,
+    limit: query ? SEARCH_RESULT_LIMIT : undefined,
+    offset: query ? searchOffset : 0,
+    query,
+    recursive,
+  });
+
+  return {
+    allFolders: databaseSnapshot.allFolders,
+    archiveRoot: "Synced archive",
+    currentPath,
+    folders: databaseSnapshot.folders,
+    media: databaseSnapshot.media,
+    mediaUrlMode: "signed-url",
+    roots: databaseSnapshot.roots.length ? databaseSnapshot.roots : readFixtureRoots(currentPath),
+  };
+}
+
 export const getLibrarySnapshot = createServerFn({ method: "GET" })
   .inputValidator(libraryRequestSchema)
   .handler(async ({ data }): Promise<LibrarySnapshot> => {
-    const currentPath = normalizeLibraryPath(data.path);
-    const query = normalizeQuery(data.query);
-    const comicMode = data.comicMode ?? false;
-    const recursive = (data.recursive ?? false) || comicMode;
-    const searchOffset = data.searchOffset ?? 0;
-    const databaseSnapshot = await readDatabaseLibrarySnapshot({
-      currentPath,
-      includeAllFolders: comicMode,
-      limit: query ? SEARCH_RESULT_LIMIT : undefined,
-      offset: query ? searchOffset : 0,
-      query,
-      recursive,
-    });
-
-    return {
-      allFolders: databaseSnapshot.allFolders,
-      archiveRoot: "Synced archive",
-      currentPath,
-      folders: databaseSnapshot.folders,
-      media: databaseSnapshot.media,
-      mediaUrlMode: "signed-url",
-      roots: databaseSnapshot.roots.length ? databaseSnapshot.roots : readFixtureRoots(currentPath),
-    };
+    await assertWebSessionAuthorized();
+    return readLibrarySnapshotRequest(data);
   });
 
 function normalizeLibraryPath(path: string | undefined): string {
