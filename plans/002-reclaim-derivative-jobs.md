@@ -19,6 +19,7 @@
 - **Depends on**: none
 - **Category**: bug
 - **Planned at**: commit `326110f`, 2026-06-12
+- **Executed at**: commit `8c0e030`, 2026-06-12 — **DONE** (reviewed)
 
 ## Why this matters
 
