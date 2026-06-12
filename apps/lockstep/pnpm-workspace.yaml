@@ -7,5 +7,11 @@ allowBuilds:
   electron: true
   electron-winstaller: true
   esbuild: true
+  fs-xattr: true
+  macos-alias: true
 blockExoticSubdeps: false
 nodeLinker: hoisted
+overrides:
+  fs-xattr: "0.3.1"
+  macos-alias: "0.2.12"
+  yauzl: "3.3.1"

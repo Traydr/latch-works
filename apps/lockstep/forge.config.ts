@@ -1,4 +1,8 @@
 import { FuseV1Options, FuseVersion } from "@electron/fuses";
+import { MakerDeb } from "@electron-forge/maker-deb";
+import { MakerDMG } from "@electron-forge/maker-dmg";
+import { MakerRpm } from "@electron-forge/maker-rpm";
+import { MakerSquirrel } from "@electron-forge/maker-squirrel";
 import { MakerZIP } from "@electron-forge/maker-zip";
 import { AutoUnpackNativesPlugin } from "@electron-forge/plugin-auto-unpack-natives";
 import { FusesPlugin } from "@electron-forge/plugin-fuses";
@@ -11,8 +15,13 @@ const config: ForgeConfig = {
     executableName: "lockstep",
   },
   rebuildConfig: {},
-  // ZIP only for v1 — avoids maker-dmg's unmaintained native deps (fs-xattr, macos-alias).
-  makers: [new MakerZIP({}, ["darwin", "linux", "win32"])],
+  makers: [
+    new MakerSquirrel({ name: "lockstep" }),
+    new MakerZIP({}, ["darwin"]),
+    new MakerDMG({}, ["darwin"]),
+    new MakerRpm({}),
+    new MakerDeb({}),
+  ],
   plugins: [
     new AutoUnpackNativesPlugin({}),
     new VitePlugin({

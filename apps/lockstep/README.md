@@ -53,4 +53,4 @@ Use the root lockfile only. Remove any `apps/lockstep/pnpm-lock.yaml` if it reap
 
 ### `ERR_PNPM_IGNORED_BUILDS` (fs-xattr / macos-alias)
 
-Lockstep does not use `@electron-forge/maker-dmg` (those native packages are only pulled by the DMG maker). Run `pnpm install` from the repo root after pulling the latest changes. Release builds use ZIP packaging via `pnpm make` in `apps/lockstep`.
+`@electron-forge/maker-dmg` depends on native packages `fs-xattr` and `macos-alias`. Their build scripts are approved in `apps/lockstep/pnpm-workspace.yaml` and versions are pinned via workspace `overrides`. Run `pnpm install` from the repo root, or `pnpm install` in `apps/lockstep` if Forge triggers a nested install.
