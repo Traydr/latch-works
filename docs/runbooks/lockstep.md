@@ -26,10 +26,11 @@ Optional environment overrides:
 - `LOCKSTEP_API_URL` — default Pane View API URL
 - `LOCKSTEP_API_TOKEN` — sync API bearer token
 
-For scripted push without interactive confirmation, pass `--yes`:
+For scripted `push` or `prune` without interactive confirmation, pass `--yes`:
 
 ```powershell
 pnpm start:lockstep -- push --source "T:\cloud-desktop\media" --yes
+pnpm start:lockstep -- prune --source "T:\cloud-desktop\media" --yes
 ```
 
 ## Doctor
@@ -85,7 +86,7 @@ The snapshot format is a JSON array:
 
 ## Push
 
-`push` sends the current local plan to the Pane View sync API. It hashes files automatically, fetches the remote snapshot when `--remote-snapshot` is not provided, asks the API for upload targets, uploads originals when storage credentials are configured, and records deletes for local paths that disappeared.
+`push` sends upload and update changes to the Pane View sync API. It hashes files automatically, fetches the remote snapshot when `--remote-snapshot` is not provided, asks the API for upload targets, and uploads originals when storage credentials are configured. `push` never applies remote deletes — use `prune` for those.
 
 ```powershell
 $env:LOCKSTEP_API_URL = "http://localhost:3000"
@@ -117,4 +118,24 @@ To test the full archive plan while uploading only the first small batch of chan
 pnpm start:lockstep -- push --source "T:\cloud-desktop\media" --max-changes 25
 ```
 
-`push` always hashes local files before planning, even when `--max-changes` is set. Capped pushes take the first N planned changes in plan order. If that cap skips delete actions, Lockstep prints a warning with the number of delayed deletes. Each push run is finalized through `/api/sync/runs/{id}/complete` with `completed` or `failed` status and final counts.
+`push` always hashes local files before planning, even when `--max-changes` is set. Capped pushes take the first N upload/update changes in plan order (delete items are excluded). Each push run is finalized through `/api/sync/runs/{id}/complete` with `completed` or `failed` status and final counts.
+
+## Prune
+
+`prune` applies planned remote deletes for paths that exist in the remote snapshot but not locally. It is separate from `push` so destructive sync actions require an explicit operator decision.
+
+When delete items are present, Lockstep prints the paths (respecting `--max-changes` if set) and requires `--yes` or interactive confirmation before applying deletes. Use `prune --yes` only in scripted automation after reviewing a read-only `plan`.
+
+```powershell
+$env:LOCKSTEP_API_URL = "http://localhost:3000"
+$env:LOCKSTEP_API_TOKEN = "replace-me"
+pnpm start:lockstep -- prune --source "T:\cloud-desktop\media"
+```
+
+Non-interactive prune (CI/scripts):
+
+```powershell
+pnpm start:lockstep -- prune --source "T:\cloud-desktop\media" --yes
+```
+
+`prune` does not hash local files unless you pass `--hash`. Remote object bytes are not removed — only `library_entries` are soft-deleted.
