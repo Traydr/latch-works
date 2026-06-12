@@ -77,7 +77,7 @@ $env:LOCKSTEP_API_TOKEN = "<sync-token>"
 pnpm start:lockstep -- push --source "D:\Archive"
 ```
 
-Optional flags: `--remote-snapshot`, `--max-changes`, `--hash`. See [runbooks/lockstep.md](./runbooks/lockstep.md).
+Optional flags: `--remote-snapshot`, `--max-changes`, `--hash`. Remote deletes are applied separately with `prune`. See [runbooks/lockstep.md](./runbooks/lockstep.md).
 
 ### Phase A — Plan (local only until push)
 
@@ -112,11 +112,11 @@ sequenceDiagram
 | `upload` | Path exists locally but not remotely |
 | `update` | Path exists both sides but size or sha256 differs |
 | `keep` | Path matches |
-| `delete` | Path exists remotely but not locally (handled on push, not during plan-only) |
+| `delete` | Path exists remotely but not locally — planned here; applied by `prune`, not `push` |
 
-`plan` and `verify` stop here. Only `push` continues below.
+`plan` and `verify` stop here. `push` and `prune` continue below as separate phases.
 
-### Phase B — Push (per changed file)
+### Phase B — Push (upload / update only)
 
 ```mermaid
 sequenceDiagram
@@ -129,19 +129,14 @@ sequenceDiagram
   PV->>DB: insert sync_runs (status: running)
   PV-->>LS: { syncRunId }
 
-  loop each plan item (upload / update / delete)
-    alt delete
-      LS->>PV: POST /api/sync/complete-object { action: delete, logicalPath, syncRunId }
-      PV->>DB: soft-delete library_entries, record sync_run_items
-    else upload or update
-      LS->>LS: SHA-256 hash file (if needed)
-      LS->>PV: POST /api/sync/upload-url { filename, sha256, contentType }
-      PV->>PV: originalObjectKey(sha256, extension)
-      PV-->>LS: { objectKey, uploadUrl }
-      LS->>S3: PUT uploadUrl (streaming body)
-      LS->>PV: POST /api/sync/complete-object { metadata, objectKey, syncRunId, ... }
-      PV->>DB: upsert media_objects, library_entries, folders, sync_run_items
-    end
+  loop each upload / update item
+    LS->>LS: SHA-256 hash file (if needed)
+    LS->>PV: POST /api/sync/upload-url { filename, sha256, contentType }
+    PV->>PV: originalObjectKey(sha256, extension)
+    PV-->>LS: { objectKey, uploadUrl }
+    LS->>S3: PUT uploadUrl (streaming body)
+    LS->>PV: POST /api/sync/complete-object { metadata, objectKey, syncRunId, ... }
+    PV->>DB: upsert media_objects, library_entries, folders, sync_run_items
   end
 ```
 
@@ -175,9 +170,27 @@ Creates a row in `sync_runs` with `source_root`, optional `counts`, and `status:
 
 Logical paths use forward slashes and preserve archive layout (e.g. `sfw/patreon/album/photo.jpg`). They are not the same as object keys: paths are browse metadata; keys are content-addressed storage.
 
-**3. Deletes**
+### Phase C — Prune (delete only)
 
-For paths in the plan with action `delete`, Lockstep posts:
+`prune` is a separate Lockstep command. When delete items are present, the CLI prints the paths and requires `--yes` or interactive confirmation before calling the API.
+
+```mermaid
+sequenceDiagram
+  participant LS as Lockstep
+  participant PV as Pane View API
+  participant DB as Postgres
+
+  LS->>PV: POST /api/sync/runs { sourceRoot, counts }
+  PV->>DB: insert sync_runs (status: running)
+  PV-->>LS: { syncRunId }
+
+  loop each delete item
+    LS->>PV: POST /api/sync/complete-object { action: delete, logicalPath, syncRunId }
+    PV->>DB: soft-delete library_entries, record sync_run_items
+  end
+```
+
+For each delete item, Lockstep posts:
 
 ```json
 { "action": "delete", "logicalPath": "...", "syncRunId": "..." }
@@ -302,12 +315,12 @@ See [runbooks/pane-view-thumbnails.md](./runbooks/pane-view-thumbnails.md) and [
 ## Data written during a full cycle
 
 ```text
-Lockstep push
+Lockstep push / prune
   sync_runs
   sync_run_items
-  media_objects      ← sha256-addressed blob metadata
-  library_entries    ← logical_path, filename, parent_path
-  folders            ← inferred from path segments
+  media_objects      ← sha256-addressed blob metadata (push only)
+  library_entries    ← logical_path, filename, parent_path (push upserts; prune soft-deletes)
+  folders            ← inferred from path segments (push only)
 
 Pane View browse (read-mostly)
   library_entries + media_objects + thumbnails → gallery snapshot
@@ -320,7 +333,7 @@ Object storage
 
 ## Related docs
 
-- [runbooks/lockstep.md](./runbooks/lockstep.md) — CLI setup, doctor, verify, push examples
+- [runbooks/lockstep.md](./runbooks/lockstep.md) — CLI setup, doctor, verify, push, and prune examples
 - [runbooks/pane-view-thumbnails.md](./runbooks/pane-view-thumbnails.md) — thumbnail pipeline plan
 - [ARCHITECTURE_PLAN.md](./ARCHITECTURE_PLAN.md) — broader product and schema direction
 
