@@ -26,6 +26,11 @@ See [railway-cdn-pane-view.md](./railway-cdn-pane-view.md) for CDN enablement an
 
 ## Future options
 
-- Lockstep pre-warm for `320` after sync (same object keys, no URL changes).
-- PDF cover previews via `previewObjectKey` for `pdf` media type.
-- Background worker if on-origin ffmpeg load becomes too heavy.
+Evaluated in [derivative-prewarm-and-workers.md](../derivative-prewarm-and-workers.md)
+(spike, 2026-06). Status:
+
+| Option | Status | Notes |
+| --- | --- | --- |
+| PDF cover previews (`previewObjectKey`, page 1 → WebP) | **Recommended next** | On-demand path; closes unsupported PDF gap |
+| Lockstep pre-warm for `320` after sync | Pending | Follow PDF covers; same object keys, no URL changes |
+| Background worker | Deferred | Revisit when origin CPU / `503` miss-rate metrics justify a queue |
