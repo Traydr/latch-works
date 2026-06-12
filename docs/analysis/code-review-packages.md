@@ -94,6 +94,8 @@ If folder IDs are path-derived elsewhere, validation would reject valid data. Cu
 
 #### High
 
+<a id="high-1-scanarchive-does-not-skip-unsupported-file-types"></a>
+
 **H1 — `scanArchive` does not skip unsupported file types (bug)**
 
 ```117:129:packages/media-index/src/scan.ts

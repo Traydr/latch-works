@@ -41,6 +41,8 @@ flowchart TD
 
 ### Critical
 
+<a id="critical-1-getlibrarysnapshot-server-function-has-no-authentication"></a>
+
 #### 1. `getLibrarySnapshot` server function has no authentication
 
 The gallery route guard (`/_gallery` `beforeLoad`) only protects page navigation. TanStack Start `createServerFn` handlers are independently callable over HTTP and do not inherit route guards.
@@ -64,7 +66,7 @@ Sibling functions (`deleteLibraryEntry`, `resolveMediaDeliveryUrl`) do check aut
 
 **Impact:** Unauthenticated callers can enumerate logical paths, filenames, SHA-256 hashes, sizes, media types, and entry UUIDs. With `recursive=true` or search pagination, they can page through the archive (up to 5,000 rows per non-search request, 200 per search page).
 
-**Compounding factor:** Ready thumbnails embed signed CDN URLs directly in the snapshot via `buildGalleryThumbnailUrl` → `buildSignedCdnDeliveryUrl`. CDN tokens are valid for `MEDIA_DELIVERY_TTL_SECONDS` (default 24h) and grant access via the unauthenticated `/cdn/v1/$` route.
+**Compounding factor:** Ready thumbnails embed signed CDN URLs directly in the snapshot via `buildGalleryThumbnailUrl` → `buildSignedCdnDeliveryUrl`. CDN tokens are valid for `MEDIA_DELIVERY_TTL_SECONDS` (default 24h) and grant access via the unauthenticated CDN route (`/cdn/v1/:token`; TanStack file route `cdn.v1.$.ts`).
 
 **Fix direction:** Add `isCurrentWebSessionValid()` at the top of the handler. Consider not embedding signed CDN URLs in responses; return opaque API paths and resolve after auth.
 
@@ -157,7 +159,7 @@ Empty databases show hardcoded navigation roots — dev artifact that could leak
 | **SQL injection** | Low risk. Drizzle parameterized queries; `escapeLikePattern` correctly escapes `%` and `_`. |
 | **SSRF** | Low risk. S3 access uses configured client/bucket only. |
 | **Path traversal (filesystem)** | Not applicable; archive paths are logical DB keys. |
-| **Path traversal (S3 keys)** | Medium for sync-token holders — unvalidated `objectKey. |
+| **Path traversal (S3 keys)** | Medium for sync-token holders — unvalidated `objectKey`. |
 | **CDN token forgery** | Well implemented — HMAC-SHA256, `timingSafeEqual`, expiry check. |
 | **Session hijacking** | Owner-only sessions enforced via email check in `web-session-core.ts`. |
 

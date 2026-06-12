@@ -98,6 +98,8 @@ Gather Box has clean site-modular architecture and the FANBOX collector demonstr
 
 #### High
 
+<a id="high-1-fanfiction-pdf-fonts-are-referenced-but-not-shipped"></a>
+
 **1. Fanfiction PDF fonts are referenced but not shipped — feature is broken**
 
 ```281:284:apps/gather-box/src/popup/fanfiction-story.ts
