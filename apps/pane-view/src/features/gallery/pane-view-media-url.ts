@@ -1,4 +1,4 @@
-import { snapThumbnailSize } from "@latch-works/media-delivery";
+import { snapThumbnailSize } from "./thumbnail-size";
 
 export function buildMediaApiUrl(
   mediaId: string,

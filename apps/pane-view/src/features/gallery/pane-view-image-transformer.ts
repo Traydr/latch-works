@@ -1,4 +1,4 @@
-import { snapThumbnailSize } from "@latch-works/media-delivery";
+import { snapThumbnailSize } from "./thumbnail-size";
 
 type PaneViewTransformOperations = {
   width?: number;
