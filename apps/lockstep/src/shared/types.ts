@@ -13,9 +13,7 @@ import type {
 } from "./contracts";
 import type { deserializeIpcResult } from "./ipc";
 
-export type IpcErrorPayload = z.infer<
-  typeof import("./contracts").IpcErrorPayloadSchema
->;
+export type IpcErrorPayload = z.infer<typeof import("./contracts").IpcErrorPayloadSchema>;
 export type LockstepPlan = z.infer<typeof LockstepPlanSchema>;
 export type LockstepPlanCounts = LockstepPlan["counts"];
 export type LockstepPlanItem = LockstepPlan["items"][number];

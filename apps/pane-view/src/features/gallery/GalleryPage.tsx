@@ -153,7 +153,6 @@ export function GalleryPage() {
   }, [setOpenSettingsHandler]);
 
   // Redirect to persisted path on first visit if URL has no path.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: Only run once on mount to restore persisted path.
   useEffect(() => {
     if (!search.path && persisted.lastPath) {
       void navigate({
@@ -769,7 +768,7 @@ export function GalleryPage() {
 
   return (
     <>
-        <header className="flex h-auto min-h-14 shrink-0 items-center justify-between gap-4 border-b border-border bg-background px-5 py-2">
+      <header className="flex h-auto min-h-14 shrink-0 items-center justify-between gap-4 border-b border-border bg-background px-5 py-2">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <SidebarTrigger className="-ml-1 shrink-0" />
           {isMobile ? (
@@ -913,22 +912,22 @@ export function GalleryPage() {
 
       <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
         <Suspense fallback={<GalleryGridSkeleton />}>
-            <GalleryBrowsePane
-              columnCountRef={columnCountRef}
-              comicMode={comicMode}
-              deletedEntryIds={deletedEntryIds}
-              deletingEntryIds={deletingEntryIds}
-              displayPath={displayPath}
-              effectiveRecursive={effectiveRecursive}
-              focusedEntryIndex={focusedEntryIndex}
-              isFetching={showFetching}
-              loadingMoreMedia={loadingMoreMedia}
-              media={allMedia}
-              mediaPage={mediaPage}
-              onActivateEntry={handleActivateEntry}
-              onDelete={deleteSelectedMedia}
-              onLoadMoreMedia={() => void loadMoreMedia()}
-              onNext={() => selectAdjacentMedia(1)}
+          <GalleryBrowsePane
+            columnCountRef={columnCountRef}
+            comicMode={comicMode}
+            deletedEntryIds={deletedEntryIds}
+            deletingEntryIds={deletingEntryIds}
+            displayPath={displayPath}
+            effectiveRecursive={effectiveRecursive}
+            focusedEntryIndex={focusedEntryIndex}
+            isFetching={showFetching}
+            loadingMoreMedia={loadingMoreMedia}
+            media={allMedia}
+            mediaPage={mediaPage}
+            onActivateEntry={handleActivateEntry}
+            onDelete={deleteSelectedMedia}
+            onLoadMoreMedia={() => void loadMoreMedia()}
+            onNext={() => selectAdjacentMedia(1)}
             onOpenViewer={() => {
               if (selected && !deletedEntryIds.has(selected.id)) {
                 openViewer(navigableMedia, selected.id);

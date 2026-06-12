@@ -27,7 +27,11 @@ export type Product = {
 };
 
 export const pipeline = [
-  { step: "Gather", product: "Gather Box", description: "Collect source media from supported pages" },
+  {
+    step: "Gather",
+    product: "Gather Box",
+    description: "Collect source media from supported pages",
+  },
   { step: "Organize", product: "Frame View", description: "Browse and verify locally on desktop" },
   { step: "Sync", product: "Lockstep", description: "Plan and push archive changes explicitly" },
   { step: "View", product: "Pane View", description: "Browse privately on web and mobile" },

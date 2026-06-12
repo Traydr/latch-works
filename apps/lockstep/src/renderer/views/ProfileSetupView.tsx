@@ -65,7 +65,11 @@ export function ProfileSetupView({
               placeholder="/path/to/archive"
               required
             />
-            <button className="prism-btn inline-flex shrink-0 items-center gap-1.5 px-3" type="button" onClick={onPickFolder}>
+            <button
+              className="prism-btn inline-flex shrink-0 items-center gap-1.5 px-3"
+              type="button"
+              onClick={onPickFolder}
+            >
               <FolderOpen className="size-3.5" aria-hidden />
               Browse
             </button>

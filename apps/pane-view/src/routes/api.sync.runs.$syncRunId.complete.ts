@@ -5,13 +5,7 @@ import { finalizeSyncRun } from "../server/sync/store";
 export const Route = createFileRoute("/api/sync/runs/$syncRunId/complete")({
   server: {
     handlers: {
-      POST: async ({
-        params,
-        request,
-      }: {
-        params: { syncRunId: string };
-        request: Request;
-      }) => {
+      POST: async ({ params, request }: { params: { syncRunId: string }; request: Request }) => {
         const unauthorized = requireSyncApiToken(request);
         if (unauthorized) {
           return unauthorized;

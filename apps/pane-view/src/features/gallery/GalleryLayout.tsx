@@ -1,15 +1,12 @@
-import { Outlet, getRouteApi } from "@tanstack/react-router";
+import { getRouteApi, Outlet } from "@tanstack/react-router";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { ArchiveSidebar } from "@/features/gallery/ArchiveSidebar";
-import {
-  displayPathFromSearch,
-  type GalleryBrowseSearch,
-} from "@/features/gallery/browse-search";
+import { displayPathFromSearch, type GalleryBrowseSearch } from "@/features/gallery/browse-search";
+import { GalleryShellProvider, useGalleryShell } from "@/features/gallery/gallery-shell-context";
 import {
   toLibrarySnapshotRequest,
   useLibrarySnapshotQuery,
 } from "@/features/library/library-queries";
-import { GalleryShellProvider, useGalleryShell } from "@/features/gallery/gallery-shell-context";
 import { ThemeSync } from "@/features/settings/ThemeSync";
 import { useAppSettings } from "@/features/settings/useAppSettings";
 import { useHydrated } from "@/hooks/use-hydrated";

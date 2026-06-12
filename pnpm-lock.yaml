@@ -286,12 +286,6 @@ importers:
       '@latch-works/lockstep-core':
         specifier: workspace:*
         version: link:../../packages/lockstep-core
-      '@latch-works/media-domain':
-        specifier: workspace:*
-        version: link:../../packages/media-domain
-      '@latch-works/media-index':
-        specifier: workspace:*
-        version: link:../../packages/media-index
     devDependencies:
       tsx:
         specifier: ^4.21.0

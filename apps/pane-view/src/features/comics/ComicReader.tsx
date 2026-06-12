@@ -118,10 +118,18 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
             </p>
           </div>
           <div className="flex items-center gap-2 text-sm">
-            <button type="button" className="rounded-xl border border-zinc-700 px-3 py-1.5 text-xs" onClick={scrollToTop}>
+            <button
+              type="button"
+              className="rounded-xl border border-zinc-700 px-3 py-1.5 text-xs"
+              onClick={scrollToTop}
+            >
               Top
             </button>
-            <button type="button" className="rounded-xl border border-zinc-700 px-3 py-1.5 text-xs" onClick={onClose}>
+            <button
+              type="button"
+              className="rounded-xl border border-zinc-700 px-3 py-1.5 text-xs"
+              onClick={onClose}
+            >
               Close
             </button>
           </div>

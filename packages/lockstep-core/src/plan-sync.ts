@@ -1,6 +1,6 @@
 import { createSyncPlan, scanArchive } from "@latch-works/media-index";
-import { fetchRemoteSnapshot, readRemoteSnapshot } from "./remote-snapshot.js";
 import { resolveHashFiles } from "./push-helpers.js";
+import { fetchRemoteSnapshot, readRemoteSnapshot } from "./remote-snapshot.js";
 import { createScanProgressCoalescer } from "./scan-progress-coalescer.js";
 import type { LockstepObserver, LockstepPlan, PlanSyncOptions } from "./types.js";
 
@@ -19,7 +19,10 @@ export async function planSync(
 
   let remote: Awaited<ReturnType<typeof fetchRemoteSnapshot>> = [];
   if (options.remoteSnapshotPath) {
-    observer?.onEvent({ type: "status", message: `Loading remote snapshot from ${options.remoteSnapshotPath}...` });
+    observer?.onEvent({
+      type: "status",
+      message: `Loading remote snapshot from ${options.remoteSnapshotPath}...`,
+    });
     remote = await readRemoteSnapshot(options.remoteSnapshotPath);
     observer?.onEvent({
       type: "status",

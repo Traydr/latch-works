@@ -26,7 +26,10 @@ export function RunProgressView({
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           {running ? (
-            <LoaderCircle className="size-4 animate-spin text-violet-600 dark:text-violet-300" aria-hidden />
+            <LoaderCircle
+              className="size-4 animate-spin text-violet-600 dark:text-violet-300"
+              aria-hidden
+            />
           ) : (
             <Activity className="size-4 text-zinc-500" aria-hidden />
           )}

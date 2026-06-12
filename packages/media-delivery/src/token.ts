@@ -74,7 +74,9 @@ function encodePayload(payload: DeliveryTokenPayload): string {
 }
 
 function decodePayload(encodedPayload: string): DeliveryTokenPayload {
-  const parsed = JSON.parse(Buffer.from(encodedPayload, "base64url").toString("utf8")) as DeliveryTokenPayload;
+  const parsed = JSON.parse(
+    Buffer.from(encodedPayload, "base64url").toString("utf8"),
+  ) as DeliveryTokenPayload;
   if (
     typeof parsed.exp !== "number" ||
     typeof parsed.objectKey !== "string" ||

@@ -45,11 +45,7 @@ export const InvokeIpcContracts = {
     z.tuple([z.string()]),
     LockstepSettingsSchema,
   ),
-  doctor: defineInvokeContract(
-    "lockstep:doctor",
-    z.tuple([z.string()]),
-    DoctorResultSchema,
-  ),
+  doctor: defineInvokeContract("lockstep:doctor", z.tuple([z.string()]), DoctorResultSchema),
   getSettings: defineInvokeContract("lockstep:get-settings", z.tuple([]), LockstepSettingsSchema),
   pickSourceFolder: defineInvokeContract(
     "lockstep:pick-source-folder",

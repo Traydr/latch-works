@@ -1,5 +1,9 @@
 import type { MediaItem } from "@latch-works/media-domain";
-import type { RemoteEntrySnapshot, ScanArchiveProgress, SyncPlanAction } from "@latch-works/media-index";
+import type {
+  RemoteEntrySnapshot,
+  ScanArchiveProgress,
+  SyncPlanAction,
+} from "@latch-works/media-index";
 
 export interface LockstepPlanItem {
   action: SyncPlanAction;

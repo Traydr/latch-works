@@ -48,14 +48,17 @@ export function createLineReporter(options: CreateLineReporterOptions = {}): Lin
     if (!force && now - lastWrite < minIntervalMs) {
       pendingLine = line;
       if (!flushTimer) {
-        flushTimer = setTimeout(() => {
-          flushTimer = null;
-          if (pendingLine) {
-            const next = pendingLine;
-            pendingLine = null;
-            writeStatus(next, true);
-          }
-        }, minIntervalMs - (now - lastWrite));
+        flushTimer = setTimeout(
+          () => {
+            flushTimer = null;
+            if (pendingLine) {
+              const next = pendingLine;
+              pendingLine = null;
+              writeStatus(next, true);
+            }
+          },
+          minIntervalMs - (now - lastWrite),
+        );
       }
       return;
     }

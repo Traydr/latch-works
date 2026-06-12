@@ -1,7 +1,4 @@
-import {
-  createS3StorageClient,
-  createSignedGetUrl,
-} from "@latch-works/media-storage";
+import { createS3StorageClient, createSignedGetUrl } from "@latch-works/media-storage";
 import { createFileRoute } from "@tanstack/react-router";
 import { env } from "../env/server";
 import { isRequestSessionValid } from "../server/auth/web-session-core";

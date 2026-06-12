@@ -48,7 +48,10 @@ export function PlanResultsView({
       <label className="mt-4 grid gap-1.5">
         <span className="prism-label">Filter changed items</span>
         <div className="relative">
-          <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-zinc-400" aria-hidden />
+          <Search
+            className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-zinc-400"
+            aria-hidden
+          />
           <input
             className="prism-input pl-9"
             value={filter}
@@ -66,9 +69,14 @@ export function PlanResultsView({
         ) : (
           <ul className="divide-y divide-zinc-200/80 dark:divide-zinc-800/80">
             {items.map((item) => (
-              <li key={`${item.action}:${item.path}`} className="grid grid-cols-[5.5rem_1fr] items-center gap-3 px-4 py-2.5">
+              <li
+                key={`${item.action}:${item.path}`}
+                className="grid grid-cols-[5.5rem_1fr] items-center gap-3 px-4 py-2.5"
+              >
                 <ActionBadge action={item.action} />
-                <span className="truncate font-mono text-xs text-zinc-700 dark:text-zinc-200">{item.path}</span>
+                <span className="truncate font-mono text-xs text-zinc-700 dark:text-zinc-200">
+                  {item.path}
+                </span>
               </li>
             ))}
           </ul>

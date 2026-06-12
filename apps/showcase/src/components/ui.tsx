@@ -13,6 +13,7 @@ import {
   Keyboard,
   LayoutGrid,
   ListChecks,
+  type LucideIcon,
   MessagesSquare,
   Play,
   RefreshCw,
@@ -25,7 +26,6 @@ import {
   UserCog,
   Workflow,
   Zap,
-  type LucideIcon,
 } from "lucide-react";
 
 const iconMap: Record<string, LucideIcon> = {
@@ -94,7 +94,9 @@ export function Screenshot({
           className="block w-full bg-muted/30 object-cover object-top transition duration-500 group-hover:scale-[1.01]"
         />
       </div>
-      {caption ? <figcaption className="mt-3 text-sm text-muted-foreground">{caption}</figcaption> : null}
+      {caption ? (
+        <figcaption className="mt-3 text-sm text-muted-foreground">{caption}</figcaption>
+      ) : null}
     </figure>
   );
 }

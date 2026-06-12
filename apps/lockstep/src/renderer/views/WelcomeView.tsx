@@ -22,7 +22,11 @@ export function WelcomeView({ onCreateProfile }: WelcomeViewProps) {
         Create a profile with your source folder, API URL, and sync token. Lockstep plans changes,
         pushes uploads and updates separately, and only applies remote deletes when you confirm.
       </p>
-      <button className="prism-btn prism-btn-primary px-4 py-2 text-sm" type="button" onClick={onCreateProfile}>
+      <button
+        className="prism-btn prism-btn-primary px-4 py-2 text-sm"
+        type="button"
+        onClick={onCreateProfile}
+      >
         Create your first profile
       </button>
     </section>

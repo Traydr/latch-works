@@ -1,9 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { GalleryPage } from "@/features/gallery/GalleryPage";
 import {
-  parseGalleryBrowseSearch,
   type GalleryBrowseSearch,
+  parseGalleryBrowseSearch,
 } from "@/features/gallery/browse-search";
+import { GalleryPage } from "@/features/gallery/GalleryPage";
 import {
   librarySnapshotQueryOptions,
   toLibrarySnapshotRequest,

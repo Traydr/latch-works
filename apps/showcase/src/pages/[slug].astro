@@ -1,7 +1,7 @@
 ---
 import { FeatureIcon, ProductBadge, Screenshot, SectionHeading } from "@/components/ui";
-import BaseLayout from "@/layouts/BaseLayout.astro";
 import { getProduct } from "@/data/products";
+import BaseLayout from "@/layouts/BaseLayout.astro";
 
 const { slug } = Astro.params;
 const product = slug ? getProduct(slug) : undefined;

@@ -151,9 +151,7 @@ export function ArchiveSidebar({
   );
 }
 
-function buildAncestorItems(
-  currentPath: string,
-): Array<{ name: string; path: string }> {
+function buildAncestorItems(currentPath: string): Array<{ name: string; path: string }> {
   if (!currentPath) {
     return [];
   }

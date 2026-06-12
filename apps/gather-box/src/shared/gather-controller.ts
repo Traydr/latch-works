@@ -27,7 +27,11 @@ import { formatError } from "../popup/errors";
 import { saveFanfictionStoryPdf } from "../popup/fanfiction-story";
 import type { PopupStatus } from "../popup/status";
 import { shouldIncludeCredentials } from "./credentials";
-import type { SiteKey } from "./sites";
+import {
+  getSiteKeyFromUrl,
+  isSupportedUrl,
+  type SiteKey
+} from "./sites";
 import {
   EMPTY_LAST_RUN,
   loadLastRun,
@@ -42,7 +46,6 @@ import {
   type GatherRuntimeMessage
 } from "./runtime-messages";
 import { loadSettings, type GatherBoxSettings } from "./settings";
-import { getSiteKeyFromUrl, isSupportedUrl, type SiteKey } from "./sites";
 import type { DownloadablePayload, GeneratedStoryPayload, GalleryImage } from "./types";
 
 interface PopupState {

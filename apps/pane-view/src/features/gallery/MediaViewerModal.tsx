@@ -1,13 +1,6 @@
 import type { MediaItem } from "@latch-works/media-domain";
 import { formatBytes } from "@latch-works/media-domain";
-import {
-  Copy,
-  Download,
-  Image,
-  Maximize,
-  type LucideIcon,
-  X,
-} from "lucide-react";
+import { Copy, Download, Image, type LucideIcon, Maximize, X } from "lucide-react";
 import {
   forwardRef,
   type JSX,
@@ -91,8 +84,7 @@ export function MediaViewerModal({
   const [chromeVisible, setChromeVisible] = useState(true);
   const viewerPrimary = useResolvedMediaUrl({
     mediaId: item && item.mediaType !== "video" && item.mediaType !== "pdf" ? item.id : undefined,
-    variant:
-      item && (showOriginal || item.mediaType !== "image") ? "original" : "preview",
+    variant: item && (showOriginal || item.mediaType !== "image") ? "original" : "preview",
   });
   const viewerFallback = useResolvedMediaUrl({
     mediaId: viewerPrimary.failed ? item?.id : undefined,

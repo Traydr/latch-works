@@ -39,7 +39,10 @@ export function ProfileSummary({ profile }: ProfileSummaryProps) {
   return (
     <div className="grid gap-3 sm:grid-cols-2">
       {fields.map((field) => (
-        <div key={field.label} className="rounded-xl border border-zinc-300/60 bg-white/50 px-3 py-2.5 dark:border-zinc-700/60 dark:bg-zinc-950/30">
+        <div
+          key={field.label}
+          className="rounded-xl border border-zinc-300/60 bg-white/50 px-3 py-2.5 dark:border-zinc-700/60 dark:bg-zinc-950/30"
+        >
           <div className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-zinc-500 uppercase dark:text-zinc-400">
             <field.icon className="size-3.5" aria-hidden />
             {field.label}

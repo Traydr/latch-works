@@ -1,7 +1,13 @@
-import { ThemeProvider } from "next-themes";
 import type { QueryClient } from "@tanstack/react-query";
-import { createRootRouteWithContext, HeadContent, Link, Outlet, Scripts } from "@tanstack/react-router";
+import {
+  createRootRouteWithContext,
+  HeadContent,
+  Link,
+  Outlet,
+  Scripts,
+} from "@tanstack/react-router";
 import { Home, SearchX } from "lucide-react";
+import { ThemeProvider } from "next-themes";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";

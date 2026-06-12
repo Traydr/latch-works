@@ -15,7 +15,10 @@ export function DoctorCheckList({ result }: DoctorCheckListProps) {
           className="flex items-start gap-2 rounded-xl border border-zinc-300/70 bg-white/60 px-3 py-2 dark:border-zinc-700/70 dark:bg-zinc-950/40"
         >
           {check.ok ? (
-            <CheckCircle2 className="mt-0.5 size-4 text-emerald-600 dark:text-emerald-400" aria-hidden />
+            <CheckCircle2
+              className="mt-0.5 size-4 text-emerald-600 dark:text-emerald-400"
+              aria-hidden
+            />
           ) : (
             <XCircle className="mt-0.5 size-4 text-red-600 dark:text-red-400" aria-hidden />
           )}

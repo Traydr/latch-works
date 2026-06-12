@@ -5,9 +5,7 @@ export function resolveHashFiles(options: { hashFiles?: boolean; requireHash?: b
   return options.hashFiles === true || options.requireHash === true;
 }
 
-export function selectChangedItems<T extends { action: SyncPlanAction }>(
-  items: T[],
-): T[] {
+export function selectChangedItems<T extends { action: SyncPlanAction }>(items: T[]): T[] {
   return items.filter((item) => item.action !== "keep");
 }
 

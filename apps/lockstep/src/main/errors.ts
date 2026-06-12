@@ -1,8 +1,4 @@
-import {
-  Result,
-  type Result as ResultType,
-  TaggedError,
-} from "better-result";
+import { Result, type Result as ResultType, TaggedError } from "better-result";
 import type { ZodType } from "zod";
 
 import { serializeIpcResult } from "../shared/ipc";

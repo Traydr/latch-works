@@ -1,8 +1,8 @@
 import type { MediaItem } from "@latch-works/media-domain";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import { resolveRequestedThumbnailSize } from "./thumbnail-size";
 import { MediaPlaceholder } from "./MediaPlaceholder";
+import { resolveRequestedThumbnailSize } from "./thumbnail-size";
 import { useResolvedMediaUrl } from "./useResolvedMediaUrl";
 
 export function Poster({

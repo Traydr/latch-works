@@ -150,7 +150,11 @@ export async function resolveOptions(
   }
 
   if (!isInteractive) {
-    throwMissingFieldError(missing[0]!);
+    const [firstMissing] = missing;
+    if (!firstMissing) {
+      throw new Error("Expected at least one missing field");
+    }
+    throwMissingFieldError(firstMissing);
   }
 
   const resolved = await runPartialPrompts(merged, missing, config, env);
@@ -176,7 +180,10 @@ export function mergeWithConfigAndEnv(
 
 export type MissingField = "source" | "remoteSnapshot" | "apiUrl";
 
-export function getMissingFields(options: CliOptions, env: NodeJS.ProcessEnv = process.env): MissingField[] {
+export function getMissingFields(
+  options: CliOptions,
+  env: NodeJS.ProcessEnv = process.env,
+): MissingField[] {
   const missing: MissingField[] = [];
 
   if (options.command !== "doctor" && !options.source) {
