@@ -1,9 +1,7 @@
 import type { MediaItem } from "@latch-works/media-domain";
-import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { MediaPlaceholder } from "./MediaPlaceholder";
-import { resolveRequestedThumbnailSize } from "./thumbnail-size";
-import { useResolvedMediaUrl } from "./useResolvedMediaUrl";
+import { PaneViewImage } from "./PaneViewImage";
 
 export function Poster({
   cardWidth = 220,
@@ -16,19 +14,6 @@ export function Poster({
 }) {
   const supportsThumbnail =
     media.mediaType === "image" || media.mediaType === "gif" || media.mediaType === "video";
-  const thumbnailSize = resolveRequestedThumbnailSize(cardWidth);
-  const thumbnail = useResolvedMediaUrl({
-    mediaId: supportsThumbnail ? media.id : undefined,
-    size: thumbnailSize,
-    variant: "thumbnail",
-  });
-  const original = useResolvedMediaUrl({
-    mediaId: supportsThumbnail && thumbnail.failed ? media.id : undefined,
-    variant: "original",
-  });
-  const displayUrl = thumbnail.resolvedUrl ?? original.resolvedUrl;
-  const loading = thumbnail.loading || original.loading;
-  const failed = !displayUrl && (thumbnail.failed || original.failed);
 
   return (
     <div
@@ -38,16 +23,16 @@ export function Poster({
         media.mediaType === "pdf" && "text-red-300",
       )}
     >
-      {loading ? <Skeleton className="absolute inset-0 rounded-none" /> : null}
-      {displayUrl && !failed ? (
-        <img
+      {supportsThumbnail ? (
+        <PaneViewImage
           alt=""
-          className={cn("h-full w-full object-cover", loading && "opacity-0")}
-          decoding="async"
-          fetchPriority={priority ? "high" : "auto"}
-          loading={priority ? "eager" : "lazy"}
-          onLoad={() => undefined}
-          src={displayUrl}
+          className="h-full w-full object-cover"
+          layout="constrained"
+          mediaId={media.id}
+          objectFit="cover"
+          priority={priority}
+          variant="thumbnail"
+          width={cardWidth}
         />
       ) : (
         <div className="grid h-full w-full place-items-center text-zinc-500">

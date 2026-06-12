@@ -148,9 +148,11 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
               <ResolvedMediaImage
                 alt={page.name}
                 className="max-h-none w-full max-w-full rounded bg-zinc-900 object-contain"
+                layout="fullWidth"
                 mediaId={page.id}
                 mediaType={page.mediaType}
                 variant="preview"
+                width={960}
               />
             </div>
           ))}

@@ -1,34 +1,39 @@
-import { useResolvedMediaUrl } from "./useResolvedMediaUrl";
+import { PaneViewImage } from "./PaneViewImage";
 
 export function ResolvedMediaImage({
   alt,
   className,
+  layout = "constrained",
   mediaId,
   mediaType,
+  priority = false,
   size = 320,
   variant = "preview",
+  width,
 }: {
   alt: string;
   className?: string;
+  layout?: "fixed" | "constrained" | "fullWidth";
   mediaId: string;
   mediaType: "image" | "gif" | "video" | "pdf" | "unknown";
+  priority?: boolean;
   size?: number;
   variant?: "thumbnail" | "preview" | "original";
+  width?: number;
 }) {
-  const primary = useResolvedMediaUrl({
-    mediaId,
-    size: variant === "thumbnail" ? size : undefined,
-    variant: variant === "original" ? "original" : mediaType === "image" ? "preview" : "original",
-  });
-  const fallback = useResolvedMediaUrl({
-    mediaId: primary.failed ? mediaId : undefined,
-    variant: "original",
-  });
-  const src = primary.resolvedUrl ?? fallback.resolvedUrl;
+  const resolvedVariant =
+    variant === "original" ? "original" : mediaType === "image" ? "preview" : "original";
 
-  if (!src) {
-    return null;
-  }
-
-  return <img alt={alt} className={className} decoding="async" loading="lazy" src={src} />;
+  return (
+    <PaneViewImage
+      alt={alt}
+      className={className}
+      layout={layout}
+      mediaId={mediaId}
+      objectFit="contain"
+      priority={priority}
+      variant={resolvedVariant}
+      width={width ?? size}
+    />
+  );
 }

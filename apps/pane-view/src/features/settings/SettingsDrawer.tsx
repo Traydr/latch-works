@@ -94,7 +94,7 @@ export function SettingsDrawer({
               <input
                 type="range"
                 min={160}
-                max={360}
+                max={480}
                 step={20}
                 value={settings.thumbnailSize}
                 onChange={(event) => onUpdate({ thumbnailSize: Number(event.target.value) })}

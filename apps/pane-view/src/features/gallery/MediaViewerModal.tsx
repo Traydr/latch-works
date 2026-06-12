@@ -16,6 +16,7 @@ import {
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useLibraryViewerState } from "@/features/viewer/use-library-viewer-state";
 import { resolveVideoResumeSeconds, videoSecondsToPositionMs } from "@/features/viewer/viewer-resume";
+import { PaneViewImage } from "./PaneViewImage";
 import { useResolvedMediaUrl } from "./useResolvedMediaUrl";
 
 const PdfViewer = lazy(() =>
@@ -85,15 +86,6 @@ export function MediaViewerModal({
   const [speed, setSpeed] = useState(1);
   const [showOriginal, setShowOriginal] = useState(false);
   const [chromeVisible, setChromeVisible] = useState(true);
-  const viewerPrimary = useResolvedMediaUrl({
-    mediaId: item && item.mediaType !== "video" && item.mediaType !== "pdf" ? item.id : undefined,
-    variant: item && (showOriginal || item.mediaType !== "image") ? "original" : "preview",
-  });
-  const viewerFallback = useResolvedMediaUrl({
-    mediaId: viewerPrimary.failed ? item?.id : undefined,
-    variant: "original",
-  });
-  const viewerImageSrc = viewerPrimary.resolvedUrl ?? viewerFallback.resolvedUrl ?? null;
   const videoDelivery = useResolvedMediaUrl({
     mediaId: item?.mediaType === "video" ? item.id : undefined,
     variant: "original",
@@ -618,13 +610,17 @@ export function MediaViewerModal({
               src={videoDelivery.resolvedUrl ?? undefined}
             />
           </>
-        ) : viewerImageSrc ? (
-          <img
+        ) : (
+          <PaneViewImage
             alt={item.name}
             className="max-h-full max-w-full rounded object-contain"
-            src={viewerImageSrc}
+            layout="fullWidth"
+            mediaId={item.id}
+            objectFit="contain"
+            variant={showOriginal || item.mediaType !== "image" ? "original" : "preview"}
+            width={960}
           />
-        ) : null}
+        )}
       </div>
 
       {/* Video controls */}

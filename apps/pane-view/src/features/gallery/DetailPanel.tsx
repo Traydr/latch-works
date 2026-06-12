@@ -13,8 +13,9 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { DeleteOverlay } from "./DeleteOverlay";
 import { MediaPlaceholder } from "./MediaPlaceholder";
-import { DEFAULT_CARD_WIDTH } from "./thumbnail-size";
-import { useResolvedMediaUrl } from "./useResolvedMediaUrl";
+import { PaneViewImage } from "./PaneViewImage";
+
+const detailPreviewWidth = 360;
 
 interface DetailPanelProps {
   isDeleted?: boolean;
@@ -50,19 +51,6 @@ export function DetailPanel({
     selected?.mediaType === "gif" ||
     selected?.mediaType === "video";
 
-  const preview = useResolvedMediaUrl({
-    mediaId: selected?.id,
-    refreshKey: thumbnailRefreshKey,
-    size: DEFAULT_CARD_WIDTH,
-    variant: "thumbnail",
-  });
-  const original = useResolvedMediaUrl({
-    mediaId: preview.failed ? selected?.id : undefined,
-    refreshKey: thumbnailRefreshKey,
-    variant: "original",
-  });
-  const src = preview.resolvedUrl ?? original.resolvedUrl;
-  const failed = !src && (preview.failed || original.failed);
 
   const handleRegenerateThumbnail = async () => {
     if (!onRegenerateThumbnail || regenerating) {
@@ -86,8 +74,17 @@ export function DetailPanel({
       {selected ? (
         <div className="grid min-w-0 max-w-full gap-4">
           <div className="relative grid aspect-[4/5] w-full min-w-0 place-items-center overflow-hidden rounded-lg border border-border bg-muted">
-            {src && !failed ? (
-              <img alt={selected.name} className="h-full w-full object-cover" src={src} />
+            {supportsThumbnail ? (
+              <PaneViewImage
+                key={thumbnailRefreshKey}
+                alt={selected.name}
+                className="h-full w-full object-cover"
+                layout="constrained"
+                mediaId={selected.id}
+                objectFit="cover"
+                variant="preview"
+                width={detailPreviewWidth}
+              />
             ) : (
               <MediaPlaceholder mediaType={selected.mediaType} size={42} />
             )}
