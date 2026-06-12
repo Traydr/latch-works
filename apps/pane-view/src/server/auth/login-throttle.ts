@@ -26,9 +26,18 @@ export function isLoginThrottled(ip: string, username: string): boolean {
   return record.count >= MAX_FAILED_ATTEMPTS;
 }
 
+function pruneExpiredAttempts(now: number): void {
+  for (const [key, record] of attemptsByKey) {
+    if (now - record.windowStart > WINDOW_MS) {
+      attemptsByKey.delete(key);
+    }
+  }
+}
+
 export function recordFailedLogin(ip: string, username: string): void {
   const key = throttleKey(ip, username);
   const now = Date.now();
+  pruneExpiredAttempts(now);
   const record = attemptsByKey.get(key);
 
   if (!record || now - record.windowStart > WINDOW_MS) {

@@ -66,6 +66,17 @@ describe("validateSyncObjectPayload", () => {
     });
     expect(result).toEqual({ ok: false, error: "extension must match filename" });
   });
+
+  it("rejects unsupported filenames even when fields are internally consistent", () => {
+    const result = validateSyncObjectPayload({
+      ...validPayload,
+      extension: "txt",
+      filename: "notes.txt",
+      logicalPath: "notes.txt",
+      mediaType: "image",
+    });
+    expect(result).toEqual({ ok: false, error: "unsupported media filename" });
+  });
 });
 
 describe("validateSyncLogicalPath", () => {

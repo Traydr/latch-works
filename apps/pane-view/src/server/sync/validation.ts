@@ -80,6 +80,10 @@ export function validateSyncObjectPayload(
     return { ok: false, error: "extension must match filename" };
   }
 
+  if (!isSupportedMediaFile(filename)) {
+    return { ok: false, error: "unsupported media filename" };
+  }
+
   const mtimeMs = Math.trunc(Number(body.mtimeMs));
   const size = Math.trunc(Number(body.size));
   if (!Number.isSafeInteger(mtimeMs) || !Number.isSafeInteger(size) || size < 0) {

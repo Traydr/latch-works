@@ -176,25 +176,40 @@ export async function softDeleteLibraryEntry({
   return Boolean(deleted);
 }
 
+const parentPathLookupThreshold = 500;
+
 async function readParentPathsWithChildren(paths: string[]): Promise<Set<string>> {
   if (paths.length === 0) {
     return new Set();
   }
 
-  const [folderParents, entryParents] = await Promise.all([
-    db
-      .selectDistinct({ parentPath: folders.parentPath })
-      .from(folders)
-      .where(and(isNull(folders.deletedAt), inArray(folders.parentPath, paths))),
-    db
-      .selectDistinct({ parentPath: libraryEntries.parentPath })
-      .from(libraryEntries)
-      .where(and(isNull(libraryEntries.deletedAt), inArray(libraryEntries.parentPath, paths))),
-  ]);
+  const pathSet = new Set(paths);
+  const [folderParents, entryParents] =
+    paths.length > parentPathLookupThreshold
+      ? await Promise.all([
+          db
+            .selectDistinct({ parentPath: folders.parentPath })
+            .from(folders)
+            .where(isNull(folders.deletedAt)),
+          db
+            .selectDistinct({ parentPath: libraryEntries.parentPath })
+            .from(libraryEntries)
+            .where(isNull(libraryEntries.deletedAt)),
+        ])
+      : await Promise.all([
+          db
+            .selectDistinct({ parentPath: folders.parentPath })
+            .from(folders)
+            .where(and(isNull(folders.deletedAt), inArray(folders.parentPath, paths))),
+          db
+            .selectDistinct({ parentPath: libraryEntries.parentPath })
+            .from(libraryEntries)
+            .where(and(isNull(libraryEntries.deletedAt), inArray(libraryEntries.parentPath, paths))),
+        ]);
 
   const parents = new Set<string>();
   for (const row of [...folderParents, ...entryParents]) {
-    if (row.parentPath) {
+    if (row.parentPath && pathSet.has(row.parentPath)) {
       parents.add(row.parentPath);
     }
   }

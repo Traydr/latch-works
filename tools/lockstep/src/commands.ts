@@ -243,7 +243,7 @@ export async function executeCommand(options: CliOptions): Promise<void> {
         {
           counts: {
             ...plan.counts,
-            capped: options.maxChanges ?? changedItems.length,
+            capped: itemsToPush.length,
             failed,
             planned: changedItems.length,
             pushed,
