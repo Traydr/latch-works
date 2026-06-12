@@ -71,11 +71,14 @@ Reusable areas:
 - Site detection and content-source types.
 - Path normalization and inferred folder naming rules.
 - Story/PDF naming rules.
-- Future metadata capture, if the extension starts writing sidecar manifests.
+- Future metadata capture via optional sidecar manifests (see design below).
 
-Likely future change:
+Planned enhancement (design only — not shipped):
 
-- After Latch Works exists, Gather Box should optionally write a small sidecar manifest per downloaded post/story. That gives Pane View richer grouping and search without scraping filenames later.
+- Gather Box will optionally write a versioned sidecar manifest (`.latch-works.source.json`) per
+  downloaded post or story. Lockstep and Pane View can ingest that metadata for source-aware
+  grouping and search without scraping filenames later. Full schema, examples, privacy rules,
+  and rollout notes: [gather-box-sidecar-manifests.md](./gather-box-sidecar-manifests.md).
 
 ## 4. Product Scope
 
@@ -516,22 +519,11 @@ First consolidation:
 
 Later enhancement:
 
-- Write optional sidecar metadata when saving downloads:
-
-```json
-{
-  "source": "supported-site-key",
-  "sourceUrl": "https://example.invalid/post/123",
-  "title": "Post title",
-  "creator": "Creator",
-  "downloadedAt": "2026-06-02T00:00:00.000Z",
-  "files": [
-    { "path": "001.webp", "index": 1, "originalUrl": "https://example.invalid/file.webp" }
-  ]
-}
-```
-
-- Lockstep reads these manifests and creates richer collections.
+- Write optional sidecar metadata when saving downloads. See
+  [gather-box-sidecar-manifests.md](./gather-box-sidecar-manifests.md) for the versioned
+  schema (`schemaVersion`, `.latch-works.source.json`), gallery/story examples, and ingest
+  rules. Shared TypeScript anchors live in `packages/media-domain/src/gather-box-sidecar.ts`.
+- Lockstep reads these manifests and creates richer collections (separate implementation plan).
 
 ## 19. Deployment Plan on Railway
 
