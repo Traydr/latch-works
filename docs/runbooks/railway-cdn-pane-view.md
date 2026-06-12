@@ -8,10 +8,10 @@ Pane View serves private thumbnails through a cacheable delivery route (`/cdn/v1
 2. Go to **Settings → Edge**.
 3. Turn on **Enable CDN Caching**.
 4. Keep **HTML Caching** on **Auto** (default).
-5. Set **Default TTL** to **1 day** or higher for static assets.
+5. Set **Default TTL** to match or exceed `MEDIA_DELIVERY_TTL_SECONDS` (default `86400` / 1 day).
 6. Leave **Purge Cache on Deploy** at **Purge HTML** unless delivery code changed.
 
-Delivery responses already send `Cache-Control: public, max-age=31536000, immutable` for derived images.
+Delivery responses send `Cache-Control: public, max-age={MEDIA_DELIVERY_TTL_SECONDS}` for derived images so CDN caching stays within the signed token lifetime.
 
 ## Verify caching
 

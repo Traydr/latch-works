@@ -1,6 +1,6 @@
 import { Readable } from "node:stream";
 import { getStoredObject } from "@latch-works/media-storage";
-import { CDN_CACHE_CONTROL, verifyCdnDeliveryToken } from "./cdn-delivery";
+import { readCdnCacheControl, verifyCdnDeliveryToken } from "./cdn-delivery";
 import { createPaneViewStorageClient } from "./storage-client";
 
 export async function serveCdnDeliveryRequest({
@@ -33,7 +33,7 @@ export async function serveCdnDeliveryRequest({
 
   const headers = new Headers({
     "accept-ranges": "bytes",
-    "cache-control": CDN_CACHE_CONTROL,
+    "cache-control": readCdnCacheControl(),
     "content-type": object.contentType ?? "application/octet-stream",
   });
 

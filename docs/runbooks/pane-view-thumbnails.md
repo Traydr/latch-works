@@ -7,7 +7,7 @@ Pane View generates thumbnails and video posters **on demand** when an authorize
 1. Gallery or `<img>` uses `/api/media/:id/thumbnail?size=320` until a `ready` row exists, then switches to `/cdn/v1/...` from the library snapshot.
 2. `/api/media/.../thumbnail` requires a Better Auth session, snaps `size` to the ladder (`160, 320, 480, 640, 960`), and ensures the derivative exists.
 3. On success, the API returns `302` to `/cdn/v1/{token}` with `Cache-Control: private, no-store`.
-4. The browser loads `/cdn/v1/{token}` without an `Authorization` header so Railway CDN can cache `image/webp` responses.
+4. The browser loads `/cdn/v1/{token}` without an `Authorization` header so Railway CDN can cache `image/webp` responses. CDN `Cache-Control` uses `public, max-age={MEDIA_DELIVERY_TTL_SECONDS}` so edge caching does not outlive the signed token.
 
 Full originals remain on `/api/media/:id/original` → S3 presigned URL (~60s) for video range performance.
 

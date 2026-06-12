@@ -31,7 +31,13 @@ export function verifyCdnDeliveryToken(token: string) {
   return deliverySigner.verify(token);
 }
 
-export const CDN_CACHE_CONTROL = "public, max-age=31536000, immutable";
+export function buildCdnCacheControl(ttlSeconds: number): string {
+  return `public, max-age=${ttlSeconds}`;
+}
+
+export function readCdnCacheControl(): string {
+  return buildCdnCacheControl(env.MEDIA_DELIVERY_TTL_SECONDS);
+}
 
 export const API_PRIVATE_CACHE_CONTROL = "private, no-store";
 
