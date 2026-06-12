@@ -23,12 +23,6 @@ import {
   useState,
 } from "react";
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
-import {
   Breadcrumb,
   BreadcrumbItem,
   BreadcrumbLink,
@@ -38,37 +32,44 @@ import {
 } from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { SidebarTrigger } from "@/components/ui/sidebar";
-import { useHydrated } from "@/hooks/use-hydrated";
-import { useIsMobile } from "@/hooks/use-mobile";
+import { ComicReader } from "@/features/comics/ComicReader";
+import { BrowserGrid } from "@/features/gallery/BrowserGrid";
 import {
   buildBreadcrumbItems,
   displayPathFromSearch,
+  type GalleryBrowseSearch,
   getParentPath,
   isTextInputTarget,
-  type GalleryBrowseSearch,
 } from "@/features/gallery/browse-search";
-import { useGalleryShell } from "@/features/gallery/gallery-shell-context";
-import { GalleryGridSkeleton } from "@/features/gallery/GalleryGridSkeleton";
-import { BrowserGrid } from "@/features/gallery/BrowserGrid";
 import { DetailPanel } from "@/features/gallery/DetailPanel";
 import { FloatingToolbar } from "@/features/gallery/FloatingToolbar";
+import { GalleryGridSkeleton } from "@/features/gallery/GalleryGridSkeleton";
+import { useGalleryShell } from "@/features/gallery/gallery-shell-context";
 import { MediaViewerModal } from "@/features/gallery/MediaViewerModal";
+import { DEFAULT_CARD_WIDTH } from "@/features/gallery/thumbnail-size";
 import { useGalleryState } from "@/features/gallery/useGalleryState";
-import { ComicReader } from "@/features/comics/ComicReader";
-import { HotkeyOverlay } from "@/features/settings/HotkeyOverlay";
-import { SettingsDrawer } from "@/features/settings/SettingsDrawer";
-import { useAppSettings, resolveRootKey, useRootPreferences } from "@/features/settings/useAppSettings";
 import {
+  type LibrarySnapshotRequest,
   toLibrarySnapshotRequest,
   useDeleteLibraryEntryMutation,
   useInvalidateLibrarySnapshot,
   useLibrarySnapshotQuery,
   useLibrarySnapshotSuspense,
-  type LibrarySnapshotRequest,
 } from "@/features/library/library-queries";
+import { getLibrarySnapshot } from "@/features/library/library-service";
 import { regenerateMediaThumbnail } from "@/features/media/media-delivery-service";
-import { DEFAULT_CARD_WIDTH } from "@/features/gallery/thumbnail-size";
+import type { LibraryMediaItem, MediaPage } from "@/server/library/repository";
+import { HotkeyOverlay } from "@/features/settings/HotkeyOverlay";
+import { SettingsDrawer } from "@/features/settings/SettingsDrawer";
+import {
+  resolveRootKey,
+  useAppSettings,
+  useRootPreferences,
+} from "@/features/settings/useAppSettings";
+import { useHydrated } from "@/hooks/use-hydrated";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 
 const galleryIndexRoute = getRouteApi("/_gallery/");
@@ -112,6 +113,20 @@ export function GalleryPage() {
   const [scrollFocusedIntoView, setScrollFocusedIntoView] = useState(false);
   const [deletingEntryIds, setDeletingEntryIds] = useState<ReadonlySet<string>>(() => new Set());
   const [deletedEntryIds, setDeletedEntryIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [extraMedia, setExtraMedia] = useState<LibraryMediaItem[]>([]);
+  const [mediaPage, setMediaPage] = useState<MediaPage | null>(null);
+  const [loadingMoreMedia, setLoadingMoreMedia] = useState(false);
+
+  const browseKey = useMemo(
+    () =>
+      [
+        snapshotRequest.path ?? "",
+        snapshotRequest.query ?? "",
+        snapshotRequest.recursive,
+        snapshotRequest.comicMode,
+      ].join("|"),
+    [snapshotRequest.comicMode, snapshotRequest.path, snapshotRequest.query, snapshotRequest.recursive],
+  );
 
   const showDetailPanel = !isMobile && detailPanelOpen;
 
@@ -156,23 +171,45 @@ export function GalleryPage() {
   }, [search.q]);
 
   useEffect(() => {
+    setExtraMedia([]);
+    setMediaPage(null);
+    setLoadingMoreMedia(false);
+  }, [browseKey]);
+
+  useEffect(() => {
+    if (!library) {
+      return;
+    }
+
+    setMediaPage(library.mediaPage);
+  }, [browseKey, library]);
+
+  const allMedia = useMemo(() => {
+    if (!library) {
+      return [];
+    }
+
+    return mergeLibraryMedia(library.media, extraMedia);
+  }, [extraMedia, library]);
+
+  useEffect(() => {
     if (!library) {
       return;
     }
 
     const selectedFromSearch = search.media
-      ? library.media.find((item) => item.id === search.media)
+      ? allMedia.find((item) => item.id === search.media)
       : null;
-    const nextSelectedId = selectedFromSearch?.id ?? library.media[0]?.id ?? null;
+    const nextSelectedId = selectedFromSearch?.id ?? allMedia[0]?.id ?? null;
 
     setSelectedId((currentId) => {
-      if (!search.media && currentId && library.media.some((item) => item.id === currentId)) {
+      if (!search.media && currentId && allMedia.some((item) => item.id === currentId)) {
         return currentId;
       }
 
       return nextSelectedId;
     });
-  }, [library, search.media]);
+  }, [allMedia, library, search.media]);
 
   const effectiveRecursive = recursive || comicMode;
   const recursiveToggleDisabled = displayPath === "";
@@ -184,8 +221,8 @@ export function GalleryPage() {
   }, [displayPath, recursive]);
 
   const sortedMedia = useMemo(
-    () => (library ? sortMediaItems(library.media, sortMode, randomSeed) : []),
-    [library, randomSeed, sortMode],
+    () => (allMedia.length > 0 ? sortMediaItems(allMedia, sortMode, randomSeed) : []),
+    [allMedia, randomSeed, sortMode],
   );
   const filteredMedia = useMemo(
     () =>
@@ -248,9 +285,7 @@ export function GalleryPage() {
     navigableMedia[0] ??
     visibleMedia[0] ??
     null;
-  const selectedIndex = selected
-    ? navigableMedia.findIndex((item) => item.id === selected.id)
-    : -1;
+  const selectedIndex = selected ? navigableMedia.findIndex((item) => item.id === selected.id) : -1;
 
   useEffect(() => {
     if (!library) {
@@ -258,16 +293,16 @@ export function GalleryPage() {
     }
 
     setDeletedEntryIds((current) => {
-      const liveIds = new Set(library.media.map((item) => item.id));
+      const liveIds = new Set(allMedia.map((item) => item.id));
       const next = new Set([...current].filter((id) => liveIds.has(id)));
       return next.size === current.size ? current : next;
     });
     setDeletingEntryIds((current) => {
-      const liveIds = new Set(library.media.map((item) => item.id));
+      const liveIds = new Set(allMedia.map((item) => item.id));
       const next = new Set([...current].filter((id) => liveIds.has(id)));
       return next.size === current.size ? current : next;
     });
-  }, [library]);
+  }, [allMedia, library]);
 
   // Persist state changes.
   useEffect(() => {
@@ -546,7 +581,7 @@ export function GalleryPage() {
         to: "/",
       });
     },
-    [buildBrowseSearch, comicMode, navigate, recursive, search.q],
+    [buildBrowseSearch, navigate, recursive],
   );
 
   const navigateSiblingFolder = (offset: -1 | 1) => {
@@ -598,8 +633,7 @@ export function GalleryPage() {
     }
 
     const currentIndex = selectedIndex >= 0 ? selectedIndex : 0;
-    const nextIndex =
-      (currentIndex + offset + navigableMedia.length) % navigableMedia.length;
+    const nextIndex = (currentIndex + offset + navigableMedia.length) % navigableMedia.length;
     const next = navigableMedia[nextIndex];
     if (next) {
       selectMedia(next.id);
@@ -710,145 +744,175 @@ export function GalleryPage() {
   const currentFolderName = breadcrumbs[breadcrumbs.length - 1]?.label ?? archiveRoot;
   const parentPath = getParentPath(displayPath);
 
+  const loadMoreMedia = useCallback(async () => {
+    if (!mediaPage?.hasMore || mediaPage.nextOffset === null || loadingMoreMedia) {
+      return;
+    }
+
+    setLoadingMoreMedia(true);
+    try {
+      const nextSnapshot = await getLibrarySnapshot({
+        data: {
+          comicMode: snapshotRequest.comicMode,
+          mediaOffset: mediaPage.nextOffset,
+          path: snapshotRequest.path,
+          query: snapshotRequest.query,
+          recursive: snapshotRequest.recursive,
+        },
+      });
+      setExtraMedia((current) => mergeLibraryMedia(current, nextSnapshot.media));
+      setMediaPage(nextSnapshot.mediaPage);
+    } finally {
+      setLoadingMoreMedia(false);
+    }
+  }, [loadingMoreMedia, mediaPage, snapshotRequest]);
+
   return (
     <>
         <header className="flex h-auto min-h-14 shrink-0 items-center justify-between gap-4 border-b border-border bg-background px-5 py-2">
-          <div className="flex min-w-0 flex-1 items-center gap-2">
-            <SidebarTrigger className="-ml-1 shrink-0" />
-            {isMobile ? (
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1">
-                  <Button
-                    disabled={!parentPath && displayPath === ""}
-                    onClick={() => navigateToPath(parentPath ?? "")}
-                    size="icon"
-                    type="button"
-                    variant="ghost"
-                  >
-                    <ChevronUp className="size-4" />
-                  </Button>
-                  <button
-                    className="min-w-0 flex-1 truncate text-left text-base font-semibold"
-                    onClick={() => setPathSheetOpen(true)}
-                    type="button"
-                  >
-                    {currentFolderName}
-                  </button>
-                </div>
-                {displayPath ? (
-                  <p className="truncate text-xs text-muted-foreground">{displayPath}</p>
-                ) : null}
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <SidebarTrigger className="-ml-1 shrink-0" />
+          {isMobile ? (
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1">
+                <Button
+                  disabled={!parentPath && displayPath === ""}
+                  onClick={() => navigateToPath(parentPath ?? "")}
+                  size="icon"
+                  type="button"
+                  variant="ghost"
+                >
+                  <ChevronUp className="size-4" />
+                </Button>
+                <button
+                  className="min-w-0 flex-1 truncate text-left text-base font-semibold"
+                  onClick={() => setPathSheetOpen(true)}
+                  type="button"
+                >
+                  {currentFolderName}
+                </button>
               </div>
-            ) : (
-              <>
-                <div className="hidden items-center gap-1 md:flex">
-                  <Button
-                    disabled={!displayPath}
-                    onClick={() => navigateToPath(parentPath ?? "")}
-                    size="sm"
-                    type="button"
-                    variant="outline"
-                  >
-                    Parent
-                  </Button>
-                  <Button onClick={() => navigateSiblingFolder(-1)} size="sm" type="button" variant="outline">
-                    Prev folder
-                  </Button>
-                  <Button onClick={() => navigateSiblingFolder(1)} size="sm" type="button" variant="outline">
-                    Next folder
-                  </Button>
-                </div>
-                <Breadcrumb className="flex min-w-0 items-center gap-2">
-                  <Archive className="size-4 shrink-0 text-muted-foreground" />
-                  <BreadcrumbList className="min-w-0 flex-nowrap overflow-hidden">
-                    <BreadcrumbItem>
-                      <BreadcrumbLink asChild>
-                        <button
-                          className="max-w-40 cursor-pointer truncate rounded-md px-2 py-1.5"
-                          onClick={() => navigateToPath("")}
-                          type="button"
-                        >
-                          {archiveRoot}
-                        </button>
-                      </BreadcrumbLink>
-                    </BreadcrumbItem>
-                    {breadcrumbs.map((crumb, index) => (
-                      <Fragment key={crumb.path}>
-                        <BreadcrumbSeparator />
-                        <BreadcrumbItem className="min-w-0">
-                          {index === breadcrumbs.length - 1 ? (
-                            <BreadcrumbPage
-                              className="max-w-72 truncate px-2 py-1.5"
+              {displayPath ? (
+                <p className="truncate text-xs text-muted-foreground">{displayPath}</p>
+              ) : null}
+            </div>
+          ) : (
+            <>
+              <div className="hidden items-center gap-1 md:flex">
+                <Button
+                  disabled={!displayPath}
+                  onClick={() => navigateToPath(parentPath ?? "")}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  Parent
+                </Button>
+                <Button
+                  onClick={() => navigateSiblingFolder(-1)}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  Prev folder
+                </Button>
+                <Button
+                  onClick={() => navigateSiblingFolder(1)}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  Next folder
+                </Button>
+              </div>
+              <Breadcrumb className="flex min-w-0 items-center gap-2">
+                <Archive className="size-4 shrink-0 text-muted-foreground" />
+                <BreadcrumbList className="min-w-0 flex-nowrap overflow-hidden">
+                  <BreadcrumbItem>
+                    <BreadcrumbLink asChild>
+                      <button
+                        className="max-w-40 cursor-pointer truncate rounded-md px-2 py-1.5"
+                        onClick={() => navigateToPath("")}
+                        type="button"
+                      >
+                        {archiveRoot}
+                      </button>
+                    </BreadcrumbLink>
+                  </BreadcrumbItem>
+                  {breadcrumbs.map((crumb, index) => (
+                    <Fragment key={crumb.path}>
+                      <BreadcrumbSeparator />
+                      <BreadcrumbItem className="min-w-0">
+                        {index === breadcrumbs.length - 1 ? (
+                          <BreadcrumbPage
+                            className="max-w-72 truncate px-2 py-1.5"
+                            title={crumb.path}
+                          >
+                            {crumb.label}
+                          </BreadcrumbPage>
+                        ) : (
+                          <BreadcrumbLink asChild>
+                            <button
+                              className="max-w-40 cursor-pointer truncate rounded-md px-2 py-1.5"
+                              onClick={() => navigateToPath(crumb.path)}
                               title={crumb.path}
+                              type="button"
                             >
                               {crumb.label}
-                            </BreadcrumbPage>
-                          ) : (
-                            <BreadcrumbLink asChild>
-                              <button
-                                className="max-w-40 cursor-pointer truncate rounded-md px-2 py-1.5"
-                                onClick={() => navigateToPath(crumb.path)}
-                                title={crumb.path}
-                                type="button"
-                              >
-                                {crumb.label}
-                              </button>
-                            </BreadcrumbLink>
-                          )}
-                        </BreadcrumbItem>
-                      </Fragment>
-                    ))}
-                  </BreadcrumbList>
-                </Breadcrumb>
-              </>
+                            </button>
+                          </BreadcrumbLink>
+                        )}
+                      </BreadcrumbItem>
+                    </Fragment>
+                  ))}
+                </BreadcrumbList>
+              </Breadcrumb>
+            </>
+          )}
+        </div>
+
+        <div className="flex shrink-0 items-center gap-1">
+          <Button
+            className="md:hidden"
+            onClick={() => setMobileSearchOpen(true)}
+            size="icon"
+            type="button"
+            variant="outline"
+          >
+            <Search className="size-4" />
+          </Button>
+          <form className="relative hidden w-72 items-center md:flex" onSubmit={submitSearch}>
+            <Search className="pointer-events-none absolute left-2.5 size-4 text-muted-foreground" />
+            <Input
+              aria-label="Search archive"
+              className="pl-8"
+              onChange={(event) => setSearchDraft(event.target.value)}
+              placeholder="Search paths"
+              type="search"
+              value={searchDraft}
+            />
+          </form>
+          <Button
+            aria-expanded={showDetailPanel}
+            aria-label={showDetailPanel ? "Hide preview panel" : "Show preview panel"}
+            className="hidden shrink-0 lg:inline-flex"
+            onClick={() => setDetailPanelOpen((open) => !open)}
+            size="icon"
+            title={showDetailPanel ? "Hide preview panel" : "Show preview panel"}
+            type="button"
+            variant="outline"
+          >
+            {showDetailPanel ? (
+              <PanelRightClose className="size-4" />
+            ) : (
+              <PanelRightOpen className="size-4" />
             )}
-          </div>
+          </Button>
+        </div>
+      </header>
 
-          <div className="flex shrink-0 items-center gap-1">
-            <Button
-              className="md:hidden"
-              onClick={() => setMobileSearchOpen(true)}
-              size="icon"
-              type="button"
-              variant="outline"
-            >
-              <Search className="size-4" />
-            </Button>
-            <form
-              className="relative hidden w-72 items-center md:flex"
-              onSubmit={submitSearch}
-            >
-              <Search className="pointer-events-none absolute left-2.5 size-4 text-muted-foreground" />
-              <Input
-                aria-label="Search archive"
-                className="pl-8"
-                onChange={(event) => setSearchDraft(event.target.value)}
-                placeholder="Search paths"
-                type="search"
-                value={searchDraft}
-              />
-            </form>
-            <Button
-              aria-expanded={showDetailPanel}
-              aria-label={showDetailPanel ? "Hide preview panel" : "Show preview panel"}
-              className="hidden shrink-0 lg:inline-flex"
-              onClick={() => setDetailPanelOpen((open) => !open)}
-              size="icon"
-              title={showDetailPanel ? "Hide preview panel" : "Show preview panel"}
-              type="button"
-              variant="outline"
-            >
-              {showDetailPanel ? (
-                <PanelRightClose className="size-4" />
-              ) : (
-                <PanelRightOpen className="size-4" />
-              )}
-            </Button>
-          </div>
-        </header>
-
-        <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-          <Suspense fallback={<GalleryGridSkeleton />}>
+      <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+        <Suspense fallback={<GalleryGridSkeleton />}>
             <GalleryBrowsePane
               columnCountRef={columnCountRef}
               comicMode={comicMode}
@@ -858,68 +922,72 @@ export function GalleryPage() {
               effectiveRecursive={effectiveRecursive}
               focusedEntryIndex={focusedEntryIndex}
               isFetching={showFetching}
+              loadingMoreMedia={loadingMoreMedia}
+              media={allMedia}
+              mediaPage={mediaPage}
               onActivateEntry={handleActivateEntry}
               onDelete={deleteSelectedMedia}
+              onLoadMoreMedia={() => void loadMoreMedia()}
               onNext={() => selectAdjacentMedia(1)}
-              onOpenViewer={() => {
-                if (selected && !deletedEntryIds.has(selected.id)) {
-                  openViewer(navigableMedia, selected.id);
-                }
-              }}
-              onPrev={() => selectAdjacentMedia(-1)}
-              onScrolledToFocus={() => setScrollFocusedIntoView(false)}
-              onSelectEntry={handleSelectEntry}
-              randomSeed={randomSeed}
-              scrollFocusedIntoView={scrollFocusedIntoView}
-              selected={selected}
-              selectedId={viewerLockedMediaId ?? selectedId}
-              showDetailPanel={showDetailPanel}
-              snapshotRequest={snapshotRequest}
-              sortMode={sortMode}
-              thumbnailSize={settings.thumbnailSize}
-            />
-          </Suspense>
-        </div>
-
-        <FloatingToolbar
-          comicMode={comicMode}
-          currentPath={displayPath}
-          isRefreshing={showFetching}
-          onChangeSortMode={setSortMode}
-          onRefresh={() => void invalidateLibrary()}
-          onToggleComicMode={() => {
-            if (displayPath === "") {
-              return;
-            }
-
-            setComicMode((current) => {
-              const next = !current;
-              if (next) {
-                setRecursive(true);
-              } else {
-                setRecursive(false);
+            onOpenViewer={() => {
+              if (selected && !deletedEntryIds.has(selected.id)) {
+                openViewer(navigableMedia, selected.id);
               }
-              return next;
-            });
-          }}
-          onToggleRecursive={() => {
-            if (displayPath === "") {
-              return;
-            }
+            }}
+            onPrev={() => selectAdjacentMedia(-1)}
+            onScrolledToFocus={() => setScrollFocusedIntoView(false)}
+            onSelectEntry={handleSelectEntry}
+            randomSeed={randomSeed}
+            scrollFocusedIntoView={scrollFocusedIntoView}
+            selected={selected}
+            selectedId={viewerLockedMediaId ?? selectedId}
+            showDetailPanel={showDetailPanel}
+            snapshotRequest={snapshotRequest}
+            sortMode={sortMode}
+            thumbnailSize={settings.thumbnailSize}
+          />
+        </Suspense>
+      </div>
 
-            setRecursive((current) => {
-              const next = !current;
-              if (!next) {
-                setComicMode(false);
-              }
-              return next;
-            });
-          }}
-          recursive={recursive}
-          recursiveDisabled={recursiveToggleDisabled}
-          shuffle={shuffle}
-          sortMode={sortMode}
-        />
+      <FloatingToolbar
+        comicMode={comicMode}
+        currentPath={displayPath}
+        isRefreshing={showFetching}
+        onChangeSortMode={setSortMode}
+        onRefresh={() => void invalidateLibrary()}
+        onToggleComicMode={() => {
+          if (displayPath === "") {
+            return;
+          }
+
+          setComicMode((current) => {
+            const next = !current;
+            if (next) {
+              setRecursive(true);
+            } else {
+              setRecursive(false);
+            }
+            return next;
+          });
+        }}
+        onToggleRecursive={() => {
+          if (displayPath === "") {
+            return;
+          }
+
+          setRecursive((current) => {
+            const next = !current;
+            if (!next) {
+              setComicMode(false);
+            }
+            return next;
+          });
+        }}
+        recursive={recursive}
+        recursiveDisabled={recursiveToggleDisabled}
+        shuffle={shuffle}
+        sortMode={sortMode}
+      />
 
       <SettingsDrawer
         onClose={() => setSettingsOpen(false)}
@@ -998,7 +1066,9 @@ export function GalleryPage() {
         />
       ) : null}
 
-      {activeComic ? <ComicReader comic={activeComic} onClose={() => setActiveComic(null)} /> : null}
+      {activeComic ? (
+        <ComicReader comic={activeComic} onClose={() => setActiveComic(null)} />
+      ) : null}
     </>
   );
 }
@@ -1012,8 +1082,12 @@ interface GalleryBrowsePaneProps {
   effectiveRecursive: boolean;
   focusedEntryIndex: number;
   isFetching: boolean;
+  loadingMoreMedia: boolean;
+  media: LibraryMediaItem[];
+  mediaPage: MediaPage | null;
   onActivateEntry: (entry: BrowserEntry) => void;
   onDelete: () => void;
+  onLoadMoreMedia: () => void;
   onNext: () => void;
   onOpenViewer: () => void;
   onPrev: () => void;
@@ -1038,8 +1112,12 @@ function GalleryBrowsePane({
   effectiveRecursive,
   focusedEntryIndex,
   isFetching,
+  loadingMoreMedia,
+  media,
+  mediaPage,
   onActivateEntry,
   onDelete,
+  onLoadMoreMedia,
   onNext,
   onOpenViewer,
   onPrev,
@@ -1058,8 +1136,8 @@ function GalleryBrowsePane({
   const { settings } = useAppSettings();
 
   const sortedMedia = useMemo(
-    () => sortMediaItems(library.media, sortMode, randomSeed),
-    [library.media, randomSeed, sortMode],
+    () => sortMediaItems(media, sortMode, randomSeed),
+    [media, randomSeed, sortMode],
   );
   const visibleMedia = useMemo(
     () =>
@@ -1107,20 +1185,36 @@ function GalleryBrowsePane({
         isFetching && "opacity-80 transition-opacity",
       )}
     >
-      <BrowserGrid
-        cardWidth={thumbnailSize}
-        comicMode={comicMode}
-        columnCountRef={columnCountRef}
-        deletedEntryIds={deletedEntryIds}
-        deletingEntryIds={deletingEntryIds}
-        entries={entries}
-        focusedIndex={focusedEntryIndex}
-        onActivateEntry={onActivateEntry}
-        onScrolledToFocus={onScrolledToFocus}
-        onSelectEntry={onSelectEntry}
-        scrollFocusedIntoView={scrollFocusedIntoView}
-        selectedId={selectedId}
-      />
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <BrowserGrid
+          cardWidth={thumbnailSize}
+          comicMode={comicMode}
+          columnCountRef={columnCountRef}
+          deletedEntryIds={deletedEntryIds}
+          deletingEntryIds={deletingEntryIds}
+          entries={entries}
+          focusedIndex={focusedEntryIndex}
+          onActivateEntry={onActivateEntry}
+          onScrolledToFocus={onScrolledToFocus}
+          onSelectEntry={onSelectEntry}
+          scrollFocusedIntoView={scrollFocusedIntoView}
+          selectedId={selectedId}
+        />
+
+        {mediaPage?.hasMore ? (
+          <div className="flex shrink-0 justify-center border-t border-border px-5 py-3">
+            <Button
+              disabled={loadingMoreMedia}
+              onClick={onLoadMoreMedia}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              {loadingMoreMedia ? "Loading more…" : "Load more"}
+            </Button>
+          </div>
+        ) : null}
+      </div>
 
       {showDetailPanel ? (
         <div className="hidden min-h-0 min-w-0 max-w-[360px] shrink-0 lg:block">
@@ -1157,4 +1251,24 @@ function GalleryBrowsePane({
       ) : null}
     </div>
   );
+}
+
+function mergeLibraryMedia(
+  base: readonly LibraryMediaItem[],
+  extra: readonly LibraryMediaItem[],
+): LibraryMediaItem[] {
+  if (extra.length === 0) {
+    return [...base];
+  }
+
+  const seen = new Set(base.map((item) => item.id));
+  const merged = [...base];
+  for (const item of extra) {
+    if (!seen.has(item.id)) {
+      seen.add(item.id);
+      merged.push(item);
+    }
+  }
+
+  return merged;
 }

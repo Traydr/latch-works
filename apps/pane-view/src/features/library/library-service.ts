@@ -5,15 +5,19 @@ import { z } from "zod";
 import { isCurrentWebSessionValid } from "../../server/auth/web-session";
 import {
   type LibraryMediaItem,
+  type MediaPage,
   readDatabaseLibrarySnapshot,
   softDeleteLibraryEntry,
 } from "../../server/library/repository";
 
 const fixtureRoots = ["nsfw", "nsfw-stories", "sfw", "sfw/patreon"];
+export const DEFAULT_MEDIA_PAGE_LIMIT = 500;
 const SEARCH_RESULT_LIMIT = 200;
 
 const libraryRequestSchema = z.object({
   comicMode: z.boolean().optional(),
+  mediaLimit: z.number().int().min(1).max(5000).optional(),
+  mediaOffset: z.number().int().min(0).optional(),
   path: z.string().optional(),
   query: z.string().optional(),
   recursive: z.boolean().optional(),
@@ -26,6 +30,7 @@ export interface LibrarySnapshot {
   currentPath: string;
   folders: FolderNode[];
   media: LibraryMediaItem[];
+  mediaPage: MediaPage;
   mediaUrlMode: "signed-url";
   roots: string[];
 }
@@ -59,11 +64,13 @@ export async function readLibrarySnapshotRequest(
   const comicMode = data.comicMode ?? false;
   const recursive = (data.recursive ?? false) || comicMode;
   const searchOffset = data.searchOffset ?? 0;
+  const mediaOffset = query ? searchOffset : (data.mediaOffset ?? 0);
+  const mediaLimit = query ? SEARCH_RESULT_LIMIT : (data.mediaLimit ?? DEFAULT_MEDIA_PAGE_LIMIT);
   const databaseSnapshot = await readDatabaseLibrarySnapshot({
     currentPath,
     includeAllFolders: comicMode,
-    limit: query ? SEARCH_RESULT_LIMIT : undefined,
-    offset: query ? searchOffset : 0,
+    limit: mediaLimit,
+    offset: mediaOffset,
     query,
     recursive,
   });
@@ -74,6 +81,7 @@ export async function readLibrarySnapshotRequest(
     currentPath,
     folders: databaseSnapshot.folders,
     media: databaseSnapshot.media,
+    mediaPage: databaseSnapshot.mediaPage,
     mediaUrlMode: "signed-url",
     roots: databaseSnapshot.roots.length ? databaseSnapshot.roots : readFixtureRoots(currentPath),
   };
