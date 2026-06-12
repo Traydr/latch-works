@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import path from "node:path";
 import { FuseV1Options, FuseVersion } from "@electron/fuses";
 import { MakerDeb } from "@electron-forge/maker-deb";
 import { MakerDMG } from "@electron-forge/maker-dmg";
@@ -9,16 +11,42 @@ import { FusesPlugin } from "@electron-forge/plugin-fuses";
 import { VitePlugin } from "@electron-forge/plugin-vite";
 import type { ForgeConfig } from "@electron-forge/shared-types";
 
+const appIconBasePath = path.resolve(__dirname, "media", "lockstep-icon");
+const windowsIconPath = `${appIconBasePath}.ico`;
+const macIconPath = `${appIconBasePath}.icns`;
+const linuxIconPath = `${appIconBasePath}.png`;
+
+function getPackagerIconPath(): string | undefined {
+  if (process.platform === "win32") {
+    return existsSync(windowsIconPath) ? appIconBasePath : undefined;
+  }
+
+  if (process.platform === "darwin") {
+    return existsSync(macIconPath) ? appIconBasePath : undefined;
+  }
+
+  return existsSync(linuxIconPath) ? linuxIconPath : undefined;
+}
+
 const config: ForgeConfig = {
   packagerConfig: {
     asar: true,
     executableName: "lockstep",
+    icon: getPackagerIconPath(),
   },
   rebuildConfig: {},
   makers: [
-    new MakerSquirrel({ name: "lockstep" }),
+    new MakerSquirrel({
+      name: "lockstep",
+      setupIcon: existsSync(windowsIconPath) ? windowsIconPath : undefined,
+    }),
     new MakerZIP({}, ["darwin"]),
-    new MakerDMG({}, ["darwin"]),
+    new MakerDMG(
+      {
+        icon: existsSync(macIconPath) ? macIconPath : undefined,
+      },
+      ["darwin"],
+    ),
     new MakerRpm({}),
     new MakerDeb({}),
   ],

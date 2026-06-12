@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { Result } from "better-result";
 import { app, BrowserWindow } from "electron";
@@ -26,9 +27,11 @@ async function createWindow(): Promise<void> {
   }
 
   runService = new RunService(profileService, () => mainWindow);
+  const windowIconPath = path.join(app.getAppPath(), "media", "lockstep-icon.png");
 
   mainWindow = new BrowserWindow({
     height: 800,
+    icon: existsSync(windowIconPath) ? windowIconPath : undefined,
     show: false,
     title: "Lockstep",
     webPreferences: {
