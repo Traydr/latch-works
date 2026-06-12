@@ -37,6 +37,7 @@ interface LegacyLockstepConfig {
 export class ProfileService {
   private readonly filePath: string;
   private readonly legacyConfigPath: string;
+  private readonly sessionTokens = new Map<string, string>();
   private state: PersistedState = { activeProfileId: null, profiles: [] };
 
   constructor(
@@ -78,16 +79,26 @@ export class ProfileService {
   }
 
   getApiToken(profileId: string): string | undefined {
-    const profile = this.getProfile(profileId);
-    if (!profile?.encryptedToken) {
-      return undefined;
+    const sessionToken = this.sessionTokens.get(profileId);
+    if (sessionToken) {
+      return sessionToken;
     }
 
-    if (!safeStorage.isEncryptionAvailable()) {
+    const profile = this.getProfile(profileId);
+    if (!profile?.encryptedToken || !safeStorage.isEncryptionAvailable()) {
       return undefined;
     }
 
     return safeStorage.decryptString(Buffer.from(profile.encryptedToken, "base64"));
+  }
+
+  setSessionToken(profileId: string, token: string): void {
+    this.sessionTokens.set(profileId, token);
+  }
+
+  isTokenConfigured(profileId: string): boolean {
+    const profile = this.getProfile(profileId);
+    return Boolean(profile?.encryptedToken || this.sessionTokens.has(profileId));
   }
 
   async createProfile(
@@ -104,6 +115,8 @@ export class ProfileService {
       const encrypted = this.encryptToken(input.token);
       if (encrypted) {
         profile.encryptedToken = encrypted;
+      } else {
+        this.sessionTokens.set(profile.id, input.token);
       }
     }
 
@@ -144,6 +157,8 @@ export class ProfileService {
       const encrypted = this.encryptToken(patch.token);
       if (encrypted) {
         profile.encryptedToken = encrypted;
+      } else {
+        this.sessionTokens.set(profileId, patch.token);
       }
     }
 
@@ -209,7 +224,7 @@ export class ProfileService {
       lastRun: profile.lastRun,
       name: profile.name,
       sourceRoot: profile.sourceRoot,
-      tokenConfigured: Boolean(profile.encryptedToken),
+      tokenConfigured: this.isTokenConfigured(profile.id),
     };
   }
 

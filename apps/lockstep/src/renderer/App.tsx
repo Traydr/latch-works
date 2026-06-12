@@ -11,11 +11,15 @@ import type {
 type Screen = "dashboard" | "plan" | "profile" | "run";
 
 const emptyProfileForm = {
-  apiUrl: "http://127.0.0.1:3000",
+  apiUrl: "http://localhost:3000",
   name: "",
   sourceRoot: "",
   token: "",
 };
+
+function tokenStatusLabel(configured: boolean): string {
+  return configured ? "Configured (encrypted or current session)" : "Not configured";
+}
 
 function actionBadgeClass(action: string): string {
   switch (action) {
@@ -41,6 +45,7 @@ export function App() {
   const [runLabel, setRunLabel] = useState("");
   const [logs, setLogs] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [sessionToken, setSessionToken] = useState("");
 
   const activeProfile = useMemo(() => {
     if (!settings?.activeProfileId) {
@@ -130,8 +135,32 @@ export function App() {
     setScreen("dashboard");
   }
 
+  async function ensureSessionToken(profile: LockstepProfilePublic): Promise<boolean> {
+    if (profile.tokenConfigured) {
+      return true;
+    }
+
+    if (!sessionToken.trim()) {
+      setError("Enter a sync API token for this session before running remote operations.");
+      return false;
+    }
+
+    const result = await window.lockstep.updateProfile(profile.id, { token: sessionToken.trim() });
+    if (Result.isError(result)) {
+      setError(result.error.message);
+      return false;
+    }
+
+    await refreshSettings();
+    return true;
+  }
+
   async function handleDoctor() {
     if (!activeProfile) {
+      return;
+    }
+
+    if (!(await ensureSessionToken(activeProfile))) {
       return;
     }
 
@@ -160,6 +189,10 @@ export function App() {
       return;
     }
 
+    if (!(await ensureSessionToken(activeProfile))) {
+      return;
+    }
+
     setError(null);
     setRunning(true);
     setRunLabel("Planning sync...");
@@ -184,6 +217,10 @@ export function App() {
       return;
     }
 
+    if (!(await ensureSessionToken(activeProfile))) {
+      return;
+    }
+
     setError(null);
     setRunning(true);
     setRunLabel("Pushing uploads and updates...");
@@ -204,6 +241,10 @@ export function App() {
 
   async function handlePrune() {
     if (!activeProfile) {
+      return;
+    }
+
+    if (!(await ensureSessionToken(activeProfile))) {
       return;
     }
 
@@ -268,7 +309,7 @@ export function App() {
         </div>
         <div>
           <div className="muted">Token</div>
-          <div>{profile.tokenConfigured ? "Encrypted on disk" : "Not saved"}</div>
+          <div>{tokenStatusLabel(profile.tokenConfigured)}</div>
         </div>
         <div>
           <div className="muted">Last run</div>
@@ -379,6 +420,18 @@ export function App() {
             <section className="panel">
               <h2>Dashboard</h2>
               {renderProfileSummary(activeProfile)}
+              {!activeProfile.tokenConfigured ? (
+                <div className="field" style={{ marginTop: "1rem" }}>
+                  <label htmlFor="session-token">Session sync token</label>
+                  <input
+                    id="session-token"
+                    type="password"
+                    value={sessionToken}
+                    onChange={(event) => setSessionToken(event.target.value)}
+                    placeholder="local-lockstep-sync-token"
+                  />
+                </div>
+              ) : null}
               <div className="actions" style={{ marginTop: "1rem" }}>
                 <button className="btn btn-secondary" type="button" disabled={running} onClick={() => void handleDoctor()}>
                   Test connection

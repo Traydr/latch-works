@@ -11,6 +11,9 @@ if (started) {
   app.quit();
 }
 
+app.disableHardwareAcceleration();
+app.commandLine.appendSwitch("disable-gpu");
+
 let mainWindow: BrowserWindow | null = null;
 let profileService: ProfileService;
 let runService: RunService;
