@@ -2,11 +2,14 @@ import type { PDFPageProxy } from "pdfjs-dist";
 import { type JSX, useEffect, useRef, useState } from "react";
 
 interface PdfViewerProps {
+  initialPage?: number;
   mediaId: string;
+  onPageChange?: (page: number) => void;
   title: string;
 }
 
 const MAX_PAGE_WIDTH_PX = 896;
+const PAGE_CHANGE_DEBOUNCE_MS = 3_000;
 
 function getPageRenderWidth(container: HTMLElement): number {
   const width = container.clientWidth;
@@ -39,15 +42,47 @@ async function renderPageToCanvas(
   }
 
   const transform =
-    outputScale !== 1 ? ([outputScale, 0, 0, outputScale, 0, 0] as const) : undefined;
+    outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : undefined;
 
   await page.render({ canvas, canvasContext: context, transform, viewport }).promise;
 }
 
-export function PdfViewer({ mediaId, title }: PdfViewerProps): JSX.Element {
+export function resolveVisiblePdfPage(entries: IntersectionObserverEntry[]): number | null {
+  let bestPage: number | null = null;
+  let bestRatio = 0;
+
+  for (const entry of entries) {
+    if (!entry.isIntersecting) {
+      continue;
+    }
+
+    const pageValue = entry.target.getAttribute("data-page-number");
+    const pageNumber = pageValue ? Number(pageValue) : Number.NaN;
+    if (!Number.isFinite(pageNumber) || pageNumber < 1) {
+      continue;
+    }
+
+    if (entry.intersectionRatio > bestRatio) {
+      bestRatio = entry.intersectionRatio;
+      bestPage = pageNumber;
+    }
+  }
+
+  return bestPage;
+}
+
+export function PdfViewer({
+  initialPage,
+  mediaId,
+  onPageChange,
+  title,
+}: PdfViewerProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const [pageCount, setPageCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const onPageChangeRef = useRef(onPageChange);
+  onPageChangeRef.current = onPageChange;
 
   useEffect(() => {
     const container = containerRef.current;
@@ -57,7 +92,23 @@ export function PdfViewer({ mediaId, title }: PdfViewerProps): JSX.Element {
 
     let cancelled = false;
     let resizeObserver: ResizeObserver | undefined;
+    let pageObserver: IntersectionObserver | undefined;
+    let pageChangeTimer: ReturnType<typeof setTimeout> | undefined;
     container.replaceChildren();
+
+    const reportPage = (page: number): void => {
+      if (!onPageChangeRef.current) {
+        return;
+      }
+
+      if (pageChangeTimer) {
+        clearTimeout(pageChangeTimer);
+      }
+
+      pageChangeTimer = setTimeout(() => {
+        onPageChangeRef.current?.(page);
+      }, PAGE_CHANGE_DEBOUNCE_MS);
+    };
 
     const render = async () => {
       try {
@@ -87,6 +138,7 @@ export function PdfViewer({ mediaId, title }: PdfViewerProps): JSX.Element {
 
           const renderWidth = getPageRenderWidth(container);
           container.replaceChildren();
+          pageObserver?.disconnect();
 
           for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
             if (cancelled) {
@@ -96,9 +148,36 @@ export function PdfViewer({ mediaId, title }: PdfViewerProps): JSX.Element {
             const page = await pdf.getPage(pageNumber);
             const canvas = document.createElement("canvas");
             canvas.className = "mx-auto max-w-full rounded bg-white";
+            canvas.dataset.pageNumber = String(pageNumber);
 
             await renderPageToCanvas(page, canvas, renderWidth);
             container.append(canvas);
+          }
+
+          if (initialPage && initialPage >= 1 && initialPage <= pdf.numPages) {
+            const target = container.querySelector<HTMLElement>(
+              `[data-page-number="${initialPage}"]`,
+            );
+            target?.scrollIntoView({ block: "start" });
+          }
+
+          if (onPageChangeRef.current) {
+            pageObserver = new IntersectionObserver(
+              (entries) => {
+                const visiblePage = resolveVisiblePdfPage(entries);
+                if (visiblePage) {
+                  reportPage(visiblePage);
+                }
+              },
+              {
+                root: scrollContainerRef.current,
+                threshold: [0, 0.25, 0.5, 0.75, 1],
+              },
+            );
+
+            for (const canvas of container.querySelectorAll("[data-page-number]")) {
+              pageObserver.observe(canvas);
+            }
           }
         };
 
@@ -133,11 +212,15 @@ export function PdfViewer({ mediaId, title }: PdfViewerProps): JSX.Element {
     return () => {
       cancelled = true;
       resizeObserver?.disconnect();
+      pageObserver?.disconnect();
+      if (pageChangeTimer) {
+        clearTimeout(pageChangeTimer);
+      }
     };
-  }, [mediaId]);
+  }, [initialPage, mediaId]);
 
   return (
-    <div className="h-full w-full overflow-auto px-3 py-2">
+    <div ref={scrollContainerRef} className="h-full w-full overflow-auto px-3 py-2">
       {error ? (
         <p className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
           {error}

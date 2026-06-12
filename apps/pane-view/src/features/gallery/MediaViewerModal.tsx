@@ -14,6 +14,8 @@ import {
   useState,
 } from "react";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useLibraryViewerState } from "@/features/viewer/use-library-viewer-state";
+import { resolveVideoResumeSeconds, videoSecondsToPositionMs } from "@/features/viewer/viewer-resume";
 import { useResolvedMediaUrl } from "./useResolvedMediaUrl";
 
 const PdfViewer = lazy(() =>
@@ -74,6 +76,7 @@ export function MediaViewerModal({
   const isScrubbingRef = useRef(false);
   const speedBoostHeldRef = useRef(false);
   const previousFocusRef = useRef<HTMLElement | null>(null);
+  const hasRestoredVideoRef = useRef(false);
 
   const [playing, setPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
@@ -95,6 +98,11 @@ export function MediaViewerModal({
     mediaId: item?.mediaType === "video" ? item.id : undefined,
     variant: "original",
   });
+  const viewerStateSubjectId =
+    item && (item.mediaType === "video" || item.mediaType === "pdf") ? item.id : undefined;
+  const { flushSave, scheduleSave, snapshot: viewerState } = useLibraryViewerState(
+    viewerStateSubjectId,
+  );
 
   const applySpeed = useCallback((nextSpeed: number): void => {
     setSpeed(nextSpeed);
@@ -111,7 +119,39 @@ export function MediaViewerModal({
     setSpeed(1);
     setShowOriginal(false);
     speedBoostHeldRef.current = false;
+    hasRestoredVideoRef.current = false;
   }, [item]);
+
+  useEffect(() => {
+    return () => {
+      void flushSave();
+    };
+  }, [flushSave]);
+
+  useEffect(() => {
+    if (item?.mediaType !== "video" || hasRestoredVideoRef.current) {
+      return;
+    }
+
+    const video = videoRef.current;
+    if (!video) {
+      return;
+    }
+
+    const loadedDuration = video.duration;
+    if (!Number.isFinite(loadedDuration) || loadedDuration <= 0) {
+      return;
+    }
+
+    const resumeSeconds = resolveVideoResumeSeconds(viewerState?.positionMs, loadedDuration);
+    if (resumeSeconds === null) {
+      return;
+    }
+
+    video.currentTime = resumeSeconds;
+    setPosition(resumeSeconds);
+    hasRestoredVideoRef.current = true;
+  }, [item?.id, item?.mediaType, viewerState?.positionMs]);
 
   useEffect(() => {
     previousFocusRef.current = document.activeElement as HTMLElement | null;
@@ -500,7 +540,14 @@ export function MediaViewerModal({
       >
         {item.mediaType === "pdf" ? (
           <Suspense fallback={<p className="text-sm text-zinc-400">Loading PDF…</p>}>
-            <PdfViewer mediaId={item.id} title={item.name} />
+            <PdfViewer
+              initialPage={viewerState?.page}
+              mediaId={item.id}
+              onPageChange={(page) => {
+                scheduleSave({ page });
+              }}
+              title={item.name}
+            />
           </Suspense>
         ) : item.mediaType === "video" ? (
           <>
@@ -514,14 +561,28 @@ export function MediaViewerModal({
               autoPlay={autoplayVideos}
               loop={loopVideos}
               onLoadedMetadata={(event) => {
-                const loadedDuration = event.currentTarget.duration;
-                event.currentTarget.volume = volume;
-                event.currentTarget.playbackRate = speed;
+                const video = event.currentTarget;
+                const loadedDuration = video.duration;
+                video.volume = volume;
+                video.playbackRate = speed;
                 if (Number.isFinite(loadedDuration)) {
                   setDuration(loadedDuration);
                 }
+
+                if (!hasRestoredVideoRef.current) {
+                  const resumeSeconds = resolveVideoResumeSeconds(
+                    viewerState?.positionMs,
+                    loadedDuration,
+                  );
+                  if (resumeSeconds !== null) {
+                    video.currentTime = resumeSeconds;
+                    setPosition(resumeSeconds);
+                    hasRestoredVideoRef.current = true;
+                  }
+                }
+
                 if (autoplayVideos) {
-                  void event.currentTarget.play().catch(() => undefined);
+                  void video.play().catch(() => undefined);
                 }
               }}
               onDurationChange={(event) => {
@@ -531,12 +592,26 @@ export function MediaViewerModal({
                 }
               }}
               onTimeUpdate={(event) => {
-                if (!isScrubbingRef.current) {
-                  setPosition(event.currentTarget.currentTime || 0);
+                if (isScrubbingRef.current) {
+                  return;
                 }
+
+                const currentTime = event.currentTarget.currentTime || 0;
+                setPosition(currentTime);
+                scheduleSave({
+                  positionMs: videoSecondsToPositionMs(currentTime),
+                });
               }}
               onPlay={() => setPlaying(true)}
-              onPause={() => setPlaying(false)}
+              onPause={(event) => {
+                setPlaying(false);
+                if (!isScrubbingRef.current) {
+                  scheduleSave({
+                    positionMs: videoSecondsToPositionMs(event.currentTarget.currentTime || 0),
+                  });
+                  void flushSave();
+                }
+              }}
               onEnded={() => {
                 setPlaying(false);
               }}
@@ -579,6 +654,10 @@ export function MediaViewerModal({
                 const next = Number((event.currentTarget as HTMLInputElement).value);
                 commitSeek(next);
                 isScrubbingRef.current = false;
+                scheduleSave({
+                  positionMs: videoSecondsToPositionMs(next),
+                });
+                void flushSave();
               }}
               onInput={(event) => {
                 const next = Number((event.currentTarget as HTMLInputElement).value);
