@@ -4,10 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "astro build",
-    "check": "pnpm typecheck && pnpm build",
     "dev": "astro dev",
+    "build": "astro build",
+    "start": "node ./dist/server/entry.mjs",
     "preview": "astro preview --host 127.0.0.1",
+    "check": "pnpm typecheck && pnpm build",
     "screenshots": "node scripts/prepare-showcase-media.mjs && node scripts/capture-screenshots.mjs",
     "screenshots:install-browser": "pnpm exec browsers install chrome@stable",
     "typecheck": "astro check"
