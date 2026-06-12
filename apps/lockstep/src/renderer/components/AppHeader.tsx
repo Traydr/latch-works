@@ -1,6 +1,7 @@
 import { Footprints, Plus } from "lucide-react";
 
 import type { LockstepSettings } from "../../shared/types";
+import { ProfileSelect } from "./ProfileSelect";
 
 interface AppHeaderProps {
   onAddProfile: () => void;
@@ -25,21 +26,14 @@ export function AppHeader({ onAddProfile, onProfileChange, settings }: AppHeader
 
       <div className="flex flex-wrap items-center gap-2">
         {settings && settings.profiles.length > 0 ? (
-          <select
-            className="prism-select max-w-[12rem]"
+          <ProfileSelect
+            profiles={settings.profiles}
             value={settings.activeProfileId ?? ""}
-            onChange={(event) => onProfileChange(event.target.value)}
-            aria-label="Active profile"
-          >
-            {settings.profiles.map((profile) => (
-              <option key={profile.id} value={profile.id}>
-                {profile.name}
-              </option>
-            ))}
-          </select>
+            onChange={onProfileChange}
+          />
         ) : null}
         <button
-          className="prism-btn inline-flex items-center gap-1.5"
+          className="prism-btn inline-flex h-8 items-center gap-1.5"
           type="button"
           onClick={onAddProfile}
         >

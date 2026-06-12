@@ -34,7 +34,7 @@ export function DashboardView({
 
         {!profile.tokenConfigured ? (
           <label className="mt-4 grid gap-1.5">
-            <span className="prism-label">Session sync token</span>
+            <span className="prism-label">Sync API token</span>
             <input
               className="prism-input"
               type="password"
@@ -43,8 +43,9 @@ export function DashboardView({
               placeholder="Enter token for this session"
             />
             <p className="text-xs text-zinc-500 dark:text-zinc-400">
-              OS encryption is unavailable here, so the token stays in memory until you quit
-              Lockstep.
+              {profile.tokenUnreadable
+                ? "Lockstep could not unlock the stored token. Enter it again to save securely or keep it in memory until you quit."
+                : "OS encryption is unavailable here, so the token stays in memory until you quit Lockstep."}
             </p>
           </label>
         ) : null}

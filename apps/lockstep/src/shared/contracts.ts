@@ -109,6 +109,8 @@ export const LockstepProfilePublicSchema = z.object({
   name: z.string(),
   sourceRoot: z.string(),
   tokenConfigured: z.boolean(),
+  tokenInSession: z.boolean(),
+  tokenUnreadable: z.boolean(),
 });
 
 export const LockstepProfileInputSchema = z.object({

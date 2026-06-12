@@ -14,6 +14,8 @@ export const showcaseSettings: LockstepSettings = {
       name: "Main archive",
       sourceRoot: "/Volumes/Media/archive",
       tokenConfigured: true,
+      tokenInSession: false,
+      tokenUnreadable: false,
     },
   ],
 };

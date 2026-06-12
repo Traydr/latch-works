@@ -23,19 +23,24 @@ export function RunProgressView({
 }: RunProgressViewProps) {
   return (
     <section className="prism-section">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
+      <div className="mb-4 flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
           {running ? (
             <LoaderCircle
-              className="size-4 animate-spin text-violet-600 dark:text-violet-300"
+              className="size-4 shrink-0 animate-spin text-violet-600 dark:text-violet-300"
               aria-hidden
             />
           ) : (
-            <Activity className="size-4 text-zinc-500" aria-hidden />
+            <Activity className="size-4 shrink-0 text-zinc-500" aria-hidden />
           )}
-          <div>
+          <div className="min-w-0">
             <h2 className="text-lg font-semibold tracking-tight">Run progress</h2>
-            <p className="text-sm text-zinc-500 dark:text-zinc-400">{runLabel || "Working..."}</p>
+            <p
+              className="truncate text-sm text-zinc-500 dark:text-zinc-400"
+              title={runLabel || "Working..."}
+            >
+              {runLabel || "Working..."}
+            </p>
           </div>
         </div>
         <div className="flex gap-2">

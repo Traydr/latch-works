@@ -11,8 +11,8 @@ export function AppShell({ children, header }: AppShellProps) {
       <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex justify-center px-4 pt-4">
         <div className="pointer-events-auto w-full max-w-5xl">{header}</div>
       </div>
-      <main className="flex-1 overflow-y-auto px-4 pb-28 pt-24">
-        <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">{children}</div>
+      <main className="flex-1 overflow-x-hidden overflow-y-auto px-4 pb-28 pt-24">
+        <div className="mx-auto flex w-full min-w-0 max-w-5xl flex-col gap-4">{children}</div>
       </main>
     </div>
   );

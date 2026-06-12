@@ -89,7 +89,11 @@ export class ProfileService {
       return undefined;
     }
 
-    return safeStorage.decryptString(Buffer.from(profile.encryptedToken, "base64"));
+    try {
+      return safeStorage.decryptString(Buffer.from(profile.encryptedToken, "base64"));
+    } catch {
+      return undefined;
+    }
   }
 
   setSessionToken(profileId: string, token: string): void {
@@ -97,8 +101,30 @@ export class ProfileService {
   }
 
   isTokenConfigured(profileId: string): boolean {
+    const tokenState = this.getTokenState(profileId);
+    return tokenState === "session" || tokenState === "secure";
+  }
+
+  private getTokenState(profileId: string): "none" | "secure" | "session" | "unreadable" {
+    if (this.sessionTokens.has(profileId)) {
+      return "session";
+    }
+
     const profile = this.getProfile(profileId);
-    return Boolean(profile?.encryptedToken || this.sessionTokens.has(profileId));
+    if (!profile?.encryptedToken) {
+      return "none";
+    }
+
+    if (!safeStorage.isEncryptionAvailable()) {
+      return "unreadable";
+    }
+
+    try {
+      safeStorage.decryptString(Buffer.from(profile.encryptedToken, "base64"));
+      return "secure";
+    } catch {
+      return "unreadable";
+    }
   }
 
   async createProfile(
@@ -216,13 +242,17 @@ export class ProfileService {
   }
 
   private toPublicProfile(profile: PersistedProfile): LockstepProfilePublic {
+    const tokenState = this.getTokenState(profile.id);
+
     return {
       apiUrl: profile.apiUrl,
       id: profile.id,
       lastRun: profile.lastRun,
       name: profile.name,
       sourceRoot: profile.sourceRoot,
-      tokenConfigured: this.isTokenConfigured(profile.id),
+      tokenConfigured: tokenState === "session" || tokenState === "secure",
+      tokenInSession: tokenState === "session",
+      tokenUnreadable: tokenState === "unreadable",
     };
   }
 
