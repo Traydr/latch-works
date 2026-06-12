@@ -4,6 +4,8 @@ import {
   ensureConfiguredOwnerCredentialAccount,
   verifyConfiguredOwnerCredentials,
 } from "../server/auth/better-auth";
+import { env } from "../env/server";
+import { resolveClientIp } from "../server/auth/client-ip";
 import {
   clearLoginThrottle,
   isLoginThrottled,
@@ -17,7 +19,7 @@ export const Route = createFileRoute("/api/auth/login")({
         const formData = await request.formData();
         const username = String(formData.get("username") ?? "");
         const password = String(formData.get("password") ?? "");
-        const clientIp = resolveClientIp(request);
+        const clientIp = resolveClientIp(request, env.PANE_VIEW_TRUST_PROXY_HEADERS);
 
         if (isLoginThrottled(clientIp, username)) {
           return new Response(null, {
@@ -104,15 +106,6 @@ function copyHeader(source: Headers, target: Headers, name: string): void {
   if (value) {
     target.set(name, value);
   }
-}
-
-function resolveClientIp(request: Request): string {
-  const forwarded = request.headers.get("x-forwarded-for");
-  if (forwarded) {
-    return forwarded.split(",")[0]?.trim() || "unknown";
-  }
-
-  return request.headers.get("x-real-ip") ?? "unknown";
 }
 
 function copySetCookies(source: Headers, target: Headers): void {

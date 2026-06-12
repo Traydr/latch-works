@@ -12,14 +12,18 @@ function throttleKey(ip: string, username: string): string {
   return `${ip}:${username.trim().toLowerCase()}`;
 }
 
-export function isLoginThrottled(ip: string, username: string): boolean {
-  const record = attemptsByKey.get(throttleKey(ip, username));
+function usernameThrottleKey(username: string): string {
+  return `user:${username.trim().toLowerCase()}`;
+}
+
+function isBucketThrottled(key: string, now: number): boolean {
+  const record = attemptsByKey.get(key);
   if (!record) {
     return false;
   }
 
-  if (Date.now() - record.windowStart > WINDOW_MS) {
-    attemptsByKey.delete(throttleKey(ip, username));
+  if (now - record.windowStart > WINDOW_MS) {
+    attemptsByKey.delete(key);
     return false;
   }
 
@@ -34,10 +38,7 @@ function pruneExpiredAttempts(now: number): void {
   }
 }
 
-export function recordFailedLogin(ip: string, username: string): void {
-  const key = throttleKey(ip, username);
-  const now = Date.now();
-  pruneExpiredAttempts(now);
+function recordAttempt(key: string, now: number): void {
   const record = attemptsByKey.get(key);
 
   if (!record || now - record.windowStart > WINDOW_MS) {
@@ -48,8 +49,24 @@ export function recordFailedLogin(ip: string, username: string): void {
   record.count += 1;
 }
 
+export function isLoginThrottled(ip: string, username: string): boolean {
+  const now = Date.now();
+  return (
+    isBucketThrottled(throttleKey(ip, username), now) ||
+    isBucketThrottled(usernameThrottleKey(username), now)
+  );
+}
+
+export function recordFailedLogin(ip: string, username: string): void {
+  const now = Date.now();
+  pruneExpiredAttempts(now);
+  recordAttempt(throttleKey(ip, username), now);
+  recordAttempt(usernameThrottleKey(username), now);
+}
+
 export function clearLoginThrottle(ip: string, username: string): void {
   attemptsByKey.delete(throttleKey(ip, username));
+  attemptsByKey.delete(usernameThrottleKey(username));
 }
 
 export function resetLoginThrottleForTests(): void {
