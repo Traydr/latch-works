@@ -3,6 +3,8 @@ import { createRoot } from "react-dom/client";
 
 import "./index.css";
 import { App } from "./renderer/App";
+import { BridgeUnavailable } from "./renderer/components/BridgeUnavailable";
+import { ErrorBoundary } from "./renderer/components/ErrorBoundary";
 
 const rootElement = document.getElementById("root");
 
@@ -12,6 +14,8 @@ if (!rootElement) {
 
 createRoot(rootElement).render(
   <React.StrictMode>
-    <App />
+    <ErrorBoundary>
+      {typeof window.lockstep === "undefined" ? <BridgeUnavailable /> : <App />}
+    </ErrorBoundary>
   </React.StrictMode>,
 );

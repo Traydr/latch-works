@@ -172,6 +172,9 @@ importers:
 
   apps/lockstep:
     dependencies:
+      '@fontsource-variable/geist':
+        specifier: ^5.2.9
+        version: 5.2.9
       '@latch-works/lockstep-core':
         specifier: workspace:*
         version: link:../../packages/lockstep-core
@@ -181,6 +184,9 @@ importers:
       electron-squirrel-startup:
         specifier: ^1.0.1
         version: 1.0.1
+      lucide-react:
+        specifier: ^0.562.0
+        version: 0.562.0(react@19.2.6)
       react:
         specifier: ^19.2.4
         version: 19.2.6
@@ -196,7 +202,7 @@ importers:
         version: 2.4.16
       '@electron-forge/cli':
         specifier: ^7.11.1
-        version: 7.11.2(encoding@0.1.13)(esbuild@0.28.0)
+        version: 7.11.2(encoding@0.1.13)(esbuild@0.28.0)(postcss@8.5.15)
       '@electron-forge/maker-deb':
         specifier: ^7.11.1
         version: 7.11.2
@@ -227,6 +233,9 @@ importers:
       '@electron/fuses':
         specifier: ^1.8.0
         version: 1.8.0
+      '@tailwindcss/postcss':
+        specifier: ^4.3.0
+        version: 4.3.0
       '@testing-library/react':
         specifier: ^16.3.0
         version: 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -251,6 +260,12 @@ importers:
       jsdom:
         specifier: ^27.0.1
         version: 27.4.0(@noble/hashes@2.2.0)
+      postcss:
+        specifier: ^8.5.8
+        version: 8.5.15
+      tailwindcss:
+        specifier: ^4.3.0
+        version: 4.3.0
       typescript:
         specifier: ^6.0.2
         version: 6.0.3
@@ -9091,39 +9106,6 @@ snapshots:
 
   '@drizzle-team/brocli@0.10.2': {}
 
-  '@electron-forge/cli@7.11.2(encoding@0.1.13)(esbuild@0.28.0)':
-    dependencies:
-      '@electron-forge/core': 7.11.2(encoding@0.1.13)(esbuild@0.28.0)
-      '@electron-forge/core-utils': 7.11.2
-      '@electron-forge/shared-types': 7.11.2
-      '@electron/get': 3.1.0
-      '@inquirer/prompts': 6.0.1
-      '@listr2/prompt-adapter-inquirer': 2.0.22(@inquirer/prompts@6.0.1)
-      chalk: 4.1.2
-      commander: 11.1.0
-      debug: 4.4.3
-      fs-extra: 10.1.0
-      listr2: 7.0.2
-      log-symbols: 4.1.0
-      semver: 7.8.1
-    transitivePeerDependencies:
-      - '@minify-html/node'
-      - '@swc/core'
-      - '@swc/css'
-      - '@swc/html'
-      - bluebird
-      - clean-css
-      - cssnano
-      - csso
-      - encoding
-      - esbuild
-      - html-minifier-terser
-      - lightningcss
-      - postcss
-      - supports-color
-      - uglify-js
-      - webpack-cli
-
   '@electron-forge/cli@7.11.2(encoding@0.1.13)(esbuild@0.28.0)(postcss@8.5.15)':
     dependencies:
       '@electron-forge/core': 7.11.2(encoding@0.1.13)(esbuild@0.28.0)(postcss@8.5.15)
@@ -9172,60 +9154,6 @@ snapshots:
     transitivePeerDependencies:
       - bluebird
       - supports-color
-
-  '@electron-forge/core@7.11.2(encoding@0.1.13)(esbuild@0.28.0)':
-    dependencies:
-      '@electron-forge/core-utils': 7.11.2
-      '@electron-forge/maker-base': 7.11.2
-      '@electron-forge/plugin-base': 7.11.2
-      '@electron-forge/publisher-base': 7.11.2
-      '@electron-forge/shared-types': 7.11.2
-      '@electron-forge/template-base': 7.11.2
-      '@electron-forge/template-vite': 7.11.2
-      '@electron-forge/template-vite-typescript': 7.11.2
-      '@electron-forge/template-webpack': 7.11.2
-      '@electron-forge/template-webpack-typescript': 7.11.2(esbuild@0.28.0)
-      '@electron-forge/tracer': 7.11.2
-      '@electron/get': 3.1.0
-      '@electron/packager': 18.4.4
-      '@electron/rebuild': 3.7.2
-      '@malept/cross-spawn-promise': 2.0.0
-      '@vscode/sudo-prompt': 9.3.2
-      chalk: 4.1.2
-      debug: 4.4.3
-      eta: 3.5.0
-      fast-glob: 3.3.3
-      filenamify: 4.3.0
-      find-up: 5.0.0
-      fs-extra: 10.1.0
-      global-dirs: 3.0.1
-      got: 11.8.6
-      interpret: 3.1.1
-      jiti: 2.7.0
-      listr2: 7.0.2
-      log-symbols: 4.1.0
-      node-fetch: 2.7.0(encoding@0.1.13)
-      rechoir: 0.8.0
-      semver: 7.8.1
-      source-map-support: 0.5.21
-      username: 5.1.0
-    transitivePeerDependencies:
-      - '@minify-html/node'
-      - '@swc/core'
-      - '@swc/css'
-      - '@swc/html'
-      - bluebird
-      - clean-css
-      - cssnano
-      - csso
-      - encoding
-      - esbuild
-      - html-minifier-terser
-      - lightningcss
-      - postcss
-      - supports-color
-      - uglify-js
-      - webpack-cli
 
   '@electron-forge/core@7.11.2(encoding@0.1.13)(esbuild@0.28.0)(postcss@8.5.15)':
     dependencies:
@@ -9426,30 +9354,6 @@ snapshots:
     transitivePeerDependencies:
       - bluebird
       - supports-color
-
-  '@electron-forge/template-webpack-typescript@7.11.2(esbuild@0.28.0)':
-    dependencies:
-      '@electron-forge/shared-types': 7.11.2
-      '@electron-forge/template-base': 7.11.2
-      fs-extra: 10.1.0
-      typescript: 5.4.5
-      webpack: 5.107.2(esbuild@0.28.0)
-    transitivePeerDependencies:
-      - '@minify-html/node'
-      - '@swc/core'
-      - '@swc/css'
-      - '@swc/html'
-      - bluebird
-      - clean-css
-      - cssnano
-      - csso
-      - esbuild
-      - html-minifier-terser
-      - lightningcss
-      - postcss
-      - supports-color
-      - uglify-js
-      - webpack-cli
 
   '@electron-forge/template-webpack-typescript@7.11.2(esbuild@0.28.0)(postcss@8.5.15)':
     dependencies:
@@ -16258,16 +16162,6 @@ snapshots:
       esbuild: 0.28.0
       postcss: 8.5.15
 
-  terser-webpack-plugin@5.6.1(esbuild@0.28.0)(webpack@5.107.2(esbuild@0.28.0)):
-    dependencies:
-      '@jridgewell/trace-mapping': 0.3.31
-      jest-worker: 27.5.1
-      schema-utils: 4.3.3
-      terser: 5.48.0
-      webpack: 5.107.2(esbuild@0.28.0)
-    optionalDependencies:
-      esbuild: 0.28.0
-
   terser@5.48.0:
     dependencies:
       '@jridgewell/source-map': 0.3.11
@@ -16800,45 +16694,6 @@ snapshots:
   webpack-sources@3.5.0: {}
 
   webpack-virtual-modules@0.6.2: {}
-
-  webpack@5.107.2(esbuild@0.28.0):
-    dependencies:
-      '@types/estree': 1.0.9
-      '@types/json-schema': 7.0.15
-      '@webassemblyjs/ast': 1.14.1
-      '@webassemblyjs/wasm-edit': 1.14.1
-      '@webassemblyjs/wasm-parser': 1.14.1
-      acorn: 8.16.0
-      acorn-import-phases: 1.0.4(acorn@8.16.0)
-      browserslist: 4.28.2
-      chrome-trace-event: 1.0.4
-      enhanced-resolve: 5.22.1
-      es-module-lexer: 2.1.0
-      eslint-scope: 5.1.1
-      events: 3.3.0
-      glob-to-regexp: 0.4.1
-      graceful-fs: 4.2.11
-      loader-runner: 4.3.2
-      mime-db: 1.54.0
-      neo-async: 2.6.2
-      schema-utils: 4.3.3
-      tapable: 2.3.3
-      terser-webpack-plugin: 5.6.1(esbuild@0.28.0)(webpack@5.107.2(esbuild@0.28.0))
-      watchpack: 2.5.1
-      webpack-sources: 3.5.0
-    transitivePeerDependencies:
-      - '@minify-html/node'
-      - '@swc/core'
-      - '@swc/css'
-      - '@swc/html'
-      - clean-css
-      - cssnano
-      - csso
-      - esbuild
-      - html-minifier-terser
-      - lightningcss
-      - postcss
-      - uglify-js
 
   webpack@5.107.2(esbuild@0.28.0)(postcss@8.5.15):
     dependencies:
