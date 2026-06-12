@@ -1,21 +1,61 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+function createInsertChain(resolvedValue: unknown) {
+  const returningMock = vi.fn().mockResolvedValue(resolvedValue);
+  const onConflictDoUpdateMock = vi.fn().mockReturnValue({ returning: returningMock });
+  const valuesMock = vi.fn().mockReturnValue({ onConflictDoUpdate: onConflictDoUpdateMock });
+  const insertMock = vi.fn().mockReturnValue({ values: valuesMock });
+  return { insertMock, onConflictDoUpdateMock, returningMock, valuesMock };
+}
+
+function createSelectChain(resolvedValue: unknown) {
+  const limitMock = vi.fn().mockResolvedValue(resolvedValue);
+  const whereMock = vi.fn().mockReturnValue({ limit: limitMock });
+  const fromMock = vi.fn().mockReturnValue({ where: whereMock });
+  const selectMock = vi.fn().mockReturnValue({ from: fromMock });
+  return { fromMock, limitMock, selectMock, whereMock };
+}
+
+function createUpdateChain() {
+  const whereMock = vi.fn().mockResolvedValue(undefined);
+  const setMock = vi.fn().mockReturnValue({ where: whereMock });
+  const updateMock = vi.fn().mockReturnValue({ set: setMock });
+  return { setMock, updateMock, whereMock };
+}
+
 const mocks = vi.hoisted(() => {
   const updateMock = vi.fn();
   const whereMock = vi.fn();
   const setMock = vi.fn();
   const returningMock = vi.fn();
+  const transactionMock = vi.fn();
+  const rootInsertMock = vi.fn();
+  const txClient = {
+    insert: vi.fn(),
+    select: vi.fn(),
+    update: vi.fn(),
+  };
 
-  return { returningMock, setMock, updateMock, whereMock };
+  return {
+    returningMock,
+    rootInsertMock,
+    setMock,
+    transactionMock,
+    txClient,
+    updateMock,
+    whereMock,
+  };
 });
 
 vi.mock("../db", () => ({
   db: {
+    insert: mocks.rootInsertMock,
+    transaction: mocks.transactionMock,
     update: mocks.updateMock,
   },
 }));
 
-import { finalizeSyncRun } from "./store";
+import { completeSyncedObject, finalizeSyncRun, markRemoteDeleted } from "./store";
 
 describe("finalizeSyncRun", () => {
   beforeEach(() => {
@@ -68,5 +108,137 @@ describe("finalizeSyncRun", () => {
         status: "failed",
       }),
     );
+  });
+});
+
+describe("completeSyncedObject", () => {
+  beforeEach(() => {
+    mocks.transactionMock.mockReset();
+    mocks.rootInsertMock.mockReset();
+    mocks.txClient.insert.mockReset();
+    mocks.txClient.select.mockReset();
+    mocks.txClient.update.mockReset();
+
+    mocks.transactionMock.mockImplementation(async (callback) => callback(mocks.txClient));
+  });
+
+  it("performs all writes inside a transaction client", async () => {
+    const mediaInsert = createInsertChain([{ id: "media-1" }]);
+    const folderInsert = createInsertChain([{ id: "folder-1" }]);
+    const libraryInsert = createInsertChain(undefined);
+    const syncItemInsert = createInsertChain(undefined);
+    const folderSelect = createSelectChain([]);
+
+    mocks.txClient.insert
+      .mockReturnValueOnce({ values: mediaInsert.valuesMock })
+      .mockReturnValueOnce({ values: folderInsert.valuesMock })
+      .mockReturnValueOnce({ values: libraryInsert.valuesMock })
+      .mockReturnValueOnce({ values: syncItemInsert.valuesMock });
+    mocks.txClient.select.mockReturnValue({ from: folderSelect.fromMock });
+
+    const result = await completeSyncedObject({
+      input: {
+        contentType: "image/jpeg",
+        extension: "jpg",
+        filename: "photo.jpg",
+        logicalPath: "photos/photo.jpg",
+        mediaType: "image",
+        mtimeMs: 1_700_000_000_000,
+        objectKey: "objects/abc",
+        sha256: "abc123",
+        size: 1024,
+        syncRunId: "run-1",
+      },
+    });
+
+    expect(result).toEqual({ status: "database" });
+    expect(mocks.transactionMock).toHaveBeenCalledTimes(1);
+    expect(mocks.rootInsertMock).not.toHaveBeenCalled();
+    expect(mocks.txClient.insert).toHaveBeenCalledTimes(4);
+    expect(mocks.txClient.select).not.toHaveBeenCalled();
+    expect(syncItemInsert.valuesMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "upload",
+        logicalPath: "photos/photo.jpg",
+        mediaObjectId: "media-1",
+        syncRunId: "run-1",
+      }),
+    );
+  });
+});
+
+describe("markRemoteDeleted", () => {
+  beforeEach(() => {
+    mocks.transactionMock.mockReset();
+    mocks.txClient.insert.mockReset();
+    mocks.txClient.select.mockReset();
+    mocks.txClient.update.mockReset();
+
+    mocks.transactionMock.mockImplementation(async (callback) => callback(mocks.txClient));
+  });
+
+  it("validates the sync run before updating library entries", async () => {
+    const syncRunSelect = createSelectChain([{ id: "run-1", status: "running" }]);
+    const libraryUpdate = createUpdateChain();
+    const syncItemInsert = createInsertChain(undefined);
+
+    mocks.txClient.select.mockReturnValue({ from: syncRunSelect.fromMock });
+    mocks.txClient.update.mockReturnValue({ set: libraryUpdate.setMock });
+    mocks.txClient.insert.mockReturnValue({ values: syncItemInsert.valuesMock });
+
+    const result = await markRemoteDeleted({
+      logicalPath: "photos/photo.jpg",
+      syncRunId: "run-1",
+    });
+
+    expect(result).toEqual({ status: "database" });
+    expect(mocks.transactionMock).toHaveBeenCalledTimes(1);
+    expect(mocks.txClient.select.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.txClient.update.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    );
+    expect(libraryUpdate.setMock).toHaveBeenCalledWith({ deletedAt: expect.any(Date) });
+    expect(syncItemInsert.valuesMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "delete",
+        logicalPath: "photos/photo.jpg",
+        syncRunId: "run-1",
+      }),
+    );
+  });
+
+  it("rejects missing sync runs without mutating library entries", async () => {
+    const syncRunSelect = createSelectChain([]);
+    const libraryUpdate = createUpdateChain();
+
+    mocks.txClient.select.mockReturnValue({ from: syncRunSelect.fromMock });
+    mocks.txClient.update.mockReturnValue({ set: libraryUpdate.setMock });
+
+    await expect(
+      markRemoteDeleted({
+        logicalPath: "photos/photo.jpg",
+        syncRunId: "missing-run",
+      }),
+    ).rejects.toThrow("Sync run not found.");
+
+    expect(libraryUpdate.setMock).not.toHaveBeenCalled();
+    expect(mocks.txClient.insert).not.toHaveBeenCalled();
+  });
+
+  it("rejects non-running sync runs without mutating library entries", async () => {
+    const syncRunSelect = createSelectChain([{ id: "run-1", status: "completed" }]);
+    const libraryUpdate = createUpdateChain();
+
+    mocks.txClient.select.mockReturnValue({ from: syncRunSelect.fromMock });
+    mocks.txClient.update.mockReturnValue({ set: libraryUpdate.setMock });
+
+    await expect(
+      markRemoteDeleted({
+        logicalPath: "photos/photo.jpg",
+        syncRunId: "run-1",
+      }),
+    ).rejects.toThrow("Sync run is not accepting writes.");
+
+    expect(libraryUpdate.setMock).not.toHaveBeenCalled();
+    expect(mocks.txClient.insert).not.toHaveBeenCalled();
   });
 });
