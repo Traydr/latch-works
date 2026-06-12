@@ -52,4 +52,22 @@ describe("scanArchive", () => {
       { path: "notes.txt", reason: "unsupported-extension" },
     ]);
   });
+
+  it("stops scanning when aborted", async () => {
+    tempDir = await mkdtemp(path.join(os.tmpdir(), "media-index-scan-"));
+    const photosDir = path.join(tempDir, "photos");
+
+    await mkdir(photosDir, { recursive: true });
+    await writeFile(path.join(photosDir, "cover.jpg"), "image");
+
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      scanArchive({
+        signal: controller.signal,
+        sourceRoot: tempDir,
+      }),
+    ).rejects.toThrow();
+  });
 });

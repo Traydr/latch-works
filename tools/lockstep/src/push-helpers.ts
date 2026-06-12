@@ -1,33 +1,25 @@
-import path from "node:path";
-import type { CliOptions } from "./types.js";
+export {
+  resolveHashFiles,
+  resolveLocalFilePath,
+  selectChangedItems,
+  selectDeleteItems,
+  selectUploadUpdateItems,
+} from "@latch-works/lockstep-core";
 
-export function resolveHashFiles(
-  options: Pick<CliOptions, "command" | "hashFiles">,
-): boolean {
-  return options.hashFiles || options.command === "push";
-}
-
+/** @deprecated Use selectUploadUpdateItems from lockstep-core */
 export function selectChangedItemsForPush<T extends { action: string }>(
   changedItems: T[],
   maxChanges?: number,
 ): { items: T[]; omittedDeleteCount: number } {
-  if (!maxChanges || changedItems.length <= maxChanges) {
-    return { items: changedItems, omittedDeleteCount: 0 };
+  const uploadUpdate = changedItems.filter(
+    (item) => item.action === "upload" || item.action === "update",
+  );
+  if (!maxChanges || uploadUpdate.length <= maxChanges) {
+    return { items: uploadUpdate, omittedDeleteCount: 0 };
   }
-
-  const items = changedItems.slice(0, maxChanges);
-  const omittedDeletes = changedItems.slice(maxChanges).filter((item) => item.action === "delete");
-  return { items, omittedDeleteCount: omittedDeletes.length };
-}
-
-export function resolveLocalFilePath(sourceRoot: string, archivePath: string): string {
-  const resolvedRoot = path.resolve(sourceRoot);
-  const resolvedFile = path.resolve(resolvedRoot, ...archivePath.split("/"));
-  const relative = path.relative(resolvedRoot, resolvedFile);
-
-  if (relative.startsWith("..") || path.isAbsolute(relative)) {
-    throw new Error(`Local path escapes source root: ${archivePath}`);
-  }
-
-  return resolvedFile;
+  const items = uploadUpdate.slice(0, maxChanges);
+  const omittedDeletes = changedItems
+    .slice(maxChanges)
+    .filter((item) => item.action === "delete").length;
+  return { items, omittedDeleteCount: omittedDeletes };
 }

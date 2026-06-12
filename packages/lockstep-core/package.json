@@ -1,26 +1,25 @@
 {
-  "name": "@latch-works/lockstep",
+  "name": "@latch-works/lockstep-core",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "bin": {
-    "lockstep": "./dist/cli.js"
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "check": "pnpm typecheck",
-    "start": "tsx src/cli.ts",
-    "test": "vitest run --passWithNoTests",
+    "check": "pnpm typecheck && pnpm test",
+    "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@inquirer/prompts": "^7.5.3",
-    "@latch-works/lockstep-core": "workspace:*",
     "@latch-works/media-domain": "workspace:*",
     "@latch-works/media-index": "workspace:*"
   },
   "devDependencies": {
-    "tsx": "^4.21.0",
     "typescript": "^6.0.2",
     "vitest": "^4.1.3"
   }

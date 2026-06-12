@@ -3,55 +3,58 @@ import { describe, expect, it } from "vitest";
 import {
   resolveHashFiles,
   resolveLocalFilePath,
-  selectChangedItemsForPush,
+  selectDeleteItems,
   selectUploadUpdateItems,
 } from "./push-helpers.js";
 
 describe("resolveHashFiles", () => {
-  it("always hashes during push even when capped", () => {
-    expect(
-      resolveHashFiles({
-        requireHash: true,
-      }),
-    ).toBe(true);
+  it("hashes when required", () => {
+    expect(resolveHashFiles({ requireHash: true })).toBe(true);
   });
 
   it("keeps plan hashing opt-in", () => {
-    expect(
-      resolveHashFiles({
-        hashFiles: false,
-      }),
-    ).toBe(false);
-  });
-});
-
-describe("selectChangedItemsForPush", () => {
-  it("excludes deletes from push batches", () => {
-    const changedItems = [
-      { action: "upload", path: "a.jpg" },
-      { action: "upload", path: "b.jpg" },
-      { action: "delete", path: "old.jpg" },
-    ];
-
-    const result = selectChangedItemsForPush(changedItems, 2);
-
-    expect(result.items).toHaveLength(2);
-    expect(result.items.every((item) => item.action !== "delete")).toBe(true);
+    expect(resolveHashFiles({ hashFiles: false })).toBe(false);
   });
 });
 
 describe("selectUploadUpdateItems", () => {
-  it("caps upload/update items only", () => {
+  it("excludes deletes from push batches", () => {
     const changedItems = [
       { action: "upload" as const, path: "a.jpg" },
-      { action: "upload" as const, path: "b.jpg" },
       { action: "delete" as const, path: "old.jpg" },
     ];
 
-    const result = selectUploadUpdateItems(changedItems, 1);
+    const result = selectUploadUpdateItems(changedItems);
 
     expect(result.items).toHaveLength(1);
     expect(result.items[0]?.action).toBe("upload");
+  });
+
+  it("caps upload/update items", () => {
+    const changedItems = [
+      { action: "upload" as const, path: "a.jpg" },
+      { action: "upload" as const, path: "b.jpg" },
+      { action: "upload" as const, path: "c.jpg" },
+    ];
+
+    const result = selectUploadUpdateItems(changedItems, 2);
+
+    expect(result.items).toHaveLength(2);
+    expect(result.omittedCount).toBe(1);
+  });
+});
+
+describe("selectDeleteItems", () => {
+  it("selects only delete actions", () => {
+    const changedItems = [
+      { action: "upload" as const, path: "a.jpg" },
+      { action: "delete" as const, path: "old.jpg" },
+    ];
+
+    const result = selectDeleteItems(changedItems);
+
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]?.action).toBe("delete");
   });
 });
 
