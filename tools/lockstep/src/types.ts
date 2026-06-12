@@ -1,4 +1,4 @@
-export type Command = "plan" | "push" | "verify" | "doctor";
+export type Command = "doctor" | "plan" | "prune" | "push" | "verify";
 
 export interface CliOptions {
   apiTokenEnv: string;

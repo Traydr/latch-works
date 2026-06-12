@@ -13,11 +13,13 @@ Usage:
   lockstep plan --source "T:\\cloud-desktop\\media" --show-skipped
   lockstep verify --source "T:\\cloud-desktop\\media" --remote-snapshot snapshot.json [--hash]
   lockstep push --source "T:\\cloud-desktop\\media" --api-url http://localhost:3000 [--hash] [--max-changes 25] [--yes]
+  lockstep prune --source "T:\\cloud-desktop\\media" --api-url http://localhost:3000 [--max-changes 25] [--yes]
   lockstep doctor [--source "T:\\cloud-desktop\\media"]
 
 Notes:
   plan and verify are read-only.
-  push uploads changed originals through the configured sync API.
+  push uploads and updates only; it never applies remote deletes.
+  prune applies planned remote deletes explicitly.
   API tokens are read from LOCKSTEP_API_TOKEN by default.
   Run lockstep with no arguments for interactive mode (TTY required).
 `);
@@ -29,7 +31,7 @@ export type ParseArgvResult =
   | { kind: "empty" }
   | { kind: "parsed"; options: CliOptions };
 
-const COMMANDS = new Set<Command>(["plan", "push", "verify", "doctor"]);
+const COMMANDS = new Set<Command>(["doctor", "plan", "prune", "push", "verify"]);
 
 export function parseArgv(argv: string[]): ParseArgvResult {
   if (argv.length === 0) {
@@ -185,7 +187,10 @@ export function getMissingFields(options: CliOptions, env: NodeJS.ProcessEnv = p
     missing.push("remoteSnapshot");
   }
 
-  if (options.command === "push" && !(options.apiUrl ?? env.LOCKSTEP_API_URL)) {
+  if (
+    (options.command === "push" || options.command === "prune") &&
+    !(options.apiUrl ?? env.LOCKSTEP_API_URL)
+  ) {
     missing.push("apiUrl");
   }
 

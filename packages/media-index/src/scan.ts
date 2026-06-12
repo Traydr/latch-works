@@ -16,6 +16,7 @@ import {
 export interface ScanArchiveOptions {
   hashFiles?: boolean;
   onProgress?: (progress: ScanArchiveProgress) => void;
+  signal?: AbortSignal;
   sourceRoot: string;
 }
 
@@ -70,9 +71,16 @@ async function hashFile({
   return hash.digest("hex");
 }
 
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw signal.reason ?? new DOMException("Aborted", "AbortError");
+  }
+}
+
 export async function scanArchive({
   hashFiles = false,
   onProgress,
+  signal,
   sourceRoot,
 }: ScanArchiveOptions): Promise<ScanArchiveResult> {
   const root = path.resolve(sourceRoot);
@@ -80,8 +88,10 @@ export async function scanArchive({
   const skippedEntries: SkippedArchiveEntry[] = [];
 
   async function walk(currentPath: string): Promise<void> {
+    throwIfAborted(signal);
     const entries = await readdir(currentPath, { withFileTypes: true });
     for (const entry of entries) {
+      throwIfAborted(signal);
       const absolutePath = path.join(currentPath, entry.name);
 
       if (entry.isDirectory()) {

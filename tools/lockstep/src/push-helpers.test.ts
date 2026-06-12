@@ -4,14 +4,14 @@ import {
   resolveHashFiles,
   resolveLocalFilePath,
   selectChangedItemsForPush,
+  selectUploadUpdateItems,
 } from "./push-helpers.js";
 
 describe("resolveHashFiles", () => {
   it("always hashes during push even when capped", () => {
     expect(
       resolveHashFiles({
-        command: "push",
-        hashFiles: false,
+        requireHash: true,
       }),
     ).toBe(true);
   });
@@ -19,7 +19,6 @@ describe("resolveHashFiles", () => {
   it("keeps plan hashing opt-in", () => {
     expect(
       resolveHashFiles({
-        command: "plan",
         hashFiles: false,
       }),
     ).toBe(false);
@@ -27,7 +26,7 @@ describe("resolveHashFiles", () => {
 });
 
 describe("selectChangedItemsForPush", () => {
-  it("warns when capped batches omit deletes", () => {
+  it("excludes deletes from push batches", () => {
     const changedItems = [
       { action: "upload", path: "a.jpg" },
       { action: "upload", path: "b.jpg" },
@@ -37,7 +36,22 @@ describe("selectChangedItemsForPush", () => {
     const result = selectChangedItemsForPush(changedItems, 2);
 
     expect(result.items).toHaveLength(2);
-    expect(result.omittedDeleteCount).toBe(1);
+    expect(result.items.every((item) => item.action !== "delete")).toBe(true);
+  });
+});
+
+describe("selectUploadUpdateItems", () => {
+  it("caps upload/update items only", () => {
+    const changedItems = [
+      { action: "upload" as const, path: "a.jpg" },
+      { action: "upload" as const, path: "b.jpg" },
+      { action: "delete" as const, path: "old.jpg" },
+    ];
+
+    const result = selectUploadUpdateItems(changedItems, 1);
+
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]?.action).toBe("upload");
   });
 });
 
