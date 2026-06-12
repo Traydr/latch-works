@@ -54,3 +54,14 @@ Use the root lockfile only. Remove any `apps/lockstep/pnpm-lock.yaml` if it reap
 ### `ERR_PNPM_IGNORED_BUILDS` (fs-xattr / macos-alias)
 
 `@electron-forge/maker-dmg` depends on native packages `fs-xattr` and `macos-alias`. Their build scripts are approved in `apps/lockstep/pnpm-workspace.yaml` and versions are pinned via workspace `overrides`. Run `pnpm install` from the repo root, or `pnpm install` in `apps/lockstep` if Forge triggers a nested install.
+
+### `Electron failed to install correctly`
+
+Electron's postinstall sometimes does not write `node_modules/electron/path.txt` after a hoisted or nested install. Lockstep runs `scripts/ensure-electron.mjs` on `postinstall` and before `start` to repair this automatically. If it still fails:
+
+```bash
+cd apps/lockstep
+rm -rf node_modules/electron
+pnpm install
+pnpm start
+```

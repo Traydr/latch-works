@@ -6,7 +6,8 @@
   "main": ".vite/build/main.js",
   "private": true,
   "scripts": {
-    "prestart": "node ./scripts/ensure-workspace-deps.mjs",
+    "postinstall": "node ./scripts/ensure-electron.mjs",
+    "prestart": "node ./scripts/ensure-workspace-deps.mjs && node ./scripts/ensure-electron.mjs",
     "start": "electron-forge start",
     "package": "electron-forge package",
     "make": "electron-forge make",
