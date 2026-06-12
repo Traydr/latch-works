@@ -11,3 +11,5 @@ dist/
 !.env.example
 lockstep-cache.sqlite
 sync-manifest-*.jsonl
+
+.DS_Store
