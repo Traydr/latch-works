@@ -1,6 +1,6 @@
+import mdx from "@astrojs/mdx";
 import node from "@astrojs/node";
 import react from "@astrojs/react";
-import mdx from "@astrojs/mdx";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "astro/config";
 
@@ -9,7 +9,7 @@ export default defineConfig({
   adapter: node({ mode: "standalone" }),
   integrations: [react(), mdx()],
   server: {
-    host: "127.0.0.1",
+    host: "0.0.0.0",
     port: 3100,
   },
   vite: {
