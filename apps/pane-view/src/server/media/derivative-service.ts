@@ -1,11 +1,15 @@
 import { spawn } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createWriteStream } from "node:fs";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { type Readable, Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { snapThumbnailSize, type ThumbnailSize } from "@latch-works/media-delivery";
 import type { MediaType } from "@latch-works/media-domain";
 import {
   deleteStoredObject,
+  getStoredObject,
   headStoredObject,
   originalObjectKey,
   previewObjectKey,
@@ -23,8 +27,32 @@ import { isDerivativeProcessingLeaseExpired } from "./derivative-lease";
 import { readMediaThumbnailContext } from "./repository";
 import { createPaneViewStorageClient } from "./storage-client";
 
-const maxSourceBytes = 512 * 1024 * 1024;
+const defaultMaxSourceBytes = 512 * 1024 * 1024;
 const derivativeGenerationLimiter = createConcurrencyLimiter(2);
+
+type FfmpegRunner = (binaryPath: string, args: string[]) => Promise<void>;
+
+let ffmpegRunner: FfmpegRunner = runFfmpeg;
+let maxSourceBytesOverride: number | null = null;
+
+function getMaxSourceBytes(): number {
+  return maxSourceBytesOverride ?? defaultMaxSourceBytes;
+}
+
+export const derivativeServiceTestHooks = {
+  resetFfmpegRunner(): void {
+    ffmpegRunner = runFfmpeg;
+  },
+  resetMaxSourceBytes(): void {
+    maxSourceBytesOverride = null;
+  },
+  setFfmpegRunner(runner: FfmpegRunner): void {
+    ffmpegRunner = runner;
+  },
+  setMaxSourceBytes(bytes: number): void {
+    maxSourceBytesOverride = bytes;
+  },
+};
 
 export type ThumbnailEnsureResult =
   | {
@@ -293,21 +321,96 @@ async function generateDerivativeBytes(
       sha256: context.sha256,
     });
 
+  if (context.mediaType === "video") {
+    const posterFrame = await extractVideoPosterFrameFromStorage({
+      extension: context.extension,
+      sourceKey,
+      storage,
+    });
+    return resizeImageToWebp(posterFrame, size);
+  }
+
+  const maxBytes = getMaxSourceBytes();
+  const sourceHead = await headStoredObject({ key: sourceKey, storage });
+  if (!sourceHead) {
+    throw new Error(`original object missing: ${sourceKey}`);
+  }
+
+  if (sourceHead.contentLength > maxBytes) {
+    throw new Error(`original object exceeds ${maxBytes} bytes`);
+  }
+
   const sourceBytes = await readStoredObjectBytes({ key: sourceKey, storage });
   if (!sourceBytes) {
     throw new Error(`original object missing: ${sourceKey}`);
   }
 
-  if (sourceBytes.byteLength > maxSourceBytes) {
-    throw new Error(`original object exceeds ${maxSourceBytes} bytes`);
-  }
-
-  if (context.mediaType === "video") {
-    const posterFrame = await extractVideoPosterFrame(sourceBytes, context.extension);
-    return resizeImageToWebp(posterFrame, size);
+  if (sourceBytes.byteLength > maxBytes) {
+    throw new Error(`original object exceeds ${maxBytes} bytes`);
   }
 
   return resizeImageToWebp(sourceBytes, size);
+}
+
+async function extractVideoPosterFrameFromStorage({
+  extension,
+  sourceKey,
+  storage,
+}: {
+  extension: string;
+  sourceKey: string;
+  storage: ReturnType<typeof createPaneViewStorageClient>;
+}): Promise<Buffer> {
+  const stored = await getStoredObject({ key: sourceKey, storage });
+  if (!stored?.body) {
+    throw new Error(`original object missing: ${sourceKey}`);
+  }
+
+  const maxBytes = getMaxSourceBytes();
+  if (stored.contentLength !== undefined && stored.contentLength > maxBytes) {
+    stored.body.destroy();
+    throw new Error(`original object exceeds ${maxBytes} bytes`);
+  }
+
+  const tempDir = await mkdtemp(path.join(tmpdir(), "pane-view-thumb-"));
+  const inputPath = path.join(tempDir, `source.${extension.replace(/^\./, "")}`);
+
+  try {
+    await streamReadableToTempFile({
+      body: stored.body,
+      destinationPath: inputPath,
+      maxBytes,
+    });
+    return await extractVideoPosterFrameAtPath(inputPath, tempDir);
+  } finally {
+    await rm(tempDir, { force: true, recursive: true });
+  }
+}
+
+async function streamReadableToTempFile({
+  body,
+  destinationPath,
+  maxBytes,
+}: {
+  body: Readable;
+  destinationPath: string;
+  maxBytes: number;
+}): Promise<void> {
+  let bytesWritten = 0;
+
+  const byteLimiter = new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      bytesWritten += chunk.length;
+      if (bytesWritten > maxBytes) {
+        callback(new Error(`original object exceeds ${maxBytes} bytes`));
+        return;
+      }
+
+      callback(null, chunk);
+    },
+  });
+
+  await pipeline(body, byteLimiter, createWriteStream(destinationPath));
 }
 
 async function resizeImageToWebp(
@@ -330,35 +433,29 @@ async function resizeImageToWebp(
   };
 }
 
-async function extractVideoPosterFrame(videoBytes: Buffer, extension: string): Promise<Buffer> {
+async function extractVideoPosterFrameAtPath(inputPath: string, tempDir: string): Promise<Buffer> {
   if (!ffmpegPath) {
     throw new Error("ffmpeg binary is not available");
   }
 
-  const tempDir = await mkdtemp(path.join(tmpdir(), "pane-view-thumb-"));
-  const inputPath = path.join(tempDir, `source.${extension.replace(/^\./, "")}`);
   const outputPath = path.join(tempDir, "poster.jpg");
 
-  try {
-    await writeFile(inputPath, videoBytes);
-    await runFfmpeg(ffmpegPath, [
-      "-hide_banner",
-      "-loglevel",
-      "error",
-      "-ss",
-      "1",
-      "-i",
-      inputPath,
-      "-frames:v",
-      "1",
-      "-q:v",
-      "2",
-      outputPath,
-    ]);
-    return await readFile(outputPath);
-  } finally {
-    await rm(tempDir, { force: true, recursive: true });
-  }
+  await ffmpegRunner(ffmpegPath, [
+    "-hide_banner",
+    "-loglevel",
+    "error",
+    "-ss",
+    "1",
+    "-i",
+    inputPath,
+    "-frames:v",
+    "1",
+    "-q:v",
+    "2",
+    outputPath,
+  ]);
+
+  return await readFile(outputPath);
 }
 
 function runFfmpeg(binaryPath: string, args: string[]): Promise<void> {
