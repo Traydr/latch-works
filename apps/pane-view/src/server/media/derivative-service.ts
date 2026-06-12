@@ -147,8 +147,6 @@ export async function ensureThumbnailDerivative({
         updatedAt: new Date(),
       })
       .where(and(eq(thumbnails.mediaObjectId, context.mediaObjectId), eq(thumbnails.size, size)));
-  } else if (existing?.status === "pending") {
-    return { status: "pending" };
   }
 
   if (!existing) {
@@ -170,8 +168,6 @@ export async function ensureThumbnailDerivative({
         updatedAt: new Date(),
       })
       .where(and(eq(thumbnails.mediaObjectId, context.mediaObjectId), eq(thumbnails.size, size)));
-  } else {
-    return { status: "pending" };
   }
 
   const [claimed] = await db
