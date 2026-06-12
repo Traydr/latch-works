@@ -206,7 +206,7 @@ function escapeHtml(value) {
 
 function runLockstep(args) {
   const result = spawnSync("pnpm", ["exec", "tsx", "src/cli.ts", ...args], {
-    cwd: join(root, "../../tools/lockstep"),
+    cwd: join(root, "../../apps/lockstep-cli"),
     env: { ...process.env, FORCE_COLOR: "0", NO_COLOR: "1" },
     encoding: "utf8",
     maxBuffer: 10 * 1024 * 1024,

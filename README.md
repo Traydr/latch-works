@@ -24,7 +24,7 @@ Gather Box   Frame View  Lockstep  Pane View
 | **Pane View** | [`apps/pane-view`](apps/pane-view) | Private web viewer for browsing a synced archive on desktop, tablet, and phone. TanStack Start + PostgreSQL + S3. |
 | **Frame View** | [`apps/frame-view`](apps/frame-view) | Cross-platform **Electron** desktop gallery for local image, video, comic, and PDF folders. The UX north star for Pane View. |
 | **Gather Box** | [`apps/gather-box`](apps/gather-box) | **Chrome extension** that downloads image galleries and story PDFs from supported sites into inferred local folder structures. |
-| **Lockstep** | [`tools/lockstep`](tools/lockstep) | CLI that scans a local archive, plans changes, and **pushes** originals to the Pane View sync API. |
+| **Lockstep** | [`apps/lockstep-cli`](apps/lockstep-cli) | CLI that scans a local archive, plans changes, and **pushes** originals to the Pane View sync API. |
 
 ### Shared packages
 
@@ -44,14 +44,13 @@ latch-works/
 ├── apps/
 │   ├── pane-view/       # TanStack Start web viewer
 │   ├── frame-view/      # Electron desktop viewer
-│   └── gather-box/      # Chrome extension
+│   ├── gather-box/      # Chrome extension
+│   └── lockstep-cli/    # Local → remote sync CLI
 ├── packages/
 │   ├── media-domain/
 │   ├── media-index/
 │   ├── media-storage/
 │   └── media-delivery/
-├── tools/
-│   └── lockstep/        # Local → remote sync CLI
 └── docs/
     ├── ARCHITECTURE_PLAN.md
     ├── decisions/
@@ -113,7 +112,7 @@ $env:LOCKSTEP_API_TOKEN = "your-sync-token"
 pnpm start:lockstep -- push --source "T:\cloud-desktop\media"
 ```
 
-See [`tools/lockstep/README.md`](tools/lockstep/README.md) and [`docs/runbooks/lockstep.md`](docs/runbooks/lockstep.md) for the full command reference.
+See [`apps/lockstep-cli/README.md`](apps/lockstep-cli/README.md) and [`docs/runbooks/lockstep.md`](docs/runbooks/lockstep.md) for the full command reference.
 
 ---
 

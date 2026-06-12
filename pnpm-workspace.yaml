@@ -1,7 +1,6 @@
 packages:
   - "apps/*"
   - "packages/*"
-  - "tools/*"
 blockExoticSubdeps: false
 overrides:
   fs-xattr: "0.3.1"

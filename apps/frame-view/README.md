@@ -2,7 +2,7 @@
 
 > Cross-platform desktop image and video viewer — the local gallery north star for [Pane View](../pane-view).
 
-Frame View is part of the [Latch Works](../../README.md) monorepo. It browses folders on disk with a keyboard-first gallery, fullscreen viewer, comic mode, and a SQLite media index. Use it to organize and preview a local archive before syncing to Pane View via [Lockstep](../../tools/lockstep).
+Frame View is part of the [Latch Works](../../README.md) monorepo. It browses folders on disk with a keyboard-first gallery, fullscreen viewer, comic mode, and a SQLite media index. Use it to organize and preview a local archive before syncing to Pane View via [Lockstep](../../apps/lockstep-cli).
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
@@ -151,7 +151,7 @@ After changes, verify manually by:
 ## Related
 
 - [Pane View](../pane-view/README.md) — web viewer targeting feature parity
-- [Lockstep](../../tools/lockstep/README.md) — sync local archive to Pane View
+- [Lockstep](../../apps/lockstep-cli/README.md) — sync local archive to Pane View
 - [Root README](../../README.md) — monorepo overview
 
 ## License

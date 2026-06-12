@@ -249,7 +249,7 @@ export const products: Product[] = [
     tagline: "Plan, push, verify.",
     description:
       "Lockstep scans a local media archive, compares it against the remote Pane View snapshot, and explicitly pushes changed originals through the sync API. Read-only commands stay safe; writes require intent.",
-    repoPath: "tools/lockstep",
+    repoPath: "apps/lockstep-cli",
     accent: "from-emerald-500/20 to-teal-500/5",
     heroScreenshot: {
       src: "/screenshots/lockstep/plan.png",

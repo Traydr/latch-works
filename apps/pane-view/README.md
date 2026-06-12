@@ -2,7 +2,7 @@
 
 > Private web viewer for a synced personal media archive — responsive on desktop, tablet, and phone.
 
-Pane View is the **web counterpart** to [Frame View](../frame-view). It serves an authenticated gallery backed by PostgreSQL metadata and S3 object storage. The browser UI is read-oriented: catalog writes happen through Lockstep sync APIs, while signed-in users can soft-delete entries from the gallery UI. Content reaches Pane View through [Lockstep](../../tools/lockstep), which scans a local archive and pushes originals to the sync API.
+Pane View is the **web counterpart** to [Frame View](../frame-view). It serves an authenticated gallery backed by PostgreSQL metadata and S3 object storage. The browser UI is read-oriented: catalog writes happen through Lockstep sync APIs, while signed-in users can soft-delete entries from the gallery UI. Content reaches Pane View through [Lockstep](../../apps/lockstep-cli), which scans a local archive and pushes originals to the sync API.
 
 ## Features
 
@@ -94,7 +94,7 @@ pnpm db:migrate    # apply migrations
 
 ## Syncing content
 
-Use [Lockstep](../../tools/lockstep) to publish a local folder tree:
+Use [Lockstep](../../apps/lockstep-cli) to publish a local folder tree:
 
 ```powershell
 # From repo root

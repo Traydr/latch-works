@@ -10,7 +10,7 @@ Latch Works is a private TypeScript pnpm workspace for collecting, syncing, and 
 - `packages/media-domain/`: shared media types, path logic, sorting, and domain tests.
 - `packages/media-index/`: archive scanning and sync-plan logic.
 - `packages/media-storage/`: storage key and S3 integration helpers.
-- `tools/lockstep/`: CLI for planning and running local archive sync work.
+- `apps/lockstep-cli/`: CLI for planning and running local archive sync work.
 - `docs/`: decisions and runbooks.
 
 Source lives in each package's `src/` directory. Tests are colocated as `*.test.ts`.
@@ -61,10 +61,10 @@ Copy `.env.example` to repo-root `.env`, symlink `apps/pane-view/.env` → `../.
 ### Running Pane View and Lockstep
 
 - Web app: `pnpm dev:pane` → http://127.0.0.1:3000 (`GET /api/health` should return `{"ok":true,"service":"pane-view"}`).
-- Lockstep plan (read-only): `cd tools/lockstep && pnpm exec tsx src/cli.ts plan --source <archive-path>` with `.env` sourced.
+- Lockstep plan (read-only): `cd apps/lockstep-cli && pnpm exec tsx src/cli.ts plan --source <archive-path>` with `.env` sourced.
 - Lockstep push: same, with `push --source <path> --api-url http://127.0.0.1:3000 --yes`.
 
-Do not pass `--` between `pnpm start:lockstep` and subcommands; use `pnpm exec tsx src/cli.ts plan ...` from `tools/lockstep` or `pnpm --filter @latch-works/lockstep start plan --source ...`.
+Do not pass `--` between `pnpm start:lockstep` and subcommands; use `pnpm exec tsx src/cli.ts plan ...` from `apps/lockstep-cli` or `pnpm --filter @latch-works/lockstep start plan --source ...`.
 
 - Gallery thumbnails and viewer images resolve signed S3 URLs through the `resolveMediaDeliveryUrl` server function (`useResolvedMediaUrl` hook). Do not point `<img src>` at `/api/media/...` in dev: Vite returns 404 for those requests when `Sec-Fetch-Dest: image`.
 - API thumbnail/preview routes redirect to signed storage URLs via `delivery-redirect.ts`. CDN tokens use `~` as the payload/signature separator and the splat route `cdn.v1.$.ts`.
@@ -73,7 +73,7 @@ Do not pass `--` between `pnpm start:lockstep` and subcommands; use `pnpm exec t
 ### Test caveats on Linux
 
 - `pnpm check` fails on Linux because `apps/frame-view` has a Windows-path unit test (`mediaProtocol.test.ts`). Other frame-view tests may emit `window is not defined` noise in Node. Run workspace tests excluding frame-view, or accept this known failure for full `pnpm check`.
-- `tools/lockstep` tests expect `LOCKSTEP_API_URL` to be unset when asserting missing-field behavior. If repo-root `.env` is sourced, run `env -u LOCKSTEP_API_URL -u LOCKSTEP_API_TOKEN pnpm --filter @latch-works/lockstep test`.
+- `apps/lockstep-cli` tests expect `LOCKSTEP_API_URL` to be unset when asserting missing-field behavior. If repo-root `.env` is sourced, run `env -u LOCKSTEP_API_URL -u LOCKSTEP_API_TOKEN pnpm --filter @latch-works/lockstep test`.
 - `pnpm lint` may report pre-existing Biome format/import issues unrelated to your changes.
 
 ### Service startup after VM boot

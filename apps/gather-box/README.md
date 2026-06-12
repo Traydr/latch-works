@@ -2,7 +2,7 @@
 
 > Chrome extension for downloading image galleries and story PDFs from supported sites into a local archive.
 
-Gather Box is the **collection** step in [Latch Works](../../README.md): media enters the ecosystem here, gets organized on disk (often alongside [Frame View](../frame-view)), and can later be synced to [Pane View](../pane-view) via [Lockstep](../../tools/lockstep).
+Gather Box is the **collection** step in [Latch Works](../../README.md): media enters the ecosystem here, gets organized on disk (often alongside [Frame View](../frame-view)), and can later be synced to [Pane View](../pane-view) via [Lockstep](../../apps/lockstep-cli).
 
 ## Supported sites
 
@@ -116,5 +116,5 @@ Spaces in folder and PDF names are converted to underscores.
 ## Related
 
 - [Frame View](../frame-view/README.md) — browse downloaded folders locally
-- [Lockstep](../../tools/lockstep/README.md) — publish archive to Pane View
+- [Lockstep](../../apps/lockstep-cli/README.md) — publish archive to Pane View
 - [Root README](../../README.md) — monorepo overview
