@@ -19,7 +19,7 @@ Usage:
 Notes:
   plan and verify are read-only.
   push uploads and updates only; it never applies remote deletes.
-  prune applies planned remote deletes explicitly.
+  prune applies planned remote deletes explicitly; confirmation or --yes is required.
   API tokens are read from LOCKSTEP_API_TOKEN by default.
   Run lockstep with no arguments for interactive mode (TTY required).
 `);
