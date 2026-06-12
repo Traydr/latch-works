@@ -1,3 +1,8 @@
+packages:
+  - "."
+  - "../../packages/lockstep-core"
+  - "../../packages/media-index"
+  - "../../packages/media-domain"
 allowBuilds:
   electron: true
   electron-winstaller: true
