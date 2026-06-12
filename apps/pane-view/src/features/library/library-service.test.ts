@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   assertWebSessionAuthorized,
+  DEFAULT_MEDIA_PAGE_LIMIT,
   readLibrarySnapshotRequest,
 } from "./library-service";
 
@@ -14,6 +15,13 @@ vi.mock("../../server/library/repository", () => ({
 
 import { isCurrentWebSessionValid } from "../../server/auth/web-session";
 import { readDatabaseLibrarySnapshot } from "../../server/library/repository";
+
+const emptyMediaPage = {
+  hasMore: false,
+  limit: DEFAULT_MEDIA_PAGE_LIMIT,
+  nextOffset: null,
+  offset: 0,
+};
 
 describe("library snapshot auth", () => {
   beforeEach(() => {
@@ -34,6 +42,7 @@ describe("library snapshot auth", () => {
       allFolders: [],
       folders: [],
       media: [],
+      mediaPage: emptyMediaPage,
       roots: ["photos"],
     });
 
@@ -42,12 +51,62 @@ describe("library snapshot auth", () => {
     expect(readDatabaseLibrarySnapshot).toHaveBeenCalledWith({
       currentPath: "photos",
       includeAllFolders: false,
-      limit: undefined,
+      limit: DEFAULT_MEDIA_PAGE_LIMIT,
       offset: 0,
       query: undefined,
       recursive: false,
     });
     expect(snapshot.currentPath).toBe("photos");
+    expect(snapshot.mediaPage).toEqual(emptyMediaPage);
     expect(snapshot.roots).toEqual(["photos"]);
+  });
+});
+
+describe("library snapshot paging", () => {
+  beforeEach(() => {
+    vi.mocked(readDatabaseLibrarySnapshot).mockReset();
+    vi.mocked(readDatabaseLibrarySnapshot).mockResolvedValue({
+      allFolders: [],
+      folders: [],
+      media: [],
+      mediaPage: emptyMediaPage,
+      roots: [],
+    });
+  });
+
+  it("passes media offset and default limit for non-search requests", async () => {
+    await readLibrarySnapshotRequest({ mediaOffset: 500, path: "photos" });
+
+    expect(readDatabaseLibrarySnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        limit: DEFAULT_MEDIA_PAGE_LIMIT,
+        offset: 500,
+        query: undefined,
+      }),
+    );
+  });
+
+  it("passes search offset and search limit for search requests", async () => {
+    await readLibrarySnapshotRequest({ path: "photos", query: "cover", searchOffset: 200 });
+
+    expect(readDatabaseLibrarySnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        limit: 200,
+        offset: 200,
+        query: "cover",
+      }),
+    );
+  });
+
+  it("honors custom media limit for non-search requests", async () => {
+    await readLibrarySnapshotRequest({ mediaLimit: 100, path: "photos" });
+
+    expect(readDatabaseLibrarySnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        limit: 100,
+        offset: 0,
+        query: undefined,
+      }),
+    );
   });
 });

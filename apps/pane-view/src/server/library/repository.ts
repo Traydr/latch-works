@@ -1,10 +1,13 @@
 import type { FolderNode, MediaItem } from "@latch-works/media-domain";
 import { getBaseName } from "@latch-works/media-domain";
-import { and, eq, ilike, inArray, isNull, or, type SQL } from "drizzle-orm";
+import { and, asc, eq, ilike, inArray, isNull, or, type SQL } from "drizzle-orm";
 import { db } from "../db";
 import { folders, libraryEntries, mediaObjects, thumbnails } from "../db/schema";
 import { buildGalleryThumbnailUrl } from "../media/cdn-delivery";
+import { buildMediaPage, type MediaPage } from "./media-page";
 import { escapeLikePattern, resolveMediaScope } from "./query-helpers";
+
+export type { MediaPage } from "./media-page";
 
 export interface LibraryMediaItem extends MediaItem {
   thumbnailUrl?: string;
@@ -14,6 +17,7 @@ export interface DatabaseLibrarySnapshot {
   allFolders: FolderNode[];
   folders: FolderNode[];
   media: LibraryMediaItem[];
+  mediaPage: MediaPage;
   roots: string[];
 }
 
@@ -27,7 +31,7 @@ export async function readDatabaseLibrarySnapshot({
 }: {
   currentPath: string;
   includeAllFolders?: boolean;
-  limit?: number;
+  limit: number;
   offset?: number;
   query?: string;
   recursive?: boolean;
@@ -90,7 +94,8 @@ export async function readDatabaseLibrarySnapshot({
         ),
       )
       .where(and(...mediaConditions))
-      .limit(limit ?? 5000)
+      .orderBy(asc(libraryEntries.logicalPath), asc(libraryEntries.id))
+      .limit(limit + 1)
       .offset(offset),
     db.select().from(folders).where(eq(folders.parentPath, "")),
   ] as const;
@@ -115,10 +120,12 @@ export async function readDatabaseLibrarySnapshot({
     path: folder.path,
   });
 
+  const { items: pageMediaRows, mediaPage } = buildMediaPage(mediaRows, limit, offset);
+
   return {
     allFolders: allFolderRows.map(mapFolderRow),
     folders: folderRows.map(mapFolderRow),
-    media: mediaRows.map(({ entry, object, thumbnail }) => {
+    media: pageMediaRows.map(({ entry, object, thumbnail }) => {
       const media: LibraryMediaItem = {
         durationMs: object.durationMs ?? undefined,
         extension: object.extension,
@@ -143,6 +150,7 @@ export async function readDatabaseLibrarySnapshot({
 
       return media;
     }),
+    mediaPage,
     roots: rootRows
       .map((folder) => folder.path)
       .concat(currentPath)
