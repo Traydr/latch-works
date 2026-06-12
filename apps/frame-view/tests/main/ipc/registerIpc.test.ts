@@ -163,6 +163,38 @@ describe('registerIpc', () => {
     });
   });
 
+  it('returns a validation error when listing children for an unauthorized folder', async () => {
+    await setup();
+    const listFolderChildrenHandler = handlers.get('tree:list-children');
+
+    resolveFolderPath.mockResolvedValue(Result.ok('C:\\blocked'));
+    isAuthorizedMediaPath.mockResolvedValue(false);
+
+    const response = await listFolderChildrenHandler?.({}, 'C:\\blocked');
+    const result = deserializeIpcResult(response, z.array(z.any()), 'tree:list-children');
+
+    expect(Result.isError(result)).toBe(true);
+    expect(Result.isError(result) ? result.error._tag : null).toBe('ValidationError');
+    expect(listFolderChildren).not.toHaveBeenCalled();
+  });
+
+  it('lists children for authorized folders', async () => {
+    await setup();
+    const listFolderChildrenHandler = handlers.get('tree:list-children');
+
+    resolveFolderPath.mockResolvedValue(Result.ok('C:\\authorized'));
+    isAuthorizedMediaPath.mockResolvedValue(true);
+    listFolderChildren.mockResolvedValue(
+      Result.ok([{ path: 'C:\\authorized\\child', name: 'child', hasChildren: false }]),
+    );
+
+    const response = await listFolderChildrenHandler?.({}, 'C:\\authorized');
+    const result = deserializeIpcResult(response, z.array(z.any()), 'tree:list-children');
+
+    expect(Result.isOk(result)).toBe(true);
+    expect(listFolderChildren).toHaveBeenCalledWith('C:\\authorized');
+  });
+
   it('returns a validation error when revealing an unauthorized media path', async () => {
     await setup();
     const revealInFolder = handlers.get('shell:reveal-in-folder');

@@ -4,7 +4,7 @@
 
 Lockstep is the **local → remote bridge** in Latch Works. It walks a source directory, detects media files using shared [`@latch-works/media-index`](../../packages/media-index) logic, compares against a remote snapshot, and uploads changed originals through the Pane View sync API.
 
-`plan` and `verify` are **read-only**. Only `push` writes to remote storage.
+`plan` and `verify` are **read-only**. Only `push` writes to remote storage. `push` always hashes during scan; use `--hash` with `plan` or `verify` for content-accurate comparisons. Capped pushes warn when delete actions are delayed by `--max-changes`, and each run is finalized through `/api/sync/runs/{id}/complete`.
 
 ## Commands
 
@@ -72,7 +72,7 @@ pnpm start:lockstep -- plan --source "T:\cloud-desktop\media" --hash
 # List every skipped non-media file
 pnpm start:lockstep -- plan --source "T:\cloud-desktop\media" --show-skipped
 
-# Cap uploads during first deployment testing
+# Cap uploads during first deployment testing (still hashes the full archive)
 pnpm start:lockstep -- push --source "T:\cloud-desktop\media" --max-changes 25
 
 # Verify against a saved snapshot JSON

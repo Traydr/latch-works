@@ -48,19 +48,19 @@ Lockstep prints live progress to stderr while it works: indexing paths, hash byt
 ## Read-Only Plan
 
 ```powershell
-pnpm lockstep -- plan --source "T:\cloud-desktop\media"
+pnpm start:lockstep -- plan --source "T:\cloud-desktop\media"
 ```
 
 Add `--hash` when the plan needs content hashes. Hashing a 35.9 GB archive will take longer but gives better change detection.
 
 ```powershell
-pnpm lockstep -- plan --source "T:\cloud-desktop\media" --hash
+pnpm start:lockstep -- plan --source "T:\cloud-desktop\media" --hash
 ```
 
 Show every skipped non-media file:
 
 ```powershell
-pnpm lockstep -- plan --source "T:\cloud-desktop\media" --show-skipped
+pnpm start:lockstep -- plan --source "T:\cloud-desktop\media" --show-skipped
 ```
 
 ## Verify Against a Snapshot
@@ -68,7 +68,7 @@ pnpm lockstep -- plan --source "T:\cloud-desktop\media" --show-skipped
 `verify` requires `--remote-snapshot`. It exits with code `1` when any path differs from the snapshot (upload, update, or delete actions).
 
 ```powershell
-pnpm lockstep -- verify --source "T:\cloud-desktop\media" --remote-snapshot remote-snapshot.json --hash
+pnpm start:lockstep -- verify --source "T:\cloud-desktop\media" --remote-snapshot remote-snapshot.json --hash
 ```
 
 The snapshot format is a JSON array:
@@ -90,7 +90,7 @@ The snapshot format is a JSON array:
 ```powershell
 $env:LOCKSTEP_API_URL = "http://localhost:3000"
 $env:LOCKSTEP_API_TOKEN = "replace-me"
-pnpm lockstep -- push --source "T:\cloud-desktop\media"
+pnpm start:lockstep -- push --source "T:\cloud-desktop\media"
 ```
 
 For the deployed Pane View domain:
@@ -98,7 +98,7 @@ For the deployed Pane View domain:
 ```powershell
 $env:LOCKSTEP_API_URL = "https://pane-view.traydr.dev"
 $env:LOCKSTEP_API_TOKEN = "replace-me"
-pnpm lockstep -- push --source "T:\cloud-desktop\media" --max-changes 25
+pnpm start:lockstep -- push --source "T:\cloud-desktop\media" --max-changes 25
 ```
 
 You can also pass `--api-url` instead of setting `LOCKSTEP_API_URL`, but the sync token must still be available through `LOCKSTEP_API_TOKEN` or the environment variable named by `--api-token-env`.
@@ -106,7 +106,7 @@ You can also pass `--api-url` instead of setting `LOCKSTEP_API_URL`, but the syn
 The token environment variable can be changed:
 
 ```powershell
-pnpm lockstep -- push --source "T:\cloud-desktop\media" --api-token-env "MY_LOCKSTEP_TOKEN"
+pnpm start:lockstep -- push --source "T:\cloud-desktop\media" --api-token-env "MY_LOCKSTEP_TOKEN"
 ```
 
 For first deployment verification, run `push` against a small test folder before pointing it at the full `T:\cloud-desktop\media` archive.
@@ -114,5 +114,7 @@ For first deployment verification, run `push` against a small test folder before
 To test the full archive plan while uploading only the first small batch of changed files, cap the push:
 
 ```powershell
-pnpm lockstep -- push --source "T:\cloud-desktop\media" --max-changes 25
+pnpm start:lockstep -- push --source "T:\cloud-desktop\media" --max-changes 25
 ```
+
+`push` always hashes local files before planning, even when `--max-changes` is set. Capped pushes take the first N planned changes in plan order. If that cap skips delete actions, Lockstep prints a warning with the number of delayed deletes. Each push run is finalized through `/api/sync/runs/{id}/complete` with `completed` or `failed` status and final counts.

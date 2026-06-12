@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   detectMediaType,
   getExtension,
+  isSupportedMediaFile,
   getParentPath,
   isSystemJunkDirectory,
   isSystemJunkFile,
@@ -114,8 +115,7 @@ export async function scanArchive({
         continue;
       }
 
-      const mediaType = detectMediaType(entry.name);
-      if (!mediaType) {
+      if (!isSupportedMediaFile(entry.name)) {
         skippedEntries.push({
           path: relativePath,
           reason: "unsupported-extension",
@@ -128,6 +128,7 @@ export async function scanArchive({
         continue;
       }
 
+      const mediaType = detectMediaType(entry.name);
       const fileStat = await stat(absolutePath);
       const parentPath = getParentPath(relativePath);
       const sha256 = hashFiles

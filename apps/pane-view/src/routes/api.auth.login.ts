@@ -4,6 +4,11 @@ import {
   ensureConfiguredOwnerCredentialAccount,
   verifyConfiguredOwnerCredentials,
 } from "../server/auth/better-auth";
+import {
+  clearLoginThrottle,
+  isLoginThrottled,
+  recordFailedLogin,
+} from "../server/auth/login-throttle";
 
 export const Route = createFileRoute("/api/auth/login")({
   server: {
@@ -12,12 +17,22 @@ export const Route = createFileRoute("/api/auth/login")({
         const formData = await request.formData();
         const username = String(formData.get("username") ?? "");
         const password = String(formData.get("password") ?? "");
+        const clientIp = resolveClientIp(request);
+
+        if (isLoginThrottled(clientIp, username)) {
+          return new Response(null, {
+            headers: { Location: "/login?error=invalid" },
+            status: 303,
+          });
+        }
+
         const owner = verifyConfiguredOwnerCredentials({
           password,
           username,
         });
 
         if (!owner) {
+          recordFailedLogin(clientIp, username);
           return new Response(null, {
             headers: { Location: "/login?error=invalid" },
             status: 303,
@@ -25,6 +40,7 @@ export const Route = createFileRoute("/api/auth/login")({
         }
 
         if (!(await ensureConfiguredOwnerCredentialAccount(owner))) {
+          recordFailedLogin(clientIp, username);
           return new Response(null, {
             headers: { Location: "/login?error=invalid" },
             status: 303,
@@ -38,9 +54,11 @@ export const Route = createFileRoute("/api/auth/login")({
         });
 
         if (signInResponse.ok) {
+          clearLoginThrottle(clientIp, username);
           return redirectWithAuthCookies(signInResponse, "/");
         }
 
+        recordFailedLogin(clientIp, username);
         return new Response(null, {
           headers: { Location: "/login?error=invalid" },
           status: 303,
@@ -86,6 +104,15 @@ function copyHeader(source: Headers, target: Headers, name: string): void {
   if (value) {
     target.set(name, value);
   }
+}
+
+function resolveClientIp(request: Request): string {
+  const forwarded = request.headers.get("x-forwarded-for");
+  if (forwarded) {
+    return forwarded.split(",")[0]?.trim() || "unknown";
+  }
+
+  return request.headers.get("x-real-ip") ?? "unknown";
 }
 
 function copySetCookies(source: Headers, target: Headers): void {

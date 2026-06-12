@@ -1,6 +1,6 @@
 import type { FolderNode, MediaItem } from "@latch-works/media-domain";
 import { getBaseName } from "@latch-works/media-domain";
-import { and, eq, ilike, isNull, or, type SQL } from "drizzle-orm";
+import { and, eq, ilike, inArray, isNull, or, type SQL } from "drizzle-orm";
 import { db } from "../db";
 import { folders, libraryEntries, mediaObjects, thumbnails } from "../db/schema";
 import { buildGalleryThumbnailUrl } from "../media/cdn-delivery";
@@ -102,9 +102,12 @@ export async function readDatabaseLibrarySnapshot({
       : Promise.resolve([]),
   ]);
 
+  const folderPaths = [...new Set([...folderRows, ...allFolderRows].map((folder) => folder.path))];
+  const parentPathsWithChildren = await readParentPathsWithChildren(folderPaths);
+
   const mapFolderRow = (folder: (typeof allFolderRows)[number]): FolderNode => ({
     folderCount: folder.folderCount ?? 0,
-    hasChildren: folder.entryCount > 0 || (folder.folderCount ?? 0) > 0,
+    hasChildren: parentPathsWithChildren.has(folder.path),
     mediaCount: folder.entryCount ?? 0,
     name: folder.name,
     parentId: folder.parentId,
@@ -171,6 +174,32 @@ export async function softDeleteLibraryEntry({
     .returning({ id: libraryEntries.id });
 
   return Boolean(deleted);
+}
+
+async function readParentPathsWithChildren(paths: string[]): Promise<Set<string>> {
+  if (paths.length === 0) {
+    return new Set();
+  }
+
+  const [folderParents, entryParents] = await Promise.all([
+    db
+      .selectDistinct({ parentPath: folders.parentPath })
+      .from(folders)
+      .where(and(isNull(folders.deletedAt), inArray(folders.parentPath, paths))),
+    db
+      .selectDistinct({ parentPath: libraryEntries.parentPath })
+      .from(libraryEntries)
+      .where(and(isNull(libraryEntries.deletedAt), inArray(libraryEntries.parentPath, paths))),
+  ]);
+
+  const parents = new Set<string>();
+  for (const row of [...folderParents, ...entryParents]) {
+    if (row.parentPath) {
+      parents.add(row.parentPath);
+    }
+  }
+
+  return parents;
 }
 
 function dedupe(value: string, index: number, values: string[]): boolean {

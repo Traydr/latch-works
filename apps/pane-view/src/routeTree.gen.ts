@@ -23,6 +23,7 @@ import { Route as ApiAuthLoginRouteImport } from './routes/api.auth.login'
 import { Route as ApiMediaMediaIdThumbnailRouteImport } from './routes/api.media.$mediaId.thumbnail'
 import { Route as ApiMediaMediaIdPreviewRouteImport } from './routes/api.media.$mediaId.preview'
 import { Route as ApiMediaMediaIdOriginalRouteImport } from './routes/api.media.$mediaId.original'
+import { Route as ApiSyncRunsSyncRunIdCompleteRouteImport } from './routes/api.sync.runs.$syncRunId.complete'
 
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
@@ -94,6 +95,12 @@ const ApiMediaMediaIdOriginalRoute = ApiMediaMediaIdOriginalRouteImport.update({
   path: '/api/media/$mediaId/original',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiSyncRunsSyncRunIdCompleteRoute =
+  ApiSyncRunsSyncRunIdCompleteRouteImport.update({
+    id: '/$syncRunId/complete',
+    path: '/$syncRunId/complete',
+    getParentRoute: () => ApiSyncRunsRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof GalleryIndexRoute
@@ -102,13 +109,14 @@ export interface FileRoutesByFullPath {
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
   '/api/sync/complete-object': typeof ApiSyncCompleteObjectRoute
-  '/api/sync/runs': typeof ApiSyncRunsRoute
+  '/api/sync/runs': typeof ApiSyncRunsRouteWithChildren
   '/api/sync/snapshot': typeof ApiSyncSnapshotRoute
   '/api/sync/upload-url': typeof ApiSyncUploadUrlRoute
   '/cdn/v1/$': typeof CdnV1SplatRoute
   '/api/media/$mediaId/original': typeof ApiMediaMediaIdOriginalRoute
   '/api/media/$mediaId/preview': typeof ApiMediaMediaIdPreviewRoute
   '/api/media/$mediaId/thumbnail': typeof ApiMediaMediaIdThumbnailRoute
+  '/api/sync/runs/$syncRunId/complete': typeof ApiSyncRunsSyncRunIdCompleteRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
@@ -117,13 +125,14 @@ export interface FileRoutesByTo {
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
   '/api/sync/complete-object': typeof ApiSyncCompleteObjectRoute
-  '/api/sync/runs': typeof ApiSyncRunsRoute
+  '/api/sync/runs': typeof ApiSyncRunsRouteWithChildren
   '/api/sync/snapshot': typeof ApiSyncSnapshotRoute
   '/api/sync/upload-url': typeof ApiSyncUploadUrlRoute
   '/cdn/v1/$': typeof CdnV1SplatRoute
   '/api/media/$mediaId/original': typeof ApiMediaMediaIdOriginalRoute
   '/api/media/$mediaId/preview': typeof ApiMediaMediaIdPreviewRoute
   '/api/media/$mediaId/thumbnail': typeof ApiMediaMediaIdThumbnailRoute
+  '/api/sync/runs/$syncRunId/complete': typeof ApiSyncRunsSyncRunIdCompleteRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -134,13 +143,14 @@ export interface FileRoutesById {
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
   '/api/sync/complete-object': typeof ApiSyncCompleteObjectRoute
-  '/api/sync/runs': typeof ApiSyncRunsRoute
+  '/api/sync/runs': typeof ApiSyncRunsRouteWithChildren
   '/api/sync/snapshot': typeof ApiSyncSnapshotRoute
   '/api/sync/upload-url': typeof ApiSyncUploadUrlRoute
   '/cdn/v1/$': typeof CdnV1SplatRoute
   '/api/media/$mediaId/original': typeof ApiMediaMediaIdOriginalRoute
   '/api/media/$mediaId/preview': typeof ApiMediaMediaIdPreviewRoute
   '/api/media/$mediaId/thumbnail': typeof ApiMediaMediaIdThumbnailRoute
+  '/api/sync/runs/$syncRunId/complete': typeof ApiSyncRunsSyncRunIdCompleteRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -158,6 +168,7 @@ export interface FileRouteTypes {
     | '/api/media/$mediaId/original'
     | '/api/media/$mediaId/preview'
     | '/api/media/$mediaId/thumbnail'
+    | '/api/sync/runs/$syncRunId/complete'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
@@ -173,6 +184,7 @@ export interface FileRouteTypes {
     | '/api/media/$mediaId/original'
     | '/api/media/$mediaId/preview'
     | '/api/media/$mediaId/thumbnail'
+    | '/api/sync/runs/$syncRunId/complete'
   id:
     | '__root__'
     | '/_gallery'
@@ -189,6 +201,7 @@ export interface FileRouteTypes {
     | '/api/media/$mediaId/original'
     | '/api/media/$mediaId/preview'
     | '/api/media/$mediaId/thumbnail'
+    | '/api/sync/runs/$syncRunId/complete'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -198,7 +211,7 @@ export interface RootRouteChildren {
   ApiAuthLoginRoute: typeof ApiAuthLoginRoute
   ApiAuthLogoutRoute: typeof ApiAuthLogoutRoute
   ApiSyncCompleteObjectRoute: typeof ApiSyncCompleteObjectRoute
-  ApiSyncRunsRoute: typeof ApiSyncRunsRoute
+  ApiSyncRunsRoute: typeof ApiSyncRunsRouteWithChildren
   ApiSyncSnapshotRoute: typeof ApiSyncSnapshotRoute
   ApiSyncUploadUrlRoute: typeof ApiSyncUploadUrlRoute
   CdnV1SplatRoute: typeof CdnV1SplatRoute
@@ -307,6 +320,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiMediaMediaIdOriginalRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/sync/runs/$syncRunId/complete': {
+      id: '/api/sync/runs/$syncRunId/complete'
+      path: '/$syncRunId/complete'
+      fullPath: '/api/sync/runs/$syncRunId/complete'
+      preLoaderRoute: typeof ApiSyncRunsSyncRunIdCompleteRouteImport
+      parentRoute: typeof ApiSyncRunsRoute
+    }
   }
 }
 
@@ -321,6 +341,18 @@ const GalleryRouteChildren: GalleryRouteChildren = {
 const GalleryRouteWithChildren =
   GalleryRoute._addFileChildren(GalleryRouteChildren)
 
+interface ApiSyncRunsRouteChildren {
+  ApiSyncRunsSyncRunIdCompleteRoute: typeof ApiSyncRunsSyncRunIdCompleteRoute
+}
+
+const ApiSyncRunsRouteChildren: ApiSyncRunsRouteChildren = {
+  ApiSyncRunsSyncRunIdCompleteRoute: ApiSyncRunsSyncRunIdCompleteRoute,
+}
+
+const ApiSyncRunsRouteWithChildren = ApiSyncRunsRoute._addFileChildren(
+  ApiSyncRunsRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   GalleryRoute: GalleryRouteWithChildren,
   LoginRoute: LoginRoute,
@@ -328,7 +360,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAuthLoginRoute: ApiAuthLoginRoute,
   ApiAuthLogoutRoute: ApiAuthLogoutRoute,
   ApiSyncCompleteObjectRoute: ApiSyncCompleteObjectRoute,
-  ApiSyncRunsRoute: ApiSyncRunsRoute,
+  ApiSyncRunsRoute: ApiSyncRunsRouteWithChildren,
   ApiSyncSnapshotRoute: ApiSyncSnapshotRoute,
   ApiSyncUploadUrlRoute: ApiSyncUploadUrlRoute,
   CdnV1SplatRoute: CdnV1SplatRoute,

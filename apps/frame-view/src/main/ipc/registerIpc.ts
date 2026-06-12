@@ -209,6 +209,11 @@ export function registerIpc(
         return validationFailure('tree:list-children', 'Invalid folder path');
       }
 
+      const authorized = await isAuthorizedMediaPath(resolvedPath);
+      if (!authorized) {
+        return validationFailure('tree:list-children', 'Folder path is not authorized');
+      }
+
       const childrenResult = await listFolderChildren(resolvedPath);
       if (Result.isError(childrenResult)) {
         return serializeAppResult(Result.err(childrenResult.error));

@@ -34,4 +34,22 @@ describe("scanArchive", () => {
       { path: "Thumbs.db", reason: "system-file" },
     ]);
   });
+
+  it("skips unsupported extensions while indexing valid media", async () => {
+    tempDir = await mkdtemp(path.join(os.tmpdir(), "media-index-scan-"));
+    const photosDir = path.join(tempDir, "photos");
+
+    await mkdir(photosDir, { recursive: true });
+    await writeFile(path.join(tempDir, "notes.txt"), "notes");
+    await writeFile(path.join(tempDir, "archive.zip"), "zip");
+    await writeFile(path.join(photosDir, "cover.jpg"), "image");
+
+    const scan = await scanArchive({ sourceRoot: tempDir });
+
+    expect(scan.items.map((item) => item.path)).toEqual(["photos/cover.jpg"]);
+    expect(scan.skippedEntries).toEqual([
+      { path: "archive.zip", reason: "unsupported-extension" },
+      { path: "notes.txt", reason: "unsupported-extension" },
+    ]);
+  });
 });

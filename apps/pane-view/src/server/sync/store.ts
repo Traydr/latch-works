@@ -1,5 +1,4 @@
 import { getBaseName, getParentPath, type MediaType } from "@latch-works/media-domain";
-import { originalObjectKey } from "@latch-works/media-storage";
 import { eq, isNull } from "drizzle-orm";
 import { db } from "../db";
 import { folders, libraryEntries, mediaObjects, syncRunItems, syncRuns } from "../db/schema";
@@ -16,9 +15,16 @@ export interface CompleteObjectInput {
   logicalPath: string;
   mediaType: MediaType;
   mtimeMs: number;
-  objectKey?: string;
+  objectKey: string;
   sha256: string;
   size: number;
+  syncRunId: string;
+}
+
+export interface FinalizeSyncRunInput {
+  counts?: Record<string, number>;
+  error?: string;
+  status: "completed" | "failed";
   syncRunId: string;
 }
 
@@ -78,13 +84,7 @@ export async function completeSyncedObject({
   input: CompleteObjectInput;
 }): Promise<{ status: "database" }> {
   const parentPath = getParentPath(input.logicalPath);
-  const objectKey =
-    input.objectKey ??
-    originalObjectKey({
-      extension: input.extension,
-      mediaType: input.mediaType,
-      sha256: input.sha256,
-    });
+  const objectKey = input.objectKey;
 
   const [mediaObject] = await db
     .insert(mediaObjects)
@@ -159,6 +159,29 @@ export async function completeSyncedObject({
       },
       target: [syncRunItems.syncRunId, syncRunItems.logicalPath],
     });
+
+  return { status: "database" };
+}
+
+export async function finalizeSyncRun({
+  input,
+}: {
+  input: FinalizeSyncRunInput;
+}): Promise<{ status: "database" }> {
+  const [syncRun] = await db
+    .update(syncRuns)
+    .set({
+      completedAt: new Date(),
+      counts: input.counts ?? {},
+      error: input.error ?? null,
+      status: input.status,
+    })
+    .where(eq(syncRuns.id, input.syncRunId))
+    .returning({ id: syncRuns.id });
+
+  if (!syncRun) {
+    throw new Error("Unable to finalize sync run.");
+  }
 
   return { status: "database" };
 }

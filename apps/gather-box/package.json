@@ -5,14 +5,17 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "check": "pnpm typecheck && pnpm build",
+    "check": "pnpm typecheck && pnpm test && pnpm build",
+    "lint": "pnpm exec biome check src",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "clean": "node scripts/clean.mjs"
   },
   "devDependencies": {
     "@types/chrome": "latest",
     "esbuild": "latest",
-    "typescript": "latest"
+    "typescript": "latest",
+    "vitest": "^4.1.3"
   },
   "dependencies": {
     "@libpdf/core": "^0.3.4"
