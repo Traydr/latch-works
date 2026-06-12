@@ -1,6 +1,7 @@
 import { createSyncPlan, scanArchive } from "@latch-works/media-index";
 import { fetchRemoteSnapshot, readRemoteSnapshot } from "./remote-snapshot.js";
 import { resolveHashFiles } from "./push-helpers.js";
+import { createScanProgressCoalescer } from "./scan-progress-coalescer.js";
 import type { LockstepObserver, LockstepPlan, PlanSyncOptions } from "./types.js";
 
 function throwIfAborted(signal?: AbortSignal): void {
@@ -41,12 +42,22 @@ export async function planSync(
     message: willHash ? "Indexing and hashing local archive..." : "Indexing local archive...",
   });
 
-  const scan = await scanArchive({
-    hashFiles: willHash,
-    onProgress: (progress) => observer?.onEvent({ type: "scan-progress", progress }),
-    signal,
-    sourceRoot: options.sourceRoot,
+  const progressCoalescer = createScanProgressCoalescer({
+    emit: (progress) => observer?.onEvent({ type: "scan-progress", progress }),
   });
+
+  let scan: Awaited<ReturnType<typeof scanArchive>>;
+  try {
+    scan = await scanArchive({
+      hashFiles: willHash,
+      onProgress: progressCoalescer.onProgress,
+      signal,
+      sourceRoot: options.sourceRoot,
+    });
+    progressCoalescer.flush();
+  } finally {
+    progressCoalescer.dispose();
+  }
 
   throwIfAborted(signal);
 
