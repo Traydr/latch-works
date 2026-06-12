@@ -6,13 +6,16 @@
 [![pnpm](https://img.shields.io/badge/pnpm-workspace-F69220?logo=pnpm&logoColor=white)](https://pnpm.io/)
 [![Private](https://img.shields.io/badge/status-private-lightgrey)](#)
 
-Latch Works is a **pnpm monorepo** that brings together viewers, a collection tool, a sync CLI, and shared media libraries into one ecosystem. The local archive stays the source of truth; remote access is explicit, authenticated, and read-only.
+Latch Works is a **pnpm monorepo** that brings together viewers, a collection tool, sync clients, shared media libraries, and a product site into one ecosystem. The local archive stays the source of truth; remote access is explicit, authenticated, and read-only.
 
-```text
-Gather  →  Organize  →  Sync  →  View
-  │            │           │         │
-Gather Box   Frame View  Lockstep  Pane View
-             (desktop)              (web/mobile)
+```mermaid
+flowchart LR
+  gather["Gather<br/>Gather Box"]
+  organize["Organize<br/>Frame View<br/>(desktop)"]
+  sync["Sync<br/>Lockstep<br/>(desktop + CLI)"]
+  view["View<br/>Pane View"]
+
+  gather --> organize --> sync --> view
 ```
 
 ---
@@ -24,7 +27,9 @@ Gather Box   Frame View  Lockstep  Pane View
 | **Pane View** | [`apps/pane-view`](apps/pane-view) | Private web viewer for browsing a synced archive on desktop, tablet, and phone. TanStack Start + PostgreSQL + S3. |
 | **Frame View** | [`apps/frame-view`](apps/frame-view) | Cross-platform **Electron** desktop gallery for local image, video, comic, and PDF folders. The UX north star for Pane View. |
 | **Gather Box** | [`apps/gather-box`](apps/gather-box) | **Chrome extension** that downloads image galleries and story PDFs from supported sites into inferred local folder structures. |
-| **Lockstep** | [`apps/lockstep-cli`](apps/lockstep-cli) | CLI that scans a local archive, plans changes, and **pushes** originals to the Pane View sync API. |
+| **Lockstep** | [`apps/lockstep`](apps/lockstep) | **Electron** desktop sync client for planning and pushing archive changes to Pane View. Profiles, encrypted token storage, and run history. |
+| **Lockstep CLI** | [`apps/lockstep-cli`](apps/lockstep-cli) | Scriptable sync tool (`plan`, `push`, `verify`, `doctor`) over the same engine as the desktop app. npm package `@latch-works/lockstep`. |
+| **Showcase** | [`apps/showcase`](apps/showcase) | Astro marketing site and MDX docs for the ecosystem — product pages, screenshots, and getting-started guides. |
 
 ### Shared packages
 
@@ -34,6 +39,7 @@ Gather Box   Frame View  Lockstep  Pane View
 | `@latch-works/media-index` | [`packages/media-index`](packages/media-index) | Archive scanning and sync-plan generation |
 | `@latch-works/media-storage` | [`packages/media-storage`](packages/media-storage) | Content-addressed S3 object key conventions and helpers |
 | `@latch-works/media-delivery` | [`packages/media-delivery`](packages/media-delivery) | Signed CDN delivery tokens for thumbnails and previews |
+| `@latch-works/lockstep-core` | [`packages/lockstep-core`](packages/lockstep-core) | Headless sync engine shared by Lockstep desktop and CLI |
 
 ---
 
@@ -45,15 +51,19 @@ latch-works/
 │   ├── pane-view/       # TanStack Start web viewer
 │   ├── frame-view/      # Electron desktop viewer
 │   ├── gather-box/      # Chrome extension
-│   └── lockstep-cli/    # Local → remote sync CLI
+│   ├── lockstep/        # Electron desktop sync client
+│   ├── lockstep-cli/    # Scriptable sync CLI
+│   └── showcase/        # Astro product site and docs
 ├── packages/
 │   ├── media-domain/
 │   ├── media-index/
 │   ├── media-storage/
-│   └── media-delivery/
+│   ├── media-delivery/
+│   └── lockstep-core/
 └── docs/
     ├── ARCHITECTURE_PLAN.md
     ├── decisions/
+    ├── plans/
     └── runbooks/
 ```
 
@@ -67,7 +77,7 @@ latch-works/
 - **S3-compatible storage** — required for Pane View media originals
 - **ffmpeg** — optional locally; Pane View bundles `ffmpeg-static` for thumbnails/posters
 
-Frame View additionally needs npm on `PATH` for Electron Forge packaging.
+Electron apps (Frame View, Lockstep) additionally need npm on `PATH` for Electron Forge packaging.
 
 ---
 
@@ -75,13 +85,19 @@ Frame View additionally needs npm on `PATH` for Electron Forge packaging.
 
 Install all workspace dependencies from the repo root:
 
-```powershell
+```bash
 pnpm install
+```
+
+Build shared packages before running app dev servers that import from `dist/`:
+
+```bash
+pnpm -r --filter './packages/*' build
 ```
 
 Run the full workspace check (build, test, typecheck):
 
-```powershell
+```bash
 pnpm check
 ```
 
@@ -89,30 +105,32 @@ pnpm check
 
 | Command | Description |
 | --- | --- |
-| `pnpm dev:pane` | Start Pane View dev server |
-| `pnpm start:lockstep` | Run Lockstep (interactive wizard when TTY) |
+| `pnpm dev:pane` | Start Pane View dev server (`http://127.0.0.1:3000`) |
+| `pnpm dev:lockstep` | Start Lockstep desktop (Electron dev) |
+| `pnpm dev:showcase` | Start Showcase site (`http://127.0.0.1:3100`) |
+| `pnpm start:lockstep` | Run Lockstep CLI (interactive wizard when TTY) |
 | `pnpm --filter @latch-works/frame-view start` | Start Frame View (Electron dev) |
 | `pnpm --filter @latch-works/gather-box build` | Build Gather Box extension to `dist/` |
 | `pnpm lint` | Biome check across the repo |
 | `pnpm test` | Run tests in all packages |
 
-### Lockstep example
+### Lockstep CLI example
 
 `plan` is read-only — it scans the source tree and prints a sync plan without changing anything:
 
-```powershell
-pnpm start:lockstep -- plan --source "T:\cloud-desktop\media"
+```bash
+pnpm start:lockstep -- plan --source "/path/to/archive"
 ```
 
 Push changed files to a running Pane View instance:
 
-```powershell
-$env:LOCKSTEP_API_URL = "http://localhost:3000"
-$env:LOCKSTEP_API_TOKEN = "your-sync-token"
-pnpm start:lockstep -- push --source "T:\cloud-desktop\media"
+```bash
+export LOCKSTEP_API_URL="http://127.0.0.1:3000"
+export LOCKSTEP_API_TOKEN="your-sync-token"
+pnpm start:lockstep -- push --source "/path/to/archive"
 ```
 
-See [`apps/lockstep-cli/README.md`](apps/lockstep-cli/README.md) and [`docs/runbooks/lockstep.md`](docs/runbooks/lockstep.md) for the full command reference.
+For the desktop client, profiles, and encrypted token storage, see [`apps/lockstep/README.md`](apps/lockstep/README.md). For the full CLI reference, see [`apps/lockstep-cli/README.md`](apps/lockstep-cli/README.md) and [`docs/runbooks/lockstep.md`](docs/runbooks/lockstep.md).
 
 ---
 
@@ -121,7 +139,7 @@ See [`apps/lockstep-cli/README.md`](apps/lockstep-cli/README.md) and [`docs/runb
 - **Private by default** — authentication gates web access; no public galleries.
 - **Read-only remote** — Pane View browses synced content; Lockstep is the write path.
 - **Local source of truth** — the desktop archive drives what gets synced.
-- **Shared domain logic** — gallery sorting, comic grouping, and scan planning live in packages, not duplicated per app.
+- **Shared domain logic** — gallery sorting, comic grouping, scan planning, and sync behavior live in packages, not duplicated per app.
 
 ---
 
@@ -134,6 +152,7 @@ See [`apps/lockstep-cli/README.md`](apps/lockstep-cli/README.md) and [`docs/runb
 | [`docs/runbooks/lockstep.md`](docs/runbooks/lockstep.md) | Lockstep operations runbook |
 | [`docs/runbooks/railway-cdn-pane-view.md`](docs/runbooks/railway-cdn-pane-view.md) | Pane View CDN and delivery setup |
 | [`docs/runbooks/pane-view-thumbnails.md`](docs/runbooks/pane-view-thumbnails.md) | Thumbnail generation notes |
+| [`apps/showcase/README.md`](apps/showcase/README.md) | Showcase dev server and screenshot capture |
 
 ---
 
@@ -153,5 +172,5 @@ The product names follow a window-and-access metaphor:
 
 ## License
 
-- **Frame View** is [MIT](apps/frame-view/LICENSE).
+- **Frame View** and **Lockstep** (desktop) are [MIT](apps/frame-view/LICENSE).
 - The rest of the monorepo is private and not licensed for redistribution.

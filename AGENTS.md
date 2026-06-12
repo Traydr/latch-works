@@ -4,14 +4,26 @@
 
 Latch Works is a private TypeScript pnpm workspace for collecting, syncing, and viewing a personal media archive. Workspace packages are declared in `pnpm-workspace.yaml`.
 
+### Apps
+
 - `apps/pane-view/`: TanStack Start web viewer, routes, server code, Drizzle config, and Vitest tests.
-- `apps/frame-view/`: Electron image/video viewer.
-- `apps/gather-box/`: browser-extension style collector build.
+- `apps/frame-view/`: Electron desktop image/video/comic/PDF viewer.
+- `apps/gather-box/`: Chrome extension collector build.
+- `apps/lockstep/`: Electron desktop sync client (`@latch-works/lockstep-app`). Primary Lockstep UX — profiles, plan/push flows, encrypted token storage.
+- `apps/lockstep-cli/`: Scriptable sync CLI (`@latch-works/lockstep`). Thin wrapper over `lockstep-core` for `plan`, `push`, `verify`, and `doctor`.
+- `apps/showcase/`: Astro marketing site and MDX docs for the ecosystem.
+
+### Packages
+
 - `packages/media-domain/`: shared media types, path logic, sorting, and domain tests.
 - `packages/media-index/`: archive scanning and sync-plan logic.
 - `packages/media-storage/`: storage key and S3 integration helpers.
-- `apps/lockstep-cli/`: CLI for planning and running local archive sync work.
-- `docs/`: decisions and runbooks.
+- `packages/media-delivery/`: signed CDN delivery tokens for thumbnails and previews.
+- `packages/lockstep-core/`: headless sync engine shared by Lockstep desktop and CLI — no console, prompts, or UI.
+
+### Other
+
+- `docs/`: architecture notes, decisions, plans, and runbooks.
 
 Source lives in each package's `src/` directory. Tests are colocated as `*.test.ts`.
 
@@ -25,9 +37,18 @@ Source lives in each package's `src/` directory. Tests are colocated as `*.test.
 - `pnpm lint`: run Biome checks from the repo root.
 - `pnpm format`: format the repo with Biome.
 
+### App dev shortcuts (repo root)
+
+- `pnpm dev:pane` — Pane View at `http://127.0.0.1:3000`
+- `pnpm dev:lockstep` — Lockstep desktop (Electron)
+- `pnpm dev:showcase` — Showcase at `http://127.0.0.1:3100`
+- `pnpm start:lockstep` — Lockstep CLI via `tsx`
+
 ## Coding Style & Naming Conventions
 
 This repo uses TypeScript ESM, pnpm 11.1.0, and Biome. Formatting is 2-space indentation, 100-column line width, organized imports, and recommended lint rules. Prefer named exports in shared packages and route public package APIs through `src/index.ts`. Use kebab-case directories and descriptive file names such as `sync-plan.ts`.
+
+Electron apps (Frame View, Lockstep) follow main/preload/renderer separation with Zod-backed IPC contracts and `better-result` payloads — do not expose raw Node APIs in renderer code.
 
 ## Testing Guidelines
 
@@ -43,6 +64,8 @@ Pull requests should include the purpose, affected app/package, verification com
 
 Do not commit secrets. Keep local values in `.env` and document required keys in `.env.example`. Treat the local archive as the source of truth; commands that mutate archive or storage state should be explicit and documented in the PR.
 
+Lockstep desktop stores sync tokens as encrypted blobs via Electron `safeStorage`; the CLI reads tokens from environment variables only.
+
 ## Cursor Cloud specific instructions
 
 ### Local services (Pane View E2E)
@@ -56,19 +79,25 @@ Copy `.env.example` to repo-root `.env`, symlink `apps/pane-view/.env` → `../.
 
 ### Build before dev
 
-`pnpm dev:pane` resolves workspace packages (`@latch-works/media-*`) from their built `dist/` output. Run `pnpm build` (or `pnpm -r --filter './packages/*' build`) before starting the dev server, or routes like `/api/health` will fail with package resolution errors.
+`pnpm dev:pane` and `pnpm dev:lockstep` resolve workspace packages (`@latch-works/media-*`, `@latch-works/lockstep-core`) from their built `dist/` output. Run `pnpm build` (or `pnpm -r --filter './packages/*' build`) before starting dev servers, or routes like `/api/health` will fail with package resolution errors.
 
 ### Running Pane View and Lockstep
 
 - Web app: `pnpm dev:pane` → http://127.0.0.1:3000 (`GET /api/health` should return `{"ok":true,"service":"pane-view"}`).
-- Lockstep plan (read-only): `cd apps/lockstep-cli && pnpm exec tsx src/cli.ts plan --source <archive-path>` with `.env` sourced.
-- Lockstep push: same, with `push --source <path> --api-url http://127.0.0.1:3000 --yes`.
+- Lockstep desktop: `pnpm dev:lockstep` from repo root after packages are built.
+- Lockstep CLI plan (read-only): `cd apps/lockstep-cli && pnpm exec tsx src/cli.ts plan --source <archive-path>` with `.env` sourced.
+- Lockstep CLI push: same, with `push --source <path> --api-url http://127.0.0.1:3000 --yes`.
 
 Do not pass `--` between `pnpm start:lockstep` and subcommands; use `pnpm exec tsx src/cli.ts plan ...` from `apps/lockstep-cli` or `pnpm --filter @latch-works/lockstep start plan --source ...`.
 
 - Gallery thumbnails and viewer images resolve signed S3 URLs through the `resolveMediaDeliveryUrl` server function (`useResolvedMediaUrl` hook). Do not point `<img src>` at `/api/media/...` in dev: Vite returns 404 for those requests when `Sec-Fetch-Dest: image`.
 - API thumbnail/preview routes redirect to signed storage URLs via `delivery-redirect.ts`. CDN tokens use `~` as the payload/signature separator and the splat route `cdn.v1.$.ts`.
 - Verify image loading: log in at `/login`, browse `/?path=photos`, then run `pnpm --filter @latch-works/pane-view check`.
+
+### Showcase
+
+- Dev server: `pnpm dev:showcase` → http://127.0.0.1:3100
+- Screenshot capture: `pnpm --filter @latch-works/showcase screenshots` (requires running Pane View for login screenshots; reads repo-root `.env` for credentials and `LOCKSTEP_SOURCE`).
 
 ### Test caveats on Linux
 
