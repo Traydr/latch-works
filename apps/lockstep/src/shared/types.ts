@@ -17,6 +17,8 @@ export type IpcErrorPayload = z.infer<
   typeof import("./contracts").IpcErrorPayloadSchema
 >;
 export type LockstepPlan = z.infer<typeof LockstepPlanSchema>;
+export type LockstepPlanCounts = LockstepPlan["counts"];
+export type LockstepPlanItem = LockstepPlan["items"][number];
 export type LockstepProfileInput = z.infer<typeof LockstepProfileInputSchema>;
 export type LockstepProfilePatch = z.infer<typeof LockstepProfilePatchSchema>;
 export type LockstepProfilePublic = z.infer<typeof LockstepProfilePublicSchema>;

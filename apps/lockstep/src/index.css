@@ -1,202 +1,86 @@
+@import "@fontsource-variable/geist";
+@import "tailwindcss";
+@config "../tailwind.config.cjs";
+
 :root {
-  color: #0f172a;
-  font-family: Inter, system-ui, -apple-system, sans-serif;
-  line-height: 1.5;
+  color-scheme: light dark;
 }
 
 * {
   box-sizing: border-box;
 }
 
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+}
+
 body {
-  margin: 0;
-  background: #f1f5f9;
+  font-family: "Geist Variable", "Segoe UI", system-ui, sans-serif;
 }
 
-button,
-input,
-select {
-  font: inherit;
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
 }
 
-button {
-  cursor: pointer;
-}
-
-.app-shell {
-  display: grid;
-  grid-template-rows: auto 1fr;
-  min-height: 100vh;
-}
-
-.app-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 1rem 1.5rem;
-  background: #0f172a;
-  color: #f8fafc;
-}
-
-.app-header h1 {
-  margin: 0;
-  font-size: 1.25rem;
-}
-
-.app-main {
-  padding: 1.5rem;
-}
-
-.panel {
-  background: #fff;
-  border: 1px solid #cbd5e1;
-  border-radius: 12px;
-  padding: 1.25rem;
-  margin-bottom: 1rem;
-}
-
-.panel h2 {
-  margin: 0 0 1rem;
-  font-size: 1.1rem;
-}
-
-.grid-2 {
-  display: grid;
-  gap: 1rem;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-}
-
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-
-.field label {
-  font-size: 0.85rem;
-  font-weight: 600;
-}
-
-.field input,
-.field select {
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
-  padding: 0.55rem 0.75rem;
-}
-
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-}
-
-.btn {
-  border: 0;
-  border-radius: 8px;
-  padding: 0.6rem 1rem;
-}
-
-.btn-primary {
-  background: #2563eb;
-  color: #fff;
-}
-
-.btn-secondary {
-  background: #e2e8f0;
-  color: #0f172a;
-}
-
-.btn-danger {
-  background: #dc2626;
-  color: #fff;
-}
-
-.btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-
-.stats {
-  display: grid;
-  gap: 0.75rem;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-}
-
-.stat-card {
-  background: #f8fafc;
-  border-radius: 8px;
-  padding: 0.75rem;
-}
-
-.stat-card strong {
-  display: block;
-  font-size: 1.4rem;
-}
-
-.muted {
-  color: #64748b;
-  font-size: 0.9rem;
-}
-
-.warning {
-  background: #fff7ed;
-  border: 1px solid #fdba74;
-  border-radius: 8px;
-  color: #9a3412;
-  padding: 0.75rem 1rem;
-}
-
-.log {
-  background: #0f172a;
-  border-radius: 8px;
-  color: #e2e8f0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.85rem;
-  max-height: 240px;
-  overflow: auto;
-  padding: 0.75rem;
-  white-space: pre-wrap;
-}
-
-.item-list {
-  max-height: 320px;
-  overflow: auto;
-}
-
-.item-row {
-  border-bottom: 1px solid #e2e8f0;
-  display: grid;
-  gap: 0.5rem;
-  grid-template-columns: 80px 1fr;
-  padding: 0.5rem 0;
-}
-
-.badge {
+::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.45);
   border-radius: 999px;
-  display: inline-block;
-  font-size: 0.75rem;
-  font-weight: 700;
-  padding: 0.15rem 0.5rem;
-  text-transform: uppercase;
 }
 
-.badge-upload {
-  background: #dbeafe;
-  color: #1d4ed8;
+::-webkit-scrollbar-track {
+  background: transparent;
 }
 
-.badge-update {
-  background: #fef3c7;
-  color: #b45309;
+/* Prism surfaces — shared with Frame View */
+.prism-surface {
+  @apply rounded-2xl border border-zinc-300 bg-white/90 shadow-xl backdrop-blur-xl dark:border-zinc-700 dark:bg-zinc-900/90;
 }
 
-.badge-delete {
-  background: #fee2e2;
-  color: #b91c1c;
+.prism-btn {
+  @apply rounded-xl border border-zinc-300/90 bg-white/70 px-3 py-1.5 text-xs font-medium text-zinc-700 transition hover:border-zinc-400 hover:bg-white disabled:pointer-events-none disabled:opacity-50 dark:border-zinc-600/90 dark:bg-zinc-900/70 dark:text-zinc-200 dark:hover:border-zinc-500 dark:hover:bg-zinc-900;
 }
 
-.badge-keep {
-  background: #e2e8f0;
-  color: #475569;
+.prism-btn-primary {
+  @apply border-violet-300 bg-violet-100 text-violet-800 hover:border-violet-400 hover:bg-violet-100 dark:border-violet-500/60 dark:bg-violet-500/20 dark:text-violet-100 dark:hover:bg-violet-500/25;
+}
+
+.prism-btn-danger {
+  border-color: rgba(248, 113, 113, 0.55);
+  background-image: repeating-linear-gradient(
+    135deg,
+    rgba(248, 113, 113, 0.18) 0,
+    rgba(248, 113, 113, 0.18) 5px,
+    transparent 5px,
+    transparent 10px
+  );
+  @apply text-red-800 dark:text-red-200;
+}
+
+.prism-pill {
+  @apply inline-flex items-center gap-2 rounded-xl border border-zinc-300/80 bg-white/70 px-2.5 py-1 text-[11px] text-zinc-600 dark:border-zinc-700/80 dark:bg-zinc-900/70 dark:text-zinc-300;
+}
+
+.prism-input {
+  @apply w-full rounded-xl border border-zinc-300 bg-white/80 px-3 py-2 text-sm text-zinc-700 outline-none transition placeholder:text-zinc-400 focus:border-violet-400 focus:ring-2 focus:ring-violet-300/40 dark:border-zinc-700 dark:bg-zinc-900/80 dark:text-zinc-200 dark:placeholder:text-zinc-500 dark:focus:border-violet-400 dark:focus:ring-violet-500/30;
+}
+
+.prism-select {
+  @apply rounded-xl border border-zinc-300 bg-white/80 px-3 py-2 text-sm text-zinc-700 outline-none transition focus:border-violet-400 focus:ring-2 focus:ring-violet-300/40 dark:border-zinc-700 dark:bg-zinc-900/80 dark:text-zinc-200 dark:focus:border-violet-400 dark:focus:ring-violet-500/30;
+}
+
+.prism-section {
+  @apply rounded-2xl border border-zinc-300/80 bg-white/70 p-4 dark:border-zinc-700/80 dark:bg-zinc-900/60;
+}
+
+.prism-label {
+  @apply text-[11px] font-semibold tracking-wide text-zinc-500 uppercase dark:text-zinc-400;
+}
+
+.prism-stat {
+  @apply rounded-2xl border border-zinc-300/70 bg-white/75 px-4 py-3 dark:border-zinc-700/70 dark:bg-zinc-900/70;
 }
