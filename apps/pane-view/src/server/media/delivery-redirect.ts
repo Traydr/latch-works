@@ -1,14 +1,12 @@
-import {
-  API_PRIVATE_CACHE_CONTROL,
-  buildSignedCdnDeliveryUrl,
-  readDeliveryPurposeForObjectKey,
-} from "./cdn-delivery";
+import { API_PRIVATE_CACHE_CONTROL } from "./cdn-delivery";
+import { buildDerivativeDeliveryUrl } from "./derivative-delivery-url";
 
-export function redirectToCdnDelivery({ objectKey }: { objectKey: string }): Response {
-  const location = buildSignedCdnDeliveryUrl({
-    objectKey,
-    purpose: readDeliveryPurposeForObjectKey(objectKey),
-  });
+export async function redirectToCdnDelivery({
+  objectKey,
+}: {
+  objectKey: string;
+}): Promise<Response> {
+  const location = await buildDerivativeDeliveryUrl(objectKey);
 
   return new Response(null, {
     headers: {

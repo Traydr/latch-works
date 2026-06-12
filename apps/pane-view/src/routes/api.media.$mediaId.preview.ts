@@ -46,7 +46,7 @@ export const Route = createFileRoute("/api/media/$mediaId/preview")({
           });
         }
 
-        return redirectToCdnDelivery({ objectKey: result.objectKey });
+        return await redirectToCdnDelivery({ objectKey: result.objectKey });
       },
     },
   },

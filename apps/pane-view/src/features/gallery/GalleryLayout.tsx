@@ -12,6 +12,7 @@ import {
 import { GalleryShellProvider, useGalleryShell } from "@/features/gallery/gallery-shell-context";
 import { ThemeSync } from "@/features/settings/ThemeSync";
 import { useAppSettings } from "@/features/settings/useAppSettings";
+import { useHydrated } from "@/hooks/use-hydrated";
 
 const galleryIndexRoute = getRouteApi("/_gallery/");
 
@@ -23,6 +24,8 @@ function GalleryLayoutContent() {
   const displayPath = displayPathFromSearch(search.path);
   const snapshotRequest = toLibrarySnapshotRequest(search);
   const { data: library, isFetching } = useLibrarySnapshotQuery(snapshotRequest);
+  const hydrated = useHydrated();
+  const showFetching = hydrated && isFetching;
   const folders = library?.folders ?? [];
 
   const navigateToPath = (path: string) => {
@@ -47,7 +50,7 @@ function GalleryLayoutContent() {
       <ArchiveSidebar
         currentPath={displayPath}
         folders={folders}
-        isLoading={isFetching}
+        isLoading={showFetching}
         onNavigateToPath={navigateToPath}
         onOpenSettings={requestOpenSettings}
       />

@@ -39,6 +39,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SidebarTrigger } from "@/components/ui/sidebar";
+import { useHydrated } from "@/hooks/use-hydrated";
 import { useIsMobile } from "@/hooks/use-mobile";
 import {
   buildBreadcrumbItems,
@@ -77,6 +78,8 @@ export function GalleryPage() {
   const navigate = galleryIndexRoute.useNavigate();
   const snapshotRequest = toLibrarySnapshotRequest(search);
   const { data: library, isFetching } = useLibrarySnapshotQuery(snapshotRequest);
+  const hydrated = useHydrated();
+  const showFetching = hydrated && isFetching;
   const invalidateLibrary = useInvalidateLibrarySnapshot();
   const deleteEntryMutation = useDeleteLibraryEntryMutation();
   const displayPath = displayPathFromSearch(search.path);
@@ -854,7 +857,7 @@ export function GalleryPage() {
               displayPath={displayPath}
               effectiveRecursive={effectiveRecursive}
               focusedEntryIndex={focusedEntryIndex}
-              isFetching={isFetching}
+              isFetching={showFetching}
               onActivateEntry={handleActivateEntry}
               onDelete={deleteSelectedMedia}
               onNext={() => selectAdjacentMedia(1)}
@@ -881,7 +884,7 @@ export function GalleryPage() {
         <FloatingToolbar
           comicMode={comicMode}
           currentPath={displayPath}
-          isRefreshing={isFetching}
+          isRefreshing={showFetching}
           onChangeSortMode={setSortMode}
           onRefresh={() => void invalidateLibrary()}
           onToggleComicMode={() => {
