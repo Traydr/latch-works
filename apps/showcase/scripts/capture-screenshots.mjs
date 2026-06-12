@@ -4,20 +4,78 @@
  * Run after pane-view is up when capturing Pane View / Lockstep output.
  */
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { existsSync, readdirSync } from "node:fs";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import puppeteer from "puppeteer-core";
 import { writePaneViewFallbackPages } from "./pane-view-fallback.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const repoRoot = join(root, "../..");
 const publicDir = join(root, "public", "screenshots");
-const paneBase = process.env.PANE_VIEW_URL ?? "http://127.0.0.1:3000";
 const framePreviewBase = process.env.FRAME_VIEW_SHOWCASE_URL ?? "http://127.0.0.1:5199";
+
+function loadRepoEnv() {
+  for (const envPath of [join(root, ".env"), join(repoRoot, ".env")]) {
+    if (!existsSync(envPath)) {
+      continue;
+    }
+
+    for (const line of readFileSync(envPath, "utf8").split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) {
+        continue;
+      }
+
+      const separator = trimmed.indexOf("=");
+      if (separator === -1) {
+        continue;
+      }
+
+      const key = trimmed.slice(0, separator).trim();
+      let value = trimmed.slice(separator + 1).trim();
+      if (
+        (value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"))
+      ) {
+        value = value.slice(1, -1);
+      }
+
+      if (!(key in process.env)) {
+        process.env[key] = value;
+      }
+    }
+  }
+}
+
+loadRepoEnv();
+
 const username = process.env.PANE_VIEW_USERNAME ?? "showcase";
 const password = process.env.PANE_VIEW_PASSWORD ?? "showcase123";
 const archiveDir = process.env.LOCKSTEP_SOURCE ?? "/tmp/showcase-archive";
+
+async function probePaneHealth(base) {
+  try {
+    const response = await fetch(`${base}/api/health`);
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function resolvePaneBase() {
+  if (process.env.PANE_VIEW_URL) {
+    return process.env.PANE_VIEW_URL.replace(/\/$/, "");
+  }
+
+  for (const base of ["http://localhost:3000", "http://127.0.0.1:3000"]) {
+    if (await probePaneHealth(base)) {
+      return base;
+    }
+  }
+
+  return "http://localhost:3000";
+}
 
 function resolveBundledChrome() {
   const cacheRoot = join(root, "chrome");
@@ -32,8 +90,14 @@ function resolveBundledChrome() {
 
     const bundleRoot = join(cacheRoot, platformDir.name);
     const candidates = [
-      join(bundleRoot, "chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"),
-      join(bundleRoot, "chrome-mac-x64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"),
+      join(
+        bundleRoot,
+        "chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+      ),
+      join(
+        bundleRoot,
+        "chrome-mac-x64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+      ),
       join(bundleRoot, "chrome-linux64/chrome"),
       join(bundleRoot, "chrome-win64/chrome.exe"),
     ];
@@ -107,7 +171,7 @@ async function applyPaneViewDarkMode(page) {
   });
 }
 
-async function loginToPaneView(page) {
+async function loginToPaneView(page, paneBase) {
   await applyPaneViewDarkMode(page);
   await page.goto(`${paneBase}/login`, { waitUntil: "networkidle2" });
   await applyPaneViewDarkMode(page);
@@ -141,16 +205,12 @@ function escapeHtml(value) {
 }
 
 function runLockstep(args) {
-  const result = spawnSync(
-    "pnpm",
-    ["exec", "tsx", "src/cli.ts", ...args],
-    {
-      cwd: join(root, "../../tools/lockstep"),
-      env: { ...process.env, FORCE_COLOR: "0", NO_COLOR: "1" },
-      encoding: "utf8",
-      maxBuffer: 10 * 1024 * 1024,
-    },
-  );
+  const result = spawnSync("pnpm", ["exec", "tsx", "src/cli.ts", ...args], {
+    cwd: join(root, "../../tools/lockstep"),
+    env: { ...process.env, FORCE_COLOR: "0", NO_COLOR: "1" },
+    encoding: "utf8",
+    maxBuffer: 10 * 1024 * 1024,
+  });
   return (result.stdout || "") + (result.stderr || "");
 }
 
@@ -194,16 +254,12 @@ async function waitForFramePreview(page) {
 }
 
 async function startFrameViewPreview() {
-  const child = spawn(
-    "pnpm",
-    ["--filter", "@latch-works/frame-view", "preview:showcase"],
-    {
-      cwd: join(root, "../.."),
-      stdio: "ignore",
-      detached: true,
-      env: { ...process.env },
-    },
-  );
+  const child = spawn("pnpm", ["--filter", "@latch-works/frame-view", "preview:showcase"], {
+    cwd: join(root, "../.."),
+    stdio: "ignore",
+    detached: true,
+    env: { ...process.env },
+  });
   child.unref();
 
   for (let attempt = 0; attempt < 40; attempt += 1) {
@@ -223,6 +279,8 @@ async function startFrameViewPreview() {
 }
 
 async function main() {
+  const paneBase = await resolvePaneBase();
+
   const browser = await puppeteer.launch({
     executablePath: chromePath,
     headless: true,
@@ -235,16 +293,14 @@ async function main() {
   let framePreviewProcess = null;
 
   try {
-    const paneHealthy = await fetch(`${paneBase}/api/health`)
-      .then((response) => response.ok)
-      .catch(() => false);
+    const paneHealthy = await probePaneHealth(paneBase);
 
     if (paneHealthy) {
       await capture(page, join(publicDir, "pane-view", "login.png"), `${paneBase}/login`, {
         darkMode: true,
         prepare: applyPaneViewDarkMode,
       });
-      await loginToPaneView(page);
+      await loginToPaneView(page, paneBase);
       await capture(
         page,
         join(publicDir, "pane-view", "gallery.png"),
@@ -252,7 +308,9 @@ async function main() {
         { darkMode: true, waitMs: 3000, prepare: applyPaneViewDarkMode },
       );
 
-      const tile = await page.$('[data-testid="media-tile"], [data-gallery-item="true"], button[aria-label*="sample"]');
+      const tile = await page.$(
+        '[data-testid="media-tile"], [data-gallery-item="true"], button[aria-label*="sample"]',
+      );
       if (tile) {
         await tile.click();
         await sleep(1800);
@@ -268,7 +326,9 @@ async function main() {
         );
       }
     } else {
-      console.warn("Pane View is not running — capturing dark-mode fallback pane-view screenshots.");
+      console.warn(
+        "Pane View is not running — capturing dark-mode fallback pane-view screenshots.",
+      );
       const fallbackPages = writePaneViewFallbackPages(publicDir);
       for (const [name, fileName] of [
         ["login", "login.png"],
@@ -298,7 +358,9 @@ async function main() {
 
     const planOutput = runLockstep(["plan", "--source", archiveDir, "--api-url", paneBase]);
     const planHtml = captureLockstepTerminal(planOutput);
-    await capture(page, join(publicDir, "lockstep", "plan.png"), `file://${planHtml}`, { darkMode: true });
+    await capture(page, join(publicDir, "lockstep", "plan.png"), `file://${planHtml}`, {
+      darkMode: true,
+    });
 
     const pushOutput = runLockstep([
       "push",
@@ -311,14 +373,21 @@ async function main() {
       "3",
     ]);
     const pushHtml = captureLockstepTerminal(pushOutput);
-    await capture(page, join(publicDir, "lockstep", "push.png"), `file://${pushHtml}`, { darkMode: true });
+    await capture(page, join(publicDir, "lockstep", "push.png"), `file://${pushHtml}`, {
+      darkMode: true,
+    });
 
     framePreviewProcess = await startFrameViewPreview();
-    await capture(page, join(publicDir, "frame-view", "gallery.png"), `${framePreviewBase}/showcase-preview.html`, {
-      darkMode: true,
-      waitMs: 1200,
-      prepare: waitForFramePreview,
-    });
+    await capture(
+      page,
+      join(publicDir, "frame-view", "gallery.png"),
+      `${framePreviewBase}/showcase-preview.html`,
+      {
+        darkMode: true,
+        waitMs: 1200,
+        prepare: waitForFramePreview,
+      },
+    );
 
     const firstTile = await page.$('[data-gallery-item="true"]');
     if (firstTile) {

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
+import { copyFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { mkdirSync, writeFileSync, copyFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -26,31 +26,31 @@ const palette = [
 ];
 
 async function main() {
-mkdirSync(photosDir, { recursive: true });
-mkdirSync(frameMediaDir, { recursive: true });
+  mkdirSync(photosDir, { recursive: true });
+  mkdirSync(frameMediaDir, { recursive: true });
 
-for (let index = 0; index < 18; index += 1) {
-  const fileName = `sample-${String(index + 1).padStart(2, "0")}.jpg`;
-  const archivePath = join(photosDir, fileName);
-  const framePath = join(frameMediaDir, fileName);
-  const color = palette[index % palette.length];
+  for (let index = 0; index < 18; index += 1) {
+    const fileName = `sample-${String(index + 1).padStart(2, "0")}.jpg`;
+    const archivePath = join(photosDir, fileName);
+    const framePath = join(frameMediaDir, fileName);
+    const color = palette[index % palette.length];
 
-  if (!existsSync(archivePath)) {
-    const label = String(index + 1).padStart(2, "0");
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1200" viewBox="0 0 1600 1200">
+    if (!existsSync(archivePath)) {
+      const label = String(index + 1).padStart(2, "0");
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1200" viewBox="0 0 1600 1200">
       <rect width="1600" height="1200" fill="${color}"/>
       <rect x="80" y="80" width="1440" height="1040" rx="48" fill="#09090b" opacity="0.25"/>
       <text x="800" y="620" text-anchor="middle" fill="#f4f4f5" font-family="Segoe UI, system-ui, sans-serif" font-size="120" font-weight="600">${label}</text>
     </svg>`;
 
-    const jpeg = await sharp(Buffer.from(svg)).jpeg({ quality: 88 }).toBuffer();
-    writeFileSync(archivePath, jpeg);
+      const jpeg = await sharp(Buffer.from(svg)).jpeg({ quality: 88 }).toBuffer();
+      writeFileSync(archivePath, jpeg);
+    }
+
+    copyFileSync(archivePath, framePath);
   }
 
-  copyFileSync(archivePath, framePath);
-}
-
-console.log(`Prepared showcase media in ${photosDir} and ${frameMediaDir}`);
+  console.log(`Prepared showcase media in ${photosDir} and ${frameMediaDir}`);
 }
 
 main().catch((error) => {
