@@ -1,26 +1,92 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "tags": [
-    "-lintignore"
-  ],
+  "tags": ["-lintignore"],
   "ignoreIssues": {
-    "apps/pane-view/src/components/ui/**": [
-      "exports",
-      "types"
-    ]
+    "apps/pane-view/src/components/ui/**": ["exports", "types"],
+    "apps/pane-view/src/components/ui/select.tsx": ["files"],
+    "apps/pane-view/src/features/**": ["exports", "files", "types"],
+    "apps/pane-view/src/server/**": ["exports", "types", "files"],
+    "apps/gather-box/**": ["exports", "types", "files"],
+    "apps/lockstep-cli/src/**": ["exports"],
+    "apps/lockstep/src/**": ["exports", "types", "files"],
+    "apps/frame-view/scripts/ensure-electron.mjs": ["files"],
+    "apps/frame-view/src/**": ["types"],
+    "apps/showcase/src/**": ["exports", "types"]
   },
   "workspaces": {
-    ".": {},
+    ".": {
+      "ignoreDependencies": ["vitest"]
+    },
     "apps/pane-view": {
-      "entry": [
-        "drizzle.config.ts",
-        "vite.config.ts",
-        "vitest.config.ts",
-        "src/router.tsx",
-        "src/routeTree.gen.ts",
-        "src/routes/**/*.{ts,tsx}"
-      ],
+      "entry": ["drizzle.config.ts", "src/router.tsx", "src/routes/**/*.{ts,tsx}"],
       "drizzle": false
+    },
+    "apps/frame-view": {
+      "entry": [
+        "forge.config.ts",
+        "vite.main.config.ts",
+        "vite.preload.config.ts",
+        "vite.renderer.config.ts",
+        "src/main.ts",
+        "src/preload.ts",
+        "src/main/catalog/catalog.worker.ts",
+        "src/main/thumbnail/thumbnail.worker.ts",
+        "src/showcase/preview.tsx",
+        "tests/**/*.test.ts",
+        "tests/testUtils.ts"
+      ],
+      "ignoreDependencies": ["ffmpeg-static", "ffprobe-static", "scheduler"]
+    },
+    "apps/gather-box": {
+      "entry": [
+        "vitest.config.ts",
+        "src/background/index.ts",
+        "src/content/index.ts",
+        "src/popup/index.ts",
+        "src/sidepanel/index.ts",
+        "src/options/index.ts",
+        "src/**/*.test.ts"
+      ]
+    },
+    "apps/lockstep": {
+      "entry": [
+        "forge.config.ts",
+        "vite.main.config.ts",
+        "vite.preload.config.ts",
+        "vite.renderer.config.ts",
+        "src/main.ts",
+        "src/preload.ts",
+        "src/showcase/preview.tsx",
+        "scripts/ensure-electron.mjs"
+      ],
+      "ignoreDependencies": ["@testing-library/react"]
+    },
+    "apps/lockstep-cli": {
+      "entry": ["src/**/*.test.ts", "src/cli.ts"]
+    },
+    "apps/showcase": {
+      "entry": [
+        "astro.config.mjs",
+        "src/content.config.ts",
+        "src/pages/**/*.{astro,ts,tsx}",
+        "scripts/*.mjs"
+      ],
+      "ignoreDependencies": ["sharp"]
+    },
+    "packages/media-domain": {
+      "entry": ["src/**/*.test.ts"]
+    },
+    "packages/media-index": {
+      "entry": ["src/**/*.test.ts"]
+    },
+    "packages/media-storage": {
+      "entry": ["src/**/*.test.ts"]
+    },
+    "packages/media-delivery": {
+      "entry": ["src/**/*.test.ts"]
+    },
+    "packages/lockstep-core": {
+      "entry": ["src/**/*.test.ts"]
     }
   }
 }

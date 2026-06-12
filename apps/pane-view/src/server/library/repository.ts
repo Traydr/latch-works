@@ -170,11 +170,7 @@ export function folderFromPath(path: string): FolderNode {
   };
 }
 
-export async function softDeleteLibraryEntry({
-  entryId,
-}: {
-  entryId: string;
-}): Promise<boolean> {
+export async function softDeleteLibraryEntry({ entryId }: { entryId: string }): Promise<boolean> {
   const [deleted] = await db
     .update(libraryEntries)
     .set({ deletedAt: new Date() })
@@ -212,7 +208,9 @@ async function readParentPathsWithChildren(paths: string[]): Promise<Set<string>
           db
             .selectDistinct({ parentPath: libraryEntries.parentPath })
             .from(libraryEntries)
-            .where(and(isNull(libraryEntries.deletedAt), inArray(libraryEntries.parentPath, paths))),
+            .where(
+              and(isNull(libraryEntries.deletedAt), inArray(libraryEntries.parentPath, paths)),
+            ),
         ]);
 
   const parents = new Set<string>();

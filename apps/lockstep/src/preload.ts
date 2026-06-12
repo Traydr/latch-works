@@ -25,10 +25,7 @@ function invokeResult<T>(
 
 const api: LockstepApi = {
   cancelRun: () =>
-    invokeResult(
-      InvokeIpcContracts.cancelRun.channel,
-      InvokeIpcContracts.cancelRun.responseSchema,
-    ),
+    invokeResult(InvokeIpcContracts.cancelRun.channel, InvokeIpcContracts.cancelRun.responseSchema),
   createProfile: (input: LockstepProfileInput) =>
     invokeResult(
       InvokeIpcContracts.createProfile.channel,
@@ -71,11 +68,7 @@ const api: LockstepApi = {
       InvokeIpcContracts.pickSourceFolder.responseSchema,
     ),
   plan: (request: RunRequest) =>
-    invokeResult(
-      InvokeIpcContracts.plan.channel,
-      InvokeIpcContracts.plan.responseSchema,
-      request,
-    ),
+    invokeResult(InvokeIpcContracts.plan.channel, InvokeIpcContracts.plan.responseSchema, request),
   prune: (request: RunRequest) =>
     invokeResult(
       InvokeIpcContracts.prune.channel,
@@ -83,11 +76,7 @@ const api: LockstepApi = {
       request,
     ),
   push: (request: RunRequest) =>
-    invokeResult(
-      InvokeIpcContracts.push.channel,
-      InvokeIpcContracts.push.responseSchema,
-      request,
-    ),
+    invokeResult(InvokeIpcContracts.push.channel, InvokeIpcContracts.push.responseSchema, request),
   setActiveProfile: (profileId: string) =>
     invokeResult(
       InvokeIpcContracts.setActiveProfile.channel,

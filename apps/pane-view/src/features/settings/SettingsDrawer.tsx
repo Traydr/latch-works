@@ -1,6 +1,6 @@
 import { useState } from "react";
-import type { AppSettings, AppSettingsPatch } from "./types";
 import { GALLERY_HOTKEYS } from "./hotkeys";
+import type { AppSettings, AppSettingsPatch } from "./types";
 
 interface SettingsDrawerProps {
   onClose: () => void;
@@ -44,14 +44,23 @@ export function SettingsDrawer({
 
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
-      <button type="button" className="absolute inset-0" aria-label="Close settings" onClick={onClose} />
+      <button
+        type="button"
+        className="absolute inset-0"
+        aria-label="Close settings"
+        onClick={onClose}
+      />
       <aside className="relative z-10 flex max-h-[80vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-xl">
         <header className="flex items-center justify-between border-b border-border px-5 py-4">
           <div>
             <h2 className="text-lg font-semibold">Settings</h2>
             <p className="text-xs text-muted-foreground">Usability, viewer, and diagnostics</p>
           </div>
-          <button type="button" className="rounded-lg border border-border px-3 py-1.5 text-sm" onClick={onClose}>
+          <button
+            type="button"
+            className="rounded-lg border border-border px-3 py-1.5 text-sm"
+            onClick={onClose}
+          >
             Close
           </button>
         </header>
@@ -196,7 +205,11 @@ function ToggleRow({
   return (
     <label className="flex items-center justify-between gap-3 text-sm">
       <span>{label}</span>
-      <input checked={checked} type="checkbox" onChange={(event) => onChange(event.target.checked)} />
+      <input
+        checked={checked}
+        type="checkbox"
+        onChange={(event) => onChange(event.target.checked)}
+      />
     </label>
   );
 }

@@ -88,20 +88,20 @@ export async function runPartialPrompts(
   config: LockstepConfig,
   env: NodeJS.ProcessEnv,
 ): Promise<CliOptions> {
-  let current = { ...options };
+  const current = { ...options };
 
   for (const field of missing) {
     switch (field) {
       case "source":
-        current.source = await promptSource(
-          current.source ?? env.LOCKSTEP_SOURCE ?? config.source,
-        );
+        current.source = await promptSource(current.source ?? env.LOCKSTEP_SOURCE ?? config.source);
         break;
       case "remoteSnapshot":
         current.remoteSnapshot = await promptRemoteSnapshot(current.remoteSnapshot);
         break;
       case "apiUrl":
-        current.apiUrl = await promptApiUrl(current.apiUrl ?? env.LOCKSTEP_API_URL ?? config.apiUrl);
+        current.apiUrl = await promptApiUrl(
+          current.apiUrl ?? env.LOCKSTEP_API_URL ?? config.apiUrl,
+        );
         break;
       default:
         break;

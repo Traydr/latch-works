@@ -38,7 +38,11 @@ export function AppHeader({ onAddProfile, onProfileChange, settings }: AppHeader
             ))}
           </select>
         ) : null}
-        <button className="prism-btn inline-flex items-center gap-1.5" type="button" onClick={onAddProfile}>
+        <button
+          className="prism-btn inline-flex items-center gap-1.5"
+          type="button"
+          onClick={onAddProfile}
+        >
           <Plus className="size-3.5" aria-hidden />
           {settings?.profiles.length ? "Add profile" : "Create profile"}
         </button>

@@ -1,11 +1,5 @@
 import type { GallerySortMode } from "@latch-works/media-domain";
-import {
-  ArrowUpDown,
-  ImageIcon,
-  ListTree,
-  RefreshCcw,
-  Shuffle,
-} from "lucide-react";
+import { ArrowUpDown, ImageIcon, ListTree, RefreshCcw, Shuffle } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -65,9 +59,7 @@ export function FloatingToolbar({
           onClick={onToggleRecursive}
           size="sm"
           title={
-            recursiveDisabled
-              ? "Open a folder to enable recursive browsing"
-              : "Recursive browsing"
+            recursiveDisabled ? "Open a folder to enable recursive browsing" : "Recursive browsing"
           }
           type="button"
           variant={recursive ? "default" : "outline"}

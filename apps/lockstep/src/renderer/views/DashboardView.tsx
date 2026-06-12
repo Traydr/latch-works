@@ -43,7 +43,8 @@ export function DashboardView({
               placeholder="Enter token for this session"
             />
             <p className="text-xs text-zinc-500 dark:text-zinc-400">
-              OS encryption is unavailable here, so the token stays in memory until you quit Lockstep.
+              OS encryption is unavailable here, so the token stays in memory until you quit
+              Lockstep.
             </p>
           </label>
         ) : null}

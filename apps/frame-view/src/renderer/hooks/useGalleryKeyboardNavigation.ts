@@ -198,7 +198,7 @@ export function useGalleryKeyboardNavigation({
         }
 
         const folderToOpen = selectedFolderEntry ?? firstFolderEntry;
-        if (!folderToOpen || folderToOpen.kind !== 'folder') {
+        if (folderToOpen?.kind !== 'folder') {
           return;
         }
 

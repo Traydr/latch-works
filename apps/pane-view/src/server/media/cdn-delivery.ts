@@ -16,10 +16,7 @@ export function buildSignedCdnDeliveryUrl({
   purpose: DeliveryPurpose;
 }): string {
   const token = deliverySigner.sign({
-    exp: readDeliveryTokenExpiration(
-      Math.floor(Date.now() / 1000),
-      env.MEDIA_DELIVERY_TTL_SECONDS,
-    ),
+    exp: readDeliveryTokenExpiration(Math.floor(Date.now() / 1000), env.MEDIA_DELIVERY_TTL_SECONDS),
     objectKey,
     purpose,
   });

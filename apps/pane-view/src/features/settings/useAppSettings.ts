@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import {
-  DEFAULT_APP_SETTINGS,
   type AppSettings,
   type AppSettingsPatch,
+  DEFAULT_APP_SETTINGS,
   type RootGalleryPreferences,
 } from "./types";
 

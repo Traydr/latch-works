@@ -81,7 +81,9 @@ export function installShowcaseFrameViewMock(): void {
       settingsState = {
         ...settingsState,
         ...patch,
-        filters: patch.filters ? { ...settingsState.filters, ...patch.filters } : settingsState.filters,
+        filters: patch.filters
+          ? { ...settingsState.filters, ...patch.filters }
+          : settingsState.filters,
         debug: patch.debug ? { ...settingsState.debug, ...patch.debug } : settingsState.debug,
         rootGalleryPreferences: patch.rootGalleryPreferences
           ? { ...settingsState.rootGalleryPreferences, ...patch.rootGalleryPreferences }

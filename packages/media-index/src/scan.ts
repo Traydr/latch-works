@@ -5,8 +5,8 @@ import path from "node:path";
 import {
   detectMediaType,
   getExtension,
-  isSupportedMediaFile,
   getParentPath,
+  isSupportedMediaFile,
   isSystemJunkDirectory,
   isSystemJunkFile,
   joinArchivePath,

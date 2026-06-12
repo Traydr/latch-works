@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
-import { createRequire } from 'node:module';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -46,7 +46,9 @@ function isElectronInstalled() {
     );
     const pathTxt = readFileSync(path.join(electronDir, 'path.txt'), 'utf8');
 
-    return distVersion === version && pathTxt === getPlatformPath() && existsSync(getInstallMarkerPath());
+    return (
+      distVersion === version && pathTxt === getPlatformPath() && existsSync(getInstallMarkerPath())
+    );
   } catch {
     return false;
   }

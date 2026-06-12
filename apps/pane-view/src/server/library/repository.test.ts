@@ -4,7 +4,9 @@ import { escapeLikePatternForTest, resolveMediaScope } from "./query-helpers";
 
 describe("resolveMediaScope", () => {
   it("scopes to direct children when non-recursive", () => {
-    expect(resolveMediaScope({ currentPath: "sfw/patreon", recursive: false, searching: false })).toEqual({
+    expect(
+      resolveMediaScope({ currentPath: "sfw/patreon", recursive: false, searching: false }),
+    ).toEqual({
       mode: "direct-children",
       parentPath: "sfw/patreon",
     });
@@ -18,7 +20,9 @@ describe("resolveMediaScope", () => {
   });
 
   it("scopes to subtree when recursive in a folder", () => {
-    expect(resolveMediaScope({ currentPath: "sfw/patreon", recursive: true, searching: false })).toEqual({
+    expect(
+      resolveMediaScope({ currentPath: "sfw/patreon", recursive: true, searching: false }),
+    ).toEqual({
       mode: "subtree",
       pathPrefix: "sfw/patreon",
     });

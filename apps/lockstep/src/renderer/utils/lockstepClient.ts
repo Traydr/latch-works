@@ -2,7 +2,9 @@ import { Result } from "better-result";
 
 import type { IpcErrorPayload } from "../../shared/types";
 
-type LockstepResult<T> = ReturnType<typeof Result.ok<T>> | ReturnType<typeof Result.err<IpcErrorPayload>>;
+type LockstepResult<T> =
+  | ReturnType<typeof Result.ok<T>>
+  | ReturnType<typeof Result.err<IpcErrorPayload>>;
 
 export function getLockstepValue<T>(result: LockstepResult<T>): T {
   if (!Result.isOk(result)) {

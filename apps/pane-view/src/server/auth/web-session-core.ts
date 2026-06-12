@@ -1,10 +1,6 @@
 import { auth, readConfiguredOwner } from "./better-auth";
 
-export async function isRequestSessionValid({
-  request,
-}: {
-  request: Request;
-}): Promise<boolean> {
+export async function isRequestSessionValid({ request }: { request: Request }): Promise<boolean> {
   const session = await auth.api.getSession({
     headers: request.headers,
   });
@@ -28,7 +24,9 @@ export async function readRequestSessionUserId({
   return session?.user.id ?? null;
 }
 
-function isConfiguredOwnerSession(session: Awaited<ReturnType<typeof auth.api.getSession>>): boolean {
+function isConfiguredOwnerSession(
+  session: Awaited<ReturnType<typeof auth.api.getSession>>,
+): boolean {
   const owner = readConfiguredOwner();
   return Boolean(owner && session && session.user.email === owner.email);
 }

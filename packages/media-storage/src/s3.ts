@@ -1,3 +1,4 @@
+import type { Readable } from "node:stream";
 import {
   DeleteObjectCommand,
   GetObjectCommand,
@@ -6,7 +7,6 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import type { Readable } from "node:stream";
 
 export interface S3StorageConfig {
   accessKeyId: string;

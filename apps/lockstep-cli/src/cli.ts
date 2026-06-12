@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import { configFromOptions, createConfigStore } from "./config.js";
 import { executeCommand } from "./commands.js";
+import { configFromOptions, createConfigStore } from "./config.js";
 import { resolveOptions } from "./options.js";
 
 async function run(): Promise<void> {

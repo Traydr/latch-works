@@ -34,10 +34,7 @@ export async function pruneDeleted(
   throwIfAborted(signal);
 
   const changedItems = selectChangedItems(plan.items);
-  const { items: itemsToPrune, omittedCount } = selectDeleteItems(
-    changedItems,
-    options.maxChanges,
-  );
+  const { items: itemsToPrune, omittedCount } = selectDeleteItems(changedItems, options.maxChanges);
 
   if (itemsToPrune.length === 0) {
     observer?.onEvent({

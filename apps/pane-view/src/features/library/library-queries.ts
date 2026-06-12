@@ -1,4 +1,10 @@
-import { keepPreviousData, useMutation, useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  useSuspenseQuery,
+} from "@tanstack/react-query";
 import type { GalleryBrowseSearch } from "@/features/gallery/browse-search";
 import { deleteLibraryEntry, getLibrarySnapshot, type LibrarySnapshot } from "./library-service";
 
@@ -11,8 +17,7 @@ export interface LibrarySnapshotRequest {
 
 export const librarySnapshotKeys = {
   all: ["library-snapshot"] as const,
-  snapshot: (request: LibrarySnapshotRequest) =>
-    [...librarySnapshotKeys.all, request] as const,
+  snapshot: (request: LibrarySnapshotRequest) => [...librarySnapshotKeys.all, request] as const,
 };
 
 export function toLibrarySnapshotRequest(search: GalleryBrowseSearch): LibrarySnapshotRequest {

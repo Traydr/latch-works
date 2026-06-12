@@ -1,9 +1,9 @@
-import type { LockstepPlan, LockstepPlanItem, LockstepSettings } from "../shared/types";
 import { ActionDock } from "../renderer/components/ActionDock";
 import { AppHeader } from "../renderer/components/AppHeader";
 import { AppShell } from "../renderer/components/AppShell";
 import { PlanResultsView } from "../renderer/views/PlanResultsView";
 import { RunProgressView } from "../renderer/views/RunProgressView";
+import type { LockstepPlan, LockstepPlanItem, LockstepSettings } from "../shared/types";
 
 export const showcaseSettings: LockstepSettings = {
   activeProfileId: "showcase-profile",
@@ -50,9 +50,7 @@ const noop = () => undefined;
 export function ShowcasePlanScreen() {
   return (
     <AppShell
-      header={
-        <AppHeader onAddProfile={noop} onProfileChange={noop} settings={showcaseSettings} />
-      }
+      header={<AppHeader onAddProfile={noop} onProfileChange={noop} settings={showcaseSettings} />}
     >
       <PlanResultsView
         filter=""
@@ -79,9 +77,7 @@ const pushLogs = [
 export function ShowcasePushScreen() {
   return (
     <AppShell
-      header={
-        <AppHeader onAddProfile={noop} onProfileChange={noop} settings={showcaseSettings} />
-      }
+      header={<AppHeader onAddProfile={noop} onProfileChange={noop} settings={showcaseSettings} />}
     >
       <RunProgressView
         doctorResult={null}

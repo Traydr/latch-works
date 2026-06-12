@@ -254,7 +254,9 @@ export function App() {
       return;
     }
 
-    if (!window.confirm("Apply planned remote deletes? This cannot be undone from the desktop app.")) {
+    if (
+      !window.confirm("Apply planned remote deletes? This cannot be undone from the desktop app.")
+    ) {
       return;
     }
 

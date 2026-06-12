@@ -55,8 +55,7 @@ export function useVirtualGridMetrics(
   const mainRef = useRef<HTMLElement | null>(null);
 
   const columnWidth = thumbnailSize + 20;
-  const effectiveViewportWidth =
-    mainClientWidth > 0 ? mainClientWidth : DEFAULT_VIEWPORT_WIDTH;
+  const effectiveViewportWidth = mainClientWidth > 0 ? mainClientWidth : DEFAULT_VIEWPORT_WIDTH;
   const columnCount = useMemo(() => {
     return Math.min(6, Math.max(2, Math.floor((effectiveViewportWidth - 40) / columnWidth)));
   }, [columnWidth, effectiveViewportWidth]);

@@ -1,12 +1,12 @@
 import {
-  doctor as runDoctor,
-  planSync,
-  pruneDeleted,
-  pushChanges,
   type LockstepObserver,
   type LockstepPlan,
   type LockstepRunEvent,
   type LockstepRunSummary,
+  planSync,
+  pruneDeleted,
+  pushChanges,
+  doctor as runDoctor,
 } from "@latch-works/lockstep-core";
 import type { BrowserWindow } from "electron";
 

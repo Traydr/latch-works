@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createSignedPutUrl, createS3StorageClient, readS3StorageConfig } from "./s3.js";
+import { createS3StorageClient, createSignedPutUrl, readS3StorageConfig } from "./s3.js";
 
 describe("S3 storage config", () => {
   it("returns null until all required env vars exist", () => {

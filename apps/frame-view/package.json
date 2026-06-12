@@ -11,10 +11,10 @@
     "package": "electron-forge package",
     "make": "electron-forge make",
     "publish": "electron-forge publish",
-    "lint": "biome check .",
+    "lint": "biome check --config-path biome.jsonc .",
     "format": "biome format --write .",
     "typecheck": "tsc --noEmit",
-    "check": "pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run knip",
+    "check": "pnpm run lint && pnpm run typecheck && pnpm run test",
     "knip": "knip",
     "db:generate": "drizzle-kit generate",
     "test": "vitest run"

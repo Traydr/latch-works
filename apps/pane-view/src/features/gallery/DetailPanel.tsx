@@ -12,8 +12,8 @@ import {
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { DeleteOverlay } from "./DeleteOverlay";
-import { DEFAULT_CARD_WIDTH } from "./thumbnail-size";
 import { MediaPlaceholder } from "./MediaPlaceholder";
+import { DEFAULT_CARD_WIDTH } from "./thumbnail-size";
 import { useResolvedMediaUrl } from "./useResolvedMediaUrl";
 
 interface DetailPanelProps {
@@ -121,20 +121,44 @@ export function DetailPanel({
           </Button>
 
           <div className="flex min-w-0 items-center gap-2">
-            <Button className="min-w-0 flex-1" size="lg" variant="outline" onClick={onPrev} title="Previous" type="button">
+            <Button
+              className="min-w-0 flex-1"
+              size="lg"
+              variant="outline"
+              onClick={onPrev}
+              title="Previous"
+              type="button"
+            >
               <ChevronLeft className="size-4" />
             </Button>
-            <Button className="min-w-0 flex-1" size="lg" variant="outline" onClick={onNext} title="Next" type="button">
+            <Button
+              className="min-w-0 flex-1"
+              size="lg"
+              variant="outline"
+              onClick={onNext}
+              title="Next"
+              type="button"
+            >
               <ChevronRight className="size-4" />
             </Button>
           </div>
 
           <div className="flex min-w-0 gap-2">
-            <Button className="min-w-0 flex-1 gap-2" onClick={onCopyPath} type="button" variant="outline">
+            <Button
+              className="min-w-0 flex-1 gap-2"
+              onClick={onCopyPath}
+              type="button"
+              variant="outline"
+            >
               <Copy className="size-4 shrink-0" />
               <span className="truncate">Copy path</span>
             </Button>
-            <Button className="min-w-0 flex-1 gap-2" onClick={onDownload} type="button" variant="outline">
+            <Button
+              className="min-w-0 flex-1 gap-2"
+              onClick={onDownload}
+              type="button"
+              variant="outline"
+            >
               <Download className="size-4 shrink-0" />
               <span className="truncate">Download</span>
             </Button>
@@ -184,7 +208,9 @@ function MetadataItem({ label, value }: { label: string; value: string }) {
   return (
     <div className="grid min-w-0 max-w-full gap-1 border-b border-border pb-3">
       <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="m-0 max-w-full overflow-hidden break-all font-medium text-foreground">{value}</dd>
+      <dd className="m-0 max-w-full overflow-hidden break-all font-medium text-foreground">
+        {value}
+      </dd>
     </div>
   );
 }

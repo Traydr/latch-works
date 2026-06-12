@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   getMissingFields,
+  type MissingField,
   mergeWithConfigAndEnv,
   parseArgv,
-  type MissingField,
 } from "./options.js";
 import type { CliOptions } from "./types.js";
 

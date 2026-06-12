@@ -273,7 +273,7 @@ async function defaultConfirmPrune(): Promise<boolean> {
 }
 
 function createCliObserver(reporter: LineReporter): LockstepObserver {
-  let pushContext: { current: number; path: string; total: number } | null = null;
+  let _pushContext: { current: number; path: string; total: number } | null = null;
 
   return {
     onEvent(event: LockstepRunEvent) {
@@ -306,16 +306,14 @@ function createCliObserver(reporter: LineReporter): LockstepObserver {
       if (event.type === "item-success") {
         reporter.clear();
         reporter.log(`[${event.current}/${event.total}] ${event.action} ${event.path}`);
-        pushContext = null;
+        _pushContext = null;
         return;
       }
 
       if (event.type === "item-failure") {
         reporter.clear();
-        reporter.log(
-          `[${event.current}/${event.total}] Failed ${event.path}: ${event.error}`,
-        );
-        pushContext = null;
+        reporter.log(`[${event.current}/${event.total}] Failed ${event.path}: ${event.error}`);
+        _pushContext = null;
       }
     },
   };

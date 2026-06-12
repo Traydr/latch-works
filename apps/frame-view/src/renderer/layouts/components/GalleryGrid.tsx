@@ -70,7 +70,7 @@ export function GalleryGrid({
   useEffect(() => {
     for (const slot of windowedItems) {
       const entry = browserEntries.at(slot.index);
-      if (!entry || entry.kind !== 'media' || entry.media.mediaType !== 'video') {
+      if (entry?.kind !== 'media' || entry.media.mediaType !== 'video') {
         continue;
       }
 

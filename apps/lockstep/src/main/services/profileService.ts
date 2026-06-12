@@ -1,8 +1,8 @@
+import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
-import { randomUUID } from "node:crypto";
 import { Result, type Result as ResultType } from "better-result";
 import { safeStorage } from "electron";
 
@@ -170,9 +170,7 @@ export class ProfileService {
     return Result.ok(this.toPublicProfile(profile));
   }
 
-  async deleteProfile(
-    profileId: string,
-  ): Promise<ResultType<LockstepSettings, FileSystemError>> {
+  async deleteProfile(profileId: string): Promise<ResultType<LockstepSettings, FileSystemError>> {
     this.state.profiles = this.state.profiles.filter((profile) => profile.id !== profileId);
     if (this.state.activeProfileId === profileId) {
       this.state.activeProfileId = this.state.profiles[0]?.id ?? null;

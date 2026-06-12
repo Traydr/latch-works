@@ -13,9 +13,7 @@ const labels: Array<{ key: keyof LockstepPlanCounts; label: string }> = [
 ];
 
 export function PlanCountGrid({ counts, compact = false }: PlanCountGridProps) {
-  const items = compact
-    ? labels.filter((entry) => entry.key !== "keep")
-    : labels;
+  const items = compact ? labels.filter((entry) => entry.key !== "keep") : labels;
 
   return (
     <div className={`grid gap-3 ${compact ? "grid-cols-3" : "grid-cols-2 sm:grid-cols-4"}`}>

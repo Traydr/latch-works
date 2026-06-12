@@ -4,7 +4,7 @@ import type { z } from "zod";
 import { createSerializedResultSchema, IpcErrorPayloadSchema } from "./contracts";
 import type { IpcErrorPayload } from "./types";
 
-function protocolError(channel: string, payload: unknown): IpcErrorPayload {
+function protocolError(channel: string, _payload: unknown): IpcErrorPayload {
   return {
     _tag: "ProtocolError",
     channel,

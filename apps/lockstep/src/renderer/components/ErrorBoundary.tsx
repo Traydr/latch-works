@@ -25,7 +25,9 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
         <div className="flex min-h-screen items-center justify-center bg-zinc-50 p-6 dark:bg-zinc-950">
           <section className="prism-section max-w-lg">
             <h1 className="text-lg font-semibold tracking-tight">Lockstep hit a renderer error</h1>
-            <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-300">{this.state.error.message}</p>
+            <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-300">
+              {this.state.error.message}
+            </p>
             <p className="mt-3 text-sm text-zinc-600 dark:text-zinc-300">
               If this mentions a missing module, run{" "}
               <code className="font-mono text-xs">pnpm install</code> from the repo root and restart

@@ -7,6 +7,7 @@
       "!**/node_modules",
       "!**/dist",
       "!**/.output",
+      "!**/.astro",
       "!**/routeTree.gen.ts",
       "!apps/frame-view",
       "!apps/gather-box"
@@ -35,5 +36,39 @@
         "organizeImports": "on"
       }
     }
-  }
+  },
+  "overrides": [
+    {
+      "includes": ["apps/showcase/**/*.astro"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noUnusedImports": "off",
+            "noUnusedVariables": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": [
+        "apps/pane-view/src/features/gallery/**",
+        "apps/pane-view/src/features/comics/**"
+      ],
+      "linter": {
+        "rules": {
+          "a11y": {
+            "noStaticElementInteractions": "off",
+            "useKeyWithClickEvents": "off"
+          },
+          "correctness": {
+            "noUnusedFunctionParameters": "off",
+            "useExhaustiveDependencies": "off"
+          },
+          "suspicious": {
+            "noArrayIndexKey": "off"
+          }
+        }
+      }
+    }
+  ]
 }

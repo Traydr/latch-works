@@ -1,9 +1,6 @@
 import { formatPushError } from "./format.js";
 import { planSync } from "./plan-sync.js";
-import {
-  selectChangedItems,
-  selectUploadUpdateItems,
-} from "./push-helpers.js";
+import { selectChangedItems, selectUploadUpdateItems } from "./push-helpers.js";
 import { postJson, pushMediaItem } from "./remote-api.js";
 import type { LockstepObserver, LockstepPlan, PushChangesOptions } from "./types.js";
 

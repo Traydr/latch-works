@@ -1,7 +1,7 @@
 ---
 import { ProductBadge, SectionHeading } from "@/components/ui";
-import BaseLayout from "@/layouts/BaseLayout.astro";
 import { pipeline, products } from "@/data/products";
+import BaseLayout from "@/layouts/BaseLayout.astro";
 
 const apps = products.filter((product) => product.kind === "app");
 const tools = products.filter((product) => product.kind === "tool");

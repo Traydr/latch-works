@@ -8,7 +8,13 @@ interface ActionDockProps {
   onPush: () => void;
 }
 
-export function ActionDock({ disabled = false, onDoctor, onPlan, onPrune, onPush }: ActionDockProps) {
+export function ActionDock({
+  disabled = false,
+  onDoctor,
+  onPlan,
+  onPrune,
+  onPush,
+}: ActionDockProps) {
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center px-4 pb-4">
       <div className="prism-surface pointer-events-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-3 px-4 py-3">
@@ -16,19 +22,39 @@ export function ActionDock({ disabled = false, onDoctor, onPlan, onPrune, onPush
           Push never applies deletes. Review the plan, then use Apply deletes explicitly.
         </p>
         <div className="flex flex-wrap items-center gap-2">
-          <button className="prism-btn inline-flex items-center gap-1.5" disabled={disabled} type="button" onClick={onDoctor}>
+          <button
+            className="prism-btn inline-flex items-center gap-1.5"
+            disabled={disabled}
+            type="button"
+            onClick={onDoctor}
+          >
             <Stethoscope className="size-3.5" aria-hidden />
             Test connection
           </button>
-          <button className="prism-btn prism-btn-primary inline-flex items-center gap-1.5" disabled={disabled} type="button" onClick={onPlan}>
+          <button
+            className="prism-btn prism-btn-primary inline-flex items-center gap-1.5"
+            disabled={disabled}
+            type="button"
+            onClick={onPlan}
+          >
             <Play className="size-3.5" aria-hidden />
             Plan
           </button>
-          <button className="prism-btn prism-btn-primary inline-flex items-center gap-1.5" disabled={disabled} type="button" onClick={onPush}>
+          <button
+            className="prism-btn prism-btn-primary inline-flex items-center gap-1.5"
+            disabled={disabled}
+            type="button"
+            onClick={onPush}
+          >
             <ArrowUpCircle className="size-3.5" aria-hidden />
             Push uploads/updates
           </button>
-          <button className="prism-btn prism-btn-danger inline-flex items-center gap-1.5" disabled={disabled} type="button" onClick={onPrune}>
+          <button
+            className="prism-btn prism-btn-danger inline-flex items-center gap-1.5"
+            disabled={disabled}
+            type="button"
+            onClick={onPrune}
+          >
             <Trash2 className="size-3.5" aria-hidden />
             Apply deletes
           </button>

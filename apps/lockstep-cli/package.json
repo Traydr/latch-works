@@ -15,9 +15,7 @@
   },
   "dependencies": {
     "@inquirer/prompts": "^7.5.3",
-    "@latch-works/lockstep-core": "workspace:*",
-    "@latch-works/media-domain": "workspace:*",
-    "@latch-works/media-index": "workspace:*"
+    "@latch-works/lockstep-core": "workspace:*"
   },
   "devDependencies": {
     "tsx": "^4.21.0",
