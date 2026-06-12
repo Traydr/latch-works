@@ -17,6 +17,7 @@ export const env = createEnv({
     PANE_VIEW_USERNAME: z.string(),
     PANE_VIEW_PASSWORD: z.string(),
     PANE_VIEW_SYNC_TOKEN: z.string(),
+    PANE_VIEW_TRUST_PROXY_HEADERS: z.coerce.boolean().default(false),
   },
   clientPrefix: "VITE_",
   client: {},
