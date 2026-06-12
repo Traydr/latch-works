@@ -50,3 +50,7 @@ Usually means renderer dependencies were not installed from the repo root. Run `
 ### `MINIMUM_RELEASE_AGE_VIOLATION` on install
 
 Use the root lockfile only. Remove any `apps/lockstep/pnpm-lock.yaml` if it reappears locally, then run `pnpm install` from the repo root.
+
+### `ERR_PNPM_IGNORED_BUILDS` (fs-xattr / macos-alias)
+
+Lockstep does not use `@electron-forge/maker-dmg` (those native packages are only pulled by the DMG maker). Run `pnpm install` from the repo root after pulling the latest changes. Release builds use ZIP packaging via `pnpm make` in `apps/lockstep`.
