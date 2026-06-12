@@ -1,74 +1,11 @@
-import { snapThumbnailSize } from "@latch-works/media-delivery";
-import { createSignedGetUrl } from "@latch-works/media-storage";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { isCurrentWebSessionValid } from "../../server/auth/web-session";
-import { planSignedOriginalDelivery } from "../../server/media/delivery";
-import { buildDerivativeDeliveryUrl } from "../../server/media/derivative-delivery-url";
-import {
-  ensurePreviewDerivative,
-  ensureThumbnailDerivative,
-  regenerateThumbnailDerivative,
-} from "../../server/media/derivative-service";
-import { readMediaDeliveryRequest, readMediaThumbnailContext } from "../../server/media/repository";
-import { createPaneViewStorageClient } from "../../server/media/storage-client";
 
 const resolveMediaDeliveryRequestSchema = z.object({
   mediaId: z.string().uuid(),
   size: z.number().int().positive().optional(),
   variant: z.enum(["thumbnail", "preview", "original"]),
 });
-
-async function resolveOriginalDeliveryUrl(mediaId: string): Promise<string> {
-  const media = await readMediaDeliveryRequest({ mediaId });
-  if (!media) {
-    throw new Error("Media not found");
-  }
-
-  const delivery = planSignedOriginalDelivery(media);
-  return createSignedGetUrl({
-    expiresInSeconds: delivery.expiresInSeconds,
-    key: delivery.objectKey,
-    storage: createPaneViewStorageClient(),
-  });
-}
-
-async function resolveDerivativeDeliveryUrl({
-  mediaId,
-  size,
-  variant,
-}: {
-  mediaId: string;
-  size?: number;
-  variant: "thumbnail" | "preview";
-}): Promise<string> {
-  const media = await readMediaThumbnailContext({ mediaId });
-  if (!media) {
-    throw new Error("Media not found");
-  }
-
-  const derivative =
-    variant === "preview"
-      ? await ensurePreviewDerivative({ mediaId })
-      : await ensureThumbnailDerivative({
-          mediaId,
-          requestedSize: snapThumbnailSize(size ?? 320),
-        });
-
-  if (derivative.status === "pending") {
-    throw new Error("Derivative pending");
-  }
-
-  if (derivative.status === "failed" || derivative.status === "unsupported") {
-    if (media.mediaType === "image" || media.mediaType === "gif") {
-      return resolveOriginalDeliveryUrl(mediaId);
-    }
-
-    throw new Error("Derivative unavailable");
-  }
-
-  return buildDerivativeDeliveryUrl(derivative.objectKey);
-}
 
 const regenerateMediaThumbnailSchema = z.object({
   mediaId: z.string().uuid(),
@@ -78,31 +15,35 @@ const regenerateMediaThumbnailSchema = z.object({
 export const regenerateMediaThumbnail = createServerFn({ method: "POST" })
   .inputValidator(regenerateMediaThumbnailSchema)
   .handler(async ({ data }): Promise<{ status: string }> => {
+    const { isCurrentWebSessionValid } = await import("../../server/auth/web-session");
     if (!(await isCurrentWebSessionValid())) {
       throw new Error("Unauthorized");
     }
 
-    const result = await regenerateThumbnailDerivative({
-      mediaId: data.mediaId,
-      requestedSize: snapThumbnailSize(data.size ?? 320),
-    });
+    const { regenerateMediaThumbnailDerivative } = await import(
+      "../../server/media/resolve-delivery-url"
+    );
 
-    return { status: result.status };
+    return regenerateMediaThumbnailDerivative({
+      mediaId: data.mediaId,
+      size: data.size,
+    });
   });
 
 export const resolveMediaDeliveryUrl = createServerFn({ method: "GET" })
   .inputValidator(resolveMediaDeliveryRequestSchema)
   .handler(async ({ data }): Promise<{ url: string }> => {
+    const { isCurrentWebSessionValid } = await import("../../server/auth/web-session");
     if (!(await isCurrentWebSessionValid())) {
       throw new Error("Unauthorized");
     }
 
-    if (data.variant === "original") {
-      return { url: await resolveOriginalDeliveryUrl(data.mediaId) };
-    }
+    const { resolveMediaDeliveryUrlForVariant } = await import(
+      "../../server/media/resolve-delivery-url"
+    );
 
     return {
-      url: await resolveDerivativeDeliveryUrl({
+      url: await resolveMediaDeliveryUrlForVariant({
         mediaId: data.mediaId,
         size: data.size,
         variant: data.variant,

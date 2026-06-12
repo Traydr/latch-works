@@ -60,7 +60,7 @@ import {
 } from "@/features/library/library-queries";
 import { getLibrarySnapshot } from "@/features/library/library-service";
 import { regenerateMediaThumbnail } from "@/features/media/media-delivery-service";
-import type { LibraryMediaItem, MediaPage } from "@/server/library/repository";
+import type { LibraryMediaItem, MediaPage } from "@/server/library/types";
 import { HotkeyOverlay } from "@/features/settings/HotkeyOverlay";
 import { SettingsDrawer } from "@/features/settings/SettingsDrawer";
 import {

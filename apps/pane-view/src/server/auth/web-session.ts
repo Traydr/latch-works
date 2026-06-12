@@ -1,9 +1,12 @@
 import { createServerFn } from "@tanstack/react-start";
-import { getRequest } from "@tanstack/react-start/server";
-import { isRequestSessionValid } from "./web-session-core";
 
-export const isCurrentWebSessionValid = createServerFn({ method: "GET" }).handler(async () =>
-  isRequestSessionValid({
+export const isCurrentWebSessionValid = createServerFn({ method: "GET" }).handler(async () => {
+  const [{ isRequestSessionValid }, { getRequest }] = await Promise.all([
+    import("./web-session-core"),
+    import("@tanstack/react-start/server"),
+  ]);
+
+  return isRequestSessionValid({
     request: getRequest(),
-  }),
-);
+  });
+});

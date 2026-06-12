@@ -1,17 +1,13 @@
-import type { FolderNode, MediaItem } from "@latch-works/media-domain";
+import type { FolderNode } from "@latch-works/media-domain";
 import { getBaseName } from "@latch-works/media-domain";
 import { and, asc, eq, ilike, inArray, isNull, or, type SQL } from "drizzle-orm";
+import type { LibraryMediaItem } from "./types";
 import { db } from "../db";
 import { folders, libraryEntries, mediaObjects, thumbnails } from "../db/schema";
-import { buildGalleryThumbnailUrl } from "../media/cdn-delivery";
 import { buildMediaPage, type MediaPage } from "./media-page";
 import { escapeLikePattern, resolveMediaScope } from "./query-helpers";
 
-export type { MediaPage } from "./media-page";
-
-export interface LibraryMediaItem extends MediaItem {
-  thumbnailUrl?: string;
-}
+export type { LibraryMediaItem, MediaPage } from "./types";
 
 export interface DatabaseLibrarySnapshot {
   allFolders: FolderNode[];
@@ -125,7 +121,7 @@ export async function readDatabaseLibrarySnapshot({
   return {
     allFolders: allFolderRows.map(mapFolderRow),
     folders: folderRows.map(mapFolderRow),
-    media: pageMediaRows.map(({ entry, object, thumbnail }) => {
+    media: pageMediaRows.map(({ entry, object }) => {
       const media: LibraryMediaItem = {
         durationMs: object.durationMs ?? undefined,
         extension: object.extension,
@@ -145,7 +141,6 @@ export async function readDatabaseLibrarySnapshot({
       media.thumbnailUrl = buildGalleryThumbnailUrl({
         entryId: entry.id,
         mediaType: object.mediaType,
-        objectKey: thumbnail?.objectKey,
       });
 
       return media;
@@ -225,4 +220,18 @@ async function readParentPathsWithChildren(paths: string[]): Promise<Set<string>
 
 function dedupe(value: string, index: number, values: string[]): boolean {
   return values.indexOf(value) === index;
+}
+
+function buildGalleryThumbnailUrl({
+  entryId,
+  mediaType,
+}: {
+  entryId: string;
+  mediaType: string;
+}): string | undefined {
+  if (mediaType !== "image" && mediaType !== "gif" && mediaType !== "video") {
+    return undefined;
+  }
+
+  return `/api/media/${entryId}/thumbnail?size=320`;
 }

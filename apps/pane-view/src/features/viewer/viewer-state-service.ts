@@ -1,12 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
-import { getRequest } from "@tanstack/react-start/server";
 import { z } from "zod";
-import { readRequestSessionUserId } from "../../server/auth/web-session-core";
-import {
-  readViewerState,
-  upsertViewerState,
-  type ViewerStateSnapshot,
-} from "../../server/viewer-state/repository";
+import type { ViewerStateSnapshot } from "../../server/viewer-state/types";
 
 const viewerStateSubjectSchema = z.object({
   subjectId: z.uuid(),
@@ -21,6 +15,12 @@ const viewerStateWriteSchema = viewerStateSubjectSchema.extend({
 export const getViewerState = createServerFn({ method: "GET" })
   .inputValidator(viewerStateSubjectSchema)
   .handler(async ({ data }): Promise<ViewerStateSnapshot | null> => {
+    const [{ readRequestSessionUserId }, { getRequest }, { readViewerState }] = await Promise.all([
+      import("../../server/auth/web-session-core"),
+      import("@tanstack/react-start/server"),
+      import("../../server/viewer-state/repository"),
+    ]);
+
     const userId = await readRequestSessionUserId({
       request: getRequest(),
     });
@@ -39,6 +39,14 @@ export const getViewerState = createServerFn({ method: "GET" })
 export const saveViewerState = createServerFn({ method: "POST" })
   .inputValidator(viewerStateWriteSchema)
   .handler(async ({ data }): Promise<ViewerStateSnapshot | null> => {
+    const [{ readRequestSessionUserId }, { getRequest }, { upsertViewerState }] = await Promise.all(
+      [
+        import("../../server/auth/web-session-core"),
+        import("@tanstack/react-start/server"),
+        import("../../server/viewer-state/repository"),
+      ],
+    );
+
     const userId = await readRequestSessionUserId({
       request: getRequest(),
     });

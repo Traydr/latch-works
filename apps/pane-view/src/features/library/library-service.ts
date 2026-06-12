@@ -2,13 +2,7 @@ import type { FolderNode } from "@latch-works/media-domain";
 import { getParentPath, toArchivePath, trimTrailingSlash } from "@latch-works/media-domain";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { isCurrentWebSessionValid } from "../../server/auth/web-session";
-import {
-  type LibraryMediaItem,
-  type MediaPage,
-  readDatabaseLibrarySnapshot,
-  softDeleteLibraryEntry,
-} from "../../server/library/repository";
+import type { LibraryMediaItem, MediaPage } from "../../server/library/types";
 
 const fixtureRoots = ["nsfw", "nsfw-stories", "sfw", "sfw/patreon"];
 export const DEFAULT_MEDIA_PAGE_LIMIT = 500;
@@ -42,15 +36,15 @@ const deleteLibraryEntrySchema = z.object({
 export const deleteLibraryEntry = createServerFn({ method: "POST" })
   .inputValidator(deleteLibraryEntrySchema)
   .handler(async ({ data }): Promise<{ deleted: boolean }> => {
-    if (!(await isCurrentWebSessionValid())) {
-      throw new Error("Unauthorized");
-    }
+    await assertWebSessionAuthorized();
 
+    const { softDeleteLibraryEntry } = await import("../../server/library/repository");
     const deleted = await softDeleteLibraryEntry({ entryId: data.entryId });
     return { deleted };
   });
 
 export async function assertWebSessionAuthorized(): Promise<void> {
+  const { isCurrentWebSessionValid } = await import("../../server/auth/web-session");
   if (!(await isCurrentWebSessionValid())) {
     throw new Error("Unauthorized");
   }
@@ -66,6 +60,7 @@ export async function readLibrarySnapshotRequest(
   const searchOffset = data.searchOffset ?? 0;
   const mediaOffset = query ? searchOffset : (data.mediaOffset ?? 0);
   const mediaLimit = query ? SEARCH_RESULT_LIMIT : (data.mediaLimit ?? DEFAULT_MEDIA_PAGE_LIMIT);
+  const { readDatabaseLibrarySnapshot } = await import("../../server/library/repository");
   const databaseSnapshot = await readDatabaseLibrarySnapshot({
     currentPath,
     includeAllFolders: comicMode,
