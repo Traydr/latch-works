@@ -1,0 +1,59 @@
+---
+title: Archive organization
+description: Practical folder layout, naming, and media-type expectations.
+section: Start Here
+sectionOrder: 1
+order: 4
+navTitle: Archive organization
+---
+
+# Archive organization
+
+A consistent folder layout makes Frame View browsing, Lockstep planning, and Pane View navigation all feel like the same library.
+
+## Pick one archive root
+
+Choose a single top-level folder as your archive root. Point Frame View and Lockstep at that root (or at meaningful subtrees inside it). Gather Box can write into subfolders beneath the same root.
+
+Keeping one root avoids surprises when Lockstep compares paths to your remote library.
+
+## Media types
+
+| Type | Typical layout | Viewing |
+| --- | --- | --- |
+| Image galleries | Folder of numbered images (`001.webp`, `002.webp`, …) | Grid or comic mode |
+| Videos | Single file or mixed grid with images | Viewer with playback controls |
+| Comics | Folder of sequential images | Comic reader in Frame View and Pane View |
+| Stories | Single PDF per work | PDF reader |
+
+## How Gather Box names things
+
+Gather Box infers folders from the page you are on. Patterns vary by source:
+
+- **Gallery posts** often land in nested folders by creator and post title.
+- **Story downloads** usually become one PDF named `{author}-{title}.pdf` under a site-specific folder.
+- Spaces in names become underscores for safe paths.
+
+Exact site behavior is listed in [Supported sources](/docs/supported-sources). You can still reorganize after download — just plan again before the next push.
+
+## Comics and sequential folders
+
+A **comic** is a folder whose images read in filename order. Both Frame View and Pane View can collapse those folders into a single comic entry with page-turn navigation.
+
+If pages sort wrong, rename files with consistent zero-padded numbers (`001`, `002`, …).
+
+## Stories as PDFs
+
+Long-form story collectors produce one PDF per work. Store them in dedicated story folders so they do not mix with image galleries in the same directory.
+
+## Manual organization tips
+
+- Keep site or creator at higher folder levels; keep individual posts in leaf folders.
+- Avoid duplicate folder names at the same level when you care about remote path clarity.
+- After large reorganizations, run Lockstep **Plan** before **Push** so you see moves as updates or new paths.
+
+## Related docs
+
+- [Gather Box folders](/docs/gather-box/folders)
+- [Frame View browsing](/docs/frame-view/browsing)
+- [Workflows](/docs/workflows)

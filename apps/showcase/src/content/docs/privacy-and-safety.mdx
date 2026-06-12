@@ -1,0 +1,60 @@
+---
+title: Privacy and safety
+description: Authentication, signed delivery, explicit sync, and local archive authority.
+section: Reference
+sectionOrder: 6
+order: 4
+navTitle: Privacy & safety
+---
+
+# Privacy and safety
+
+Latch Works is designed for a personal archive, not a public gallery. These practices keep control with you.
+
+## Local archive authority
+
+Files on your computer are yours. Frame View reads them locally. Nothing leaves your machine until Lockstep **push** runs successfully.
+
+Treat your archive folder like any sensitive media directory: disk encryption and backups are your responsibility.
+
+## Explicit sync
+
+Lockstep never uploads in the background. **Plan** is always read-only. **Push** requires you to start it deliberately.
+
+Review plan counts before pushing, especially after renaming or deleting folders. **Push** never applies deletes — use **Apply deletes** in Lockstep desktop when you intend to remove remote entries from the plan.
+
+## Authentication
+
+Pane View requires sign-in. Credentials are separate from your sync token:
+
+- **Sign-in** controls who can browse the web gallery.
+- **Sync token** authorizes Lockstep to register uploads with your library.
+
+Store sync tokens only in Lockstep (encrypted by the OS when available) or in a secure secret store for CLI use. Do not share tokens in chat or email.
+
+## Signed delivery links
+
+Pane View thumbnails and previews use **signed links** that expire. Browsers load media from those temporary URLs instead of a permanent public path.
+
+That means:
+
+- Shared links stop working after expiry.
+- Hotlinking your library from unrelated sites is not supported by design.
+
+## Gather Box and site sessions
+
+Some story downloads use your browser login. Gather Box can send credentials with requests when allowed in extension settings. Use **per-site** or **never** modes if you want tighter control.
+
+Only collect from sites you are authorized to download from.
+
+## Network exposure
+
+Pane View should be reachable only over HTTPS on infrastructure you trust. Lockstep stores your Pane View URL in the profile — use the same hostname you intend to browse.
+
+Run **Doctor** after changing URLs or tokens to catch misconfiguration early.
+
+## Related docs
+
+- [Core concepts](/docs/core-concepts)
+- [Lockstep setup](/docs/lockstep/setup)
+- [Pane View troubleshooting](/docs/pane-view/troubleshooting)

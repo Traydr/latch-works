@@ -1,0 +1,47 @@
+---
+import { docNavLabel, type DocsSection } from "@/data/docs-nav";
+
+interface Props {
+  sections: DocsSection[];
+  currentPath: string;
+  showHeading?: boolean;
+}
+
+const { sections, currentPath, showHeading = true } = Astro.props;
+---
+
+{showHeading ? (
+  <p class="mb-3 px-3 text-xs font-medium uppercase tracking-widest text-primary">Documentation</p>
+) : null}
+<nav class="space-y-5" aria-label="Docs">
+  {
+    sections.map((section) => (
+      <div>
+        <p class="mb-1.5 px-3 text-[0.65rem] font-semibold uppercase tracking-wider text-muted-foreground">
+          {section.name}
+        </p>
+        <div class="space-y-0.5">
+          {
+            section.pages.map((doc) => {
+              const href = `/docs/${doc.id}`;
+              const active = currentPath === href;
+              return (
+                <a
+                  href={href}
+                  class:list={[
+                    "block rounded-md px-3 py-1.5 text-sm transition",
+                    active
+                      ? "bg-accent text-accent-foreground"
+                      : "text-muted-foreground hover:text-foreground",
+                  ]}
+                >
+                  {docNavLabel(doc)}
+                </a>
+              );
+            })
+          }
+        </div>
+      </div>
+    ))
+  }
+</nav>

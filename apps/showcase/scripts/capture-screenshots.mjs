@@ -3,7 +3,7 @@
  * Captures real screenshots for the Latch Works showcase site.
  * Run after pane-view is up when capturing Pane View / Lockstep output.
  */
-import { execFileSync, spawn, spawnSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,6 +14,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = join(root, "../..");
 const publicDir = join(root, "public", "screenshots");
 const framePreviewBase = process.env.FRAME_VIEW_SHOWCASE_URL ?? "http://127.0.0.1:5199";
+const lockstepPreviewBase = process.env.LOCKSTEP_SHOWCASE_URL ?? "http://127.0.0.1:5200";
 
 function loadRepoEnv() {
   for (const envPath of [join(root, ".env"), join(repoRoot, ".env")]) {
@@ -52,7 +53,6 @@ loadRepoEnv();
 
 const username = process.env.PANE_VIEW_USERNAME ?? "showcase";
 const password = process.env.PANE_VIEW_PASSWORD ?? "showcase123";
-const archiveDir = process.env.LOCKSTEP_SOURCE ?? "/tmp/showcase-archive";
 
 async function probePaneHealth(base) {
   try {
@@ -184,36 +184,6 @@ async function loginToPaneView(page, paneBase) {
   await applyPaneViewDarkMode(page);
 }
 
-function captureLockstepTerminal(output) {
-  const html = `<!DOCTYPE html>
-<html lang="en" class="dark"><head><meta charset="utf-8"><style>
-  * { box-sizing: border-box; }
-  body { margin: 0; background: #0d1117; padding: 24px; font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace; color-scheme: dark; }
-  .window { border-radius: 12px; overflow: hidden; border: 1px solid #30363d; box-shadow: 0 24px 48px rgba(0,0,0,.45); }
-  .titlebar { background: #161b22; color: #8b949e; padding: 10px 14px; font-size: 12px; border-bottom: 1px solid #30363d; }
-  pre { margin: 0; padding: 20px; background: #0d1117; color: #c9d1d9; font-size: 13px; line-height: 1.55; white-space: pre-wrap; }
-</style></head><body>
-<div class="window"><div class="titlebar">lockstep — zsh</div><pre>${escapeHtml(output)}</pre></div>
-</body></html>`;
-  const tmp = join(publicDir, "lockstep", "_terminal.html");
-  writeFileSync(tmp, html);
-  return tmp;
-}
-
-function escapeHtml(value) {
-  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
-}
-
-function runLockstep(args) {
-  const result = spawnSync("pnpm", ["exec", "tsx", "src/cli.ts", ...args], {
-    cwd: join(root, "../../apps/lockstep-cli"),
-    env: { ...process.env, FORCE_COLOR: "0", NO_COLOR: "1" },
-    encoding: "utf8",
-    maxBuffer: 10 * 1024 * 1024,
-  });
-  return (result.stdout || "") + (result.stderr || "");
-}
-
 function buildGatherBoxPreviewHtml(mode) {
   const gatherRoot = join(root, "../../apps/gather-box");
   const css = execFileSync("cat", [join(gatherRoot, "popup/popup.css")], { encoding: "utf8" });
@@ -251,6 +221,31 @@ async function waitForFramePreview(page) {
     () => document.querySelectorAll('[data-gallery-item="true"]').length >= 8,
     { timeout: 30_000 },
   );
+}
+
+async function startLockstepPreview() {
+  const child = spawn("pnpm", ["--filter", "@latch-works/lockstep-app", "preview:showcase"], {
+    cwd: join(root, "../.."),
+    stdio: "ignore",
+    detached: true,
+    env: { ...process.env },
+  });
+  child.unref();
+
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    try {
+      const response = await fetch(`${lockstepPreviewBase}/showcase-preview.html?screen=plan`);
+      if (response.ok) {
+        return child;
+      }
+    } catch {
+      // retry
+    }
+    await sleep(500);
+  }
+
+  child.kill();
+  throw new Error("Lockstep showcase preview did not start on port 5200");
 }
 
 async function startFrameViewPreview() {
@@ -291,6 +286,7 @@ async function main() {
   await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: "dark" }]);
 
   let framePreviewProcess = null;
+  let lockstepPreviewProcess = null;
 
   try {
     const paneHealthy = await probePaneHealth(paneBase);
@@ -356,26 +352,19 @@ async function main() {
       });
     }
 
-    const planOutput = runLockstep(["plan", "--source", archiveDir, "--api-url", paneBase]);
-    const planHtml = captureLockstepTerminal(planOutput);
-    await capture(page, join(publicDir, "lockstep", "plan.png"), `file://${planHtml}`, {
-      darkMode: true,
-    });
-
-    const pushOutput = runLockstep([
-      "push",
-      "--source",
-      archiveDir,
-      "--api-url",
-      paneBase,
-      "--yes",
-      "--max-changes",
-      "3",
-    ]);
-    const pushHtml = captureLockstepTerminal(pushOutput);
-    await capture(page, join(publicDir, "lockstep", "push.png"), `file://${pushHtml}`, {
-      darkMode: true,
-    });
+    lockstepPreviewProcess = await startLockstepPreview();
+    await capture(
+      page,
+      join(publicDir, "lockstep", "plan.png"),
+      `${lockstepPreviewBase}/showcase-preview.html?screen=plan`,
+      { darkMode: true, waitMs: 800 },
+    );
+    await capture(
+      page,
+      join(publicDir, "lockstep", "push.png"),
+      `${lockstepPreviewBase}/showcase-preview.html?screen=push`,
+      { darkMode: true, waitMs: 800 },
+    );
 
     framePreviewProcess = await startFrameViewPreview();
     await capture(
@@ -409,6 +398,9 @@ async function main() {
     await page.screenshot({ path: join(publicDir, "frame-view", "settings.png"), type: "png" });
     console.log(`Saved ${join(publicDir, "frame-view", "settings.png")}`);
   } finally {
+    if (lockstepPreviewProcess) {
+      lockstepPreviewProcess.kill();
+    }
     if (framePreviewProcess) {
       framePreviewProcess.kill();
     }

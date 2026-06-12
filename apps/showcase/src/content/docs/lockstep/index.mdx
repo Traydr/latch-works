@@ -1,0 +1,46 @@
+---
+title: Lockstep overview
+description: Explicit sync between your local archive and Pane View.
+section: Lockstep
+sectionOrder: 4
+order: 1
+navTitle: Overview
+---
+
+# Lockstep
+
+Lockstep is the sync bridge between your local archive and Pane View. It scans your source folder, shows what would change, and uploads originals only when you push.
+
+![Lockstep desktop sync client](/screenshots/lockstep/plan.png)
+
+## Role in the workflow
+
+1. You organize and verify media in Frame View.
+2. Lockstep **plans** a diff against your remote library (read-only).
+3. You **push** when upload and update counts look right.
+4. Pane View indexes what arrives for remote browsing.
+
+Lockstep never syncs silently in the background.
+
+## Desktop first
+
+The Lockstep desktop app is the primary experience: profiles, plan review, push progress, doctor checks, and run logs in one place.
+
+An optional command-line companion exists for scripted runs — see [Lockstep CLI](/docs/lockstep/cli).
+
+## Core commands
+
+| Command | Writes? | Purpose |
+| --- | --- | --- |
+| Plan | No | Show upload, update, keep, and delete counts |
+| Push | Yes | Upload and register new/changed originals only |
+| Apply deletes | Yes | Remove remote entries listed in the plan |
+| Verify | No | Compare local tree to a snapshot file |
+| Doctor | No | Validate profile, token, and remote reachability |
+
+## Related docs
+
+- [Setup profiles](/docs/lockstep/setup)
+- [Plan](/docs/lockstep/plan)
+- [Push](/docs/lockstep/push)
+- [Verify and doctor](/docs/lockstep/verify-and-doctor)

@@ -1,0 +1,59 @@
+---
+title: Lockstep push
+description: Pushing changes, progress states, capped runs, and when to retry.
+section: Lockstep
+sectionOrder: 4
+order: 4
+navTitle: Push
+---
+
+# Lockstep push
+
+**Push** executes the plan: uploads new and changed originals and registers them with Pane View.
+
+![Lockstep desktop push progress](/screenshots/lockstep/push.png)
+
+## Before you push
+
+1. Run **Plan** and read upload/update/delete counts.
+2. Confirm you are on the intended active profile.
+3. Ensure stable network — large originals take time.
+
+Push requires a valid sync token. Enter a session token on desktop if the profile has none saved.
+
+## During push
+
+Lockstep streams progress in the run view:
+
+- Files completed vs remaining
+- Current path being uploaded
+- Errors per file without necessarily stopping the whole run
+
+You can stop a run from the UI when you realize the plan was wrong. Already-uploaded files remain registered; plan again to see what is left.
+
+## Capped and partial runs
+
+For safety, pushes may respect a **cap** on how many changes apply in one run (common during first deployments). When capped:
+
+- The run ends after reaching the limit even if more items were planned.
+- Plan again and push repeatedly until keep counts stabilize.
+
+If a run fails mid-batch, note the last successful path, fix any errors, and push again — hashing prevents duplicate uploads of unchanged files.
+
+## After push
+
+1. Sign in to Pane View and browse affected folders.
+2. Wait for thumbnail generation if grids look empty at first refresh.
+3. Run **Verify** if you maintain snapshot files for drift auditing.
+
+## Deletes are separate
+
+**Push never applies deletes.** The action dock states this explicitly: review the plan, push uploads and updates, then use **Apply deletes** when you intend to remove remote entries listed under delete counts.
+
+Lockstep does not silently wipe remote libraries. Skipping **Apply deletes** leaves remote files in place even when the plan listed them.
+
+## Related docs
+
+- [Plan](/docs/lockstep/plan)
+- [Verify and doctor](/docs/lockstep/verify-and-doctor)
+- [Pane View troubleshooting](/docs/pane-view/troubleshooting)

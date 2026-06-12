@@ -1,0 +1,68 @@
+---
+title: Core concepts
+description: Archive, sync, originals, thumbnails, and local vs remote viewing.
+section: Start Here
+sectionOrder: 1
+order: 3
+navTitle: Core concepts
+---
+
+# Core concepts
+
+These terms appear throughout the handbook. They describe how Latch Works treats your files — not how the software is built.
+
+## Archive
+
+Your **archive** is the folder tree on your computer that holds collected and organized media. Frame View and Lockstep both work from this tree. Pane View shows a remote index of what you have synced.
+
+The archive is **local-first**: you decide what is on disk, when to reorganize folders, and when to push changes outward.
+
+## Source of truth
+
+The local archive is the **source of truth**. Pane View reflects what Lockstep has uploaded and registered. If something is missing remotely, fix or collect it locally first, then plan and push again.
+
+Lockstep does not remove remote media during **Push**. If the plan lists delete entries, use **Apply deletes** separately after review.
+
+## Sync
+
+**Sync** in Latch Works means a deliberate compare-and-push cycle:
+
+1. Lockstep scans your source folder and builds a **plan** (read-only).
+2. You review upload, update, keep, and delete counts.
+3. You run **Push uploads/updates** for new and changed originals.
+4. You run **Apply deletes** only when you intend to remove remote entries listed in the plan.
+
+There is no background auto-sync. That keeps uploads predictable and private.
+
+## Originals
+
+An **original** is the full-resolution file in your archive — the image, video, or PDF on disk. Lockstep uploads originals when the plan says they are new or changed.
+
+Pane View may also show **thumbnails** and **previews**: smaller derived versions for fast grid browsing and viewer loading. They are generated from originals after sync, not substitutes for them.
+
+## Thumbnails and previews
+
+| Term | Role |
+| --- | --- |
+| Thumbnail | Small grid image for scanning folders quickly |
+| Preview | Larger intermediate image or clip for the viewer |
+
+In Pane View, thumbnails and previews are delivered through **signed links** that expire. They are not permanent public URLs.
+
+Frame View generates its own local thumbnail cache while scanning folders on disk.
+
+## Local vs remote
+
+| | Local (Frame View) | Remote (Pane View) |
+| --- | --- | --- |
+| Requires sign-in | No | Yes |
+| Shows unsynced files | Yes | No |
+| Writes to archive | No (read-only browsing) | No (read-only browsing) |
+| Best for | Verification and organization | Access away from your desk |
+
+## Related docs
+
+- [Archive organization](/docs/archive-organization)
+- [Lockstep plan](/docs/lockstep/plan)
+- [Privacy and safety](/docs/privacy-and-safety)
+- [Glossary](/docs/glossary)

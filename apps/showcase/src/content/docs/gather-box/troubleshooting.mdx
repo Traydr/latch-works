@@ -1,0 +1,64 @@
+---
+title: Gather Box troubleshooting
+description: Fix unsupported pages, folder permission, partial downloads, and login issues.
+section: Gather Box
+sectionOrder: 2
+order: 6
+navTitle: Troubleshooting
+---
+
+# Gather Box troubleshooting
+
+## Unsupported page
+
+**Symptom:** Download button disabled; popup says the page is not supported.
+
+**Fix:**
+
+- Confirm the URL matches a [supported source](/docs/supported-sources) pattern (post/work page, not search or profile index).
+- Reload the tab after the page fully loads.
+- Reload the extension if you just updated it.
+
+## Folder permission errors
+
+**Symptom:** Download fails immediately or asks for folder access repeatedly.
+
+**Fix:**
+
+- Choose the destination folder again and grant write permission.
+- Avoid folders on read-only or synced cloud drives if the browser blocks writes.
+- Pick a local disk path inside your archive root.
+
+## Partial download / missing files
+
+**Symptom:** Progress completes but some images are missing from the log or folder.
+
+**Fix:**
+
+- Read the results log for per-file errors.
+- Retry failed items — transient network errors are common.
+- For gallery sites, ensure you are on the full post, not a preview page.
+
+## Login or session issues
+
+**Symptom:** Story PDF is empty, tiny, or contains a login page.
+
+**Fix:**
+
+- Sign in on the site in the same browser profile as the extension.
+- In Gather Box options, allow credentials for that site (or set global mode to **always** temporarily).
+- Re-open the work page and download again.
+
+## Popup errors or stale state
+
+**Fix:**
+
+- Close and reopen the popup.
+- Reload the extension from `chrome://extensions`.
+- Try the keyboard shortcut (Command+Shift+G / Ctrl+Shift+G) on the active tab.
+
+## Related docs
+
+- [Install](/docs/gather-box/install)
+- [Collect stories](/docs/gather-box/collect-stories)
+- [Privacy and safety](/docs/privacy-and-safety)

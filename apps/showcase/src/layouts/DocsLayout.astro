@@ -1,6 +1,8 @@
 ---
 import { getCollection } from "astro:content";
+import DocsSidebarNav from "@/components/DocsSidebarNav.astro";
 import BaseLayout from "@/layouts/BaseLayout.astro";
+import { groupDocsBySection } from "@/data/docs-nav";
 
 interface Props {
   title: string;
@@ -8,41 +10,43 @@ interface Props {
 }
 
 const { title, description } = Astro.props;
-const docs = (await getCollection("docs")).sort(
-  (left, right) => (left.data.order ?? 99) - (right.data.order ?? 99),
-);
+const sections = groupDocsBySection(await getCollection("docs"));
 const currentPath = Astro.url.pathname;
 ---
 
 <BaseLayout title={`${title} — Latch Works Docs`} description={description}>
-  <div class="mx-auto grid max-w-6xl gap-10 px-4 py-12 sm:px-6 lg:grid-cols-[220px_minmax(0,1fr)]">
-    <aside class="lg:sticky lg:top-20 lg:self-start">
-      <p class="mb-3 text-xs font-medium uppercase tracking-widest text-primary">Documentation</p>
-      <nav class="space-y-1" aria-label="Docs">
-        {
-          docs.map((doc) => {
-            const href = `/docs/${doc.id}`;
-            const active = currentPath === href;
-            return (
-              <a
-                href={href}
-                class:list={[
-                  "block rounded-md px-3 py-2 text-sm transition",
-                  active
-                    ? "bg-accent text-accent-foreground"
-                    : "text-muted-foreground hover:text-foreground",
-                ]}
-              >
-                {doc.data.title}
-              </a>
-            );
-          })
-        }
-      </nav>
-    </aside>
+  <a
+    href="#docs-content"
+    class="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-accent focus:px-3 focus:py-2 focus:text-sm focus:text-accent-foreground"
+  >
+    Skip to content
+  </a>
 
-    <article class="prose-docs min-w-0">
+  <div class="mx-auto grid max-w-6xl gap-6 px-4 py-8 sm:px-6 sm:py-12 lg:grid-cols-[260px_minmax(0,1fr)] lg:gap-10">
+    <article id="docs-content" class="prose-docs order-1 min-w-0 lg:order-2">
       <slot />
     </article>
+
+    <aside
+      class="order-2 hidden min-w-0 lg:sticky lg:top-20 lg:block lg:order-1 lg:max-h-[calc(100vh-6rem)] lg:self-start lg:overflow-y-auto"
+    >
+      <DocsSidebarNav sections={sections} currentPath={currentPath} />
+    </aside>
+
+    <aside class="order-2 min-w-0 lg:hidden">
+      <details class="rounded-lg border border-border/80">
+        <summary
+          class="cursor-pointer list-none px-3 py-2.5 text-sm font-medium text-foreground marker:content-none [&::-webkit-details-marker]:hidden"
+        >
+          <span class="flex items-center justify-between gap-2">
+            <span>Documentation menu</span>
+            <span class="text-xs font-normal text-muted-foreground">Show sections</span>
+          </span>
+        </summary>
+        <div class="max-h-[50vh] overflow-y-auto border-t border-border/80 px-1 pb-3 pt-2">
+          <DocsSidebarNav sections={sections} currentPath={currentPath} showHeading={false} />
+        </div>
+      </details>
+    </aside>
   </div>
 </BaseLayout>

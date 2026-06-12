@@ -1,0 +1,56 @@
+---
+title: Verify and doctor
+description: Health checks, drift verification, and common configuration failures.
+section: Lockstep
+sectionOrder: 4
+order: 5
+navTitle: Verify & doctor
+---
+
+# Verify and doctor
+
+These read-only checks catch misconfiguration before a long push and detect drift afterward.
+
+## Doctor
+
+**Doctor** validates your active profile environment:
+
+- Source folder exists and is readable
+- Pane View URL is reachable
+- Sync token is present and accepted
+- Runtime prerequisites reported by Lockstep
+
+Run doctor after creating a profile, rotating tokens, or changing URLs. Fix every failed check before planning a large push.
+
+Typical failures:
+
+| Issue | What to check |
+| --- | --- |
+| Unreachable URL | Typo, VPN, or server down |
+| Unauthorized token | Expired or wrong token for this library |
+| Missing source | Profile points at moved or unmounted disk |
+
+## Verify
+
+**Verify** compares your local archive to a **snapshot file** exported from a previous successful sync state. It exits with an error when paths or hashes drift.
+
+Use verify when:
+
+- You want automated assurance after manual file edits
+- A push was interrupted and you need a binary yes/no drift answer
+- You script checks alongside backup routines
+
+Verify does not fix drift — it only reports. Plan and push (or restore from backup) to reconcile.
+
+## Order of operations
+
+1. **Doctor** — environment healthy?
+2. **Plan** — expected diff?
+3. **Push** — apply changes
+4. **Verify** — still aligned with snapshot?
+
+## Related docs
+
+- [Setup](/docs/lockstep/setup)
+- [Push](/docs/lockstep/push)
+- [Workflows](/docs/workflows)

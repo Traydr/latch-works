@@ -1,0 +1,52 @@
+---
+title: Lockstep setup
+description: Profiles, source folder, Pane View URL, sync token, and credential storage.
+section: Lockstep
+sectionOrder: 4
+order: 2
+navTitle: Setup
+---
+
+# Lockstep setup
+
+Lockstep stores one or more **profiles**. Each profile ties a local source folder to a Pane View instance and sync token.
+
+## Create a profile
+
+1. Open the Lockstep desktop app.
+2. Choose **New profile**.
+3. Fill in:
+   - **Name** — label for this archive (e.g. "Main archive")
+   - **Source folder** — root of your local archive tree
+   - **Pane View URL** — the HTTPS address where you browse remotely
+   - **Sync API token** — secret that authorizes uploads (from your Pane View operator)
+
+4. Save the profile.
+
+## Sync token handling
+
+Tokens authorize Lockstep to register uploads. They are separate from your Pane View sign-in password.
+
+- On desktop, Lockstep encrypts saved tokens with OS key storage when available.
+- If encryption is unavailable, you may enter a token for the current session only.
+- Never paste tokens into public chats or screenshots.
+
+## Active profile
+
+Select which profile is active before running plan, push, verify, or doctor. Switch profiles when you maintain more than one archive or remote library.
+
+## Before the first push
+
+1. Run **Doctor** on the profile to confirm URL, token, and connectivity.
+2. Run **Plan** and read counts with zero expectation of uploads if the remote library is empty.
+3. Push a small test folder first if you are unsure.
+
+## CLI configuration
+
+If you use the command-line companion, settings can live in a config file under your home directory while tokens stay in environment variables. See [Lockstep CLI](/docs/lockstep/cli).
+
+## Related docs
+
+- [Lockstep overview](/docs/lockstep)
+- [Verify and doctor](/docs/lockstep/verify-and-doctor)
+- [Privacy and safety](/docs/privacy-and-safety)

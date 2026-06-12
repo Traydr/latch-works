@@ -248,64 +248,64 @@ export const products: Product[] = [
     kind: "tool",
     tagline: "Plan, push, verify.",
     description:
-      "Lockstep scans a local media archive, compares it against the remote Pane View snapshot, and explicitly pushes changed originals through the sync API. Read-only commands stay safe; writes require intent.",
-    repoPath: "apps/lockstep-cli",
+      "Lockstep is the desktop sync client for your local archive. Scan against Pane View, review a read-only plan, push uploads and updates explicitly, and apply deletes only when you choose.",
+    repoPath: "apps/lockstep",
     accent: "from-emerald-500/20 to-teal-500/5",
     heroScreenshot: {
       src: "/screenshots/lockstep/plan.png",
-      alt: "Lockstep CLI plan output showing sync summary",
-      caption: "Read-only plan command — scan and diff without uploading",
+      alt: "Lockstep desktop plan results with upload, update, and delete counts",
+      caption: "Read-only plan — review changes before any writes",
     },
     gallery: [
       {
         src: "/screenshots/lockstep/push.png",
-        alt: "Lockstep CLI push progress output",
-        caption: "Push uploads changed originals and registers them with Pane View",
+        alt: "Lockstep desktop push progress with run log",
+        caption: "Push uploads and updates — deletes stay on a separate action",
       },
     ],
     features: [
       {
-        title: "plan (read-only)",
+        title: "Plan (read-only)",
         description:
-          "Walk the source tree, detect media via shared media-index logic, and print a sync plan with zero side effects.",
+          "Walk the source tree, diff against Pane View, and review upload, update, keep, and delete counts with zero side effects.",
         icon: "list-checks",
       },
       {
-        title: "push (explicit writes)",
+        title: "Push uploads/updates",
         description:
-          "Hash, upload, and register changed files through Pane View sync routes. Cap changes during first deployments.",
+          "Upload and register new or changed originals. Push never applies deletes — those stay on a separate explicit action.",
         icon: "upload",
       },
       {
-        title: "verify",
+        title: "Apply deletes",
         description:
-          "Compare local archive state against a remote snapshot file and exit non-zero on drift.",
+          "Remove remote entries listed in the plan only when you run this action after review.",
+        icon: "trash-2",
+      },
+      {
+        title: "Verify",
+        description:
+          "Compare local archive state against a snapshot file and exit non-zero on drift.",
         icon: "git-compare",
       },
       {
-        title: "doctor",
+        title: "Test connection",
         description:
-          "Check Node version, config file, environment variables, and API reachability before a long sync run.",
+          "Validate profile settings, sync token, and Pane View reachability before a long run.",
         icon: "stethoscope",
       },
       {
-        title: "Interactive wizard",
+        title: "Profiles",
         description:
-          "Run with no arguments in a TTY and Lockstep prompts for missing source path, API URL, and token.",
-        icon: "messages-square",
-      },
-      {
-        title: "Shared scan logic",
-        description:
-          "Uses @latch-works/media-index and media-domain packages — the same path rules as the rest of the monorepo.",
-        icon: "blocks",
+          "Save source folder, Pane View URL, and encrypted sync tokens per archive. Switch profiles when you maintain multiple libraries.",
+        icon: "user-cog",
       },
     ],
     highlights: [
-      "CLI binary: lockstep plan | push | verify | doctor",
-      "Config at ~/.latch-works/lockstep.json (tokens stay in env)",
+      "Desktop app with plan review, push progress, and run logs",
+      "Push never applies deletes — Apply deletes is separate",
       "Content hashing for accurate change detection",
-      "Never deletes remote media unless explicitly instructed",
+      "Optional command-line companion for scripted runs",
     ],
   },
 ];

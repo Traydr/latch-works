@@ -1,0 +1,65 @@
+---
+title: Workflows
+description: End-to-end routines for setup, collection days, sync review, and remote browsing.
+section: Reference
+sectionOrder: 6
+order: 1
+navTitle: Workflows
+---
+
+# Workflows
+
+These routines assume you already installed the apps. Adjust folder names and schedules to fit your archive.
+
+## First archive setup
+
+1. Create an empty archive root on disk.
+2. Install Gather Box and pick that root (or a subfolder) as the default destination per site.
+3. Collect one small gallery and one story PDF as test content.
+4. Open Frame View on the archive root and confirm both appear correctly.
+5. Create a Lockstep profile with source folder, Pane View URL, and sync token.
+6. Run **Doctor**, then **Plan**, then **Push** for the test content.
+7. Sign in to Pane View and browse the same paths.
+
+## Regular collection day
+
+1. Browse supported sites and collect new posts with Gather Box.
+2. Open Frame View and spot-check new folders — order, naming, missing pages.
+3. Optionally reorganize folders before syncing.
+4. Run Lockstep **Plan** and note upload/update counts.
+5. **Push** when satisfied.
+6. Open Pane View on phone or tablet to confirm new media appears.
+
+## Sync review (plan-only)
+
+Use this when you want confidence without uploading:
+
+1. Open Lockstep and select your profile.
+2. Run **Plan** only.
+3. Scan upload vs update vs keep counts and the item list if shown.
+4. If counts look wrong, fix folders locally and plan again.
+
+Plan never writes to your remote library.
+
+## Remote browsing session
+
+1. Sign in to Pane View.
+2. Navigate to a folder you recently synced.
+3. Use search or recursive mode to find a specific title.
+4. Open the viewer; use keyboard or touch navigation for comics and videos.
+
+If media is missing, check locally in Frame View first, then plan and push.
+
+## After reorganizing folders
+
+1. Browse locally to confirm the new layout.
+2. Run **Plan** — moves may appear as deletes plus uploads or as path updates depending on content hashes.
+3. Read counts carefully — use **Push uploads/updates** for new/changed files and **Apply deletes** only if you intend to remove remote entries.
+4. Run **Verify** afterward if you maintain a snapshot file for drift checks.
+
+## Related docs
+
+- [Quick start](/docs/quick-start)
+- [Lockstep plan](/docs/lockstep/plan)
+- [Lockstep push](/docs/lockstep/push)
+- [Pane View browsing](/docs/pane-view/browsing)

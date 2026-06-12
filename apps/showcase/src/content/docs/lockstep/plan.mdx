@@ -1,0 +1,49 @@
+---
+title: Lockstep plan
+description: Read-only planning and interpreting sync counts.
+section: Lockstep
+sectionOrder: 4
+order: 3
+navTitle: Plan
+---
+
+# Lockstep plan
+
+**Plan** walks your source folder, detects media, and compares against the remote index. It never uploads or deletes anything.
+
+![Lockstep desktop plan results](/screenshots/lockstep/plan.png)
+
+## Running plan
+
+1. Select your active profile in Lockstep desktop.
+2. Click **Plan** (or run the plan command in the CLI companion).
+3. Wait for the scan and diff to finish.
+4. Review the summary counts and item list.
+
+## Interpreting counts
+
+| Count | Meaning |
+| --- | --- |
+| Upload | New local files not yet on the remote library |
+| Update | Same path but content hash changed |
+| Keep | Already in sync — no action needed |
+| Delete | Local removal or path drop that would remove a remote entry — requires **Apply deletes**, not push |
+
+Exact labels match what Lockstep prints in the run log. Treat **keep** as reassurance; focus on upload and update before pushing.
+
+## When to plan without pushing
+
+- After a Gather Box collection day
+- After renaming or moving folders
+- Before any push when counts look unexpectedly large
+- On a schedule — weekly plan-only reviews build confidence
+
+## Filtering the item list
+
+Lockstep desktop lets you filter planned items by path substring when reviewing large diffs. Use this to sanity-check one creator folder at a time.
+
+## Related docs
+
+- [Push](/docs/lockstep/push)
+- [Workflows](/docs/workflows)
+- [Core concepts](/docs/core-concepts)

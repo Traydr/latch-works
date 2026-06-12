@@ -9,6 +9,7 @@
     "postinstall": "node ./scripts/ensure-electron.mjs",
     "prestart": "node ./scripts/ensure-workspace-deps.mjs && node ./scripts/ensure-electron.mjs",
     "start": "electron-forge start",
+    "preview:showcase": "vite --config vite.showcase.config.mjs",
     "package": "electron-forge package",
     "make": "electron-forge make",
     "lint": "biome check .",

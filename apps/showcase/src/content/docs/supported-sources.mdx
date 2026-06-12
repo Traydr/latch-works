@@ -1,0 +1,49 @@
+---
+title: Supported sources
+description: Exact sites and content types Gather Box can collect.
+section: Reference
+sectionOrder: 6
+order: 2
+navTitle: Supported sources
+---
+
+# Supported sources
+
+Gather Box only collects from the sites below. Other pages show as unsupported in the extension popup.
+
+## Site appendix
+
+| Site | Content type | Output |
+| --- | --- | --- |
+| MyHentaiGallery | Image galleries | Numbered images in a post folder |
+| Kemono | Post attachments | Images in a nested post folder |
+| pixiv FANBOX | Post images | Images in a creator/post folder |
+| Archive of Our Own | Works | Single PDF download |
+| Hentai Foundry | Stories | Single PDF download |
+| FanFiction.Net | Multi-chapter stories | Single merged PDF |
+
+## Gallery vs story behavior
+
+**Galleries** download original images in sequence (`001`, `002`, …). **Stories** fetch chapters (where applicable) and produce one local PDF named with author and title.
+
+Story collectors may need you to be signed in on the site. Gather Box can include session credentials for downloads when configured — see [Gather Box troubleshooting](/docs/gather-box/troubleshooting).
+
+## Folder patterns (summary)
+
+| Source | Typical folder shape |
+| --- | --- |
+| Kemono | `{user_type}/{user_name}/{post_title}/` |
+| FANBOX | `{creator_name}/{post_title}-{post_id}/` |
+| Story PDFs | `{site_folder}/{Author}-{Title}.pdf` |
+
+Spaces become underscores. Details and edge cases are covered in [Gather Box folders](/docs/gather-box/folders).
+
+## When a page is unsupported
+
+The download action stays disabled and the popup explains that the active tab is not a supported URL pattern. Double-check you are on a post or work page, not a profile index or search results page.
+
+## Related docs
+
+- [Gather Box overview](/docs/gather-box)
+- [Collect galleries](/docs/gather-box/collect-galleries)
+- [Collect stories](/docs/gather-box/collect-stories)

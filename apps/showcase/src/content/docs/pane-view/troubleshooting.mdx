@@ -1,0 +1,70 @@
+---
+title: Pane View troubleshooting
+description: Login failure, missing media, and thumbnail or preview loading problems.
+section: Pane View
+sectionOrder: 5
+order: 6
+navTitle: Troubleshooting
+---
+
+# Pane View troubleshooting
+
+## Login failure
+
+**Symptom:** Credentials rejected or immediate redirect back to login.
+
+**Fix:**
+
+- Confirm username and password with your library operator.
+- Clear site cookies for your Pane View hostname and retry.
+- Check clock skew on mobile devices — extreme drift can break sessions.
+
+Sync tokens are **not** used on the login form. Enter those in Lockstep only.
+
+## Missing media after sync
+
+**Symptom:** Files visible in Frame View but absent in Pane View.
+
+**Fix:**
+
+1. Run Lockstep **Plan** — do uploads still appear pending?
+2. **Push** if needed and wait for completion.
+3. Browse the exact folder path — renames change remote paths.
+4. Hard refresh the browser.
+
+Pane View never shows unsynced local-only files.
+
+## Thumbnails or previews blank
+
+**Symptom:** Grid cells empty or viewer shows broken image icon.
+
+**Fix:**
+
+- Wait a minute after a large push — derivatives generate asynchronously.
+- Refresh the folder; signed links expire and regenerate.
+- Confirm push succeeded without file errors in Lockstep logs.
+- Try another browser rule-out (extensions blocking cross-origin media).
+
+## Video will not play
+
+**Symptom:** Spinner forever or codec error.
+
+**Fix:**
+
+- Confirm the original plays locally in Frame View.
+- Retry on Wi‑Fi; large files struggle on poor mobile links.
+- Re-push if the upload was interrupted mid-file.
+
+## Search misses known files
+
+**Fix:**
+
+- Enable recursive mode.
+- Search from a higher folder in the tree.
+- Plan again — index updates follow successful push.
+
+## Related docs
+
+- [Lockstep push](/docs/lockstep/push)
+- [Privacy and safety](/docs/privacy-and-safety)
+- [Core concepts](/docs/core-concepts)

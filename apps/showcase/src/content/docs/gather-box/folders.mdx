@@ -1,0 +1,48 @@
+---
+title: Destination folders
+description: Per-site folder memory, naming, and keeping collected files organized.
+section: Gather Box
+sectionOrder: 2
+order: 5
+navTitle: Folders
+---
+
+# Destination folders
+
+Gather Box writes into folders you select with the browser’s folder picker. Good defaults keep your archive browsable without manual renaming.
+
+## Per-site memory
+
+Each supported site remembers its own last destination folder. Switching between sites does not overwrite another site’s choice.
+
+When you collect from a new site for the first time, pick a subfolder under your archive root that matches how you want Frame View to group that source.
+
+## Inferred paths
+
+Collectors build subpaths from page metadata:
+
+| Source type | Behavior |
+| --- | --- |
+| Nested gallery posts | Folders by creator and post metadata |
+| Flat gallery posts | Post folder with numbered images |
+| Stories | PDF in a site folder with author-title filename |
+
+Exact site patterns are listed in [Supported sources](/docs/supported-sources).
+
+Spaces become underscores. Adjust locally after download if you prefer different names — then run Lockstep **Plan** before the next push.
+
+## Writable folder validation
+
+Gather Box checks that the active tab is supported and that you granted write access to the destination before starting. If permission expired, choose the folder again when prompted.
+
+## Organization practices
+
+- Keep one archive root; use first-level folders for sources or creators.
+- Do not mix story PDFs and image galleries in the same leaf folder.
+- After bulk collection, spot-check in Frame View before syncing.
+
+## Related docs
+
+- [Archive organization](/docs/archive-organization)
+- [Collect galleries](/docs/gather-box/collect-galleries)
+- [Supported sources](/docs/supported-sources)

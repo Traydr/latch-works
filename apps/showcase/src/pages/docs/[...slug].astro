@@ -2,7 +2,8 @@
 import { getCollection, render } from "astro:content";
 import DocsLayout from "@/layouts/DocsLayout.astro";
 
-const slug = Astro.params.slug;
+const raw = Astro.params.slug;
+const slug = Array.isArray(raw) ? raw.join("/") : raw;
 const docs = await getCollection("docs");
 const doc = docs.find((entry) => entry.id === slug);
 
