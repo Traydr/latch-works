@@ -14,18 +14,18 @@ These plans are the product of the audit. The advisor did not modify source code
 | [001](001-sync-ingest-transactions.md) | Make sync ingest and delete writes atomic | P1 | M | none | DONE |
 | [002](002-reclaim-derivative-jobs.md) | Reclaim pending derivative jobs reliably | P1 | S | none | DONE |
 | [003](003-align-cdn-cache-ttl.md) | Align CDN cache headers with signed token expiry | P1 | S | none | DONE |
-| [004](004-lockstep-prune-confirmation.md) | Add a real confirmation gate to Lockstep prune | P1 | M | none | TODO |
-| [005](005-finalize-cancelled-sync-runs.md) | Finalize cancelled Lockstep sync runs | P1 | M | none | TODO |
-| [006](006-harden-login-throttle.md) | Harden Pane View login throttling | P1 | M | none | TODO |
-| [007](007-cheapen-sync-token-verification.md) | Remove per-request scrypt from sync token verification | P2 | S | none | TODO |
-| [008](008-page-gallery-snapshots.md) | Add explicit paging to gallery snapshots | P2 | L | none | TODO |
-| [009](009-stream-derivative-generation.md) | Stream large originals during derivative generation | P2 | M | 002 | TODO |
-| [010](010-throttle-lockstep-progress.md) | Throttle Lockstep scan progress events | P2 | M | none | TODO |
-| [011](011-cover-workspace-check-gates.md) | Make root verification cover the advertised gates | P2 | M | none | TODO |
-| [012](012-update-lockstep-delete-docs.md) | Update Lockstep delete behavior documentation | P2 | S | 004 | TODO |
-| [013](013-wire-pane-view-resume-state.md) | Wire Pane View resume state into the viewer | P3 | M | none | TODO |
-| [014](014-design-gather-box-sidecars.md) | Design Gather Box sidecar manifests | P3 | M | none | TODO |
-| [015](015-spike-derivative-prewarm.md) | Spike derivative pre-warm, PDF covers, and worker strategy | P3 | M | 002, 009 | TODO |
+| [004](004-lockstep-prune-confirmation.md) | Add a real confirmation gate to Lockstep prune | P1 | M | none | PR [#14](https://github.com/Traydr/latch-works/pull/14) |
+| [005](005-finalize-cancelled-sync-runs.md) | Finalize cancelled Lockstep sync runs | P1 | M | none | PR [#17](https://github.com/Traydr/latch-works/pull/17) |
+| [006](006-harden-login-throttle.md) | Harden Pane View login throttling | P1 | M | none | PR [#16](https://github.com/Traydr/latch-works/pull/16) |
+| [007](007-cheapen-sync-token-verification.md) | Remove per-request scrypt from sync token verification | P2 | S | none | PR [#15](https://github.com/Traydr/latch-works/pull/15) |
+| [008](008-page-gallery-snapshots.md) | Add explicit paging to gallery snapshots | P2 | L | none | PR [#19](https://github.com/Traydr/latch-works/pull/19) |
+| [009](009-stream-derivative-generation.md) | Stream large originals during derivative generation | P2 | M | 002 | PR [#18](https://github.com/Traydr/latch-works/pull/18) |
+| [010](010-throttle-lockstep-progress.md) | Throttle Lockstep scan progress events | P2 | M | none | PR [#21](https://github.com/Traydr/latch-works/pull/21) |
+| [011](011-cover-workspace-check-gates.md) | Make root verification cover the advertised gates | P2 | M | none | PR [#20](https://github.com/Traydr/latch-works/pull/20) |
+| [012](012-update-lockstep-delete-docs.md) | Update Lockstep delete behavior documentation | P2 | S | 004 | PR [#22](https://github.com/Traydr/latch-works/pull/22) |
+| [013](013-wire-pane-view-resume-state.md) | Wire Pane View resume state into the viewer | P3 | M | none | PR [#25](https://github.com/Traydr/latch-works/pull/25) |
+| [014](014-design-gather-box-sidecars.md) | Design Gather Box sidecar manifests | P3 | M | none | PR [#23](https://github.com/Traydr/latch-works/pull/23) |
+| [015](015-spike-derivative-prewarm.md) | Spike derivative pre-warm, PDF covers, and worker strategy | P3 | M | 002, 009 | PR [#24](https://github.com/Traydr/latch-works/pull/24) |
 
 Status values: `TODO` | `IN PROGRESS` | `DONE` | `BLOCKED (reason)` |
 `REJECTED (reason)`.
@@ -58,6 +58,21 @@ Status values: `TODO` | `IN PROGRESS` | `DONE` | `BLOCKED (reason)` |
 - Broad dependency upgrade/migration: rejected for this pass because the audit
   did not verify a specific outdated or vulnerable dependency beyond the blocked
   advisory check.
+
+## Execution Notes (2026-06-12)
+
+- Plans 004–015 were executed in isolated worktrees; each branch has a draft PR
+  (links in the status column above).
+- GitHub issue creation via `gh issue create` failed: token lacks
+  `issues: write` (`Resource not accessible by integration`). Re-run with a
+  token that has issue permissions if issues are still wanted.
+- Advisor spot-check: plan 004 lockstep tests (29 pass) and plan 009 media tests
+  (46 pass) after `pnpm -r --filter './packages/*' build` in fresh worktrees.
+- Plan 011: root `pnpm lint` and `pnpm knip` pass; full `pnpm check` may still
+  hit pre-existing Linux/frame-view and lockstep-core dist-test caveats documented
+  by the executor.
+- Plan 010 branch is based on plan 005 cancellation work; review merge order if
+  both land.
 
 ## Notes For Executors
 
