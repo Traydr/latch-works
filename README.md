@@ -10,10 +10,29 @@ Latch Works is a **pnpm monorepo** that brings together viewers, a collection to
 
 ```mermaid
 flowchart LR
-  gather["Gather<br/>Gather Box"]
-  organize["Organize<br/>Frame View<br/>(desktop)"]
-  sync["Sync<br/>Lockstep<br/>(desktop + CLI)"]
-  view["View<br/>Pane View"]
+  subgraph gatherCol[" "]
+    direction TB
+    gather["Gather"]
+    gatherApp["Gather Box"]
+  end
+
+  subgraph organizeCol[" "]
+    direction TB
+    organize["Organize"]
+    organizeApp["Frame View<br/>(desktop)"]
+  end
+
+  subgraph syncCol[" "]
+    direction TB
+    sync["Sync"]
+    syncApp["Lockstep<br/>(desktop + CLI)"]
+  end
+
+  subgraph viewCol[" "]
+    direction TB
+    view["View"]
+    viewApp["Pane View"]
+  end
 
   gather --> organize --> sync --> view
 ```
