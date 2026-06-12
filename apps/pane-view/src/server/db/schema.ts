@@ -35,6 +35,13 @@ export const thumbnailStatusEnum = pgEnum("thumbnail_status", [
   "failed",
 ]);
 export const subjectTypeEnum = pgEnum("subject_type", ["library_entry", "collection"]);
+export const maintenanceJobTypeEnum = pgEnum("maintenance_job_type", ["library_hard_wipe"]);
+export const maintenanceJobStatusEnum = pgEnum("maintenance_job_status", [
+  "pending",
+  "running",
+  "completed",
+  "failed",
+]);
 export const sourceTypeEnum = pgEnum("source_type", [
   "cli",
   "local",
@@ -365,5 +372,41 @@ export const favorites = pgTable(
   },
   (table) => ({
     pk: primaryKey({ columns: [table.userId, table.subjectId, table.subjectType] }),
+  }),
+);
+
+export interface MaintenanceJobProgress {
+  errorCount: number;
+  lastError?: string;
+  orphanPrefix?: string;
+  orphanContinuationToken?: string;
+  phase:
+    | "s3_derivatives"
+    | "s3_originals"
+    | "s3_orphan_sweep"
+    | "db_hard_delete"
+    | "completed";
+  processedCount: number;
+}
+
+export const maintenanceJobs = pgTable(
+  "maintenance_jobs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    type: maintenanceJobTypeEnum("type").notNull(),
+    status: maintenanceJobStatusEnum("status").notNull().default("pending"),
+    progress: jsonb("progress").$type<MaintenanceJobProgress>().notNull().default({
+      errorCount: 0,
+      phase: "s3_derivatives",
+      processedCount: 0,
+    }),
+    error: text("error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => ({
+    statusIndex: index("maintenance_jobs_status_idx").on(table.status),
+    typeStatusIndex: index("maintenance_jobs_type_status_idx").on(table.type, table.status),
   }),
 );

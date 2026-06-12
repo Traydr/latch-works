@@ -101,6 +101,53 @@ export async function invalidateThumbnailDerivatives({
   return { status: "ok" };
 }
 
+const thumbnailPurgeBatchSize = 500;
+
+export async function purgeAllThumbnailDerivatives(): Promise<{
+  deletedRows: number;
+  s3Errors: number;
+}> {
+  const storage = createPaneViewStorageClient();
+  let deletedRows = 0;
+  let s3Errors = 0;
+
+  while (true) {
+    const rows = await db
+      .select({
+        mediaObjectId: thumbnails.mediaObjectId,
+        objectKey: thumbnails.objectKey,
+        size: thumbnails.size,
+      })
+      .from(thumbnails)
+      .limit(thumbnailPurgeBatchSize);
+
+    if (rows.length === 0) {
+      break;
+    }
+
+    await Promise.all(
+      rows.map(async (row) => {
+        try {
+          await deleteStoredObject({ key: row.objectKey, storage });
+        } catch {
+          s3Errors += 1;
+        }
+      }),
+    );
+
+    for (const row of rows) {
+      await db
+        .delete(thumbnails)
+        .where(
+          and(eq(thumbnails.mediaObjectId, row.mediaObjectId), eq(thumbnails.size, row.size)),
+        );
+      deletedRows += 1;
+    }
+  }
+
+  return { deletedRows, s3Errors };
+}
+
 export async function regenerateThumbnailDerivative({
   mediaId,
   requestedSize,

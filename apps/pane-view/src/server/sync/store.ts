@@ -2,6 +2,7 @@ import { getBaseName, getParentPath, type MediaType } from "@latch-works/media-d
 import { eq, isNull } from "drizzle-orm";
 import { db } from "../db";
 import { folders, libraryEntries, mediaObjects, syncRunItems, syncRuns } from "../db/schema";
+import { assertNoActiveCleanupJob } from "../management/guards";
 
 type SyncDbClient = Pick<typeof db, "insert" | "select" | "update">;
 
@@ -61,6 +62,8 @@ export async function startSyncRun({
 }: {
   input: StartSyncRunInput;
 }): Promise<{ status: "database"; syncRunId: string }> {
+  await assertNoActiveCleanupJob();
+
   const [syncRun] = await db
     .insert(syncRuns)
     .values({

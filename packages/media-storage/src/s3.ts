@@ -3,6 +3,7 @@ import {
   DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
@@ -175,6 +176,67 @@ export async function deleteStoredObject({
       Key: key,
     }),
   );
+}
+
+export interface ListStoredObjectsPage {
+  keys: string[];
+  nextContinuationToken: string | undefined;
+}
+
+export async function listStoredObjectsByPrefix({
+  continuationToken,
+  limit = 1000,
+  prefix,
+  storage,
+}: {
+  continuationToken?: string;
+  limit?: number;
+  prefix: string;
+  storage: S3StorageClient;
+}): Promise<ListStoredObjectsPage> {
+  const response = await storage.client.send(
+    new ListObjectsV2Command({
+      Bucket: storage.bucket,
+      ContinuationToken: continuationToken,
+      MaxKeys: limit,
+      Prefix: prefix,
+    }),
+  );
+
+  const keys =
+    response.Contents?.map((entry) => entry.Key).filter((key): key is string => Boolean(key)) ?? [];
+
+  return {
+    keys,
+    nextContinuationToken: response.IsTruncated ? response.NextContinuationToken : undefined,
+  };
+}
+
+export async function deleteStoredObjectsBatch({
+  keys,
+  onError,
+  storage,
+}: {
+  keys: string[];
+  onError?: (error: unknown, key: string) => void;
+  storage: S3StorageClient;
+}): Promise<{ deleted: number; errors: number }> {
+  let deleted = 0;
+  let errors = 0;
+
+  await Promise.all(
+    keys.map(async (key) => {
+      try {
+        await deleteStoredObject({ key, storage });
+        deleted += 1;
+      } catch (error) {
+        errors += 1;
+        onError?.(error, key);
+      }
+    }),
+  );
+
+  return { deleted, errors };
 }
 
 export async function putStoredObject({

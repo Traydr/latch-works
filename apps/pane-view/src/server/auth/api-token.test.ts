@@ -13,6 +13,7 @@ vi.mock("../../env/server", () => ({
 }));
 
 import {
+  assertSyncApiTokenFromBody,
   getSyncApiTokenDigestCacheForTests,
   hashApiToken,
   readBearerToken,
@@ -121,5 +122,20 @@ describe("requireSyncApiToken", () => {
     const response = requireSyncApiToken(request);
 
     expect(response?.status).toBe(401);
+  });
+});
+
+describe("assertSyncApiTokenFromBody", () => {
+  beforeEach(() => {
+    configuredSyncToken = syncToken;
+    resetSyncApiTokenDigestCacheForTests();
+  });
+
+  it("throws when the body token is invalid", () => {
+    expect(() => assertSyncApiTokenFromBody("wrong-token")).toThrow("Invalid sync token.");
+  });
+
+  it("accepts a valid body token", () => {
+    expect(() => assertSyncApiTokenFromBody(syncToken)).not.toThrow();
   });
 });

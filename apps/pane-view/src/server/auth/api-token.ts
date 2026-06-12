@@ -73,3 +73,9 @@ export function requireSyncApiToken(request: Request): Response | null {
 
   return new Response("Unauthorized", { status: 401 });
 }
+
+export function assertSyncApiTokenFromBody(token: string | undefined): void {
+  if (!verifySyncApiToken({ token: token ?? null })) {
+    throw new Error("Invalid sync token.");
+  }
+}

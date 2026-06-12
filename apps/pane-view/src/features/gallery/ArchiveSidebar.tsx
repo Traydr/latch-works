@@ -1,5 +1,6 @@
 import type { FolderNode } from "@latch-works/media-domain";
-import { Archive, ChevronRight, Folder, LogOut, Settings } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { Archive, ChevronRight, Folder, LogOut, Settings, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Sidebar,
@@ -136,6 +137,12 @@ export function ArchiveSidebar({
           >
             <Settings className="size-4" />
             <span>Settings</span>
+          </Button>
+          <Button asChild className="w-full justify-start gap-2" variant="ghost">
+            <Link to="/manage">
+              <Wrench className="size-4" />
+              <span>Manage</span>
+            </Link>
           </Button>
           <form action="/api/auth/logout" method="post">
             <Button className="w-full justify-start gap-2" type="submit" variant="ghost">
