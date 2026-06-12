@@ -4,10 +4,13 @@ import {
   planSync,
   pruneDeleted,
   pushChanges,
+  selectChangedItems,
+  selectDeleteItems,
   type LockstepObserver,
   type LockstepPlan,
   type LockstepRunEvent,
 } from "@latch-works/lockstep-core";
+import { isInteractiveTerminal } from "./options.js";
 import {
   createLineReporter,
   formatPushStatus,
@@ -17,7 +20,17 @@ import {
 } from "./progress.js";
 import type { CliOptions } from "./types.js";
 
-export async function executeCommand(options: CliOptions): Promise<void> {
+export type ExecuteCommandDeps = {
+  confirmPrune?: () => Promise<boolean>;
+  isInteractive?: () => boolean;
+};
+
+export async function executeCommand(
+  options: CliOptions,
+  deps: ExecuteCommandDeps = {},
+): Promise<void> {
+  const isInteractive = deps.isInteractive ?? isInteractiveTerminal;
+  const confirmPrune = deps.confirmPrune ?? defaultConfirmPrune;
   const reporter = createLineReporter();
   const observer = createCliObserver(reporter);
 
@@ -140,6 +153,32 @@ export async function executeCommand(options: CliOptions): Promise<void> {
   }
 
   if (options.command === "prune") {
+    const changedItems = selectChangedItems(plan.items);
+    const { items: itemsToPrune } = selectDeleteItems(changedItems, options.maxChanges);
+
+    if (itemsToPrune.length === 0) {
+      console.log("");
+      console.log("Nothing to prune.");
+      return;
+    }
+
+    if (!options.yes) {
+      if (!isInteractive()) {
+        console.log("");
+        console.log("Prune requires --yes in non-interactive mode.");
+        process.exitCode = 1;
+        return;
+      }
+
+      const confirmed = await confirmPrune();
+      if (!confirmed) {
+        console.log("");
+        console.log("Prune cancelled.");
+        process.exitCode = 1;
+        return;
+      }
+    }
+
     const result = await pruneDeleted(
       {
         apiToken: requiredApiToken,
@@ -156,8 +195,6 @@ export async function executeCommand(options: CliOptions): Promise<void> {
     if (result.failed > 0) {
       console.log(`Prune finished: ${result.pruned} succeeded, ${result.failed} failed.`);
       process.exitCode = 1;
-    } else if (result.pruned === 0) {
-      console.log("Nothing to prune.");
     } else {
       console.log(`Prune finished: ${result.pruned} delete(s) applied.`);
     }
@@ -185,7 +222,7 @@ function printPlanSummary(plan: LockstepPlan, options: CliOptions): void {
   console.log(`  keep:   ${plan.counts.keep}`);
   console.log(`  delete: ${plan.counts.delete}`);
 
-  const changedItems = plan.items.filter((item) => item.action !== "keep");
+  const changedItems = selectChangedItems(plan.items);
   const previewCount = options.command === "push" || options.command === "prune" ? 5 : 20;
   const changedPreview = changedItems.slice(0, previewCount);
   if (changedPreview.length > 0 && options.command !== "push" && options.command !== "prune") {
@@ -198,6 +235,41 @@ function printPlanSummary(plan: LockstepPlan, options: CliOptions): void {
       console.log(`  ... and ${changedItems.length - previewCount} more`);
     }
   }
+
+  if (options.command === "prune" && plan.counts.delete > 0) {
+    const { items: deletesToApply, omittedCount } = selectDeleteItems(
+      changedItems,
+      options.maxChanges,
+    );
+    const deletePreviewLimit = 20;
+    const deletePreview = deletesToApply.slice(0, deletePreviewLimit);
+
+    console.log("");
+    if (options.maxChanges !== undefined && omittedCount > 0) {
+      console.log(
+        `Deletes to apply: ${deletesToApply.length} of ${plan.counts.delete} (capped by --max-changes)`,
+      );
+    } else {
+      console.log(`Deletes to apply: ${plan.counts.delete}`);
+    }
+    console.log(deletesToApply.length > deletePreviewLimit ? "First deletes" : "Deletes");
+    for (const item of deletePreview) {
+      console.log(`  delete ${item.path}`);
+    }
+    if (deletesToApply.length > deletePreviewLimit) {
+      console.log(`  ... and ${deletesToApply.length - deletePreviewLimit} more`);
+    }
+  }
+}
+
+async function defaultConfirmPrune(): Promise<boolean> {
+  const { input } = await import("@inquirer/prompts");
+  const answer = await input({
+    message: 'Type "prune" to confirm remote deletes',
+    validate: (value) => value === "prune" || 'Type "prune" to confirm.',
+  });
+
+  return answer === "prune";
 }
 
 function createCliObserver(reporter: LineReporter): LockstepObserver {
