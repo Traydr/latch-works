@@ -84,6 +84,7 @@ export async function pushChanges(
 
   let pushed = 0;
   let failed = 0;
+  let cancelled = false;
 
   try {
     for (const [index, item] of itemsToPush.entries()) {
@@ -119,6 +120,7 @@ export async function pushChanges(
         });
       } catch (error) {
         if (signal?.aborted) {
+          cancelled = true;
           throw error;
         }
         failed += 1;
@@ -132,7 +134,14 @@ export async function pushChanges(
         });
       }
     }
+  } catch (error) {
+    if (signal?.aborted) {
+      cancelled = true;
+    } else {
+      throw error;
+    }
   } finally {
+    const wasCancelled = cancelled || (signal?.aborted ?? false);
     await postJson(
       options.apiUrl,
       `/api/sync/runs/${syncRun.syncRunId}/complete`,
@@ -145,16 +154,34 @@ export async function pushChanges(
           planned: changedItems.length,
           pushed,
         },
-        error: failed > 0 ? `${failed} item(s) failed during push` : undefined,
-        status: failed > 0 ? "failed" : "completed",
+        error: wasCancelled
+          ? "Run cancelled by user"
+          : failed > 0
+            ? `${failed} item(s) failed during push`
+            : undefined,
+        status: wasCancelled ? "cancelled" : failed > 0 ? "failed" : "completed",
       },
-      signal,
     ).catch((error) => {
       observer?.onEvent({
         type: "status",
         message: `Warning: failed to finalize sync run: ${formatPushError(error)}`,
       });
     });
+  }
+
+  if (cancelled) {
+    observer?.onEvent({
+      type: "complete",
+      summary: {
+        action: "push",
+        completedAt: new Date().toISOString(),
+        failed,
+        planCounts: plan.counts,
+        pushed,
+        status: "cancelled",
+      },
+    });
+    throw signal?.reason ?? new DOMException("Aborted", "AbortError");
   }
 
   const summary = {

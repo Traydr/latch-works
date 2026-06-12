@@ -90,6 +90,27 @@ describe("finalizeSyncRun", () => {
     );
   });
 
+  it("marks cancelled runs with error text", async () => {
+    mocks.returningMock.mockResolvedValue([{ id: "run-1" }]);
+
+    await finalizeSyncRun({
+      input: {
+        counts: { failed: 0, planned: 2, pushed: 1 },
+        error: "Run cancelled by user",
+        status: "cancelled",
+        syncRunId: "run-1",
+      },
+    });
+
+    expect(mocks.setMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        counts: { failed: 0, planned: 2, pushed: 1 },
+        error: "Run cancelled by user",
+        status: "cancelled",
+      }),
+    );
+  });
+
   it("marks failed runs with error text", async () => {
     mocks.returningMock.mockResolvedValue([{ id: "run-1" }]);
 

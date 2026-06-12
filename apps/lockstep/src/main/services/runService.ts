@@ -144,7 +144,7 @@ export class RunService {
   }
 
   private async runWithCore<T>(
-    _operation: string,
+    operation: LockstepRunSummary["action"],
     request: RunRequest,
     runner: (
       credentials: { apiToken: string; apiUrl: string; sourceRoot: string },
@@ -168,7 +168,16 @@ export class RunService {
 
     this.running = true;
     this.abortController = new AbortController();
-    const observer = this.createObserver();
+    let completeObserved = false;
+    const baseObserver = this.createObserver();
+    const observer: LockstepObserver = {
+      onEvent: (event: LockstepRunEvent) => {
+        if (event.type === "complete") {
+          completeObserved = true;
+        }
+        baseObserver.onEvent(event);
+      },
+    };
 
     try {
       return await runner(
@@ -181,9 +190,9 @@ export class RunService {
         this.abortController.signal,
       );
     } catch (error) {
-      if (this.abortController.signal.aborted) {
+      if (this.abortController.signal.aborted && !completeObserved) {
         const summary: LockstepRunSummary = {
-          action: "plan",
+          action: operation,
           completedAt: new Date().toISOString(),
           failed: 0,
           profileId: request.profileId,
@@ -192,7 +201,6 @@ export class RunService {
         };
         observer.onEvent({ type: "cancelled" });
         observer.onEvent({ type: "complete", summary });
-        throw error;
       }
       throw error;
     } finally {
