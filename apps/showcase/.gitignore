@@ -1,2 +1,5 @@
+.astro
 dist
+chrome
 public/screenshots/**/_*.html
+public/screenshots/**/_preview-*.html

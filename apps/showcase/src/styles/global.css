@@ -88,3 +88,74 @@
     color-mix(in oklch, var(--muted) 60%, transparent)
   );
 }
+
+.prose-docs {
+  color: var(--muted-foreground);
+  line-height: 1.75;
+}
+
+.prose-docs h1,
+.prose-docs h2,
+.prose-docs h3 {
+  color: var(--foreground);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.prose-docs h1 {
+  font-size: 2rem;
+  margin-bottom: 1rem;
+}
+
+.prose-docs h2 {
+  font-size: 1.35rem;
+  margin-top: 2.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.prose-docs h3 {
+  font-size: 1.1rem;
+  margin-top: 1.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.prose-docs p {
+  margin: 1rem 0;
+}
+
+.prose-docs a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.prose-docs ul,
+.prose-docs ol {
+  margin: 1rem 0;
+  padding-left: 1.25rem;
+}
+
+.prose-docs li {
+  margin: 0.35rem 0;
+}
+
+.prose-docs code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: color-mix(in oklch, var(--muted) 70%, transparent);
+  border-radius: 0.35rem;
+  padding: 0.1rem 0.35rem;
+}
+
+.prose-docs pre {
+  overflow-x: auto;
+  border-radius: 0.75rem;
+  border: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
+  background: color-mix(in oklch, var(--card) 90%, transparent);
+  padding: 1rem;
+}
+
+.prose-docs pre code {
+  background: transparent;
+  padding: 0;
+}

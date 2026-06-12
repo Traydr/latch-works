@@ -1,4 +1,5 @@
 import {
+  Activity,
   ArrowRight,
   Blocks,
   BookOpen,
@@ -23,7 +24,6 @@ import {
   Workflow,
   Zap,
   type LucideIcon,
-  Activity,
 } from "lucide-react";
 
 const iconMap: Record<string, LucideIcon> = {
@@ -90,9 +90,7 @@ export function Screenshot({
           className="block w-full bg-muted/30 object-cover object-top transition duration-500 group-hover:scale-[1.01]"
         />
       </div>
-      {caption ? (
-        <figcaption className="mt-3 text-sm text-muted-foreground">{caption}</figcaption>
-      ) : null}
+      {caption ? <figcaption className="mt-3 text-sm text-muted-foreground">{caption}</figcaption> : null}
     </figure>
   );
 }
@@ -112,7 +110,9 @@ export function SectionHeading({
         <p className="mb-2 text-sm font-medium uppercase tracking-widest text-primary">{eyebrow}</p>
       ) : null}
       <h2 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">{title}</h2>
-      {description ? <p className="mt-3 text-base leading-relaxed text-muted-foreground">{description}</p> : null}
+      {description ? (
+        <p className="mt-3 text-base leading-relaxed text-muted-foreground">{description}</p>
+      ) : null}
     </div>
   );
 }

@@ -87,6 +87,9 @@ typings/
 
 # Vite
 .vite/
+.showcase-preview/
+showcase-media/*
+!showcase-media/.gitkeep
 
 # Electron-Forge
 out/

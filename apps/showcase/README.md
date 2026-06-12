@@ -1,6 +1,8 @@
 # Showcase
 
-Static marketing site for the Latch Works ecosystem — index page plus subpages for each app and tool.
+Server-rendered marketing site for the Latch Works ecosystem — product pages, documentation, and screenshots.
+
+Built with [Astro](https://astro.build/) (`output: "server"`) so pages and MDX docs render on the server.
 
 ## Development
 
@@ -10,16 +12,28 @@ pnpm dev:showcase
 
 Opens at http://127.0.0.1:3100
 
+- `/` — ecosystem overview
+- `/{slug}` — Pane View, Frame View, Gather Box, Lockstep
+- `/docs` — MDX documentation
+
 ## Screenshots
 
 Product screenshots live in `public/screenshots/`. Regenerate them after UI changes to the source apps:
 
 ```bash
-# Requires pane-view running with seeded archive data
+# Prepare sample media, then capture (Pane View optional but recommended)
 pnpm --filter @latch-works/showcase screenshots
 ```
 
-The capture script logs into a local Pane View instance, runs Lockstep commands, and renders Gather Box / Frame View previews from real extension CSS and archive media.
+The capture script:
+
+- Forces dark mode for Pane View, Gather Box, Lockstep terminal renders, and Frame View
+- Logs into a local Pane View instance when `http://127.0.0.1:3000/api/health` is healthy
+- Runs real Lockstep `plan` / `push` commands for terminal screenshots
+- Renders Gather Box from the extension popup CSS
+- Boots Frame View's `preview:showcase` Vite entry so screenshots use the real React UI (not a mock layout)
+
+Set `CHROME_PATH` if Chrome is installed outside the default macOS / Linux locations.
 
 ## Build
 

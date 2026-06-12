@@ -1,0 +1,48 @@
+---
+import { getCollection } from "astro:content";
+import BaseLayout from "@/layouts/BaseLayout.astro";
+
+interface Props {
+  title: string;
+  description?: string;
+}
+
+const { title, description } = Astro.props;
+const docs = (await getCollection("docs")).sort(
+  (left, right) => (left.data.order ?? 99) - (right.data.order ?? 99),
+);
+const currentPath = Astro.url.pathname;
+---
+
+<BaseLayout title={`${title} — Latch Works Docs`} description={description}>
+  <div class="mx-auto grid max-w-6xl gap-10 px-4 py-12 sm:px-6 lg:grid-cols-[220px_minmax(0,1fr)]">
+    <aside class="lg:sticky lg:top-20 lg:self-start">
+      <p class="mb-3 text-xs font-medium uppercase tracking-widest text-primary">Documentation</p>
+      <nav class="space-y-1" aria-label="Docs">
+        {
+          docs.map((doc) => {
+            const href = `/docs/${doc.id}`;
+            const active = currentPath === href;
+            return (
+              <a
+                href={href}
+                class:list={[
+                  "block rounded-md px-3 py-2 text-sm transition",
+                  active
+                    ? "bg-accent text-accent-foreground"
+                    : "text-muted-foreground hover:text-foreground",
+                ]}
+              >
+                {doc.data.title}
+              </a>
+            );
+          })
+        }
+      </nav>
+    </aside>
+
+    <article class="prose-docs min-w-0">
+      <slot />
+    </article>
+  </div>
+</BaseLayout>

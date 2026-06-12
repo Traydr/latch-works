@@ -1,0 +1,53 @@
+---
+title: Getting started
+description: Run the apps locally for development and sync.
+order: 2
+---
+
+# Getting started
+
+This guide covers the minimum setup to browse a local archive in Frame View and sync a sample tree to Pane View.
+
+## Prerequisites
+
+- Node.js and pnpm 11
+- PostgreSQL and S3-compatible storage for Pane View
+- A local media folder to use as the archive source of truth
+
+## Frame View
+
+From the repo root:
+
+```bash
+pnpm install
+pnpm --filter @latch-works/frame-view start
+```
+
+Open a folder from the app menu or `Cmd/Ctrl+O`, then browse the gallery. Frame View is the UX reference that Pane View targets for parity.
+
+## Pane View
+
+Copy `.env.example` to the repo root, symlink `apps/pane-view/.env`, migrate the database, build workspace packages, then start the dev server:
+
+```bash
+pnpm build
+pnpm dev:pane
+```
+
+Visit `http://127.0.0.1:3000` and sign in with your configured credentials.
+
+## Lockstep
+
+With Pane View running and `.env` sourced:
+
+```bash
+cd tools/lockstep
+pnpm exec tsx src/cli.ts plan --source /path/to/archive --api-url http://127.0.0.1:3000
+```
+
+`plan` is read-only. Use `push --yes` when you are ready to upload changed originals.
+
+## Next steps
+
+- Browse product pages on this site for feature-level detail.
+- Read runbooks under `docs/runbooks/` in the monorepo for thumbnail jobs and delivery setup.

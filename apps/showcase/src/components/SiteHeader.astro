@@ -1,0 +1,57 @@
+---
+import { apps, tools } from "@/data/products";
+
+const pathname = Astro.url.pathname;
+
+function navClass(href: string, end = false): string {
+  const active = end ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
+  return [
+    "rounded-md px-3 py-2 text-sm transition",
+    active ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground",
+  ].join(" ");
+}
+---
+
+<header class="sticky top-0 z-50 border-b border-border/70 bg-background/85 backdrop-blur-md">
+  <div class="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
+    <a href="/" class="group flex items-center gap-3">
+      <img src="/favicon.svg" alt="" class="size-8 rounded-md" aria-hidden="true" />
+      <div>
+        <p class="text-sm font-semibold tracking-tight text-foreground group-hover:text-primary">
+          Latch Works
+        </p>
+        <p class="hidden text-xs text-muted-foreground sm:block">Private media tools</p>
+      </div>
+    </a>
+
+    <nav class="hidden items-center gap-1 md:flex" aria-label="Primary">
+      <a href="/" class={navClass("/", true)}>Overview</a>
+      {apps.map((product) => (
+        <a href={`/${product.slug}`} class={navClass(`/${product.slug}`)}>
+          {product.name}
+        </a>
+      ))}
+      {tools.map((product) => (
+        <a href={`/${product.slug}`} class={navClass(`/${product.slug}`)}>
+          {product.name}
+        </a>
+      ))}
+      <a href="/docs" class={navClass("/docs")}>Docs</a>
+    </nav>
+
+    <details class="relative md:hidden">
+      <summary class="cursor-pointer list-none rounded-md border border-border/70 px-3 py-2 text-sm text-muted-foreground">
+        Menu
+      </summary>
+      <div class="absolute right-0 z-50 mt-2 w-48 rounded-lg border border-border bg-card p-2 shadow-lg">
+        <a href="/" class={navClass("/", true)}>Overview</a>
+        {[...apps, ...tools].map((product) => (
+          <a href={`/${product.slug}`} class={navClass(`/${product.slug}`)}>
+            {product.name}
+          </a>
+        ))}
+        <a href="/docs" class={navClass("/docs")}>Docs</a>
+      </div>
+    </details>
+  </div>
+</header>
