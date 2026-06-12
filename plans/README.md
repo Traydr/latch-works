@@ -11,7 +11,7 @@ These plans are the product of the audit. The advisor did not modify source code
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 | --- | --- | --- | --- | --- | --- |
-| [001](001-sync-ingest-transactions.md) | Make sync ingest and delete writes atomic | P1 | M | none | TODO |
+| [001](001-sync-ingest-transactions.md) | Make sync ingest and delete writes atomic | P1 | M | none | DONE |
 | [002](002-reclaim-derivative-jobs.md) | Reclaim pending derivative jobs reliably | P1 | S | none | TODO |
 | [003](003-align-cdn-cache-ttl.md) | Align CDN cache headers with signed token expiry | P1 | S | none | TODO |
 | [004](004-lockstep-prune-confirmation.md) | Add a real confirmation gate to Lockstep prune | P1 | M | none | TODO |

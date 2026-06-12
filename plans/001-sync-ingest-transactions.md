@@ -19,6 +19,8 @@
 - **Depends on**: none
 - **Category**: bug
 - **Planned at**: commit `326110f`, 2026-06-12
+- **Executed at**: commit `5db28d0`, branch `codex/001-sync-ingest-transactions`
+- **Review**: APPROVED 2026-06-12
 
 ## Why this matters
 
