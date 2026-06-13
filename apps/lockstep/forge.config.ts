@@ -12,9 +12,17 @@ import { VitePlugin } from "@electron-forge/plugin-vite";
 import type { ForgeConfig } from "@electron-forge/shared-types";
 
 const appIconBasePath = path.resolve(__dirname, "media", "lockstep-icon");
+const appBundleId = "dev.traydr.latchworks.lockstep";
 const windowsIconPath = `${appIconBasePath}.ico`;
 const macIconPath = `${appIconBasePath}.icns`;
 const linuxIconPath = `${appIconBasePath}.png`;
+const localMacEntitlements = [
+  "com.apple.security.cs.allow-jit",
+  "com.apple.security.cs.allow-unsigned-executable-memory",
+  "com.apple.security.cs.disable-library-validation",
+];
+
+type PackagerConfig = NonNullable<ForgeConfig["packagerConfig"]>;
 
 function getPackagerIconPath(): string | undefined {
   if (process.platform === "win32") {
@@ -28,11 +36,33 @@ function getPackagerIconPath(): string | undefined {
   return existsSync(linuxIconPath) ? linuxIconPath : undefined;
 }
 
+function getMacCodeSignConfig(): PackagerConfig["osxSign"] | undefined {
+  if (process.platform !== "darwin") {
+    return undefined;
+  }
+
+  const identity = process.env.LOCKSTEP_MACOS_SIGN_IDENTITY?.trim();
+  if (identity) {
+    return { identity };
+  }
+
+  return {
+    identity: "-",
+    identityValidation: false,
+    optionsForFile: (filePath) =>
+      filePath.endsWith(".app") ? { entitlements: localMacEntitlements } : {},
+    preAutoEntitlements: false,
+    preEmbedProvisioningProfile: false,
+  };
+}
+
 const config: ForgeConfig = {
   packagerConfig: {
+    appBundleId,
     asar: true,
     executableName: "lockstep",
     icon: getPackagerIconPath(),
+    osxSign: getMacCodeSignConfig(),
   },
   rebuildConfig: {},
   makers: [

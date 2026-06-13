@@ -18,13 +18,49 @@ Lockstep remembers non-secret settings between runs in:
 %USERPROFILE%\.latch-works\lockstep.json
 ```
 
-The file stores values such as your last source directory and API URL. API tokens are never written to disk; keep using `LOCKSTEP_API_TOKEN` (or `--api-token-env`).
+The CLI config file stores values such as your last source directory and API URL. CLI API tokens
+are never written to disk; keep using `LOCKSTEP_API_TOKEN` (or `--api-token-env`).
 
 Optional environment overrides:
 
 - `LOCKSTEP_SOURCE` — default local archive path (overrides the config file)
 - `LOCKSTEP_API_URL` — default Pane View API URL
 - `LOCKSTEP_API_TOKEN` — sync API bearer token
+
+## Desktop GUI Token Storage
+
+The Lockstep desktop app stores per-profile sync tokens with Electron `safeStorage`. On macOS,
+Electron stores the encryption key in Keychain, and Keychain ties access to the app identity and code
+signature. An installable app produced without a fresh signature can write the token during one
+process, then fail to unlock it after restart.
+
+The macOS Forge package now uses a stable bundle id:
+
+```text
+dev.traydr.latchworks.lockstep
+```
+
+`pnpm make` signs macOS packages by default. If `LOCKSTEP_MACOS_SIGN_IDENTITY` is unset, Forge uses
+an ad-hoc signature for local same-machine testing and gives the Electron app/helper bundles the
+local-only `com.apple.security.cs.disable-library-validation` entitlement. For builds that will be
+shared or installed on another Mac, set `LOCKSTEP_MACOS_SIGN_IDENTITY` to an Apple Developer ID
+Application certificate and notarize before distribution.
+
+Useful checks on the build machine:
+
+```bash
+security find-identity -v -p codesigning
+codesign --verify --deep --strict --verbose=2 apps/lockstep/out/Lockstep-darwin-arm64/Lockstep.app
+codesign -dv apps/lockstep/out/Lockstep-darwin-arm64/Lockstep.app
+```
+
+`codesign -dv` should show `Identifier=dev.traydr.latchworks.lockstep`, not `com.github.Electron`.
+If launch fails with `Library not loaded: @rpath/Electron Framework.framework/Electron Framework`
+and `mapped file (non-platform) have different Team IDs`, the app/helper bundles were signed without
+the local ad-hoc helper entitlement or were signed with mixed identities.
+If a user previously saved a token with the invalid unsigned package, they should re-enter the token
+once after installing the fixed build. The old encrypted blob may remain unreadable because Keychain
+was asked to protect it for a different or invalid code requirement.
 
 For scripted `push` or `prune` without interactive confirmation, pass `--yes`:
 

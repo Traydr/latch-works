@@ -29,6 +29,55 @@ You can also run `pnpm start` from `apps/lockstep` after a root install. Electro
 
 `apps/lockstep/pnpm-workspace.yaml` lists only Lockstep and its workspace package dependencies (`lockstep-core`, `media-index`, `media-domain`) so Forge can use a hoisted install without pulling the entire monorepo.
 
+## Packaging on macOS
+
+Build the installable app from `apps/lockstep`:
+
+```bash
+pnpm make
+```
+
+Lockstep stores desktop sync tokens with Electron `safeStorage`, which uses macOS Keychain.
+Packaged macOS builds must have a stable bundle id and a valid code signature, or Keychain can
+allow the app to store the token but refuse to unlock it on the next launch.
+
+Forge sets `CFBundleIdentifier` to `dev.traydr.latchworks.lockstep` and signs macOS packages by
+default. If `LOCKSTEP_MACOS_SIGN_IDENTITY` is set, that identity is used. If it is unset, local
+builds are signed ad-hoc with `identity: "-"`, plus local-only Electron helper entitlements that
+disable hardened-runtime library validation. This is enough for same-machine testing but is not
+notarized for distribution.
+
+To see available signing identities:
+
+```bash
+security find-identity -v -p codesigning
+```
+
+For distributable builds, use an Apple Developer ID Application certificate:
+
+```bash
+LOCKSTEP_MACOS_SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" pnpm make
+```
+
+After changing from the earlier unsigned package to a signed package, re-enter the sync token once in
+Lockstep. Tokens saved by the old invalid signature may remain unreadable, but newly saved tokens
+should survive restarts.
+
+Verify a packaged app before using the DMG:
+
+```bash
+codesign --verify --deep --strict --verbose=2 out/Lockstep-darwin-arm64/Lockstep.app
+codesign -dv out/Lockstep-darwin-arm64/Lockstep.app
+```
+
+The displayed identifier should be `dev.traydr.latchworks.lockstep`, and verification should report
+that the app is valid on disk.
+
+If the app fails at launch with `Library not loaded: @rpath/Electron Framework.framework/Electron
+Framework` and `mapped file (non-platform) have different Team IDs`, the package is missing the
+local ad-hoc helper entitlements or was signed with mixed identities. Rebuild with the current Forge
+config, or use one Developer ID Application identity for the full package.
+
 ## Troubleshooting
 
 ### `WORKSPACE_PKG_NOT_FOUND` for `@latch-works/lockstep-core`
