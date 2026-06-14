@@ -12,14 +12,22 @@ import { VitePlugin } from '@electron-forge/plugin-vite';
 import type { ForgeConfig } from '@electron-forge/shared-types';
 
 const appIconBasePath = path.resolve(__dirname, 'media', 'frame-view-icon');
+const appBundleId = 'dev.traydr.latchworks.frameview';
 const windowsIconPath = `${appIconBasePath}.ico`;
 const macIconPath = `${appIconBasePath}.icns`;
 const linuxIconPath = `${appIconBasePath}.png`;
+const localMacEntitlements = [
+  'com.apple.security.cs.allow-jit',
+  'com.apple.security.cs.allow-unsigned-executable-memory',
+  'com.apple.security.cs.disable-library-validation',
+];
 const appName = 'frame-view';
 const appExecutableName = `${appName}.exe`;
 const appSetupExe = `${appName} Setup.exe`;
 const stagedRuntimeNodeModulesPath = path.resolve(__dirname, '.packaged-runtime', 'node_modules');
 const runtimeDependencyRoots = ['ffmpeg-static', 'ffprobe-static', 'sharp'];
+
+type PackagerConfig = NonNullable<ForgeConfig['packagerConfig']>;
 
 function resolvePackageDirectory(packageName: string): string {
   const packagePathSegments = packageName.startsWith('@') ? packageName.split('/') : [packageName];
@@ -38,7 +46,9 @@ function copyRuntimePackage(packageName: string, visited: Set<string>): void {
 
   visited.add(packageName);
   const targetPath = path.join(stagedRuntimeNodeModulesPath, ...packageName.split('/'));
+  // Keep packaged runtime dependencies self-contained so codesign can seal the .app bundle.
   cpSync(sourcePath, targetPath, {
+    dereference: true,
     recursive: true,
   });
 
@@ -101,8 +111,29 @@ function getPackagerIconPath(): string | undefined {
   return existsSync(linuxIconPath) ? linuxIconPath : undefined;
 }
 
+function getMacCodeSignConfig(): PackagerConfig['osxSign'] | undefined {
+  if (process.platform !== 'darwin') {
+    return undefined;
+  }
+
+  const identity = process.env.FRAME_VIEW_MACOS_SIGN_IDENTITY?.trim();
+  if (identity) {
+    return { identity };
+  }
+
+  return {
+    identity: '-',
+    identityValidation: false,
+    optionsForFile: (filePath) =>
+      filePath.endsWith('.app') ? { entitlements: localMacEntitlements } : {},
+    preAutoEntitlements: false,
+    preEmbedProvisioningProfile: false,
+  };
+}
+
 const config: ForgeConfig = {
   packagerConfig: {
+    appBundleId,
     asar: {
       unpack: '**/*.{exe,node,dll}',
     },
@@ -121,6 +152,7 @@ const config: ForgeConfig = {
     extraResource: [stagedRuntimeNodeModulesPath],
     icon: getPackagerIconPath(),
     executableName: appName,
+    osxSign: getMacCodeSignConfig(),
   },
   rebuildConfig: {
     onlyModules: [],
