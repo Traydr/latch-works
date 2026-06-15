@@ -49,7 +49,7 @@ import { GalleryGridSkeleton } from "@/features/gallery/GalleryGridSkeleton";
 import { useGalleryShell } from "@/features/gallery/gallery-shell-context";
 import { MediaViewerModal } from "@/features/gallery/MediaViewerModal";
 import { DEFAULT_CARD_WIDTH } from "@/features/gallery/thumbnail-size";
-import { useGalleryState } from "@/features/gallery/useGalleryState";
+import { useGalleryState, GALLERY_STATE_DEFAULTS } from "@/features/gallery/useGalleryState";
 import {
   type LibrarySnapshotRequest,
   toLibrarySnapshotRequest,
@@ -87,6 +87,7 @@ export function GalleryPage() {
   const { setOpenSettingsHandler } = useGalleryShell();
 
   const persisted = useGalleryState();
+  const { isReady: galleryStateReady } = persisted;
   const { settings, updateSettings } = useAppSettings();
   const rootKey = resolveRootKey(displayPath);
   const { savePreferences: saveRootPreferences } = useRootPreferences(rootKey);
@@ -98,10 +99,10 @@ export function GalleryPage() {
   const [pathSheetOpen, setPathSheetOpen] = useState(false);
   const [activeComic, setActiveComic] = useState<ComicEntry | null>(null);
 
-  const [recursive, setRecursive] = useState(search.recursive ?? persisted.recursive);
-  const [comicMode, setComicMode] = useState(search.comic ?? persisted.comicMode);
-  const [detailPanelOpen, setDetailPanelOpen] = useState(persisted.detailPanelOpen);
-  const [sortMode, setSortMode] = useState<GallerySortMode>(persisted.sortMode);
+  const [recursive, setRecursive] = useState(search.recursive ?? GALLERY_STATE_DEFAULTS.recursive);
+  const [comicMode, setComicMode] = useState(search.comic ?? GALLERY_STATE_DEFAULTS.comicMode);
+  const [detailPanelOpen, setDetailPanelOpen] = useState(GALLERY_STATE_DEFAULTS.detailPanelOpen);
+  const [sortMode, setSortMode] = useState<GallerySortMode>(GALLERY_STATE_DEFAULTS.sortMode);
   const [randomSeed, setRandomSeed] = useState(() => createRandomSeed());
   const [selectedId, setSelectedId] = useState<string | null>(search.media ?? null);
   const [searchDraft, setSearchDraft] = useState(search.q ?? "");
@@ -116,6 +117,7 @@ export function GalleryPage() {
   const [extraMedia, setExtraMedia] = useState<LibraryMediaItem[]>([]);
   const [mediaPage, setMediaPage] = useState<MediaPage | null>(null);
   const [loadingMoreMedia, setLoadingMoreMedia] = useState(false);
+  const [hasRestoredGalleryPrefs, setHasRestoredGalleryPrefs] = useState(false);
 
   const browseKey = useMemo(
     () =>
@@ -303,38 +305,94 @@ export function GalleryPage() {
     });
   }, [allMedia, library]);
 
+  useEffect(() => {
+    if (!hydrated || !galleryStateReady || hasRestoredGalleryPrefs) {
+      return;
+    }
+
+    if (search.recursive === undefined) {
+      setRecursive(persisted.recursive);
+    }
+
+    if (search.comic === undefined) {
+      setComicMode(persisted.comicMode);
+    }
+
+    setDetailPanelOpen(persisted.detailPanelOpen);
+    setSortMode(persisted.sortMode);
+    setHasRestoredGalleryPrefs(true);
+  }, [
+    galleryStateReady,
+    hasRestoredGalleryPrefs,
+    hydrated,
+    persisted.comicMode,
+    persisted.detailPanelOpen,
+    persisted.recursive,
+    persisted.sortMode,
+    search.comic,
+    search.recursive,
+  ]);
+
   // Persist state changes.
   useEffect(() => {
+    if (!hydrated || !hasRestoredGalleryPrefs) {
+      return;
+    }
+
     persisted.setLastPath(displayPath);
-  }, [displayPath, persisted.setLastPath]);
+  }, [displayPath, hasRestoredGalleryPrefs, hydrated, persisted.setLastPath]);
 
   useEffect(() => {
+    if (!hydrated || !hasRestoredGalleryPrefs) {
+      return;
+    }
+
     persisted.setLastSelectedId(selectedId);
-  }, [selectedId, persisted.setLastSelectedId]);
+  }, [hasRestoredGalleryPrefs, hydrated, persisted.setLastSelectedId, selectedId]);
 
   useEffect(() => {
+    if (!hydrated || !hasRestoredGalleryPrefs) {
+      return;
+    }
+
     persisted.setRecursive(recursive);
-  }, [recursive, persisted.setRecursive]);
+  }, [hasRestoredGalleryPrefs, hydrated, persisted.setRecursive, recursive]);
 
   useEffect(() => {
+    if (!hydrated || !hasRestoredGalleryPrefs) {
+      return;
+    }
+
     saveRootPreferences({
       comicMode,
       recursive,
       sortMode,
     });
-  }, [comicMode, recursive, saveRootPreferences, sortMode]);
+  }, [comicMode, hasRestoredGalleryPrefs, hydrated, recursive, saveRootPreferences, sortMode]);
 
   useEffect(() => {
+    if (!hydrated || !hasRestoredGalleryPrefs) {
+      return;
+    }
+
     persisted.setComicMode(comicMode);
-  }, [comicMode, persisted.setComicMode]);
+  }, [comicMode, hasRestoredGalleryPrefs, hydrated, persisted.setComicMode]);
 
   useEffect(() => {
+    if (!hydrated || !hasRestoredGalleryPrefs) {
+      return;
+    }
+
     persisted.setSortMode(sortMode);
-  }, [sortMode, persisted.setSortMode]);
+  }, [hasRestoredGalleryPrefs, hydrated, persisted.setSortMode, sortMode]);
 
   useEffect(() => {
+    if (!hydrated || !hasRestoredGalleryPrefs) {
+      return;
+    }
+
     persisted.setDetailPanelOpen(detailPanelOpen);
-  }, [detailPanelOpen, persisted.setDetailPanelOpen]);
+  }, [detailPanelOpen, hasRestoredGalleryPrefs, hydrated, persisted.setDetailPanelOpen]);
 
   useEffect(() => {
     const urlRecursive = search.recursive ?? false;
