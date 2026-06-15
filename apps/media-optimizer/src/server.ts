@@ -9,7 +9,7 @@ let inFlight: Promise<ProcessResult> | null = null;
 export function createServer(): Hono {
   const app = new Hono();
 
-  app.get("/healthz", (c) => c.json({ ok: true, service: "media-optimizer" }));
+  app.get("/health", (c) => c.json({ ok: true, service: "media-optimizer" }));
 
   const internal = new Hono();
   internal.use("*", bearerAuth({ token: env.MEDIA_OPTIMIZER_TOKEN }));

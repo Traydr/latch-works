@@ -9,7 +9,7 @@ Pane View owns the derivative queue (`thumbnails` rows, claim/complete/fail). Th
    - `MEDIA_OPTIMIZER_TOKEN` — shared secret (min 16 chars), must match Pane View
    - `PANE_VIEW_INTERNAL_URL` — Pane View base URL reachable from the optimizer (private networking preferred)
    - S3 credentials (`S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`)
-3. Health check: `GET /healthz`
+3. Health check: `GET /health`
 4. Processing wake: `POST /internal/optimizer/process` with `Authorization: Bearer $MEDIA_OPTIMIZER_TOKEN`
 
 ## Pane View production settings

@@ -48,17 +48,19 @@ async function processJob(
     const existingObject = await headStoredObject({ key: job.objectKey, storage });
     if (existingObject) {
       const bytes = await readStoredObjectBytes({ key: job.objectKey, storage });
-      const metadata = await readWebpMetadata(bytes);
-      const completed = await reportComplete({
-        height: metadata.height,
-        mediaObjectId: job.mediaObjectId,
-        objectKey: job.objectKey,
-        processingToken,
-        size: job.size,
-        width: metadata.width,
-      });
+      if (bytes) {
+        const metadata = await readWebpMetadata(bytes);
+        const completed = await reportComplete({
+          height: metadata.height,
+          mediaObjectId: job.mediaObjectId,
+          objectKey: job.objectKey,
+          processingToken,
+          size: job.size,
+          width: metadata.width,
+        });
 
-      return completed;
+        return completed;
+      }
     }
 
     const generated = await generateDerivativeBytes({
@@ -138,6 +140,10 @@ export async function processBatch(): Promise<ProcessResult> {
       }
 
       const job = jobs[index];
+      if (!job) {
+        continue;
+      }
+
       const ok = await processJob(job, processingToken, storage);
       processed += 1;
       if (ok) {
