@@ -13,10 +13,13 @@ import {
   useRef,
   useState,
 } from "react";
+import { useLibraryViewerState } from "@/features/viewer/use-library-viewer-state";
+import {
+  resolveVideoResumeSeconds,
+  videoSecondsToPositionMs,
+} from "@/features/viewer/viewer-resume";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useViewerChromeIdle } from "@/hooks/use-viewer-chrome-idle";
-import { useLibraryViewerState } from "@/features/viewer/use-library-viewer-state";
-import { resolveVideoResumeSeconds, videoSecondsToPositionMs } from "@/features/viewer/viewer-resume";
 import { PaneViewImage } from "./PaneViewImage";
 import { useResolvedMediaUrl } from "./useResolvedMediaUrl";
 
@@ -97,9 +100,11 @@ export function MediaViewerModal({
   });
   const viewerStateSubjectId =
     item && (item.mediaType === "video" || item.mediaType === "pdf") ? item.id : undefined;
-  const { flushSave, scheduleSave, snapshot: viewerState } = useLibraryViewerState(
-    viewerStateSubjectId,
-  );
+  const {
+    flushSave,
+    scheduleSave,
+    snapshot: viewerState,
+  } = useLibraryViewerState(viewerStateSubjectId);
   const [resumePdfPage, setResumePdfPage] = useState<number | undefined>();
 
   useEffect(() => {

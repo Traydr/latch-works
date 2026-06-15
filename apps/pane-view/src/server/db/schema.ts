@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import {
   bigint,
@@ -312,12 +313,21 @@ export const thumbnails = pgTable(
     height: integer("height").notNull(),
     status: thumbnailStatusEnum("status").notNull().default("pending"),
     error: text("error"),
+    // Worker-safe scheduling fields. `processingToken` is a lease owner id so an
+    // external optimizer and Pane View never double-generate the same row.
+    processingToken: text("processing_token"),
+    attemptCount: integer("attempt_count").notNull().default(0),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({
     pk: primaryKey({ columns: [table.mediaObjectId, table.size] }),
     statusIndex: index("thumbnails_status_idx").on(table.mediaObjectId, table.size, table.status),
+    // Partial index for the optimizer claim scan over schedulable pending rows.
+    pendingIndex: index("thumbnails_pending_idx")
+      .on(table.nextAttemptAt)
+      .where(sql`${table.status} = 'pending'`),
   }),
 );
 
@@ -380,12 +390,7 @@ export interface MaintenanceJobProgress {
   lastError?: string;
   orphanPrefix?: string;
   orphanContinuationToken?: string;
-  phase:
-    | "s3_derivatives"
-    | "s3_originals"
-    | "s3_orphan_sweep"
-    | "db_hard_delete"
-    | "completed";
+  phase: "s3_derivatives" | "s3_originals" | "s3_orphan_sweep" | "db_hard_delete" | "completed";
   processedCount: number;
 }
 

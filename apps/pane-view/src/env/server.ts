@@ -18,6 +18,15 @@ export const env = createEnv({
     PANE_VIEW_PASSWORD: z.string(),
     PANE_VIEW_SYNC_TOKEN: z.string(),
     PANE_VIEW_TRUST_PROXY_HEADERS: z.coerce.boolean().default(false),
+    // Derivative generation mode. When unset, falls back to "triggered" if a
+    // MEDIA_OPTIMIZER_URL is configured, otherwise "inline" (see
+    // resolveDerivativeProcessingMode).
+    DERIVATIVE_PROCESSING_MODE: z.enum(["inline", "triggered"]).optional(),
+    // Shared bearer secret protecting the internal optimizer claim/complete/fail
+    // routes, and used by Pane View to authenticate optimizer wake requests.
+    MEDIA_OPTIMIZER_TOKEN: z.string().min(16).optional(),
+    // Base URL of the media-optimizer service used to wake it on demand.
+    MEDIA_OPTIMIZER_URL: z.url().optional(),
   },
   clientPrefix: "VITE_",
   client: {},
@@ -25,3 +34,18 @@ export const env = createEnv({
   skipValidation: typeof process !== "undefined" && Boolean(process.env.SKIP_ENV_VALIDATION),
   emptyStringAsUndefined: true,
 });
+
+export type DerivativeProcessingMode = "inline" | "triggered";
+
+/**
+ * Resolves the effective derivative processing mode. Explicit
+ * `DERIVATIVE_PROCESSING_MODE` always wins; otherwise production defers to the
+ * optimizer when `MEDIA_OPTIMIZER_URL` is configured, and local/dev stays inline.
+ */
+export function resolveDerivativeProcessingMode(): DerivativeProcessingMode {
+  if (env.DERIVATIVE_PROCESSING_MODE) {
+    return env.DERIVATIVE_PROCESSING_MODE;
+  }
+
+  return env.MEDIA_OPTIMIZER_URL ? "triggered" : "inline";
+}

@@ -93,9 +93,7 @@ describe("pushChanges cancellation", () => {
       ),
     ).rejects.toMatchObject({ name: "AbortError" });
 
-    const finalizeCall = postJson.mock.calls.find((call) =>
-      String(call[1]).endsWith("/complete"),
-    );
+    const finalizeCall = postJson.mock.calls.find((call) => String(call[1]).endsWith("/complete"));
     expect(finalizeCall).toBeDefined();
     expect(finalizeCall?.[4]).toBeUndefined();
     expect(finalizeCall?.[3]).toMatchObject({
@@ -132,9 +130,7 @@ describe("pushChanges cancellation", () => {
     );
 
     expect(result.failed).toBe(1);
-    const finalizeCall = postJson.mock.calls.find((call) =>
-      String(call[1]).endsWith("/complete"),
-    );
+    const finalizeCall = postJson.mock.calls.find((call) => String(call[1]).endsWith("/complete"));
     expect(finalizeCall?.[3]).toMatchObject({
       status: "failed",
     });
@@ -181,9 +177,7 @@ describe("pruneDeleted cancellation", () => {
       ),
     ).rejects.toMatchObject({ name: "AbortError" });
 
-    const finalizeCall = postJson.mock.calls.find((call) =>
-      String(call[1]).endsWith("/complete"),
-    );
+    const finalizeCall = postJson.mock.calls.find((call) => String(call[1]).endsWith("/complete"));
     expect(finalizeCall).toBeDefined();
     expect(finalizeCall?.[4]).toBeUndefined();
     expect(finalizeCall?.[3]).toMatchObject({
@@ -220,9 +214,7 @@ describe("pruneDeleted cancellation", () => {
     );
 
     expect(result.failed).toBe(1);
-    const finalizeCall = postJson.mock.calls.find((call) =>
-      String(call[1]).endsWith("/complete"),
-    );
+    const finalizeCall = postJson.mock.calls.find((call) => String(call[1]).endsWith("/complete"));
     expect(finalizeCall?.[3]).toMatchObject({
       status: "failed",
     });

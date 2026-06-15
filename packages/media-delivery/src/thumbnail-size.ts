@@ -2,6 +2,14 @@ export const THUMBNAIL_SIZE_LADDER = [160, 320, 480, 640, 960] as const;
 
 export type ThumbnailSize = (typeof THUMBNAIL_SIZE_LADDER)[number];
 
+/**
+ * Fixed size used for gallery grid tiles. The library snapshot joins ready
+ * derivatives at this size and embeds their delivery URLs, and the client
+ * fallback requests the same size, so generated derivatives always match what
+ * the snapshot can embed on the next load.
+ */
+export const GALLERY_THUMBNAIL_SIZE: ThumbnailSize = 320;
+
 export function snapThumbnailSize(requestedSize: number): ThumbnailSize {
   const normalized = Number.isFinite(requestedSize) && requestedSize > 0 ? requestedSize : 320;
 

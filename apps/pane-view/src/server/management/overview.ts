@@ -1,12 +1,6 @@
 import { count, isNotNull, isNull, sql } from "drizzle-orm";
 import { db } from "../db";
-import {
-  collections,
-  folders,
-  libraryEntries,
-  mediaObjects,
-  thumbnails,
-} from "../db/schema";
+import { collections, folders, libraryEntries, mediaObjects, thumbnails } from "../db/schema";
 import { readActiveCleanupJob } from "./guards";
 import { listRunningSyncRuns, type RunningSyncRun } from "./sync-run-control";
 
@@ -54,14 +48,8 @@ export async function readManagementOverview(): Promise<ManagementOverview> {
     runningSyncRuns,
     activeCleanupJob,
   ] = await Promise.all([
-    db
-      .select({ value: count() })
-      .from(libraryEntries)
-      .where(isNull(libraryEntries.deletedAt)),
-    db
-      .select({ value: count() })
-      .from(libraryEntries)
-      .where(isNotNull(libraryEntries.deletedAt)),
+    db.select({ value: count() }).from(libraryEntries).where(isNull(libraryEntries.deletedAt)),
+    db.select({ value: count() }).from(libraryEntries).where(isNotNull(libraryEntries.deletedAt)),
     db.select({ value: count() }).from(folders).where(isNull(folders.deletedAt)),
     db.select({ value: count() }).from(collections),
     db

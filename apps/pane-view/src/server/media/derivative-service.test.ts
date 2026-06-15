@@ -1,5 +1,3 @@
-import { writeFile } from "node:fs/promises";
-import { Readable } from "node:stream";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 function createSelectChain(resolvedValue: unknown) {
@@ -52,14 +50,17 @@ const readyRow = {
   width: 160,
 };
 
+const generatedDerivative = { bytes: Buffer.from("webp"), height: 120, width: 160 };
+
 const mocks = vi.hoisted(() => ({
-  getStoredObject: vi.fn(),
+  deleteStoredObject: vi.fn(),
+  generateDerivativeBytes: vi.fn(),
   headStoredObject: vi.fn(),
   insertMock: vi.fn(),
   putStoredObject: vi.fn(),
   readMediaThumbnailContext: vi.fn(),
   readStoredObjectBytes: vi.fn(),
-  rmMock: vi.fn(),
+  readWebpMetadata: vi.fn(),
   selectMock: vi.fn(),
   updateMock: vi.fn(),
 }));
@@ -84,70 +85,32 @@ vi.mock("@latch-works/media-storage", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@latch-works/media-storage")>();
   return {
     ...actual,
-    getStoredObject: mocks.getStoredObject,
+    deleteStoredObject: mocks.deleteStoredObject,
     headStoredObject: mocks.headStoredObject,
     putStoredObject: mocks.putStoredObject,
     readStoredObjectBytes: mocks.readStoredObjectBytes,
   };
 });
 
-vi.mock("node:fs/promises", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("node:fs/promises")>();
-  mocks.rmMock.mockImplementation(actual.rm);
-  return {
-    ...actual,
-    rm: mocks.rmMock,
-  };
-});
-
-vi.mock("ffmpeg-static", () => ({
-  default: "/usr/bin/ffmpeg",
+// The CPU-heavy generation package is loaded via dynamic import; mock it so
+// these tests exercise only the Pane View DB orchestration / state machine.
+vi.mock("@latch-works/media-derivatives", () => ({
+  generateDerivativeBytes: mocks.generateDerivativeBytes,
+  readWebpMetadata: mocks.readWebpMetadata,
 }));
 
-vi.mock("sharp", () => {
-  const sharpFn = vi.fn(() => ({
-    metadata: vi.fn().mockResolvedValue({ height: 120, width: 160 }),
-    resize: vi.fn().mockReturnThis(),
-    rotate: vi.fn().mockReturnThis(),
-    toBuffer: vi.fn().mockResolvedValue({
-      data: Buffer.from("webp"),
-      info: { height: 120, width: 160 },
-    }),
-    webp: vi.fn().mockReturnThis(),
-  }));
-
-  return { default: sharpFn };
-});
-
-import {
-  derivativeServiceTestHooks,
-  ensureThumbnailDerivative,
-} from "./derivative-service";
-
-function mockSourceHead(contentLength: number) {
-  return {
-    contentLength,
-    contentType: "image/jpeg",
-    etag: '"etag"',
-  };
-}
-
-function createReadableFromChunks(chunks: Buffer[]): Readable {
-  return Readable.from(chunks);
-}
+import { ensureThumbnailDerivative } from "./derivative-service";
 
 describe("ensureThumbnailDerivative", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    derivativeServiceTestHooks.resetFfmpegRunner();
-    derivativeServiceTestHooks.resetMaxSourceBytes();
     mocks.readMediaThumbnailContext.mockResolvedValue(thumbnailContext);
     mocks.headStoredObject.mockResolvedValue(null);
-    mocks.readStoredObjectBytes.mockResolvedValue(Buffer.from("source-image"));
+    mocks.generateDerivativeBytes.mockResolvedValue(generatedDerivative);
     mocks.putStoredObject.mockResolvedValue(undefined);
   });
 
-  it("inserts pending, claims, and attempts generation when no row exists", async () => {
+  it("inserts pending, claims, and delegates generation when no row exists", async () => {
     const select = createSelectChain([]);
     const insert = createInsertChain();
     const claim = createUpdateChain([{ mediaObjectId: "obj-1", size: 320, status: "processing" }]);
@@ -158,9 +121,6 @@ describe("ensureThumbnailDerivative", () => {
     mocks.updateMock
       .mockReturnValueOnce({ set: claim.setMock })
       .mockReturnValueOnce({ set: markReady.setMock });
-    mocks.headStoredObject
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(mockSourceHead(Buffer.from("source-image").byteLength));
 
     const result = await ensureThumbnailDerivative({ mediaId: "media-1", requestedSize: 320 });
 
@@ -170,26 +130,20 @@ describe("ensureThumbnailDerivative", () => {
     expect(claim.setMock).toHaveBeenCalledWith(
       expect.objectContaining({ status: "processing", updatedAt: expect.any(Date) }),
     );
-    expect(mocks.headStoredObject).toHaveBeenCalled();
-    expect(mocks.readStoredObjectBytes).toHaveBeenCalled();
-    expect(mocks.getStoredObject).not.toHaveBeenCalled();
-    expect(mocks.putStoredObject).toHaveBeenCalled();
-    expect(result).toEqual(
+    expect(mocks.generateDerivativeBytes).toHaveBeenCalledWith(
       expect.objectContaining({
-        height: 120,
-        status: "ready",
-        width: 160,
+        size: 320,
+        source: expect.objectContaining({ mediaType: "image", originalObjectKey: "objects/abc" }),
       }),
     );
+    expect(mocks.putStoredObject).toHaveBeenCalledWith(
+      expect.objectContaining({ body: generatedDerivative.bytes, contentType: "image/webp" }),
+    );
+    expect(result).toEqual(expect.objectContaining({ height: 120, status: "ready", width: 160 }));
   });
 
-  it("claims an existing pending row and attempts generation", async () => {
-    const pendingRow = {
-      ...readyRow,
-      height: 0,
-      status: "pending" as const,
-      width: 0,
-    };
+  it("claims an existing pending row and delegates generation", async () => {
+    const pendingRow = { ...readyRow, height: 0, status: "pending" as const, width: 0 };
     const select = createSelectChain([pendingRow]);
     const claim = createUpdateChain([{ mediaObjectId: "obj-1", size: 320, status: "processing" }]);
     const markReady = createUpdateChain();
@@ -198,27 +152,16 @@ describe("ensureThumbnailDerivative", () => {
     mocks.updateMock
       .mockReturnValueOnce({ set: claim.setMock })
       .mockReturnValueOnce({ set: markReady.setMock });
-    mocks.headStoredObject
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(mockSourceHead(Buffer.from("source-image").byteLength));
 
     const result = await ensureThumbnailDerivative({ mediaId: "media-1", requestedSize: 320 });
 
     expect(mocks.insertMock).not.toHaveBeenCalled();
-    expect(claim.setMock).toHaveBeenCalledWith(
-      expect.objectContaining({ status: "processing", updatedAt: expect.any(Date) }),
-    );
-    expect(mocks.headStoredObject).toHaveBeenCalled();
+    expect(mocks.generateDerivativeBytes).toHaveBeenCalled();
     expect(result.status).toBe("ready");
   });
 
   it("returns pending when an existing pending row cannot be claimed", async () => {
-    const pendingRow = {
-      ...readyRow,
-      height: 0,
-      status: "pending" as const,
-      width: 0,
-    };
+    const pendingRow = { ...readyRow, height: 0, status: "pending" as const, width: 0 };
     const select = createSelectChain([pendingRow]);
     const claim = createUpdateChain([]);
 
@@ -228,8 +171,7 @@ describe("ensureThumbnailDerivative", () => {
     const result = await ensureThumbnailDerivative({ mediaId: "media-1", requestedSize: 320 });
 
     expect(result).toEqual({ status: "pending" });
-    expect(mocks.headStoredObject).not.toHaveBeenCalled();
-    expect(mocks.readStoredObjectBytes).not.toHaveBeenCalled();
+    expect(mocks.generateDerivativeBytes).not.toHaveBeenCalled();
   });
 
   it("returns pending for an unexpired processing lease without claiming", async () => {
@@ -250,12 +192,12 @@ describe("ensureThumbnailDerivative", () => {
 
     expect(result).toEqual({ status: "pending" });
     expect(mocks.updateMock).not.toHaveBeenCalled();
-    expect(mocks.headStoredObject).not.toHaveBeenCalled();
+    expect(mocks.generateDerivativeBytes).not.toHaveBeenCalled();
 
     vi.spyOn(Date, "now").mockRestore();
   });
 
-  it("resets an expired processing lease, claims, and attempts generation", async () => {
+  it("resets an expired processing lease, claims, and delegates generation", async () => {
     const updatedAt = new Date("2026-06-12T12:00:00.000Z");
     const processingRow = {
       ...readyRow,
@@ -274,12 +216,8 @@ describe("ensureThumbnailDerivative", () => {
       .mockReturnValueOnce({ set: reset.setMock })
       .mockReturnValueOnce({ set: claim.setMock })
       .mockReturnValueOnce({ set: markReady.setMock });
-    mocks.headStoredObject
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(mockSourceHead(Buffer.from("source-image").byteLength));
 
-    const now = updatedAt.getTime() + 11 * 60 * 1000;
-    vi.spyOn(Date, "now").mockReturnValue(now);
+    vi.spyOn(Date, "now").mockReturnValue(updatedAt.getTime() + 11 * 60 * 1000);
 
     const result = await ensureThumbnailDerivative({ mediaId: "media-1", requestedSize: 320 });
 
@@ -289,7 +227,7 @@ describe("ensureThumbnailDerivative", () => {
     expect(claim.setMock).toHaveBeenCalledWith(
       expect.objectContaining({ status: "processing", updatedAt: expect.any(Date) }),
     );
-    expect(mocks.headStoredObject).toHaveBeenCalled();
+    expect(mocks.generateDerivativeBytes).toHaveBeenCalled();
     expect(result.status).toBe("ready");
 
     vi.spyOn(Date, "now").mockRestore();
@@ -311,188 +249,37 @@ describe("ensureThumbnailDerivative", () => {
     });
     expect(mocks.insertMock).not.toHaveBeenCalled();
     expect(mocks.updateMock).not.toHaveBeenCalled();
-    expect(mocks.headStoredObject).not.toHaveBeenCalled();
-  });
-});
-
-const videoContext = {
-  extension: "mp4",
-  mediaObjectId: "obj-video",
-  mediaType: "video" as const,
-  originalObjectKey: "objects/video",
-  sha256: validSha256,
-};
-
-function setupVideoGenerationMocks() {
-  const select = createSelectChain([]);
-  const insert = createInsertChain();
-  const claim = createUpdateChain([
-    { mediaObjectId: "obj-video", size: 320, status: "processing" },
-  ]);
-  const markReady = createUpdateChain();
-  const markFailed = createUpdateChain();
-
-  mocks.selectMock.mockReturnValue({ from: select.fromMock });
-  mocks.insertMock.mockReturnValue({ values: insert.valuesMock });
-  mocks.updateMock
-    .mockReturnValueOnce({ set: claim.setMock })
-    .mockReturnValueOnce({ set: markReady.setMock })
-    .mockReturnValue({ set: markFailed.setMock });
-
-  mocks.headStoredObject.mockResolvedValue(null);
-
-  return { claim, insert, markFailed, markReady, select };
-}
-
-describe("video derivative streaming", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    derivativeServiceTestHooks.resetFfmpegRunner();
-    derivativeServiceTestHooks.resetMaxSourceBytes();
-    mocks.readMediaThumbnailContext.mockResolvedValue(videoContext);
-    mocks.putStoredObject.mockResolvedValue(undefined);
+    expect(mocks.generateDerivativeBytes).not.toHaveBeenCalled();
   });
 
-  it("streams the original video and does not buffer it with readStoredObjectBytes", async () => {
-    setupVideoGenerationMocks();
-    const videoBytes = Buffer.from("video-bytes");
-    mocks.getStoredObject.mockResolvedValue({
-      body: createReadableFromChunks([videoBytes]),
-      contentLength: videoBytes.byteLength,
-      contentRange: undefined,
-      contentType: "video/mp4",
+  it("adopts an already-stored derivative object without regenerating", async () => {
+    const select = createSelectChain([]);
+    const insert = createInsertChain();
+    const claim = createUpdateChain([{ mediaObjectId: "obj-1", size: 320, status: "processing" }]);
+    const markReady = createUpdateChain();
+
+    mocks.selectMock.mockReturnValue({ from: select.fromMock });
+    mocks.insertMock.mockReturnValue({ values: insert.valuesMock });
+    mocks.updateMock
+      .mockReturnValueOnce({ set: claim.setMock })
+      .mockReturnValueOnce({ set: markReady.setMock });
+    mocks.headStoredObject.mockResolvedValue({
+      contentLength: 1024,
+      contentType: "image/webp",
       etag: '"etag"',
-      statusCode: 200,
     });
+    mocks.readStoredObjectBytes.mockResolvedValue(Buffer.from("stored-webp"));
+    mocks.readWebpMetadata.mockResolvedValue({ height: 200, width: 240 });
 
-    derivativeServiceTestHooks.setFfmpegRunner(async (_binaryPath, args) => {
-      const outputPath = args.at(-1);
-      if (typeof outputPath === "string") {
-        await writeFile(outputPath, Buffer.from("poster-jpg"));
-      }
-    });
+    const result = await ensureThumbnailDerivative({ mediaId: "media-1", requestedSize: 320 });
 
-    const result = await ensureThumbnailDerivative({ mediaId: "media-video", requestedSize: 320 });
-
-    expect(mocks.getStoredObject).toHaveBeenCalledWith(
-      expect.objectContaining({ key: "objects/video" }),
-    );
-    expect(mocks.readStoredObjectBytes).not.toHaveBeenCalled();
-    expect(result).toEqual(
-      expect.objectContaining({
-        purpose: "preview",
-        status: "ready",
-      }),
-    );
+    expect(mocks.generateDerivativeBytes).not.toHaveBeenCalled();
+    expect(mocks.readWebpMetadata).toHaveBeenCalled();
+    expect(mocks.putStoredObject).not.toHaveBeenCalled();
+    expect(result).toEqual(expect.objectContaining({ height: 200, status: "ready", width: 240 }));
   });
 
-  it("rejects oversized streamed sources before ffmpeg runs", async () => {
-    setupVideoGenerationMocks();
-    const maxSourceBytes = 512 * 1024 * 1024;
-    const oversizedChunk = Buffer.alloc(1024, 1);
-    mocks.getStoredObject.mockResolvedValue({
-      body: createReadableFromChunks([oversizedChunk]),
-      contentLength: maxSourceBytes + 1,
-      contentRange: undefined,
-      contentType: "video/mp4",
-      etag: '"etag"',
-      statusCode: 200,
-    });
-
-    let ffmpegRan = false;
-    derivativeServiceTestHooks.setFfmpegRunner(async () => {
-      ffmpegRan = true;
-    });
-
-    const result = await ensureThumbnailDerivative({ mediaId: "media-video", requestedSize: 320 });
-
-    expect(ffmpegRan).toBe(false);
-    expect(mocks.readStoredObjectBytes).not.toHaveBeenCalled();
-    expect(result).toEqual({ status: "failed" });
-  });
-
-  it("rejects streamed sources that exceed maxSourceBytes while piping", async () => {
-    setupVideoGenerationMocks();
-    derivativeServiceTestHooks.setMaxSourceBytes(16);
-    mocks.getStoredObject.mockResolvedValue({
-      body: createReadableFromChunks([Buffer.alloc(16, 1), Buffer.from("extra")]),
-      contentLength: undefined,
-      contentRange: undefined,
-      contentType: "video/mp4",
-      etag: '"etag"',
-      statusCode: 200,
-    });
-
-    let ffmpegRan = false;
-    derivativeServiceTestHooks.setFfmpegRunner(async () => {
-      ffmpegRan = true;
-    });
-
-    const result = await ensureThumbnailDerivative({ mediaId: "media-video", requestedSize: 320 });
-
-    expect(ffmpegRan).toBe(false);
-    expect(result).toEqual({ status: "failed" });
-  });
-
-  it("removes temp directories after successful video generation", async () => {
-    setupVideoGenerationMocks();
-    mocks.getStoredObject.mockResolvedValue({
-      body: createReadableFromChunks([Buffer.from("video-bytes")]),
-      contentLength: 11,
-      contentRange: undefined,
-      contentType: "video/mp4",
-      etag: '"etag"',
-      statusCode: 200,
-    });
-
-    derivativeServiceTestHooks.setFfmpegRunner(async (_binaryPath, args) => {
-      const outputPath = args.at(-1);
-      if (typeof outputPath === "string") {
-        await writeFile(outputPath, Buffer.from("poster-jpg"));
-      }
-    });
-
-    await ensureThumbnailDerivative({ mediaId: "media-video", requestedSize: 320 });
-
-    expect(mocks.rmMock).toHaveBeenCalled();
-    const removedPaths = mocks.rmMock.mock.calls.map((call) => call[0]);
-    expect(removedPaths.some((removedPath) => String(removedPath).includes("pane-view-thumb-"))).toBe(
-      true,
-    );
-  });
-
-  it("removes temp directories when ffmpeg fails", async () => {
-    setupVideoGenerationMocks();
-    mocks.getStoredObject.mockResolvedValue({
-      body: createReadableFromChunks([Buffer.from("video-bytes")]),
-      contentLength: 11,
-      contentRange: undefined,
-      contentType: "video/mp4",
-      etag: '"etag"',
-      statusCode: 200,
-    });
-
-    derivativeServiceTestHooks.setFfmpegRunner(async () => {
-      throw new Error("ffmpeg failed");
-    });
-
-    const result = await ensureThumbnailDerivative({ mediaId: "media-video", requestedSize: 320 });
-
-    expect(result).toEqual({ status: "failed" });
-    expect(mocks.rmMock).toHaveBeenCalled();
-  });
-});
-
-describe("image derivative size guard", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    derivativeServiceTestHooks.resetFfmpegRunner();
-    derivativeServiceTestHooks.resetMaxSourceBytes();
-    mocks.readMediaThumbnailContext.mockResolvedValue(thumbnailContext);
-    mocks.putStoredObject.mockResolvedValue(undefined);
-  });
-
-  it("rejects oversized image sources before buffering when contentLength is known", async () => {
+  it("marks the row failed when generation throws", async () => {
     const select = createSelectChain([]);
     const insert = createInsertChain();
     const claim = createUpdateChain([{ mediaObjectId: "obj-1", size: 320, status: "processing" }]);
@@ -503,37 +290,11 @@ describe("image derivative size guard", () => {
     mocks.updateMock
       .mockReturnValueOnce({ set: claim.setMock })
       .mockReturnValueOnce({ set: markFailed.setMock });
-    mocks.headStoredObject
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(mockSourceHead(512 * 1024 * 1024 + 1));
+    mocks.generateDerivativeBytes.mockRejectedValue(new Error("boom"));
 
     const result = await ensureThumbnailDerivative({ mediaId: "media-1", requestedSize: 320 });
 
-    expect(mocks.readStoredObjectBytes).not.toHaveBeenCalled();
     expect(result).toEqual({ status: "failed" });
-  });
-
-  it("buffers image sources under the max size guard", async () => {
-    const select = createSelectChain([]);
-    const insert = createInsertChain();
-    const claim = createUpdateChain([{ mediaObjectId: "obj-1", size: 320, status: "processing" }]);
-    const markReady = createUpdateChain();
-    const sourceBytes = Buffer.from("source-image");
-
-    mocks.selectMock.mockReturnValue({ from: select.fromMock });
-    mocks.insertMock.mockReturnValue({ values: insert.valuesMock });
-    mocks.updateMock
-      .mockReturnValueOnce({ set: claim.setMock })
-      .mockReturnValueOnce({ set: markReady.setMock });
-    mocks.headStoredObject
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(mockSourceHead(sourceBytes.byteLength));
-    mocks.readStoredObjectBytes.mockResolvedValue(sourceBytes);
-
-    const result = await ensureThumbnailDerivative({ mediaId: "media-1", requestedSize: 320 });
-
-    expect(mocks.readStoredObjectBytes).toHaveBeenCalled();
-    expect(mocks.getStoredObject).not.toHaveBeenCalled();
-    expect(result.status).toBe("ready");
+    expect(markFailed.setMock).toHaveBeenCalledWith(expect.objectContaining({ status: "failed" }));
   });
 });

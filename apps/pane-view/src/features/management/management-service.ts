@@ -6,7 +6,10 @@ import {
   readCleanupJobStatus,
   resumePendingMaintenanceJobs,
 } from "../../server/management/cleanup-worker";
-import { countEntriesUnderPath, softDeleteFolderSubtree } from "../../server/management/folder-delete";
+import {
+  countEntriesUnderPath,
+  softDeleteFolderSubtree,
+} from "../../server/management/folder-delete";
 import { scheduleLibraryWipe } from "../../server/management/library-wipe";
 import { assertNoActiveSyncRun } from "../../server/management/guards";
 import { readManagementOverview } from "../../server/management/overview";

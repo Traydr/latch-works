@@ -1,10 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { resolveClientIp } from "./client-ip";
-import {
-  isLoginThrottled,
-  recordFailedLogin,
-  resetLoginThrottleForTests,
-} from "./login-throttle";
+import { isLoginThrottled, recordFailedLogin, resetLoginThrottleForTests } from "./login-throttle";
 
 function requestWithForwardedFor(value: string): Request {
   return new Request("http://localhost:3000/api/auth/login", {

@@ -1,3 +1,4 @@
+import { GALLERY_THUMBNAIL_SIZE } from "@latch-works/media-delivery";
 import { cn } from "@/lib/utils";
 import { useResolvedMediaUrl } from "./useResolvedMediaUrl";
 
@@ -9,6 +10,7 @@ type PaneViewImageProps = {
   mediaId: string;
   objectFit?: "contain" | "cover" | "fill" | "none" | "scale-down";
   priority?: boolean;
+  readyUrl?: string;
   variant?: "thumbnail" | "preview" | "original";
   width?: number;
 };
@@ -19,12 +21,15 @@ export function PaneViewImage({
   mediaId,
   objectFit,
   priority = false,
+  readyUrl,
   variant = "thumbnail",
-  width = 320,
 }: PaneViewImageProps) {
   const { failed, loading, resolvedUrl } = useResolvedMediaUrl({
     mediaId,
-    size: variant === "thumbnail" ? width : undefined,
+    readyUrl: variant === "thumbnail" ? readyUrl : undefined,
+    // Gallery tiles use a single fixed size so generated derivatives always
+    // match the size the snapshot embeds; preview/original ignore size.
+    size: variant === "thumbnail" ? GALLERY_THUMBNAIL_SIZE : undefined,
     variant,
   });
 

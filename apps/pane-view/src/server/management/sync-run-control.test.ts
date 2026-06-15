@@ -14,10 +14,7 @@ vi.mock("../db", () => ({
   },
 }));
 
-import {
-  forceCancelAllRunningSyncRuns,
-  forceCancelSyncRun,
-} from "./sync-run-control";
+import { forceCancelAllRunningSyncRuns, forceCancelSyncRun } from "./sync-run-control";
 
 describe("sync run control", () => {
   beforeEach(() => {

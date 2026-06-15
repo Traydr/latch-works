@@ -51,7 +51,6 @@ export function DetailPanel({
     selected?.mediaType === "gif" ||
     selected?.mediaType === "video";
 
-
   const handleRegenerateThumbnail = async () => {
     if (!onRegenerateThumbnail || regenerating) {
       return;

@@ -303,6 +303,43 @@ importers:
         specifier: ^4.1.3
         version: 4.1.7(@types/node@25.9.1)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.0.14(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
 
+  apps/media-optimizer:
+    dependencies:
+      '@hono/node-server':
+        specifier: ^2.0.4
+        version: 2.0.4(hono@4.12.25)
+      '@latch-works/media-delivery':
+        specifier: workspace:*
+        version: link:../../packages/media-delivery
+      '@latch-works/media-derivatives':
+        specifier: workspace:*
+        version: link:../../packages/media-derivatives
+      '@latch-works/media-domain':
+        specifier: workspace:*
+        version: link:../../packages/media-domain
+      '@latch-works/media-storage':
+        specifier: workspace:*
+        version: link:../../packages/media-storage
+      '@t3-oss/env-core':
+        specifier: ^0.13.11
+        version: 0.13.11(typescript@6.0.3)(zod@4.4.3)
+      hono:
+        specifier: ^4.12.25
+        version: 4.12.25
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      tsx:
+        specifier: ^4.21.0
+        version: 4.22.4
+      typescript:
+        specifier: ^6.0.2
+        version: 6.0.3
+      vitest:
+        specifier: ^4.1.3
+        version: 4.1.7(@types/node@25.9.1)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.0.14(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
+
   apps/pane-view:
     dependencies:
       '@better-auth/drizzle-adapter':
@@ -314,6 +351,9 @@ importers:
       '@latch-works/media-delivery':
         specifier: workspace:*
         version: link:../../packages/media-delivery
+      '@latch-works/media-derivatives':
+        specifier: workspace:*
+        version: link:../../packages/media-derivatives
       '@latch-works/media-domain':
         specifier: workspace:*
         version: link:../../packages/media-domain
@@ -377,9 +417,6 @@ importers:
       react-dom:
         specifier: ^19.2.4
         version: 19.2.6(react@19.2.6)
-      sharp:
-        specifier: ^0.34.5
-        version: 0.34.5
       tailwind-merge:
         specifier: ^3.6.0
         version: 3.6.0
@@ -496,6 +533,31 @@ importers:
         version: 4.1.7(@types/node@25.9.1)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.0.14(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/media-delivery:
+    devDependencies:
+      typescript:
+        specifier: ^6.0.2
+        version: 6.0.3
+      vitest:
+        specifier: ^4.1.3
+        version: 4.1.7(@types/node@25.9.1)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.0.14(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  packages/media-derivatives:
+    dependencies:
+      '@latch-works/media-delivery':
+        specifier: workspace:*
+        version: link:../media-delivery
+      '@latch-works/media-domain':
+        specifier: workspace:*
+        version: link:../media-domain
+      '@latch-works/media-storage':
+        specifier: workspace:*
+        version: link:../media-storage
+      ffmpeg-static:
+        specifier: ^5.3.0
+        version: 5.3.0
+      sharp:
+        specifier: ^0.34.5
+        version: 0.34.5
     devDependencies:
       typescript:
         specifier: ^6.0.2
@@ -1839,6 +1901,12 @@ packages:
 
   '@gar/promisify@1.1.3':
     resolution: {integrity: sha512-k2Ty1JcVojjJFwrg/ThKi2ujJ7XNLYaFGNB/bWT9wGR+oSMJHMa5w+CUq6p/pVrKeNNgA7pCqEcjSnHVoqJQFw==}
+
+  '@hono/node-server@2.0.4':
+    resolution: {integrity: sha512-Ut3y0dMMPWy6bZ2kVfx25EOVbZlm15dhF4mOsezMlhpNHy+4MkU1qN9Y6lnruYi4wPmFzimGX2X7LF/FwHli4A==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      hono: ^4
 
   '@img/colour@1.1.0':
     resolution: {integrity: sha512-Td76q7j57o/tLVdgS746cYARfSyxk8iEfRxewL9h4OMzYhbW4TAcppl0mT4eyqXddh6L/jwoM75mo7ixa/pCeQ==}
@@ -5701,6 +5769,10 @@ packages:
 
   hastscript@9.0.1:
     resolution: {integrity: sha512-g7df9rMFX/SPi34tyGCyUBREQoKkapwdY/T04Qn9TDWfHhAYt4/I0gMVirzK5wEzeUqIjEB+LXC/ypb7Aqno5w==}
+
+  hono@4.12.25:
+    resolution: {integrity: sha512-2NFaIyNVgJmBs/ecmtGzlmluTFs5cHEWGTdu0t1HBwYzoGXOL5nUQBRMXsXWla5i4KkG//QMzVP88m1+I3fdAQ==}
+    engines: {node: '>=16.9.0'}
 
   hookable@6.1.1:
     resolution: {integrity: sha512-U9LYDy1CwhMCnprUfeAZWZGByVbhd54hwepegYTK7Pi5NvqEj63ifz5z+xukznehT7i6NIZRu89Ay1AZmRsLEQ==}
@@ -9937,6 +10009,10 @@ snapshots:
 
   '@gar/promisify@1.1.3': {}
 
+  '@hono/node-server@2.0.4(hono@4.12.25)':
+    dependencies:
+      hono: 4.12.25
+
   '@img/colour@1.1.0': {}
 
   '@img/sharp-darwin-arm64@0.34.5':
@@ -13907,6 +13983,8 @@ snapshots:
       hast-util-parse-selector: 4.0.0
       property-information: 7.2.0
       space-separated-tokens: 2.0.2
+
+  hono@4.12.25: {}
 
   hookable@6.1.1: {}
 

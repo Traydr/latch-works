@@ -31,6 +31,7 @@ export function Poster({
           mediaId={media.id}
           objectFit="cover"
           priority={priority}
+          readyUrl={media.thumbnailUrl}
           variant="thumbnail"
           width={cardWidth}
         />
