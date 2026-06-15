@@ -41,6 +41,23 @@ export async function claimJobs(limit: number): Promise<ClaimResponse> {
   return (await response.json()) as ClaimResponse;
 }
 
+interface MatchResponse {
+  matched: boolean;
+}
+
+async function parseMatchResponse(response: Response, action: string): Promise<boolean> {
+  if (response.status === 409) {
+    return false;
+  }
+
+  if (!response.ok) {
+    throw new Error(`${action} failed: ${response.status}`);
+  }
+
+  const body = (await response.json()) as MatchResponse;
+  return body.matched;
+}
+
 export async function reportComplete(input: {
   height: number;
   mediaObjectId: string;
@@ -48,12 +65,9 @@ export async function reportComplete(input: {
   processingToken: string;
   size: number;
   width: number;
-}): Promise<void> {
+}): Promise<boolean> {
   const response = await postInternal("/internal/optimizer/complete", input);
-  // 409 means the lease no longer matches (reclaimed); not fatal for the loop.
-  if (!response.ok && response.status !== 409) {
-    throw new Error(`complete failed: ${response.status}`);
-  }
+  return parseMatchResponse(response, "complete");
 }
 
 export async function reportFailure(input: {
@@ -61,9 +75,7 @@ export async function reportFailure(input: {
   mediaObjectId: string;
   processingToken: string;
   size: number;
-}): Promise<void> {
+}): Promise<boolean> {
   const response = await postInternal("/internal/optimizer/fail", input);
-  if (!response.ok && response.status !== 409) {
-    throw new Error(`fail report failed: ${response.status}`);
-  }
+  return parseMatchResponse(response, "fail report");
 }

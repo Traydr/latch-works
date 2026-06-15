@@ -60,7 +60,7 @@ async function processJob(
       storage,
     });
 
-    await reportComplete({
+    const completed = await reportComplete({
       height: generated.height,
       mediaObjectId: job.mediaObjectId,
       objectKey: job.objectKey,
@@ -69,7 +69,7 @@ async function processJob(
       width: generated.width,
     });
 
-    return true;
+    return completed;
   } catch (error) {
     await reportFailure({
       error: error instanceof Error ? error.message : "derivative generation failed",

@@ -71,8 +71,8 @@ describe("processBatch", () => {
       width: 240,
     });
     mocks.putStoredObject.mockResolvedValue(undefined);
-    mocks.reportComplete.mockResolvedValue(undefined);
-    mocks.reportFailure.mockResolvedValue(undefined);
+    mocks.reportComplete.mockResolvedValue(true);
+    mocks.reportFailure.mockResolvedValue(true);
   });
 
   it("generates, uploads, and reports completion for each claimed job", async () => {
@@ -131,5 +131,18 @@ describe("processBatch", () => {
 
     expect(result.processed).toBe(0);
     expect(mocks.claimJobs).toHaveBeenCalledTimes(1);
+  });
+
+  it("counts a stale lease on complete as failure even after upload", async () => {
+    mocks.claimJobs.mockResolvedValueOnce(claimResponseOfLength(1)).mockResolvedValue({
+      jobs: [],
+      processingToken: "token-empty",
+    });
+    mocks.reportComplete.mockResolvedValueOnce(false);
+
+    const result = await processBatch();
+
+    expect(mocks.putStoredObject).toHaveBeenCalledTimes(1);
+    expect(result).toEqual(expect.objectContaining({ failed: 1, processed: 1, succeeded: 0 }));
   });
 });
