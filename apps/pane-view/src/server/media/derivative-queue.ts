@@ -127,6 +127,39 @@ export async function completeDerivativeJob({
   return updated.length > 0;
 }
 
+/**
+ * Returns a leased `processing` row to `pending` without incrementing attempts.
+ * Used when an optimizer batch exits before it can process every claimed job.
+ */
+export async function releaseDerivativeJob({
+  mediaObjectId,
+  processingToken,
+  size,
+}: {
+  mediaObjectId: string;
+  processingToken: string;
+  size: number;
+}): Promise<boolean> {
+  const updated = await db
+    .update(thumbnails)
+    .set({
+      processingToken: null,
+      status: "pending",
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(thumbnails.mediaObjectId, mediaObjectId),
+        eq(thumbnails.size, size),
+        eq(thumbnails.processingToken, processingToken),
+        eq(thumbnails.status, "processing"),
+      ),
+    )
+    .returning({ mediaObjectId: thumbnails.mediaObjectId });
+
+  return updated.length > 0;
+}
+
 function retryDelayMs(attemptCount: number): number {
   return Math.min(RETRY_MAX_DELAY_MS, RETRY_BASE_DELAY_MS * 2 ** attemptCount);
 }
@@ -174,7 +207,7 @@ export async function failDerivativeJob({
   const giveUp = nextAttempt >= maxAttempts;
   const status = giveUp ? "failed" : "pending";
 
-  await db
+  const updated = await db
     .update(thumbnails)
     .set({
       attemptCount: nextAttempt,
@@ -190,7 +223,12 @@ export async function failDerivativeJob({
         eq(thumbnails.size, size),
         eq(thumbnails.processingToken, processingToken),
       ),
-    );
+    )
+    .returning({ mediaObjectId: thumbnails.mediaObjectId });
+
+  if (updated.length === 0) {
+    return { matched: false };
+  }
 
   return { matched: true, status };
 }

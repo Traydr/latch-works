@@ -79,3 +79,17 @@ export async function reportFailure(input: {
   const response = await postInternal("/internal/optimizer/fail", input);
   return parseMatchResponse(response, "fail report");
 }
+
+export async function releaseJobs(input: {
+  jobs: Array<{ mediaObjectId: string; size: number }>;
+  processingToken: string;
+}): Promise<void> {
+  if (input.jobs.length === 0) {
+    return;
+  }
+
+  const response = await postInternal("/internal/optimizer/release", input);
+  if (!response.ok) {
+    throw new Error(`release failed: ${response.status}`);
+  }
+}

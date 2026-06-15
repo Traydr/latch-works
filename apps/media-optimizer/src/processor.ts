@@ -9,6 +9,7 @@ import { env } from "./env.js";
 import {
   claimJobs,
   type DerivativeJob,
+  releaseJobs,
   reportComplete,
   reportFailure,
 } from "./pane-view-client.js";
@@ -106,13 +107,19 @@ export async function processBatch(): Promise<ProcessResult> {
       break;
     }
 
-    for (const job of jobs) {
+    for (let index = 0; index < jobs.length; index += 1) {
       if (Date.now() - startedAt >= env.OPTIMIZER_MAX_RUNTIME_MS) {
-        // Remaining claimed jobs stay 'processing' and are reclaimed by a later
-        // run once their lease expires.
+        await releaseJobs({
+          jobs: jobs.slice(index).map((job) => ({
+            mediaObjectId: job.mediaObjectId,
+            size: job.size,
+          })),
+          processingToken,
+        });
         break;
       }
 
+      const job = jobs[index];
       const ok = await processJob(job, processingToken, storage);
       processed += 1;
       if (ok) {

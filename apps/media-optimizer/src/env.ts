@@ -10,7 +10,7 @@ export const env = createEnv({
     // How many jobs a single /process invocation will attempt before returning.
     OPTIMIZER_BATCH_LIMIT: z.coerce.number().int().positive().default(20),
     // How many jobs to lease per claim round (keeps dangling leases small on timeout).
-    OPTIMIZER_CLAIM_CHUNK: z.coerce.number().int().positive().default(4),
+    OPTIMIZER_CLAIM_CHUNK: z.coerce.number().int().positive().default(1),
     // Wall-clock budget for a single /process invocation.
     OPTIMIZER_MAX_RUNTIME_MS: z.coerce.number().int().positive().default(50_000),
     S3_ENDPOINT: z.url(),

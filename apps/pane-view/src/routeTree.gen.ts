@@ -14,6 +14,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as GalleryRouteImport } from './routes/_gallery'
 import { Route as GalleryIndexRouteImport } from './routes/_gallery/index'
 import { Route as ApiHealthRouteImport } from './routes/api.health'
+import { Route as InternalOptimizerReleaseRouteImport } from './routes/internal.optimizer.release'
 import { Route as InternalOptimizerFailRouteImport } from './routes/internal.optimizer.fail'
 import { Route as InternalOptimizerCompleteRouteImport } from './routes/internal.optimizer.complete'
 import { Route as InternalOptimizerClaimRouteImport } from './routes/internal.optimizer.claim'
@@ -53,6 +54,12 @@ const ApiHealthRoute = ApiHealthRouteImport.update({
   path: '/api/health',
   getParentRoute: () => rootRouteImport,
 } as any)
+const InternalOptimizerReleaseRoute =
+  InternalOptimizerReleaseRouteImport.update({
+    id: '/internal/optimizer/release',
+    path: '/internal/optimizer/release',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const InternalOptimizerFailRoute = InternalOptimizerFailRouteImport.update({
   id: '/internal/optimizer/fail',
   path: '/internal/optimizer/fail',
@@ -142,6 +149,7 @@ export interface FileRoutesByFullPath {
   '/internal/optimizer/claim': typeof InternalOptimizerClaimRoute
   '/internal/optimizer/complete': typeof InternalOptimizerCompleteRoute
   '/internal/optimizer/fail': typeof InternalOptimizerFailRoute
+  '/internal/optimizer/release': typeof InternalOptimizerReleaseRoute
   '/api/media/$mediaId/original': typeof ApiMediaMediaIdOriginalRoute
   '/api/media/$mediaId/preview': typeof ApiMediaMediaIdPreviewRoute
   '/api/media/$mediaId/thumbnail': typeof ApiMediaMediaIdThumbnailRoute
@@ -162,6 +170,7 @@ export interface FileRoutesByTo {
   '/internal/optimizer/claim': typeof InternalOptimizerClaimRoute
   '/internal/optimizer/complete': typeof InternalOptimizerCompleteRoute
   '/internal/optimizer/fail': typeof InternalOptimizerFailRoute
+  '/internal/optimizer/release': typeof InternalOptimizerReleaseRoute
   '/api/media/$mediaId/original': typeof ApiMediaMediaIdOriginalRoute
   '/api/media/$mediaId/preview': typeof ApiMediaMediaIdPreviewRoute
   '/api/media/$mediaId/thumbnail': typeof ApiMediaMediaIdThumbnailRoute
@@ -184,6 +193,7 @@ export interface FileRoutesById {
   '/internal/optimizer/claim': typeof InternalOptimizerClaimRoute
   '/internal/optimizer/complete': typeof InternalOptimizerCompleteRoute
   '/internal/optimizer/fail': typeof InternalOptimizerFailRoute
+  '/internal/optimizer/release': typeof InternalOptimizerReleaseRoute
   '/api/media/$mediaId/original': typeof ApiMediaMediaIdOriginalRoute
   '/api/media/$mediaId/preview': typeof ApiMediaMediaIdPreviewRoute
   '/api/media/$mediaId/thumbnail': typeof ApiMediaMediaIdThumbnailRoute
@@ -206,6 +216,7 @@ export interface FileRouteTypes {
     | '/internal/optimizer/claim'
     | '/internal/optimizer/complete'
     | '/internal/optimizer/fail'
+    | '/internal/optimizer/release'
     | '/api/media/$mediaId/original'
     | '/api/media/$mediaId/preview'
     | '/api/media/$mediaId/thumbnail'
@@ -226,6 +237,7 @@ export interface FileRouteTypes {
     | '/internal/optimizer/claim'
     | '/internal/optimizer/complete'
     | '/internal/optimizer/fail'
+    | '/internal/optimizer/release'
     | '/api/media/$mediaId/original'
     | '/api/media/$mediaId/preview'
     | '/api/media/$mediaId/thumbnail'
@@ -247,6 +259,7 @@ export interface FileRouteTypes {
     | '/internal/optimizer/claim'
     | '/internal/optimizer/complete'
     | '/internal/optimizer/fail'
+    | '/internal/optimizer/release'
     | '/api/media/$mediaId/original'
     | '/api/media/$mediaId/preview'
     | '/api/media/$mediaId/thumbnail'
@@ -268,6 +281,7 @@ export interface RootRouteChildren {
   InternalOptimizerClaimRoute: typeof InternalOptimizerClaimRoute
   InternalOptimizerCompleteRoute: typeof InternalOptimizerCompleteRoute
   InternalOptimizerFailRoute: typeof InternalOptimizerFailRoute
+  InternalOptimizerReleaseRoute: typeof InternalOptimizerReleaseRoute
   ApiMediaMediaIdOriginalRoute: typeof ApiMediaMediaIdOriginalRoute
   ApiMediaMediaIdPreviewRoute: typeof ApiMediaMediaIdPreviewRoute
   ApiMediaMediaIdThumbnailRoute: typeof ApiMediaMediaIdThumbnailRoute
@@ -308,6 +322,13 @@ declare module '@tanstack/react-router' {
       path: '/api/health'
       fullPath: '/api/health'
       preLoaderRoute: typeof ApiHealthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/internal/optimizer/release': {
+      id: '/internal/optimizer/release'
+      path: '/internal/optimizer/release'
+      fullPath: '/internal/optimizer/release'
+      preLoaderRoute: typeof InternalOptimizerReleaseRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/internal/optimizer/fail': {
@@ -449,6 +470,7 @@ const rootRouteChildren: RootRouteChildren = {
   InternalOptimizerClaimRoute: InternalOptimizerClaimRoute,
   InternalOptimizerCompleteRoute: InternalOptimizerCompleteRoute,
   InternalOptimizerFailRoute: InternalOptimizerFailRoute,
+  InternalOptimizerReleaseRoute: InternalOptimizerReleaseRoute,
   ApiMediaMediaIdOriginalRoute: ApiMediaMediaIdOriginalRoute,
   ApiMediaMediaIdPreviewRoute: ApiMediaMediaIdPreviewRoute,
   ApiMediaMediaIdThumbnailRoute: ApiMediaMediaIdThumbnailRoute,

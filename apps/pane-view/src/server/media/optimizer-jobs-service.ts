@@ -5,6 +5,7 @@ import {
   completeDerivativeJob,
   type DerivativeJob,
   failDerivativeJob,
+  releaseDerivativeJob,
 } from "./derivative-queue";
 
 const DEFAULT_CLAIM_LIMIT = 5;
@@ -28,6 +29,19 @@ export const failRequestSchema = z.object({
   mediaObjectId: z.string().uuid(),
   processingToken: z.string().min(1),
   size: z.number().int().positive(),
+});
+
+export const releaseRequestSchema = z.object({
+  jobs: z
+    .array(
+      z.object({
+        mediaObjectId: z.string().uuid(),
+        size: z.number().int().positive(),
+      }),
+    )
+    .min(1)
+    .max(MAX_CLAIM_LIMIT),
+  processingToken: z.string().min(1),
 });
 
 export interface ClaimResponse {
@@ -60,4 +74,23 @@ export async function completeOptimizerJob(
 
 export async function failOptimizerJob(input: z.infer<typeof failRequestSchema>) {
   return failDerivativeJob(input);
+}
+
+export async function releaseOptimizerJobs(
+  input: z.infer<typeof releaseRequestSchema>,
+): Promise<{ released: number }> {
+  let released = 0;
+
+  for (const job of input.jobs) {
+    const matched = await releaseDerivativeJob({
+      mediaObjectId: job.mediaObjectId,
+      processingToken: input.processingToken,
+      size: job.size,
+    });
+    if (matched) {
+      released += 1;
+    }
+  }
+
+  return { released };
 }

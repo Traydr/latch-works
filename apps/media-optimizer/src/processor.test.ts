@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   createS3StorageClient: vi.fn(() => ({ bucket: "test", client: {} })),
   generateDerivativeBytes: vi.fn(),
   putStoredObject: vi.fn(),
+  releaseJobs: vi.fn(),
   reportComplete: vi.fn(),
   reportFailure: vi.fn(),
 }));
@@ -27,6 +28,7 @@ vi.mock("./env.js", () => ({
 
 vi.mock("./pane-view-client.js", () => ({
   claimJobs: mocks.claimJobs,
+  releaseJobs: mocks.releaseJobs,
   reportComplete: mocks.reportComplete,
   reportFailure: mocks.reportFailure,
 }));
@@ -71,6 +73,7 @@ describe("processBatch", () => {
       width: 240,
     });
     mocks.putStoredObject.mockResolvedValue(undefined);
+    mocks.releaseJobs.mockResolvedValue(undefined);
     mocks.reportComplete.mockResolvedValue(true);
     mocks.reportFailure.mockResolvedValue(true);
   });

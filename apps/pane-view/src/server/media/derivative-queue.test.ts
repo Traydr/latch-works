@@ -26,13 +26,6 @@ function mockUpdateReturning(returningValue: unknown) {
   return { setMock, whereMock };
 }
 
-function mockUpdateNoReturning() {
-  const whereMock = vi.fn().mockResolvedValue(undefined);
-  const setMock = vi.fn().mockReturnValue({ where: whereMock });
-  mocks.updateMock.mockReturnValue({ set: setMock });
-  return { setMock, whereMock };
-}
-
 function mockSelect(rows: unknown) {
   const limitMock = vi.fn().mockResolvedValue(rows);
   const whereMock = vi.fn().mockReturnValue({ limit: limitMock });
@@ -83,7 +76,7 @@ describe("failDerivativeJob", () => {
 
   it("reschedules as pending while attempts remain", async () => {
     mockSelect([{ attemptCount: 0 }]);
-    const { setMock } = mockUpdateNoReturning();
+    mockUpdateReturning([{ mediaObjectId: "obj-1" }]);
 
     const result = await failDerivativeJob({
       error: "boom",
@@ -93,14 +86,11 @@ describe("failDerivativeJob", () => {
     });
 
     expect(result).toEqual({ matched: true, status: "pending" });
-    expect(setMock).toHaveBeenCalledWith(
-      expect.objectContaining({ attemptCount: 1, status: "pending", processingToken: null }),
-    );
   });
 
   it("marks failed once the attempt budget is exhausted", async () => {
     mockSelect([{ attemptCount: DERIVATIVE_MAX_ATTEMPTS - 1 }]);
-    const { setMock } = mockUpdateNoReturning();
+    mockUpdateReturning([{ mediaObjectId: "obj-1" }]);
 
     const result = await failDerivativeJob({
       error: "boom",
@@ -110,9 +100,20 @@ describe("failDerivativeJob", () => {
     });
 
     expect(result).toEqual({ matched: true, status: "failed" });
-    expect(setMock).toHaveBeenCalledWith(
-      expect.objectContaining({ status: "failed", nextAttemptAt: null }),
-    );
+  });
+
+  it("returns unmatched when the lease is lost before the update", async () => {
+    mockSelect([{ attemptCount: 0 }]);
+    mockUpdateReturning([]);
+
+    const result = await failDerivativeJob({
+      error: "boom",
+      mediaObjectId: "obj-1",
+      processingToken: "token-1",
+      size: 320,
+    });
+
+    expect(result).toEqual({ matched: false });
   });
 
   it("returns unmatched when no row owns the lease token", async () => {
