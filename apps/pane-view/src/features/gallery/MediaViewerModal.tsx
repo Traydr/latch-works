@@ -95,6 +95,17 @@ export function MediaViewerModal({
   const { flushSave, scheduleSave, snapshot: viewerState } = useLibraryViewerState(
     viewerStateSubjectId,
   );
+  const [resumePdfPage, setResumePdfPage] = useState<number | undefined>();
+
+  useEffect(() => {
+    setResumePdfPage(undefined);
+  }, [item?.id]);
+
+  useEffect(() => {
+    if (viewerState?.page !== undefined) {
+      setResumePdfPage((current) => current ?? viewerState.page);
+    }
+  }, [viewerState?.page]);
 
   const applySpeed = useCallback((nextSpeed: number): void => {
     setSpeed(nextSpeed);
@@ -533,7 +544,7 @@ export function MediaViewerModal({
         {item.mediaType === "pdf" ? (
           <Suspense fallback={<p className="text-sm text-zinc-400">Loading PDF…</p>}>
             <PdfViewer
-              initialPage={viewerState?.page}
+              initialPage={resumePdfPage}
               mediaId={item.id}
               onPageChange={(page) => {
                 scheduleSave({ page });

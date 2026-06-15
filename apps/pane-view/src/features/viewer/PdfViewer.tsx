@@ -71,6 +71,11 @@ export function resolveVisiblePdfPage(entries: IntersectionObserverEntry[]): num
   return bestPage;
 }
 
+export function scrollToPdfPage(container: HTMLElement, page: number): void {
+  const target = container.querySelector<HTMLElement>(`[data-page-number="${page}"]`);
+  target?.scrollIntoView({ block: "start" });
+}
+
 export function PdfViewer({
   initialPage,
   mediaId,
@@ -82,7 +87,30 @@ export function PdfViewer({
   const [pageCount, setPageCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const onPageChangeRef = useRef(onPageChange);
+  const hasAppliedInitialPageRef = useRef(false);
   onPageChangeRef.current = onPageChange;
+
+  useEffect(() => {
+    hasAppliedInitialPageRef.current = false;
+  }, [mediaId]);
+
+  useEffect(() => {
+    if (hasAppliedInitialPageRef.current || !initialPage || pageCount < 1) {
+      return;
+    }
+
+    const container = containerRef.current;
+    if (!container) {
+      return;
+    }
+
+    if (initialPage > pageCount) {
+      return;
+    }
+
+    scrollToPdfPage(container, initialPage);
+    hasAppliedInitialPageRef.current = true;
+  }, [initialPage, pageCount]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -136,6 +164,8 @@ export function PdfViewer({
             return;
           }
 
+          const scrollContainer = scrollContainerRef.current;
+          const previousScrollTop = scrollContainer?.scrollTop ?? 0;
           const renderWidth = getPageRenderWidth(container);
           container.replaceChildren();
           pageObserver?.disconnect();
@@ -154,11 +184,8 @@ export function PdfViewer({
             container.append(canvas);
           }
 
-          if (initialPage && initialPage >= 1 && initialPage <= pdf.numPages) {
-            const target = container.querySelector<HTMLElement>(
-              `[data-page-number="${initialPage}"]`,
-            );
-            target?.scrollIntoView({ block: "start" });
+          if (scrollContainer) {
+            scrollContainer.scrollTop = previousScrollTop;
           }
 
           if (onPageChangeRef.current) {
@@ -217,7 +244,7 @@ export function PdfViewer({
         clearTimeout(pageChangeTimer);
       }
     };
-  }, [initialPage, mediaId]);
+  }, [mediaId]);
 
   return (
     <div ref={scrollContainerRef} className="h-full w-full overflow-auto px-3 py-2">
