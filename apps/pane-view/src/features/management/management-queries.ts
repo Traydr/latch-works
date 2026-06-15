@@ -131,7 +131,8 @@ export function useWipeLibraryMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (input: { confirmation: string; syncToken: string }) => wipeLibrary({ data: input }),
+    mutationFn: (input: { confirmation: string; syncToken: string }) =>
+      wipeLibrary({ data: input }),
     onSuccess: () => {
       void invalidate();
       void queryClient.invalidateQueries({ queryKey: librarySnapshotKeys.all });

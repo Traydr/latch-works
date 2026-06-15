@@ -60,9 +60,7 @@ export function useViewerChromeIdle(options: UseViewerChromeIdleOptions): {
     };
   }, [clearIdleTimer, isMobile, pinned, revealChrome]);
 
-  const chromeVisibilityClass = chromeVisible
-    ? "opacity-100"
-    : "opacity-0 pointer-events-none";
+  const chromeVisibilityClass = chromeVisible ? "opacity-100" : "opacity-0 pointer-events-none";
 
   return { chromeVisible, revealChrome, toggleChrome, chromeVisibilityClass };
 }

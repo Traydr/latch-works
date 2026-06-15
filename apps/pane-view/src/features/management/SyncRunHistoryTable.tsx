@@ -59,9 +59,7 @@ export function SyncRunHistoryTable({
                 <td className="px-3 py-2 align-top">{formatTimestamp(run.startedAt)}</td>
                 <td className="px-3 py-2 align-top">
                   <StatusBadge status={run.status} />
-                  {run.error ? (
-                    <p className="mt-1 text-xs text-destructive">{run.error}</p>
-                  ) : null}
+                  {run.error ? <p className="mt-1 text-xs text-destructive">{run.error}</p> : null}
                 </td>
                 <td className="px-3 py-2 align-top font-mono text-xs">{run.sourceRoot}</td>
                 <td className="px-3 py-2 align-top font-mono text-xs">
@@ -91,11 +89,7 @@ export function SyncRunHistoryTable({
   );
 }
 
-function StatusBadge({
-  status,
-}: {
-  status: SyncRunHistoryEntry["status"];
-}) {
+function StatusBadge({ status }: { status: SyncRunHistoryEntry["status"] }) {
   const className =
     status === "completed"
       ? "text-emerald-600 dark:text-emerald-400"

@@ -127,7 +127,12 @@ export function GalleryPage() {
         snapshotRequest.recursive,
         snapshotRequest.comicMode,
       ].join("|"),
-    [snapshotRequest.comicMode, snapshotRequest.path, snapshotRequest.query, snapshotRequest.recursive],
+    [
+      snapshotRequest.comicMode,
+      snapshotRequest.path,
+      snapshotRequest.query,
+      snapshotRequest.recursive,
+    ],
   );
 
   const showDetailPanel = !isMobile && detailPanelOpen;

@@ -41,8 +41,7 @@ async function renderPageToCanvas(
     return;
   }
 
-  const transform =
-    outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : undefined;
+  const transform = outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : undefined;
 
   await page.render({ canvas, canvasContext: context, transform, viewport }).promise;
 }

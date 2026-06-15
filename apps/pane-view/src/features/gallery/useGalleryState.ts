@@ -35,17 +35,20 @@ function readPersistedState(): PersistedState {
 
     const record = parsed as Record<string, unknown>;
     return {
-      comicMode: typeof record.comicMode === "boolean" ? record.comicMode : GALLERY_STATE_DEFAULTS.comicMode,
+      comicMode:
+        typeof record.comicMode === "boolean" ? record.comicMode : GALLERY_STATE_DEFAULTS.comicMode,
       detailPanelOpen:
         typeof record.detailPanelOpen === "boolean"
           ? record.detailPanelOpen
           : GALLERY_STATE_DEFAULTS.detailPanelOpen,
-      lastPath: typeof record.lastPath === "string" ? record.lastPath : GALLERY_STATE_DEFAULTS.lastPath,
+      lastPath:
+        typeof record.lastPath === "string" ? record.lastPath : GALLERY_STATE_DEFAULTS.lastPath,
       lastSelectedId:
         typeof record.lastSelectedId === "string" || record.lastSelectedId === null
           ? record.lastSelectedId
           : GALLERY_STATE_DEFAULTS.lastSelectedId,
-      recursive: typeof record.recursive === "boolean" ? record.recursive : GALLERY_STATE_DEFAULTS.recursive,
+      recursive:
+        typeof record.recursive === "boolean" ? record.recursive : GALLERY_STATE_DEFAULTS.recursive,
       sortMode: isSortMode(record.sortMode) ? record.sortMode : GALLERY_STATE_DEFAULTS.sortMode,
     };
   } catch {

@@ -76,10 +76,7 @@ export async function softDeleteFolderSubtree({
       .update(folders)
       .set({ deletedAt: now })
       .where(
-        and(
-          isNull(folders.deletedAt),
-          or(eq(folders.path, path), ilike(folders.path, pattern)),
-        ),
+        and(isNull(folders.deletedAt), or(eq(folders.path, path), ilike(folders.path, pattern))),
       )
       .returning({ id: folders.id });
 

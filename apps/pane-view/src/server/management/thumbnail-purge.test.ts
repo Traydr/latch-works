@@ -40,9 +40,7 @@ describe("purgeAllThumbnailDerivatives", () => {
   });
 
   it("deletes thumbnail rows and storage objects in batches", async () => {
-    const firstBatch = [
-      { mediaObjectId: "obj-1", objectKey: "thumbnails/a.webp", size: 320 },
-    ];
+    const firstBatch = [{ mediaObjectId: "obj-1", objectKey: "thumbnails/a.webp", size: 320 }];
 
     mocks.selectMock
       .mockReturnValueOnce({

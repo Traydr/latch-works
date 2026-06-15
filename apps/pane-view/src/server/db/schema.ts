@@ -390,12 +390,7 @@ export interface MaintenanceJobProgress {
   lastError?: string;
   orphanPrefix?: string;
   orphanContinuationToken?: string;
-  phase:
-    | "s3_derivatives"
-    | "s3_originals"
-    | "s3_orphan_sweep"
-    | "db_hard_delete"
-    | "completed";
+  phase: "s3_derivatives" | "s3_originals" | "s3_orphan_sweep" | "db_hard_delete" | "completed";
   processedCount: number;
 }
 

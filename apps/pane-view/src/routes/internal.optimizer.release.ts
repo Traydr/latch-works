@@ -1,9 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { requireOptimizerToken } from "../server/auth/optimizer-token";
-import {
-  releaseOptimizerJobs,
-  releaseRequestSchema,
-} from "../server/media/optimizer-jobs-service";
+import { releaseOptimizerJobs, releaseRequestSchema } from "../server/media/optimizer-jobs-service";
 
 export const Route = createFileRoute("/internal/optimizer/release")({
   server: {

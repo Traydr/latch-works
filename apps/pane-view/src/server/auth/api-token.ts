@@ -52,11 +52,7 @@ export function hashApiToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
-export function verifySyncApiToken({
-  token,
-}: {
-  token: string | null;
-}): boolean {
+export function verifySyncApiToken({ token }: { token: string | null }): boolean {
   const configuredDigest = getConfiguredTokenDigest();
   if (!configuredDigest || !token) {
     return false;

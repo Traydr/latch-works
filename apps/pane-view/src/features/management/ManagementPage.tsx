@@ -179,8 +179,8 @@ export function ManagementPage() {
         <section className="space-y-3 rounded-xl border border-border p-4">
           <h2 className="text-sm font-semibold">Thumbnails</h2>
           <p className="text-sm text-muted-foreground">
-            Purge cached thumbnails to force regeneration on the next browse. Original files are
-            not removed.
+            Purge cached thumbnails to force regeneration on the next browse. Original files are not
+            removed.
           </p>
           <label className="grid gap-1 text-sm">
             <span>Type PURGE THUMBNAILS to confirm</span>

@@ -1,9 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  getViewerState,
-  saveViewerState,
-  type ViewerStateSnapshot,
-} from "./viewer-state-service";
+import { getViewerState, saveViewerState, type ViewerStateSnapshot } from "./viewer-state-service";
 import { VIEWER_STATE_SAVE_DEBOUNCE_MS } from "./viewer-resume";
 
 interface ViewerStatePatch {
@@ -25,27 +21,30 @@ export function useLibraryViewerState(subjectId: string | undefined) {
     }
   }, []);
 
-  const flushSave = useCallback(async (targetSubjectId = subjectIdRef.current): Promise<void> => {
-    const pending = pendingPatchRef.current;
-    if (!targetSubjectId || !pending) {
-      return;
-    }
+  const flushSave = useCallback(
+    async (targetSubjectId = subjectIdRef.current): Promise<void> => {
+      const pending = pendingPatchRef.current;
+      if (!targetSubjectId || !pending) {
+        return;
+      }
 
-    pendingPatchRef.current = null;
-    clearDebounceTimer();
+      pendingPatchRef.current = null;
+      clearDebounceTimer();
 
-    const saved = await saveViewerState({
-      data: {
-        subjectId: targetSubjectId,
-        subjectType: "library_entry",
-        ...pending,
-      },
-    });
+      const saved = await saveViewerState({
+        data: {
+          subjectId: targetSubjectId,
+          subjectType: "library_entry",
+          ...pending,
+        },
+      });
 
-    if (saved && targetSubjectId === subjectIdRef.current) {
-      setSnapshot(saved);
-    }
-  }, [clearDebounceTimer]);
+      if (saved && targetSubjectId === subjectIdRef.current) {
+        setSnapshot(saved);
+      }
+    },
+    [clearDebounceTimer],
+  );
 
   const scheduleSave = useCallback(
     (patch: ViewerStatePatch): void => {

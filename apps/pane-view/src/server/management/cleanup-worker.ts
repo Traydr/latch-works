@@ -1,7 +1,4 @@
-import {
-  deleteStoredObjectsBatch,
-  listStoredObjectsByPrefix,
-} from "@latch-works/media-storage";
+import { deleteStoredObjectsBatch, listStoredObjectsByPrefix } from "@latch-works/media-storage";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "../db";
 import {

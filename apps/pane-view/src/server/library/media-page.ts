@@ -5,7 +5,11 @@ export interface MediaPage {
   offset: number;
 }
 
-export function buildMediaPage<T>(rows: readonly T[], limit: number, offset: number): {
+export function buildMediaPage<T>(
+  rows: readonly T[],
+  limit: number,
+  offset: number,
+): {
   items: T[];
   mediaPage: MediaPage;
 } {
