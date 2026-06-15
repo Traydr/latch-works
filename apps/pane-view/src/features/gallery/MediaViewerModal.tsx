@@ -1,6 +1,6 @@
 import type { MediaItem } from "@latch-works/media-domain";
 import { formatBytes } from "@latch-works/media-domain";
-import { Copy, Download, Image, type LucideIcon, Maximize, X } from "lucide-react";
+import { Copy, Download, Image, type LucideIcon, Maximize, Pause, Play, X } from "lucide-react";
 import {
   forwardRef,
   type JSX,
@@ -436,10 +436,9 @@ export function MediaViewerModal({
             <p className="truncate text-sm font-medium text-white">{item.name}</p>
             <p className="truncate text-xs text-white/70">{details.join(" · ")}</p>
           </div>
-          <div className="flex shrink-0 items-center gap-1">
+          <div className="flex shrink-0 items-center gap-1.5">
             <ViewerToolbarButton
               ariaLabel="Copy path"
-              compact={isMobile}
               icon={Copy}
               label="Copy path"
               onClick={(event) => {
@@ -449,7 +448,6 @@ export function MediaViewerModal({
             />
             <ViewerToolbarButton
               ariaLabel="Download"
-              compact={isMobile}
               icon={Download}
               label="Download"
               onClick={(event) => {
@@ -460,7 +458,6 @@ export function MediaViewerModal({
             {item.mediaType === "image" ? (
               <ViewerToolbarButton
                 ariaLabel={showOriginal ? "Show preview" : "Show original"}
-                compact={isMobile}
                 icon={Image}
                 label={showOriginal ? "Preview" : "Original"}
                 onClick={(event) => {
@@ -471,7 +468,6 @@ export function MediaViewerModal({
             ) : null}
             <ViewerToolbarButton
               ariaLabel="Toggle fullscreen"
-              compact={isMobile}
               icon={Maximize}
               label="Fullscreen"
               onClick={(event) => {
@@ -482,7 +478,6 @@ export function MediaViewerModal({
             <ViewerToolbarButton
               ref={closeButtonRef}
               ariaLabel="Close viewer"
-              compact={isMobile}
               icon={X}
               label="Close"
               onClick={(event) => {
@@ -521,7 +516,7 @@ export function MediaViewerModal({
       <button
         type="button"
         aria-label="Previous item"
-        className={`absolute left-3 top-1/2 z-20 hidden -translate-y-1/2 cursor-pointer rounded-full p-3 text-xl text-white/90 transition-opacity duration-300 hover:bg-white/15 md:block ${chromeVisibilityClass} ${canStepBackward ? "" : "pointer-events-none opacity-40"}`}
+        className={`absolute left-3 top-1/2 z-20 hidden -translate-y-1/2 cursor-pointer rounded-full p-3 text-xl text-white/90 transition-opacity duration-300 hover:bg-violet-500/25 hover:text-violet-100 md:block ${chromeVisibilityClass} ${canStepBackward ? "" : "pointer-events-none opacity-40"}`}
         onClick={(event) => {
           event.stopPropagation();
           step(-1);
@@ -533,7 +528,7 @@ export function MediaViewerModal({
       <button
         type="button"
         aria-label="Next item"
-        className={`absolute right-3 top-1/2 z-20 hidden -translate-y-1/2 cursor-pointer rounded-full p-3 text-xl text-white/90 transition-opacity duration-300 hover:bg-white/15 md:block ${chromeVisibilityClass} ${canStepForward ? "" : "pointer-events-none opacity-40"}`}
+        className={`absolute right-3 top-1/2 z-20 hidden -translate-y-1/2 cursor-pointer rounded-full p-3 text-xl text-white/90 transition-opacity duration-300 hover:bg-violet-500/25 hover:text-violet-100 md:block ${chromeVisibilityClass} ${canStepForward ? "" : "pointer-events-none opacity-40"}`}
         onClick={(event) => {
           event.stopPropagation();
           step(1);
@@ -654,7 +649,7 @@ export function MediaViewerModal({
               max={canSeek ? duration : 1}
               step={0.1}
               value={position}
-              className="w-full accent-white"
+              className="w-full accent-violet-400"
               disabled={!canSeek}
               onPointerDown={() => {
                 isScrubbingRef.current = true;
@@ -681,21 +676,23 @@ export function MediaViewerModal({
             <div className="flex flex-wrap items-center gap-2 text-sm text-white/90">
               <button
                 type="button"
-                className="inline-flex cursor-pointer items-center justify-center rounded-full px-3 py-1.5 text-xs font-medium text-white/90 transition hover:bg-white/15"
+                className="inline-flex size-9 cursor-pointer items-center justify-center rounded-full text-white/90 transition hover:bg-violet-500/25 hover:text-violet-100"
+                title={playing ? "Pause" : "Play"}
+                aria-label={playing ? "Pause" : "Play"}
                 onClick={toggleVideoPlayback}
               >
-                {playing ? "Pause" : "Play"}
+                {playing ? <Pause className="size-5" /> : <Play className="size-5" />}
               </button>
               <button
                 type="button"
-                className="inline-flex cursor-pointer items-center justify-center rounded-full px-3 py-1.5 text-xs font-medium text-white/90 transition hover:bg-white/15"
+                className="inline-flex cursor-pointer items-center justify-center rounded-full px-3 py-1.5 text-xs font-medium text-white/90 transition hover:bg-violet-500/25 hover:text-violet-100"
                 onClick={() => skip(-5)}
               >
                 -5s
               </button>
               <button
                 type="button"
-                className="inline-flex cursor-pointer items-center justify-center rounded-full px-3 py-1.5 text-xs font-medium text-white/90 transition hover:bg-white/15"
+                className="inline-flex cursor-pointer items-center justify-center rounded-full px-3 py-1.5 text-xs font-medium text-white/90 transition hover:bg-violet-500/25 hover:text-violet-100"
                 onClick={() => skip(5)}
               >
                 +5s
@@ -708,7 +705,7 @@ export function MediaViewerModal({
                   max={1}
                   step={0.01}
                   value={volume}
-                  className="accent-white"
+                  className="accent-violet-400"
                   onChange={(event) => {
                     const next = Number(event.target.value);
                     const clamped = Math.max(0, Math.min(1, next));
@@ -754,27 +751,22 @@ const ViewerToolbarButton = forwardRef<
   HTMLButtonElement,
   {
     ariaLabel: string;
-    compact: boolean;
     icon: LucideIcon;
     label: string;
     onClick: (event: MouseEvent<HTMLButtonElement>) => void;
   }
->(function ViewerToolbarButton({ ariaLabel, compact, icon: Icon, label, onClick }, ref) {
+>(function ViewerToolbarButton({ ariaLabel, icon: Icon, label, onClick }, ref) {
   return (
     <button
       ref={ref}
       type="button"
       aria-label={ariaLabel}
       title={label}
-      className="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-white/90 transition hover:bg-white/15 sm:size-9"
+      className="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-white/90 transition hover:bg-violet-500/25 hover:text-violet-100"
       onClick={onClick}
     >
-      {compact ? (
-        <Icon className="size-4" />
-      ) : (
-        <span className="px-2 py-1 text-xs font-medium">{label}</span>
-      )}
-      {compact ? <span className="sr-only">{label}</span> : null}
+      <Icon className="size-4" />
+      <span className="sr-only">{label}</span>
     </button>
   );
 });

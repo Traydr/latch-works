@@ -132,52 +132,47 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
       onMouseMove={revealChrome}
       onPointerDown={revealChrome}
     >
-      {/* Top-left title label */}
+      {/* Top bar: title + actions */}
       <div
         className={`viewer-scrim-top viewer-chrome-transition ${chromeVisibilityClass}`}
         style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))' }}
       >
-        <div className="pointer-events-auto min-w-0 max-w-[min(70vw,640px)]">
-          <p className="truncate text-sm font-medium text-white">{comic.name}</p>
-          <p className="text-xs text-white/70">
-            {currentPageIndex + 1}/{comic.pages.length} pages
-          </p>
-        </div>
-      </div>
-
-      {/* Right-side action rail */}
-      <div
-        className={`pointer-events-none absolute right-3 top-1/2 z-20 -translate-y-1/2 viewer-chrome-transition ${chromeVisibilityClass}`}
-        style={{ paddingRight: 'env(safe-area-inset-right)' }}
-      >
-        <div className="pointer-events-auto flex flex-col gap-1">
-          <button
-            type="button"
-            className="viewer-overlay-btn"
-            title="Close"
-            aria-label="Close"
-            onClick={onClose}
-          >
-            <X className="size-5" />
-          </button>
-          <button
-            type="button"
-            className="viewer-overlay-btn"
-            title="Scroll to top"
-            aria-label="Scroll to top"
-            onClick={scrollToTop}
-          >
-            <ArrowUp className="size-5" />
-          </button>
-          <button
-            type="button"
-            className="viewer-overlay-btn"
-            title="Reveal in folder"
-            aria-label="Reveal in folder"
-            onClick={() => void window.frameView.revealInFolder(comic.cover.path)}
-          >
-            <FolderOpen className="size-5" />
-          </button>
+        <div className="pointer-events-auto flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium text-white">{comic.name}</p>
+            <p className="text-xs text-white/70">
+              {currentPageIndex + 1}/{comic.pages.length} pages
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            <button
+              type="button"
+              className="viewer-overlay-btn"
+              title="Scroll to top"
+              aria-label="Scroll to top"
+              onClick={scrollToTop}
+            >
+              <ArrowUp className="size-5" />
+            </button>
+            <button
+              type="button"
+              className="viewer-overlay-btn"
+              title="Reveal in folder"
+              aria-label="Reveal in folder"
+              onClick={() => void window.frameView.revealInFolder(comic.cover.path)}
+            >
+              <FolderOpen className="size-5" />
+            </button>
+            <button
+              type="button"
+              className="viewer-overlay-btn"
+              title="Close"
+              aria-label="Close"
+              onClick={onClose}
+            >
+              <X className="size-5" />
+            </button>
+          </div>
         </div>
       </div>
 

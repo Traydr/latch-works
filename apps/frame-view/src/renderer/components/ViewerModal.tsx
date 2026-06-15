@@ -1,4 +1,4 @@
-import { FolderOpen, Maximize, X } from 'lucide-react';
+import { FolderOpen, Maximize, Pause, Play, X } from 'lucide-react';
 import { type JSX, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { MediaItem } from '../../shared/types';
@@ -343,50 +343,45 @@ export function ViewerModal({
       onMouseMove={revealChrome}
       onPointerDown={revealChrome}
     >
-      {/* Top-left filename label */}
+      {/* Top bar: filename + actions */}
       <div
         className={`viewer-scrim-top viewer-chrome-transition ${chromeVisibilityClass}`}
         style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))' }}
       >
-        <div className="pointer-events-auto min-w-0 max-w-[min(70vw,640px)]">
-          <p className="truncate text-sm font-medium text-white">{item.name}</p>
-          <p className="truncate text-xs text-white/70">{details.join(' · ')}</p>
-        </div>
-      </div>
-
-      {/* Right-side action rail */}
-      <div
-        className={`pointer-events-none absolute right-3 top-1/2 z-20 -translate-y-1/2 viewer-chrome-transition ${chromeVisibilityClass}`}
-        style={{ paddingRight: 'env(safe-area-inset-right)' }}
-      >
-        <div className="pointer-events-auto flex flex-col gap-1">
-          <button
-            type="button"
-            className="viewer-overlay-btn"
-            title="Close"
-            aria-label="Close"
-            onClick={onClose}
-          >
-            <X className="size-5" />
-          </button>
-          <button
-            type="button"
-            className="viewer-overlay-btn"
-            title="Fullscreen"
-            aria-label="Fullscreen"
-            onClick={() => void toggleFullscreen()}
-          >
-            <Maximize className="size-5" />
-          </button>
-          <button
-            type="button"
-            className="viewer-overlay-btn"
-            title="Reveal in folder"
-            aria-label="Reveal in folder"
-            onClick={() => void window.frameView.revealInFolder(item.path)}
-          >
-            <FolderOpen className="size-5" />
-          </button>
+        <div className="pointer-events-auto flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium text-white">{item.name}</p>
+            <p className="truncate text-xs text-white/70">{details.join(' · ')}</p>
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            <button
+              type="button"
+              className="viewer-overlay-btn"
+              title="Close"
+              aria-label="Close"
+              onClick={onClose}
+            >
+              <X className="size-5" />
+            </button>
+            <button
+              type="button"
+              className="viewer-overlay-btn"
+              title="Fullscreen"
+              aria-label="Fullscreen"
+              onClick={() => void toggleFullscreen()}
+            >
+              <Maximize className="size-5" />
+            </button>
+            <button
+              type="button"
+              className="viewer-overlay-btn"
+              title="Reveal in folder"
+              aria-label="Reveal in folder"
+              onClick={() => void window.frameView.revealInFolder(item.path)}
+            >
+              <FolderOpen className="size-5" />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -403,7 +398,7 @@ export function ViewerModal({
       <button
         type="button"
         aria-label="Next item"
-        className={`viewer-overlay-btn absolute right-14 top-1/2 z-20 -translate-y-1/2 viewer-chrome-transition ${chromeVisibilityClass} ${canStepForward ? '' : 'pointer-events-none opacity-40'}`}
+        className={`viewer-overlay-btn absolute right-3 top-1/2 z-20 -translate-y-1/2 viewer-chrome-transition ${chromeVisibilityClass} ${canStepForward ? '' : 'pointer-events-none opacity-40'}`}
         onClick={() => onStep(1)}
         disabled={!canStepForward}
       >
@@ -481,7 +476,7 @@ export function ViewerModal({
               max={canSeek ? duration : 1}
               step={0.1}
               value={position}
-              className="w-full accent-white"
+              className="viewer-accent-range w-full"
               disabled={!canSeek}
               onPointerDown={() => {
                 isScrubbingRef.current = true;
@@ -518,10 +513,12 @@ export function ViewerModal({
             <div className="flex flex-wrap items-center gap-2 text-sm text-white/90">
               <button
                 type="button"
-                className="viewer-overlay-btn-text"
+                className="viewer-overlay-btn"
+                title={playing ? 'Pause' : 'Play'}
+                aria-label={playing ? 'Pause' : 'Play'}
                 onClick={toggleVideoPlayback}
               >
-                {playing ? 'Pause' : 'Play'}
+                {playing ? <Pause className="size-5" /> : <Play className="size-5" />}
               </button>
               <button type="button" className="viewer-overlay-btn-text" onClick={() => skip(-5)}>
                 -5s
@@ -537,7 +534,7 @@ export function ViewerModal({
                   max={1}
                   step={0.01}
                   value={volume}
-                  className="accent-white"
+                  className="viewer-accent-range"
                   onChange={(event) => {
                     const next = Number(event.target.value);
                     const clamped = Math.max(0, Math.min(1, next));

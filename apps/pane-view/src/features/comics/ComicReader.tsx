@@ -132,24 +132,24 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
               {currentPageIndex + 1}/{comic.pages.length} pages
             </p>
           </div>
-          <div className="flex shrink-0 items-center gap-1">
+          <div className="flex shrink-0 items-center gap-1.5">
             <button
               type="button"
-              className="inline-flex size-9 cursor-pointer items-center justify-center rounded-full text-white/90 transition hover:bg-white/15"
+              className="inline-flex size-8 cursor-pointer items-center justify-center rounded-full text-white/90 transition hover:bg-violet-500/25 hover:text-violet-100"
               title="Scroll to top"
               aria-label="Scroll to top"
               onClick={scrollToTop}
             >
-              <ArrowUp className="size-5" />
+              <ArrowUp className="size-4" />
             </button>
             <button
               type="button"
-              className="inline-flex size-9 cursor-pointer items-center justify-center rounded-full text-white/90 transition hover:bg-white/15"
+              className="inline-flex size-8 cursor-pointer items-center justify-center rounded-full text-white/90 transition hover:bg-violet-500/25 hover:text-violet-100"
               title="Close"
               aria-label="Close"
               onClick={onClose}
             >
-              <X className="size-5" />
+              <X className="size-4" />
             </button>
           </div>
         </div>
