@@ -1,8 +1,10 @@
 import { snapThumbnailSize } from "@latch-works/media-delivery";
-import { generateDerivativeBytes } from "@latch-works/media-derivatives";
+import { generateDerivativeBytes, readWebpMetadata } from "@latch-works/media-derivatives";
 import {
   createS3StorageClient,
+  headStoredObject,
   putStoredObject,
+  readStoredObjectBytes,
   type S3StorageClient,
 } from "@latch-works/media-storage";
 import { env } from "./env.js";
@@ -43,6 +45,22 @@ async function processJob(
   storage: S3StorageClient,
 ): Promise<boolean> {
   try {
+    const existingObject = await headStoredObject({ key: job.objectKey, storage });
+    if (existingObject) {
+      const bytes = await readStoredObjectBytes({ key: job.objectKey, storage });
+      const metadata = await readWebpMetadata(bytes);
+      const completed = await reportComplete({
+        height: metadata.height,
+        mediaObjectId: job.mediaObjectId,
+        objectKey: job.objectKey,
+        processingToken,
+        size: job.size,
+        width: metadata.width,
+      });
+
+      return completed;
+    }
+
     const generated = await generateDerivativeBytes({
       size: snapThumbnailSize(job.size),
       source: {

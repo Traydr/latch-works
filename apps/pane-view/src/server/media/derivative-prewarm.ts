@@ -42,9 +42,12 @@ export async function prewarmSyncRunDerivatives({
         inArray(syncRunItems.action, ["upload", "update"]),
       ),
     )
-    .limit(PREWARM_SCAN_LIMIT);
+    .limit(PREWARM_SCAN_LIMIT + 1);
 
-  const values = rows
+  const truncated = rows.length > PREWARM_SCAN_LIMIT;
+  const cappedRows = truncated ? rows.slice(0, PREWARM_SCAN_LIMIT) : rows;
+
+  const values = cappedRows
     .filter((row) => supportsDerivative(row.mediaType))
     .map((row) => ({
       height: 0,
@@ -71,8 +74,9 @@ export async function prewarmSyncRunDerivatives({
 
   logDerivativeEvent("derivative.prewarm", {
     enqueued: inserted.length,
-    scanned: rows.length,
+    scanned: cappedRows.length,
     syncRunId,
+    truncated,
   });
 
   if (inserted.length > 0) {

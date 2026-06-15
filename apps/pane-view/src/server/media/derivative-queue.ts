@@ -1,6 +1,6 @@
 import type { ThumbnailSize } from "@latch-works/media-delivery";
 import type { MediaType } from "@latch-works/media-domain";
-import { and, asc, eq, isNull, lte, or } from "drizzle-orm";
+import { and, asc, eq, isNull, lte, or, sql } from "drizzle-orm";
 import { db } from "../db";
 import { mediaObjects, thumbnails } from "../db/schema";
 import { derivativeProcessingLeaseMs } from "./derivative-lease";
@@ -37,7 +37,11 @@ export async function claimDerivativeJobs({
     const now = new Date();
     const leaseExpiry = new Date(now.getTime() - derivativeProcessingLeaseMs);
     const eligible = await tx
-      .select({ mediaObjectId: thumbnails.mediaObjectId, size: thumbnails.size })
+      .select({
+        mediaObjectId: thumbnails.mediaObjectId,
+        size: thumbnails.size,
+        status: thumbnails.status,
+      })
       .from(thumbnails)
       .where(
         or(
@@ -58,9 +62,15 @@ export async function claimDerivativeJobs({
     }
 
     for (const row of eligible) {
+      const isReclaim = row.status === "processing";
       await tx
         .update(thumbnails)
-        .set({ processingToken, status: "processing", updatedAt: now })
+        .set({
+          ...(isReclaim ? { attemptCount: sql`${thumbnails.attemptCount} + 1` } : {}),
+          processingToken,
+          status: "processing",
+          updatedAt: now,
+        })
         .where(and(eq(thumbnails.mediaObjectId, row.mediaObjectId), eq(thumbnails.size, row.size)));
     }
 
