@@ -34,6 +34,9 @@ importers:
       better-result:
         specifier: ^2.8.1
         version: 2.9.2
+      dotenv:
+        specifier: ^17.4.2
+        version: 17.4.2
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(kysely@0.29.2)(pg@8.21.0)(postgres@3.4.9)
@@ -46,6 +49,9 @@ importers:
       ffprobe-static:
         specifier: ^3.1.0
         version: 3.1.0
+      lucide-react:
+        specifier: ^0.562.0
+        version: 0.562.0(react@19.2.6)
       react:
         specifier: ^19.2.4
         version: 19.2.6
@@ -352,7 +358,7 @@ importers:
         version: 0.4.6(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       nitro:
         specifier: 3.0.260429-beta
-        version: 3.0.260429-beta(chokidar@5.0.0)(drizzle-orm@0.45.2(kysely@0.29.2)(pg@8.21.0)(postgres@3.4.9))(jiti@2.7.0)(lru-cache@11.5.1)(rollup@4.61.1)(vite@8.0.11(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
+        version: 3.0.260429-beta(chokidar@5.0.0)(dotenv@17.4.2)(drizzle-orm@0.45.2(kysely@0.29.2)(pg@8.21.0)(postgres@3.4.9))(jiti@2.7.0)(lru-cache@11.5.1)(rollup@4.61.1)(vite@8.0.11(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
       pdfjs-dist:
         specifier: ^6.0.227
         version: 6.0.227
@@ -5030,6 +5036,10 @@ packages:
 
   domutils@3.2.2:
     resolution: {integrity: sha512-6kZKyUajlDuqlHKVX1w7gyslj9MPIXzIFiz/rGu35uC1wMi+kMhQwGhl4lt9unC9Vb9INnY9Z3/ZA3+FhASLaw==}
+
+  dotenv@17.4.2:
+    resolution: {integrity: sha512-nI4U3TottKAcAD9LLud4Cb7b2QztQMUEfHbvhTH09bqXTxnSie8WnjPALV/WMCrJZ6UV/qHJ6L03OqO3LcdYZw==}
+    engines: {node: '>=12'}
 
   drizzle-kit@0.31.10:
     resolution: {integrity: sha512-7OZcmQUrdGI+DUNNsKBn1aW8qSoKuTH7d0mYgSP8bAzdFzKoovxEFnoGQp2dVs82EOJeYycqRtciopszwUf8bw==}
@@ -13041,6 +13051,8 @@ snapshots:
       domelementtype: 2.3.0
       domhandler: 5.0.3
 
+  dotenv@17.4.2: {}
+
   drizzle-kit@0.31.10:
     dependencies:
       '@drizzle-team/brocli': 0.10.2
@@ -14912,7 +14924,7 @@ snapshots:
 
   nice-try@1.0.5: {}
 
-  nitro@3.0.260429-beta(chokidar@5.0.0)(drizzle-orm@0.45.2(kysely@0.29.2)(pg@8.21.0)(postgres@3.4.9))(jiti@2.7.0)(lru-cache@11.5.1)(rollup@4.61.1)(vite@8.0.11(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0)):
+  nitro@3.0.260429-beta(chokidar@5.0.0)(dotenv@17.4.2)(drizzle-orm@0.45.2(kysely@0.29.2)(pg@8.21.0)(postgres@3.4.9))(jiti@2.7.0)(lru-cache@11.5.1)(rollup@4.61.1)(vite@8.0.11(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0)):
     dependencies:
       consola: 3.4.2
       crossws: 0.4.5(srvx@0.11.16)
@@ -14929,6 +14941,7 @@ snapshots:
       unenv: 2.0.0-rc.24
       unstorage: 2.0.0-alpha.7(chokidar@5.0.0)(db0@0.3.4(drizzle-orm@0.45.2(kysely@0.29.2)(pg@8.21.0)(postgres@3.4.9)))(lru-cache@11.5.1)(ofetch@2.0.0-alpha.3)
     optionalDependencies:
+      dotenv: 17.4.2
       jiti: 2.7.0
       rollup: 4.61.1
       vite: 8.0.11(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0)

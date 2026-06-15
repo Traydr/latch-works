@@ -1,5 +1,7 @@
+import { ArrowUp, FolderOpen, X } from 'lucide-react';
 import { type JSX, useEffect, useRef, useState } from 'react';
 
+import { useViewerChromeIdle } from '../hooks/useViewerChromeIdle';
 import type { ComicEntry } from '../utils/comics';
 import { HOTKEYS, isPlainHotkeyEvent, matchesAnyKey } from '../utils/hotkeys';
 import { toFileUrl } from '../utils/path';
@@ -14,6 +16,7 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
   const pageRefs = useRef<Array<HTMLImageElement | null>>([]);
   const currentPageIndexRef = useRef(0);
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
+  const { chromeVisible, revealChrome, chromeVisibilityClass } = useViewerChromeIdle();
 
   const setCurrentPage = (index: number): void => {
     currentPageIndexRef.current = index;
@@ -42,6 +45,8 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
     };
 
     const keyListener = (event: KeyboardEvent): void => {
+      revealChrome();
+
       if (matchesAnyKey(event, HOTKEYS.close)) {
         onClose();
         return;
@@ -65,7 +70,7 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
 
     window.addEventListener('keydown', keyListener);
     return () => window.removeEventListener('keydown', keyListener);
-  }, [comic.pages.length, onClose]);
+  }, [comic.pages.length, onClose, revealChrome]);
 
   useEffect(() => {
     const reader = readerRef.current;
@@ -96,6 +101,7 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
     };
 
     const onScroll = (): void => {
+      revealChrome();
       if (frameId !== null) {
         return;
       }
@@ -111,41 +117,66 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
 
       reader.removeEventListener('scroll', onScroll);
     };
-  }, [currentPageIndex]);
+  }, [currentPageIndex, revealChrome]);
 
   const scrollToTop = (): void => {
     readerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   return (
-    <div className="dark fixed inset-0 z-50 bg-zinc-950 text-zinc-100">
-      <div className="pointer-events-none absolute left-1/2 top-4 z-20 w-[min(94vw,980px)] -translate-x-1/2">
-        <div className="prism-surface pointer-events-auto flex items-center justify-between gap-3 px-4 py-3">
-          <div className="min-w-0">
-            <p className="truncate text-sm font-medium text-zinc-100">{comic.name}</p>
-            <p className="text-xs text-zinc-300">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Comic reader for ${comic.name}`}
+      className={`dark fixed inset-0 z-50 bg-zinc-950 text-zinc-100 ${chromeVisible ? '' : 'cursor-none'}`}
+      onMouseMove={revealChrome}
+      onPointerDown={revealChrome}
+    >
+      {/* Top bar: title + actions */}
+      <div
+        className={`viewer-scrim-top viewer-chrome-transition ${chromeVisibilityClass}`}
+        style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))' }}
+      >
+        <div className="pointer-events-auto flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium text-white">{comic.name}</p>
+            <p className="text-xs text-white/70">
               {currentPageIndex + 1}/{comic.pages.length} pages
             </p>
           </div>
-          <div className="flex items-center gap-2 text-sm">
+          <div className="flex shrink-0 items-center gap-1">
             <button
               type="button"
-              className="prism-btn"
+              className="viewer-overlay-btn"
+              title="Scroll to top"
+              aria-label="Scroll to top"
+              onClick={scrollToTop}
+            >
+              <ArrowUp className="size-5" />
+            </button>
+            <button
+              type="button"
+              className="viewer-overlay-btn"
+              title="Reveal in folder"
+              aria-label="Reveal in folder"
               onClick={() => void window.frameView.revealInFolder(comic.cover.path)}
             >
-              Reveal
+              <FolderOpen className="size-5" />
             </button>
-            <button type="button" className="prism-btn" onClick={scrollToTop}>
-              Top
-            </button>
-            <button type="button" className="prism-btn" onClick={onClose}>
-              Close
+            <button
+              type="button"
+              className="viewer-overlay-btn"
+              title="Close"
+              aria-label="Close"
+              onClick={onClose}
+            >
+              <X className="size-5" />
             </button>
           </div>
         </div>
       </div>
 
-      <div ref={readerRef} className="h-full overflow-auto px-3 pb-12 pt-24">
+      <div ref={readerRef} className="h-full overflow-auto px-3 pb-6 pt-3">
         <div className="mx-auto flex w-[min(100%,980px)] flex-col items-center gap-3">
           {comic.pages.map((page, index) => (
             <img
@@ -157,7 +188,7 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
               alt={page.name}
               loading="lazy"
               decoding="async"
-              className="max-h-none w-full max-w-full rounded bg-zinc-900 object-contain"
+              className="max-h-none w-full max-w-full bg-zinc-900 object-contain"
             />
           ))}
         </div>

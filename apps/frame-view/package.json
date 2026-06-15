@@ -1,11 +1,14 @@
 {
   "name": "@latch-works/frame-view",
   "productName": "Frame View",
-  "version": "1.0.15",
+  "version": "1.0.16",
   "description": "Cross-platform image and video viewer",
   "main": ".vite/build/main.js",
   "private": true,
   "scripts": {
+    "ensure-electron": "node ./scripts/ensure-electron.mjs",
+    "postinstall": "node ./scripts/ensure-electron.mjs",
+    "prestart": "node ./scripts/ensure-electron.mjs",
     "start": "electron-forge start",
     "preview:showcase": "vite --config vite.showcase.config.mjs",
     "package": "electron-forge package",
@@ -62,10 +65,12 @@
   },
   "dependencies": {
     "better-result": "^2.8.1",
+    "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",
     "electron-squirrel-startup": "^1.0.1",
     "ffmpeg-static": "^5.3.0",
     "ffprobe-static": "^3.1.0",
+    "lucide-react": "^0.562.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "scheduler": "^0.27.0",

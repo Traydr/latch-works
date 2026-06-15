@@ -85,6 +85,7 @@ Copy `.env.example` to repo-root `.env`, symlink `apps/pane-view/.env` → `../.
 
 - Web app: `pnpm dev:pane` → http://127.0.0.1:3000 (`GET /api/health` should return `{"ok":true,"service":"pane-view"}`).
 - Lockstep desktop: `pnpm dev:lockstep` from repo root after packages are built.
+- Frame View desktop: `cd apps/frame-view && pnpm start` from repo root after packages are built. **Cloud VM agents must set `FRAME_VIEW_DISABLE_GPU=1`** in `apps/frame-view/.env` (see `apps/frame-view/.env.example`) or Electron will crash on launch due to unavailable GPU acceleration.
 - Lockstep CLI plan (read-only): `cd apps/lockstep-cli && pnpm exec tsx src/cli.ts plan --source <archive-path>` with `.env` sourced.
 - Lockstep CLI push: same, with `push --source <path> --api-url http://127.0.0.1:3000 --yes`.
 

@@ -76,3 +76,29 @@ body {
 .prism-section {
   @apply rounded-2xl border border-zinc-300/80 bg-white/70 p-3 dark:border-zinc-700/80 dark:bg-zinc-900/60;
 }
+
+/* ---- Viewer overlay chrome (transparent gradient scrims) ---- */
+
+.viewer-scrim-top {
+  @apply pointer-events-none absolute inset-x-0 top-0 z-20 bg-gradient-to-b from-black/70 via-black/30 to-transparent px-4 pb-10 pt-4;
+}
+
+.viewer-scrim-bottom {
+  @apply pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-black/70 via-black/30 to-transparent px-4 pb-4 pt-10;
+}
+
+.viewer-overlay-btn {
+  @apply inline-flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-white/90 transition hover:bg-violet-500/25 hover:text-violet-100;
+}
+
+.viewer-overlay-btn-text {
+  @apply inline-flex cursor-pointer items-center justify-center rounded-full px-3 py-1.5 text-xs font-medium text-white/90 transition hover:bg-violet-500/25 hover:text-violet-100;
+}
+
+.viewer-accent-range {
+  @apply accent-violet-400;
+}
+
+.viewer-chrome-transition {
+  @apply transition-opacity duration-300;
+}
