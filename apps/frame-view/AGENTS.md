@@ -12,6 +12,7 @@
 ## Build, Test, and Development Commands
 - `pnpm install`: install dependencies.
 - `pnpm run start`: run Electron Forge in dev mode with Vite.
+- **Cloud VM / headless Linux:** copy `.env.example` to `.env` and set `FRAME_VIEW_DISABLE_GPU=1` before `pnpm run start`, or Electron crashes when GPU acceleration is unavailable. Leave unset on normal desktops to keep hardware acceleration enabled.
 - `pnpm run lint`: run Biome checks for the repo.
 - `pnpm run format`: format the repo with Biome.
 - `pnpm run knip`: detect unused files, exports, and dependencies.

@@ -1,8 +1,15 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { Result, type Result as ResultType } from 'better-result';
+import { config as loadEnv } from 'dotenv';
 import { app, BrowserWindow, protocol } from 'electron';
 import started from 'electron-squirrel-startup';
+
+loadEnv();
+
+if (['1', 'true', 'yes'].includes((process.env.FRAME_VIEW_DISABLE_GPU ?? '').toLowerCase())) {
+  app.disableHardwareAcceleration();
+}
 
 import { CatalogService } from './main/catalog/CatalogService';
 import { registerIpc } from './main/ipc/registerIpc';

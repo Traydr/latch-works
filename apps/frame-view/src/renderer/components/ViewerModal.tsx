@@ -1,6 +1,8 @@
+import { FolderOpen, Maximize, X } from 'lucide-react';
 import { type JSX, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { MediaItem } from '../../shared/types';
+import { useViewerChromeIdle } from '../hooks/useViewerChromeIdle';
 import { HOTKEYS, isPlainHotkeyEvent, isTextInputTarget, matchesAnyKey } from '../utils/hotkeys';
 import { formatBytes, formatDuration, toFileUrl } from '../utils/path';
 
@@ -60,6 +62,11 @@ export function ViewerModal({
   const [volume, setVolume] = useState(() => readPersistedVolume());
   const [speed, setSpeed] = useState(1);
 
+  const chromePinned = isVideoItem && !playing;
+  const { chromeVisible, revealChrome, chromeVisibilityClass } = useViewerChromeIdle({
+    pinned: chromePinned,
+  });
+
   const applySpeed = useCallback((nextSpeed: number): void => {
     setSpeed(nextSpeed);
 
@@ -112,6 +119,8 @@ export function ViewerModal({
     }
 
     const keyListener = (event: KeyboardEvent): void => {
+      revealChrome();
+
       if (isTextInputTarget(event.target) && !matchesAnyKey(event, HOTKEYS.close)) {
         return;
       }
@@ -229,7 +238,7 @@ export function ViewerModal({
       window.removeEventListener('keyup', keyUpListener);
       window.removeEventListener('blur', resetHeldSpeed);
     };
-  }, [applySpeed, isVideoItem, item, onClose, queueStep]);
+  }, [applySpeed, isVideoItem, item, onClose, queueStep, revealChrome]);
 
   if (!item) {
     return null;
@@ -325,61 +334,96 @@ export function ViewerModal({
   };
 
   return (
-    <div ref={modalRef} className="dark fixed inset-0 z-50 bg-zinc-950/95 text-zinc-100">
-      <div className="pointer-events-none absolute left-1/2 top-4 z-20 w-[min(94vw,980px)] -translate-x-1/2">
-        <div className="prism-surface pointer-events-auto flex items-center justify-between gap-3 px-4 py-3">
-          <div className="min-w-0">
-            <p className="truncate text-sm font-medium text-zinc-100">{item.name}</p>
-            <p className="text-xs text-zinc-300">{details.join(' | ')}</p>
-          </div>
-          <div className="flex items-center gap-2 text-sm">
-            <button
-              type="button"
-              className="prism-btn"
-              onClick={() => void window.frameView.revealInFolder(item.path)}
-            >
-              Reveal
-            </button>
-            <button type="button" className="prism-btn" onClick={() => void toggleFullscreen()}>
-              Fullscreen
-            </button>
-            <button type="button" className="prism-btn" onClick={onClose}>
-              Close
-            </button>
-          </div>
+    <div
+      ref={modalRef}
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Viewer for ${item.name}`}
+      className={`dark fixed inset-0 z-50 bg-zinc-950/95 text-zinc-100 ${chromeVisible ? '' : 'cursor-none'}`}
+      onMouseMove={revealChrome}
+      onPointerDown={revealChrome}
+    >
+      {/* Top-left filename label */}
+      <div
+        className={`viewer-scrim-top viewer-chrome-transition ${chromeVisibilityClass}`}
+        style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))' }}
+      >
+        <div className="pointer-events-auto min-w-0 max-w-[min(70vw,640px)]">
+          <p className="truncate text-sm font-medium text-white">{item.name}</p>
+          <p className="truncate text-xs text-white/70">{details.join(' · ')}</p>
         </div>
       </div>
 
+      {/* Right-side action rail */}
+      <div
+        className={`pointer-events-none absolute right-3 top-1/2 z-20 -translate-y-1/2 viewer-chrome-transition ${chromeVisibilityClass}`}
+        style={{ paddingRight: 'env(safe-area-inset-right)' }}
+      >
+        <div className="pointer-events-auto flex flex-col gap-1">
+          <button
+            type="button"
+            className="viewer-overlay-btn"
+            title="Close"
+            aria-label="Close"
+            onClick={onClose}
+          >
+            <X className="size-5" />
+          </button>
+          <button
+            type="button"
+            className="viewer-overlay-btn"
+            title="Fullscreen"
+            aria-label="Fullscreen"
+            onClick={() => void toggleFullscreen()}
+          >
+            <Maximize className="size-5" />
+          </button>
+          <button
+            type="button"
+            className="viewer-overlay-btn"
+            title="Reveal in folder"
+            aria-label="Reveal in folder"
+            onClick={() => void window.frameView.revealInFolder(item.path)}
+          >
+            <FolderOpen className="size-5" />
+          </button>
+        </div>
+      </div>
+
+      {/* Side navigation */}
       <button
         type="button"
-        className={`prism-surface absolute left-4 top-1/2 z-20 -translate-y-1/2 p-3 text-xl ${canStepBackward ? '' : 'pointer-events-none opacity-40'}`}
+        aria-label="Previous item"
+        className={`viewer-overlay-btn absolute left-3 top-1/2 z-20 -translate-y-1/2 viewer-chrome-transition ${chromeVisibilityClass} ${canStepBackward ? '' : 'pointer-events-none opacity-40'}`}
         onClick={() => onStep(-1)}
         disabled={!canStepBackward}
       >
-        {'<'}
+        <span className="px-1 text-xl">{'<'}</span>
       </button>
       <button
         type="button"
-        className={`prism-surface absolute right-4 top-1/2 z-20 -translate-y-1/2 p-3 text-xl ${canStepForward ? '' : 'pointer-events-none opacity-40'}`}
+        aria-label="Next item"
+        className={`viewer-overlay-btn absolute right-14 top-1/2 z-20 -translate-y-1/2 viewer-chrome-transition ${chromeVisibilityClass} ${canStepForward ? '' : 'pointer-events-none opacity-40'}`}
         onClick={() => onStep(1)}
         disabled={!canStepForward}
       >
-        {'>'}
+        <span className="px-1 text-xl">{'>'}</span>
       </button>
 
-      <div className="flex h-full items-center justify-center p-12 pt-24">
+      {/* Center media */}
+      <div className="flex h-full items-center justify-center p-3">
         {item.mediaType === 'image' ? (
           <img
             src={toFileUrl(item.path)}
             alt={item.name}
-            className="max-h-full max-w-full rounded object-contain"
+            className="max-h-full max-w-full object-contain"
           />
         ) : (
           <video
             key={item.id}
             ref={videoRef}
             src={toFileUrl(item.path)}
-            className="max-h-full max-w-full rounded bg-black"
+            className="max-h-full max-w-full bg-black object-contain"
             autoPlay={autoplayVideos}
             loop={loopVideos}
             preload="auto"
@@ -424,16 +468,20 @@ export function ViewerModal({
         )}
       </div>
 
+      {/* Video controls */}
       {item.mediaType === 'video' ? (
-        <div className="pointer-events-none absolute bottom-4 left-1/2 z-20 w-[min(94vw,980px)] -translate-x-1/2">
-          <div className="prism-surface pointer-events-auto space-y-2 px-4 py-3">
+        <div
+          className={`viewer-scrim-bottom viewer-chrome-transition ${chromeVisibilityClass}`}
+          style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
+        >
+          <div className="pointer-events-auto space-y-2">
             <input
               type="range"
               min={0}
               max={canSeek ? duration : 1}
               step={0.1}
               value={position}
-              className="w-full accent-violet-500"
+              className="w-full accent-white"
               disabled={!canSeek}
               onPointerDown={() => {
                 isScrubbingRef.current = true;
@@ -467,25 +515,29 @@ export function ViewerModal({
                 commitSeek(next);
               }}
             />
-            <div className="flex flex-wrap items-center gap-2 text-sm text-zinc-200">
-              <button type="button" className="prism-btn" onClick={toggleVideoPlayback}>
+            <div className="flex flex-wrap items-center gap-2 text-sm text-white/90">
+              <button
+                type="button"
+                className="viewer-overlay-btn-text"
+                onClick={toggleVideoPlayback}
+              >
                 {playing ? 'Pause' : 'Play'}
               </button>
-              <button type="button" className="prism-btn" onClick={() => skip(-5)}>
+              <button type="button" className="viewer-overlay-btn-text" onClick={() => skip(-5)}>
                 -5s
               </button>
-              <button type="button" className="prism-btn" onClick={() => skip(5)}>
+              <button type="button" className="viewer-overlay-btn-text" onClick={() => skip(5)}>
                 +5s
               </button>
-              <label className="flex items-center gap-2 text-zinc-300">
-                Volume
+              <label className="flex items-center gap-2 text-white/80">
+                Vol
                 <input
                   type="range"
                   min={0}
                   max={1}
                   step={0.01}
                   value={volume}
-                  className="accent-violet-500"
+                  className="accent-white"
                   onChange={(event) => {
                     const next = Number(event.target.value);
                     const clamped = Math.max(0, Math.min(1, next));
@@ -501,26 +553,24 @@ export function ViewerModal({
                   }}
                 />
               </label>
-              <label className="flex items-center gap-2 text-zinc-300">
+              <label className="flex items-center gap-2 text-white/80">
                 Speed
-                <div className="relative">
-                  <select
-                    className="prism-select"
-                    value={speed}
-                    onChange={(event) => {
-                      const next = Number(event.target.value);
-                      speedBoostHeldRef.current = false;
-                      applySpeed(next);
-                    }}
-                  >
-                    <option value={0.5}>0.5x</option>
-                    <option value={1}>1x</option>
-                    <option value={1.5}>1.5x</option>
-                    <option value={2}>2x</option>
-                  </select>
-                </div>
+                <select
+                  className="rounded-lg border-0 bg-white/15 px-2 py-1 text-xs text-white outline-none"
+                  value={speed}
+                  onChange={(event) => {
+                    const next = Number(event.target.value);
+                    speedBoostHeldRef.current = false;
+                    applySpeed(next);
+                  }}
+                >
+                  <option value={0.5}>0.5x</option>
+                  <option value={1}>1x</option>
+                  <option value={1.5}>1.5x</option>
+                  <option value={2}>2x</option>
+                </select>
               </label>
-              <span className="text-zinc-300">
+              <span className="text-white/70">
                 {Math.floor(position)}/{Math.floor(duration || 0)}s
               </span>
             </div>

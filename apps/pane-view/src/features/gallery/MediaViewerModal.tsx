@@ -14,6 +14,7 @@ import {
   useState,
 } from "react";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useViewerChromeIdle } from "@/hooks/use-viewer-chrome-idle";
 import { useLibraryViewerState } from "@/features/viewer/use-library-viewer-state";
 import { resolveVideoResumeSeconds, videoSecondsToPositionMs } from "@/features/viewer/viewer-resume";
 import { PaneViewImage } from "./PaneViewImage";
@@ -85,7 +86,11 @@ export function MediaViewerModal({
   const [volume, setVolume] = useState(() => readPersistedVolume());
   const [speed, setSpeed] = useState(1);
   const [showOriginal, setShowOriginal] = useState(false);
-  const [chromeVisible, setChromeVisible] = useState(true);
+  const chromePinned = isVideoItem && !playing;
+  const { chromeVisible, revealChrome, toggleChrome, chromeVisibilityClass } = useViewerChromeIdle({
+    isMobile,
+    pinned: chromePinned,
+  });
   const videoDelivery = useResolvedMediaUrl({
     mediaId: item?.mediaType === "video" ? item.id : undefined,
     variant: "original",
@@ -228,6 +233,8 @@ export function MediaViewerModal({
   // Keyboard handling.
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      revealChrome();
+
       if (isTextInputTarget(event.target)) {
         return;
       }
@@ -315,7 +322,7 @@ export function MediaViewerModal({
       window.removeEventListener("keyup", handleKeyUp);
       window.removeEventListener("blur", resetHeldSpeed);
     };
-  }, [applySpeed, isVideoItem, onClose, skip, step]);
+  }, [applySpeed, isVideoItem, onClose, revealChrome, skip, step]);
 
   if (!item) {
     return null;
@@ -409,27 +416,27 @@ export function MediaViewerModal({
   return (
     <div
       ref={modalRef}
-      className="fixed inset-0 z-50 bg-zinc-950/95 text-zinc-100"
+      className={`fixed inset-0 z-50 bg-zinc-950/95 text-zinc-100 ${!isMobile && !chromeVisible ? "cursor-none" : ""}`}
       role="dialog"
       aria-modal="true"
       aria-label={`Viewer for ${item.name}`}
       onClick={() => {
-        if (isMobile) {
-          setChromeVisible((visible) => !visible);
-        }
+        toggleChrome();
       }}
+      onMouseMove={revealChrome}
+      onPointerDown={revealChrome}
     >
       {/* Top info bar */}
       <div
-        className={`pointer-events-none absolute left-1/2 top-4 z-20 w-[min(94vw,980px)] -translate-x-1/2 transition-opacity ${chromeVisible ? "opacity-100" : "opacity-0 md:opacity-100"}`}
-        style={{ paddingTop: "env(safe-area-inset-top)" }}
+        className={`pointer-events-none absolute inset-x-0 top-0 z-20 bg-gradient-to-b from-black/70 via-black/30 to-transparent px-3 pb-8 pt-3 transition-opacity duration-300 ${chromeVisibilityClass}`}
+        style={{ paddingTop: "max(0.75rem, env(safe-area-inset-top))" }}
       >
-        <div className="pointer-events-auto flex flex-col gap-2 rounded-2xl border border-zinc-700/80 bg-zinc-900/90 px-3 py-2 shadow-xl backdrop-blur-xl sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-4 sm:py-3">
-          <div className="min-w-0">
-            <p className="truncate text-sm font-medium text-zinc-100">{item.name}</p>
-            <p className={`truncate text-xs text-zinc-300`}>{details.join(" | ")}</p>
+        <div className="pointer-events-auto flex items-center justify-between gap-2 sm:gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium text-white">{item.name}</p>
+            <p className="truncate text-xs text-white/70">{details.join(" · ")}</p>
           </div>
-          <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+          <div className="flex shrink-0 items-center gap-1">
             <ViewerToolbarButton
               ariaLabel="Copy path"
               compact={isMobile}
@@ -514,7 +521,7 @@ export function MediaViewerModal({
       <button
         type="button"
         aria-label="Previous item"
-        className={`absolute left-4 top-1/2 z-20 hidden -translate-y-1/2 cursor-pointer rounded-2xl border border-zinc-700/80 bg-zinc-900/90 p-3 text-xl shadow-xl backdrop-blur-xl md:block ${canStepBackward ? "" : "pointer-events-none opacity-40"}`}
+        className={`absolute left-3 top-1/2 z-20 hidden -translate-y-1/2 cursor-pointer rounded-full p-3 text-xl text-white/90 transition-opacity duration-300 hover:bg-white/15 md:block ${chromeVisibilityClass} ${canStepBackward ? "" : "pointer-events-none opacity-40"}`}
         onClick={(event) => {
           event.stopPropagation();
           step(-1);
@@ -526,7 +533,7 @@ export function MediaViewerModal({
       <button
         type="button"
         aria-label="Next item"
-        className={`absolute right-4 top-1/2 z-20 hidden -translate-y-1/2 cursor-pointer rounded-2xl border border-zinc-700/80 bg-zinc-900/90 p-3 text-xl shadow-xl backdrop-blur-xl md:block ${canStepForward ? "" : "pointer-events-none opacity-40"}`}
+        className={`absolute right-3 top-1/2 z-20 hidden -translate-y-1/2 cursor-pointer rounded-full p-3 text-xl text-white/90 transition-opacity duration-300 hover:bg-white/15 md:block ${chromeVisibilityClass} ${canStepForward ? "" : "pointer-events-none opacity-40"}`}
         onClick={(event) => {
           event.stopPropagation();
           step(1);
@@ -538,7 +545,7 @@ export function MediaViewerModal({
 
       {/* Center media */}
       <div
-        className="flex h-full items-center justify-center px-3 pb-[env(safe-area-inset-bottom)] pt-[calc(env(safe-area-inset-top)+5rem)] md:p-12 md:pt-24"
+        className="flex h-full items-center justify-center p-3 pb-[env(safe-area-inset-bottom)]"
         onClick={(event) => event.stopPropagation()}
       >
         {item.mediaType === "pdf" ? (
@@ -558,7 +565,7 @@ export function MediaViewerModal({
             <video
               key={item.id}
               ref={videoRef}
-              className="max-h-full max-w-full rounded bg-black"
+              className="max-h-full max-w-full bg-black object-contain"
               preload="auto"
               playsInline
               autoPlay={autoplayVideos}
@@ -624,7 +631,7 @@ export function MediaViewerModal({
         ) : (
           <PaneViewImage
             alt={item.name}
-            className="max-h-full max-w-full rounded object-contain"
+            className="max-h-full max-w-full object-contain"
             layout="fullWidth"
             mediaId={item.id}
             objectFit="contain"
@@ -637,17 +644,17 @@ export function MediaViewerModal({
       {/* Video controls */}
       {item.mediaType === "video" ? (
         <div
-          className={`pointer-events-none absolute bottom-4 left-1/2 z-20 w-[min(94vw,980px)] -translate-x-1/2 transition-opacity ${chromeVisible ? "opacity-100" : "opacity-0 md:opacity-100"}`}
-          style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+          className={`pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-black/70 via-black/30 to-transparent px-4 pb-4 pt-10 transition-opacity duration-300 ${chromeVisibilityClass}`}
+          style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}
         >
-          <div className="pointer-events-auto space-y-2 rounded-2xl border border-zinc-700/80 bg-zinc-900/90 px-4 py-3 shadow-xl backdrop-blur-xl">
+          <div className="pointer-events-auto space-y-2">
             <input
               type="range"
               min={0}
               max={canSeek ? duration : 1}
               step={0.1}
               value={position}
-              className="w-full accent-violet-500"
+              className="w-full accent-white"
               disabled={!canSeek}
               onPointerDown={() => {
                 isScrubbingRef.current = true;
@@ -671,37 +678,37 @@ export function MediaViewerModal({
                 setPosition(next);
               }}
             />
-            <div className="flex flex-wrap items-center gap-2 text-sm text-zinc-200">
+            <div className="flex flex-wrap items-center gap-2 text-sm text-white/90">
               <button
                 type="button"
-                className="cursor-pointer rounded-xl border border-zinc-300/90 bg-white/70 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-white dark:border-zinc-700/80 dark:bg-zinc-900/70 dark:text-zinc-200"
+                className="inline-flex cursor-pointer items-center justify-center rounded-full px-3 py-1.5 text-xs font-medium text-white/90 transition hover:bg-white/15"
                 onClick={toggleVideoPlayback}
               >
                 {playing ? "Pause" : "Play"}
               </button>
               <button
                 type="button"
-                className="cursor-pointer rounded-xl border border-zinc-300/90 bg-white/70 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-white dark:border-zinc-700/80 dark:bg-zinc-900/70 dark:text-zinc-200"
+                className="inline-flex cursor-pointer items-center justify-center rounded-full px-3 py-1.5 text-xs font-medium text-white/90 transition hover:bg-white/15"
                 onClick={() => skip(-5)}
               >
                 -5s
               </button>
               <button
                 type="button"
-                className="cursor-pointer rounded-xl border border-zinc-300/90 bg-white/70 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-white dark:border-zinc-700/80 dark:bg-zinc-900/70 dark:text-zinc-200"
+                className="inline-flex cursor-pointer items-center justify-center rounded-full px-3 py-1.5 text-xs font-medium text-white/90 transition hover:bg-white/15"
                 onClick={() => skip(5)}
               >
                 +5s
               </button>
-              <label className="flex items-center gap-2 text-zinc-300">
-                Volume
+              <label className="flex items-center gap-2 text-white/80">
+                Vol
                 <input
                   type="range"
                   min={0}
                   max={1}
                   step={0.01}
                   value={volume}
-                  className="accent-violet-500"
+                  className="accent-white"
                   onChange={(event) => {
                     const next = Number(event.target.value);
                     const clamped = Math.max(0, Math.min(1, next));
@@ -717,10 +724,10 @@ export function MediaViewerModal({
                   }}
                 />
               </label>
-              <label className="flex items-center gap-2 text-zinc-300">
+              <label className="flex items-center gap-2 text-white/80">
                 Speed
                 <select
-                  className="rounded-xl border border-zinc-300 bg-white/80 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-violet-400 focus:ring-offset-2 dark:border-zinc-700 dark:bg-zinc-900/80"
+                  className="rounded-lg border-0 bg-white/15 px-2 py-1 text-xs text-white outline-none"
                   value={speed}
                   onChange={(event) => {
                     applySpeed(Number(event.target.value));
@@ -732,7 +739,7 @@ export function MediaViewerModal({
                   <option value={2}>2x</option>
                 </select>
               </label>
-              <span className="text-zinc-300">
+              <span className="text-white/70">
                 {Math.floor(position)}/{Math.floor(duration || 0)}s
               </span>
             </div>
@@ -759,13 +766,13 @@ const ViewerToolbarButton = forwardRef<
       type="button"
       aria-label={ariaLabel}
       title={label}
-      className="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-xl border border-zinc-300/90 bg-white/70 text-zinc-700 hover:bg-white sm:size-auto dark:border-zinc-700/80 dark:bg-zinc-900/70 dark:text-zinc-200"
+      className="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-white/90 transition hover:bg-white/15 sm:size-9"
       onClick={onClick}
     >
       {compact ? (
         <Icon className="size-4" />
       ) : (
-        <span className="px-3 py-1.5 text-xs font-medium">{label}</span>
+        <span className="px-2 py-1 text-xs font-medium">{label}</span>
       )}
       {compact ? <span className="sr-only">{label}</span> : null}
     </button>
