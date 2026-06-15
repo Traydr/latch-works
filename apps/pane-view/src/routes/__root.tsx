@@ -51,7 +51,7 @@ function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
       <head>
         <HeadContent />
       </head>
-      <body>
+      <body suppressHydrationWarning>
         <TooltipProvider>{children}</TooltipProvider>
         <Scripts />
       </body>

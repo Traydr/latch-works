@@ -12,7 +12,7 @@ interface PersistedState {
   sortMode: GallerySortMode;
 }
 
-const DEFAULT_STATE: PersistedState = {
+export const GALLERY_STATE_DEFAULTS: PersistedState = {
   comicMode: false,
   detailPanelOpen: true,
   lastPath: "",
@@ -25,31 +25,31 @@ function readPersistedState(): PersistedState {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) {
-      return DEFAULT_STATE;
+      return GALLERY_STATE_DEFAULTS;
     }
 
     const parsed = JSON.parse(raw) as unknown;
     if (typeof parsed !== "object" || parsed === null) {
-      return DEFAULT_STATE;
+      return GALLERY_STATE_DEFAULTS;
     }
 
     const record = parsed as Record<string, unknown>;
     return {
-      comicMode: typeof record.comicMode === "boolean" ? record.comicMode : DEFAULT_STATE.comicMode,
+      comicMode: typeof record.comicMode === "boolean" ? record.comicMode : GALLERY_STATE_DEFAULTS.comicMode,
       detailPanelOpen:
         typeof record.detailPanelOpen === "boolean"
           ? record.detailPanelOpen
-          : DEFAULT_STATE.detailPanelOpen,
-      lastPath: typeof record.lastPath === "string" ? record.lastPath : DEFAULT_STATE.lastPath,
+          : GALLERY_STATE_DEFAULTS.detailPanelOpen,
+      lastPath: typeof record.lastPath === "string" ? record.lastPath : GALLERY_STATE_DEFAULTS.lastPath,
       lastSelectedId:
         typeof record.lastSelectedId === "string" || record.lastSelectedId === null
           ? record.lastSelectedId
-          : DEFAULT_STATE.lastSelectedId,
-      recursive: typeof record.recursive === "boolean" ? record.recursive : DEFAULT_STATE.recursive,
-      sortMode: isSortMode(record.sortMode) ? record.sortMode : DEFAULT_STATE.sortMode,
+          : GALLERY_STATE_DEFAULTS.lastSelectedId,
+      recursive: typeof record.recursive === "boolean" ? record.recursive : GALLERY_STATE_DEFAULTS.recursive,
+      sortMode: isSortMode(record.sortMode) ? record.sortMode : GALLERY_STATE_DEFAULTS.sortMode,
     };
   } catch {
-    return DEFAULT_STATE;
+    return GALLERY_STATE_DEFAULTS;
   }
 }
 
@@ -72,13 +72,13 @@ function isSortMode(value: unknown): value is GallerySortMode {
 }
 
 export function useGalleryState() {
-  const [state, setState] = useState<PersistedState>(() => {
-    if (typeof window === "undefined") {
-      return DEFAULT_STATE;
-    }
+  const [state, setState] = useState<PersistedState>(GALLERY_STATE_DEFAULTS);
+  const [isReady, setIsReady] = useState(false);
 
-    return readPersistedState();
-  });
+  useEffect(() => {
+    setState(readPersistedState());
+    setIsReady(true);
+  }, []);
 
   const updateState = useCallback((patch: Partial<PersistedState>) => {
     setState((current) => {
@@ -100,6 +100,7 @@ export function useGalleryState() {
   return {
     comicMode: state.comicMode,
     detailPanelOpen: state.detailPanelOpen,
+    isReady,
     lastPath: state.lastPath,
     lastSelectedId: state.lastSelectedId,
     recursive: state.recursive,
