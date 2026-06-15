@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
-import { describe, expect, it } from "vitest";
-import { resolveVisiblePdfPage } from "./PdfViewer";
+import { describe, expect, it, vi } from "vitest";
+import { resolveVisiblePdfPage, scrollToPdfPage } from "./PdfViewer";
 
 describe("resolveVisiblePdfPage", () => {
   it("returns the page with the highest intersection ratio", () => {
@@ -39,5 +39,21 @@ describe("resolveVisiblePdfPage", () => {
     ]);
 
     expect(page).toBeNull();
+  });
+});
+
+describe("scrollToPdfPage", () => {
+  it("scrolls the requested page into view", () => {
+    const container = document.createElement("div");
+    const pageOne = document.createElement("canvas");
+    pageOne.dataset.pageNumber = "1";
+    const pageTwo = document.createElement("canvas");
+    pageTwo.dataset.pageNumber = "2";
+    pageTwo.scrollIntoView = vi.fn();
+    container.append(pageOne, pageTwo);
+
+    scrollToPdfPage(container, 2);
+
+    expect(pageTwo.scrollIntoView).toHaveBeenCalledWith({ block: "start" });
   });
 });
