@@ -1,11 +1,14 @@
+import { GALLERY_THUMBNAIL_SIZE } from "@latch-works/media-delivery";
 import type { FolderNode } from "@latch-works/media-domain";
 import { getBaseName } from "@latch-works/media-domain";
 import { and, asc, eq, ilike, inArray, isNull, or, type SQL } from "drizzle-orm";
-import type { LibraryMediaItem } from "./types";
 import { db } from "../db";
 import { folders, libraryEntries, mediaObjects, thumbnails } from "../db/schema";
+import { buildDerivativeDeliveryUrl } from "../media/derivative-delivery-url";
+import { logDerivativeEvent } from "../media/derivative-telemetry";
 import { buildMediaPage, type MediaPage } from "./media-page";
 import { escapeLikePattern, resolveMediaScope } from "./query-helpers";
+import type { LibraryMediaItem } from "./types";
 
 export type { LibraryMediaItem, MediaPage } from "./types";
 
@@ -85,7 +88,7 @@ export async function readDatabaseLibrarySnapshot({
         thumbnails,
         and(
           eq(thumbnails.mediaObjectId, mediaObjects.id),
-          eq(thumbnails.size, 320),
+          eq(thumbnails.size, GALLERY_THUMBNAIL_SIZE),
           eq(thumbnails.status, "ready"),
         ),
       )
@@ -118,11 +121,12 @@ export async function readDatabaseLibrarySnapshot({
 
   const { items: pageMediaRows, mediaPage } = buildMediaPage(mediaRows, limit, offset);
 
-  return {
-    allFolders: allFolderRows.map(mapFolderRow),
-    folders: folderRows.map(mapFolderRow),
-    media: pageMediaRows.map(({ entry, object }) => {
-      const media: LibraryMediaItem = {
+  let embeddedReadyCount = 0;
+  let thumbnailEligibleCount = 0;
+
+  const media = await Promise.all(
+    pageMediaRows.map(async ({ entry, object, thumbnail }): Promise<LibraryMediaItem> => {
+      const item: LibraryMediaItem = {
         durationMs: object.durationMs ?? undefined,
         extension: object.extension,
         height: object.height ?? undefined,
@@ -138,13 +142,34 @@ export async function readDatabaseLibrarySnapshot({
         width: object.width ?? undefined,
       };
 
-      media.thumbnailUrl = buildGalleryThumbnailUrl({
-        entryId: entry.id,
-        mediaType: object.mediaType,
-      });
+      if (supportsGalleryThumbnail(object.mediaType)) {
+        thumbnailEligibleCount += 1;
 
-      return media;
+        // When the gallery-size derivative is already `ready`, embed its real
+        // delivery URL so the client renders directly without a per-tile
+        // `resolveMediaDeliveryUrl` server-function round-trip. Missing/pending
+        // derivatives leave `thumbnailUrl` undefined and fall back to polling.
+        if (thumbnail) {
+          item.thumbnailUrl = await buildDerivativeDeliveryUrl(thumbnail.objectKey);
+          embeddedReadyCount += 1;
+        }
+      }
+
+      return item;
     }),
+  );
+
+  logDerivativeEvent("library.snapshot.thumbnail_embed", {
+    embeddedReady: embeddedReadyCount,
+    pageSize: media.length,
+    pendingFallback: thumbnailEligibleCount - embeddedReadyCount,
+    thumbnailEligible: thumbnailEligibleCount,
+  });
+
+  return {
+    allFolders: allFolderRows.map(mapFolderRow),
+    folders: folderRows.map(mapFolderRow),
+    media,
     mediaPage,
     roots: rootRows
       .map((folder) => folder.path)
@@ -222,16 +247,6 @@ function dedupe(value: string, index: number, values: string[]): boolean {
   return values.indexOf(value) === index;
 }
 
-function buildGalleryThumbnailUrl({
-  entryId,
-  mediaType,
-}: {
-  entryId: string;
-  mediaType: string;
-}): string | undefined {
-  if (mediaType !== "image" && mediaType !== "gif" && mediaType !== "video") {
-    return undefined;
-  }
-
-  return `/api/media/${entryId}/thumbnail?size=320`;
+function supportsGalleryThumbnail(mediaType: string): boolean {
+  return mediaType === "image" || mediaType === "gif" || mediaType === "video";
 }

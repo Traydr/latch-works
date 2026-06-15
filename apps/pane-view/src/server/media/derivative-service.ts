@@ -1,53 +1,44 @@
-import { spawn } from "node:child_process";
-import { createWriteStream } from "node:fs";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { type Readable, Transform } from "node:stream";
-import { pipeline } from "node:stream/promises";
-import { snapThumbnailSize, type ThumbnailSize } from "@latch-works/media-delivery";
-import type { MediaType } from "@latch-works/media-domain";
+import { snapThumbnailSize } from "@latch-works/media-delivery";
+import type { FfmpegRunner } from "@latch-works/media-derivatives";
+import {
+  buildDerivativeDescriptor,
+  supportsDerivative,
+} from "@latch-works/media-derivatives/descriptor";
 import {
   deleteStoredObject,
-  getStoredObject,
   headStoredObject,
-  originalObjectKey,
-  previewObjectKey,
   putStoredObject,
   readStoredObjectBytes,
-  thumbnailObjectKey,
 } from "@latch-works/media-storage";
 import { and, eq } from "drizzle-orm";
-import ffmpegPath from "ffmpeg-static";
-import sharp from "sharp";
+import { resolveDerivativeProcessingMode } from "../../env/server";
 import { db } from "../db";
 import { thumbnails } from "../db/schema";
 import { createConcurrencyLimiter } from "./concurrency-limiter";
 import { isDerivativeProcessingLeaseExpired } from "./derivative-lease";
+import { logDerivativeEvent } from "./derivative-telemetry";
+import { wakeOptimizer } from "./optimizer-wake";
 import { readMediaThumbnailContext } from "./repository";
 import { createPaneViewStorageClient } from "./storage-client";
 
-const defaultMaxSourceBytes = 512 * 1024 * 1024;
 const derivativeGenerationLimiter = createConcurrencyLimiter(2);
 
-type FfmpegRunner = (binaryPath: string, args: string[]) => Promise<void>;
-
-let ffmpegRunner: FfmpegRunner = runFfmpeg;
+// CPU-heavy generation lives in `@latch-works/media-derivatives` and is loaded
+// via dynamic import so that `sharp`/`ffmpeg-static` are only pulled into the
+// Pane View process when it actually generates (inline mode). The pure
+// descriptor helpers come from the sharp-free `/descriptor` subpath.
+let ffmpegRunnerOverride: FfmpegRunner | null = null;
 let maxSourceBytesOverride: number | null = null;
-
-function getMaxSourceBytes(): number {
-  return maxSourceBytesOverride ?? defaultMaxSourceBytes;
-}
 
 export const derivativeServiceTestHooks = {
   resetFfmpegRunner(): void {
-    ffmpegRunner = runFfmpeg;
+    ffmpegRunnerOverride = null;
   },
   resetMaxSourceBytes(): void {
     maxSourceBytesOverride = null;
   },
   setFfmpegRunner(runner: FfmpegRunner): void {
-    ffmpegRunner = runner;
+    ffmpegRunnerOverride = runner;
   },
   setMaxSourceBytes(bytes: number): void {
     maxSourceBytesOverride = bytes;
@@ -138,9 +129,7 @@ export async function purgeAllThumbnailDerivatives(): Promise<{
     for (const row of rows) {
       await db
         .delete(thumbnails)
-        .where(
-          and(eq(thumbnails.mediaObjectId, row.mediaObjectId), eq(thumbnails.size, row.size)),
-        );
+        .where(and(eq(thumbnails.mediaObjectId, row.mediaObjectId), eq(thumbnails.size, row.size)));
       deletedRows += 1;
     }
   }
@@ -245,6 +234,16 @@ export async function ensureThumbnailDerivative({
       .where(and(eq(thumbnails.mediaObjectId, context.mediaObjectId), eq(thumbnails.size, size)));
   }
 
+  // In triggered mode Pane View never generates inline: the row is now pending
+  // and the media-optimizer service claims and generates it out of band, so the
+  // heavy sharp/ffmpeg path is never loaded into this process. Nudge the
+  // optimizer (throttled, non-fatal) so on-demand requests don't wait for the
+  // next prewarm/cron.
+  if (resolveDerivativeProcessingMode() === "triggered") {
+    void wakeOptimizer("on-demand");
+    return { status: "pending" };
+  }
+
   const [claimed] = await db
     .update(thumbnails)
     .set({ status: "processing", updatedAt: new Date() })
@@ -282,9 +281,28 @@ export async function ensureThumbnailDerivative({
       };
     }
 
-    const generated = await derivativeGenerationLimiter.run(() =>
-      generateDerivativeBytes(context, size),
-    );
+    const generationStartedAt = Date.now();
+    const generated = await derivativeGenerationLimiter.run(async () => {
+      const { generateDerivativeBytes } = await import("@latch-works/media-derivatives");
+      return generateDerivativeBytes({
+        ffmpegRunner: ffmpegRunnerOverride ?? undefined,
+        maxSourceBytes: maxSourceBytesOverride ?? undefined,
+        size,
+        source: {
+          extension: context.extension,
+          mediaType: context.mediaType,
+          originalObjectKey: context.originalObjectKey,
+          sha256: context.sha256,
+        },
+        storage,
+      });
+    });
+    logDerivativeEvent("derivative.generate", {
+      durationMs: Date.now() - generationStartedAt,
+      mediaType: context.mediaType,
+      purpose: derivative.purpose,
+      size,
+    });
     await putStoredObject({
       body: generated.bytes,
       contentType: "image/webp",
@@ -320,212 +338,6 @@ export async function ensureThumbnailDerivative({
   }
 }
 
-function supportsDerivative(mediaType: MediaType): boolean {
-  return mediaType === "image" || mediaType === "gif" || mediaType === "video";
-}
-
-function buildDerivativeDescriptor(
-  context: Awaited<ReturnType<typeof readMediaThumbnailContext>>,
-  size: ThumbnailSize,
-): { objectKey: string; purpose: "thumbnail" | "preview" } {
-  if (!context) {
-    throw new Error("missing media thumbnail context");
-  }
-
-  if (context.mediaType === "video") {
-    return {
-      objectKey: previewObjectKey({
-        extension: context.extension,
-        mediaType: "video",
-        sha256: context.sha256,
-        size,
-      }),
-      purpose: "preview",
-    };
-  }
-
-  return {
-    objectKey: thumbnailObjectKey({
-      extension: context.extension,
-      mediaType: context.mediaType,
-      sha256: context.sha256,
-      size,
-    }),
-    purpose: "thumbnail",
-  };
-}
-
-async function generateDerivativeBytes(
-  context: NonNullable<Awaited<ReturnType<typeof readMediaThumbnailContext>>>,
-  size: ThumbnailSize,
-): Promise<{ bytes: Buffer; height: number; width: number }> {
-  const storage = createPaneViewStorageClient();
-  const sourceKey =
-    context.originalObjectKey ??
-    originalObjectKey({
-      extension: context.extension,
-      mediaType: context.mediaType,
-      sha256: context.sha256,
-    });
-
-  if (context.mediaType === "video") {
-    const posterFrame = await extractVideoPosterFrameFromStorage({
-      extension: context.extension,
-      sourceKey,
-      storage,
-    });
-    return resizeImageToWebp(posterFrame, size);
-  }
-
-  const maxBytes = getMaxSourceBytes();
-  const sourceHead = await headStoredObject({ key: sourceKey, storage });
-  if (!sourceHead) {
-    throw new Error(`original object missing: ${sourceKey}`);
-  }
-
-  if (sourceHead.contentLength > maxBytes) {
-    throw new Error(`original object exceeds ${maxBytes} bytes`);
-  }
-
-  const sourceBytes = await readStoredObjectBytes({ key: sourceKey, storage });
-  if (!sourceBytes) {
-    throw new Error(`original object missing: ${sourceKey}`);
-  }
-
-  if (sourceBytes.byteLength > maxBytes) {
-    throw new Error(`original object exceeds ${maxBytes} bytes`);
-  }
-
-  return resizeImageToWebp(sourceBytes, size);
-}
-
-async function extractVideoPosterFrameFromStorage({
-  extension,
-  sourceKey,
-  storage,
-}: {
-  extension: string;
-  sourceKey: string;
-  storage: ReturnType<typeof createPaneViewStorageClient>;
-}): Promise<Buffer> {
-  const stored = await getStoredObject({ key: sourceKey, storage });
-  if (!stored?.body) {
-    throw new Error(`original object missing: ${sourceKey}`);
-  }
-
-  const maxBytes = getMaxSourceBytes();
-  if (stored.contentLength !== undefined && stored.contentLength > maxBytes) {
-    stored.body.destroy();
-    throw new Error(`original object exceeds ${maxBytes} bytes`);
-  }
-
-  const tempDir = await mkdtemp(path.join(tmpdir(), "pane-view-thumb-"));
-  const inputPath = path.join(tempDir, `source.${extension.replace(/^\./, "")}`);
-
-  try {
-    await streamReadableToTempFile({
-      body: stored.body,
-      destinationPath: inputPath,
-      maxBytes,
-    });
-    return await extractVideoPosterFrameAtPath(inputPath, tempDir);
-  } finally {
-    await rm(tempDir, { force: true, recursive: true });
-  }
-}
-
-async function streamReadableToTempFile({
-  body,
-  destinationPath,
-  maxBytes,
-}: {
-  body: Readable;
-  destinationPath: string;
-  maxBytes: number;
-}): Promise<void> {
-  let bytesWritten = 0;
-
-  const byteLimiter = new Transform({
-    transform(chunk: Buffer, _encoding, callback) {
-      bytesWritten += chunk.length;
-      if (bytesWritten > maxBytes) {
-        callback(new Error(`original object exceeds ${maxBytes} bytes`));
-        return;
-      }
-
-      callback(null, chunk);
-    },
-  });
-
-  await pipeline(body, byteLimiter, createWriteStream(destinationPath));
-}
-
-async function resizeImageToWebp(
-  input: Buffer,
-  size: ThumbnailSize,
-): Promise<{ bytes: Buffer; height: number; width: number }> {
-  const result = await sharp(input)
-    .rotate()
-    .resize(size, size, {
-      fit: "inside",
-      withoutEnlargement: true,
-    })
-    .webp({ quality: 90 })
-    .toBuffer({ resolveWithObject: true });
-
-  return {
-    bytes: result.data,
-    height: result.info.height,
-    width: result.info.width,
-  };
-}
-
-async function extractVideoPosterFrameAtPath(inputPath: string, tempDir: string): Promise<Buffer> {
-  if (!ffmpegPath) {
-    throw new Error("ffmpeg binary is not available");
-  }
-
-  const outputPath = path.join(tempDir, "poster.jpg");
-
-  await ffmpegRunner(ffmpegPath, [
-    "-hide_banner",
-    "-loglevel",
-    "error",
-    "-ss",
-    "1",
-    "-i",
-    inputPath,
-    "-frames:v",
-    "1",
-    "-q:v",
-    "2",
-    outputPath,
-  ]);
-
-  return await readFile(outputPath);
-}
-
-function runFfmpeg(binaryPath: string, args: string[]): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(binaryPath, args, { stdio: ["ignore", "ignore", "pipe"] });
-    let stderr = "";
-
-    child.stderr.on("data", (chunk: Buffer) => {
-      stderr += chunk.toString();
-    });
-
-    child.on("error", reject);
-    child.on("close", (code) => {
-      if (code === 0) {
-        resolve();
-        return;
-      }
-
-      reject(new Error(stderr.trim() || `ffmpeg exited with code ${String(code)}`));
-    });
-  });
-}
-
 async function readWebpMetadataFromStorage(
   objectKey: string,
   storage: ReturnType<typeof createPaneViewStorageClient>,
@@ -535,11 +347,8 @@ async function readWebpMetadataFromStorage(
     throw new Error(`derivative object missing: ${objectKey}`);
   }
 
-  const metadata = await sharp(bytes).metadata();
-  return {
-    height: metadata.height ?? 0,
-    width: metadata.width ?? 0,
-  };
+  const { readWebpMetadata } = await import("@latch-works/media-derivatives");
+  return readWebpMetadata(bytes);
 }
 
 async function markThumbnailReady({

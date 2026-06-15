@@ -14,6 +14,9 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as GalleryRouteImport } from './routes/_gallery'
 import { Route as GalleryIndexRouteImport } from './routes/_gallery/index'
 import { Route as ApiHealthRouteImport } from './routes/api.health'
+import { Route as InternalOptimizerFailRouteImport } from './routes/internal.optimizer.fail'
+import { Route as InternalOptimizerCompleteRouteImport } from './routes/internal.optimizer.complete'
+import { Route as InternalOptimizerClaimRouteImport } from './routes/internal.optimizer.claim'
 import { Route as CdnV1SplatRouteImport } from './routes/cdn.v1.$'
 import { Route as ApiSyncUploadUrlRouteImport } from './routes/api.sync.upload-url'
 import { Route as ApiSyncSnapshotRouteImport } from './routes/api.sync.snapshot'
@@ -48,6 +51,22 @@ const GalleryIndexRoute = GalleryIndexRouteImport.update({
 const ApiHealthRoute = ApiHealthRouteImport.update({
   id: '/api/health',
   path: '/api/health',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InternalOptimizerFailRoute = InternalOptimizerFailRouteImport.update({
+  id: '/internal/optimizer/fail',
+  path: '/internal/optimizer/fail',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InternalOptimizerCompleteRoute =
+  InternalOptimizerCompleteRouteImport.update({
+    id: '/internal/optimizer/complete',
+    path: '/internal/optimizer/complete',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const InternalOptimizerClaimRoute = InternalOptimizerClaimRouteImport.update({
+  id: '/internal/optimizer/claim',
+  path: '/internal/optimizer/claim',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CdnV1SplatRoute = CdnV1SplatRouteImport.update({
@@ -120,6 +139,9 @@ export interface FileRoutesByFullPath {
   '/api/sync/snapshot': typeof ApiSyncSnapshotRoute
   '/api/sync/upload-url': typeof ApiSyncUploadUrlRoute
   '/cdn/v1/$': typeof CdnV1SplatRoute
+  '/internal/optimizer/claim': typeof InternalOptimizerClaimRoute
+  '/internal/optimizer/complete': typeof InternalOptimizerCompleteRoute
+  '/internal/optimizer/fail': typeof InternalOptimizerFailRoute
   '/api/media/$mediaId/original': typeof ApiMediaMediaIdOriginalRoute
   '/api/media/$mediaId/preview': typeof ApiMediaMediaIdPreviewRoute
   '/api/media/$mediaId/thumbnail': typeof ApiMediaMediaIdThumbnailRoute
@@ -137,6 +159,9 @@ export interface FileRoutesByTo {
   '/api/sync/snapshot': typeof ApiSyncSnapshotRoute
   '/api/sync/upload-url': typeof ApiSyncUploadUrlRoute
   '/cdn/v1/$': typeof CdnV1SplatRoute
+  '/internal/optimizer/claim': typeof InternalOptimizerClaimRoute
+  '/internal/optimizer/complete': typeof InternalOptimizerCompleteRoute
+  '/internal/optimizer/fail': typeof InternalOptimizerFailRoute
   '/api/media/$mediaId/original': typeof ApiMediaMediaIdOriginalRoute
   '/api/media/$mediaId/preview': typeof ApiMediaMediaIdPreviewRoute
   '/api/media/$mediaId/thumbnail': typeof ApiMediaMediaIdThumbnailRoute
@@ -156,6 +181,9 @@ export interface FileRoutesById {
   '/api/sync/snapshot': typeof ApiSyncSnapshotRoute
   '/api/sync/upload-url': typeof ApiSyncUploadUrlRoute
   '/cdn/v1/$': typeof CdnV1SplatRoute
+  '/internal/optimizer/claim': typeof InternalOptimizerClaimRoute
+  '/internal/optimizer/complete': typeof InternalOptimizerCompleteRoute
+  '/internal/optimizer/fail': typeof InternalOptimizerFailRoute
   '/api/media/$mediaId/original': typeof ApiMediaMediaIdOriginalRoute
   '/api/media/$mediaId/preview': typeof ApiMediaMediaIdPreviewRoute
   '/api/media/$mediaId/thumbnail': typeof ApiMediaMediaIdThumbnailRoute
@@ -175,6 +203,9 @@ export interface FileRouteTypes {
     | '/api/sync/snapshot'
     | '/api/sync/upload-url'
     | '/cdn/v1/$'
+    | '/internal/optimizer/claim'
+    | '/internal/optimizer/complete'
+    | '/internal/optimizer/fail'
     | '/api/media/$mediaId/original'
     | '/api/media/$mediaId/preview'
     | '/api/media/$mediaId/thumbnail'
@@ -192,6 +223,9 @@ export interface FileRouteTypes {
     | '/api/sync/snapshot'
     | '/api/sync/upload-url'
     | '/cdn/v1/$'
+    | '/internal/optimizer/claim'
+    | '/internal/optimizer/complete'
+    | '/internal/optimizer/fail'
     | '/api/media/$mediaId/original'
     | '/api/media/$mediaId/preview'
     | '/api/media/$mediaId/thumbnail'
@@ -210,6 +244,9 @@ export interface FileRouteTypes {
     | '/api/sync/snapshot'
     | '/api/sync/upload-url'
     | '/cdn/v1/$'
+    | '/internal/optimizer/claim'
+    | '/internal/optimizer/complete'
+    | '/internal/optimizer/fail'
     | '/api/media/$mediaId/original'
     | '/api/media/$mediaId/preview'
     | '/api/media/$mediaId/thumbnail'
@@ -228,6 +265,9 @@ export interface RootRouteChildren {
   ApiSyncSnapshotRoute: typeof ApiSyncSnapshotRoute
   ApiSyncUploadUrlRoute: typeof ApiSyncUploadUrlRoute
   CdnV1SplatRoute: typeof CdnV1SplatRoute
+  InternalOptimizerClaimRoute: typeof InternalOptimizerClaimRoute
+  InternalOptimizerCompleteRoute: typeof InternalOptimizerCompleteRoute
+  InternalOptimizerFailRoute: typeof InternalOptimizerFailRoute
   ApiMediaMediaIdOriginalRoute: typeof ApiMediaMediaIdOriginalRoute
   ApiMediaMediaIdPreviewRoute: typeof ApiMediaMediaIdPreviewRoute
   ApiMediaMediaIdThumbnailRoute: typeof ApiMediaMediaIdThumbnailRoute
@@ -268,6 +308,27 @@ declare module '@tanstack/react-router' {
       path: '/api/health'
       fullPath: '/api/health'
       preLoaderRoute: typeof ApiHealthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/internal/optimizer/fail': {
+      id: '/internal/optimizer/fail'
+      path: '/internal/optimizer/fail'
+      fullPath: '/internal/optimizer/fail'
+      preLoaderRoute: typeof InternalOptimizerFailRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/internal/optimizer/complete': {
+      id: '/internal/optimizer/complete'
+      path: '/internal/optimizer/complete'
+      fullPath: '/internal/optimizer/complete'
+      preLoaderRoute: typeof InternalOptimizerCompleteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/internal/optimizer/claim': {
+      id: '/internal/optimizer/claim'
+      path: '/internal/optimizer/claim'
+      fullPath: '/internal/optimizer/claim'
+      preLoaderRoute: typeof InternalOptimizerClaimRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/cdn/v1/$': {
@@ -385,6 +446,9 @@ const rootRouteChildren: RootRouteChildren = {
   ApiSyncSnapshotRoute: ApiSyncSnapshotRoute,
   ApiSyncUploadUrlRoute: ApiSyncUploadUrlRoute,
   CdnV1SplatRoute: CdnV1SplatRoute,
+  InternalOptimizerClaimRoute: InternalOptimizerClaimRoute,
+  InternalOptimizerCompleteRoute: InternalOptimizerCompleteRoute,
+  InternalOptimizerFailRoute: InternalOptimizerFailRoute,
   ApiMediaMediaIdOriginalRoute: ApiMediaMediaIdOriginalRoute,
   ApiMediaMediaIdPreviewRoute: ApiMediaMediaIdPreviewRoute,
   ApiMediaMediaIdThumbnailRoute: ApiMediaMediaIdThumbnailRoute,

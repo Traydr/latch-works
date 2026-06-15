@@ -9,6 +9,11 @@ const serverExternal = [
   "@aws-sdk/s3-request-presigner",
   "@better-auth/drizzle-adapter",
   "@latch-works/media-delivery",
+  // Externalized so the heavy generation package (and its sharp/ffmpeg deps) is
+  // resolved at runtime via dynamic import only in inline mode, never bundled
+  // into the always-loaded Pane View server graph.
+  "@latch-works/media-derivatives",
+  "@latch-works/media-derivatives/descriptor",
   "@latch-works/media-storage",
   "ffmpeg-static",
   "sharp",

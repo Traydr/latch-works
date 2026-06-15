@@ -7,6 +7,7 @@ import {
   ensureThumbnailDerivative,
   regenerateThumbnailDerivative,
 } from "./derivative-service";
+import { logDerivativeEvent } from "./derivative-telemetry";
 import { readMediaDeliveryRequest, readMediaThumbnailContext } from "./repository";
 import { createPaneViewStorageClient } from "./storage-client";
 
@@ -38,6 +39,7 @@ export async function resolveDerivativeDeliveryUrl({
     throw new Error("Media not found");
   }
 
+  const startedAt = Date.now();
   const derivative =
     variant === "preview"
       ? await ensurePreviewDerivative({ mediaId })
@@ -45,6 +47,13 @@ export async function resolveDerivativeDeliveryUrl({
           mediaId,
           requestedSize: snapThumbnailSize(size ?? 320),
         });
+
+  logDerivativeEvent("derivative.resolve", {
+    durationMs: Date.now() - startedAt,
+    mediaType: media.mediaType,
+    status: derivative.status,
+    variant,
+  });
 
   if (derivative.status === "pending") {
     throw new Error("Derivative pending");
