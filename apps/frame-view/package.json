@@ -6,8 +6,6 @@
   "main": ".vite/build/main.js",
   "private": true,
   "scripts": {
-    "ensure-electron": "node ./scripts/ensure-electron.mjs",
-    "postinstall": "node ./scripts/ensure-electron.mjs",
     "prestart": "node ./scripts/ensure-electron.mjs",
     "start": "electron-forge start",
     "preview:showcase": "vite --config vite.showcase.config.mjs",
