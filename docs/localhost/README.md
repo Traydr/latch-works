@@ -2,7 +2,7 @@
 
 This directory contains a Docker Compose stack for the local services Pane View needs:
 
-- PostgreSQL 16 on `localhost:5432`
+- PostgreSQL 18.4 on `localhost:5432`
 - RustFS S3-compatible object storage on `http://127.0.0.1:9000`
 - RustFS console on `http://127.0.0.1:9001`
 - An init container that creates the `latch-works-media` bucket
@@ -67,6 +67,10 @@ This deletes the local PostgreSQL and RustFS volumes for this compose project:
 cd docs/localhost
 docker compose down -v
 ```
+
+If you previously started this stack with the PostgreSQL volume mounted at
+`/var/lib/postgresql/data`, run the reset once before starting it again. PostgreSQL 18+ expects the
+Docker volume at `/var/lib/postgresql`.
 
 ## Notes
 
