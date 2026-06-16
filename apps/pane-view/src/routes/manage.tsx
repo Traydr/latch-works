@@ -1,10 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { requireCurrentWebSession } from "@/features/auth/web-session-guard";
 import { ManagementPage } from "@/features/management/ManagementPage";
+import { requireWebSession } from "@/server/auth/require-web-session";
 
 export const Route = createFileRoute("/manage")({
   beforeLoad: async () => {
-    await requireCurrentWebSession();
+    await requireWebSession();
   },
   component: ManagementPage,
 });

@@ -39,26 +39,6 @@ export default defineConfig({
   server: {
     port: 3000,
   },
-  plugins: [
-    nitro({
-      handlers: [
-        {
-          route: "/**",
-          handler: new URL("./src/server/spa-shell-fallback.ts", import.meta.url).pathname,
-          middleware: true,
-        },
-      ],
-    }),
-    tailwindcss(),
-    tanstackStart({
-      spa: {
-        enabled: true,
-        prerender: {
-          outputPath: "/_shell.html",
-        },
-      },
-    }),
-    viteReact(),
-  ],
+  plugins: [nitro(), tailwindcss(), tanstackStart(), viteReact()],
   envPrefix: "VITE_",
 });
