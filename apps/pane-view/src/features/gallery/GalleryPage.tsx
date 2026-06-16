@@ -144,7 +144,7 @@ export function GalleryPage() {
   );
   const listingRequest = useMemo(
     () => ({
-      comicMode: false as const,
+      comicMode,
       path: search.path,
       query: search.q,
       recursive: effectiveRecursive,
@@ -154,6 +154,7 @@ export function GalleryPage() {
       sortMode,
     }),
     [
+      comicMode,
       effectiveRecursive,
       randomSeed,
       search.path,

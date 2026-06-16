@@ -45,6 +45,20 @@ export function toLibrarySnapshotRequest(search: GalleryBrowseSearch): LibrarySn
   };
 }
 
+/** Route loader deps: folder-only snapshot for non-comic gallery (avoids 500-row media preload). */
+export function toGalleryRouteLoaderDeps(search: GalleryBrowseSearch): LibrarySnapshotRequest {
+  const comicMode = search.comic ?? false;
+  const recursive = (search.recursive ?? false) || comicMode;
+
+  return {
+    comicMode,
+    mediaLimit: comicMode ? undefined : 0,
+    path: search.path,
+    query: search.q,
+    recursive,
+  };
+}
+
 export function librarySnapshotQueryOptions(request: LibrarySnapshotRequest) {
   return {
     queryKey: librarySnapshotKeys.snapshot(request),
@@ -101,7 +115,11 @@ export function useLibrarySnapshotSuspense(request: LibrarySnapshotRequest) {
 
 export function useInvalidateLibrarySnapshot() {
   const queryClient = useQueryClient();
-  return () => queryClient.invalidateQueries({ queryKey: librarySnapshotKeys.all });
+  return () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: librarySnapshotKeys.all }),
+      queryClient.invalidateQueries({ queryKey: galleryListingKeys.all }),
+    ]);
 }
 
 export function useDeleteLibraryEntryMutation() {
@@ -111,7 +129,10 @@ export function useDeleteLibraryEntryMutation() {
     mutationFn: (entryId: string) => deleteLibraryEntry({ data: { entryId } }),
     onSuccess: (result) => {
       if (result.deleted) {
-        void queryClient.invalidateQueries({ queryKey: librarySnapshotKeys.all });
+        void Promise.all([
+          queryClient.invalidateQueries({ queryKey: librarySnapshotKeys.all }),
+          queryClient.invalidateQueries({ queryKey: galleryListingKeys.all }),
+        ]);
       }
     },
   });

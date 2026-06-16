@@ -6,12 +6,12 @@ import {
 import { GalleryPage } from "@/features/gallery/GalleryPage";
 import {
   librarySnapshotQueryOptions,
-  toLibrarySnapshotRequest,
+  toGalleryRouteLoaderDeps,
 } from "@/features/library/library-queries";
 
 export const Route = createFileRoute("/_gallery/")({
   validateSearch: (search): GalleryBrowseSearch => parseGalleryBrowseSearch(search),
-  loaderDeps: ({ search }) => toLibrarySnapshotRequest(search),
+  loaderDeps: ({ search }) => toGalleryRouteLoaderDeps(search),
   loader: async ({ context, deps }) => {
     await context.queryClient.ensureQueryData(librarySnapshotQueryOptions(deps));
   },

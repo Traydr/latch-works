@@ -297,7 +297,7 @@ export async function readDatabaseGalleryListing({
   const trimmedQuery = query?.trim();
   const searching = Boolean(trimmedQuery);
   const decodedCursor = decodeGalleryListingCursor(cursor);
-  const includeFolders = !recursive && !searching && !cursor;
+  const includeFolders = !recursive && !cursor;
   const mediaScope = resolveMediaScope({ currentPath, recursive, searching });
   const mediaConditions: SQL[] = [isNull(libraryEntries.deletedAt)];
   const folderConditions: SQL[] = [isNull(folders.deletedAt)];
@@ -308,8 +308,17 @@ export async function readDatabaseGalleryListing({
       ilike(libraryEntries.logicalPath, queryPattern),
       ilike(libraryEntries.filename, queryPattern),
     );
+    const folderQueryCondition = or(
+      ilike(folders.path, queryPattern),
+      ilike(folders.name, queryPattern),
+    );
+
     if (mediaQueryCondition) {
       mediaConditions.push(mediaQueryCondition);
+    }
+
+    if (folderQueryCondition) {
+      folderConditions.push(folderQueryCondition);
     }
   } else {
     folderConditions.push(eq(folders.parentPath, currentPath));

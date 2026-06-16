@@ -1,5 +1,5 @@
+import { buildBrowserEntries, buildComicEntries } from "@latch-works/media-domain";
 import { describe, expect, it } from "vitest";
-import { buildComicEntries } from "@latch-works/media-domain";
 import { buildMediaPage } from "./media-page";
 import { escapeLikePatternForTest, resolveMediaScope } from "./query-helpers";
 
@@ -59,6 +59,36 @@ describe("comic folder metadata", () => {
 
     expect(comics).toHaveLength(1);
     expect(comics[0]?.folderPath).toBe("sfw/parent/leaf");
+  });
+
+  it("places search folder hits before media entries", () => {
+    const entries = buildBrowserEntries({
+      folders: [
+        {
+          folderCount: 0,
+          hasChildren: true,
+          mediaCount: 0,
+          name: "patreon",
+          parentPath: "sfw",
+          path: "sfw/patreon",
+        },
+      ],
+      comics: [],
+      items: [],
+      recursive: false,
+      comicMode: false,
+      sortMode: "name-asc",
+    });
+
+    expect(entries).toEqual([
+      {
+        hasChildren: true,
+        key: "folder:sfw/patreon",
+        kind: "folder",
+        name: "patreon",
+        path: "sfw/patreon",
+      },
+    ]);
   });
 });
 
