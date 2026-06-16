@@ -2,7 +2,6 @@ import { GALLERY_THUMBNAIL_SIZE, PREVIEW_DERIVATIVE_SIZE } from "@latch-works/me
 import type { FolderNode } from "@latch-works/media-domain";
 import { getBaseName } from "@latch-works/media-domain";
 import { and, asc, eq, ilike, inArray, isNull, or, type SQL } from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
 import { db } from "../db";
 import { folders, libraryEntries, mediaObjects, thumbnails } from "../db/schema";
 import { buildDerivativeDeliveryUrl } from "../media/derivative-delivery-url";
@@ -10,8 +9,6 @@ import { logDerivativeEvent } from "../media/derivative-telemetry";
 import { buildMediaPage, type MediaPage } from "./media-page";
 import { escapeLikePattern, resolveMediaScope } from "./query-helpers";
 import type { LibraryMediaItem } from "./types";
-
-const previewThumbnails = alias(thumbnails, "preview_thumbnails");
 
 export type { LibraryMediaItem, MediaPage } from "./types";
 
@@ -83,7 +80,6 @@ export async function readDatabaseLibrarySnapshot({
       .select({
         entry: libraryEntries,
         object: mediaObjects,
-        preview: previewThumbnails,
         thumbnail: thumbnails,
       })
       .from(libraryEntries)
@@ -94,14 +90,6 @@ export async function readDatabaseLibrarySnapshot({
           eq(thumbnails.mediaObjectId, mediaObjects.id),
           eq(thumbnails.size, GALLERY_THUMBNAIL_SIZE),
           eq(thumbnails.status, "ready"),
-        ),
-      )
-      .leftJoin(
-        previewThumbnails,
-        and(
-          eq(previewThumbnails.mediaObjectId, mediaObjects.id),
-          eq(previewThumbnails.size, PREVIEW_DERIVATIVE_SIZE),
-          eq(previewThumbnails.status, "ready"),
         ),
       )
       .where(and(...mediaConditions))
@@ -133,12 +121,36 @@ export async function readDatabaseLibrarySnapshot({
 
   const { items: pageMediaRows, mediaPage } = buildMediaPage(mediaRows, limit, offset);
 
+  const previewRows =
+    pageMediaRows.length === 0
+      ? []
+      : await db
+          .select({
+            mediaObjectId: thumbnails.mediaObjectId,
+            objectKey: thumbnails.objectKey,
+          })
+          .from(thumbnails)
+          .where(
+            and(
+              inArray(
+                thumbnails.mediaObjectId,
+                pageMediaRows.map((row) => row.object.id),
+              ),
+              eq(thumbnails.size, PREVIEW_DERIVATIVE_SIZE),
+              eq(thumbnails.status, "ready"),
+            ),
+          );
+
+  const previewByObjectId = new Map(
+    previewRows.map((row) => [row.mediaObjectId, row.objectKey] as const),
+  );
+
   let embeddedReadyCount = 0;
   let embeddedPreviewCount = 0;
   let thumbnailEligibleCount = 0;
 
   const media = await Promise.all(
-    pageMediaRows.map(async ({ entry, object, preview, thumbnail }): Promise<LibraryMediaItem> => {
+    pageMediaRows.map(async ({ entry, object, thumbnail }): Promise<LibraryMediaItem> => {
       const item: LibraryMediaItem = {
         durationMs: object.durationMs ?? undefined,
         extension: object.extension,
@@ -167,8 +179,9 @@ export async function readDatabaseLibrarySnapshot({
           embeddedReadyCount += 1;
         }
 
-        if (preview) {
-          item.previewUrl = await buildDerivativeDeliveryUrl(preview.objectKey);
+        const previewObjectKey = previewByObjectId.get(object.id);
+        if (previewObjectKey) {
+          item.previewUrl = await buildDerivativeDeliveryUrl(previewObjectKey);
           embeddedPreviewCount += 1;
         }
       }
