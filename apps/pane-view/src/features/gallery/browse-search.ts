@@ -38,6 +38,10 @@ export function displayPathFromSearch(path: string | undefined): string {
   return path ?? "";
 }
 
+export function canUseFolderBrowseModes(path: string | undefined): boolean {
+  return displayPathFromSearch(path) !== "";
+}
+
 export function buildBreadcrumbItems(path: string): Array<{ label: string; path: string }> {
   if (!path) {
     return [{ label: "Archive root", path: "" }];

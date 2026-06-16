@@ -42,6 +42,7 @@ import {
 } from "@/features/gallery/batched-thumbnail-resolver";
 import {
   buildBreadcrumbItems,
+  canUseFolderBrowseModes,
   displayPathFromSearch,
   type GalleryBrowseSearch,
   getParentPath,
@@ -130,21 +131,23 @@ export function GalleryPage() {
     {},
   );
 
-  const effectiveRecursive = recursive || comicMode;
-  const recursiveToggleDisabled = displayPath === "";
+  const folderModesEnabled = canUseFolderBrowseModes(search.path);
+  const effectiveComicMode = folderModesEnabled && comicMode;
+  const effectiveRecursive = folderModesEnabled && (recursive || effectiveComicMode);
+  const recursiveToggleDisabled = !folderModesEnabled;
 
   const snapshotRequest = useMemo(
     () => ({
       ...toLibrarySnapshotRequest(search),
-      comicMode,
+      comicMode: effectiveComicMode,
       recursive: effectiveRecursive,
-      mediaLimit: comicMode ? undefined : 0,
+      mediaLimit: effectiveComicMode ? undefined : 0,
     }),
-    [comicMode, effectiveRecursive, search],
+    [effectiveComicMode, effectiveRecursive, search],
   );
   const listingRequest = useMemo(
     () => ({
-      comicMode,
+      comicMode: effectiveComicMode,
       path: search.path,
       query: search.q,
       recursive: effectiveRecursive,
@@ -154,7 +157,7 @@ export function GalleryPage() {
       sortMode,
     }),
     [
-      comicMode,
+      effectiveComicMode,
       effectiveRecursive,
       randomSeed,
       search.path,
@@ -164,9 +167,13 @@ export function GalleryPage() {
       sortMode,
     ],
   );
-  const usesServerListing = !comicMode;
+  const usesServerListing = !effectiveComicMode;
   const { data: library, isFetching } = useLibrarySnapshotQuery(snapshotRequest);
-  const { data: listing, isFetching: isListingFetching } = useGalleryListingQuery(listingRequest);
+  const {
+    data: listing,
+    isFetching: isListingFetching,
+    isPlaceholderData: isListingPlaceholderData,
+  } = useGalleryListingQuery(listingRequest);
   const showFetching = hydrated && (isFetching || (usesServerListing && isListingFetching));
 
   const listingBrowseKey = useMemo(
@@ -208,13 +215,18 @@ export function GalleryPage() {
       path?: string;
       q?: string;
       recursive?: boolean;
-    }): GalleryBrowseSearch => ({
-      comic: (patch.comic ?? comicMode) || undefined,
-      media: patch.media,
-      path: patch.path ?? displayPath,
-      q: patch.q ?? search.q,
-      recursive: (patch.recursive ?? recursive) || undefined,
-    }),
+    }): GalleryBrowseSearch => {
+      const nextPath = patch.path ?? displayPath;
+      const nextFolderModesEnabled = canUseFolderBrowseModes(nextPath);
+
+      return {
+        comic: nextFolderModesEnabled ? (patch.comic ?? comicMode) || undefined : undefined,
+        media: patch.media,
+        path: nextPath,
+        q: patch.q ?? search.q,
+        recursive: nextFolderModesEnabled ? (patch.recursive ?? recursive) || undefined : undefined,
+      };
+    },
     [comicMode, displayPath, recursive, search.q],
   );
 
@@ -263,7 +275,7 @@ export function GalleryPage() {
   }, [browseKey, library, usesServerListing]);
 
   useEffect(() => {
-    if (!listing || !usesServerListing) {
+    if (!listing || !usesServerListing || isListingPlaceholderData) {
       return;
     }
 
@@ -274,7 +286,7 @@ export function GalleryPage() {
       offset: 0,
     });
     setListingCursor(listing.page.cursor);
-  }, [listing, listingBrowseKey, usesServerListing]);
+  }, [isListingPlaceholderData, listing, listingBrowseKey, usesServerListing]);
 
   const allMedia = useMemo(() => {
     if (usesServerListing) {
@@ -311,7 +323,10 @@ export function GalleryPage() {
     if (displayPath === "" && recursive) {
       setRecursive(false);
     }
-  }, [displayPath, recursive]);
+    if (displayPath === "" && comicMode) {
+      setComicMode(false);
+    }
+  }, [comicMode, displayPath, recursive]);
 
   const sortedMedia = useMemo(
     () =>
@@ -343,7 +358,7 @@ export function GalleryPage() {
     [deletedEntryIds, visibleMedia],
   );
   const comics = useMemo(() => {
-    if (!comicMode || !library) {
+    if (!effectiveComicMode || !library) {
       return [];
     }
 
@@ -352,7 +367,7 @@ export function GalleryPage() {
       leafFoldersOnly: true,
     });
     return sortComicEntries(groupedComics, sortMode, randomSeed);
-  }, [comicMode, displayPath, library, randomSeed, sortMode, visibleMedia]);
+  }, [effectiveComicMode, displayPath, library, randomSeed, sortMode, visibleMedia]);
   const clientEntries = useMemo(
     () =>
       library
@@ -361,11 +376,11 @@ export function GalleryPage() {
             comics,
             items: visibleMedia,
             recursive: effectiveRecursive,
-            comicMode,
+            comicMode: effectiveComicMode,
             sortMode,
           })
         : [],
-    [comicMode, comics, effectiveRecursive, library, sortMode, visibleMedia],
+    [comics, effectiveComicMode, effectiveRecursive, library, sortMode, visibleMedia],
   );
   const listingEntries = useMemo(
     () => [...(listing?.entries ?? []), ...extraListingEntries],
@@ -466,11 +481,18 @@ export function GalleryPage() {
     }
 
     saveRootPreferences({
-      comicMode,
-      recursive,
+      comicMode: effectiveComicMode,
+      recursive: effectiveRecursive,
       sortMode,
     });
-  }, [comicMode, hasRestoredGalleryPrefs, hydrated, recursive, saveRootPreferences, sortMode]);
+  }, [
+    effectiveComicMode,
+    effectiveRecursive,
+    hasRestoredGalleryPrefs,
+    hydrated,
+    saveRootPreferences,
+    sortMode,
+  ]);
 
   useEffect(() => {
     if (!hydrated || !hasRestoredGalleryPrefs) {
@@ -499,7 +521,10 @@ export function GalleryPage() {
   useEffect(() => {
     const urlRecursive = search.recursive ?? false;
     const urlComic = search.comic ?? false;
-    if (urlRecursive === recursive && urlComic === comicMode) {
+    const nextRecursive = folderModesEnabled ? recursive : false;
+    const nextComic = folderModesEnabled ? comicMode : false;
+
+    if (urlRecursive === nextRecursive && urlComic === nextComic) {
       return;
     }
 
@@ -509,7 +534,15 @@ export function GalleryPage() {
       replace: true,
       resetScroll: false,
     });
-  }, [buildBrowseSearch, comicMode, navigate, recursive, search.comic, search.recursive]);
+  }, [
+    buildBrowseSearch,
+    comicMode,
+    folderModesEnabled,
+    navigate,
+    recursive,
+    search.comic,
+    search.recursive,
+  ]);
 
   // Keyboard shortcuts.
   useEffect(() => {
@@ -1157,7 +1190,7 @@ export function GalleryPage() {
         {library && (!usesServerListing || listing) ? (
           <GalleryBrowsePane
             columnCountRef={columnCountRef}
-            comicMode={comicMode}
+            comicMode={effectiveComicMode}
             deletedEntryIds={deletedEntryIds}
             deletingEntryIds={deletingEntryIds}
             entries={entries}
@@ -1192,7 +1225,7 @@ export function GalleryPage() {
       </div>
 
       <FloatingToolbar
-        comicMode={comicMode}
+        comicMode={effectiveComicMode}
         currentPath={displayPath}
         isRefreshing={showFetching}
         onChangeSortMode={setSortMode}
@@ -1225,7 +1258,7 @@ export function GalleryPage() {
             return next;
           });
         }}
-        recursive={recursive}
+        recursive={effectiveRecursive}
         recursiveDisabled={recursiveToggleDisabled}
         shuffle={shuffle}
         sortMode={sortMode}
@@ -1236,7 +1269,7 @@ export function GalleryPage() {
         onUpdate={updateSettings}
         onUpdateRecursiveDefault={setRecursive}
         open={settingsOpen}
-        recursiveDefault={recursive}
+        recursiveDefault={effectiveRecursive}
         settings={settings}
       />
 
