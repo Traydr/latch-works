@@ -30,6 +30,10 @@ Pane View is the **web counterpart** to [Frame View](../frame-view). It serves a
 | Media | `sharp`, `ffmpeg-static`, `pdfjs-dist` |
 | Shared libs | `@latch-works/media-domain`, `media-storage`, `media-delivery` |
 
+Pane View runs TanStack Start in SPA mode for browser page rendering. It still starts a
+server-backed Nitro process for auth, server functions, Lockstep sync APIs, media redirects,
+`/cdn/v1/*` delivery, and `/internal/optimizer/*` callbacks.
+
 ## Prerequisites
 
 - Node.js 22+
