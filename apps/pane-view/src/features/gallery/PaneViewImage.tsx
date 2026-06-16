@@ -10,7 +10,9 @@ type PaneViewImageProps = {
   mediaId: string;
   objectFit?: "contain" | "cover" | "fill" | "none" | "scale-down";
   priority?: boolean;
+  previewReadyUrl?: string;
   readyUrl?: string;
+  thumbnailReadyUrl?: string;
   variant?: "thumbnail" | "preview" | "original";
   width?: number;
 };
@@ -21,12 +23,22 @@ export function PaneViewImage({
   mediaId,
   objectFit,
   priority = false,
+  previewReadyUrl,
   readyUrl,
+  thumbnailReadyUrl,
   variant = "thumbnail",
 }: PaneViewImageProps) {
+  const resolvedReadyUrl =
+    variant === "thumbnail"
+      ? readyUrl ?? thumbnailReadyUrl
+      : variant === "preview"
+        ? readyUrl ?? previewReadyUrl
+        : undefined;
+
   const { failed, loading, resolvedUrl } = useResolvedMediaUrl({
+    fallbackReadyUrl: variant === "preview" ? thumbnailReadyUrl : undefined,
     mediaId,
-    readyUrl: variant === "thumbnail" ? readyUrl : undefined,
+    readyUrl: resolvedReadyUrl,
     // Gallery tiles use a single fixed size so generated derivatives always
     // match the size the snapshot embeds; preview/original ignore size.
     size: variant === "thumbnail" ? GALLERY_THUMBNAIL_SIZE : undefined,

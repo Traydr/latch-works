@@ -21,6 +21,7 @@ import {
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useViewerChromeIdle } from "@/hooks/use-viewer-chrome-idle";
 import { PaneViewImage } from "./PaneViewImage";
+import { readEmbeddedDeliveryUrls } from "./embedded-delivery-urls";
 import { useResolvedMediaUrl } from "./useResolvedMediaUrl";
 
 const PdfViewer = lazy(() =>
@@ -175,23 +176,6 @@ export function MediaViewerModal({
     };
   }, []);
 
-  useEffect(() => {
-    const prefetch = (targetIndex: number) => {
-      const target = items[targetIndex];
-      if (!target || target.mediaType === "video" || target.mediaType === "pdf") {
-        return;
-      }
-
-      const link = document.createElement("link");
-      link.rel = "prefetch";
-      link.href = `/api/media/${target.id}/preview`;
-      document.head.append(link);
-    };
-
-    prefetch(index + 1);
-    prefetch(index - 1);
-  }, [index, items]);
-
   const step = useCallback(
     (delta: number) => {
       setIndex((currentIndex) => {
@@ -341,6 +325,8 @@ export function MediaViewerModal({
           ? Math.round(duration * 1000)
           : undefined
       : undefined;
+
+  const embeddedDeliveryUrls = readEmbeddedDeliveryUrls(item);
 
   const details = [
     formatBytes(item.size),
@@ -635,6 +621,8 @@ export function MediaViewerModal({
             layout="fullWidth"
             mediaId={item.id}
             objectFit="contain"
+            previewReadyUrl={embeddedDeliveryUrls.previewUrl}
+            thumbnailReadyUrl={embeddedDeliveryUrls.thumbnailUrl}
             variant={showOriginal || item.mediaType !== "image" ? "original" : "preview"}
             width={960}
           />

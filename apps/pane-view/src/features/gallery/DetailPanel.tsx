@@ -12,6 +12,7 @@ import {
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { DeleteOverlay } from "./DeleteOverlay";
+import { readEmbeddedDeliveryUrls } from "./embedded-delivery-urls";
 import { MediaPlaceholder } from "./MediaPlaceholder";
 import { PaneViewImage } from "./PaneViewImage";
 
@@ -50,6 +51,7 @@ export function DetailPanel({
     selected?.mediaType === "image" ||
     selected?.mediaType === "gif" ||
     selected?.mediaType === "video";
+  const embeddedDeliveryUrls = selected ? readEmbeddedDeliveryUrls(selected) : undefined;
 
   const handleRegenerateThumbnail = async () => {
     if (!onRegenerateThumbnail || regenerating) {
@@ -81,6 +83,8 @@ export function DetailPanel({
                 layout="constrained"
                 mediaId={selected.id}
                 objectFit="cover"
+                previewReadyUrl={embeddedDeliveryUrls?.previewUrl}
+                thumbnailReadyUrl={embeddedDeliveryUrls?.thumbnailUrl}
                 variant="preview"
                 width={detailPreviewWidth}
               />

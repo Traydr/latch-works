@@ -10,23 +10,26 @@ import {
   recordResolveSuccess,
 } from "./resolve-throttle";
 
-const MAX_RETRIES = 12;
+const MAX_THUMBNAIL_RETRIES = 12;
+const MAX_PREVIEW_RETRIES = 30;
 
 export function useResolvedMediaUrl({
+  fallbackReadyUrl,
   mediaId,
   readyUrl,
   refreshKey = 0,
   size,
   variant,
 }: {
+  fallbackReadyUrl?: string;
   mediaId: string | undefined;
   readyUrl?: string;
   refreshKey?: number;
   size?: number;
   variant: "thumbnail" | "preview" | "original";
 }) {
-  const [resolvedUrl, setResolvedUrl] = useState<string | undefined>(readyUrl);
-  const [loading, setLoading] = useState(Boolean(mediaId) && !readyUrl);
+  const [resolvedUrl, setResolvedUrl] = useState<string | undefined>(readyUrl ?? fallbackReadyUrl);
+  const [loading, setLoading] = useState(Boolean(mediaId) && !readyUrl && !fallbackReadyUrl);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
@@ -48,12 +51,14 @@ export function useResolvedMediaUrl({
     }
 
     let cancelled = false;
-    setLoading(true);
+    setLoading(!fallbackReadyUrl);
     setFailed(false);
-    setResolvedUrl(undefined);
+    setResolvedUrl(fallbackReadyUrl);
+
+    const maxRetries = variant === "preview" ? MAX_PREVIEW_RETRIES : MAX_THUMBNAIL_RETRIES;
 
     void (async () => {
-      for (let attempt = 0; attempt < MAX_RETRIES; attempt += 1) {
+      for (let attempt = 0; attempt < maxRetries; attempt += 1) {
         if (cancelled) {
           return;
         }
@@ -84,24 +89,28 @@ export function useResolvedMediaUrl({
             return;
           }
 
-          recordResolveSuccess();
-          setResolvedUrl(result.url);
-          setLoading(false);
-          setFailed(false);
-          return;
-        } catch (error) {
+          if (result.pending) {
+            pending = true;
+            if (fallbackReadyUrl) {
+              setResolvedUrl(fallbackReadyUrl);
+              setLoading(false);
+            }
+          } else {
+            recordResolveSuccess();
+            setResolvedUrl(result.url);
+            setLoading(false);
+            setFailed(false);
+            return;
+          }
+        } catch {
           if (cancelled) {
             return;
           }
 
-          if (error instanceof Error && error.message === "Derivative pending") {
-            pending = true;
-          } else {
-            recordResolveFailure();
-            setFailed(true);
-            setLoading(false);
-            return;
-          }
+          recordResolveFailure();
+          setFailed(true);
+          setLoading(false);
+          return;
         } finally {
           release();
         }
@@ -112,15 +121,21 @@ export function useResolvedMediaUrl({
       }
 
       if (!cancelled) {
-        setFailed(true);
-        setLoading(false);
+        if (fallbackReadyUrl) {
+          setResolvedUrl(fallbackReadyUrl);
+          setLoading(false);
+          setFailed(false);
+        } else {
+          setFailed(true);
+          setLoading(false);
+        }
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [mediaId, readyUrl, refreshKey, size, variant]);
+  }, [fallbackReadyUrl, mediaId, readyUrl, refreshKey, size, variant]);
 
   return { failed, loading, resolvedUrl };
 }

@@ -1,4 +1,4 @@
-import { GALLERY_THUMBNAIL_SIZE } from "@latch-works/media-delivery";
+import { GALLERY_THUMBNAIL_SIZE, PREVIEW_DERIVATIVE_SIZE } from "@latch-works/media-delivery";
 import type { FolderNode } from "@latch-works/media-domain";
 import { getBaseName } from "@latch-works/media-domain";
 import { and, asc, eq, ilike, inArray, isNull, or, type SQL } from "drizzle-orm";
@@ -121,7 +121,32 @@ export async function readDatabaseLibrarySnapshot({
 
   const { items: pageMediaRows, mediaPage } = buildMediaPage(mediaRows, limit, offset);
 
+  const previewRows =
+    pageMediaRows.length === 0
+      ? []
+      : await db
+          .select({
+            mediaObjectId: thumbnails.mediaObjectId,
+            objectKey: thumbnails.objectKey,
+          })
+          .from(thumbnails)
+          .where(
+            and(
+              inArray(
+                thumbnails.mediaObjectId,
+                pageMediaRows.map((row) => row.object.id),
+              ),
+              eq(thumbnails.size, PREVIEW_DERIVATIVE_SIZE),
+              eq(thumbnails.status, "ready"),
+            ),
+          );
+
+  const previewByObjectId = new Map(
+    previewRows.map((row) => [row.mediaObjectId, row.objectKey] as const),
+  );
+
   let embeddedReadyCount = 0;
+  let embeddedPreviewCount = 0;
   let thumbnailEligibleCount = 0;
 
   const media = await Promise.all(
@@ -153,6 +178,12 @@ export async function readDatabaseLibrarySnapshot({
           item.thumbnailUrl = await buildDerivativeDeliveryUrl(thumbnail.objectKey);
           embeddedReadyCount += 1;
         }
+
+        const previewObjectKey = previewByObjectId.get(object.id);
+        if (previewObjectKey) {
+          item.previewUrl = await buildDerivativeDeliveryUrl(previewObjectKey);
+          embeddedPreviewCount += 1;
+        }
       }
 
       return item;
@@ -160,6 +191,7 @@ export async function readDatabaseLibrarySnapshot({
   );
 
   logDerivativeEvent("library.snapshot.thumbnail_embed", {
+    embeddedPreview: embeddedPreviewCount,
     embeddedReady: embeddedReadyCount,
     pageSize: media.length,
     pendingFallback: thumbnailEligibleCount - embeddedReadyCount,
