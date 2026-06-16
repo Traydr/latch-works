@@ -88,7 +88,12 @@ export async function readLibrarySnapshotRequest(
   const recursive = (data.recursive ?? false) || comicMode;
   const searchOffset = data.searchOffset ?? 0;
   const mediaOffset = query ? searchOffset : (data.mediaOffset ?? 0);
-  const mediaLimit = query ? SEARCH_RESULT_LIMIT : (data.mediaLimit ?? DEFAULT_MEDIA_PAGE_LIMIT);
+  const mediaLimit =
+    data.mediaLimit !== undefined
+      ? data.mediaLimit
+      : query
+        ? SEARCH_RESULT_LIMIT
+        : DEFAULT_MEDIA_PAGE_LIMIT;
   const { readDatabaseLibrarySnapshot } = await import("../../server/library/repository");
   const databaseSnapshot = await readDatabaseLibrarySnapshot({
     currentPath,
