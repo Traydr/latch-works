@@ -32,7 +32,7 @@ export const regenerateMediaThumbnail = createServerFn({ method: "POST" })
 
 export const resolveMediaDeliveryUrl = createServerFn({ method: "GET" })
   .inputValidator(resolveMediaDeliveryRequestSchema)
-  .handler(async ({ data }): Promise<{ url: string }> => {
+  .handler(async ({ data }) => {
     const { isCurrentWebSessionValid } = await import("../../server/auth/web-session");
     if (!(await isCurrentWebSessionValid())) {
       throw new Error("Unauthorized");
@@ -42,11 +42,9 @@ export const resolveMediaDeliveryUrl = createServerFn({ method: "GET" })
       "../../server/media/resolve-delivery-url"
     );
 
-    return {
-      url: await resolveMediaDeliveryUrlForVariant({
-        mediaId: data.mediaId,
-        size: data.size,
-        variant: data.variant,
-      }),
-    };
+    return resolveMediaDeliveryUrlForVariant({
+      mediaId: data.mediaId,
+      size: data.size,
+      variant: data.variant,
+    });
   });

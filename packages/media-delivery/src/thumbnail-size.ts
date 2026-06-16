@@ -10,6 +10,13 @@ export type ThumbnailSize = (typeof THUMBNAIL_SIZE_LADDER)[number];
  */
 export const GALLERY_THUMBNAIL_SIZE: ThumbnailSize = 320;
 
+/**
+ * Fixed size used for fullscreen/detail previews. The library snapshot can
+ * embed ready derivatives at this size, and `/api/media/:id/preview` always
+ * requests this ladder step.
+ */
+export const PREVIEW_DERIVATIVE_SIZE: ThumbnailSize = 960;
+
 export function snapThumbnailSize(requestedSize: number): ThumbnailSize {
   const normalized = Number.isFinite(requestedSize) && requestedSize > 0 ? requestedSize : 320;
 

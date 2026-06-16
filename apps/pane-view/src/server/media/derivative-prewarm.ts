@@ -1,4 +1,4 @@
-import { GALLERY_THUMBNAIL_SIZE } from "@latch-works/media-delivery";
+import { GALLERY_THUMBNAIL_SIZE, PREVIEW_DERIVATIVE_SIZE } from "@latch-works/media-delivery";
 import {
   buildDerivativeDescriptor,
   supportsDerivative,
@@ -47,20 +47,38 @@ export async function prewarmSyncRunDerivatives({
   const truncated = rows.length > PREWARM_SCAN_LIMIT;
   const cappedRows = truncated ? rows.slice(0, PREWARM_SCAN_LIMIT) : rows;
 
-  const values = cappedRows
-    .filter((row) => supportsDerivative(row.mediaType))
-    .map((row) => ({
-      height: 0,
-      mediaObjectId: row.mediaObjectId,
-      nextAttemptAt: null,
-      objectKey: buildDerivativeDescriptor(
-        { extension: row.extension, mediaType: row.mediaType, sha256: row.sha256 },
-        GALLERY_THUMBNAIL_SIZE,
-      ).objectKey,
-      size: GALLERY_THUMBNAIL_SIZE,
-      status: "pending" as const,
-      width: 0,
-    }));
+  const values = cappedRows.flatMap((row) => {
+    if (!supportsDerivative(row.mediaType)) {
+      return [];
+    }
+
+    const source = {
+      extension: row.extension,
+      mediaType: row.mediaType,
+      sha256: row.sha256,
+    };
+
+    return [
+      {
+        height: 0,
+        mediaObjectId: row.mediaObjectId,
+        nextAttemptAt: null,
+        objectKey: buildDerivativeDescriptor(source, GALLERY_THUMBNAIL_SIZE).objectKey,
+        size: GALLERY_THUMBNAIL_SIZE,
+        status: "pending" as const,
+        width: 0,
+      },
+      {
+        height: 0,
+        mediaObjectId: row.mediaObjectId,
+        nextAttemptAt: null,
+        objectKey: buildDerivativeDescriptor(source, PREVIEW_DERIVATIVE_SIZE).objectKey,
+        size: PREVIEW_DERIVATIVE_SIZE,
+        status: "pending" as const,
+        width: 0,
+      },
+    ];
+  });
 
   if (values.length === 0) {
     return;

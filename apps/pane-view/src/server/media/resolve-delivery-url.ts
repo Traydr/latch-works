@@ -11,6 +11,10 @@ import { logDerivativeEvent } from "./derivative-telemetry";
 import { readMediaDeliveryRequest, readMediaThumbnailContext } from "./repository";
 import { createPaneViewStorageClient } from "./storage-client";
 
+export type MediaDeliveryResolveResult =
+  | { pending: true }
+  | { pending: false; url: string };
+
 async function resolveOriginalDeliveryUrl(mediaId: string): Promise<string> {
   const media = await readMediaDeliveryRequest({ mediaId });
   if (!media) {
@@ -33,7 +37,7 @@ export async function resolveDerivativeDeliveryUrl({
   mediaId: string;
   size?: number;
   variant: "thumbnail" | "preview";
-}): Promise<string> {
+}): Promise<MediaDeliveryResolveResult> {
   const media = await readMediaThumbnailContext({ mediaId });
   if (!media) {
     throw new Error("Media not found");
@@ -56,18 +60,21 @@ export async function resolveDerivativeDeliveryUrl({
   });
 
   if (derivative.status === "pending") {
-    throw new Error("Derivative pending");
+    return { pending: true };
   }
 
   if (derivative.status === "failed" || derivative.status === "unsupported") {
     if (media.mediaType === "image" || media.mediaType === "gif") {
-      return resolveOriginalDeliveryUrl(mediaId);
+      return { pending: false, url: await resolveOriginalDeliveryUrl(mediaId) };
     }
 
     throw new Error("Derivative unavailable");
   }
 
-  return buildDerivativeDeliveryUrl(derivative.objectKey);
+  return {
+    pending: false,
+    url: await buildDerivativeDeliveryUrl(derivative.objectKey),
+  };
 }
 
 export async function resolveMediaDeliveryUrlForVariant({
@@ -78,9 +85,9 @@ export async function resolveMediaDeliveryUrlForVariant({
   mediaId: string;
   size?: number;
   variant: "thumbnail" | "preview" | "original";
-}): Promise<string> {
+}): Promise<MediaDeliveryResolveResult> {
   if (variant === "original") {
-    return resolveOriginalDeliveryUrl(mediaId);
+    return { pending: false, url: await resolveOriginalDeliveryUrl(mediaId) };
   }
 
   return resolveDerivativeDeliveryUrl({

@@ -1,4 +1,4 @@
-import { snapThumbnailSize } from "@latch-works/media-delivery";
+import { snapThumbnailSize, PREVIEW_DERIVATIVE_SIZE } from "@latch-works/media-delivery";
 import type { FfmpegRunner } from "@latch-works/media-derivatives";
 import {
   buildDerivativeDescriptor,
@@ -161,7 +161,7 @@ export async function ensurePreviewDerivative({
 }: {
   mediaId: string;
 }): Promise<ThumbnailEnsureResult> {
-  return ensureThumbnailDerivative({ mediaId, requestedSize: 960 });
+  return ensureThumbnailDerivative({ mediaId, requestedSize: PREVIEW_DERIVATIVE_SIZE });
 }
 
 export async function ensureThumbnailDerivative({

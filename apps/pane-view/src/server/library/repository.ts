@@ -1,7 +1,8 @@
-import { GALLERY_THUMBNAIL_SIZE } from "@latch-works/media-delivery";
+import { GALLERY_THUMBNAIL_SIZE, PREVIEW_DERIVATIVE_SIZE } from "@latch-works/media-delivery";
 import type { FolderNode } from "@latch-works/media-domain";
 import { getBaseName } from "@latch-works/media-domain";
 import { and, asc, eq, ilike, inArray, isNull, or, type SQL } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { db } from "../db";
 import { folders, libraryEntries, mediaObjects, thumbnails } from "../db/schema";
 import { buildDerivativeDeliveryUrl } from "../media/derivative-delivery-url";
@@ -9,6 +10,8 @@ import { logDerivativeEvent } from "../media/derivative-telemetry";
 import { buildMediaPage, type MediaPage } from "./media-page";
 import { escapeLikePattern, resolveMediaScope } from "./query-helpers";
 import type { LibraryMediaItem } from "./types";
+
+const previewThumbnails = alias(thumbnails, "preview_thumbnails");
 
 export type { LibraryMediaItem, MediaPage } from "./types";
 
@@ -80,6 +83,7 @@ export async function readDatabaseLibrarySnapshot({
       .select({
         entry: libraryEntries,
         object: mediaObjects,
+        preview: previewThumbnails,
         thumbnail: thumbnails,
       })
       .from(libraryEntries)
@@ -90,6 +94,14 @@ export async function readDatabaseLibrarySnapshot({
           eq(thumbnails.mediaObjectId, mediaObjects.id),
           eq(thumbnails.size, GALLERY_THUMBNAIL_SIZE),
           eq(thumbnails.status, "ready"),
+        ),
+      )
+      .leftJoin(
+        previewThumbnails,
+        and(
+          eq(previewThumbnails.mediaObjectId, mediaObjects.id),
+          eq(previewThumbnails.size, PREVIEW_DERIVATIVE_SIZE),
+          eq(previewThumbnails.status, "ready"),
         ),
       )
       .where(and(...mediaConditions))
@@ -122,10 +134,11 @@ export async function readDatabaseLibrarySnapshot({
   const { items: pageMediaRows, mediaPage } = buildMediaPage(mediaRows, limit, offset);
 
   let embeddedReadyCount = 0;
+  let embeddedPreviewCount = 0;
   let thumbnailEligibleCount = 0;
 
   const media = await Promise.all(
-    pageMediaRows.map(async ({ entry, object, thumbnail }): Promise<LibraryMediaItem> => {
+    pageMediaRows.map(async ({ entry, object, preview, thumbnail }): Promise<LibraryMediaItem> => {
       const item: LibraryMediaItem = {
         durationMs: object.durationMs ?? undefined,
         extension: object.extension,
@@ -153,6 +166,11 @@ export async function readDatabaseLibrarySnapshot({
           item.thumbnailUrl = await buildDerivativeDeliveryUrl(thumbnail.objectKey);
           embeddedReadyCount += 1;
         }
+
+        if (preview) {
+          item.previewUrl = await buildDerivativeDeliveryUrl(preview.objectKey);
+          embeddedPreviewCount += 1;
+        }
       }
 
       return item;
@@ -160,6 +178,7 @@ export async function readDatabaseLibrarySnapshot({
   );
 
   logDerivativeEvent("library.snapshot.thumbnail_embed", {
+    embeddedPreview: embeddedPreviewCount,
     embeddedReady: embeddedReadyCount,
     pageSize: media.length,
     pendingFallback: thumbnailEligibleCount - embeddedReadyCount,

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { snapThumbnailSize, THUMBNAIL_SIZE_LADDER } from "./thumbnail-size.js";
+import {
+  GALLERY_THUMBNAIL_SIZE,
+  PREVIEW_DERIVATIVE_SIZE,
+  snapThumbnailSize,
+  THUMBNAIL_SIZE_LADDER,
+} from "./thumbnail-size.js";
 
 describe("snapThumbnailSize", () => {
   it("snaps to the nearest ladder size", () => {
@@ -14,5 +19,10 @@ describe("snapThumbnailSize", () => {
 
   it("exposes the ladder", () => {
     expect(THUMBNAIL_SIZE_LADDER).toEqual([160, 320, 480, 640, 960]);
+  });
+
+  it("exposes fixed gallery and preview sizes", () => {
+    expect(GALLERY_THUMBNAIL_SIZE).toBe(320);
+    expect(PREVIEW_DERIVATIVE_SIZE).toBe(960);
   });
 });
