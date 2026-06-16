@@ -1,4 +1,4 @@
-import { GALLERY_THUMBNAIL_SIZE } from "@latch-works/media-delivery";
+import { GALLERY_THUMBNAIL_SIZE } from "@/features/gallery/gallery-thumbnail-size";
 import { cn } from "@/lib/utils";
 import { useResolvedMediaUrl } from "./useResolvedMediaUrl";
 
