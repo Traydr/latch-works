@@ -2,6 +2,8 @@
 
 Pane View owns the derivative queue (`thumbnails` rows, claim/complete/fail). The **media-optimizer** service (`apps/media-optimizer`) does CPU-heavy `sharp` / `ffmpeg` work and reports results back over authenticated internal HTTP routes.
 
+For a detailed walkthrough of the request flow, job claiming, S3 byte paths, and sharp/ffmpeg conversion, see [media-optimizer-internals.md](../media-optimizer-internals.md).
+
 ## Railway deploy
 
 1. Create a separate Railway service from `apps/media-optimizer` with **Serverless** enabled so Railpack installs Linux `sharp` and `ffmpeg-static` binaries.
