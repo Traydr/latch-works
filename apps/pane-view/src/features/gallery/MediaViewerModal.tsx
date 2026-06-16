@@ -20,8 +20,8 @@ import {
 } from "@/features/viewer/viewer-resume";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useViewerChromeIdle } from "@/hooks/use-viewer-chrome-idle";
-import { PaneViewImage } from "./PaneViewImage";
 import { readEmbeddedDeliveryUrls } from "./embedded-delivery-urls";
+import { PaneViewImage } from "./PaneViewImage";
 import { useResolvedMediaUrl } from "./useResolvedMediaUrl";
 
 const PdfViewer = lazy(() =>
