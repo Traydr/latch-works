@@ -1,38 +1,47 @@
 # Pane View Thumbnails and CDN Delivery
 
-Pane View owns the durable derivative queue (`thumbnails` rows) and signed delivery URLs. In `inline` mode Pane View can generate thumbnails and video posters itself; in `triggered` mode it enqueues pending rows and wakes the separate **media-optimizer** service to do CPU-heavy generation. Bytes are stored in the Railway bucket at content-addressed keys and served through **Railway CDN** via signed `/cdn/v1/:token` URLs.
+Pane View owns signed delivery URLs and the **Derivative Queue** for video posters (and future PDF covers). **Image** gallery tiles use Bunny Optimizer in production; local dev uses inline sharp derivatives.
 
-## Request flow
+## Image delivery (production)
+
+1. Library snapshots embed `thumbnailDeliveryToken` for images when `IMAGE_DELIVERY_MODE=bunny`.
+2. Gallery tiles render via `@unpic/react` with `cdn="bunny"`, building `https://{BUNNY_CDN_HOST}/lw/{token}?width=…`.
+3. Bunny fetches the Original through cdn-selector → pane-view `/cdn/v1/{token}` on cache miss.
+4. No derivative queue wait for images — tokens mint immediately.
+
+See [bunny-image-delivery.md](./bunny-image-delivery.md) for Bunny zone and cdn-selector setup.
+
+## Video / derivative delivery
 
 1. Library snapshots embed `thumbnailUrl` / `previewUrl` when a ready derivative row exists.
-2. Gallery tiles render embedded `/cdn/v1/...` URLs directly and do not call a per-tile resolver.
-3. Visible/near-visible gallery items without ready URLs are resolved through a bounded batched server function. Pending derivatives stay as placeholders while Pane View wakes the optimizer.
-4. `/api/media/.../thumbnail` and `/api/media/.../preview` remain session-gated compatibility routes. They snap `size` to the ladder (`160, 320, 480, 640, 960`) and return `503` while a derivative is pending.
-5. On success, derivative API routes return `302` to `/cdn/v1/{token}` with `Cache-Control: private, no-store`.
-6. The browser loads `/cdn/v1/{token}` without an `Authorization` header so Railway CDN can cache `image/webp` responses. CDN `Cache-Control` uses `public, max-age={MEDIA_DELIVERY_TTL_SECONDS}` so edge caching does not outlive the signed token.
+2. Visible items without embedded URLs resolve through batched `resolveMediaDeliveryUrls`.
+3. Pending video derivatives wake the **media-optimizer** worker (video-only) in triggered mode.
+4. Ready derivatives redirect to Railway CDN `/cdn/v1/{token}`.
 
-Full originals remain on `/api/media/:id/original` → S3 presigned URL (~60s) for video range performance.
+## API routes
 
-## Generation
+| Route | Behavior |
+| --- | --- |
+| `GET /api/media/:id/thumbnail` | Images (bunny): `302` to Bunny URL. Video: ensure derivative → `/cdn/v1/{token}` or `503` pending. |
+| `GET /api/media/:id/preview` | Video poster / future PDF cover |
+| `GET /api/media/:id/original` | Session-gated S3 presign (~60s) |
+| `GET /cdn/v1/:token` | HMAC token → stream Original or Derivative from S3 |
+
+## Generation (derivatives only)
 
 | Media | Tool | Storage key |
 | --- | --- | --- |
-| Image / GIF | `sharp` | `thumbnails/sha256/.../{hash}-{size}.webp` |
 | Video | `ffmpeg` poster + `sharp` | `previews/video/sha256/.../{hash}-{size}.webp` |
+| Image / GIF (inline dev only) | `sharp` | `thumbnails/sha256/.../{hash}-{size}.webp` |
 
-The derivative state machine is `pending` → `processing` → `ready` / `failed`. In triggered mode, Pane View creates or resets pending rows and the media optimizer leases rows with a processing token. Stale `processing` rows are reclaimable after the derivative lease window.
+Derivative state machine: `pending` → `processing` → `ready` / `failed`. The media-optimizer claims **video** rows only.
 
 ## Operations
 
-See [railway-cdn-pane-view.md](./railway-cdn-pane-view.md) for CDN enablement and `x-cache` verification. See [media-optimizer.md](./media-optimizer.md) for optimizer deployment, status endpoints, and queue diagnostics.
+- Railway CDN: [railway-cdn-pane-view.md](./railway-cdn-pane-view.md)
+- Bunny images: [bunny-image-delivery.md](./bunny-image-delivery.md)
+- Derivative worker: [media-optimizer.md](./media-optimizer.md)
 
-## Future options
+## Future
 
-Evaluated in [derivative-prewarm-and-workers.md](../derivative-prewarm-and-workers.md)
-(spike, 2026-06). Status:
-
-| Option | Status | Notes |
-| --- | --- | --- |
-| PDF cover previews (`previewObjectKey`, page 1 → WebP) | **Recommended next** | On-demand path; closes unsupported PDF gap |
-| Lockstep pre-warm for `320` after sync | Active for triggered mode | Same object keys, no URL changes |
-| Background worker | Active as `apps/media-optimizer` | Pane View owns queue state; optimizer owns CPU-heavy generation |
+PDF cover previews remain the recommended next derivative type. See [derivative-prewarm-and-workers.md](../derivative-prewarm-and-workers.md).

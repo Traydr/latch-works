@@ -391,42 +391,44 @@ sequenceDiagram
   participant B as Browser
   participant PV as Pane View
   participant DB as Postgres
-  participant CDN as Railway CDN
+  participant Bunny as Bunny CDN
+  participant CS as cdn-selector
+  participant RCDN as Railway CDN
   participant S3 as Object storage
   participant MO as Media Optimizer
 
   B->>PV: GET /?path=... (session cookie)
-  PV->>DB: folders + library_entries + thumbnails
-  PV-->>B: SSR gallery (thumbnailUrl when ready)
+  PV->>DB: folders + library_entries
+  PV-->>B: SSR gallery (thumbnailDeliveryToken for images)
 
-  B->>PV: resolveMediaDeliveryUrls (batched server fn)
-  PV->>DB: ensure pending derivatives
-  PV->>MO: wake /internal/optimizer/process
-  PV-->>B: ready CDN URLs or pending status
+  B->>PV: resolveMediaDeliveryUrls (batched, videos)
+  PV->>DB: ensure pending video derivatives
+  PV->>MO: wake optimizer
+  PV-->>B: ready Railway CDN URLs or pending
 
-  B->>CDN: GET /cdn/v1/{token}
-  alt cache hit
-    CDN-->>B: WebP bytes
-  else cache miss
-    CDN->>PV: GET /cdn/v1/{token}
-    PV->>S3: stream derivative
-    PV-->>CDN: 200 + immutable cache headers
-    CDN-->>B: WebP bytes
+  B->>Bunny: GET /lw/{token}?width=...
+  alt Bunny cache miss
+    Bunny->>CS: GET /lw/{token}
+    CS-->>Bunny: 302 pane-view/cdn/v1/{token}
+    Bunny->>PV: GET /cdn/v1/{token}
+    PV->>S3: stream Original
+    Bunny-->>Bunny: resize/WebP + cache
   end
+  Bunny-->>B: WebP tile
 
-  B->>PV: GET /api/media/:id/original
-  PV-->>B: 302 presigned S3 GET (~60s)
+  B->>RCDN: GET /cdn/v1/{token} (video poster)
+  RCDN-->>B: WebP derivative
 ```
 
 | Endpoint | Auth | Behavior |
 | --- | --- | --- |
 | `GET /api/media/:mediaId/original` | Session | Redirect to short-lived S3 presigned URL |
-| `GET /api/media/:mediaId/thumbnail?size=` | Session | Ensure derivative, redirect to `/cdn/v1/{token}` or `503` while pending |
+| `GET /api/media/:mediaId/thumbnail?size=` | Session | Images: redirect to Bunny. Video: derivative CDN URL or `503` pending |
 | `GET /api/media/:mediaId/preview?size=` | Session | Video poster / PDF cover variant |
-| `GET /cdn/v1/:token` | HMAC token | Stream derivative with long CDN cache headers |
+| `GET /cdn/v1/:token` | HMAC token | Stream Original or Derivative from S3 |
 | `resolveMediaDeliveryUrls` | Session (server fn) | Batched resolve for visible grid window (max 48 items) |
 
-Gallery tiles use batched resolution (`src/features/gallery/batched-thumbnail-resolver.ts`) rather than per-tile polling. The viewer loads originals via `/api/media/${id}/original`.
+Gallery tiles use batched resolution (`src/features/gallery/batched-thumbnail-resolver.ts`) for videos; images receive delivery tokens immediately. See [runbooks/bunny-image-delivery.md](./runbooks/bunny-image-delivery.md).
 
 ---
 

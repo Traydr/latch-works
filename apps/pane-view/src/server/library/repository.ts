@@ -2,10 +2,12 @@ import { GALLERY_THUMBNAIL_SIZE, PREVIEW_DERIVATIVE_SIZE } from "@latch-works/me
 import type { FolderNode } from "@latch-works/media-domain";
 import { getBaseName } from "@latch-works/media-domain";
 import { and, asc, eq, ilike, inArray, isNull, or, type SQL } from "drizzle-orm";
+import { resolveImageDeliveryMode } from "../../env/image-delivery";
 import { db } from "../db";
 import { folders, libraryEntries, mediaObjects, thumbnails } from "../db/schema";
 import { buildDerivativeDeliveryUrl } from "../media/derivative-delivery-url";
 import { logDerivativeEvent } from "../media/derivative-telemetry";
+import { mintImageOriginalDeliveryToken } from "../media/image-delivery";
 import { buildMediaPage, type MediaPage } from "./media-page";
 import { escapeLikePattern, resolveMediaScope } from "./query-helpers";
 import type { LibraryMediaItem } from "./types";
@@ -170,11 +172,21 @@ export async function readDatabaseLibrarySnapshot({
       if (supportsGalleryThumbnail(object.mediaType)) {
         thumbnailEligibleCount += 1;
 
-        // When the gallery-size derivative is already `ready`, embed its real
-        // delivery URL so the client renders directly without a per-tile
-        // `resolveMediaDeliveryUrl` server-function round-trip. Missing/pending
-        // derivatives leave `thumbnailUrl` undefined and fall back to polling.
-        if (thumbnail) {
+        // Bunny image delivery embeds an Original delivery token immediately.
+        // Inline/video paths still embed a ready derivative URL when available.
+        if (
+          (object.mediaType === "image" || object.mediaType === "gif") &&
+          resolveImageDeliveryMode() === "bunny"
+        ) {
+          item.thumbnailDeliveryToken = mintImageOriginalDeliveryToken({
+            extension: object.extension,
+            mediaObjectId: object.id,
+            mediaType: object.mediaType,
+            originalObjectKey: object.objectKey,
+            sha256: object.sha256,
+          });
+          embeddedReadyCount += 1;
+        } else if (thumbnail) {
           item.thumbnailUrl = await buildDerivativeDeliveryUrl(thumbnail.objectKey);
           embeddedReadyCount += 1;
         }

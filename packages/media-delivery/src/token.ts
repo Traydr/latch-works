@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-export type DeliveryPurpose = "thumbnail" | "preview";
+export type DeliveryPurpose = "thumbnail" | "preview" | "original";
 
 export interface DeliveryTokenPayload {
   exp: number;
@@ -80,7 +80,9 @@ function decodePayload(encodedPayload: string): DeliveryTokenPayload {
   if (
     typeof parsed.exp !== "number" ||
     typeof parsed.objectKey !== "string" ||
-    (parsed.purpose !== "thumbnail" && parsed.purpose !== "preview")
+    (parsed.purpose !== "thumbnail" &&
+      parsed.purpose !== "preview" &&
+      parsed.purpose !== "original")
   ) {
     throw new Error("Invalid delivery token payload");
   }

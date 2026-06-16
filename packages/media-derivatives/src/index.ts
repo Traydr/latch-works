@@ -3,6 +3,7 @@ export {
   DEFAULT_MAX_SOURCE_BYTES,
   type DerivativeDescriptor,
   supportsDerivative,
+  supportsInlineImageThumbnail,
 } from "./descriptor.js";
 export { generateDerivativeBytes } from "./generate.js";
 export { readWebpMetadata, resizeImageToWebp } from "./image.js";

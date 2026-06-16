@@ -1,6 +1,6 @@
 # Media Optimizer Service
 
-Pane View owns the derivative queue (`thumbnails` rows, claim/complete/fail). The **media-optimizer** service (`apps/media-optimizer`) does CPU-heavy `sharp` / `ffmpeg` work and reports results back over authenticated internal HTTP routes.
+Pane View owns the derivative queue (`thumbnails` rows, claim/complete/fail). The **media-optimizer** service (`apps/media-optimizer`) is a **video-only** derivative worker: it runs `ffmpeg` poster extraction and `sharp` WebP encoding for video previews. Image gallery tiles use Bunny Optimizer instead — see [bunny-image-delivery.md](./bunny-image-delivery.md).
 
 For a detailed walkthrough of the request flow, job claiming, S3 byte paths, and sharp/ffmpeg conversion, see [media-optimizer-internals.md](../media-optimizer-internals.md).
 

@@ -38,7 +38,7 @@ import { ComicReader } from "@/features/comics/ComicReader";
 import { BrowserGrid } from "@/features/gallery/BrowserGrid";
 import {
   type GalleryThumbnailRequest,
-  readCachedGalleryThumbnailUrls,
+  readCachedGalleryThumbnailState,
   resolveGalleryThumbnailsBatch,
 } from "@/features/gallery/batched-thumbnail-resolver";
 import {
@@ -127,6 +127,9 @@ export function GalleryPage() {
     GalleryThumbnailRequest[]
   >([]);
   const [resolvedThumbnailUrls, setResolvedThumbnailUrls] = useState<Record<string, string>>({});
+  const [resolvedThumbnailTokens, setResolvedThumbnailTokens] = useState<Record<string, string>>(
+    {},
+  );
 
   const browseKey = useMemo(
     () =>
@@ -190,7 +193,9 @@ export function GalleryPage() {
     setMediaPage(null);
     setLoadingMoreMedia(false);
     setWindowedThumbnailRequests([]);
-    setResolvedThumbnailUrls(readCachedGalleryThumbnailUrls());
+    const cached = readCachedGalleryThumbnailState();
+    setResolvedThumbnailUrls(cached.urls);
+    setResolvedThumbnailTokens(cached.deliveryTokens);
   }, [browseKey]);
 
   useEffect(() => {
@@ -848,7 +853,12 @@ export function GalleryPage() {
         }
 
         const media = entry.kind === "comic" ? entry.comic.cover : entry.media;
-        if (!supportsGalleryThumbnail(media) || media.thumbnailUrl) {
+        const embedded = media as LibraryMediaItem;
+        if (
+          !supportsGalleryThumbnail(media) ||
+          embedded.thumbnailUrl ||
+          embedded.thumbnailDeliveryToken
+        ) {
           return [];
         }
 
@@ -868,9 +878,10 @@ export function GalleryPage() {
 
     let cancelled = false;
     const timeoutId = window.setTimeout(() => {
-      void resolveGalleryThumbnailsBatch(windowedThumbnailRequests).then((urls) => {
+      void resolveGalleryThumbnailsBatch(windowedThumbnailRequests).then((resolved) => {
         if (!cancelled) {
-          setResolvedThumbnailUrls(urls);
+          setResolvedThumbnailUrls(resolved.urls);
+          setResolvedThumbnailTokens(resolved.deliveryTokens);
         }
       });
     }, 200);
@@ -1053,6 +1064,7 @@ export function GalleryPage() {
             onSelectEntry={handleSelectEntry}
             onWindowedEntriesChange={handleWindowedEntriesChange}
             randomSeed={randomSeed}
+            resolvedThumbnailTokens={resolvedThumbnailTokens}
             resolvedThumbnailUrls={resolvedThumbnailUrls}
             scrollFocusedIntoView={scrollFocusedIntoView}
             selected={selected}
@@ -1211,6 +1223,7 @@ interface GalleryBrowsePaneProps {
   onSelectEntry: (entry: BrowserEntry) => void;
   onWindowedEntriesChange: (entries: BrowserEntry[]) => void;
   randomSeed: number;
+  resolvedThumbnailTokens: Readonly<Record<string, string>>;
   resolvedThumbnailUrls: Readonly<Record<string, string>>;
   scrollFocusedIntoView: boolean;
   selected: MediaItem | null;
@@ -1243,6 +1256,7 @@ function GalleryBrowsePane({
   onSelectEntry,
   onWindowedEntriesChange,
   randomSeed,
+  resolvedThumbnailTokens,
   resolvedThumbnailUrls,
   scrollFocusedIntoView,
   selected,
@@ -1347,6 +1361,7 @@ function GalleryBrowsePane({
           onWindowedEntriesChange={onWindowedEntriesChange}
           scrollFocusedIntoView={scrollFocusedIntoView}
           selectedId={selectedId}
+          thumbnailDeliveryTokens={resolvedThumbnailTokens}
           thumbnailUrls={resolvedThumbnailUrls}
         />
 

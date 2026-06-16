@@ -16,6 +16,7 @@ const railwayServicePort = "8080";
 
 const paneViewPrivateUrl = `http://\${{Pane-View.RAILWAY_PRIVATE_DOMAIN}}:${railwayServicePort}`;
 const mediaOptimizerPrivateUrl = `http://\${{Media-Optimizer.RAILWAY_PRIVATE_DOMAIN}}:${railwayServicePort}`;
+const bunnyCdnHost = "cdn.latch-works.traydr.dev";
 
 const workspaceConfigWatchPatterns = ["/package.json", "/pnpm-lock.yaml", "/pnpm-workspace.yaml"];
 
@@ -105,8 +106,10 @@ export default defineRailway(() => {
     env: {
       BETTER_AUTH_SECRET: preserve(),
       BETTER_AUTH_URL: "https://pane-view.traydr.dev",
+      BUNNY_CDN_HOST: bunnyCdnHost,
       DATABASE_URL: "${{Postgres.DATABASE_URL}}",
       DERIVATIVE_PROCESSING_MODE: "triggered",
+      IMAGE_DELIVERY_MODE: "bunny",
       MEDIA_DELIVERY_SECRET: preserve(),
       MEDIA_DELIVERY_TTL_SECONDS: "86400",
       MEDIA_OPTIMIZER_TOKEN: MediaOptimizer.env.MEDIA_OPTIMIZER_TOKEN,
@@ -115,6 +118,8 @@ export default defineRailway(() => {
       PANE_VIEW_PASSWORD: preserve(),
       PANE_VIEW_SYNC_TOKEN: preserve(),
       PANE_VIEW_USERNAME: preserve(),
+      VITE_BUNNY_CDN_HOST: bunnyCdnHost,
+      VITE_IMAGE_DELIVERY_MODE: "bunny",
       ...s3Env,
     },
   });

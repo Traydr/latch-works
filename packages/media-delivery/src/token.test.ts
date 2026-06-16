@@ -42,6 +42,20 @@ describe("delivery token", () => {
     expect(signer.verify(token)).toBeNull();
   });
 
+  it("round-trips an original-purpose token", () => {
+    const token = signer.sign({
+      exp: Math.floor(Date.now() / 1000) + 3600,
+      objectKey: "originals/sha256/ab/cd/hash.jpg",
+      purpose: "original",
+    });
+
+    expect(signer.verify(token)).toEqual({
+      exp: expect.any(Number),
+      objectKey: "originals/sha256/ab/cd/hash.jpg",
+      purpose: "original",
+    });
+  });
+
   it("builds a CDN delivery path", () => {
     expect(buildCdnDeliveryPath("abc.def")).toBe("/cdn/v1/abc.def");
   });

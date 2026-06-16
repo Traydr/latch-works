@@ -9,7 +9,13 @@ export interface GalleryThumbnailRequest {
   size?: number;
 }
 
+export interface GalleryThumbnailResolveState {
+  deliveryTokens: Record<string, string>;
+  urls: Record<string, string>;
+}
+
 interface ThumbnailCacheEntry {
+  deliveryToken?: string;
   inFlight: boolean;
   nextRetryAt?: number;
   status: "failed" | "pending" | "ready";
@@ -42,6 +48,7 @@ function applyResult(result: MediaDeliveryBatchResult): void {
   if (result.status === "ready") {
     attempts.delete(key);
     cache.set(key, {
+      deliveryToken: result.deliveryToken,
       status: "ready",
       url: result.url,
       inFlight: false,
@@ -61,23 +68,35 @@ function applyResult(result: MediaDeliveryBatchResult): void {
   cache.set(key, { inFlight: false, status: "failed" });
 }
 
-export function readCachedGalleryThumbnailUrls(): Record<string, string> {
+export function readCachedGalleryThumbnailState(): GalleryThumbnailResolveState {
   const urls: Record<string, string> = {};
+  const deliveryTokens: Record<string, string> = {};
+
   for (const [key, entry] of cache) {
-    if (entry.status === "ready" && entry.url) {
-      const mediaId = key.split(":")[0];
-      if (mediaId) {
-        urls[mediaId] = entry.url;
-      }
+    if (entry.status !== "ready") {
+      continue;
+    }
+
+    const mediaId = key.split(":")[0];
+    if (!mediaId) {
+      continue;
+    }
+
+    if (entry.url) {
+      urls[mediaId] = entry.url;
+    }
+
+    if (entry.deliveryToken) {
+      deliveryTokens[mediaId] = entry.deliveryToken;
     }
   }
 
-  return urls;
+  return { deliveryTokens, urls };
 }
 
 export async function resolveGalleryThumbnailsBatch(
   requests: GalleryThumbnailRequest[],
-): Promise<Record<string, string>> {
+): Promise<GalleryThumbnailResolveState> {
   const now = Date.now();
   const uniqueRequests = new Map<string, GalleryThumbnailRequest>();
 
@@ -97,7 +116,7 @@ export async function resolveGalleryThumbnailsBatch(
 
   const batch = [...uniqueRequests.entries()].slice(0, 48);
   if (batch.length === 0) {
-    return readCachedGalleryThumbnailUrls();
+    return readCachedGalleryThumbnailState();
   }
 
   for (const [key] of batch) {
@@ -129,7 +148,7 @@ export async function resolveGalleryThumbnailsBatch(
     }
   }
 
-  return readCachedGalleryThumbnailUrls();
+  return readCachedGalleryThumbnailState();
 }
 
 export function __resetGalleryThumbnailResolverForTests(): void {

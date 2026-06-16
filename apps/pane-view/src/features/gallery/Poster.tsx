@@ -1,4 +1,5 @@
 import type { MediaItem } from "@latch-works/media-domain";
+import type { LibraryMediaItem } from "@/server/library/types";
 import { cn } from "@/lib/utils";
 import { MediaPlaceholder } from "./MediaPlaceholder";
 import { PaneViewImage } from "./PaneViewImage";
@@ -7,13 +8,16 @@ export function Poster({
   cardWidth = 220,
   media,
   priority = false,
+  resolvedThumbnailDeliveryToken,
   resolvedThumbnailUrl,
 }: {
   cardWidth?: number;
   media: MediaItem;
   priority?: boolean;
+  resolvedThumbnailDeliveryToken?: string;
   resolvedThumbnailUrl?: string;
 }) {
+  const libraryMedia = media as LibraryMediaItem;
   const supportsThumbnail =
     media.mediaType === "image" || media.mediaType === "gif" || media.mediaType === "video";
 
@@ -33,8 +37,11 @@ export function Poster({
           mediaId={media.id}
           objectFit="cover"
           priority={priority}
-          readyUrl={media.thumbnailUrl ?? resolvedThumbnailUrl}
+          readyUrl={libraryMedia.thumbnailUrl ?? resolvedThumbnailUrl}
           resolveMissing={false}
+          thumbnailDeliveryToken={
+            libraryMedia.thumbnailDeliveryToken ?? resolvedThumbnailDeliveryToken
+          }
           variant="thumbnail"
           width={cardWidth}
         />

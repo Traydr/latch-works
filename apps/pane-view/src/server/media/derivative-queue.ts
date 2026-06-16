@@ -64,14 +64,17 @@ export async function claimDerivativeJobs({
         status: thumbnails.status,
       })
       .from(thumbnails)
+      .innerJoin(mediaObjects, eq(thumbnails.mediaObjectId, mediaObjects.id))
       .where(
-        or(
-          and(
-            eq(thumbnails.status, "pending"),
-            or(isNull(thumbnails.nextAttemptAt), lte(thumbnails.nextAttemptAt, now)),
+        and(
+          eq(mediaObjects.mediaType, "video"),
+          or(
+            and(
+              eq(thumbnails.status, "pending"),
+              or(isNull(thumbnails.nextAttemptAt), lte(thumbnails.nextAttemptAt, now)),
+            ),
+            and(eq(thumbnails.status, "processing"), lte(thumbnails.updatedAt, leaseExpiry)),
           ),
-          // Reclaim crashed/timed-out runs whose processing lease has expired.
-          and(eq(thumbnails.status, "processing"), lte(thumbnails.updatedAt, leaseExpiry)),
         ),
       )
       .orderBy(...claimOrderBy())

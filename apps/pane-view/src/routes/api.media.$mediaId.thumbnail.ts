@@ -1,6 +1,8 @@
 import { snapThumbnailSize } from "@latch-works/media-delivery";
 import { createFileRoute } from "@tanstack/react-router";
+import { resolveImageDeliveryMode } from "../env/image-delivery";
 import { isRequestSessionValid } from "../server/auth/web-session-core";
+import { redirectImageToBunnyThumbnail } from "../server/media/bunny-delivery";
 import { API_PRIVATE_CACHE_CONTROL } from "../server/media/cdn-delivery";
 import { redirectToCdnDelivery } from "../server/media/delivery-redirect";
 import { ensureThumbnailDerivative } from "../server/media/derivative-service";
@@ -28,6 +30,14 @@ export const Route = createFileRoute("/api/media/$mediaId/thumbnail")({
         }
 
         const size = snapThumbnailSize(readThumbnailSize(request));
+
+        if (
+          (media.mediaType === "image" || media.mediaType === "gif") &&
+          resolveImageDeliveryMode() === "bunny"
+        ) {
+          return redirectImageToBunnyThumbnail({ mediaId: params.mediaId, size });
+        }
+
         const result = await ensureThumbnailDerivative({
           mediaId: params.mediaId,
           requestedSize: size,

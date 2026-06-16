@@ -20,11 +20,12 @@ type ResolveInput = {
 };
 
 type ResolveOutcome =
-  | { status: "ready"; url: string }
+  | { deliveryToken?: string; status: "ready"; url?: string }
   | { retryAfterMs: number; status: "pending" }
   | { status: "failed" };
 
 type ResolveCacheEntry = {
+  deliveryToken?: string;
   inFlight?: Promise<ResolveOutcome>;
   nextRetryAt?: number;
   pendingAttempt: number;
@@ -56,8 +57,8 @@ async function resolveSharedMediaUrl(input: ResolveInput): Promise<ResolveOutcom
   const entry = resolveCache.get(key) ?? { pendingAttempt: 0 };
   resolveCache.set(key, entry);
 
-  if (entry.url) {
-    return { status: "ready", url: entry.url };
+  if (entry.url || entry.deliveryToken) {
+    return { deliveryToken: entry.deliveryToken, status: "ready", url: entry.url };
   }
 
   if (entry.inFlight) {
@@ -90,9 +91,10 @@ async function resolveSharedMediaUrl(input: ResolveInput): Promise<ResolveOutcom
 
       recordResolveSuccess();
       entry.url = result.url;
+      entry.deliveryToken = result.deliveryToken;
       entry.nextRetryAt = undefined;
       entry.pendingAttempt = 0;
-      return { status: "ready", url: result.url };
+      return { deliveryToken: result.deliveryToken, status: "ready", url: result.url };
     } catch {
       recordResolveFailure();
       return { status: "failed" };
@@ -106,6 +108,7 @@ async function resolveSharedMediaUrl(input: ResolveInput): Promise<ResolveOutcom
 }
 
 export function useResolvedMediaUrl({
+  deliveryToken: readyDeliveryToken,
   fallbackReadyUrl,
   mediaId,
   readyUrl,
@@ -113,6 +116,7 @@ export function useResolvedMediaUrl({
   size,
   variant,
 }: {
+  deliveryToken?: string;
   fallbackReadyUrl?: string;
   mediaId: string | undefined;
   readyUrl?: string;
@@ -120,23 +124,35 @@ export function useResolvedMediaUrl({
   size?: number;
   variant: "thumbnail" | "preview" | "original";
 }) {
+  const [resolvedDeliveryToken, setResolvedDeliveryToken] = useState<string | undefined>(
+    readyDeliveryToken,
+  );
   const [resolvedUrl, setResolvedUrl] = useState<string | undefined>(readyUrl ?? fallbackReadyUrl);
-  const [loading, setLoading] = useState(Boolean(mediaId) && !readyUrl && !fallbackReadyUrl);
+  const [loading, setLoading] = useState(
+    Boolean(mediaId) && !readyUrl && !fallbackReadyUrl && !readyDeliveryToken,
+  );
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     if (!mediaId) {
+      setResolvedDeliveryToken(undefined);
       setResolvedUrl(undefined);
       setLoading(false);
       setFailed(false);
       return;
     }
 
-    // Snapshot already provided a ready delivery URL: render directly and skip
-    // the server-function round-trip entirely. This is the common case and the
-    // primary fix for the gallery request storm.
+    if (readyDeliveryToken) {
+      setResolvedDeliveryToken(readyDeliveryToken);
+      setResolvedUrl(readyUrl);
+      setLoading(false);
+      setFailed(false);
+      return;
+    }
+
     if (readyUrl) {
       setResolvedUrl(readyUrl);
+      setResolvedDeliveryToken(undefined);
       setLoading(false);
       setFailed(false);
       return;
@@ -146,6 +162,7 @@ export function useResolvedMediaUrl({
     setLoading(!fallbackReadyUrl);
     setFailed(false);
     setResolvedUrl(fallbackReadyUrl);
+    setResolvedDeliveryToken(undefined);
 
     void (async () => {
       for (let attempt = 0; attempt < maxPendingPollsForVariant(variant); attempt += 1) {
@@ -160,6 +177,7 @@ export function useResolvedMediaUrl({
         }
 
         if (result.status === "ready") {
+          setResolvedDeliveryToken(result.deliveryToken);
           setResolvedUrl(result.url);
           setLoading(false);
           setFailed(false);
@@ -196,9 +214,9 @@ export function useResolvedMediaUrl({
     return () => {
       cancelled = true;
     };
-  }, [fallbackReadyUrl, mediaId, readyUrl, refreshKey, size, variant]);
+  }, [fallbackReadyUrl, mediaId, readyDeliveryToken, readyUrl, refreshKey, size, variant]);
 
-  return { failed, loading, resolvedUrl };
+  return { deliveryToken: resolvedDeliveryToken, failed, loading, resolvedUrl };
 }
 
 export function __resetResolvedMediaUrlCacheForTests(): void {

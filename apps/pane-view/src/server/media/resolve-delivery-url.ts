@@ -1,5 +1,6 @@
 import { snapThumbnailSize } from "@latch-works/media-delivery";
 import { createSignedGetUrl } from "@latch-works/media-storage";
+import { resolveImageDeliveryMode } from "../../env/image-delivery";
 import { planSignedOriginalDelivery } from "./delivery";
 import { buildDerivativeDeliveryUrl } from "./derivative-delivery-url";
 import {
@@ -8,12 +9,19 @@ import {
   regenerateThumbnailDerivative,
 } from "./derivative-service";
 import { logDerivativeEvent } from "./derivative-telemetry";
+import { mintImageOriginalDeliveryToken } from "./image-delivery";
 import { readMediaDeliveryRequest, readMediaThumbnailContext } from "./repository";
 import { createPaneViewStorageClient } from "./storage-client";
 
-export type MediaDeliveryResolveResult = { pending: true } | { pending: false; url: string };
+export type MediaDeliveryResolveResult =
+  | { pending: true }
+  | { pending: false; deliveryToken?: string; url?: string };
 
 let readyResolveLogCount = 0;
+
+function isImageMediaType(mediaType: string): boolean {
+  return mediaType === "image" || mediaType === "gif";
+}
 
 async function resolveOriginalDeliveryUrl(mediaId: string): Promise<string> {
   const media = await readMediaDeliveryRequest({ mediaId });
@@ -29,7 +37,33 @@ async function resolveOriginalDeliveryUrl(mediaId: string): Promise<string> {
   });
 }
 
-export async function resolveDerivativeDeliveryUrl({
+async function resolveImageThumbnailDelivery({
+  mediaId,
+  size,
+}: {
+  mediaId: string;
+  size?: number;
+}): Promise<MediaDeliveryResolveResult> {
+  const media = await readMediaThumbnailContext({ mediaId });
+  if (!media) {
+    throw new Error("Media not found");
+  }
+
+  if (resolveImageDeliveryMode() === "bunny") {
+    return {
+      deliveryToken: mintImageOriginalDeliveryToken(media),
+      pending: false,
+    };
+  }
+
+  return resolveQueuedDerivativeDeliveryUrl({
+    mediaId,
+    size,
+    variant: "thumbnail",
+  });
+}
+
+async function resolveQueuedDerivativeDeliveryUrl({
   mediaId,
   size,
   variant,
@@ -70,7 +104,7 @@ export async function resolveDerivativeDeliveryUrl({
   }
 
   if (derivative.status === "failed" || derivative.status === "unsupported") {
-    if (media.mediaType === "image" || media.mediaType === "gif") {
+    if (isImageMediaType(media.mediaType)) {
       return { pending: false, url: await resolveOriginalDeliveryUrl(mediaId) };
     }
 
@@ -81,6 +115,33 @@ export async function resolveDerivativeDeliveryUrl({
     pending: false,
     url: await buildDerivativeDeliveryUrl(derivative.objectKey),
   };
+}
+
+export async function resolveDerivativeDeliveryUrl({
+  mediaId,
+  size,
+  variant,
+}: {
+  mediaId: string;
+  size?: number;
+  variant: "thumbnail" | "preview";
+}): Promise<MediaDeliveryResolveResult> {
+  if (variant === "thumbnail") {
+    const media = await readMediaThumbnailContext({ mediaId });
+    if (!media) {
+      throw new Error("Media not found");
+    }
+
+    if (isImageMediaType(media.mediaType)) {
+      return resolveImageThumbnailDelivery({ mediaId, size });
+    }
+  }
+
+  return resolveQueuedDerivativeDeliveryUrl({
+    mediaId,
+    size,
+    variant,
+  });
 }
 
 export async function resolveMediaDeliveryUrlForVariant({
@@ -110,6 +171,15 @@ export async function regenerateMediaThumbnailDerivative({
   mediaId: string;
   size?: number;
 }): Promise<{ status: string }> {
+  const media = await readMediaThumbnailContext({ mediaId });
+  if (!media) {
+    return { status: "failed" };
+  }
+
+  if (isImageMediaType(media.mediaType) && resolveImageDeliveryMode() === "bunny") {
+    return { status: "unsupported" };
+  }
+
   const result = await regenerateThumbnailDerivative({
     mediaId,
     requestedSize: snapThumbnailSize(size ?? 320),

@@ -18,7 +18,14 @@ const regenerateMediaThumbnailSchema = z.object({
 
 export type MediaDeliveryBatchResult =
   | { mediaId: string; retryAfterMs: number; size?: number; status: "pending"; variant: string }
-  | { mediaId: string; size?: number; status: "ready"; url: string; variant: string }
+  | {
+      deliveryToken?: string;
+      mediaId: string;
+      size?: number;
+      status: "ready";
+      url?: string;
+      variant: string;
+    }
   | { mediaId: string; size?: number; status: "failed"; variant: string };
 
 export const regenerateMediaThumbnail = createServerFn({ method: "POST" })
@@ -105,6 +112,7 @@ export const resolveMediaDeliveryUrls = createServerFn({ method: "POST" })
           }
 
           return {
+            deliveryToken: result.deliveryToken,
             mediaId: item.mediaId,
             size: item.size,
             status: "ready",

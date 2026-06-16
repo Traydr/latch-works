@@ -8,6 +8,20 @@ import { env } from "../../env/server";
 
 const deliverySigner = createDeliveryTokenSigner(env.MEDIA_DELIVERY_SECRET);
 
+function mintDeliveryToken({
+  objectKey,
+  purpose,
+}: {
+  objectKey: string;
+  purpose: DeliveryPurpose;
+}): string {
+  return deliverySigner.sign({
+    exp: readDeliveryTokenExpiration(Math.floor(Date.now() / 1000), env.MEDIA_DELIVERY_TTL_SECONDS),
+    objectKey,
+    purpose,
+  });
+}
+
 export function buildSignedCdnDeliveryUrl({
   objectKey,
   purpose,
@@ -15,13 +29,11 @@ export function buildSignedCdnDeliveryUrl({
   objectKey: string;
   purpose: DeliveryPurpose;
 }): string {
-  const token = deliverySigner.sign({
-    exp: readDeliveryTokenExpiration(Math.floor(Date.now() / 1000), env.MEDIA_DELIVERY_TTL_SECONDS),
-    objectKey,
-    purpose,
-  });
+  return buildCdnDeliveryPath(mintDeliveryToken({ objectKey, purpose }));
+}
 
-  return buildCdnDeliveryPath(token);
+export function mintOriginalDeliveryToken(objectKey: string): string {
+  return mintDeliveryToken({ objectKey, purpose: "original" });
 }
 
 export function verifyCdnDeliveryToken(token: string) {

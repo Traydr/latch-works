@@ -3,6 +3,7 @@ import type { FfmpegRunner } from "@latch-works/media-derivatives";
 import {
   buildDerivativeDescriptor,
   supportsDerivative,
+  supportsInlineImageThumbnail,
 } from "@latch-works/media-derivatives/descriptor";
 import {
   deleteStoredObject,
@@ -12,6 +13,7 @@ import {
 } from "@latch-works/media-storage";
 import { and, eq } from "drizzle-orm";
 import { resolveDerivativeProcessingMode } from "../../env/server";
+import { resolveImageDeliveryMode } from "../../env/image-delivery";
 import { db } from "../db";
 import { thumbnails } from "../db/schema";
 import { createConcurrencyLimiter } from "./concurrency-limiter";
@@ -71,7 +73,10 @@ export async function invalidateThumbnailDerivatives({
     return { status: "not_found" };
   }
 
-  if (!supportsDerivative(context.mediaType)) {
+  if (
+    !supportsDerivative(context.mediaType) &&
+    !supportsInlineImageThumbnail(context.mediaType)
+  ) {
     return { status: "unsupported" };
   }
 
@@ -181,7 +186,14 @@ export async function ensureThumbnailDerivative({
     return { status: "failed" };
   }
 
-  if (!supportsDerivative(context.mediaType)) {
+  if (!supportsDerivative(context.mediaType) && !supportsInlineImageThumbnail(context.mediaType)) {
+    return { status: "unsupported" };
+  }
+
+  if (
+    supportsInlineImageThumbnail(context.mediaType) &&
+    resolveImageDeliveryMode() === "bunny"
+  ) {
     return { status: "unsupported" };
   }
 

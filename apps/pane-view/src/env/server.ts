@@ -27,9 +27,16 @@ export const env = createEnv({
     MEDIA_OPTIMIZER_TOKEN: z.string().min(16).optional(),
     // Base URL of the media-optimizer service used to wake it on demand.
     MEDIA_OPTIMIZER_URL: z.url().optional(),
+    // Bunny CDN hostname for image delivery (e.g. img.example.com).
+    BUNNY_CDN_HOST: z.string().min(1).optional(),
+    // Image delivery: "bunny" (edge resize from Originals) or "inline" (local sharp).
+    IMAGE_DELIVERY_MODE: z.enum(["bunny", "inline"]).optional(),
   },
   clientPrefix: "VITE_",
-  client: {},
+  client: {
+    VITE_BUNNY_CDN_HOST: z.string().min(1).optional(),
+    VITE_IMAGE_DELIVERY_MODE: z.enum(["bunny", "inline"]).optional(),
+  },
   runtimeEnv: process.env,
   skipValidation: typeof process !== "undefined" && Boolean(process.env.SKIP_ENV_VALIDATION),
   emptyStringAsUndefined: true,

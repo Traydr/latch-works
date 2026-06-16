@@ -49,15 +49,15 @@ import { processBatch } from "./processor.js";
 function makeJob(index: number) {
   return {
     attemptCount: 0,
-    extension: "jpg",
+    extension: "mp4",
     mediaObjectId: `obj-${index}`,
-    mediaType: "image" as const,
-    objectKey: `thumbnails/obj-${index}-320.webp`,
-    originalObjectKey: `originals/obj-${index}.jpg`,
+    mediaType: "video" as const,
+    objectKey: `previews/video/obj-${index}-320.webp`,
+    originalObjectKey: `originals/obj-${index}.mp4`,
     priorityAt: "2026-06-16T12:00:00.000Z",
     queuePriority: index % 2 === 0 ? 300 : 200,
     queueSource: "on-demand" as const,
-    queueVariant: index % 2 === 0 ? ("preview" as const) : ("thumbnail" as const),
+    queueVariant: "preview" as const,
     sha256: "a".repeat(64),
     size: 320,
   };
@@ -96,7 +96,7 @@ describe("processBatch", () => {
 
     expect(mocks.generateDerivativeBytes).toHaveBeenCalledTimes(1);
     expect(mocks.putStoredObject).toHaveBeenCalledWith(
-      expect.objectContaining({ contentType: "image/webp", key: "thumbnails/obj-0-320.webp" }),
+      expect.objectContaining({ contentType: "image/webp", key: "previews/video/obj-0-320.webp" }),
     );
     expect(mocks.reportComplete).toHaveBeenCalledWith(
       expect.objectContaining({ height: 200, processingToken: "token-1", width: 240 }),
@@ -180,5 +180,26 @@ describe("processBatch", () => {
       expect.objectContaining({ height: 180, processingToken: "token-1", width: 220 }),
     );
     expect(result).toEqual(expect.objectContaining({ failed: 0, processed: 1, succeeded: 1 }));
+  });
+
+  it("rejects non-video jobs without generating derivatives", async () => {
+    mocks.claimJobs.mockResolvedValueOnce({
+      jobs: [{ ...makeJob(0), mediaType: "image" as const }],
+      processingToken: "token-1",
+    }).mockResolvedValue({
+      jobs: [],
+      processingToken: "token-empty",
+    });
+
+    const result = await processBatch();
+
+    expect(mocks.generateDerivativeBytes).not.toHaveBeenCalled();
+    expect(mocks.reportFailure).toHaveBeenCalledWith(
+      expect.objectContaining({
+        error: "derivative worker only processes video media",
+        mediaObjectId: "obj-0",
+      }),
+    );
+    expect(result).toEqual(expect.objectContaining({ failed: 1, processed: 1, succeeded: 0 }));
   });
 });

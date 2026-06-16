@@ -622,6 +622,7 @@ export function MediaViewerModal({
             mediaId={item.id}
             objectFit="contain"
             previewReadyUrl={embeddedDeliveryUrls.previewUrl}
+            thumbnailDeliveryToken={embeddedDeliveryUrls.thumbnailDeliveryToken}
             thumbnailReadyUrl={embeddedDeliveryUrls.thumbnailUrl}
             variant={showOriginal || item.mediaType !== "image" ? "original" : "preview"}
             width={960}

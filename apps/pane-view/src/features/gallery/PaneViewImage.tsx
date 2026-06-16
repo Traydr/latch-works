@@ -1,4 +1,9 @@
+import { Image } from "@unpic/react";
 import { GALLERY_THUMBNAIL_SIZE } from "@/features/gallery/gallery-thumbnail-size";
+import {
+  buildBunnyLwImageSrc,
+  readClientImageDeliveryMode,
+} from "@/env/image-delivery-client";
 import { cn } from "@/lib/utils";
 import { useResolvedMediaUrl } from "./useResolvedMediaUrl";
 
@@ -13,22 +18,35 @@ type PaneViewImageProps = {
   previewReadyUrl?: string;
   readyUrl?: string;
   resolveMissing?: boolean;
+  thumbnailDeliveryToken?: string;
   thumbnailReadyUrl?: string;
   variant?: "thumbnail" | "preview" | "original";
   width?: number;
 };
 
+function resolveThumbnailPixelSize(width?: number): number {
+  if (width && width > 0) {
+    return Math.max(1, Math.round(width * (typeof window !== "undefined" ? window.devicePixelRatio : 1)));
+  }
+
+  return GALLERY_THUMBNAIL_SIZE;
+}
+
 export function PaneViewImage({
   alt,
   className,
+  height,
+  layout = "constrained",
   mediaId,
   objectFit,
   priority = false,
   previewReadyUrl,
   readyUrl,
   resolveMissing = true,
+  thumbnailDeliveryToken,
   thumbnailReadyUrl,
   variant = "thumbnail",
+  width,
 }: PaneViewImageProps) {
   const resolvedReadyUrl =
     variant === "thumbnail"
@@ -37,26 +55,51 @@ export function PaneViewImage({
         ? (readyUrl ?? previewReadyUrl)
         : undefined;
 
-  const { failed, loading, resolvedUrl } = useResolvedMediaUrl({
+  const resolvedReadyDeliveryToken =
+    variant === "thumbnail" ? thumbnailDeliveryToken : undefined;
+
+  const { deliveryToken, failed, loading, resolvedUrl } = useResolvedMediaUrl({
+    deliveryToken: resolvedReadyDeliveryToken,
     fallbackReadyUrl: variant === "preview" ? thumbnailReadyUrl : undefined,
-    mediaId: resolveMissing || resolvedReadyUrl ? mediaId : undefined,
+    mediaId: resolveMissing || resolvedReadyUrl || resolvedReadyDeliveryToken ? mediaId : undefined,
     readyUrl: resolvedReadyUrl,
-    // Gallery tiles use a single fixed size so generated derivatives always
-    // match the size the snapshot embeds; preview/original ignore size.
-    size: variant === "thumbnail" ? GALLERY_THUMBNAIL_SIZE : undefined,
+    size: variant === "thumbnail" ? resolveThumbnailPixelSize(width) : undefined,
     variant,
   });
 
-  if (!resolveMissing && !resolvedReadyUrl) {
+  if (!resolveMissing && !resolvedReadyUrl && !resolvedReadyDeliveryToken) {
     return <div aria-hidden className={cn(className, "bg-zinc-800/80")} />;
   }
 
-  if (loading || !resolvedUrl) {
+  if (loading || (!resolvedUrl && !deliveryToken)) {
     return <div aria-hidden className={cn(className, "bg-zinc-800/80")} />;
   }
 
   if (failed) {
     return <div aria-hidden className={cn(className, "bg-zinc-800")} />;
+  }
+
+  const imageWidth = resolveThumbnailPixelSize(width);
+  const imageHeight = height ?? imageWidth;
+  const useBunny = variant === "thumbnail" && readClientImageDeliveryMode() === "bunny";
+  const unpicLayout = layout === "fullWidth" ? "constrained" : layout;
+
+  if (useBunny && deliveryToken) {
+    return (
+      <Image
+        alt={alt}
+        background="auto"
+        cdn="bunny"
+        className={className}
+        decoding="async"
+        fetchpriority={priority ? "high" : undefined}
+        height={imageHeight}
+        layout={unpicLayout}
+        loading={priority ? "eager" : "lazy"}
+        src={buildBunnyLwImageSrc(deliveryToken)}
+        width={imageWidth}
+      />
+    );
   }
 
   return (

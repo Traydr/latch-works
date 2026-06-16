@@ -3,6 +3,7 @@ import type { MediaPage } from "./media-page";
 
 export interface LibraryMediaItem extends MediaItem {
   previewUrl?: string;
+  thumbnailDeliveryToken?: string;
   thumbnailUrl?: string;
 }
 

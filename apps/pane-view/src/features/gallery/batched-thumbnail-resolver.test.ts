@@ -62,7 +62,10 @@ describe("resolveGalleryThumbnailsBatch", () => {
       },
     });
     expect(first).toEqual({
-      "00000000-0000-4000-8000-000000000001": "/cdn/v1/ready",
+      deliveryTokens: {},
+      urls: {
+        "00000000-0000-4000-8000-000000000001": "/cdn/v1/ready",
+      },
     });
 
     const second = await resolveGalleryThumbnailsBatch([
