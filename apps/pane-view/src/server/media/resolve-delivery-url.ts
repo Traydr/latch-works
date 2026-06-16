@@ -11,9 +11,7 @@ import { logDerivativeEvent } from "./derivative-telemetry";
 import { readMediaDeliveryRequest, readMediaThumbnailContext } from "./repository";
 import { createPaneViewStorageClient } from "./storage-client";
 
-export type MediaDeliveryResolveResult =
-  | { pending: true }
-  | { pending: false; url: string };
+export type MediaDeliveryResolveResult = { pending: true } | { pending: false; url: string };
 
 async function resolveOriginalDeliveryUrl(mediaId: string): Promise<string> {
   const media = await readMediaDeliveryRequest({ mediaId });

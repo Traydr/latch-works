@@ -30,9 +30,9 @@ export function PaneViewImage({
 }: PaneViewImageProps) {
   const resolvedReadyUrl =
     variant === "thumbnail"
-      ? readyUrl ?? thumbnailReadyUrl
+      ? (readyUrl ?? thumbnailReadyUrl)
       : variant === "preview"
-        ? readyUrl ?? previewReadyUrl
+        ? (readyUrl ?? previewReadyUrl)
         : undefined;
 
   const { failed, loading, resolvedUrl } = useResolvedMediaUrl({
