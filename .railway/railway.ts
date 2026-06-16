@@ -1,3 +1,4 @@
+/** biome-ignore-all lint/suspicious/noTemplateCurlyInString: This is necessary for railway to automatically inject env vars */
 import {
   bucket,
   defineRailway,
@@ -9,8 +10,32 @@ import {
   service,
 } from "railway/iac";
 
+const europeWest4 = "europe-west4-drams3a";
+
+const paneViewPrivateUrl = "http://${{Pane-View.RAILWAY_PRIVATE_DOMAIN}}:${{Pane-View.PORT}}";
+const mediaOptimizerPrivateUrl =
+  "http://${{Media-Optimizer.RAILWAY_PRIVATE_DOMAIN}}:${{Media-Optimizer.PORT}}";
+
 export default defineRailway(() => {
   const latchWorks = github("Traydr/latch-works");
+
+  const mediaBucket = bucket("balanced-wrap", { region: "ams" });
+
+  const postgresDb = {
+    ...postgres("Postgres", { region: europeWest4 }),
+    deploy: {
+      multiRegionConfig: { [europeWest4]: { numReplicas: 1 } },
+      requiredMountPath: "/var/lib/postgresql/data",
+    },
+  };
+
+  const s3Env = {
+    S3_ACCESS_KEY_ID: "${{balanced-wrap.ACCESS_KEY_ID}}",
+    S3_BUCKET: "${{balanced-wrap.BUCKET}}",
+    S3_ENDPOINT: "${{balanced-wrap.ENDPOINT}}",
+    S3_REGION: "${{balanced-wrap.REGION}}",
+    S3_SECRET_ACCESS_KEY: "${{balanced-wrap.SECRET_ACCESS_KEY}}",
+  };
 
   const MediaOptimizer = service("Media-Optimizer", {
     source: latchWorks,
@@ -22,7 +47,7 @@ export default defineRailway(() => {
     },
     start: "cd ./apps/media-optimizer && pnpm start",
     replicas: {
-      "europe-west4-drams3a": 1,
+      [europeWest4]: 1,
     },
     deploy: {
       limitOverride: { containers: { cpu: 2, memoryBytes: 6000000000 } },
@@ -31,25 +56,15 @@ export default defineRailway(() => {
     networking: { privateNetworkEndpoint: "latch-works-media-optimizer" },
     env: {
       MEDIA_OPTIMIZER_TOKEN: preserve(),
-      NODE_ENV: preserve(),
+      NODE_ENV: "production",
       OPTIMIZER_BATCH_LIMIT: "250",
       OPTIMIZER_CLAIM_CHUNK: "5",
       OPTIMIZER_MAX_RUNTIME_MS: "300000",
-      PANE_VIEW_INTERNAL_URL: preserve(),
-      S3_ACCESS_KEY_ID: preserve(),
-      S3_BUCKET: preserve(),
-      S3_ENDPOINT: preserve(),
-      S3_REGION: preserve(),
-      S3_SECRET_ACCESS_KEY: preserve(),
+      PANE_VIEW_INTERNAL_URL: paneViewPrivateUrl,
+      ...s3Env,
     },
   });
-  const Postgres = {
-    ...postgres("Postgres", { region: "europe-west4-drams3a" }),
-    deploy: {
-      multiRegionConfig: { "europe-west4-drams3a": { numReplicas: 1 } },
-      requiredMountPath: "/var/lib/postgresql/data",
-    },
-  };
+
   const PaneView = service("Pane-View", {
     source: latchWorks,
     build: {
@@ -60,7 +75,7 @@ export default defineRailway(() => {
     },
     start: "cd ./apps/pane-view && pnpm start",
     replicas: {
-      "europe-west4-drams3a": 1,
+      [europeWest4]: 1,
     },
     deploy: {
       limitOverride: { containers: { cpu: 2, memoryBytes: 6000000000 } },
@@ -71,24 +86,21 @@ export default defineRailway(() => {
     networking: { privateNetworkEndpoint: "latch-works" },
     env: {
       BETTER_AUTH_SECRET: preserve(),
-      BETTER_AUTH_URL: preserve(),
-      DATABASE_URL: preserve(),
+      BETTER_AUTH_URL: "https://pane-view.traydr.dev",
+      DATABASE_URL: "${{Postgres.DATABASE_URL}}",
       DERIVATIVE_PROCESSING_MODE: "triggered",
       MEDIA_DELIVERY_SECRET: preserve(),
-      MEDIA_DELIVERY_TTL_SECONDS: preserve(),
-      MEDIA_OPTIMIZER_TOKEN: preserve(),
-      MEDIA_OPTIMIZER_URL: preserve(),
-      NODE_ENV: preserve(),
+      MEDIA_DELIVERY_TTL_SECONDS: "86400",
+      MEDIA_OPTIMIZER_TOKEN: MediaOptimizer.env.MEDIA_OPTIMIZER_TOKEN,
+      MEDIA_OPTIMIZER_URL: mediaOptimizerPrivateUrl,
+      NODE_ENV: "production",
       PANE_VIEW_PASSWORD: preserve(),
       PANE_VIEW_SYNC_TOKEN: preserve(),
       PANE_VIEW_USERNAME: preserve(),
-      S3_ACCESS_KEY_ID: preserve(),
-      S3_BUCKET: preserve(),
-      S3_ENDPOINT: preserve(),
-      S3_REGION: preserve(),
-      S3_SECRET_ACCESS_KEY: preserve(),
+      ...s3Env,
     },
   });
+
   const Showcase = service("Showcase", {
     source: latchWorks,
     build: {
@@ -99,7 +111,7 @@ export default defineRailway(() => {
     },
     start: "cd ./apps/showcase && pnpm start",
     replicas: {
-      "europe-west4-drams3a": 1,
+      [europeWest4]: 1,
     },
     deploy: {
       limitOverride: { containers: { cpu: 2, memoryBytes: 4000000000 } },
@@ -108,10 +120,11 @@ export default defineRailway(() => {
     domains: ["latch-works.traydr.dev"],
     networking: { privateNetworkEndpoint: "latch-works-1797" },
   });
-  const balancedWrap = bucket("balanced-wrap", { region: "ams" });
-  const PostgreSQL = group("PostgreSQL", [Postgres]);
+
+  const PostgreSQL = group("PostgreSQL", [postgresDb]);
+  const Storage = group("Storage", [mediaBucket]);
 
   return project("latch-works", {
-    resources: [MediaOptimizer, PaneView, Showcase, balancedWrap, PostgreSQL],
+    resources: [MediaOptimizer, PaneView, Showcase, Storage, PostgreSQL],
   });
 });
