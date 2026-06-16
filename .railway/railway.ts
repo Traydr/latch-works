@@ -21,10 +21,12 @@ export default defineRailway(() => {
       watchPatterns: ["/apps/media-optimizer/**"],
     },
     start: "cd ./apps/media-optimizer && pnpm start",
-    replicas: 1,
+    replicas: {
+      "europe-west4-drams3a": 1,
+    },
     deploy: {
       limitOverride: { containers: { cpu: 2, memoryBytes: 6000000000 } },
-      sleepApplication: false,
+      sleepApplication: true,
     },
     networking: { privateNetworkEndpoint: "latch-works-media-optimizer" },
     env: {
@@ -57,11 +59,13 @@ export default defineRailway(() => {
       watchPatterns: ["/apps/pane-view/**"],
     },
     start: "cd ./apps/pane-view && pnpm start",
-    replicas: 1,
+    replicas: {
+      "europe-west4-drams3a": 1,
+    },
     deploy: {
       limitOverride: { containers: { cpu: 2, memoryBytes: 6000000000 } },
       preDeployCommand: ["cd ./apps/pane-view && pnpm db:migrate"],
-      sleepApplication: false,
+      sleepApplication: true,
     },
     domains: ["pane-view.traydr.dev"],
     networking: { privateNetworkEndpoint: "latch-works" },
@@ -94,7 +98,9 @@ export default defineRailway(() => {
       watchPatterns: ["/apps/showcase/**"],
     },
     start: "cd ./apps/showcase && pnpm start",
-    replicas: 1,
+    replicas: {
+      "europe-west4-drams3a": 1,
+    },
     deploy: {
       limitOverride: { containers: { cpu: 2, memoryBytes: 4000000000 } },
       sleepApplication: true,
