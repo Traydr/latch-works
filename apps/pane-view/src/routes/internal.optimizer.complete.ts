@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { requireOptimizerToken } from "../server/auth/optimizer-token";
+import { logDerivativeEvent } from "../server/media/derivative-telemetry";
 import {
   completeOptimizerJob,
   completeRequestSchema,
@@ -17,6 +18,9 @@ export const Route = createFileRoute("/internal/optimizer/complete")({
         const body = await request.json().catch(() => ({}));
         const parsed = completeRequestSchema.safeParse(body);
         if (!parsed.success) {
+          logDerivativeEvent("optimizer.complete_invalid", {
+            issueCount: parsed.error.issues.length,
+          });
           return Response.json({ error: "Invalid complete request" }, { status: 400 });
         }
 

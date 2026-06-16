@@ -1,0 +1,138 @@
+import {
+  type MediaDeliveryBatchResult,
+  resolveMediaDeliveryUrls,
+} from "@/features/media/media-delivery-service";
+import { GALLERY_THUMBNAIL_SIZE } from "./gallery-thumbnail-size";
+
+export interface GalleryThumbnailRequest {
+  mediaId: string;
+  size?: number;
+}
+
+interface ThumbnailCacheEntry {
+  inFlight: boolean;
+  nextRetryAt?: number;
+  status: "failed" | "pending" | "ready";
+  url?: string;
+}
+
+const PENDING_RETRY_DELAYS_MS = [15_000, 45_000, 120_000, 300_000] as const;
+const cache = new Map<string, ThumbnailCacheEntry>();
+const attempts = new Map<string, number>();
+
+function cacheKey(request: GalleryThumbnailRequest): string {
+  return `${request.mediaId}:${request.size ?? GALLERY_THUMBNAIL_SIZE}`;
+}
+
+function pendingRetryDelayMs(key: string, serverRetryAfterMs?: number): number {
+  const attempt = attempts.get(key) ?? 0;
+  const baseDelay =
+    PENDING_RETRY_DELAYS_MS[Math.min(attempt, PENDING_RETRY_DELAYS_MS.length - 1)] ?? 300_000;
+  attempts.set(key, attempt + 1);
+  const jitter = 0.75 + Math.random() * 0.5;
+  return Math.max(serverRetryAfterMs ?? 0, Math.round(baseDelay * jitter));
+}
+
+function applyResult(result: MediaDeliveryBatchResult): void {
+  const key = cacheKey({
+    mediaId: result.mediaId,
+    size: result.size,
+  });
+
+  if (result.status === "ready") {
+    attempts.delete(key);
+    cache.set(key, {
+      status: "ready",
+      url: result.url,
+      inFlight: false,
+    });
+    return;
+  }
+
+  if (result.status === "pending") {
+    cache.set(key, {
+      inFlight: false,
+      nextRetryAt: Date.now() + pendingRetryDelayMs(key, result.retryAfterMs),
+      status: "pending",
+    });
+    return;
+  }
+
+  cache.set(key, { inFlight: false, status: "failed" });
+}
+
+export function readCachedGalleryThumbnailUrls(): Record<string, string> {
+  const urls: Record<string, string> = {};
+  for (const [key, entry] of cache) {
+    if (entry.status === "ready" && entry.url) {
+      const mediaId = key.split(":")[0];
+      if (mediaId) {
+        urls[mediaId] = entry.url;
+      }
+    }
+  }
+
+  return urls;
+}
+
+export async function resolveGalleryThumbnailsBatch(
+  requests: GalleryThumbnailRequest[],
+): Promise<Record<string, string>> {
+  const now = Date.now();
+  const uniqueRequests = new Map<string, GalleryThumbnailRequest>();
+
+  for (const request of requests) {
+    const key = cacheKey(request);
+    const cached = cache.get(key);
+    if (cached?.status === "ready" || cached?.status === "failed" || cached?.inFlight) {
+      continue;
+    }
+
+    if (cached?.nextRetryAt && cached.nextRetryAt > now) {
+      continue;
+    }
+
+    uniqueRequests.set(key, request);
+  }
+
+  const batch = [...uniqueRequests.entries()].slice(0, 48);
+  if (batch.length === 0) {
+    return readCachedGalleryThumbnailUrls();
+  }
+
+  for (const [key] of batch) {
+    cache.set(key, { inFlight: true, status: "pending" });
+  }
+
+  try {
+    const response = await resolveMediaDeliveryUrls({
+      data: {
+        items: batch.map(([, request]) => ({
+          mediaId: request.mediaId,
+          size: request.size ?? GALLERY_THUMBNAIL_SIZE,
+          variant: "thumbnail" as const,
+        })),
+      },
+    });
+
+    for (const result of response.results) {
+      applyResult(result);
+    }
+  } catch {
+    const retryAt = Date.now() + 30_000;
+    for (const [key] of batch) {
+      cache.set(key, {
+        inFlight: false,
+        nextRetryAt: retryAt,
+        status: "pending",
+      });
+    }
+  }
+
+  return readCachedGalleryThumbnailUrls();
+}
+
+export function __resetGalleryThumbnailResolverForTests(): void {
+  cache.clear();
+  attempts.clear();
+}

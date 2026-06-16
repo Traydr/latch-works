@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { snapThumbnailSize } from "@latch-works/media-delivery";
 import { generateDerivativeBytes, readWebpMetadata } from "@latch-works/media-derivatives";
 import {
@@ -8,6 +9,7 @@ import {
   type S3StorageClient,
 } from "@latch-works/media-storage";
 import { env } from "./env.js";
+import { logOptimizerError, logOptimizerEvent, sanitizeError } from "./logging.js";
 import {
   claimJobs,
   type DerivativeJob,
@@ -17,9 +19,12 @@ import {
 } from "./pane-view-client.js";
 
 export interface ProcessResult {
+  claimed: number;
   durationMs: number;
+  emptyClaims: number;
   failed: number;
   processed: number;
+  released: number;
   succeeded: number;
 }
 
@@ -42,8 +47,19 @@ function getStorage(): S3StorageClient {
 async function processJob(
   job: DerivativeJob,
   processingToken: string,
+  runId: string,
   storage: S3StorageClient,
 ): Promise<boolean> {
+  const startedAt = Date.now();
+  logOptimizerEvent("optimizer.job_start", {
+    attemptCount: job.attemptCount,
+    mediaObjectId: job.mediaObjectId,
+    mediaType: job.mediaType,
+    processingToken,
+    runId,
+    size: job.size,
+  });
+
   try {
     const existingObject = await headStoredObject({ key: job.objectKey, storage });
     if (existingObject) {
@@ -59,6 +75,26 @@ async function processJob(
           width: metadata.width,
         });
 
+        if (!completed) {
+          logOptimizerError("optimizer.job_stale_lease", {
+            durationMs: Date.now() - startedAt,
+            mediaObjectId: job.mediaObjectId,
+            processingToken,
+            runId,
+            size: job.size,
+          });
+          return false;
+        }
+
+        logOptimizerEvent("optimizer.job_complete", {
+          durationMs: Date.now() - startedAt,
+          mediaObjectId: job.mediaObjectId,
+          mediaType: job.mediaType,
+          processingToken,
+          runId,
+          size: job.size,
+          source: "existing_object",
+        });
         return completed;
       }
     }
@@ -90,15 +126,55 @@ async function processJob(
       width: generated.width,
     });
 
+    if (!completed) {
+      logOptimizerError("optimizer.job_stale_lease", {
+        durationMs: Date.now() - startedAt,
+        mediaObjectId: job.mediaObjectId,
+        processingToken,
+        runId,
+        size: job.size,
+      });
+      return false;
+    }
+
+    logOptimizerEvent("optimizer.job_complete", {
+      durationMs: Date.now() - startedAt,
+      mediaObjectId: job.mediaObjectId,
+      mediaType: job.mediaType,
+      processingToken,
+      runId,
+      size: job.size,
+      source: "generated",
+    });
     return completed;
   } catch (error) {
-    await reportFailure({
-      error: error instanceof Error ? error.message : "derivative generation failed",
+    const message = sanitizeError(error);
+    try {
+      await reportFailure({
+        error: message,
+        mediaObjectId: job.mediaObjectId,
+        processingToken,
+        size: job.size,
+      });
+    } catch (reportError) {
+      logOptimizerError("optimizer.job_failure_report_failed", {
+        error: sanitizeError(reportError),
+        mediaObjectId: job.mediaObjectId,
+        processingToken,
+        runId,
+        size: job.size,
+      });
+    }
+
+    logOptimizerError("optimizer.job_failed", {
+      durationMs: Date.now() - startedAt,
+      error: message,
       mediaObjectId: job.mediaObjectId,
+      mediaType: job.mediaType,
       processingToken,
+      runId,
       size: job.size,
     });
-
     return false;
   }
 }
@@ -108,10 +184,13 @@ async function processJob(
  * (concurrency 1) until the batch limit or runtime budget is reached, or the
  * queue is empty.
  */
-export async function processBatch(): Promise<ProcessResult> {
+export async function processBatch(runId: string = randomUUID()): Promise<ProcessResult> {
   const startedAt = Date.now();
   const storage = getStorage();
+  let claimed = 0;
+  let emptyClaims = 0;
   let processed = 0;
+  let released = 0;
   let succeeded = 0;
   let failed = 0;
 
@@ -121,20 +200,35 @@ export async function processBatch(): Promise<ProcessResult> {
   ) {
     const remaining = env.OPTIMIZER_BATCH_LIMIT - processed;
     const limit = Math.min(remaining, env.OPTIMIZER_CLAIM_CHUNK);
+    logOptimizerEvent("optimizer.claim_start", { limit, runId });
     const { jobs, processingToken } = await claimJobs(limit);
+    claimed += jobs.length;
+    logOptimizerEvent("optimizer.claim_complete", {
+      jobCount: jobs.length,
+      processingToken,
+      runId,
+    });
 
     if (jobs.length === 0) {
+      emptyClaims += 1;
       break;
     }
 
     for (let index = 0; index < jobs.length; index += 1) {
       if (Date.now() - startedAt >= env.OPTIMIZER_MAX_RUNTIME_MS) {
+        const remainingJobs = jobs.slice(index).map((job) => ({
+          mediaObjectId: job.mediaObjectId,
+          size: job.size,
+        }));
         await releaseJobs({
-          jobs: jobs.slice(index).map((job) => ({
-            mediaObjectId: job.mediaObjectId,
-            size: job.size,
-          })),
+          jobs: remainingJobs,
           processingToken,
+        });
+        released += remainingJobs.length;
+        logOptimizerEvent("optimizer.jobs_released", {
+          jobCount: remainingJobs.length,
+          processingToken,
+          runId,
         });
         break;
       }
@@ -144,7 +238,7 @@ export async function processBatch(): Promise<ProcessResult> {
         continue;
       }
 
-      const ok = await processJob(job, processingToken, storage);
+      const ok = await processJob(job, processingToken, runId, storage);
       processed += 1;
       if (ok) {
         succeeded += 1;
@@ -154,5 +248,15 @@ export async function processBatch(): Promise<ProcessResult> {
     }
   }
 
-  return { durationMs: Date.now() - startedAt, failed, processed, succeeded };
+  const result = {
+    claimed,
+    durationMs: Date.now() - startedAt,
+    emptyClaims,
+    failed,
+    processed,
+    released,
+    succeeded,
+  };
+  logOptimizerEvent("optimizer.batch_complete", { runId, ...result });
+  return result;
 }

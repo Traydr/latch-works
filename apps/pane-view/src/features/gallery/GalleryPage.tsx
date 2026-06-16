@@ -37,6 +37,11 @@ import { SidebarTrigger } from "@/components/ui/sidebar";
 import { ComicReader } from "@/features/comics/ComicReader";
 import { BrowserGrid } from "@/features/gallery/BrowserGrid";
 import {
+  type GalleryThumbnailRequest,
+  readCachedGalleryThumbnailUrls,
+  resolveGalleryThumbnailsBatch,
+} from "@/features/gallery/batched-thumbnail-resolver";
+import {
   buildBreadcrumbItems,
   displayPathFromSearch,
   type GalleryBrowseSearch,
@@ -118,6 +123,10 @@ export function GalleryPage() {
   const [mediaPage, setMediaPage] = useState<MediaPage | null>(null);
   const [loadingMoreMedia, setLoadingMoreMedia] = useState(false);
   const [hasRestoredGalleryPrefs, setHasRestoredGalleryPrefs] = useState(false);
+  const [windowedThumbnailRequests, setWindowedThumbnailRequests] = useState<
+    GalleryThumbnailRequest[]
+  >([]);
+  const [resolvedThumbnailUrls, setResolvedThumbnailUrls] = useState<Record<string, string>>({});
 
   const browseKey = useMemo(
     () =>
@@ -180,6 +189,8 @@ export function GalleryPage() {
     setExtraMedia([]);
     setMediaPage(null);
     setLoadingMoreMedia(false);
+    setWindowedThumbnailRequests([]);
+    setResolvedThumbnailUrls(readCachedGalleryThumbnailUrls());
   }, [browseKey]);
 
   useEffect(() => {
@@ -829,6 +840,47 @@ export function GalleryPage() {
     }
   }, [loadingMoreMedia, mediaPage, snapshotRequest]);
 
+  const handleWindowedEntriesChange = useCallback((windowedEntries: BrowserEntry[]) => {
+    const requests = dedupeThumbnailRequests(
+      windowedEntries.flatMap((entry): GalleryThumbnailRequest[] => {
+        if (entry.kind === "folder") {
+          return [];
+        }
+
+        const media = entry.kind === "comic" ? entry.comic.cover : entry.media;
+        if (!supportsGalleryThumbnail(media) || media.thumbnailUrl) {
+          return [];
+        }
+
+        return [{ mediaId: media.id }];
+      }),
+    );
+
+    setWindowedThumbnailRequests((current) =>
+      areThumbnailRequestsEqual(current, requests) ? current : requests,
+    );
+  }, []);
+
+  useEffect(() => {
+    if (windowedThumbnailRequests.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+    const timeoutId = window.setTimeout(() => {
+      void resolveGalleryThumbnailsBatch(windowedThumbnailRequests).then((urls) => {
+        if (!cancelled) {
+          setResolvedThumbnailUrls(urls);
+        }
+      });
+    }, 200);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [windowedThumbnailRequests]);
+
   return (
     <>
       <header className="flex h-auto min-h-14 shrink-0 items-center justify-between gap-4 border-b border-border bg-background px-5 py-2">
@@ -999,7 +1051,9 @@ export function GalleryPage() {
             onPrev={() => selectAdjacentMedia(-1)}
             onScrolledToFocus={() => setScrollFocusedIntoView(false)}
             onSelectEntry={handleSelectEntry}
+            onWindowedEntriesChange={handleWindowedEntriesChange}
             randomSeed={randomSeed}
+            resolvedThumbnailUrls={resolvedThumbnailUrls}
             scrollFocusedIntoView={scrollFocusedIntoView}
             selected={selected}
             selectedId={viewerLockedMediaId ?? selectedId}
@@ -1155,7 +1209,9 @@ interface GalleryBrowsePaneProps {
   onPrev: () => void;
   onScrolledToFocus: () => void;
   onSelectEntry: (entry: BrowserEntry) => void;
+  onWindowedEntriesChange: (entries: BrowserEntry[]) => void;
   randomSeed: number;
+  resolvedThumbnailUrls: Readonly<Record<string, string>>;
   scrollFocusedIntoView: boolean;
   selected: MediaItem | null;
   selectedId: string | null;
@@ -1185,7 +1241,9 @@ function GalleryBrowsePane({
   onPrev,
   onScrolledToFocus,
   onSelectEntry,
+  onWindowedEntriesChange,
   randomSeed,
+  resolvedThumbnailUrls,
   scrollFocusedIntoView,
   selected,
   selectedId,
@@ -1196,6 +1254,31 @@ function GalleryBrowsePane({
 }: GalleryBrowsePaneProps) {
   const { data: library } = useLibrarySnapshotSuspense(snapshotRequest);
   const { settings } = useAppSettings();
+  const [scrollContainer, setScrollContainer] = useState<HTMLElement | null>(null);
+  const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!mediaPage?.hasMore || loadingMoreMedia || !scrollContainer) {
+      return;
+    }
+
+    const sentinel = loadMoreSentinelRef.current;
+    if (!sentinel) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          onLoadMoreMedia();
+        }
+      },
+      { root: scrollContainer, rootMargin: "320px 0px 320px 0px" },
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [loadingMoreMedia, mediaPage?.hasMore, onLoadMoreMedia, scrollContainer]);
 
   const sortedMedia = useMemo(
     () => sortMediaItems(media, sortMode, randomSeed),
@@ -1256,11 +1339,15 @@ function GalleryBrowsePane({
           deletingEntryIds={deletingEntryIds}
           entries={entries}
           focusedIndex={focusedEntryIndex}
+          loadMoreSentinelRef={loadMoreSentinelRef}
           onActivateEntry={onActivateEntry}
+          onScrollContainerChange={setScrollContainer}
           onScrolledToFocus={onScrolledToFocus}
           onSelectEntry={onSelectEntry}
+          onWindowedEntriesChange={onWindowedEntriesChange}
           scrollFocusedIntoView={scrollFocusedIntoView}
           selectedId={selectedId}
+          thumbnailUrls={resolvedThumbnailUrls}
         />
 
         {mediaPage?.hasMore ? (
@@ -1333,4 +1420,41 @@ function mergeLibraryMedia(
   }
 
   return merged;
+}
+
+function supportsGalleryThumbnail(media: MediaItem): boolean {
+  return media.mediaType === "image" || media.mediaType === "gif" || media.mediaType === "video";
+}
+
+function dedupeThumbnailRequests(
+  requests: readonly GalleryThumbnailRequest[],
+): GalleryThumbnailRequest[] {
+  const seen = new Set<string>();
+  const deduped: GalleryThumbnailRequest[] = [];
+
+  for (const request of requests) {
+    const key = `${request.mediaId}:${request.size ?? "default"}`;
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    deduped.push(request);
+  }
+
+  return deduped;
+}
+
+function areThumbnailRequestsEqual(
+  left: readonly GalleryThumbnailRequest[],
+  right: readonly GalleryThumbnailRequest[],
+): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  return left.every(
+    (request, index) =>
+      request.mediaId === right[index]?.mediaId && request.size === right[index]?.size,
+  );
 }

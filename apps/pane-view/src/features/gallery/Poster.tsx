@@ -7,10 +7,12 @@ export function Poster({
   cardWidth = 220,
   media,
   priority = false,
+  resolvedThumbnailUrl,
 }: {
   cardWidth?: number;
   media: MediaItem;
   priority?: boolean;
+  resolvedThumbnailUrl?: string;
 }) {
   const supportsThumbnail =
     media.mediaType === "image" || media.mediaType === "gif" || media.mediaType === "video";
@@ -31,7 +33,8 @@ export function Poster({
           mediaId={media.id}
           objectFit="cover"
           priority={priority}
-          readyUrl={media.thumbnailUrl}
+          readyUrl={media.thumbnailUrl ?? resolvedThumbnailUrl}
+          resolveMissing={false}
           variant="thumbnail"
           width={cardWidth}
         />

@@ -91,8 +91,10 @@ export async function prewarmSyncRunDerivatives({
     .returning({ mediaObjectId: thumbnails.mediaObjectId });
 
   logDerivativeEvent("derivative.prewarm", {
+    eligible: values.length,
     enqueued: inserted.length,
     scanned: cappedRows.length,
+    skippedExisting: values.length - inserted.length,
     syncRunId,
     truncated,
   });
