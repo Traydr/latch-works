@@ -1,10 +1,28 @@
 import { Hono } from "hono";
 import { bearerAuth } from "hono/bearer-auth";
 import { env } from "./env.js";
-import { type ProcessResult, processBatch } from "./processor.js";
+import { processBatch } from "./processor.js";
 
 // Single-flight guard: enforce concurrency 1 across overlapping /process calls.
-let inFlight: Promise<ProcessResult> | null = null;
+let inFlight: Promise<void> | null = null;
+
+function startProcessing(): void {
+  inFlight = processBatch()
+    .then((result) => {
+      console.log(JSON.stringify({ event: "media-optimizer.process", ...result }));
+    })
+    .catch((error) => {
+      console.error(
+        JSON.stringify({
+          error: error instanceof Error ? error.message : "process failed",
+          event: "media-optimizer.process_failed",
+        }),
+      );
+    })
+    .finally(() => {
+      inFlight = null;
+    });
+}
 
 export function createServer(): Hono {
   const app = new Hono();
@@ -16,21 +34,11 @@ export function createServer(): Hono {
 
   internal.post("/optimizer/process", async (c) => {
     if (inFlight) {
-      return c.json({ status: "busy" }, 409);
+      return c.json({ status: "busy" }, 202);
     }
 
-    inFlight = processBatch();
-    try {
-      const result = await inFlight;
-      return c.json({ status: "ok", ...result });
-    } catch (error) {
-      return c.json(
-        { error: error instanceof Error ? error.message : "process failed", status: "error" },
-        500,
-      );
-    } finally {
-      inFlight = null;
-    }
+    startProcessing();
+    return c.json({ status: "started" }, 202);
   });
 
   app.route("/internal", internal);

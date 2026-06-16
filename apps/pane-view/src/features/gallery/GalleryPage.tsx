@@ -49,7 +49,7 @@ import { GalleryGridSkeleton } from "@/features/gallery/GalleryGridSkeleton";
 import { useGalleryShell } from "@/features/gallery/gallery-shell-context";
 import { MediaViewerModal } from "@/features/gallery/MediaViewerModal";
 import { DEFAULT_CARD_WIDTH } from "@/features/gallery/thumbnail-size";
-import { useGalleryState, GALLERY_STATE_DEFAULTS } from "@/features/gallery/useGalleryState";
+import { GALLERY_STATE_DEFAULTS, useGalleryState } from "@/features/gallery/useGalleryState";
 import {
   type LibrarySnapshotRequest,
   toLibrarySnapshotRequest,
@@ -60,7 +60,6 @@ import {
 } from "@/features/library/library-queries";
 import { getLibrarySnapshot } from "@/features/library/library-service";
 import { regenerateMediaThumbnail } from "@/features/media/media-delivery-service";
-import type { LibraryMediaItem, MediaPage } from "@/server/library/types";
 import { HotkeyOverlay } from "@/features/settings/HotkeyOverlay";
 import { SettingsDrawer } from "@/features/settings/SettingsDrawer";
 import {
@@ -71,6 +70,7 @@ import {
 import { useHydrated } from "@/hooks/use-hydrated";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
+import type { LibraryMediaItem, MediaPage } from "@/server/library/types";
 
 const galleryIndexRoute = getRouteApi("/_gallery/");
 
@@ -1264,7 +1264,7 @@ function GalleryBrowsePane({
         />
 
         {mediaPage?.hasMore ? (
-          <div className="flex shrink-0 justify-center border-t border-border px-5 py-3">
+          <div className="flex shrink-0 justify-center border-t border-border px-5 pb-24 pt-3 sm:pb-20">
             <Button
               disabled={loadingMoreMedia}
               onClick={onLoadMoreMedia}

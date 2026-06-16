@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { resolveMediaDeliveryUrl } from "@/features/media/media-delivery-service";
 import {
   acquireResolveSlot,
-  backoffDelayMs,
   circuitWaitMs,
   delay,
   isCircuitOpen,
@@ -10,8 +9,101 @@ import {
   recordResolveSuccess,
 } from "./resolve-throttle";
 
-const MAX_THUMBNAIL_RETRIES = 12;
-const MAX_PREVIEW_RETRIES = 30;
+const MAX_THUMBNAIL_PENDING_POLLS_PER_MOUNT = 3;
+const MAX_PREVIEW_PENDING_POLLS_PER_MOUNT = 30;
+const PENDING_RETRY_DELAYS_MS = [15_000, 45_000, 120_000, 300_000] as const;
+
+type ResolveInput = {
+  mediaId: string;
+  size?: number;
+  variant: "thumbnail" | "preview" | "original";
+};
+
+type ResolveOutcome =
+  | { status: "ready"; url: string }
+  | { retryAfterMs: number; status: "pending" }
+  | { status: "failed" };
+
+type ResolveCacheEntry = {
+  inFlight?: Promise<ResolveOutcome>;
+  nextRetryAt?: number;
+  pendingAttempt: number;
+  url?: string;
+};
+
+const resolveCache = new Map<string, ResolveCacheEntry>();
+
+function resolveCacheKey({ mediaId, size, variant }: ResolveInput): string {
+  return `${variant}:${mediaId}:${size ?? "default"}`;
+}
+
+function maxPendingPollsForVariant(variant: ResolveInput["variant"]): number {
+  return variant === "preview"
+    ? MAX_PREVIEW_PENDING_POLLS_PER_MOUNT
+    : MAX_THUMBNAIL_PENDING_POLLS_PER_MOUNT;
+}
+
+function pendingRetryDelayMs(attempt: number): number {
+  const fallbackDelay = 300_000;
+  const baseDelay =
+    PENDING_RETRY_DELAYS_MS[Math.min(attempt, PENDING_RETRY_DELAYS_MS.length - 1)] ?? fallbackDelay;
+  const jitter = 0.75 + Math.random() * 0.5;
+  return Math.round(baseDelay * jitter);
+}
+
+async function resolveSharedMediaUrl(input: ResolveInput): Promise<ResolveOutcome> {
+  const key = resolveCacheKey(input);
+  const entry = resolveCache.get(key) ?? { pendingAttempt: 0 };
+  resolveCache.set(key, entry);
+
+  if (entry.url) {
+    return { status: "ready", url: entry.url };
+  }
+
+  if (entry.inFlight) {
+    return entry.inFlight;
+  }
+
+  const now = Date.now();
+  if (entry.nextRetryAt && entry.nextRetryAt > now) {
+    return { retryAfterMs: entry.nextRetryAt - now, status: "pending" };
+  }
+
+  entry.inFlight = (async () => {
+    const breakerWait = circuitWaitMs();
+    if (isCircuitOpen() && breakerWait > 0) {
+      await delay(breakerWait);
+    }
+
+    const release = await acquireResolveSlot();
+    try {
+      const result = await resolveMediaDeliveryUrl({
+        data: input,
+      });
+
+      if (result.pending) {
+        const retryAfterMs = pendingRetryDelayMs(entry.pendingAttempt);
+        entry.pendingAttempt += 1;
+        entry.nextRetryAt = Date.now() + retryAfterMs;
+        return { retryAfterMs, status: "pending" };
+      }
+
+      recordResolveSuccess();
+      entry.url = result.url;
+      entry.nextRetryAt = undefined;
+      entry.pendingAttempt = 0;
+      return { status: "ready", url: result.url };
+    } catch {
+      recordResolveFailure();
+      return { status: "failed" };
+    } finally {
+      release();
+      entry.inFlight = undefined;
+    }
+  })();
+
+  return entry.inFlight;
+}
 
 export function useResolvedMediaUrl({
   fallbackReadyUrl,
@@ -55,69 +147,38 @@ export function useResolvedMediaUrl({
     setFailed(false);
     setResolvedUrl(fallbackReadyUrl);
 
-    const maxRetries = variant === "preview" ? MAX_PREVIEW_RETRIES : MAX_THUMBNAIL_RETRIES;
-
     void (async () => {
-      for (let attempt = 0; attempt < maxRetries; attempt += 1) {
+      for (let attempt = 0; attempt < maxPendingPollsForVariant(variant); attempt += 1) {
         if (cancelled) {
           return;
         }
 
-        // Back off globally while the breaker is open so we stop hammering a
-        // server that is already failing or cold-booting.
-        const breakerWait = circuitWaitMs();
-        if (isCircuitOpen() && breakerWait > 0) {
-          await delay(breakerWait);
-          if (cancelled) {
-            return;
-          }
+        const result = await resolveSharedMediaUrl({ mediaId, size, variant });
+
+        if (cancelled) {
+          return;
         }
 
-        const release = await acquireResolveSlot();
-        let pending = false;
+        if (result.status === "ready") {
+          setResolvedUrl(result.url);
+          setLoading(false);
+          setFailed(false);
+          return;
+        }
 
-        try {
-          if (cancelled) {
-            return;
-          }
-
-          const result = await resolveMediaDeliveryUrl({
-            data: { mediaId, size, variant },
-          });
-
-          if (cancelled) {
-            return;
-          }
-
-          if (result.pending) {
-            pending = true;
-            if (fallbackReadyUrl) {
-              setResolvedUrl(fallbackReadyUrl);
-              setLoading(false);
-            }
-          } else {
-            recordResolveSuccess();
-            setResolvedUrl(result.url);
-            setLoading(false);
-            setFailed(false);
-            return;
-          }
-        } catch {
-          if (cancelled) {
-            return;
-          }
-
-          recordResolveFailure();
+        if (result.status === "failed") {
           setFailed(true);
           setLoading(false);
           return;
-        } finally {
-          release();
         }
 
-        if (pending) {
-          await delay(backoffDelayMs(attempt));
+        if (fallbackReadyUrl) {
+          setResolvedUrl(fallbackReadyUrl);
+          setLoading(false);
+          setFailed(false);
         }
+
+        await delay(result.retryAfterMs);
       }
 
       if (!cancelled) {
@@ -138,4 +199,8 @@ export function useResolvedMediaUrl({
   }, [fallbackReadyUrl, mediaId, readyUrl, refreshKey, size, variant]);
 
   return { failed, loading, resolvedUrl };
+}
+
+export function __resetResolvedMediaUrlCacheForTests(): void {
+  resolveCache.clear();
 }
