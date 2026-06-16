@@ -12,9 +12,10 @@ import {
 
 const europeWest4 = "europe-west4-drams3a";
 
-const paneViewPrivateUrl = "http://${{Pane-View.RAILWAY_PRIVATE_DOMAIN}}:${{Pane-View.PORT}}";
-const mediaOptimizerPrivateUrl =
-  "http://${{Media-Optimizer.RAILWAY_PRIVATE_DOMAIN}}:${{Media-Optimizer.PORT}}";
+const railwayServicePort = "8080";
+
+const paneViewPrivateUrl = `http://\${{Pane-View.RAILWAY_PRIVATE_DOMAIN}}:${railwayServicePort}`;
+const mediaOptimizerPrivateUrl = `http://\${{Media-Optimizer.RAILWAY_PRIVATE_DOMAIN}}:${railwayServicePort}`;
 
 const workspaceConfigWatchPatterns = ["/package.json", "/pnpm-lock.yaml", "/pnpm-workspace.yaml"];
 
