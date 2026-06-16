@@ -1,4 +1,4 @@
-import { snapThumbnailSize } from "@latch-works/media-delivery";
+import { PREVIEW_DERIVATIVE_SIZE, snapThumbnailSize } from "@latch-works/media-delivery";
 import { createSignedGetUrl } from "@latch-works/media-storage";
 import { resolveImageDeliveryMode } from "../../env/image-delivery";
 import { planSignedOriginalDelivery } from "./delivery";
@@ -6,11 +6,16 @@ import { buildDerivativeDeliveryUrl } from "./derivative-delivery-url";
 import {
   ensurePreviewDerivative,
   ensureThumbnailDerivative,
+  ensureThumbnailDerivativeForContext,
   regenerateThumbnailDerivative,
 } from "./derivative-service";
 import { logDerivativeEvent } from "./derivative-telemetry";
 import { mintImageOriginalDeliveryToken } from "./image-delivery";
-import { readMediaDeliveryRequest, readMediaThumbnailContext } from "./repository";
+import {
+  readMediaDeliveryRequest,
+  readMediaThumbnailContext,
+  readMediaThumbnailContextsByEntryIds,
+} from "./repository";
 import { createPaneViewStorageClient } from "./storage-client";
 
 export type MediaDeliveryResolveResult =
@@ -186,4 +191,172 @@ export async function regenerateMediaThumbnailDerivative({
   });
 
   return { status: result.status };
+}
+
+export interface MediaDeliveryBatchResolveItem {
+  mediaId: string;
+  size?: number;
+  variant: "thumbnail" | "preview" | "original";
+}
+
+export type MediaDeliveryBatchResolveResult =
+  | { mediaId: string; retryAfterMs: number; size?: number; status: "pending"; variant: string }
+  | {
+      deliveryToken?: string;
+      mediaId: string;
+      size?: number;
+      status: "ready";
+      url?: string;
+      variant: string;
+    }
+  | { mediaId: string; size?: number; status: "failed"; variant: string };
+
+function batchResolveKey(item: MediaDeliveryBatchResolveItem): string {
+  return `${item.variant}:${item.mediaId}:${item.size ?? "default"}`;
+}
+
+export async function resolveMediaDeliveryUrlsForVariants(
+  items: MediaDeliveryBatchResolveItem[],
+): Promise<MediaDeliveryBatchResolveResult[]> {
+  const seen = new Set<string>();
+  const uniqueItems = items.filter((item) => {
+    const key = batchResolveKey(item);
+    if (seen.has(key)) {
+      return false;
+    }
+
+    seen.add(key);
+    return true;
+  });
+
+  const thumbnailPreviewIds = uniqueItems
+    .filter((item) => item.variant === "thumbnail" || item.variant === "preview")
+    .map((item) => item.mediaId);
+  const contexts = await readMediaThumbnailContextsByEntryIds({ mediaIds: thumbnailPreviewIds });
+
+  const results = await Promise.all(
+    uniqueItems.map(async (item): Promise<MediaDeliveryBatchResolveResult> => {
+      try {
+        if (item.variant === "original") {
+          const result = await resolveMediaDeliveryUrlForVariant({
+            mediaId: item.mediaId,
+            size: item.size,
+            variant: item.variant,
+          });
+
+          if (result.pending) {
+            return {
+              mediaId: item.mediaId,
+              retryAfterMs: 15_000,
+              size: item.size,
+              status: "pending",
+              variant: item.variant,
+            };
+          }
+
+          return {
+            deliveryToken: result.deliveryToken,
+            mediaId: item.mediaId,
+            size: item.size,
+            status: "ready",
+            url: result.url,
+            variant: item.variant,
+          };
+        }
+
+        const context = contexts.get(item.mediaId);
+        if (!context) {
+          return {
+            mediaId: item.mediaId,
+            size: item.size,
+            status: "failed",
+            variant: item.variant,
+          };
+        }
+
+        if (item.variant === "thumbnail" && isImageMediaType(context.mediaType)) {
+          if (resolveImageDeliveryMode() === "bunny") {
+            return {
+              deliveryToken: mintImageOriginalDeliveryToken(context),
+              mediaId: item.mediaId,
+              size: item.size,
+              status: "ready",
+              variant: item.variant,
+            };
+          }
+        }
+
+        const startedAt = Date.now();
+        const derivative =
+          item.variant === "preview"
+            ? await ensureThumbnailDerivativeForContext({
+                context,
+                requestedSize: PREVIEW_DERIVATIVE_SIZE,
+              })
+            : await ensureThumbnailDerivativeForContext({
+                context,
+                requestedSize: snapThumbnailSize(item.size ?? 320),
+              });
+
+        if (derivative.status !== "ready" || readyResolveLogCount % 100 === 0) {
+          logDerivativeEvent("derivative.resolve", {
+            durationMs: Date.now() - startedAt,
+            mediaType: context.mediaType,
+            sampled: derivative.status === "ready",
+            status: derivative.status,
+            variant: item.variant,
+          });
+        }
+        if (derivative.status === "ready") {
+          readyResolveLogCount += 1;
+        }
+
+        if (derivative.status === "pending") {
+          return {
+            mediaId: item.mediaId,
+            retryAfterMs: 15_000,
+            size: item.size,
+            status: "pending",
+            variant: item.variant,
+          };
+        }
+
+        if (derivative.status === "failed" || derivative.status === "unsupported") {
+          if (isImageMediaType(context.mediaType)) {
+            return {
+              mediaId: item.mediaId,
+              size: item.size,
+              status: "ready",
+              url: await resolveOriginalDeliveryUrl(item.mediaId),
+              variant: item.variant,
+            };
+          }
+
+          return {
+            mediaId: item.mediaId,
+            size: item.size,
+            status: "failed",
+            variant: item.variant,
+          };
+        }
+
+        return {
+          mediaId: item.mediaId,
+          size: item.size,
+          status: "ready",
+          url: await buildDerivativeDeliveryUrl(derivative.objectKey),
+          variant: item.variant,
+        };
+      } catch {
+        return {
+          mediaId: item.mediaId,
+          size: item.size,
+          status: "failed",
+          variant: item.variant,
+        };
+      }
+    }),
+  );
+
+  return results;
 }

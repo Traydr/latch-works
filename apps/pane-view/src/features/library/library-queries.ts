@@ -5,19 +5,35 @@ import {
   useQueryClient,
   useSuspenseQuery,
 } from "@tanstack/react-query";
+import type { GallerySortMode } from "@latch-works/media-domain";
 import type { GalleryBrowseSearch } from "@/features/gallery/browse-search";
-import { deleteLibraryEntry, getLibrarySnapshot, type LibrarySnapshot } from "./library-service";
+import {
+  deleteLibraryEntry,
+  getGalleryListing,
+  getLibrarySnapshot,
+  type GalleryListingRequest,
+  type LibrarySnapshot,
+} from "./library-service";
 
 export interface LibrarySnapshotRequest {
   comicMode: boolean;
+  mediaLimit?: number;
   path: string | undefined;
   query: string | undefined;
   recursive: boolean;
 }
 
+export interface GalleryListingQueryRequest extends GalleryListingRequest {}
+
 export const librarySnapshotKeys = {
   all: ["library-snapshot"] as const,
   snapshot: (request: LibrarySnapshotRequest) => [...librarySnapshotKeys.all, request] as const,
+};
+
+export const galleryListingKeys = {
+  all: ["gallery-listing"] as const,
+  listing: (request: GalleryListingQueryRequest) =>
+    [...galleryListingKeys.all, request] as const,
 };
 
 export function toLibrarySnapshotRequest(search: GalleryBrowseSearch): LibrarySnapshotRequest {
@@ -36,6 +52,7 @@ export function librarySnapshotQueryOptions(request: LibrarySnapshotRequest) {
       getLibrarySnapshot({
         data: {
           comicMode: request.comicMode,
+          mediaLimit: request.mediaLimit,
           path: request.path,
           query: request.query,
           recursive: request.recursive,
@@ -45,8 +62,37 @@ export function librarySnapshotQueryOptions(request: LibrarySnapshotRequest) {
   };
 }
 
+export function galleryListingQueryOptions(request: GalleryListingQueryRequest) {
+  return {
+    queryKey: galleryListingKeys.listing(request),
+    queryFn: (): Promise<Awaited<ReturnType<typeof getGalleryListing>>> =>
+      getGalleryListing({
+        data: {
+          comicMode: request.comicMode,
+          cursor: request.cursor,
+          limit: request.limit,
+          path: request.path,
+          query: request.query,
+          randomSeed: request.randomSeed,
+          recursive: request.recursive,
+          showImages: request.showImages,
+          showVideos: request.showVideos,
+          sortMode: request.sortMode,
+        },
+      }),
+    placeholderData: keepPreviousData,
+  };
+}
+
 export function useLibrarySnapshotQuery(request: LibrarySnapshotRequest) {
   return useQuery(librarySnapshotQueryOptions(request));
+}
+
+export function useGalleryListingQuery(request: GalleryListingQueryRequest) {
+  return useQuery({
+    ...galleryListingQueryOptions(request),
+    enabled: !request.comicMode,
+  });
 }
 
 export function useLibrarySnapshotSuspense(request: LibrarySnapshotRequest) {

@@ -1,5 +1,5 @@
 import type { MediaType } from "@latch-works/media-domain";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "../db";
 import { libraryEntries, mediaObjects, thumbnails } from "../db/schema";
 import type { MediaDeliveryRequest, StoredMediaDeliveryRequest } from "./delivery";
@@ -64,8 +64,23 @@ export async function readMediaThumbnailContext({
 }: {
   mediaId: string;
 }): Promise<MediaThumbnailContext | null> {
-  const [media] = await db
+  const contexts = await readMediaThumbnailContextsByEntryIds({ mediaIds: [mediaId] });
+  return contexts.get(mediaId) ?? null;
+}
+
+export async function readMediaThumbnailContextsByEntryIds({
+  mediaIds,
+}: {
+  mediaIds: string[];
+}): Promise<Map<string, MediaThumbnailContext>> {
+  const uniqueIds = [...new Set(mediaIds)];
+  if (uniqueIds.length === 0) {
+    return new Map();
+  }
+
+  const rows = await db
     .select({
+      entryId: libraryEntries.id,
       extension: mediaObjects.extension,
       mediaObjectId: mediaObjects.id,
       mediaType: mediaObjects.mediaType,
@@ -74,8 +89,18 @@ export async function readMediaThumbnailContext({
     })
     .from(libraryEntries)
     .innerJoin(mediaObjects, eq(libraryEntries.mediaObjectId, mediaObjects.id))
-    .where(and(eq(libraryEntries.id, mediaId), isNull(libraryEntries.deletedAt)))
-    .limit(1);
+    .where(and(inArray(libraryEntries.id, uniqueIds), isNull(libraryEntries.deletedAt)));
 
-  return media ?? null;
+  const contexts = new Map<string, MediaThumbnailContext>();
+  for (const row of rows) {
+    contexts.set(row.entryId, {
+      extension: row.extension,
+      mediaObjectId: row.mediaObjectId,
+      mediaType: row.mediaType,
+      originalObjectKey: row.originalObjectKey,
+      sha256: row.sha256,
+    });
+  }
+
+  return contexts;
 }

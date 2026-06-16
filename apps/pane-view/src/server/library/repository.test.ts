@@ -1,6 +1,66 @@
 import { describe, expect, it } from "vitest";
+import { buildComicEntries } from "@latch-works/media-domain";
 import { buildMediaPage } from "./media-page";
 import { escapeLikePatternForTest, resolveMediaScope } from "./query-helpers";
+
+function mapAllFolderHasChildren(
+  allFolderRows: Array<{ parentPath: string | null; path: string }>,
+): Map<string, boolean> {
+  const folderParentPathsWithChildFolders = new Set(
+    allFolderRows
+      .map((folder) => folder.parentPath)
+      .filter((parentPath): parentPath is string => Boolean(parentPath)),
+  );
+
+  return new Map(
+    allFolderRows.map((folder) => [folder.path, folderParentPathsWithChildFolders.has(folder.path)]),
+  );
+}
+
+describe("comic folder metadata", () => {
+  it("marks all-folder leaf status from child folders only", () => {
+    const allFolders = [
+      { parentPath: "sfw", path: "sfw/parent" },
+      { parentPath: "sfw/parent", path: "sfw/parent/leaf" },
+    ];
+    const hasChildrenByPath = mapAllFolderHasChildren(allFolders);
+
+    expect(hasChildrenByPath.get("sfw/parent")).toBe(true);
+    expect(hasChildrenByPath.get("sfw/parent/leaf")).toBe(false);
+  });
+
+  it("keeps leaf-folder comic grouping behavior", () => {
+    const comics = buildComicEntries(
+      [
+        {
+          extension: "jpg",
+          id: "page-1",
+          mediaType: "image",
+          mtimeMs: 1,
+          name: "page-1.jpg",
+          parentPath: "sfw/parent/leaf",
+          path: "sfw/parent/leaf/page-1.jpg",
+          size: 1,
+        },
+      ],
+      "sfw/parent",
+      {
+        folders: [
+          {
+            parentPath: "sfw",
+          },
+          {
+            parentPath: "sfw/parent",
+          },
+        ],
+        leafFoldersOnly: true,
+      },
+    );
+
+    expect(comics).toHaveLength(1);
+    expect(comics[0]?.folderPath).toBe("sfw/parent/leaf");
+  });
+});
 
 describe("resolveMediaScope", () => {
   it("scopes to direct children when non-recursive", () => {

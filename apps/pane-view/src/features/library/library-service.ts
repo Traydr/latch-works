@@ -1,7 +1,10 @@
-import type { FolderNode } from "@latch-works/media-domain";
+import type { FolderNode, GallerySortMode } from "@latch-works/media-domain";
+import { GallerySortModeSchema } from "@latch-works/media-domain";
 import { getParentPath, toArchivePath, trimTrailingSlash } from "@latch-works/media-domain";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import type { GalleryListingPage } from "../../server/library/gallery-listing";
+import { DEFAULT_GALLERY_LISTING_LIMIT } from "../../server/library/gallery-listing";
 import type { LibraryMediaItem, MediaPage } from "../../server/library/types";
 
 const fixtureRoots = ["nsfw", "nsfw-stories", "sfw", "sfw/patreon"];
@@ -10,13 +13,39 @@ const SEARCH_RESULT_LIMIT = 200;
 
 const libraryRequestSchema = z.object({
   comicMode: z.boolean().optional(),
-  mediaLimit: z.number().int().min(1).max(5000).optional(),
+  mediaLimit: z.number().int().min(0).max(5000).optional(),
   mediaOffset: z.number().int().min(0).optional(),
   path: z.string().optional(),
   query: z.string().optional(),
   recursive: z.boolean().optional(),
   searchOffset: z.number().int().min(0).optional(),
 });
+
+const galleryListingRequestSchema = z.object({
+  comicMode: z.boolean().optional(),
+  cursor: z.string().optional(),
+  limit: z.number().int().min(1).max(200).optional(),
+  path: z.string().optional(),
+  query: z.string().optional(),
+  randomSeed: z.number().int().nonnegative(),
+  recursive: z.boolean().optional(),
+  showImages: z.boolean(),
+  showVideos: z.boolean(),
+  sortMode: GallerySortModeSchema,
+});
+
+export interface GalleryListingRequest {
+  comicMode: boolean;
+  cursor?: string;
+  limit?: number;
+  path: string | undefined;
+  query: string | undefined;
+  randomSeed: number;
+  recursive: boolean;
+  showImages: boolean;
+  showVideos: boolean;
+  sortMode: GallerySortMode;
+}
 
 export interface LibrarySnapshot {
   allFolders: FolderNode[];
@@ -81,6 +110,34 @@ export async function readLibrarySnapshotRequest(
     roots: databaseSnapshot.roots.length ? databaseSnapshot.roots : readFixtureRoots(currentPath),
   };
 }
+
+export const getGalleryListing = createServerFn({ method: "GET" })
+  .inputValidator(galleryListingRequestSchema)
+  .handler(async ({ data }): Promise<GalleryListingPage> => {
+    await assertWebSessionAuthorized();
+
+    const currentPath = normalizeLibraryPath(data.path);
+    const query = normalizeQuery(data.query);
+    const comicMode = data.comicMode ?? false;
+    const recursive = (data.recursive ?? false) || comicMode;
+
+    if (comicMode) {
+      throw new Error("Gallery listing is not available in comic mode");
+    }
+
+    const { readDatabaseGalleryListing } = await import("../../server/library/repository");
+    return readDatabaseGalleryListing({
+      currentPath,
+      cursor: data.cursor,
+      limit: data.limit ?? DEFAULT_GALLERY_LISTING_LIMIT,
+      query,
+      randomSeed: data.randomSeed,
+      recursive,
+      showImages: data.showImages,
+      showVideos: data.showVideos,
+      sortMode: data.sortMode,
+    });
+  });
 
 export const getLibrarySnapshot = createServerFn({ method: "GET" })
   .inputValidator(libraryRequestSchema)

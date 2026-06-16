@@ -15,7 +15,6 @@ import {
   type FormEvent,
   Fragment,
   type MutableRefObject,
-  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -56,14 +55,13 @@ import { MediaViewerModal } from "@/features/gallery/MediaViewerModal";
 import { DEFAULT_CARD_WIDTH } from "@/features/gallery/thumbnail-size";
 import { GALLERY_STATE_DEFAULTS, useGalleryState } from "@/features/gallery/useGalleryState";
 import {
-  type LibrarySnapshotRequest,
   toLibrarySnapshotRequest,
   useDeleteLibraryEntryMutation,
+  useGalleryListingQuery,
   useInvalidateLibrarySnapshot,
   useLibrarySnapshotQuery,
-  useLibrarySnapshotSuspense,
 } from "@/features/library/library-queries";
-import { getLibrarySnapshot } from "@/features/library/library-service";
+import { getGalleryListing, getLibrarySnapshot } from "@/features/library/library-service";
 import { regenerateMediaThumbnail } from "@/features/media/media-delivery-service";
 import { HotkeyOverlay } from "@/features/settings/HotkeyOverlay";
 import { SettingsDrawer } from "@/features/settings/SettingsDrawer";
@@ -82,10 +80,7 @@ const galleryIndexRoute = getRouteApi("/_gallery/");
 export function GalleryPage() {
   const search = galleryIndexRoute.useSearch();
   const navigate = galleryIndexRoute.useNavigate();
-  const snapshotRequest = toLibrarySnapshotRequest(search);
-  const { data: library, isFetching } = useLibrarySnapshotQuery(snapshotRequest);
   const hydrated = useHydrated();
-  const showFetching = hydrated && isFetching;
   const invalidateLibrary = useInvalidateLibrarySnapshot();
   const deleteEntryMutation = useDeleteLibraryEntryMutation();
   const displayPath = displayPathFromSearch(search.path);
@@ -120,7 +115,11 @@ export function GalleryPage() {
   const [deletingEntryIds, setDeletingEntryIds] = useState<ReadonlySet<string>>(() => new Set());
   const [deletedEntryIds, setDeletedEntryIds] = useState<ReadonlySet<string>>(() => new Set());
   const [extraMedia, setExtraMedia] = useState<LibraryMediaItem[]>([]);
+  const [extraListingEntries, setExtraListingEntries] = useState<BrowserEntry[]>([]);
+  const [extraListingMedia, setExtraListingMedia] = useState<LibraryMediaItem[]>([]);
   const [mediaPage, setMediaPage] = useState<MediaPage | null>(null);
+  const [listingPage, setListingPage] = useState<MediaPage | null>(null);
+  const [listingCursor, setListingCursor] = useState<string | null>(null);
   const [loadingMoreMedia, setLoadingMoreMedia] = useState(false);
   const [hasRestoredGalleryPrefs, setHasRestoredGalleryPrefs] = useState(false);
   const [windowedThumbnailRequests, setWindowedThumbnailRequests] = useState<
@@ -129,6 +128,58 @@ export function GalleryPage() {
   const [resolvedThumbnailUrls, setResolvedThumbnailUrls] = useState<Record<string, string>>({});
   const [resolvedThumbnailTokens, setResolvedThumbnailTokens] = useState<Record<string, string>>(
     {},
+  );
+
+  const effectiveRecursive = recursive || comicMode;
+  const recursiveToggleDisabled = displayPath === "";
+
+  const snapshotRequest = useMemo(
+    () => ({
+      ...toLibrarySnapshotRequest(search),
+      comicMode,
+      recursive: effectiveRecursive,
+      mediaLimit: comicMode ? undefined : 0,
+    }),
+    [comicMode, effectiveRecursive, search],
+  );
+  const listingRequest = useMemo(
+    () => ({
+      comicMode: false as const,
+      path: search.path,
+      query: search.q,
+      recursive: effectiveRecursive,
+      randomSeed,
+      showImages: settings.showImages,
+      showVideos: settings.showVideos,
+      sortMode,
+    }),
+    [
+      effectiveRecursive,
+      randomSeed,
+      search.path,
+      search.q,
+      settings.showImages,
+      settings.showVideos,
+      sortMode,
+    ],
+  );
+  const usesServerListing = !comicMode;
+  const { data: library, isFetching } = useLibrarySnapshotQuery(snapshotRequest);
+  const { data: listing, isFetching: isListingFetching } = useGalleryListingQuery(listingRequest);
+  const showFetching = hydrated && (isFetching || (usesServerListing && isListingFetching));
+
+  const listingBrowseKey = useMemo(
+    () =>
+      [
+        listingRequest.path ?? "",
+        listingRequest.query ?? "",
+        listingRequest.recursive,
+        listingRequest.randomSeed,
+        listingRequest.showImages,
+        listingRequest.showVideos,
+        listingRequest.sortMode,
+      ].join("|"),
+    [listingRequest],
   );
 
   const browseKey = useMemo(
@@ -190,29 +241,51 @@ export function GalleryPage() {
 
   useEffect(() => {
     setExtraMedia([]);
+    setExtraListingEntries([]);
+    setExtraListingMedia([]);
     setMediaPage(null);
+    setListingPage(null);
+    setListingCursor(null);
     setLoadingMoreMedia(false);
     setWindowedThumbnailRequests([]);
     const cached = readCachedGalleryThumbnailState();
     setResolvedThumbnailUrls(cached.urls);
     setResolvedThumbnailTokens(cached.deliveryTokens);
-  }, [browseKey]);
+  }, [browseKey, listingBrowseKey, usesServerListing]);
 
   useEffect(() => {
-    if (!library) {
+    if (!library || usesServerListing) {
       return;
     }
 
     setMediaPage(library.mediaPage);
-  }, [browseKey, library]);
+  }, [browseKey, library, usesServerListing]);
+
+  useEffect(() => {
+    if (!listing || !usesServerListing) {
+      return;
+    }
+
+    setListingPage({
+      hasMore: listing.page.hasMore,
+      limit: listing.page.limit,
+      nextOffset: null,
+      offset: 0,
+    });
+    setListingCursor(listing.page.cursor);
+  }, [listing, listingBrowseKey, usesServerListing]);
 
   const allMedia = useMemo(() => {
+    if (usesServerListing) {
+      return mergeLibraryMedia(listing?.media ?? [], extraListingMedia);
+    }
+
     if (!library) {
       return [];
     }
 
     return mergeLibraryMedia(library.media, extraMedia);
-  }, [extraMedia, library]);
+  }, [extraListingMedia, extraMedia, library, listing?.media, usesServerListing]);
 
   useEffect(() => {
     if (!library) {
@@ -233,9 +306,6 @@ export function GalleryPage() {
     });
   }, [allMedia, library, search.media]);
 
-  const effectiveRecursive = recursive || comicMode;
-  const recursiveToggleDisabled = displayPath === "";
-
   useEffect(() => {
     if (displayPath === "" && recursive) {
       setRecursive(false);
@@ -243,23 +313,28 @@ export function GalleryPage() {
   }, [displayPath, recursive]);
 
   const sortedMedia = useMemo(
-    () => (allMedia.length > 0 ? sortMediaItems(allMedia, sortMode, randomSeed) : []),
-    [allMedia, randomSeed, sortMode],
+    () =>
+      usesServerListing || allMedia.length === 0
+        ? allMedia
+        : sortMediaItems(allMedia, sortMode, randomSeed),
+    [allMedia, randomSeed, sortMode, usesServerListing],
   );
   const filteredMedia = useMemo(
     () =>
-      sortedMedia.filter((item) => {
-        if (item.mediaType === "video" && !settings.showVideos) {
-          return false;
-        }
+      usesServerListing
+        ? sortedMedia
+        : sortedMedia.filter((item) => {
+            if (item.mediaType === "video" && !settings.showVideos) {
+              return false;
+            }
 
-        if ((item.mediaType === "image" || item.mediaType === "gif") && !settings.showImages) {
-          return false;
-        }
+            if ((item.mediaType === "image" || item.mediaType === "gif") && !settings.showImages) {
+              return false;
+            }
 
-        return true;
-      }),
-    [settings.showImages, settings.showVideos, sortedMedia],
+            return true;
+          }),
+    [settings.showImages, settings.showVideos, sortedMedia, usesServerListing],
   );
   const visibleMedia = filteredMedia;
   const navigableMedia = useMemo(
@@ -277,7 +352,7 @@ export function GalleryPage() {
     });
     return sortComicEntries(groupedComics, sortMode, randomSeed);
   }, [comicMode, displayPath, library, randomSeed, sortMode, visibleMedia]);
-  const entries = useMemo(
+  const clientEntries = useMemo(
     () =>
       library
         ? buildBrowserEntries({
@@ -291,6 +366,11 @@ export function GalleryPage() {
         : [],
     [comicMode, comics, effectiveRecursive, library, sortMode, visibleMedia],
   );
+  const listingEntries = useMemo(
+    () => [...(listing?.entries ?? []), ...extraListingEntries],
+    [extraListingEntries, listing?.entries],
+  );
+  const entries = usesServerListing ? listingEntries : clientEntries;
 
   useEffect(() => {
     setFocusedEntryIndex((currentIndex) => {
@@ -823,6 +903,34 @@ export function GalleryPage() {
   const parentPath = getParentPath(displayPath);
 
   const loadMoreMedia = useCallback(async () => {
+    if (usesServerListing) {
+      if (!listingPage?.hasMore || !listingCursor || loadingMoreMedia) {
+        return;
+      }
+
+      setLoadingMoreMedia(true);
+      try {
+        const nextListing = await getGalleryListing({
+          data: {
+            ...listingRequest,
+            cursor: listingCursor,
+          },
+        });
+        setExtraListingMedia((current) => mergeLibraryMedia(current, nextListing.media));
+        setExtraListingEntries((current) => [...current, ...nextListing.entries]);
+        setListingPage({
+          hasMore: nextListing.page.hasMore,
+          limit: nextListing.page.limit,
+          nextOffset: null,
+          offset: 0,
+        });
+        setListingCursor(nextListing.page.cursor);
+      } finally {
+        setLoadingMoreMedia(false);
+      }
+      return;
+    }
+
     if (!mediaPage?.hasMore || mediaPage.nextOffset === null || loadingMoreMedia) {
       return;
     }
@@ -843,7 +951,15 @@ export function GalleryPage() {
     } finally {
       setLoadingMoreMedia(false);
     }
-  }, [loadingMoreMedia, mediaPage, snapshotRequest]);
+  }, [
+    listingCursor,
+    listingPage,
+    listingRequest,
+    loadingMoreMedia,
+    mediaPage,
+    snapshotRequest,
+    usesServerListing,
+  ]);
 
   const handleWindowedEntriesChange = useCallback((windowedEntries: BrowserEntry[]) => {
     const requests = dedupeThumbnailRequests(
@@ -1037,19 +1153,17 @@ export function GalleryPage() {
       </header>
 
       <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-        <Suspense fallback={<GalleryGridSkeleton />}>
+        {library && (!usesServerListing || listing) ? (
           <GalleryBrowsePane
             columnCountRef={columnCountRef}
             comicMode={comicMode}
             deletedEntryIds={deletedEntryIds}
             deletingEntryIds={deletingEntryIds}
-            displayPath={displayPath}
-            effectiveRecursive={effectiveRecursive}
+            entries={entries}
             focusedEntryIndex={focusedEntryIndex}
             isFetching={showFetching}
             loadingMoreMedia={loadingMoreMedia}
-            media={allMedia}
-            mediaPage={mediaPage}
+            mediaPage={usesServerListing ? listingPage : mediaPage}
             onActivateEntry={handleActivateEntry}
             onDelete={deleteSelectedMedia}
             onLoadMoreMedia={() => void loadMoreMedia()}
@@ -1063,18 +1177,17 @@ export function GalleryPage() {
             onScrolledToFocus={() => setScrollFocusedIntoView(false)}
             onSelectEntry={handleSelectEntry}
             onWindowedEntriesChange={handleWindowedEntriesChange}
-            randomSeed={randomSeed}
             resolvedThumbnailTokens={resolvedThumbnailTokens}
             resolvedThumbnailUrls={resolvedThumbnailUrls}
             scrollFocusedIntoView={scrollFocusedIntoView}
             selected={selected}
             selectedId={viewerLockedMediaId ?? selectedId}
             showDetailPanel={showDetailPanel}
-            snapshotRequest={snapshotRequest}
-            sortMode={sortMode}
             thumbnailSize={settings.thumbnailSize}
           />
-        </Suspense>
+        ) : (
+          <GalleryGridSkeleton />
+        )}
       </div>
 
       <FloatingToolbar
@@ -1206,12 +1319,10 @@ interface GalleryBrowsePaneProps {
   comicMode: boolean;
   deletedEntryIds: ReadonlySet<string>;
   deletingEntryIds: ReadonlySet<string>;
-  displayPath: string;
-  effectiveRecursive: boolean;
+  entries: BrowserEntry[];
   focusedEntryIndex: number;
   isFetching: boolean;
   loadingMoreMedia: boolean;
-  media: LibraryMediaItem[];
   mediaPage: MediaPage | null;
   onActivateEntry: (entry: BrowserEntry) => void;
   onDelete: () => void;
@@ -1222,15 +1333,12 @@ interface GalleryBrowsePaneProps {
   onScrolledToFocus: () => void;
   onSelectEntry: (entry: BrowserEntry) => void;
   onWindowedEntriesChange: (entries: BrowserEntry[]) => void;
-  randomSeed: number;
   resolvedThumbnailTokens: Readonly<Record<string, string>>;
   resolvedThumbnailUrls: Readonly<Record<string, string>>;
   scrollFocusedIntoView: boolean;
   selected: MediaItem | null;
   selectedId: string | null;
   showDetailPanel: boolean;
-  snapshotRequest: LibrarySnapshotRequest;
-  sortMode: GallerySortMode;
   thumbnailSize: number;
 }
 
@@ -1239,12 +1347,10 @@ function GalleryBrowsePane({
   comicMode,
   deletedEntryIds,
   deletingEntryIds,
-  displayPath,
-  effectiveRecursive,
+  entries,
   focusedEntryIndex,
   isFetching,
   loadingMoreMedia,
-  media,
   mediaPage,
   onActivateEntry,
   onDelete,
@@ -1255,19 +1361,14 @@ function GalleryBrowsePane({
   onScrolledToFocus,
   onSelectEntry,
   onWindowedEntriesChange,
-  randomSeed,
   resolvedThumbnailTokens,
   resolvedThumbnailUrls,
   scrollFocusedIntoView,
   selected,
   selectedId,
   showDetailPanel,
-  snapshotRequest,
-  sortMode,
   thumbnailSize,
 }: GalleryBrowsePaneProps) {
-  const { data: library } = useLibrarySnapshotSuspense(snapshotRequest);
-  const { settings } = useAppSettings();
   const [scrollContainer, setScrollContainer] = useState<HTMLElement | null>(null);
   const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
 
@@ -1282,8 +1383,8 @@ function GalleryBrowsePane({
     }
 
     const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
+      (observerEntries) => {
+        if (observerEntries.some((entry) => entry.isIntersecting)) {
           onLoadMoreMedia();
         }
       },
@@ -1293,49 +1394,6 @@ function GalleryBrowsePane({
     observer.observe(sentinel);
     return () => observer.disconnect();
   }, [loadingMoreMedia, mediaPage?.hasMore, onLoadMoreMedia, scrollContainer]);
-
-  const sortedMedia = useMemo(
-    () => sortMediaItems(media, sortMode, randomSeed),
-    [media, randomSeed, sortMode],
-  );
-  const visibleMedia = useMemo(
-    () =>
-      sortedMedia.filter((item) => {
-        if (item.mediaType === "video" && !settings.showVideos) {
-          return false;
-        }
-
-        if ((item.mediaType === "image" || item.mediaType === "gif") && !settings.showImages) {
-          return false;
-        }
-
-        return true;
-      }),
-    [settings.showImages, settings.showVideos, sortedMedia],
-  );
-  const comics = useMemo(() => {
-    if (!comicMode) {
-      return [];
-    }
-
-    const groupedComics = buildComicEntries(visibleMedia, displayPath || null, {
-      folders: library.allFolders,
-      leafFoldersOnly: true,
-    });
-    return sortComicEntries(groupedComics, sortMode, randomSeed);
-  }, [comicMode, displayPath, library.allFolders, randomSeed, sortMode, visibleMedia]);
-  const entries = useMemo(
-    () =>
-      buildBrowserEntries({
-        folders: library.folders,
-        comics,
-        items: visibleMedia,
-        recursive: effectiveRecursive,
-        comicMode,
-        sortMode,
-      }),
-    [comicMode, comics, effectiveRecursive, library.folders, sortMode, visibleMedia],
-  );
 
   return (
     <div

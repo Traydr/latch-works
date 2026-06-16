@@ -77,7 +77,7 @@ export const resolveMediaDeliveryUrls = createServerFn({ method: "POST" })
       throw new Error("Unauthorized");
     }
 
-    const { resolveMediaDeliveryUrlForVariant } = await import(
+    const { resolveMediaDeliveryUrlsForVariants } = await import(
       "../../server/media/resolve-delivery-url"
     );
 
@@ -92,43 +92,7 @@ export const resolveMediaDeliveryUrls = createServerFn({ method: "POST" })
       return true;
     });
 
-    const results = await Promise.all(
-      uniqueItems.map(async (item): Promise<MediaDeliveryBatchResult> => {
-        try {
-          const result = await resolveMediaDeliveryUrlForVariant({
-            mediaId: item.mediaId,
-            size: item.size,
-            variant: item.variant,
-          });
-
-          if (result.pending) {
-            return {
-              mediaId: item.mediaId,
-              retryAfterMs: 15_000,
-              size: item.size,
-              status: "pending",
-              variant: item.variant,
-            };
-          }
-
-          return {
-            deliveryToken: result.deliveryToken,
-            mediaId: item.mediaId,
-            size: item.size,
-            status: "ready",
-            url: result.url,
-            variant: item.variant,
-          };
-        } catch {
-          return {
-            mediaId: item.mediaId,
-            size: item.size,
-            status: "failed",
-            variant: item.variant,
-          };
-        }
-      }),
-    );
+    const results = await resolveMediaDeliveryUrlsForVariants(uniqueItems);
 
     return { results };
   });
