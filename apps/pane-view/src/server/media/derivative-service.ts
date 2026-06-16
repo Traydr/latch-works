@@ -24,7 +24,7 @@ import {
 } from "./derivative-priority";
 import { logDerivativeEvent } from "./derivative-telemetry";
 import { wakeOptimizer } from "./optimizer-wake";
-import { readMediaThumbnailContext } from "./repository";
+import { readMediaThumbnailContext, type MediaThumbnailContext } from "./repository";
 import { createPaneViewStorageClient } from "./storage-client";
 
 const derivativeGenerationLimiter = createConcurrencyLimiter(2);
@@ -180,11 +180,22 @@ export async function ensureThumbnailDerivative({
   mediaId: string;
   requestedSize: number;
 }): Promise<ThumbnailEnsureResult> {
-  const size = snapThumbnailSize(requestedSize);
   const context = await readMediaThumbnailContext({ mediaId });
   if (!context) {
     return { status: "failed" };
   }
+
+  return ensureThumbnailDerivativeForContext({ context, requestedSize });
+}
+
+export async function ensureThumbnailDerivativeForContext({
+  context,
+  requestedSize,
+}: {
+  context: MediaThumbnailContext;
+  requestedSize: number;
+}): Promise<ThumbnailEnsureResult> {
+  const size = snapThumbnailSize(requestedSize);
 
   if (!supportsDerivative(context.mediaType) && !supportsInlineImageThumbnail(context.mediaType)) {
     return { status: "unsupported" };

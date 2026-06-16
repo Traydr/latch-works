@@ -109,4 +109,16 @@ describe("library snapshot paging", () => {
       }),
     );
   });
+
+  it("honors explicit media limit for search requests", async () => {
+    await readLibrarySnapshotRequest({ mediaLimit: 0, path: "photos", query: "cover" });
+
+    expect(readDatabaseLibrarySnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        limit: 0,
+        offset: 0,
+        query: "cover",
+      }),
+    );
+  });
 });

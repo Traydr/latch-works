@@ -8,11 +8,11 @@ STOP conditions, and update your row when done.
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 | --- | --- | --- | --- | --- | --- |
-| 001 | Compute Gallery Derived State Once | P1 | S | - | TODO |
-| 002 | Resolve Gallery Delivery Batches Without Per-Item Re-Reads | P1 | M | - | TODO |
-| 003 | Add Indexes For Gallery Scope And Search Queries | P1 | M | - | TODO |
-| 004 | Move Gallery Sorting Filtering And Pagination To Server Queries | P1 | L | 001, 003 | TODO |
-| 005 | Trim Comic Mode Folder Child Lookup Work | P2 | S/M | - | TODO |
+| 001 | Compute Gallery Derived State Once | P1 | S | - | DONE |
+| 002 | Resolve Gallery Delivery Batches Without Per-Item Re-Reads | P1 | M | - | DONE |
+| 003 | Add Indexes For Gallery Scope And Search Queries | P1 | M | - | DONE |
+| 004 | Move Gallery Sorting Filtering And Pagination To Server Queries | P1 | L | 001, 003 | DONE |
+| 005 | Trim Comic Mode Folder Child Lookup Work | P2 | S/M | - | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
