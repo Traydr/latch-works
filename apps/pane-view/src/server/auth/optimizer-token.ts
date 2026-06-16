@@ -1,5 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { env } from "../../env/server";
+import { logDerivativeEvent } from "../media/derivative-telemetry";
 import { readBearerToken } from "./api-token";
 
 let cachedConfiguredToken: string | null = null;
@@ -41,6 +42,7 @@ export function verifyOptimizerToken(token: string | null): boolean {
 /** Returns a 401/503 response when the optimizer token is missing or invalid, else null. */
 export function requireOptimizerToken(request: Request): Response | null {
   if (!env.MEDIA_OPTIMIZER_TOKEN) {
+    logDerivativeEvent("optimizer.auth_failed", { reason: "token_not_configured" });
     return new Response("Optimizer token not configured", { status: 503 });
   }
 
@@ -48,5 +50,6 @@ export function requireOptimizerToken(request: Request): Response | null {
     return null;
   }
 
+  logDerivativeEvent("optimizer.auth_failed", { reason: "invalid_token" });
   return new Response("Unauthorized", { status: 401 });
 }

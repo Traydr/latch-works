@@ -12,6 +12,7 @@ type PaneViewImageProps = {
   priority?: boolean;
   previewReadyUrl?: string;
   readyUrl?: string;
+  resolveMissing?: boolean;
   thumbnailReadyUrl?: string;
   variant?: "thumbnail" | "preview" | "original";
   width?: number;
@@ -25,6 +26,7 @@ export function PaneViewImage({
   priority = false,
   previewReadyUrl,
   readyUrl,
+  resolveMissing = true,
   thumbnailReadyUrl,
   variant = "thumbnail",
 }: PaneViewImageProps) {
@@ -37,13 +39,17 @@ export function PaneViewImage({
 
   const { failed, loading, resolvedUrl } = useResolvedMediaUrl({
     fallbackReadyUrl: variant === "preview" ? thumbnailReadyUrl : undefined,
-    mediaId,
+    mediaId: resolveMissing || resolvedReadyUrl ? mediaId : undefined,
     readyUrl: resolvedReadyUrl,
     // Gallery tiles use a single fixed size so generated derivatives always
     // match the size the snapshot embeds; preview/original ignore size.
     size: variant === "thumbnail" ? GALLERY_THUMBNAIL_SIZE : undefined,
     variant,
   });
+
+  if (!resolveMissing && !resolvedReadyUrl) {
+    return <div aria-hidden className={cn(className, "bg-zinc-800/80")} />;
+  }
 
   if (loading || !resolvedUrl) {
     return <div aria-hidden className={cn(className, "bg-zinc-800/80")} />;

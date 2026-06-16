@@ -1,5 +1,6 @@
 import type { MediaType } from "@latch-works/media-domain";
 import { env } from "./env.js";
+import { excerpt, logOptimizerError } from "./logging.js";
 
 export interface DerivativeJob {
   attemptCount: number;
@@ -35,6 +36,12 @@ async function postInternal(path: string, body: unknown): Promise<Response> {
 export async function claimJobs(limit: number): Promise<ClaimResponse> {
   const response = await postInternal("/internal/optimizer/claim", { limit });
   if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    logOptimizerError("optimizer.pane_view_request_failed", {
+      body: excerpt(body),
+      path: "/internal/optimizer/claim",
+      status: response.status,
+    });
     throw new Error(`claim failed: ${response.status}`);
   }
 
@@ -51,6 +58,12 @@ async function parseMatchResponse(response: Response, action: string): Promise<b
   }
 
   if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    logOptimizerError("optimizer.pane_view_request_failed", {
+      action,
+      body: excerpt(body),
+      status: response.status,
+    });
     throw new Error(`${action} failed: ${response.status}`);
   }
 
@@ -90,6 +103,12 @@ export async function releaseJobs(input: {
 
   const response = await postInternal("/internal/optimizer/release", input);
   if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    logOptimizerError("optimizer.pane_view_request_failed", {
+      body: excerpt(body),
+      path: "/internal/optimizer/release",
+      status: response.status,
+    });
     throw new Error(`release failed: ${response.status}`);
   }
 }

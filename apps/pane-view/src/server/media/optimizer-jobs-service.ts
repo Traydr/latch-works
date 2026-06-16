@@ -7,6 +7,7 @@ import {
   failDerivativeJob,
   releaseDerivativeJob,
 } from "./derivative-queue";
+import { logDerivativeEvent } from "./derivative-telemetry";
 
 const DEFAULT_CLAIM_LIMIT = 5;
 const MAX_CLAIM_LIMIT = 50;
@@ -62,6 +63,12 @@ export async function claimOptimizerJobs(
     processingToken,
   });
 
+  logDerivativeEvent("optimizer.claim", {
+    jobCount: jobs.length,
+    limit: input.limit ?? DEFAULT_CLAIM_LIMIT,
+    processingToken,
+  });
+
   return { jobs, processingToken };
 }
 
@@ -69,11 +76,25 @@ export async function completeOptimizerJob(
   input: z.infer<typeof completeRequestSchema>,
 ): Promise<{ matched: boolean }> {
   const matched = await completeDerivativeJob(input);
+  logDerivativeEvent("optimizer.complete", {
+    matched,
+    mediaObjectId: input.mediaObjectId,
+    processingToken: input.processingToken,
+    size: input.size,
+  });
   return { matched };
 }
 
 export async function failOptimizerJob(input: z.infer<typeof failRequestSchema>) {
-  return failDerivativeJob(input);
+  const result = await failDerivativeJob(input);
+  logDerivativeEvent("optimizer.fail", {
+    matched: result.matched,
+    mediaObjectId: input.mediaObjectId,
+    processingToken: input.processingToken,
+    size: input.size,
+    status: result.status,
+  });
+  return result;
 }
 
 export async function releaseOptimizerJobs(
@@ -91,6 +112,12 @@ export async function releaseOptimizerJobs(
       released += 1;
     }
   }
+
+  logDerivativeEvent("optimizer.release", {
+    jobCount: input.jobs.length,
+    processingToken: input.processingToken,
+    released,
+  });
 
   return { released };
 }

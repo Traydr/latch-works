@@ -12,11 +12,15 @@ interface BrowserGridProps {
   deletingEntryIds: ReadonlySet<string>;
   entries: BrowserEntry[];
   focusedIndex: number;
+  loadMoreSentinelRef?: RefObject<HTMLDivElement | null>;
   onActivateEntry: (entry: BrowserEntry) => void;
+  onScrollContainerChange?: (element: HTMLElement | null) => void;
   onSelectEntry: (entry: BrowserEntry) => void;
   scrollFocusedIntoView: boolean;
   onScrolledToFocus: () => void;
   selectedId: string | null;
+  thumbnailUrls?: Readonly<Record<string, string>>;
+  onWindowedEntriesChange?: (entries: BrowserEntry[]) => void;
 }
 
 export function BrowserGrid({
@@ -27,11 +31,15 @@ export function BrowserGrid({
   deletingEntryIds,
   entries,
   focusedIndex,
+  loadMoreSentinelRef,
   onActivateEntry,
+  onScrollContainerChange,
   onSelectEntry,
   scrollFocusedIntoView,
   onScrolledToFocus,
   selectedId,
+  thumbnailUrls = {},
+  onWindowedEntriesChange,
 }: BrowserGridProps) {
   const {
     cardHeight,
@@ -49,6 +57,22 @@ export function BrowserGrid({
   if (columnCountRef.current !== columnCount) {
     columnCountRef.current = columnCount;
   }
+
+  useEffect(() => {
+    onScrollContainerChange?.(mainRef.current);
+    return () => onScrollContainerChange?.(null);
+  }, [mainRef, onScrollContainerChange]);
+
+  useEffect(() => {
+    if (!onWindowedEntriesChange) {
+      return;
+    }
+
+    const visibleEntries = windowedItems
+      .map((slot) => entries[slot.index])
+      .filter((entry): entry is BrowserEntry => Boolean(entry));
+    onWindowedEntriesChange(visibleEntries);
+  }, [entries, onWindowedEntriesChange, windowedItems]);
 
   useEffect(() => {
     if (!scrollFocusedIntoView || entries.length === 0) {
@@ -136,12 +160,14 @@ export function BrowserGrid({
                 onSelect={onSelectEntry}
                 priority={Math.abs(slot.index - focusedIndex) <= columnCount}
                 selected={selected}
+                thumbnailUrls={thumbnailUrls}
                 top={slot.top}
               />
             );
           })}
         </div>
       )}
+      <div ref={loadMoreSentinelRef} aria-hidden className="h-px w-px" />
     </section>
   );
 }

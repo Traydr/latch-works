@@ -200,7 +200,7 @@ Pane View sets `library_entries.deleted_at` and records a `sync_run_items` row w
 
 ### What push does not do yet
 
-- **Thumbnail generation during sync** — derivatives are generated on demand when Pane View serves `/api/media/:id/thumbnail`. See [runbooks/pane-view-thumbnails.md](./runbooks/pane-view-thumbnails.md).
+- **Guaranteed derivative completion during sync** — in triggered mode Pane View can enqueue prewarm derivative rows after sync completion and wake the media optimizer, but Lockstep does not block push completion on every derivative becoming ready. See [runbooks/pane-view-thumbnails.md](./runbooks/pane-view-thumbnails.md) and [runbooks/media-optimizer.md](./runbooks/media-optimizer.md).
 - **Background transcode / PDF covers** — planned as a later worker path in [ARCHITECTURE_PLAN.md](./ARCHITECTURE_PLAN.md).
 
 ---
@@ -248,7 +248,7 @@ sequenceDiagram
 
 - Without `q`: folders where `parent_path = currentPath`; media under `currentPath/` (prefix match on `logical_path`).
 - With `q`: case-insensitive match on path/filename for both folders and media.
-- Builds `LibraryMediaItem` rows with `thumbnailUrl` when a ready 320px thumbnail exists; otherwise images/gifs use `/api/media/:id/original` as the grid preview.
+- Builds `LibraryMediaItem` rows with `thumbnailUrl` when a ready 320px thumbnail exists. Missing ready thumbnails render as placeholders until a bounded batched resolver asks Pane View to enqueue or resolve visible/near-visible derivatives.
 
 The home component (`PaneViewHome`) sorts and filters client-side (recursive mode, comic mode, sort mode), builds `BrowserEntry` list (folders, media, comics), and persists UI preferences via `useGalleryState` (local storage).
 
@@ -279,10 +279,10 @@ sequenceDiagram
   participant DB as Postgres
   participant S3 as Object storage
 
-  Browser->>PV: GET /api/media/{id}/thumbnail?size=320
+  Browser->>PV: batched resolve visible thumbnails
   PV->>PV: isRequestSessionValid()
-  PV->>DB: ensure derivative row / generate on demand
-  PV-->>Browser: 302 Location /cdn/v1/{token}
+  PV->>DB: ensure derivative rows / read ready rows
+  PV-->>Browser: ready URLs or pending statuses
   Browser->>CDN: GET /cdn/v1/{token}
   alt cache_hit
     CDN-->>Browser: image/webp bytes
@@ -300,7 +300,7 @@ sequenceDiagram
 | `GET /api/media/:mediaId/thumbnail?size=` | Session | Ensures on-demand derivative, then 302 to `/cdn/v1/{token}`; `503` while generating |
 | `GET /cdn/v1/:token` | HMAC token | Streams derivative bytes with long CDN cache headers |
 
-`MediaViewerModal` loads video/image/gif via `/api/media/${id}/original`. Grid tiles use `thumbnailUrl` from the library snapshot (`/cdn/v1/...` when ready, otherwise `/api/media/.../thumbnail?size=320`).
+`MediaViewerModal` loads video/image/gif via `/api/media/${id}/original`. Grid tiles use `thumbnailUrl` from the library snapshot (`/cdn/v1/...` when ready). Missing gallery thumbnails are resolved in visible-window batches rather than by every tile polling its own `/api/media/.../thumbnail?size=320` URL.
 
 See [runbooks/pane-view-thumbnails.md](./runbooks/pane-view-thumbnails.md) and [runbooks/railway-cdn-pane-view.md](./runbooks/railway-cdn-pane-view.md).
 

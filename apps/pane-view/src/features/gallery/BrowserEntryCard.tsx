@@ -16,6 +16,7 @@ interface BrowserEntryCardProps {
   onSelect: (entry: BrowserEntry) => void;
   priority?: boolean;
   selected: boolean;
+  thumbnailUrls: Readonly<Record<string, string>>;
   top: number;
 }
 
@@ -31,6 +32,7 @@ export function BrowserEntryCard({
   onSelect,
   priority = false,
   selected,
+  thumbnailUrls,
   top,
 }: BrowserEntryCardProps) {
   const isMobile = useIsMobile();
@@ -69,6 +71,7 @@ export function BrowserEntryCard({
           focused={focused}
           priority={priority}
           selected={selected}
+          thumbnailUrls={thumbnailUrls}
         />
       ) : (
         <MediaCard
@@ -79,6 +82,7 @@ export function BrowserEntryCard({
           focused={focused}
           priority={priority}
           selected={selected}
+          thumbnailUrls={thumbnailUrls}
         />
       )}
     </button>
@@ -137,6 +141,7 @@ function ComicCard({
   focused,
   priority,
   selected,
+  thumbnailUrls,
 }: {
   cardWidth: number;
   deletedEntryIds: ReadonlySet<string>;
@@ -145,6 +150,7 @@ function ComicCard({
   focused: boolean;
   priority?: boolean;
   selected: boolean;
+  thumbnailUrls: Readonly<Record<string, string>>;
 }) {
   const comic = entry.comic;
   const isDeleting = comic.pages.some((page) => deletingEntryIds.has(page.id));
@@ -161,7 +167,12 @@ function ComicCard({
       }`}
       title={comic.folderPath}
     >
-      <Poster cardWidth={cardWidth} media={comic.cover} priority={priority} />
+      <Poster
+        cardWidth={cardWidth}
+        media={comic.cover}
+        priority={priority}
+        resolvedThumbnailUrl={thumbnailUrls[comic.cover.id]}
+      />
       {isDeleting || isDeleted ? <DeleteOverlay animated={isDeleting} /> : null}
       <div className="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/75 via-black/10 to-transparent">
         <div className="px-3 pb-3">
@@ -181,6 +192,7 @@ function MediaCard({
   focused,
   priority,
   selected,
+  thumbnailUrls,
 }: {
   cardWidth: number;
   deletedEntryIds: ReadonlySet<string>;
@@ -189,6 +201,7 @@ function MediaCard({
   focused: boolean;
   priority?: boolean;
   selected: boolean;
+  thumbnailUrls: Readonly<Record<string, string>>;
 }) {
   const item = entry.media;
   const isDeleting = deletingEntryIds.has(item.id);
@@ -205,7 +218,12 @@ function MediaCard({
       }`}
       title={item.path}
     >
-      <Poster cardWidth={cardWidth} media={item} priority={priority} />
+      <Poster
+        cardWidth={cardWidth}
+        media={item}
+        priority={priority}
+        resolvedThumbnailUrl={thumbnailUrls[item.id]}
+      />
       {isDeleting || isDeleted ? <DeleteOverlay animated={isDeleting} /> : null}
       <div className="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 transition-opacity group-hover:opacity-100">
         <div className="px-3 pb-3">

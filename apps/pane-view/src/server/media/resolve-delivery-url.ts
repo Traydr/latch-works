@@ -13,6 +13,8 @@ import { createPaneViewStorageClient } from "./storage-client";
 
 export type MediaDeliveryResolveResult = { pending: true } | { pending: false; url: string };
 
+let readyResolveLogCount = 0;
+
 async function resolveOriginalDeliveryUrl(mediaId: string): Promise<string> {
   const media = await readMediaDeliveryRequest({ mediaId });
   if (!media) {
@@ -50,12 +52,18 @@ export async function resolveDerivativeDeliveryUrl({
           requestedSize: snapThumbnailSize(size ?? 320),
         });
 
-  logDerivativeEvent("derivative.resolve", {
-    durationMs: Date.now() - startedAt,
-    mediaType: media.mediaType,
-    status: derivative.status,
-    variant,
-  });
+  if (derivative.status !== "ready" || readyResolveLogCount % 100 === 0) {
+    logDerivativeEvent("derivative.resolve", {
+      durationMs: Date.now() - startedAt,
+      mediaType: media.mediaType,
+      sampled: derivative.status === "ready",
+      status: derivative.status,
+      variant,
+    });
+  }
+  if (derivative.status === "ready") {
+    readyResolveLogCount += 1;
+  }
 
   if (derivative.status === "pending") {
     return { pending: true };

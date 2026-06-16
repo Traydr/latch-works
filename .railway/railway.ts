@@ -16,6 +16,15 @@ const paneViewPrivateUrl = "http://${{Pane-View.RAILWAY_PRIVATE_DOMAIN}}:${{Pane
 const mediaOptimizerPrivateUrl =
   "http://${{Media-Optimizer.RAILWAY_PRIVATE_DOMAIN}}:${{Media-Optimizer.PORT}}";
 
+const workspaceConfigWatchPatterns = ["/package.json", "/pnpm-lock.yaml", "/pnpm-workspace.yaml"];
+
+const mediaPackageWatchPatterns = [
+  "/packages/media-delivery/**",
+  "/packages/media-derivatives/**",
+  "/packages/media-domain/**",
+  "/packages/media-storage/**",
+];
+
 export default defineRailway(() => {
   const latchWorks = github("Traydr/latch-works");
 
@@ -40,10 +49,14 @@ export default defineRailway(() => {
   const MediaOptimizer = service("Media-Optimizer", {
     source: latchWorks,
     build: {
-      buildCommand: "pnpm build",
+      buildCommand: "pnpm --filter @latch-works/media-optimizer... build",
       buildEnvironment: "V3",
       builder: "RAILPACK",
-      watchPatterns: ["/apps/media-optimizer/**"],
+      watchPatterns: [
+        "/apps/media-optimizer/**",
+        ...mediaPackageWatchPatterns,
+        ...workspaceConfigWatchPatterns,
+      ],
     },
     start: "cd ./apps/media-optimizer && pnpm start",
     replicas: {
@@ -68,10 +81,14 @@ export default defineRailway(() => {
   const PaneView = service("Pane-View", {
     source: latchWorks,
     build: {
-      buildCommand: "pnpm build",
+      buildCommand: "pnpm --filter @latch-works/pane-view... build",
       buildEnvironment: "V3",
       builder: "RAILPACK",
-      watchPatterns: ["/apps/pane-view/**"],
+      watchPatterns: [
+        "/apps/pane-view/**",
+        ...mediaPackageWatchPatterns,
+        ...workspaceConfigWatchPatterns,
+      ],
     },
     start: "cd ./apps/pane-view && pnpm start",
     replicas: {
@@ -104,10 +121,10 @@ export default defineRailway(() => {
   const Showcase = service("Showcase", {
     source: latchWorks,
     build: {
-      buildCommand: "pnpm build",
+      buildCommand: "pnpm --filter @latch-works/showcase build",
       buildEnvironment: "V3",
       builder: "RAILPACK",
-      watchPatterns: ["/apps/showcase/**"],
+      watchPatterns: ["/apps/showcase/**", ...workspaceConfigWatchPatterns],
     },
     start: "cd ./apps/showcase && pnpm start",
     replicas: {
