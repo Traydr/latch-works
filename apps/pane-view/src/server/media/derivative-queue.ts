@@ -1,9 +1,15 @@
 import type { ThumbnailSize } from "@latch-works/media-delivery";
 import type { MediaType } from "@latch-works/media-domain";
-import { and, asc, eq, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, lte, or, sql } from "drizzle-orm";
 import { db } from "../db";
 import { mediaObjects, thumbnails } from "../db/schema";
 import { derivativeProcessingLeaseMs } from "./derivative-lease";
+import type {
+  DerivativeQueueIntent,
+  DerivativeQueueSource,
+  DerivativeQueueVariant,
+} from "./derivative-priority";
+import { resolveDerivativeQueuePriority } from "./derivative-priority";
 
 export const DERIVATIVE_MAX_ATTEMPTS = 5;
 const RETRY_BASE_DELAY_MS = 60_000;
@@ -16,8 +22,23 @@ export interface DerivativeJob {
   mediaType: MediaType;
   objectKey: string;
   originalObjectKey: string;
+  priorityAt: string;
+  queuePriority: number;
+  queueSource: DerivativeQueueSource;
+  queueVariant: DerivativeQueueVariant;
   sha256: string;
   size: number;
+}
+
+function claimOrderBy() {
+  return [
+    desc(thumbnails.queuePriority),
+    desc(thumbnails.priorityAt),
+    desc(thumbnails.createdAt),
+    sql`${thumbnails.nextAttemptAt} asc nulls first`,
+    asc(thumbnails.mediaObjectId),
+    desc(thumbnails.size),
+  ] as const;
 }
 
 /**
@@ -53,7 +74,7 @@ export async function claimDerivativeJobs({
           and(eq(thumbnails.status, "processing"), lte(thumbnails.updatedAt, leaseExpiry)),
         ),
       )
-      .orderBy(asc(thumbnails.nextAttemptAt), asc(thumbnails.createdAt))
+      .orderBy(...claimOrderBy())
       .limit(limit)
       .for("update", { skipLocked: true });
 
@@ -74,7 +95,7 @@ export async function claimDerivativeJobs({
         .where(and(eq(thumbnails.mediaObjectId, row.mediaObjectId), eq(thumbnails.size, row.size)));
     }
 
-    return tx
+    const jobs = await tx
       .select({
         attemptCount: thumbnails.attemptCount,
         extension: mediaObjects.extension,
@@ -82,6 +103,10 @@ export async function claimDerivativeJobs({
         mediaType: mediaObjects.mediaType,
         objectKey: thumbnails.objectKey,
         originalObjectKey: mediaObjects.objectKey,
+        priorityAt: thumbnails.priorityAt,
+        queuePriority: thumbnails.queuePriority,
+        queueSource: thumbnails.queueSource,
+        queueVariant: thumbnails.queueVariant,
         sha256: mediaObjects.sha256,
         size: thumbnails.size,
       })
@@ -89,7 +114,13 @@ export async function claimDerivativeJobs({
       .innerJoin(mediaObjects, eq(thumbnails.mediaObjectId, mediaObjects.id))
       .where(
         and(eq(thumbnails.processingToken, processingToken), eq(thumbnails.status, "processing")),
-      );
+      )
+      .orderBy(...claimOrderBy());
+
+    return jobs.map((job) => ({
+      ...job,
+      priorityAt: job.priorityAt.toISOString(),
+    }));
   });
 }
 
@@ -250,14 +281,119 @@ export async function failDerivativeJob({
  * row was enqueued.
  */
 export async function enqueueDerivativeJob({
+  intent,
   mediaObjectId,
   objectKey,
   size,
 }: {
+  intent: DerivativeQueueIntent;
   mediaObjectId: string;
   objectKey: string;
   size: ThumbnailSize;
 }): Promise<boolean> {
+  const priorityAt = intent.priorityAt ?? new Date();
+  const queuePriority = resolveDerivativeQueuePriority(intent);
+  const [existing] = await db
+    .select({
+      priorityAt: thumbnails.priorityAt,
+      queuePriority: thumbnails.queuePriority,
+      status: thumbnails.status,
+      updatedAt: thumbnails.updatedAt,
+    })
+    .from(thumbnails)
+    .where(and(eq(thumbnails.mediaObjectId, mediaObjectId), eq(thumbnails.size, size)))
+    .limit(1);
+
+  if (existing?.status === "ready") {
+    return false;
+  }
+
+  if (
+    existing?.status === "processing" &&
+    Date.now() - existing.updatedAt.getTime() < derivativeProcessingLeaseMs
+  ) {
+    return false;
+  }
+
+  if (existing?.status === "pending") {
+    const shouldPromote =
+      queuePriority > existing.queuePriority ||
+      (queuePriority === existing.queuePriority && priorityAt > existing.priorityAt);
+
+    if (!shouldPromote) {
+      return false;
+    }
+
+    const updated = await db
+      .update(thumbnails)
+      .set({
+        objectKey,
+        priorityAt,
+        queuePriority,
+        queueSource: intent.source,
+        queueVariant: intent.variant,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(thumbnails.mediaObjectId, mediaObjectId), eq(thumbnails.size, size)))
+      .returning({ mediaObjectId: thumbnails.mediaObjectId });
+
+    return updated.length > 0;
+  }
+
+  if (existing?.status === "failed") {
+    if (intent.source !== "on-demand") {
+      return false;
+    }
+
+    const updated = await db
+      .update(thumbnails)
+      .set({
+        error: null,
+        nextAttemptAt: null,
+        objectKey,
+        priorityAt,
+        processingToken: null,
+        queuePriority,
+        queueSource: intent.source,
+        queueVariant: intent.variant,
+        status: "pending",
+        updatedAt: new Date(),
+      })
+      .where(and(eq(thumbnails.mediaObjectId, mediaObjectId), eq(thumbnails.size, size)))
+      .returning({ mediaObjectId: thumbnails.mediaObjectId });
+
+    return updated.length > 0;
+  }
+
+  if (existing?.status === "processing") {
+    const updated = await db
+      .update(thumbnails)
+      .set({
+        attemptCount: sql`${thumbnails.attemptCount} + 1`,
+        error: null,
+        nextAttemptAt: null,
+        objectKey,
+        priorityAt,
+        processingToken: null,
+        queuePriority,
+        queueSource: intent.source,
+        queueVariant: intent.variant,
+        status: "pending",
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(thumbnails.mediaObjectId, mediaObjectId),
+          eq(thumbnails.size, size),
+          eq(thumbnails.status, "processing"),
+          lte(thumbnails.updatedAt, new Date(Date.now() - derivativeProcessingLeaseMs)),
+        ),
+      )
+      .returning({ mediaObjectId: thumbnails.mediaObjectId });
+
+    return updated.length > 0;
+  }
+
   const inserted = await db
     .insert(thumbnails)
     .values({
@@ -265,6 +401,10 @@ export async function enqueueDerivativeJob({
       mediaObjectId,
       objectKey,
       nextAttemptAt: null,
+      priorityAt,
+      queuePriority,
+      queueSource: intent.source,
+      queueVariant: intent.variant,
       size,
       status: "pending",
       width: 0,

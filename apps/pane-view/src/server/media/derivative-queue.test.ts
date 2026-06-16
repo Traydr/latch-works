@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  insertMock: vi.fn(),
   selectMock: vi.fn(),
   updateMock: vi.fn(),
 }));
 
 vi.mock("../db", () => ({
   db: {
+    insert: mocks.insertMock,
     select: mocks.selectMock,
     update: mocks.updateMock,
   },
@@ -15,6 +17,7 @@ vi.mock("../db", () => ({
 import {
   completeDerivativeJob,
   DERIVATIVE_MAX_ATTEMPTS,
+  enqueueDerivativeJob,
   failDerivativeJob,
 } from "./derivative-queue";
 
@@ -31,6 +34,14 @@ function mockSelect(rows: unknown) {
   const whereMock = vi.fn().mockReturnValue({ limit: limitMock });
   const fromMock = vi.fn().mockReturnValue({ where: whereMock });
   mocks.selectMock.mockReturnValue({ from: fromMock });
+}
+
+function mockInsertReturning(returningValue: unknown) {
+  const returningMock = vi.fn().mockResolvedValue(returningValue);
+  const onConflictDoNothingMock = vi.fn().mockReturnValue({ returning: returningMock });
+  const valuesMock = vi.fn().mockReturnValue({ onConflictDoNothing: onConflictDoNothingMock });
+  mocks.insertMock.mockReturnValue({ values: valuesMock });
+  return { onConflictDoNothingMock, returningMock, valuesMock };
 }
 
 describe("completeDerivativeJob", () => {
@@ -66,6 +77,145 @@ describe("completeDerivativeJob", () => {
     });
 
     expect(result).toBe(false);
+  });
+});
+
+describe("enqueueDerivativeJob", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("inserts a new pending row with queue priority metadata", async () => {
+    const priorityAt = new Date("2026-06-16T12:00:00.000Z");
+    mockSelect([]);
+    const insert = mockInsertReturning([{ mediaObjectId: "obj-1" }]);
+
+    const result = await enqueueDerivativeJob({
+      intent: { priorityAt, source: "on-demand", variant: "preview" },
+      mediaObjectId: "obj-1",
+      objectKey: "thumbnails/x-960.webp",
+      size: 960,
+    });
+
+    expect(result).toBe(true);
+    expect(insert.valuesMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        priorityAt,
+        queuePriority: 300,
+        queueSource: "on-demand",
+        queueVariant: "preview",
+        status: "pending",
+      }),
+    );
+  });
+
+  it("promotes an existing pending row when demand priority is higher", async () => {
+    const priorityAt = new Date("2026-06-16T12:00:00.000Z");
+    mockSelect([
+      {
+        priorityAt: new Date("2026-06-15T12:00:00.000Z"),
+        queuePriority: 0,
+        status: "pending",
+        updatedAt: new Date("2026-06-15T12:00:00.000Z"),
+      },
+    ]);
+    const update = mockUpdateReturning([{ mediaObjectId: "obj-1" }]);
+
+    const result = await enqueueDerivativeJob({
+      intent: { priorityAt, source: "on-demand", variant: "thumbnail" },
+      mediaObjectId: "obj-1",
+      objectKey: "thumbnails/x-320.webp",
+      size: 320,
+    });
+
+    expect(result).toBe(true);
+    expect(update.setMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        priorityAt,
+        queuePriority: 200,
+        queueSource: "on-demand",
+        queueVariant: "thumbnail",
+      }),
+    );
+    expect(mocks.insertMock).not.toHaveBeenCalled();
+  });
+
+  it("does not downgrade an existing on-demand pending row during prewarm", async () => {
+    mockSelect([
+      {
+        priorityAt: new Date("2026-06-16T12:00:00.000Z"),
+        queuePriority: 200,
+        status: "pending",
+        updatedAt: new Date("2026-06-16T12:00:00.000Z"),
+      },
+    ]);
+
+    const result = await enqueueDerivativeJob({
+      intent: {
+        priorityAt: new Date("2026-06-15T12:00:00.000Z"),
+        source: "prewarm",
+        variant: "preview",
+      },
+      mediaObjectId: "obj-1",
+      objectKey: "thumbnails/x-960.webp",
+      size: 960,
+    });
+
+    expect(result).toBe(false);
+    expect(mocks.updateMock).not.toHaveBeenCalled();
+    expect(mocks.insertMock).not.toHaveBeenCalled();
+  });
+
+  it("resets failed rows only for on-demand work", async () => {
+    const priorityAt = new Date("2026-06-16T12:00:00.000Z");
+    mockSelect([
+      {
+        priorityAt: new Date("2026-06-15T12:00:00.000Z"),
+        queuePriority: 0,
+        status: "failed",
+        updatedAt: new Date("2026-06-15T12:00:00.000Z"),
+      },
+    ]);
+    const update = mockUpdateReturning([{ mediaObjectId: "obj-1" }]);
+
+    const result = await enqueueDerivativeJob({
+      intent: { priorityAt, source: "on-demand", variant: "thumbnail" },
+      mediaObjectId: "obj-1",
+      objectKey: "thumbnails/x-320.webp",
+      size: 320,
+    });
+
+    expect(result).toBe(true);
+    expect(update.setMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        error: null,
+        nextAttemptAt: null,
+        queuePriority: 200,
+        status: "pending",
+      }),
+    );
+  });
+
+  it("leaves ready rows untouched", async () => {
+    mockSelect([
+      {
+        priorityAt: new Date("2026-06-15T12:00:00.000Z"),
+        queuePriority: 0,
+        status: "ready",
+        updatedAt: new Date("2026-06-15T12:00:00.000Z"),
+      },
+    ]);
+
+    const result = await enqueueDerivativeJob({
+      intent: { source: "on-demand", variant: "thumbnail" },
+      mediaObjectId: "obj-1",
+      objectKey: "thumbnails/x-320.webp",
+      size: 320,
+    });
+
+    expect(result).toBe(false);
+    expect(mocks.updateMock).not.toHaveBeenCalled();
+    expect(mocks.insertMock).not.toHaveBeenCalled();
   });
 });
 

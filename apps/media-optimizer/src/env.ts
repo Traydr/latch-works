@@ -8,16 +8,8 @@ export const env = createEnv({
     PORT: z.coerce.number().int().positive().optional(),
     // Base URL of the Pane View instance that owns the derivative queue/DB.
     PANE_VIEW_INTERNAL_URL: z.url(),
-    // How many jobs a single /process invocation will attempt before returning.
-    OPTIMIZER_BATCH_LIMIT: z.coerce.number().int().positive().default(250),
-    // How many jobs to lease per claim round (keeps dangling leases small on timeout).
+    // How many jobs to lease per claim round. The optimizer drains until empty.
     OPTIMIZER_CLAIM_CHUNK: z.coerce.number().int().positive().default(5),
-    // Wall-clock budget for a single /process invocation.
-    OPTIMIZER_MAX_RUNTIME_MS: z.coerce
-      .number()
-      .int()
-      .positive()
-      .default(5 * 60_000),
     S3_ENDPOINT: z.url(),
     S3_REGION: z.string(),
     S3_BUCKET: z.string(),

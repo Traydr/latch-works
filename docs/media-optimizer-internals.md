@@ -91,7 +91,7 @@ sequenceDiagram
   PV->>MO: POST /internal/optimizer/process
   MO-->>PV: 202 { runId, status: "started" }
   Note over MO: processBatch(runId) runs in background
-  loop until limits or empty queue
+  loop until empty queue
     MO->>PV: POST /internal/optimizer/claim
     PV-->>MO: jobs + processingToken
     MO->>MO: process each job sequentially
@@ -101,23 +101,21 @@ sequenceDiagram
 
 ---
 
-## Batch loop and limits
+## Drain loop and claim chunks
 
-`processBatch` (`apps/media-optimizer/src/processor.ts`) drains the queue until:
+`processBatch` (`apps/media-optimizer/src/processor.ts`) drains the queue until Pane View returns no schedulable jobs. The optimizer has no self-imposed max jobs or max runtime. Railway/serverless lifecycle is the outer stop mechanism; if the platform stops a run, already completed rows stay `ready` and still-leased rows are reclaimed by Pane View after lease expiry.
 
-| Limit | Env var | Default |
+| Control | Env var | Default |
 | --- | --- | --- |
-| Max jobs per wake | `OPTIMIZER_BATCH_LIMIT` | 250 |
-| Jobs per claim round | `OPTIMIZER_CLAIM_CHUNK` | 5 |
-| Wall-clock budget | `OPTIMIZER_MAX_RUNTIME_MS` | 300000 (5 min) |
+| Jobs leased per claim round | `OPTIMIZER_CLAIM_CHUNK` | 5 |
 
 Each iteration:
 
-1. `claimJobs(min(remaining, OPTIMIZER_CLAIM_CHUNK))` → Pane View
+1. `claimJobs(OPTIMIZER_CLAIM_CHUNK)` → Pane View
 2. Process jobs **strictly one at a time** (concurrency 1)
-3. Stop when queue is empty or any limit is hit
+3. Stop when the claim returns zero jobs
 
-If the runtime budget expires mid-chunk, unprocessed jobs in that chunk are **released** back to `pending` via `POST /internal/optimizer/release`.
+Small claim chunks keep lease exposure bounded if the platform kills a worker mid-run.
 
 ---
 
@@ -131,6 +129,15 @@ The optimizer calls `POST /internal/optimizer/claim` with `{ limit }`. Pane View
 2. `UPDATE` each row → `status = processing`, `processingToken = <uuid>`
 3. `JOIN media_objects` and return everything the worker needs
 
+Claims are ordered by Derivative Demand:
+
+1. On-demand previews (`queuePriority = 300`)
+2. On-demand thumbnails (`queuePriority = 200`)
+3. Prewarm previews (`queuePriority = 100`)
+4. Prewarm thumbnails (`queuePriority = 0`)
+
+Within a priority band, newest `priority_at` wins, then newest row creation time. On-demand requests set `priority_at` to request time. Post-sync prewarm uses the newest available library/media timestamp.
+
 ### DerivativeJob payload
 
 | Field | Meaning |
@@ -140,6 +147,7 @@ The optimizer calls `POST /internal/optimizer/claim` with `{ limit }`. Pane View
 | `objectKey` | S3 key for the derivative (e.g. `thumbnails/sha256/.../<hash>-320.webp`) |
 | `sha256`, `extension`, `mediaType`, `size` | Generation inputs |
 | `attemptCount` | Retry counter |
+| `queueSource`, `queueVariant`, `queuePriority`, `priorityAt` | Priority diagnostics; Pane View already made the claim-order decision |
 
 **Lease:** `processingToken` must match on `complete` / `fail` / `release`. Stale `processing` rows are reclaimable after **10 minutes** (`derivativeProcessingLeaseMs`).
 
@@ -325,9 +333,7 @@ See [runbooks/railway-cdn-pane-view.md](./runbooks/railway-cdn-pane-view.md).
 | `MEDIA_OPTIMIZER_TOKEN` | Bearer auth for `/internal/*` and Pane View wake |
 | `PANE_VIEW_INTERNAL_URL` | Base URL for claim/complete/fail/release |
 | `S3_*` | Same bucket as Pane View |
-| `OPTIMIZER_BATCH_LIMIT` | Max jobs per `/process` invocation |
-| `OPTIMIZER_CLAIM_CHUNK` | Jobs leased per claim round |
-| `OPTIMIZER_MAX_RUNTIME_MS` | Wall-clock budget per batch |
+| `OPTIMIZER_CLAIM_CHUNK` | Jobs leased per claim round; the run still drains until empty |
 | `PORT` / `MEDIA_OPTIMIZER_PORT` | Listen port (default 3200) |
 
 ### Pane View (optimizer-related)
@@ -350,8 +356,7 @@ The optimizer emits single-line JSON log events:
 | `optimizer.claim_start` / `claim_complete` | Claim round |
 | `optimizer.job_start` / `job_complete` / `job_failed` | Per job |
 | `optimizer.job_stale_lease` | Complete rejected (lease mismatch) |
-| `optimizer.jobs_released` | Batch timeout released unprocessed jobs |
-| `optimizer.batch_complete` | Run finished with counters |
+| `optimizer.batch_complete` | Queue drained and run finished with counters |
 | `optimizer.pane_view_request_failed` | Claim/complete HTTP error |
 
 Pane View logs complementary events (`optimizer.wake_requested`, `optimizer.claim`, `optimizer.complete`, etc.) via `derivative-telemetry.ts`.
@@ -373,7 +378,7 @@ Pane View logs complementary events (`optimizer.wake_requested`, `optimizer.clai
 | Area | Path |
 | --- | --- |
 | Optimizer HTTP server | `apps/media-optimizer/src/server.ts` |
-| Batch loop and per-job flow | `apps/media-optimizer/src/processor.ts` |
+| Drain loop and per-job flow | `apps/media-optimizer/src/processor.ts` |
 | Pane View HTTP client | `apps/media-optimizer/src/pane-view-client.ts` |
 | Wake from Pane View | `apps/pane-view/src/server/media/optimizer-wake.ts` |
 | Queue claim/complete/fail | `apps/pane-view/src/server/media/derivative-queue.ts` |

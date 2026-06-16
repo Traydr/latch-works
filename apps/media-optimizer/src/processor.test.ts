@@ -8,7 +8,6 @@ const mocks = vi.hoisted(() => ({
   putStoredObject: vi.fn(),
   readStoredObjectBytes: vi.fn(),
   readWebpMetadata: vi.fn(),
-  releaseJobs: vi.fn(),
   reportComplete: vi.fn(),
   reportFailure: vi.fn(),
 }));
@@ -17,9 +16,7 @@ vi.mock("./env.js", () => ({
   env: {
     MEDIA_OPTIMIZER_PORT: 3200,
     MEDIA_OPTIMIZER_TOKEN: "test-token-0123456789",
-    OPTIMIZER_BATCH_LIMIT: 5,
     OPTIMIZER_CLAIM_CHUNK: 2,
-    OPTIMIZER_MAX_RUNTIME_MS: 50_000,
     PANE_VIEW_INTERNAL_URL: "http://127.0.0.1:3000",
     S3_ACCESS_KEY_ID: "test",
     S3_BUCKET: "test",
@@ -31,7 +28,6 @@ vi.mock("./env.js", () => ({
 
 vi.mock("./pane-view-client.js", () => ({
   claimJobs: mocks.claimJobs,
-  releaseJobs: mocks.releaseJobs,
   reportComplete: mocks.reportComplete,
   reportFailure: mocks.reportFailure,
 }));
@@ -58,6 +54,10 @@ function makeJob(index: number) {
     mediaType: "image" as const,
     objectKey: `thumbnails/obj-${index}-320.webp`,
     originalObjectKey: `originals/obj-${index}.jpg`,
+    priorityAt: "2026-06-16T12:00:00.000Z",
+    queuePriority: index % 2 === 0 ? 300 : 200,
+    queueSource: "on-demand" as const,
+    queueVariant: index % 2 === 0 ? ("preview" as const) : ("thumbnail" as const),
     sha256: "a".repeat(64),
     size: 320,
   };
@@ -82,7 +82,6 @@ describe("processBatch", () => {
     mocks.putStoredObject.mockResolvedValue(undefined);
     mocks.readStoredObjectBytes.mockResolvedValue(Buffer.from("webp"));
     mocks.readWebpMetadata.mockResolvedValue({ height: 180, width: 220 });
-    mocks.releaseJobs.mockResolvedValue(undefined);
     mocks.reportComplete.mockResolvedValue(true);
     mocks.reportFailure.mockResolvedValue(true);
   });
@@ -125,15 +124,22 @@ describe("processBatch", () => {
     expect(result).toEqual(expect.objectContaining({ failed: 1, processed: 1, succeeded: 0 }));
   });
 
-  it("honors the batch limit even when the queue keeps returning work", async () => {
-    mocks.claimJobs.mockImplementation((limit: number) =>
-      Promise.resolve(claimResponseOfLength(limit)),
-    );
+  it("drains work until the queue is empty even past the old batch limit", async () => {
+    mocks.claimJobs
+      .mockResolvedValueOnce(claimResponseOfLength(2))
+      .mockResolvedValueOnce(claimResponseOfLength(2))
+      .mockResolvedValueOnce(claimResponseOfLength(2))
+      .mockResolvedValueOnce({ jobs: [], processingToken: "token-empty" });
 
     const result = await processBatch();
 
-    expect(result.processed).toBe(5);
-    expect(mocks.generateDerivativeBytes).toHaveBeenCalledTimes(5);
+    expect(result).toEqual(
+      expect.objectContaining({ processed: 6, stopReason: "empty", succeeded: 6 }),
+    );
+    expect(mocks.generateDerivativeBytes).toHaveBeenCalledTimes(6);
+    expect(mocks.claimJobs).toHaveBeenNthCalledWith(1, 2);
+    expect(mocks.claimJobs).toHaveBeenNthCalledWith(2, 2);
+    expect(mocks.claimJobs).toHaveBeenNthCalledWith(3, 2);
   });
 
   it("stops claiming when the queue is empty", async () => {
@@ -142,6 +148,7 @@ describe("processBatch", () => {
     const result = await processBatch();
 
     expect(result.processed).toBe(0);
+    expect(result.stopReason).toBe("empty");
     expect(mocks.claimJobs).toHaveBeenCalledTimes(1);
   });
 

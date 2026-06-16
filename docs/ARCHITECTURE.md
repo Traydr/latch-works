@@ -558,7 +558,7 @@ Defined in `.railway/railway.ts`:
 | Service | Domain / networking | Notes |
 | --- | --- | --- |
 | **Pane View** | `pane-view.traydr.dev`, private `latch-works` | Pre-deploy `db:migrate`, `DERIVATIVE_PROCESSING_MODE=triggered` |
-| **Media Optimizer** | Private `latch-works-media-optimizer` only | Serverless sleep, 2 CPU / 6 GB, batch limits via env |
+| **Media Optimizer** | Private `latch-works-media-optimizer` only | Serverless sleep, 2 CPU / 6 GB, drains due derivative work until empty |
 | **Showcase** | `latch-works.traydr.dev` | Static docs, no secrets |
 | **Postgres** | Private to Pane View | `DATABASE_URL` |
 | **balanced-wrap bucket** | S3-compatible (AMS) | Shared by Pane View and Media Optimizer |

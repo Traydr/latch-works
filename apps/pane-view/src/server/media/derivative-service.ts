@@ -1,4 +1,4 @@
-import { snapThumbnailSize, PREVIEW_DERIVATIVE_SIZE } from "@latch-works/media-delivery";
+import { PREVIEW_DERIVATIVE_SIZE, snapThumbnailSize } from "@latch-works/media-delivery";
 import type { FfmpegRunner } from "@latch-works/media-derivatives";
 import {
   buildDerivativeDescriptor,
@@ -16,6 +16,10 @@ import { db } from "../db";
 import { thumbnails } from "../db/schema";
 import { createConcurrencyLimiter } from "./concurrency-limiter";
 import { isDerivativeProcessingLeaseExpired } from "./derivative-lease";
+import {
+  derivativeQueueVariantForRequestedSize,
+  resolveDerivativeQueuePriority,
+} from "./derivative-priority";
 import { logDerivativeEvent } from "./derivative-telemetry";
 import { wakeOptimizer } from "./optimizer-wake";
 import { readMediaThumbnailContext } from "./repository";
@@ -182,6 +186,12 @@ export async function ensureThumbnailDerivative({
   }
 
   const derivative = buildDerivativeDescriptor(context, size);
+  const queueIntent = {
+    priorityAt: new Date(),
+    source: "on-demand" as const,
+    variant: derivativeQueueVariantForRequestedSize(size),
+  };
+  const queuePriority = resolveDerivativeQueuePriority(queueIntent);
   const [existing] = await db
     .select()
     .from(thumbnails)
@@ -207,6 +217,10 @@ export async function ensureThumbnailDerivative({
       .update(thumbnails)
       .set({
         error: null,
+        priorityAt: queueIntent.priorityAt,
+        queuePriority,
+        queueSource: queueIntent.source,
+        queueVariant: queueIntent.variant,
         status: "pending",
         updatedAt: new Date(),
       })
@@ -218,6 +232,10 @@ export async function ensureThumbnailDerivative({
       height: 0,
       mediaObjectId: context.mediaObjectId,
       objectKey: derivative.objectKey,
+      priorityAt: queueIntent.priorityAt,
+      queuePriority,
+      queueSource: queueIntent.source,
+      queueVariant: queueIntent.variant,
       size,
       status: "pending",
       width: 0,
@@ -228,10 +246,34 @@ export async function ensureThumbnailDerivative({
       .set({
         error: null,
         objectKey: derivative.objectKey,
+        priorityAt: queueIntent.priorityAt,
+        queuePriority,
+        queueSource: queueIntent.source,
+        queueVariant: queueIntent.variant,
         status: "pending",
         updatedAt: new Date(),
       })
       .where(and(eq(thumbnails.mediaObjectId, context.mediaObjectId), eq(thumbnails.size, size)));
+  } else if (existing.status === "pending") {
+    const existingPriority = existing.queuePriority ?? 0;
+    const existingPriorityAt = existing.priorityAt ?? existing.createdAt ?? new Date(0);
+    const shouldPromote =
+      queuePriority > existingPriority ||
+      (queuePriority === existingPriority && queueIntent.priorityAt > existingPriorityAt);
+
+    if (shouldPromote) {
+      await db
+        .update(thumbnails)
+        .set({
+          objectKey: derivative.objectKey,
+          priorityAt: queueIntent.priorityAt,
+          queuePriority,
+          queueSource: queueIntent.source,
+          queueVariant: queueIntent.variant,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(thumbnails.mediaObjectId, context.mediaObjectId), eq(thumbnails.size, size)));
+    }
   }
 
   // In triggered mode Pane View never generates inline: the row is now pending

@@ -145,17 +145,26 @@ describe("ensureThumbnailDerivative", () => {
   it("claims an existing pending row and delegates generation", async () => {
     const pendingRow = { ...readyRow, height: 0, status: "pending" as const, width: 0 };
     const select = createSelectChain([pendingRow]);
+    const promote = createUpdateChain();
     const claim = createUpdateChain([{ mediaObjectId: "obj-1", size: 320, status: "processing" }]);
     const markReady = createUpdateChain();
 
     mocks.selectMock.mockReturnValue({ from: select.fromMock });
     mocks.updateMock
+      .mockReturnValueOnce({ set: promote.setMock })
       .mockReturnValueOnce({ set: claim.setMock })
       .mockReturnValueOnce({ set: markReady.setMock });
 
     const result = await ensureThumbnailDerivative({ mediaId: "media-1", requestedSize: 320 });
 
     expect(mocks.insertMock).not.toHaveBeenCalled();
+    expect(promote.setMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        queuePriority: 200,
+        queueSource: "on-demand",
+        queueVariant: "thumbnail",
+      }),
+    );
     expect(mocks.generateDerivativeBytes).toHaveBeenCalled();
     expect(result.status).toBe("ready");
   });
@@ -163,10 +172,13 @@ describe("ensureThumbnailDerivative", () => {
   it("returns pending when an existing pending row cannot be claimed", async () => {
     const pendingRow = { ...readyRow, height: 0, status: "pending" as const, width: 0 };
     const select = createSelectChain([pendingRow]);
+    const promote = createUpdateChain();
     const claim = createUpdateChain([]);
 
     mocks.selectMock.mockReturnValue({ from: select.fromMock });
-    mocks.updateMock.mockReturnValue({ set: claim.setMock });
+    mocks.updateMock
+      .mockReturnValueOnce({ set: promote.setMock })
+      .mockReturnValueOnce({ set: claim.setMock });
 
     const result = await ensureThumbnailDerivative({ mediaId: "media-1", requestedSize: 320 });
 

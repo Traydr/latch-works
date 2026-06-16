@@ -13,7 +13,6 @@ import { logOptimizerError, logOptimizerEvent, sanitizeError } from "./logging.j
 import {
   claimJobs,
   type DerivativeJob,
-  releaseJobs,
   reportComplete,
   reportFailure,
 } from "./pane-view-client.js";
@@ -24,8 +23,8 @@ export interface ProcessResult {
   emptyClaims: number;
   failed: number;
   processed: number;
-  released: number;
   succeeded: number;
+  stopReason: "empty";
 }
 
 let storageClient: S3StorageClient | null = null;
@@ -56,6 +55,10 @@ async function processJob(
     mediaObjectId: job.mediaObjectId,
     mediaType: job.mediaType,
     processingToken,
+    priorityAt: job.priorityAt,
+    queuePriority: job.queuePriority,
+    queueSource: job.queueSource,
+    queueVariant: job.queueVariant,
     runId,
     size: job.size,
   });
@@ -91,6 +94,9 @@ async function processJob(
           mediaObjectId: job.mediaObjectId,
           mediaType: job.mediaType,
           processingToken,
+          queuePriority: job.queuePriority,
+          queueSource: job.queueSource,
+          queueVariant: job.queueVariant,
           runId,
           size: job.size,
           source: "existing_object",
@@ -142,6 +148,9 @@ async function processJob(
       mediaObjectId: job.mediaObjectId,
       mediaType: job.mediaType,
       processingToken,
+      queuePriority: job.queuePriority,
+      queueSource: job.queueSource,
+      queueVariant: job.queueVariant,
       runId,
       size: job.size,
       source: "generated",
@@ -172,6 +181,9 @@ async function processJob(
       mediaObjectId: job.mediaObjectId,
       mediaType: job.mediaType,
       processingToken,
+      queuePriority: job.queuePriority,
+      queueSource: job.queueSource,
+      queueVariant: job.queueVariant,
       runId,
       size: job.size,
     });
@@ -181,8 +193,8 @@ async function processJob(
 
 /**
  * Drains the Pane View derivative queue, processing jobs strictly sequentially
- * (concurrency 1) until the batch limit or runtime budget is reached, or the
- * queue is empty.
+ * (concurrency 1) until the queue is empty. Platform lifecycle limits are the
+ * outer guard; stale processing rows are reclaimed by Pane View lease expiry.
  */
 export async function processBatch(runId: string = randomUUID()): Promise<ProcessResult> {
   const startedAt = Date.now();
@@ -190,18 +202,12 @@ export async function processBatch(runId: string = randomUUID()): Promise<Proces
   let claimed = 0;
   let emptyClaims = 0;
   let processed = 0;
-  let released = 0;
   let succeeded = 0;
   let failed = 0;
 
-  while (
-    processed < env.OPTIMIZER_BATCH_LIMIT &&
-    Date.now() - startedAt < env.OPTIMIZER_MAX_RUNTIME_MS
-  ) {
-    const remaining = env.OPTIMIZER_BATCH_LIMIT - processed;
-    const limit = Math.min(remaining, env.OPTIMIZER_CLAIM_CHUNK);
-    logOptimizerEvent("optimizer.claim_start", { limit, runId });
-    const { jobs, processingToken } = await claimJobs(limit);
+  while (true) {
+    logOptimizerEvent("optimizer.claim_start", { limit: env.OPTIMIZER_CLAIM_CHUNK, runId });
+    const { jobs, processingToken } = await claimJobs(env.OPTIMIZER_CLAIM_CHUNK);
     claimed += jobs.length;
     logOptimizerEvent("optimizer.claim_complete", {
       jobCount: jobs.length,
@@ -214,30 +220,7 @@ export async function processBatch(runId: string = randomUUID()): Promise<Proces
       break;
     }
 
-    for (let index = 0; index < jobs.length; index += 1) {
-      if (Date.now() - startedAt >= env.OPTIMIZER_MAX_RUNTIME_MS) {
-        const remainingJobs = jobs.slice(index).map((job) => ({
-          mediaObjectId: job.mediaObjectId,
-          size: job.size,
-        }));
-        await releaseJobs({
-          jobs: remainingJobs,
-          processingToken,
-        });
-        released += remainingJobs.length;
-        logOptimizerEvent("optimizer.jobs_released", {
-          jobCount: remainingJobs.length,
-          processingToken,
-          runId,
-        });
-        break;
-      }
-
-      const job = jobs[index];
-      if (!job) {
-        continue;
-      }
-
+    for (const job of jobs) {
       const ok = await processJob(job, processingToken, runId, storage);
       processed += 1;
       if (ok) {
@@ -254,8 +237,8 @@ export async function processBatch(runId: string = randomUUID()): Promise<Proces
     emptyClaims,
     failed,
     processed,
-    released,
     succeeded,
+    stopReason: "empty" as const,
   };
   logOptimizerEvent("optimizer.batch_complete", { runId, ...result });
   return result;

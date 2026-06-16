@@ -9,6 +9,10 @@ export interface DerivativeJob {
   mediaType: MediaType;
   objectKey: string;
   originalObjectKey: string;
+  priorityAt: string;
+  queuePriority: number;
+  queueSource: "prewarm" | "on-demand";
+  queueVariant: "thumbnail" | "preview";
   sha256: string;
   size: number;
 }

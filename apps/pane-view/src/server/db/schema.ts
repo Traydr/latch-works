@@ -35,6 +35,14 @@ export const thumbnailStatusEnum = pgEnum("thumbnail_status", [
   "ready",
   "failed",
 ]);
+export const derivativeQueueSourceEnum = pgEnum("derivative_queue_source", [
+  "prewarm",
+  "on-demand",
+]);
+export const derivativeQueueVariantEnum = pgEnum("derivative_queue_variant", [
+  "thumbnail",
+  "preview",
+]);
 export const subjectTypeEnum = pgEnum("subject_type", ["library_entry", "collection"]);
 export const maintenanceJobTypeEnum = pgEnum("maintenance_job_type", ["library_hard_wipe"]);
 export const maintenanceJobStatusEnum = pgEnum("maintenance_job_status", [
@@ -318,6 +326,10 @@ export const thumbnails = pgTable(
     processingToken: text("processing_token"),
     attemptCount: integer("attempt_count").notNull().default(0),
     nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }),
+    queueSource: derivativeQueueSourceEnum("queue_source").notNull().default("prewarm"),
+    queueVariant: derivativeQueueVariantEnum("queue_variant").notNull().default("thumbnail"),
+    queuePriority: integer("queue_priority").notNull().default(0),
+    priorityAt: timestamp("priority_at", { withTimezone: true }).defaultNow().notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -325,8 +337,8 @@ export const thumbnails = pgTable(
     pk: primaryKey({ columns: [table.mediaObjectId, table.size] }),
     statusIndex: index("thumbnails_status_idx").on(table.mediaObjectId, table.size, table.status),
     // Partial index for the optimizer claim scan over schedulable pending rows.
-    pendingIndex: index("thumbnails_pending_idx")
-      .on(table.nextAttemptAt)
+    pendingPriorityIndex: index("thumbnails_pending_priority_idx")
+      .on(table.queuePriority, table.priorityAt, table.createdAt)
       .where(sql`${table.status} = 'pending'`),
   }),
 );

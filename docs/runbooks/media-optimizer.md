@@ -33,7 +33,7 @@ All `/internal/optimizer/*` endpoints require `Authorization: Bearer $MEDIA_OPTI
 | `POST /internal/optimizer/complete` | Marks a leased row `ready`; returns `409` when the lease no longer matches. |
 | `POST /internal/optimizer/fail` | Records a failed attempt and either reschedules with backoff or marks the row `failed`. |
 | `POST /internal/optimizer/release` | Returns unprocessed leased rows to `pending`. |
-| `GET /internal/optimizer/queue-status` | Read-only queue diagnostics: counts by status, stale processing rows, due pending rows, and oldest pending timestamp. |
+| `GET /internal/optimizer/queue-status` | Read-only queue diagnostics: counts by status/source/variant, stale processing rows, due pending rows, highest-priority pending timestamp, and oldest pending timestamp. |
 
 ## Pane View production settings
 
@@ -47,7 +47,9 @@ MEDIA_OPTIMIZER_TOKEN=...
 
 Do not rely on inferring `triggered` from `MEDIA_OPTIMIZER_URL` alone in production — if the optimizer is down or mis-tokened, derivatives stay `pending` and Pane View does not fall back to inline generation.
 
-Run `pnpm db:migrate` after deploy (migration `0006_optimizer_scheduling.sql`). With the lean Pane View build, **min-instances=1** is reasonable on the web service.
+Run `pnpm db:migrate` after deploy (through migration `0007_derivative_queue_priority.sql`). With the lean Pane View build, **min-instances=1** is reasonable on the web service.
+
+The optimizer does not have a max jobs or max runtime setting. A wake drains due work until Pane View returns an empty claim, while Railway/serverless lifecycle provides the outer stop. Keep `OPTIMIZER_CLAIM_CHUNK` small enough that an interrupted worker leaves only a few rows leased until the normal processing lease expires. Frequent wakes are safe because the optimizer service is single-flight: overlapping wakes return `busy`.
 
 ## Security
 
@@ -70,7 +72,6 @@ The optimizer emits single-line JSON events:
 - `optimizer.job_complete`
 - `optimizer.job_failed`
 - `optimizer.job_stale_lease`
-- `optimizer.jobs_released`
 - `optimizer.batch_complete`
 - `optimizer.pane_view_request_failed`
 
@@ -96,6 +97,7 @@ Successful `derivative.resolve` logs are sampled to avoid request spam. Pending 
    - If `lastRun.emptyClaims` is high while Pane View has pending rows, check `PANE_VIEW_INTERNAL_URL` and token auth.
 2. `GET $PANE_VIEW_URL/internal/optimizer/queue-status` with the same bearer token.
    - `pending > 0` and `nextAttemptDue > 0` means work is schedulable now.
+   - `pendingBySource` and `pendingByVariant` show whether backlog is on-demand/prewarm and preview/thumbnail work.
    - `processing > 0` with `staleProcessing > 0` means the next claim should reclaim old leases.
    - `failed > 0` means inspect recent `optimizer.job_failed` logs and `thumbnails.error`.
 3. Check Pane View `optimizer.wake_result`.

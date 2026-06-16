@@ -50,6 +50,13 @@
       "when": 1781563949557,
       "tag": "0006_optimizer_scheduling",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1781640000000,
+      "tag": "0007_derivative_queue_priority",
+      "breakpoints": true
     }
   ]
 }

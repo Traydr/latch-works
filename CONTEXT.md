@@ -12,6 +12,10 @@ _Avoid_: Optimized image, transformed image
 The durable `thumbnails` table state machine used to schedule and track derivative generation.
 _Avoid_: Thumbnail cache, optimizer queue
 
+**Derivative Demand**:
+A request signal recorded on a Derivative Queue row that determines claim priority, such as on-demand preview demand or post-sync prewarm demand.
+_Avoid_: Batch priority, optimizer priority
+
 **Media Optimizer**:
 The service that claims derivative queue rows and performs CPU-heavy derivative generation.
 _Avoid_: Image proxy, thumbnail server
