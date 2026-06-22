@@ -1,0 +1,76 @@
+---
+import DocsSidebarNav from "@/components/DocsSidebarNav.astro";
+import { apps, pipeline, tools } from "@/data/products";
+import type { DocsSection } from "@/data/docs-nav";
+import { navClass } from "@/variants/shared/nav";
+
+interface Props {
+  sections?: DocsSection[];
+  currentPath?: string;
+  showDocsNav?: boolean;
+}
+
+const { sections = [], currentPath = "", showDocsNav = false } = Astro.props;
+const pathname = Astro.url.pathname;
+---
+
+<div class="min-h-screen lg:grid lg:grid-cols-[280px_minmax(0,1fr)]">
+  <aside class="border-b border-border/70 bg-card/50 lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r lg:overflow-y-auto">
+    <div class="flex h-full flex-col p-5">
+      <a href="/" class="mb-6 flex items-center gap-3">
+        <img src="/favicon.svg" alt="" class="size-8 rounded-md" aria-hidden="true" />
+        <div>
+          <p class="text-sm font-semibold text-foreground">Latch Works</p>
+          <p class="text-xs text-muted-foreground">Sidebar workspace</p>
+        </div>
+      </a>
+
+      <nav class="space-y-1" aria-label="Primary">
+        <a href="/" class={navClass(pathname, "/", true)}>Overview</a>
+        {apps.map((product) => (
+          <a href={`/${product.slug}`} class={navClass(pathname, `/${product.slug}`)}>{product.name}</a>
+        ))}
+        {tools.map((product) => (
+          <a href={`/${product.slug}`} class={navClass(pathname, `/${product.slug}`)}>{product.name}</a>
+        ))}
+        <a href="/docs" class={navClass(pathname, "/docs")}>Docs</a>
+      </nav>
+
+      {
+        showDocsNav && sections.length > 0 ? (
+          <div class="mt-6 border-t border-border/70 pt-5">
+            <DocsSidebarNav sections={sections} currentPath={currentPath} />
+          </div>
+        ) : (
+          <div class="mt-8 border-t border-border/70 pt-5">
+            <p class="mb-3 text-xs font-medium uppercase tracking-widest text-primary">Pipeline</p>
+            <ol class="space-y-3">
+              {
+                pipeline.map((stage, index) => (
+                  <li class="flex gap-3 text-sm">
+                    <span class="flex size-6 shrink-0 items-center justify-center rounded-full border border-border text-xs text-primary">{index + 1}</span>
+                    <div>
+                      <p class="font-medium text-foreground">{stage.product}</p>
+                      <p class="text-xs text-muted-foreground">{stage.step} — {stage.description}</p>
+                    </div>
+                  </li>
+                ))
+              }
+            </ol>
+          </div>
+        )
+      }
+
+      <p class="mt-auto hidden pt-8 text-xs text-muted-foreground lg:block">Gather → Organize → Sync → View</p>
+    </div>
+  </aside>
+
+  <div class="flex min-h-screen min-w-0 flex-col">
+    <main class="flex-1">
+      <slot />
+    </main>
+    <footer class="border-t border-border/70 px-6 py-4 text-xs text-muted-foreground">
+      Latch Works — local-first media archive tools
+    </footer>
+  </div>
+</div>

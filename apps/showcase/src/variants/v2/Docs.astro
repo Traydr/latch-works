@@ -1,0 +1,10 @@
+---
+interface Props {
+  currentPath: string;
+}
+const { currentPath } = Astro.props;
+---
+
+<article id="docs-content" class="prose-docs max-w-3xl px-6 py-8 lg:px-10 lg:py-12">
+  <slot />
+</article>

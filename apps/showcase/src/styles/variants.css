@@ -1,0 +1,42 @@
+/* Only one layout variant visible at a time */
+.variant-root {
+  display: none;
+}
+
+html[data-active-variant="1"] .variant-root[data-variant="1"],
+html[data-active-variant="2"] .variant-root[data-variant="2"],
+html[data-active-variant="3"] .variant-root[data-variant="3"],
+html[data-active-variant="4"] .variant-root[data-variant="4"],
+html[data-active-variant="5"] .variant-root[data-variant="5"] {
+  display: block;
+}
+
+/* Room for the fixed 1–5 switcher */
+body {
+  padding-right: 3.5rem;
+}
+
+@media (max-width: 640px) {
+  body {
+    padding-right: 3rem;
+  }
+}
+
+/* Variant 3: horizontal snap carousel */
+.variant3-carousel {
+  scroll-snap-type: x mandatory;
+  scrollbar-width: thin;
+}
+
+.variant3-carousel > * {
+  scroll-snap-align: center;
+}
+
+/* Variant 5: scroll-snap storytelling sections */
+.variant5-snap {
+  scroll-snap-type: y proximity;
+}
+
+.variant5-snap > section {
+  scroll-snap-align: start;
+}

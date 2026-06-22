@@ -1,8 +1,6 @@
 ---
-import SiteFooter from "@/components/SiteFooter.astro";
-import SiteHeader from "@/components/SiteHeader.astro";
-import { ThemeSwitcher } from "@/components/ThemeSwitcher";
-import { defaultTheme, themeStorageKey } from "@/data/themes";
+import { VariantSwitcher } from "@/components/VariantSwitcher";
+import { defaultVariant, variantStorageKey } from "@/data/variants";
 import "@/styles/global.css";
 
 interface Props {
@@ -17,30 +15,26 @@ const {
 ---
 
 <!doctype html>
-<html lang="en" data-theme={defaultTheme}>
+<html lang="en" data-active-variant={defaultVariant}>
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content={description} />
     <title>{title}</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <script is:inline define:vars={{ themeStorageKey, defaultTheme }}>
+    <script is:inline define:vars={{ variantStorageKey, defaultVariant }}>
       try {
-        const stored = localStorage.getItem(themeStorageKey);
-        if (stored && ["1", "2", "3", "4", "5"].includes(stored)) {
-          document.documentElement.dataset.theme = stored;
+        const stored = localStorage.getItem(variantStorageKey);
+        const legacy = localStorage.getItem("latch-showcase-theme");
+        const value = stored ?? (legacy && ["1", "2", "3", "4", "5"].includes(legacy) ? legacy : null);
+        if (value) {
+          document.documentElement.dataset.activeVariant = value;
         }
       } catch {}
     </script>
   </head>
   <body>
-    <div class="flex min-h-screen flex-col">
-      <SiteHeader />
-      <main class="flex-1">
-        <slot />
-      </main>
-      <SiteFooter />
-    </div>
-    <ThemeSwitcher client:load />
+    <slot />
+    <VariantSwitcher client:load />
   </body>
 </html>

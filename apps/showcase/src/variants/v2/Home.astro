@@ -1,0 +1,67 @@
+---
+import { ProductBadge } from "@/components/ui";
+import { products, tools } from "@/data/products";
+import { heroCopy, principles } from "@/data/site-content";
+
+const apps = products.filter((product) => product.kind === "app");
+const lockstep = tools[0];
+---
+
+<section class="border-b border-border/70 px-6 py-12 lg:px-10 lg:py-16">
+  <p class="text-xs font-medium uppercase tracking-widest text-primary">{heroCopy.eyebrow}</p>
+  <h1 class="mt-3 max-w-2xl text-3xl font-semibold tracking-tight text-foreground lg:text-4xl">{heroCopy.title}</h1>
+  <p class="mt-4 max-w-xl text-base leading-relaxed text-muted-foreground">{heroCopy.description}</p>
+</section>
+
+<section class="px-6 py-10 lg:px-10">
+  <p class="mb-5 text-xs font-medium uppercase tracking-widest text-muted-foreground">Apps — list view</p>
+  <div class="divide-y divide-border/70 rounded-xl border border-border/70">
+    {
+      apps.map((product) => (
+        <a href={`/${product.slug}`} class="group flex flex-col gap-4 p-5 transition hover:bg-muted/20 sm:flex-row sm:items-center">
+          <img src={product.heroScreenshot.src} alt={product.heroScreenshot.alt} class="aspect-[16/10] w-full rounded-lg object-cover object-top sm:w-56" />
+          <div class="min-w-0 flex-1">
+            <div class="flex flex-wrap items-center gap-2">
+              <h2 class="text-lg font-semibold text-foreground">{product.name}</h2>
+              <ProductBadge kind={product.kind} />
+            </div>
+            <p class="mt-1 text-sm text-muted-foreground">{product.tagline}</p>
+            <p class="mt-2 text-sm text-primary">Open product page →</p>
+          </div>
+        </a>
+      ))
+    }
+  </div>
+</section>
+
+{
+  lockstep ? (
+    <section class="mx-6 mb-10 rounded-xl border border-border/70 bg-card/40 p-6 lg:mx-10">
+      <div class="flex flex-wrap items-start justify-between gap-4">
+        <div class="max-w-xl">
+          <p class="text-xs font-medium uppercase tracking-widest text-primary">Sync tool</p>
+          <h2 class="mt-2 text-2xl font-semibold text-foreground">{lockstep.name}</h2>
+          <p class="mt-2 text-sm leading-relaxed text-muted-foreground">{lockstep.description}</p>
+        </div>
+        <a href={`/${lockstep.slug}`} class="rounded-lg border border-border px-4 py-2 text-sm text-foreground transition hover:border-primary/50">View Lockstep</a>
+      </div>
+      <ul class="mt-5 grid gap-2 sm:grid-cols-3">
+        {lockstep.highlights.slice(0, 3).map((item) => (
+          <li class="rounded-md bg-muted/20 px-3 py-2 text-xs text-muted-foreground">{item}</li>
+        ))}
+      </ul>
+    </section>
+  ) : null
+}
+
+<section class="border-t border-border/70 px-6 py-10 lg:px-10">
+  <h2 class="text-lg font-semibold text-foreground">Principles</h2>
+  <dl class="mt-5 grid gap-4 sm:grid-cols-2">
+    {principles.map((item) => (
+      <div class="rounded-lg border border-border/60 p-4">
+        <dt class="font-medium text-foreground">{item.title}</dt>
+        <dd class="mt-1 text-sm text-muted-foreground">{item.body}</dd>
+      </div>
+    ))}
+  </dl>
+</section>

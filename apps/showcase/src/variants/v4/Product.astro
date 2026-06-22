@@ -1,0 +1,50 @@
+---
+import { FeatureIcon, ProductBadge, Screenshot } from "@/components/ui";
+import type { Product } from "@/data/products";
+
+interface Props {
+  product: Product;
+}
+const { product } = Astro.props;
+---
+
+<div class="mx-auto max-w-7xl p-3 sm:p-4">
+  <a href="/" class="inline-flex text-sm text-muted-foreground transition hover:text-foreground">← Overview</a>
+
+  <div class="mt-4 grid gap-3 sm:grid-cols-4 sm:auto-rows-[minmax(120px,auto)] lg:gap-4">
+    <header class={`col-span-2 row-span-2 rounded-2xl border border-border/70 bg-gradient-to-br p-6 ${product.accent}`}>
+      <ProductBadge kind={product.kind} />
+      <h1 class="mt-3 text-3xl font-semibold text-foreground">{product.name}</h1>
+      <p class="mt-2 text-primary">{product.tagline}</p>
+      <p class="mt-4 text-sm text-muted-foreground">{product.description}</p>
+    </header>
+
+    <div class="col-span-2 row-span-3 overflow-hidden rounded-2xl border border-border/70">
+      <Screenshot src={product.heroScreenshot.src} alt={product.heroScreenshot.alt} caption={product.heroScreenshot.caption} priority />
+    </div>
+
+    {
+      product.features.map((feature, index) => (
+        <article class:list={["rounded-2xl border border-border/70 bg-card/30 p-4", index === 0 ? "col-span-2" : ""]}>
+          <FeatureIcon name={feature.icon} />
+          <h2 class="mt-3 text-sm font-semibold text-foreground">{feature.title}</h2>
+          <p class="mt-1 text-xs leading-relaxed text-muted-foreground">{feature.description}</p>
+        </article>
+      ))
+    }
+
+    {
+      product.highlights.map((item) => (
+        <div class="rounded-2xl border border-border/60 bg-muted/10 p-4 text-xs text-muted-foreground">{item}</div>
+      ))
+    }
+
+    {
+      product.gallery.map((shot) => (
+        <div class="col-span-2 rounded-2xl border border-border/70 p-2">
+          <Screenshot src={shot.src} alt={shot.alt} caption={shot.caption} />
+        </div>
+      ))
+    }
+  </div>
+</div>

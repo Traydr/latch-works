@@ -1,0 +1,22 @@
+---
+import DocsSidebarNav from "@/components/DocsSidebarNav.astro";
+import type { DocsSection } from "@/data/docs-nav";
+
+interface Props {
+  sections: DocsSection[];
+  currentPath: string;
+}
+const { sections, currentPath } = Astro.props;
+---
+
+<div class="mx-auto max-w-7xl p-3 sm:p-4">
+  <div class="grid gap-3 lg:grid-cols-[280px_minmax(0,1fr)] lg:gap-4">
+    <aside class="rounded-2xl border border-border/70 bg-card/30 p-3 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto">
+      <DocsSidebarNav sections={sections} currentPath={currentPath} />
+    </aside>
+
+    <article id="docs-content" class="prose-docs min-w-0 rounded-2xl border border-border/70 bg-card/20 p-6 sm:p-8 lg:columns-2 lg:gap-10">
+      <slot />
+    </article>
+  </div>
+</div>

@@ -1,0 +1,23 @@
+---
+import DocsSidebarNav from "@/components/DocsSidebarNav.astro";
+import type { DocsSection } from "@/data/docs-nav";
+
+interface Props {
+  sections: DocsSection[];
+  currentPath: string;
+}
+const { sections, currentPath } = Astro.props;
+---
+
+<div class="mx-auto max-w-2xl px-6 py-10">
+  <details class="mb-8 rounded-lg border border-border/80 bg-card/30">
+    <summary class="cursor-pointer px-4 py-3 text-sm font-medium text-foreground">Table of contents</summary>
+    <div class="border-t border-border/80 p-3">
+      <DocsSidebarNav sections={sections} currentPath={currentPath} showHeading={false} />
+    </div>
+  </details>
+
+  <article id="docs-content" class="prose-docs">
+    <slot />
+  </article>
+</div>

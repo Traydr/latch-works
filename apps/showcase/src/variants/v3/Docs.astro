@@ -1,0 +1,52 @@
+---
+import DocsSidebarNav from "@/components/DocsSidebarNav.astro";
+import type { DocsSection } from "@/data/docs-nav";
+
+interface Props {
+  sections: DocsSection[];
+  currentPath: string;
+}
+const { sections, currentPath } = Astro.props;
+---
+
+<div class="border-b border-border/70 bg-card/30">
+  <div class="mx-auto max-w-5xl px-4 py-4 sm:px-8">
+    <p class="mb-2 text-xs font-medium uppercase tracking-widest text-primary">Documentation</p>
+    <div class="variant3-carousel flex gap-2 overflow-x-auto pb-1">
+      {
+        sections.flatMap((section) =>
+          section.pages.map((doc) => {
+            const href = `/docs/${doc.id}`;
+            const active = currentPath === href;
+            return (
+              <a
+                href={href}
+                class:list={[
+                  "shrink-0 rounded-full border px-3 py-1.5 text-xs transition",
+                  active
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "border-border/80 text-muted-foreground hover:text-foreground",
+                ]}
+              >
+                {doc.data.navTitle ?? doc.data.title}
+              </a>
+            );
+          }),
+        )
+      }
+    </div>
+  </div>
+</div>
+
+<article id="docs-content" class="prose-docs mx-auto max-w-3xl px-4 py-10 sm:px-8">
+  <slot />
+</article>
+
+<aside class="mx-auto max-w-5xl px-4 pb-12 sm:px-8 lg:hidden">
+  <details class="rounded-lg border border-border/80">
+    <summary class="cursor-pointer px-3 py-2 text-sm">All doc sections</summary>
+    <div class="border-t border-border/80 p-2">
+      <DocsSidebarNav sections={sections} currentPath={currentPath} showHeading={false} />
+    </div>
+  </details>
+</aside>

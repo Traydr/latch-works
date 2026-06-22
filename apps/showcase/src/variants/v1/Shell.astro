@@ -1,0 +1,12 @@
+---
+import SiteFooter from "@/components/SiteFooter.astro";
+import SiteHeader from "@/components/SiteHeader.astro";
+---
+
+<div class="flex min-h-screen flex-col">
+  <SiteHeader />
+  <main class="flex-1">
+    <slot />
+  </main>
+  <SiteFooter />
+</div>

@@ -1,0 +1,63 @@
+---
+import { FeatureIcon, ProductBadge, Screenshot } from "@/components/ui";
+import type { Product } from "@/data/products";
+
+interface Props {
+  product: Product;
+}
+const { product } = Astro.props;
+---
+
+<div class="lg:grid lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-0">
+  <div class="min-w-0 border-b border-border/70 px-6 py-10 lg:border-b-0 lg:px-10">
+    <a href="/" class="text-sm text-muted-foreground transition hover:text-foreground">← Overview</a>
+    <div class="mt-6 flex flex-wrap items-center gap-2">
+      <h1 class="text-3xl font-semibold text-foreground">{product.name}</h1>
+      <ProductBadge kind={product.kind} />
+    </div>
+    <p class="mt-2 text-primary">{product.tagline}</p>
+    <p class="mt-4 max-w-2xl text-sm leading-relaxed text-muted-foreground">{product.description}</p>
+
+    <div class="mt-10">
+      <Screenshot src={product.heroScreenshot.src} alt={product.heroScreenshot.alt} caption={product.heroScreenshot.caption} priority />
+    </div>
+
+    <section class="mt-12">
+      <h2 class="text-sm font-medium uppercase tracking-widest text-primary">Capabilities</h2>
+      <div class="mt-5 space-y-4">
+        {
+          product.features.map((feature) => (
+            <article class="flex gap-4 rounded-lg border border-border/70 p-4">
+              <FeatureIcon name={feature.icon} />
+              <div>
+                <h3 class="font-medium text-foreground">{feature.title}</h3>
+                <p class="mt-1 text-sm text-muted-foreground">{feature.description}</p>
+              </div>
+            </article>
+          ))
+        }
+      </div>
+    </section>
+
+    {
+      product.gallery.length > 0 ? (
+        <section class="mt-12 space-y-6">
+          <h2 class="text-sm font-medium uppercase tracking-widest text-primary">Gallery</h2>
+          {product.gallery.map((shot) => (
+            <Screenshot src={shot.src} alt={shot.alt} caption={shot.caption} />
+          ))}
+        </section>
+      ) : null
+    }
+  </div>
+
+  <aside class="border-t border-border/70 bg-card/30 px-6 py-8 lg:sticky lg:top-0 lg:h-screen lg:border-l lg:border-t-0 lg:overflow-y-auto">
+    <p class="text-xs font-medium uppercase tracking-widest text-muted-foreground">At a glance</p>
+    <ul class="mt-4 space-y-3">
+      {product.highlights.map((item) => (
+        <li class="border-l-2 border-primary/50 pl-3 text-sm text-muted-foreground">{item}</li>
+      ))}
+    </ul>
+    <p class="mt-8 font-mono text-xs text-muted-foreground">{product.repoPath}</p>
+  </aside>
+</div>

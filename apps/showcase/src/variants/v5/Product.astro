@@ -1,0 +1,57 @@
+---
+import type { Product } from "@/data/products";
+
+interface Props {
+  product: Product;
+}
+const { product } = Astro.props;
+---
+
+<article class="variant5-snap">
+  <section class="mx-auto max-w-2xl border-b border-border/70 px-6 py-16 sm:py-20">
+    <a href="/" class="text-sm text-muted-foreground">← Manifesto home</a>
+    <p class="mt-8 font-mono text-xs text-muted-foreground">{product.repoPath}</p>
+    <h1 class="mt-4 text-4xl font-semibold text-foreground sm:text-5xl">{product.name}</h1>
+    <p class="mt-4 text-xl text-primary">{product.tagline}</p>
+    <p class="mt-8 text-lg leading-relaxed text-muted-foreground">{product.description}</p>
+  </section>
+
+  <section class="border-b border-border/70">
+    <img src={product.heroScreenshot.src} alt={product.heroScreenshot.alt} class="mx-auto max-h-[70vh] w-full max-w-5xl object-cover object-top" />
+    {product.heroScreenshot.caption ? (
+      <p class="mx-auto max-w-2xl px-6 py-4 text-center text-sm text-muted-foreground">{product.heroScreenshot.caption}</p>
+    ) : null}
+  </section>
+
+  {
+    product.features.map((feature, index) => (
+      <section class="mx-auto max-w-2xl border-b border-border/70 px-6 py-16 sm:py-20">
+        <p class="font-mono text-xs text-muted-foreground">{String(index + 1).padStart(2, "0")}</p>
+        <h2 class="mt-4 text-2xl font-semibold text-foreground">{feature.title}</h2>
+        <p class="mt-6 text-lg leading-relaxed text-muted-foreground">{feature.description}</p>
+      </section>
+    ))
+  }
+
+  <section class="mx-auto max-w-2xl px-6 py-16 sm:py-20">
+    <h2 class="text-xl font-semibold text-foreground">At a glance</h2>
+    <ul class="mt-6 space-y-4">
+      {product.highlights.map((item) => (
+        <li class="text-muted-foreground">— {item}</li>
+      ))}
+    </ul>
+  </section>
+
+  {
+    product.gallery.length > 0 ? (
+      <section class="space-y-2 border-t border-border/70 pb-16">
+        {product.gallery.map((shot) => (
+          <figure>
+            <img src={shot.src} alt={shot.alt} class="w-full object-cover object-top" />
+            {shot.caption ? <figcaption class="mx-auto max-w-2xl px-6 py-3 text-sm text-muted-foreground">{shot.caption}</figcaption> : null}
+          </figure>
+        ))}
+      </section>
+    ) : null
+  }
+</article>

@@ -1,0 +1,19 @@
+---
+import { navClass } from "@/variants/shared/nav";
+
+const pathname = Astro.url.pathname;
+---
+
+<div class="min-h-screen">
+  <header class="sticky top-0 z-40 border-b border-border/70 bg-background/90 backdrop-blur-sm">
+    <div class="mx-auto flex max-w-3xl items-center justify-between px-6 py-3">
+      <a href="/" class="text-sm font-semibold text-foreground">Latch Works</a>
+      <nav class="flex gap-2 text-sm" aria-label="Primary">
+        <a href="/docs" class={navClass(pathname, "/docs")}>Docs</a>
+      </nav>
+    </div>
+  </header>
+  <main>
+    <slot />
+  </main>
+</div>

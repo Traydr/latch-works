@@ -1,0 +1,61 @@
+---
+import { FeatureIcon, ProductBadge, Screenshot } from "@/components/ui";
+import type { Product } from "@/data/products";
+
+interface Props {
+  product: Product;
+}
+const { product } = Astro.props;
+---
+
+<section class={`relative min-h-[55vh] overflow-hidden border-b border-border/70`}>
+  <img src={product.heroScreenshot.src} alt="" class="absolute inset-0 h-full w-full object-cover object-top opacity-40" aria-hidden="true" />
+  <div class={`absolute inset-0 bg-gradient-to-t from-background via-background/80 to-transparent`}></div>
+  <div class="relative mx-auto flex min-h-[55vh] max-w-5xl flex-col justify-end px-4 pb-12 pt-24 sm:px-8">
+    <a href="/" class="mb-6 text-sm text-muted-foreground">← Overview</a>
+    <ProductBadge kind={product.kind} />
+    <h1 class="mt-3 text-4xl font-semibold text-foreground sm:text-5xl">{product.name}</h1>
+    <p class="mt-3 max-w-2xl text-lg text-primary">{product.tagline}</p>
+    <p class="mt-4 max-w-2xl text-sm text-muted-foreground">{product.description}</p>
+  </div>
+</section>
+
+<section class="divide-y divide-border/70">
+  {
+    product.features.map((feature, index) => (
+      <article class={`grid gap-6 px-4 py-12 sm:px-8 lg:grid-cols-2 lg:items-center ${index % 2 === 1 ? "lg:[&>div:first-child]:order-2" : ""}`}>
+        <div>
+          <p class="text-xs uppercase tracking-widest text-muted-foreground">Feature {index + 1}</p>
+          <h2 class="mt-2 text-2xl font-semibold text-foreground">{feature.title}</h2>
+          <p class="mt-3 text-muted-foreground">{feature.description}</p>
+        </div>
+        <div class="flex justify-center">
+          <div class="rounded-2xl border border-border/70 bg-card/40 p-6">
+            <FeatureIcon name={feature.icon} />
+          </div>
+        </div>
+      </article>
+    ))
+  }
+</section>
+
+<section class="border-t border-border/70 bg-card/20 px-4 py-12 sm:px-8">
+  <h2 class="text-sm font-medium uppercase tracking-widest text-primary">Highlights</h2>
+  <ul class="mt-6 grid gap-3 sm:grid-cols-2">
+    {product.highlights.map((item) => (
+      <li class="rounded-lg border border-border/60 px-4 py-3 text-sm text-muted-foreground">{item}</li>
+    ))}
+  </ul>
+</section>
+
+{
+  product.gallery.length > 0 ? (
+    <section class="variant3-carousel flex gap-5 overflow-x-auto px-4 py-12 sm:px-8">
+      {product.gallery.map((shot) => (
+        <div class="w-[min(85vw,640px)] shrink-0">
+          <Screenshot src={shot.src} alt={shot.alt} caption={shot.caption} />
+        </div>
+      ))}
+    </section>
+  ) : null
+}

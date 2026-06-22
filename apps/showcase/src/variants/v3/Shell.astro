@@ -1,0 +1,29 @@
+---
+import { apps, tools } from "@/data/products";
+import { navClass } from "@/variants/shared/nav";
+
+const pathname = Astro.url.pathname;
+---
+
+<div class="flex min-h-screen flex-col">
+  <header class="flex items-center justify-between border-b border-border/70 px-4 py-3 sm:px-6">
+    <a href="/" class="flex items-center gap-2">
+      <img src="/favicon.svg" alt="" class="size-7" aria-hidden="true" />
+      <span class="text-sm font-semibold text-foreground">Latch Works</span>
+    </a>
+    <nav class="flex items-center gap-1 text-sm" aria-label="Primary">
+      <a href="/docs" class={navClass(pathname, "/docs")}>Docs</a>
+      {tools.map((product) => (
+        <a href={`/${product.slug}`} class={`hidden sm:inline ${navClass(pathname, `/${product.slug}`)}`}>{product.name}</a>
+      ))}
+    </nav>
+  </header>
+
+  <main class="flex-1">
+    <slot />
+  </main>
+
+  <footer class="border-t border-border/70 px-4 py-3 text-center text-xs text-muted-foreground">
+    Scroll horizontally through apps below — or use layout 1 for the classic grid
+  </footer>
+</div>

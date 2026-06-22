@@ -1,0 +1,77 @@
+---
+import { ProductBadge } from "@/components/ui";
+import { pipeline, products, tools } from "@/data/products";
+import { heroCopy, principles } from "@/data/site-content";
+
+const apps = products.filter((product) => product.kind === "app");
+const lockstep = tools[0];
+---
+
+<section class="relative flex min-h-[70vh] flex-col justify-end overflow-hidden border-b border-border/70 px-4 pb-12 pt-24 sm:px-8">
+  <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_right,color-mix(in_oklch,var(--primary)_20%,transparent),transparent_55%)]"></div>
+  <p class="relative text-xs font-medium uppercase tracking-[0.25em] text-primary">{heroCopy.eyebrow}</p>
+  <h1 class="relative mt-4 max-w-4xl text-4xl font-semibold tracking-tight text-foreground sm:text-6xl">{heroCopy.title}</h1>
+  <p class="relative mt-5 max-w-2xl text-lg text-muted-foreground">{heroCopy.description}</p>
+
+  <ol class="relative mt-10 flex flex-wrap gap-2">
+    {pipeline.map((stage, index) => (
+      <li class="rounded-full border border-border/80 bg-card/60 px-3 py-1.5 text-xs text-muted-foreground">
+        <span class="text-primary">{index + 1}.</span> {stage.step} · {stage.product}
+      </li>
+    ))}
+  </ol>
+</section>
+
+<section class="py-10">
+  <div class="mb-4 px-4 sm:px-8">
+    <h2 class="text-sm font-medium uppercase tracking-widest text-muted-foreground">Apps — swipe or scroll →</h2>
+  </div>
+  <div class="variant3-carousel flex gap-5 overflow-x-auto px-4 pb-6 sm:px-8">
+    {
+      apps.map((product) => (
+        <a
+          href={`/${product.slug}`}
+          class={`group w-[min(88vw,720px)] shrink-0 overflow-hidden rounded-2xl border border-border/80 bg-card/50`}
+        >
+          <div class={`h-1 bg-gradient-to-r ${product.accent}`}></div>
+          <img src={product.heroScreenshot.src} alt={product.heroScreenshot.alt} class="aspect-[16/10] w-full object-cover object-top" />
+          <div class="p-6">
+            <div class="flex items-center gap-2">
+              <h3 class="text-2xl font-semibold text-foreground">{product.name}</h3>
+              <ProductBadge kind={product.kind} />
+            </div>
+            <p class="mt-2 text-muted-foreground">{product.tagline}</p>
+          </div>
+        </a>
+      ))
+    }
+  </div>
+</section>
+
+{
+  lockstep ? (
+    <section class="border-y border-border/70 bg-card/30 px-4 py-12 sm:px-8">
+      <div class="mx-auto grid max-w-5xl gap-8 lg:grid-cols-2 lg:items-center">
+        <img src={lockstep.heroScreenshot.src} alt={lockstep.heroScreenshot.alt} class="rounded-xl border border-border/70 object-cover" />
+        <div>
+          <p class="text-xs uppercase tracking-widest text-primary">Tool</p>
+          <h2 class="mt-2 text-3xl font-semibold text-foreground">{lockstep.name}</h2>
+          <p class="mt-3 text-muted-foreground">{lockstep.description}</p>
+          <a href={`/${lockstep.slug}`} class="mt-5 inline-flex text-sm font-medium text-primary">Explore Lockstep →</a>
+        </div>
+      </div>
+    </section>
+  ) : null
+}
+
+<section class="px-4 py-12 sm:px-8">
+  <h2 class="text-center text-sm font-medium uppercase tracking-widest text-muted-foreground">Principles</h2>
+  <div class="mx-auto mt-8 grid max-w-4xl gap-4 sm:grid-cols-2">
+    {principles.map((item) => (
+      <div class="rounded-xl border border-border/70 p-5 text-center">
+        <h3 class="font-medium text-foreground">{item.title}</h3>
+        <p class="mt-2 text-sm text-muted-foreground">{item.body}</p>
+      </div>
+    ))}
+  </div>
+</section>
