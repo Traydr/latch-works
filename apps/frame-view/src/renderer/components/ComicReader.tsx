@@ -140,7 +140,7 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
         <div className="pointer-events-auto flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium text-white">{comic.name}</p>
-            <p className="text-xs text-white/70">
+            <p className="text-xs text-white/70 tabular-nums">
               {currentPageIndex + 1}/{comic.pages.length} pages
             </p>
           </div>
@@ -188,7 +188,7 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
               alt={page.name}
               loading="lazy"
               decoding="async"
-              className="max-h-none w-full max-w-full bg-zinc-900 object-contain"
+              className="max-h-none w-full max-w-full bg-zinc-900 object-contain [outline:1px_solid_rgba(255,255,255,0.1)]"
             />
           ))}
         </div>

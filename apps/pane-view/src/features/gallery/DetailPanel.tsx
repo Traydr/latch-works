@@ -196,7 +196,7 @@ export function DetailPanel({
           <div className="grid max-w-56 justify-items-center gap-2 text-sm text-muted-foreground">
             <ImageIcon className="size-8" />
             <strong className="text-foreground">No media selected</strong>
-            <span>Choose an image, video, or PDF from the browser.</span>
+            <span className="text-pretty">Choose an image, video, or PDF from the browser.</span>
           </div>
         </div>
       )}

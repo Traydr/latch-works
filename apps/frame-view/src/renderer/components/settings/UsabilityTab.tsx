@@ -152,7 +152,7 @@ export function UsabilityTab({ onUpdate, settings }: UsabilityTabProps): JSX.Ele
 
         <div className="space-y-4">
           <label className="prism-section block space-y-1.5">
-            <span className="text-zinc-500 dark:text-zinc-400">
+            <span className="text-zinc-500 tabular-nums dark:text-zinc-400">
               Thumbnail size: {thumbnailSizeDraft}px
             </span>
             <input

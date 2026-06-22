@@ -61,15 +61,15 @@ export function GalleryHeader({
           ) : null}
           {cacheStatusMessage ? <span className="prism-pill">{cacheStatusMessage}</span> : null}
           {folderEntryCount > 0 ? (
-            <span className="prism-pill">{folderEntryCount} folders</span>
+            <span className="prism-pill tabular-nums">{folderEntryCount} folders</span>
           ) : null}
           {comicEntryCount > 0 ? (
-            <span className="prism-pill">{comicEntryCount} comics</span>
+            <span className="prism-pill tabular-nums">{comicEntryCount} comics</span>
           ) : (
-            <span className="prism-pill">{mediaEntryCount} items</span>
+            <span className="prism-pill tabular-nums">{mediaEntryCount} items</span>
           )}
           {selectedBrowserEntryIndex >= 0 ? (
-            <span className="prism-pill">
+            <span className="prism-pill tabular-nums">
               {selectedBrowserEntryIndex + 1}/{browserEntryCount}
             </span>
           ) : null}

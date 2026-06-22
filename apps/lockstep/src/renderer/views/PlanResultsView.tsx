@@ -25,7 +25,7 @@ export function PlanResultsView({
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <div>
           <h2 className="text-lg font-semibold tracking-tight">Plan results</h2>
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">
+          <p className="text-sm tabular-nums text-zinc-500 dark:text-zinc-400">
             {items.length.toLocaleString()} changed item(s) after filtering
           </p>
         </div>

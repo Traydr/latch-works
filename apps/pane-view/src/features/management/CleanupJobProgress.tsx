@@ -36,18 +36,18 @@ export function CleanupJobProgress({ job }: CleanupJobProgressProps) {
       <div className="space-y-1">
         <div className="flex justify-between text-xs text-muted-foreground">
           <span>{phaseLabels[job.progress.phase]}</span>
-          <span>{job.progress.processedCount} processed</span>
+          <span className="tabular-nums">{job.progress.processedCount} processed</span>
         </div>
         <div className="h-2 overflow-hidden rounded-full bg-muted">
           <div
-            className="h-full bg-amber-500 transition-all"
+            className="h-full bg-amber-500 transition-[width]"
             style={{ width: `${estimateProgress(job)}%` }}
           />
         </div>
       </div>
 
       {job.progress.errorCount > 0 ? (
-        <p className="text-xs text-destructive">
+        <p className="tabular-nums text-xs text-destructive">
           {job.progress.errorCount} storage delete error
           {job.progress.errorCount === 1 ? "" : "s"} (best-effort cleanup continues).
         </p>

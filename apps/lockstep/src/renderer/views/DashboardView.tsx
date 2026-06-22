@@ -56,7 +56,7 @@ export function DashboardView({
           <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
             <div>
               <h3 className="text-base font-semibold tracking-tight">Latest plan</h3>
-              <p className="text-sm text-zinc-500 dark:text-zinc-400">
+              <p className="text-sm tabular-nums text-zinc-500 dark:text-zinc-400">
                 Skipped files: {plan.skipped.toLocaleString()}
               </p>
             </div>

@@ -34,7 +34,7 @@ function LoginRoute() {
           </div>
           <div>
             <strong className="block text-sm font-semibold">Pane View</strong>
-            <span className="block text-xs text-zinc-400">Private archive access</span>
+            <span className="block text-pretty text-xs text-zinc-400">Private archive access</span>
           </div>
         </div>
 
@@ -55,7 +55,9 @@ function LoginRoute() {
         </label>
 
         {search.error === "invalid" ? (
-          <p className="m-0 text-sm text-red-300">Those credentials did not match Pane View.</p>
+          <p className="m-0 text-pretty text-sm text-red-300">
+            Those credentials did not match Pane View.
+          </p>
         ) : null}
 
         <Button size="lg" type="submit">

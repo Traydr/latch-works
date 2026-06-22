@@ -85,7 +85,7 @@
 
 .screenshot-frame {
   box-shadow:
-    0 0 0 1px color-mix(in oklch, var(--border) 90%, transparent),
+    0 0 0 1px rgba(255, 255, 255, 0.1),
     0 24px 48px -12px color-mix(in oklch, black 55%, transparent);
 }
 
@@ -108,6 +108,7 @@
   color: var(--foreground);
   font-weight: 600;
   letter-spacing: -0.02em;
+  text-wrap: balance;
 }
 
 .prose-docs h1 {
@@ -129,6 +130,7 @@
 
 .prose-docs p {
   margin: 1rem 0;
+  text-wrap: pretty;
 }
 
 .prose-docs a {
@@ -195,7 +197,7 @@
   height: auto;
   margin: 1.5rem 0;
   border-radius: 0.75rem;
-  border: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
+  outline: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow: 0 12px 32px -8px color-mix(in oklch, black 45%, transparent);
 }
 

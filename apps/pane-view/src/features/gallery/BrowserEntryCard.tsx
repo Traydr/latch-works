@@ -51,7 +51,7 @@ export function BrowserEntryCard({
   return (
     <button
       type="button"
-      className="absolute cursor-pointer text-left transition-all"
+      className="absolute cursor-pointer text-left transition"
       onClick={handleClick}
       onDoubleClick={isMobile ? undefined : () => onActivate(entry)}
       onMouseDown={(event) => event.preventDefault()}
@@ -104,7 +104,7 @@ function FolderCard({
 }) {
   return (
     <div
-      className={`flex h-full w-full flex-col justify-between overflow-hidden rounded-2xl border p-4 transition-all ${
+      className={`flex h-full w-full flex-col justify-between overflow-hidden rounded-2xl border p-4 transition ${
         selected
           ? "border-violet-400 bg-violet-50/90 dark:border-violet-500 dark:bg-violet-500/15"
           : focused
@@ -164,7 +164,7 @@ function ComicCard({
 
   return (
     <div
-      className={`group relative h-full w-full overflow-hidden rounded-2xl bg-zinc-800 text-left transition-all ${
+      className={`group relative h-full w-full overflow-hidden rounded-2xl bg-zinc-800 text-left transition outline outline-1 outline-black/10 dark:outline-white/10 ${
         selected
           ? "ring-2 ring-violet-500 ring-offset-2 ring-offset-zinc-950"
           : focused
@@ -184,7 +184,7 @@ function ComicCard({
       <div className="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/75 via-black/10 to-transparent">
         <div className="px-3 pb-3">
           <p className="line-clamp-2 text-sm font-semibold text-white">{comic.name}</p>
-          <p className="text-[11px] text-white/75">{comic.pages.length} pages</p>
+          <p className="tabular-nums text-[11px] text-white/75">{comic.pages.length} pages</p>
         </div>
       </div>
     </div>
@@ -218,7 +218,7 @@ function MediaCard({
 
   return (
     <div
-      className={`group relative h-full w-full overflow-hidden rounded-2xl text-left transition-all ${
+      className={`group relative h-full w-full overflow-hidden rounded-2xl text-left transition outline outline-1 outline-black/10 dark:outline-white/10 ${
         selected
           ? "ring-2 ring-violet-500 ring-offset-2 ring-offset-zinc-950"
           : focused

@@ -128,7 +128,7 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
         <div className="pointer-events-auto flex items-center justify-between gap-3">
           <div className="min-w-0">
             <p className="truncate text-sm font-medium text-white">{comic.name}</p>
-            <p className="text-xs text-white/70">
+            <p className="tabular-nums text-xs text-white/70">
               {currentPageIndex + 1}/{comic.pages.length} pages
             </p>
           </div>

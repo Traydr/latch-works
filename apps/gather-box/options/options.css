@@ -21,6 +21,7 @@ body {
   margin: 4px 0 0;
   color: var(--muted-foreground);
   font-size: 13px;
+  text-wrap: pretty;
 }
 
 .settings {
@@ -33,6 +34,7 @@ body {
   margin: 0 0 12px;
   font-size: 13px;
   font-weight: 600;
+  text-wrap: balance;
 }
 
 .field {
@@ -69,6 +71,7 @@ body {
   color: var(--muted-foreground);
   font-size: 11px;
   line-height: 1.4;
+  text-wrap: pretty;
 }
 
 .checkbox-row,

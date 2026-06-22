@@ -49,7 +49,7 @@ const HOTKEY_GROUPS: { title: string; entries: { action: string; keys: string }[
 export function HotkeysTab(): JSX.Element {
   return (
     <div className="space-y-3">
-      <p className="text-zinc-500 dark:text-zinc-400">
+      <p className="text-zinc-500 text-pretty dark:text-zinc-400">
         Keyboard-first navigation is built into the gallery and viewer. Use this as the quick
         reference.
       </p>

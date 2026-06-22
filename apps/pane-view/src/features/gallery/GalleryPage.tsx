@@ -1106,7 +1106,7 @@ export function GalleryPage() {
                   <BreadcrumbItem>
                     <BreadcrumbLink asChild>
                       <button
-                        className="max-w-40 cursor-pointer truncate rounded-md px-2 py-1.5"
+                        className="max-w-40 min-h-10 cursor-pointer truncate rounded-md px-2 py-1.5"
                         onClick={() => navigateToPath("")}
                         type="button"
                       >
@@ -1128,7 +1128,7 @@ export function GalleryPage() {
                         ) : (
                           <BreadcrumbLink asChild>
                             <button
-                              className="max-w-40 cursor-pointer truncate rounded-md px-2 py-1.5"
+                              className="max-w-40 min-h-10 cursor-pointer truncate rounded-md px-2 py-1.5"
                               onClick={() => navigateToPath(crumb.path)}
                               title={crumb.path}
                               type="button"
@@ -1301,7 +1301,7 @@ export function GalleryPage() {
           </SheetHeader>
           <div className="mt-4 grid gap-2">
             <button
-              className="rounded-lg border border-border px-3 py-2 text-left text-sm"
+              className="min-h-10 rounded-lg border border-border px-3 py-2 text-left text-sm"
               onClick={() => {
                 navigateToPath("");
                 setPathSheetOpen(false);
@@ -1313,7 +1313,7 @@ export function GalleryPage() {
             {breadcrumbs.map((crumb) => (
               <button
                 key={crumb.path}
-                className="rounded-lg border border-border px-3 py-2 text-left text-sm"
+                className="min-h-10 rounded-lg border border-border px-3 py-2 text-left text-sm"
                 onClick={() => {
                   navigateToPath(crumb.path);
                   setPathSheetOpen(false);

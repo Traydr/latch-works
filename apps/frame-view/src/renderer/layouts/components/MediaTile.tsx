@@ -40,7 +40,7 @@ export function MediaTile({
       data-gallery-item="true"
       data-gallery-item-id={entry.key}
       data-gallery-item-video={item.mediaType === 'video' ? 'true' : undefined}
-      className={`group absolute overflow-hidden rounded-2xl text-left transition-all ${
+      className={`group absolute overflow-hidden rounded-2xl text-left transition active:scale-[0.96] [outline:1px_solid_rgba(0,0,0,0.1)] dark:[outline:1px_solid_rgba(255,255,255,0.1)] ${
         selected
           ? 'ring-2 ring-violet-500 ring-offset-2 ring-offset-zinc-50 dark:ring-offset-zinc-950'
           : 'hover:shadow-lg'

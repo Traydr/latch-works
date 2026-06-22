@@ -111,7 +111,7 @@ export function DebugTab({
       <div className="grid gap-4 md:grid-cols-2">
         <SettingsSection className="space-y-2">
           <p className="text-zinc-500 dark:text-zinc-400">Current view</p>
-          <div className="space-y-1 text-xs text-zinc-500 dark:text-zinc-400">
+          <div className="space-y-1 text-xs tabular-nums text-zinc-500 dark:text-zinc-400">
             <p>Folder: {currentFolderSummary.folderName ?? 'none'}</p>
             <p>Visible items: {currentFolderSummary.itemCount}</p>
             <p>Recursive: {currentFolderSummary.recursive ? 'enabled' : 'disabled'}</p>
@@ -122,7 +122,7 @@ export function DebugTab({
         <SettingsSection className="space-y-2">
           <p className="text-zinc-500 dark:text-zinc-400">Runtime environment</p>
           {diagnosticsSnapshot ? (
-            <div className="space-y-1 text-xs text-zinc-500 dark:text-zinc-400">
+            <div className="space-y-1 text-xs tabular-nums text-zinc-500 dark:text-zinc-400">
               <p>Version: {diagnosticsSnapshot.appVersion}</p>
               <p>Electron: {diagnosticsSnapshot.electronVersion}</p>
               <p>
@@ -140,7 +140,7 @@ export function DebugTab({
         <SettingsSection className="space-y-2">
           <p className="text-zinc-500 dark:text-zinc-400">Thumbnail worker</p>
           {diagnosticsSnapshot?.thumbnailWorker ? (
-            <div className="space-y-1 text-xs text-zinc-500 dark:text-zinc-400">
+            <div className="space-y-1 text-xs tabular-nums text-zinc-500 dark:text-zinc-400">
               <p>Worker path: {diagnosticsSnapshot.thumbnailWorker.workerPath ?? 'unknown'}</p>
               <p>
                 sharp:{' '}
@@ -181,7 +181,7 @@ export function DebugTab({
         <SettingsSection className="space-y-2">
           <p className="text-zinc-500 dark:text-zinc-400">Thumbnail pipeline</p>
           {diagnosticsSnapshot ? (
-            <div className="space-y-1 text-xs text-zinc-500 dark:text-zinc-400">
+            <div className="space-y-1 text-xs tabular-nums text-zinc-500 dark:text-zinc-400">
               <p>Image workers: {diagnosticsSnapshot.thumbnails.imageWorkerCount}</p>
               <p>Video workers: {diagnosticsSnapshot.thumbnails.videoWorkerCount}</p>
               <p>Image queue depth: {diagnosticsSnapshot.thumbnails.imageQueueDepth}</p>
@@ -209,7 +209,7 @@ export function DebugTab({
         <SettingsSection className="space-y-2">
           <p className="text-zinc-500 dark:text-zinc-400">Performance timings</p>
           {diagnosticsSnapshot?.thumbnailWorkerPerformance ? (
-            <div className="space-y-1 text-xs text-zinc-500 dark:text-zinc-400">
+            <div className="space-y-1 text-xs tabular-nums text-zinc-500 dark:text-zinc-400">
               <p>
                 Memory hit avg/max:{' '}
                 {diagnosticsSnapshot.thumbnailWorkerPerformance.memoryHit?.averageMs ?? 0}ms /{' '}
@@ -241,7 +241,7 @@ export function DebugTab({
         <SettingsSection className="space-y-2">
           <p className="text-zinc-500 dark:text-zinc-400">Storage footprint</p>
           {mediaIndexStats ? (
-            <div className="space-y-1 text-xs text-zinc-500 dark:text-zinc-400">
+            <div className="space-y-1 text-xs tabular-nums text-zinc-500 dark:text-zinc-400">
               <p>Indexed items: {mediaIndexStats.totalItems}</p>
               <p>Indexed roots: {mediaIndexStats.uniqueRoots}</p>
               <p>DB path: {mediaIndexStats.dbPath}</p>

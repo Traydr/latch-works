@@ -15,7 +15,7 @@ export function HotkeyOverlay({ onClose }: HotkeyOverlayProps) {
       />
       <section className="relative z-10 w-full max-w-lg rounded-2xl border border-border bg-background p-5 shadow-xl">
         <div className="mb-4 flex items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold">Keyboard shortcuts</h2>
+          <h2 className="text-balance text-lg font-semibold">Keyboard shortcuts</h2>
           <button
             type="button"
             className="rounded-lg border border-border px-3 py-1.5 text-sm"

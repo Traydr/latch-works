@@ -17,10 +17,10 @@ const tools = products.filter((product) => product.kind === "tool");
       <p class="mb-4 text-sm font-medium uppercase tracking-widest text-primary">
         Private media archive ecosystem
       </p>
-      <h1 class="max-w-3xl text-4xl font-semibold tracking-tight text-foreground sm:text-5xl lg:text-6xl">
+      <h1 class="text-balance max-w-3xl text-4xl font-semibold tracking-tight text-foreground sm:text-5xl lg:text-6xl">
         Collect, sync, and view your archive — privately.
       </h1>
-      <p class="mt-6 max-w-2xl text-lg leading-relaxed text-muted-foreground">
+      <p class="text-pretty mt-6 max-w-2xl text-lg leading-relaxed text-muted-foreground">
         Latch Works brings together a browser extension, desktop viewer, sync CLI, and web viewer into
         one calm, local-first system. Your laptop stays the source of truth; remote access is explicit
         and authenticated.
@@ -114,7 +114,7 @@ const tools = products.filter((product) => product.kind === "tool");
                 <h3 class="text-2xl font-semibold text-foreground">{product.name}</h3>
                 <ProductBadge kind={product.kind} />
               </div>
-              <p class="mt-3 text-base leading-relaxed text-muted-foreground">{product.description}</p>
+              <p class="text-pretty mt-3 text-base leading-relaxed text-muted-foreground">{product.description}</p>
               <ul class="mt-6 space-y-2">
                 {
                   product.highlights.slice(0, 3).map((item) => (

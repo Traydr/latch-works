@@ -411,7 +411,7 @@ export function ViewerModal({
           <img
             src={toFileUrl(item.path)}
             alt={item.name}
-            className="max-h-full max-w-full object-contain"
+            className="max-h-full max-w-full object-contain [outline:1px_solid_rgba(255,255,255,0.1)]"
           />
         ) : (
           <video
@@ -567,7 +567,7 @@ export function ViewerModal({
                   <option value={2}>2x</option>
                 </select>
               </label>
-              <span className="text-white/70">
+              <span className="text-white/70 tabular-nums">
                 {Math.floor(position)}/{Math.floor(duration || 0)}s
               </span>
             </div>

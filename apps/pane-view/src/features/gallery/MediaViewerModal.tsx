@@ -734,7 +734,7 @@ export function MediaViewerModal({
                   <option value={2}>2x</option>
                 </select>
               </label>
-              <span className="text-white/70">
+              <span className="tabular-nums text-white/70">
                 {Math.floor(position)}/{Math.floor(duration || 0)}s
               </span>
             </div>

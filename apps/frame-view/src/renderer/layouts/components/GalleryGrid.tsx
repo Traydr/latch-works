@@ -98,7 +98,7 @@ export function GalleryGrid({
       >
         {browserEntries.length === 0 ? (
           <div className="flex h-full items-center justify-center">
-            <p className="prism-surface rounded-2xl px-6 py-4 text-sm text-zinc-500 dark:text-zinc-300">
+            <p className="prism-surface rounded-2xl px-6 py-4 text-sm text-pretty text-zinc-500 dark:text-zinc-300">
               {rootPath
                 ? folderChildrenLoading
                   ? 'Checking folder contents...'

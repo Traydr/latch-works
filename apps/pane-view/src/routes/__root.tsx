@@ -73,10 +73,10 @@ function AppNotFound() {
           <SearchX size={28} />
         </div>
         <p className="m-0 text-sm font-semibold text-zinc-400">404</p>
-        <h1 className="m-0 text-xl font-semibold" id="not-found-title">
+        <h1 className="m-0 text-balance text-xl font-semibold" id="not-found-title">
           Archive path not found
         </h1>
-        <span className="text-sm text-zinc-400">
+        <span className="text-pretty text-sm text-zinc-400">
           The page or media route you opened does not exist in Pane View.
         </span>
         <Button asChild className="mt-1 gap-2" size="lg">

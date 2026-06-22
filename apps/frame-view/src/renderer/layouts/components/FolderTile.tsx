@@ -28,7 +28,7 @@ export function FolderTile({
       type="button"
       data-gallery-item="true"
       data-gallery-item-id={entry.key}
-      className={`group absolute flex flex-col justify-between overflow-hidden rounded-2xl border p-4 text-left transition-all ${
+      className={`group absolute flex flex-col justify-between overflow-hidden rounded-2xl border p-4 text-left transition active:scale-[0.96] ${
         selected
           ? 'border-violet-400 bg-violet-50/90 ring-2 ring-violet-400/70 dark:border-violet-500 dark:bg-violet-500/15'
           : 'border-zinc-300/80 bg-white/75 hover:-translate-y-0.5 hover:border-zinc-400 hover:bg-white hover:shadow-lg dark:border-zinc-700/80 dark:bg-zinc-900/75 dark:hover:border-zinc-600 dark:hover:bg-zinc-900'

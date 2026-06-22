@@ -31,7 +31,7 @@ export function LocalStorageTab({
       <SettingsSection className="space-y-2">
         <p className="text-zinc-500 dark:text-zinc-400">Media index (SQLite)</p>
         {mediaIndexStats ? (
-          <div className="space-y-1 text-xs text-zinc-500 dark:text-zinc-400">
+          <div className="space-y-1 text-xs text-zinc-500 tabular-nums dark:text-zinc-400">
             <p>{mediaIndexStats.totalItems} indexed item(s)</p>
             <p>{mediaIndexStats.uniqueRoots} root folder(s)</p>
             <p className="break-all">{mediaIndexStats.dbPath}</p>

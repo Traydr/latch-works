@@ -75,8 +75,10 @@ export function SettingsDrawer({
       <aside className="prism-surface z-10 mx-6 flex max-h-[78vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl">
         <div className="flex items-center justify-between border-b border-inherit px-5 py-3">
           <div>
-            <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Preferences</h2>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+            <h2 className="text-lg font-semibold text-balance text-zinc-900 dark:text-zinc-100">
+              Preferences
+            </h2>
+            <p className="text-xs text-pretty text-zinc-500 dark:text-zinc-400">
               Organize usability, storage, shortcuts, and diagnostics in one place.
             </p>
           </div>

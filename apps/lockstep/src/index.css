@@ -20,6 +20,17 @@ body,
 
 body {
   font-family: "Geist Variable", "Segoe UI", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+}
+
+p {
+  text-wrap: pretty;
 }
 
 ::-webkit-scrollbar {
@@ -42,7 +53,7 @@ body {
 }
 
 .prism-btn {
-  @apply rounded-xl border border-zinc-300/90 bg-white/70 px-3 py-1.5 text-xs font-medium text-zinc-700 transition hover:border-zinc-400 hover:bg-white disabled:pointer-events-none disabled:opacity-50 dark:border-zinc-600/90 dark:bg-zinc-900/70 dark:text-zinc-200 dark:hover:border-zinc-500 dark:hover:bg-zinc-900;
+  @apply rounded-xl border border-zinc-300/90 bg-white/70 px-3 py-1.5 text-xs font-medium text-zinc-700 transition hover:border-zinc-400 hover:bg-white active:scale-[0.96] disabled:pointer-events-none disabled:opacity-50 dark:border-zinc-600/90 dark:bg-zinc-900/70 dark:text-zinc-200 dark:hover:border-zinc-500 dark:hover:bg-zinc-900;
 }
 
 .prism-btn-primary {

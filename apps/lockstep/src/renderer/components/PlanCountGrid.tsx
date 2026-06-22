@@ -20,7 +20,7 @@ export function PlanCountGrid({ counts, compact = false }: PlanCountGridProps) {
       {items.map((entry) => (
         <div key={entry.key} className="prism-stat">
           <p className="prism-label">{entry.label}</p>
-          <p className="mt-1 text-2xl font-semibold tracking-tight">{counts[entry.key]}</p>
+          <p className="mt-1 text-2xl font-semibold tabular-nums tracking-tight">{counts[entry.key]}</p>
         </div>
       ))}
     </div>

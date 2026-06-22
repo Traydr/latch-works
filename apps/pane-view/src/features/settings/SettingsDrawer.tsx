@@ -53,8 +53,10 @@ export function SettingsDrawer({
       <aside className="relative z-10 flex max-h-[80vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-xl">
         <header className="flex items-center justify-between border-b border-border px-5 py-4">
           <div>
-            <h2 className="text-lg font-semibold">Settings</h2>
-            <p className="text-xs text-muted-foreground">Usability, viewer, and diagnostics</p>
+            <h2 className="text-balance text-lg font-semibold">Settings</h2>
+            <p className="text-pretty text-xs text-muted-foreground">
+              Usability, viewer, and diagnostics
+            </p>
           </div>
           <button
             type="button"
@@ -67,7 +69,7 @@ export function SettingsDrawer({
 
         <div className="space-y-6 overflow-auto px-5 py-4">
           <section className="space-y-3">
-            <h3 className="text-sm font-semibold">Usability</h3>
+            <h3 className="text-balance text-sm font-semibold">Usability</h3>
             <ToggleRow
               checked={recursiveDefault}
               label="Default recursive browsing"
@@ -113,7 +115,7 @@ export function SettingsDrawer({
           </section>
 
           <section className="space-y-3">
-            <h3 className="text-sm font-semibold">Viewer</h3>
+            <h3 className="text-balance text-sm font-semibold">Viewer</h3>
             <ToggleRow
               checked={settings.rememberViewerPosition}
               label="Remember PDF page and video position"
@@ -137,7 +139,7 @@ export function SettingsDrawer({
           </section>
 
           <section className="space-y-3">
-            <h3 className="text-sm font-semibold">Keyboard shortcuts</h3>
+            <h3 className="text-balance text-sm font-semibold">Keyboard shortcuts</h3>
             <ul className="space-y-2">
               {GALLERY_HOTKEYS.map((entry) => (
                 <li key={entry.action} className="flex justify-between gap-3 text-sm">
@@ -149,7 +151,7 @@ export function SettingsDrawer({
           </section>
 
           <section className="space-y-3">
-            <h3 className="text-sm font-semibold">Diagnostics</h3>
+            <h3 className="text-balance text-sm font-semibold">Diagnostics</h3>
             <button
               type="button"
               className="rounded-lg border border-border px-3 py-2 text-sm"
@@ -166,7 +168,9 @@ export function SettingsDrawer({
             </button>
             {confirmOpen ? (
               <div className="rounded-lg border border-border p-3 text-sm">
-                <p className="mb-3">Clear all Pane View local preferences on this device?</p>
+                <p className="mb-3 text-pretty">
+                  Clear all Pane View local preferences on this device?
+                </p>
                 <div className="flex gap-2">
                   <button
                     type="button"

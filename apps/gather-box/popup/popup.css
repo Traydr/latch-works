@@ -125,6 +125,7 @@ h1 {
   font-size: 14px;
   font-weight: 600;
   letter-spacing: -0.01em;
+  text-wrap: balance;
 }
 
 .badge {
@@ -211,6 +212,8 @@ h1 {
   color: var(--muted-foreground);
   font-size: 11px;
   line-height: 1.4;
+  text-wrap: pretty;
+  font-variant-numeric: tabular-nums;
 }
 
 .sub.center {
@@ -230,6 +233,7 @@ h1 {
   font-size: 12px;
   font-weight: 500;
   padding: 6px 12px;
+  min-height: 40px;
   cursor: pointer;
   transition:
     background 0.12s,
@@ -240,7 +244,7 @@ h1 {
 }
 
 .btn:active:not(:disabled) {
-  transform: translateY(1px);
+  transform: scale(0.96);
 }
 
 .btn:disabled {
@@ -309,6 +313,7 @@ h1 {
 .btn-tiny {
   padding: 3px 8px;
   font-size: 11px;
+  min-height: auto;
 }
 
 .btn-huge {
@@ -382,6 +387,7 @@ h1 {
 
 .log-entry {
   color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
 }
 
 .log-entry + .log-entry {

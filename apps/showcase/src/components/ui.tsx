@@ -115,9 +115,9 @@ export function SectionHeading({
       {eyebrow ? (
         <p className="mb-2 text-sm font-medium uppercase tracking-widest text-primary">{eyebrow}</p>
       ) : null}
-      <h2 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">{title}</h2>
+      <h2 className="text-balance text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">{title}</h2>
       {description ? (
-        <p className="mt-3 text-base leading-relaxed text-muted-foreground">{description}</p>
+        <p className="text-pretty mt-3 text-base leading-relaxed text-muted-foreground">{description}</p>
       ) : null}
     </div>
   );
@@ -127,7 +127,7 @@ export function CtaLink({ to, children }: { to: string; children: React.ReactNod
   return (
     <a
       href={to}
-      className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition hover:opacity-90"
+      className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition hover:opacity-90 active:scale-[0.96]"
     >
       {children}
       <ArrowRight className="size-4" aria-hidden="true" />
