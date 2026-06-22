@@ -12,8 +12,10 @@ if (!product) {
 ---
 
 <BaseLayout title={`${product.name} — Latch Works`} description={product.description}>
-  <section class={`relative overflow-hidden border-b border-border/70 bg-gradient-to-br ${product.accent}`}>
-    <div class="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
+  <section
+    class={`product-hero relative overflow-hidden border-b border-border/70 bg-gradient-to-br ${product.accent}`}
+  >
+    <div class="hero-inner mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
       <a
         href="/"
         class="mb-6 inline-flex items-center gap-2 text-sm text-muted-foreground transition hover:text-foreground"
@@ -25,7 +27,9 @@ if (!product) {
       </a>
 
       <div class="flex flex-wrap items-center gap-3">
-        <h1 class="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">{product.name}</h1>
+        <h1 class="theme-hero-title text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
+          {product.name}
+        </h1>
         <ProductBadge kind={product.kind} />
       </div>
       <p class="mt-2 text-lg text-primary">{product.tagline}</p>
@@ -46,6 +50,7 @@ if (!product) {
   <section class="border-y border-border/70 bg-card/20">
     <div class="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
       <SectionHeading
+        class="section-heading"
         eyebrow="Features"
         title={`What ${product.name} does`}
         description="Real capabilities drawn from the monorepo — not aspirational marketing copy."
@@ -54,7 +59,7 @@ if (!product) {
       <div class="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
         {
           product.features.map((feature) => (
-            <article class="rounded-xl border border-border/70 bg-background/40 p-5 transition hover:border-primary/30">
+            <article class="feature-card theme-card rounded-xl border border-border/70 bg-background/40 p-5 transition hover:border-primary/30">
               <FeatureIcon name={feature.icon} />
               <h3 class="mt-4 font-medium text-foreground">{feature.title}</h3>
               <p class="mt-2 text-sm leading-relaxed text-muted-foreground">{feature.description}</p>
@@ -66,11 +71,11 @@ if (!product) {
   </section>
 
   <section class="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
-    <SectionHeading eyebrow="Highlights" title="At a glance" />
+    <SectionHeading class="section-heading" eyebrow="Highlights" title="At a glance" />
     <ul class="mt-8 grid gap-3 sm:grid-cols-2">
       {
         product.highlights.map((item) => (
-          <li class="flex items-start gap-3 rounded-lg border border-border/60 bg-muted/15 px-4 py-3 text-sm text-muted-foreground">
+          <li class="theme-card flex items-start gap-3 rounded-lg border border-border/60 bg-muted/15 px-4 py-3 text-sm text-muted-foreground">
             <svg
               class="mt-0.5 size-4 shrink-0 text-primary"
               viewBox="0 0 24 24"
@@ -92,7 +97,7 @@ if (!product) {
     product.gallery.length > 0 ? (
       <section class="border-t border-border/70 bg-card/20">
         <div class="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
-          <SectionHeading eyebrow="Screenshots" title="More from the app" />
+          <SectionHeading class="section-heading" eyebrow="Screenshots" title="More from the app" />
           <div class="mt-10 grid gap-8 lg:grid-cols-2">
             {product.gallery.map((shot) => (
               <Screenshot src={shot.src} alt={shot.alt} caption={shot.caption} />

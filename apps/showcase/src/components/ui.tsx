@@ -59,7 +59,7 @@ const iconMap: Record<string, LucideIcon> = {
 export function FeatureIcon({ name }: { name: string }) {
   const Icon = iconMap[name] ?? Blocks;
   return (
-    <div className="feature-icon flex size-10 shrink-0 items-center justify-center rounded-lg border border-border/60">
+    <div className="feature-icon mx-auto flex size-10 shrink-0 items-center justify-center rounded-lg border border-border/60 sm:mx-0">
       <Icon className="size-5 text-primary" aria-hidden="true" />
     </div>
   );
@@ -67,7 +67,7 @@ export function FeatureIcon({ name }: { name: string }) {
 
 export function ProductBadge({ kind }: { kind: "app" | "tool" }) {
   return (
-    <span className="inline-flex items-center rounded-full border border-border/80 bg-muted/60 px-2.5 py-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+    <span className="product-badge inline-flex items-center rounded-full border border-border/80 bg-muted/60 px-2.5 py-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
       {kind}
     </span>
   );
@@ -105,13 +105,15 @@ export function SectionHeading({
   eyebrow,
   title,
   description,
+  class: className,
 }: {
   eyebrow?: string;
   title: string;
   description?: string;
+  class?: string;
 }) {
   return (
-    <div className="max-w-2xl">
+    <div className={["max-w-2xl", className].filter(Boolean).join(" ")}>
       {eyebrow ? (
         <p className="mb-2 text-sm font-medium uppercase tracking-widest text-primary">{eyebrow}</p>
       ) : null}

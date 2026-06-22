@@ -8,28 +8,30 @@ const tools = products.filter((product) => product.kind === "tool");
 ---
 
 <BaseLayout>
-  <section class="gradient-grid relative overflow-hidden border-b border-border/70">
+  <section class="hero-section gradient-grid relative overflow-hidden border-b border-border/70">
     <div
       class="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,color-mix(in_oklch,var(--primary)_18%,transparent),transparent_60%)]"
     >
     </div>
-    <div class="relative mx-auto max-w-6xl px-4 py-20 sm:px-6 sm:py-28">
-      <p class="mb-4 text-sm font-medium uppercase tracking-widest text-primary">
-        Private media archive ecosystem
-      </p>
-      <h1 class="max-w-3xl text-4xl font-semibold tracking-tight text-foreground sm:text-5xl lg:text-6xl">
-        Collect, sync, and view your archive — privately.
-      </h1>
-      <p class="mt-6 max-w-2xl text-lg leading-relaxed text-muted-foreground">
-        Latch Works brings together a browser extension, desktop viewer, sync CLI, and web viewer into
-        one calm, local-first system. Your laptop stays the source of truth; remote access is explicit
-        and authenticated.
-      </p>
+    <div class="hero-inner relative mx-auto max-w-6xl px-4 py-20 sm:px-6 sm:py-28">
+      <div class="hero-lead">
+        <p class="hero-eyebrow mb-4 text-sm font-medium uppercase tracking-widest text-primary">
+          Private media archive ecosystem
+        </p>
+        <h1 class="theme-hero-title max-w-3xl text-4xl font-semibold tracking-tight text-foreground sm:text-5xl lg:text-6xl">
+          Collect, sync, and view your archive — privately.
+        </h1>
+        <p class="mt-6 max-w-2xl text-lg leading-relaxed text-muted-foreground">
+          Latch Works brings together a browser extension, desktop viewer, sync CLI, and web viewer into
+          one calm, local-first system. Your laptop stays the source of truth; remote access is explicit
+          and authenticated.
+        </p>
+      </div>
 
-      <div class="mt-10 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div class="hero-pipeline pipeline-grid mt-10 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {
           pipeline.map((stage) => (
-            <div class="glass-panel rounded-xl p-4">
+            <div class="pipeline-card glass-panel theme-card rounded-xl p-4">
               <p class="text-xs font-medium uppercase tracking-widest text-primary">{stage.step}</p>
               <p class="mt-1 font-medium text-foreground">{stage.product}</p>
               <p class="mt-2 text-sm text-muted-foreground">{stage.description}</p>
@@ -42,18 +44,20 @@ const tools = products.filter((product) => product.kind === "tool");
 
   <section class="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
     <SectionHeading
+      class="section-heading"
       eyebrow="Apps"
       title="Three surfaces, one archive"
       description="Each app handles a distinct part of the workflow — collection, local browsing, and private web viewing."
     />
 
-    <div class="mt-10 grid gap-6 lg:grid-cols-3">
+    <div class="app-cards mt-10 grid gap-6 lg:grid-cols-3">
       {
         apps.map((product) => (
           <a
             href={`/${product.slug}`}
-            class={`group glass-panel overflow-hidden rounded-2xl transition hover:border-primary/40 hover:shadow-[0_0_0_1px_color-mix(in_oklch,var(--primary)_30%,transparent)]`}
+            class={`app-card group glass-panel theme-card overflow-hidden rounded-2xl transition hover:border-primary/40 hover:shadow-[0_0_0_1px_color-mix(in_oklch,var(--primary)_30%,transparent)]`}
           >
+            <span class="neon-accent-bar hidden" aria-hidden="true" />
             <div class={`h-1.5 bg-gradient-to-r ${product.accent}`} />
             <div class="overflow-hidden">
               <img
@@ -91,6 +95,7 @@ const tools = products.filter((product) => product.kind === "tool");
   <section class="border-y border-border/70 bg-card/30">
     <div class="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
       <SectionHeading
+        class="section-heading"
         eyebrow="Tools"
         title="Explicit sync, no surprises"
         description="Lockstep is the controlled bridge between your local archive and the hosted Pane View backend."
@@ -100,7 +105,7 @@ const tools = products.filter((product) => product.kind === "tool");
         tools.map((product) => (
           <a
             href={`/${product.slug}`}
-            class="group mt-10 grid overflow-hidden rounded-2xl border border-border/80 bg-card/60 lg:grid-cols-2"
+            class="tool-feature group mt-10 grid overflow-hidden rounded-2xl border border-border/80 bg-card/60 lg:grid-cols-2"
           >
             <div class="overflow-hidden">
               <img
@@ -147,11 +152,12 @@ const tools = products.filter((product) => product.kind === "tool");
 
   <section class="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
     <SectionHeading
+      class="section-heading"
       eyebrow="Principles"
       title="Built for personal archives"
       description="Latch Works is intentionally read-focused. It is not a social platform or a public gallery."
     />
-    <div class="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <div class="principles-grid mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
       {
         [
           {
@@ -171,7 +177,7 @@ const tools = products.filter((product) => product.kind === "tool");
             body: "Direct language, dark UI, practical spacing — a workshop, not a marketing site.",
           },
         ].map((item) => (
-          <div class="rounded-xl border border-border/70 bg-muted/20 p-5">
+          <div class="principle-card theme-card rounded-xl border border-border/70 bg-muted/20 p-5">
             <h3 class="font-medium text-foreground">{item.title}</h3>
             <p class="mt-2 text-sm leading-relaxed text-muted-foreground">{item.body}</p>
           </div>

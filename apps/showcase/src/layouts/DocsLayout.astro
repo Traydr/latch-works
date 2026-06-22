@@ -22,13 +22,13 @@ const currentPath = Astro.url.pathname;
     Skip to content
   </a>
 
-  <div class="mx-auto grid max-w-6xl gap-6 px-4 py-8 sm:px-6 sm:py-12 lg:grid-cols-[260px_minmax(0,1fr)] lg:gap-10">
+  <div class="docs-layout mx-auto grid max-w-6xl gap-6 px-4 py-8 sm:px-6 sm:py-12 lg:grid-cols-[260px_minmax(0,1fr)] lg:gap-10">
     <article id="docs-content" class="prose-docs order-1 min-w-0 lg:order-2">
       <slot />
     </article>
 
     <aside
-      class="order-2 hidden min-w-0 lg:sticky lg:top-20 lg:block lg:order-1 lg:max-h-[calc(100vh-6rem)] lg:self-start lg:overflow-y-auto"
+      class="docs-sidebar order-2 hidden min-w-0 lg:sticky lg:top-20 lg:block lg:order-1 lg:max-h-[calc(100vh-6rem)] lg:self-start lg:overflow-y-auto"
     >
       <DocsSidebarNav sections={sections} currentPath={currentPath} />
     </aside>
