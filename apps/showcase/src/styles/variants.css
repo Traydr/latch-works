@@ -1,6 +1,6 @@
 /* Only one layout variant visible at a time */
 .variant-root {
-  display: none;
+  display: none !important;
 }
 
 html[data-active-variant="1"] .variant-root[data-variant="1"],
@@ -8,7 +8,7 @@ html[data-active-variant="2"] .variant-root[data-variant="2"],
 html[data-active-variant="3"] .variant-root[data-variant="3"],
 html[data-active-variant="4"] .variant-root[data-variant="4"],
 html[data-active-variant="5"] .variant-root[data-variant="5"] {
-  display: block;
+  display: block !important;
 }
 
 /* Room for the fixed 1–5 switcher */

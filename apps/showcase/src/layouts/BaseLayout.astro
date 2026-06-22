@@ -1,6 +1,6 @@
 ---
-import { VariantSwitcher } from "@/components/VariantSwitcher";
-import { defaultVariant, variantStorageKey } from "@/data/variants";
+import VariantSwitcher from "@/components/VariantSwitcher.astro";
+import { defaultVariant } from "@/data/variants";
 import "@/styles/global.css";
 
 interface Props {
@@ -22,11 +22,12 @@ const {
     <meta name="description" content={description} />
     <title>{title}</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <script is:inline define:vars={{ variantStorageKey, defaultVariant }}>
+    <script is:inline>
       try {
-        const stored = localStorage.getItem(variantStorageKey);
+        const stored = localStorage.getItem("latch-showcase-variant");
         const legacy = localStorage.getItem("latch-showcase-theme");
-        const value = stored ?? (legacy && ["1", "2", "3", "4", "5"].includes(legacy) ? legacy : null);
+        const value =
+          stored ?? (legacy && ["1", "2", "3", "4", "5"].includes(legacy) ? legacy : null);
         if (value) {
           document.documentElement.dataset.activeVariant = value;
         }
@@ -35,6 +36,6 @@ const {
   </head>
   <body>
     <slot />
-    <VariantSwitcher client:load />
+    <VariantSwitcher />
   </body>
 </html>

@@ -1,0 +1,73 @@
+---
+import { variants } from "@/data/variants";
+---
+
+<nav
+  id="variant-switcher"
+  class="fixed right-0 top-1/2 z-[100] flex -translate-y-1/2 flex-col rounded-l-lg border border-border/80 bg-card/95 shadow-lg backdrop-blur-md"
+  aria-label="Layout variant switcher"
+>
+  {
+    variants.map((variant) => (
+      <button
+        type="button"
+        data-variant-btn={variant.id}
+        title={`${variant.name}: ${variant.description}`}
+        aria-label={`Switch to layout ${variant.label}: ${variant.name}`}
+        aria-pressed={variant.id === "1" ? "true" : "false"}
+        class="variant-switcher-btn group relative flex h-11 w-11 items-center justify-center border-b border-border/50 text-sm font-semibold transition last:border-b-0"
+      >
+        {variant.label}
+        <span class="pointer-events-none absolute right-full mr-2 hidden whitespace-nowrap rounded border border-border bg-card px-2 py-1 text-xs font-normal text-foreground group-hover:block">
+          {variant.name}
+        </span>
+      </button>
+    ))
+  }
+</nav>
+
+<script is:inline>
+  function latchSetVariant(id) {
+    document.documentElement.dataset.activeVariant = id;
+    try {
+      localStorage.setItem("latch-showcase-variant", id);
+    } catch {}
+    document.querySelectorAll("[data-variant-btn]").forEach((button) => {
+      const active = button.getAttribute("data-variant-btn") === id;
+      button.setAttribute("aria-pressed", active ? "true" : "false");
+      button.classList.toggle("bg-primary", active);
+      button.classList.toggle("text-primary-foreground", active);
+      button.classList.toggle("text-muted-foreground", !active);
+    });
+  }
+
+  document.getElementById("variant-switcher")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-variant-btn]");
+    if (!button) return;
+    latchSetVariant(button.getAttribute("data-variant-btn"));
+  });
+
+  try {
+    const stored = localStorage.getItem("latch-showcase-variant");
+    const legacy = localStorage.getItem("latch-showcase-theme");
+    const value =
+      stored ?? (legacy && ["1", "2", "3", "4", "5"].includes(legacy) ? legacy : null);
+    if (value) {
+      latchSetVariant(value);
+    }
+  } catch {}
+</script>
+
+<style>
+  .variant-switcher-btn[aria-pressed="true"] {
+    background: var(--primary);
+    color: var(--primary-foreground);
+  }
+  .variant-switcher-btn[aria-pressed="false"] {
+    color: var(--muted-foreground);
+  }
+  .variant-switcher-btn[aria-pressed="false"]:hover {
+    background: var(--accent);
+    color: var(--accent-foreground);
+  }
+</style>

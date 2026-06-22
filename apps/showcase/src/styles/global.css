@@ -1,6 +1,6 @@
 @import "@fontsource-variable/geist";
-@import "./variants.css";
 @import "tailwindcss";
+@import "./variants.css";
 
 @layer base {
   * {
