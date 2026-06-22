@@ -35,19 +35,21 @@ const flushSave = vi.fn();
 const scheduleSave = vi.fn();
 
 vi.mock("@/features/viewer/use-library-viewer-state", () => ({
-  useLibraryViewerState: () => ({
-    flushSave,
-    scheduleSave,
-    snapshot: {
-      positionMs: 45_000,
-      subjectId: videoItem.id,
-      subjectType: "library_entry" as const,
-      updatedAt: "2026-06-12T00:00:00.000Z",
-    },
+  useLibraryViewerState: (subjectId: string | undefined) => ({
+    flushSave: subjectId ? flushSave : vi.fn(),
+    scheduleSave: subjectId ? scheduleSave : vi.fn(),
+    snapshot: subjectId
+      ? {
+          positionMs: 45_000,
+          subjectId: videoItem.id,
+          subjectType: "library_entry" as const,
+          updatedAt: "2026-06-12T00:00:00.000Z",
+        }
+      : null,
   }),
 }));
 
-function renderModal(): { root: Root; container: HTMLDivElement } {
+function renderModal(rememberViewerPosition = true): { root: Root; container: HTMLDivElement } {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -60,6 +62,7 @@ function renderModal(): { root: Root; container: HTMLDivElement } {
         loopNavigation: false,
         loopVideos: false,
         onClose: vi.fn(),
+        rememberViewerPosition,
         startIndex: 0,
       }),
     );
@@ -174,6 +177,35 @@ describe("MediaViewerModal resume state", () => {
     });
 
     expect(scheduleSave).toHaveBeenCalledTimes(2);
+    expect(flushSave).not.toHaveBeenCalled();
+  });
+
+  it("does not resume or save position when rememberViewerPosition is disabled", () => {
+    ({ root } = renderModal(false));
+    const video = document.querySelector("video");
+    expect(video).not.toBeNull();
+
+    act(() => {
+      Object.defineProperty(video, "duration", {
+        configurable: true,
+        value: 120,
+      });
+      video?.dispatchEvent(new Event("loadedmetadata"));
+    });
+
+    expect(video?.currentTime).toBe(0);
+
+    act(() => {
+      Object.defineProperty(video, "currentTime", {
+        configurable: true,
+        value: 12.5,
+        writable: true,
+      });
+      video?.dispatchEvent(new Event("timeupdate"));
+      video?.dispatchEvent(new Event("pause"));
+    });
+
+    expect(scheduleSave).not.toHaveBeenCalled();
     expect(flushSave).not.toHaveBeenCalled();
   });
 });

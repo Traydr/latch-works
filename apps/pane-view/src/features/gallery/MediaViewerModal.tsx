@@ -34,6 +34,7 @@ interface MediaViewerModalProps {
   loopNavigation: boolean;
   loopVideos: boolean;
   onClose: () => void;
+  rememberViewerPosition: boolean;
   startIndex: number;
 }
 
@@ -70,6 +71,7 @@ export function MediaViewerModal({
   loopNavigation,
   loopVideos,
   onClose,
+  rememberViewerPosition,
   startIndex,
 }: MediaViewerModalProps): JSX.Element | null {
   const isMobile = useIsMobile();
@@ -100,7 +102,9 @@ export function MediaViewerModal({
     variant: "original",
   });
   const viewerStateSubjectId =
-    item && (item.mediaType === "video" || item.mediaType === "pdf") ? item.id : undefined;
+    rememberViewerPosition && item && (item.mediaType === "video" || item.mediaType === "pdf")
+      ? item.id
+      : undefined;
   const {
     flushSave,
     scheduleSave,

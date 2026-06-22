@@ -115,6 +115,11 @@ export function SettingsDrawer({
           <section className="space-y-3">
             <h3 className="text-sm font-semibold">Viewer</h3>
             <ToggleRow
+              checked={settings.rememberViewerPosition}
+              label="Remember PDF page and video position"
+              onChange={(checked) => onUpdate({ rememberViewerPosition: checked })}
+            />
+            <ToggleRow
               checked={settings.autoplayVideos}
               label="Autoplay videos"
               onChange={(checked) => onUpdate({ autoplayVideos: checked })}

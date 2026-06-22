@@ -4,6 +4,7 @@ export interface AppSettings {
   autoplayVideos: boolean;
   loopNavigation: boolean;
   loopVideos: boolean;
+  rememberViewerPosition: boolean;
   showImages: boolean;
   showVideos: boolean;
   theme: ThemeMode;
@@ -22,6 +23,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   autoplayVideos: false,
   loopNavigation: true,
   loopVideos: false,
+  rememberViewerPosition: true,
   showImages: true,
   showVideos: true,
   theme: "system",

@@ -1333,6 +1333,7 @@ export function GalleryPage() {
           items={viewerItems ?? visibleMedia}
           loopNavigation={settings.loopNavigation}
           loopVideos={settings.loopVideos}
+          rememberViewerPosition={settings.rememberViewerPosition}
           onClose={closeViewer}
           startIndex={Math.max(
             0,
