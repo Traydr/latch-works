@@ -39,7 +39,11 @@ import {
   type LastRunLogEntry,
   type LastRunState
 } from "./last-run";
-import { buildFolderPreview, getFolderSegments } from "./path";
+import {
+  buildFolderPreview,
+  getFolderSegments
+} from "./path";
+import { updateSaveBehavior } from "./layouts";
 import {
   PENDING_DOWNLOAD_SESSION_KEY,
   START_DOWNLOAD_MESSAGE,
@@ -89,6 +93,11 @@ export class GatherController {
   private elements!: PopupElements;
   private logEntries: LastRunLogEntry[] = [];
   private readonly options: GatherControllerOptions;
+  private keydownHandler: ((event: KeyboardEvent) => void) | null = null;
+  private messageHandler: ((message: GatherRuntimeMessage) => void) | null = null;
+  private storageHandler:
+    | ((changes: Record<string, chrome.storage.StorageChange>, areaName: string) => void)
+    | null = null;
 
   constructor(options: GatherControllerOptions = {}) {
     this.options = options;
@@ -118,7 +127,7 @@ export class GatherController {
       this.options.onOpenSidePanel?.();
     });
 
-    document.addEventListener("keydown", (event) => {
+    this.keydownHandler = (event: KeyboardEvent) => {
       if (event.key !== "Enter" || event.repeat) {
         return;
       }
@@ -133,19 +142,22 @@ export class GatherController {
 
       event.preventDefault();
       void this.handleDownload();
-    });
+    };
+    document.addEventListener("keydown", this.keydownHandler);
 
-    chrome.runtime.onMessage.addListener((message: GatherRuntimeMessage) => {
+    this.messageHandler = (message: GatherRuntimeMessage) => {
       if (message.type === START_DOWNLOAD_MESSAGE) {
         void this.handleDownload();
       }
-    });
+    };
+    chrome.runtime.onMessage.addListener(this.messageHandler);
 
-    chrome.storage.onChanged.addListener((changes, areaName) => {
+    this.storageHandler = (changes, areaName) => {
       if (areaName === "sync" && changes["gather-box-settings"]) {
         void this.refreshSettings();
       }
-    });
+    };
+    chrome.storage.onChanged.addListener(this.storageHandler);
 
     this.state.settings = await loadSettings();
     this.state.lastRun = await loadLastRun();
@@ -174,6 +186,22 @@ export class GatherController {
     this.state.settings = await loadSettings();
     await this.restoreSavedDirectoryHandle();
     this.syncPopupActions();
+    updateSaveBehavior(this.state.siteKey);
+  }
+
+  destroy(): void {
+    if (this.keydownHandler) {
+      document.removeEventListener("keydown", this.keydownHandler);
+      this.keydownHandler = null;
+    }
+    if (this.messageHandler) {
+      chrome.runtime.onMessage.removeListener(this.messageHandler);
+      this.messageHandler = null;
+    }
+    if (this.storageHandler) {
+      chrome.storage.onChanged.removeListener(this.storageHandler);
+      this.storageHandler = null;
+    }
   }
 
   private async detectActiveTab(): Promise<void> {
@@ -184,6 +212,7 @@ export class GatherController {
       if (!tab || typeof tab.id !== "number" || !tab.url) {
         this.state.siteKey = null;
         updatePageStatus(this.elements, "No active page", "Open a supported post page and reopen this UI.");
+        updateSaveBehavior(this.state.siteKey);
         await this.restoreSavedDirectoryHandle();
         this.syncPopupActions();
         return;
@@ -196,6 +225,7 @@ export class GatherController {
           "Unsupported page",
           "Open a supported MyHentaiGallery, Kemono, FANBOX, AO3, Hentai Foundry story, or fanfiction.net story page."
         );
+        updateSaveBehavior(this.state.siteKey);
         await this.restoreSavedDirectoryHandle();
         this.syncPopupActions();
         return;
@@ -203,11 +233,13 @@ export class GatherController {
 
       this.state.siteKey = getSiteKeyFromUrl(tab.url);
       updatePageStatus(this.elements, "Supported page detected", tab.url);
+      updateSaveBehavior(this.state.siteKey);
       this.syncPopupActions();
     } catch (error) {
       this.state.siteKey = null;
       this.state.directoryHandle = null;
       updatePageStatus(this.elements, "Error", formatError(error));
+      updateSaveBehavior(this.state.siteKey);
       this.syncPopupActions();
     }
   }
