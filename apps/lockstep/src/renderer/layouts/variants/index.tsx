@@ -158,7 +158,7 @@ function ScreenContent(props: LayoutProps) {
 
 function SidebarShell({ children, header }: { children: ReactNode; header: ReactNode }) {
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-zinc-50 text-zinc-800 dark:bg-zinc-950 dark:text-zinc-100">
+    <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-zinc-50 text-zinc-800 dark:bg-zinc-950 dark:text-zinc-100">
       <div className="shrink-0 border-b border-zinc-200/80 px-4 py-3 dark:border-zinc-800/80">{header}</div>
       {children}
     </div>
@@ -320,7 +320,7 @@ export function UnifiedDashboardLayout(props: LayoutProps) {
   return (
     <SidebarShell
       header={
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="space-y-3">
           <AppHeader
             settings={settings}
             onAddProfile={handlers.onCreateProfile}
@@ -329,6 +329,7 @@ export function UnifiedDashboardLayout(props: LayoutProps) {
           {activeProfile ? (
             <LayoutActionButtons
               disabled={running}
+              size="compact"
               onDoctor={handlers.onDoctor}
               onPlan={handlers.onPlan}
               onPrune={handlers.onPrune}
@@ -434,23 +435,22 @@ export function CompactToolbarLayout(props: LayoutProps) {
   return (
     <SidebarShell
       header={
-        <div className="space-y-2">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <AppHeader
-              settings={settings}
-              onAddProfile={handlers.onCreateProfile}
-              onProfileChange={handlers.onProfileChange}
+        <div className="space-y-3">
+          <AppHeader
+            settings={settings}
+            onAddProfile={handlers.onCreateProfile}
+            onProfileChange={handlers.onProfileChange}
+          />
+          {activeProfile ? (
+            <LayoutActionButtons
+              disabled={running}
+              size="compact"
+              onDoctor={handlers.onDoctor}
+              onPlan={handlers.onPlan}
+              onPrune={handlers.onPrune}
+              onPush={handlers.onPush}
             />
-            {activeProfile ? (
-              <LayoutActionButtons
-                disabled={running}
-                onDoctor={handlers.onDoctor}
-                onPlan={handlers.onPlan}
-                onPrune={handlers.onPrune}
-                onPush={handlers.onPush}
-              />
-            ) : null}
-          </div>
+          ) : null}
           {activeProfile ? (
             <div className="flex items-center gap-1">
               {(["overview", "plan", "activity"] as const).map((entry) => (
@@ -658,6 +658,7 @@ export function StatusBoardLayout(props: LayoutProps) {
                 <LayoutActionButtons
                   disabled={running}
                   layout="grid"
+                  size="compact"
                   onDoctor={handlers.onDoctor}
                   onPlan={handlers.onPlan}
                   onPrune={handlers.onPrune}

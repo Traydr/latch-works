@@ -53,7 +53,7 @@ p {
 }
 
 .prism-btn {
-  @apply rounded-xl border border-zinc-300/90 bg-white/70 px-3 py-1.5 text-xs font-medium text-zinc-700 transition hover:border-zinc-400 hover:bg-white active:scale-[0.96] disabled:pointer-events-none disabled:opacity-50 dark:border-zinc-600/90 dark:bg-zinc-900/70 dark:text-zinc-200 dark:hover:border-zinc-500 dark:hover:bg-zinc-900;
+  @apply inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-xl border border-zinc-300/90 bg-white/70 px-3 py-2 text-xs font-medium text-zinc-700 transition hover:border-zinc-400 hover:bg-white active:scale-[0.96] disabled:pointer-events-none disabled:opacity-50 dark:border-zinc-600/90 dark:bg-zinc-900/70 dark:text-zinc-200 dark:hover:border-zinc-500 dark:hover:bg-zinc-900;
 }
 
 .prism-btn-primary {
@@ -103,4 +103,29 @@ p {
   100% {
     transform: translateX(400%);
   }
+}
+
+/* Fixed-size showcase frame — matches Electron window (1100×800) for recordings */
+.showcase-recording-root {
+  display: flex;
+  min-height: 100vh;
+  align-items: center;
+  justify-content: center;
+  background: #09090b;
+  padding: 32px;
+}
+
+.showcase-app-frame {
+  position: relative;
+  width: 1100px;
+  height: 800px;
+  flex-shrink: 0;
+  overflow: hidden;
+  border-radius: 12px;
+  border: 1px solid rgba(63, 63, 70, 0.8);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.55);
+}
+
+.showcase-app-frame > * {
+  height: 100%;
 }
