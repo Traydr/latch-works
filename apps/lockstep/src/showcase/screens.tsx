@@ -10,7 +10,7 @@ export const showcaseSettings: LockstepSettings = {
       apiUrl: "https://archive.example.com",
       id: "showcase-profile",
       name: "Main archive",
-      sourceRoot: "/Volumes/Media/archive",
+      sourceRoot: "/tmp/lockstep-demo-archive",
       tokenConfigured: true,
       tokenInSession: false,
       tokenUnreadable: false,
@@ -35,12 +35,12 @@ export const showcasePlan: LockstepPlan = {
   items: showcasePlanItems(),
   skipped: 3,
   skippedEntries: [{ path: "sfw/.DS_Store", reason: "not media" }],
-  sourceRoot: "/Volumes/Media/archive",
+  sourceRoot: "/tmp/lockstep-demo-archive",
   totalBytes: 1_842_000_000,
   totalFiles: 1866,
 };
 
-function showcasePlanItems(): LockstepPlanItem[] {
+export function showcasePlanItems(): LockstepPlanItem[] {
   return [
     { action: "upload", path: "sfw/photos/sample-14.jpg" },
     { action: "upload", path: "sfw/photos/sample-15.jpg" },

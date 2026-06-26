@@ -2,12 +2,13 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 
 import "../index.css";
+import { ShowcaseLivePushDemo } from "./LivePushDemo";
 import { ShowcaseLayoutDemo, ShowcasePlanScreen, ShowcasePushScreen } from "./screens";
 
 document.documentElement.classList.add("dark");
 document.body.classList.add("dark", "bg-zinc-950");
 
-const screen = new URLSearchParams(window.location.search).get("screen") ?? "demo";
+const screen = new URLSearchParams(window.location.search).get("screen") ?? "live";
 const rootElement = document.getElementById("root");
 
 if (!rootElement) {
@@ -19,8 +20,10 @@ const content =
     <ShowcasePlanScreen />
   ) : screen === "push" ? (
     <ShowcasePushScreen />
-  ) : (
+  ) : screen === "mock" ? (
     <ShowcaseLayoutDemo />
+  ) : (
+    <ShowcaseLivePushDemo />
   );
 
 createRoot(rootElement).render(<React.StrictMode>{content}</React.StrictMode>);
