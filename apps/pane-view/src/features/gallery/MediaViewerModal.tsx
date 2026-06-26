@@ -511,7 +511,7 @@ export function MediaViewerModal({
       <button
         type="button"
         aria-label="Previous item"
-        className={`absolute left-3 top-1/2 z-20 hidden -translate-y-1/2 cursor-pointer rounded-full p-3 text-xl text-white/90 transition-opacity duration-300 hover:bg-violet-500/25 hover:text-violet-100 md:block ${chromeVisibilityClass} ${canStepBackward ? "" : "pointer-events-none opacity-40"}`}
+        className={`absolute left-3 top-1/2 z-20 hidden h-[25dvh] min-h-11 w-12 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full text-xl text-white/90 transition-opacity duration-300 hover:bg-violet-500/25 hover:text-violet-100 md:flex ${chromeVisibilityClass} ${canStepBackward ? "" : "pointer-events-none opacity-40"}`}
         onClick={(event) => {
           event.stopPropagation();
           step(-1);
@@ -523,7 +523,7 @@ export function MediaViewerModal({
       <button
         type="button"
         aria-label="Next item"
-        className={`absolute right-3 top-1/2 z-20 hidden -translate-y-1/2 cursor-pointer rounded-full p-3 text-xl text-white/90 transition-opacity duration-300 hover:bg-violet-500/25 hover:text-violet-100 md:block ${chromeVisibilityClass} ${canStepForward ? "" : "pointer-events-none opacity-40"}`}
+        className={`absolute right-3 top-1/2 z-20 hidden h-[25dvh] min-h-11 w-12 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full text-xl text-white/90 transition-opacity duration-300 hover:bg-violet-500/25 hover:text-violet-100 md:flex ${chromeVisibilityClass} ${canStepForward ? "" : "pointer-events-none opacity-40"}`}
         onClick={(event) => {
           event.stopPropagation();
           step(1);
