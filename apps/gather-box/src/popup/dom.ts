@@ -5,8 +5,7 @@ export type LogTone = "error" | "success";
 
 export interface PopupElements {
   badge: HTMLElement;
-  pageStatus: HTMLElement;
-  pageDetail: HTMLElement;
+  unsupportedBanner: HTMLElement;
   folderName: HTMLElement;
   folderDetail: HTMLElement;
   chooseFolder: HTMLButtonElement;
@@ -41,8 +40,7 @@ export function getPopupElements(
 ): PopupElements {
   return {
     badge: requireElement(document, "badge-mini", HTMLElement),
-    pageStatus: requireElement(document, "pageStatus-mini", HTMLElement),
-    pageDetail: requireElement(document, "pageDetail-mini", HTMLElement),
+    unsupportedBanner: requireElement(document, "unsupportedBanner-mini", HTMLElement),
     folderName: requireElement(document, "folderName-mini", HTMLElement),
     folderDetail: requireElement(document, "folderDetail-mini", HTMLElement),
     chooseFolder: requireElement(document, "chooseFolder-mini", HTMLButtonElement),
@@ -67,9 +65,15 @@ export function setBadge(elements: PopupElements, status: PopupStatus): void {
   elements.badge.classList.add(`badge-${status}`);
 }
 
-export function updatePageStatus(elements: PopupElements, status: string, detail: string): void {
-  elements.pageStatus.textContent = status;
-  elements.pageDetail.textContent = detail;
+export function setPageState(
+  elements: PopupElements,
+  supported: boolean,
+  message?: string
+): void {
+  elements.unsupportedBanner.hidden = supported;
+  if (!supported && message) {
+    elements.unsupportedBanner.textContent = message;
+  }
 }
 
 export function setFolder(elements: PopupElements, name: string, detail: string): void {

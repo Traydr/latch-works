@@ -4,7 +4,6 @@ import {
   initSwitcher,
   renderLayoutInto
 } from "../shared/layouts";
-import { OPEN_SIDE_PANEL_MESSAGE } from "../shared/runtime-messages";
 
 let controller: GatherController | null = null;
 
@@ -22,7 +21,14 @@ async function applyLayout(id: number): Promise<void> {
   controller = new GatherController({
     includeOpenSidePanel: true,
     onOpenSidePanel: () => {
-      void chrome.runtime.sendMessage({ type: OPEN_SIDE_PANEL_MESSAGE });
+      void chrome.tabs
+        .query({ active: true, currentWindow: true })
+        .then(([tab]) => {
+          if (tab?.windowId !== undefined) {
+            return chrome.sidePanel.open({ windowId: tab.windowId });
+          }
+          return undefined;
+        });
     }
   });
 

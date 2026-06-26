@@ -16,9 +16,9 @@ import {
   setDestinationPreview,
   setFolder,
   setLogExpanded,
+  setPageState,
   setProgress,
   syncActions,
-  updatePageStatus,
   type LogTone,
   type PopupElements
 } from "../popup/dom";
@@ -211,7 +211,7 @@ export class GatherController {
 
       if (!tab || typeof tab.id !== "number" || !tab.url) {
         this.state.siteKey = null;
-        updatePageStatus(this.elements, "No active page", "Open a supported post page and reopen this UI.");
+        setPageState(this.elements, false, "No active page detected. Open a supported post page, then reopen Gather Box.");
         updateSaveBehavior(this.state.siteKey);
         await this.restoreSavedDirectoryHandle();
         this.syncPopupActions();
@@ -220,10 +220,10 @@ export class GatherController {
 
       if (!isSupportedUrl(tab.url)) {
         this.state.siteKey = null;
-        updatePageStatus(
+        setPageState(
           this.elements,
-          "Unsupported page",
-          "Open a supported MyHentaiGallery, Kemono, FANBOX, AO3, Hentai Foundry story, or fanfiction.net story page."
+          false,
+          "This isn't a supported page. Open a MyHentaiGallery, Kemono, FANBOX, AO3, Hentai Foundry, or fanfiction.net page."
         );
         updateSaveBehavior(this.state.siteKey);
         await this.restoreSavedDirectoryHandle();
@@ -232,13 +232,13 @@ export class GatherController {
       }
 
       this.state.siteKey = getSiteKeyFromUrl(tab.url);
-      updatePageStatus(this.elements, "Supported page detected", tab.url);
+      setPageState(this.elements, true);
       updateSaveBehavior(this.state.siteKey);
       this.syncPopupActions();
     } catch (error) {
       this.state.siteKey = null;
       this.state.directoryHandle = null;
-      updatePageStatus(this.elements, "Error", formatError(error));
+      setPageState(this.elements, false, formatError(error));
       updateSaveBehavior(this.state.siteKey);
       this.syncPopupActions();
     }
