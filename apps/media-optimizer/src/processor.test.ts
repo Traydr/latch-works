@@ -182,9 +182,18 @@ describe("processBatch", () => {
     expect(result).toEqual(expect.objectContaining({ failed: 0, processed: 1, succeeded: 1 }));
   });
 
-  it("rejects non-video jobs without generating derivatives", async () => {
+  it("processes image jobs", async () => {
     mocks.claimJobs.mockResolvedValueOnce({
-      jobs: [{ ...makeJob(0), mediaType: "image" as const }],
+      jobs: [
+        {
+          ...makeJob(0),
+          extension: "jpg",
+          mediaType: "image" as const,
+          objectKey: "thumbnails/obj-0-720.webp",
+          originalObjectKey: "originals/obj-0.jpg",
+          size: 720,
+        },
+      ],
       processingToken: "token-1",
     }).mockResolvedValue({
       jobs: [],
@@ -193,13 +202,8 @@ describe("processBatch", () => {
 
     const result = await processBatch();
 
-    expect(mocks.generateDerivativeBytes).not.toHaveBeenCalled();
-    expect(mocks.reportFailure).toHaveBeenCalledWith(
-      expect.objectContaining({
-        error: "derivative worker only processes video media",
-        mediaObjectId: "obj-0",
-      }),
-    );
-    expect(result).toEqual(expect.objectContaining({ failed: 1, processed: 1, succeeded: 0 }));
+    expect(mocks.generateDerivativeBytes).toHaveBeenCalledTimes(1);
+    expect(mocks.reportFailure).not.toHaveBeenCalled();
+    expect(result).toEqual(expect.objectContaining({ failed: 0, processed: 1, succeeded: 1 }));
   });
 });

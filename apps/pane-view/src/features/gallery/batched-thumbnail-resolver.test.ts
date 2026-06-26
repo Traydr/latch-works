@@ -23,7 +23,7 @@ describe("resolveGalleryThumbnailsBatch", () => {
       results: [
         {
           mediaId: "00000000-0000-4000-8000-000000000001",
-          size: 320,
+          size: 720,
           status: "ready",
           url: "/cdn/v1/ready",
           variant: "thumbnail",
@@ -31,7 +31,7 @@ describe("resolveGalleryThumbnailsBatch", () => {
         {
           mediaId: "00000000-0000-4000-8000-000000000002",
           retryAfterMs: 15_000,
-          size: 320,
+          size: 720,
           status: "pending",
           variant: "thumbnail",
         },
@@ -50,12 +50,12 @@ describe("resolveGalleryThumbnailsBatch", () => {
         items: [
           {
             mediaId: "00000000-0000-4000-8000-000000000001",
-            size: 320,
+            size: 720,
             variant: "thumbnail",
           },
           {
             mediaId: "00000000-0000-4000-8000-000000000002",
-            size: 320,
+            size: 720,
             variant: "thumbnail",
           },
         ],

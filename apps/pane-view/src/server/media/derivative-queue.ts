@@ -1,6 +1,6 @@
 import type { ThumbnailSize } from "@latch-works/media-delivery";
 import type { MediaType } from "@latch-works/media-domain";
-import { and, asc, desc, eq, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { db } from "../db";
 import { mediaObjects, thumbnails } from "../db/schema";
 import { derivativeProcessingLeaseMs } from "./derivative-lease";
@@ -67,7 +67,7 @@ export async function claimDerivativeJobs({
       .innerJoin(mediaObjects, eq(thumbnails.mediaObjectId, mediaObjects.id))
       .where(
         and(
-          eq(mediaObjects.mediaType, "video"),
+          inArray(mediaObjects.mediaType, ["video", "image", "gif"]),
           or(
             and(
               eq(thumbnails.status, "pending"),

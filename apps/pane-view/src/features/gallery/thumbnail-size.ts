@@ -1,9 +1,9 @@
 export const DEFAULT_CARD_WIDTH = 220;
 
-const THUMBNAIL_SIZE_LADDER = [160, 320, 480, 640, 960] as const;
+const THUMBNAIL_SIZE_LADDER = [160, 320, 480, 640, 720, 960, 1080] as const;
 
 export function snapThumbnailSize(requestedSize: number): number {
-  const normalized = Number.isFinite(requestedSize) && requestedSize > 0 ? requestedSize : 320;
+  const normalized = Number.isFinite(requestedSize) && requestedSize > 0 ? requestedSize : 720;
 
   let closest: (typeof THUMBNAIL_SIZE_LADDER)[number] = THUMBNAIL_SIZE_LADDER[0];
   let closestDistance = Math.abs(normalized - closest);

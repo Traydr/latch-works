@@ -1,6 +1,6 @@
 # Media Optimizer Service
 
-Pane View owns the derivative queue (`thumbnails` rows, claim/complete/fail). The **media-optimizer** service (`apps/media-optimizer`) is a **video-only** derivative worker: it runs `ffmpeg` poster extraction and `sharp` WebP encoding for video previews. Image gallery tiles use Bunny Optimizer instead — see [bunny-image-delivery.md](./bunny-image-delivery.md).
+Pane View owns the derivative queue (`thumbnails` rows, claim/complete/fail). The **media-optimizer** service (`apps/media-optimizer`) drains that queue for **image, GIF, and video** derivatives: `sharp` WebP encoding for stills and `ffmpeg` poster extraction for video previews. Production uses a **hybrid** image path — ready pre-generated derivatives are served from Railway CDN, with Bunny Optimizer as fallback while jobs are pending. See [bunny-image-delivery.md](./bunny-image-delivery.md).
 
 For a detailed walkthrough of the request flow, job claiming, S3 byte paths, and sharp/ffmpeg conversion, see [media-optimizer-internals.md](../media-optimizer-internals.md).
 

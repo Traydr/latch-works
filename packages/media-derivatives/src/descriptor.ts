@@ -11,7 +11,7 @@ export interface DerivativeDescriptor {
 }
 
 export function supportsDerivative(mediaType: MediaType): boolean {
-  return mediaType === "video";
+  return mediaType === "video" || mediaType === "image" || mediaType === "gif";
 }
 
 export function supportsInlineImageThumbnail(mediaType: MediaType): boolean {

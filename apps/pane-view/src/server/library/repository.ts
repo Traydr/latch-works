@@ -211,20 +211,25 @@ export async function readDatabaseLibrarySnapshot({
       if (supportsGalleryThumbnail(object.mediaType)) {
         thumbnailEligibleCount += 1;
 
-        // Bunny image delivery embeds an Original delivery token immediately.
-        // Inline/video paths still embed a ready derivative URL when available.
+        // Hybrid image delivery: embed ready derivatives when available, otherwise
+        // mint a Bunny Original token for on-the-fly transforms.
         if (
           (object.mediaType === "image" || object.mediaType === "gif") &&
           resolveImageDeliveryMode() === "bunny"
         ) {
-          item.thumbnailDeliveryToken = mintImageOriginalDeliveryToken({
-            extension: object.extension,
-            mediaObjectId: object.id,
-            mediaType: object.mediaType,
-            originalObjectKey: object.objectKey,
-            sha256: object.sha256,
-          });
-          embeddedReadyCount += 1;
+          if (thumbnail) {
+            item.thumbnailUrl = await buildDerivativeDeliveryUrl(thumbnail.objectKey);
+            embeddedReadyCount += 1;
+          } else {
+            item.thumbnailDeliveryToken = mintImageOriginalDeliveryToken({
+              extension: object.extension,
+              mediaObjectId: object.id,
+              mediaType: object.mediaType,
+              originalObjectKey: object.objectKey,
+              sha256: object.sha256,
+            });
+            embeddedReadyCount += 1;
+          }
         } else if (thumbnail) {
           item.thumbnailUrl = await buildDerivativeDeliveryUrl(thumbnail.objectKey);
           embeddedReadyCount += 1;
@@ -658,13 +663,17 @@ async function mapMediaRowsToLibraryItems(
           (object.mediaType === "image" || object.mediaType === "gif") &&
           resolveImageDeliveryMode() === "bunny"
         ) {
-          item.thumbnailDeliveryToken = mintImageOriginalDeliveryToken({
-            extension: object.extension,
-            mediaObjectId: object.id,
-            mediaType: object.mediaType,
-            originalObjectKey: object.objectKey,
-            sha256: object.sha256,
-          });
+          if (thumbnail) {
+            item.thumbnailUrl = await buildDerivativeDeliveryUrl(thumbnail.objectKey);
+          } else {
+            item.thumbnailDeliveryToken = mintImageOriginalDeliveryToken({
+              extension: object.extension,
+              mediaObjectId: object.id,
+              mediaType: object.mediaType,
+              originalObjectKey: object.objectKey,
+              sha256: object.sha256,
+            });
+          }
         } else if (thumbnail) {
           item.thumbnailUrl = await buildDerivativeDeliveryUrl(thumbnail.objectKey);
         }

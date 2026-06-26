@@ -81,7 +81,11 @@ export function PaneViewImage({
 
   const imageWidth = resolveThumbnailPixelSize(width);
   const imageHeight = height ?? imageWidth;
-  const useBunny = variant === "thumbnail" && readClientImageDeliveryMode() === "bunny";
+  const useBunny =
+    variant === "thumbnail" &&
+    readClientImageDeliveryMode() === "bunny" &&
+    !resolvedReadyUrl &&
+    Boolean(deliveryToken);
   const unpicLayout = layout === "fullWidth" ? "constrained" : layout;
 
   if (useBunny && deliveryToken) {

@@ -8,10 +8,10 @@ import {
 const sha256 = "a".repeat(64);
 
 describe("supportsDerivative", () => {
-  it("returns true only for video", () => {
+  it("returns true for image, gif, and video", () => {
     expect(supportsDerivative("video")).toBe(true);
-    expect(supportsDerivative("image")).toBe(false);
-    expect(supportsDerivative("gif")).toBe(false);
+    expect(supportsDerivative("image")).toBe(true);
+    expect(supportsDerivative("gif")).toBe(true);
     expect(supportsDerivative("pdf")).toBe(false);
     expect(supportsDerivative("unknown")).toBe(false);
   });

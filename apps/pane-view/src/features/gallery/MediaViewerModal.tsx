@@ -21,6 +21,7 @@ import {
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useViewerChromeIdle } from "@/hooks/use-viewer-chrome-idle";
 import { readEmbeddedDeliveryUrls } from "./embedded-delivery-urls";
+import { GALLERY_PREVIEW_SIZE } from "./gallery-preview-size";
 import { PaneViewImage } from "./PaneViewImage";
 import { useResolvedMediaUrl } from "./useResolvedMediaUrl";
 
@@ -629,7 +630,7 @@ export function MediaViewerModal({
             thumbnailDeliveryToken={embeddedDeliveryUrls.thumbnailDeliveryToken}
             thumbnailReadyUrl={embeddedDeliveryUrls.thumbnailUrl}
             variant={showOriginal || item.mediaType !== "image" ? "original" : "preview"}
-            width={960}
+            width={GALLERY_PREVIEW_SIZE}
           />
         )}
       </div>

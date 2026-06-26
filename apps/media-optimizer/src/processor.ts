@@ -221,28 +221,6 @@ export async function processBatch(runId: string = randomUUID()): Promise<Proces
     }
 
     for (const job of jobs) {
-      if (job.mediaType !== "video") {
-        try {
-          await reportFailure({
-            error: "derivative worker only processes video media",
-            mediaObjectId: job.mediaObjectId,
-            processingToken,
-            size: job.size,
-          });
-        } catch (reportError) {
-          logOptimizerError("optimizer.job_failure_report_failed", {
-            error: sanitizeError(reportError),
-            mediaObjectId: job.mediaObjectId,
-            processingToken,
-            runId,
-            size: job.size,
-          });
-        }
-        failed += 1;
-        processed += 1;
-        continue;
-      }
-
       const ok = await processJob(job, processingToken, runId, storage);
       processed += 1;
       if (ok) {

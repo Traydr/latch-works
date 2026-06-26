@@ -13,7 +13,6 @@ import {
 } from "@latch-works/media-storage";
 import { and, eq } from "drizzle-orm";
 import { resolveDerivativeProcessingMode } from "../../env/server";
-import { resolveImageDeliveryMode } from "../../env/image-delivery";
 import { db } from "../db";
 import { thumbnails } from "../db/schema";
 import { createConcurrencyLimiter } from "./concurrency-limiter";
@@ -198,13 +197,6 @@ export async function ensureThumbnailDerivativeForContext({
   const size = snapThumbnailSize(requestedSize);
 
   if (!supportsDerivative(context.mediaType) && !supportsInlineImageThumbnail(context.mediaType)) {
-    return { status: "unsupported" };
-  }
-
-  if (
-    supportsInlineImageThumbnail(context.mediaType) &&
-    resolveImageDeliveryMode() === "bunny"
-  ) {
     return { status: "unsupported" };
   }
 

@@ -17,6 +17,7 @@
     "build": "tsc -p tsconfig.json",
     "check": "pnpm typecheck && pnpm test",
     "test": "vitest run",
+    "analyze-thumbnail-sizes": "tsx scripts/analyze-thumbnail-sizes.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
@@ -27,6 +28,7 @@
     "sharp": "^0.34.5"
   },
   "devDependencies": {
+    "tsx": "^4.21.0",
     "typescript": "^6.0.2",
     "vitest": "^4.1.3"
   }
