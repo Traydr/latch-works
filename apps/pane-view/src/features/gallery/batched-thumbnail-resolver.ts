@@ -94,6 +94,29 @@ export function readCachedGalleryThumbnailState(): GalleryThumbnailResolveState 
   return { deliveryTokens, urls };
 }
 
+export function getNextPendingThumbnailRetryMs(
+  requests: GalleryThumbnailRequest[],
+): number | null {
+  const now = Date.now();
+  let earliestDelay: number | null = null;
+
+  for (const request of requests) {
+    const cached = cache.get(cacheKey(request));
+    if (cached?.status !== "pending" || cached.inFlight) {
+      continue;
+    }
+
+    if (!cached.nextRetryAt || cached.nextRetryAt <= now) {
+      return 0;
+    }
+
+    const delay = cached.nextRetryAt - now;
+    earliestDelay = earliestDelay === null ? delay : Math.min(earliestDelay, delay);
+  }
+
+  return earliestDelay;
+}
+
 export async function resolveGalleryThumbnailsBatch(
   requests: GalleryThumbnailRequest[],
 ): Promise<GalleryThumbnailResolveState> {
