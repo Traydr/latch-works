@@ -37,6 +37,7 @@ import { ComicReader } from "@/features/comics/ComicReader";
 import { BrowserGrid } from "@/features/gallery/BrowserGrid";
 import {
   type GalleryThumbnailRequest,
+  getNextPendingThumbnailRetryMs,
   readCachedGalleryThumbnailState,
   resolveGalleryThumbnailsBatch,
 } from "@/features/gallery/batched-thumbnail-resolver";
@@ -1027,18 +1028,55 @@ export function GalleryPage() {
     }
 
     let cancelled = false;
-    const timeoutId = window.setTimeout(() => {
+    let debounceTimeoutId: number | undefined;
+    let retryTimeoutId: number | undefined;
+
+    const applyResolvedState = (resolved: Awaited<ReturnType<typeof resolveGalleryThumbnailsBatch>>) => {
+      setResolvedThumbnailUrls(resolved.urls);
+      setResolvedThumbnailTokens(resolved.deliveryTokens);
+    };
+
+    const scheduleRetry = () => {
+      if (cancelled) {
+        return;
+      }
+
+      const retryDelayMs = getNextPendingThumbnailRetryMs(windowedThumbnailRequests);
+      if (retryDelayMs === null) {
+        return;
+      }
+
+      retryTimeoutId = window.setTimeout(() => {
+        void resolveGalleryThumbnailsBatch(windowedThumbnailRequests).then((resolved) => {
+          if (cancelled) {
+            return;
+          }
+
+          applyResolvedState(resolved);
+          scheduleRetry();
+        });
+      }, retryDelayMs);
+    };
+
+    debounceTimeoutId = window.setTimeout(() => {
       void resolveGalleryThumbnailsBatch(windowedThumbnailRequests).then((resolved) => {
-        if (!cancelled) {
-          setResolvedThumbnailUrls(resolved.urls);
-          setResolvedThumbnailTokens(resolved.deliveryTokens);
+        if (cancelled) {
+          return;
         }
+
+        applyResolvedState(resolved);
+        scheduleRetry();
       });
     }, 200);
 
     return () => {
       cancelled = true;
-      window.clearTimeout(timeoutId);
+      if (debounceTimeoutId !== undefined) {
+        window.clearTimeout(debounceTimeoutId);
+      }
+      if (retryTimeoutId !== undefined) {
+        window.clearTimeout(retryTimeoutId);
+      }
     };
   }, [windowedThumbnailRequests]);
 

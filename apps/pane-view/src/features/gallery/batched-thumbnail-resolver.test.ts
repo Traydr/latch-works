@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   __resetGalleryThumbnailResolverForTests,
+  getNextPendingThumbnailRetryMs,
   resolveGalleryThumbnailsBatch,
 } from "./batched-thumbnail-resolver";
 
@@ -75,5 +76,40 @@ describe("resolveGalleryThumbnailsBatch", () => {
 
     expect(mocks.resolveMediaDeliveryUrls).toHaveBeenCalledTimes(1);
     expect(second).toEqual(first);
+  });
+
+  it("reports the earliest pending retry delay for visible requests", async () => {
+    mocks.resolveMediaDeliveryUrls.mockResolvedValueOnce({
+      results: [
+        {
+          mediaId: "00000000-0000-4000-8000-000000000001",
+          retryAfterMs: 15_000,
+          size: 320,
+          status: "pending",
+          variant: "thumbnail",
+        },
+        {
+          mediaId: "00000000-0000-4000-8000-000000000002",
+          retryAfterMs: 30_000,
+          size: 320,
+          status: "pending",
+          variant: "thumbnail",
+        },
+      ],
+    });
+
+    await resolveGalleryThumbnailsBatch([
+      { mediaId: "00000000-0000-4000-8000-000000000001" },
+      { mediaId: "00000000-0000-4000-8000-000000000002" },
+    ]);
+
+    const retryDelayMs = getNextPendingThumbnailRetryMs([
+      { mediaId: "00000000-0000-4000-8000-000000000001" },
+      { mediaId: "00000000-0000-4000-8000-000000000002" },
+    ]);
+
+    expect(retryDelayMs).not.toBeNull();
+    expect(retryDelayMs).toBeGreaterThan(0);
+    expect(retryDelayMs).toBeLessThanOrEqual(30_000);
   });
 });
