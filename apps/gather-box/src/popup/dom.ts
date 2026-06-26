@@ -1,5 +1,12 @@
 import type { PopupStatus } from "./status";
 import { getStatusLabel } from "./status";
+import {
+  buildInferredPathPreview,
+  getSiteSaveProfile,
+  SITE_SAVE_PROFILES,
+  type SiteSaveProfile
+} from "../shared/site-save-profiles";
+import type { SiteKey } from "../shared/sites";
 
 export type LogTone = "error" | "success";
 
@@ -20,6 +27,16 @@ export interface PopupElements {
   progressText: HTMLElement;
   resultLog: HTMLElement;
   logDetails: HTMLDetailsElement;
+  siteContext: HTMLElement;
+  siteLabel: HTMLElement;
+  siteOutput: HTMLElement;
+  siteSaveRule: HTMLElement;
+  sitePathPattern: HTMLElement;
+  sitePathExample: HTMLElement;
+  siteFilePattern: HTMLElement;
+  siteCredentialsNote: HTMLElement;
+  siteAtlas: HTMLElement;
+  siteAtlasRows: HTMLElement;
 }
 
 export interface PopupElementOptions {
@@ -57,7 +74,17 @@ export function getPopupElements(
     progressBar: requireElement(document, "progressBar-mini", HTMLProgressElement),
     progressText: requireElement(document, "progressText-mini", HTMLElement),
     resultLog: requireElement(document, "resultLog-mini", HTMLElement),
-    logDetails: requireElement(document, "logDetails-mini", HTMLDetailsElement)
+    logDetails: requireElement(document, "logDetails-mini", HTMLDetailsElement),
+    siteContext: requireElement(document, "siteContext-mini", HTMLElement),
+    siteLabel: requireElement(document, "siteLabel-mini", HTMLElement),
+    siteOutput: requireElement(document, "siteOutput-mini", HTMLElement),
+    siteSaveRule: requireElement(document, "siteSaveRule-mini", HTMLElement),
+    sitePathPattern: requireElement(document, "sitePathPattern-mini", HTMLElement),
+    sitePathExample: requireElement(document, "sitePathExample-mini", HTMLElement),
+    siteFilePattern: requireElement(document, "siteFilePattern-mini", HTMLElement),
+    siteCredentialsNote: requireElement(document, "siteCredentialsNote-mini", HTMLElement),
+    siteAtlas: requireElement(document, "siteAtlas-mini", HTMLElement),
+    siteAtlasRows: requireElement(document, "siteAtlasRows-mini", HTMLElement)
   };
 }
 
@@ -166,6 +193,87 @@ export function flashDownloadComplete(elements: PopupElements): void {
   window.setTimeout(() => {
     elements.downloadButton.classList.remove("download-complete-glow");
   }, 2000);
+}
+
+export function renderSiteContext(elements: PopupElements, siteKey: SiteKey | null): void {
+  if (!siteKey) {
+    elements.siteContext.hidden = true;
+    highlightSiteAtlasRow(elements, null);
+    return;
+  }
+
+  const profile = getSiteSaveProfile(siteKey);
+  populateSiteContextFields(elements, profile);
+  elements.siteContext.hidden = false;
+  highlightSiteAtlasRow(elements, siteKey);
+}
+
+function populateSiteContextFields(elements: PopupElements, profile: SiteSaveProfile): void {
+  elements.siteLabel.textContent = profile.label;
+  elements.siteOutput.textContent = profile.outputLabel;
+  elements.siteSaveRule.textContent = profile.saveRuleSummary;
+  elements.sitePathPattern.textContent = profile.folderPattern;
+  elements.sitePathExample.textContent = profile.folderExample;
+  elements.siteFilePattern.textContent = profile.filePattern;
+
+  if (profile.credentialsNote) {
+    elements.siteCredentialsNote.textContent = profile.credentialsNote;
+    elements.siteCredentialsNote.hidden = false;
+  } else {
+    elements.siteCredentialsNote.textContent = "";
+    elements.siteCredentialsNote.hidden = true;
+  }
+}
+
+export function renderSiteAtlas(elements: PopupElements): void {
+  elements.siteAtlasRows.innerHTML = "";
+
+  for (const profile of SITE_SAVE_PROFILES) {
+    const row = document.createElement("article");
+    row.className = "site-atlas-row";
+    row.dataset.siteKey = profile.key;
+    row.setAttribute("role", "listitem");
+
+    row.innerHTML = `
+      <div class="site-atlas-row-head">
+        <span class="site-atlas-row-label">${escapeHtml(profile.label)}</span>
+        <span class="site-atlas-row-output">${escapeHtml(profile.outputLabel)}</span>
+      </div>
+      <p class="site-atlas-row-pattern mono">${escapeHtml(profile.folderPattern)}</p>
+      <p class="site-atlas-row-example">${escapeHtml(profile.folderExample)}</p>
+    `;
+
+    elements.siteAtlasRows.appendChild(row);
+  }
+}
+
+export function highlightSiteAtlasRow(elements: PopupElements, siteKey: SiteKey | null): void {
+  for (const row of elements.siteAtlasRows.querySelectorAll<HTMLElement>(".site-atlas-row")) {
+    row.classList.toggle("site-atlas-row-active", siteKey !== null && row.dataset.siteKey === siteKey);
+  }
+}
+
+export function setInferredPathPreview(
+  elements: PopupElements,
+  rootName: string | null,
+  siteKey: SiteKey | null
+): void {
+  if (!rootName || !siteKey) {
+    return;
+  }
+
+  const profile = getSiteSaveProfile(siteKey);
+  const preview = buildInferredPathPreview(rootName, profile);
+  setDestinationPreview(elements, preview);
+  elements.progressText.textContent = "Ready to download.";
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 function requireElement<T extends HTMLElement>(

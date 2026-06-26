@@ -11,10 +11,13 @@ import {
   clearLog,
   flashDownloadComplete,
   getPopupElements,
+  renderSiteAtlas,
+  renderSiteContext,
   restoreLog,
   setBadge,
   setDestinationPreview,
   setFolder,
+  setInferredPathPreview,
   setLogExpanded,
   setProgress,
   syncActions,
@@ -39,6 +42,7 @@ import {
   type LastRunLogEntry,
   type LastRunState
 } from "./last-run";
+import { getPreviewSiteLabel, getPreviewTabUrl } from "../popup/preview-mode";
 import { buildFolderPreview, getFolderSegments } from "./path";
 import {
   PENDING_DOWNLOAD_SESSION_KEY,
@@ -65,6 +69,7 @@ interface DirectoryPickerWindow extends Window {
 export interface GatherControllerOptions {
   includeOpenSidePanel?: boolean;
   onOpenSidePanel?: () => void;
+  previewSiteKey?: SiteKey | null;
 }
 
 export class GatherController {
@@ -89,9 +94,14 @@ export class GatherController {
   private elements!: PopupElements;
   private logEntries: LastRunLogEntry[] = [];
   private readonly options: GatherControllerOptions;
+  private previewMode = false;
+  private previewHasFolder = false;
 
   constructor(options: GatherControllerOptions = {}) {
     this.options = options;
+    if (options.previewSiteKey) {
+      this.previewMode = true;
+    }
   }
 
   async init(document: Document): Promise<void> {
@@ -154,13 +164,19 @@ export class GatherController {
     this.setStatus("idle");
     resetProgress(this.elements);
     restoreLog(this.elements, this.logEntries);
+    renderSiteAtlas(this.elements);
 
     if (this.state.lastRun.destinationPreview) {
       setDestinationPreview(this.elements, this.state.lastRun.destinationPreview);
     }
 
-    await this.detectActiveTab();
-    await this.restoreSavedDirectoryHandle();
+    if (this.previewMode && this.options.previewSiteKey) {
+      this.applyPreviewState(this.options.previewSiteKey);
+    } else {
+      await this.detectActiveTab();
+      await this.restoreSavedDirectoryHandle();
+    }
+
     this.syncPopupActions();
 
     const pending = await chrome.storage.session.get(PENDING_DOWNLOAD_SESSION_KEY);
@@ -183,6 +199,7 @@ export class GatherController {
 
       if (!tab || typeof tab.id !== "number" || !tab.url) {
         this.state.siteKey = null;
+        renderSiteContext(this.elements, null);
         updatePageStatus(this.elements, "No active page", "Open a supported post page and reopen this UI.");
         await this.restoreSavedDirectoryHandle();
         this.syncPopupActions();
@@ -191,6 +208,7 @@ export class GatherController {
 
       if (!isSupportedUrl(tab.url)) {
         this.state.siteKey = null;
+        renderSiteContext(this.elements, null);
         updatePageStatus(
           this.elements,
           "Unsupported page",
@@ -202,14 +220,32 @@ export class GatherController {
       }
 
       this.state.siteKey = getSiteKeyFromUrl(tab.url);
+      renderSiteContext(this.elements, this.state.siteKey);
       updatePageStatus(this.elements, "Supported page detected", tab.url);
+      this.refreshInferredPathPreview();
       this.syncPopupActions();
     } catch (error) {
       this.state.siteKey = null;
       this.state.directoryHandle = null;
+      renderSiteContext(this.elements, null);
       updatePageStatus(this.elements, "Error", formatError(error));
       this.syncPopupActions();
     }
+  }
+
+  applyPreviewState(siteKey: SiteKey): void {
+    this.previewMode = true;
+    this.state.siteKey = siteKey;
+    this.state.activeTab = {
+      url: getPreviewTabUrl(siteKey)
+    } as chrome.tabs.Tab;
+
+    renderSiteContext(this.elements, siteKey);
+    updatePageStatus(this.elements, getPreviewSiteLabel(siteKey), getPreviewTabUrl(siteKey));
+    setFolder(this.elements, "Archive", "Preview folder for layout demo.");
+    this.previewHasFolder = true;
+    this.refreshInferredPathPreview();
+    this.syncPopupActions();
   }
 
   private async handleChooseFolder(): Promise<void> {
@@ -273,6 +309,11 @@ export class GatherController {
 
   private async handleDownload(): Promise<void> {
     if (this.state.running) {
+      return;
+    }
+
+    if (this.previewMode) {
+      this.appendLog("Preview mode: download is disabled.", "error");
       return;
     }
 
@@ -646,6 +687,7 @@ export class GatherController {
 
       this.state.directoryHandle = directoryHandle;
       setFolder(this.elements, directoryHandle.name, `Remembered for ${scopeLabel}.`);
+      this.refreshInferredPathPreview();
     } catch (error) {
       this.elements.folderDetail.textContent = `Could not restore folder: ${formatError(error)}`;
     }
@@ -654,6 +696,7 @@ export class GatherController {
   private async setDirectoryHandle(directoryHandle: FileSystemDirectoryHandle): Promise<void> {
     this.state.directoryHandle = directoryHandle;
     this.elements.folderName.textContent = directoryHandle.name;
+    this.refreshInferredPathPreview();
 
     try {
       await saveDirectoryHandle(
@@ -699,14 +742,34 @@ export class GatherController {
   }
 
   private syncPopupActions(): void {
+    const hasDirectory = Boolean(this.state.directoryHandle) || this.previewHasFolder;
+    const canDownload =
+      (this.previewMode || this.isSupportedTab()) && hasDirectory && !this.state.running;
+
     syncActions(
       this.elements,
-      this.isSupportedTab() && Boolean(this.state.directoryHandle) && !this.state.running,
+      canDownload,
       this.state.running,
-      Boolean(this.state.directoryHandle),
+      hasDirectory,
       this.state.lastRun.canRetry && this.state.lastRun.retryImages.length > 0,
       this.state.lastRun.failedItems.length > 0
     );
+  }
+
+  private refreshInferredPathPreview(): void {
+    if (!this.state.siteKey) {
+      return;
+    }
+
+    const rootName = this.previewHasFolder
+      ? "Archive"
+      : this.state.directoryHandle?.name ?? null;
+
+    if (!rootName) {
+      return;
+    }
+
+    setInferredPathPreview(this.elements, rootName, this.state.siteKey);
   }
 
   private setStatus(status: PopupStatus): void {

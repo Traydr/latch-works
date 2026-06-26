@@ -11,3 +11,39 @@ body {
 .log {
   max-height: 280px;
 }
+
+/* Side panel: wider split dashboard */
+
+.popup[data-layout="2"] {
+  grid-template-columns: 1.1fr 0.9fr;
+}
+
+.popup[data-layout="2"] .site-meta-row {
+  grid-template-columns: 76px 1fr;
+}
+
+/* Side panel: command strip uses horizontal space */
+
+.popup[data-layout="3"] .layout-zone-log .log {
+  max-height: min(50vh, 420px);
+}
+
+/* Side panel: console layout */
+
+.popup[data-layout="4"] .layout-zone-log .log {
+  max-height: min(55vh, 480px);
+}
+
+.popup[data-layout="4"] .layout-zone-site .site-meta-grid {
+  grid-template-columns: 80px 1fr 80px 1fr;
+}
+
+/* Side panel: atlas gets more room */
+
+.popup[data-layout="5"] .layout-zone-atlas .site-atlas-rows {
+  max-height: min(45vh, 400px);
+}
+
+.popup[data-layout="5"] .layout-zone-log .log {
+  max-height: 100px;
+}

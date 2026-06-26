@@ -7,8 +7,19 @@
     <link rel="stylesheet" href="sidepanel.css">
   </head>
   <body>
-    <main class="popup">
-      <header class="header">
+    <div class="layout-switcher" data-preview-only aria-label="Layout preview switcher">
+      <span class="layout-switcher-label">Layout</span>
+      <div class="layout-switcher-buttons" role="group" aria-label="Choose layout">
+        <button type="button" class="layout-switcher-btn" data-layout="1">1</button>
+        <button type="button" class="layout-switcher-btn" data-layout="2">2</button>
+        <button type="button" class="layout-switcher-btn" data-layout="3">3</button>
+        <button type="button" class="layout-switcher-btn" data-layout="4">4</button>
+        <button type="button" class="layout-switcher-btn" data-layout="5">5</button>
+      </div>
+    </div>
+
+    <main class="popup" data-layout="1">
+      <header class="layout-zone layout-zone-header header">
         <div class="brand">
           <span class="brand-mark" aria-hidden="true"></span>
           <h1>Gather Box</h1>
@@ -19,14 +30,38 @@
         </div>
       </header>
 
-      <button id="downloadBtn-mini" class="btn btn-primary btn-huge btn-full" type="button" disabled>Download Content</button>
+      <section class="layout-zone layout-zone-actions action-zone">
+        <button id="downloadBtn-mini" class="btn btn-primary btn-huge btn-full" type="button" disabled>Download Content</button>
+        <div class="action-row">
+          <button id="retryBtn-mini" class="btn btn-ghost btn-tiny" type="button" disabled>Retry failed</button>
+          <button id="copyErrorsBtn-mini" class="btn btn-ghost btn-tiny" type="button" disabled>Copy errors</button>
+        </div>
+      </section>
 
-      <div class="action-row">
-        <button id="retryBtn-mini" class="btn btn-ghost btn-tiny" type="button" disabled>Retry failed</button>
-        <button id="copyErrorsBtn-mini" class="btn btn-ghost btn-tiny" type="button" disabled>Copy errors</button>
-      </div>
+      <section id="siteContext-mini" class="layout-zone layout-zone-site surface site-context" aria-label="Site save behavior" hidden>
+        <div class="site-context-header">
+          <span id="siteLabel-mini" class="site-label">—</span>
+          <span id="siteOutput-mini" class="site-output-chip">—</span>
+        </div>
+        <p id="siteSaveRule-mini" class="site-save-rule">—</p>
+        <dl class="site-meta-grid">
+          <div class="site-meta-row">
+            <dt>Folder pattern</dt>
+            <dd id="sitePathPattern-mini" class="mono">—</dd>
+          </div>
+          <div class="site-meta-row">
+            <dt>Example</dt>
+            <dd id="sitePathExample-mini" class="mono">—</dd>
+          </div>
+          <div class="site-meta-row">
+            <dt>Files</dt>
+            <dd id="siteFilePattern-mini">—</dd>
+          </div>
+        </dl>
+        <p id="siteCredentialsNote-mini" class="site-credentials-note" hidden></p>
+      </section>
 
-      <section class="surface" aria-label="Destination folder">
+      <section class="layout-zone layout-zone-folder surface" aria-label="Destination folder">
         <div class="folder-row">
           <span class="label">Folder</span>
           <span id="folderName-mini" class="value truncate">No folder selected</span>
@@ -36,13 +71,13 @@
         <p id="folderDetail-mini" class="sub">Choose a writable folder for this run.</p>
       </section>
 
-      <section class="surface progress-block" aria-label="Download progress">
+      <section class="layout-zone layout-zone-progress surface progress-block" aria-label="Download progress">
         <p id="destinationPreview-mini" class="destination-preview" hidden></p>
         <progress id="progressBar-mini" class="progress" max="1" value="0"></progress>
         <p id="progressText-mini" class="sub center">Waiting for a supported page and folder.</p>
       </section>
 
-      <section class="surface" aria-label="Active page">
+      <section class="layout-zone layout-zone-page surface" aria-label="Active page">
         <div class="status-row">
           <span class="label">Page</span>
           <span id="pageStatus-mini" class="value">Checking...</span>
@@ -50,7 +85,15 @@
         <p id="pageDetail-mini" class="sub">The active tab is checked when the side panel opens.</p>
       </section>
 
-      <details id="logDetails-mini" class="log-details surface">
+      <section id="siteAtlas-mini" class="layout-zone layout-zone-atlas surface site-atlas" aria-label="Site save reference">
+        <div class="site-atlas-header">
+          <h2 class="site-atlas-title">Save behavior by site</h2>
+          <p class="site-atlas-sub">How each source organizes files under your chosen folder.</p>
+        </div>
+        <div id="siteAtlasRows-mini" class="site-atlas-rows" role="list"></div>
+      </section>
+
+      <details id="logDetails-mini" class="layout-zone layout-zone-log log-details surface">
         <summary>Results</summary>
         <div id="resultLog-mini" class="log" role="log" aria-live="polite">
           <p class="log-empty">No activity yet.</p>
