@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import type { LayoutVariant } from "./types";
 
@@ -16,6 +16,11 @@ function readStoredVariant(): LayoutVariant {
     return 1;
   }
 
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("record") === "1") {
+    return 1;
+  }
+
   const stored = window.localStorage.getItem(STORAGE_KEY);
   const parsed = Number(stored);
   if (parsed >= 1 && parsed <= 5) {
@@ -25,20 +30,30 @@ function readStoredVariant(): LayoutVariant {
   return 1;
 }
 
+function isRecordMode(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  return new URLSearchParams(window.location.search).get("record") === "1";
+}
+
 export function LayoutProvider({ children }: { children: ReactNode }) {
   const [variant, setVariantState] = useState<LayoutVariant>(() => readStoredVariant());
 
   useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEY, String(variant));
+    if (!isRecordMode()) {
+      window.localStorage.setItem(STORAGE_KEY, String(variant));
+    }
   }, [variant]);
 
-  const setVariant = (next: LayoutVariant) => {
+  const setVariant = useCallback((next: LayoutVariant) => {
     setVariantState(next);
-  };
+  }, []);
 
-  return (
-    <LayoutContext.Provider value={{ variant, setVariant }}>{children}</LayoutContext.Provider>
-  );
+  const value = useMemo(() => ({ variant, setVariant }), [variant, setVariant]);
+
+  return <LayoutContext.Provider value={value}>{children}</LayoutContext.Provider>;
 }
 
 export function useLayoutVariant() {

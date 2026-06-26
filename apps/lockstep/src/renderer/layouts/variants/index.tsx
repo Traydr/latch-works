@@ -197,6 +197,7 @@ export function SidebarCommandLayout(props: LayoutProps) {
               <LayoutActionButtons
                 disabled={running}
                 layout="vertical"
+                size="compact"
                 onDoctor={handlers.onDoctor}
                 onPlan={handlers.onPlan}
                 onPrune={handlers.onPrune}

@@ -1,5 +1,4 @@
 import { useLayoutVariant } from "./LayoutContext";
-import { LayoutShell } from "./LayoutShell";
 import { LayoutSwitcher } from "./LayoutSwitcher";
 import type { LayoutContentProps } from "./types";
 import {
@@ -10,53 +9,30 @@ import {
   UnifiedDashboardLayout,
 } from "./variants";
 
-export function LayoutRenderer(props: LayoutContentProps) {
+function ActiveLayout(props: LayoutContentProps) {
   const { variant } = useLayoutVariant();
-
-  const layoutProps = { ...props };
 
   switch (variant) {
     case 1:
-      return (
-        <LayoutShell>
-          <SidebarCommandLayout {...layoutProps} />
-          <LayoutSwitcher />
-        </LayoutShell>
-      );
+      return <SidebarCommandLayout {...props} />;
     case 2:
-      return (
-        <LayoutShell>
-          <SplitWorkspaceLayout {...layoutProps} />
-          <LayoutSwitcher />
-        </LayoutShell>
-      );
+      return <SplitWorkspaceLayout {...props} />;
     case 3:
-      return (
-        <LayoutShell>
-          <UnifiedDashboardLayout {...layoutProps} />
-          <LayoutSwitcher />
-        </LayoutShell>
-      );
+      return <UnifiedDashboardLayout {...props} />;
     case 4:
-      return (
-        <LayoutShell>
-          <CompactToolbarLayout {...layoutProps} />
-          <LayoutSwitcher />
-        </LayoutShell>
-      );
+      return <CompactToolbarLayout {...props} />;
     case 5:
-      return (
-        <LayoutShell>
-          <StatusBoardLayout {...layoutProps} />
-          <LayoutSwitcher />
-        </LayoutShell>
-      );
+      return <StatusBoardLayout {...props} />;
     default:
-      return (
-        <LayoutShell>
-          <SidebarCommandLayout {...layoutProps} />
-          <LayoutSwitcher />
-        </LayoutShell>
-      );
+      return <SidebarCommandLayout {...props} />;
   }
+}
+
+export function LayoutRenderer(props: LayoutContentProps) {
+  return (
+    <div className="relative h-full min-h-0">
+      <ActiveLayout {...props} />
+      <LayoutSwitcher />
+    </div>
+  );
 }

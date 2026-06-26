@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { LayoutProvider } from "../renderer/layouts/LayoutContext";
+import { LayoutProvider, useLayoutVariant } from "../renderer/layouts/LayoutContext";
 import { LayoutRenderer } from "../renderer/layouts/LayoutRenderer";
 import type { LayoutContentProps } from "../renderer/layouts/types";
+import type { LayoutVariant } from "../renderer/layouts/types";
 import type { LockstepRunEvent } from "../shared/types";
 import {
   applyRunEvent,
@@ -51,13 +52,47 @@ const baseProps: Omit<
   onSubmitProfile: noop,
 };
 
-export function ShowcaseLivePushDemo() {
+function ShowcaseRecordCycle() {
+  const { setVariant } = useLayoutVariant();
+  const startedRef = useRef(false);
+
+  useEffect(() => {
+    if (startedRef.current) {
+      return;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("record") !== "1") {
+      return;
+    }
+
+    startedRef.current = true;
+    setVariant(1);
+    let current: LayoutVariant = 1;
+
+    const interval = window.setInterval(() => {
+      if (current >= 5) {
+        window.clearInterval(interval);
+        return;
+      }
+      current = (current + 1) as LayoutVariant;
+      setVariant(current);
+    }, 6000);
+
+    return () => window.clearInterval(interval);
+  }, [setVariant]);
+
+  return null;
+}
+
+function ShowcaseLivePushInner() {
   const [running, setRunning] = useState(false);
-  const [runLabel, setRunLabel] = useState("Preparing live push...");
+  const [runLabel, setRunLabel] = useState("Waiting to start push...");
   const [runProgress, setRunProgress] = useState<RunProgressState>(emptyRunProgress);
   const [logs, setLogs] = useState<string[]>([]);
   const [screen, setScreen] = useState<LayoutContentProps["screen"]>("run");
-  const startedRef = useRef(false);
+  const eventCursorRef = useRef(0);
+  const pushStartedRef = useRef(false);
 
   const handleEvent = useCallback((event: LockstepRunEvent | { type: "demo-end" }) => {
     if (event.type === "demo-end") {
@@ -100,36 +135,48 @@ export function ShowcaseLivePushDemo() {
   }, []);
 
   useEffect(() => {
-    if (startedRef.current) {
+    if (pushStartedRef.current) {
       return;
     }
-    startedRef.current = true;
+    pushStartedRef.current = true;
 
-    setRunning(true);
-    setScreen("run");
-    setLogs(["Starting live push of demo archive..."]);
-    setRunProgress(emptyRunProgress());
+    const params = new URLSearchParams(window.location.search);
+    const delayMs = params.get("record") === "1" ? 2500 : 0;
 
-    void fetch("/api/demo/push", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sourceRoot: "/tmp/lockstep-demo-archive" }),
-    });
+    const startTimeout = window.setTimeout(() => {
+      eventCursorRef.current = 0;
+      setRunning(true);
+      setRunProgress(emptyRunProgress());
+      setRunLabel("Starting live push...");
+      setLogs(["Starting live push of demo archive..."]);
 
-    const source = new EventSource("/api/demo/push/stream");
-    source.onmessage = (message) => {
-      try {
-        const event = JSON.parse(message.data) as LockstepRunEvent | { type: "demo-end" };
-        handleEvent(event);
-        if (event.type === "demo-end") {
-          source.close();
-        }
-      } catch {
-        // ignore malformed events
-      }
+      void fetch("/api/demo/push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sourceRoot: "/tmp/lockstep-demo-archive" }),
+      });
+    }, delayMs);
+
+    let poll = 0;
+    const pollTimeout = window.setTimeout(() => {
+      poll = window.setInterval(() => {
+        void fetch(`/api/demo/push/events?since=${eventCursorRef.current}`)
+          .then((response) => response.json())
+          .then((payload: { events: LockstepRunEvent[]; total: number }) => {
+            for (const event of payload.events) {
+              handleEvent(event);
+            }
+            eventCursorRef.current = payload.total;
+          })
+          .catch(() => undefined);
+      }, 250);
+    }, delayMs);
+
+    return () => {
+      window.clearTimeout(startTimeout);
+      window.clearTimeout(pollTimeout);
+      window.clearInterval(poll);
     };
-
-    return () => source.close();
   }, [handleEvent]);
 
   const layoutProps = useMemo(
@@ -151,8 +198,17 @@ export function ShowcaseLivePushDemo() {
   );
 
   return (
-    <LayoutProvider>
+    <>
+      <ShowcaseRecordCycle />
       <LayoutRenderer {...layoutProps} />
+    </>
+  );
+}
+
+export function ShowcaseLivePushDemo() {
+  return (
+    <LayoutProvider>
+      <ShowcaseLivePushInner />
     </LayoutProvider>
   );
 }

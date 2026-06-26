@@ -31,4 +31,4 @@ const content =
     wrap(<ShowcaseLivePushDemo />)
   );
 
-createRoot(rootElement).render(<React.StrictMode>{content}</React.StrictMode>);
+createRoot(rootElement).render(content);

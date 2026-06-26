@@ -28,12 +28,9 @@ function readBody(req) {
 }
 
 async function runLivePush(sourceRoot) {
-  if (pushState.running) {
-    return false;
-  }
-
   pushState.running = true;
   pushState.events = [];
+  pushState.listeners.clear();
 
   try {
     const { pushChanges } = await import("@latch-works/lockstep-core");
@@ -102,27 +99,20 @@ export function showcaseLivePushPlugin() {
           return;
         }
 
-        if (url === "/api/demo/push/stream" && req.method === "GET") {
+        if (url.startsWith("/api/demo/push/events") && req.method === "GET") {
+          const parsed = new URL(url, "http://127.0.0.1");
+          const since = Number(parsed.searchParams.get("since") ?? "0");
+          const events = pushState.events.slice(since);
+
           res.statusCode = 200;
-          res.setHeader("Content-Type", "text/event-stream");
-          res.setHeader("Cache-Control", "no-cache");
-          res.setHeader("Connection", "keep-alive");
-          res.flushHeaders?.();
-
-          for (const event of pushState.events) {
-            res.write(`data: ${JSON.stringify(event)}\n\n`);
-          }
-
-          const listener = (event) => {
-            res.write(`data: ${JSON.stringify(event)}\n\n`);
-            if (event.type === "demo-end") {
-              pushState.listeners.delete(listener);
-              res.end();
-            }
-          };
-
-          pushState.listeners.add(listener);
-          req.on("close", () => pushState.listeners.delete(listener));
+          res.setHeader("Content-Type", "application/json");
+          res.end(
+            JSON.stringify({
+              events,
+              running: pushState.running,
+              total: pushState.events.length,
+            }),
+          );
           return;
         }
 
