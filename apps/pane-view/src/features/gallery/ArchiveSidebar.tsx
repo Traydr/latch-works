@@ -127,7 +127,7 @@ export function ArchiveSidebar({
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className="border-t border-sidebar-border p-2">
+      <SidebarFooter className="border-t border-sidebar-border p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
         <div className="grid gap-1">
           <Button
             className="w-full justify-start gap-2"

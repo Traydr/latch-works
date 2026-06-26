@@ -40,7 +40,7 @@ function GalleryLayoutContent() {
 
   return (
     <SidebarProvider
-      className="min-h-screen overflow-hidden bg-background text-foreground"
+      className="min-h-dvh overflow-hidden bg-background text-foreground"
       defaultOpen
     >
       <ThemeSync theme={settings.theme} />
