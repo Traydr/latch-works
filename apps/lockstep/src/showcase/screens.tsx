@@ -1,8 +1,6 @@
-import { ActionDock } from "../renderer/components/ActionDock";
-import { AppHeader } from "../renderer/components/AppHeader";
-import { AppShell } from "../renderer/components/AppShell";
-import { PlanResultsView } from "../renderer/views/PlanResultsView";
-import { RunProgressView } from "../renderer/views/RunProgressView";
+import { LayoutProvider } from "../renderer/layouts/LayoutContext";
+import { LayoutRenderer } from "../renderer/layouts/LayoutRenderer";
+import type { LayoutContentProps } from "../renderer/layouts/types";
 import type { LockstepPlan, LockstepPlanItem, LockstepSettings } from "../shared/types";
 
 export const showcaseSettings: LockstepSettings = {
@@ -16,6 +14,13 @@ export const showcaseSettings: LockstepSettings = {
       tokenConfigured: true,
       tokenInSession: false,
       tokenUnreadable: false,
+      lastRun: {
+        action: "push",
+        completedAt: new Date().toISOString(),
+        failed: 0,
+        pushed: 8,
+        status: "completed",
+      },
     },
   ],
 };
@@ -47,25 +52,6 @@ function showcasePlanItems(): LockstepPlanItem[] {
   ];
 }
 
-const noop = () => undefined;
-
-export function ShowcasePlanScreen() {
-  return (
-    <AppShell
-      header={<AppHeader onAddProfile={noop} onProfileChange={noop} settings={showcaseSettings} />}
-    >
-      <PlanResultsView
-        filter=""
-        items={showcasePlanItems()}
-        onBack={noop}
-        onFilterChange={noop}
-        plan={showcasePlan}
-      />
-      <ActionDock disabled onDoctor={noop} onPlan={noop} onPrune={noop} onPush={noop} />
-    </AppShell>
-  );
-}
-
 const pushLogs = [
   "Creating sync run...",
   "Pushing 8 upload/update change(s).",
@@ -76,20 +62,84 @@ const pushLogs = [
   "Hashing sfw/stories/author-long_title.pdf (847 files)",
 ];
 
-export function ShowcasePushScreen() {
+const noop = () => undefined;
+
+const showcaseLayoutProps: LayoutContentProps = {
+  activeProfile: showcaseSettings.profiles[0] ?? null,
+  doctorResult: null,
+  error: null,
+  filter: "",
+  filteredItems: showcasePlanItems(),
+  handlers: {
+    onBack: noop,
+    onCancel: noop,
+    onCreateProfile: noop,
+    onDoctor: noop,
+    onFilterChange: noop,
+    onPlan: noop,
+    onPrune: noop,
+    onProfileChange: noop,
+    onPush: noop,
+    onSessionTokenChange: noop,
+    onViewActivity: noop,
+    onViewPlan: noop,
+  },
+  logs: pushLogs,
+  plan: showcasePlan,
+  profileForm: {
+    apiUrl: "https://archive.example.com",
+    name: "",
+    sourceRoot: "",
+    token: "",
+  },
+  runLabel: "[4/8] update sfw/photos/sample-03.jpg",
+  runProgress: {
+    stage: "transfer",
+    current: 4,
+    total: 8,
+    currentPath: "sfw/photos/sample-03.jpg",
+    currentAction: "update",
+    filesFound: 847,
+    skipped: 3,
+    bytesHashed: 0,
+    fileSize: 0,
+    phaseLabel: "Transferring 4 of 8",
+  },
+  running: true,
+  screen: "run",
+  sessionToken: "",
+  settings: showcaseSettings,
+  onCancelProfile: noop,
+  onPickFolder: noop,
+  onProfileFormChange: noop,
+  onSubmitProfile: noop,
+};
+
+export function ShowcaseLayoutDemo() {
   return (
-    <AppShell
-      header={<AppHeader onAddProfile={noop} onProfileChange={noop} settings={showcaseSettings} />}
-    >
-      <RunProgressView
-        doctorResult={null}
-        logs={pushLogs}
-        onBack={noop}
-        onCancel={noop}
-        running
-        runLabel="[4/8] update sfw/photos/sample-03.jpg"
-      />
-      <ActionDock disabled onDoctor={noop} onPlan={noop} onPrune={noop} onPush={noop} />
-    </AppShell>
+    <LayoutProvider>
+      <LayoutRenderer {...showcaseLayoutProps} />
+    </LayoutProvider>
   );
+}
+
+export function ShowcasePlanScreen() {
+  return (
+    <LayoutProvider>
+      <LayoutRenderer
+        {...showcaseLayoutProps}
+        running={false}
+        screen="plan"
+        runProgress={{
+          ...showcaseLayoutProps.runProgress,
+          stage: "complete",
+          phaseLabel: "Plan complete",
+        }}
+      />
+    </LayoutProvider>
+  );
+}
+
+export function ShowcasePushScreen() {
+  return <ShowcaseLayoutDemo />;
 }

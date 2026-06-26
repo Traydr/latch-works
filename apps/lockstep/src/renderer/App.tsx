@@ -8,18 +8,15 @@ import type {
   LockstepRunEvent,
   LockstepSettings,
 } from "../shared/types";
-import { ActionDock } from "./components/ActionDock";
-import { AlertBanner } from "./components/AlertBanner";
-import { AppHeader } from "./components/AppHeader";
-import { AppShell } from "./components/AppShell";
+import { LayoutProvider } from "./layouts/LayoutContext";
+import { LayoutRenderer } from "./layouts/LayoutRenderer";
+import type { LayoutContentProps, Screen } from "./layouts/types";
 import { useSystemTheme } from "./hooks/useSystemTheme";
-import { DashboardView } from "./views/DashboardView";
-import { PlanResultsView } from "./views/PlanResultsView";
-import { ProfileSetupView } from "./views/ProfileSetupView";
-import { RunProgressView } from "./views/RunProgressView";
-import { WelcomeView } from "./views/WelcomeView";
-
-type Screen = "dashboard" | "plan" | "profile" | "run";
+import {
+  applyRunEvent,
+  emptyRunProgress,
+  type RunProgressState,
+} from "./utils/runProgress";
 
 const emptyProfileForm = {
   apiUrl: "http://localhost:3000",
@@ -39,6 +36,7 @@ export function App() {
   const [filter, setFilter] = useState("");
   const [running, setRunning] = useState(false);
   const [runLabel, setRunLabel] = useState("");
+  const [runProgress, setRunProgress] = useState<RunProgressState>(emptyRunProgress);
   const [logs, setLogs] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [sessionToken, setSessionToken] = useState("");
@@ -68,6 +66,8 @@ export function App() {
 
   useEffect(() => {
     const unsubscribe = window.lockstep.onRunEvent((event: LockstepRunEvent) => {
+      setRunProgress((current) => applyRunEvent(current, event));
+
       if (event.type === "status") {
         setRunLabel(event.message);
         setLogs((current) => [...current.slice(-200), event.message]);
@@ -91,11 +91,13 @@ export function App() {
 
       if (event.type === "item-success") {
         const message = `[${event.current}/${event.total}] ${event.action} ${event.path}`;
+        setRunLabel(message);
         setLogs((current) => [...current.slice(-200), message]);
       }
 
       if (event.type === "item-failure") {
         const message = `[${event.current}/${event.total}] failed ${event.path}: ${event.error}`;
+        setRunLabel(message);
         setLogs((current) => [...current.slice(-200), message]);
       }
 
@@ -123,6 +125,14 @@ export function App() {
       .filter((item) => item.action !== "keep")
       .filter((item) => !query || item.path.toLowerCase().includes(query));
   }, [filter, plan]);
+
+  function resetRunState(initialMessage: string) {
+    setRunning(true);
+    setRunLabel(initialMessage);
+    setRunProgress(emptyRunProgress());
+    setLogs([initialMessage]);
+    lastLoggedScanProgressRef.current = null;
+  }
 
   async function handleCreateProfile(event: React.FormEvent) {
     event.preventDefault();
@@ -170,9 +180,7 @@ export function App() {
 
     setError(null);
     setDoctorResult(null);
-    setRunning(true);
-    setRunLabel("Running doctor...");
-    setLogs(["Running doctor..."]);
+    resetRunState("Running doctor...");
     setScreen("run");
 
     const result = await window.lockstep.doctor(activeProfile.id);
@@ -185,6 +193,11 @@ export function App() {
 
     setDoctorResult(result.value);
     setRunLabel(result.value.ok ? "Doctor passed." : "Doctor found issues.");
+    setRunProgress((current) => ({
+      ...current,
+      stage: "complete",
+      phaseLabel: result.value.ok ? "Doctor passed." : "Doctor found issues.",
+    }));
     await refreshSettings();
   }
 
@@ -198,10 +211,7 @@ export function App() {
     }
 
     setError(null);
-    setRunning(true);
-    setRunLabel("Planning sync...");
-    setLogs(["Planning sync..."]);
-    lastLoggedScanProgressRef.current = null;
+    resetRunState("Planning sync...");
     setScreen("run");
 
     const result = await window.lockstep.plan({ profileId: activeProfile.id });
@@ -227,10 +237,7 @@ export function App() {
     }
 
     setError(null);
-    setRunning(true);
-    setRunLabel("Pushing uploads and updates...");
-    setLogs(["Pushing uploads and updates..."]);
-    lastLoggedScanProgressRef.current = null;
+    resetRunState("Pushing uploads and updates...");
     setScreen("run");
 
     const result = await window.lockstep.push({ profileId: activeProfile.id });
@@ -242,6 +249,11 @@ export function App() {
     }
 
     setRunLabel(`Push ${result.value.status}: ${result.value.pushed} item(s).`);
+    setRunProgress((current) => ({
+      ...current,
+      stage: "complete",
+      phaseLabel: `Push ${result.value.status}: ${result.value.pushed} item(s).`,
+    }));
     await refreshSettings();
   }
 
@@ -261,10 +273,7 @@ export function App() {
     }
 
     setError(null);
-    setRunning(true);
-    setRunLabel("Applying remote deletes...");
-    setLogs(["Applying remote deletes..."]);
-    lastLoggedScanProgressRef.current = null;
+    resetRunState("Applying remote deletes...");
     setScreen("run");
 
     const result = await window.lockstep.prune({ profileId: activeProfile.id });
@@ -276,6 +285,11 @@ export function App() {
     }
 
     setRunLabel(`Prune ${result.value.status}: ${result.value.pushed} delete(s).`);
+    setRunProgress((current) => ({
+      ...current,
+      stage: "complete",
+      phaseLabel: `Prune ${result.value.status}: ${result.value.pushed} delete(s).`,
+    }));
     await refreshSettings();
   }
 
@@ -305,74 +319,44 @@ export function App() {
     setSettings(result.value);
   }
 
-  const showActionDock = screen === "dashboard" && Boolean(activeProfile);
+  const layoutProps: LayoutContentProps = {
+    activeProfile,
+    doctorResult,
+    error,
+    filter,
+    filteredItems,
+    handlers: {
+      onBack: () => setScreen("dashboard"),
+      onCancel: () => void handleCancel(),
+      onCreateProfile: () => setScreen("profile"),
+      onDoctor: () => void handleDoctor(),
+      onFilterChange: setFilter,
+      onPlan: () => void handlePlan(),
+      onPrune: () => void handlePrune(),
+      onProfileChange: (profileId) => void handleProfileChange(profileId),
+      onPush: () => void handlePush(),
+      onSessionTokenChange: setSessionToken,
+      onViewActivity: () => setScreen("run"),
+      onViewPlan: () => setScreen("plan"),
+    },
+    logs,
+    plan,
+    profileForm,
+    runLabel,
+    runProgress,
+    running,
+    screen,
+    sessionToken,
+    settings,
+    onCancelProfile: () => setScreen("dashboard"),
+    onPickFolder: () => void handlePickFolder(),
+    onProfileFormChange: (patch) => setProfileForm((current) => ({ ...current, ...patch })),
+    onSubmitProfile: (event) => void handleCreateProfile(event),
+  };
 
   return (
-    <AppShell
-      header={
-        <AppHeader
-          settings={settings}
-          onAddProfile={() => setScreen("profile")}
-          onProfileChange={(profileId) => void handleProfileChange(profileId)}
-        />
-      }
-    >
-      {error ? <AlertBanner message={error} /> : null}
-
-      {screen === "profile" ? (
-        <ProfileSetupView
-          form={profileForm}
-          onCancel={() => setScreen("dashboard")}
-          onChange={(patch) => setProfileForm((current) => ({ ...current, ...patch }))}
-          onPickFolder={() => void handlePickFolder()}
-          onSubmit={(event) => void handleCreateProfile(event)}
-        />
-      ) : null}
-
-      {screen === "dashboard" && activeProfile ? (
-        <DashboardView
-          plan={plan}
-          profile={activeProfile}
-          sessionToken={sessionToken}
-          onSessionTokenChange={setSessionToken}
-          onViewPlan={() => setScreen("plan")}
-        />
-      ) : null}
-
-      {screen === "dashboard" && !activeProfile ? (
-        <WelcomeView onCreateProfile={() => setScreen("profile")} />
-      ) : null}
-
-      {screen === "plan" && plan ? (
-        <PlanResultsView
-          filter={filter}
-          items={filteredItems}
-          plan={plan}
-          onBack={() => setScreen("dashboard")}
-          onFilterChange={setFilter}
-        />
-      ) : null}
-
-      {screen === "run" ? (
-        <RunProgressView
-          doctorResult={doctorResult}
-          logs={logs}
-          running={running}
-          runLabel={runLabel}
-          onBack={() => setScreen("dashboard")}
-          onCancel={() => void handleCancel()}
-        />
-      ) : null}
-
-      {showActionDock ? (
-        <ActionDock
-          disabled={running}
-          onDoctor={() => void handleDoctor()}
-          onPlan={() => void handlePlan()}
-          onPush={() => void handlePush()}
-          onPrune={() => void handlePrune()}
-        />
-      ) : null}
-    </AppShell>
+    <LayoutProvider>
+      <LayoutRenderer {...layoutProps} />
+    </LayoutProvider>
   );
 }
