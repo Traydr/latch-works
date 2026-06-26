@@ -94,21 +94,50 @@ describe("resolveMediaDeliveryUrlsForVariants", () => {
     });
   });
 
-  it("returns Bunny image delivery tokens without derivative ensure", async () => {
+  it("returns Bunny fallback tokens when image derivatives are pending", async () => {
     const results = await resolveMediaDeliveryUrlsForVariants([
-      { mediaId: "media-1", variant: "thumbnail", size: 320 },
+      { mediaId: "media-1", variant: "thumbnail", size: 720 },
     ]);
 
     expect(results).toEqual([
       {
         deliveryToken: "bunny-token",
         mediaId: "media-1",
-        size: 320,
+        size: 720,
         status: "ready",
         variant: "thumbnail",
       },
     ]);
-    expect(mocks.ensureThumbnailDerivativeForContext).not.toHaveBeenCalled();
+    expect(mocks.ensureThumbnailDerivativeForContext).toHaveBeenCalledWith({
+      context: imageContext,
+      requestedSize: 720,
+    });
+  });
+
+  it("returns CDN URLs when image derivatives are ready", async () => {
+    mocks.ensureThumbnailDerivativeForContext.mockResolvedValue({
+      height: 405,
+      objectKey: "thumbnails/sha256/ab/cd/hash-720.webp",
+      purpose: "thumbnail",
+      status: "ready",
+      width: 720,
+    });
+    mocks.buildDerivativeDeliveryUrl.mockResolvedValue("https://cdn.example/thumb.webp");
+
+    const results = await resolveMediaDeliveryUrlsForVariants([
+      { mediaId: "media-1", variant: "thumbnail", size: 720 },
+    ]);
+
+    expect(results).toEqual([
+      {
+        mediaId: "media-1",
+        size: 720,
+        status: "ready",
+        url: "https://cdn.example/thumb.webp",
+        variant: "thumbnail",
+      },
+    ]);
+    expect(mocks.mintImageOriginalDeliveryToken).not.toHaveBeenCalled();
   });
 
   it("returns failed for missing media without failing the batch", async () => {

@@ -1,4 +1,4 @@
-import { PREVIEW_DERIVATIVE_SIZE, snapThumbnailSize } from "@latch-works/media-delivery";
+import { GALLERY_THUMBNAIL_SIZE, PREVIEW_DERIVATIVE_SIZE, snapThumbnailSize } from "@latch-works/media-delivery";
 import { createSignedGetUrl } from "@latch-works/media-storage";
 import { resolveImageDeliveryMode } from "../../env/image-delivery";
 import { planSignedOriginalDelivery } from "./delivery";
@@ -42,6 +42,41 @@ async function resolveOriginalDeliveryUrl(mediaId: string): Promise<string> {
   });
 }
 
+async function resolveImageThumbnailHybrid({
+  context,
+  mediaId,
+  size,
+}: {
+  context: NonNullable<Awaited<ReturnType<typeof readMediaThumbnailContext>>>;
+  mediaId: string;
+  size?: number;
+}): Promise<MediaDeliveryResolveResult> {
+  const derivative = await ensureThumbnailDerivativeForContext({
+    context,
+    requestedSize: snapThumbnailSize(size ?? GALLERY_THUMBNAIL_SIZE),
+  });
+
+  if (derivative.status === "ready") {
+    return {
+      pending: false,
+      url: await buildDerivativeDeliveryUrl(derivative.objectKey),
+    };
+  }
+
+  if (resolveImageDeliveryMode() === "bunny") {
+    return {
+      deliveryToken: mintImageOriginalDeliveryToken(context),
+      pending: false,
+    };
+  }
+
+  if (derivative.status === "pending") {
+    return { pending: true };
+  }
+
+  return { pending: false, url: await resolveOriginalDeliveryUrl(mediaId) };
+}
+
 async function resolveImageThumbnailDelivery({
   mediaId,
   size,
@@ -54,18 +89,7 @@ async function resolveImageThumbnailDelivery({
     throw new Error("Media not found");
   }
 
-  if (resolveImageDeliveryMode() === "bunny") {
-    return {
-      deliveryToken: mintImageOriginalDeliveryToken(media),
-      pending: false,
-    };
-  }
-
-  return resolveQueuedDerivativeDeliveryUrl({
-    mediaId,
-    size,
-    variant: "thumbnail",
-  });
+  return resolveImageThumbnailHybrid({ context: media, mediaId, size });
 }
 
 async function resolveQueuedDerivativeDeliveryUrl({
@@ -181,13 +205,9 @@ export async function regenerateMediaThumbnailDerivative({
     return { status: "failed" };
   }
 
-  if (isImageMediaType(media.mediaType) && resolveImageDeliveryMode() === "bunny") {
-    return { status: "unsupported" };
-  }
-
   const result = await regenerateThumbnailDerivative({
     mediaId,
-    requestedSize: snapThumbnailSize(size ?? 320),
+    requestedSize: snapThumbnailSize(size ?? GALLERY_THUMBNAIL_SIZE),
   });
 
   return { status: result.status };
@@ -275,15 +295,30 @@ export async function resolveMediaDeliveryUrlsForVariants(
         }
 
         if (item.variant === "thumbnail" && isImageMediaType(context.mediaType)) {
-          if (resolveImageDeliveryMode() === "bunny") {
+          const imageResult = await resolveImageThumbnailHybrid({
+            context,
+            mediaId: item.mediaId,
+            size: item.size,
+          });
+
+          if (imageResult.pending) {
             return {
-              deliveryToken: mintImageOriginalDeliveryToken(context),
               mediaId: item.mediaId,
+              retryAfterMs: 15_000,
               size: item.size,
-              status: "ready",
+              status: "pending",
               variant: item.variant,
             };
           }
+
+          return {
+            deliveryToken: imageResult.deliveryToken,
+            mediaId: item.mediaId,
+            size: item.size,
+            status: "ready",
+            url: imageResult.url,
+            variant: item.variant,
+          };
         }
 
         const startedAt = Date.now();

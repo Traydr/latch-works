@@ -48,7 +48,7 @@ When a user requests a thumbnail that does not exist yet, `ensureThumbnailDeriva
 
 ### Post-sync prewarm
 
-After a sync run completes, `prewarmSyncRunDerivatives` enqueues gallery-size (320px) derivatives for newly uploaded or updated image, GIF, and video objects, then wakes the optimizer.
+After a sync run completes, `prewarmSyncRunDerivatives` enqueues gallery-size (720px) derivatives for newly uploaded or updated image, GIF, and video objects, then wakes the optimizer.
 
 **Source:** `apps/pane-view/src/server/media/derivative-prewarm.ts`
 
@@ -266,10 +266,10 @@ S3 GetObject (stream) → temp file on disk (byte-limited)
 
 ### Size ladder
 
-Requested sizes snap to the nearest step: **160, 320, 480, 640, 960**.
+Requested sizes snap to the nearest step: **160, 320, 480, 640, 720, 960, 1080**.
 
-- Gallery grid default: **320** (`GALLERY_THUMBNAIL_SIZE`)
-- Fullscreen preview: **960** (`PREVIEW_DERIVATIVE_SIZE`)
+- Gallery grid default: **720** (`GALLERY_THUMBNAIL_SIZE`)
+- Fullscreen preview: **1080** (`PREVIEW_DERIVATIVE_SIZE`)
 
 **Source:** `packages/media-delivery/src/thumbnail-size.ts`
 
