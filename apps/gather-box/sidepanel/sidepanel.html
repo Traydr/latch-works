@@ -8,13 +8,23 @@
   </head>
   <body>
     <div class="layout-switcher" data-preview-only aria-label="Layout preview switcher">
-      <span class="layout-switcher-label">Layout</span>
-      <div class="layout-switcher-buttons" role="group" aria-label="Choose layout">
-        <button type="button" class="layout-switcher-btn" data-layout="1">1</button>
-        <button type="button" class="layout-switcher-btn" data-layout="2">2</button>
-        <button type="button" class="layout-switcher-btn" data-layout="3">3</button>
-        <button type="button" class="layout-switcher-btn" data-layout="4">4</button>
-        <button type="button" class="layout-switcher-btn" data-layout="5">5</button>
+      <div class="layout-switcher-row">
+        <span class="layout-switcher-label">Layout</span>
+        <div class="layout-switcher-buttons" role="group" aria-label="Choose layout">
+          <button type="button" class="layout-switcher-btn" data-layout="1">1</button>
+          <button type="button" class="layout-switcher-btn" data-layout="2">2</button>
+          <button type="button" class="layout-switcher-btn" data-layout="3">3</button>
+          <button type="button" class="layout-switcher-btn" data-layout="4">4</button>
+          <button type="button" class="layout-switcher-btn" data-layout="5">5</button>
+        </div>
+      </div>
+      <div class="layout-switcher-row">
+        <span class="layout-switcher-label">Site</span>
+        <div class="preview-site-buttons" role="group" aria-label="Preview site">
+          <button type="button" class="preview-site-btn preview-site-btn-active" data-preview-site="kemono">Kemono</button>
+          <button type="button" class="preview-site-btn" data-preview-site="fanbox">FANBOX</button>
+          <button type="button" class="preview-site-btn" data-preview-site="ao3">AO3</button>
+        </div>
       </div>
     </div>
 

@@ -175,6 +175,10 @@ export class GatherController {
     } else {
       await this.detectActiveTab();
       await this.restoreSavedDirectoryHandle();
+
+      if (!this.state.siteKey && document.querySelector(".layout-switcher")) {
+        this.applyPreviewState(this.options.previewSiteKey ?? "kemono");
+      }
     }
 
     this.syncPopupActions();

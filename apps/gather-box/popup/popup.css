@@ -408,9 +408,8 @@ h1 {
 
 .layout-switcher {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  flex-direction: column;
+  gap: 6px;
   margin-bottom: 8px;
   padding: 6px 8px;
   border: 1px dashed var(--accent-border);
@@ -418,7 +417,15 @@ h1 {
   background: rgba(139, 92, 246, 0.08);
 }
 
+.layout-switcher-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .layout-switcher-label {
+  flex-shrink: 0;
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -426,9 +433,36 @@ h1 {
   color: var(--accent-hover);
 }
 
-.layout-switcher-buttons {
+.layout-switcher-buttons,
+.preview-site-buttons {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
+  justify-content: flex-end;
+}
+
+.preview-site-btn {
+  min-height: 26px;
+  padding: 2px 8px;
+  border: 1px solid var(--surface-border);
+  border-radius: var(--radius-sm);
+  background: var(--input-bg);
+  color: var(--muted-foreground);
+  font: inherit;
+  font-size: 10px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.preview-site-btn:hover {
+  border-color: var(--accent-border);
+  color: var(--foreground);
+}
+
+.preview-site-btn-active {
+  border-color: var(--accent-border);
+  background: var(--accent-muted);
+  color: var(--accent-foreground);
 }
 
 .layout-switcher-btn {

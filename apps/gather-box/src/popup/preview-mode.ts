@@ -30,7 +30,48 @@ export function parsePreviewSiteKey(): SiteKey | null {
   }
 
   const alias = hash.slice("preview=".length).trim().toLowerCase();
-  return PREVIEW_ALIASES[alias] ?? null;
+  return resolvePreviewSiteAlias(alias);
+}
+
+export function resolvePreviewSiteAlias(alias: string | undefined): SiteKey | null {
+  if (!alias) {
+    return null;
+  }
+
+  return PREVIEW_ALIASES[alias.trim().toLowerCase()] ?? null;
+}
+
+export function initPreviewSiteSwitcher(
+  document: Document,
+  onSelect: (siteKey: SiteKey) => void,
+  initialSiteKey: SiteKey
+): void {
+  const buttons = document.querySelectorAll<HTMLButtonElement>("[data-preview-site]");
+  setPreviewSiteButtonState(buttons, initialSiteKey);
+
+  for (const button of buttons) {
+    button.addEventListener("click", () => {
+      const siteKey = resolvePreviewSiteAlias(button.dataset.previewSite);
+      if (!siteKey) {
+        return;
+      }
+
+      setPreviewSiteButtonState(buttons, siteKey);
+      onSelect(siteKey);
+    });
+  }
+}
+
+function setPreviewSiteButtonState(
+  buttons: NodeListOf<HTMLButtonElement>,
+  activeSiteKey: SiteKey
+): void {
+  for (const button of buttons) {
+    const siteKey = resolvePreviewSiteAlias(button.dataset.previewSite);
+    const active = siteKey === activeSiteKey;
+    button.classList.toggle("preview-site-btn-active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+  }
 }
 
 export function getPreviewTabUrl(siteKey: SiteKey): string {
