@@ -996,6 +996,10 @@ export function GalleryPage() {
     usesServerListing,
   ]);
 
+  const handleLoadMoreMedia = useCallback(() => {
+    void loadMoreMedia();
+  }, [loadMoreMedia]);
+
   const handleWindowedEntriesChange = useCallback((windowedEntries: BrowserEntry[]) => {
     const requests = dedupeThumbnailRequests(
       windowedEntries.flatMap((entry): GalleryThumbnailRequest[] => {
@@ -1240,7 +1244,7 @@ export function GalleryPage() {
             mediaPage={usesServerListing ? listingPage : mediaPage}
             onActivateEntry={handleActivateEntry}
             onDelete={deleteSelectedMedia}
-            onLoadMoreMedia={() => void loadMoreMedia()}
+            onLoadMoreMedia={handleLoadMoreMedia}
             onNext={() => selectAdjacentMedia(1)}
             onOpenViewer={() => {
               if (selected && !deletedEntryIds.has(selected.id)) {
@@ -1448,77 +1452,36 @@ function GalleryBrowsePane({
   thumbnailSize,
 }: GalleryBrowsePaneProps) {
   const [scrollContainer, setScrollContainer] = useState<HTMLElement | null>(null);
-  const loadMoreTriggerRef = useRef<HTMLDivElement | null>(null);
-  const loadMoreTriggerVisibleRef = useRef(false);
-  const previousEntryCountRef = useRef(entries.length);
+  const [loadMoreTrigger, setLoadMoreTrigger] = useState<HTMLDivElement | null>(null);
+  const loadMoreTriggerIntersectingRef = useRef(false);
+  const loadingMoreMediaRef = useRef(loadingMoreMedia);
+  loadingMoreMediaRef.current = loadingMoreMedia;
 
   useEffect(() => {
-    loadMoreTriggerVisibleRef.current = false;
-    previousEntryCountRef.current = entries.length;
+    loadMoreTriggerIntersectingRef.current = false;
   }, [paginationResetKey]);
 
   useEffect(() => {
-    if (entries.length < previousEntryCountRef.current) {
-      loadMoreTriggerVisibleRef.current = false;
-    }
-
-    previousEntryCountRef.current = entries.length;
-  }, [entries.length]);
-
-  useEffect(() => {
-    if (!mediaPage?.hasMore || loadingMoreMedia || !scrollContainer) {
+    if (!mediaPage?.hasMore || !scrollContainer || !loadMoreTrigger) {
       return;
     }
 
-    let frameId: number | null = null;
+    const observer = new IntersectionObserver(
+      (observerEntries) => {
+        const isIntersecting = observerEntries.some((entry) => entry.isIntersecting);
+        const wasIntersecting = loadMoreTriggerIntersectingRef.current;
+        loadMoreTriggerIntersectingRef.current = isIntersecting;
 
-    const checkTriggerVisibility = () => {
-      frameId = null;
-      const trigger = loadMoreTriggerRef.current;
-      if (!trigger) {
-        loadMoreTriggerVisibleRef.current = false;
-        return;
-      }
+        if (isIntersecting && !wasIntersecting && !loadingMoreMediaRef.current) {
+          onLoadMoreMedia();
+        }
+      },
+      { root: scrollContainer, rootMargin: "0px", threshold: 0 },
+    );
 
-      const triggerRect = trigger.getBoundingClientRect();
-      const containerRect = scrollContainer.getBoundingClientRect();
-      const isVisible =
-        triggerRect.bottom > containerRect.top &&
-        triggerRect.top < containerRect.bottom &&
-        triggerRect.right > containerRect.left &&
-        triggerRect.left < containerRect.right;
-      const wasVisible = loadMoreTriggerVisibleRef.current;
-      loadMoreTriggerVisibleRef.current = isVisible;
-
-      if (isVisible && !wasVisible) {
-        onLoadMoreMedia();
-      }
-    };
-
-    const scheduleVisibilityCheck = () => {
-      if (frameId !== null) {
-        return;
-      }
-
-      frameId = window.requestAnimationFrame(checkTriggerVisibility);
-    };
-
-    scheduleVisibilityCheck();
-
-    const resizeObserver = new ResizeObserver(scheduleVisibilityCheck);
-    resizeObserver.observe(scrollContainer);
-    scrollContainer.addEventListener("scroll", scheduleVisibilityCheck, { passive: true });
-    window.addEventListener("resize", scheduleVisibilityCheck);
-
-    return () => {
-      if (frameId !== null) {
-        window.cancelAnimationFrame(frameId);
-      }
-      resizeObserver.disconnect();
-      scrollContainer.removeEventListener("scroll", scheduleVisibilityCheck);
-      window.removeEventListener("resize", scheduleVisibilityCheck);
-    };
-  }, [loadingMoreMedia, mediaPage?.hasMore, onLoadMoreMedia, scrollContainer]);
+    observer.observe(loadMoreTrigger);
+    return () => observer.disconnect();
+  }, [loadMoreTrigger, mediaPage?.hasMore, onLoadMoreMedia, scrollContainer]);
 
   return (
     <div
@@ -1538,7 +1501,7 @@ function GalleryBrowsePane({
           footer={
             mediaPage?.hasMore ? (
               <div className="mt-4 flex justify-center border-t border-border pt-3">
-                <div ref={loadMoreTriggerRef} className="inline-flex">
+                <div ref={setLoadMoreTrigger} className="inline-flex">
                   <Button
                     disabled={loadingMoreMedia}
                     onClick={onLoadMoreMedia}
