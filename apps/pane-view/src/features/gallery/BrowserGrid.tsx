@@ -115,7 +115,7 @@ export function BrowserGrid({
   return (
     <section
       ref={mainRef}
-      className="min-w-0 flex-1 overflow-auto px-5 pb-28 pt-5"
+      className="min-h-0 min-w-0 flex-1 overflow-auto px-5 pb-28 pt-5"
       aria-label="Archive browser"
     >
       {entries.length === 0 ? (
