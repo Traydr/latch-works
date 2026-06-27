@@ -1451,7 +1451,6 @@ function GalleryBrowsePane({
   paginationResetKey,
   thumbnailSize,
 }: GalleryBrowsePaneProps) {
-  const [scrollContainer, setScrollContainer] = useState<HTMLElement | null>(null);
   const [loadMoreTrigger, setLoadMoreTrigger] = useState<HTMLDivElement | null>(null);
   const loadMoreTriggerIntersectingRef = useRef(false);
   const loadingMoreMediaRef = useRef(loadingMoreMedia);
@@ -1462,7 +1461,7 @@ function GalleryBrowsePane({
   }, [paginationResetKey]);
 
   useEffect(() => {
-    if (!mediaPage?.hasMore || !scrollContainer || !loadMoreTrigger) {
+    if (!mediaPage?.hasMore || !loadMoreTrigger) {
       return;
     }
 
@@ -1476,12 +1475,12 @@ function GalleryBrowsePane({
           onLoadMoreMedia();
         }
       },
-      { root: scrollContainer, rootMargin: "0px", threshold: 0 },
+      { root: null, rootMargin: "0px", threshold: 0 },
     );
 
     observer.observe(loadMoreTrigger);
     return () => observer.disconnect();
-  }, [loadMoreTrigger, mediaPage?.hasMore, onLoadMoreMedia, scrollContainer]);
+  }, [loadMoreTrigger, mediaPage?.hasMore, onLoadMoreMedia]);
 
   return (
     <div
@@ -1517,7 +1516,6 @@ function GalleryBrowsePane({
           }
           focusedIndex={focusedEntryIndex}
           onActivateEntry={onActivateEntry}
-          onScrollContainerChange={setScrollContainer}
           onScrolledToFocus={onScrolledToFocus}
           onSelectEntry={onSelectEntry}
           onWindowedEntriesChange={onWindowedEntriesChange}
