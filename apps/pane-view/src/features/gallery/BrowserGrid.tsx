@@ -1,6 +1,6 @@
 import type { BrowserEntry } from "@latch-works/media-domain";
 import { Archive } from "lucide-react";
-import { type RefObject, useEffect } from "react";
+import { type ReactNode, type RefObject, useEffect } from "react";
 import { BrowserEntryCard } from "./BrowserEntryCard";
 import { useVirtualGridMetrics } from "./useVirtualGridMetrics";
 
@@ -11,8 +11,8 @@ interface BrowserGridProps {
   deletedEntryIds: ReadonlySet<string>;
   deletingEntryIds: ReadonlySet<string>;
   entries: BrowserEntry[];
+  footer?: ReactNode;
   focusedIndex: number;
-  loadMoreSentinelRef?: RefObject<HTMLDivElement | null>;
   onActivateEntry: (entry: BrowserEntry) => void;
   onScrollContainerChange?: (element: HTMLElement | null) => void;
   onSelectEntry: (entry: BrowserEntry) => void;
@@ -31,8 +31,8 @@ export function BrowserGrid({
   deletedEntryIds,
   deletingEntryIds,
   entries,
+  footer,
   focusedIndex,
-  loadMoreSentinelRef,
   onActivateEntry,
   onScrollContainerChange,
   onSelectEntry,
@@ -170,7 +170,7 @@ export function BrowserGrid({
           })}
         </div>
       )}
-      <div ref={loadMoreSentinelRef} aria-hidden className="h-px w-px" />
+      {footer}
     </section>
   );
 }

@@ -1257,6 +1257,7 @@ export function GalleryPage() {
             selected={selected}
             selectedId={viewerLockedMediaId ?? selectedId}
             showDetailPanel={showDetailPanel}
+            paginationResetKey={usesServerListing ? listingBrowseKey : browseKey}
             thumbnailSize={settings.thumbnailSize}
           />
         ) : (
@@ -1414,6 +1415,7 @@ interface GalleryBrowsePaneProps {
   selected: MediaItem | null;
   selectedId: string | null;
   showDetailPanel: boolean;
+  paginationResetKey: string;
   thumbnailSize: number;
 }
 
@@ -1442,16 +1444,22 @@ function GalleryBrowsePane({
   selected,
   selectedId,
   showDetailPanel,
+  paginationResetKey,
   thumbnailSize,
 }: GalleryBrowsePaneProps) {
   const [scrollContainer, setScrollContainer] = useState<HTMLElement | null>(null);
-  const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
-  const loadMoreSentinelIntersectingRef = useRef(false);
+  const loadMoreTriggerRef = useRef<HTMLDivElement | null>(null);
+  const loadMoreTriggerIntersectingRef = useRef(false);
   const previousEntryCountRef = useRef(entries.length);
 
   useEffect(() => {
+    loadMoreTriggerIntersectingRef.current = false;
+    previousEntryCountRef.current = entries.length;
+  }, [paginationResetKey]);
+
+  useEffect(() => {
     if (entries.length < previousEntryCountRef.current) {
-      loadMoreSentinelIntersectingRef.current = false;
+      loadMoreTriggerIntersectingRef.current = false;
     }
 
     previousEntryCountRef.current = entries.length;
@@ -1462,25 +1470,25 @@ function GalleryBrowsePane({
       return;
     }
 
-    const sentinel = loadMoreSentinelRef.current;
-    if (!sentinel) {
+    const trigger = loadMoreTriggerRef.current;
+    if (!trigger) {
       return;
     }
 
     const observer = new IntersectionObserver(
       (observerEntries) => {
         const isIntersecting = observerEntries.some((entry) => entry.isIntersecting);
-        const wasIntersecting = loadMoreSentinelIntersectingRef.current;
-        loadMoreSentinelIntersectingRef.current = isIntersecting;
+        const wasIntersecting = loadMoreTriggerIntersectingRef.current;
+        loadMoreTriggerIntersectingRef.current = isIntersecting;
 
         if (isIntersecting && !wasIntersecting) {
           onLoadMoreMedia();
         }
       },
-      { root: scrollContainer, rootMargin: "320px 0px 320px 0px" },
+      { root: scrollContainer, rootMargin: "0px", threshold: 0.01 },
     );
 
-    observer.observe(sentinel);
+    observer.observe(trigger);
     return () => observer.disconnect();
   }, [loadingMoreMedia, mediaPage?.hasMore, onLoadMoreMedia, scrollContainer]);
 
@@ -1499,8 +1507,24 @@ function GalleryBrowsePane({
           deletedEntryIds={deletedEntryIds}
           deletingEntryIds={deletingEntryIds}
           entries={entries}
+          footer={
+            mediaPage?.hasMore ? (
+              <div className="mt-4 flex justify-center border-t border-border pt-3">
+                <div ref={loadMoreTriggerRef} className="inline-flex">
+                  <Button
+                    disabled={loadingMoreMedia}
+                    onClick={onLoadMoreMedia}
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    {loadingMoreMedia ? "Loading more…" : "Load more"}
+                  </Button>
+                </div>
+              </div>
+            ) : null
+          }
           focusedIndex={focusedEntryIndex}
-          loadMoreSentinelRef={loadMoreSentinelRef}
           onActivateEntry={onActivateEntry}
           onScrollContainerChange={setScrollContainer}
           onScrolledToFocus={onScrolledToFocus}
@@ -1511,20 +1535,6 @@ function GalleryBrowsePane({
           thumbnailDeliveryTokens={resolvedThumbnailTokens}
           thumbnailUrls={resolvedThumbnailUrls}
         />
-
-        {mediaPage?.hasMore ? (
-          <div className="flex shrink-0 justify-center border-t border-border px-5 pb-24 pt-3 sm:pb-20">
-            <Button
-              disabled={loadingMoreMedia}
-              onClick={onLoadMoreMedia}
-              size="sm"
-              type="button"
-              variant="outline"
-            >
-              {loadingMoreMedia ? "Loading more…" : "Load more"}
-            </Button>
-          </div>
-        ) : null}
       </div>
 
       {showDetailPanel ? (
