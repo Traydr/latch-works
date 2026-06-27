@@ -1031,7 +1031,9 @@ export function GalleryPage() {
     let debounceTimeoutId: number | undefined;
     let retryTimeoutId: number | undefined;
 
-    const applyResolvedState = (resolved: Awaited<ReturnType<typeof resolveGalleryThumbnailsBatch>>) => {
+    const applyResolvedState = (
+      resolved: Awaited<ReturnType<typeof resolveGalleryThumbnailsBatch>>,
+    ) => {
       setResolvedThumbnailUrls(resolved.urls);
       setResolvedThumbnailTokens(resolved.deliveryTokens);
     };
@@ -1444,6 +1446,16 @@ function GalleryBrowsePane({
 }: GalleryBrowsePaneProps) {
   const [scrollContainer, setScrollContainer] = useState<HTMLElement | null>(null);
   const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
+  const loadMoreSentinelIntersectingRef = useRef(false);
+  const previousEntryCountRef = useRef(entries.length);
+
+  useEffect(() => {
+    if (entries.length < previousEntryCountRef.current) {
+      loadMoreSentinelIntersectingRef.current = false;
+    }
+
+    previousEntryCountRef.current = entries.length;
+  }, [entries.length]);
 
   useEffect(() => {
     if (!mediaPage?.hasMore || loadingMoreMedia || !scrollContainer) {
@@ -1457,7 +1469,11 @@ function GalleryBrowsePane({
 
     const observer = new IntersectionObserver(
       (observerEntries) => {
-        if (observerEntries.some((entry) => entry.isIntersecting)) {
+        const isIntersecting = observerEntries.some((entry) => entry.isIntersecting);
+        const wasIntersecting = loadMoreSentinelIntersectingRef.current;
+        loadMoreSentinelIntersectingRef.current = isIntersecting;
+
+        if (isIntersecting && !wasIntersecting) {
           onLoadMoreMedia();
         }
       },
