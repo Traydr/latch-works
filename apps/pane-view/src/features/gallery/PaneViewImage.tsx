@@ -1,9 +1,10 @@
-import { Image } from "@unpic/react";
-import { GALLERY_THUMBNAIL_SIZE } from "@/features/gallery/gallery-thumbnail-size";
+import { Image } from "@unpic/react/base";
 import {
   buildBunnyLwImageSrc,
+  buildBunnyLwImageTransformUrl,
   readClientImageDeliveryMode,
 } from "@/env/image-delivery-client";
+import { GALLERY_THUMBNAIL_SIZE } from "@/features/gallery/gallery-thumbnail-size";
 import { cn } from "@/lib/utils";
 import { useResolvedMediaUrl } from "./useResolvedMediaUrl";
 
@@ -26,7 +27,10 @@ type PaneViewImageProps = {
 
 function resolveThumbnailPixelSize(width?: number): number {
   if (width && width > 0) {
-    return Math.max(1, Math.round(width * (typeof window !== "undefined" ? window.devicePixelRatio : 1)));
+    return Math.max(
+      1,
+      Math.round(width * (typeof window !== "undefined" ? window.devicePixelRatio : 1)),
+    );
   }
 
   return GALLERY_THUMBNAIL_SIZE;
@@ -55,8 +59,7 @@ export function PaneViewImage({
         ? (readyUrl ?? previewReadyUrl)
         : undefined;
 
-  const resolvedReadyDeliveryToken =
-    variant === "thumbnail" ? thumbnailDeliveryToken : undefined;
+  const resolvedReadyDeliveryToken = variant === "thumbnail" ? thumbnailDeliveryToken : undefined;
 
   const { deliveryToken, failed, loading, resolvedUrl } = useResolvedMediaUrl({
     deliveryToken: resolvedReadyDeliveryToken,
@@ -93,7 +96,6 @@ export function PaneViewImage({
       <Image
         alt={alt}
         background="auto"
-        cdn="bunny"
         className={className}
         decoding="async"
         fetchpriority={priority ? "high" : undefined}
@@ -101,6 +103,7 @@ export function PaneViewImage({
         layout={unpicLayout}
         loading={priority ? "eager" : "lazy"}
         src={buildBunnyLwImageSrc(deliveryToken)}
+        transformer={buildBunnyLwImageTransformUrl}
         width={imageWidth}
       />
     );
