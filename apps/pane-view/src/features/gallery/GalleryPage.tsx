@@ -1449,17 +1449,17 @@ function GalleryBrowsePane({
 }: GalleryBrowsePaneProps) {
   const [scrollContainer, setScrollContainer] = useState<HTMLElement | null>(null);
   const loadMoreTriggerRef = useRef<HTMLDivElement | null>(null);
-  const loadMoreTriggerIntersectingRef = useRef(false);
+  const loadMoreTriggerVisibleRef = useRef(false);
   const previousEntryCountRef = useRef(entries.length);
 
   useEffect(() => {
-    loadMoreTriggerIntersectingRef.current = false;
+    loadMoreTriggerVisibleRef.current = false;
     previousEntryCountRef.current = entries.length;
   }, [paginationResetKey]);
 
   useEffect(() => {
     if (entries.length < previousEntryCountRef.current) {
-      loadMoreTriggerIntersectingRef.current = false;
+      loadMoreTriggerVisibleRef.current = false;
     }
 
     previousEntryCountRef.current = entries.length;
@@ -1470,26 +1470,54 @@ function GalleryBrowsePane({
       return;
     }
 
-    const trigger = loadMoreTriggerRef.current;
-    if (!trigger) {
-      return;
-    }
+    let frameId: number | null = null;
 
-    const observer = new IntersectionObserver(
-      (observerEntries) => {
-        const isIntersecting = observerEntries.some((entry) => entry.isIntersecting);
-        const wasIntersecting = loadMoreTriggerIntersectingRef.current;
-        loadMoreTriggerIntersectingRef.current = isIntersecting;
+    const checkTriggerVisibility = () => {
+      frameId = null;
+      const trigger = loadMoreTriggerRef.current;
+      if (!trigger) {
+        loadMoreTriggerVisibleRef.current = false;
+        return;
+      }
 
-        if (isIntersecting && !wasIntersecting) {
-          onLoadMoreMedia();
-        }
-      },
-      { root: scrollContainer, rootMargin: "0px", threshold: 0.01 },
-    );
+      const triggerRect = trigger.getBoundingClientRect();
+      const containerRect = scrollContainer.getBoundingClientRect();
+      const isVisible =
+        triggerRect.bottom > containerRect.top &&
+        triggerRect.top < containerRect.bottom &&
+        triggerRect.right > containerRect.left &&
+        triggerRect.left < containerRect.right;
+      const wasVisible = loadMoreTriggerVisibleRef.current;
+      loadMoreTriggerVisibleRef.current = isVisible;
 
-    observer.observe(trigger);
-    return () => observer.disconnect();
+      if (isVisible && !wasVisible) {
+        onLoadMoreMedia();
+      }
+    };
+
+    const scheduleVisibilityCheck = () => {
+      if (frameId !== null) {
+        return;
+      }
+
+      frameId = window.requestAnimationFrame(checkTriggerVisibility);
+    };
+
+    scheduleVisibilityCheck();
+
+    const resizeObserver = new ResizeObserver(scheduleVisibilityCheck);
+    resizeObserver.observe(scrollContainer);
+    scrollContainer.addEventListener("scroll", scheduleVisibilityCheck, { passive: true });
+    window.addEventListener("resize", scheduleVisibilityCheck);
+
+    return () => {
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+      }
+      resizeObserver.disconnect();
+      scrollContainer.removeEventListener("scroll", scheduleVisibilityCheck);
+      window.removeEventListener("resize", scheduleVisibilityCheck);
+    };
   }, [loadingMoreMedia, mediaPage?.hasMore, onLoadMoreMedia, scrollContainer]);
 
   return (
