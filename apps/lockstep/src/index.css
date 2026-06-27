@@ -95,3 +95,57 @@ p {
 .prism-stat {
   @apply rounded-2xl border border-zinc-300/70 bg-white/75 px-4 py-3 dark:border-zinc-700/70 dark:bg-zinc-900/70;
 }
+
+/* ---- Lockstep compact redesign tokens (design-trials scaffold) ---- */
+.ls-surface {
+  @apply rounded-lg border border-zinc-200 bg-white/95 dark:border-zinc-800 dark:bg-zinc-900/70;
+}
+.ls-surface-2 {
+  @apply rounded-lg border border-zinc-200/80 bg-zinc-50 dark:border-zinc-800/80 dark:bg-zinc-950/40;
+}
+.ls-divider {
+  @apply border-zinc-200 dark:border-zinc-800;
+}
+.ls-btn {
+  @apply inline-flex items-center justify-center gap-1.5 rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 transition hover:border-zinc-400 hover:bg-zinc-50 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-200 dark:hover:border-zinc-600 dark:hover:bg-zinc-800;
+}
+.ls-btn-primary {
+  @apply border-violet-400/70 bg-violet-500/15 text-violet-700 hover:bg-violet-500/20 dark:border-violet-500/50 dark:bg-violet-500/20 dark:text-violet-200 dark:hover:bg-violet-500/25;
+}
+.ls-btn-danger {
+  @apply border-red-400/60 bg-red-500/10 text-red-700 hover:bg-red-500/15 dark:border-red-500/40 dark:bg-red-500/15 dark:text-red-200 dark:hover:bg-red-500/20;
+}
+.ls-btn-ghost {
+  @apply border-transparent bg-transparent text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800/60 dark:hover:text-zinc-200;
+}
+.ls-input {
+  @apply w-full rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 text-sm text-zinc-800 outline-none transition placeholder:text-zinc-400 focus:border-violet-400 focus:ring-2 focus:ring-violet-300/30 dark:border-zinc-700 dark:bg-zinc-900/60 dark:text-zinc-100 dark:placeholder:text-zinc-600 dark:focus:border-violet-400 dark:focus:ring-violet-500/20;
+}
+.ls-label {
+  @apply font-mono text-[10px] font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-500;
+}
+.ls-mono {
+  font-family: "Geist Mono Variable", ui-monospace, monospace;
+}
+
+@keyframes ls-indeterminate {
+  0% {
+    left: -33%;
+  }
+  100% {
+    left: 100%;
+  }
+}
+
+@keyframes ls-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+.ls-pulse {
+  animation: ls-pulse 1.4s ease-in-out infinite;
+}
