@@ -19,6 +19,7 @@ import {
   setPageState,
   setProgress,
   syncActions,
+  updateSaveBehavior,
   type LogTone,
   type PopupElements
 } from "../popup/dom";
@@ -43,7 +44,6 @@ import {
   buildFolderPreview,
   getFolderSegments
 } from "./path";
-import { updateSaveBehavior } from "./layouts";
 import {
   PENDING_DOWNLOAD_SESSION_KEY,
   START_DOWNLOAD_MESSAGE,

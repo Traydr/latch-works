@@ -1,3 +1,5 @@
+import type { SiteKey } from "../shared/sites";
+import { getSaveBehavior, type SaveBehavior } from "../shared/save-behavior";
 import type { PopupStatus } from "./status";
 import { getStatusLabel } from "./status";
 
@@ -170,6 +172,53 @@ export function flashDownloadComplete(elements: PopupElements): void {
   window.setTimeout(() => {
     elements.downloadButton.classList.remove("download-complete-glow");
   }, 2000);
+}
+
+export function updateSaveBehavior(siteKey: SiteKey | null): void {
+  const behavior = getSaveBehavior(siteKey);
+  const block = document.getElementById("saveBlock-mini");
+  const pattern = document.getElementById("savePattern-mini");
+  const summary = document.getElementById("saveSummary-mini");
+  const path = document.getElementById("savePath-mini");
+  const file = document.getElementById("saveFile-mini");
+
+  if (!behavior) {
+    if (block) block.hidden = true;
+    if (pattern) {
+      pattern.textContent = "";
+      pattern.removeAttribute("data-pattern");
+      pattern.hidden = true;
+    }
+    if (summary) summary.textContent = "";
+    if (path) path.textContent = "";
+    if (file) file.hidden = true;
+    return;
+  }
+
+  if (block) block.hidden = false;
+  if (pattern) {
+    pattern.textContent = behavior.tag;
+    pattern.dataset.pattern = behavior.pattern;
+    pattern.hidden = false;
+  }
+  if (summary) summary.textContent = behavior.summary;
+  if (path) renderPathInline(path, behavior);
+  if (file) {
+    file.textContent = behavior.filePattern;
+    file.hidden = false;
+  }
+}
+
+function renderPathInline(el: HTMLElement, behavior: SaveBehavior): void {
+  const segments = behavior.pathTemplate.split("/").filter(Boolean);
+  let text = segments.join(" / ");
+
+  if (behavior.pattern === "direct-file") {
+    const fileName = behavior.filePattern.split("(")[0].trim();
+    text += ` / ${fileName}`;
+  }
+
+  el.textContent = text;
 }
 
 function requireElement<T extends HTMLElement>(
