@@ -1,5 +1,5 @@
 ---
-name: design-variation-rounds
+name: design-trials
 description: Generate multiple unique UI layout variations behind a temporary switcher, iterate through feedback rounds where each round produces entirely new designs, then harvest the winner and strip all scaffolding. Use when the user wants to redesign a UI through comparison and iteration rather than a single proposal, mentions "variations", "layout options", "redesign", or wants to compare multiple approaches side by side.
 ---
 
