@@ -1,8 +1,9 @@
-import { ActionDock } from "../renderer/components/ActionDock";
-import { AppHeader } from "../renderer/components/AppHeader";
-import { AppShell } from "../renderer/components/AppShell";
-import { PlanResultsView } from "../renderer/views/PlanResultsView";
-import { RunProgressView } from "../renderer/views/RunProgressView";
+import { AppLayout } from "../renderer/components/AppLayout";
+import type {
+  LockstepController,
+  RunProgressState,
+  Screen,
+} from "../renderer/hooks/useLockstepController";
 import type { LockstepPlan, LockstepPlanItem, LockstepSettings } from "../shared/types";
 
 export const showcaseSettings: LockstepSettings = {
@@ -11,6 +12,13 @@ export const showcaseSettings: LockstepSettings = {
     {
       apiUrl: "https://archive.example.com",
       id: "showcase-profile",
+      lastRun: {
+        action: "push",
+        completedAt: "2026-06-27T00:00:00.000Z",
+        failed: 0,
+        pushed: 18,
+        status: "completed",
+      },
       name: "Main archive",
       sourceRoot: "/Volumes/Media/archive",
       tokenConfigured: true,
@@ -47,25 +55,6 @@ function showcasePlanItems(): LockstepPlanItem[] {
   ];
 }
 
-const noop = () => undefined;
-
-export function ShowcasePlanScreen() {
-  return (
-    <AppShell
-      header={<AppHeader onAddProfile={noop} onProfileChange={noop} settings={showcaseSettings} />}
-    >
-      <PlanResultsView
-        filter=""
-        items={showcasePlanItems()}
-        onBack={noop}
-        onFilterChange={noop}
-        plan={showcasePlan}
-      />
-      <ActionDock disabled onDoctor={noop} onPlan={noop} onPrune={noop} onPush={noop} />
-    </AppShell>
-  );
-}
-
 const pushLogs = [
   "Creating sync run...",
   "Pushing 8 upload/update change(s).",
@@ -76,20 +65,89 @@ const pushLogs = [
   "Hashing sfw/stories/author-long_title.pdf (847 files)",
 ];
 
+const idleProgress: RunProgressState = {
+  action: "",
+  bytesHashed: 0,
+  currentAction: null,
+  currentPath: null,
+  endedAt: null,
+  failed: 0,
+  fileSize: null,
+  itemCurrent: 0,
+  itemTotal: 0,
+  phase: "idle",
+  pushed: 0,
+  scanFilesFound: 0,
+  scanPath: null,
+  scanSkipped: 0,
+  scanStage: null,
+  startedAt: null,
+  summaryMessage: null,
+};
+
+function pushProgress(): RunProgressState {
+  return {
+    ...idleProgress,
+    action: "push",
+    bytesHashed: 684_000_000,
+    currentAction: "update",
+    currentPath: "sfw/photos/sample-03.jpg",
+    itemCurrent: 4,
+    itemTotal: 8,
+    phase: "items",
+    pushed: 3,
+    scanFilesFound: 1866,
+    scanSkipped: 3,
+    startedAt: Date.now() - 18_000,
+  };
+}
+
+const noop = () => undefined;
+const noopAsync = async () => undefined;
+
+function createController(screen: Screen): LockstepController {
+  const running = screen === "run";
+  const runProgress = running ? pushProgress() : idleProgress;
+
+  return {
+    activeProfile: showcaseSettings.profiles[0] ?? null,
+    doctorResult: null,
+    error: null,
+    filter: "",
+    filteredItems: showcasePlan.items.filter((item) => item.action !== "keep"),
+    handleCancel: noopAsync,
+    handleCreateProfile: noopAsync,
+    handleDoctor: noopAsync,
+    handlePickFolder: noopAsync,
+    handlePlan: noopAsync,
+    handleProfileChange: noopAsync,
+    handlePrune: noopAsync,
+    handlePush: noopAsync,
+    logs: running ? pushLogs : [],
+    plan: showcasePlan,
+    profileForm: {
+      apiUrl: "http://localhost:3000",
+      name: "",
+      sourceRoot: "",
+      token: "",
+    },
+    runLabel: running ? "[4/8] update sfw/photos/sample-03.jpg" : "",
+    runProgress,
+    running,
+    screen,
+    sessionToken: "",
+    setFilter: noop,
+    setProfileForm: noop,
+    setScreen: noop,
+    setSessionToken: noop,
+    settings: showcaseSettings,
+  };
+}
+
+export function ShowcasePlanScreen() {
+  return <AppLayout ctrl={createController("plan")} />;
+}
+
 export function ShowcasePushScreen() {
-  return (
-    <AppShell
-      header={<AppHeader onAddProfile={noop} onProfileChange={noop} settings={showcaseSettings} />}
-    >
-      <RunProgressView
-        doctorResult={null}
-        logs={pushLogs}
-        onBack={noop}
-        onCancel={noop}
-        running
-        runLabel="[4/8] update sfw/photos/sample-03.jpg"
-      />
-      <ActionDock disabled onDoctor={noop} onPlan={noop} onPrune={noop} onPush={noop} />
-    </AppShell>
-  );
+  return <AppLayout ctrl={createController("run")} />;
 }
