@@ -87,26 +87,6 @@ export function ActionChip({ action, className = "" }: { action: string; classNa
   );
 }
 
-export function TokenDot({ ok, label }: { ok: boolean; label?: string }) {
-  return (
-    <span className="inline-flex items-center gap-1.5">
-      <span
-        className={`size-1.5 rounded-full ${ok ? "bg-emerald-400" : "bg-amber-400"}`}
-        aria-hidden
-      />
-      {label ? <span className="sr-only">{label}</span> : null}
-    </span>
-  );
-}
-
-export function Kbd({ children }: { children: ReactNode }) {
-  return (
-    <kbd className="rounded border border-zinc-600/70 bg-zinc-800/80 px-1 py-px font-mono text-[10px] text-zinc-400">
-      {children}
-    </kbd>
-  );
-}
-
 export function ProgressBar({
   percent,
   indeterminate = false,
@@ -188,7 +168,6 @@ export function PhaseSteps({
       {labels.map((label, index) => {
         const isDone = currentIndex > index || phase === "done";
         const isCurrent = currentIndex === index && phase !== "done" && phase !== "idle";
-        const isUpcoming = currentIndex < index;
         return (
           <div key={label} className="flex flex-1 items-center gap-1.5">
             <div className="flex items-center gap-1.5">
@@ -217,7 +196,6 @@ export function PhaseSteps({
                 aria-hidden
               />
             ) : null}
-            {isUpcoming ? null : null}
           </div>
         );
       })}
@@ -262,11 +240,6 @@ export function actionTone(action: string): string {
   return ACTION_COLORS[action] ?? "text-zinc-400";
 }
 
-/**
- * Single fixed-height line showing the file currently being synced.
- * Strictly stable: fixed height, fixed-width action slot, truncated path,
- * non-shrinking counter. Long file paths never reflow the layout.
- */
 export function SyncLine({
   action,
   path,
@@ -302,11 +275,6 @@ export function SyncLine({
   );
 }
 
-/**
- * Progress bar whose track is ALWAYS rendered so the vertical slot is
- * reserved. Pass percent=null and indeterminate=false for an empty idle
- * track that still holds its space.
- */
 export function ReservedBar({
   percent,
   indeterminate = false,

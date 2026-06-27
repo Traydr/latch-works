@@ -1,6 +1,5 @@
 import {
   ArrowUpCircle,
-  ChevronDown,
   CircleCheck,
   Footprints,
   ListChecks,
@@ -9,14 +8,14 @@ import {
   Stethoscope,
   Trash2,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import { AlertBanner } from "../components/AlertBanner";
-import { DoctorCheckList } from "../components/DoctorCheckList";
-import { ProfileSelect } from "../components/ProfileSelect";
 import type { LockstepController } from "../hooks/useLockstepController";
 import { ProfileSetupView } from "../views/ProfileSetupView";
-import { PlanLegend, PlanList, profileFieldList, TokenInput } from "./pieces";
+import { AlertBanner } from "./AlertBanner";
+import { DoctorCheckList } from "./DoctorCheckList";
+import { ProfileSelect } from "./ProfileSelect";
+import { PlanLegend, PlanList, profileFieldList, TokenInput } from "./planPieces";
 import {
   formatBytes,
   formatDuration,
@@ -25,7 +24,7 @@ import {
   Stat,
   SyncLine,
   useNow,
-} from "./shared";
+} from "./syncPrimitives";
 
 const STAGES = [
   { label: "Profile", icon: CircleCheck },
@@ -35,16 +34,24 @@ const STAGES = [
   { label: "Prune", icon: Trash2 },
 ] as const;
 
-export function Layout3({ ctrl }: { ctrl: LockstepController }) {
+type Tab = "dashboard" | "plan" | "log";
+
+export function AppLayout({ ctrl }: { ctrl: LockstepController }) {
   const { screen, setScreen, settings, activeProfile, error } = ctrl;
-  const [tab, setTab] = useState<"dashboard" | "plan">("dashboard");
-  const [logOpen, setLogOpen] = useState(false);
+  const [tab, setTab] = useState<Tab>("dashboard");
   const showProfile = screen === "profile";
   const showWorkspace = !showProfile && !!activeProfile;
 
+  // Sync the plan tab when the controller transitions to the plan screen
+  // (happens after handlePlan completes or when the Review pipeline stage is clicked).
+  useEffect(() => {
+    if (screen === "plan") {
+      setTab("plan");
+    }
+  }, [screen]);
+
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-zinc-100 text-zinc-800 dark:bg-zinc-950 dark:text-zinc-100">
-      {/* Minimal top bar. */}
       <header className="flex shrink-0 items-center gap-2 border-b border-zinc-200 px-3 py-1.5 dark:border-zinc-800">
         <Footprints className="size-3.5 text-violet-500" aria-hidden />
         <span className="text-xs font-semibold tracking-tight">Lockstep</span>
@@ -57,7 +64,7 @@ export function Layout3({ ctrl }: { ctrl: LockstepController }) {
         ) : null}
         <button
           type="button"
-          className="ls-btn ls-btn-ghost h-6 px-1 ml-auto"
+          className="ls-btn ls-btn-ghost ml-auto h-6 px-1"
           onClick={() => setScreen("profile")}
           title="Add profile"
         >
@@ -85,11 +92,10 @@ export function Layout3({ ctrl }: { ctrl: LockstepController }) {
 
       {!showProfile && !activeProfile ? (
         <div className="flex flex-1 items-center justify-center p-4">
-          <Welcome3 onCreate={() => setScreen("profile")} />
+          <Welcome onCreate={() => setScreen("profile")} />
         </div>
       ) : null}
 
-      {/* Content region — top ~65%. */}
       {showWorkspace ? (
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="flex shrink-0 items-center gap-1 border-b border-zinc-200 px-3 py-1.5 dark:border-zinc-800">
@@ -104,6 +110,7 @@ export function Layout3({ ctrl }: { ctrl: LockstepController }) {
               disabled={!ctrl.plan}
               onClick={() => ctrl.plan && setTab("plan")}
             />
+            <TabBtn label="Log" active={tab === "log"} onClick={() => setTab("log")} />
             {ctrl.plan ? (
               <span className="ml-auto">
                 <PlanLegend counts={ctrl.plan.counts} />
@@ -169,14 +176,12 @@ export function Layout3({ ctrl }: { ctrl: LockstepController }) {
                 <PlanList ctrl={ctrl} className="min-h-0 flex-1" />
               </section>
             ) : null}
+            {tab === "log" ? <LogPanel ctrl={ctrl} /> : null}
           </div>
         </div>
       ) : null}
 
-      {/* Unified command dock — bottom ~35%. Pipeline + progress live together. */}
-      {showWorkspace ? (
-        <CommandDock3 ctrl={ctrl} logOpen={logOpen} onToggleLog={() => setLogOpen((c) => !c)} />
-      ) : null}
+      {showWorkspace ? <CommandDock ctrl={ctrl} /> : null}
     </div>
   );
 }
@@ -204,15 +209,36 @@ function TabBtn({
   );
 }
 
-function CommandDock3({
-  ctrl,
-  logOpen,
-  onToggleLog,
-}: {
-  ctrl: LockstepController;
-  logOpen: boolean;
-  onToggleLog: () => void;
-}) {
+function LogPanel({ ctrl }: { ctrl: LockstepController }) {
+  const { logs, running } = ctrl;
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (el && logs.length > 0) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [logs.length]);
+  return (
+    <section className="ls-surface mx-auto flex h-full max-w-2xl flex-col p-3">
+      <div className="mb-2 flex shrink-0 items-center justify-between">
+        <h2 className="text-sm font-semibold tracking-tight">Run log</h2>
+        <span className="ls-mono text-[10px] text-zinc-500">
+          {logs.length} {running ? "· live" : "lines"}
+        </span>
+      </div>
+      <div
+        ref={ref}
+        className="ls-surface-2 min-h-0 flex-1 overflow-auto p-3 ls-mono text-[11px] leading-relaxed whitespace-pre-wrap text-zinc-400"
+      >
+        {logs.length > 0
+          ? logs.join("\n")
+          : "No log output yet. Run Plan, Push, or Prune to see activity."}
+      </div>
+    </section>
+  );
+}
+
+function CommandDock({ ctrl }: { ctrl: LockstepController }) {
   const {
     activeProfile,
     plan,
@@ -282,8 +308,7 @@ function CommandDock3({
     runProgress.itemTotal > 0 ? `${runProgress.itemCurrent}/${runProgress.itemTotal}` : null;
 
   return (
-    <div className="flex h-52 shrink-0 flex-col border-t-2 border-violet-500/30 bg-zinc-50/95 dark:bg-zinc-900/80">
-      {/* Pipeline row — stages as large clickable buttons. */}
+    <div className="flex h-44 shrink-0 flex-col border-t-2 border-violet-500/30 bg-zinc-50/95 dark:bg-zinc-900/80">
       <div className="flex shrink-0 items-center gap-1 px-3 py-2">
         {STAGES.map((stage, index) => {
           const state = states[index];
@@ -306,17 +331,6 @@ function CommandDock3({
           );
         })}
         <div className="ml-auto flex items-center gap-2">
-          <button
-            type="button"
-            className="ls-btn ls-btn-ghost h-6 px-1.5"
-            onClick={onToggleLog}
-            title="Toggle log"
-          >
-            <ChevronDown
-              className={`size-3.5 transition ${logOpen ? "rotate-180" : ""}`}
-              aria-hidden
-            />
-          </button>
           {running ? (
             <button
               type="button"
@@ -337,7 +351,6 @@ function CommandDock3({
           </button>
         </div>
       </div>
-      {/* Progress + stats — reserved slots. */}
       <div className="flex shrink-0 items-center gap-2 px-3 pb-1">
         <ReservedBar
           percent={idle ? null : percent}
@@ -371,16 +384,11 @@ function CommandDock3({
           tone={runProgress.failed ? "text-red-400" : "text-zinc-400"}
         />
       </div>
-      {logOpen ? (
-        <div className="ls-surface-2 mx-3 mb-2 min-h-0 flex-1 overflow-auto p-2 ls-mono text-[10px] leading-relaxed whitespace-pre-wrap text-zinc-400">
-          {ctrl.logs.length > 0 ? ctrl.logs.slice(-60).join("\n") : "Waiting..."}
-        </div>
-      ) : null}
     </div>
   );
 }
 
-function Welcome3({ onCreate }: { onCreate: () => void }) {
+function Welcome({ onCreate }: { onCreate: () => void }) {
   return (
     <section className="ls-surface flex max-w-md flex-col items-start gap-3 p-4">
       <h2 className="text-sm font-semibold tracking-tight">Welcome to Lockstep</h2>

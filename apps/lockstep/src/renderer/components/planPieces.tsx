@@ -2,7 +2,7 @@ import { Search } from "lucide-react";
 
 import type { LockstepProfilePublic } from "../../shared/types";
 import type { LockstepController } from "../hooks/useLockstepController";
-import { ActionChip } from "./shared";
+import { ActionChip } from "./syncPrimitives";
 
 export interface Field {
   label: string;

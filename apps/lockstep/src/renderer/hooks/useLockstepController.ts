@@ -87,9 +87,6 @@ export interface LockstepController {
   sessionToken: string;
   setSessionToken: (value: string) => void;
   runProgress: RunProgressState;
-  startDemoRun: () => void;
-  stopDemoRun: () => void;
-  isDemoRun: boolean;
   handleCreateProfile: (event: React.FormEvent) => Promise<void>;
   handleDoctor: () => Promise<void>;
   handlePlan: () => Promise<void>;
@@ -98,7 +95,6 @@ export interface LockstepController {
   handleCancel: () => Promise<void>;
   handlePickFolder: () => Promise<void>;
   handleProfileChange: (profileId: string) => Promise<void>;
-  clearError: () => void;
 }
 
 export function useLockstepController(): LockstepController {
@@ -114,9 +110,7 @@ export function useLockstepController(): LockstepController {
   const [error, setError] = useState<string | null>(null);
   const [sessionToken, setSessionToken] = useState("");
   const [runProgress, setRunProgress] = useState<RunProgressState>(initialProgress);
-  const [isDemoRun, setIsDemoRun] = useState(false);
   const lastLoggedScanProgressRef = useRef<string | null>(null);
-  const demoTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
 
   const activeProfile = useMemo(() => {
     if (!settings?.activeProfileId) {
@@ -215,7 +209,6 @@ export function useLockstepController(): LockstepController {
 
       if (event.type === "complete") {
         setRunning(false);
-        setIsDemoRun(false);
         setRunLabel(event.summary.message ?? `${event.summary.action} ${event.summary.status}`);
         setRunProgress((prev) => ({
           ...prev,
@@ -236,22 +229,6 @@ export function useLockstepController(): LockstepController {
     const unsubscribe = window.lockstep.onRunEvent(applyRunEvent);
     return unsubscribe;
   }, [applyRunEvent]);
-
-  const stopDemoRun = useCallback(() => {
-    for (const timer of demoTimersRef.current) {
-      clearTimeout(timer);
-    }
-    demoTimersRef.current = [];
-    setIsDemoRun(false);
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      for (const timer of demoTimersRef.current) {
-        clearTimeout(timer);
-      }
-    };
-  }, []);
 
   const filteredItems = useMemo(() => {
     if (!plan) {
@@ -411,15 +388,8 @@ export function useLockstepController(): LockstepController {
   }, [activeProfile, ensureSessionToken, beginRun, refreshSettings]);
 
   const handleCancel = useCallback(async () => {
-    if (isDemoRun) {
-      stopDemoRun();
-      setRunning(false);
-      setRunLabel("Run cancelled.");
-      setRunProgress((prev) => ({ ...prev, phase: "cancelled", endedAt: Date.now() }));
-      return;
-    }
     await window.lockstep.cancelRun();
-  }, [isDemoRun, stopDemoRun]);
+  }, []);
 
   const handlePickFolder = useCallback(async () => {
     const result = await window.lockstep.pickSourceFolder();
@@ -441,108 +411,6 @@ export function useLockstepController(): LockstepController {
     setSettings(result.value);
   }, []);
 
-  const startDemoRun = useCallback(() => {
-    stopDemoRun();
-    setIsDemoRun(true);
-    setError(null);
-    setDoctorResult(null);
-    setRunning(true);
-    setScreen("run");
-    setLogs([]);
-    lastLoggedScanProgressRef.current = null;
-    setRunProgress({
-      ...initialProgress,
-      phase: "planning",
-      action: "push",
-      startedAt: Date.now(),
-    });
-
-    const push = (delay: number, event: LockstepRunEvent) => {
-      demoTimersRef.current.push(setTimeout(() => applyRunEvent(event), delay));
-    };
-
-    push(0, { type: "status", message: "Planning sync..." });
-    push(400, {
-      type: "scan-progress",
-      progress: { filesFound: 120, skipped: 3, stage: "scanning", path: "sfw/photos" },
-    });
-    push(800, {
-      type: "scan-progress",
-      progress: { filesFound: 847, skipped: 5, stage: "scanning", path: "sfw/comics" },
-    });
-    push(1300, {
-      type: "scan-progress",
-      progress: {
-        bytesHashed: 4_200_000,
-        fileSize: 8_100_000,
-        filesFound: 847,
-        skipped: 5,
-        stage: "hashing",
-        path: "sfw/stories/author-long_title.pdf",
-      },
-    });
-    push(1800, {
-      type: "scan-progress",
-      progress: {
-        bytesHashed: 8_100_000,
-        fileSize: 8_100_000,
-        filesFound: 847,
-        skipped: 5,
-        stage: "hashing",
-        path: "sfw/stories/author-long_title.pdf",
-      },
-    });
-    push(2200, { type: "status", message: "Pushing uploads and updates..." });
-
-    const total = 8;
-    const sample = [
-      { action: "upload", path: "sfw/photos/sample-14.jpg" },
-      { action: "upload", path: "sfw/photos/sample-15.jpg" },
-      { action: "upload", path: "sfw/comics/chapter-01/001.webp" },
-      { action: "update", path: "sfw/photos/sample-03.jpg" },
-      { action: "update", path: "sfw/stories/author-long_title.pdf" },
-      { action: "upload", path: "sfw/comics/chapter-01/002.webp" },
-      { action: "upload", path: "sfw/photos/sample-16.jpg" },
-      { action: "update", path: "sfw/photos/sample-07.jpg" },
-    ];
-    sample.forEach((item, index) => {
-      const current = index + 1;
-      const delay = 2600 + index * 650;
-      if (index === 5) {
-        push(delay, {
-          type: "item-failure",
-          action: item.action,
-          current,
-          total,
-          path: item.path,
-          error: "storage quota exceeded",
-        });
-      } else {
-        push(delay, {
-          type: "item-success",
-          action: item.action,
-          current,
-          total,
-          path: item.path,
-        });
-      }
-    });
-
-    push(2600 + sample.length * 650 + 300, {
-      type: "complete",
-      summary: {
-        action: "push",
-        completedAt: new Date().toISOString(),
-        failed: 1,
-        pushed: 7,
-        status: "completed",
-        message: "Push completed: 7 pushed, 1 failed.",
-      },
-    });
-  }, [applyRunEvent, stopDemoRun]);
-
-  const clearError = useCallback(() => setError(null), []);
-
   return {
     screen,
     setScreen,
@@ -562,9 +430,6 @@ export function useLockstepController(): LockstepController {
     sessionToken,
     setSessionToken,
     runProgress,
-    startDemoRun,
-    stopDemoRun,
-    isDemoRun,
     handleCreateProfile,
     handleDoctor,
     handlePlan,
@@ -573,6 +438,5 @@ export function useLockstepController(): LockstepController {
     handleCancel,
     handlePickFolder,
     handleProfileChange,
-    clearError,
   };
 }
