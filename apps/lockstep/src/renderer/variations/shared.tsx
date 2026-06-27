@@ -262,4 +262,70 @@ export function actionTone(action: string): string {
   return ACTION_COLORS[action] ?? "text-zinc-400";
 }
 
+/**
+ * Single fixed-height line showing the file currently being synced.
+ * Strictly stable: fixed height, fixed-width action slot, truncated path,
+ * non-shrinking counter. Long file paths never reflow the layout.
+ */
+export function SyncLine({
+  action,
+  path,
+  counter,
+  idle = false,
+  running = false,
+  idleText = "Idle — ready to sync",
+  className = "",
+}: {
+  action: string | null;
+  path: string | null;
+  counter?: string | null;
+  idle?: boolean;
+  running?: boolean;
+  idleText?: string;
+  className?: string;
+}) {
+  return (
+    <div className={`flex h-6 items-center gap-2 overflow-hidden ${className}`}>
+      <span className="inline-flex w-14 shrink-0 justify-center">
+        {action ? <ActionChip action={action} /> : null}
+      </span>
+      <span
+        className={`min-w-0 flex-1 truncate ls-mono text-xs ${idle ? "text-zinc-500" : "text-zinc-600 dark:text-zinc-300"}`}
+        title={path ?? undefined}
+      >
+        {idle ? idleText : (path ?? (running ? "Working..." : ""))}
+      </span>
+      {counter ? (
+        <span className="shrink-0 ls-mono text-[10px] tabular-nums text-zinc-500">{counter}</span>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Progress bar whose track is ALWAYS rendered so the vertical slot is
+ * reserved. Pass percent=null and indeterminate=false for an empty idle
+ * track that still holds its space.
+ */
+export function ReservedBar({
+  percent,
+  indeterminate = false,
+  tone = "violet",
+  className = "",
+}: {
+  percent: number | null;
+  indeterminate?: boolean;
+  tone?: "violet" | "emerald" | "red";
+  className?: string;
+}) {
+  return (
+    <ProgressBar
+      percent={percent}
+      indeterminate={indeterminate}
+      tone={tone}
+      className={className}
+    />
+  );
+}
+
 export { ACTION_BG, ACTION_COLORS };

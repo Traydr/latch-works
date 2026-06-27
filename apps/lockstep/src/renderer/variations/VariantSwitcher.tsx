@@ -5,11 +5,11 @@ import type { LockstepController } from "../hooks/useLockstepController";
 
 const STORAGE_KEY = "lockstep.designTrial.variant";
 const VARIANTS = [
-  { id: 1, name: "Sidebar Console" },
-  { id: 2, name: "Top Toolbar" },
-  { id: 3, name: "Three-Pane" },
-  { id: 4, name: "Pipeline" },
-  { id: 5, name: "Single Surface" },
+  { id: 1, name: "Compact Bar" },
+  { id: 2, name: "Split Rail" },
+  { id: 3, name: "Bottom Command" },
+  { id: 4, name: "Header Pipeline" },
+  { id: 5, name: "Centered Flow" },
 ] as const;
 
 export function usePersistentVariant(): [number, (variant: number) => void] {

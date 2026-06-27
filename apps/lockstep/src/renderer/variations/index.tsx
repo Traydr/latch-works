@@ -1,9 +1,9 @@
 import type { LockstepController } from "../hooks/useLockstepController";
-import { Layout1 } from "./Layout1Sidebar";
-import { Layout2 } from "./Layout2Toolbar";
-import { Layout3 } from "./Layout3ThreePane";
-import { Layout4 } from "./Layout4Pipeline";
-import { Layout5 } from "./Layout5SingleSurface";
+import { Layout1 } from "./Layout1CompactBar";
+import { Layout2 } from "./Layout2SplitRail";
+import { Layout3 } from "./Layout3BottomCommand";
+import { Layout4 } from "./Layout4HeaderPipeline";
+import { Layout5 } from "./Layout5CenteredFlow";
 
 export function renderLayout(variant: number, ctrl: LockstepController) {
   switch (variant) {
