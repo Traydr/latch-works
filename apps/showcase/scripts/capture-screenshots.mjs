@@ -3,7 +3,7 @@
  * Captures real screenshots for the Latch Works showcase site.
  * Run after pane-view is up when capturing Pane View / Lockstep output.
  */
-import { execFileSync, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -184,36 +184,164 @@ async function loginToPaneView(page, paneBase) {
   await applyPaneViewDarkMode(page);
 }
 
+async function selectFirstPaneMedia(page) {
+  const tile = await page.$(
+    '[data-testid="media-tile"], [data-gallery-item="true"], button[aria-label*="sample"]',
+  );
+  if (tile) {
+    await tile.click();
+    return true;
+  }
+
+  return page.evaluate(() => {
+    const button = [...document.querySelectorAll("button")].find((element) =>
+      /\bsample-\d+\.(?:jpe?g|png|webp|gif)\b/i.test(element.textContent ?? ""),
+    );
+    button?.click();
+    return Boolean(button);
+  });
+}
+
+async function openPaneViewerFromSelection(page) {
+  const openedViewer = await page.evaluate(() => {
+    const button = [...document.querySelectorAll("button")].find((element) =>
+      element.textContent?.trim().includes("Open Viewer"),
+    );
+    button?.click();
+    return Boolean(button);
+  });
+  if (openedViewer) {
+    await page.waitForSelector('[aria-label="Close viewer"], [role="dialog"]', { timeout: 5000 });
+    await sleep(500);
+  }
+  return openedViewer;
+}
+
 function buildGatherBoxPreviewHtml(mode) {
   const gatherRoot = join(root, "../../apps/gather-box");
-  const css = execFileSync("cat", [join(gatherRoot, "popup/popup.css")], { encoding: "utf8" });
+  const html = readFileSync(join(gatherRoot, "dist/popup/popup.html"), "utf8");
+  const css = readFileSync(join(gatherRoot, "dist/popup/popup.css"), "utf8");
+  const js = readFileSync(join(gatherRoot, "dist/popup/popup.js"), "utf8");
   const isActive = mode === "active";
-  return `<!DOCTYPE html>
-<html lang="en" class="dark"><head><meta charset="utf-8"><style>${css}
-  body { background: #09090b; display: grid; place-items: center; min-height: 100vh; margin: 0; color-scheme: dark; }
-  .popup { width: 360px; }
-</style></head><body>
-<main class="popup">
-  <header class="header">
-    <h1>Gather Box</h1>
-    <span class="badge" style="${isActive ? "background:#1f3d2c;color:#6ec98e" : ""}">${isActive ? "READY" : "IDLE"}</span>
-  </header>
-  <button class="btn btn-primary btn-huge btn-full" type="button" ${isActive ? "" : "disabled"}>Download Content</button>
-  <div class="folder-row">
-    <span class="label">Folder</span>
-    <span class="value truncate">${isActive ? "media/sfw/patreon/artist" : "No folder selected"}</span>
-    <button class="btn btn-ghost btn-tiny" type="button">Choose</button>
-  </div>
-  <p class="sub">${isActive ? "Folder ready for this download run." : "Choose a writable folder for this run."}</p>
-  <progress class="progress" max="1" value="${isActive ? "0.35" : "0"}"></progress>
-  <p class="sub center">${isActive ? "Downloading page 7 of 20…" : "Waiting for a supported page and folder."}</p>
-  <div class="status-row">
-    <span class="label">Page</span>
-    <span class="value">${isActive ? "Supported gallery" : "Unsupported"}</span>
-  </div>
-  <p class="sub">${isActive ? "Fanbox post detected — 20 images found." : "The active tab is checked when the popup opens."}</p>
-</main>
-</body></html>`;
+  const tabUrl = isActive
+    ? "https://creator.fanbox.cc/posts/11929835"
+    : "https://example.com/";
+  const directoryName = "media";
+  const chromeStub = `
+(() => {
+  const isActive = ${JSON.stringify(isActive)};
+  const tabUrl = ${JSON.stringify(tabUrl)};
+  const directoryHandle = {
+    kind: "directory",
+    name: ${JSON.stringify(directoryName)},
+    queryPermission: async () => "granted",
+    requestPermission: async () => "granted",
+    getDirectoryHandle: async (name) => ({ ...directoryHandle, name }),
+    getFileHandle: async (name) => ({
+      kind: "file",
+      name,
+      createWritable: async () => ({ write: async () => {}, close: async () => {} }),
+    }),
+  };
+  const stores = { sync: {}, local: {}, session: {} };
+  const makeEvent = () => ({
+    addListener() {},
+    removeListener() {},
+  });
+  const normalizeKeys = (source, keys) => {
+    if (keys == null) return { ...source };
+    if (typeof keys === "string") return { [keys]: source[keys] };
+    if (Array.isArray(keys)) {
+      return Object.fromEntries(keys.map((key) => [key, source[key]]));
+    }
+    return Object.fromEntries(
+      Object.entries(keys).map(([key, fallback]) => [key, source[key] ?? fallback]),
+    );
+  };
+  const makeStorageArea = (name) => ({
+    get: async (keys) => normalizeKeys(stores[name], keys),
+    set: async (items) => {
+      Object.assign(stores[name], items);
+    },
+    remove: async (keys) => {
+      for (const key of Array.isArray(keys) ? keys : [keys]) {
+        delete stores[name][key];
+      }
+    },
+  });
+  const makeRequest = (result) => {
+    const request = {};
+    window.setTimeout(() => {
+      request.result = result;
+      request.onsuccess?.();
+    }, 0);
+    return request;
+  };
+  const objectStore = {
+    get: () => makeRequest(isActive ? directoryHandle : null),
+    put: () => makeRequest(undefined),
+    delete: () => makeRequest(undefined),
+  };
+  Object.defineProperty(window, "indexedDB", {
+    configurable: true,
+    value: {
+      open: () => makeRequest({
+        objectStoreNames: { contains: () => true },
+        transaction: () => ({ objectStore: () => objectStore }),
+      }),
+    },
+  });
+  window.chrome = {
+    runtime: { onMessage: makeEvent() },
+    scripting: { executeScript: async () => {} },
+    sidePanel: { open: async () => {} },
+    storage: {
+      sync: makeStorageArea("sync"),
+      local: makeStorageArea("local"),
+      session: makeStorageArea("session"),
+      onChanged: makeEvent(),
+    },
+    tabs: {
+      query: async () => [{ id: 7, url: tabUrl, windowId: 1 }],
+      sendMessage: async () => ({
+        ok: true,
+        outputKind: "downloadable-files",
+        site: "fanbox",
+        title: "Showcase post",
+        images: [],
+        skippedCount: 0,
+      }),
+    },
+  };
+  window.showDirectoryPicker = async () => directoryHandle;
+})();
+`;
+
+  return html
+    .replace(
+      '<link rel="stylesheet" href="popup.css">',
+      `<style>${css}
+html,
+body {
+  width: 100%;
+  min-width: 0;
+  min-height: 100vh;
+}
+body {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  background: #09090b;
+}
+.popup {
+  width: 400px;
+}
+</style>`,
+    )
+    .replace(
+      '<script src="popup.js"></script>',
+      `<script>${chromeStub}</script><script>${js}</script>`,
+    );
 }
 
 async function waitForFramePreview(page) {
@@ -304,12 +432,10 @@ async function main() {
         { darkMode: true, waitMs: 3000, prepare: applyPaneViewDarkMode },
       );
 
-      const tile = await page.$(
-        '[data-testid="media-tile"], [data-gallery-item="true"], button[aria-label*="sample"]',
-      );
-      if (tile) {
-        await tile.click();
+      const selectedMedia = await selectFirstPaneMedia(page);
+      if (selectedMedia) {
         await sleep(1800);
+        await openPaneViewerFromSelection(page);
         await page.screenshot({ path: join(publicDir, "pane-view", "viewer.png"), type: "png" });
         console.log(`Saved ${join(publicDir, "pane-view", "viewer.png")}`);
         await page.keyboard.press("Escape");
@@ -318,7 +444,14 @@ async function main() {
           page,
           join(publicDir, "pane-view", "viewer.png"),
           `${paneBase}/?path=sfw/photos&media=${encodeURIComponent("sfw/photos/sample-01.jpg")}`,
-          { darkMode: true, waitMs: 2500, prepare: applyPaneViewDarkMode },
+          {
+            darkMode: true,
+            waitMs: 2500,
+            prepare: async (currentPage) => {
+              await applyPaneViewDarkMode(currentPage);
+              await openPaneViewerFromSelection(currentPage);
+            },
+          },
         );
       }
     } else {
