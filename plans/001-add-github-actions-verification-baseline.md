@@ -5,7 +5,7 @@
 > step. If a STOP condition occurs, stop and report. When done, update this
 > plan's row in `plans/README.md`.
 >
-> **Drift check (run first)**: `git diff --stat 027d48a..HEAD -- package.json pnpm-lock.yaml AGENTS.md .github`
+> **Drift check (run first)**: `git diff --stat d8f3c52..HEAD -- package.json pnpm-lock.yaml AGENTS.md .github`
 > If any in-scope file changed since this plan was written, compare the current
 > state excerpts below against live code before proceeding.
 
@@ -16,7 +16,7 @@
 - **Risk**: LOW
 - **Depends on**: none
 - **Category**: tests, dx
-- **Planned at**: commit `027d48a`, 2026-06-23
+- **Planned at**: commit `d8f3c52`, 2026-06-28
 
 ## Why This Matters
 

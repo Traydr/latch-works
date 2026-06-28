@@ -3,7 +3,7 @@
 > **Executor instructions**: Run the drift check first. Keep output format and
 > storage keys unchanged. Update `plans/README.md` when done.
 >
-> **Drift check (run first)**: `git diff --stat 027d48a..HEAD -- packages/media-derivatives/src/video.ts packages/media-derivatives/src/generate.test.ts packages/media-derivatives/src/video.test.ts packages/media-derivatives/src/descriptor.ts`
+> **Drift check (run first)**: `git diff --stat d8f3c52..HEAD -- packages/media-derivatives/src/video.ts packages/media-derivatives/src/generate.test.ts packages/media-derivatives/src/video.test.ts packages/media-derivatives/src/descriptor.ts`
 
 ## Status
 
@@ -12,7 +12,7 @@
 - **Risk**: LOW
 - **Depends on**: plans/001-add-github-actions-verification-baseline.md
 - **Category**: bug
-- **Planned at**: commit `027d48a`, 2026-06-23
+- **Planned at**: commit `d8f3c52`, 2026-06-28
 
 ## Why This Matters
 

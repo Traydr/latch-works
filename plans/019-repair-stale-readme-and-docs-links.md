@@ -3,7 +3,7 @@
 > **Executor instructions**: Run the drift check first. This is docs-only. Update
 > `plans/README.md` when done.
 >
-> **Drift check (run first)**: `git diff --stat 027d48a..HEAD -- README.md apps/pane-view/README.md docs/ARCHITECTURE.md docs/next-recommendations.md docs/media-optimizer-internals.md docs/runbooks/pane-view-thumbnails.md docs/gather-box-sidecar-manifests.md`
+> **Drift check (run first)**: `git diff --stat d8f3c52..HEAD -- README.md apps/pane-view/README.md docs/ARCHITECTURE.md docs/next-recommendations.md docs/media-optimizer-internals.md docs/runbooks/pane-view-thumbnails.md docs/gather-box-sidecar-manifests.md`
 
 ## Status
 
@@ -12,7 +12,7 @@
 - **Risk**: LOW
 - **Depends on**: plans/018-fix-local-service-onboarding-docs.md
 - **Category**: docs
-- **Planned at**: commit `027d48a`, 2026-06-23
+- **Planned at**: commit `d8f3c52`, 2026-06-28
 
 ## Why This Matters
 
@@ -25,8 +25,10 @@ trustworthy.
 
 - `README.md:44-61` omits `apps/media-optimizer` and
   `packages/media-derivatives` from the app/package inventory.
-- `README.md:82-86` lists `docs/ARCHITECTURE_PLAN.md`, `docs/decisions/`, and
-  `docs/plans/`; none exist.
+- `README.md:82-86` lists `docs/ARCHITECTURE_PLAN.md`, `docs/decisions/`,
+  `docs/plans/`, and `docs/runbooks/`. `docs/plans/` now exists, but
+  `ARCHITECTURE_PLAN.md` and `docs/decisions/` do not; the tree still omits
+  `docs/adr/` and `docs/localhost/`.
 - `README.md:169` links `docs/ARCHITECTURE_PLAN.md`, which does not exist.
 - Grep found missing-doc references to `ARCHITECTURE_PLAN.md`,
   `end-to-end-request-flow.md`, and `derivative-prewarm-and-workers.md` in
@@ -63,8 +65,8 @@ trustworthy.
 
 Add rows for `apps/media-optimizer` and `packages/media-derivatives`, using the
 descriptions from `docs/ARCHITECTURE.md:51-65`. Update the workspace tree to
-include `docs/adr/`, `docs/localhost/`, and `docs/runbooks/`, and remove phantom
-`docs/decisions/` and `docs/plans/`.
+include `docs/adr/`, `docs/localhost/`, `docs/plans/`, and `docs/runbooks/`, and
+remove phantom `docs/ARCHITECTURE_PLAN.md` and `docs/decisions/`.
 
 **Verify**: `grep -n "media-optimizer\|media-derivatives" README.md` -> both appear in inventory sections.
 

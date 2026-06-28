@@ -4,7 +4,7 @@
 > use `pnpm audit --fix`; update manifests deliberately. Update
 > `plans/README.md` when done.
 >
-> **Drift check (run first)**: `git diff --stat 027d48a..HEAD -- package.json pnpm-lock.yaml pnpm-workspace.yaml apps/*/package.json packages/*/package.json`
+> **Drift check (run first)**: `git diff --stat d8f3c52..HEAD -- package.json pnpm-lock.yaml pnpm-workspace.yaml apps/*/package.json packages/*/package.json`
 
 ## Status
 
@@ -13,7 +13,7 @@
 - **Risk**: MED
 - **Depends on**: plans/001-add-github-actions-verification-baseline.md
 - **Category**: security, migration
-- **Planned at**: commit `027d48a`, 2026-06-23
+- **Planned at**: commit `d8f3c52`, 2026-06-28
 
 ## Why This Matters
 
@@ -29,7 +29,11 @@ high-severity audit without broad, unreviewed dependency churn.
 - Frame View and Lockstep use `vite` ranges around `^8.0.7` in their manifests.
 - Showcase uses `astro` in `apps/showcase/package.json:22` plus Astro adapters.
 - `pnpm-workspace.yaml:5-8` already uses overrides for native/package tooling.
-- Baseline audit reported high advisories for `vite`, `astro`, `tar`, and `tmp`.
+- Re-running `pnpm audit --audit-level high` on 2026-06-28 reported 21 total
+  advisories: 10 high, 8 moderate, and 3 low. The high advisories are for
+  `vite`, `astro`, `tar`, and `tmp`.
+- Current patched targets from that audit: `tar >=7.5.11`, `tmp >=0.2.6`,
+  `vite >=8.0.16`, and `astro >=6.4.6`.
 
 ## Commands You Will Need
 
@@ -65,7 +69,7 @@ high-severity audit without broad, unreviewed dependency churn.
 
 Run `pnpm audit --audit-level high` and save the package/advisory names in the
 PR notes. Do not copy secrets or environment values. Confirm the high advisories
-still include the packages listed above.
+still include the packages listed above, and note any new packages separately.
 
 **Verify**: `pnpm audit --audit-level high` -> nonzero with the expected high advisories.
 

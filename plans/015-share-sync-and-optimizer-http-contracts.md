@@ -4,7 +4,7 @@
 > contracts after the behavior is characterized and content-type validation is
 > fixed. Update `plans/README.md` when done.
 >
-> **Drift check (run first)**: `git diff --stat 027d48a..HEAD -- apps/media-optimizer/src/pane-view-client.ts apps/pane-view/src/server/media/optimizer-jobs-service.ts apps/pane-view/src/server/sync/validation.ts packages/lockstep-core/src/remote-api.ts packages/*/src apps/*/package.json packages/*/package.json pnpm-lock.yaml`
+> **Drift check (run first)**: `git diff --stat d8f3c52..HEAD -- apps/media-optimizer/src/pane-view-client.ts apps/pane-view/src/server/media/optimizer-jobs-service.ts apps/pane-view/src/server/sync/validation.ts packages/lockstep-core/src/remote-api.ts packages/*/src apps/*/package.json packages/*/package.json pnpm-lock.yaml`
 
 ## Status
 
@@ -13,7 +13,7 @@
 - **Risk**: MED
 - **Depends on**: plans/002-add-sync-orchestration-and-route-tests.md, plans/004-validate-sync-content-types-and-nosniff.md
 - **Category**: tech-debt
-- **Planned at**: commit `027d48a`, 2026-06-23
+- **Planned at**: commit `d8f3c52`, 2026-06-28
 
 ## Why This Matters
 

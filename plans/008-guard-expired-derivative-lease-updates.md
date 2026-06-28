@@ -3,7 +3,7 @@
 > **Executor instructions**: Run the drift check first. Match the existing queue
 > guard pattern exactly. Update `plans/README.md` when done.
 >
-> **Drift check (run first)**: `git diff --stat 027d48a..HEAD -- apps/pane-view/src/server/media/derivative-service.ts apps/pane-view/src/server/media/derivative-service.test.ts apps/pane-view/src/server/media/derivative-queue.ts apps/pane-view/src/server/media/derivative-queue.test.ts`
+> **Drift check (run first)**: `git diff --stat d8f3c52..HEAD -- apps/pane-view/src/server/media/derivative-service.ts apps/pane-view/src/server/media/derivative-service.test.ts apps/pane-view/src/server/media/derivative-queue.ts apps/pane-view/src/server/media/derivative-queue.test.ts`
 
 ## Status
 
@@ -12,7 +12,7 @@
 - **Risk**: LOW
 - **Depends on**: plans/001-add-github-actions-verification-baseline.md
 - **Category**: bug
-- **Planned at**: commit `027d48a`, 2026-06-23
+- **Planned at**: commit `d8f3c52`, 2026-06-28
 
 ## Why This Matters
 
@@ -23,10 +23,10 @@ update; the current update can overwrite it back to `pending`.
 
 ## Current State
 
-- `derivative-service.ts:218-222` reads an existing thumbnail row.
-- `derivative-service.ts:234-250` detects expired `processing` rows and updates
+- `derivative-service.ts:210-214` reads an existing thumbnail row.
+- `derivative-service.ts:226-242` detects expired `processing` rows and updates
   with a predicate containing only `mediaObjectId` and `size`.
-- `derivative-queue.ts:387-394` shows the safer pattern: include
+- `derivative-queue.ts:371-394` shows the safer pattern: include
   `eq(thumbnails.status, "processing")` and `lte(thumbnails.updatedAt, leaseExpiry)`.
 
 ## Commands You Will Need
@@ -67,7 +67,7 @@ receives `status = processing` and `updatedAt <= now - derivativeProcessingLease
 
 In `derivative-service.ts`, compute the same lease cutoff used by
 `isDerivativeProcessingLeaseExpired` or import/reuse a helper if one exists.
-Change the update at lines 239-250 so `.where(and(...))` includes:
+Change the expired-processing update so `.where(and(...))` includes:
 
 ```ts
 eq(thumbnails.status, "processing")

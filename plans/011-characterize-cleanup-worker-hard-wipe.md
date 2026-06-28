@@ -4,7 +4,7 @@
 > destructive state machine; do not change behavior unless tests expose a small
 > obvious bug. Update `plans/README.md` when done.
 >
-> **Drift check (run first)**: `git diff --stat 027d48a..HEAD -- apps/pane-view/src/server/management/cleanup-worker.ts apps/pane-view/src/server/management/*.test.ts apps/pane-view/src/server/db/schema.ts`
+> **Drift check (run first)**: `git diff --stat d8f3c52..HEAD -- apps/pane-view/src/server/management/cleanup-worker.ts apps/pane-view/src/server/management/*.test.ts apps/pane-view/src/server/db/schema.ts`
 
 ## Status
 
@@ -13,7 +13,7 @@
 - **Risk**: MED
 - **Depends on**: plans/001-add-github-actions-verification-baseline.md
 - **Category**: tests
-- **Planned at**: commit `027d48a`, 2026-06-23
+- **Planned at**: commit `d8f3c52`, 2026-06-28
 
 ## Why This Matters
 

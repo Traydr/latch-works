@@ -3,7 +3,7 @@
 > **Executor instructions**: Run the drift check first. Keep final last-run state
 > durable after success/failure. Update `plans/README.md` when done.
 >
-> **Drift check (run first)**: `git diff --stat 027d48a..HEAD -- apps/gather-box/src/shared/gather-controller.ts apps/gather-box/src/shared/last-run.ts apps/gather-box/src/shared/*.test.ts apps/gather-box/src/**/*.test.ts`
+> **Drift check (run first)**: `git diff --stat d8f3c52..HEAD -- apps/gather-box/src/shared/gather-controller.ts apps/gather-box/src/shared/last-run.ts apps/gather-box/src/shared/*.test.ts apps/gather-box/src/**/*.test.ts`
 
 ## Status
 
@@ -12,7 +12,7 @@
 - **Risk**: LOW
 - **Depends on**: plans/001-add-github-actions-verification-baseline.md
 - **Category**: perf
-- **Planned at**: commit `027d48a`, 2026-06-23
+- **Planned at**: commit `d8f3c52`, 2026-06-28
 
 ## Why This Matters
 
@@ -22,11 +22,14 @@ quadratic serialization and extension storage writes on large galleries.
 
 ## Current State
 
-- `gather-controller.ts:721-725` pushes a log entry and calls
+- `gather-controller.ts:753-756` pushes a log entry and calls
   `void this.persistLastRun({})` every time.
-- `gather-controller.ts:744-757` rebuilds the full `LastRunState`, including
+- `gather-controller.ts:776-790` rebuilds the full `LastRunState`, including
   `log: this.logEntries`, and calls `saveLastRun`.
 - `last-run.ts:51-52` writes the normalized full state to `chrome.storage.local`.
+- Terminal paths such as gallery download, retry, and generated story completion
+  already call `persistLastRun(...)` after final state patches
+  (`gather-controller.ts:442-446`, `525-529`, and `570-574`).
 - Gather Box currently has very limited tests; `download-policy.test.ts` is the
   main shared test example.
 

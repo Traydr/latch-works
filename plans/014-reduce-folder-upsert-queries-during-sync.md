@@ -4,7 +4,7 @@
 > on the sync ingest path; preserve correctness and tests from Plans 002 and 003.
 > Update `plans/README.md` when done.
 >
-> **Drift check (run first)**: `git diff --stat 027d48a..HEAD -- apps/pane-view/src/server/sync/store.ts apps/pane-view/src/server/sync/store.test.ts apps/pane-view/src/server/db/schema.ts apps/pane-view/src/server/library`
+> **Drift check (run first)**: `git diff --stat d8f3c52..HEAD -- apps/pane-view/src/server/sync/store.ts apps/pane-view/src/server/sync/store.test.ts apps/pane-view/src/server/db/schema.ts apps/pane-view/src/server/library`
 
 ## Status
 
@@ -13,7 +13,7 @@
 - **Risk**: MED
 - **Depends on**: plans/002-add-sync-orchestration-and-route-tests.md, plans/003-reject-writes-to-finalized-sync-runs.md
 - **Category**: perf
-- **Planned at**: commit `027d48a`, 2026-06-23
+- **Planned at**: commit `d8f3c52`, 2026-06-28
 
 ## Why This Matters
 

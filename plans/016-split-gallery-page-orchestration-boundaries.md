@@ -4,7 +4,7 @@
 > preserve behavior and keep changes reviewable. Update `plans/README.md` when
 > done.
 >
-> **Drift check (run first)**: `git diff --stat 027d48a..HEAD -- apps/pane-view/src/features/gallery/GalleryPage.tsx apps/pane-view/src/features/gallery apps/pane-view/src/features/gallery/*.test.tsx`
+> **Drift check (run first)**: `git diff --stat d8f3c52..HEAD -- apps/pane-view/src/features/gallery/GalleryPage.tsx apps/pane-view/src/features/gallery apps/pane-view/src/features/gallery/*.test.tsx`
 
 ## Status
 
@@ -13,24 +13,27 @@
 - **Risk**: MED
 - **Depends on**: plans/001-add-github-actions-verification-baseline.md
 - **Category**: tech-debt
-- **Planned at**: commit `027d48a`, 2026-06-23
+- **Planned at**: commit `d8f3c52`, 2026-06-28
 
 ## Why This Matters
 
 `GalleryPage.tsx` is the main Pane View gallery orchestrator and is currently a
-1,568-line file with many local state variables, effects, helpers, and a nested
+1,621-line file with many local state variables, effects, helpers, and a nested
 `GalleryBrowsePane`. This makes gallery behavior expensive to review and risky
 to change. The goal is smaller, named boundaries without changing UI behavior.
 
 ## Current State
 
-- `GalleryPage.tsx:81-1350` contains the main `GalleryPage` component.
-- `GalleryPage.tsx:97-132` initializes many independent state variables,
+- `GalleryPage.tsx:82-1400` contains the main `GalleryPage` component.
+- `GalleryPage.tsx:98-132` initializes many independent state variables,
   including settings UI, browse modes, selection, viewer state, pagination,
   deletion state, and thumbnail resolution state.
-- `GalleryPage.tsx:1352-1511` defines `GalleryBrowsePane` in the same file.
-- `GalleryPage.tsx:1513-1568` defines helper functions for media merging and
+- `GalleryPage.tsx:1426-1564` defines `GalleryBrowsePane` in the same file.
+- `GalleryPage.tsx:1566-1621` defines helper functions for media merging and
   thumbnail request dedupe.
+- Recent gallery pagination work added load-more intersection state inside the
+  nested browse pane (`GalleryPage.tsx:1454-1476`); preserve that behavior
+  during any mechanical extraction.
 - Repo React convention: preserve existing style and do not add `useMemo` or
   `useCallback` broadly except where already needed for behavior.
 

@@ -4,7 +4,7 @@
 > sequential; this plan only releases jobs that were claimed but not processed.
 > Update `plans/README.md` when done.
 >
-> **Drift check (run first)**: `git diff --stat 027d48a..HEAD -- apps/media-optimizer/src/processor.ts apps/media-optimizer/src/pane-view-client.ts apps/media-optimizer/src/processor.test.ts apps/pane-view/src/server/media/optimizer-jobs-service.ts apps/pane-view/src/server/media/derivative-queue.ts`
+> **Drift check (run first)**: `git diff --stat d8f3c52..HEAD -- apps/media-optimizer/src/processor.ts apps/media-optimizer/src/pane-view-client.ts apps/media-optimizer/src/processor.test.ts apps/pane-view/src/server/media/optimizer-jobs-service.ts apps/pane-view/src/server/media/derivative-queue.ts`
 
 ## Status
 
@@ -13,7 +13,7 @@
 - **Risk**: LOW
 - **Depends on**: plans/001-add-github-actions-verification-baseline.md
 - **Category**: bug
-- **Planned at**: commit `027d48a`, 2026-06-23
+- **Planned at**: commit `d8f3c52`, 2026-06-28
 
 ## Why This Matters
 
@@ -26,10 +26,10 @@ Releasing remaining jobs lowers user-visible pending time after interruptions.
 
 - `apps/media-optimizer/src/processor.ts:13-18` imports `claimJobs`,
   `reportComplete`, and `reportFailure`, but not `releaseJobs`.
-- `processor.ts:210-253` claims a batch and loops over every job sequentially.
+- `processor.ts:199-245` claims a batch and loops over every job sequentially.
 - `pane-view-client.ts:100-118` exports `releaseJobs`, but grep found no call
   sites besides the export.
-- `apps/pane-view/src/server/media/derivative-queue.ts:174-177` documents that
+- `apps/pane-view/src/server/media/derivative-queue.ts:175-177` documents that
   release returns leased rows to `pending` without incrementing attempts.
 
 ## Commands You Will Need
