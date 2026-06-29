@@ -83,7 +83,7 @@ function createBaseController(
 export function ShowcasePushTimerDemo() {
   const startedAtRef = useRef(Date.now() - 66_000);
   const [running, setRunning] = useState(true);
-  const [itemCurrent, setItemCurrent] = useState(255);
+  const [itemCurrent, setItemCurrent] = useState(240);
   const [endedAt, setEndedAt] = useState<number | null>(null);
   const [, setTick] = useState(0);
 
@@ -106,7 +106,7 @@ export function ShowcasePushTimerDemo() {
         }
         return current + 1;
       });
-    }, 400);
+    }, 1200);
 
     return () => clearInterval(id);
   }, [running]);
