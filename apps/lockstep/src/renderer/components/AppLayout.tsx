@@ -25,6 +25,7 @@ import {
   SyncLine,
   useNow,
 } from "./syncPrimitives";
+import { isElapsedClockActive } from "../lib/run-lifecycle";
 
 const STAGES = [
   { label: "Profile", icon: CircleCheck },
@@ -108,7 +109,12 @@ export function AppLayout({ ctrl }: { ctrl: LockstepController }) {
               label="Plan"
               active={tab === "plan"}
               disabled={!ctrl.plan}
-              onClick={() => ctrl.plan && setTab("plan")}
+              onClick={() => {
+                if (ctrl.plan) {
+                  ctrl.markReviewVisited();
+                  setTab("plan");
+                }
+              }}
             />
             <TabBtn label="Log" active={tab === "log"} onClick={() => setTab("log")} />
             {ctrl.plan ? (
@@ -244,13 +250,19 @@ function CommandDock({ ctrl }: { ctrl: LockstepController }) {
     plan,
     running,
     runProgress,
+    pipelineProgress,
     handleDoctor,
     handlePlan,
     handlePush,
     handlePrune,
     setScreen,
   } = ctrl;
-  const now = useNow(running);
+  const clockActive = isElapsedClockActive(
+    running,
+    runProgress.startedAt,
+    runProgress.endedAt,
+  );
+  const now = useNow(clockActive);
   const hasProfile = !!activeProfile;
   const hasPlan = !!plan;
   const activeAction = runProgress.action;
@@ -269,19 +281,19 @@ function CommandDock({ ctrl }: { ctrl: LockstepController }) {
       onClick: () => void handlePlan(),
     },
     {
-      done: false,
-      active: ctrl.screen === "plan",
+      done: pipelineProgress.reviewed,
+      active: ctrl.screen === "plan" && !running,
       disabled: !hasPlan,
       onClick: () => plan && setScreen("plan"),
     },
     {
-      done: false,
+      done: pipelineProgress.pushCompleted,
       active: running && activeAction === "push",
       disabled: running || !hasProfile,
       onClick: () => void handlePush(),
     },
     {
-      done: false,
+      done: pipelineProgress.pruneCompleted,
       active: running && activeAction === "prune",
       disabled: running || !hasProfile,
       onClick: () => void handlePrune(),

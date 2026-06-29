@@ -8,6 +8,13 @@ import type {
   LockstepRunEvent,
   LockstepSettings,
 } from "../../shared/types";
+import { shouldEndRunOnComplete } from "../lib/run-lifecycle";
+
+export interface PipelineProgressState {
+  reviewed: boolean;
+  pushCompleted: boolean;
+  pruneCompleted: boolean;
+}
 
 export type Screen = "dashboard" | "plan" | "profile" | "run";
 
@@ -87,6 +94,8 @@ export interface LockstepController {
   sessionToken: string;
   setSessionToken: (value: string) => void;
   runProgress: RunProgressState;
+  pipelineProgress: PipelineProgressState;
+  markReviewVisited: () => void;
   handleCreateProfile: (event: React.FormEvent) => Promise<void>;
   handleDoctor: () => Promise<void>;
   handlePlan: () => Promise<void>;
@@ -110,7 +119,13 @@ export function useLockstepController(): LockstepController {
   const [error, setError] = useState<string | null>(null);
   const [sessionToken, setSessionToken] = useState("");
   const [runProgress, setRunProgress] = useState<RunProgressState>(initialProgress);
+  const [pipelineProgress, setPipelineProgress] = useState<PipelineProgressState>({
+    reviewed: false,
+    pushCompleted: false,
+    pruneCompleted: false,
+  });
   const lastLoggedScanProgressRef = useRef<string | null>(null);
+  const activeRunActionRef = useRef("");
 
   const activeProfile = useMemo(() => {
     if (!settings?.activeProfileId) {
@@ -208,17 +223,35 @@ export function useLockstepController(): LockstepController {
       }
 
       if (event.type === "complete") {
+        const activeRunAction = activeRunActionRef.current;
+        if (!shouldEndRunOnComplete(event.summary.action, activeRunAction)) {
+          setRunProgress((prev) => ({
+            ...prev,
+            phase: "items",
+            endedAt: null,
+          }));
+          return;
+        }
+
         setRunning(false);
+        activeRunActionRef.current = "";
         setRunLabel(event.summary.message ?? `${event.summary.action} ${event.summary.status}`);
         setRunProgress((prev) => ({
           ...prev,
           phase: event.summary.status === "cancelled" ? "cancelled" : "done",
+          action: event.summary.action,
           itemCurrent: event.summary.status === "cancelled" ? prev.itemCurrent : prev.itemTotal,
           failed: event.summary.failed,
           pushed: event.summary.pushed,
           endedAt: Date.now(),
           summaryMessage: event.summary.message ?? null,
         }));
+        if (event.summary.action === "push" && event.summary.status === "completed") {
+          setPipelineProgress((prev) => ({ ...prev, pushCompleted: true }));
+        }
+        if (event.summary.action === "prune" && event.summary.status === "completed") {
+          setPipelineProgress((prev) => ({ ...prev, pruneCompleted: true }));
+        }
         void refreshSettings();
       }
     },
@@ -265,11 +298,23 @@ export function useLockstepController(): LockstepController {
   const beginRun = useCallback((label: string, action: string) => {
     setError(null);
     setRunning(true);
+    activeRunActionRef.current = action;
     setRunLabel(label);
     setLogs([label]);
     lastLoggedScanProgressRef.current = null;
     setRunProgress({ ...initialProgress, phase: "planning", action, startedAt: Date.now() });
     setScreen("run");
+  }, []);
+
+  const markReviewVisited = useCallback(() => {
+    setPipelineProgress((prev) => ({ ...prev, reviewed: true }));
+  }, []);
+
+  const goToScreen = useCallback((next: Screen) => {
+    if (next === "plan") {
+      setPipelineProgress((prev) => ({ ...prev, reviewed: true }));
+    }
+    setScreen(next);
   }, []);
 
   const handleCreateProfile = useCallback(
@@ -283,7 +328,7 @@ export function useLockstepController(): LockstepController {
       }
       setProfileForm(emptyProfileForm);
       await refreshSettings();
-      setScreen("dashboard");
+      goToScreen("dashboard");
     },
     [profileForm, refreshSettings],
   );
@@ -325,10 +370,11 @@ export function useLockstepController(): LockstepController {
       return;
     }
     setPlan(result.value);
-    setScreen("plan");
+    setPipelineProgress({ reviewed: true, pushCompleted: false, pruneCompleted: false });
+    goToScreen("plan");
     setRunProgress((prev) => ({ ...prev, phase: "done", endedAt: Date.now() }));
     await refreshSettings();
-  }, [activeProfile, ensureSessionToken, beginRun, refreshSettings]);
+  }, [activeProfile, ensureSessionToken, beginRun, refreshSettings, goToScreen]);
 
   const handlePush = useCallback(async () => {
     if (!activeProfile || !(await ensureSessionToken(activeProfile))) {
@@ -353,6 +399,10 @@ export function useLockstepController(): LockstepController {
       endedAt: Date.now(),
       summaryMessage: `Push ${result.value.status}: ${result.value.pushed} item(s).`,
     }));
+    if (result.value.status === "completed") {
+      setPipelineProgress((prev) => ({ ...prev, pushCompleted: true }));
+    }
+    activeRunActionRef.current = "";
     await refreshSettings();
   }, [activeProfile, ensureSessionToken, beginRun, refreshSettings]);
 
@@ -384,6 +434,10 @@ export function useLockstepController(): LockstepController {
       endedAt: Date.now(),
       summaryMessage: `Prune ${result.value.status}: ${result.value.pushed} delete(s).`,
     }));
+    if (result.value.status === "completed") {
+      setPipelineProgress((prev) => ({ ...prev, pruneCompleted: true }));
+    }
+    activeRunActionRef.current = "";
     await refreshSettings();
   }, [activeProfile, ensureSessionToken, beginRun, refreshSettings]);
 
@@ -413,7 +467,7 @@ export function useLockstepController(): LockstepController {
 
   return {
     screen,
-    setScreen,
+    setScreen: goToScreen,
     settings,
     activeProfile,
     profileForm,
@@ -430,6 +484,8 @@ export function useLockstepController(): LockstepController {
     sessionToken,
     setSessionToken,
     runProgress,
+    pipelineProgress,
+    markReviewVisited,
     handleCreateProfile,
     handleDoctor,
     handlePlan,
