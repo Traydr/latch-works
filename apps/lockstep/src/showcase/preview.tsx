@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 
 import "../index.css";
 import { ShowcasePlanScreen, ShowcasePushScreen } from "./screens";
+import { ShowcasePipelineStepsDemo, ShowcasePushTimerDemo } from "./demo-screens";
 
 document.documentElement.classList.add("dark");
 document.body.classList.add("dark", "bg-zinc-950");
@@ -14,8 +15,17 @@ if (!rootElement) {
   throw new Error("Root element not found");
 }
 
-createRoot(rootElement).render(
-  <React.StrictMode>
-    {screen === "push" ? <ShowcasePushScreen /> : <ShowcasePlanScreen />}
-  </React.StrictMode>,
-);
+function renderScreen() {
+  switch (screen) {
+    case "push":
+      return <ShowcasePushScreen />;
+    case "timer":
+      return <ShowcasePushTimerDemo />;
+    case "steps":
+      return <ShowcasePipelineStepsDemo />;
+    default:
+      return <ShowcasePlanScreen />;
+  }
+}
+
+createRoot(rootElement).render(<React.StrictMode>{renderScreen()}</React.StrictMode>);
