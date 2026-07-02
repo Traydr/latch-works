@@ -124,6 +124,12 @@ function createController(screen: Screen): LockstepController {
     handlePrune: noopAsync,
     handlePush: noopAsync,
     logs: running ? pushLogs : [],
+    markReviewVisited: noop,
+    pipelineProgress: {
+      reviewed: screen === "plan",
+      pushCompleted: false,
+      pruneCompleted: false,
+    },
     plan: showcasePlan,
     profileForm: {
       apiUrl: "http://localhost:3000",
