@@ -149,6 +149,7 @@ async function createWindow(): Promise<void> {
     minHeight: 640,
     autoHideMenuBar: true,
     icon: windowIconPath,
+    title: 'Frame View',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
