@@ -19,6 +19,15 @@ let mainWindow: BrowserWindow | null = null;
 let profileService: ProfileService;
 let runService: RunService;
 
+function resolveWindowIconPath(fileName: string): string | undefined {
+  const candidates = [
+    path.join(app.getAppPath(), "media", fileName),
+    path.join(process.resourcesPath, "media", fileName),
+  ];
+
+  return candidates.find((candidate) => existsSync(candidate));
+}
+
 async function createWindow(): Promise<void> {
   profileService = new ProfileService(app.getPath("userData"));
   const initResult = await profileService.init();
@@ -27,11 +36,11 @@ async function createWindow(): Promise<void> {
   }
 
   runService = new RunService(profileService, () => mainWindow);
-  const windowIconPath = path.join(app.getAppPath(), "media", "lockstep-icon.png");
+  const windowIconPath = resolveWindowIconPath("lockstep-icon.png");
 
   mainWindow = new BrowserWindow({
     height: 800,
-    icon: existsSync(windowIconPath) ? windowIconPath : undefined,
+    icon: windowIconPath,
     show: false,
     title: "Lockstep",
     webPreferences: {

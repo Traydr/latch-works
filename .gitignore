@@ -12,5 +12,6 @@ dist/
 lockstep-cache.sqlite
 sync-manifest-*.jsonl
 .railway-config-pull-*/
+tmp/
 
 .DS_Store

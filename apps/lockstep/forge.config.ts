@@ -16,6 +16,7 @@ const appBundleId = "dev.traydr.latchworks.lockstep";
 const windowsIconPath = `${appIconBasePath}.ico`;
 const macIconPath = `${appIconBasePath}.icns`;
 const linuxIconPath = `${appIconBasePath}.png`;
+const appMediaPath = path.resolve(__dirname, "media");
 const localMacEntitlements = [
   "com.apple.security.cs.allow-jit",
   "com.apple.security.cs.allow-unsigned-executable-memory",
@@ -61,6 +62,7 @@ const config: ForgeConfig = {
     appBundleId,
     asar: true,
     executableName: "lockstep",
+    extraResource: [appMediaPath],
     icon: getPackagerIconPath(),
     osxSign: getMacCodeSignConfig(),
   },
