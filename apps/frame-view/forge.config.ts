@@ -16,6 +16,7 @@ const appBundleId = 'dev.traydr.latchworks.frameview';
 const windowsIconPath = `${appIconBasePath}.ico`;
 const macIconPath = `${appIconBasePath}.icns`;
 const linuxIconPath = `${appIconBasePath}.png`;
+const appMediaPath = path.resolve(__dirname, 'media');
 const localMacEntitlements = [
   'com.apple.security.cs.allow-jit',
   'com.apple.security.cs.allow-unsigned-executable-memory',
@@ -149,7 +150,7 @@ const config: ForgeConfig = {
       return true;
     },
     prune: false,
-    extraResource: [stagedRuntimeNodeModulesPath],
+    extraResource: [stagedRuntimeNodeModulesPath, appMediaPath],
     icon: getPackagerIconPath(),
     executableName: appName,
     osxSign: getMacCodeSignConfig(),

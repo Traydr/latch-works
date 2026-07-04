@@ -49,6 +49,15 @@ let catalogService: CatalogService;
 let mediaToolsService: MediaToolsService;
 const pendingCommands: AppCommand[] = [];
 
+function resolveWindowIconPath(fileName: string): string | undefined {
+  const candidates = [
+    path.join(app.getAppPath(), 'media', fileName),
+    path.join(process.resourcesPath, 'media', fileName),
+  ];
+
+  return candidates.find((candidate) => existsSync(candidate));
+}
+
 function logResultError<T, E extends { message: string }>(
   operation: string,
   result: ResultType<T, E>,
@@ -106,7 +115,7 @@ async function createWindow(): Promise<void> {
     mediaToolsService = new MediaToolsService();
   }
 
-  const windowIconPath = path.join(app.getAppPath(), 'media', 'frame-view-icon.png');
+  const windowIconPath = resolveWindowIconPath('frame-view-icon.png');
 
   if (!settingsService) {
     settingsService = new SettingsService(app.getPath('userData'));
@@ -139,7 +148,7 @@ async function createWindow(): Promise<void> {
     minWidth: 980,
     minHeight: 640,
     autoHideMenuBar: true,
-    icon: existsSync(windowIconPath) ? windowIconPath : undefined,
+    icon: windowIconPath,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
