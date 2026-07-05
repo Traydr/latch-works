@@ -1,5 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { areThumbnailRequestsEqual, dedupeThumbnailRequests } from "./gallery-page-helpers";
+import {
+  areThumbnailRequestsEqual,
+  dedupeThumbnailRequests,
+  supportsGalleryThumbnail,
+} from "./gallery-page-helpers";
+
+describe("supportsGalleryThumbnail", () => {
+  it("returns true for image, gif, video, and pdf", () => {
+    expect(supportsGalleryThumbnail({ id: "1", mediaType: "image" } as never)).toBe(true);
+    expect(supportsGalleryThumbnail({ id: "1", mediaType: "gif" } as never)).toBe(true);
+    expect(supportsGalleryThumbnail({ id: "1", mediaType: "video" } as never)).toBe(true);
+    expect(supportsGalleryThumbnail({ id: "1", mediaType: "pdf" } as never)).toBe(true);
+  });
+
+  it("returns false for other media types", () => {
+    expect(supportsGalleryThumbnail({ id: "1", mediaType: "unknown" } as never)).toBe(false);
+    expect(supportsGalleryThumbnail({ id: "1", mediaType: "audio" } as never)).toBe(false);
+  });
+});
 
 describe("dedupeThumbnailRequests", () => {
   it("returns an empty array for empty input", () => {

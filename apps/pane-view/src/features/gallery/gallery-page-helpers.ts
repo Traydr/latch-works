@@ -23,7 +23,12 @@ export function mergeLibraryMedia(
 }
 
 export function supportsGalleryThumbnail(media: MediaItem): boolean {
-  return media.mediaType === "image" || media.mediaType === "gif" || media.mediaType === "video";
+  return (
+    media.mediaType === "image" ||
+    media.mediaType === "gif" ||
+    media.mediaType === "video" ||
+    media.mediaType === "pdf"
+  );
 }
 
 export function dedupeThumbnailRequests(
