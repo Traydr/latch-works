@@ -11,12 +11,27 @@
 
 ## Status
 
+- **Status**: DONE
 - **Priority**: P1
 - **Effort**: M
 - **Risk**: LOW
 - **Depends on**: none
 - **Category**: tests, dx
 - **Planned at**: commit `8f19cd4`, 2026-07-05
+- **Pull request**: https://github.com/Traydr/latch-works/pull/47
+- **Merged**: 2026-07-05, merge commit `4ffbdb4`
+- **Verified**: GitHub `Check` passed on PR #47 and latest `main` check passed
+  at https://github.com/Traydr/latch-works/actions/runs/28746243602
+
+## Completion Notes
+
+- Implemented `.github/workflows/check.yml` on `ubuntu-latest` per maintainer
+  feedback, using `pnpm/action-setup@v4` before `actions/setup-node@v4` so
+  `cache: pnpm` can locate pnpm.
+- Installed with `pnpm install --frozen-lockfile --prod=false` and ran the full
+  workspace `pnpm check` gate.
+- Accepted execution deviation: source/test/config cleanup was included to make
+  Biome, Knip, and the full CI gate green.
 
 ## Why This Matters
 
@@ -110,13 +125,14 @@ Plan 018 handles local services docs.
 
 ## Done Criteria
 
-- [ ] `.github/workflows/check.yml` exists and runs on PRs.
-- [ ] Workflow uses Node 22 and pnpm 11.1.0.
-- [ ] The workflow runs `pnpm install --frozen-lockfile` and a full check command.
-- [ ] `pnpm check` exits 0 locally or the PR explicitly records a pre-existing
-  failure without weakening the new gate.
-- [ ] No source files were changed except minimal test-env cleanup if required.
-- [ ] `plans/README.md` status row updated.
+- [x] `.github/workflows/check.yml` exists and runs on PRs.
+- [x] Workflow uses Node 22 and pnpm 11.1.0.
+- [x] The workflow runs `pnpm install --frozen-lockfile --prod=false` and
+  `pnpm check`.
+- [x] `pnpm check` exited 0 locally and in GitHub Actions.
+- [x] Accepted deviation recorded: source/test/config cleanup was needed to make
+  the CI gate green.
+- [x] `plans/README.md` status row updated.
 
 ## STOP Conditions
 

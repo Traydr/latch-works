@@ -7,12 +7,24 @@
 
 ## Status
 
+- **Status**: DONE
 - **Priority**: P1
 - **Effort**: S
 - **Risk**: LOW
 - **Depends on**: plans/002-add-sync-orchestration-and-route-tests.md
 - **Category**: bug
 - **Planned at**: commit `8f19cd4`, 2026-07-05
+- **Pull request**: https://github.com/Traydr/latch-works/pull/49
+- **Merged**: 2026-07-05, merge commit `6d10563`
+- **Verified**: GitHub `Check` passed on PR #49 and latest `main` check passed
+  at https://github.com/Traydr/latch-works/actions/runs/28746243602
+
+## Completion Notes
+
+- Added the writable sync-run guard at the start of upload completion writes.
+- Added regression coverage confirming finalized runs reject late object
+  completion writes.
+- The upload and delete paths now share the same finalized-run write policy.
 
 ## Why This Matters
 
@@ -97,10 +109,10 @@ contract unless the existing route already maps errors.
 
 ## Done Criteria
 
-- [ ] `completeSyncedObject` calls `assertWritableSyncRun` before any upsert.
-- [ ] Upload and delete paths now enforce the same writable-run rule.
-- [ ] Focused tests and typecheck exit 0.
-- [ ] `plans/README.md` status row updated.
+- [x] `completeSyncedObject` calls `assertWritableSyncRun` before any upsert.
+- [x] Upload and delete paths now enforce the same writable-run rule.
+- [x] Focused tests and the GitHub `Check` workflow exited 0.
+- [x] `plans/README.md` status row updated.
 
 ## STOP Conditions
 

@@ -8,12 +8,24 @@
 
 ## Status
 
+- **Status**: DONE
 - **Priority**: P1
 - **Effort**: M
 - **Risk**: MED
 - **Depends on**: plans/001-add-github-actions-verification-baseline.md
 - **Category**: tests
 - **Planned at**: commit `8f19cd4`, 2026-07-05
+- **Pull request**: https://github.com/Traydr/latch-works/pull/48
+- **Merged**: 2026-07-05, merge commit `fe86968`
+- **Verified**: GitHub `Check` passed on PR #48 and latest `main` check passed
+  at https://github.com/Traydr/latch-works/actions/runs/28746243602
+
+## Completion Notes
+
+- Added Lockstep core characterization tests for push and prune orchestration.
+- Added Pane View sync route handler tests covering auth, run creation,
+  finalization, upload completion, and remote delete delegation.
+- No production behavior changed in this plan.
 
 ## Why This Matters
 
@@ -107,12 +119,12 @@ Import route modules and invoke their server `POST` handlers with constructed
 
 ## Done Criteria
 
-- [ ] Push orchestration has tests for success, failure, capped/no-op, and abort.
-- [ ] Prune orchestration has tests for success, failure, capped/no-op, and abort.
-- [ ] Pane View sync route handlers have auth and delegation tests.
-- [ ] No production behavior changed.
-- [ ] Focused test and typecheck commands exit 0.
-- [ ] `plans/README.md` status row updated.
+- [x] Push orchestration has tests for success, failure, capped/no-op, and abort.
+- [x] Prune orchestration has tests for success, failure, capped/no-op, and abort.
+- [x] Pane View sync route handlers have auth and delegation tests.
+- [x] No production behavior changed.
+- [x] Focused tests and the GitHub `Check` workflow exited 0.
+- [x] `plans/README.md` status row updated.
 
 ## STOP Conditions
 

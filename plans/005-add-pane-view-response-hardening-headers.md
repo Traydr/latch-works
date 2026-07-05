@@ -8,12 +8,29 @@
 
 ## Status
 
+- **Status**: DONE
 - **Priority**: P1
 - **Effort**: M
 - **Risk**: MED
 - **Depends on**: plans/001-add-github-actions-verification-baseline.md
 - **Category**: security
 - **Planned at**: commit `8f19cd4`, 2026-07-05
+- **Pull request**: https://github.com/Traydr/latch-works/pull/51
+- **Follow-up**: https://github.com/Traydr/latch-works/pull/52 fixed CSP
+  compatibility with TanStack Start hydration scripts.
+- **Merged**: 2026-07-05, plan merge commit `651cbb4`, follow-up merge commit
+  `5cdd0e9`
+- **Verified**: GitHub `Check` passed on PR #51 and latest `main` check passed
+  at https://github.com/Traydr/latch-works/actions/runs/28746243602
+
+## Completion Notes
+
+- Added a central Pane View security header helper/middleware.
+- Added CSP `frame-ancestors 'none'`, `X-Content-Type-Options: nosniff`, and
+  `Referrer-Policy: same-origin`.
+- PR #52 loosened the script directive enough for TanStack Start hydration while
+  preserving the response hardening intent.
+- Added security header and delivery compatibility tests.
 
 ## Why This Matters
 
@@ -116,12 +133,12 @@ one server handler test where practical.
 
 ## Done Criteria
 
-- [ ] Pane View app routes set `frame-ancestors 'none'` through CSP.
-- [ ] Pane View responses set `X-Content-Type-Options: nosniff` and
+- [x] Pane View app routes set `frame-ancestors 'none'` through CSP.
+- [x] Pane View responses set `X-Content-Type-Options: nosniff` and
   `Referrer-Policy: same-origin`.
-- [ ] Media delivery routes are not broken by HTML-only CSP.
-- [ ] Build, focused tests, and typecheck exit 0.
-- [ ] `plans/README.md` status row updated.
+- [x] Media delivery routes are not broken by HTML-only CSP.
+- [x] Build, focused tests, and the GitHub `Check` workflow exited 0.
+- [x] `plans/README.md` status row updated.
 
 ## STOP Conditions
 

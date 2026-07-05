@@ -8,12 +8,24 @@
 
 ## Status
 
+- **Status**: DONE
 - **Priority**: P1
 - **Effort**: M
 - **Risk**: LOW
 - **Depends on**: plans/002-add-sync-orchestration-and-route-tests.md
 - **Category**: security
 - **Planned at**: commit `8f19cd4`, 2026-07-05
+- **Pull request**: https://github.com/Traydr/latch-works/pull/50
+- **Merged**: 2026-07-05, merge commit `86f1788`
+- **Verified**: GitHub `Check` passed on PR #50 and latest `main` check passed
+  at https://github.com/Traydr/latch-works/actions/runs/28746243602
+
+## Completion Notes
+
+- Added server-side expected content-type mapping for sync payload validation.
+- Upload URL signing now uses the server-derived content type.
+- CDN responses include `X-Content-Type-Options: nosniff`.
+- Added focused validation, sync route, and CDN response coverage.
 
 ## Why This Matters
 
@@ -116,12 +128,12 @@ headers. Keep existing range, cache, etag, and content-length behavior.
 
 ## Done Criteria
 
-- [ ] Client-supplied content type is never persisted unless it matches the
+- [x] Client-supplied content type is never persisted unless it matches the
   server-derived media mapping.
-- [ ] Upload URL signing uses the server-derived content type.
-- [ ] `/cdn/v1/*` responses include `X-Content-Type-Options: nosniff`.
-- [ ] Focused tests and typecheck exit 0.
-- [ ] `plans/README.md` status row updated.
+- [x] Upload URL signing uses the server-derived content type.
+- [x] `/cdn/v1/*` responses include `X-Content-Type-Options: nosniff`.
+- [x] Focused tests and the GitHub `Check` workflow exited 0.
+- [x] `plans/README.md` status row updated.
 
 ## STOP Conditions
 
