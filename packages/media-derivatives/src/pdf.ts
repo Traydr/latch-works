@@ -136,12 +136,10 @@ export async function renderPdfCoverPage(
     const canvasFactory = doc.canvasFactory as unknown as PdfjsCanvasFactory;
     const { canvas } = canvasFactory.create(width, height);
 
-    await page
-      .render({
-        canvas: canvas as unknown as HTMLCanvasElement,
-        viewport,
-      })
-      .promise;
+    await page.render({
+      canvas: canvas as unknown as HTMLCanvasElement,
+      viewport,
+    }).promise;
 
     page.cleanup();
 

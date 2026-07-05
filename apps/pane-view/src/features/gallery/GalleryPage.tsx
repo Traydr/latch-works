@@ -11,15 +11,7 @@ import {
 } from "@latch-works/media-domain";
 import { getRouteApi } from "@tanstack/react-router";
 import { Archive, ChevronUp, PanelRightClose, PanelRightOpen, Search } from "lucide-react";
-import {
-  type FormEvent,
-  Fragment,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { type FormEvent, Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -41,10 +33,10 @@ import {
   getParentPath,
   isTextInputTarget,
 } from "@/features/gallery/browse-search";
-import { mergeLibraryMedia } from "@/features/gallery/gallery-page-helpers";
-import { GalleryBrowsePane } from "@/features/gallery/GalleryBrowsePane";
 import { FloatingToolbar } from "@/features/gallery/FloatingToolbar";
+import { GalleryBrowsePane } from "@/features/gallery/GalleryBrowsePane";
 import { GalleryGridSkeleton } from "@/features/gallery/GalleryGridSkeleton";
+import { mergeLibraryMedia } from "@/features/gallery/gallery-page-helpers";
 import { useGalleryShell } from "@/features/gallery/gallery-shell-context";
 import { MediaViewerModal } from "@/features/gallery/MediaViewerModal";
 import { GALLERY_STATE_DEFAULTS, useGalleryState } from "@/features/gallery/useGalleryState";

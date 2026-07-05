@@ -12,10 +12,7 @@ export interface DerivativeDescriptor {
 
 export function supportsDerivative(mediaType: MediaType): boolean {
   return (
-    mediaType === "video" ||
-    mediaType === "image" ||
-    mediaType === "gif" ||
-    mediaType === "pdf"
+    mediaType === "video" || mediaType === "image" || mediaType === "gif" || mediaType === "pdf"
   );
 }
 

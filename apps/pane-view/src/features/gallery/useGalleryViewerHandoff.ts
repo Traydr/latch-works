@@ -18,7 +18,9 @@ export interface GalleryViewerHandoffResult {
  * MediaViewerModal. Calls `setSelectedId` when the viewer opens to synchronize
  * gallery selection.
  */
-export function useGalleryViewerHandoff(setSelectedId: (id: string) => void): GalleryViewerHandoffResult {
+export function useGalleryViewerHandoff(
+  setSelectedId: (id: string) => void,
+): GalleryViewerHandoffResult {
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerItems, setViewerItems] = useState<MediaItem[] | null>(null);
   const [viewerLockedMediaId, setViewerLockedMediaId] = useState<string | null>(null);
