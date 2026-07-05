@@ -14,7 +14,6 @@ import { Archive, ChevronUp, PanelRightClose, PanelRightOpen, Search } from "luc
 import {
   type FormEvent,
   Fragment,
-  type MutableRefObject,
   useCallback,
   useEffect,
   useMemo,
@@ -34,13 +33,6 @@ import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { ComicReader } from "@/features/comics/ComicReader";
-import { BrowserGrid } from "@/features/gallery/BrowserGrid";
-import {
-  type GalleryThumbnailRequest,
-  getNextPendingThumbnailRetryMs,
-  readCachedGalleryThumbnailState,
-  resolveGalleryThumbnailsBatch,
-} from "@/features/gallery/batched-thumbnail-resolver";
 import {
   buildBreadcrumbItems,
   canUseFolderBrowseModes,
@@ -49,13 +41,15 @@ import {
   getParentPath,
   isTextInputTarget,
 } from "@/features/gallery/browse-search";
-import { DetailPanel } from "@/features/gallery/DetailPanel";
+import { mergeLibraryMedia } from "@/features/gallery/gallery-page-helpers";
+import { GalleryBrowsePane } from "@/features/gallery/GalleryBrowsePane";
 import { FloatingToolbar } from "@/features/gallery/FloatingToolbar";
 import { GalleryGridSkeleton } from "@/features/gallery/GalleryGridSkeleton";
 import { useGalleryShell } from "@/features/gallery/gallery-shell-context";
 import { MediaViewerModal } from "@/features/gallery/MediaViewerModal";
-import { DEFAULT_CARD_WIDTH } from "@/features/gallery/thumbnail-size";
 import { GALLERY_STATE_DEFAULTS, useGalleryState } from "@/features/gallery/useGalleryState";
+import { useGalleryViewerHandoff } from "@/features/gallery/useGalleryViewerHandoff";
+import { useWindowedThumbnailResolution } from "@/features/gallery/useWindowedThumbnailResolution";
 import {
   toLibrarySnapshotRequest,
   useDeleteLibraryEntryMutation,
@@ -64,7 +58,6 @@ import {
   useLibrarySnapshotQuery,
 } from "@/features/library/library-queries";
 import { getGalleryListing, getLibrarySnapshot } from "@/features/library/library-service";
-import { regenerateMediaThumbnail } from "@/features/media/media-delivery-service";
 import { HotkeyOverlay } from "@/features/settings/HotkeyOverlay";
 import { SettingsDrawer } from "@/features/settings/SettingsDrawer";
 import {
@@ -74,7 +67,6 @@ import {
 } from "@/features/settings/useAppSettings";
 import { useHydrated } from "@/hooks/use-hydrated";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { cn } from "@/lib/utils";
 import type { LibraryMediaItem, MediaPage } from "@/server/library/types";
 
 const galleryIndexRoute = getRouteApi("/_gallery/");
@@ -108,10 +100,6 @@ export function GalleryPage() {
   const [randomSeed, setRandomSeed] = useState(() => createRandomSeed());
   const [selectedId, setSelectedId] = useState<string | null>(search.media ?? null);
   const [searchDraft, setSearchDraft] = useState(search.q ?? "");
-  const [viewerOpen, setViewerOpen] = useState(false);
-  const [viewerItems, setViewerItems] = useState<MediaItem[] | null>(null);
-  /** When set, gallery selection stays on this id while the viewer pages through `viewerItems`. */
-  const [viewerLockedMediaId, setViewerLockedMediaId] = useState<string | null>(null);
   const [focusedEntryIndex, setFocusedEntryIndex] = useState(0);
   const [scrollFocusedIntoView, setScrollFocusedIntoView] = useState(false);
   const [deletingEntryIds, setDeletingEntryIds] = useState<ReadonlySet<string>>(() => new Set());
@@ -124,13 +112,6 @@ export function GalleryPage() {
   const [listingCursor, setListingCursor] = useState<string | null>(null);
   const [loadingMoreMedia, setLoadingMoreMedia] = useState(false);
   const [hasRestoredGalleryPrefs, setHasRestoredGalleryPrefs] = useState(false);
-  const [windowedThumbnailRequests, setWindowedThumbnailRequests] = useState<
-    GalleryThumbnailRequest[]
-  >([]);
-  const [resolvedThumbnailUrls, setResolvedThumbnailUrls] = useState<Record<string, string>>({});
-  const [resolvedThumbnailTokens, setResolvedThumbnailTokens] = useState<Record<string, string>>(
-    {},
-  );
 
   const folderModesEnabled = canUseFolderBrowseModes(search.path);
   const effectiveComicMode = folderModesEnabled && comicMode;
@@ -207,6 +188,13 @@ export function GalleryPage() {
     ],
   );
 
+  const thumbnailResetKey = `${browseKey}|${listingBrowseKey}|${String(usesServerListing)}`;
+  const { resolvedThumbnailUrls, resolvedThumbnailTokens, handleWindowedEntriesChange } =
+    useWindowedThumbnailResolution(thumbnailResetKey);
+
+  const { viewerOpen, viewerItems, viewerLockedMediaId, openViewer, closeViewer } =
+    useGalleryViewerHandoff(setSelectedId);
+
   const showDetailPanel = !isMobile && detailPanelOpen;
 
   const buildBrowseSearch = useCallback(
@@ -261,10 +249,6 @@ export function GalleryPage() {
     setListingPage(null);
     setListingCursor(null);
     setLoadingMoreMedia(false);
-    setWindowedThumbnailRequests([]);
-    const cached = readCachedGalleryThumbnailState();
-    setResolvedThumbnailUrls(cached.urls);
-    setResolvedThumbnailTokens(cached.deliveryTokens);
   }, [browseKey, listingBrowseKey, usesServerListing]);
 
   useEffect(() => {
@@ -900,28 +884,6 @@ export function GalleryPage() {
     }
   };
 
-  const openViewer = (
-    items: MediaItem[],
-    startMediaId: string,
-    options?: { lockSelectionToMediaId?: string },
-  ) => {
-    const startIndex = items.findIndex((item) => item.id === startMediaId);
-    if (startIndex < 0) {
-      return;
-    }
-
-    setViewerItems(items);
-    setViewerLockedMediaId(options?.lockSelectionToMediaId ?? null);
-    setSelectedId(options?.lockSelectionToMediaId ?? startMediaId);
-    setViewerOpen(true);
-  };
-
-  const closeViewer = () => {
-    setViewerOpen(false);
-    setViewerItems(null);
-    setViewerLockedMediaId(null);
-  };
-
   const handleActivateEntry = (entry: BrowserEntry) => {
     if (entry.kind === "folder") {
       navigateToPath(entry.path);
@@ -999,92 +961,6 @@ export function GalleryPage() {
   const handleLoadMoreMedia = useCallback(() => {
     void loadMoreMedia();
   }, [loadMoreMedia]);
-
-  const handleWindowedEntriesChange = useCallback((windowedEntries: BrowserEntry[]) => {
-    const requests = dedupeThumbnailRequests(
-      windowedEntries.flatMap((entry): GalleryThumbnailRequest[] => {
-        if (entry.kind === "folder") {
-          return [];
-        }
-
-        const media = entry.kind === "comic" ? entry.comic.cover : entry.media;
-        const embedded = media as LibraryMediaItem;
-        if (
-          !supportsGalleryThumbnail(media) ||
-          embedded.thumbnailUrl ||
-          embedded.thumbnailDeliveryToken
-        ) {
-          return [];
-        }
-
-        return [{ mediaId: media.id }];
-      }),
-    );
-
-    setWindowedThumbnailRequests((current) =>
-      areThumbnailRequestsEqual(current, requests) ? current : requests,
-    );
-  }, []);
-
-  useEffect(() => {
-    if (windowedThumbnailRequests.length === 0) {
-      return;
-    }
-
-    let cancelled = false;
-    let debounceTimeoutId: number | undefined;
-    let retryTimeoutId: number | undefined;
-
-    const applyResolvedState = (
-      resolved: Awaited<ReturnType<typeof resolveGalleryThumbnailsBatch>>,
-    ) => {
-      setResolvedThumbnailUrls(resolved.urls);
-      setResolvedThumbnailTokens(resolved.deliveryTokens);
-    };
-
-    const scheduleRetry = () => {
-      if (cancelled) {
-        return;
-      }
-
-      const retryDelayMs = getNextPendingThumbnailRetryMs(windowedThumbnailRequests);
-      if (retryDelayMs === null) {
-        return;
-      }
-
-      retryTimeoutId = window.setTimeout(() => {
-        void resolveGalleryThumbnailsBatch(windowedThumbnailRequests).then((resolved) => {
-          if (cancelled) {
-            return;
-          }
-
-          applyResolvedState(resolved);
-          scheduleRetry();
-        });
-      }, retryDelayMs);
-    };
-
-    debounceTimeoutId = window.setTimeout(() => {
-      void resolveGalleryThumbnailsBatch(windowedThumbnailRequests).then((resolved) => {
-        if (cancelled) {
-          return;
-        }
-
-        applyResolvedState(resolved);
-        scheduleRetry();
-      });
-    }, 200);
-
-    return () => {
-      cancelled = true;
-      if (debounceTimeoutId !== undefined) {
-        window.clearTimeout(debounceTimeoutId);
-      }
-      if (retryTimeoutId !== undefined) {
-        window.clearTimeout(retryTimeoutId);
-      }
-    };
-  }, [windowedThumbnailRequests]);
 
   return (
     <>
@@ -1391,231 +1267,5 @@ export function GalleryPage() {
         <ComicReader comic={activeComic} onClose={() => setActiveComic(null)} />
       ) : null}
     </>
-  );
-}
-
-interface GalleryBrowsePaneProps {
-  columnCountRef: MutableRefObject<number>;
-  comicMode: boolean;
-  deletedEntryIds: ReadonlySet<string>;
-  deletingEntryIds: ReadonlySet<string>;
-  entries: BrowserEntry[];
-  focusedEntryIndex: number;
-  isFetching: boolean;
-  loadingMoreMedia: boolean;
-  mediaPage: MediaPage | null;
-  onActivateEntry: (entry: BrowserEntry) => void;
-  onDelete: () => void;
-  onLoadMoreMedia: () => void;
-  onNext: () => void;
-  onOpenViewer: () => void;
-  onPrev: () => void;
-  onScrolledToFocus: () => void;
-  onSelectEntry: (entry: BrowserEntry) => void;
-  onWindowedEntriesChange: (entries: BrowserEntry[]) => void;
-  resolvedThumbnailTokens: Readonly<Record<string, string>>;
-  resolvedThumbnailUrls: Readonly<Record<string, string>>;
-  scrollFocusedIntoView: boolean;
-  selected: MediaItem | null;
-  selectedId: string | null;
-  showDetailPanel: boolean;
-  paginationResetKey: string;
-  thumbnailSize: number;
-}
-
-function GalleryBrowsePane({
-  columnCountRef,
-  comicMode,
-  deletedEntryIds,
-  deletingEntryIds,
-  entries,
-  focusedEntryIndex,
-  isFetching,
-  loadingMoreMedia,
-  mediaPage,
-  onActivateEntry,
-  onDelete,
-  onLoadMoreMedia,
-  onNext,
-  onOpenViewer,
-  onPrev,
-  onScrolledToFocus,
-  onSelectEntry,
-  onWindowedEntriesChange,
-  resolvedThumbnailTokens,
-  resolvedThumbnailUrls,
-  scrollFocusedIntoView,
-  selected,
-  selectedId,
-  showDetailPanel,
-  paginationResetKey,
-  thumbnailSize,
-}: GalleryBrowsePaneProps) {
-  const [loadMoreTrigger, setLoadMoreTrigger] = useState<HTMLDivElement | null>(null);
-  const loadMoreTriggerIntersectingRef = useRef(false);
-  const loadingMoreMediaRef = useRef(loadingMoreMedia);
-  loadingMoreMediaRef.current = loadingMoreMedia;
-
-  useEffect(() => {
-    loadMoreTriggerIntersectingRef.current = false;
-  }, [paginationResetKey]);
-
-  useEffect(() => {
-    if (!mediaPage?.hasMore || !loadMoreTrigger) {
-      return;
-    }
-
-    const observer = new IntersectionObserver(
-      (observerEntries) => {
-        const isIntersecting = observerEntries.some((entry) => entry.isIntersecting);
-        const wasIntersecting = loadMoreTriggerIntersectingRef.current;
-        loadMoreTriggerIntersectingRef.current = isIntersecting;
-
-        if (isIntersecting && !wasIntersecting && !loadingMoreMediaRef.current) {
-          onLoadMoreMedia();
-        }
-      },
-      { root: null, rootMargin: "0px", threshold: 0 },
-    );
-
-    observer.observe(loadMoreTrigger);
-    return () => observer.disconnect();
-  }, [loadMoreTrigger, mediaPage?.hasMore, onLoadMoreMedia]);
-
-  return (
-    <div
-      className={cn(
-        "flex min-h-0 min-w-0 flex-1 overflow-hidden",
-        isFetching && "opacity-80 transition-opacity",
-      )}
-    >
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <BrowserGrid
-          cardWidth={thumbnailSize}
-          comicMode={comicMode}
-          columnCountRef={columnCountRef}
-          deletedEntryIds={deletedEntryIds}
-          deletingEntryIds={deletingEntryIds}
-          entries={entries}
-          footer={
-            mediaPage?.hasMore ? (
-              <div className="mt-4 flex justify-center border-t border-border pt-3">
-                <div ref={setLoadMoreTrigger} className="inline-flex">
-                  <Button
-                    disabled={loadingMoreMedia}
-                    onClick={onLoadMoreMedia}
-                    size="sm"
-                    type="button"
-                    variant="outline"
-                  >
-                    {loadingMoreMedia ? "Loading more…" : "Load more"}
-                  </Button>
-                </div>
-              </div>
-            ) : null
-          }
-          focusedIndex={focusedEntryIndex}
-          onActivateEntry={onActivateEntry}
-          onScrolledToFocus={onScrolledToFocus}
-          onSelectEntry={onSelectEntry}
-          onWindowedEntriesChange={onWindowedEntriesChange}
-          scrollFocusedIntoView={scrollFocusedIntoView}
-          selectedId={selectedId}
-          thumbnailDeliveryTokens={resolvedThumbnailTokens}
-          thumbnailUrls={resolvedThumbnailUrls}
-        />
-      </div>
-
-      {showDetailPanel ? (
-        <div className="hidden min-h-0 min-w-0 max-w-[360px] shrink-0 lg:block">
-          <DetailPanel
-            isDeleted={selected ? deletedEntryIds.has(selected.id) : false}
-            isDeleting={selected ? deletingEntryIds.has(selected.id) : false}
-            onCopyPath={() => {
-              if (selected) {
-                void navigator.clipboard.writeText(selected.path);
-              }
-            }}
-            onDelete={onDelete}
-            onDownload={() => {
-              if (selected) {
-                window.open(`/api/media/${selected.id}/original`, "_blank", "noopener,noreferrer");
-              }
-            }}
-            onNext={onNext}
-            onOpenViewer={onOpenViewer}
-            onPrev={onPrev}
-            onRegenerateThumbnail={async () => {
-              if (!selected) {
-                return;
-              }
-
-              await regenerateMediaThumbnail({
-                data: { mediaId: selected.id, size: DEFAULT_CARD_WIDTH },
-              });
-            }}
-            selected={selected}
-            showDelete
-          />
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function mergeLibraryMedia(
-  base: readonly LibraryMediaItem[],
-  extra: readonly LibraryMediaItem[],
-): LibraryMediaItem[] {
-  if (extra.length === 0) {
-    return [...base];
-  }
-
-  const seen = new Set(base.map((item) => item.id));
-  const merged = [...base];
-  for (const item of extra) {
-    if (!seen.has(item.id)) {
-      seen.add(item.id);
-      merged.push(item);
-    }
-  }
-
-  return merged;
-}
-
-function supportsGalleryThumbnail(media: MediaItem): boolean {
-  return media.mediaType === "image" || media.mediaType === "gif" || media.mediaType === "video";
-}
-
-function dedupeThumbnailRequests(
-  requests: readonly GalleryThumbnailRequest[],
-): GalleryThumbnailRequest[] {
-  const seen = new Set<string>();
-  const deduped: GalleryThumbnailRequest[] = [];
-
-  for (const request of requests) {
-    const key = `${request.mediaId}:${request.size ?? "default"}`;
-    if (seen.has(key)) {
-      continue;
-    }
-
-    seen.add(key);
-    deduped.push(request);
-  }
-
-  return deduped;
-}
-
-function areThumbnailRequestsEqual(
-  left: readonly GalleryThumbnailRequest[],
-  right: readonly GalleryThumbnailRequest[],
-): boolean {
-  if (left.length !== right.length) {
-    return false;
-  }
-
-  return left.every(
-    (request, index) =>
-      request.mediaId === right[index]?.mediaId && request.size === right[index]?.size,
   );
 }
