@@ -7,7 +7,11 @@ import {
 import { createFileRoute } from "@tanstack/react-router";
 import { env } from "../env/server";
 import { requireSyncApiToken } from "../server/auth/api-token";
-import { validateUploadFilename } from "../server/sync/validation";
+import {
+  expectedContentTypeForExtension,
+  validateSyncContentType,
+  validateUploadFilename,
+} from "../server/sync/validation";
 
 interface UploadUrlRequest {
   contentType?: string;
@@ -34,15 +38,24 @@ export const Route = createFileRoute("/api/sync/upload-url")({
           return Response.json({ error: filenameError }, { status: 400 });
         }
 
+        const extension = getExtension(body.filename);
+        const contentType = expectedContentTypeForExtension(extension);
+        if (body.contentType !== undefined) {
+          const contentTypeError = validateSyncContentType(extension, body.contentType);
+          if (contentTypeError) {
+            return Response.json({ error: contentTypeError }, { status: 400 });
+          }
+        }
+
         const mediaType = detectMediaType(body.filename);
 
         const objectKey = originalObjectKey({
-          extension: getExtension(body.filename),
+          extension,
           mediaType,
           sha256: body.sha256,
         });
         const uploadUrl = await createSignedPutUrl({
-          contentType: body.contentType ?? "application/octet-stream",
+          contentType,
           key: objectKey,
           storage: createS3StorageClient({
             accessKeyId: env.S3_ACCESS_KEY_ID,

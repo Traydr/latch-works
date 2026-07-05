@@ -70,6 +70,7 @@ describe("serveCdnDeliveryRequest", () => {
     });
 
     expect(response.status).toBe(200);
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
     const cacheControl = response.headers.get("cache-control");
     expect(cacheControl).toContain("public");
     expect(cacheControl).not.toContain("immutable");
@@ -77,5 +78,28 @@ describe("serveCdnDeliveryRequest", () => {
     const maxAgeMatch = cacheControl?.match(/max-age=(\d+)/);
     expect(maxAgeMatch).not.toBeNull();
     expect(Number(maxAgeMatch?.[1])).toBeLessThanOrEqual(env.MEDIA_DELIVERY_TTL_SECONDS);
+  });
+
+  it("sets nosniff on HEAD responses", async () => {
+    mocks.verifyCdnDeliveryToken.mockReturnValue({
+      exp: Math.floor(Date.now() / 1000) + 3600,
+      objectKey: "originals/sha256/ab/cd/photo.jpg",
+      purpose: "original",
+    });
+    mocks.getStoredObject.mockResolvedValue({
+      body: Readable.from([Buffer.from("jpeg")]),
+      contentLength: 4,
+      contentType: "image/jpeg",
+      etag: '"etag"',
+      statusCode: 200,
+    });
+
+    const response = await serveCdnDeliveryRequest({
+      request: new Request("https://example.test/cdn/v1/good", { method: "HEAD" }),
+      token: "good",
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
   });
 });

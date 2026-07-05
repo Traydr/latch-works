@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  expectedContentTypeForExtension,
+  validateSyncContentType,
   validateSyncLogicalPath,
   validateSyncObjectPayload,
   validateUploadFilename,
@@ -76,6 +78,41 @@ describe("validateSyncObjectPayload", () => {
       mediaType: "image",
     });
     expect(result).toEqual({ ok: false, error: "unsupported media filename" });
+  });
+
+  it("rejects mismatched content types", () => {
+    const result = validateSyncObjectPayload({
+      ...validPayload,
+      contentType: "image/png",
+    });
+    expect(result).toEqual({ ok: false, error: "contentType does not match extension" });
+  });
+});
+
+describe("expectedContentTypeForExtension", () => {
+  it.each([
+    ["jpg", "image/jpeg"],
+    ["jpeg", "image/jpeg"],
+    ["png", "image/png"],
+    ["webp", "image/webp"],
+    ["gif", "image/gif"],
+    ["avif", "image/avif"],
+    ["mp4", "video/mp4"],
+    ["m4v", "video/mp4"],
+    ["webm", "video/webm"],
+    ["mov", "video/quicktime"],
+    ["pdf", "application/pdf"],
+  ] as const)("maps %s to %s", (extension, contentType) => {
+    expect(expectedContentTypeForExtension(extension)).toBe(contentType);
+  });
+});
+
+describe("validateSyncContentType", () => {
+  it("rejects mismatched content types", () => {
+    expect(validateSyncContentType("jpg", "image/png")).toBe(
+      "contentType does not match extension",
+    );
+    expect(validateSyncContentType("jpg", "image/jpeg")).toBeNull();
   });
 });
 
