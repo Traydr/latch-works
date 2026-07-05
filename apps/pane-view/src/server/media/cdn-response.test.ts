@@ -77,5 +77,8 @@ describe("serveCdnDeliveryRequest", () => {
     const maxAgeMatch = cacheControl?.match(/max-age=(\d+)/);
     expect(maxAgeMatch).not.toBeNull();
     expect(Number(maxAgeMatch?.[1])).toBeLessThanOrEqual(env.MEDIA_DELIVERY_TTL_SECONDS);
+    expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
+    expect(response.headers.get("Referrer-Policy")).toBe("same-origin");
+    expect(response.headers.get("Content-Security-Policy")).toBeNull();
   });
 });

@@ -1,5 +1,6 @@
 import { Readable } from "node:stream";
 import { getStoredObject } from "@latch-works/media-storage";
+import { applyMediaDeliverySecurityHeaders } from "../security-headers";
 import { readCdnCacheControl, verifyCdnDeliveryToken } from "./cdn-delivery";
 import { createPaneViewStorageClient } from "./storage-client";
 
@@ -36,6 +37,7 @@ export async function serveCdnDeliveryRequest({
     "cache-control": readCdnCacheControl(),
     "content-type": object.contentType ?? "application/octet-stream",
   });
+  applyMediaDeliverySecurityHeaders(headers);
 
   if (object.contentLength !== undefined) {
     headers.set("content-length", String(object.contentLength));
