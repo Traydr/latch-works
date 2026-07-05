@@ -5,7 +5,6 @@ import {
   type ComicEntry,
   createRandomSeed,
   type GallerySortMode,
-  type MediaItem,
   sortComicEntries,
   sortMediaItems,
 } from "@latch-works/media-domain";
