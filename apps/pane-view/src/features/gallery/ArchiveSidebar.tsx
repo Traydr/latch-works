@@ -45,12 +45,14 @@ export function ArchiveSidebar({
     >
       <SidebarHeader>
         <div className="flex items-center gap-3 overflow-hidden px-2 py-1.5">
-          <div
-            className="grid size-8 shrink-0 place-items-center rounded-md border border-sidebar-border text-[10px] font-bold text-primary"
+          <img
+            alt=""
             aria-hidden="true"
-          >
-            LW
-          </div>
+            className="size-8 shrink-0 rounded-md"
+            height={32}
+            src="/favicon-48.png"
+            width={32}
+          />
           <div className={cn("min-w-0 transition-opacity", isCollapsed && "opacity-0")}>
             <strong className="block truncate text-sm font-semibold">Pane View</strong>
             <span className="block truncate text-[11px] text-muted-foreground">Latch Works</span>

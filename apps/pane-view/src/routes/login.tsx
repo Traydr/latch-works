@@ -28,12 +28,14 @@ function LoginRoute() {
         method="post"
       >
         <div className="flex items-center gap-3 border-b border-zinc-800 pb-4">
-          <div
-            className="grid size-9 place-items-center rounded-md border border-zinc-700 text-xs font-bold text-amber-300"
+          <img
+            alt=""
             aria-hidden="true"
-          >
-            LW
-          </div>
+            className="size-9 shrink-0 rounded-md"
+            height={36}
+            src="/favicon-48.png"
+            width={36}
+          />
           <div>
             <strong className="block text-sm font-semibold">Pane View</strong>
             <span className="block text-pretty text-xs text-zinc-400">Private archive access</span>
