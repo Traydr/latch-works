@@ -54,10 +54,7 @@ export function expectedContentTypeForExtension(extension: string): string {
   }
 }
 
-export function validateSyncContentType(
-  extension: string,
-  contentType: string,
-): string | null {
+export function validateSyncContentType(extension: string, contentType: string): string | null {
   const expected = expectedContentTypeForExtension(extension);
   if (contentType !== expected) {
     return "contentType does not match extension";

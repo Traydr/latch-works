@@ -40,9 +40,9 @@ vi.mock("@latch-works/media-storage", async (importOriginal) => {
 });
 
 import { Route as CompleteObjectRoute } from "../../routes/api.sync.complete-object";
-import { Route as UploadUrlRoute } from "../../routes/api.sync.upload-url";
 import { Route as SyncRunsRoute } from "../../routes/api.sync.runs";
 import { Route as SyncRunCompleteRoute } from "../../routes/api.sync.runs.$syncRunId.complete";
+import { Route as UploadUrlRoute } from "../../routes/api.sync.upload-url";
 
 const {
   completeSyncedObject,
@@ -75,24 +75,28 @@ type SyncRunCompletePost = (ctx: {
   request: Request;
 }) => Promise<Response>;
 
-function getPostHandler<T>(handlers: unknown): T {
+function getPostHandler<T>(handlers: unknown | undefined): T {
+  if (!handlers) {
+    throw new Error("Expected route server handlers");
+  }
+
   return (handlers as { POST: T }).POST;
 }
 
 function postSyncRuns(): SyncRunsPost {
-  return getPostHandler(SyncRunsRoute.options.server!.handlers);
+  return getPostHandler(SyncRunsRoute.options.server?.handlers);
 }
 
 function postSyncRunComplete(): SyncRunCompletePost {
-  return getPostHandler(SyncRunCompleteRoute.options.server!.handlers);
+  return getPostHandler(SyncRunCompleteRoute.options.server?.handlers);
 }
 
 function postCompleteObject(): SyncRunsPost {
-  return getPostHandler(CompleteObjectRoute.options.server!.handlers);
+  return getPostHandler(CompleteObjectRoute.options.server?.handlers);
 }
 
 function postUploadUrl(): SyncRunsPost {
-  return getPostHandler(UploadUrlRoute.options.server!.handlers);
+  return getPostHandler(UploadUrlRoute.options.server?.handlers);
 }
 
 describe("sync route handlers", () => {
