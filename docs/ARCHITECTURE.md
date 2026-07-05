@@ -34,7 +34,7 @@ flowchart TB
   end
 
   subgraph clients["Clients"]
-    Browser["Browser / PWA"]
+    Browser["Browser (SPA)"]
   end
 
   LS -->|"Bearer sync token\n+ presigned PUT"| PV
@@ -76,9 +76,11 @@ Build order matters for local dev: workspace packages compile to `dist/` and mus
 
 **Stack:** TanStack Start (React + Router + server functions), Drizzle ORM, Postgres, Better Auth, Nitro/Vite production server.
 
+**UI rendering:** Route paths `/`, `/login`, and `/manage` are client-rendered SPA routes (`ssr: false`). The server still serves the app shell HTML for direct refreshes on those paths; routing and data fetching occur in the browser. Server functions (`createServerFn`) remain the data and mutation boundary — the client build receives RPC stubs so existing library, media delivery, viewer state, and management server functions are called directly from client route loaders and React Query hooks. Non-UI routes (`/api/*`, `/cdn/v1/*`, `/internal/optimizer/*`) are conventional server handlers and are not affected by SPA routing.
+
 **Responsibilities:**
 
-- Owner authentication (browser sessions)
+- Owner authentication (browser sessions); session status checked client-side via `getSessionStatus` server function before rendering protected UI
 - Sync ingest API for Lockstep (`/api/sync/*`)
 - Library queries and gallery UI (`/`, `?path=`, `?q=`, `?media=`)
 - Media delivery: session-gated authorize routes and HMAC-signed CDN URLs
@@ -327,7 +329,7 @@ Two credential types by design: browser sessions never call sync APIs; the sync 
 | Lockstep | `Authorization: Bearer <PANE_VIEW_SYNC_TOKEN>` | `/api/sync/*` only |
 | Media Optimizer | `Authorization: Bearer <MEDIA_OPTIMIZER_TOKEN>` | `/internal/optimizer/*` on both Pane View and optimizer |
 
-**Browser login:** `POST /api/auth/login` validates configured owner username/password, then Better Auth `sign-in/email`. Protected routes and server functions call `isCurrentWebSessionValid()`.
+**Browser login:** `POST /api/auth/login` validates configured owner username/password, then Better Auth `sign-in/email`. UI routes check session status client-side via the `getSessionStatus` server function (`src/features/auth/session-service.ts`); server functions that touch private data call `isCurrentWebSessionValid()` (or `assertWebSessionAuthorized()`) internally.
 
 **Sync token:** `requireSyncApiToken()` in `apps/pane-view/src/server/auth/api-token.ts` — constant-time comparison against `PANE_VIEW_SYNC_TOKEN`.
 
@@ -398,8 +400,12 @@ sequenceDiagram
   participant MO as Media Optimizer
 
   B->>PV: GET /?path=... (session cookie)
+  PV-->>B: SPA app shell (client renders, loaders call server functions)
+  B->>PV: getSessionStatus server fn (session cookie)
+  PV-->>B: authenticated: true/false
+  B->>PV: getLibrarySnapshot server fn (session cookie)
   PV->>DB: folders + library_entries
-  PV-->>B: SSR gallery (thumbnailDeliveryToken for images)
+  PV-->>B: library snapshot
 
   B->>PV: resolveMediaDeliveryUrls (batched, videos)
   PV->>DB: ensure pending video derivatives
