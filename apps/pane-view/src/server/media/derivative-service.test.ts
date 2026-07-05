@@ -322,7 +322,9 @@ describe("ensureThumbnailDerivative", () => {
 
     const select = createSelectChain([]);
     const insert = createInsertChain();
-    const claim = createUpdateChain([{ mediaObjectId: "obj-pdf", size: 320, status: "processing" }]);
+    const claim = createUpdateChain([
+      { mediaObjectId: "obj-pdf", size: 320, status: "processing" },
+    ]);
     const markReady = createUpdateChain();
 
     mocks.selectMock.mockReturnValue({ from: select.fromMock });

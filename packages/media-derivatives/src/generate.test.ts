@@ -108,7 +108,12 @@ describe("generateDerivativeBytes (pdf)", () => {
 
     const result = await generateDerivativeBytes({
       size: 320,
-      source: { extension: "pdf", mediaType: "pdf", originalObjectKey: "originals/doc.pdf", sha256 },
+      source: {
+        extension: "pdf",
+        mediaType: "pdf",
+        originalObjectKey: "originals/doc.pdf",
+        sha256,
+      },
       storage,
     });
 
@@ -122,7 +127,12 @@ describe("generateDerivativeBytes (pdf)", () => {
     await expect(
       generateDerivativeBytes({
         size: 320,
-        source: { extension: "pdf", mediaType: "pdf", originalObjectKey: "originals/doc.pdf", sha256 },
+        source: {
+          extension: "pdf",
+          mediaType: "pdf",
+          originalObjectKey: "originals/doc.pdf",
+          sha256,
+        },
         storage,
       }),
     ).rejects.toThrow(/exceeds/);
@@ -136,7 +146,12 @@ describe("generateDerivativeBytes (pdf)", () => {
     await expect(
       generateDerivativeBytes({
         size: 320,
-        source: { extension: "pdf", mediaType: "pdf", originalObjectKey: "originals/doc.pdf", sha256 },
+        source: {
+          extension: "pdf",
+          mediaType: "pdf",
+          originalObjectKey: "originals/doc.pdf",
+          sha256,
+        },
         storage,
       }),
     ).rejects.toThrow(/missing/);
@@ -147,12 +162,19 @@ describe("generateDerivativeBytes (pdf)", () => {
     const pdfBytes = Buffer.from("bad-pdf");
     mocks.headStoredObject.mockResolvedValue(mockHead(pdfBytes.byteLength));
     mocks.readStoredObjectBytes.mockResolvedValue(pdfBytes);
-    mocks.renderPdfCoverPage.mockRejectedValue(new Error("PDF load failed: Invalid PDF structure."));
+    mocks.renderPdfCoverPage.mockRejectedValue(
+      new Error("PDF load failed: Invalid PDF structure."),
+    );
 
     await expect(
       generateDerivativeBytes({
         size: 320,
-        source: { extension: "pdf", mediaType: "pdf", originalObjectKey: "originals/doc.pdf", sha256 },
+        source: {
+          extension: "pdf",
+          mediaType: "pdf",
+          originalObjectKey: "originals/doc.pdf",
+          sha256,
+        },
         storage,
       }),
     ).rejects.toThrow(/Invalid PDF structure/);
