@@ -3,7 +3,7 @@
 > **Executor instructions**: Run the drift check first. This is docs-only. Do not
 > copy or introduce secret values. Update `plans/README.md` when done.
 >
-> **Drift check (run first)**: `git diff --stat d8f3c52..HEAD -- AGENTS.md README.md docs/localhost/README.md docs/localhost/compose.yaml docs/ARCHITECTURE.md`
+> **Drift check (run first)**: `git diff --stat 8f19cd4..HEAD -- AGENTS.md README.md docs/localhost/README.md docs/localhost/compose.yaml docs/ARCHITECTURE.md`
 
 ## Status
 
@@ -12,7 +12,7 @@
 - **Risk**: LOW
 - **Depends on**: none
 - **Category**: docs, dx
-- **Planned at**: commit `d8f3c52`, 2026-06-28
+- **Planned at**: commit `8f19cd4`, 2026-07-05
 
 ## Why This Matters
 

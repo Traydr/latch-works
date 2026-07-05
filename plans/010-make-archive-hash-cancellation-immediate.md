@@ -3,7 +3,7 @@
 > **Executor instructions**: Run the drift check first. Preserve scan result
 > ordering. Update `plans/README.md` when done.
 >
-> **Drift check (run first)**: `git diff --stat d8f3c52..HEAD -- packages/media-index/src/scan.ts packages/media-index/src/scan.test.ts packages/lockstep-core/src/sync-cancellation.test.ts packages/lockstep-core/src/remote-api.ts`
+> **Drift check (run first)**: `git diff --stat 8f19cd4..HEAD -- packages/media-index/src/scan.ts packages/media-index/src/scan.test.ts packages/lockstep-core/src/sync-cancellation.test.ts packages/lockstep-core/src/remote-api.ts`
 
 ## Status
 
@@ -12,7 +12,7 @@
 - **Risk**: LOW
 - **Depends on**: plans/001-add-github-actions-verification-baseline.md
 - **Category**: bug, dx
-- **Planned at**: commit `d8f3c52`, 2026-06-28
+- **Planned at**: commit `8f19cd4`, 2026-07-05
 
 ## Why This Matters
 

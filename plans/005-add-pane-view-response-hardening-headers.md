@@ -4,7 +4,7 @@
 > testable header layer; do not guess at a CSP that breaks TanStack Start assets.
 > Update `plans/README.md` when done.
 >
-> **Drift check (run first)**: `git diff --stat d8f3c52..HEAD -- apps/pane-view/src apps/pane-view/vite.config.ts apps/pane-view/package.json`
+> **Drift check (run first)**: `git diff --stat 8f19cd4..HEAD -- apps/pane-view/src apps/pane-view/vite.config.ts apps/pane-view/package.json`
 
 ## Status
 
@@ -13,7 +13,7 @@
 - **Risk**: MED
 - **Depends on**: plans/001-add-github-actions-verification-baseline.md
 - **Category**: security
-- **Planned at**: commit `d8f3c52`, 2026-06-28
+- **Planned at**: commit `8f19cd4`, 2026-07-05
 
 ## Why This Matters
 
@@ -24,7 +24,8 @@ blast radius of future injection bugs and prevents clickjacking of `/manage`.
 
 ## Current State
 
-- `apps/pane-view/src/routes/__root.tsx:19-33` only returns metadata and links.
+- `apps/pane-view/src/routes/__root.tsx:19-38` only returns metadata, favicon
+  links, and the app stylesheet.
 - `apps/pane-view/vite.config.ts:39-42` configures dev server port and plugins,
   but no headers or route rules.
 - `apps/pane-view/src/routes/manage.tsx:5-9` gates `/manage` by session but does

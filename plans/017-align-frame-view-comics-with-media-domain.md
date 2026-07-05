@@ -4,7 +4,7 @@
 > local AGENTS guidance, but do not broaden the extraction beyond comic helpers.
 > Update `plans/README.md` when done.
 >
-> **Drift check (run first)**: `git diff --stat d8f3c52..HEAD -- apps/frame-view/src/renderer/utils/comics.ts apps/frame-view/tests/renderer/utils/comics.test.ts packages/media-domain/src/comics.ts packages/media-domain/src/comics.test.ts apps/frame-view/package.json apps/frame-view/tsconfig.json`
+> **Drift check (run first)**: `git diff --stat 8f19cd4..HEAD -- apps/frame-view/src/renderer/utils/comics.ts apps/frame-view/tests/renderer/utils/comics.test.ts packages/media-domain/src/comics.ts packages/media-domain/src/comics.test.ts apps/frame-view/package.json apps/frame-view/tsconfig.json`
 
 ## Status
 
@@ -13,7 +13,7 @@
 - **Risk**: LOW-MED
 - **Depends on**: plans/001-add-github-actions-verification-baseline.md
 - **Category**: tech-debt
-- **Planned at**: commit `d8f3c52`, 2026-06-28
+- **Planned at**: commit `8f19cd4`, 2026-07-05
 
 ## Why This Matters
 

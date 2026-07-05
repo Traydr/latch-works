@@ -3,7 +3,7 @@
 > **Executor instructions**: Run the drift check first. Keep env validation and
 > test isolation intact. Update `plans/README.md` when done.
 >
-> **Drift check (run first)**: `git diff --stat d8f3c52..HEAD -- apps/pane-view/src/server/media/storage-client.ts apps/pane-view/src/routes/api.sync.upload-url.ts apps/pane-view/src/server/media/*.test.ts apps/pane-view/src/server/sync/*.test.ts`
+> **Drift check (run first)**: `git diff --stat 8f19cd4..HEAD -- apps/pane-view/src/server/media/storage-client.ts apps/pane-view/src/routes/api.sync.upload-url.ts apps/pane-view/src/server/media/*.test.ts apps/pane-view/src/server/sync/*.test.ts`
 
 ## Status
 
@@ -12,7 +12,7 @@
 - **Risk**: LOW
 - **Depends on**: plans/001-add-github-actions-verification-baseline.md
 - **Category**: perf
-- **Planned at**: commit `d8f3c52`, 2026-06-28
+- **Planned at**: commit `8f19cd4`, 2026-07-05
 
 ## Why This Matters
 
@@ -27,7 +27,9 @@ churn without changing external behavior.
 - `packages/media-storage/src/s3.ts:45-61` constructs `new S3Client(...)`.
 - `derivative-delivery-url.ts:6-12` calls `createPaneViewStorageClient()` when
   building dev signed URLs.
-- `repository.ts:193-236` can call derivative URL builders per gallery row.
+- `apps/pane-view/src/server/library/repository.ts:193-246` maps gallery rows
+  with per-row `buildDerivativeDeliveryUrl(...)` calls for ready thumbnails and
+  previews.
 - `api.sync.upload-url.ts:44-54` constructs a separate S3 client inline instead
   of using `createPaneViewStorageClient`.
 

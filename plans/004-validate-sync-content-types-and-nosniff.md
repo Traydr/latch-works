@@ -4,7 +4,7 @@
 > validation while adding content-type validation. Update `plans/README.md` when
 > done.
 >
-> **Drift check (run first)**: `git diff --stat d8f3c52..HEAD -- apps/pane-view/src/server/sync apps/pane-view/src/routes/api.sync.upload-url.ts apps/pane-view/src/server/media/cdn-response.ts packages/lockstep-core/src/remote-api.ts`
+> **Drift check (run first)**: `git diff --stat 8f19cd4..HEAD -- apps/pane-view/src/server/sync apps/pane-view/src/routes/api.sync.upload-url.ts apps/pane-view/src/server/media/cdn-response.ts packages/lockstep-core/src/remote-api.ts`
 
 ## Status
 
@@ -13,7 +13,7 @@
 - **Risk**: LOW
 - **Depends on**: plans/002-add-sync-orchestration-and-route-tests.md
 - **Category**: security
-- **Planned at**: commit `d8f3c52`, 2026-06-28
+- **Planned at**: commit `8f19cd4`, 2026-07-05
 
 ## Why This Matters
 

@@ -4,7 +4,7 @@
 > preserve behavior and keep changes reviewable. Update `plans/README.md` when
 > done.
 >
-> **Drift check (run first)**: `git diff --stat d8f3c52..HEAD -- apps/pane-view/src/features/gallery/GalleryPage.tsx apps/pane-view/src/features/gallery apps/pane-view/src/features/gallery/*.test.tsx`
+> **Drift check (run first)**: `git diff --stat 8f19cd4..HEAD -- apps/pane-view/src/features/gallery/GalleryPage.tsx apps/pane-view/src/features/gallery apps/pane-view/src/features/gallery/*.test.tsx`
 
 ## Status
 
@@ -13,7 +13,7 @@
 - **Risk**: MED
 - **Depends on**: plans/001-add-github-actions-verification-baseline.md
 - **Category**: tech-debt
-- **Planned at**: commit `d8f3c52`, 2026-06-28
+- **Planned at**: commit `8f19cd4`, 2026-07-05
 
 ## Why This Matters
 

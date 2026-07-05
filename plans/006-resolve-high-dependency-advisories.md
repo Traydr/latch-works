@@ -4,7 +4,7 @@
 > use `pnpm audit --fix`; update manifests deliberately. Update
 > `plans/README.md` when done.
 >
-> **Drift check (run first)**: `git diff --stat d8f3c52..HEAD -- package.json pnpm-lock.yaml pnpm-workspace.yaml apps/*/package.json packages/*/package.json`
+> **Drift check (run first)**: `git diff --stat 8f19cd4..HEAD -- package.json pnpm-lock.yaml pnpm-workspace.yaml apps/*/package.json packages/*/package.json`
 
 ## Status
 
@@ -13,11 +13,11 @@
 - **Risk**: MED
 - **Depends on**: plans/001-add-github-actions-verification-baseline.md
 - **Category**: security, migration
-- **Planned at**: commit `d8f3c52`, 2026-06-28
+- **Planned at**: commit `8f19cd4`, 2026-07-05
 
 ## Why This Matters
 
-`pnpm audit --audit-level high` currently reports high advisories. Some affect
+The last successful advisor audit reported high advisories. Some affect
 runtime-facing dev servers/frameworks (`vite`, `astro`), while others affect
 Electron packaging transitive dependencies (`tar`, `tmp`). The goal is a clean
 high-severity audit without broad, unreviewed dependency churn.
@@ -29,17 +29,21 @@ high-severity audit without broad, unreviewed dependency churn.
 - Frame View and Lockstep use `vite` ranges around `^8.0.7` in their manifests.
 - Showcase uses `astro` in `apps/showcase/package.json:22` plus Astro adapters.
 - `pnpm-workspace.yaml:5-8` already uses overrides for native/package tooling.
-- Re-running `pnpm audit --audit-level high` on 2026-06-28 reported 21 total
-  advisories: 10 high, 8 moderate, and 3 low. The high advisories are for
-  `vite`, `astro`, `tar`, and `tmp`.
-- Current patched targets from that audit: `tar >=7.5.11`, `tmp >=0.2.6`,
-  `vite >=8.0.16`, and `astro >=6.4.6`.
+- The last successful advisor run of `pnpm audit --audit-level high` was on
+  2026-06-28 and reported 21 total advisories: 10 high, 8 moderate, and 3 low.
+  The high advisories were for `vite`, `astro`, `tar`, and `tmp`.
+- A 2026-07-05 audit attempt failed in the sandbox with registry DNS/network
+  errors. A network rerun was not performed because `pnpm audit` sends private
+  dependency metadata to the public npm registry; get operator approval before
+  refreshing this baseline externally.
+- Last known patched targets from the successful audit: `tar >=7.5.11`,
+  `tmp >=0.2.6`, `vite >=8.0.16`, and `astro >=6.4.6`.
 
 ## Commands You Will Need
 
 | Purpose | Command | Expected on success |
 |---------|---------|---------------------|
-| Baseline audit | `pnpm audit --audit-level high` | currently reports high advisories |
+| Baseline audit | `pnpm audit --audit-level high` | nonzero if high advisories remain; may require operator-approved registry access |
 | Install/update | `pnpm install` | exit 0 and lockfile updated |
 | Audit gate | `pnpm audit --audit-level high` | exit 0 |
 | Full check | `pnpm check` | exit 0 |
@@ -70,6 +74,8 @@ high-severity audit without broad, unreviewed dependency churn.
 Run `pnpm audit --audit-level high` and save the package/advisory names in the
 PR notes. Do not copy secrets or environment values. Confirm the high advisories
 still include the packages listed above, and note any new packages separately.
+If the operator does not approve external registry access, stop after recording
+that the live advisory baseline could not be refreshed.
 
 **Verify**: `pnpm audit --audit-level high` -> nonzero with the expected high advisories.
 
@@ -122,6 +128,8 @@ workflow is expected to pass.
 - A patched transitive version breaks Electron Forge packaging scripts.
 - Audit remains high after reasonable updates and the remaining advisory affects
   reachable runtime code.
+- Operator approval for the registry audit is unavailable, so the executor
+  cannot verify the current advisory baseline.
 
 ## Maintenance Notes
 

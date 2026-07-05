@@ -3,7 +3,7 @@
 > **Executor instructions**: Run the drift check first. This is docs-only. Update
 > `plans/README.md` when done.
 >
-> **Drift check (run first)**: `git diff --stat d8f3c52..HEAD -- README.md apps/pane-view/README.md docs/ARCHITECTURE.md docs/next-recommendations.md docs/media-optimizer-internals.md docs/runbooks/pane-view-thumbnails.md docs/gather-box-sidecar-manifests.md`
+> **Drift check (run first)**: `git diff --stat 8f19cd4..HEAD -- README.md apps/pane-view/README.md docs/ARCHITECTURE.md docs/next-recommendations.md docs/media-optimizer-internals.md docs/runbooks/pane-view-thumbnails.md docs/gather-box-sidecar-manifests.md`
 
 ## Status
 
@@ -12,7 +12,7 @@
 - **Risk**: LOW
 - **Depends on**: plans/018-fix-local-service-onboarding-docs.md
 - **Category**: docs
-- **Planned at**: commit `d8f3c52`, 2026-06-28
+- **Planned at**: commit `8f19cd4`, 2026-07-05
 
 ## Why This Matters
 

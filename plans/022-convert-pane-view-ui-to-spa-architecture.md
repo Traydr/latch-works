@@ -5,7 +5,7 @@
 > STOP condition occurs, stop and report rather than improvising. When done,
 > update this plan's row in `plans/README.md`.
 >
-> **Drift check (run first)**: `git diff --stat d8f3c52..HEAD -- apps/pane-view/src apps/pane-view/package.json apps/pane-view/vite.config.ts apps/pane-view/tsconfig.json .railway/railway.ts docs/ARCHITECTURE.md`
+> **Drift check (run first)**: `git diff --stat 8f19cd4..HEAD -- apps/pane-view/src apps/pane-view/package.json apps/pane-view/vite.config.ts apps/pane-view/tsconfig.json .railway/railway.ts docs/ARCHITECTURE.md`
 > If any in-scope file changed since this plan was written, compare the current
 > state excerpts below against live code before proceeding.
 
@@ -16,7 +16,7 @@
 - **Risk**: MED
 - **Depends on**: plans/001-add-github-actions-verification-baseline.md, plans/005-add-pane-view-response-hardening-headers.md
 - **Category**: tech-debt, architecture
-- **Planned at**: commit `d8f3c52`, 2026-06-28
+- **Planned at**: commit `8f19cd4`, 2026-07-05
 
 ## Why This Matters
 

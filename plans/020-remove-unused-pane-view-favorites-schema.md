@@ -4,7 +4,7 @@
 > maintainer decision: do not build favorites now; remove the unused table/schema
 > instead. Update `plans/README.md` when done.
 >
-> **Drift check (run first)**: `git diff --stat d8f3c52..HEAD -- apps/pane-view/src/server/db/schema.ts apps/pane-view/drizzle apps/pane-view/src/server/management apps/pane-view/src/features apps/pane-view/src/routes`
+> **Drift check (run first)**: `git diff --stat 8f19cd4..HEAD -- apps/pane-view/src/server/db/schema.ts apps/pane-view/drizzle apps/pane-view/src/server/management apps/pane-view/src/features apps/pane-view/src/routes`
 
 ## Status
 
@@ -13,7 +13,7 @@
 - **Risk**: MED
 - **Depends on**: plans/001-add-github-actions-verification-baseline.md
 - **Category**: migration, tech-debt
-- **Planned at**: commit `d8f3c52`, 2026-06-28
+- **Planned at**: commit `8f19cd4`, 2026-07-05
 
 ## Why This Matters
 

@@ -4,7 +4,7 @@
 > sequential; this plan only releases jobs that were claimed but not processed.
 > Update `plans/README.md` when done.
 >
-> **Drift check (run first)**: `git diff --stat d8f3c52..HEAD -- apps/media-optimizer/src/processor.ts apps/media-optimizer/src/pane-view-client.ts apps/media-optimizer/src/processor.test.ts apps/pane-view/src/server/media/optimizer-jobs-service.ts apps/pane-view/src/server/media/derivative-queue.ts`
+> **Drift check (run first)**: `git diff --stat 8f19cd4..HEAD -- apps/media-optimizer/src/processor.ts apps/media-optimizer/src/pane-view-client.ts apps/media-optimizer/src/processor.test.ts apps/pane-view/src/server/media/optimizer-jobs-service.ts apps/pane-view/src/server/media/derivative-queue.ts`
 
 ## Status
 
@@ -13,7 +13,7 @@
 - **Risk**: LOW
 - **Depends on**: plans/001-add-github-actions-verification-baseline.md
 - **Category**: bug
-- **Planned at**: commit `d8f3c52`, 2026-06-28
+- **Planned at**: commit `8f19cd4`, 2026-07-05
 
 ## Why This Matters
 

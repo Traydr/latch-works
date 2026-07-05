@@ -4,7 +4,7 @@
 > with security/resource limits: corrupt, encrypted, and huge PDFs must fail
 > safely. Update `plans/README.md` when done.
 >
-> **Drift check (run first)**: `git diff --stat d8f3c52..HEAD -- packages/media-derivatives/src packages/media-storage/src apps/pane-view/src/server/media apps/pane-view/src/features/gallery/Poster.tsx apps/media-optimizer/src apps/pane-view/src/server/db/schema.ts`
+> **Drift check (run first)**: `git diff --stat 8f19cd4..HEAD -- packages/media-derivatives/src packages/media-storage/src apps/pane-view/src/server/media apps/pane-view/src/features/gallery/Poster.tsx apps/media-optimizer/src apps/pane-view/src/server/db/schema.ts`
 
 ## Status
 
@@ -13,7 +13,7 @@
 - **Risk**: MED
 - **Depends on**: plans/001-add-github-actions-verification-baseline.md
 - **Category**: direction
-- **Planned at**: commit `d8f3c52`, 2026-06-28
+- **Planned at**: commit `8f19cd4`, 2026-07-05
 
 ## Why This Matters
 
