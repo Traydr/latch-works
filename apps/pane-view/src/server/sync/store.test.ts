@@ -144,18 +144,18 @@ describe("completeSyncedObject", () => {
   });
 
   it("performs all writes inside a transaction client", async () => {
+    const syncRunSelect = createSelectChain([{ id: "run-1", status: "running" }]);
     const mediaInsert = createInsertChain([{ id: "media-1" }]);
     const folderInsert = createInsertChain([{ id: "folder-1" }]);
     const libraryInsert = createInsertChain(undefined);
     const syncItemInsert = createInsertChain(undefined);
-    const folderSelect = createSelectChain([]);
 
+    mocks.txClient.select.mockReturnValue({ from: syncRunSelect.fromMock });
     mocks.txClient.insert
       .mockReturnValueOnce({ values: mediaInsert.valuesMock })
       .mockReturnValueOnce({ values: folderInsert.valuesMock })
       .mockReturnValueOnce({ values: libraryInsert.valuesMock })
       .mockReturnValueOnce({ values: syncItemInsert.valuesMock });
-    mocks.txClient.select.mockReturnValue({ from: folderSelect.fromMock });
 
     const result = await completeSyncedObject({
       input: {
@@ -176,7 +176,9 @@ describe("completeSyncedObject", () => {
     expect(mocks.transactionMock).toHaveBeenCalledTimes(1);
     expect(mocks.rootInsertMock).not.toHaveBeenCalled();
     expect(mocks.txClient.insert).toHaveBeenCalledTimes(4);
-    expect(mocks.txClient.select).not.toHaveBeenCalled();
+    expect(mocks.txClient.select.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.txClient.insert.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    );
     expect(syncItemInsert.valuesMock).toHaveBeenCalledWith(
       expect.objectContaining({
         action: "upload",
@@ -185,6 +187,34 @@ describe("completeSyncedObject", () => {
         syncRunId: "run-1",
       }),
     );
+  });
+
+  it("rejects non-running sync runs without mutating media objects", async () => {
+    const syncRunSelect = createSelectChain([{ id: "run-1", status: "completed" }]);
+    const mediaInsert = createInsertChain([{ id: "media-1" }]);
+
+    mocks.txClient.select.mockReturnValue({ from: syncRunSelect.fromMock });
+    mocks.txClient.insert.mockReturnValue({ values: mediaInsert.valuesMock });
+
+    await expect(
+      completeSyncedObject({
+        input: {
+          contentType: "image/jpeg",
+          extension: "jpg",
+          filename: "photo.jpg",
+          logicalPath: "photos/photo.jpg",
+          mediaType: "image",
+          mtimeMs: 1_700_000_000_000,
+          objectKey: "objects/abc",
+          sha256: "abc123",
+          size: 1024,
+          syncRunId: "run-1",
+        },
+      }),
+    ).rejects.toThrow("Sync run is not accepting writes.");
+
+    expect(mediaInsert.valuesMock).not.toHaveBeenCalled();
+    expect(mocks.txClient.insert).not.toHaveBeenCalled();
   });
 });
 

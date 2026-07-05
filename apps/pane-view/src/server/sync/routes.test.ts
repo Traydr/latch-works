@@ -206,6 +206,20 @@ describe("sync route handlers", () => {
       expect(body).toEqual({ status: "database" });
     });
 
+    it("propagates store rejection from upload completion", async () => {
+      completeSyncedObject.mockRejectedValue(new Error("Sync run is not accepting writes."));
+
+      const request = new Request("http://127.0.0.1:3000/api/sync/complete-object", {
+        body: JSON.stringify(validUploadPayload),
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        method: "POST",
+      });
+
+      await expect(postCompleteObject()({ request })).rejects.toThrow(
+        "Sync run is not accepting writes.",
+      );
+    });
+
     it("returns the auth response without calling stores when unauthorized", async () => {
       const unauthorized = new Response("Unauthorized", { status: 401 });
       requireSyncApiToken.mockReturnValue(unauthorized);

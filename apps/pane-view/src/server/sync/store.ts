@@ -92,6 +92,8 @@ export async function completeSyncedObject({
   const objectKey = input.objectKey;
 
   await db.transaction(async (tx) => {
+    await assertWritableSyncRun(tx, input.syncRunId);
+
     const [mediaObject] = await tx
       .insert(mediaObjects)
       .values({
