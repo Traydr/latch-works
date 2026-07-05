@@ -183,22 +183,24 @@ describe("processBatch", () => {
   });
 
   it("processes image jobs", async () => {
-    mocks.claimJobs.mockResolvedValueOnce({
-      jobs: [
-        {
-          ...makeJob(0),
-          extension: "jpg",
-          mediaType: "image" as const,
-          objectKey: "thumbnails/obj-0-720.webp",
-          originalObjectKey: "originals/obj-0.jpg",
-          size: 720,
-        },
-      ],
-      processingToken: "token-1",
-    }).mockResolvedValue({
-      jobs: [],
-      processingToken: "token-empty",
-    });
+    mocks.claimJobs
+      .mockResolvedValueOnce({
+        jobs: [
+          {
+            ...makeJob(0),
+            extension: "jpg",
+            mediaType: "image" as const,
+            objectKey: "thumbnails/obj-0-720.webp",
+            originalObjectKey: "originals/obj-0.jpg",
+            size: 720,
+          },
+        ],
+        processingToken: "token-1",
+      })
+      .mockResolvedValue({
+        jobs: [],
+        processingToken: "token-empty",
+      });
 
     const result = await processBatch();
 

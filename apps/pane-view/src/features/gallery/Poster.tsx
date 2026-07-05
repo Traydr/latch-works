@@ -1,6 +1,6 @@
 import type { MediaItem } from "@latch-works/media-domain";
-import type { LibraryMediaItem } from "@/server/library/types";
 import { cn } from "@/lib/utils";
+import type { LibraryMediaItem } from "@/server/library/types";
 import { MediaPlaceholder } from "./MediaPlaceholder";
 import { PaneViewImage } from "./PaneViewImage";
 

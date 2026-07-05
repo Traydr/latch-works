@@ -150,22 +150,28 @@ export function ShowcasePipelineStepsDemo() {
 
   const ctrl = useMemo(
     (): LockstepController =>
-      createBaseController("dashboard", idleProgress, false, {
-        reviewed,
-        pushCompleted,
-        pruneCompleted,
-      }, {
-        handlePush: async () => setPushCompleted(true),
-        handlePrune: async () => setPruneCompleted(true),
-        markReviewVisited: () => setReviewed(true),
-        setScreen: (next) => {
-          if (next === "plan") {
-            setReviewed(true);
-          }
-          setScreen(next);
+      createBaseController(
+        "dashboard",
+        idleProgress,
+        false,
+        {
+          reviewed,
+          pushCompleted,
+          pruneCompleted,
         },
-        screen,
-      }),
+        {
+          handlePush: async () => setPushCompleted(true),
+          handlePrune: async () => setPruneCompleted(true),
+          markReviewVisited: () => setReviewed(true),
+          setScreen: (next) => {
+            if (next === "plan") {
+              setReviewed(true);
+            }
+            setScreen(next);
+          },
+          screen,
+        },
+      ),
     [pruneCompleted, pushCompleted, reviewed, screen],
   );
 

@@ -9,7 +9,7 @@ import { type ProcessResult, processBatch } from "./processor.js";
 let inFlight: Promise<void> | null = null;
 let currentRunId: string | undefined;
 
-export interface OptimizerRunStatus extends ProcessResult {
+interface OptimizerRunStatus extends ProcessResult {
   finishedAt: string;
   runId: string;
   startedAt: string;

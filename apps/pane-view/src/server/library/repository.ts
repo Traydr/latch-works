@@ -23,14 +23,14 @@ import { folders, libraryEntries, mediaObjects, thumbnails } from "../db/schema"
 import { buildDerivativeDeliveryUrl } from "../media/derivative-delivery-url";
 import { logDerivativeEvent } from "../media/derivative-telemetry";
 import { mintImageOriginalDeliveryToken } from "../media/image-delivery";
-import { buildMediaPage, type MediaPage } from "./media-page";
 import {
-  decodeGalleryListingCursor,
   DEFAULT_GALLERY_LISTING_LIMIT,
+  decodeGalleryListingCursor,
   encodeGalleryListingCursor,
-  galleryListingRandomHash,
   type GalleryListingPage,
+  galleryListingRandomHash,
 } from "./gallery-listing";
+import { buildMediaPage, type MediaPage } from "./media-page";
 import { escapeLikePattern, resolveMediaScope } from "./query-helpers";
 import type { LibraryMediaItem } from "./types";
 
@@ -552,81 +552,98 @@ function buildGalleryListingOrderBy(sortMode: GallerySortMode, randomSeed: numbe
 function buildGalleryListingCursorCondition(
   cursor: NonNullable<ReturnType<typeof decodeGalleryListingCursor>>,
 ): SQL {
+  const requireCondition = (condition: SQL | undefined): SQL => {
+    if (!condition) {
+      throw new Error("Expected gallery listing cursor condition");
+    }
+    return condition;
+  };
+
   switch (cursor.sortMode) {
     case "name-desc":
-      return or(
-        lt(libraryEntries.filename, cursor.filename),
-        and(
-          eq(libraryEntries.filename, cursor.filename),
-          lt(libraryEntries.logicalPath, cursor.logicalPath),
+      return requireCondition(
+        or(
+          lt(libraryEntries.filename, cursor.filename),
+          and(
+            eq(libraryEntries.filename, cursor.filename),
+            lt(libraryEntries.logicalPath, cursor.logicalPath),
+          ),
+          and(
+            eq(libraryEntries.filename, cursor.filename),
+            eq(libraryEntries.logicalPath, cursor.logicalPath),
+            lt(libraryEntries.id, cursor.id),
+          ),
         ),
-        and(
-          eq(libraryEntries.filename, cursor.filename),
-          eq(libraryEntries.logicalPath, cursor.logicalPath),
-          lt(libraryEntries.id, cursor.id),
-        ),
-      )!;
+      );
     case "date-newest":
-      return or(
-        lt(libraryEntries.mtimeMs, cursor.mtimeMs),
-        and(
-          eq(libraryEntries.mtimeMs, cursor.mtimeMs),
-          gt(libraryEntries.logicalPath, cursor.logicalPath),
+      return requireCondition(
+        or(
+          lt(libraryEntries.mtimeMs, cursor.mtimeMs),
+          and(
+            eq(libraryEntries.mtimeMs, cursor.mtimeMs),
+            gt(libraryEntries.logicalPath, cursor.logicalPath),
+          ),
+          and(
+            eq(libraryEntries.mtimeMs, cursor.mtimeMs),
+            eq(libraryEntries.logicalPath, cursor.logicalPath),
+            gt(libraryEntries.id, cursor.id),
+          ),
         ),
-        and(
-          eq(libraryEntries.mtimeMs, cursor.mtimeMs),
-          eq(libraryEntries.logicalPath, cursor.logicalPath),
-          gt(libraryEntries.id, cursor.id),
-        ),
-      )!;
+      );
     case "date-oldest":
-      return or(
-        gt(libraryEntries.mtimeMs, cursor.mtimeMs),
-        and(
-          eq(libraryEntries.mtimeMs, cursor.mtimeMs),
-          gt(libraryEntries.logicalPath, cursor.logicalPath),
+      return requireCondition(
+        or(
+          gt(libraryEntries.mtimeMs, cursor.mtimeMs),
+          and(
+            eq(libraryEntries.mtimeMs, cursor.mtimeMs),
+            gt(libraryEntries.logicalPath, cursor.logicalPath),
+          ),
+          and(
+            eq(libraryEntries.mtimeMs, cursor.mtimeMs),
+            eq(libraryEntries.logicalPath, cursor.logicalPath),
+            gt(libraryEntries.id, cursor.id),
+          ),
         ),
-        and(
-          eq(libraryEntries.mtimeMs, cursor.mtimeMs),
-          eq(libraryEntries.logicalPath, cursor.logicalPath),
-          gt(libraryEntries.id, cursor.id),
-        ),
-      )!;
+      );
     case "random":
-      return or(
-        gt(
-          sql`md5(concat(${cursor.randomSeed ?? 0}::text, ':', ${libraryEntries.id}::text))`,
-          cursor.randomHash ?? "",
-        ),
-        and(
-          eq(
+      return requireCondition(
+        or(
+          gt(
             sql`md5(concat(${cursor.randomSeed ?? 0}::text, ':', ${libraryEntries.id}::text))`,
             cursor.randomHash ?? "",
           ),
-          gt(libraryEntries.logicalPath, cursor.logicalPath),
-        ),
-        and(
-          eq(
-            sql`md5(concat(${cursor.randomSeed ?? 0}::text, ':', ${libraryEntries.id}::text))`,
-            cursor.randomHash ?? "",
+          and(
+            eq(
+              sql`md5(concat(${cursor.randomSeed ?? 0}::text, ':', ${libraryEntries.id}::text))`,
+              cursor.randomHash ?? "",
+            ),
+            gt(libraryEntries.logicalPath, cursor.logicalPath),
           ),
-          eq(libraryEntries.logicalPath, cursor.logicalPath),
-          gt(libraryEntries.id, cursor.id),
+          and(
+            eq(
+              sql`md5(concat(${cursor.randomSeed ?? 0}::text, ':', ${libraryEntries.id}::text))`,
+              cursor.randomHash ?? "",
+            ),
+            eq(libraryEntries.logicalPath, cursor.logicalPath),
+            gt(libraryEntries.id, cursor.id),
+          ),
         ),
-      )!;
+      );
     default:
-      return or(
-        gt(libraryEntries.filename, cursor.filename),
-        and(
-          eq(libraryEntries.filename, cursor.filename),
-          gt(libraryEntries.logicalPath, cursor.logicalPath),
+      return requireCondition(
+        or(
+          gt(libraryEntries.filename, cursor.filename),
+          and(
+            eq(libraryEntries.filename, cursor.filename),
+            gt(libraryEntries.logicalPath, cursor.logicalPath),
+          ),
+          and(
+            eq(libraryEntries.filename, cursor.filename),
+            eq(libraryEntries.logicalPath, cursor.logicalPath),
+            gt(libraryEntries.id, cursor.id),
+          ),
         ),
-        and(
-          eq(libraryEntries.filename, cursor.filename),
-          eq(libraryEntries.logicalPath, cursor.logicalPath),
-          gt(libraryEntries.id, cursor.id),
-        ),
-      )!;
+      );
   }
 }
 

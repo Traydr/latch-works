@@ -15,6 +15,7 @@
   },
   "workspaces": {
     ".": {
+      "entry": [".railway/railway.ts"],
       "ignoreDependencies": ["vitest"]
     },
     "apps/pane-view": {
@@ -39,7 +40,6 @@
     },
     "apps/gather-box": {
       "entry": [
-        "vitest.config.ts",
         "src/background/index.ts",
         "src/content/index.ts",
         "src/popup/index.ts",
@@ -56,21 +56,15 @@
         "vite.renderer.config.ts",
         "src/main.ts",
         "src/preload.ts",
-        "src/showcase/preview.tsx",
-        "scripts/ensure-electron.mjs"
+        "src/showcase/preview.tsx"
       ],
       "ignoreDependencies": ["@testing-library/react"]
     },
     "apps/lockstep-cli": {
-      "entry": ["src/**/*.test.ts", "src/cli.ts"]
+      "entry": ["src/**/*.test.ts"]
     },
     "apps/showcase": {
-      "entry": [
-        "astro.config.mjs",
-        "src/content.config.ts",
-        "src/pages/**/*.{astro,ts,tsx}",
-        "scripts/*.mjs"
-      ],
+      "entry": ["src/pages/**/*.{astro,ts,tsx}", "scripts/*.mjs"],
       "ignoreDependencies": ["sharp"]
     },
     "packages/media-domain": {

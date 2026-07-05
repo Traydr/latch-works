@@ -94,9 +94,7 @@ export function readCachedGalleryThumbnailState(): GalleryThumbnailResolveState 
   return { deliveryTokens, urls };
 }
 
-export function getNextPendingThumbnailRetryMs(
-  requests: GalleryThumbnailRequest[],
-): number | null {
+export function getNextPendingThumbnailRetryMs(requests: GalleryThumbnailRequest[]): number | null {
   const now = Date.now();
   let earliestDelay: number | null = null;
 

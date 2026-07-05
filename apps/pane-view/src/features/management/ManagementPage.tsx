@@ -182,9 +182,13 @@ export function ManagementPage() {
             Purge cached thumbnails to force regeneration on the next browse. Original files are not
             removed.
           </p>
-          <label className="grid gap-1 text-sm">
+          <label className="grid gap-1 text-sm" htmlFor="purge-thumbnails-confirm">
             <span>Type PURGE THUMBNAILS to confirm</span>
-            <Input onChange={(event) => setPurgeConfirm(event.target.value)} value={purgeConfirm} />
+            <Input
+              id="purge-thumbnails-confirm"
+              onChange={(event) => setPurgeConfirm(event.target.value)}
+              value={purgeConfirm}
+            />
           </label>
           <div className="flex flex-wrap gap-2">
             <Button
@@ -258,18 +262,23 @@ export function ManagementPage() {
             Schedule a full library wipe. The gallery empties immediately; storage and database
             cleanup continue in the background. Enter your Lockstep sync token to confirm.
           </p>
-          <label className="grid gap-1 text-sm">
+          <label className="grid gap-1 text-sm" htmlFor="wipe-library-sync-token">
             <span>Sync token</span>
             <Input
               autoComplete="off"
+              id="wipe-library-sync-token"
               onChange={(event) => setSyncToken(event.target.value)}
               type="password"
               value={syncToken}
             />
           </label>
-          <label className="grid gap-1 text-sm">
+          <label className="grid gap-1 text-sm" htmlFor="wipe-library-confirm">
             <span>Type WIPE LIBRARY to confirm</span>
-            <Input onChange={(event) => setWipeConfirm(event.target.value)} value={wipeConfirm} />
+            <Input
+              id="wipe-library-confirm"
+              onChange={(event) => setWipeConfirm(event.target.value)}
+              value={wipeConfirm}
+            />
           </label>
           <Button
             disabled={maintenanceBlocked || wipeMutation.isPending}

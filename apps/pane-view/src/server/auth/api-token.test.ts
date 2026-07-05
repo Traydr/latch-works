@@ -17,8 +17,8 @@ import {
   getSyncApiTokenDigestCacheForTests,
   hashApiToken,
   readBearerToken,
-  resetSyncApiTokenDigestCacheForTests,
   requireSyncApiToken,
+  resetSyncApiTokenDigestCacheForTests,
   verifySyncApiToken,
 } from "./api-token";
 

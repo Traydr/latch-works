@@ -1,7 +1,4 @@
-export function shouldEndRunOnComplete(
-  summaryAction: string,
-  activeRunAction: string,
-): boolean {
+export function shouldEndRunOnComplete(summaryAction: string, activeRunAction: string): boolean {
   if (summaryAction === "plan" && (activeRunAction === "push" || activeRunAction === "prune")) {
     return false;
   }
