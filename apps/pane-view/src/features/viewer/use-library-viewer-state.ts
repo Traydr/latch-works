@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getViewerState, saveViewerState, type ViewerStateSnapshot } from "./viewer-state-service";
 import { VIEWER_STATE_SAVE_DEBOUNCE_MS } from "./viewer-resume";
+import { getViewerState, saveViewerState, type ViewerStateSnapshot } from "./viewer-state-service";
 
 interface ViewerStatePatch {
   page?: number;

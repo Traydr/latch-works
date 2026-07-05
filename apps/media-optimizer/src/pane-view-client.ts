@@ -96,23 +96,3 @@ export async function reportFailure(input: {
   const response = await postInternal("/internal/optimizer/fail", input);
   return parseMatchResponse(response, "fail report");
 }
-
-export async function releaseJobs(input: {
-  jobs: Array<{ mediaObjectId: string; size: number }>;
-  processingToken: string;
-}): Promise<void> {
-  if (input.jobs.length === 0) {
-    return;
-  }
-
-  const response = await postInternal("/internal/optimizer/release", input);
-  if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    logOptimizerError("optimizer.pane_view_request_failed", {
-      body: excerpt(body),
-      path: "/internal/optimizer/release",
-      status: response.status,
-    });
-    throw new Error(`release failed: ${response.status}`);
-  }
-}

@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LockstepPlan } from "@latch-works/lockstep-core";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { planSync, pruneDeleted, pushChanges, runDoctorCore } = vi.hoisted(() => ({
   planSync: vi.fn(),

@@ -223,9 +223,7 @@ function buildGatherBoxPreviewHtml(mode) {
   const css = readFileSync(join(gatherRoot, "dist/popup/popup.css"), "utf8");
   const js = readFileSync(join(gatherRoot, "dist/popup/popup.js"), "utf8");
   const isActive = mode === "active";
-  const tabUrl = isActive
-    ? "https://creator.fanbox.cc/posts/11929835"
-    : "https://example.com/";
+  const tabUrl = isActive ? "https://creator.fanbox.cc/posts/11929835" : "https://example.com/";
   const directoryName = "media";
   const chromeStub = `
 (() => {

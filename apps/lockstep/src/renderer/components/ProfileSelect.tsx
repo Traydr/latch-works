@@ -42,7 +42,7 @@ export function ProfileSelect({ onChange, profiles, value }: ProfileSelectProps)
       </button>
 
       {open ? (
-        <ul
+        <div
           className="absolute top-full right-0 z-50 mt-1 max-h-60 min-w-full overflow-auto rounded-xl border border-zinc-300/90 bg-white/95 p-1 shadow-xl backdrop-blur-xl dark:border-zinc-600/90 dark:bg-zinc-900/95"
           role="listbox"
         >
@@ -50,25 +50,26 @@ export function ProfileSelect({ onChange, profiles, value }: ProfileSelectProps)
             const selected = profile.id === value;
 
             return (
-              <li key={profile.id} aria-selected={selected} role="option">
-                <button
-                  className={`w-full truncate rounded-lg px-2.5 py-1.5 text-left text-xs ${
-                    selected
-                      ? "bg-violet-100 text-violet-800 dark:bg-violet-500/20 dark:text-violet-100"
-                      : "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800"
-                  }`}
-                  type="button"
-                  onClick={() => {
-                    onChange(profile.id);
-                    setOpen(false);
-                  }}
-                >
-                  {profile.name}
-                </button>
-              </li>
+              <button
+                key={profile.id}
+                aria-selected={selected}
+                className={`w-full truncate rounded-lg px-2.5 py-1.5 text-left text-xs ${
+                  selected
+                    ? "bg-violet-100 text-violet-800 dark:bg-violet-500/20 dark:text-violet-100"
+                    : "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                }`}
+                role="option"
+                type="button"
+                onClick={() => {
+                  onChange(profile.id);
+                  setOpen(false);
+                }}
+              >
+                {profile.name}
+              </button>
             );
           })}
-        </ul>
+        </div>
       ) : null}
     </div>
   );

@@ -9,7 +9,7 @@ export function readClientImageDeliveryMode(): ImageDeliveryMode {
   return import.meta.env.VITE_BUNNY_CDN_HOST ? "bunny" : "inline";
 }
 
-export function readBunnyCdnHost(): string | undefined {
+function readBunnyCdnHost(): string | undefined {
   return import.meta.env.VITE_BUNNY_CDN_HOST;
 }
 

@@ -66,7 +66,7 @@ describe("ProfileService", () => {
     const { safeStorage } = await import("electron");
     vi.mocked(safeStorage.isEncryptionAvailable).mockReturnValue(false);
 
-    const service = await createService();
+    await createService();
     const settingsPath = path.join(tempDir, "lockstep-settings.json");
     await writeFile(
       settingsPath,

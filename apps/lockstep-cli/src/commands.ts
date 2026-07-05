@@ -1,14 +1,14 @@
 import {
-  doctor as runDoctorCore,
   formatBytes,
-  planSync,
-  pruneDeleted,
-  pushChanges,
-  selectChangedItems,
-  selectDeleteItems,
   type LockstepObserver,
   type LockstepPlan,
   type LockstepRunEvent,
+  planSync,
+  pruneDeleted,
+  pushChanges,
+  doctor as runDoctorCore,
+  selectChangedItems,
+  selectDeleteItems,
 } from "@latch-works/lockstep-core";
 import { isInteractiveTerminal } from "./options.js";
 import {

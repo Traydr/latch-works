@@ -1,4 +1,8 @@
-import { GALLERY_THUMBNAIL_SIZE, PREVIEW_DERIVATIVE_SIZE, snapThumbnailSize } from "@latch-works/media-delivery";
+import {
+  GALLERY_THUMBNAIL_SIZE,
+  PREVIEW_DERIVATIVE_SIZE,
+  snapThumbnailSize,
+} from "@latch-works/media-delivery";
 import { createSignedGetUrl } from "@latch-works/media-storage";
 import { resolveImageDeliveryMode } from "../../env/image-delivery";
 import { planSignedOriginalDelivery } from "./delivery";

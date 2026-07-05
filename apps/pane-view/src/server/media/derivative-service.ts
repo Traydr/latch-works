@@ -23,7 +23,7 @@ import {
 } from "./derivative-priority";
 import { logDerivativeEvent } from "./derivative-telemetry";
 import { wakeOptimizer } from "./optimizer-wake";
-import { readMediaThumbnailContext, type MediaThumbnailContext } from "./repository";
+import { type MediaThumbnailContext, readMediaThumbnailContext } from "./repository";
 import { createPaneViewStorageClient } from "./storage-client";
 
 const derivativeGenerationLimiter = createConcurrencyLimiter(2);
@@ -72,10 +72,7 @@ export async function invalidateThumbnailDerivatives({
     return { status: "not_found" };
   }
 
-  if (
-    !supportsDerivative(context.mediaType) &&
-    !supportsInlineImageThumbnail(context.mediaType)
-  ) {
+  if (!supportsDerivative(context.mediaType) && !supportsInlineImageThumbnail(context.mediaType)) {
     return { status: "unsupported" };
   }
 

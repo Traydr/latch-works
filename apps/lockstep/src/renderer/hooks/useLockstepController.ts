@@ -330,7 +330,7 @@ export function useLockstepController(): LockstepController {
       await refreshSettings();
       goToScreen("dashboard");
     },
-    [profileForm, refreshSettings],
+    [profileForm, refreshSettings, goToScreen],
   );
 
   const handleDoctor = useCallback(async () => {

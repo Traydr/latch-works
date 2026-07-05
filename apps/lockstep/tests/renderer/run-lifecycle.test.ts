@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  isElapsedClockActive,
-  shouldEndRunOnComplete,
-} from "../../src/renderer/lib/run-lifecycle";
+import { isElapsedClockActive, shouldEndRunOnComplete } from "../../src/renderer/lib/run-lifecycle";
 
 describe("shouldEndRunOnComplete", () => {
   it("ends standalone plan runs", () => {

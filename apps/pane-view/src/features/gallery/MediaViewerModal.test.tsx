@@ -4,8 +4,8 @@ import type { MediaItem } from "@latch-works/media-domain";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MediaViewerModal } from "./MediaViewerModal";
 import { VIEWER_STATE_SAVE_DEBOUNCE_MS } from "@/features/viewer/viewer-resume";
+import { MediaViewerModal } from "./MediaViewerModal";
 
 const videoItem: MediaItem = {
   durationMs: 120_000,

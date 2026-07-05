@@ -11,6 +11,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 
 import type { LockstepController } from "../hooks/useLockstepController";
+import { isElapsedClockActive } from "../lib/run-lifecycle";
 import { ProfileSetupView } from "../views/ProfileSetupView";
 import { AlertBanner } from "./AlertBanner";
 import { DoctorCheckList } from "./DoctorCheckList";
@@ -25,7 +26,6 @@ import {
   SyncLine,
   useNow,
 } from "./syncPrimitives";
-import { isElapsedClockActive } from "../lib/run-lifecycle";
 
 const STAGES = [
   { label: "Profile", icon: CircleCheck },
@@ -257,11 +257,7 @@ function CommandDock({ ctrl }: { ctrl: LockstepController }) {
     handlePrune,
     setScreen,
   } = ctrl;
-  const clockActive = isElapsedClockActive(
-    running,
-    runProgress.startedAt,
-    runProgress.endedAt,
-  );
+  const clockActive = isElapsedClockActive(running, runProgress.startedAt, runProgress.endedAt);
   const now = useNow(clockActive);
   const hasProfile = !!activeProfile;
   const hasPlan = !!plan;

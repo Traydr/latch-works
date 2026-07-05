@@ -16,8 +16,8 @@ vi.mock("../db", () => ({
   },
 }));
 
-import { listRunningSyncRuns } from "./sync-run-control";
 import { assertNoActiveCleanupJob, assertNoActiveSyncRun } from "./guards";
+import { listRunningSyncRuns } from "./sync-run-control";
 
 describe("management guards", () => {
   beforeEach(() => {

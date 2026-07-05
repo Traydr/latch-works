@@ -13,7 +13,10 @@ function mapAllFolderHasChildren(
   );
 
   return new Map(
-    allFolderRows.map((folder) => [folder.path, folderParentPathsWithChildFolders.has(folder.path)]),
+    allFolderRows.map((folder) => [
+      folder.path,
+      folderParentPathsWithChildFolders.has(folder.path),
+    ]),
   );
 }
 
