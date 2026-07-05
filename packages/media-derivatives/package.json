@@ -24,7 +24,6 @@
     "@latch-works/media-delivery": "workspace:*",
     "@latch-works/media-domain": "workspace:*",
     "@latch-works/media-storage": "workspace:*",
-    "@napi-rs/canvas": "^1.0.2",
     "ffmpeg-static": "^5.3.0",
     "pdfjs-dist": "^6.0.227",
     "sharp": "^0.34.5"

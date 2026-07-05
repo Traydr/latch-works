@@ -1,24 +1,21 @@
 import { describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  createCanvas: vi.fn(),
+  canvasFactoryCreate: vi.fn(),
   destroy: vi.fn().mockResolvedValue(undefined),
   encode: vi.fn().mockResolvedValue(Buffer.from("png-bytes")),
-  getContext: vi.fn(),
   getDocument: vi.fn(),
   getPage: vi.fn(),
   getViewport: vi.fn(),
   renderPromise: vi.fn().mockResolvedValue(undefined),
   render: vi.fn(),
   cleanup: vi.fn(),
-  resolve: vi.fn(),
-  resolveWorker: vi.fn(),
   workerSrc: "",
 }));
 
-vi.mock("@napi-rs/canvas", () => ({
-  createCanvas: mocks.createCanvas,
-}));
+// No @napi-rs/canvas mock needed — the implementation delegates canvas
+// creation entirely to pdfjs's NodeCanvasFactory so all canvas objects come
+// from pdfjs's own @napi-rs/canvas instance.
 
 vi.mock("pdfjs-dist/legacy/build/pdf.mjs", () => ({
   getDocument: mocks.getDocument,
@@ -42,18 +39,15 @@ import { renderPdfCoverPage } from "./pdf.js";
 
 const fakePdfBytes = Buffer.from("mock-pdf-bytes");
 
-function setupSuccessfulRender(
-  pageWidth = 612,
-  pageHeight = 792,
-): void {
+function setupSuccessfulRender(pageWidth = 612, pageHeight = 792): void {
   const fakeCtx = {};
   const fakeCanvas = {
     encode: mocks.encode,
-    getContext: mocks.getContext.mockReturnValue(fakeCtx),
     height: pageHeight * 2,
     width: pageWidth * 2,
   };
-  mocks.createCanvas.mockReturnValue(fakeCanvas);
+
+  mocks.canvasFactoryCreate.mockReturnValue({ canvas: fakeCanvas, context: fakeCtx });
 
   const fakeRenderTask = { promise: mocks.renderPromise() };
   mocks.render.mockReturnValue(fakeRenderTask);
@@ -71,6 +65,7 @@ function setupSuccessfulRender(
   mocks.getPage.mockResolvedValue(fakePage);
 
   const fakeDoc = {
+    canvasFactory: { create: mocks.canvasFactoryCreate },
     getPage: mocks.getPage,
     numPages: 1,
   };
@@ -99,10 +94,24 @@ describe("renderPdfCoverPage", () => {
       expect.objectContaining({ data: expect.any(Uint8Array) }),
     );
     expect(mocks.getPage).toHaveBeenCalledWith(1);
+    expect(mocks.canvasFactoryCreate).toHaveBeenCalledWith(expect.any(Number), expect.any(Number));
     expect(mocks.render).toHaveBeenCalledWith(
       expect.objectContaining({ viewport: expect.any(Object) }),
     );
     expect(result).toEqual(Buffer.from("png-bytes"));
+  });
+
+  it("passes standardFontDataUrl and useSystemFonts: false to getDocument", async () => {
+    setupSuccessfulRender();
+
+    await renderPdfCoverPage(fakePdfBytes);
+
+    expect(mocks.getDocument).toHaveBeenCalledWith(
+      expect.objectContaining({
+        standardFontDataUrl: expect.any(String),
+        useSystemFonts: false,
+      }),
+    );
   });
 
   it("cleans up the loading task even when rendering succeeds", async () => {
@@ -158,7 +167,11 @@ describe("renderPdfCoverPage", () => {
   });
 
   it("throws when the PDF has no pages", async () => {
-    const fakeDoc = { getPage: mocks.getPage, numPages: 0 };
+    const fakeDoc = {
+      canvasFactory: { create: mocks.canvasFactoryCreate },
+      getPage: mocks.getPage,
+      numPages: 0,
+    };
     const fakeTask = {
       destroy: mocks.destroy,
       onPassword: undefined as unknown,
