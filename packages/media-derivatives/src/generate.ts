@@ -6,6 +6,7 @@ import {
 import ffmpegStaticPath from "ffmpeg-static";
 import { DEFAULT_MAX_SOURCE_BYTES } from "./descriptor.js";
 import { resizeImageToWebp } from "./image.js";
+import { renderPdfCoverPage } from "./pdf.js";
 import type { GenerateDerivativeOptions, GeneratedDerivative } from "./types.js";
 import { extractVideoPosterFrameFromStorage, runFfmpeg } from "./video.js";
 
@@ -41,6 +42,22 @@ export async function generateDerivativeBytes(
       storage,
     });
     return resizeImageToWebp(posterFrame, size);
+  }
+
+  if (source.mediaType === "pdf") {
+    const sourceHead = await headStoredObject({ key: sourceKey, storage });
+    if (!sourceHead) {
+      throw new Error(`original object missing: ${sourceKey}`);
+    }
+    if (sourceHead.contentLength > maxBytes) {
+      throw new Error(`original object exceeds ${maxBytes} bytes`);
+    }
+    const pdfBytes = await readStoredObjectBytes({ key: sourceKey, storage });
+    if (!pdfBytes) {
+      throw new Error(`original object missing: ${sourceKey}`);
+    }
+    const coverPng = await renderPdfCoverPage(pdfBytes, maxBytes);
+    return resizeImageToWebp(coverPng, size);
   }
 
   const sourceHead = await headStoredObject({ key: sourceKey, storage });

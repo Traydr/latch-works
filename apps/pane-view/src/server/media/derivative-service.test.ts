@@ -309,4 +309,36 @@ describe("ensureThumbnailDerivative", () => {
     expect(result).toEqual({ status: "failed" });
     expect(markFailed.setMock).toHaveBeenCalledWith(expect.objectContaining({ status: "failed" }));
   });
+
+  it("enqueues and processes a pdf cover derivative", async () => {
+    const pdfContext = {
+      extension: "pdf",
+      mediaObjectId: "obj-pdf",
+      mediaType: "pdf" as const,
+      originalObjectKey: "objects/doc.pdf",
+      sha256: validSha256,
+    };
+    mocks.readMediaThumbnailContext.mockResolvedValue(pdfContext);
+
+    const select = createSelectChain([]);
+    const insert = createInsertChain();
+    const claim = createUpdateChain([{ mediaObjectId: "obj-pdf", size: 320, status: "processing" }]);
+    const markReady = createUpdateChain();
+
+    mocks.selectMock.mockReturnValue({ from: select.fromMock });
+    mocks.insertMock.mockReturnValue({ values: insert.valuesMock });
+    mocks.updateMock
+      .mockReturnValueOnce({ set: claim.setMock })
+      .mockReturnValueOnce({ set: markReady.setMock });
+
+    const result = await ensureThumbnailDerivative({ mediaId: "media-pdf", requestedSize: 320 });
+
+    expect(mocks.generateDerivativeBytes).toHaveBeenCalledWith(
+      expect.objectContaining({
+        size: 320,
+        source: expect.objectContaining({ mediaType: "pdf", originalObjectKey: "objects/doc.pdf" }),
+      }),
+    );
+    expect(result).toEqual(expect.objectContaining({ height: 120, status: "ready", width: 160 }));
+  });
 });

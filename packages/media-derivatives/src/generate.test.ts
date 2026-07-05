@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   getStoredObject: vi.fn(),
   headStoredObject: vi.fn(),
   readStoredObjectBytes: vi.fn(),
+  renderPdfCoverPage: vi.fn(),
 }));
 
 vi.mock("@latch-works/media-storage", async (importOriginal) => {
@@ -19,6 +20,10 @@ vi.mock("@latch-works/media-storage", async (importOriginal) => {
 });
 
 vi.mock("ffmpeg-static", () => ({ default: "/usr/bin/ffmpeg" }));
+
+vi.mock("./pdf.js", () => ({
+  renderPdfCoverPage: mocks.renderPdfCoverPage,
+}));
 
 vi.mock("sharp", () => {
   const sharpFn = vi.fn(() => ({
@@ -87,6 +92,70 @@ describe("generateDerivativeBytes (image)", () => {
         storage,
       }),
     ).rejects.toThrow(/missing/);
+  });
+});
+
+describe("generateDerivativeBytes (pdf)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.renderPdfCoverPage.mockResolvedValue(Buffer.from("cover-png"));
+  });
+
+  it("fetches, renders, and resizes a PDF cover page", async () => {
+    const pdfBytes = Buffer.from("pdf-source");
+    mocks.headStoredObject.mockResolvedValue(mockHead(pdfBytes.byteLength));
+    mocks.readStoredObjectBytes.mockResolvedValue(pdfBytes);
+
+    const result = await generateDerivativeBytes({
+      size: 320,
+      source: { extension: "pdf", mediaType: "pdf", originalObjectKey: "originals/doc.pdf", sha256 },
+      storage,
+    });
+
+    expect(mocks.renderPdfCoverPage).toHaveBeenCalledWith(pdfBytes, expect.any(Number));
+    expect(result).toEqual({ bytes: Buffer.from("webp"), height: 120, width: 160 });
+  });
+
+  it("rejects oversized PDF sources before downloading", async () => {
+    mocks.headStoredObject.mockResolvedValue(mockHead(512 * 1024 * 1024 + 1));
+
+    await expect(
+      generateDerivativeBytes({
+        size: 320,
+        source: { extension: "pdf", mediaType: "pdf", originalObjectKey: "originals/doc.pdf", sha256 },
+        storage,
+      }),
+    ).rejects.toThrow(/exceeds/);
+    expect(mocks.readStoredObjectBytes).not.toHaveBeenCalled();
+    expect(mocks.renderPdfCoverPage).not.toHaveBeenCalled();
+  });
+
+  it("rejects when the PDF source object is missing", async () => {
+    mocks.headStoredObject.mockResolvedValue(null);
+
+    await expect(
+      generateDerivativeBytes({
+        size: 320,
+        source: { extension: "pdf", mediaType: "pdf", originalObjectKey: "originals/doc.pdf", sha256 },
+        storage,
+      }),
+    ).rejects.toThrow(/missing/);
+    expect(mocks.renderPdfCoverPage).not.toHaveBeenCalled();
+  });
+
+  it("propagates render failures from corrupt or encrypted PDFs", async () => {
+    const pdfBytes = Buffer.from("bad-pdf");
+    mocks.headStoredObject.mockResolvedValue(mockHead(pdfBytes.byteLength));
+    mocks.readStoredObjectBytes.mockResolvedValue(pdfBytes);
+    mocks.renderPdfCoverPage.mockRejectedValue(new Error("PDF load failed: Invalid PDF structure."));
+
+    await expect(
+      generateDerivativeBytes({
+        size: 320,
+        source: { extension: "pdf", mediaType: "pdf", originalObjectKey: "originals/doc.pdf", sha256 },
+        storage,
+      }),
+    ).rejects.toThrow(/Invalid PDF structure/);
   });
 });
 

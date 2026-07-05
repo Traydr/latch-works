@@ -515,7 +515,7 @@ function dedupe(value: string, index: number, values: string[]): boolean {
 }
 
 function supportsGalleryThumbnail(mediaType: string): boolean {
-  return mediaType === "image" || mediaType === "gif" || mediaType === "video";
+  return mediaType === "image" || mediaType === "gif" || mediaType === "video" || mediaType === "pdf";
 }
 
 function buildGalleryListingOrderBy(sortMode: GallerySortMode, randomSeed: number) {
