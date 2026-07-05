@@ -2,10 +2,21 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   completeSyncedObject: vi.fn(),
+  createSignedPutUrl: vi.fn(),
   finalizeSyncRun: vi.fn(),
   markRemoteDeleted: vi.fn(),
   requireSyncApiToken: vi.fn(),
   startSyncRun: vi.fn(),
+}));
+
+vi.mock("../../env/server", () => ({
+  env: {
+    S3_ACCESS_KEY_ID: "test-access-key",
+    S3_BUCKET: "test-bucket",
+    S3_ENDPOINT: "http://127.0.0.1:9000",
+    S3_REGION: "us-east-1",
+    S3_SECRET_ACCESS_KEY: "test-secret-key",
+  },
 }));
 
 vi.mock("../auth/api-token", () => ({
@@ -19,12 +30,23 @@ vi.mock("./store", () => ({
   startSyncRun: mocks.startSyncRun,
 }));
 
+vi.mock("@latch-works/media-storage", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@latch-works/media-storage")>();
+  return {
+    ...actual,
+    createSignedPutUrl: mocks.createSignedPutUrl,
+    createS3StorageClient: vi.fn(() => ({})),
+  };
+});
+
 import { Route as CompleteObjectRoute } from "../../routes/api.sync.complete-object";
 import { Route as SyncRunsRoute } from "../../routes/api.sync.runs";
 import { Route as SyncRunCompleteRoute } from "../../routes/api.sync.runs.$syncRunId.complete";
+import { Route as UploadUrlRoute } from "../../routes/api.sync.upload-url";
 
 const {
   completeSyncedObject,
+  createSignedPutUrl,
   finalizeSyncRun,
   markRemoteDeleted,
   requireSyncApiToken,
@@ -53,20 +75,28 @@ type SyncRunCompletePost = (ctx: {
   request: Request;
 }) => Promise<Response>;
 
-function getPostHandler<T>(handlers: unknown): T {
+function getPostHandler<T>(handlers: unknown | undefined): T {
+  if (!handlers) {
+    throw new Error("Expected route server handlers");
+  }
+
   return (handlers as { POST: T }).POST;
 }
 
 function postSyncRuns(): SyncRunsPost {
-  return getPostHandler(SyncRunsRoute.options.server!.handlers);
+  return getPostHandler(SyncRunsRoute.options.server?.handlers);
 }
 
 function postSyncRunComplete(): SyncRunCompletePost {
-  return getPostHandler(SyncRunCompleteRoute.options.server!.handlers);
+  return getPostHandler(SyncRunCompleteRoute.options.server?.handlers);
 }
 
 function postCompleteObject(): SyncRunsPost {
-  return getPostHandler(CompleteObjectRoute.options.server!.handlers);
+  return getPostHandler(CompleteObjectRoute.options.server?.handlers);
+}
+
+function postUploadUrl(): SyncRunsPost {
+  return getPostHandler(UploadUrlRoute.options.server?.handlers);
 }
 
 describe("sync route handlers", () => {
@@ -76,12 +106,14 @@ describe("sync route handlers", () => {
     finalizeSyncRun.mockReset();
     completeSyncedObject.mockReset();
     markRemoteDeleted.mockReset();
+    createSignedPutUrl.mockReset();
 
     requireSyncApiToken.mockReturnValue(null);
     startSyncRun.mockResolvedValue({ syncRunId: "run-1" });
     finalizeSyncRun.mockResolvedValue({ status: "database" });
     completeSyncedObject.mockResolvedValue({ status: "database" });
     markRemoteDeleted.mockResolvedValue({ status: "database" });
+    createSignedPutUrl.mockResolvedValue("https://storage.example/upload");
   });
 
   describe("POST /api/sync/runs", () => {
@@ -235,6 +267,54 @@ describe("sync route handlers", () => {
       expect(response).toBe(unauthorized);
       expect(completeSyncedObject).not.toHaveBeenCalled();
       expect(markRemoteDeleted).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("POST /api/sync/upload-url", () => {
+    it("signs upload URLs with the server-derived content type", async () => {
+      const request = new Request("http://127.0.0.1:3000/api/sync/upload-url", {
+        body: JSON.stringify({
+          contentType: "image/jpeg",
+          filename: "cover.jpg",
+          sha256: "a".repeat(64),
+        }),
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        method: "POST",
+      });
+
+      const response = await postUploadUrl()({ request });
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(createSignedPutUrl).toHaveBeenCalledWith(
+        expect.objectContaining({
+          contentType: "image/jpeg",
+        }),
+      );
+      expect(body).toEqual({
+        objectKey: expect.any(String),
+        status: "signed-url-ready",
+        uploadUrl: "https://storage.example/upload",
+      });
+    });
+
+    it("rejects mismatched content types with 400", async () => {
+      const request = new Request("http://127.0.0.1:3000/api/sync/upload-url", {
+        body: JSON.stringify({
+          contentType: "image/png",
+          filename: "cover.jpg",
+          sha256: "a".repeat(64),
+        }),
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        method: "POST",
+      });
+
+      const response = await postUploadUrl()({ request });
+      const body = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(body).toEqual({ error: "contentType does not match extension" });
+      expect(createSignedPutUrl).not.toHaveBeenCalled();
     });
   });
 });

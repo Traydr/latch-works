@@ -27,6 +27,42 @@ export type SyncObjectValidationResult =
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/i;
 
+export function expectedContentTypeForExtension(extension: string): string {
+  switch (extension.toLowerCase()) {
+    case "jpg":
+    case "jpeg":
+      return "image/jpeg";
+    case "png":
+      return "image/png";
+    case "webp":
+      return "image/webp";
+    case "gif":
+      return "image/gif";
+    case "avif":
+      return "image/avif";
+    case "mp4":
+    case "m4v":
+      return "video/mp4";
+    case "webm":
+      return "video/webm";
+    case "mov":
+      return "video/quicktime";
+    case "pdf":
+      return "application/pdf";
+    default:
+      return "application/octet-stream";
+  }
+}
+
+export function validateSyncContentType(extension: string, contentType: string): string | null {
+  const expected = expectedContentTypeForExtension(extension);
+  if (contentType !== expected) {
+    return "contentType does not match extension";
+  }
+
+  return null;
+}
+
 export function validateSyncObjectPayload(
   body: Record<string, unknown>,
 ): SyncObjectValidationResult {
@@ -100,10 +136,16 @@ export function validateSyncObjectPayload(
     return { ok: false, error: "objectKey does not match derived storage key" };
   }
 
+  const contentType = String(body.contentType);
+  const contentTypeError = validateSyncContentType(extension, contentType);
+  if (contentTypeError) {
+    return { ok: false, error: contentTypeError };
+  }
+
   return {
     ok: true,
     input: {
-      contentType: String(body.contentType),
+      contentType: expectedContentTypeForExtension(extension),
       extension,
       filename,
       logicalPath,

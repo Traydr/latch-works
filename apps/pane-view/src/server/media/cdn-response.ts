@@ -35,6 +35,7 @@ export async function serveCdnDeliveryRequest({
     "accept-ranges": "bytes",
     "cache-control": readCdnCacheControl(),
     "content-type": object.contentType ?? "application/octet-stream",
+    "x-content-type-options": "nosniff",
   });
 
   if (object.contentLength !== undefined) {
