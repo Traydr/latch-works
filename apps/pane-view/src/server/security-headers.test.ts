@@ -35,6 +35,7 @@ describe("applyAppSecurityHeaders", () => {
     expect(headers.get("Referrer-Policy")).toBe("same-origin");
     expect(headers.get("Content-Security-Policy")).toBe(APP_CONTENT_SECURITY_POLICY);
     expect(headers.get("Content-Security-Policy")).toContain("frame-ancestors 'none'");
+    expect(headers.get("Content-Security-Policy")).not.toContain("default-src");
   });
 });
 
