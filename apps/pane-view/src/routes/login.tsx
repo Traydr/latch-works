@@ -1,14 +1,16 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { isCurrentWebSessionValid } from "@/server/auth/web-session";
+import { getSessionStatus } from "@/features/auth/session-service";
 
 export const Route = createFileRoute("/login")({
+  ssr: false,
   validateSearch: (search): { error?: string } => ({
     error: typeof search.error === "string" ? search.error : undefined,
   }),
   loader: async () => {
-    if (await isCurrentWebSessionValid()) {
+    const { authenticated } = await getSessionStatus();
+    if (authenticated) {
       throw redirect({ to: "/" });
     }
   },

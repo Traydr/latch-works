@@ -1,10 +1,14 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
+import { getSessionStatus } from "@/features/auth/session-service";
 import { ManagementPage } from "@/features/management/ManagementPage";
-import { requireWebSession } from "@/server/auth/require-web-session";
 
 export const Route = createFileRoute("/manage")({
-  beforeLoad: async () => {
-    await requireWebSession();
+  ssr: false,
+  loader: async () => {
+    const { authenticated } = await getSessionStatus();
+    if (!authenticated) {
+      throw redirect({ to: "/login" });
+    }
   },
   component: ManagementPage,
 });
