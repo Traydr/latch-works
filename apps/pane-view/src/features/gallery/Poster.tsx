@@ -19,7 +19,10 @@ export function Poster({
 }) {
   const libraryMedia = media as LibraryMediaItem;
   const supportsThumbnail =
-    media.mediaType === "image" || media.mediaType === "gif" || media.mediaType === "video";
+    media.mediaType === "image" ||
+    media.mediaType === "gif" ||
+    media.mediaType === "video" ||
+    media.mediaType === "pdf";
 
   return (
     <div

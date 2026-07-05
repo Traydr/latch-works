@@ -67,7 +67,7 @@ export async function claimDerivativeJobs({
       .innerJoin(mediaObjects, eq(thumbnails.mediaObjectId, mediaObjects.id))
       .where(
         and(
-          inArray(mediaObjects.mediaType, ["video", "image", "gif"]),
+          inArray(mediaObjects.mediaType, ["video", "image", "gif", "pdf"]),
           or(
             and(
               eq(thumbnails.status, "pending"),

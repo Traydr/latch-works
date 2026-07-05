@@ -11,7 +11,9 @@ export interface DerivativeDescriptor {
 }
 
 export function supportsDerivative(mediaType: MediaType): boolean {
-  return mediaType === "video" || mediaType === "image" || mediaType === "gif";
+  return (
+    mediaType === "video" || mediaType === "image" || mediaType === "gif" || mediaType === "pdf"
+  );
 }
 
 export function supportsInlineImageThumbnail(mediaType: MediaType): boolean {
@@ -22,11 +24,11 @@ export function buildDerivativeDescriptor(
   source: DerivativeSource,
   size: ThumbnailSize,
 ): DerivativeDescriptor {
-  if (source.mediaType === "video") {
+  if (source.mediaType === "video" || source.mediaType === "pdf") {
     return {
       objectKey: previewObjectKey({
         extension: source.extension,
-        mediaType: "video",
+        mediaType: source.mediaType,
         sha256: source.sha256,
         size,
       }),

@@ -8,11 +8,11 @@ import {
 const sha256 = "a".repeat(64);
 
 describe("supportsDerivative", () => {
-  it("returns true for image, gif, and video", () => {
+  it("returns true for image, gif, video, and pdf", () => {
     expect(supportsDerivative("video")).toBe(true);
     expect(supportsDerivative("image")).toBe(true);
     expect(supportsDerivative("gif")).toBe(true);
-    expect(supportsDerivative("pdf")).toBe(false);
+    expect(supportsDerivative("pdf")).toBe(true);
     expect(supportsDerivative("unknown")).toBe(false);
   });
 });
@@ -52,5 +52,19 @@ describe("buildDerivativeDescriptor", () => {
 
     expect(descriptor.purpose).toBe("thumbnail");
     expect(descriptor.objectKey).toContain("thumbnails/");
+  });
+
+  it("builds a pdf preview descriptor using the preview object key", () => {
+    const descriptor = buildDerivativeDescriptor(
+      {
+        extension: "pdf",
+        mediaType: "pdf",
+        sha256,
+      },
+      320,
+    );
+
+    expect(descriptor.purpose).toBe("preview");
+    expect(descriptor.objectKey).toContain("previews/pdf/");
   });
 });

@@ -15,6 +15,9 @@ const serverExternal = [
   "@latch-works/media-derivatives",
   "@latch-works/media-derivatives/descriptor",
   "@latch-works/media-storage",
+  // Native canvas backend for PDF rendering — must not be scanned by Vite's
+  // dep optimizer (the platform binary is not valid UTF-8).
+  "@napi-rs/canvas",
   "ffmpeg-static",
   "sharp",
   "better-auth",
@@ -34,7 +37,7 @@ export default defineConfig({
     external: [...serverExternal, "pdfjs-dist"],
   },
   optimizeDeps: {
-    exclude: ["pdfjs-dist"],
+    exclude: ["@napi-rs/canvas", "pdfjs-dist"],
   },
   server: {
     port: 3000,

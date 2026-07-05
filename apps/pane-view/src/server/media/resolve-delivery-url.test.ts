@@ -186,4 +186,44 @@ describe("resolveMediaDeliveryUrlsForVariants", () => {
       requestedSize: 320,
     });
   });
+
+  it("routes pdf thumbnails through the queued derivative path, not Bunny", async () => {
+    const pdfContext = {
+      extension: "pdf",
+      mediaObjectId: "obj-3",
+      mediaType: "pdf" as const,
+      originalObjectKey: "objects/ghi",
+      sha256: "c".repeat(64),
+    };
+    mocks.readMediaThumbnailContextsByEntryIds.mockResolvedValue(
+      new Map([["media-3", pdfContext]]),
+    );
+    mocks.ensureThumbnailDerivativeForContext.mockResolvedValue({
+      height: 1122,
+      objectKey: "previews/pdf/sha/320.webp",
+      purpose: "preview",
+      status: "ready",
+      width: 864,
+    });
+    mocks.buildDerivativeDeliveryUrl.mockResolvedValue("https://cdn.example/preview.webp");
+
+    const results = await resolveMediaDeliveryUrlsForVariants([
+      { mediaId: "media-3", variant: "thumbnail", size: 320 },
+    ]);
+
+    expect(mocks.mintImageOriginalDeliveryToken).not.toHaveBeenCalled();
+    expect(mocks.ensureThumbnailDerivativeForContext).toHaveBeenCalledWith({
+      context: pdfContext,
+      requestedSize: 320,
+    });
+    expect(results).toEqual([
+      {
+        mediaId: "media-3",
+        size: 320,
+        status: "ready",
+        url: "https://cdn.example/preview.webp",
+        variant: "thumbnail",
+      },
+    ]);
+  });
 });

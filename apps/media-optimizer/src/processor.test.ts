@@ -208,4 +208,43 @@ describe("processBatch", () => {
     expect(mocks.reportFailure).not.toHaveBeenCalled();
     expect(result).toEqual(expect.objectContaining({ failed: 0, processed: 1, succeeded: 1 }));
   });
+
+  it("generates, uploads, and reports completion for a PDF job", async () => {
+    mocks.claimJobs
+      .mockResolvedValueOnce({
+        jobs: [
+          {
+            ...makeJob(0),
+            extension: "pdf",
+            mediaType: "pdf" as const,
+            objectKey: "previews/pdf/obj-0-320.webp",
+            originalObjectKey: "originals/obj-0.pdf",
+            size: 320,
+          },
+        ],
+        processingToken: "token-1",
+      })
+      .mockResolvedValue({
+        jobs: [],
+        processingToken: "token-empty",
+      });
+
+    const result = await processBatch();
+
+    expect(mocks.generateDerivativeBytes).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: expect.objectContaining({ mediaType: "pdf" }),
+      }),
+    );
+    expect(mocks.putStoredObject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        contentType: "image/webp",
+        key: "previews/pdf/obj-0-320.webp",
+      }),
+    );
+    expect(mocks.reportComplete).toHaveBeenCalledWith(
+      expect.objectContaining({ height: 200, processingToken: "token-1", width: 240 }),
+    );
+    expect(result).toEqual(expect.objectContaining({ failed: 0, processed: 1, succeeded: 1 }));
+  });
 });
