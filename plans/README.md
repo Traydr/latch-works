@@ -25,19 +25,39 @@ when done.
 | 013 | Debounce Gather Box last-run persistence | P2 | S | 001 | TODO |
 | 014 | Reduce folder upsert queries during sync | P2 | M | 002, 003 | TODO |
 | 015 | Share sync and optimizer HTTP contracts | P2 | M | 002, 004 | TODO |
-| 016 | Split GalleryPage orchestration boundaries | P3 | L | 001 | TODO |
+| 016 | Split GalleryPage orchestration boundaries | P3 | L | 001 | DONE (combined PR, branch `advisor/016-021-022-gallery-pdf-spa`) |
 | 017 | Align Frame View comics with media-domain | P2 | S | 001 | TODO |
 | 018 | Fix local-service onboarding docs | P2 | S | - | TODO |
 | 019 | Repair stale README and docs links | P2 | S | 018 | TODO |
 | 020 | Remove unused Pane View favorites schema | P3 | M | 001 | TODO |
-| 021 | Add PDF cover previews to derivative flow | P3 | M | 001 | TODO |
-| 022 | Convert Pane View UI to SPA architecture | P2 | L | 001, 005 | TODO |
+| 021 | Add PDF cover previews to derivative flow | P3 | M | 001 | DONE (combined PR, branch `advisor/016-021-022-gallery-pdf-spa`) |
+| 022 | Convert Pane View UI to SPA architecture | P2 | L | 001, 005 | DONE (combined PR, branch `advisor/016-021-022-gallery-pdf-spa`) |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) |
 REJECTED (with one-line rationale).
 
 ## Reconciliation Notes
 
+- Executed plans 016, 021, and 022 on 2026-07-05 (executor subagents on one
+  shared branch, reviewed and E2E-tested against local Postgres/MinIO). Notes:
+  - 016: `GalleryPage.tsx` reduced from 1,621 to ~1,240 lines; the ~700-line
+    target was not reached. Remaining bulk is header JSX, mobile sheet modals,
+    and keyboard handlers — a follow-up extraction plan would be needed if the
+    target still matters.
+  - 021: initial implementation crashed on real PDFs (duplicate
+    `@napi-rs/canvas` native instances between pdfjs-dist's optional dep and a
+    direct dep). Fixed by rendering through `doc.canvasFactory` and passing
+    `standardFontDataUrl`; verified end-to-end with a real PDF cover rendering
+    in the gallery. `@napi-rs/canvas` needed `pnpm-workspace.yaml` `allowBuilds`
+    and vite `serverExternal`/`optimizeDeps.exclude` entries in Pane View.
+  - 022: `ssr: false` route-level conversion with a `getSessionStatus` server
+    function; security-headers middleware from plan 005 preserved and verified
+    via response headers. Unauthenticated `/` and `/manage` redirect to
+    `/login` client-side with no private-data flash.
+  - Known pre-existing failure (unchanged files, present on `main`):
+    `batched-thumbnail-resolver.test.ts` "reports the earliest pending retry
+    delay" — test fixture uses `size: 320` but the cache key uses
+    `GALLERY_THUMBNAIL_SIZE` (720). Worth a tiny follow-up fix.
 - Executed plans 001-005 with Cursor CLI subagents, reviewed the work, opened
   PRs #47-#51, and merged them into `main` on 2026-07-05 in dependency order.
 - Verified each PR's GitHub `Check` workflow before merge. The latest `main`
