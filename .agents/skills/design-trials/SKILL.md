@@ -1,46 +1,70 @@
 ---
 name: design-trials
-description: Generate multiple unique UI layout variations behind a temporary switcher, iterate through feedback rounds where each round produces entirely new designs, then harvest the winner and strip all scaffolding. Use when the user wants to redesign a UI through comparison and iteration rather than a single proposal, mentions "variations", "layout options", "redesign", or wants to compare multiple approaches side by side.
+description: Run UI design trials: compare a fixed-size set of distinct in-app layouts, refresh the full set after feedback, and land one winner. Use when the user wants variations, layout options, redesign, or side-by-side comparison.
 ---
 
-# Design Variation Rounds
+# Design Trials
 
-A redesign skill that buys convergence through divergence: build many **variations** at once, let the user compare them live, and use each **round** of feedback to produce entirely new designs — not tweaks. The **scaffold** (a temporary numbered switcher) makes comparison instant. When the user picks a direction, **harvest** the winner and remove every trace of the variation system.
+Design trials are a temporary studio inside the real app: keep a stable number of
+options, make each option structurally different, refresh the whole set from feedback,
+then commit the selected layout and delete the studio.
 
 ## Companion skills
 
-If `frontend-design` is present, load it before generating layouts — its guidance on distinctive, non-templated visual choices, typography, and palette directly raises the quality of each variation. If `grill-with-docs` is present, load it during Ground — its interview-style challenge of the plan against the domain model sharpens terminology and catches assumptions before they propagate into N layouts.
+If `frontend-design` is present, load it before generating a set. Use
+`grill-with-docs` when the redesign depends on project-specific domain language,
+workflow boundaries, or documented decisions; consult code and docs first, and do
+not write app glossary or ADR entries for visual-only trial decisions.
 
-**Completion:** companion skills loaded if available.
+## Stable count
 
-## Scaffold
+Establish `N` before making options:
 
-Build a temporary switcher into the real app: numbered buttons (1–N) that swap layouts without a page reload. The switcher persists the user's choice across sessions. Each layout swap must destroy the previous controller — remove all event listeners, message handlers, storage listeners — and re-initialize a fresh one against the new DOM. Listener leaks across swaps break the app silently, and the damage is invisible until a later swap double-fires a handler.
+- If the user states a count, that count is `N`.
+- If the user does not state a count, `N = 5`.
+- Every later feedback pass produces exactly `N` variations.
+- Change `N` only when the user explicitly asks for a different number.
 
-Every layout must contain all element IDs the controller requires. A missing ID crashes on init. Verify by counting each ID across all layout templates before building.
+Feedback never changes the count by implication. "Make them denser", "combine 2
+and 4", "another pass", and "closer to option 3" each still mean a fresh set of
+`N` options.
 
-**Completion:** switcher swaps between N layouts with no listener leaks; every layout inits without errors.
+## Trial studio
 
-## Vary
+Build a temporary numbered switcher (`1`-`N`) into the real app. It swaps layouts
+without a page reload and persists the selected option across sessions. Keep the
+studio isolated and easy to remove; it is comparison scaffolding, not product UI.
 
-Generate N unique layouts (5 is a good default). Each must be structurally distinct — not a reskin of the same structure with different colors. Vary the information hierarchy: which element is the hero, how domain behavior is presented (breadcrumbs, flow nodes, inline text, data grid, pills), how density is distributed, what is hidden behind a toggle versus always visible.
+Every layout must satisfy the same controller contract. On each swap, destroy the
+previous controller completely: event listeners, message handlers, storage listeners,
+timers, and observers. Then initialize a fresh controller against the new DOM.
 
-Each layout must surface the domain information found in Ground, but present it differently. The user should feel that switching between layouts changes how they understand the data, not just how it looks.
+Before running the set, verify every required element ID appears exactly once in
+each layout.
 
-**Completion:** N layouts, each structurally unique, each surfacing domain info, each containing all required element IDs.
+## Option quality
 
-## Round
+Every set contains `N` structurally distinct options. A new set is not a tweak pass:
+do not reskin the same structure, rename cards, or only change palette. Vary the
+information hierarchy, navigation model, density, disclosure, control placement, and
+data presentation.
 
-Present the variations and collect feedback. A round is not a tweak pass — each round produces entirely new designs that incorporate all accumulated feedback. If the user says "I liked the compactness of 2 and the breadcrumbs of 5," the next round's designs are fresh layouts that combine those qualities, not edits to 2 and 5.
+Each option preserves the required product behavior and surfaces the domain concepts
+found in code and docs, but it should make the user understand the data differently
+from the other options.
 
-Feedback compounds: each round's designs carry every constraint from every prior round. The user narrows the space; you fill it with new options.
+## Feedback loop
 
-**Completion:** the user picks a direction, or gives feedback for another round.
+Treat feedback as constraints for the next fresh set. Constraints accumulate across
+the whole trial: if the user likes the compactness of option 2 and the breadcrumbs
+of option 5, the next set contains new structures that combine those qualities.
 
-## Harvest
+Continue with exactly `N` options until the user selects a winner, explicitly changes
+`N`, or asks to stop comparing.
 
-When the user picks a layout, make it the only layout. Remove the switcher, the layout-template system, the extra CSS for discarded layouts, and any storage keys for the selected layout. Inline the winner's HTML directly into the app's templates. Move any shared logic (like domain-behavior rendering) out of the variation system and into the permanent codebase.
+## Winner
 
-The final codebase should have no trace that a variation system ever existed — no switcher markup, no layout-switching functions, no orphaned CSS classes, no storage keys.
-
-**Completion:** no switcher, no layout templates, no extra CSS classes from discarded layouts; the winner is the sole layout, wired permanently.
+When the user picks a layout, make it the only layout. Remove the switcher, layout
+templates, discarded CSS, trial helpers, and storage keys. Inline the winner into
+the app's permanent templates, and move shared rendering logic out of the trial
+system. The final codebase should have no trace that a comparison studio existed.
