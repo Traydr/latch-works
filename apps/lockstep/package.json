@@ -6,6 +6,7 @@
   "main": ".vite/build/main.js",
   "private": true,
   "scripts": {
+    "premake": "pnpm --dir ../.. --filter @latch-works/lockstep-core... build",
     "prestart": "node ./scripts/ensure-workspace-deps.mjs && node ./scripts/ensure-electron.mjs",
     "start": "electron-forge start",
     "preview:showcase": "vite --config vite.showcase.config.mjs",
