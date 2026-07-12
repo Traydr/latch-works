@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Result } from 'better-result';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -154,8 +154,10 @@ describe('App', () => {
     };
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    cleanup();
     useAppStore.setState(initialState, true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
   });
 
   it('rescans exactly once when filters are updated from settings', async () => {

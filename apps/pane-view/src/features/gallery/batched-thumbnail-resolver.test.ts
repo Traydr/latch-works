@@ -111,4 +111,50 @@ describe("resolveGalleryThumbnailsBatch", () => {
     expect(retryDelayMs).toBeGreaterThan(0);
     expect(retryDelayMs).toBeLessThanOrEqual(30_000);
   });
+
+  it("retries failed batch items instead of caching them terminally", async () => {
+    vi.useFakeTimers();
+
+    mocks.resolveMediaDeliveryUrls.mockResolvedValueOnce({
+      results: [
+        {
+          mediaId: "00000000-0000-4000-8000-000000000003",
+          size: 720,
+          status: "failed",
+          variant: "thumbnail",
+        },
+      ],
+    });
+
+    const first = await resolveGalleryThumbnailsBatch([
+      { mediaId: "00000000-0000-4000-8000-000000000003" },
+    ]);
+    expect(first.urls).toEqual({});
+    expect(
+      getNextPendingThumbnailRetryMs([{ mediaId: "00000000-0000-4000-8000-000000000003" }]),
+    ).not.toBeNull();
+
+    await vi.advanceTimersByTimeAsync(300_000);
+
+    mocks.resolveMediaDeliveryUrls.mockResolvedValueOnce({
+      results: [
+        {
+          mediaId: "00000000-0000-4000-8000-000000000003",
+          size: 720,
+          status: "ready",
+          url: "https://edge.shutter.test/recovered",
+          variant: "thumbnail",
+        },
+      ],
+    });
+
+    const second = await resolveGalleryThumbnailsBatch([
+      { mediaId: "00000000-0000-4000-8000-000000000003" },
+    ]);
+    expect(second.urls).toEqual({
+      "00000000-0000-4000-8000-000000000003": "https://edge.shutter.test/recovered",
+    });
+
+    vi.useRealTimers();
+  });
 });

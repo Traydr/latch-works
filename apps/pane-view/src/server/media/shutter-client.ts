@@ -48,15 +48,33 @@ function frameStrings(values: readonly string[]): Uint8Array<ArrayBuffer> {
   return output;
 }
 
+function readCapabilityKeyMaterial(
+  registry: Record<string, unknown>,
+  spaceId: string,
+  kid: string,
+): string | undefined {
+  const spaceKeys = registry[spaceId];
+  if (spaceKeys && typeof spaceKeys === "object" && !Array.isArray(spaceKeys)) {
+    const encoded = (spaceKeys as Record<string, unknown>)[kid];
+    if (typeof encoded === "string") {
+      return encoded;
+    }
+  }
+
+  const flat = registry[kid];
+  return typeof flat === "string" ? flat : undefined;
+}
+
 function capabilityKey(): { kid: string; key: Uint8Array<ArrayBuffer> } {
   if (!env.SHUTTER_CAPABILITY_KEYS || !env.SHUTTER_CAPABILITY_KID) {
     throw new Error("Shutter capability issuance is not configured");
   }
-  const registry = JSON.parse(env.SHUTTER_CAPABILITY_KEYS) as Record<
-    string,
-    Record<string, string>
-  >;
-  const encoded = registry[env.SHUTTER_SPACE_ID]?.[env.SHUTTER_CAPABILITY_KID];
+  const registry = JSON.parse(env.SHUTTER_CAPABILITY_KEYS) as Record<string, unknown>;
+  const encoded = readCapabilityKeyMaterial(
+    registry,
+    env.SHUTTER_SPACE_ID,
+    env.SHUTTER_CAPABILITY_KID,
+  );
   if (!encoded) throw new Error("Shutter capability key ID is not active");
   const key = Uint8Array.from(Buffer.from(encoded, "base64url"));
   if (key.byteLength !== 32) throw new Error("Shutter capability key must be 32 bytes");
@@ -120,10 +138,17 @@ function edgeUrl(path: string): string {
   return new URL(path, env.SHUTTER_EDGE_URL).toString();
 }
 
+function assertSourceId(sha256: string): void {
+  if (!/^[a-f0-9]{64}$/i.test(sha256)) {
+    throw new Error("Shutter source ID must be a SHA-256 hex digest");
+  }
+}
+
 export async function resolveShutterImageUrl(
   context: MediaThumbnailContext,
   width: number,
 ): Promise<string> {
+  assertSourceId(context.sha256);
   const capability = await issueCapability({
     space_id: env.SHUTTER_SPACE_ID,
     source_id: context.sha256,
@@ -142,6 +167,7 @@ export async function resolveShutterPreview(
 ): Promise<ShutterPreviewResult> {
   if (context.mediaType !== "video" && context.mediaType !== "pdf") return { status: "failed" };
   if (!env.SHUTTER_SPACE_API_TOKEN) throw new Error("Shutter Space API is not configured");
+  assertSourceId(context.sha256);
   const kind = context.mediaType;
   const sourceCapability = await issueCapability({
     space_id: env.SHUTTER_SPACE_ID,
