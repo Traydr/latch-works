@@ -2,6 +2,7 @@ import { createSignedGetUrl } from "@latch-works/media-storage";
 import { env } from "../../env/server";
 import type { MediaThumbnailContext } from "./repository";
 import {
+  decodeCapabilityKeyMaterial,
   parseCapabilityKeyRegistry,
   readCapabilityKeyMaterial,
   validateCapabilityKeyConfig,
@@ -69,8 +70,7 @@ function capabilityKey(): { kid: string; key: Uint8Array<ArrayBuffer> } {
     throw new Error(`Shutter capability key ID "${status.kid}" is not active for space "${status.spaceId}"`);
   }
 
-  const key = Uint8Array.from(Buffer.from(encoded, "base64url"));
-  return { kid: status.kid, key };
+  return { kid: status.kid, key: decodeCapabilityKeyMaterial(encoded) };
 }
 
 export function getShutterCapabilityKeyStatus() {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  decodeCapabilityKeyMaterial,
   listCapabilityKeyIds,
   parseCapabilityKeyRegistry,
   readCapabilityKeyMaterial,
@@ -9,6 +10,15 @@ import {
 
 const KEY = Uint8Array.from({ length: 32 }, (_, index) => index);
 const encodedKey = Buffer.from(KEY).toString("base64url");
+const hexKey = "b0573018577c75f337fee083e513b588b24f1a46dd4831702bd5a4416aaf7766";
+const railwayCapabilityKeys = `{
+  "ernesta": {
+    "key-id": "e9fc8797aeb1921b9e48087e67ad8c6e8ce27af0b6ef43d2f54d24b968668f1a"
+  },
+  "pane-view": {
+    "key-id": "${hexKey}"
+  }
+}`;
 
 describe("shutter capability config", () => {
   it("unwraps single-quoted JSON copied from .env examples", () => {
@@ -62,5 +72,32 @@ describe("shutter capability config", () => {
         spaceId: "pane-view",
       }),
     ).toEqual({ ok: true, kid: "active-key", spaceId: "pane-view" });
+  });
+
+  it("accepts Railway multiline JSON with hex-encoded key material", () => {
+    expect(
+      validateCapabilityKeyConfig({
+        capabilityKeys: railwayCapabilityKeys,
+        capabilityKid: "key-id",
+        spaceId: "pane-view",
+      }),
+    ).toEqual({ ok: true, kid: "key-id", spaceId: "pane-view" });
+  });
+
+  it("decodes 64-char hex secrets to 32-byte keys", () => {
+    expect(decodeCapabilityKeyMaterial(hexKey)).toHaveLength(32);
+  });
+
+  it("rejects using the hex secret as SHUTTER_CAPABILITY_KID", () => {
+    const status = validateCapabilityKeyConfig({
+      capabilityKeys: railwayCapabilityKeys,
+      capabilityKid: hexKey,
+      spaceId: "pane-view",
+    });
+
+    expect(status.ok).toBe(false);
+    if (status.ok) throw new Error("expected invalid status");
+    expect(status.error).toContain('key ID "b0573018577c75f337fee083e513b588b24f1a46dd4831702bd5a4416aaf7766"');
+    expect(status.error).toContain('nested["pane-view"]: key-id');
   });
 });

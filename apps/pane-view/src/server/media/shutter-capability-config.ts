@@ -19,8 +19,31 @@ export function unwrapEnvJson(raw: string): string {
   return trimmed;
 }
 
+export function unwrapEnvScalar(raw: string): string {
+  return unwrapEnvJson(raw).trim();
+}
+
+function assertCapabilityKeyRegistry(value: unknown): CapabilityKeyRegistry {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new SyntaxError("Invalid capability key registry");
+  }
+  return value as CapabilityKeyRegistry;
+}
+
 export function parseCapabilityKeyRegistry(raw: string): CapabilityKeyRegistry {
-  return JSON.parse(unwrapEnvJson(raw)) as CapabilityKeyRegistry;
+  let parsed: unknown = JSON.parse(unwrapEnvJson(raw));
+  if (typeof parsed === "string") {
+    parsed = JSON.parse(parsed);
+  }
+  return assertCapabilityKeyRegistry(parsed);
+}
+
+export function decodeCapabilityKeyMaterial(encoded: string): Uint8Array<ArrayBuffer> {
+  const trimmed = encoded.trim();
+  if (/^[0-9a-fA-F]{64}$/u.test(trimmed)) {
+    return Uint8Array.from(Buffer.from(trimmed, "hex"));
+  }
+  return Uint8Array.from(Buffer.from(trimmed, "base64url"));
 }
 
 export function listCapabilityKeyIds(
@@ -87,8 +110,8 @@ export function validateCapabilityKeyConfig({
   capabilityKid: string;
   spaceId: string;
 }): CapabilityKeyConfigStatus {
-  const kid = capabilityKid.trim();
-  const normalizedSpaceId = spaceId.trim();
+  const kid = unwrapEnvScalar(capabilityKid);
+  const normalizedSpaceId = unwrapEnvScalar(spaceId);
 
   if (!capabilityKeys.trim() || !kid) {
     return {
@@ -121,7 +144,7 @@ export function validateCapabilityKeyConfig({
     };
   }
 
-  const key = Uint8Array.from(Buffer.from(encoded, "base64url"));
+  const key = decodeCapabilityKeyMaterial(encoded);
   if (key.byteLength !== 32) {
     return {
       ok: false,
