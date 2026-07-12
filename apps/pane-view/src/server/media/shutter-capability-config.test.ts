@@ -97,7 +97,9 @@ describe("shutter capability config", () => {
 
     expect(status.ok).toBe(false);
     if (status.ok) throw new Error("expected invalid status");
-    expect(status.error).toContain('key ID "b0573018577c75f337fee083e513b588b24f1a46dd4831702bd5a4416aaf7766"');
+    expect(status.error).toContain(
+      'key ID "b0573018577c75f337fee083e513b588b24f1a46dd4831702bd5a4416aaf7766"',
+    );
     expect(status.error).toContain('nested["pane-view"]: key-id');
   });
 });

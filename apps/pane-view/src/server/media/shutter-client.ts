@@ -67,7 +67,9 @@ function capabilityKey(): { kid: string; key: Uint8Array<ArrayBuffer> } {
   const registry = parseCapabilityKeyRegistry(env.SHUTTER_CAPABILITY_KEYS);
   const encoded = readCapabilityKeyMaterial(registry, status.spaceId, status.kid);
   if (!encoded) {
-    throw new Error(`Shutter capability key ID "${status.kid}" is not active for space "${status.spaceId}"`);
+    throw new Error(
+      `Shutter capability key ID "${status.kid}" is not active for space "${status.spaceId}"`,
+    );
   }
 
   return { kid: status.kid, key: decodeCapabilityKeyMaterial(encoded) };
@@ -231,5 +233,7 @@ export async function purgeShutterSource(sourceId: string): Promise<void> {
 
 const startupCapabilityStatus = getShutterCapabilityKeyStatus();
 if (!startupCapabilityStatus.ok) {
-  console.error(`[pane-view] Shutter capability keys misconfigured: ${startupCapabilityStatus.error}`);
+  console.error(
+    `[pane-view] Shutter capability keys misconfigured: ${startupCapabilityStatus.error}`,
+  );
 }
