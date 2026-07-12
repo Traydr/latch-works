@@ -16,7 +16,7 @@
   "workspaces": {
     ".": {
       "entry": [".railway/railway.ts"],
-      "ignoreDependencies": ["vitest"]
+      "ignoreDependencies": ["lodash", "vitest"]
     },
     "apps/pane-view": {
       "entry": ["drizzle.config.ts", "src/router.tsx", "src/routes/**/*.{ts,tsx}"],
