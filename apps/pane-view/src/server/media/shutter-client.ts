@@ -1,6 +1,11 @@
 import { createSignedGetUrl } from "@latch-works/media-storage";
 import { env } from "../../env/server";
 import type { MediaThumbnailContext } from "./repository";
+import {
+  parseCapabilityKeyRegistry,
+  readCapabilityKeyMaterial,
+  validateCapabilityKeyConfig,
+} from "./shutter-capability-config";
 import { createPaneViewStorageClient } from "./storage-client";
 
 const SHUTTER_WIDTHS = [320, 640, 750, 828, 960, 1080, 1280, 1668, 1920, 2048, 2560, 3200, 3840];
@@ -48,37 +53,32 @@ function frameStrings(values: readonly string[]): Uint8Array<ArrayBuffer> {
   return output;
 }
 
-function readCapabilityKeyMaterial(
-  registry: Record<string, unknown>,
-  spaceId: string,
-  kid: string,
-): string | undefined {
-  const spaceKeys = registry[spaceId];
-  if (spaceKeys && typeof spaceKeys === "object" && !Array.isArray(spaceKeys)) {
-    const encoded = (spaceKeys as Record<string, unknown>)[kid];
-    if (typeof encoded === "string") {
-      return encoded;
-    }
+function capabilityKey(): { kid: string; key: Uint8Array<ArrayBuffer> } {
+  const status = validateCapabilityKeyConfig({
+    capabilityKeys: env.SHUTTER_CAPABILITY_KEYS,
+    capabilityKid: env.SHUTTER_CAPABILITY_KID,
+    spaceId: env.SHUTTER_SPACE_ID,
+  });
+  if (!status.ok) {
+    throw new Error(status.error);
   }
 
-  const flat = registry[kid];
-  return typeof flat === "string" ? flat : undefined;
+  const registry = parseCapabilityKeyRegistry(env.SHUTTER_CAPABILITY_KEYS);
+  const encoded = readCapabilityKeyMaterial(registry, status.spaceId, status.kid);
+  if (!encoded) {
+    throw new Error(`Shutter capability key ID "${status.kid}" is not active for space "${status.spaceId}"`);
+  }
+
+  const key = Uint8Array.from(Buffer.from(encoded, "base64url"));
+  return { kid: status.kid, key };
 }
 
-function capabilityKey(): { kid: string; key: Uint8Array<ArrayBuffer> } {
-  if (!env.SHUTTER_CAPABILITY_KEYS || !env.SHUTTER_CAPABILITY_KID) {
-    throw new Error("Shutter capability issuance is not configured");
-  }
-  const registry = JSON.parse(env.SHUTTER_CAPABILITY_KEYS) as Record<string, unknown>;
-  const encoded = readCapabilityKeyMaterial(
-    registry,
-    env.SHUTTER_SPACE_ID,
-    env.SHUTTER_CAPABILITY_KID,
-  );
-  if (!encoded) throw new Error("Shutter capability key ID is not active");
-  const key = Uint8Array.from(Buffer.from(encoded, "base64url"));
-  if (key.byteLength !== 32) throw new Error("Shutter capability key must be 32 bytes");
-  return { kid: env.SHUTTER_CAPABILITY_KID, key };
+export function getShutterCapabilityKeyStatus() {
+  return validateCapabilityKeyConfig({
+    capabilityKeys: env.SHUTTER_CAPABILITY_KEYS,
+    capabilityKid: env.SHUTTER_CAPABILITY_KID,
+    spaceId: env.SHUTTER_SPACE_ID,
+  });
 }
 
 function canonicalClaims(claims: CapabilityClaims): string {
@@ -227,4 +227,9 @@ export async function purgeShutterSource(sourceId: string): Promise<void> {
   if (response.status !== 204) {
     throw new Error(`Shutter source purge failed with ${response.status}`);
   }
+}
+
+const startupCapabilityStatus = getShutterCapabilityKeyStatus();
+if (!startupCapabilityStatus.ok) {
+  console.error(`[pane-view] Shutter capability keys misconfigured: ${startupCapabilityStatus.error}`);
 }

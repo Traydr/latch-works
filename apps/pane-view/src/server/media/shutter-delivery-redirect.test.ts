@@ -43,6 +43,25 @@ describe("redirectToShutterRendition", () => {
     expect(mocks.resolveImage).toHaveBeenCalledWith(image, 320);
   });
 
+  it("returns 502 when preview issuance fails", async () => {
+    mocks.readContext.mockResolvedValue({
+      ...image,
+      extension: "mp4",
+      mediaType: "video",
+      originalObjectKey: "originals/video.mp4",
+      sha256: "b".repeat(64),
+    });
+    mocks.resolvePreview.mockRejectedValue(new Error("Shutter capability key ID is not active"));
+
+    const response = await redirectToShutterRendition({
+      mediaId: "video",
+      width: 640,
+    });
+
+    expect(response.status).toBe(502);
+    expect(await response.text()).toBe("Rendition unavailable");
+  });
+
   it("returns retryable 503 while video previews are pending", async () => {
     mocks.readContext.mockResolvedValue({
       ...image,

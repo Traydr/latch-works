@@ -49,7 +49,15 @@ export async function redirectToShutterRendition({
     });
   }
 
-  const preview = await resolveShutterPreview(context, width);
+  let preview: Awaited<ReturnType<typeof resolveShutterPreview>>;
+  try {
+    preview = await resolveShutterPreview(context, width);
+  } catch {
+    return new Response("Rendition unavailable", {
+      headers: { "Cache-Control": API_PRIVATE_CACHE_CONTROL },
+      status: 502,
+    });
+  }
   if (preview.status === "pending") {
     return new Response("Rendition is being generated", {
       headers: {
