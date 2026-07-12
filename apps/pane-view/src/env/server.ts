@@ -30,12 +30,20 @@ export const env = createEnv({
     // Bunny CDN hostname for image delivery (e.g. img.example.com).
     BUNNY_CDN_HOST: z.string().min(1).optional(),
     // Image delivery: "bunny" (edge resize from Originals) or "inline" (local sharp).
-    IMAGE_DELIVERY_MODE: z.enum(["bunny", "inline"]).optional(),
+    IMAGE_DELIVERY_MODE: z.enum(["bunny", "inline", "shutter"]).optional(),
+    VIDEO_PREVIEW_PROVIDER: z.enum(["legacy", "shutter"]).default("legacy"),
+    PDF_PREVIEW_PROVIDER: z.enum(["legacy", "shutter"]).default("legacy"),
+    SHUTTER_EDGE_URL: z.url().default("https://shutter-edge.traydr.dev"),
+    SHUTTER_CONTROL_URL: z.url().default("https://shutter-control.traydr.dev"),
+    SHUTTER_SPACE_ID: z.string().min(1).default("pane-view"),
+    SHUTTER_SPACE_API_TOKEN: z.string().min(32).optional(),
+    SHUTTER_CAPABILITY_KEYS: z.string().optional(),
+    SHUTTER_CAPABILITY_KID: z.string().min(1).optional(),
   },
   clientPrefix: "VITE_",
   client: {
     VITE_BUNNY_CDN_HOST: z.string().min(1).optional(),
-    VITE_IMAGE_DELIVERY_MODE: z.enum(["bunny", "inline"]).optional(),
+    VITE_IMAGE_DELIVERY_MODE: z.enum(["bunny", "inline", "shutter"]).optional(),
   },
   runtimeEnv: process.env,
   skipValidation: typeof process !== "undefined" && Boolean(process.env.SKIP_ENV_VALIDATION),

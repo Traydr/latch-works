@@ -1,8 +1,8 @@
-export type ImageDeliveryMode = "bunny" | "inline";
+export type ImageDeliveryMode = "bunny" | "inline" | "shutter";
 
 export function readClientImageDeliveryMode(): ImageDeliveryMode {
   const configured = import.meta.env.VITE_IMAGE_DELIVERY_MODE;
-  if (configured === "bunny" || configured === "inline") {
+  if (configured === "bunny" || configured === "inline" || configured === "shutter") {
     return configured;
   }
 
