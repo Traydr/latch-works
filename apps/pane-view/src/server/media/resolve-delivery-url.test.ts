@@ -8,6 +8,9 @@ const mocks = vi.hoisted(() => ({
   resolveImageDeliveryMode: vi.fn(),
   buildDerivativeDeliveryUrl: vi.fn(),
   createSignedGetUrl: vi.fn(),
+  resolveShutterImageUrl: vi.fn(),
+  resolveShutterPreview: vi.fn(),
+  usesShutterPreview: vi.fn(),
 }));
 
 vi.mock("../../env/image-delivery", () => ({
@@ -50,6 +53,12 @@ vi.mock("./storage-client", () => ({
   createPaneViewStorageClient: vi.fn(),
 }));
 
+vi.mock("./shutter-client", () => ({
+  resolveShutterImageUrl: mocks.resolveShutterImageUrl,
+  resolveShutterPreview: mocks.resolveShutterPreview,
+  usesShutterPreview: mocks.usesShutterPreview,
+}));
+
 import { resolveMediaDeliveryUrlsForVariants } from "./resolve-delivery-url";
 
 const imageContext = {
@@ -80,6 +89,9 @@ describe("resolveMediaDeliveryUrlsForVariants", () => {
     );
     mocks.mintImageOriginalDeliveryToken.mockReturnValue("bunny-token");
     mocks.ensureThumbnailDerivativeForContext.mockResolvedValue({ status: "pending" });
+    mocks.resolveShutterImageUrl.mockResolvedValue("https://shutter.test/private-image");
+    mocks.resolveShutterPreview.mockResolvedValue({ status: "pending", retryAfterMs: 5_000 });
+    mocks.usesShutterPreview.mockReturnValue(false);
   });
 
   it("dedupes duplicate batch entries", async () => {
@@ -225,5 +237,41 @@ describe("resolveMediaDeliveryUrlsForVariants", () => {
         variant: "thumbnail",
       },
     ]);
+  });
+
+  it("routes private still images directly through Shutter", async () => {
+    mocks.resolveImageDeliveryMode.mockReturnValue("shutter");
+    const results = await resolveMediaDeliveryUrlsForVariants([
+      { mediaId: "media-1", variant: "thumbnail", size: 321 },
+    ]);
+    expect(results).toEqual([
+      {
+        mediaId: "media-1",
+        size: 321,
+        status: "ready",
+        url: "https://shutter.test/private-image",
+        variant: "thumbnail",
+      },
+    ]);
+    expect(mocks.resolveShutterImageUrl).toHaveBeenCalledWith(imageContext, 321);
+    expect(mocks.ensureThumbnailDerivativeForContext).not.toHaveBeenCalled();
+  });
+
+  it("maps Shutter video jobs to the shared polling result", async () => {
+    mocks.usesShutterPreview.mockImplementation((mediaType) => mediaType === "video");
+    const results = await resolveMediaDeliveryUrlsForVariants([
+      { mediaId: "media-2", variant: "thumbnail", size: 320 },
+    ]);
+    expect(results).toEqual([
+      {
+        mediaId: "media-2",
+        retryAfterMs: 5_000,
+        size: 320,
+        status: "pending",
+        variant: "thumbnail",
+      },
+    ]);
+    expect(mocks.resolveShutterPreview).toHaveBeenCalledWith(videoContext, 320);
+    expect(mocks.ensureThumbnailDerivativeForContext).not.toHaveBeenCalled();
   });
 });

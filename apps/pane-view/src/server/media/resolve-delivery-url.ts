@@ -20,6 +20,11 @@ import {
   readMediaThumbnailContext,
   readMediaThumbnailContextsByEntryIds,
 } from "./repository";
+import {
+  resolveShutterImageUrl,
+  resolveShutterPreview,
+  usesShutterPreview,
+} from "./shutter-client";
 import { createPaneViewStorageClient } from "./storage-client";
 
 export type MediaDeliveryResolveResult =
@@ -111,6 +116,12 @@ async function resolveQueuedDerivativeDeliveryUrl({
   }
 
   const startedAt = Date.now();
+  if (usesShutterPreview(media.mediaType)) {
+    const shutter = await resolveShutterPreview(media, size ?? PREVIEW_DERIVATIVE_SIZE);
+    if (shutter.status === "pending") return { pending: true };
+    if (shutter.status === "ready") return { pending: false, url: shutter.url };
+    throw new Error("Derivative unavailable");
+  }
   const derivative =
     variant === "preview"
       ? await ensurePreviewDerivative({ mediaId })
@@ -159,13 +170,23 @@ export async function resolveDerivativeDeliveryUrl({
   size?: number;
   variant: "thumbnail" | "preview";
 }): Promise<MediaDeliveryResolveResult> {
-  if (variant === "thumbnail") {
+  if (variant === "thumbnail" || variant === "preview") {
     const media = await readMediaThumbnailContext({ mediaId });
     if (!media) {
       throw new Error("Media not found");
     }
 
-    if (isImageMediaType(media.mediaType)) {
+    if (isImageMediaType(media.mediaType) && resolveImageDeliveryMode() === "shutter") {
+      return {
+        pending: false,
+        url: await resolveShutterImageUrl(
+          media,
+          size ?? (variant === "preview" ? PREVIEW_DERIVATIVE_SIZE : GALLERY_THUMBNAIL_SIZE),
+        ),
+      };
+    }
+
+    if (variant === "thumbnail" && isImageMediaType(media.mediaType)) {
       return resolveImageThumbnailDelivery({ mediaId, size });
     }
   }
@@ -298,6 +319,20 @@ export async function resolveMediaDeliveryUrlsForVariants(
           };
         }
 
+        if (isImageMediaType(context.mediaType) && resolveImageDeliveryMode() === "shutter") {
+          return {
+            mediaId: item.mediaId,
+            size: item.size,
+            status: "ready",
+            url: await resolveShutterImageUrl(
+              context,
+              item.size ??
+                (item.variant === "preview" ? PREVIEW_DERIVATIVE_SIZE : GALLERY_THUMBNAIL_SIZE),
+            ),
+            variant: item.variant,
+          };
+        }
+
         if (item.variant === "thumbnail" && isImageMediaType(context.mediaType)) {
           const imageResult = await resolveImageThumbnailHybrid({
             context,
@@ -326,6 +361,36 @@ export async function resolveMediaDeliveryUrlsForVariants(
         }
 
         const startedAt = Date.now();
+        if (usesShutterPreview(context.mediaType)) {
+          const shutter = await resolveShutterPreview(
+            context,
+            item.size ??
+              (item.variant === "preview" ? PREVIEW_DERIVATIVE_SIZE : GALLERY_THUMBNAIL_SIZE),
+          );
+          if (shutter.status === "pending") {
+            return {
+              mediaId: item.mediaId,
+              retryAfterMs: shutter.retryAfterMs,
+              size: item.size,
+              status: "pending",
+              variant: item.variant,
+            };
+          }
+          return shutter.status === "ready"
+            ? {
+                mediaId: item.mediaId,
+                size: item.size,
+                status: "ready",
+                url: shutter.url,
+                variant: item.variant,
+              }
+            : {
+                mediaId: item.mediaId,
+                size: item.size,
+                status: "failed",
+                variant: item.variant,
+              };
+        }
         const derivative =
           item.variant === "preview"
             ? await ensureThumbnailDerivativeForContext({
