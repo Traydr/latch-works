@@ -57,7 +57,6 @@ flowchart LR
 | `@latch-works/media-domain` | [`packages/media-domain`](packages/media-domain) | Media types, path helpers, gallery sort/comic grouping, Zod schemas |
 | `@latch-works/media-index` | [`packages/media-index`](packages/media-index) | Archive scanning and sync-plan generation |
 | `@latch-works/media-storage` | [`packages/media-storage`](packages/media-storage) | Content-addressed S3 object key conventions and helpers |
-| `@latch-works/media-delivery` | [`packages/media-delivery`](packages/media-delivery) | Signed CDN delivery tokens for thumbnails and previews |
 | `@latch-works/lockstep-core` | [`packages/lockstep-core`](packages/lockstep-core) | Headless sync engine shared by Lockstep desktop and CLI |
 
 ---

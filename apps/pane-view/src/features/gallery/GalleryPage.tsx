@@ -180,7 +180,7 @@ export function GalleryPage() {
   );
 
   const thumbnailResetKey = `${browseKey}|${listingBrowseKey}|${String(usesServerListing)}`;
-  const { resolvedThumbnailUrls, resolvedThumbnailTokens, handleWindowedEntriesChange } =
+  const { resolvedThumbnailUrls, handleWindowedEntriesChange } =
     useWindowedThumbnailResolution(thumbnailResetKey);
 
   const { viewerOpen, viewerItems, viewerLockedMediaId, openViewer, closeViewer } =
@@ -1122,7 +1122,6 @@ export function GalleryPage() {
             onScrolledToFocus={() => setScrollFocusedIntoView(false)}
             onSelectEntry={handleSelectEntry}
             onWindowedEntriesChange={handleWindowedEntriesChange}
-            resolvedThumbnailTokens={resolvedThumbnailTokens}
             resolvedThumbnailUrls={resolvedThumbnailUrls}
             scrollFocusedIntoView={scrollFocusedIntoView}
             selected={selected}

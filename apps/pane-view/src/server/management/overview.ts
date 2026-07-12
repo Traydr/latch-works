@@ -1,6 +1,6 @@
 import { count, isNotNull, isNull, sql } from "drizzle-orm";
 import { db } from "../db";
-import { collections, folders, libraryEntries, mediaObjects, thumbnails } from "../db/schema";
+import { collections, folders, libraryEntries, mediaObjects } from "../db/schema";
 import { readActiveCleanupJob } from "./guards";
 import { listRunningSyncRuns, type RunningSyncRun } from "./sync-run-control";
 
@@ -26,13 +26,6 @@ export interface ManagementOverview {
   storage: {
     mediaObjectBytes: number;
     mediaObjectCount: number;
-    thumbnailCount: number;
-  };
-  thumbnails: {
-    failed: number;
-    pending: number;
-    processing: number;
-    ready: number;
   };
 }
 
@@ -43,8 +36,6 @@ export async function readManagementOverview(): Promise<ManagementOverview> {
     activeFoldersRow,
     collectionsRow,
     mediaObjectStats,
-    thumbnailCountRow,
-    thumbnailStatusRows,
     runningSyncRuns,
     activeCleanupJob,
   ] = await Promise.all([
@@ -58,14 +49,6 @@ export async function readManagementOverview(): Promise<ManagementOverview> {
         count: count(),
       })
       .from(mediaObjects),
-    db.select({ value: count() }).from(thumbnails),
-    db
-      .select({
-        status: thumbnails.status,
-        value: count(),
-      })
-      .from(thumbnails)
-      .groupBy(thumbnails.status),
     listRunningSyncRuns(),
     readActiveCleanupJob(),
   ]);
@@ -76,19 +59,6 @@ export async function readManagementOverview(): Promise<ManagementOverview> {
         sourceRoot: runningSyncRuns[0].sourceRoot,
       }
     : null;
-
-  const thumbnailCounts = {
-    failed: 0,
-    pending: 0,
-    processing: 0,
-    ready: 0,
-  };
-
-  for (const row of thumbnailStatusRows) {
-    if (row.status in thumbnailCounts) {
-      thumbnailCounts[row.status as keyof typeof thumbnailCounts] = row.value;
-    }
-  }
 
   return {
     activeCleanupJob,
@@ -103,8 +73,6 @@ export async function readManagementOverview(): Promise<ManagementOverview> {
     storage: {
       mediaObjectBytes: Number(mediaObjectStats[0]?.bytes ?? 0),
       mediaObjectCount: mediaObjectStats[0]?.count ?? 0,
-      thumbnailCount: thumbnailCountRow[0]?.value ?? 0,
     },
-    thumbnails: thumbnailCounts,
   };
 }

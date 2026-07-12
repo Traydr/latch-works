@@ -7,8 +7,6 @@ import {
   getCleanupJobStatus,
   getManagementOverview,
   getSyncRunHistory,
-  purgeAllThumbnails,
-  retryFailedThumbnailsAction,
   wipeLibrary,
 } from "./management-service";
 
@@ -65,30 +63,6 @@ export function useCleanupJobStatusQuery(jobId: string | null) {
 function useInvalidateManagement() {
   const queryClient = useQueryClient();
   return () => queryClient.invalidateQueries({ queryKey: managementKeys.all });
-}
-
-export function usePurgeAllThumbnailsMutation() {
-  const invalidate = useInvalidateManagement();
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (confirmation: string) => purgeAllThumbnails({ data: { confirmation } }),
-    onSuccess: () => {
-      void invalidate();
-      void queryClient.invalidateQueries({ queryKey: librarySnapshotKeys.all });
-    },
-  });
-}
-
-export function useRetryFailedThumbnailsMutation() {
-  const invalidate = useInvalidateManagement();
-
-  return useMutation({
-    mutationFn: (limit?: number) => retryFailedThumbnailsAction({ data: { limit } }),
-    onSuccess: () => {
-      void invalidate();
-    },
-  });
 }
 
 export function useDeleteFoldersMutation() {

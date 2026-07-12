@@ -19,7 +19,6 @@ interface BrowserGridProps {
   scrollFocusedIntoView: boolean;
   onScrolledToFocus: () => void;
   selectedId: string | null;
-  thumbnailDeliveryTokens?: Readonly<Record<string, string>>;
   thumbnailUrls?: Readonly<Record<string, string>>;
   onWindowedEntriesChange?: (entries: BrowserEntry[]) => void;
 }
@@ -39,7 +38,6 @@ export function BrowserGrid({
   scrollFocusedIntoView,
   onScrolledToFocus,
   selectedId,
-  thumbnailDeliveryTokens = {},
   thumbnailUrls = {},
   onWindowedEntriesChange,
 }: BrowserGridProps) {
@@ -162,7 +160,6 @@ export function BrowserGrid({
                 onSelect={onSelectEntry}
                 priority={Math.abs(slot.index - focusedIndex) <= columnCount}
                 selected={selected}
-                thumbnailDeliveryTokens={thumbnailDeliveryTokens}
                 thumbnailUrls={thumbnailUrls}
                 top={slot.top}
               />

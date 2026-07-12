@@ -15,7 +15,7 @@ type CommonClaims = {
   iat: number;
   exp: number;
 };
-type CapabilityClaims =
+export type CapabilityClaims =
   | (CommonClaims & { purpose: "image_source"; locator: string })
   | (CommonClaims & { purpose: "master_preview"; kind: PreviewKind })
   | (CommonClaims & { purpose: "preview_job"; kind: PreviewKind; locator: string });
@@ -24,7 +24,12 @@ export type ShutterPreviewResult =
   | { status: "ready"; url: string }
   | { status: "failed" };
 
-function normalizeWidth(width: number): number {
+function retryAfterMs(response: Response): number {
+  const seconds = Number(response.headers.get("retry-after"));
+  return Number.isFinite(seconds) && seconds >= 0 ? seconds * 1_000 : 5_000;
+}
+
+export function normalizeShutterWidth(width: number): number {
   if (width <= 24) return 24;
   return SHUTTER_WIDTHS.find((candidate) => candidate >= width) ?? 3840;
 }
@@ -72,9 +77,12 @@ function canonicalClaims(claims: CapabilityClaims): string {
   return JSON.stringify({ ...common, kind: claims.kind, locator: claims.locator });
 }
 
-async function issueCapability(claims: CapabilityClaims): Promise<string> {
+async function issueCapability(
+  claims: CapabilityClaims,
+  ivOverride?: Uint8Array<ArrayBuffer>,
+): Promise<string> {
   const { kid, key } = capabilityKey();
-  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const iv = ivOverride ?? crypto.getRandomValues(new Uint8Array(12));
   const cryptoKey = await crypto.subtle.importKey("raw", key, { name: "AES-GCM" }, false, [
     "encrypt",
   ]);
@@ -90,6 +98,10 @@ async function issueCapability(claims: CapabilityClaims): Promise<string> {
   );
   return `v1.${kid}.${Buffer.from(iv).toString("base64url")}.${Buffer.from(ciphertext).toString("base64url")}`;
 }
+
+export const shutterClientTestHooks = {
+  issueCapability,
+};
 
 function claimTimes(): { iat: number; exp: number } {
   const iat = Math.floor(Date.now() / 1000);
@@ -120,7 +132,7 @@ export async function resolveShutterImageUrl(
     ...claimTimes(),
   });
   return edgeUrl(
-    `/v1/private/${encodeURIComponent(env.SHUTTER_SPACE_ID)}/source/${encodeURIComponent(capability)}?w=${normalizeWidth(width)}&q=75`,
+    `/v1/private/${encodeURIComponent(env.SHUTTER_SPACE_ID)}/source/${encodeURIComponent(capability)}?w=${normalizeShutterWidth(width)}&q=75`,
   );
 }
 
@@ -140,20 +152,28 @@ export async function resolveShutterPreview(
     ...claimTimes(),
   });
   const jobPath = `/v1/spaces/${encodeURIComponent(env.SHUTTER_SPACE_ID)}/sources/${encodeURIComponent(context.sha256)}/previews/${kind}`;
-  const response = await fetch(new URL(jobPath, env.SHUTTER_CONTROL_URL), {
-    method: "PUT",
-    headers: {
-      authorization: `Bearer ${env.SHUTTER_SPACE_API_TOKEN}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({ sourceCapability }),
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (!response.ok) throw new Error(`Shutter preview request failed with ${response.status}`);
+  let response: Response;
+  try {
+    response = await fetch(new URL(jobPath, env.SHUTTER_CONTROL_URL), {
+      method: "PUT",
+      headers: {
+        authorization: `Bearer ${env.SHUTTER_SPACE_API_TOKEN}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ sourceCapability }),
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch {
+    return { status: "pending", retryAfterMs: 5_000 };
+  }
+  if (!response.ok) {
+    return response.status === 408 || response.status === 429 || response.status >= 500
+      ? { status: "pending", retryAfterMs: retryAfterMs(response) }
+      : { status: "failed" };
+  }
   const result = (await response.json()) as { status?: unknown };
   if (result.status === "pending" || result.status === "processing") {
-    const seconds = Number(response.headers.get("retry-after"));
-    return { status: "pending", retryAfterMs: Number.isFinite(seconds) ? seconds * 1_000 : 5_000 };
+    return { status: "pending", retryAfterMs: retryAfterMs(response) };
   }
   if (result.status !== "ready") return { status: "failed" };
   const capability = await issueCapability({
@@ -166,13 +186,19 @@ export async function resolveShutterPreview(
   return {
     status: "ready",
     url: edgeUrl(
-      `/v1/private/${encodeURIComponent(env.SHUTTER_SPACE_ID)}/master/${encodeURIComponent(capability)}?w=${normalizeWidth(width)}&q=75`,
+      `/v1/private/${encodeURIComponent(env.SHUTTER_SPACE_ID)}/master/${encodeURIComponent(capability)}?w=${normalizeShutterWidth(width)}&q=75`,
     ),
   };
 }
 
-export function usesShutterPreview(mediaType: MediaThumbnailContext["mediaType"]): boolean {
-  if (mediaType === "video") return env.VIDEO_PREVIEW_PROVIDER === "shutter";
-  if (mediaType === "pdf") return env.PDF_PREVIEW_PROVIDER === "shutter";
-  return false;
+export async function purgeShutterSource(sourceId: string): Promise<void> {
+  const path = `/v1/spaces/${encodeURIComponent(env.SHUTTER_SPACE_ID)}/sources/${encodeURIComponent(sourceId)}/purge`;
+  const response = await fetch(new URL(path, env.SHUTTER_CONTROL_URL), {
+    method: "POST",
+    headers: { authorization: `Bearer ${env.SHUTTER_SPACE_API_TOKEN}` },
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (response.status !== 204) {
+    throw new Error(`Shutter source purge failed with ${response.status}`);
+  }
 }

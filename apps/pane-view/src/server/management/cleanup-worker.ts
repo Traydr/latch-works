@@ -10,14 +10,15 @@ import {
   mediaObjects,
   syncRunItems,
   syncRuns,
-  thumbnails,
   viewerState,
 } from "../db/schema";
+import { purgeShutterSource } from "../media/shutter-client";
 import { createPaneViewStorageClient } from "../media/storage-client";
 
 const batchSize = 100;
 const maxBatchDurationMs = 2_000;
-const orphanPrefixes = ["originals/", "thumbnails/", "previews/"] as const;
+
+const orphanPrefixes = ["originals/"] as const;
 
 const activeJobStatuses = ["pending", "running"] as const;
 
@@ -139,50 +140,12 @@ async function processMaintenanceJobBatch(jobId: string): Promise<boolean> {
   const storage = createPaneViewStorageClient();
 
   switch (progress.phase) {
-    case "s3_derivatives": {
-      const rows = await db
-        .select({
-          mediaObjectId: thumbnails.mediaObjectId,
-          objectKey: thumbnails.objectKey,
-          size: thumbnails.size,
-        })
-        .from(thumbnails)
-        .limit(batchSize);
-
-      if (rows.length === 0) {
-        await updateJobProgress(jobId, {
-          ...progress,
-          phase: "s3_originals",
-        });
-        return true;
-      }
-
-      const batch = await deleteStoredObjectsBatch({
-        keys: rows.map((row) => row.objectKey),
-        storage,
-      });
-
-      for (const row of rows) {
-        await db
-          .delete(thumbnails)
-          .where(
-            and(eq(thumbnails.mediaObjectId, row.mediaObjectId), eq(thumbnails.size, row.size)),
-          );
-      }
-
-      await updateJobProgress(jobId, {
-        ...progress,
-        errorCount: progress.errorCount + batch.errors,
-        processedCount: progress.processedCount + rows.length,
-      });
-      return true;
-    }
-
     case "s3_originals": {
       const rows = await db
         .select({
           id: mediaObjects.id,
           objectKey: mediaObjects.objectKey,
+          sha256: mediaObjects.sha256,
         })
         .from(mediaObjects)
         .limit(batchSize);
@@ -201,7 +164,26 @@ async function processMaintenanceJobBatch(jobId: string): Promise<boolean> {
         storage,
       });
 
+      if (batch.errors > 0) {
+        await updateJobProgress(jobId, {
+          ...progress,
+          errorCount: progress.errorCount + batch.errors,
+          lastError: "One or more source objects could not be deleted; retrying batch",
+        });
+        return true;
+      }
+
       for (const row of rows) {
+        try {
+          await purgeShutterSource(row.sha256);
+        } catch (error) {
+          await updateJobProgress(jobId, {
+            ...progress,
+            errorCount: progress.errorCount + 1,
+            lastError: error instanceof Error ? error.message : "Shutter source purge failed",
+          });
+          return true;
+        }
         await db.delete(mediaObjects).where(eq(mediaObjects.id, row.id));
       }
 

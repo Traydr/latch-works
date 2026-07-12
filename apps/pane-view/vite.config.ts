@@ -8,12 +8,9 @@ const serverExternal = [
   "@aws-sdk/client-s3",
   "@aws-sdk/s3-request-presigner",
   "@better-auth/drizzle-adapter",
-  "@latch-works/media-delivery",
   // Externalized so the heavy generation package (and its sharp/ffmpeg deps) is
   // resolved at runtime via dynamic import only in inline mode, never bundled
   // into the always-loaded Pane View server graph.
-  "@latch-works/media-derivatives",
-  "@latch-works/media-derivatives/descriptor",
   "@latch-works/media-storage",
   // Native canvas backend for PDF rendering — must not be scanned by Vite's
   // dep optimizer (the platform binary is not valid UTF-8).

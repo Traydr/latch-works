@@ -12,18 +12,12 @@ import {
 import { assertNoActiveSyncRun } from "../../server/management/guards";
 import { scheduleLibraryWipe } from "../../server/management/library-wipe";
 import { readManagementOverview } from "../../server/management/overview";
-import { retryFailedThumbnails } from "../../server/management/retry-failed-thumbnails";
 import {
   forceCancelAllRunningSyncRuns,
   forceCancelSyncRun,
 } from "../../server/management/sync-run-control";
 import { readSyncRunHistory } from "../../server/management/sync-run-history";
-import { purgeAllThumbnailDerivatives } from "../../server/media/derivative-service";
 import { assertWebSessionAuthorized } from "../library/library-service";
-
-const confirmationSchema = z.object({
-  confirmation: z.string(),
-});
 
 const folderDeleteSchema = z.object({
   folderPaths: z.array(z.string().min(1)).min(1),
@@ -42,10 +36,6 @@ const cleanupJobSchema = z.object({
   jobId: z.string().uuid(),
 });
 
-const retryFailedSchema = z.object({
-  limit: z.number().int().min(1).max(50).optional(),
-});
-
 const cancelSyncRunSchema = z.object({
   syncRunId: z.string().uuid(),
 });
@@ -60,27 +50,6 @@ export const getSyncRunHistory = createServerFn({ method: "GET" }).handler(async
   await assertWebSessionAuthorized();
   return readSyncRunHistory();
 });
-
-export const purgeAllThumbnails = createServerFn({ method: "POST" })
-  .inputValidator(confirmationSchema)
-  .handler(async ({ data }) => {
-    await assertWebSessionAuthorized();
-    await assertNoActiveSyncRun();
-
-    if (data.confirmation !== "PURGE THUMBNAILS") {
-      throw new Error('Type "PURGE THUMBNAILS" to confirm.');
-    }
-
-    return purgeAllThumbnailDerivatives();
-  });
-
-export const retryFailedThumbnailsAction = createServerFn({ method: "POST" })
-  .inputValidator(retryFailedSchema)
-  .handler(async ({ data }) => {
-    await assertWebSessionAuthorized();
-    await assertNoActiveSyncRun();
-    return retryFailedThumbnails({ limit: data.limit });
-  });
 
 export const deleteFolders = createServerFn({ method: "POST" })
   .inputValidator(folderDeleteSchema)

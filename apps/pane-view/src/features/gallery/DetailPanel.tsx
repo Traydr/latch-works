@@ -1,18 +1,8 @@
 import type { MediaItem } from "@latch-works/media-domain";
 import { formatBytes } from "@latch-works/media-domain";
-import {
-  ChevronLeft,
-  ChevronRight,
-  Copy,
-  Download,
-  ImageIcon,
-  RefreshCw,
-  Trash2,
-} from "lucide-react";
-import { useState } from "react";
+import { ChevronLeft, ChevronRight, Copy, Download, ImageIcon, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DeleteOverlay } from "./DeleteOverlay";
-import { readEmbeddedDeliveryUrls } from "./embedded-delivery-urls";
 import { MediaPlaceholder } from "./MediaPlaceholder";
 import { PaneViewImage } from "./PaneViewImage";
 
@@ -27,7 +17,6 @@ interface DetailPanelProps {
   onNext: () => void;
   onOpenViewer: () => void;
   onPrev: () => void;
-  onRegenerateThumbnail?: () => Promise<void>;
   selected: MediaItem | null;
   showDelete?: boolean;
 }
@@ -41,31 +30,14 @@ export function DetailPanel({
   onNext,
   onOpenViewer,
   onPrev,
-  onRegenerateThumbnail,
   selected,
   showDelete = false,
 }: DetailPanelProps) {
-  const [thumbnailRefreshKey, setThumbnailRefreshKey] = useState(0);
-  const [regenerating, setRegenerating] = useState(false);
   const supportsThumbnail =
     selected?.mediaType === "image" ||
     selected?.mediaType === "gif" ||
-    selected?.mediaType === "video";
-  const embeddedDeliveryUrls = selected ? readEmbeddedDeliveryUrls(selected) : undefined;
-
-  const handleRegenerateThumbnail = async () => {
-    if (!onRegenerateThumbnail || regenerating) {
-      return;
-    }
-
-    setRegenerating(true);
-    try {
-      await onRegenerateThumbnail();
-      setThumbnailRefreshKey((current) => current + 1);
-    } finally {
-      setRegenerating(false);
-    }
-  };
+    selected?.mediaType === "video" ||
+    selected?.mediaType === "pdf";
 
   return (
     <aside
@@ -77,14 +49,11 @@ export function DetailPanel({
           <div className="relative grid aspect-[4/5] w-full min-w-0 place-items-center overflow-hidden rounded-lg border border-border bg-muted">
             {supportsThumbnail ? (
               <PaneViewImage
-                key={thumbnailRefreshKey}
                 alt={selected.name}
                 className="h-full w-full object-cover"
                 layout="constrained"
                 mediaId={selected.id}
                 objectFit="cover"
-                previewReadyUrl={embeddedDeliveryUrls?.previewUrl}
-                thumbnailReadyUrl={embeddedDeliveryUrls?.thumbnailUrl}
                 variant="preview"
                 width={detailPreviewWidth}
               />
@@ -93,20 +62,6 @@ export function DetailPanel({
             )}
             {isDeleting || isDeleted ? (
               <DeleteOverlay animated={isDeleting} className="rounded-lg" />
-            ) : null}
-            {supportsThumbnail && onRegenerateThumbnail ? (
-              <Button
-                aria-label="Regenerate thumbnail"
-                className="absolute right-2 top-2"
-                disabled={regenerating}
-                onClick={() => void handleRegenerateThumbnail()}
-                size="icon"
-                title="Regenerate thumbnail"
-                type="button"
-                variant="secondary"
-              >
-                <RefreshCw className={regenerating ? "size-4 animate-spin" : "size-4"} />
-              </Button>
             ) : null}
           </div>
 

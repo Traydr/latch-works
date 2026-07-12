@@ -1,5 +1,5 @@
 /**
  * Fullscreen/detail preview size. Must stay in sync with
- * `PREVIEW_DERIVATIVE_SIZE` in `@latch-works/media-delivery`.
+ * Pane View requests this width from Shutter for detail and fullscreen previews.
  */
 export const GALLERY_PREVIEW_SIZE = 1080 as const;

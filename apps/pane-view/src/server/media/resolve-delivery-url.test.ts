@@ -1,277 +1,94 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  ensureThumbnailDerivativeForContext: vi.fn(),
-  mintImageOriginalDeliveryToken: vi.fn(),
-  readMediaDeliveryRequest: vi.fn(),
-  readMediaThumbnailContextsByEntryIds: vi.fn(),
-  resolveImageDeliveryMode: vi.fn(),
-  buildDerivativeDeliveryUrl: vi.fn(),
-  createSignedGetUrl: vi.fn(),
-  resolveShutterImageUrl: vi.fn(),
-  resolveShutterPreview: vi.fn(),
-  usesShutterPreview: vi.fn(),
-}));
-
-vi.mock("../../env/image-delivery", () => ({
-  resolveImageDeliveryMode: mocks.resolveImageDeliveryMode,
-}));
-
-vi.mock("./derivative-delivery-url", () => ({
-  buildDerivativeDeliveryUrl: mocks.buildDerivativeDeliveryUrl,
-}));
-
-vi.mock("./delivery", () => ({
-  planSignedOriginalDelivery: vi.fn(() => ({
-    expiresInSeconds: 3600,
-    objectKey: "objects/original",
-  })),
-}));
-
-vi.mock("./image-delivery", () => ({
-  mintImageOriginalDeliveryToken: mocks.mintImageOriginalDeliveryToken,
+  readContexts: vi.fn(),
+  resolveImage: vi.fn(),
+  resolvePreview: vi.fn(),
 }));
 
 vi.mock("./repository", () => ({
-  readMediaDeliveryRequest: mocks.readMediaDeliveryRequest,
+  readMediaDeliveryRequest: vi.fn(),
   readMediaThumbnailContext: vi.fn(),
-  readMediaThumbnailContextsByEntryIds: mocks.readMediaThumbnailContextsByEntryIds,
+  readMediaThumbnailContextsByEntryIds: mocks.readContexts,
 }));
-
-vi.mock("./derivative-service", () => ({
-  ensurePreviewDerivative: vi.fn(),
-  ensureThumbnailDerivative: vi.fn(),
-  ensureThumbnailDerivativeForContext: mocks.ensureThumbnailDerivativeForContext,
-  regenerateThumbnailDerivative: vi.fn(),
-}));
-
-vi.mock("@latch-works/media-storage", () => ({
-  createSignedGetUrl: mocks.createSignedGetUrl,
-}));
-
-vi.mock("./storage-client", () => ({
-  createPaneViewStorageClient: vi.fn(),
-}));
-
 vi.mock("./shutter-client", () => ({
-  resolveShutterImageUrl: mocks.resolveShutterImageUrl,
-  resolveShutterPreview: mocks.resolveShutterPreview,
-  usesShutterPreview: mocks.usesShutterPreview,
+  resolveShutterImageUrl: mocks.resolveImage,
+  resolveShutterPreview: mocks.resolvePreview,
 }));
+vi.mock("./storage-client", () => ({ createPaneViewStorageClient: vi.fn() }));
+vi.mock("@latch-works/media-storage", () => ({ createSignedGetUrl: vi.fn() }));
 
 import { resolveMediaDeliveryUrlsForVariants } from "./resolve-delivery-url";
 
-const imageContext = {
+const image = {
   extension: "jpg",
-  mediaObjectId: "obj-1",
+  mediaObjectId: "object-image",
   mediaType: "image" as const,
-  originalObjectKey: "objects/abc",
+  originalObjectKey: "originals/image.jpg",
   sha256: "a".repeat(64),
 };
-
-const videoContext = {
+const video = {
   extension: "mp4",
-  mediaObjectId: "obj-2",
+  mediaObjectId: "object-video",
   mediaType: "video" as const,
-  originalObjectKey: "objects/def",
+  originalObjectKey: "originals/video.mp4",
   sha256: "b".repeat(64),
 };
 
 describe("resolveMediaDeliveryUrlsForVariants", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.resolveImageDeliveryMode.mockReturnValue("bunny");
-    mocks.readMediaThumbnailContextsByEntryIds.mockResolvedValue(
-      new Map<string, typeof imageContext | typeof videoContext>([
-        ["media-1", imageContext],
-        ["media-2", videoContext],
+    mocks.readContexts.mockResolvedValue(
+      new Map<string, typeof image | typeof video>([
+        ["image", image],
+        ["video", video],
       ]),
     );
-    mocks.mintImageOriginalDeliveryToken.mockReturnValue("bunny-token");
-    mocks.ensureThumbnailDerivativeForContext.mockResolvedValue({ status: "pending" });
-    mocks.resolveShutterImageUrl.mockResolvedValue("https://shutter.test/private-image");
-    mocks.resolveShutterPreview.mockResolvedValue({ status: "pending", retryAfterMs: 5_000 });
-    mocks.usesShutterPreview.mockReturnValue(false);
+    mocks.resolveImage.mockResolvedValue("https://shutter.test/image");
+    mocks.resolvePreview.mockResolvedValue({ status: "pending", retryAfterMs: 7_000 });
   });
 
-  it("dedupes duplicate batch entries", async () => {
+  it("deduplicates and resolves images only through Shutter", async () => {
     const results = await resolveMediaDeliveryUrlsForVariants([
-      { mediaId: "media-1", variant: "thumbnail", size: 320 },
-      { mediaId: "media-1", variant: "thumbnail", size: 320 },
-    ]);
-
-    expect(results).toHaveLength(1);
-    expect(mocks.readMediaThumbnailContextsByEntryIds).toHaveBeenCalledWith({
-      mediaIds: ["media-1"],
-    });
-  });
-
-  it("returns Bunny fallback tokens when image derivatives are pending", async () => {
-    const results = await resolveMediaDeliveryUrlsForVariants([
-      { mediaId: "media-1", variant: "thumbnail", size: 720 },
-    ]);
-
-    expect(results).toEqual([
-      {
-        deliveryToken: "bunny-token",
-        mediaId: "media-1",
-        size: 720,
-        status: "ready",
-        variant: "thumbnail",
-      },
-    ]);
-    expect(mocks.ensureThumbnailDerivativeForContext).toHaveBeenCalledWith({
-      context: imageContext,
-      requestedSize: 720,
-    });
-  });
-
-  it("returns CDN URLs when image derivatives are ready", async () => {
-    mocks.ensureThumbnailDerivativeForContext.mockResolvedValue({
-      height: 405,
-      objectKey: "thumbnails/sha256/ab/cd/hash-720.webp",
-      purpose: "thumbnail",
-      status: "ready",
-      width: 720,
-    });
-    mocks.buildDerivativeDeliveryUrl.mockResolvedValue("https://cdn.example/thumb.webp");
-
-    const results = await resolveMediaDeliveryUrlsForVariants([
-      { mediaId: "media-1", variant: "thumbnail", size: 720 },
-    ]);
-
-    expect(results).toEqual([
-      {
-        mediaId: "media-1",
-        size: 720,
-        status: "ready",
-        url: "https://cdn.example/thumb.webp",
-        variant: "thumbnail",
-      },
-    ]);
-    expect(mocks.mintImageOriginalDeliveryToken).not.toHaveBeenCalled();
-  });
-
-  it("returns failed for missing media without failing the batch", async () => {
-    mocks.readMediaThumbnailContextsByEntryIds.mockResolvedValue(
-      new Map([["media-1", imageContext]]),
-    );
-
-    const results = await resolveMediaDeliveryUrlsForVariants([
-      { mediaId: "missing", variant: "thumbnail", size: 320 },
-      { mediaId: "media-1", variant: "thumbnail", size: 320 },
-    ]);
-
-    expect(results).toEqual([
-      {
-        mediaId: "missing",
-        size: 320,
-        status: "failed",
-        variant: "thumbnail",
-      },
-      {
-        deliveryToken: "bunny-token",
-        mediaId: "media-1",
-        size: 320,
-        status: "ready",
-        variant: "thumbnail",
-      },
-    ]);
-  });
-
-  it("maps pending video thumbnails to batch pending results", async () => {
-    const results = await resolveMediaDeliveryUrlsForVariants([
-      { mediaId: "media-2", variant: "thumbnail", size: 320 },
-    ]);
-
-    expect(results).toEqual([
-      {
-        mediaId: "media-2",
-        retryAfterMs: 15_000,
-        size: 320,
-        status: "pending",
-        variant: "thumbnail",
-      },
-    ]);
-    expect(mocks.ensureThumbnailDerivativeForContext).toHaveBeenCalledWith({
-      context: videoContext,
-      requestedSize: 320,
-    });
-  });
-
-  it("routes pdf thumbnails through the queued derivative path, not Bunny", async () => {
-    const pdfContext = {
-      extension: "pdf",
-      mediaObjectId: "obj-3",
-      mediaType: "pdf" as const,
-      originalObjectKey: "objects/ghi",
-      sha256: "c".repeat(64),
-    };
-    mocks.readMediaThumbnailContextsByEntryIds.mockResolvedValue(
-      new Map([["media-3", pdfContext]]),
-    );
-    mocks.ensureThumbnailDerivativeForContext.mockResolvedValue({
-      height: 1122,
-      objectKey: "previews/pdf/sha/320.webp",
-      purpose: "preview",
-      status: "ready",
-      width: 864,
-    });
-    mocks.buildDerivativeDeliveryUrl.mockResolvedValue("https://cdn.example/preview.webp");
-
-    const results = await resolveMediaDeliveryUrlsForVariants([
-      { mediaId: "media-3", variant: "thumbnail", size: 320 },
-    ]);
-
-    expect(mocks.mintImageOriginalDeliveryToken).not.toHaveBeenCalled();
-    expect(mocks.ensureThumbnailDerivativeForContext).toHaveBeenCalledWith({
-      context: pdfContext,
-      requestedSize: 320,
-    });
-    expect(results).toEqual([
-      {
-        mediaId: "media-3",
-        size: 320,
-        status: "ready",
-        url: "https://cdn.example/preview.webp",
-        variant: "thumbnail",
-      },
-    ]);
-  });
-
-  it("routes private still images directly through Shutter", async () => {
-    mocks.resolveImageDeliveryMode.mockReturnValue("shutter");
-    const results = await resolveMediaDeliveryUrlsForVariants([
-      { mediaId: "media-1", variant: "thumbnail", size: 321 },
+      { mediaId: "image", size: 321, variant: "thumbnail" },
+      { mediaId: "image", size: 321, variant: "thumbnail" },
     ]);
     expect(results).toEqual([
       {
-        mediaId: "media-1",
+        mediaId: "image",
         size: 321,
         status: "ready",
-        url: "https://shutter.test/private-image",
+        url: "https://shutter.test/image",
         variant: "thumbnail",
       },
     ]);
-    expect(mocks.resolveShutterImageUrl).toHaveBeenCalledWith(imageContext, 321);
-    expect(mocks.ensureThumbnailDerivativeForContext).not.toHaveBeenCalled();
+    expect(mocks.resolveImage).toHaveBeenCalledWith(image, 321);
   });
 
-  it("maps Shutter video jobs to the shared polling result", async () => {
-    mocks.usesShutterPreview.mockImplementation((mediaType) => mediaType === "video");
-    const results = await resolveMediaDeliveryUrlsForVariants([
-      { mediaId: "media-2", variant: "thumbnail", size: 320 },
-    ]);
-    expect(results).toEqual([
+  it("preserves Shutter preview retry timing", async () => {
+    await expect(
+      resolveMediaDeliveryUrlsForVariants([{ mediaId: "video", size: 640, variant: "preview" }]),
+    ).resolves.toEqual([
       {
-        mediaId: "media-2",
-        retryAfterMs: 5_000,
-        size: 320,
+        mediaId: "video",
+        retryAfterMs: 7_000,
+        size: 640,
         status: "pending",
-        variant: "thumbnail",
+        variant: "preview",
       },
     ]);
-    expect(mocks.resolveShutterPreview).toHaveBeenCalledWith(videoContext, 320);
-    expect(mocks.ensureThumbnailDerivativeForContext).not.toHaveBeenCalled();
+  });
+
+  it("isolates missing and terminally failed items", async () => {
+    mocks.resolvePreview.mockResolvedValue({ status: "failed" });
+    await expect(
+      resolveMediaDeliveryUrlsForVariants([
+        { mediaId: "missing", variant: "thumbnail" },
+        { mediaId: "video", variant: "thumbnail" },
+      ]),
+    ).resolves.toEqual([
+      { mediaId: "missing", status: "failed", variant: "thumbnail" },
+      { mediaId: "video", status: "failed", variant: "thumbnail" },
+    ]);
   });
 });

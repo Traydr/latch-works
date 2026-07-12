@@ -9,10 +9,10 @@ import {
 
 describe("isMediaDeliveryPath", () => {
   it("matches CDN and signed media API routes", () => {
-    expect(isMediaDeliveryPath("/cdn/v1/token~sig")).toBe(true);
+    expect(isMediaDeliveryPath("/cdn/v1/token~sig")).toBe(false);
     expect(isMediaDeliveryPath("/api/media/abc/original")).toBe(true);
-    expect(isMediaDeliveryPath("/api/media/abc/thumbnail")).toBe(true);
-    expect(isMediaDeliveryPath("/api/media/abc/preview")).toBe(true);
+    expect(isMediaDeliveryPath("/api/media/abc/thumbnail")).toBe(false);
+    expect(isMediaDeliveryPath("/api/media/abc/preview")).toBe(false);
   });
 
   it("does not match app or sync routes", () => {
@@ -71,7 +71,7 @@ describe("applySecurityHeadersToResponse", () => {
       status: 302,
     });
 
-    applySecurityHeadersToResponse(response, "/api/media/abc/thumbnail");
+    applySecurityHeadersToResponse(response, "/api/media/abc/original");
 
     expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
     expect(response.headers.get("Referrer-Policy")).toBe("same-origin");

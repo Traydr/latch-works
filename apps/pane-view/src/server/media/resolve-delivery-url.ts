@@ -1,200 +1,52 @@
-import {
-  GALLERY_THUMBNAIL_SIZE,
-  PREVIEW_DERIVATIVE_SIZE,
-  snapThumbnailSize,
-} from "@latch-works/media-delivery";
 import { createSignedGetUrl } from "@latch-works/media-storage";
-import { resolveImageDeliveryMode } from "../../env/image-delivery";
 import { planSignedOriginalDelivery } from "./delivery";
-import { buildDerivativeDeliveryUrl } from "./derivative-delivery-url";
-import {
-  ensurePreviewDerivative,
-  ensureThumbnailDerivative,
-  ensureThumbnailDerivativeForContext,
-  regenerateThumbnailDerivative,
-} from "./derivative-service";
-import { logDerivativeEvent } from "./derivative-telemetry";
-import { mintImageOriginalDeliveryToken } from "./image-delivery";
 import {
   readMediaDeliveryRequest,
   readMediaThumbnailContext,
   readMediaThumbnailContextsByEntryIds,
 } from "./repository";
-import {
-  resolveShutterImageUrl,
-  resolveShutterPreview,
-  usesShutterPreview,
-} from "./shutter-client";
+import { resolveShutterImageUrl, resolveShutterPreview } from "./shutter-client";
 import { createPaneViewStorageClient } from "./storage-client";
 
+const THUMBNAIL_WIDTH = 320;
+const PREVIEW_WIDTH = 960;
+
 export type MediaDeliveryResolveResult =
-  | { pending: true }
-  | { pending: false; deliveryToken?: string; url?: string };
+  | { pending: true; retryAfterMs: number }
+  | { pending: false; url: string };
 
-let readyResolveLogCount = 0;
+function renditionWidth(variant: "thumbnail" | "preview", size?: number): number {
+  return size ?? (variant === "preview" ? PREVIEW_WIDTH : THUMBNAIL_WIDTH);
+}
 
-function isImageMediaType(mediaType: string): boolean {
-  return mediaType === "image" || mediaType === "gif";
+async function resolveRendition(
+  context: NonNullable<Awaited<ReturnType<typeof readMediaThumbnailContext>>>,
+  variant: "thumbnail" | "preview",
+  size?: number,
+): Promise<MediaDeliveryResolveResult> {
+  const width = renditionWidth(variant, size);
+  if (context.mediaType === "image" || context.mediaType === "gif") {
+    return { pending: false, url: await resolveShutterImageUrl(context, width) };
+  }
+  if (context.mediaType !== "video" && context.mediaType !== "pdf") {
+    throw new Error("Rendition unavailable for unsupported media type");
+  }
+  const preview = await resolveShutterPreview(context, width);
+  if (preview.status === "pending") {
+    return { pending: true, retryAfterMs: preview.retryAfterMs };
+  }
+  if (preview.status === "failed") throw new Error("Shutter rendition unavailable");
+  return { pending: false, url: preview.url };
 }
 
 async function resolveOriginalDeliveryUrl(mediaId: string): Promise<string> {
   const media = await readMediaDeliveryRequest({ mediaId });
-  if (!media) {
-    throw new Error("Media not found");
-  }
-
+  if (!media) throw new Error("Media not found");
   const delivery = planSignedOriginalDelivery(media);
   return createSignedGetUrl({
     expiresInSeconds: delivery.expiresInSeconds,
     key: delivery.objectKey,
     storage: createPaneViewStorageClient(),
-  });
-}
-
-async function resolveImageThumbnailHybrid({
-  context,
-  mediaId,
-  size,
-}: {
-  context: NonNullable<Awaited<ReturnType<typeof readMediaThumbnailContext>>>;
-  mediaId: string;
-  size?: number;
-}): Promise<MediaDeliveryResolveResult> {
-  const derivative = await ensureThumbnailDerivativeForContext({
-    context,
-    requestedSize: snapThumbnailSize(size ?? GALLERY_THUMBNAIL_SIZE),
-  });
-
-  if (derivative.status === "ready") {
-    return {
-      pending: false,
-      url: await buildDerivativeDeliveryUrl(derivative.objectKey),
-    };
-  }
-
-  if (resolveImageDeliveryMode() === "bunny") {
-    return {
-      deliveryToken: mintImageOriginalDeliveryToken(context),
-      pending: false,
-    };
-  }
-
-  if (derivative.status === "pending") {
-    return { pending: true };
-  }
-
-  return { pending: false, url: await resolveOriginalDeliveryUrl(mediaId) };
-}
-
-async function resolveImageThumbnailDelivery({
-  mediaId,
-  size,
-}: {
-  mediaId: string;
-  size?: number;
-}): Promise<MediaDeliveryResolveResult> {
-  const media = await readMediaThumbnailContext({ mediaId });
-  if (!media) {
-    throw new Error("Media not found");
-  }
-
-  return resolveImageThumbnailHybrid({ context: media, mediaId, size });
-}
-
-async function resolveQueuedDerivativeDeliveryUrl({
-  mediaId,
-  size,
-  variant,
-}: {
-  mediaId: string;
-  size?: number;
-  variant: "thumbnail" | "preview";
-}): Promise<MediaDeliveryResolveResult> {
-  const media = await readMediaThumbnailContext({ mediaId });
-  if (!media) {
-    throw new Error("Media not found");
-  }
-
-  const startedAt = Date.now();
-  if (usesShutterPreview(media.mediaType)) {
-    const shutter = await resolveShutterPreview(media, size ?? PREVIEW_DERIVATIVE_SIZE);
-    if (shutter.status === "pending") return { pending: true };
-    if (shutter.status === "ready") return { pending: false, url: shutter.url };
-    throw new Error("Derivative unavailable");
-  }
-  const derivative =
-    variant === "preview"
-      ? await ensurePreviewDerivative({ mediaId })
-      : await ensureThumbnailDerivative({
-          mediaId,
-          requestedSize: snapThumbnailSize(size ?? 320),
-        });
-
-  if (derivative.status !== "ready" || readyResolveLogCount % 100 === 0) {
-    logDerivativeEvent("derivative.resolve", {
-      durationMs: Date.now() - startedAt,
-      mediaType: media.mediaType,
-      sampled: derivative.status === "ready",
-      status: derivative.status,
-      variant,
-    });
-  }
-  if (derivative.status === "ready") {
-    readyResolveLogCount += 1;
-  }
-
-  if (derivative.status === "pending") {
-    return { pending: true };
-  }
-
-  if (derivative.status === "failed" || derivative.status === "unsupported") {
-    if (isImageMediaType(media.mediaType)) {
-      return { pending: false, url: await resolveOriginalDeliveryUrl(mediaId) };
-    }
-
-    throw new Error("Derivative unavailable");
-  }
-
-  return {
-    pending: false,
-    url: await buildDerivativeDeliveryUrl(derivative.objectKey),
-  };
-}
-
-export async function resolveDerivativeDeliveryUrl({
-  mediaId,
-  size,
-  variant,
-}: {
-  mediaId: string;
-  size?: number;
-  variant: "thumbnail" | "preview";
-}): Promise<MediaDeliveryResolveResult> {
-  if (variant === "thumbnail" || variant === "preview") {
-    const media = await readMediaThumbnailContext({ mediaId });
-    if (!media) {
-      throw new Error("Media not found");
-    }
-
-    if (isImageMediaType(media.mediaType) && resolveImageDeliveryMode() === "shutter") {
-      return {
-        pending: false,
-        url: await resolveShutterImageUrl(
-          media,
-          size ?? (variant === "preview" ? PREVIEW_DERIVATIVE_SIZE : GALLERY_THUMBNAIL_SIZE),
-        ),
-      };
-    }
-
-    if (variant === "thumbnail" && isImageMediaType(media.mediaType)) {
-      return resolveImageThumbnailDelivery({ mediaId, size });
-    }
-  }
-
-  return resolveQueuedDerivativeDeliveryUrl({
-    mediaId,
-    size,
-    variant,
   });
 }
 
@@ -210,32 +62,9 @@ export async function resolveMediaDeliveryUrlForVariant({
   if (variant === "original") {
     return { pending: false, url: await resolveOriginalDeliveryUrl(mediaId) };
   }
-
-  return resolveDerivativeDeliveryUrl({
-    mediaId,
-    size,
-    variant,
-  });
-}
-
-export async function regenerateMediaThumbnailDerivative({
-  mediaId,
-  size,
-}: {
-  mediaId: string;
-  size?: number;
-}): Promise<{ status: string }> {
-  const media = await readMediaThumbnailContext({ mediaId });
-  if (!media) {
-    return { status: "failed" };
-  }
-
-  const result = await regenerateThumbnailDerivative({
-    mediaId,
-    requestedSize: snapThumbnailSize(size ?? GALLERY_THUMBNAIL_SIZE),
-  });
-
-  return { status: result.status };
+  const context = await readMediaThumbnailContext({ mediaId });
+  if (!context) throw new Error("Media not found");
+  return resolveRendition(context, variant, size);
 }
 
 export interface MediaDeliveryBatchResolveItem {
@@ -246,14 +75,7 @@ export interface MediaDeliveryBatchResolveItem {
 
 export type MediaDeliveryBatchResolveResult =
   | { mediaId: string; retryAfterMs: number; size?: number; status: "pending"; variant: string }
-  | {
-      deliveryToken?: string;
-      mediaId: string;
-      size?: number;
-      status: "ready";
-      url?: string;
-      variant: string;
-    }
+  | { mediaId: string; size?: number; status: "ready"; url: string; variant: string }
   | { mediaId: string; size?: number; status: "failed"; variant: string };
 
 function batchResolveKey(item: MediaDeliveryBatchResolveItem): string {
@@ -266,51 +88,20 @@ export async function resolveMediaDeliveryUrlsForVariants(
   const seen = new Set<string>();
   const uniqueItems = items.filter((item) => {
     const key = batchResolveKey(item);
-    if (seen.has(key)) {
-      return false;
-    }
-
+    if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
-
-  const thumbnailPreviewIds = uniqueItems
-    .filter((item) => item.variant === "thumbnail" || item.variant === "preview")
+  const renditionIds = uniqueItems
+    .filter((item) => item.variant !== "original")
     .map((item) => item.mediaId);
-  const contexts = await readMediaThumbnailContextsByEntryIds({ mediaIds: thumbnailPreviewIds });
+  const contexts = await readMediaThumbnailContextsByEntryIds({ mediaIds: renditionIds });
 
-  const results = await Promise.all(
+  return Promise.all(
     uniqueItems.map(async (item): Promise<MediaDeliveryBatchResolveResult> => {
       try {
-        if (item.variant === "original") {
-          const result = await resolveMediaDeliveryUrlForVariant({
-            mediaId: item.mediaId,
-            size: item.size,
-            variant: item.variant,
-          });
-
-          if (result.pending) {
-            return {
-              mediaId: item.mediaId,
-              retryAfterMs: 15_000,
-              size: item.size,
-              status: "pending",
-              variant: item.variant,
-            };
-          }
-
-          return {
-            deliveryToken: result.deliveryToken,
-            mediaId: item.mediaId,
-            size: item.size,
-            status: "ready",
-            url: result.url,
-            variant: item.variant,
-          };
-        }
-
-        const context = contexts.get(item.mediaId);
-        if (!context) {
+        const context = item.variant === "original" ? undefined : contexts.get(item.mediaId);
+        if (item.variant !== "original" && !context) {
           return {
             mediaId: item.mediaId,
             size: item.size,
@@ -318,149 +109,31 @@ export async function resolveMediaDeliveryUrlsForVariants(
             variant: item.variant,
           };
         }
-
-        if (isImageMediaType(context.mediaType) && resolveImageDeliveryMode() === "shutter") {
-          return {
-            mediaId: item.mediaId,
-            size: item.size,
-            status: "ready",
-            url: await resolveShutterImageUrl(
-              context,
-              item.size ??
-                (item.variant === "preview" ? PREVIEW_DERIVATIVE_SIZE : GALLERY_THUMBNAIL_SIZE),
-            ),
-            variant: item.variant,
-          };
+        let result: MediaDeliveryResolveResult;
+        if (item.variant === "original") {
+          result = await resolveMediaDeliveryUrlForVariant(item);
+        } else {
+          if (!context) throw new Error("Media not found");
+          result = await resolveRendition(context, item.variant, item.size);
         }
-
-        if (item.variant === "thumbnail" && isImageMediaType(context.mediaType)) {
-          const imageResult = await resolveImageThumbnailHybrid({
-            context,
-            mediaId: item.mediaId,
-            size: item.size,
-          });
-
-          if (imageResult.pending) {
-            return {
+        return result.pending
+          ? {
               mediaId: item.mediaId,
-              retryAfterMs: 15_000,
+              retryAfterMs: result.retryAfterMs,
               size: item.size,
               status: "pending",
               variant: item.variant,
-            };
-          }
-
-          return {
-            deliveryToken: imageResult.deliveryToken,
-            mediaId: item.mediaId,
-            size: item.size,
-            status: "ready",
-            url: imageResult.url,
-            variant: item.variant,
-          };
-        }
-
-        const startedAt = Date.now();
-        if (usesShutterPreview(context.mediaType)) {
-          const shutter = await resolveShutterPreview(
-            context,
-            item.size ??
-              (item.variant === "preview" ? PREVIEW_DERIVATIVE_SIZE : GALLERY_THUMBNAIL_SIZE),
-          );
-          if (shutter.status === "pending") {
-            return {
-              mediaId: item.mediaId,
-              retryAfterMs: shutter.retryAfterMs,
-              size: item.size,
-              status: "pending",
-              variant: item.variant,
-            };
-          }
-          return shutter.status === "ready"
-            ? {
-                mediaId: item.mediaId,
-                size: item.size,
-                status: "ready",
-                url: shutter.url,
-                variant: item.variant,
-              }
-            : {
-                mediaId: item.mediaId,
-                size: item.size,
-                status: "failed",
-                variant: item.variant,
-              };
-        }
-        const derivative =
-          item.variant === "preview"
-            ? await ensureThumbnailDerivativeForContext({
-                context,
-                requestedSize: PREVIEW_DERIVATIVE_SIZE,
-              })
-            : await ensureThumbnailDerivativeForContext({
-                context,
-                requestedSize: snapThumbnailSize(item.size ?? 320),
-              });
-
-        if (derivative.status !== "ready" || readyResolveLogCount % 100 === 0) {
-          logDerivativeEvent("derivative.resolve", {
-            durationMs: Date.now() - startedAt,
-            mediaType: context.mediaType,
-            sampled: derivative.status === "ready",
-            status: derivative.status,
-            variant: item.variant,
-          });
-        }
-        if (derivative.status === "ready") {
-          readyResolveLogCount += 1;
-        }
-
-        if (derivative.status === "pending") {
-          return {
-            mediaId: item.mediaId,
-            retryAfterMs: 15_000,
-            size: item.size,
-            status: "pending",
-            variant: item.variant,
-          };
-        }
-
-        if (derivative.status === "failed" || derivative.status === "unsupported") {
-          if (isImageMediaType(context.mediaType)) {
-            return {
+            }
+          : {
               mediaId: item.mediaId,
               size: item.size,
               status: "ready",
-              url: await resolveOriginalDeliveryUrl(item.mediaId),
+              url: result.url,
               variant: item.variant,
             };
-          }
-
-          return {
-            mediaId: item.mediaId,
-            size: item.size,
-            status: "failed",
-            variant: item.variant,
-          };
-        }
-
-        return {
-          mediaId: item.mediaId,
-          size: item.size,
-          status: "ready",
-          url: await buildDerivativeDeliveryUrl(derivative.objectKey),
-          variant: item.variant,
-        };
       } catch {
-        return {
-          mediaId: item.mediaId,
-          size: item.size,
-          status: "failed",
-          variant: item.variant,
-        };
+        return { mediaId: item.mediaId, size: item.size, status: "failed", variant: item.variant };
       }
     }),
   );
-
-  return results;
 }

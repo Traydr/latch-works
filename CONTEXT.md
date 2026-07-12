@@ -5,7 +5,7 @@ Latch Works collects, syncs, derives, and serves a private personal media archiv
 ## Language
 
 **Derivative**:
-A generated media representation stored separately from the original, such as a video poster or PDF cover preview. Image gallery tiles no longer use Derivatives in production — Bunny serves resized Originals instead.
+A generated media representation stored separately from the original, such as a Shutter video poster or PDF cover preview. Image gallery tiles use on-demand Shutter Renditions rather than stored Derivatives.
 _Avoid_: Optimized image, transformed image
 
 **Rendition**:
@@ -15,26 +15,6 @@ _Avoid_: Unbounded image resize, media URL
 **Image Optimization**:
 An on-demand Image Rendition that resizes a Source Object within requested width and height while preserving its composition, then WebP-encodes it at the requested quality.
 _Avoid_: General-purpose image manipulation, arbitrary transformation pipeline
-
-**Delivery Token**:
-A time-limited HMAC credential embedded in a URL path that authorizes CDN access to a specific stored object. Purposes include `thumbnail`, `preview`, and `original`.
-_Avoid_: Private id hash, signed URL
-
-**Image Delivery**:
-The Bunny Optimizer path that resizes and WebP-converts image Originals at the edge from a Delivery Token.
-_Avoid_: Thumbnail CDN, image proxy
-
-**Derivative Queue**:
-The durable `thumbnails` table state machine used to schedule and track derivative generation.
-_Avoid_: Thumbnail cache, optimizer queue
-
-**Derivative Demand**:
-A request signal recorded on a Derivative Queue row that determines claim priority, such as on-demand preview demand or post-sync prewarm demand.
-_Avoid_: Batch priority, optimizer priority
-
-**Media Optimizer**:
-The video-only derivative worker that claims Derivative Queue rows and performs CPU-heavy poster generation.
-_Avoid_: Image proxy, thumbnail server
 
 **Shutter**:
 Private media infrastructure shared by Latch Works and other private applications. It captures durable visual renditions of stored media for its consuming applications.

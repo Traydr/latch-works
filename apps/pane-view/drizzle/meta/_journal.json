@@ -57,6 +57,20 @@
       "when": 1781640000000,
       "tag": "0007_derivative_queue_priority",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1783872000000,
+      "tag": "0008_gallery_query_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1783872060000,
+      "tag": "0009_shutter_only",
+      "breakpoints": true
     }
   ]
 }

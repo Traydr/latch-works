@@ -11,10 +11,8 @@ import {
   dedupeThumbnailRequests,
   supportsGalleryThumbnail,
 } from "@/features/gallery/gallery-page-helpers";
-import type { LibraryMediaItem } from "@/server/library/types";
 
 export interface WindowedThumbnailResolutionResult {
-  resolvedThumbnailTokens: Record<string, string>;
   resolvedThumbnailUrls: Record<string, string>;
   handleWindowedEntriesChange: (entries: BrowserEntry[]) => void;
 }
@@ -33,15 +31,11 @@ export function useWindowedThumbnailResolution(
   const [resolvedThumbnailUrls, setResolvedThumbnailUrls] = useState<Record<string, string>>(
     cached.urls,
   );
-  const [resolvedThumbnailTokens, setResolvedThumbnailTokens] = useState<Record<string, string>>(
-    cached.deliveryTokens,
-  );
 
   useEffect(() => {
     setWindowedThumbnailRequests([]);
     const fresh = readCachedGalleryThumbnailState();
     setResolvedThumbnailUrls(fresh.urls);
-    setResolvedThumbnailTokens(fresh.deliveryTokens);
   }, [resetKey]);
 
   useEffect(() => {
@@ -57,7 +51,6 @@ export function useWindowedThumbnailResolution(
       resolved: Awaited<ReturnType<typeof resolveGalleryThumbnailsBatch>>,
     ) => {
       setResolvedThumbnailUrls(resolved.urls);
-      setResolvedThumbnailTokens(resolved.deliveryTokens);
     };
 
     const scheduleRetry = () => {
@@ -112,12 +105,7 @@ export function useWindowedThumbnailResolution(
         }
 
         const media = entry.kind === "comic" ? entry.comic.cover : entry.media;
-        const embedded = media as LibraryMediaItem;
-        if (
-          !supportsGalleryThumbnail(media) ||
-          embedded.thumbnailUrl ||
-          embedded.thumbnailDeliveryToken
-        ) {
+        if (!supportsGalleryThumbnail(media)) {
           return [];
         }
 
@@ -131,7 +119,6 @@ export function useWindowedThumbnailResolution(
   }, []);
 
   return {
-    resolvedThumbnailTokens,
     resolvedThumbnailUrls,
     handleWindowedEntriesChange,
   };

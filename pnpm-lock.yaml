@@ -312,43 +312,6 @@ importers:
         specifier: ^4.1.3
         version: 4.1.7(@types/node@25.9.1)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.0.14(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
 
-  apps/media-optimizer:
-    dependencies:
-      '@hono/node-server':
-        specifier: ^2.0.4
-        version: 2.0.4(hono@4.12.25)
-      '@latch-works/media-delivery':
-        specifier: workspace:*
-        version: link:../../packages/media-delivery
-      '@latch-works/media-derivatives':
-        specifier: workspace:*
-        version: link:../../packages/media-derivatives
-      '@latch-works/media-domain':
-        specifier: workspace:*
-        version: link:../../packages/media-domain
-      '@latch-works/media-storage':
-        specifier: workspace:*
-        version: link:../../packages/media-storage
-      '@t3-oss/env-core':
-        specifier: ^0.13.11
-        version: 0.13.11(typescript@6.0.3)(zod@4.4.3)
-      hono:
-        specifier: ^4.12.25
-        version: 4.12.25
-      zod:
-        specifier: ^4.4.3
-        version: 4.4.3
-    devDependencies:
-      tsx:
-        specifier: ^4.21.0
-        version: 4.22.4
-      typescript:
-        specifier: ^6.0.2
-        version: 6.0.3
-      vitest:
-        specifier: ^4.1.3
-        version: 4.1.7(@types/node@25.9.1)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.0.14(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
-
   apps/pane-view:
     dependencies:
       '@better-auth/drizzle-adapter':
@@ -357,12 +320,6 @@ importers:
       '@fontsource-variable/geist':
         specifier: ^5.2.9
         version: 5.2.9
-      '@latch-works/media-delivery':
-        specifier: workspace:*
-        version: link:../../packages/media-delivery
-      '@latch-works/media-derivatives':
-        specifier: workspace:*
-        version: link:../../packages/media-derivatives
       '@latch-works/media-domain':
         specifier: workspace:*
         version: link:../../packages/media-domain
@@ -381,9 +338,6 @@ importers:
       '@tanstack/react-start':
         specifier: ^1.120.20
         version: 1.168.18(crossws@0.4.5(srvx@0.11.16))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(vite@8.0.11(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))(webpack@5.107.2(esbuild@0.28.0)(postcss@8.5.15))
-      '@unpic/react':
-        specifier: ^1.0.2
-        version: 1.0.2(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       better-auth:
         specifier: ^1.6.13
         version: 1.6.13(@tanstack/react-start@1.168.18(crossws@0.4.5(srvx@0.11.16))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(vite@8.0.11(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))(webpack@5.107.2(esbuild@0.28.0)(postcss@8.5.15)))(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(kysely@0.29.2)(pg@8.21.0)(postgres@3.4.9))(pg@8.21.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(vitest@4.1.7(@types/node@25.9.1)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.0.11(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0)))
@@ -396,9 +350,6 @@ importers:
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(kysely@0.29.2)(pg@8.21.0)(postgres@3.4.9)
-      ffmpeg-static:
-        specifier: ^5.3.0
-        version: 5.3.0
       lucide-react:
         specifier: ^0.562.0
         version: 0.562.0(react@19.2.6)
@@ -463,6 +414,9 @@ importers:
       tailwindcss:
         specifier: ^4.3.0
         version: 4.3.0
+      tsx:
+        specifier: ^4.21.0
+        version: 4.22.4
       typescript:
         specifier: ^6.0.2
         version: 6.0.3
@@ -534,46 +488,6 @@ importers:
         specifier: workspace:*
         version: link:../media-index
     devDependencies:
-      typescript:
-        specifier: ^6.0.2
-        version: 6.0.3
-      vitest:
-        specifier: ^4.1.3
-        version: 4.1.7(@types/node@25.9.1)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.0.14(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
-
-  packages/media-delivery:
-    devDependencies:
-      typescript:
-        specifier: ^6.0.2
-        version: 6.0.3
-      vitest:
-        specifier: ^4.1.3
-        version: 4.1.7(@types/node@25.9.1)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.0.14(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
-
-  packages/media-derivatives:
-    dependencies:
-      '@latch-works/media-delivery':
-        specifier: workspace:*
-        version: link:../media-delivery
-      '@latch-works/media-domain':
-        specifier: workspace:*
-        version: link:../media-domain
-      '@latch-works/media-storage':
-        specifier: workspace:*
-        version: link:../media-storage
-      ffmpeg-static:
-        specifier: ^5.3.0
-        version: 5.3.0
-      pdfjs-dist:
-        specifier: ^6.0.227
-        version: 6.0.227
-      sharp:
-        specifier: ^0.34.5
-        version: 0.34.5
-    devDependencies:
-      tsx:
-        specifier: ^4.21.0
-        version: 4.22.4
       typescript:
         specifier: ^6.0.2
         version: 6.0.3
@@ -1921,12 +1835,6 @@ packages:
     resolution: {integrity: sha512-mB9oAsNCm9aM3/SOv4YtBMqZbYj10R7dkq8byBqxGY/ncFwhf2oQzMV+LCRlWoDSEBJ3COiR1yeDvMtsoOsuFQ==}
     peerDependencies:
       graphql: ^0.8.0 || ^0.9.0 || ^0.10.0 || ^0.11.0 || ^0.12.0 || ^0.13.0 || ^14.0.0 || ^15.0.0 || ^16.0.0 || ^17.0.0
-
-  '@hono/node-server@2.0.4':
-    resolution: {integrity: sha512-Ut3y0dMMPWy6bZ2kVfx25EOVbZlm15dhF4mOsezMlhpNHy+4MkU1qN9Y6lnruYi4wPmFzimGX2X7LF/FwHli4A==}
-    engines: {node: '>=20'}
-    peerDependencies:
-      hono: ^4
 
   '@img/colour@1.1.0':
     resolution: {integrity: sha512-Td76q7j57o/tLVdgS746cYARfSyxk8iEfRxewL9h4OMzYhbW4TAcppl0mT4eyqXddh6L/jwoM75mo7ixa/pCeQ==}
@@ -4229,19 +4137,6 @@ packages:
   '@ungap/structured-clone@1.3.1':
     resolution: {integrity: sha512-mUFwbeTqrVgDQxFveS+df2yfap6iuP20NAKAsBt5jDEoOTDew+zwLAOilHCeQJOVSvmgCX4ogqIrA0mnyr08yQ==}
 
-  '@unpic/core@1.0.3':
-    resolution: {integrity: sha512-aum9YNVUGso7MjGLD0Rp/08kywCGLqZ03/q6VQBFFakDBOXWEc8D4kPGcZ8v5wEnGRex3lE+++bOuucBp3KJ/w==}
-
-  '@unpic/react@1.0.2':
-    resolution: {integrity: sha512-5RmRfELwTF8w+4zjtQGqjpvX+RU2VLvis3xDCS1O2uWk0PZN2cvatL+3/KAR3mshAuRrkFGTX1XwyAezSXaoCA==}
-    peerDependencies:
-      next: ^13.0.0 || ^14.0.0 || ^15.0.0 || ^16.0.0
-      react: ^17.0.0 || ^18.0.0 || ^19.0.0
-      react-dom: ^17.0.0 || ^18.0.0 || ^19.0.0
-    peerDependenciesMeta:
-      next:
-        optional: true
-
   '@vitejs/plugin-react@4.7.0':
     resolution: {integrity: sha512-gUu9hwfWvvEDBBmgtAowQCojwZmJ5mcLn3aufeCsitijs3+f2NsrPtlAWIR6OPiqljl96GVCUbLe0HyqIpVaoA==}
     engines: {node: ^14.18.0 || >=16.0.0}
@@ -5793,10 +5688,6 @@ packages:
 
   hastscript@9.0.1:
     resolution: {integrity: sha512-g7df9rMFX/SPi34tyGCyUBREQoKkapwdY/T04Qn9TDWfHhAYt4/I0gMVirzK5wEzeUqIjEB+LXC/ypb7Aqno5w==}
-
-  hono@4.12.25:
-    resolution: {integrity: sha512-2NFaIyNVgJmBs/ecmtGzlmluTFs5cHEWGTdu0t1HBwYzoGXOL5nUQBRMXsXWla5i4KkG//QMzVP88m1+I3fdAQ==}
-    engines: {node: '>=16.9.0'}
 
   hookable@6.1.1:
     resolution: {integrity: sha512-U9LYDy1CwhMCnprUfeAZWZGByVbhd54hwepegYTK7Pi5NvqEj63ifz5z+xukznehT7i6NIZRu89Ay1AZmRsLEQ==}
@@ -7835,9 +7726,6 @@ packages:
   unorm@1.6.0:
     resolution: {integrity: sha512-b2/KCUlYZUeA7JFUuRJZPUtr4gZvBh7tavtv4fvk4+KV9pfGiR6CQAQAWl49ZpR3ts2dk4FYkP7EIgDJoiOLDA==}
     engines: {node: '>= 0.4.0'}
-
-  unpic@4.2.2:
-    resolution: {integrity: sha512-z6T2ScMgRV2y2H8MwwhY5xHZWXhUx/YxtOCGJwfURSl7ypVy4HpLIMWoIZKnnxQa/RKzM0kg8hUh0paIrpLfvw==}
 
   unplugin@3.0.0:
     resolution: {integrity: sha512-0Mqk3AT2TZCXWKdcoaufeXNukv2mTrEZExeXlHIOZXdqYoHHr4n51pymnwV8x2BOVxwXbK2HLlI7usrqMpycdg==}
@@ -10042,10 +9930,6 @@ snapshots:
     dependencies:
       graphql: 16.14.2
 
-  '@hono/node-server@2.0.4(hono@4.12.25)':
-    dependencies:
-      hono: 4.12.25
-
   '@img/colour@1.1.0': {}
 
   '@img/sharp-darwin-arm64@0.34.5':
@@ -12194,16 +12078,6 @@ snapshots:
 
   '@ungap/structured-clone@1.3.1': {}
 
-  '@unpic/core@1.0.3':
-    dependencies:
-      unpic: 4.2.2
-
-  '@unpic/react@1.0.2(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
-    dependencies:
-      '@unpic/core': 1.0.3
-      react: 19.2.6
-      react-dom: 19.2.6(react@19.2.6)
-
   '@vitejs/plugin-react@4.7.0(vite@6.4.3(@types/node@25.9.1)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))':
     dependencies:
       '@babel/core': 7.29.7
@@ -14018,8 +13892,6 @@ snapshots:
       hast-util-parse-selector: 4.0.0
       property-information: 7.2.0
       space-separated-tokens: 2.0.2
-
-  hono@4.12.25: {}
 
   hookable@6.1.1: {}
 
@@ -16531,8 +16403,6 @@ snapshots:
 
   unorm@1.6.0:
     optional: true
-
-  unpic@4.2.2: {}
 
   unplugin@3.0.0:
     dependencies:

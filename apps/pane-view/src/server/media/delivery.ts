@@ -13,24 +13,10 @@ export interface MediaDeliveryPlan {
   strategy: "signed-url";
 }
 
-export interface StoredMediaDeliveryRequest {
-  objectKey: string;
-}
-
 export function planSignedOriginalDelivery(request: MediaDeliveryRequest): MediaDeliveryPlan {
   return {
     expiresInSeconds: 60,
     objectKey: request.objectKey ?? originalObjectKey(request),
-    strategy: "signed-url",
-  };
-}
-
-export function planSignedStoredMediaDelivery(
-  request: StoredMediaDeliveryRequest,
-): MediaDeliveryPlan {
-  return {
-    expiresInSeconds: 60,
-    objectKey: request.objectKey,
     strategy: "signed-url",
   };
 }

@@ -13,8 +13,6 @@ import {
   useCleanupJobStatusQuery,
   useDeleteFoldersMutation,
   useManagementOverviewQuery,
-  usePurgeAllThumbnailsMutation,
-  useRetryFailedThumbnailsMutation,
   useSyncRunHistoryQuery,
   useWipeLibraryMutation,
 } from "./management-queries";
@@ -23,14 +21,11 @@ import { SyncRunHistoryTable } from "./SyncRunHistoryTable";
 export function ManagementPage() {
   const overviewQuery = useManagementOverviewQuery();
   const historyQuery = useSyncRunHistoryQuery();
-  const purgeMutation = usePurgeAllThumbnailsMutation();
-  const retryMutation = useRetryFailedThumbnailsMutation();
   const deleteFoldersMutation = useDeleteFoldersMutation();
   const wipeMutation = useWipeLibraryMutation();
   const cancelSyncRunMutation = useCancelSyncRunMutation();
   const cancelAllSyncRunsMutation = useCancelAllRunningSyncRunsMutation();
 
-  const [purgeConfirm, setPurgeConfirm] = useState("");
   const [selectedFolders, setSelectedFolders] = useState<string[]>([]);
   const [wipeConfirm, setWipeConfirm] = useState("");
   const [syncToken, setSyncToken] = useState("");
@@ -82,21 +77,8 @@ export function ManagementPage() {
         label: "Original storage",
         value: formatBytes(overview.storage.mediaObjectBytes),
       },
-      {
-        label: "Thumbnails",
-        value: `${overview.storage.thumbnailCount.toLocaleString()} (${overview.thumbnails.failed} failed)`,
-      },
     ];
   }, [overview]);
-
-  const handlePurge = async () => {
-    await purgeMutation.mutateAsync(purgeConfirm);
-    setPurgeConfirm("");
-  };
-
-  const handleRetryFailed = async () => {
-    await retryMutation.mutateAsync(10);
-  };
 
   const handleDeleteFolders = async () => {
     await deleteFoldersMutation.mutateAsync(selectedFolders);
@@ -129,7 +111,7 @@ export function ManagementPage() {
             </Link>
             <h1 className="text-2xl font-semibold">Management</h1>
             <p className="text-sm text-muted-foreground">
-              Maintenance tools for thumbnails, folders, and library reset.
+              Maintenance tools for folders, source storage, and library reset.
             </p>
           </div>
         </header>
@@ -174,45 +156,6 @@ export function ManagementPage() {
               runs={historyQuery.data ?? []}
             />
           )}
-        </section>
-
-        <section className="space-y-3 rounded-xl border border-border p-4">
-          <h2 className="text-sm font-semibold">Thumbnails</h2>
-          <p className="text-sm text-muted-foreground">
-            Purge cached thumbnails to force regeneration on the next browse. Original files are not
-            removed.
-          </p>
-          <label className="grid gap-1 text-sm" htmlFor="purge-thumbnails-confirm">
-            <span>Type PURGE THUMBNAILS to confirm</span>
-            <Input
-              id="purge-thumbnails-confirm"
-              onChange={(event) => setPurgeConfirm(event.target.value)}
-              value={purgeConfirm}
-            />
-          </label>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              disabled={maintenanceBlocked || purgeMutation.isPending}
-              onClick={() => void handlePurge()}
-              type="button"
-              variant="destructive"
-            >
-              Purge all thumbnails
-            </Button>
-            <Button
-              disabled={
-                maintenanceBlocked ||
-                retryMutation.isPending ||
-                !overview ||
-                overview.thumbnails.failed === 0
-              }
-              onClick={() => void handleRetryFailed()}
-              type="button"
-              variant="outline"
-            >
-              Retry failed thumbnails
-            </Button>
-          </div>
         </section>
 
         <section className="space-y-3 rounded-xl border border-border p-4">

@@ -1,4 +1,3 @@
-import { GALLERY_THUMBNAIL_SIZE, PREVIEW_DERIVATIVE_SIZE } from "@latch-works/media-delivery";
 import type { FolderNode, GallerySortMode } from "@latch-works/media-domain";
 import { buildBrowserEntries, getBaseName } from "@latch-works/media-domain";
 import {
@@ -17,12 +16,8 @@ import {
   type SQL,
   sql,
 } from "drizzle-orm";
-import { resolveImageDeliveryMode } from "../../env/image-delivery";
 import { db } from "../db";
-import { folders, libraryEntries, mediaObjects, thumbnails } from "../db/schema";
-import { buildDerivativeDeliveryUrl } from "../media/derivative-delivery-url";
-import { logDerivativeEvent } from "../media/derivative-telemetry";
-import { mintImageOriginalDeliveryToken } from "../media/image-delivery";
+import { folders, libraryEntries, mediaObjects } from "../db/schema";
 import {
   DEFAULT_GALLERY_LISTING_LIMIT,
   decodeGalleryListingCursor,
@@ -105,18 +100,9 @@ export async function readDatabaseLibrarySnapshot({
           .select({
             entry: libraryEntries,
             object: mediaObjects,
-            thumbnail: thumbnails,
           })
           .from(libraryEntries)
           .innerJoin(mediaObjects, eq(libraryEntries.mediaObjectId, mediaObjects.id))
-          .leftJoin(
-            thumbnails,
-            and(
-              eq(thumbnails.mediaObjectId, mediaObjects.id),
-              eq(thumbnails.size, GALLERY_THUMBNAIL_SIZE),
-              eq(thumbnails.status, "ready"),
-            ),
-          )
           .where(and(...mediaConditions))
           .orderBy(asc(libraryEntries.logicalPath), asc(libraryEntries.id))
           .limit(limit + 1)
@@ -162,96 +148,22 @@ export async function readDatabaseLibrarySnapshot({
 
   const { items: pageMediaRows, mediaPage } = buildMediaPage(mediaRows, limit, offset);
 
-  const previewRows =
-    pageMediaRows.length === 0
-      ? []
-      : await db
-          .select({
-            mediaObjectId: thumbnails.mediaObjectId,
-            objectKey: thumbnails.objectKey,
-          })
-          .from(thumbnails)
-          .where(
-            and(
-              inArray(
-                thumbnails.mediaObjectId,
-                pageMediaRows.map((row) => row.object.id),
-              ),
-              eq(thumbnails.size, PREVIEW_DERIVATIVE_SIZE),
-              eq(thumbnails.status, "ready"),
-            ),
-          );
-
-  const previewByObjectId = new Map(
-    previewRows.map((row) => [row.mediaObjectId, row.objectKey] as const),
-  );
-
-  let embeddedReadyCount = 0;
-  let embeddedPreviewCount = 0;
-  let thumbnailEligibleCount = 0;
-
-  const media = await Promise.all(
-    pageMediaRows.map(async ({ entry, object, thumbnail }): Promise<LibraryMediaItem> => {
-      const item: LibraryMediaItem = {
-        durationMs: object.durationMs ?? undefined,
-        extension: object.extension,
-        height: object.height ?? undefined,
-        id: entry.id,
-        mediaType: object.mediaType,
-        mtimeMs: entry.mtimeMs,
-        name: entry.filename,
-        pageCount: object.pageCount ?? undefined,
-        parentPath: entry.parentPath,
-        path: entry.logicalPath,
-        sha256: object.sha256,
-        size: object.size,
-        width: object.width ?? undefined,
-      };
-
-      if (supportsGalleryThumbnail(object.mediaType)) {
-        thumbnailEligibleCount += 1;
-
-        // Hybrid image delivery: embed ready derivatives when available, otherwise
-        // mint a Bunny Original token for on-the-fly transforms.
-        if (
-          (object.mediaType === "image" || object.mediaType === "gif") &&
-          resolveImageDeliveryMode() === "bunny"
-        ) {
-          if (thumbnail) {
-            item.thumbnailUrl = await buildDerivativeDeliveryUrl(thumbnail.objectKey);
-            embeddedReadyCount += 1;
-          } else {
-            item.thumbnailDeliveryToken = mintImageOriginalDeliveryToken({
-              extension: object.extension,
-              mediaObjectId: object.id,
-              mediaType: object.mediaType,
-              originalObjectKey: object.objectKey,
-              sha256: object.sha256,
-            });
-            embeddedReadyCount += 1;
-          }
-        } else if (thumbnail) {
-          item.thumbnailUrl = await buildDerivativeDeliveryUrl(thumbnail.objectKey);
-          embeddedReadyCount += 1;
-        }
-
-        const previewObjectKey = previewByObjectId.get(object.id);
-        if (previewObjectKey) {
-          item.previewUrl = await buildDerivativeDeliveryUrl(previewObjectKey);
-          embeddedPreviewCount += 1;
-        }
-      }
-
-      return item;
-    }),
-  );
-
-  logDerivativeEvent("library.snapshot.thumbnail_embed", {
-    embeddedPreview: embeddedPreviewCount,
-    embeddedReady: embeddedReadyCount,
-    pageSize: media.length,
-    pendingFallback: thumbnailEligibleCount - embeddedReadyCount,
-    thumbnailEligible: thumbnailEligibleCount,
+  const media = pageMediaRows.map(({ entry, object }): LibraryMediaItem => {
+    return {
+      durationMs: object.durationMs ?? undefined,
+      extension: object.extension,
+      height: object.height ?? undefined,
+      id: entry.id,
+      mediaType: object.mediaType,
+      mtimeMs: entry.mtimeMs,
+      name: entry.filename,
+      pageCount: object.pageCount ?? undefined,
+      parentPath: entry.parentPath,
+      path: entry.logicalPath,
+      sha256: object.sha256,
+      size: object.size,
+      width: object.width ?? undefined,
+    };
   });
 
   return {
@@ -360,18 +272,9 @@ export async function readDatabaseGalleryListing({
       .select({
         entry: libraryEntries,
         object: mediaObjects,
-        thumbnail: thumbnails,
       })
       .from(libraryEntries)
       .innerJoin(mediaObjects, eq(libraryEntries.mediaObjectId, mediaObjects.id))
-      .leftJoin(
-        thumbnails,
-        and(
-          eq(thumbnails.mediaObjectId, mediaObjects.id),
-          eq(thumbnails.size, GALLERY_THUMBNAIL_SIZE),
-          eq(thumbnails.status, "ready"),
-        ),
-      )
       .where(and(...mediaConditions))
       .orderBy(...buildGalleryListingOrderBy(sortMode, randomSeed))
       .limit(limit + 1),
@@ -395,31 +298,7 @@ export async function readDatabaseGalleryListing({
     path: folder.path,
   }));
 
-  const previewRows =
-    pageMediaRows.length === 0
-      ? []
-      : await db
-          .select({
-            mediaObjectId: thumbnails.mediaObjectId,
-            objectKey: thumbnails.objectKey,
-          })
-          .from(thumbnails)
-          .where(
-            and(
-              inArray(
-                thumbnails.mediaObjectId,
-                pageMediaRows.map((row) => row.object.id),
-              ),
-              eq(thumbnails.size, PREVIEW_DERIVATIVE_SIZE),
-              eq(thumbnails.status, "ready"),
-            ),
-          );
-
-  const previewByObjectId = new Map(
-    previewRows.map((row) => [row.mediaObjectId, row.objectKey] as const),
-  );
-
-  const media = await mapMediaRowsToLibraryItems(pageMediaRows, previewByObjectId);
+  const media = mapMediaRowsToLibraryItems(pageMediaRows);
   const entries = buildBrowserEntries({
     folders: folderNodes,
     comics: [],
@@ -512,12 +391,6 @@ async function readParentPathsWithChildren(paths: string[]): Promise<Set<string>
 
 function dedupe(value: string, index: number, values: string[]): boolean {
   return values.indexOf(value) === index;
-}
-
-function supportsGalleryThumbnail(mediaType: string): boolean {
-  return (
-    mediaType === "image" || mediaType === "gif" || mediaType === "video" || mediaType === "pdf"
-  );
 }
 
 function buildGalleryListingOrderBy(sortMode: GallerySortMode, randomSeed: number) {
@@ -652,58 +525,24 @@ function buildGalleryListingCursorCondition(
 type MediaRow = {
   entry: typeof libraryEntries.$inferSelect;
   object: typeof mediaObjects.$inferSelect;
-  thumbnail: typeof thumbnails.$inferSelect | null;
 };
 
-async function mapMediaRowsToLibraryItems(
-  pageMediaRows: MediaRow[],
-  previewByObjectId: Map<string, string>,
-): Promise<LibraryMediaItem[]> {
-  return Promise.all(
-    pageMediaRows.map(async ({ entry, object, thumbnail }): Promise<LibraryMediaItem> => {
-      const item: LibraryMediaItem = {
-        durationMs: object.durationMs ?? undefined,
-        extension: object.extension,
-        height: object.height ?? undefined,
-        id: entry.id,
-        mediaType: object.mediaType,
-        mtimeMs: entry.mtimeMs,
-        name: entry.filename,
-        pageCount: object.pageCount ?? undefined,
-        parentPath: entry.parentPath,
-        path: entry.logicalPath,
-        sha256: object.sha256,
-        size: object.size,
-        width: object.width ?? undefined,
-      };
-
-      if (supportsGalleryThumbnail(object.mediaType)) {
-        if (
-          (object.mediaType === "image" || object.mediaType === "gif") &&
-          resolveImageDeliveryMode() === "bunny"
-        ) {
-          if (thumbnail) {
-            item.thumbnailUrl = await buildDerivativeDeliveryUrl(thumbnail.objectKey);
-          } else {
-            item.thumbnailDeliveryToken = mintImageOriginalDeliveryToken({
-              extension: object.extension,
-              mediaObjectId: object.id,
-              mediaType: object.mediaType,
-              originalObjectKey: object.objectKey,
-              sha256: object.sha256,
-            });
-          }
-        } else if (thumbnail) {
-          item.thumbnailUrl = await buildDerivativeDeliveryUrl(thumbnail.objectKey);
-        }
-
-        const previewObjectKey = previewByObjectId.get(object.id);
-        if (previewObjectKey) {
-          item.previewUrl = await buildDerivativeDeliveryUrl(previewObjectKey);
-        }
-      }
-
-      return item;
-    }),
-  );
+function mapMediaRowsToLibraryItems(pageMediaRows: MediaRow[]): LibraryMediaItem[] {
+  return pageMediaRows.map(({ entry, object }): LibraryMediaItem => {
+    return {
+      durationMs: object.durationMs ?? undefined,
+      extension: object.extension,
+      height: object.height ?? undefined,
+      id: entry.id,
+      mediaType: object.mediaType,
+      mtimeMs: entry.mtimeMs,
+      name: entry.filename,
+      pageCount: object.pageCount ?? undefined,
+      parentPath: entry.parentPath,
+      path: entry.logicalPath,
+      sha256: object.sha256,
+      size: object.size,
+      width: object.width ?? undefined,
+    };
+  });
 }

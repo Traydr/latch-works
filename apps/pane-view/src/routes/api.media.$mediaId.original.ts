@@ -2,9 +2,10 @@ import { createS3StorageClient, createSignedGetUrl } from "@latch-works/media-st
 import { createFileRoute } from "@tanstack/react-router";
 import { env } from "../env/server";
 import { isRequestSessionValid } from "../server/auth/web-session-core";
-import { API_PRIVATE_CACHE_CONTROL } from "../server/media/cdn-delivery";
 import { planSignedOriginalDelivery } from "../server/media/delivery";
 import { readMediaDeliveryRequest } from "../server/media/repository";
+
+const API_PRIVATE_CACHE_CONTROL = "private, no-store";
 
 export const Route = createFileRoute("/api/media/$mediaId/original")({
   server: {

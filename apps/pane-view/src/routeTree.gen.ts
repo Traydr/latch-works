@@ -14,20 +14,12 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as GalleryRouteImport } from './routes/_gallery'
 import { Route as GalleryIndexRouteImport } from './routes/_gallery/index'
 import { Route as ApiHealthRouteImport } from './routes/api.health'
-import { Route as InternalOptimizerReleaseRouteImport } from './routes/internal.optimizer.release'
-import { Route as InternalOptimizerQueueStatusRouteImport } from './routes/internal.optimizer.queue-status'
-import { Route as InternalOptimizerFailRouteImport } from './routes/internal.optimizer.fail'
-import { Route as InternalOptimizerCompleteRouteImport } from './routes/internal.optimizer.complete'
-import { Route as InternalOptimizerClaimRouteImport } from './routes/internal.optimizer.claim'
-import { Route as CdnV1SplatRouteImport } from './routes/cdn.v1.$'
 import { Route as ApiSyncUploadUrlRouteImport } from './routes/api.sync.upload-url'
 import { Route as ApiSyncSnapshotRouteImport } from './routes/api.sync.snapshot'
 import { Route as ApiSyncRunsRouteImport } from './routes/api.sync.runs'
 import { Route as ApiSyncCompleteObjectRouteImport } from './routes/api.sync.complete-object'
 import { Route as ApiAuthLogoutRouteImport } from './routes/api.auth.logout'
 import { Route as ApiAuthLoginRouteImport } from './routes/api.auth.login'
-import { Route as ApiMediaMediaIdThumbnailRouteImport } from './routes/api.media.$mediaId.thumbnail'
-import { Route as ApiMediaMediaIdPreviewRouteImport } from './routes/api.media.$mediaId.preview'
 import { Route as ApiMediaMediaIdOriginalRouteImport } from './routes/api.media.$mediaId.original'
 import { Route as ApiSyncRunsSyncRunIdCompleteRouteImport } from './routes/api.sync.runs.$syncRunId.complete'
 
@@ -53,39 +45,6 @@ const GalleryIndexRoute = GalleryIndexRouteImport.update({
 const ApiHealthRoute = ApiHealthRouteImport.update({
   id: '/api/health',
   path: '/api/health',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const InternalOptimizerReleaseRoute =
-  InternalOptimizerReleaseRouteImport.update({
-    id: '/internal/optimizer/release',
-    path: '/internal/optimizer/release',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const InternalOptimizerQueueStatusRoute =
-  InternalOptimizerQueueStatusRouteImport.update({
-    id: '/internal/optimizer/queue-status',
-    path: '/internal/optimizer/queue-status',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const InternalOptimizerFailRoute = InternalOptimizerFailRouteImport.update({
-  id: '/internal/optimizer/fail',
-  path: '/internal/optimizer/fail',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const InternalOptimizerCompleteRoute =
-  InternalOptimizerCompleteRouteImport.update({
-    id: '/internal/optimizer/complete',
-    path: '/internal/optimizer/complete',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const InternalOptimizerClaimRoute = InternalOptimizerClaimRouteImport.update({
-  id: '/internal/optimizer/claim',
-  path: '/internal/optimizer/claim',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CdnV1SplatRoute = CdnV1SplatRouteImport.update({
-  id: '/cdn/v1/$',
-  path: '/cdn/v1/$',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiSyncUploadUrlRoute = ApiSyncUploadUrlRouteImport.update({
@@ -118,17 +77,6 @@ const ApiAuthLoginRoute = ApiAuthLoginRouteImport.update({
   path: '/api/auth/login',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiMediaMediaIdThumbnailRoute =
-  ApiMediaMediaIdThumbnailRouteImport.update({
-    id: '/api/media/$mediaId/thumbnail',
-    path: '/api/media/$mediaId/thumbnail',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiMediaMediaIdPreviewRoute = ApiMediaMediaIdPreviewRouteImport.update({
-  id: '/api/media/$mediaId/preview',
-  path: '/api/media/$mediaId/preview',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ApiMediaMediaIdOriginalRoute = ApiMediaMediaIdOriginalRouteImport.update({
   id: '/api/media/$mediaId/original',
   path: '/api/media/$mediaId/original',
@@ -152,15 +100,7 @@ export interface FileRoutesByFullPath {
   '/api/sync/runs': typeof ApiSyncRunsRouteWithChildren
   '/api/sync/snapshot': typeof ApiSyncSnapshotRoute
   '/api/sync/upload-url': typeof ApiSyncUploadUrlRoute
-  '/cdn/v1/$': typeof CdnV1SplatRoute
-  '/internal/optimizer/claim': typeof InternalOptimizerClaimRoute
-  '/internal/optimizer/complete': typeof InternalOptimizerCompleteRoute
-  '/internal/optimizer/fail': typeof InternalOptimizerFailRoute
-  '/internal/optimizer/queue-status': typeof InternalOptimizerQueueStatusRoute
-  '/internal/optimizer/release': typeof InternalOptimizerReleaseRoute
   '/api/media/$mediaId/original': typeof ApiMediaMediaIdOriginalRoute
-  '/api/media/$mediaId/preview': typeof ApiMediaMediaIdPreviewRoute
-  '/api/media/$mediaId/thumbnail': typeof ApiMediaMediaIdThumbnailRoute
   '/api/sync/runs/$syncRunId/complete': typeof ApiSyncRunsSyncRunIdCompleteRoute
 }
 export interface FileRoutesByTo {
@@ -174,15 +114,7 @@ export interface FileRoutesByTo {
   '/api/sync/runs': typeof ApiSyncRunsRouteWithChildren
   '/api/sync/snapshot': typeof ApiSyncSnapshotRoute
   '/api/sync/upload-url': typeof ApiSyncUploadUrlRoute
-  '/cdn/v1/$': typeof CdnV1SplatRoute
-  '/internal/optimizer/claim': typeof InternalOptimizerClaimRoute
-  '/internal/optimizer/complete': typeof InternalOptimizerCompleteRoute
-  '/internal/optimizer/fail': typeof InternalOptimizerFailRoute
-  '/internal/optimizer/queue-status': typeof InternalOptimizerQueueStatusRoute
-  '/internal/optimizer/release': typeof InternalOptimizerReleaseRoute
   '/api/media/$mediaId/original': typeof ApiMediaMediaIdOriginalRoute
-  '/api/media/$mediaId/preview': typeof ApiMediaMediaIdPreviewRoute
-  '/api/media/$mediaId/thumbnail': typeof ApiMediaMediaIdThumbnailRoute
   '/api/sync/runs/$syncRunId/complete': typeof ApiSyncRunsSyncRunIdCompleteRoute
 }
 export interface FileRoutesById {
@@ -198,15 +130,7 @@ export interface FileRoutesById {
   '/api/sync/runs': typeof ApiSyncRunsRouteWithChildren
   '/api/sync/snapshot': typeof ApiSyncSnapshotRoute
   '/api/sync/upload-url': typeof ApiSyncUploadUrlRoute
-  '/cdn/v1/$': typeof CdnV1SplatRoute
-  '/internal/optimizer/claim': typeof InternalOptimizerClaimRoute
-  '/internal/optimizer/complete': typeof InternalOptimizerCompleteRoute
-  '/internal/optimizer/fail': typeof InternalOptimizerFailRoute
-  '/internal/optimizer/queue-status': typeof InternalOptimizerQueueStatusRoute
-  '/internal/optimizer/release': typeof InternalOptimizerReleaseRoute
   '/api/media/$mediaId/original': typeof ApiMediaMediaIdOriginalRoute
-  '/api/media/$mediaId/preview': typeof ApiMediaMediaIdPreviewRoute
-  '/api/media/$mediaId/thumbnail': typeof ApiMediaMediaIdThumbnailRoute
   '/api/sync/runs/$syncRunId/complete': typeof ApiSyncRunsSyncRunIdCompleteRoute
 }
 export interface FileRouteTypes {
@@ -222,15 +146,7 @@ export interface FileRouteTypes {
     | '/api/sync/runs'
     | '/api/sync/snapshot'
     | '/api/sync/upload-url'
-    | '/cdn/v1/$'
-    | '/internal/optimizer/claim'
-    | '/internal/optimizer/complete'
-    | '/internal/optimizer/fail'
-    | '/internal/optimizer/queue-status'
-    | '/internal/optimizer/release'
     | '/api/media/$mediaId/original'
-    | '/api/media/$mediaId/preview'
-    | '/api/media/$mediaId/thumbnail'
     | '/api/sync/runs/$syncRunId/complete'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -244,15 +160,7 @@ export interface FileRouteTypes {
     | '/api/sync/runs'
     | '/api/sync/snapshot'
     | '/api/sync/upload-url'
-    | '/cdn/v1/$'
-    | '/internal/optimizer/claim'
-    | '/internal/optimizer/complete'
-    | '/internal/optimizer/fail'
-    | '/internal/optimizer/queue-status'
-    | '/internal/optimizer/release'
     | '/api/media/$mediaId/original'
-    | '/api/media/$mediaId/preview'
-    | '/api/media/$mediaId/thumbnail'
     | '/api/sync/runs/$syncRunId/complete'
   id:
     | '__root__'
@@ -267,15 +175,7 @@ export interface FileRouteTypes {
     | '/api/sync/runs'
     | '/api/sync/snapshot'
     | '/api/sync/upload-url'
-    | '/cdn/v1/$'
-    | '/internal/optimizer/claim'
-    | '/internal/optimizer/complete'
-    | '/internal/optimizer/fail'
-    | '/internal/optimizer/queue-status'
-    | '/internal/optimizer/release'
     | '/api/media/$mediaId/original'
-    | '/api/media/$mediaId/preview'
-    | '/api/media/$mediaId/thumbnail'
     | '/api/sync/runs/$syncRunId/complete'
   fileRoutesById: FileRoutesById
 }
@@ -290,15 +190,7 @@ export interface RootRouteChildren {
   ApiSyncRunsRoute: typeof ApiSyncRunsRouteWithChildren
   ApiSyncSnapshotRoute: typeof ApiSyncSnapshotRoute
   ApiSyncUploadUrlRoute: typeof ApiSyncUploadUrlRoute
-  CdnV1SplatRoute: typeof CdnV1SplatRoute
-  InternalOptimizerClaimRoute: typeof InternalOptimizerClaimRoute
-  InternalOptimizerCompleteRoute: typeof InternalOptimizerCompleteRoute
-  InternalOptimizerFailRoute: typeof InternalOptimizerFailRoute
-  InternalOptimizerQueueStatusRoute: typeof InternalOptimizerQueueStatusRoute
-  InternalOptimizerReleaseRoute: typeof InternalOptimizerReleaseRoute
   ApiMediaMediaIdOriginalRoute: typeof ApiMediaMediaIdOriginalRoute
-  ApiMediaMediaIdPreviewRoute: typeof ApiMediaMediaIdPreviewRoute
-  ApiMediaMediaIdThumbnailRoute: typeof ApiMediaMediaIdThumbnailRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -336,48 +228,6 @@ declare module '@tanstack/react-router' {
       path: '/api/health'
       fullPath: '/api/health'
       preLoaderRoute: typeof ApiHealthRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/internal/optimizer/release': {
-      id: '/internal/optimizer/release'
-      path: '/internal/optimizer/release'
-      fullPath: '/internal/optimizer/release'
-      preLoaderRoute: typeof InternalOptimizerReleaseRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/internal/optimizer/queue-status': {
-      id: '/internal/optimizer/queue-status'
-      path: '/internal/optimizer/queue-status'
-      fullPath: '/internal/optimizer/queue-status'
-      preLoaderRoute: typeof InternalOptimizerQueueStatusRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/internal/optimizer/fail': {
-      id: '/internal/optimizer/fail'
-      path: '/internal/optimizer/fail'
-      fullPath: '/internal/optimizer/fail'
-      preLoaderRoute: typeof InternalOptimizerFailRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/internal/optimizer/complete': {
-      id: '/internal/optimizer/complete'
-      path: '/internal/optimizer/complete'
-      fullPath: '/internal/optimizer/complete'
-      preLoaderRoute: typeof InternalOptimizerCompleteRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/internal/optimizer/claim': {
-      id: '/internal/optimizer/claim'
-      path: '/internal/optimizer/claim'
-      fullPath: '/internal/optimizer/claim'
-      preLoaderRoute: typeof InternalOptimizerClaimRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/cdn/v1/$': {
-      id: '/cdn/v1/$'
-      path: '/cdn/v1/$'
-      fullPath: '/cdn/v1/$'
-      preLoaderRoute: typeof CdnV1SplatRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/sync/upload-url': {
@@ -420,20 +270,6 @@ declare module '@tanstack/react-router' {
       path: '/api/auth/login'
       fullPath: '/api/auth/login'
       preLoaderRoute: typeof ApiAuthLoginRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/media/$mediaId/thumbnail': {
-      id: '/api/media/$mediaId/thumbnail'
-      path: '/api/media/$mediaId/thumbnail'
-      fullPath: '/api/media/$mediaId/thumbnail'
-      preLoaderRoute: typeof ApiMediaMediaIdThumbnailRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/media/$mediaId/preview': {
-      id: '/api/media/$mediaId/preview'
-      path: '/api/media/$mediaId/preview'
-      fullPath: '/api/media/$mediaId/preview'
-      preLoaderRoute: typeof ApiMediaMediaIdPreviewRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/media/$mediaId/original': {
@@ -487,15 +323,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiSyncRunsRoute: ApiSyncRunsRouteWithChildren,
   ApiSyncSnapshotRoute: ApiSyncSnapshotRoute,
   ApiSyncUploadUrlRoute: ApiSyncUploadUrlRoute,
-  CdnV1SplatRoute: CdnV1SplatRoute,
-  InternalOptimizerClaimRoute: InternalOptimizerClaimRoute,
-  InternalOptimizerCompleteRoute: InternalOptimizerCompleteRoute,
-  InternalOptimizerFailRoute: InternalOptimizerFailRoute,
-  InternalOptimizerQueueStatusRoute: InternalOptimizerQueueStatusRoute,
-  InternalOptimizerReleaseRoute: InternalOptimizerReleaseRoute,
   ApiMediaMediaIdOriginalRoute: ApiMediaMediaIdOriginalRoute,
-  ApiMediaMediaIdPreviewRoute: ApiMediaMediaIdPreviewRoute,
-  ApiMediaMediaIdThumbnailRoute: ApiMediaMediaIdThumbnailRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

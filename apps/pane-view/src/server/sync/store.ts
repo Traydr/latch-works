@@ -192,17 +192,6 @@ export async function finalizeSyncRun({
     throw new Error("Unable to finalize sync run.");
   }
 
-  if (input.status === "completed") {
-    // Prewarm derivatives for freshly synced media so they are ready before the
-    // first gallery view. Best-effort: never fail the sync completion on this.
-    try {
-      const { prewarmSyncRunDerivatives } = await import("../media/derivative-prewarm");
-      await prewarmSyncRunDerivatives({ syncRunId: input.syncRunId });
-    } catch {
-      // Prewarm is an optimization; the on-demand path still generates on view.
-    }
-  }
-
   return { status: "database" };
 }
 

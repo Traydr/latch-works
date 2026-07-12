@@ -15,7 +15,7 @@ Pane View is the **web counterpart** to [Frame View](../frame-view). It serves a
 - Sort modes: name, date, random
 - Search and detail panel
 - Planned: favorites and per-user viewer resume state (schema hooks exist; UI wiring is incomplete)
-- Signed CDN delivery for thumbnails; presigned redirects for originals
+- Shutter renditions for thumbnails and previews; presigned redirects for originals
 - Sync API for Lockstep push/plan/verify workflows
 
 ## Tech stack
@@ -28,7 +28,7 @@ Pane View is the **web counterpart** to [Frame View](../frame-view). It serves a
 | Database | PostgreSQL + [Drizzle ORM](https://orm.drizzle.team/) |
 | Storage | S3-compatible object storage |
 | Media | `sharp`, `ffmpeg-static`, `pdfjs-dist` |
-| Shared libs | `@latch-works/media-domain`, `media-storage`, `media-delivery` |
+| Shared libs | `@latch-works/media-domain`, `media-storage` |
 
 ## Prerequisites
 
@@ -50,7 +50,6 @@ S3_REGION=auto
 S3_BUCKET=...
 S3_ACCESS_KEY_ID=...
 S3_SECRET_ACCESS_KEY=...
-MEDIA_DELIVERY_SECRET=...          # min 32 chars
 PANE_VIEW_USERNAME=...
 PANE_VIEW_PASSWORD=...
 PANE_VIEW_SYNC_TOKEN=...           # bearer token for Lockstep
@@ -127,5 +126,5 @@ src/
 
 - [Lockstep runbook](../../docs/runbooks/lockstep.md)
 - [Railway CDN setup](../../docs/runbooks/railway-cdn-pane-view.md)
-- [Thumbnail runbook](../../docs/runbooks/pane-view-thumbnails.md)
+- Shutter configuration is documented in the repository architecture and `.env.example`.
 - [Architecture plan](../../docs/ARCHITECTURE_PLAN.md)

@@ -3,8 +3,6 @@ import { type MutableRefObject, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { BrowserGrid } from "@/features/gallery/BrowserGrid";
 import { DetailPanel } from "@/features/gallery/DetailPanel";
-import { DEFAULT_CARD_WIDTH } from "@/features/gallery/thumbnail-size";
-import { regenerateMediaThumbnail } from "@/features/media/media-delivery-service";
 import { cn } from "@/lib/utils";
 import type { MediaPage } from "@/server/library/types";
 
@@ -27,7 +25,6 @@ export interface GalleryBrowsePaneProps {
   onScrolledToFocus: () => void;
   onSelectEntry: (entry: BrowserEntry) => void;
   onWindowedEntriesChange: (entries: BrowserEntry[]) => void;
-  resolvedThumbnailTokens: Readonly<Record<string, string>>;
   resolvedThumbnailUrls: Readonly<Record<string, string>>;
   scrollFocusedIntoView: boolean;
   selected: MediaItem | null;
@@ -56,7 +53,6 @@ export function GalleryBrowsePane({
   onScrolledToFocus,
   onSelectEntry,
   onWindowedEntriesChange,
-  resolvedThumbnailTokens,
   resolvedThumbnailUrls,
   scrollFocusedIntoView,
   selected,
@@ -135,7 +131,6 @@ export function GalleryBrowsePane({
           onWindowedEntriesChange={onWindowedEntriesChange}
           scrollFocusedIntoView={scrollFocusedIntoView}
           selectedId={selectedId}
-          thumbnailDeliveryTokens={resolvedThumbnailTokens}
           thumbnailUrls={resolvedThumbnailUrls}
         />
       </div>
@@ -159,15 +154,6 @@ export function GalleryBrowsePane({
             onNext={onNext}
             onOpenViewer={onOpenViewer}
             onPrev={onPrev}
-            onRegenerateThumbnail={async () => {
-              if (!selected) {
-                return;
-              }
-
-              await regenerateMediaThumbnail({
-                data: { mediaId: selected.id, size: DEFAULT_CARD_WIDTH },
-              });
-            }}
             selected={selected}
             showDelete
           />

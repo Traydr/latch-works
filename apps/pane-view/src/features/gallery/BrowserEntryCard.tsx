@@ -16,7 +16,6 @@ interface BrowserEntryCardProps {
   onSelect: (entry: BrowserEntry) => void;
   priority?: boolean;
   selected: boolean;
-  thumbnailDeliveryTokens: Readonly<Record<string, string>>;
   thumbnailUrls: Readonly<Record<string, string>>;
   top: number;
 }
@@ -33,7 +32,6 @@ export function BrowserEntryCard({
   onSelect,
   priority = false,
   selected,
-  thumbnailDeliveryTokens,
   thumbnailUrls,
   top,
 }: BrowserEntryCardProps) {
@@ -73,7 +71,6 @@ export function BrowserEntryCard({
           focused={focused}
           priority={priority}
           selected={selected}
-          thumbnailDeliveryTokens={thumbnailDeliveryTokens}
           thumbnailUrls={thumbnailUrls}
         />
       ) : (
@@ -85,7 +82,6 @@ export function BrowserEntryCard({
           focused={focused}
           priority={priority}
           selected={selected}
-          thumbnailDeliveryTokens={thumbnailDeliveryTokens}
           thumbnailUrls={thumbnailUrls}
         />
       )}
@@ -145,7 +141,6 @@ function ComicCard({
   focused,
   priority,
   selected,
-  thumbnailDeliveryTokens,
   thumbnailUrls,
 }: {
   cardWidth: number;
@@ -155,7 +150,6 @@ function ComicCard({
   focused: boolean;
   priority?: boolean;
   selected: boolean;
-  thumbnailDeliveryTokens: Readonly<Record<string, string>>;
   thumbnailUrls: Readonly<Record<string, string>>;
 }) {
   const comic = entry.comic;
@@ -177,7 +171,6 @@ function ComicCard({
         cardWidth={cardWidth}
         media={comic.cover}
         priority={priority}
-        resolvedThumbnailDeliveryToken={thumbnailDeliveryTokens[comic.cover.id]}
         resolvedThumbnailUrl={thumbnailUrls[comic.cover.id]}
       />
       {isDeleting || isDeleted ? <DeleteOverlay animated={isDeleting} /> : null}
@@ -199,7 +192,6 @@ function MediaCard({
   focused,
   priority,
   selected,
-  thumbnailDeliveryTokens,
   thumbnailUrls,
 }: {
   cardWidth: number;
@@ -209,7 +201,6 @@ function MediaCard({
   focused: boolean;
   priority?: boolean;
   selected: boolean;
-  thumbnailDeliveryTokens: Readonly<Record<string, string>>;
   thumbnailUrls: Readonly<Record<string, string>>;
 }) {
   const item = entry.media;
@@ -231,7 +222,6 @@ function MediaCard({
         cardWidth={cardWidth}
         media={item}
         priority={priority}
-        resolvedThumbnailDeliveryToken={thumbnailDeliveryTokens[item.id]}
         resolvedThumbnailUrl={thumbnailUrls[item.id]}
       />
       {isDeleting || isDeleted ? <DeleteOverlay animated={isDeleting} /> : null}

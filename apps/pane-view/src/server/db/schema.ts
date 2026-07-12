@@ -1,4 +1,3 @@
-import { sql } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import {
   bigint,
@@ -29,20 +28,6 @@ export const syncRunStatusEnum = pgEnum("sync_run_status", [
   "cancelled",
 ]);
 export const syncActionEnum = pgEnum("sync_action", ["upload", "update", "keep", "delete"]);
-export const thumbnailStatusEnum = pgEnum("thumbnail_status", [
-  "pending",
-  "processing",
-  "ready",
-  "failed",
-]);
-export const derivativeQueueSourceEnum = pgEnum("derivative_queue_source", [
-  "prewarm",
-  "on-demand",
-]);
-export const derivativeQueueVariantEnum = pgEnum("derivative_queue_variant", [
-  "thumbnail",
-  "preview",
-]);
 export const subjectTypeEnum = pgEnum("subject_type", ["library_entry", "collection"]);
 export const maintenanceJobTypeEnum = pgEnum("maintenance_job_type", ["library_hard_wipe"]);
 export const maintenanceJobStatusEnum = pgEnum("maintenance_job_status", [
@@ -309,40 +294,6 @@ export const collectionItems = pgTable(
   }),
 );
 
-export const thumbnails = pgTable(
-  "thumbnails",
-  {
-    mediaObjectId: uuid("media_object_id")
-      .notNull()
-      .references(() => mediaObjects.id, { onDelete: "cascade" }),
-    size: integer("size").notNull(),
-    objectKey: text("object_key").notNull(),
-    width: integer("width").notNull(),
-    height: integer("height").notNull(),
-    status: thumbnailStatusEnum("status").notNull().default("pending"),
-    error: text("error"),
-    // Worker-safe scheduling fields. `processingToken` is a lease owner id so an
-    // external optimizer and Pane View never double-generate the same row.
-    processingToken: text("processing_token"),
-    attemptCount: integer("attempt_count").notNull().default(0),
-    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }),
-    queueSource: derivativeQueueSourceEnum("queue_source").notNull().default("prewarm"),
-    queueVariant: derivativeQueueVariantEnum("queue_variant").notNull().default("thumbnail"),
-    queuePriority: integer("queue_priority").notNull().default(0),
-    priorityAt: timestamp("priority_at", { withTimezone: true }).defaultNow().notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => ({
-    pk: primaryKey({ columns: [table.mediaObjectId, table.size] }),
-    statusIndex: index("thumbnails_status_idx").on(table.mediaObjectId, table.size, table.status),
-    // Partial index for the optimizer claim scan over schedulable pending rows.
-    pendingPriorityIndex: index("thumbnails_pending_priority_idx")
-      .on(table.queuePriority, table.priorityAt, table.createdAt)
-      .where(sql`${table.status} = 'pending'`),
-  }),
-);
-
 export const syncRunItems = pgTable(
   "sync_run_items",
   {
@@ -402,7 +353,7 @@ export interface MaintenanceJobProgress {
   lastError?: string;
   orphanPrefix?: string;
   orphanContinuationToken?: string;
-  phase: "s3_derivatives" | "s3_originals" | "s3_orphan_sweep" | "db_hard_delete" | "completed";
+  phase: "s3_originals" | "s3_orphan_sweep" | "db_hard_delete" | "completed";
   processedCount: number;
 }
 
@@ -414,7 +365,7 @@ export const maintenanceJobs = pgTable(
     status: maintenanceJobStatusEnum("status").notNull().default("pending"),
     progress: jsonb("progress").$type<MaintenanceJobProgress>().notNull().default({
       errorCount: 0,
-      phase: "s3_derivatives",
+      phase: "s3_originals",
       processedCount: 0,
     }),
     error: text("error"),

@@ -7,7 +7,6 @@ interface CleanupJobProgressProps {
 const phaseLabels: Record<CleanupJobStatus["progress"]["phase"], string> = {
   completed: "Completed",
   db_hard_delete: "Removing database records",
-  s3_derivatives: "Deleting thumbnails",
   s3_originals: "Deleting originals",
   s3_orphan_sweep: "Sweeping storage orphans",
 };
@@ -62,8 +61,7 @@ function estimateProgress(job: CleanupJobStatus): number {
   const phaseWeights: Record<CleanupJobStatus["progress"]["phase"], number> = {
     completed: 100,
     db_hard_delete: 90,
-    s3_derivatives: 20,
-    s3_originals: 50,
+    s3_originals: 40,
     s3_orphan_sweep: 75,
   };
 

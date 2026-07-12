@@ -50,7 +50,7 @@ export async function scheduleLibraryWipe({
     .values({
       progress: {
         errorCount: 0,
-        phase: "s3_derivatives",
+        phase: "s3_originals",
         processedCount: 0,
       },
       status: "pending",

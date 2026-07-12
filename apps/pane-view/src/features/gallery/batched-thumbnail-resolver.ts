@@ -10,12 +10,10 @@ export interface GalleryThumbnailRequest {
 }
 
 export interface GalleryThumbnailResolveState {
-  deliveryTokens: Record<string, string>;
   urls: Record<string, string>;
 }
 
 interface ThumbnailCacheEntry {
-  deliveryToken?: string;
   inFlight: boolean;
   nextRetryAt?: number;
   status: "failed" | "pending" | "ready";
@@ -48,7 +46,6 @@ function applyResult(result: MediaDeliveryBatchResult): void {
   if (result.status === "ready") {
     attempts.delete(key);
     cache.set(key, {
-      deliveryToken: result.deliveryToken,
       status: "ready",
       url: result.url,
       inFlight: false,
@@ -70,7 +67,6 @@ function applyResult(result: MediaDeliveryBatchResult): void {
 
 export function readCachedGalleryThumbnailState(): GalleryThumbnailResolveState {
   const urls: Record<string, string> = {};
-  const deliveryTokens: Record<string, string> = {};
 
   for (const [key, entry] of cache) {
     if (entry.status !== "ready") {
@@ -85,13 +81,9 @@ export function readCachedGalleryThumbnailState(): GalleryThumbnailResolveState 
     if (entry.url) {
       urls[mediaId] = entry.url;
     }
-
-    if (entry.deliveryToken) {
-      deliveryTokens[mediaId] = entry.deliveryToken;
-    }
   }
 
-  return { deliveryTokens, urls };
+  return { urls };
 }
 
 export function getNextPendingThumbnailRetryMs(requests: GalleryThumbnailRequest[]): number | null {
