@@ -57,10 +57,7 @@ function applyResult(result: MediaDeliveryBatchResult): void {
     inFlight: false,
     nextRetryAt:
       Date.now() +
-      pendingRetryDelayMs(
-        key,
-        result.status === "pending" ? result.retryAfterMs : undefined,
-      ),
+      pendingRetryDelayMs(key, result.status === "pending" ? result.retryAfterMs : undefined),
     status: "pending",
   });
 }

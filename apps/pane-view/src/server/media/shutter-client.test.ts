@@ -50,7 +50,9 @@ describe("Shutter Pane View client", () => {
 
   it("accepts a flat capability-key registry", async () => {
     mocks.env.SHUTTER_CAPABILITY_KEYS = JSON.stringify({ "active-key": encodedKey });
-    await expect(resolveShutterImageUrl(image, 320)).resolves.toMatch(/^https:\/\/edge\.shutter\.test/u);
+    await expect(resolveShutterImageUrl(image, 320)).resolves.toMatch(
+      /^https:\/\/edge\.shutter\.test/u,
+    );
     mocks.env.SHUTTER_CAPABILITY_KEYS = JSON.stringify({
       "pane-view": { "active-key": encodedKey },
     });
@@ -146,7 +148,8 @@ describe("Shutter Pane View client", () => {
   it("distinguishes retryable Control failures from terminal responses", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn()
+      vi
+        .fn()
         .mockResolvedValueOnce(new Response(null, { status: 503, headers: { "retry-after": "9" } }))
         .mockResolvedValueOnce(new Response(null, { status: 401 })),
     );
