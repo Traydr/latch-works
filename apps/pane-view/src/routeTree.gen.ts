@@ -20,6 +20,8 @@ import { Route as ApiSyncRunsRouteImport } from './routes/api.sync.runs'
 import { Route as ApiSyncCompleteObjectRouteImport } from './routes/api.sync.complete-object'
 import { Route as ApiAuthLogoutRouteImport } from './routes/api.auth.logout'
 import { Route as ApiAuthLoginRouteImport } from './routes/api.auth.login'
+import { Route as ApiMediaMediaIdThumbnailRouteImport } from './routes/api.media.$mediaId.thumbnail'
+import { Route as ApiMediaMediaIdPreviewRouteImport } from './routes/api.media.$mediaId.preview'
 import { Route as ApiMediaMediaIdOriginalRouteImport } from './routes/api.media.$mediaId.original'
 import { Route as ApiSyncRunsSyncRunIdCompleteRouteImport } from './routes/api.sync.runs.$syncRunId.complete'
 
@@ -77,6 +79,17 @@ const ApiAuthLoginRoute = ApiAuthLoginRouteImport.update({
   path: '/api/auth/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiMediaMediaIdThumbnailRoute =
+  ApiMediaMediaIdThumbnailRouteImport.update({
+    id: '/api/media/$mediaId/thumbnail',
+    path: '/api/media/$mediaId/thumbnail',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiMediaMediaIdPreviewRoute = ApiMediaMediaIdPreviewRouteImport.update({
+  id: '/api/media/$mediaId/preview',
+  path: '/api/media/$mediaId/preview',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiMediaMediaIdOriginalRoute = ApiMediaMediaIdOriginalRouteImport.update({
   id: '/api/media/$mediaId/original',
   path: '/api/media/$mediaId/original',
@@ -101,6 +114,8 @@ export interface FileRoutesByFullPath {
   '/api/sync/snapshot': typeof ApiSyncSnapshotRoute
   '/api/sync/upload-url': typeof ApiSyncUploadUrlRoute
   '/api/media/$mediaId/original': typeof ApiMediaMediaIdOriginalRoute
+  '/api/media/$mediaId/preview': typeof ApiMediaMediaIdPreviewRoute
+  '/api/media/$mediaId/thumbnail': typeof ApiMediaMediaIdThumbnailRoute
   '/api/sync/runs/$syncRunId/complete': typeof ApiSyncRunsSyncRunIdCompleteRoute
 }
 export interface FileRoutesByTo {
@@ -115,6 +130,8 @@ export interface FileRoutesByTo {
   '/api/sync/snapshot': typeof ApiSyncSnapshotRoute
   '/api/sync/upload-url': typeof ApiSyncUploadUrlRoute
   '/api/media/$mediaId/original': typeof ApiMediaMediaIdOriginalRoute
+  '/api/media/$mediaId/preview': typeof ApiMediaMediaIdPreviewRoute
+  '/api/media/$mediaId/thumbnail': typeof ApiMediaMediaIdThumbnailRoute
   '/api/sync/runs/$syncRunId/complete': typeof ApiSyncRunsSyncRunIdCompleteRoute
 }
 export interface FileRoutesById {
@@ -131,6 +148,8 @@ export interface FileRoutesById {
   '/api/sync/snapshot': typeof ApiSyncSnapshotRoute
   '/api/sync/upload-url': typeof ApiSyncUploadUrlRoute
   '/api/media/$mediaId/original': typeof ApiMediaMediaIdOriginalRoute
+  '/api/media/$mediaId/preview': typeof ApiMediaMediaIdPreviewRoute
+  '/api/media/$mediaId/thumbnail': typeof ApiMediaMediaIdThumbnailRoute
   '/api/sync/runs/$syncRunId/complete': typeof ApiSyncRunsSyncRunIdCompleteRoute
 }
 export interface FileRouteTypes {
@@ -147,6 +166,8 @@ export interface FileRouteTypes {
     | '/api/sync/snapshot'
     | '/api/sync/upload-url'
     | '/api/media/$mediaId/original'
+    | '/api/media/$mediaId/preview'
+    | '/api/media/$mediaId/thumbnail'
     | '/api/sync/runs/$syncRunId/complete'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -161,6 +182,8 @@ export interface FileRouteTypes {
     | '/api/sync/snapshot'
     | '/api/sync/upload-url'
     | '/api/media/$mediaId/original'
+    | '/api/media/$mediaId/preview'
+    | '/api/media/$mediaId/thumbnail'
     | '/api/sync/runs/$syncRunId/complete'
   id:
     | '__root__'
@@ -176,6 +199,8 @@ export interface FileRouteTypes {
     | '/api/sync/snapshot'
     | '/api/sync/upload-url'
     | '/api/media/$mediaId/original'
+    | '/api/media/$mediaId/preview'
+    | '/api/media/$mediaId/thumbnail'
     | '/api/sync/runs/$syncRunId/complete'
   fileRoutesById: FileRoutesById
 }
@@ -191,6 +216,8 @@ export interface RootRouteChildren {
   ApiSyncSnapshotRoute: typeof ApiSyncSnapshotRoute
   ApiSyncUploadUrlRoute: typeof ApiSyncUploadUrlRoute
   ApiMediaMediaIdOriginalRoute: typeof ApiMediaMediaIdOriginalRoute
+  ApiMediaMediaIdPreviewRoute: typeof ApiMediaMediaIdPreviewRoute
+  ApiMediaMediaIdThumbnailRoute: typeof ApiMediaMediaIdThumbnailRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -272,6 +299,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthLoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/media/$mediaId/thumbnail': {
+      id: '/api/media/$mediaId/thumbnail'
+      path: '/api/media/$mediaId/thumbnail'
+      fullPath: '/api/media/$mediaId/thumbnail'
+      preLoaderRoute: typeof ApiMediaMediaIdThumbnailRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/media/$mediaId/preview': {
+      id: '/api/media/$mediaId/preview'
+      path: '/api/media/$mediaId/preview'
+      fullPath: '/api/media/$mediaId/preview'
+      preLoaderRoute: typeof ApiMediaMediaIdPreviewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/media/$mediaId/original': {
       id: '/api/media/$mediaId/original'
       path: '/api/media/$mediaId/original'
@@ -324,6 +365,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiSyncSnapshotRoute: ApiSyncSnapshotRoute,
   ApiSyncUploadUrlRoute: ApiSyncUploadUrlRoute,
   ApiMediaMediaIdOriginalRoute: ApiMediaMediaIdOriginalRoute,
+  ApiMediaMediaIdPreviewRoute: ApiMediaMediaIdPreviewRoute,
+  ApiMediaMediaIdThumbnailRoute: ApiMediaMediaIdThumbnailRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

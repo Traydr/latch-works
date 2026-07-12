@@ -1,7 +1,7 @@
 export const APP_CONTENT_SECURITY_POLICY =
   "frame-ancestors 'none'; object-src 'none'; base-uri 'self'";
 
-export const MEDIA_DELIVERY_PATH_PATTERN = /^\/api\/media\/[^/]+\/original$/;
+export const MEDIA_DELIVERY_PATH_PATTERN = /^\/api\/media\/[^/]+\/(original|thumbnail|preview)$/;
 
 export function isMediaDeliveryPath(pathname: string): boolean {
   return MEDIA_DELIVERY_PATH_PATTERN.test(pathname);

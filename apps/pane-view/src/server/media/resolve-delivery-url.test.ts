@@ -44,11 +44,9 @@ describe("resolveMediaDeliveryUrlsForVariants", () => {
         ["video", video],
       ]),
     );
-    mocks.resolveImage.mockResolvedValue("https://shutter.test/image");
-    mocks.resolvePreview.mockResolvedValue({ status: "pending", retryAfterMs: 7_000 });
   });
 
-  it("deduplicates and resolves images only through Shutter", async () => {
+  it("deduplicates and returns same-origin thumbnail API URLs", async () => {
     const results = await resolveMediaDeliveryUrlsForVariants([
       { mediaId: "image", size: 321, variant: "thumbnail" },
       { mediaId: "image", size: 321, variant: "thumbnail" },
@@ -58,29 +56,30 @@ describe("resolveMediaDeliveryUrlsForVariants", () => {
         mediaId: "image",
         size: 321,
         status: "ready",
-        url: "https://shutter.test/image",
+        url: "/api/media/image/thumbnail?size=320",
         variant: "thumbnail",
       },
     ]);
-    expect(mocks.resolveImage).toHaveBeenCalledWith(image, 321);
+    expect(mocks.resolveImage).not.toHaveBeenCalled();
+    expect(mocks.resolvePreview).not.toHaveBeenCalled();
   });
 
-  it("preserves Shutter preview retry timing", async () => {
+  it("returns preview API URLs for video renditions", async () => {
     await expect(
       resolveMediaDeliveryUrlsForVariants([{ mediaId: "video", size: 640, variant: "preview" }]),
     ).resolves.toEqual([
       {
         mediaId: "video",
-        retryAfterMs: 7_000,
         size: 640,
-        status: "pending",
+        status: "ready",
+        url: "/api/media/video/preview",
         variant: "preview",
       },
     ]);
+    expect(mocks.resolvePreview).not.toHaveBeenCalled();
   });
 
-  it("isolates missing and terminally failed items", async () => {
-    mocks.resolvePreview.mockResolvedValue({ status: "failed" });
+  it("isolates missing items without calling Shutter", async () => {
     await expect(
       resolveMediaDeliveryUrlsForVariants([
         { mediaId: "missing", variant: "thumbnail" },
@@ -88,7 +87,12 @@ describe("resolveMediaDeliveryUrlsForVariants", () => {
       ]),
     ).resolves.toEqual([
       { mediaId: "missing", status: "failed", variant: "thumbnail" },
-      { mediaId: "video", status: "failed", variant: "thumbnail" },
+      {
+        mediaId: "video",
+        status: "ready",
+        url: "/api/media/video/thumbnail?size=320",
+        variant: "thumbnail",
+      },
     ]);
   });
 });

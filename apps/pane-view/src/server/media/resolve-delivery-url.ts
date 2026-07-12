@@ -1,11 +1,12 @@
 import { createSignedGetUrl } from "@latch-works/media-storage";
 import { planSignedOriginalDelivery } from "./delivery";
+import { buildMediaDeliveryApiUrl } from "./delivery-api-url";
 import {
+  type MediaThumbnailContext,
   readMediaDeliveryRequest,
   readMediaThumbnailContext,
   readMediaThumbnailContextsByEntryIds,
 } from "./repository";
-import { resolveShutterImageUrl, resolveShutterPreview } from "./shutter-client";
 import { createPaneViewStorageClient } from "./storage-client";
 
 const THUMBNAIL_WIDTH = 320;
@@ -19,24 +20,26 @@ function renditionWidth(variant: "thumbnail" | "preview", size?: number): number
   return size ?? (variant === "preview" ? PREVIEW_WIDTH : THUMBNAIL_WIDTH);
 }
 
-async function resolveRendition(
-  context: NonNullable<Awaited<ReturnType<typeof readMediaThumbnailContext>>>,
+function supportsShutterRendition(mediaType: MediaThumbnailContext["mediaType"]): boolean {
+  return (
+    mediaType === "image" || mediaType === "gif" || mediaType === "video" || mediaType === "pdf"
+  );
+}
+
+function resolveRenditionApiUrl(
+  mediaId: string,
+  context: MediaThumbnailContext,
   variant: "thumbnail" | "preview",
   size?: number,
-): Promise<MediaDeliveryResolveResult> {
-  const width = renditionWidth(variant, size);
-  if (context.mediaType === "image" || context.mediaType === "gif") {
-    return { pending: false, url: await resolveShutterImageUrl(context, width) };
-  }
-  if (context.mediaType !== "video" && context.mediaType !== "pdf") {
+): MediaDeliveryResolveResult {
+  if (!supportsShutterRendition(context.mediaType)) {
     throw new Error("Rendition unavailable for unsupported media type");
   }
-  const preview = await resolveShutterPreview(context, width);
-  if (preview.status === "pending") {
-    return { pending: true, retryAfterMs: preview.retryAfterMs };
-  }
-  if (preview.status === "failed") throw new Error("Shutter rendition unavailable");
-  return { pending: false, url: preview.url };
+
+  return {
+    pending: false,
+    url: buildMediaDeliveryApiUrl(mediaId, variant, renditionWidth(variant, size)),
+  };
 }
 
 async function resolveOriginalDeliveryUrl(mediaId: string): Promise<string> {
@@ -64,7 +67,7 @@ export async function resolveMediaDeliveryUrlForVariant({
   }
   const context = await readMediaThumbnailContext({ mediaId });
   if (!context) throw new Error("Media not found");
-  return resolveRendition(context, variant, size);
+  return resolveRenditionApiUrl(mediaId, context, variant, size);
 }
 
 export interface MediaDeliveryBatchResolveItem {
@@ -114,7 +117,7 @@ export async function resolveMediaDeliveryUrlsForVariants(
           result = await resolveMediaDeliveryUrlForVariant(item);
         } else {
           if (!context) throw new Error("Media not found");
-          result = await resolveRendition(context, item.variant, item.size);
+          result = resolveRenditionApiUrl(item.mediaId, context, item.variant, item.size);
         }
         return result.pending
           ? {

@@ -11,8 +11,8 @@ describe("isMediaDeliveryPath", () => {
   it("matches CDN and signed media API routes", () => {
     expect(isMediaDeliveryPath("/cdn/v1/token~sig")).toBe(false);
     expect(isMediaDeliveryPath("/api/media/abc/original")).toBe(true);
-    expect(isMediaDeliveryPath("/api/media/abc/thumbnail")).toBe(false);
-    expect(isMediaDeliveryPath("/api/media/abc/preview")).toBe(false);
+    expect(isMediaDeliveryPath("/api/media/abc/thumbnail")).toBe(true);
+    expect(isMediaDeliveryPath("/api/media/abc/preview")).toBe(true);
   });
 
   it("does not match app or sync routes", () => {

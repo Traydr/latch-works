@@ -44,6 +44,15 @@ function applyResult(result: MediaDeliveryBatchResult): void {
   });
 
   if (result.status === "ready") {
+    if (!result.url) {
+      cache.set(key, {
+        inFlight: false,
+        nextRetryAt: Date.now() + pendingRetryDelayMs(key),
+        status: "pending",
+      });
+      return;
+    }
+
     attempts.delete(key);
     cache.set(key, {
       status: "ready",
@@ -146,6 +155,19 @@ export async function resolveGalleryThumbnailsBatch(
 
     for (const result of response.results) {
       applyResult(result);
+    }
+
+    const resolvedKeys = new Set(
+      response.results.map((result) => cacheKey({ mediaId: result.mediaId, size: result.size })),
+    );
+    for (const [key] of batch) {
+      if (!resolvedKeys.has(key) && cache.get(key)?.inFlight) {
+        cache.set(key, {
+          inFlight: false,
+          nextRetryAt: Date.now() + pendingRetryDelayMs(key),
+          status: "pending",
+        });
+      }
     }
   } catch {
     const retryAt = Date.now() + 30_000;
