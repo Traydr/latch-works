@@ -53,16 +53,16 @@ function applyResult(result: MediaDeliveryBatchResult): void {
     return;
   }
 
-  if (result.status === "pending") {
-    cache.set(key, {
-      inFlight: false,
-      nextRetryAt: Date.now() + pendingRetryDelayMs(key, result.retryAfterMs),
-      status: "pending",
-    });
-    return;
-  }
-
-  cache.set(key, { inFlight: false, status: "failed" });
+  cache.set(key, {
+    inFlight: false,
+    nextRetryAt:
+      Date.now() +
+      pendingRetryDelayMs(
+        key,
+        result.status === "pending" ? result.retryAfterMs : undefined,
+      ),
+    status: "pending",
+  });
 }
 
 export function readCachedGalleryThumbnailState(): GalleryThumbnailResolveState {
@@ -116,7 +116,7 @@ export async function resolveGalleryThumbnailsBatch(
   for (const request of requests) {
     const key = cacheKey(request);
     const cached = cache.get(key);
-    if (cached?.status === "ready" || cached?.status === "failed" || cached?.inFlight) {
+    if (cached?.status === "ready" || cached?.inFlight) {
       continue;
     }
 
