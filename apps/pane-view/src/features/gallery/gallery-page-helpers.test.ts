@@ -3,7 +3,9 @@ import {
   areThumbnailRequestsEqual,
   dedupeThumbnailRequests,
   supportsGalleryThumbnail,
+  toLibrarySnapshotNextPageRequest,
 } from "./gallery-page-helpers";
+import { toLibrarySnapshotRequest } from "../library/library-queries";
 
 describe("supportsGalleryThumbnail", () => {
   it("returns true for image, gif, video, and pdf", () => {
@@ -76,5 +78,40 @@ describe("areThumbnailRequestsEqual", () => {
     const left = [{ mediaId: "x", size: 100 }, { mediaId: "y" }];
     const right = [{ mediaId: "x", size: 100 }, { mediaId: "y" }];
     expect(areThumbnailRequestsEqual(left, right)).toBe(true);
+  });
+});
+
+describe("toLibrarySnapshotNextPageRequest", () => {
+  it("preserves each browse key while omitting all folders on later pages", () => {
+    const photos = toLibrarySnapshotRequest({
+      comic: true,
+      path: "photos",
+      q: "cover",
+      recursive: true,
+    });
+    const videos = toLibrarySnapshotRequest({
+      comic: false,
+      path: "videos",
+      q: "trailer",
+      recursive: false,
+    });
+
+    expect(videos).not.toEqual(photos);
+    expect(toLibrarySnapshotNextPageRequest(photos, 500)).toEqual({
+      comicMode: true,
+      includeAllFolders: false,
+      mediaOffset: 500,
+      path: "photos",
+      query: "cover",
+      recursive: true,
+    });
+    expect(toLibrarySnapshotNextPageRequest(videos, 500)).toEqual({
+      comicMode: false,
+      includeAllFolders: false,
+      mediaOffset: 500,
+      path: "videos",
+      query: "trailer",
+      recursive: false,
+    });
   });
 });

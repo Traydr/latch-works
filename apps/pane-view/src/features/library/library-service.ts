@@ -17,6 +17,7 @@ const SEARCH_RESULT_LIMIT = 200;
 
 const libraryRequestSchema = z.object({
   comicMode: z.boolean().optional(),
+  includeAllFolders: z.boolean().optional(),
   mediaLimit: z.number().int().min(0).max(5000).optional(),
   mediaOffset: z.number().int().min(0).optional(),
   path: z.string().optional(),
@@ -89,6 +90,7 @@ export async function readLibrarySnapshotRequest(
   const currentPath = normalizeLibraryPath(data.path);
   const query = normalizeQuery(data.query);
   const comicMode = data.comicMode ?? false;
+  const includeAllFolders = data.includeAllFolders ?? comicMode;
   const recursive = (data.recursive ?? false) || comicMode;
   const searchOffset = data.searchOffset ?? 0;
   const mediaOffset = query ? searchOffset : (data.mediaOffset ?? 0);
@@ -101,7 +103,7 @@ export async function readLibrarySnapshotRequest(
   const { readDatabaseLibrarySnapshot } = await import("../../server/library/repository");
   const databaseSnapshot = await readDatabaseLibrarySnapshot({
     currentPath,
-    includeAllFolders: comicMode,
+    includeAllFolders,
     limit: mediaLimit,
     offset: mediaOffset,
     query,
