@@ -5,6 +5,8 @@ import type {
 } from "../shared/x-media";
 import {
   X_WEB_BEARER_TOKEN,
+  buildXFeatureValues,
+  buildXFieldToggles,
   extractGraphqlMedia,
   parseXMedia
 } from "../shared/x-media";
@@ -194,19 +196,11 @@ async function requestTweetDetail(
   );
   url.searchParams.set(
     "features",
-    JSON.stringify(
-      Object.fromEntries(
-        operation.featureSwitches.map((name) => [name, message.featureValues[name] ?? false])
-      )
-    )
+    JSON.stringify(buildXFeatureValues(operation.featureSwitches, message.featureValues))
   );
   url.searchParams.set(
     "fieldToggles",
-    JSON.stringify(
-      Object.fromEntries(
-        operation.fieldToggles.map((name) => [name, name === "withArticleRichContentState"])
-      )
-    )
+    JSON.stringify(buildXFieldToggles(operation.fieldToggles))
   );
 
   const headers: Record<string, string> = {

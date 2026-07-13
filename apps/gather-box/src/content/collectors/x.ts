@@ -2,6 +2,8 @@ import type { GalleryCollectResponse, GalleryImage } from "../../shared/types";
 import {
   RESOLVE_X_MEDIA_MESSAGE,
   X_WEB_BEARER_TOKEN,
+  buildXFeatureValues,
+  buildXFieldToggles,
   extractGraphqlMedia,
   parseXMedia,
   type ResolveXMediaMessage,
@@ -42,7 +44,9 @@ export async function collectXData(
     let resolvedMedia: ResolvedXMedia[] = response.ok ? response.media : [];
 
     if (!response.ok && response.operation && csrfToken) {
-      resolvedMedia = await resolveAuthenticatedXMedia(resolveMessage, response.operation, csrfToken);
+      resolvedMedia = await resolveAuthenticatedXMedia(resolveMessage, response.operation, () =>
+        getCookieValue(document.cookie, "ct0")
+      );
     }
 
     if (!response.ok && resolvedMedia.length === 0) {
@@ -199,7 +203,7 @@ async function resolveXMedia(message: ResolveXMediaMessage): Promise<ResolveXMed
 async function resolveAuthenticatedXMedia(
   message: ResolveXMediaMessage,
   operation: XOperationMetadata,
-  csrfToken: string
+  getCsrfToken: () => string | null
 ): Promise<ResolvedXMedia[]> {
   const url = new URL(`https://x.com/i/api/graphql/${operation.queryId}/TweetDetail`);
   url.searchParams.set(
@@ -217,34 +221,29 @@ async function resolveAuthenticatedXMedia(
   );
   url.searchParams.set(
     "features",
-    JSON.stringify(
-      Object.fromEntries(
-        operation.featureSwitches.map((name) => [name, message.featureValues[name] ?? false])
-      )
-    )
+    JSON.stringify(buildXFeatureValues(operation.featureSwitches, message.featureValues))
   );
   url.searchParams.set(
     "fieldToggles",
-    JSON.stringify(
-      Object.fromEntries(
-        operation.fieldToggles.map((name) => [name, name === "withArticleRichContentState"])
-      )
-    )
+    JSON.stringify(buildXFieldToggles(operation.fieldToggles))
   );
 
   try {
-    const response = await fetch(url, {
-      credentials: "include",
-      headers: {
-        authorization: `Bearer ${X_WEB_BEARER_TOKEN}`,
-        "content-type": "application/json",
-        "x-csrf-token": csrfToken,
-        "x-twitter-active-user": "yes",
-        "x-twitter-auth-type": "OAuth2Session",
-        "x-twitter-client-language": "en"
-      },
-      signal: AbortSignal.timeout(12_000)
-    });
+    const initialCsrfToken = getCsrfToken();
+    if (!initialCsrfToken) {
+      return [];
+    }
+
+    let response = await fetchAuthenticatedTweetDetail(url, initialCsrfToken);
+    if (response.status === 403) {
+      // X commonly rotates ct0 on a rejected request. Fetch processes Set-Cookie before resolving,
+      // so read document.cookie again and retry once with the new CSRF token.
+      const refreshedCsrfToken = getCsrfToken();
+      if (refreshedCsrfToken && refreshedCsrfToken !== initialCsrfToken) {
+        response = await fetchAuthenticatedTweetDetail(url, refreshedCsrfToken);
+      }
+    }
+
     if (!response.ok) {
       return [];
     }
@@ -253,4 +252,19 @@ async function resolveAuthenticatedXMedia(
   } catch {
     return [];
   }
+}
+
+function fetchAuthenticatedTweetDetail(url: URL, csrfToken: string): Promise<Response> {
+  return fetch(url, {
+    credentials: "include",
+    headers: {
+      authorization: `Bearer ${X_WEB_BEARER_TOKEN}`,
+      "content-type": "application/json",
+      "x-csrf-token": csrfToken,
+      "x-twitter-active-user": "yes",
+      "x-twitter-auth-type": "OAuth2Session",
+      "x-twitter-client-language": "en"
+    },
+    signal: AbortSignal.timeout(12_000)
+  });
 }

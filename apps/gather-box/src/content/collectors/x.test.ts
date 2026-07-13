@@ -96,65 +96,78 @@ describe.skipIf(!hasFixtures)("X collector fixtures", () => {
 
   it("runs the signed-in fallback in the X page context", async () => {
     const page = parseFixture("x-com-video-no-download.html");
-    Object.defineProperty(page, "cookie", { configurable: true, value: "ct0=test-csrf" });
+    let pageCookie = "ct0=stale-csrf";
+    Object.defineProperty(page, "cookie", {
+      configurable: true,
+      get: () => pageCookie
+    });
     const resolver = vi.fn().mockResolvedValue({
       ok: false,
       message: "Guest lookup returned no media",
       operation: {
         queryId: "query-id",
-        featureSwitches: ["feature_one"],
+        featureSwitches: [
+          "rweb_video_screen_enabled",
+          "profile_label_improvements_pcf_label_in_post_enabled",
+          "longform_notetweets_consumption_enabled"
+        ],
         fieldToggles: ["withArticleRichContentState"]
       }
     });
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          data: {
-            threaded_conversation_with_injections_v2: {
-              instructions: [
-                {
-                  type: "TimelineAddEntries",
-                  entries: [
-                    {
-                      entryId: "tweet-1284566903420334080",
-                      content: {
-                        itemContent: {
-                          tweet_results: {
-                            result: {
-                              __typename: "Tweet",
-                              legacy: {
-                                extended_entities: {
-                                  media: [
-                                    {
-                                      type: "video",
-                                      media_url_https: "https://pbs.twimg.com/poster.jpg",
-                                      video_info: {
-                                        variants: [
-                                          {
-                                            bitrate: 1_000_000,
-                                            content_type: "video/mp4",
-                                            url: "https://video.twimg.com/ext_tw_video/high.mp4?tag=12"
-                                          }
-                                        ]
-                                      }
+    const successfulResponse = new Response(
+      JSON.stringify({
+        data: {
+          threaded_conversation_with_injections_v2: {
+            instructions: [
+              {
+                type: "TimelineAddEntries",
+                entries: [
+                  {
+                    entryId: "tweet-1284566903420334080",
+                    content: {
+                      itemContent: {
+                        tweet_results: {
+                          result: {
+                            __typename: "Tweet",
+                            legacy: {
+                              extended_entities: {
+                                media: [
+                                  {
+                                    type: "video",
+                                    media_url_https: "https://pbs.twimg.com/poster.jpg",
+                                    video_info: {
+                                      variants: [
+                                        {
+                                          bitrate: 1_000_000,
+                                          content_type: "video/mp4",
+                                          url: "https://video.twimg.com/ext_tw_video/high.mp4?tag=12"
+                                        }
+                                      ]
                                     }
-                                  ]
-                                }
+                                  }
+                                ]
                               }
                             }
                           }
                         }
                       }
                     }
-                  ]
-                }
-              ]
-            }
+                  }
+                ]
+              }
+            ]
           }
-        }),
-        { status: 200 }
-      )
+        }
+      }),
+      { status: 200 }
     );
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(() => {
+        pageCookie = "ct0=refreshed-csrf";
+        return Promise.resolve(new Response(null, { status: 403 }));
+      })
+      .mockResolvedValueOnce(successfulResponse);
     vi.stubGlobal("fetch", fetchMock);
 
     const result = await collectXData(
@@ -166,8 +179,24 @@ describe.skipIf(!hasFixtures)("X collector fixtures", () => {
     );
 
     expect(result.ok).toBe(true);
-    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(String(fetchMock.mock.calls[0][0])).toContain("https://x.com/i/api/graphql/query-id/");
+    const firstRequest = fetchMock.mock.calls[0];
+    const secondRequest = fetchMock.mock.calls[1];
+    expect((firstRequest[1]?.headers as Record<string, string>)["x-csrf-token"]).toBe(
+      "stale-csrf"
+    );
+    expect((secondRequest[1]?.headers as Record<string, string>)["x-csrf-token"]).toBe(
+      "refreshed-csrf"
+    );
+    const features = JSON.parse(
+      new URL(String(secondRequest[0])).searchParams.get("features") ?? "{}"
+    );
+    expect(features).toEqual({
+      rweb_video_screen_enabled: false,
+      profile_label_improvements_pcf_label_in_post_enabled: true,
+      longform_notetweets_consumption_enabled: true
+    });
     if (result.ok && result.outputKind === "downloadable-files") {
       expect(result.images[0].fileName).toBe("high.mp4");
     }
