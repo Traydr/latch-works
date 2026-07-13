@@ -42,6 +42,7 @@ interface ScanContext {
   filters: ScanFilters;
   lastProgressEmittedAt: number;
   mediaIndexScanId: number | null;
+  mediaIndexPersistenceFailed: boolean;
   pendingBatch: MediaItem[];
   pendingProgressPath: string | null;
   queue: string[];
@@ -201,6 +202,7 @@ export class CatalogRuntime {
       filters: this.buildScanFilters(options),
       lastProgressEmittedAt: 0,
       mediaIndexScanId: null,
+      mediaIndexPersistenceFailed: false,
       pendingBatch: [],
       pendingProgressPath: null,
       queue: [options.rootPath],
@@ -362,13 +364,14 @@ export class CatalogRuntime {
     context.pendingBatch = [];
     this.emitScanEvent({ type: 'batch', runId: run.id, items: batchToEmit });
 
-    if (context.mediaIndexScanId !== null) {
+    if (context.mediaIndexScanId !== null && !context.mediaIndexPersistenceFailed) {
       const upsertResult = await this.mediaIndexService.upsertBatch(
         options.rootPath,
         context.mediaIndexScanId,
         batchToEmit,
       );
       if (Result.isError(upsertResult)) {
+        context.mediaIndexPersistenceFailed = true;
         this.emitScanEvent({
           type: 'error',
           message: `Media index update failed: ${upsertResult.error.message}`,
@@ -515,6 +518,20 @@ export class CatalogRuntime {
     }
 
     if (context.mediaIndexScanId !== null) {
+      if (context.mediaIndexPersistenceFailed) {
+        const cancelResult = await this.mediaIndexService.cancelScan(context.mediaIndexScanId);
+        if (Result.isError(cancelResult)) {
+          this.emitScanEvent({
+            type: 'error',
+            message: `Media index cancellation failed: ${cancelResult.error.message}`,
+            runId: run.id,
+          });
+        }
+
+        this.emitScanEvent({ type: 'cancelled', runId: run.id });
+        return;
+      }
+
       const finishResult = await this.mediaIndexService.finishScan(
         options.rootPath,
         context.mediaIndexScanId,
@@ -525,6 +542,18 @@ export class CatalogRuntime {
           message: `Media index finalize failed: ${finishResult.error.message}`,
           runId: run.id,
         });
+
+        const cancelResult = await this.mediaIndexService.cancelScan(context.mediaIndexScanId);
+        if (Result.isError(cancelResult)) {
+          this.emitScanEvent({
+            type: 'error',
+            message: `Media index cancellation failed: ${cancelResult.error.message}`,
+            runId: run.id,
+          });
+        }
+
+        this.emitScanEvent({ type: 'cancelled', runId: run.id });
+        return;
       }
     }
 

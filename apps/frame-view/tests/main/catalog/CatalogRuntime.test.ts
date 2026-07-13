@@ -486,20 +486,95 @@ describe('CatalogRuntime', () => {
     });
   });
 
-  it('emits scan batches even when best-effort index upserts fail', async () => {
+  it.each([
+    1, 2, 3,
+  ])('cancels a degraded scan when durable batch %i fails without removing old rows', async (failedBatch) => {
+    const oldItemPath = '/existing/old.jpg';
+    const persistedItems = new Map([[oldItemPath, { rootPath: '', lastSeenScanId: 0 }]]);
+    let upsertCalls = 0;
+    const finishScan = vi.fn(async () => Result.ok());
+    const cancelScan = vi.fn(async () => Result.ok());
+    const mediaIndexService = {
+      init: () => Result.ok(),
+      startScan: async (rootPath: string) => {
+        persistedItems.set(oldItemPath, { rootPath, lastSeenScanId: 0 });
+        return Result.ok(1);
+      },
+      upsertBatch: async (rootPath: string, scanId: number, items: Array<{ path: string }>) => {
+        upsertCalls += 1;
+        if (upsertCalls === failedBatch) {
+          return Result.err(new Error('index unavailable'));
+        }
+
+        for (const item of items) {
+          persistedItems.set(item.path, { rootPath, lastSeenScanId: scanId });
+        }
+        return Result.ok();
+      },
+      finishScan,
+      cancelScan,
+      clear: async () => Result.ok(),
+      getStats: async () =>
+        Result.ok({
+          totalItems: persistedItems.size,
+          uniqueRoots: 1,
+          dbPath: 'mock-media-index.sqlite',
+        }),
+    };
+    const rootPath = await createTempDir('frame-view-catalog-root-');
+    tempDirs.push(rootPath);
+    await createMediaTree(rootPath, 1, 610);
+
+    const events: CatalogWorkerEvent[] = [];
+    const { CatalogRuntime } = await import('../../../src/main/catalog/CatalogRuntime');
+    const runtime = new CatalogRuntime({
+      emitEvent: (event) => events.push(event),
+      emitResponse: () => {
+        // No-op.
+      },
+      mediaIndexService: mediaIndexService as never,
+    });
+
+    await runtime.handleRequest({
+      requestId: 1,
+      type: 'start-scan',
+      options: {
+        rootPath,
+        recursive: false,
+        filters: {
+          imageExtensions: ['jpg'],
+          videoExtensions: [],
+          showImages: true,
+          showVideos: false,
+        },
+      },
+    });
+
+    await waitForCondition(() => events.some((event) => event.event.type === 'cancelled'));
+
+    const batchTotal = events
+      .map((event) => event.event)
+      .filter((event) => event.type === 'batch')
+      .reduce((total, event) => total + event.items.length, 0);
+    expect(batchTotal).toBe(610);
+    expect(upsertCalls).toBe(failedBatch);
+    expect(finishScan).not.toHaveBeenCalled();
+    expect(cancelScan).toHaveBeenCalledWith(1);
+    expect(persistedItems.get(oldItemPath)).toEqual({ rootPath, lastSeenScanId: 0 });
+    expect(events.some((event) => event.event.type === 'done')).toBe(false);
+  });
+
+  it('reports a durable cancellation failure but still emits a terminal cancelled event', async () => {
+    const cancelScan = vi.fn(async () => Result.err(new Error('database unavailable')));
     const mediaIndexService = {
       init: () => Result.ok(),
       startScan: async () => Result.ok(1),
       upsertBatch: async () => Result.err(new Error('index unavailable')),
       finishScan: async () => Result.ok(),
-      cancelScan: async () => Result.ok(),
+      cancelScan,
       clear: async () => Result.ok(),
       getStats: async () =>
-        Result.ok({
-          totalItems: 0,
-          uniqueRoots: 0,
-          dbPath: 'mock-media-index.sqlite',
-        }),
+        Result.ok({ totalItems: 0, uniqueRoots: 0, dbPath: 'mock-media-index.sqlite' }),
     };
     const rootPath = await createTempDir('frame-view-catalog-root-');
     tempDirs.push(rootPath);
@@ -530,10 +605,70 @@ describe('CatalogRuntime', () => {
       },
     });
 
-    await waitForCondition(() => events.some((event) => event.event.type === 'done'));
+    await waitForCondition(() => events.some((event) => event.event.type === 'cancelled'));
 
-    const eventTypes = events.map((event) => event.event.type);
-    expect(eventTypes.indexOf('batch')).toBeLessThan(eventTypes.indexOf('error'));
-    expect(eventTypes).toContain('done');
+    expect(cancelScan).toHaveBeenCalledWith(1);
+    expect(events.map((event) => event.event)).toContainEqual(
+      expect.objectContaining({
+        type: 'error',
+        message: 'Media index cancellation failed: database unavailable',
+      }),
+    );
+    expect(events.some((event) => event.event.type === 'done')).toBe(false);
+  });
+
+  it('does not report a failed durable finalization as a successful scan', async () => {
+    const finishScan = vi.fn(async () => Result.err(new Error('database unavailable')));
+    const cancelScan = vi.fn(async () => Result.ok());
+    const mediaIndexService = {
+      init: () => Result.ok(),
+      startScan: async () => Result.ok(1),
+      upsertBatch: async () => Result.ok(),
+      finishScan,
+      cancelScan,
+      clear: async () => Result.ok(),
+      getStats: async () =>
+        Result.ok({ totalItems: 0, uniqueRoots: 0, dbPath: 'mock-media-index.sqlite' }),
+    };
+    const rootPath = await createTempDir('frame-view-catalog-root-');
+    tempDirs.push(rootPath);
+    await createMediaTree(rootPath, 1, 2);
+
+    const events: CatalogWorkerEvent[] = [];
+    const { CatalogRuntime } = await import('../../../src/main/catalog/CatalogRuntime');
+    const runtime = new CatalogRuntime({
+      emitEvent: (event) => events.push(event),
+      emitResponse: () => {
+        // No-op.
+      },
+      mediaIndexService: mediaIndexService as never,
+    });
+
+    await runtime.handleRequest({
+      requestId: 1,
+      type: 'start-scan',
+      options: {
+        rootPath,
+        recursive: false,
+        filters: {
+          imageExtensions: ['jpg'],
+          videoExtensions: [],
+          showImages: true,
+          showVideos: false,
+        },
+      },
+    });
+
+    await waitForCondition(() => events.some((event) => event.event.type === 'cancelled'));
+
+    expect(finishScan).toHaveBeenCalledWith(rootPath, 1);
+    expect(cancelScan).toHaveBeenCalledWith(1);
+    expect(events.map((event) => event.event)).toContainEqual(
+      expect.objectContaining({
+        type: 'error',
+        message: 'Media index finalize failed: database unavailable',
+      }),
+    );
+    expect(events.some((event) => event.event.type === 'done')).toBe(false);
   });
 });
