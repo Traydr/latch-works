@@ -97,7 +97,7 @@ function collectVisibleXPhotos(
 ): GalleryImage[] {
   const dialogImages = Array.from(
     document.querySelectorAll<HTMLImageElement>(
-      '[role="dialog"] img[src*="pbs.twimg.com/media/"]'
+      '[role="dialog"] [data-testid="swipe-to-dismiss"] img[src*="pbs.twimg.com/media/"]'
     )
   );
   const postPath = `/${post.username}/status/${post.id}/photo/`;

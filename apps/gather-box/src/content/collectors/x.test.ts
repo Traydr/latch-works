@@ -29,6 +29,12 @@ describe.skipIf(!hasFixtures)("X collector fixtures", () => {
       "rongrongzi07",
       "2061840804394701186",
       ["HJ0hRkgacAATj-j.jpg", "HJ0hRkmasAAokLR.jpg"]
+    ],
+    [
+      "x-com-too-much.html",
+      "LoveHimeking",
+      "2000751308379468134",
+      ["G8QYtXla4AE3SB8.jpg", "G8QYtXkbAAAwHiK.jpg"]
     ]
   ])("collects visible original photos from %s", async (fixtureName, username, postId, fileNames) => {
     const page = parseFixture(fixtureName);
@@ -45,9 +51,34 @@ describe.skipIf(!hasFixtures)("X collector fixtures", () => {
     if (!result.ok || result.outputKind !== "downloadable-files") {
       return;
     }
-    expect(result.folderSegments).toEqual([username]);
+    expect(result.folderSegments).toEqual([lowercaseFirstAscii(username)]);
     expect(result.images.map((image) => image.fileName)).toEqual(fileNames);
     expect(result.images.every((image) => image.originalUrl.includes("name=orig"))).toBe(true);
+  });
+
+  it("excludes reply media from the photo viewer's conversation sidebar", async () => {
+    const page = parseFixture("x-com-too-much.html");
+    const dialog = page.querySelector('[role="dialog"]');
+    const replyImage = page.createElement("img");
+    replyImage.src =
+      "https://pbs.twimg.com/media/sidebar-reply-image?format=jpg&name=small";
+    dialog?.appendChild(replyImage);
+
+    const result = await collectXData(
+      page,
+      new URL(
+        "https://x.com/LoveHimeking/status/2000751308379468134/photo/1"
+      ) as unknown as Location,
+      vi.fn()
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok && result.outputKind === "downloadable-files") {
+      expect(result.images.map((image) => image.fileName)).toEqual([
+        "G8QYtXla4AE3SB8.jpg",
+        "G8QYtXkbAAAwHiK.jpg"
+      ]);
+    }
   });
 
   it.each([
