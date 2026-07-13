@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
+import type { Readable } from "node:stream";
 import {
   detectMediaType,
   getExtension,
@@ -14,10 +15,25 @@ import {
 } from "@latch-works/media-domain";
 
 export interface ScanArchiveOptions {
+  directoryConcurrency?: number;
+  fileConcurrency?: number;
   hashFiles?: boolean;
   onProgress?: (progress: ScanArchiveProgress) => void;
+  operations?: ScanArchiveOperations;
   signal?: AbortSignal;
   sourceRoot: string;
+}
+
+export interface ScanArchiveOperations {
+  createReadStream: (filePath: string) => Readable;
+  readdir: (directoryPath: string) => Promise<DirectoryEntry[]>;
+  stat: (filePath: string) => Promise<{ mtimeMs: number; size: number }>;
+}
+
+export interface DirectoryEntry {
+  isDirectory(): boolean;
+  isFile(): boolean;
+  name: string;
 }
 
 export type ScanArchiveProgress =
@@ -51,23 +67,42 @@ export interface SkippedArchiveEntry {
 async function hashFile({
   filePath,
   onProgress,
+  operations,
+  signal,
 }: {
   filePath: string;
   onProgress?: (bytesHashed: number) => void;
+  operations: ScanArchiveOperations;
+  signal?: AbortSignal;
 }): Promise<string> {
   const hash = createHash("sha256");
   let bytesHashed = 0;
 
   await new Promise<void>((resolve, reject) => {
-    const stream = createReadStream(filePath);
+    const stream = operations.createReadStream(filePath);
+    const abort = () => stream.destroy(signal?.reason);
+    const cleanup = () => signal?.removeEventListener("abort", abort);
+
+    signal?.addEventListener("abort", abort, { once: true });
     stream.on("data", (chunk) => {
+      if (signal?.aborted) {
+        stream.destroy(signal.reason);
+        return;
+      }
       hash.update(chunk);
       bytesHashed += chunk.length;
       onProgress?.(bytesHashed);
     });
-    stream.on("error", reject);
-    stream.on("end", resolve);
+    stream.on("error", (error) => {
+      cleanup();
+      reject(error);
+    });
+    stream.on("end", () => {
+      cleanup();
+      resolve();
+    });
   });
+  throwIfAborted(signal);
   return hash.digest("hex");
 }
 
@@ -77,106 +112,244 @@ function throwIfAborted(signal?: AbortSignal): void {
   }
 }
 
+function concurrency(value: number | undefined): number {
+  if (value === undefined) {
+    return 4;
+  }
+  if (!Number.isInteger(value) || value < 1 || value > 16) {
+    throw new RangeError("Scan concurrency must be an integer between 1 and 16");
+  }
+  return value;
+}
+
+async function runQueue<T>({
+  concurrency: workerCount,
+  signal,
+  tasks,
+  work,
+}: {
+  concurrency: number;
+  signal?: AbortSignal;
+  tasks: T[];
+  work: (task: T, add: (task: T) => void, isRunning: () => boolean) => Promise<void>;
+}): Promise<void> {
+  let next = 0;
+  let active = 0;
+  let settled = false;
+
+  await new Promise<void>((resolve, reject) => {
+    const fail = (error: unknown): void => {
+      if (!settled) {
+        settled = true;
+        reject(error);
+      }
+    };
+    const schedule = (): void => {
+      if (settled) {
+        return;
+      }
+      try {
+        throwIfAborted(signal);
+      } catch (error) {
+        fail(error);
+        return;
+      }
+
+      while (active < workerCount && next < tasks.length) {
+        const task = tasks[next++];
+        if (task === undefined) {
+          continue;
+        }
+        active += 1;
+        void work(
+          task,
+          (newTask) => {
+            if (!settled) {
+              throwIfAborted(signal);
+              tasks.push(newTask);
+            }
+          },
+          () => !settled,
+        ).then(
+          () => {
+            active -= 1;
+            if (settled) {
+              return;
+            }
+            if (next === tasks.length && active === 0) {
+              settled = true;
+              resolve();
+            } else {
+              schedule();
+            }
+          },
+          (error: unknown) => {
+            active -= 1;
+            fail(error);
+          },
+        );
+      }
+
+      if (next === tasks.length && active === 0) {
+        settled = true;
+        resolve();
+      }
+    };
+
+    schedule();
+  });
+}
+
 export async function scanArchive({
+  directoryConcurrency,
+  fileConcurrency,
   hashFiles = false,
   onProgress,
+  operations = {
+    createReadStream,
+    readdir: (directoryPath) => readdir(directoryPath, { withFileTypes: true }),
+    stat,
+  },
   signal,
   sourceRoot,
 }: ScanArchiveOptions): Promise<ScanArchiveResult> {
   const root = path.resolve(sourceRoot);
   const items: MediaItem[] = [];
   const skippedEntries: SkippedArchiveEntry[] = [];
+  const candidates: Array<{ absolutePath: string; name: string; path: string }> = [];
+  const directories = [root];
 
-  async function walk(currentPath: string): Promise<void> {
-    throwIfAborted(signal);
-    const entries = await readdir(currentPath, { withFileTypes: true });
-    for (const entry of entries) {
+  await runQueue({
+    concurrency: concurrency(directoryConcurrency),
+    signal,
+    tasks: directories,
+    work: async (currentPath, addDirectory, isRunning) => {
       throwIfAborted(signal);
-      const absolutePath = path.join(currentPath, entry.name);
+      const entries = await operations.readdir(currentPath);
+      throwIfAborted(signal);
+      if (!isRunning()) {
+        return;
+      }
+      for (const entry of [...entries].sort((left, right) => left.name.localeCompare(right.name))) {
+        throwIfAborted(signal);
+        if (!isRunning()) {
+          return;
+        }
+        const absolutePath = path.join(currentPath, entry.name);
 
-      if (entry.isDirectory()) {
-        if (isSystemJunkDirectory(entry.name)) {
+        if (entry.isDirectory()) {
+          if (isSystemJunkDirectory(entry.name)) {
+            continue;
+          }
+          throwIfAborted(signal);
+          addDirectory(absolutePath);
           continue;
         }
-        await walk(absolutePath);
-        continue;
+
+        if (!entry.isFile()) {
+          skippedEntries.push({
+            path: joinArchivePath(path.relative(root, absolutePath)),
+            reason: "not-a-regular-file",
+          });
+          continue;
+        }
+
+        const relativePath = joinArchivePath(path.relative(root, absolutePath));
+
+        if (isSystemJunkFile(entry.name)) {
+          skippedEntries.push({
+            path: relativePath,
+            reason: "system-file",
+          });
+          onProgress?.({
+            filesFound: items.length,
+            skipped: skippedEntries.length,
+            stage: "scanning",
+          });
+          continue;
+        }
+
+        if (!isSupportedMediaFile(entry.name)) {
+          skippedEntries.push({
+            path: relativePath,
+            reason: "unsupported-extension",
+          });
+          onProgress?.({
+            filesFound: items.length,
+            skipped: skippedEntries.length,
+            stage: "scanning",
+          });
+          continue;
+        }
+
+        candidates.push({ absolutePath, name: entry.name, path: relativePath });
       }
+    },
+  });
 
-      if (!entry.isFile()) {
-        skippedEntries.push({
-          path: joinArchivePath(path.relative(root, absolutePath)),
-          reason: "not-a-regular-file",
-        });
-        continue;
+  candidates.sort((left, right) => left.path.localeCompare(right.path));
+  skippedEntries.sort((left, right) => left.path.localeCompare(right.path));
+
+  const indexedItems = new Map<string, MediaItem>();
+  await runQueue({
+    concurrency: concurrency(fileConcurrency),
+    signal,
+    tasks: candidates,
+    work: async (candidate, _add, isRunning) => {
+      throwIfAborted(signal);
+      const fileStat = await operations.stat(candidate.absolutePath);
+      throwIfAborted(signal);
+      if (!isRunning()) {
+        return;
       }
-
-      const relativePath = joinArchivePath(path.relative(root, absolutePath));
-
-      if (isSystemJunkFile(entry.name)) {
-        skippedEntries.push({
-          path: relativePath,
-          reason: "system-file",
-        });
-        onProgress?.({
-          filesFound: items.length,
-          skipped: skippedEntries.length,
-          stage: "scanning",
-        });
-        continue;
-      }
-
-      if (!isSupportedMediaFile(entry.name)) {
-        skippedEntries.push({
-          path: relativePath,
-          reason: "unsupported-extension",
-        });
-        onProgress?.({
-          filesFound: items.length,
-          skipped: skippedEntries.length,
-          stage: "scanning",
-        });
-        continue;
-      }
-
-      const mediaType = detectMediaType(entry.name);
-      const fileStat = await stat(absolutePath);
-      const parentPath = getParentPath(relativePath);
       const sha256 = hashFiles
         ? await hashFile({
-            filePath: absolutePath,
+            filePath: candidate.absolutePath,
             onProgress: (bytesHashed) =>
+              isRunning() &&
               onProgress?.({
                 bytesHashed,
                 fileSize: fileStat.size,
-                filesFound: items.length,
-                path: relativePath,
+                filesFound: indexedItems.size,
+                path: candidate.path,
                 skipped: skippedEntries.length,
                 stage: "hashing",
               }),
+            operations,
+            signal,
           })
         : undefined;
 
-      items.push({
-        id: sha256 ?? relativePath,
-        path: relativePath,
-        parentPath,
-        name: entry.name,
-        extension: getExtension(entry.name),
-        mediaType,
+      if (!isRunning()) {
+        return;
+      }
+
+      indexedItems.set(candidate.path, {
+        id: sha256 ?? candidate.path,
+        path: candidate.path,
+        parentPath: getParentPath(candidate.path),
+        name: candidate.name,
+        extension: getExtension(candidate.name),
+        mediaType: detectMediaType(candidate.name),
         size: fileStat.size,
         mtimeMs: Math.trunc(fileStat.mtimeMs),
         sha256,
       });
       onProgress?.({
-        filesFound: items.length,
-        path: relativePath,
+        filesFound: indexedItems.size,
+        path: candidate.path,
         skipped: skippedEntries.length,
         stage: "scanning",
       });
     }
-  }
+  });
 
-  await walk(root);
+  for (const candidate of candidates) {
+    const item = indexedItems.get(candidate.path);
+    if (item) {
+      items.push(item);
+    }
+  }
 
   return {
     items,

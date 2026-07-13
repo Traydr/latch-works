@@ -52,6 +52,8 @@ export async function planSync(
   let scan: Awaited<ReturnType<typeof scanArchive>>;
   try {
     scan = await scanArchive({
+      directoryConcurrency: options.directoryConcurrency,
+      fileConcurrency: options.fileConcurrency,
       hashFiles: willHash,
       onProgress: progressCoalescer.onProgress,
       signal,
