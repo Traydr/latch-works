@@ -7,6 +7,7 @@
 
 ## Status
 
+- **Status**: DONE (`a996635`, independently verified 2026-07-13)
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: MED
@@ -106,4 +107,3 @@ initial page near the end, rapid scroll, rapid resize, render rejection, media c
 
 Reviewer focus: cancelled PDF.js tasks, stale async completions, canvas memory bounds, and scroll
 position stability across resize.
-

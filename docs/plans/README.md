@@ -17,9 +17,9 @@ the corresponding plan.
 | [030](030-serialize-sync-and-hard-wipe.md) | Make sync/hard-wipe exclusion race-free | P1 | M | 025 | TODO |
 | [031](031-abort-degraded-frame-index-scan.md) | Prevent failed index batches from finishing scans | P1 | S–M | — | DONE |
 | [032](032-serialize-gather-last-run-writes.md) | Prevent stale extension state saves | P2 | S | — | DONE |
-| [033](033-reunify-frame-media-domain.md) | Reuse shared media/path semantics in Frame | P2 | M | — | TODO |
-| [034](034-virtualize-pdf-pages.md) | Bound Pane PDF rendering work | P2 | M | — | TODO |
-| [035](035-parallelize-archive-scan.md) | Add bounded scan/stat/hash concurrency | P2 | M | — | TODO |
+| [033](033-reunify-frame-media-domain.md) | Reuse shared media/path semantics in Frame | P2 | M | — | DONE |
+| [034](034-virtualize-pdf-pages.md) | Bound Pane PDF rendering work | P2 | M | — | DONE |
+| [035](035-parallelize-archive-scan.md) | Add bounded scan/stat/hash concurrency | P2 | M | — | DONE |
 | [036](036-pipeline-lockstep-uploads.md) | Add bounded parallel Lockstep uploads | P2 | L | 026 | TODO |
 | [037](037-batch-sync-registration.md) | Batch server registration and ancestor writes | P3 | L | 026, 030, 036 | TODO |
 | [038](038-avoid-repeating-comic-folder-tree.md) | Fetch comic folder structure once per browse key | P2 | M | — | TODO |
