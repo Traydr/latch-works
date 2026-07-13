@@ -10,6 +10,7 @@
     }
   },
   "scripts": {
+    "benchmark:push-perf": "tsx scripts/push-perf-benchmark.mts",
     "build": "tsc -p tsconfig.json",
     "check": "pnpm typecheck && pnpm test",
     "test": "vitest run",
@@ -19,6 +20,7 @@
     "@latch-works/media-domain": "workspace:*"
   },
   "devDependencies": {
+    "tsx": "^4.21.0",
     "typescript": "^6.0.2",
     "vitest": "^4.1.3"
   }
