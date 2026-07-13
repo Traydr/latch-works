@@ -928,6 +928,7 @@ export function GalleryPage() {
       const nextSnapshot = await getLibrarySnapshot({
         data: {
           comicMode: snapshotRequest.comicMode,
+          includeAllFolders: false,
           mediaOffset: mediaPage.nextOffset,
           path: snapshotRequest.path,
           query: snapshotRequest.query,

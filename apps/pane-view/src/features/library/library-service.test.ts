@@ -60,6 +60,25 @@ describe("library snapshot auth", () => {
     expect(snapshot.mediaPage).toEqual(emptyMediaPage);
     expect(snapshot.roots).toEqual(["photos"]);
   });
+
+  it("includes all folders for initial comic snapshots", async () => {
+    vi.mocked(readDatabaseLibrarySnapshot).mockResolvedValue({
+      allFolders: [],
+      folders: [],
+      media: [],
+      mediaPage: emptyMediaPage,
+      roots: [],
+    });
+
+    await readLibrarySnapshotRequest({ comicMode: true, path: "photos" });
+
+    expect(readDatabaseLibrarySnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        includeAllFolders: true,
+        recursive: true,
+      }),
+    );
+  });
 });
 
 describe("library snapshot paging", () => {
@@ -82,6 +101,23 @@ describe("library snapshot paging", () => {
         limit: DEFAULT_MEDIA_PAGE_LIMIT,
         offset: 500,
         query: undefined,
+      }),
+    );
+  });
+
+  it("omits all folders for paged comic snapshots when explicitly requested", async () => {
+    await readLibrarySnapshotRequest({
+      comicMode: true,
+      includeAllFolders: false,
+      mediaOffset: 500,
+      path: "photos",
+    });
+
+    expect(readDatabaseLibrarySnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        includeAllFolders: false,
+        offset: 500,
+        recursive: true,
       }),
     );
   });
