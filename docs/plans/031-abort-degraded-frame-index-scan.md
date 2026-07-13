@@ -7,6 +7,7 @@
 
 ## Status
 
+- **Status**: DONE (`969a9fa`, independently verified 2026-07-13)
 - **Priority**: P1
 - **Effort**: S-M
 - **Risk**: MED
@@ -95,4 +96,3 @@ Extend the injected `mediaIndexService` test double. Cover first, middle, and fi
 
 Treat scan finalization as a commit point: every batch must persist before stale rows may be removed.
 Review future “best effort” changes against that invariant.
-

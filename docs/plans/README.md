@@ -15,8 +15,8 @@ the corresponding plan.
 | [028](028-drain-thumbnail-batches.md) | Resolve every thumbnail beyond the 48-item batch | P1 | S | — | DONE |
 | [029](029-atomic-folder-subtree-delete.md) | Delete folder selections in one transaction | P1 | S | — | DONE |
 | [030](030-serialize-sync-and-hard-wipe.md) | Make sync/hard-wipe exclusion race-free | P1 | M | 025 | TODO |
-| [031](031-abort-degraded-frame-index-scan.md) | Prevent failed index batches from finishing scans | P1 | S–M | — | TODO |
-| [032](032-serialize-gather-last-run-writes.md) | Prevent stale extension state saves | P2 | S | — | TODO |
+| [031](031-abort-degraded-frame-index-scan.md) | Prevent failed index batches from finishing scans | P1 | S–M | — | DONE |
+| [032](032-serialize-gather-last-run-writes.md) | Prevent stale extension state saves | P2 | S | — | DONE |
 | [033](033-reunify-frame-media-domain.md) | Reuse shared media/path semantics in Frame | P2 | M | — | TODO |
 | [034](034-virtualize-pdf-pages.md) | Bound Pane PDF rendering work | P2 | M | — | TODO |
 | [035](035-parallelize-archive-scan.md) | Add bounded scan/stat/hash concurrency | P2 | M | — | TODO |

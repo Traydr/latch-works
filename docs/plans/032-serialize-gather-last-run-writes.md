@@ -7,6 +7,7 @@
 
 ## Status
 
+- **Status**: DONE (`7e968e3`, independently verified 2026-07-13)
 - **Priority**: P2
 - **Effort**: S
 - **Risk**: LOW
@@ -91,4 +92,3 @@ flush with no work, flush during work, and a subsequent save after failure.
 
 Future persistent controller state should use the same queue rather than calling Chrome storage from
 event/log handlers directly.
-
