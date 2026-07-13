@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { buildComicEntries, detectMediaType, sortMediaItems } from "./index.js";
+import {
+  buildComicEntries,
+  detectMediaType,
+  sortMediaItems,
+  sortComicEntries,
+} from "./index.js";
 import type { MediaItem } from "./media.js";
 
 const baseItem = {
@@ -31,6 +36,18 @@ describe("media-domain", () => {
     ]);
   });
 
+  it("uses a stable path-derived order for random sorting", () => {
+    const items: MediaItem[] = [
+      { ...baseItem, id: "a", name: "a.jpg", path: "comic/a.jpg", mtimeMs: 1 },
+      { ...baseItem, id: "b", name: "b.jpg", path: "comic/b.jpg", mtimeMs: 2 },
+      { ...baseItem, id: "c", name: "c.jpg", path: "comic/c.jpg", mtimeMs: 3 },
+    ];
+
+    expect(sortMediaItems(items, "random", 42).map((item) => item.id)).toEqual(
+      sortMediaItems([...items].reverse(), "random", 42).map((item) => item.id),
+    );
+  });
+
   it("groups image folders as comics while preserving archive paths", () => {
     const items: MediaItem[] = [
       {
@@ -55,6 +72,46 @@ describe("media-domain", () => {
     expect(comics).toHaveLength(1);
     expect(comics[0]?.folderPath).toBe("sfw/patreon/post-a");
     expect(comics[0]?.pages.map((page) => page.name)).toEqual(["001.jpg", "002.jpg"]);
+  });
+
+  it("treats images and GIFs as comic pages while excluding root files", () => {
+    const items: MediaItem[] = [
+      { ...baseItem, id: "root", name: "root.jpg", path: "comics/root.jpg", mtimeMs: 1 },
+      {
+        ...baseItem,
+        id: "gif",
+        name: "002.gif",
+        path: "comics/my_comic-title/002.gif",
+        mediaType: "gif",
+        extension: "gif",
+        mtimeMs: 2,
+      },
+      {
+        ...baseItem,
+        id: "cover",
+        name: "001.jpg",
+        path: "comics/my_comic-title/001.jpg",
+        mtimeMs: 3,
+      },
+      {
+        ...baseItem,
+        id: "video",
+        name: "clip.mp4",
+        path: "comics/my_comic-title/clip.mp4",
+        mediaType: "video",
+        extension: "mp4",
+        mtimeMs: 4,
+      },
+    ];
+
+    const comics = buildComicEntries(items, "comics");
+    expect(comics).toHaveLength(1);
+    expect(comics[0]?.name).toBe("my comic title");
+    expect(comics[0]?.cover.id).toBe("cover");
+    expect(comics[0]?.pages.map((page) => page.id)).toEqual(["cover", "gif"]);
+    expect(sortComicEntries(comics, "name-asc", 1).map((comic) => comic.id)).toEqual([
+      "comics/my_comic-title",
+    ]);
   });
 
   it("skips non-leaf folders when leafFoldersOnly is enabled", () => {

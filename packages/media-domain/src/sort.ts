@@ -1,14 +1,20 @@
-import type { GallerySortMode, MediaItem } from "./media.js";
+import type { GallerySortMode } from "./media.js";
 
 const nameCollator = new Intl.Collator(undefined, {
   numeric: true,
   sensitivity: "base",
 });
 
-export function compareByName(
-  a: Pick<MediaItem, "name" | "path">,
-  b: Pick<MediaItem, "name" | "path">,
-) {
+export interface NamedPath {
+  name: string;
+  path: string;
+}
+
+export interface SortableMediaItem extends NamedPath {
+  mtimeMs: number;
+}
+
+export function compareByName(a: NamedPath, b: NamedPath) {
   const byName = nameCollator.compare(a.name, b.name);
   if (byName !== 0) {
     return byName;
@@ -31,11 +37,11 @@ export function createRandomSeed(): number {
   return (Date.now() ^ Math.floor(Math.random() * 0x7fffffff)) >>> 0;
 }
 
-export function sortMediaItems(
-  items: readonly MediaItem[],
+export function sortMediaItems<T extends SortableMediaItem>(
+  items: readonly T[],
   sortMode: GallerySortMode,
   randomSeed: number,
-): MediaItem[] {
+): T[] {
   const sorted = [...items];
 
   sorted.sort((a, b) => {
