@@ -11,9 +11,9 @@ the corresponding plan.
 | [024](024-exclude-pnpm-store-from-biome.md) | Make root Biome checks checkout-local | P1 | S | — | DONE |
 | [025](025-repair-drizzle-snapshot-baseline.md) | Restore a current Drizzle snapshot baseline | P1 | M | — | BLOCKED |
 | [026](026-attest-sync-uploads.md) | Verify uploaded bytes before DB registration | P1 | M | — | BLOCKED |
-| [027](027-preserve-terminal-sync-status.md) | Make sync-run terminal states immutable | P1 | S | — | TODO |
-| [028](028-drain-thumbnail-batches.md) | Resolve every thumbnail beyond the 48-item batch | P1 | S | — | TODO |
-| [029](029-atomic-folder-subtree-delete.md) | Delete folder selections in one transaction | P1 | S | — | TODO |
+| [027](027-preserve-terminal-sync-status.md) | Make sync-run terminal states immutable | P1 | S | — | DONE |
+| [028](028-drain-thumbnail-batches.md) | Resolve every thumbnail beyond the 48-item batch | P1 | S | — | DONE |
+| [029](029-atomic-folder-subtree-delete.md) | Delete folder selections in one transaction | P1 | S | — | DONE |
 | [030](030-serialize-sync-and-hard-wipe.md) | Make sync/hard-wipe exclusion race-free | P1 | M | 025 | TODO |
 | [031](031-abort-degraded-frame-index-scan.md) | Prevent failed index batches from finishing scans | P1 | S–M | — | TODO |
 | [032](032-serialize-gather-last-run-writes.md) | Prevent stale extension state saves | P2 | S | — | TODO |

@@ -7,6 +7,7 @@
 
 ## Status
 
+- **Status**: DONE (`e81477c`, independently verified 2026-07-13)
 - **Priority**: P1
 - **Effort**: S
 - **Risk**: LOW
@@ -87,4 +88,3 @@ folder update, and failure on a later root. Follow the existing `folder-delete.t
 
 Large selections hold locks longer; reviewers should ensure path validation happens before the
 transaction and that no network I/O is introduced inside it.
-

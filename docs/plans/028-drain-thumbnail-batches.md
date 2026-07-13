@@ -7,6 +7,7 @@
 
 ## Status
 
+- **Status**: DONE (`3eb65e4`, independently verified 2026-07-13)
 - **Priority**: P1
 - **Effort**: S
 - **Risk**: LOW

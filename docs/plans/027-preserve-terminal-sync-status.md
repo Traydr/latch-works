@@ -7,6 +7,7 @@
 
 ## Status
 
+- **Status**: DONE (`13eda05`, independently verified 2026-07-13)
 - **Priority**: P1
 - **Effort**: S
 - **Risk**: LOW
@@ -87,4 +88,3 @@ predicate and replay behavior; do not only assert `.set()` arguments.
 
 All future sync-run state changes must encode their source status in the update predicate. Review any
 new retry behavior for idempotency rather than reopening terminal rows.
-
