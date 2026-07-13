@@ -4,16 +4,17 @@
 > ship an incomplete reader. Preserve Electron sandboxing and delete throwaway prototype code unless
 > every retention gate passes. Run every gate and update the plan index.
 >
-> **Drift check (run first)**: `git diff --stat fd5693d..HEAD -- apps/frame-view packages/media-domain docs apps/showcase/src/content/docs/frame-view`
+> **Drift check (run first)**: `git diff --stat 06b5005..HEAD -- apps/frame-view packages/media-domain docs apps/showcase/src/content/docs/frame-view`
 
 ## Status
 
+- **Status**: BLOCKED (`b74d7b8`; design-only branch, user-only package/make gates not run)
 - **Priority**: P2
 - **Effort**: M (spike only; implementation to be re-estimated)
 - **Risk**: MED
 - **Depends on**: Plan 033, Plan 034
 - **Category**: product direction / architecture spike
-- **Planned at**: commit `fd5693d`, 2026-07-13
+- **Planned at**: commit `06b5005`, 2026-07-13 (refreshed after Plans 033 and 034)
 - **Original direction**: 1
 
 ## Why this matters
@@ -30,10 +31,10 @@ reader performance contract before this promise becomes a broad cross-process im
   open PDF files.
 - `apps/showcase/src/content/docs/frame-view/comics-and-stories.mdx:12-30` and the Frame landing page
   describe a dedicated reader that does not exist.
-- Pane's `PdfViewer` supplies useful behavior evidence, but Plan 034 must first replace its eager
-  all-pages rendering; do not copy that implementation before virtualization lands.
-- Plan 033 moves Frame's path/media classification toward the shared media domain. Adding PDF before
-  that work would deepen the duplicate model.
+- Pane's `PdfViewer` now provides the bounded Plan 034 windowing contract: stable geometry,
+  visible-page rendering, overscan, obsolete-task cancellation, and at most eight retained canvases.
+- Plan 033 moved Frame's catalog path and media classification semantics toward
+  `@latch-works/media-domain`; extend that shared model rather than restoring local duplicates.
 
 ## Commands you will need
 

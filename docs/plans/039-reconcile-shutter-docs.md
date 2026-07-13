@@ -4,16 +4,18 @@
 > `CONTEXT.md` terminology as the evidence hierarchy. Do not preserve a documented claim merely
 > because several documents repeat it. Run every gate and update the plan index.
 >
-> **Drift check (run first)**: `git diff --stat fd5693d..HEAD -- README.md CONTEXT.md docs apps/*/README.md apps/showcase/src/content/docs package.json`
+> **Drift check (run first)**: `git diff --stat 06b5005..HEAD -- README.md CONTEXT.md docs apps/*/README.md apps/showcase/src/content/docs package.json`
 
 ## Status
 
+- **Status**: DONE (`953e7b2`, independently verified 2026-07-13; root lint retains unrelated
+  baseline failures)
 - **Priority**: P1
 - **Effort**: M
 - **Risk**: LOW
 - **Depends on**: none
 - **Category**: docs / DX
-- **Planned at**: commit `fd5693d`, 2026-07-13
+- **Planned at**: commit `06b5005`, 2026-07-13 (drift check refreshed after advisor plans were added)
 - **Original finding**: 22
 
 ## Why this matters
@@ -52,9 +54,9 @@ code and can cause operators to configure the wrong delivery model.
 
 ## Scope
 
-**In scope**: root and app READMEs; `CONTEXT.md`; current architecture/recommendation/runbook docs;
-Showcase claims about Frame; localhost environment example; a small deterministic documentation
-contract checker and root script if needed.
+**In scope**: root `AGENTS.md` and root/app READMEs; `CONTEXT.md`; current
+architecture/recommendation/runbook docs; Showcase claims about Frame; localhost environment example;
+a small deterministic documentation contract checker and root script if needed.
 
 **Out of scope**: changing the Shutter architecture; relaxing server environment validation;
 implementing Frame PDF support; restoring deleted derivative packages; rewriting historical ADRs;
@@ -150,4 +152,3 @@ rendered root README plus changed Showcase pages for broken navigation.
 
 Run `pnpm docs:check` in CI once it is stable. Any product page that describes an unshipped feature
 must link to a status-bearing direction/design record rather than presenting it as current behavior.
-

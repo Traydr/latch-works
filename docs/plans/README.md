@@ -22,9 +22,9 @@ the corresponding plan.
 | [035](035-parallelize-archive-scan.md) | Add bounded scan/stat/hash concurrency | P2 | M | — | DONE |
 | [036](036-pipeline-lockstep-uploads.md) | Add bounded parallel Lockstep uploads | P2 | L | 026 | TODO |
 | [037](037-batch-sync-registration.md) | Batch server registration and ancestor writes | P3 | L | 026, 030, 036 | TODO |
-| [038](038-avoid-repeating-comic-folder-tree.md) | Fetch comic folder structure once per browse key | P2 | M | — | TODO |
-| [039](039-reconcile-shutter-docs.md) | Make docs match Shutter and current scripts | P1 | M | — | TODO |
-| [040](040-frame-view-pdf-spike.md) | Validate and specify Frame PDF reading | P2 | M spike | 033, 034 | TODO |
+| [038](038-avoid-repeating-comic-folder-tree.md) | Fetch comic folder structure once per browse key | P2 | M | — | DONE |
+| [039](039-reconcile-shutter-docs.md) | Make docs match Shutter and current scripts | P1 | M | — | DONE |
+| [040](040-frame-view-pdf-spike.md) | Validate and specify Frame PDF reading | P2 | M spike | 033, 034 | BLOCKED |
 
 Plans without dependencies can run in parallel. Within the dependent chain, execute `025 -> 030`,
 `026 -> 036`, then `026 + 030 + 036 -> 037`. Run the PDF direction spike only after Plans 033 and
@@ -39,6 +39,10 @@ Plans without dependencies can run in parallel. Within the dependent chain, exec
   valid PUT because checksum/SHA metadata were hoisted into the query while also returned as unsigned
   headers. The plan now specifies the verified signable/unhoistable header shape. The partial branch
   is `codex/026-attest-sync-uploads` at `2dcf74e`.
+- **040**: the executor retained a provisional design record on `codex/040-frame-view-pdf-spike` at
+  `b74d7b8`, then stopped because Frame's `package` and `make` gates are user-only. No development or
+  packaged prototype, performance measurements, or worker-resolution evidence was produced, so the
+  branch is not a completed spike and must not be treated as shipped capability.
 
 ## Finding coverage
 
