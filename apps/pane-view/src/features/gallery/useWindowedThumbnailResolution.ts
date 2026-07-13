@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   type GalleryThumbnailRequest,
   getNextPendingThumbnailRetryMs,
+  hasEligibleGalleryThumbnailRequests,
   readCachedGalleryThumbnailState,
   resolveGalleryThumbnailsBatch,
 } from "@/features/gallery/batched-thumbnail-resolver";
@@ -45,12 +46,24 @@ export function useWindowedThumbnailResolution(
 
     let cancelled = false;
     let debounceTimeoutId: number | undefined;
+    let drainTimeoutId: number | undefined;
     let retryTimeoutId: number | undefined;
 
     const applyResolvedState = (
       resolved: Awaited<ReturnType<typeof resolveGalleryThumbnailsBatch>>,
     ) => {
       setResolvedThumbnailUrls(resolved.urls);
+    };
+
+    const resolveAndSchedule = () => {
+      void resolveGalleryThumbnailsBatch(windowedThumbnailRequests).then((resolved) => {
+        if (cancelled) {
+          return;
+        }
+
+        applyResolvedState(resolved);
+        scheduleNext();
+      });
     };
 
     const scheduleRetry = () => {
@@ -64,26 +77,25 @@ export function useWindowedThumbnailResolution(
       }
 
       retryTimeoutId = window.setTimeout(() => {
-        void resolveGalleryThumbnailsBatch(windowedThumbnailRequests).then((resolved) => {
-          if (cancelled) {
-            return;
-          }
-
-          applyResolvedState(resolved);
-          scheduleRetry();
-        });
+        resolveAndSchedule();
       }, retryDelayMs);
     };
 
-    debounceTimeoutId = window.setTimeout(() => {
-      void resolveGalleryThumbnailsBatch(windowedThumbnailRequests).then((resolved) => {
-        if (cancelled) {
-          return;
-        }
+    const scheduleNext = () => {
+      if (cancelled) {
+        return;
+      }
 
-        applyResolvedState(resolved);
-        scheduleRetry();
-      });
+      if (hasEligibleGalleryThumbnailRequests(windowedThumbnailRequests)) {
+        drainTimeoutId = window.setTimeout(resolveAndSchedule, 0);
+        return;
+      }
+
+      scheduleRetry();
+    };
+
+    debounceTimeoutId = window.setTimeout(() => {
+      resolveAndSchedule();
     }, 200);
 
     return () => {
@@ -91,11 +103,14 @@ export function useWindowedThumbnailResolution(
       if (debounceTimeoutId !== undefined) {
         window.clearTimeout(debounceTimeoutId);
       }
+      if (drainTimeoutId !== undefined) {
+        window.clearTimeout(drainTimeoutId);
+      }
       if (retryTimeoutId !== undefined) {
         window.clearTimeout(retryTimeoutId);
       }
     };
-  }, [windowedThumbnailRequests]);
+  }, [resetKey, windowedThumbnailRequests]);
 
   const handleWindowedEntriesChange = useCallback((windowedEntries: BrowserEntry[]) => {
     const requests = dedupeThumbnailRequests(

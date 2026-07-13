@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   __resetGalleryThumbnailResolverForTests,
   getNextPendingThumbnailRetryMs,
+  hasEligibleGalleryThumbnailRequests,
   resolveGalleryThumbnailsBatch,
 } from "./batched-thumbnail-resolver";
 
@@ -134,5 +135,107 @@ describe("resolveGalleryThumbnailsBatch", () => {
 
     await resolveGalleryThumbnailsBatch([{ mediaId: "00000000-0000-4000-8000-000000000003" }]);
     expect(mocks.resolveMediaDeliveryUrls).toHaveBeenCalledTimes(1);
+  });
+
+  it("drains 49 ready requests in batches no larger than 48", async () => {
+    const requests = Array.from({ length: 49 }, (_, index) => ({
+      mediaId: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+    }));
+    mocks.resolveMediaDeliveryUrls.mockImplementation(({ data }) =>
+      Promise.resolve({
+        results: data.items.map((item: { mediaId: string; size: number }) => ({
+          ...item,
+          status: "ready",
+          url: `https://edge.shutter.test/${item.mediaId}`,
+          variant: "thumbnail",
+        })),
+      }),
+    );
+
+    await resolveGalleryThumbnailsBatch(requests);
+    expect(hasEligibleGalleryThumbnailRequests(requests)).toBe(true);
+    await resolveGalleryThumbnailsBatch(requests);
+
+    expect(mocks.resolveMediaDeliveryUrls).toHaveBeenCalledTimes(2);
+    expect(mocks.resolveMediaDeliveryUrls.mock.calls.map(([call]) => call.data.items)).toHaveLength(2);
+    expect(mocks.resolveMediaDeliveryUrls.mock.calls.map(([call]) => call.data.items.length)).toEqual([
+      48,
+      1,
+    ]);
+    expect(hasEligibleGalleryThumbnailRequests(requests)).toBe(false);
+  });
+
+  it("keeps every batch bounded while draining 97 ready requests", async () => {
+    const requests = Array.from({ length: 97 }, (_, index) => ({
+      mediaId: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+    }));
+    mocks.resolveMediaDeliveryUrls.mockImplementation(({ data }) =>
+      Promise.resolve({
+        results: data.items.map((item: { mediaId: string; size: number }) => ({
+          ...item,
+          status: "ready",
+          url: `https://edge.shutter.test/${item.mediaId}`,
+          variant: "thumbnail",
+        })),
+      }),
+    );
+
+    while (hasEligibleGalleryThumbnailRequests(requests)) {
+      await resolveGalleryThumbnailsBatch(requests);
+    }
+
+    expect(mocks.resolveMediaDeliveryUrls.mock.calls.map(([call]) => call.data.items.length)).toEqual([
+      48,
+      48,
+      1,
+    ]);
+  });
+
+  it("keeps immediately eligible work distinct from delayed pending retries", async () => {
+    const requests = Array.from({ length: 49 }, (_, index) => ({
+      mediaId: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+    }));
+    mocks.resolveMediaDeliveryUrls
+      .mockResolvedValueOnce({
+        results: [
+          {
+            mediaId: requests[0]?.mediaId,
+            retryAfterMs: 15_000,
+            size: 720,
+            status: "pending",
+            variant: "thumbnail",
+          },
+          ...requests.slice(1, 48).map((request) => ({
+            mediaId: request.mediaId,
+            size: 720,
+            status: "failed",
+            variant: "thumbnail",
+          })),
+        ],
+      })
+      .mockResolvedValueOnce({
+        results: [
+          {
+            mediaId: requests[48]?.mediaId,
+            size: 720,
+            status: "failed",
+            variant: "thumbnail",
+          },
+        ],
+      });
+
+    await resolveGalleryThumbnailsBatch(requests);
+
+    expect(hasEligibleGalleryThumbnailRequests(requests)).toBe(true);
+    expect(getNextPendingThumbnailRetryMs(requests)).toBeGreaterThan(0);
+
+    await resolveGalleryThumbnailsBatch(requests);
+
+    expect(mocks.resolveMediaDeliveryUrls.mock.calls.map(([call]) => call.data.items.length)).toEqual([
+      48,
+      1,
+    ]);
+    expect(hasEligibleGalleryThumbnailRequests(requests)).toBe(false);
+    expect(getNextPendingThumbnailRetryMs(requests)).toBeGreaterThan(0);
   });
 });
