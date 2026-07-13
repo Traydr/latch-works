@@ -70,8 +70,16 @@ describe("Shutter Pane View client", () => {
     expect(url.pathname).toMatch(/^\/v1\/private\/pane-view\/source\/v1\.active-key\./u);
     expect(url.search).toBe("?w=640&q=75");
     expect(mocks.createSignedGetUrl).toHaveBeenCalledWith(
-      expect.objectContaining({ expiresInSeconds: 86_400, key: image.originalObjectKey }),
+      expect.objectContaining({ expiresInSeconds: 86_700, key: image.originalObjectKey }),
     );
+  });
+
+  it("issues capabilities for the documented 24-hour lifetime", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-13T00:00:00.000Z"));
+    const times = shutterClientTestHooks.claimTimes();
+    expect(times.exp - times.iat).toBe(86_400);
+    vi.useRealTimers();
   });
 
   it("matches Shutter's versioned AES-GCM image capability fixture", async () => {
@@ -145,6 +153,24 @@ describe("Shutter Pane View client", () => {
     vi.unstubAllGlobals();
   });
 
+  it("preserves persisted Shutter failure classification", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          failure: { action: "replace_source", code: "unsupported_media" },
+          status: "failed",
+        }),
+      ),
+    );
+    await expect(resolveShutterPreview(video, 320)).resolves.toEqual({
+      action: "replace_source",
+      code: "unsupported_media",
+      status: "failed",
+    });
+    vi.unstubAllGlobals();
+  });
+
   it("distinguishes retryable Control failures from terminal responses", async () => {
     vi.stubGlobal(
       "fetch",
@@ -157,7 +183,11 @@ describe("Shutter Pane View client", () => {
       status: "pending",
       retryAfterMs: 9_000,
     });
-    await expect(resolveShutterPreview(video, 320)).resolves.toEqual({ status: "failed" });
+    await expect(resolveShutterPreview(video, 320)).resolves.toEqual({
+      action: undefined,
+      code: undefined,
+      status: "failed",
+    });
     vi.unstubAllGlobals();
   });
 

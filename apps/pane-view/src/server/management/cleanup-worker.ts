@@ -1,9 +1,11 @@
 import { deleteStoredObjectsBatch, listStoredObjectsByPrefix } from "@latch-works/media-storage";
-import { and, eq, inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { db } from "../db";
 import {
   favorites,
   folders,
+  type LegacyDerivativeCleanupJobProgress,
+  type LibraryWipeJobProgress,
   libraryEntries,
   type MaintenanceJobProgress,
   maintenanceJobs,
@@ -14,6 +16,11 @@ import {
 } from "../db/schema";
 import { purgeShutterSource } from "../media/shutter-client";
 import { createPaneViewStorageClient } from "../media/storage-client";
+import {
+  deleteLegacyDerivativeBatch,
+  legacyDerivativePrefixes,
+  readLegacyDerivativeBatch,
+} from "./legacy-derivative-storage";
 
 const batchSize = 100;
 const maxBatchDurationMs = 2_000;
@@ -25,14 +32,19 @@ const activeJobStatuses = ["pending", "running"] as const;
 let resumeStarted = false;
 const runningJobs = new Set<string>();
 
-export interface CleanupJobStatus {
+interface CleanupJobStatusBase {
   completedAt: string | null;
   error: string | null;
   id: string;
-  progress: MaintenanceJobProgress;
   startedAt: string | null;
   status: "pending" | "running" | "completed" | "failed";
 }
+
+export type CleanupJobStatus = CleanupJobStatusBase &
+  (
+    | { progress: LegacyDerivativeCleanupJobProgress; type: "legacy_derivative_cleanup" }
+    | { progress: LibraryWipeJobProgress; type: "library_hard_wipe" }
+  );
 
 export async function readCleanupJobStatus({
   jobId,
@@ -47,6 +59,7 @@ export async function readCleanupJobStatus({
       progress: maintenanceJobs.progress,
       startedAt: maintenanceJobs.startedAt,
       status: maintenanceJobs.status,
+      type: maintenanceJobs.type,
     })
     .from(maintenanceJobs)
     .where(eq(maintenanceJobs.id, jobId))
@@ -56,14 +69,20 @@ export async function readCleanupJobStatus({
     return null;
   }
 
-  return {
+  const base = {
     completedAt: job.completedAt?.toISOString() ?? null,
     error: job.error,
     id: job.id,
-    progress: job.progress,
     startedAt: job.startedAt?.toISOString() ?? null,
     status: job.status,
   };
+  return job.type === "legacy_derivative_cleanup"
+    ? {
+        ...base,
+        progress: job.progress as LegacyDerivativeCleanupJobProgress,
+        type: job.type,
+      }
+    : { ...base, progress: job.progress as LibraryWipeJobProgress, type: job.type };
 }
 
 export async function resumePendingMaintenanceJobs(): Promise<void> {
@@ -73,15 +92,16 @@ export async function resumePendingMaintenanceJobs(): Promise<void> {
 
   resumeStarted = true;
 
-  const jobs = await db
-    .select({ id: maintenanceJobs.id })
-    .from(maintenanceJobs)
-    .where(
-      and(
-        eq(maintenanceJobs.type, "library_hard_wipe"),
-        inArray(maintenanceJobs.status, [...activeJobStatuses]),
-      ),
-    );
+  let jobs: { id: string }[];
+  try {
+    jobs = await db
+      .select({ id: maintenanceJobs.id })
+      .from(maintenanceJobs)
+      .where(inArray(maintenanceJobs.status, [...activeJobStatuses]));
+  } catch (error) {
+    resumeStarted = false;
+    throw error;
+  }
 
   for (const job of jobs) {
     void processMaintenanceJob(job.id);
@@ -94,22 +114,37 @@ export function processMaintenanceJob(jobId: string): void {
   }
 
   runningJobs.add(jobId);
-  void runMaintenanceJobLoop(jobId).finally(() => {
-    runningJobs.delete(jobId);
-  });
+  void runMaintenanceJobLoop(jobId).then(
+    (continueInNextTurn) => {
+      runningJobs.delete(jobId);
+      if (continueInNextTurn) queueMicrotask(() => processMaintenanceJob(jobId));
+    },
+    async (error) => {
+      runningJobs.delete(jobId);
+      const message = error instanceof Error ? error.message : "Maintenance job failed";
+      try {
+        await db
+          .update(maintenanceJobs)
+          .set({ error: message, status: "failed" })
+          .where(eq(maintenanceJobs.id, jobId));
+      } catch (updateError) {
+        console.error("[pane-view] Unable to record maintenance job failure", updateError);
+      }
+    },
+  );
 }
 
-async function runMaintenanceJobLoop(jobId: string): Promise<void> {
+async function runMaintenanceJobLoop(jobId: string): Promise<boolean> {
   const startedAt = Date.now();
 
   while (Date.now() - startedAt < maxBatchDurationMs) {
     const continued = await processMaintenanceJobBatch(jobId);
     if (!continued) {
-      return;
+      return false;
     }
   }
 
-  void processMaintenanceJob(jobId);
+  return true;
 }
 
 async function processMaintenanceJobBatch(jobId: string): Promise<boolean> {
@@ -117,6 +152,7 @@ async function processMaintenanceJobBatch(jobId: string): Promise<boolean> {
     .select({
       progress: maintenanceJobs.progress,
       status: maintenanceJobs.status,
+      type: maintenanceJobs.type,
     })
     .from(maintenanceJobs)
     .where(eq(maintenanceJobs.id, jobId))
@@ -137,6 +173,29 @@ async function processMaintenanceJobBatch(jobId: string): Promise<boolean> {
   }
 
   const progress = job.progress;
+  if (job.type === "legacy_derivative_cleanup") {
+    return processLegacyDerivativeCleanupBatch(
+      jobId,
+      progress as LegacyDerivativeCleanupJobProgress,
+    );
+  }
+
+  if ((progress as { phase?: string }).phase === "s3_derivatives") {
+    await updateJobProgress(jobId, {
+      errorCount: progress.errorCount,
+      phase: "s3_originals",
+      processedCount: progress.processedCount,
+    });
+    return true;
+  }
+
+  return processLibraryWipeBatch(jobId, progress as LibraryWipeJobProgress);
+}
+
+async function processLibraryWipeBatch(
+  jobId: string,
+  progress: LibraryWipeJobProgress,
+): Promise<boolean> {
   const storage = createPaneViewStorageClient();
 
   switch (progress.phase) {
@@ -282,6 +341,71 @@ async function processMaintenanceJobBatch(jobId: string): Promise<boolean> {
   }
 }
 
+async function processLegacyDerivativeCleanupBatch(
+  jobId: string,
+  progress: LegacyDerivativeCleanupJobProgress,
+): Promise<boolean> {
+  if (progress.phase === "completed") return false;
+
+  const objects = await readLegacyDerivativeBatch(progress.prefix);
+  if (objects.length === 0) {
+    const prefixIndex = legacyDerivativePrefixes.indexOf(progress.prefix);
+    const nextPrefix = legacyDerivativePrefixes[prefixIndex + 1];
+    if (nextPrefix) {
+      await updateJobProgress(jobId, {
+        ...progress,
+        consecutiveNoProgressCount: 0,
+        prefix: nextPrefix,
+      });
+      return true;
+    }
+
+    await db
+      .update(maintenanceJobs)
+      .set({
+        completedAt: new Date(),
+        progress: { ...progress, phase: "completed" },
+        status: "completed",
+      })
+      .where(eq(maintenanceJobs.id, jobId));
+    return false;
+  }
+
+  const deleted = await deleteLegacyDerivativeBatch(objects);
+  const consecutiveNoProgressCount =
+    deleted.deletedCount === 0 ? progress.consecutiveNoProgressCount + 1 : 0;
+  const nextProgress: LegacyDerivativeCleanupJobProgress = {
+    ...progress,
+    consecutiveNoProgressCount,
+    errorCount: progress.errorCount + deleted.errorCount,
+    lastError:
+      deleted.errorCount > 0
+        ? "One or more legacy derivative objects could not be deleted"
+        : undefined,
+    processedBytes: progress.processedBytes + deleted.deletedBytes,
+    processedCount: progress.processedCount + deleted.deletedCount,
+  };
+
+  if (consecutiveNoProgressCount >= 3) {
+    await db
+      .update(maintenanceJobs)
+      .set({
+        error: "Legacy derivative cleanup made no progress for three consecutive batches.",
+        progress: nextProgress,
+        status: "failed",
+      })
+      .where(eq(maintenanceJobs.id, jobId));
+    return false;
+  }
+
+  await updateJobProgress(jobId, nextProgress);
+  return true;
+}
+
 async function updateJobProgress(jobId: string, progress: MaintenanceJobProgress): Promise<void> {
   await db.update(maintenanceJobs).set({ progress }).where(eq(maintenanceJobs.id, jobId));
 }
+
+export const cleanupWorkerTestHooks = {
+  processLegacyDerivativeCleanupBatch,
+};

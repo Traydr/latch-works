@@ -29,7 +29,10 @@ export const syncRunStatusEnum = pgEnum("sync_run_status", [
 ]);
 export const syncActionEnum = pgEnum("sync_action", ["upload", "update", "keep", "delete"]);
 export const subjectTypeEnum = pgEnum("subject_type", ["library_entry", "collection"]);
-export const maintenanceJobTypeEnum = pgEnum("maintenance_job_type", ["library_hard_wipe"]);
+export const maintenanceJobTypeEnum = pgEnum("maintenance_job_type", [
+  "library_hard_wipe",
+  "legacy_derivative_cleanup",
+]);
 export const maintenanceJobStatusEnum = pgEnum("maintenance_job_status", [
   "pending",
   "running",
@@ -348,7 +351,7 @@ export const favorites = pgTable(
   }),
 );
 
-export interface MaintenanceJobProgress {
+export interface LibraryWipeJobProgress {
   errorCount: number;
   lastError?: string;
   orphanPrefix?: string;
@@ -356,6 +359,18 @@ export interface MaintenanceJobProgress {
   phase: "s3_originals" | "s3_orphan_sweep" | "db_hard_delete" | "completed";
   processedCount: number;
 }
+
+export interface LegacyDerivativeCleanupJobProgress {
+  consecutiveNoProgressCount: number;
+  errorCount: number;
+  lastError?: string;
+  phase: "legacy_prefixes" | "completed";
+  prefix: "thumbnails/" | "previews/";
+  processedBytes: number;
+  processedCount: number;
+}
+
+export type MaintenanceJobProgress = LibraryWipeJobProgress | LegacyDerivativeCleanupJobProgress;
 
 export const maintenanceJobs = pgTable(
   "maintenance_jobs",

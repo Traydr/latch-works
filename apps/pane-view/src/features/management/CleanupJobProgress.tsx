@@ -1,10 +1,13 @@
+import type { LibraryWipeJobProgress } from "../../server/db/schema";
 import type { CleanupJobStatus } from "../../server/management/cleanup-worker";
 
 interface CleanupJobProgressProps {
   job: CleanupJobStatus;
 }
 
-const phaseLabels: Record<CleanupJobStatus["progress"]["phase"], string> = {
+type LibraryWipeCleanupJobStatus = Extract<CleanupJobStatus, { type: "library_hard_wipe" }>;
+
+const phaseLabels: Record<LibraryWipeJobProgress["phase"], string> = {
   completed: "Completed",
   db_hard_delete: "Removing database records",
   s3_originals: "Deleting originals",
@@ -12,6 +15,7 @@ const phaseLabels: Record<CleanupJobStatus["progress"]["phase"], string> = {
 };
 
 export function CleanupJobProgress({ job }: CleanupJobProgressProps) {
+  if (job.type !== "library_hard_wipe") return null;
   const isActive = job.status === "pending" || job.status === "running";
 
   return (
@@ -57,8 +61,8 @@ export function CleanupJobProgress({ job }: CleanupJobProgressProps) {
   );
 }
 
-function estimateProgress(job: CleanupJobStatus): number {
-  const phaseWeights: Record<CleanupJobStatus["progress"]["phase"], number> = {
+function estimateProgress(job: LibraryWipeCleanupJobStatus): number {
+  const phaseWeights: Record<LibraryWipeJobProgress["phase"], number> = {
     completed: 100,
     db_hard_delete: 90,
     s3_originals: 40,

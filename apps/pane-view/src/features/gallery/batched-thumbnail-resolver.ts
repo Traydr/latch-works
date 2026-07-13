@@ -20,7 +20,7 @@ interface ThumbnailCacheEntry {
   url?: string;
 }
 
-const PENDING_RETRY_DELAYS_MS = [15_000, 45_000, 120_000, 300_000] as const;
+const PENDING_RETRY_DELAYS_MS = [5_000, 10_000, 20_000, 30_000, 60_000] as const;
 const cache = new Map<string, ThumbnailCacheEntry>();
 const attempts = new Map<string, number>();
 
@@ -31,7 +31,7 @@ function cacheKey(request: GalleryThumbnailRequest): string {
 function pendingRetryDelayMs(key: string, serverRetryAfterMs?: number): number {
   const attempt = attempts.get(key) ?? 0;
   const baseDelay =
-    PENDING_RETRY_DELAYS_MS[Math.min(attempt, PENDING_RETRY_DELAYS_MS.length - 1)] ?? 300_000;
+    PENDING_RETRY_DELAYS_MS[Math.min(attempt, PENDING_RETRY_DELAYS_MS.length - 1)] ?? 60_000;
   attempts.set(key, attempt + 1);
   const jitter = 0.75 + Math.random() * 0.5;
   return Math.max(serverRetryAfterMs ?? 0, Math.round(baseDelay * jitter));
@@ -62,13 +62,17 @@ function applyResult(result: MediaDeliveryBatchResult): void {
     return;
   }
 
-  cache.set(key, {
-    inFlight: false,
-    nextRetryAt:
-      Date.now() +
-      pendingRetryDelayMs(key, result.status === "pending" ? result.retryAfterMs : undefined),
-    status: "pending",
-  });
+  if (result.status === "pending") {
+    cache.set(key, {
+      inFlight: false,
+      nextRetryAt: Date.now() + pendingRetryDelayMs(key, result.retryAfterMs),
+      status: "pending",
+    });
+    return;
+  }
+
+  attempts.delete(key);
+  cache.set(key, { inFlight: false, status: "failed" });
 }
 
 export function readCachedGalleryThumbnailState(): GalleryThumbnailResolveState {
@@ -122,7 +126,7 @@ export async function resolveGalleryThumbnailsBatch(
   for (const request of requests) {
     const key = cacheKey(request);
     const cached = cache.get(key);
-    if (cached?.status === "ready" || cached?.inFlight) {
+    if (cached?.status === "ready" || cached?.status === "failed" || cached?.inFlight) {
       continue;
     }
 

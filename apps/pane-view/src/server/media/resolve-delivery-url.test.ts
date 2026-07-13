@@ -44,9 +44,14 @@ describe("resolveMediaDeliveryUrlsForVariants", () => {
         ["video", video],
       ]),
     );
+    mocks.resolveImage.mockResolvedValue("https://edge.shutter.test/image");
+    mocks.resolvePreview.mockResolvedValue({
+      status: "ready",
+      url: "https://edge.shutter.test/master",
+    });
   });
 
-  it("deduplicates and returns same-origin thumbnail API URLs", async () => {
+  it("deduplicates and returns private Shutter image URLs", async () => {
     const results = await resolveMediaDeliveryUrlsForVariants([
       { mediaId: "image", size: 321, variant: "thumbnail" },
       { mediaId: "image", size: 321, variant: "thumbnail" },
@@ -56,27 +61,28 @@ describe("resolveMediaDeliveryUrlsForVariants", () => {
         mediaId: "image",
         size: 321,
         status: "ready",
-        url: "/api/media/image/thumbnail?size=320",
+        url: "https://edge.shutter.test/image",
         variant: "thumbnail",
       },
     ]);
-    expect(mocks.resolveImage).not.toHaveBeenCalled();
+    expect(mocks.resolveImage).toHaveBeenCalledWith(image, 321);
     expect(mocks.resolvePreview).not.toHaveBeenCalled();
   });
 
-  it("returns preview API URLs for video renditions", async () => {
+  it("returns pending until video renditions are ready", async () => {
+    mocks.resolvePreview.mockResolvedValueOnce({ status: "pending", retryAfterMs: 5_000 });
     await expect(
       resolveMediaDeliveryUrlsForVariants([{ mediaId: "video", size: 640, variant: "preview" }]),
     ).resolves.toEqual([
       {
         mediaId: "video",
         size: 640,
-        status: "ready",
-        url: "/api/media/video/preview",
+        retryAfterMs: 5_000,
+        status: "pending",
         variant: "preview",
       },
     ]);
-    expect(mocks.resolvePreview).not.toHaveBeenCalled();
+    expect(mocks.resolvePreview).toHaveBeenCalledWith(video, 640);
   });
 
   it("isolates missing items without calling Shutter", async () => {
@@ -90,9 +96,31 @@ describe("resolveMediaDeliveryUrlsForVariants", () => {
       {
         mediaId: "video",
         status: "ready",
-        url: "/api/media/video/thumbnail?size=320",
+        url: "https://edge.shutter.test/master",
         variant: "thumbnail",
       },
     ]);
+  });
+
+  it("limits concurrent Shutter preview checks to six", async () => {
+    const contexts = new Map<string, typeof video>();
+    const items = Array.from({ length: 8 }, (_, index) => {
+      const mediaId = `video-${index}`;
+      contexts.set(mediaId, { ...video, mediaObjectId: mediaId, sha256: `${index}`.repeat(64) });
+      return { mediaId, variant: "thumbnail" as const };
+    });
+    mocks.readContexts.mockResolvedValue(contexts);
+    let active = 0;
+    let maximum = 0;
+    mocks.resolvePreview.mockImplementation(async () => {
+      active += 1;
+      maximum = Math.max(maximum, active);
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      active -= 1;
+      return { status: "ready", url: "https://edge.shutter.test/master" };
+    });
+
+    await resolveMediaDeliveryUrlsForVariants(items);
+    expect(maximum).toBe(6);
   });
 });

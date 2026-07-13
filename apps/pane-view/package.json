@@ -6,7 +6,6 @@
   "scripts": {
     "build": "vite build",
     "check": "pnpm typecheck && pnpm build",
-    "cleanup:legacy-derivatives": "tsx scripts/cleanup-legacy-derivatives.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "dev": "vite dev --port 3000",

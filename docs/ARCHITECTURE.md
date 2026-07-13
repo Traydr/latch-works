@@ -65,7 +65,7 @@ Railway hosts Pane View, Showcase, PostgreSQL, and the Pane View source bucket. 
 and operated independently with its own Control, Edge, executor, database, and rendition storage.
 Pane View requires its Shutter Space API token and capability-key registry at startup.
 
-Before the Shutter-only schema migration is deployed, run
-`pnpm --filter @latch-works/pane-view cleanup:legacy-derivatives` using the production database and
-source-storage configuration. The command is resumable and must finish with zero errors before the
-`thumbnails` table is dropped.
+After deploying the Shutter-only schema migration, open Pane View's Management page and scan
+**Legacy derivative storage**. If objects remain under the retired `thumbnails/` or `previews/`
+prefixes, use the confirmed background cleanup there. The job is resumable, never targets
+`originals/`, and may run while Lockstep sync is active.

@@ -45,6 +45,36 @@ function renderHookPair(): { unmount: () => void } {
   };
 }
 
+function renderSingleHook(): {
+  getState: () => ReturnType<typeof useResolvedMediaUrl> | undefined;
+  unmount: () => void;
+} {
+  let root: Root | undefined;
+  let state: ReturnType<typeof useResolvedMediaUrl> | undefined;
+  const container = document.createElement("div");
+
+  function Host(): ReactNode {
+    state = useResolvedMediaUrl({
+      mediaId: "00000000-0000-4000-8000-000000000002",
+      size: 720,
+      variant: "thumbnail",
+    });
+    return null;
+  }
+
+  act(() => {
+    root = createRoot(container);
+    root.render(createElement(Host));
+  });
+
+  return {
+    getState: () => state,
+    unmount: () => {
+      act(() => root?.unmount());
+    },
+  };
+}
+
 describe("useResolvedMediaUrl", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -53,6 +83,7 @@ describe("useResolvedMediaUrl", () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.useRealTimers();
   });
 
@@ -75,5 +106,30 @@ describe("useResolvedMediaUrl", () => {
     });
 
     unmount();
+  });
+
+  it("keeps polling a visible pending rendition until it is ready", async () => {
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    mocks.resolveMediaDeliveryUrl
+      .mockResolvedValueOnce({ pending: true, retryAfterMs: 5_000 })
+      .mockResolvedValueOnce({ pending: false, url: "https://edge.shutter.test/ready" });
+    const hook = renderSingleHook();
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(hook.getState()).toMatchObject({ loading: true, resolvedUrl: undefined });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(hook.getState()).toEqual({
+      failed: false,
+      loading: false,
+      resolvedUrl: "https://edge.shutter.test/ready",
+    });
+    expect(mocks.resolveMediaDeliveryUrl).toHaveBeenCalledTimes(2);
+    hook.unmount();
   });
 });

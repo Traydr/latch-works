@@ -2,6 +2,7 @@ import { count, isNotNull, isNull, sql } from "drizzle-orm";
 import { db } from "../db";
 import { collections, folders, libraryEntries, mediaObjects } from "../db/schema";
 import { readActiveCleanupJob } from "./guards";
+import { readActiveLegacyDerivativeCleanupJob } from "./legacy-derivative-cleanup";
 import { listRunningSyncRuns, type RunningSyncRun } from "./sync-run-control";
 
 export interface ManagementOverview {
@@ -12,6 +13,7 @@ export interface ManagementOverview {
     processedCount: number;
     status: "pending" | "running";
   } | null;
+  activeLegacyDerivativeCleanupJob: { id: string } | null;
   activeSyncRun: {
     id: string;
     sourceRoot: string;
@@ -38,6 +40,7 @@ export async function readManagementOverview(): Promise<ManagementOverview> {
     mediaObjectStats,
     runningSyncRuns,
     activeCleanupJob,
+    activeLegacyDerivativeCleanupJob,
   ] = await Promise.all([
     db.select({ value: count() }).from(libraryEntries).where(isNull(libraryEntries.deletedAt)),
     db.select({ value: count() }).from(libraryEntries).where(isNotNull(libraryEntries.deletedAt)),
@@ -51,6 +54,7 @@ export async function readManagementOverview(): Promise<ManagementOverview> {
       .from(mediaObjects),
     listRunningSyncRuns(),
     readActiveCleanupJob(),
+    readActiveLegacyDerivativeCleanupJob(),
   ]);
 
   const activeSyncRun = runningSyncRuns[0]
@@ -62,6 +66,7 @@ export async function readManagementOverview(): Promise<ManagementOverview> {
 
   return {
     activeCleanupJob,
+    activeLegacyDerivativeCleanupJob,
     activeSyncRun,
     runningSyncRuns,
     library: {

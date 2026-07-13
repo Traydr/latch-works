@@ -67,7 +67,7 @@ export async function readActiveCleanupJob(): Promise<{
   return {
     errorCount: job.errorCount ?? 0,
     id: job.id,
-    phase: job.phase ?? "s3_derivatives",
+    phase: job.phase ?? "s3_originals",
     processedCount: job.processedCount ?? 0,
     status: job.status,
   };

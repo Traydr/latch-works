@@ -1,16 +1,18 @@
 import { createSignedGetUrl } from "@latch-works/media-storage";
+import { createConcurrencyLimiter } from "./concurrency-limiter";
 import { planSignedOriginalDelivery } from "./delivery";
-import { buildMediaDeliveryApiUrl } from "./delivery-api-url";
 import {
   type MediaThumbnailContext,
   readMediaDeliveryRequest,
   readMediaThumbnailContext,
   readMediaThumbnailContextsByEntryIds,
 } from "./repository";
+import { resolveShutterImageUrl, resolveShutterPreview } from "./shutter-client";
 import { createPaneViewStorageClient } from "./storage-client";
 
 const THUMBNAIL_WIDTH = 320;
 const PREVIEW_WIDTH = 960;
+const shutterControlLimiter = createConcurrencyLimiter(6);
 
 export type MediaDeliveryResolveResult =
   | { pending: true; retryAfterMs: number }
@@ -20,26 +22,30 @@ function renditionWidth(variant: "thumbnail" | "preview", size?: number): number
   return size ?? (variant === "preview" ? PREVIEW_WIDTH : THUMBNAIL_WIDTH);
 }
 
-function supportsShutterRendition(mediaType: MediaThumbnailContext["mediaType"]): boolean {
-  return (
-    mediaType === "image" || mediaType === "gif" || mediaType === "video" || mediaType === "pdf"
-  );
-}
-
-function resolveRenditionApiUrl(
-  mediaId: string,
+async function resolveRendition(
   context: MediaThumbnailContext,
   variant: "thumbnail" | "preview",
   size?: number,
-): MediaDeliveryResolveResult {
-  if (!supportsShutterRendition(context.mediaType)) {
+): Promise<MediaDeliveryResolveResult> {
+  const width = renditionWidth(variant, size);
+  if (context.mediaType === "image" || context.mediaType === "gif") {
+    return { pending: false, url: await resolveShutterImageUrl(context, width) };
+  }
+
+  if (context.mediaType !== "video" && context.mediaType !== "pdf") {
     throw new Error("Rendition unavailable for unsupported media type");
   }
 
-  return {
-    pending: false,
-    url: buildMediaDeliveryApiUrl(mediaId, variant, renditionWidth(variant, size)),
-  };
+  const preview = await shutterControlLimiter.run(() => resolveShutterPreview(context, width));
+  if (preview.status === "pending") {
+    return { pending: true, retryAfterMs: preview.retryAfterMs };
+  }
+  if (preview.status === "failed") {
+    throw new Error(
+      preview.code ? `Shutter rendition failed (${preview.code})` : "Shutter rendition unavailable",
+    );
+  }
+  return { pending: false, url: preview.url };
 }
 
 async function resolveOriginalDeliveryUrl(mediaId: string): Promise<string> {
@@ -67,7 +73,7 @@ export async function resolveMediaDeliveryUrlForVariant({
   }
   const context = await readMediaThumbnailContext({ mediaId });
   if (!context) throw new Error("Media not found");
-  return resolveRenditionApiUrl(mediaId, context, variant, size);
+  return resolveRendition(context, variant, size);
 }
 
 export interface MediaDeliveryBatchResolveItem {
@@ -117,7 +123,7 @@ export async function resolveMediaDeliveryUrlsForVariants(
           result = await resolveMediaDeliveryUrlForVariant(item);
         } else {
           if (!context) throw new Error("Media not found");
-          result = resolveRenditionApiUrl(item.mediaId, context, item.variant, item.size);
+          result = await resolveRendition(context, item.variant, item.size);
         }
         return result.pending
           ? {

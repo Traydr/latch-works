@@ -10,6 +10,8 @@ import {
   softDeleteFolderSubtree,
 } from "../../server/management/folder-delete";
 import { assertNoActiveSyncRun } from "../../server/management/guards";
+import { scheduleLegacyDerivativeCleanup } from "../../server/management/legacy-derivative-cleanup";
+import { readLegacyDerivativeInventory } from "../../server/management/legacy-derivative-storage";
 import { scheduleLibraryWipe } from "../../server/management/library-wipe";
 import { readManagementOverview } from "../../server/management/overview";
 import {
@@ -40,6 +42,10 @@ const cancelSyncRunSchema = z.object({
   syncRunId: z.string().uuid(),
 });
 
+const legacyDerivativeCleanupSchema = z.object({
+  confirmation: z.string(),
+});
+
 export const getManagementOverview = createServerFn({ method: "GET" }).handler(async () => {
   await assertWebSessionAuthorized();
   await resumePendingMaintenanceJobs();
@@ -50,6 +56,18 @@ export const getSyncRunHistory = createServerFn({ method: "GET" }).handler(async
   await assertWebSessionAuthorized();
   return readSyncRunHistory();
 });
+
+export const getLegacyDerivativeInventory = createServerFn({ method: "GET" }).handler(async () => {
+  await assertWebSessionAuthorized();
+  return readLegacyDerivativeInventory();
+});
+
+export const startLegacyDerivativeCleanup = createServerFn({ method: "POST" })
+  .inputValidator(legacyDerivativeCleanupSchema)
+  .handler(async ({ data }) => {
+    await assertWebSessionAuthorized();
+    return scheduleLegacyDerivativeCleanup(data);
+  });
 
 export const deleteFolders = createServerFn({ method: "POST" })
   .inputValidator(folderDeleteSchema)

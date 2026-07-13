@@ -183,6 +183,47 @@ export interface ListStoredObjectsPage {
   nextContinuationToken: string | undefined;
 }
 
+export interface StoredObjectSummary {
+  key: string;
+  size: number;
+}
+
+export interface ListStoredObjectSummariesPage {
+  nextContinuationToken: string | undefined;
+  objects: StoredObjectSummary[];
+}
+
+export async function listStoredObjectSummariesByPrefix({
+  continuationToken,
+  limit = 1000,
+  prefix,
+  storage,
+}: {
+  continuationToken?: string;
+  limit?: number;
+  prefix: string;
+  storage: S3StorageClient;
+}): Promise<ListStoredObjectSummariesPage> {
+  const response = await storage.client.send(
+    new ListObjectsV2Command({
+      Bucket: storage.bucket,
+      ContinuationToken: continuationToken,
+      MaxKeys: limit,
+      Prefix: prefix,
+    }),
+  );
+
+  const objects =
+    response.Contents?.flatMap((entry) =>
+      entry.Key ? [{ key: entry.Key, size: Number(entry.Size ?? 0) }] : [],
+    ) ?? [];
+
+  return {
+    objects,
+    nextContinuationToken: response.IsTruncated ? response.NextContinuationToken : undefined,
+  };
+}
+
 export async function listStoredObjectsByPrefix({
   continuationToken,
   limit = 1000,
@@ -194,44 +235,47 @@ export async function listStoredObjectsByPrefix({
   prefix: string;
   storage: S3StorageClient;
 }): Promise<ListStoredObjectsPage> {
-  const response = await storage.client.send(
-    new ListObjectsV2Command({
-      Bucket: storage.bucket,
-      ContinuationToken: continuationToken,
-      MaxKeys: limit,
-      Prefix: prefix,
-    }),
-  );
-
-  const keys =
-    response.Contents?.map((entry) => entry.Key).filter((key): key is string => Boolean(key)) ?? [];
+  const page = await listStoredObjectSummariesByPrefix({
+    continuationToken,
+    limit,
+    prefix,
+    storage,
+  });
 
   return {
-    keys,
-    nextContinuationToken: response.IsTruncated ? response.NextContinuationToken : undefined,
+    keys: page.objects.map((object) => object.key),
+    nextContinuationToken: page.nextContinuationToken,
   };
 }
 
 export async function deleteStoredObjectsBatch({
   keys,
+  maxConcurrent = keys.length || 1,
   onError,
   storage,
 }: {
   keys: string[];
+  maxConcurrent?: number;
   onError?: (error: unknown, key: string) => void;
   storage: S3StorageClient;
 }): Promise<{ deleted: number; errors: number }> {
   let deleted = 0;
   let errors = 0;
 
+  const queue = [...keys];
+  const workerCount = Math.min(Math.max(1, maxConcurrent), queue.length);
   await Promise.all(
-    keys.map(async (key) => {
-      try {
-        await deleteStoredObject({ key, storage });
-        deleted += 1;
-      } catch (error) {
-        errors += 1;
-        onError?.(error, key);
+    Array.from({ length: workerCount }, async () => {
+      while (queue.length > 0) {
+        const key = queue.shift();
+        if (!key) continue;
+        try {
+          await deleteStoredObject({ key, storage });
+          deleted += 1;
+        } catch (error) {
+          errors += 1;
+          onError?.(error, key);
+        }
       }
     }),
   );

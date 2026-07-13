@@ -71,6 +71,13 @@
       "when": 1783872060000,
       "tag": "0009_shutter_only",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1783872120000,
+      "tag": "0010_legacy_derivative_cleanup",
+      "breakpoints": true
     }
   ]
 }

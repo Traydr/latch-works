@@ -10,8 +10,8 @@ import {
 import { createPaneViewStorageClient } from "./storage-client";
 
 const SHUTTER_WIDTHS = [320, 640, 750, 828, 960, 1080, 1280, 1668, 1920, 2048, 2560, 3200, 3840];
-const CAPABILITY_LIFETIME_SECONDS = 23 * 60 * 60;
-const SOURCE_LOCATOR_LIFETIME_SECONDS = 24 * 60 * 60;
+const CAPABILITY_LIFETIME_SECONDS = 24 * 60 * 60;
+const SOURCE_LOCATOR_LIFETIME_SECONDS = 24 * 60 * 60 + 5 * 60;
 type CapabilityPurpose = "image_source" | "master_preview" | "preview_job";
 type PreviewKind = "video" | "pdf";
 type CommonClaims = {
@@ -28,7 +28,7 @@ export type CapabilityClaims =
 export type ShutterPreviewResult =
   | { status: "pending"; retryAfterMs: number }
   | { status: "ready"; url: string }
-  | { status: "failed" };
+  | { action?: string; code?: string; status: "failed" };
 
 function retryAfterMs(response: Response): number {
   const seconds = Number(response.headers.get("retry-after"));
@@ -120,6 +120,7 @@ async function issueCapability(
 }
 
 export const shutterClientTestHooks = {
+  claimTimes,
   issueCapability,
 };
 
@@ -199,11 +200,20 @@ export async function resolveShutterPreview(
       ? { status: "pending", retryAfterMs: retryAfterMs(response) }
       : { status: "failed" };
   }
-  const result = (await response.json()) as { status?: unknown };
+  const result = (await response.json()) as {
+    failure?: { action?: unknown; code?: unknown };
+    status?: unknown;
+  };
   if (result.status === "pending" || result.status === "processing") {
     return { status: "pending", retryAfterMs: retryAfterMs(response) };
   }
-  if (result.status !== "ready") return { status: "failed" };
+  if (result.status !== "ready") {
+    return {
+      action: typeof result.failure?.action === "string" ? result.failure.action : undefined,
+      code: typeof result.failure?.code === "string" ? result.failure.code : undefined,
+      status: "failed",
+    };
+  }
   const capability = await issueCapability({
     space_id: env.SHUTTER_SPACE_ID,
     source_id: context.sha256,

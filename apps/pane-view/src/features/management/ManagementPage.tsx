@@ -1,17 +1,20 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { getLibrarySnapshot } from "../library/library-service";
 import { CleanupJobProgress } from "./CleanupJobProgress";
 import { FolderPicker } from "./FolderPicker";
 import { formatBytes } from "./format-bytes";
+import { LegacyDerivativeCleanupProgress } from "./LegacyDerivativeCleanupProgress";
 import {
   useCancelAllRunningSyncRunsMutation,
   useCancelSyncRunMutation,
   useCleanupJobStatusQuery,
   useDeleteFoldersMutation,
+  useLegacyDerivativeCleanupMutation,
+  useLegacyDerivativeInventoryQuery,
   useManagementOverviewQuery,
   useSyncRunHistoryQuery,
   useWipeLibraryMutation,
@@ -25,11 +28,15 @@ export function ManagementPage() {
   const wipeMutation = useWipeLibraryMutation();
   const cancelSyncRunMutation = useCancelSyncRunMutation();
   const cancelAllSyncRunsMutation = useCancelAllRunningSyncRunsMutation();
+  const legacyCleanupMutation = useLegacyDerivativeCleanupMutation();
 
   const [selectedFolders, setSelectedFolders] = useState<string[]>([]);
   const [wipeConfirm, setWipeConfirm] = useState("");
   const [syncToken, setSyncToken] = useState("");
   const [trackedJobId, setTrackedJobId] = useState<string | null>(null);
+  const [trackedLegacyJobId, setTrackedLegacyJobId] = useState<string | null>(null);
+  const [legacyCleanupConfirm, setLegacyCleanupConfirm] = useState("");
+  const [legacyInventoryEnabled, setLegacyInventoryEnabled] = useState(false);
   const [folderSnapshot, setFolderSnapshot] = useState<Awaited<
     ReturnType<typeof getLibrarySnapshot>
   > | null>(null);
@@ -38,6 +45,25 @@ export function ManagementPage() {
   const overview = overviewQuery.data;
   const activeJobId = trackedJobId ?? overview?.activeCleanupJob?.id ?? null;
   const cleanupJobQuery = useCleanupJobStatusQuery(activeJobId);
+  const activeLegacyJobId =
+    trackedLegacyJobId ?? overview?.activeLegacyDerivativeCleanupJob?.id ?? null;
+  const legacyCleanupJobQuery = useCleanupJobStatusQuery(activeLegacyJobId);
+  const legacyInventoryQuery = useLegacyDerivativeInventoryQuery(legacyInventoryEnabled);
+  const legacyCleanupActive = Boolean(
+    activeLegacyJobId &&
+      (!legacyCleanupJobQuery.data ||
+        legacyCleanupJobQuery.data.status === "pending" ||
+        legacyCleanupJobQuery.data.status === "running"),
+  );
+
+  useEffect(() => {
+    const status = legacyCleanupJobQuery.data?.status;
+    if (status === "completed" || status === "failed") {
+      setLegacyInventoryEnabled(true);
+      void legacyInventoryQuery.refetch();
+      void overviewQuery.refetch();
+    }
+  }, [legacyCleanupJobQuery.data?.status, legacyInventoryQuery.refetch, overviewQuery.refetch]);
 
   const runningSyncCount = overview?.runningSyncRuns.length ?? 0;
   const maintenanceBlocked = Boolean(runningSyncCount > 0 || overview?.activeCleanupJob);
@@ -95,6 +121,12 @@ export function ManagementPage() {
     setSyncToken("");
   };
 
+  const handleLegacyCleanup = async () => {
+    const result = await legacyCleanupMutation.mutateAsync(legacyCleanupConfirm);
+    setTrackedLegacyJobId(result.jobId);
+    setLegacyCleanupConfirm("");
+  };
+
   const cleanupJob = cleanupJobQuery.data;
 
   return (
@@ -137,6 +169,104 @@ export function ManagementPage() {
               ))}
             </div>
           )}
+        </section>
+
+        <section className="space-y-4 rounded-xl border border-border p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="max-w-2xl">
+              <h2 className="text-sm font-semibold text-balance">Legacy derivative storage</h2>
+              <p className="text-sm text-muted-foreground text-pretty">
+                Find thumbnails and previews left in Pane View storage before Shutter became the
+                only rendition provider. This scan never includes originals.
+              </p>
+            </div>
+            <Button
+              disabled={legacyInventoryQuery.isFetching}
+              onClick={() => {
+                setLegacyInventoryEnabled(true);
+                if (legacyInventoryEnabled) void legacyInventoryQuery.refetch();
+              }}
+              type="button"
+              variant="outline"
+            >
+              {legacyInventoryQuery.isFetching ? "Scanning…" : "Scan legacy storage"}
+            </Button>
+          </div>
+
+          {legacyInventoryQuery.error ? (
+            <p className="text-sm text-destructive">
+              {legacyInventoryQuery.error instanceof Error
+                ? legacyInventoryQuery.error.message
+                : "Unable to scan legacy storage."}
+            </p>
+          ) : null}
+
+          {legacyInventoryQuery.data ? (
+            <div className="grid gap-3 sm:grid-cols-3">
+              {legacyInventoryQuery.data.prefixes.map((item) => (
+                <div
+                  className="rounded-lg bg-muted/40 p-3 ring-1 ring-inset ring-border"
+                  key={item.prefix}
+                >
+                  <p className="font-mono text-xs text-muted-foreground">{item.prefix}</p>
+                  <p className="mt-1 tabular-nums text-sm font-medium">
+                    {item.count.toLocaleString()} objects · {formatBytes(item.bytes)}
+                  </p>
+                </div>
+              ))}
+              <div className="rounded-lg bg-muted/40 p-3 ring-1 ring-inset ring-border">
+                <p className="text-xs text-muted-foreground">Total reclaimable</p>
+                <p className="mt-1 tabular-nums text-sm font-medium">
+                  {legacyInventoryQuery.data.totalCount.toLocaleString()} objects ·{" "}
+                  {formatBytes(legacyInventoryQuery.data.totalBytes)}
+                </p>
+              </div>
+            </div>
+          ) : null}
+
+          {legacyCleanupJobQuery.data ? (
+            <LegacyDerivativeCleanupProgress
+              job={legacyCleanupJobQuery.data}
+              totalCount={legacyInventoryQuery.data?.totalCount}
+            />
+          ) : null}
+
+          {legacyInventoryQuery.data && legacyInventoryQuery.data.totalCount > 0 ? (
+            <div className="space-y-3 rounded-lg bg-destructive/5 p-3 ring-1 ring-inset ring-destructive/30">
+              <p className="text-sm text-muted-foreground text-pretty">
+                This permanently deletes only objects under <code>thumbnails/</code> and{" "}
+                <code>previews/</code>. Type the confirmation phrase to continue.
+              </p>
+              <label className="grid gap-1 text-sm" htmlFor="legacy-derivative-confirm">
+                <span>Type DELETE LEGACY DERIVATIVES to confirm</span>
+                <Input
+                  id="legacy-derivative-confirm"
+                  onChange={(event) => setLegacyCleanupConfirm(event.target.value)}
+                  value={legacyCleanupConfirm}
+                />
+              </label>
+              <Button
+                className="active:scale-[0.96] transition-transform"
+                disabled={
+                  legacyCleanupActive ||
+                  legacyCleanupMutation.isPending ||
+                  legacyCleanupConfirm !== "DELETE LEGACY DERIVATIVES"
+                }
+                onClick={() => void handleLegacyCleanup()}
+                type="button"
+                variant="destructive"
+              >
+                Delete legacy derivatives
+              </Button>
+              {legacyCleanupMutation.error ? (
+                <p className="text-sm text-destructive">
+                  {legacyCleanupMutation.error instanceof Error
+                    ? legacyCleanupMutation.error.message
+                    : "Unable to start legacy cleanup."}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
         </section>
 
         {cleanupJob && (cleanupJob.status === "pending" || cleanupJob.status === "running") ? (

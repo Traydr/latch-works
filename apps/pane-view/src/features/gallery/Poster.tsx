@@ -37,7 +37,7 @@ export function Poster({
           objectFit="cover"
           priority={priority}
           readyUrl={resolvedThumbnailUrl}
-          resolveMissing={!resolvedThumbnailUrl}
+          resolveMissing={false}
           variant="thumbnail"
           width={cardWidth}
         />

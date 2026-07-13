@@ -112,9 +112,7 @@ describe("resolveGalleryThumbnailsBatch", () => {
     expect(retryDelayMs).toBeLessThanOrEqual(30_000);
   });
 
-  it("retries failed batch items instead of caching them terminally", async () => {
-    vi.useFakeTimers();
-
+  it("caches terminal batch failures without scheduling another poll", async () => {
     mocks.resolveMediaDeliveryUrls.mockResolvedValueOnce({
       results: [
         {
@@ -132,29 +130,9 @@ describe("resolveGalleryThumbnailsBatch", () => {
     expect(first.urls).toEqual({});
     expect(
       getNextPendingThumbnailRetryMs([{ mediaId: "00000000-0000-4000-8000-000000000003" }]),
-    ).not.toBeNull();
+    ).toBeNull();
 
-    await vi.advanceTimersByTimeAsync(300_000);
-
-    mocks.resolveMediaDeliveryUrls.mockResolvedValueOnce({
-      results: [
-        {
-          mediaId: "00000000-0000-4000-8000-000000000003",
-          size: 720,
-          status: "ready",
-          url: "https://edge.shutter.test/recovered",
-          variant: "thumbnail",
-        },
-      ],
-    });
-
-    const second = await resolveGalleryThumbnailsBatch([
-      { mediaId: "00000000-0000-4000-8000-000000000003" },
-    ]);
-    expect(second.urls).toEqual({
-      "00000000-0000-4000-8000-000000000003": "https://edge.shutter.test/recovered",
-    });
-
-    vi.useRealTimers();
+    await resolveGalleryThumbnailsBatch([{ mediaId: "00000000-0000-4000-8000-000000000003" }]);
+    expect(mocks.resolveMediaDeliveryUrls).toHaveBeenCalledTimes(1);
   });
 });

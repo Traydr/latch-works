@@ -9,9 +9,7 @@ import {
   recordResolveSuccess,
 } from "./resolve-throttle";
 
-const MAX_THUMBNAIL_PENDING_POLLS_PER_MOUNT = 3;
-const MAX_PREVIEW_PENDING_POLLS_PER_MOUNT = 30;
-const PENDING_RETRY_DELAYS_MS = [15_000, 45_000, 120_000, 300_000] as const;
+const PENDING_RETRY_DELAYS_MS = [5_000, 10_000, 20_000, 30_000, 60_000] as const;
 
 type ResolveInput = {
   mediaId: string;
@@ -37,18 +35,12 @@ function resolveCacheKey({ mediaId, size, variant }: ResolveInput): string {
   return `${variant}:${mediaId}:${size ?? "default"}`;
 }
 
-function maxPendingPollsForVariant(variant: ResolveInput["variant"]): number {
-  return variant === "preview"
-    ? MAX_PREVIEW_PENDING_POLLS_PER_MOUNT
-    : MAX_THUMBNAIL_PENDING_POLLS_PER_MOUNT;
-}
-
-function pendingRetryDelayMs(attempt: number): number {
-  const fallbackDelay = 300_000;
+function pendingRetryDelayMs(attempt: number, serverRetryAfterMs?: number): number {
+  const fallbackDelay = 60_000;
   const baseDelay =
     PENDING_RETRY_DELAYS_MS[Math.min(attempt, PENDING_RETRY_DELAYS_MS.length - 1)] ?? fallbackDelay;
   const jitter = 0.75 + Math.random() * 0.5;
-  return Math.round(baseDelay * jitter);
+  return Math.max(serverRetryAfterMs ?? 0, Math.round(baseDelay * jitter));
 }
 
 async function resolveSharedMediaUrl(input: ResolveInput): Promise<ResolveOutcome> {
@@ -82,7 +74,7 @@ async function resolveSharedMediaUrl(input: ResolveInput): Promise<ResolveOutcom
       });
 
       if (result.pending) {
-        const retryAfterMs = pendingRetryDelayMs(entry.pendingAttempt);
+        const retryAfterMs = pendingRetryDelayMs(entry.pendingAttempt, result.retryAfterMs);
         entry.pendingAttempt += 1;
         entry.nextRetryAt = Date.now() + retryAfterMs;
         return { retryAfterMs, status: "pending" };
@@ -145,7 +137,7 @@ export function useResolvedMediaUrl({
     setResolvedUrl(fallbackReadyUrl);
 
     void (async () => {
-      for (let attempt = 0; attempt < maxPendingPollsForVariant(variant); attempt += 1) {
+      while (!cancelled) {
         if (cancelled) {
           return;
         }
@@ -176,17 +168,6 @@ export function useResolvedMediaUrl({
         }
 
         await delay(result.retryAfterMs);
-      }
-
-      if (!cancelled) {
-        if (fallbackReadyUrl) {
-          setResolvedUrl(fallbackReadyUrl);
-          setLoading(false);
-          setFailed(false);
-        } else {
-          setFailed(true);
-          setLoading(false);
-        }
       }
     })();
 
