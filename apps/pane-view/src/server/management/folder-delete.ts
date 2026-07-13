@@ -55,37 +55,40 @@ export async function softDeleteFolderSubtree({
     assertDeletableFolderPath(path);
   }
 
-  const results: FolderDeleteResult[] = [];
+  const now = new Date();
 
-  for (const path of normalizedPaths) {
-    const pattern = `${escapeLikePattern(path)}/%`;
-    const now = new Date();
+  return db.transaction(async (tx) => {
+    const results: FolderDeleteResult[] = [];
 
-    const deletedEntries = await db
-      .update(libraryEntries)
-      .set({ deletedAt: now })
-      .where(
-        and(
-          isNull(libraryEntries.deletedAt),
-          or(eq(libraryEntries.parentPath, path), ilike(libraryEntries.logicalPath, pattern)),
-        ),
-      )
-      .returning({ id: libraryEntries.id });
+    for (const path of normalizedPaths) {
+      const pattern = `${escapeLikePattern(path)}/%`;
 
-    const deletedFolders = await db
-      .update(folders)
-      .set({ deletedAt: now })
-      .where(
-        and(isNull(folders.deletedAt), or(eq(folders.path, path), ilike(folders.path, pattern))),
-      )
-      .returning({ id: folders.id });
+      const deletedEntries = await tx
+        .update(libraryEntries)
+        .set({ deletedAt: now })
+        .where(
+          and(
+            isNull(libraryEntries.deletedAt),
+            or(eq(libraryEntries.parentPath, path), ilike(libraryEntries.logicalPath, pattern)),
+          ),
+        )
+        .returning({ id: libraryEntries.id });
 
-    results.push({
-      entriesDeleted: deletedEntries.length,
-      foldersDeleted: deletedFolders.length,
-      path,
-    });
-  }
+      const deletedFolders = await tx
+        .update(folders)
+        .set({ deletedAt: now })
+        .where(
+          and(isNull(folders.deletedAt), or(eq(folders.path, path), ilike(folders.path, pattern))),
+        )
+        .returning({ id: folders.id });
 
-  return results;
+      results.push({
+        entriesDeleted: deletedEntries.length,
+        foldersDeleted: deletedFolders.length,
+        path,
+      });
+    }
+
+    return results;
+  });
 }
