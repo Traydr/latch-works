@@ -1,4 +1,6 @@
+import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { syncRuns } from "../db/schema";
 
 function createInsertChain(resolvedValue: unknown) {
   const returningMock = vi.fn().mockResolvedValue(resolvedValue);
@@ -30,6 +32,7 @@ const mocks = vi.hoisted(() => {
   const returningMock = vi.fn();
   const transactionMock = vi.fn();
   const rootInsertMock = vi.fn();
+  const rootSelectMock = vi.fn();
   const txClient = {
     insert: vi.fn(),
     select: vi.fn(),
@@ -39,6 +42,7 @@ const mocks = vi.hoisted(() => {
   return {
     returningMock,
     rootInsertMock,
+    rootSelectMock,
     setMock,
     transactionMock,
     txClient,
@@ -50,6 +54,7 @@ const mocks = vi.hoisted(() => {
 vi.mock("../db", () => ({
   db: {
     insert: mocks.rootInsertMock,
+    select: mocks.rootSelectMock,
     transaction: mocks.transactionMock,
     update: mocks.updateMock,
   },
@@ -63,6 +68,7 @@ describe("finalizeSyncRun", () => {
     mocks.whereMock.mockReset();
     mocks.setMock.mockReset();
     mocks.returningMock.mockReset();
+    mocks.rootSelectMock.mockReset();
 
     mocks.updateMock.mockReturnValue({ set: mocks.setMock });
     mocks.setMock.mockReturnValue({ where: mocks.whereMock });
@@ -87,6 +93,9 @@ describe("finalizeSyncRun", () => {
         error: null,
         status: "completed",
       }),
+    );
+    expect(mocks.whereMock).toHaveBeenCalledWith(
+      and(eq(syncRuns.id, "run-1"), eq(syncRuns.status, "running")),
     );
   });
 
@@ -129,6 +138,59 @@ describe("finalizeSyncRun", () => {
         status: "failed",
       }),
     );
+  });
+
+  it("accepts an exact terminal-status replay without updating details", async () => {
+    mocks.returningMock.mockResolvedValue([]);
+    const select = createSelectChain([{ status: "completed" }]);
+    mocks.rootSelectMock.mockReturnValue({ from: select.fromMock });
+
+    const result = await finalizeSyncRun({
+      input: {
+        counts: { planned: 2, pushed: 2 },
+        status: "completed",
+        syncRunId: "run-1",
+      },
+    });
+
+    expect(result).toEqual({ status: "database" });
+    expect(select.whereMock).toHaveBeenCalledWith(eq(syncRuns.id, "run-1"));
+  });
+
+  it("rejects a cancelled run finalized as completed", async () => {
+    mocks.returningMock.mockResolvedValue([]);
+    const select = createSelectChain([{ status: "cancelled" }]);
+    mocks.rootSelectMock.mockReturnValue({ from: select.fromMock });
+
+    await expect(
+      finalizeSyncRun({
+        input: {
+          counts: { planned: 2, pushed: 2 },
+          status: "completed",
+          syncRunId: "run-1",
+        },
+      }),
+    ).rejects.toThrow("Unable to finalize sync run.");
+
+    expect(select.whereMock).toHaveBeenCalledWith(eq(syncRuns.id, "run-1"));
+  });
+
+  it("rejects a completed run finalized as failed", async () => {
+    mocks.returningMock.mockResolvedValue([]);
+    const select = createSelectChain([{ status: "completed" }]);
+    mocks.rootSelectMock.mockReturnValue({ from: select.fromMock });
+
+    await expect(
+      finalizeSyncRun({
+        input: {
+          error: "1 item(s) failed during push",
+          status: "failed",
+          syncRunId: "run-1",
+        },
+      }),
+    ).rejects.toThrow("Unable to finalize sync run.");
+
+    expect(select.whereMock).toHaveBeenCalledWith(eq(syncRuns.id, "run-1"));
   });
 });
 

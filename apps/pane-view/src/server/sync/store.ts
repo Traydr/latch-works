@@ -1,5 +1,5 @@
 import { getBaseName, getParentPath, type MediaType } from "@latch-works/media-domain";
-import { eq, isNull } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { db } from "../db";
 import { folders, libraryEntries, mediaObjects, syncRunItems, syncRuns } from "../db/schema";
 import { assertNoActiveCleanupJob } from "../management/guards";
@@ -185,14 +185,24 @@ export async function finalizeSyncRun({
       error: input.error ?? null,
       status: input.status,
     })
-    .where(eq(syncRuns.id, input.syncRunId))
+    .where(and(eq(syncRuns.id, input.syncRunId), eq(syncRuns.status, "running")))
     .returning({ id: syncRuns.id });
 
-  if (!syncRun) {
-    throw new Error("Unable to finalize sync run.");
+  if (syncRun) {
+    return { status: "database" };
   }
 
-  return { status: "database" };
+  const [existingSyncRun] = await db
+    .select({ status: syncRuns.status })
+    .from(syncRuns)
+    .where(eq(syncRuns.id, input.syncRunId))
+    .limit(1);
+
+  if (existingSyncRun?.status === input.status) {
+    return { status: "database" };
+  }
+
+  throw new Error("Unable to finalize sync run.");
 }
 
 export async function markRemoteDeleted({
