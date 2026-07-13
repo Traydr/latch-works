@@ -15,6 +15,14 @@ function image(path: string, name: string): MediaItem {
   };
 }
 
+function gif(path: string, name: string): MediaItem {
+  return {
+    ...image(path, name),
+    extension: 'gif',
+    mediaType: 'gif',
+  };
+}
+
 describe('buildComicEntries', () => {
   it('groups image pages by containing folder and sorts comics and pages naturally', () => {
     const comics = buildComicEntries([
@@ -53,6 +61,47 @@ describe('buildComicEntries', () => {
     );
 
     expect(comics.map((comic) => comic.name)).toEqual(['comic']);
+  });
+
+  it('treats GIFs as comic pages and preserves Windows absolute paths', () => {
+    const comics = buildComicEntries(
+      [
+        image('C:\\root\\root-page.jpg', 'root-page.jpg'),
+        gif('C:\\root\\my_comic-title\\page-2.gif', 'page-2.gif'),
+        image('C:\\root\\my_comic-title\\page-1.jpg', 'page-1.jpg'),
+        {
+          ...image('C:\\root\\my_comic-title\\clip.mp4', 'clip.mp4'),
+          extension: 'mp4',
+          mediaType: 'video',
+        },
+      ],
+      'C:\\root',
+    );
+
+    expect(comics).toHaveLength(1);
+    expect(comics[0]).toMatchObject({
+      cover: { id: 'C:\\root\\my_comic-title\\page-1.jpg' },
+      folderPath: 'C:\\root\\my_comic-title',
+      name: 'my comic title',
+    });
+    expect(comics[0]?.pages.map((page) => page.name)).toEqual(['page-1.jpg', 'page-2.gif']);
+  });
+
+  it('preserves POSIX absolute paths while excluding root files', () => {
+    const comics = buildComicEntries(
+      [
+        image('/Users/gallery/root-page.jpg', 'root-page.jpg'),
+        image('/Users/gallery/comic/page-10.jpg', 'page-10.jpg'),
+        image('/Users/gallery/comic/page-2.jpg', 'page-2.jpg'),
+      ],
+      '/Users/gallery',
+    );
+
+    expect(comics[0]).toMatchObject({
+      folderPath: '/Users/gallery/comic',
+      name: 'comic',
+    });
+    expect(comics[0]?.pages.map((page) => page.name)).toEqual(['page-2.jpg', 'page-10.jpg']);
   });
 
   it('sorts comic entries by their first A-Z page item', () => {

@@ -1,3 +1,6 @@
+packages:
+  - "."
+  - "../../packages/media-domain"
 allowBuilds:
   electron: true
   electron-winstaller: true
