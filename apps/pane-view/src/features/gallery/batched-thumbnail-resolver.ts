@@ -117,9 +117,7 @@ export function getNextPendingThumbnailRetryMs(requests: GalleryThumbnailRequest
   return earliestDelay;
 }
 
-export function hasEligibleGalleryThumbnailRequests(
-  requests: GalleryThumbnailRequest[],
-): boolean {
+export function hasEligibleGalleryThumbnailRequests(requests: GalleryThumbnailRequest[]): boolean {
   const now = Date.now();
 
   return requests.some((request) => {

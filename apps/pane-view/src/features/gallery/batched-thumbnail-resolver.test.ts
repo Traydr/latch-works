@@ -157,11 +157,12 @@ describe("resolveGalleryThumbnailsBatch", () => {
     await resolveGalleryThumbnailsBatch(requests);
 
     expect(mocks.resolveMediaDeliveryUrls).toHaveBeenCalledTimes(2);
-    expect(mocks.resolveMediaDeliveryUrls.mock.calls.map(([call]) => call.data.items)).toHaveLength(2);
-    expect(mocks.resolveMediaDeliveryUrls.mock.calls.map(([call]) => call.data.items.length)).toEqual([
-      48,
-      1,
-    ]);
+    expect(mocks.resolveMediaDeliveryUrls.mock.calls.map(([call]) => call.data.items)).toHaveLength(
+      2,
+    );
+    expect(
+      mocks.resolveMediaDeliveryUrls.mock.calls.map(([call]) => call.data.items.length),
+    ).toEqual([48, 1]);
     expect(hasEligibleGalleryThumbnailRequests(requests)).toBe(false);
   });
 
@@ -184,11 +185,9 @@ describe("resolveGalleryThumbnailsBatch", () => {
       await resolveGalleryThumbnailsBatch(requests);
     }
 
-    expect(mocks.resolveMediaDeliveryUrls.mock.calls.map(([call]) => call.data.items.length)).toEqual([
-      48,
-      48,
-      1,
-    ]);
+    expect(
+      mocks.resolveMediaDeliveryUrls.mock.calls.map(([call]) => call.data.items.length),
+    ).toEqual([48, 48, 1]);
   });
 
   it("keeps immediately eligible work distinct from delayed pending retries", async () => {
@@ -231,10 +230,9 @@ describe("resolveGalleryThumbnailsBatch", () => {
 
     await resolveGalleryThumbnailsBatch(requests);
 
-    expect(mocks.resolveMediaDeliveryUrls.mock.calls.map(([call]) => call.data.items.length)).toEqual([
-      48,
-      1,
-    ]);
+    expect(
+      mocks.resolveMediaDeliveryUrls.mock.calls.map(([call]) => call.data.items.length),
+    ).toEqual([48, 1]);
     expect(hasEligibleGalleryThumbnailRequests(requests)).toBe(false);
     expect(getNextPendingThumbnailRetryMs(requests)).toBeGreaterThan(0);
   });
