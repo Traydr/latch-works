@@ -44,7 +44,7 @@ flowchart LR
 | Name | Path | What it does |
 | --- | --- | --- |
 | **Pane View** | [`apps/pane-view`](apps/pane-view) | Private web viewer for browsing a synced archive on desktop, tablet, and phone. TanStack Start + PostgreSQL + S3. |
-| **Frame View** | [`apps/frame-view`](apps/frame-view) | Cross-platform **Electron** desktop gallery for local image, video, comic, and PDF folders. The UX north star for Pane View. |
+| **Frame View** | [`apps/frame-view`](apps/frame-view) | Cross-platform **Electron** desktop gallery for local images, videos, and comics. PDF reading is [planned](docs/plans/040-frame-view-pdf-spike.md), not shipped. The UX north star for Pane View. |
 | **Gather Box** | [`apps/gather-box`](apps/gather-box) | **Chrome extension** that downloads image galleries and story PDFs from supported sites into inferred local folder structures. |
 | **Lockstep** | [`apps/lockstep`](apps/lockstep) | **Electron** desktop sync client for planning and pushing archive changes to Pane View. Profiles, encrypted token storage, and run history. |
 | **Lockstep CLI** | [`apps/lockstep-cli`](apps/lockstep-cli) | Scriptable sync tool (`plan`, `push`, `verify`, `doctor`) over the same engine as the desktop app. npm package `@latch-works/lockstep`. |
@@ -76,10 +76,9 @@ latch-works/
 │   ├── media-domain/
 │   ├── media-index/
 │   ├── media-storage/
-│   ├── media-delivery/
 │   └── lockstep-core/
 └── docs/
-    ├── ARCHITECTURE_PLAN.md
+    ├── ARCHITECTURE.md
     ├── decisions/
     ├── plans/
     └── runbooks/
@@ -93,7 +92,7 @@ latch-works/
 - **pnpm** 11 (`corepack enable` or install globally)
 - **PostgreSQL** — required for Pane View
 - **S3-compatible storage** — required for Pane View media originals
-- **ffmpeg** — optional locally; Pane View bundles `ffmpeg-static` for thumbnails/posters
+- **Shutter access** — Pane View uses Shutter for signed thumbnail and preview renditions
 
 Electron apps (Frame View, Lockstep) additionally need npm on `PATH` for Electron Forge packaging.
 
@@ -137,7 +136,7 @@ pnpm check
 `plan` is read-only — it scans the source tree and prints a sync plan without changing anything:
 
 ```bash
-pnpm start:lockstep -- plan --source "/path/to/archive"
+pnpm --filter @latch-works/lockstep start plan --source "/path/to/archive"
 ```
 
 Push changed files to a running Pane View instance:
@@ -145,7 +144,7 @@ Push changed files to a running Pane View instance:
 ```bash
 export LOCKSTEP_API_URL="http://127.0.0.1:3000"
 export LOCKSTEP_API_TOKEN="your-sync-token"
-pnpm start:lockstep -- push --source "/path/to/archive"
+pnpm --filter @latch-works/lockstep start push --source "/path/to/archive"
 ```
 
 For the desktop client, profiles, and encrypted token storage, see [`apps/lockstep/README.md`](apps/lockstep/README.md). For the full CLI reference, see [`apps/lockstep-cli/README.md`](apps/lockstep-cli/README.md) and [`docs/runbooks/lockstep.md`](docs/runbooks/lockstep.md).
@@ -165,11 +164,10 @@ For the desktop client, profiles, and encrypted token storage, see [`apps/lockst
 
 | Doc | Description |
 | --- | --- |
-| [`docs/ARCHITECTURE_PLAN.md`](docs/ARCHITECTURE_PLAN.md) | System design, scope, and consolidation plan |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Current system architecture and Shutter delivery model |
 | [`docs/latch-works-brand-kit.md`](docs/latch-works-brand-kit.md) | Naming, tone, and product vocabulary |
 | [`docs/runbooks/lockstep.md`](docs/runbooks/lockstep.md) | Lockstep operations runbook |
-| [`docs/runbooks/railway-cdn-pane-view.md`](docs/runbooks/railway-cdn-pane-view.md) | Pane View CDN and delivery setup |
-| [`docs/runbooks/pane-view-thumbnails.md`](docs/runbooks/pane-view-thumbnails.md) | Thumbnail generation notes |
+| [`docs/plans/040-frame-view-pdf-spike.md`](docs/plans/040-frame-view-pdf-spike.md) | Direction record for planned Frame View PDF reading |
 | [`apps/showcase/README.md`](apps/showcase/README.md) | Showcase dev server and screenshot capture |
 
 ---

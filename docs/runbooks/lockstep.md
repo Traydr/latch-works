@@ -10,7 +10,7 @@ When run from a terminal with no arguments, Lockstep starts a guided wizard:
 pnpm start:lockstep
 ```
 
-If you omit required flags on a command (for example `pnpm start:lockstep -- push`), Lockstep prompts for the missing values instead of failing immediately. Non-TTY environments (CI, pipes) keep the strict flag-based behavior.
+If you omit required flags on a command (for example `pnpm --filter @latch-works/lockstep start push`), Lockstep prompts for the missing values instead of failing immediately. Non-TTY environments (CI, pipes) keep the strict flag-based behavior.
 
 Lockstep remembers non-secret settings between runs in:
 
@@ -65,8 +65,8 @@ was asked to protect it for a different or invalid code requirement.
 For scripted `push` or `prune` without interactive confirmation, pass `--yes`:
 
 ```powershell
-pnpm start:lockstep -- push --source "T:\cloud-desktop\media" --yes
-pnpm start:lockstep -- prune --source "T:\cloud-desktop\media" --yes
+pnpm --filter @latch-works/lockstep start push --source "T:\cloud-desktop\media" --yes
+pnpm --filter @latch-works/lockstep start prune --source "T:\cloud-desktop\media" --yes
 ```
 
 ## Doctor
@@ -74,8 +74,8 @@ pnpm start:lockstep -- prune --source "T:\cloud-desktop\media" --yes
 Check Node, env configuration, and API connectivity:
 
 ```powershell
-pnpm start:lockstep -- doctor
-pnpm start:lockstep -- doctor --source "T:\cloud-desktop\media"
+pnpm --filter @latch-works/lockstep start doctor
+pnpm --filter @latch-works/lockstep start doctor --source "T:\cloud-desktop\media"
 ```
 
 When `LOCKSTEP_API_URL` and `LOCKSTEP_API_TOKEN` are set, doctor requests `/api/sync/snapshot` and reports reachability.
@@ -85,19 +85,19 @@ Lockstep prints live progress to stderr while it works: indexing paths, hash byt
 ## Read-Only Plan
 
 ```powershell
-pnpm start:lockstep -- plan --source "T:\cloud-desktop\media"
+pnpm --filter @latch-works/lockstep start plan --source "T:\cloud-desktop\media"
 ```
 
 Add `--hash` when the plan needs content hashes. Hashing a 35.9 GB archive will take longer but gives better change detection.
 
 ```powershell
-pnpm start:lockstep -- plan --source "T:\cloud-desktop\media" --hash
+pnpm --filter @latch-works/lockstep start plan --source "T:\cloud-desktop\media" --hash
 ```
 
 Show every skipped non-media file:
 
 ```powershell
-pnpm start:lockstep -- plan --source "T:\cloud-desktop\media" --show-skipped
+pnpm --filter @latch-works/lockstep start plan --source "T:\cloud-desktop\media" --show-skipped
 ```
 
 ## Verify Against a Snapshot
@@ -105,7 +105,7 @@ pnpm start:lockstep -- plan --source "T:\cloud-desktop\media" --show-skipped
 `verify` requires `--remote-snapshot`. It exits with code `1` when any path differs from the snapshot (upload, update, or delete actions).
 
 ```powershell
-pnpm start:lockstep -- verify --source "T:\cloud-desktop\media" --remote-snapshot remote-snapshot.json --hash
+pnpm --filter @latch-works/lockstep start verify --source "T:\cloud-desktop\media" --remote-snapshot remote-snapshot.json --hash
 ```
 
 The snapshot format is a JSON array:
@@ -127,7 +127,7 @@ The snapshot format is a JSON array:
 ```powershell
 $env:LOCKSTEP_API_URL = "http://localhost:3000"
 $env:LOCKSTEP_API_TOKEN = "replace-me"
-pnpm start:lockstep -- push --source "T:\cloud-desktop\media"
+pnpm --filter @latch-works/lockstep start push --source "T:\cloud-desktop\media"
 ```
 
 For the deployed Pane View domain:
@@ -135,7 +135,7 @@ For the deployed Pane View domain:
 ```powershell
 $env:LOCKSTEP_API_URL = "https://pane-view.traydr.dev"
 $env:LOCKSTEP_API_TOKEN = "replace-me"
-pnpm start:lockstep -- push --source "T:\cloud-desktop\media" --max-changes 25
+pnpm --filter @latch-works/lockstep start push --source "T:\cloud-desktop\media" --max-changes 25
 ```
 
 You can also pass `--api-url` instead of setting `LOCKSTEP_API_URL`, but the sync token must still be available through `LOCKSTEP_API_TOKEN` or the environment variable named by `--api-token-env`.
@@ -143,7 +143,7 @@ You can also pass `--api-url` instead of setting `LOCKSTEP_API_URL`, but the syn
 The token environment variable can be changed:
 
 ```powershell
-pnpm start:lockstep -- push --source "T:\cloud-desktop\media" --api-token-env "MY_LOCKSTEP_TOKEN"
+pnpm --filter @latch-works/lockstep start push --source "T:\cloud-desktop\media" --api-token-env "MY_LOCKSTEP_TOKEN"
 ```
 
 For first deployment verification, run `push` against a small test folder before pointing it at the full `T:\cloud-desktop\media` archive.
@@ -151,7 +151,7 @@ For first deployment verification, run `push` against a small test folder before
 To test the full archive plan while uploading only the first small batch of changed files, cap the push:
 
 ```powershell
-pnpm start:lockstep -- push --source "T:\cloud-desktop\media" --max-changes 25
+pnpm --filter @latch-works/lockstep start push --source "T:\cloud-desktop\media" --max-changes 25
 ```
 
 `push` always hashes local files before planning, even when `--max-changes` is set. Capped pushes take the first N upload/update changes in plan order (delete items are excluded). Each push run is finalized through `/api/sync/runs/{id}/complete` with `completed` or `failed` status and final counts.
@@ -165,13 +165,13 @@ When delete items are present, Lockstep prints the paths (respecting `--max-chan
 ```powershell
 $env:LOCKSTEP_API_URL = "http://localhost:3000"
 $env:LOCKSTEP_API_TOKEN = "replace-me"
-pnpm start:lockstep -- prune --source "T:\cloud-desktop\media"
+pnpm --filter @latch-works/lockstep start prune --source "T:\cloud-desktop\media"
 ```
 
 Non-interactive prune (CI/scripts):
 
 ```powershell
-pnpm start:lockstep -- prune --source "T:\cloud-desktop\media" --yes
+pnpm --filter @latch-works/lockstep start prune --source "T:\cloud-desktop\media" --yes
 ```
 
 `prune` does not hash local files unless you pass `--hash`. Remote object bytes are not removed — only `library_entries` are soft-deleted.

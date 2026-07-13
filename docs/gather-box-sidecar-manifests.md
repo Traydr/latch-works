@@ -256,5 +256,5 @@ today.
 - Gather Box collector types: `apps/gather-box/src/shared/types.ts`
 - Path sanitization: `apps/gather-box/src/shared/path.ts`
 - Shared TypeScript anchors: `packages/media-domain/src/gather-box-sidecar.ts`
-- Architecture context: [ARCHITECTURE_PLAN.md](./ARCHITECTURE_PLAN.md) § Gather Box
+- Architecture context: [ARCHITECTURE.md](./ARCHITECTURE.md) § Applications
 - User-facing sources: [Supported sources](/docs/supported-sources)

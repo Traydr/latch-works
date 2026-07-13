@@ -106,7 +106,7 @@ Use the root lockfile only. Remove any `apps/lockstep/pnpm-lock.yaml` if it reap
 
 ### `Electron failed to install correctly`
 
-Electron's postinstall sometimes does not write `node_modules/electron/path.txt` after a hoisted or nested install. Lockstep runs `scripts/ensure-electron.mjs` on `postinstall` and before `start` to repair this automatically. If it still fails:
+Electron's install can leave `node_modules/electron/path.txt` absent after a hoisted or nested install. Lockstep runs `scripts/ensure-electron.mjs` before `start` to repair this automatically. If it still fails:
 
 ```bash
 cd apps/lockstep

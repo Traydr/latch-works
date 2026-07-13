@@ -33,5 +33,5 @@ An immutable original stored by a consuming application. Replacing it creates a 
 _Avoid_: Mutable media file, overwritten original
 
 **Pane View**:
-The web service that owns auth, library state, derivative queue state, and signed delivery URLs.
+The web service that owns auth, library state, Source Object storage, and authorization for signed Shutter Renditions and original URLs.
 _Avoid_: Gallery app, web frontend
