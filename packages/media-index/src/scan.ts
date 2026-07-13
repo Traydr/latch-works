@@ -131,17 +131,27 @@ async function runQueue<T>({
   concurrency: number;
   signal?: AbortSignal;
   tasks: T[];
-  work: (task: T, add: (task: T) => void) => Promise<void>;
+  work: (task: T, add: (task: T) => void, isRunning: () => boolean) => Promise<void>;
 }): Promise<void> {
   let next = 0;
   let active = 0;
+  let settled = false;
 
   await new Promise<void>((resolve, reject) => {
+    const fail = (error: unknown): void => {
+      if (!settled) {
+        settled = true;
+        reject(error);
+      }
+    };
     const schedule = (): void => {
+      if (settled) {
+        return;
+      }
       try {
         throwIfAborted(signal);
       } catch (error) {
-        reject(error);
+        fail(error);
         return;
       }
 
@@ -151,23 +161,37 @@ async function runQueue<T>({
           continue;
         }
         active += 1;
-        void work(task, (newTask) => {
-          throwIfAborted(signal);
-          tasks.push(newTask);
-        }).then(
+        void work(
+          task,
+          (newTask) => {
+            if (!settled) {
+              throwIfAborted(signal);
+              tasks.push(newTask);
+            }
+          },
+          () => !settled,
+        ).then(
           () => {
             active -= 1;
+            if (settled) {
+              return;
+            }
             if (next === tasks.length && active === 0) {
+              settled = true;
               resolve();
             } else {
               schedule();
             }
           },
-          (error: unknown) => reject(error),
+          (error: unknown) => {
+            active -= 1;
+            fail(error);
+          },
         );
       }
 
       if (next === tasks.length && active === 0) {
+        settled = true;
         resolve();
       }
     };
@@ -199,12 +223,18 @@ export async function scanArchive({
     concurrency: concurrency(directoryConcurrency),
     signal,
     tasks: directories,
-    work: async (currentPath, addDirectory) => {
+    work: async (currentPath, addDirectory, isRunning) => {
       throwIfAborted(signal);
       const entries = await operations.readdir(currentPath);
       throwIfAborted(signal);
+      if (!isRunning()) {
+        return;
+      }
       for (const entry of [...entries].sort((left, right) => left.name.localeCompare(right.name))) {
         throwIfAborted(signal);
+        if (!isRunning()) {
+          return;
+        }
         const absolutePath = path.join(currentPath, entry.name);
 
         if (entry.isDirectory()) {
@@ -265,14 +295,18 @@ export async function scanArchive({
     concurrency: concurrency(fileConcurrency),
     signal,
     tasks: candidates,
-    work: async (candidate) => {
+    work: async (candidate, _add, isRunning) => {
       throwIfAborted(signal);
       const fileStat = await operations.stat(candidate.absolutePath);
       throwIfAborted(signal);
+      if (!isRunning()) {
+        return;
+      }
       const sha256 = hashFiles
         ? await hashFile({
             filePath: candidate.absolutePath,
             onProgress: (bytesHashed) =>
+              isRunning() &&
               onProgress?.({
                 bytesHashed,
                 fileSize: fileStat.size,
@@ -285,6 +319,10 @@ export async function scanArchive({
             signal,
           })
         : undefined;
+
+      if (!isRunning()) {
+        return;
+      }
 
       indexedItems.set(candidate.path, {
         id: sha256 ?? candidate.path,

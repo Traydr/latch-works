@@ -161,6 +161,34 @@ describe("scanArchive", () => {
     expect(readDirectories).toEqual(["/archive", "/archive/a"]);
   });
 
+  it("uses the configured directory read bound in parallel", async () => {
+    let active = 0;
+    let peak = 0;
+    const operations: ScanArchiveOperations = {
+      createReadStream: () => Readable.from([]),
+      readdir: async (directoryPath) => {
+        if (directoryPath === "/archive") {
+          return [
+            entry("a", "directory"),
+            entry("b", "directory"),
+            entry("c", "directory"),
+            entry("d", "directory"),
+          ];
+        }
+        active += 1;
+        peak = Math.max(peak, active);
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        active -= 1;
+        return [];
+      },
+      stat: async () => ({ mtimeMs: 1, size: 1 }),
+    };
+
+    await scanArchive({ directoryConcurrency: 2, operations, sourceRoot: "/archive" });
+
+    expect(peak).toBe(2);
+  });
+
   it("bounds stat and hash work, preserves hashes, and reports the hashing file path", async () => {
     let active = 0;
     let peak = 0;
@@ -218,6 +246,61 @@ describe("scanArchive", () => {
     await expect(scan).rejects.toThrow("cancelled");
     expect(destroyed).toBe(true);
   });
+
+  it("does not dequeue or report work after a concurrent worker fails", async () => {
+    const started: string[] = [];
+    const progress: string[] = [];
+    const operations: ScanArchiveOperations = {
+      createReadStream: () => Readable.from([]),
+      readdir: async () => [entry("a.jpg"), entry("b.jpg"), entry("c.jpg"), entry("d.jpg")],
+      stat: async (filePath) => {
+        started.push(path.basename(filePath));
+        if (filePath.endsWith("a.jpg")) {
+          throw new Error("stat failed");
+        }
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        return { mtimeMs: 1, size: 1 };
+      },
+    };
+
+    await expect(
+      scanArchive({
+        fileConcurrency: 2,
+        onProgress: (event) => {
+          if (event.path) {
+            progress.push(event.path);
+          }
+        },
+        operations,
+        sourceRoot: "/archive",
+      }),
+    ).rejects.toThrow("stat failed");
+    await new Promise((resolve) => setTimeout(resolve, 40));
+
+    expect(started).toEqual(["a.jpg", "b.jpg"]);
+    expect(progress).toEqual([]);
+  });
+
+  for (const [option, value] of [
+    ["directoryConcurrency", 0],
+    ["directoryConcurrency", 17],
+    ["directoryConcurrency", 1.5],
+    ["fileConcurrency", 0],
+    ["fileConcurrency", 17],
+    ["fileConcurrency", 1.5],
+  ] as const) {
+    it(`rejects invalid ${option} value ${value}`, async () => {
+      const operations: ScanArchiveOperations = {
+        createReadStream: () => Readable.from([]),
+        readdir: async () => [],
+        stat: async () => ({ mtimeMs: 1, size: 0 }),
+      };
+
+      await expect(scanArchive({ [option]: value, operations, sourceRoot: "/archive" })).rejects.toThrow(
+        "Scan concurrency must be an integer between 1 and 16",
+      );
+    });
+  }
 
   it("propagates read errors and handles empty trees", async () => {
     tempDir = await mkdtemp(path.join(os.tmpdir(), "media-index-scan-"));
