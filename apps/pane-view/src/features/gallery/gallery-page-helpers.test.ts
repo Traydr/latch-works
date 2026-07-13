@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { toLibrarySnapshotRequest } from "../library/library-queries";
 import {
   areThumbnailRequestsEqual,
   dedupeThumbnailRequests,
   supportsGalleryThumbnail,
   toLibrarySnapshotNextPageRequest,
 } from "./gallery-page-helpers";
-import { toLibrarySnapshotRequest } from "../library/library-queries";
 
 describe("supportsGalleryThumbnail", () => {
   it("returns true for image, gif, video, and pdf", () => {
