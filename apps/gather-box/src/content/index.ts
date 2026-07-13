@@ -1,4 +1,5 @@
 import { COLLECT_MESSAGE_TYPE } from "../shared/messages";
+import { DEFAULT_SETTINGS, loadSettings, SETTINGS_KEY } from "../shared/settings";
 import type { GalleryCollectResponse } from "../shared/types";
 import { collectArchiveOfOurOwnData } from "./collectors/archiveofourown";
 import { collectFanboxData } from "./collectors/fanbox";
@@ -8,6 +9,20 @@ import { collectKemonoData } from "./collectors/kemono";
 import { collectMyHentaiGalleryData } from "./collectors/my-hentai-gallery";
 import { collectPixivData } from "./collectors/pixiv";
 import { collectXData } from "./collectors/x";
+import { installPageShortcuts, type PageShortcutSettings } from "./page-shortcuts";
+
+let pageShortcutSettings: PageShortcutSettings = {
+  enabled: DEFAULT_SETTINGS.shortcutsEnabled,
+  primaryUi: DEFAULT_SETTINGS.primaryUi
+};
+installPageShortcuts(document, chrome.runtime, () => pageShortcutSettings);
+void refreshPageShortcutSettings().catch(() => {});
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName === "sync" && changes[SETTINGS_KEY]) {
+    void refreshPageShortcutSettings().catch(() => {});
+  }
+});
 
 chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
   if (!isCollectMessage(message)) {
@@ -84,4 +99,12 @@ function isCollectMessage(message: unknown): boolean {
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Could not collect comic data.";
+}
+
+async function refreshPageShortcutSettings(): Promise<void> {
+  const settings = await loadSettings();
+  pageShortcutSettings = {
+    enabled: settings.shortcutsEnabled,
+    primaryUi: settings.primaryUi
+  };
 }

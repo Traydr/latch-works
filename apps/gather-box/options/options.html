@@ -83,9 +83,21 @@
 
         <section class="surface">
           <h2>Shortcuts</h2>
+          <label class="checkbox-row">
+            <input id="shortcutsEnabled" name="shortcutsEnabled" type="checkbox">
+            <span>Enable page shortcuts</span>
+          </label>
           <p class="field-hint">
-            Assign a keyboard shortcut in <code>chrome://extensions/shortcuts</code> for
-            <strong>Download content from the active tab</strong>.
+            On a supported page, use <code>Right Shift + ]</code> to toggle Gather Box and
+            <code>Right Shift + [</code> to start downloading.
+          </p>
+          <p class="field-hint">
+            Native Chrome shortcuts work regardless of whether the page or Gather Box has focus:
+            toggle with <code id="toggleCommandShortcut">Not assigned</code> and download with
+            <code id="downloadCommandShortcut">Not assigned</code>.
+          </p>
+          <p class="field-hint">
+            Change native shortcuts in <code>chrome://extensions/shortcuts</code>.
           </p>
         </section>
 

@@ -8,6 +8,7 @@ export interface GatherBoxSettings {
   downloadConcurrency: number;
   useGlobalFolder: boolean;
   verboseLogging: boolean;
+  shortcutsEnabled: boolean;
   credentialsMode: CredentialsMode;
   credentialsPerSite: Partial<Record<SiteKey, CredentialsChoice>>;
   primaryUi: PrimaryUiMode;
@@ -17,12 +18,13 @@ export const DEFAULT_SETTINGS: GatherBoxSettings = {
   downloadConcurrency: 4,
   useGlobalFolder: false,
   verboseLogging: false,
+  shortcutsEnabled: true,
   credentialsMode: "auto",
   credentialsPerSite: {},
   primaryUi: "popup"
 };
 
-const SETTINGS_KEY = "gather-box-settings";
+export const SETTINGS_KEY = "gather-box-settings";
 
 export async function loadSettings(): Promise<GatherBoxSettings> {
   const stored = await chrome.storage.sync.get(SETTINGS_KEY);
@@ -48,6 +50,10 @@ export function normalizeSettings(settings: Partial<GatherBoxSettings>): GatherB
       : DEFAULT_SETTINGS.downloadConcurrency,
     useGlobalFolder: Boolean(settings.useGlobalFolder),
     verboseLogging: Boolean(settings.verboseLogging),
+    shortcutsEnabled:
+      settings.shortcutsEnabled === undefined
+        ? DEFAULT_SETTINGS.shortcutsEnabled
+        : Boolean(settings.shortcutsEnabled),
     credentialsMode: isCredentialsMode(settings.credentialsMode)
       ? settings.credentialsMode
       : DEFAULT_SETTINGS.credentialsMode,

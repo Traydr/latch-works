@@ -6,6 +6,8 @@ const STORE_NAME = "handles";
 const DIRECTORY_KEY_PREFIX = "last-directory:";
 export const GLOBAL_DIRECTORY_KEY = `${DIRECTORY_KEY_PREFIX}global`;
 
+export type DirectoryPermissionResult = "granted" | "requires-user-activation" | "denied";
+
 export async function saveDirectoryHandle(
   siteKey: SiteKey | null,
   directoryHandle: FileSystemDirectoryHandle,
@@ -53,23 +55,34 @@ export async function clearDirectoryHandle(
 }
 
 export async function ensureDirectoryPermission(
-  directoryHandle: FileSystemDirectoryHandle
-): Promise<boolean> {
+  directoryHandle: FileSystemDirectoryHandle,
+  allowPermissionPrompt = true
+): Promise<DirectoryPermissionResult> {
   const options: FileSystemHandlePermissionDescriptor = { mode: "readwrite" };
 
-  if (typeof directoryHandle.queryPermission === "function") {
-    const currentPermission = await directoryHandle.queryPermission(options);
-    if (currentPermission === "granted") {
-      return true;
+  try {
+    // requestPermission must be invoked before the first await in a click/key handler or Chrome may
+    // discard the transient activation. Calling it for an already-granted handle is harmless.
+    if (allowPermissionPrompt && typeof directoryHandle.requestPermission === "function") {
+      const requestedPermission = await directoryHandle.requestPermission(options);
+      return requestedPermission === "granted" ? "granted" : "denied";
     }
+
+    if (typeof directoryHandle.queryPermission === "function") {
+      const currentPermission = await directoryHandle.queryPermission(options);
+      if (currentPermission === "granted") {
+        return "granted";
+      }
+    }
+
+    if (!allowPermissionPrompt) {
+      return "requires-user-activation";
+    }
+  } catch (error) {
+    return isUserActivationError(error) ? "requires-user-activation" : "denied";
   }
 
-  if (typeof directoryHandle.requestPermission === "function") {
-    const requestedPermission = await directoryHandle.requestPermission(options);
-    return requestedPermission === "granted";
-  }
-
-  return false;
+  return "denied";
 }
 
 export function getDirectoryScopeLabel(useGlobalFolder: boolean): string {
@@ -115,4 +128,17 @@ async function requestResult<T>(request: IDBRequest<T>): Promise<T> {
       reject(request.error || new Error("IndexedDB request failed."));
     };
   });
+}
+
+function isUserActivationError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) {
+    return false;
+  }
+
+  const candidate = error as { name?: unknown; message?: unknown };
+  return (
+    candidate.name === "SecurityError" &&
+    typeof candidate.message === "string" &&
+    candidate.message.toLowerCase().includes("user activation")
+  );
 }

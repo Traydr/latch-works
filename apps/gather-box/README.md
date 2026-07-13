@@ -27,6 +27,15 @@ Each site remembers its own destination folder. Folder and filename inference ru
 4. Click **Download Content**.
 5. The popup reports progress and any per-file failures.
 
+On a supported page, hold the right Shift key and press `]` to toggle Gather Box, or `[` to start
+the download immediately. Left Shift does not activate these page shortcuts, and the shortcuts can
+be disabled from Gather Box settings.
+
+For focus-independent shortcuts, Chrome commands default to `Ctrl+Shift+Period`
+(`Command+Shift+Period` on macOS) to toggle Gather Box and `Ctrl+Shift+Comma`
+(`Command+Shift+Comma` on macOS) to download. They can be remapped in
+`chrome://extensions/shortcuts`.
+
 Downloads use your browser session cookies where needed (AO3, Hentai Foundry, fanfiction.net). Individual file failures do not stop the rest of the batch.
 
 ## Project structure

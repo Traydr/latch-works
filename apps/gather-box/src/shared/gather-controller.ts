@@ -47,9 +47,11 @@ import {
 import {
   PENDING_DOWNLOAD_SESSION_KEY,
   START_DOWNLOAD_MESSAGE,
+  TOGGLE_OPEN_UI_MESSAGE,
   type GatherRuntimeMessage
 } from "./runtime-messages";
 import { loadSettings, type GatherBoxSettings } from "./settings";
+import { installShortcutKeyListener } from "./shortcut-keys";
 import type { DownloadablePayload, GeneratedStoryPayload, GalleryImage } from "./types";
 
 interface PopupState {
@@ -69,6 +71,7 @@ interface DirectoryPickerWindow extends Window {
 export interface GatherControllerOptions {
   includeOpenSidePanel?: boolean;
   onOpenSidePanel?: () => void;
+  onToggleShortcut?: () => void;
 }
 
 export class GatherController {
@@ -82,6 +85,7 @@ export class GatherController {
       downloadConcurrency: 4,
       useGlobalFolder: false,
       verboseLogging: false,
+      shortcutsEnabled: true,
       credentialsMode: "auto",
       credentialsPerSite: {},
       primaryUi: "popup"
@@ -94,7 +98,14 @@ export class GatherController {
   private readonly lastRunWriter = new LastRunWriter();
   private readonly options: GatherControllerOptions;
   private keydownHandler: ((event: KeyboardEvent) => void) | null = null;
-  private messageHandler: ((message: GatherRuntimeMessage) => void) | null = null;
+  private shortcutCleanup: (() => void) | null = null;
+  private messageHandler:
+    | ((
+        message: GatherRuntimeMessage,
+        sender: chrome.runtime.MessageSender,
+        sendResponse: (response?: unknown) => void
+      ) => boolean)
+    | null = null;
   private storageHandler:
     | ((changes: Record<string, chrome.storage.StorageChange>, areaName: string) => void)
     | null = null;
@@ -115,7 +126,7 @@ export class GatherController {
       void this.handleClearFolder();
     });
     this.elements.downloadButton.addEventListener("click", () => {
-      void this.handleDownload();
+      void this.handleDownload(true);
     });
     this.elements.retryButton.addEventListener("click", () => {
       void this.handleRetryFailed();
@@ -141,14 +152,33 @@ export class GatherController {
       }
 
       event.preventDefault();
-      void this.handleDownload();
+      void this.handleDownload(true);
     };
     document.addEventListener("keydown", this.keydownHandler);
 
-    this.messageHandler = (message: GatherRuntimeMessage) => {
-      if (message.type === START_DOWNLOAD_MESSAGE) {
-        void this.handleDownload();
+    this.shortcutCleanup = installShortcutKeyListener(
+      document,
+      () => this.state.settings.shortcutsEnabled,
+      (action) => {
+        if (action === "toggle") {
+          this.options.onToggleShortcut?.();
+          return;
+        }
+
+        void this.handleDownload(true);
       }
+    );
+
+    this.messageHandler = (message: GatherRuntimeMessage, _sender, sendResponse) => {
+      if (message.type === START_DOWNLOAD_MESSAGE) {
+        sendResponse({ accepted: true });
+        void this.handleDownload(false);
+      }
+      if (message.type === TOGGLE_OPEN_UI_MESSAGE) {
+        sendResponse({ accepted: true });
+        this.options.onToggleShortcut?.();
+      }
+      return false;
     };
     chrome.runtime.onMessage.addListener(this.messageHandler);
 
@@ -178,7 +208,7 @@ export class GatherController {
     const pending = await chrome.storage.session.get(PENDING_DOWNLOAD_SESSION_KEY);
     if (pending[PENDING_DOWNLOAD_SESSION_KEY]) {
       await chrome.storage.session.remove(PENDING_DOWNLOAD_SESSION_KEY);
-      void this.handleDownload();
+      void this.handleDownload(false);
     }
   }
 
@@ -194,6 +224,8 @@ export class GatherController {
       document.removeEventListener("keydown", this.keydownHandler);
       this.keydownHandler = null;
     }
+    this.shortcutCleanup?.();
+    this.shortcutCleanup = null;
     if (this.messageHandler) {
       chrome.runtime.onMessage.removeListener(this.messageHandler);
       this.messageHandler = null;
@@ -303,7 +335,7 @@ export class GatherController {
     }
   }
 
-  private async handleDownload(): Promise<void> {
+  private async handleDownload(allowPermissionPrompt: boolean): Promise<void> {
     if (this.state.running) {
       return;
     }
@@ -320,8 +352,20 @@ export class GatherController {
       return;
     }
 
-    const hasPermission = await ensureDirectoryPermission(this.state.directoryHandle);
-    if (!hasPermission) {
+    const permission = await ensureDirectoryPermission(
+      this.state.directoryHandle,
+      allowPermissionPrompt
+    );
+    if (permission === "requires-user-activation") {
+      this.appendLog(
+        "Folder access needs confirmation. Click Download Content to grant access and continue.",
+        "error"
+      );
+      this.elements.folderDetail.textContent = "Click Download Content to confirm folder access.";
+      this.syncPopupActions();
+      return;
+    }
+    if (permission !== "granted") {
       this.appendLog("Folder is no longer writable. Choose it again.", "error");
       this.elements.folderDetail.textContent = "Access denied. Pick the folder again.";
       this.syncPopupActions();
@@ -380,8 +424,8 @@ export class GatherController {
       return;
     }
 
-    const hasPermission = await ensureDirectoryPermission(this.state.directoryHandle);
-    if (!hasPermission) {
+    const permission = await ensureDirectoryPermission(this.state.directoryHandle, true);
+    if (permission !== "granted") {
       this.appendLog("Folder is no longer writable. Choose it again.", "error");
       this.syncPopupActions();
       return;

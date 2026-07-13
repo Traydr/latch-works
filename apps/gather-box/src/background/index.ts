@@ -1,11 +1,19 @@
 import {
   APPLY_UI_MODE_MESSAGE,
+  OPEN_EXTENSION_MESSAGE,
   OPEN_SIDE_PANEL_MESSAGE,
   PENDING_DOWNLOAD_SESSION_KEY,
-  START_DOWNLOAD_MESSAGE
+  START_DOWNLOAD_MESSAGE,
+  TOGGLE_OPEN_UI_MESSAGE,
+  TRIGGER_DOWNLOAD_MESSAGE
 } from "../shared/runtime-messages";
 import { isSupportedUrl } from "../shared/sites";
-import { applyPrimaryUiMode, openSidePanelForActiveTab } from "../shared/ui-mode";
+import { loadSettings, type PrimaryUiMode } from "../shared/settings";
+import {
+  applyPrimaryUiMode,
+  openPrimaryUiForTab,
+  openSidePanelForActiveTab
+} from "../shared/ui-mode";
 import { isResolveXMediaMessage } from "../shared/x-media";
 import { resolveXPostMedia } from "./x-media-resolver";
 
@@ -28,20 +36,11 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   void triggerDownload(tab);
 });
 
-chrome.commands.onCommand.addListener((command) => {
-  if (command !== "download-active-tab") {
-    return;
-  }
-
-  void (async () => {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (tab) {
-      await triggerDownload(tab);
-    }
-  })();
+chrome.commands.onCommand.addListener((command, tab) => {
+  void handleChromeCommand(command, tab);
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (isResolveXMediaMessage(message)) {
     void resolveXPostMedia(message).then(sendResponse);
     return true;
@@ -54,6 +53,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   if (message.type === OPEN_SIDE_PANEL_MESSAGE) {
     void openSidePanelForActiveTab();
+  }
+
+  if (message.type === OPEN_EXTENSION_MESSAGE && sender.tab) {
+    void togglePrimaryUi(sender.tab, message.primaryUi);
+  }
+
+  if (message.type === TRIGGER_DOWNLOAD_MESSAGE && sender.tab) {
+    void startDownloadFromShortcut(sender.tab, message.primaryUi);
   }
 
   return false;
@@ -79,7 +86,33 @@ async function setupContextMenu(): Promise<void> {
   });
 }
 
-async function triggerDownload(tab: chrome.tabs.Tab): Promise<void> {
+async function handleChromeCommand(command: string, commandTab?: chrome.tabs.Tab): Promise<void> {
+  if (command !== "toggle-gather-box" && command !== "download-active-tab") {
+    return;
+  }
+
+  const settings = await loadSettings();
+  if (!settings.shortcutsEnabled) {
+    return;
+  }
+
+  const tab = commandTab ?? (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
+  if (!tab) {
+    return;
+  }
+
+  if (command === "toggle-gather-box") {
+    await togglePrimaryUi(tab, settings.primaryUi);
+    return;
+  }
+
+  await startDownloadFromShortcut(tab, settings.primaryUi);
+}
+
+async function triggerDownload(
+  tab: chrome.tabs.Tab,
+  primaryUi: PrimaryUiMode = "sidePanel"
+): Promise<void> {
   if (!tab.url || !isSupportedUrl(tab.url)) {
     return;
   }
@@ -91,14 +124,62 @@ async function triggerDownload(tab: chrome.tabs.Tab): Promise<void> {
 
   if (tab.windowId !== undefined) {
     await chrome.storage.session.set({ [PENDING_DOWNLOAD_SESSION_KEY]: true });
-    await chrome.sidePanel.open({ windowId: tab.windowId });
+    await openPrimaryUiForTab(tab, primaryUi);
+  }
+}
+
+async function startDownloadFromShortcut(
+  tab: chrome.tabs.Tab,
+  primaryUi: PrimaryUiMode
+): Promise<void> {
+  if (!tab.url || !isSupportedUrl(tab.url) || tab.windowId === undefined) {
+    return;
+  }
+
+  // Start both operations in the shortcut's user-gesture turn. The UI consumes the pending flag
+  // during initialization and starts the same download action as its button. A currently-open UI
+  // receives the direct request and acknowledges it, allowing the pending flag to be cleared.
+  const pendingWrite = chrome.storage.session.set({ [PENDING_DOWNLOAD_SESSION_KEY]: true });
+  const directDelivery = deliverStartDownloadMessage();
+  const openingUi = openPrimaryUiForTab(tab, primaryUi);
+  try {
+    await Promise.all([pendingWrite, openingUi]);
+    if (await directDelivery) {
+      await chrome.storage.session.remove(PENDING_DOWNLOAD_SESSION_KEY);
+    }
+  } catch {
+    await chrome.storage.session.remove(PENDING_DOWNLOAD_SESSION_KEY);
+  }
+}
+
+async function togglePrimaryUi(tab: chrome.tabs.Tab, primaryUi: PrimaryUiMode): Promise<void> {
+  // Do not await a state probe here: Chrome can expire the user gesture before sidePanel.open().
+  // Opening is a no-op when the UI already exists; that instance receives the close request.
+  await Promise.allSettled([
+    deliverToggleUiMessage(),
+    openPrimaryUiForTab(tab, primaryUi)
+  ]);
+}
+
+async function deliverToggleUiMessage(): Promise<boolean> {
+  try {
+    const response = await chrome.runtime.sendMessage<
+      { type: typeof TOGGLE_OPEN_UI_MESSAGE },
+      { accepted?: boolean } | undefined
+    >({ type: TOGGLE_OPEN_UI_MESSAGE });
+    return response?.accepted === true;
+  } catch {
+    return false;
   }
 }
 
 async function deliverStartDownloadMessage(): Promise<boolean> {
   try {
-    await chrome.runtime.sendMessage({ type: START_DOWNLOAD_MESSAGE });
-    return true;
+    const response = await chrome.runtime.sendMessage<
+      { type: typeof START_DOWNLOAD_MESSAGE },
+      { accepted?: boolean } | undefined
+    >({ type: START_DOWNLOAD_MESSAGE });
+    return response?.accepted === true;
   } catch {
     return false;
   }

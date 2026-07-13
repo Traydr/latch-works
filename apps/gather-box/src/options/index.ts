@@ -13,6 +13,9 @@ interface SettingsFormElements {
   form: HTMLFormElement;
   downloadConcurrency: HTMLInputElement;
   verboseLogging: HTMLInputElement;
+  shortcutsEnabled: HTMLInputElement;
+  toggleCommandShortcut: HTMLElement;
+  downloadCommandShortcut: HTMLElement;
   credentialsMode: HTMLSelectElement;
   perSiteCredentials: HTMLElement;
   saveStatus: HTMLElement;
@@ -28,6 +31,7 @@ async function init(): Promise<void> {
 
   renderPerSiteCredentials(elements.perSiteCredentials, settings);
   applySettingsToForm(elements, settings);
+  await renderCommandShortcuts(elements);
 
   elements.credentialsMode.addEventListener("change", () => {
     elements.perSiteCredentials.hidden = elements.credentialsMode.value !== "perSite";
@@ -44,10 +48,21 @@ function getFormElements(): SettingsFormElements {
     form: requireElement("settingsForm", HTMLFormElement),
     downloadConcurrency: requireElement("downloadConcurrency", HTMLInputElement),
     verboseLogging: requireElement("verboseLogging", HTMLInputElement),
+    shortcutsEnabled: requireElement("shortcutsEnabled", HTMLInputElement),
+    toggleCommandShortcut: requireElement("toggleCommandShortcut", HTMLElement),
+    downloadCommandShortcut: requireElement("downloadCommandShortcut", HTMLElement),
     credentialsMode: requireElement("credentialsMode", HTMLSelectElement),
     perSiteCredentials: requireElement("perSiteCredentials", HTMLElement),
     saveStatus: requireElement("saveStatus", HTMLElement)
   };
+}
+
+async function renderCommandShortcuts(elements: SettingsFormElements): Promise<void> {
+  const commands = await chrome.commands.getAll();
+  const shortcuts = new Map(commands.map((command) => [command.name, command.shortcut]));
+  elements.toggleCommandShortcut.textContent = shortcuts.get("toggle-gather-box") || "Not assigned";
+  elements.downloadCommandShortcut.textContent =
+    shortcuts.get("download-active-tab") || "Not assigned";
 }
 
 function renderPerSiteCredentials(container: HTMLElement, settings: GatherBoxSettings): void {
@@ -81,6 +96,7 @@ function renderPerSiteCredentials(container: HTMLElement, settings: GatherBoxSet
 function applySettingsToForm(elements: SettingsFormElements, settings: GatherBoxSettings): void {
   elements.downloadConcurrency.value = String(settings.downloadConcurrency);
   elements.verboseLogging.checked = settings.verboseLogging;
+  elements.shortcutsEnabled.checked = settings.shortcutsEnabled;
   elements.credentialsMode.value = settings.credentialsMode;
   elements.perSiteCredentials.hidden = settings.credentialsMode !== "perSite";
 
@@ -109,6 +125,7 @@ async function handleSave(elements: SettingsFormElements): Promise<void> {
   const settings: GatherBoxSettings = {
     downloadConcurrency: Number(elements.downloadConcurrency.value),
     verboseLogging: elements.verboseLogging.checked,
+    shortcutsEnabled: elements.shortcutsEnabled.checked,
     useGlobalFolder: folderMode === "global",
     credentialsMode: elements.credentialsMode.value as CredentialsMode,
     credentialsPerSite: readPerSiteCredentials(elements.perSiteCredentials),
