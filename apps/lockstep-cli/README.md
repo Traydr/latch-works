@@ -29,7 +29,7 @@ pnpm start:lockstep
 Read-only plan:
 
 ```powershell
-pnpm start:lockstep -- plan --source "T:\cloud-desktop\media"
+pnpm --filter @latch-works/lockstep start plan --source "T:\cloud-desktop\media"
 ```
 
 Push to a local Pane View dev server:
@@ -37,19 +37,19 @@ Push to a local Pane View dev server:
 ```powershell
 $env:LOCKSTEP_API_URL = "http://localhost:3000"
 $env:LOCKSTEP_API_TOKEN = "your-sync-token"
-pnpm start:lockstep -- push --source "T:\cloud-desktop\media"
+pnpm --filter @latch-works/lockstep start push --source "T:\cloud-desktop\media"
 ```
 
 Non-interactive push (CI/scripts):
 
 ```powershell
-pnpm start:lockstep -- push --source "T:\cloud-desktop\media" --yes
+pnpm --filter @latch-works/lockstep start push --source "T:\cloud-desktop\media" --yes
 ```
 
 Non-interactive prune (CI/scripts; applies remote deletes):
 
 ```powershell
-pnpm start:lockstep -- prune --source "T:\cloud-desktop\media" --api-url http://localhost:3000 --yes
+pnpm --filter @latch-works/lockstep start prune --source "T:\cloud-desktop\media" --api-url http://localhost:3000 --yes
 ```
 
 ## Configuration
@@ -74,19 +74,19 @@ CLI flags override config and env. Use `--api-token-env` to read the token from 
 
 ```powershell
 # Content hashing for accurate change detection (slower on large archives)
-pnpm start:lockstep -- plan --source "T:\cloud-desktop\media" --hash
+pnpm --filter @latch-works/lockstep start plan --source "T:\cloud-desktop\media" --hash
 
 # List every skipped non-media file
-pnpm start:lockstep -- plan --source "T:\cloud-desktop\media" --show-skipped
+pnpm --filter @latch-works/lockstep start plan --source "T:\cloud-desktop\media" --show-skipped
 
 # Cap uploads during first deployment testing (still hashes the full archive)
-pnpm start:lockstep -- push --source "T:\cloud-desktop\media" --max-changes 25
+pnpm --filter @latch-works/lockstep start push --source "T:\cloud-desktop\media" --max-changes 25
 
 # Cap remote deletes during prune testing (--yes required without a TTY)
-pnpm start:lockstep -- prune --source "T:\cloud-desktop\media" --max-changes 25 --yes
+pnpm --filter @latch-works/lockstep start prune --source "T:\cloud-desktop\media" --max-changes 25 --yes
 
 # Verify against a saved snapshot JSON
-pnpm start:lockstep -- verify --source "T:\cloud-desktop\media" --remote-snapshot remote-snapshot.json --hash
+pnpm --filter @latch-works/lockstep start verify --source "T:\cloud-desktop\media" --remote-snapshot remote-snapshot.json --hash
 ```
 
 ## Progress output

@@ -27,7 +27,7 @@ Pane View is the **web counterpart** to [Frame View](../frame-view). It serves a
 | Auth | [Better Auth](https://www.better-auth.com/) |
 | Database | PostgreSQL + [Drizzle ORM](https://orm.drizzle.team/) |
 | Storage | S3-compatible object storage |
-| Media | `sharp`, `ffmpeg-static`, `pdfjs-dist` |
+| Media | Shutter renditions and `pdfjs-dist` |
 | Shared libs | `@latch-works/media-domain`, `media-storage` |
 
 ## Prerequisites
@@ -53,6 +53,12 @@ S3_SECRET_ACCESS_KEY=...
 PANE_VIEW_USERNAME=...
 PANE_VIEW_PASSWORD=...
 PANE_VIEW_SYNC_TOKEN=...           # bearer token for Lockstep
+SHUTTER_EDGE_URL=https://...
+SHUTTER_CONTROL_URL=https://...
+SHUTTER_SPACE_ID=...
+SHUTTER_SPACE_API_TOKEN=...        # Shutter control-plane token
+SHUTTER_CAPABILITY_KEYS=...        # Shutter capability-key registry
+SHUTTER_CAPABILITY_KID=...
 ```
 
 `LOCKSTEP_API_TOKEN` on the CLI side should match `PANE_VIEW_SYNC_TOKEN`.
@@ -99,7 +105,7 @@ Use [Lockstep](../../apps/lockstep-cli) to publish a local folder tree:
 # From repo root
 $env:LOCKSTEP_API_URL = "http://127.0.0.1:3000"
 $env:LOCKSTEP_API_TOKEN = "your-sync-token"
-pnpm start:lockstep -- push --source "T:\cloud-desktop\media"
+pnpm --filter @latch-works/lockstep start push --source "T:\cloud-desktop\media"
 ```
 
 Start with `plan` (read-only) or `doctor` to verify connectivity before pushing.
@@ -125,6 +131,5 @@ src/
 ## Related docs
 
 - [Lockstep runbook](../../docs/runbooks/lockstep.md)
-- [Railway CDN setup](../../docs/runbooks/railway-cdn-pane-view.md)
-- Shutter configuration is documented in the repository architecture and `.env.example`.
-- [Architecture plan](../../docs/ARCHITECTURE_PLAN.md)
+- [Architecture](../../docs/ARCHITECTURE.md)
+- Shutter configuration is documented in the repository architecture and `docs/localhost/latch-works.env.example`.

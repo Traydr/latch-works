@@ -458,7 +458,7 @@ A private desktop media viewer for local image, video, comic, and story archives
 Short description:
 
 ```text
-Frame View is the local desktop viewer and reference experience for browsing archived media, including images, GIFs, videos, comics, and PDF stories.
+Frame View is the local desktop viewer and reference experience for browsing archived images, GIFs, videos, and comics. PDF reading is planned, not shipped.
 ```
 
 ### Pane View

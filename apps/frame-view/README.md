@@ -2,7 +2,7 @@
 
 > Cross-platform desktop image and video viewer — the local gallery north star for [Pane View](../pane-view).
 
-Frame View is part of the [Latch Works](../../README.md) monorepo. It browses folders on disk with a keyboard-first gallery, fullscreen viewer, comic mode, and a SQLite media index. Use it to organize and preview a local archive before syncing to Pane View via [Lockstep](../../apps/lockstep-cli).
+Frame View is part of the [Latch Works](../../README.md) monorepo. It browses local image and video folders with a keyboard-first gallery, fullscreen viewer, comic mode, and a SQLite media index. PDF reading is [planned](../../docs/plans/040-frame-view-pdf-spike.md), not shipped. Use it to organize and preview a local archive before syncing to Pane View via [Lockstep](../../apps/lockstep-cli).
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
@@ -53,7 +53,7 @@ pnpm start
 If Electron fails to launch with a missing `Electron Framework.framework` error, repair the local binary install:
 
 ```bash
-pnpm run ensure-electron
+pnpm start
 ```
 
 `pnpm start` runs this check automatically before launching Forge.
