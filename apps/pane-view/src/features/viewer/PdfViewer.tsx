@@ -8,8 +8,20 @@ interface PdfViewerProps {
   title: string;
 }
 
+interface PageGeometry {
+  height: number;
+  width: number;
+}
+
+interface ActiveRender {
+  cancel: () => void;
+}
+
 const MAX_PAGE_WIDTH_PX = 896;
+const MAX_RETAINED_CANVASES = 8;
 const PAGE_CHANGE_DEBOUNCE_MS = 3_000;
+const PAGE_OVERSCAN = 2;
+const GEOMETRY_CONCURRENCY = 4;
 
 function getPageRenderWidth(container: HTMLElement): number {
   const width = container.clientWidth;
@@ -21,29 +33,47 @@ function getPageRenderWidth(container: HTMLElement): number {
   return Math.min(Math.max(parentWidth - 24, 320), MAX_PAGE_WIDTH_PX);
 }
 
-async function renderPageToCanvas(
-  page: PDFPageProxy,
-  canvas: HTMLCanvasElement,
-  renderWidth: number,
-): Promise<void> {
-  const baseViewport = page.getViewport({ scale: 1 });
-  const scale = renderWidth / baseViewport.width;
-  const viewport = page.getViewport({ scale });
-  const outputScale = window.devicePixelRatio || 1;
+export function getPdfPageRenderWindow(
+  visiblePages: Iterable<number>,
+  pageCount: number,
+  focalPage = 1,
+): number[] {
+  const focal = Math.min(Math.max(focalPage, 1), pageCount);
+  const visible = [...new Set(visiblePages)].filter((page) => page >= 1 && page <= pageCount);
+  const selected = new Set(
+    visible.length <= MAX_RETAINED_CANVASES
+      ? visible
+      : visible
+          .sort((left, right) => Math.abs(left - focal) - Math.abs(right - focal) || left - right)
+          .slice(0, MAX_RETAINED_CANVASES),
+  );
 
-  canvas.width = Math.floor(viewport.width * outputScale);
-  canvas.height = Math.floor(viewport.height * outputScale);
-  canvas.style.width = `${Math.floor(viewport.width)}px`;
-  canvas.style.height = `${Math.floor(viewport.height)}px`;
-
-  const context = canvas.getContext("2d");
-  if (!context) {
-    return;
+  if (selected.size === 0) {
+    selected.add(focal);
   }
 
-  const transform = outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : undefined;
+  for (
+    let distance = 1;
+    distance <= PAGE_OVERSCAN && selected.size < MAX_RETAINED_CANVASES;
+    distance += 1
+  ) {
+    const candidates = [focal - distance, focal + distance];
+    let added = false;
+    for (const page of candidates) {
+      if (page >= 1 && page <= pageCount && !selected.has(page)) {
+        selected.add(page);
+        added = true;
+        if (selected.size === MAX_RETAINED_CANVASES) {
+          break;
+        }
+      }
+    }
+    if (!added && focal - distance < 1 && focal + distance > pageCount) {
+      break;
+    }
+  }
 
-  await page.render({ canvas, canvasContext: context, transform, viewport }).promise;
+  return [...selected].sort((left, right) => left - right);
 }
 
 export function resolveVisiblePdfPage(entries: IntersectionObserverEntry[]): number | null {
@@ -94,6 +124,8 @@ export function PdfViewer({
     if (previousMediaIdRef.current !== mediaId) {
       previousMediaIdRef.current = mediaId;
       hasAppliedInitialPageRef.current = false;
+      setError(null);
+      setPageCount(0);
     }
   }, [mediaId]);
 
@@ -103,11 +135,7 @@ export function PdfViewer({
     }
 
     const container = containerRef.current;
-    if (!container) {
-      return;
-    }
-
-    if (initialPage > pageCount) {
+    if (!container || initialPage > pageCount) {
       return;
     }
 
@@ -125,6 +153,12 @@ export function PdfViewer({
     let resizeObserver: ResizeObserver | undefined;
     let pageObserver: IntersectionObserver | undefined;
     let pageChangeTimer: ReturnType<typeof setTimeout> | undefined;
+    let destroyLoadingTask: (() => void) | undefined;
+    let renderWidth = getPageRenderWidth(container);
+    let renderVersion = 0;
+    let focalPage = initialPage ?? 1;
+    const visiblePages = new Set<number>();
+    const renderTasks = new Map<number, ActiveRender>();
     container.replaceChildren();
 
     const reportPage = (page: number): void => {
@@ -141,93 +175,195 @@ export function PdfViewer({
       }, PAGE_CHANGE_DEBOUNCE_MS);
     };
 
+    const cancelRender = (pageNumber: number): void => {
+      renderTasks.get(pageNumber)?.cancel();
+      renderTasks.delete(pageNumber);
+      const slot = container.querySelector<HTMLElement>(`[data-page-number="${pageNumber}"]`);
+      const canvas = slot?.querySelector("canvas");
+      if (canvas) {
+        canvas.width = 0;
+        canvas.height = 0;
+        canvas.remove();
+      }
+    };
+
     const render = async () => {
       try {
         const [pdfjs, workerModule] = await Promise.all([
           import("pdfjs-dist"),
           import("pdfjs-dist/build/pdf.worker.min.mjs?url"),
         ]);
-
         if (cancelled) {
           return;
         }
 
         pdfjs.GlobalWorkerOptions.workerSrc = workerModule.default;
-
         const loadingTask = pdfjs.getDocument({ url: `/api/media/${mediaId}/original` });
+        destroyLoadingTask = () => loadingTask.destroy();
         const pdf = await loadingTask.promise;
         if (cancelled) {
           return;
         }
 
-        setPageCount(pdf.numPages);
-
-        const paintPages = async () => {
-          if (cancelled) {
-            return;
-          }
-
-          const scrollContainer = scrollContainerRef.current;
-          const previousScrollTop = scrollContainer?.scrollTop ?? 0;
-          const renderWidth = getPageRenderWidth(container);
-          container.replaceChildren();
-          pageObserver?.disconnect();
-
-          for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
-            if (cancelled) {
-              return;
+        const geometry = new Map<number, PageGeometry>();
+        // A Rendition needs stable geometry before pages are painted so resume scrolling works.
+        let nextGeometryPage = 1;
+        await Promise.all(
+          Array.from({ length: Math.min(GEOMETRY_CONCURRENCY, pdf.numPages) }, async () => {
+            while (!cancelled) {
+              const pageNumber = nextGeometryPage;
+              nextGeometryPage += 1;
+              if (pageNumber > pdf.numPages) {
+                return;
+              }
+              const page = await pdf.getPage(pageNumber);
+              const viewport = page.getViewport({ scale: 1 });
+              geometry.set(pageNumber, { height: viewport.height, width: viewport.width });
+              page.cleanup();
             }
+          }),
+        );
+        if (cancelled) {
+          return;
+        }
 
-            const page = await pdf.getPage(pageNumber);
-            const canvas = document.createElement("canvas");
-            canvas.className = "mx-auto max-w-full rounded bg-white";
-            canvas.dataset.pageNumber = String(pageNumber);
-
-            await renderPageToCanvas(page, canvas, renderWidth);
-            container.append(canvas);
-          }
-
-          if (scrollContainer) {
-            scrollContainer.scrollTop = previousScrollTop;
-          }
-
-          if (onPageChangeRef.current) {
-            pageObserver = new IntersectionObserver(
-              (entries) => {
-                const visiblePage = resolveVisiblePdfPage(entries);
-                if (visiblePage) {
-                  reportPage(visiblePage);
-                }
-              },
-              {
-                root: scrollContainerRef.current,
-                threshold: [0, 0.25, 0.5, 0.75, 1],
-              },
-            );
-
-            for (const canvas of container.querySelectorAll("[data-page-number]")) {
-              pageObserver.observe(canvas);
+        const applyGeometry = () => {
+          for (const [pageNumber, dimensions] of geometry) {
+            const slot = container.querySelector<HTMLElement>(`[data-page-number="${pageNumber}"]`);
+            if (slot) {
+              slot.style.width = `${Math.floor(renderWidth)}px`;
+              slot.style.aspectRatio = `${dimensions.width} / ${dimensions.height}`;
             }
           }
         };
 
-        if (container.clientWidth === 0) {
-          await new Promise<void>((resolve) => {
-            requestAnimationFrame(() => resolve());
-          });
+        for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+          const slot = document.createElement("div");
+          slot.className = "mx-auto max-w-full overflow-hidden rounded bg-white";
+          slot.dataset.pageNumber = String(pageNumber);
+          container.append(slot);
         }
+        applyGeometry();
+        setPageCount(pdf.numPages);
 
-        await paintPages();
-
-        let lastRenderWidth = getPageRenderWidth(container);
-        resizeObserver = new ResizeObserver(() => {
-          const nextRenderWidth = getPageRenderWidth(container);
-          if (Math.abs(nextRenderWidth - lastRenderWidth) < 8) {
-            return;
+        const paintWindow = () => {
+          const desiredPages = new Set(getPdfPageRenderWindow(visiblePages, pdf.numPages, focalPage));
+          for (const pageNumber of [...renderTasks.keys()]) {
+            if (!desiredPages.has(pageNumber)) {
+              cancelRender(pageNumber);
+            }
+          }
+          for (const canvas of container.querySelectorAll<HTMLCanvasElement>("canvas")) {
+            const pageNumber = Number(canvas.parentElement?.dataset.pageNumber);
+            if (!desiredPages.has(pageNumber)) {
+              cancelRender(pageNumber);
+            }
           }
 
-          lastRenderWidth = nextRenderWidth;
-          void paintPages();
+          const version = renderVersion;
+          for (const pageNumber of desiredPages) {
+            const slot = container.querySelector<HTMLElement>(`[data-page-number="${pageNumber}"]`);
+            if (!slot || slot.querySelector("canvas") || renderTasks.has(pageNumber)) {
+              continue;
+            }
+
+            let task: ActiveRender | undefined;
+            task = {
+              cancel: () => {
+                task = undefined;
+              },
+            };
+            renderTasks.set(pageNumber, task);
+            void (async () => {
+              let page: PDFPageProxy | undefined;
+              let renderTask: ReturnType<PDFPageProxy["render"]> | undefined;
+              try {
+                page = await pdf.getPage(pageNumber);
+                if (cancelled || task !== renderTasks.get(pageNumber) || version !== renderVersion) {
+                  return;
+                }
+
+                const dimensions = geometry.get(pageNumber);
+                if (!dimensions) {
+                  return;
+                }
+                const scale = renderWidth / dimensions.width;
+                const viewport = page.getViewport({ scale });
+                const canvas = document.createElement("canvas");
+                const outputScale = window.devicePixelRatio || 1;
+                canvas.width = Math.floor(viewport.width * outputScale);
+                canvas.height = Math.floor(viewport.height * outputScale);
+                canvas.className = "block h-full w-full";
+                const context = canvas.getContext("2d");
+                if (!context) {
+                  return;
+                }
+
+                renderTask = page.render({
+                  canvas,
+                  canvasContext: context,
+                  transform: outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : undefined,
+                  viewport,
+                });
+                task.cancel = () => renderTask?.cancel();
+                await renderTask.promise;
+                if (!cancelled && task === renderTasks.get(pageNumber) && version === renderVersion) {
+                  slot.replaceChildren(canvas);
+                }
+              } catch {
+                // Cancelled and failed page paints leave their geometry placeholder in place.
+              } finally {
+                page?.cleanup();
+                if (task === renderTasks.get(pageNumber)) {
+                  renderTasks.delete(pageNumber);
+                }
+              }
+            })();
+          }
+        };
+
+        pageObserver = new IntersectionObserver(
+          (entries) => {
+            for (const entry of entries) {
+              const pageNumber = Number(entry.target.getAttribute("data-page-number"));
+              if (!Number.isFinite(pageNumber)) {
+                continue;
+              }
+              if (entry.isIntersecting) {
+                visiblePages.add(pageNumber);
+              } else {
+                visiblePages.delete(pageNumber);
+              }
+            }
+            const visiblePage = resolveVisiblePdfPage(entries);
+            if (visiblePage) {
+              focalPage = visiblePage;
+              reportPage(visiblePage);
+            }
+            paintWindow();
+          },
+          { root: scrollContainerRef.current, threshold: [0, 0.25, 0.5, 0.75, 1] },
+        );
+        for (const slot of container.querySelectorAll("[data-page-number]")) {
+          pageObserver.observe(slot);
+        }
+        paintWindow();
+
+        resizeObserver = new ResizeObserver(() => {
+          const nextRenderWidth = getPageRenderWidth(container);
+          if (Math.abs(nextRenderWidth - renderWidth) < 8) {
+            return;
+          }
+          renderWidth = nextRenderWidth;
+          renderVersion += 1;
+          applyGeometry();
+          for (const pageNumber of [...renderTasks.keys()]) {
+            cancelRender(pageNumber);
+          }
+          for (const canvas of container.querySelectorAll<HTMLCanvasElement>("canvas")) {
+            cancelRender(Number(canvas.parentElement?.dataset.pageNumber));
+          }
+          paintWindow();
         });
         resizeObserver.observe(container);
       } catch (cause) {
@@ -238,9 +374,13 @@ export function PdfViewer({
     };
 
     void render();
-
     return () => {
       cancelled = true;
+      renderVersion += 1;
+      destroyLoadingTask?.();
+      for (const task of renderTasks.values()) {
+        task.cancel();
+      }
       resizeObserver?.disconnect();
       pageObserver?.disconnect();
       if (pageChangeTimer) {
