@@ -1,79 +1,321 @@
 // @vitest-environment jsdom
 
-import { describe, expect, it, vi } from "vitest";
-import { getPdfPageRenderWindow, resolveVisiblePdfPage, scrollToPdfPage } from "./PdfViewer";
+import { act, createElement } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({
+  documents: [] as FakeDocument[],
+  intersectionObservers: [] as FakeIntersectionObserver[],
+  resizeObservers: [] as FakeResizeObserver[],
+  renderTasks: [] as FakeRenderTask[],
+  scrollIntoView: vi.fn(),
+}));
+
+vi.mock("pdfjs-dist", () => ({
+  GlobalWorkerOptions: {},
+  getDocument: vi.fn(() => mocks.documents.shift()),
+}));
+
+vi.mock("pdfjs-dist/build/pdf.worker.min.mjs?url", () => ({ default: "pdf-worker" }));
+
+import { PdfViewer, getPdfPageRenderWindow, resolveVisiblePdfPage, scrollToPdfPage } from "./PdfViewer";
+
+interface Deferred<T> {
+  promise: Promise<T>;
+  reject: (reason?: unknown) => void;
+  resolve: (value: T) => void;
+}
+
+interface FakeRenderTask {
+  cancel: ReturnType<typeof vi.fn>;
+  pageNumber: number;
+  reject: (reason?: unknown) => void;
+  resolve: () => void;
+}
+
+interface FakeDocument {
+  destroy: ReturnType<typeof vi.fn>;
+  getPage: ReturnType<typeof vi.fn>;
+  numPages: number;
+  promise: Promise<FakeDocument>;
+}
+
+class FakeIntersectionObserver {
+  readonly disconnect = vi.fn();
+  readonly observed = new Set<Element>();
+
+  constructor(private readonly callback: IntersectionObserverCallback) {
+    mocks.intersectionObservers.push(this);
+  }
+
+  observe = (element: Element): void => {
+    this.observed.add(element);
+  };
+
+  unobserve = vi.fn();
+
+  emit(pages: Array<[number, number, boolean]>): void {
+    this.callback(
+      pages.map(([pageNumber, intersectionRatio, isIntersecting]) => {
+        const target = [...this.observed].find(
+          (element) => element.getAttribute("data-page-number") === String(pageNumber),
+        );
+        return { intersectionRatio, isIntersecting, target } as IntersectionObserverEntry;
+      }),
+      this as unknown as IntersectionObserver,
+    );
+  }
+}
+
+class FakeResizeObserver {
+  readonly disconnect = vi.fn();
+  readonly observed = new Set<Element>();
+
+  constructor(private readonly callback: ResizeObserverCallback) {
+    mocks.resizeObservers.push(this);
+  }
+
+  observe = (element: Element): void => {
+    this.observed.add(element);
+  };
+
+  emit(): void {
+    this.callback([], this as unknown as ResizeObserver);
+  }
+}
+
+function deferred<T>(): Deferred<T> {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((nextResolve, nextReject) => {
+    resolve = nextResolve;
+    reject = nextReject;
+  });
+  return { promise, reject, resolve };
+}
+
+function fakeDocument(pageCount: number, pendingPages = new Set<number>(), rejectedPages = new Set<number>()): FakeDocument {
+  const document: Omit<FakeDocument, "promise"> = {
+    destroy: vi.fn(),
+    getPage: vi.fn(async (pageNumber: number) => ({
+      cleanup: vi.fn(),
+      getViewport: vi.fn(({ scale }: { scale: number }) => ({ height: 1400 * scale, width: 1000 * scale })),
+      render: vi.fn(() => {
+        const task = deferred<void>();
+        const renderTask: FakeRenderTask = {
+          cancel: vi.fn(),
+          pageNumber,
+          reject: task.reject,
+          resolve: () => task.resolve(),
+        };
+        mocks.renderTasks.push(renderTask);
+        if (rejectedPages.has(pageNumber)) {
+          task.reject(new Error("render failed"));
+        } else if (!pendingPages.has(pageNumber)) {
+          task.resolve();
+        }
+        return { cancel: renderTask.cancel, promise: task.promise };
+      }),
+    })),
+    numPages: pageCount,
+  };
+
+  const result = document as FakeDocument;
+  result.promise = Promise.resolve(result);
+  return result;
+}
+
+async function flush(): Promise<void> {
+  await act(async () => {
+    for (let index = 0; index < 100; index += 1) {
+      await Promise.resolve();
+    }
+  });
+}
+
+function mount(props: { initialPage?: number; mediaId?: string; onPageChange?: (page: number) => void } = {}) {
+  const container = document.createElement("div");
+  document.body.append(container);
+  let root: Root;
+  const render = (nextProps = props) => {
+    act(() => {
+      root.render(
+        createElement(PdfViewer, {
+          initialPage: nextProps.initialPage,
+          mediaId: nextProps.mediaId ?? "media-a",
+          onPageChange: nextProps.onPageChange,
+          title: "Test PDF",
+        }),
+      );
+    });
+  };
+  act(() => {
+    root = createRoot(container);
+  });
+  render();
+  return {
+    container,
+    rerender: render,
+    unmount: () => act(() => root.unmount()),
+  };
+}
+
+function slots(container: HTMLElement): HTMLElement[] {
+  return [...container.querySelectorAll<HTMLElement>("[data-page-number]")];
+}
 
 describe("getPdfPageRenderWindow", () => {
-  it("bounds initial painting for a 300-page Rendition", () => {
-    expect(getPdfPageRenderWindow([], 300)).toEqual([1, 2, 3]);
-    expect(getPdfPageRenderWindow([], 300, 298)).toEqual([296, 297, 298, 299, 300]);
+  it("keeps every observed visible page when there is capacity", () => {
+    expect(getPdfPageRenderWindow([1, 10], 300, 1)).toEqual([1, 2, 3, 10]);
   });
 
-  it("includes visible pages and overscan without retaining more than eight canvases", () => {
-    const pages = getPdfPageRenderWindow([100, 101], 300);
+  it("uses the focal page as deterministic priority when visible pages exceed capacity", () => {
+    expect(getPdfPageRenderWindow([1, 2, 3, 4, 5, 6, 7, 8, 9], 300, 9)).toEqual([
+      2, 3, 4, 5, 6, 7, 8, 9,
+    ]);
+  });
+});
 
-    expect(pages).toEqual([98, 99, 100, 101, 102, 103]);
-    expect(pages).toHaveLength(6);
-    expect(getPdfPageRenderWindow([1, 10], 300)).toHaveLength(8);
+describe("PdfViewer", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    mocks.documents.length = 0;
+    mocks.intersectionObservers.length = 0;
+    mocks.resizeObservers.length = 0;
+    mocks.renderTasks.length = 0;
+    mocks.scrollIntoView.mockReset();
+    vi.stubGlobal("IntersectionObserver", FakeIntersectionObserver);
+    vi.stubGlobal("ResizeObserver", FakeResizeObserver);
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({} as CanvasRenderingContext2D);
+    Element.prototype.scrollIntoView = mocks.scrollIntoView;
   });
 
-  it("clamps the window at document boundaries", () => {
-    expect(getPdfPageRenderWindow([1], 1)).toEqual([1]);
-    expect(getPdfPageRenderWindow([300], 300)).toEqual([298, 299, 300]);
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+    document.body.replaceChildren();
+  });
+
+  it("creates geometry for 300 pages while initially painting only the bounded window", async () => {
+    const pdf = fakeDocument(300);
+    mocks.documents.push(pdf);
+    const viewer = mount();
+
+    await flush();
+
+    expect(slots(viewer.container)).toHaveLength(300);
+    expect(pdf.getPage).toHaveBeenCalledTimes(303);
+    expect(mocks.renderTasks.map((task) => task.pageNumber)).toEqual([1, 2, 3]);
+    viewer.unmount();
+  });
+
+  it("renders the next observer window and retains no more than eight canvases", async () => {
+    mocks.documents.push(fakeDocument(300));
+    const viewer = mount();
+    await flush();
+
+    mocks.intersectionObservers[0]?.emit([
+      [1, 0, false],
+      [10, 1, true],
+    ]);
+    await flush();
+
+    expect(mocks.renderTasks.map((task) => task.pageNumber)).toEqual([1, 2, 3, 8, 9, 10, 11, 12]);
+    expect(viewer.container.querySelectorAll("canvas").length).toBeLessThanOrEqual(8);
+    expect([...viewer.container.querySelectorAll("canvas")].map((canvas) => canvas.parentElement?.dataset.pageNumber)).toEqual([
+      "8",
+      "9",
+      "10",
+      "11",
+      "12",
+    ]);
+    viewer.unmount();
+  });
+
+  it("repaints only the active window on resize and ignores stale completion", async () => {
+    const pdf = fakeDocument(300, new Set([1, 2, 3]));
+    mocks.documents.push(pdf);
+    const viewer = mount();
+    await flush();
+    const resizeTarget = [...mocks.resizeObservers[0]!.observed][0] as HTMLElement;
+    Object.defineProperty(resizeTarget, "clientWidth", { configurable: true, value: 600 });
+
+    mocks.resizeObservers[0]?.emit();
+    await flush();
+
+    expect(mocks.renderTasks.slice(0, 3).every((task) => task.cancel.mock.calls.length === 1)).toBe(true);
+    expect(mocks.renderTasks.slice(3).map((task) => task.pageNumber)).toEqual([1, 2, 3]);
+    mocks.renderTasks[0]?.resolve();
+    await flush();
+    expect(slots(viewer.container)[0]?.querySelector("canvas")).toBeNull();
+    mocks.renderTasks[3]?.resolve();
+    await flush();
+    expect(slots(viewer.container)[0]?.querySelector("canvas")).not.toBeNull();
+    viewer.unmount();
+  });
+
+  it("restores the initial page and suppresses rejected render task errors", async () => {
+    mocks.documents.push(fakeDocument(20, new Set(), new Set([18])));
+    const viewer = mount({ initialPage: 18 });
+    await flush();
+
+    expect(mocks.scrollIntoView).toHaveBeenCalledWith({ block: "start" });
+    expect(mocks.renderTasks.map((task) => task.pageNumber)).toEqual([16, 17, 18, 19, 20]);
+    expect(slots(viewer.container)[17]?.querySelector("canvas")).toBeNull();
+    viewer.unmount();
+  });
+
+  it("destroys loading work and cancels renders, observers, and reporting on media change and unmount", async () => {
+    const firstPdf = fakeDocument(20, new Set([1, 2, 3]));
+    const secondPdf = fakeDocument(20, new Set([1, 2, 3]));
+    mocks.documents.push(firstPdf, secondPdf);
+    const onPageChange = vi.fn();
+    const viewer = mount({ onPageChange });
+    await flush();
+    mocks.intersectionObservers[0]?.emit([[1, 1, true]]);
+    await flush();
+
+    viewer.rerender({ mediaId: "media-b", onPageChange });
+    await flush();
+    expect(firstPdf.destroy).toHaveBeenCalledTimes(1);
+    expect(mocks.intersectionObservers[0]?.disconnect).toHaveBeenCalledTimes(1);
+    expect(mocks.resizeObservers[0]?.disconnect).toHaveBeenCalledTimes(1);
+    expect(mocks.renderTasks.slice(0, 3).every((task) => task.cancel.mock.calls.length === 1)).toBe(true);
+
+    viewer.unmount();
+    expect(secondPdf.destroy).toHaveBeenCalledTimes(1);
+    expect(mocks.intersectionObservers[1]?.disconnect).toHaveBeenCalledTimes(1);
+    expect(mocks.resizeObservers[1]?.disconnect).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
 
 describe("resolveVisiblePdfPage", () => {
   it("returns the page with the highest intersection ratio", () => {
-    const pageOne = document.createElement("canvas");
+    const pageOne = document.createElement("div");
     pageOne.dataset.pageNumber = "1";
-    const pageTwo = document.createElement("canvas");
+    const pageTwo = document.createElement("div");
     pageTwo.dataset.pageNumber = "2";
-
-    const page = resolveVisiblePdfPage([
-      {
-        intersectionRatio: 0.2,
-        isIntersecting: true,
-        target: pageOne,
-      } as unknown as IntersectionObserverEntry,
-      {
-        intersectionRatio: 0.8,
-        isIntersecting: true,
-        target: pageTwo,
-      } as unknown as IntersectionObserverEntry,
-    ]);
-
-    expect(page).toBe(2);
-  });
-
-  it("ignores non-intersecting entries", () => {
-    const pageOne = document.createElement("canvas");
-    pageOne.dataset.pageNumber = "1";
-
-    const page = resolveVisiblePdfPage([
-      {
-        intersectionRatio: 0,
-        isIntersecting: false,
-        target: pageOne,
-      } as unknown as IntersectionObserverEntry,
-    ]);
-
-    expect(page).toBeNull();
+    expect(
+      resolveVisiblePdfPage([
+        { intersectionRatio: 0.2, isIntersecting: true, target: pageOne } as unknown as IntersectionObserverEntry,
+        { intersectionRatio: 0.8, isIntersecting: true, target: pageTwo } as unknown as IntersectionObserverEntry,
+      ]),
+    ).toBe(2);
   });
 });
 
 describe("scrollToPdfPage", () => {
   it("scrolls the requested page into view", () => {
     const container = document.createElement("div");
-    const pageOne = document.createElement("canvas");
-    pageOne.dataset.pageNumber = "1";
-    const pageTwo = document.createElement("canvas");
-    pageTwo.dataset.pageNumber = "2";
-    pageTwo.scrollIntoView = vi.fn();
-    container.append(pageOne, pageTwo);
-
+    const page = document.createElement("div");
+    page.dataset.pageNumber = "2";
+    page.scrollIntoView = vi.fn();
+    container.append(page);
     scrollToPdfPage(container, 2);
-
-    expect(pageTwo.scrollIntoView).toHaveBeenCalledWith({ block: "start" });
+    expect(page.scrollIntoView).toHaveBeenCalledWith({ block: "start" });
   });
 });

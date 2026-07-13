@@ -21,6 +21,7 @@ const MAX_PAGE_WIDTH_PX = 896;
 const MAX_RETAINED_CANVASES = 8;
 const PAGE_CHANGE_DEBOUNCE_MS = 3_000;
 const PAGE_OVERSCAN = 2;
+const GEOMETRY_CONCURRENCY = 4;
 
 function getPageRenderWidth(container: HTMLElement): number {
   const width = container.clientWidth;
@@ -35,15 +36,44 @@ function getPageRenderWidth(container: HTMLElement): number {
 export function getPdfPageRenderWindow(
   visiblePages: Iterable<number>,
   pageCount: number,
-  fallbackPage = 1,
+  focalPage = 1,
 ): number[] {
-  const pages = [...visiblePages].filter((page) => page >= 1 && page <= pageCount);
-  const first = pages.length > 0 ? Math.min(...pages) : Math.min(Math.max(fallbackPage, 1), pageCount);
-  const last = pages.length > 0 ? Math.max(...pages) : first;
-  const start = Math.max(1, first - PAGE_OVERSCAN);
-  const end = Math.min(pageCount, Math.min(last + PAGE_OVERSCAN, start + MAX_RETAINED_CANVASES - 1));
+  const focal = Math.min(Math.max(focalPage, 1), pageCount);
+  const visible = [...new Set(visiblePages)].filter((page) => page >= 1 && page <= pageCount);
+  const selected = new Set(
+    visible.length <= MAX_RETAINED_CANVASES
+      ? visible
+      : visible
+          .sort((left, right) => Math.abs(left - focal) - Math.abs(right - focal) || left - right)
+          .slice(0, MAX_RETAINED_CANVASES),
+  );
 
-  return Array.from({ length: end - start + 1 }, (_, index) => start + index);
+  if (selected.size === 0) {
+    selected.add(focal);
+  }
+
+  for (
+    let distance = 1;
+    distance <= PAGE_OVERSCAN && selected.size < MAX_RETAINED_CANVASES;
+    distance += 1
+  ) {
+    const candidates = [focal - distance, focal + distance];
+    let added = false;
+    for (const page of candidates) {
+      if (page >= 1 && page <= pageCount && !selected.has(page)) {
+        selected.add(page);
+        added = true;
+        if (selected.size === MAX_RETAINED_CANVASES) {
+          break;
+        }
+      }
+    }
+    if (!added && focal - distance < 1 && focal + distance > pageCount) {
+      break;
+    }
+  }
+
+  return [...selected].sort((left, right) => left - right);
 }
 
 export function resolveVisiblePdfPage(entries: IntersectionObserverEntry[]): number | null {
@@ -126,6 +156,7 @@ export function PdfViewer({
     let destroyLoadingTask: (() => void) | undefined;
     let renderWidth = getPageRenderWidth(container);
     let renderVersion = 0;
+    let focalPage = initialPage ?? 1;
     const visiblePages = new Set<number>();
     const renderTasks = new Map<number, ActiveRender>();
     container.replaceChildren();
@@ -176,14 +207,24 @@ export function PdfViewer({
 
         const geometry = new Map<number, PageGeometry>();
         // A Rendition needs stable geometry before pages are painted so resume scrolling works.
-        for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
-          const page = await pdf.getPage(pageNumber);
-          const viewport = page.getViewport({ scale: 1 });
-          geometry.set(pageNumber, { height: viewport.height, width: viewport.width });
-          page.cleanup();
-          if (cancelled) {
-            return;
-          }
+        let nextGeometryPage = 1;
+        await Promise.all(
+          Array.from({ length: Math.min(GEOMETRY_CONCURRENCY, pdf.numPages) }, async () => {
+            while (!cancelled) {
+              const pageNumber = nextGeometryPage;
+              nextGeometryPage += 1;
+              if (pageNumber > pdf.numPages) {
+                return;
+              }
+              const page = await pdf.getPage(pageNumber);
+              const viewport = page.getViewport({ scale: 1 });
+              geometry.set(pageNumber, { height: viewport.height, width: viewport.width });
+              page.cleanup();
+            }
+          }),
+        );
+        if (cancelled) {
+          return;
         }
 
         const applyGeometry = () => {
@@ -205,8 +246,8 @@ export function PdfViewer({
         applyGeometry();
         setPageCount(pdf.numPages);
 
-        const paintWindow = (fallbackPage = initialPage ?? 1) => {
-          const desiredPages = new Set(getPdfPageRenderWindow(visiblePages, pdf.numPages, fallbackPage));
+        const paintWindow = () => {
+          const desiredPages = new Set(getPdfPageRenderWindow(visiblePages, pdf.numPages, focalPage));
           for (const pageNumber of [...renderTasks.keys()]) {
             if (!desiredPages.has(pageNumber)) {
               cancelRender(pageNumber);
@@ -296,9 +337,10 @@ export function PdfViewer({
             }
             const visiblePage = resolveVisiblePdfPage(entries);
             if (visiblePage) {
+              focalPage = visiblePage;
               reportPage(visiblePage);
             }
-            paintWindow(visiblePage ?? initialPage ?? 1);
+            paintWindow();
           },
           { root: scrollContainerRef.current, threshold: [0, 0.25, 0.5, 0.75, 1] },
         );
