@@ -35,8 +35,8 @@ import {
 } from "./sites";
 import {
   EMPTY_LAST_RUN,
+  LastRunWriter,
   loadLastRun,
-  saveLastRun,
   type LastRunLogEntry,
   type LastRunState
 } from "./last-run";
@@ -92,6 +92,7 @@ export class GatherController {
 
   private elements!: PopupElements;
   private logEntries: LastRunLogEntry[] = [];
+  private readonly lastRunWriter = new LastRunWriter();
   private readonly options: GatherControllerOptions;
   private keydownHandler: ((event: KeyboardEvent) => void) | null = null;
   private messageHandler: ((message: GatherRuntimeMessage) => void) | null = null;
@@ -360,6 +361,7 @@ export class GatherController {
       this.appendLog(formatError(error), "error");
       setLogExpanded(this.elements, true);
     } finally {
+      await this.lastRunWriter.flush();
       this.state.running = false;
       this.syncPopupActions();
       if (shouldFlashDownloadButton) {
@@ -453,6 +455,7 @@ export class GatherController {
       this.appendLog(`Retry failed: ${formatError(error)}`, "error");
       setLogExpanded(this.elements, true);
     } finally {
+      await this.lastRunWriter.flush();
       this.state.running = false;
       this.syncPopupActions();
     }
@@ -786,9 +789,19 @@ export class GatherController {
       canRetry: patch.canRetry ?? this.state.lastRun.canRetry
     };
 
-    await saveLastRun(this.state.lastRun);
+    this.lastRunWriter.enqueue(copyLastRun(this.state.lastRun));
+    await this.lastRunWriter.flush();
     this.syncPopupActions();
   }
+}
+
+function copyLastRun(state: LastRunState): LastRunState {
+  return {
+    ...state,
+    log: state.log.map((entry) => ({ ...entry })),
+    failedItems: state.failedItems.map((item) => ({ ...item })),
+    retryImages: state.retryImages.map((image) => ({ ...image }))
+  };
 }
 
 function resetProgress(elements: PopupElements): void {
