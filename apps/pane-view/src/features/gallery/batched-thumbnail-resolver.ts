@@ -117,6 +117,20 @@ export function getNextPendingThumbnailRetryMs(requests: GalleryThumbnailRequest
   return earliestDelay;
 }
 
+export function hasEligibleGalleryThumbnailRequests(requests: GalleryThumbnailRequest[]): boolean {
+  const now = Date.now();
+
+  return requests.some((request) => {
+    const cached = cache.get(cacheKey(request));
+    return (
+      cached?.status !== "ready" &&
+      cached?.status !== "failed" &&
+      !cached?.inFlight &&
+      (!cached?.nextRetryAt || cached.nextRetryAt <= now)
+    );
+  });
+}
+
 export async function resolveGalleryThumbnailsBatch(
   requests: GalleryThumbnailRequest[],
 ): Promise<GalleryThumbnailResolveState> {
