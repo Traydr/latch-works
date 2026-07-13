@@ -18,7 +18,6 @@ Latch Works is a private TypeScript pnpm workspace for collecting, syncing, and 
 - `packages/media-domain/`: shared media types, path logic, sorting, and domain tests.
 - `packages/media-index/`: archive scanning and sync-plan logic.
 - `packages/media-storage/`: storage key and S3 integration helpers.
-- `packages/media-delivery/`: signed CDN delivery tokens for thumbnails and previews.
 - `packages/lockstep-core/`: headless sync engine shared by Lockstep desktop and CLI — no console, prompts, or UI.
 
 ### Other
