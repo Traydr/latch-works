@@ -23,37 +23,37 @@
       "source": "mattpocock/skills",
       "sourceType": "github",
       "skillPath": "skills/engineering/grill-with-docs/SKILL.md",
-      "computedHash": "eb0e91e84277283dc2b23ed544399e53afd6b5287e5b6929f25fe8aa608e164b"
+      "computedHash": "e7ef25bbee50cda2eb7b3a8ef541db0a0396dad7d369f7d14fb610671dd1864b"
     },
     "improve": {
       "source": "shadcn/improve",
       "sourceType": "github",
       "skillPath": "skills/improve/SKILL.md",
-      "computedHash": "7a0f09dd535fc84391dc63bea826d6aeab985b92423fa4dd93edacb5dfb82524"
+      "computedHash": "39a9358732dcff385e9e4d3e60b4547856f834e54a58b35e455aa9bd49928c13"
     },
     "improve-codebase-architecture": {
       "source": "mattpocock/skills",
       "sourceType": "github",
       "skillPath": "skills/engineering/improve-codebase-architecture/SKILL.md",
-      "computedHash": "ef32aea0a8fab9b365ff9e08a95f8d353e20ca21ea46ec2e73587c86dd341351"
+      "computedHash": "8bf292143ca93b00276a0de0fc5f84f2381f4690c5b0d32e99fa283a072f392f"
     },
     "make-interfaces-feel-better": {
       "source": "jakubkrehel/make-interfaces-feel-better",
       "sourceType": "github",
       "skillPath": "skills/make-interfaces-feel-better/SKILL.md",
-      "computedHash": "54b6e221bbe4e2d1a8461c3f9ecabe69daf891f964e9ee5e699c323daa018f2e"
+      "computedHash": "8e3423e467eae12f3748ca1a365a668105ac59dbb0fdd50e66b45a40bb581950"
     },
     "review-animations": {
       "source": "emilkowalski/skills",
       "sourceType": "github",
       "skillPath": "skills/review-animations/SKILL.md",
-      "computedHash": "ca04aaa0a815f05e0910ded8fedbfbdfe0acdec8f52dfbb88277890070d134d4"
+      "computedHash": "c92905bff59c3007d07c2638a2a83d5d71c901feef108cce1da0bf3c7cafd579"
     },
     "writing-great-skills": {
       "source": "mattpocock/skills",
       "sourceType": "github",
       "skillPath": "skills/productivity/writing-great-skills/SKILL.md",
-      "computedHash": "dd555ce552f82784c3d2b8d13a8e26a6677a07ddc00032e142dec33bfd5438c6"
+      "computedHash": "42fe94c64d7b9acda9ce7d6495a3476893a1b18615986528f55f7162a29789d4"
     }
   }
 }
