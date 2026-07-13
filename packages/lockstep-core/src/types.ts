@@ -68,6 +68,8 @@ export interface LockstepObserver {
 export interface PlanSyncOptions {
   apiToken?: string;
   apiUrl?: string;
+  directoryConcurrency?: number;
+  fileConcurrency?: number;
   hashFiles?: boolean;
   remoteSnapshotPath?: string;
   signal?: AbortSignal;
