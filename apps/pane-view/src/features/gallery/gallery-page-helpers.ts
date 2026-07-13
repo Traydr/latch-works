@@ -1,5 +1,6 @@
 import type { MediaItem } from "@latch-works/media-domain";
 import type { GalleryThumbnailRequest } from "@/features/gallery/batched-thumbnail-resolver";
+import type { LibrarySnapshotRequest } from "@/features/library/library-queries";
 import type { LibraryMediaItem } from "@/server/library/types";
 
 export function mergeLibraryMedia(
@@ -20,6 +21,20 @@ export function mergeLibraryMedia(
   }
 
   return merged;
+}
+
+export function toLibrarySnapshotNextPageRequest(
+  request: LibrarySnapshotRequest,
+  mediaOffset: number,
+) {
+  return {
+    comicMode: request.comicMode,
+    includeAllFolders: false,
+    mediaOffset,
+    path: request.path,
+    query: request.query,
+    recursive: request.recursive,
+  };
 }
 
 export function supportsGalleryThumbnail(media: MediaItem): boolean {

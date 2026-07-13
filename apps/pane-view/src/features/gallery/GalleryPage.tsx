@@ -35,7 +35,10 @@ import {
 import { FloatingToolbar } from "@/features/gallery/FloatingToolbar";
 import { GalleryBrowsePane } from "@/features/gallery/GalleryBrowsePane";
 import { GalleryGridSkeleton } from "@/features/gallery/GalleryGridSkeleton";
-import { mergeLibraryMedia } from "@/features/gallery/gallery-page-helpers";
+import {
+  mergeLibraryMedia,
+  toLibrarySnapshotNextPageRequest,
+} from "@/features/gallery/gallery-page-helpers";
 import { useGalleryShell } from "@/features/gallery/gallery-shell-context";
 import { MediaViewerModal } from "@/features/gallery/MediaViewerModal";
 import { GALLERY_STATE_DEFAULTS, useGalleryState } from "@/features/gallery/useGalleryState";
@@ -926,14 +929,7 @@ export function GalleryPage() {
     setLoadingMoreMedia(true);
     try {
       const nextSnapshot = await getLibrarySnapshot({
-        data: {
-          comicMode: snapshotRequest.comicMode,
-          includeAllFolders: false,
-          mediaOffset: mediaPage.nextOffset,
-          path: snapshotRequest.path,
-          query: snapshotRequest.query,
-          recursive: snapshotRequest.recursive,
-        },
+        data: toLibrarySnapshotNextPageRequest(snapshotRequest, mediaPage.nextOffset),
       });
       setExtraMedia((current) => mergeLibraryMedia(current, nextSnapshot.media));
       setMediaPage(nextSnapshot.mediaPage);
