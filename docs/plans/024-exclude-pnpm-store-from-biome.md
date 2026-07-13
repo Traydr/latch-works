@@ -9,6 +9,7 @@
 
 ## Status
 
+- **Status**: DONE (`4cc6141`, independently verified 2026-07-13)
 - **Priority**: P1
 - **Effort**: S
 - **Risk**: LOW
@@ -88,4 +89,3 @@ No new automated test is warranted for a one-line tool include. The regression c
 
 Review future repo-local caches individually. Exclude generated/dependency state by exact directory
 name; do not make Biome ignore all dot-directories.
-

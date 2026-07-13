@@ -8,9 +8,9 @@ the corresponding plan.
 
 | Plan | Outcome | Priority | Effort | Depends on | Status |
 |---|---|---:|---:|---|---|
-| [024](024-exclude-pnpm-store-from-biome.md) | Make root Biome checks checkout-local | P1 | S | — | TODO |
-| [025](025-repair-drizzle-snapshot-baseline.md) | Restore a current Drizzle snapshot baseline | P1 | M | — | TODO |
-| [026](026-attest-sync-uploads.md) | Verify uploaded bytes before DB registration | P1 | M | — | TODO |
+| [024](024-exclude-pnpm-store-from-biome.md) | Make root Biome checks checkout-local | P1 | S | — | DONE |
+| [025](025-repair-drizzle-snapshot-baseline.md) | Restore a current Drizzle snapshot baseline | P1 | M | — | BLOCKED |
+| [026](026-attest-sync-uploads.md) | Verify uploaded bytes before DB registration | P1 | M | — | BLOCKED |
 | [027](027-preserve-terminal-sync-status.md) | Make sync-run terminal states immutable | P1 | S | — | TODO |
 | [028](028-drain-thumbnail-batches.md) | Resolve every thumbnail beyond the 48-item batch | P1 | S | — | TODO |
 | [029](029-atomic-folder-subtree-delete.md) | Delete folder selections in one transaction | P1 | S | — | TODO |
@@ -29,6 +29,16 @@ the corresponding plan.
 Plans without dependencies can run in parallel. Within the dependent chain, execute `025 -> 030`,
 `026 -> 036`, then `026 + 030 + 036 -> 037`. Run the PDF direction spike only after Plans 033 and
 034 establish the shared media model and bounded PDF rendering contract.
+
+## Execution blockers
+
+- **025**: `drizzle-kit generate --custom` copied the stale `0006` snapshot instead of deriving a
+  snapshot from the current schema. The plan now specifies ordinary generation followed by a
+  verified comments-only no-op migration; both disposable PostgreSQL paths still need execution.
+- **026**: two executor revision rounds produced a tested partial branch, but live MinIO rejected the
+  valid PUT because checksum/SHA metadata were hoisted into the query while also returned as unsigned
+  headers. The plan now specifies the verified signable/unhoistable header shape. The partial branch
+  is `codex/026-attest-sync-uploads` at `2dcf74e`.
 
 ## Finding coverage
 

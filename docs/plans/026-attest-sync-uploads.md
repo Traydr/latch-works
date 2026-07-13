@@ -8,6 +8,7 @@
 
 ## Status
 
+- **Status**: BLOCKED after two revision rounds; signing-shape correction documented below
 - **Priority**: P1
 - **Effort**: M
 - **Risk**: MED
@@ -31,6 +32,12 @@ declared hash, size, and content type before any media/library row is committed.
 - `remote-api.ts:95-150` hashes, opens the file again for upload, then sends the old item size/mtime.
 - Content types are validated by `apps/pane-view/src/server/sync/validation.ts`; match that pattern.
 - `CONTEXT.md` defines a Source Object as immutable. Do not weaken deterministic SHA-256 keys.
+- Partial implementation is retained on branch `codex/026-attest-sync-uploads` at `2dcf74e`; its
+  focused suites, root typecheck, and root lint pass. Continue from that branch rather than repeating
+  the completed route, HEAD verification, streaming, and unit-test work.
+- Live MinIO diagnosis found that `getSignedUrl` hoists `x-amz-checksum-sha256` and
+  `x-amz-meta-sha256` into the query while the partial helper also returns both as headers. MinIO
+  rejects the valid PUT because `x-amz-meta-sha256` is then an unsigned request header.
 
 ## Commands you will need
 
@@ -66,8 +73,15 @@ deployment limit exists. Sign exact content length, content type, SHA-256 checks
 SHA metadata in `PutObjectCommand`; return the headers Lockstep must send rather than duplicating
 header knowledge in the client.
 
+For AWS SDK presigning, pass `signableHeaders: new Set(["content-type"])` and
+`unhoistableHeaders: new Set(["x-amz-checksum-sha256", "x-amz-meta-sha256"])` to `getSignedUrl`.
+The resulting `X-Amz-SignedHeaders` must contain
+`content-length;content-type;host;x-amz-checksum-sha256;x-amz-meta-sha256`. Do not return a header
+unless it is represented in that signed-header list.
+
 **Verify**: storage and route tests cover missing, negative, oversized, and valid sizes; signed input
-contains exact content length and checksum.
+contains exact content length and checksum; a URL-structure assertion proves all returned headers are
+signed and checksum/SHA metadata are not hoisted.
 
 ### Step 2: Make Lockstep upload the exact attested stream
 
@@ -93,7 +107,10 @@ valid completion still creates the same rows.
 ### Step 4: Exercise the actual local S3 provider
 
 With disposable local objects, prove the provider enforces the signed checksum and content length.
-Use synthetic bytes only and remove them through the provider's normal test cleanup.
+Use synthetic bytes only and remove them through the provider's normal test cleanup. The prior
+diagnostic established the expected MinIO behavior for the corrected signing shape: valid PUT returns
+200, altered bytes return `XAmzContentChecksumMismatch`, and altered length/type/metadata/checksum
+returns `SignatureDoesNotMatch`.
 
 **Verify**: valid PUT + HEAD succeeds; altered bytes or headers are rejected and no completion row is
 written.
@@ -117,6 +134,8 @@ mismatch, and the happy path.
 
 - RustFS/production S3 does not support the selected checksum header consistently.
 - Presigning exact content length breaks supported clients/providers.
+- The installed AWS presigner does not support `signableHeaders` and `unhoistableHeaders`, or the
+  resulting URL omits any returned header from `X-Amz-SignedHeaders`.
 - Verification requires downloading whole production-sized objects into Pane View memory.
 - The fix requires changing deterministic object keys.
 
@@ -125,4 +144,3 @@ mismatch, and the happy path.
 Any new upload client must use the returned signed-header contract. Reviewer attention should focus
 on provider interoperability, zero-byte handling, and ensuring HEAD/network work stays outside DB
 transactions.
-
