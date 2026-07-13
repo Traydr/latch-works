@@ -51,8 +51,10 @@ function resolveConcurrency(value: number | undefined): number {
 async function hashPathsSubset({
   fileConcurrency,
   items,
+  onProgress,
   operations = defaultOperations,
   signal,
+  skipped = 0,
   sourceRoot,
 }: {
   fileConcurrency?: number;
@@ -60,6 +62,7 @@ async function hashPathsSubset({
   onProgress?: ScanArchiveOptions["onProgress"];
   operations?: ScanArchiveOperations;
   signal?: AbortSignal;
+  skipped?: number;
   sourceRoot: string;
 }): Promise<Map<string, string>> {
   const root = path.resolve(sourceRoot);
@@ -81,9 +84,25 @@ async function hashPathsSubset({
         }
         active += 1;
         const absolutePath = path.join(root, item.path);
+        onProgress?.({
+          bytesHashed: 0,
+          fileSize: item.size,
+          filesFound: hashes.size,
+          path: item.path,
+          skipped,
+          stage: "hashing",
+        });
         void hashSingleFile(absolutePath, operations, signal)
           .then((sha256) => {
             hashes.set(item.path, sha256);
+            onProgress?.({
+              bytesHashed: item.size,
+              fileSize: item.size,
+              filesFound: hashes.size,
+              path: item.path,
+              skipped,
+              stage: "hashing",
+            });
             active -= 1;
             if (next === items.length && active === 0) {
               settled = true;
@@ -167,6 +186,7 @@ export async function scanArchiveWithHashCache(
     onProgress: options.onProgress,
     operations: options.operations,
     signal: options.signal,
+    skipped: withoutHash.skipped,
     sourceRoot: withoutHash.sourceRoot,
   });
 
@@ -212,6 +232,7 @@ export async function scanArchiveSelectiveHash(
     onProgress: options.onProgress,
     operations: options.operations,
     signal: options.signal,
+    skipped: withoutHash.skipped,
     sourceRoot: withoutHash.sourceRoot,
   });
 
@@ -277,6 +298,7 @@ export async function scanArchiveIncremental(
     onProgress: options.onProgress,
     operations: options.operations,
     signal: options.signal,
+    skipped: withoutHash.skipped,
     sourceRoot: withoutHash.sourceRoot,
   });
 

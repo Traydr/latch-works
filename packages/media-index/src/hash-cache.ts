@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 export interface HashCacheEntry {
@@ -59,6 +59,7 @@ export async function readHashCache(cachePath: string): Promise<HashCacheData> {
 }
 
 export async function writeHashCache(cachePath: string, cache: HashCacheData): Promise<void> {
+  await mkdir(path.dirname(cachePath), { recursive: true });
   await writeFile(cachePath, `${JSON.stringify(cache)}\n`, "utf8");
 }
 

@@ -70,6 +70,7 @@ export interface PlanSyncOptions {
   apiUrl?: string;
   directoryConcurrency?: number;
   fileConcurrency?: number;
+  hashCachePath?: string;
   hashFiles?: boolean;
   remoteSnapshotPath?: string;
   signal?: AbortSignal;
