@@ -1,6 +1,6 @@
 # Gather Box
 
-> Chrome extension for downloading image galleries and story PDFs from supported sites into a local archive.
+> Chrome extension for downloading media galleries and story PDFs from supported sites into a local archive.
 
 Gather Box is the **collection** step in [Latch Works](../../README.md): media enters the ecosystem here, gets organized on disk (often alongside [Frame View](../frame-view)), and can later be synced to [Pane View](../pane-view) via [Lockstep](../../apps/lockstep-cli).
 
@@ -11,6 +11,8 @@ Gather Box is the **collection** step in [Latch Works](../../README.md): media e
 | **MyHentaiGallery** | Gallery images (`/thumbnail/` → `/original/`) |
 | **Kemono** | Post image attachments |
 | **pixiv FANBOX** | Post image CDN files |
+| **X** | Post images, animated GIF videos, and videos |
+| **pixiv** | Original artwork pages, including collapsed multi-image works |
 | **Archive of Our Own** | Work PDF download |
 | **Hentai Foundry** | Story PDF download |
 | **fanfiction.net** | All chapters fetched and merged into one local PDF |
@@ -72,6 +74,8 @@ Source lives in `src/` and is bundled into `dist/`. Reload the unpacked extensio
 - `https://myhentaigallery.com/a/20942`
 - `https://kemono.cr/fanbox/user/24921130/post/11471817`
 - `https://creator.fanbox.cc/posts/11929835`
+- `https://x.com/anska_art/status/2076653334111396311/photo/1`
+- `https://www.pixiv.net/en/artworks/142625231`
 - `https://archiveofourown.org/works/18187196`
 - `https://www.hentai-foundry.com/stories/user/dotDelamora/70617/Taming-Guinevere`
 - `https://www.fanfiction.net/s/12620462/1/Taboo`
@@ -90,6 +94,18 @@ Source lives in `src/` and is bundled into `dist/`. Reload the unpacked extensio
 <root>/<creator_name>/<post_title>-<post_id>/
 ```
 
+**X** — one folder per username (an initial ASCII capital is lowercased):
+
+```text
+<root>/<username>/<site media filename>
+```
+
+**pixiv** — one folder per creator and stable user ID:
+
+```text
+<root>/<username>-<user_id>/<artwork_id>_p<page>.<extension>
+```
+
 **Story PDFs** (AO3, Hentai Foundry, fanfiction.net):
 
 ```text
@@ -101,6 +117,9 @@ Spaces in folder and PDF names are converted to underscores.
 ## Notes
 
 - The popup shows the picked folder **name** only — browsers do not expose the full absolute path through the File System Access API.
+- Existing media is never overwritten. Gather Box compares SHA-256 hashes when a site filename already exists, skips identical content, and appends a four-character suffix before the extension for different content.
+- pixiv original-image requests use a narrowly scoped extension rule to supply pixiv's required `Referer` header.
+- X video resolution uses X's public syndication data first, then its web-client media response. The fallback flow was informed by [Cobalt's X extractor](https://github.com/imputnet/cobalt/blob/main/api/src/processing/services/twitter.js); Gather Box does not call a hosted Cobalt instance.
 - The extension re-confirms folder access with Chrome when needed.
 - MyHentaiGallery collection targets `ul.comics-grid.clear div.comic-thumb img[src]` and ignores ad blocks outside that selector.
 

@@ -6,26 +6,31 @@ import { collectFanfictionNetData } from "./collectors/fanfiction-net";
 import { collectHentaiFoundryStoriesData } from "./collectors/hentai-foundry-stories";
 import { collectKemonoData } from "./collectors/kemono";
 import { collectMyHentaiGalleryData } from "./collectors/my-hentai-gallery";
+import { collectPixivData } from "./collectors/pixiv";
+import { collectXData } from "./collectors/x";
 
 chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
   if (!isCollectMessage(message)) {
     return undefined;
   }
 
-  try {
-    sendResponse(collectComicData(document, window.location));
-  } catch (error) {
-    sendResponse({
-      ok: false,
-      code: "COLLECTION_FAILED",
-      message: getErrorMessage(error)
-    } satisfies GalleryCollectResponse);
-  }
+  void collectComicData(document, window.location)
+    .then(sendResponse)
+    .catch((error) => {
+      sendResponse({
+        ok: false,
+        code: "COLLECTION_FAILED",
+        message: getErrorMessage(error)
+      } satisfies GalleryCollectResponse);
+    });
 
-  return false;
+  return true;
 });
 
-function collectComicData(document: Document, location: Location): GalleryCollectResponse {
+async function collectComicData(
+  document: Document,
+  location: Location
+): Promise<GalleryCollectResponse> {
   if (location.hostname === "myhentaigallery.com") {
     return collectMyHentaiGalleryData(document, location);
   }
@@ -36,6 +41,17 @@ function collectComicData(document: Document, location: Location): GalleryCollec
 
   if (location.hostname.endsWith(".fanbox.cc") && location.pathname.startsWith("/posts/")) {
     return collectFanboxData(document, location);
+  }
+
+  if (location.hostname === "x.com") {
+    return collectXData(document, location);
+  }
+
+  if (
+    (location.hostname === "www.pixiv.net" || location.hostname === "pixiv.net") &&
+    location.pathname.includes("/artworks/")
+  ) {
+    return collectPixivData(document, location);
   }
 
   if (location.hostname === "archiveofourown.org") {

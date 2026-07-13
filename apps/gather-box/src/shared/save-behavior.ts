@@ -37,6 +37,20 @@ const SINGLE_FOLDER_BEHAVIORS: Partial<Record<SiteKey, Omit<SaveBehavior, "patte
     detail: "Images save into a single folder named after the comic.",
     pathTemplate: "<root>/<comic title>/",
     filePattern: "Original filenames (webp / jpg)"
+  },
+  x: {
+    folderDepth: 1,
+    summary: "Creates 1 creator folder",
+    detail: "Media saves under the post author's username.",
+    pathTemplate: "<root>/<username>/",
+    filePattern: "X media filenames"
+  },
+  pixiv: {
+    folderDepth: 1,
+    summary: "Creates 1 creator folder",
+    detail: "Images save under the creator name and pixiv user ID.",
+    pathTemplate: "<root>/<username>-<user id>/",
+    filePattern: "pixiv original filenames"
   }
 };
 

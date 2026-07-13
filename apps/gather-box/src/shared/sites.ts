@@ -2,6 +2,8 @@ export type SiteKey =
   | "myhentaigallery"
   | "kemono"
   | "fanbox"
+  | "x"
+  | "pixiv"
   | "archiveofourown"
   | "hentaifoundry-stories"
   | "fanfiction-net";
@@ -27,6 +29,16 @@ export const SUPPORTED_SITES: SupportedSite[] = [
     key: "fanbox",
     label: "pixivFANBOX",
     patterns: [/^https:\/\/[a-z0-9-]+\.fanbox\.cc\/posts\/[^/?#]+(?:[/?#]|$)/i]
+  },
+  {
+    key: "x",
+    label: "X",
+    patterns: [/^https:\/\/x\.com\/[^/?#]+\/status\/\d+(?:\/(?:photo|video)\/\d+)?(?:[/?#]|$)/i]
+  },
+  {
+    key: "pixiv",
+    label: "pixiv",
+    patterns: [/^https:\/\/(?:www\.)?pixiv\.net\/(?:[a-z]{2}\/)?artworks\/\d+(?:[/?#]|$)/i]
   },
   {
     key: "archiveofourown",

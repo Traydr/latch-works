@@ -6,7 +6,6 @@ export type CredentialsChoice = "include" | "omit";
 
 export interface GatherBoxSettings {
   downloadConcurrency: number;
-  skipExistingFiles: boolean;
   useGlobalFolder: boolean;
   verboseLogging: boolean;
   credentialsMode: CredentialsMode;
@@ -16,7 +15,6 @@ export interface GatherBoxSettings {
 
 export const DEFAULT_SETTINGS: GatherBoxSettings = {
   downloadConcurrency: 4,
-  skipExistingFiles: false,
   useGlobalFolder: false,
   verboseLogging: false,
   credentialsMode: "auto",
@@ -48,7 +46,6 @@ export function normalizeSettings(settings: Partial<GatherBoxSettings>): GatherB
     downloadConcurrency: Number.isFinite(concurrency)
       ? Math.min(16, Math.max(1, Math.round(concurrency)))
       : DEFAULT_SETTINGS.downloadConcurrency,
-    skipExistingFiles: Boolean(settings.skipExistingFiles),
     useGlobalFolder: Boolean(settings.useGlobalFolder),
     verboseLogging: Boolean(settings.verboseLogging),
     credentialsMode: isCredentialsMode(settings.credentialsMode)

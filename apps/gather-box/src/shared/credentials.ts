@@ -5,6 +5,7 @@ import type { DownloadablePayload } from "./types";
 const AUTO_INCLUDE_SITES = new Set<SiteKey>([
   "archiveofourown",
   "fanbox",
+  "pixiv",
   "hentaifoundry-stories"
 ]);
 

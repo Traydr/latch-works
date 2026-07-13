@@ -17,6 +17,7 @@ await Promise.all([
 await Promise.all([
   cp(resolve(root, "manifest.json"), resolve(dist, "manifest.json")),
   cp(resolve(root, "assets"), resolve(dist, "assets"), { recursive: true }),
+  cp(resolve(root, "rules"), resolve(dist, "rules"), { recursive: true }),
   cp(resolve(root, "popup", "popup.html"), resolve(dist, "popup", "popup.html")),
   cp(resolve(root, "popup", "popup.css"), resolve(dist, "popup", "popup.css")),
   cp(resolve(root, "sidepanel", "sidepanel.html"), resolve(dist, "sidepanel", "sidepanel.html")),

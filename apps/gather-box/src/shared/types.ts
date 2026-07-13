@@ -58,6 +58,7 @@ export type CollectionErrorCode =
   | "GRID_NOT_FOUND"
   | "NO_IMAGES_FOUND"
   | "NO_VALID_IMAGES"
+  | "MEDIA_RESOLUTION_FAILED"
   | "INVALID_KEMONO_PATH"
   | "USER_NOT_FOUND"
   | "TITLE_NOT_FOUND"

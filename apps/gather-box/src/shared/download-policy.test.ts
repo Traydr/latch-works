@@ -12,6 +12,15 @@ describe("download policy", () => {
     expect(isAllowedDownloadUrl("fanbox", "https://downloads.fanbox.cc/files/image.jpg")).toBe(
       true,
     );
+    expect(
+      isAllowedDownloadUrl("x", "https://video.twimg.com/ext_tw_video/1/pu/vid/video.mp4"),
+    ).toBe(true);
+    expect(
+      isAllowedDownloadUrl(
+        "pixiv",
+        "https://i.pximg.net/img-original/img/2026/03/22/142625231_p0.jpg",
+      ),
+    ).toBe(true);
   });
 
   it("rejects cross-site or unsupported hosts", () => {

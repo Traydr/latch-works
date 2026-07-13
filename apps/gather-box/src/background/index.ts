@@ -6,6 +6,8 @@ import {
 } from "../shared/runtime-messages";
 import { isSupportedUrl } from "../shared/sites";
 import { applyPrimaryUiMode, openSidePanelForActiveTab } from "../shared/ui-mode";
+import { isResolveXMediaMessage } from "../shared/x-media";
+import { resolveXPostMedia } from "./x-media-resolver";
 
 const CONTEXT_MENU_ID = "gather-box-download";
 
@@ -39,7 +41,12 @@ chrome.commands.onCommand.addListener((command) => {
   })();
 });
 
-chrome.runtime.onMessage.addListener((message) => {
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (isResolveXMediaMessage(message)) {
+    void resolveXPostMedia(message).then(sendResponse);
+    return true;
+  }
+
   if (message.type === APPLY_UI_MODE_MESSAGE) {
     void applyPrimaryUiMode();
     return;
@@ -48,6 +55,8 @@ chrome.runtime.onMessage.addListener((message) => {
   if (message.type === OPEN_SIDE_PANEL_MESSAGE) {
     void openSidePanelForActiveTab();
   }
+
+  return false;
 });
 
 async function setupContextMenu(): Promise<void> {
@@ -60,6 +69,9 @@ async function setupContextMenu(): Promise<void> {
       "https://myhentaigallery.com/a/*",
       "https://kemono.cr/*/user/*/post/*",
       "https://*.fanbox.cc/posts/*",
+      "https://x.com/*/status/*",
+      "https://www.pixiv.net/artworks/*",
+      "https://www.pixiv.net/*/artworks/*",
       "https://archiveofourown.org/works/*",
       "https://www.hentai-foundry.com/stories/user/*",
       "https://www.fanfiction.net/s/*"

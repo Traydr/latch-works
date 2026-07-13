@@ -9,6 +9,11 @@ const DOWNLOAD_URL_POLICIES: Record<SiteKey, RegExp[]> = {
   "hentaifoundry-stories": [/^https:\/\/www\.hentai-foundry\.com\/.+/],
   kemono: [/^https:\/\/(?:[a-z0-9-]+\.)?kemono\.cr\/.+/],
   myhentaigallery: [/^https:\/\/(?:www\.)?myhentaigallery\.com\/.+\/original\/.+/],
+  pixiv: [/^https:\/\/i\.pximg\.net\/img-original\/.+/],
+  x: [
+    /^https:\/\/pbs\.twimg\.com\/media\/.+/,
+    /^https:\/\/video\.twimg\.com\/.+\.mp4(?:\?.*)?$/,
+  ],
 };
 
 export function isAllowedDownloadUrl(site: SiteKey, url: string): boolean {

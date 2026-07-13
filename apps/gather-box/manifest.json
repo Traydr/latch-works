@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Gather Box",
-  "description": "Download original images and story PDFs from supported content pages into a chosen local folder.",
+  "description": "Download original images, videos, and story PDFs from supported content pages into a chosen local folder.",
   "version": "0.2.0",
   "action": {
     "default_title": "Gather Box",
@@ -30,6 +30,7 @@
     "activeTab",
     "scripting",
     "storage",
+    "declarativeNetRequestWithHostAccess",
     "contextMenus",
     "sidePanel"
   ],
@@ -40,6 +41,14 @@
     "https://*.kemono.cr/*",
     "https://*.fanbox.cc/*",
     "https://downloads.fanbox.cc/*",
+    "https://x.com/*",
+    "https://api.x.com/*",
+    "https://abs.twimg.com/*",
+    "https://cdn.syndication.twimg.com/*",
+    "https://pbs.twimg.com/*",
+    "https://video.twimg.com/*",
+    "https://www.pixiv.net/*",
+    "https://i.pximg.net/*",
     "https://archiveofourown.org/*",
     "https://download.archiveofourown.org/*",
     "https://www.hentai-foundry.com/*",
@@ -51,12 +60,24 @@
     "48": "assets/icons/icon48.png",
     "128": "assets/icons/icon128.png"
   },
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "pixiv_referer",
+        "enabled": true,
+        "path": "rules/pixiv-referer.json"
+      }
+    ]
+  },
   "content_scripts": [
     {
       "matches": [
         "https://myhentaigallery.com/a/*",
         "https://kemono.cr/*/user/*/post/*",
         "https://*.fanbox.cc/posts/*",
+        "https://x.com/*/status/*",
+        "https://www.pixiv.net/artworks/*",
+        "https://www.pixiv.net/*/artworks/*",
         "https://archiveofourown.org/works/*",
         "https://www.hentai-foundry.com/stories/user/*",
         "https://www.fanfiction.net/s/*"

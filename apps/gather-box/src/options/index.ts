@@ -12,7 +12,6 @@ import { SUPPORTED_SITES, type SiteKey } from "../shared/sites";
 interface SettingsFormElements {
   form: HTMLFormElement;
   downloadConcurrency: HTMLInputElement;
-  skipExistingFiles: HTMLInputElement;
   verboseLogging: HTMLInputElement;
   credentialsMode: HTMLSelectElement;
   perSiteCredentials: HTMLElement;
@@ -44,7 +43,6 @@ function getFormElements(): SettingsFormElements {
   return {
     form: requireElement("settingsForm", HTMLFormElement),
     downloadConcurrency: requireElement("downloadConcurrency", HTMLInputElement),
-    skipExistingFiles: requireElement("skipExistingFiles", HTMLInputElement),
     verboseLogging: requireElement("verboseLogging", HTMLInputElement),
     credentialsMode: requireElement("credentialsMode", HTMLSelectElement),
     perSiteCredentials: requireElement("perSiteCredentials", HTMLElement),
@@ -82,7 +80,6 @@ function renderPerSiteCredentials(container: HTMLElement, settings: GatherBoxSet
 
 function applySettingsToForm(elements: SettingsFormElements, settings: GatherBoxSettings): void {
   elements.downloadConcurrency.value = String(settings.downloadConcurrency);
-  elements.skipExistingFiles.checked = settings.skipExistingFiles;
   elements.verboseLogging.checked = settings.verboseLogging;
   elements.credentialsMode.value = settings.credentialsMode;
   elements.perSiteCredentials.hidden = settings.credentialsMode !== "perSite";
@@ -111,7 +108,6 @@ async function handleSave(elements: SettingsFormElements): Promise<void> {
 
   const settings: GatherBoxSettings = {
     downloadConcurrency: Number(elements.downloadConcurrency.value),
-    skipExistingFiles: elements.skipExistingFiles.checked,
     verboseLogging: elements.verboseLogging.checked,
     useGlobalFolder: folderMode === "global",
     credentialsMode: elements.credentialsMode.value as CredentialsMode,

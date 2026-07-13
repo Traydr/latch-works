@@ -30,7 +30,11 @@ export interface DownloadOptions {
   credentials?: RequestCredentials;
   concurrency?: number;
   site?: SiteKey;
-  skipExistingFiles?: boolean;
+}
+
+export interface CollisionSaveResult {
+  fileName: string;
+  skipped: boolean;
 }
 
 export async function downloadImages(
@@ -48,6 +52,16 @@ export async function downloadImages(
   let completed = 0;
   const total = images.length;
   const concurrency = options.concurrency ?? DEFAULT_DOWNLOAD_CONCURRENCY;
+  let saveQueue = Promise.resolve();
+
+  const enqueueSave = <T>(task: () => Promise<T>): Promise<T> => {
+    const result = saveQueue.then(task);
+    saveQueue = result.then(
+      () => undefined,
+      () => undefined
+    );
+    return result;
+  };
 
   callbacks.onStart(total);
 
@@ -56,16 +70,6 @@ export async function downloadImages(
       const preparedImage = options.site ? prepareDownloadImage(options.site, image) : image;
       if (!preparedImage) {
         throw new Error("Download URL or filename is not allowed");
-      }
-
-      if (
-        options.skipExistingFiles &&
-        (await fileExists(destinationDirectory, preparedImage.fileName))
-      ) {
-        summary.skipped += 1;
-        callbacks.onSkipped?.(preparedImage.fileName);
-        callbacks.onVerbose?.(`Skipped existing file ${preparedImage.fileName}`);
-        return;
       }
 
       callbacks.onVerbose?.(`Fetching ${preparedImage.originalUrl}`);
@@ -77,14 +81,18 @@ export async function downloadImages(
       }
 
       const blob = await response.blob();
-      const fileHandle = await destinationDirectory.getFileHandle(preparedImage.fileName, {
-        create: true,
-      });
-      const writable = await fileHandle.createWritable();
-      await writable.write(blob);
-      await writable.close();
+      const saved = await enqueueSave(() =>
+        saveBlobWithoutClobbering(blob, destinationDirectory, preparedImage.fileName)
+      );
+      if (saved.skipped) {
+        summary.skipped += 1;
+        callbacks.onSkipped?.(saved.fileName);
+        callbacks.onVerbose?.(`Skipped identical existing file ${saved.fileName}`);
+        return;
+      }
+
       summary.saved += 1;
-      callbacks.onSaved(preparedImage.fileName);
+      callbacks.onSaved(saved.fileName);
     } catch (error) {
       summary.failed += 1;
       summary.failedItems.push({
@@ -99,6 +107,47 @@ export async function downloadImages(
   });
 
   return summary;
+}
+
+export async function saveBlobWithoutClobbering(
+  blob: Blob,
+  destinationDirectory: FileSystemDirectoryHandle,
+  preferredFileName: string,
+  randomSuffix: () => string = createRandomSuffix
+): Promise<CollisionSaveResult> {
+  const preferredHandle = await getExistingFileHandle(destinationDirectory, preferredFileName);
+  if (!preferredHandle) {
+    await writeBlob(destinationDirectory, preferredFileName, blob);
+    return { fileName: preferredFileName, skipped: false };
+  }
+
+  if (await fileContentsMatch(preferredHandle, blob)) {
+    return { fileName: preferredFileName, skipped: true };
+  }
+
+  for (let attempt = 0; attempt < 128; attempt += 1) {
+    const candidateName = addFileNameSuffix(preferredFileName, randomSuffix());
+    const candidateHandle = await getExistingFileHandle(destinationDirectory, candidateName);
+    if (!candidateHandle) {
+      await writeBlob(destinationDirectory, candidateName, blob);
+      return { fileName: candidateName, skipped: false };
+    }
+
+    if (await fileContentsMatch(candidateHandle, blob)) {
+      return { fileName: candidateName, skipped: true };
+    }
+  }
+
+  throw new Error(`Could not find an unused filename for ${preferredFileName}`);
+}
+
+export function addFileNameSuffix(fileName: string, suffix: string): string {
+  const dotIndex = fileName.lastIndexOf(".");
+  if (dotIndex <= 0) {
+    return `${fileName}_${suffix}`;
+  }
+
+  return `${fileName.slice(0, dotIndex)}_${suffix}${fileName.slice(dotIndex)}`;
 }
 
 export async function runPool<T>(
@@ -140,14 +189,53 @@ export async function getOrCreateNestedDirectory(
   return currentDirectory;
 }
 
-async function fileExists(
+async function getExistingFileHandle(
   destinationDirectory: FileSystemDirectoryHandle,
   fileName: string
-): Promise<boolean> {
+): Promise<FileSystemFileHandle | null> {
   try {
-    await destinationDirectory.getFileHandle(fileName);
-    return true;
+    return await destinationDirectory.getFileHandle(fileName);
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "NotFoundError") {
+      return null;
+    }
+    throw error;
+  }
+}
+
+async function fileContentsMatch(fileHandle: FileSystemFileHandle, blob: Blob): Promise<boolean> {
+  try {
+    const existingFile = await fileHandle.getFile();
+    if (existingFile.size !== blob.size) {
+      return false;
+    }
+
+    const existingHash = await hashBlob(existingFile);
+    const incomingHash = await hashBlob(blob);
+    return existingHash === incomingHash;
   } catch {
     return false;
   }
+}
+
+async function hashBlob(blob: Blob): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function writeBlob(
+  destinationDirectory: FileSystemDirectoryHandle,
+  fileName: string,
+  blob: Blob
+): Promise<void> {
+  const fileHandle = await destinationDirectory.getFileHandle(fileName, { create: true });
+  const writable = await fileHandle.createWritable();
+  await writable.write(blob);
+  await writable.close();
+}
+
+function createRandomSuffix(): string {
+  const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
+  const randomBytes = crypto.getRandomValues(new Uint8Array(4));
+  return Array.from(randomBytes, (byte) => alphabet[byte % alphabet.length]).join("");
 }

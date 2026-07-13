@@ -80,7 +80,6 @@ export class GatherController {
     running: false,
     settings: {
       downloadConcurrency: 4,
-      skipExistingFiles: false,
       useGlobalFolder: false,
       verboseLogging: false,
       credentialsMode: "auto",
@@ -224,7 +223,7 @@ export class GatherController {
         setPageState(
           this.elements,
           false,
-          "This isn't a supported page. Open a MyHentaiGallery, Kemono, FANBOX, AO3, Hentai Foundry, or fanfiction.net page."
+          "This isn't a supported page. Open an X post, pixiv artwork, MyHentaiGallery, Kemono, FANBOX, AO3, Hentai Foundry, or fanfiction.net page."
         );
         updateSaveBehavior(this.state.siteKey);
         await this.restoreSavedDirectoryHandle();
@@ -505,8 +504,7 @@ export class GatherController {
       {
         credentials: shouldIncludeCredentials(payload, this.state.settings) ? "include" : "omit",
         concurrency: this.state.settings.downloadConcurrency,
-        site: payload.site,
-        skipExistingFiles: this.state.settings.skipExistingFiles,
+        site: payload.site
       }
     );
 
@@ -706,7 +704,6 @@ export class GatherController {
     credentials: RequestCredentials;
     concurrency: number;
     site?: SiteKey;
-    skipExistingFiles: boolean;
   } {
     const siteKey = this.state.lastRun.siteKey;
     const credentials =
@@ -724,8 +721,7 @@ export class GatherController {
     return {
       credentials,
       concurrency: this.state.settings.downloadConcurrency,
-      site: siteKey ?? undefined,
-      skipExistingFiles: this.state.settings.skipExistingFiles,
+      site: siteKey ?? undefined
     };
   }
 
@@ -812,6 +808,10 @@ function resetProgress(elements: PopupElements): void {
 }
 
 function getItemName(payload: DownloadablePayload): string {
+  if (payload.site === "x") {
+    return "media item";
+  }
+
   return payload.site === "archiveofourown" || payload.site === "hentaifoundry-stories"
     ? "file"
     : "image";
