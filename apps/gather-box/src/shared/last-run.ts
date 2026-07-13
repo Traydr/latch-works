@@ -37,6 +37,66 @@ export const EMPTY_LAST_RUN: LastRunState = {
   canRetry: false
 };
 
+export class LastRunWriter {
+  private pending: { state: LastRunState; version: number } | null = null;
+  private writing = false;
+  private acceptedVersion = 0;
+  private completedVersion = 0;
+  private flushWaiters: Array<{ version: number; resolve: () => void }> = [];
+
+  enqueue(state: LastRunState): void {
+    this.acceptedVersion += 1;
+    this.pending = { state, version: this.acceptedVersion };
+    void this.writePending();
+  }
+
+  async flush(): Promise<void> {
+    const version = this.acceptedVersion;
+    if (this.completedVersion >= version) {
+      return;
+    }
+
+    await new Promise<void>((resolve) => {
+      this.flushWaiters.push({ version, resolve });
+    });
+  }
+
+  private async writePending(): Promise<void> {
+    if (this.writing || !this.pending) {
+      return;
+    }
+
+    const pending = this.pending;
+    this.pending = null;
+    this.writing = true;
+
+    try {
+      await saveLastRun(pending.state);
+    } catch {
+      // A failed Chrome storage write must not prevent a later snapshot from being saved.
+    } finally {
+      this.writing = false;
+      this.completedVersion = pending.version;
+      this.resolveFlushWaiters();
+      void this.writePending();
+    }
+  }
+
+  private resolveFlushWaiters(): void {
+    const remaining: typeof this.flushWaiters = [];
+
+    for (const waiter of this.flushWaiters) {
+      if (waiter.version <= this.completedVersion) {
+        waiter.resolve();
+      } else {
+        remaining.push(waiter);
+      }
+    }
+
+    this.flushWaiters = remaining;
+  }
+}
+
 export async function loadLastRun(): Promise<LastRunState> {
   const stored = await chrome.storage.local.get(LAST_RUN_KEY);
   const value = stored[LAST_RUN_KEY];
