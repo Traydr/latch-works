@@ -1,5 +1,6 @@
 import { buildStoryPdfFileName } from "../../shared/path";
 import type { GalleryCollectResponse } from "../../shared/types";
+import { getText } from "./utils";
 
 const HF_PDF_LINK_SELECTOR = 'a.pdfLink[href$=".pdf"]';
 const HF_STORY_TITLE_FALLBACK_SELECTOR = '.storyRow .titlebar a[href*="/stories/user/"]';
@@ -96,8 +97,4 @@ function parseStoryPath(location: Location): HentaiFoundryStoryPath | null {
     storyId: decodeURIComponent(parts[3]),
     storyTitle: decodeURIComponent(parts[4]).replace(/-/g, " ")
   };
-}
-
-function getText(element: Element | null): string {
-  return element ? element.textContent?.trim() || "" : "";
 }

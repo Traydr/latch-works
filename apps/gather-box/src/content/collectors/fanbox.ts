@@ -1,4 +1,5 @@
 import type { GalleryCollectResponse, GalleryImage } from "../../shared/types";
+import { getFileName, getImageSource, getText } from "./utils";
 
 const FANBOX_IMAGE_LINK_SELECTOR = 'a[href^="https://downloads.fanbox.cc/images/post/"]';
 const FANBOX_TITLE_SELECTOR = "article h1";
@@ -215,30 +216,11 @@ function buildPostFolderName(title: string, postId: string | null): string {
   return postId ? `${title}-${postId}` : title;
 }
 
-function getFileName(originalUrl: string): string {
-  const url = new URL(originalUrl);
-  const parts = url.pathname.split("/");
-  return parts[parts.length - 1] || "image";
-}
-
 function getFileExtension(pathname: string): string {
   const fileName = pathname.split("/").pop() || "";
   const extension = fileName.split(".").pop();
 
   return extension ? extension.toLowerCase() : "";
-}
-
-function getImageSource(image: HTMLImageElement, location: Location): string | null {
-  const rawSource = image.getAttribute("data-src") || image.getAttribute("src");
-  if (!rawSource) {
-    return null;
-  }
-
-  return new URL(rawSource, location.href).toString();
-}
-
-function getText(element: Element | null): string {
-  return element ? element.textContent?.trim() || "" : "";
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

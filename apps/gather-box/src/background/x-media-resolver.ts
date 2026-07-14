@@ -1,3 +1,4 @@
+import { formatError } from "../shared/format-error";
 import type {
   ResolveXMediaMessage,
   ResolveXMediaResponse,
@@ -106,7 +107,7 @@ export async function resolveXPostMedia(
   } catch (error) {
     return {
       ok: false,
-      message: `Could not resolve X media: ${getErrorMessage(error)}`
+      message: `Could not resolve X media: ${formatError(error, "Unknown X media error")}`
     };
   }
 }
@@ -269,8 +270,4 @@ function fetchWithTimeout(input: URL | string, init: RequestInit = {}): Promise<
     ...init,
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
   });
-}
-
-function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Unknown X media error";
 }

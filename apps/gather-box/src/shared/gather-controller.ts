@@ -18,6 +18,7 @@ import {
   setLogExpanded,
   setPageState,
   setProgress,
+  resetProgress,
   syncActions,
   updateSaveBehavior,
   type LogTone,
@@ -50,7 +51,7 @@ import {
   TOGGLE_OPEN_UI_MESSAGE,
   type GatherRuntimeMessage
 } from "./runtime-messages";
-import { loadSettings, type GatherBoxSettings } from "./settings";
+import { loadSettings, DEFAULT_SETTINGS, type GatherBoxSettings } from "./settings";
 import { installShortcutKeyListener } from "./shortcut-keys";
 import type { DownloadablePayload, GeneratedStoryPayload, GalleryImage } from "./types";
 
@@ -81,15 +82,7 @@ export class GatherController {
     directoryHandle: null,
     status: "idle",
     running: false,
-    settings: {
-      downloadConcurrency: 4,
-      useGlobalFolder: false,
-      verboseLogging: false,
-      shortcutsEnabled: true,
-      credentialsMode: "auto",
-      credentialsPerSite: {},
-      primaryUi: "popup"
-    },
+    settings: { ...DEFAULT_SETTINGS },
     lastRun: { ...EMPTY_LAST_RUN }
   };
 
@@ -842,13 +835,6 @@ function copyLastRun(state: LastRunState): LastRunState {
     failedItems: state.failedItems.map((item) => ({ ...item })),
     retryImages: state.retryImages.map((image) => ({ ...image }))
   };
-}
-
-function resetProgress(elements: PopupElements): void {
-  elements.progressBar.max = 1;
-  elements.progressBar.value = 0;
-  elements.progressText.textContent = "Waiting for a supported page and folder.";
-  setDestinationPreview(elements, "");
 }
 
 function getItemName(payload: DownloadablePayload): string {

@@ -1,4 +1,5 @@
 import type { GalleryCollectResponse, GalleryImage } from "../../shared/types";
+import { getFileName, getImageSource, getText } from "./utils";
 
 const KEMONO_USER_SELECTOR = "a.post__user-name[href*='/user/']";
 const KEMONO_TITLE_SELECTOR = "h1.post__title";
@@ -104,26 +105,7 @@ function buildKemonoFileEntry(
   };
 }
 
-function getFileName(originalUrl: string): string {
-  const url = new URL(originalUrl);
-  const parts = url.pathname.split("/");
-  return parts[parts.length - 1] || "image";
-}
-
 function getKemonoPostTitle(titleElement: Element): string {
   const primarySpan = titleElement.querySelector("span");
   return getText(primarySpan || titleElement);
-}
-
-function getImageSource(image: HTMLImageElement, location: Location): string | null {
-  const rawSource = image.getAttribute("data-src") || image.getAttribute("src");
-  if (!rawSource) {
-    return null;
-  }
-
-  return new URL(rawSource, location.href).toString();
-}
-
-function getText(element: Element | null): string {
-  return element ? element.textContent?.trim() || "" : "";
 }

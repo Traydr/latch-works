@@ -1,18 +1,16 @@
 import {
   APPLY_UI_MODE_MESSAGE,
   OPEN_EXTENSION_MESSAGE,
-  OPEN_SIDE_PANEL_MESSAGE,
   PENDING_DOWNLOAD_SESSION_KEY,
   START_DOWNLOAD_MESSAGE,
   TOGGLE_OPEN_UI_MESSAGE,
   TRIGGER_DOWNLOAD_MESSAGE
 } from "../shared/runtime-messages";
-import { isSupportedUrl } from "../shared/sites";
+import { CONTEXT_MENU_URL_PATTERNS, isSupportedUrl } from "../shared/sites";
 import { loadSettings, type PrimaryUiMode } from "../shared/settings";
 import {
   applyPrimaryUiMode,
-  openPrimaryUiForTab,
-  openSidePanelForActiveTab
+  openPrimaryUiForTab
 } from "../shared/ui-mode";
 import { isResolveXMediaMessage } from "../shared/x-media";
 import { resolveXPostMedia } from "./x-media-resolver";
@@ -51,10 +49,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return;
   }
 
-  if (message.type === OPEN_SIDE_PANEL_MESSAGE) {
-    void openSidePanelForActiveTab();
-  }
-
   if (message.type === OPEN_EXTENSION_MESSAGE && sender.tab) {
     void togglePrimaryUi(sender.tab, message.primaryUi);
   }
@@ -72,17 +66,7 @@ async function setupContextMenu(): Promise<void> {
     id: CONTEXT_MENU_ID,
     title: "Gather to archive",
     contexts: ["page"],
-    documentUrlPatterns: [
-      "https://myhentaigallery.com/a/*",
-      "https://kemono.cr/*/user/*/post/*",
-      "https://*.fanbox.cc/posts/*",
-      "https://x.com/*/status/*",
-      "https://www.pixiv.net/artworks/*",
-      "https://www.pixiv.net/*/artworks/*",
-      "https://archiveofourown.org/works/*",
-      "https://www.hentai-foundry.com/stories/user/*",
-      "https://www.fanfiction.net/s/*"
-    ]
+    documentUrlPatterns: CONTEXT_MENU_URL_PATTERNS
   });
 }
 
@@ -117,7 +101,7 @@ async function triggerDownload(
     return;
   }
 
-  const delivered = await deliverStartDownloadMessage();
+  const delivered = await deliverRuntimeMessage(START_DOWNLOAD_MESSAGE);
   if (delivered) {
     return;
   }
@@ -140,7 +124,7 @@ async function startDownloadFromShortcut(
   // during initialization and starts the same download action as its button. A currently-open UI
   // receives the direct request and acknowledges it, allowing the pending flag to be cleared.
   const pendingWrite = chrome.storage.session.set({ [PENDING_DOWNLOAD_SESSION_KEY]: true });
-  const directDelivery = deliverStartDownloadMessage();
+  const directDelivery = deliverRuntimeMessage(START_DOWNLOAD_MESSAGE);
   const openingUi = openPrimaryUiForTab(tab, primaryUi);
   try {
     await Promise.all([pendingWrite, openingUi]);
@@ -156,29 +140,19 @@ async function togglePrimaryUi(tab: chrome.tabs.Tab, primaryUi: PrimaryUiMode): 
   // Do not await a state probe here: Chrome can expire the user gesture before sidePanel.open().
   // Opening is a no-op when the UI already exists; that instance receives the close request.
   await Promise.allSettled([
-    deliverToggleUiMessage(),
+    deliverRuntimeMessage(TOGGLE_OPEN_UI_MESSAGE),
     openPrimaryUiForTab(tab, primaryUi)
   ]);
 }
 
-async function deliverToggleUiMessage(): Promise<boolean> {
+async function deliverRuntimeMessage(
+  type: typeof START_DOWNLOAD_MESSAGE | typeof TOGGLE_OPEN_UI_MESSAGE
+): Promise<boolean> {
   try {
     const response = await chrome.runtime.sendMessage<
-      { type: typeof TOGGLE_OPEN_UI_MESSAGE },
+      { type: typeof START_DOWNLOAD_MESSAGE | typeof TOGGLE_OPEN_UI_MESSAGE },
       { accepted?: boolean } | undefined
-    >({ type: TOGGLE_OPEN_UI_MESSAGE });
-    return response?.accepted === true;
-  } catch {
-    return false;
-  }
-}
-
-async function deliverStartDownloadMessage(): Promise<boolean> {
-  try {
-    const response = await chrome.runtime.sendMessage<
-      { type: typeof START_DOWNLOAD_MESSAGE },
-      { accepted?: boolean } | undefined
-    >({ type: START_DOWNLOAD_MESSAGE });
+    >({ type });
     return response?.accepted === true;
   } catch {
     return false;

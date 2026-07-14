@@ -1,4 +1,5 @@
 import type { GalleryCollectResponse, GalleryImage } from "../../shared/types";
+import { getFileName } from "./utils";
 
 const MHG_TITLE_SUFFIX = "Hentai Comic - My Hentai Gallery";
 const MHG_GRID_SELECTOR = "ul.comics-grid.clear";
@@ -80,12 +81,6 @@ function rewriteToOriginalUrl(thumbnailUrl: string, location: Location): string 
 
   url.pathname = url.pathname.replace("/thumbnail/", "/original/");
   return url.toString();
-}
-
-function getFileName(originalUrl: string): string {
-  const url = new URL(originalUrl);
-  const parts = url.pathname.split("/");
-  return parts[parts.length - 1] || "image";
 }
 
 function getComicTitle(document: Document): string {

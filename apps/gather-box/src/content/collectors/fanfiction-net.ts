@@ -1,5 +1,6 @@
 import { buildStoryPdfFileName } from "../../shared/path";
 import type { GalleryCollectResponse, StoryChapterReference } from "../../shared/types";
+import { getText as getElementText } from "./utils";
 
 const FFN_HOSTNAME = "www.fanfiction.net";
 const FFN_TITLE_SELECTOR = "#profile_top b.xcontrast_txt";
@@ -143,7 +144,7 @@ function getTitleFallback(document: Document): string {
 }
 
 function getText(element: Element | null): string {
-  return collapseWhitespace(element?.textContent || "");
+  return collapseWhitespace(getElementText(element));
 }
 
 function collapseWhitespace(value: string): string {

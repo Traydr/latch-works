@@ -1,10 +1,5 @@
 import type { LogTone } from "../popup/dom";
-
-export interface DownloadFailure {
-  fileName: string;
-  reason: string;
-  originalUrl?: string;
-}
+import type { DownloadFailure } from "../popup/downloader";
 import type { SiteKey } from "./sites";
 import type { GalleryImage } from "./types";
 

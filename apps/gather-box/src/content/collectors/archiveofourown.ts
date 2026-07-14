@@ -1,5 +1,6 @@
 import { buildStoryPdfFileName } from "../../shared/path";
 import type { GalleryCollectResponse } from "../../shared/types";
+import { getText } from "./utils";
 
 const AO3_PDF_LINK_SELECTOR = 'li.download a[href*=".pdf"]';
 const AO3_TITLE_SELECTOR = "#workskin h2.title.heading";
@@ -98,8 +99,4 @@ function getAuthors(document: Document): string {
 function getWorkId(location: Location): string | null {
   const match = location.pathname.match(/^\/works\/([^/]+)/);
   return match ? match[1] : null;
-}
-
-function getText(element: Element | null): string {
-  return element ? element.textContent?.trim() || "" : "";
 }
