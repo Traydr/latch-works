@@ -65,9 +65,13 @@ export interface LockstepObserver {
   onEvent(event: LockstepRunEvent): void;
 }
 
+export type HashMode = "all" | "none" | "remote-aware";
+
 export interface PlanSyncOptions {
   apiToken?: string;
   apiUrl?: string;
+  hashCacheRoot?: string;
+  hashMode?: HashMode;
   directoryConcurrency?: number;
   fileConcurrency?: number;
   hashFiles?: boolean;
@@ -80,6 +84,8 @@ export interface PushChangesOptions {
   apiToken: string;
   apiUrl: string;
   hashFiles?: boolean;
+  hashCacheRoot?: string;
+  hashMode?: HashMode;
   maxChanges?: number;
   plan?: LockstepPlan;
   remoteSnapshotPath?: string;

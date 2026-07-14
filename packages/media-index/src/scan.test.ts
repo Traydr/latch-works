@@ -155,7 +155,12 @@ describe("scanArchive", () => {
     };
 
     await expect(
-      scanArchive({ directoryConcurrency: 1, operations, signal: controller.signal, sourceRoot: "/archive" }),
+      scanArchive({
+        directoryConcurrency: 1,
+        operations,
+        signal: controller.signal,
+        sourceRoot: "/archive",
+      }),
     ).rejects.toThrow("cancelled");
     expect(peak).toBe(1);
     expect(readDirectories).toEqual(["/archive", "/archive/a"]);
@@ -232,19 +237,41 @@ describe("scanArchive", () => {
     const controller = new AbortController();
     let destroyed = false;
     const operations: ScanArchiveOperations = {
-      createReadStream: () => delayedStream("image", 50, () => {
-        destroyed = true;
-      }),
+      createReadStream: () =>
+        delayedStream("image", 50, () => {
+          destroyed = true;
+        }),
       readdir: async () => [entry("cover.jpg")],
       stat: async () => ({ mtimeMs: 1, size: 5 }),
     };
 
-    const scan = scanArchive({ hashFiles: true, operations, signal: controller.signal, sourceRoot: "/archive" });
+    const scan = scanArchive({
+      hashFiles: true,
+      operations,
+      signal: controller.signal,
+      sourceRoot: "/archive",
+    });
     await new Promise((resolve) => setTimeout(resolve, 5));
     controller.abort(new Error("cancelled"));
 
     await expect(scan).rejects.toThrow("cancelled");
     expect(destroyed).toBe(true);
+  });
+
+  it("rejects a file whose fingerprint changes while it is being hashed", async () => {
+    let statCalls = 0;
+    const operations: ScanArchiveOperations = {
+      createReadStream: () => Readable.from([Buffer.from("image")]),
+      readdir: async () => [entry("cover.jpg")],
+      stat: async () => {
+        statCalls += 1;
+        return { ctimeMs: statCalls, mtimeMs: statCalls, size: 5 };
+      },
+    };
+
+    await expect(
+      scanArchive({ hashFiles: true, operations, sourceRoot: "/archive" }),
+    ).rejects.toThrow("File changed while hashing");
   });
 
   it("does not dequeue or report work after a concurrent worker fails", async () => {
@@ -296,9 +323,9 @@ describe("scanArchive", () => {
         stat: async () => ({ mtimeMs: 1, size: 0 }),
       };
 
-      await expect(scanArchive({ [option]: value, operations, sourceRoot: "/archive" })).rejects.toThrow(
-        "Scan concurrency must be an integer between 1 and 16",
-      );
+      await expect(
+        scanArchive({ [option]: value, operations, sourceRoot: "/archive" }),
+      ).rejects.toThrow("Scan concurrency must be an integer between 1 and 16");
     });
   }
 

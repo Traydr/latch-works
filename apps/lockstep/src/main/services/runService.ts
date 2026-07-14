@@ -63,7 +63,7 @@ export class RunService {
         {
           apiToken: credentials.apiToken,
           apiUrl: credentials.apiUrl,
-          hashFiles: true,
+          hashMode: "remote-aware",
           maxChanges: request.maxChanges,
           signal,
           sourceRoot: credentials.sourceRoot,

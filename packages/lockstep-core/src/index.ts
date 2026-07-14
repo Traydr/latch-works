@@ -5,6 +5,7 @@ export { pruneDeleted } from "./prune-deleted.js";
 export { pushChanges } from "./push-changes.js";
 export {
   resolveHashFiles,
+  resolveHashMode,
   resolveLocalFilePath,
   selectChangedItems,
   selectDeleteItems,
@@ -17,6 +18,7 @@ export type {
   DoctorCheck,
   DoctorOptions,
   DoctorResult,
+  HashMode,
   LockstepObserver,
   LockstepPlan,
   LockstepPlanCounts,

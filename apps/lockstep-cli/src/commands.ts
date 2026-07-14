@@ -95,7 +95,7 @@ export async function executeCommand(
     {
       apiToken,
       apiUrl,
-      hashFiles: options.hashFiles || options.command === "push",
+      hashMode: options.command === "push" ? "remote-aware" : options.hashFiles ? "all" : "none",
       remoteSnapshotPath: options.remoteSnapshot,
       sourceRoot: options.source,
     },
@@ -131,7 +131,6 @@ export async function executeCommand(
       {
         apiToken: requiredApiToken,
         apiUrl: requiredApiUrl,
-        hashFiles: true,
         maxChanges: options.maxChanges,
         plan,
         sourceRoot: options.source,

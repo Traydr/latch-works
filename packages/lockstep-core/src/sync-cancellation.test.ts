@@ -1,35 +1,34 @@
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import type { MediaItem } from "@latch-works/media-domain";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LockstepPlan, LockstepRunEvent } from "./types.js";
 
 const mocks = vi.hoisted(() => ({
   deleteRemoteItem: vi.fn(),
+  hashLocalFile: vi.fn(),
   postJson: vi.fn(),
   pushMediaItem: vi.fn(),
 }));
 
 vi.mock("./remote-api.js", () => ({
   deleteRemoteItem: mocks.deleteRemoteItem,
+  hashLocalFile: mocks.hashLocalFile,
   postJson: mocks.postJson,
   pushMediaItem: mocks.pushMediaItem,
 }));
 
-const { deleteRemoteItem, postJson, pushMediaItem } = mocks;
+const { deleteRemoteItem, hashLocalFile, postJson, pushMediaItem } = mocks;
 
 import { pruneDeleted } from "./prune-deleted.js";
 import { pushChanges } from "./push-changes.js";
 
-const localItem: MediaItem = {
-  extension: "jpg",
-  id: "media-1",
-  mediaType: "image",
-  mtimeMs: 1_700_000_000_000,
-  name: "photo.jpg",
-  parentPath: "photos",
-  path: "photos/photo.jpg",
-  sha256: "abc123",
-  size: 1024,
-};
+let cacheRoot: string;
+let localItem: MediaItem;
+let sourceRoot = "/tmp/archive";
+let tempDir: string;
 
 function createPlan(items: LockstepPlan["items"]): LockstepPlan {
   return {
@@ -42,7 +41,7 @@ function createPlan(items: LockstepPlan["items"]): LockstepPlan {
     items,
     skipped: 0,
     skippedEntries: [],
-    sourceRoot: "/tmp/archive",
+    sourceRoot,
     totalBytes: 1024,
     totalFiles: items.length,
   };
@@ -62,9 +61,36 @@ function collectEvents(observer?: { onEvent: (event: LockstepRunEvent) => void }
 }
 
 describe("pushChanges cancellation", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    tempDir = await mkdtemp(path.join(os.tmpdir(), "lockstep-cancellation-"));
+    sourceRoot = path.join(tempDir, "archive");
+    cacheRoot = path.join(tempDir, "cache");
+    await mkdir(path.join(sourceRoot, "photos"), { recursive: true });
+    const content = Buffer.alloc(1024, 1);
+    const filePath = path.join(sourceRoot, "photos", "photo.jpg");
+    await writeFile(filePath, content);
+    const fileStat = await stat(filePath);
+    const sha256 = createHash("sha256").update(content).digest("hex");
+    localItem = {
+      extension: "jpg",
+      id: sha256,
+      mediaType: "image",
+      mtimeMs: Math.trunc(fileStat.mtimeMs),
+      name: "photo.jpg",
+      parentPath: "photos",
+      path: "photos/photo.jpg",
+      sha256,
+      size: content.length,
+    };
     postJson.mockReset();
     pushMediaItem.mockReset();
+    hashLocalFile.mockReset();
+    hashLocalFile.mockResolvedValue(sha256);
+  });
+
+  afterEach(async () => {
+    await rm(tempDir, { force: true, recursive: true });
+    sourceRoot = "/tmp/archive";
   });
 
   it("finalizes cancelled push runs without reusing the aborted signal", async () => {
@@ -85,6 +111,7 @@ describe("pushChanges cancellation", () => {
         {
           apiToken: "token",
           apiUrl: "http://127.0.0.1:3000",
+          hashCacheRoot: cacheRoot,
           plan,
           signal: controller.signal,
           sourceRoot: plan.sourceRoot,
@@ -123,6 +150,7 @@ describe("pushChanges cancellation", () => {
       {
         apiToken: "token",
         apiUrl: "http://127.0.0.1:3000",
+        hashCacheRoot: cacheRoot,
         plan,
         sourceRoot: plan.sourceRoot,
       },

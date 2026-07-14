@@ -1,8 +1,23 @@
 import path from "node:path";
 import type { SyncPlanAction } from "@latch-works/media-index";
+import type { HashMode } from "./types.js";
 
 export function resolveHashFiles(options: { hashFiles?: boolean; requireHash?: boolean }): boolean {
   return options.hashFiles === true || options.requireHash === true;
+}
+
+export function resolveHashMode(options: {
+  defaultMode?: HashMode;
+  hashFiles?: boolean;
+  hashMode?: HashMode;
+}): HashMode {
+  if (options.hashMode) {
+    return options.hashMode;
+  }
+  if (options.hashFiles !== undefined) {
+    return options.hashFiles ? "all" : "none";
+  }
+  return options.defaultMode ?? "none";
 }
 
 export function selectChangedItems<T extends { action: SyncPlanAction }>(items: T[]): T[] {

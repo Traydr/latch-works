@@ -1,8 +1,8 @@
-import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { Readable, Transform } from "node:stream";
 import type { MediaItem } from "@latch-works/media-domain";
+import { hashFileContents } from "@latch-works/media-index";
 import { formatBytes } from "./format.js";
 import { resolveLocalFilePath } from "./push-helpers.js";
 
@@ -38,41 +38,27 @@ export async function hashLocalFile(
   signal?: AbortSignal,
 ): Promise<string> {
   const fileStat = await stat(filePath);
-  const hash = createHash("sha256");
-  let bytesHashed = 0;
   let lastReport = 0;
-
-  await new Promise<void>((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
-      return;
-    }
-
-    const stream = createReadStream(filePath);
-    const onAbort = () => {
-      stream.destroy(signal?.reason ?? new DOMException("Aborted", "AbortError"));
-    };
-    signal?.addEventListener("abort", onAbort, { once: true });
-
-    stream.on("data", (chunk) => {
-      hash.update(chunk);
-      bytesHashed += chunk.length;
-
+  const sha256 = await hashFileContents({
+    expected: {
+      ctimeMs: fileStat.ctimeMs,
+      mtimeMs: fileStat.mtimeMs,
+      size: fileStat.size,
+    },
+    filePath,
+    onProgress: (bytesHashed) => {
       const now = Date.now();
       if (now - lastReport >= 100) {
         lastReport = now;
         onProgress?.(bytesHashed, fileStat.size);
       }
-    });
-    stream.on("error", reject);
-    stream.on("end", () => {
-      signal?.removeEventListener("abort", onAbort);
-      resolve();
-    });
+    },
+    operations: { createReadStream, stat },
+    signal,
   });
 
   onProgress?.(fileStat.size, fileStat.size);
-  return hash.digest("hex");
+  return sha256;
 }
 
 export async function pushMediaItem({

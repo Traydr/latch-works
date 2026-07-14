@@ -122,7 +122,11 @@ The snapshot format is a JSON array:
 
 ## Push
 
-`push` sends upload and update changes to the Pane View sync API. It hashes files automatically, fetches the remote snapshot when `--remote-snapshot` is not provided, asks the API for upload targets, and uploads originals when storage credentials are configured. `push` never applies remote deletes — use `prune` for those.
+`push` sends upload and update changes to the Pane View sync API. It fetches the remote snapshot,
+uses cached hashes for unchanged local files, hashes equal-size cache misses to detect content changes,
+and defers hashes for obvious uploads or size changes until those items are selected for upload. It
+then asks the API for upload targets and uploads originals when storage credentials are configured.
+`push` never applies remote deletes — use `prune` for those.
 
 ```powershell
 $env:LOCKSTEP_API_URL = "http://localhost:3000"
@@ -154,7 +158,15 @@ To test the full archive plan while uploading only the first small batch of chan
 pnpm --filter @latch-works/lockstep start push --source "T:\cloud-desktop\media" --max-changes 25
 ```
 
-`push` always hashes local files before planning, even when `--max-changes` is set. Capped pushes take the first N upload/update changes in plan order (delete items are excluded). Each push run is finalized through `/api/sync/runs/{id}/complete` with `completed` or `failed` status and final counts.
+Capped pushes take the first N upload/update changes in plan order (delete items are excluded) and
+only hash the selected obvious uploads or size changes. Equal-size remote entries are still hashed on
+a cache miss because size alone cannot prove that their contents match. Each push run is finalized
+through `/api/sync/runs/{id}/complete` with `completed` or `failed` status and final counts.
+
+Lockstep stores versioned, per-source hash caches under
+`~/.latch-works/hash-cache/v1/`. Cache entries are invalidated when file size, modified time, or the
+available change time differs. A missing, malformed, or unwritable cache slows the run down but does
+not prevent synchronization.
 
 ## Prune
 

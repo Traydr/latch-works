@@ -112,6 +112,27 @@ describe("RunService cancellation summaries", () => {
     });
   });
 
+  it("uses remote-aware hashing for desktop pushes", async () => {
+    const runService = await createRunService();
+    const plan = {
+      counts: { delete: 0, keep: 0, update: 0, upload: 0 },
+      items: [],
+      skipped: 0,
+      skippedEntries: [],
+      sourceRoot: "/tmp/archive",
+      totalBytes: 0,
+      totalFiles: 0,
+    };
+    pushChanges.mockResolvedValue({ failed: 0, plan, pushed: 0 });
+
+    await runService.push({ profileId });
+
+    expect(pushChanges).toHaveBeenCalledWith(
+      expect.objectContaining({ hashMode: "remote-aware" }),
+      expect.anything(),
+    );
+  });
+
   it("reports cancelled prune runs with action prune", async () => {
     const runService = await createRunService();
 

@@ -1,7 +1,15 @@
-import { formatPushError } from "./format.js";
+import { stat } from "node:fs/promises";
+import type { MediaItem } from "@latch-works/media-domain";
+import { type ArchiveFileFingerprint, fingerprintsMatch } from "@latch-works/media-index";
+import { formatBytes, formatPushError } from "./format.js";
+import { type HashCache, loadHashCache } from "./hash-cache.js";
 import { planSync } from "./plan-sync.js";
-import { selectChangedItems, selectUploadUpdateItems } from "./push-helpers.js";
-import { postJson, pushMediaItem } from "./remote-api.js";
+import {
+  resolveLocalFilePath,
+  selectChangedItems,
+  selectUploadUpdateItems,
+} from "./push-helpers.js";
+import { hashLocalFile, postJson, pushMediaItem } from "./remote-api.js";
 import type { LockstepObserver, LockstepPlan, PushChangesOptions } from "./types.js";
 
 function throwIfAborted(signal?: AbortSignal): void {
@@ -23,7 +31,10 @@ export async function pushChanges(
       {
         apiToken: options.apiToken,
         apiUrl: options.apiUrl,
+        hashCacheRoot: options.hashCacheRoot,
         hashFiles: options.hashFiles ?? true,
+        hashMode:
+          options.hashMode ?? (options.hashFiles === undefined ? "remote-aware" : undefined),
         remoteSnapshotPath: options.remoteSnapshotPath,
         signal,
         sourceRoot: options.sourceRoot,
@@ -67,6 +78,14 @@ export async function pushChanges(
     });
   }
 
+  const { cache: hashCache, warning: cacheWarning } = await loadHashCache({
+    cacheRoot: options.hashCacheRoot,
+    sourceRoot: plan.sourceRoot,
+  });
+  if (cacheWarning) {
+    observer?.onEvent({ type: "status", message: `Warning: ${cacheWarning}` });
+  }
+
   observer?.onEvent({ type: "status", message: "Creating sync run..." });
   const syncRun = await postJson<{ syncRunId: string }>(
     options.apiUrl,
@@ -93,10 +112,19 @@ export async function pushChanges(
           continue;
         }
 
+        const local = await resolvePushItemHash({
+          cache: hashCache,
+          current,
+          item: item.local,
+          observer,
+          signal,
+          sourceRoot: plan.sourceRoot,
+          total: itemsToPush.length,
+        });
         await pushMediaItem({
           apiToken: options.apiToken,
           apiUrl: options.apiUrl,
-          item: item.local,
+          item: local,
           onStage: (stage, detail) => {
             observer?.onEvent({
               type: "status",
@@ -164,6 +192,12 @@ export async function pushChanges(
         message: `Warning: failed to finalize sync run: ${formatPushError(error)}`,
       });
     });
+    await hashCache.save().catch((error) => {
+      observer?.onEvent({
+        type: "status",
+        message: `Warning: hash cache could not be saved: ${formatPushError(error)}`,
+      });
+    });
   }
 
   if (cancelled) {
@@ -192,4 +226,63 @@ export async function pushChanges(
 
   observer?.onEvent({ type: "complete", summary });
   return { failed, plan, pushed };
+}
+
+async function resolvePushItemHash({
+  cache,
+  current,
+  item,
+  observer,
+  signal,
+  sourceRoot,
+  total,
+}: {
+  cache: HashCache;
+  current: number;
+  item: MediaItem;
+  observer?: LockstepObserver;
+  signal?: AbortSignal;
+  sourceRoot: string;
+  total: number;
+}): Promise<MediaItem> {
+  const filePath = resolveLocalFilePath(sourceRoot, item.path);
+  const fileStat = await stat(filePath);
+  const fingerprint: ArchiveFileFingerprint = {
+    ctimeMs: fileStat.ctimeMs,
+    mtimeMs: Math.trunc(fileStat.mtimeMs),
+    size: fileStat.size,
+  };
+  if (fingerprint.size !== item.size || fingerprint.mtimeMs !== Math.trunc(item.mtimeMs)) {
+    throw new Error(`Local file changed after planning; rerun sync: ${item.path}`);
+  }
+
+  let sha256 = cache.get(item.path, fingerprint);
+  if (!sha256) {
+    observer?.onEvent({
+      type: "status",
+      message: `[${current}/${total}] hashing ${item.path}`,
+    });
+    sha256 = await hashLocalFile(
+      filePath,
+      (bytesHashed, fileSize) => {
+        observer?.onEvent({
+          type: "status",
+          message: `[${current}/${total}] hashing ${item.path} (${formatBytes(bytesHashed)} / ${formatBytes(fileSize)})`,
+        });
+      },
+      signal,
+    );
+    const afterStat = await stat(filePath);
+    const afterFingerprint: ArchiveFileFingerprint = {
+      ctimeMs: afterStat.ctimeMs,
+      mtimeMs: Math.trunc(afterStat.mtimeMs),
+      size: afterStat.size,
+    };
+    if (!fingerprintsMatch(fingerprint, afterFingerprint)) {
+      throw new Error(`Local file changed after planning; rerun sync: ${item.path}`);
+    }
+    cache.set(item.path, fingerprint, sha256);
+  }
+
+  return { ...item, id: sha256, sha256 };
 }

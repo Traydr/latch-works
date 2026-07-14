@@ -93,6 +93,23 @@ describe("executeCommand prune", () => {
     expect(stdout.some((line) => line.includes("Prune requires --yes"))).toBe(true);
   });
 
+  it("uses remote-aware hashing for push planning", async () => {
+    const plan = createPlan();
+    planSync.mockResolvedValue(plan);
+    pushChanges.mockResolvedValue({ failed: 0, plan, pushed: 0 });
+
+    await executeCommand({
+      ...createPruneOptions(),
+      command: "push",
+    });
+
+    expect(planSync).toHaveBeenCalledWith(
+      expect.objectContaining({ hashMode: "remote-aware" }),
+      expect.anything(),
+    );
+    expect(pushChanges).toHaveBeenCalledOnce();
+  });
+
   it("calls pruneDeleted with --yes", async () => {
     planSync.mockResolvedValue(
       createPlan({

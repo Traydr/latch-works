@@ -1,5 +1,6 @@
-import { createSyncPlan, scanArchive } from "@latch-works/media-index";
-import { resolveHashFiles } from "./push-helpers.js";
+import { createSyncPlan, hashArchiveItems, scanArchive } from "@latch-works/media-index";
+import { loadHashCache } from "./hash-cache.js";
+import { resolveHashMode } from "./push-helpers.js";
 import { fetchRemoteSnapshot, readRemoteSnapshot } from "./remote-snapshot.js";
 import { createScanProgressCoalescer } from "./scan-progress-coalescer.js";
 import type { LockstepObserver, LockstepPlan, PlanSyncOptions } from "./types.js";
@@ -39,10 +40,10 @@ export async function planSync(
 
   throwIfAborted(signal);
 
-  const willHash = resolveHashFiles({ hashFiles: options.hashFiles });
+  const hashMode = resolveHashMode({ hashFiles: options.hashFiles, hashMode: options.hashMode });
   observer?.onEvent({
     type: "status",
-    message: willHash ? "Indexing and hashing local archive..." : "Indexing local archive...",
+    message: "Indexing local archive...",
   });
 
   const progressCoalescer = createScanProgressCoalescer({
@@ -50,15 +51,57 @@ export async function planSync(
   });
 
   let scan: Awaited<ReturnType<typeof scanArchive>>;
+  let localItems: Awaited<ReturnType<typeof scanArchive>>["items"] = [];
   try {
     scan = await scanArchive({
       directoryConcurrency: options.directoryConcurrency,
       fileConcurrency: options.fileConcurrency,
-      hashFiles: willHash,
+      hashFiles: false,
       onProgress: progressCoalescer.onProgress,
       signal,
       sourceRoot: options.sourceRoot,
     });
+    localItems = scan.items;
+
+    if (hashMode !== "none") {
+      const { cache, warning } = await loadHashCache({
+        cacheRoot: options.hashCacheRoot,
+        sourceRoot: scan.sourceRoot,
+      });
+      if (warning) {
+        observer?.onEvent({ type: "status", message: `Warning: ${warning}` });
+      }
+
+      const hydrated = cache.hydrate(localItems, scan.fingerprints);
+      localItems = hydrated.items;
+      const hashPaths = selectPlanningHashPaths(hashMode, localItems, remote);
+      observer?.onEvent({
+        type: "status",
+        message: `Hash cache: ${hydrated.hits.toLocaleString()} hit(s); ${hashPaths.size.toLocaleString()} file(s) require hashing.`,
+      });
+
+      if (hashPaths.size > 0) {
+        localItems = await hashArchiveItems({
+          fileConcurrency: options.fileConcurrency,
+          fingerprints: scan.fingerprints,
+          items: localItems,
+          onProgress: progressCoalescer.onProgress,
+          paths: hashPaths,
+          signal,
+          skipped: scan.skipped,
+          sourceRoot: scan.sourceRoot,
+        });
+      }
+
+      cache.updateFromItems(localItems, scan.fingerprints);
+      cache.retain(new Set(localItems.map((item) => item.path)));
+      await cache.save().catch((error) => {
+        observer?.onEvent({
+          type: "status",
+          message: `Warning: hash cache could not be saved: ${formatError(error)}`,
+        });
+      });
+    }
     progressCoalescer.flush();
   } finally {
     progressCoalescer.dispose();
@@ -66,8 +109,8 @@ export async function planSync(
 
   throwIfAborted(signal);
 
-  const plan = createSyncPlan(scan.items, remote);
-  const totalBytes = scan.items.reduce((sum, item) => sum + item.size, 0);
+  const plan = createSyncPlan(localItems, remote);
+  const totalBytes = localItems.reduce((sum, item) => sum + item.size, 0);
 
   const result: LockstepPlan = {
     counts: plan.counts,
@@ -76,7 +119,7 @@ export async function planSync(
     skippedEntries: scan.skippedEntries,
     sourceRoot: scan.sourceRoot,
     totalBytes,
-    totalFiles: scan.items.length,
+    totalFiles: localItems.length,
   };
 
   observer?.onEvent({
@@ -92,4 +135,31 @@ export async function planSync(
   });
 
   return result;
+}
+
+function selectPlanningHashPaths(
+  hashMode: "all" | "remote-aware",
+  localItems: Awaited<ReturnType<typeof scanArchive>>["items"],
+  remoteEntries: Awaited<ReturnType<typeof fetchRemoteSnapshot>>,
+): Set<string> {
+  if (hashMode === "all") {
+    return new Set(localItems.filter((item) => !item.sha256).map((item) => item.path));
+  }
+
+  const remoteByPath = new Map(remoteEntries.map((entry) => [entry.path, entry]));
+  return new Set(
+    localItems
+      .filter((item) => {
+        if (item.sha256) {
+          return false;
+        }
+        const remote = remoteByPath.get(item.path);
+        return remote?.sha256 !== undefined && remote.size === item.size;
+      })
+      .map((item) => item.path),
+  );
+}
+
+function formatError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

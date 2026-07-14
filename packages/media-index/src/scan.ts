@@ -27,7 +27,13 @@ export interface ScanArchiveOptions {
 export interface ScanArchiveOperations {
   createReadStream: (filePath: string) => Readable;
   readdir: (directoryPath: string) => Promise<DirectoryEntry[]>;
-  stat: (filePath: string) => Promise<{ mtimeMs: number; size: number }>;
+  stat: (filePath: string) => Promise<ArchiveFileFingerprint>;
+}
+
+export interface ArchiveFileFingerprint {
+  ctimeMs?: number;
+  mtimeMs: number;
+  size: number;
 }
 
 export interface DirectoryEntry {
@@ -53,6 +59,7 @@ export type ScanArchiveProgress =
     };
 
 export interface ScanArchiveResult {
+  fingerprints: Map<string, ArchiveFileFingerprint>;
   items: MediaItem[];
   skipped: number;
   skippedEntries: SkippedArchiveEntry[];
@@ -64,17 +71,20 @@ export interface SkippedArchiveEntry {
   reason: "system-file" | "unsupported-extension" | "not-a-regular-file";
 }
 
-async function hashFile({
+export async function hashFileContents({
+  expected,
   filePath,
   onProgress,
   operations,
   signal,
 }: {
+  expected?: ArchiveFileFingerprint;
   filePath: string;
   onProgress?: (bytesHashed: number) => void;
-  operations: ScanArchiveOperations;
+  operations: Pick<ScanArchiveOperations, "createReadStream" | "stat">;
   signal?: AbortSignal;
 }): Promise<string> {
+  throwIfAborted(signal);
   const hash = createHash("sha256");
   let bytesHashed = 0;
 
@@ -103,7 +113,37 @@ async function hashFile({
     });
   });
   throwIfAborted(signal);
+
+  if (expected) {
+    const after = normalizeFingerprint(await operations.stat(filePath));
+    throwIfAborted(signal);
+    if (!fingerprintsMatch(expected, after)) {
+      throw new Error(`File changed while hashing: ${filePath}`);
+    }
+  }
+
   return hash.digest("hex");
+}
+
+export function fingerprintsMatch(
+  left: ArchiveFileFingerprint,
+  right: ArchiveFileFingerprint,
+): boolean {
+  return (
+    left.size === right.size &&
+    Math.trunc(left.mtimeMs) === Math.trunc(right.mtimeMs) &&
+    (left.ctimeMs === undefined ||
+      right.ctimeMs === undefined ||
+      Math.trunc(left.ctimeMs) === Math.trunc(right.ctimeMs))
+  );
+}
+
+function normalizeFingerprint(fingerprint: ArchiveFileFingerprint): ArchiveFileFingerprint {
+  return {
+    ctimeMs: fingerprint.ctimeMs === undefined ? undefined : Math.trunc(fingerprint.ctimeMs),
+    mtimeMs: Math.trunc(fingerprint.mtimeMs),
+    size: fingerprint.size,
+  };
 }
 
 function throwIfAborted(signal?: AbortSignal): void {
@@ -200,6 +240,79 @@ async function runQueue<T>({
   });
 }
 
+export interface HashArchiveItemsOptions {
+  fileConcurrency?: number;
+  fingerprints?: ReadonlyMap<string, ArchiveFileFingerprint>;
+  items: readonly MediaItem[];
+  onProgress?: (progress: ScanArchiveProgress) => void;
+  operations?: Pick<ScanArchiveOperations, "createReadStream" | "stat">;
+  paths?: ReadonlySet<string>;
+  signal?: AbortSignal;
+  skipped?: number;
+  sourceRoot: string;
+}
+
+export async function hashArchiveItems({
+  fileConcurrency,
+  fingerprints,
+  items,
+  onProgress,
+  operations = { createReadStream, stat },
+  paths,
+  signal,
+  skipped = 0,
+  sourceRoot,
+}: HashArchiveItemsOptions): Promise<MediaItem[]> {
+  const root = path.resolve(sourceRoot);
+  const tasks = items.filter(
+    (item) => item.sha256 === undefined && (paths === undefined || paths.has(item.path)),
+  );
+  const hashes = new Map<string, string>();
+
+  await runQueue({
+    concurrency: concurrency(fileConcurrency),
+    signal,
+    tasks,
+    work: async (item, _add, isRunning) => {
+      throwIfAborted(signal);
+      const filePath = path.resolve(root, ...item.path.split("/"));
+      const relative = path.relative(root, filePath);
+      if (relative.startsWith("..") || path.isAbsolute(relative)) {
+        throw new Error(`Archive path escapes source root: ${item.path}`);
+      }
+
+      const expected = fingerprints?.get(item.path) ?? {
+        mtimeMs: item.mtimeMs,
+        size: item.size,
+      };
+      const sha256 = await hashFileContents({
+        expected,
+        filePath,
+        onProgress: (bytesHashed) =>
+          isRunning() &&
+          onProgress?.({
+            bytesHashed,
+            fileSize: item.size,
+            filesFound: items.length,
+            path: item.path,
+            skipped,
+            stage: "hashing",
+          }),
+        operations,
+        signal,
+      });
+      if (isRunning()) {
+        hashes.set(item.path, sha256);
+      }
+    },
+  });
+
+  return items.map((item) => {
+    const sha256 = hashes.get(item.path);
+    return sha256 ? { ...item, id: sha256, sha256 } : item;
+  });
+}
+
 export async function scanArchive({
   directoryConcurrency,
   fileConcurrency,
@@ -214,7 +327,8 @@ export async function scanArchive({
   sourceRoot,
 }: ScanArchiveOptions): Promise<ScanArchiveResult> {
   const root = path.resolve(sourceRoot);
-  const items: MediaItem[] = [];
+  let items: MediaItem[] = [];
+  const fingerprints = new Map<string, ArchiveFileFingerprint>();
   const skippedEntries: SkippedArchiveEntry[] = [];
   const candidates: Array<{ absolutePath: string; name: string; path: string }> = [];
   const directories = [root];
@@ -297,43 +411,22 @@ export async function scanArchive({
     tasks: candidates,
     work: async (candidate, _add, isRunning) => {
       throwIfAborted(signal);
-      const fileStat = await operations.stat(candidate.absolutePath);
+      const fileStat = normalizeFingerprint(await operations.stat(candidate.absolutePath));
       throwIfAborted(signal);
       if (!isRunning()) {
         return;
       }
-      const sha256 = hashFiles
-        ? await hashFile({
-            filePath: candidate.absolutePath,
-            onProgress: (bytesHashed) =>
-              isRunning() &&
-              onProgress?.({
-                bytesHashed,
-                fileSize: fileStat.size,
-                filesFound: indexedItems.size,
-                path: candidate.path,
-                skipped: skippedEntries.length,
-                stage: "hashing",
-              }),
-            operations,
-            signal,
-          })
-        : undefined;
 
-      if (!isRunning()) {
-        return;
-      }
-
+      fingerprints.set(candidate.path, fileStat);
       indexedItems.set(candidate.path, {
-        id: sha256 ?? candidate.path,
+        id: candidate.path,
         path: candidate.path,
         parentPath: getParentPath(candidate.path),
         name: candidate.name,
         extension: getExtension(candidate.name),
         mediaType: detectMediaType(candidate.name),
         size: fileStat.size,
-        mtimeMs: Math.trunc(fileStat.mtimeMs),
-        sha256,
+        mtimeMs: fileStat.mtimeMs,
       });
       onProgress?.({
         filesFound: indexedItems.size,
@@ -341,7 +434,7 @@ export async function scanArchive({
         skipped: skippedEntries.length,
         stage: "scanning",
       });
-    }
+    },
   });
 
   for (const candidate of candidates) {
@@ -351,7 +444,21 @@ export async function scanArchive({
     }
   }
 
+  if (hashFiles) {
+    items = await hashArchiveItems({
+      fileConcurrency,
+      fingerprints,
+      items,
+      onProgress,
+      operations,
+      signal,
+      skipped: skippedEntries.length,
+      sourceRoot: root,
+    });
+  }
+
   return {
+    fingerprints,
     items,
     skipped: skippedEntries.length,
     skippedEntries,

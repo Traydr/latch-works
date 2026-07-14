@@ -2,6 +2,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   resolveHashFiles,
+  resolveHashMode,
   resolveLocalFilePath,
   selectDeleteItems,
   selectUploadUpdateItems,
@@ -14,6 +15,18 @@ describe("resolveHashFiles", () => {
 
   it("keeps plan hashing opt-in", () => {
     expect(resolveHashFiles({ hashFiles: false })).toBe(false);
+  });
+});
+
+describe("resolveHashMode", () => {
+  it("uses an explicit mode before the legacy boolean", () => {
+    expect(resolveHashMode({ hashFiles: true, hashMode: "remote-aware" })).toBe("remote-aware");
+  });
+
+  it("maps the legacy boolean and supports a default", () => {
+    expect(resolveHashMode({ hashFiles: true })).toBe("all");
+    expect(resolveHashMode({ hashFiles: false })).toBe("none");
+    expect(resolveHashMode({ defaultMode: "remote-aware" })).toBe("remote-aware");
   });
 });
 

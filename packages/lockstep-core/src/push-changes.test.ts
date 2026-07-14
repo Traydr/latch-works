@@ -1,33 +1,32 @@
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import type { MediaItem } from "@latch-works/media-domain";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LockstepPlan, LockstepRunEvent } from "./types.js";
 
 const mocks = vi.hoisted(() => ({
+  hashLocalFile: vi.fn(),
   postJson: vi.fn(),
   pushMediaItem: vi.fn(),
 }));
 
 vi.mock("./remote-api.js", () => ({
   deleteRemoteItem: vi.fn(),
+  hashLocalFile: mocks.hashLocalFile,
   postJson: mocks.postJson,
   pushMediaItem: mocks.pushMediaItem,
 }));
 
-const { postJson, pushMediaItem } = mocks;
+const { hashLocalFile, postJson, pushMediaItem } = mocks;
 
 import { pushChanges } from "./push-changes.js";
 
-const localItem: MediaItem = {
-  extension: "jpg",
-  id: "media-1",
-  mediaType: "image",
-  mtimeMs: 1_700_000_000_000,
-  name: "photo.jpg",
-  parentPath: "photos",
-  path: "photos/photo.jpg",
-  sha256: "abc123",
-  size: 1024,
-};
+let cacheRoot: string;
+let localItem: MediaItem;
+let sourceRoot: string;
+let tempDir: string;
 
 function createPlan(items: LockstepPlan["items"]): LockstepPlan {
   return {
@@ -40,7 +39,7 @@ function createPlan(items: LockstepPlan["items"]): LockstepPlan {
     items,
     skipped: 0,
     skippedEntries: [],
-    sourceRoot: "/tmp/archive",
+    sourceRoot,
     totalBytes: 1024,
     totalFiles: items.length,
   };
@@ -59,9 +58,35 @@ function collectEvents() {
 }
 
 describe("pushChanges orchestration", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    tempDir = await mkdtemp(path.join(os.tmpdir(), "lockstep-push-changes-"));
+    sourceRoot = path.join(tempDir, "archive");
+    cacheRoot = path.join(tempDir, "cache");
+    await mkdir(path.join(sourceRoot, "photos"), { recursive: true });
+    const content = Buffer.alloc(1024, 1);
+    const filePath = path.join(sourceRoot, "photos", "photo.jpg");
+    await writeFile(filePath, content);
+    const fileStat = await stat(filePath);
+    const sha256 = createHash("sha256").update(content).digest("hex");
+    localItem = {
+      extension: "jpg",
+      id: sha256,
+      mediaType: "image",
+      mtimeMs: Math.trunc(fileStat.mtimeMs),
+      name: "photo.jpg",
+      parentPath: "photos",
+      path: "photos/photo.jpg",
+      sha256,
+      size: content.length,
+    };
     postJson.mockReset();
     pushMediaItem.mockReset();
+    hashLocalFile.mockReset();
+    hashLocalFile.mockResolvedValue(sha256);
+  });
+
+  afterEach(async () => {
+    await rm(tempDir, { force: true, recursive: true });
   });
 
   it("emits complete without creating a sync run when nothing changed", async () => {
@@ -72,6 +97,7 @@ describe("pushChanges orchestration", () => {
       {
         apiToken: "token",
         apiUrl: "http://127.0.0.1:3000",
+        hashCacheRoot: cacheRoot,
         plan,
         sourceRoot: plan.sourceRoot,
       },
@@ -107,6 +133,7 @@ describe("pushChanges orchestration", () => {
       {
         apiToken: "token",
         apiUrl: "http://127.0.0.1:3000",
+        hashCacheRoot: cacheRoot,
         plan,
         sourceRoot: plan.sourceRoot,
       },
@@ -151,6 +178,43 @@ describe("pushChanges orchestration", () => {
     });
   });
 
+  it("hashes only upload/update items selected by maxChanges", async () => {
+    const secondPath = path.join(sourceRoot, "photos", "second.jpg");
+    await writeFile(secondPath, Buffer.alloc(1024, 2));
+    const secondStat = await stat(secondPath);
+    const secondItem: MediaItem = {
+      ...localItem,
+      id: "second",
+      mtimeMs: Math.trunc(secondStat.mtimeMs),
+      name: "second.jpg",
+      path: "photos/second.jpg",
+      sha256: undefined,
+    };
+    const plan = createPlan([
+      { action: "upload", local: localItem, path: localItem.path },
+      { action: "upload", local: secondItem, path: secondItem.path },
+    ]);
+    postJson.mockResolvedValueOnce({ syncRunId: "run-1" });
+    pushMediaItem.mockResolvedValueOnce(undefined);
+    postJson.mockResolvedValueOnce({ status: "database" });
+
+    const result = await pushChanges({
+      apiToken: "token",
+      apiUrl: "http://127.0.0.1:3000",
+      hashCacheRoot: cacheRoot,
+      maxChanges: 1,
+      plan,
+      sourceRoot: plan.sourceRoot,
+    });
+
+    expect(result.pushed).toBe(1);
+    expect(hashLocalFile).toHaveBeenCalledTimes(1);
+    expect(pushMediaItem).toHaveBeenCalledTimes(1);
+    expect(pushMediaItem).toHaveBeenCalledWith(
+      expect.objectContaining({ item: expect.objectContaining({ path: localItem.path }) }),
+    );
+  });
+
   it("finalizes as failed and increments failed when an item fails", async () => {
     const plan = createPlan([{ action: "upload", local: localItem, path: localItem.path }]);
 
@@ -164,6 +228,7 @@ describe("pushChanges orchestration", () => {
       {
         apiToken: "token",
         apiUrl: "http://127.0.0.1:3000",
+        hashCacheRoot: cacheRoot,
         plan,
         sourceRoot: plan.sourceRoot,
       },
@@ -207,6 +272,7 @@ describe("pushChanges orchestration", () => {
         {
           apiToken: "token",
           apiUrl: "http://127.0.0.1:3000",
+          hashCacheRoot: cacheRoot,
           plan,
           signal: controller.signal,
           sourceRoot: plan.sourceRoot,
