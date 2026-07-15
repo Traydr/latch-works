@@ -12,7 +12,7 @@ Gather Box is the **collection** step in [Latch Works](../../README.md): media e
 | **Kemono** | Post image attachments |
 | **pixiv FANBOX** | Post image CDN files |
 | **X** | Post images, animated GIF videos, and videos |
-| **Reddit** | Post images, galleries, GIFs as MP4, and embedded RedGIFs videos |
+| **Reddit** | Community and user-profile post images, galleries, GIFs as MP4, and embedded RedGIFs videos |
 | **pixiv** | Original artwork pages, including collapsed multi-image works |
 | **Archive of Our Own** | Work PDF download |
 | **Hentai Foundry** | Story PDF download |

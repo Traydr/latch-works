@@ -82,7 +82,9 @@ export async function collectRedditData(
 }
 
 function getRedditPost(document: Document, location: Location): RedditPost | null {
-  const match = location.pathname.match(/^\/r\/[^/]+\/comments\/([a-z0-9]+)(?:\/[^/?#]+)?\/?$/i);
+  const match = location.pathname.match(
+    /^\/(?:r|user)\/[^/]+\/comments\/([a-z0-9]+)(?:\/[^/?#]+)?\/?$/i
+  );
   if (!match) {
     return null;
   }

@@ -12,7 +12,8 @@ const fixtureNames = [
   "reddit-com-single-image.html",
   "reddit-com-multi-image.html",
   "reddit-com-single-gif.html",
-  "reddit-com-embedded-redgif-video.html"
+  "reddit-com-embedded-redgif-video.html",
+  "reddit-com-user-media.html"
 ];
 const hasFixtures = fixtureNames.every((name) => existsSync(join(fixtureDirectory, name)));
 
@@ -122,6 +123,40 @@ describe.skipIf(!hasFixtures)("Reddit collector fixtures", () => {
         {
           originalUrl: "https://media.redgifs.com/TrustworthyThankfulBream.mp4",
           fileName: "TrustworthyThankfulBream.mp4"
+        }
+      ]
+    });
+  });
+
+  it("collects embedded RedGIFs media from a user-profile post", async () => {
+    const resolver = vi.fn().mockResolvedValue({
+      ok: true,
+      media: {
+        originalUrl: "https://media.redgifs.com/TerribleNeatGalapagosMockingbird.mp4",
+        thumbnailUrl: null,
+        fileName: "TerribleNeatGalapagosMockingbird.mp4"
+      }
+    });
+    const result = await collectRedditData(
+      parseFixture("reddit-com-user-media.html"),
+      redditLocation("/user/KsuColt/comments/1tmgv8u/farm_life_is_so_much_fun/"),
+      resolver
+    );
+
+    expect(resolver).toHaveBeenCalledWith({
+      type: RESOLVE_REDGIFS_MEDIA_MESSAGE,
+      redgifsId: "terribleneatgalapagosmockingbird"
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      site: "reddit",
+      title: "Farm life is so much fun 😜💦",
+      galleryId: "1tmgv8u",
+      folderSegments: [],
+      images: [
+        {
+          originalUrl: "https://media.redgifs.com/TerribleNeatGalapagosMockingbird.mp4",
+          fileName: "TerribleNeatGalapagosMockingbird.mp4"
         }
       ]
     });

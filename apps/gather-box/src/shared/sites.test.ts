@@ -10,6 +10,10 @@ describe("site detection", () => {
     [
       "https://www.reddit.com/r/hentai/comments/1uvr9p0/yani_neko_undressing/",
       "reddit"
+    ],
+    [
+      "https://www.reddit.com/user/KsuColt/comments/1tmgv8u/farm_life_is_so_much_fun/",
+      "reddit"
     ]
   ])("recognizes %s", (url, site) => {
     expect(isSupportedUrl(url)).toBe(true);
@@ -20,5 +24,6 @@ describe("site detection", () => {
     expect(isSupportedUrl("https://x.com/anska_art")).toBe(false);
     expect(isSupportedUrl("https://www.pixiv.net/en/users/34028718")).toBe(false);
     expect(isSupportedUrl("https://www.reddit.com/r/hentai/")).toBe(false);
+    expect(isSupportedUrl("https://www.reddit.com/user/KsuColt/")).toBe(false);
   });
 });

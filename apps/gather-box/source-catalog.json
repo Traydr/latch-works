@@ -74,8 +74,8 @@
   {
     "key": "reddit",
     "label": "Reddit",
-    "urlPatterns": ["^https://(?:www\\.)?reddit\\.com/r/[^/]+/comments/[a-z0-9]+(?:/[^/?#]+)?(?:[/?#]|$)"],
-    "pageMatches": ["https://www.reddit.com/r/*/comments/*", "https://reddit.com/r/*/comments/*"],
+    "urlPatterns": ["^https://(?:www\\.)?reddit\\.com/(?:r|user)/[^/]+/comments/[a-z0-9]+(?:/[^/?#]+)?(?:[/?#]|$)"],
+    "pageMatches": ["https://www.reddit.com/r/*/comments/*", "https://reddit.com/r/*/comments/*", "https://www.reddit.com/user/*/comments/*", "https://reddit.com/user/*/comments/*"],
     "hostPermissions": [
       { "pattern": "https://www.reddit.com/*", "reason": "Eligible Reddit post pages" },
       { "pattern": "https://reddit.com/*", "reason": "Non-www eligible Reddit post URLs" },
@@ -84,7 +84,7 @@
       { "pattern": "https://api.redgifs.com/*", "reason": "Embedded RedGIFs media resolution" },
       { "pattern": "https://*.redgifs.com/*", "reason": "Resolved RedGIFs video downloads" }
     ],
-    "contextMenuMatches": ["https://www.reddit.com/r/*/comments/*", "https://reddit.com/r/*/comments/*"],
+    "contextMenuMatches": ["https://www.reddit.com/r/*/comments/*", "https://reddit.com/r/*/comments/*", "https://www.reddit.com/user/*/comments/*", "https://reddit.com/user/*/comments/*"],
     "collectorEntry": "content/collectors/reddit.js",
     "collectorModule": "src/content/collectors/reddit.ts",
     "outputKinds": ["downloadable-files"],
