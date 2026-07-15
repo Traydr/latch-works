@@ -1,5 +1,5 @@
 import { gzipSync } from "node:zlib";
-import { copyFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { access, copyFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, resolve } from "node:path";
 import { build } from "esbuild";
 
@@ -7,6 +7,7 @@ const root = resolve(import.meta.dirname, "..");
 const dist = resolve(root, "dist");
 const reports = resolve(root, ".build-meta");
 const development = process.env.NODE_ENV === "development";
+const sourceCatalog = JSON.parse(await readFile(resolve(root, "source-catalog.json"), "utf8"));
 const common = {
   absWorkingDir: root,
   bundle: true,
@@ -18,7 +19,6 @@ const common = {
 };
 
 const packagedFiles = [
-  "manifest.json",
   "ui/gather-box.css",
   "sidepanel/sidepanel.html",
   "sidepanel/sidepanel.css",
@@ -38,10 +38,12 @@ const packagedFiles = [
 ];
 
 await verifyVersionAgreement();
+const { manifest, permissionReport } = await generateManifest();
 await rm(dist, { force: true, recursive: true });
 await rm(reports, { force: true, recursive: true });
 await mkdir(dist, { recursive: true });
 await Promise.all(packagedFiles.map(copyPackagedFile));
+await writeFile(resolve(dist, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
 
 const pages = await build({
   ...common,
@@ -79,6 +81,7 @@ const content = await build({
 
 const metafiles = { pages: pages.metafile, background: background.metafile, content: content.metafile };
 await mkdir(reports, { recursive: true });
+await writeFile(resolve(reports, "permissions.json"), `${JSON.stringify(permissionReport, null, 2)}\n`);
 await Promise.all(
   Object.entries(metafiles).map(([name, metafile]) =>
     writeFile(resolve(reports, `${name}.json`), `${JSON.stringify(metafile, null, 2)}\n`)
@@ -101,11 +104,61 @@ async function copyPackagedFile(relativePath) {
 
 async function verifyVersionAgreement() {
   const packageJson = JSON.parse(await readFile(resolve(root, "package.json"), "utf8"));
-  const manifest = JSON.parse(await readFile(resolve(root, "manifest.json"), "utf8"));
+  const manifest = JSON.parse(await readFile(resolve(root, "manifest.base.json"), "utf8"));
   if (packageJson.version !== manifest.version) {
     throw new Error(
       `Gather Box version mismatch: package.json=${packageJson.version}, manifest.json=${manifest.version}`
     );
+  }
+}
+
+async function generateManifest() {
+  const base = JSON.parse(await readFile(resolve(root, "manifest.base.json"), "utf8"));
+  const permissionOwners = new Map();
+  const pageMatches = new Set();
+  for (const source of sourceCatalog) {
+    for (const match of [...source.pageMatches, ...source.contextMenuMatches]) {
+      validateHttpsMatch(match, source.key);
+    }
+    for (const match of source.pageMatches) pageMatches.add(match);
+    for (const permission of source.hostPermissions) {
+      validateHttpsMatch(permission.pattern, source.key);
+      const owners = permissionOwners.get(permission.pattern) ?? [];
+      owners.push({ source: source.key, reason: permission.reason });
+      permissionOwners.set(permission.pattern, owners);
+    }
+    if (!source.collectorEntry || source.outputKinds.length === 0 || !source.save) {
+      throw new Error(`Gather Source ${source.key} is missing collector, output, or save policy.`);
+    }
+    await access(resolve(root, source.collectorModule)).catch(() => {
+      throw new Error(`Gather Source ${source.key} selects missing collector ${source.collectorModule}.`);
+    });
+  }
+
+  const hostPermissions = [...permissionOwners.keys()].sort();
+  const permissionReport = hostPermissions.map((pattern) => ({
+    pattern,
+    owners: permissionOwners.get(pattern)
+  }));
+  return {
+    manifest: {
+      ...base,
+      host_permissions: hostPermissions,
+      content_scripts: [
+        {
+          matches: [...pageMatches].sort(),
+          js: ["content/gallery-collector.js"],
+          run_at: "document_start"
+        }
+      ]
+    },
+    permissionReport
+  };
+}
+
+function validateHttpsMatch(pattern, sourceKey) {
+  if (!pattern.startsWith("https://") || pattern.startsWith("https://*/*") || pattern === "<all_urls>") {
+    throw new Error(`Gather Source ${sourceKey} declares an unsafe Chrome match: ${pattern}`);
   }
 }
 

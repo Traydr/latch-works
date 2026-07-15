@@ -43,7 +43,8 @@ Downloads use your browser session cookies where needed (AO3, Hentai Foundry, fa
 
 ```text
 gather-box/
-├── manifest.json
+├── manifest.base.json   # Stable MV3 shell; source access is generated
+├── source-catalog.json  # Authoritative Gather Source policy
 ├── sidepanel/           # The sole Gather Box UI
 ├── offscreen/           # Persistent Gather Output execution document
 ├── ui/                  # Shared extension-page styling
@@ -75,6 +76,8 @@ pnpm --filter @latch-works/gather-box clean
 ```
 
 Source lives in `src/` and is bundled into `dist/`. Reload the unpacked extension in Chrome after every rebuild.
+The build emits the reviewable manifest and a host-permission ownership report from
+`source-catalog.json`; generated reports live in `.build-meta/` and are not packaged.
 
 ## Load in Chrome
 

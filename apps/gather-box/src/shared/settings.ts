@@ -1,4 +1,5 @@
 import type { SiteKey } from "./sites";
+import { getGatherSource } from "./source-catalog";
 
 export type CredentialsMode = "auto" | "always" | "never" | "perSite";
 export type CredentialsChoice = "include" | "omit";
@@ -73,7 +74,7 @@ function sanitizeCredentialsPerSite(
   const sanitized: Partial<Record<SiteKey, CredentialsChoice>> = {};
 
   for (const [siteKey, choice] of Object.entries(value)) {
-    if (choice === "include" || choice === "omit") {
+    if ((choice === "include" || choice === "omit") && getGatherSource(siteKey)) {
       sanitized[siteKey as SiteKey] = choice;
     }
   }

@@ -10,6 +10,7 @@ import {
   TRIGGER_DOWNLOAD_MESSAGE
 } from "../shared/runtime-messages";
 import { isResolveXMediaMessage } from "../shared/x-media";
+import { getContextMenuMatches } from "../shared/source-catalog";
 import { GatherCommands } from "./gather-commands";
 import { GatherRunCoordinator } from "./gather-run-coordinator";
 import { resolveXPostMedia } from "./x-media-resolver";
@@ -113,16 +114,6 @@ async function setupContextMenu(): Promise<void> {
     id: CONTEXT_MENU_ID,
     title: "Gather to archive",
     contexts: ["page"],
-    documentUrlPatterns: [
-      "https://myhentaigallery.com/a/*",
-      "https://kemono.cr/*/user/*/post/*",
-      "https://*.fanbox.cc/posts/*",
-      "https://x.com/*/status/*",
-      "https://www.pixiv.net/artworks/*",
-      "https://www.pixiv.net/*/artworks/*",
-      "https://archiveofourown.org/works/*",
-      "https://www.hentai-foundry.com/stories/user/*",
-      "https://www.fanfiction.net/s/*"
-    ]
+    documentUrlPatterns: getContextMenuMatches()
   });
 }

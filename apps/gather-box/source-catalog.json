@@ -1,0 +1,137 @@
+[
+  {
+    "key": "myhentaigallery",
+    "label": "MyHentaiGallery",
+    "urlPatterns": ["^https://myhentaigallery\\.com/a/[^/?#]+(?:[/?#]|$)"],
+    "pageMatches": ["https://myhentaigallery.com/a/*"],
+    "hostPermissions": [
+      { "pattern": "https://myhentaigallery.com/*", "reason": "Eligible gallery pages" },
+      { "pattern": "https://cdn.myhentaicomics.com/*", "reason": "Original gallery media" }
+    ],
+    "contextMenuMatches": ["https://myhentaigallery.com/a/*"],
+    "collectorEntry": "content/collectors/myhentaigallery.js",
+    "collectorModule": "src/content/collectors/my-hentai-gallery.ts",
+    "outputKinds": ["downloadable-files"],
+    "includeCredentialsByDefault": false,
+    "downloadUrlPatterns": ["^https://(?:www\\.)?myhentaigallery\\.com/.+/original/.+"],
+    "save": { "pattern": "single-folder", "folderDepth": 1, "summary": "Creates 1 folder", "detail": "Images save into a single folder named after the comic.", "pathTemplate": "<root>/<comic title>/", "filePattern": "Original filenames (webp / jpg)", "tag": "FOLDER · 1", "railCode": "F1" }
+  },
+  {
+    "key": "kemono",
+    "label": "Kemono",
+    "urlPatterns": ["^https://kemono\\.cr/[^/]+/user/[^/]+/post/[^/?#]+(?:[/?#]|$)"],
+    "pageMatches": ["https://kemono.cr/*/user/*/post/*"],
+    "hostPermissions": [
+      { "pattern": "https://kemono.cr/*", "reason": "Eligible post pages and attachments" },
+      { "pattern": "https://*.kemono.cr/*", "reason": "Attachment CDN hosts" }
+    ],
+    "contextMenuMatches": ["https://kemono.cr/*/user/*/post/*"],
+    "collectorEntry": "content/collectors/kemono.js",
+    "collectorModule": "src/content/collectors/kemono.ts",
+    "outputKinds": ["downloadable-files"],
+    "includeCredentialsByDefault": false,
+    "downloadUrlPatterns": ["^https://(?:[a-z0-9-]+\\.)?kemono\\.cr/.+"],
+    "save": { "pattern": "nested", "folderDepth": 3, "summary": "Creates 3 nested folders", "detail": "Files nest by service, user, then post title under your chosen root.", "pathTemplate": "<root>/<service>/<user>/<post title>/", "filePattern": "Attachment filenames", "tag": "NESTED · 3", "railCode": "N3" }
+  },
+  {
+    "key": "fanbox",
+    "label": "pixivFANBOX",
+    "urlPatterns": ["^https://[a-z0-9-]+\\.fanbox\\.cc/posts/[^/?#]+(?:[/?#]|$)"],
+    "pageMatches": ["https://*.fanbox.cc/posts/*"],
+    "hostPermissions": [
+      { "pattern": "https://*.fanbox.cc/*", "reason": "Eligible FANBOX post pages" },
+      { "pattern": "https://downloads.fanbox.cc/*", "reason": "FANBOX image downloads" }
+    ],
+    "contextMenuMatches": ["https://*.fanbox.cc/posts/*"],
+    "collectorEntry": "content/collectors/fanbox.js",
+    "collectorModule": "src/content/collectors/fanbox.ts",
+    "outputKinds": ["downloadable-files"],
+    "includeCredentialsByDefault": true,
+    "downloadUrlPatterns": ["^https://downloads\\.fanbox\\.cc/.+"],
+    "save": { "pattern": "nested", "folderDepth": 2, "summary": "Creates 2 nested folders", "detail": "Files nest by creator, then post title + ID under your chosen root.", "pathTemplate": "<root>/<creator>/<post title>-<id>/", "filePattern": "CDN filenames (jpg / png / webp / gif)", "tag": "NESTED · 2", "railCode": "N2" }
+  },
+  {
+    "key": "x",
+    "label": "X",
+    "urlPatterns": ["^https://x\\.com/[^/?#]+/status/\\d+(?:/(?:photo|video)/\\d+)?(?:[/?#]|$)"],
+    "pageMatches": ["https://x.com/*/status/*"],
+    "hostPermissions": [
+      { "pattern": "https://x.com/*", "reason": "Eligible post pages and web media responses" },
+      { "pattern": "https://api.x.com/*", "reason": "Web-client media resolution" },
+      { "pattern": "https://abs.twimg.com/*", "reason": "X web-client bearer metadata" },
+      { "pattern": "https://cdn.syndication.twimg.com/*", "reason": "Public syndication media resolution" },
+      { "pattern": "https://pbs.twimg.com/*", "reason": "Original image media" },
+      { "pattern": "https://video.twimg.com/*", "reason": "Original video media" }
+    ],
+    "contextMenuMatches": ["https://x.com/*/status/*"],
+    "collectorEntry": "content/collectors/x.js",
+    "collectorModule": "src/content/collectors/x.ts",
+    "outputKinds": ["downloadable-files"],
+    "includeCredentialsByDefault": false,
+    "downloadUrlPatterns": ["^https://pbs\\.twimg\\.com/media/.+", "^https://video\\.twimg\\.com/.+\\.mp4(?:\\?.*)?$"],
+    "save": { "pattern": "single-folder", "folderDepth": 1, "summary": "Creates 1 creator folder", "detail": "Media saves under the post author's username.", "pathTemplate": "<root>/<username>/", "filePattern": "X media filenames", "tag": "FOLDER · 1", "railCode": "F1" }
+  },
+  {
+    "key": "pixiv",
+    "label": "pixiv",
+    "urlPatterns": ["^https://(?:www\\.)?pixiv\\.net/(?:[a-z]{2}/)?artworks/\\d+(?:[/?#]|$)"],
+    "pageMatches": ["https://www.pixiv.net/artworks/*", "https://www.pixiv.net/*/artworks/*", "https://pixiv.net/artworks/*", "https://pixiv.net/*/artworks/*"],
+    "hostPermissions": [
+      { "pattern": "https://www.pixiv.net/*", "reason": "Eligible artwork pages and metadata" },
+      { "pattern": "https://pixiv.net/*", "reason": "Non-www eligible artwork URLs" },
+      { "pattern": "https://i.pximg.net/*", "reason": "Original artwork media" }
+    ],
+    "contextMenuMatches": ["https://www.pixiv.net/artworks/*", "https://www.pixiv.net/*/artworks/*", "https://pixiv.net/artworks/*", "https://pixiv.net/*/artworks/*"],
+    "collectorEntry": "content/collectors/pixiv.js",
+    "collectorModule": "src/content/collectors/pixiv.ts",
+    "outputKinds": ["downloadable-files"],
+    "includeCredentialsByDefault": true,
+    "downloadUrlPatterns": ["^https://i\\.pximg\\.net/img-original/.+"],
+    "save": { "pattern": "single-folder", "folderDepth": 1, "summary": "Creates 1 creator folder", "detail": "Images save under the creator name and pixiv user ID.", "pathTemplate": "<root>/<username>-<user id>/", "filePattern": "pixiv original filenames", "tag": "FOLDER · 1", "railCode": "F1" }
+  },
+  {
+    "key": "archiveofourown",
+    "label": "Archive of Our Own",
+    "urlPatterns": ["^https://archiveofourown\\.org/works/[^/?#]+(?:[/?#]|$)"],
+    "pageMatches": ["https://archiveofourown.org/works/*"],
+    "hostPermissions": [
+      { "pattern": "https://archiveofourown.org/*", "reason": "Eligible works and site-generated PDFs" },
+      { "pattern": "https://download.archiveofourown.org/*", "reason": "Redirected work PDF downloads" }
+    ],
+    "contextMenuMatches": ["https://archiveofourown.org/works/*"],
+    "collectorEntry": "content/collectors/archiveofourown.js",
+    "collectorModule": "src/content/collectors/archiveofourown.ts",
+    "outputKinds": ["downloadable-files"],
+    "includeCredentialsByDefault": true,
+    "downloadUrlPatterns": ["^https://archiveofourown\\.org/.+"],
+    "save": { "pattern": "direct-file", "folderDepth": 0, "summary": "Saves directly to root", "detail": "No folder is created. One PDF lands in your chosen root.", "pathTemplate": "<root>/", "filePattern": "Author-Story.pdf (site-generated)", "tag": "DIRECT", "railCode": "D" }
+  },
+  {
+    "key": "hentaifoundry-stories",
+    "label": "Hentai Foundry Stories",
+    "urlPatterns": ["^https://www\\.hentai-foundry\\.com/stories/user/[^/]+/[^/]+/[^/?#]+(?:[/?#]|$)"],
+    "pageMatches": ["https://www.hentai-foundry.com/stories/user/*"],
+    "hostPermissions": [{ "pattern": "https://www.hentai-foundry.com/*", "reason": "Eligible stories and site-generated PDFs" }],
+    "contextMenuMatches": ["https://www.hentai-foundry.com/stories/user/*"],
+    "collectorEntry": "content/collectors/hentaifoundry-stories.js",
+    "collectorModule": "src/content/collectors/hentai-foundry-stories.ts",
+    "outputKinds": ["downloadable-files"],
+    "includeCredentialsByDefault": true,
+    "downloadUrlPatterns": ["^https://www\\.hentai-foundry\\.com/.+"],
+    "save": { "pattern": "direct-file", "folderDepth": 0, "summary": "Saves directly to root", "detail": "No folder is created. One PDF lands in your chosen root.", "pathTemplate": "<root>/", "filePattern": "Author-Story.pdf (site-generated)", "tag": "DIRECT", "railCode": "D" }
+  },
+  {
+    "key": "fanfiction-net",
+    "label": "FanFiction.Net",
+    "urlPatterns": ["^https://www\\.fanfiction\\.net/s/[^/]+/[^/]+/[^/?#]+(?:[/?#]|$)"],
+    "pageMatches": ["https://www.fanfiction.net/s/*"],
+    "hostPermissions": [{ "pattern": "https://www.fanfiction.net/*", "reason": "Eligible stories and chapter fetches" }],
+    "contextMenuMatches": ["https://www.fanfiction.net/s/*"],
+    "collectorEntry": "content/collectors/fanfiction-net.js",
+    "collectorModule": "src/content/collectors/fanfiction-net.ts",
+    "outputKinds": ["generated-story-pdf"],
+    "includeCredentialsByDefault": false,
+    "downloadUrlPatterns": ["^https://www\\.fanfiction\\.net/.+"],
+    "save": { "pattern": "direct-file", "folderDepth": 0, "summary": "Saves directly to root", "detail": "No folder is created. All chapters are fetched, merged, and saved as one PDF in your chosen root.", "pathTemplate": "<root>/", "filePattern": "Author-Story.pdf (generated locally)", "tag": "DIRECT", "railCode": "D" }
+  }
+]

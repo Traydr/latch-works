@@ -8,7 +8,7 @@
 
 ## Status
 
-- **Status**: TODO
+- **Status**: DONE
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: MED
@@ -173,3 +173,20 @@ manifest output, permission report, missing collector artifacts, and user-facing
 Adding a Gather Source must begin in the catalog and include URL, permission, collector, output,
 credential, save, documentation, and test evidence in one review. Avoid recreating source switches
 outside the catalog adapters.
+
+## Implemented source matrix
+
+| Gather Source | Page eligibility | Output | Credentials | Save behavior | Collector adapter |
+|---|---|---|---|---|---|
+| MyHentaiGallery | `/a/*` | files | omit | one folder | `my-hentai-gallery.ts` |
+| Kemono | `/*/user/*/post/*` | files | omit | three nested folders | `kemono.ts` |
+| pixivFANBOX | creator `/posts/*` | files | include | two nested folders | `fanbox.ts` |
+| X | `/*/status/*` | files | omit | creator folder | `x.ts` |
+| pixiv | localized or direct `/artworks/*` | files | include | creator + user ID folder | `pixiv.ts` |
+| Archive of Our Own | `/works/*` | site PDF | include | direct file | `archiveofourown.ts` |
+| Hentai Foundry Stories | `/stories/user/*` | site PDF | include | direct file | `hentai-foundry-stories.ts` |
+| FanFiction.Net | `/s/*` | local PDF | omit | direct file | `fanfiction-net.ts` |
+
+The catalog records each page and fetch origin with a reason. The build now narrows X and pixiv
+always-on matches to eligible post/artwork paths. Existing non-`www` pixiv eligibility is preserved
+with an explicit permission and match instead of relying on an unowned redirect assumption.

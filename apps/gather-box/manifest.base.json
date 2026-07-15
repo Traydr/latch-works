@@ -43,26 +43,6 @@
     "sidePanel",
     "offscreen"
   ],
-  "host_permissions": [
-    "https://myhentaigallery.com/*",
-    "https://cdn.myhentaicomics.com/*",
-    "https://kemono.cr/*",
-    "https://*.kemono.cr/*",
-    "https://*.fanbox.cc/*",
-    "https://downloads.fanbox.cc/*",
-    "https://x.com/*",
-    "https://api.x.com/*",
-    "https://abs.twimg.com/*",
-    "https://cdn.syndication.twimg.com/*",
-    "https://pbs.twimg.com/*",
-    "https://video.twimg.com/*",
-    "https://www.pixiv.net/*",
-    "https://i.pximg.net/*",
-    "https://archiveofourown.org/*",
-    "https://download.archiveofourown.org/*",
-    "https://www.hentai-foundry.com/*",
-    "https://www.fanfiction.net/*"
-  ],
   "icons": {
     "16": "assets/icons/icon16.png",
     "32": "assets/icons/icon32.png",
@@ -77,23 +57,5 @@
         "path": "rules/pixiv-referer.json"
       }
     ]
-  },
-  "content_scripts": [
-    {
-      "matches": [
-        "https://myhentaigallery.com/a/*",
-        "https://kemono.cr/*/user/*/post/*",
-        "https://*.fanbox.cc/posts/*",
-        "https://x.com/*",
-        "https://www.pixiv.net/*",
-        "https://archiveofourown.org/works/*",
-        "https://www.hentai-foundry.com/stories/user/*",
-        "https://www.fanfiction.net/s/*"
-      ],
-      "js": [
-        "content/gallery-collector.js"
-      ],
-      "run_at": "document_start"
-    }
-  ]
+  }
 }

@@ -18,4 +18,12 @@ describe("Gather Box shortcut settings", () => {
         .pageShortcutsEnabled
     ).toBe(true);
   });
+
+  it("drops credential overrides for unknown persisted source keys", () => {
+    expect(
+      normalizeSettings({
+        credentialsPerSite: { pixiv: "omit", invented: "include" }
+      } as never).credentialsPerSite
+    ).toEqual({ pixiv: "omit" });
+  });
 });

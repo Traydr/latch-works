@@ -1,13 +1,6 @@
 import type { GatherBoxSettings } from "./settings";
-import type { SiteKey } from "./sites";
+import { getGatherSource } from "./source-catalog";
 import type { DownloadablePayload } from "./types";
-
-const AUTO_INCLUDE_SITES = new Set<SiteKey>([
-  "archiveofourown",
-  "fanbox",
-  "pixiv",
-  "hentaifoundry-stories"
-]);
 
 export function shouldIncludeCredentials(
   payload: DownloadablePayload,
@@ -23,8 +16,10 @@ export function shouldIncludeCredentials(
 
   if (settings.credentialsMode === "perSite") {
     const choice = settings.credentialsPerSite[payload.site];
-    return choice ? choice === "include" : AUTO_INCLUDE_SITES.has(payload.site);
+    return choice
+      ? choice === "include"
+      : (getGatherSource(payload.site)?.includeCredentialsByDefault ?? false);
   }
 
-  return AUTO_INCLUDE_SITES.has(payload.site);
+  return getGatherSource(payload.site)?.includeCredentialsByDefault ?? false;
 }
