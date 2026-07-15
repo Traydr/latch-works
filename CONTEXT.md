@@ -35,3 +35,24 @@ _Avoid_: Mutable media file, overwritten original
 **Pane View**:
 The web service that owns auth, library state, Source Object storage, and authorization for signed Shutter Renditions and original URLs.
 _Avoid_: Gallery app, web frontend
+
+**Gather Box**:
+The browser collector that turns supported source pages into files in the authoritative local archive.
+Its visible control surface is the side panel; collection execution is independent of that panel's
+lifetime.
+_Avoid_: Download popup, background downloader
+
+**Gather Source**:
+A supported external site together with its eligible page URLs, download origins, collection
+behavior, credential policy, and archive save behavior.
+_Avoid_: Host permission entry, collector switch case
+
+**Gather Run**:
+One identified attempt to collect an exact source tab and materialize its Gather Output in the local
+archive. A Gather Run has one owner and remains observable when the Gather Box side panel closes.
+_Avoid_: Popup session, pending download flag
+
+**Gather Output**:
+The files materialized by a Gather Run. An output is either a batch of source files or one generated
+story PDF.
+_Avoid_: Download response, popup payload

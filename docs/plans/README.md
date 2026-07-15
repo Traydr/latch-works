@@ -25,10 +25,17 @@ the corresponding plan.
 | [038](038-avoid-repeating-comic-folder-tree.md) | Fetch comic folder structure once per browse key | P2 | M | — | DONE |
 | [039](039-reconcile-shutter-docs.md) | Make docs match Shutter and current scripts | P1 | M | — | DONE |
 | [040](040-frame-view-pdf-spike.md) | Validate and specify Frame PDF reading | P2 | M spike | 033, 034 | BLOCKED |
+| [041](041-own-gather-runs-outside-ui.md) | Move Gather Run ownership out of transient UI | P1 | L | — | TODO |
+| [042](042-make-gather-commands-deterministic.md) | Make Gather commands exact and side-panel-only | P1 | M | 041 | TODO |
+| [043](043-isolate-gather-output-builds.md) | Lazy-load Gather Output adapters and enforce budgets | P1 | M | 041 | TODO |
+| [044](044-deepen-gather-source-catalog.md) | Make one Gather Source catalog authoritative | P2 | M | 043 | TODO |
+| [045](045-load-gather-collectors-on-demand.md) | Inject only the selected Gather Source collector | P2 | M | 042, 044 | TODO |
 
 Plans without dependencies can run in parallel. Within the dependent chain, execute `025 -> 030`,
 `026 -> 036`, then `026 + 030 + 036 -> 037`. Run the PDF direction spike only after Plans 033 and
-034 establish the shared media model and bounded PDF rendering contract.
+034 establish the shared media model and bounded PDF rendering contract. For the accepted Gather Box
+architecture in ADR 0001, execute `041`, then `042` and `043`; continue with `043 -> 044`, and finish
+with `042 + 044 -> 045`.
 
 ## Execution blockers
 
@@ -54,6 +61,9 @@ Finding 11 is machine-dependent rather than speculative: root Biome configuratio
 the repository but does not exclude `.pnpm-store`, while `.gitignore` alone does not prevent that
 traversal. A checkout with a local pnpm store therefore lints cached package contents; Plan 024 adds
 the narrow exclusion and a regression check without hiding other dot-directories.
+
+Plans 041–045 come from the accepted Gather Box architecture review on 2026-07-15 rather than the
+original repository survey. They implement ADR 0001 as dependent, independently reviewable slices.
 
 ## Historical and rejected work
 

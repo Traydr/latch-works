@@ -12,11 +12,27 @@ source-object storage, and source retention.
 | Lockstep | Desktop sync planning and push UX |
 | Lockstep CLI | Scriptable sync client over `lockstep-core` |
 | Frame View | Local desktop viewer |
-| Gather Box | Browser collector |
+| Gather Box | Browser collector whose side panel controls independently owned Gather Runs |
 | Showcase | Marketing and ecosystem documentation |
 
 Shared media identity and path behavior live in `media-domain`; archive scanning and sync planning
 live in `media-index`; S3-compatible source storage lives in `media-storage`.
+
+## Gather Box
+
+Gather Box uses the side panel as its only full control surface. A visible panel is an adapter over a
+persisted Gather Run; closing it does not cancel archive writes. The extension service worker owns
+run identity, exact source-tab targeting, state, and command coordination. An offscreen extension
+document executes remote fetches, File System Access writes, and generated story PDFs after a visible
+UI has granted any required directory permission.
+
+One Gather Source catalog owns supported-site URL, permission, collector, credential, and save
+behavior policy. The always-on page content contains only the page-key adapter; a run injects the
+collector selected for its exact source. Source-file batches and generated story PDFs are separate
+Gather Output adapters, and the heavy PDF implementation loads only for its output kind.
+
+See [ADR 0001](./adr/0001-gather-box-run-architecture.md) and Plans
+[041](./plans/041-own-gather-runs-outside-ui.md)–[045](./plans/045-load-gather-collectors-on-demand.md).
 
 ## Pane View and Shutter
 
