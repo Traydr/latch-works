@@ -5,13 +5,14 @@ export type SiteKey =
   | "kemono"
   | "fanbox"
   | "x"
+  | "reddit"
   | "pixiv"
   | "archiveofourown"
   | "hentaifoundry-stories"
   | "fanfiction-net";
 
 export type GatherOutputKind = "downloadable-files" | "generated-story-pdf";
-export type SavePattern = "nested" | "single-folder" | "direct-file";
+export type SavePattern = "nested" | "single-folder" | "direct-file" | "conditional";
 
 export interface SourceSaveBehavior {
   pattern: SavePattern;

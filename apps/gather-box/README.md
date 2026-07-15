@@ -12,6 +12,7 @@ Gather Box is the **collection** step in [Latch Works](../../README.md): media e
 | **Kemono** | Post image attachments |
 | **pixiv FANBOX** | Post image CDN files |
 | **X** | Post images, animated GIF videos, and videos |
+| **Reddit** | Post images, galleries, GIFs, and embedded RedGIFs videos |
 | **pixiv** | Original artwork pages, including collapsed multi-image works |
 | **Archive of Our Own** | Work PDF download |
 | **Hentai Foundry** | Story PDF download |
@@ -94,6 +95,7 @@ The build emits the reviewable manifest and a host-permission ownership report f
 - `https://kemono.cr/fanbox/user/24921130/post/11471817`
 - `https://creator.fanbox.cc/posts/11929835`
 - `https://x.com/anska_art/status/2076653334111396311/photo/1`
+- `https://www.reddit.com/r/Hololewd/comments/1uurxe0/nerissa_and_shiori_doujin_by_brulee/`
 - `https://www.pixiv.net/en/artworks/142625231`
 - `https://archiveofourown.org/works/18187196`
 - `https://www.hentai-foundry.com/stories/user/dotDelamora/70617/Taming-Guinevere`
@@ -125,6 +127,13 @@ The build emits the reviewable manifest and a host-permission ownership report f
 <root>/<username>-<user_id>/<artwork_id>_p<page>.<extension>
 ```
 
+**Reddit** — single media saves directly; galleries use an ordered post folder:
+
+```text
+<root>/<media filename>
+<root>/<post_title>_<post_id>/01_<media filename>
+```
+
 **Story PDFs** (AO3, Hentai Foundry, fanfiction.net):
 
 ```text
@@ -139,6 +148,7 @@ Spaces in folder and PDF names are converted to underscores.
 - Existing media is never overwritten. Gather Box compares SHA-256 hashes when a site filename already exists, skips identical content, and appends a four-character suffix before the extension for different content.
 - pixiv original-image requests use a narrowly scoped extension rule to supply pixiv's required `Referer` header.
 - X video resolution uses X's public syndication data first, then its web-client media response. The fallback flow was informed by [Cobalt's X extractor](https://github.com/imputnet/cobalt/blob/main/api/src/processing/services/twitter.js); Gather Box does not call a hosted Cobalt instance.
+- Embedded RedGIFs posts are resolved locally through RedGIFs' temporary-token API; the extension downloads the returned HD MP4 when available. A narrowly scoped request rule supplies the API origin headers used by the current [yt-dlp RedGIFs extractor](https://github.com/yt-dlp/yt-dlp/blob/master/yt_dlp/extractor/redgifs.py).
 - The extension re-confirms folder access with Chrome when needed.
 - MyHentaiGallery collection targets `ul.comics-grid.clear div.comic-thumb img[src]` and ignores ad blocks outside that selector.
 
@@ -150,6 +160,7 @@ Spaces in folder and PDF names are converted to underscores.
 - [ ] Story PDFs use `{author}-{story}.pdf` naming
 - [ ] fanfiction.net: chapter count matches selector; generated PDF has all chapters in order with basic bold/italic preserved
 - [ ] FANBOX: files land in `<creator>/<post_title>-<post_id>/`
+- [ ] Reddit: single media lands at the root; galleries use `<post_title>_<post_id>/01_<filename>`
 
 ## Related
 

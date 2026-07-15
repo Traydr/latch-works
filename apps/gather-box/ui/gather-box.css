@@ -51,6 +51,12 @@
   --p-bg: var(--success-muted);
 }
 
+[data-pattern="conditional"] {
+  --p-color: #67e8f9;
+  --p-border: rgba(34, 211, 238, 0.4);
+  --p-bg: rgba(34, 211, 238, 0.12);
+}
+
 *,
 *::before,
 *::after {

@@ -228,7 +228,7 @@ export class GatherController {
         setPageState(
           this.elements,
           false,
-          "This isn't a supported page. Open an X post, pixiv artwork, MyHentaiGallery, Kemono, FANBOX, AO3, Hentai Foundry, or fanfiction.net page."
+          "This isn't a supported page. Open an X or Reddit post, pixiv artwork, MyHentaiGallery, Kemono, FANBOX, AO3, Hentai Foundry, or fanfiction.net page."
         );
         updateSaveBehavior(this.state.siteKey);
         await this.restoreSavedDirectoryHandle();

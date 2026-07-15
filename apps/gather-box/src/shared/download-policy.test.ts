@@ -21,6 +21,10 @@ describe("download policy", () => {
         "https://i.pximg.net/img-original/img/2026/03/22/142625231_p0.jpg",
       ),
     ).toBe(true);
+    expect(isAllowedDownloadUrl("reddit", "https://i.redd.it/media123.jpg")).toBe(true);
+    expect(
+      isAllowedDownloadUrl("reddit", "https://media.redgifs.com/Example.mp4"),
+    ).toBe(true);
   });
 
   it("rejects cross-site or unsupported hosts", () => {
@@ -31,6 +35,7 @@ describe("download policy", () => {
       true,
     );
     expect(isAllowedDownloadUrl("fanbox", "https://example.com/image.jpg")).toBe(false);
+    expect(isAllowedDownloadUrl("reddit", "https://evil.example.com/video.mp4")).toBe(false);
   });
 
   it("sanitizes unsafe filenames before download", () => {

@@ -55,6 +55,11 @@
         "id": "pixiv_referer",
         "enabled": true,
         "path": "rules/pixiv-referer.json"
+      },
+      {
+        "id": "redgifs_api_headers",
+        "enabled": true,
+        "path": "rules/redgifs-api.json"
       }
     ]
   }

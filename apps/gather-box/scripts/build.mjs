@@ -26,6 +26,7 @@ const packagedFiles = [
   "options/options.css",
   "offscreen/offscreen.html",
   "rules/pixiv-referer.json",
+  "rules/redgifs-api.json",
   "assets/fonts/NotoSerif-Regular.ttf",
   "assets/fonts/NotoSerif-Italic.ttf",
   "assets/fonts/NotoSerif-Bold.ttf",

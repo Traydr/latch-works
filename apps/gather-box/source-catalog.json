@@ -72,6 +72,27 @@
     "save": { "pattern": "single-folder", "folderDepth": 1, "summary": "Creates 1 creator folder", "detail": "Media saves under the post author's username.", "pathTemplate": "<root>/<username>/", "filePattern": "X media filenames", "tag": "FOLDER · 1", "railCode": "F1" }
   },
   {
+    "key": "reddit",
+    "label": "Reddit",
+    "urlPatterns": ["^https://(?:www\\.)?reddit\\.com/r/[^/]+/comments/[a-z0-9]+(?:/[^/?#]+)?(?:[/?#]|$)"],
+    "pageMatches": ["https://www.reddit.com/r/*/comments/*", "https://reddit.com/r/*/comments/*"],
+    "hostPermissions": [
+      { "pattern": "https://www.reddit.com/*", "reason": "Eligible Reddit post pages" },
+      { "pattern": "https://reddit.com/*", "reason": "Non-www eligible Reddit post URLs" },
+      { "pattern": "https://i.redd.it/*", "reason": "Original Reddit image and GIF media" },
+      { "pattern": "https://preview.redd.it/*", "reason": "Reddit gallery thumbnails used to identify originals" },
+      { "pattern": "https://api.redgifs.com/*", "reason": "Embedded RedGIFs media resolution" },
+      { "pattern": "https://*.redgifs.com/*", "reason": "Resolved RedGIFs video downloads" }
+    ],
+    "contextMenuMatches": ["https://www.reddit.com/r/*/comments/*", "https://reddit.com/r/*/comments/*"],
+    "collectorEntry": "content/collectors/reddit.js",
+    "collectorModule": "src/content/collectors/reddit.ts",
+    "outputKinds": ["downloadable-files"],
+    "includeCredentialsByDefault": false,
+    "downloadUrlPatterns": ["^https://i\\.redd\\.it/.+", "^https://(?:[a-z0-9-]+\\.)?redgifs\\.com/.+\\.mp4(?:\\?.*)?$"],
+    "save": { "pattern": "conditional", "folderDepth": 1, "summary": "Folders only for multi-media posts", "detail": "Single media saves directly; galleries use a post title + ID folder and indexed filenames.", "pathTemplate": "<root>/[<post title>_<id>/]", "filePattern": "Original filename, or 01_<filename> for galleries", "tag": "DIRECT / FOLDER", "railCode": "D/F1" }
+  },
+  {
     "key": "pixiv",
     "label": "pixiv",
     "urlPatterns": ["^https://(?:www\\.)?pixiv\\.net/(?:[a-z]{2}/)?artworks/\\d+(?:[/?#]|$)"],

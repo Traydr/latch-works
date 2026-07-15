@@ -1,0 +1,25 @@
+[
+  {
+    "id": 2,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {
+          "header": "Origin",
+          "operation": "set",
+          "value": "https://www.redgifs.com"
+        },
+        {
+          "header": "Referer",
+          "operation": "set",
+          "value": "https://www.redgifs.com/"
+        }
+      ]
+    },
+    "condition": {
+      "urlFilter": "||api.redgifs.com/v2/",
+      "resourceTypes": ["xmlhttprequest"]
+    }
+  }
+]

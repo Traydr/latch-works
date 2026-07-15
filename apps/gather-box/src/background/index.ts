@@ -9,10 +9,12 @@ import {
   OPEN_EXTENSION_MESSAGE,
   TRIGGER_DOWNLOAD_MESSAGE
 } from "../shared/runtime-messages";
-import { isResolveXMediaMessage } from "../shared/x-media";
+import { isResolveRedgifsMediaMessage } from "../shared/reddit-media";
 import { getContextMenuMatches } from "../shared/source-catalog";
+import { isResolveXMediaMessage } from "../shared/x-media";
 import { GatherCommands } from "./gather-commands";
 import { GatherRunCoordinator } from "./gather-run-coordinator";
+import { resolveRedgifsMedia } from "./redgifs-media-resolver";
 import { resolveXPostMedia } from "./x-media-resolver";
 
 const CONTEXT_MENU_ID = "gather-box-download";
@@ -89,6 +91,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (isResolveXMediaMessage(message)) {
     void resolveXPostMedia(message).then(sendResponse);
+    return true;
+  }
+
+  if (isResolveRedgifsMediaMessage(message)) {
+    void resolveRedgifsMedia(message.redgifsId).then(sendResponse);
     return true;
   }
 
