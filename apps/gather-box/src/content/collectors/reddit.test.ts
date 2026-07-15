@@ -43,7 +43,7 @@ describe.skipIf(!hasFixtures)("Reddit collector fixtures", () => {
     expect(resolver).not.toHaveBeenCalled();
   });
 
-  it("keeps a single animated GIF and its original extension", async () => {
+  it("uses Reddit's MP4 rendition for a single animated GIF", async () => {
     const result = await collectRedditData(
       parseFixture("reddit-com-single-gif.html"),
       redditLocation(
@@ -57,8 +57,10 @@ describe.skipIf(!hasFixtures)("Reddit collector fixtures", () => {
       folderSegments: [],
       images: [
         {
-          originalUrl: "https://i.redd.it/l66er2d2km9h1.gif",
-          fileName: "l66er2d2km9h1.gif"
+          originalUrl: expect.stringMatching(
+            /^https:\/\/preview\.redd\.it\/l66er2d2km9h1\.gif\?.*format=mp4/
+          ),
+          fileName: "l66er2d2km9h1.mp4"
         }
       ]
     });

@@ -32,7 +32,7 @@ export async function collectRedditData(
   let images = collectGalleryImages(post.element);
   if (images.length === 0) {
     const contentHref = post.element.getAttribute("content-href") ?? "";
-    const redditMedia = normalizeRedditMediaUrl(contentHref);
+    const redditMedia = collectRedditGifVideo(post.element) ?? normalizeRedditMediaUrl(contentHref);
     if (redditMedia) {
       images = [toGalleryImage(redditMedia, 1)];
     } else {
@@ -120,6 +120,42 @@ function collectGalleryImages(post: Element): GalleryImage[] {
   }
 
   return result;
+}
+
+function collectRedditGifVideo(
+  post: Element
+): { originalUrl: string; thumbnailUrl: string | null; fileName: string } | null {
+  if (post.getAttribute("post-type") !== "gif") {
+    return null;
+  }
+
+  const player = post.querySelector("shreddit-player[gif]");
+  const source =
+    player?.getAttribute("src") || player?.querySelector("source")?.getAttribute("src");
+  if (!source) {
+    return null;
+  }
+
+  try {
+    const url = new URL(source);
+    const sourceFileName = decodeURIComponent(url.pathname.split("/").pop() ?? "");
+    if (
+      url.protocol !== "https:" ||
+      url.hostname !== "preview.redd.it" ||
+      url.searchParams.get("format")?.toLowerCase() !== "mp4" ||
+      !/^[a-z0-9]+\.gif$/i.test(sourceFileName)
+    ) {
+      return null;
+    }
+
+    return {
+      originalUrl: url.toString(),
+      thumbnailUrl: player?.getAttribute("poster") ?? null,
+      fileName: sourceFileName.replace(/\.gif$/i, ".mp4")
+    };
+  } catch {
+    return null;
+  }
 }
 
 function normalizeRedditMediaUrl(

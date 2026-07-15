@@ -89,7 +89,7 @@
     "collectorModule": "src/content/collectors/reddit.ts",
     "outputKinds": ["downloadable-files"],
     "includeCredentialsByDefault": false,
-    "downloadUrlPatterns": ["^https://i\\.redd\\.it/.+", "^https://(?:[a-z0-9-]+\\.)?redgifs\\.com/.+\\.mp4(?:\\?.*)?$"],
+    "downloadUrlPatterns": ["^https://i\\.redd\\.it/.+", "^https://preview\\.redd\\.it/[a-z0-9]+\\.gif\\?(?=[^#]*\\bformat=mp4(?:&|$))[^#]+$", "^https://(?:[a-z0-9-]+\\.)?redgifs\\.com/.+\\.mp4(?:\\?.*)?$"],
     "save": { "pattern": "conditional", "folderDepth": 1, "summary": "Folders only for multi-media posts", "detail": "Single media saves directly; galleries use a post title + ID folder and indexed filenames.", "pathTemplate": "<root>/[<post title>_<id>/]", "filePattern": "Original filename, or 01_<filename> for galleries", "tag": "DIRECT / FOLDER", "railCode": "D/F1" }
   },
   {

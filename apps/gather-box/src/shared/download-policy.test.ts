@@ -23,6 +23,12 @@ describe("download policy", () => {
     ).toBe(true);
     expect(isAllowedDownloadUrl("reddit", "https://i.redd.it/media123.jpg")).toBe(true);
     expect(
+      isAllowedDownloadUrl(
+        "reddit",
+        "https://preview.redd.it/media123.gif?width=1280&format=mp4&signature=abc",
+      ),
+    ).toBe(true);
+    expect(
       isAllowedDownloadUrl("reddit", "https://media.redgifs.com/Example.mp4"),
     ).toBe(true);
   });
@@ -36,6 +42,9 @@ describe("download policy", () => {
     );
     expect(isAllowedDownloadUrl("fanbox", "https://example.com/image.jpg")).toBe(false);
     expect(isAllowedDownloadUrl("reddit", "https://evil.example.com/video.mp4")).toBe(false);
+    expect(
+      isAllowedDownloadUrl("reddit", "https://preview.redd.it/media123.gif?format=png"),
+    ).toBe(false);
   });
 
   it("sanitizes unsafe filenames before download", () => {

@@ -12,7 +12,7 @@ Gather Box is the **collection** step in [Latch Works](../../README.md): media e
 | **Kemono** | Post image attachments |
 | **pixiv FANBOX** | Post image CDN files |
 | **X** | Post images, animated GIF videos, and videos |
-| **Reddit** | Post images, galleries, GIFs, and embedded RedGIFs videos |
+| **Reddit** | Post images, galleries, GIFs as MP4, and embedded RedGIFs videos |
 | **pixiv** | Original artwork pages, including collapsed multi-image works |
 | **Archive of Our Own** | Work PDF download |
 | **Hentai Foundry** | Story PDF download |
@@ -149,6 +149,7 @@ Spaces in folder and PDF names are converted to underscores.
 - pixiv original-image requests use a narrowly scoped extension rule to supply pixiv's required `Referer` header.
 - X video resolution uses X's public syndication data first, then its web-client media response. The fallback flow was informed by [Cobalt's X extractor](https://github.com/imputnet/cobalt/blob/main/api/src/processing/services/twitter.js); Gather Box does not call a hosted Cobalt instance.
 - Embedded RedGIFs posts are resolved locally through RedGIFs' temporary-token API; the extension downloads the returned HD MP4 when available. A narrowly scoped request rule supplies the API origin headers used by the current [yt-dlp RedGIFs extractor](https://github.com/yt-dlp/yt-dlp/blob/master/yt_dlp/extractor/redgifs.py).
+- Reddit GIF posts use Reddit's existing signed MP4 rendition, avoiding local transcoding and its bundle/runtime cost.
 - The extension re-confirms folder access with Chrome when needed.
 - MyHentaiGallery collection targets `ul.comics-grid.clear div.comic-thumb img[src]` and ignores ad blocks outside that selector.
 
