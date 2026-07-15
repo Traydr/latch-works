@@ -1,4 +1,4 @@
-import { ensureCollectorAndCollect } from "../gather/active-tab";
+import { injectCollectorAndCollect } from "../gather/active-tab";
 import { formatError } from "../gather/errors";
 import {
   createGatherRunState,
@@ -14,6 +14,7 @@ import {
 import { loadGatherRun, saveGatherRun } from "../shared/gather-run-store";
 import { saveLastRun } from "../shared/last-run";
 import { getSiteKeyFromUrl, isSupportedUrl } from "../shared/sites";
+import { getGatherSource } from "../shared/source-catalog";
 import { loadSettings } from "../shared/settings";
 import type { DownloadablePayload } from "../shared/types";
 import { OffscreenDocument } from "./offscreen-document";
@@ -135,13 +136,21 @@ export class GatherRunCoordinator {
         progress: { ...run.progress, message: "Collecting content metadata..." }
       });
       const currentTab = await chrome.tabs.get(tab.id);
-      if (!currentTab.url || getSiteKeyFromUrl(currentTab.url) !== siteKey) {
+      if (!currentTab.url || currentTab.url !== run.tabUrl || getSiteKeyFromUrl(currentTab.url) !== siteKey) {
         throw new Error("The source tab navigated before collection started.");
       }
+      const source = getGatherSource(siteKey);
+      if (!source) throw new Error("The Gather Source no longer has a collector adapter.");
       const response =
         retryPayload ??
-        (await ensureCollectorAndCollect(tab.id, () => {
-          void this.appendLog(run.id, "Injecting collector into the source page...");
+        (await injectCollectorAndCollect({
+          tabId: tab.id,
+          pageUrl: run.tabUrl,
+          requestId: run.id,
+          source,
+          onInjecting: () => {
+            void this.appendLog(run.id, `Injecting the ${source.label} collector...`);
+          }
         }));
       if (!response || response.ok !== true) {
         throw new Error(response?.message || "The source page did not return collection data.");

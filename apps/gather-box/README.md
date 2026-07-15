@@ -38,6 +38,8 @@ For focus-independent shortcuts, Chrome commands default to `Ctrl+Shift+Period`
 `chrome://extensions/shortcuts`.
 
 Downloads use your browser session cookies where needed (AO3, Hentai Foundry, fanfiction.net). Individual file failures do not stop the rest of the batch.
+The always-on page script contains only the optional Right Shift shortcuts. When gathering starts,
+the service worker injects exactly one catalog-selected collector into the captured tab's main frame.
 
 ## Project structure
 

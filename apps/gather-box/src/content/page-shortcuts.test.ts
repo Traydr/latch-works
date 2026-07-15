@@ -55,6 +55,39 @@ describe("Gather Box page shortcuts", () => {
     uninstall();
   });
 
+  it("resets held Shift on blur and ignores repeat events", () => {
+    const sendMessage = vi.fn().mockResolvedValue(undefined);
+    const uninstall = installPageShortcuts(document, { sendMessage });
+    pressKey({ code: "ShiftRight", key: "Shift", shiftKey: true });
+    window.dispatchEvent(new Event("blur"));
+    pressKey({ code: "BracketRight", key: "]", shiftKey: true });
+    pressKey({ code: "ShiftRight", key: "Shift", shiftKey: true });
+    pressKey({ code: "BracketRight", key: "]", shiftKey: true, repeat: true });
+    expect(sendMessage).not.toHaveBeenCalled();
+    uninstall();
+  });
+
+  it("does not intercept shortcuts typed into editable controls", () => {
+    const sendMessage = vi.fn().mockResolvedValue(undefined);
+    const uninstall = installPageShortcuts(document, { sendMessage });
+    const input = document.createElement("input");
+    document.body.append(input);
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { code: "ShiftRight", key: "Shift", bubbles: true })
+    );
+    const shortcut = new KeyboardEvent("keydown", {
+      code: "BracketRight",
+      key: "]",
+      bubbles: true,
+      cancelable: true
+    });
+    input.dispatchEvent(shortcut);
+    expect(shortcut.defaultPrevented).toBe(false);
+    expect(sendMessage).not.toHaveBeenCalled();
+    input.remove();
+    uninstall();
+  });
+
   it("accepts key and location when the browser does not report physical codes", () => {
     const sendMessage = vi.fn().mockResolvedValue(undefined);
     const uninstall = installPageShortcuts(document, { sendMessage });

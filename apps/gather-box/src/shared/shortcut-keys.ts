@@ -13,7 +13,7 @@ export function installShortcutKeyListener(
       return;
     }
 
-    if (!isEnabled() || !rightShiftDown || event.repeat) {
+    if (!isEnabled() || !rightShiftDown || event.repeat || isEditableTarget(event.target)) {
       return;
     }
 
@@ -61,6 +61,14 @@ export function installShortcutKeyListener(
       document.removeEventListener("keyup", handleKeyup, true);
     }
   };
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    (target instanceof HTMLElement && target.isContentEditable)
+  );
 }
 
 function isRightShift(event: KeyboardEvent): boolean {

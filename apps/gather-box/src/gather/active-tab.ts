@@ -1,37 +1,52 @@
-import { COLLECT_MESSAGE_TYPE, type CollectComicGalleryMessage } from "../shared/messages";
+import {
+  COLLECT_MESSAGE_TYPE,
+  type CollectComicGalleryMessage,
+  type CollectComicGalleryResponse
+} from "../shared/messages";
+import type { GatherSource } from "../shared/source-catalog";
 import type { GalleryCollectResponse } from "../shared/types";
 import { formatError } from "./errors";
-
-const COLLECTOR_FILE = "content/gallery-collector.js";
 
 export async function getActiveTab(): Promise<chrome.tabs.Tab | null> {
   const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
   return tabs[0] || null;
 }
 
-export async function ensureCollectorAndCollect(
-  tabId: number,
-  onInjecting: () => void
-): Promise<GalleryCollectResponse> {
-  const message: CollectComicGalleryMessage = { type: COLLECT_MESSAGE_TYPE };
+export async function injectCollectorAndCollect(input: {
+  tabId: number;
+  pageUrl: string;
+  requestId: string;
+  source: GatherSource;
+  onInjecting: () => void;
+}): Promise<GalleryCollectResponse> {
+  const { tabId, pageUrl, requestId, source, onInjecting } = input;
+  const message: CollectComicGalleryMessage = {
+    type: COLLECT_MESSAGE_TYPE,
+    requestId,
+    sourceKey: source.key,
+    pageUrl
+  };
 
   try {
-    return await chrome.tabs.sendMessage(tabId, message);
-  } catch (error) {
-    if (!isMissingReceiverError(error)) {
-      throw new Error(`Could not reach the page collector: ${formatError(error)}`);
-    }
-
     onInjecting();
     await chrome.scripting.executeScript({
-      target: { tabId },
-      files: [COLLECTOR_FILE]
+      target: { tabId, frameIds: [0] },
+      files: [source.collectorEntry]
     });
-
-    return chrome.tabs.sendMessage(tabId, message);
+    const response = await chrome.tabs.sendMessage<
+      CollectComicGalleryMessage,
+      CollectComicGalleryResponse
+    >(tabId, message, { frameId: 0 });
+    if (
+      !response ||
+      response.requestId !== requestId ||
+      response.sourceKey !== source.key ||
+      !response.result
+    ) {
+      throw new Error("The selected collector returned a stale or mismatched response.");
+    }
+    return response.result;
+  } catch (error) {
+    throw new Error(`Could not run the ${source.label} collector: ${formatError(error)}`);
   }
-}
-
-function isMissingReceiverError(error: unknown): boolean {
-  return formatError(error).includes("Receiving end does not exist");
 }

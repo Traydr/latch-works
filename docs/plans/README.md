@@ -29,7 +29,7 @@ the corresponding plan.
 | [042](042-make-gather-commands-deterministic.md) | Make Gather commands exact and side-panel-only | P1 | M | 041 | DONE |
 | [043](043-isolate-gather-output-builds.md) | Lazy-load Gather Output adapters and enforce budgets | P1 | M | 041 | DONE |
 | [044](044-deepen-gather-source-catalog.md) | Make one Gather Source catalog authoritative | P2 | M | 043 | DONE |
-| [045](045-load-gather-collectors-on-demand.md) | Inject only the selected Gather Source collector | P2 | M | 042, 044 | TODO |
+| [045](045-load-gather-collectors-on-demand.md) | Inject only the selected Gather Source collector | P2 | M | 042, 044 | DONE |
 
 Plans without dependencies can run in parallel. Within the dependent chain, execute `025 -> 030`,
 `026 -> 036`, then `026 + 030 + 036 -> 037`. Run the PDF direction spike only after Plans 033 and

@@ -8,7 +8,7 @@
 
 ## Status
 
-- **Status**: TODO
+- **Status**: DONE
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: MED
@@ -175,3 +175,25 @@ execution, and manifest entry presence.
 New Gather Sources must ship a catalog entry, dedicated collector entry or justified shared adapter,
 synthetic fixture suite, injection smoke, permission reason, and size evidence. Keep the page-key
 adapter source-agnostic.
+
+## Final content-entry baseline
+
+The release metafile gate proves that `content/page-shortcuts.js` imports only shortcut and semantic
+message modules. Each collector output imports exactly one source collector module; cross-source
+imports fail the build.
+
+| Entry | Raw minified |
+|---|---:|
+| Always-on page shortcuts | 1.6 KB |
+| MyHentaiGallery collector | 2.3 KB |
+| Kemono collector | 2.8 KB |
+| pixivFANBOX collector | 4.1 KB |
+| X collector | 8.6 KB |
+| pixiv collector | 3.2 KB |
+| Archive of Our Own collector | 2.7 KB |
+| Hentai Foundry collector | 2.7 KB |
+| FanFiction.Net collector | 3.4 KB |
+
+All entries execute in Chrome's isolated world. No collector is listed under `content_scripts` or
+`web_accessible_resources`; the manifest loads only the 1.6 KB page shortcut adapter at
+`document_start`.

@@ -71,9 +71,13 @@ const background = await build({
 
 const content = await build({
   ...common,
-  entryPoints: {
-    "content/gallery-collector": resolve(root, "src/content/index.ts")
-  },
+  entryPoints: Object.fromEntries([
+    ["content/page-shortcuts", resolve(root, "src/content/page-shortcuts-entry.ts")],
+    ...sourceCatalog.map((source) => [
+      source.collectorEntry.replace(/\.js$/, ""),
+      resolve(root, "src/content/entries", `${basename(source.collectorEntry, ".js")}.ts`)
+    ])
+  ]),
   entryNames: "[dir]/[name]",
   format: "iife",
   outdir: dist
@@ -147,7 +151,7 @@ async function generateManifest() {
       content_scripts: [
         {
           matches: [...pageMatches].sort(),
-          js: ["content/gallery-collector.js"],
+          js: ["content/page-shortcuts.js"],
           run_at: "document_start"
         }
       ]
@@ -172,6 +176,15 @@ async function createArtifactReport(metafiles) {
     throw new Error("Generated-story chunk was not emitted as an isolated local module.");
   }
 
+  verifyContentIsolation(metafiles.content);
+  const collectorMeasurements = Object.fromEntries(
+    await Promise.all(
+      sourceCatalog.map(async (source) => [
+        `collector ${source.key} JS`,
+        await measureOutputGraph(metafiles.content, findOutput(metafiles.content, source.collectorEntry))
+      ])
+    )
+  );
   const categories = {
     "side panel eager JS": await measureOutputGraph(metafiles.pages, pageEntry),
     "offscreen base JS": await measureOutputGraph(metafiles.pages, offscreenEntry, new Set([storyChunk])),
@@ -180,10 +193,11 @@ async function createArtifactReport(metafiles) {
       metafiles.background,
       findOutput(metafiles.background, "background/service-worker.js")
     ),
-    "content script JS": await measureOutputGraph(
+    "page shortcuts JS": await measureOutputGraph(
       metafiles.content,
-      findOutput(metafiles.content, "content/gallery-collector.js")
+      findOutput(metafiles.content, "content/page-shortcuts.js")
     ),
+    ...collectorMeasurements,
     fonts: await measureDirectory(resolve(dist, "assets/fonts"), (name) => name.endsWith(".ttf")),
     icons: await measureDirectory(resolve(dist, "assets/icons"), () => true),
     "total JS": await measureJsOutputs(metafiles),
@@ -195,6 +209,25 @@ async function createArtifactReport(metafiles) {
     storyChunk: storyChunk.replace(/^dist\//, ""),
     categories
   };
+}
+
+function verifyContentIsolation(metafile) {
+  const shortcutOutput = metafile.outputs[findOutput(metafile, "content/page-shortcuts.js")];
+  const shortcutInputs = Object.keys(shortcutOutput.inputs);
+  if (shortcutInputs.some((input) => input.includes("/collectors/"))) {
+    throw new Error("The always-on page-shortcut entry imports Gather Source collector code.");
+  }
+
+  for (const source of sourceCatalog) {
+    const output = metafile.outputs[findOutput(metafile, source.collectorEntry)];
+    const collectorInputs = Object.keys(output.inputs).filter((input) => input.includes("/collectors/"));
+    const expected = source.collectorModule.replace(/^src\//, "src/");
+    if (collectorInputs.length !== 1 || collectorInputs[0] !== expected) {
+      throw new Error(
+        `Collector entry ${source.key} crossed source seams: ${collectorInputs.join(", ") || "none"}`
+      );
+    }
+  }
 }
 
 function findOutput(metafile, suffix) {
@@ -268,10 +301,11 @@ function enforceBudgets(report, metafiles) {
     "offscreen base JS": 180_000,
     "generated-story JS": 1_300_000,
     "service worker JS": 150_000,
-    "content script JS": 40_000,
+    "page shortcuts JS": 10_000,
     "total JS": 1_800_000,
     "total dist": 5_000_000
   };
+  for (const source of sourceCatalog) budgets[`collector ${source.key} JS`] = 40_000;
   const failures = Object.entries(budgets).filter(
     ([name, budget]) => report.categories[name].raw > budget
   );
