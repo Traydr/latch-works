@@ -1,4 +1,4 @@
-import { ensureCollectorAndCollect, getActiveTab } from "../gather/active-tab";
+import { getActiveTab } from "../gather/active-tab";
 import {
   clearDirectoryHandle,
   ensureDirectoryPermission,
@@ -23,11 +23,8 @@ import {
   type LogTone,
   type PopupElements
 } from "../gather/dom";
-import { downloadImages, getOrCreateNestedDirectory, type DownloadFailure } from "../gather/downloader";
 import { formatError } from "../gather/errors";
-import { saveFanfictionStoryPdf } from "../gather/fanfiction-story";
 import type { PopupStatus } from "../gather/status";
-import { shouldIncludeCredentials } from "./credentials";
 import {
   getSiteKeyFromUrl,
   isSupportedUrl,
@@ -40,10 +37,6 @@ import {
   type LastRunLogEntry,
   type LastRunState
 } from "./last-run";
-import {
-  buildFolderPreview,
-  getFolderSegments
-} from "./path";
 import { GATHER_RUN_STATE_KEY, normalizeGatherRunState, type GatherRunState } from "./gather-run";
 import {
   RETRY_GATHER_RUN_REQUEST,
@@ -53,7 +46,6 @@ import {
 import { loadGatherRun } from "./gather-run-store";
 import { loadSettings, type GatherBoxSettings } from "./settings";
 import { installShortcutKeyListener } from "./shortcut-keys";
-import type { DownloadablePayload, GeneratedStoryPayload, GalleryImage } from "./types";
 
 interface PopupState {
   activeTab: chrome.tabs.Tab | null;
@@ -408,121 +400,6 @@ export class GatherController {
     }
   }
 
-  private async handleDownloadableFiles(payload: DownloadablePayload): Promise<boolean> {
-    const skippedCount = Number(payload.skippedCount || 0);
-    const itemName = getItemName(payload);
-    this.appendLog(`Found ${formatItemCount(payload.images.length, itemName)} in "${payload.title}".`, "success");
-    if (skippedCount > 0) {
-      this.appendLog(`Skipped ${skippedCount} entries without valid URLs.`, "error");
-    }
-
-    if (this.state.settings.verboseLogging) {
-      for (const image of payload.images) {
-        this.logVerbose(`${image.fileName} -> ${image.originalUrl}`);
-      }
-    }
-
-    this.setStatus("downloading");
-    const destinationDirectory = await this.getDestinationDirectory(payload);
-    const summary = await downloadImages(
-      payload.images,
-      destinationDirectory,
-      {
-        onStart: (total) => {
-          setProgress(this.elements, 0, total || 1, `Starting ${total} downloads...`);
-        },
-        onProgress: (completed, total) => {
-          setProgress(
-            this.elements,
-            completed,
-            total || 1,
-            `Processed ${completed} of ${formatItemCount(total, itemName)}.`
-          );
-        },
-        onSaved: (fileName) => {
-          this.appendLog(`Saved ${fileName}`, "success");
-        },
-        onSkipped: (fileName) => {
-          this.appendLog(`Skipped existing ${fileName}`, "success");
-        },
-        onVerbose: (message) => {
-          this.logVerbose(message);
-        }
-      },
-      {
-        credentials: shouldIncludeCredentials(payload, this.state.settings) ? "include" : "omit",
-        concurrency: this.state.settings.downloadConcurrency,
-        site: payload.site
-      }
-    );
-
-    const stateName: PopupStatus = summary.failed > 0 ? "error" : "complete";
-    this.setStatus(stateName);
-    this.elements.progressText.textContent = `Done. Saved ${summary.saved} of ${formatItemCount(
-      payload.images.length,
-      itemName
-    )}.`;
-    this.appendLog(
-      `Complete. Saved ${summary.saved}, failed ${summary.failed}, skipped ${summary.skipped}, collector skipped ${skippedCount}.`,
-      stateName === "complete" ? "success" : "error"
-    );
-
-    for (const item of summary.failedItems) {
-      this.appendLog(`Failed ${item.fileName}: ${item.reason}`, "error");
-    }
-
-    await this.persistLastRun({
-      failedItems: summary.failedItems,
-      retryImages: this.buildRetryImages(summary.failedItems, payload.images),
-      canRetry: summary.failedItems.length > 0
-    });
-
-    if (stateName === "error") {
-      setLogExpanded(this.elements, true);
-    }
-
-    return stateName === "complete";
-  }
-
-  private async handleGeneratedStoryDownload(payload: GeneratedStoryPayload): Promise<void> {
-    this.appendLog(
-      `Found ${formatItemCount(payload.chapters.length, "chapter")} in "${payload.title}".`,
-      "success"
-    );
-    this.setStatus("downloading");
-    const destinationDirectory = await this.getDestinationDirectory(payload);
-
-    await saveFanfictionStoryPdf(payload, destinationDirectory, {
-      onStart: (total) => {
-        setProgress(this.elements, 0, total || 1, `Collecting ${formatItemCount(total, "chapter")}...`);
-      },
-      onChapterFetched: (completed, total) => {
-        setProgress(this.elements, completed, total || 1, `Fetched chapter ${completed} of ${total}.`);
-      },
-      onGenerating: () => {
-        setProgress(
-          this.elements,
-          payload.chapters.length,
-          payload.chapters.length || 1,
-          "Generating PDF..."
-        );
-        this.appendLog("Generating PDF...");
-      },
-      onSaved: (fileName) => {
-        this.appendLog(`Saved ${fileName}`, "success");
-      }
-    });
-
-    this.setStatus("complete");
-    this.elements.progressText.textContent = "Done. Saved 1 file.";
-    this.appendLog("Complete. Saved 1 file, failed 0, skipped 0.", "success");
-    await this.persistLastRun({
-      failedItems: [],
-      retryImages: [],
-      canRetry: false
-    });
-  }
-
   private async handleCopyErrors(): Promise<void> {
     const failedItems = this.state.lastRun.failedItems;
     if (failedItems.length === 0) {
@@ -537,74 +414,6 @@ export class GatherController {
       this.appendLog(`Could not copy error report: ${formatError(error)}`, "error");
       setLogExpanded(this.elements, true);
     }
-  }
-
-  private async getDestinationDirectory(
-    payload: DownloadablePayload | GeneratedStoryPayload
-  ): Promise<FileSystemDirectoryHandle> {
-    if (!this.state.directoryHandle) {
-      throw new Error("Choose a folder before downloading.");
-    }
-
-    const folderSegments = getFolderSegments(payload);
-    const destinationDirectory = await getOrCreateNestedDirectory(
-      this.state.directoryHandle,
-      folderSegments
-    );
-    const preview = buildFolderPreview(this.state.directoryHandle.name, folderSegments);
-    this.appendLog(`Writing to ${preview}`, "success");
-
-    return destinationDirectory;
-  }
-
-  private async getDestinationDirectoryFromPreview(
-    destinationPreview: string
-  ): Promise<FileSystemDirectoryHandle> {
-    if (!this.state.directoryHandle) {
-      throw new Error("Choose a folder before downloading.");
-    }
-
-    const segments = destinationPreview.includes("/")
-      ? destinationPreview.split("/").slice(1)
-      : [];
-
-    return getOrCreateNestedDirectory(this.state.directoryHandle, segments);
-  }
-
-  private async previewDestination(
-    payload: DownloadablePayload | GeneratedStoryPayload
-  ): Promise<string> {
-    if (!this.state.directoryHandle) {
-      return "";
-    }
-
-    const folderSegments = getFolderSegments(payload);
-    return buildFolderPreview(this.state.directoryHandle.name, folderSegments);
-  }
-
-  private async collectGalleryFromPage(): Promise<DownloadablePayload | GeneratedStoryPayload> {
-    const tabId =
-      this.state.activeTab && typeof this.state.activeTab.id === "number"
-        ? this.state.activeTab.id
-        : null;
-
-    if (tabId === null) {
-      throw new Error("No active tab available.");
-    }
-
-    const response = await ensureCollectorAndCollect(tabId, () => {
-      this.appendLog("Injecting collector into page...");
-    });
-
-    if (!response || response.ok !== true) {
-      const message =
-        response && "message" in response && response.message
-          ? response.message
-          : "The page did not return gallery data.";
-      throw new Error(message);
-    }
-
-    return response;
   }
 
   private async restoreSavedDirectoryHandle(): Promise<void> {
@@ -646,31 +455,6 @@ export class GatherController {
       this.appendLog(`Folder could not be persisted: ${formatError(error)}`, "error");
       this.elements.folderDetail.textContent = "Works for this session only.";
     }
-  }
-
-  private getDownloadOptionsForRetry(): {
-    credentials: RequestCredentials;
-    concurrency: number;
-    site?: SiteKey;
-  } {
-    const siteKey = this.state.lastRun.siteKey;
-    const credentials =
-      siteKey &&
-      shouldIncludeCredentials(
-        {
-          site: siteKey,
-          outputKind: "downloadable-files"
-        } as DownloadablePayload,
-        this.state.settings
-      )
-        ? "include"
-        : "omit";
-
-    return {
-      credentials,
-      concurrency: this.state.settings.downloadConcurrency,
-      site: siteKey ?? undefined
-    };
   }
 
   private isSupportedTab(): boolean {
@@ -740,23 +524,6 @@ export class GatherController {
     void this.persistLastRun({});
   }
 
-  private logVerbose(message: string): void {
-    if (!this.state.settings.verboseLogging) {
-      return;
-    }
-
-    this.appendLog(message);
-  }
-
-  private buildRetryImages(
-    failedItems: DownloadFailure[],
-    sourceImages: GalleryImage[]
-  ): GalleryImage[] {
-    const failedNames = new Set(failedItems.map((item) => item.fileName));
-
-    return sourceImages.filter((image) => failedNames.has(image.fileName));
-  }
-
   private async persistLastRun(patch: Partial<LastRunState>): Promise<void> {
     this.state.lastRun = {
       timestamp: Date.now(),
@@ -792,25 +559,11 @@ function resetProgress(elements: PopupElements): void {
   setDestinationPreview(elements, "");
 }
 
-function getItemName(payload: DownloadablePayload): string {
-  if (payload.site === "x") {
-    return "media item";
-  }
-
-  return payload.site === "archiveofourown" || payload.site === "hentaifoundry-stories"
-    ? "file"
-    : "image";
-}
-
-function formatItemCount(count: number, itemName: string): string {
-  return `${count} ${count === 1 ? itemName : `${itemName}s`}`;
-}
-
 function isAbortError(error: unknown): boolean {
   return typeof error === "object" && error !== null && "name" in error && error.name === "AbortError";
 }
 
-function buildErrorReport(failedItems: DownloadFailure[], lastRun: LastRunState): string {
+function buildErrorReport(failedItems: LastRunState["failedItems"], lastRun: LastRunState): string {
   const lines = [
     "Gather Box error report",
     `Generated: ${new Date().toISOString()}`,

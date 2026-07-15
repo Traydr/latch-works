@@ -5,7 +5,6 @@ import {
   type DownloadFailure
 } from "../gather/downloader";
 import { formatError } from "../gather/errors";
-import { saveFanfictionStoryPdf } from "../gather/fanfiction-story";
 import { shouldIncludeCredentials } from "../shared/credentials";
 import type { GatherRunEvent } from "../shared/gather-run-messages";
 import { buildFolderPreview, getFolderSegments } from "../shared/path";
@@ -22,6 +21,10 @@ export async function executeGatherOutput(input: {
   emit: (event: GatherRunEvent) => Promise<void>;
 }): Promise<void> {
   const { payload, settings, emit } = input;
+  if (!isGatherOutputKind((payload as { outputKind?: unknown }).outputKind)) {
+    await emit({ kind: "failed", message: "The Gather Output kind is not supported." });
+    return;
+  }
   const directoryHandle = await loadDirectoryHandle(payload.site, settings.useGlobalFolder);
   if (!directoryHandle) {
     await emit({ kind: "failed", message: "Choose a destination folder before gathering." });
@@ -49,6 +52,10 @@ export async function executeGatherOutput(input: {
   } catch (error) {
     await emit({ kind: "failed", message: formatError(error) });
   }
+}
+
+export function isGatherOutputKind(value: unknown): value is DownloadablePayload["outputKind"] | GeneratedStoryPayload["outputKind"] {
+  return value === "downloadable-files" || value === "generated-story-pdf";
 }
 
 async function executeFiles(
@@ -107,6 +114,7 @@ async function executeStory(
   destinationDirectory: FileSystemDirectoryHandle,
   emit: (event: GatherRunEvent) => Promise<void>
 ): Promise<void> {
+  const { saveFanfictionStoryPdf } = await import("../gather/fanfiction-story");
   await emit({
     kind: "log",
     message: `Found ${payload.chapters.length} chapter(s) in "${payload.title}".`,

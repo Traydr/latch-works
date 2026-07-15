@@ -84,7 +84,7 @@ export async function saveFanfictionStoryPdf(
   callbacks.onSaved(payload.fileName);
 }
 
-async function fetchChapterContents(
+export async function fetchChapterContents(
   payload: GeneratedStoryPayload,
   callbacks: FanfictionStoryCallbacks
 ): Promise<StoryChapterContent[]> {
@@ -124,7 +124,7 @@ function delay(milliseconds: number): Promise<void> {
   });
 }
 
-function extractStoryBlocks(storyText: Element): StoryBlock[] {
+export function extractStoryBlocks(storyText: Element): StoryBlock[] {
   const blocks: StoryBlock[] = [];
 
   for (const child of Array.from(storyText.childNodes)) {

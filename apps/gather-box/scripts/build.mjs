@@ -1,43 +1,244 @@
-import { cp, mkdir, rm } from "node:fs/promises";
-import { resolve } from "node:path";
+import { gzipSync } from "node:zlib";
+import { copyFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { basename, dirname, isAbsolute, resolve } from "node:path";
 import { build } from "esbuild";
 
 const root = resolve(import.meta.dirname, "..");
 const dist = resolve(root, "dist");
-
-await rm(dist, { force: true, recursive: true });
-await mkdir(dist, { recursive: true });
-await Promise.all([
-  mkdir(resolve(dist, "sidepanel"), { recursive: true }),
-  mkdir(resolve(dist, "options"), { recursive: true }),
-  mkdir(resolve(dist, "background"), { recursive: true }),
-  mkdir(resolve(dist, "offscreen"), { recursive: true }),
-  mkdir(resolve(dist, "ui"), { recursive: true })
-]);
-
-await Promise.all([
-  cp(resolve(root, "manifest.json"), resolve(dist, "manifest.json")),
-  cp(resolve(root, "assets"), resolve(dist, "assets"), { recursive: true }),
-  cp(resolve(root, "rules"), resolve(dist, "rules"), { recursive: true }),
-  cp(resolve(root, "ui", "gather-box.css"), resolve(dist, "ui", "gather-box.css")),
-  cp(resolve(root, "sidepanel", "sidepanel.html"), resolve(dist, "sidepanel", "sidepanel.html")),
-  cp(resolve(root, "sidepanel", "sidepanel.css"), resolve(dist, "sidepanel", "sidepanel.css")),
-  cp(resolve(root, "options", "options.html"), resolve(dist, "options", "options.html")),
-  cp(resolve(root, "options", "options.css"), resolve(dist, "options", "options.css")),
-  cp(resolve(root, "offscreen", "offscreen.html"), resolve(dist, "offscreen", "offscreen.html"))
-]);
-
-await build({
-  entryPoints: {
-    "sidepanel/sidepanel": resolve(root, "src", "sidepanel", "index.ts"),
-    "options/options": resolve(root, "src", "options", "index.ts"),
-    "background/service-worker": resolve(root, "src", "background", "index.ts"),
-    "offscreen/offscreen": resolve(root, "src", "offscreen", "index.ts"),
-    "content/gallery-collector": resolve(root, "src", "content", "index.ts")
-  },
+const reports = resolve(root, ".build-meta");
+const development = process.env.NODE_ENV === "development";
+const common = {
+  absWorkingDir: root,
   bundle: true,
-  format: "iife",
+  logLevel: "silent",
+  metafile: true,
+  minify: !development,
+  sourcemap: development ? "inline" : false,
+  target: "chrome145"
+};
+
+const packagedFiles = [
+  "manifest.json",
+  "ui/gather-box.css",
+  "sidepanel/sidepanel.html",
+  "sidepanel/sidepanel.css",
+  "options/options.html",
+  "options/options.css",
+  "offscreen/offscreen.html",
+  "rules/pixiv-referer.json",
+  "assets/fonts/NotoSerif-Regular.ttf",
+  "assets/fonts/NotoSerif-Italic.ttf",
+  "assets/fonts/NotoSerif-Bold.ttf",
+  "assets/fonts/NotoSerif-BoldItalic.ttf",
+  "assets/fonts/OFL.txt",
+  "assets/icons/icon16.png",
+  "assets/icons/icon32.png",
+  "assets/icons/icon48.png",
+  "assets/icons/icon128.png"
+];
+
+await verifyVersionAgreement();
+await rm(dist, { force: true, recursive: true });
+await rm(reports, { force: true, recursive: true });
+await mkdir(dist, { recursive: true });
+await Promise.all(packagedFiles.map(copyPackagedFile));
+
+const pages = await build({
+  ...common,
+  entryPoints: {
+    "sidepanel/sidepanel": resolve(root, "src/sidepanel/index.ts"),
+    "options/options": resolve(root, "src/options/index.ts"),
+    "offscreen/offscreen": resolve(root, "src/offscreen/index.ts")
+  },
+  chunkNames: "chunks/[name]-[hash]",
+  entryNames: "[dir]/[name]",
+  format: "esm",
   outdir: dist,
-  target: "chrome120",
-  logLevel: "info"
+  splitting: true
 });
+
+const background = await build({
+  ...common,
+  entryPoints: {
+    "background/service-worker": resolve(root, "src/background/index.ts")
+  },
+  entryNames: "[dir]/[name]",
+  format: "esm",
+  outdir: dist
+});
+
+const content = await build({
+  ...common,
+  entryPoints: {
+    "content/gallery-collector": resolve(root, "src/content/index.ts")
+  },
+  entryNames: "[dir]/[name]",
+  format: "iife",
+  outdir: dist
+});
+
+const metafiles = { pages: pages.metafile, background: background.metafile, content: content.metafile };
+await mkdir(reports, { recursive: true });
+await Promise.all(
+  Object.entries(metafiles).map(([name, metafile]) =>
+    writeFile(resolve(reports, `${name}.json`), `${JSON.stringify(metafile, null, 2)}\n`)
+  )
+);
+
+const report = await createArtifactReport(metafiles);
+await writeFile(resolve(reports, "summary.json"), `${JSON.stringify(report, null, 2)}\n`);
+enforceBudgets(report, metafiles);
+
+for (const [name, measurement] of Object.entries(report.categories)) {
+  process.stdout.write(`${name.padEnd(24)} ${formatBytes(measurement.raw).padStart(9)} raw  ${formatBytes(measurement.gzip).padStart(9)} gzip\n`);
+}
+
+async function copyPackagedFile(relativePath) {
+  const target = resolve(dist, relativePath);
+  await mkdir(dirname(target), { recursive: true });
+  await copyFile(resolve(root, relativePath), target);
+}
+
+async function verifyVersionAgreement() {
+  const packageJson = JSON.parse(await readFile(resolve(root, "package.json"), "utf8"));
+  const manifest = JSON.parse(await readFile(resolve(root, "manifest.json"), "utf8"));
+  if (packageJson.version !== manifest.version) {
+    throw new Error(
+      `Gather Box version mismatch: package.json=${packageJson.version}, manifest.json=${manifest.version}`
+    );
+  }
+}
+
+async function createArtifactReport(metafiles) {
+  const pageEntry = findOutput(metafiles.pages, "sidepanel/sidepanel.js");
+  const offscreenEntry = findOutput(metafiles.pages, "offscreen/offscreen.js");
+  const storyChunk = Object.entries(metafiles.pages.outputs).find(([, output]) =>
+    Object.keys(output.inputs).some((input) => input.endsWith("src/gather/fanfiction-story.ts"))
+  )?.[0];
+  if (!storyChunk) {
+    throw new Error("Generated-story chunk was not emitted as an isolated local module.");
+  }
+
+  const categories = {
+    "side panel eager JS": await measureOutputGraph(metafiles.pages, pageEntry),
+    "offscreen base JS": await measureOutputGraph(metafiles.pages, offscreenEntry, new Set([storyChunk])),
+    "generated-story JS": await measureOutputGraph(metafiles.pages, storyChunk),
+    "service worker JS": await measureOutputGraph(
+      metafiles.background,
+      findOutput(metafiles.background, "background/service-worker.js")
+    ),
+    "content script JS": await measureOutputGraph(
+      metafiles.content,
+      findOutput(metafiles.content, "content/gallery-collector.js")
+    ),
+    fonts: await measureDirectory(resolve(dist, "assets/fonts"), (name) => name.endsWith(".ttf")),
+    icons: await measureDirectory(resolve(dist, "assets/icons"), () => true),
+    "total JS": await measureJsOutputs(metafiles),
+    "total dist": await measureDirectory(dist, () => true)
+  };
+  return {
+    schemaVersion: 1,
+    mode: development ? "development" : "release",
+    storyChunk: storyChunk.replace(/^dist\//, ""),
+    categories
+  };
+}
+
+function findOutput(metafile, suffix) {
+  const output = Object.keys(metafile.outputs).find((path) => path.endsWith(suffix));
+  if (!output) {
+    throw new Error(`Expected build output was not emitted: ${suffix}`);
+  }
+  return output;
+}
+
+async function measureOutputGraph(metafile, entry, excluded = new Set()) {
+  const paths = new Set();
+  const visit = (path) => {
+    if (paths.has(path) || excluded.has(path)) return;
+    paths.add(path);
+    for (const imported of metafile.outputs[path]?.imports ?? []) {
+      const resolved = imported.path.startsWith("dist/")
+        ? imported.path
+        : `dist/${imported.path.replace(/^\.\//, "")}`;
+      if (metafile.outputs[resolved]) visit(resolved);
+    }
+  };
+  visit(entry);
+  return measureFiles([...paths].map(outputPath));
+}
+
+async function measureJsOutputs(metafiles) {
+  const outputs = new Set(
+    Object.values(metafiles).flatMap((metafile) =>
+      Object.keys(metafile.outputs).filter((path) => path.endsWith(".js"))
+    )
+  );
+  return measureFiles([...outputs].map(outputPath));
+}
+
+function outputPath(path) {
+  return isAbsolute(path) ? path : resolve(root, path);
+}
+
+async function measureFiles(paths) {
+  let raw = 0;
+  let gzip = 0;
+  for (const path of paths) {
+    const bytes = await readFile(path);
+    raw += bytes.byteLength;
+    gzip += gzipSync(bytes, { level: 9 }).byteLength;
+  }
+  return { raw, gzip };
+}
+
+async function measureDirectory(directory, include) {
+  const files = await walk(directory);
+  return measureFiles(files.filter((path) => include(basename(path))));
+}
+
+async function walk(directory) {
+  const entries = await readdir(directory, { withFileTypes: true });
+  return (
+    await Promise.all(
+      entries.map((entry) => {
+        const path = resolve(directory, entry.name);
+        return entry.isDirectory() ? walk(path) : Promise.resolve([path]);
+      })
+    )
+  ).flat();
+}
+
+function enforceBudgets(report, metafiles) {
+  const budgets = {
+    "side panel eager JS": 150_000,
+    "offscreen base JS": 180_000,
+    "generated-story JS": 1_300_000,
+    "service worker JS": 150_000,
+    "content script JS": 40_000,
+    "total JS": 1_800_000,
+    "total dist": 5_000_000
+  };
+  const failures = Object.entries(budgets).filter(
+    ([name, budget]) => report.categories[name].raw > budget
+  );
+  if (failures.length === 0) return;
+
+  const largestInputs = Object.values(metafiles)
+    .flatMap((metafile) => Object.entries(metafile.inputs))
+    .sort(([, left], [, right]) => right.bytes - left.bytes)
+    .slice(0, 8)
+    .map(([path, input]) => `  ${formatBytes(input.bytes).padStart(9)}  ${path}`)
+    .join("\n");
+  const message = failures
+    .map(
+      ([name, budget]) =>
+        `${name}: ${formatBytes(report.categories[name].raw)} exceeds ${formatBytes(budget)}`
+    )
+    .join("\n");
+  throw new Error(`Gather Box artifact budget exceeded:\n${message}\nLargest source inputs:\n${largestInputs}`);
+}
+
+function formatBytes(bytes) {
+  return bytes < 1_000_000 ? `${(bytes / 1_000).toFixed(1)} kB` : `${(bytes / 1_000_000).toFixed(2)} MB`;
+}

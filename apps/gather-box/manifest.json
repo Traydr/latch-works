@@ -8,7 +8,8 @@
     "default_title": "Gather Box"
   },
   "background": {
-    "service_worker": "background/service-worker.js"
+    "service_worker": "background/service-worker.js",
+    "type": "module"
   },
   "options_ui": {
     "page": "options/options.html",

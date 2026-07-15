@@ -8,7 +8,7 @@
 
 ## Status
 
-- **Status**: TODO
+- **Status**: DONE
 - **Priority**: P1
 - **Effort**: M
 - **Risk**: MED
@@ -183,3 +183,21 @@ through the Plan 041 browser harness.
 Review metafile deltas on dependency upgrades. Keep heavy optional implementations aligned with
 their runtime seam, and require a recorded reason whenever ordinary UI startup gains a new dependency
 larger than its existing local source graph.
+
+## Final release baseline
+
+Measured by `scripts/build.mjs` after Plans 041–042. The deterministic machine report is emitted to
+the ignored `apps/gather-box/.build-meta/` directory on every build.
+
+| Category | Raw | Gzip |
+|---|---:|---:|
+| Side panel eager JS | 25.7 KB | 8.2 KB |
+| Offscreen base JS | 10.5 KB | 4.4 KB |
+| Generated-story JS | 966.9 KB | 251.7 KB |
+| Service worker JS | 22.6 KB | 7.6 KB |
+| Always-on content JS | 24.6 KB | 8.0 KB |
+| Total JS | 1.05 MB | 279.5 KB |
+| Total packaged extension | 3.69 MB | 1.54 MB |
+
+The release package retains all four Noto Serif fonts and their OFL license. Only the four manifest
+icons ship; the 598 KB design/source icon pair is excluded.
