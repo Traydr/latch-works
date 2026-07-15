@@ -1,11 +1,11 @@
-import { ensureDirectoryPermission, loadDirectoryHandle } from "../popup/directory-store";
+import { ensureDirectoryPermission, loadDirectoryHandle } from "../gather/directory-store";
 import {
   downloadImages,
   getOrCreateNestedDirectory,
   type DownloadFailure
-} from "../popup/downloader";
-import { formatError } from "../popup/errors";
-import { saveFanfictionStoryPdf } from "../popup/fanfiction-story";
+} from "../gather/downloader";
+import { formatError } from "../gather/errors";
+import { saveFanfictionStoryPdf } from "../gather/fanfiction-story";
 import { shouldIncludeCredentials } from "../shared/credentials";
 import type { GatherRunEvent } from "../shared/gather-run-messages";
 import { buildFolderPreview, getFolderSegments } from "../shared/path";

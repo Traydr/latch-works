@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { PopupElements } from "../popup/dom";
+import type { PopupElements } from "../gather/dom";
 import { GatherController } from "./gather-controller";
 import type { LastRunLogEntry, LastRunState } from "./last-run";
 import type { GalleryImage } from "./types";

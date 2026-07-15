@@ -1,6 +1,5 @@
 import type { SiteKey } from "./sites";
 
-export type PrimaryUiMode = "popup" | "sidePanel";
 export type CredentialsMode = "auto" | "always" | "never" | "perSite";
 export type CredentialsChoice = "include" | "omit";
 
@@ -8,20 +7,18 @@ export interface GatherBoxSettings {
   downloadConcurrency: number;
   useGlobalFolder: boolean;
   verboseLogging: boolean;
-  shortcutsEnabled: boolean;
+  pageShortcutsEnabled: boolean;
   credentialsMode: CredentialsMode;
   credentialsPerSite: Partial<Record<SiteKey, CredentialsChoice>>;
-  primaryUi: PrimaryUiMode;
 }
 
 export const DEFAULT_SETTINGS: GatherBoxSettings = {
   downloadConcurrency: 4,
   useGlobalFolder: false,
   verboseLogging: false,
-  shortcutsEnabled: true,
+  pageShortcutsEnabled: true,
   credentialsMode: "auto",
-  credentialsPerSite: {},
-  primaryUi: "popup"
+  credentialsPerSite: {}
 };
 
 export const SETTINGS_KEY = "gather-box-settings";
@@ -42,6 +39,7 @@ export async function saveSettings(settings: GatherBoxSettings): Promise<void> {
 }
 
 export function normalizeSettings(settings: Partial<GatherBoxSettings>): GatherBoxSettings {
+  const legacy = settings as Partial<GatherBoxSettings> & { shortcutsEnabled?: unknown };
   const concurrency = Number(settings.downloadConcurrency ?? DEFAULT_SETTINGS.downloadConcurrency);
 
   return {
@@ -50,15 +48,14 @@ export function normalizeSettings(settings: Partial<GatherBoxSettings>): GatherB
       : DEFAULT_SETTINGS.downloadConcurrency,
     useGlobalFolder: Boolean(settings.useGlobalFolder),
     verboseLogging: Boolean(settings.verboseLogging),
-    shortcutsEnabled:
-      settings.shortcutsEnabled === undefined
-        ? DEFAULT_SETTINGS.shortcutsEnabled
-        : Boolean(settings.shortcutsEnabled),
+    pageShortcutsEnabled:
+      settings.pageShortcutsEnabled === undefined && legacy.shortcutsEnabled === undefined
+        ? DEFAULT_SETTINGS.pageShortcutsEnabled
+        : Boolean(settings.pageShortcutsEnabled ?? legacy.shortcutsEnabled),
     credentialsMode: isCredentialsMode(settings.credentialsMode)
       ? settings.credentialsMode
       : DEFAULT_SETTINGS.credentialsMode,
-    credentialsPerSite: sanitizeCredentialsPerSite(settings.credentialsPerSite),
-    primaryUi: settings.primaryUi === "sidePanel" ? "sidePanel" : "popup"
+    credentialsPerSite: sanitizeCredentialsPerSite(settings.credentialsPerSite)
   };
 }
 

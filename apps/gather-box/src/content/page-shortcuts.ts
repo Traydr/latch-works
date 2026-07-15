@@ -3,7 +3,6 @@ import {
   TRIGGER_DOWNLOAD_MESSAGE,
   type GatherRuntimeMessage
 } from "../shared/runtime-messages";
-import type { PrimaryUiMode } from "../shared/settings";
 import { installShortcutKeyListener } from "../shared/shortcut-keys";
 
 interface RuntimeMessenger {
@@ -12,34 +11,31 @@ interface RuntimeMessenger {
 
 export interface PageShortcutSettings {
   enabled: boolean;
-  primaryUi: PrimaryUiMode;
 }
 
 export function installPageShortcuts(
   document: Document,
   runtime: RuntimeMessenger = chrome.runtime,
-  getSettings: () => PageShortcutSettings | null = () => ({
-    enabled: true,
-    primaryUi: "popup"
-  })
+  getSettings: () => PageShortcutSettings | null = () => ({ enabled: true })
 ): () => void {
-  return installShortcutKeyListener(document, () => getSettings()?.enabled ?? false, (action) => {
+  let uninstall: () => void = () => undefined;
+  uninstall = installShortcutKeyListener(document, () => getSettings()?.enabled ?? false, (action) => {
     const settings = getSettings();
     if (!settings) {
       return;
     }
 
-    const message: GatherRuntimeMessage =
-      action === "toggle"
-        ? { type: OPEN_EXTENSION_MESSAGE, primaryUi: settings.primaryUi }
-        : { type: TRIGGER_DOWNLOAD_MESSAGE, primaryUi: settings.primaryUi };
+    const message: GatherRuntimeMessage = {
+      type: action === "toggle" ? OPEN_EXTENSION_MESSAGE : TRIGGER_DOWNLOAD_MESSAGE,
+      target: "background"
+    };
     try {
-      void runtime.sendMessage(message).catch(() => {
-        // The extension may be reloading while the page's old content script is still present.
-      });
+      void runtime.sendMessage(message).catch(uninstall);
     } catch {
-      // sendMessage throws synchronously after an unpacked extension is reloaded. The stale page
-      // listener cannot remove itself because its extension context no longer exists.
+      // An old content script survives an unpacked-extension reload. Stop intercepting the page
+      // shortcut after the first invalid-context signal so later keys behave normally.
+      uninstall();
     }
   });
+  return uninstall;
 }

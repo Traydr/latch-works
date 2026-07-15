@@ -1,11 +1,11 @@
-import { ensureCollectorAndCollect, getActiveTab } from "../popup/active-tab";
+import { ensureCollectorAndCollect, getActiveTab } from "../gather/active-tab";
 import {
   clearDirectoryHandle,
   ensureDirectoryPermission,
   getDirectoryScopeLabel,
   loadDirectoryHandle,
   saveDirectoryHandle
-} from "../popup/directory-store";
+} from "../gather/directory-store";
 import {
   addLog,
   clearLog,
@@ -22,11 +22,11 @@ import {
   updateSaveBehavior,
   type LogTone,
   type PopupElements
-} from "../popup/dom";
-import { downloadImages, getOrCreateNestedDirectory, type DownloadFailure } from "../popup/downloader";
-import { formatError } from "../popup/errors";
-import { saveFanfictionStoryPdf } from "../popup/fanfiction-story";
-import type { PopupStatus } from "../popup/status";
+} from "../gather/dom";
+import { downloadImages, getOrCreateNestedDirectory, type DownloadFailure } from "../gather/downloader";
+import { formatError } from "../gather/errors";
+import { saveFanfictionStoryPdf } from "../gather/fanfiction-story";
+import type { PopupStatus } from "../gather/status";
 import { shouldIncludeCredentials } from "./credentials";
 import {
   getSiteKeyFromUrl,
@@ -51,12 +51,6 @@ import {
   type GatherRunResponse
 } from "./gather-run-messages";
 import { loadGatherRun } from "./gather-run-store";
-import {
-  PENDING_DOWNLOAD_SESSION_KEY,
-  START_DOWNLOAD_MESSAGE,
-  TOGGLE_OPEN_UI_MESSAGE,
-  type GatherRuntimeMessage
-} from "./runtime-messages";
 import { loadSettings, type GatherBoxSettings } from "./settings";
 import { installShortcutKeyListener } from "./shortcut-keys";
 import type { DownloadablePayload, GeneratedStoryPayload, GalleryImage } from "./types";
@@ -92,10 +86,9 @@ export class GatherController {
       downloadConcurrency: 4,
       useGlobalFolder: false,
       verboseLogging: false,
-      shortcutsEnabled: true,
+      pageShortcutsEnabled: true,
       credentialsMode: "auto",
-      credentialsPerSite: {},
-      primaryUi: "popup"
+      credentialsPerSite: {}
     },
     lastRun: { ...EMPTY_LAST_RUN }
   };
@@ -106,13 +99,6 @@ export class GatherController {
   private readonly options: GatherControllerOptions;
   private keydownHandler: ((event: KeyboardEvent) => void) | null = null;
   private shortcutCleanup: (() => void) | null = null;
-  private messageHandler:
-    | ((
-        message: GatherRuntimeMessage,
-        sender: chrome.runtime.MessageSender,
-        sendResponse: (response?: unknown) => void
-      ) => boolean)
-    | null = null;
   private storageHandler:
     | ((changes: Record<string, chrome.storage.StorageChange>, areaName: string) => void)
     | null = null;
@@ -165,7 +151,7 @@ export class GatherController {
 
     this.shortcutCleanup = installShortcutKeyListener(
       document,
-      () => this.state.settings.shortcutsEnabled,
+      () => this.state.settings.pageShortcutsEnabled,
       (action) => {
         if (action === "toggle") {
           this.options.onToggleShortcut?.();
@@ -175,19 +161,6 @@ export class GatherController {
         void this.handleDownload(true);
       }
     );
-
-    this.messageHandler = (message: GatherRuntimeMessage, _sender, sendResponse) => {
-      if (message.type === START_DOWNLOAD_MESSAGE) {
-        sendResponse({ accepted: true });
-        void this.handleDownload(false);
-      }
-      if (message.type === TOGGLE_OPEN_UI_MESSAGE) {
-        sendResponse({ accepted: true });
-        this.options.onToggleShortcut?.();
-      }
-      return false;
-    };
-    chrome.runtime.onMessage.addListener(this.messageHandler);
 
     this.storageHandler = (changes, areaName) => {
       if (areaName === "sync" && changes["gather-box-settings"]) {
@@ -222,11 +195,6 @@ export class GatherController {
     }
     this.syncPopupActions();
 
-    const pending = await chrome.storage.session.get(PENDING_DOWNLOAD_SESSION_KEY);
-    if (pending[PENDING_DOWNLOAD_SESSION_KEY]) {
-      await chrome.storage.session.remove(PENDING_DOWNLOAD_SESSION_KEY);
-      void this.handleDownload(false);
-    }
   }
 
   async refreshSettings(): Promise<void> {
@@ -243,10 +211,6 @@ export class GatherController {
     }
     this.shortcutCleanup?.();
     this.shortcutCleanup = null;
-    if (this.messageHandler) {
-      chrome.runtime.onMessage.removeListener(this.messageHandler);
-      this.messageHandler = null;
-    }
     if (this.storageHandler) {
       chrome.storage.onChanged.removeListener(this.storageHandler);
       this.storageHandler = null;

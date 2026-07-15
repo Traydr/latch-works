@@ -3,9 +3,9 @@
   "name": "Gather Box",
   "description": "Download original images, videos, and story PDFs from supported content pages into a chosen local folder.",
   "version": "0.2.0",
+  "minimum_chrome_version": "145",
   "action": {
-    "default_title": "Gather Box",
-    "default_popup": "popup/popup.html"
+    "default_title": "Gather Box"
   },
   "background": {
     "service_worker": "background/service-worker.js"

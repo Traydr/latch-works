@@ -1,4 +1,4 @@
-import type { LogTone } from "../popup/dom";
+import type { LogTone } from "../gather/dom";
 
 export interface DownloadFailure {
   fileName: string;

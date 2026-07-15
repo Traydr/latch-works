@@ -1,11 +1,9 @@
-import { APPLY_UI_MODE_MESSAGE } from "../shared/runtime-messages";
 import {
   loadSettings,
   saveSettings,
   type CredentialsChoice,
   type CredentialsMode,
-  type GatherBoxSettings,
-  type PrimaryUiMode
+  type GatherBoxSettings
 } from "../shared/settings";
 import { SUPPORTED_SITES, type SiteKey } from "../shared/sites";
 
@@ -13,7 +11,7 @@ interface SettingsFormElements {
   form: HTMLFormElement;
   downloadConcurrency: HTMLInputElement;
   verboseLogging: HTMLInputElement;
-  shortcutsEnabled: HTMLInputElement;
+  pageShortcutsEnabled: HTMLInputElement;
   toggleCommandShortcut: HTMLElement;
   downloadCommandShortcut: HTMLElement;
   credentialsMode: HTMLSelectElement;
@@ -48,7 +46,7 @@ function getFormElements(): SettingsFormElements {
     form: requireElement("settingsForm", HTMLFormElement),
     downloadConcurrency: requireElement("downloadConcurrency", HTMLInputElement),
     verboseLogging: requireElement("verboseLogging", HTMLInputElement),
-    shortcutsEnabled: requireElement("shortcutsEnabled", HTMLInputElement),
+    pageShortcutsEnabled: requireElement("pageShortcutsEnabled", HTMLInputElement),
     toggleCommandShortcut: requireElement("toggleCommandShortcut", HTMLElement),
     downloadCommandShortcut: requireElement("downloadCommandShortcut", HTMLElement),
     credentialsMode: requireElement("credentialsMode", HTMLSelectElement),
@@ -96,7 +94,7 @@ function renderPerSiteCredentials(container: HTMLElement, settings: GatherBoxSet
 function applySettingsToForm(elements: SettingsFormElements, settings: GatherBoxSettings): void {
   elements.downloadConcurrency.value = String(settings.downloadConcurrency);
   elements.verboseLogging.checked = settings.verboseLogging;
-  elements.shortcutsEnabled.checked = settings.shortcutsEnabled;
+  elements.pageShortcutsEnabled.checked = settings.pageShortcutsEnabled;
   elements.credentialsMode.value = settings.credentialsMode;
   elements.perSiteCredentials.hidden = settings.credentialsMode !== "perSite";
 
@@ -108,33 +106,21 @@ function applySettingsToForm(elements: SettingsFormElements, settings: GatherBox
     folderInput.checked = true;
   }
 
-  const primaryUiInput = elements.form.querySelector<HTMLInputElement>(
-    `input[name="primaryUi"][value="${settings.primaryUi}"]`
-  );
-  if (primaryUiInput) {
-    primaryUiInput.checked = true;
-  }
 }
 
 async function handleSave(elements: SettingsFormElements): Promise<void> {
   const folderMode = elements.form.querySelector<HTMLInputElement>('input[name="folderMode"]:checked')
     ?.value;
-  const primaryUi = elements.form.querySelector<HTMLInputElement>('input[name="primaryUi"]:checked')
-    ?.value;
-
   const settings: GatherBoxSettings = {
     downloadConcurrency: Number(elements.downloadConcurrency.value),
     verboseLogging: elements.verboseLogging.checked,
-    shortcutsEnabled: elements.shortcutsEnabled.checked,
+    pageShortcutsEnabled: elements.pageShortcutsEnabled.checked,
     useGlobalFolder: folderMode === "global",
     credentialsMode: elements.credentialsMode.value as CredentialsMode,
-    credentialsPerSite: readPerSiteCredentials(elements.perSiteCredentials),
-    primaryUi: (primaryUi === "sidePanel" ? "sidePanel" : "popup") as PrimaryUiMode
+    credentialsPerSite: readPerSiteCredentials(elements.perSiteCredentials)
   };
 
   await saveSettings(settings);
-  await chrome.runtime.sendMessage({ type: APPLY_UI_MODE_MESSAGE });
-
   elements.saveStatus.textContent = "Settings saved.";
   window.setTimeout(() => {
     elements.saveStatus.textContent = "";

@@ -12,8 +12,7 @@ import { collectXData } from "./collectors/x";
 import { installPageShortcuts, type PageShortcutSettings } from "./page-shortcuts";
 
 let pageShortcutSettings: PageShortcutSettings = {
-  enabled: DEFAULT_SETTINGS.shortcutsEnabled,
-  primaryUi: DEFAULT_SETTINGS.primaryUi
+  enabled: DEFAULT_SETTINGS.pageShortcutsEnabled
 };
 installPageShortcuts(document, chrome.runtime, () => pageShortcutSettings);
 void refreshPageShortcutSettings().catch(() => {});
@@ -104,7 +103,6 @@ function getErrorMessage(error: unknown): string {
 async function refreshPageShortcutSettings(): Promise<void> {
   const settings = await loadSettings();
   pageShortcutSettings = {
-    enabled: settings.shortcutsEnabled,
-    primaryUi: settings.primaryUi
+    enabled: settings.pageShortcutsEnabled
   };
 }

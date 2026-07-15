@@ -25,7 +25,8 @@ Each site remembers its own destination folder. Folder and filename inference ru
 2. Click the extension icon.
 3. Choose a writable destination folder (Chrome File System Access API).
 4. Click **Download Content**.
-5. The popup reports progress and any per-file failures.
+5. The side panel reports progress and any per-file failures while the Gather Run continues in the
+   background.
 
 On a supported page, hold the right Shift key and press `]` to toggle Gather Box, or `[` to start
 the download immediately. Left Shift does not activate these page shortcuts, and the shortcuts can
@@ -43,10 +44,14 @@ Downloads use your browser session cookies where needed (AO3, Hentai Foundry, fa
 ```text
 gather-box/
 ├── manifest.json
-├── popup/               # Extension popup HTML/CSS
+├── sidepanel/           # The sole Gather Box UI
+├── offscreen/           # Persistent Gather Output execution document
+├── ui/                  # Shared extension-page styling
 ├── src/
-│   ├── popup/           # Popup logic and UI state
+│   ├── background/      # Commands and Gather Run coordination
+│   ├── gather/          # Collection/output adapters and UI helpers
 │   ├── content/         # Per-site collectors (injected scripts)
+│   ├── offscreen/       # Gather Output executor
 │   └── shared/          # Site detection, path helpers
 ├── scripts/
 │   ├── build.mjs        # esbuild bundle → dist/
@@ -125,7 +130,7 @@ Spaces in folder and PDF names are converted to underscores.
 
 ## Notes
 
-- The popup shows the picked folder **name** only — browsers do not expose the full absolute path through the File System Access API.
+- The side panel shows the picked folder **name** only — browsers do not expose the full absolute path through the File System Access API.
 - Existing media is never overwritten. Gather Box compares SHA-256 hashes when a site filename already exists, skips identical content, and appends a four-character suffix before the extension for different content.
 - pixiv original-image requests use a narrowly scoped extension rule to supply pixiv's required `Referer` header.
 - X video resolution uses X's public syndication data first, then its web-client media response. The fallback flow was informed by [Cobalt's X extractor](https://github.com/imputnet/cobalt/blob/main/api/src/processing/services/twitter.js); Gather Box does not call a hosted Cobalt instance.
@@ -134,7 +139,7 @@ Spaces in folder and PDF names are converted to underscores.
 
 ## Manual checks
 
-- [ ] Popup opens without console errors after loading unpacked
+- [ ] Toolbar action and toggle shortcut open/close the same side panel without console errors
 - [ ] Unsupported pages keep the download action disabled
 - [ ] Image files keep sequential names (`001.webp`, `002.webp`, …)
 - [ ] Story PDFs use `{author}-{story}.pdf` naming

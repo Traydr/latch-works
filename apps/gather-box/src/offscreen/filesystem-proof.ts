@@ -1,4 +1,4 @@
-import { ensureDirectoryPermission, loadDirectoryHandle } from "../popup/directory-store";
+import { ensureDirectoryPermission, loadDirectoryHandle } from "../gather/directory-store";
 import type { SiteKey } from "../shared/sites";
 
 export interface OffscreenFilesystemProofResult {

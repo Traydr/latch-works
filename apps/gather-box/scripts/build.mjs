@@ -8,19 +8,18 @@ const dist = resolve(root, "dist");
 await rm(dist, { force: true, recursive: true });
 await mkdir(dist, { recursive: true });
 await Promise.all([
-  mkdir(resolve(dist, "popup"), { recursive: true }),
   mkdir(resolve(dist, "sidepanel"), { recursive: true }),
   mkdir(resolve(dist, "options"), { recursive: true }),
   mkdir(resolve(dist, "background"), { recursive: true }),
-  mkdir(resolve(dist, "offscreen"), { recursive: true })
+  mkdir(resolve(dist, "offscreen"), { recursive: true }),
+  mkdir(resolve(dist, "ui"), { recursive: true })
 ]);
 
 await Promise.all([
   cp(resolve(root, "manifest.json"), resolve(dist, "manifest.json")),
   cp(resolve(root, "assets"), resolve(dist, "assets"), { recursive: true }),
   cp(resolve(root, "rules"), resolve(dist, "rules"), { recursive: true }),
-  cp(resolve(root, "popup", "popup.html"), resolve(dist, "popup", "popup.html")),
-  cp(resolve(root, "popup", "popup.css"), resolve(dist, "popup", "popup.css")),
+  cp(resolve(root, "ui", "gather-box.css"), resolve(dist, "ui", "gather-box.css")),
   cp(resolve(root, "sidepanel", "sidepanel.html"), resolve(dist, "sidepanel", "sidepanel.html")),
   cp(resolve(root, "sidepanel", "sidepanel.css"), resolve(dist, "sidepanel", "sidepanel.css")),
   cp(resolve(root, "options", "options.html"), resolve(dist, "options", "options.html")),
@@ -30,7 +29,6 @@ await Promise.all([
 
 await build({
   entryPoints: {
-    "popup/popup": resolve(root, "src", "popup", "index.ts"),
     "sidepanel/sidepanel": resolve(root, "src", "sidepanel", "index.ts"),
     "options/options": resolve(root, "src", "options", "index.ts"),
     "background/service-worker": resolve(root, "src", "background", "index.ts"),

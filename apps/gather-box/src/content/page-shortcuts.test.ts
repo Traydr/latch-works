@@ -22,7 +22,7 @@ describe("Gather Box page shortcuts", () => {
     expect(shortcut.defaultPrevented).toBe(true);
     expect(sendMessage).toHaveBeenCalledWith({
       type: OPEN_EXTENSION_MESSAGE,
-      primaryUi: "popup"
+      target: "background"
     });
     uninstall();
   });
@@ -36,7 +36,7 @@ describe("Gather Box page shortcuts", () => {
 
     expect(sendMessage).toHaveBeenCalledWith({
       type: TRIGGER_DOWNLOAD_MESSAGE,
-      primaryUi: "popup"
+      target: "background"
     });
     uninstall();
   });
@@ -64,7 +64,7 @@ describe("Gather Box page shortcuts", () => {
 
     expect(sendMessage).toHaveBeenCalledWith({
       type: OPEN_EXTENSION_MESSAGE,
-      primaryUi: "popup"
+      target: "background"
     });
     uninstall();
   });
@@ -72,8 +72,7 @@ describe("Gather Box page shortcuts", () => {
   it("does not intercept shortcuts when they are disabled", () => {
     const sendMessage = vi.fn().mockResolvedValue(undefined);
     const uninstall = installPageShortcuts(document, { sendMessage }, () => ({
-      enabled: false,
-      primaryUi: "sidePanel"
+      enabled: false
     }));
 
     pressKey({ code: "ShiftRight", key: "Shift", shiftKey: true });
@@ -92,6 +91,8 @@ describe("Gather Box page shortcuts", () => {
 
     pressKey({ code: "ShiftRight", key: "Shift", shiftKey: true });
     expect(() => pressKey({ code: "BracketRight", key: "]", shiftKey: true })).not.toThrow();
+    const nextShortcut = pressKey({ code: "BracketRight", key: "]", shiftKey: true });
+    expect(nextShortcut.defaultPrevented).toBe(false);
 
     uninstall();
   });

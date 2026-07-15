@@ -1,5 +1,5 @@
-import { ensureCollectorAndCollect } from "../popup/active-tab";
-import { formatError } from "../popup/errors";
+import { ensureCollectorAndCollect } from "../gather/active-tab";
+import { formatError } from "../gather/errors";
 import {
   createGatherRunState,
   isTerminalGatherRunPhase,
