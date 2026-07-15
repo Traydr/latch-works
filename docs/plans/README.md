@@ -25,7 +25,7 @@ the corresponding plan.
 | [038](038-avoid-repeating-comic-folder-tree.md) | Fetch comic folder structure once per browse key | P2 | M | — | DONE |
 | [039](039-reconcile-shutter-docs.md) | Make docs match Shutter and current scripts | P1 | M | — | DONE |
 | [040](040-frame-view-pdf-spike.md) | Validate and specify Frame PDF reading | P2 | M spike | 033, 034 | BLOCKED |
-| [041](041-own-gather-runs-outside-ui.md) | Move Gather Run ownership out of transient UI | P1 | L | — | TODO |
+| [041](041-own-gather-runs-outside-ui.md) | Move Gather Run ownership out of transient UI | P1 | L | — | DONE |
 | [042](042-make-gather-commands-deterministic.md) | Make Gather commands exact and side-panel-only | P1 | M | 041 | TODO |
 | [043](043-isolate-gather-output-builds.md) | Lazy-load Gather Output adapters and enforce budgets | P1 | M | 041 | TODO |
 | [044](044-deepen-gather-source-catalog.md) | Make one Gather Source catalog authoritative | P2 | M | 043 | TODO |

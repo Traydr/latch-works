@@ -15,9 +15,17 @@ import {
   openSidePanelForActiveTab
 } from "../shared/ui-mode";
 import { isResolveXMediaMessage } from "../shared/x-media";
+import {
+  isGatherRunEventMessage,
+  isRetryGatherRunRequest,
+  isStartGatherRunRequest
+} from "../shared/gather-run-messages";
+import { markInterruptedGatherRun } from "../shared/gather-run-store";
+import { GatherRunCoordinator } from "./gather-run-coordinator";
 import { resolveXPostMedia } from "./x-media-resolver";
 
 const CONTEXT_MENU_ID = "gather-box-download";
+const gatherRuns = new GatherRunCoordinator();
 
 chrome.runtime.onInstalled.addListener(() => {
   void setupContextMenu();
@@ -26,6 +34,7 @@ chrome.runtime.onInstalled.addListener(() => {
 
 chrome.runtime.onStartup.addListener(() => {
   void applyPrimaryUiMode();
+  void markInterruptedGatherRun();
 });
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
@@ -41,6 +50,30 @@ chrome.commands.onCommand.addListener((command, tab) => {
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (isStartGatherRunRequest(message)) {
+    void chrome.tabs
+      .get(message.tabId)
+      .then((tab) => gatherRuns.startForTab(tab))
+      .then(sendResponse)
+      .catch((error) =>
+        sendResponse({
+          outcome: "failed",
+          message: error instanceof Error ? error.message : "Could not start Gather Run."
+        })
+      );
+    return true;
+  }
+
+  if (isRetryGatherRunRequest(message)) {
+    void gatherRuns.retry(message.runId).then(sendResponse);
+    return true;
+  }
+
+  if (isGatherRunEventMessage(message)) {
+    void gatherRuns.handleEvent(message);
+    return false;
+  }
+
   if (isResolveXMediaMessage(message)) {
     void resolveXPostMedia(message).then(sendResponse);
     return true;

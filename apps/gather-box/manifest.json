@@ -39,7 +39,8 @@
     "storage",
     "declarativeNetRequestWithHostAccess",
     "contextMenus",
-    "sidePanel"
+    "sidePanel",
+    "offscreen"
   ],
   "host_permissions": [
     "https://myhentaigallery.com/*",

@@ -44,6 +44,13 @@ import {
   buildFolderPreview,
   getFolderSegments
 } from "./path";
+import { GATHER_RUN_STATE_KEY, normalizeGatherRunState, type GatherRunState } from "./gather-run";
+import {
+  RETRY_GATHER_RUN_REQUEST,
+  START_GATHER_RUN_REQUEST,
+  type GatherRunResponse
+} from "./gather-run-messages";
+import { loadGatherRun } from "./gather-run-store";
 import {
   PENDING_DOWNLOAD_SESSION_KEY,
   START_DOWNLOAD_MESSAGE,
@@ -186,6 +193,12 @@ export class GatherController {
       if (areaName === "sync" && changes["gather-box-settings"]) {
         void this.refreshSettings();
       }
+      if (areaName === "local" && changes[GATHER_RUN_STATE_KEY]?.newValue) {
+        const run = normalizeGatherRunState(changes[GATHER_RUN_STATE_KEY].newValue);
+        if (run) {
+          this.applyGatherRun(run);
+        }
+      }
     };
     chrome.storage.onChanged.addListener(this.storageHandler);
 
@@ -203,6 +216,10 @@ export class GatherController {
 
     await this.detectActiveTab();
     await this.restoreSavedDirectoryHandle();
+    const currentRun = await loadGatherRun();
+    if (currentRun) {
+      this.applyGatherRun(currentRun);
+    }
     this.syncPopupActions();
 
     const pending = await chrome.storage.session.get(PENDING_DOWNLOAD_SESSION_KEY);
@@ -352,64 +369,48 @@ export class GatherController {
       return;
     }
 
-    const permission = await ensureDirectoryPermission(
-      this.state.directoryHandle,
-      allowPermissionPrompt
-    );
-    if (permission === "requires-user-activation") {
-      this.appendLog(
-        "Folder access needs confirmation. Click Download Content to grant access and continue.",
-        "error"
-      );
-      this.elements.folderDetail.textContent = "Click Download Content to confirm folder access.";
-      this.syncPopupActions();
-      return;
+    if (allowPermissionPrompt) {
+      const permission = await ensureDirectoryPermission(this.state.directoryHandle, true);
+      if (permission === "requires-user-activation") {
+        this.appendLog("Folder access needs confirmation. Click Download Content again.", "error");
+        this.syncPopupActions();
+        return;
+      }
+      if (permission !== "granted") {
+        this.appendLog("Folder is no longer writable. Choose it again.", "error");
+        this.syncPopupActions();
+        return;
+      }
     }
-    if (permission !== "granted") {
-      this.appendLog("Folder is no longer writable. Choose it again.", "error");
-      this.elements.folderDetail.textContent = "Access denied. Pick the folder again.";
-      this.syncPopupActions();
+
+    const tabId = this.state.activeTab?.id;
+    if (typeof tabId !== "number") {
+      this.appendLog("No active source tab is available.", "error");
       return;
     }
 
     this.state.running = true;
-    clearLog(this.elements);
-    this.logEntries = [];
-    resetProgress(this.elements);
     this.setStatus("collecting");
     this.syncPopupActions();
-    this.appendLog("Collecting content metadata...");
-    let shouldFlashDownloadButton = false;
-
     try {
-      const payload = await this.collectGalleryFromPage();
-      const destinationPreview = await this.previewDestination(payload);
-      setDestinationPreview(this.elements, destinationPreview);
-      await this.persistLastRun({
-        destinationPreview,
-        failedItems: [],
-        retryImages: [],
-        canRetry: false
-      });
-
-      if (payload.outputKind === "generated-story-pdf") {
-        await this.handleGeneratedStoryDownload(payload);
-        shouldFlashDownloadButton = true;
+      const response = await chrome.runtime.sendMessage<
+        { type: typeof START_GATHER_RUN_REQUEST; target: "background"; tabId: number },
+        GatherRunResponse
+      >({ type: START_GATHER_RUN_REQUEST, target: "background", tabId });
+      if (response.outcome === "started" || response.outcome === "already-running") {
+        this.applyGatherRun(response.run);
+      } else if (response.outcome === "unsupported-source") {
+        this.appendLog("Active tab is not a supported Gather Source.", "error");
+      } else if (response.outcome === "target-unavailable") {
+        this.appendLog("The source tab is no longer available.", "error");
       } else {
-        shouldFlashDownloadButton = await this.handleDownloadableFiles(payload);
+        this.appendLog(response.message, "error");
       }
     } catch (error) {
-      this.setStatus("error");
-      this.elements.progressText.textContent = "Download stopped due to an error.";
-      this.appendLog(formatError(error), "error");
-      setLogExpanded(this.elements, true);
+      this.appendLog(`Could not start Gather Run: ${formatError(error)}`, "error");
     } finally {
-      await this.lastRunWriter.flush();
       this.state.running = false;
       this.syncPopupActions();
-      if (shouldFlashDownloadButton) {
-        flashDownloadComplete(this.elements);
-      }
     }
   }
 
@@ -418,89 +419,28 @@ export class GatherController {
       return;
     }
 
-    if (!this.state.directoryHandle) {
-      this.appendLog("Choose a folder before retrying.", "error");
-      this.syncPopupActions();
+    const run = await loadGatherRun();
+    if (!run || run.retryImages.length === 0) {
+      this.appendLog("No retryable Gather Run was found.", "error");
       return;
     }
-
+    if (!this.state.directoryHandle) {
+      this.appendLog("Choose a folder before retrying.", "error");
+      return;
+    }
     const permission = await ensureDirectoryPermission(this.state.directoryHandle, true);
     if (permission !== "granted") {
       this.appendLog("Folder is no longer writable. Choose it again.", "error");
-      this.syncPopupActions();
       return;
     }
-
-    const destinationPreview = this.state.lastRun.destinationPreview;
-    if (!destinationPreview) {
-      this.appendLog("No remembered destination path for retry.", "error");
-      return;
-    }
-
-    this.state.running = true;
-    this.setStatus("downloading");
-    this.syncPopupActions();
-    this.appendLog(`Retrying ${this.state.lastRun.retryImages.length} failed file(s)...`);
-
-    try {
-      const destinationDirectory = await this.getDestinationDirectoryFromPreview(destinationPreview);
-      const summary = await downloadImages(
-        this.state.lastRun.retryImages,
-        destinationDirectory,
-        {
-          onStart: (total) => {
-            setProgress(this.elements, 0, total || 1, `Retrying ${total} file(s)...`);
-          },
-          onProgress: (completed, total) => {
-            setProgress(
-              this.elements,
-              completed,
-              total || 1,
-              `Retried ${completed} of ${total} file(s).`
-            );
-          },
-          onSaved: (fileName) => {
-            this.appendLog(`Saved ${fileName}`, "success");
-          },
-          onSkipped: (fileName) => {
-            this.appendLog(`Skipped existing ${fileName}`, "success");
-          },
-          onVerbose: (message) => {
-            this.logVerbose(message);
-          }
-        },
-        this.getDownloadOptionsForRetry()
-      );
-
-      const stateName: PopupStatus = summary.failed > 0 ? "error" : "complete";
-      this.setStatus(stateName);
-      this.elements.progressText.textContent = `Retry done. Saved ${summary.saved}, failed ${summary.failed}.`;
-      this.appendLog(
-        `Retry complete. Saved ${summary.saved}, failed ${summary.failed}, skipped ${summary.skipped}.`,
-        stateName === "complete" ? "success" : "error"
-      );
-
-      for (const item of summary.failedItems) {
-        this.appendLog(`Failed ${item.fileName}: ${item.reason}`, "error");
-      }
-
-      await this.persistLastRun({
-        failedItems: summary.failedItems,
-        retryImages: this.buildRetryImages(summary.failedItems, this.state.lastRun.retryImages),
-        canRetry: summary.failedItems.length > 0
-      });
-
-      if (stateName === "error") {
-        setLogExpanded(this.elements, true);
-      }
-    } catch (error) {
-      this.setStatus("error");
-      this.appendLog(`Retry failed: ${formatError(error)}`, "error");
-      setLogExpanded(this.elements, true);
-    } finally {
-      await this.lastRunWriter.flush();
-      this.state.running = false;
-      this.syncPopupActions();
+    const response = await chrome.runtime.sendMessage<
+      { type: typeof RETRY_GATHER_RUN_REQUEST; target: "background"; runId: string },
+      GatherRunResponse
+    >({ type: RETRY_GATHER_RUN_REQUEST, target: "background", runId: run.id });
+    if (response.outcome === "started" || response.outcome === "already-running") {
+      this.applyGatherRun(response.run);
+    } else if (response.outcome === "failed") {
+      this.appendLog(response.message, "error");
     }
   }
 
@@ -791,6 +731,43 @@ export class GatherController {
     if (status === "error") {
       setLogExpanded(this.elements, true);
     }
+  }
+
+  private applyGatherRun(run: GatherRunState): void {
+    const status: PopupStatus =
+      run.phase === "complete"
+        ? "complete"
+        : run.phase === "failed" || run.phase === "interrupted" || run.phase === "permission-required"
+          ? "error"
+          : run.phase === "writing"
+            ? "downloading"
+            : "collecting";
+    this.setStatus(status);
+    setProgress(
+      this.elements,
+      run.progress.completed,
+      run.progress.total || 1,
+      run.progress.message
+    );
+    if (run.destinationPreview) {
+      setDestinationPreview(this.elements, run.destinationPreview);
+    }
+    this.logEntries = [...run.log];
+    restoreLog(this.elements, this.logEntries);
+    this.state.lastRun = {
+      timestamp: run.updatedAt,
+      siteKey: run.siteKey,
+      tabUrl: run.tabUrl,
+      destinationPreview: run.destinationPreview,
+      log: run.log,
+      failedItems: run.failedItems,
+      retryImages: run.retryImages,
+      canRetry: run.retryImages.length > 0
+    };
+    if (run.phase === "complete") {
+      flashDownloadComplete(this.elements);
+    }
+    this.syncPopupActions();
   }
 
   private appendLog(message: string, tone?: LogTone): void {
