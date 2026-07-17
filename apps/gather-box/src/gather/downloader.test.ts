@@ -119,6 +119,70 @@ describe("collision-safe downloads", () => {
     await expect(pending).rejects.toMatchObject({ name: "AbortError" });
     expect([...directory.files.keys()]).toHaveLength(0);
   });
+
+  it("does not commit a file when cancelled after write and before close", async () => {
+    let releaseWrite!: () => void;
+    const writeGate = new Promise<void>((resolve) => {
+      releaseWrite = resolve;
+    });
+    let writeStarted!: () => void;
+    const writeStartedGate = new Promise<void>((resolve) => {
+      writeStarted = resolve;
+    });
+    const abortSpy = vi.fn(async () => undefined);
+    const closeSpy = vi.fn(async () => undefined);
+    const files = new Map<string, Blob>();
+    const handle = {
+      async getFileHandle(name: string, options?: { create?: boolean }) {
+        if (!files.has(name) && !options?.create) {
+          throw new DOMException("Not found", "NotFoundError");
+        }
+        if (!files.has(name)) {
+          files.set(name, new Blob());
+        }
+        return {
+          async getFile() {
+            return new File([files.get(name) ?? new Blob()], name);
+          },
+          async createWritable() {
+            let pending = new Blob();
+            return {
+              async write(data: FileSystemWriteChunkType) {
+                pending = data instanceof Blob ? data : new Blob([data as BlobPart]);
+                writeStarted();
+                await writeGate;
+              },
+              async close() {
+                await closeSpy();
+                files.set(name, pending);
+              },
+              async abort() {
+                await abortSpy();
+              }
+            };
+          }
+        };
+      }
+    } as unknown as FileSystemDirectoryHandle;
+
+    const controller = new AbortController();
+    const pending = saveBlobWithoutClobbering(
+      new Blob(["payload"]),
+      handle,
+      "cancelled.jpg",
+      undefined,
+      controller.signal
+    );
+
+    await writeStartedGate;
+    controller.abort();
+    releaseWrite();
+
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    expect(closeSpy).not.toHaveBeenCalled();
+    expect(abortSpy).toHaveBeenCalledTimes(1);
+    expect(files.get("cancelled.jpg")?.size ?? 0).toBe(0);
+  });
 });
 
 function createMemoryDirectory(initialFiles: Record<string, Blob>): {

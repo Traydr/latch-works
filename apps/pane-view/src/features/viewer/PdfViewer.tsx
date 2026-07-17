@@ -118,7 +118,9 @@ export function PdfViewer({
   const onPageChangeRef = useRef(onPageChange);
   const hasAppliedInitialPageRef = useRef(false);
   const previousMediaIdRef = useRef(mediaId);
+  const initialPageRef = useRef(initialPage);
   onPageChangeRef.current = onPageChange;
+  initialPageRef.current = initialPage;
 
   useEffect(() => {
     if (previousMediaIdRef.current !== mediaId) {
@@ -156,7 +158,8 @@ export function PdfViewer({
     let destroyLoadingTask: (() => void) | undefined;
     let renderWidth = getPageRenderWidth(container);
     let renderVersion = 0;
-    let focalPage = initialPage ?? 1;
+    // Snapshot resume page at load time; later resume updates use the scroll effect, not a reload.
+    let focalPage = initialPageRef.current ?? 1;
     const visiblePages = new Set<number>();
     const renderTasks = new Map<number, ActiveRender>();
     container.replaceChildren();
@@ -397,7 +400,9 @@ export function PdfViewer({
         clearTimeout(pageChangeTimer);
       }
     };
-  }, [mediaId, initialPage]);
+    // Keep document loading keyed to mediaId only. Late-arriving resume pages are applied by the
+    // scroll effect above — including initialPage here would tear down and reload the PDF mid-view.
+  }, [mediaId]);
 
   return (
     <div ref={scrollContainerRef} className="h-full w-full overflow-auto px-3 py-2">

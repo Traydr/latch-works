@@ -19,6 +19,7 @@ vi.mock("pdfjs-dist", () => ({
 
 vi.mock("pdfjs-dist/build/pdf.worker.min.mjs?url", () => ({ default: "pdf-worker" }));
 
+import { getDocument } from "pdfjs-dist";
 import {
   getPdfPageRenderWindow,
   PdfViewer,
@@ -200,6 +201,7 @@ describe("PdfViewer", () => {
     mocks.resizeObservers.length = 0;
     mocks.renderTasks.length = 0;
     mocks.scrollIntoView.mockReset();
+    vi.mocked(getDocument).mockClear();
     vi.stubGlobal("IntersectionObserver", FakeIntersectionObserver);
     vi.stubGlobal("ResizeObserver", FakeResizeObserver);
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(
@@ -308,6 +310,22 @@ describe("PdfViewer", () => {
     expect(mocks.intersectionObservers[1]?.disconnect).toHaveBeenCalledTimes(1);
     expect(mocks.resizeObservers[1]?.disconnect).toHaveBeenCalledTimes(1);
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("does not reload the document when a late resume page arrives for the same media", async () => {
+    const pdf = fakeDocument(20, new Set([1, 2, 3]));
+    mocks.documents.push(pdf);
+    const viewer = mount({ mediaId: "media-a" });
+    await flush();
+    expect(vi.mocked(getDocument)).toHaveBeenCalledTimes(1);
+
+    viewer.rerender({ mediaId: "media-a", initialPage: 12 });
+    await flush();
+
+    expect(pdf.destroy).not.toHaveBeenCalled();
+    expect(vi.mocked(getDocument)).toHaveBeenCalledTimes(1);
+    expect(mocks.scrollIntoView).toHaveBeenCalledWith({ block: "start" });
+    viewer.unmount();
   });
 });
 

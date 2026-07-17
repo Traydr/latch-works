@@ -247,6 +247,8 @@ async function writeBlob(
   try {
     throwIfAborted(signal);
     await writable.write(blob);
+    // close() commits the File System Access write — if cancel landed during write, abort instead.
+    throwIfAborted(signal);
     await writable.close();
   } catch (error) {
     await closeWritableSafely(writable);
