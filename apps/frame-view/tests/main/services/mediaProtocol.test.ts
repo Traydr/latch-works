@@ -56,11 +56,8 @@ describe('mediaProtocol helpers', () => {
   });
 
   it('shrinks authorized roots to the most specific matching root', async () => {
-    const {
-      authorizeMediaRoot,
-      isAuthorizedMediaPath,
-      shrinkAuthorizedMediaRootsTo,
-    } = await import('../../../src/main/services/mediaProtocol');
+    const { authorizeMediaRoot, isAuthorizedMediaPath, shrinkAuthorizedMediaRootsTo } =
+      await import('../../../src/main/services/mediaProtocol');
 
     const rootA = process.platform === 'win32' ? 'C:\\gallery-a' : '/tmp/gallery-a';
     const rootB = process.platform === 'win32' ? 'C:\\gallery-b' : '/tmp/gallery-b';

@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   classifyFrameCandidate,
+  type FrameScanFilters,
   shouldSkipDirectoryName,
   toFrameMediaItem,
-  type FrameScanFilters,
 } from '../../../src/main/catalog/catalogDiscoveryAdapter';
 
 const filters: FrameScanFilters = {

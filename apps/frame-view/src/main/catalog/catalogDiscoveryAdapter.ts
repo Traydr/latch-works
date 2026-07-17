@@ -1,8 +1,4 @@
-import {
-  getExtension,
-  isSystemJunkDirectory,
-  isSystemJunkFile,
-} from '@latch-works/media-domain';
+import { getExtension, isSystemJunkDirectory, isSystemJunkFile } from '@latch-works/media-domain';
 
 import type { MediaItem } from '../../shared/types';
 
