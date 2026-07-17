@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createGatherRunState, GATHER_RUN_STATE_KEY } from "./gather-run";
 
 const storage = new Map<string, unknown>();
+const getContexts = vi.fn(async (_filter?: chrome.runtime.ContextFilter) => [] as chrome.runtime.ExtensionContext[]);
 
 vi.stubGlobal("chrome", {
   storage: {
@@ -17,7 +18,7 @@ vi.stubGlobal("chrome", {
   },
   runtime: {
     getURL: vi.fn((path: string) => `chrome-extension://test/${path}`),
-    getContexts: vi.fn(async () => []),
+    getContexts,
     ContextType: { OFFSCREEN_DOCUMENT: "OFFSCREEN_DOCUMENT" }
   }
 });
@@ -25,8 +26,8 @@ vi.stubGlobal("chrome", {
 describe("gather-run-store interrupt recovery", () => {
   beforeEach(() => {
     storage.clear();
-    vi.clearAllMocks();
-    chrome.runtime.getContexts = vi.fn(async () => []);
+    getContexts.mockReset();
+    getContexts.mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -59,7 +60,17 @@ describe("gather-run-store interrupt recovery", () => {
       siteKey: "pixiv"
     });
     storage.set(GATHER_RUN_STATE_KEY, { ...run, phase: "writing" });
-    chrome.runtime.getContexts = vi.fn(async () => [{ contextType: "OFFSCREEN_DOCUMENT" }]);
+    getContexts.mockResolvedValue([
+      {
+        contextId: "offscreen-1",
+        contextType: "OFFSCREEN_DOCUMENT",
+        documentUrl: "chrome-extension://test/offscreen/offscreen.html",
+        frameId: 0,
+        incognito: false,
+        tabId: -1,
+        windowId: -1
+      } as chrome.runtime.ExtensionContext
+    ]);
 
     const { markInterruptedGatherRun } = await import("./gather-run-store");
     const result = await markInterruptedGatherRun();
