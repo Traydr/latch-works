@@ -1,18 +1,6 @@
-export function formatBytes(bytes: number): string {
-  if (bytes < 1024) {
-    return `${bytes} B`;
-  }
+import { formatBytes } from "@latch-works/media-domain";
 
-  if (bytes < 1024 * 1024) {
-    return `${(bytes / 1024).toFixed(1)} KB`;
-  }
-
-  if (bytes < 1024 * 1024 * 1024) {
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  }
-
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-}
+export { formatBytes };
 
 export function formatPushError(error: unknown): string {
   if (!(error instanceof Error)) {

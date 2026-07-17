@@ -153,7 +153,6 @@ export function validateSyncObjectPayload(
 
   const derivedObjectKey = originalObjectKey({
     extension,
-    mediaType: mediaType as MediaType,
     sha256,
   });
   const objectKey = typeof body.objectKey === "string" ? body.objectKey : derivedObjectKey;

@@ -11,7 +11,11 @@ export interface FolderDeleteResult {
 }
 
 function normalizeFolderPath(path: string): string {
-  return trimTrailingSlash(toArchivePath(path));
+  const normalized = trimTrailingSlash(toArchivePath(path));
+  if (normalized.split("/").includes("..")) {
+    throw new Error("Folder path must not contain '..' segments.");
+  }
+  return normalized;
 }
 
 function assertDeletableFolderPath(path: string): void {

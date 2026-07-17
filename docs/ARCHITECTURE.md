@@ -61,6 +61,8 @@ flowchart LR
 - SHA-256 is the immutable Shutter Source ID; a presigned S3 URL is the replaceable Source Locator.
 - A hard library wipe deletes each original, requests Shutter Source Purge, and deletes the media row
   only after Shutter confirms the purge. Soft deletion retains both source systems.
+- Soft-delete and Lockstep `prune` only mark library entries/folders deleted in PostgreSQL. S3
+  originals and Shutter assets remain until an explicit hard wipe.
 
 The authenticated media resolver accepts `mediaId`, `thumbnail | preview | original`, and an
 optional width. Batch requests contain at most 48 items and independently return `ready`, `pending`
@@ -69,8 +71,8 @@ with `retryAfterMs`, or `failed`.
 ## Sync and storage
 
 Lockstep uploads immutable originals under deterministic SHA-256 keys. Pane View records media and
-library-entry metadata in PostgreSQL. Sync deletion soft-deletes library entries; physical source
-deletion happens only through an explicit hard wipe.
+library-entry metadata in PostgreSQL. Soft-delete (folder delete, entry delete) and Lockstep `prune`
+only mark library rows deleted; S3 originals and Shutter assets remain until an explicit hard wipe.
 
 Pane View does not prewarm renditions. Shutter images are created on demand, while video and PDF
 jobs begin when their first rendition is requested.

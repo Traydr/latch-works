@@ -1,4 +1,4 @@
-import { detectMediaType, getExtension } from "@latch-works/media-domain";
+import { getExtension } from "@latch-works/media-domain";
 import {
   createS3StorageClient,
   createSignedPutUrl,
@@ -65,12 +65,10 @@ export const Route = createFileRoute("/api/sync/upload-url")({
           }
         }
 
-        const mediaType = detectMediaType(body.filename);
         const size = Math.trunc(Number(body.size));
 
         const objectKey = originalObjectKey({
           extension,
-          mediaType,
           sha256: body.sha256,
         });
         const signed = await createSignedPutUrl({

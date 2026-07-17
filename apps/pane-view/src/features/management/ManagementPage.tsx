@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { getLibrarySnapshot } from "../library/library-service";
 import { CleanupJobProgress } from "./CleanupJobProgress";
 import { FolderPicker } from "./FolderPicker";
-import { formatBytes } from "./format-bytes";
+import { formatBytes } from "@latch-works/media-domain";
 import { LegacyDerivativeCleanupProgress } from "./LegacyDerivativeCleanupProgress";
 import {
   useCancelAllRunningSyncRunsMutation,

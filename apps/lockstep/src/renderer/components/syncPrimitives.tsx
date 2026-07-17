@@ -1,17 +1,10 @@
+import { formatBytes } from "@latch-works/lockstep-core";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 
 import type { RunPhase, RunProgressState } from "../hooks/useLockstepController";
 
-export function formatBytes(bytes: number): string {
-  if (!bytes || bytes < 0) {
-    return "0 B";
-  }
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  const value = bytes;
-  const i = Math.min(units.length - 1, Math.floor(Math.log(value) / Math.log(1024)));
-  return `${(value / 1024 ** i).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
-}
+export { formatBytes };
 
 export function formatDuration(ms: number): string {
   if (!ms || ms < 0) {

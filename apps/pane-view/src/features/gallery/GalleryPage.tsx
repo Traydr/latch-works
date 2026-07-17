@@ -523,7 +523,7 @@ export function GalleryPage() {
     search.recursive,
   ]);
 
-  // Keyboard shortcuts.
+  // Keyboard shortcuts — gallery owns browse keys; MediaViewerModal owns viewer keys.
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (settingsOpen || hotkeysOpen || mobileSearchOpen || pathSheetOpen) {
@@ -547,26 +547,26 @@ export function GalleryPage() {
       }
 
       if (viewerOpen) {
-        handleViewerKeyDown(event);
         return;
       }
 
       handleGalleryKeyDown(event);
     };
 
-    const handleKeyUp = (event: KeyboardEvent) => {
-      if (viewerOpen) {
-        handleViewerKeyUp(event);
-      }
-    };
-
     window.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("keyup", handleKeyUp);
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("keyup", handleKeyUp);
     };
-  });
+  }, [
+    displayPath,
+    entries,
+    focusedEntryIndex,
+    hotkeysOpen,
+    mobileSearchOpen,
+    pathSheetOpen,
+    settingsOpen,
+    viewerOpen,
+  ]);
 
   const handleGalleryKeyDown = (event: KeyboardEvent) => {
     if (event.metaKey || event.ctrlKey || event.altKey) {
@@ -633,61 +633,6 @@ export function GalleryPage() {
         handleActivateEntry(entry);
       }
       return;
-    }
-  };
-
-  const handleViewerKeyDown = (event: KeyboardEvent) => {
-    if (event.metaKey || event.ctrlKey || event.altKey) {
-      return;
-    }
-
-    const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
-
-    if (key === "Escape") {
-      event.preventDefault();
-      closeViewer();
-      return;
-    }
-    if (key === "ArrowRight" || key === "e") {
-      event.preventDefault();
-      if (!viewerLockedMediaId) {
-        selectAdjacentMedia(1);
-      }
-      return;
-    }
-    if (key === "ArrowLeft" || key === "q") {
-      event.preventDefault();
-      if (!viewerLockedMediaId) {
-        selectAdjacentMedia(-1);
-      }
-      return;
-    }
-    if (key === " " || key === "2") {
-      event.preventDefault();
-      // Play/pause handled inside MediaViewerModal.
-      return;
-    }
-    if (key === "1") {
-      event.preventDefault();
-      // Seek backward handled inside MediaViewerModal.
-      return;
-    }
-    if (key === "3") {
-      event.preventDefault();
-      // Seek forward handled inside MediaViewerModal.
-      return;
-    }
-    if (key === "4") {
-      event.preventDefault();
-      // Temporary speed boost handled inside MediaViewerModal.
-      return;
-    }
-  };
-
-  const handleViewerKeyUp = (event: KeyboardEvent) => {
-    const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
-    if (key === "4") {
-      // Release speed boost handled inside MediaViewerModal.
     }
   };
 
