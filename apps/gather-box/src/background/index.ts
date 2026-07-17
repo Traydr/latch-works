@@ -23,9 +23,9 @@ const CONTEXT_MENU_ID = "gather-box-download";
 const gatherRuns = new GatherRunCoordinator();
 const gatherCommands = new GatherCommands(gatherRuns);
 
-// Recover non-terminal runs whenever the service worker wakes, not only on browser startup.
-void recoverInterruptedGatherRun();
-
+// Only recover on browser/extension startup. Do not mark interrupted on every service-worker
+// wake: MV3 can suspend the worker while the offscreen document is still writing, and the next
+// GATHER_RUN_EVENT would otherwise race recovery and drop live progress/complete events.
 chrome.runtime.onInstalled.addListener(() => {
   void configureExtensionUi();
   void setupContextMenu();

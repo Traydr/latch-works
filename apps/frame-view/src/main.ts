@@ -9,6 +9,7 @@ import { CatalogService } from './main/catalog/CatalogService';
 import { registerIpc } from './main/ipc/registerIpc';
 import { buildAppMenu } from './main/menu';
 import {
+  authorizeRememberedMediaRoot,
   MEDIA_PROTOCOL_SCHEME,
   registerMediaProtocol,
   setThumbnailDebugOptions,
@@ -125,7 +126,9 @@ async function createWindow(): Promise<void> {
     }
   }
 
-  setThumbnailDebugOptions(settingsService.getSettings().debug);
+  const settings = settingsService.getSettings();
+  await authorizeRememberedMediaRoot(settings);
+  setThumbnailDebugOptions(settings.debug);
 
   if (!catalogService) {
     catalogService = new CatalogService(app.getPath('userData'), (event) => {

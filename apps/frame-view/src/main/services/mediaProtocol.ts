@@ -277,6 +277,21 @@ export async function authorizeMediaRoot(rootPath: string): Promise<void> {
   authorizedMediaRoots.add(canonicalRoot);
 }
 
+/**
+ * Re-authorize the persisted last folder after process restart so rememberLastFolder
+ * can auto-scan without requiring another native folder dialog.
+ */
+export async function authorizeRememberedMediaRoot(settings: {
+  lastFolderPath: string | null;
+  rememberLastFolder: boolean;
+}): Promise<void> {
+  if (!settings.rememberLastFolder || !settings.lastFolderPath) {
+    return;
+  }
+
+  await authorizeMediaRoot(settings.lastFolderPath);
+}
+
 /** Keep only the most specific authorized root that contains `mediaPath`. */
 export async function shrinkAuthorizedMediaRootsTo(mediaPath: string): Promise<void> {
   if (authorizedMediaRoots.size === 0) {

@@ -152,7 +152,19 @@ export function registerIpc(
       return validationFailure('scan:start', 'Invalid folder path');
     }
 
-    const authorized = await isAuthorizedMediaPath(resolvedRoot);
+    const settings = settingsService.getSettings();
+    let authorized = await isAuthorizedMediaPath(resolvedRoot);
+    // Remembered folders are chosen via the native dialog, then persisted. After a restart the
+    // in-memory allowlist is empty — re-authorize the exact remembered path so auto-scan works.
+    if (
+      !authorized &&
+      settings.rememberLastFolder &&
+      settings.lastFolderPath &&
+      path.resolve(resolvedRoot) === path.resolve(settings.lastFolderPath)
+    ) {
+      await authorizeMediaRoot(resolvedRoot);
+      authorized = await isAuthorizedMediaPath(resolvedRoot);
+    }
     if (!authorized) {
       if (!mainWindow.isDestroyed()) {
         mainWindow.webContents.send('scan:event', {
@@ -169,7 +181,6 @@ export function registerIpc(
 
     await shrinkAuthorizedMediaRootsTo(resolvedRoot);
 
-    const settings = settingsService.getSettings();
     if (settings.rememberLastFolder) {
       const updateResult = await settingsService.updateSettings({ lastFolderPath: resolvedRoot });
       if (Result.isError(updateResult)) {
