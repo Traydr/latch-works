@@ -74,14 +74,12 @@ describe('mediaProtocol helpers', () => {
   });
 
   it('authorizes the remembered last folder when rememberLastFolder is enabled', async () => {
-    const {
-      authorizeRememberedMediaRoot,
-      isAuthorizedMediaPath,
-    } = await import('../../../src/main/services/mediaProtocol');
+    const { authorizeRememberedMediaRoot, isAuthorizedMediaPath } = await import(
+      '../../../src/main/services/mediaProtocol'
+    );
 
     const remembered = process.platform === 'win32' ? 'C:\\remembered' : '/tmp/remembered';
-    const nested =
-      process.platform === 'win32' ? 'C:\\remembered\\album' : '/tmp/remembered/album';
+    const nested = process.platform === 'win32' ? 'C:\\remembered\\album' : '/tmp/remembered/album';
 
     await authorizeRememberedMediaRoot({
       rememberLastFolder: true,
@@ -94,10 +92,9 @@ describe('mediaProtocol helpers', () => {
 
   it('skips remembered-folder authorization when the setting is disabled', async () => {
     vi.resetModules();
-    const {
-      authorizeRememberedMediaRoot,
-      isAuthorizedMediaPath,
-    } = await import('../../../src/main/services/mediaProtocol');
+    const { authorizeRememberedMediaRoot, isAuthorizedMediaPath } = await import(
+      '../../../src/main/services/mediaProtocol'
+    );
 
     const remembered = process.platform === 'win32' ? 'C:\\skipped' : '/tmp/skipped';
 
