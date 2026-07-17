@@ -1,4 +1,4 @@
-import { formatBytes } from "@latch-works/lockstep-core";
+import { formatBytes } from "@latch-works/media-domain";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 

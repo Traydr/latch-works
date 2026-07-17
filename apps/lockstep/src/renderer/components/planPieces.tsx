@@ -1,7 +1,7 @@
 import { Search } from "lucide-react";
 
 import type { LockstepProfilePublic } from "../../shared/types";
-import type { LockstepController } from "../hooks/useLockstepController";
+import type { PlanController } from "../hooks/useLockstepController";
 import { ActionChip } from "./syncPrimitives";
 
 export interface Field {
@@ -65,15 +65,15 @@ export function TokenInput({
 }
 
 export function PlanList({
-  ctrl,
+  plan,
   className = "",
   emptyHint = "No changed items match this filter.",
 }: {
-  ctrl: LockstepController;
+  plan: PlanController;
   className?: string;
   emptyHint?: string;
 }) {
-  const { filter, setFilter, filteredItems } = ctrl;
+  const { filter, setFilter, filteredItems } = plan;
   return (
     <div className={`flex min-h-0 flex-col gap-2 ${className}`}>
       <div className="relative">

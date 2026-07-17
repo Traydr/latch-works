@@ -11,6 +11,13 @@ import type { MediaItem, ScanEvent, ScanOptions } from '../../shared/types';
 import type { MediaIndexService } from '../db/mediaIndexService';
 import { MediaIndexService as MediaIndexServiceImpl } from '../db/mediaIndexService';
 import {
+  classifyFrameCandidate,
+  type FrameScanCandidate,
+  type FrameScanFilters,
+  shouldSkipDirectoryName,
+  toFrameMediaItem,
+} from './catalogDiscoveryAdapter';
+import {
   CATALOG_BATCH_SIZE,
   CATALOG_FILE_STAT_CONCURRENCY,
   CATALOG_PROGRESS_EVENT_INTERVAL_MS,
@@ -22,24 +29,10 @@ interface ActiveRun {
   promise: Promise<void>;
 }
 
-interface ScanCandidateFile {
-  extension: string;
-  fullPath: string;
-  mediaType: 'image' | 'video';
-  name: string;
-}
-
-interface ScanFilters {
-  imageExtensions: Set<string>;
-  showImages: boolean;
-  showVideos: boolean;
-  videoExtensions: Set<string>;
-}
-
 interface ScanContext {
   discoveredItems: number;
   excludedRootChildPaths: Set<string>;
-  filters: ScanFilters;
+  filters: FrameScanFilters;
   lastProgressEmittedAt: number;
   mediaIndexScanId: number | null;
   mediaIndexPersistenceFailed: boolean;
@@ -180,7 +173,7 @@ export class CatalogRuntime {
     return this.activeRun?.id === run.id && !run.cancelled;
   }
 
-  private buildScanFilters(options: ScanOptions): ScanFilters {
+  private buildScanFilters(options: ScanOptions): FrameScanFilters {
     return {
       imageExtensions: new Set(options.filters.imageExtensions.map((ext) => ext.toLowerCase())),
       showImages: options.filters.showImages,
@@ -217,7 +210,7 @@ export class CatalogRuntime {
     options: ScanOptions,
     context: ScanContext,
     currentPath: string,
-  ): Promise<ScanCandidateFile[] | null> {
+  ): Promise<FrameScanCandidate[] | null> {
     let directory: Awaited<ReturnType<typeof fs.opendir>>;
     try {
       directory = await fs.opendir(currentPath, { encoding: 'utf8' });
@@ -243,7 +236,7 @@ export class CatalogRuntime {
     context.pendingProgressPath = currentPath;
     this.emitProgress(run, context);
 
-    const candidateFiles: ScanCandidateFile[] = [];
+    const candidateFiles: FrameScanCandidate[] = [];
     try {
       for await (const entry of directory) {
         if (!this.isRunActive(run)) {
@@ -252,6 +245,10 @@ export class CatalogRuntime {
 
         const fullPath = path.join(currentPath, entry.name);
         if (entry.isDirectory()) {
+          if (shouldSkipDirectoryName(entry.name)) {
+            continue;
+          }
+
           if (options.recursive) {
             if (
               currentPath === options.rootPath &&
@@ -269,20 +266,14 @@ export class CatalogRuntime {
           continue;
         }
 
-        const extension = path.extname(entry.name).replace('.', '').toLowerCase();
-        const isImage =
-          context.filters.showImages && context.filters.imageExtensions.has(extension);
-        const isVideo =
-          context.filters.showVideos && context.filters.videoExtensions.has(extension);
-        if (!isImage && !isVideo) {
+        const classified = classifyFrameCandidate(entry.name, context.filters);
+        if (!classified) {
           continue;
         }
 
         candidateFiles.push({
-          extension,
+          ...classified,
           fullPath,
-          mediaType: isVideo ? 'video' : 'image',
-          name: entry.name,
         });
       }
     } catch {
@@ -303,22 +294,18 @@ export class CatalogRuntime {
   }
 
   private async statCandidateChunk(
-    chunk: ScanCandidateFile[],
+    chunk: FrameScanCandidate[],
   ): Promise<Array<{ item: MediaItem } | { statErrorPath: string }>> {
     return Promise.all(
       chunk.map(async (candidate) => {
         try {
           const stats = await fs.stat(candidate.fullPath);
-          const item: MediaItem = {
-            id: `${candidate.fullPath}:${stats.size}:${stats.mtimeMs}`,
-            path: candidate.fullPath,
-            name: candidate.name,
-            extension: candidate.extension,
-            mediaType: candidate.mediaType,
-            size: stats.size,
-            mtimeMs: stats.mtimeMs,
+          return {
+            item: toFrameMediaItem(candidate, {
+              mtimeMs: stats.mtimeMs,
+              size: stats.size,
+            }),
           };
-          return { item };
         } catch {
           return { statErrorPath: candidate.fullPath };
         }

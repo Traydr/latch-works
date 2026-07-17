@@ -1,6 +1,3 @@
-import { existsSync } from 'node:fs';
-import path from 'node:path';
-
 import { utilityProcess } from 'electron';
 
 import {
@@ -12,12 +9,18 @@ import {
   type ThumbnailJobPriority,
   type ThumbnailJobRequest,
   type ThumbnailPerformanceSnapshot,
-  type ThumbnailTimingAggregate,
   type ThumbnailWorkerCapabilities,
   type ThumbnailWorkerJobResult,
   type ThumbnailWorkerRequest,
 } from '../../shared/thumbnail';
 import { RequestAbortError } from '../errors';
+import {
+  appendRecentEntry,
+  createTimingAggregateSnapshot,
+  nowMs,
+  resolveThumbnailWorkerPath,
+  type ThumbnailPerformanceAggregateState,
+} from './thumbnailBrokerHelpers';
 
 export interface ThumbnailPipelineStatus {
   ffmpegAvailable: boolean;
@@ -64,12 +67,6 @@ interface ThumbnailBrokerTask {
   promise: Promise<ThumbnailWorkerJobResult>;
 }
 
-interface ThumbnailPerformanceAggregateState {
-  count: number;
-  maxMs: number;
-  totalMs: number;
-}
-
 interface WorkerSlot {
   activeRequestId: number | null;
   capabilities: ThumbnailWorkerCapabilities | null;
@@ -92,64 +89,6 @@ const DEFAULT_VIDEO_WORKERS = 1;
 const MAX_RECENT_FAILURES = 10;
 const MAX_RECENT_WORKER_EVENTS = 10;
 const QUEUE_WARNING_THRESHOLD = 100;
-
-function nowMs(): number {
-  return Date.now();
-}
-
-function createTimingAggregateSnapshot(
-  aggregate: ThumbnailPerformanceAggregateState | null,
-): ThumbnailTimingAggregate | null {
-  if (!aggregate || aggregate.count === 0) {
-    return null;
-  }
-
-  return {
-    averageMs: Math.round((aggregate.totalMs / aggregate.count) * 100) / 100,
-    count: aggregate.count,
-    maxMs: Math.round(aggregate.maxMs * 100) / 100,
-  };
-}
-
-function appendRecentEntry(entries: string[], entry: string, maxEntries: number): void {
-  entries.push(`${new Date().toISOString()} ${entry}`);
-  if (entries.length > maxEntries) {
-    entries.splice(0, entries.length - maxEntries);
-  }
-}
-
-function resolveThumbnailWorkerPath(overridePath?: string): {
-  checkedPaths: string[];
-  resolvedPath: string;
-} {
-  const candidates = [
-    overridePath,
-    path.join(__dirname, 'thumbnail.worker.js'),
-    process.resourcesPath
-      ? path.join(process.resourcesPath, 'app.asar', '.vite', 'build', 'thumbnail.worker.js')
-      : null,
-    process.resourcesPath
-      ? path.join(
-          process.resourcesPath,
-          'app.asar.unpacked',
-          '.vite',
-          'build',
-          'thumbnail.worker.js',
-        )
-      : null,
-  ].filter((candidate): candidate is string => !!candidate);
-
-  for (const candidatePath of candidates) {
-    if (existsSync(candidatePath)) {
-      return {
-        checkedPaths: candidates,
-        resolvedPath: candidatePath,
-      };
-    }
-  }
-
-  throw new Error(`Thumbnail worker entry was not found. Checked: ${candidates.join(', ')}`);
-}
 
 export class ThumbnailBrokerService {
   private readonly childFactory: ThumbnailChildFactory;

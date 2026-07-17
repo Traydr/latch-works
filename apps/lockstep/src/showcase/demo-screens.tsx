@@ -36,43 +36,59 @@ function createBaseController(
   runProgress: RunProgressState,
   running: boolean,
   pipelineProgress: { reviewed: boolean; pushCompleted: boolean; pruneCompleted: boolean },
-  overrides: Partial<LockstepController> = {},
+  overrides: {
+    session?: Partial<LockstepController["session"]>;
+    profile?: Partial<LockstepController["profile"]>;
+    plan?: Partial<LockstepController["plan"]>;
+    run?: Partial<LockstepController["run"]>;
+  } = {},
 ): LockstepController {
   return {
-    activeProfile: showcaseSettings.profiles[0] ?? null,
-    doctorResult: null,
-    error: null,
-    filter: "",
-    filteredItems: showcasePlan.items.filter((item) => item.action !== "keep"),
-    handleCancel: noopAsync,
-    handleCreateProfile: noopAsync,
-    handleDoctor: noopAsync,
-    handlePickFolder: noopAsync,
-    handlePlan: noopAsync,
-    handleProfileChange: noopAsync,
-    handlePrune: noopAsync,
-    handlePush: noopAsync,
-    logs: [],
-    markReviewVisited: noop,
-    pipelineProgress,
-    plan: showcasePlan,
-    profileForm: {
-      apiUrl: "http://localhost:3000",
-      name: "",
-      sourceRoot: "",
-      token: "",
+    session: {
+      screen,
+      setScreen: noop,
+      settings: showcaseSettings,
+      activeProfile: showcaseSettings.profiles[0] ?? null,
+      error: null,
+      sessionToken: "",
+      setSessionToken: noop,
+      handleProfileChange: noopAsync,
+      ...overrides.session,
     },
-    runLabel: runProgress.currentPath ?? "",
-    runProgress,
-    running,
-    screen,
-    sessionToken: "",
-    setFilter: noop,
-    setProfileForm: noop,
-    setScreen: noop,
-    setSessionToken: noop,
-    settings: showcaseSettings,
-    ...overrides,
+    profile: {
+      profileForm: {
+        apiUrl: "http://localhost:3000",
+        name: "",
+        sourceRoot: "",
+        token: "",
+      },
+      setProfileForm: noop,
+      handleCreateProfile: noopAsync,
+      handlePickFolder: noopAsync,
+      ...overrides.profile,
+    },
+    plan: {
+      plan: showcasePlan,
+      doctorResult: null,
+      filter: "",
+      setFilter: noop,
+      filteredItems: showcasePlan.items.filter((item) => item.action !== "keep"),
+      pipelineProgress,
+      markReviewVisited: noop,
+      ...overrides.plan,
+    },
+    run: {
+      running,
+      runLabel: runProgress.currentPath ?? "",
+      logs: [],
+      runProgress,
+      handleDoctor: noopAsync,
+      handlePlan: noopAsync,
+      handlePush: noopAsync,
+      handlePrune: noopAsync,
+      handleCancel: noopAsync,
+      ...overrides.run,
+    },
   };
 }
 
@@ -160,16 +176,22 @@ export function ShowcasePipelineStepsDemo() {
           pruneCompleted,
         },
         {
-          handlePush: async () => setPushCompleted(true),
-          handlePrune: async () => setPruneCompleted(true),
-          markReviewVisited: () => setReviewed(true),
-          setScreen: (next) => {
-            if (next === "plan") {
-              setReviewed(true);
-            }
-            setScreen(next);
+          session: {
+            screen,
+            setScreen: (next) => {
+              if (next === "plan") {
+                setReviewed(true);
+              }
+              setScreen(next);
+            },
           },
-          screen,
+          plan: {
+            markReviewVisited: () => setReviewed(true),
+          },
+          run: {
+            handlePush: async () => setPushCompleted(true),
+            handlePrune: async () => setPruneCompleted(true),
+          },
         },
       ),
     [pruneCompleted, pushCompleted, reviewed, screen],

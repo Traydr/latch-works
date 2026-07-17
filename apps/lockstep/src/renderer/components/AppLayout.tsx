@@ -10,7 +10,12 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import type { LockstepController } from "../hooks/useLockstepController";
+import type {
+  LockstepController,
+  PlanController,
+  RunController,
+  SessionController,
+} from "../hooks/useLockstepController";
 import { isElapsedClockActive } from "../lib/run-lifecycle";
 import { ProfileSetupView } from "../views/ProfileSetupView";
 import { AlertBanner } from "./AlertBanner";
@@ -38,7 +43,8 @@ const STAGES = [
 type Tab = "dashboard" | "plan" | "log";
 
 export function AppLayout({ ctrl }: { ctrl: LockstepController }) {
-  const { screen, setScreen, settings, activeProfile, error } = ctrl;
+  const { session, profile, plan: planCtrl, run } = ctrl;
+  const { screen, setScreen, settings, activeProfile, error } = session;
   const [tab, setTab] = useState<Tab>("dashboard");
   const showProfile = screen === "profile";
   const showWorkspace = !showProfile && !!activeProfile;
@@ -60,7 +66,7 @@ export function AppLayout({ ctrl }: { ctrl: LockstepController }) {
           <ProfileSelect
             profiles={settings.profiles}
             value={settings.activeProfileId ?? ""}
-            onChange={(id) => void ctrl.handleProfileChange(id)}
+            onChange={(id) => void session.handleProfileChange(id)}
           />
         ) : null}
         <button
@@ -82,11 +88,11 @@ export function AppLayout({ ctrl }: { ctrl: LockstepController }) {
       {showProfile ? (
         <div className="flex-1 overflow-y-auto p-4">
           <ProfileSetupView
-            form={ctrl.profileForm}
+            form={profile.profileForm}
             onCancel={() => setScreen("dashboard")}
-            onChange={(patch) => ctrl.setProfileForm((c) => ({ ...c, ...patch }))}
-            onPickFolder={() => void ctrl.handlePickFolder()}
-            onSubmit={(e) => void ctrl.handleCreateProfile(e)}
+            onChange={(patch) => profile.setProfileForm((c) => ({ ...c, ...patch }))}
+            onPickFolder={() => void profile.handlePickFolder()}
+            onSubmit={(e) => void profile.handleCreateProfile(e)}
           />
         </div>
       ) : null}
@@ -108,18 +114,18 @@ export function AppLayout({ ctrl }: { ctrl: LockstepController }) {
             <TabBtn
               label="Plan"
               active={tab === "plan"}
-              disabled={!ctrl.plan}
+              disabled={!planCtrl.plan}
               onClick={() => {
-                if (ctrl.plan) {
-                  ctrl.markReviewVisited();
+                if (planCtrl.plan) {
+                  planCtrl.markReviewVisited();
                   setTab("plan");
                 }
               }}
             />
             <TabBtn label="Log" active={tab === "log"} onClick={() => setTab("log")} />
-            {ctrl.plan ? (
+            {planCtrl.plan ? (
               <span className="ml-auto">
-                <PlanLegend counts={ctrl.plan.counts} />
+                <PlanLegend counts={planCtrl.plan.counts} />
               </span>
             ) : null}
           </div>
@@ -143,51 +149,53 @@ export function AppLayout({ ctrl }: { ctrl: LockstepController }) {
                   </div>
                   <div className="mt-3">
                     <TokenInput
-                      value={ctrl.sessionToken}
-                      onChange={ctrl.setSessionToken}
+                      value={session.sessionToken}
+                      onChange={session.setSessionToken}
                       profile={activeProfile}
                     />
                   </div>
-                  {ctrl.plan ? (
+                  {planCtrl.plan ? (
                     <div className="mt-3 border-t border-zinc-200 pt-3 dark:border-zinc-800">
                       <div className="flex items-center justify-between">
                         <span className="ls-label">latest plan</span>
                       </div>
                       <div className="mt-1.5">
-                        <ProportionBar counts={ctrl.plan.counts} />
+                        <ProportionBar counts={planCtrl.plan.counts} />
                       </div>
                       <div className="mt-2">
-                        <PlanLegend counts={ctrl.plan.counts} />
+                        <PlanLegend counts={planCtrl.plan.counts} />
                       </div>
                       <p className="mt-2 ls-mono text-[10px] text-zinc-500">
-                        {ctrl.plan.totalFiles.toLocaleString()} files ·{" "}
-                        {formatBytes(ctrl.plan.totalBytes)} · {ctrl.plan.skipped} skipped
+                        {planCtrl.plan.totalFiles.toLocaleString()} files ·{" "}
+                        {formatBytes(planCtrl.plan.totalBytes)} · {planCtrl.plan.skipped} skipped
                       </p>
                     </div>
                   ) : null}
-                  {ctrl.doctorResult ? (
+                  {planCtrl.doctorResult ? (
                     <div className="mt-3 border-t border-zinc-200 pt-3 dark:border-zinc-800">
                       <p className="ls-label mb-1">doctor</p>
                       <div className="max-h-32 overflow-auto">
-                        <DoctorCheckList result={ctrl.doctorResult} />
+                        <DoctorCheckList result={planCtrl.doctorResult} />
                       </div>
                     </div>
                   ) : null}
                 </section>
               </div>
             ) : null}
-            {tab === "plan" && ctrl.plan ? (
+            {tab === "plan" && planCtrl.plan ? (
               <section className="ls-surface mx-auto flex h-full max-w-2xl flex-col p-3">
                 <h2 className="mb-2 text-sm font-semibold tracking-tight">Review changes</h2>
-                <PlanList ctrl={ctrl} className="min-h-0 flex-1" />
+                <PlanList plan={planCtrl} className="min-h-0 flex-1" />
               </section>
             ) : null}
-            {tab === "log" ? <LogPanel ctrl={ctrl} /> : null}
+            {tab === "log" ? <LogPanel run={run} /> : null}
           </div>
         </div>
       ) : null}
 
-      {showWorkspace ? <CommandDock ctrl={ctrl} /> : null}
+      {showWorkspace ? (
+        <CommandDock session={session} plan={planCtrl} run={run} />
+      ) : null}
     </div>
   );
 }
@@ -215,8 +223,8 @@ function TabBtn({
   );
 }
 
-function LogPanel({ ctrl }: { ctrl: LockstepController }) {
-  const { logs, running } = ctrl;
+function LogPanel({ run }: { run: RunController }) {
+  const { logs, running } = run;
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = ref.current;
@@ -244,19 +252,27 @@ function LogPanel({ ctrl }: { ctrl: LockstepController }) {
   );
 }
 
-function CommandDock({ ctrl }: { ctrl: LockstepController }) {
+function CommandDock({
+  session,
+  plan: planCtrl,
+  run,
+}: {
+  session: SessionController;
+  plan: PlanController;
+  run: RunController;
+}) {
+  const { activeProfile, screen, setScreen } = session;
+  const { plan, pipelineProgress } = planCtrl;
   const {
-    activeProfile,
-    plan,
     running,
     runProgress,
-    pipelineProgress,
+    runLabel,
     handleDoctor,
     handlePlan,
     handlePush,
     handlePrune,
-    setScreen,
-  } = ctrl;
+    handleCancel,
+  } = run;
   const clockActive = isElapsedClockActive(running, runProgress.startedAt, runProgress.endedAt);
   const now = useNow(clockActive);
   const hasProfile = !!activeProfile;
@@ -266,7 +282,7 @@ function CommandDock({ ctrl }: { ctrl: LockstepController }) {
   const states = [
     {
       done: hasProfile,
-      active: !hasProfile || ctrl.screen === "profile",
+      active: !hasProfile || screen === "profile",
       disabled: false,
       onClick: () => setScreen("profile"),
     },
@@ -278,7 +294,7 @@ function CommandDock({ ctrl }: { ctrl: LockstepController }) {
     },
     {
       done: pipelineProgress.reviewed,
-      active: ctrl.screen === "plan" && !running,
+      active: screen === "plan" && !running,
       disabled: !hasPlan,
       onClick: () => plan && setScreen("plan"),
     },
@@ -343,7 +359,7 @@ function CommandDock({ ctrl }: { ctrl: LockstepController }) {
             <button
               type="button"
               className="ls-btn ls-btn-danger h-6"
-              onClick={() => void ctrl.handleCancel()}
+              onClick={() => void handleCancel()}
             >
               Cancel
             </button>
@@ -376,7 +392,7 @@ function CommandDock({ ctrl }: { ctrl: LockstepController }) {
       <div className="shrink-0 px-3">
         <SyncLine
           action={runProgress.currentAction}
-          path={runProgress.currentPath ?? ctrl.runLabel}
+          path={runProgress.currentPath ?? runLabel}
           counter={counter}
           idle={idle}
           running={running}

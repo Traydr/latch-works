@@ -54,6 +54,7 @@
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.9",
     "@latch-works/lockstep-core": "workspace:*",
+    "@latch-works/media-domain": "workspace:*",
     "better-result": "^2.8.1",
     "electron-squirrel-startup": "^1.0.1",
     "lucide-react": "^0.562.0",
