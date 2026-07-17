@@ -77,6 +77,15 @@ function parseDefaults(record: Record<string, unknown>): LockstepConfigDefaults 
     defaults.maxChanges = record.maxChanges;
   }
 
+  if (
+    typeof record.uploadConcurrency === "number" &&
+    Number.isInteger(record.uploadConcurrency) &&
+    record.uploadConcurrency >= 1 &&
+    record.uploadConcurrency <= 8
+  ) {
+    defaults.uploadConcurrency = record.uploadConcurrency;
+  }
+
   return defaults;
 }
 
@@ -123,6 +132,7 @@ export function configFromOptions(options: {
   maxChanges?: number;
   showSkipped: boolean;
   source?: string;
+  uploadConcurrency?: number;
 }): LockstepConfig {
   return {
     apiUrl: options.apiUrl,
@@ -132,6 +142,7 @@ export function configFromOptions(options: {
       hashFiles: options.hashFiles,
       maxChanges: options.maxChanges,
       showSkipped: options.showSkipped,
+      uploadConcurrency: options.uploadConcurrency,
     },
   };
 }

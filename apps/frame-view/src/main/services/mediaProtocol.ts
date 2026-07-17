@@ -205,7 +205,7 @@ async function fetchThumbnail(
   try {
     const service = thumbnailService;
     if (!service) {
-      return fetchMediaFile(new Request('frameview-media://media'), mediaPath);
+      return new Response('Thumbnail service unavailable', { status: 503 });
     }
 
     const result = await service.getThumbnail(mediaPath, thumbSize, abortSignal, priority);
@@ -215,7 +215,7 @@ async function fetchThumbnail(
       return new Response(null, { status: 204 });
     }
 
-    return fetchMediaFile(new Request('frameview-media://media'), mediaPath);
+    return new Response('Thumbnail generation failed', { status: 500 });
   }
 }
 
@@ -275,6 +275,30 @@ export async function authorizeMediaRoot(rootPath: string): Promise<void> {
 
   const canonicalRoot = await toCanonicalPath(rootPath);
   authorizedMediaRoots.add(canonicalRoot);
+}
+
+/** Keep only the most specific authorized root that contains `mediaPath`. */
+export async function shrinkAuthorizedMediaRootsTo(mediaPath: string): Promise<void> {
+  if (authorizedMediaRoots.size === 0) {
+    return;
+  }
+
+  const canonicalMediaPath = await toCanonicalPath(mediaPath);
+  const matchingRoots = [...authorizedMediaRoots].filter((authorizedRoot) =>
+    isPathWithinRoot(canonicalMediaPath, authorizedRoot),
+  );
+  if (matchingRoots.length === 0) {
+    return;
+  }
+
+  matchingRoots.sort((left, right) => right.length - left.length);
+  const retainedRoot = matchingRoots[0];
+  if (!retainedRoot) {
+    return;
+  }
+
+  authorizedMediaRoots.clear();
+  authorizedMediaRoots.add(retainedRoot);
 }
 
 export async function clearThumbnailCache(): Promise<void> {

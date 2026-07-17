@@ -54,4 +54,25 @@ describe('mediaProtocol helpers', () => {
     expect(parseThumbnailPriority('100')).toBe(2);
     expect(parseThumbnailPriority('wat')).toBe(0);
   });
+
+  it('shrinks authorized roots to the most specific matching root', async () => {
+    const {
+      authorizeMediaRoot,
+      isAuthorizedMediaPath,
+      shrinkAuthorizedMediaRootsTo,
+    } = await import('../../../src/main/services/mediaProtocol');
+
+    const rootA = process.platform === 'win32' ? 'C:\\gallery-a' : '/tmp/gallery-a';
+    const rootB = process.platform === 'win32' ? 'C:\\gallery-b' : '/tmp/gallery-b';
+    const nested = process.platform === 'win32' ? 'C:\\gallery-a\\nested' : '/tmp/gallery-a/nested';
+
+    await authorizeMediaRoot(rootA);
+    await authorizeMediaRoot(rootB);
+    expect(await isAuthorizedMediaPath(nested)).toBe(true);
+    expect(await isAuthorizedMediaPath(rootB)).toBe(true);
+
+    await shrinkAuthorizedMediaRootsTo(nested);
+    expect(await isAuthorizedMediaPath(nested)).toBe(true);
+    expect(await isAuthorizedMediaPath(rootB)).toBe(false);
+  });
 });

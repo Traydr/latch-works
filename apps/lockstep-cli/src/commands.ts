@@ -134,6 +134,7 @@ export async function executeCommand(
         maxChanges: options.maxChanges,
         plan,
         sourceRoot: options.source,
+        uploadConcurrency: options.uploadConcurrency,
       },
       observer,
     );

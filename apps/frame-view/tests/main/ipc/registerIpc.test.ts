@@ -47,6 +47,7 @@ const getThumbnailDiagnostics = vi.fn(() => null);
 const getThumbnailWorkerCapabilities = vi.fn(() => null);
 const isAuthorizedMediaPath = vi.fn();
 const setThumbnailDebugOptions = vi.fn();
+const shrinkAuthorizedMediaRootsTo = vi.fn();
 
 vi.mock('../../../src/main/services/mediaProtocol', () => ({
   authorizeMediaRoot,
@@ -55,6 +56,7 @@ vi.mock('../../../src/main/services/mediaProtocol', () => ({
   getThumbnailWorkerCapabilities,
   isAuthorizedMediaPath,
   setThumbnailDebugOptions,
+  shrinkAuthorizedMediaRootsTo,
 }));
 
 describe('registerIpc', () => {
@@ -70,6 +72,7 @@ describe('registerIpc', () => {
     clearThumbnailCache.mockReset();
     isAuthorizedMediaPath.mockReset();
     setThumbnailDebugOptions.mockReset();
+    shrinkAuthorizedMediaRootsTo.mockReset();
     vi.resetModules();
   });
 
@@ -209,12 +212,42 @@ describe('registerIpc', () => {
     expect(showItemInFolder).not.toHaveBeenCalled();
   });
 
+  it('rejects scan starts for paths that were not authorized via the folder dialog', async () => {
+    const { catalogService, mainWindow } = await setup();
+    const scanStart = handlers.get('scan:start');
+
+    resolveFolderPath.mockResolvedValue(Result.ok('C:\\untrusted'));
+    isAuthorizedMediaPath.mockResolvedValue(false);
+
+    const response = await scanStart?.(
+      {},
+      {
+        rootPath: 'C:\\untrusted',
+        recursive: false,
+        filters: DEFAULT_SETTINGS.filters,
+      },
+    );
+    const result = deserializeIpcResult(response, z.undefined(), 'scan:start');
+
+    expect(Result.isError(result)).toBe(true);
+    expect(Result.isError(result) ? result.error._tag : null).toBe('ValidationError');
+    expect(authorizeMediaRoot).not.toHaveBeenCalled();
+    expect(shrinkAuthorizedMediaRootsTo).not.toHaveBeenCalled();
+    expect(catalogService.startScan).not.toHaveBeenCalled();
+    expect(mainWindow.webContents.send).toHaveBeenCalledWith('scan:event', {
+      type: 'error',
+      message: 'Folder path is not authorized. Open a folder with the native dialog first.',
+      path: 'C:\\untrusted',
+    });
+  });
+
   it('emits a scan error when the catalog service fails to start a scan', async () => {
     const { catalogService, mainWindow } = await setup();
     const scanStart = handlers.get('scan:start');
 
     resolveFolderPath.mockResolvedValue(Result.ok('C:\\resolved'));
-    authorizeMediaRoot.mockResolvedValue(undefined);
+    isAuthorizedMediaPath.mockResolvedValue(true);
+    shrinkAuthorizedMediaRootsTo.mockResolvedValue(undefined);
     catalogService.startScan.mockResolvedValue(
       Result.err(
         new WorkerError({
@@ -236,6 +269,8 @@ describe('registerIpc', () => {
     const result = deserializeIpcResult(response, z.undefined(), 'scan:start');
 
     expect(Result.isError(result)).toBe(true);
+    expect(authorizeMediaRoot).not.toHaveBeenCalled();
+    expect(shrinkAuthorizedMediaRootsTo).toHaveBeenCalledWith('C:\\resolved');
     expect(mainWindow.webContents.send).toHaveBeenCalledWith('scan:event', {
       type: 'error',
       message: 'Scan failed: worker crashed',

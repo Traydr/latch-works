@@ -142,6 +142,8 @@ export class ProfileService {
       if (encrypted) {
         profile.encryptedToken = encrypted;
       } else {
+        // Do not persist a plaintext or stale encrypted blob when OS encryption is unavailable.
+        delete profile.encryptedToken;
         this.sessionTokens.set(profile.id, input.token);
       }
     }
@@ -184,6 +186,8 @@ export class ProfileService {
       if (encrypted) {
         profile.encryptedToken = encrypted;
       } else {
+        // Clear any previously persisted ciphertext so a later restart cannot revive a stale token.
+        delete profile.encryptedToken;
         this.sessionTokens.set(profileId, patch.token);
       }
     }
@@ -197,6 +201,7 @@ export class ProfileService {
   }
 
   async deleteProfile(profileId: string): Promise<ResultType<LockstepSettings, FileSystemError>> {
+    this.sessionTokens.delete(profileId);
     this.state.profiles = this.state.profiles.filter((profile) => profile.id !== profileId);
     if (this.state.activeProfileId === profileId) {
       this.state.activeProfileId = this.state.profiles[0]?.id ?? null;

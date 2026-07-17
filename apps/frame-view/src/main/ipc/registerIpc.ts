@@ -18,6 +18,7 @@ import {
   getThumbnailWorkerCapabilities,
   isAuthorizedMediaPath,
   setThumbnailDebugOptions,
+  shrinkAuthorizedMediaRootsTo,
 } from '../services/mediaProtocol';
 import type { MediaToolsService } from '../services/mediaToolsService';
 import type { SettingsService } from '../services/settingsService';
@@ -151,7 +152,22 @@ export function registerIpc(
       return validationFailure('scan:start', 'Invalid folder path');
     }
 
-    await authorizeMediaRoot(resolvedRoot);
+    const authorized = await isAuthorizedMediaPath(resolvedRoot);
+    if (!authorized) {
+      if (!mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('scan:event', {
+          type: 'error',
+          message: 'Folder path is not authorized. Open a folder with the native dialog first.',
+          path: resolvedRoot,
+        });
+      }
+      return validationFailure(
+        'scan:start',
+        'Folder path is not authorized. Open a folder with the native dialog first.',
+      );
+    }
+
+    await shrinkAuthorizedMediaRootsTo(resolvedRoot);
 
     const settings = settingsService.getSettings();
     if (settings.rememberLastFolder) {

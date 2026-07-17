@@ -12,10 +12,26 @@ import {
 import { hashLocalFile, postJson, pushMediaItem } from "./remote-api.js";
 import type { LockstepObserver, LockstepPlan, PushChangesOptions } from "./types.js";
 
+const DEFAULT_UPLOAD_CONCURRENCY = 3;
+const MIN_UPLOAD_CONCURRENCY = 1;
+const MAX_UPLOAD_CONCURRENCY = 8;
+
 function throwIfAborted(signal?: AbortSignal): void {
   if (signal?.aborted) {
     throw signal.reason ?? new DOMException("Aborted", "AbortError");
   }
+}
+
+export function resolveUploadConcurrency(value: number | undefined): number {
+  if (value === undefined) {
+    return DEFAULT_UPLOAD_CONCURRENCY;
+  }
+  if (!Number.isInteger(value) || value < MIN_UPLOAD_CONCURRENCY || value > MAX_UPLOAD_CONCURRENCY) {
+    throw new RangeError(
+      `uploadConcurrency must be an integer between ${MIN_UPLOAD_CONCURRENCY} and ${MAX_UPLOAD_CONCURRENCY}`,
+    );
+  }
+  return value;
 }
 
 export async function pushChanges(
@@ -24,6 +40,7 @@ export async function pushChanges(
 ): Promise<{ failed: number; plan: LockstepPlan; pushed: number }> {
   const { signal } = options;
   throwIfAborted(signal);
+  const uploadConcurrency = resolveUploadConcurrency(options.uploadConcurrency);
 
   const plan =
     options.plan ??
@@ -101,67 +118,77 @@ export async function pushChanges(
   let pushed = 0;
   let failed = 0;
   let cancelled = false;
+  let abortError: unknown;
+
+  const workItems = itemsToPush.map((item, index) => ({
+    current: index + 1,
+    item,
+  }));
 
   try {
-    for (const [index, item] of itemsToPush.entries()) {
-      throwIfAborted(signal);
-
-      const current = index + 1;
-      try {
+    await runBoundedQueue({
+      concurrency: uploadConcurrency,
+      signal,
+      tasks: workItems,
+      work: async ({ current, item }) => {
         if (!item.local) {
-          continue;
+          return;
         }
 
-        const local = await resolvePushItemHash({
-          cache: hashCache,
-          current,
-          item: item.local,
-          observer,
-          signal,
-          sourceRoot: plan.sourceRoot,
-          total: itemsToPush.length,
-        });
-        await pushMediaItem({
-          apiToken: options.apiToken,
-          apiUrl: options.apiUrl,
-          item: local,
-          onStage: (stage, detail) => {
-            observer?.onEvent({
-              type: "status",
-              message: `[${current}/${itemsToPush.length}] ${stage} ${item.path}${detail ? ` (${detail})` : ""}`,
-            });
-          },
-          signal,
-          sourceRoot: plan.sourceRoot,
-          syncRunId: syncRun.syncRunId,
-        });
-        pushed += 1;
-        observer?.onEvent({
-          type: "item-success",
-          action: item.action,
-          current,
-          path: item.path,
-          total: itemsToPush.length,
-        });
-      } catch (error) {
-        if (signal?.aborted) {
-          cancelled = true;
-          throw error;
+        try {
+          const local = await resolvePushItemHash({
+            cache: hashCache,
+            current,
+            item: item.local,
+            observer,
+            signal,
+            sourceRoot: plan.sourceRoot,
+            total: itemsToPush.length,
+          });
+          await pushMediaItem({
+            apiToken: options.apiToken,
+            apiUrl: options.apiUrl,
+            item: local,
+            onStage: (stage, detail) => {
+              observer?.onEvent({
+                type: "status",
+                message: `[${current}/${itemsToPush.length}] ${stage} ${item.path}${detail ? ` (${detail})` : ""}`,
+              });
+            },
+            signal,
+            sourceRoot: plan.sourceRoot,
+            syncRunId: syncRun.syncRunId,
+          });
+          pushed += 1;
+          observer?.onEvent({
+            type: "item-success",
+            action: item.action,
+            current,
+            path: item.path,
+            total: itemsToPush.length,
+          });
+        } catch (error) {
+          if (signal?.aborted) {
+            cancelled = true;
+            abortError = error;
+            throw error;
+          }
+          failed += 1;
+          observer?.onEvent({
+            type: "item-failure",
+            action: item.action,
+            current,
+            error: formatPushError(error),
+            path: item.path,
+            total: itemsToPush.length,
+          });
         }
-        failed += 1;
-        observer?.onEvent({
-          type: "item-failure",
-          action: item.action,
-          current,
-          error: formatPushError(error),
-          path: item.path,
-          total: itemsToPush.length,
-        });
-      }
-    }
+      },
+    });
   } catch (error) {
     if (signal?.aborted) {
       cancelled = true;
+      abortError = abortError ?? error;
     } else {
       throw error;
     }
@@ -212,7 +239,7 @@ export async function pushChanges(
         status: "cancelled",
       },
     });
-    throw signal?.reason ?? new DOMException("Aborted", "AbortError");
+    throw abortError ?? signal?.reason ?? new DOMException("Aborted", "AbortError");
   }
 
   const summary = {
@@ -226,6 +253,102 @@ export async function pushChanges(
 
   observer?.onEvent({ type: "complete", summary });
   return { failed, plan, pushed };
+}
+
+async function runBoundedQueue<T>({
+  concurrency,
+  signal,
+  tasks,
+  work,
+}: {
+  concurrency: number;
+  signal?: AbortSignal;
+  tasks: T[];
+  work: (task: T) => Promise<void>;
+}): Promise<void> {
+  let nextIndex = 0;
+  let active = 0;
+  let settled = false;
+  let firstError: unknown;
+
+  await new Promise<void>((resolve, reject) => {
+    const fail = (error: unknown): void => {
+      if (!settled) {
+        settled = true;
+        reject(error);
+      }
+    };
+
+    const settleIfDone = (): void => {
+      if (settled) {
+        return;
+      }
+      if (active === 0 && (nextIndex >= tasks.length || signal?.aborted)) {
+        settled = true;
+        if (signal?.aborted) {
+          reject(firstError ?? signal.reason ?? new DOMException("Aborted", "AbortError"));
+          return;
+        }
+        resolve();
+      }
+    };
+
+    const schedule = (): void => {
+      if (settled) {
+        return;
+      }
+
+      if (signal?.aborted) {
+        settleIfDone();
+        return;
+      }
+
+      while (active < concurrency && nextIndex < tasks.length) {
+        if (signal?.aborted) {
+          break;
+        }
+
+        const task = tasks[nextIndex++];
+        if (task === undefined) {
+          break;
+        }
+
+        active += 1;
+        void work(task)
+          .catch((error) => {
+            if (signal?.aborted) {
+              firstError = firstError ?? error;
+            } else if (!settled) {
+              // Unexpected non-abort failures from the worker wrapper should fail the queue.
+              // Per-item failures are handled inside `work` and should not reject.
+              firstError = firstError ?? error;
+              fail(error);
+            }
+          })
+          .finally(() => {
+            active -= 1;
+            if (settled) {
+              return;
+            }
+            if (signal?.aborted) {
+              settleIfDone();
+              return;
+            }
+            schedule();
+            settleIfDone();
+          });
+      }
+
+      settleIfDone();
+    };
+
+    if (tasks.length === 0) {
+      resolve();
+      return;
+    }
+
+    schedule();
+  });
 }
 
 async function resolvePushItemHash({

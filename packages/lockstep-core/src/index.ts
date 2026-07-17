@@ -2,7 +2,7 @@ export { doctor } from "./doctor.js";
 export { formatBytes, formatPushError } from "./format.js";
 export { planSync } from "./plan-sync.js";
 export { pruneDeleted } from "./prune-deleted.js";
-export { pushChanges } from "./push-changes.js";
+export { pushChanges, resolveUploadConcurrency } from "./push-changes.js";
 export {
   resolveHashFiles,
   resolveHashMode,

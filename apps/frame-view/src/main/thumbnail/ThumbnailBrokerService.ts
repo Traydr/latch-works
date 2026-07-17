@@ -559,7 +559,11 @@ export class ThumbnailBrokerService {
     }
 
     const task = this.requestIdToTask.get(message.requestId);
-    worker.activeRequestId = null;
+    // Only clear the active slot when this response matches the current request.
+    // A late response for a cancelled request must not free a newer in-flight job.
+    if (message.requestId === worker.activeRequestId) {
+      worker.activeRequestId = null;
+    }
 
     if (!task) {
       this.pumpQueue(worker.kind);
