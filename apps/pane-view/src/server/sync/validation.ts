@@ -27,8 +27,8 @@ export type SyncObjectValidationResult =
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/i;
 
-/** Conservative default when no deployment-specific upload ceiling is configured. */
-export const MAX_SYNC_UPLOAD_BYTES = 10 * 1024 * 1024 * 1024;
+/** S3 single-PUT object size limit (multipart required above this). */
+export const MAX_SYNC_UPLOAD_BYTES = 5 * 1024 * 1024 * 1024;
 
 export function validateUploadSize(size: unknown): string | null {
   if (size === undefined || size === null) {

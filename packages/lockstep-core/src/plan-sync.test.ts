@@ -122,6 +122,37 @@ describe("planSync hash modes", () => {
     );
   });
 
+  it("hashes equal-size case-only path matches on remote-aware plans", async () => {
+    tempDir = await mkdtemp(path.join(os.tmpdir(), "lockstep-plan-sync-case-"));
+    const sourceRoot = path.join(tempDir, "archive");
+    const nested = path.join(sourceRoot, "SFW");
+    const cacheRoot = path.join(tempDir, "cache");
+    const snapshotPath = path.join(tempDir, "snapshot.json");
+    await mkdir(nested, { recursive: true });
+    await writeFile(path.join(nested, "Photo.JPG"), "new!");
+    await writeFile(
+      snapshotPath,
+      JSON.stringify([{ path: "sfw/photo.jpg", sha256: sha256("old!"), size: 4 }]),
+      "utf-8",
+    );
+    const events: LockstepRunEvent[] = [];
+
+    const plan = await planSync(
+      {
+        hashCacheRoot: cacheRoot,
+        hashMode: "remote-aware",
+        remoteSnapshotPath: snapshotPath,
+        sourceRoot,
+      },
+      { onEvent: (event) => events.push(event) },
+    );
+
+    expect(hashedPaths(events)).toEqual(new Set(["SFW/Photo.JPG"]));
+    expect(plan.counts).toEqual({ delete: 0, keep: 0, update: 1, upload: 0 });
+    expect(plan.items[0]?.action).toBe("update");
+    expect(plan.items[0]?.local?.sha256).toBe(sha256("new!"));
+  });
+
   async function createFixture() {
     tempDir = await mkdtemp(path.join(os.tmpdir(), "lockstep-plan-sync-"));
     const sourceRoot = path.join(tempDir, "archive");

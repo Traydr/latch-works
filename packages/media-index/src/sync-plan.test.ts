@@ -60,4 +60,26 @@ describe("createSyncPlan", () => {
     expect(plan.items).toHaveLength(1);
     expect(plan.items[0]?.action).toBe("keep");
   });
+
+  it("updates when case-only path matches differ by hash", () => {
+    const plan = createSyncPlan(
+      [
+        {
+          id: "a",
+          path: "SFW/Photo.JPG",
+          parentPath: "SFW",
+          name: "Photo.JPG",
+          extension: "jpg",
+          mediaType: "image",
+          size: 10,
+          mtimeMs: 1,
+          sha256: "newhash",
+        },
+      ],
+      [{ path: "sfw/photo.jpg", size: 10, sha256: "oldhash" }],
+    );
+
+    expect(plan.counts).toEqual({ upload: 0, update: 1, keep: 0, delete: 0 });
+    expect(plan.items[0]?.action).toBe("update");
+  });
 });
