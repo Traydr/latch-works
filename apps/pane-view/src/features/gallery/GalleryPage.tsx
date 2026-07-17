@@ -1,13 +1,4 @@
-import {
-  type BrowserEntry,
-  buildBrowserEntries,
-  buildComicEntries,
-  type ComicEntry,
-  createRandomSeed,
-  type GallerySortMode,
-  sortComicEntries,
-  sortMediaItems,
-} from "@latch-works/media-domain";
+import type { BrowserEntry, ComicEntry } from "@latch-works/media-domain";
 import { getRouteApi } from "@tanstack/react-router";
 import { Archive, ChevronUp, PanelRightClose, PanelRightOpen, Search } from "lucide-react";
 import { type FormEvent, Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -26,42 +17,29 @@ import { SidebarTrigger } from "@/components/ui/sidebar";
 import { ComicReader } from "@/features/comics/ComicReader";
 import {
   buildBreadcrumbItems,
-  canUseFolderBrowseModes,
   displayPathFromSearch,
-  type GalleryBrowseSearch,
   getParentPath,
-  isTextInputTarget,
 } from "@/features/gallery/browse-search";
 import { FloatingToolbar } from "@/features/gallery/FloatingToolbar";
 import { GalleryBrowsePane } from "@/features/gallery/GalleryBrowsePane";
 import { GalleryGridSkeleton } from "@/features/gallery/GalleryGridSkeleton";
-import {
-  mergeLibraryMedia,
-  toLibrarySnapshotNextPageRequest,
-} from "@/features/gallery/gallery-page-helpers";
 import { useGalleryShell } from "@/features/gallery/gallery-shell-context";
 import { MediaViewerModal } from "@/features/gallery/MediaViewerModal";
-import { GALLERY_STATE_DEFAULTS, useGalleryState } from "@/features/gallery/useGalleryState";
+import { useGalleryBrowse } from "@/features/gallery/useGalleryBrowse";
+import { useGalleryKeyboard } from "@/features/gallery/useGalleryKeyboard";
+import { useGalleryPreferences } from "@/features/gallery/useGalleryPreferences";
 import { useGalleryViewerHandoff } from "@/features/gallery/useGalleryViewerHandoff";
 import { useWindowedThumbnailResolution } from "@/features/gallery/useWindowedThumbnailResolution";
 import {
   toLibrarySnapshotRequest,
   useDeleteLibraryEntryMutation,
-  useGalleryListingQuery,
   useInvalidateLibrarySnapshot,
-  useLibrarySnapshotQuery,
 } from "@/features/library/library-queries";
-import { getGalleryListing, getLibrarySnapshot } from "@/features/library/library-service";
 import { HotkeyOverlay } from "@/features/settings/HotkeyOverlay";
 import { SettingsDrawer } from "@/features/settings/SettingsDrawer";
-import {
-  resolveRootKey,
-  useAppSettings,
-  useRootPreferences,
-} from "@/features/settings/useAppSettings";
+import { useAppSettings } from "@/features/settings/useAppSettings";
 import { useHydrated } from "@/hooks/use-hydrated";
 import { useIsMobile } from "@/hooks/use-mobile";
-import type { LibraryMediaItem, MediaPage } from "@/server/library/types";
 
 const galleryIndexRoute = getRouteApi("/_gallery/");
 
@@ -74,11 +52,7 @@ export function GalleryPage() {
   const displayPath = displayPathFromSearch(search.path);
   const { setOpenSettingsHandler } = useGalleryShell();
 
-  const persisted = useGalleryState();
-  const { isReady: galleryStateReady } = persisted;
   const { settings, updateSettings } = useAppSettings();
-  const rootKey = resolveRootKey(displayPath);
-  const { savePreferences: saveRootPreferences } = useRootPreferences(rootKey);
   const isMobile = useIsMobile();
 
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -86,31 +60,34 @@ export function GalleryPage() {
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [pathSheetOpen, setPathSheetOpen] = useState(false);
   const [activeComic, setActiveComic] = useState<ComicEntry | null>(null);
-
-  const [recursive, setRecursive] = useState(search.recursive ?? GALLERY_STATE_DEFAULTS.recursive);
-  const [comicMode, setComicMode] = useState(search.comic ?? GALLERY_STATE_DEFAULTS.comicMode);
-  const [detailPanelOpen, setDetailPanelOpen] = useState(GALLERY_STATE_DEFAULTS.detailPanelOpen);
-  const [sortMode, setSortMode] = useState<GallerySortMode>(GALLERY_STATE_DEFAULTS.sortMode);
-  const [randomSeed, setRandomSeed] = useState(() => createRandomSeed());
-  const [selectedId, setSelectedId] = useState<string | null>(search.media ?? null);
   const [searchDraft, setSearchDraft] = useState(search.q ?? "");
   const [focusedEntryIndex, setFocusedEntryIndex] = useState(0);
   const [scrollFocusedIntoView, setScrollFocusedIntoView] = useState(false);
   const [deletingEntryIds, setDeletingEntryIds] = useState<ReadonlySet<string>>(() => new Set());
   const [deletedEntryIds, setDeletedEntryIds] = useState<ReadonlySet<string>>(() => new Set());
-  const [extraMedia, setExtraMedia] = useState<LibraryMediaItem[]>([]);
-  const [extraListingEntries, setExtraListingEntries] = useState<BrowserEntry[]>([]);
-  const [extraListingMedia, setExtraListingMedia] = useState<LibraryMediaItem[]>([]);
-  const [mediaPage, setMediaPage] = useState<MediaPage | null>(null);
-  const [listingPage, setListingPage] = useState<MediaPage | null>(null);
-  const [listingCursor, setListingCursor] = useState<string | null>(null);
-  const [loadingMoreMedia, setLoadingMoreMedia] = useState(false);
-  const [hasRestoredGalleryPrefs, setHasRestoredGalleryPrefs] = useState(false);
 
-  const folderModesEnabled = canUseFolderBrowseModes(search.path);
-  const effectiveComicMode = folderModesEnabled && comicMode;
-  const effectiveRecursive = folderModesEnabled && (recursive || effectiveComicMode);
-  const recursiveToggleDisabled = !folderModesEnabled;
+  const {
+    buildBrowseSearch,
+    detailPanelOpen,
+    effectiveComicMode,
+    effectiveRecursive,
+    randomSeed,
+    recursive,
+    recursiveToggleDisabled,
+    selectedId,
+    setComicMode,
+    setDetailPanelOpen,
+    setRecursive,
+    setSelectedId,
+    setSortMode,
+    shuffle,
+    sortMode,
+  } = useGalleryPreferences({
+    displayPath,
+    hydrated,
+    navigate,
+    search,
+  });
 
   const snapshotRequest = useMemo(
     () => ({
@@ -143,141 +120,46 @@ export function GalleryPage() {
       sortMode,
     ],
   );
-  const usesServerListing = !effectiveComicMode;
-  const { data: library, isFetching } = useLibrarySnapshotQuery(snapshotRequest);
+
   const {
-    data: listing,
-    isFetching: isListingFetching,
-    isPlaceholderData: isListingPlaceholderData,
-  } = useGalleryListingQuery(listingRequest);
-  const showFetching = hydrated && (isFetching || (usesServerListing && isListingFetching));
+    allMedia,
+    browseKey,
+    entries,
+    handleLoadMoreMedia,
+    isReady,
+    library,
+    loadingMoreMedia,
+    mediaPage,
+    showFetching,
+    visibleMedia,
+  } = useGalleryBrowse({
+    displayPath,
+    effectiveComicMode,
+    effectiveRecursive,
+    hydrated,
+    listingRequest,
+    showImages: settings.showImages,
+    showVideos: settings.showVideos,
+    snapshotRequest,
+  });
 
-  const listingBrowseKey = useMemo(
-    () =>
-      [
-        listingRequest.path ?? "",
-        listingRequest.query ?? "",
-        listingRequest.recursive,
-        listingRequest.randomSeed,
-        listingRequest.showImages,
-        listingRequest.showVideos,
-        listingRequest.sortMode,
-      ].join("|"),
-    [listingRequest],
-  );
-
-  const browseKey = useMemo(
-    () =>
-      [
-        snapshotRequest.path ?? "",
-        snapshotRequest.query ?? "",
-        snapshotRequest.recursive,
-        snapshotRequest.comicMode,
-      ].join("|"),
-    [
-      snapshotRequest.comicMode,
-      snapshotRequest.path,
-      snapshotRequest.query,
-      snapshotRequest.recursive,
-    ],
-  );
-
-  const thumbnailResetKey = `${browseKey}|${listingBrowseKey}|${String(usesServerListing)}`;
   const { resolvedThumbnailUrls, handleWindowedEntriesChange } =
-    useWindowedThumbnailResolution(thumbnailResetKey);
+    useWindowedThumbnailResolution(browseKey);
 
   const { viewerOpen, viewerItems, viewerLockedMediaId, openViewer, closeViewer } =
     useGalleryViewerHandoff(setSelectedId);
 
   const showDetailPanel = !isMobile && detailPanelOpen;
-
-  const buildBrowseSearch = useCallback(
-    (patch: {
-      comic?: boolean;
-      media?: string;
-      path?: string;
-      q?: string;
-      recursive?: boolean;
-    }): GalleryBrowseSearch => {
-      const nextPath = patch.path ?? displayPath;
-      const nextFolderModesEnabled = canUseFolderBrowseModes(nextPath);
-
-      return {
-        comic: nextFolderModesEnabled ? (patch.comic ?? comicMode) || undefined : undefined,
-        media: patch.media,
-        path: nextPath,
-        q: patch.q ?? search.q,
-        recursive: nextFolderModesEnabled ? (patch.recursive ?? recursive) || undefined : undefined,
-      };
-    },
-    [comicMode, displayPath, recursive, search.q],
-  );
+  const columnCountRef = useRef(4);
 
   useEffect(() => {
     setOpenSettingsHandler(() => setSettingsOpen(true));
     return () => setOpenSettingsHandler(null);
   }, [setOpenSettingsHandler]);
 
-  // Redirect to persisted path on first visit if URL has no path.
-  useEffect(() => {
-    if (!search.path && persisted.lastPath) {
-      void navigate({
-        search: buildBrowseSearch({
-          media: undefined,
-          path: persisted.lastPath,
-        }),
-        to: "/",
-      });
-    }
-  }, []);
-
   useEffect(() => {
     setSearchDraft(search.q ?? "");
   }, [search.q]);
-
-  useEffect(() => {
-    setExtraMedia([]);
-    setExtraListingEntries([]);
-    setExtraListingMedia([]);
-    setMediaPage(null);
-    setListingPage(null);
-    setListingCursor(null);
-    setLoadingMoreMedia(false);
-  }, [browseKey, listingBrowseKey, usesServerListing]);
-
-  useEffect(() => {
-    if (!library || usesServerListing) {
-      return;
-    }
-
-    setMediaPage(library.mediaPage);
-  }, [browseKey, library, usesServerListing]);
-
-  useEffect(() => {
-    if (!listing || !usesServerListing || isListingPlaceholderData) {
-      return;
-    }
-
-    setListingPage({
-      hasMore: listing.page.hasMore,
-      limit: listing.page.limit,
-      nextOffset: null,
-      offset: 0,
-    });
-    setListingCursor(listing.page.cursor);
-  }, [isListingPlaceholderData, listing, listingBrowseKey, usesServerListing]);
-
-  const allMedia = useMemo(() => {
-    if (usesServerListing) {
-      return mergeLibraryMedia(listing?.media ?? [], extraListingMedia);
-    }
-
-    if (!library) {
-      return [];
-    }
-
-    return mergeLibraryMedia(library.media, extraMedia);
-  }, [extraListingMedia, extraMedia, library, listing?.media, usesServerListing]);
 
   useEffect(() => {
     if (!library) {
@@ -296,76 +178,7 @@ export function GalleryPage() {
 
       return nextSelectedId;
     });
-  }, [allMedia, library, search.media]);
-
-  useEffect(() => {
-    if (displayPath === "" && recursive) {
-      setRecursive(false);
-    }
-    if (displayPath === "" && comicMode) {
-      setComicMode(false);
-    }
-  }, [comicMode, displayPath, recursive]);
-
-  const sortedMedia = useMemo(
-    () =>
-      usesServerListing || allMedia.length === 0
-        ? allMedia
-        : sortMediaItems(allMedia, sortMode, randomSeed),
-    [allMedia, randomSeed, sortMode, usesServerListing],
-  );
-  const filteredMedia = useMemo(
-    () =>
-      usesServerListing
-        ? sortedMedia
-        : sortedMedia.filter((item) => {
-            if (item.mediaType === "video" && !settings.showVideos) {
-              return false;
-            }
-
-            if ((item.mediaType === "image" || item.mediaType === "gif") && !settings.showImages) {
-              return false;
-            }
-
-            return true;
-          }),
-    [settings.showImages, settings.showVideos, sortedMedia, usesServerListing],
-  );
-  const visibleMedia = filteredMedia;
-  const navigableMedia = useMemo(
-    () => visibleMedia.filter((item) => !deletedEntryIds.has(item.id)),
-    [deletedEntryIds, visibleMedia],
-  );
-  const comics = useMemo(() => {
-    if (!effectiveComicMode || !library) {
-      return [];
-    }
-
-    const groupedComics = buildComicEntries(visibleMedia, displayPath || null, {
-      folders: library.allFolders,
-      leafFoldersOnly: true,
-    });
-    return sortComicEntries(groupedComics, sortMode, randomSeed);
-  }, [effectiveComicMode, displayPath, library, randomSeed, sortMode, visibleMedia]);
-  const clientEntries = useMemo(
-    () =>
-      library
-        ? buildBrowserEntries({
-            folders: library.folders,
-            comics,
-            items: visibleMedia,
-            recursive: effectiveRecursive,
-            comicMode: effectiveComicMode,
-            sortMode,
-          })
-        : [],
-    [comics, effectiveComicMode, effectiveRecursive, library, sortMode, visibleMedia],
-  );
-  const listingEntries = useMemo(
-    () => [...(listing?.entries ?? []), ...extraListingEntries],
-    [extraListingEntries, listing?.entries],
-  );
-  const entries = usesServerListing ? listingEntries : clientEntries;
+  }, [allMedia, library, search.media, setSelectedId]);
 
   useEffect(() => {
     setFocusedEntryIndex((currentIndex) => {
@@ -376,6 +189,11 @@ export function GalleryPage() {
       return Math.min(currentIndex, entries.length - 1);
     });
   }, [entries]);
+
+  const navigableMedia = useMemo(
+    () => visibleMedia.filter((item) => !deletedEntryIds.has(item.id)),
+    [deletedEntryIds, visibleMedia],
+  );
 
   const selected =
     visibleMedia.find((item) => item.id === (viewerLockedMediaId ?? selectedId)) ??
@@ -401,286 +219,6 @@ export function GalleryPage() {
     });
   }, [allMedia, library]);
 
-  useEffect(() => {
-    if (!hydrated || !galleryStateReady || hasRestoredGalleryPrefs) {
-      return;
-    }
-
-    if (search.recursive === undefined) {
-      setRecursive(persisted.recursive);
-    }
-
-    if (search.comic === undefined) {
-      setComicMode(persisted.comicMode);
-    }
-
-    setDetailPanelOpen(persisted.detailPanelOpen);
-    setSortMode(persisted.sortMode);
-    setHasRestoredGalleryPrefs(true);
-  }, [
-    galleryStateReady,
-    hasRestoredGalleryPrefs,
-    hydrated,
-    persisted.comicMode,
-    persisted.detailPanelOpen,
-    persisted.recursive,
-    persisted.sortMode,
-    search.comic,
-    search.recursive,
-  ]);
-
-  // Persist state changes.
-  useEffect(() => {
-    if (!hydrated || !hasRestoredGalleryPrefs) {
-      return;
-    }
-
-    persisted.setLastPath(displayPath);
-  }, [displayPath, hasRestoredGalleryPrefs, hydrated, persisted.setLastPath]);
-
-  useEffect(() => {
-    if (!hydrated || !hasRestoredGalleryPrefs) {
-      return;
-    }
-
-    persisted.setLastSelectedId(selectedId);
-  }, [hasRestoredGalleryPrefs, hydrated, persisted.setLastSelectedId, selectedId]);
-
-  useEffect(() => {
-    if (!hydrated || !hasRestoredGalleryPrefs) {
-      return;
-    }
-
-    persisted.setRecursive(recursive);
-  }, [hasRestoredGalleryPrefs, hydrated, persisted.setRecursive, recursive]);
-
-  useEffect(() => {
-    if (!hydrated || !hasRestoredGalleryPrefs) {
-      return;
-    }
-
-    saveRootPreferences({
-      comicMode: effectiveComicMode,
-      recursive: effectiveRecursive,
-      sortMode,
-    });
-  }, [
-    effectiveComicMode,
-    effectiveRecursive,
-    hasRestoredGalleryPrefs,
-    hydrated,
-    saveRootPreferences,
-    sortMode,
-  ]);
-
-  useEffect(() => {
-    if (!hydrated || !hasRestoredGalleryPrefs) {
-      return;
-    }
-
-    persisted.setComicMode(comicMode);
-  }, [comicMode, hasRestoredGalleryPrefs, hydrated, persisted.setComicMode]);
-
-  useEffect(() => {
-    if (!hydrated || !hasRestoredGalleryPrefs) {
-      return;
-    }
-
-    persisted.setSortMode(sortMode);
-  }, [hasRestoredGalleryPrefs, hydrated, persisted.setSortMode, sortMode]);
-
-  useEffect(() => {
-    if (!hydrated || !hasRestoredGalleryPrefs) {
-      return;
-    }
-
-    persisted.setDetailPanelOpen(detailPanelOpen);
-  }, [detailPanelOpen, hasRestoredGalleryPrefs, hydrated, persisted.setDetailPanelOpen]);
-
-  useEffect(() => {
-    const urlRecursive = search.recursive ?? false;
-    const urlComic = search.comic ?? false;
-    const nextRecursive = folderModesEnabled ? recursive : false;
-    const nextComic = folderModesEnabled ? comicMode : false;
-
-    if (urlRecursive === nextRecursive && urlComic === nextComic) {
-      return;
-    }
-
-    void navigate({
-      search: buildBrowseSearch({}),
-      to: "/",
-      replace: true,
-      resetScroll: false,
-    });
-  }, [
-    buildBrowseSearch,
-    comicMode,
-    folderModesEnabled,
-    navigate,
-    recursive,
-    search.comic,
-    search.recursive,
-  ]);
-
-  // Keyboard shortcuts — gallery owns browse keys; MediaViewerModal owns viewer keys.
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (settingsOpen || hotkeysOpen || mobileSearchOpen || pathSheetOpen) {
-        if (event.key === "Escape") {
-          setSettingsOpen(false);
-          setHotkeysOpen(false);
-          setMobileSearchOpen(false);
-          setPathSheetOpen(false);
-        }
-        return;
-      }
-
-      if (isTextInputTarget(event.target)) {
-        return;
-      }
-
-      if (event.key === "?") {
-        event.preventDefault();
-        setHotkeysOpen(true);
-        return;
-      }
-
-      if (viewerOpen) {
-        return;
-      }
-
-      handleGalleryKeyDown(event);
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [
-    displayPath,
-    entries,
-    focusedEntryIndex,
-    hotkeysOpen,
-    mobileSearchOpen,
-    pathSheetOpen,
-    settingsOpen,
-    viewerOpen,
-  ]);
-
-  const handleGalleryKeyDown = (event: KeyboardEvent) => {
-    if (event.metaKey || event.ctrlKey || event.altKey) {
-      return;
-    }
-
-    const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
-
-    // Folder navigation with Shift (check before plain WASD).
-    if (event.shiftKey) {
-      if (key === "w") {
-        event.preventDefault();
-        const parent = getParentPath(displayPath);
-        navigateToPath(parent ?? "");
-        return;
-      }
-      if (key === "s") {
-        event.preventDefault();
-        const entry = entries[focusedEntryIndex];
-        if (entry?.kind === "folder") {
-          navigateToPath(entry.path);
-        }
-        return;
-      }
-      if (key === "a") {
-        event.preventDefault();
-        navigateSiblingFolder(-1);
-        return;
-      }
-      if (key === "d") {
-        event.preventDefault();
-        navigateSiblingFolder(1);
-        return;
-      }
-    }
-
-    // Navigation.
-    if (key === "ArrowRight" || key === "d") {
-      event.preventDefault();
-      moveGridFocus(1, 0);
-      return;
-    }
-    if (key === "ArrowLeft" || key === "a") {
-      event.preventDefault();
-      moveGridFocus(-1, 0);
-      return;
-    }
-    if (key === "ArrowDown" || key === "s") {
-      event.preventDefault();
-      moveGridFocus(0, 1);
-      return;
-    }
-    if (key === "ArrowUp" || key === "w") {
-      event.preventDefault();
-      moveGridFocus(0, -1);
-      return;
-    }
-
-    // Activate.
-    if (key === "Enter" || key === "f") {
-      event.preventDefault();
-      const entry = entries[focusedEntryIndex];
-      if (entry) {
-        handleActivateEntry(entry);
-      }
-      return;
-    }
-  };
-
-  const columnCountRef = useRef(4);
-
-  const moveGridFocus = (dx: number, dy: number) => {
-    if (!entries.length) {
-      return;
-    }
-
-    const columnCount = columnCountRef.current;
-    const currentRow = Math.floor(focusedEntryIndex / columnCount);
-    const currentCol = focusedEntryIndex % columnCount;
-
-    const nextRow = currentRow + dy;
-    const nextCol = currentCol + dx;
-    const nextIndex = nextRow * columnCount + nextCol;
-
-    if (nextIndex < 0 || nextIndex >= entries.length) {
-      if (entries.length === 0) {
-        return;
-      }
-
-      const wrappedIndex =
-        nextIndex < 0 ? entries.length - 1 : nextIndex >= entries.length ? 0 : nextIndex;
-      setFocusedEntryIndex(wrappedIndex);
-      setScrollFocusedIntoView(true);
-      const wrappedEntry = entries[wrappedIndex];
-      if (wrappedEntry?.kind === "media") {
-        selectMedia(wrappedEntry.media.id);
-      } else if (wrappedEntry?.kind === "comic") {
-        selectMedia(wrappedEntry.comic.cover.id);
-      }
-      return;
-    }
-
-    if (nextIndex >= 0 && nextIndex < entries.length) {
-      setFocusedEntryIndex(nextIndex);
-      setScrollFocusedIntoView(true);
-      const entry = entries[nextIndex];
-      if (entry?.kind === "media") {
-        selectMedia(entry.media.id);
-      } else if (entry?.kind === "comic") {
-        selectMedia(entry.comic.cover.id);
-      }
-    }
-  };
-
   const navigateToPath = useCallback(
     (path: string) => {
       const nextRecursive = path === "" ? false : recursive;
@@ -697,26 +235,88 @@ export function GalleryPage() {
         to: "/",
       });
     },
-    [buildBrowseSearch, navigate, recursive],
+    [buildBrowseSearch, navigate, recursive, setRecursive],
   );
 
-  const navigateSiblingFolder = (offset: -1 | 1) => {
-    if (!library) {
-      return;
-    }
+  const navigateSiblingFolder = useCallback(
+    (offset: -1 | 1) => {
+      if (!library) {
+        return;
+      }
 
-    const siblings = library.folders;
-    const currentIndex = siblings.findIndex((f) => f.path === displayPath);
-    if (currentIndex < 0) {
-      return;
-    }
+      const siblings = library.folders;
+      const currentIndex = siblings.findIndex((f) => f.path === displayPath);
+      if (currentIndex < 0) {
+        return;
+      }
 
-    const nextIndex = (currentIndex + offset + siblings.length) % siblings.length;
-    const next = siblings[nextIndex];
-    if (next) {
-      navigateToPath(next.path);
-    }
-  };
+      const nextIndex = (currentIndex + offset + siblings.length) % siblings.length;
+      const next = siblings[nextIndex];
+      if (next) {
+        navigateToPath(next.path);
+      }
+    },
+    [displayPath, library, navigateToPath],
+  );
+
+  const selectMedia = useCallback(
+    (mediaId: string) => {
+      setSelectedId(mediaId);
+      void navigate({
+        search: buildBrowseSearch({
+          media: mediaId,
+        }),
+        to: "/",
+        replace: true,
+        resetScroll: false,
+      });
+    },
+    [buildBrowseSearch, navigate, setSelectedId],
+  );
+
+  const handleActivateEntry = useCallback(
+    (entry: BrowserEntry) => {
+      if (entry.kind === "folder") {
+        navigateToPath(entry.path);
+      } else if (entry.kind === "comic") {
+        setActiveComic(entry.comic);
+      } else {
+        openViewer(visibleMedia, entry.media.id);
+      }
+    },
+    [navigateToPath, openViewer, visibleMedia],
+  );
+
+  const closeOverlays = useCallback(() => {
+    setSettingsOpen(false);
+    setHotkeysOpen(false);
+    setMobileSearchOpen(false);
+    setPathSheetOpen(false);
+  }, []);
+
+  const openHotkeys = useCallback(() => {
+    setHotkeysOpen(true);
+  }, []);
+
+  useGalleryKeyboard({
+    columnCountRef,
+    displayPath,
+    entries,
+    focusedEntryIndex,
+    hotkeysOpen,
+    mobileSearchOpen,
+    onActivateEntry: handleActivateEntry,
+    onCloseOverlays: closeOverlays,
+    onNavigateSiblingFolder: navigateSiblingFolder,
+    onNavigateToPath: navigateToPath,
+    onOpenHotkeys: openHotkeys,
+    onSelectMedia: selectMedia,
+    pathSheetOpen,
+    setFocusedEntryIndex,
+    setScrollFocusedIntoView,
+    settingsOpen,
+    viewerOpen,
+  });
 
   const submitSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -728,18 +328,6 @@ export function GalleryPage() {
         q: nextQuery || undefined,
       }),
       to: "/",
-    });
-  };
-
-  const selectMedia = (mediaId: string) => {
-    setSelectedId(mediaId);
-    void navigate({
-      search: buildBrowseSearch({
-        media: mediaId,
-      }),
-      to: "/",
-      replace: true,
-      resetScroll: false,
     });
   };
 
@@ -803,11 +391,6 @@ export function GalleryPage() {
     })();
   };
 
-  const shuffle = () => {
-    setSortMode("random");
-    setRandomSeed(createRandomSeed());
-  };
-
   const handleSelectEntry = (entry: BrowserEntry) => {
     const entryIndex = entries.findIndex((candidate) => candidate.key === entry.key);
     if (entryIndex >= 0) {
@@ -823,77 +406,10 @@ export function GalleryPage() {
     }
   };
 
-  const handleActivateEntry = (entry: BrowserEntry) => {
-    if (entry.kind === "folder") {
-      navigateToPath(entry.path);
-    } else if (entry.kind === "comic") {
-      setActiveComic(entry.comic);
-    } else {
-      openViewer(visibleMedia, entry.media.id);
-    }
-  };
-
   const breadcrumbs = useMemo(() => buildBreadcrumbItems(displayPath), [displayPath]);
   const archiveRoot = library?.archiveRoot ?? "Synced archive";
   const currentFolderName = breadcrumbs[breadcrumbs.length - 1]?.label ?? archiveRoot;
   const parentPath = getParentPath(displayPath);
-
-  const loadMoreMedia = useCallback(async () => {
-    if (usesServerListing) {
-      if (!listingPage?.hasMore || !listingCursor || loadingMoreMedia) {
-        return;
-      }
-
-      setLoadingMoreMedia(true);
-      try {
-        const nextListing = await getGalleryListing({
-          data: {
-            ...listingRequest,
-            cursor: listingCursor,
-          },
-        });
-        setExtraListingMedia((current) => mergeLibraryMedia(current, nextListing.media));
-        setExtraListingEntries((current) => [...current, ...nextListing.entries]);
-        setListingPage({
-          hasMore: nextListing.page.hasMore,
-          limit: nextListing.page.limit,
-          nextOffset: null,
-          offset: 0,
-        });
-        setListingCursor(nextListing.page.cursor);
-      } finally {
-        setLoadingMoreMedia(false);
-      }
-      return;
-    }
-
-    if (!mediaPage?.hasMore || mediaPage.nextOffset === null || loadingMoreMedia) {
-      return;
-    }
-
-    setLoadingMoreMedia(true);
-    try {
-      const nextSnapshot = await getLibrarySnapshot({
-        data: toLibrarySnapshotNextPageRequest(snapshotRequest, mediaPage.nextOffset),
-      });
-      setExtraMedia((current) => mergeLibraryMedia(current, nextSnapshot.media));
-      setMediaPage(nextSnapshot.mediaPage);
-    } finally {
-      setLoadingMoreMedia(false);
-    }
-  }, [
-    listingCursor,
-    listingPage,
-    listingRequest,
-    loadingMoreMedia,
-    mediaPage,
-    snapshotRequest,
-    usesServerListing,
-  ]);
-
-  const handleLoadMoreMedia = useCallback(() => {
-    void loadMoreMedia();
-  }, [loadMoreMedia]);
 
   return (
     <>
@@ -1040,7 +556,7 @@ export function GalleryPage() {
       </header>
 
       <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-        {library && (!usesServerListing || listing) ? (
+        {isReady ? (
           <GalleryBrowsePane
             columnCountRef={columnCountRef}
             comicMode={effectiveComicMode}
@@ -1050,7 +566,7 @@ export function GalleryPage() {
             focusedEntryIndex={focusedEntryIndex}
             isFetching={showFetching}
             loadingMoreMedia={loadingMoreMedia}
-            mediaPage={usesServerListing ? listingPage : mediaPage}
+            mediaPage={mediaPage}
             onActivateEntry={handleActivateEntry}
             onDelete={deleteSelectedMedia}
             onLoadMoreMedia={handleLoadMoreMedia}
@@ -1069,7 +585,7 @@ export function GalleryPage() {
             selected={selected}
             selectedId={viewerLockedMediaId ?? selectedId}
             showDetailPanel={showDetailPanel}
-            paginationResetKey={usesServerListing ? listingBrowseKey : browseKey}
+            paginationResetKey={browseKey}
             thumbnailSize={settings.thumbnailSize}
           />
         ) : (

@@ -117,6 +117,10 @@ export function useGalleryState() {
       (lastSelectedId: string | null) => updateState({ lastSelectedId }),
       [updateState],
     ),
+    setPreferences: useCallback(
+      (patch: Partial<PersistedState>) => updateState(patch),
+      [updateState],
+    ),
     setRecursive: useCallback((recursive: boolean) => updateState({ recursive }), [updateState]),
     setSortMode: useCallback(
       (sortMode: GallerySortMode) => updateState({ sortMode }),

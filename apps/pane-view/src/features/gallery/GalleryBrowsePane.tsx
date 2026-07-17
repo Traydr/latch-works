@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { BrowserGrid } from "@/features/gallery/BrowserGrid";
 import { DetailPanel } from "@/features/gallery/DetailPanel";
 import { cn } from "@/lib/utils";
-import type { MediaPage } from "@/server/library/types";
+import type { MediaPage } from "@/features/library/types";
 
 export interface GalleryBrowsePaneProps {
   columnCountRef: MutableRefObject<number>;

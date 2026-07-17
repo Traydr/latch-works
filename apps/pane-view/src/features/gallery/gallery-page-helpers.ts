@@ -1,7 +1,18 @@
-import type { MediaItem } from "@latch-works/media-domain";
+import type {
+  BrowserEntry,
+  FolderNode,
+  GallerySortMode,
+  MediaItem,
+} from "@latch-works/media-domain";
+import {
+  buildBrowserEntries,
+  buildComicEntries,
+  sortComicEntries,
+  sortMediaItems,
+} from "@latch-works/media-domain";
 import type { GalleryThumbnailRequest } from "@/features/gallery/batched-thumbnail-resolver";
 import type { LibrarySnapshotRequest } from "@/features/library/library-queries";
-import type { LibraryMediaItem } from "@/server/library/types";
+import type { GalleryBrowsePage, LibraryMediaItem, MediaPage } from "@/features/library/types";
 
 export function mergeLibraryMedia(
   base: readonly LibraryMediaItem[],
@@ -77,4 +88,152 @@ export function areThumbnailRequestsEqual(
     (request, index) =>
       request.mediaId === right[index]?.mediaId && request.size === right[index]?.size,
   );
+}
+
+/** Convert snapshot MediaPage into the unified browse page shape. */
+export function browsePageFromMediaPage(mediaPage: MediaPage): GalleryBrowsePage {
+  return {
+    cursor: null,
+    hasMore: mediaPage.hasMore,
+    limit: mediaPage.limit,
+    nextOffset: mediaPage.nextOffset,
+  };
+}
+
+/** Convert listing cursor page into the unified browse page shape. */
+export function browsePageFromListingPage(page: {
+  cursor: string | null;
+  hasMore: boolean;
+  limit: number;
+}): GalleryBrowsePage {
+  return {
+    cursor: page.cursor,
+    hasMore: page.hasMore,
+    limit: page.limit,
+    nextOffset: null,
+  };
+}
+
+/** MediaPage-shaped view for GalleryBrowsePane (only `hasMore` is required at call sites). */
+export function mediaPageFromBrowsePage(page: GalleryBrowsePage | null): MediaPage | null {
+  if (!page) {
+    return null;
+  }
+
+  return {
+    hasMore: page.hasMore,
+    limit: page.limit,
+    nextOffset: page.nextOffset,
+    offset: 0,
+  };
+}
+
+export function buildBrowseKey(parts: {
+  comicMode: boolean;
+  path: string | undefined;
+  query: string | undefined;
+  randomSeed?: number;
+  recursive: boolean;
+  showImages?: boolean;
+  showVideos?: boolean;
+  sortMode?: GallerySortMode;
+  /** When true, include listing-only sort/filter seed fields. */
+  includeListingFields: boolean;
+}): string {
+  const base = [parts.path ?? "", parts.query ?? "", parts.recursive, parts.comicMode];
+  if (!parts.includeListingFields) {
+    return base.join("|");
+  }
+
+  return [
+    ...base,
+    parts.randomSeed ?? 0,
+    parts.showImages ?? true,
+    parts.showVideos ?? true,
+    parts.sortMode ?? "name-asc",
+  ].join("|");
+}
+
+export function filterMediaByVisibility(
+  media: readonly LibraryMediaItem[],
+  options: { showImages: boolean; showVideos: boolean },
+): LibraryMediaItem[] {
+  return media.filter((item) => {
+    if (item.mediaType === "video" && !options.showVideos) {
+      return false;
+    }
+
+    if ((item.mediaType === "image" || item.mediaType === "gif") && !options.showImages) {
+      return false;
+    }
+
+    return true;
+  });
+}
+
+/**
+ * Resolve visible media for the unified browse model.
+ * Listing mode trusts server sort/filter; comic mode sorts and filters client-side.
+ */
+export function resolveBrowseMedia(input: {
+  comicMode: boolean;
+  extraMedia: readonly LibraryMediaItem[];
+  listingMedia: readonly LibraryMediaItem[] | undefined;
+  randomSeed: number;
+  showImages: boolean;
+  showVideos: boolean;
+  snapshotMedia: readonly LibraryMediaItem[] | undefined;
+  sortMode: GallerySortMode;
+}): LibraryMediaItem[] {
+  const base = input.comicMode ? (input.snapshotMedia ?? []) : (input.listingMedia ?? []);
+  const merged = mergeLibraryMedia(base, input.extraMedia);
+
+  if (!input.comicMode || merged.length === 0) {
+    return merged;
+  }
+
+  const sorted = sortMediaItems(merged, input.sortMode, input.randomSeed);
+  return filterMediaByVisibility(sorted, {
+    showImages: input.showImages,
+    showVideos: input.showVideos,
+  });
+}
+
+/**
+ * Resolve grid entries: listing appends server pages; comic post-processes media into entries.
+ */
+export function resolveBrowseEntries(input: {
+  allFolders: readonly FolderNode[] | undefined;
+  comicMode: boolean;
+  displayPath: string;
+  extraEntries: readonly BrowserEntry[];
+  folders: readonly FolderNode[] | undefined;
+  listingEntries: readonly BrowserEntry[] | undefined;
+  randomSeed: number;
+  recursive: boolean;
+  sortMode: GallerySortMode;
+  visibleMedia: readonly LibraryMediaItem[];
+}): BrowserEntry[] {
+  if (!input.comicMode) {
+    return [...(input.listingEntries ?? []), ...input.extraEntries];
+  }
+
+  if (!input.folders) {
+    return [];
+  }
+
+  const groupedComics = buildComicEntries(input.visibleMedia, input.displayPath || null, {
+    folders: input.allFolders ?? [],
+    leafFoldersOnly: true,
+  });
+  const comics = sortComicEntries(groupedComics, input.sortMode, input.randomSeed);
+
+  return buildBrowserEntries({
+    folders: input.folders,
+    comics,
+    items: input.visibleMedia,
+    recursive: input.recursive,
+    comicMode: true,
+    sortMode: input.sortMode,
+  });
 }
