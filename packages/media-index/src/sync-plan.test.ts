@@ -37,4 +37,49 @@ describe("createSyncPlan", () => {
 
     expect(plan.counts).toEqual({ upload: 0, update: 1, keep: 1, delete: 1 });
   });
+
+  it("treats case-only path differences as the same identity", () => {
+    const plan = createSyncPlan(
+      [
+        {
+          id: "a",
+          path: "SFW/Photo.JPG",
+          parentPath: "SFW",
+          name: "Photo.JPG",
+          extension: "jpg",
+          mediaType: "image",
+          size: 10,
+          mtimeMs: 1,
+          sha256: "aaa",
+        },
+      ],
+      [{ path: "sfw/photo.jpg", size: 10, sha256: "aaa" }],
+    );
+
+    expect(plan.counts).toEqual({ upload: 0, update: 0, keep: 1, delete: 0 });
+    expect(plan.items).toHaveLength(1);
+    expect(plan.items[0]?.action).toBe("keep");
+  });
+
+  it("updates when case-only path matches differ by hash", () => {
+    const plan = createSyncPlan(
+      [
+        {
+          id: "a",
+          path: "SFW/Photo.JPG",
+          parentPath: "SFW",
+          name: "Photo.JPG",
+          extension: "jpg",
+          mediaType: "image",
+          size: 10,
+          mtimeMs: 1,
+          sha256: "newhash",
+        },
+      ],
+      [{ path: "sfw/photo.jpg", size: 10, sha256: "oldhash" }],
+    );
+
+    expect(plan.counts).toEqual({ upload: 0, update: 1, keep: 0, delete: 0 });
+    expect(plan.items[0]?.action).toBe("update");
+  });
 });

@@ -19,7 +19,13 @@ vi.mock("pdfjs-dist", () => ({
 
 vi.mock("pdfjs-dist/build/pdf.worker.min.mjs?url", () => ({ default: "pdf-worker" }));
 
-import { PdfViewer, getPdfPageRenderWindow, resolveVisiblePdfPage, scrollToPdfPage } from "./PdfViewer";
+import { getDocument } from "pdfjs-dist";
+import {
+  getPdfPageRenderWindow,
+  PdfViewer,
+  resolveVisiblePdfPage,
+  scrollToPdfPage,
+} from "./PdfViewer";
 
 interface Deferred<T> {
   promise: Promise<T>;
@@ -95,12 +101,19 @@ function deferred<T>(): Deferred<T> {
   return { promise, reject, resolve };
 }
 
-function fakeDocument(pageCount: number, pendingPages = new Set<number>(), rejectedPages = new Set<number>()): FakeDocument {
+function fakeDocument(
+  pageCount: number,
+  pendingPages = new Set<number>(),
+  rejectedPages = new Set<number>(),
+): FakeDocument {
   const document: Omit<FakeDocument, "promise"> = {
     destroy: vi.fn(),
     getPage: vi.fn(async (pageNumber: number) => ({
       cleanup: vi.fn(),
-      getViewport: vi.fn(({ scale }: { scale: number }) => ({ height: 1400 * scale, width: 1000 * scale })),
+      getViewport: vi.fn(({ scale }: { scale: number }) => ({
+        height: 1400 * scale,
+        width: 1000 * scale,
+      })),
       render: vi.fn(() => {
         const task = deferred<void>();
         const renderTask: FakeRenderTask = {
@@ -134,7 +147,9 @@ async function flush(): Promise<void> {
   });
 }
 
-function mount(props: { initialPage?: number; mediaId?: string; onPageChange?: (page: number) => void } = {}) {
+function mount(
+  props: { initialPage?: number; mediaId?: string; onPageChange?: (page: number) => void } = {},
+) {
   const container = document.createElement("div");
   document.body.append(container);
   let root: Root;
@@ -186,9 +201,12 @@ describe("PdfViewer", () => {
     mocks.resizeObservers.length = 0;
     mocks.renderTasks.length = 0;
     mocks.scrollIntoView.mockReset();
+    vi.mocked(getDocument).mockClear();
     vi.stubGlobal("IntersectionObserver", FakeIntersectionObserver);
     vi.stubGlobal("ResizeObserver", FakeResizeObserver);
-    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({} as CanvasRenderingContext2D);
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(
+      {} as CanvasRenderingContext2D,
+    );
     Element.prototype.scrollIntoView = mocks.scrollIntoView;
   });
 
@@ -225,13 +243,11 @@ describe("PdfViewer", () => {
 
     expect(mocks.renderTasks.map((task) => task.pageNumber)).toEqual([1, 2, 3, 8, 9, 10, 11, 12]);
     expect(viewer.container.querySelectorAll("canvas").length).toBeLessThanOrEqual(8);
-    expect([...viewer.container.querySelectorAll("canvas")].map((canvas) => canvas.parentElement?.dataset.pageNumber)).toEqual([
-      "8",
-      "9",
-      "10",
-      "11",
-      "12",
-    ]);
+    expect(
+      [...viewer.container.querySelectorAll("canvas")].map(
+        (canvas) => canvas.parentElement?.dataset.pageNumber,
+      ),
+    ).toEqual(["8", "9", "10", "11", "12"]);
     viewer.unmount();
   });
 
@@ -246,7 +262,9 @@ describe("PdfViewer", () => {
     mocks.resizeObservers[0]?.emit();
     await flush();
 
-    expect(mocks.renderTasks.slice(0, 3).every((task) => task.cancel.mock.calls.length === 1)).toBe(true);
+    expect(mocks.renderTasks.slice(0, 3).every((task) => task.cancel.mock.calls.length === 1)).toBe(
+      true,
+    );
     expect(mocks.renderTasks.slice(3).map((task) => task.pageNumber)).toEqual([1, 2, 3]);
     mocks.renderTasks[0]?.resolve();
     await flush();
@@ -283,13 +301,31 @@ describe("PdfViewer", () => {
     expect(firstPdf.destroy).toHaveBeenCalledTimes(1);
     expect(mocks.intersectionObservers[0]?.disconnect).toHaveBeenCalledTimes(1);
     expect(mocks.resizeObservers[0]?.disconnect).toHaveBeenCalledTimes(1);
-    expect(mocks.renderTasks.slice(0, 3).every((task) => task.cancel.mock.calls.length === 1)).toBe(true);
+    expect(mocks.renderTasks.slice(0, 3).every((task) => task.cancel.mock.calls.length === 1)).toBe(
+      true,
+    );
 
     viewer.unmount();
     expect(secondPdf.destroy).toHaveBeenCalledTimes(1);
     expect(mocks.intersectionObservers[1]?.disconnect).toHaveBeenCalledTimes(1);
     expect(mocks.resizeObservers[1]?.disconnect).toHaveBeenCalledTimes(1);
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("does not reload the document when a late resume page arrives for the same media", async () => {
+    const pdf = fakeDocument(20, new Set([1, 2, 3]));
+    mocks.documents.push(pdf);
+    const viewer = mount({ mediaId: "media-a" });
+    await flush();
+    expect(vi.mocked(getDocument)).toHaveBeenCalledTimes(1);
+
+    viewer.rerender({ mediaId: "media-a", initialPage: 12 });
+    await flush();
+
+    expect(pdf.destroy).not.toHaveBeenCalled();
+    expect(vi.mocked(getDocument)).toHaveBeenCalledTimes(1);
+    expect(mocks.scrollIntoView).toHaveBeenCalledWith({ block: "start" });
+    viewer.unmount();
   });
 });
 
@@ -301,8 +337,16 @@ describe("resolveVisiblePdfPage", () => {
     pageTwo.dataset.pageNumber = "2";
     expect(
       resolveVisiblePdfPage([
-        { intersectionRatio: 0.2, isIntersecting: true, target: pageOne } as unknown as IntersectionObserverEntry,
-        { intersectionRatio: 0.8, isIntersecting: true, target: pageTwo } as unknown as IntersectionObserverEntry,
+        {
+          intersectionRatio: 0.2,
+          isIntersecting: true,
+          target: pageOne,
+        } as unknown as IntersectionObserverEntry,
+        {
+          intersectionRatio: 0.8,
+          isIntersecting: true,
+          target: pageTwo,
+        } as unknown as IntersectionObserverEntry,
       ]),
     ).toBe(2);
   });

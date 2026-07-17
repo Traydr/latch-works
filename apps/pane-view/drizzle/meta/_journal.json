@@ -78,6 +78,13 @@
       "when": 1783872120000,
       "tag": "0010_legacy_derivative_cleanup",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1784284800000,
+      "tag": "0011_serialize_sync_hard_wipe",
+      "breakpoints": true
     }
   ]
 }

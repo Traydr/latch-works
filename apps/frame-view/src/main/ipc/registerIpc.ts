@@ -18,6 +18,7 @@ import {
   getThumbnailWorkerCapabilities,
   isAuthorizedMediaPath,
   setThumbnailDebugOptions,
+  shrinkAuthorizedMediaRootsTo,
 } from '../services/mediaProtocol';
 import type { MediaToolsService } from '../services/mediaToolsService';
 import type { SettingsService } from '../services/settingsService';
@@ -151,9 +152,35 @@ export function registerIpc(
       return validationFailure('scan:start', 'Invalid folder path');
     }
 
-    await authorizeMediaRoot(resolvedRoot);
-
     const settings = settingsService.getSettings();
+    let authorized = await isAuthorizedMediaPath(resolvedRoot);
+    // Remembered folders are chosen via the native dialog, then persisted. After a restart the
+    // in-memory allowlist is empty — re-authorize the exact remembered path so auto-scan works.
+    if (
+      !authorized &&
+      settings.rememberLastFolder &&
+      settings.lastFolderPath &&
+      path.resolve(resolvedRoot) === path.resolve(settings.lastFolderPath)
+    ) {
+      await authorizeMediaRoot(resolvedRoot);
+      authorized = await isAuthorizedMediaPath(resolvedRoot);
+    }
+    if (!authorized) {
+      if (!mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('scan:event', {
+          type: 'error',
+          message: 'Folder path is not authorized. Open a folder with the native dialog first.',
+          path: resolvedRoot,
+        });
+      }
+      return validationFailure(
+        'scan:start',
+        'Folder path is not authorized. Open a folder with the native dialog first.',
+      );
+    }
+
+    await shrinkAuthorizedMediaRootsTo(resolvedRoot);
+
     if (settings.rememberLastFolder) {
       const updateResult = await settingsService.updateSettings({ lastFolderPath: resolvedRoot });
       if (Result.isError(updateResult)) {

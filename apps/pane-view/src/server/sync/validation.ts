@@ -27,6 +27,26 @@ export type SyncObjectValidationResult =
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/i;
 
+/** S3 single-PUT object size limit (multipart required above this). */
+export const MAX_SYNC_UPLOAD_BYTES = 5 * 1024 * 1024 * 1024;
+
+export function validateUploadSize(size: unknown): string | null {
+  if (size === undefined || size === null) {
+    return "size is required";
+  }
+
+  const parsed = Math.trunc(Number(size));
+  if (!Number.isSafeInteger(parsed) || parsed < 0) {
+    return "size must be a non-negative safe integer";
+  }
+
+  if (parsed > MAX_SYNC_UPLOAD_BYTES) {
+    return `size must not exceed ${MAX_SYNC_UPLOAD_BYTES} bytes`;
+  }
+
+  return null;
+}
+
 export function expectedContentTypeForExtension(extension: string): string {
   switch (extension.toLowerCase()) {
     case "jpg":
@@ -126,9 +146,13 @@ export function validateSyncObjectPayload(
     return { ok: false, error: "mtimeMs and size must be valid integers" };
   }
 
+  const sizeError = validateUploadSize(size);
+  if (sizeError) {
+    return { ok: false, error: sizeError };
+  }
+
   const derivedObjectKey = originalObjectKey({
     extension,
-    mediaType: mediaType as MediaType,
     sha256,
   });
   const objectKey = typeof body.objectKey === "string" ? body.objectKey : derivedObjectKey;

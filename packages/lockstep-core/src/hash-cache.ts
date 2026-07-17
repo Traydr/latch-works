@@ -112,7 +112,7 @@ export class HashCache {
   }
 }
 
-export function defaultHashCacheRoot(): string {
+function defaultHashCacheRoot(): string {
   return path.join(homedir(), ".latch-works", "hash-cache", `v${CACHE_VERSION}`);
 }
 

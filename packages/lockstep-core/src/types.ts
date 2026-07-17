@@ -91,6 +91,8 @@ export interface PushChangesOptions {
   remoteSnapshotPath?: string;
   signal?: AbortSignal;
   sourceRoot: string;
+  /** Bounded concurrent upload workers. Defaults to 3. Valid range: 1-8. */
+  uploadConcurrency?: number;
 }
 
 export interface PruneDeletedOptions {

@@ -1,8 +1,16 @@
 import { getBaseName, getParentPath, type MediaType } from "@latch-works/media-domain";
+import {
+  createS3StorageClient,
+  headStoredObject,
+  type S3StorageClient,
+} from "@latch-works/media-storage";
 import { and, eq, isNull } from "drizzle-orm";
+import { env } from "../../env/server";
 import { db } from "../db";
+import { acquireLibraryMutationStartupLock } from "../db/library-coordination-lock";
 import { folders, libraryEntries, mediaObjects, syncRunItems, syncRuns } from "../db/schema";
 import { assertNoActiveCleanupJob } from "../management/guards";
+import { normalizeSyncLogicalPath, validateSyncLogicalPath } from "./validation";
 
 type SyncDbClient = Pick<typeof db, "insert" | "select" | "update">;
 
@@ -62,34 +70,68 @@ export async function startSyncRun({
 }: {
   input: StartSyncRunInput;
 }): Promise<{ status: "database"; syncRunId: string }> {
-  await assertNoActiveCleanupJob();
+  const syncRunId = await db.transaction(async (tx) => {
+    await acquireLibraryMutationStartupLock(tx);
+    await assertNoActiveCleanupJob(tx);
 
-  const [syncRun] = await db
-    .insert(syncRuns)
-    .values({
-      counts: input.counts ?? {},
-      sourceRoot: input.sourceRoot,
-      status: "running",
-    })
-    .returning({ id: syncRuns.id });
+    const [syncRun] = await tx
+      .insert(syncRuns)
+      .values({
+        counts: input.counts ?? {},
+        sourceRoot: input.sourceRoot,
+        status: "running",
+      })
+      .returning({ id: syncRuns.id });
 
-  if (!syncRun) {
-    throw new Error("Unable to create sync run.");
-  }
+    if (!syncRun) {
+      throw new Error("Unable to create sync run.");
+    }
+
+    return syncRun.id;
+  });
 
   return {
     status: "database",
-    syncRunId: syncRun.id,
+    syncRunId,
   };
 }
 
 export async function completeSyncedObject({
   input,
+  storage = createS3StorageClient({
+    accessKeyId: env.S3_ACCESS_KEY_ID,
+    bucket: env.S3_BUCKET,
+    endpoint: env.S3_ENDPOINT,
+    region: env.S3_REGION,
+    secretAccessKey: env.S3_SECRET_ACCESS_KEY,
+  }),
 }: {
   input: CompleteObjectInput;
+  storage?: S3StorageClient;
 }): Promise<{ status: "database" }> {
+  await assertNoActiveCleanupJob();
+
   const parentPath = getParentPath(input.logicalPath);
   const objectKey = input.objectKey;
+  const expectedChecksum = Buffer.from(input.sha256.toLowerCase(), "hex").toString("base64");
+
+  const head = await headStoredObject({ key: objectKey, storage });
+  if (!head) {
+    throw new Error("Uploaded object was not found in storage.");
+  }
+  if (head.contentLength !== input.size) {
+    throw new Error("Uploaded object size does not match declared size.");
+  }
+  if (head.contentType && head.contentType !== input.contentType) {
+    throw new Error("Uploaded object content type does not match declared type.");
+  }
+  const metadataSha = head.metadata?.sha256?.toLowerCase();
+  if (metadataSha && metadataSha !== input.sha256.toLowerCase()) {
+    throw new Error("Uploaded object sha256 metadata does not match declared hash.");
+  }
+  if (head.checksumSHA256 && head.checksumSHA256 !== expectedChecksum) {
+    throw new Error("Uploaded object checksum does not match declared hash.");
+  }
 
   await db.transaction(async (tx) => {
     await assertWritableSyncRun(tx, input.syncRunId);
@@ -212,19 +254,27 @@ export async function markRemoteDeleted({
   logicalPath: string;
   syncRunId: string;
 }): Promise<{ status: "database" }> {
+  await assertNoActiveCleanupJob();
+
+  const normalizedPath = normalizeSyncLogicalPath(logicalPath);
+  const pathError = validateSyncLogicalPath(normalizedPath);
+  if (pathError) {
+    throw new Error(pathError);
+  }
+
   await db.transaction(async (tx) => {
     await assertWritableSyncRun(tx, syncRunId);
 
     await tx
       .update(libraryEntries)
       .set({ deletedAt: new Date() })
-      .where(eq(libraryEntries.logicalPath, logicalPath));
+      .where(eq(libraryEntries.logicalPath, normalizedPath));
 
     await tx
       .insert(syncRunItems)
       .values({
         action: "delete",
-        logicalPath,
+        logicalPath: normalizedPath,
         syncRunId,
       })
       .onConflictDoUpdate({

@@ -54,4 +54,55 @@ describe('mediaProtocol helpers', () => {
     expect(parseThumbnailPriority('100')).toBe(2);
     expect(parseThumbnailPriority('wat')).toBe(0);
   });
+
+  it('shrinks authorized roots to the most specific matching root', async () => {
+    const { authorizeMediaRoot, isAuthorizedMediaPath, shrinkAuthorizedMediaRootsTo } =
+      await import('../../../src/main/services/mediaProtocol');
+
+    const rootA = process.platform === 'win32' ? 'C:\\gallery-a' : '/tmp/gallery-a';
+    const rootB = process.platform === 'win32' ? 'C:\\gallery-b' : '/tmp/gallery-b';
+    const nested = process.platform === 'win32' ? 'C:\\gallery-a\\nested' : '/tmp/gallery-a/nested';
+
+    await authorizeMediaRoot(rootA);
+    await authorizeMediaRoot(rootB);
+    expect(await isAuthorizedMediaPath(nested)).toBe(true);
+    expect(await isAuthorizedMediaPath(rootB)).toBe(true);
+
+    await shrinkAuthorizedMediaRootsTo(nested);
+    expect(await isAuthorizedMediaPath(nested)).toBe(true);
+    expect(await isAuthorizedMediaPath(rootB)).toBe(false);
+  });
+
+  it('authorizes the remembered last folder when rememberLastFolder is enabled', async () => {
+    const { authorizeRememberedMediaRoot, isAuthorizedMediaPath } = await import(
+      '../../../src/main/services/mediaProtocol'
+    );
+
+    const remembered = process.platform === 'win32' ? 'C:\\remembered' : '/tmp/remembered';
+    const nested = process.platform === 'win32' ? 'C:\\remembered\\album' : '/tmp/remembered/album';
+
+    await authorizeRememberedMediaRoot({
+      rememberLastFolder: true,
+      lastFolderPath: remembered,
+    });
+
+    expect(await isAuthorizedMediaPath(remembered)).toBe(true);
+    expect(await isAuthorizedMediaPath(nested)).toBe(true);
+  });
+
+  it('skips remembered-folder authorization when the setting is disabled', async () => {
+    vi.resetModules();
+    const { authorizeRememberedMediaRoot, isAuthorizedMediaPath } = await import(
+      '../../../src/main/services/mediaProtocol'
+    );
+
+    const remembered = process.platform === 'win32' ? 'C:\\skipped' : '/tmp/skipped';
+
+    await authorizeRememberedMediaRoot({
+      rememberLastFolder: false,
+      lastFolderPath: remembered,
+    });
+
+    expect(await isAuthorizedMediaPath(remembered)).toBe(false);
+  });
 });

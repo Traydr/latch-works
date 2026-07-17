@@ -8,7 +8,6 @@ import {
 } from "../gather/directory-store";
 import {
   addLog,
-  clearLog,
   flashDownloadComplete,
   getPopupElements,
   restoreLog,
@@ -23,7 +22,7 @@ import {
   type LogTone,
   type PopupElements
 } from "../gather/dom";
-import { formatError } from "../gather/errors";
+import { formatError, isAbortError } from "../gather/errors";
 import type { PopupStatus } from "../gather/status";
 import {
   getSiteKeyFromUrl,
@@ -37,10 +36,17 @@ import {
   type LastRunLogEntry,
   type LastRunState
 } from "./last-run";
-import { GATHER_RUN_STATE_KEY, normalizeGatherRunState, type GatherRunState } from "./gather-run";
 import {
+  GATHER_RUN_STATE_KEY,
+  isTerminalGatherRunPhase,
+  normalizeGatherRunState,
+  type GatherRunState
+} from "./gather-run";
+import {
+  CANCEL_GATHER_RUN_REQUEST,
   RETRY_GATHER_RUN_REQUEST,
   START_GATHER_RUN_REQUEST,
+  type GatherRunCancelOutcome,
   type GatherRunResponse
 } from "./gather-run-messages";
 import { loadGatherRun } from "./gather-run-store";
@@ -53,6 +59,7 @@ interface PopupState {
   directoryHandle: FileSystemDirectoryHandle | null;
   status: PopupStatus;
   running: boolean;
+  activeRunId: string | null;
   settings: GatherBoxSettings;
   lastRun: LastRunState;
 }
@@ -74,6 +81,7 @@ export class GatherController {
     directoryHandle: null,
     status: "idle",
     running: false,
+    activeRunId: null,
     settings: {
       downloadConcurrency: 4,
       useGlobalFolder: false,
@@ -94,6 +102,15 @@ export class GatherController {
   private storageHandler:
     | ((changes: Record<string, chrome.storage.StorageChange>, areaName: string) => void)
     | null = null;
+  private tabActivatedHandler: ((activeInfo: { tabId: number; windowId: number }) => void) | null =
+    null;
+  private tabUpdatedHandler:
+    | ((
+        tabId: number,
+        changeInfo: { status?: string; url?: string },
+        tab: chrome.tabs.Tab
+      ) => void)
+    | null = null;
 
   constructor(options: GatherControllerOptions = {}) {
     this.options = options;
@@ -112,6 +129,9 @@ export class GatherController {
     });
     this.elements.downloadButton.addEventListener("click", () => {
       void this.handleDownload(true);
+    });
+    this.elements.cancelButton.addEventListener("click", () => {
+      void this.handleCancel();
     });
     this.elements.retryButton.addEventListener("click", () => {
       void this.handleRetryFailed();
@@ -167,6 +187,17 @@ export class GatherController {
     };
     chrome.storage.onChanged.addListener(this.storageHandler);
 
+    this.tabActivatedHandler = () => {
+      void this.detectActiveTab();
+    };
+    this.tabUpdatedHandler = (_tabId, changeInfo) => {
+      if (changeInfo.status === "complete" || changeInfo.url) {
+        void this.detectActiveTab();
+      }
+    };
+    chrome.tabs.onActivated.addListener(this.tabActivatedHandler);
+    chrome.tabs.onUpdated.addListener(this.tabUpdatedHandler);
+
     this.state.settings = await loadSettings();
     this.state.lastRun = await loadLastRun();
     this.logEntries = [...this.state.lastRun.log];
@@ -186,7 +217,6 @@ export class GatherController {
       this.applyGatherRun(currentRun);
     }
     this.syncPopupActions();
-
   }
 
   async refreshSettings(): Promise<void> {
@@ -206,6 +236,14 @@ export class GatherController {
     if (this.storageHandler) {
       chrome.storage.onChanged.removeListener(this.storageHandler);
       this.storageHandler = null;
+    }
+    if (this.tabActivatedHandler) {
+      chrome.tabs.onActivated.removeListener(this.tabActivatedHandler);
+      this.tabActivatedHandler = null;
+    }
+    if (this.tabUpdatedHandler) {
+      chrome.tabs.onUpdated.removeListener(this.tabUpdatedHandler);
+      this.tabUpdatedHandler = null;
     }
   }
 
@@ -313,6 +351,8 @@ export class GatherController {
       return;
     }
 
+    await this.detectActiveTab();
+
     if (!this.isSupportedTab()) {
       this.appendLog("Active tab is not a supported content page.", "error");
       this.syncPopupActions();
@@ -367,6 +407,28 @@ export class GatherController {
     } finally {
       this.state.running = false;
       this.syncPopupActions();
+    }
+  }
+
+  private async handleCancel(): Promise<void> {
+    const runId = this.state.activeRunId;
+    if (!runId) {
+      return;
+    }
+
+    try {
+      const response = await chrome.runtime.sendMessage<
+        { type: typeof CANCEL_GATHER_RUN_REQUEST; target: "background"; runId: string },
+        GatherRunCancelOutcome
+      >({ type: CANCEL_GATHER_RUN_REQUEST, target: "background", runId });
+      if (response.outcome === "cancelled") {
+        this.applyGatherRun(response.run);
+        this.appendLog("Gather Run cancelled.", "error");
+      } else if (response.outcome === "failed") {
+        this.appendLog(response.message, "error");
+      }
+    } catch (error) {
+      this.appendLog(`Could not cancel Gather Run: ${formatError(error)}`, "error");
     }
   }
 
@@ -462,13 +524,17 @@ export class GatherController {
   }
 
   private syncPopupActions(): void {
+    const runInFlight =
+      Boolean(this.state.activeRunId) &&
+      (this.state.status === "collecting" || this.state.status === "downloading");
     syncActions(
       this.elements,
-      this.isSupportedTab() && Boolean(this.state.directoryHandle) && !this.state.running,
-      this.state.running,
+      this.isSupportedTab() && Boolean(this.state.directoryHandle) && !this.state.running && !runInFlight,
+      this.state.running || runInFlight,
       Boolean(this.state.directoryHandle),
       this.state.lastRun.canRetry && this.state.lastRun.retryImages.length > 0,
-      this.state.lastRun.failedItems.length > 0
+      this.state.lastRun.failedItems.length > 0,
+      runInFlight
     );
   }
 
@@ -482,10 +548,14 @@ export class GatherController {
   }
 
   private applyGatherRun(run: GatherRunState): void {
+    this.state.activeRunId = isTerminalGatherRunPhase(run.phase) ? null : run.id;
     const status: PopupStatus =
       run.phase === "complete"
         ? "complete"
-        : run.phase === "failed" || run.phase === "interrupted" || run.phase === "permission-required"
+        : run.phase === "failed" ||
+            run.phase === "interrupted" ||
+            run.phase === "cancelled" ||
+            run.phase === "permission-required"
           ? "error"
           : run.phase === "writing"
             ? "downloading"
@@ -557,10 +627,6 @@ function resetProgress(elements: PopupElements): void {
   elements.progressBar.value = 0;
   elements.progressText.textContent = "Waiting for a supported page and folder.";
   setDestinationPreview(elements, "");
-}
-
-function isAbortError(error: unknown): boolean {
-  return typeof error === "object" && error !== null && "name" in error && error.name === "AbortError";
 }
 
 function buildErrorReport(failedItems: LastRunState["failedItems"], lastRun: LastRunState): string {

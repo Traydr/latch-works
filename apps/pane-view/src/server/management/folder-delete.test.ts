@@ -67,6 +67,12 @@ describe("softDeleteFolderSubtree", () => {
     );
   });
 
+  it("rejects folder paths with parent segments", async () => {
+    await expect(softDeleteFolderSubtree({ folderPaths: ["sfw/../other"] })).rejects.toThrow(
+      "Folder path must not contain '..' segments.",
+    );
+  });
+
   it("rejects empty folder selection", async () => {
     await expect(softDeleteFolderSubtree({ folderPaths: [] })).rejects.toThrow(
       "Select at least one folder",

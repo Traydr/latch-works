@@ -118,7 +118,9 @@ export function PdfViewer({
   const onPageChangeRef = useRef(onPageChange);
   const hasAppliedInitialPageRef = useRef(false);
   const previousMediaIdRef = useRef(mediaId);
+  const initialPageRef = useRef(initialPage);
   onPageChangeRef.current = onPageChange;
+  initialPageRef.current = initialPage;
 
   useEffect(() => {
     if (previousMediaIdRef.current !== mediaId) {
@@ -156,7 +158,8 @@ export function PdfViewer({
     let destroyLoadingTask: (() => void) | undefined;
     let renderWidth = getPageRenderWidth(container);
     let renderVersion = 0;
-    let focalPage = initialPage ?? 1;
+    // Snapshot resume page at load time; later resume updates use the scroll effect, not a reload.
+    let focalPage = initialPageRef.current ?? 1;
     const visiblePages = new Set<number>();
     const renderTasks = new Map<number, ActiveRender>();
     container.replaceChildren();
@@ -247,7 +250,9 @@ export function PdfViewer({
         setPageCount(pdf.numPages);
 
         const paintWindow = () => {
-          const desiredPages = new Set(getPdfPageRenderWindow(visiblePages, pdf.numPages, focalPage));
+          const desiredPages = new Set(
+            getPdfPageRenderWindow(visiblePages, pdf.numPages, focalPage),
+          );
           for (const pageNumber of [...renderTasks.keys()]) {
             if (!desiredPages.has(pageNumber)) {
               cancelRender(pageNumber);
@@ -279,7 +284,11 @@ export function PdfViewer({
               let renderTask: ReturnType<PDFPageProxy["render"]> | undefined;
               try {
                 page = await pdf.getPage(pageNumber);
-                if (cancelled || task !== renderTasks.get(pageNumber) || version !== renderVersion) {
+                if (
+                  cancelled ||
+                  task !== renderTasks.get(pageNumber) ||
+                  version !== renderVersion
+                ) {
                   return;
                 }
 
@@ -307,7 +316,11 @@ export function PdfViewer({
                 });
                 task.cancel = () => renderTask?.cancel();
                 await renderTask.promise;
-                if (!cancelled && task === renderTasks.get(pageNumber) && version === renderVersion) {
+                if (
+                  !cancelled &&
+                  task === renderTasks.get(pageNumber) &&
+                  version === renderVersion
+                ) {
                   slot.replaceChildren(canvas);
                 }
               } catch {
@@ -387,6 +400,8 @@ export function PdfViewer({
         clearTimeout(pageChangeTimer);
       }
     };
+    // Keep document loading keyed to mediaId only. Late-arriving resume pages are applied by the
+    // scroll effect above — including initialPage here would tear down and reload the PDF mid-view.
   }, [mediaId]);
 
   return (

@@ -1,14 +1,19 @@
 import {
   GATHER_RUN_EVENT,
+  isCancelGatherRunMessage,
   isExecuteGatherRunMessage,
   type GatherRunEvent
 } from "../shared/gather-run-messages";
 import { executeGatherOutput } from "./executor";
 import { proveOffscreenFilesystemAccess } from "./filesystem-proof";
 
-const activeRunIds = new Set<string>();
+const activeControllers = new Map<string, AbortController>();
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (!isExtensionOriginSender(sender)) {
+    return false;
+  }
+
   if (
     message?.type === "GATHER_BOX_OFFSCREEN_FILESYSTEM_PROOF" &&
     message?.target === "offscreen"
@@ -25,15 +30,24 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     );
     return true;
   }
+
+  if (isCancelGatherRunMessage(message)) {
+    const controller = activeControllers.get(message.runId);
+    controller?.abort();
+    sendResponse({ aborted: Boolean(controller) });
+    return false;
+  }
+
   if (!isExecuteGatherRunMessage(message)) {
     return false;
   }
-  if (activeRunIds.has(message.runId)) {
+  if (activeControllers.has(message.runId)) {
     sendResponse({ accepted: true, duplicate: true });
     return false;
   }
 
-  activeRunIds.add(message.runId);
+  const controller = new AbortController();
+  activeControllers.set(message.runId, controller);
   sendResponse({ accepted: true });
   let eventQueue = Promise.resolve();
   const emit = (event: GatherRunEvent): Promise<void> => {
@@ -44,7 +58,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   void executeGatherOutput({
     payload: message.payload,
     settings: message.settings,
-    emit
+    emit,
+    signal: controller.signal
   })
     .catch((error) =>
       emit({
@@ -53,7 +68,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       })
     )
     .finally(() => {
-      activeRunIds.delete(message.runId);
+      activeControllers.delete(message.runId);
     });
   return false;
 });
@@ -65,4 +80,8 @@ async function emitRunEvent(runId: string, event: GatherRunEvent): Promise<void>
     runId,
     event
   });
+}
+
+function isExtensionOriginSender(sender: chrome.runtime.MessageSender): boolean {
+  return !sender.tab && sender.id === chrome.runtime.id;
 }

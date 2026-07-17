@@ -9,6 +9,7 @@ export interface CliOptions {
   remoteSnapshot?: string;
   showSkipped: boolean;
   source?: string;
+  uploadConcurrency?: number;
   yes: boolean;
 }
 
@@ -16,6 +17,7 @@ export interface LockstepConfigDefaults {
   hashFiles?: boolean;
   maxChanges?: number;
   showSkipped?: boolean;
+  uploadConcurrency?: number;
 }
 
 export interface LockstepConfig {

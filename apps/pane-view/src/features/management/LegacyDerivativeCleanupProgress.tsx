@@ -1,5 +1,5 @@
+import { formatBytes } from "@latch-works/media-domain";
 import type { CleanupJobStatus } from "../../server/management/cleanup-worker";
-import { formatBytes } from "./format-bytes";
 
 export function LegacyDerivativeCleanupProgress({
   job,

@@ -1,4 +1,4 @@
-import type { MediaItem } from "@latch-works/media-domain";
+import { type MediaItem, normalizePathForCompare } from "@latch-works/media-domain";
 
 export interface RemoteEntrySnapshot {
   path: string;
@@ -24,12 +24,14 @@ export function createSyncPlan(
   localItems: readonly MediaItem[],
   remoteEntries: readonly RemoteEntrySnapshot[] = [],
 ): SyncPlan {
-  const remoteByPath = new Map(remoteEntries.map((entry) => [entry.path, entry]));
-  const localByPath = new Map(localItems.map((item) => [item.path, item]));
+  const remoteByPath = new Map(
+    remoteEntries.map((entry) => [normalizePathForCompare(entry.path), entry]),
+  );
+  const localByPath = new Map(localItems.map((item) => [normalizePathForCompare(item.path), item]));
   const items: SyncPlanItem[] = [];
 
   for (const local of localItems) {
-    const remote = remoteByPath.get(local.path);
+    const remote = remoteByPath.get(normalizePathForCompare(local.path));
     if (!remote) {
       items.push({ action: "upload", local, path: local.path });
       continue;
@@ -47,7 +49,7 @@ export function createSyncPlan(
   }
 
   for (const remote of remoteEntries) {
-    if (!localByPath.has(remote.path)) {
+    if (!localByPath.has(normalizePathForCompare(remote.path))) {
       items.push({ action: "delete", path: remote.path, remote });
     }
   }

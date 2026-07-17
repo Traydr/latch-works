@@ -1,5 +1,4 @@
 import {
-  formatBytes,
   type LockstepObserver,
   type LockstepPlan,
   type LockstepRunEvent,
@@ -7,9 +6,8 @@ import {
   pruneDeleted,
   pushChanges,
   doctor as runDoctorCore,
-  selectChangedItems,
-  selectDeleteItems,
 } from "@latch-works/lockstep-core";
+import { formatBytes } from "@latch-works/media-domain";
 import { isInteractiveTerminal } from "./options.js";
 import {
   createLineReporter,
@@ -134,6 +132,7 @@ export async function executeCommand(
         maxChanges: options.maxChanges,
         plan,
         sourceRoot: options.source,
+        uploadConcurrency: options.uploadConcurrency,
       },
       observer,
     );
@@ -152,8 +151,9 @@ export async function executeCommand(
   }
 
   if (options.command === "prune") {
-    const changedItems = selectChangedItems(plan.items);
-    const { items: itemsToPrune } = selectDeleteItems(changedItems, options.maxChanges);
+    const deleteItems = plan.items.filter((item) => item.action === "delete");
+    const itemsToPrune =
+      options.maxChanges === undefined ? deleteItems : deleteItems.slice(0, options.maxChanges);
 
     if (itemsToPrune.length === 0) {
       console.log("");
@@ -221,7 +221,7 @@ function printPlanSummary(plan: LockstepPlan, options: CliOptions): void {
   console.log(`  keep:   ${plan.counts.keep}`);
   console.log(`  delete: ${plan.counts.delete}`);
 
-  const changedItems = selectChangedItems(plan.items);
+  const changedItems = plan.items.filter((item) => item.action !== "keep");
   const previewCount = options.command === "push" || options.command === "prune" ? 5 : 20;
   const changedPreview = changedItems.slice(0, previewCount);
   if (changedPreview.length > 0 && options.command !== "push" && options.command !== "prune") {
@@ -236,10 +236,11 @@ function printPlanSummary(plan: LockstepPlan, options: CliOptions): void {
   }
 
   if (options.command === "prune" && plan.counts.delete > 0) {
-    const { items: deletesToApply, omittedCount } = selectDeleteItems(
-      changedItems,
-      options.maxChanges,
-    );
+    const deletesToApply =
+      options.maxChanges === undefined
+        ? changedItems.filter((item) => item.action === "delete")
+        : changedItems.filter((item) => item.action === "delete").slice(0, options.maxChanges);
+    const omittedCount = plan.counts.delete - deletesToApply.length;
     const deletePreviewLimit = 20;
     const deletePreview = deletesToApply.slice(0, deletePreviewLimit);
 

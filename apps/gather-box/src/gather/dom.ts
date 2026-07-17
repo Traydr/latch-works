@@ -13,6 +13,7 @@ export interface PopupElements {
   chooseFolder: HTMLButtonElement;
   clearFolder: HTMLButtonElement;
   downloadButton: HTMLButtonElement;
+  cancelButton: HTMLButtonElement;
   retryButton: HTMLButtonElement;
   copyErrorsButton: HTMLButtonElement;
   openSidePanelButton: HTMLButtonElement | null;
@@ -48,6 +49,7 @@ export function getPopupElements(
     chooseFolder: requireElement(document, "chooseFolder-mini", HTMLButtonElement),
     clearFolder: requireElement(document, "clearFolder-mini", HTMLButtonElement),
     downloadButton: requireElement(document, "downloadBtn-mini", HTMLButtonElement),
+    cancelButton: requireElement(document, "cancelBtn-mini", HTMLButtonElement),
     retryButton: requireElement(document, "retryBtn-mini", HTMLButtonElement),
     copyErrorsButton: requireElement(document, "copyErrorsBtn-mini", HTMLButtonElement),
     openSidePanelButton: options.includeOpenSidePanel
@@ -151,11 +153,13 @@ export function syncActions(
   running: boolean,
   hasDirectoryHandle: boolean,
   canRetry: boolean,
-  hasErrors: boolean
+  hasErrors: boolean,
+  canCancel = false
 ): void {
   elements.downloadButton.disabled = !canDownload;
   elements.chooseFolder.disabled = running;
   elements.clearFolder.disabled = running || !hasDirectoryHandle;
+  elements.cancelButton.disabled = !canCancel;
   elements.retryButton.disabled = running || !canRetry;
   elements.copyErrorsButton.disabled = running || !hasErrors;
 

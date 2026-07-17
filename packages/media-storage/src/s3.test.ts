@@ -33,7 +33,7 @@ describe("S3 storage config", () => {
 });
 
 describe("presigned PUT URLs", () => {
-  it("does not embed automatic checksum query params", async () => {
+  it("signs content length, content type, checksum, and sha metadata without hoisting", async () => {
     const storage = createS3StorageClient({
       accessKeyId: "key",
       bucket: "bucket",
@@ -42,14 +42,54 @@ describe("presigned PUT URLs", () => {
       secretAccessKey: "secret",
     });
 
-    const uploadUrl = await createSignedPutUrl({
+    const sha256 = "a".repeat(64);
+    const checksumSHA256 = Buffer.from(sha256, "hex").toString("base64");
+    const result = await createSignedPutUrl({
+      contentLength: 12,
       contentType: "image/png",
-      key: "originals/sha256/00/00/test.png",
+      key: `originals/sha256/00/00/${sha256}.png`,
+      sha256,
       storage,
     });
 
-    expect(uploadUrl).not.toContain("x-amz-checksum-crc32");
-    expect(uploadUrl).not.toContain("x-amz-sdk-checksum-algorithm");
+    const signedHeaders = new URL(result.uploadUrl).searchParams.get("X-Amz-SignedHeaders") ?? "";
+    expect(signedHeaders.split(";")).toEqual(
+      expect.arrayContaining([
+        "content-length",
+        "content-type",
+        "x-amz-checksum-sha256",
+        "x-amz-meta-sha256",
+      ]),
+    );
+    expect(result.uploadUrl).not.toContain("x-amz-checksum-sha256=");
+    expect(result.uploadUrl).not.toContain("x-amz-meta-sha256=");
+    expect(result.uploadUrl).not.toContain("x-amz-checksum-crc32");
+    expect(result.headers).toEqual({
+      "Content-Length": "12",
+      "Content-Type": "image/png",
+      "x-amz-checksum-sha256": checksumSHA256,
+      "x-amz-meta-sha256": sha256,
+    });
+  });
+
+  it("rejects invalid sha256 values before signing", async () => {
+    const storage = createS3StorageClient({
+      accessKeyId: "key",
+      bucket: "bucket",
+      endpoint: "https://storage.invalid",
+      region: "auto",
+      secretAccessKey: "secret",
+    });
+
+    await expect(
+      createSignedPutUrl({
+        contentLength: 1,
+        contentType: "image/png",
+        key: "originals/bad.png",
+        sha256: "not-a-hash",
+        storage,
+      }),
+    ).rejects.toThrow();
   });
 });
 

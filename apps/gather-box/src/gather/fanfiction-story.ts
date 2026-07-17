@@ -1,5 +1,10 @@
 import { PDF, rgb, type EmbeddedFont, type PDFPage } from "@libpdf/core";
+import { isAllowedDownloadUrl } from "../shared/download-policy";
+import type { GatherBoxSettings } from "../shared/settings";
 import type { GeneratedStoryPayload, StoryChapterReference } from "../shared/types";
+import { shouldIncludeCredentials } from "../shared/credentials";
+import { saveBlobWithoutClobbering } from "./downloader";
+import { throwIfAborted } from "./errors";
 
 const PAGE_SIZE = "letter";
 const MARGIN = 54;
@@ -18,6 +23,11 @@ export interface FanfictionStoryCallbacks {
   onChapterFetched(completed: number, total: number, chapter: StoryChapterReference): void;
   onGenerating(): void;
   onSaved(fileName: string): void;
+}
+
+export interface FanfictionStoryOptions {
+  settings?: GatherBoxSettings;
+  signal?: AbortSignal;
 }
 
 interface StoryChapterContent {
@@ -68,40 +78,58 @@ interface TextLine {
 export async function saveFanfictionStoryPdf(
   payload: GeneratedStoryPayload,
   destinationDirectory: FileSystemDirectoryHandle,
-  callbacks: FanfictionStoryCallbacks
+  callbacks: FanfictionStoryCallbacks,
+  options: FanfictionStoryOptions = {}
 ): Promise<void> {
   callbacks.onStart(payload.chapters.length);
-  const chapters = await fetchChapterContents(payload, callbacks);
+  const chapters = await fetchChapterContents(payload, callbacks, options);
 
+  throwIfAborted(options.signal);
   callbacks.onGenerating();
   const bytes = await buildStoryPdf(payload, chapters);
+  throwIfAborted(options.signal);
   const pdfBytes = new ArrayBuffer(bytes.byteLength);
   new Uint8Array(pdfBytes).set(bytes);
-  const fileHandle = await destinationDirectory.getFileHandle(payload.fileName, { create: true });
-  const writable = await fileHandle.createWritable();
-  await writable.write(new Blob([pdfBytes], { type: "application/pdf" }));
-  await writable.close();
-  callbacks.onSaved(payload.fileName);
+  const saved = await saveBlobWithoutClobbering(
+    new Blob([pdfBytes], { type: "application/pdf" }),
+    destinationDirectory,
+    payload.fileName,
+    undefined,
+    options.signal
+  );
+  callbacks.onSaved(saved.fileName);
 }
 
 export async function fetchChapterContents(
   payload: GeneratedStoryPayload,
-  callbacks: FanfictionStoryCallbacks
+  callbacks: FanfictionStoryCallbacks,
+  options: FanfictionStoryOptions = {}
 ): Promise<StoryChapterContent[]> {
   const chapters: StoryChapterContent[] = [];
   const parser = new DOMParser();
+  const credentials =
+    options.settings && shouldIncludeCredentials(payload, options.settings) ? "include" : "omit";
 
   for (const [index, chapter] of payload.chapters.entries()) {
+    throwIfAborted(options.signal);
     if (index > 0) {
-      await delay(CHAPTER_FETCH_DELAY_MS);
+      await delay(CHAPTER_FETCH_DELAY_MS, options.signal);
     }
 
-    const response = await fetch(chapter.url, { credentials: "include" });
+    if (!isAllowedDownloadUrl(payload.site, chapter.url)) {
+      throw new Error(`Failed ${chapter.label}: chapter URL is not allowed.`);
+    }
+
+    const response = await fetch(chapter.url, {
+      credentials,
+      signal: options.signal
+    });
     if (!response.ok) {
       throw new Error(`Failed ${chapter.label}: HTTP ${response.status}`);
     }
 
     const html = await response.text();
+    throwIfAborted(options.signal);
     const document = parser.parseFromString(html, "text/html");
     const storyText = document.querySelector("#storytext");
     if (!storyText) {
@@ -118,9 +146,24 @@ export async function fetchChapterContents(
   return chapters;
 }
 
-function delay(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => {
-    window.setTimeout(resolve, milliseconds);
+function delay(milliseconds: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException("The operation was aborted.", "AbortError"));
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, milliseconds);
+
+    const onAbort = (): void => {
+      window.clearTimeout(timer);
+      reject(new DOMException("The operation was aborted.", "AbortError"));
+    };
+
+    signal?.addEventListener("abort", onAbort, { once: true });
   });
 }
 

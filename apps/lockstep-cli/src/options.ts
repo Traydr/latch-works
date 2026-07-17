@@ -12,7 +12,7 @@ Usage:
   lockstep plan --source "T:\\cloud-desktop\\media" [--hash] [--remote-snapshot snapshot.json]
   lockstep plan --source "T:\\cloud-desktop\\media" --show-skipped
   lockstep verify --source "T:\\cloud-desktop\\media" --remote-snapshot snapshot.json [--hash]
-  lockstep push --source "T:\\cloud-desktop\\media" --api-url http://localhost:3000 [--hash] [--max-changes 25] [--yes]
+  lockstep push --source "T:\\cloud-desktop\\media" --api-url http://localhost:3000 [--hash] [--max-changes 25] [--upload-concurrency 3] [--yes]
   lockstep prune --source "T:\\cloud-desktop\\media" --api-url http://localhost:3000 [--max-changes 25] [--yes]
   lockstep doctor [--source "T:\\cloud-desktop\\media"]
 
@@ -21,6 +21,7 @@ Notes:
   push uploads and updates only; it never applies remote deletes.
   prune applies planned remote deletes explicitly; confirmation or --yes is required.
   API tokens are read from LOCKSTEP_API_TOKEN by default.
+  --upload-concurrency bounds parallel uploads (1-8, default 3).
   Run lockstep with no arguments for interactive mode (TTY required).
 `);
 }
@@ -77,6 +78,15 @@ export function parseArgv(argv: string[]): ParseArgvResult {
         options.maxChanges = parsePositiveInteger(rest[index + 1], "--max-changes");
         index += 1;
         break;
+      case "--upload-concurrency":
+        options.uploadConcurrency = parseBoundedInteger(
+          rest[index + 1],
+          "--upload-concurrency",
+          1,
+          8,
+        );
+        index += 1;
+        break;
       case "--show-skipped":
         options.showSkipped = true;
         break;
@@ -102,6 +112,20 @@ function parsePositiveInteger(value: string | undefined, name: string): number {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed <= 0) {
     throw new Error(`${name} must be a positive integer.`);
+  }
+
+  return parsed;
+}
+
+function parseBoundedInteger(
+  value: string | undefined,
+  name: string,
+  min: number,
+  max: number,
+): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < min || parsed > max) {
+    throw new Error(`${name} must be an integer between ${min} and ${max}.`);
   }
 
   return parsed;
@@ -175,6 +199,7 @@ export function mergeWithConfigAndEnv(
     hashFiles: options.hashFiles || defaults.hashFiles === true,
     showSkipped: options.showSkipped || defaults.showSkipped === true,
     maxChanges: options.maxChanges ?? defaults.maxChanges,
+    uploadConcurrency: options.uploadConcurrency ?? defaults.uploadConcurrency,
   };
 }
 

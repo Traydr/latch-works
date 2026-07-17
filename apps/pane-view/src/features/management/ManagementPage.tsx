@@ -1,3 +1,4 @@
+import { formatBytes } from "@latch-works/media-domain";
 import { Link } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -6,7 +7,6 @@ import { Input } from "@/components/ui/input";
 import { getLibrarySnapshot } from "../library/library-service";
 import { CleanupJobProgress } from "./CleanupJobProgress";
 import { FolderPicker } from "./FolderPicker";
-import { formatBytes } from "./format-bytes";
 import { LegacyDerivativeCleanupProgress } from "./LegacyDerivativeCleanupProgress";
 import {
   useCancelAllRunningSyncRunsMutation,

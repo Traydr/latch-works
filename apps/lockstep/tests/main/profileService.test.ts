@@ -19,6 +19,8 @@ describe("ProfileService", () => {
   beforeEach(async () => {
     tempDir = await mkdtemp(path.join(os.tmpdir(), "lockstep-profile-"));
     encryptString.mockClear();
+    const { safeStorage } = await import("electron");
+    vi.mocked(safeStorage.isEncryptionAvailable).mockReturnValue(true);
     vi.resetModules();
   });
 
@@ -96,6 +98,56 @@ describe("ProfileService", () => {
     expect(profile?.tokenUnreadable).toBe(true);
     expect(profile?.tokenInSession).toBe(false);
     expect(reloaded.getApiToken("profile-1")).toBeUndefined();
+  });
+
+  it("clears persisted encryptedToken when updating a token without OS encryption", async () => {
+    const { safeStorage } = await import("electron");
+    vi.mocked(safeStorage.isEncryptionAvailable).mockReturnValue(true);
+
+    const service = await createService();
+    const created = await service.createProfile({
+      apiUrl: "http://127.0.0.1:3000",
+      name: "Local",
+      sourceRoot: "/tmp/archive",
+      token: "old-token",
+    });
+    expect(created.status).toBe("ok");
+    if (created.status !== "ok") {
+      return;
+    }
+
+    vi.mocked(safeStorage.isEncryptionAvailable).mockReturnValue(false);
+    const updated = await service.updateProfile(created.value.id, { token: "session-token" });
+    expect(updated.status).toBe("ok");
+    expect(service.getApiToken(created.value.id)).toBe("session-token");
+
+    const raw = await readFile(path.join(tempDir, "lockstep-settings.json"), "utf-8");
+    const parsed = JSON.parse(raw) as {
+      profiles: Array<{ encryptedToken?: string; id: string }>;
+    };
+    const persisted = parsed.profiles.find((profile) => profile.id === created.value.id);
+    expect(persisted?.encryptedToken).toBeUndefined();
+  });
+
+  it("clears session tokens when deleting a profile", async () => {
+    const { safeStorage } = await import("electron");
+    vi.mocked(safeStorage.isEncryptionAvailable).mockReturnValue(false);
+
+    const service = await createService();
+    const created = await service.createProfile({
+      apiUrl: "http://127.0.0.1:3000",
+      name: "Local",
+      sourceRoot: "/tmp/archive",
+      token: "session-token",
+    });
+    expect(created.status).toBe("ok");
+    if (created.status !== "ok") {
+      return;
+    }
+
+    expect(service.getApiToken(created.value.id)).toBe("session-token");
+    await service.deleteProfile(created.value.id);
+    expect(service.getApiToken(created.value.id)).toBeUndefined();
   });
 
   it("persists profiles to lockstep-settings.json", async () => {

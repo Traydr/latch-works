@@ -9,7 +9,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import type { GalleryListingPage } from "../../server/library/gallery-listing";
 import { DEFAULT_GALLERY_LISTING_LIMIT } from "../../server/library/gallery-listing";
-import type { LibraryMediaItem, MediaPage } from "../../server/library/types";
+import type { LibraryMediaItem, MediaPage } from "./types";
 
 const fixtureRoots = ["nsfw", "nsfw-stories", "sfw", "sfw/patreon"];
 export const DEFAULT_MEDIA_PAGE_LIMIT = 500;

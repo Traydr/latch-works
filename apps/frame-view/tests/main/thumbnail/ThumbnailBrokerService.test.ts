@@ -415,6 +415,73 @@ describe('ThumbnailBrokerService', () => {
     await expect(secondPromise).resolves.toMatchObject({ bytes: new Uint8Array([8]) });
   });
 
+  it('ignores a late stale response after cancel so a newer job stays active', async () => {
+    const child = new FakeThumbnailChild();
+    const broker = new ThumbnailBrokerService('C:\\frame-view-user', {
+      childFactory: () => child,
+      imageWorkers: 1,
+      videoWorkers: 1,
+      workerModulePath: __filename,
+    });
+
+    const firstAbort = new AbortController();
+    const firstPromise = broker.getThumbnail(
+      {
+        cacheKey: 'stale',
+        kind: 'image',
+        mediaPath: 'C:\\gallery\\stale.png',
+        priority: 1,
+        thumbSize: 220,
+      },
+      firstAbort.signal,
+    );
+
+    await waitForCondition(() => getGenerateMessages(child).length === 1);
+    const staleRequestId = getGenerateMessages(child)[0]?.requestId;
+    firstAbort.abort();
+    await expect(firstPromise).rejects.toMatchObject({ name: 'AbortError' });
+
+    const secondPromise = broker.getThumbnail({
+      cacheKey: 'fresh',
+      kind: 'image',
+      mediaPath: 'C:\\gallery\\fresh.png',
+      priority: 2,
+      thumbSize: 220,
+    });
+
+    await waitForCondition(() => getGenerateMessages(child).length === 2);
+    const freshRequestId = getGenerateMessages(child)[1]?.requestId;
+    expect(freshRequestId).toBeDefined();
+    expect(freshRequestId).not.toBe(staleRequestId);
+
+    // Late response for the cancelled request must not clear the fresh active slot.
+    child.emit('message', {
+      requestId: staleRequestId,
+      ok: true,
+      result: {
+        bytes: new Uint8Array([1]),
+        cacheCreated: true,
+        cacheKey: 'stale',
+        contentType: 'image/webp',
+      },
+    });
+
+    expect(broker.getStatus().inflightRequests).toBe(1);
+
+    child.emit('message', {
+      requestId: freshRequestId,
+      ok: true,
+      result: {
+        bytes: new Uint8Array([2, 2]),
+        cacheCreated: true,
+        cacheKey: 'fresh',
+        contentType: 'image/webp',
+      },
+    });
+
+    await expect(secondPromise).resolves.toMatchObject({ bytes: new Uint8Array([2, 2]) });
+  });
+
   it('rejects an active request when a worker exits and restarts lazily on the next request', async () => {
     const children: FakeThumbnailChild[] = [];
     const childFactory = vi.fn((modulePath: string, args: string[]) => {

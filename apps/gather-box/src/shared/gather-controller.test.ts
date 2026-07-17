@@ -53,6 +53,7 @@ describe("GatherController last-run persistence", () => {
     controller.logEntries = [{ message: "Collecting content metadata..." }];
     controller.elements = {
       downloadButton: { disabled: false },
+      cancelButton: { disabled: false },
       chooseFolder: { disabled: false },
       clearFolder: { disabled: false },
       retryButton: { disabled: false },

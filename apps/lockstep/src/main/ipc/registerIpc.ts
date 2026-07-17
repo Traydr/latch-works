@@ -5,7 +5,7 @@ import type { ZodType } from "zod";
 
 import { serializeIpcResult } from "../../shared/ipc";
 import { InvokeIpcContractList, InvokeIpcContracts } from "../../shared/ipcContracts";
-import { parseWithSchema, serializeAppResult, ValidationError } from "../errors";
+import { parseWithSchema, RunError, serializeAppResult, ValidationError } from "../errors";
 import type { ProfileService } from "../services/profileService";
 import type { RunService } from "../services/runService";
 
@@ -17,6 +17,18 @@ function validationFailure(operation: string, message: string) {
   return serializeAppResult(
     Result.err(
       new ValidationError({
+        operation,
+        message,
+      }),
+    ),
+  );
+}
+
+function operationalFailure(operation: string, error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return serializeAppResult(
+    Result.err(
+      new RunError({
         operation,
         message,
       }),
@@ -133,8 +145,7 @@ export function registerIpc(
       const result = await runService.doctor(profileId);
       return okResult(result);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return validationFailure(InvokeIpcContracts.doctor.channel, message);
+      return operationalFailure(InvokeIpcContracts.doctor.channel, error);
     }
   });
 
@@ -152,8 +163,7 @@ export function registerIpc(
       const plan = await runService.plan(validated.value);
       return okResult(plan);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return validationFailure(InvokeIpcContracts.plan.channel, message);
+      return operationalFailure(InvokeIpcContracts.plan.channel, error);
     }
   });
 
@@ -171,8 +181,7 @@ export function registerIpc(
       const summary = await runService.push(validated.value);
       return okResult(summary);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return validationFailure(InvokeIpcContracts.push.channel, message);
+      return operationalFailure(InvokeIpcContracts.push.channel, error);
     }
   });
 
@@ -190,8 +199,7 @@ export function registerIpc(
       const summary = await runService.prune(validated.value);
       return okResult(summary);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return validationFailure(InvokeIpcContracts.prune.channel, message);
+      return operationalFailure(InvokeIpcContracts.prune.channel, error);
     }
   });
 

@@ -1,11 +1,20 @@
 import type { DownloadablePayload, GeneratedStoryPayload } from "./types";
 
 export function sanitizePathSegment(value: unknown): string {
-  const sanitized = String(value || "")
+  const raw = String(value || "").trim();
+  if (raw === "." || raw === "..") {
+    return "";
+  }
+
+  const sanitized = raw
     .replace(/[<>:"/\\|?*]/g, " ")
     .replace(/\s+/g, "_")
     .replace(/[._]+$/g, "")
     .trim();
+
+  if (sanitized === "." || sanitized === "..") {
+    return "";
+  }
 
   return sanitized || "";
 }

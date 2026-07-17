@@ -6,10 +6,6 @@ const mocks = vi.hoisted(() => ({
   whereMock: vi.fn(),
 }));
 
-vi.mock("./sync-run-control", () => ({
-  listRunningSyncRuns: vi.fn(),
-}));
-
 vi.mock("../db", () => ({
   db: {
     select: mocks.selectMock,
@@ -17,46 +13,45 @@ vi.mock("../db", () => ({
 }));
 
 import { assertNoActiveCleanupJob, assertNoActiveSyncRun } from "./guards";
-import { listRunningSyncRuns } from "./sync-run-control";
 
 describe("management guards", () => {
   beforeEach(() => {
-    vi.mocked(listRunningSyncRuns).mockReset();
     mocks.selectMock.mockReset();
     mocks.whereMock.mockReset();
     mocks.limitMock.mockReset();
-
-    mocks.selectMock.mockReturnValue({
-      from: vi.fn(() => ({
-        where: mocks.whereMock.mockReturnValue({
-          limit: mocks.limitMock,
-        }),
-      })),
-    });
   });
 
   it("blocks destructive ops when a sync run is active", async () => {
-    vi.mocked(listRunningSyncRuns).mockResolvedValue([
-      {
-        id: "run-1",
-        sourceRoot: "/archive",
-        startedAt: "2026-06-12T00:00:00.000Z",
-      },
-    ]);
+    mocks.selectMock.mockReturnValue({
+      from: vi.fn(() => ({
+        where: mocks.whereMock.mockResolvedValue([
+          {
+            id: "run-1",
+            sourceRoot: "/archive",
+          },
+        ]),
+      })),
+    });
 
     await expect(assertNoActiveSyncRun()).rejects.toThrow("sync run is currently active");
   });
 
   it("blocks sync starts when a cleanup job is active", async () => {
-    mocks.limitMock.mockResolvedValueOnce([
-      {
-        errorCount: 0,
-        id: "job-1",
-        phase: "s3_derivatives",
-        processedCount: 0,
-        status: "running",
-      },
-    ]);
+    mocks.selectMock.mockReturnValue({
+      from: vi.fn(() => ({
+        where: mocks.whereMock.mockReturnValue({
+          limit: mocks.limitMock.mockResolvedValue([
+            {
+              errorCount: 0,
+              id: "job-1",
+              phase: "s3_derivatives",
+              processedCount: 0,
+              status: "running",
+            },
+          ]),
+        }),
+      })),
+    });
 
     await expect(assertNoActiveCleanupJob()).rejects.toThrow("cleanup job is still running");
   });

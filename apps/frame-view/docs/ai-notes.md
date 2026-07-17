@@ -91,6 +91,7 @@
 - Window shutdown hardening: main-window close persistence now runs through `createMainWindowCloseHandler` and `persistWindowState`, preventing duplicate close handling and ensuring immediate final writes before destroy.
 - Thumbnail cache maintenance: runtime disk-cache pruning now re-enforces the configured file cap during long sessions instead of only at startup.
 - Catalog runtime maintainability: scan constants now live in `src/main/catalog/catalogScanConstants.ts`, and `CatalogRuntime` now isolates filter building, directory candidate listing, stat batching, indexed batch flushes, and throttled progress emission.
+- Catalog discovery adapter: `catalogDiscoveryAdapter.ts` classifies candidates with media-domain helpers shared with media-index (extension + system-junk skips) and maps to Frame absolute-path MediaItems. CatalogRuntime still owns streaming batches, cancel/progress, recursive/exclusion policy, and SQLite MediaIndexService persistence; full `scanArchive` adoption remains deferred.
 - Tooling status: repo now includes `pnpm run typecheck` and `pnpm run check`.
 - Validation status: `pnpm run check` passes after the maintainability refactor and test expansion.
 - Bootstrap stability note: `useAppBootstrap` must stay mount-stable; wiring it to changing scan/settings callbacks can cancel remembered-folder scans during normal renderer updates and leave the gallery mounted with zero items.

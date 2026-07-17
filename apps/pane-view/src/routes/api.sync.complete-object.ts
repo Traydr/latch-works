@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { requireSyncApiToken } from "../server/auth/api-token";
+import { assertNoActiveCleanupJob } from "../server/management/guards";
 import { completeSyncedObject, markRemoteDeleted } from "../server/sync/store";
 import { validateSyncObjectPayload } from "../server/sync/validation";
 
@@ -10,6 +11,15 @@ export const Route = createFileRoute("/api/sync/complete-object")({
         const unauthorized = requireSyncApiToken(request);
         if (unauthorized) {
           return unauthorized;
+        }
+
+        try {
+          await assertNoActiveCleanupJob();
+        } catch (error) {
+          return Response.json(
+            { error: error instanceof Error ? error.message : "Library wipe is active." },
+            { status: 409 },
+          );
         }
 
         const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;

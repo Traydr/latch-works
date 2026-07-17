@@ -1,3 +1,4 @@
+import { normalizePathForCompare } from "@latch-works/media-domain";
 import { createSyncPlan, hashArchiveItems, scanArchive } from "@latch-works/media-index";
 import { loadHashCache } from "./hash-cache.js";
 import { resolveHashMode } from "./push-helpers.js";
@@ -146,14 +147,16 @@ function selectPlanningHashPaths(
     return new Set(localItems.filter((item) => !item.sha256).map((item) => item.path));
   }
 
-  const remoteByPath = new Map(remoteEntries.map((entry) => [entry.path, entry]));
+  const remoteByPath = new Map(
+    remoteEntries.map((entry) => [normalizePathForCompare(entry.path), entry]),
+  );
   return new Set(
     localItems
       .filter((item) => {
         if (item.sha256) {
           return false;
         }
-        const remote = remoteByPath.get(item.path);
+        const remote = remoteByPath.get(normalizePathForCompare(item.path));
         return remote?.sha256 !== undefined && remote.size === item.size;
       })
       .map((item) => item.path),

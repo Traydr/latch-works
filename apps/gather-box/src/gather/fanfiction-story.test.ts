@@ -17,7 +17,7 @@ const payload: GeneratedStoryPayload = {
   fileName: "Writer-A_Test_Story.pdf",
   summary: "Summary",
   metadataLine: "Rated T",
-  chapters: [{ chapterNumber: 1, label: "Chapter 1", url: "https://example.test/chapter-1" }]
+  chapters: [{ chapterNumber: 1, label: "Chapter 1", url: "https://www.fanfiction.net/s/1/1/Test" }]
 };
 
 afterEach(() => vi.unstubAllGlobals());
@@ -70,5 +70,22 @@ describe("generated-story output adapter", () => {
         onSaved: vi.fn()
       })
     ).rejects.toThrow("Failed Chapter 1: story text was not found.");
+  });
+
+  it("rejects chapter URLs outside the download allowlist", async () => {
+    await expect(
+      fetchChapterContents(
+        {
+          ...payload,
+          chapters: [{ chapterNumber: 1, label: "Chapter 1", url: "https://evil.example/chapter" }]
+        },
+        {
+          onStart: vi.fn(),
+          onChapterFetched: vi.fn(),
+          onGenerating: vi.fn(),
+          onSaved: vi.fn()
+        }
+      )
+    ).rejects.toThrow("chapter URL is not allowed");
   });
 });

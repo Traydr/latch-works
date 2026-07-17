@@ -1,9 +1,9 @@
 import type { GatherBoxSettings } from "./settings";
+import type { SiteKey } from "./sites";
 import { getGatherSource } from "./source-catalog";
-import type { DownloadablePayload } from "./types";
 
 export function shouldIncludeCredentials(
-  payload: DownloadablePayload,
+  payload: { site: SiteKey },
   settings: GatherBoxSettings
 ): boolean {
   if (settings.credentialsMode === "always") {
