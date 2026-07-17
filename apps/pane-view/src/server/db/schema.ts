@@ -1,5 +1,5 @@
-import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import {
   bigint,
   boolean,
@@ -394,6 +394,8 @@ export const maintenanceJobs = pgTable(
     typeStatusIndex: index("maintenance_jobs_type_status_idx").on(table.type, table.status),
     activeHardWipeUnique: uniqueIndex("maintenance_jobs_active_hard_wipe_unique")
       .on(table.type)
-      .where(sql`${table.type} = 'library_hard_wipe' and ${table.status} in ('pending', 'running')`),
+      .where(
+        sql`${table.type} = 'library_hard_wipe' and ${table.status} in ('pending', 'running')`,
+      ),
   }),
 );

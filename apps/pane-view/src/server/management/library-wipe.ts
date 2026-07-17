@@ -49,7 +49,10 @@ export async function scheduleLibraryWipe({
 
       const now = new Date();
 
-      await tx.update(libraryEntries).set({ deletedAt: now }).where(isNull(libraryEntries.deletedAt));
+      await tx
+        .update(libraryEntries)
+        .set({ deletedAt: now })
+        .where(isNull(libraryEntries.deletedAt));
       await tx.update(folders).set({ deletedAt: now }).where(isNull(folders.deletedAt));
       await tx.delete(collectionItems);
       await tx.delete(collections);

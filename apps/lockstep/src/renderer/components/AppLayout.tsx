@@ -193,9 +193,7 @@ export function AppLayout({ ctrl }: { ctrl: LockstepController }) {
         </div>
       ) : null}
 
-      {showWorkspace ? (
-        <CommandDock session={session} plan={planCtrl} run={run} />
-      ) : null}
+      {showWorkspace ? <CommandDock session={session} plan={planCtrl} run={run} /> : null}
     </div>
   );
 }

@@ -11,7 +11,8 @@
     "apps/lockstep/src/**": ["exports", "types", "files"],
     "apps/frame-view/scripts/ensure-electron.mjs": ["files"],
     "apps/frame-view/src/**": ["types"],
-    "apps/showcase/src/**": ["exports", "types"]
+    "apps/showcase/src/**": ["exports", "types"],
+    "packages/media-domain/src/gather-box-sidecar.ts": ["exports", "types"]
   },
   "workspaces": {
     ".": {
@@ -41,10 +42,11 @@
     "apps/gather-box": {
       "entry": [
         "src/background/index.ts",
-        "src/content/index.ts",
-        "src/popup/index.ts",
+        "src/content/page-shortcuts.ts",
+        "src/content/collector-entry.ts",
         "src/sidepanel/index.ts",
         "src/options/index.ts",
+        "src/offscreen/index.ts",
         "src/**/*.test.ts"
       ]
     },

@@ -22,11 +22,15 @@ function throwIfAborted(signal?: AbortSignal): void {
   }
 }
 
-export function resolveUploadConcurrency(value: number | undefined): number {
+function resolveUploadConcurrency(value: number | undefined): number {
   if (value === undefined) {
     return DEFAULT_UPLOAD_CONCURRENCY;
   }
-  if (!Number.isInteger(value) || value < MIN_UPLOAD_CONCURRENCY || value > MAX_UPLOAD_CONCURRENCY) {
+  if (
+    !Number.isInteger(value) ||
+    value < MIN_UPLOAD_CONCURRENCY ||
+    value > MAX_UPLOAD_CONCURRENCY
+  ) {
     throw new RangeError(
       `uploadConcurrency must be an integer between ${MIN_UPLOAD_CONCURRENCY} and ${MAX_UPLOAD_CONCURRENCY}`,
     );

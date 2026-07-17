@@ -127,10 +127,7 @@ export async function pushMediaItem({
   }
 
   const postUploadStat = await stat(filePath);
-  if (
-    postUploadStat.size !== preHashStat.size ||
-    postUploadStat.mtimeMs !== preHashStat.mtimeMs
-  ) {
+  if (postUploadStat.size !== preHashStat.size || postUploadStat.mtimeMs !== preHashStat.mtimeMs) {
     throw new Error("File changed during sync; retry this item.");
   }
 

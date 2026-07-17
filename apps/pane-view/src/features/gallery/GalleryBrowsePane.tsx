@@ -3,8 +3,8 @@ import { type MutableRefObject, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { BrowserGrid } from "@/features/gallery/BrowserGrid";
 import { DetailPanel } from "@/features/gallery/DetailPanel";
-import { cn } from "@/lib/utils";
 import type { MediaPage } from "@/features/library/types";
+import { cn } from "@/lib/utils";
 
 export interface GalleryBrowsePaneProps {
   columnCountRef: MutableRefObject<number>;

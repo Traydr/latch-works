@@ -79,7 +79,12 @@ export function parseArgv(argv: string[]): ParseArgvResult {
         index += 1;
         break;
       case "--upload-concurrency":
-        options.uploadConcurrency = parseBoundedInteger(rest[index + 1], "--upload-concurrency", 1, 8);
+        options.uploadConcurrency = parseBoundedInteger(
+          rest[index + 1],
+          "--upload-concurrency",
+          1,
+          8,
+        );
         index += 1;
         break;
       case "--show-skipped":

@@ -47,9 +47,7 @@ export async function assertNoActiveSyncRun(client: QueryClient = db): Promise<v
   );
 }
 
-export async function readActiveCleanupJob(
-  client: QueryClient = db,
-): Promise<{
+export async function readActiveCleanupJob(client: QueryClient = db): Promise<{
   id: string;
   phase: string;
   processedCount: number;

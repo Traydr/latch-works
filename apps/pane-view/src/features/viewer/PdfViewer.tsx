@@ -247,7 +247,9 @@ export function PdfViewer({
         setPageCount(pdf.numPages);
 
         const paintWindow = () => {
-          const desiredPages = new Set(getPdfPageRenderWindow(visiblePages, pdf.numPages, focalPage));
+          const desiredPages = new Set(
+            getPdfPageRenderWindow(visiblePages, pdf.numPages, focalPage),
+          );
           for (const pageNumber of [...renderTasks.keys()]) {
             if (!desiredPages.has(pageNumber)) {
               cancelRender(pageNumber);
@@ -279,7 +281,11 @@ export function PdfViewer({
               let renderTask: ReturnType<PDFPageProxy["render"]> | undefined;
               try {
                 page = await pdf.getPage(pageNumber);
-                if (cancelled || task !== renderTasks.get(pageNumber) || version !== renderVersion) {
+                if (
+                  cancelled ||
+                  task !== renderTasks.get(pageNumber) ||
+                  version !== renderVersion
+                ) {
                   return;
                 }
 
@@ -307,7 +313,11 @@ export function PdfViewer({
                 });
                 task.cancel = () => renderTask?.cancel();
                 await renderTask.promise;
-                if (!cancelled && task === renderTasks.get(pageNumber) && version === renderVersion) {
+                if (
+                  !cancelled &&
+                  task === renderTasks.get(pageNumber) &&
+                  version === renderVersion
+                ) {
                   slot.replaceChildren(canvas);
                 }
               } catch {
@@ -387,7 +397,7 @@ export function PdfViewer({
         clearTimeout(pageChangeTimer);
       }
     };
-  }, [mediaId]);
+  }, [mediaId, initialPage]);
 
   return (
     <div ref={scrollContainerRef} className="h-full w-full overflow-auto px-3 py-2">

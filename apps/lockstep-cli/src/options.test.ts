@@ -49,13 +49,7 @@ describe("parseArgv", () => {
   });
 
   it("parses push --upload-concurrency bounds", () => {
-    const result = parseArgv([
-      "push",
-      "--source",
-      "D:\\media",
-      "--upload-concurrency",
-      "3",
-    ]);
+    const result = parseArgv(["push", "--source", "D:\\media", "--upload-concurrency", "3"]);
     expect(result.kind).toBe("parsed");
     if (result.kind !== "parsed") {
       return;

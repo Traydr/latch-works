@@ -538,9 +538,6 @@ importers:
       '@aws-sdk/s3-request-presigner':
         specifier: ^3.955.0
         version: 3.1057.0
-      '@latch-works/media-domain':
-        specifier: workspace:*
-        version: link:../media-domain
     devDependencies:
       typescript:
         specifier: ^6.0.2

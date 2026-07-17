@@ -1,6 +1,6 @@
 import type { GallerySortMode, MediaItem } from "./media.js";
 import { displayNameFromPath, getParentPath, normalizePathForCompare } from "./paths.js";
-import { compareByName, sortMediaItems, type SortableMediaItem } from "./sort.js";
+import { compareByName, type SortableMediaItem, sortMediaItems } from "./sort.js";
 
 export interface ComicMediaItem extends SortableMediaItem {
   id: string;
@@ -62,7 +62,10 @@ export function buildComicEntries<T extends ComicMediaItem>(
       continue;
     }
 
-    if (normalizedRootPath && pathAdapter.normalizePathForCompare(folderPath) === normalizedRootPath) {
+    if (
+      normalizedRootPath &&
+      pathAdapter.normalizePathForCompare(folderPath) === normalizedRootPath
+    ) {
       continue;
     }
 

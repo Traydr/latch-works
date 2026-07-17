@@ -27,9 +27,7 @@ export function createSyncPlan(
   const remoteByPath = new Map(
     remoteEntries.map((entry) => [normalizePathForCompare(entry.path), entry]),
   );
-  const localByPath = new Map(
-    localItems.map((item) => [normalizePathForCompare(item.path), item]),
-  );
+  const localByPath = new Map(localItems.map((item) => [normalizePathForCompare(item.path), item]));
   const items: SyncPlanItem[] = [];
 
   for (const local of localItems) {

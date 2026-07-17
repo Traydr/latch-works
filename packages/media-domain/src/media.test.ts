@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  buildComicEntries,
-  detectMediaType,
-  sortMediaItems,
-  sortComicEntries,
-} from "./index.js";
+import { buildComicEntries, detectMediaType, sortComicEntries, sortMediaItems } from "./index.js";
 import type { MediaItem } from "./media.js";
 
 const baseItem = {

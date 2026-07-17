@@ -1,5 +1,4 @@
 export {
-  useLockstepController,
   type LockstepController,
   type PipelineProgressState,
   type PlanController,
@@ -10,4 +9,5 @@ export {
   type RunProgressState,
   type Screen,
   type SessionController,
+  useLockstepController,
 } from "./controller/useLockstepController";
