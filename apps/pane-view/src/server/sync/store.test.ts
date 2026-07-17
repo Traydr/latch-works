@@ -33,6 +33,7 @@ const mocks = vi.hoisted(() => {
   const transactionMock = vi.fn();
   const rootInsertMock = vi.fn();
   const rootSelectMock = vi.fn();
+  const headStoredObject = vi.fn();
   const txClient = {
     insert: vi.fn(),
     select: vi.fn(),
@@ -40,6 +41,7 @@ const mocks = vi.hoisted(() => {
   };
 
   return {
+    headStoredObject,
     returningMock,
     rootInsertMock,
     rootSelectMock,
@@ -59,6 +61,25 @@ vi.mock("../db", () => ({
     update: mocks.updateMock,
   },
 }));
+
+vi.mock("../../env/server", () => ({
+  env: {
+    S3_ACCESS_KEY_ID: "test-access-key",
+    S3_BUCKET: "test-bucket",
+    S3_ENDPOINT: "http://127.0.0.1:9000",
+    S3_REGION: "us-east-1",
+    S3_SECRET_ACCESS_KEY: "test-secret-key",
+  },
+}));
+
+vi.mock("@latch-works/media-storage", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@latch-works/media-storage")>();
+  return {
+    ...actual,
+    createS3StorageClient: vi.fn(() => ({ bucket: "test-bucket", client: {} })),
+    headStoredObject: mocks.headStoredObject,
+  };
+});
 
 import { completeSyncedObject, finalizeSyncRun, markRemoteDeleted } from "./store";
 
@@ -201,11 +222,19 @@ describe("completeSyncedObject", () => {
     mocks.txClient.insert.mockReset();
     mocks.txClient.select.mockReset();
     mocks.txClient.update.mockReset();
+    mocks.headStoredObject.mockReset();
 
     mocks.transactionMock.mockImplementation(async (callback) => callback(mocks.txClient));
+    mocks.headStoredObject.mockResolvedValue({
+      checksumSHA256: Buffer.from("abc123".padEnd(64, "0"), "hex").toString("base64"),
+      contentLength: 1024,
+      contentType: "image/jpeg",
+      etag: '"etag"',
+      metadata: { sha256: "abc123".padEnd(64, "0") },
+    });
   });
 
-  it("performs all writes inside a transaction client", async () => {
+  it("performs all writes inside a transaction client after HEAD attestation", async () => {
     const syncRunSelect = createSelectChain([{ id: "run-1", status: "running" }]);
     const mediaInsert = createInsertChain([{ id: "media-1" }]);
     const folderInsert = createInsertChain([{ id: "folder-1" }]);
@@ -219,6 +248,7 @@ describe("completeSyncedObject", () => {
       .mockReturnValueOnce({ values: libraryInsert.valuesMock })
       .mockReturnValueOnce({ values: syncItemInsert.valuesMock });
 
+    const sha256 = "abc123".padEnd(64, "0");
     const result = await completeSyncedObject({
       input: {
         contentType: "image/jpeg",
@@ -228,13 +258,16 @@ describe("completeSyncedObject", () => {
         mediaType: "image",
         mtimeMs: 1_700_000_000_000,
         objectKey: "objects/abc",
-        sha256: "abc123",
+        sha256,
         size: 1024,
         syncRunId: "run-1",
       },
     });
 
     expect(result).toEqual({ status: "database" });
+    expect(mocks.headStoredObject).toHaveBeenCalledWith(
+      expect.objectContaining({ key: "objects/abc" }),
+    );
     expect(mocks.transactionMock).toHaveBeenCalledTimes(1);
     expect(mocks.rootInsertMock).not.toHaveBeenCalled();
     expect(mocks.txClient.insert).toHaveBeenCalledTimes(4);
@@ -249,6 +282,58 @@ describe("completeSyncedObject", () => {
         syncRunId: "run-1",
       }),
     );
+  });
+
+  it("rejects missing storage objects before opening a transaction", async () => {
+    mocks.headStoredObject.mockResolvedValue(null);
+
+    await expect(
+      completeSyncedObject({
+        input: {
+          contentType: "image/jpeg",
+          extension: "jpg",
+          filename: "photo.jpg",
+          logicalPath: "photos/photo.jpg",
+          mediaType: "image",
+          mtimeMs: 1_700_000_000_000,
+          objectKey: "objects/abc",
+          sha256: "abc123".padEnd(64, "0"),
+          size: 1024,
+          syncRunId: "run-1",
+        },
+      }),
+    ).rejects.toThrow("Uploaded object was not found in storage.");
+
+    expect(mocks.transactionMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects size mismatches before opening a transaction", async () => {
+    mocks.headStoredObject.mockResolvedValue({
+      checksumSHA256: undefined,
+      contentLength: 10,
+      contentType: "image/jpeg",
+      etag: '"etag"',
+      metadata: undefined,
+    });
+
+    await expect(
+      completeSyncedObject({
+        input: {
+          contentType: "image/jpeg",
+          extension: "jpg",
+          filename: "photo.jpg",
+          logicalPath: "photos/photo.jpg",
+          mediaType: "image",
+          mtimeMs: 1_700_000_000_000,
+          objectKey: "objects/abc",
+          sha256: "abc123".padEnd(64, "0"),
+          size: 1024,
+          syncRunId: "run-1",
+        },
+      }),
+    ).rejects.toThrow("Uploaded object size does not match declared size.");
+
+    expect(mocks.transactionMock).not.toHaveBeenCalled();
   });
 
   it("rejects non-running sync runs without mutating media objects", async () => {
@@ -268,7 +353,7 @@ describe("completeSyncedObject", () => {
           mediaType: "image",
           mtimeMs: 1_700_000_000_000,
           objectKey: "objects/abc",
-          sha256: "abc123",
+          sha256: "abc123".padEnd(64, "0"),
           size: 1024,
           syncRunId: "run-1",
         },

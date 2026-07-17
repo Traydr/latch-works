@@ -9,14 +9,17 @@ import { env } from "../env/server";
 import { requireSyncApiToken } from "../server/auth/api-token";
 import {
   expectedContentTypeForExtension,
+  MAX_SYNC_UPLOAD_BYTES,
   validateSyncContentType,
   validateUploadFilename,
+  validateUploadSize,
 } from "../server/sync/validation";
 
 interface UploadUrlRequest {
   contentType?: string;
   filename?: string;
   sha256?: string;
+  size?: number;
 }
 
 export const Route = createFileRoute("/api/sync/upload-url")({
@@ -38,6 +41,11 @@ export const Route = createFileRoute("/api/sync/upload-url")({
           return Response.json({ error: filenameError }, { status: 400 });
         }
 
+        const sizeError = validateUploadSize(body.size);
+        if (sizeError) {
+          return Response.json({ error: sizeError }, { status: 400 });
+        }
+
         const extension = getExtension(body.filename);
         const contentType = expectedContentTypeForExtension(extension);
         if (body.contentType !== undefined) {
@@ -48,15 +56,18 @@ export const Route = createFileRoute("/api/sync/upload-url")({
         }
 
         const mediaType = detectMediaType(body.filename);
+        const size = Math.trunc(Number(body.size));
 
         const objectKey = originalObjectKey({
           extension,
           mediaType,
           sha256: body.sha256,
         });
-        const uploadUrl = await createSignedPutUrl({
+        const signed = await createSignedPutUrl({
+          contentLength: size,
           contentType,
           key: objectKey,
+          sha256: body.sha256,
           storage: createS3StorageClient({
             accessKeyId: env.S3_ACCESS_KEY_ID,
             bucket: env.S3_BUCKET,
@@ -67,9 +78,11 @@ export const Route = createFileRoute("/api/sync/upload-url")({
         });
 
         return Response.json({
+          headers: signed.headers,
+          maxUploadBytes: MAX_SYNC_UPLOAD_BYTES,
           objectKey,
           status: "signed-url-ready",
-          uploadUrl,
+          uploadUrl: signed.uploadUrl,
         });
       },
     },

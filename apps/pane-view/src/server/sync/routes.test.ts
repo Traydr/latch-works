@@ -113,7 +113,10 @@ describe("sync route handlers", () => {
     finalizeSyncRun.mockResolvedValue({ status: "database" });
     completeSyncedObject.mockResolvedValue({ status: "database" });
     markRemoteDeleted.mockResolvedValue({ status: "database" });
-    createSignedPutUrl.mockResolvedValue("https://storage.example/upload");
+    createSignedPutUrl.mockResolvedValue({
+      headers: { "Content-Type": "image/jpeg" },
+      uploadUrl: "https://storage.example/upload",
+    });
   });
 
   describe("POST /api/sync/runs", () => {
@@ -271,7 +274,51 @@ describe("sync route handlers", () => {
   });
 
   describe("POST /api/sync/upload-url", () => {
-    it("signs upload URLs with the server-derived content type", async () => {
+    it("signs upload URLs with declared size and returns required headers", async () => {
+      createSignedPutUrl.mockResolvedValue({
+        headers: {
+          "Content-Length": "128",
+          "Content-Type": "image/jpeg",
+          "x-amz-checksum-sha256": "checksum",
+          "x-amz-meta-sha256": "a".repeat(64),
+        },
+        uploadUrl: "https://storage.example/upload",
+      });
+
+      const request = new Request("http://127.0.0.1:3000/api/sync/upload-url", {
+        body: JSON.stringify({
+          contentType: "image/jpeg",
+          filename: "cover.jpg",
+          sha256: "a".repeat(64),
+          size: 128,
+        }),
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        method: "POST",
+      });
+
+      const response = await postUploadUrl()({ request });
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(createSignedPutUrl).toHaveBeenCalledWith(
+        expect.objectContaining({
+          contentLength: 128,
+          contentType: "image/jpeg",
+          sha256: "a".repeat(64),
+        }),
+      );
+      expect(body).toEqual({
+        headers: expect.objectContaining({
+          "Content-Type": "image/jpeg",
+        }),
+        maxUploadBytes: expect.any(Number),
+        objectKey: expect.any(String),
+        status: "signed-url-ready",
+        uploadUrl: "https://storage.example/upload",
+      });
+    });
+
+    it("rejects missing size with 400", async () => {
       const request = new Request("http://127.0.0.1:3000/api/sync/upload-url", {
         body: JSON.stringify({
           contentType: "image/jpeg",
@@ -285,17 +332,9 @@ describe("sync route handlers", () => {
       const response = await postUploadUrl()({ request });
       const body = await response.json();
 
-      expect(response.status).toBe(200);
-      expect(createSignedPutUrl).toHaveBeenCalledWith(
-        expect.objectContaining({
-          contentType: "image/jpeg",
-        }),
-      );
-      expect(body).toEqual({
-        objectKey: expect.any(String),
-        status: "signed-url-ready",
-        uploadUrl: "https://storage.example/upload",
-      });
+      expect(response.status).toBe(400);
+      expect(body).toEqual({ error: "size is required" });
+      expect(createSignedPutUrl).not.toHaveBeenCalled();
     });
 
     it("rejects mismatched content types with 400", async () => {
@@ -304,6 +343,7 @@ describe("sync route handlers", () => {
           contentType: "image/png",
           filename: "cover.jpg",
           sha256: "a".repeat(64),
+          size: 128,
         }),
         headers: { ...authHeaders(), "Content-Type": "application/json" },
         method: "POST",

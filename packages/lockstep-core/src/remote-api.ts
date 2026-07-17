@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { Readable, Transform } from "node:stream";
@@ -79,6 +80,7 @@ export async function pushMediaItem({
   syncRunId: string;
 }): Promise<void> {
   const filePath = resolveLocalFilePath(sourceRoot, item.path);
+  const preHashStat = await stat(filePath);
   const sha256 =
     item.sha256 ??
     (await hashLocalFile(
@@ -91,6 +93,7 @@ export async function pushMediaItem({
 
   onStage("registering", "requesting upload URL");
   const uploadTarget = await postJson<{
+    headers?: Record<string, string>;
     objectKey: string;
     uploadUrl: string | null;
   }>(
@@ -101,22 +104,34 @@ export async function pushMediaItem({
       contentType: contentTypeFor(item),
       filename: item.name,
       sha256,
+      size: preHashStat.size,
     },
     signal,
   );
 
   if (uploadTarget.uploadUrl) {
-    await uploadFile(
-      uploadTarget.uploadUrl,
+    await uploadFile({
+      contentType: contentTypeFor(item),
+      expectedSha256: sha256,
+      expectedSize: preHashStat.size,
       filePath,
-      contentTypeFor(item),
-      (bytesUploaded, total) => {
+      headers: uploadTarget.headers ?? {},
+      onProgress: (bytesUploaded, total) => {
         onStage("uploading", `${formatBytes(bytesUploaded)} / ${formatBytes(total)}`);
       },
       signal,
-    );
+      uploadUrl: uploadTarget.uploadUrl,
+    });
   } else {
     onStage("uploading", "skipped (storage not configured)");
+  }
+
+  const postUploadStat = await stat(filePath);
+  if (
+    postUploadStat.size !== preHashStat.size ||
+    postUploadStat.mtimeMs !== preHashStat.mtimeMs
+  ) {
+    throw new Error("File changed during sync; retry this item.");
   }
 
   onStage("registering", "recording ingest");
@@ -133,7 +148,7 @@ export async function pushMediaItem({
       mtimeMs: item.mtimeMs,
       objectKey: uploadTarget.objectKey,
       sha256,
-      size: item.size,
+      size: preHashStat.size,
       syncRunId,
     },
     signal,
@@ -166,22 +181,40 @@ export async function deleteRemoteItem({
   );
 }
 
-async function uploadFile(
-  uploadUrl: string,
-  filePath: string,
-  contentType: string,
-  onProgress?: (bytesUploaded: number, total: number) => void,
-  signal?: AbortSignal,
-): Promise<void> {
+export async function uploadFile({
+  contentType,
+  expectedSha256,
+  expectedSize,
+  filePath,
+  headers,
+  onProgress,
+  signal,
+  uploadUrl,
+}: {
+  contentType: string;
+  expectedSha256: string;
+  expectedSize: number;
+  filePath: string;
+  headers: Record<string, string>;
+  onProgress?: (bytesUploaded: number, total: number) => void;
+  signal?: AbortSignal;
+  uploadUrl: string;
+}): Promise<void> {
   const fileStat = await stat(filePath);
+  if (fileStat.size !== expectedSize) {
+    throw new Error("File changed during sync; retry this item.");
+  }
+
   const total = fileStat.size;
   let bytesUploaded = 0;
   let lastReport = 0;
-
-  const body = createReadStream(filePath).pipe(
+  const digest = createHash("sha256");
+  const source = createReadStream(filePath);
+  const body = source.pipe(
     new Transform({
       transform(chunk, _encoding, callback) {
         bytesUploaded += chunk.length;
+        digest.update(chunk);
         const now = Date.now();
         if (onProgress && now - lastReport >= 100) {
           lastReport = now;
@@ -192,22 +225,58 @@ async function uploadFile(
     }),
   );
 
-  const response = await fetch(uploadUrl, {
-    body: Readable.toWeb(body) as BodyInit,
-    duplex: "half",
-    headers: {
-      "Content-Length": String(total),
-      "Content-Type": contentType,
-    },
-    method: "PUT",
-    signal,
-  } as RequestInit & { duplex: "half" });
+  const destroyStreams = () => {
+    if (!source.destroyed) {
+      source.destroy();
+    }
+    if (!body.destroyed) {
+      body.destroy();
+    }
+  };
 
-  if (!response.ok) {
-    throw new Error(`Upload failed with ${response.status}: ${await response.text()}`);
+  const onAbort = () => {
+    destroyStreams();
+  };
+  signal?.addEventListener("abort", onAbort, { once: true });
+
+  try {
+    if (signal?.aborted) {
+      throw new Error("Upload aborted.");
+    }
+
+    const response = await fetch(uploadUrl, {
+      body: Readable.toWeb(body) as BodyInit,
+      duplex: "half",
+      headers: {
+        ...headers,
+        "Content-Length": headers["Content-Length"] ?? String(total),
+        "Content-Type": headers["Content-Type"] ?? contentType,
+      },
+      method: "PUT",
+      signal,
+    } as RequestInit & { duplex: "half" });
+
+    if (!response.ok) {
+      throw new Error(`Upload failed with ${response.status}: ${await response.text()}`);
+    }
+
+    if (bytesUploaded !== expectedSize) {
+      throw new Error("Uploaded byte count does not match declared size.");
+    }
+
+    const uploadedSha256 = digest.digest("hex");
+    if (uploadedSha256 !== expectedSha256.toLowerCase()) {
+      throw new Error("Uploaded bytes do not match declared sha256.");
+    }
+
+    onProgress?.(total, total);
+  } catch (error) {
+    destroyStreams();
+    throw error;
+  } finally {
+    signal?.removeEventListener("abort", onAbort);
+    destroyStreams();
   }
-
-  onProgress?.(total, total);
 }
 
 function contentTypeFor(item: MediaItem): string {

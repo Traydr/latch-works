@@ -81,9 +81,11 @@ export async function createSignedGetUrl({
 }
 
 export interface StoredObjectHead {
+  checksumSHA256: string | undefined;
   contentLength: number;
   contentType: string | undefined;
   etag: string | undefined;
+  metadata: Record<string, string> | undefined;
 }
 
 export interface StoredObjectBody {
@@ -111,9 +113,11 @@ export async function headStoredObject({
     );
 
     return {
+      checksumSHA256: response.ChecksumSHA256,
       contentLength: Number(response.ContentLength ?? 0),
       contentType: response.ContentType,
       etag: response.ETag,
+      metadata: response.Metadata,
     };
   } catch (error) {
     if (isNotFoundError(error)) {
@@ -333,24 +337,78 @@ function isNotFoundError(error: unknown): boolean {
   );
 }
 
+export interface SignedPutUrlResult {
+  headers: Record<string, string>;
+  uploadUrl: string;
+}
+
 export async function createSignedPutUrl({
+  contentLength,
   contentType,
   expiresInSeconds = 300,
   key,
+  sha256,
   storage,
 }: {
+  contentLength: number;
   contentType: string;
   expiresInSeconds?: number;
   key: string;
+  sha256: string;
   storage: S3StorageClient;
-}): Promise<string> {
-  return getSignedUrl(
+}): Promise<SignedPutUrlResult> {
+  if (!/^[a-f0-9]{64}$/i.test(sha256)) {
+    throw new Error(`Invalid sha256 value: ${sha256}`);
+  }
+
+  const normalizedSha256 = sha256.toLowerCase();
+  const checksumSHA256 = Buffer.from(normalizedSha256, "hex").toString("base64");
+  const candidateHeaders: Record<string, string> = {
+    "Content-Length": String(contentLength),
+    "Content-Type": contentType,
+    "x-amz-checksum-sha256": checksumSHA256,
+    "x-amz-meta-sha256": normalizedSha256,
+  };
+
+  const uploadUrl = await getSignedUrl(
     storage.client,
     new PutObjectCommand({
       Bucket: storage.bucket,
+      ChecksumSHA256: checksumSHA256,
+      ContentLength: contentLength,
       ContentType: contentType,
       Key: key,
+      Metadata: {
+        sha256: normalizedSha256,
+      },
     }),
-    { expiresIn: expiresInSeconds },
+    {
+      expiresIn: expiresInSeconds,
+      signableHeaders: new Set(["content-length", "content-type"]),
+      unhoistableHeaders: new Set(["x-amz-checksum-sha256", "x-amz-meta-sha256"]),
+    },
   );
+
+  const signedHeaderNames = new Set(
+    (new URL(uploadUrl).searchParams.get("X-Amz-SignedHeaders") ?? "").split(";").filter(Boolean),
+  );
+  const headers: Record<string, string> = {};
+  for (const [headerName, headerValue] of Object.entries(candidateHeaders)) {
+    if (signedHeaderNames.has(headerName.toLowerCase())) {
+      headers[headerName] = headerValue;
+    }
+  }
+
+  for (const required of [
+    "content-type",
+    "content-length",
+    "x-amz-checksum-sha256",
+    "x-amz-meta-sha256",
+  ]) {
+    if (!signedHeaderNames.has(required)) {
+      throw new Error(`Presigned PUT URL omitted required signed header: ${required}`);
+    }
+  }
+
+  return { headers, uploadUrl };
 }

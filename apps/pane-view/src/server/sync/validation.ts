@@ -27,6 +27,26 @@ export type SyncObjectValidationResult =
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/i;
 
+/** Conservative default when no deployment-specific upload ceiling is configured. */
+export const MAX_SYNC_UPLOAD_BYTES = 10 * 1024 * 1024 * 1024;
+
+export function validateUploadSize(size: unknown): string | null {
+  if (size === undefined || size === null) {
+    return "size is required";
+  }
+
+  const parsed = Math.trunc(Number(size));
+  if (!Number.isSafeInteger(parsed) || parsed < 0) {
+    return "size must be a non-negative safe integer";
+  }
+
+  if (parsed > MAX_SYNC_UPLOAD_BYTES) {
+    return `size must not exceed ${MAX_SYNC_UPLOAD_BYTES} bytes`;
+  }
+
+  return null;
+}
+
 export function expectedContentTypeForExtension(extension: string): string {
   switch (extension.toLowerCase()) {
     case "jpg":
@@ -124,6 +144,11 @@ export function validateSyncObjectPayload(
   const size = Math.trunc(Number(body.size));
   if (!Number.isSafeInteger(mtimeMs) || !Number.isSafeInteger(size) || size < 0) {
     return { ok: false, error: "mtimeMs and size must be valid integers" };
+  }
+
+  const sizeError = validateUploadSize(size);
+  if (sizeError) {
+    return { ok: false, error: sizeError };
   }
 
   const derivedObjectKey = originalObjectKey({
