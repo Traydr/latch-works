@@ -7,6 +7,7 @@ import {
 import { createFileRoute } from "@tanstack/react-router";
 import { env } from "../env/server";
 import { requireSyncApiToken } from "../server/auth/api-token";
+import { assertNoActiveCleanupJob } from "../server/management/guards";
 import {
   expectedContentTypeForExtension,
   MAX_SYNC_UPLOAD_BYTES,
@@ -29,6 +30,15 @@ export const Route = createFileRoute("/api/sync/upload-url")({
         const unauthorized = requireSyncApiToken(request);
         if (unauthorized) {
           return unauthorized;
+        }
+
+        try {
+          await assertNoActiveCleanupJob();
+        } catch (error) {
+          return Response.json(
+            { error: error instanceof Error ? error.message : "Library wipe is active." },
+            { status: 409 },
+          );
         }
 
         const body = (await request.json().catch(() => ({}))) as UploadUrlRequest;

@@ -81,6 +81,14 @@ vi.mock("@latch-works/media-storage", async (importOriginal) => {
   };
 });
 
+vi.mock("../management/guards", () => ({
+  assertNoActiveCleanupJob: vi.fn(async () => undefined),
+}));
+
+vi.mock("../db/library-coordination-lock", () => ({
+  acquireLibraryMutationStartupLock: vi.fn(async () => undefined),
+}));
+
 import { completeSyncedObject, finalizeSyncRun, markRemoteDeleted } from "./store";
 
 describe("finalizeSyncRun", () => {

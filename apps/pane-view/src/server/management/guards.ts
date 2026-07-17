@@ -1,7 +1,11 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../db";
-import { maintenanceJobs } from "../db/schema";
+import { maintenanceJobs, syncRuns } from "../db/schema";
 import { listRunningSyncRuns } from "./sync-run-control";
+
+type QueryClient = {
+  select: typeof db.select;
+};
 
 export async function readActiveSyncRun(): Promise<{
   id: string;
@@ -19,8 +23,15 @@ export async function readActiveSyncRun(): Promise<{
   };
 }
 
-export async function assertNoActiveSyncRun(): Promise<void> {
-  const runningSyncRuns = await listRunningSyncRuns();
+export async function assertNoActiveSyncRun(client: QueryClient = db): Promise<void> {
+  const runningSyncRuns = await client
+    .select({
+      id: syncRuns.id,
+      sourceRoot: syncRuns.sourceRoot,
+    })
+    .from(syncRuns)
+    .where(eq(syncRuns.status, "running"));
+
   if (runningSyncRuns.length === 0) {
     return;
   }
@@ -36,14 +47,16 @@ export async function assertNoActiveSyncRun(): Promise<void> {
   );
 }
 
-export async function readActiveCleanupJob(): Promise<{
+export async function readActiveCleanupJob(
+  client: QueryClient = db,
+): Promise<{
   id: string;
   phase: string;
   processedCount: number;
   errorCount: number;
   status: "pending" | "running";
 } | null> {
-  const [job] = await db
+  const [job] = await client
     .select({
       errorCount: sql<number>`(${maintenanceJobs.progress}->>'errorCount')::int`,
       id: maintenanceJobs.id,
@@ -73,8 +86,8 @@ export async function readActiveCleanupJob(): Promise<{
   };
 }
 
-export async function assertNoActiveCleanupJob(): Promise<void> {
-  const activeJob = await readActiveCleanupJob();
+export async function assertNoActiveCleanupJob(client: QueryClient = db): Promise<void> {
+  const activeJob = await readActiveCleanupJob(client);
   if (activeJob) {
     throw new Error(
       "A library wipe cleanup job is still running. Wait for it to finish before starting a sync.",

@@ -7,8 +7,10 @@ import {
 import { and, eq, isNull } from "drizzle-orm";
 import { env } from "../../env/server";
 import { db } from "../db";
+import { acquireLibraryMutationStartupLock } from "../db/library-coordination-lock";
 import { folders, libraryEntries, mediaObjects, syncRunItems, syncRuns } from "../db/schema";
 import { assertNoActiveCleanupJob } from "../management/guards";
+import { normalizeSyncLogicalPath, validateSyncLogicalPath } from "./validation";
 
 type SyncDbClient = Pick<typeof db, "insert" | "select" | "update">;
 
@@ -68,24 +70,29 @@ export async function startSyncRun({
 }: {
   input: StartSyncRunInput;
 }): Promise<{ status: "database"; syncRunId: string }> {
-  await assertNoActiveCleanupJob();
+  const syncRunId = await db.transaction(async (tx) => {
+    await acquireLibraryMutationStartupLock(tx);
+    await assertNoActiveCleanupJob(tx);
 
-  const [syncRun] = await db
-    .insert(syncRuns)
-    .values({
-      counts: input.counts ?? {},
-      sourceRoot: input.sourceRoot,
-      status: "running",
-    })
-    .returning({ id: syncRuns.id });
+    const [syncRun] = await tx
+      .insert(syncRuns)
+      .values({
+        counts: input.counts ?? {},
+        sourceRoot: input.sourceRoot,
+        status: "running",
+      })
+      .returning({ id: syncRuns.id });
 
-  if (!syncRun) {
-    throw new Error("Unable to create sync run.");
-  }
+    if (!syncRun) {
+      throw new Error("Unable to create sync run.");
+    }
+
+    return syncRun.id;
+  });
 
   return {
     status: "database",
-    syncRunId: syncRun.id,
+    syncRunId,
   };
 }
 
@@ -102,6 +109,8 @@ export async function completeSyncedObject({
   input: CompleteObjectInput;
   storage?: S3StorageClient;
 }): Promise<{ status: "database" }> {
+  await assertNoActiveCleanupJob();
+
   const parentPath = getParentPath(input.logicalPath);
   const objectKey = input.objectKey;
   const expectedChecksum = Buffer.from(input.sha256.toLowerCase(), "hex").toString("base64");
@@ -245,19 +254,27 @@ export async function markRemoteDeleted({
   logicalPath: string;
   syncRunId: string;
 }): Promise<{ status: "database" }> {
+  await assertNoActiveCleanupJob();
+
+  const normalizedPath = normalizeSyncLogicalPath(logicalPath);
+  const pathError = validateSyncLogicalPath(normalizedPath);
+  if (pathError) {
+    throw new Error(pathError);
+  }
+
   await db.transaction(async (tx) => {
     await assertWritableSyncRun(tx, syncRunId);
 
     await tx
       .update(libraryEntries)
       .set({ deletedAt: new Date() })
-      .where(eq(libraryEntries.logicalPath, logicalPath));
+      .where(eq(libraryEntries.logicalPath, normalizedPath));
 
     await tx
       .insert(syncRunItems)
       .values({
         action: "delete",
-        logicalPath,
+        logicalPath: normalizedPath,
         syncRunId,
       })
       .onConflictDoUpdate({

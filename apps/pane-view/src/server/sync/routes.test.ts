@@ -23,6 +23,10 @@ vi.mock("../auth/api-token", () => ({
   requireSyncApiToken: mocks.requireSyncApiToken,
 }));
 
+vi.mock("../management/guards", () => ({
+  assertNoActiveCleanupJob: vi.fn(async () => undefined),
+}));
+
 vi.mock("./store", () => ({
   completeSyncedObject: mocks.completeSyncedObject,
   finalizeSyncRun: mocks.finalizeSyncRun,
