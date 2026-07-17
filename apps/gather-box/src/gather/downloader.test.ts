@@ -74,6 +74,51 @@ describe("collision-safe downloads", () => {
     expect([...directory.files.keys()].some((name) => /^site-name_[a-z0-9]{4}\.jpg$/.test(name)))
       .toBe(true);
   });
+
+  it("aborts in-flight downloads when the signal fires", async () => {
+    const directory = createMemoryDirectory({});
+    const controller = new AbortController();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        await new Promise<void>((_resolve, reject) => {
+          const signal = init?.signal;
+          if (signal?.aborted) {
+            reject(new DOMException("The operation was aborted.", "AbortError"));
+            return;
+          }
+          signal?.addEventListener(
+            "abort",
+            () => reject(new DOMException("The operation was aborted.", "AbortError")),
+            { once: true }
+          );
+        });
+        return new Response(new Blob(["late"]));
+      })
+    );
+
+    const pending = downloadImages(
+      [
+        {
+          pageNumber: 1,
+          thumbnailUrl: null,
+          originalUrl: "https://example.test/slow",
+          fileName: "slow.jpg"
+        }
+      ],
+      directory.handle,
+      {
+        onStart: () => undefined,
+        onProgress: () => undefined,
+        onSaved: () => undefined
+      },
+      { signal: controller.signal }
+    );
+
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    expect([...directory.files.keys()]).toHaveLength(0);
+  });
 });
 
 function createMemoryDirectory(initialFiles: Record<string, Blob>): {
@@ -103,6 +148,9 @@ function createMemoryDirectory(initialFiles: Record<string, Blob>): {
             },
             async close() {
               files.set(name, pending);
+            },
+            async abort() {
+              // Leave the partial write uncommitted.
             }
           };
         }

@@ -4,7 +4,7 @@ import {
   getOrCreateNestedDirectory,
   type DownloadFailure
 } from "../gather/downloader";
-import { formatError } from "../gather/errors";
+import { formatError, isAbortError } from "../gather/errors";
 import { shouldIncludeCredentials } from "../shared/credentials";
 import type { GatherRunEvent } from "../shared/gather-run-messages";
 import { buildFolderPreview, getFolderSegments } from "../shared/path";
@@ -19,8 +19,9 @@ export async function executeGatherOutput(input: {
   payload: DownloadablePayload | GeneratedStoryPayload;
   settings: GatherBoxSettings;
   emit: (event: GatherRunEvent) => Promise<void>;
+  signal?: AbortSignal;
 }): Promise<void> {
-  const { payload, settings, emit } = input;
+  const { payload, settings, emit, signal } = input;
   if (!isGatherOutputKind((payload as { outputKind?: unknown }).outputKind)) {
     await emit({ kind: "failed", message: "The Gather Output kind is not supported." });
     return;
@@ -45,11 +46,15 @@ export async function executeGatherOutput(input: {
 
   try {
     if (payload.outputKind === "generated-story-pdf") {
-      await executeStory(payload, destinationDirectory, emit);
+      await executeStory(payload, destinationDirectory, settings, emit, signal);
       return;
     }
-    await executeFiles(payload, destinationDirectory, settings, emit);
+    await executeFiles(payload, destinationDirectory, settings, emit, signal);
   } catch (error) {
+    if (isAbortError(error) || signal?.aborted) {
+      await emit({ kind: "cancelled", message: "Gather Run cancelled." });
+      return;
+    }
     await emit({ kind: "failed", message: formatError(error) });
   }
 }
@@ -62,7 +67,8 @@ async function executeFiles(
   payload: DownloadablePayload,
   destinationDirectory: FileSystemDirectoryHandle,
   settings: GatherBoxSettings,
-  emit: (event: GatherRunEvent) => Promise<void>
+  emit: (event: GatherRunEvent) => Promise<void>,
+  signal?: AbortSignal
 ): Promise<void> {
   await emit({
     kind: "log",
@@ -92,7 +98,8 @@ async function executeFiles(
     {
       credentials: shouldIncludeCredentials(payload, settings) ? "include" : "omit",
       concurrency: settings.downloadConcurrency,
-      site: payload.site
+      site: payload.site,
+      signal
     }
   );
 
@@ -112,7 +119,9 @@ async function executeFiles(
 async function executeStory(
   payload: GeneratedStoryPayload,
   destinationDirectory: FileSystemDirectoryHandle,
-  emit: (event: GatherRunEvent) => Promise<void>
+  settings: GatherBoxSettings,
+  emit: (event: GatherRunEvent) => Promise<void>,
+  signal?: AbortSignal
 ): Promise<void> {
   const { saveFanfictionStoryPdf } = await import("../gather/fanfiction-story");
   await emit({
@@ -120,28 +129,33 @@ async function executeStory(
     message: `Found ${payload.chapters.length} chapter(s) in "${payload.title}".`,
     tone: "success"
   });
-  await saveFanfictionStoryPdf(payload, destinationDirectory, {
-    onStart: () => undefined,
-    onChapterFetched: (completed, total) => {
-      void emit({
-        kind: "progress",
-        completed,
-        total,
-        message: `Fetched chapter ${completed} of ${total}.`
-      });
+  await saveFanfictionStoryPdf(
+    payload,
+    destinationDirectory,
+    {
+      onStart: () => undefined,
+      onChapterFetched: (completed, total) => {
+        void emit({
+          kind: "progress",
+          completed,
+          total,
+          message: `Fetched chapter ${completed} of ${total}.`
+        });
+      },
+      onGenerating: () => {
+        void emit({
+          kind: "progress",
+          completed: payload.chapters.length,
+          total: payload.chapters.length,
+          message: "Generating PDF..."
+        });
+      },
+      onSaved: (fileName) => {
+        void emit({ kind: "log", message: `Saved ${fileName}`, tone: "success" });
+      }
     },
-    onGenerating: () => {
-      void emit({
-        kind: "progress",
-        completed: payload.chapters.length,
-        total: payload.chapters.length,
-        message: "Generating PDF..."
-      });
-    },
-    onSaved: (fileName) => {
-      void emit({ kind: "log", message: `Saved ${fileName}`, tone: "success" });
-    }
-  });
+    { settings, signal }
+  );
   await emit({
     kind: "complete",
     saved: 1,

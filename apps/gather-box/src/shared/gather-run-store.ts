@@ -33,3 +33,15 @@ export async function markInterruptedGatherRun(): Promise<GatherRunState | null>
   await saveGatherRun(interrupted);
   return interrupted;
 }
+
+let interruptRecovery: Promise<GatherRunState | null> | null = null;
+
+/** Deduplicated recovery for service-worker wake, install, and startup. */
+export function recoverInterruptedGatherRun(): Promise<GatherRunState | null> {
+  if (!interruptRecovery) {
+    interruptRecovery = markInterruptedGatherRun().finally(() => {
+      interruptRecovery = null;
+    });
+  }
+  return interruptRecovery;
+}

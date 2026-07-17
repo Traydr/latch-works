@@ -1,16 +1,18 @@
-import { injectCollectorAndCollect } from "../gather/active-tab";
-import { formatError } from "../gather/errors";
+import {
+  CANCEL_GATHER_RUN,
+  EXECUTE_GATHER_RUN,
+  type GatherRunCancelOutcome,
+  type GatherRunEvent,
+  type GatherRunEventMessage
+} from "../shared/gather-run-messages";
 import {
   createGatherRunState,
   isTerminalGatherRunPhase,
   type GatherRunStartOutcome,
   type GatherRunState
 } from "../shared/gather-run";
-import {
-  EXECUTE_GATHER_RUN,
-  type GatherRunEvent,
-  type GatherRunEventMessage
-} from "../shared/gather-run-messages";
+import { injectCollectorAndCollect } from "../gather/active-tab";
+import { formatError } from "../gather/errors";
 import { loadGatherRun, saveGatherRun } from "../shared/gather-run-store";
 import { saveLastRun } from "../shared/last-run";
 import { getSiteKeyFromUrl, isSupportedUrl } from "../shared/sites";
@@ -50,6 +52,42 @@ export class GatherRunCoordinator {
         images: previous.retryImages
       });
     });
+  }
+
+  async cancel(runId: string): Promise<GatherRunCancelOutcome> {
+    const run = await loadGatherRun();
+    if (!run || run.id !== runId || isTerminalGatherRunPhase(run.phase)) {
+      return { outcome: "idle" };
+    }
+
+    const cancelled = applyGatherRunEvent(run, {
+      kind: "cancelled",
+      message: "Gather Run cancelled."
+    });
+    await saveGatherRun(cancelled);
+    await saveLastRun({
+      timestamp: cancelled.updatedAt,
+      siteKey: cancelled.siteKey,
+      tabUrl: cancelled.tabUrl,
+      destinationPreview: cancelled.destinationPreview,
+      log: cancelled.log,
+      failedItems: cancelled.failedItems,
+      retryImages: cancelled.retryImages,
+      canRetry: cancelled.retryImages.length > 0
+    });
+
+    try {
+      await this.offscreenDocument.ensure();
+      await chrome.runtime.sendMessage({
+        type: CANCEL_GATHER_RUN,
+        target: "offscreen",
+        runId
+      });
+    } catch {
+      // Offscreen may not be open yet (still collecting); local cancel is enough.
+    }
+
+    return { outcome: "cancelled", run: cancelled };
   }
 
   handleEvent(message: GatherRunEventMessage): Promise<void> {
@@ -156,6 +194,11 @@ export class GatherRunCoordinator {
         throw new Error(response?.message || "The source page did not return collection data.");
       }
 
+      const latest = await loadGatherRun();
+      if (!latest || latest.id !== run.id || isTerminalGatherRunPhase(latest.phase)) {
+        return { outcome: "failed", message: "Gather Run was cancelled before writing began." };
+      }
+
       await this.offscreenDocument.ensure();
       const settings = await loadSettings();
       const accepted = await chrome.runtime.sendMessage({
@@ -170,6 +213,10 @@ export class GatherRunCoordinator {
       }
       return { outcome: "started", run: (await loadGatherRun()) ?? run };
     } catch (error) {
+      const current = await loadGatherRun();
+      if (current && current.id === run.id && isTerminalGatherRunPhase(current.phase)) {
+        return { outcome: "failed", message: current.error ?? "Gather Run cancelled." };
+      }
       const failed = await this.patch(run, {
         phase: "failed",
         error: formatError(error),
@@ -208,65 +255,76 @@ export function applyGatherRunEvent(
   now = Date.now()
 ): GatherRunState {
   const updatedAt = now;
-  if (event.kind === "permission-required") {
-    return {
-      ...run,
-      updatedAt,
-      phase: "permission-required",
-      error: null,
-      progress: { ...run.progress, message: "Folder access needs confirmation in Gather Box." },
-      log: [...run.log, { message: "Confirm folder access to continue.", tone: "error" }]
-    };
-  }
-  if (event.kind === "writing") {
-    return {
-      ...run,
-      updatedAt,
-      phase: "writing",
-      destinationPreview: event.destinationPreview,
-      folderSegments: event.folderSegments,
-      progress: { ...run.progress, total: event.total, message: "Writing Gather Output..." }
-    };
-  }
-  if (event.kind === "progress") {
-    return {
-      ...run,
-      updatedAt,
-      progress: {
-        ...run.progress,
-        completed: event.completed,
-        total: event.total,
-        message: event.message
-      }
-    };
-  }
-  if (event.kind === "log") {
-    return { ...run, updatedAt, log: [...run.log, event] };
-  }
-  if (event.kind === "failed") {
-    return {
-      ...run,
-      updatedAt,
-      phase: "failed",
-      error: event.message,
-      progress: { ...run.progress, message: "Gather Run failed." },
-      log: [...run.log, { message: event.message, tone: "error" }]
-    };
-  }
-  return {
-    ...run,
-    updatedAt,
-    phase: event.failed > 0 ? "failed" : "complete",
-    error: event.failed > 0 ? `${event.failed} item(s) failed.` : null,
-    failedItems: event.failedItems,
-    retryImages: event.retryImages,
-    progress: {
-      ...run.progress,
-      completed: run.progress.total,
-      saved: event.saved,
-      skipped: event.skipped,
-      failed: event.failed,
-      message: `Complete. Saved ${event.saved}, skipped ${event.skipped}, failed ${event.failed}.`
+  switch (event.kind) {
+    case "permission-required":
+      return {
+        ...run,
+        updatedAt,
+        phase: "permission-required",
+        error: null,
+        progress: { ...run.progress, message: "Folder access needs confirmation in Gather Box." },
+        log: [...run.log, { message: "Confirm folder access to continue.", tone: "error" }]
+      };
+    case "writing":
+      return {
+        ...run,
+        updatedAt,
+        phase: "writing",
+        destinationPreview: event.destinationPreview,
+        folderSegments: event.folderSegments,
+        progress: { ...run.progress, total: event.total, message: "Writing Gather Output..." }
+      };
+    case "progress":
+      return {
+        ...run,
+        updatedAt,
+        progress: {
+          ...run.progress,
+          completed: event.completed,
+          total: event.total,
+          message: event.message
+        }
+      };
+    case "log":
+      return { ...run, updatedAt, log: [...run.log, event] };
+    case "failed":
+      return {
+        ...run,
+        updatedAt,
+        phase: "failed",
+        error: event.message,
+        progress: { ...run.progress, message: "Gather Run failed." },
+        log: [...run.log, { message: event.message, tone: "error" }]
+      };
+    case "cancelled":
+      return {
+        ...run,
+        updatedAt,
+        phase: "cancelled",
+        error: event.message ?? "Gather Run cancelled.",
+        progress: { ...run.progress, message: "Gather Run cancelled." },
+        log: [...run.log, { message: event.message ?? "Gather Run cancelled.", tone: "error" }]
+      };
+    case "complete":
+      return {
+        ...run,
+        updatedAt,
+        phase: event.failed > 0 ? "failed" : "complete",
+        error: event.failed > 0 ? `${event.failed} item(s) failed.` : null,
+        failedItems: event.failedItems,
+        retryImages: event.retryImages,
+        progress: {
+          ...run.progress,
+          completed: run.progress.total,
+          saved: event.saved,
+          skipped: event.skipped,
+          failed: event.failed,
+          message: `Complete. Saved ${event.saved}, skipped ${event.skipped}, failed ${event.failed}.`
+        }
+      };
+    default: {
+      const unknownKind = (event as { kind?: unknown }).kind;
+      throw new Error(`Rejected unknown Gather Run event kind: ${String(unknownKind)}`);
     }
-  };
+  }
 }

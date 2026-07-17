@@ -74,4 +74,19 @@ describe("Gather Run transitions", () => {
     expect(failed.phase).toBe("failed");
     expect(failed.retryImages).toEqual([image]);
   });
+
+  it("maps cancel events to the cancelled phase", () => {
+    const cancelled = applyGatherRunEvent(run, { kind: "cancelled", message: "Stopped." }, 106);
+    expect(cancelled).toMatchObject({
+      phase: "cancelled",
+      error: "Stopped.",
+      progress: { message: "Gather Run cancelled." }
+    });
+  });
+
+  it("rejects unknown event kinds instead of completing", () => {
+    expect(() =>
+      applyGatherRunEvent(run, { kind: "explode" } as never, 107)
+    ).toThrow(/Rejected unknown Gather Run event kind/);
+  });
 });

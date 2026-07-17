@@ -124,7 +124,10 @@
     "collectorModule": "src/content/collectors/archiveofourown.ts",
     "outputKinds": ["downloadable-files"],
     "includeCredentialsByDefault": true,
-    "downloadUrlPatterns": ["^https://archiveofourown\\.org/.+"],
+    "downloadUrlPatterns": [
+      "^https://archiveofourown\\.org/downloads/[^/?#]+/.+\\.pdf(?:\\?.*)?$",
+      "^https://download\\.archiveofourown\\.org/(?:downloads/)?[^/?#]+/.+\\.pdf(?:\\?.*)?$"
+    ],
     "save": { "pattern": "direct-file", "folderDepth": 0, "summary": "Saves directly to root", "detail": "No folder is created. One PDF lands in your chosen root.", "pathTemplate": "<root>/", "filePattern": "Author-Story.pdf (site-generated)", "tag": "DIRECT", "railCode": "D" }
   },
   {
@@ -138,7 +141,7 @@
     "collectorModule": "src/content/collectors/hentai-foundry-stories.ts",
     "outputKinds": ["downloadable-files"],
     "includeCredentialsByDefault": true,
-    "downloadUrlPatterns": ["^https://www\\.hentai-foundry\\.com/.+"],
+    "downloadUrlPatterns": ["^https://www\\.hentai-foundry\\.com/stories/.+\\.pdf(?:\\?.*)?$"],
     "save": { "pattern": "direct-file", "folderDepth": 0, "summary": "Saves directly to root", "detail": "No folder is created. One PDF lands in your chosen root.", "pathTemplate": "<root>/", "filePattern": "Author-Story.pdf (site-generated)", "tag": "DIRECT", "railCode": "D" }
   },
   {
@@ -152,7 +155,7 @@
     "collectorModule": "src/content/collectors/fanfiction-net.ts",
     "outputKinds": ["generated-story-pdf"],
     "includeCredentialsByDefault": false,
-    "downloadUrlPatterns": ["^https://www\\.fanfiction\\.net/.+"],
+    "downloadUrlPatterns": ["^https://www\\.fanfiction\\.net/s/[^/]+/\\d+/[^/?#]+(?:[/?#]|$)"],
     "save": { "pattern": "direct-file", "folderDepth": 0, "summary": "Saves directly to root", "detail": "No folder is created. All chapters are fetched, merged, and saved as one PDF in your chosen root.", "pathTemplate": "<root>/", "filePattern": "Author-Story.pdf (generated locally)", "tag": "DIRECT", "railCode": "D" }
   }
 ]

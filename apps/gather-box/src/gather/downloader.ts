@@ -1,7 +1,7 @@
 import { prepareDownloadImage } from "../shared/download-policy";
 import type { SiteKey } from "../shared/sites";
 import type { GalleryImage } from "../shared/types";
-import { formatError } from "./errors";
+import { formatError, isAbortError, throwIfAborted } from "./errors";
 
 export const DEFAULT_DOWNLOAD_CONCURRENCY = 4;
 
@@ -30,6 +30,7 @@ export interface DownloadOptions {
   credentials?: RequestCredentials;
   concurrency?: number;
   site?: SiteKey;
+  signal?: AbortSignal;
 }
 
 export interface CollisionSaveResult {
@@ -64,9 +65,11 @@ export async function downloadImages(
   };
 
   callbacks.onStart(total);
+  throwIfAborted(options.signal);
 
   await runPool(images, concurrency, async (image) => {
     try {
+      throwIfAborted(options.signal);
       const preparedImage = options.site ? prepareDownloadImage(options.site, image) : image;
       if (!preparedImage) {
         throw new Error("Download URL or filename is not allowed");
@@ -75,14 +78,16 @@ export async function downloadImages(
       callbacks.onVerbose?.(`Fetching ${preparedImage.originalUrl}`);
       const response = await fetch(preparedImage.originalUrl, {
         credentials: options.credentials ?? "omit",
+        signal: options.signal
       });
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
 
       const blob = await response.blob();
+      throwIfAborted(options.signal);
       const saved = await enqueueSave(() =>
-        saveBlobWithoutClobbering(blob, destinationDirectory, preparedImage.fileName)
+        saveBlobWithoutClobbering(blob, destinationDirectory, preparedImage.fileName, undefined, options.signal)
       );
       if (saved.skipped) {
         summary.skipped += 1;
@@ -94,6 +99,9 @@ export async function downloadImages(
       summary.saved += 1;
       callbacks.onSaved(saved.fileName);
     } catch (error) {
+      if (isAbortError(error) || options.signal?.aborted) {
+        throw isAbortError(error) ? error : new DOMException("The operation was aborted.", "AbortError");
+      }
       summary.failed += 1;
       summary.failedItems.push({
         fileName: image.fileName,
@@ -106,6 +114,7 @@ export async function downloadImages(
     }
   });
 
+  throwIfAborted(options.signal);
   return summary;
 }
 
@@ -113,11 +122,13 @@ export async function saveBlobWithoutClobbering(
   blob: Blob,
   destinationDirectory: FileSystemDirectoryHandle,
   preferredFileName: string,
-  randomSuffix: () => string = createRandomSuffix
+  randomSuffix: () => string = createRandomSuffix,
+  signal?: AbortSignal
 ): Promise<CollisionSaveResult> {
+  throwIfAborted(signal);
   const preferredHandle = await getExistingFileHandle(destinationDirectory, preferredFileName);
   if (!preferredHandle) {
-    await writeBlob(destinationDirectory, preferredFileName, blob);
+    await writeBlob(destinationDirectory, preferredFileName, blob, signal);
     return { fileName: preferredFileName, skipped: false };
   }
 
@@ -126,10 +137,11 @@ export async function saveBlobWithoutClobbering(
   }
 
   for (let attempt = 0; attempt < 128; attempt += 1) {
+    throwIfAborted(signal);
     const candidateName = addFileNameSuffix(preferredFileName, randomSuffix());
     const candidateHandle = await getExistingFileHandle(destinationDirectory, candidateName);
     if (!candidateHandle) {
-      await writeBlob(destinationDirectory, candidateName, blob);
+      await writeBlob(destinationDirectory, candidateName, blob, signal);
       return { fileName: candidateName, skipped: false };
     }
 
@@ -226,12 +238,32 @@ async function hashBlob(blob: Blob): Promise<string> {
 async function writeBlob(
   destinationDirectory: FileSystemDirectoryHandle,
   fileName: string,
-  blob: Blob
+  blob: Blob,
+  signal?: AbortSignal
 ): Promise<void> {
+  throwIfAborted(signal);
   const fileHandle = await destinationDirectory.getFileHandle(fileName, { create: true });
   const writable = await fileHandle.createWritable();
-  await writable.write(blob);
-  await writable.close();
+  try {
+    throwIfAborted(signal);
+    await writable.write(blob);
+    await writable.close();
+  } catch (error) {
+    await closeWritableSafely(writable);
+    throw error;
+  }
+}
+
+async function closeWritableSafely(writable: FileSystemWritableFileStream): Promise<void> {
+  try {
+    if (typeof writable.abort === "function") {
+      await writable.abort();
+      return;
+    }
+    await writable.close();
+  } catch {
+    // Best-effort cleanup after a failed or aborted write.
+  }
 }
 
 function createRandomSuffix(): string {

@@ -1,9 +1,11 @@
 import {
+  isCancelGatherRunRequest,
   isGatherRunEventMessage,
   isRetryGatherRunRequest,
   isStartGatherRunRequest
 } from "../shared/gather-run-messages";
-import { markInterruptedGatherRun } from "../shared/gather-run-store";
+import { loadGatherRun, recoverInterruptedGatherRun } from "../shared/gather-run-store";
+import { isTerminalGatherRunPhase } from "../shared/gather-run";
 import {
   isPageGatherMessage,
   OPEN_EXTENSION_MESSAGE,
@@ -21,14 +23,18 @@ const CONTEXT_MENU_ID = "gather-box-download";
 const gatherRuns = new GatherRunCoordinator();
 const gatherCommands = new GatherCommands(gatherRuns);
 
+// Recover non-terminal runs whenever the service worker wakes, not only on browser startup.
+void recoverInterruptedGatherRun();
+
 chrome.runtime.onInstalled.addListener(() => {
   void configureExtensionUi();
   void setupContextMenu();
+  void recoverInterruptedGatherRun();
 });
 
 chrome.runtime.onStartup.addListener(() => {
   void configureExtensionUi();
-  void markInterruptedGatherRun();
+  void recoverInterruptedGatherRun();
 });
 
 chrome.sidePanel.onOpened.addListener((info) => {
@@ -59,7 +65,7 @@ chrome.commands.onCommand.addListener((command, tab) => {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (isStartGatherRunRequest(message)) {
-    if (sender.tab || sender.id !== chrome.runtime.id) {
+    if (!isExtensionOriginSender(sender)) {
       sendResponse({ outcome: "failed", message: "Untrusted Gather Run target." });
       return false;
     }
@@ -76,7 +82,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (isRetryGatherRunRequest(message)) {
-    if (sender.tab || sender.id !== chrome.runtime.id) {
+    if (!isExtensionOriginSender(sender)) {
       sendResponse({ outcome: "failed", message: "Untrusted Gather Run retry." });
       return false;
     }
@@ -84,18 +90,42 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (isCancelGatherRunRequest(message)) {
+    if (!isExtensionOriginSender(sender)) {
+      sendResponse({ outcome: "failed", message: "Untrusted Gather Run cancel." });
+      return false;
+    }
+    void gatherRuns.cancel(message.runId).then(sendResponse);
+    return true;
+  }
+
   if (isGatherRunEventMessage(message)) {
+    if (!isExtensionOriginSender(sender)) {
+      return false;
+    }
     void gatherRuns.handleEvent(message);
     return false;
   }
 
   if (isResolveXMediaMessage(message)) {
-    void resolveXPostMedia(message).then(sendResponse);
+    void authorizeMediaResolver(sender).then((allowed) => {
+      if (!allowed) {
+        sendResponse({ ok: false, message: "Media resolution is only allowed for the active Gather Run tab." });
+        return;
+      }
+      return resolveXPostMedia(message).then(sendResponse);
+    });
     return true;
   }
 
   if (isResolveRedgifsMediaMessage(message)) {
-    void resolveRedgifsMedia(message.redgifsId).then(sendResponse);
+    void authorizeMediaResolver(sender).then((allowed) => {
+      if (!allowed) {
+        sendResponse({ ok: false, message: "Media resolution is only allowed for the active Gather Run tab." });
+        return;
+      }
+      return resolveRedgifsMedia(message.redgifsId).then(sendResponse);
+    });
     return true;
   }
 
@@ -123,4 +153,21 @@ async function setupContextMenu(): Promise<void> {
     contexts: ["page"],
     documentUrlPatterns: getContextMenuMatches()
   });
+}
+
+function isExtensionOriginSender(sender: chrome.runtime.MessageSender): boolean {
+  return !sender.tab && sender.id === chrome.runtime.id;
+}
+
+async function authorizeMediaResolver(sender: chrome.runtime.MessageSender): Promise<boolean> {
+  if (sender.id !== chrome.runtime.id || typeof sender.tab?.id !== "number") {
+    return false;
+  }
+
+  const run = await loadGatherRun();
+  if (!run || isTerminalGatherRunPhase(run.phase)) {
+    return false;
+  }
+
+  return run.tabId === sender.tab.id && (run.phase === "collecting" || run.phase === "preparing");
 }

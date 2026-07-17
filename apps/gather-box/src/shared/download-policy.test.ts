@@ -31,6 +31,21 @@ describe("download policy", () => {
     expect(
       isAllowedDownloadUrl("reddit", "https://media.redgifs.com/Example.mp4"),
     ).toBe(true);
+    expect(
+      isAllowedDownloadUrl("archiveofourown", "https://archiveofourown.org/downloads/1/story.pdf"),
+    ).toBe(true);
+    expect(
+      isAllowedDownloadUrl(
+        "archiveofourown",
+        "https://download.archiveofourown.org/downloads/1/story.pdf",
+      ),
+    ).toBe(true);
+    expect(
+      isAllowedDownloadUrl("hentaifoundry-stories", "https://www.hentai-foundry.com/stories/story.pdf"),
+    ).toBe(true);
+    expect(
+      isAllowedDownloadUrl("fanfiction-net", "https://www.fanfiction.net/s/1/2/Test-Story"),
+    ).toBe(true);
   });
 
   it("rejects cross-site or unsupported hosts", () => {
@@ -45,6 +60,15 @@ describe("download policy", () => {
     expect(
       isAllowedDownloadUrl("reddit", "https://preview.redd.it/media123.gif?format=png"),
     ).toBe(false);
+    expect(isAllowedDownloadUrl("archiveofourown", "https://archiveofourown.org/works/1")).toBe(
+      false,
+    );
+    expect(isAllowedDownloadUrl("hentaifoundry-stories", "https://www.hentai-foundry.com/pictures/1")).toBe(
+      false,
+    );
+    expect(isAllowedDownloadUrl("fanfiction-net", "https://www.fanfiction.net/u/1/Author")).toBe(
+      false,
+    );
   });
 
   it("sanitizes unsafe filenames before download", () => {
