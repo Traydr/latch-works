@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, exists, gte, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, exists, gte, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import { db } from "../db";
 import { collections, folders, libraryEntries, mediaObjects, syncRuns } from "../db/schema";
 import {
@@ -170,13 +170,18 @@ export async function readArchiveStats(): Promise<ArchiveStats> {
       .limit(TOP_LIMIT),
     db
       .select({
-        entryCount: folders.entryCount,
+        entryCount: sql<number>`count(*)::int`,
         name: folders.name,
         path: folders.path,
       })
-      .from(folders)
-      .where(and(isNull(folders.deletedAt), sql`${folders.entryCount} > 0`))
-      .orderBy(desc(folders.entryCount))
+      .from(libraryEntries)
+      .innerJoin(
+        folders,
+        and(eq(folders.path, libraryEntries.parentPath), isNull(folders.deletedAt)),
+      )
+      .where(and(isNull(libraryEntries.deletedAt), ne(libraryEntries.parentPath, "")))
+      .groupBy(folders.path, folders.name)
+      .orderBy(desc(sql`count(*)`))
       .limit(TOP_LIMIT),
     db
       .select({
@@ -331,8 +336,13 @@ export async function readArchiveStats(): Promise<ArchiveStats> {
 
   const bytesLast30Days = growthDailyBytes.reduce((sum, bucket) => sum + bucket.value, 0);
   const entriesLast30Days = growthDailyEntries.reduce((sum, bucket) => sum + bucket.value, 0);
-  const bytesPerDay = averageDailyGrowth(growthDailyBytes, GROWTH_WINDOW_DAYS, today);
-  const entriesPerDay = averageDailyGrowth(growthDailyEntries, GROWTH_WINDOW_DAYS, today);
+  const archiveStartedOn = oldestObjectAt ? toDayKey(oldestObjectAt) : null;
+  const bytesPerDay = averageDailyGrowth(growthDailyBytes, GROWTH_WINDOW_DAYS, today, {
+    archiveStartedOn,
+  });
+  const entriesPerDay = averageDailyGrowth(growthDailyEntries, GROWTH_WINDOW_DAYS, today, {
+    archiveStartedOn,
+  });
 
   const syncByDay = new Map(
     syncDailyRows.map((row) => [
@@ -406,7 +416,7 @@ export async function readArchiveStats(): Promise<ArchiveStats> {
       extension: row.extension.startsWith(".") ? row.extension : `.${row.extension}`,
     })),
     topFolders: topFolderRows.map((row) => ({
-      entryCount: row.entryCount,
+      entryCount: asNumber(row.entryCount),
       name: row.name,
       path: row.path,
     })),

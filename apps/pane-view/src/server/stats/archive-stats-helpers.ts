@@ -72,6 +72,12 @@ export function averageDailyGrowth(
   daily: DailyBucket[],
   windowDays: number,
   endDay = toDayKey(new Date()),
+  options?: {
+    /** YYYY-MM-DD when the archive first existed. Leading quiet days inside the
+     * window are only skipped when this falls inside the window (brand-new
+     * archive). Established archives always divide by the full window. */
+    archiveStartedOn?: string | null;
+  },
 ): number {
   if (windowDays <= 0) {
     return 0;
@@ -89,13 +95,18 @@ export function averageDailyGrowth(
     cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
 
-  // Ignore leading empty history before the archive existed.
-  const firstActivity = daily.find((bucket) => bucket.value > 0)?.day;
-  if (!firstActivity || firstActivity > endDay) {
+  if (total <= 0) {
     return 0;
   }
 
-  const effectiveStart = firstActivity > startKey ? firstActivity : startKey;
+  const archiveStartedOn = options?.archiveStartedOn ?? null;
+  if (archiveStartedOn && archiveStartedOn > endDay) {
+    return 0;
+  }
+
+  // Brand-new archives: start counting from birth. Established archives: full window.
+  const effectiveStart =
+    archiveStartedOn && archiveStartedOn > startKey ? archiveStartedOn : startKey;
   const effectiveDays =
     Math.floor((end.getTime() - new Date(`${effectiveStart}T00:00:00.000Z`).getTime()) / DAY_MS) +
     1;

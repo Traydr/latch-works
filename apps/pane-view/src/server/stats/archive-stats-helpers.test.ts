@@ -45,7 +45,7 @@ describe("archive-stats-helpers", () => {
     ]);
   });
 
-  it("averages growth over the effective window after first activity", () => {
+  it("averages growth from archive birth for brand-new archives", () => {
     const daily = [
       { day: "2026-01-01", value: 0 },
       { day: "2026-01-02", value: 0 },
@@ -54,7 +54,33 @@ describe("archive-stats-helpers", () => {
       { day: "2026-01-05", value: 30 },
     ];
 
-    expect(averageDailyGrowth(daily, 5, "2026-01-05")).toBe(30);
+    expect(averageDailyGrowth(daily, 5, "2026-01-05", { archiveStartedOn: "2026-01-03" })).toBe(30);
+  });
+
+  it("counts quiet days for archives that already existed before the window", () => {
+    const daily = [
+      { day: "2026-01-01", value: 0 },
+      { day: "2026-01-02", value: 0 },
+      { day: "2026-01-03", value: 0 },
+      { day: "2026-01-04", value: 0 },
+      { day: "2026-01-05", value: 100 },
+    ];
+
+    expect(averageDailyGrowth(daily, 5, "2026-01-05", { archiveStartedOn: "2025-06-01" })).toBe(20);
+  });
+
+  it("returns zero when nothing was added in the window", () => {
+    expect(
+      averageDailyGrowth(
+        [
+          { day: "2026-01-01", value: 0 },
+          { day: "2026-01-05", value: 0 },
+        ],
+        5,
+        "2026-01-05",
+        { archiveStartedOn: "2025-01-01" },
+      ),
+    ).toBe(0);
   });
 
   it("projects future size from the current total and daily rate", () => {
