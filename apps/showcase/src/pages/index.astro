@@ -20,10 +20,25 @@ import VariantPigment from "@/components/prototype/home/VariantPigment.astro";
 import VariantRiso from "@/components/prototype/home/VariantRiso.astro";
 import VariantSwatchbook from "@/components/prototype/home/VariantSwatchbook.astro";
 import VariantWorkbench from "@/components/prototype/home/VariantWorkbench.astro";
-import { HOME_VARIANTS, resolveVariant } from "@/components/prototype/variants";
+import {
+  HOME_VARIANTS,
+  PROTOTYPE_FAMILY_COOKIE,
+  resolveVariant,
+} from "@/components/prototype/variants";
 import BaseLayout from "@/layouts/BaseLayout.astro";
 
-const variant = resolveVariant(Astro.url.searchParams.get("variant"), HOME_VARIANTS);
+const requestedVariant = Astro.url.searchParams.get("variant");
+const savedVariant = Astro.cookies.get(PROTOTYPE_FAMILY_COOKIE)?.value ?? null;
+const variant = resolveVariant(requestedVariant ?? savedVariant, HOME_VARIANTS);
+
+if (requestedVariant) {
+  Astro.cookies.set(PROTOTYPE_FAMILY_COOKIE, variant.key, {
+    httpOnly: true,
+    maxAge: 60 * 60 * 24 * 365,
+    path: "/",
+    sameSite: "lax",
+  });
+}
 ---
 
 <BaseLayout>

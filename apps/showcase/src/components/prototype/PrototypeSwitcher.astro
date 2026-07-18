@@ -18,7 +18,11 @@ const isDev = import.meta.env.DEV;
 
 {
   isDev && (
-    <div class="proto-switcher" data-keys={variants.map((v) => v.key).join(",")}>
+    <div
+      class="proto-switcher"
+      data-current={current.key}
+      data-keys={variants.map((v) => v.key).join(",")}
+    >
       <button type="button" data-step="-1" aria-label="Previous variant">
         ←
       </button>
@@ -82,7 +86,7 @@ const isDev = import.meta.env.DEV;
     const keys = (bar.dataset.keys ?? "").split(",");
     const go = (step: number) => {
       const url = new URL(window.location.href);
-      const current = url.searchParams.get("variant") ?? keys[0];
+      const current = url.searchParams.get("variant") ?? bar.dataset.current ?? keys[0];
       const idx = Math.max(0, keys.indexOf(current));
       const next = keys[(idx + step + keys.length) % keys.length];
       url.searchParams.set("variant", next);

@@ -13,6 +13,8 @@ export type VariantOption = {
   slug: string;
 };
 
+export const PROTOTYPE_FAMILY_COOKIE = "latch-works.prototype-family";
+
 export const FAMILIES: VariantOption[] = [
   { key: "0", name: "Current", slug: "current" },
   { key: "1", name: "Archive", slug: "archive" },
