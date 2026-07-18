@@ -48,7 +48,7 @@ const enamel: Record<string, string> = {
     stages.map((product, index) => (
       <section
         class:list={["product-plate", index % 2 === 1 && "reverse"]}
-        style={`--enamel:${enamel[product.slug]};--ink:${product.slug === "frame-view" ? "#fff" : "#151310"}`}
+        style={`--enamel:${enamel[product.slug]};--ink:#151310`}
       >
         <i class="chev tl"></i>
         <i class="chev tr"></i>
