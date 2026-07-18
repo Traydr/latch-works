@@ -50,10 +50,10 @@ const enamel: Record<string, string> = {
         class:list={["product-plate", index % 2 === 1 && "reverse"]}
         style={`--enamel:${enamel[product.slug]};--ink:${product.slug === "frame-view" ? "#fff" : "#151310"}`}
       >
-        <i class="screw tl"></i>
-        <i class="screw tr"></i>
-        <i class="screw bl"></i>
-        <i class="screw br"></i>
+        <i class="chev tl"></i>
+        <i class="chev tr"></i>
+        <i class="chev bl"></i>
+        <i class="chev br"></i>
         <div class="plate-copy">
           <p class="stage">STAGE 0{index + 1} / {pipeline[index].step}</p>
           <h2>
@@ -135,11 +135,11 @@ const enamel: Record<string, string> = {
   .shot { margin:0; padding:.65rem; background:var(--enamel); border:1px solid color-mix(in srgb,var(--ink),transparent 50%); box-shadow:13px 16px 0 color-mix(in srgb,var(--ink),transparent 79%); transform:rotate(2deg); }
   .shot img { display:block; width:100%; aspect-ratio:16/10; object-fit:cover; filter:grayscale(1) contrast(1.12) brightness(1.02); mix-blend-mode:multiply; opacity:.92; }
   .shot figcaption { margin:.65rem 0 .1rem; font-size:.56rem; }
-  .screw { position:absolute; width:14px; height:14px; border-radius:50%; background:linear-gradient(45deg,transparent 42%,#151310 43% 57%,transparent 58%),radial-gradient(circle at 35% 30%,#fff8 0 13%,#151310 50%); border:1px solid #15131066; }
-  .tl { top:18px; left:18px; }
-  .tr { top:18px; right:18px; }
-  .bl { bottom:18px; left:18px; }
-  .br { bottom:18px; right:18px; }
+  .chev { position:absolute; width:12px; height:12px; border:2px solid currentColor; }
+  .tl { top:18px; left:18px; border-right:0; border-bottom:0; }
+  .tr { top:18px; right:18px; border-left:0; border-bottom:0; }
+  .bl { bottom:18px; left:18px; border-right:0; border-top:0; }
+  .br { bottom:18px; right:18px; border-left:0; border-top:0; }
   .closing { padding:clamp(3rem,7vw,7rem) max(1.5rem,8vw); border-top:1px solid #2A2E35; }
   .principles { display:grid; grid-template-columns:repeat(4,1fr); border:1px solid #2A2E35; }
   .principles article { padding:1.5rem; border-right:1px solid #2A2E35; }

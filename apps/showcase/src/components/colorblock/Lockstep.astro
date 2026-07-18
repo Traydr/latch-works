@@ -95,11 +95,11 @@ const supporting = product.features.slice(4);
   main{--green:#34C98E;background:#16181C;color:#E8EAED;min-height:100vh;padding:1.3rem;font-family:"Barlow",sans-serif}
   .back{font:700 .73rem "JetBrains Mono",monospace;color:#E8EAED;text-transform:uppercase;text-decoration:none}
   .hero{position:relative;background:var(--green);color:#151310;padding:clamp(2.5rem,6vw,6rem);margin-top:1.5rem}
-  .hero i{position:absolute;width:13px;height:13px;border-radius:50%;background:linear-gradient(45deg,transparent 42%,#151310 43% 57%,transparent 58%),radial-gradient(circle at 35% 30%,#fff8 0 13%,#151310 50%)}
-  .hero i:nth-of-type(1){top:15px;left:15px}
-  .hero i:nth-of-type(2){top:15px;right:15px}
-  .hero i:nth-of-type(3){bottom:15px;left:15px}
-  .hero i:nth-of-type(4){bottom:15px;right:15px}
+  .hero i{position:absolute;width:12px;height:12px;border:2px solid #151310}
+  .hero i:nth-of-type(1){top:15px;left:15px;border-right:0;border-bottom:0}
+  .hero i:nth-of-type(2){top:15px;right:15px;border-left:0;border-bottom:0}
+  .hero i:nth-of-type(3){bottom:15px;left:15px;border-right:0;border-top:0}
+  .hero i:nth-of-type(4){bottom:15px;right:15px;border-left:0;border-top:0}
   .hero>p,.spec,figcaption,aside,.guard span{font:700 .65rem/1.5 "JetBrains Mono",monospace;letter-spacing:.07em}
   .hero h1,h2{font:700 "Barlow Condensed",sans-serif;text-transform:uppercase;line-height:.78;letter-spacing:-.03em;margin:.8rem 0}
   .hero h1{font-size:clamp(5.5rem,15vw,14rem)}
