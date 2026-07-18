@@ -153,6 +153,8 @@ export async function pushChanges(
             apiToken: options.apiToken,
             apiUrl: options.apiUrl,
             item: local,
+            // Keep the existing library row when only case / jpeg↔jpg spelling differs.
+            logicalPath: item.action === "update" && item.remote ? item.remote.path : local.path,
             onStage: (stage, detail) => {
               observer?.onEvent({
                 type: "status",

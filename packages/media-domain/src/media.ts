@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { canonicalizeExtension } from "./paths.js";
 
 export const ImageExtensions = ["jpg", "jpeg", "png", "webp", "gif", "bmp", "avif"] as const;
 
@@ -57,7 +58,7 @@ export function getExtension(fileName: string): string {
     return "";
   }
 
-  return fileName.slice(dotIndex + 1).toLowerCase();
+  return canonicalizeExtension(fileName.slice(dotIndex + 1));
 }
 
 export function detectMediaType(fileName: string): MediaType {

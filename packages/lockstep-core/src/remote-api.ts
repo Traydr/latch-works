@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { Readable, Transform } from "node:stream";
-import type { MediaItem } from "@latch-works/media-domain";
+import { getBaseName, getExtension, type MediaItem } from "@latch-works/media-domain";
 import { hashFileContents } from "@latch-works/media-index";
 import { formatBytes } from "./format.js";
 import { resolveLocalFilePath } from "./push-helpers.js";
@@ -66,6 +66,11 @@ export async function pushMediaItem({
   apiToken,
   apiUrl,
   item,
+  /**
+   * Library path to register. For updates, pass the existing remote path when it only
+   * differs by case/extension alias so upsert hits the same row instead of inserting a twin.
+   */
+  logicalPath = item.path,
   onStage,
   signal,
   sourceRoot,
@@ -74,12 +79,16 @@ export async function pushMediaItem({
   apiToken: string;
   apiUrl: string;
   item: MediaItem;
+  logicalPath?: string;
   onStage: (stage: PushStage, detail?: string) => void;
   signal?: AbortSignal;
   sourceRoot: string;
   syncRunId: string;
 }): Promise<void> {
   const filePath = resolveLocalFilePath(sourceRoot, item.path);
+  const registrationName = getBaseName(logicalPath);
+  const registrationExtension = getExtension(registrationName);
+  const contentType = contentTypeForExtension(registrationExtension);
   const preHashStat = await stat(filePath);
   const sha256 =
     item.sha256 ??
@@ -101,8 +110,8 @@ export async function pushMediaItem({
     "/api/sync/upload-url",
     apiToken,
     {
-      contentType: contentTypeFor(item),
-      filename: item.name,
+      contentType,
+      filename: registrationName,
       sha256,
       size: preHashStat.size,
     },
@@ -111,7 +120,7 @@ export async function pushMediaItem({
 
   if (uploadTarget.uploadUrl) {
     await uploadFile({
-      contentType: contentTypeFor(item),
+      contentType,
       expectedSha256: sha256,
       expectedSize: preHashStat.size,
       filePath,
@@ -137,10 +146,10 @@ export async function pushMediaItem({
     "/api/sync/complete-object",
     apiToken,
     {
-      contentType: contentTypeFor(item),
-      extension: item.extension,
-      filename: item.name,
-      logicalPath: item.path,
+      contentType,
+      extension: registrationExtension,
+      filename: registrationName,
+      logicalPath,
       mediaType: item.mediaType,
       mtimeMs: item.mtimeMs,
       objectKey: uploadTarget.objectKey,
@@ -276,8 +285,8 @@ export async function uploadFile({
   }
 }
 
-function contentTypeFor(item: MediaItem): string {
-  switch (item.extension) {
+function contentTypeForExtension(extension: string): string {
+  switch (extension) {
     case "jpg":
     case "jpeg":
       return "image/jpeg";

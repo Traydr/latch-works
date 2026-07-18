@@ -1,4 +1,4 @@
-import { type MediaItem, normalizePathForCompare } from "@latch-works/media-domain";
+import { createSyncPathIdentity, type MediaItem } from "@latch-works/media-domain";
 
 export interface RemoteEntrySnapshot {
   path: string;
@@ -24,18 +24,22 @@ export function createSyncPlan(
   localItems: readonly MediaItem[],
   remoteEntries: readonly RemoteEntrySnapshot[] = [],
 ): SyncPlan {
-  const remoteByPath = new Map(
-    remoteEntries.map((entry) => [normalizePathForCompare(entry.path), entry]),
+  const identity = createSyncPathIdentity(
+    localItems.map((item) => item.path),
+    remoteEntries.map((entry) => entry.path),
   );
-  const localByPath = new Map(localItems.map((item) => [normalizePathForCompare(item.path), item]));
+  const remoteByPath = new Map(remoteEntries.map((entry) => [identity(entry.path), entry]));
   const items: SyncPlanItem[] = [];
+  const matchedRemotePaths = new Set<string>();
 
   for (const local of localItems) {
-    const remote = remoteByPath.get(normalizePathForCompare(local.path));
+    const remote = remoteByPath.get(identity(local.path));
     if (!remote) {
       items.push({ action: "upload", local, path: local.path });
       continue;
     }
+
+    matchedRemotePaths.add(remote.path);
 
     if (
       remote.size !== local.size ||
@@ -49,7 +53,9 @@ export function createSyncPlan(
   }
 
   for (const remote of remoteEntries) {
-    if (!localByPath.has(normalizePathForCompare(remote.path))) {
+    // Prefer matchedRemotePaths so alias/case duplicate remotes collapsed in remoteByPath
+    // still plan as deletes after the surviving identity is kept/updated.
+    if (!matchedRemotePaths.has(remote.path)) {
       items.push({ action: "delete", path: remote.path, remote });
     }
   }
