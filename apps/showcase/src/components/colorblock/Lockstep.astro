@@ -1,0 +1,143 @@
+---
+/**
+ * Lockstep product page — Colorblock design system.
+ * Emerald enamel #34C98E, dark ink, steel seams, and a latched delete guard.
+ * Apply deletes appears exactly once: behind the hatched guard rail.
+ */
+import "@fontsource/barlow-condensed/600.css";
+import "@fontsource/barlow-condensed/700.css";
+import "@fontsource/barlow/400.css";
+import "@fontsource/barlow/500.css";
+import "@fontsource/jetbrains-mono/400.css";
+import "@fontsource/jetbrains-mono/700.css";
+import type { Product } from "@/data/products";
+
+interface Props {
+  product: Product;
+}
+
+const { product } = Astro.props;
+
+// Plan, Push, Verify — the tagline verbs. Deletes live only in the guard.
+const actions = [product.features[0], product.features[1], product.features[3]].filter(
+  (feature) => feature !== undefined,
+);
+const applyDeletes = product.features[2];
+const supporting = product.features.slice(4);
+---
+
+<main>
+  <a class="back" href="/">← All stages</a>
+
+  <section class="hero">
+    <i></i><i></i><i></i><i></i>
+    <p>STAGE 03 / SYNC</p>
+    <h1>{product.name}</h1>
+    <strong>{product.tagline}</strong>
+    <p class="desc">{product.description}</p>
+    <div class="spec">
+      PATH <b>{product.repoPath}</b><br />
+      TYPE <b>{product.kind}</b><br />
+      ROLE <b>explicit archive sync</b>
+    </div>
+  </section>
+
+  <section class="visual">
+    <figure>
+      <img src={product.heroScreenshot.src} alt={product.heroScreenshot.alt} />
+      <figcaption>{product.heroScreenshot.caption}</figcaption>
+    </figure>
+  </section>
+
+  <section class="actions">
+    {
+      actions.map((action) => (
+        <article>
+          <small>{action.title.split(" ")[0]}</small>
+          <h2>{action.title.replace(/\//g, "/\u200B")}</h2>
+          <p>{action.description}</p>
+        </article>
+      ))
+    }
+  </section>
+
+  {
+    applyDeletes && (
+      <section class="guard">
+        <div>
+          <b>APPLY DELETES</b>
+          <span>LATCHED - separate explicit action</span>
+        </div>
+        <p>{applyDeletes.description}</p>
+      </section>
+    )
+  }
+
+  <section class="features">
+    {
+      supporting.map((feature) => (
+        <article>
+          <h2>{feature.title}</h2>
+          <p>{feature.description}</p>
+        </article>
+      ))
+    }
+  </section>
+
+  <aside>
+    {product.highlights.map((highlight) => <span>{highlight}</span>)}
+  </aside>
+
+  <a class="manual" href={`/docs/${product.slug}`}>Service manual →</a>
+</main>
+
+<style>
+  main{--green:#34C98E;background:#16181C;color:#E8EAED;min-height:100vh;padding:1.3rem;font-family:"Barlow",sans-serif}
+  .back{font:700 .73rem "JetBrains Mono",monospace;color:#E8EAED;text-transform:uppercase;text-decoration:none}
+  .hero{position:relative;background:var(--green);color:#151310;padding:clamp(2.5rem,6vw,6rem);margin-top:1.5rem}
+  .hero i{position:absolute;width:13px;height:13px;border-radius:50%;background:linear-gradient(45deg,transparent 42%,#151310 43% 57%,transparent 58%),radial-gradient(circle at 35% 30%,#fff8 0 13%,#151310 50%)}
+  .hero i:nth-of-type(1){top:15px;left:15px}
+  .hero i:nth-of-type(2){top:15px;right:15px}
+  .hero i:nth-of-type(3){bottom:15px;left:15px}
+  .hero i:nth-of-type(4){bottom:15px;right:15px}
+  .hero>p,.spec,figcaption,aside,.guard span{font:700 .65rem/1.5 "JetBrains Mono",monospace;letter-spacing:.07em}
+  .hero h1,h2{font:700 "Barlow Condensed",sans-serif;text-transform:uppercase;line-height:.78;letter-spacing:-.03em;margin:.8rem 0}
+  .hero h1{font-size:clamp(5.5rem,15vw,14rem)}
+  .hero strong{font:500 clamp(1.3rem,2.2vw,2rem) "Barlow",sans-serif}
+  .desc{font:400 1.1rem/1.45 "Barlow",sans-serif;max-width:55rem}
+  .spec{border-top:1px solid #15131055;padding-top:.8rem}
+  .spec b{font-weight:400;margin-left:1rem}
+  .visual{padding:clamp(3rem,7vw,7rem) 12vw}
+  .visual figure{margin:0;background:var(--green);padding:.65rem;transform:rotate(2deg);box-shadow:15px 16px 0 #0005}
+  .visual img{display:block;width:100%;filter:grayscale(1) contrast(1.12) brightness(1.02);mix-blend-mode:multiply;opacity:.92}
+  .visual figcaption{color:#151310;margin:.6rem 0 0}
+  .actions{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin:0 5vw}
+  .actions article{background:var(--green);color:#151310;padding:clamp(1.5rem,3vw,3rem);min-height:260px;border:1px solid #207b59}
+  .actions small{font:700 1rem "JetBrains Mono",monospace}
+  .actions h2{font-size:clamp(3rem,6vw,6rem)}
+  .actions p{line-height:1.4;max-width:22rem}
+  .guard{margin:1rem 5vw;display:grid;grid-template-columns:1fr 1fr;border:1px solid #c66b16;background:repeating-linear-gradient(-45deg,#e7882b 0 10px,#f5a623 10px 20px);color:#151310;padding:1.5rem}
+  .guard div{border-right:1px solid #15131066}
+  .guard b{display:block;font:700 clamp(2.5rem,5vw,5rem)/.8 "Barlow Condensed",sans-serif}
+  .guard span{display:block;margin-top:.8rem}
+  .guard p{font:500 1.1rem/1.4 "Barlow",sans-serif;margin:0;padding-left:1.5rem}
+  .features{display:grid;grid-template-columns:repeat(auto-fit,minmax(16rem,1fr));gap:1px;background:#2A2E35;margin-top:4rem}
+  .features article{background:#1d2025;padding:1.5rem}
+  .features h2{font-size:2.3rem;color:var(--green)}
+  .features p{color:#c1c5cb;line-height:1.4}
+  aside{display:grid;grid-template-columns:repeat(4,1fr);border-block:1px solid #2A2E35;margin-top:4rem}
+  aside span{padding:1rem;border-right:1px solid #2A2E35}
+  .manual{display:block;background:var(--green);color:#151310;margin:4rem 5vw 1rem;padding:1.2rem;text-align:center;text-decoration:none;font:700 2rem "Barlow Condensed",sans-serif;text-transform:uppercase}
+  a:focus-visible{outline:3px solid white;outline-offset:4px}
+  @media(max-width:700px){
+    .hero h1{font-size:clamp(2.75rem,13.5vw,6rem)}
+    .visual{padding-inline:1rem}
+    .actions,.features{grid-template-columns:1fr;margin-inline:0}
+    .guard{grid-template-columns:1fr;margin-inline:0}
+    .guard div{border-right:0;border-bottom:1px solid #15131066;padding-bottom:1rem}
+    .guard p{padding:1rem 0 0}
+    aside{grid-template-columns:1fr}
+    aside span{border-right:0;border-bottom:1px solid #2A2E35}
+    .manual{margin-inline:0}
+  }
+</style>
