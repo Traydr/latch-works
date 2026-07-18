@@ -18,6 +18,7 @@ import {
   XAxis,
   YAxis,
 } from "@/components/dither-kit";
+import { bytesToMegabytes } from "./stats-chart-data";
 import { useArchiveStatsQuery } from "./stats-queries";
 
 const MEDIA_TYPE_COLORS: Record<string, DitherColor> = {
@@ -27,23 +28,6 @@ const MEDIA_TYPE_COLORS: Record<string, DitherColor> = {
   unknown: "grey",
   video: "purple",
 };
-
-function formatDuration(ms: number): string {
-  if (ms <= 0) {
-    return "0s";
-  }
-  const totalSeconds = Math.floor(ms / 1000);
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  if (hours > 0) {
-    return `${hours.toLocaleString()}h ${minutes}m`;
-  }
-  if (minutes > 0) {
-    return `${minutes}m ${seconds}s`;
-  }
-  return `${seconds}s`;
-}
 
 function formatRate(bytesPerDay: number): string {
   return `${formatBytes(bytesPerDay)}/day`;
@@ -102,12 +86,22 @@ export function StatsPage() {
   const statsQuery = useArchiveStatsQuery();
   const stats = statsQuery.data;
 
-  const sizeSpark = stats?.sizeOverTime.map((point) => point.value) ?? [];
+  const sizeChartData =
+    stats?.sizeOverTime.map((point) => ({
+      ...point,
+      value: bytesToMegabytes(point.value),
+    })) ?? [];
+  const recentGrowthChartData =
+    stats?.recentGrowth.map((point) => ({
+      ...point,
+      bytesAdded: bytesToMegabytes(point.bytesAdded),
+    })) ?? [];
+  const sizeSpark = sizeChartData.map((point) => point.value);
   const entrySpark = stats?.entriesOverTime.map((point) => point.value) ?? [];
-  const growthSpark = stats?.recentGrowth.map((point) => point.bytesAdded) ?? [];
+  const growthSpark = recentGrowthChartData.map((point) => point.bytesAdded);
 
   const sizeConfig = {
-    value: { color: "blue" as const, label: "Archive size" },
+    value: { color: "blue" as const, label: "Archive size (MB)" },
   } satisfies ChartConfig;
 
   const entryConfig = {
@@ -115,7 +109,7 @@ export function StatsPage() {
   } satisfies ChartConfig;
 
   const growthConfig = {
-    bytesAdded: { color: "orange" as const, label: "Bytes added" },
+    bytesAdded: { color: "orange" as const, label: "MB added" },
   } satisfies ChartConfig;
 
   const syncConfig = {
@@ -124,7 +118,7 @@ export function StatsPage() {
 
   const mediaTypePieData =
     stats?.byMediaType.map((row) => ({
-      bytes: row.bytes,
+      megabytes: bytesToMegabytes(row.bytes),
       mediaType: row.mediaType,
     })) ?? [];
 
@@ -140,12 +134,12 @@ export function StatsPage() {
 
   const extensionBarData =
     stats?.topExtensions.map((row) => ({
-      bytes: row.bytes,
       extension: row.extension,
+      megabytes: bytesToMegabytes(row.bytes),
     })) ?? [];
 
   const extensionConfig = {
-    bytes: { color: "purple" as const, label: "Bytes" },
+    megabytes: { color: "purple" as const, label: "MB" },
   } satisfies ChartConfig;
 
   return (
@@ -209,13 +203,12 @@ export function StatsPage() {
               />
             </section>
 
-            <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <StatCard
                 label="Average object"
                 value={formatBytes(stats.totals.averageObjectBytes)}
               />
               <StatCard label="Folders" value={stats.totals.activeFolders.toLocaleString()} />
-              <StatCard label="Collections" value={stats.totals.collections.toLocaleString()} />
               <StatCard
                 hint={
                   stats.totals.softDeletedEntries > 0
@@ -229,11 +222,11 @@ export function StatsPage() {
 
             <div className="grid gap-4 lg:grid-cols-2">
               <ChartPanel
-                description="Cumulative original storage from object created dates (last 90 days)."
+                description="Cumulative original storage in MB from object created dates (last 90 days)."
                 title="Size over time"
               >
                 {stats.sizeOverTime.length > 1 ? (
-                  <AreaChart bloom="aura" config={sizeConfig} data={stats.sizeOverTime}>
+                  <AreaChart bloom="aura" config={sizeConfig} data={sizeChartData}>
                     <Grid />
                     <XAxis dataKey="label" />
                     <YAxis />
@@ -263,11 +256,11 @@ export function StatsPage() {
               </ChartPanel>
 
               <ChartPanel
-                description="Bytes ingested per day over the last 30 days."
+                description="MB ingested per day over the last 30 days."
                 title="Daily growth"
               >
                 {stats.recentGrowth.some((row) => row.bytesAdded > 0) ? (
-                  <BarChart bloom="aura" config={growthConfig} data={stats.recentGrowth}>
+                  <BarChart bloom="aura" config={growthConfig} data={recentGrowthChartData}>
                     <Grid />
                     <XAxis dataKey="label" />
                     <YAxis />
@@ -297,7 +290,7 @@ export function StatsPage() {
               </ChartPanel>
 
               <ChartPanel
-                description="Share of original storage by media type."
+                description="Share of original storage in MB by media type."
                 title="Storage by type"
               >
                 {mediaTypePieData.length > 0 ? (
@@ -305,7 +298,7 @@ export function StatsPage() {
                     bloom="aura"
                     config={mediaTypeConfig}
                     data={mediaTypePieData}
-                    dataKey="bytes"
+                    dataKey="megabytes"
                     innerRadius={0.55}
                     nameKey="mediaType"
                   >
@@ -319,7 +312,7 @@ export function StatsPage() {
               </ChartPanel>
 
               <ChartPanel
-                description="Top extensions by original bytes stored."
+                description="Top extensions by original storage in MB."
                 title="Top extensions"
               >
                 {extensionBarData.length > 0 ? (
@@ -328,7 +321,7 @@ export function StatsPage() {
                     <XAxis dataKey="extension" />
                     <YAxis />
                     <Tooltip labelKey="extension" />
-                    <Bar dataKey="bytes" variant="hatched" />
+                    <Bar dataKey="megabytes" variant="hatched" />
                   </BarChart>
                 ) : (
                   <EmptyChart />
@@ -356,23 +349,7 @@ export function StatsPage() {
                       : "—"
                   }
                 />
-                <FunFact
-                  label="Total video runtime"
-                  value={formatDuration(stats.funFacts.totalVideoDurationMs)}
-                />
-                <FunFact
-                  label="PDF pages indexed"
-                  value={stats.funFacts.totalPdfPages.toLocaleString()}
-                />
                 <FunFact label="Images & gifs" value={stats.funFacts.imageCount.toLocaleString()} />
-                <FunFact
-                  label="Average megapixels"
-                  value={
-                    stats.funFacts.averageImageMegapixels == null
-                      ? "—"
-                      : `${stats.funFacts.averageImageMegapixels.toFixed(1)} MP`
-                  }
-                />
                 <FunFact
                   label="Entries added (30d)"
                   value={stats.growth.entriesLast30Days.toLocaleString()}

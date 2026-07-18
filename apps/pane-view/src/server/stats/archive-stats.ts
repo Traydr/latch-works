@@ -1,6 +1,6 @@
 import { and, asc, count, desc, eq, exists, gte, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import { db } from "../db";
-import { collections, folders, libraryEntries, mediaObjects, syncRuns } from "../db/schema";
+import { folders, libraryEntries, mediaObjects, syncRuns } from "../db/schema";
 import {
   averageDailyGrowth,
   type CumulativePoint,
@@ -25,13 +25,10 @@ export interface ArchiveStats {
   }>;
   entriesOverTime: CumulativePoint[];
   funFacts: {
-    averageImageMegapixels: number | null;
     dedupeSavedBytes: number;
     imageCount: number;
     largestObjectBytes: number;
     largestObjectExtension: string | null;
-    totalPdfPages: number;
-    totalVideoDurationMs: number;
   };
   growth: {
     bytesLast30Days: number;
@@ -69,7 +66,6 @@ export interface ArchiveStats {
     activeFolders: number;
     archiveAgeDays: number | null;
     averageObjectBytes: number;
-    collections: number;
     mediaObjectBytes: number;
     mediaObjectCount: number;
     newestObjectAt: string | null;
@@ -118,13 +114,11 @@ export async function readArchiveStats(): Promise<ArchiveStats> {
     activeEntriesRow,
     softDeletedEntriesRow,
     activeFoldersRow,
-    collectionsRow,
     mediaObjectStats,
     ageRow,
     byMediaTypeRows,
     topExtensionRows,
     topFolderRows,
-    funFactRows,
     imageStatsRow,
     largestObjectRow,
     entryBytesRow,
@@ -136,7 +130,6 @@ export async function readArchiveStats(): Promise<ArchiveStats> {
     db.select({ value: count() }).from(libraryEntries).where(isNull(libraryEntries.deletedAt)),
     db.select({ value: count() }).from(libraryEntries).where(isNotNull(libraryEntries.deletedAt)),
     db.select({ value: count() }).from(folders).where(isNull(folders.deletedAt)),
-    db.select({ value: count() }).from(collections).where(isNull(collections.deletedAt)),
     db
       .select({
         bytes: sql<number>`coalesce(sum(${mediaObjects.size}), 0)`,
@@ -185,24 +178,6 @@ export async function readArchiveStats(): Promise<ArchiveStats> {
       .limit(TOP_LIMIT),
     db
       .select({
-        totalPdfPages: sql<number>`coalesce(sum(${mediaObjects.pageCount}), 0)`,
-        totalVideoDurationMs: sql<number>`coalesce(sum(${mediaObjects.durationMs}), 0)`,
-      })
-      .from(mediaObjects),
-    db
-      .select({
-        averageMegapixels: sql<number | null>`
-          avg(
-            case
-              when ${mediaObjects.width} is not null
-                and ${mediaObjects.height} is not null
-                and ${mediaObjects.width} > 0
-                and ${mediaObjects.height} > 0
-              then (${mediaObjects.width}::float8 * ${mediaObjects.height}::float8) / 1000000.0
-              else null
-            end
-          )
-        `,
         imageCount: count(),
       })
       .from(mediaObjects)
@@ -389,16 +364,10 @@ export async function readArchiveStats(): Promise<ArchiveStats> {
     })),
     entriesOverTime,
     funFacts: {
-      averageImageMegapixels:
-        imageStatsRow[0]?.averageMegapixels == null
-          ? null
-          : Number(imageStatsRow[0].averageMegapixels),
       dedupeSavedBytes,
       imageCount: imageStatsRow[0]?.imageCount ?? 0,
       largestObjectBytes: largestObjectRow[0]?.size ?? 0,
       largestObjectExtension: largestObjectRow[0]?.extension ?? null,
-      totalPdfPages: asNumber(funFactRows[0]?.totalPdfPages),
-      totalVideoDurationMs: asNumber(funFactRows[0]?.totalVideoDurationMs),
     },
     growth: {
       bytesLast30Days,
@@ -425,7 +394,6 @@ export async function readArchiveStats(): Promise<ArchiveStats> {
       activeFolders: activeFoldersRow[0]?.value ?? 0,
       archiveAgeDays: daysBetween(oldestObjectAt, newestObjectAt ?? new Date()),
       averageObjectBytes: mediaObjectCount > 0 ? mediaObjectBytes / mediaObjectCount : 0,
-      collections: collectionsRow[0]?.value ?? 0,
       mediaObjectBytes,
       mediaObjectCount,
       newestObjectAt: newestObjectAt?.toISOString() ?? null,
