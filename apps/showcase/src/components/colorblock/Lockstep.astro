@@ -26,7 +26,7 @@ const applyDeletes = product.features[2];
 const supporting = product.features.slice(4);
 ---
 
-<main>
+<div class="page">
   <a class="back" href="/">← All stages</a>
 
   <section class="hero">
@@ -89,10 +89,10 @@ const supporting = product.features.slice(4);
   </aside>
 
   <a class="manual" href={`/docs/${product.slug}`}>Service manual →</a>
-</main>
+</div>
 
 <style>
-  main{--green:#34C98E;background:#16181C;color:#E8EAED;min-height:100vh;padding:1.3rem;font-family:"Barlow",sans-serif}
+  .page{--green:#34C98E;background:#16181C;color:#E8EAED;min-height:100vh;padding:1.3rem;font-family:"Barlow",sans-serif}
   .back{font:700 .73rem "JetBrains Mono",monospace;color:#E8EAED;text-transform:uppercase;text-decoration:none}
   .hero{position:relative;background:var(--green);color:#151310;padding:clamp(2.5rem,6vw,6rem);margin-top:1.5rem}
   .hero i{position:absolute;width:12px;height:12px;border:2px solid #151310}
@@ -100,8 +100,8 @@ const supporting = product.features.slice(4);
   .hero i:nth-of-type(2){top:15px;right:15px;border-left:0;border-bottom:0}
   .hero i:nth-of-type(3){bottom:15px;left:15px;border-right:0;border-top:0}
   .hero i:nth-of-type(4){bottom:15px;right:15px;border-left:0;border-top:0}
-  .hero>p,.spec,figcaption,aside,.guard span{font:700 .65rem/1.5 "JetBrains Mono",monospace;letter-spacing:.07em}
-  .hero h1,h2{font:700 "Barlow Condensed",sans-serif;text-transform:uppercase;line-height:.78;letter-spacing:-.03em;margin:.8rem 0}
+  .hero>p:not(.desc),.spec,figcaption,aside,.guard span{font:700 .65rem/1.5 "JetBrains Mono",monospace;letter-spacing:.07em}
+  .hero h1,h2{font-family:"Barlow Condensed",sans-serif;font-weight:700;text-transform:uppercase;line-height:.78;letter-spacing:-.03em;margin:.8rem 0}
   .hero h1{font-size:clamp(5.5rem,15vw,14rem)}
   .hero strong{font:500 clamp(1.3rem,2.2vw,2rem) "Barlow",sans-serif}
   .desc{font:400 1.1rem/1.45 "Barlow",sans-serif;max-width:55rem}

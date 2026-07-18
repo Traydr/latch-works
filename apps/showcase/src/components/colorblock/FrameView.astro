@@ -3,10 +3,277 @@
  * Frame View product page — Colorblock design system.
  * Violet enamel #8B7CF6 with white stencil type in a dark steel display rig.
  */
-import "@fontsource/barlow-condensed/600.css"; import "@fontsource/barlow-condensed/700.css"; import "@fontsource/barlow/400.css"; import "@fontsource/barlow/500.css"; import "@fontsource/jetbrains-mono/400.css"; import "@fontsource/jetbrains-mono/700.css";
-import type { Product } from "@/data/products"; interface Props { product: Product; } const { product } = Astro.props;
+import "@fontsource/barlow-condensed/600.css";
+import "@fontsource/barlow-condensed/700.css";
+import "@fontsource/barlow/400.css";
+import "@fontsource/barlow/500.css";
+import "@fontsource/jetbrains-mono/400.css";
+import "@fontsource/jetbrains-mono/700.css";
+import type { Product } from "@/data/products";
+
+interface Props {
+  product: Product;
+}
+const { product } = Astro.props;
 ---
-<main><a class="back" href="/">← All stages</a><section class="hero"><i></i><i></i><i></i><i></i><p>STAGE 02 / ORGANIZE</p><h1>{product.name}</h1><strong>{product.tagline}</strong><p>{product.description}</p><div>PATH <b>{product.repoPath}</b> / TYPE <b>{product.kind}</b> / ROLE <b>local desktop reference</b></div></section><section class="display"><i></i><i></i><i></i><i></i><img src={product.heroScreenshot.src} alt={product.heroScreenshot.alt}/><p>{product.heroScreenshot.caption}</p></section><section class="gallery">{product.gallery.map((shot)=><figure><img src={shot.src} alt={shot.alt}/><figcaption>{shot.caption}</figcaption></figure>)}</section><section class="features">{product.features.map((feature)=><article><h2>{feature.title}</h2><p>{feature.description}</p></article>)}</section><aside>{product.highlights.map((highlight)=><span>{highlight}</span>)}</aside><a class="manual" href={`/docs/${product.slug}`}>Service manual →</a></main>
+
+<div class="page">
+  <a class="back" href="/">← All stages</a><section class="hero">
+    <i></i><i></i><i></i><i></i><p>STAGE 02 / ORGANIZE</p><h1>
+      {product.name}
+    </h1><strong>{product.tagline}</strong><p>{product.description}</p><div>
+      PATH <b>{product.repoPath}</b> / TYPE <b>{product.kind}</b> / ROLE <b
+        >local desktop reference</b>
+    </div>
+  </section><section class="display">
+    <i></i><i></i><i></i><i></i><img
+      src={product.heroScreenshot.src}
+      alt={product.heroScreenshot.alt}
+    /><p>{product.heroScreenshot.caption}</p>
+  </section><section class="gallery">
+    {
+      product.gallery.map((shot) => (
+        <figure>
+          <>
+            <img src={shot.src} alt={shot.alt} />
+            <figcaption>{shot.caption}</figcaption>
+          </>
+        </figure>
+      ))
+    }
+  </section><section class="features">
+    {
+      product.features.map((feature) => (
+        <article>
+          <>
+            <h2>{feature.title}</h2>
+            <p>{feature.description}</p>
+          </>
+        </article>
+      ))
+    }
+  </section><aside>
+    {product.highlights.map((highlight) => <span>{highlight}</span>)}
+  </aside><a class="manual" href={`/docs/${product.slug}`}>Service manual →</a>
+</div>
 <style>
-main{--violet:#8B7CF6;background:#16181C;color:#E8EAED;min-height:100vh;padding:1.3rem;font-family:"Barlow",sans-serif}.back{font:700 .73rem "JetBrains Mono",monospace;color:#E8EAED;text-transform:uppercase;text-decoration:none}.hero{position:relative;background:var(--violet);padding:clamp(2.5rem,6vw,6rem);margin-top:1.5rem;color:#fff}.hero p,.hero div,figcaption,aside{font:700 .65rem/1.5 "JetBrains Mono",monospace;letter-spacing:.07em}.hero>p:nth-of-type(2){font:400 1.1rem/1.45 "Barlow",sans-serif;max-width:55rem;letter-spacing:0}.hero h1,h2{font:700 "Barlow Condensed",sans-serif;text-transform:uppercase;line-height:.78;letter-spacing:-.03em;margin:.8rem 0}.hero h1{font-size:clamp(5.5rem,15vw,14rem)}.hero strong{font:500 clamp(1.3rem,2.2vw,2rem) "Barlow",sans-serif}.hero div{border-top:1px solid #fff7;padding-top:.8rem}.hero b{font-weight:400}.hero>i,.display i{position:absolute;width:12px;height:12px;border:2px solid #fff}.hero>i:nth-of-type(1),.display i:nth-of-type(1){top:13px;left:13px;border-right:0;border-bottom:0}.hero>i:nth-of-type(2),.display i:nth-of-type(2){top:13px;right:13px;border-left:0;border-bottom:0}.hero>i:nth-of-type(3),.display i:nth-of-type(3){bottom:13px;left:13px;border-right:0;border-top:0}.hero>i:nth-of-type(4),.display i:nth-of-type(4){bottom:13px;right:13px;border-left:0;border-top:0}.display{position:relative;background:var(--violet);padding:.75rem;margin:clamp(2rem,6vw,6rem) auto 1.5rem;max-width:1300px;transform:rotate(1.3deg);box-shadow:18px 20px 0 #0006}.display img{display:block;width:100%;max-height:72vh;object-fit:cover;filter:grayscale(1) contrast(1.12) brightness(1.02);mix-blend-mode:multiply;opacity:.92}.display p{color:#fff;margin:.6rem 0 0}.gallery{display:grid;grid-template-columns:1fr 1fr;gap:2rem;max-width:1120px;margin:4rem auto}.gallery figure{margin:0;background:var(--violet);padding:.6rem;transform:rotate(-1.7deg)}.gallery figure+figure{transform:rotate(1.8deg)}.gallery img{display:block;width:100%;filter:grayscale(1) contrast(1.12) brightness(1.02);mix-blend-mode:multiply;opacity:.92}.gallery figcaption{color:#fff;margin:.6rem 0 0}.features{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:#2A2E35;border:1px solid #2A2E35}.features article{background:#1d2025;padding:1.5rem;min-height:170px}.features h2{font-size:2.2rem;color:var(--violet)}.features p{line-height:1.42;color:#c1c5cb}aside{display:grid;grid-template-columns:repeat(4,1fr);border-block:1px solid #2A2E35;margin-top:4rem}aside span{padding:1rem;border-right:1px solid #2A2E35}.manual{display:block;background:var(--violet);color:#fff;margin:4rem 0 1rem;padding:1.2rem;text-align:center;text-decoration:none;font:700 2rem "Barlow Condensed",sans-serif;text-transform:uppercase}a:focus-visible{outline:3px solid #fff;outline-offset:4px}@media(max-width:700px){.hero h1{font-size:clamp(5rem,23vw,8rem)}.gallery,.features{grid-template-columns:1fr}.features{gap:1px}.display{margin-inline:0}.gallery{margin-block:3rem}aside{grid-template-columns:1fr}aside span{border-right:0;border-bottom:1px solid #2A2E35}}
+  .page {
+    --violet: #8b7cf6;
+    background: #16181c;
+    color: #e8eaed;
+    min-height: 100vh;
+    padding: 1.3rem;
+    font-family: "Barlow", sans-serif;
+  }
+  .back {
+    font:
+      700 0.73rem "JetBrains Mono",
+      monospace;
+    color: #e8eaed;
+    text-transform: uppercase;
+    text-decoration: none;
+  }
+  .hero {
+    position: relative;
+    background: var(--violet);
+    padding: clamp(2.5rem, 6vw, 6rem);
+    margin-top: 1.5rem;
+    color: #fff;
+  }
+  .hero p,
+  .hero div,
+  figcaption,
+  aside {
+    font:
+      700 0.65rem/1.5 "JetBrains Mono",
+      monospace;
+    letter-spacing: 0.07em;
+  }
+  .hero > p:nth-of-type(2) {
+    font:
+      400 1.1rem/1.45 "Barlow",
+      sans-serif;
+    max-width: 55rem;
+    letter-spacing: 0;
+  }
+  .hero h1,
+  h2 {
+    font-family: "Barlow Condensed", sans-serif;
+    font-weight: 700;
+    text-transform: uppercase;
+    line-height: 0.78;
+    letter-spacing: -0.03em;
+    margin: 0.8rem 0;
+  }
+  .hero h1 {
+    font-size: clamp(5.5rem, 15vw, 14rem);
+  }
+  .hero strong {
+    font:
+      500 clamp(1.3rem, 2.2vw, 2rem) "Barlow",
+      sans-serif;
+  }
+  .hero div {
+    border-top: 1px solid #fff7;
+    padding-top: 0.8rem;
+  }
+  .hero b {
+    font-weight: 400;
+  }
+  .hero > i,
+  .display i {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    border: 2px solid #fff;
+  }
+  .hero > i:nth-of-type(1),
+  .display i:nth-of-type(1) {
+    top: 13px;
+    left: 13px;
+    border-right: 0;
+    border-bottom: 0;
+  }
+  .hero > i:nth-of-type(2),
+  .display i:nth-of-type(2) {
+    top: 13px;
+    right: 13px;
+    border-left: 0;
+    border-bottom: 0;
+  }
+  .hero > i:nth-of-type(3),
+  .display i:nth-of-type(3) {
+    bottom: 13px;
+    left: 13px;
+    border-right: 0;
+    border-top: 0;
+  }
+  .hero > i:nth-of-type(4),
+  .display i:nth-of-type(4) {
+    bottom: 13px;
+    right: 13px;
+    border-left: 0;
+    border-top: 0;
+  }
+  .display {
+    position: relative;
+    background: var(--violet);
+    padding: 0.75rem;
+    margin: clamp(2rem, 6vw, 6rem) auto 1.5rem;
+    max-width: 1300px;
+    transform: rotate(1.3deg);
+    box-shadow: 18px 20px 0 #0006;
+  }
+  .display img {
+    display: block;
+    width: 100%;
+    max-height: 72vh;
+    object-fit: cover;
+    filter: grayscale(1) contrast(1.12) brightness(1.02);
+    mix-blend-mode: multiply;
+    opacity: 0.92;
+  }
+  .display p {
+    color: #fff;
+    margin: 0.6rem 0 0;
+  }
+  .gallery {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+    max-width: 1120px;
+    margin: 4rem auto;
+  }
+  .gallery figure {
+    margin: 0;
+    background: var(--violet);
+    padding: 0.6rem;
+    transform: rotate(-1.7deg);
+  }
+  .gallery figure + figure {
+    transform: rotate(1.8deg);
+  }
+  .gallery img {
+    display: block;
+    width: 100%;
+    filter: grayscale(1) contrast(1.12) brightness(1.02);
+    mix-blend-mode: multiply;
+    opacity: 0.92;
+  }
+  .gallery figcaption {
+    color: #fff;
+    margin: 0.6rem 0 0;
+  }
+  .features {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: #2a2e35;
+    border: 1px solid #2a2e35;
+  }
+  .features article {
+    background: #1d2025;
+    padding: 1.5rem;
+    min-height: 170px;
+  }
+  .features h2 {
+    font-size: 2.2rem;
+    color: var(--violet);
+  }
+  .features p {
+    line-height: 1.42;
+    color: #c1c5cb;
+  }
+  aside {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    border-block: 1px solid #2a2e35;
+    margin-top: 4rem;
+  }
+  aside span {
+    padding: 1rem;
+    border-right: 1px solid #2a2e35;
+  }
+  .manual {
+    display: block;
+    background: var(--violet);
+    color: #fff;
+    margin: 4rem 0 1rem;
+    padding: 1.2rem;
+    text-align: center;
+    text-decoration: none;
+    font:
+      700 2rem "Barlow Condensed",
+      sans-serif;
+    text-transform: uppercase;
+  }
+  a:focus-visible {
+    outline: 3px solid #fff;
+    outline-offset: 4px;
+  }
+  @media (max-width: 700px) {
+    .hero h1 {
+      font-size: clamp(5rem, 23vw, 8rem);
+    }
+    .gallery,
+    .features {
+      grid-template-columns: 1fr;
+    }
+    .features {
+      gap: 1px;
+    }
+    .display {
+      margin-inline: 0;
+    }
+    .gallery {
+      margin-block: 3rem;
+    }
+    aside {
+      grid-template-columns: 1fr;
+    }
+    aside span {
+      border-right: 0;
+      border-bottom: 1px solid #2a2e35;
+    }
+  }
 </style>
