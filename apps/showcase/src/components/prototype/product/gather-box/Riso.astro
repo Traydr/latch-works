@@ -1,0 +1,24 @@
+---
+/** PROTOTYPE — Riso: orange #FF6C2F field, paper #F6F1E7, pink headline registration offset. */
+import type { Product } from "@/data/products";
+interface Props { product: Product; }
+const { product } = Astro.props;
+const sources = ["Fanbox", "Kemono", "Archive of Our Own", "Fanfiction.net", "Hentai Foundry"];
+---
+<main class="riso gather">
+  <a class="back" href="/">← All stages</a>
+  <section class="hero"><div class="intro"><p>STAGE 01 / COLLECT</p><h1 data-print={product.name}>{product.name}</h1><strong>{product.tagline}</strong><p>{product.description}</p><code>{product.repoPath}</code></div><figure><div class="print"><img src={product.heroScreenshot.src} alt={product.heroScreenshot.alt} /></div><figcaption>{product.heroScreenshot.caption}</figcaption></figure></section>
+  <section class="sources"><p>COLLECTION SOURCES / CURRENT ROSTER</p><ol>{sources.map((source,index) => <li><b>0{index + 1}</b>{source}</li>)}</ol><pre aria-label="Example inferred archive folder">archive/
+└── artist/
+    └── series/
+        └── post-title/
+            ├── 001.jpg
+            └── 002.jpg</pre></section>
+  <section class="features">{product.features.map((feature,index) => <article><b>0{index + 1}</b><h2>{feature.title}</h2><p>{feature.description}</p></article>)}</section>
+  <p class="ticker">{product.highlights.join("  /  ")}</p><a class="cta" href={`/docs/${product.slug}`}>Read more →</a>
+</main>
+<style>
+@import "@fontsource/barlow-condensed/600.css"; @import "@fontsource/barlow-condensed/700.css"; @import "@fontsource/ibm-plex-mono/400.css"; @import "@fontsource/ibm-plex-mono/500.css";
+.riso{--paper:#F6F1E7;--deep:#EFE7D8;--ink:#1C1A17;--riso:#FF6C2F;min-height:100vh;color:var(--ink);background:var(--paper) radial-gradient(rgba(28,26,23,.13) .55px,transparent .8px);background-size:5px 5px;font-family:"IBM Plex Mono",monospace;padding:1.5rem 4vw 0;}.back{color:inherit;font-size:.75rem;text-decoration:none;border-bottom:1px solid}.hero{background:var(--riso);padding:clamp(1.5rem,5vw,5rem);margin:1.5rem 0 5rem;min-height:650px;display:grid;grid-template-columns:.95fr 1.05fr;gap:3rem;align-items:center;box-shadow:7px 8px 0 var(--ink);transform:rotate(-.7deg)}.intro>p,.sources>p,figcaption,.ticker{font-size:.7rem;line-height:1.55;letter-spacing:.06em}.intro h1,h2{font-family:"Barlow Condensed",sans-serif;text-transform:uppercase;line-height:.78;letter-spacing:-.05em;margin:.7rem 0;}.intro h1{font-size:clamp(5.5rem,12vw,11rem);position:relative;z-index:0}.intro h1:after{content:attr(data-print);position:absolute;inset:0 auto auto 4px;z-index:-1;color:#FF48B0}.intro strong{font-size:1rem}.intro p:not(:first-child){max-width:31rem;font-size:.78rem;line-height:1.7}.intro code{font-size:.7rem;border-top:1px solid;padding-top:.7rem}.hero figure{margin:0;transform:rotate(2deg)}.print{background:var(--ink);padding:.45rem}.print img{display:block;width:100%;aspect-ratio:.86;object-fit:cover;filter:grayscale(1) contrast(1.16) sepia(.3);mix-blend-mode:screen;opacity:.89}figcaption{padding-top:.5rem}.sources{display:grid;grid-template-columns:1fr 1fr .9fr;gap:2rem;margin:0 4vw 5rem;padding:1.5rem 0;border-top:2px solid;border-bottom:2px solid}.sources>p{margin:0}.sources ol{margin:0;padding:0;list-style:none}.sources li{border-bottom:1px solid;padding:.5rem 0;font-size:.78rem}.sources li b{color:var(--riso);margin-right:1rem}pre{margin:0;background:var(--deep);padding:1rem;font:500 .68rem/1.7 "IBM Plex Mono",monospace;transform:rotate(1deg)}.features{display:grid;grid-template-columns:repeat(3,1fr);margin:0 4vw 4rem;border-top:1px solid}.features article{padding:1.25rem 1.25rem 1.5rem 0;margin-right:1.25rem;border-right:1px solid}.features article:nth-child(3n){border:0}.features b{font-size:.68rem;color:var(--riso)}.features h2{font-size:2.7rem}.features p{font-size:.7rem;line-height:1.65}.ticker{margin:0 -4vw;padding:1rem 4vw;border-top:2px solid;border-bottom:2px solid;white-space:nowrap;overflow:hidden}.cta{display:block;background:var(--riso);color:var(--ink);padding:2rem 4vw;font:700 clamp(2.6rem,6vw,5rem)/.8 "Barlow Condensed",sans-serif;text-transform:uppercase;text-decoration:none}a:focus-visible{outline:3px solid #FF48B0;outline-offset:4px}@media(max-width:700px){.hero{grid-template-columns:1fr;min-height:auto;margin-bottom:3rem}.sources{grid-template-columns:1fr;margin-inline:0}.features{grid-template-columns:1fr 1fr;margin-inline:0}.features article:nth-child(3n){border-right:1px solid}.features article:nth-child(2n){border:0}}@media(max-width:390px){.riso{padding-inline:1rem}.features{grid-template-columns:1fr}.features article{border-right:0!important;border-bottom:1px solid}.sources{margin-bottom:3rem}}@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
+.intro h1 { color: var(--paper); }
+</style>

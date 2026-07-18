@@ -2,18 +2,23 @@
 /**
  * PROTOTYPE HUB — throwaway. Do not ship as-is.
  *
- * Iteration 3: five design families, switchable via `?variant=` (0 = current
- * design, baseline). Keys are aligned with product pages — the same key on
- * `/[slug]` is the same family. Flip with the floating bar or ←/→ keys.
- * Once winners are picked, fold them into the real pages and delete
- * src/components/prototype/.
+ * Iteration 4: ten design families, switchable via `?variant=` (0 = current
+ * design, baseline). 1–5 from iteration 3; 6–10 are new families synthesized
+ * from the top-ranked directions (Pigment × Workshop × Archive). Keys are
+ * aligned with product pages — the same key on `/[slug]` is the same family.
+ * Flip with the floating bar or ←/→ keys.
  */
 import PrototypeSwitcher from "@/components/prototype/PrototypeSwitcher.astro";
 import VariantAtlas from "@/components/prototype/home/VariantAtlas.astro";
+import VariantBlueprint from "@/components/prototype/home/VariantBlueprint.astro";
 import VariantCatalog from "@/components/prototype/home/VariantCatalog.astro";
+import VariantColorblock from "@/components/prototype/home/VariantColorblock.astro";
 import VariantCurrent from "@/components/prototype/home/VariantCurrent.astro";
 import VariantDossier from "@/components/prototype/home/VariantDossier.astro";
+import VariantHalftone from "@/components/prototype/home/VariantHalftone.astro";
 import VariantPigment from "@/components/prototype/home/VariantPigment.astro";
+import VariantRiso from "@/components/prototype/home/VariantRiso.astro";
+import VariantSwatchbook from "@/components/prototype/home/VariantSwatchbook.astro";
 import VariantWorkbench from "@/components/prototype/home/VariantWorkbench.astro";
 import { HOME_VARIANTS, resolveVariant } from "@/components/prototype/variants";
 import BaseLayout from "@/layouts/BaseLayout.astro";
@@ -28,5 +33,10 @@ const variant = resolveVariant(Astro.url.searchParams.get("variant"), HOME_VARIA
   {variant.slug === "atlas" && <VariantAtlas />}
   {variant.slug === "dossier" && <VariantDossier />}
   {variant.slug === "pigment" && <VariantPigment />}
+  {variant.slug === "colorblock" && <VariantColorblock />}
+  {variant.slug === "blueprint" && <VariantBlueprint />}
+  {variant.slug === "riso" && <VariantRiso />}
+  {variant.slug === "halftone" && <VariantHalftone />}
+  {variant.slug === "swatchbook" && <VariantSwatchbook />}
   <PrototypeSwitcher current={variant} variants={HOME_VARIANTS} />
 </BaseLayout>

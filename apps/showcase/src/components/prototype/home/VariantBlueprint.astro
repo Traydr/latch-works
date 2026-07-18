@@ -1,0 +1,73 @@
+---
+// PROTOTYPE: Blueprint. Paper #173E7A / #122F5F, white linework and faint 28px grid;
+// IBM Plex Mono carries technical data, Barlow Condensed titles, cyan marks navigation only.
+import "@fontsource/barlow-condensed/600.css";
+import "@fontsource/barlow-condensed/700.css";
+import "@fontsource/ibm-plex-mono/400.css";
+import "@fontsource/ibm-plex-mono/500.css";
+import { pipeline, products } from "@/data/products";
+
+const stages = pipeline.map((stage, index) => ({ ...stage, index: index + 1, productData: products.find((product) => product.name === stage.product)! }));
+const principles = [
+  ["Local-first", "The archive on disk stays authoritative. Sync is explicit, never automatic mirroring."],
+  ["Private by default", "Web viewing requires authentication. Delivery URLs are signed and time-limited."],
+  ["Shared packages", "media-domain, media-index, media-storage, and lockstep-core keep behavior consistent."],
+  ["Calm tooling", "Direct language, dark UI, practical spacing — a workshop, not a marketing site."],
+];
+---
+
+<main class="sheet">
+  <header class="sheet-head">
+    <p class="eyebrow">LATCH WORKS / SYSTEM OVERVIEW</p>
+    <h1>THE ARCHIVE<br />ASSEMBLY</h1>
+    <p class="subhead">PRIVATE MEDIA ARCHIVE / LOCAL-FIRST / EXPLICIT SYNC</p>
+  </header>
+
+  <section class="pipeline" aria-labelledby="pipeline-title">
+    <div class="section-label"><span>FIG. 1</span><h2 id="pipeline-title">Pipeline schematic</h2><span>4 UNITS</span></div>
+    <svg class="pipeline-diagram" viewBox="0 0 1200 174" role="img" aria-label="Four-stage Latch Works pipeline from Gather Box to Pane View">
+      <defs><marker id="arrow" viewBox="0 0 8 8" refX="4" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 8 4 L 0 8 z" fill="currentColor" /></marker></defs>
+      <g class="diagram-lines">
+        <line x1="110" y1="95" x2="1090" y2="95" marker-start="url(#arrow)" marker-end="url(#arrow)" />
+        <line x1="110" y1="84" x2="110" y2="106" /><line x1="437" y1="84" x2="437" y2="106" /><line x1="763" y1="84" x2="763" y2="106" /><line x1="1090" y1="84" x2="1090" y2="106" />
+        <line x1="110" y1="50" x2="1090" y2="50" stroke-dasharray="4 6" />
+      </g>
+      <g class="stage-dot"><circle cx="110" cy="95" r="12" /><circle cx="437" cy="95" r="12" /><circle cx="763" cy="95" r="12" /><circle cx="1090" cy="95" r="12" /></g>
+      <g class="diagram-copy"><text x="110" y="25" text-anchor="middle">STAGE 01 / GATHER</text><text x="437" y="25" text-anchor="middle">STAGE 02 / ORGANIZE</text><text x="763" y="25" text-anchor="middle">STAGE 03 / SYNC</text><text x="1090" y="25" text-anchor="middle">STAGE 04 / VIEW</text><text x="273" y="137" text-anchor="middle">LOCAL ARCHIVE</text><text x="600" y="137" text-anchor="middle">EXPLICIT TRANSFER</text><text x="927" y="137" text-anchor="middle">AUTHENTICATED WEB</text></g>
+    </svg>
+  </section>
+
+  <div class="content-grid">
+    <section class="figures" aria-label="Product figures">
+      {stages.map((stage) => (
+        <article class="figure">
+          <div class="figure-head"><span>FIG. {stage.index + 1}</span><span>STAGE 0{stage.index}</span></div>
+          <a href={`/${stage.productData.slug}`} class="figure-link">
+            <div class="shot">
+              <img src={stage.productData.heroScreenshot.src} alt={stage.productData.heroScreenshot.alt} />
+              <svg viewBox="0 0 100 60" aria-hidden="true"><path d="M4 50H27L39 35" /><circle cx="40" cy="34" r="1.7" /><path d="M95 12H74L63 26" /><circle cx="62" cy="27" r="1.7" /></svg>
+              <span class="callout left">NAVIGATION</span><span class="callout right">WORK AREA</span>
+            </div>
+            <h3>{stage.productData.name}</h3>
+            <p>{stage.productData.tagline}</p>
+            <span class="open">OPEN SHEET →</span>
+          </a>
+        </article>
+      ))}
+    </section>
+    <aside class="notes">
+      <div class="section-label"><span>NOTES</span><span>01–04</span></div>
+      {principles.map(([title, body], index) => <section class="note"><span>{String(index + 1).padStart(2, "0")}</span><h2>{title}</h2><p>{body}</p></section>)}
+    </aside>
+  </div>
+  <footer class="title-block"><span>PROJECT</span><strong>LATCH WORKS</strong><span>SHEET</span><strong>1</strong><span>UNITS</span><strong>4</strong><span>DATE</span><strong>2026-07</strong></footer>
+</main>
+
+<style>
+  .sheet { --paper:#173E7A; --deep:#122F5F; --line:rgba(255,255,255,.75); --grid:rgba(255,255,255,.07); --text:#F2F6FC; --dim:#9DB4D8; --cyan:#7FD4FF; color:var(--text); min-height:100vh; padding:clamp(1.25rem,4vw,4.5rem); background-color:var(--paper); background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px); background-size:28px 28px; font-family:"IBM Plex Mono",monospace; box-sizing:border-box; }
+  .sheet-head { border-bottom:1px solid var(--line); padding:1rem 0 2rem; display:grid; grid-template-columns:1fr auto; align-items:end; gap:1rem; }.eyebrow,.subhead,.section-label,.figure-head,.open,.title-block { font-size:.68rem; letter-spacing:.08em; }.eyebrow { color:var(--cyan); margin:0; }.sheet h1 { font:700 clamp(3.4rem,9vw,8.8rem)/.78 "Barlow Condensed",sans-serif; letter-spacing:.01em; margin:.5rem 0 0; }.subhead { color:var(--dim); margin:0 0 .25rem; text-align:right; }
+  .pipeline { padding:1.5rem 0 2.5rem; border-bottom:1px solid var(--line); }.section-label { display:flex; justify-content:space-between; gap:1rem; color:var(--dim); }.section-label h2 { color:var(--text); font-size:.72rem; font-weight:500; margin:0; }.pipeline-diagram { display:block; width:100%; color:var(--line); margin:1rem 0 0; overflow:visible; }.diagram-lines line { stroke:currentColor; stroke-width:1; }.stage-dot circle { fill:var(--paper); stroke:var(--cyan); stroke-width:1.6; }.diagram-copy { fill:var(--text); font:500 12px "IBM Plex Mono",monospace; letter-spacing:1px; }.diagram-copy text:nth-last-child(-n+3) { fill:var(--dim); font-size:10px; }
+  .content-grid { display:grid; grid-template-columns:minmax(0,3fr) minmax(15rem,1fr); gap:clamp(2rem,5vw,5rem); padding:2.5rem 0 5rem; }.figures { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:2.5rem 1.25rem; }.figure-head { color:var(--dim); display:flex; justify-content:space-between; margin-bottom:.45rem; }.figure-link { color:inherit; text-decoration:none; display:block; }.shot { aspect-ratio:1.62; border:1px solid var(--line); position:relative; overflow:hidden; background:var(--deep); }.shot img { width:100%; height:100%; object-fit:cover; display:block; opacity:.9; }.shot svg { position:absolute; inset:0; width:100%; height:100%; stroke:var(--cyan); fill:none; stroke-width:.35; }.shot svg circle { fill:var(--cyan); stroke:none; }.callout { position:absolute; font-size:clamp(.42rem,.6vw,.58rem); letter-spacing:.04em; color:var(--cyan); background:var(--paper); padding:.13rem .2rem; }.callout.left { left:2%; bottom:10%; }.callout.right { right:2%; top:8%; }.figure h3 { font:700 clamp(2rem,3.5vw,3.4rem)/.9 "Barlow Condensed",sans-serif; margin:.8rem 0 .25rem; }.figure p { color:var(--dim); font-size:.78rem; line-height:1.55; margin:0; min-height:2.5em; }.open { display:inline-block; color:var(--cyan); margin-top:1rem; }.figure-link:hover .shot { outline:1px solid var(--cyan); outline-offset:3px; }.figure-link:focus-visible,.cta:focus-visible { outline:2px solid var(--cyan); outline-offset:4px; }
+  .notes { border-left:1px solid var(--line); padding-left:1.25rem; }.note { border-bottom:1px solid rgba(255,255,255,.34); padding:1.25rem 0; }.note span { color:var(--cyan); font-size:.65rem; }.note h2 { font:600 1.45rem "Barlow Condensed",sans-serif; margin:.25rem 0; }.note p { color:var(--dim); font-size:.72rem; line-height:1.6; margin:0; }.title-block { background:var(--deep); border:1px solid var(--line); padding:.75rem 1rem; display:grid; grid-template-columns:repeat(4,auto); gap:.25rem 1rem; width:max-content; margin-left:auto; }.title-block span { color:var(--dim); }.title-block strong { font-weight:500; color:var(--text); }
+  @media (max-width:700px) { .sheet-head { grid-template-columns:1fr; }.subhead{text-align:left}.pipeline-diagram{width:160%;margin-left:-30%}.content-grid{grid-template-columns:1fr}.notes{border-left:0;border-top:1px solid var(--line);padding:1.5rem 0 0}.title-block{grid-template-columns:repeat(2,auto);margin-left:0}.figures{gap:2rem 1rem} }.@media(max-width:460px){.figures{grid-template-columns:1fr}.sheet{padding:1.25rem}.pipeline{overflow:hidden}.sheet h1{font-size:3.5rem}}
+</style>

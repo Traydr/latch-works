@@ -8,7 +8,7 @@ const { product } = Astro.props;
 const steps = product.features.slice(0, 4);
 ---
 <main>
-  <section class="hero"><a class="back" href="/">← All stages</a><div class="headline"><p class="chip">PIGMENT 03 · EMERALD · #34C98E</p><h1>{product.name}</h1><p class="tagline">{product.tagline}</p><p>{product.description}</p><code>{product.repoPath}</code></div><figure><img src={product.heroScreenshot.src} alt={product.heroScreenshot.alt}/><figcaption>{product.heroScreenshot.caption}</figcaption></figure></section>
+  <section class="hero"><a class="back" href="/">← All stages</a><div class="headline"><h1>{product.name}</h1><p class="tagline">{product.tagline}</p><p>{product.description}</p><code>{product.repoPath}</code></div><figure><img src={product.heroScreenshot.src} alt={product.heroScreenshot.alt}/><figcaption>{product.heroScreenshot.caption}</figcaption></figure></section>
   <section class="procedure"><p class="eyebrow">SYNC PROCEDURE / REVIEW EACH STEP</p><ul>{steps.map((feature) => <li class:list={{ warning: feature.title === "Apply deletes" }}><span>{feature.title}</span><h2>{feature.title}</h2><p>{feature.description}</p></li>)}</ul></section>
   <section class="more"><ul>{product.features.slice(4).map((feature) => <li><i></i><div><h2>{feature.title}</h2><p>{feature.description}</p></div></li>)}</ul><figure><img src={product.gallery[0].src} alt={product.gallery[0].alt}/><figcaption>{product.gallery[0].caption}</figcaption></figure></section>
   <p class="highlight">{product.highlights.join("  /  ")}</p><a class="cta" href={`/docs/${product.slug}`}>Read the formula →</a>

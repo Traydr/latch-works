@@ -10,7 +10,7 @@ const sources = ["Fanbox", "Kemono", "Archive of Our Own", "Fanfiction.net", "He
 <main>
   <a class="back" href="/">← All stages</a>
   <section class="hero">
-    <div class="copy"><p class="chip">PIGMENT 01 · AMBER · #F5A623</p><h1>{product.name}</h1><p class="tagline">{product.tagline}</p><p class="description">{product.description}</p><code>{product.repoPath}</code></div>
+    <div class="copy"><h1>{product.name}</h1><p class="tagline">{product.tagline}</p><p class="description">{product.description}</p><code>{product.repoPath}</code></div>
     <figure class="duotone"><img src={product.heroScreenshot.src} alt={product.heroScreenshot.alt} /><figcaption>{product.heroScreenshot.caption}</figcaption></figure>
     <div class="sources"><span>COLLECTION SOURCES</span>{sources.map((source) => <b>{source}</b>)}</div>
   </section>

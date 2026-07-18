@@ -3,28 +3,48 @@
  * PROTOTYPE — throwaway. Do not ship.
  *
  * Routes a product + family slug to that product page's design component.
- * Keeps [slug].astro free of a 20-branch conditional.
+ * Keeps [slug].astro free of a 40-branch conditional.
  */
 import type { Product } from "@/data/products";
 import FrameArchive from "./product/frame-view/Archive.astro";
 import FrameAtlas from "./product/frame-view/Atlas.astro";
+import FrameBlueprint from "./product/frame-view/Blueprint.astro";
+import FrameColorblock from "./product/frame-view/Colorblock.astro";
 import FrameDossier from "./product/frame-view/Dossier.astro";
+import FrameHalftone from "./product/frame-view/Halftone.astro";
 import FramePigment from "./product/frame-view/Pigment.astro";
+import FrameRiso from "./product/frame-view/Riso.astro";
+import FrameSwatchbook from "./product/frame-view/Swatchbook.astro";
 import FrameWorkshop from "./product/frame-view/Workshop.astro";
 import GatherArchive from "./product/gather-box/Archive.astro";
 import GatherAtlas from "./product/gather-box/Atlas.astro";
+import GatherBlueprint from "./product/gather-box/Blueprint.astro";
+import GatherColorblock from "./product/gather-box/Colorblock.astro";
 import GatherDossier from "./product/gather-box/Dossier.astro";
+import GatherHalftone from "./product/gather-box/Halftone.astro";
 import GatherPigment from "./product/gather-box/Pigment.astro";
+import GatherRiso from "./product/gather-box/Riso.astro";
+import GatherSwatchbook from "./product/gather-box/Swatchbook.astro";
 import GatherWorkshop from "./product/gather-box/Workshop.astro";
 import LockstepArchive from "./product/lockstep/Archive.astro";
 import LockstepAtlas from "./product/lockstep/Atlas.astro";
+import LockstepBlueprint from "./product/lockstep/Blueprint.astro";
+import LockstepColorblock from "./product/lockstep/Colorblock.astro";
 import LockstepDossier from "./product/lockstep/Dossier.astro";
+import LockstepHalftone from "./product/lockstep/Halftone.astro";
 import LockstepPigment from "./product/lockstep/Pigment.astro";
+import LockstepRiso from "./product/lockstep/Riso.astro";
+import LockstepSwatchbook from "./product/lockstep/Swatchbook.astro";
 import LockstepWorkshop from "./product/lockstep/Workshop.astro";
 import PaneArchive from "./product/pane-view/Archive.astro";
 import PaneAtlas from "./product/pane-view/Atlas.astro";
+import PaneBlueprint from "./product/pane-view/Blueprint.astro";
+import PaneColorblock from "./product/pane-view/Colorblock.astro";
 import PaneDossier from "./product/pane-view/Dossier.astro";
+import PaneHalftone from "./product/pane-view/Halftone.astro";
 import PanePigment from "./product/pane-view/Pigment.astro";
+import PaneRiso from "./product/pane-view/Riso.astro";
+import PaneSwatchbook from "./product/pane-view/Swatchbook.astro";
 import PaneWorkshop from "./product/pane-view/Workshop.astro";
 
 interface Props {
@@ -41,6 +61,11 @@ const designs: Record<string, Record<string, (_props: Props) => unknown>> = {
     atlas: GatherAtlas,
     dossier: GatherDossier,
     pigment: GatherPigment,
+    colorblock: GatherColorblock,
+    blueprint: GatherBlueprint,
+    riso: GatherRiso,
+    halftone: GatherHalftone,
+    swatchbook: GatherSwatchbook,
   },
   "frame-view": {
     archive: FrameArchive,
@@ -48,6 +73,11 @@ const designs: Record<string, Record<string, (_props: Props) => unknown>> = {
     atlas: FrameAtlas,
     dossier: FrameDossier,
     pigment: FramePigment,
+    colorblock: FrameColorblock,
+    blueprint: FrameBlueprint,
+    riso: FrameRiso,
+    halftone: FrameHalftone,
+    swatchbook: FrameSwatchbook,
   },
   lockstep: {
     archive: LockstepArchive,
@@ -55,6 +85,11 @@ const designs: Record<string, Record<string, (_props: Props) => unknown>> = {
     atlas: LockstepAtlas,
     dossier: LockstepDossier,
     pigment: LockstepPigment,
+    colorblock: LockstepColorblock,
+    blueprint: LockstepBlueprint,
+    riso: LockstepRiso,
+    halftone: LockstepHalftone,
+    swatchbook: LockstepSwatchbook,
   },
   "pane-view": {
     archive: PaneArchive,
@@ -62,6 +97,11 @@ const designs: Record<string, Record<string, (_props: Props) => unknown>> = {
     atlas: PaneAtlas,
     dossier: PaneDossier,
     pigment: PanePigment,
+    colorblock: PaneColorblock,
+    blueprint: PaneBlueprint,
+    riso: PaneRiso,
+    halftone: PaneHalftone,
+    swatchbook: PaneSwatchbook,
   },
 };
 

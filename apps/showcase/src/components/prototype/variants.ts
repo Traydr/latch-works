@@ -20,6 +20,11 @@ export const FAMILIES: VariantOption[] = [
   { key: "3", name: "Atlas", slug: "atlas" },
   { key: "4", name: "Dossier", slug: "dossier" },
   { key: "5", name: "Pigment", slug: "pigment" },
+  { key: "6", name: "Colorblock", slug: "colorblock" },
+  { key: "7", name: "Blueprint", slug: "blueprint" },
+  { key: "8", name: "Riso", slug: "riso" },
+  { key: "9", name: "Halftone", slug: "halftone" },
+  { key: "10", name: "Swatchbook", slug: "swatchbook" },
 ];
 
 export const HOME_VARIANTS = FAMILIES;

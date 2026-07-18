@@ -34,7 +34,6 @@ const pigments = {
         return (
           <article class="product" style={`--pigment:${pigment.hex};--ink:${pigment.ink}`}>
             <div class="product-copy">
-              <p class="chip">PIGMENT 0{index + 1} · {pigment.name} · {pigment.hex}</p>
               <h2>{product.name}</h2>
               <p class="tagline">{product.tagline}</p>
               <a href={`/${product.slug}`}>Open <span aria-hidden="true">→</span></a>

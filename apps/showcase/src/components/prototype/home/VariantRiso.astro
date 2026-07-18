@@ -1,0 +1,76 @@
+---
+/** PROTOTYPE — Riso: #F6F1E7 paper, #1C1A17 ink, product inks and pink headline misregistration. */
+import { products, pipeline } from "@/data/products";
+
+const orderedProducts = ["gather-box", "frame-view", "lockstep", "pane-view"].map(
+  (slug) => products.find((product) => product.slug === slug)!,
+);
+const inks = ["#FF6C2F", "#7A5AFF", "#00A08A", "#3B82F6"];
+const principles = [
+  ["Local-first", "The archive on disk stays authoritative. Sync is explicit, never automatic mirroring."],
+  ["Private by default", "Web viewing requires authentication. Delivery URLs are signed and time-limited."],
+  ["Shared packages", "media-domain, media-index, media-storage, and lockstep-core keep behavior consistent."],
+  ["Calm tooling", "Direct language, dark UI, practical spacing — a workshop, not a marketing site."],
+];
+---
+
+<main class="riso-home">
+  <header class="masthead">
+    <p class="kicker">LATCH WORKS / A PRIVATE MEDIA ARCHIVE</p>
+    <h1 data-print="PRIVATE MEDIA ARCHIVE">PRIVATE MEDIA ARCHIVE</h1>
+    <p class="thesis">Collect, organize, sync, view.<br />Local-first, from browser to archive.</p>
+    <ol class="pipeline">
+      {pipeline.map((stage, index) => (
+        <li style={`--stage-ink: ${inks[index]}`}>
+          <span></span><b>{stage.step}</b><small>{stage.product}</small>
+        </li>
+      ))}
+    </ol>
+  </header>
+
+  <section class="posters" aria-label="The four stages">
+    {orderedProducts.map((product, index) => (
+      <article class="poster" style={`--ink: ${inks[index]}; --tilt: ${index % 2 ? "1.2deg" : "-1.3deg"}`}>
+        <div class="poster-copy">
+          <p>STAGE 0{index + 1} / {pipeline[index].step.toUpperCase()}</p>
+          <h2>{product.name}</h2>
+          <span>{product.tagline}</span>
+          <a href={`/${product.slug}`}>Open <span aria-hidden="true">→</span></a>
+        </div>
+        <figure>
+          <div class="print"><img src={product.heroScreenshot.src} alt={product.heroScreenshot.alt} /></div>
+          <figcaption>{product.heroScreenshot.caption}</figcaption>
+        </figure>
+      </article>
+    ))}
+  </section>
+
+  <section class="principles" aria-label="Archive principles">
+    <p class="kicker">WORKSHOP RULES / HELD IN COMMON</p>
+    <div>
+      {principles.map(([title, body]) => <article><h2>{title}</h2><p>{body}</p></article>)}
+    </div>
+  </section>
+</main>
+
+<style>
+  @import "@fontsource/barlow-condensed/600.css";
+  @import "@fontsource/barlow-condensed/700.css";
+  @import "@fontsource/ibm-plex-mono/400.css";
+  @import "@fontsource/ibm-plex-mono/500.css";
+  .riso-home { --paper:#F6F1E7; --deep:#EFE7D8; --dark:#1C1A17; color:var(--dark); background-color:var(--paper); background-image:radial-gradient(rgba(28,26,23,.16) .55px, transparent .8px); background-size:5px 5px; font-family:"IBM Plex Mono",monospace; overflow:hidden; }
+  .masthead { min-height:90vh; padding:clamp(2rem,5vw,5rem) clamp(1.25rem,4vw,4.5rem) 2.5rem; display:flex; flex-direction:column; justify-content:space-between; border-bottom:2px solid var(--dark); }
+  .kicker,.poster-copy p,figcaption { margin:0; font-size:.7rem; line-height:1.45; letter-spacing:.08em; font-weight:500; }
+  h1,h2 { font-family:"Barlow Condensed",sans-serif; text-transform:uppercase; line-height:.78; letter-spacing:-.055em; margin:0; }
+  h1 { position:relative; z-index:0; max-width:1100px; font-size:clamp(5rem,14.4vw,14rem); } h1::after { content:attr(data-print); position:absolute; z-index:-1; inset:0 auto auto 4px; color:#FF48B0; }
+  .thesis { margin:2rem 0; max-width:38rem; font-size:clamp(.88rem,1.35vw,1.15rem); line-height:1.6; }
+  .pipeline { display:grid; grid-template-columns:repeat(4,1fr); padding:0; margin:1rem 0 0; gap:1rem; list-style:none; } .pipeline li { display:grid; grid-template-columns:1rem 1fr; column-gap:.6rem; align-items:center; font-size:.72rem; } .pipeline span { width:1rem; height:1rem; background:var(--stage-ink); grid-row:span 2; transform:rotate(-3deg); } .pipeline b { font-weight:500; text-transform:uppercase; } .pipeline small { font-size:.61rem; color:#6E6557; }
+  .posters { padding:clamp(3rem,7vw,8rem) 3.5vw 5rem; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:clamp(3rem,7vw,8rem) clamp(2rem,4vw,5rem); }
+  .poster { background:var(--ink); color:var(--paper); padding:clamp(1.25rem,3vw,3rem); transform:rotate(var(--tilt)); box-shadow:7px 8px 0 var(--dark); display:grid; grid-template-columns:minmax(9rem,.8fr) minmax(0,1.4fr); gap:1.25rem; align-items:end; } .poster:nth-child(2),.poster:nth-child(3) { margin-top:3rem; } .poster-copy { align-self:stretch; display:flex; flex-direction:column; } .poster-copy h2 { font-size:clamp(3.8rem,7vw,7rem); margin:.75rem 0 1rem; } .poster-copy > span { font-size:.72rem; line-height:1.5; } .poster a { margin-top:auto; color:inherit; text-decoration:none; font-size:.82rem; padding-top:1rem; border-bottom:1px solid currentColor; } .poster a span { font-size:1.25em; }
+  figure { margin:0; transform:rotate(calc(var(--tilt) * -1)); } .print { background:var(--dark); overflow:hidden; border:1px solid rgba(246,241,231,.55); } .print img { display:block; width:100%; aspect-ratio:1.16; object-fit:cover; filter:grayscale(1) contrast(1.18) sepia(.22); mix-blend-mode:screen; opacity:.86; } figcaption { padding:.55rem .1rem 0; }
+  .principles { padding:clamp(3rem,7vw,7rem) 4vw; background:var(--deep); border-top:2px solid var(--dark); } .principles > div { display:grid; grid-template-columns:repeat(4,1fr); margin-top:2rem; border-top:1px solid var(--dark); } .principles article { padding:1.2rem 1.2rem 0 0; margin-right:1.2rem; border-right:1px solid var(--dark); } .principles article:last-child { border:0; } .principles h2 { font-size:2.45rem; } .principles p { font-size:.72rem; line-height:1.65; }
+  a:focus-visible { outline:3px solid #FF48B0; outline-offset:4px; }
+  @media (max-width:700px) { .masthead { min-height:76vh; } .pipeline { grid-template-columns:repeat(2,1fr); } .posters { grid-template-columns:1fr; padding-inline:7vw; gap:4rem; } .poster:nth-child(2),.poster:nth-child(3) { margin-top:0; } .principles > div { grid-template-columns:1fr 1fr; } .principles article:nth-child(2) { border:0; } .principles article:nth-child(-n+2) { padding-bottom:1.5rem; border-bottom:1px solid var(--dark); } }
+  @media (max-width:390px) { .poster { grid-template-columns:1fr; } .poster-copy { min-height:12rem; } .principles > div { grid-template-columns:1fr; } .principles article { border-right:0; border-bottom:1px solid var(--dark); padding-bottom:1.2rem; } }
+  @media (prefers-reduced-motion:reduce) { * { scroll-behavior:auto; } }
+</style>

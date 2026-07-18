@@ -1,0 +1,97 @@
+---
+// PROTOTYPE: #EFEAE0 archive paper, #F7F3E8 glued strips, #191713 ink; product pigments form a riveted, fanned swatchbook. Geist 700 names, IBM Plex Mono specifications.
+import { pipeline, products } from "@/data/products";
+
+const pigments: Record<string, { color: string; text: string }> = {
+  "gather-box": { color: "#F5A623", text: "#151310" },
+  "frame-view": { color: "#8B7CF6", text: "#fff" },
+  lockstep: { color: "#34C98E", text: "#151310" },
+  "pane-view": { color: "#38A8E8", text: "#151310" },
+};
+const orderedProducts = ["gather-box", "frame-view", "lockstep", "pane-view"].flatMap((slug) =>
+  products.filter((product) => product.slug === slug),
+);
+---
+
+<main>
+  <header class="intro">
+    <p class="kicker">LATCH WORKS / PRIVATE MEDIA ARCHIVE</p>
+    <h1>Four tools. One archive.<br />Kept local-first.</h1>
+    <p class="lede">A small workshop for collecting, organizing, syncing, and privately viewing your media.</p>
+  </header>
+
+  <nav class="pipeline" aria-label="Archive pipeline">
+    {pipeline.map((item, index) => <span>{item.step}{index < pipeline.length - 1 && <b>→</b>}</span>)}
+  </nav>
+
+  <section class="fan" aria-label="Products">
+    {orderedProducts.map((product) => {
+      const pigment = pigments[product.slug];
+      return (
+        <article class={`swatch ${product.slug}`} style={`--pigment:${pigment.color};--card-ink:${pigment.text}`}>
+          <i class="rivet" aria-hidden="true"></i>
+          <a class="card-link" href={`/${product.slug}`} aria-label={`Open ${product.name}`}></a>
+          <div class="card-head">
+            <p>STAGE {pipeline.findIndex((item) => item.product === product.name) + 1}</p>
+            <h2>{product.name}</h2>
+            <p class="tagline">{product.tagline}</p>
+          </div>
+          <figure class="hero-shot"><img src={product.heroScreenshot.src} alt={product.heroScreenshot.alt} /></figure>
+          <div class="spec"><span>{product.repoPath} · {product.kind}</span><a href={`/${product.slug}`}>Open →</a></div>
+        </article>
+      );
+    })}
+  </section>
+
+  <section class="principles" aria-labelledby="principles-title">
+    <p class="kicker" id="principles-title">WORKSHOP NOTES</p>
+    <div class="principle-grid">
+      <article><h2>Local-first</h2><p>The archive on disk stays authoritative. Sync is explicit, never automatic mirroring.</p></article>
+      <article><h2>Private by default</h2><p>Web viewing requires authentication. Delivery URLs are signed and time-limited.</p></article>
+      <article><h2>Shared packages</h2><p>media-domain, media-index, media-storage, and lockstep-core keep behavior consistent.</p></article>
+      <article><h2>Calm tooling</h2><p>Direct language, dark UI, practical spacing — a workshop, not a marketing site.</p></article>
+    </div>
+  </section>
+</main>
+
+<style>
+  @import "@fontsource/ibm-plex-mono/400.css";
+  @import "@fontsource/ibm-plex-mono/500.css";
+  main { max-width: 1500px; margin: 0 auto; padding: 40px clamp(18px, 4vw, 64px) 72px; color: #191713; background: #EFEAE0; box-shadow: 0 0 0 100vmax #EFEAE0; clip-path: inset(0 -100vmax); }
+  .intro { max-width: 900px; }
+  .kicker, .pipeline, .spec, .card-head > p, .principles h2 { font: 500 11px/1.4 "IBM Plex Mono", monospace; letter-spacing: .08em; }
+  .kicker { margin: 0 0 10px; color: #6E6759; }
+  h1, h2, p { margin-top: 0; }
+  h1 { margin-bottom: 14px; font-family: Geist Variable, sans-serif; font-size: clamp(39px, 5.3vw, 74px); font-weight: 700; letter-spacing: -.065em; line-height: .94; }
+  .lede { max-width: 550px; margin-bottom: 28px; font: 16px/1.5 "IBM Plex Mono", monospace; color: #6E6759; }
+  .pipeline { display: flex; gap: 14px; flex-wrap: wrap; margin: 0 0 22px; color: #6E6759; }
+  .pipeline b { margin-left: 14px; color: #191713; }
+  .fan { display: flex; align-items: flex-start; padding: 8px 2.5% 32px; overflow: visible; }
+  .swatch { position: relative; flex: 1 1 310px; min-width: 0; margin-left: -4.5%; padding: 24px 18px 0; border-radius: 12px; background: var(--pigment); color: var(--card-ink); box-shadow: 0 20px 34px rgb(25 23 19 / .22); transition: transform .2s ease, box-shadow .2s ease; }
+  .swatch:first-child { margin-left: 0; transform: rotate(-2.5deg); z-index: 1; }
+  .frame-view { transform: rotate(-.65deg); z-index: 2; }
+  .lockstep { transform: rotate(1deg); z-index: 3; }
+  .pane-view { transform: rotate(2.5deg); z-index: 4; }
+  .swatch:hover { transform: translateY(-8px) rotate(0deg); box-shadow: 0 28px 42px rgb(25 23 19 / .28); z-index: 5; }
+  .card-link { position: absolute; inset: 0; z-index: 1; border-radius: 12px; }
+  .card-link:focus-visible, .spec a:focus-visible { outline: 3px solid #191713; outline-offset: 4px; }
+  .rivet { position: absolute; top: 13px; left: 13px; width: 16px; height: 16px; border-radius: 50%; background: radial-gradient(circle at 32% 28%, #f1f3f4 0 10%, #C9CDD3 24%, #6A6F76 74%, #42464b); box-shadow: 0 1px 2px rgb(0 0 0 / .35); }
+  .rivet::after { content: ""; position: absolute; top: 7px; left: 3px; width: 10px; height: 2px; border-radius: 2px; background: #565b61; transform: rotate(-12deg); }
+  .card-head { min-height: 132px; padding-left: 26px; }
+  .card-head > p { margin-bottom: 13px; opacity: .72; }
+  .card-head h2 { margin-bottom: 6px; font-family: Geist Variable, sans-serif; font-size: clamp(29px, 3vw, 46px); font-weight: 700; letter-spacing: -.065em; line-height: .92; }
+  .card-head .tagline { font: 500 12px/1.35 "IBM Plex Mono", monospace; opacity: .9; }
+  .hero-shot { margin: 0; padding: 6px; background: #F7F3E8; box-shadow: 0 3px 5px rgb(0 0 0 / .13); }
+  .hero-shot img { display: block; width: 100%; aspect-ratio: 1.38; object-fit: cover; }
+  .spec { position: relative; z-index: 2; display: flex; justify-content: space-between; gap: 12px; margin: 15px -8px -17px; padding: 15px 10px; background: #F7F3E8; color: #191713; box-shadow: 0 5px 8px rgb(25 23 19 / .15); transform: rotate(-.8deg); }
+  .spec::before, .principle-grid article::before { content: ""; position: absolute; top: -5px; left: 16%; width: 42px; height: 10px; background: rgb(239 234 224 / .7); transform: rotate(2deg); }
+  .spec a { color: inherit; font-weight: 500; text-decoration-thickness: 1px; }
+  .principles { margin-top: 30px; padding-top: 28px; border-top: 1px solid #c9c1b2; }
+  .principle-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; }
+  .principle-grid article { position: relative; padding: 18px 16px; background: #F7F3E8; box-shadow: 0 4px 9px rgb(25 23 19 / .1); }
+  .principle-grid h2 { margin-bottom: 16px; color: #191713; }
+  .principle-grid p { margin: 0; font: 12px/1.55 "IBM Plex Mono", monospace; color: #6E6759; }
+  @media (max-width: 820px) { .fan { padding-left: 0; padding-right: 0; } .swatch { flex-basis: 260px; padding: 20px 13px 0; } .swatch:first-child { margin-left: 0; } .card-head { min-height: 118px; } .principle-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 560px) { main { padding-top: 28px; } h1 { font-size: 43px; } .fan { display: block; padding: 4px 4px 32px; } .swatch, .swatch:first-child, .frame-view, .lockstep, .pane-view { width: 100%; margin: 0 0 24px; transform: none; } .swatch:hover { transform: translateY(-4px); } .card-head { min-height: 0; } .principle-grid { grid-template-columns: 1fr; } }
+  @media (prefers-reduced-motion: reduce) { .swatch { transition: none; } }
+</style>
