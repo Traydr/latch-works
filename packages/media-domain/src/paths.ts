@@ -38,11 +38,53 @@ export function canonicalizeExtension(extension: string): string {
 
 /**
  * Identity key for sync/plan matching.
- * Fold separators, Unicode (NFC), case, and extension aliases (jpeg → jpg).
+ * Fold separators, Unicode (NFC), case, and optionally extension aliases (jpeg → jpg).
  */
-export function normalizePathForCompare(path: string): string {
+export function normalizePathForCompare(
+  path: string,
+  options: { canonicalizeExtensions?: boolean } = {},
+): string {
   const normalized = trimTrailingSlash(toArchivePath(path)).normalize("NFC").toLowerCase();
+  if (options.canonicalizeExtensions === false) {
+    return normalized;
+  }
   return canonicalizePathExtension(normalized);
+}
+
+/**
+ * Build a path identity function for sync planning.
+ *
+ * Alias jpeg↔jpg across machines by default. When either the local archive or the
+ * remote snapshot has multiple paths that collapse to the same aliased key (e.g. both
+ * `photo.jpg` and `photo.jpeg`), skip extension aliasing for that key so distinct
+ * files are not merged, overwritten, or deleted.
+ */
+export function createSyncPathIdentity(
+  localPaths: readonly string[],
+  remotePaths: readonly string[] = [],
+): (path: string) => string {
+  const collidingAliasedKeys = new Set<string>();
+
+  for (const paths of [localPaths, remotePaths]) {
+    const counts = new Map<string, number>();
+    for (const path of paths) {
+      const key = normalizePathForCompare(path);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    for (const [key, count] of counts) {
+      if (count > 1) {
+        collidingAliasedKeys.add(key);
+      }
+    }
+  }
+
+  return (path: string) => {
+    const aliased = normalizePathForCompare(path);
+    if (collidingAliasedKeys.has(aliased)) {
+      return normalizePathForCompare(path, { canonicalizeExtensions: false });
+    }
+    return aliased;
+  };
 }
 
 function canonicalizePathExtension(path: string): string {

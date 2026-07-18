@@ -1,4 +1,4 @@
-import { type MediaItem, normalizePathForCompare } from "@latch-works/media-domain";
+import { createSyncPathIdentity, type MediaItem } from "@latch-works/media-domain";
 
 export interface RemoteEntrySnapshot {
   path: string;
@@ -24,14 +24,16 @@ export function createSyncPlan(
   localItems: readonly MediaItem[],
   remoteEntries: readonly RemoteEntrySnapshot[] = [],
 ): SyncPlan {
-  const remoteByPath = new Map(
-    remoteEntries.map((entry) => [normalizePathForCompare(entry.path), entry]),
+  const identity = createSyncPathIdentity(
+    localItems.map((item) => item.path),
+    remoteEntries.map((entry) => entry.path),
   );
+  const remoteByPath = new Map(remoteEntries.map((entry) => [identity(entry.path), entry]));
   const items: SyncPlanItem[] = [];
   const matchedRemotePaths = new Set<string>();
 
   for (const local of localItems) {
-    const remote = remoteByPath.get(normalizePathForCompare(local.path));
+    const remote = remoteByPath.get(identity(local.path));
     if (!remote) {
       items.push({ action: "upload", local, path: local.path });
       continue;
