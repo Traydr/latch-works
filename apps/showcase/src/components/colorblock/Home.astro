@@ -147,13 +147,15 @@ const enamel: Record<string, string> = {
   .principles h2 { font-size:clamp(2rem,3vw,3.4rem); }
   .principles p { color:#b7bbc2; line-height:1.45; margin:.8rem 0 0; }
   a:focus-visible { outline:3px solid #fff; outline-offset:4px; }
-  @media(max-width:700px){
-    .intro{min-height:auto}
-    .pipeline{display:grid;grid-template-columns:1fr 1fr}
+  @media(max-width:840px){
     .product-plate,.product-plate.reverse{grid-template-columns:1fr;min-height:auto}
     .reverse .plate-copy,.reverse .shot{order:initial}
     .reverse .shot{transform:rotate(-1.5deg)}
     .product-plate h2{font-size:clamp(4.5rem,22vw,7rem)}
+  }
+  @media(max-width:700px){
+    .intro{min-height:auto}
+    .pipeline{display:grid;grid-template-columns:1fr 1fr}
     .principles{grid-template-columns:1fr 1fr}
     .principles article:nth-child(2){border-right:0}
     .principles article:nth-child(-n+2){border-bottom:1px solid #2A2E35}
