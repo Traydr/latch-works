@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as StatsRouteImport } from './routes/stats'
 import { Route as ManageRouteImport } from './routes/manage'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as GalleryRouteImport } from './routes/_gallery'
@@ -25,6 +26,11 @@ import { Route as ApiMediaMediaIdPreviewRouteImport } from './routes/api.media.$
 import { Route as ApiMediaMediaIdOriginalRouteImport } from './routes/api.media.$mediaId.original'
 import { Route as ApiSyncRunsSyncRunIdCompleteRouteImport } from './routes/api.sync.runs.$syncRunId.complete'
 
+const StatsRoute = StatsRouteImport.update({
+  id: '/stats',
+  path: '/stats',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ManageRoute = ManageRouteImport.update({
   id: '/manage',
   path: '/manage',
@@ -106,6 +112,7 @@ export interface FileRoutesByFullPath {
   '/': typeof GalleryIndexRoute
   '/login': typeof LoginRoute
   '/manage': typeof ManageRoute
+  '/stats': typeof StatsRoute
   '/api/health': typeof ApiHealthRoute
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
@@ -121,6 +128,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/manage': typeof ManageRoute
+  '/stats': typeof StatsRoute
   '/api/health': typeof ApiHealthRoute
   '/': typeof GalleryIndexRoute
   '/api/auth/login': typeof ApiAuthLoginRoute
@@ -139,6 +147,7 @@ export interface FileRoutesById {
   '/_gallery': typeof GalleryRouteWithChildren
   '/login': typeof LoginRoute
   '/manage': typeof ManageRoute
+  '/stats': typeof StatsRoute
   '/api/health': typeof ApiHealthRoute
   '/_gallery/': typeof GalleryIndexRoute
   '/api/auth/login': typeof ApiAuthLoginRoute
@@ -158,6 +167,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/manage'
+    | '/stats'
     | '/api/health'
     | '/api/auth/login'
     | '/api/auth/logout'
@@ -173,6 +183,7 @@ export interface FileRouteTypes {
   to:
     | '/login'
     | '/manage'
+    | '/stats'
     | '/api/health'
     | '/'
     | '/api/auth/login'
@@ -190,6 +201,7 @@ export interface FileRouteTypes {
     | '/_gallery'
     | '/login'
     | '/manage'
+    | '/stats'
     | '/api/health'
     | '/_gallery/'
     | '/api/auth/login'
@@ -208,6 +220,7 @@ export interface RootRouteChildren {
   GalleryRoute: typeof GalleryRouteWithChildren
   LoginRoute: typeof LoginRoute
   ManageRoute: typeof ManageRoute
+  StatsRoute: typeof StatsRoute
   ApiHealthRoute: typeof ApiHealthRoute
   ApiAuthLoginRoute: typeof ApiAuthLoginRoute
   ApiAuthLogoutRoute: typeof ApiAuthLogoutRoute
@@ -222,6 +235,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/stats': {
+      id: '/stats'
+      path: '/stats'
+      fullPath: '/stats'
+      preLoaderRoute: typeof StatsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/manage': {
       id: '/manage'
       path: '/manage'
@@ -357,6 +377,7 @@ const rootRouteChildren: RootRouteChildren = {
   GalleryRoute: GalleryRouteWithChildren,
   LoginRoute: LoginRoute,
   ManageRoute: ManageRoute,
+  StatsRoute: StatsRoute,
   ApiHealthRoute: ApiHealthRoute,
   ApiAuthLoginRoute: ApiAuthLoginRoute,
   ApiAuthLogoutRoute: ApiAuthLogoutRoute,
