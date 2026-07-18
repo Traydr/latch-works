@@ -69,6 +69,22 @@ describe("validateSyncObjectPayload", () => {
     expect(result).toEqual({ ok: false, error: "extension must match filename" });
   });
 
+  it("accepts jpeg extension aliases and stores them as jpg", () => {
+    const result = validateSyncObjectPayload({
+      ...validPayload,
+      extension: "jpeg",
+      filename: "cover.jpeg",
+      logicalPath: "photos/cover.jpeg",
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.input.extension).toBe("jpg");
+      expect(result.input.objectKey).toBe(
+        `originals/sha256/${validPayload.sha256.slice(0, 2)}/${validPayload.sha256.slice(2, 4)}/${validPayload.sha256}.jpg`,
+      );
+    }
+  });
+
   it("rejects unsupported filenames even when fields are internally consistent", () => {
     const result = validateSyncObjectPayload({
       ...validPayload,

@@ -27,8 +27,8 @@ export function createSyncPlan(
   const remoteByPath = new Map(
     remoteEntries.map((entry) => [normalizePathForCompare(entry.path), entry]),
   );
-  const localByPath = new Map(localItems.map((item) => [normalizePathForCompare(item.path), item]));
   const items: SyncPlanItem[] = [];
+  const matchedRemotePaths = new Set<string>();
 
   for (const local of localItems) {
     const remote = remoteByPath.get(normalizePathForCompare(local.path));
@@ -36,6 +36,8 @@ export function createSyncPlan(
       items.push({ action: "upload", local, path: local.path });
       continue;
     }
+
+    matchedRemotePaths.add(remote.path);
 
     if (
       remote.size !== local.size ||
@@ -49,7 +51,9 @@ export function createSyncPlan(
   }
 
   for (const remote of remoteEntries) {
-    if (!localByPath.has(normalizePathForCompare(remote.path))) {
+    // Prefer matchedRemotePaths so alias/case duplicate remotes collapsed in remoteByPath
+    // still plan as deletes after the surviving identity is kept/updated.
+    if (!matchedRemotePaths.has(remote.path)) {
       items.push({ action: "delete", path: remote.path, remote });
     }
   }

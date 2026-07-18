@@ -17,7 +17,9 @@ function shardPath(sha256: string): string {
 }
 
 function cleanExtension(extension: string): string {
-  return extension.replace(/^\./, "").toLowerCase();
+  const cleaned = extension.replace(/^\./, "").toLowerCase();
+  // Keep in sync with canonicalizeExtension in @latch-works/media-domain.
+  return cleaned === "jpeg" ? "jpg" : cleaned;
 }
 
 /** Content-addressed key for an immutable original. mediaType is not part of the key. */

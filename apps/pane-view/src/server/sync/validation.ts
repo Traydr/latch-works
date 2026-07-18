@@ -1,4 +1,5 @@
 import {
+  canonicalizeExtension,
   getBaseName,
   getExtension,
   isSupportedMediaFile,
@@ -130,7 +131,7 @@ export function validateSyncObjectPayload(
     return { ok: false, error: "filename must match logicalPath" };
   }
 
-  const extension = String(body.extension);
+  const extension = canonicalizeExtension(String(body.extension));
   const derivedExtension = getExtension(filename);
   if (extension !== derivedExtension) {
     return { ok: false, error: "extension must match filename" };

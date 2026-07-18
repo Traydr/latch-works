@@ -12,6 +12,7 @@ const baseItem = {
 describe("media-domain", () => {
   it("detects archive media types by extension", () => {
     expect(detectMediaType("cover.JPG")).toBe("image");
+    expect(detectMediaType("cover.jpeg")).toBe("image");
     expect(detectMediaType("clip.webm")).toBe("video");
     expect(detectMediaType("story.pdf")).toBe("pdf");
     expect(detectMediaType("notes.txt")).toBe("unknown");

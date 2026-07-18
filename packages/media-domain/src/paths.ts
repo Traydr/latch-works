@@ -26,8 +26,41 @@ export function joinArchivePath(...parts: string[]): string {
   return toArchivePath(parts.filter(Boolean).join("/"));
 }
 
+/** Alias map so equivalent spellings share one sync/storage identity. */
+const EXTENSION_ALIASES: Record<string, string> = {
+  jpeg: "jpg",
+};
+
+export function canonicalizeExtension(extension: string): string {
+  const normalized = extension.replace(/^\./, "").toLowerCase();
+  return EXTENSION_ALIASES[normalized] ?? normalized;
+}
+
+/**
+ * Identity key for sync/plan matching.
+ * Fold separators, Unicode (NFC), case, and extension aliases (jpeg → jpg).
+ */
 export function normalizePathForCompare(path: string): string {
-  return trimTrailingSlash(toArchivePath(path)).toLowerCase();
+  const normalized = trimTrailingSlash(toArchivePath(path)).normalize("NFC").toLowerCase();
+  return canonicalizePathExtension(normalized);
+}
+
+function canonicalizePathExtension(path: string): string {
+  const separatorIndex = path.lastIndexOf("/");
+  const baseStart = separatorIndex + 1;
+  const baseName = path.slice(baseStart);
+  const dotIndex = baseName.lastIndexOf(".");
+  if (dotIndex <= 0 || dotIndex === baseName.length - 1) {
+    return path;
+  }
+
+  const extension = baseName.slice(dotIndex + 1);
+  const canonicalExtension = canonicalizeExtension(extension);
+  if (canonicalExtension === extension) {
+    return path;
+  }
+
+  return `${path.slice(0, baseStart)}${baseName.slice(0, dotIndex + 1)}${canonicalExtension}`;
 }
 
 export function displayNameFromPath(path: string): string {
