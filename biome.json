@@ -11,6 +11,8 @@
       "!**/.output",
       "!**/.astro",
       "!**/routeTree.gen.ts",
+      "!apps/pane-view/src/components/dither-kit",
+      "!apps/pane-view/dither-kit.json",
       "!apps/frame-view",
       "!apps/gather-box"
     ]
