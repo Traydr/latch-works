@@ -1,0 +1,169 @@
+---
+/**
+ * Showcase home — Colorblock design system.
+ * Steel #16181C shell, #2A2E35 seams, full-width product enamel plates.
+ */
+import "@fontsource/barlow-condensed/600.css";
+import "@fontsource/barlow-condensed/700.css";
+import "@fontsource/barlow/400.css";
+import "@fontsource/barlow/500.css";
+import "@fontsource/jetbrains-mono/400.css";
+import "@fontsource/jetbrains-mono/700.css";
+import { pipeline, products } from "@/data/products";
+
+const stages = ["gather-box", "frame-view", "lockstep", "pane-view"]
+  .map((slug) => products.find((product) => product.slug === slug))
+  .filter((product) => product !== undefined);
+const enamel: Record<string, string> = {
+  "gather-box": "#F5A623",
+  "frame-view": "#8B7CF6",
+  lockstep: "#34C98E",
+  "pane-view": "#38A8E8",
+};
+---
+
+<div class="page">
+  <header class="intro">
+    <p class="kicker">Latch Works / private archive tools</p>
+    <h1>COLLECT<br />TO VIEW.</h1>
+    <p class="intro-copy">
+      Four local-first tools for a private media archive. Keep the archive on disk. Move through
+      it with intent.
+    </p>
+    <div class="pipeline" aria-label="Archive pipeline">
+      {
+        pipeline.map((item, index) => (
+          <a class="stage-chip" style={`--enamel:${enamel[stages[index].slug]}`} href={`/${stages[index].slug}`}>
+            <span>{item.step}</span>
+            <b>{item.product}</b>
+          </a>
+        ))
+      }
+    </div>
+  </header>
+
+  <div class="seam"><span>ARCHIVE PIPELINE</span></div>
+
+  {
+    stages.map((product, index) => (
+      <section
+        class:list={["product-plate", index % 2 === 1 && "reverse"]}
+        style={`--enamel:${enamel[product.slug]};--ink:#151310`}
+      >
+        <i class="chev tl"></i>
+        <i class="chev tr"></i>
+        <i class="chev bl"></i>
+        <i class="chev br"></i>
+        <div class="plate-copy">
+          <p class="stage">STAGE 0{index + 1} / {pipeline[index].step}</p>
+          <h2>
+            {product.slug === "lockstep" ? (
+              <>
+                LOCK
+                <br />
+                STEP
+              </>
+            ) : (
+              product.name
+            )}
+          </h2>
+          <p class="tagline">{product.tagline}</p>
+          <div class="specs">
+            <span>PATH <b>{product.repoPath}</b></span>
+            <span>KIND <b>{product.kind}</b></span>
+          </div>
+          <a class="open" href={`/${product.slug}`}>
+            Open <span>→</span>
+          </a>
+        </div>
+        <figure class="shot">
+          <img src={product.heroScreenshot.src} alt={product.heroScreenshot.alt} />
+          <figcaption>{product.heroScreenshot.caption}</figcaption>
+        </figure>
+      </section>
+    ))
+  }
+
+  <section class="closing">
+    <p class="kicker">Built around the archive, not around a feed</p>
+    <div class="principles">
+      <article>
+        <h2>LOCAL-FIRST</h2>
+        <p>The archive on disk stays authoritative. Sync is explicit, never automatic mirroring.</p>
+      </article>
+      <article>
+        <h2>PRIVATE BY DEFAULT</h2>
+        <p>Web viewing requires authentication. Delivery URLs are signed and time-limited.</p>
+      </article>
+      <article>
+        <h2>SHARED PACKAGES</h2>
+        <p>media-domain, media-index, media-storage, and lockstep-core keep behavior consistent.</p>
+      </article>
+      <article>
+        <h2>CALM TOOLING</h2>
+        <p>Direct language, dark UI, practical spacing — a workshop, not a marketing site.</p>
+      </article>
+    </div>
+  </section>
+</div>
+
+<style>
+  .page { background:#16181C; color:#E8EAED; overflow:hidden; font-family:"Barlow",sans-serif; }
+  .intro { min-height:72vh; padding:clamp(2rem,6vw,6rem) max(1.5rem,8vw) 3rem; display:grid; align-content:center; background:linear-gradient(115deg,#16181C 62%,#20242a); }
+  .kicker,.stage,.specs,figcaption { font:700 .68rem/1.3 "JetBrains Mono",monospace; letter-spacing:.09em; text-transform:uppercase; }
+  .kicker { color:#8A8F98; margin:0 0 1rem; }
+  h1,h2 { font-family:"Barlow Condensed",sans-serif; font-weight:700; text-transform:uppercase; line-height:.78; margin:0; letter-spacing:-.035em; }
+  h1 { font-size:clamp(5.5rem,15vw,15rem); max-width:1100px; }
+  .intro-copy { font-size:clamp(1.05rem,1.6vw,1.4rem); line-height:1.35; max-width:44rem; color:#c2c6cc; margin:1.7rem 0 2rem; }
+  .pipeline { border:1px solid #2A2E35; display:flex; width:min(100%,900px); background:#16181C; padding:6px; gap:6px; }
+  .stage-chip { color:#151310; background:var(--enamel); padding:.65rem .75rem; flex:1; text-decoration:none; min-width:0; }
+  .stage-chip span { display:block; font:700 .58rem "JetBrains Mono",monospace; text-transform:uppercase; opacity:.65; }
+  .stage-chip b { display:block; font:700 1.2rem "Barlow Condensed",sans-serif; text-transform:uppercase; white-space:nowrap; }
+  .seam { height:38px; border-block:1px solid #2A2E35; background:repeating-linear-gradient(90deg,#16181C 0 24px,#20242a 24px 26px); display:flex; align-items:center; justify-content:center; }
+  .seam span { font:700 .58rem "JetBrains Mono",monospace; color:#8A8F98; letter-spacing:.15em; }
+  .product-plate { position:relative; min-height:min(700px,78vh); padding:clamp(3.5rem,7vw,7rem) max(1.5rem,8vw); background:var(--enamel); color:var(--ink); display:grid; grid-template-columns:minmax(280px,.85fr) minmax(360px,1.15fr); align-items:center; gap:clamp(2rem,7vw,10rem); border-block:1px solid color-mix(in srgb,var(--enamel),#151310 34%); }
+  .product-plate.reverse { grid-template-columns:minmax(360px,1.15fr) minmax(280px,.85fr); }
+  .reverse .plate-copy { order:2; }
+  .reverse .shot { order:1; transform:rotate(-2deg); }
+  .stage { margin:0 0 .8rem; opacity:.72; }
+  .product-plate h2 { font-size:clamp(5rem,11vw,11rem); }
+  .tagline { font-size:clamp(1.2rem,2vw,1.7rem); margin:1rem 0 2rem; max-width:28rem; font-weight:500; }
+  .specs { border-top:1px solid color-mix(in srgb,var(--ink),transparent 65%); padding-top:.8rem; display:grid; gap:.45rem; }
+  .specs b { font-weight:400; margin-left:.8rem; }
+  .open { display:inline-flex; margin-top:2.4rem; color:inherit; border-bottom:2px solid currentColor; text-decoration:none; font:700 1.6rem "Barlow Condensed",sans-serif; text-transform:uppercase; padding-bottom:.16rem; }
+  .open span { margin-left:.7rem; }
+  .shot { margin:0; padding:.65rem; background:var(--enamel); border:1px solid color-mix(in srgb,var(--ink),transparent 50%); box-shadow:13px 16px 0 color-mix(in srgb,var(--ink),transparent 79%); transform:rotate(2deg); }
+  .shot img { display:block; width:100%; aspect-ratio:16/10; object-fit:cover; filter:grayscale(1) contrast(1.12) brightness(1.02); mix-blend-mode:multiply; opacity:.92; }
+  .shot figcaption { margin:.65rem 0 .1rem; font-size:.56rem; }
+  .chev { position:absolute; width:12px; height:12px; border:2px solid currentColor; }
+  .tl { top:18px; left:18px; border-right:0; border-bottom:0; }
+  .tr { top:18px; right:18px; border-left:0; border-bottom:0; }
+  .bl { bottom:18px; left:18px; border-right:0; border-top:0; }
+  .br { bottom:18px; right:18px; border-left:0; border-top:0; }
+  .closing { padding:clamp(3rem,7vw,7rem) max(1.5rem,8vw); border-top:1px solid #2A2E35; }
+  .principles { display:grid; grid-template-columns:repeat(4,1fr); border:1px solid #2A2E35; }
+  .principles article { padding:1.5rem; border-right:1px solid #2A2E35; }
+  .principles article:last-child { border:0; }
+  .principles h2 { font-size:clamp(2rem,3vw,3.4rem); }
+  .principles p { color:#b7bbc2; line-height:1.45; margin:.8rem 0 0; }
+  a:focus-visible { outline:3px solid #fff; outline-offset:4px; }
+  @media(max-width:840px){
+    .product-plate,.product-plate.reverse{grid-template-columns:1fr;min-height:auto}
+    .reverse .plate-copy,.reverse .shot{order:initial}
+    .reverse .shot{transform:rotate(-1.5deg)}
+    .product-plate h2{font-size:clamp(4.5rem,22vw,7rem)}
+  }
+  @media(max-width:700px){
+    .intro{min-height:auto}
+    .pipeline{display:grid;grid-template-columns:1fr 1fr}
+    .principles{grid-template-columns:1fr 1fr}
+    .principles article:nth-child(2){border-right:0}
+    .principles article:nth-child(-n+2){border-bottom:1px solid #2A2E35}
+  }
+  @media(max-width:390px){
+    .pipeline{grid-template-columns:1fr}
+    .principles{grid-template-columns:1fr}
+    .principles article{border-right:0;border-bottom:1px solid #2A2E35}
+    .principles article:last-child{border-bottom:0}
+  }
+</style>
