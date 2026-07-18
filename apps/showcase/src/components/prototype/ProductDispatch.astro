@@ -1,0 +1,73 @@
+---
+/**
+ * PROTOTYPE — throwaway. Do not ship.
+ *
+ * Routes a product + family slug to that product page's design component.
+ * Keeps [slug].astro free of a 20-branch conditional.
+ */
+import type { Product } from "@/data/products";
+import FrameArchive from "./product/frame-view/Archive.astro";
+import FrameAtlas from "./product/frame-view/Atlas.astro";
+import FrameDossier from "./product/frame-view/Dossier.astro";
+import FramePigment from "./product/frame-view/Pigment.astro";
+import FrameWorkshop from "./product/frame-view/Workshop.astro";
+import GatherArchive from "./product/gather-box/Archive.astro";
+import GatherAtlas from "./product/gather-box/Atlas.astro";
+import GatherDossier from "./product/gather-box/Dossier.astro";
+import GatherPigment from "./product/gather-box/Pigment.astro";
+import GatherWorkshop from "./product/gather-box/Workshop.astro";
+import LockstepArchive from "./product/lockstep/Archive.astro";
+import LockstepAtlas from "./product/lockstep/Atlas.astro";
+import LockstepDossier from "./product/lockstep/Dossier.astro";
+import LockstepPigment from "./product/lockstep/Pigment.astro";
+import LockstepWorkshop from "./product/lockstep/Workshop.astro";
+import PaneArchive from "./product/pane-view/Archive.astro";
+import PaneAtlas from "./product/pane-view/Atlas.astro";
+import PaneDossier from "./product/pane-view/Dossier.astro";
+import PanePigment from "./product/pane-view/Pigment.astro";
+import PaneWorkshop from "./product/pane-view/Workshop.astro";
+
+interface Props {
+  product: Product;
+  family: string;
+}
+
+const { product, family } = Astro.props;
+
+const designs: Record<string, Record<string, (_props: Props) => unknown>> = {
+  "gather-box": {
+    archive: GatherArchive,
+    workshop: GatherWorkshop,
+    atlas: GatherAtlas,
+    dossier: GatherDossier,
+    pigment: GatherPigment,
+  },
+  "frame-view": {
+    archive: FrameArchive,
+    workshop: FrameWorkshop,
+    atlas: FrameAtlas,
+    dossier: FrameDossier,
+    pigment: FramePigment,
+  },
+  lockstep: {
+    archive: LockstepArchive,
+    workshop: LockstepWorkshop,
+    atlas: LockstepAtlas,
+    dossier: LockstepDossier,
+    pigment: LockstepPigment,
+  },
+  "pane-view": {
+    archive: PaneArchive,
+    workshop: PaneWorkshop,
+    atlas: PaneAtlas,
+    dossier: PaneDossier,
+    pigment: PanePigment,
+  },
+};
+
+const Design = designs[product.slug]?.[family] as
+  | ((props: { product: Product }) => unknown)
+  | undefined;
+---
+
+{Design ? <Design product={product} /> : null}

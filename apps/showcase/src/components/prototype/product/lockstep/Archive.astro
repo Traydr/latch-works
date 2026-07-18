@@ -1,0 +1,382 @@
+---
+/**
+ * PROTOTYPE — Lockstep "Registrar's Ledger" (Archive family). Throwaway.
+ *
+ * Concept: sync as bookkeeping. Lockstep doesn't move files so much as record
+ * what may move — so its page is the registrar's ledger: ruled entries for
+ * plan, push, verify, each stamped with its disposition. Deletes stay HELD,
+ * stamped red, until explicitly posted. Replaces the rejected "Bench".
+ *
+ * Tokens
+ *   Color: paper #F1EDE2 · ledger line #CFC7B4 · ink #201D17 · pencil #6E6759
+ *          stamp #A8362A (held/destructive only) · registered #3E6B4F
+ *   Type:  IBM Plex Serif 600 (title) · IBM Plex Mono (ledger entries)
+ *   Layout: ledger cover → ruled entry rows with disposition stamps →
+ *           plates (screenshots) → itemized feature entries → balanced colophon.
+ *   Signature: disposition stamps (RECORDED / REGISTERED / VERIFIED / HELD)
+ *           and a closing "BALANCED · 0 DRIFT" line.
+ */
+import "@fontsource/ibm-plex-mono/400.css";
+import "@fontsource/ibm-plex-mono/500.css";
+import "@fontsource/ibm-plex-serif/600.css";
+import type { Product } from "@/data/products";
+
+interface Props {
+  product: Product;
+}
+
+const { product } = Astro.props;
+
+const entries = [
+  {
+    action: "PLAN",
+    detail: "Walk the source tree, diff against Pane View, review counts. Zero side effects.",
+    stamp: "RECORDED",
+    held: false,
+  },
+  {
+    action: "PUSH",
+    detail: "Upload and register new or changed originals. Deletes never posted here.",
+    stamp: "REGISTERED",
+    held: false,
+  },
+  {
+    action: "VERIFY",
+    detail: "Compare local state against the snapshot file. Non-zero exit on drift.",
+    stamp: "VERIFIED",
+    held: false,
+  },
+  {
+    action: "APPLY DELETES",
+    detail: "Posted only as its own explicit action, after the plan is reviewed.",
+    stamp: "HELD",
+    held: true,
+  },
+];
+---
+
+<div class="ledger-page">
+  <div class="book">
+    <a class="back" href="/">← All stages</a>
+
+    <!-- Cover -->
+    <header class="cover">
+      <p class="kicker">REGISTRAR'S LEDGER · STAGE 03 · SYNC</p>
+      <h1>{product.name}</h1>
+      <p class="tagline">{product.tagline}</p>
+      <p class="desc">{product.description}</p>
+      <dl class="cover-fields">
+        <div><dt>LEDGER</dt><dd>{product.repoPath}</dd></div>
+        <div><dt>CURRENCY</dt><dd>Files, originals, snapshots</dd></div>
+        <div><dt>BALANCE</dt><dd>Local disk vs. Pane View</dd></div>
+      </dl>
+    </header>
+
+    <!-- Entries -->
+    <section class="entries" aria-label="Sync actions">
+      {
+        entries.map((entry) => (
+          <div class:list={["entry", { held: entry.held }]}>
+            <span class="action">{entry.action}</span>
+            <span class="detail">{entry.detail}</span>
+            <span class="stamp">{entry.stamp}</span>
+          </div>
+        ))
+      }
+    </section>
+
+    <!-- Plates -->
+    <section class="plates">
+      {
+        [product.heroScreenshot, ...product.gallery].map((shot, i) => (
+          <figure class="plate">
+            <img src={shot.src} alt={shot.alt} loading={i === 0 ? "eager" : "lazy"} />
+            <figcaption>
+              <span class="plate-no">PLATE {["I", "II", "III"][i]}</span>
+              {shot.caption}
+            </figcaption>
+          </figure>
+        ))
+      }
+    </section>
+
+    <!-- Itemized features -->
+    <section class="items">
+      <h2 class="items-title"><span>Itemized capabilities</span></h2>
+      <div class="items-grid">
+        {
+          product.features.map((feature) => (
+            <div class="item">
+              <h3>{feature.title}</h3>
+              <p>{feature.description}</p>
+            </div>
+          ))
+        }
+      </div>
+      <ul class="notes">
+        {product.highlights.map((h) => <li>{h}</li>)}
+      </ul>
+    </section>
+
+    <footer class="colophon">
+      <a class="handbook" href="/docs/lockstep">Registrar's handbook →</a>
+      <p class="balanced">BALANCED · 0 DRIFT</p>
+    </footer>
+  </div>
+</div>
+
+<style>
+  .ledger-page {
+    --paper: #f1ede2;
+    --line: #cfc7b4;
+    --ink: #201d17;
+    --pencil: #6e6759;
+    --stamp: #a8362a;
+    --registered: #3e6b4f;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    padding-bottom: 4.5rem;
+  }
+
+  .book {
+    max-width: 64rem;
+    margin: 0 auto;
+    padding: 2rem 1.25rem 0;
+  }
+
+  .back {
+    display: inline-block;
+    font-size: 0.75rem;
+    color: var(--pencil);
+    text-decoration: none;
+    margin-bottom: 2.5rem;
+  }
+  .back:hover { color: var(--ink); }
+
+  /* — Cover — */
+  .cover {
+    text-align: center;
+    padding-bottom: 2.5rem;
+    border-bottom: 2px solid var(--ink);
+  }
+  .kicker {
+    font-size: 0.72rem;
+    letter-spacing: 0.28em;
+    color: var(--pencil);
+    margin: 0 0 0.75rem;
+  }
+  .cover h1 {
+    font-family: "IBM Plex Serif", Georgia, serif;
+    font-size: clamp(2.75rem, 6vw, 4.25rem);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    margin: 0;
+  }
+  .tagline {
+    margin: 0.5rem 0 0;
+    font-size: 0.95rem;
+    letter-spacing: 0.12em;
+    color: var(--registered);
+    font-weight: 500;
+  }
+  .desc {
+    max-width: 38rem;
+    margin: 1.25rem auto 0;
+    font-size: 0.85rem;
+    line-height: 1.75;
+    color: var(--pencil);
+  }
+  .cover-fields {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.5rem 2.5rem;
+    margin: 1.75rem 0 0;
+    font-size: 0.72rem;
+  }
+  .cover-fields div {
+    display: flex;
+    gap: 0.6rem;
+  }
+  .cover-fields dt { color: var(--pencil); }
+  .cover-fields dd { margin: 0; font-weight: 500; }
+
+  /* — Entries — */
+  .entries {
+    margin-top: 2.25rem;
+    border-top: 1px solid var(--ink);
+  }
+  .entry {
+    display: grid;
+    grid-template-columns: 9rem 1fr auto;
+    gap: 1rem;
+    align-items: center;
+    padding: 0.85rem 0.5rem;
+    border-bottom: 1px solid var(--line);
+    font-size: 0.82rem;
+  }
+  .entry .action {
+    font-weight: 500;
+    letter-spacing: 0.08em;
+  }
+  .entry .detail {
+    color: var(--pencil);
+    line-height: 1.55;
+    font-size: 0.78rem;
+  }
+  .entry .stamp {
+    font-size: 0.62rem;
+    font-weight: 500;
+    letter-spacing: 0.22em;
+    color: var(--registered);
+    border: 1.5px solid var(--registered);
+    border-radius: 3px;
+    padding: 0.25rem 0.5rem 0.2rem 0.65rem;
+    transform: rotate(-3deg);
+    white-space: nowrap;
+  }
+  .entry.held {
+    background: color-mix(in srgb, var(--stamp) 5%, transparent);
+  }
+  .entry.held .stamp {
+    color: var(--stamp);
+    border-color: var(--stamp);
+    transform: rotate(2deg);
+  }
+  @media (max-width: 44rem) {
+    .entry {
+      grid-template-columns: 1fr;
+      gap: 0.35rem;
+    }
+    .entry .stamp {
+      justify-self: start;
+    }
+  }
+
+  /* — Plates — */
+  .plates {
+    margin-top: 3rem;
+    display: grid;
+    gap: 2rem;
+  }
+  @media (min-width: 56rem) {
+    .plates { grid-template-columns: 1fr 1fr; }
+  }
+  .plate {
+    margin: 0;
+    border: 1px solid var(--line);
+    background: #f8f5eb;
+    padding: 0.6rem;
+    box-shadow: 0 12px 24px -16px rgba(32, 29, 23, 0.4);
+  }
+  .plate img {
+    display: block;
+    width: 100%;
+    filter: saturate(0.92);
+  }
+  .plate figcaption {
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+    margin-top: 0.55rem;
+    font-size: 0.7rem;
+    color: var(--pencil);
+  }
+  .plate-no {
+    letter-spacing: 0.25em;
+    color: var(--ink);
+    font-weight: 500;
+  }
+
+  /* — Items — */
+  .items {
+    margin-top: 3.5rem;
+  }
+  .items-title {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin: 0 0 1.5rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+  }
+  .items-title::after {
+    content: "";
+    flex: 1;
+    border-top: 1px solid var(--line);
+  }
+  .items-grid {
+    display: grid;
+    gap: 0;
+    border-top: 1px solid var(--line);
+  }
+  @media (min-width: 56rem) {
+    .items-grid {
+      grid-template-columns: 1fr 1fr;
+      gap: 0 2.5rem;
+    }
+  }
+  .item {
+    padding: 0.9rem 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .item h3 {
+    margin: 0;
+    font-size: 0.82rem;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+  }
+  .item p {
+    margin: 0.4rem 0 0;
+    font-size: 0.76rem;
+    line-height: 1.65;
+    color: var(--pencil);
+  }
+  .notes {
+    list-style: none;
+    margin: 1.75rem 0 0;
+    padding: 0;
+    font-size: 0.76rem;
+    line-height: 1.9;
+    color: var(--pencil);
+  }
+  .notes li::before {
+    content: "—  ";
+    color: var(--line);
+  }
+
+  /* — Colophon — */
+  .colophon {
+    margin-top: 3rem;
+    border-top: 2px solid var(--ink);
+    padding-top: 1.5rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+  .handbook {
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: var(--ink);
+    text-decoration: none;
+    border-bottom: 1.5px solid var(--ink);
+    padding-bottom: 0.1rem;
+  }
+  .handbook:hover { color: var(--registered); border-color: var(--registered); }
+  .handbook:focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 3px;
+  }
+  .balanced {
+    margin: 0;
+    font-size: 0.68rem;
+    letter-spacing: 0.3em;
+    color: var(--registered);
+    font-weight: 500;
+  }
+</style>

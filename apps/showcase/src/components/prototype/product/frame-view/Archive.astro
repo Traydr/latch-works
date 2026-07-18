@@ -1,0 +1,308 @@
+---
+/**
+ * PROTOTYPE — Frame View product page "Gallery Wall". Throwaway. Do not ship.
+ *
+ * Concept: Frame View is the media viewer, so its page is the exhibition.
+ * Screenshots hang on a warm gallery wall under spotlight cones, each with a
+ * museum plaque; features read as wall text beside the work.
+ *
+ * Tokens
+ *   Color: wall #241F1A · wall deep #1B1712 · plaque #EFE7D6 · plaque ink #2A2419
+ *          frame #14100B + brass line #C9A86A · text #E8E1D4 · dim #A79B87
+ *   Type:  IBM Plex Serif 600 (plaques, wall text) · Geist (body)
+ *   Layout: one centered masterwork (hero + plaque + spotlight) → wall text
+ *           intro → staggered hung pieces → feature wall → closing plaque.
+ *   Signature: spotlight cones and cream museum plaques.
+ */
+import "@fontsource/ibm-plex-serif/600.css";
+import "@fontsource/ibm-plex-serif/400.css";
+import type { Product } from "@/data/products";
+
+interface Props {
+  product: Product;
+}
+
+const { product } = Astro.props;
+---
+
+<div class="gallery">
+  <div class="wall">
+    <a class="back" href="/">← All stages</a>
+
+    <!-- Masterwork -->
+    <header class="masterwork">
+      <div class="piece hero-piece">
+        <span class="spot" aria-hidden="true"></span>
+        <div class="frame">
+          <img src={product.heroScreenshot.src} alt={product.heroScreenshot.alt} />
+        </div>
+        <div class="plaque">
+          <p class="plaque-name">{product.name}</p>
+          <p class="plaque-line">{product.tagline}</p>
+          <p class="plaque-line dim">Electron · images, video, comics, PDF stories</p>
+        </div>
+      </div>
+      <div class="wall-text">
+        <p class="eyebrow">STAGE 02 · ORGANIZE · {product.repoPath}</p>
+        <p class="statement">{product.description}</p>
+      </div>
+    </header>
+
+    <!-- Hung pieces -->
+    {
+      product.gallery.length > 0 && (
+        <section class="hang" aria-label="More views">
+          {product.gallery.map((shot, i) => (
+            <figure class:list={["piece", i % 2 === 1 ? "raise" : ""]}>
+              <span class="spot" aria-hidden="true" />
+              <div class="frame">
+                <img src={shot.src} alt={shot.alt} loading="lazy" />
+              </div>
+              <figcaption class="plaque small">
+                <p class="plaque-line">{shot.caption}</p>
+              </figcaption>
+            </figure>
+          ))}
+        </section>
+      )
+    }
+
+    <!-- Feature wall -->
+    <section class="features">
+      <h2 class="room-title">Wall text</h2>
+      <div class="feature-grid">
+        {
+          product.features.map((feature) => (
+            <div class="feature">
+              <h3>{feature.title}</h3>
+              <p>{feature.description}</p>
+            </div>
+          ))
+        }
+      </div>
+    </section>
+
+    <!-- Highlights + closing -->
+    <footer class="closing">
+      <ul class="highlights">
+        {product.highlights.map((h) => <li>{h}</li>)}
+      </ul>
+      <div class="plaque cta">
+        <p class="plaque-line">Reference UX for the whole ecosystem</p>
+        <a class="visit" href="/docs/frame-view">Read the visitor's guide →</a>
+      </div>
+    </footer>
+  </div>
+</div>
+
+<style>
+  .gallery {
+    --wall: #241f1a;
+    --wall-deep: #1b1712;
+    --plaque: #efe7d6;
+    --plaque-ink: #2a2419;
+    --frame: #14100b;
+    --brass: #c9a86a;
+    --text: #e8e1d4;
+    --dim: #a79b87;
+    background:
+      radial-gradient(ellipse 120% 60% at 50% -10%, rgba(233, 214, 175, 0.06), transparent 60%),
+      var(--wall);
+    color: var(--text);
+    font-family: "Geist Variable", system-ui, sans-serif;
+    padding-bottom: 5rem;
+  }
+
+  .wall {
+    max-width: 72rem;
+    margin: 0 auto;
+    padding: 2rem 1.25rem 0;
+  }
+
+  .back {
+    display: inline-block;
+    font-size: 0.8rem;
+    color: var(--dim);
+    text-decoration: none;
+    margin-bottom: 3rem;
+  }
+  .back:hover { color: var(--brass); }
+
+  /* — Pieces — */
+  .piece {
+    position: relative;
+    margin: 0;
+    padding-top: 3.5rem;
+  }
+  .spot {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 70%;
+    height: 8rem;
+    background: linear-gradient(to bottom, rgba(240, 222, 180, 0.14), transparent 75%);
+    clip-path: polygon(38% 0, 62% 0, 100% 100%, 0 100%);
+    pointer-events: none;
+  }
+  .frame {
+    background: var(--frame);
+    border: 1px solid #0c0906;
+    padding: clamp(0.6rem, 1.5vw, 1rem);
+    box-shadow:
+      inset 0 0 0 1px color-mix(in srgb, var(--brass) 55%, transparent),
+      0 30px 60px -25px rgba(0, 0, 0, 0.85);
+  }
+  .frame img {
+    display: block;
+    width: 100%;
+  }
+  .plaque {
+    width: fit-content;
+    max-width: 100%;
+    margin: 1.5rem auto 0;
+    background: var(--plaque);
+    color: var(--plaque-ink);
+    padding: 0.7rem 1.4rem;
+    text-align: center;
+    box-shadow: 0 8px 20px -10px rgba(0, 0, 0, 0.7);
+  }
+  .plaque-name {
+    margin: 0;
+    font-family: "IBM Plex Serif", Georgia, serif;
+    font-weight: 600;
+    font-size: 1.05rem;
+  }
+  .plaque-line {
+    margin: 0.15rem 0 0;
+    font-family: "IBM Plex Serif", Georgia, serif;
+    font-size: 0.8rem;
+    line-height: 1.5;
+  }
+  .plaque-line.dim {
+    opacity: 0.65;
+    font-size: 0.72rem;
+  }
+  .plaque.small {
+    padding: 0.5rem 1rem;
+  }
+
+  /* — Masterwork — */
+  .masterwork {
+    text-align: center;
+  }
+  .hero-piece {
+    max-width: 54rem;
+    margin: 0 auto;
+  }
+  .wall-text {
+    max-width: 40rem;
+    margin: 3.5rem auto 0;
+  }
+  .eyebrow {
+    margin: 0 0 1rem;
+    font-size: 0.7rem;
+    letter-spacing: 0.32em;
+    color: var(--brass);
+  }
+  .statement {
+    margin: 0;
+    font-family: "IBM Plex Serif", Georgia, serif;
+    font-size: clamp(1.15rem, 2.2vw, 1.5rem);
+    line-height: 1.6;
+    color: var(--text);
+    text-wrap: balance;
+  }
+
+  /* — Hung pieces — */
+  .hang {
+    margin-top: 5rem;
+    display: grid;
+    gap: 3rem;
+  }
+  @media (min-width: 60rem) {
+    .hang {
+      grid-template-columns: 1fr 1fr;
+      gap: 2.5rem;
+      align-items: start;
+    }
+    .hang .raise {
+      margin-top: 3.5rem;
+    }
+  }
+
+  /* — Feature wall — */
+  .features {
+    margin-top: 5.5rem;
+    border-top: 1px solid color-mix(in srgb, var(--brass) 25%, transparent);
+    padding-top: 3rem;
+  }
+  .room-title {
+    margin: 0 0 2.25rem;
+    font-family: "IBM Plex Serif", Georgia, serif;
+    font-weight: 600;
+    font-size: 1.6rem;
+    text-align: center;
+  }
+  .feature-grid {
+    display: grid;
+    gap: 2.25rem 3rem;
+  }
+  @media (min-width: 60rem) {
+    .feature-grid {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+  .feature h3 {
+    margin: 0;
+    font-family: "IBM Plex Serif", Georgia, serif;
+    font-weight: 600;
+    font-size: 1.05rem;
+    color: var(--brass);
+  }
+  .feature p {
+    margin: 0.5rem 0 0;
+    font-size: 0.88rem;
+    line-height: 1.7;
+    color: var(--dim);
+  }
+
+  /* — Closing — */
+  .closing {
+    margin-top: 5rem;
+    text-align: center;
+  }
+  .highlights {
+    list-style: none;
+    margin: 0 auto;
+    padding: 0;
+    max-width: 42rem;
+    display: grid;
+    gap: 0.6rem;
+    font-size: 0.85rem;
+    color: var(--dim);
+  }
+  .highlights li::before {
+    content: "— ";
+    color: var(--brass);
+  }
+  .plaque.cta {
+    margin-top: 3rem;
+    padding: 1rem 1.75rem;
+  }
+  .visit {
+    display: inline-block;
+    margin-top: 0.5rem;
+    color: var(--plaque-ink);
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-decoration: none;
+    border-bottom: 1.5px solid var(--plaque-ink);
+    padding-bottom: 0.1rem;
+  }
+  .visit:hover { opacity: 0.7; }
+  .visit:focus-visible {
+    outline: 2px solid var(--plaque-ink);
+    outline-offset: 3px;
+  }
+</style>

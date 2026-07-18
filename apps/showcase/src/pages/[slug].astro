@@ -1,4 +1,7 @@
 ---
+import ProductDispatch from "@/components/prototype/ProductDispatch.astro";
+import PrototypeSwitcher from "@/components/prototype/PrototypeSwitcher.astro";
+import { PRODUCT_VARIANTS, resolveVariant } from "@/components/prototype/variants";
 import { FeatureIcon, ProductBadge, Screenshot, SectionHeading } from "@/components/ui";
 import { getProduct } from "@/data/products";
 import BaseLayout from "@/layouts/BaseLayout.astro";
@@ -9,9 +12,18 @@ const product = slug ? getProduct(slug) : undefined;
 if (!product) {
   return Astro.redirect("/");
 }
+
+// PROTOTYPE — throwaway. Five design families on ?variant=1..5, aligned with
+// the index (same key = same family). 0 = current page. Fold winners in, then
+// delete src/components/prototype/.
+const variant = resolveVariant(Astro.url.searchParams.get("variant"), PRODUCT_VARIANTS);
 ---
 
 <BaseLayout title={`${product.name} — Latch Works`} description={product.description}>
+  {variant.key !== "0" && <ProductDispatch product={product} family={variant.slug} />}
+  <PrototypeSwitcher current={variant} variants={PRODUCT_VARIANTS} />
+  {variant.key === "0" && (
+  <>
   <section class={`relative overflow-hidden border-b border-border/70 bg-gradient-to-br ${product.accent}`}>
     <div class="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
       <a
@@ -102,4 +114,6 @@ if (!product) {
       </section>
     ) : null
   }
+  </>
+  )}
 </BaseLayout>

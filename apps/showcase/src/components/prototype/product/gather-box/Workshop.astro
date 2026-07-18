@@ -1,0 +1,60 @@
+---
+/**
+ * PROTOTYPE — Workshop / Gather Box
+ * Tokens: steel #1B1F23, panel #23282E, seam #343A41, zinc #C9CDD3,
+ * dim #7C828A, safety orange #FF5C1F, intake stripe #F5A623.
+ * Signature: slotted corner screws and data-backed engraved spec plates.
+ */
+import "@fontsource/barlow-condensed/600.css";
+import "@fontsource/barlow-condensed/700.css";
+import "@fontsource/barlow/400.css";
+import "@fontsource/barlow/500.css";
+import "@fontsource/ibm-plex-mono/400.css";
+import "@fontsource/ibm-plex-mono/500.css";
+import type { Product } from "@/data/products";
+
+interface Props { product: Product; }
+const { product } = Astro.props;
+const sources = ["Fanbox", "Kemono", "Archive of Our Own", "Fanfiction.net", "Hentai Foundry"];
+---
+
+<main class="workshop">
+  <a class="back" href="/">← All stages</a>
+  <section class="nameplate">
+    <i class="stripe" aria-hidden="true"></i><span class="screw tl" aria-hidden="true"></span><span class="screw tr" aria-hidden="true"></span><span class="screw bl" aria-hidden="true"></span><span class="screw br" aria-hidden="true"></span>
+    <p class="kicker">STAGE 01 · GATHER</p><h1>{product.name}</h1><p class="tagline">{product.tagline}</p><p class="description">{product.description}</p>
+    <dl class="specs"><div><dt>PATH</dt><dd>{product.repoPath}</dd></div><div><dt>TYPE</dt><dd>APP</dd></div><div><dt>ROLE</dt><dd>{product.tagline}</dd></div></dl>
+  </section>
+
+  <section class="intake" aria-labelledby="intake-title">
+    <div class="section-head"><p>INTAKE MANIFOLD</p><h2 id="intake-title">Collection sources</h2></div>
+    <div class="source-rail" aria-label="Supported collection sources">
+      {sources.map((source, index) => <div class="source"><span>{String(index + 1).padStart(2, "0")}</span><strong>{source}</strong></div>)}
+    </div>
+    <div class="intake-grid">
+      <figure class="bezel"><img src={product.heroScreenshot.src} alt={product.heroScreenshot.alt} /><figcaption>{product.heroScreenshot.caption}</figcaption></figure>
+      <div class="tree"><p>FOLDER INFERENCE · EXAMPLE</p><pre>~/archive
+└── artist-name
+    └── series-title
+        └── post-title
+            └── 001.jpg</pre></div>
+    </div>
+  </section>
+
+  <section class="features" aria-labelledby="feature-title"><div class="section-head"><p>COMPONENT REGISTER</p><h2 id="feature-title">Collection equipment</h2></div><div class="feature-list">{product.features.map((feature, index) => <article><span>{String(index + 1).padStart(2, "0")}</span><h3>{feature.title}</h3><p>{feature.description}</p></article>)}</div></section>
+  <section class="highlights"><h2>Workshop notes</h2><ul>{product.highlights.map((highlight) => <li>{highlight}</li>)}</ul></section>
+  <a class="manual" href={`/docs/${product.slug}`}>Service manual <span>→</span></a>
+</main>
+
+<style>
+  .workshop { --steel:#1b1f23; --panel:#23282e; --seam:#343a41; --zinc:#c9cdd3; --dim:#7c828a; --accent:#f5a623; background:radial-gradient(color-mix(in srgb,#343a41 45%,transparent) 1px,transparent 1px) 0 0 / 22px 22px,var(--steel); color:var(--zinc); font-family:"Barlow",sans-serif; min-height:100vh; padding:2rem max(1rem,calc((100% - 70rem)/2)) 4rem; }
+  .back,.kicker,.specs,.section-head p,.source span,.tree p,figcaption,.manual { font-family:"IBM Plex Mono",monospace; letter-spacing:.1em; font-size:.72rem; }
+  .back { color:var(--zinc); text-decoration:none; display:inline-block; margin-bottom:1.5rem; } .back:focus-visible,.manual:focus-visible { outline:2px solid var(--accent); outline-offset:4px; }
+  .nameplate { position:relative; overflow:hidden; padding:2.6rem clamp(1.3rem,5vw,3.5rem); background:linear-gradient(180deg,#262c32,#1e2328); border:1px solid var(--seam); box-shadow:inset 0 1px rgba(255,255,255,.06),0 20px 40px -24px #000; }
+  .stripe { position:absolute; inset:0 auto 0 0; width:5px; background:var(--accent); } .screw { position:absolute; width:.78rem; height:.78rem; border-radius:50%; background:linear-gradient(45deg,transparent 43%,#101315 44% 56%,transparent 57%),radial-gradient(circle at 35% 30%,#626b74,#252a30 72%); box-shadow:inset 0 -1px 2px #000; }.tl{top:.6rem;left:.7rem}.tr{top:.6rem;right:.7rem;transform:rotate(30deg)}.bl{bottom:.6rem;left:.7rem;transform:rotate(65deg)}.br{bottom:.6rem;right:.7rem;transform:rotate(110deg)}
+  .kicker { color:var(--accent); margin:0; }.nameplate h1,.section-head h2,.highlights h2 { font-family:"Barlow Condensed",sans-serif; font-weight:700; text-transform:uppercase; letter-spacing:.03em; }.nameplate h1 { font-size:clamp(3.8rem,10vw,7rem); line-height:.82; margin:.7rem 0; color:#eef0f2; }.tagline { font-size:1.3rem; margin:0; }.description { color:var(--dim); max-width:45rem; line-height:1.6; margin:1rem 0 1.5rem; }.specs { margin:0; border-top:1px solid var(--seam); max-width:48rem; }.specs div { display:grid; grid-template-columns:4.5rem 1fr; gap:1rem; padding:.55rem 0; border-bottom:1px dashed var(--seam); }.specs dt { color:var(--dim); }.specs dd { margin:0; line-height:1.45; }
+  .intake,.features,.highlights { margin-top:3rem; }.section-head { border-bottom:1px solid var(--seam); margin-bottom:1rem; }.section-head p { color:var(--accent); margin:0 0 .35rem; }.section-head h2,.highlights h2 { margin:0 0 .75rem; font-size:2.1rem; }.source-rail { display:grid; grid-template-columns:repeat(5,1fr); gap:.55rem; padding:.8rem 0; border-block:7px solid #252b31; }.source { background:linear-gradient(180deg,#2a3036,#20252a); border:1px solid var(--seam); box-shadow:inset 0 1px rgba(255,255,255,.04); padding:.8rem; min-height:4.4rem; }.source span { display:block; color:var(--accent); }.source strong { display:block; font:600 1rem "Barlow Condensed",sans-serif; text-transform:uppercase; margin-top:.3rem; }
+  .intake-grid { display:grid; grid-template-columns:3fr 2fr; gap:1.25rem; margin-top:1.25rem; }.bezel { margin:0; background:#101315; border:1px solid #090b0d; padding:.55rem; box-shadow:inset 0 2px 10px #000; }.bezel img { width:100%; display:block; }.bezel figcaption { color:var(--dim); padding:.6rem .15rem .05rem; }.tree { background:linear-gradient(180deg,#262c32,#1e2328); border:1px solid var(--seam); padding:1.1rem; box-shadow:inset 0 1px rgba(255,255,255,.05); }.tree p { color:var(--accent); margin:0 0 1.3rem; }.tree pre { font:400 clamp(.7rem,1.5vw,.86rem)/1.75 "IBM Plex Mono",monospace; color:var(--zinc); white-space:pre-wrap; margin:0; }
+  .feature-list { display:grid; grid-template-columns:repeat(3,1fr); border:1px solid var(--seam); gap:1px; background:var(--seam); }.feature-list article { background:var(--panel); padding:1.15rem; }.feature-list span { font:500 .72rem "IBM Plex Mono",monospace; color:var(--accent); }.feature-list h3 { font:600 1.35rem "Barlow Condensed",sans-serif; text-transform:uppercase; margin:.5rem 0 .3rem; }.feature-list p { color:var(--dim); line-height:1.55; font-size:.9rem; margin:0; }.highlights { background:linear-gradient(180deg,#262c32,#1e2328); border:1px solid var(--seam); padding:1.2rem; }.highlights ul { margin:0; padding:0; list-style:none; }.highlights li { color:var(--dim); padding:.45rem 0 .45rem 1.15rem; border-bottom:1px dashed var(--seam); }.highlights li:last-child{border:0}.highlights li::before { content:"▸"; color:var(--accent); position:absolute; margin-left:-1.15rem; }.manual { display:inline-block; color:var(--accent); border:1px solid color-mix(in srgb,var(--accent) 65%,transparent); padding:.7rem .9rem; text-decoration:none; margin-top:1.5rem; transition:background .16s ease,transform .16s ease; }.manual:hover { background:color-mix(in srgb,var(--accent) 12%,transparent); }.manual:active { transform:scale(.97); }
+  @media(max-width:700px){.source-rail{grid-template-columns:repeat(2,1fr)}.source:last-child{grid-column:span 2}.intake-grid{grid-template-columns:1fr}.feature-list{grid-template-columns:1fr 1fr}}@media(max-width:420px){.workshop{padding-inline:1rem}.nameplate{padding:2.2rem 1.15rem}.nameplate h1{font-size:3.55rem}.feature-list{grid-template-columns:1fr}.source{min-height:auto}}
+</style>

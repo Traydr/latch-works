@@ -1,0 +1,441 @@
+---
+/**
+ * PROTOTYPE — Variant 1 "Card Catalog". Throwaway. Do not ship.
+ *
+ * Concept: the archive as a library card catalog. Latch Works is a collection;
+ * each product is a cataloged item with an accession number in pipeline order
+ * (Gather LW-0001 → View LW-0004), typed fields, and a rubber access stamp.
+ *
+ * Tokens
+ *   Color: paper #F1EDE2 · card #F8F5EB · ink #201D17 · pencil #6E6759
+ *          rule #CFC7B4 · tab manila #DAC78E · stamp red #A8362A (stamps only)
+ *   Type:  IBM Plex Mono (primary voice — typed fields) · IBM Plex Serif 600 (titles)
+ *   Layout: one continuous collection record — tabbed stage dividers, one
+ *           card per product, shelflist notes at the foot.
+ *   Signature: rotated rubber access stamps + punched drawer-rod hole on every card.
+ *   Iteration 2: removed drawer-pull wordmark (duplicated the title) and the
+ *   weak MEDIUM field.
+ */
+import "@fontsource/ibm-plex-mono/400.css";
+import "@fontsource/ibm-plex-mono/500.css";
+import "@fontsource/ibm-plex-serif/600.css";
+import { pipeline, products } from "@/data/products";
+
+const meta: Record<string, { accession: string; medium: string; stamp: string; plate: string }> = {
+  "gather-box": {
+    accession: "LW-0001",
+    medium: "Browser extension (Chrome)",
+    stamp: "COLLECT",
+    plate: "PLATE I",
+  },
+  "frame-view": {
+    accession: "LW-0002",
+    medium: "Desktop application (Electron)",
+    stamp: "LOCAL FIRST",
+    plate: "PLATE II",
+  },
+  lockstep: {
+    accession: "LW-0003",
+    medium: "Desktop sync client + CLI",
+    stamp: "EXPLICIT SYNC",
+    plate: "PLATE III",
+  },
+  "pane-view": {
+    accession: "LW-0004",
+    medium: "Web application (self-hosted)",
+    stamp: "READ-ONLY",
+    plate: "PLATE IV",
+  },
+};
+
+const ordered = ["gather-box", "frame-view", "lockstep", "pane-view"]
+  .map((slug) => products.find((p) => p.slug === slug))
+  .filter((p) => p !== undefined);
+
+const notes = [
+  { label: "LOCAL-FIRST", text: "The archive on disk stays authoritative. Sync is explicit, never automatic mirroring." },
+  { label: "PRIVATE BY DEFAULT", text: "Web viewing requires authentication. Delivery URLs are signed and time-limited." },
+  { label: "SHARED PACKAGES", text: "media-domain, media-index, media-storage, and lockstep-core keep behavior consistent." },
+  { label: "CALM TOOLING", text: "Direct language, dark UI, practical spacing — a workshop, not a marketing site." },
+];
+---
+
+<div class="catalog">
+  <div class="sheet">
+    <!-- Collection record -->
+    <header class="record">
+      <p class="kicker">Collection record · 4 items · personal media archive</p>
+      <h1>Latch Works</h1>
+      <p class="abstract">
+        One extension, two desktop apps, and a web viewer — cataloged below in the order a
+        file passes through them.
+      </p>
+      <dl class="record-fields">
+        <div><dt>ACCESS</dt><dd>Private. Authenticated, read-only web delivery.</dd></div>
+        <div><dt>LOCATION</dt><dd>Local disk is the source of truth</dd></div>
+      </dl>
+    </header>
+
+    <!-- Stage dividers -->
+    <nav class="tabs" aria-label="Pipeline stages">
+      {
+        pipeline.map((stage, i) => (
+          <div class="tab" style={`--i:${i}`}>
+            <span class="tab-step">{stage.step}</span>
+            <span class="tab-product">{stage.product}</span>
+          </div>
+        ))
+      }
+    </nav>
+
+    <!-- Catalog cards -->
+    <ol class="cards">
+      {
+        ordered.map((product) => {
+          const m = meta[product.slug];
+          return (
+            <li class="card">
+              <span class="rod-hole" aria-hidden="true" />
+              <div class="card-head">
+                <span class="accession">{m.accession}</span>
+                <span class="stamp">{m.stamp}</span>
+              </div>
+              <div class="card-body">
+                <figure class="plate">
+                  <span class="corner tl" aria-hidden="true" />
+                  <span class="corner tr" aria-hidden="true" />
+                  <span class="corner bl" aria-hidden="true" />
+                  <span class="corner br" aria-hidden="true" />
+                  <img src={product.heroScreenshot.src} alt={product.heroScreenshot.alt} loading="lazy" />
+                  <figcaption>{m.plate}</figcaption>
+                </figure>
+                <div class="fields">
+                  <h2>{product.name}</h2>
+                  <dl>
+                    <div><dt>MEDIUM</dt><dd>{m.medium}</dd></div>
+                    <div><dt>REPO</dt><dd>{product.repoPath}</dd></div>
+                    <div><dt>NOTES</dt><dd>{product.tagline}</dd></div>
+                  </dl>
+                  <ul class="contents">
+                    {product.highlights.slice(0, 3).map((h) => (
+                      <li>{h}</li>
+                    ))}
+                  </ul>
+                  <a class="record-link" href={`/${product.slug}`}>
+                    Full record<span aria-hidden="true"> →</span>
+                  </a>
+                </div>
+              </div>
+            </li>
+          );
+        })
+      }
+    </ol>
+
+    <!-- Shelflist notes -->
+    <footer class="notes">
+      <h2>Shelflist notes</h2>
+      <div class="notes-grid">
+        {
+          notes.map((note) => (
+            <p><strong>{note.label}</strong> — {note.text}</p>
+          ))
+        }
+      </div>
+      <p class="colophon">END OF RECORD · LW-0000 · NOTHING HERE IS PUBLIC</p>
+    </footer>
+  </div>
+</div>
+
+<style>
+  .catalog {
+    --paper: #f1ede2;
+    --card: #f8f5eb;
+    --ink: #201d17;
+    --pencil: #6e6759;
+    --rule: #cfc7b4;
+    --tab: #dac78e;
+    --stamp: #a8362a;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    padding-bottom: 4rem;
+  }
+
+  .sheet {
+    max-width: 72rem;
+    margin: 0 auto;
+    padding: 0 1.25rem;
+  }
+
+  /* — Collection record — */
+  .record {
+    text-align: center;
+    padding: 3.5rem 0 2.5rem;
+    border-bottom: 2px solid var(--ink);
+  }
+  .kicker {
+    font-size: 0.78rem;
+    letter-spacing: 0.08em;
+    color: var(--pencil);
+  }
+  .record h1 {
+    font-family: "IBM Plex Serif", Georgia, serif;
+    font-size: clamp(2.75rem, 6vw, 4.5rem);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    margin: 0.5rem 0 0;
+  }
+  .abstract {
+    max-width: 40rem;
+    margin: 1rem auto 0;
+    font-size: 0.9rem;
+    line-height: 1.7;
+    color: var(--pencil);
+  }
+  .record-fields {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.5rem 2.5rem;
+    margin: 2rem 0 0;
+    font-size: 0.75rem;
+  }
+  .record-fields div {
+    display: flex;
+    gap: 0.6rem;
+  }
+  .record-fields dt {
+    color: var(--pencil);
+  }
+  .record-fields dd {
+    margin: 0;
+    font-weight: 500;
+  }
+
+  /* — Stage tabs — */
+  .tabs {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.5rem;
+    margin-top: 2rem;
+  }
+  @media (min-width: 56rem) {
+    .tabs {
+      grid-template-columns: repeat(4, 1fr);
+    }
+  }
+  .tab {
+    background: var(--tab);
+    border: 1px solid color-mix(in srgb, var(--tab) 70%, var(--ink));
+    border-bottom: 2px solid var(--ink);
+    border-radius: 6px 6px 0 0;
+    padding: 0.55rem 0.9rem 0.5rem;
+    transform: translateY(calc((var(--i) % 2) * 3px));
+    box-shadow: 0 -2px 3px rgba(32, 29, 23, 0.08);
+  }
+  .tab-step {
+    display: block;
+    font-size: 0.66rem;
+    letter-spacing: 0.22em;
+    color: color-mix(in srgb, var(--ink) 65%, transparent);
+  }
+  .tab-product {
+    display: block;
+    font-weight: 500;
+    font-size: 0.88rem;
+  }
+
+  /* — Catalog cards — */
+  .cards {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 2.25rem;
+    margin-top: 2.5rem;
+  }
+  .card {
+    position: relative;
+    background: var(--card);
+    border: 1px solid var(--rule);
+    border-top: 3px solid var(--ink);
+    box-shadow:
+      0 1px 0 rgba(32, 29, 23, 0.15),
+      0 14px 28px -18px rgba(32, 29, 23, 0.45);
+    padding: 1.25rem 1.5rem 2.5rem;
+  }
+  .rod-hole {
+    position: absolute;
+    left: 50%;
+    bottom: 0.65rem;
+    transform: translateX(-50%);
+    width: 1rem;
+    height: 1rem;
+    border-radius: 50%;
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    box-shadow: inset 0 1px 2px rgba(32, 29, 23, 0.3);
+  }
+  .card-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+  }
+  .accession {
+    font-size: 0.8rem;
+    font-weight: 500;
+    letter-spacing: 0.18em;
+    border-bottom: 1px solid var(--ink);
+    padding-bottom: 0.15rem;
+  }
+  .stamp {
+    font-size: 0.72rem;
+    font-weight: 500;
+    letter-spacing: 0.28em;
+    color: var(--stamp);
+    border: 2px solid var(--stamp);
+    border-radius: 4px;
+    padding: 0.35rem 0.6rem 0.3rem 0.85rem;
+    transform: rotate(-7deg);
+    opacity: 0.85;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--stamp) 35%, transparent);
+  }
+  .card-body {
+    display: grid;
+    gap: 1.5rem;
+    margin-top: 1.25rem;
+  }
+  @media (min-width: 56rem) {
+    .card-body {
+      grid-template-columns: 5fr 6fr;
+      align-items: start;
+    }
+  }
+
+  .plate {
+    position: relative;
+    margin: 0;
+    padding: 0.5rem;
+    background: #fff;
+    border: 1px solid var(--rule);
+  }
+  .plate img {
+    display: block;
+    width: 100%;
+    filter: saturate(0.92);
+  }
+  .plate figcaption {
+    margin-top: 0.45rem;
+    text-align: center;
+    font-size: 0.7rem;
+    letter-spacing: 0.3em;
+    color: var(--pencil);
+  }
+  .corner {
+    position: absolute;
+    width: 0.9rem;
+    height: 0.9rem;
+    border: 2px solid var(--pencil);
+    opacity: 0.75;
+  }
+  .corner.tl { top: -3px; left: -3px; border-right: 0; border-bottom: 0; }
+  .corner.tr { top: -3px; right: -3px; border-left: 0; border-bottom: 0; }
+  .corner.bl { bottom: 1.35rem; left: -3px; border-right: 0; border-top: 0; }
+  .corner.br { bottom: 1.35rem; right: -3px; border-left: 0; border-top: 0; }
+
+  .fields h2 {
+    font-family: "IBM Plex Serif", Georgia, serif;
+    font-size: 1.9rem;
+    font-weight: 600;
+    margin: 0 0 0.75rem;
+    letter-spacing: -0.01em;
+  }
+  .fields dl {
+    margin: 0;
+    font-size: 0.78rem;
+  }
+  .fields dl div {
+    display: grid;
+    grid-template-columns: 5.5rem 1fr;
+    gap: 0.75rem;
+    padding: 0.4rem 0;
+    border-bottom: 1px solid var(--rule);
+  }
+  .fields dt {
+    color: var(--pencil);
+    letter-spacing: 0.06em;
+  }
+  .fields dd {
+    margin: 0;
+    line-height: 1.5;
+  }
+  .contents {
+    margin: 0.9rem 0 0;
+    padding-left: 1.1rem;
+    font-size: 0.78rem;
+    line-height: 1.7;
+    color: var(--pencil);
+  }
+  .contents li::marker {
+    content: "—  ";
+    color: var(--rule);
+  }
+  .record-link {
+    display: inline-block;
+    margin-top: 1.1rem;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--ink);
+    text-decoration: none;
+    border-bottom: 1.5px solid var(--ink);
+    padding-bottom: 0.1rem;
+  }
+  .record-link:hover {
+    background: var(--tab);
+  }
+  .record-link:focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+  }
+
+  /* — Shelflist notes — */
+  .notes {
+    margin-top: 3.5rem;
+    border-top: 2px solid var(--ink);
+    padding-top: 1.75rem;
+  }
+  .notes h2 {
+    font-size: 0.8rem;
+    font-weight: 500;
+    letter-spacing: 0.3em;
+    margin: 0 0 1.25rem;
+  }
+  .notes-grid {
+    display: grid;
+    gap: 1rem 2.5rem;
+    font-size: 0.78rem;
+    line-height: 1.7;
+    color: var(--pencil);
+  }
+  @media (min-width: 56rem) {
+    .notes-grid {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+  .notes-grid p {
+    margin: 0;
+  }
+  .notes-grid strong {
+    color: var(--ink);
+    font-weight: 500;
+  }
+  .colophon {
+    margin: 2.5rem 0 0;
+    text-align: center;
+    font-size: 0.68rem;
+    letter-spacing: 0.35em;
+    color: var(--pencil);
+  }
+</style>
