@@ -26,7 +26,6 @@ const { product } = Astro.props;
     <p class="desc">{product.description}</p>
   </section>
   <section class="display">
-    <i></i><i></i><i></i><i></i>
     <img src={product.heroScreenshot.src} alt={product.heroScreenshot.alt} />
     <p>{product.heroScreenshot.caption}</p>
   </section>
@@ -110,36 +109,31 @@ const { product } = Astro.props;
       500 clamp(1.3rem, 2.2vw, 2rem) "Barlow",
       sans-serif;
   }
-  .hero > i,
-  .display i {
+  .hero > i {
     position: absolute;
     width: 12px;
     height: 12px;
     border: 2px solid #151310;
   }
-  .hero > i:nth-of-type(1),
-  .display i:nth-of-type(1) {
+  .hero > i:nth-of-type(1) {
     top: 13px;
     left: 13px;
     border-right: 0;
     border-bottom: 0;
   }
-  .hero > i:nth-of-type(2),
-  .display i:nth-of-type(2) {
+  .hero > i:nth-of-type(2) {
     top: 13px;
     right: 13px;
     border-left: 0;
     border-bottom: 0;
   }
-  .hero > i:nth-of-type(3),
-  .display i:nth-of-type(3) {
+  .hero > i:nth-of-type(3) {
     bottom: 13px;
     left: 13px;
     border-right: 0;
     border-top: 0;
   }
-  .hero > i:nth-of-type(4),
-  .display i:nth-of-type(4) {
+  .hero > i:nth-of-type(4) {
     bottom: 13px;
     right: 13px;
     border-left: 0;

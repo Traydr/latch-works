@@ -198,13 +198,13 @@ export const products: Product[] = [
     ],
     features: [
       {
-        title: "Plan (read-only)",
+        title: "Plan Changes",
         description:
           "Walk the source tree, diff against Pane View, and review upload, update, keep, and delete counts with zero side effects.",
         icon: "list-checks",
       },
       {
-        title: "Push uploads/updates",
+        title: "Push Updates",
         description:
           "Upload and register new or changed originals. Push never applies deletes — those stay on a separate explicit action.",
         icon: "upload",
