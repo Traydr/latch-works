@@ -4,44 +4,88 @@ import { type DocsSection, docNavLabel } from "@/data/docs-nav";
 interface Props {
   sections: DocsSection[];
   currentPath: string;
-  showHeading?: boolean;
 }
 
-const { sections, currentPath, showHeading = true } = Astro.props;
+const { sections, currentPath } = Astro.props;
+
+const sectionEnamel: Record<string, string> = {
+  "Gather Box": "#F5A623",
+  "Frame View": "#8B7CF6",
+  Lockstep: "#34C98E",
+  "Pane View": "#38A8E8",
+};
 ---
 
-{showHeading ? (
-  <p class="mb-3 px-3 text-xs font-medium uppercase tracking-widest text-primary">Documentation</p>
-) : null}
-<nav class="space-y-5" aria-label="Docs">
+<nav class="docs-nav" aria-label="Docs">
   {
-    sections.map((section) => (
-      <div>
-        <p class="mb-1.5 px-3 text-[0.65rem] font-semibold uppercase tracking-wider text-muted-foreground">
-          {section.name}
-        </p>
-        <div class="space-y-0.5">
-          {
-            section.pages.map((doc) => {
+    sections.map((section) => {
+      const enamel = sectionEnamel[section.name];
+      return (
+        <div class="section" style={enamel ? `--enamel:${enamel}` : undefined}>
+          <p class="section-label">{section.name}</p>
+          <div class="links">
+            {section.pages.map((doc) => {
               const href = `/docs/${doc.id}`;
               const active = currentPath === href;
               return (
-                <a
-                  href={href}
-                  class:list={[
-                    "block rounded-md px-3 py-1.5 text-sm transition",
-                    active
-                      ? "bg-accent text-accent-foreground"
-                      : "text-muted-foreground hover:text-foreground",
-                  ]}
-                >
+                <a href={href} class:list={["link", active && "active"]}>
                   {docNavLabel(doc)}
                 </a>
               );
-            })
-          }
+            })}
+          </div>
         </div>
-      </div>
-    ))
+      );
+    })
   }
 </nav>
+
+<style>
+  .docs-nav {
+    display: grid;
+    gap: 1.35rem;
+  }
+  .section-label {
+    margin: 0 0 0.4rem;
+    padding: 0 0.75rem;
+    font:
+      700 0.58rem/1.3 "JetBrains Mono",
+      monospace;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--enamel, #8a8f98);
+  }
+  .links {
+    display: grid;
+    gap: 1px;
+    background: #2a2e35;
+    border: 1px solid #2a2e35;
+  }
+  .link {
+    display: block;
+    padding: 0.55rem 0.75rem;
+    background: #1a1d22;
+    color: #8a8f98;
+    text-decoration: none;
+    font:
+      500 0.92rem/1.3 "Barlow",
+      sans-serif;
+  }
+  .link:hover {
+    color: #e8eaed;
+    background: #20242a;
+  }
+  .link.active {
+    color: #151310;
+    background: var(--enamel, #e8eaed);
+    font-weight: 700;
+  }
+  .section:not([style*="--enamel"]) .link.active {
+    color: #e8eaed;
+    background: #2a2e35;
+  }
+  a:focus-visible {
+    outline: 3px solid #fff;
+    outline-offset: 2px;
+  }
+</style>
