@@ -13,7 +13,7 @@ pnpm dev:showcase
 Opens at http://127.0.0.1:3100
 
 - `/` — ecosystem overview
-- `/{slug}` — Pane View, Frame View, Gather Box, Lockstep
+- `/{slug}` — Gather Box, Frame View, Lockstep, Pane View
 - `/docs` — MDX documentation
 
 ## Screenshots
@@ -35,6 +35,10 @@ The capture script:
 - Boots Frame View's `preview:showcase` Vite entry so screenshots use the real React UI (not a mock layout)
 
 Set `CHROME_PATH` if Chrome is installed outside the default macOS / Linux locations.
+
+## Future considerations
+
+An enamel-matched grayscale + multiply screenshot treatment looked strong on Colorblock plates, but it misrepresented real app color. Keep screenshots in natural color for now; reconsider that tonal treatment later as optional art direction, not the default.
 
 ## Build
 

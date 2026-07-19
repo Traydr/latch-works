@@ -25,18 +25,18 @@
 
 :root {
   color-scheme: dark;
-  --background: oklch(0.13 0.01 260);
-  --foreground: oklch(0.96 0.005 260);
-  --card: oklch(0.17 0.012 260);
-  --card-foreground: oklch(0.96 0.005 260);
-  --muted: oklch(0.22 0.012 260);
-  --muted-foreground: oklch(0.68 0.02 260);
-  --border: oklch(0.28 0.015 260);
-  --accent: oklch(0.24 0.03 250);
-  --accent-foreground: oklch(0.92 0.02 250);
-  --primary: oklch(0.78 0.06 250);
-  --primary-foreground: oklch(0.14 0.02 260);
-  --ring: oklch(0.55 0.05 250);
+  --background: #16181c;
+  --foreground: #e8eaed;
+  --card: #1d2025;
+  --card-foreground: #e8eaed;
+  --muted: #20242a;
+  --muted-foreground: #8a8f98;
+  --border: #2a2e35;
+  --accent: #2a2e35;
+  --accent-foreground: #e8eaed;
+  --primary: #38a8e8;
+  --primary-foreground: #151310;
+  --ring: #38a8e8;
   --font-sans: "Geist Variable", "Segoe UI", system-ui, sans-serif;
   --font-mono: ui-monospace, "Geist Mono Variable", SFMono-Regular, monospace;
 }
@@ -60,41 +60,6 @@
 
 ::selection {
   background: color-mix(in oklch, var(--primary) 35%, transparent);
-}
-
-.gradient-grid {
-  background-image:
-    linear-gradient(
-      to right,
-      color-mix(in oklch, var(--border) 35%, transparent) 1px,
-      transparent 1px
-    ),
-    linear-gradient(
-      to bottom,
-      color-mix(in oklch, var(--border) 35%, transparent) 1px,
-      transparent 1px
-    );
-  background-size: 48px 48px;
-}
-
-.glass-panel {
-  background: color-mix(in oklch, var(--card) 88%, transparent);
-  backdrop-filter: blur(12px);
-  border: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
-}
-
-.screenshot-frame {
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.1),
-    0 24px 48px -12px color-mix(in oklch, black 55%, transparent);
-}
-
-.feature-icon {
-  background: linear-gradient(
-    135deg,
-    color-mix(in oklch, var(--accent) 80%, transparent),
-    color-mix(in oklch, var(--muted) 60%, transparent)
-  );
 }
 
 .prose-docs {

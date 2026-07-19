@@ -9,11 +9,9 @@ import "@fontsource/barlow/400.css";
 import "@fontsource/barlow/500.css";
 import "@fontsource/jetbrains-mono/400.css";
 import "@fontsource/jetbrains-mono/700.css";
-import { pipeline, products } from "@/data/products";
+import { pipeline, pipelineProducts } from "@/data/products";
 
-const stages = ["gather-box", "frame-view", "lockstep", "pane-view"]
-  .map((slug) => products.find((product) => product.slug === slug))
-  .filter((product) => product !== undefined);
+const stages = pipelineProducts;
 const enamel: Record<string, string> = {
   "gather-box": "#F5A623",
   "frame-view": "#8B7CF6",
@@ -33,7 +31,11 @@ const enamel: Record<string, string> = {
     <div class="pipeline" aria-label="Archive pipeline">
       {
         pipeline.map((item, index) => (
-          <a class="stage-chip" style={`--enamel:${enamel[stages[index].slug]}`} href={`/${stages[index].slug}`}>
+          <a
+            class="stage-chip"
+            style={`--enamel:${enamel[stages[index].slug]}`}
+            href={`/${stages[index].slug}`}
+          >
             <span>{item.step}</span>
             <b>{item.product}</b>
           </a>
@@ -55,7 +57,7 @@ const enamel: Record<string, string> = {
         <i class="chev bl"></i>
         <i class="chev br"></i>
         <div class="plate-copy">
-          <p class="stage">STAGE 0{index + 1} / {pipeline[index].step}</p>
+          <p class="stage">{pipeline[index].step}</p>
           <h2>
             {product.slug === "lockstep" ? (
               <>
@@ -68,10 +70,6 @@ const enamel: Record<string, string> = {
             )}
           </h2>
           <p class="tagline">{product.tagline}</p>
-          <div class="specs">
-            <span>PATH <b>{product.repoPath}</b></span>
-            <span>KIND <b>{product.kind}</b></span>
-          </div>
           <a class="open" href={`/${product.slug}`}>
             Open <span>→</span>
           </a>
@@ -96,12 +94,14 @@ const enamel: Record<string, string> = {
         <p>Web viewing requires authentication. Delivery URLs are signed and time-limited.</p>
       </article>
       <article>
-        <h2>SHARED PACKAGES</h2>
-        <p>media-domain, media-index, media-storage, and lockstep-core keep behavior consistent.</p>
+        <h2>ONE PIPELINE</h2>
+        <p>
+          Gather, organize, sync, and view share the same archive rules so each tool stays in step.
+        </p>
       </article>
       <article>
         <h2>CALM TOOLING</h2>
-        <p>Direct language, dark UI, practical spacing — a workshop, not a marketing site.</p>
+        <p>Direct language, dark UI, and practical spacing — tools you can use every day.</p>
       </article>
     </div>
   </section>
@@ -110,7 +110,7 @@ const enamel: Record<string, string> = {
 <style>
   .page { background:#16181C; color:#E8EAED; overflow:hidden; font-family:"Barlow",sans-serif; }
   .intro { min-height:72vh; padding:clamp(2rem,6vw,6rem) max(1.5rem,8vw) 3rem; display:grid; align-content:center; background:linear-gradient(115deg,#16181C 62%,#20242a); }
-  .kicker,.stage,.specs,figcaption { font:700 .68rem/1.3 "JetBrains Mono",monospace; letter-spacing:.09em; text-transform:uppercase; }
+  .kicker,.stage,figcaption { font:700 .68rem/1.3 "JetBrains Mono",monospace; letter-spacing:.09em; text-transform:uppercase; }
   .kicker { color:#8A8F98; margin:0 0 1rem; }
   h1,h2 { font-family:"Barlow Condensed",sans-serif; font-weight:700; text-transform:uppercase; line-height:.78; margin:0; letter-spacing:-.035em; }
   h1 { font-size:clamp(5.5rem,15vw,15rem); max-width:1100px; }
@@ -128,12 +128,10 @@ const enamel: Record<string, string> = {
   .stage { margin:0 0 .8rem; opacity:.72; }
   .product-plate h2 { font-size:clamp(5rem,11vw,11rem); }
   .tagline { font-size:clamp(1.2rem,2vw,1.7rem); margin:1rem 0 2rem; max-width:28rem; font-weight:500; }
-  .specs { border-top:1px solid color-mix(in srgb,var(--ink),transparent 65%); padding-top:.8rem; display:grid; gap:.45rem; }
-  .specs b { font-weight:400; margin-left:.8rem; }
-  .open { display:inline-flex; margin-top:2.4rem; color:inherit; border-bottom:2px solid currentColor; text-decoration:none; font:700 1.6rem "Barlow Condensed",sans-serif; text-transform:uppercase; padding-bottom:.16rem; }
+  .open { display:inline-flex; margin-top:.4rem; color:inherit; border-bottom:2px solid currentColor; text-decoration:none; font:700 1.6rem "Barlow Condensed",sans-serif; text-transform:uppercase; padding-bottom:.16rem; }
   .open span { margin-left:.7rem; }
   .shot { margin:0; padding:.65rem; background:var(--enamel); border:1px solid color-mix(in srgb,var(--ink),transparent 50%); box-shadow:13px 16px 0 color-mix(in srgb,var(--ink),transparent 79%); transform:rotate(2deg); }
-  .shot img { display:block; width:100%; aspect-ratio:16/10; object-fit:cover; filter:grayscale(1) contrast(1.12) brightness(1.02); mix-blend-mode:multiply; opacity:.92; }
+  .shot img { display:block; width:100%; aspect-ratio:16/10; object-fit:cover; }
   .shot figcaption { margin:.65rem 0 .1rem; font-size:.56rem; }
   .chev { position:absolute; width:12px; height:12px; border:2px solid currentColor; }
   .tl { top:18px; left:18px; border-right:0; border-bottom:0; }

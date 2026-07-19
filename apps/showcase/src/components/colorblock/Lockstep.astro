@@ -27,19 +27,12 @@ const supporting = product.features.slice(4);
 ---
 
 <div class="page">
-  <a class="back" href="/">← All stages</a>
-
   <section class="hero">
     <i></i><i></i><i></i><i></i>
-    <p>STAGE 03 / SYNC</p>
+    <p>Sync</p>
     <h1>{product.name}</h1>
     <strong>{product.tagline}</strong>
     <p class="desc">{product.description}</p>
-    <div class="spec">
-      PATH <b>{product.repoPath}</b><br />
-      TYPE <b>{product.kind}</b><br />
-      ROLE <b>explicit archive sync</b>
-    </div>
   </section>
 
   <section class="visual">
@@ -88,28 +81,25 @@ const supporting = product.features.slice(4);
     {product.highlights.map((highlight) => <span>{highlight}</span>)}
   </aside>
 
-  <a class="manual" href={`/docs/${product.slug}`}>Service manual →</a>
+  <a class="docs" href={`/docs/${product.slug}`}>Docs →</a>
 </div>
 
 <style>
   .page{--green:#34C98E;background:#16181C;color:#E8EAED;min-height:100vh;padding:1.3rem;font-family:"Barlow",sans-serif}
-  .back{font:700 .73rem "JetBrains Mono",monospace;color:#E8EAED;text-transform:uppercase;text-decoration:none}
-  .hero{position:relative;background:var(--green);color:#151310;padding:clamp(2.5rem,6vw,6rem);margin-top:1.5rem}
+  .hero{position:relative;background:var(--green);color:#151310;padding:clamp(2.5rem,6vw,6rem);margin-top:.4rem}
   .hero i{position:absolute;width:12px;height:12px;border:2px solid #151310}
   .hero i:nth-of-type(1){top:15px;left:15px;border-right:0;border-bottom:0}
   .hero i:nth-of-type(2){top:15px;right:15px;border-left:0;border-bottom:0}
   .hero i:nth-of-type(3){bottom:15px;left:15px;border-right:0;border-top:0}
   .hero i:nth-of-type(4){bottom:15px;right:15px;border-left:0;border-top:0}
-  .hero>p:not(.desc),.spec,figcaption,aside,.guard span{font:700 .65rem/1.5 "JetBrains Mono",monospace;letter-spacing:.07em}
+  .hero>p:not(.desc),figcaption,aside,.guard span{font:700 .65rem/1.5 "JetBrains Mono",monospace;letter-spacing:.07em;text-transform:uppercase}
   .hero h1,h2{font-family:"Barlow Condensed",sans-serif;font-weight:700;text-transform:uppercase;line-height:.78;letter-spacing:-.03em;margin:.8rem 0}
   .hero h1{font-size:clamp(5.5rem,15vw,14rem)}
   .hero strong{font:500 clamp(1.3rem,2.2vw,2rem) "Barlow",sans-serif}
   .desc{font:400 1.1rem/1.45 "Barlow",sans-serif;max-width:55rem}
-  .spec{border-top:1px solid #15131055;padding-top:.8rem}
-  .spec b{font-weight:400;margin-left:1rem}
   .visual{padding:clamp(3rem,7vw,7rem) 12vw}
   .visual figure{margin:0;background:var(--green);padding:.65rem;transform:rotate(2deg);box-shadow:15px 16px 0 #0005}
-  .visual img{display:block;width:100%;filter:grayscale(1) contrast(1.12) brightness(1.02);mix-blend-mode:multiply;opacity:.92}
+  .visual img{display:block;width:100%}
   .visual figcaption{color:#151310;margin:.6rem 0 0}
   .actions{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin:0 5vw}
   .actions article{background:var(--green);color:#151310;padding:clamp(1.5rem,3vw,3rem);min-height:260px;border:1px solid #207b59}
@@ -127,7 +117,7 @@ const supporting = product.features.slice(4);
   .features p{color:#c1c5cb;line-height:1.4}
   aside{display:grid;grid-template-columns:repeat(4,1fr);border-block:1px solid #2A2E35;margin-top:4rem}
   aside span{padding:1rem;border-right:1px solid #2A2E35}
-  .manual{display:block;background:var(--green);color:#151310;margin:4rem 5vw 1rem;padding:1.2rem;text-align:center;text-decoration:none;font:700 2rem "Barlow Condensed",sans-serif;text-transform:uppercase}
+  .docs{display:block;background:var(--green);color:#151310;margin:4rem 5vw 1rem;padding:1.2rem;text-align:center;text-decoration:none;font:700 2rem "Barlow Condensed",sans-serif;text-transform:uppercase}
   a:focus-visible{outline:3px solid white;outline-offset:4px}
   @media(max-width:700px){
     .hero h1{font-size:clamp(2.75rem,13.5vw,6rem)}
@@ -138,6 +128,6 @@ const supporting = product.features.slice(4);
     .guard p{padding:1rem 0 0}
     aside{grid-template-columns:1fr}
     aside span{border-right:0;border-bottom:1px solid #2A2E35}
-    .manual{margin-inline:0}
+    .docs{margin-inline:0}
   }
 </style>

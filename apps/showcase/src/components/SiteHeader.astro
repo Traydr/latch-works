@@ -1,57 +1,217 @@
 ---
-import { apps, tools } from "@/data/products";
+import "@fontsource/barlow-condensed/600.css";
+import "@fontsource/barlow-condensed/700.css";
+import "@fontsource/barlow/400.css";
+import "@fontsource/barlow/500.css";
+import "@fontsource/jetbrains-mono/400.css";
+import "@fontsource/jetbrains-mono/700.css";
+import { pipelineProducts } from "@/data/products";
 
 const pathname = Astro.url.pathname;
 
-function navClass(href: string, end = false): string {
-  const active = end ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
-  return [
-    "rounded-md px-3 py-2 text-sm transition",
-    active ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground",
-  ].join(" ");
+const enamel: Record<string, string> = {
+  "gather-box": "#F5A623",
+  "frame-view": "#8B7CF6",
+  lockstep: "#34C98E",
+  "pane-view": "#38A8E8",
+};
+
+function isActive(href: string, end = false): boolean {
+  return end ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
 }
 ---
 
-<header class="sticky top-0 z-50 border-b border-border/70 bg-background/85 backdrop-blur-md">
-  <div class="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
-    <a href="/" class="group flex items-center gap-3">
-      <img src="/favicon.png" alt="" class="size-8 rounded-md" aria-hidden="true" />
-      <div>
-        <p class="text-sm font-semibold tracking-tight text-foreground group-hover:text-primary">
-          Latch Works
-        </p>
-        <p class="hidden text-xs text-muted-foreground sm:block">Private media tools</p>
-      </div>
+<header class="site-header">
+  <div class="inner">
+    <a class="brand" href="/">
+      <img src="/favicon.png" alt="" width="32" height="32" aria-hidden="true" />
+      <span>
+        <b>Latch Works</b>
+        <small>Private media tools</small>
+      </span>
     </a>
 
-    <nav class="hidden items-center gap-1 md:flex" aria-label="Primary">
-      <a href="/" class={navClass("/", true)}>Overview</a>
-      {apps.map((product) => (
-        <a href={`/${product.slug}`} class={navClass(`/${product.slug}`)}>
-          {product.name}
-        </a>
-      ))}
-      {tools.map((product) => (
-        <a href={`/${product.slug}`} class={navClass(`/${product.slug}`)}>
-          {product.name}
-        </a>
-      ))}
-      <a href="/docs" class={navClass("/docs")}>Docs</a>
-    </nav>
-
-    <details class="relative md:hidden">
-      <summary class="cursor-pointer list-none rounded-md border border-border/70 px-3 py-2 text-sm text-muted-foreground transition-transform active:scale-[0.96]">
-        Menu
-      </summary>
-      <div class="absolute right-0 z-50 mt-2 w-48 rounded-lg border border-border bg-card p-2 shadow-lg">
-        <a href="/" class={navClass("/", true)}>Overview</a>
-        {[...apps, ...tools].map((product) => (
-          <a href={`/${product.slug}`} class={navClass(`/${product.slug}`)}>
+    <nav class="desktop" aria-label="Primary">
+      <a class:list={["nav-link", isActive("/", true) && "active"]} href="/">Overview</a>
+      {
+        pipelineProducts.map((product) => (
+          <a
+            class:list={["nav-link", isActive(`/${product.slug}`) && "active"]}
+            href={`/${product.slug}`}
+            style={`--enamel:${enamel[product.slug]}`}
+          >
             {product.name}
           </a>
-        ))}
-        <a href="/docs" class={navClass("/docs")}>Docs</a>
+        ))
+      }
+      <a class:list={["nav-link", isActive("/docs") && "active"]} href="/docs">Docs</a>
+    </nav>
+
+    <details class="mobile">
+      <summary>Menu</summary>
+      <div class="menu">
+        <a class:list={[isActive("/", true) && "active"]} href="/">Overview</a>
+        {
+          pipelineProducts.map((product) => (
+            <a
+              class:list={[isActive(`/${product.slug}`) && "active"]}
+              href={`/${product.slug}`}
+              style={`--enamel:${enamel[product.slug]}`}
+            >
+              {product.name}
+            </a>
+          ))
+        }
+        <a class:list={[isActive("/docs") && "active"]} href="/docs">Docs</a>
       </div>
     </details>
   </div>
 </header>
+
+<style>
+  .site-header {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: #16181c;
+    border-bottom: 1px solid #2a2e35;
+    font-family: "Barlow", sans-serif;
+  }
+  .inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    max-width: 72rem;
+    margin: 0 auto;
+    padding: 0.85rem 1.25rem;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    color: #e8eaed;
+    text-decoration: none;
+    min-width: 0;
+  }
+  .brand img {
+    width: 2rem;
+    height: 2rem;
+    flex-shrink: 0;
+  }
+  .brand span {
+    display: grid;
+    gap: 0.1rem;
+  }
+  .brand b {
+    font:
+      700 0.95rem/1.1 "Barlow Condensed",
+      sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+  }
+  .brand small {
+    font:
+      700 0.58rem/1 "JetBrains Mono",
+      monospace;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #8a8f98;
+  }
+  .desktop {
+    display: none;
+    align-items: center;
+    gap: 0.2rem;
+  }
+  .nav-link {
+    font:
+      700 0.72rem/1 "JetBrains Mono",
+      monospace;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #8a8f98;
+    text-decoration: none;
+    padding: 0.55rem 0.7rem;
+    border: 1px solid transparent;
+  }
+  .nav-link:hover {
+    color: #e8eaed;
+  }
+  .nav-link.active {
+    color: #151310;
+    background: var(--enamel, #e8eaed);
+    border-color: color-mix(in srgb, var(--enamel, #e8eaed), #151310 28%);
+  }
+  .nav-link.active[href="/"],
+  .nav-link.active[href="/docs"] {
+    background: #2a2e35;
+    color: #e8eaed;
+    border-color: #3a404a;
+  }
+  .mobile {
+    position: relative;
+  }
+  .mobile summary {
+    list-style: none;
+    cursor: pointer;
+    font:
+      700 0.72rem/1 "JetBrains Mono",
+      monospace;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #e8eaed;
+    border: 1px solid #2a2e35;
+    padding: 0.55rem 0.75rem;
+  }
+  .mobile summary::-webkit-details-marker {
+    display: none;
+  }
+  .menu {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 0.5rem);
+    width: 13.5rem;
+    background: #16181c;
+    border: 1px solid #2a2e35;
+    display: grid;
+    z-index: 50;
+  }
+  .menu a {
+    font:
+      700 0.72rem/1 "JetBrains Mono",
+      monospace;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #8a8f98;
+    text-decoration: none;
+    padding: 0.75rem 0.9rem;
+    border-bottom: 1px solid #2a2e35;
+  }
+  .menu a:last-child {
+    border-bottom: 0;
+  }
+  .menu a:hover {
+    color: #e8eaed;
+  }
+  .menu a.active {
+    color: #151310;
+    background: var(--enamel, #e8eaed);
+  }
+  .menu a.active[href="/"],
+  .menu a.active[href="/docs"] {
+    background: #2a2e35;
+    color: #e8eaed;
+  }
+  a:focus-visible {
+    outline: 3px solid #fff;
+    outline-offset: 3px;
+  }
+  @media (min-width: 860px) {
+    .desktop {
+      display: flex;
+    }
+    .mobile {
+      display: none;
+    }
+  }
+</style>

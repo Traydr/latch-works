@@ -15,33 +15,39 @@ interface Props {
   product: Product;
 }
 const { product } = Astro.props;
-const sources = ["Fanbox", "Reddit", "Archive of Our Own", "Fanfiction.net", "Twitter (X)"];
+const sources = [
+  "MyHentaiGallery",
+  "Kemono",
+  "pixiv FANBOX",
+  "Archive of Our Own",
+  "Hentai Foundry",
+  "FanFiction.Net",
+];
 ---
 
 <div class="page">
-  <a class="back" href="/">← All stages</a><section class="nameplate">
-    <i></i><i></i><i></i><i></i><p>STAGE 01 / COLLECT</p><h1>
-      {product.name}
-    </h1><strong>{product.tagline}</strong><p class="description">
-      {product.description}
-    </p><div class="spec">
-      PATH <b>{product.repoPath}</b><br />TYPE <b>{product.kind}</b><br />ROLE <b
-        >pipeline entry point</b>
-    </div>
-  </section><section class="visual">
+  <section class="nameplate">
+    <i></i><i></i><i></i><i></i>
+    <p>Gather</p>
+    <h1>{product.name}</h1>
+    <strong>{product.tagline}</strong>
+    <p class="description">{product.description}</p>
+  </section>
+  <section class="visual">
     <figure>
-      <img
-        src={product.heroScreenshot.src}
-        alt={product.heroScreenshot.alt}
-      /><figcaption>{product.heroScreenshot.caption}</figcaption>
-    </figure><div class="sources">
-      <p>COLLECTION SOURCES</p>{sources.map((source) => <b>{source}</b>)}
+      <img src={product.heroScreenshot.src} alt={product.heroScreenshot.alt} />
+      <figcaption>{product.heroScreenshot.caption}</figcaption>
+    </figure>
+    <div class="sources">
+      <p>Supported sources</p>
+      {sources.map((source) => <b>{source}</b>)}
     </div>
-  </section><section class="tree">
-    <p>
-      FOLDER STRUCTURE / EXAMPLE
-    </p><pre>~/archive → artist-name/series-title/post-title/001.jpg</pre>
-  </section><section class="features">
+  </section>
+  <section class="tree">
+    <p>Folder structure / example</p>
+    <pre>~/archive → artist-name/series-title/post-title/001.jpg</pre>
+  </section>
+  <section class="features">
     {
       product.features.map((feature) => (
         <article>
@@ -54,9 +60,11 @@ const sources = ["Fanbox", "Reddit", "Archive of Our Own", "Fanfiction.net", "Tw
         </article>
       ))
     }
-  </section><aside>
+  </section>
+  <aside>
     {product.highlights.map((highlight) => <span>{highlight}</span>)}
-  </aside><a class="manual" href={`/docs/${product.slug}`}>Service manual →</a>
+  </aside>
+  <a class="docs" href={`/docs/${product.slug}`}>Docs →</a>
 </div>
 <style>
   .page {
@@ -67,18 +75,10 @@ const sources = ["Fanbox", "Reddit", "Archive of Our Own", "Fanfiction.net", "Tw
     min-height: 100vh;
     font-family: "Barlow", sans-serif;
   }
-  .back {
-    font:
-      700 0.73rem "JetBrains Mono",
-      monospace;
-    color: #e8eaed;
-    text-transform: uppercase;
-    text-decoration: none;
-  }
   .nameplate {
     background: var(--amber);
     color: #151310;
-    margin-top: 1.5rem;
+    margin-top: 0.4rem;
     padding: clamp(2.4rem, 6vw, 6rem);
     position: relative;
     border: 1px solid #a86900;
@@ -118,7 +118,6 @@ const sources = ["Fanbox", "Reddit", "Archive of Our Own", "Fanfiction.net", "Tw
     border-top: 0;
   }
   .nameplate > p:not(.description),
-  .spec,
   .sources p,
   .tree p,
   figcaption,
@@ -127,6 +126,7 @@ const sources = ["Fanbox", "Reddit", "Archive of Our Own", "Fanfiction.net", "Tw
       700 0.65rem/1.55 "JetBrains Mono",
       monospace;
     letter-spacing: 0.07em;
+    text-transform: uppercase;
   }
   .nameplate h1,
   h2 {
@@ -150,15 +150,7 @@ const sources = ["Fanbox", "Reddit", "Archive of Our Own", "Fanfiction.net", "Tw
       400 1.1rem/1.45 "Barlow",
       sans-serif;
     max-width: 52rem;
-    margin: 1.6rem 0;
-  }
-  .spec {
-    border-top: 1px solid #15131055;
-    padding-top: 0.8rem;
-  }
-  .spec b {
-    font-weight: 400;
-    margin-left: 1rem;
+    margin: 1.6rem 0 0;
   }
   .visual {
     padding: clamp(3rem, 7vw, 7rem) 5vw;
@@ -177,9 +169,6 @@ const sources = ["Fanbox", "Reddit", "Archive of Our Own", "Fanfiction.net", "Tw
   .visual img {
     display: block;
     width: 100%;
-    filter: grayscale(1) contrast(1.12) brightness(1.02);
-    mix-blend-mode: multiply;
-    opacity: 0.92;
   }
   .visual figcaption {
     color: #151310;
@@ -260,7 +249,7 @@ const sources = ["Fanbox", "Reddit", "Archive of Our Own", "Fanfiction.net", "Tw
     padding: 1rem;
     border-right: 1px solid #2a2e35;
   }
-  .manual {
+  .docs {
     display: block;
     margin: 4rem 5vw 2rem;
     background: var(--amber);
@@ -284,7 +273,7 @@ const sources = ["Fanbox", "Reddit", "Archive of Our Own", "Fanfiction.net", "Tw
     }
     .tree,
     aside,
-    .manual {
+    .docs {
       margin-inline: 0;
     }
     .features {

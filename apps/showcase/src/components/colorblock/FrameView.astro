@@ -18,19 +18,19 @@ const { product } = Astro.props;
 ---
 
 <div class="page">
-  <a class="back" href="/">← All stages</a><section class="hero">
-    <i></i><i></i><i></i><i></i><p>STAGE 02 / ORGANIZE</p><h1>
-      {product.name}
-    </h1><strong>{product.tagline}</strong><p>{product.description}</p><div>
-      PATH <b>{product.repoPath}</b> / TYPE <b>{product.kind}</b> / ROLE <b
-        >local desktop reference</b>
-    </div>
-  </section><section class="display">
-    <i></i><i></i><i></i><i></i><img
-      src={product.heroScreenshot.src}
-      alt={product.heroScreenshot.alt}
-    /><p>{product.heroScreenshot.caption}</p>
-  </section><section class="gallery">
+  <section class="hero">
+    <i></i><i></i><i></i><i></i>
+    <p>Organize</p>
+    <h1>{product.name}</h1>
+    <strong>{product.tagline}</strong>
+    <p class="desc">{product.description}</p>
+  </section>
+  <section class="display">
+    <i></i><i></i><i></i><i></i>
+    <img src={product.heroScreenshot.src} alt={product.heroScreenshot.alt} />
+    <p>{product.heroScreenshot.caption}</p>
+  </section>
+  <section class="gallery">
     {
       product.gallery.map((shot) => (
         <figure>
@@ -41,7 +41,8 @@ const { product } = Astro.props;
         </figure>
       ))
     }
-  </section><section class="features">
+  </section>
+  <section class="features">
     {
       product.features.map((feature) => (
         <article>
@@ -52,9 +53,11 @@ const { product } = Astro.props;
         </article>
       ))
     }
-  </section><aside>
+  </section>
+  <aside>
     {product.highlights.map((highlight) => <span>{highlight}</span>)}
-  </aside><a class="manual" href={`/docs/${product.slug}`}>Service manual →</a>
+  </aside>
+  <a class="docs" href={`/docs/${product.slug}`}>Docs →</a>
 </div>
 <style>
   .page {
@@ -65,36 +68,30 @@ const { product } = Astro.props;
     padding: 1.3rem;
     font-family: "Barlow", sans-serif;
   }
-  .back {
-    font:
-      700 0.73rem "JetBrains Mono",
-      monospace;
-    color: #e8eaed;
-    text-transform: uppercase;
-    text-decoration: none;
-  }
   .hero {
     position: relative;
     background: var(--violet);
     padding: clamp(2.5rem, 6vw, 6rem);
-    margin-top: 1.5rem;
+    margin-top: 0.4rem;
     color: #151310;
   }
-  .hero p,
-  .hero div,
+  .hero > p:first-of-type,
   figcaption,
-  aside {
+  aside,
+  .display > p {
     font:
       700 0.65rem/1.5 "JetBrains Mono",
       monospace;
     letter-spacing: 0.07em;
+    text-transform: uppercase;
   }
-  .hero > p:nth-of-type(2) {
+  .desc {
     font:
       400 1.1rem/1.45 "Barlow",
       sans-serif;
     max-width: 55rem;
     letter-spacing: 0;
+    text-transform: none;
   }
   .hero h1,
   h2 {
@@ -112,13 +109,6 @@ const { product } = Astro.props;
     font:
       500 clamp(1.3rem, 2.2vw, 2rem) "Barlow",
       sans-serif;
-  }
-  .hero div {
-    border-top: 1px solid #15131055;
-    padding-top: 0.8rem;
-  }
-  .hero b {
-    font-weight: 400;
   }
   .hero > i,
   .display i {
@@ -169,9 +159,6 @@ const { product } = Astro.props;
     width: 100%;
     max-height: 72vh;
     object-fit: cover;
-    filter: grayscale(1) contrast(1.12) brightness(1.02);
-    mix-blend-mode: multiply;
-    opacity: 0.92;
   }
   .display p {
     color: #151310;
@@ -196,9 +183,6 @@ const { product } = Astro.props;
   .gallery img {
     display: block;
     width: 100%;
-    filter: grayscale(1) contrast(1.12) brightness(1.02);
-    mix-blend-mode: multiply;
-    opacity: 0.92;
   }
   .gallery figcaption {
     color: #151310;
@@ -234,7 +218,7 @@ const { product } = Astro.props;
     padding: 1rem;
     border-right: 1px solid #2a2e35;
   }
-  .manual {
+  .docs {
     display: block;
     background: var(--violet);
     color: #151310;
@@ -258,9 +242,6 @@ const { product } = Astro.props;
     .gallery,
     .features {
       grid-template-columns: 1fr;
-    }
-    .features {
-      gap: 1px;
     }
     .display {
       margin-inline: 0;

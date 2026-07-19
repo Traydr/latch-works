@@ -1,11 +1,67 @@
-<footer class="border-t border-border/70 bg-card/40">
-  <div class="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-10 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+---
+import "@fontsource/barlow-condensed/600.css";
+import "@fontsource/barlow/400.css";
+import "@fontsource/jetbrains-mono/400.css";
+import "@fontsource/jetbrains-mono/700.css";
+---
+
+<footer class="site-footer">
+  <div class="inner">
     <div>
-      <p class="font-medium text-foreground">Latch Works</p>
-      <p class="mt-1 max-w-md text-sm text-muted-foreground">
+      <p class="brand">Latch Works</p>
+      <p class="blurb">
         A private workshop for collecting, syncing, and viewing a personal media archive.
       </p>
     </div>
-    <p class="text-sm text-muted-foreground">Gather → Organize → Sync → View</p>
+    <p class="pipeline">Gather → Organize → Sync → View</p>
   </div>
 </footer>
+
+<style>
+  .site-footer {
+    background: #16181c;
+    border-top: 1px solid #2a2e35;
+    color: #e8eaed;
+    font-family: "Barlow", sans-serif;
+  }
+  .inner {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    max-width: 72rem;
+    margin: 0 auto;
+    padding: 2.5rem 1.25rem;
+  }
+  .brand {
+    margin: 0;
+    font:
+      700 1.1rem/1 "Barlow Condensed",
+      sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+  }
+  .blurb {
+    margin: 0.55rem 0 0;
+    max-width: 28rem;
+    color: #8a8f98;
+    font:
+      400 0.95rem/1.45 "Barlow",
+      sans-serif;
+  }
+  .pipeline {
+    margin: 0;
+    font:
+      700 0.68rem/1.3 "JetBrains Mono",
+      monospace;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #8a8f98;
+  }
+  @media (min-width: 640px) {
+    .inner {
+      flex-direction: row;
+      align-items: center;
+      justify-content: space-between;
+    }
+  }
+</style>
