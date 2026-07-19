@@ -1,41 +1,47 @@
 ---
-title: Collect image galleries
-description: Download gallery pages into numbered image folders.
+title: Collect media
+description: Download images and video from supported posts into your archive.
 section: Gather Box
 sectionOrder: 2
 order: 3
-navTitle: Collect galleries
+navTitle: Collect media
 ---
 
-# Collect image galleries
+# Collect media
 
-Gallery collectors download original images from a post page into a folder with sequential filenames.
+Media collectors download original images (and video on some sites) from a post or artwork page into folders under your chosen destination.
 
 ## Steps
 
-1. Open a supported gallery post in Chrome.
-2. Click the Gather Box icon and confirm the page is recognized.
-3. Click **Choose folder** (or reuse the remembered destination for that site).
+1. Open a supported media page in Chrome.
+2. Open the Gather Box side panel and confirm the page is recognized.
+3. Click **Choose** (or reuse the remembered destination for that site).
 4. Click **Download Content**.
-5. Watch the progress bar and review the results log when finished.
+5. Watch progress; open **More** for the results log, **Retry failed**, or **Copy errors** if needed.
+
+You can also right-click a supported page and choose **Gather to archive**, or use the download keyboard shortcut.
 
 ## What to expect
 
-- Images save as numbered files (`001.webp`, `002.webp`, …) in a post-specific folder.
-- Nested paths vary by site (creator name, post title, user type). See [Supported sources](/docs/supported-sources) for patterns.
+- Filenames usually come from the site or CDN. Gather Box does not renumber every gallery to `001`, `002`, ….
+- Reddit multi-image posts use `01_<filename>` style prefixes inside a post folder.
+- Nested paths vary by site — see [Supported sources](/docs/supported-sources).
 - Individual file failures are logged; the rest of the batch continues.
+- Identical files are skipped; collisions get a short suffix before the extension.
 
 ## Choosing the destination
 
-Pick a folder inside your archive root so Frame View and Lockstep see the same tree later. Gather Box remembers the last folder **per site**, not one global folder for everything.
+Pick a folder inside your archive root so Frame View and Lockstep see the same tree later.
 
-The popup shows the folder **name** only — browsers do not expose the full disk path for privacy reasons.
+By default Gather Box remembers the last folder **per site**. In Settings you can instead use **one global archive folder** for every site.
+
+The side panel shows the folder **name** only — browsers do not expose the full disk path for privacy reasons.
 
 ## Tips
 
 - Collect one post at a time for predictable folder names.
-- After download, open the folder in Frame View to confirm image order and count.
-- If thumbnails on the site differ from originals, Gather Box targets original URLs where the collector supports it.
+- After download, open the folder in Frame View to confirm count and order.
+- Use **Cancel run** if you need to stop a long download.
 
 ## Related docs
 

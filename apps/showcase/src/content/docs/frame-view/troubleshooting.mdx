@@ -17,8 +17,9 @@ navTitle: Troubleshooting
 
 - Confirm you opened the correct folder or enable recursive mode.
 - Wait for the scan progress indicator to finish.
-- Check that files use supported image or video extensions. Frame View PDF support is planned, not shipped.
-- Rescan from the menu after copying files in from outside Gather Box.
+- Check that files use supported extensions (images: jpg/jpeg/png/webp/gif/bmp; video: mp4/webm/mov/mkv). PDFs are not indexed yet.
+- If Comic mode is on, loose media tiles are hidden — toggle Comic off to see them.
+- Rescan (Refresh / F5) after copying files in from outside Gather Box.
 
 ## Slow scans on large folders
 
@@ -28,7 +29,7 @@ navTitle: Troubleshooting
 
 - Let the initial index complete — later visits reuse the local media index.
 - Narrow to a subfolder when spot-checking new downloads.
-- Clear and rebuild cache only if the index is corrupt, not for every slow folder.
+- Clear and rebuild the index only if it looks corrupt, not for every slow folder.
 
 ## Stale or wrong thumbnails
 
@@ -46,6 +47,7 @@ navTitle: Troubleshooting
 **Fix:**
 
 - Confirm the file plays in another player (codec support varies by platform).
+- Check Usability settings for viewer autoplay / loop.
 - Try opening a neighboring file to isolate a corrupt download.
 - Re-download from Gather Box if the original is incomplete.
 
@@ -55,8 +57,8 @@ navTitle: Troubleshooting
 
 **Fix:**
 
-- Rename with consistent zero-padded numbering.
-- Remove non-page images from the comic folder.
+- Confirm Comic mode is on and you opened the comic entry, not loose files.
+- Prefer consistent numeric filenames; remove non-page images from the comic folder.
 
 ## Related docs
 

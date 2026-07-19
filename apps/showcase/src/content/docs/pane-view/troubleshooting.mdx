@@ -17,7 +17,6 @@ navTitle: Troubleshooting
 
 - Confirm username and password with your library operator.
 - Clear site cookies for your Pane View hostname and retry.
-- Check clock skew on mobile devices — extreme drift can break sessions.
 
 Sync tokens are **not** used on the login form. Enter those in Lockstep only.
 
@@ -40,10 +39,10 @@ Pane View never shows unsynced local-only files.
 
 **Fix:**
 
-- Wait a minute after a large push — derivatives generate asynchronously.
-- Refresh the folder; signed links expire and regenerate.
+- Wait briefly after a large push — derivatives generate asynchronously and signed links refresh.
+- Refresh the folder from the toolbar.
 - Confirm push succeeded without file errors in Lockstep logs.
-- Try another browser rule-out (extensions blocking cross-origin media).
+- Try another browser (extensions can block cross-origin media).
 
 ## Video will not play
 
@@ -59,9 +58,9 @@ Pane View never shows unsynced local-only files.
 
 **Fix:**
 
-- Enable recursive mode.
-- Search from a higher folder in the tree.
-- Plan again — index updates follow successful push.
+- Search is library-wide — recursive mode does not change search scope.
+- Check spelling and underscores vs spaces in path segments.
+- Plan and push again — the index updates after a successful push.
 
 ## Related docs
 

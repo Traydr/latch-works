@@ -11,11 +11,11 @@ navTitle: Troubleshooting
 
 ## Unsupported page
 
-**Symptom:** Download button disabled; popup says the page is not supported.
+**Symptom:** Download button disabled; side panel says the page is not supported.
 
 **Fix:**
 
-- Confirm the URL matches a [supported source](/docs/supported-sources) pattern (post/work page, not search or profile index).
+- Confirm the URL matches a [supported source](/docs/supported-sources) pattern (post/artwork/work page, not search or profile index).
 - Reload the tab after the page fully loads.
 - Reload the extension if you just updated it.
 
@@ -31,13 +31,13 @@ navTitle: Troubleshooting
 
 ## Partial download / missing files
 
-**Symptom:** Progress completes but some images are missing from the log or folder.
+**Symptom:** Progress completes but some files are missing from the log or folder.
 
 **Fix:**
 
-- Read the results log for per-file errors.
-- Retry failed items — transient network errors are common.
-- For gallery sites, ensure you are on the full post, not a preview page.
+- Open **More** and read the results log for per-file errors.
+- Use **Retry failed** for transient network errors.
+- Ensure you are on the full post, not a preview or listing page.
 
 ## Login or session issues
 
@@ -46,16 +46,17 @@ navTitle: Troubleshooting
 **Fix:**
 
 - Sign in on the site in the same browser profile as the extension.
-- In Gather Box options, allow credentials for that site (or set global mode to **always** temporarily).
+- In Gather Box Settings, allow credentials for that site (or set mode to **Always** temporarily).
 - Re-open the work page and download again.
 
-## Popup errors or stale state
+## Side panel errors or stale state
 
 **Fix:**
 
-- Close and reopen the popup.
+- Close and reopen the side panel.
 - Reload the extension from `chrome://extensions`.
-- Try the keyboard shortcut (Command+Shift+G / Ctrl+Shift+G) on the active tab.
+- Try the download shortcut (Command/Ctrl+Shift+Comma) on the active tab.
+- Use the context menu **Gather to archive** on the page URL as a fallback.
 
 ## Related docs
 

@@ -51,21 +51,21 @@ export const products: Product[] = [
     repoPath: "apps/gather-box",
     heroScreenshot: {
       src: "/screenshots/gather-box/popup.png",
-      alt: "Gather Box extension popup ready to download",
-      caption: "Extension popup with page detection and folder selection",
+      alt: "Gather Box side panel ready to download",
+      caption: "Side panel with page detection and folder selection",
     },
     gallery: [
       {
         src: "/screenshots/gather-box/popup-active.png",
-        alt: "Gather Box popup showing supported page status",
-        caption: "Site-specific collectors detect supported gallery pages",
+        alt: "Gather Box side panel showing supported page status",
+        caption: "Site-specific collectors detect supported pages",
       },
     ],
     features: [
       {
         title: "Site collectors",
         description:
-          "Dedicated content scripts for Fanbox, Kemono, Archive of Our Own, Fanfiction.net, Hentai Foundry, and more.",
+          "Dedicated content scripts for Fanbox, Kemono, X, Reddit, pixiv, Archive of Our Own, Fanfiction.net, Hentai Foundry, and more.",
         icon: "globe",
       },
       {
@@ -112,7 +112,7 @@ export const products: Product[] = [
     kind: "app",
     tagline: "Your local archive, framed.",
     description:
-      "Frame View is the cross-platform desktop gallery for local image, video, comic, and PDF story archives. Pane View mirrors the same browsing patterns on the web.",
+      "Frame View is the cross-platform desktop gallery for local image, video, and comic archives. Pane View mirrors the same browsing patterns on the web (and adds PDF reading after sync).",
     repoPath: "apps/frame-view",
     heroScreenshot: {
       src: "/screenshots/frame-view/gallery.png",

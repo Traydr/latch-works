@@ -1,6 +1,6 @@
 ---
 title: Lockstep CLI companion
-description: Optional scriptable Lockstep for plan, push, verify, and doctor.
+description: Optional scriptable Lockstep for plan, push, prune, verify, and doctor.
 section: Lockstep
 sectionOrder: 4
 order: 6
@@ -15,9 +15,24 @@ The desktop app covers everyday sync. The CLI companion runs the same engine hea
 
 - Scheduled plan-only reports
 - Push from a machine without opening the desktop UI
-- CI-style verify steps against a snapshot file
+- Capped pushes with `--max-changes`
+- Verify against a snapshot file
+- Explicit prune of planned deletes in scripts
 
 For most personal use, prefer the desktop app for visibility into progress and errors.
+
+## Invoke
+
+From the repo (with packages built and env sourced as needed):
+
+```bash
+cd apps/lockstep-cli
+pnpm exec tsx src/cli.ts plan --source /path/to/archive
+```
+
+Or: `pnpm --filter @latch-works/lockstep start plan --source …`
+
+Do not put a bare `--` between `pnpm start:lockstep` and the subcommand.
 
 ## Commands
 
@@ -25,31 +40,48 @@ For most personal use, prefer the desktop app for visibility into progress and e
 | --- | --- |
 | `plan` | Read-only diff summary |
 | `push` | Upload and register new/changed originals (never deletes) |
-| `prune` | Apply planned remote deletes |
-| `verify` | Compare tree to snapshot |
+| `prune` | Apply planned remote deletes (requires confirm or `--yes`) |
+| `verify` | Compare tree to `--remote-snapshot` |
 | `doctor` | Environment and connectivity checks |
 
-Push and prune are separate commands — same split as **Push uploads/updates** and **Apply deletes** in the desktop app.
+Push and prune are separate — same split as **Push** and **Apply deletes** in the desktop app.
 
-Run commands with your source folder, Pane View URL, and token supplied via config file or environment — whichever your install documents.
+## Useful flags
+
+| Flag | Used by | Purpose |
+| --- | --- | --- |
+| `--source` | all | Local archive root |
+| `--api-url` | plan/push/prune/doctor | Pane View API base URL |
+| `--hash` | plan/verify | Full content hashing (plan); hash compare (verify) |
+| `--max-changes` | push/prune | Cap how many changes apply in one run |
+| `--upload-concurrency` | push | Parallel uploads |
+| `--remote-snapshot` | plan/verify | Snapshot JSON path (required for verify) |
+| `--show-skipped` | plan | Include skipped items in output |
+| `--yes` | prune (required non-interactively) | Skip prune confirmation |
+| `--api-token-env` | auth | Env var name holding the sync token |
+
+**Push always uses remote-aware hashing** when talking to Pane View. Desktop plan is size-oriented by default; CLI plan uses hashing only with `--hash`.
+
+`--yes` gates **prune**, not push. Push runs without an interactive confirm once arguments are complete.
 
 ## Configuration
 
-A JSON config file in your home directory can store default source paths and API URLs. **Keep tokens in environment variables**, not in the config file on disk, so secrets stay out of backups and dotfile repos.
+Defaults live in `~/.latch-works/lockstep.json` (source path, API URL, etc.). **Keep tokens in environment variables**, not in the config file.
 
 ## Interactive mode
 
-When run in a terminal without required arguments, Lockstep may prompt for missing source path, URL, and token. Useful for ad hoc runs on a new machine.
+Running with no arguments in a TTY starts a wizard for **plan / push / verify / doctor**. Prune is not in the wizard — run `prune` as an explicit subcommand.
 
 ## Safety
 
 - Always plan before push in automation scripts.
 - Run prune only when you intend to apply delete entries from the plan.
-- Use non-interactive confirm flags only after you trust the plan output.
-- Doctor before the first automated push to a new remote library.
+- Prefer `--max-changes` on first pushes to a new remote library.
+- Run `doctor` before the first automated push to a new remote library.
 
 ## Related docs
 
 - [Lockstep overview](/docs/lockstep)
 - [Setup](/docs/lockstep/setup)
 - [Plan](/docs/lockstep/plan)
+- [Verify and connection checks](/docs/lockstep/verify-and-doctor)

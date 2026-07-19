@@ -29,10 +29,12 @@ Lockstep does not remove remote media during **Push**. If the plan lists delete 
 
 1. Lockstep scans your source folder and builds a **plan** (read-only).
 2. You review upload, update, keep, and delete counts.
-3. You run **Push uploads/updates** for new and changed originals.
-4. You run **Apply deletes** only when you intend to remove remote entries listed in the plan.
+3. You run **Push** for new and changed originals.
+4. You run **Apply deletes** (desktop) or `prune` (CLI) only when you intend to remove remote entries listed in the plan.
 
 There is no background auto-sync. That keeps uploads predictable and private.
+
+Desktop plan is size/path oriented by default; push re-plans with content hashing. Optional CLI **verify** compares against a snapshot file for drift checks.
 
 ## Originals
 
@@ -65,4 +67,3 @@ Frame View generates its own local thumbnail cache while scanning folders on dis
 - [Archive organization](/docs/archive-organization)
 - [Lockstep plan](/docs/lockstep/plan)
 - [Privacy and safety](/docs/privacy-and-safety)
-- [Glossary](/docs/glossary)

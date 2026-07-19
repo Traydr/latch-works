@@ -14,11 +14,11 @@ Lockstep stores one or more **profiles**. Each profile ties a local source folde
 ## Create a profile
 
 1. Open the Lockstep desktop app.
-2. Choose **New profile**.
+2. Choose **Create your first profile** or **Add profile**.
 3. Fill in:
    - **Name** — label for this archive (e.g. "Main archive")
    - **Source folder** — root of your local archive tree
-   - **Pane View URL** — the HTTPS address where you browse remotely
+   - **Pane View API URL** — the base URL of your Pane View instance (API host, not only the browse UI)
    - **Sync API token** — secret that authorizes uploads (from your Pane View operator)
 
 4. Save the profile.
@@ -33,20 +33,20 @@ Tokens authorize Lockstep to register uploads. They are separate from your Pane 
 
 ## Active profile
 
-Select which profile is active before running plan, push, verify, or doctor. Switch profiles when you maintain more than one archive or remote library.
+Select which profile is active before running plan, push, apply deletes, or test connection. Switch profiles when you maintain more than one archive or remote library.
 
 ## Before the first push
 
-1. Run **Doctor** on the profile to confirm URL, token, and connectivity.
-2. Run **Plan** and read counts with zero expectation of uploads if the remote library is empty.
+1. Click **Test connection** on the profile to confirm source path, URL, token, and that Pane View responds.
+2. Run **Plan** and read counts — an empty remote library should show many uploads and zero updates.
 3. Push a small test folder first if you are unsure.
 
 ## CLI configuration
 
-If you use the command-line companion, settings can live in a config file under your home directory while tokens stay in environment variables. See [Lockstep CLI](/docs/lockstep/cli).
+If you use the command-line companion, defaults live in `~/.latch-works/lockstep.json` while tokens stay in environment variables. See [Lockstep CLI](/docs/lockstep/cli).
 
 ## Related docs
 
 - [Lockstep overview](/docs/lockstep)
-- [Verify and doctor](/docs/lockstep/verify-and-doctor)
+- [Verify and connection checks](/docs/lockstep/verify-and-doctor)
 - [Privacy and safety](/docs/privacy-and-safety)

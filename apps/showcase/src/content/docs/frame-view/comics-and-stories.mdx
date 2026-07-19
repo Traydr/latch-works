@@ -1,6 +1,6 @@
 ---
 title: Comics and stories
-description: Sequential image folders and planned PDF story reading.
+description: Comic mode for image folders, and planned PDF reading.
 section: Frame View
 sectionOrder: 3
 order: 4
@@ -9,29 +9,25 @@ navTitle: Comics & stories
 
 # Comics and stories
 
-Frame View treats image comics as a first-class reading mode. PDF reading is [planned](../../../../../../docs/plans/040-frame-view-pdf-spike.md), not shipped.
+Frame View treats image comics as a first-class reading mode when you enable **Comic** in the toolbar. PDF reading is planned, not shipped.
 
 ## Comics (image folders)
 
-When a folder contains numbered sequential images, Frame View can present it as a **comic entry** instead of a loose pile of files.
+1. Toggle **Comic** in the gallery toolbar.
+2. Frame View groups non-root folders that contain images into comic entries (no special “numbered sequence” detection required).
+3. Comic mode forces recursive scanning and hides loose media tiles.
+4. Open a comic to enter the reader — pages are stacked in a vertical scroll.
+5. Jump between pages with **Q** / **E** (or arrows). Escape returns to the gallery.
 
-- Open the comic to enter the reader with one image per page.
-- Turn pages with **Q** / **E** or arrow keys.
-- Press Escape to return to the gallery.
-
-Filename order matters. Use zero-padded numbers (`001`, `002`, …) if lexical sorting puts `10` before `2`.
+Page order uses numeric-aware sorting, so `2` sorts before `10`. Zero-padded names (`001`, `002`, …) are still fine when you want predictable filenames.
 
 ## PDF stories
 
-Frame View does not currently index or open PDFs. The planned reader will be evaluated separately; use Pane View for PDF reading after sync.
-
-## Mixed folders
-
-Keep stories (PDFs) separate from image galleries in the same directory when you want clean comic detection once PDF support ships. See [Archive organization](/docs/archive-organization).
+Frame View does not currently index or open PDFs. Use Pane View for PDF reading after sync. Keep story PDFs out of image comic folders so comic grouping stays clean.
 
 ## Pane View parity
 
-Pane View supports comics and PDFs for synced content. Frame View PDF support remains planned.
+Pane View supports comics and PDFs for synced content. Frame View’s comic reader is a vertical page stack; Pane View’s comic reader is closer to page-turn navigation. Hotkeys (Q/E, Escape) stay similar.
 
 ## Related docs
 

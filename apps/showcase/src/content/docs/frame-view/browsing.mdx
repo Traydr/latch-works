@@ -13,31 +13,35 @@ Frame View turns a folder on disk into a virtualized grid of media entries.
 
 ## Open a folder
 
-Use **Open folder** from the menu or the standard open shortcut for your platform. Frame View remembers recently opened paths.
+Use **Open folder** from the menu (`Cmd/Ctrl+O`), drag a folder onto the window, or reopen the last folder when **Remember last folder** is enabled in preferences.
 
-Point at your archive root or any subtree — the breadcrumb and folder overlay reflect your current location.
+Point at your archive root or any subtree — the path label and folder overlay reflect your current location.
 
 ## Grid navigation
 
 - Click an item to select it; double-click or press Enter / F to open the viewer.
 - Use W/A/S/D or arrow keys to move selection.
-- Shift+S opens the focused folder; Shift+W goes to the parent.
+- Shift+S opens the selected folder (or the first folder tile); Shift+W goes to the parent.
 
-Mixed grids show images and videos together. Video cells loop short previews so you can scan motion quickly.
+Mixed grids show images and videos together. With autoplay-on-hover enabled, video cells play the real file (looping when that setting is on) so you can scan motion quickly.
 
 ## Recursive scanning
 
-Enable recursive mode to include media from subfolders in the current view. Useful for flat searches across a creator tree without drilling down manually.
+Enable recursive mode to include media from subfolders in the current view. Folder tiles hide while recursive is on. Useful for scanning across a creator tree without drilling down manually.
 
 Large folders use a background scan and local index so scrolling stays responsive. The first scan after opening a big tree may take time — see [Troubleshooting](/docs/frame-view/troubleshooting).
 
+## Comic mode
+
+Toggle **Comic** in the toolbar to group image folders into comic entries. Comic mode forces recursive scanning and hides loose media tiles. Details: [Comics and stories](/docs/frame-view/comics-and-stories).
+
 ## Sorting
 
-Switch sort modes from the gallery toolbar — including name, date, and random shuffle. Sort affects grid order only, not files on disk.
+Switch sort modes from the gallery toolbar: A–Z, Z–A, Newest, Oldest, and Random. When Random is selected, a **Shuffle** control re-seeds the order. Sort affects grid order only, not files on disk.
 
 ## Folder overlay
 
-Open the folder overlay to jump between sibling folders without returning to the file picker. Shift+A and Shift+D move to previous and next sibling folders.
+Open the folder overlay to jump between sibling folders and to include/exclude child folders for recursive scans. Shift+A and Shift+D move to previous and next sibling folders.
 
 ## Related docs
 

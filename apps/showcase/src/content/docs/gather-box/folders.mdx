@@ -11,23 +11,24 @@ navTitle: Folders
 
 Gather Box writes into folders you select with the browser’s folder picker. Good defaults keep your archive browsable without manual renaming.
 
-## Per-site memory
+## Per-site vs global memory
 
-Each supported site remembers its own last destination folder. Switching between sites does not overwrite another site’s choice.
+By default each supported site remembers its own last destination folder. Switching sites does not overwrite another site’s choice.
 
-When you collect from a new site for the first time, pick a subfolder under your archive root that matches how you want Frame View to group that source.
+In Settings you can enable **one global archive folder** so every collector reuses the same root.
+
+When you collect from a new site for the first time (or with global mode off), pick a subfolder under your archive root that matches how you want Frame View to group that source.
 
 ## Inferred paths
 
-Collectors build subpaths from page metadata:
+Collectors build subpaths from page metadata. Exact templates live in [Supported sources](/docs/supported-sources). In short:
 
-| Source type | Behavior |
+| Pattern | Examples |
 | --- | --- |
-| Nested gallery posts | Folders by creator and post metadata |
-| Flat gallery posts | Post folder with numbered images |
-| Stories | PDF in a site folder with author-title filename |
-
-Exact site patterns are listed in [Supported sources](/docs/supported-sources).
+| Single folder | MyHentaiGallery comic title; X username; pixiv `username-id` |
+| Nested folders | Kemono service/user/post; FANBOX creator/post |
+| Conditional folder | Reddit: direct file for single media; post folder for galleries |
+| Direct file | Story PDFs land in the chosen root with no nested site folder |
 
 Spaces become underscores. Adjust locally after download if you prefer different names — then run Lockstep **Plan** before the next push.
 
@@ -44,5 +45,5 @@ Gather Box checks that the active tab is supported and that you granted write ac
 ## Related docs
 
 - [Archive organization](/docs/archive-organization)
-- [Collect galleries](/docs/gather-box/collect-galleries)
+- [Collect media](/docs/gather-box/collect-galleries)
 - [Supported sources](/docs/supported-sources)

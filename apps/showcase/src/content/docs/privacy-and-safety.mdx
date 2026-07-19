@@ -21,7 +21,7 @@ Treat your archive folder like any sensitive media directory: disk encryption an
 
 Lockstep never uploads in the background. **Plan** is always read-only. **Push** requires you to start it deliberately.
 
-Review plan counts before pushing, especially after renaming or deleting folders. **Push** never applies deletes — use **Apply deletes** in Lockstep desktop when you intend to remove remote entries from the plan.
+Review plan counts before pushing, especially after renaming or deleting folders. **Push** never applies deletes — use **Apply deletes** in Lockstep desktop (or CLI `prune`) when you intend to remove remote entries from the plan.
 
 ## Authentication
 
@@ -43,15 +43,15 @@ That means:
 
 ## Gather Box and site sessions
 
-Some story downloads use your browser login. Gather Box can send credentials with requests when allowed in extension settings. Use **per-site** or **never** modes if you want tighter control.
+Some downloads use your browser login. Gather Box credential modes in Settings: **Auto**, **Always**, **Never**, and **Per site**. Tighten the mode if you want less cookie use.
 
 Only collect from sites you are authorized to download from.
 
 ## Network exposure
 
-Pane View should be reachable only over HTTPS on infrastructure you trust. Lockstep stores your Pane View URL in the profile — use the same hostname you intend to browse.
+Pane View should be reachable only over HTTPS on infrastructure you trust. Lockstep stores your Pane View API URL in the profile — use the same host you intend to browse.
 
-Run **Doctor** after changing URLs or tokens to catch misconfiguration early.
+Click **Test connection** (desktop) or run CLI `doctor` after changing URLs or tokens to catch misconfiguration early.
 
 ## Related docs
 

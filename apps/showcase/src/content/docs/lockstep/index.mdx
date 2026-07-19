@@ -24,23 +24,23 @@ Lockstep never syncs silently in the background.
 
 ## Desktop first
 
-The Lockstep desktop app is the primary experience: profiles, plan review, push progress, doctor checks, and run logs in one place.
+The Lockstep desktop app is the primary experience: profiles, plan review, push progress, connection checks, and run logs in one place.
 
 An optional command-line companion exists for scripted runs — see [Lockstep CLI](/docs/lockstep/cli).
 
-## Core commands
+## Core actions
 
-| Command | Writes? | Purpose |
-| --- | --- | --- |
-| Plan | No | Show upload, update, keep, and delete counts |
-| Push | Yes | Upload and register new/changed originals only |
-| Apply deletes | Yes | Remove remote entries listed in the plan |
-| Verify | No | Compare local tree to a snapshot file |
-| Doctor | No | Validate profile, token, and remote reachability |
+| Action | Surface | Writes? | Purpose |
+| --- | --- | --- | --- |
+| Plan | Desktop + CLI | No | Show upload, update, keep, and delete counts |
+| Push | Desktop + CLI | Yes | Upload and register new/changed originals only |
+| Apply deletes / prune | Desktop + CLI | Yes | Remove remote entries listed in the plan |
+| Test connection | Desktop (+ CLI `doctor`) | No | Validate profile settings and reachability |
+| Verify | CLI only | No | Compare local tree to a snapshot file |
 
 ## Related docs
 
 - [Setup profiles](/docs/lockstep/setup)
 - [Plan](/docs/lockstep/plan)
 - [Push](/docs/lockstep/push)
-- [Verify and doctor](/docs/lockstep/verify-and-doctor)
+- [Verify and connection checks](/docs/lockstep/verify-and-doctor)

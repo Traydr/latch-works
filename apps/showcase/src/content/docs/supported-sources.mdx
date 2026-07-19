@@ -9,41 +9,55 @@ navTitle: Supported sources
 
 # Supported sources
 
-Gather Box only collects from the sites below. Other pages show as unsupported in the extension popup.
+Gather Box only collects from the sites below. Other pages show as unsupported in the side panel.
 
 ## Site appendix
 
 | Site | Content type | Output |
 | --- | --- | --- |
-| MyHentaiGallery | Image galleries | Numbered images in a post folder |
-| Kemono | Post attachments | Images in a nested post folder |
+| MyHentaiGallery | Image galleries | Images in a comic-title folder (original filenames) |
+| Kemono | Post attachments | Files in a nested service/user/post folder |
 | pixiv FANBOX | Post images | Images in a creator/post folder |
-| Archive of Our Own | Works | Single PDF download |
-| Hentai Foundry | Stories | Single PDF download |
-| FanFiction.Net | Multi-chapter stories | Single merged PDF |
+| X | Images and videos | Media under the post author's username |
+| Reddit | Images, galleries, GIF/RedGIFs video | Direct file, or a post folder for multi-media |
+| pixiv | Original artwork (including multi-page) | Images under `username-userId` |
+| Archive of Our Own | Works | Single site-generated PDF in the chosen root |
+| Hentai Foundry | Stories | Single site-generated PDF in the chosen root |
+| FanFiction.Net | Multi-chapter stories | Single locally merged PDF in the chosen root |
 
-## Gallery vs story behavior
+## Media vs story behavior
 
-**Galleries** download original images in sequence (`001`, `002`, …). **Stories** fetch chapters (where applicable) and produce one local PDF named with author and title.
+**Media collectors** download original files (images and, on some sites, video). Filenames usually come from the site or CDN — Gather Box does not renumber everything to `001`, `002`, …. Reddit galleries are the exception: they use `01_<filename>` prefixes.
 
-Story collectors may need you to be signed in on the site. Gather Box can include session credentials for downloads when configured — see [Gather Box troubleshooting](/docs/gather-box/troubleshooting).
+**Story collectors** produce one PDF per work:
 
-## Folder patterns (summary)
+- **AO3** and **Hentai Foundry** download the site’s generated PDF.
+- **FanFiction.Net** fetches chapters and merges them locally into one PDF.
 
-| Source | Typical folder shape |
+Story downloads may need you to be signed in. Gather Box can include session credentials when configured — see [Gather Box troubleshooting](/docs/gather-box/troubleshooting).
+
+## Folder patterns
+
+Paths are relative to the destination folder you pick in the side panel. Spaces become underscores.
+
+| Source | Typical shape |
 | --- | --- |
-| Kemono | `{user_type}/{user_name}/{post_title}/` |
-| FANBOX | `{creator_name}/{post_title}-{post_id}/` |
-| Story PDFs | `{site_folder}/{Author}-{Title}.pdf` |
+| MyHentaiGallery | `<root>/<comic title>/` |
+| Kemono | `<root>/<service>/<user>/<post title>/` |
+| FANBOX | `<root>/<creator>/<post title>-<id>/` |
+| X | `<root>/<username>/` |
+| Reddit | `<root>/` for single media; `<root>/<post title>_<id>/` for galleries |
+| pixiv | `<root>/<username>-<user id>/` |
+| AO3 / Hentai Foundry / FanFiction.Net | `<root>/Author-Story.pdf` (no nested site folder) |
 
-Spaces become underscores. Details and edge cases are covered in [Gather Box folders](/docs/gather-box/folders).
+Details and edge cases are covered in [Gather Box folders](/docs/gather-box/folders).
 
 ## When a page is unsupported
 
-The download action stays disabled and the popup explains that the active tab is not a supported URL pattern. Double-check you are on a post or work page, not a profile index or search results page.
+The download action stays disabled and the side panel explains that the active tab is not a supported URL pattern. Double-check you are on a post, artwork, or work page — not a profile index or search results page.
 
 ## Related docs
 
 - [Gather Box overview](/docs/gather-box)
-- [Collect galleries](/docs/gather-box/collect-galleries)
+- [Collect media](/docs/gather-box/collect-galleries)
 - [Collect stories](/docs/gather-box/collect-stories)

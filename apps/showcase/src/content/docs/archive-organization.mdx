@@ -21,26 +21,26 @@ Keeping one root avoids surprises when Lockstep compares paths to your remote li
 
 | Type | Typical layout | Viewing |
 | --- | --- | --- |
-| Image galleries | Folder of numbered images (`001.webp`, `002.webp`, …) | Grid or comic mode |
+| Image galleries | Folder of images (site or CDN filenames) | Grid or Comic mode |
 | Videos | Single file or mixed grid with images | Viewer with playback controls |
-| Comics | Folder of sequential images | Comic reader in Frame View and Pane View |
-| Stories | Single PDF per work | Pane View PDF reader after sync; Frame View support is [planned](../../../../../docs/plans/040-frame-view-pdf-spike.md) |
+| Comics | Folder of images (Comic mode groups the folder) | Comic reader in Frame View and Pane View |
+| Stories | Single PDF per work in a dedicated folder | Pane View PDF reader after sync; Frame View PDF support is planned |
 
 ## How Gather Box names things
 
-Gather Box infers folders from the page you are on. Patterns vary by source:
+Gather Box infers folders from the page you are on. Patterns vary by source — see [Supported sources](/docs/supported-sources) for the full matrix.
 
-- **Gallery posts** often land in nested folders by creator and post title.
-- **Story downloads** usually become one PDF named `{author}-{title}.pdf` under a site-specific folder.
+- **Media posts** often land in creator/post folders; filenames are usually original or CDN names.
+- **Story downloads** become one `Author-Story.pdf` **directly in the chosen root** (no nested site folder).
 - Spaces in names become underscores for safe paths.
 
-Exact site behavior is listed in [Supported sources](/docs/supported-sources). You can still reorganize after download — just plan again before the next push.
+You can still reorganize after download — just plan again before the next push.
 
 ## Comics and sequential folders
 
-A **comic** is a folder whose images read in filename order. Both Frame View and Pane View can collapse those folders into a single comic entry with page-turn navigation.
+A **comic** is a folder of images. Enable **Comic** mode in Frame View or Pane View to collapse those folders into comic entries.
 
-If pages sort wrong, rename files with consistent zero-padded numbers (`001`, `002`, …).
+Page order uses numeric-aware sorting. Zero-padded names (`001`, `002`, …) remain a good habit for consistency.
 
 ## Stories as PDFs
 
@@ -50,7 +50,7 @@ Long-form story collectors produce one PDF per work. Store them in dedicated sto
 
 - Keep site or creator at higher folder levels; keep individual posts in leaf folders.
 - Avoid duplicate folder names at the same level when you care about remote path clarity.
-- After large reorganizations, run Lockstep **Plan** before **Push** so you see moves as updates or new paths.
+- After large reorganizations, run Lockstep **Plan** before **Push** so you see moves as deletes plus uploads or new paths.
 
 ## Related docs
 

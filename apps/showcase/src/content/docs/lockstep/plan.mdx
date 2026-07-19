@@ -16,7 +16,7 @@ navTitle: Plan
 ## Running plan
 
 1. Select your active profile in Lockstep desktop.
-2. Click **Plan** (or run the plan command in the CLI companion).
+2. Click **Plan** (or run `plan` in the CLI companion).
 3. Wait for the scan and diff to finish.
 4. Review the summary counts and item list.
 
@@ -25,11 +25,19 @@ navTitle: Plan
 | Count | Meaning |
 | --- | --- |
 | Upload | New local files not yet on the remote library |
-| Update | Same path but content hash changed |
+| Update | Local file differs from remote (see hashing note below) |
 | Keep | Already in sync — no action needed |
-| Delete | Local removal or path drop that would remove a remote entry — requires **Apply deletes**, not push |
+| Delete | Would remove a remote entry — requires **Apply deletes** / `prune`, not push |
 
-Exact labels match what Lockstep prints in the run log. Treat **keep** as reassurance; focus on upload and update before pushing.
+Treat **keep** as reassurance; focus on upload and update before pushing.
+
+## Hashing note
+
+Desktop **Plan** compares without full content hashing by default (size/path oriented). That means some content changes that keep the same size may still show as **keep** until push.
+
+**Push** re-plans with remote-aware hashing before uploading, so update counts can grow compared with the last plan.
+
+On the CLI, pass `--hash` to plan with full hashing when you want a stricter pre-push review.
 
 ## When to plan without pushing
 

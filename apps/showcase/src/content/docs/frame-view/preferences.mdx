@@ -1,6 +1,6 @@
 ---
 title: Frame View preferences
-description: Theme, remembered folders, shortcuts, and local cache controls.
+description: Theme, usability toggles, hotkeys, and local cache controls.
 section: Frame View
 sectionOrder: 3
 order: 5
@@ -9,31 +9,35 @@ navTitle: Preferences
 
 # Frame View preferences
 
-Open the settings drawer from the gallery toolbar to adjust usability and storage options.
+Open the settings drawer from the gallery toolbar (or `Cmd/Ctrl+,`) to adjust usability and storage options.
 
 ![Frame View settings drawer](/screenshots/frame-view/settings.png)
 
-## Appearance
+## Usability
 
-Switch between dark and light theme. The choice persists across sessions and matches your preferred reading environment.
-
-## Remembered folders
-
-Frame View stores recently opened paths so you can return to your archive root quickly. Clear history here if you relocate the archive to a new disk.
+- **Theme** — System, Light, or Dark (persists across sessions).
+- **Remember last folder** — reopen the previous archive root on launch.
+- **Recursive by default** — start new folders in recursive mode.
+- **Hover autoplay / viewer autoplay / loop videos / preview audio** — video playback behavior in the grid and viewer.
+- **Loop viewer navigation** — wrap previous/next at the ends of the list.
+- **Thumbnail size** and **show images / show videos** — what the grid displays.
 
 ## Keyboard shortcuts
 
-The settings drawer lists active hotkeys for gallery, viewer, and comic modes. A full table lives in [Keyboard shortcuts](/docs/keyboard-shortcuts).
+The Hotkeys tab lists active shortcuts for gallery, viewer, and comic modes. A full table lives in [Keyboard shortcuts](/docs/keyboard-shortcuts).
 
-## Storage and cache
+## Local storage
 
 Frame View maintains a local media index and thumbnail cache for fast rescans. From settings you can:
 
-- Inspect cache location and size
-- Clear thumbnail cache when previews look stale
-- Trigger diagnostics if scans misbehave
+- Clear the thumbnail cache when previews look stale
+- View media-index stats (item counts, database path) and clear the index if needed
 
-Clearing cache does not delete originals — only derived thumbnails and index data, which rebuild on the next scan.
+Clearing cache or index does not delete originals — only derived data, which rebuilds on the next scan.
+
+## Debug
+
+The Debug tab exposes diagnostics for stubborn scan or index issues. Use it when normal clear-and-rescan does not help.
 
 ## Window state
 

@@ -14,18 +14,18 @@ These routines assume you already installed the apps. Adjust folder names and sc
 ## First archive setup
 
 1. Create an empty archive root on disk.
-2. Install Gather Box and pick that root (or a subfolder) as the default destination per site.
+2. Install Gather Box and pick that root (or a subfolder) as the destination per site — or enable one global folder in Settings.
 3. Collect one small gallery and one story PDF as test content.
-4. Open Frame View on the archive root and confirm the image or video content appears correctly. Frame View PDF reading is planned, not shipped.
-5. Create a Lockstep profile with source folder, Pane View URL, and sync token.
-6. Run **Doctor**, then **Plan**, then **Push** for the test content.
+4. Open Frame View on the archive root and confirm image/video content appears. Frame View PDF reading is planned, not shipped.
+5. Create a Lockstep profile with source folder, Pane View API URL, and sync token.
+6. Click **Test connection**, then **Plan**, then **Push** for the test content.
 7. Sign in to Pane View and browse the same paths.
 
 ## Regular collection day
 
 1. Browse supported sites and collect new posts with Gather Box.
 2. Open Frame View and spot-check new folders — order, naming, missing pages.
-3. Optionally reorganize folders before syncing.
+3. Optionally reorganize folders in your file manager before syncing.
 4. Run Lockstep **Plan** and note upload/update counts.
 5. **Push** when satisfied.
 6. Open Pane View on phone or tablet to confirm new media appears.
@@ -45,7 +45,7 @@ Plan never writes to your remote library.
 
 1. Sign in to Pane View.
 2. Navigate to a folder you recently synced.
-3. Use search or recursive mode to find a specific title.
+3. Use search (library-wide) or recursive browsing to find a specific title.
 4. Open the viewer; use keyboard or touch navigation for comics and videos.
 
 If media is missing, check locally in Frame View first, then plan and push.
@@ -53,9 +53,9 @@ If media is missing, check locally in Frame View first, then plan and push.
 ## After reorganizing folders
 
 1. Browse locally to confirm the new layout.
-2. Run **Plan** — moves may appear as deletes plus uploads or as path updates depending on content hashes.
-3. Read counts carefully — use **Push uploads/updates** for new/changed files and **Apply deletes** only if you intend to remove remote entries.
-4. Run **Verify** afterward if you maintain a snapshot file for drift checks.
+2. Run **Plan** — moves may appear as deletes plus uploads depending on paths.
+3. Read counts carefully — use **Push** for new/changed files and **Apply deletes** only if you intend to remove remote entries.
+4. Optionally run CLI **verify** afterward if you maintain a snapshot file for drift checks.
 
 ## Related docs
 

@@ -9,39 +9,48 @@ navTitle: Collect stories
 
 # Collect stories as PDF
 
-Story collectors produce a **single PDF** per work — suitable for reading in Pane View after sync. Frame View PDF reading is [planned](../../../../../../docs/plans/040-frame-view-pdf-spike.md), not shipped.
+Story collectors produce a **single PDF** per work — suitable for reading in Pane View after sync. Frame View PDF reading is planned, not shipped.
 
 ## Supported story sources
 
-Story collectors save long-form works as PDFs. See [Supported sources](/docs/supported-sources) for which sites support stories versus galleries.
+| Site | How the PDF is produced |
+| --- | --- |
+| Archive of Our Own | Downloads the site-generated PDF |
+| Hentai Foundry | Downloads the site-generated PDF |
+| FanFiction.Net | Fetches chapters and merges them locally into one PDF |
+
+See [Supported sources](/docs/supported-sources) for the full site list (media vs stories).
 
 ## Steps
 
 1. Open the work or story URL while signed in if the site requires it.
-2. Open Gather Box and choose a destination folder (often a site-specific subfolder of your archive).
-3. Start the download and wait for PDF generation to finish.
-4. Confirm the output file appears in the results log.
+2. Open the Gather Box side panel and choose a destination folder (often your archive root or a stories subfolder).
+3. Start the download and wait for completion.
+4. Confirm the output file appears in the results log under **More**.
 
 ## Output naming
 
-Story PDFs typically use `{author}-{title}.pdf` with spaces replaced by underscores. Multi-chapter works merge into one file in reading order when the collector supports it.
+Story PDFs typically use `Author-Story.pdf` with spaces replaced by underscores. They save **directly into the chosen root** — Gather Box does not create a nested site folder for stories.
 
 ## Credentials and login
 
-Story sites often need your browser session. Gather Box can include credentials on download requests when allowed in extension settings:
+Story sites often need your browser session. Gather Box credential modes in Settings:
 
-- **Automatic** for some sites by default
-- **Per-site** overrides in extension options
-- **Never** if you want downloads to fail rather than send cookies
+- **Auto** (default) — include cookies for sites that need them by default
+- **Always** — include cookies for every download
+- **Never** — never send cookies
+- **Per site** — override per collector
+
+Defaults with cookies on include FANBOX, pixiv, AO3, and Hentai Foundry. FanFiction.Net defaults off.
 
 If a download returns login HTML instead of content, sign in on the site and retry.
 
 ## After download
 
-Open the PDF in Pane View after sync to verify formatting. Large multi-chapter works may take longer to build — wait for the popup to report completion before closing the tab.
+Open the PDF in Pane View after sync to verify formatting. Large FanFiction.Net works may take longer to merge — wait for the side panel to report completion before closing the tab.
 
 ## Related docs
 
-- [Collect galleries](/docs/gather-box/collect-galleries)
+- [Collect media](/docs/gather-box/collect-galleries)
 - [Frame View comics and stories](/docs/frame-view/comics-and-stories)
 - [Troubleshooting](/docs/gather-box/troubleshooting)

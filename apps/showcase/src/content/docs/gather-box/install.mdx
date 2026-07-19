@@ -9,40 +9,48 @@ navTitle: Install
 
 # Install Gather Box
 
-Gather Box runs as an unpacked Chrome extension during personal use. You need Google Chrome or a Chromium browser with extension support.
+Gather Box runs as an unpacked Chrome extension. You need Google Chrome **145+** (or a Chromium browser that meets that floor).
 
-## Load the extension
+## Build and load
 
-1. Open `chrome://extensions` in Chrome.
-2. Enable **Developer mode** (toggle in the toolbar).
-3. Click **Load unpacked**.
-4. Select the built extension folder from your Gather Box install.
+1. From the Latch Works repo, build the extension:
 
-After loading, pin Gather Box to the toolbar for quick access.
+   ```bash
+   pnpm --filter @latch-works/gather-box build
+   ```
+
+2. Open `chrome://extensions` in Chrome.
+3. Enable **Developer mode**.
+4. Click **Load unpacked**.
+5. Select `apps/gather-box/dist`.
+
+After loading, pin Gather Box to the toolbar. Clicking the icon opens the **side panel** (there is no separate popup UI).
 
 ## First launch checks
 
-1. Click the Gather Box icon on any tab — the popup should open without errors.
-2. Visit a [supported page](/docs/supported-sources) — the popup should enable download.
-3. Open **Extension options** from the popup or extensions page to review credential and folder defaults.
+1. Click the Gather Box icon — the side panel should open without errors.
+2. Visit a [supported page](/docs/supported-sources) — download should enable.
+3. Open **Settings** from the side panel (or the extension’s options page) to review credential and folder defaults.
 
 ![Gather Box detecting a supported page](/screenshots/gather-box/popup-active.png)
 
-## Optional: side panel and shortcuts
+## Shortcuts
 
-Gather Box can open a side panel for status while you browse. A default keyboard shortcut downloads from the active tab:
+Default shortcuts (change under `chrome://extensions/shortcuts`):
 
-- **Mac:** Command+Shift+G
-- **Windows / Linux:** Ctrl+Shift+G
+| Action | Mac | Windows / Linux |
+| --- | --- | --- |
+| Toggle side panel | Command+Shift+. (Period) | Ctrl+Shift+. |
+| Download from active tab | Command+Shift+, (Comma) | Ctrl+Shift+, |
 
-Change the shortcut under `chrome://extensions/shortcuts` if it conflicts with other tools.
+On supported pages you can also use Right Shift+`]` / `[` for page shortcuts when enabled in Settings.
 
 ## Updating after changes
 
-When you receive a new build, click **Reload** on the extension card in `chrome://extensions`, then retry a small test download.
+When you rebuild, click **Reload** on the extension card in `chrome://extensions`, then retry a small test download.
 
 ## Related docs
 
 - [Gather Box overview](/docs/gather-box)
-- [Collect galleries](/docs/gather-box/collect-galleries)
+- [Collect media](/docs/gather-box/collect-galleries)
 - [Troubleshooting](/docs/gather-box/troubleshooting)
