@@ -143,10 +143,13 @@ const { product } = Astro.props;
     max-width: 55rem;
   }
   .panes {
-    height: min(760px, 65vw);
-    min-height: 480px;
+    /* ~16:10 main-shot slot; capped so side panes stay on-canvas on wide screens. */
+    width: min(100%, calc(68vh * 37 / 20));
+    aspect-ratio: 37 / 20;
+    height: auto;
     position: relative;
-    margin: 4rem 7vw;
+    margin: 4rem auto;
+    box-sizing: border-box;
   }
   .panes figure {
     position: absolute;
@@ -169,20 +172,20 @@ const { product } = Astro.props;
     margin: 0.6rem 0 0;
   }
   .main-shot {
-    inset: 2% 17% 2% 0;
+    inset: 2% 18% 2% 0;
     transform: rotate(-1.7deg);
   }
   .side-shot {
-    width: 38%;
-    height: 48%;
-    right: 0;
+    width: 32%;
+    height: 46%;
+    right: 2.5%;
   }
   .s0 {
-    top: 0;
+    top: 1%;
     transform: rotate(2.1deg);
   }
   .s1 {
-    bottom: 0;
+    bottom: 1%;
     transform: rotate(-2.3deg);
   }
   .features {
@@ -242,6 +245,8 @@ const { product } = Astro.props;
       font-size: clamp(5rem, 23vw, 8rem);
     }
     .panes {
+      width: 100%;
+      aspect-ratio: auto;
       height: 610px;
       margin: 3rem 0;
     }
@@ -249,17 +254,18 @@ const { product } = Astro.props;
       inset: 0 5% 34% 0;
     }
     .side-shot {
-      width: 62%;
+      width: 58%;
       height: 30%;
+      right: 2%;
     }
     .s0 {
       top: auto;
       bottom: 18%;
-      right: 0;
+      right: 2%;
     }
     .s1 {
       bottom: 0;
-      right: 8%;
+      right: 10%;
     }
     .features {
       grid-template-columns: 1fr;

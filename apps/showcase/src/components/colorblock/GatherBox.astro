@@ -148,7 +148,7 @@ const sources = ["pixiv FANBOX", "X", "Reddit", "pixiv", "Archive of Our Own", "
   .visual {
     padding: clamp(3rem, 7vw, 7rem) 5vw;
     display: grid;
-    grid-template-columns: 1.3fr 0.7fr;
+    grid-template-columns: minmax(0, 1.6fr) minmax(12rem, 0.7fr);
     align-items: end;
     gap: 3rem;
   }
@@ -162,6 +162,7 @@ const sources = ["pixiv FANBOX", "X", "Reddit", "pixiv", "Archive of Our Own", "
   .visual img {
     display: block;
     width: 100%;
+    height: auto;
   }
   .visual figcaption {
     color: #151310;

@@ -332,7 +332,7 @@ body {
   background: #09090b;
 }
 .popup {
-  width: 400px;
+  width: 440px;
 }
 </style>`,
     )
@@ -340,6 +340,34 @@ body {
       '<script src="popup.js"></script>',
       `<script>${chromeStub}</script><script>${js}</script>`,
     );
+}
+
+async function captureGatherBoxPopup(page, path, url) {
+  await page.setViewport({ width: 720, height: 900, deviceScaleFactor: 2 });
+  await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: "dark" }]);
+  await page.goto(url, { waitUntil: "networkidle2", timeout: 60_000 });
+  await sleep(300);
+
+  const popup = await page.$(".popup");
+  if (!popup) {
+    throw new Error(`Gather Box popup not found for ${path}`);
+  }
+
+  const box = await popup.boundingBox();
+  if (!box) {
+    throw new Error(`Gather Box popup has no bounding box for ${path}`);
+  }
+
+  const pad = 40;
+  const clip = {
+    x: Math.max(0, box.x - pad),
+    y: Math.max(0, box.y - pad),
+    width: box.width + pad * 2,
+    height: box.height + pad * 2,
+  };
+
+  await page.screenshot({ path, type: "png", clip });
+  console.log(`Saved ${path}`);
 }
 
 async function waitForFramePreview(page) {
@@ -477,10 +505,7 @@ async function main() {
     ]) {
       const htmlPath = join(publicDir, "gather-box", `_preview-${mode}.html`);
       writeFileSync(htmlPath, buildGatherBoxPreviewHtml(mode));
-      await capture(page, join(publicDir, "gather-box", file), `file://${htmlPath}`, {
-        darkMode: true,
-        waitMs: 300,
-      });
+      await captureGatherBoxPopup(page, join(publicDir, "gather-box", file), `file://${htmlPath}`);
     }
 
     lockstepPreviewProcess = await startLockstepPreview();
