@@ -145,6 +145,23 @@
     "save": { "pattern": "direct-file", "folderDepth": 0, "summary": "Saves directly to root", "detail": "No folder is created. One PDF lands in your chosen root.", "pathTemplate": "<root>/", "filePattern": "Author-Story.pdf (site-generated)", "tag": "DIRECT", "railCode": "D" }
   },
   {
+    "key": "hentaifoundry-pictures",
+    "label": "Hentai Foundry Pictures",
+    "urlPatterns": ["^https://www\\.hentai-foundry\\.com/pictures/user/[^/]+/[^/]+/[^/?#]+(?:[/?#]|$)"],
+    "pageMatches": ["https://www.hentai-foundry.com/pictures/user/*"],
+    "hostPermissions": [
+      { "pattern": "https://www.hentai-foundry.com/*", "reason": "Eligible picture pages" },
+      { "pattern": "https://pictures.hentai-foundry.com/*", "reason": "Full-size picture media" }
+    ],
+    "contextMenuMatches": ["https://www.hentai-foundry.com/pictures/user/*"],
+    "collectorEntry": "content/collectors/hentaifoundry-pictures.js",
+    "collectorModule": "src/content/collectors/hentai-foundry-pictures.ts",
+    "outputKinds": ["downloadable-files"],
+    "includeCredentialsByDefault": true,
+    "downloadUrlPatterns": ["^https://pictures\\.hentai-foundry\\.com/.+"],
+    "save": { "pattern": "single-folder", "folderDepth": 1, "summary": "Creates 1 artist folder", "detail": "The full-size picture saves under the artist name; existing all-lowercase legacy folders are reused.", "pathTemplate": "<root>/<artist>/", "filePattern": "Site media filename", "tag": "FOLDER · 1", "railCode": "F1" }
+  },
+  {
     "key": "fanfiction-net",
     "label": "FanFiction.Net",
     "urlPatterns": ["^https://www\\.fanfiction\\.net/s/[^/]+/[^/]+/[^/?#]+(?:[/?#]|$)"],

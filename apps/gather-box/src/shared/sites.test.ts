@@ -14,6 +14,10 @@ describe("site detection", () => {
     [
       "https://www.reddit.com/user/KsuColt/comments/1tmgv8u/farm_life_is_so_much_fun/",
       "reddit"
+    ],
+    [
+      "https://www.hentai-foundry.com/pictures/user/TheKite/1200030/Fallout-Unsheltered-Nuts-n-Bolts-06",
+      "hentaifoundry-pictures"
     ]
   ])("recognizes %s", (url, site) => {
     expect(isSupportedUrl(url)).toBe(true);
@@ -25,5 +29,6 @@ describe("site detection", () => {
     expect(isSupportedUrl("https://www.pixiv.net/en/users/34028718")).toBe(false);
     expect(isSupportedUrl("https://www.reddit.com/r/hentai/")).toBe(false);
     expect(isSupportedUrl("https://www.reddit.com/user/KsuColt/")).toBe(false);
+    expect(isSupportedUrl("https://www.hentai-foundry.com/pictures/user/TheKite")).toBe(false);
   });
 });

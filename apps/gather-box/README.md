@@ -15,7 +15,7 @@ Gather Box is the **collection** step in [Latch Works](../../README.md): media e
 | **Reddit** | Community and user-profile post images, galleries, GIFs as MP4, and embedded RedGIFs videos |
 | **pixiv** | Original artwork pages, including collapsed multi-image works |
 | **Archive of Our Own** | Work PDF download |
-| **Hentai Foundry** | Story PDF download |
+| **Hentai Foundry** | Full-size pictures and story PDF downloads |
 | **fanfiction.net** | All chapters fetched and merged into one local PDF |
 
 Each site remembers its own destination folder. Folder and filename inference rules (underscores, nested paths for Kemono/FANBOX, `{author}-{story}.pdf` for stories) are implemented per collector in `src/content/collectors/`.
@@ -99,6 +99,7 @@ The build emits the reviewable manifest and a host-permission ownership report f
 - `https://www.pixiv.net/en/artworks/142625231`
 - `https://archiveofourown.org/works/18187196`
 - `https://www.hentai-foundry.com/stories/user/dotDelamora/70617/Taming-Guinevere`
+- `https://www.hentai-foundry.com/pictures/user/TheKite/1200030/Fallout-Unsheltered-Nuts-n-Bolts-06`
 - `https://www.fanfiction.net/s/12620462/1/Taboo`
 
 ## Folder layout examples
@@ -139,6 +140,15 @@ The build emits the reviewable manifest and a host-permission ownership report f
 ```text
 <site-folder>/Author_Name-Story_Title.pdf
 ```
+
+**Hentai Foundry pictures** — full-size media under a normalized artist folder:
+
+```text
+<root>/<artist_name>/<site_media_filename>
+```
+
+New artist folders lowercase only the first ASCII character. If an all-lowercase folder for that
+artist already exists, Gather Box reuses it for compatibility with older Hentai Foundry archives.
 
 Spaces in folder and PDF names are converted to underscores.
 

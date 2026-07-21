@@ -5,6 +5,7 @@ import {
   type DownloadFailure
 } from "../gather/downloader";
 import { formatError, isAbortError } from "../gather/errors";
+import { resolveCompatibleFolderSegments } from "../gather/folder-compatibility";
 import { shouldIncludeCredentials } from "../shared/credentials";
 import type { GatherRunEvent } from "../shared/gather-run-messages";
 import { buildFolderPreview, getFolderSegments } from "../shared/path";
@@ -38,7 +39,18 @@ export async function executeGatherOutput(input: {
     return;
   }
 
-  const folderSegments = getFolderSegments(payload);
+  const standardFolderSegments = getFolderSegments(payload);
+  const { segments: folderSegments, usedLegacyFolder } = await resolveCompatibleFolderSegments(
+    directoryHandle,
+    payload.site,
+    standardFolderSegments
+  );
+  if (usedLegacyFolder) {
+    await emit({
+      kind: "log",
+      message: `Using existing legacy artist folder "${folderSegments[0]}".`
+    });
+  }
   const destinationPreview = buildFolderPreview(directoryHandle.name, folderSegments);
   const total = payload.outputKind === "generated-story-pdf" ? payload.chapters.length : payload.images.length;
   await emit({ kind: "writing", destinationPreview, folderSegments, total });

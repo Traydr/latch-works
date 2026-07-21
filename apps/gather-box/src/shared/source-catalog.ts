@@ -9,6 +9,7 @@ export type SiteKey =
   | "pixiv"
   | "archiveofourown"
   | "hentaifoundry-stories"
+  | "hentaifoundry-pictures"
   | "fanfiction-net";
 
 export type GatherOutputKind = "downloadable-files" | "generated-story-pdf";

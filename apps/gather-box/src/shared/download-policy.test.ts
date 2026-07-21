@@ -44,6 +44,12 @@ describe("download policy", () => {
       isAllowedDownloadUrl("hentaifoundry-stories", "https://www.hentai-foundry.com/stories/story.pdf"),
     ).toBe(true);
     expect(
+      isAllowedDownloadUrl(
+        "hentaifoundry-pictures",
+        "https://pictures.hentai-foundry.com/t/TheKite/1200030/TheKite-1200030-image.png",
+      ),
+    ).toBe(true);
+    expect(
       isAllowedDownloadUrl("fanfiction-net", "https://www.fanfiction.net/s/1/2/Test-Story"),
     ).toBe(true);
   });
@@ -66,6 +72,12 @@ describe("download policy", () => {
     expect(isAllowedDownloadUrl("hentaifoundry-stories", "https://www.hentai-foundry.com/pictures/1")).toBe(
       false,
     );
+    expect(
+      isAllowedDownloadUrl(
+        "hentaifoundry-pictures",
+        "https://thumbs.hentai-foundry.com/thumb.php?pid=1200030",
+      ),
+    ).toBe(false);
     expect(isAllowedDownloadUrl("fanfiction-net", "https://www.fanfiction.net/u/1/Author")).toBe(
       false,
     );
