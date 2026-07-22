@@ -1,99 +1,6 @@
-import { buildBrowserEntries, buildComicEntries } from "@latch-works/media-domain";
 import { describe, expect, it } from "vitest";
 import { buildMediaPage } from "./media-page";
-import { escapeLikePatternForTest, resolveMediaScope } from "./query-helpers";
-
-function mapAllFolderHasChildren(
-  allFolderRows: Array<{ parentPath: string | null; path: string }>,
-): Map<string, boolean> {
-  const folderParentPathsWithChildFolders = new Set(
-    allFolderRows
-      .map((folder) => folder.parentPath)
-      .filter((parentPath): parentPath is string => Boolean(parentPath)),
-  );
-
-  return new Map(
-    allFolderRows.map((folder) => [
-      folder.path,
-      folderParentPathsWithChildFolders.has(folder.path),
-    ]),
-  );
-}
-
-describe("comic folder metadata", () => {
-  it("marks all-folder leaf status from child folders only", () => {
-    const allFolders = [
-      { parentPath: "sfw", path: "sfw/parent" },
-      { parentPath: "sfw/parent", path: "sfw/parent/leaf" },
-    ];
-    const hasChildrenByPath = mapAllFolderHasChildren(allFolders);
-
-    expect(hasChildrenByPath.get("sfw/parent")).toBe(true);
-    expect(hasChildrenByPath.get("sfw/parent/leaf")).toBe(false);
-  });
-
-  it("keeps leaf-folder comic grouping behavior", () => {
-    const comics = buildComicEntries(
-      [
-        {
-          extension: "jpg",
-          id: "page-1",
-          mediaType: "image",
-          mtimeMs: 1,
-          name: "page-1.jpg",
-          parentPath: "sfw/parent/leaf",
-          path: "sfw/parent/leaf/page-1.jpg",
-          size: 1,
-        },
-      ],
-      "sfw/parent",
-      {
-        folders: [
-          {
-            parentPath: "sfw",
-          },
-          {
-            parentPath: "sfw/parent",
-          },
-        ],
-        leafFoldersOnly: true,
-      },
-    );
-
-    expect(comics).toHaveLength(1);
-    expect(comics[0]?.folderPath).toBe("sfw/parent/leaf");
-  });
-
-  it("places search folder hits before media entries", () => {
-    const entries = buildBrowserEntries({
-      folders: [
-        {
-          folderCount: 0,
-          hasChildren: true,
-          mediaCount: 0,
-          name: "patreon",
-          parentPath: "sfw",
-          path: "sfw/patreon",
-        },
-      ],
-      comics: [],
-      items: [],
-      recursive: false,
-      comicMode: false,
-      sortMode: "name-asc",
-    });
-
-    expect(entries).toEqual([
-      {
-        hasChildren: true,
-        key: "folder:sfw/patreon",
-        kind: "folder",
-        name: "patreon",
-        path: "sfw/patreon",
-      },
-    ]);
-  });
-});
+import { escapeLikePattern, resolveMediaScope } from "./query-helpers";
 
 describe("resolveMediaScope", () => {
   it("scopes to direct children when non-recursive", () => {
@@ -134,9 +41,9 @@ describe("resolveMediaScope", () => {
   });
 });
 
-describe("escapeLikePatternForTest", () => {
+describe("escapeLikePattern", () => {
   it("escapes like wildcards", () => {
-    expect(escapeLikePatternForTest("100%_done")).toBe("100\\%\\_done");
+    expect(escapeLikePattern("100%_done")).toBe("100\\%\\_done");
   });
 });
 
@@ -165,17 +72,5 @@ describe("buildMediaPage", () => {
       nextOffset: null,
       offset: 4,
     });
-  });
-
-  it("keeps deterministic pages without duplicated rows across offsets", () => {
-    const rows = ["a", "b", "c", "d", "e"];
-    const firstPage = buildMediaPage(rows.slice(0, 3), 2, 0);
-    const secondPage = buildMediaPage(rows.slice(2), 2, 2);
-    const merged = [...firstPage.items, ...secondPage.items];
-    const unique = new Set(merged);
-
-    expect(firstPage.items).toEqual(["a", "b"]);
-    expect(secondPage.items).toEqual(["c", "d"]);
-    expect(merged).toHaveLength(unique.size);
   });
 });

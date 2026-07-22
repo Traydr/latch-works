@@ -28,10 +28,6 @@ export function resolveMediaScope({
   return { mode: "direct-children", parentPath: currentPath };
 }
 
-export function escapeLikePatternForTest(value: string): string {
-  return escapeLikePattern(value);
-}
-
 export function escapeLikePattern(value: string): string {
   return value.replace(/[\\%_]/g, (match) => `\\${match}`);
 }

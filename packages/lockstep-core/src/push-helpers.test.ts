@@ -1,22 +1,11 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  resolveHashFiles,
   resolveHashMode,
   resolveLocalFilePath,
   selectDeleteItems,
   selectUploadUpdateItems,
 } from "./push-helpers.js";
-
-describe("resolveHashFiles", () => {
-  it("hashes when required", () => {
-    expect(resolveHashFiles({ requireHash: true })).toBe(true);
-  });
-
-  it("keeps plan hashing opt-in", () => {
-    expect(resolveHashFiles({ hashFiles: false })).toBe(false);
-  });
-});
 
 describe("resolveHashMode", () => {
   it("uses an explicit mode before the legacy boolean", () => {

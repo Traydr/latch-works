@@ -1,4 +1,5 @@
 import type { GalleryCollectResponse, GalleryImage } from "../../shared/types";
+import { lowercaseFirstAscii } from "../../shared/path";
 import {
   RESOLVE_X_MEDIA_MESSAGE,
   X_WEB_BEARER_TOKEN,
@@ -84,11 +85,6 @@ export async function collectXData(
     skippedCount: 0,
     images
   };
-}
-
-export function lowercaseFirstAscii(value: string): string {
-  const first = value.charAt(0);
-  return first >= "A" && first <= "Z" ? `${first.toLowerCase()}${value.slice(1)}` : value;
 }
 
 function collectVisibleXPhotos(

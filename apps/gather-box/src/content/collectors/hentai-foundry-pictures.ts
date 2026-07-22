@@ -1,4 +1,5 @@
 import type { GalleryCollectResponse } from "../../shared/types";
+import { lowercaseFirstAscii } from "../../shared/path";
 
 const PICTURE_PATH_PATTERN = /^\/pictures\/user\/([^/]+)\/([^/]+)\/([^/?#]+)/;
 const FULL_SIZE_HOST = "pictures.hentai-foundry.com";
@@ -61,11 +62,6 @@ export function collectHentaiFoundryPicturesData(
       }
     ]
   };
-}
-
-export function lowercaseFirstAscii(value: string): string {
-  const first = value.charAt(0);
-  return first >= "A" && first <= "Z" ? `${first.toLowerCase()}${value.slice(1)}` : value;
 }
 
 function parsePicturePath(location: Location): HentaiFoundryPicturePath | null {

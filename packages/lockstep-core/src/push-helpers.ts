@@ -2,10 +2,6 @@ import path from "node:path";
 import type { SyncPlanAction } from "@latch-works/media-index";
 import type { HashMode } from "./types.js";
 
-export function resolveHashFiles(options: { hashFiles?: boolean; requireHash?: boolean }): boolean {
-  return options.hashFiles === true || options.requireHash === true;
-}
-
 export function resolveHashMode(options: {
   defaultMode?: HashMode;
   hashFiles?: boolean;

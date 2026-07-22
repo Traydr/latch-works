@@ -282,6 +282,8 @@ describe("pushChanges orchestration", () => {
     ).rejects.toMatchObject({ name: "AbortError" });
 
     const finalizeCall = postJson.mock.calls.find((call) => String(call[1]).endsWith("/complete"));
+    expect(finalizeCall).toBeDefined();
+    expect(finalizeCall?.[4]).toBeUndefined();
     expect(finalizeCall?.[3]).toMatchObject({
       error: "Run cancelled by user",
       status: "cancelled",
