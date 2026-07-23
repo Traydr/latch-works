@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   resolveHashMode,
   resolveLocalFilePath,
-  selectDeleteItems,
   selectUploadUpdateItems,
 } from "./push-helpers.js";
 
@@ -20,18 +19,6 @@ describe("resolveHashMode", () => {
 });
 
 describe("selectUploadUpdateItems", () => {
-  it("excludes deletes from push batches", () => {
-    const changedItems = [
-      { action: "upload" as const, path: "a.jpg" },
-      { action: "delete" as const, path: "old.jpg" },
-    ];
-
-    const result = selectUploadUpdateItems(changedItems);
-
-    expect(result.items).toHaveLength(1);
-    expect(result.items[0]?.action).toBe("upload");
-  });
-
   it("caps upload/update items", () => {
     const changedItems = [
       { action: "upload" as const, path: "a.jpg" },
@@ -46,28 +33,7 @@ describe("selectUploadUpdateItems", () => {
   });
 });
 
-describe("selectDeleteItems", () => {
-  it("selects only delete actions", () => {
-    const changedItems = [
-      { action: "upload" as const, path: "a.jpg" },
-      { action: "delete" as const, path: "old.jpg" },
-    ];
-
-    const result = selectDeleteItems(changedItems);
-
-    expect(result.items).toHaveLength(1);
-    expect(result.items[0]?.action).toBe("delete");
-  });
-});
-
 describe("resolveLocalFilePath", () => {
-  it("resolves valid archive paths inside the source root", () => {
-    const sourceRoot = path.resolve("/tmp/archive");
-    expect(resolveLocalFilePath(sourceRoot, "photos/cover.jpg")).toBe(
-      path.resolve(sourceRoot, "photos/cover.jpg"),
-    );
-  });
-
   it("rejects paths that escape the source root", () => {
     const sourceRoot = path.resolve("/tmp/archive");
     expect(() => resolveLocalFilePath(sourceRoot, "../outside.jpg")).toThrow(

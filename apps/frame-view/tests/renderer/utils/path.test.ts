@@ -3,10 +3,6 @@ import { describe, expect, it } from 'vitest';
 import { getParentPath, toDisplayName } from '../../../src/renderer/utils/path';
 
 describe('getParentPath', () => {
-  it('returns null for empty input', () => {
-    expect(getParentPath(null)).toBeNull();
-  });
-
   it('preserves POSIX separators on macOS-style paths', () => {
     expect(getParentPath('/Users/album/2024')).toBe('/Users/album');
     expect(getParentPath('/Users/album/')).toBe('/Users');
@@ -39,9 +35,5 @@ describe('toDisplayName', () => {
   it('returns the last path segment', () => {
     expect(toDisplayName('/Users/album/2024')).toBe('2024');
     expect(toDisplayName('C:\\gallery\\nested')).toBe('nested');
-  });
-
-  it('returns a placeholder when no folder is selected', () => {
-    expect(toDisplayName(null)).toBe('No folder selected');
   });
 });

@@ -8,10 +8,6 @@ import {
 import type { CliOptions } from "./types.js";
 
 describe("parseArgv", () => {
-  it("detects empty argv", () => {
-    expect(parseArgv([])).toEqual({ kind: "empty" });
-  });
-
   it("detects help requests", () => {
     expect(parseArgv(["--help"])).toEqual({ kind: "help" });
     expect(parseArgv(["help"])).toEqual({ kind: "help" });

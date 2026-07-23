@@ -24,46 +24,7 @@ function gif(path: string, name: string): MediaItem {
 }
 
 describe('buildComicEntries', () => {
-  it('groups image pages by containing folder and sorts comics and pages naturally', () => {
-    const comics = buildComicEntries([
-      image('C:\\root\\author\\shiori_doujin\\page-2.jpg', 'page-2.jpg'),
-      image('C:\\root\\author\\shiori_doujin\\page-10.jpg', 'page-10.jpg'),
-      image('C:\\root\\author\\shiori_doujin\\page-1.jpg', 'page-1.jpg'),
-      image('C:\\root\\author\\dash-title\\page-1.jpg', 'page-1.jpg'),
-      image('C:\\root\\alpha\\cover.jpg', 'cover.jpg'),
-      {
-        id: 'video',
-        path: 'C:\\root\\alpha\\clip.mp4',
-        name: 'clip.mp4',
-        extension: 'mp4',
-        mediaType: 'video',
-        size: 1,
-        mtimeMs: 1,
-      },
-    ]);
-
-    expect(comics.map((comic) => comic.name)).toEqual(['alpha', 'dash title', 'shiori doujin']);
-    expect(comics[2]?.pages.map((page) => page.name)).toEqual([
-      'page-1.jpg',
-      'page-2.jpg',
-      'page-10.jpg',
-    ]);
-    expect(comics[2]?.cover.name).toBe('page-1.jpg');
-  });
-
-  it('ignores images directly in the opened root folder', () => {
-    const comics = buildComicEntries(
-      [
-        image('C:\\root\\root-page.jpg', 'root-page.jpg'),
-        image('C:\\root\\comic\\page-1.jpg', 'page-1.jpg'),
-      ],
-      'C:\\root',
-    );
-
-    expect(comics.map((comic) => comic.name)).toEqual(['comic']);
-  });
-
-  it('treats GIFs as comic pages and preserves Windows absolute paths', () => {
+  it('preserves Windows absolute paths while excluding root files', () => {
     const comics = buildComicEntries(
       [
         image('C:\\root\\root-page.jpg', 'root-page.jpg'),

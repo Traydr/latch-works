@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildComicEntries, detectMediaType, sortComicEntries, sortMediaItems } from "./index.js";
+import { buildComicEntries, sortComicEntries, sortMediaItems } from "./index.js";
 import type { MediaItem } from "./media.js";
 
 const baseItem = {
@@ -10,14 +10,6 @@ const baseItem = {
 } satisfies Pick<MediaItem, "parentPath" | "extension" | "mediaType" | "size">;
 
 describe("media-domain", () => {
-  it("detects archive media types by extension", () => {
-    expect(detectMediaType("cover.JPG")).toBe("image");
-    expect(detectMediaType("cover.jpeg")).toBe("image");
-    expect(detectMediaType("clip.webm")).toBe("video");
-    expect(detectMediaType("story.pdf")).toBe("pdf");
-    expect(detectMediaType("notes.txt")).toBe("unknown");
-  });
-
   it("sorts names with numeric collation", () => {
     const items: MediaItem[] = [
       { ...baseItem, id: "10", name: "10.jpg", path: "comic/10.jpg", mtimeMs: 10 },

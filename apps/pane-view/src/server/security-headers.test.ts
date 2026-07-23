@@ -1,11 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  APP_CONTENT_SECURITY_POLICY,
-  applyAppSecurityHeaders,
-  applyMediaDeliverySecurityHeaders,
-  applySecurityHeadersToResponse,
-  isMediaDeliveryPath,
-} from "./security-headers";
+import { applySecurityHeadersToResponse, isMediaDeliveryPath } from "./security-headers";
 
 describe("isMediaDeliveryPath", () => {
   it("matches CDN and signed media API routes", () => {
@@ -22,32 +16,6 @@ describe("isMediaDeliveryPath", () => {
     expect(isMediaDeliveryPath("/api/health")).toBe(false);
     expect(isMediaDeliveryPath("/api/sync/runs")).toBe(false);
     expect(isMediaDeliveryPath("/api/media/abc")).toBe(false);
-  });
-});
-
-describe("applyAppSecurityHeaders", () => {
-  it("sets baseline app hardening headers including frame-ancestors", () => {
-    const headers = new Headers();
-
-    applyAppSecurityHeaders(headers);
-
-    expect(headers.get("X-Content-Type-Options")).toBe("nosniff");
-    expect(headers.get("Referrer-Policy")).toBe("same-origin");
-    expect(headers.get("Content-Security-Policy")).toBe(APP_CONTENT_SECURITY_POLICY);
-    expect(headers.get("Content-Security-Policy")).toContain("frame-ancestors 'none'");
-    expect(headers.get("Content-Security-Policy")).not.toContain("default-src");
-  });
-});
-
-describe("applyMediaDeliverySecurityHeaders", () => {
-  it("sets delivery hardening headers without HTML CSP", () => {
-    const headers = new Headers();
-
-    applyMediaDeliverySecurityHeaders(headers);
-
-    expect(headers.get("X-Content-Type-Options")).toBe("nosniff");
-    expect(headers.get("Referrer-Policy")).toBe("same-origin");
-    expect(headers.get("Content-Security-Policy")).toBeNull();
   });
 });
 

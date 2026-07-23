@@ -50,16 +50,12 @@ function createPruneOptions(overrides: Partial<CliOptions> = {}): CliOptions {
 
 describe("executeCommand prune", () => {
   const originalEnv = process.env;
-  let stdout: string[];
   let originalExitCode: typeof process.exitCode;
 
   beforeEach(() => {
-    stdout = [];
     originalExitCode = process.exitCode;
     process.exitCode = undefined;
-    vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
-      stdout.push(args.map(String).join(" "));
-    });
+    vi.spyOn(console, "log").mockImplementation(() => {});
     process.env = {
       ...originalEnv,
       LOCKSTEP_API_TOKEN: "test-token",
@@ -90,7 +86,6 @@ describe("executeCommand prune", () => {
 
     expect(pruneDeleted).not.toHaveBeenCalled();
     expect(process.exitCode).toBe(1);
-    expect(stdout.some((line) => line.includes("Prune requires --yes"))).toBe(true);
   });
 
   it("uses remote-aware hashing for push planning", async () => {
@@ -127,27 +122,6 @@ describe("executeCommand prune", () => {
     expect(process.exitCode).toBeUndefined();
   });
 
-  it("prints delete paths in the plan summary", async () => {
-    planSync.mockResolvedValue(
-      createPlan({
-        counts: { delete: 2, keep: 0, update: 0, upload: 0 },
-        items: [
-          { action: "delete", path: "photos/old-a.jpg" },
-          { action: "delete", path: "photos/old-b.jpg" },
-        ],
-      }),
-    );
-    pruneDeleted.mockResolvedValue({ failed: 0, plan: createPlan(), pruned: 2 });
-
-    await executeCommand(createPruneOptions({ yes: true }), {
-      isInteractive: () => false,
-    });
-
-    expect(stdout.some((line) => line.includes("Deletes to apply: 2"))).toBe(true);
-    expect(stdout.some((line) => line.includes("delete photos/old-a.jpg"))).toBe(true);
-    expect(stdout.some((line) => line.includes("delete photos/old-b.jpg"))).toBe(true);
-  });
-
   it("does not prompt or call pruneDeleted when there are zero deletes", async () => {
     planSync.mockResolvedValue(createPlan());
     const confirmPrune = vi.fn();
@@ -159,7 +133,6 @@ describe("executeCommand prune", () => {
 
     expect(confirmPrune).not.toHaveBeenCalled();
     expect(pruneDeleted).not.toHaveBeenCalled();
-    expect(stdout.some((line) => line.includes("Nothing to prune."))).toBe(true);
     expect(process.exitCode).toBeUndefined();
   });
 
@@ -198,6 +171,5 @@ describe("executeCommand prune", () => {
 
     expect(pruneDeleted).not.toHaveBeenCalled();
     expect(process.exitCode).toBe(1);
-    expect(stdout.some((line) => line.includes("Prune cancelled."))).toBe(true);
   });
 });

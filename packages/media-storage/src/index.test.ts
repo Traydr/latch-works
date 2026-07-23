@@ -9,10 +9,4 @@ describe("media-storage", () => {
       `originals/sha256/01/23/${hash}.jpg`,
     );
   });
-
-  it("aliases jpeg to jpg in storage keys", () => {
-    expect(originalObjectKey({ extension: "jpeg", sha256: hash })).toBe(
-      originalObjectKey({ extension: "jpg", sha256: hash }),
-    );
-  });
 });

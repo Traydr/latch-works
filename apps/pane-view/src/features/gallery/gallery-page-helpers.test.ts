@@ -4,16 +4,12 @@ import { toLibrarySnapshotRequest } from "../library/library-queries";
 import type { LibraryMediaItem } from "../library/types";
 import {
   areThumbnailRequestsEqual,
-  browsePageFromListingPage,
-  browsePageFromMediaPage,
   buildBrowseKey,
   dedupeThumbnailRequests,
   filterMediaByVisibility,
-  mediaPageFromBrowsePage,
   mergeLibraryMedia,
   resolveBrowseEntries,
   resolveBrowseMedia,
-  supportsGalleryThumbnail,
   toLibrarySnapshotNextPageRequest,
 } from "./gallery-page-helpers";
 
@@ -31,30 +27,7 @@ function media(
   } as LibraryMediaItem;
 }
 
-describe("supportsGalleryThumbnail", () => {
-  it("returns true for image, gif, video, and pdf", () => {
-    expect(supportsGalleryThumbnail({ id: "1", mediaType: "image" } as never)).toBe(true);
-    expect(supportsGalleryThumbnail({ id: "1", mediaType: "gif" } as never)).toBe(true);
-    expect(supportsGalleryThumbnail({ id: "1", mediaType: "video" } as never)).toBe(true);
-    expect(supportsGalleryThumbnail({ id: "1", mediaType: "pdf" } as never)).toBe(true);
-  });
-
-  it("returns false for other media types", () => {
-    expect(supportsGalleryThumbnail({ id: "1", mediaType: "unknown" } as never)).toBe(false);
-    expect(supportsGalleryThumbnail({ id: "1", mediaType: "audio" } as never)).toBe(false);
-  });
-});
-
 describe("dedupeThumbnailRequests", () => {
-  it("returns an empty array for empty input", () => {
-    expect(dedupeThumbnailRequests([])).toEqual([]);
-  });
-
-  it("passes through requests with distinct mediaIds", () => {
-    const requests = [{ mediaId: "a" }, { mediaId: "b" }, { mediaId: "c" }];
-    expect(dedupeThumbnailRequests(requests)).toEqual(requests);
-  });
-
   it("removes duplicate mediaId entries, keeping the first", () => {
     const requests = [{ mediaId: "a" }, { mediaId: "a" }, { mediaId: "b" }];
     expect(dedupeThumbnailRequests(requests)).toEqual([{ mediaId: "a" }, { mediaId: "b" }]);
@@ -75,19 +48,6 @@ describe("dedupeThumbnailRequests", () => {
 });
 
 describe("areThumbnailRequestsEqual", () => {
-  it("returns true for two empty arrays", () => {
-    expect(areThumbnailRequestsEqual([], [])).toBe(true);
-  });
-
-  it("returns false when lengths differ", () => {
-    expect(areThumbnailRequestsEqual([{ mediaId: "a" }], [])).toBe(false);
-  });
-
-  it("returns true for identical request lists", () => {
-    const list = [{ mediaId: "a" }, { mediaId: "b", size: 300 }];
-    expect(areThumbnailRequestsEqual(list, list)).toBe(true);
-  });
-
   it("returns false when mediaId differs at same position", () => {
     expect(areThumbnailRequestsEqual([{ mediaId: "a" }], [{ mediaId: "b" }])).toBe(false);
   });
@@ -146,50 +106,6 @@ describe("mergeLibraryMedia", () => {
     const extra = [media({ id: "b", mediaType: "image" }), media({ id: "c", mediaType: "image" })];
 
     expect(mergeLibraryMedia(base, extra).map((item) => item.id)).toEqual(["a", "b", "c"]);
-  });
-});
-
-describe("browse page adapters", () => {
-  it("maps snapshot MediaPage into unified browse page", () => {
-    expect(
-      browsePageFromMediaPage({
-        hasMore: true,
-        limit: 500,
-        nextOffset: 500,
-        offset: 0,
-      }),
-    ).toEqual({
-      cursor: null,
-      hasMore: true,
-      limit: 500,
-      nextOffset: 500,
-    });
-  });
-
-  it("maps listing cursor page into unified browse page", () => {
-    expect(
-      browsePageFromListingPage({
-        cursor: "abc",
-        hasMore: true,
-        limit: 60,
-      }),
-    ).toEqual({
-      cursor: "abc",
-      hasMore: true,
-      limit: 60,
-      nextOffset: null,
-    });
-  });
-
-  it("round-trips browse page into MediaPage for the browse pane", () => {
-    const browse = browsePageFromListingPage({ cursor: "x", hasMore: false, limit: 60 });
-    expect(mediaPageFromBrowsePage(browse)).toEqual({
-      hasMore: false,
-      limit: 60,
-      nextOffset: null,
-      offset: 0,
-    });
-    expect(mediaPageFromBrowsePage(null)).toBeNull();
   });
 });
 

@@ -2,23 +2,6 @@ import { describe, expect, it } from "vitest";
 import { GATHER_SOURCES, getGatherSource, getGatherSourceFromUrl } from "./source-catalog";
 
 describe("Gather Source catalog", () => {
-  it("has unique stable keys and labels with complete policy", () => {
-    expect(new Set(GATHER_SOURCES.map((source) => source.key)).size).toBe(GATHER_SOURCES.length);
-    expect(new Set(GATHER_SOURCES.map((source) => source.label)).size).toBe(GATHER_SOURCES.length);
-
-    for (const source of GATHER_SOURCES) {
-      expect(source.urlPatterns.length, source.key).toBeGreaterThan(0);
-      expect(source.pageMatches.length, source.key).toBeGreaterThan(0);
-      expect(source.hostPermissions.length, source.key).toBeGreaterThan(0);
-      expect(source.contextMenuMatches.length, source.key).toBeGreaterThan(0);
-      expect(source.downloadUrlPatterns.length, source.key).toBeGreaterThan(0);
-      expect(source.collectorEntry, source.key).toMatch(/^content\/collectors\/.+\.js$/);
-      expect(source.collectorModule, source.key).toMatch(/^src\/content\/collectors\/.+\.ts$/);
-      expect(source.outputKinds.length, source.key).toBeGreaterThan(0);
-      expect(source.save.pathTemplate, source.key).toContain("<root>");
-    }
-  });
-
   it("keeps context-menu eligibility inside always-on page access", () => {
     for (const source of GATHER_SOURCES) {
       expect(

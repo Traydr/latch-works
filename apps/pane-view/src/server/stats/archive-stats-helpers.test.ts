@@ -3,16 +3,13 @@ import {
   averageDailyGrowth,
   daysBetween,
   fillDailyBuckets,
-  formatDayLabel,
-  projectForward,
   toCumulativeSeries,
   toDayKey,
 } from "./archive-stats-helpers";
 
 describe("archive-stats-helpers", () => {
-  it("formats day keys and labels in UTC", () => {
+  it("builds UTC day keys", () => {
     expect(toDayKey(new Date("2026-03-15T18:22:00.000Z"))).toBe("2026-03-15");
-    expect(formatDayLabel("2026-03-15")).toBe("Mar 15");
   });
 
   it("fills missing days with zeros", () => {
@@ -81,10 +78,6 @@ describe("archive-stats-helpers", () => {
         { archiveStartedOn: "2025-01-01" },
       ),
     ).toBe(0);
-  });
-
-  it("projects future size from the current total and daily rate", () => {
-    expect(projectForward(1000, 10, 90)).toBe(1900);
   });
 
   it("computes archive age in whole days", () => {

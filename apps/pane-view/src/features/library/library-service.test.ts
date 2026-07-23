@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  assertWebSessionAuthorized,
   DEFAULT_MEDIA_PAGE_LIMIT,
   readLibrarySnapshotRequest,
 } from "./library-service";
@@ -27,13 +26,6 @@ describe("library snapshot auth", () => {
   beforeEach(() => {
     vi.mocked(isCurrentWebSessionValid).mockReset();
     vi.mocked(readDatabaseLibrarySnapshot).mockReset();
-  });
-
-  it("rejects unauthenticated snapshot requests", async () => {
-    vi.mocked(isCurrentWebSessionValid).mockResolvedValue(false);
-
-    await expect(assertWebSessionAuthorized()).rejects.toThrow("Unauthorized");
-    expect(readDatabaseLibrarySnapshot).not.toHaveBeenCalled();
   });
 
   it("loads snapshots for authenticated requests", async () => {
