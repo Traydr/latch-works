@@ -21,4 +21,9 @@ describe("path sanitization", () => {
     expect(sanitizePathSegment("My Comic!")).toBe("My_Comic!");
     expect(sanitizeFileName("../../evil name?.jpg")).toBe("evil_name_.jpg");
   });
+
+  it("preserves trailing underscores used by X usernames", () => {
+    expect(sanitizePathSegment(lowercaseFirstAscii("ILIE_ILIE_"))).toBe("iLIE_ILIE_");
+    expect(sanitizePathSegment("ILIE_ILIE_.")).toBe("ILIE_ILIE_");
+  });
 });

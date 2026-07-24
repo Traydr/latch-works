@@ -14,7 +14,8 @@ export function sanitizePathSegment(value: unknown): string {
   const sanitized = raw
     .replace(/[<>:"/\\|?*]/g, " ")
     .replace(/\s+/g, "_")
-    .replace(/[._]+$/g, "")
+    // Trailing dots are Windows-invalid; keep trailing underscores (X handles).
+    .replace(/\.+$/g, "")
     .trim();
 
   if (sanitized === "." || sanitized === "..") {
