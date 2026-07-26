@@ -482,28 +482,32 @@ export function MediaViewerModal({
         </div>
       </div>
 
-      <button
-        type="button"
-        aria-label="Previous item"
-        className={`absolute left-0 top-0 z-10 h-full w-1/2 ${canStepBackward ? "cursor-w-resize" : "cursor-default"} md:hidden`}
-        onClick={(event) => {
-          event.stopPropagation();
-          if (canStepBackward) {
-            step(-1);
-          }
-        }}
-      />
-      <button
-        type="button"
-        aria-label="Next item"
-        className={`absolute right-0 top-0 z-10 h-full w-1/2 ${canStepForward ? "cursor-e-resize" : "cursor-default"} md:hidden`}
-        onClick={(event) => {
-          event.stopPropagation();
-          if (canStepForward) {
-            step(1);
-          }
-        }}
-      />
+      {item.mediaType !== "pdf" ? (
+        <>
+          <button
+            type="button"
+            aria-label="Previous item"
+            className={`absolute left-0 top-0 z-10 h-full w-1/2 ${canStepBackward ? "cursor-w-resize" : "cursor-default"} md:hidden`}
+            onClick={(event) => {
+              event.stopPropagation();
+              if (canStepBackward) {
+                step(-1);
+              }
+            }}
+          />
+          <button
+            type="button"
+            aria-label="Next item"
+            className={`absolute right-0 top-0 z-10 h-full w-1/2 ${canStepForward ? "cursor-e-resize" : "cursor-default"} md:hidden`}
+            onClick={(event) => {
+              event.stopPropagation();
+              if (canStepForward) {
+                step(1);
+              }
+            }}
+          />
+        </>
+      ) : null}
 
       {/* Side arrows */}
       <button
