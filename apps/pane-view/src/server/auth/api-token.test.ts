@@ -22,35 +22,21 @@ import {
   verifySyncApiToken,
 } from "./api-token";
 
+function syncRequest(authorization?: string): Request {
+  return new Request(
+    "http://localhost/api/sync/upload-url",
+    authorization === undefined ? undefined : { headers: { Authorization: authorization } },
+  );
+}
+
 describe("readBearerToken", () => {
-  it("returns null when Authorization is missing", () => {
-    const request = new Request("http://localhost/api/sync/upload-url");
-
-    expect(readBearerToken(request)).toBeNull();
-  });
-
-  it("returns null when Authorization is not a bearer token", () => {
-    const request = new Request("http://localhost/api/sync/upload-url", {
-      headers: { Authorization: "Basic abc123" },
-    });
-
-    expect(readBearerToken(request)).toBeNull();
-  });
-
-  it("returns null when bearer token is empty after trimming", () => {
-    const request = new Request("http://localhost/api/sync/upload-url", {
-      headers: { Authorization: "Bearer    " },
-    });
-
-    expect(readBearerToken(request)).toBeNull();
-  });
-
-  it("returns the trimmed bearer token", () => {
-    const request = new Request("http://localhost/api/sync/upload-url", {
-      headers: { Authorization: "Bearer  sync-token  " },
-    });
-
-    expect(readBearerToken(request)).toBe("sync-token");
+  it.each([
+    ["header is absent", undefined, null],
+    ["scheme is not bearer", "Basic abc123", null],
+    ["token is blank after trimming", "Bearer    ", null],
+    ["token has surrounding whitespace", "Bearer  sync-token  ", "sync-token"],
+  ])("reads %s", (_case, authorization, expected) => {
+    expect(readBearerToken(syncRequest(authorization))).toBe(expected);
   });
 });
 
@@ -68,22 +54,16 @@ describe("verifySyncApiToken", () => {
     resetSyncApiTokenDigestCacheForTests();
   });
 
-  it("returns false when the configured token is missing", () => {
-    configuredSyncToken = undefined;
-
-    expect(verifySyncApiToken({ token: syncToken })).toBe(false);
-  });
-
-  it("returns false when the bearer token is missing", () => {
+  it("accepts only an exact match against a configured token", () => {
+    expect(verifySyncApiToken({ token: syncToken })).toBe(true);
+    expect(verifySyncApiToken({ token: "wrong-token" })).toBe(false);
     expect(verifySyncApiToken({ token: null })).toBe(false);
   });
 
-  it("returns false when the bearer token is wrong", () => {
-    expect(verifySyncApiToken({ token: "wrong-token" })).toBe(false);
-  });
+  it("fails closed when no token is configured", () => {
+    configuredSyncToken = undefined;
 
-  it("returns true when the bearer token matches the configured token", () => {
-    expect(verifySyncApiToken({ token: syncToken })).toBe(true);
+    expect(verifySyncApiToken({ token: syncToken })).toBe(false);
   });
 
   it("caches the configured token digest across requests", () => {
@@ -106,22 +86,9 @@ describe("requireSyncApiToken", () => {
     resetSyncApiTokenDigestCacheForTests();
   });
 
-  it("returns null when the bearer token is valid", () => {
-    const request = new Request("http://localhost/api/sync/upload-url", {
-      headers: { Authorization: `Bearer ${syncToken}` },
-    });
-
-    expect(requireSyncApiToken(request)).toBeNull();
-  });
-
-  it("returns 401 when the bearer token is invalid", () => {
-    const request = new Request("http://localhost/api/sync/upload-url", {
-      headers: { Authorization: "Bearer wrong-token" },
-    });
-
-    const response = requireSyncApiToken(request);
-
-    expect(response?.status).toBe(401);
+  it("passes a valid bearer token through and 401s an invalid one", () => {
+    expect(requireSyncApiToken(syncRequest(`Bearer ${syncToken}`))).toBeNull();
+    expect(requireSyncApiToken(syncRequest("Bearer wrong-token"))?.status).toBe(401);
   });
 });
 
@@ -131,11 +98,8 @@ describe("assertSyncApiTokenFromBody", () => {
     resetSyncApiTokenDigestCacheForTests();
   });
 
-  it("throws when the body token is invalid", () => {
-    expect(() => assertSyncApiTokenFromBody("wrong-token")).toThrow("Invalid sync token.");
-  });
-
-  it("accepts a valid body token", () => {
+  it("accepts a valid body token and throws on an invalid one", () => {
     expect(() => assertSyncApiTokenFromBody(syncToken)).not.toThrow();
+    expect(() => assertSyncApiTokenFromBody("wrong-token")).toThrow("Invalid sync token.");
   });
 });

@@ -18,12 +18,9 @@ async function createTempConfigDir(): Promise<string> {
 }
 
 describe("parseConfig", () => {
-  it("returns empty config for invalid input", () => {
+  it("parses known fields, ignores unknown keys, and empties invalid input", () => {
     expect(parseConfig(null)).toEqual({});
     expect(parseConfig("nope")).toEqual({});
-  });
-
-  it("parses known fields and ignores unknown keys", () => {
     expect(
       parseConfig({
         source: "T:\\media",

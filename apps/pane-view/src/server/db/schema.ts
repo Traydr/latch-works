@@ -32,6 +32,10 @@ export const syncActionEnum = pgEnum("sync_action", ["upload", "update", "keep",
 export const subjectTypeEnum = pgEnum("subject_type", ["library_entry", "collection"]);
 export const maintenanceJobTypeEnum = pgEnum("maintenance_job_type", [
   "library_hard_wipe",
+  // Retired one-time migration (removed 2026-07). The value stays declared so
+  // Drizzle does not try to drop it: Postgres cannot remove an enum member
+  // without recreating the type, and historical maintenance_jobs rows still
+  // reference it. Nothing schedules jobs of this type any more.
   "legacy_derivative_cleanup",
 ]);
 export const maintenanceJobStatusEnum = pgEnum("maintenance_job_status", [
@@ -361,17 +365,7 @@ export interface LibraryWipeJobProgress {
   processedCount: number;
 }
 
-export interface LegacyDerivativeCleanupJobProgress {
-  consecutiveNoProgressCount: number;
-  errorCount: number;
-  lastError?: string;
-  phase: "legacy_prefixes" | "completed";
-  prefix: "thumbnails/" | "previews/";
-  processedBytes: number;
-  processedCount: number;
-}
-
-export type MaintenanceJobProgress = LibraryWipeJobProgress | LegacyDerivativeCleanupJobProgress;
+export type MaintenanceJobProgress = LibraryWipeJobProgress;
 
 export const maintenanceJobs = pgTable(
   "maintenance_jobs",

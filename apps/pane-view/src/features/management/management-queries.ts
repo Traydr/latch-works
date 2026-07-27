@@ -5,17 +5,14 @@ import {
   cancelSyncRun,
   deleteFolders,
   getCleanupJobStatus,
-  getLegacyDerivativeInventory,
   getManagementOverview,
   getSyncRunHistory,
-  startLegacyDerivativeCleanup,
   wipeLibrary,
 } from "./management-service";
 
 export const managementKeys = {
   all: ["management"] as const,
   cleanupJob: (jobId: string) => [...managementKeys.all, "cleanup-job", jobId] as const,
-  legacyDerivatives: () => [...managementKeys.all, "legacy-derivatives"] as const,
   overview: () => [...managementKeys.all, "overview"] as const,
   syncHistory: () => [...managementKeys.all, "sync-history"] as const,
 };
@@ -26,11 +23,7 @@ export function useManagementOverviewQuery() {
     queryFn: () => getManagementOverview(),
     refetchInterval: (query) => {
       const overview = query.state.data;
-      if (
-        overview?.activeCleanupJob ||
-        overview?.activeLegacyDerivativeCleanupJob ||
-        (overview?.runningSyncRuns.length ?? 0) > 0
-      ) {
+      if (overview?.activeCleanupJob || (overview?.runningSyncRuns.length ?? 0) > 0) {
         return 3_000;
       }
       return false;
@@ -49,14 +42,6 @@ export function useSyncRunHistoryQuery() {
       }
       return false;
     },
-  });
-}
-
-export function useLegacyDerivativeInventoryQuery(enabled: boolean) {
-  return useQuery({
-    enabled,
-    queryKey: managementKeys.legacyDerivatives(),
-    queryFn: () => getLegacyDerivativeInventory(),
   });
 }
 
@@ -125,16 +110,6 @@ export function useWipeLibraryMutation() {
     onSuccess: () => {
       void invalidate();
       void queryClient.invalidateQueries({ queryKey: librarySnapshotKeys.all });
-    },
-  });
-}
-
-export function useLegacyDerivativeCleanupMutation() {
-  const invalidate = useInvalidateManagement();
-  return useMutation({
-    mutationFn: (confirmation: string) => startLegacyDerivativeCleanup({ data: { confirmation } }),
-    onSuccess: () => {
-      void invalidate();
     },
   });
 }

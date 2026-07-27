@@ -4,7 +4,6 @@ import { db } from "../db";
 import {
   favorites,
   folders,
-  type LegacyDerivativeCleanupJobProgress,
   type LibraryWipeJobProgress,
   libraryEntries,
   type MaintenanceJobProgress,
@@ -16,11 +15,6 @@ import {
 } from "../db/schema";
 import { purgeShutterSource } from "../media/shutter-client";
 import { createPaneViewStorageClient } from "../media/storage-client";
-import {
-  deleteLegacyDerivativeBatch,
-  legacyDerivativePrefixes,
-  readLegacyDerivativeBatch,
-} from "./legacy-derivative-storage";
 
 const batchSize = 100;
 const maxBatchDurationMs = 2_000;
@@ -32,19 +26,15 @@ const activeJobStatuses = ["pending", "running"] as const;
 let resumeStarted = false;
 const runningJobs = new Set<string>();
 
-interface CleanupJobStatusBase {
+export interface CleanupJobStatus {
   completedAt: string | null;
   error: string | null;
   id: string;
+  progress: LibraryWipeJobProgress;
   startedAt: string | null;
   status: "pending" | "running" | "completed" | "failed";
+  type: "library_hard_wipe";
 }
-
-export type CleanupJobStatus = CleanupJobStatusBase &
-  (
-    | { progress: LegacyDerivativeCleanupJobProgress; type: "legacy_derivative_cleanup" }
-    | { progress: LibraryWipeJobProgress; type: "library_hard_wipe" }
-  );
 
 export async function readCleanupJobStatus({
   jobId,
@@ -69,20 +59,21 @@ export async function readCleanupJobStatus({
     return null;
   }
 
-  const base = {
+  // Retired job types (legacy_derivative_cleanup) can still exist as historical
+  // rows. They have no progress shape we can report, so treat them as absent.
+  if (job.type !== "library_hard_wipe") {
+    return null;
+  }
+
+  return {
     completedAt: job.completedAt?.toISOString() ?? null,
     error: job.error,
     id: job.id,
+    progress: job.progress as LibraryWipeJobProgress,
     startedAt: job.startedAt?.toISOString() ?? null,
     status: job.status,
+    type: job.type,
   };
-  return job.type === "legacy_derivative_cleanup"
-    ? {
-        ...base,
-        progress: job.progress as LegacyDerivativeCleanupJobProgress,
-        type: job.type,
-      }
-    : { ...base, progress: job.progress as LibraryWipeJobProgress, type: job.type };
 }
 
 export async function resumePendingMaintenanceJobs(): Promise<void> {
@@ -173,13 +164,6 @@ async function processMaintenanceJobBatch(jobId: string): Promise<boolean> {
   }
 
   const progress = job.progress;
-  if (job.type === "legacy_derivative_cleanup") {
-    return processLegacyDerivativeCleanupBatch(
-      jobId,
-      progress as LegacyDerivativeCleanupJobProgress,
-    );
-  }
-
   if ((progress as { phase?: string }).phase === "s3_derivatives") {
     await updateJobProgress(jobId, {
       errorCount: progress.errorCount,
@@ -341,71 +325,6 @@ async function processLibraryWipeBatch(
   }
 }
 
-async function processLegacyDerivativeCleanupBatch(
-  jobId: string,
-  progress: LegacyDerivativeCleanupJobProgress,
-): Promise<boolean> {
-  if (progress.phase === "completed") return false;
-
-  const objects = await readLegacyDerivativeBatch(progress.prefix);
-  if (objects.length === 0) {
-    const prefixIndex = legacyDerivativePrefixes.indexOf(progress.prefix);
-    const nextPrefix = legacyDerivativePrefixes[prefixIndex + 1];
-    if (nextPrefix) {
-      await updateJobProgress(jobId, {
-        ...progress,
-        consecutiveNoProgressCount: 0,
-        prefix: nextPrefix,
-      });
-      return true;
-    }
-
-    await db
-      .update(maintenanceJobs)
-      .set({
-        completedAt: new Date(),
-        progress: { ...progress, phase: "completed" },
-        status: "completed",
-      })
-      .where(eq(maintenanceJobs.id, jobId));
-    return false;
-  }
-
-  const deleted = await deleteLegacyDerivativeBatch(objects);
-  const consecutiveNoProgressCount =
-    deleted.deletedCount === 0 ? progress.consecutiveNoProgressCount + 1 : 0;
-  const nextProgress: LegacyDerivativeCleanupJobProgress = {
-    ...progress,
-    consecutiveNoProgressCount,
-    errorCount: progress.errorCount + deleted.errorCount,
-    lastError:
-      deleted.errorCount > 0
-        ? "One or more legacy derivative objects could not be deleted"
-        : undefined,
-    processedBytes: progress.processedBytes + deleted.deletedBytes,
-    processedCount: progress.processedCount + deleted.deletedCount,
-  };
-
-  if (consecutiveNoProgressCount >= 3) {
-    await db
-      .update(maintenanceJobs)
-      .set({
-        error: "Legacy derivative cleanup made no progress for three consecutive batches.",
-        progress: nextProgress,
-        status: "failed",
-      })
-      .where(eq(maintenanceJobs.id, jobId));
-    return false;
-  }
-
-  await updateJobProgress(jobId, nextProgress);
-  return true;
-}
-
 async function updateJobProgress(jobId: string, progress: MaintenanceJobProgress): Promise<void> {
   await db.update(maintenanceJobs).set({ progress }).where(eq(maintenanceJobs.id, jobId));
 }
-
-export const cleanupWorkerTestHooks = {
-  processLegacyDerivativeCleanupBatch,
-};
