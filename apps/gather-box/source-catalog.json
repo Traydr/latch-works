@@ -2,6 +2,7 @@
   {
     "key": "myhentaigallery",
     "label": "MyHentaiGallery",
+    "unlisted": true,
     "urlPatterns": ["^https://myhentaigallery\\.com/a/[^/?#]+(?:[/?#]|$)"],
     "pageMatches": ["https://myhentaigallery.com/a/*"],
     "hostPermissions": [
@@ -19,6 +20,7 @@
   {
     "key": "kemono",
     "label": "Kemono",
+    "unlisted": true,
     "urlPatterns": ["^https://kemono\\.cr/[^/]+/user/[^/]+/post/[^/?#]+(?:[/?#]|$)"],
     "pageMatches": ["https://kemono.cr/*/user/*/post/*"],
     "hostPermissions": [
@@ -36,6 +38,7 @@
   {
     "key": "fanbox",
     "label": "pixivFANBOX",
+    "unlisted": true,
     "urlPatterns": ["^https://[a-z0-9-]+\\.fanbox\\.cc/posts/[^/?#]+(?:[/?#]|$)"],
     "pageMatches": ["https://*.fanbox.cc/posts/*"],
     "hostPermissions": [
@@ -133,6 +136,7 @@
   {
     "key": "hentaifoundry-stories",
     "label": "Hentai Foundry Stories",
+    "unlisted": true,
     "urlPatterns": ["^https://www\\.hentai-foundry\\.com/stories/user/[^/]+/[^/]+/[^/?#]+(?:[/?#]|$)"],
     "pageMatches": ["https://www.hentai-foundry.com/stories/user/*"],
     "hostPermissions": [{ "pattern": "https://www.hentai-foundry.com/*", "reason": "Eligible stories and site-generated PDFs" }],
@@ -147,6 +151,7 @@
   {
     "key": "hentaifoundry-pictures",
     "label": "Hentai Foundry Pictures",
+    "unlisted": true,
     "urlPatterns": ["^https://www\\.hentai-foundry\\.com/pictures/user/[^/]+/[^/]+/[^/?#]+(?:[/?#]|$)"],
     "pageMatches": ["https://www.hentai-foundry.com/pictures/user/*"],
     "hostPermissions": [

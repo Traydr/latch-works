@@ -107,7 +107,7 @@ belongs to the current run, and repeated collection/navigation/reload does not d
 
 ### Step 4: Preserve SPA and reload behavior
 
-Exercise X, pixiv, and FANBOX navigation patterns where the document may survive URL changes. The
+Exercise X, pixiv, and creator-post navigation patterns where the document may survive URL changes. The
 coordinator must revalidate current tab URL against the captured Gather Source before injection and
 the collector must inspect current DOM/location at execution time.
 
@@ -120,8 +120,8 @@ page and native commands, and observe either correct collection or an explicit r
 
 ### Step 5: Add fixture tests for every collector
 
-Add synthetic, credential-free DOM/response fixtures for MyHentaiGallery, Kemono, FANBOX, AO3,
-Hentai Foundry stories, and fanfiction.net to match the existing X/pixiv coverage. Cover selector
+Add synthetic, credential-free DOM/response fixtures for the gallery, post-attachment, creator-post, AO3,
+story-PDF, and fanfiction.net collectors to match the existing X/pixiv coverage. Cover selector
 absence, malformed URLs, sanitization, ordering, skipped items, folder segments, metadata, and output
 kind. Keep live-site smoke checks manual and do not commit private page captures.
 
@@ -185,13 +185,13 @@ imports fail the build.
 | Entry | Raw minified |
 |---|---:|
 | Always-on page shortcuts | 1.6 KB |
-| MyHentaiGallery collector | 2.3 KB |
-| Kemono collector | 2.8 KB |
-| pixivFANBOX collector | 4.1 KB |
+| Gallery grid collector      | 2.3 KB |
+| Post attachment collector   | 2.8 KB |
+| Creator post collector      | 4.1 KB |
 | X collector | 8.6 KB |
 | pixiv collector | 3.2 KB |
 | Archive of Our Own collector | 2.7 KB |
-| Hentai Foundry collector | 2.7 KB |
+| Story PDF collector         | 2.7 KB |
 | FanFiction.Net collector | 3.4 KB |
 
 All entries execute in Chrome's isolated world. No collector is listed under `content_scripts` or

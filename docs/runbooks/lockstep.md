@@ -137,7 +137,7 @@ pnpm --filter @latch-works/lockstep start push --source "T:\cloud-desktop\media"
 For the deployed Pane View domain:
 
 ```powershell
-$env:LOCKSTEP_API_URL = "https://pane-view.traydr.dev"
+$env:LOCKSTEP_API_URL = "https://replace-with-pane-view-domain"
 $env:LOCKSTEP_API_TOKEN = "replace-me"
 pnpm --filter @latch-works/lockstep start push --source "T:\cloud-desktop\media" --max-changes 25
 ```

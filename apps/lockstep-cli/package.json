@@ -8,7 +8,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "check": "pnpm typecheck",
+    "check": "pnpm typecheck && pnpm test",
     "start": "tsx src/cli.ts",
     "test": "vitest run src --passWithNoTests",
     "typecheck": "tsc -p tsconfig.json --noEmit"

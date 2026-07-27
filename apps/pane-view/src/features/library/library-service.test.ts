@@ -1,8 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  DEFAULT_MEDIA_PAGE_LIMIT,
-  readLibrarySnapshotRequest,
-} from "./library-service";
+import { DEFAULT_MEDIA_PAGE_LIMIT, readLibrarySnapshotRequest } from "./library-service";
 
 vi.mock("../../server/auth/web-session", () => ({
   isCurrentWebSessionValid: vi.fn(),

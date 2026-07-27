@@ -25,7 +25,7 @@ credential defaults, download-origin policy, and save-behavior presentation. Add
 source requires synchronized edits across at least six modules.
 
 Drift already exists: X and pixiv content scripts match broader pages than runtime eligibility;
-pixiv URL variants differ across representations; download policy accepts a MyHentaiGallery host
+pixiv URL variants differ across representations; download policy accepts a gallery CDN host
 variant not represented by source detection/permissions. This makes least-privilege review and
 source additions unreliable.
 
@@ -178,14 +178,14 @@ outside the catalog adapters.
 
 | Gather Source | Page eligibility | Output | Credentials | Save behavior | Collector adapter |
 |---|---|---|---|---|---|
-| MyHentaiGallery | `/a/*` | files | omit | one folder | `my-hentai-gallery.ts` |
-| Kemono | `/*/user/*/post/*` | files | omit | three nested folders | `kemono.ts` |
-| pixivFANBOX | creator `/posts/*` | files | include | two nested folders | `fanbox.ts` |
 | X | `/*/status/*` | files | omit | creator folder | `x.ts` |
 | pixiv | localized or direct `/artworks/*` | files | include | creator + user ID folder | `pixiv.ts` |
+| Reddit | `/r/*/comments/*` | files | omit | conditional folder | `reddit.ts` |
 | Archive of Our Own | `/works/*` | site PDF | include | direct file | `archiveofourown.ts` |
-| Hentai Foundry Stories | `/stories/user/*` | site PDF | include | direct file | `hentai-foundry-stories.ts` |
 | FanFiction.Net | `/s/*` | local PDF | omit | direct file | `fanfiction-net.ts` |
+
+Sources marked `"unlisted": true` in `source-catalog.json` are omitted from this table. The catalog
+is authoritative for the complete matrix.
 
 The catalog records each page and fetch origin with a reason. The build now narrows X and pixiv
 always-on matches to eligible post/artwork paths. Existing non-`www` pixiv eligibility is preserved

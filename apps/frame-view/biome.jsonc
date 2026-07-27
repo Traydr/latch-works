@@ -8,7 +8,15 @@
   },
   "files": {
     "ignoreUnknown": true,
-    "includes": ["**", "!dist", "!.vite", "!.packaged-runtime", "!node_modules", "!.pnpm-patches"]
+    "includes": [
+      "**",
+      "!dist",
+      "!out",
+      "!.vite",
+      "!.packaged-runtime",
+      "!node_modules",
+      "!.pnpm-patches"
+    ]
   },
   "formatter": {
     "enabled": true,

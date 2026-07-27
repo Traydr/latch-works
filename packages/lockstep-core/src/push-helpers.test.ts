@@ -1,10 +1,6 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import {
-  resolveHashMode,
-  resolveLocalFilePath,
-  selectUploadUpdateItems,
-} from "./push-helpers.js";
+import { resolveHashMode, resolveLocalFilePath, selectUploadUpdateItems } from "./push-helpers.js";
 
 describe("resolveHashMode", () => {
   it("uses an explicit mode before the legacy boolean", () => {

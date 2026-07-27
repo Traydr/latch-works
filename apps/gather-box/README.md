@@ -8,17 +8,19 @@ Gather Box is the **collection** step in [Latch Works](../../README.md): media e
 
 | Site | Content |
 | --- | --- |
-| **MyHentaiGallery** | Gallery images (`/thumbnail/` → `/original/`) |
-| **Kemono** | Post image attachments |
-| **pixiv FANBOX** | Post image CDN files |
 | **X** | Post images, animated GIF videos, and videos |
-| **Reddit** | Community and user-profile post images, galleries, GIFs as MP4, and embedded RedGIFs videos |
+| **Reddit** | Community and user-profile post images, galleries, GIFs as MP4, and embedded video posts |
 | **pixiv** | Original artwork pages, including collapsed multi-image works |
 | **Archive of Our Own** | Work PDF download |
-| **Hentai Foundry** | Full-size pictures and story PDF downloads |
 | **fanfiction.net** | All chapters fetched and merged into one local PDF |
 
-Each site remembers its own destination folder. Folder and filename inference rules (underscores, nested paths for Kemono/FANBOX, `{author}-{story}.pdf` for stories) are implemented per collector in `src/content/collectors/`.
+Each site remembers its own destination folder. Folder and filename inference rules (underscores,
+nested post paths, `{author}-{story}.pdf` for stories) are implemented per collector in
+`src/content/collectors/`.
+
+`source-catalog.json` is the authoritative list. Entries marked `"unlisted": true` are fully
+supported at runtime but are deliberately kept out of enumerated surfaces — this README, the
+options page, and the generated docs site. Read the catalog directly for the complete set.
 
 ## How it works
 
@@ -38,7 +40,7 @@ For focus-independent shortcuts, Chrome commands default to `Ctrl+Shift+Period`
 (`Command+Shift+Comma` on macOS) to download. They can be remapped in
 `chrome://extensions/shortcuts`.
 
-Downloads use your browser session cookies where needed (AO3, Hentai Foundry, fanfiction.net). Individual file failures do not stop the rest of the batch.
+Downloads use your browser session cookies where needed (AO3, fanfiction.net, and other login-gated sources). Individual file failures do not stop the rest of the batch.
 The always-on page script contains only the optional Right Shift shortcuts. When gathering starts,
 the service worker injects exactly one catalog-selected collector into the captured tab's main frame.
 
@@ -91,30 +93,13 @@ The build emits the reviewable manifest and a host-permission ownership report f
 
 ## Usage example URLs
 
-- `https://myhentaigallery.com/a/20942`
-- `https://kemono.cr/fanbox/user/24921130/post/11471817`
-- `https://creator.fanbox.cc/posts/11929835`
-- `https://x.com/anska_art/status/2076653334111396311/photo/1`
-- `https://www.reddit.com/r/Hololewd/comments/1uurxe0/nerissa_and_shiori_doujin_by_brulee/`
-- `https://www.pixiv.net/en/artworks/142625231`
-- `https://archiveofourown.org/works/18187196`
-- `https://www.hentai-foundry.com/stories/user/dotDelamora/70617/Taming-Guinevere`
-- `https://www.hentai-foundry.com/pictures/user/TheKite/1200030/Fallout-Unsheltered-Nuts-n-Bolts-06`
-- `https://www.fanfiction.net/s/12620462/1/Taboo`
+- `https://x.com/<user>/status/<post_id>/photo/1`
+- `https://www.reddit.com/r/<subreddit>/comments/<post_id>/<slug>/`
+- `https://www.pixiv.net/en/artworks/<artwork_id>`
+- `https://archiveofourown.org/works/<work_id>`
+- `https://www.fanfiction.net/s/<story_id>/1/<slug>`
 
 ## Folder layout examples
-
-**Kemono** — nested by user type, name, and post title:
-
-```text
-<root>/<user_type>/<user_name>/<post_title>/
-```
-
-**FANBOX** — nested by creator and post:
-
-```text
-<root>/<creator_name>/<post_title>-<post_id>/
-```
 
 **X** — one folder per username (an initial ASCII capital is lowercased):
 
@@ -135,22 +120,15 @@ The build emits the reviewable manifest and a host-permission ownership report f
 <root>/<post_title>_<post_id>/01_<media filename>
 ```
 
-**Story PDFs** (AO3, Hentai Foundry, fanfiction.net):
+**Story PDFs** (AO3, fanfiction.net):
 
 ```text
 <site-folder>/Author_Name-Story_Title.pdf
 ```
 
-**Hentai Foundry pictures** — full-size media under a normalized artist folder:
-
-```text
-<root>/<artist_name>/<site_media_filename>
-```
-
-New artist folders lowercase only the first ASCII character. If an all-lowercase folder for that
-artist already exists, Gather Box reuses it for compatibility with older Hentai Foundry archives.
-
-Spaces in folder and PDF names are converted to underscores.
+Some picture collectors normalize the artist folder, lowercasing only the first ASCII character and
+reusing an existing all-lowercase folder when one is already present. Spaces in folder and PDF names
+are converted to underscores.
 
 ## Notes
 
@@ -158,10 +136,10 @@ Spaces in folder and PDF names are converted to underscores.
 - Existing media is never overwritten. Gather Box compares SHA-256 hashes when a site filename already exists, skips identical content, and appends a four-character suffix before the extension for different content.
 - pixiv original-image requests use a narrowly scoped extension rule to supply pixiv's required `Referer` header.
 - X video resolution uses X's public syndication data first, then its web-client media response. The fallback flow was informed by [Cobalt's X extractor](https://github.com/imputnet/cobalt/blob/main/api/src/processing/services/twitter.js); Gather Box does not call a hosted Cobalt instance.
-- Embedded RedGIFs posts are resolved locally through RedGIFs' temporary-token API; the extension downloads the returned HD MP4 when available. A narrowly scoped request rule supplies the API origin headers used by the current [yt-dlp RedGIFs extractor](https://github.com/yt-dlp/yt-dlp/blob/master/yt_dlp/extractor/redgifs.py).
+- Embedded third-party video posts are resolved locally through the host's temporary-token API; the extension downloads the returned HD MP4 when available. A narrowly scoped request rule supplies the required origin headers. See `src/background/` for the per-host resolvers and their attribution.
 - Reddit GIF posts use Reddit's existing signed MP4 rendition, avoiding local transcoding and its bundle/runtime cost.
 - The extension re-confirms folder access with Chrome when needed.
-- MyHentaiGallery collection targets `ul.comics-grid.clear div.comic-thumb img[src]` and ignores ad blocks outside that selector.
+- Gallery collectors target a specific grid selector per site and ignore ad blocks outside it.
 
 ## Manual checks
 
@@ -170,7 +148,7 @@ Spaces in folder and PDF names are converted to underscores.
 - [ ] Image files keep sequential names (`001.webp`, `002.webp`, …)
 - [ ] Story PDFs use `{author}-{story}.pdf` naming
 - [ ] fanfiction.net: chapter count matches selector; generated PDF has all chapters in order with basic bold/italic preserved
-- [ ] FANBOX: files land in `<creator>/<post_title>-<post_id>/`
+- [ ] Nested post collectors: files land in `<creator>/<post_title>-<post_id>/`
 - [ ] Reddit: single media lands at the root; galleries use `<post_title>_<post_id>/01_<filename>`
 
 ## Related

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { GATHER_SOURCES, getGatherSource, getGatherSourceFromUrl } from "./source-catalog";
+import {
+  GATHER_SOURCES,
+  LISTED_GATHER_SOURCES,
+  getGatherSource,
+  getGatherSourceFromUrl
+} from "./source-catalog";
 
 describe("Gather Source catalog", () => {
   it("keeps context-menu eligibility inside always-on page access", () => {
@@ -24,5 +29,17 @@ describe("Gather Source catalog", () => {
   it("rejects unknown persisted keys and ineligible URLs", () => {
     expect(getGatherSource("invented-source")).toBeNull();
     expect(getGatherSourceFromUrl("https://example.com/post/1")).toBeNull();
+  });
+
+  it("keeps unlisted sources collectable but out of enumerated surfaces", () => {
+    const unlisted = GATHER_SOURCES.filter((source) => source.unlisted);
+    expect(unlisted.length).toBeGreaterThan(0);
+
+    for (const source of unlisted) {
+      // Excluded from any browsable list (options page, generated docs).
+      expect(LISTED_GATHER_SOURCES, source.key).not.toContain(source);
+      // ...but still fully resolvable at runtime, so collection is unaffected.
+      expect(getGatherSource(source.key), source.key).toBe(source);
+    }
   });
 });

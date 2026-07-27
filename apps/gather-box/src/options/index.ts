@@ -5,7 +5,7 @@ import {
   type CredentialsMode,
   type GatherBoxSettings
 } from "../shared/settings";
-import { SUPPORTED_SITES, type SiteKey } from "../shared/sites";
+import { LISTED_SITES, type SiteKey } from "../shared/sites";
 
 interface SettingsFormElements {
   form: HTMLFormElement;
@@ -66,7 +66,7 @@ async function renderCommandShortcuts(elements: SettingsFormElements): Promise<v
 function renderPerSiteCredentials(container: HTMLElement, settings: GatherBoxSettings): void {
   container.innerHTML = "";
 
-  for (const site of SUPPORTED_SITES) {
+  for (const site of LISTED_SITES) {
     const row = document.createElement("div");
     row.className = "per-site-row";
 

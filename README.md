@@ -4,7 +4,7 @@
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-6-blue?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![pnpm](https://img.shields.io/badge/pnpm-workspace-F69220?logo=pnpm&logoColor=white)](https://pnpm.io/)
-[![Private](https://img.shields.io/badge/status-private-lightgrey)](#)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 Latch Works is a **pnpm monorepo** that brings together viewers, a collection tool, sync clients, shared media libraries, and a product site into one ecosystem. The local archive stays the source of truth; remote access is explicit, authenticated, and read-only.
 

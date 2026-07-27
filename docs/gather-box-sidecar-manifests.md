@@ -27,7 +27,7 @@ today.
 
 ```text
 archive-root/
-  kemono/
+  pixiv/
     patron/
       sample_post_title/
         .latch-works.source.json
@@ -99,8 +99,8 @@ Synthetic data only — do not treat these as real archive paths.
 {
   "schemaVersion": 1,
   "outputKind": "downloadable-files",
-  "site": "kemono",
-  "sourceUrl": "https://example.invalid/kemono/user/sample/post/1001",
+  "site": "pixiv",
+  "sourceUrl": "https://example.invalid/pixiv/user/sample/post/1001",
   "sourceId": "1001",
   "title": "Sample_Post_Title",
   "downloadedAt": "2026-06-12T18:30:00.000Z",

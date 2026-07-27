@@ -9,20 +9,18 @@ navTitle: Supported sources
 
 # Supported sources
 
-Gather Box only collects from the sites below. Other pages show as unsupported in the side panel.
+Gather Box collects only from an explicit catalog of sites — anything else shows as unsupported in
+the side panel. The commonly used sources are listed below; `source-catalog.json` in the extension
+source is the authoritative list.
 
 ## Site appendix
 
 | Site | Content type | Output |
 | --- | --- | --- |
-| MyHentaiGallery | Image galleries | Images in a comic-title folder (original filenames) |
-| Kemono | Post attachments | Files in a nested service/user/post folder |
-| pixiv FANBOX | Post images | Images in a creator/post folder |
 | X | Images and videos | Media under the post author's username |
-| Reddit | Images, galleries, GIF/RedGIFs video | Direct file, or a post folder for multi-media |
+| Reddit | Images, galleries, GIF and embedded video | Direct file, or a post folder for multi-media |
 | pixiv | Original artwork (including multi-page) | Images under `username-userId` |
 | Archive of Our Own | Works | Single site-generated PDF in the chosen root |
-| Hentai Foundry | Stories | Single site-generated PDF in the chosen root |
 | FanFiction.Net | Multi-chapter stories | Single locally merged PDF in the chosen root |
 
 ## Media vs story behavior
@@ -31,7 +29,7 @@ Gather Box only collects from the sites below. Other pages show as unsupported i
 
 **Story collectors** produce one PDF per work:
 
-- **AO3** and **Hentai Foundry** download the site’s generated PDF.
+- **AO3** downloads the site’s generated PDF.
 - **FanFiction.Net** fetches chapters and merges them locally into one PDF.
 
 Story downloads may need you to be signed in. Gather Box can include session credentials when configured — see [Gather Box troubleshooting](/docs/gather-box/troubleshooting).
@@ -42,13 +40,10 @@ Paths are relative to the destination folder you pick in the side panel. Spaces 
 
 | Source | Typical shape |
 | --- | --- |
-| MyHentaiGallery | `<root>/<comic title>/` |
-| Kemono | `<root>/<service>/<user>/<post title>/` |
-| FANBOX | `<root>/<creator>/<post title>-<id>/` |
 | X | `<root>/<username>/` |
 | Reddit | `<root>/` for single media; `<root>/<post title>_<id>/` for galleries |
 | pixiv | `<root>/<username>-<user id>/` |
-| AO3 / Hentai Foundry / FanFiction.Net | `<root>/Author-Story.pdf` (no nested site folder) |
+| AO3 / FanFiction.Net | `<root>/Author-Story.pdf` (no nested site folder) |
 
 Details and edge cases are covered in [Gather Box folders](/docs/gather-box/folders).
 
