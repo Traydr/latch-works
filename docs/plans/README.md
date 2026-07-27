@@ -30,8 +30,8 @@ the corresponding plan.
 | [043](043-isolate-gather-output-builds.md) | Lazy-load Gather Output adapters and enforce budgets | P1 | M | 041 | DONE |
 | [044](044-deepen-gather-source-catalog.md) | Make one Gather Source catalog authoritative | P2 | M | 043 | DONE |
 | [045](045-load-gather-collectors-on-demand.md) | Inject only the selected Gather Source collector | P2 | M | 042, 044 | DONE |
-| [046](046-inject-pane-view-module-state.md) | Remove test-only exports by injecting module state | P2 | M | — | TODO |
-| [047](047-neutralize-test-fixtures.md) | Neutralize repository-visible test fixtures | P3 | S | — | TODO |
+| [046](046-inject-pane-view-module-state.md) | Remove test-only exports by injecting module state | P2 | M | — | DONE |
+| [047](047-neutralize-test-fixtures.md) | Neutralize repository-visible test fixtures | P3 | S | — | DONE |
 
 Plans without dependencies can run in parallel. Within the dependent chain, execute `025 -> 030`,
 `026 -> 036`, then `026 + 030 + 036 -> 037`. Run the PDF direction spike only after Plans 033 and

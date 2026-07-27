@@ -85,6 +85,13 @@
       "when": 1784284800000,
       "tag": "0011_serialize_sync_hard_wipe",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1785146400000,
+      "tag": "0012_shared_login_throttle",
+      "breakpoints": true
     }
   ]
 }

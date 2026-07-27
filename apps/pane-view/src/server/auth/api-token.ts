@@ -1,42 +1,38 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { env } from "../../env/server";
 
-let cachedConfiguredToken: string | null = null;
-let cachedConfiguredTokenDigest: Buffer | null = null;
-
 function digestApiToken(token: string): Buffer {
   return createHash("sha256").update(token).digest();
 }
 
-export function resetSyncApiTokenDigestCacheForTests(): void {
-  cachedConfiguredToken = null;
-  cachedConfiguredTokenDigest = null;
-}
+export function createSyncApiTokenVerifier({
+  digest = digestApiToken,
+  getConfiguredToken,
+}: {
+  digest?: (token: string) => Buffer;
+  getConfiguredToken: () => string | undefined;
+}) {
+  let cachedConfiguredToken: string | null = null;
+  let cachedConfiguredTokenDigest: Buffer | null = null;
 
-export function getSyncApiTokenDigestCacheForTests(): {
-  configuredToken: string | null;
-  configuredTokenDigest: Buffer | null;
-} {
   return {
-    configuredToken: cachedConfiguredToken,
-    configuredTokenDigest: cachedConfiguredTokenDigest,
+    verify({ token }: { token: string | null }): boolean {
+      const configured = getConfiguredToken();
+      if (!configured || !token) return false;
+
+      if (cachedConfiguredToken !== configured || !cachedConfiguredTokenDigest) {
+        cachedConfiguredToken = configured;
+        cachedConfiguredTokenDigest = digest(configured);
+      }
+
+      return timingSafeEqual(digest(token), cachedConfiguredTokenDigest);
+    },
   };
 }
 
-function getConfiguredTokenDigest(): Buffer | null {
-  const configured = env.PANE_VIEW_SYNC_TOKEN;
-  if (!configured) {
-    return null;
-  }
-
-  if (cachedConfiguredToken === configured && cachedConfiguredTokenDigest) {
-    return cachedConfiguredTokenDigest;
-  }
-
-  cachedConfiguredToken = configured;
-  cachedConfiguredTokenDigest = digestApiToken(configured);
-  return cachedConfiguredTokenDigest;
-}
+const sharedSyncApiTokenVerifier = createSyncApiTokenVerifier({
+  getConfiguredToken: () => env.PANE_VIEW_SYNC_TOKEN,
+});
 
 export function readBearerToken(request: Request): string | null {
   const authorization = request.headers.get("Authorization");
@@ -53,13 +49,7 @@ export function hashApiToken(token: string): string {
 }
 
 export function verifySyncApiToken({ token }: { token: string | null }): boolean {
-  const configuredDigest = getConfiguredTokenDigest();
-  if (!configuredDigest || !token) {
-    return false;
-  }
-
-  const tokenDigest = digestApiToken(token);
-  return timingSafeEqual(tokenDigest, configuredDigest);
+  return sharedSyncApiTokenVerifier.verify({ token });
 }
 
 export function requireSyncApiToken(request: Request): Response | null {

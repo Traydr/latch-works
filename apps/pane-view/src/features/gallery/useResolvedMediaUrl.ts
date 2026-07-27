@@ -29,7 +29,17 @@ type ResolveCacheEntry = {
   url?: string;
 };
 
-const resolveCache = new Map<string, ResolveCacheEntry>();
+interface ResolveThrottle {
+  acquireResolveSlot(): Promise<() => void>;
+  circuitWaitMs(): number;
+  isCircuitOpen(): boolean;
+  recordResolveFailure(): void;
+  recordResolveSuccess(): void;
+}
+
+export interface ResolvedMediaUrlCache {
+  resolve(input: ResolveInput): Promise<ResolveOutcome>;
+}
 
 function resolveCacheKey({ mediaId, size, variant }: ResolveInput): string {
   return `${variant}:${mediaId}:${size ?? "default"}`;
@@ -43,61 +53,75 @@ function pendingRetryDelayMs(attempt: number, serverRetryAfterMs?: number): numb
   return Math.max(serverRetryAfterMs ?? 0, Math.round(baseDelay * jitter));
 }
 
-async function resolveSharedMediaUrl(input: ResolveInput): Promise<ResolveOutcome> {
-  const key = resolveCacheKey(input);
-  const entry = resolveCache.get(key) ?? { pendingAttempt: 0 };
-  resolveCache.set(key, entry);
+export function createResolvedMediaUrlCache({
+  resolve = resolveMediaDeliveryUrl,
+  throttle = {
+    acquireResolveSlot,
+    circuitWaitMs,
+    isCircuitOpen,
+    recordResolveFailure,
+    recordResolveSuccess,
+  },
+}: {
+  resolve?: typeof resolveMediaDeliveryUrl;
+  throttle?: ResolveThrottle;
+} = {}): ResolvedMediaUrlCache {
+  const entries = new Map<string, ResolveCacheEntry>();
 
-  if (entry.url) {
-    return { status: "ready", url: entry.url };
-  }
+  return {
+    async resolve(input): Promise<ResolveOutcome> {
+      const key = resolveCacheKey(input);
+      const entry = entries.get(key) ?? { pendingAttempt: 0 };
+      entries.set(key, entry);
 
-  if (entry.inFlight) {
-    return entry.inFlight;
-  }
+      if (entry.url) return { status: "ready", url: entry.url };
+      if (entry.inFlight) return entry.inFlight;
 
-  const now = Date.now();
-  if (entry.nextRetryAt && entry.nextRetryAt > now) {
-    return { retryAfterMs: entry.nextRetryAt - now, status: "pending" };
-  }
-
-  entry.inFlight = (async () => {
-    const breakerWait = circuitWaitMs();
-    if (isCircuitOpen() && breakerWait > 0) {
-      await delay(breakerWait);
-    }
-
-    const release = await acquireResolveSlot();
-    try {
-      const result = await resolveMediaDeliveryUrl({
-        data: input,
-      });
-
-      if (result.pending) {
-        const retryAfterMs = pendingRetryDelayMs(entry.pendingAttempt, result.retryAfterMs);
-        entry.pendingAttempt += 1;
-        entry.nextRetryAt = Date.now() + retryAfterMs;
-        return { retryAfterMs, status: "pending" };
+      const now = Date.now();
+      if (entry.nextRetryAt && entry.nextRetryAt > now) {
+        return { retryAfterMs: entry.nextRetryAt - now, status: "pending" };
       }
 
-      recordResolveSuccess();
-      entry.url = result.url;
-      entry.nextRetryAt = undefined;
-      entry.pendingAttempt = 0;
-      return { status: "ready", url: result.url };
-    } catch {
-      recordResolveFailure();
-      return { status: "failed" };
-    } finally {
-      release();
-      entry.inFlight = undefined;
-    }
-  })();
+      entry.inFlight = (async () => {
+        const breakerWait = throttle.circuitWaitMs();
+        if (throttle.isCircuitOpen() && breakerWait > 0) {
+          await delay(breakerWait);
+        }
 
-  return entry.inFlight;
+        const release = await throttle.acquireResolveSlot();
+        try {
+          const result = await resolve({ data: input });
+
+          if (result.pending) {
+            const retryAfterMs = pendingRetryDelayMs(entry.pendingAttempt, result.retryAfterMs);
+            entry.pendingAttempt += 1;
+            entry.nextRetryAt = Date.now() + retryAfterMs;
+            return { retryAfterMs, status: "pending" };
+          }
+
+          throttle.recordResolveSuccess();
+          entry.url = result.url;
+          entry.nextRetryAt = undefined;
+          entry.pendingAttempt = 0;
+          return { status: "ready", url: result.url };
+        } catch {
+          throttle.recordResolveFailure();
+          return { status: "failed" };
+        } finally {
+          release();
+          entry.inFlight = undefined;
+        }
+      })();
+
+      return entry.inFlight;
+    },
+  };
 }
 
+const sharedResolvedMediaUrlCache = createResolvedMediaUrlCache();
+
 export function useResolvedMediaUrl({
+  cache = sharedResolvedMediaUrlCache,
   fallbackReadyUrl,
   mediaId,
   readyUrl,
@@ -105,6 +129,7 @@ export function useResolvedMediaUrl({
   size,
   variant,
 }: {
+  cache?: ResolvedMediaUrlCache;
   fallbackReadyUrl?: string;
   mediaId: string | undefined;
   readyUrl?: string;
@@ -138,15 +163,8 @@ export function useResolvedMediaUrl({
 
     void (async () => {
       while (!cancelled) {
-        if (cancelled) {
-          return;
-        }
-
-        const result = await resolveSharedMediaUrl({ mediaId, size, variant });
-
-        if (cancelled) {
-          return;
-        }
+        const result = await cache.resolve({ mediaId, size, variant });
+        if (cancelled) return;
 
         if (result.status === "ready") {
           setResolvedUrl(result.url);
@@ -174,11 +192,7 @@ export function useResolvedMediaUrl({
     return () => {
       cancelled = true;
     };
-  }, [fallbackReadyUrl, mediaId, readyUrl, refreshKey, size, variant]);
+  }, [cache, fallbackReadyUrl, mediaId, readyUrl, refreshKey, size, variant]);
 
   return { failed, loading, resolvedUrl };
-}
-
-export function __resetResolvedMediaUrlCacheForTests(): void {
-  resolveCache.clear();
 }

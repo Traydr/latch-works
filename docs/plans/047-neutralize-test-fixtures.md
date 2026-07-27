@@ -8,11 +8,25 @@
 
 ## Status
 
-- **Status**: TODO
+- **Status**: DONE
 - **Priority**: P3
 - **Effort**: S
 - **Risk**: LOW
 - **Category**: developer experience / presentation
+
+## Implementation notes
+
+- Completed 2026-07-27.
+- Reddit fixtures now use neutral community and user paths, while the Hentai Foundry detection case
+  remains to preserve explicit unlisted-source coverage.
+- Opaque `sfw/patreon` paths were replaced with neutral photo archive paths in the named repository
+  suite and in three additional test files found by the required sweep.
+- Remaining sweep hits are source-specific collector, resolver, and download-policy coverage whose
+  module names already carry the source name.
+- The `sfw` paths left in `paths.test.ts`, `sync-plan.test.ts`, and `plan-sync.test.ts` were kept
+  deliberately. "SFW" does imply a counterpart, so the justification is not that the string is
+  neutral — it is that `SFW`/`sfw` is doing real work there as a case-folding fixture pair, and
+  substituting it would weaken the assertion these suites exist to make.
 
 ## Why this matters
 

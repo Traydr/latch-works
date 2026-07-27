@@ -1,24 +1,16 @@
-import { afterEach, describe, expect, it } from "vitest";
-import {
-  __resetResolveThrottleForTests,
-  acquireResolveSlot,
-  backoffDelayMs,
-  isCircuitOpen,
-  recordResolveFailure,
-  recordResolveSuccess,
-} from "./resolve-throttle";
-
-afterEach(() => {
-  __resetResolveThrottleForTests();
-});
+import { describe, expect, it } from "vitest";
+import { backoffDelayMs, createResolveThrottle } from "./resolve-throttle";
 
 describe("acquireResolveSlot", () => {
   it("caps in-flight resolves at the global concurrency limit", async () => {
+    const throttle = createResolveThrottle();
     const max = 6;
-    const releasers = await Promise.all(Array.from({ length: max }, () => acquireResolveSlot()));
+    const releasers = await Promise.all(
+      Array.from({ length: max }, () => throttle.acquireResolveSlot()),
+    );
 
     let extraGranted = false;
-    const extra = acquireResolveSlot().then((release) => {
+    const extra = throttle.acquireResolveSlot().then((release) => {
       extraGranted = true;
       return release;
     });
@@ -26,32 +18,39 @@ describe("acquireResolveSlot", () => {
     await Promise.resolve();
     expect(extraGranted).toBe(false);
 
-    // Releasing one slot hands it to the queued waiter.
     const [firstRelease, ...remaining] = releasers;
     firstRelease?.();
     const extraRelease = await extra;
     expect(extraGranted).toBe(true);
 
     extraRelease();
-    for (const release of remaining) {
-      release();
-    }
+    for (const release of remaining) release();
   });
 });
 
 describe("circuit breaker", () => {
   it("opens after repeated failures and a success resets it", () => {
-    expect(isCircuitOpen()).toBe(false);
+    const throttle = createResolveThrottle();
+    expect(throttle.isCircuitOpen()).toBe(false);
 
     for (let i = 0; i < 8; i += 1) {
-      recordResolveFailure(1_000);
+      throttle.recordResolveFailure(1_000);
     }
 
-    expect(isCircuitOpen(1_000)).toBe(true);
-    expect(isCircuitOpen(1_000 + 11_000)).toBe(false);
+    expect(throttle.isCircuitOpen(1_000)).toBe(true);
+    expect(throttle.isCircuitOpen(1_000 + 11_000)).toBe(false);
 
-    recordResolveSuccess();
-    expect(isCircuitOpen(1_000)).toBe(false);
+    throttle.recordResolveSuccess();
+    expect(throttle.isCircuitOpen(1_000)).toBe(false);
+  });
+
+  it("does not share circuit state between instances", () => {
+    const first = createResolveThrottle();
+    const second = createResolveThrottle();
+    for (let i = 0; i < 8; i += 1) first.recordResolveFailure(1_000);
+
+    expect(first.isCircuitOpen(1_000)).toBe(true);
+    expect(second.isCircuitOpen(1_000)).toBe(false);
   });
 });
 

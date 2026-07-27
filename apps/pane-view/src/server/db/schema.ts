@@ -126,6 +126,19 @@ export const verifications = pgTable("verifications", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+export const loginThrottleAttempts = pgTable(
+  "login_throttle_attempts",
+  {
+    key: text("key").primaryKey(),
+    count: integer("count").notNull(),
+    windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => ({
+    expiresAtIndex: index("login_throttle_attempts_expires_at_idx").on(table.expiresAt),
+  }),
+);
+
 export const apiTokens = pgTable(
   "api_tokens",
   {

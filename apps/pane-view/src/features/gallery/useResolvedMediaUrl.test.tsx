@@ -3,7 +3,11 @@
 import { act, createElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { __resetResolvedMediaUrlCacheForTests, useResolvedMediaUrl } from "./useResolvedMediaUrl";
+import {
+  createResolvedMediaUrlCache,
+  type ResolvedMediaUrlCache,
+  useResolvedMediaUrl,
+} from "./useResolvedMediaUrl";
 
 const mocks = vi.hoisted(() => ({
   resolveMediaDeliveryUrl: vi.fn(),
@@ -13,17 +17,19 @@ vi.mock("@/features/media/media-delivery-service", () => ({
   resolveMediaDeliveryUrl: mocks.resolveMediaDeliveryUrl,
 }));
 
-function renderHookPair(): { unmount: () => void } {
+function renderHookPair(cache: ResolvedMediaUrlCache): { unmount: () => void } {
   let root: Root | undefined;
   const container = document.createElement("div");
 
   function Host(): ReactNode {
     useResolvedMediaUrl({
+      cache,
       mediaId: "00000000-0000-4000-8000-000000000001",
       size: 320,
       variant: "thumbnail",
     });
     useResolvedMediaUrl({
+      cache,
       mediaId: "00000000-0000-4000-8000-000000000001",
       size: 320,
       variant: "thumbnail",
@@ -45,7 +51,7 @@ function renderHookPair(): { unmount: () => void } {
   };
 }
 
-function renderSingleHook(): {
+function renderSingleHook(cache: ResolvedMediaUrlCache): {
   getState: () => ReturnType<typeof useResolvedMediaUrl> | undefined;
   unmount: () => void;
 } {
@@ -55,6 +61,7 @@ function renderSingleHook(): {
 
   function Host(): ReactNode {
     state = useResolvedMediaUrl({
+      cache,
       mediaId: "00000000-0000-4000-8000-000000000002",
       size: 720,
       variant: "thumbnail",
@@ -76,10 +83,12 @@ function renderSingleHook(): {
 }
 
 describe("useResolvedMediaUrl", () => {
+  let cache: ResolvedMediaUrlCache;
+
   beforeEach(() => {
     vi.useFakeTimers();
-    __resetResolvedMediaUrlCacheForTests();
     mocks.resolveMediaDeliveryUrl.mockReset();
+    cache = createResolvedMediaUrlCache();
   });
 
   afterEach(() => {
@@ -89,7 +98,7 @@ describe("useResolvedMediaUrl", () => {
 
   it("shares an in-flight pending resolve across matching mounted consumers", async () => {
     mocks.resolveMediaDeliveryUrl.mockResolvedValue({ pending: true });
-    const { unmount } = renderHookPair();
+    const { unmount } = renderHookPair(cache);
 
     await act(async () => {
       await Promise.resolve();
@@ -113,7 +122,7 @@ describe("useResolvedMediaUrl", () => {
     mocks.resolveMediaDeliveryUrl
       .mockResolvedValueOnce({ pending: true, retryAfterMs: 5_000 })
       .mockResolvedValueOnce({ pending: false, url: "https://edge.shutter.test/ready" });
-    const hook = renderSingleHook();
+    const hook = renderSingleHook(cache);
 
     await act(async () => {
       await Promise.resolve();
@@ -131,5 +140,22 @@ describe("useResolvedMediaUrl", () => {
     });
     expect(mocks.resolveMediaDeliveryUrl).toHaveBeenCalledTimes(2);
     hook.unmount();
+  });
+
+  it("does not share resolved URLs between cache instances", async () => {
+    mocks.resolveMediaDeliveryUrl.mockResolvedValue({
+      pending: false,
+      url: "https://edge.shutter.test/ready",
+    });
+    const input = {
+      mediaId: "00000000-0000-4000-8000-000000000001",
+      size: 320,
+      variant: "thumbnail" as const,
+    };
+
+    await cache.resolve(input);
+    await createResolvedMediaUrlCache().resolve(input);
+
+    expect(mocks.resolveMediaDeliveryUrl).toHaveBeenCalledTimes(2);
   });
 });

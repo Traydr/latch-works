@@ -21,7 +21,7 @@ export const Route = createFileRoute("/api/auth/login")({
         const password = String(formData.get("password") ?? "");
         const clientIp = resolveClientIp(request, env.PANE_VIEW_TRUST_PROXY_HEADERS);
 
-        if (isLoginThrottled(clientIp, username)) {
+        if (await isLoginThrottled(clientIp, username)) {
           return new Response(null, {
             headers: { Location: "/login?error=invalid" },
             status: 303,
@@ -34,7 +34,7 @@ export const Route = createFileRoute("/api/auth/login")({
         });
 
         if (!owner) {
-          recordFailedLogin(clientIp, username);
+          await recordFailedLogin(clientIp, username);
           return new Response(null, {
             headers: { Location: "/login?error=invalid" },
             status: 303,
@@ -42,7 +42,7 @@ export const Route = createFileRoute("/api/auth/login")({
         }
 
         if (!(await ensureConfiguredOwnerCredentialAccount(owner))) {
-          recordFailedLogin(clientIp, username);
+          await recordFailedLogin(clientIp, username);
           return new Response(null, {
             headers: { Location: "/login?error=invalid" },
             status: 303,
@@ -56,11 +56,11 @@ export const Route = createFileRoute("/api/auth/login")({
         });
 
         if (signInResponse.ok) {
-          clearLoginThrottle(clientIp, username);
+          await clearLoginThrottle(clientIp, username);
           return redirectWithAuthCookies(signInResponse, "/");
         }
 
-        recordFailedLogin(clientIp, username);
+        await recordFailedLogin(clientIp, username);
         return new Response(null, {
           headers: { Location: "/login?error=invalid" },
           status: 303,

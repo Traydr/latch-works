@@ -10,7 +10,7 @@ describe("gallery listing cursor", () => {
     const encoded = encodeGalleryListingCursor({
       filename: "cover.jpg",
       id: "entry-1",
-      logicalPath: "sfw/patreon/cover.jpg",
+      logicalPath: "photos/2026/cover.jpg",
       mtimeMs: 1_700_000_000_000,
       randomHash: galleryListingRandomHash(42, "entry-1"),
       randomSeed: 42,
@@ -20,7 +20,7 @@ describe("gallery listing cursor", () => {
     expect(decodeGalleryListingCursor(encoded)).toEqual({
       filename: "cover.jpg",
       id: "entry-1",
-      logicalPath: "sfw/patreon/cover.jpg",
+      logicalPath: "photos/2026/cover.jpg",
       mtimeMs: 1_700_000_000_000,
       randomHash: galleryListingRandomHash(42, "entry-1"),
       randomSeed: 42,

@@ -18,58 +18,67 @@ const CIRCUIT_COOLDOWN_MS = 10_000;
 
 type Releaser = () => void;
 
-let activeCount = 0;
-const waiters: Array<(release: Releaser) => void> = [];
+export function createResolveThrottle() {
+  let activeCount = 0;
+  const waiters: Array<(release: Releaser) => void> = [];
+  let consecutiveFailures = 0;
+  let circuitOpenUntil = 0;
 
-function releaseSlot(): void {
-  const next = waiters.shift();
-  if (next) {
-    // Hand the slot directly to the next waiter without decrementing.
-    next(releaseSlot);
-    return;
+  function releaseSlot(): void {
+    const next = waiters.shift();
+    if (next) {
+      // Hand the slot directly to the next waiter without decrementing.
+      next(releaseSlot);
+      return;
+    }
+
+    activeCount = Math.max(0, activeCount - 1);
   }
 
-  activeCount = Math.max(0, activeCount - 1);
+  return {
+    acquireResolveSlot(): Promise<Releaser> {
+      if (activeCount < MAX_CONCURRENT_RESOLVES) {
+        activeCount += 1;
+        return Promise.resolve(releaseSlot);
+      }
+
+      return new Promise<Releaser>((resolve) => {
+        waiters.push(resolve);
+      });
+    },
+
+    circuitWaitMs(now: number = Date.now()): number {
+      return Math.max(0, circuitOpenUntil - now);
+    },
+
+    isCircuitOpen(now: number = Date.now()): boolean {
+      return now < circuitOpenUntil;
+    },
+
+    recordResolveFailure(now: number = Date.now()): void {
+      consecutiveFailures += 1;
+      if (consecutiveFailures >= CIRCUIT_FAILURE_THRESHOLD) {
+        circuitOpenUntil = now + CIRCUIT_COOLDOWN_MS;
+        consecutiveFailures = 0;
+      }
+    },
+
+    recordResolveSuccess(): void {
+      consecutiveFailures = 0;
+      circuitOpenUntil = 0;
+    },
+  };
 }
 
-/**
- * Acquires a concurrency slot, resolving with a release callback. Callers must
- * invoke the releaser exactly once when their work settles.
- */
-export function acquireResolveSlot(): Promise<Releaser> {
-  if (activeCount < MAX_CONCURRENT_RESOLVES) {
-    activeCount += 1;
-    return Promise.resolve(releaseSlot);
-  }
+const sharedResolveThrottle = createResolveThrottle();
 
-  return new Promise<Releaser>((resolve) => {
-    waiters.push(resolve);
-  });
-}
-
-let consecutiveFailures = 0;
-let circuitOpenUntil = 0;
-
-export function isCircuitOpen(now: number = Date.now()): boolean {
-  return now < circuitOpenUntil;
-}
-
-export function circuitWaitMs(now: number = Date.now()): number {
-  return Math.max(0, circuitOpenUntil - now);
-}
-
-export function recordResolveSuccess(): void {
-  consecutiveFailures = 0;
-  circuitOpenUntil = 0;
-}
-
-export function recordResolveFailure(now: number = Date.now()): void {
-  consecutiveFailures += 1;
-  if (consecutiveFailures >= CIRCUIT_FAILURE_THRESHOLD) {
-    circuitOpenUntil = now + CIRCUIT_COOLDOWN_MS;
-    consecutiveFailures = 0;
-  }
-}
+export const {
+  acquireResolveSlot,
+  circuitWaitMs,
+  isCircuitOpen,
+  recordResolveFailure,
+  recordResolveSuccess,
+} = sharedResolveThrottle;
 
 /**
  * Exponential backoff with full jitter. `attempt` is zero-based.
@@ -83,12 +92,4 @@ export function delay(ms: number): Promise<void> {
   return new Promise((resolve) => {
     window.setTimeout(resolve, ms);
   });
-}
-
-/** Test-only reset of module state. */
-export function __resetResolveThrottleForTests(): void {
-  activeCount = 0;
-  waiters.length = 0;
-  consecutiveFailures = 0;
-  circuitOpenUntil = 0;
 }

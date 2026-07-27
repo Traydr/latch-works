@@ -1,10 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  __resetGalleryThumbnailResolverForTests,
-  getNextPendingThumbnailRetryMs,
-  hasEligibleGalleryThumbnailRequests,
-  resolveGalleryThumbnailsBatch,
-} from "./batched-thumbnail-resolver";
+import { createThumbnailResolver } from "./batched-thumbnail-resolver";
 
 const mocks = vi.hoisted(() => ({
   resolveMediaDeliveryUrls: vi.fn(),
@@ -15,9 +10,11 @@ vi.mock("@/features/media/media-delivery-service", () => ({
 }));
 
 describe("resolveGalleryThumbnailsBatch", () => {
+  let resolver: ReturnType<typeof createThumbnailResolver>;
+
   beforeEach(() => {
     vi.clearAllMocks();
-    __resetGalleryThumbnailResolverForTests();
+    resolver = createThumbnailResolver();
   });
 
   it("dedupes visible-window requests and respects ready/pending cache state", async () => {
@@ -40,7 +37,7 @@ describe("resolveGalleryThumbnailsBatch", () => {
       ],
     });
 
-    const first = await resolveGalleryThumbnailsBatch([
+    const first = await resolver.resolveGalleryThumbnailsBatch([
       { mediaId: "00000000-0000-4000-8000-000000000001" },
       { mediaId: "00000000-0000-4000-8000-000000000001" },
       { mediaId: "00000000-0000-4000-8000-000000000002" },
@@ -69,7 +66,7 @@ describe("resolveGalleryThumbnailsBatch", () => {
       },
     });
 
-    const second = await resolveGalleryThumbnailsBatch([
+    const second = await resolver.resolveGalleryThumbnailsBatch([
       { mediaId: "00000000-0000-4000-8000-000000000001" },
       { mediaId: "00000000-0000-4000-8000-000000000002" },
     ]);
@@ -98,12 +95,12 @@ describe("resolveGalleryThumbnailsBatch", () => {
       ],
     });
 
-    await resolveGalleryThumbnailsBatch([
+    await resolver.resolveGalleryThumbnailsBatch([
       { mediaId: "00000000-0000-4000-8000-000000000001" },
       { mediaId: "00000000-0000-4000-8000-000000000002" },
     ]);
 
-    const retryDelayMs = getNextPendingThumbnailRetryMs([
+    const retryDelayMs = resolver.getNextPendingThumbnailRetryMs([
       { mediaId: "00000000-0000-4000-8000-000000000001" },
       { mediaId: "00000000-0000-4000-8000-000000000002" },
     ]);
@@ -125,15 +122,19 @@ describe("resolveGalleryThumbnailsBatch", () => {
       ],
     });
 
-    const first = await resolveGalleryThumbnailsBatch([
+    const first = await resolver.resolveGalleryThumbnailsBatch([
       { mediaId: "00000000-0000-4000-8000-000000000003" },
     ]);
     expect(first.urls).toEqual({});
     expect(
-      getNextPendingThumbnailRetryMs([{ mediaId: "00000000-0000-4000-8000-000000000003" }]),
+      resolver.getNextPendingThumbnailRetryMs([
+        { mediaId: "00000000-0000-4000-8000-000000000003" },
+      ]),
     ).toBeNull();
 
-    await resolveGalleryThumbnailsBatch([{ mediaId: "00000000-0000-4000-8000-000000000003" }]);
+    await resolver.resolveGalleryThumbnailsBatch([
+      { mediaId: "00000000-0000-4000-8000-000000000003" },
+    ]);
     expect(mocks.resolveMediaDeliveryUrls).toHaveBeenCalledTimes(1);
   });
 
@@ -152,9 +153,9 @@ describe("resolveGalleryThumbnailsBatch", () => {
       }),
     );
 
-    await resolveGalleryThumbnailsBatch(requests);
-    expect(hasEligibleGalleryThumbnailRequests(requests)).toBe(true);
-    await resolveGalleryThumbnailsBatch(requests);
+    await resolver.resolveGalleryThumbnailsBatch(requests);
+    expect(resolver.hasEligibleGalleryThumbnailRequests(requests)).toBe(true);
+    await resolver.resolveGalleryThumbnailsBatch(requests);
 
     expect(mocks.resolveMediaDeliveryUrls).toHaveBeenCalledTimes(2);
     expect(mocks.resolveMediaDeliveryUrls.mock.calls.map(([call]) => call.data.items)).toHaveLength(
@@ -163,7 +164,7 @@ describe("resolveGalleryThumbnailsBatch", () => {
     expect(
       mocks.resolveMediaDeliveryUrls.mock.calls.map(([call]) => call.data.items.length),
     ).toEqual([48, 1]);
-    expect(hasEligibleGalleryThumbnailRequests(requests)).toBe(false);
+    expect(resolver.hasEligibleGalleryThumbnailRequests(requests)).toBe(false);
   });
 
   it("keeps every batch bounded while draining 97 ready requests", async () => {
@@ -181,8 +182,8 @@ describe("resolveGalleryThumbnailsBatch", () => {
       }),
     );
 
-    while (hasEligibleGalleryThumbnailRequests(requests)) {
-      await resolveGalleryThumbnailsBatch(requests);
+    while (resolver.hasEligibleGalleryThumbnailRequests(requests)) {
+      await resolver.resolveGalleryThumbnailsBatch(requests);
     }
 
     expect(
@@ -223,17 +224,37 @@ describe("resolveGalleryThumbnailsBatch", () => {
         ],
       });
 
-    await resolveGalleryThumbnailsBatch(requests);
+    await resolver.resolveGalleryThumbnailsBatch(requests);
 
-    expect(hasEligibleGalleryThumbnailRequests(requests)).toBe(true);
-    expect(getNextPendingThumbnailRetryMs(requests)).toBeGreaterThan(0);
+    expect(resolver.hasEligibleGalleryThumbnailRequests(requests)).toBe(true);
+    expect(resolver.getNextPendingThumbnailRetryMs(requests)).toBeGreaterThan(0);
 
-    await resolveGalleryThumbnailsBatch(requests);
+    await resolver.resolveGalleryThumbnailsBatch(requests);
 
     expect(
       mocks.resolveMediaDeliveryUrls.mock.calls.map(([call]) => call.data.items.length),
     ).toEqual([48, 1]);
-    expect(hasEligibleGalleryThumbnailRequests(requests)).toBe(false);
-    expect(getNextPendingThumbnailRetryMs(requests)).toBeGreaterThan(0);
+    expect(resolver.hasEligibleGalleryThumbnailRequests(requests)).toBe(false);
+    expect(resolver.getNextPendingThumbnailRetryMs(requests)).toBeGreaterThan(0);
+  });
+
+  it("does not share cached results between resolver instances", async () => {
+    mocks.resolveMediaDeliveryUrls.mockResolvedValue({
+      results: [
+        {
+          mediaId: "00000000-0000-4000-8000-000000000001",
+          size: 720,
+          status: "ready",
+          url: "https://edge.shutter.test/ready",
+          variant: "thumbnail",
+        },
+      ],
+    });
+    const request = [{ mediaId: "00000000-0000-4000-8000-000000000001" }];
+
+    await resolver.resolveGalleryThumbnailsBatch(request);
+    await createThumbnailResolver().resolveGalleryThumbnailsBatch(request);
+
+    expect(mocks.resolveMediaDeliveryUrls).toHaveBeenCalledTimes(2);
   });
 });

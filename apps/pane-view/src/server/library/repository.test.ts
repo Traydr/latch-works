@@ -5,10 +5,10 @@ import { escapeLikePattern, resolveMediaScope } from "./query-helpers";
 describe("resolveMediaScope", () => {
   it("scopes to direct children when non-recursive", () => {
     expect(
-      resolveMediaScope({ currentPath: "sfw/patreon", recursive: false, searching: false }),
+      resolveMediaScope({ currentPath: "photos/2026", recursive: false, searching: false }),
     ).toEqual({
       mode: "direct-children",
-      parentPath: "sfw/patreon",
+      parentPath: "photos/2026",
     });
   });
 
@@ -21,10 +21,10 @@ describe("resolveMediaScope", () => {
 
   it("scopes to subtree when recursive in a folder", () => {
     expect(
-      resolveMediaScope({ currentPath: "sfw/patreon", recursive: true, searching: false }),
+      resolveMediaScope({ currentPath: "photos/2026", recursive: true, searching: false }),
     ).toEqual({
       mode: "subtree",
-      pathPrefix: "sfw/patreon",
+      pathPrefix: "photos/2026",
     });
   });
 
@@ -35,7 +35,7 @@ describe("resolveMediaScope", () => {
   });
 
   it("uses search mode when query is active", () => {
-    expect(resolveMediaScope({ currentPath: "sfw", recursive: false, searching: true })).toEqual({
+    expect(resolveMediaScope({ currentPath: "media", recursive: false, searching: true })).toEqual({
       mode: "search",
     });
   });

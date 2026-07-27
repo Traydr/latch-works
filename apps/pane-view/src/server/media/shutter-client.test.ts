@@ -20,12 +20,12 @@ vi.mock("@latch-works/media-storage", () => ({
 }));
 vi.mock("./storage-client", () => ({ createPaneViewStorageClient: vi.fn(() => ({})) }));
 
+import { issueShutterCapability, shutterCapabilityClaimTimes } from "./shutter-capability";
 import {
   normalizeShutterWidth,
   purgeShutterSource,
   resolveShutterImageUrl,
   resolveShutterPreview,
-  shutterClientTestHooks,
 } from "./shutter-client";
 
 const image = {
@@ -77,7 +77,7 @@ describe("Shutter Pane View client", () => {
   it("issues capabilities for the documented 24-hour lifetime", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-07-13T00:00:00.000Z"));
-    const times = shutterClientTestHooks.claimTimes();
+    const times = shutterCapabilityClaimTimes();
     expect(times.exp - times.iat).toBe(86_400);
     vi.useRealTimers();
   });
@@ -89,7 +89,7 @@ describe("Shutter Pane View client", () => {
       "fixture-space": { "fixture-key-2026-07": encodedKey },
     });
     await expect(
-      shutterClientTestHooks.issueCapability(
+      issueShutterCapability(
         {
           space_id: "fixture-space",
           source_id: "image/source 01",

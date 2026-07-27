@@ -3,7 +3,7 @@ import { buildComicEntries, sortComicEntries, sortMediaItems } from "./index.js"
 import type { MediaItem } from "./media.js";
 
 const baseItem = {
-  parentPath: "sfw/patreon/sample",
+  parentPath: "photos/2026/sample",
   extension: "jpg",
   mediaType: "image",
   size: 1,
@@ -42,23 +42,23 @@ describe("media-domain", () => {
         ...baseItem,
         id: "a",
         name: "001.jpg",
-        path: "sfw/patreon/post-a/001.jpg",
-        parentPath: "sfw/patreon/post-a",
+        path: "photos/2026/post-a/001.jpg",
+        parentPath: "photos/2026/post-a",
         mtimeMs: 1,
       },
       {
         ...baseItem,
         id: "b",
         name: "002.jpg",
-        path: "sfw/patreon/post-a/002.jpg",
-        parentPath: "sfw/patreon/post-a",
+        path: "photos/2026/post-a/002.jpg",
+        parentPath: "photos/2026/post-a",
         mtimeMs: 2,
       },
     ];
 
-    const comics = buildComicEntries(items, "sfw/patreon");
+    const comics = buildComicEntries(items, "photos/2026");
     expect(comics).toHaveLength(1);
-    expect(comics[0]?.folderPath).toBe("sfw/patreon/post-a");
+    expect(comics[0]?.folderPath).toBe("photos/2026/post-a");
     expect(comics[0]?.pages.map((page) => page.name)).toEqual(["001.jpg", "002.jpg"]);
   });
 

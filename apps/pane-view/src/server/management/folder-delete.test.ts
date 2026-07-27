@@ -68,7 +68,7 @@ describe("softDeleteFolderSubtree", () => {
   });
 
   it("rejects folder paths with parent segments", async () => {
-    await expect(softDeleteFolderSubtree({ folderPaths: ["sfw/../other"] })).rejects.toThrow(
+    await expect(softDeleteFolderSubtree({ folderPaths: ["photos/../other"] })).rejects.toThrow(
       "Folder path must not contain '..' segments.",
     );
   });
@@ -81,19 +81,19 @@ describe("softDeleteFolderSubtree", () => {
 
   it("soft-deletes entries and folders in one transaction", async () => {
     const results = await softDeleteFolderSubtree({
-      folderPaths: ["sfw/patreon/", "sfw/patreon", "sfw/photos"],
+      folderPaths: ["photos/2026/", "photos/2026", "photos/2025"],
     });
 
     expect(results).toEqual([
       {
         entriesDeleted: 1,
         foldersDeleted: 1,
-        path: "sfw/patreon",
+        path: "photos/2026",
       },
       {
         entriesDeleted: 1,
         foldersDeleted: 1,
-        path: "sfw/photos",
+        path: "photos/2025",
       },
     ]);
     expect(mocks.transactionMock).toHaveBeenCalledTimes(1);
@@ -114,7 +114,7 @@ describe("softDeleteFolderSubtree", () => {
     mocks.failureAt = 2;
     mocks.failureError = error;
 
-    await expect(softDeleteFolderSubtree({ folderPaths: ["sfw/patreon"] })).rejects.toThrow(error);
+    await expect(softDeleteFolderSubtree({ folderPaths: ["photos/2026"] })).rejects.toThrow(error);
 
     expect(mocks.committedMutations).toEqual([]);
   });
@@ -125,7 +125,7 @@ describe("softDeleteFolderSubtree", () => {
     mocks.failureError = error;
 
     await expect(
-      softDeleteFolderSubtree({ folderPaths: ["sfw/patreon", "sfw/photos"] }),
+      softDeleteFolderSubtree({ folderPaths: ["photos/2026", "photos/2025"] }),
     ).rejects.toThrow(error);
 
     expect(mocks.committedMutations).toEqual([]);

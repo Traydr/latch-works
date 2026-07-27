@@ -1,74 +1,95 @@
-const MAX_FAILED_ATTEMPTS = 5;
-const WINDOW_MS = 5 * 60 * 1000;
+import { inArray, lt, sql } from "drizzle-orm";
+import { db } from "../db";
+import { loginThrottleAttempts } from "../db/schema";
+import { createLoginThrottle, type LoginThrottleStore } from "./login-throttle-core";
 
-interface AttemptRecord {
-  count: number;
-  windowStart: number;
+type ThrottleExecutor = Pick<typeof db, "insert">;
+
+/**
+ * Builds the atomic attempt upsert.
+ *
+ * Every `case` reads the *existing* row: in `on conflict do update`, PostgreSQL
+ * evaluates all `set` right-hand sides against the pre-update tuple, so
+ * assigning `expires_at` last cannot disturb the `count` and `window_start`
+ * branches. An expired row therefore restarts the window at 1 rather than
+ * continuing to accumulate, which is what makes the fixed window fixed.
+ *
+ * Exported so `login-throttle-sql.test.ts` can assert the rendered SQL. That
+ * suite is the only coverage this branch logic has — the in-memory stores used
+ * by the behavioral suites are separate implementations of the same contract.
+ */
+export function buildLoginThrottleUpsert(
+  executor: ThrottleExecutor,
+  key: string,
+  currentTime: Date,
+  nextExpiry: Date,
+) {
+  return executor
+    .insert(loginThrottleAttempts)
+    .values({
+      count: 1,
+      expiresAt: nextExpiry,
+      key,
+      windowStart: currentTime,
+    })
+    .onConflictDoUpdate({
+      target: loginThrottleAttempts.key,
+      set: {
+        count: sql`case
+          when ${loginThrottleAttempts.expiresAt} < ${currentTime} then 1
+          else ${loginThrottleAttempts.count} + 1
+        end`,
+        expiresAt: sql`case
+          when ${loginThrottleAttempts.expiresAt} < ${currentTime} then ${nextExpiry}
+          else ${loginThrottleAttempts.expiresAt}
+        end`,
+        windowStart: sql`case
+          when ${loginThrottleAttempts.expiresAt} < ${currentTime} then ${currentTime}
+          else ${loginThrottleAttempts.windowStart}
+        end`,
+      },
+    });
 }
 
-const attemptsByKey = new Map<string, AttemptRecord>();
+const databaseLoginThrottleStore: LoginThrottleStore = {
+  async clear(keys) {
+    await db.delete(loginThrottleAttempts).where(inArray(loginThrottleAttempts.key, keys));
+  },
 
-function throttleKey(ip: string, username: string): string {
-  return `${ip}:${username.trim().toLowerCase()}`;
-}
+  async read(keys) {
+    // Read-only on purpose: this runs on every login attempt, including
+    // successful ones. Expired rows are filtered by the caller, and pruning
+    // happens on the write path instead.
+    const rows = await db
+      .select()
+      .from(loginThrottleAttempts)
+      .where(inArray(loginThrottleAttempts.key, keys));
 
-function usernameThrottleKey(username: string): string {
-  return `user:${username.trim().toLowerCase()}`;
-}
+    return rows.map((row) => ({
+      count: row.count,
+      expiresAt: row.expiresAt.getTime(),
+      key: row.key,
+      windowStart: row.windowStart.getTime(),
+    }));
+  },
 
-function isBucketThrottled(key: string, now: number): boolean {
-  const record = attemptsByKey.get(key);
-  if (!record) {
-    return false;
-  }
+  async record(keys, now, expiresAt) {
+    const currentTime = new Date(now);
+    const nextExpiry = new Date(expiresAt);
 
-  if (now - record.windowStart > WINDOW_MS) {
-    attemptsByKey.delete(key);
-    return false;
-  }
+    // Prune before the transaction, not inside it. A global delete holds locks
+    // in scan order, so folding it into the upsert transaction would let two
+    // concurrent failed logins acquire row locks in opposite orders.
+    await db.delete(loginThrottleAttempts).where(lt(loginThrottleAttempts.expiresAt, currentTime));
 
-  return record.count >= MAX_FAILED_ATTEMPTS;
-}
+    await db.transaction(async (tx) => {
+      for (const key of keys) {
+        await buildLoginThrottleUpsert(tx, key, currentTime, nextExpiry);
+      }
+    });
+  },
+};
 
-function pruneExpiredAttempts(now: number): void {
-  for (const [key, record] of attemptsByKey) {
-    if (now - record.windowStart > WINDOW_MS) {
-      attemptsByKey.delete(key);
-    }
-  }
-}
+const sharedLoginThrottle = createLoginThrottle({ store: databaseLoginThrottleStore });
 
-function recordAttempt(key: string, now: number): void {
-  const record = attemptsByKey.get(key);
-
-  if (!record || now - record.windowStart > WINDOW_MS) {
-    attemptsByKey.set(key, { count: 1, windowStart: now });
-    return;
-  }
-
-  record.count += 1;
-}
-
-export function isLoginThrottled(ip: string, username: string): boolean {
-  const now = Date.now();
-  return (
-    isBucketThrottled(throttleKey(ip, username), now) ||
-    isBucketThrottled(usernameThrottleKey(username), now)
-  );
-}
-
-export function recordFailedLogin(ip: string, username: string): void {
-  const now = Date.now();
-  pruneExpiredAttempts(now);
-  recordAttempt(throttleKey(ip, username), now);
-  recordAttempt(usernameThrottleKey(username), now);
-}
-
-export function clearLoginThrottle(ip: string, username: string): void {
-  attemptsByKey.delete(throttleKey(ip, username));
-  attemptsByKey.delete(usernameThrottleKey(username));
-}
-
-export function resetLoginThrottleForTests(): void {
-  attemptsByKey.clear();
-}
+export const { clearLoginThrottle, isLoginThrottled, recordFailedLogin } = sharedLoginThrottle;

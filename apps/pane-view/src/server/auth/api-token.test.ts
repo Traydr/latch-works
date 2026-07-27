@@ -14,11 +14,10 @@ vi.mock("../../env/server", () => ({
 
 import {
   assertSyncApiTokenFromBody,
-  getSyncApiTokenDigestCacheForTests,
+  createSyncApiTokenVerifier,
   hashApiToken,
   readBearerToken,
   requireSyncApiToken,
-  resetSyncApiTokenDigestCacheForTests,
   verifySyncApiToken,
 } from "./api-token";
 
@@ -51,7 +50,6 @@ describe("hashApiToken", () => {
 describe("verifySyncApiToken", () => {
   beforeEach(() => {
     configuredSyncToken = syncToken;
-    resetSyncApiTokenDigestCacheForTests();
   });
 
   it("accepts only an exact match against a configured token", () => {
@@ -67,23 +65,21 @@ describe("verifySyncApiToken", () => {
   });
 
   it("caches the configured token digest across requests", () => {
-    expect(getSyncApiTokenDigestCacheForTests().configuredTokenDigest).toBeNull();
+    const digest = vi.fn((token: string) => crypto.createHash("sha256").update(token).digest());
+    const verifier = createSyncApiTokenVerifier({
+      digest,
+      getConfiguredToken: () => syncToken,
+    });
 
-    verifySyncApiToken({ token: "wrong-token" });
-    const digestAfterFirst = getSyncApiTokenDigestCacheForTests().configuredTokenDigest;
-
-    expect(digestAfterFirst).not.toBeNull();
-
-    verifySyncApiToken({ token: syncToken });
-
-    expect(getSyncApiTokenDigestCacheForTests().configuredTokenDigest).toBe(digestAfterFirst);
+    expect(verifier.verify({ token: "wrong-token" })).toBe(false);
+    expect(verifier.verify({ token: syncToken })).toBe(true);
+    expect(digest.mock.calls.filter(([token]) => token === syncToken)).toHaveLength(2);
   });
 });
 
 describe("requireSyncApiToken", () => {
   beforeEach(() => {
     configuredSyncToken = syncToken;
-    resetSyncApiTokenDigestCacheForTests();
   });
 
   it("passes a valid bearer token through and 401s an invalid one", () => {
@@ -95,7 +91,6 @@ describe("requireSyncApiToken", () => {
 describe("assertSyncApiTokenFromBody", () => {
   beforeEach(() => {
     configuredSyncToken = syncToken;
-    resetSyncApiTokenDigestCacheForTests();
   });
 
   it("accepts a valid body token and throws on an invalid one", () => {

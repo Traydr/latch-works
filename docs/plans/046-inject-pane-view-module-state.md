@@ -8,12 +8,27 @@
 
 ## Status
 
-- **Status**: TODO
+- **Status**: DONE
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: MED
 - **Depends on**: —
 - **Category**: architecture / testability / security
+
+## Implementation notes
+
+- Completed 2026-07-27.
+- Login throttling is stored in PostgreSQL and updated with atomic upserts, so counters now survive
+  process restarts and hold across Pane View replicas.
+- The drift check showed that the legacy cleanup worker hook and its tests had already been removed
+  after this plan's baseline. No replacement extraction was necessary for that hook.
+- Gallery resolver state, the resolved-media cache, the resolve throttle, and the sync-token digest
+  cache are now explicitly constructed instances. Production callers use one shared instance while
+  tests construct isolated instances.
+- Shutter capability issuance lives in `shutter-capability.ts`, and importing `shutter-client.ts`
+  performs no capability-configuration evaluation.
+- `production-export-names.test.ts` rejects production exports matching
+  `/ForTests$|TestHooks$|^__/`; its failure path was verified with a temporary offending export.
 
 ## Why this matters
 
