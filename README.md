@@ -183,10 +183,3 @@ The product names follow a window-and-access metaphor:
 | **Pane** | The web viewing surface |
 | **Box** | Collects and stores incoming media |
 | **Lockstep** | Keeps local and remote archives in sync |
-
----
-
-## License
-
-- **Frame View** and **Lockstep** (desktop) are [MIT](apps/frame-view/LICENSE).
-- The rest of the monorepo is private and not licensed for redistribution.
