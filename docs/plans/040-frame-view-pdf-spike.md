@@ -8,8 +8,8 @@
 
 ## Status
 
-- **Status**: BLOCKED (`b74d7b8`; design-only branch, user-only package/make gates not run)
-- **Priority**: P2
+- **Status**: BLOCKED on user-only desktop gates; start from scratch (audited 2026-07-28)
+- **Priority**: P2 — consider deferring; see Blocker analysis
 - **Effort**: M (spike only; implementation to be re-estimated)
 - **Risk**: MED
 - **Depends on**: Plan 033, Plan 034
@@ -24,13 +24,36 @@ does too. Frame's actual catalog, IPC contracts, thumbnails, and modal support o
 bounded spike should determine the secure Electron delivery boundary, PDF.js packaging model, and
 reader performance contract before this promise becomes a broad cross-process implementation.
 
+## Blocker analysis (audit 2026-07-28)
+
+**What is blocking**: Steps 2 and 3 require `pnpm --filter @latch-works/frame-view package` / `make`
+and then opening the resulting desktop distributable to measure packaged worker resolution,
+first-page latency, and bounded canvas behavior. An agent cannot launch a packaged Electron app, so
+these gates are user-only. Steps 1, 4, and 5 are desk work and are not blocked.
+
+**Is it still blocked**: yes, and nothing has started. The earlier attempt left a provisional design
+record on `codex/040-frame-view-pdf-spike` at `b74d7b8`; that branch no longer exists on `origin` or
+locally and the commit is unreachable from any ref. Do not try to continue from it. It contained a
+design draft only — no prototype, measurements, or worker-resolution evidence — so nothing of
+substance is lost. `docs/frame-view-pdf-reader-design.md` does not exist on `main`.
+
+**Urgency has dropped**: the reason this was P2 was that the Showcase advertised a Frame PDF reader
+that does not exist. Plan 039 fixed that — `frame-view/index.mdx`, `comics-and-stories.mdx`, and
+`troubleshooting.mdx` now all state that PDF reading is planned and not shipped. Code and docs agree.
+
+**How to resolve**: either (a) a human runs Steps 2–3 interactively on a supported desktop OS and
+records the measurements, after which an agent can finish Steps 4–5; or (b) mark this deferred until
+Frame PDF reading is actually wanted. Nothing depends on this plan.
+
 ## Current state
 
-- `apps/frame-view/src/shared/contracts.ts` models only image/video media.
+- `apps/frame-view/src/shared/contracts.ts` models only image/video media, and `apps/frame-view` has
+  no `pdfjs-dist` dependency.
 - Frame catalog discovery, thumbnailing, and `ViewerModal` branch on image/video and do not index or
   open PDF files.
-- `apps/showcase/src/content/docs/frame-view/comics-and-stories.mdx:12-30` and the Frame landing page
-  describe a dedicated reader that does not exist.
+- The Showcase no longer overclaims: Plan 039 corrected `comics-and-stories.mdx`, `index.mdx`, and
+  `troubleshooting.mdx` to state that Frame PDF reading is planned and not shipped. Keep it that way
+  until production done criteria are met.
 - Pane's `PdfViewer` now provides the bounded Plan 034 windowing contract: stable geometry,
   visible-page rendering, overscan, obsolete-task cancellation, and at most eight retained canvases.
 - Plan 033 moved Frame's catalog path and media classification semantics toward

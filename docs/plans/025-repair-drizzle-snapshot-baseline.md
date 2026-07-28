@@ -8,7 +8,7 @@
 
 ## Status
 
-- **Status**: BLOCKED after execution; revised procedure awaits a fresh executor
+- **Status**: BLOCKED on environment — needs two disposable PostgreSQL databases (audited 2026-07-28)
 - **Priority**: P1
 - **Effort**: M
 - **Risk**: MED
@@ -19,25 +19,42 @@
 
 ## Why this matters
 
-The migration journal records migrations through `0010`, but the newest snapshot is `0006` and still
+The migration journal records migrations through `0012`, but the newest snapshot is `0006` and still
 models the removed `thumbnails` table. A future `drizzle-kit generate` can therefore rediscover
 already-applied changes and emit destructive or misleading SQL. The target is a comments-only
 baseline migration whose ordinary-generator snapshot matches the current schema, verified on both
 fresh and already-migrated disposable PostgreSQL databases.
 
+**The drift has grown since this plan was written.** Two further migrations were hand-written past
+the stale baseline: `0011_serialize_sync_hard_wipe` (Plan 030) and `0012_shared_login_throttle`
+(Plan 046). Each one widens the gap the generator will try to close.
+
 ## Current state
 
-- `apps/pane-view/drizzle/meta/_journal.json:54-80` records `0007` through `0010`.
-- `apps/pane-view/drizzle/meta/0006_snapshot.json:1515` still contains `public.thumbnails`.
+- `apps/pane-view/drizzle/meta/_journal.json` records `0007` through `0012`; snapshots exist only for
+  `0000`, `0001`, `0002`, and `0006`.
+- `apps/pane-view/drizzle/meta/0006_snapshot.json` still contains `public.thumbnails`.
 - `apps/pane-view/drizzle/0009_shutter_only.sql` drops that table and derivative enums.
-- `apps/pane-view/src/server/db/schema.ts` is the current Shutter-only schema.
+- `apps/pane-view/src/server/db/schema.ts` is the current Shutter-only schema and contains no
+  thumbnail or derivative-queue objects.
 - An execution attempt proved that Drizzle Kit `0.31.10` custom migrations copy the latest snapshot:
   `--custom` created empty SQL but retained `public.thumbnails` and `public.thumbnail_status`.
 - Ordinary `drizzle-kit generate` derives a current snapshot from `schema.ts`; its generated SQL must
-  first be audited as the already-applied net effect of hand-written migrations `0007` through `0010`,
+  first be audited as the already-applied net effect of hand-written migrations `0007` through `0012`,
   then only the new SQL body is replaced with an explanatory comments-only no-op.
 - Drizzle config imports the full validated Pane environment; use a secret-free disposable env and
   never copy values from an existing `.env` into committed files.
+
+### Drift corrections (audit 2026-07-28)
+
+- The baseline file is now `0013_*`, not `0011_*`; `0011` and `0012` are taken.
+- The generated diff will now also include `login_throttle_attempts` (table + `expires_at` index,
+  `schema.ts:129-138`) and `maintenance_jobs_active_hard_wipe_unique` (`schema.ts:402`). Both are
+  **already applied** by `0012` and `0011` respectively. Account for them as expected, not as
+  unexplained operations — they are not a STOP condition.
+- The only blocker is environment access. Steps 1 and 4 need two throwaway PostgreSQL databases
+  (one empty, one migrated through `0012`); a hosted scratch database is fine, local Docker is not
+  required. Steps 2, 3, and 5 need no database.
 
 ## Commands you will need
 
@@ -49,11 +66,11 @@ fresh and already-migrated disposable PostgreSQL databases.
 
 ## Scope
 
-**In scope**: a new `apps/pane-view/drizzle/0011_*` baseline SQL file; its matching snapshot;
+**In scope**: a new `apps/pane-view/drizzle/0013_*` baseline SQL file; its matching snapshot;
 `apps/pane-view/drizzle/meta/_journal.json`; optionally a migration-drift check script under
 `apps/pane-view/scripts/` and its package script.
 
-**Out of scope**: rewriting `0000`-`0010`; editing production databases; changing application
+**Out of scope**: rewriting `0000`-`0012`; editing production databases; changing application
 schema; adding new product columns or indexes.
 
 ## Git workflow
@@ -64,11 +81,11 @@ schema; adding new product columns or indexes.
 
 ## Steps
 
-### Step 1: Prepare the through-0010 upgrade database
+### Step 1: Prepare the through-0012 upgrade database
 
 Provision two empty disposable PostgreSQL databases: one for the fresh path and one for the upgrade
-path. Before generating `0011`, point `DATABASE_URL` only at the upgrade database and run the existing
-migrations through `0010`. Use `SKIP_ENV_VALIDATION=1` so unrelated application secrets are not
+path. Before generating `0013`, point `DATABASE_URL` only at the upgrade database and run the existing
+migrations through `0012`. Use `SKIP_ENV_VALIDATION=1` so unrelated application secrets are not
 required. Record the current application-table/enum catalog for later comparison; never print the
 database URL.
 
@@ -78,14 +95,14 @@ database URL.
 SKIP_ENV_VALIDATION=1 DATABASE_URL="$UPGRADE_DATABASE_URL" pnpm --filter @latch-works/pane-view db:migrate
 ```
 
-Expected: exit 0 with journal entries only through `0010`.
+Expected: exit 0 with journal entries only through `0012`.
 
 ### Step 2: Generate and audit a current snapshot
 
 Run ordinary generation, not `--custom`. It should compare stale snapshot `0006` with current
-`schema.ts`, producing `0011_schema_baseline.sql`, `meta/0011_snapshot.json`, and one journal entry.
+`schema.ts`, producing `0013_schema_baseline.sql`, `meta/0013_snapshot.json`, and one journal entry.
 Before editing the SQL, account for every generated operation against the already-applied net effect
-of `0007`-`0010`. The manual `pg_trgm` extension/indexes from `0008` are intentionally not modeled by
+of `0007`-`0012`. The manual `pg_trgm` extension/indexes from `0008` are intentionally not modeled by
 `schema.ts`; do not add them to the snapshot.
 
 The new snapshot must omit `public.thumbnails`, `public.thumbnail_status`,
@@ -96,26 +113,26 @@ The new snapshot must omit `public.thumbnails`, `public.thumbnail_status`,
 **Verify**: run
 `SKIP_ENV_VALIDATION=1 pnpm --filter @latch-works/pane-view db:generate --name schema_baseline`.
 It must create exactly the three expected metadata/migration changes; the snapshot must match
-`schema.ts`, and no generated operation may be unexplained by `0007`-`0010`.
+`schema.ts`, and no generated operation may be unexplained by `0007`-`0012`.
 
 ### Step 3: Convert only the new migration body to a no-op
 
-Replace only the executable body of `0011_schema_baseline.sql` with comments explaining that
-`0007`-`0010` already applied the represented schema delta and `0011` advances Drizzle's snapshot
-baseline. Do not edit the generated snapshot IDs, journal entry, or any migration `0000`-`0010`.
+Replace only the executable body of `0013_schema_baseline.sql` with comments explaining that
+`0007`-`0012` already applied the represented schema delta and `0013` advances Drizzle's snapshot
+baseline. Do not edit the generated snapshot IDs, journal entry, or any migration `0000`-`0012`.
 
 **Verify**:
 
 ```bash
-rg -n 'CREATE|ALTER|DROP|TRUNCATE|DELETE|UPDATE|INSERT' apps/pane-view/drizzle/0011_*.sql
+rg -n 'CREATE|ALTER|DROP|TRUNCATE|DELETE|UPDATE|INSERT' apps/pane-view/drizzle/0013_*.sql
 ```
 
 Expected: no executable DDL/DML matches.
 
 ### Step 4: Prove fresh and upgrade paths are equivalent
 
-Run all migrations through `0011` on the fresh database. Then run migration again against the upgrade
-database so only comments-only `0011` is newly applied. Compare relevant PostgreSQL catalogs: current
+Run all migrations through `0013` on the fresh database. Then run migration again against the upgrade
+database so only comments-only `0013` is newly applied. Compare relevant PostgreSQL catalogs: current
 modeled tables/enums must match, obsolete thumbnail objects must be absent, and both databases must
 retain the manual `0008` indexes.
 
@@ -125,8 +142,8 @@ exit 0 and the catalog comparison must have no differences.
 
 ### Step 5: Prove future generation stability
 
-Run ordinary `db:generate` with the final `0011` snapshot present. Record `git status --short` before
-and after. Drizzle must report no schema changes and create no `0012` files or tracked modifications.
+Run ordinary `db:generate` with the final `0013` snapshot present. Record `git status --short` before
+and after. Drizzle must report no schema changes and create no `0014` files or tracked modifications.
 Remove any untracked probe artifact before reporting; do not commit it.
 
 **Verify**: `SKIP_ENV_VALIDATION=1 pnpm --filter @latch-works/pane-view db:generate` reports no
@@ -135,7 +152,7 @@ schema changes; `pnpm --filter @latch-works/pane-view typecheck` exits 0.
 ## Test plan
 
 - Fresh empty database: migrations `0000` through baseline succeed.
-- Existing through-`0010` database: baseline succeeds and changes no application tables.
+- Existing through-`0012` database: baseline succeeds and changes no application tables.
 - Current schema generation: no duplicate drop/create operations.
 - Snapshot inspection: no `thumbnails`, `thumbnail_status`, or derivative queue types.
 
@@ -150,10 +167,10 @@ schema changes; `pnpm --filter @latch-works/pane-view typecheck` exits 0.
 ## STOP conditions
 
 - Ordinary generation does not create a current snapshot with this Drizzle version.
-- Generated SQL contains an operation not fully accounted for by `0007`-`0010`.
-- Repair would require changing applied migration checksums or rewriting `0000`-`0010`.
+- Generated SQL contains an operation not fully accounted for by `0007`-`0012`.
+- Repair would require changing applied migration checksums or rewriting `0000`-`0012`.
 - Fresh and upgrade-path databases produce different current schemas.
-- A generation probe after `0011` creates another schema diff.
+- A generation probe after `0013` creates another schema diff.
 
 ## Maintenance notes
 

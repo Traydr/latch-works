@@ -7,10 +7,12 @@
 
 ## Status
 
+- **Status**: TODO — ready to execute; all dependencies landed (audited 2026-07-28)
 - **Priority**: P3
 - **Effort**: L
 - **Risk**: HIGH
-- **Depends on**: `docs/plans/026-attest-sync-uploads.md`, `docs/plans/030-serialize-sync-and-hard-wipe.md`, `docs/plans/036-pipeline-lockstep-uploads.md`
+- **Depends on**: Plans 026, 030, and 036 — all landed (`458cda2`, `5885249`, `5e69cba`); plan files
+  removed, see `docs/plans/README.md`
 - **Category**: perf
 - **Planned at**: commit `fd5693d`, 2026-07-13
 - **Original finding**: 16
@@ -24,10 +26,15 @@ ancestor once, and preserve resumable item outcomes.
 
 ## Current state
 
-- `sync/store.ts:94` opens one transaction per object.
-- `upsertContainingFolders` loops every ancestor and performs select + upsert.
-- Lockstep currently registers immediately inside `pushMediaItem`; Plan 036 makes items concurrent.
-- Plan 026 HEAD-verifies objects before DB mutation; batch flow must retain that invariant.
+- `sync/store.ts` still opens one transaction per object in `completeSyncedObject`.
+- `upsertContainingFolders` (`sync/store.ts:325-335`) loops every ancestor and performs select +
+  upsert; this is the O(files x depth) cost the plan targets and it is unchanged.
+- Lockstep registers immediately inside `pushMediaItem`; Plan 036 landed and items are now concurrent
+  through `runBoundedQueue` with `uploadConcurrency` (default 3).
+- Plan 026 landed: `completeSyncedObject` HEAD-verifies size, content type, SHA metadata, and checksum
+  before any DB mutation. The batch flow must retain that invariant per item.
+- Plan 030 landed: both sync start and wipe scheduling take a shared advisory transaction lock, and
+  the upload/complete routes call `assertNoActiveCleanupJob`. Batching must not bypass either.
 - Existing route validation rejects unsafe paths and derives object keys; reuse it per item.
 
 ## Commands you will need
