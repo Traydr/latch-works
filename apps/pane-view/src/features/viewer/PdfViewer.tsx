@@ -119,8 +119,14 @@ export function PdfViewer({
   const hasAppliedInitialPageRef = useRef(false);
   const previousMediaIdRef = useRef(mediaId);
   const initialPageRef = useRef(initialPage);
-  onPageChangeRef.current = onPageChange;
-  initialPageRef.current = initialPage;
+
+  useEffect(() => {
+    onPageChangeRef.current = onPageChange;
+  }, [onPageChange]);
+
+  useEffect(() => {
+    initialPageRef.current = initialPage;
+  }, [initialPage]);
 
   useEffect(() => {
     if (previousMediaIdRef.current !== mediaId) {
