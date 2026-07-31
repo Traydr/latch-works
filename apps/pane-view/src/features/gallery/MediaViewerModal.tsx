@@ -641,6 +641,7 @@ export function MediaViewerModal({
         >
           <div className="pointer-events-auto space-y-2">
             <input
+              aria-label="Video seek position"
               type="range"
               min={0}
               max={canSeek ? duration : 1}

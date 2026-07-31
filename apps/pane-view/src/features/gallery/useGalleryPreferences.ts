@@ -102,7 +102,7 @@ export function useGalleryPreferences({
         to: "/",
       });
     }
-  }, []);
+  }, [buildBrowseSearch, navigate, persisted.lastPath, search.path]);
 
   useEffect(() => {
     if (displayPath === "" && recursive) {

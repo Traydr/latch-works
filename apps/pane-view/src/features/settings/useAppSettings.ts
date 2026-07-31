@@ -62,17 +62,21 @@ export function resolveRootKey(currentPath: string): string {
 
 export function useAppSettings() {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_APP_SETTINGS);
+  const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
     setSettings(readSettings());
+    setIsReady(true);
   }, []);
 
+  useEffect(() => {
+    if (isReady) {
+      writeSettings(settings);
+    }
+  }, [isReady, settings]);
+
   const updateSettings = useCallback((patch: AppSettingsPatch) => {
-    setSettings((current) => {
-      const next = { ...current, ...patch };
-      writeSettings(next);
-      return next;
-    });
+    setSettings((current) => ({ ...current, ...patch }));
   }, []);
 
   return { settings, updateSettings };
