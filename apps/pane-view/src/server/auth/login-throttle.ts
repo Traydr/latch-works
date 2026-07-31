@@ -84,6 +84,7 @@ const databaseLoginThrottleStore: LoginThrottleStore = {
 
     await db.transaction(async (tx) => {
       for (const key of keys) {
+        // react-doctor-disable-next-line react-doctor/async-await-in-loop -- Stable lock order prevents concurrent login transactions from deadlocking.
         await buildLoginThrottleUpsert(tx, key, currentTime, nextExpiry);
       }
     });

@@ -2,8 +2,8 @@ import type { QueryClient } from "@tanstack/react-query";
 import { createRootRouteWithContext, Outlet } from "@tanstack/react-router";
 import { ThemeProvider } from "next-themes";
 import appCss from "../styles.css?url";
-import { AppNotFound } from "./app-not-found";
-import { RootDocument } from "./root-document";
+import { AppNotFound } from "./-app-not-found";
+import { RootDocument } from "./-root-document";
 
 export const Route = createRootRouteWithContext<{
   queryClient: QueryClient;

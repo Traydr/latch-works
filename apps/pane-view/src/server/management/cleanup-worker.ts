@@ -218,6 +218,7 @@ async function processLibraryWipeBatch(
 
       for (const row of rows) {
         try {
+          // react-doctor-disable-next-line react-doctor/async-await-in-loop -- Stop at the first purge failure so the durable job cursor remains retry-safe.
           await purgeShutterSource(row.sha256);
         } catch (error) {
           await updateJobProgress(jobId, {
@@ -227,6 +228,7 @@ async function processLibraryWipeBatch(
           });
           return true;
         }
+        // react-doctor-disable-next-line react-doctor/async-await-in-loop -- Delete only after this row's external source purge succeeds.
         await db.delete(mediaObjects).where(eq(mediaObjects.id, row.id));
       }
 
