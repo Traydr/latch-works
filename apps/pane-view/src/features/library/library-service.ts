@@ -64,7 +64,7 @@ export interface LibrarySnapshot {
 }
 
 const deleteLibraryEntrySchema = z.object({
-  entryId: z.string().uuid(),
+  entryId: z.uuid(),
 });
 
 export const deleteLibraryEntry = createServerFn({ method: "POST" })
@@ -167,12 +167,5 @@ function normalizeQuery(query: string | undefined): string | undefined {
 }
 
 function readFixtureRoots(currentPath: string): string[] {
-  return fixtureRoots
-    .concat(currentPath, getParentPath(currentPath))
-    .filter((path) => path.length > 0)
-    .filter(dedupe);
-}
-
-function dedupe(value: string, index: number, values: string[]): boolean {
-  return values.indexOf(value) === index;
+  return [...new Set(fixtureRoots.concat(currentPath, getParentPath(currentPath)).filter(Boolean))];
 }

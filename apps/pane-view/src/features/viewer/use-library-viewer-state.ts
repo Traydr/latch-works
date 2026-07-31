@@ -12,7 +12,10 @@ export function useLibraryViewerState(subjectId: string | undefined) {
   const pendingPatchRef = useRef<ViewerStatePatch | null>(null);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const subjectIdRef = useRef(subjectId);
-  subjectIdRef.current = subjectId;
+
+  useEffect(() => {
+    subjectIdRef.current = subjectId;
+  }, [subjectId]);
 
   const clearDebounceTimer = useCallback((): void => {
     if (debounceTimerRef.current) {

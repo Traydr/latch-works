@@ -4,6 +4,8 @@ import { type ReactNode, type RefObject, useEffect } from "react";
 import { BrowserEntryCard } from "./BrowserEntryCard";
 import { useVirtualGridMetrics } from "./useVirtualGridMetrics";
 
+const EMPTY_THUMBNAIL_URLS: Readonly<Record<string, string>> = {};
+
 interface BrowserGridProps {
   cardWidth: number;
   columnCountRef: RefObject<number>;
@@ -38,7 +40,7 @@ export function BrowserGrid({
   scrollFocusedIntoView,
   onScrolledToFocus,
   selectedId,
-  thumbnailUrls = {},
+  thumbnailUrls = EMPTY_THUMBNAIL_URLS,
   onWindowedEntriesChange,
 }: BrowserGridProps) {
   const {

@@ -4,10 +4,10 @@ import { Input } from "@/components/ui/input";
 import { getSessionStatus } from "@/features/auth/session-service";
 
 export const Route = createFileRoute("/login")({
-  ssr: false,
   validateSearch: (search): { error?: string } => ({
     error: typeof search.error === "string" ? search.error : undefined,
   }),
+  ssr: false,
   loader: async () => {
     const { authenticated } = await getSessionStatus();
     if (authenticated) {

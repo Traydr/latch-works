@@ -64,7 +64,10 @@ export function GalleryBrowsePane({
   const [loadMoreTrigger, setLoadMoreTrigger] = useState<HTMLDivElement | null>(null);
   const loadMoreTriggerIntersectingRef = useRef(false);
   const loadingMoreMediaRef = useRef(loadingMoreMedia);
-  loadingMoreMediaRef.current = loadingMoreMedia;
+
+  useEffect(() => {
+    loadingMoreMediaRef.current = loadingMoreMedia;
+  }, [loadingMoreMedia]);
 
   useEffect(() => {
     loadMoreTriggerIntersectingRef.current = false;

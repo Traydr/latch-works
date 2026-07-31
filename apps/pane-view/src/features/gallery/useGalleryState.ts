@@ -83,12 +83,14 @@ export function useGalleryState() {
     setIsReady(true);
   }, []);
 
+  useEffect(() => {
+    if (isReady) {
+      writePersistedState(state);
+    }
+  }, [isReady, state]);
+
   const updateState = useCallback((patch: Partial<PersistedState>) => {
-    setState((current) => {
-      const next = { ...current, ...patch };
-      writePersistedState(next);
-      return next;
-    });
+    setState((current) => ({ ...current, ...patch }));
   }, []);
 
   const queueRef = useRef<Partial<PersistedState> | null>(null);

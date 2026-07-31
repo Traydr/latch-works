@@ -33,11 +33,11 @@ const wipeLibrarySchema = z.object({
 });
 
 const cleanupJobSchema = z.object({
-  jobId: z.string().uuid(),
+  jobId: z.uuid(),
 });
 
 const cancelSyncRunSchema = z.object({
-  syncRunId: z.string().uuid(),
+  syncRunId: z.uuid(),
 });
 
 export const getManagementOverview = createServerFn({ method: "GET" }).handler(async () => {

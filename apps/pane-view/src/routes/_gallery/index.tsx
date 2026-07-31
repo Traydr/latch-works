@@ -10,9 +10,9 @@ import {
 } from "@/features/library/library-queries";
 
 export const Route = createFileRoute("/_gallery/")({
-  ssr: false,
   validateSearch: (search): GalleryBrowseSearch => parseGalleryBrowseSearch(search),
   loaderDeps: ({ search }) => toGalleryRouteLoaderDeps(search),
+  ssr: false,
   loader: async ({ context, deps }) => {
     await context.queryClient.ensureQueryData(librarySnapshotQueryOptions(deps));
   },

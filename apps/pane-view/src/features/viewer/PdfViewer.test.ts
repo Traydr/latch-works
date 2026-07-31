@@ -20,12 +20,12 @@ vi.mock("pdfjs-dist", () => ({
 vi.mock("pdfjs-dist/build/pdf.worker.min.mjs?url", () => ({ default: "pdf-worker" }));
 
 import { getDocument } from "pdfjs-dist";
+import { PdfViewer } from "./PdfViewer";
 import {
   getPdfPageRenderWindow,
-  PdfViewer,
   resolveVisiblePdfPage,
   scrollToPdfPage,
-} from "./PdfViewer";
+} from "./pdf-viewer-helpers";
 
 interface Deferred<T> {
   promise: Promise<T>;

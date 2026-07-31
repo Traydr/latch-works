@@ -9,6 +9,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useEffectEvent,
   useMemo,
   useRef,
   useState,
@@ -223,90 +224,90 @@ export function MediaViewerModal({
     }
   }, []);
 
+  const handleKeyDown = useEffectEvent((event: KeyboardEvent) => {
+    revealChrome();
+
+    if (isTextInputTarget(event.target)) {
+      return;
+    }
+
+    if (event.metaKey || event.ctrlKey || event.altKey) {
+      return;
+    }
+
+    const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+
+    if (key === "Escape") {
+      event.preventDefault();
+      onClose();
+      return;
+    }
+    if (key === "ArrowRight" || key === "e") {
+      event.preventDefault();
+      step(1);
+      return;
+    }
+    if (key === "ArrowLeft" || key === "q") {
+      event.preventDefault();
+      step(-1);
+      return;
+    }
+
+    if (!isVideoItem) {
+      return;
+    }
+
+    if (key === " " || key === "2") {
+      event.preventDefault();
+      const video = videoRef.current;
+      if (!video) {
+        return;
+      }
+      if (video.paused) {
+        void video.play();
+      } else {
+        video.pause();
+      }
+      return;
+    }
+    if (key === "1") {
+      event.preventDefault();
+      skip(-5);
+      return;
+    }
+    if (key === "3") {
+      event.preventDefault();
+      skip(5);
+      return;
+    }
+    if (key === "4") {
+      event.preventDefault();
+      speedBoostHeldRef.current = true;
+      applySpeed(2);
+    }
+  });
+
+  const handleKeyUp = useEffectEvent((event: KeyboardEvent) => {
+    if (event.metaKey || event.ctrlKey || event.altKey) {
+      return;
+    }
+
+    const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+    if (key === "4" && speedBoostHeldRef.current) {
+      speedBoostHeldRef.current = false;
+      applySpeed(1);
+    }
+  });
+
+  const resetHeldSpeed = useEffectEvent(() => {
+    if (speedBoostHeldRef.current) {
+      speedBoostHeldRef.current = false;
+      applySpeed(1);
+    }
+  });
+
   // Keyboard handling.
   useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      revealChrome();
-
-      if (isTextInputTarget(event.target)) {
-        return;
-      }
-
-      if (event.metaKey || event.ctrlKey || event.altKey) {
-        return;
-      }
-
-      const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
-
-      if (key === "Escape") {
-        event.preventDefault();
-        onClose();
-        return;
-      }
-      if (key === "ArrowRight" || key === "e") {
-        event.preventDefault();
-        step(1);
-        return;
-      }
-      if (key === "ArrowLeft" || key === "q") {
-        event.preventDefault();
-        step(-1);
-        return;
-      }
-
-      if (!isVideoItem) {
-        return;
-      }
-
-      if (key === " " || key === "2") {
-        event.preventDefault();
-        const video = videoRef.current;
-        if (!video) {
-          return;
-        }
-        if (video.paused) {
-          void video.play();
-        } else {
-          video.pause();
-        }
-        return;
-      }
-      if (key === "1") {
-        event.preventDefault();
-        skip(-5);
-        return;
-      }
-      if (key === "3") {
-        event.preventDefault();
-        skip(5);
-        return;
-      }
-      if (key === "4") {
-        event.preventDefault();
-        speedBoostHeldRef.current = true;
-        applySpeed(2);
-      }
-    };
-
-    const handleKeyUp = (event: KeyboardEvent) => {
-      if (event.metaKey || event.ctrlKey || event.altKey) {
-        return;
-      }
-
-      const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
-      if (key === "4" && speedBoostHeldRef.current) {
-        speedBoostHeldRef.current = false;
-        applySpeed(1);
-      }
-    };
-
-    const resetHeldSpeed = () => {
-      if (speedBoostHeldRef.current) {
-        speedBoostHeldRef.current = false;
-        applySpeed(1);
-      }
-    };
-
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
     window.addEventListener("blur", resetHeldSpeed);
@@ -315,7 +316,7 @@ export function MediaViewerModal({
       window.removeEventListener("keyup", handleKeyUp);
       window.removeEventListener("blur", resetHeldSpeed);
     };
-  }, [applySpeed, isVideoItem, onClose, revealChrome, skip, step]);
+  }, []);
 
   if (!item) {
     return null;
@@ -641,6 +642,7 @@ export function MediaViewerModal({
         >
           <div className="pointer-events-auto space-y-2">
             <input
+              aria-label="Video seek position"
               type="range"
               min={0}
               max={canSeek ? duration : 1}
