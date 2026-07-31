@@ -10,6 +10,7 @@ interface FolderPickerProps {
 
 export function FolderPicker({ folders, onChange, selectedPaths }: FolderPickerProps) {
   const [query, setQuery] = useState("");
+  const selectedPathSet = useMemo(() => new Set(selectedPaths), [selectedPaths]);
 
   const visibleFolders = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -27,7 +28,7 @@ export function FolderPicker({ folders, onChange, selectedPaths }: FolderPickerP
   }, [folders, query]);
 
   const togglePath = (path: string) => {
-    if (selectedPaths.includes(path)) {
+    if (selectedPathSet.has(path)) {
       onChange(selectedPaths.filter((value) => value !== path));
       return;
     }
@@ -49,7 +50,7 @@ export function FolderPicker({ folders, onChange, selectedPaths }: FolderPickerP
         ) : (
           <ul className="divide-y divide-border">
             {visibleFolders.map((folder) => {
-              const checked = selectedPaths.includes(folder.path);
+              const checked = selectedPathSet.has(folder.path);
               return (
                 <li key={folder.path}>
                   <label className="flex cursor-pointer items-start gap-3 px-3 py-2 text-sm hover:bg-muted/40">

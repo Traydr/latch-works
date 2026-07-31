@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
 const resolveMediaDeliveryRequestSchema = z.object({
-  mediaId: z.string().uuid(),
+  mediaId: z.uuid(),
   size: z.number().int().positive().optional(),
   variant: z.enum(["thumbnail", "preview", "original"]),
 });

@@ -29,6 +29,26 @@ const MEDIA_TYPE_COLORS: Record<string, DitherColor> = {
   video: "purple",
 };
 
+const SIZE_CHART_CONFIG = {
+  value: { color: "blue" as const, label: "Archive size (MB)" },
+} satisfies ChartConfig;
+
+const ENTRY_CHART_CONFIG = {
+  value: { color: "green" as const, label: "Entries" },
+} satisfies ChartConfig;
+
+const GROWTH_CHART_CONFIG = {
+  bytesAdded: { color: "orange" as const, label: "MB added" },
+} satisfies ChartConfig;
+
+const SYNC_CHART_CONFIG = {
+  started: { color: "blue" as const, label: "Sync runs" },
+} satisfies ChartConfig;
+
+const EXTENSION_CHART_CONFIG = {
+  megabytes: { color: "purple" as const, label: "MB" },
+} satisfies ChartConfig;
+
 function formatRate(bytesPerDay: number): string {
   return `${formatBytes(bytesPerDay)}/day`;
 }
@@ -100,22 +120,6 @@ export function StatsPage() {
   const entrySpark = stats?.entriesOverTime.map((point) => point.value) ?? [];
   const growthSpark = recentGrowthChartData.map((point) => point.bytesAdded);
 
-  const sizeConfig = {
-    value: { color: "blue" as const, label: "Archive size (MB)" },
-  } satisfies ChartConfig;
-
-  const entryConfig = {
-    value: { color: "green" as const, label: "Entries" },
-  } satisfies ChartConfig;
-
-  const growthConfig = {
-    bytesAdded: { color: "orange" as const, label: "MB added" },
-  } satisfies ChartConfig;
-
-  const syncConfig = {
-    started: { color: "blue" as const, label: "Sync runs" },
-  } satisfies ChartConfig;
-
   const mediaTypePieData =
     stats?.byMediaType.map((row) => ({
       megabytes: bytesToMegabytes(row.bytes),
@@ -137,10 +141,6 @@ export function StatsPage() {
       extension: row.extension,
       megabytes: bytesToMegabytes(row.bytes),
     })) ?? [];
-
-  const extensionConfig = {
-    megabytes: { color: "purple" as const, label: "MB" },
-  } satisfies ChartConfig;
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -226,7 +226,7 @@ export function StatsPage() {
                 title="Size over time"
               >
                 {stats.sizeOverTime.length > 1 ? (
-                  <AreaChart bloom="aura" config={sizeConfig} data={sizeChartData}>
+                  <AreaChart bloom="aura" config={SIZE_CHART_CONFIG} data={sizeChartData}>
                     <Grid />
                     <XAxis dataKey="label" />
                     <YAxis />
@@ -243,7 +243,7 @@ export function StatsPage() {
                 title="Entries over time"
               >
                 {stats.entriesOverTime.length > 1 ? (
-                  <AreaChart bloom="aura" config={entryConfig} data={stats.entriesOverTime}>
+                  <AreaChart bloom="aura" config={ENTRY_CHART_CONFIG} data={stats.entriesOverTime}>
                     <Grid />
                     <XAxis dataKey="label" />
                     <YAxis />
@@ -260,7 +260,7 @@ export function StatsPage() {
                 title="Daily growth"
               >
                 {stats.recentGrowth.some((row) => row.bytesAdded > 0) ? (
-                  <BarChart bloom="aura" config={growthConfig} data={recentGrowthChartData}>
+                  <BarChart bloom="aura" config={GROWTH_CHART_CONFIG} data={recentGrowthChartData}>
                     <Grid />
                     <XAxis dataKey="label" />
                     <YAxis />
@@ -277,7 +277,7 @@ export function StatsPage() {
                 title="Sync activity"
               >
                 {stats.syncActivity.some((row) => row.started > 0) ? (
-                  <BarChart bloom="aura" config={syncConfig} data={stats.syncActivity}>
+                  <BarChart bloom="aura" config={SYNC_CHART_CONFIG} data={stats.syncActivity}>
                     <Grid />
                     <XAxis dataKey="label" />
                     <YAxis />
@@ -316,7 +316,7 @@ export function StatsPage() {
                 title="Top extensions"
               >
                 {extensionBarData.length > 0 ? (
-                  <BarChart bloom="aura" config={extensionConfig} data={extensionBarData}>
+                  <BarChart bloom="aura" config={EXTENSION_CHART_CONFIG} data={extensionBarData}>
                     <Grid />
                     <XAxis dataKey="extension" />
                     <YAxis />

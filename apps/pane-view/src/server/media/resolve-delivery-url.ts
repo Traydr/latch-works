@@ -101,9 +101,12 @@ export async function resolveMediaDeliveryUrlsForVariants(
     seen.add(key);
     return true;
   });
-  const renditionIds = uniqueItems
-    .filter((item) => item.variant !== "original")
-    .map((item) => item.mediaId);
+  const renditionIds: string[] = [];
+  for (const item of uniqueItems) {
+    if (item.variant !== "original") {
+      renditionIds.push(item.mediaId);
+    }
+  }
   const contexts = await readMediaThumbnailContextsByEntryIds({ mediaIds: renditionIds });
 
   return Promise.all(
