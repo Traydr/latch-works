@@ -24,12 +24,6 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
   };
 
   useEffect(() => {
-    pageRefs.current = [];
-    setCurrentPage(0);
-    readerRef.current?.scrollTo({ top: 0 });
-  }, [comic]);
-
-  useEffect(() => {
     const scrollToPage = (index: number): void => {
       const nextIndex = Math.max(0, Math.min(comic.pages.length - 1, index));
       setCurrentPage(nextIndex);

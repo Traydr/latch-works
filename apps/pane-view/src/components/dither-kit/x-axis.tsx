@@ -27,7 +27,7 @@ export function XAxis({
         const position = ctx.xCenter(i) ?? 0
         return (
           <text
-            key={`${String(raw)}:${position}`}
+            key={JSON.stringify(row)}
             x={position}
             y={y}
             textAnchor="middle"

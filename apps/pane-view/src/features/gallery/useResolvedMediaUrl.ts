@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useReducer } from "react";
 import { resolveMediaDeliveryUrl } from "@/features/media/media-delivery-service";
 import {
   acquireResolveSlot,
@@ -120,6 +120,52 @@ export function createResolvedMediaUrlCache({
 
 const sharedResolvedMediaUrlCache = createResolvedMediaUrlCache();
 
+interface ResolvedMediaState {
+  failed: boolean;
+  inputKey: string;
+  loading: boolean;
+  resolvedUrl?: string;
+}
+
+type ResolvedMediaAction =
+  | { inputKey: string; type: "failed" }
+  | { inputKey: string; type: "pending"; url?: string }
+  | { inputKey: string; type: "ready"; url: string }
+  | { state: ResolvedMediaState; type: "reset" };
+
+function resolvedMediaReducer(
+  state: ResolvedMediaState,
+  action: ResolvedMediaAction,
+): ResolvedMediaState {
+  if (action.type === "reset") {
+    return action.state;
+  }
+  if (action.inputKey !== state.inputKey) {
+    return state;
+  }
+  if (action.type === "ready") {
+    return { ...state, failed: false, loading: false, resolvedUrl: action.url };
+  }
+  if (action.type === "failed") {
+    return { ...state, failed: true, loading: false };
+  }
+  return { ...state, failed: false, loading: !action.url, resolvedUrl: action.url };
+}
+
+function createResolvedMediaState(
+  inputKey: string,
+  mediaId: string | undefined,
+  readyUrl: string | undefined,
+  fallbackReadyUrl: string | undefined,
+): ResolvedMediaState {
+  return {
+    failed: false,
+    inputKey,
+    loading: Boolean(mediaId) && !readyUrl && !fallbackReadyUrl,
+    resolvedUrl: readyUrl ?? fallbackReadyUrl,
+  };
+}
+
 export function useResolvedMediaUrl({
   cache = sharedResolvedMediaUrlCache,
   fallbackReadyUrl,
@@ -137,29 +183,27 @@ export function useResolvedMediaUrl({
   size?: number;
   variant: "thumbnail" | "preview" | "original";
 }) {
-  const [resolvedUrl, setResolvedUrl] = useState<string | undefined>(readyUrl ?? fallbackReadyUrl);
-  const [loading, setLoading] = useState(Boolean(mediaId) && !readyUrl && !fallbackReadyUrl);
-  const [failed, setFailed] = useState(false);
+  const inputKey = `${mediaId ?? "none"}:${variant}:${size ?? "default"}:${refreshKey}:${readyUrl ?? ""}:${fallbackReadyUrl ?? ""}`;
+  const initialState = useMemo(
+    () => createResolvedMediaState(inputKey, mediaId, readyUrl, fallbackReadyUrl),
+    [fallbackReadyUrl, inputKey, mediaId, readyUrl],
+  );
+  const [storedState, dispatch] = useReducer(resolvedMediaReducer, initialState);
+  const state = storedState.inputKey === inputKey ? storedState : initialState;
 
+  // The reducer key and cancellation check both reject stale async results after an input change.
+  // react-doctor-disable-next-line react-doctor/no-set-state-after-await-in-effect
   useEffect(() => {
+    dispatch({ state: initialState, type: "reset" });
     if (!mediaId) {
-      setResolvedUrl(undefined);
-      setLoading(false);
-      setFailed(false);
       return;
     }
 
     if (readyUrl) {
-      setResolvedUrl(readyUrl);
-      setLoading(false);
-      setFailed(false);
       return;
     }
 
     let cancelled = false;
-    setLoading(!fallbackReadyUrl);
-    setFailed(false);
-    setResolvedUrl(fallbackReadyUrl);
 
     void (async () => {
       while (!cancelled) {
@@ -167,23 +211,16 @@ export function useResolvedMediaUrl({
         if (cancelled) return;
 
         if (result.status === "ready") {
-          setResolvedUrl(result.url);
-          setLoading(false);
-          setFailed(false);
+          dispatch({ inputKey, type: "ready", url: result.url });
           return;
         }
 
         if (result.status === "failed") {
-          setFailed(true);
-          setLoading(false);
+          dispatch({ inputKey, type: "failed" });
           return;
         }
 
-        if (fallbackReadyUrl) {
-          setResolvedUrl(fallbackReadyUrl);
-          setLoading(false);
-          setFailed(false);
-        }
+        dispatch({ inputKey, type: "pending", url: fallbackReadyUrl });
 
         await delay(result.retryAfterMs);
       }
@@ -192,7 +229,11 @@ export function useResolvedMediaUrl({
     return () => {
       cancelled = true;
     };
-  }, [cache, fallbackReadyUrl, mediaId, readyUrl, refreshKey, size, variant]);
+  }, [cache, fallbackReadyUrl, initialState, inputKey, mediaId, readyUrl, size, variant]);
 
-  return { failed, loading, resolvedUrl };
+  return {
+    failed: state.failed,
+    loading: state.loading,
+    resolvedUrl: state.resolvedUrl,
+  };
 }

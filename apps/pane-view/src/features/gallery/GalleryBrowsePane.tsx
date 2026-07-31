@@ -22,11 +22,8 @@ export interface GalleryBrowsePaneProps {
   onNext: () => void;
   onOpenViewer: () => void;
   onPrev: () => void;
-  onScrolledToFocus: () => void;
   onSelectEntry: (entry: BrowserEntry) => void;
-  onWindowedEntriesChange: (entries: BrowserEntry[]) => void;
-  resolvedThumbnailUrls: Readonly<Record<string, string>>;
-  scrollFocusedIntoView: boolean;
+  scrollRequestKey: number;
   selected: MediaItem | null;
   selectedId: string | null;
   showDetailPanel: boolean;
@@ -50,11 +47,8 @@ export function GalleryBrowsePane({
   onNext,
   onOpenViewer,
   onPrev,
-  onScrolledToFocus,
   onSelectEntry,
-  onWindowedEntriesChange,
-  resolvedThumbnailUrls,
-  scrollFocusedIntoView,
+  scrollRequestKey,
   selected,
   selectedId,
   showDetailPanel,
@@ -129,12 +123,10 @@ export function GalleryBrowsePane({
           }
           focusedIndex={focusedEntryIndex}
           onActivateEntry={onActivateEntry}
-          onScrolledToFocus={onScrolledToFocus}
           onSelectEntry={onSelectEntry}
-          onWindowedEntriesChange={onWindowedEntriesChange}
-          scrollFocusedIntoView={scrollFocusedIntoView}
+          scrollRequestKey={scrollRequestKey}
           selectedId={selectedId}
-          thumbnailUrls={resolvedThumbnailUrls}
+          thumbnailResetKey={paginationResetKey}
         />
       </div>
 

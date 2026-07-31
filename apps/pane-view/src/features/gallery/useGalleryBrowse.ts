@@ -1,5 +1,5 @@
 import type { BrowserEntry } from "@latch-works/media-domain";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   browsePageFromListingPage,
   browsePageFromMediaPage,
@@ -30,6 +30,24 @@ export interface UseGalleryBrowseOptions {
   snapshotRequest: LibrarySnapshotRequest;
 }
 
+interface BrowseAccumulation {
+  browseKey: string;
+  extraEntries: BrowserEntry[];
+  extraMedia: LibraryMediaItem[];
+  loadingMoreMedia: boolean;
+  page: GalleryBrowsePage | null;
+}
+
+function createBrowseAccumulation(browseKey: string): BrowseAccumulation {
+  return {
+    browseKey,
+    extraEntries: [],
+    extraMedia: [],
+    loadingMoreMedia: false,
+    page: null,
+  };
+}
+
 /**
  * One browse model for comic and server listing.
  * Comic mode is a post-process of snapshot media pages; listing mode accumulates cursor pages.
@@ -45,11 +63,6 @@ export function useGalleryBrowse({
   showVideos,
   snapshotRequest,
 }: UseGalleryBrowseOptions) {
-  const [extraMedia, setExtraMedia] = useState<LibraryMediaItem[]>([]);
-  const [extraEntries, setExtraEntries] = useState<BrowserEntry[]>([]);
-  const [browsePage, setBrowsePage] = useState<GalleryBrowsePage | null>(null);
-  const [loadingMoreMedia, setLoadingMoreMedia] = useState(false);
-
   const { data: library, isFetching } = useLibrarySnapshotQuery(snapshotRequest);
   const {
     data: listing,
@@ -87,29 +100,31 @@ export function useGalleryBrowse({
       usesServerListing,
     ],
   );
+  const [storedAccumulation, setAccumulation] = useState<BrowseAccumulation>(() =>
+    createBrowseAccumulation(browseKey),
+  );
+  const accumulation =
+    storedAccumulation.browseKey === browseKey
+      ? storedAccumulation
+      : createBrowseAccumulation(browseKey);
+  const { extraEntries, extraMedia, loadingMoreMedia } = accumulation;
+  const queryPage = usesServerListing
+    ? listing && !isListingPlaceholderData
+      ? browsePageFromListingPage(listing.page)
+      : null
+    : library
+      ? browsePageFromMediaPage(library.mediaPage)
+      : null;
+  const browsePage = accumulation.page ?? queryPage;
 
-  useEffect(() => {
-    setExtraMedia([]);
-    setExtraEntries([]);
-    setBrowsePage(null);
-    setLoadingMoreMedia(false);
-  }, [browseKey]);
-
-  useEffect(() => {
-    if (!library || usesServerListing) {
-      return;
-    }
-
-    setBrowsePage(browsePageFromMediaPage(library.mediaPage));
-  }, [browseKey, library, usesServerListing]);
-
-  useEffect(() => {
-    if (!listing || !usesServerListing || isListingPlaceholderData) {
-      return;
-    }
-
-    setBrowsePage(browsePageFromListingPage(listing.page));
-  }, [browseKey, isListingPlaceholderData, listing, usesServerListing]);
+  const updateAccumulation = useCallback(
+    (update: (current: BrowseAccumulation) => BrowseAccumulation) => {
+      setAccumulation((stored) =>
+        update(stored.browseKey === browseKey ? stored : createBrowseAccumulation(browseKey)),
+      );
+    },
+    [browseKey],
+  );
 
   const allMedia = useMemo(() => {
     const base = effectiveComicMode ? (library?.media ?? []) : (listing?.media ?? []);
@@ -180,7 +195,7 @@ export function useGalleryBrowse({
         return;
       }
 
-      setLoadingMoreMedia(true);
+      updateAccumulation((current) => ({ ...current, loadingMoreMedia: true }));
       try {
         const nextListing = await getGalleryListing({
           data: {
@@ -188,11 +203,14 @@ export function useGalleryBrowse({
             cursor: browsePage.cursor,
           },
         });
-        setExtraMedia((current) => mergeLibraryMedia(current, nextListing.media));
-        setExtraEntries((current) => [...current, ...nextListing.entries]);
-        setBrowsePage(browsePageFromListingPage(nextListing.page));
+        updateAccumulation((current) => ({
+          ...current,
+          extraEntries: [...current.extraEntries, ...nextListing.entries],
+          extraMedia: mergeLibraryMedia(current.extraMedia, nextListing.media),
+          page: browsePageFromListingPage(nextListing.page),
+        }));
       } finally {
-        setLoadingMoreMedia(false);
+        updateAccumulation((current) => ({ ...current, loadingMoreMedia: false }));
       }
       return;
     }
@@ -201,17 +219,27 @@ export function useGalleryBrowse({
       return;
     }
 
-    setLoadingMoreMedia(true);
+    updateAccumulation((current) => ({ ...current, loadingMoreMedia: true }));
     try {
       const nextSnapshot = await getLibrarySnapshot({
         data: toLibrarySnapshotNextPageRequest(snapshotRequest, browsePage.nextOffset),
       });
-      setExtraMedia((current) => mergeLibraryMedia(current, nextSnapshot.media));
-      setBrowsePage(browsePageFromMediaPage(nextSnapshot.mediaPage));
+      updateAccumulation((current) => ({
+        ...current,
+        extraMedia: mergeLibraryMedia(current.extraMedia, nextSnapshot.media),
+        page: browsePageFromMediaPage(nextSnapshot.mediaPage),
+      }));
     } finally {
-      setLoadingMoreMedia(false);
+      updateAccumulation((current) => ({ ...current, loadingMoreMedia: false }));
     }
-  }, [browsePage, listingRequest, loadingMoreMedia, snapshotRequest, usesServerListing]);
+  }, [
+    browsePage,
+    listingRequest,
+    loadingMoreMedia,
+    snapshotRequest,
+    updateAccumulation,
+    usesServerListing,
+  ]);
 
   const handleLoadMoreMedia = useCallback(() => {
     void loadMoreMedia();

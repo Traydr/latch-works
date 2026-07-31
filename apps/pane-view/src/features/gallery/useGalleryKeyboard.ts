@@ -17,7 +17,7 @@ export interface UseGalleryKeyboardOptions {
   onSelectMedia: (mediaId: string) => void;
   pathSheetOpen: boolean;
   setFocusedEntryIndex: (index: number | ((current: number) => number)) => void;
-  setScrollFocusedIntoView: (value: boolean) => void;
+  requestScrollFocusedIntoView: () => void;
   settingsOpen: boolean;
   viewerOpen: boolean;
 }
@@ -40,7 +40,7 @@ export function useGalleryKeyboard({
   onSelectMedia,
   pathSheetOpen,
   setFocusedEntryIndex,
-  setScrollFocusedIntoView,
+  requestScrollFocusedIntoView,
   settingsOpen,
   viewerOpen,
 }: UseGalleryKeyboardOptions): void {
@@ -60,7 +60,7 @@ export function useGalleryKeyboard({
 
       const applyFocus = (index: number) => {
         setFocusedEntryIndex(index);
-        setScrollFocusedIntoView(true);
+        requestScrollFocusedIntoView();
         const entry = entries[index];
         if (entry?.kind === "media") {
           onSelectMedia(entry.media.id);
@@ -193,7 +193,7 @@ export function useGalleryKeyboard({
     onSelectMedia,
     pathSheetOpen,
     setFocusedEntryIndex,
-    setScrollFocusedIntoView,
+    requestScrollFocusedIntoView,
     settingsOpen,
     viewerOpen,
   ]);
