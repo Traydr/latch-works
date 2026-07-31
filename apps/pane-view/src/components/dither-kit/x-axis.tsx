@@ -24,11 +24,11 @@ export function XAxis({
         if (i % step !== 0) return null
         const raw = dataKey ? row[dataKey] : i
         const label = tickFormatter ? tickFormatter(raw, i) : String(raw ?? "")
+        const position = ctx.xCenter(i) ?? 0
         return (
           <text
-            // biome-ignore lint/suspicious/noArrayIndexKey: index is the stable x position
-            key={i}
-            x={ctx.xCenter(i) ?? 0}
+            key={`${String(raw)}:${position}`}
+            x={position}
             y={y}
             textAnchor="middle"
             dominantBaseline="hanging"
