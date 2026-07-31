@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="apps/frame-view/media/frame-view-icon.svg" alt="Latch Works" width="120" />
+  <img src="apps/frame-view/media/frame-view-icon.png" alt="Latch Works" width="120" />
 </p>
 
 <p align="center">
