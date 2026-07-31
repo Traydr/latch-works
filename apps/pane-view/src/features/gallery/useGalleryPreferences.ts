@@ -6,6 +6,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -57,6 +58,7 @@ export function useGalleryPreferences({
   const [sortModeOverride, setSortModeOverride] = useState<GallerySortMode>();
   const [randomSeed, setRandomSeed] = useState(() => createRandomSeed());
   const [selectedId, setSelectedId] = useState<string | null>(search.media ?? null);
+  const hasCheckedInitialPathRef = useRef(false);
   const baseRecursive =
     search.recursive ??
     (galleryStateReady ? persisted.recursive : GALLERY_STATE_DEFAULTS.recursive);
@@ -146,6 +148,11 @@ export function useGalleryPreferences({
 
   // Redirect to persisted path on first visit if URL has no path.
   useEffect(() => {
+    if (!hydrated || !galleryStateReady || hasCheckedInitialPathRef.current) {
+      return;
+    }
+
+    hasCheckedInitialPathRef.current = true;
     if (!search.path && persisted.lastPath) {
       void navigate({
         search: buildBrowseSearch({
@@ -155,7 +162,7 @@ export function useGalleryPreferences({
         to: "/",
       });
     }
-  }, [buildBrowseSearch, navigate, persisted.lastPath, search.path]);
+  }, [buildBrowseSearch, galleryStateReady, hydrated, navigate, persisted.lastPath, search.path]);
 
   // Persist preferences as one object (local + root).
   useEffect(() => {
