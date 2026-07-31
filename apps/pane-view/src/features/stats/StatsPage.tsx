@@ -49,6 +49,14 @@ const EXTENSION_CHART_CONFIG = {
   megabytes: { color: "purple" as const, label: "MB" },
 } satisfies ChartConfig;
 
+const ARCHIVE_TIMESTAMP_FORMATTER = new Intl.DateTimeFormat("en-GB", {
+  dateStyle: "medium",
+  timeStyle: "medium",
+  timeZone: "UTC",
+});
+
+type ArchiveStats = NonNullable<ReturnType<typeof useArchiveStatsQuery>["data"]>;
+
 function formatRate(bytesPerDay: number): string {
   return `${formatBytes(bytesPerDay)}/day`;
 }
@@ -329,87 +337,88 @@ export function StatsPage() {
               </ChartPanel>
             </div>
 
-            <section className="space-y-3 rounded-xl border border-border p-4">
-              <div>
-                <h2 className="text-sm font-semibold">Fun facts</h2>
-                <p className="text-sm text-muted-foreground">
-                  Odd corners of the archive that are still somehow useful.
-                </p>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                <FunFact
-                  label="Largest object"
-                  value={
-                    stats.funFacts.largestObjectBytes > 0
-                      ? `${formatBytes(stats.funFacts.largestObjectBytes)}${
-                          stats.funFacts.largestObjectExtension
-                            ? ` (${stats.funFacts.largestObjectExtension})`
-                            : ""
-                        }`
-                      : "—"
-                  }
-                />
-                <FunFact label="Images & gifs" value={stats.funFacts.imageCount.toLocaleString()} />
-                <FunFact
-                  label="Entries added (30d)"
-                  value={stats.growth.entriesLast30Days.toLocaleString()}
-                />
-              </div>
-            </section>
-
-            <section className="space-y-3 rounded-xl border border-border p-4">
-              <div>
-                <h2 className="text-sm font-semibold">Busiest folders</h2>
-                <p className="text-sm text-muted-foreground">
-                  Active folders ranked by entry count.
-                </p>
-              </div>
-              {stats.topFolders.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No folders with entries yet.</p>
-              ) : (
-                <ul className="divide-y divide-border">
-                  {stats.topFolders.map((folder) => (
-                    <li
-                      className="flex items-center justify-between gap-3 py-2 text-sm"
-                      key={folder.path}
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate font-medium">{folder.name}</p>
-                        <p className="truncate font-mono text-xs text-muted-foreground">
-                          {folder.path}
-                        </p>
-                      </div>
-                      <p className="shrink-0 tabular-nums text-muted-foreground">
-                        {folder.entryCount.toLocaleString()}
-                      </p>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-
-            <section className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-xl border border-border p-4 text-sm">
-                <p className="text-xs text-muted-foreground">Oldest object</p>
-                <p className="mt-1 font-medium">
-                  {stats.totals.oldestObjectAt
-                    ? new Date(stats.totals.oldestObjectAt).toLocaleString()
-                    : "—"}
-                </p>
-              </div>
-              <div className="rounded-xl border border-border p-4 text-sm">
-                <p className="text-xs text-muted-foreground">Newest object</p>
-                <p className="mt-1 font-medium">
-                  {stats.totals.newestObjectAt
-                    ? new Date(stats.totals.newestObjectAt).toLocaleString()
-                    : "—"}
-                </p>
-              </div>
-            </section>
+            <StatsHighlights stats={stats} />
           </>
         ) : null}
       </div>
     </main>
+  );
+}
+
+function StatsHighlights({ stats }: { stats: ArchiveStats }) {
+  return (
+    <>
+      <section className="space-y-3 rounded-xl border border-border p-4">
+        <div>
+          <h2 className="text-sm font-semibold">Fun facts</h2>
+          <p className="text-sm text-muted-foreground">
+            Odd corners of the archive that are still somehow useful.
+          </p>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <FunFact
+            label="Largest object"
+            value={
+              stats.funFacts.largestObjectBytes > 0
+                ? `${formatBytes(stats.funFacts.largestObjectBytes)}${
+                    stats.funFacts.largestObjectExtension
+                      ? ` (${stats.funFacts.largestObjectExtension})`
+                      : ""
+                  }`
+                : "—"
+            }
+          />
+          <FunFact label="Images & gifs" value={stats.funFacts.imageCount.toLocaleString()} />
+          <FunFact
+            label="Entries added (30d)"
+            value={stats.growth.entriesLast30Days.toLocaleString()}
+          />
+        </div>
+      </section>
+
+      <section className="space-y-3 rounded-xl border border-border p-4">
+        <div>
+          <h2 className="text-sm font-semibold">Busiest folders</h2>
+          <p className="text-sm text-muted-foreground">Active folders ranked by entry count.</p>
+        </div>
+        {stats.topFolders.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No folders with entries yet.</p>
+        ) : (
+          <ul className="divide-y divide-border">
+            {stats.topFolders.map((folder) => (
+              <li
+                className="flex items-center justify-between gap-3 py-2 text-sm"
+                key={folder.path}
+              >
+                <div className="min-w-0">
+                  <p className="truncate font-medium">{folder.name}</p>
+                  <p className="truncate font-mono text-xs text-muted-foreground">{folder.path}</p>
+                </div>
+                <p className="shrink-0 tabular-nums text-muted-foreground">
+                  {folder.entryCount.toLocaleString()}
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="grid gap-3 sm:grid-cols-2">
+        <TimestampCard label="Oldest object" value={stats.totals.oldestObjectAt} />
+        <TimestampCard label="Newest object" value={stats.totals.newestObjectAt} />
+      </section>
+    </>
+  );
+}
+
+function TimestampCard({ label, value }: { label: string; value: Date | string | null }) {
+  return (
+    <div className="rounded-xl border border-border p-4 text-sm">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="mt-1 font-medium">
+        {value ? ARCHIVE_TIMESTAMP_FORMATTER.format(new Date(value)) : "—"}
+      </p>
+    </div>
   );
 }
 

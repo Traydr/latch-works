@@ -1,7 +1,18 @@
 import type { BrowserEntry, ComicEntry } from "@latch-works/media-domain";
 import { getRouteApi } from "@tanstack/react-router";
 import { Archive, ChevronUp, PanelRightClose, PanelRightOpen, Search } from "lucide-react";
-import { type FormEvent, Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  createContext,
+  type FormEvent,
+  Fragment,
+  type JSX,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -29,7 +40,6 @@ import { useGalleryBrowse } from "@/features/gallery/useGalleryBrowse";
 import { useGalleryKeyboard } from "@/features/gallery/useGalleryKeyboard";
 import { useGalleryPreferences } from "@/features/gallery/useGalleryPreferences";
 import { useGalleryViewerHandoff } from "@/features/gallery/useGalleryViewerHandoff";
-import { useWindowedThumbnailResolution } from "@/features/gallery/useWindowedThumbnailResolution";
 import {
   toLibrarySnapshotRequest,
   useDeleteLibraryEntryMutation,
@@ -43,7 +53,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 
 const galleryIndexRoute = getRouteApi("/_gallery/");
 
-export function GalleryPage() {
+function useGalleryPage() {
   const search = galleryIndexRoute.useSearch();
   const navigate = galleryIndexRoute.useNavigate();
   const hydrated = useHydrated();
@@ -62,7 +72,7 @@ export function GalleryPage() {
   const [activeComic, setActiveComic] = useState<ComicEntry | null>(null);
   const [searchDraft, setSearchDraft] = useState(search.q ?? "");
   const [focusedEntryIndex, setFocusedEntryIndex] = useState(0);
-  const [scrollFocusedIntoView, setScrollFocusedIntoView] = useState(false);
+  const [scrollRequestKey, setScrollRequestKey] = useState(0);
   const [deletingEntryIds, setDeletingEntryIds] = useState<ReadonlySet<string>>(() => new Set());
   const [deletedEntryIds, setDeletedEntryIds] = useState<ReadonlySet<string>>(() => new Set());
 
@@ -142,9 +152,6 @@ export function GalleryPage() {
     showVideos: settings.showVideos,
     snapshotRequest,
   });
-
-  const { resolvedThumbnailUrls, handleWindowedEntriesChange } =
-    useWindowedThumbnailResolution(browseKey);
 
   const { viewerOpen, viewerItems, viewerLockedMediaId, openViewer, closeViewer } =
     useGalleryViewerHandoff(setSelectedId);
@@ -297,6 +304,9 @@ export function GalleryPage() {
   const openHotkeys = useCallback(() => {
     setHotkeysOpen(true);
   }, []);
+  const requestScrollFocusedIntoView = useCallback(() => {
+    setScrollRequestKey((current) => current + 1);
+  }, []);
 
   useGalleryKeyboard({
     columnCountRef,
@@ -313,7 +323,7 @@ export function GalleryPage() {
     onSelectMedia: selectMedia,
     pathSheetOpen,
     setFocusedEntryIndex,
-    setScrollFocusedIntoView,
+    requestScrollFocusedIntoView,
     settingsOpen,
     viewerOpen,
   });
@@ -411,259 +421,343 @@ export function GalleryPage() {
   const currentFolderName = breadcrumbs[breadcrumbs.length - 1]?.label ?? archiveRoot;
   const parentPath = getParentPath(displayPath);
 
+  return {
+    activeComic,
+    archiveRoot,
+    breadcrumbs,
+    browseKey,
+    closeViewer,
+    columnCountRef,
+    currentFolderName,
+    deleteSelectedMedia,
+    deletedEntryIds,
+    deletingEntryIds,
+    displayPath,
+    effectiveComicMode,
+    effectiveRecursive,
+    entries,
+    focusedEntryIndex,
+    handleActivateEntry,
+    handleLoadMoreMedia,
+    handleSelectEntry,
+    hotkeysOpen,
+    invalidateLibrary,
+    isMobile,
+    isReady,
+    loadingMoreMedia,
+    mediaPage,
+    mobileSearchOpen,
+    navigateSiblingFolder,
+    navigateToPath,
+    navigableMedia,
+    openViewer,
+    parentPath,
+    pathSheetOpen,
+    recursiveToggleDisabled,
+    scrollRequestKey,
+    searchDraft,
+    selectAdjacentMedia,
+    selected,
+    selectedId,
+    setActiveComic,
+    setComicMode,
+    setDetailPanelOpen,
+    setHotkeysOpen,
+    setMobileSearchOpen,
+    setPathSheetOpen,
+    setRecursive,
+    setSearchDraft,
+    setSettingsOpen,
+    setSortMode,
+    settings,
+    settingsOpen,
+    showDetailPanel,
+    showFetching,
+    shuffle,
+    sortMode,
+    submitSearch,
+    updateSettings,
+    viewerItems,
+    viewerLockedMediaId,
+    viewerOpen,
+    visibleMedia,
+  };
+}
+
+type GalleryPageModel = ReturnType<typeof useGalleryPage>;
+const GalleryPageContext = createContext<GalleryPageModel | null>(null);
+
+function useGalleryPageModel(): GalleryPageModel {
+  const model = useContext(GalleryPageContext);
+  if (!model) throw new Error("Gallery page context is missing");
+  return model;
+}
+
+export function GalleryPage(): JSX.Element {
+  const model = useGalleryPage();
+  return (
+    <GalleryPageContext.Provider value={model}>
+      <GalleryHeader />
+      <GalleryContent />
+      <GalleryOverlays />
+    </GalleryPageContext.Provider>
+  );
+}
+
+function GalleryHeader(): JSX.Element {
+  const model = useGalleryPageModel();
+  return (
+    <header className="flex h-auto min-h-14 shrink-0 items-center justify-between gap-4 border-b border-border bg-background px-5 py-2">
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        <SidebarTrigger className="-ml-1 shrink-0" />
+        {model.isMobile ? <MobilePathHeader /> : <DesktopPathHeader />}
+      </div>
+      <div className="flex shrink-0 items-center gap-1">
+        <Button
+          className="md:hidden"
+          onClick={() => model.setMobileSearchOpen(true)}
+          size="icon"
+          type="button"
+          variant="outline"
+        >
+          <Search className="size-4" />
+        </Button>
+        <form className="relative hidden w-72 items-center md:flex" onSubmit={model.submitSearch}>
+          <Search className="pointer-events-none absolute left-2.5 size-4 text-muted-foreground" />
+          <Input
+            aria-label="Search archive"
+            className="pl-8"
+            onChange={(event) => model.setSearchDraft(event.target.value)}
+            placeholder="Search paths"
+            type="search"
+            value={model.searchDraft}
+          />
+        </form>
+        <Button
+          aria-expanded={model.showDetailPanel}
+          aria-label={model.showDetailPanel ? "Hide preview panel" : "Show preview panel"}
+          className="hidden shrink-0 lg:inline-flex"
+          onClick={() => model.setDetailPanelOpen((open) => !open)}
+          size="icon"
+          title={model.showDetailPanel ? "Hide preview panel" : "Show preview panel"}
+          type="button"
+          variant="outline"
+        >
+          {model.showDetailPanel ? (
+            <PanelRightClose className="size-4" />
+          ) : (
+            <PanelRightOpen className="size-4" />
+          )}
+        </Button>
+      </div>
+    </header>
+  );
+}
+
+function MobilePathHeader(): JSX.Element {
+  const model = useGalleryPageModel();
+  return (
+    <div className="min-w-0 flex-1">
+      <div className="flex items-center gap-1">
+        <Button
+          disabled={!model.parentPath && model.displayPath === ""}
+          onClick={() => model.navigateToPath(model.parentPath ?? "")}
+          size="icon"
+          type="button"
+          variant="ghost"
+        >
+          <ChevronUp className="size-4" />
+        </Button>
+        <button
+          className="min-w-0 flex-1 truncate text-left text-base font-semibold"
+          onClick={() => model.setPathSheetOpen(true)}
+          type="button"
+        >
+          {model.currentFolderName}
+        </button>
+      </div>
+      {model.displayPath ? (
+        <p className="truncate text-xs text-muted-foreground">{model.displayPath}</p>
+      ) : null}
+    </div>
+  );
+}
+
+function DesktopPathHeader(): JSX.Element {
+  const model = useGalleryPageModel();
   return (
     <>
-      <header className="flex h-auto min-h-14 shrink-0 items-center justify-between gap-4 border-b border-border bg-background px-5 py-2">
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          <SidebarTrigger className="-ml-1 shrink-0" />
-          {isMobile ? (
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1">
-                <Button
-                  disabled={!parentPath && displayPath === ""}
-                  onClick={() => navigateToPath(parentPath ?? "")}
-                  size="icon"
-                  type="button"
-                  variant="ghost"
-                >
-                  <ChevronUp className="size-4" />
-                </Button>
-                <button
-                  className="min-w-0 flex-1 truncate text-left text-base font-semibold"
-                  onClick={() => setPathSheetOpen(true)}
-                  type="button"
-                >
-                  {currentFolderName}
-                </button>
-              </div>
-              {displayPath ? (
-                <p className="truncate text-xs text-muted-foreground">{displayPath}</p>
-              ) : null}
-            </div>
-          ) : (
-            <>
-              <div className="hidden items-center gap-1 md:flex">
-                <Button
-                  disabled={!displayPath}
-                  onClick={() => navigateToPath(parentPath ?? "")}
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                >
-                  Parent
-                </Button>
-                <Button
-                  onClick={() => navigateSiblingFolder(-1)}
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                >
-                  Prev folder
-                </Button>
-                <Button
-                  onClick={() => navigateSiblingFolder(1)}
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                >
-                  Next folder
-                </Button>
-              </div>
-              <Breadcrumb className="flex min-w-0 items-center gap-2">
-                <Archive className="size-4 shrink-0 text-muted-foreground" />
-                <BreadcrumbList className="min-w-0 flex-nowrap overflow-hidden">
-                  <BreadcrumbItem>
-                    <BreadcrumbLink asChild>
-                      <button
-                        className="max-w-40 min-h-10 cursor-pointer truncate rounded-md px-2 py-1.5"
-                        onClick={() => navigateToPath("")}
-                        type="button"
-                      >
-                        {archiveRoot}
-                      </button>
-                    </BreadcrumbLink>
-                  </BreadcrumbItem>
-                  {breadcrumbs.map((crumb, index) => (
-                    <Fragment key={crumb.path}>
-                      <BreadcrumbSeparator />
-                      <BreadcrumbItem className="min-w-0">
-                        {index === breadcrumbs.length - 1 ? (
-                          <BreadcrumbPage
-                            className="max-w-72 truncate px-2 py-1.5"
-                            title={crumb.path}
-                          >
-                            {crumb.label}
-                          </BreadcrumbPage>
-                        ) : (
-                          <BreadcrumbLink asChild>
-                            <button
-                              className="max-w-40 min-h-10 cursor-pointer truncate rounded-md px-2 py-1.5"
-                              onClick={() => navigateToPath(crumb.path)}
-                              title={crumb.path}
-                              type="button"
-                            >
-                              {crumb.label}
-                            </button>
-                          </BreadcrumbLink>
-                        )}
-                      </BreadcrumbItem>
-                    </Fragment>
-                  ))}
-                </BreadcrumbList>
-              </Breadcrumb>
-            </>
-          )}
-        </div>
+      <div className="hidden items-center gap-1 md:flex">
+        <Button
+          disabled={!model.displayPath}
+          onClick={() => model.navigateToPath(model.parentPath ?? "")}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          Parent
+        </Button>
+        <Button
+          onClick={() => model.navigateSiblingFolder(-1)}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          Prev folder
+        </Button>
+        <Button
+          onClick={() => model.navigateSiblingFolder(1)}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          Next folder
+        </Button>
+      </div>
+      <Breadcrumb className="flex min-w-0 items-center gap-2">
+        <Archive className="size-4 shrink-0 text-muted-foreground" />
+        <BreadcrumbList className="min-w-0 flex-nowrap overflow-hidden">
+          <BreadcrumbItem>
+            <BreadcrumbLink asChild>
+              <button
+                className="max-w-40 min-h-10 cursor-pointer truncate rounded-md px-2 py-1.5"
+                onClick={() => model.navigateToPath("")}
+                type="button"
+              >
+                {model.archiveRoot}
+              </button>
+            </BreadcrumbLink>
+          </BreadcrumbItem>
+          {model.breadcrumbs.map((crumb, index) => (
+            <Fragment key={crumb.path}>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem className="min-w-0">
+                {index === model.breadcrumbs.length - 1 ? (
+                  <BreadcrumbPage className="max-w-72 truncate px-2 py-1.5" title={crumb.path}>
+                    {crumb.label}
+                  </BreadcrumbPage>
+                ) : (
+                  <BreadcrumbLink asChild>
+                    <button
+                      className="max-w-40 min-h-10 cursor-pointer truncate rounded-md px-2 py-1.5"
+                      onClick={() => model.navigateToPath(crumb.path)}
+                      title={crumb.path}
+                      type="button"
+                    >
+                      {crumb.label}
+                    </button>
+                  </BreadcrumbLink>
+                )}
+              </BreadcrumbItem>
+            </Fragment>
+          ))}
+        </BreadcrumbList>
+      </Breadcrumb>
+    </>
+  );
+}
 
-        <div className="flex shrink-0 items-center gap-1">
-          <Button
-            className="md:hidden"
-            onClick={() => setMobileSearchOpen(true)}
-            size="icon"
-            type="button"
-            variant="outline"
-          >
-            <Search className="size-4" />
-          </Button>
-          <form className="relative hidden w-72 items-center md:flex" onSubmit={submitSearch}>
-            <Search className="pointer-events-none absolute left-2.5 size-4 text-muted-foreground" />
-            <Input
-              aria-label="Search archive"
-              className="pl-8"
-              onChange={(event) => setSearchDraft(event.target.value)}
-              placeholder="Search paths"
-              type="search"
-              value={searchDraft}
-            />
-          </form>
-          <Button
-            aria-expanded={showDetailPanel}
-            aria-label={showDetailPanel ? "Hide preview panel" : "Show preview panel"}
-            className="hidden shrink-0 lg:inline-flex"
-            onClick={() => setDetailPanelOpen((open) => !open)}
-            size="icon"
-            title={showDetailPanel ? "Hide preview panel" : "Show preview panel"}
-            type="button"
-            variant="outline"
-          >
-            {showDetailPanel ? (
-              <PanelRightClose className="size-4" />
-            ) : (
-              <PanelRightOpen className="size-4" />
-            )}
-          </Button>
-        </div>
-      </header>
-
+function GalleryContent(): JSX.Element {
+  const model = useGalleryPageModel();
+  return (
+    <>
       <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-        {isReady ? (
+        {model.isReady ? (
           <GalleryBrowsePane
-            columnCountRef={columnCountRef}
-            comicMode={effectiveComicMode}
-            deletedEntryIds={deletedEntryIds}
-            deletingEntryIds={deletingEntryIds}
-            entries={entries}
-            focusedEntryIndex={focusedEntryIndex}
-            isFetching={showFetching}
-            loadingMoreMedia={loadingMoreMedia}
-            mediaPage={mediaPage}
-            onActivateEntry={handleActivateEntry}
-            onDelete={deleteSelectedMedia}
-            onLoadMoreMedia={handleLoadMoreMedia}
-            onNext={() => selectAdjacentMedia(1)}
+            columnCountRef={model.columnCountRef}
+            comicMode={model.effectiveComicMode}
+            deletedEntryIds={model.deletedEntryIds}
+            deletingEntryIds={model.deletingEntryIds}
+            entries={model.entries}
+            focusedEntryIndex={model.focusedEntryIndex}
+            isFetching={model.showFetching}
+            loadingMoreMedia={model.loadingMoreMedia}
+            mediaPage={model.mediaPage}
+            onActivateEntry={model.handleActivateEntry}
+            onDelete={model.deleteSelectedMedia}
+            onLoadMoreMedia={model.handleLoadMoreMedia}
+            onNext={() => model.selectAdjacentMedia(1)}
             onOpenViewer={() => {
-              if (selected && !deletedEntryIds.has(selected.id)) {
-                openViewer(navigableMedia, selected.id);
-              }
+              if (model.selected && !model.deletedEntryIds.has(model.selected.id))
+                model.openViewer(model.navigableMedia, model.selected.id);
             }}
-            onPrev={() => selectAdjacentMedia(-1)}
-            onScrolledToFocus={() => setScrollFocusedIntoView(false)}
-            onSelectEntry={handleSelectEntry}
-            onWindowedEntriesChange={handleWindowedEntriesChange}
-            resolvedThumbnailUrls={resolvedThumbnailUrls}
-            scrollFocusedIntoView={scrollFocusedIntoView}
-            selected={selected}
-            selectedId={viewerLockedMediaId ?? selectedId}
-            showDetailPanel={showDetailPanel}
-            paginationResetKey={browseKey}
-            thumbnailSize={settings.thumbnailSize}
+            onPrev={() => model.selectAdjacentMedia(-1)}
+            onSelectEntry={model.handleSelectEntry}
+            scrollRequestKey={model.scrollRequestKey}
+            selected={model.selected}
+            selectedId={model.viewerLockedMediaId ?? model.selectedId}
+            showDetailPanel={model.showDetailPanel}
+            paginationResetKey={model.browseKey}
+            thumbnailSize={model.settings.thumbnailSize}
           />
         ) : (
           <GalleryGridSkeleton />
         )}
       </div>
-
       <FloatingToolbar
-        comicMode={effectiveComicMode}
-        currentPath={displayPath}
-        isRefreshing={showFetching}
-        onChangeSortMode={setSortMode}
-        onRefresh={() => void invalidateLibrary()}
+        comicMode={model.effectiveComicMode}
+        currentPath={model.displayPath}
+        isRefreshing={model.showFetching}
+        onChangeSortMode={model.setSortMode}
+        onRefresh={() => void model.invalidateLibrary()}
         onToggleComicMode={() => {
-          if (displayPath === "") {
-            return;
-          }
-
-          setComicMode((current) => {
+          if (model.displayPath === "") return;
+          model.setComicMode((current) => {
             const next = !current;
-            if (next) {
-              setRecursive(true);
-            } else {
-              setRecursive(false);
-            }
+            model.setRecursive(next);
             return next;
           });
         }}
         onToggleRecursive={() => {
-          if (displayPath === "") {
-            return;
-          }
-
-          setRecursive((current) => {
+          if (model.displayPath === "") return;
+          model.setRecursive((current) => {
             const next = !current;
-            if (!next) {
-              setComicMode(false);
-            }
+            if (!next) model.setComicMode(false);
             return next;
           });
         }}
-        recursive={effectiveRecursive}
-        recursiveDisabled={recursiveToggleDisabled}
-        shuffle={shuffle}
-        sortMode={sortMode}
+        recursive={model.effectiveRecursive}
+        recursiveDisabled={model.recursiveToggleDisabled}
+        shuffle={model.shuffle}
+        sortMode={model.sortMode}
       />
+    </>
+  );
+}
 
+function GalleryOverlays(): JSX.Element {
+  const model = useGalleryPageModel();
+  const viewerMedia = model.viewerItems ?? model.visibleMedia;
+  return (
+    <>
       <SettingsDrawer
-        onClose={() => setSettingsOpen(false)}
-        onUpdate={updateSettings}
-        onUpdateRecursiveDefault={setRecursive}
-        open={settingsOpen}
-        recursiveDefault={effectiveRecursive}
-        settings={settings}
+        onClose={() => model.setSettingsOpen(false)}
+        onUpdate={model.updateSettings}
+        onUpdateRecursiveDefault={model.setRecursive}
+        open={model.settingsOpen}
+        recursiveDefault={model.effectiveRecursive}
+        settings={model.settings}
       />
-
-      {hotkeysOpen ? <HotkeyOverlay onClose={() => setHotkeysOpen(false)} /> : null}
-
-      <Sheet onOpenChange={setMobileSearchOpen} open={mobileSearchOpen}>
+      {model.hotkeysOpen ? <HotkeyOverlay onClose={() => model.setHotkeysOpen(false)} /> : null}
+      <Sheet onOpenChange={model.setMobileSearchOpen} open={model.mobileSearchOpen}>
         <SheetContent className="p-5" side="bottom">
           <SheetHeader>
             <SheetTitle>Search archive</SheetTitle>
           </SheetHeader>
-          <form className="mt-4 grid gap-3" onSubmit={submitSearch}>
+          <form className="mt-4 grid gap-3" onSubmit={model.submitSearch}>
             <Input
               aria-label="Search archive"
               autoFocus
-              onChange={(event) => setSearchDraft(event.target.value)}
+              onChange={(event) => model.setSearchDraft(event.target.value)}
               placeholder="Search paths"
               type="search"
-              value={searchDraft}
+              value={model.searchDraft}
             />
             <Button type="submit">Search</Button>
           </form>
         </SheetContent>
       </Sheet>
-
-      <Sheet onOpenChange={setPathSheetOpen} open={pathSheetOpen}>
+      <Sheet onOpenChange={model.setPathSheetOpen} open={model.pathSheetOpen}>
         <SheetContent className="p-5" side="bottom">
           <SheetHeader>
             <SheetTitle>Folder path</SheetTitle>
@@ -672,20 +766,20 @@ export function GalleryPage() {
             <button
               className="min-h-10 rounded-lg border border-border px-3 py-2 text-left text-sm"
               onClick={() => {
-                navigateToPath("");
-                setPathSheetOpen(false);
+                model.navigateToPath("");
+                model.setPathSheetOpen(false);
               }}
               type="button"
             >
-              {archiveRoot}
+              {model.archiveRoot}
             </button>
-            {breadcrumbs.map((crumb) => (
+            {model.breadcrumbs.map((crumb) => (
               <button
                 key={crumb.path}
                 className="min-h-10 rounded-lg border border-border px-3 py-2 text-left text-sm"
                 onClick={() => {
-                  navigateToPath(crumb.path);
-                  setPathSheetOpen(false);
+                  model.navigateToPath(crumb.path);
+                  model.setPathSheetOpen(false);
                 }}
                 type="button"
               >
@@ -695,24 +789,26 @@ export function GalleryPage() {
           </div>
         </SheetContent>
       </Sheet>
-
-      {viewerOpen && selected ? (
+      {model.viewerOpen && model.selected ? (
         <MediaViewerModal
-          autoplayVideos={settings.autoplayVideos}
-          items={viewerItems ?? visibleMedia}
-          loopNavigation={settings.loopNavigation}
-          loopVideos={settings.loopVideos}
-          rememberViewerPosition={settings.rememberViewerPosition}
-          onClose={closeViewer}
+          autoplayVideos={model.settings.autoplayVideos}
+          items={viewerMedia}
+          loopNavigation={model.settings.loopNavigation}
+          loopVideos={model.settings.loopVideos}
+          rememberViewerPosition={model.settings.rememberViewerPosition}
+          onClose={model.closeViewer}
           startIndex={Math.max(
             0,
-            (viewerItems ?? visibleMedia).findIndex((item) => item.id === selected.id),
+            viewerMedia.findIndex((item) => item.id === model.selected?.id),
           )}
         />
       ) : null}
-
-      {activeComic ? (
-        <ComicReader comic={activeComic} onClose={() => setActiveComic(null)} />
+      {model.activeComic ? (
+        <ComicReader
+          key={model.activeComic.id}
+          comic={model.activeComic}
+          onClose={() => model.setActiveComic(null)}
+        />
       ) : null}
     </>
   );

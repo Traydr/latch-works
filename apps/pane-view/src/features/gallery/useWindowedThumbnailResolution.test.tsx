@@ -19,7 +19,6 @@ vi.mock("./batched-thumbnail-resolver", () => ({
 }));
 
 vi.mock("./gallery-page-helpers", () => ({
-  areThumbnailRequestsEqual: vi.fn(() => false),
   dedupeThumbnailRequests: vi.fn((requests) => requests),
   supportsGalleryThumbnail: vi.fn(() => true),
 }));
@@ -30,12 +29,12 @@ function renderHook(resetKey: string): {
   unmount: () => void;
 } {
   let currentResetKey = resetKey;
-  let handleWindowedEntriesChange: ((entries: never[]) => void) | undefined;
+  let currentEntries: never[] = [];
   let root: Root | undefined;
   const container = document.createElement("div");
 
   function Host(): ReactNode {
-    ({ handleWindowedEntriesChange } = useWindowedThumbnailResolution(currentResetKey));
+    useWindowedThumbnailResolution(currentResetKey, currentEntries);
     return null;
   }
 
@@ -46,10 +45,12 @@ function renderHook(resetKey: string): {
 
   return {
     setEntries: (mediaIds) => {
+      currentEntries = mediaIds.map((id) => ({
+        kind: "media",
+        media: { id, mediaType: "image" },
+      })) as never[];
       act(() => {
-        handleWindowedEntriesChange?.(
-          mediaIds.map((id) => ({ kind: "media", media: { id, mediaType: "image" } })) as never[],
-        );
+        root?.render(createElement(Host));
       });
     },
     rerender: (nextResetKey) => {

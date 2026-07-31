@@ -67,6 +67,7 @@ export async function softDeleteFolderSubtree({
     for (const path of normalizedPaths) {
       const pattern = `${escapeLikePattern(path)}/%`;
 
+      // react-doctor-disable-next-line react-doctor/async-await-in-loop -- Overlapping folder selections must be updated in deterministic input order on one transaction.
       const deletedEntries = await tx
         .update(libraryEntries)
         .set({ deletedAt: now })
@@ -78,6 +79,7 @@ export async function softDeleteFolderSubtree({
         )
         .returning({ id: libraryEntries.id });
 
+      // react-doctor-disable-next-line react-doctor/async-await-in-loop -- Keep entry/folder counts paired before advancing to the next possibly overlapping subtree.
       const deletedFolders = await tx
         .update(folders)
         .set({ deletedAt: now })

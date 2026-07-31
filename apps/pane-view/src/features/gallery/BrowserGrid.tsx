@@ -1,10 +1,9 @@
 import type { BrowserEntry } from "@latch-works/media-domain";
 import { Archive } from "lucide-react";
-import { type ReactNode, type RefObject, useEffect } from "react";
+import { type ReactNode, type RefObject, useEffect, useMemo } from "react";
 import { BrowserEntryCard } from "./BrowserEntryCard";
 import { useVirtualGridMetrics } from "./useVirtualGridMetrics";
-
-const EMPTY_THUMBNAIL_URLS: Readonly<Record<string, string>> = {};
+import { useWindowedThumbnailResolution } from "./useWindowedThumbnailResolution";
 
 interface BrowserGridProps {
   cardWidth: number;
@@ -16,13 +15,10 @@ interface BrowserGridProps {
   footer?: ReactNode;
   focusedIndex: number;
   onActivateEntry: (entry: BrowserEntry) => void;
-  onScrollContainerChange?: (element: HTMLElement | null) => void;
   onSelectEntry: (entry: BrowserEntry) => void;
-  scrollFocusedIntoView: boolean;
-  onScrolledToFocus: () => void;
+  scrollRequestKey: number;
   selectedId: string | null;
-  thumbnailUrls?: Readonly<Record<string, string>>;
-  onWindowedEntriesChange?: (entries: BrowserEntry[]) => void;
+  thumbnailResetKey: string;
 }
 
 export function BrowserGrid({
@@ -35,13 +31,10 @@ export function BrowserGrid({
   footer,
   focusedIndex,
   onActivateEntry,
-  onScrollContainerChange,
   onSelectEntry,
-  scrollFocusedIntoView,
-  onScrolledToFocus,
+  scrollRequestKey,
   selectedId,
-  thumbnailUrls = EMPTY_THUMBNAIL_URLS,
-  onWindowedEntriesChange,
+  thumbnailResetKey,
 }: BrowserGridProps) {
   const {
     cardHeight,
@@ -54,6 +47,17 @@ export function BrowserGrid({
     windowedItems,
   } = useVirtualGridMetrics(entries.length, cardWidth, comicMode ? "tall" : "wide");
   const resolvedCardWidth = measuredCardWidth || cardWidth;
+  const windowedEntries = useMemo(
+    () =>
+      windowedItems
+        .map((slot) => entries[slot.index])
+        .filter((entry): entry is BrowserEntry => Boolean(entry)),
+    [entries, windowedItems],
+  );
+  const { resolvedThumbnailUrls } = useWindowedThumbnailResolution(
+    thumbnailResetKey,
+    windowedEntries,
+  );
 
   // Sync column count for keyboard navigation.
   if (columnCountRef.current !== columnCount) {
@@ -61,29 +65,12 @@ export function BrowserGrid({
   }
 
   useEffect(() => {
-    onScrollContainerChange?.(mainRef.current);
-    return () => onScrollContainerChange?.(null);
-  }, [mainRef, onScrollContainerChange]);
-
-  useEffect(() => {
-    if (!onWindowedEntriesChange) {
-      return;
-    }
-
-    const visibleEntries = windowedItems
-      .map((slot) => entries[slot.index])
-      .filter((entry): entry is BrowserEntry => Boolean(entry));
-    onWindowedEntriesChange(visibleEntries);
-  }, [entries, onWindowedEntriesChange, windowedItems]);
-
-  useEffect(() => {
-    if (!scrollFocusedIntoView || entries.length === 0) {
+    if (scrollRequestKey === 0 || entries.length === 0) {
       return;
     }
 
     const element = mainRef.current;
     if (!element) {
-      onScrolledToFocus();
       return;
     }
 
@@ -99,18 +86,7 @@ export function BrowserGrid({
     } else if (itemBottom > viewBottom - padding) {
       element.scrollTop = itemBottom - element.clientHeight + padding;
     }
-
-    onScrolledToFocus();
-  }, [
-    cardHeight,
-    columnCount,
-    entries.length,
-    focusedIndex,
-    mainRef,
-    onScrolledToFocus,
-    rowStride,
-    scrollFocusedIntoView,
-  ]);
+  }, [cardHeight, columnCount, entries.length, focusedIndex, mainRef, rowStride, scrollRequestKey]);
 
   return (
     <section
@@ -162,7 +138,7 @@ export function BrowserGrid({
                 onSelect={onSelectEntry}
                 priority={Math.abs(slot.index - focusedIndex) <= columnCount}
                 selected={selected}
-                thumbnailUrls={thumbnailUrls}
+                thumbnailUrls={resolvedThumbnailUrls}
                 top={slot.top}
               />
             );

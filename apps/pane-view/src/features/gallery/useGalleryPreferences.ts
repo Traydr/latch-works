@@ -1,6 +1,14 @@
 import type { GallerySortMode } from "@latch-works/media-domain";
 import { createRandomSeed } from "@latch-works/media-domain";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  type Dispatch,
+  type SetStateAction,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   canUseFolderBrowseModes,
   type GalleryBrowseSearch,
@@ -44,13 +52,60 @@ export function useGalleryPreferences({
   const rootKey = resolveRootKey(displayPath);
   const { savePreferences: saveRootPreferences } = useRootPreferences(rootKey);
 
-  const [recursive, setRecursive] = useState(search.recursive ?? GALLERY_STATE_DEFAULTS.recursive);
-  const [comicMode, setComicMode] = useState(search.comic ?? GALLERY_STATE_DEFAULTS.comicMode);
-  const [detailPanelOpen, setDetailPanelOpen] = useState(GALLERY_STATE_DEFAULTS.detailPanelOpen);
-  const [sortMode, setSortMode] = useState<GallerySortMode>(GALLERY_STATE_DEFAULTS.sortMode);
+  const [recursiveOverride, setRecursiveOverride] = useState<boolean>();
+  const [comicModeOverride, setComicModeOverride] = useState<boolean>();
+  const [detailPanelOverride, setDetailPanelOverride] = useState<boolean>();
+  const [sortModeOverride, setSortModeOverride] = useState<GallerySortMode>();
   const [randomSeed, setRandomSeed] = useState(() => createRandomSeed());
   const [selectedId, setSelectedId] = useState<string | null>(search.media ?? null);
-  const [hasRestoredGalleryPrefs, setHasRestoredGalleryPrefs] = useState(false);
+  const hasCheckedInitialPathRef = useRef(false);
+  const baseRecursive =
+    search.recursive ??
+    (galleryStateReady ? persisted.recursive : GALLERY_STATE_DEFAULTS.recursive);
+  const baseComicMode =
+    search.comic ?? (galleryStateReady ? persisted.comicMode : GALLERY_STATE_DEFAULTS.comicMode);
+  const baseDetailPanel = galleryStateReady
+    ? persisted.detailPanelOpen
+    : GALLERY_STATE_DEFAULTS.detailPanelOpen;
+  const baseSortMode = galleryStateReady ? persisted.sortMode : GALLERY_STATE_DEFAULTS.sortMode;
+  const recursive = recursiveOverride ?? baseRecursive;
+  const comicMode = comicModeOverride ?? baseComicMode;
+  const detailPanelOpen = detailPanelOverride ?? baseDetailPanel;
+  const sortMode = sortModeOverride ?? baseSortMode;
+  const hasRestoredGalleryPrefs = hydrated && galleryStateReady;
+
+  const setRecursive: Dispatch<SetStateAction<boolean>> = useCallback(
+    (next) => {
+      setRecursiveOverride((current) =>
+        typeof next === "function" ? next(current ?? baseRecursive) : next,
+      );
+    },
+    [baseRecursive],
+  );
+  const setComicMode: Dispatch<SetStateAction<boolean>> = useCallback(
+    (next) => {
+      setComicModeOverride((current) =>
+        typeof next === "function" ? next(current ?? baseComicMode) : next,
+      );
+    },
+    [baseComicMode],
+  );
+  const setDetailPanelOpen: Dispatch<SetStateAction<boolean>> = useCallback(
+    (next) => {
+      setDetailPanelOverride((current) =>
+        typeof next === "function" ? next(current ?? baseDetailPanel) : next,
+      );
+    },
+    [baseDetailPanel],
+  );
+  const setSortMode: Dispatch<SetStateAction<GallerySortMode>> = useCallback(
+    (next) => {
+      setSortModeOverride((current) =>
+        typeof next === "function" ? next(current ?? baseSortMode) : next,
+      );
+    },
+    [baseSortMode],
+  );
 
   const folderModesEnabled = canUseFolderBrowseModes(search.path);
   const effectiveComicMode = folderModesEnabled && comicMode;
@@ -93,6 +148,11 @@ export function useGalleryPreferences({
 
   // Redirect to persisted path on first visit if URL has no path.
   useEffect(() => {
+    if (!hydrated || !galleryStateReady || hasCheckedInitialPathRef.current) {
+      return;
+    }
+
+    hasCheckedInitialPathRef.current = true;
     if (!search.path && persisted.lastPath) {
       void navigate({
         search: buildBrowseSearch({
@@ -102,44 +162,7 @@ export function useGalleryPreferences({
         to: "/",
       });
     }
-  }, [buildBrowseSearch, navigate, persisted.lastPath, search.path]);
-
-  useEffect(() => {
-    if (displayPath === "" && recursive) {
-      setRecursive(false);
-    }
-    if (displayPath === "" && comicMode) {
-      setComicMode(false);
-    }
-  }, [comicMode, displayPath, recursive]);
-
-  useEffect(() => {
-    if (!hydrated || !galleryStateReady || hasRestoredGalleryPrefs) {
-      return;
-    }
-
-    if (search.recursive === undefined) {
-      setRecursive(persisted.recursive);
-    }
-
-    if (search.comic === undefined) {
-      setComicMode(persisted.comicMode);
-    }
-
-    setDetailPanelOpen(persisted.detailPanelOpen);
-    setSortMode(persisted.sortMode);
-    setHasRestoredGalleryPrefs(true);
-  }, [
-    galleryStateReady,
-    hasRestoredGalleryPrefs,
-    hydrated,
-    persisted.comicMode,
-    persisted.detailPanelOpen,
-    persisted.recursive,
-    persisted.sortMode,
-    search.comic,
-    search.recursive,
-  ]);
+  }, [buildBrowseSearch, galleryStateReady, hydrated, navigate, persisted.lastPath, search.path]);
 
   // Persist preferences as one object (local + root).
   useEffect(() => {
@@ -200,7 +223,7 @@ export function useGalleryPreferences({
   const shuffle = useCallback(() => {
     setSortMode("random");
     setRandomSeed(createRandomSeed());
-  }, []);
+  }, [setSortMode]);
 
   return {
     buildBrowseSearch,

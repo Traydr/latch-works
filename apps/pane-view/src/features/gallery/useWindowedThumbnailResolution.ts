@@ -1,5 +1,5 @@
 import type { BrowserEntry } from "@latch-works/media-domain";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   type GalleryThumbnailRequest,
   getNextPendingThumbnailRetryMs,
@@ -8,14 +8,12 @@ import {
   resolveGalleryThumbnailsBatch,
 } from "@/features/gallery/batched-thumbnail-resolver";
 import {
-  areThumbnailRequestsEqual,
   dedupeThumbnailRequests,
   supportsGalleryThumbnail,
 } from "@/features/gallery/gallery-page-helpers";
 
 export interface WindowedThumbnailResolutionResult {
   resolvedThumbnailUrls: Record<string, string>;
-  handleWindowedEntriesChange: (entries: BrowserEntry[]) => void;
 }
 
 /**
@@ -24,20 +22,28 @@ export interface WindowedThumbnailResolutionResult {
  */
 export function useWindowedThumbnailResolution(
   resetKey: string,
+  windowedEntries: BrowserEntry[],
 ): WindowedThumbnailResolutionResult {
-  const cached = readCachedGalleryThumbnailState();
-  const [windowedThumbnailRequests, setWindowedThumbnailRequests] = useState<
-    GalleryThumbnailRequest[]
-  >([]);
-  const [resolvedThumbnailUrls, setResolvedThumbnailUrls] = useState<Record<string, string>>(
-    cached.urls,
-  );
+  const [resolution, setResolution] = useState(() => {
+    const cached = readCachedGalleryThumbnailState();
+    return { resetKey, urls: cached.urls };
+  });
+  const windowedThumbnailRequests = useMemo(
+    () =>
+      dedupeThumbnailRequests(
+        windowedEntries.flatMap((entry): GalleryThumbnailRequest[] => {
+          if (entry.kind === "folder") {
+            return [];
+          }
 
-  useEffect(() => {
-    setWindowedThumbnailRequests([]);
-    const fresh = readCachedGalleryThumbnailState();
-    setResolvedThumbnailUrls(fresh.urls);
-  }, [resetKey]);
+          const media = entry.kind === "comic" ? entry.comic.cover : entry.media;
+          return supportsGalleryThumbnail(media) ? [{ mediaId: media.id }] : [];
+        }),
+      ),
+    [windowedEntries],
+  );
+  const resolvedThumbnailUrls =
+    resolution.resetKey === resetKey ? resolution.urls : readCachedGalleryThumbnailState().urls;
 
   useEffect(() => {
     if (windowedThumbnailRequests.length === 0) {
@@ -52,7 +58,7 @@ export function useWindowedThumbnailResolution(
     const applyResolvedState = (
       resolved: Awaited<ReturnType<typeof resolveGalleryThumbnailsBatch>>,
     ) => {
-      setResolvedThumbnailUrls(resolved.urls);
+      setResolution({ resetKey, urls: resolved.urls });
     };
 
     const resolveAndSchedule = () => {
@@ -112,29 +118,7 @@ export function useWindowedThumbnailResolution(
     };
   }, [resetKey, windowedThumbnailRequests]);
 
-  const handleWindowedEntriesChange = useCallback((windowedEntries: BrowserEntry[]) => {
-    const requests = dedupeThumbnailRequests(
-      windowedEntries.flatMap((entry): GalleryThumbnailRequest[] => {
-        if (entry.kind === "folder") {
-          return [];
-        }
-
-        const media = entry.kind === "comic" ? entry.comic.cover : entry.media;
-        if (!supportsGalleryThumbnail(media)) {
-          return [];
-        }
-
-        return [{ mediaId: media.id }];
-      }),
-    );
-
-    setWindowedThumbnailRequests((current) =>
-      areThumbnailRequestsEqual(current, requests) ? current : requests,
-    );
-  }, []);
-
   return {
     resolvedThumbnailUrls,
-    handleWindowedEntriesChange,
   };
 }
