@@ -21,18 +21,20 @@
     "key": "kemono",
     "label": "Kemono",
     "unlisted": true,
-    "urlPatterns": ["^https://kemono\\.cr/[^/]+/user/[^/]+/post/[^/?#]+(?:[/?#]|$)"],
-    "pageMatches": ["https://kemono.cr/*/user/*/post/*"],
+    "urlPatterns": ["^https://(?:kemono\\.cr|pawchive\\.pw)/[^/]+/user/[^/]+/post/[^/?#]+(?:[/?#]|$)"],
+    "pageMatches": ["https://kemono.cr/*/user/*/post/*", "https://pawchive.pw/*/user/*/post/*"],
     "hostPermissions": [
       { "pattern": "https://kemono.cr/*", "reason": "Eligible post pages and attachments" },
-      { "pattern": "https://*.kemono.cr/*", "reason": "Attachment CDN hosts" }
+      { "pattern": "https://*.kemono.cr/*", "reason": "Attachment CDN hosts" },
+      { "pattern": "https://pawchive.pw/*", "reason": "Alternate eligible post pages and attachments" },
+      { "pattern": "https://*.pawchive.pw/*", "reason": "Alternate attachment CDN hosts" }
     ],
-    "contextMenuMatches": ["https://kemono.cr/*/user/*/post/*"],
+    "contextMenuMatches": ["https://kemono.cr/*/user/*/post/*", "https://pawchive.pw/*/user/*/post/*"],
     "collectorEntry": "content/collectors/kemono.js",
     "collectorModule": "src/content/collectors/kemono.ts",
     "outputKinds": ["downloadable-files"],
     "includeCredentialsByDefault": false,
-    "downloadUrlPatterns": ["^https://(?:[a-z0-9-]+\\.)?kemono\\.cr/.+"],
+    "downloadUrlPatterns": ["^https://(?:[a-z0-9-]+\\.)?(?:kemono\\.cr|pawchive\\.pw)/.+"],
     "save": { "pattern": "nested", "folderDepth": 3, "summary": "Creates 3 nested folders", "detail": "Files nest by service, user, then post title under your chosen root.", "pathTemplate": "<root>/<service>/<user>/<post title>/", "filePattern": "Attachment filenames", "tag": "NESTED · 3", "railCode": "N3" }
   },
   {
