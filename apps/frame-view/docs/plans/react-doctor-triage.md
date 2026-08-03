@@ -20,8 +20,8 @@ from the final scan; false positives are addressed at their source instead of su
 | 1 | 1 | `insecure-crypto-risk` in `.vite/renderer/main_window/assets/index-*.js` | False positive, high | The match is React DOM's internal `Math.random()` marker in ignored generated output. Remove the stale build output from the scan workspace; clean checkouts do not contain it. |
 | 2 | 1 | `unused-dependency` for `scheduler` | True positive, high | Remove the unused direct dependency and update both Frame View lockfile importers. React keeps its own transitive dependency. |
 | 3 | 1 | `require-pnpm-hardening`: missing `minimumReleaseAge` | True positive, high | Add the recommended seven-day release-age gate to Frame View's standalone workspace config. |
-| 4 | 1 | `require-pnpm-hardening`: missing `trustPolicy` | True positive, high | Require `no-downgrade` trust signals in Frame View's standalone workspace config. |
-| 5 | 1 | `require-pnpm-hardening`: `blockExoticSubdeps: false` | True positive, high | Enable exotic transitive dependency blocking. |
+| 4 | 1 | `require-pnpm-hardening`: missing `trustPolicy` | True positive, high | Require `no-downgrade` trust signals for packages published within the last year while retaining pnpm's documented legacy-package cutoff for older unsigned releases. |
+| 5 | 1 | `require-pnpm-hardening`: `blockExoticSubdeps: false` | True positive, high | Enable exotic transitive dependency blocking and redirect Electron Forge's pinned GitHub `@electron/node-gyp` tarball to the byte-equivalent registry release `10.2.0-electron.2`. |
 | 6 | 1 | `js-combine-iterations` in `CatalogRuntime.ts` | True positive, high | Normalize and validate excluded paths in one loop. |
 | 7 | 1 | `async-await-in-loop` in `mediaIndexService.ts` | True positive, medium | Start the independent synchronous-proxy upserts together and await them as one transaction batch. |
 | 8 | 1 | `js-combine-iterations` in `registerIpc.ts` | True positive, high | Normalize and validate excluded paths in one loop. |

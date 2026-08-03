@@ -184,14 +184,19 @@ export class CatalogRuntime {
 
   private buildScanContext(options: ScanOptions): ScanContext {
     const excludedRootChildPaths = options.excludedRootChildPaths ?? [];
+    const resolvedRootPath = path.resolve(options.rootPath);
+    const validatedExcludedRootChildPaths: string[] = [];
+
+    for (const excludedPath of excludedRootChildPaths) {
+      const resolvedExcludedPath = path.resolve(excludedPath);
+      if (path.dirname(resolvedExcludedPath) === resolvedRootPath) {
+        validatedExcludedRootChildPaths.push(resolvedExcludedPath);
+      }
+    }
 
     return {
       discoveredItems: 0,
-      excludedRootChildPaths: new Set(
-        excludedRootChildPaths
-          .map((excludedPath) => path.resolve(excludedPath))
-          .filter((excludedPath) => path.dirname(excludedPath) === path.resolve(options.rootPath)),
-      ),
+      excludedRootChildPaths: new Set(validatedExcludedRootChildPaths),
       filters: this.buildScanFilters(options),
       lastProgressEmittedAt: 0,
       mediaIndexScanId: null,

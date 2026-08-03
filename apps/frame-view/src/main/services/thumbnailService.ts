@@ -196,20 +196,20 @@ export class ThumbnailService {
 
     try {
       const entries = await fs.readdir(this.diskCacheDir, { withFileTypes: true });
-      await Promise.all(
-        entries
-          .filter(
-            (entry) =>
-              entry.isFile() && (entry.name.endsWith('.png') || entry.name.endsWith('.webp')),
-          )
-          .map(async (entry) => {
-            try {
-              await fs.unlink(path.join(this.diskCacheDir, entry.name));
-            } catch {
-              // Ignore deletion errors.
-            }
+      const deletionTasks: Promise<void>[] = [];
+      for (const entry of entries) {
+        if (!entry.isFile() || (!entry.name.endsWith('.png') && !entry.name.endsWith('.webp'))) {
+          continue;
+        }
+
+        deletionTasks.push(
+          fs.unlink(path.join(this.diskCacheDir, entry.name)).catch(() => {
+            // Ignore deletion errors.
           }),
-      );
+        );
+      }
+
+      await Promise.all(deletionTasks);
       this.diskCacheFileCount = 0;
     } catch {
       // Ignore clear-cache errors.

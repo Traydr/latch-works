@@ -22,7 +22,7 @@ export type BrowserEntry =
     };
 
 function sortFolders(folders: FolderNode[], sortMode: GallerySortMode): FolderNode[] {
-  const sorted = [...folders].sort((left, right) =>
+  const sorted = folders.toSorted((left, right) =>
     left.name.localeCompare(right.name, undefined, { sensitivity: 'base', numeric: true }),
   );
 

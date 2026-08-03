@@ -10,7 +10,8 @@ import type {
 import { DebugTab } from './settings/DebugTab';
 import { HotkeysTab } from './settings/HotkeysTab';
 import { LocalStorageTab } from './settings/LocalStorageTab';
-import { SETTINGS_TABS, type SettingsTab, SettingsTabNav } from './settings/SettingsTabNav';
+import { SettingsTabNav } from './settings/SettingsTabNav';
+import { SETTINGS_TABS, type SettingsTab } from './settings/settingsTabs';
 import { UsabilityTab } from './settings/UsabilityTab';
 
 interface CurrentFolderSummary {

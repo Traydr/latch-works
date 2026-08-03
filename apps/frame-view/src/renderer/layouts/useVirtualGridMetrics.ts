@@ -76,9 +76,7 @@ export function useVirtualGridMetrics(
     return Math.max(110, Math.floor((cardWidth * 9) / 16));
   }, [aspectRatio, cardWidth]);
 
-  const rowStride = useMemo(() => {
-    return cardHeight + GRID_GAP_PX;
-  }, [cardHeight]);
+  const rowStride = cardHeight + GRID_GAP_PX;
 
   const rowCount = useMemo(() => {
     return Math.ceil(itemCount / columnCount);
