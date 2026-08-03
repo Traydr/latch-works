@@ -56,3 +56,12 @@ from the final scan; false positives are addressed at their source instead of su
 - Focused renderer tests for keyed modal/drawer lifecycles and accessibility behavior.
 - Manual desktop smoke check: open a folder, browse items, open/step/close the viewer, open/close a
   comic, use video controls, and open/close each settings tab.
+
+## Final automated verification
+
+- `pnpx react-doctor@latest apps/frame-view --yes --verbose --blocking warning --no-score
+  --no-color`: no issues found.
+- `pnpm --dir apps/frame-view run check`: lint and typecheck passed; 18 test files and 82 tests
+  passed.
+- `pnpm --dir apps/frame-view install --lockfile-only`: the standalone lockfile passed the enabled
+  supply-chain policies after the Electron registry override and legacy trust cutoff were applied.
