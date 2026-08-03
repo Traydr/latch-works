@@ -1,7 +1,8 @@
-import { type JSX, useEffect, useMemo } from 'react';
+import { type JSX, useContext, useEffect, useMemo } from 'react';
 
 import type { AppSettings } from '../../../shared/types';
 import { FolderGridOverlay } from '../../components/FolderGridOverlay';
+import { VideoMetadataQueueContext } from '../../contexts/videoMetadataQueueContext';
 import type { BrowserEntry } from '../../utils/browserEntries';
 import { toDisplayName } from '../../utils/path';
 import { getThumbnailPriorityForRow, getThumbnailRequestSize } from '../../utils/thumbnail';
@@ -20,7 +21,6 @@ interface GalleryGridProps {
   comicMode: boolean;
   excludedRootChildPaths: string[];
   onActivateBrowserEntry: (entry: BrowserEntry) => void;
-  onRequestVideoMetadata: (item: Extract<BrowserEntry, { kind: 'media' }>['media']) => void;
   onSelectBrowserEntry: (entry: BrowserEntry) => void;
   onSelectFolder: (folderPath: string) => void;
   onToggleExcludedRootChild: (folderPath: string) => void;
@@ -37,7 +37,6 @@ export function GalleryGrid({
   comicMode,
   excludedRootChildPaths,
   onActivateBrowserEntry,
-  onRequestVideoMetadata,
   onSelectBrowserEntry,
   onSelectFolder,
   onToggleExcludedRootChild,
@@ -46,6 +45,7 @@ export function GalleryGrid({
   setFolderOverlayOpen,
   settings,
 }: GalleryGridProps): JSX.Element {
+  const requestVideoMetadata = useContext(VideoMetadataQueueContext);
   const {
     cardHeight,
     cardWidth,
@@ -74,9 +74,9 @@ export function GalleryGrid({
         continue;
       }
 
-      onRequestVideoMetadata(entry.media);
+      requestVideoMetadata(entry.media);
     }
-  }, [browserEntries, onRequestVideoMetadata, windowedItems]);
+  }, [browserEntries, requestVideoMetadata, windowedItems]);
 
   return (
     <>

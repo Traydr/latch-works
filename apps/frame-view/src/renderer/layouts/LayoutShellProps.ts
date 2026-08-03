@@ -1,4 +1,4 @@
-import type { AppSettings, GallerySortMode, MediaItem } from '../../shared/types';
+import type { AppSettings, GallerySortMode } from '../../shared/types';
 import type { BrowserEntry, BrowserEntryCollection } from '../utils/browserEntries';
 
 /**
@@ -38,7 +38,6 @@ export interface LayoutShellProps {
   onChangeSortMode: (mode: GallerySortMode) => void;
   onShuffleRandom: () => void;
   onOpenSettings: () => void;
-  onRequestVideoMetadata: (item: MediaItem) => void;
   onSelectFolder: (folderPath: string) => void;
   onSelectBrowserEntry: (entry: BrowserEntry) => void;
   onActivateBrowserEntry: (entry: BrowserEntry) => void;

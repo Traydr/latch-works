@@ -3,15 +3,16 @@ import { type JSX, useCallback, useMemo, useState } from 'react';
 import type { AppSettingsPatch, GallerySortMode } from '../shared/types';
 import { ComicReader } from './components/ComicReader';
 import { SettingsDrawer } from './components/SettingsDrawer';
-import { ViewerModal } from './components/ViewerModal';
+import { ViewerOverlay } from './components/ViewerOverlay';
+import { VideoMetadataQueueProvider } from './contexts/VideoMetadataQueueProvider';
 import { useAppBootstrap } from './hooks/useAppBootstrap';
 import { useBrowserSelection } from './hooks/useBrowserSelection';
 import { useFolderNavigationModel } from './hooks/useFolderNavigationModel';
+import { useFolderOpenActions } from './hooks/useFolderOpenActions';
 import { useGalleryKeyboardNavigation } from './hooks/useGalleryKeyboardNavigation';
 import { useScanActions } from './hooks/useScanActions';
 import { useSettingsActions } from './hooks/useSettingsActions';
 import { useSettingsPanelData } from './hooks/useSettingsPanelData';
-import { useVideoMetadataQueue } from './hooks/useVideoMetadataQueue';
 import type { LayoutShellProps } from './layouts';
 import { PrismLayout } from './layouts';
 import { useAppStore } from './store/useAppStore';
@@ -35,10 +36,8 @@ function AppInner(): JSX.Element {
   const recursive = useAppStore((state) => state.recursive);
   const items = useAppStore((state) => state.items);
   const loadingChunks = useAppStore((state) => state.loadingChunks);
-  const viewerItemsSnapshot = useAppStore((state) => state.viewerItemsSnapshot);
   const selectedId = useAppStore((state) => state.selectedId);
   const viewerIndex = useAppStore((state) => state.viewerIndex);
-  const activeScanRunId = useAppStore((state) => state.activeScanRunId);
   const scanMessage = useAppStore((state) => state.scanMessage);
   const scanState = useAppStore((state) => state.scanState);
 
@@ -46,10 +45,7 @@ function AppInner(): JSX.Element {
   const setRecursive = useAppStore((state) => state.setRecursive);
   const setSelectedId = useAppStore((state) => state.setSelectedId);
   const openViewerAt = useAppStore((state) => state.openViewerAt);
-  const closeViewer = useAppStore((state) => state.closeViewer);
-  const shiftViewer = useAppStore((state) => state.shiftViewer);
   const applyScanEvent = useAppStore((state) => state.applyScanEvent);
-  const applyVideoMetadata = useAppStore((state) => state.applyVideoMetadata);
 
   const rootGalleryPreferences = useMemo(() => {
     return getRootGalleryPreferences(settings, rootPath);
@@ -89,56 +85,15 @@ function AppInner(): JSX.Element {
     runScan,
   });
 
-  const openFolderAction = useCallback((): void => {
-    void (async () => {
-      const selectedPath = await openFolderDialogAction();
-      if (!selectedPath) {
-        return;
-      }
-
-      setNavigationCeilingPath(selectedPath);
-      setPendingFolderSelectionPath(null);
-      const selectedPreferences = getRootGalleryPreferences(settings, selectedPath);
-      await runScan(selectedPath, {
-        excludedRootChildPaths: selectedPreferences.excludedRootChildPaths,
-        recursive: recursive || selectedPreferences.comicMode,
-      });
-    })();
-  }, [
-    openFolderDialogAction,
+  const { openFolderAction, scanInputPathAction } = useFolderOpenActions({
+    openFolderDialog: openFolderDialogAction,
     recursive,
+    resolveScanInputPath: resolveScanInputPathAction,
     runScan,
     setNavigationCeilingPath,
     setPendingFolderSelectionPath,
     settings,
-  ]);
-
-  const scanInputPathAction = useCallback(
-    (candidatePath: string): void => {
-      void (async () => {
-        const resolvedPath = await resolveScanInputPathAction(candidatePath);
-        if (!resolvedPath) {
-          return;
-        }
-
-        setNavigationCeilingPath(resolvedPath);
-        setPendingFolderSelectionPath(null);
-        const resolvedPreferences = getRootGalleryPreferences(settings, resolvedPath);
-        await runScan(resolvedPath, {
-          excludedRootChildPaths: resolvedPreferences.excludedRootChildPaths,
-          recursive: recursive || resolvedPreferences.comicMode,
-        });
-      })();
-    },
-    [
-      recursive,
-      resolveScanInputPathAction,
-      runScan,
-      setNavigationCeilingPath,
-      setPendingFolderSelectionPath,
-      settings,
-    ],
-  );
+  });
 
   const comicEntries = useMemo(() => {
     return comicMode && scanState !== 'loading'
@@ -183,11 +138,6 @@ function AppInner(): JSX.Element {
     selectedId,
     setPendingFolderSelectionPath,
     setSelectedId,
-  });
-
-  const requestVideoMetadataAction = useVideoMetadataQueue({
-    activeScanRunId,
-    applyVideoMetadata,
   });
 
   const { diagnosticsSnapshot, mediaIndexStats, mediaToolsStatus, refreshSettingsPanelData } =
@@ -246,14 +196,6 @@ function AppInner(): JSX.Element {
     openSiblingFolderAction,
     navigateToFolderAction,
   });
-
-  const activeViewerItems = viewerItemsSnapshot ?? items;
-  const canStepViewerBackward =
-    settings.loopViewerNavigation || viewerIndex === null || viewerIndex > 0;
-  const canStepViewerForward =
-    settings.loopViewerNavigation ||
-    viewerIndex === null ||
-    (activeViewerItems.length > 0 && viewerIndex < activeViewerItems.length - 1);
 
   const layoutProps: LayoutShellProps = {
     settings,
@@ -326,7 +268,6 @@ function AppInner(): JSX.Element {
     onChangeSortMode: changeSortModeAction,
     onShuffleRandom: shuffleRandomAction,
     onOpenSettings: () => setSettingsOpen(true),
-    onRequestVideoMetadata: requestVideoMetadataAction,
     onSelectFolder: navigateToFolderAction,
     onSelectBrowserEntry: selectBrowserEntryAction,
     onActivateBrowserEntry: activateBrowserEntryAction,
@@ -346,19 +287,7 @@ function AppInner(): JSX.Element {
     <>
       <PrismLayout {...layoutProps} />
 
-      {viewerIndex !== null ? (
-        <ViewerModal
-          key={activeViewerItems[viewerIndex]?.id ?? viewerIndex}
-          items={activeViewerItems}
-          index={viewerIndex}
-          autoplayVideos={settings.autoplayVideos}
-          loopVideos={settings.loopVideos}
-          canStepBackward={canStepViewerBackward}
-          canStepForward={canStepViewerForward}
-          onClose={closeViewer}
-          onStep={(delta) => shiftViewer(delta, settings.loopViewerNavigation)}
-        />
-      ) : null}
+      <ViewerOverlay />
 
       {activeComic ? (
         <ComicReader
@@ -393,5 +322,9 @@ function AppInner(): JSX.Element {
 }
 
 export function App(): JSX.Element {
-  return <AppInner />;
+  return (
+    <VideoMetadataQueueProvider>
+      <AppInner />
+    </VideoMetadataQueueProvider>
+  );
 }
