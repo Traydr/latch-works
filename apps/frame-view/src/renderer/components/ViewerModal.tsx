@@ -1,10 +1,11 @@
-import { FolderOpen, Maximize, Pause, Play, X } from 'lucide-react';
 import { type JSX, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { MediaItem } from '../../shared/types';
 import { useViewerChromeIdle } from '../hooks/useViewerChromeIdle';
-import { HOTKEYS, isPlainHotkeyEvent, isTextInputTarget, matchesAnyKey } from '../utils/hotkeys';
+import { useViewerKeyboardControls } from '../hooks/useViewerKeyboardControls';
 import { formatBytes, formatDuration, toFileUrl } from '../utils/path';
+import { ViewerChrome } from './viewer/ViewerChrome';
+import { ViewerVideoControls } from './viewer/ViewerVideoControls';
 
 interface ViewerModalProps {
   items: MediaItem[];
@@ -37,6 +38,25 @@ function readPersistedVolume(): number {
   }
 }
 
+function buildViewerDetails(item: MediaItem, loadedDuration: number): string[] {
+  const resolvedDurationMs =
+    item.mediaType === 'video'
+      ? item.durationMs && item.durationMs > 0
+        ? item.durationMs
+        : loadedDuration > 0
+          ? Math.round(loadedDuration * 1000)
+          : undefined
+      : undefined;
+
+  return [
+    formatBytes(item.size),
+    item.extension.toUpperCase(),
+    ...(resolvedDurationMs ? [formatDuration(resolvedDurationMs)] : []),
+    ...(item.width && item.height ? [`${item.width}x${item.height}`] : []),
+    ...(item.codec ? [item.codec] : []),
+  ];
+}
+
 export function ViewerModal({
   items,
   index,
@@ -49,7 +69,7 @@ export function ViewerModal({
 }: ViewerModalProps): JSX.Element | null {
   const item = useMemo(() => items[index], [items, index]);
   const isVideoItem = item?.mediaType === 'video';
-  const modalRef = useRef<HTMLDivElement | null>(null);
+  const modalRef = useRef<HTMLDialogElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const isScrubbingRef = useRef(false);
   const queuedStepRef = useRef(0);
@@ -66,6 +86,12 @@ export function ViewerModal({
   const { chromeVisible, revealChrome, chromeVisibilityClass } = useViewerChromeIdle({
     pinned: chromePinned,
   });
+
+  useEffect(() => {
+    const dialog = modalRef.current;
+    dialog?.showModal();
+    return () => dialog?.close();
+  }, []);
 
   const applySpeed = useCallback((nextSpeed: number): void => {
     setSpeed(nextSpeed);
@@ -105,154 +131,23 @@ export function ViewerModal({
     };
   }, []);
 
-  useEffect(() => {
-    if (!item) {
-      return;
-    }
-
-    const keyListener = (event: KeyboardEvent): void => {
-      revealChrome();
-
-      if (isTextInputTarget(event.target) && !matchesAnyKey(event, HOTKEYS.close)) {
-        return;
-      }
-
-      if (!isPlainHotkeyEvent(event)) {
-        return;
-      }
-
-      if (matchesAnyKey(event, HOTKEYS.close)) {
-        onClose();
-        return;
-      }
-
-      if (matchesAnyKey(event, HOTKEYS.viewerNext)) {
-        event.preventDefault();
-        queueStep(1);
-        return;
-      }
-
-      if (matchesAnyKey(event, HOTKEYS.viewerPrevious)) {
-        event.preventDefault();
-        queueStep(-1);
-        return;
-      }
-
-      if (!isVideoItem) {
-        return;
-      }
-
-      if (matchesAnyKey(event, HOTKEYS.videoPlayPause)) {
-        event.preventDefault();
-        const video = videoRef.current;
-        if (!video) {
-          return;
-        }
-
-        if (video.paused) {
-          void video.play();
-        } else {
-          video.pause();
-        }
-
-        return;
-      }
-
-      if (matchesAnyKey(event, [...HOTKEYS.videoSeekBackward, ...HOTKEYS.videoSeekForward])) {
-        event.preventDefault();
-        const video = videoRef.current;
-        if (!video) {
-          return;
-        }
-
-        const total = video.duration;
-        if (!Number.isFinite(total) || total <= 0) {
-          return;
-        }
-
-        const targetTime =
-          video.currentTime + (matchesAnyKey(event, HOTKEYS.videoSeekBackward) ? -5 : 5);
-        const safeTotal = Math.max(0, total - 0.05);
-        const nextTime = Math.max(0, Math.min(safeTotal, targetTime));
-        const wasPlaying = !video.paused;
-
-        if ('fastSeek' in video && typeof video.fastSeek === 'function') {
-          video.fastSeek(nextTime);
-        } else {
-          video.currentTime = nextTime;
-        }
-
-        setPosition(nextTime);
-
-        if (wasPlaying) {
-          void video.play().catch(() => {
-            // Keep paused if resume cannot start.
-          });
-        }
-
-        return;
-      }
-
-      if (matchesAnyKey(event, HOTKEYS.videoTemporarySpeed)) {
-        event.preventDefault();
-        speedBoostHeldRef.current = true;
-        applySpeed(2);
-      }
-    };
-
-    const keyUpListener = (event: KeyboardEvent): void => {
-      if (!isPlainHotkeyEvent(event)) {
-        return;
-      }
-
-      if (!matchesAnyKey(event, HOTKEYS.videoTemporarySpeed) || !speedBoostHeldRef.current) {
-        return;
-      }
-
-      speedBoostHeldRef.current = false;
-      applySpeed(1);
-    };
-
-    const resetHeldSpeed = (): void => {
-      if (!speedBoostHeldRef.current) {
-        return;
-      }
-
-      speedBoostHeldRef.current = false;
-      applySpeed(1);
-    };
-
-    window.addEventListener('keydown', keyListener);
-    window.addEventListener('keyup', keyUpListener);
-    window.addEventListener('blur', resetHeldSpeed);
-    return () => {
-      window.removeEventListener('keydown', keyListener);
-      window.removeEventListener('keyup', keyUpListener);
-      window.removeEventListener('blur', resetHeldSpeed);
-    };
-  }, [applySpeed, isVideoItem, item, onClose, queueStep, revealChrome]);
+  useViewerKeyboardControls({
+    applySpeed,
+    isVideoItem,
+    item,
+    onChangePosition: setPosition,
+    onClose,
+    queueStep,
+    revealChrome,
+    speedBoostHeldRef,
+    videoRef,
+  });
 
   if (!item) {
     return null;
   }
 
-  const resolvedDurationMs =
-    item.mediaType === 'video'
-      ? item.durationMs && item.durationMs > 0
-        ? item.durationMs
-        : duration > 0
-          ? Math.round(duration * 1000)
-          : undefined
-      : undefined;
-
-  const details = [
-    formatBytes(item.size),
-    item.extension.toUpperCase(),
-    ...(resolvedDurationMs ? [formatDuration(resolvedDurationMs)] : []),
-    ...(item.width && item.height ? [`${item.width}x${item.height}`] : []),
-    ...(item.codec ? [item.codec] : []),
-  ];
-
+  const details = buildViewerDetails(item, duration);
   const canSeek = Number.isFinite(duration) && duration > 0;
 
   const commitSeek = (rawTarget: number): void => {
@@ -325,77 +220,46 @@ export function ViewerModal({
     await modalRef.current.requestFullscreen();
   };
 
+  const changeVolume = (nextVolume: number): void => {
+    const clamped = Math.max(0, Math.min(1, nextVolume));
+    setVolume(clamped);
+    try {
+      window.localStorage.setItem(VIEWER_VOLUME_STORAGE_KEY, String(clamped));
+    } catch {
+      // Ignore storage write errors.
+    }
+    if (videoRef.current) {
+      videoRef.current.volume = clamped;
+    }
+  };
+
+  const changeSpeed = (nextSpeed: number): void => {
+    speedBoostHeldRef.current = false;
+    applySpeed(nextSpeed);
+  };
+
   return (
-    <div
+    <dialog
       ref={modalRef}
-      role="dialog"
-      aria-modal="true"
       aria-label={`Viewer for ${item.name}`}
-      className={`dark fixed inset-0 z-50 bg-zinc-950/95 text-zinc-100 ${chromeVisible ? '' : 'cursor-none'}`}
+      className={`dark fixed inset-0 z-50 m-0 h-screen max-h-none w-screen max-w-none border-0 bg-zinc-950/95 p-0 text-zinc-100 backdrop:bg-zinc-950 ${chromeVisible ? '' : 'cursor-none'}`}
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
       onMouseMove={revealChrome}
       onPointerDown={revealChrome}
     >
-      {/* Top bar: filename + actions */}
-      <div
-        className={`viewer-scrim-top viewer-chrome-transition ${chromeVisibilityClass}`}
-        style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))' }}
-      >
-        <div className="pointer-events-auto flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium text-white">{item.name}</p>
-            <p className="truncate text-xs text-white/70">{details.join(' · ')}</p>
-          </div>
-          <div className="flex shrink-0 items-center gap-1">
-            <button
-              type="button"
-              className="viewer-overlay-btn"
-              title="Close"
-              aria-label="Close"
-              onClick={onClose}
-            >
-              <X className="size-5" />
-            </button>
-            <button
-              type="button"
-              className="viewer-overlay-btn"
-              title="Fullscreen"
-              aria-label="Fullscreen"
-              onClick={() => void toggleFullscreen()}
-            >
-              <Maximize className="size-5" />
-            </button>
-            <button
-              type="button"
-              className="viewer-overlay-btn"
-              title="Reveal in folder"
-              aria-label="Reveal in folder"
-              onClick={() => void window.frameView.revealInFolder(item.path)}
-            >
-              <FolderOpen className="size-5" />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Side navigation */}
-      <button
-        type="button"
-        aria-label="Previous item"
-        className={`viewer-overlay-btn absolute left-3 top-1/2 z-20 -translate-y-1/2 viewer-chrome-transition ${chromeVisibilityClass} ${canStepBackward ? '' : 'pointer-events-none opacity-40'}`}
-        onClick={() => onStep(-1)}
-        disabled={!canStepBackward}
-      >
-        <span className="px-1 text-xl">{'<'}</span>
-      </button>
-      <button
-        type="button"
-        aria-label="Next item"
-        className={`viewer-overlay-btn absolute right-3 top-1/2 z-20 -translate-y-1/2 viewer-chrome-transition ${chromeVisibilityClass} ${canStepForward ? '' : 'pointer-events-none opacity-40'}`}
-        onClick={() => onStep(1)}
-        disabled={!canStepForward}
-      >
-        <span className="px-1 text-xl">{'>'}</span>
-      </button>
+      <ViewerChrome
+        canStepBackward={canStepBackward}
+        canStepForward={canStepForward}
+        chromeVisibilityClass={chromeVisibilityClass}
+        details={details}
+        item={item}
+        onClose={onClose}
+        onStep={onStep}
+        onToggleFullscreen={() => void toggleFullscreen()}
+      />
 
       {/* Center media */}
       <div className="flex h-full items-center justify-center p-3">
@@ -457,115 +321,25 @@ export function ViewerModal({
 
       {/* Video controls */}
       {item.mediaType === 'video' ? (
-        <div
-          className={`viewer-scrim-bottom viewer-chrome-transition ${chromeVisibilityClass}`}
-          style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
-        >
-          <div className="pointer-events-auto space-y-2">
-            <input
-              type="range"
-              min={0}
-              max={canSeek ? duration : 1}
-              step={0.1}
-              value={position}
-              className="viewer-accent-range w-full"
-              disabled={!canSeek}
-              onPointerDown={() => {
-                isScrubbingRef.current = true;
-              }}
-              onPointerCancel={() => {
-                isScrubbingRef.current = false;
-              }}
-              onBlur={() => {
-                isScrubbingRef.current = false;
-              }}
-              onPointerUp={(event) => {
-                if (!canSeek) {
-                  isScrubbingRef.current = false;
-                  return;
-                }
-
-                const next = Number((event.currentTarget as HTMLInputElement).value);
-                commitSeek(next);
-                isScrubbingRef.current = false;
-              }}
-              onInput={(event) => {
-                const next = Number((event.currentTarget as HTMLInputElement).value);
-                setPosition(next);
-              }}
-              onChange={(event) => {
-                if (!canSeek) {
-                  return;
-                }
-
-                const next = Number(event.target.value);
-                commitSeek(next);
-              }}
-            />
-            <div className="flex flex-wrap items-center gap-2 text-sm text-white/90">
-              <button
-                type="button"
-                className="viewer-overlay-btn"
-                title={playing ? 'Pause' : 'Play'}
-                aria-label={playing ? 'Pause' : 'Play'}
-                onClick={toggleVideoPlayback}
-              >
-                {playing ? <Pause className="size-5" /> : <Play className="size-5" />}
-              </button>
-              <button type="button" className="viewer-overlay-btn-text" onClick={() => skip(-5)}>
-                -5s
-              </button>
-              <button type="button" className="viewer-overlay-btn-text" onClick={() => skip(5)}>
-                +5s
-              </button>
-              <label className="flex items-center gap-2 text-white/80">
-                Vol
-                <input
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.01}
-                  value={volume}
-                  className="viewer-accent-range"
-                  onChange={(event) => {
-                    const next = Number(event.target.value);
-                    const clamped = Math.max(0, Math.min(1, next));
-                    setVolume(clamped);
-                    try {
-                      window.localStorage.setItem(VIEWER_VOLUME_STORAGE_KEY, String(clamped));
-                    } catch {
-                      // Ignore storage write errors.
-                    }
-                    if (videoRef.current) {
-                      videoRef.current.volume = clamped;
-                    }
-                  }}
-                />
-              </label>
-              <label className="flex items-center gap-2 text-white/80">
-                Speed
-                <select
-                  className="rounded-lg border-0 bg-white/15 px-2 py-1 text-xs text-white outline-none"
-                  value={speed}
-                  onChange={(event) => {
-                    const next = Number(event.target.value);
-                    speedBoostHeldRef.current = false;
-                    applySpeed(next);
-                  }}
-                >
-                  <option value={0.5}>0.5x</option>
-                  <option value={1}>1x</option>
-                  <option value={1.5}>1.5x</option>
-                  <option value={2}>2x</option>
-                </select>
-              </label>
-              <span className="text-white/70 tabular-nums">
-                {Math.floor(position)}/{Math.floor(duration || 0)}s
-              </span>
-            </div>
-          </div>
-        </div>
+        <ViewerVideoControls
+          canSeek={canSeek}
+          chromeVisibilityClass={chromeVisibilityClass}
+          duration={duration}
+          onChangePosition={setPosition}
+          onChangeScrubbing={(scrubbing) => {
+            isScrubbingRef.current = scrubbing;
+          }}
+          onChangeSpeed={changeSpeed}
+          onChangeVolume={changeVolume}
+          onCommitSeek={commitSeek}
+          onSkip={skip}
+          onTogglePlayback={toggleVideoPlayback}
+          playing={playing}
+          position={position}
+          speed={speed}
+          volume={volume}
+        />
       ) : null}
-    </div>
+    </dialog>
   );
 }

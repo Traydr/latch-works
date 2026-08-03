@@ -29,13 +29,13 @@ export function FolderGridOverlay({
 }: FolderGridOverlayProps): JSX.Element {
   const [currentPath, setCurrentPath] = useState<string | null>(rootPath);
   const [folders, setFolders] = useState<FolderNode[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [pendingLoadRequestId, setPendingLoadRequestId] = useState<number | null>(null);
   const [breadcrumbs, setBreadcrumbs] = useState<{ path: string; name: string }[]>([]);
   const loadRequestIdRef = useRef(0);
 
   const loadFolder = useCallback(async (folderPath: string): Promise<void> => {
     const requestId = ++loadRequestIdRef.current;
-    setLoading(true);
+    setPendingLoadRequestId(requestId);
     try {
       const nodes = getFrameViewValue(
         await window.frameView.listFolderChildren(folderPath),
@@ -47,9 +47,9 @@ export function FolderGridOverlay({
 
       setFolders(nodes ?? []);
     } finally {
-      if (requestId === loadRequestIdRef.current) {
-        setLoading(false);
-      }
+      setPendingLoadRequestId((currentRequestId) =>
+        currentRequestId === requestId ? null : currentRequestId,
+      );
     }
   }, []);
 
@@ -113,6 +113,7 @@ export function FolderGridOverlay({
 
   const excludedRootChildPathSet = new Set(excludedRootChildPaths);
   const isShowingOpenedRoot = currentPath === rootPath;
+  const loading = pendingLoadRequestId !== null;
 
   return (
     <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/35 backdrop-blur-sm">
