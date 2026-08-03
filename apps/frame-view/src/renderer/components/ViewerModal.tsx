@@ -75,14 +75,6 @@ export function ViewerModal({
     }
   }, []);
 
-  useEffect(() => {
-    setPlaying(false);
-    setDuration(0);
-    setPosition(0);
-    speedBoostHeldRef.current = false;
-    setSpeed(1);
-  }, [item]);
-
   const queueStep = useCallback(
     (delta: number): void => {
       queuedStepRef.current += delta;

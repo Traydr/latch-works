@@ -18,28 +18,21 @@ vi.mock('../../src/renderer/layouts', () => ({
 }));
 
 vi.mock('../../src/renderer/components/SettingsDrawer', () => ({
-  SettingsDrawer: ({
-    isOpen,
-    onUpdate,
-  }: {
-    isOpen: boolean;
-    onUpdate: (patch: unknown) => void;
-  }) =>
-    isOpen ? (
-      <button
-        type="button"
-        onClick={() =>
-          onUpdate({
-            filters: {
-              ...DEFAULT_SETTINGS.filters,
-              showVideos: false,
-            },
-          })
-        }
-      >
-        apply-filter
-      </button>
-    ) : null,
+  SettingsDrawer: ({ onUpdate }: { onUpdate: (patch: unknown) => void }) => (
+    <button
+      type="button"
+      onClick={() =>
+        onUpdate({
+          filters: {
+            ...DEFAULT_SETTINGS.filters,
+            showVideos: false,
+          },
+        })
+      }
+    >
+      apply-filter
+    </button>
+  ),
 }));
 
 vi.mock('../../src/renderer/components/ViewerModal', () => ({

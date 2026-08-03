@@ -348,6 +348,7 @@ function AppInner(): JSX.Element {
 
       {viewerIndex !== null ? (
         <ViewerModal
+          key={activeViewerItems[viewerIndex]?.id ?? viewerIndex}
           items={activeViewerItems}
           index={viewerIndex}
           autoplayVideos={settings.autoplayVideos}
@@ -360,28 +361,33 @@ function AppInner(): JSX.Element {
       ) : null}
 
       {activeComic ? (
-        <ComicReader comic={activeComic} onClose={() => setActiveComic(null)} />
+        <ComicReader
+          key={activeComic.id}
+          comic={activeComic}
+          onClose={() => setActiveComic(null)}
+        />
       ) : null}
 
-      <SettingsDrawer
-        isOpen={settingsOpen}
-        currentFolderSummary={{
-          folderName: rootPath ? toDisplayName(rootPath) : null,
-          itemCount: browserEntries.mediaEntryCount,
-          recursive: effectiveRecursive,
-          scanState,
-        }}
-        diagnosticsSnapshot={diagnosticsSnapshot}
-        settings={settings}
-        onClose={() => setSettingsOpen(false)}
-        onUpdate={handleSettingsUpdate}
-        mediaIndexStats={mediaIndexStats}
-        mediaToolsStatus={mediaToolsStatus}
-        onCopyDiagnostics={copyDiagnosticsAction}
-        onRefreshDiagnostics={refreshDiagnosticsAction}
-        onClearThumbnailCache={clearThumbnailCacheAction}
-        onClearMediaIndex={clearMediaIndexAction}
-      />
+      {settingsOpen ? (
+        <SettingsDrawer
+          currentFolderSummary={{
+            folderName: rootPath ? toDisplayName(rootPath) : null,
+            itemCount: browserEntries.mediaEntryCount,
+            recursive: effectiveRecursive,
+            scanState,
+          }}
+          diagnosticsSnapshot={diagnosticsSnapshot}
+          settings={settings}
+          onClose={() => setSettingsOpen(false)}
+          onUpdate={handleSettingsUpdate}
+          mediaIndexStats={mediaIndexStats}
+          mediaToolsStatus={mediaToolsStatus}
+          onCopyDiagnostics={copyDiagnosticsAction}
+          onRefreshDiagnostics={refreshDiagnosticsAction}
+          onClearThumbnailCache={clearThumbnailCacheAction}
+          onClearMediaIndex={clearMediaIndexAction}
+        />
+      ) : null}
     </>
   );
 }

@@ -36,26 +36,20 @@ export function FolderGridOverlay({
   const loadFolder = useCallback(async (folderPath: string): Promise<void> => {
     const requestId = ++loadRequestIdRef.current;
     setLoading(true);
-    const nodes = getFrameViewValue(
-      await window.frameView.listFolderChildren(folderPath),
-      'list-folder-children',
-    );
-    if (requestId !== loadRequestIdRef.current) {
-      return;
-    }
-
-    if (nodes) {
-      setFolders(nodes);
-    } else {
+    try {
+      const nodes = getFrameViewValue(
+        await window.frameView.listFolderChildren(folderPath),
+        'list-folder-children',
+      );
       if (requestId !== loadRequestIdRef.current) {
         return;
       }
 
-      setFolders([]);
-    }
-
-    if (requestId === loadRequestIdRef.current) {
-      setLoading(false);
+      setFolders(nodes ?? []);
+    } finally {
+      if (requestId === loadRequestIdRef.current) {
+        setLoading(false);
+      }
     }
   }, []);
 

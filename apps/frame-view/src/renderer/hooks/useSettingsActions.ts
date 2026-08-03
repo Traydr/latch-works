@@ -43,7 +43,7 @@ export function useSettingsActions({
   scanState,
 }: UseSettingsActionsOptions): UseSettingsActionsResult {
   const [cacheStatusMessage, setCacheStatusMessage] = useState<string | null>(null);
-  const settingsUpdateQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const settingsUpdateQueueRef = useRef<Promise<void> | null>(null);
 
   const scheduleStatusReset = useCallback((message: string): void => {
     setCacheStatusMessage(message);
@@ -73,8 +73,10 @@ export function useSettingsActions({
         }
       };
 
-      settingsUpdateQueueRef.current = settingsUpdateQueueRef.current.then(runUpdate, runUpdate);
-      await settingsUpdateQueueRef.current;
+      const currentQueue = settingsUpdateQueueRef.current ?? Promise.resolve();
+      const scheduledUpdate = currentQueue.then(runUpdate, runUpdate);
+      settingsUpdateQueueRef.current = scheduledUpdate;
+      await scheduledUpdate;
     },
     [initializeSettings, recursive, rootPath, runScan],
   );
