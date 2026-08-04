@@ -6,10 +6,11 @@ import type {
   RunProgressState,
   Screen,
 } from "../renderer/hooks/useLockstepController";
-import { showcasePlan, showcaseSettings } from "./screens";
+import { showcasePlan, showcaseSettings } from "./fixtures";
 
 const noop = () => undefined;
 const noopAsync = async () => undefined;
+const noopPlan = async () => false;
 
 const idleProgress: RunProgressState = {
   action: "",
@@ -83,7 +84,7 @@ function createBaseController(
       logs: [],
       runProgress,
       handleDoctor: noopAsync,
-      handlePlan: noopAsync,
+      handlePlan: noopPlan,
       handlePush: noopAsync,
       handlePrune: noopAsync,
       handleCancel: noopAsync,
@@ -98,6 +99,7 @@ function createBaseController(
  */
 export function ShowcasePushTimerDemo() {
   const startedAtRef = useRef(Date.now() - 66_000);
+  const itemCurrentRef = useRef(240);
   const [running, setRunning] = useState(true);
   const [itemCurrent, setItemCurrent] = useState(240);
   const [endedAt, setEndedAt] = useState<number | null>(null);
@@ -114,14 +116,14 @@ export function ShowcasePushTimerDemo() {
     }
 
     const id = setInterval(() => {
-      setItemCurrent((current) => {
-        if (current >= 271) {
-          setRunning(false);
-          setEndedAt(Date.now());
-          return 271;
-        }
-        return current + 1;
-      });
+      const nextItemCurrent = Math.min(itemCurrentRef.current + 1, 271);
+      itemCurrentRef.current = nextItemCurrent;
+      setItemCurrent(nextItemCurrent);
+
+      if (nextItemCurrent === 271) {
+        setRunning(false);
+        setEndedAt(Date.now());
+      }
     }, 1200);
 
     return () => clearInterval(id);

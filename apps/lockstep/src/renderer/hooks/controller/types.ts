@@ -110,7 +110,7 @@ export interface RunController {
   logs: string[];
   runProgress: RunProgressState;
   handleDoctor: () => Promise<void>;
-  handlePlan: () => Promise<void>;
+  handlePlan: () => Promise<boolean>;
   handlePush: () => Promise<void>;
   handlePrune: () => Promise<void>;
   handleCancel: () => Promise<void>;

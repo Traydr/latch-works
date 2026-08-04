@@ -55,10 +55,13 @@ export function ProfileSetupView({
           </label>
         </div>
 
-        <label className="grid gap-1.5">
-          <span className="prism-label">Source folder</span>
+        <div className="grid gap-1.5">
+          <label className="prism-label" htmlFor="profile-source-root">
+            Source folder
+          </label>
           <div className="flex gap-2">
             <input
+              id="profile-source-root"
               className="prism-input"
               value={form.sourceRoot}
               onChange={(event) => onChange({ sourceRoot: event.target.value })}
@@ -74,7 +77,7 @@ export function ProfileSetupView({
               Browse
             </button>
           </div>
-        </label>
+        </div>
 
         <label className="grid gap-1.5">
           <span className="prism-label">Sync API token</span>

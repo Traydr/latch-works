@@ -4,35 +4,6 @@ import type { LockstepProfilePublic } from "../../shared/types";
 import type { PlanController } from "../hooks/useLockstepController";
 import { ActionChip } from "./syncPrimitives";
 
-export interface Field {
-  label: string;
-  value: string;
-  tone?: string;
-}
-
-export function profileFieldList(profile: LockstepProfilePublic): Field[] {
-  const tokenStatus = profile.tokenConfigured
-    ? profile.tokenInSession
-      ? "In memory"
-      : "Stored"
-    : profile.tokenUnreadable
-      ? "Unreadable"
-      : "Not set";
-  return [
-    { label: "source", value: profile.sourceRoot },
-    { label: "api", value: profile.apiUrl },
-    {
-      label: "token",
-      value: tokenStatus,
-      tone: profile.tokenConfigured ? "text-emerald-400" : "text-amber-400",
-    },
-    {
-      label: "last run",
-      value: profile.lastRun ? `${profile.lastRun.action} · ${profile.lastRun.status}` : "none",
-    },
-  ];
-}
-
 export function TokenInput({
   value,
   onChange,
@@ -76,12 +47,16 @@ export function PlanList({
   const { filter, setFilter, filteredItems } = plan;
   return (
     <div className={`flex min-h-0 flex-col gap-2 ${className}`}>
+      <label className="ls-label" htmlFor="plan-path-filter">
+        Filter plan paths
+      </label>
       <div className="relative">
         <Search
           className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-zinc-500"
           aria-hidden
         />
         <input
+          id="plan-path-filter"
           className="ls-input pl-8"
           value={filter}
           onChange={(event) => setFilter(event.target.value)}

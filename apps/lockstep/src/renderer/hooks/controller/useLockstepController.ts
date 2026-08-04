@@ -198,9 +198,9 @@ export function useLockstepController(): LockstepController {
       return [];
     }
     const query = filter.trim().toLowerCase();
-    return plan.items
-      .filter((item) => item.action !== "keep")
-      .filter((item) => !query || item.path.toLowerCase().includes(query));
+    return plan.items.filter(
+      (item) => item.action !== "keep" && (!query || item.path.toLowerCase().includes(query)),
+    );
   }, [filter, plan]);
 
   const ensureSessionToken = useCallback(
@@ -289,7 +289,7 @@ export function useLockstepController(): LockstepController {
 
   const handlePlan = useCallback(async () => {
     if (!activeProfile || !(await ensureSessionToken(activeProfile))) {
-      return;
+      return false;
     }
     beginRun("Planning sync...", "plan");
     const result = await window.lockstep.plan({ profileId: activeProfile.id });
@@ -297,14 +297,14 @@ export function useLockstepController(): LockstepController {
     if (Result.isError(result)) {
       setError(result.error.message);
       setRunProgress((prev) => ({ ...prev, phase: "error", endedAt: Date.now() }));
-      return;
+      return false;
     }
     setPlan(result.value);
     setPipelineProgress({ reviewed: true, pushCompleted: false, pruneCompleted: false });
-    setScreen("plan");
     setRunProgress((prev) => ({ ...prev, phase: "done", endedAt: Date.now() }));
     await refreshSettings();
-  }, [activeProfile, ensureSessionToken, beginRun, refreshSettings, setScreen]);
+    return true;
+  }, [activeProfile, ensureSessionToken, beginRun, refreshSettings]);
 
   const handlePush = useCallback(async () => {
     if (!activeProfile || !(await ensureSessionToken(activeProfile))) {
