@@ -18,7 +18,7 @@ from the final scan; false positives are addressed at their source instead of su
 | # | Count | Rule and location | Classification | Resolution |
 | --- | ---: | --- | --- | --- |
 | 1 | 1 | `insecure-crypto-risk` in `.vite/renderer/main_window/assets/index-*.js` | False positive, high | The match is React DOM's internal `Math.random()` marker in ignored generated output. Remove the stale build output from the scan workspace; clean checkouts do not contain it. |
-| 2 | 1 | `unused-dependency` for `scheduler` | True positive, high | Remove the unused direct dependency and update both Frame View lockfile importers. React keeps its own transitive dependency. |
+| 2 | 1 | `unused-dependency` for `scheduler` | False positive, high | Keep and explicitly preload the direct dependency: Vite's renderer optimizer otherwise emitted React DOM with a browser-side `require("scheduler")`, causing a blank window. Cover direct resolution with a regression test. |
 | 3 | 1 | `require-pnpm-hardening`: missing `minimumReleaseAge` | True positive, high | Add the recommended seven-day release-age gate to Frame View's standalone workspace config. |
 | 4 | 1 | `require-pnpm-hardening`: missing `trustPolicy` | True positive, high | Require `no-downgrade` trust signals for packages published within the last year while retaining pnpm's documented legacy-package cutoff for older unsigned releases. |
 | 5 | 1 | `require-pnpm-hardening`: `blockExoticSubdeps: false` | True positive, high | Enable exotic transitive dependency blocking and redirect Electron Forge's pinned GitHub `@electron/node-gyp` tarball to the byte-equivalent registry release `10.2.0-electron.2`. |
@@ -54,6 +54,8 @@ from the final scan; false positives are addressed at their source instead of su
 - React Doctor full scan: zero errors and zero warnings with warning-level blocking.
 - Frame View lint, typecheck, and tests.
 - Focused renderer tests for keyed modal/drawer lifecycles and accessibility behavior.
+- Renderer dependency regression test confirming `scheduler` remains directly resolvable for React
+  DOM optimization.
 - Manual desktop smoke check: open a folder, browse items, open/step/close the viewer, open/close a
   comic, use video controls, and open/close each settings tab.
 
@@ -61,7 +63,7 @@ from the final scan; false positives are addressed at their source instead of su
 
 - `pnpx react-doctor@latest apps/frame-view --yes --verbose --blocking warning --no-score
   --no-color`: no issues found.
-- `pnpm --dir apps/frame-view run check`: lint and typecheck passed; 18 test files and 82 tests
+- `pnpm --filter @latch-works/frame-view check`: lint and typecheck passed; 19 test files and 83 tests
   passed.
 - `pnpm --dir apps/frame-view install --lockfile-only`: the standalone lockfile passed the enabled
   supply-chain policies after the Electron registry override and legacy trust cutoff were applied.
