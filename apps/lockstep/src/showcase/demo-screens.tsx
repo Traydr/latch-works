@@ -6,7 +6,7 @@ import type {
   RunProgressState,
   Screen,
 } from "../renderer/hooks/useLockstepController";
-import { showcasePlan, showcaseSettings } from "./screens";
+import { showcasePlan, showcaseSettings } from "./fixtures";
 
 const noop = () => undefined;
 const noopAsync = async () => undefined;

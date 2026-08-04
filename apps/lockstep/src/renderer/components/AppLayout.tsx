@@ -1,3 +1,4 @@
+import { formatBytes } from "@latch-works/media-domain";
 import {
   ArrowUpCircle,
   CircleCheck,
@@ -16,21 +17,15 @@ import type {
   RunController,
   SessionController,
 } from "../hooks/useLockstepController";
+import { profileFieldList } from "../lib/profile-fields";
+import { formatDuration } from "../lib/run-formatters";
 import { isElapsedClockActive } from "../lib/run-lifecycle";
 import { ProfileSetupView } from "../views/ProfileSetupView";
 import { AlertBanner } from "./AlertBanner";
 import { DoctorCheckList } from "./DoctorCheckList";
 import { ProfileSelect } from "./ProfileSelect";
-import { PlanLegend, PlanList, profileFieldList, TokenInput } from "./planPieces";
-import {
-  formatBytes,
-  formatDuration,
-  ProportionBar,
-  ReservedBar,
-  Stat,
-  SyncLine,
-  useNow,
-} from "./syncPrimitives";
+import { PlanLegend, PlanList, TokenInput } from "./planPieces";
+import { ProportionBar, ReservedBar, Stat, SyncLine, useNow } from "./syncPrimitives";
 
 const STAGES = [
   { label: "Profile", icon: CircleCheck },

@@ -1,60 +1,5 @@
-import { formatBytes } from "@latch-works/media-domain";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
-
-import type { RunPhase, RunProgressState } from "../hooks/useLockstepController";
-
-export { formatBytes };
-
-export function formatDuration(ms: number): string {
-  if (!ms || ms < 0) {
-    return "0s";
-  }
-  const seconds = Math.floor(ms / 1000);
-  if (seconds < 60) {
-    return `${seconds}s`;
-  }
-  const minutes = Math.floor(seconds / 60);
-  const rem = seconds % 60;
-  return `${minutes}m ${rem}s`;
-}
-
-const PHASE_STEPS = ["scan", "plan", "push", "done"] as const;
-
-export function phaseStepIndex(phase: RunPhase, action: string): number {
-  if (phase === "idle") return -1;
-  if (phase === "done" || phase === "cancelled" || phase === "error") return 3;
-  if (phase === "planning") return 1;
-  if (phase === "scanning" || phase === "hashing") return 0;
-  if (phase === "items") {
-    return action === "plan" ? 1 : action === "doctor" ? 1 : 2;
-  }
-  return -1;
-}
-
-export function deriveRunPercent(progress: RunProgressState): number | null {
-  if (progress.phase === "items" && progress.itemTotal > 0) {
-    return Math.min(1, progress.itemCurrent / progress.itemTotal);
-  }
-  if (progress.phase === "done") {
-    return 1;
-  }
-  if (
-    progress.phase === "planning" ||
-    progress.phase === "scanning" ||
-    progress.phase === "hashing"
-  ) {
-    return null;
-  }
-  return null;
-}
-
-const ACTION_COLORS: Record<string, string> = {
-  upload: "text-sky-400",
-  update: "text-amber-400",
-  delete: "text-red-400",
-  keep: "text-zinc-500",
-};
 
 const ACTION_BG: Record<string, string> = {
   upload: "bg-sky-500",
@@ -80,7 +25,7 @@ export function ActionChip({ action, className = "" }: { action: string; classNa
   );
 }
 
-export function ProgressBar({
+function ProgressBar({
   percent,
   indeterminate = false,
   tone = "violet",
@@ -145,57 +90,6 @@ export function ProportionBar({
   );
 }
 
-export function PhaseSteps({
-  phase,
-  action,
-  className = "",
-}: {
-  phase: RunPhase;
-  action: string;
-  className?: string;
-}) {
-  const currentIndex = phaseStepIndex(phase, action);
-  const labels = action === "prune" ? ["scan", "plan", "prune", "done"] : PHASE_STEPS;
-  return (
-    <div className={`flex items-center gap-1.5 ${className}`}>
-      {labels.map((label, index) => {
-        const isDone = currentIndex > index || phase === "done";
-        const isCurrent = currentIndex === index && phase !== "done" && phase !== "idle";
-        return (
-          <div key={label} className="flex flex-1 items-center gap-1.5">
-            <div className="flex items-center gap-1.5">
-              <span
-                className={`flex size-4 items-center justify-center rounded-full border text-[9px] ${
-                  isDone
-                    ? "border-emerald-500/60 bg-emerald-500/20 text-emerald-300"
-                    : isCurrent
-                      ? "border-violet-400 bg-violet-500/30 text-violet-200"
-                      : "border-zinc-700 bg-zinc-800/60 text-zinc-600"
-                }`}
-              >
-                {isDone ? "✓" : index + 1}
-              </span>
-              <span
-                className={`font-mono text-[10px] uppercase tracking-wide ${
-                  isDone || isCurrent ? "text-zinc-300" : "text-zinc-600"
-                }`}
-              >
-                {label}
-              </span>
-            </div>
-            {index < labels.length - 1 ? (
-              <div
-                className={`h-px flex-1 ${isDone ? "bg-emerald-500/40" : "bg-zinc-800"}`}
-                aria-hidden
-              />
-            ) : null}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 export function Stat({
   label,
   value,
@@ -227,10 +121,6 @@ export function useNow(active: boolean, intervalMs = 1000): number {
     return () => clearInterval(id);
   }, [active, intervalMs]);
   return now;
-}
-
-export function actionTone(action: string): string {
-  return ACTION_COLORS[action] ?? "text-zinc-400";
 }
 
 export function SyncLine({
@@ -288,5 +178,3 @@ export function ReservedBar({
     />
   );
 }
-
-export { ACTION_BG, ACTION_COLORS };
