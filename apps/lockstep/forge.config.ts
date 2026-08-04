@@ -15,6 +15,7 @@ const appIconBasePath = path.resolve(__dirname, "media", "lockstep-icon");
 const appBundleId = "dev.traydr.latchworks.lockstep";
 const windowsIconPath = `${appIconBasePath}.ico`;
 const macIconPath = `${appIconBasePath}.icns`;
+const macModernIconPath = `${appIconBasePath}.icon`;
 const linuxIconPath = `${appIconBasePath}.png`;
 const appMediaPath = path.resolve(__dirname, "media");
 const localMacEntitlements = [
@@ -25,13 +26,16 @@ const localMacEntitlements = [
 
 type PackagerConfig = NonNullable<ForgeConfig["packagerConfig"]>;
 
-function getPackagerIconPath(): string | undefined {
+function getPackagerIconPath(): PackagerConfig["icon"] {
   if (process.platform === "win32") {
     return existsSync(windowsIconPath) ? appIconBasePath : undefined;
   }
 
   if (process.platform === "darwin") {
-    return existsSync(macIconPath) ? appIconBasePath : undefined;
+    const macIconPaths = [macIconPath, macModernIconPath].filter((iconPath) =>
+      existsSync(iconPath),
+    );
+    return macIconPaths.length > 0 ? macIconPaths : undefined;
   }
 
   return existsSync(linuxIconPath) ? linuxIconPath : undefined;
