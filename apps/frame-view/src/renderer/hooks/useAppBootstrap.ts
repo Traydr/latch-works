@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useEffectEvent, useRef } from 'react';
 
 import type { AppSettings, ScanEvent, ThemeMode } from '../../shared/types';
 import { frameViewClient } from '../services/frameViewClient';
@@ -46,32 +46,19 @@ export function useAppBootstrap({
   scanInputPathAction,
   toggleSettingsAction,
 }: UseAppBootstrapOptions): void {
-  const applyScanEventRef = useRef(applyScanEvent);
-  const initializeSettingsRef = useRef(initializeSettings);
-  const setRecursiveRef = useRef(setRecursive);
-  const setNavigationCeilingPathRef = useRef(setNavigationCeilingPath);
-  const setPendingFolderSelectionPathRef = useRef(setPendingFolderSelectionPath);
-  const openFolderActionRef = useRef(openFolderAction);
-  const refreshCurrentFolderActionRef = useRef(refreshCurrentFolderAction);
-  const runScanRef = useRef(runScan);
-  const scanInputPathActionRef = useRef(scanInputPathAction);
-  const toggleSettingsActionRef = useRef(toggleSettingsAction);
   const pendingScanEventsRef = useRef<ScanEvent[]>([]);
   const flushFrameIdRef = useRef<number | null>(null);
 
-  initializeSettingsRef.current = initializeSettings;
-  setRecursiveRef.current = setRecursive;
-  setNavigationCeilingPathRef.current = setNavigationCeilingPath;
-  setPendingFolderSelectionPathRef.current = setPendingFolderSelectionPath;
-  openFolderActionRef.current = openFolderAction;
-  refreshCurrentFolderActionRef.current = refreshCurrentFolderAction;
-  runScanRef.current = runScan;
-  scanInputPathActionRef.current = scanInputPathAction;
-  toggleSettingsActionRef.current = toggleSettingsAction;
-
-  useEffect(() => {
-    applyScanEventRef.current = applyScanEvent;
-  }, [applyScanEvent]);
+  const applyScanEventEvent = useEffectEvent(applyScanEvent);
+  const initializeSettingsEvent = useEffectEvent(initializeSettings);
+  const setRecursiveEvent = useEffectEvent(setRecursive);
+  const setNavigationCeilingPathEvent = useEffectEvent(setNavigationCeilingPath);
+  const setPendingFolderSelectionPathEvent = useEffectEvent(setPendingFolderSelectionPath);
+  const openFolderEvent = useEffectEvent(openFolderAction);
+  const refreshCurrentFolderEvent = useEffectEvent(refreshCurrentFolderAction);
+  const runScanEvent = useEffectEvent(runScan);
+  const scanInputPathEvent = useEffectEvent(scanInputPathAction);
+  const toggleSettingsEvent = useEffectEvent(toggleSettingsAction);
 
   useEffect(() => {
     let mounted = true;
@@ -86,7 +73,7 @@ export function useAppBootstrap({
       pendingScanEventsRef.current = [];
 
       for (const event of pendingEvents) {
-        applyScanEventRef.current(event);
+        applyScanEventEvent(event);
       }
     };
 
@@ -124,18 +111,18 @@ export function useAppBootstrap({
         return;
       }
 
-      initializeSettingsRef.current(loadedSettings);
+      initializeSettingsEvent(loadedSettings);
       applyTheme(loadedSettings.theme);
 
       if (loadedSettings.rememberLastFolder && loadedSettings.lastFolderPath) {
-        setNavigationCeilingPathRef.current(loadedSettings.lastFolderPath);
-        setPendingFolderSelectionPathRef.current(null);
+        setNavigationCeilingPathEvent(loadedSettings.lastFolderPath);
+        setPendingFolderSelectionPathEvent(null);
         const rootPreferences = getRootGalleryPreferences(
           loadedSettings,
           loadedSettings.lastFolderPath,
         );
-        setRecursiveRef.current(loadedSettings.recursiveDefault || rootPreferences.comicMode);
-        await runScanRef.current(loadedSettings.lastFolderPath, {
+        setRecursiveEvent(loadedSettings.recursiveDefault || rootPreferences.comicMode);
+        await runScanEvent(loadedSettings.lastFolderPath, {
           recursive: loadedSettings.recursiveDefault || rootPreferences.comicMode,
           filters: loadedSettings.filters,
           excludedRootChildPaths: rootPreferences.excludedRootChildPaths,
@@ -189,7 +176,7 @@ export function useAppBootstrap({
         return;
       }
 
-      scanInputPathAction(rawPath);
+      scanInputPathEvent(rawPath);
     };
 
     window.addEventListener('dragover', onDragOver);
@@ -199,27 +186,27 @@ export function useAppBootstrap({
       window.removeEventListener('dragover', onDragOver);
       window.removeEventListener('drop', onDrop);
     };
-  }, [scanInputPathAction]);
+  }, []);
 
   useEffect(() => {
     const unsubscribe = frameViewClient.onAppCommand((command) => {
       if (command.type === 'open-folder-dialog') {
-        openFolderActionRef.current();
+        openFolderEvent();
         return;
       }
 
       if (command.type === 'refresh-current-folder') {
-        refreshCurrentFolderActionRef.current();
+        refreshCurrentFolderEvent();
         return;
       }
 
       if (command.type === 'toggle-settings') {
-        toggleSettingsActionRef.current();
+        toggleSettingsEvent();
         return;
       }
 
       if (command.type === 'scan-path') {
-        scanInputPathActionRef.current(command.path);
+        scanInputPathEvent(command.path);
       }
     });
 

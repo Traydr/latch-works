@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { MediaItem, VideoProbeMetadata } from '../../shared/types';
 import { frameViewClient } from '../services/frameViewClient';
@@ -19,8 +19,8 @@ export function useVideoMetadataQueue({
 }: UseVideoMetadataQueueOptions): (item: MediaItem) => void {
   const metadataProbeQueueRef = useRef<MediaItem[]>([]);
   const metadataProbeInFlightRef = useRef(0);
-  const metadataProbeQueuedIdsRef = useRef(new Set<string>());
-  const metadataProbeCompletedIdsRef = useRef(new Set<string>());
+  const [metadataProbeQueuedIds] = useState(() => new Set<string>());
+  const [metadataProbeCompletedIds] = useState(() => new Set<string>());
 
   const pumpVideoMetadataQueue = useCallback((): void => {
     const MAX_PROBE_CONCURRENCY = 2;
@@ -53,8 +53,8 @@ export function useVideoMetadataQueue({
           // Ignore probe failures for best-effort metadata enrichment.
         } finally {
           metadataProbeInFlightRef.current -= 1;
-          metadataProbeQueuedIdsRef.current.delete(item.id);
-          metadataProbeCompletedIdsRef.current.add(item.id);
+          metadataProbeQueuedIds.delete(item.id);
+          metadataProbeCompletedIds.add(item.id);
 
           if (metadataProbeQueueRef.current.length > 0) {
             pumpVideoMetadataQueue();
@@ -62,13 +62,13 @@ export function useVideoMetadataQueue({
         }
       })();
     }
-  }, [applyVideoMetadata]);
+  }, [applyVideoMetadata, metadataProbeCompletedIds, metadataProbeQueuedIds]);
 
   useEffect(() => {
     metadataProbeQueueRef.current = [];
-    metadataProbeQueuedIdsRef.current.clear();
-    metadataProbeCompletedIdsRef.current.clear();
-  }, [activeScanRunId]);
+    metadataProbeQueuedIds.clear();
+    metadataProbeCompletedIds.clear();
+  }, [activeScanRunId, metadataProbeCompletedIds, metadataProbeQueuedIds]);
 
   return useCallback(
     (item: MediaItem): void => {
@@ -82,17 +82,14 @@ export function useVideoMetadataQueue({
         return;
       }
 
-      if (
-        metadataProbeCompletedIdsRef.current.has(item.id) ||
-        metadataProbeQueuedIdsRef.current.has(item.id)
-      ) {
+      if (metadataProbeCompletedIds.has(item.id) || metadataProbeQueuedIds.has(item.id)) {
         return;
       }
 
-      metadataProbeQueuedIdsRef.current.add(item.id);
+      metadataProbeQueuedIds.add(item.id);
       metadataProbeQueueRef.current.push(item);
       pumpVideoMetadataQueue();
     },
-    [pumpVideoMetadataQueue],
+    [metadataProbeCompletedIds, metadataProbeQueuedIds, pumpVideoMetadataQueue],
   );
 }

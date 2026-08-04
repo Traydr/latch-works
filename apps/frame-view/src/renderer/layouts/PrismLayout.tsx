@@ -40,7 +40,6 @@ export function PrismLayout({
   onChangeSortMode,
   onShuffleRandom,
   onOpenSettings,
-  onRequestVideoMetadata,
   onSelectFolder,
   onSelectBrowserEntry,
   onActivateBrowserEntry,
@@ -90,21 +89,24 @@ export function PrismLayout({
       <GalleryHeader
         browserEntryCount={browserEntries.length}
         cacheStatusMessage={cacheStatusMessage}
-        canGoToNextFolder={canGoToNextFolder}
-        canGoToPreviousFolder={canGoToPreviousFolder}
-        canOpenParentFolder={canOpenParentFolder}
+        folderNavigation={{
+          canGoToNextFolder,
+          canGoToPreviousFolder,
+          canOpenParentFolder,
+          onOpenNextFolder,
+          onOpenParentFolder,
+          onOpenPreviousFolder,
+        }}
         currentFolderPathLabel={currentFolderPathLabel}
         comicEntryCount={comicEntryCount}
         folderEntryCount={folderEntryCount}
         folderLabel={folderLabel}
-        isScanning={isScanning}
         mediaEntryCount={mediaEntryCount}
-        onOpenNextFolder={onOpenNextFolder}
-        onOpenParentFolder={onOpenParentFolder}
-        onOpenPreviousFolder={onOpenPreviousFolder}
         rootPath={rootPath}
         selectedBrowserEntryIndex={selectedBrowserEntryIndex}
-        topStatus={topStatus}
+        topStatus={
+          topStatus ? { message: topStatus, kind: isScanning ? 'scanning' : 'ready' } : null
+        }
       />
 
       <GalleryGrid
@@ -114,7 +116,6 @@ export function PrismLayout({
         folderChildrenLoading={folderChildrenLoading}
         folderOverlayOpen={folderOverlayOpen}
         onActivateBrowserEntry={onActivateBrowserEntry}
-        onRequestVideoMetadata={onRequestVideoMetadata}
         onSelectBrowserEntry={onSelectBrowserEntry}
         onSelectFolder={onSelectFolder}
         onToggleExcludedRootChild={onToggleExcludedRootChild}

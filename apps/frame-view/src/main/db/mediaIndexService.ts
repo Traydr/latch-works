@@ -142,27 +142,12 @@ export class MediaIndexService {
     try {
       const database = this.requireDb();
       await database.transaction(async (tx) => {
-        for (const item of items) {
-          await tx
-            .insert(mediaIndexTable)
-            .values({
-              path: item.path,
-              rootPath,
-              name: item.name,
-              extension: item.extension,
-              mediaType: item.mediaType,
-              size: item.size,
-              mtimeMs: item.mtimeMs,
-              width: item.width ?? null,
-              height: item.height ?? null,
-              durationMs: item.durationMs ?? null,
-              codec: item.codec ?? null,
-              lastSeenScanId: scanId,
-              updatedAtMs: now,
-            })
-            .onConflictDoUpdate({
-              target: mediaIndexTable.path,
-              set: {
+        await Promise.all(
+          items.map((item) =>
+            tx
+              .insert(mediaIndexTable)
+              .values({
+                path: item.path,
                 rootPath,
                 name: item.name,
                 extension: item.extension,
@@ -175,10 +160,27 @@ export class MediaIndexService {
                 codec: item.codec ?? null,
                 lastSeenScanId: scanId,
                 updatedAtMs: now,
-              },
-            })
-            .run();
-        }
+              })
+              .onConflictDoUpdate({
+                target: mediaIndexTable.path,
+                set: {
+                  rootPath,
+                  name: item.name,
+                  extension: item.extension,
+                  mediaType: item.mediaType,
+                  size: item.size,
+                  mtimeMs: item.mtimeMs,
+                  width: item.width ?? null,
+                  height: item.height ?? null,
+                  durationMs: item.durationMs ?? null,
+                  codec: item.codec ?? null,
+                  lastSeenScanId: scanId,
+                  updatedAtMs: now,
+                },
+              })
+              .run(),
+          ),
+        );
       });
       return Result.ok();
     } catch (error) {

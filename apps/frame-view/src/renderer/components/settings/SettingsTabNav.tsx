@@ -1,8 +1,6 @@
 import type { JSX } from 'react';
 
-export const SETTINGS_TABS = ['Usability', 'Local Storage', 'Hotkeys', 'Debug'] as const;
-
-export type SettingsTab = (typeof SETTINGS_TABS)[number];
+import { SETTINGS_TABS, type SettingsTab } from './settingsTabs';
 
 interface SettingsTabNavProps {
   activeTab: SettingsTab;

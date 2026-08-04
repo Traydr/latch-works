@@ -3,38 +3,33 @@ import type { JSX } from 'react';
 interface GalleryHeaderProps {
   browserEntryCount: number;
   cacheStatusMessage: string | null;
-  canGoToNextFolder: boolean;
-  canGoToPreviousFolder: boolean;
-  canOpenParentFolder: boolean;
+  folderNavigation: {
+    canGoToNextFolder: boolean;
+    canGoToPreviousFolder: boolean;
+    canOpenParentFolder: boolean;
+    onOpenNextFolder: () => void;
+    onOpenParentFolder: () => void;
+    onOpenPreviousFolder: () => void;
+  };
   comicEntryCount: number;
   currentFolderPathLabel: string;
   folderEntryCount: number;
   folderLabel: string;
-  isScanning: boolean;
   mediaEntryCount: number;
-  onOpenNextFolder: () => void;
-  onOpenParentFolder: () => void;
-  onOpenPreviousFolder: () => void;
   rootPath: string | null;
   selectedBrowserEntryIndex: number;
-  topStatus: string | null;
+  topStatus: { kind: 'ready' | 'scanning'; message: string } | null;
 }
 
 export function GalleryHeader({
   browserEntryCount,
   cacheStatusMessage,
-  canGoToNextFolder,
-  canGoToPreviousFolder,
-  canOpenParentFolder,
+  folderNavigation,
   comicEntryCount,
   currentFolderPathLabel,
   folderEntryCount,
   folderLabel,
-  isScanning,
   mediaEntryCount,
-  onOpenNextFolder,
-  onOpenParentFolder,
-  onOpenPreviousFolder,
   rootPath,
   selectedBrowserEntryIndex,
   topStatus,
@@ -53,10 +48,10 @@ export function GalleryHeader({
         <div className="flex items-center gap-2">
           {topStatus ? (
             <span className="prism-pill">
-              {isScanning ? (
+              {topStatus.kind === 'scanning' ? (
                 <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-amber-400" />
               ) : null}
-              <span className="max-w-[28vw] truncate">{topStatus}</span>
+              <span className="max-w-[28vw] truncate">{topStatus.message}</span>
             </span>
           ) : null}
           {cacheStatusMessage ? <span className="prism-pill">{cacheStatusMessage}</span> : null}
@@ -77,25 +72,25 @@ export function GalleryHeader({
             <>
               <button
                 type="button"
-                className={`prism-btn ${canOpenParentFolder ? '' : 'pointer-events-none opacity-45'}`}
-                onClick={onOpenParentFolder}
-                disabled={!canOpenParentFolder}
+                className={`prism-btn ${folderNavigation.canOpenParentFolder ? '' : 'pointer-events-none opacity-45'}`}
+                onClick={folderNavigation.onOpenParentFolder}
+                disabled={!folderNavigation.canOpenParentFolder}
               >
                 Parent
               </button>
               <button
                 type="button"
-                className={`prism-btn ${canGoToPreviousFolder ? '' : 'pointer-events-none opacity-45'}`}
-                onClick={onOpenPreviousFolder}
-                disabled={!canGoToPreviousFolder}
+                className={`prism-btn ${folderNavigation.canGoToPreviousFolder ? '' : 'pointer-events-none opacity-45'}`}
+                onClick={folderNavigation.onOpenPreviousFolder}
+                disabled={!folderNavigation.canGoToPreviousFolder}
               >
                 Prev Folder
               </button>
               <button
                 type="button"
-                className={`prism-btn ${canGoToNextFolder ? '' : 'pointer-events-none opacity-45'}`}
-                onClick={onOpenNextFolder}
-                disabled={!canGoToNextFolder}
+                className={`prism-btn ${folderNavigation.canGoToNextFolder ? '' : 'pointer-events-none opacity-45'}`}
+                onClick={folderNavigation.onOpenNextFolder}
+                disabled={!folderNavigation.canGoToNextFolder}
               >
                 Next Folder
               </button>

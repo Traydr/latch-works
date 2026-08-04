@@ -76,37 +76,35 @@ export const AppSettingsSchema = z.object({
   debug: DebugSettingsSchema,
 });
 
-export const AppSettingsPatchSchema = z
-  .object({
-    theme: ThemeModeSchema.optional(),
-    rememberLastFolder: z.boolean().optional(),
-    recursiveDefault: z.boolean().optional(),
-    autoplayOnHover: z.boolean().optional(),
-    autoplayVideos: z.boolean().optional(),
-    loopViewerNavigation: z.boolean().optional(),
-    previewAudioEnabled: z.boolean().optional(),
-    loopVideos: z.boolean().optional(),
-    thumbnailSize: finiteNumberSchema.optional(),
-    sortMode: GallerySortModeSchema.optional(),
-    randomSeed: integerNumberSchema.optional(),
-    rootGalleryPreferences: RootGalleryPreferencesMapSchema.optional(),
-    filters: z
-      .object({
-        imageExtensions: normalizedExtensionsSchema.optional(),
-        videoExtensions: normalizedExtensionsSchema.optional(),
-        showImages: z.boolean().optional(),
-        showVideos: z.boolean().optional(),
-      })
-      .optional(),
-    lastFolderPath: PathInputSchema.nullable().optional(),
-    debug: z
-      .object({
-        enableDebugLogging: z.boolean().optional(),
-        enablePerformanceMonitoring: z.boolean().optional(),
-      })
-      .optional(),
-  })
-  .strict();
+export const AppSettingsPatchSchema = z.strictObject({
+  theme: ThemeModeSchema.optional(),
+  rememberLastFolder: z.boolean().optional(),
+  recursiveDefault: z.boolean().optional(),
+  autoplayOnHover: z.boolean().optional(),
+  autoplayVideos: z.boolean().optional(),
+  loopViewerNavigation: z.boolean().optional(),
+  previewAudioEnabled: z.boolean().optional(),
+  loopVideos: z.boolean().optional(),
+  thumbnailSize: finiteNumberSchema.optional(),
+  sortMode: GallerySortModeSchema.optional(),
+  randomSeed: integerNumberSchema.optional(),
+  rootGalleryPreferences: RootGalleryPreferencesMapSchema.optional(),
+  filters: z
+    .object({
+      imageExtensions: normalizedExtensionsSchema.optional(),
+      videoExtensions: normalizedExtensionsSchema.optional(),
+      showImages: z.boolean().optional(),
+      showVideos: z.boolean().optional(),
+    })
+    .optional(),
+  lastFolderPath: PathInputSchema.nullable().optional(),
+  debug: z
+    .object({
+      enableDebugLogging: z.boolean().optional(),
+      enablePerformanceMonitoring: z.boolean().optional(),
+    })
+    .optional(),
+});
 
 export const MediaItemSchema = z.object({
   id: z.string(),

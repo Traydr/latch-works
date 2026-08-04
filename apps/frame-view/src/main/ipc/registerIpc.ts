@@ -188,12 +188,18 @@ export function registerIpc(
       }
     }
 
+    const excludedRootChildPaths: string[] = [];
+    for (const excludedPath of validated.value.excludedRootChildPaths) {
+      const resolvedExcludedPath = path.resolve(excludedPath);
+      if (path.dirname(resolvedExcludedPath) === resolvedRoot) {
+        excludedRootChildPaths.push(resolvedExcludedPath);
+      }
+    }
+
     const startResult = await catalogService.startScan({
       ...validated.value,
       rootPath: resolvedRoot,
-      excludedRootChildPaths: validated.value.excludedRootChildPaths
-        .map((excludedPath) => path.resolve(excludedPath))
-        .filter((excludedPath) => path.dirname(excludedPath) === resolvedRoot),
+      excludedRootChildPaths,
     });
     if (Result.isError(startResult)) {
       if (!mainWindow.isDestroyed()) {

@@ -12,22 +12,23 @@ interface ComicReaderProps {
 }
 
 export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
+  const dialogRef = useRef<HTMLDialogElement | null>(null);
   const readerRef = useRef<HTMLDivElement | null>(null);
   const pageRefs = useRef<Array<HTMLImageElement | null>>([]);
   const currentPageIndexRef = useRef(0);
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
   const { chromeVisible, revealChrome, chromeVisibilityClass } = useViewerChromeIdle();
 
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    dialog?.showModal();
+    return () => dialog?.close();
+  }, []);
+
   const setCurrentPage = (index: number): void => {
     currentPageIndexRef.current = index;
     setCurrentPageIndex(index);
   };
-
-  useEffect(() => {
-    pageRefs.current = [];
-    setCurrentPage(0);
-    readerRef.current?.scrollTo({ top: 0 });
-  }, [comic]);
 
   useEffect(() => {
     const scrollToPage = (index: number): void => {
@@ -124,11 +125,14 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
   };
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
+    <dialog
+      ref={dialogRef}
       aria-label={`Comic reader for ${comic.name}`}
-      className={`dark fixed inset-0 z-50 bg-zinc-950 text-zinc-100 ${chromeVisible ? '' : 'cursor-none'}`}
+      className={`dark fixed inset-0 z-50 m-0 h-screen max-h-none w-screen max-w-none border-0 bg-zinc-950 p-0 text-zinc-100 backdrop:bg-zinc-950 ${chromeVisible ? '' : 'cursor-none'}`}
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
       onMouseMove={revealChrome}
       onPointerDown={revealChrome}
     >
@@ -193,6 +197,6 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
           ))}
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }

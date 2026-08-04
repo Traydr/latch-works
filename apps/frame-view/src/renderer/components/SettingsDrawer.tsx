@@ -1,4 +1,4 @@
-import { type JSX, useEffect, useState } from 'react';
+import { type JSX, useState } from 'react';
 
 import type {
   AppSettings,
@@ -10,7 +10,8 @@ import type {
 import { DebugTab } from './settings/DebugTab';
 import { HotkeysTab } from './settings/HotkeysTab';
 import { LocalStorageTab } from './settings/LocalStorageTab';
-import { SETTINGS_TABS, type SettingsTab, SettingsTabNav } from './settings/SettingsTabNav';
+import { SettingsTabNav } from './settings/SettingsTabNav';
+import { SETTINGS_TABS, type SettingsTab } from './settings/settingsTabs';
 import { UsabilityTab } from './settings/UsabilityTab';
 
 interface CurrentFolderSummary {
@@ -23,7 +24,6 @@ interface CurrentFolderSummary {
 interface SettingsDrawerProps {
   currentFolderSummary: CurrentFolderSummary;
   diagnosticsSnapshot: DiagnosticsSnapshot | null;
-  isOpen: boolean;
   mediaIndexStats: MediaIndexStats | null;
   mediaToolsStatus: MediaToolsStatus | null;
   onClearMediaIndex: () => void;
@@ -38,7 +38,6 @@ interface SettingsDrawerProps {
 export function SettingsDrawer({
   currentFolderSummary,
   diagnosticsSnapshot,
-  isOpen,
   mediaIndexStats,
   mediaToolsStatus,
   onClearMediaIndex,
@@ -48,20 +47,9 @@ export function SettingsDrawer({
   onRefreshDiagnostics,
   onUpdate,
   settings,
-}: SettingsDrawerProps): JSX.Element | null {
+}: SettingsDrawerProps): JSX.Element {
   const [activeTab, setActiveTab] = useState<SettingsTab>(SETTINGS_TABS[0]);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!isOpen) {
-      setActiveTab(SETTINGS_TABS[0]);
-      setCopyStatus(null);
-    }
-  }, [isOpen]);
-
-  if (!isOpen) {
-    return null;
-  }
 
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/35 backdrop-blur-sm">
