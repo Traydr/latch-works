@@ -1,0 +1,12 @@
+{
+  "$schema": "https://react.doctor/schema/config.json",
+  "ignore": {
+    "files": [".vite/**"],
+    "overrides": [
+      {
+        "files": ["src/preload.ts"],
+        "rules": ["deslop/unused-file"]
+      }
+    ]
+  }
+}
