@@ -1,11 +1,12 @@
 {
   "fill": {
-    "automatic-gradient": "extended-srgb:0.00000,0.53333,1.00000,1.00000"
+    "solid": "extended-srgb:0.19216,0.20392,0.22745,1.00000"
   },
   "groups": [
     {
       "layers": [
         {
+          "glass": false,
           "image-name": "lockstep-icon.png",
           "name": "lockstep-icon"
         }
@@ -14,8 +15,9 @@
         "kind": "neutral",
         "opacity": 0.5
       },
+      "specular": false,
       "translucency": {
-        "enabled": true,
+        "enabled": false,
         "value": 0.5
       }
     }
