@@ -45,17 +45,15 @@ type Tab = "dashboard" | "plan" | "log";
 export function AppLayout({ ctrl }: { ctrl: LockstepController }) {
   const { session, profile, plan: planCtrl, run } = ctrl;
   const { screen, setScreen, settings, activeProfile, error } = session;
-  const [tab, setTab] = useState<Tab>("dashboard");
+  const [tab, setTab] = useState<Tab>(() => (screen === "plan" ? "plan" : "dashboard"));
   const showProfile = screen === "profile";
   const showWorkspace = !showProfile && !!activeProfile;
 
-  // Sync the plan tab when the controller transitions to the plan screen
-  // (happens after handlePlan completes or when the Review pipeline stage is clicked).
-  useEffect(() => {
-    if (screen === "plan") {
-      setTab("plan");
-    }
-  }, [screen]);
+  const showPlan = () => {
+    planCtrl.markReviewVisited();
+    setTab("plan");
+    setScreen("plan");
+  };
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-zinc-100 text-zinc-800 dark:bg-zinc-950 dark:text-zinc-100">
@@ -117,8 +115,7 @@ export function AppLayout({ ctrl }: { ctrl: LockstepController }) {
               disabled={!planCtrl.plan}
               onClick={() => {
                 if (planCtrl.plan) {
-                  planCtrl.markReviewVisited();
-                  setTab("plan");
+                  showPlan();
                 }
               }}
             />
@@ -193,7 +190,9 @@ export function AppLayout({ ctrl }: { ctrl: LockstepController }) {
         </div>
       ) : null}
 
-      {showWorkspace ? <CommandDock session={session} plan={planCtrl} run={run} /> : null}
+      {showWorkspace ? (
+        <CommandDock session={session} plan={planCtrl} run={run} onShowPlan={showPlan} />
+      ) : null}
     </div>
   );
 }
@@ -254,10 +253,12 @@ function CommandDock({
   session,
   plan: planCtrl,
   run,
+  onShowPlan,
 }: {
   session: SessionController;
   plan: PlanController;
   run: RunController;
+  onShowPlan: () => void;
 }) {
   const { activeProfile, screen, setScreen } = session;
   const { plan, pipelineProgress } = planCtrl;
@@ -288,13 +289,19 @@ function CommandDock({
       done: hasPlan,
       active: running && activeAction === "plan",
       disabled: running || !hasProfile,
-      onClick: () => void handlePlan(),
+      onClick: () => {
+        void handlePlan().then((planned) => {
+          if (planned) {
+            onShowPlan();
+          }
+        });
+      },
     },
     {
       done: pipelineProgress.reviewed,
       active: screen === "plan" && !running,
       disabled: !hasPlan,
-      onClick: () => plan && setScreen("plan"),
+      onClick: () => plan && onShowPlan(),
     },
     {
       done: pipelineProgress.pushCompleted,

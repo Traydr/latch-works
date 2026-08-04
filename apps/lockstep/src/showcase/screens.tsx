@@ -104,6 +104,7 @@ function pushProgress(): RunProgressState {
 
 const noop = () => undefined;
 const noopAsync = async () => undefined;
+const noopPlan = async () => false;
 
 function createController(screen: Screen): LockstepController {
   const running = screen === "run";
@@ -150,7 +151,7 @@ function createController(screen: Screen): LockstepController {
       logs: running ? pushLogs : [],
       runProgress,
       handleDoctor: noopAsync,
-      handlePlan: noopAsync,
+      handlePlan: noopPlan,
       handlePush: noopAsync,
       handlePrune: noopAsync,
       handleCancel: noopAsync,

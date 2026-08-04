@@ -76,12 +76,16 @@ export function PlanList({
   const { filter, setFilter, filteredItems } = plan;
   return (
     <div className={`flex min-h-0 flex-col gap-2 ${className}`}>
+      <label className="ls-label" htmlFor="plan-path-filter">
+        Filter plan paths
+      </label>
       <div className="relative">
         <Search
           className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-zinc-500"
           aria-hidden
         />
         <input
+          id="plan-path-filter"
           className="ls-input pl-8"
           value={filter}
           onChange={(event) => setFilter(event.target.value)}
