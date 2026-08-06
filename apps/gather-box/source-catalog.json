@@ -169,6 +169,24 @@
     "save": { "pattern": "single-folder", "folderDepth": 1, "summary": "Creates 1 artist folder", "detail": "The full-size picture saves under the artist name; existing all-lowercase legacy folders are reused.", "pathTemplate": "<root>/<artist>/", "filePattern": "Site media filename", "tag": "FOLDER · 1", "railCode": "F1" }
   },
   {
+    "key": "danbooru",
+    "label": "Danbooru",
+    "unlisted": true,
+    "urlPatterns": ["^https://danbooru\\.donmai\\.us/posts/\\d+(?:[/?#]|$)"],
+    "pageMatches": ["https://danbooru.donmai.us/posts/*"],
+    "hostPermissions": [
+      { "pattern": "https://danbooru.donmai.us/*", "reason": "Eligible post pages" },
+      { "pattern": "https://cdn.donmai.us/*", "reason": "Original post media" }
+    ],
+    "contextMenuMatches": ["https://danbooru.donmai.us/posts/*"],
+    "collectorEntry": "content/collectors/danbooru.js",
+    "collectorModule": "src/content/collectors/danbooru.ts",
+    "outputKinds": ["downloadable-files"],
+    "includeCredentialsByDefault": false,
+    "downloadUrlPatterns": ["^https://cdn\\.donmai\\.us/original/.+"],
+    "save": { "pattern": "single-folder", "folderDepth": 1, "summary": "Creates 1 artist folder", "detail": "The original-quality file saves directly under the artist name.", "pathTemplate": "<root>/<artist>/", "filePattern": "Site-provided media filename", "tag": "FOLDER · 1", "railCode": "F1" }
+  },
+  {
     "key": "fanfiction-net",
     "label": "FanFiction.Net",
     "urlPatterns": ["^https://www\\.fanfiction\\.net/s/[^/]+/[^/]+/[^/?#]+(?:[/?#]|$)"],

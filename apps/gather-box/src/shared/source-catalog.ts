@@ -10,6 +10,7 @@ export type SiteKey =
   | "archiveofourown"
   | "hentaifoundry-stories"
   | "hentaifoundry-pictures"
+  | "danbooru"
   | "fanfiction-net";
 
 export type GatherOutputKind = "downloadable-files" | "generated-story-pdf";

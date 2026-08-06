@@ -50,6 +50,12 @@ describe("download policy", () => {
       ),
     ).toBe(true);
     expect(
+      isAllowedDownloadUrl(
+        "danbooru",
+        "https://cdn.donmai.us/original/fc/a4/original-image.jpg?download=1",
+      ),
+    ).toBe(true);
+    expect(
       isAllowedDownloadUrl("fanfiction-net", "https://www.fanfiction.net/s/1/2/Test-Story"),
     ).toBe(true);
   });
@@ -77,6 +83,9 @@ describe("download policy", () => {
         "hentaifoundry-pictures",
         "https://thumbs.hentai-foundry.com/thumb.php?pid=1200030",
       ),
+    ).toBe(false);
+    expect(
+      isAllowedDownloadUrl("danbooru", "https://cdn.donmai.us/sample/fc/a4/sample-image.jpg"),
     ).toBe(false);
     expect(isAllowedDownloadUrl("fanfiction-net", "https://www.fanfiction.net/u/1/Author")).toBe(
       false,

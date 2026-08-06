@@ -18,7 +18,8 @@ describe("site detection", () => {
     [
       "https://www.hentai-foundry.com/pictures/user/TheKite/1200030/Fallout-Unsheltered-Nuts-n-Bolts-06",
       "hentaifoundry-pictures"
-    ]
+    ],
+    ["https://danbooru.donmai.us/posts/11926515?q=zhu_yuan+", "danbooru"]
   ])("recognizes %s", (url, site) => {
     expect(isSupportedUrl(url)).toBe(true);
     expect(getSiteKeyFromUrl(url)).toBe(site);
@@ -30,5 +31,6 @@ describe("site detection", () => {
     expect(isSupportedUrl("https://www.reddit.com/r/photography/")).toBe(false);
     expect(isSupportedUrl("https://www.reddit.com/user/ArchiveFan/")).toBe(false);
     expect(isSupportedUrl("https://www.hentai-foundry.com/pictures/user/TheKite")).toBe(false);
+    expect(isSupportedUrl("https://danbooru.donmai.us/posts")).toBe(false);
   });
 });
