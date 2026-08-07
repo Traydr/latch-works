@@ -8,6 +8,7 @@ import {
   getCleanupJobStatus,
   getManagementOverview,
   getSyncRunHistory,
+  purgeDeletedShutterSources,
   purgeSoftDeletedItems,
   wipeLibrary,
 } from "./management-service";
@@ -33,8 +34,9 @@ export function useManagementOverviewQuery() {
   });
 }
 
-export function useSyncRunHistoryQuery() {
+export function useSyncRunHistoryQuery(enabled = true) {
   return useQuery({
+    enabled,
     queryKey: managementKeys.syncHistory(),
     queryFn: () => getSyncRunHistory(),
     refetchInterval: (query) => {
@@ -138,6 +140,17 @@ export function usePurgeSoftDeletedItemsMutation() {
     onSuccess: () => {
       void invalidate();
       void queryClient.invalidateQueries({ queryKey: librarySnapshotKeys.all });
+    },
+  });
+}
+
+export function usePurgeDeletedShutterSourcesMutation() {
+  const invalidate = useInvalidateManagement();
+
+  return useMutation({
+    mutationFn: () => purgeDeletedShutterSources(),
+    onSuccess: () => {
+      void invalidate();
     },
   });
 }

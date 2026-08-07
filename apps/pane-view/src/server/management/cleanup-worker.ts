@@ -9,7 +9,9 @@ import {
   type MaintenanceJobProgress,
   maintenanceJobs,
   mediaObjects,
+  type ShutterSourcePurgeJobProgress,
   type SoftDeletedPurgeJobProgress,
+  shutterSourceCleanup,
   syncRunItems,
   syncRuns,
   viewerState,
@@ -39,6 +41,7 @@ export type CleanupJobStatus = CleanupJobStatusBase &
   (
     | { progress: LibraryWipeJobProgress; type: "library_hard_wipe" }
     | { progress: SoftDeletedPurgeJobProgress; type: "soft_deleted_purge" }
+    | { progress: ShutterSourcePurgeJobProgress; type: "shutter_source_purge" }
   );
 
 export async function readCleanupJobStatus({
@@ -66,7 +69,11 @@ export async function readCleanupJobStatus({
 
   // Retired job types (legacy_derivative_cleanup) can still exist as historical
   // rows. They have no progress shape we can report, so treat them as absent.
-  if (job.type !== "library_hard_wipe" && job.type !== "soft_deleted_purge") {
+  if (
+    job.type !== "library_hard_wipe" &&
+    job.type !== "soft_deleted_purge" &&
+    job.type !== "shutter_source_purge"
+  ) {
     return null;
   }
 
@@ -78,9 +85,13 @@ export async function readCleanupJobStatus({
     status: job.status,
   };
 
-  return job.type === "library_hard_wipe"
-    ? { ...base, progress: job.progress as LibraryWipeJobProgress, type: job.type }
-    : { ...base, progress: job.progress as SoftDeletedPurgeJobProgress, type: job.type };
+  if (job.type === "library_hard_wipe") {
+    return { ...base, progress: job.progress as LibraryWipeJobProgress, type: job.type };
+  }
+  if (job.type === "soft_deleted_purge") {
+    return { ...base, progress: job.progress as SoftDeletedPurgeJobProgress, type: job.type };
+  }
+  return { ...base, progress: job.progress as ShutterSourcePurgeJobProgress, type: job.type };
 }
 
 export async function resumePendingMaintenanceJobs(): Promise<void> {
@@ -182,6 +193,10 @@ async function processMaintenanceJobBatch(jobId: string): Promise<boolean> {
     return processSoftDeletedPurgeBatch(jobId, progress as SoftDeletedPurgeJobProgress);
   }
 
+  if (job.type === "shutter_source_purge") {
+    return processShutterSourcePurgeBatch(jobId, progress as ShutterSourcePurgeJobProgress);
+  }
+
   return false;
 }
 
@@ -225,13 +240,6 @@ async function processSoftDeletedPurgeBatch(
       if (!(await isMaintenanceJobActive(jobId))) return false;
 
       for (const row of rows) {
-        try {
-          // react-doctor-disable-next-line react-doctor/async-await-in-loop -- Keep each external purge and database delete retry-safe.
-          await purgeShutterSource(row.sha256);
-        } catch (error) {
-          const reason = error instanceof Error ? error.message : String(error);
-          throw new Error(`Shutter source purge failed: ${reason}`);
-        }
         const entryIds = db
           .select({ id: libraryEntries.id })
           .from(libraryEntries)
@@ -240,6 +248,10 @@ async function processSoftDeletedPurgeBatch(
         // subject state has no foreign key, so remove it explicitly in the same transaction.
         // react-doctor-disable-next-line react-doctor/async-await-in-loop -- Each transaction advances the durable cleanup cursor.
         await db.transaction(async (tx) => {
+          await tx
+            .insert(shutterSourceCleanup)
+            .values({ sha256: row.sha256 })
+            .onConflictDoNothing();
           await tx
             .delete(favorites)
             .where(
@@ -308,6 +320,103 @@ async function processSoftDeletedPurgeBatch(
           ),
         );
       return false;
+    }
+
+    case "completed":
+      return false;
+  }
+}
+
+async function processShutterSourcePurgeBatch(
+  jobId: string,
+  progress: ShutterSourcePurgeJobProgress,
+): Promise<boolean> {
+  switch (progress.phase) {
+    case "queue_sources": {
+      const deletedReference = db
+        .select({ value: sql`1` })
+        .from(libraryEntries)
+        .where(
+          and(
+            eq(libraryEntries.mediaObjectId, mediaObjects.id),
+            isNotNull(libraryEntries.deletedAt),
+          ),
+        );
+      const activeReference = db
+        .select({ value: sql`1` })
+        .from(libraryEntries)
+        .where(
+          and(eq(libraryEntries.mediaObjectId, mediaObjects.id), isNull(libraryEntries.deletedAt)),
+        );
+      const alreadyQueued = db
+        .select({ value: sql`1` })
+        .from(shutterSourceCleanup)
+        .where(eq(shutterSourceCleanup.sha256, mediaObjects.sha256));
+      const rows = await db
+        .select({ sha256: mediaObjects.sha256 })
+        .from(mediaObjects)
+        .where(and(exists(deletedReference), notExists(activeReference), notExists(alreadyQueued)))
+        .limit(batchSize);
+
+      if (rows.length === 0) {
+        await updateJobProgress(jobId, { ...progress, phase: "shutter_sources" });
+        return true;
+      }
+
+      await db.insert(shutterSourceCleanup).values(rows).onConflictDoNothing();
+      return true;
+    }
+
+    case "shutter_sources": {
+      const activeSourceReference = db
+        .select({ value: sql`1` })
+        .from(libraryEntries)
+        .innerJoin(mediaObjects, eq(mediaObjects.id, libraryEntries.mediaObjectId))
+        .where(
+          and(
+            eq(mediaObjects.sha256, shutterSourceCleanup.sha256),
+            isNull(libraryEntries.deletedAt),
+          ),
+        );
+      const rows = await db
+        .select({ sha256: shutterSourceCleanup.sha256 })
+        .from(shutterSourceCleanup)
+        .where(and(isNull(shutterSourceCleanup.purgedAt), notExists(activeSourceReference)))
+        .limit(batchSize);
+
+      if (rows.length === 0) {
+        await db
+          .update(maintenanceJobs)
+          .set({
+            completedAt: new Date(),
+            progress: { ...progress, phase: "completed" },
+            status: "completed",
+          })
+          .where(
+            and(
+              eq(maintenanceJobs.id, jobId),
+              inArray(maintenanceJobs.status, [...activeJobStatuses]),
+            ),
+          );
+        return false;
+      }
+
+      for (const row of rows) {
+        // react-doctor-disable-next-line react-doctor/async-await-in-loop -- Mark each source only after Shutter confirms its purge.
+        await purgeShutterSource(row.sha256);
+        // react-doctor-disable-next-line react-doctor/async-await-in-loop -- The durable queue advances one confirmed source at a time.
+        await db
+          .update(shutterSourceCleanup)
+          .set({ purgedAt: new Date() })
+          .where(eq(shutterSourceCleanup.sha256, row.sha256));
+        if (!(await isMaintenanceJobActive(jobId))) return false;
+      }
+
+      await updateJobProgress(jobId, {
+        ...progress,
+        processedCount: progress.processedCount + rows.length,
+      });
+      return true;
     }
 
     case "completed":

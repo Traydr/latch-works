@@ -13,6 +13,7 @@ import {
 import { assertNoActiveSyncRun } from "../../server/management/guards";
 import { scheduleLibraryWipe } from "../../server/management/library-wipe";
 import { readManagementOverview } from "../../server/management/overview";
+import { scheduleShutterSourcePurge } from "../../server/management/shutter-source-purge";
 import { scheduleSoftDeletedPurge } from "../../server/management/soft-deleted-purge";
 import {
   forceCancelAllRunningSyncRuns,
@@ -81,6 +82,11 @@ export const wipeLibrary = createServerFn({ method: "POST" })
 export const purgeSoftDeletedItems = createServerFn({ method: "POST" }).handler(async () => {
   await assertWebSessionAuthorized();
   return scheduleSoftDeletedPurge();
+});
+
+export const purgeDeletedShutterSources = createServerFn({ method: "POST" }).handler(async () => {
+  await assertWebSessionAuthorized();
+  return scheduleShutterSourcePurge();
 });
 
 export const cancelCleanupJob = createServerFn({ method: "POST" })

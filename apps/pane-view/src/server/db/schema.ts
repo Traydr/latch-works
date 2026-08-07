@@ -33,6 +33,7 @@ export const subjectTypeEnum = pgEnum("subject_type", ["library_entry", "collect
 export const maintenanceJobTypeEnum = pgEnum("maintenance_job_type", [
   "library_hard_wipe",
   "soft_deleted_purge",
+  "shutter_source_purge",
   // Retired one-time migration (removed 2026-07). The value stays declared so
   // Drizzle does not try to drop it: Postgres cannot remove an enum member
   // without recreating the type, and historical maintenance_jobs rows still
@@ -213,6 +214,20 @@ export const mediaObjects = pgTable(
   }),
 );
 
+export const shutterSourceCleanup = pgTable(
+  "shutter_source_cleanup",
+  {
+    sha256: text("sha256").primaryKey(),
+    queuedAt: timestamp("queued_at", { withTimezone: true }).defaultNow().notNull(),
+    purgedAt: timestamp("purged_at", { withTimezone: true }),
+  },
+  (table) => ({
+    pendingIndex: index("shutter_source_cleanup_pending_idx")
+      .on(table.queuedAt)
+      .where(sql`${table.purgedAt} is null`),
+  }),
+);
+
 export const folders = pgTable(
   "folders",
   {
@@ -387,7 +402,17 @@ export interface SoftDeletedPurgeJobProgress {
   processedCount: number;
 }
 
-export type MaintenanceJobProgress = LibraryWipeJobProgress | SoftDeletedPurgeJobProgress;
+export interface ShutterSourcePurgeJobProgress {
+  errorCount: number;
+  lastError?: string;
+  phase: "queue_sources" | "shutter_sources" | "completed";
+  processedCount: number;
+}
+
+export type MaintenanceJobProgress =
+  | LibraryWipeJobProgress
+  | SoftDeletedPurgeJobProgress
+  | ShutterSourcePurgeJobProgress;
 
 export const maintenanceJobs = pgTable(
   "maintenance_jobs",

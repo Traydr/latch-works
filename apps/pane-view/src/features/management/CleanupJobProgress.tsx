@@ -1,5 +1,9 @@
 import { Button } from "@/components/ui/button";
-import type { LibraryWipeJobProgress, SoftDeletedPurgeJobProgress } from "../../server/db/schema";
+import type {
+  LibraryWipeJobProgress,
+  ShutterSourcePurgeJobProgress,
+  SoftDeletedPurgeJobProgress,
+} from "../../server/db/schema";
 import type { CleanupJobStatus } from "../../server/management/cleanup-worker";
 
 interface CleanupJobProgressProps {
@@ -22,6 +26,12 @@ const purgePhaseLabels: Record<SoftDeletedPurgeJobProgress["phase"], string> = {
   orphaned_media: "Deleting unreferenced originals",
 };
 
+const shutterPhaseLabels: Record<ShutterSourcePurgeJobProgress["phase"], string> = {
+  completed: "Completed",
+  queue_sources: "Finding deleted-item sources",
+  shutter_sources: "Deleting Shutter sources",
+};
+
 export function CleanupJobProgress({
   cancelError,
   isCancelling,
@@ -30,24 +40,32 @@ export function CleanupJobProgress({
 }: CleanupJobProgressProps) {
   const isActive = job.status === "pending" || job.status === "running";
   const isWipe = job.type === "library_hard_wipe";
+  const isShutterPurge = job.type === "shutter_source_purge";
   const phaseLabel = isWipe
     ? phaseLabels[job.progress.phase]
-    : purgePhaseLabels[job.progress.phase];
+    : isShutterPurge
+      ? shutterPhaseLabels[job.progress.phase]
+      : purgePhaseLabels[job.progress.phase];
+  const jobTitle = isWipe
+    ? "Library wipe cleanup"
+    : isShutterPurge
+      ? "Shutter source cleanup"
+      : "Deleted-item cleanup";
 
   return (
     <section className="space-y-3 rounded-xl border border-amber-500/40 bg-amber-500/5 p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold">
-            {isWipe ? "Library wipe cleanup" : "Deleted-item cleanup"}
-          </h3>
+          <h3 className="text-sm font-semibold">{jobTitle}</h3>
           <p className="text-xs text-muted-foreground">
             {isActive
-              ? "Storage and database cleanup is running in the background. Avoid starting a sync until this finishes."
+              ? isShutterPurge
+                ? "Shutter source cleanup is running in the background. Avoid starting a sync until this finishes."
+                : "Storage and database cleanup is running in the background. Avoid starting a sync until this finishes."
               : job.status === "failed"
-                ? "Cleanup failed. Review the error and retry from the danger zone if needed."
+                ? "Cleanup failed. Review the error and retry the matching action below if needed."
                 : job.status === "cancelled"
-                  ? "Cleanup was cancelled. Items not yet processed remain soft-deleted."
+                  ? "Cleanup was cancelled. Work not yet processed remains queued."
                   : "Cleanup finished."}
           </p>
         </div>
@@ -96,6 +114,11 @@ export function CleanupJobProgress({
 }
 
 function estimateProgress(job: CleanupJobStatus): number {
+  if (job.type === "shutter_source_purge") {
+    if (job.status === "completed") return 100;
+    return { completed: 100, queue_sources: 25, shutter_sources: 60 }[job.progress.phase];
+  }
+
   if (job.type === "soft_deleted_purge") {
     if (job.status === "completed") return 100;
     return { completed: 100, db_hard_delete: 85, orphaned_media: 35 }[job.progress.phase];
