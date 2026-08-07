@@ -1,8 +1,12 @@
+import { Button } from "@/components/ui/button";
 import type { LibraryWipeJobProgress, SoftDeletedPurgeJobProgress } from "../../server/db/schema";
 import type { CleanupJobStatus } from "../../server/management/cleanup-worker";
 
 interface CleanupJobProgressProps {
+  cancelError: string | null;
+  isCancelling: boolean;
   job: CleanupJobStatus;
+  onCancel: () => void;
 }
 
 const phaseLabels: Record<LibraryWipeJobProgress["phase"], string> = {
@@ -18,7 +22,12 @@ const purgePhaseLabels: Record<SoftDeletedPurgeJobProgress["phase"], string> = {
   orphaned_media: "Deleting unreferenced originals",
 };
 
-export function CleanupJobProgress({ job }: CleanupJobProgressProps) {
+export function CleanupJobProgress({
+  cancelError,
+  isCancelling,
+  job,
+  onCancel,
+}: CleanupJobProgressProps) {
   const isActive = job.status === "pending" || job.status === "running";
   const isWipe = job.type === "library_hard_wipe";
   const phaseLabel = isWipe
@@ -37,12 +46,27 @@ export function CleanupJobProgress({ job }: CleanupJobProgressProps) {
               ? "Storage and database cleanup is running in the background. Avoid starting a sync until this finishes."
               : job.status === "failed"
                 ? "Cleanup failed. Review the error and retry from the danger zone if needed."
-                : "Cleanup finished."}
+                : job.status === "cancelled"
+                  ? "Cleanup was cancelled. Items not yet processed remain soft-deleted."
+                  : "Cleanup finished."}
           </p>
         </div>
-        <span className="rounded-full border border-border px-2 py-0.5 text-xs capitalize">
-          {job.status}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="rounded-full border border-border px-2 py-0.5 text-xs capitalize">
+            {job.status}
+          </span>
+          {isActive ? (
+            <Button
+              disabled={isCancelling}
+              onClick={onCancel}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              {isCancelling ? "Cancelling…" : "Cancel cleanup"}
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       <div className="space-y-1">
@@ -61,11 +85,12 @@ export function CleanupJobProgress({ job }: CleanupJobProgressProps) {
       {job.progress.errorCount > 0 ? (
         <p className="tabular-nums text-xs text-destructive">
           {job.progress.errorCount} storage delete error
-          {job.progress.errorCount === 1 ? "" : "s"} (best-effort cleanup continues).
+          {job.progress.errorCount === 1 ? "" : "s"} recorded.
         </p>
       ) : null}
 
       {job.error ? <p className="text-xs text-destructive">{job.error}</p> : null}
+      {cancelError ? <p className="text-xs text-destructive">{cancelError}</p> : null}
     </section>
   );
 }

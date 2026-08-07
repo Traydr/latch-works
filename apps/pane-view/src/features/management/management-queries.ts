@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { librarySnapshotKeys } from "../library/library-queries";
 import {
   cancelAllRunningSyncRuns,
+  cancelCleanupJob,
   cancelSyncRun,
   deleteFolders,
   getCleanupJobStatus,
@@ -57,6 +58,19 @@ export function useCleanupJobStatusQuery(jobId: string | null) {
         return 2_000;
       }
       return false;
+    },
+  });
+}
+
+export function useCancelCleanupJobMutation() {
+  const invalidate = useInvalidateManagement();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (jobId: string) => cancelCleanupJob({ data: { jobId } }),
+    onSuccess: (_result, jobId) => {
+      void invalidate();
+      void queryClient.invalidateQueries({ queryKey: managementKeys.cleanupJob(jobId) });
     },
   });
 }

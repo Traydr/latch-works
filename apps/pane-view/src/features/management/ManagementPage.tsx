@@ -1,7 +1,7 @@
 import { formatBytes } from "@latch-works/media-domain";
 import { Link } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { getLibrarySnapshot } from "../library/library-service";
@@ -9,6 +9,7 @@ import { CleanupJobProgress } from "./CleanupJobProgress";
 import { FolderPicker } from "./FolderPicker";
 import {
   useCancelAllRunningSyncRunsMutation,
+  useCancelCleanupJobMutation,
   useCancelSyncRunMutation,
   useCleanupJobStatusQuery,
   useDeleteFoldersMutation,
@@ -27,6 +28,7 @@ export function ManagementPage() {
   const wipeMutation = useWipeLibraryMutation();
   const cancelSyncRunMutation = useCancelSyncRunMutation();
   const cancelAllSyncRunsMutation = useCancelAllRunningSyncRunsMutation();
+  const cancelCleanupJobMutation = useCancelCleanupJobMutation();
 
   const [selectedFolders, setSelectedFolders] = useState<string[]>([]);
   const [wipeConfirm, setWipeConfirm] = useState("");
@@ -40,6 +42,12 @@ export function ManagementPage() {
   const overview = overviewQuery.data;
   const activeJobId = trackedJobId ?? overview?.activeCleanupJob?.id ?? null;
   const cleanupJobQuery = useCleanupJobStatusQuery(activeJobId);
+
+  useEffect(() => {
+    if (overview?.activeCleanupJob?.id) {
+      setTrackedJobId(overview.activeCleanupJob.id);
+    }
+  }, [overview?.activeCleanupJob?.id]);
   const runningSyncCount = overview?.runningSyncRuns.length ?? 0;
   const maintenanceBlocked = Boolean(runningSyncCount > 0 || overview?.activeCleanupJob);
   const blockReason =
@@ -138,7 +146,7 @@ export function ManagementPage() {
         {blockReason ? (
           <section className="rounded-xl border border-amber-500/40 bg-amber-500/5 px-4 py-3 text-sm">
             {blockReason} Destructive actions are disabled until running syncs are stopped or
-            finished. Use sync run history below to stop stuck runs.
+            finished. Use the cleanup control below or sync run history to stop stuck work.
           </section>
         ) : null}
 
@@ -158,8 +166,17 @@ export function ManagementPage() {
           )}
         </section>
 
-        {cleanupJob && (cleanupJob.status === "pending" || cleanupJob.status === "running") ? (
-          <CleanupJobProgress job={cleanupJob} />
+        {cleanupJob ? (
+          <CleanupJobProgress
+            cancelError={
+              cancelCleanupJobMutation.error instanceof Error
+                ? cancelCleanupJobMutation.error.message
+                : null
+            }
+            isCancelling={cancelCleanupJobMutation.isPending}
+            job={cleanupJob}
+            onCancel={() => cancelCleanupJobMutation.mutate(cleanupJob.id)}
+          />
         ) : null}
 
         <section className="space-y-3">
