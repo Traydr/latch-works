@@ -32,6 +32,7 @@ export const syncActionEnum = pgEnum("sync_action", ["upload", "update", "keep",
 export const subjectTypeEnum = pgEnum("subject_type", ["library_entry", "collection"]);
 export const maintenanceJobTypeEnum = pgEnum("maintenance_job_type", [
   "library_hard_wipe",
+  "soft_deleted_purge",
   // Retired one-time migration (removed 2026-07). The value stays declared so
   // Drizzle does not try to drop it: Postgres cannot remove an enum member
   // without recreating the type, and historical maintenance_jobs rows still
@@ -378,7 +379,14 @@ export interface LibraryWipeJobProgress {
   processedCount: number;
 }
 
-export type MaintenanceJobProgress = LibraryWipeJobProgress;
+export interface SoftDeletedPurgeJobProgress {
+  errorCount: number;
+  lastError?: string;
+  phase: "orphaned_media" | "db_hard_delete" | "completed";
+  processedCount: number;
+}
+
+export type MaintenanceJobProgress = LibraryWipeJobProgress | SoftDeletedPurgeJobProgress;
 
 export const maintenanceJobs = pgTable(
   "maintenance_jobs",
@@ -403,6 +411,11 @@ export const maintenanceJobs = pgTable(
       .on(table.type)
       .where(
         sql`${table.type} = 'library_hard_wipe' and ${table.status} in ('pending', 'running')`,
+      ),
+    activeSoftDeletedPurgeUnique: uniqueIndex("maintenance_jobs_active_soft_deleted_purge_unique")
+      .on(table.type)
+      .where(
+        sql`${table.type} = 'soft_deleted_purge' and ${table.status} in ('pending', 'running')`,
       ),
   }),
 );

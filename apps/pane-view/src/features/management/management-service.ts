@@ -12,6 +12,7 @@ import {
 import { assertNoActiveSyncRun } from "../../server/management/guards";
 import { scheduleLibraryWipe } from "../../server/management/library-wipe";
 import { readManagementOverview } from "../../server/management/overview";
+import { scheduleSoftDeletedPurge } from "../../server/management/soft-deleted-purge";
 import {
   forceCancelAllRunningSyncRuns,
   forceCancelSyncRun,
@@ -75,6 +76,11 @@ export const wipeLibrary = createServerFn({ method: "POST" })
       syncToken: data.syncToken,
     });
   });
+
+export const purgeSoftDeletedItems = createServerFn({ method: "POST" }).handler(async () => {
+  await assertWebSessionAuthorized();
+  return scheduleSoftDeletedPurge();
+});
 
 export const cancelSyncRun = createServerFn({ method: "POST" })
   .inputValidator(cancelSyncRunSchema)

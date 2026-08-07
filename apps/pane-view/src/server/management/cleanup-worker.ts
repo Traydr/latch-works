@@ -1,5 +1,5 @@
 import { deleteStoredObjectsBatch, listStoredObjectsByPrefix } from "@latch-works/media-storage";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, exists, inArray, isNotNull, isNull, notExists, sql } from "drizzle-orm";
 import { db } from "../db";
 import {
   favorites,
@@ -9,6 +9,7 @@ import {
   type MaintenanceJobProgress,
   maintenanceJobs,
   mediaObjects,
+  type SoftDeletedPurgeJobProgress,
   syncRunItems,
   syncRuns,
   viewerState,
@@ -26,15 +27,19 @@ const activeJobStatuses = ["pending", "running"] as const;
 let resumeStarted = false;
 const runningJobs = new Set<string>();
 
-export interface CleanupJobStatus {
+interface CleanupJobStatusBase {
   completedAt: string | null;
   error: string | null;
   id: string;
-  progress: LibraryWipeJobProgress;
   startedAt: string | null;
   status: "pending" | "running" | "completed" | "failed";
-  type: "library_hard_wipe";
 }
+
+export type CleanupJobStatus = CleanupJobStatusBase &
+  (
+    | { progress: LibraryWipeJobProgress; type: "library_hard_wipe" }
+    | { progress: SoftDeletedPurgeJobProgress; type: "soft_deleted_purge" }
+  );
 
 export async function readCleanupJobStatus({
   jobId,
@@ -61,19 +66,21 @@ export async function readCleanupJobStatus({
 
   // Retired job types (legacy_derivative_cleanup) can still exist as historical
   // rows. They have no progress shape we can report, so treat them as absent.
-  if (job.type !== "library_hard_wipe") {
+  if (job.type !== "library_hard_wipe" && job.type !== "soft_deleted_purge") {
     return null;
   }
 
-  return {
+  const base = {
     completedAt: job.completedAt?.toISOString() ?? null,
     error: job.error,
     id: job.id,
-    progress: job.progress as LibraryWipeJobProgress,
     startedAt: job.startedAt?.toISOString() ?? null,
     status: job.status,
-    type: job.type,
   };
+
+  return job.type === "library_hard_wipe"
+    ? { ...base, progress: job.progress as LibraryWipeJobProgress, type: job.type }
+    : { ...base, progress: job.progress as SoftDeletedPurgeJobProgress, type: job.type };
 }
 
 export async function resumePendingMaintenanceJobs(): Promise<void> {
@@ -173,7 +180,154 @@ async function processMaintenanceJobBatch(jobId: string): Promise<boolean> {
     return true;
   }
 
-  return processLibraryWipeBatch(jobId, progress as LibraryWipeJobProgress);
+  if (job.type === "library_hard_wipe") {
+    return processLibraryWipeBatch(jobId, progress as LibraryWipeJobProgress);
+  }
+
+  if (job.type === "soft_deleted_purge") {
+    return processSoftDeletedPurgeBatch(jobId, progress as SoftDeletedPurgeJobProgress);
+  }
+
+  return false;
+}
+
+async function processSoftDeletedPurgeBatch(
+  jobId: string,
+  progress: SoftDeletedPurgeJobProgress,
+): Promise<boolean> {
+  switch (progress.phase) {
+    case "orphaned_media": {
+      const deletedReference = db
+        .select({ value: sql`1` })
+        .from(libraryEntries)
+        .where(
+          and(
+            eq(libraryEntries.mediaObjectId, mediaObjects.id),
+            isNotNull(libraryEntries.deletedAt),
+          ),
+        );
+      const activeReference = db
+        .select({ value: sql`1` })
+        .from(libraryEntries)
+        .where(
+          and(eq(libraryEntries.mediaObjectId, mediaObjects.id), isNull(libraryEntries.deletedAt)),
+        );
+      const rows = await db
+        .select({
+          id: mediaObjects.id,
+          objectKey: mediaObjects.objectKey,
+          sha256: mediaObjects.sha256,
+        })
+        .from(mediaObjects)
+        .where(and(exists(deletedReference), notExists(activeReference)))
+        .limit(batchSize);
+
+      if (rows.length === 0) {
+        await updateJobProgress(jobId, { ...progress, phase: "db_hard_delete" });
+        return true;
+      }
+
+      const batch = await deleteStoredObjectsBatch({
+        keys: rows.map((row) => row.objectKey),
+        storage: createPaneViewStorageClient(),
+      });
+      if (batch.errors > 0) {
+        await updateJobProgress(jobId, {
+          ...progress,
+          errorCount: progress.errorCount + batch.errors,
+          lastError: "One or more source objects could not be deleted; retrying batch",
+        });
+        return true;
+      }
+
+      for (const row of rows) {
+        try {
+          // react-doctor-disable-next-line react-doctor/async-await-in-loop -- Keep each external purge and database delete retry-safe.
+          await purgeShutterSource(row.sha256);
+        } catch (error) {
+          await updateJobProgress(jobId, {
+            ...progress,
+            errorCount: progress.errorCount + 1,
+            lastError: error instanceof Error ? error.message : "Shutter source purge failed",
+          });
+          return true;
+        }
+        const entryIds = db
+          .select({ id: libraryEntries.id })
+          .from(libraryEntries)
+          .where(eq(libraryEntries.mediaObjectId, row.id));
+        // Deleting an unshared media row cascades its soft-deleted library entries. Generic
+        // subject state has no foreign key, so remove it explicitly in the same transaction.
+        // react-doctor-disable-next-line react-doctor/async-await-in-loop -- Each transaction advances the durable cleanup cursor.
+        await db.transaction(async (tx) => {
+          await tx
+            .delete(favorites)
+            .where(
+              and(
+                eq(favorites.subjectType, "library_entry"),
+                inArray(favorites.subjectId, entryIds),
+              ),
+            );
+          await tx
+            .delete(viewerState)
+            .where(
+              and(
+                eq(viewerState.subjectType, "library_entry"),
+                inArray(viewerState.subjectId, entryIds),
+              ),
+            );
+          await tx.delete(mediaObjects).where(eq(mediaObjects.id, row.id));
+        });
+      }
+
+      await updateJobProgress(jobId, {
+        ...progress,
+        lastError: undefined,
+        processedCount: progress.processedCount + rows.length,
+      });
+      return true;
+    }
+
+    case "db_hard_delete": {
+      const deletedEntryIds = db
+        .select({ id: libraryEntries.id })
+        .from(libraryEntries)
+        .where(isNotNull(libraryEntries.deletedAt));
+
+      await db.transaction(async (tx) => {
+        await tx
+          .delete(favorites)
+          .where(
+            and(
+              eq(favorites.subjectType, "library_entry"),
+              inArray(favorites.subjectId, deletedEntryIds),
+            ),
+          );
+        await tx
+          .delete(viewerState)
+          .where(
+            and(
+              eq(viewerState.subjectType, "library_entry"),
+              inArray(viewerState.subjectId, deletedEntryIds),
+            ),
+          );
+        await tx.delete(libraryEntries).where(isNotNull(libraryEntries.deletedAt));
+      });
+
+      await db
+        .update(maintenanceJobs)
+        .set({
+          completedAt: new Date(),
+          progress: { ...progress, phase: "completed" },
+          status: "completed",
+        })
+        .where(eq(maintenanceJobs.id, jobId));
+      return false;
+    }
+
+    case "completed":
+      return false;
+  }
 }
 
 async function processLibraryWipeBatch(

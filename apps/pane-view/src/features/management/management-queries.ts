@@ -7,6 +7,7 @@ import {
   getCleanupJobStatus,
   getManagementOverview,
   getSyncRunHistory,
+  purgeSoftDeletedItems,
   wipeLibrary,
 } from "./management-service";
 
@@ -107,6 +108,19 @@ export function useWipeLibraryMutation() {
   return useMutation({
     mutationFn: (input: { confirmation: string; syncToken: string }) =>
       wipeLibrary({ data: input }),
+    onSuccess: () => {
+      void invalidate();
+      void queryClient.invalidateQueries({ queryKey: librarySnapshotKeys.all });
+    },
+  });
+}
+
+export function usePurgeSoftDeletedItemsMutation() {
+  const invalidate = useInvalidateManagement();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () => purgeSoftDeletedItems(),
     onSuccess: () => {
       void invalidate();
       void queryClient.invalidateQueries({ queryKey: librarySnapshotKeys.all });

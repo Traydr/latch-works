@@ -92,6 +92,20 @@
       "when": 1785146400000,
       "tag": "0012_shared_login_throttle",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1786096800000,
+      "tag": "0013_soft_deleted_purge",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1786096860000,
+      "tag": "0014_soft_deleted_purge_index",
+      "breakpoints": true
     }
   ]
 }
