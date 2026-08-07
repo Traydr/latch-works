@@ -412,10 +412,8 @@ export const maintenanceJobs = pgTable(
       .where(
         sql`${table.type} = 'library_hard_wipe' and ${table.status} in ('pending', 'running')`,
       ),
-    activeSoftDeletedPurgeUnique: uniqueIndex("maintenance_jobs_active_soft_deleted_purge_unique")
+    activeTypeUnique: uniqueIndex("maintenance_jobs_active_type_unique")
       .on(table.type)
-      .where(
-        sql`${table.type} = 'soft_deleted_purge' and ${table.status} in ('pending', 'running')`,
-      ),
+      .where(sql`${table.status} in ('pending', 'running')`),
   }),
 );
