@@ -106,6 +106,13 @@
       "when": 1786096860000,
       "tag": "0014_soft_deleted_purge_index",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1786150800000,
+      "tag": "0015_cancelled_maintenance_jobs",
+      "breakpoints": true
     }
   ]
 }

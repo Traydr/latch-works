@@ -44,6 +44,7 @@ export const maintenanceJobStatusEnum = pgEnum("maintenance_job_status", [
   "running",
   "completed",
   "failed",
+  "cancelled",
 ]);
 export const sourceTypeEnum = pgEnum("source_type", [
   "cli",

@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { cancelMaintenanceJob } from "../../server/management/cleanup-control";
 import {
   processMaintenanceJob,
   readCleanupJobStatus,
@@ -81,6 +82,17 @@ export const purgeSoftDeletedItems = createServerFn({ method: "POST" }).handler(
   await assertWebSessionAuthorized();
   return scheduleSoftDeletedPurge();
 });
+
+export const cancelCleanupJob = createServerFn({ method: "POST" })
+  .inputValidator(cleanupJobSchema)
+  .handler(async ({ data }) => {
+    await assertWebSessionAuthorized();
+    const result = await cancelMaintenanceJob({ jobId: data.jobId });
+    if (!result.cancelled) {
+      throw new Error("Cleanup job is not running or no longer exists.");
+    }
+    return result;
+  });
 
 export const cancelSyncRun = createServerFn({ method: "POST" })
   .inputValidator(cancelSyncRunSchema)

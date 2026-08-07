@@ -1,4 +1,4 @@
-import { deleteStoredObjectsBatch, listStoredObjectsByPrefix } from "@latch-works/media-storage";
+import { listStoredObjectsByPrefix } from "@latch-works/media-storage";
 import { and, eq, exists, inArray, isNotNull, isNull, notExists, sql } from "drizzle-orm";
 import { db } from "../db";
 import {
@@ -15,10 +15,10 @@ import {
   viewerState,
 } from "../db/schema";
 import { purgeShutterSource } from "../media/shutter-client";
-import { createPaneViewStorageClient } from "../media/storage-client";
+import { deleteMaintenanceObjects, getMaintenanceStorageClient } from "./maintenance-storage";
 
-const batchSize = 100;
-const maxBatchDurationMs = 2_000;
+const batchSize = 25;
+const nextBatchDelayMs = 25;
 
 const orphanPrefixes = ["originals/"] as const;
 
@@ -32,7 +32,7 @@ interface CleanupJobStatusBase {
   error: string | null;
   id: string;
   startedAt: string | null;
-  status: "pending" | "running" | "completed" | "failed";
+  status: "pending" | "running" | "completed" | "failed" | "cancelled";
 }
 
 export type CleanupJobStatus = CleanupJobStatusBase &
@@ -112,10 +112,12 @@ export function processMaintenanceJob(jobId: string): void {
   }
 
   runningJobs.add(jobId);
-  void runMaintenanceJobLoop(jobId).then(
+  void processMaintenanceJobBatch(jobId).then(
     (continueInNextTurn) => {
       runningJobs.delete(jobId);
-      if (continueInNextTurn) queueMicrotask(() => processMaintenanceJob(jobId));
+      if (continueInNextTurn) {
+        setTimeout(() => processMaintenanceJob(jobId), nextBatchDelayMs);
+      }
     },
     async (error) => {
       runningJobs.delete(jobId);
@@ -123,26 +125,18 @@ export function processMaintenanceJob(jobId: string): void {
       try {
         await db
           .update(maintenanceJobs)
-          .set({ error: message, status: "failed" })
-          .where(eq(maintenanceJobs.id, jobId));
+          .set({ completedAt: new Date(), error: message, status: "failed" })
+          .where(
+            and(
+              eq(maintenanceJobs.id, jobId),
+              inArray(maintenanceJobs.status, [...activeJobStatuses]),
+            ),
+          );
       } catch (updateError) {
         console.error("[pane-view] Unable to record maintenance job failure", updateError);
       }
     },
   );
-}
-
-async function runMaintenanceJobLoop(jobId: string): Promise<boolean> {
-  const startedAt = Date.now();
-
-  while (Date.now() - startedAt < maxBatchDurationMs) {
-    const continued = await processMaintenanceJobBatch(jobId);
-    if (!continued) {
-      return false;
-    }
-  }
-
-  return true;
 }
 
 async function processMaintenanceJobBatch(jobId: string): Promise<boolean> {
@@ -156,7 +150,7 @@ async function processMaintenanceJobBatch(jobId: string): Promise<boolean> {
     .where(eq(maintenanceJobs.id, jobId))
     .limit(1);
 
-  if (!job || job.status === "completed" || job.status === "failed") {
+  if (!job || job.status === "completed" || job.status === "failed" || job.status === "cancelled") {
     return false;
   }
 
@@ -167,7 +161,7 @@ async function processMaintenanceJobBatch(jobId: string): Promise<boolean> {
         startedAt: new Date(),
         status: "running",
       })
-      .where(eq(maintenanceJobs.id, jobId));
+      .where(and(eq(maintenanceJobs.id, jobId), eq(maintenanceJobs.status, "pending")));
   }
 
   const progress = job.progress;
@@ -227,30 +221,16 @@ async function processSoftDeletedPurgeBatch(
         return true;
       }
 
-      const batch = await deleteStoredObjectsBatch({
-        keys: rows.map((row) => row.objectKey),
-        storage: createPaneViewStorageClient(),
-      });
-      if (batch.errors > 0) {
-        await updateJobProgress(jobId, {
-          ...progress,
-          errorCount: progress.errorCount + batch.errors,
-          lastError: "One or more source objects could not be deleted; retrying batch",
-        });
-        return true;
-      }
+      await deleteMaintenanceObjects(rows.map((row) => row.objectKey));
+      if (!(await isMaintenanceJobActive(jobId))) return false;
 
       for (const row of rows) {
         try {
           // react-doctor-disable-next-line react-doctor/async-await-in-loop -- Keep each external purge and database delete retry-safe.
           await purgeShutterSource(row.sha256);
         } catch (error) {
-          await updateJobProgress(jobId, {
-            ...progress,
-            errorCount: progress.errorCount + 1,
-            lastError: error instanceof Error ? error.message : "Shutter source purge failed",
-          });
-          return true;
+          const reason = error instanceof Error ? error.message : String(error);
+          throw new Error(`Shutter source purge failed: ${reason}`);
         }
         const entryIds = db
           .select({ id: libraryEntries.id })
@@ -321,7 +301,12 @@ async function processSoftDeletedPurgeBatch(
           progress: { ...progress, phase: "completed" },
           status: "completed",
         })
-        .where(eq(maintenanceJobs.id, jobId));
+        .where(
+          and(
+            eq(maintenanceJobs.id, jobId),
+            inArray(maintenanceJobs.status, [...activeJobStatuses]),
+          ),
+        );
       return false;
     }
 
@@ -334,8 +319,6 @@ async function processLibraryWipeBatch(
   jobId: string,
   progress: LibraryWipeJobProgress,
 ): Promise<boolean> {
-  const storage = createPaneViewStorageClient();
-
   switch (progress.phase) {
     case "s3_originals": {
       const rows = await db
@@ -356,31 +339,16 @@ async function processLibraryWipeBatch(
         return true;
       }
 
-      const batch = await deleteStoredObjectsBatch({
-        keys: rows.map((row) => row.objectKey),
-        storage,
-      });
-
-      if (batch.errors > 0) {
-        await updateJobProgress(jobId, {
-          ...progress,
-          errorCount: progress.errorCount + batch.errors,
-          lastError: "One or more source objects could not be deleted; retrying batch",
-        });
-        return true;
-      }
+      await deleteMaintenanceObjects(rows.map((row) => row.objectKey));
+      if (!(await isMaintenanceJobActive(jobId))) return false;
 
       for (const row of rows) {
         try {
           // react-doctor-disable-next-line react-doctor/async-await-in-loop -- Stop at the first purge failure so the durable job cursor remains retry-safe.
           await purgeShutterSource(row.sha256);
         } catch (error) {
-          await updateJobProgress(jobId, {
-            ...progress,
-            errorCount: progress.errorCount + 1,
-            lastError: error instanceof Error ? error.message : "Shutter source purge failed",
-          });
-          return true;
+          const reason = error instanceof Error ? error.message : String(error);
+          throw new Error(`Shutter source purge failed: ${reason}`);
         }
         // react-doctor-disable-next-line react-doctor/async-await-in-loop -- Delete only after this row's external source purge succeeds.
         await db.delete(mediaObjects).where(eq(mediaObjects.id, row.id));
@@ -388,7 +356,6 @@ async function processLibraryWipeBatch(
 
       await updateJobProgress(jobId, {
         ...progress,
-        errorCount: progress.errorCount + batch.errors,
         processedCount: progress.processedCount + rows.length,
       });
       return true;
@@ -404,18 +371,15 @@ async function processLibraryWipeBatch(
         continuationToken: progress.orphanContinuationToken,
         limit: batchSize,
         prefix,
-        storage,
+        storage: getMaintenanceStorageClient(),
       });
 
       if (page.keys.length > 0) {
-        const batch = await deleteStoredObjectsBatch({
-          keys: page.keys,
-          storage,
-        });
+        await deleteMaintenanceObjects(page.keys);
+        if (!(await isMaintenanceJobActive(jobId))) return false;
 
         await updateJobProgress(jobId, {
           ...progress,
-          errorCount: progress.errorCount + batch.errors,
           orphanContinuationToken: page.nextContinuationToken,
           orphanPrefix: prefix,
           processedCount: progress.processedCount + page.keys.length,
@@ -472,7 +436,12 @@ async function processLibraryWipeBatch(
           },
           status: "completed",
         })
-        .where(eq(maintenanceJobs.id, jobId));
+        .where(
+          and(
+            eq(maintenanceJobs.id, jobId),
+            inArray(maintenanceJobs.status, [...activeJobStatuses]),
+          ),
+        );
       return false;
     }
 
@@ -482,5 +451,22 @@ async function processLibraryWipeBatch(
 }
 
 async function updateJobProgress(jobId: string, progress: MaintenanceJobProgress): Promise<void> {
-  await db.update(maintenanceJobs).set({ progress }).where(eq(maintenanceJobs.id, jobId));
+  await db
+    .update(maintenanceJobs)
+    .set({ progress })
+    .where(
+      and(eq(maintenanceJobs.id, jobId), inArray(maintenanceJobs.status, [...activeJobStatuses])),
+    );
+}
+
+async function isMaintenanceJobActive(jobId: string): Promise<boolean> {
+  const [job] = await db
+    .select({ id: maintenanceJobs.id })
+    .from(maintenanceJobs)
+    .where(
+      and(eq(maintenanceJobs.id, jobId), inArray(maintenanceJobs.status, [...activeJobStatuses])),
+    )
+    .limit(1);
+
+  return Boolean(job);
 }
