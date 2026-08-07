@@ -1,11 +1,9 @@
-import type { LibraryWipeJobProgress } from "../../server/db/schema";
+import type { LibraryWipeJobProgress, SoftDeletedPurgeJobProgress } from "../../server/db/schema";
 import type { CleanupJobStatus } from "../../server/management/cleanup-worker";
 
 interface CleanupJobProgressProps {
   job: CleanupJobStatus;
 }
-
-type LibraryWipeCleanupJobStatus = Extract<CleanupJobStatus, { type: "library_hard_wipe" }>;
 
 const phaseLabels: Record<LibraryWipeJobProgress["phase"], string> = {
   completed: "Completed",
@@ -14,15 +12,26 @@ const phaseLabels: Record<LibraryWipeJobProgress["phase"], string> = {
   s3_orphan_sweep: "Sweeping storage orphans",
 };
 
+const purgePhaseLabels: Record<SoftDeletedPurgeJobProgress["phase"], string> = {
+  completed: "Completed",
+  db_hard_delete: "Removing database records",
+  orphaned_media: "Deleting unreferenced originals",
+};
+
 export function CleanupJobProgress({ job }: CleanupJobProgressProps) {
-  if (job.type !== "library_hard_wipe") return null;
   const isActive = job.status === "pending" || job.status === "running";
+  const isWipe = job.type === "library_hard_wipe";
+  const phaseLabel = isWipe
+    ? phaseLabels[job.progress.phase]
+    : purgePhaseLabels[job.progress.phase];
 
   return (
     <section className="space-y-3 rounded-xl border border-amber-500/40 bg-amber-500/5 p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold">Library wipe cleanup</h3>
+          <h3 className="text-sm font-semibold">
+            {isWipe ? "Library wipe cleanup" : "Deleted-item cleanup"}
+          </h3>
           <p className="text-xs text-muted-foreground">
             {isActive
               ? "Storage and database cleanup is running in the background. Avoid starting a sync until this finishes."
@@ -38,7 +47,7 @@ export function CleanupJobProgress({ job }: CleanupJobProgressProps) {
 
       <div className="space-y-1">
         <div className="flex justify-between text-xs text-muted-foreground">
-          <span>{phaseLabels[job.progress.phase]}</span>
+          <span>{phaseLabel}</span>
           <span className="tabular-nums">{job.progress.processedCount} processed</span>
         </div>
         <div className="h-2 overflow-hidden rounded-full bg-muted">
@@ -61,7 +70,12 @@ export function CleanupJobProgress({ job }: CleanupJobProgressProps) {
   );
 }
 
-function estimateProgress(job: LibraryWipeCleanupJobStatus): number {
+function estimateProgress(job: CleanupJobStatus): number {
+  if (job.type === "soft_deleted_purge") {
+    if (job.status === "completed") return 100;
+    return { completed: 100, db_hard_delete: 85, orphaned_media: 35 }[job.progress.phase];
+  }
+
   const phaseWeights: Record<LibraryWipeJobProgress["phase"], number> = {
     completed: 100,
     db_hard_delete: 90,

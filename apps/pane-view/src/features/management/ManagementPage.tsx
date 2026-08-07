@@ -1,7 +1,7 @@
 import { formatBytes } from "@latch-works/media-domain";
 import { Link } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { getLibrarySnapshot } from "../library/library-service";
@@ -13,6 +13,7 @@ import {
   useCleanupJobStatusQuery,
   useDeleteFoldersMutation,
   useManagementOverviewQuery,
+  usePurgeSoftDeletedItemsMutation,
   useSyncRunHistoryQuery,
   useWipeLibraryMutation,
 } from "./management-queries";
@@ -22,6 +23,7 @@ export function ManagementPage() {
   const overviewQuery = useManagementOverviewQuery();
   const historyQuery = useSyncRunHistoryQuery();
   const deleteFoldersMutation = useDeleteFoldersMutation();
+  const purgeSoftDeletedMutation = usePurgeSoftDeletedItemsMutation();
   const wipeMutation = useWipeLibraryMutation();
   const cancelSyncRunMutation = useCancelSyncRunMutation();
   const cancelAllSyncRunsMutation = useCancelAllRunningSyncRunsMutation();
@@ -46,7 +48,7 @@ export function ManagementPage() {
         ? `Sync in progress from ${overview?.runningSyncRuns[0]?.sourceRoot}.`
         : `${runningSyncCount} sync runs are still marked running.`
       : overview?.activeCleanupJob
-        ? "Library wipe cleanup is still running."
+        ? "Library cleanup is still running."
         : null;
 
   const loadFolders = async () => {
@@ -73,6 +75,10 @@ export function ManagementPage() {
       { label: "Active entries", value: overview.library.activeEntries.toLocaleString() },
       { label: "Active folders", value: overview.library.activeFolders.toLocaleString() },
       {
+        label: "Soft-deleted entries",
+        value: overview.library.softDeletedEntries.toLocaleString(),
+      },
+      {
         label: "Original storage",
         value: formatBytes(overview.storage.mediaObjectBytes),
       },
@@ -92,6 +98,20 @@ export function ManagementPage() {
     setTrackedJobId(result.jobId);
     setWipeConfirm("");
     setSyncToken("");
+  };
+
+  const handlePurgeSoftDeleted = async () => {
+    const count = overview?.library.softDeletedEntries ?? 0;
+    if (
+      !window.confirm(
+        `Permanently delete ${count.toLocaleString()} soft-deleted item${count === 1 ? "" : "s"}? This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+
+    const result = await purgeSoftDeletedMutation.mutateAsync();
+    if (result.jobId) setTrackedJobId(result.jobId);
   };
 
   const cleanupJob = cleanupJobQuery.data;
@@ -163,7 +183,7 @@ export function ManagementPage() {
               <h2 className="text-sm font-semibold">Delete folders</h2>
               <p className="text-sm text-muted-foreground">
                 Soft-delete a folder subtree from the library index. Storage originals remain until
-                a full wipe or manual cleanup.
+                deleted items are purged or the library is wiped.
               </p>
             </div>
             <Button onClick={() => void loadFolders()} type="button" variant="outline">
@@ -195,6 +215,33 @@ export function ManagementPage() {
                 Delete selected folders
               </Button>
             </>
+          ) : null}
+        </section>
+
+        <section className="space-y-3 rounded-xl border border-border p-4">
+          <h2 className="text-sm font-semibold">Purge deleted items</h2>
+          <p className="text-sm text-muted-foreground">
+            Permanently remove all soft-deleted entries. Originals and Shutter assets are also
+            deleted when no active entry references the same media.
+          </p>
+          <Button
+            disabled={
+              maintenanceBlocked ||
+              purgeSoftDeletedMutation.isPending ||
+              (overview?.library.softDeletedEntries ?? 0) === 0
+            }
+            onClick={() => void handlePurgeSoftDeleted()}
+            type="button"
+            variant="destructive"
+          >
+            Permanently delete {overview?.library.softDeletedEntries.toLocaleString() ?? 0} items
+          </Button>
+          {purgeSoftDeletedMutation.error ? (
+            <p className="text-sm text-destructive">
+              {purgeSoftDeletedMutation.error instanceof Error
+                ? purgeSoftDeletedMutation.error.message
+                : "Deleted-item cleanup failed."}
+            </p>
           ) : null}
         </section>
 

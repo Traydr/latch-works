@@ -65,7 +65,7 @@ export async function readActiveCleanupJob(client: QueryClient = db): Promise<{
     .from(maintenanceJobs)
     .where(
       and(
-        eq(maintenanceJobs.type, "library_hard_wipe"),
+        inArray(maintenanceJobs.type, ["library_hard_wipe", "soft_deleted_purge"]),
         inArray(maintenanceJobs.status, ["pending", "running"]),
       ),
     )
@@ -88,7 +88,7 @@ export async function assertNoActiveCleanupJob(client: QueryClient = db): Promis
   const activeJob = await readActiveCleanupJob(client);
   if (activeJob) {
     throw new Error(
-      "A library wipe cleanup job is still running. Wait for it to finish before starting a sync.",
+      "A library cleanup job is still running. Wait for it to finish before starting a sync.",
     );
   }
 }
