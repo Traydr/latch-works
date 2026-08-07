@@ -1,6 +1,6 @@
 import { formatBytes } from "@latch-works/media-domain";
 import { Link } from "@tanstack/react-router";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,7 @@ import {
   useCleanupJobStatusQuery,
   useDeleteFoldersMutation,
   useManagementOverviewQuery,
+  usePurgeDeletedShutterSourcesMutation,
   usePurgeSoftDeletedItemsMutation,
   useSyncRunHistoryQuery,
   useWipeLibraryMutation,
@@ -22,9 +23,11 @@ import { SyncRunHistoryTable } from "./SyncRunHistoryTable";
 
 export function ManagementPage() {
   const overviewQuery = useManagementOverviewQuery();
-  const historyQuery = useSyncRunHistoryQuery();
+  const [historyExpanded, setHistoryExpanded] = useState(false);
+  const historyQuery = useSyncRunHistoryQuery(historyExpanded);
   const deleteFoldersMutation = useDeleteFoldersMutation();
   const purgeSoftDeletedMutation = usePurgeSoftDeletedItemsMutation();
+  const purgeShutterSourcesMutation = usePurgeDeletedShutterSourcesMutation();
   const wipeMutation = useWipeLibraryMutation();
   const cancelSyncRunMutation = useCancelSyncRunMutation();
   const cancelAllSyncRunsMutation = useCancelAllRunningSyncRunsMutation();
@@ -34,6 +37,7 @@ export function ManagementPage() {
   const [wipeConfirm, setWipeConfirm] = useState("");
   const [syncToken, setSyncToken] = useState("");
   const [trackedJobId, setTrackedJobId] = useState<string | null>(null);
+  const [shutterPurgeMessage, setShutterPurgeMessage] = useState<string | null>(null);
   const [folderSnapshot, setFolderSnapshot] = useState<Awaited<
     ReturnType<typeof getLibrarySnapshot>
   > | null>(null);
@@ -122,6 +126,24 @@ export function ManagementPage() {
     if (result.jobId) setTrackedJobId(result.jobId);
   };
 
+  const handlePurgeShutterSources = async () => {
+    if (
+      !window.confirm(
+        "Delete Shutter sources belonging only to soft-deleted items? Active library media is excluded.",
+      )
+    ) {
+      return;
+    }
+
+    setShutterPurgeMessage(null);
+    const result = await purgeShutterSourcesMutation.mutateAsync();
+    if (result.jobId) {
+      setTrackedJobId(result.jobId);
+    } else {
+      setShutterPurgeMessage("No deleted-item Shutter sources are waiting to be purged.");
+    }
+  };
+
   const cleanupJob = cleanupJobQuery.data;
 
   return (
@@ -179,19 +201,37 @@ export function ManagementPage() {
           />
         ) : null}
 
-        <section className="space-y-3">
-          <h2 className="text-sm font-semibold">Sync run history</h2>
-          {historyQuery.isLoading ? (
-            <p className="text-sm text-muted-foreground">Loading sync history…</p>
-          ) : (
-            <SyncRunHistoryTable
-              cancellingSyncRunId={cancelSyncRunMutation.variables ?? null}
-              isCancellingAll={cancelAllSyncRunsMutation.isPending}
-              onCancelAllRunning={() => void cancelAllSyncRunsMutation.mutateAsync()}
-              onCancelRun={(syncRunId) => void cancelSyncRunMutation.mutateAsync(syncRunId)}
-              runs={historyQuery.data ?? []}
-            />
-          )}
+        <section className="space-y-3" id="sync-run-history">
+          <Button
+            aria-controls="sync-run-history-content"
+            aria-expanded={historyExpanded}
+            className="h-auto gap-2 px-0 text-sm font-semibold"
+            onClick={() => setHistoryExpanded((expanded) => !expanded)}
+            type="button"
+            variant="ghost"
+          >
+            {historyExpanded ? (
+              <ChevronDown className="size-4" />
+            ) : (
+              <ChevronRight className="size-4" />
+            )}
+            Sync run history
+          </Button>
+          {historyExpanded ? (
+            <div id="sync-run-history-content">
+              {historyQuery.isLoading ? (
+                <p className="text-sm text-muted-foreground">Loading sync history…</p>
+              ) : (
+                <SyncRunHistoryTable
+                  cancellingSyncRunId={cancelSyncRunMutation.variables ?? null}
+                  isCancellingAll={cancelAllSyncRunsMutation.isPending}
+                  onCancelAllRunning={() => void cancelAllSyncRunsMutation.mutateAsync()}
+                  onCancelRun={(syncRunId) => void cancelSyncRunMutation.mutateAsync(syncRunId)}
+                  runs={historyQuery.data ?? []}
+                />
+              )}
+            </div>
+          ) : null}
         </section>
 
         <section className="space-y-3 rounded-xl border border-border p-4">
@@ -238,8 +278,9 @@ export function ManagementPage() {
         <section className="space-y-3 rounded-xl border border-border p-4">
           <h2 className="text-sm font-semibold">Purge deleted items</h2>
           <p className="text-sm text-muted-foreground">
-            Permanently remove all soft-deleted entries. Originals and Shutter assets are also
-            deleted when no active entry references the same media.
+            Permanently remove all soft-deleted entries and their originals from Pane View storage
+            when no active entry references the same media. Shutter source IDs are retained for the
+            separate cleanup action below.
           </p>
           <Button
             disabled={
@@ -258,6 +299,34 @@ export function ManagementPage() {
               {purgeSoftDeletedMutation.error instanceof Error
                 ? purgeSoftDeletedMutation.error.message
                 : "Deleted-item cleanup failed."}
+            </p>
+          ) : null}
+        </section>
+
+        <section className="space-y-3 rounded-xl border border-border p-4">
+          <h2 className="text-sm font-semibold">Purge deleted Shutter sources</h2>
+          <p className="text-sm text-muted-foreground">
+            Delete Shutter sources associated only with soft-deleted items. This can run before or
+            after Pane View storage cleanup, and never targets media referenced by an active item.
+          </p>
+          <Button
+            disabled={maintenanceBlocked || purgeShutterSourcesMutation.isPending}
+            onClick={() => void handlePurgeShutterSources()}
+            type="button"
+            variant="destructive"
+          >
+            {purgeShutterSourcesMutation.isPending
+              ? "Scheduling Shutter cleanup…"
+              : "Purge deleted Shutter sources"}
+          </Button>
+          {shutterPurgeMessage ? (
+            <p className="text-sm text-muted-foreground">{shutterPurgeMessage}</p>
+          ) : null}
+          {purgeShutterSourcesMutation.error ? (
+            <p className="text-sm text-destructive">
+              {purgeShutterSourcesMutation.error instanceof Error
+                ? purgeShutterSourcesMutation.error.message
+                : "Shutter source cleanup failed."}
             </p>
           ) : null}
         </section>

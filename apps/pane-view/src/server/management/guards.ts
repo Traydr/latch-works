@@ -65,7 +65,11 @@ export async function readActiveCleanupJob(client: QueryClient = db): Promise<{
     .from(maintenanceJobs)
     .where(
       and(
-        inArray(maintenanceJobs.type, ["library_hard_wipe", "soft_deleted_purge"]),
+        inArray(maintenanceJobs.type, [
+          "library_hard_wipe",
+          "soft_deleted_purge",
+          "shutter_source_purge",
+        ]),
         inArray(maintenanceJobs.status, ["pending", "running"]),
       ),
     )
