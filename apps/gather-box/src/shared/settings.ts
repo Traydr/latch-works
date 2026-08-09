@@ -6,6 +6,7 @@ export type CredentialsChoice = "include" | "omit";
 
 export interface GatherBoxSettings {
   downloadConcurrency: number;
+  mediaCompatibilityMode: boolean;
   useGlobalFolder: boolean;
   verboseLogging: boolean;
   pageShortcutsEnabled: boolean;
@@ -15,6 +16,7 @@ export interface GatherBoxSettings {
 
 export const DEFAULT_SETTINGS: GatherBoxSettings = {
   downloadConcurrency: 4,
+  mediaCompatibilityMode: false,
   useGlobalFolder: false,
   verboseLogging: false,
   pageShortcutsEnabled: true,
@@ -47,6 +49,7 @@ export function normalizeSettings(settings: Partial<GatherBoxSettings>): GatherB
     downloadConcurrency: Number.isFinite(concurrency)
       ? Math.min(16, Math.max(1, Math.round(concurrency)))
       : DEFAULT_SETTINGS.downloadConcurrency,
+    mediaCompatibilityMode: Boolean(settings.mediaCompatibilityMode),
     useGlobalFolder: Boolean(settings.useGlobalFolder),
     verboseLogging: Boolean(settings.verboseLogging),
     pageShortcutsEnabled:

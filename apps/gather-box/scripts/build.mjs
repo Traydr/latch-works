@@ -44,6 +44,11 @@ await rm(dist, { force: true, recursive: true });
 await rm(reports, { force: true, recursive: true });
 await mkdir(dist, { recursive: true });
 await Promise.all(packagedFiles.map(copyPackagedFile));
+await mkdir(resolve(dist, "codecs"), { recursive: true });
+await copyFile(
+  resolve(root, "node_modules/@jsquash/avif/codec/enc/avif_enc.wasm"),
+  resolve(dist, "codecs/avif_enc.wasm")
+);
 await writeFile(resolve(dist, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
 
 const pages = await build({
@@ -176,6 +181,12 @@ async function createArtifactReport(metafiles) {
   if (!storyChunk) {
     throw new Error("Generated-story chunk was not emitted as an isolated local module.");
   }
+  const mediaConversionChunk = Object.entries(metafiles.pages.outputs).find(([, output]) =>
+    Object.keys(output.inputs).some((input) => input.endsWith("src/gather/media-conversion.ts"))
+  )?.[0];
+  if (!mediaConversionChunk) {
+    throw new Error("Media-conversion chunk was not emitted as an isolated local module.");
+  }
 
   verifyContentIsolation(metafiles.content);
   const collectorMeasurements = Object.fromEntries(
@@ -188,8 +199,13 @@ async function createArtifactReport(metafiles) {
   );
   const categories = {
     "side panel eager JS": await measureOutputGraph(metafiles.pages, pageEntry),
-    "offscreen base JS": await measureOutputGraph(metafiles.pages, offscreenEntry, new Set([storyChunk])),
+    "offscreen base JS": await measureOutputGraph(
+      metafiles.pages,
+      offscreenEntry,
+      new Set([storyChunk, mediaConversionChunk])
+    ),
     "generated-story JS": await measureOutputGraph(metafiles.pages, storyChunk),
+    "media conversion JS": await measureOutputGraph(metafiles.pages, mediaConversionChunk),
     "service worker JS": await measureOutputGraph(
       metafiles.background,
       findOutput(metafiles.background, "background/service-worker.js")
@@ -208,6 +224,7 @@ async function createArtifactReport(metafiles) {
     schemaVersion: 1,
     mode: development ? "development" : "release",
     storyChunk: storyChunk.replace(/^dist\//, ""),
+    mediaConversionChunk: mediaConversionChunk.replace(/^dist\//, ""),
     categories
   };
 }
@@ -301,10 +318,11 @@ function enforceBudgets(report, metafiles) {
     "side panel eager JS": 150_000,
     "offscreen base JS": 180_000,
     "generated-story JS": 1_300_000,
+    "media conversion JS": 300_000,
     "service worker JS": 150_000,
     "page shortcuts JS": 10_000,
     "total JS": 1_800_000,
-    "total dist": 5_000_000
+    "total dist": 8_000_000
   };
   for (const source of sourceCatalog) budgets[`collector ${source.key} JS`] = 40_000;
   const failures = Object.entries(budgets).filter(

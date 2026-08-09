@@ -44,6 +44,12 @@ Downloads use your browser session cookies where needed (AO3, fanfiction.net, an
 The always-on page script contains only the optional Right Shift shortcuts. When gathering starts,
 the service worker injects exactly one catalog-selected collector into the captured tab's main frame.
 
+The optional **Convert media for the AVIF archive** setting keeps Gather Box compatible with an
+archive normalized to AVIF and MP4. It converts JPEG, PNG, WebP, and BMP still images to AVIF at
+quality 70 / speed 6, converts downloaded GIFs to H.264 MP4, and leaves existing AVIF and MP4 media
+unchanged. Conversion runs locally in the extension. When the converted target filename already
+exists, Gather Box skips the item before fetching it.
+
 ## Project structure
 
 ```text
@@ -133,7 +139,7 @@ are converted to underscores.
 ## Notes
 
 - The side panel shows the picked folder **name** only — browsers do not expose the full absolute path through the File System Access API.
-- Existing media is never overwritten. Gather Box compares SHA-256 hashes when a site filename already exists, skips identical content, and appends a four-character suffix before the extension for different content.
+- Existing media is never overwritten. Gather Box compares SHA-256 hashes when a site filename already exists, skips identical content, and appends a four-character suffix before the extension for different content. In AVIF archive mode, an existing converted target filename is treated as already gathered and skipped without a network request.
 - pixiv original-image requests use a narrowly scoped extension rule to supply pixiv's required `Referer` header.
 - X video resolution uses X's public syndication data first, then its web-client media response. The fallback flow was informed by [Cobalt's X extractor](https://github.com/imputnet/cobalt/blob/main/api/src/processing/services/twitter.js); Gather Box does not call a hosted Cobalt instance.
 - Embedded third-party video posts are resolved locally through the host's temporary-token API; the extension downloads the returned HD MP4 when available. A narrowly scoped request rule supplies the required origin headers. See `src/background/` for the per-host resolvers and their attribution.

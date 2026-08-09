@@ -10,6 +10,7 @@ import { LISTED_SITES, type SiteKey } from "../shared/sites";
 interface SettingsFormElements {
   form: HTMLFormElement;
   downloadConcurrency: HTMLInputElement;
+  mediaCompatibilityMode: HTMLInputElement;
   verboseLogging: HTMLInputElement;
   pageShortcutsEnabled: HTMLInputElement;
   toggleCommandShortcut: HTMLElement;
@@ -45,6 +46,7 @@ function getFormElements(): SettingsFormElements {
   return {
     form: requireElement("settingsForm", HTMLFormElement),
     downloadConcurrency: requireElement("downloadConcurrency", HTMLInputElement),
+    mediaCompatibilityMode: requireElement("mediaCompatibilityMode", HTMLInputElement),
     verboseLogging: requireElement("verboseLogging", HTMLInputElement),
     pageShortcutsEnabled: requireElement("pageShortcutsEnabled", HTMLInputElement),
     toggleCommandShortcut: requireElement("toggleCommandShortcut", HTMLElement),
@@ -93,6 +95,7 @@ function renderPerSiteCredentials(container: HTMLElement, settings: GatherBoxSet
 
 function applySettingsToForm(elements: SettingsFormElements, settings: GatherBoxSettings): void {
   elements.downloadConcurrency.value = String(settings.downloadConcurrency);
+  elements.mediaCompatibilityMode.checked = settings.mediaCompatibilityMode;
   elements.verboseLogging.checked = settings.verboseLogging;
   elements.pageShortcutsEnabled.checked = settings.pageShortcutsEnabled;
   elements.credentialsMode.value = settings.credentialsMode;
@@ -113,6 +116,7 @@ async function handleSave(elements: SettingsFormElements): Promise<void> {
     ?.value;
   const settings: GatherBoxSettings = {
     downloadConcurrency: Number(elements.downloadConcurrency.value),
+    mediaCompatibilityMode: elements.mediaCompatibilityMode.checked,
     verboseLogging: elements.verboseLogging.checked,
     pageShortcutsEnabled: elements.pageShortcutsEnabled.checked,
     useGlobalFolder: folderMode === "global",

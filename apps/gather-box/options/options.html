@@ -28,6 +28,18 @@
           </label>
 
           <label class="checkbox-row">
+            <input id="mediaCompatibilityMode" name="mediaCompatibilityMode" type="checkbox">
+            <span>
+              Convert media for the AVIF archive
+              <span class="field-hint checkbox-hint">
+                Saves still images as AVIF (quality 70, speed 6) and GIFs as H.264 MP4.
+                Existing AVIF and MP4 files pass through unchanged. Conversion happens locally and
+                can take longer than a direct download.
+              </span>
+            </span>
+          </label>
+
+          <label class="checkbox-row">
             <input id="verboseLogging" name="verboseLogging" type="checkbox">
             <span>Verbose logging (include fetch URLs in the results log)</span>
           </label>

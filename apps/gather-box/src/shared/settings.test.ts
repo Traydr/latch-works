@@ -2,6 +2,14 @@ import { describe, expect, it } from "vitest";
 import { normalizeSettings } from "./settings";
 
 describe("Gather Box shortcut settings", () => {
+  it("keeps archive media conversion off by default", () => {
+    expect(normalizeSettings({}).mediaCompatibilityMode).toBe(false);
+  });
+
+  it("preserves an enabled archive media conversion setting", () => {
+    expect(normalizeSettings({ mediaCompatibilityMode: true }).mediaCompatibilityMode).toBe(true);
+  });
+
   it("enables shortcuts by default for existing settings", () => {
     expect(normalizeSettings({}).pageShortcutsEnabled).toBe(true);
   });

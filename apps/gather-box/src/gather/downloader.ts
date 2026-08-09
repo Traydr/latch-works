@@ -29,6 +29,7 @@ export interface DownloadCallbacks {
 export interface DownloadOptions {
   credentials?: RequestCredentials;
   concurrency?: number;
+  mediaCompatibilityMode?: boolean;
   site?: SiteKey;
   signal?: AbortSignal;
 }
@@ -75,6 +76,20 @@ export async function downloadImages(
         throw new Error("Download URL or filename is not allowed");
       }
 
+      if (options.mediaCompatibilityMode) {
+        const { getMediaConversionPlan } = await import("./media-conversion");
+        const targetFileName = getMediaConversionPlan(preparedImage.fileName, "")?.fileName;
+        if (
+          targetFileName &&
+          (await getExistingFileHandle(destinationDirectory, targetFileName))
+        ) {
+          summary.skipped += 1;
+          callbacks.onSkipped?.(targetFileName);
+          callbacks.onVerbose?.(`Skipped existing converted file ${targetFileName}`);
+          return;
+        }
+      }
+
       callbacks.onVerbose?.(`Fetching ${preparedImage.originalUrl}`);
       const response = await fetch(preparedImage.originalUrl, {
         credentials: options.credentials ?? "omit",
@@ -84,10 +99,20 @@ export async function downloadImages(
         throw new Error(`HTTP ${response.status}`);
       }
 
-      const blob = await response.blob();
+      let blob = await response.blob();
+      let fileName = preparedImage.fileName;
+      if (options.mediaCompatibilityMode) {
+        const { convertMediaForArchive } = await import("./media-conversion");
+        const converted = await convertMediaForArchive(blob, fileName, options.signal);
+        blob = converted.blob;
+        fileName = converted.fileName;
+        if (converted.converted) {
+          callbacks.onVerbose?.(`Converted ${preparedImage.fileName} to ${fileName}`);
+        }
+      }
       throwIfAborted(options.signal);
       const saved = await enqueueSave(() =>
-        saveBlobWithoutClobbering(blob, destinationDirectory, preparedImage.fileName, undefined, options.signal)
+        saveBlobWithoutClobbering(blob, destinationDirectory, fileName, undefined, options.signal)
       );
       if (saved.skipped) {
         summary.skipped += 1;

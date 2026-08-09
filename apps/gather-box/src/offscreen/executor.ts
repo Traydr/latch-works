@@ -110,6 +110,7 @@ async function executeFiles(
     {
       credentials: shouldIncludeCredentials(payload, settings) ? "include" : "omit",
       concurrency: settings.downloadConcurrency,
+      mediaCompatibilityMode: settings.mediaCompatibilityMode,
       site: payload.site,
       signal
     }
