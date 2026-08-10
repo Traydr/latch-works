@@ -2,6 +2,10 @@ import { prepareDownloadImage } from "../shared/download-policy";
 import type { SiteKey } from "../shared/sites";
 import type { GalleryImage } from "../shared/types";
 import { formatError, isAbortError, throwIfAborted } from "./errors";
+import {
+  IDENTITY_MEDIA_TRANSFORMER,
+  type MediaTransformer
+} from "./media-transformer";
 
 export const DEFAULT_DOWNLOAD_CONCURRENCY = 4;
 
@@ -29,7 +33,7 @@ export interface DownloadCallbacks {
 export interface DownloadOptions {
   credentials?: RequestCredentials;
   concurrency?: number;
-  mediaCompatibilityMode?: boolean;
+  mediaTransformer?: MediaTransformer;
   site?: SiteKey;
   signal?: AbortSignal;
 }
@@ -54,6 +58,7 @@ export async function downloadImages(
   let completed = 0;
   const total = images.length;
   const concurrency = options.concurrency ?? DEFAULT_DOWNLOAD_CONCURRENCY;
+  const mediaTransformer = options.mediaTransformer ?? IDENTITY_MEDIA_TRANSFORMER;
   let saveQueue = Promise.resolve();
 
   const enqueueSave = <T>(task: () => Promise<T>): Promise<T> => {
@@ -76,18 +81,15 @@ export async function downloadImages(
         throw new Error("Download URL or filename is not allowed");
       }
 
-      if (options.mediaCompatibilityMode) {
-        const { getMediaConversionPlan } = await import("./media-conversion");
-        const targetFileName = getMediaConversionPlan(preparedImage.fileName, "")?.fileName;
-        if (
-          targetFileName &&
-          (await getExistingFileHandle(destinationDirectory, targetFileName))
-        ) {
-          summary.skipped += 1;
-          callbacks.onSkipped?.(targetFileName);
-          callbacks.onVerbose?.(`Skipped existing converted file ${targetFileName}`);
-          return;
-        }
+      const expectedTarget = mediaTransformer.expectedTarget(preparedImage.fileName);
+      if (
+        expectedTarget &&
+        (await getExistingFileHandle(destinationDirectory, expectedTarget))
+      ) {
+        summary.skipped += 1;
+        callbacks.onSkipped?.(expectedTarget);
+        callbacks.onVerbose?.(`Skipped existing converted file ${expectedTarget}`);
+        return;
       }
 
       callbacks.onVerbose?.(`Fetching ${preparedImage.originalUrl}`);
@@ -99,20 +101,26 @@ export async function downloadImages(
         throw new Error(`HTTP ${response.status}`);
       }
 
-      let blob = await response.blob();
-      let fileName = preparedImage.fileName;
-      if (options.mediaCompatibilityMode) {
-        const { convertMediaForArchive } = await import("./media-conversion");
-        const converted = await convertMediaForArchive(blob, fileName, options.signal);
-        blob = converted.blob;
-        fileName = converted.fileName;
-        if (converted.converted) {
-          callbacks.onVerbose?.(`Converted ${preparedImage.fileName} to ${fileName}`);
-        }
+      const downloadedBlob = await response.blob();
+      const transformed = await mediaTransformer.transform(
+        downloadedBlob,
+        preparedImage.fileName,
+        options.signal
+      );
+      if (transformed.converted) {
+        callbacks.onVerbose?.(
+          `Converted ${preparedImage.fileName} to ${transformed.fileName}`
+        );
       }
       throwIfAborted(options.signal);
       const saved = await enqueueSave(() =>
-        saveBlobWithoutClobbering(blob, destinationDirectory, fileName, undefined, options.signal)
+        saveBlobWithoutClobbering(
+          transformed.blob,
+          destinationDirectory,
+          transformed.fileName,
+          undefined,
+          options.signal
+        )
       );
       if (saved.skipped) {
         summary.skipped += 1;

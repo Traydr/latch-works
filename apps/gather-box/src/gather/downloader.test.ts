@@ -96,7 +96,12 @@ describe("collision-safe downloads", () => {
         onSaved: () => undefined,
         onSkipped: () => undefined
       },
-      { mediaCompatibilityMode: true }
+      {
+        mediaTransformer: {
+          expectedTarget: () => "existing.avif",
+          transform: async (blob, fileName) => ({ blob, fileName, converted: false })
+        }
+      }
     );
 
     expect(summary).toMatchObject({ saved: 0, failed: 0, skipped: 1 });
