@@ -75,6 +75,39 @@ describe("collision-safe downloads", () => {
       .toBe(true);
   });
 
+  it("does not fetch a source file when its converted archive target already exists", async () => {
+    const directory = createMemoryDirectory({ "existing.avif": new Blob(["migrated bytes"]) });
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const summary = await downloadImages(
+      [
+        {
+          pageNumber: 1,
+          thumbnailUrl: null,
+          originalUrl: "https://example.test/existing.jpg",
+          fileName: "existing.jpg"
+        }
+      ],
+      directory.handle,
+      {
+        onStart: () => undefined,
+        onProgress: () => undefined,
+        onSaved: () => undefined,
+        onSkipped: () => undefined
+      },
+      {
+        mediaTransformer: {
+          expectedTarget: () => "existing.avif",
+          transform: async (blob, fileName) => ({ blob, fileName, converted: false })
+        }
+      }
+    );
+
+    expect(summary).toMatchObject({ saved: 0, failed: 0, skipped: 1 });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("aborts in-flight downloads when the signal fires", async () => {
     const directory = createMemoryDirectory({});
     const controller = new AbortController();

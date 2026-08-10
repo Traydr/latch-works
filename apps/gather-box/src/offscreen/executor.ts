@@ -82,6 +82,11 @@ async function executeFiles(
   emit: (event: GatherRunEvent) => Promise<void>,
   signal?: AbortSignal
 ): Promise<void> {
+  const mediaTransformer = settings.mediaCompatibilityMode
+    ? await import("../gather/archive-media-transformer").then(
+        ({ ARCHIVE_MEDIA_TRANSFORMER }) => ARCHIVE_MEDIA_TRANSFORMER
+      )
+    : undefined;
   await emit({
     kind: "log",
     message: `Found ${payload.images.length} item(s) in "${payload.title}".`,
@@ -110,6 +115,7 @@ async function executeFiles(
     {
       credentials: shouldIncludeCredentials(payload, settings) ? "include" : "omit",
       concurrency: settings.downloadConcurrency,
+      mediaTransformer,
       site: payload.site,
       signal
     }

@@ -50,7 +50,7 @@ import {
   type GatherRunResponse
 } from "./gather-run-messages";
 import { loadGatherRun } from "./gather-run-store";
-import { loadSettings, type GatherBoxSettings } from "./settings";
+import { DEFAULT_SETTINGS, loadSettings, type GatherBoxSettings } from "./settings";
 import { installShortcutKeyListener } from "./shortcut-keys";
 
 interface PopupState {
@@ -82,14 +82,7 @@ export class GatherController {
     status: "idle",
     running: false,
     activeRunId: null,
-    settings: {
-      downloadConcurrency: 4,
-      useGlobalFolder: false,
-      verboseLogging: false,
-      pageShortcutsEnabled: true,
-      credentialsMode: "auto",
-      credentialsPerSite: {}
-    },
+    settings: { ...DEFAULT_SETTINGS },
     lastRun: { ...EMPTY_LAST_RUN }
   };
 

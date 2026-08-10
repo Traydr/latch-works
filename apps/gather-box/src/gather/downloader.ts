@@ -2,6 +2,10 @@ import { prepareDownloadImage } from "../shared/download-policy";
 import type { SiteKey } from "../shared/sites";
 import type { GalleryImage } from "../shared/types";
 import { formatError, isAbortError, throwIfAborted } from "./errors";
+import {
+  IDENTITY_MEDIA_TRANSFORMER,
+  type MediaTransformer
+} from "./media-transformer";
 
 export const DEFAULT_DOWNLOAD_CONCURRENCY = 4;
 
@@ -29,6 +33,7 @@ export interface DownloadCallbacks {
 export interface DownloadOptions {
   credentials?: RequestCredentials;
   concurrency?: number;
+  mediaTransformer?: MediaTransformer;
   site?: SiteKey;
   signal?: AbortSignal;
 }
@@ -53,6 +58,7 @@ export async function downloadImages(
   let completed = 0;
   const total = images.length;
   const concurrency = options.concurrency ?? DEFAULT_DOWNLOAD_CONCURRENCY;
+  const mediaTransformer = options.mediaTransformer ?? IDENTITY_MEDIA_TRANSFORMER;
   let saveQueue = Promise.resolve();
 
   const enqueueSave = <T>(task: () => Promise<T>): Promise<T> => {
@@ -75,6 +81,17 @@ export async function downloadImages(
         throw new Error("Download URL or filename is not allowed");
       }
 
+      const expectedTarget = mediaTransformer.expectedTarget(preparedImage.fileName);
+      if (
+        expectedTarget &&
+        (await getExistingFileHandle(destinationDirectory, expectedTarget))
+      ) {
+        summary.skipped += 1;
+        callbacks.onSkipped?.(expectedTarget);
+        callbacks.onVerbose?.(`Skipped existing converted file ${expectedTarget}`);
+        return;
+      }
+
       callbacks.onVerbose?.(`Fetching ${preparedImage.originalUrl}`);
       const response = await fetch(preparedImage.originalUrl, {
         credentials: options.credentials ?? "omit",
@@ -84,10 +101,26 @@ export async function downloadImages(
         throw new Error(`HTTP ${response.status}`);
       }
 
-      const blob = await response.blob();
+      const downloadedBlob = await response.blob();
+      const transformed = await mediaTransformer.transform(
+        downloadedBlob,
+        preparedImage.fileName,
+        options.signal
+      );
+      if (transformed.converted) {
+        callbacks.onVerbose?.(
+          `Converted ${preparedImage.fileName} to ${transformed.fileName}`
+        );
+      }
       throwIfAborted(options.signal);
       const saved = await enqueueSave(() =>
-        saveBlobWithoutClobbering(blob, destinationDirectory, preparedImage.fileName, undefined, options.signal)
+        saveBlobWithoutClobbering(
+          transformed.blob,
+          destinationDirectory,
+          transformed.fileName,
+          undefined,
+          options.signal
+        )
       );
       if (saved.skipped) {
         summary.skipped += 1;
