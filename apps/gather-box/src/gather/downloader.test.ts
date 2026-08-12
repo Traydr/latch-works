@@ -216,6 +216,62 @@ describe("collision-safe downloads", () => {
     expect(abortSpy).toHaveBeenCalledTimes(1);
     expect(files.get("cancelled.jpg")?.size ?? 0).toBe(0);
   });
+
+  it("repairs a known incomplete canonical file instead of creating a suffix", async () => {
+    const files = new Map<string, Blob>();
+    let failCanonicalOnce = true;
+    const handle = {
+      async getFileHandle(name: string, options?: { create?: boolean }) {
+        if (!files.has(name) && !options?.create) {
+          throw new DOMException("Not found", "NotFoundError");
+        }
+        if (!files.has(name)) {
+          files.set(name, new Blob());
+        }
+        return {
+          async getFile() {
+            return new File([files.get(name) ?? new Blob()], name);
+          },
+          async createWritable() {
+            let pending = new Blob();
+            return {
+              async write(data: FileSystemWriteChunkType) {
+                pending = data instanceof Blob ? data : new Blob([data as BlobPart]);
+              },
+              async close() {
+                if (name === "recovered.jpg" && failCanonicalOnce) {
+                  failCanonicalOnce = false;
+                  files.set(name, new Blob(["partial"]));
+                  throw new Error("browser stopped during commit");
+                }
+                files.set(name, pending);
+              },
+              async abort() {
+                // The test deliberately leaves the partial canonical file behind.
+              }
+            };
+          }
+        };
+      },
+      async removeEntry(name: string) {
+        files.delete(name);
+      }
+    } as unknown as FileSystemDirectoryHandle;
+
+    await expect(
+      saveBlobWithoutClobbering(new Blob(["complete"]), handle, "recovered.jpg", () => "next")
+    ).rejects.toThrow("browser stopped during commit");
+
+    const result = await saveBlobWithoutClobbering(
+      new Blob(["complete"]),
+      handle,
+      "recovered.jpg",
+      () => "next"
+    );
+    expect(result).toEqual({ fileName: "recovered.jpg", skipped: false });
+    expect(await files.get("recovered.jpg")?.text()).toBe("complete");
+    expect([...files.keys()]).toEqual(["recovered.jpg"]);
+  });
 });
 
 function createMemoryDirectory(initialFiles: Record<string, Blob>): {
@@ -252,6 +308,9 @@ function createMemoryDirectory(initialFiles: Record<string, Blob>): {
           };
         }
       };
+    },
+    async removeEntry(name: string) {
+      files.delete(name);
     }
   } as unknown as FileSystemDirectoryHandle;
 

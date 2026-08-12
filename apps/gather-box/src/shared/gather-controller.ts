@@ -37,9 +37,7 @@ import {
   type LastRunState
 } from "./last-run";
 import {
-  GATHER_RUN_STATE_KEY,
   isTerminalGatherRunPhase,
-  normalizeGatherRunState,
   type GatherRunState
 } from "./gather-run";
 import {
@@ -49,7 +47,15 @@ import {
   type GatherRunCancelOutcome,
   type GatherRunResponse
 } from "./gather-run-messages";
-import { loadGatherRun } from "./gather-run-store";
+import {
+  GATHER_QUEUE_STATE_KEY,
+  getGatherQueueDisplayRun,
+  getLatestGatherQueueResult,
+  getRetryableGatherQueueResult,
+  loadGatherQueue,
+  normalizeGatherQueueState,
+  type GatherQueueState
+} from "./gather-queue";
 import { DEFAULT_SETTINGS, loadSettings, type GatherBoxSettings } from "./settings";
 import { installShortcutKeyListener } from "./shortcut-keys";
 
@@ -90,6 +96,7 @@ export class GatherController {
   private logEntries: LastRunLogEntry[] = [];
   private readonly lastRunWriter = new LastRunWriter();
   private readonly options: GatherControllerOptions;
+  private retryRunId: string | null = null;
   private keydownHandler: ((event: KeyboardEvent) => void) | null = null;
   private shortcutCleanup: (() => void) | null = null;
   private storageHandler:
@@ -171,11 +178,10 @@ export class GatherController {
       if (areaName === "sync" && changes["gather-box-settings"]) {
         void this.refreshSettings();
       }
-      if (areaName === "local" && changes[GATHER_RUN_STATE_KEY]?.newValue) {
-        const run = normalizeGatherRunState(changes[GATHER_RUN_STATE_KEY].newValue);
-        if (run) {
-          this.applyGatherRun(run);
-        }
+      if (areaName === "local" && changes[GATHER_QUEUE_STATE_KEY]?.newValue) {
+        this.applyGatherQueue(
+          normalizeGatherQueueState(changes[GATHER_QUEUE_STATE_KEY].newValue)
+        );
       }
     };
     chrome.storage.onChanged.addListener(this.storageHandler);
@@ -205,10 +211,7 @@ export class GatherController {
 
     await this.detectActiveTab();
     await this.restoreSavedDirectoryHandle();
-    const currentRun = await loadGatherRun();
-    if (currentRun) {
-      this.applyGatherRun(currentRun);
-    }
+    this.applyGatherQueue(await loadGatherQueue());
     this.syncPopupActions();
   }
 
@@ -434,8 +437,8 @@ export class GatherController {
       return;
     }
 
-    const run = await loadGatherRun();
-    if (!run || run.retryImages.length === 0) {
+    const runId = this.retryRunId;
+    if (!runId) {
       this.appendLog("No retryable Gather Run was found.", "error");
       return;
     }
@@ -451,7 +454,7 @@ export class GatherController {
     const response = await chrome.runtime.sendMessage<
       { type: typeof RETRY_GATHER_RUN_REQUEST; target: "background"; runId: string },
       GatherRunResponse
-    >({ type: RETRY_GATHER_RUN_REQUEST, target: "background", runId: run.id });
+    >({ type: RETRY_GATHER_RUN_REQUEST, target: "background", runId });
     if (response.outcome === "started" || response.outcome === "queued") {
       this.applyGatherRun(response.run);
     } else if (response.outcome === "failed") {
@@ -561,7 +564,7 @@ export class GatherController {
           ? "error"
           : run.phase === "queued"
             ? "queued"
-            : run.phase === "writing"
+            : run.phase === "writing" || run.phase === "cancelling"
               ? "downloading"
               : "collecting";
     this.setStatus(status);
@@ -576,18 +579,29 @@ export class GatherController {
     }
     this.logEntries = [...run.log];
     restoreLog(this.elements, this.logEntries);
-    this.state.lastRun = {
-      timestamp: run.updatedAt,
-      siteKey: run.siteKey,
-      tabUrl: run.tabUrl,
-      destinationPreview: run.destinationPreview,
-      log: run.log,
-      failedItems: run.failedItems,
-      retryImages: run.retryImages,
-      canRetry: run.retryImages.length > 0
-    };
     if (run.phase === "complete") {
       flashDownloadComplete(this.elements);
+    }
+    this.syncPopupActions();
+  }
+
+  private applyGatherQueue(queue: GatherQueueState): void {
+    const displayed = getGatherQueueDisplayRun(queue);
+    const latest = getLatestGatherQueueResult(queue);
+    const retryable = getRetryableGatherQueueResult(queue);
+
+    if (displayed) {
+      this.applyGatherRun(displayed);
+    } else if (latest) {
+      this.applyGatherRun(latest);
+    }
+
+    const actionResult = retryable ?? latest;
+    if (actionResult) {
+      this.state.lastRun = lastRunFromGatherResult(actionResult);
+      this.retryRunId = retryable?.id ?? null;
+    } else {
+      this.retryRunId = null;
     }
     this.syncPopupActions();
   }
@@ -615,6 +629,19 @@ export class GatherController {
     await this.lastRunWriter.flush();
     this.syncPopupActions();
   }
+}
+
+function lastRunFromGatherResult(run: GatherRunState): LastRunState {
+  return {
+    timestamp: run.updatedAt,
+    siteKey: run.siteKey,
+    tabUrl: run.tabUrl,
+    destinationPreview: run.destinationPreview,
+    log: run.log,
+    failedItems: run.failedItems,
+    retryImages: run.retryImages,
+    canRetry: run.retryImages.length > 0
+  };
 }
 
 function copyLastRun(state: LastRunState): LastRunState {

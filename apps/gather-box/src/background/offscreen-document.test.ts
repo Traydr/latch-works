@@ -35,8 +35,19 @@ describe("OffscreenDocument", () => {
       sendMessage
     };
 
-    await expect(new OffscreenDocument(platform).getActiveRunIds()).resolves.toEqual([]);
+    await expect(new OffscreenDocument(platform).getActiveRunId()).resolves.toBeNull();
     expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("reports the single active executor run", async () => {
+    const platform = {
+      getContexts: vi.fn().mockResolvedValue([{}]),
+      getUrl: vi.fn().mockReturnValue("chrome-extension://test/offscreen/offscreen.html"),
+      createDocument: vi.fn().mockResolvedValue(undefined),
+      sendMessage: vi.fn().mockResolvedValue({ activeRunId: "run-1" })
+    };
+
+    await expect(new OffscreenDocument(platform).getActiveRunId()).resolves.toBe("run-1");
   });
 
   it("serializes concurrent creation attempts", async () => {

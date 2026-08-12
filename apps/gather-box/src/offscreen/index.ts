@@ -6,10 +6,10 @@ import {
   type GatherRunEvent
 } from "../shared/gather-run-messages";
 import { executeGatherOutput } from "./executor";
+import { GatherExecutionSlot } from "./execution-slot";
 import { proveOffscreenFilesystemAccess } from "./filesystem-proof";
 
-const activeExecutions = new Map<string, AbortController>();
-let executionQueue = Promise.resolve();
+const executionSlot = new GatherExecutionSlot();
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!isExtensionOriginSender(sender)) {
@@ -34,53 +34,52 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (isGetGatherExecutorStatusMessage(message)) {
-    sendResponse({ activeRunIds: [...activeExecutions.keys()] });
+    sendResponse({ activeRunId: executionSlot.activeRunId });
     return false;
   }
 
   if (isCancelGatherRunMessage(message)) {
-    const execution = activeExecutions.get(message.runId);
-    execution?.abort();
-    sendResponse({ aborted: Boolean(execution) });
+    sendResponse({ aborted: executionSlot.abort(message.runId) });
     return false;
   }
 
   if (!isExecuteGatherRunMessage(message)) {
     return false;
   }
-  if (activeExecutions.has(message.runId)) {
-    sendResponse({ accepted: true, duplicate: true });
-    return false;
-  }
-
-  const controller = new AbortController();
-  sendResponse({ accepted: true });
   let eventQueue = Promise.resolve();
   const emit = (event: GatherRunEvent): Promise<void> => {
     const delivery = eventQueue.then(() => emitRunEvent(message.runId, event));
     eventQueue = delivery.catch(() => undefined);
     return delivery;
   };
-  const completed = executionQueue
-    .then(() =>
-      executeGatherOutput({
+  const start = executionSlot.start(message.runId, async (signal) => {
+    try {
+      await executeGatherOutput({
         payload: message.payload,
         settings: message.settings,
         emit,
-        signal: controller.signal
-      })
-    )
-    .catch((error) =>
-      emit({
-        kind: "failed",
-        message: error instanceof Error ? error.message : "Gather execution failed."
-      })
-    )
-    .finally(() => {
-      activeExecutions.delete(message.runId);
-    });
-  executionQueue = completed.catch(() => undefined);
-  activeExecutions.set(message.runId, controller);
+        signal
+      });
+    } catch (error) {
+      await emit(
+        signal.aborted
+          ? { kind: "cancelled", message: "Gather Run cancelled." }
+          : {
+              kind: "failed",
+              message: error instanceof Error ? error.message : "Gather execution failed."
+            }
+      );
+      return;
+    }
+    if (signal.aborted) {
+      await emit({ kind: "cancelled", message: "Gather Run cancelled." });
+    }
+  });
+  sendResponse({
+    accepted: start !== "busy",
+    duplicate: start === "duplicate",
+    busy: start === "busy"
+  });
   return false;
 });
 

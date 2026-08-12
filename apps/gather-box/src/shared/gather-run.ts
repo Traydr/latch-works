@@ -2,7 +2,6 @@ import type { DownloadFailure, LastRunLogEntry } from "./last-run";
 import type { SiteKey } from "./sites";
 import type { GalleryImage } from "./types";
 
-export const GATHER_RUN_STATE_KEY = "gather-box-active-run";
 export const GATHER_RUN_SCHEMA_VERSION = 1;
 
 export type GatherRunPhase =
@@ -11,6 +10,7 @@ export type GatherRunPhase =
   | "collecting"
   | "queued"
   | "writing"
+  | "cancelling"
   | "complete"
   | "failed"
   | "cancelled"

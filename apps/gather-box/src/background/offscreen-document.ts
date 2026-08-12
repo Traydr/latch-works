@@ -42,21 +42,19 @@ export class OffscreenDocument {
     return contexts.length > 0;
   }
 
-  async getActiveRunIds(): Promise<string[]> {
+  async getActiveRunId(): Promise<string | null> {
     try {
       if (!(await this.isOpen())) {
-        return [];
+        return null;
       }
 
       const response = (await this.platform.sendMessage({
         type: GET_GATHER_EXECUTOR_STATUS,
         target: "offscreen"
-      })) as { activeRunIds?: unknown } | undefined;
-      return Array.isArray(response?.activeRunIds)
-        ? response.activeRunIds.filter((id): id is string => typeof id === "string")
-        : [];
+      })) as { activeRunId?: unknown } | undefined;
+      return typeof response?.activeRunId === "string" ? response.activeRunId : null;
     } catch {
-      return [];
+      return null;
     }
   }
 

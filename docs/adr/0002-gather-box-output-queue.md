@@ -23,10 +23,10 @@ Output and the execution settings that apply to it, acknowledges the queue posit
 depends on the source tab.
 
 The offscreen document executes one output at a time. Downloads retain their existing bounded
-per-file fetch concurrency, while media conversions and filesystem commits remain serialized.
-Queue state and the currently displayed run are separate persisted views: the queue is
-authoritative for scheduling, and the displayed run is an adapter for the side panel's existing
-progress interface.
+per-file fetch concurrency, while media conversions and filesystem commits remain serialized. One
+persisted queue snapshot owns pending jobs and bounded terminal results. The side panel derives its
+active progress, error report, and retry actions from that snapshot rather than persisting a second
+run view.
 
 If Chrome restarts without an active offscreen executor, fully collected jobs that were preparing or
 writing return to the front of the queue. Collision-safe writes make replay safe. A job interrupted
@@ -34,7 +34,8 @@ while its collector still depended on page DOM is marked interrupted because it 
 Gather Output to replay.
 
 Folder permission remains a visible-user responsibility. A permission-required job pauses the FIFO
-queue until access is confirmed or the job is cancelled.
+queue until access is confirmed or the job is cancelled. Confirmation resumes the job by its saved
+global or site-scoped destination, so the original source tab does not need to remain open.
 
 ## Consequences
 
@@ -44,8 +45,9 @@ queue until access is confirmed or the job is cancelled.
 - Cancelling an executing job aborts it promptly; the offscreen executor does not start the next
   dispatched job until the cancelled work has unwound.
 - Settings are snapshotted per collected output, so later settings changes affect new queue entries.
-- Queue recovery can repeat a partially written output, relying on existing identical-file and
-  converted-target checks to avoid clobbering archive files.
+- Queue recovery can repeat a partially written output. A per-target commit marker identifies a
+  canonical file that may be incomplete, allowing replay to repair that exact path instead of
+  preserving corrupt bytes and writing a suffixed duplicate.
 
 ## Alternatives rejected
 

@@ -1,28 +1,42 @@
 import type { GatherRunState } from "./gather-run";
-import { normalizeGatherRunState } from "./gather-run";
+import { isTerminalGatherRunPhase, normalizeGatherRunState } from "./gather-run";
 import { normalizeSettings, type GatherBoxSettings } from "./settings";
 import type { DownloadablePayload, GeneratedStoryPayload } from "./types";
+import type { SiteKey } from "./sites";
 
 export const GATHER_QUEUE_STATE_KEY = "gather-box-run-queue";
 export const GATHER_QUEUE_SCHEMA_VERSION = 1;
 export const MAX_GATHER_QUEUE_LENGTH = 100;
+export const MAX_GATHER_QUEUE_RESULTS = 100;
 
 export type GatherOutput = DownloadablePayload | GeneratedStoryPayload;
 
-export interface GatherQueueJob {
-  run: GatherRunState;
-  payload: GatherOutput | null;
-  settings: GatherBoxSettings | null;
+export interface CollectingGatherQueueJob {
+  kind: "collecting";
+  run: GatherRunState & { phase: "collecting" };
 }
+
+export interface OutputGatherQueueJob {
+  kind: "output";
+  run: GatherRunState & {
+    phase: "queued" | "preparing" | "permission-required" | "writing" | "cancelling";
+  };
+  payload: GatherOutput;
+  settings: GatherBoxSettings;
+}
+
+export type GatherQueueJob = CollectingGatherQueueJob | OutputGatherQueueJob;
 
 export interface GatherQueueState {
   schemaVersion: typeof GATHER_QUEUE_SCHEMA_VERSION;
   jobs: GatherQueueJob[];
+  results: GatherRunState[];
 }
 
 export const EMPTY_GATHER_QUEUE: GatherQueueState = {
   schemaVersion: GATHER_QUEUE_SCHEMA_VERSION,
-  jobs: []
+  jobs: [],
+  results: []
 };
 
 export async function loadGatherQueue(): Promise<GatherQueueState> {
@@ -52,29 +66,77 @@ export function normalizeGatherQueueState(value: unknown): GatherQueueState {
     jobs: candidate.jobs
       .map(normalizeGatherQueueJob)
       .filter((job): job is GatherQueueJob => Boolean(job))
-      .slice(0, MAX_GATHER_QUEUE_LENGTH)
+      .slice(0, MAX_GATHER_QUEUE_LENGTH),
+    results: Array.isArray(candidate.results)
+      ? candidate.results
+          .map(normalizeGatherRunState)
+          .filter((run): run is GatherRunState => run !== null)
+          .filter((run) => isTerminalGatherRunPhase(run.phase))
+          .slice(-MAX_GATHER_QUEUE_RESULTS)
+      : []
   };
 }
 
-export function getExecutingGatherJob(queue: GatherQueueState): GatherQueueJob | null {
+export function getLatestGatherQueueResult(queue: GatherQueueState): GatherRunState | null {
+  return queue.results.at(-1) ?? null;
+}
+
+export function getRetryableGatherQueueResult(queue: GatherQueueState): GatherRunState | null {
+  for (let index = queue.results.length - 1; index >= 0; index -= 1) {
+    if (queue.results[index].retryImages.length > 0) {
+      return queue.results[index];
+    }
+  }
+  return null;
+}
+
+export function recordGatherQueueResult(
+  queue: GatherQueueState,
+  run: GatherRunState
+): GatherQueueState {
+  if (!isTerminalGatherRunPhase(run.phase)) {
+    throw new Error(`Cannot record non-terminal Gather Run ${run.id}.`);
+  }
+  return {
+    ...queue,
+    results: [...queue.results.filter((result) => result.id !== run.id), run].slice(
+      -MAX_GATHER_QUEUE_RESULTS
+    )
+  };
+}
+
+export function getExecutingGatherJob(queue: GatherQueueState): OutputGatherQueueJob | null {
   return (
     queue.jobs.find(
-      (job) =>
-        job.run.phase === "preparing" ||
-        job.run.phase === "writing" ||
-        job.run.phase === "permission-required"
+      (job): job is OutputGatherQueueJob =>
+        job.kind === "output" &&
+        (job.run.phase === "preparing" ||
+          job.run.phase === "writing" ||
+          job.run.phase === "cancelling" ||
+          job.run.phase === "permission-required")
     ) ?? null
   );
 }
 
-export function getNextQueuedGatherJob(queue: GatherQueueState): GatherQueueJob | null {
+export function getNextQueuedGatherJob(queue: GatherQueueState): OutputGatherQueueJob | null {
   if (getExecutingGatherJob(queue)) {
     return null;
   }
 
+  const first = queue.jobs[0];
+  return first?.kind === "output" && first.run.phase === "queued" ? first : null;
+}
+
+export function getPermissionRequiredGatherJob(
+  queue: GatherQueueState,
+  siteKey: SiteKey
+): OutputGatherQueueJob | null {
   return (
     queue.jobs.find(
-      (job) => job.run.phase === "queued" && Boolean(job.payload) && Boolean(job.settings)
+      (job): job is OutputGatherQueueJob =>
+        job.kind === "output" &&
+        job.run.phase === "permission-required" &&
+        (job.settings.useGlobalFolder || job.run.siteKey === siteKey)
     ) ?? null
   );
 }
@@ -87,7 +149,7 @@ export function recoverStoppedGatherQueue(
   const interrupted: GatherRunState[] = [];
 
   for (const job of queue.jobs) {
-    if (job.run.phase === "collecting" || !job.payload || !job.settings) {
+    if (job.kind === "collecting") {
       interrupted.push({
         ...job.run,
         phase: "interrupted",
@@ -104,7 +166,9 @@ export function recoverStoppedGatherQueue(
     jobs.push({
       ...job,
       run:
-        job.run.phase === "preparing" || job.run.phase === "writing"
+        job.run.phase === "preparing" ||
+        job.run.phase === "writing" ||
+        job.run.phase === "cancelling"
           ? {
               ...job.run,
               phase: "queued",
@@ -125,7 +189,7 @@ export function recoverStoppedGatherQueue(
 export function getGatherQueueDisplayRun(queue: GatherQueueState): GatherRunState | null {
   const displayed =
     getExecutingGatherJob(queue) ??
-    queue.jobs.find((job) => job.run.phase === "collecting") ??
+    queue.jobs.find((job) => job.kind === "collecting") ??
     queue.jobs.find((job) => job.run.phase === "queued") ??
     null;
   if (!displayed) {
@@ -157,22 +221,34 @@ function normalizeGatherQueueJob(value: unknown): GatherQueueJob | null {
     return null;
   }
 
-  const candidate = value as Partial<GatherQueueJob>;
+  const candidate = value as {
+    run?: unknown;
+    payload?: unknown;
+    settings?: unknown;
+  };
   const run = normalizeGatherRunState(candidate.run);
-  if (!run || !isGatherOutput(candidate.payload)) {
-    if (run?.phase === "collecting" && candidate.payload == null) {
-      return { run, payload: null, settings: null };
-    }
+  if (!run) {
+    return null;
+  }
+
+  if (run.phase === "collecting") {
+    return { kind: "collecting", run: run as CollectingGatherQueueJob["run"] };
+  }
+
+  if (
+    isTerminalGatherRunPhase(run.phase) ||
+    !isGatherOutput(candidate.payload) ||
+    !candidate.settings ||
+    typeof candidate.settings !== "object"
+  ) {
     return null;
   }
 
   return {
-    run,
+    kind: "output",
+    run: run as OutputGatherQueueJob["run"],
     payload: candidate.payload,
-    settings:
-      candidate.settings && typeof candidate.settings === "object"
-        ? normalizeSettings(candidate.settings)
-        : null
+    settings: normalizeSettings(candidate.settings)
   };
 }
 
