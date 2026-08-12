@@ -15,7 +15,12 @@ describe("GatherCommands", () => {
   });
 
   it("opens the panel and starts one run for the captured tab", async () => {
-    const startForTab = vi.fn().mockResolvedValue({ outcome: "started", run: { id: "run-1" } });
+    const startForTab = vi.fn().mockResolvedValue({
+      outcome: "started",
+      run: { id: "run-1" },
+      queuedRunId: "run-1",
+      position: 0
+    });
     const panel = { open: vi.fn().mockResolvedValue(undefined), close: vi.fn() };
     const commands = new GatherCommands({ startForTab }, panel);
 

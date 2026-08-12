@@ -270,6 +270,7 @@ export class GatherController {
       this.state.siteKey = getSiteKeyFromUrl(tab.url);
       setPageState(this.elements, true);
       updateSaveBehavior(this.state.siteKey);
+      await this.restoreSavedDirectoryHandle();
       this.syncPopupActions();
     } catch (error) {
       this.state.siteKey = null;
@@ -386,8 +387,11 @@ export class GatherController {
         { type: typeof START_GATHER_RUN_REQUEST; target: "background"; tabId: number },
         GatherRunResponse
       >({ type: START_GATHER_RUN_REQUEST, target: "background", tabId });
-      if (response.outcome === "started" || response.outcome === "already-running") {
+      if (response.outcome === "started" || response.outcome === "queued") {
         this.applyGatherRun(response.run);
+        if (response.outcome === "queued") {
+          this.appendLog(`Added to queue at position ${response.position}.`, "success");
+        }
       } else if (response.outcome === "unsupported-source") {
         this.appendLog("Active tab is not a supported Gather Source.", "error");
       } else if (response.outcome === "target-unavailable") {
@@ -448,7 +452,7 @@ export class GatherController {
       { type: typeof RETRY_GATHER_RUN_REQUEST; target: "background"; runId: string },
       GatherRunResponse
     >({ type: RETRY_GATHER_RUN_REQUEST, target: "background", runId: run.id });
-    if (response.outcome === "started" || response.outcome === "already-running") {
+    if (response.outcome === "started" || response.outcome === "queued") {
       this.applyGatherRun(response.run);
     } else if (response.outcome === "failed") {
       this.appendLog(response.message, "error");
@@ -473,6 +477,7 @@ export class GatherController {
 
   private async restoreSavedDirectoryHandle(): Promise<void> {
     const scopeLabel = getDirectoryScopeLabel(this.state.settings.useGlobalFolder);
+    this.state.directoryHandle = null;
 
     if (!this.state.siteKey && !this.state.settings.useGlobalFolder) {
       setFolder(this.elements, "No folder selected", `Choose a writable folder for ${scopeLabel}.`);
@@ -517,18 +522,22 @@ export class GatherController {
   }
 
   private syncPopupActions(): void {
+    const hasActiveJob = Boolean(this.state.activeRunId);
     const runInFlight =
-      Boolean(this.state.activeRunId) &&
-      (this.state.status === "collecting" || this.state.status === "downloading");
+      hasActiveJob &&
+      (this.state.status === "collecting" ||
+        this.state.status === "queued" ||
+        this.state.status === "downloading");
     syncActions(
       this.elements,
-      this.isSupportedTab() && Boolean(this.state.directoryHandle) && !this.state.running && !runInFlight,
-      this.state.running || runInFlight,
+      this.isSupportedTab() && Boolean(this.state.directoryHandle) && !this.state.running,
+      this.state.running,
       Boolean(this.state.directoryHandle),
       this.state.lastRun.canRetry && this.state.lastRun.retryImages.length > 0,
       this.state.lastRun.failedItems.length > 0,
-      runInFlight
+      hasActiveJob
     );
+    this.elements.downloadButton.textContent = runInFlight ? "Add to Queue" : "Download Content";
   }
 
   private setStatus(status: PopupStatus): void {
@@ -550,9 +559,11 @@ export class GatherController {
             run.phase === "cancelled" ||
             run.phase === "permission-required"
           ? "error"
-          : run.phase === "writing"
-            ? "downloading"
-            : "collecting";
+          : run.phase === "queued"
+            ? "queued"
+            : run.phase === "writing"
+              ? "downloading"
+              : "collecting";
     this.setStatus(status);
     setProgress(
       this.elements,

@@ -8,6 +8,7 @@ export const CANCEL_GATHER_RUN_REQUEST = "GATHER_BOX_RUN_CANCEL" as const;
 export const EXECUTE_GATHER_RUN = "GATHER_BOX_RUN_EXECUTE" as const;
 export const CANCEL_GATHER_RUN = "GATHER_BOX_RUN_ABORT" as const;
 export const GATHER_RUN_EVENT = "GATHER_BOX_RUN_EVENT" as const;
+export const GET_GATHER_EXECUTOR_STATUS = "GATHER_BOX_EXECUTOR_STATUS" as const;
 
 export interface StartGatherRunRequest {
   type: typeof START_GATHER_RUN_REQUEST;
@@ -39,6 +40,11 @@ export interface CancelGatherRunMessage {
   type: typeof CANCEL_GATHER_RUN;
   target: "offscreen";
   runId: string;
+}
+
+export interface GetGatherExecutorStatusMessage {
+  type: typeof GET_GATHER_EXECUTOR_STATUS;
+  target: "offscreen";
 }
 
 export type GatherRunEvent =
@@ -94,6 +100,12 @@ export function isExecuteGatherRunMessage(value: unknown): value is ExecuteGathe
 
 export function isCancelGatherRunMessage(value: unknown): value is CancelGatherRunMessage {
   return hasMessageShape(value, CANCEL_GATHER_RUN, "offscreen") && typeof value.runId === "string";
+}
+
+export function isGetGatherExecutorStatusMessage(
+  value: unknown
+): value is GetGatherExecutorStatusMessage {
+  return hasMessageShape(value, GET_GATHER_EXECUTOR_STATUS, "offscreen");
 }
 
 export function isGatherRunEventMessage(value: unknown): value is GatherRunEventMessage {

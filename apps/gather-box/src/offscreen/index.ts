@@ -1,5 +1,6 @@
 import {
   GATHER_RUN_EVENT,
+  isGetGatherExecutorStatusMessage,
   isCancelGatherRunMessage,
   isExecuteGatherRunMessage,
   type GatherRunEvent
@@ -7,7 +8,8 @@ import {
 import { executeGatherOutput } from "./executor";
 import { proveOffscreenFilesystemAccess } from "./filesystem-proof";
 
-const activeControllers = new Map<string, AbortController>();
+const activeExecutions = new Map<string, AbortController>();
+let executionQueue = Promise.resolve();
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!isExtensionOriginSender(sender)) {
@@ -31,23 +33,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (isGetGatherExecutorStatusMessage(message)) {
+    sendResponse({ activeRunIds: [...activeExecutions.keys()] });
+    return false;
+  }
+
   if (isCancelGatherRunMessage(message)) {
-    const controller = activeControllers.get(message.runId);
-    controller?.abort();
-    sendResponse({ aborted: Boolean(controller) });
+    const execution = activeExecutions.get(message.runId);
+    execution?.abort();
+    sendResponse({ aborted: Boolean(execution) });
     return false;
   }
 
   if (!isExecuteGatherRunMessage(message)) {
     return false;
   }
-  if (activeControllers.has(message.runId)) {
+  if (activeExecutions.has(message.runId)) {
     sendResponse({ accepted: true, duplicate: true });
     return false;
   }
 
   const controller = new AbortController();
-  activeControllers.set(message.runId, controller);
   sendResponse({ accepted: true });
   let eventQueue = Promise.resolve();
   const emit = (event: GatherRunEvent): Promise<void> => {
@@ -55,12 +61,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     eventQueue = delivery.catch(() => undefined);
     return delivery;
   };
-  void executeGatherOutput({
-    payload: message.payload,
-    settings: message.settings,
-    emit,
-    signal: controller.signal
-  })
+  const completed = executionQueue
+    .then(() =>
+      executeGatherOutput({
+        payload: message.payload,
+        settings: message.settings,
+        emit,
+        signal: controller.signal
+      })
+    )
     .catch((error) =>
       emit({
         kind: "failed",
@@ -68,8 +77,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       })
     )
     .finally(() => {
-      activeControllers.delete(message.runId);
+      activeExecutions.delete(message.runId);
     });
+  executionQueue = completed.catch(() => undefined);
+  activeExecutions.set(message.runId, controller);
   return false;
 });
 

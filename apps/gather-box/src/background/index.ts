@@ -4,8 +4,7 @@ import {
   isRetryGatherRunRequest,
   isStartGatherRunRequest
 } from "../shared/gather-run-messages";
-import { loadGatherRun, recoverInterruptedGatherRun } from "../shared/gather-run-store";
-import { isTerminalGatherRunPhase } from "../shared/gather-run";
+import { loadGatherQueue } from "../shared/gather-queue";
 import {
   isPageGatherMessage,
   OPEN_EXTENSION_MESSAGE,
@@ -29,12 +28,12 @@ const gatherCommands = new GatherCommands(gatherRuns);
 chrome.runtime.onInstalled.addListener(() => {
   void configureExtensionUi();
   void setupContextMenu();
-  void recoverInterruptedGatherRun();
+  void gatherRuns.recover();
 });
 
 chrome.runtime.onStartup.addListener(() => {
   void configureExtensionUi();
-  void recoverInterruptedGatherRun();
+  void gatherRuns.recover();
 });
 
 chrome.sidePanel.onOpened.addListener((info) => {
@@ -103,8 +102,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (!isExtensionOriginSender(sender)) {
       return false;
     }
-    void gatherRuns.handleEvent(message);
-    return false;
+    void gatherRuns.handleEvent(message).then(
+      () => sendResponse({ accepted: true }),
+      (error) =>
+        sendResponse({
+          accepted: false,
+          message: error instanceof Error ? error.message : "Could not persist Gather progress."
+        })
+    );
+    return true;
   }
 
   if (isResolveXMediaMessage(message)) {
@@ -164,10 +170,8 @@ async function authorizeMediaResolver(sender: chrome.runtime.MessageSender): Pro
     return false;
   }
 
-  const run = await loadGatherRun();
-  if (!run || isTerminalGatherRunPhase(run.phase)) {
-    return false;
-  }
-
-  return run.tabId === sender.tab.id && (run.phase === "collecting" || run.phase === "preparing");
+  const queue = await loadGatherQueue();
+  return queue.jobs.some(
+    (job) => job.run.tabId === sender.tab?.id && job.run.phase === "collecting"
+  );
 }

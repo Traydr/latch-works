@@ -32,6 +32,7 @@ const BADGE_STATUS_CLASSES = [
   "badge-idle",
   "badge-pickingFolder",
   "badge-collecting",
+  "badge-queued",
   "badge-downloading",
   "badge-complete",
   "badge-error"
