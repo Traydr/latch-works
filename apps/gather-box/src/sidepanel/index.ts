@@ -1,7 +1,7 @@
-import { GatherController } from "../shared/gather-controller";
+import { initTrialStudio } from "./trial-studio";
 
 document.addEventListener("DOMContentLoaded", () => {
-  const controller = new GatherController({
+  initTrialStudio({
     onToggleShortcut: () => {
       if (typeof chrome.sidePanel.close !== "function") {
         return;
@@ -15,5 +15,4 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     }
   });
-  void controller.init(document);
 });
