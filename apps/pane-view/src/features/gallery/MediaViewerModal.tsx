@@ -1,6 +1,20 @@
 import type { MediaItem } from "@latch-works/media-domain";
-import { type JSX, useCallback, useState } from "react";
+import { type JSX, useCallback, useEffect, useState } from "react";
 import { MediaViewerSession } from "./MediaViewerSession";
+import { useResolvedMediaUrl } from "./useResolvedMediaUrl";
+
+function usePrefetchNeighborPreview(item: MediaItem | undefined): void {
+  const { resolvedUrl } = useResolvedMediaUrl({
+    mediaId: item?.mediaType === "image" ? item.id : undefined,
+    variant: "preview",
+  });
+
+  useEffect(() => {
+    if (resolvedUrl) {
+      new window.Image().src = resolvedUrl;
+    }
+  }, [resolvedUrl]);
+}
 
 interface MediaViewerModalProps {
   autoplayVideos: boolean;
@@ -36,6 +50,17 @@ export function MediaViewerModal({
     },
     [items.length, loopNavigation],
   );
+
+  const neighbor = (delta: -1 | 1): MediaItem | undefined => {
+    if (items.length < 2) {
+      return undefined;
+    }
+    return loopNavigation
+      ? items[(index + delta + items.length) % items.length]
+      : items[index + delta];
+  };
+  usePrefetchNeighborPreview(neighbor(-1));
+  usePrefetchNeighborPreview(neighbor(1));
 
   if (!item) {
     return null;
