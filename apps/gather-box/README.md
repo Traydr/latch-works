@@ -151,7 +151,11 @@ are converted to underscores.
 - Reddit GIF posts use Reddit's existing signed MP4 rendition, avoiding local transcoding and its bundle/runtime cost.
 - The extension re-confirms folder access with Chrome when needed.
 - A permission-required job pauses the output queue until folder access is confirmed or the job is
-  cancelled.
+  cancelled. The side panel names the page that can confirm it: any supported page when a global
+  folder is set, otherwise a page from the paused job's own site. Confirming resumes the paused job
+  and still queues the page you confirmed from.
+- Retrying failed files confirms access to the folder of the run that failed, so it works from any
+  tab rather than only from a tab on that run's site.
 - Gallery collectors target a specific grid selector per site and ignore ad blocks outside it.
 
 ## Manual checks

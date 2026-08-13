@@ -24,7 +24,7 @@ const run = createGatherRunState({
 
 describe("Gather Run transitions", () => {
   it("moves through permission, writing, progress, and completion", () => {
-    const permission = applyGatherRunEvent(run, { kind: "permission-required" }, 101);
+    const permission = applyGatherRunEvent(run, { kind: "permission-required", scope: "site" }, 101);
     expect(permission.phase).toBe("permission-required");
 
     const writing = applyGatherRunEvent(
@@ -61,6 +61,19 @@ describe("Gather Run transitions", () => {
       updatedAt: 104,
       progress: { saved: 2, skipped: 0, failed: 0 }
     });
+  });
+
+  it("names the page that can confirm a paused job's folder", () => {
+    const siteScoped = applyGatherRunEvent(run, { kind: "permission-required", scope: "site" }, 101);
+    expect(siteScoped.progress.message).toContain("a pixiv page");
+    expect(siteScoped.log.at(-1)?.message).toContain("a pixiv page");
+
+    const globalScoped = applyGatherRunEvent(
+      run,
+      { kind: "permission-required", scope: "global" },
+      101
+    );
+    expect(globalScoped.progress.message).toContain("any supported page");
   });
 
   it("preserves retry input when an output finishes with failures", () => {
@@ -103,18 +116,48 @@ describe("Gather Run transitions", () => {
 });
 
 describe("Gather queue orchestration", () => {
-  it("resumes a site-scoped permission job from a replacement tab", async () => {
+  it("resumes a site-scoped permission job and still queues the confirming tab", async () => {
     const waitingJob = outputJob("waiting", "permission-required");
     waitingJob.run.tabId = 1;
     const harness = createHarness({
       ...EMPTY_GATHER_QUEUE,
       jobs: [waitingJob]
     });
+    harness.collect.mockResolvedValue(downloadablePayload());
+    harness.getTab.mockResolvedValue({
+      id: 99,
+      windowId: 2,
+      url: "https://www.pixiv.net/artworks/2"
+    } as chrome.tabs.Tab);
 
     const result = await harness.coordinator.startForTab({
       id: 99,
       windowId: 2,
       url: "https://www.pixiv.net/artworks/2"
+    } as chrome.tabs.Tab);
+
+    expect(harness.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ run: expect.objectContaining({ id: "waiting" }) })
+    );
+    expect(harness.collect).toHaveBeenCalledOnce();
+    expect(result).toMatchObject({ outcome: "queued", queuedRunId: "new-run" });
+    expect(harness.getQueue().jobs).toMatchObject([
+      { run: { id: "waiting", phase: "preparing" } },
+      { run: { id: "new-run", phase: "queued", tabUrl: "https://www.pixiv.net/artworks/2" } }
+    ]);
+  });
+
+  it("resumes a permission job without re-collecting its own page", async () => {
+    const waitingJob = outputJob("waiting", "permission-required");
+    const harness = createHarness({
+      ...EMPTY_GATHER_QUEUE,
+      jobs: [waitingJob]
+    });
+
+    const result = await harness.coordinator.startForTab({
+      id: 1,
+      windowId: 1,
+      url: "https://www.pixiv.net/artworks/1"
     } as chrome.tabs.Tab);
 
     expect(result.outcome).toBe("started");

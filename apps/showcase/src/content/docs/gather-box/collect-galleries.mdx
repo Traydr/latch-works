@@ -29,7 +29,9 @@ page during the short metadata-capture step; downloads and AVIF conversion conti
 time in the background.
 
 Fully captured queue entries persist across browser restarts. If folder permission expires, the
-queue pauses until you confirm access in the side panel.
+queue pauses and the side panel names the page that can confirm it — any supported page when you use
+one global folder, otherwise a page from the paused entry's own site. Gathering from that page
+confirms access, resumes the paused entry, and queues the page you gathered from as well.
 
 ## What to expect
 

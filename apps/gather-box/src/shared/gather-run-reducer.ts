@@ -1,5 +1,6 @@
 import type { GatherRunEvent } from "./gather-run-messages";
 import type { GatherRunState } from "./gather-run";
+import { getGatherSource } from "./source-catalog";
 
 export function applyGatherRunEvent(
   run: GatherRunState,
@@ -7,15 +8,29 @@ export function applyGatherRunEvent(
   now = Date.now()
 ): GatherRunState {
   switch (event.kind) {
-    case "permission-required":
+    case "permission-required": {
+      // A paused job blocks the whole queue, and only a gather started from a tab that resolves to
+      // the same folder handle can confirm it. Name that tab instead of asking for "confirmation".
+      const label = getGatherSource(run.siteKey)?.label ?? "this source";
+      const target = event.scope === "global" ? "any supported page" : `a ${label} page`;
       return {
         ...run,
         updatedAt: now,
         phase: "permission-required",
         error: null,
-        progress: { ...run.progress, message: "Folder access needs confirmation in Gather Box." },
-        log: [...run.log, { message: "Confirm folder access to continue.", tone: "error" }]
+        progress: {
+          ...run.progress,
+          message: `Folder access for ${label} needs confirmation from ${target}.`
+        },
+        log: [
+          ...run.log,
+          {
+            message: `Queue paused. Start a gather on ${target} to confirm folder access.`,
+            tone: "error"
+          }
+        ]
       };
+    }
     case "writing":
       return {
         ...run,

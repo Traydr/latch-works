@@ -37,6 +37,11 @@ Folder permission remains a visible-user responsibility. A permission-required j
 queue until access is confirmed or the job is cancelled. Confirmation resumes the job by its saved
 global or site-scoped destination, so the original source tab does not need to remain open.
 
+Because only a gather intent carries the user activation that confirms folder access, confirmation
+is a side effect of gathering some other page. That page is still collected and queued on its own —
+resuming a paused job never consumes the intent for the tab in hand. A paused job reports which page
+can confirm it, since a site-scoped destination can only be confirmed from that job's own site.
+
 ## Consequences
 
 - People can continue browsing as soon as Gather Box reports that a page is queued.
@@ -45,6 +50,8 @@ global or site-scoped destination, so the original source tab does not need to r
 - Cancelling an executing job aborts it promptly; the offscreen executor does not start the next
   dispatched job until the cancelled work has unwound.
 - Settings are snapshotted per collected output, so later settings changes affect new queue entries.
+- Confirming folder access can start two jobs at once: the resumed one and the page it was confirmed
+  from. Only one still executes at a time.
 - Queue recovery can repeat a partially written output. A per-target commit marker identifies a
   canonical file that may be incomplete, allowing replay to repair that exact path instead of
   preserving corrupt bytes and writing a suffixed duplicate.

@@ -29,6 +29,7 @@ import {
   isSupportedUrl,
   type SiteKey
 } from "./sites";
+import { getGatherSource } from "./source-catalog";
 import {
   EMPTY_LAST_RUN,
   LastRunWriter,
@@ -96,7 +97,8 @@ export class GatherController {
   private logEntries: LastRunLogEntry[] = [];
   private readonly lastRunWriter = new LastRunWriter();
   private readonly options: GatherControllerOptions;
-  private retryRunId: string | null = null;
+  /** Retry writes under the failed run's site, not whichever tab is active now. */
+  private retryTarget: { runId: string; siteKey: SiteKey } | null = null;
   private keydownHandler: ((event: KeyboardEvent) => void) | null = null;
   private shortcutCleanup: (() => void) | null = null;
   private storageHandler:
@@ -437,24 +439,36 @@ export class GatherController {
       return;
     }
 
-    const runId = this.retryRunId;
-    if (!runId) {
+    const target = this.retryTarget;
+    if (!target) {
       this.appendLog("No retryable Gather Run was found.", "error");
       return;
     }
-    if (!this.state.directoryHandle) {
-      this.appendLog("Choose a folder before retrying.", "error");
+
+    // The executor reloads this same handle by the run's site, so confirm access to that folder
+    // rather than the active tab's — the two differ whenever you retry from another tab.
+    const scopeLabel = getGatherSource(target.siteKey)?.label ?? target.siteKey;
+    const directoryHandle = await loadDirectoryHandle(
+      target.siteKey,
+      this.state.settings.useGlobalFolder
+    );
+    if (!directoryHandle) {
+      this.appendLog(`Choose a folder for ${scopeLabel} before retrying.`, "error");
       return;
     }
-    const permission = await ensureDirectoryPermission(this.state.directoryHandle, true);
+    const permission = await ensureDirectoryPermission(directoryHandle, true);
+    if (permission === "requires-user-activation") {
+      this.appendLog("Folder access needs confirmation. Click Retry Failed again.", "error");
+      return;
+    }
     if (permission !== "granted") {
-      this.appendLog("Folder is no longer writable. Choose it again.", "error");
+      this.appendLog(`Folder for ${scopeLabel} is no longer writable. Choose it again.`, "error");
       return;
     }
     const response = await chrome.runtime.sendMessage<
       { type: typeof RETRY_GATHER_RUN_REQUEST; target: "background"; runId: string },
       GatherRunResponse
-    >({ type: RETRY_GATHER_RUN_REQUEST, target: "background", runId });
+    >({ type: RETRY_GATHER_RUN_REQUEST, target: "background", runId: target.runId });
     if (response.outcome === "started" || response.outcome === "queued") {
       this.applyGatherRun(response.run);
     } else if (response.outcome === "failed") {
@@ -599,9 +613,9 @@ export class GatherController {
     const actionResult = retryable ?? latest;
     if (actionResult) {
       this.state.lastRun = lastRunFromGatherResult(actionResult);
-      this.retryRunId = retryable?.id ?? null;
+      this.retryTarget = retryable ? { runId: retryable.id, siteKey: retryable.siteKey } : null;
     } else {
-      this.retryRunId = null;
+      this.retryTarget = null;
     }
     this.syncPopupActions();
   }

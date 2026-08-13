@@ -47,8 +47,11 @@ export interface GetGatherExecutorStatusMessage {
   target: "offscreen";
 }
 
+/** Which folder handle a paused job is waiting on, so the panel can say where to confirm it. */
+export type GatherFolderScope = "global" | "site";
+
 export type GatherRunEvent =
-  | { kind: "permission-required" }
+  | { kind: "permission-required"; scope: GatherFolderScope }
   | { kind: "writing"; destinationPreview: string; folderSegments: string[]; total: number }
   | { kind: "progress"; completed: number; total: number; message: string }
   | { kind: "log"; message: string; tone?: "error" | "success" }
@@ -125,7 +128,7 @@ export function isGatherRunEvent(value: unknown): value is GatherRunEvent {
   const event = value as Record<string, unknown>;
   switch (event.kind) {
     case "permission-required":
-      return true;
+      return event.scope === "global" || event.scope === "site";
     case "writing":
       return (
         typeof event.destinationPreview === "string" &&

@@ -35,7 +35,10 @@ export async function executeGatherOutput(input: {
 
   const permission = await ensureDirectoryPermission(directoryHandle, false);
   if (permission !== "granted") {
-    await emit({ kind: "permission-required" });
+    await emit({
+      kind: "permission-required",
+      scope: settings.useGlobalFolder ? "global" : "site"
+    });
     return;
   }
 

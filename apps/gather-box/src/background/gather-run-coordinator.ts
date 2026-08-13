@@ -38,6 +38,12 @@ type Reservation =
   | { kind: "existing"; runId: string; position: number }
   | { kind: "outcome"; outcome: GatherRunStartOutcome };
 
+interface ReservationResult {
+  reservation: Reservation;
+  /** A paused job was unblocked by this intent and needs dispatching before the new page. */
+  resumed: boolean;
+}
+
 export class GatherRunCoordinator {
   private operationQueue = Promise.resolve();
 
@@ -58,12 +64,14 @@ export class GatherRunCoordinator {
       return { outcome: "unsupported-source" };
     }
 
-    const reservation = await this.reserve(tab, siteKey);
+    const { reservation, resumed } = await this.reserve(tab, siteKey);
+    if (resumed || reservation.kind === "existing") {
+      await this.dispatchNext();
+    }
     if (reservation.kind === "outcome") {
       return reservation.outcome;
     }
     if (reservation.kind === "existing") {
-      await this.dispatchNext();
       return this.outcomeForJob(reservation.runId, reservation.position);
     }
 
@@ -235,65 +243,62 @@ export class GatherRunCoordinator {
     await this.dispatchNext();
   }
 
-  private async reserve(tab: chrome.tabs.Tab, siteKey: SiteKey): Promise<Reservation> {
+  private async reserve(tab: chrome.tabs.Tab, siteKey: SiteKey): Promise<ReservationResult> {
     return this.exclusive(async () => {
-      let queue = await this.dependencies.loadQueue();
-      const permissionJob = getPermissionRequiredGatherJob(queue, siteKey);
-      if (permissionJob) {
-        const run = asOutputRun({
-          ...permissionJob.run,
-          phase: "queued",
-          error: null,
-          updatedAt: this.dependencies.now(),
-          progress: { ...permissionJob.run.progress, message: "Folder access confirmed. Queued." }
-        });
-        queue = replaceJob(queue, { ...permissionJob, run });
-        await this.dependencies.saveQueue(queue);
-        return { kind: "existing", runId: run.id, position: 0 };
-      }
+      const loaded = await this.dependencies.loadQueue();
+      // Confirming folder access unblocks a paused job, but it is not a request to gather that
+      // job's page again. The tab in hand still gets collected on its own.
+      const permissionJob = getPermissionRequiredGatherJob(loaded, siteKey);
+      let queue = permissionJob
+        ? replaceJob(loaded, resumePermissionJob(permissionJob, this.dependencies.now()))
+        : loaded;
+      const resumed = permissionJob !== null;
+      let reservation: Reservation;
 
       const duplicate = queue.jobs.find((job) => job.run.tabUrl === tab.url);
       if (duplicate) {
-        return {
+        reservation = {
           kind: "existing",
           runId: duplicate.run.id,
-          position: queue.jobs.findIndex((job) => job.run.id === duplicate.run.id)
+          position: queue.jobs.indexOf(duplicate)
         };
-      }
-      if (queue.jobs.length >= MAX_GATHER_QUEUE_LENGTH) {
-        return {
+      } else if (queue.jobs.length >= MAX_GATHER_QUEUE_LENGTH) {
+        reservation = {
           kind: "outcome",
           outcome: {
             outcome: "failed",
             message: `The Gather queue is full (${MAX_GATHER_QUEUE_LENGTH} items).`
           }
         };
+      } else {
+        const run = asCollectingRun({
+          ...createGatherRunState({
+            id: this.dependencies.randomUUID(),
+            tabId: tab.id!,
+            windowId: tab.windowId!,
+            tabUrl: tab.url!,
+            siteKey,
+            now: this.dependencies.now()
+          }),
+          phase: "collecting",
+          log: [{ message: "Collecting content metadata..." }],
+          progress: {
+            completed: 0,
+            total: 0,
+            saved: 0,
+            skipped: 0,
+            failed: 0,
+            message: "Collecting content metadata..."
+          }
+        });
+        reservation = { kind: "collect", run, position: queue.jobs.length };
+        queue = { ...queue, jobs: [...queue.jobs, { kind: "collecting", run }] };
       }
 
-      const run = asCollectingRun({
-        ...createGatherRunState({
-          id: this.dependencies.randomUUID(),
-          tabId: tab.id!,
-          windowId: tab.windowId!,
-          tabUrl: tab.url!,
-          siteKey,
-          now: this.dependencies.now()
-        }),
-        phase: "collecting",
-        log: [{ message: "Collecting content metadata..." }],
-        progress: {
-          completed: 0,
-          total: 0,
-          saved: 0,
-          skipped: 0,
-          failed: 0,
-          message: "Collecting content metadata..."
-        }
-      });
-      const position = queue.jobs.length;
-      queue = { ...queue, jobs: [...queue.jobs, { kind: "collecting", run }] };
-      await this.dependencies.saveQueue(queue);
-      return { kind: "collect", run, position };
+      if (queue !== loaded) {
+        await this.dependencies.saveQueue(queue);
+      }
+      return { reservation, resumed };
     });
   }
 
@@ -445,6 +450,19 @@ export class GatherRunCoordinator {
     );
     return result;
   }
+}
+
+function resumePermissionJob(job: OutputGatherQueueJob, now: number): OutputGatherQueueJob {
+  return {
+    ...job,
+    run: asOutputRun({
+      ...job.run,
+      phase: "queued",
+      error: null,
+      updatedAt: now,
+      progress: { ...job.run.progress, message: "Folder access confirmed. Queued." }
+    })
+  };
 }
 
 function replaceJob(queue: GatherQueueState, job: OutputGatherQueueJob): GatherQueueState {
