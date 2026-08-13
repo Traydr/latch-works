@@ -120,6 +120,11 @@ export function isGatherRunEventMessage(value: unknown): value is GatherRunEvent
   );
 }
 
+/** Events that end a run. The background dispatches the next queued output from exactly these. */
+export function isTerminalGatherRunEvent(event: GatherRunEvent): boolean {
+  return event.kind === "complete" || event.kind === "failed" || event.kind === "cancelled";
+}
+
 export function isGatherRunEvent(value: unknown): value is GatherRunEvent {
   if (!value || typeof value !== "object" || !("kind" in value)) {
     return false;

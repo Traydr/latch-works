@@ -19,6 +19,36 @@ describe("GatherExecutionSlot", () => {
     expect(slot.start("second", async () => undefined)).toBe("started");
   });
 
+  it("runs the release callback with the slot already free", async () => {
+    const slot = new GatherExecutionSlot();
+    let runIdAtRelease: string | null = "unset";
+
+    slot.start(
+      "first",
+      async () => undefined,
+      () => {
+        runIdAtRelease = slot.activeRunId;
+      }
+    );
+
+    await vi.waitFor(() => expect(runIdAtRelease).toBeNull());
+  });
+
+  it("keeps the slot released when its release callback throws", async () => {
+    const slot = new GatherExecutionSlot();
+
+    slot.start(
+      "first",
+      async () => undefined,
+      () => {
+        throw new Error("reporting failed");
+      }
+    );
+
+    await vi.waitFor(() => expect(slot.activeRunId).toBeNull());
+    expect(slot.start("second", async () => undefined)).toBe("started");
+  });
+
   it("aborts only the matching active run", async () => {
     const slot = new GatherExecutionSlot();
     let signal: AbortSignal | undefined;

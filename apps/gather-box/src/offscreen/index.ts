@@ -7,6 +7,7 @@ import {
 } from "../shared/gather-run-messages";
 import { executeGatherOutput } from "./executor";
 import { GatherExecutionSlot } from "./execution-slot";
+import { createGatherRunEventEmitter } from "./run-event-emitter";
 import { proveOffscreenFilesystemAccess } from "./filesystem-proof";
 
 const executionSlot = new GatherExecutionSlot();
@@ -46,35 +47,34 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!isExecuteGatherRunMessage(message)) {
     return false;
   }
-  let eventQueue = Promise.resolve();
-  const emit = (event: GatherRunEvent): Promise<void> => {
-    const delivery = eventQueue.then(() => emitRunEvent(message.runId, event));
-    eventQueue = delivery.catch(() => undefined);
-    return delivery;
-  };
-  const start = executionSlot.start(message.runId, async (signal) => {
-    try {
-      await executeGatherOutput({
-        payload: message.payload,
-        settings: message.settings,
-        emit,
-        signal
-      });
-    } catch (error) {
-      await emit(
-        signal.aborted
-          ? { kind: "cancelled", message: "Gather Run cancelled." }
-          : {
-              kind: "failed",
-              message: error instanceof Error ? error.message : "Gather execution failed."
-            }
-      );
-      return;
-    }
-    if (signal.aborted) {
-      await emit({ kind: "cancelled", message: "Gather Run cancelled." });
-    }
-  });
+  const emitter = createGatherRunEventEmitter((event) => emitRunEvent(message.runId, event));
+  const start = executionSlot.start(
+    message.runId,
+    async (signal) => {
+      try {
+        await executeGatherOutput({
+          payload: message.payload,
+          settings: message.settings,
+          emit: emitter.emit,
+          signal
+        });
+      } catch (error) {
+        await emitter.emit(
+          signal.aborted
+            ? { kind: "cancelled", message: "Gather Run cancelled." }
+            : {
+                kind: "failed",
+                message: error instanceof Error ? error.message : "Gather execution failed."
+              }
+        );
+        return;
+      }
+      if (signal.aborted) {
+        await emitter.emit({ kind: "cancelled", message: "Gather Run cancelled." });
+      }
+    },
+    emitter.flush
+  );
   sendResponse({
     accepted: start !== "busy",
     duplicate: start === "duplicate",

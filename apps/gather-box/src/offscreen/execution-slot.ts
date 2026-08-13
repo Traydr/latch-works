@@ -7,7 +7,15 @@ export class GatherExecutionSlot {
     return this.active?.runId ?? null;
   }
 
-  start(runId: string, execute: (signal: AbortSignal) => Promise<void>): GatherExecutionStart {
+  /**
+   * `onReleased` runs once the slot is free again, so work that can dispatch the next run — such as
+   * reporting this one as finished — never races the release.
+   */
+  start(
+    runId: string,
+    execute: (signal: AbortSignal) => Promise<void>,
+    onReleased?: () => void
+  ): GatherExecutionStart {
     if (this.active?.runId === runId) {
       return "duplicate";
     }
@@ -23,6 +31,11 @@ export class GatherExecutionSlot {
       .finally(() => {
         if (this.active?.runId === runId) {
           this.active = null;
+        }
+        try {
+          onReleased?.();
+        } catch {
+          // Releasing the slot must not depend on how the run was reported.
         }
       });
     return "started";
