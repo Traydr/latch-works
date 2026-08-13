@@ -21,6 +21,18 @@ Media collectors download original images (and video on some sites) from a post 
 
 You can also right-click a supported page and choose **Gather to archive**, or use the download keyboard shortcut.
 
+## Queue while browsing
+
+If Gather Box is already processing an output, its main action changes to **Add to Queue**. Add the
+current page, wait for the queued confirmation, and then continue browsing. Gather Box only needs the
+page during the short metadata-capture step; downloads and AVIF conversion continue one output at a
+time in the background.
+
+Fully captured queue entries persist across browser restarts. If folder permission expires, the
+queue pauses and the side panel names the page that can confirm it — any supported page when you use
+one global folder, otherwise a page from the paused entry's own site. Gathering from that page
+confirms access, resumes the paused entry, and queues the page you gathered from as well.
+
 ## What to expect
 
 - Filenames usually come from the site or CDN. Gather Box does not renumber every gallery to `001`, `002`, ….
@@ -39,7 +51,7 @@ The side panel shows the folder **name** only — browsers do not expose the ful
 
 ## Tips
 
-- Collect one post at a time for predictable folder names.
+- Queue several posts while browsing; each keeps the folder name captured from its source page.
 - After download, open the folder in Frame View to confirm count and order.
 - Use **Cancel run** if you need to stop a long download.
 

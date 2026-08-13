@@ -1,13 +1,16 @@
 import {
   GATHER_RUN_EVENT,
+  isGetGatherExecutorStatusMessage,
   isCancelGatherRunMessage,
   isExecuteGatherRunMessage,
   type GatherRunEvent
 } from "../shared/gather-run-messages";
 import { executeGatherOutput } from "./executor";
+import { GatherExecutionSlot } from "./execution-slot";
+import { createGatherRunEventEmitter } from "./run-event-emitter";
 import { proveOffscreenFilesystemAccess } from "./filesystem-proof";
 
-const activeControllers = new Map<string, AbortController>();
+const executionSlot = new GatherExecutionSlot();
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!isExtensionOriginSender(sender)) {
@@ -31,45 +34,52 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (isGetGatherExecutorStatusMessage(message)) {
+    sendResponse({ activeRunId: executionSlot.activeRunId });
+    return false;
+  }
+
   if (isCancelGatherRunMessage(message)) {
-    const controller = activeControllers.get(message.runId);
-    controller?.abort();
-    sendResponse({ aborted: Boolean(controller) });
+    sendResponse({ aborted: executionSlot.abort(message.runId) });
     return false;
   }
 
   if (!isExecuteGatherRunMessage(message)) {
     return false;
   }
-  if (activeControllers.has(message.runId)) {
-    sendResponse({ accepted: true, duplicate: true });
-    return false;
-  }
-
-  const controller = new AbortController();
-  activeControllers.set(message.runId, controller);
-  sendResponse({ accepted: true });
-  let eventQueue = Promise.resolve();
-  const emit = (event: GatherRunEvent): Promise<void> => {
-    const delivery = eventQueue.then(() => emitRunEvent(message.runId, event));
-    eventQueue = delivery.catch(() => undefined);
-    return delivery;
-  };
-  void executeGatherOutput({
-    payload: message.payload,
-    settings: message.settings,
-    emit,
-    signal: controller.signal
-  })
-    .catch((error) =>
-      emit({
-        kind: "failed",
-        message: error instanceof Error ? error.message : "Gather execution failed."
-      })
-    )
-    .finally(() => {
-      activeControllers.delete(message.runId);
-    });
+  const emitter = createGatherRunEventEmitter((event) => emitRunEvent(message.runId, event));
+  const start = executionSlot.start(
+    message.runId,
+    async (signal) => {
+      try {
+        await executeGatherOutput({
+          payload: message.payload,
+          settings: message.settings,
+          emit: emitter.emit,
+          signal
+        });
+      } catch (error) {
+        await emitter.emit(
+          signal.aborted
+            ? { kind: "cancelled", message: "Gather Run cancelled." }
+            : {
+                kind: "failed",
+                message: error instanceof Error ? error.message : "Gather execution failed."
+              }
+        );
+        return;
+      }
+      if (signal.aborted) {
+        await emitter.emit({ kind: "cancelled", message: "Gather Run cancelled." });
+      }
+    },
+    emitter.flush
+  );
+  sendResponse({
+    accepted: start !== "busy",
+    duplicate: start === "duplicate",
+    busy: start === "busy"
+  });
   return false;
 });
 

@@ -26,6 +26,12 @@ run identity, exact source-tab targeting, state, and command coordination. An of
 document executes remote fetches, File System Access writes, and generated story PDFs after a visible
 UI has granted any required directory permission.
 
+Collected Gather Outputs enter a persisted FIFO queue. Page inspection is the short foreground
+capture step; once an output reports as queued, its source tab can navigate or close. The offscreen
+document executes one queued output at a time so CPU-heavy AVIF conversion and archive writes do
+not compete across posts. Pending collected outputs survive service-worker suspension and are
+requeued after browser restart; a capture interrupted before metadata exists must be queued again.
+
 One Gather Source catalog owns supported-site URL, permission, collector, credential, and save
 behavior policy. The always-on page content contains only the page-key adapter; a run injects the
 collector selected for its exact source. Source-file batches and generated story PDFs are separate

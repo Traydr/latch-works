@@ -29,6 +29,7 @@ import {
   isSupportedUrl,
   type SiteKey
 } from "./sites";
+import { getGatherSource } from "./source-catalog";
 import {
   EMPTY_LAST_RUN,
   LastRunWriter,
@@ -37,9 +38,7 @@ import {
   type LastRunState
 } from "./last-run";
 import {
-  GATHER_RUN_STATE_KEY,
   isTerminalGatherRunPhase,
-  normalizeGatherRunState,
   type GatherRunState
 } from "./gather-run";
 import {
@@ -49,7 +48,15 @@ import {
   type GatherRunCancelOutcome,
   type GatherRunResponse
 } from "./gather-run-messages";
-import { loadGatherRun } from "./gather-run-store";
+import {
+  GATHER_QUEUE_STATE_KEY,
+  getGatherQueueDisplayRun,
+  getLatestGatherQueueResult,
+  getRetryableGatherQueueResult,
+  loadGatherQueue,
+  normalizeGatherQueueState,
+  type GatherQueueState
+} from "./gather-queue";
 import { DEFAULT_SETTINGS, loadSettings, type GatherBoxSettings } from "./settings";
 import { installShortcutKeyListener } from "./shortcut-keys";
 
@@ -90,6 +97,8 @@ export class GatherController {
   private logEntries: LastRunLogEntry[] = [];
   private readonly lastRunWriter = new LastRunWriter();
   private readonly options: GatherControllerOptions;
+  /** Retry writes under the failed run's site, not whichever tab is active now. */
+  private retryTarget: { runId: string; siteKey: SiteKey } | null = null;
   private keydownHandler: ((event: KeyboardEvent) => void) | null = null;
   private shortcutCleanup: (() => void) | null = null;
   private storageHandler:
@@ -171,11 +180,10 @@ export class GatherController {
       if (areaName === "sync" && changes["gather-box-settings"]) {
         void this.refreshSettings();
       }
-      if (areaName === "local" && changes[GATHER_RUN_STATE_KEY]?.newValue) {
-        const run = normalizeGatherRunState(changes[GATHER_RUN_STATE_KEY].newValue);
-        if (run) {
-          this.applyGatherRun(run);
-        }
+      if (areaName === "local" && changes[GATHER_QUEUE_STATE_KEY]?.newValue) {
+        this.applyGatherQueue(
+          normalizeGatherQueueState(changes[GATHER_QUEUE_STATE_KEY].newValue)
+        );
       }
     };
     chrome.storage.onChanged.addListener(this.storageHandler);
@@ -205,10 +213,7 @@ export class GatherController {
 
     await this.detectActiveTab();
     await this.restoreSavedDirectoryHandle();
-    const currentRun = await loadGatherRun();
-    if (currentRun) {
-      this.applyGatherRun(currentRun);
-    }
+    this.applyGatherQueue(await loadGatherQueue());
     this.syncPopupActions();
   }
 
@@ -270,6 +275,7 @@ export class GatherController {
       this.state.siteKey = getSiteKeyFromUrl(tab.url);
       setPageState(this.elements, true);
       updateSaveBehavior(this.state.siteKey);
+      await this.restoreSavedDirectoryHandle();
       this.syncPopupActions();
     } catch (error) {
       this.state.siteKey = null;
@@ -386,8 +392,11 @@ export class GatherController {
         { type: typeof START_GATHER_RUN_REQUEST; target: "background"; tabId: number },
         GatherRunResponse
       >({ type: START_GATHER_RUN_REQUEST, target: "background", tabId });
-      if (response.outcome === "started" || response.outcome === "already-running") {
+      if (response.outcome === "started" || response.outcome === "queued") {
         this.applyGatherRun(response.run);
+        if (response.outcome === "queued") {
+          this.appendLog(`Added to queue at position ${response.position}.`, "success");
+        }
       } else if (response.outcome === "unsupported-source") {
         this.appendLog("Active tab is not a supported Gather Source.", "error");
       } else if (response.outcome === "target-unavailable") {
@@ -430,25 +439,37 @@ export class GatherController {
       return;
     }
 
-    const run = await loadGatherRun();
-    if (!run || run.retryImages.length === 0) {
+    const target = this.retryTarget;
+    if (!target) {
       this.appendLog("No retryable Gather Run was found.", "error");
       return;
     }
-    if (!this.state.directoryHandle) {
-      this.appendLog("Choose a folder before retrying.", "error");
+
+    // The executor reloads this same handle by the run's site, so confirm access to that folder
+    // rather than the active tab's — the two differ whenever you retry from another tab.
+    const scopeLabel = getGatherSource(target.siteKey)?.label ?? target.siteKey;
+    const directoryHandle = await loadDirectoryHandle(
+      target.siteKey,
+      this.state.settings.useGlobalFolder
+    );
+    if (!directoryHandle) {
+      this.appendLog(`Choose a folder for ${scopeLabel} before retrying.`, "error");
       return;
     }
-    const permission = await ensureDirectoryPermission(this.state.directoryHandle, true);
+    const permission = await ensureDirectoryPermission(directoryHandle, true);
+    if (permission === "requires-user-activation") {
+      this.appendLog("Folder access needs confirmation. Click Retry Failed again.", "error");
+      return;
+    }
     if (permission !== "granted") {
-      this.appendLog("Folder is no longer writable. Choose it again.", "error");
+      this.appendLog(`Folder for ${scopeLabel} is no longer writable. Choose it again.`, "error");
       return;
     }
     const response = await chrome.runtime.sendMessage<
       { type: typeof RETRY_GATHER_RUN_REQUEST; target: "background"; runId: string },
       GatherRunResponse
-    >({ type: RETRY_GATHER_RUN_REQUEST, target: "background", runId: run.id });
-    if (response.outcome === "started" || response.outcome === "already-running") {
+    >({ type: RETRY_GATHER_RUN_REQUEST, target: "background", runId: target.runId });
+    if (response.outcome === "started" || response.outcome === "queued") {
       this.applyGatherRun(response.run);
     } else if (response.outcome === "failed") {
       this.appendLog(response.message, "error");
@@ -473,6 +494,7 @@ export class GatherController {
 
   private async restoreSavedDirectoryHandle(): Promise<void> {
     const scopeLabel = getDirectoryScopeLabel(this.state.settings.useGlobalFolder);
+    this.state.directoryHandle = null;
 
     if (!this.state.siteKey && !this.state.settings.useGlobalFolder) {
       setFolder(this.elements, "No folder selected", `Choose a writable folder for ${scopeLabel}.`);
@@ -517,18 +539,22 @@ export class GatherController {
   }
 
   private syncPopupActions(): void {
+    const hasActiveJob = Boolean(this.state.activeRunId);
     const runInFlight =
-      Boolean(this.state.activeRunId) &&
-      (this.state.status === "collecting" || this.state.status === "downloading");
+      hasActiveJob &&
+      (this.state.status === "collecting" ||
+        this.state.status === "queued" ||
+        this.state.status === "downloading");
     syncActions(
       this.elements,
-      this.isSupportedTab() && Boolean(this.state.directoryHandle) && !this.state.running && !runInFlight,
-      this.state.running || runInFlight,
+      this.isSupportedTab() && Boolean(this.state.directoryHandle) && !this.state.running,
+      this.state.running,
       Boolean(this.state.directoryHandle),
       this.state.lastRun.canRetry && this.state.lastRun.retryImages.length > 0,
       this.state.lastRun.failedItems.length > 0,
-      runInFlight
+      hasActiveJob
     );
+    this.elements.downloadButton.textContent = runInFlight ? "Add to Queue" : "Download Content";
   }
 
   private setStatus(status: PopupStatus): void {
@@ -550,9 +576,11 @@ export class GatherController {
             run.phase === "cancelled" ||
             run.phase === "permission-required"
           ? "error"
-          : run.phase === "writing"
-            ? "downloading"
-            : "collecting";
+          : run.phase === "queued"
+            ? "queued"
+            : run.phase === "writing" || run.phase === "cancelling"
+              ? "downloading"
+              : "collecting";
     this.setStatus(status);
     setProgress(
       this.elements,
@@ -565,18 +593,29 @@ export class GatherController {
     }
     this.logEntries = [...run.log];
     restoreLog(this.elements, this.logEntries);
-    this.state.lastRun = {
-      timestamp: run.updatedAt,
-      siteKey: run.siteKey,
-      tabUrl: run.tabUrl,
-      destinationPreview: run.destinationPreview,
-      log: run.log,
-      failedItems: run.failedItems,
-      retryImages: run.retryImages,
-      canRetry: run.retryImages.length > 0
-    };
     if (run.phase === "complete") {
       flashDownloadComplete(this.elements);
+    }
+    this.syncPopupActions();
+  }
+
+  private applyGatherQueue(queue: GatherQueueState): void {
+    const displayed = getGatherQueueDisplayRun(queue);
+    const latest = getLatestGatherQueueResult(queue);
+    const retryable = getRetryableGatherQueueResult(queue);
+
+    if (displayed) {
+      this.applyGatherRun(displayed);
+    } else if (latest) {
+      this.applyGatherRun(latest);
+    }
+
+    const actionResult = retryable ?? latest;
+    if (actionResult) {
+      this.state.lastRun = lastRunFromGatherResult(actionResult);
+      this.retryTarget = retryable ? { runId: retryable.id, siteKey: retryable.siteKey } : null;
+    } else {
+      this.retryTarget = null;
     }
     this.syncPopupActions();
   }
@@ -604,6 +643,19 @@ export class GatherController {
     await this.lastRunWriter.flush();
     this.syncPopupActions();
   }
+}
+
+function lastRunFromGatherResult(run: GatherRunState): LastRunState {
+  return {
+    timestamp: run.updatedAt,
+    siteKey: run.siteKey,
+    tabUrl: run.tabUrl,
+    destinationPreview: run.destinationPreview,
+    log: run.log,
+    failedItems: run.failedItems,
+    retryImages: run.retryImages,
+    canRetry: run.retryImages.length > 0
+  };
 }
 
 function copyLastRun(state: LastRunState): LastRunState {

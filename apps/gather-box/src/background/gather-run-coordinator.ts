@@ -1,9 +1,20 @@
+import { formatError } from "../gather/errors";
 import {
-  CANCEL_GATHER_RUN,
-  EXECUTE_GATHER_RUN,
-  type GatherRunCancelOutcome,
-  type GatherRunEvent,
-  type GatherRunEventMessage
+  getGatherQueueDisplayRun,
+  getNextQueuedGatherJob,
+  getPermissionRequiredGatherJob,
+  getRetryableGatherQueueResult,
+  loadGatherQueue,
+  MAX_GATHER_QUEUE_LENGTH,
+  recordGatherQueueResult,
+  recoverStoppedGatherQueue,
+  type CollectingGatherQueueJob,
+  type GatherQueueState,
+  type OutputGatherQueueJob
+} from "../shared/gather-queue";
+import type {
+  GatherRunCancelOutcome,
+  GatherRunEventMessage
 } from "../shared/gather-run-messages";
 import {
   createGatherRunState,
@@ -11,320 +22,473 @@ import {
   type GatherRunStartOutcome,
   type GatherRunState
 } from "../shared/gather-run";
-import { injectCollectorAndCollect } from "../gather/active-tab";
-import { formatError } from "../gather/errors";
-import { loadGatherRun, saveGatherRun } from "../shared/gather-run-store";
-import { saveLastRun } from "../shared/last-run";
-import { getSiteKeyFromUrl, isSupportedUrl } from "../shared/sites";
-import { getGatherSource } from "../shared/source-catalog";
-import { loadSettings } from "../shared/settings";
+import { getSiteKeyFromUrl, isSupportedUrl, type SiteKey } from "../shared/sites";
 import type { DownloadablePayload } from "../shared/types";
-import { OffscreenDocument } from "./offscreen-document";
+import { applyGatherRunEvent } from "../shared/gather-run-reducer";
+import {
+  createChromeCoordinatorDependencies,
+  type GatherRunCoordinatorDependencies
+} from "./gather-run-coordinator-dependencies";
+
+export { applyGatherRunEvent } from "../shared/gather-run-reducer";
+export type { GatherRunCoordinatorDependencies } from "./gather-run-coordinator-dependencies";
+
+type Reservation =
+  | { kind: "collect"; run: CollectingGatherQueueJob["run"]; position: number }
+  | { kind: "existing"; runId: string; position: number }
+  | { kind: "outcome"; outcome: GatherRunStartOutcome };
+
+interface ReservationResult {
+  reservation: Reservation;
+  /** A paused job was unblocked by this intent and needs dispatching before the new page. */
+  resumed: boolean;
+}
 
 export class GatherRunCoordinator {
-  private eventQueue = Promise.resolve();
-  private offscreenDocument = new OffscreenDocument();
-  private startQueue = Promise.resolve();
+  private operationQueue = Promise.resolve();
 
-  startForTab(tab: chrome.tabs.Tab): Promise<GatherRunStartOutcome> {
-    return this.serializeStart(() => this.start(tab));
-  }
+  constructor(
+    private readonly dependencies: GatherRunCoordinatorDependencies =
+      createChromeCoordinatorDependencies()
+  ) {}
 
-  async retry(runId: string): Promise<GatherRunStartOutcome> {
-    return this.serializeStart(async () => {
-      const previous = await loadGatherRun();
-      if (!previous || previous.id !== runId || previous.retryImages.length === 0) {
-        return { outcome: "failed", message: "No retryable Gather Run was found." };
-      }
-      const tab = await chrome.tabs.get(previous.tabId).catch(() => null);
-      if (!tab) {
-        return { outcome: "target-unavailable" };
-      }
-      return this.start(tab, {
-        ok: true,
-        outputKind: "downloadable-files",
-        site: previous.siteKey,
-        title: "Retry",
-        pageUrl: previous.tabUrl,
-        galleryId: null,
-        folderSegments: previous.folderSegments,
-        skippedCount: 0,
-        images: previous.retryImages
-      });
-    });
-  }
-
-  async cancel(runId: string): Promise<GatherRunCancelOutcome> {
-    const run = await loadGatherRun();
-    if (!run || run.id !== runId || isTerminalGatherRunPhase(run.phase)) {
-      return { outcome: "idle" };
-    }
-
-    const cancelled = applyGatherRunEvent(run, {
-      kind: "cancelled",
-      message: "Gather Run cancelled."
-    });
-    await saveGatherRun(cancelled);
-    await saveLastRun({
-      timestamp: cancelled.updatedAt,
-      siteKey: cancelled.siteKey,
-      tabUrl: cancelled.tabUrl,
-      destinationPreview: cancelled.destinationPreview,
-      log: cancelled.log,
-      failedItems: cancelled.failedItems,
-      retryImages: cancelled.retryImages,
-      canRetry: cancelled.retryImages.length > 0
-    });
-
-    try {
-      await this.offscreenDocument.ensure();
-      await chrome.runtime.sendMessage({
-        type: CANCEL_GATHER_RUN,
-        target: "offscreen",
-        runId
-      });
-    } catch {
-      // Offscreen may not be open yet (still collecting); local cancel is enough.
-    }
-
-    return { outcome: "cancelled", run: cancelled };
-  }
-
-  handleEvent(message: GatherRunEventMessage): Promise<void> {
-    const result = this.eventQueue.then(() => this.applyEventMessage(message));
-    this.eventQueue = result.catch(() => undefined);
-    return result;
-  }
-
-  private async applyEventMessage(message: GatherRunEventMessage): Promise<void> {
-    const run = await loadGatherRun();
-    if (!run || run.id !== message.runId || isTerminalGatherRunPhase(run.phase)) {
-      return;
-    }
-
-    const updated = applyGatherRunEvent(run, message.event);
-    await saveGatherRun(updated);
-    if (isTerminalGatherRunPhase(updated.phase)) {
-      await saveLastRun({
-        timestamp: updated.updatedAt,
-        siteKey: updated.siteKey,
-        tabUrl: updated.tabUrl,
-        destinationPreview: updated.destinationPreview,
-        log: updated.log,
-        failedItems: updated.failedItems,
-        retryImages: updated.retryImages,
-        canRetry: updated.retryImages.length > 0
-      });
-    }
-  }
-
-  private serializeStart(
-    operation: () => Promise<GatherRunStartOutcome>
-  ): Promise<GatherRunStartOutcome> {
-    const result = this.startQueue.then(operation, operation);
-    this.startQueue = result.then(
-      () => undefined,
-      () => undefined
-    );
-    return result;
-  }
-
-  private async start(
-    tab: chrome.tabs.Tab,
-    retryPayload?: DownloadablePayload
-  ): Promise<GatherRunStartOutcome> {
+  async startForTab(tab: chrome.tabs.Tab): Promise<GatherRunStartOutcome> {
     if (typeof tab.id !== "number" || tab.windowId === undefined || !tab.url) {
       return { outcome: "target-unavailable" };
     }
     if (!isSupportedUrl(tab.url)) {
       return { outcome: "unsupported-source" };
     }
-
-    const existing = await loadGatherRun();
-    if (existing && !isTerminalGatherRunPhase(existing.phase)) {
-      if (existing.phase === "permission-required" && existing.tabId === tab.id) {
-        await saveGatherRun({
-          ...existing,
-          phase: "cancelled",
-          updatedAt: Date.now(),
-          progress: { ...existing.progress, message: "Superseded after folder access confirmation." }
-        });
-      } else {
-        return { outcome: "already-running", run: existing };
-      }
-    }
-
     const siteKey = getSiteKeyFromUrl(tab.url);
     if (!siteKey) {
       return { outcome: "unsupported-source" };
     }
-    let run = createGatherRunState({
-      id: crypto.randomUUID(),
-      tabId: tab.id,
-      windowId: tab.windowId,
-      tabUrl: tab.url,
-      siteKey
-    });
-    await saveGatherRun(run);
 
-    try {
-      run = await this.patch(run, {
-        phase: "collecting",
-        log: [{ message: "Collecting content metadata..." }],
-        progress: { ...run.progress, message: "Collecting content metadata..." }
+    const { reservation, resumed } = await this.reserve(tab, siteKey);
+    if (resumed || reservation.kind === "existing") {
+      await this.dispatchNext();
+    }
+    if (reservation.kind === "outcome") {
+      return reservation.outcome;
+    }
+    if (reservation.kind === "existing") {
+      return this.outcomeForJob(reservation.runId, reservation.position);
+    }
+
+    return this.finishCollection(tab, siteKey, reservation);
+  }
+
+  async retry(runId: string): Promise<GatherRunStartOutcome> {
+    const previous = await this.exclusive(async () => {
+      const queue = await this.dependencies.loadQueue();
+      const result = getRetryableGatherQueueResult(queue);
+      return result?.id === runId ? result : null;
+    });
+    if (!previous) {
+      return { outcome: "failed", message: "No retryable Gather Run was found." };
+    }
+
+    const settings = await this.dependencies.loadSettings();
+    const payload: DownloadablePayload = {
+      ok: true,
+      outputKind: "downloadable-files",
+      site: previous.siteKey,
+      title: "Retry",
+      pageUrl: previous.tabUrl,
+      galleryId: null,
+      folderSegments: previous.folderSegments,
+      skippedCount: 0,
+      images: previous.retryImages
+    };
+    const reservation = await this.exclusive(async () => {
+      let queue = await this.dependencies.loadQueue();
+      if (queue.jobs.length >= MAX_GATHER_QUEUE_LENGTH) {
+        return null;
+      }
+      const run = asOutputRun({
+        ...createGatherRunState({
+          id: this.dependencies.randomUUID(),
+          tabId: previous.tabId,
+          windowId: previous.windowId,
+          tabUrl: previous.tabUrl,
+          siteKey: previous.siteKey,
+          now: this.dependencies.now()
+        }),
+        phase: "queued",
+        folderSegments: payload.folderSegments,
+        progress: {
+          completed: 0,
+          total: payload.images.length,
+          saved: 0,
+          skipped: 0,
+          failed: 0,
+          message: `Queued "${payload.title}".`
+        },
+        log: [{ message: `Queued retry for ${previous.retryImages.length} failed item(s).` }]
       });
-      const currentTab = await chrome.tabs.get(tab.id);
-      if (!currentTab.url || currentTab.url !== run.tabUrl || getSiteKeyFromUrl(currentTab.url) !== siteKey) {
+      const position = queue.jobs.length;
+      queue = {
+        ...queue,
+        jobs: [...queue.jobs, { kind: "output", run, payload, settings }],
+        results: queue.results.filter((result) => result.id !== previous.id)
+      };
+      await this.dependencies.saveQueue(queue);
+      return { runId: run.id, position };
+    });
+    if (!reservation) {
+      return {
+        outcome: "failed",
+        message: `The Gather queue is full (${MAX_GATHER_QUEUE_LENGTH} items).`
+      };
+    }
+
+    await this.dispatchNext();
+    return this.outcomeForJob(reservation.runId, reservation.position);
+  }
+
+  async cancel(runId: string): Promise<GatherRunCancelOutcome> {
+    const decision = await this.exclusive(async () => {
+      let queue = await this.dependencies.loadQueue();
+      const job = queue.jobs.find((candidate) => candidate.run.id === runId);
+      if (!job) {
+        return { kind: "idle" } as const;
+      }
+
+      if (
+        job.kind === "output" &&
+        (job.run.phase === "preparing" ||
+          job.run.phase === "writing" ||
+          job.run.phase === "cancelling")
+      ) {
+        const run = asOutputRun({
+          ...job.run,
+          phase: "cancelling",
+          updatedAt: this.dependencies.now(),
+          progress: { ...job.run.progress, message: "Cancelling Gather Run..." }
+        });
+        queue = replaceJob(queue, { ...job, run });
+        await this.dependencies.saveQueue(queue);
+        return { kind: "abort", run } as const;
+      }
+
+      const cancelled = applyGatherRunEvent(job.run, {
+        kind: "cancelled",
+        message: "Gather Run cancelled."
+      }, this.dependencies.now());
+      queue = recordAndRemove(queue, cancelled);
+      await this.dependencies.saveQueue(queue);
+      return { kind: "done", run: cancelled } as const;
+    });
+
+    if (decision.kind === "idle") {
+      return { outcome: "idle" };
+    }
+    if (decision.kind === "done") {
+      await this.dispatchNext();
+      return { outcome: "cancelled", run: decision.run };
+    }
+
+    const aborted = await this.dependencies.abort(runId).catch(() => false);
+    if (!aborted) {
+      await this.handleEvent({
+        type: "GATHER_BOX_RUN_EVENT",
+        target: "background",
+        runId,
+        event: { kind: "cancelled", message: "Gather Run cancelled." }
+      });
+    }
+    return { outcome: "cancelled", run: decision.run };
+  }
+
+  async handleEvent(message: GatherRunEventMessage): Promise<void> {
+    const shouldDispatch = await this.exclusive(async () => {
+      let queue = await this.dependencies.loadQueue();
+      const job = queue.jobs.find((candidate) => candidate.run.id === message.runId);
+      if (!job || job.kind !== "output") {
+        return false;
+      }
+      if (job.run.phase === "cancelling" && message.event.kind !== "cancelled") {
+        return false;
+      }
+
+      const updated = applyGatherRunEvent(job.run, message.event, this.dependencies.now());
+      if (isTerminalGatherRunPhase(updated.phase)) {
+        queue = recordAndRemove(queue, updated);
+        await this.dependencies.saveQueue(queue);
+        return true;
+      }
+
+      queue = replaceJob(queue, { ...job, run: asOutputRun(updated) });
+      await this.dependencies.saveQueue(queue);
+      return false;
+    });
+
+    if (shouldDispatch) {
+      await this.dispatchNext();
+    }
+  }
+
+  async recover(): Promise<void> {
+    const activeRunId = await this.dependencies.getActiveRunId();
+    await this.exclusive(async () => {
+      let queue = await this.dependencies.loadQueue();
+      if (activeRunId && queue.jobs.some((job) => job.run.id === activeRunId)) {
+        return;
+      }
+
+      const recovered = recoverStoppedGatherQueue(queue, this.dependencies.now());
+      queue = recovered.interrupted.reduce(recordGatherQueueResult, recovered.queue);
+      await this.dependencies.saveQueue(queue);
+    });
+    await this.dispatchNext();
+  }
+
+  private async reserve(tab: chrome.tabs.Tab, siteKey: SiteKey): Promise<ReservationResult> {
+    return this.exclusive(async () => {
+      const loaded = await this.dependencies.loadQueue();
+      // Confirming folder access unblocks a paused job, but it is not a request to gather that
+      // job's page again. The tab in hand still gets collected on its own.
+      const permissionJob = getPermissionRequiredGatherJob(loaded, siteKey);
+      let queue = permissionJob
+        ? replaceJob(loaded, resumePermissionJob(permissionJob, this.dependencies.now()))
+        : loaded;
+      const resumed = permissionJob !== null;
+      let reservation: Reservation;
+
+      const duplicate = queue.jobs.find((job) => job.run.tabUrl === tab.url);
+      if (duplicate) {
+        reservation = {
+          kind: "existing",
+          runId: duplicate.run.id,
+          position: queue.jobs.indexOf(duplicate)
+        };
+      } else if (queue.jobs.length >= MAX_GATHER_QUEUE_LENGTH) {
+        reservation = {
+          kind: "outcome",
+          outcome: {
+            outcome: "failed",
+            message: `The Gather queue is full (${MAX_GATHER_QUEUE_LENGTH} items).`
+          }
+        };
+      } else {
+        const run = asCollectingRun({
+          ...createGatherRunState({
+            id: this.dependencies.randomUUID(),
+            tabId: tab.id!,
+            windowId: tab.windowId!,
+            tabUrl: tab.url!,
+            siteKey,
+            now: this.dependencies.now()
+          }),
+          phase: "collecting",
+          log: [{ message: "Collecting content metadata..." }],
+          progress: {
+            completed: 0,
+            total: 0,
+            saved: 0,
+            skipped: 0,
+            failed: 0,
+            message: "Collecting content metadata..."
+          }
+        });
+        reservation = { kind: "collect", run, position: queue.jobs.length };
+        queue = { ...queue, jobs: [...queue.jobs, { kind: "collecting", run }] };
+      }
+
+      if (queue !== loaded) {
+        await this.dependencies.saveQueue(queue);
+      }
+      return { reservation, resumed };
+    });
+  }
+
+  private async finishCollection(
+    tab: chrome.tabs.Tab,
+    siteKey: SiteKey,
+    reservation: Extract<Reservation, { kind: "collect" }>
+  ): Promise<GatherRunStartOutcome> {
+    try {
+      const currentTab = await this.dependencies.getTab(tab.id!);
+      if (
+        !currentTab.url ||
+        currentTab.url !== reservation.run.tabUrl ||
+        getSiteKeyFromUrl(currentTab.url) !== siteKey
+      ) {
         throw new Error("The source tab navigated before collection started.");
       }
-      const source = getGatherSource(siteKey);
-      if (!source) throw new Error("The Gather Source no longer has a collector adapter.");
-      const response =
-        retryPayload ??
-        (await injectCollectorAndCollect({
-          tabId: tab.id,
-          pageUrl: run.tabUrl,
-          requestId: run.id,
-          source,
-          onInjecting: () => {
-            void this.appendLog(run.id, `Injecting the ${source.label} collector...`);
-          }
-        }));
-      if (!response || response.ok !== true) {
-        throw new Error(response?.message || "The source page did not return collection data.");
-      }
-
-      const latest = await loadGatherRun();
-      if (!latest || latest.id !== run.id || isTerminalGatherRunPhase(latest.phase)) {
-        return { outcome: "failed", message: "Gather Run was cancelled before writing began." };
-      }
-
-      await this.offscreenDocument.ensure();
-      const settings = await loadSettings();
-      const accepted = await chrome.runtime.sendMessage({
-        type: EXECUTE_GATHER_RUN,
-        target: "offscreen",
-        runId: run.id,
-        payload: response,
-        settings
+      const [payload, settings] = await Promise.all([
+        this.dependencies.collect(currentTab, reservation.run),
+        this.dependencies.loadSettings()
+      ]);
+      const total =
+        payload.outputKind === "generated-story-pdf"
+          ? payload.chapters.length
+          : payload.images.length;
+      const completed = await this.exclusive(async () => {
+        let queue = await this.dependencies.loadQueue();
+        const index = queue.jobs.findIndex((job) => job.run.id === reservation.run.id);
+        if (index < 0 || queue.jobs[index].kind !== "collecting") {
+          return false;
+        }
+        const run = asOutputRun({
+          ...reservation.run,
+          phase: "queued",
+          updatedAt: this.dependencies.now(),
+          folderSegments: payload.folderSegments,
+          progress: { ...reservation.run.progress, total, message: `Queued "${payload.title}".` },
+          log: [
+            ...reservation.run.log,
+            { message: `Queued ${total} item(s) from "${payload.title}".`, tone: "success" }
+          ]
+        });
+        const jobs = [...queue.jobs];
+        jobs[index] = { kind: "output", run, payload, settings };
+        queue = { ...queue, jobs };
+        await this.dependencies.saveQueue(queue);
+        return true;
       });
-      if (accepted?.accepted !== true) {
-        throw new Error("The Gather executor did not accept the run.");
+      if (!completed) {
+        return { outcome: "failed", message: "The queued Gather Run was cancelled." };
       }
-      return { outcome: "started", run: (await loadGatherRun()) ?? run };
+
+      await this.dispatchNext();
+      return this.outcomeForJob(reservation.run.id, reservation.position);
     } catch (error) {
-      const current = await loadGatherRun();
-      if (current && current.id === run.id && isTerminalGatherRunPhase(current.phase)) {
-        return { outcome: "failed", message: current.error ?? "Gather Run cancelled." };
-      }
-      const failed = await this.patch(run, {
-        phase: "failed",
-        error: formatError(error),
-        log: [...run.log, { message: formatError(error), tone: "error" }],
-        progress: { ...run.progress, message: "Gather Run failed." }
+      const failed = applyGatherRunEvent(
+        reservation.run,
+        { kind: "failed", message: formatError(error) },
+        this.dependencies.now()
+      );
+      await this.exclusive(async () => {
+        let queue = await this.dependencies.loadQueue();
+        if (!queue.jobs.some((job) => job.run.id === reservation.run.id)) {
+          return;
+        }
+        queue = recordAndRemove(queue, failed);
+        await this.dependencies.saveQueue(queue);
       });
+      await this.dispatchNext();
       return { outcome: "failed", message: failed.error ?? "Gather Run failed." };
     }
   }
 
-  private async patch(
-    run: GatherRunState,
-    patch: Partial<GatherRunState>
-  ): Promise<GatherRunState> {
-    const updated: GatherRunState = { ...run, ...patch, updatedAt: Date.now() };
-    await saveGatherRun(updated);
-    return updated;
+  private async dispatchNext(): Promise<void> {
+    while (true) {
+      const job = await this.exclusive(async () => {
+        let queue = await this.dependencies.loadQueue();
+        const next = getNextQueuedGatherJob(queue);
+        if (!next) {
+          return null;
+        }
+        const run = asOutputRun({
+          ...next.run,
+          phase: "preparing",
+          updatedAt: this.dependencies.now(),
+          progress: {
+            ...next.run.progress,
+            completed: 0,
+            message: "Starting queued Gather Output..."
+          }
+        });
+        const claimed = { ...next, run };
+        queue = replaceJob(queue, claimed);
+        await this.dependencies.saveQueue(queue);
+        return claimed;
+      });
+      if (!job) {
+        return;
+      }
+
+      const accepted = await this.dependencies.execute(job).catch(() => false);
+      if (accepted) {
+        return;
+      }
+
+      const failed = applyGatherRunEvent(
+        job.run,
+        { kind: "failed", message: "The Gather executor did not accept the queued output." },
+        this.dependencies.now()
+      );
+      await this.exclusive(async () => {
+        let queue = await this.dependencies.loadQueue();
+        if (!queue.jobs.some((candidate) => candidate.run.id === job.run.id)) {
+          return;
+        }
+        queue = recordAndRemove(queue, failed);
+        await this.dependencies.saveQueue(queue);
+      });
+    }
   }
 
-  private async appendLog(runId: string, message: string): Promise<void> {
-    const run = await loadGatherRun();
-    if (!run || run.id !== runId) {
-      return;
+  private async outcomeForJob(
+    runId: string,
+    requestedPosition: number
+  ): Promise<GatherRunStartOutcome> {
+    const queue = await this.exclusive(() => this.dependencies.loadQueue());
+    const job = queue.jobs.find((candidate) => candidate.run.id === runId);
+    const completed = queue.results.find((result) => result.id === runId);
+    if (!job && !completed) {
+      return { outcome: "failed", message: "The queued Gather Run could not be restored." };
     }
-    await saveGatherRun({
-      ...run,
-      updatedAt: Date.now(),
-      log: [...run.log, { message }]
-    });
+    const run = getGatherQueueDisplayRun(queue) ?? completed ?? job!.run;
+    if (job?.kind === "output" && job.run.phase !== "queued") {
+      return { outcome: "started", run, queuedRunId: runId, position: 0 };
+    }
+    return {
+      outcome: "queued",
+      run,
+      queuedRunId: runId,
+      position: Math.max(1, requestedPosition)
+    };
+  }
+
+  private exclusive<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.operationQueue.then(operation, operation);
+    this.operationQueue = result.then(
+      () => undefined,
+      () => undefined
+    );
+    return result;
   }
 }
 
-export function applyGatherRunEvent(
-  run: GatherRunState,
-  event: GatherRunEvent,
-  now = Date.now()
-): GatherRunState {
-  const updatedAt = now;
-  switch (event.kind) {
-    case "permission-required":
-      return {
-        ...run,
-        updatedAt,
-        phase: "permission-required",
-        error: null,
-        progress: { ...run.progress, message: "Folder access needs confirmation in Gather Box." },
-        log: [...run.log, { message: "Confirm folder access to continue.", tone: "error" }]
-      };
-    case "writing":
-      return {
-        ...run,
-        updatedAt,
-        phase: "writing",
-        destinationPreview: event.destinationPreview,
-        folderSegments: event.folderSegments,
-        progress: { ...run.progress, total: event.total, message: "Writing Gather Output..." }
-      };
-    case "progress":
-      return {
-        ...run,
-        updatedAt,
-        progress: {
-          ...run.progress,
-          completed: event.completed,
-          total: event.total,
-          message: event.message
-        }
-      };
-    case "log":
-      return { ...run, updatedAt, log: [...run.log, event] };
-    case "failed":
-      return {
-        ...run,
-        updatedAt,
-        phase: "failed",
-        error: event.message,
-        progress: { ...run.progress, message: "Gather Run failed." },
-        log: [...run.log, { message: event.message, tone: "error" }]
-      };
-    case "cancelled":
-      return {
-        ...run,
-        updatedAt,
-        phase: "cancelled",
-        error: event.message ?? "Gather Run cancelled.",
-        progress: { ...run.progress, message: "Gather Run cancelled." },
-        log: [...run.log, { message: event.message ?? "Gather Run cancelled.", tone: "error" }]
-      };
-    case "complete":
-      return {
-        ...run,
-        updatedAt,
-        phase: event.failed > 0 ? "failed" : "complete",
-        error: event.failed > 0 ? `${event.failed} item(s) failed.` : null,
-        failedItems: event.failedItems,
-        retryImages: event.retryImages,
-        progress: {
-          ...run.progress,
-          completed: run.progress.total,
-          saved: event.saved,
-          skipped: event.skipped,
-          failed: event.failed,
-          message: `Complete. Saved ${event.saved}, skipped ${event.skipped}, failed ${event.failed}.`
-        }
-      };
-    default: {
-      const unknownKind = (event as { kind?: unknown }).kind;
-      throw new Error(`Rejected unknown Gather Run event kind: ${String(unknownKind)}`);
-    }
+function resumePermissionJob(job: OutputGatherQueueJob, now: number): OutputGatherQueueJob {
+  return {
+    ...job,
+    run: asOutputRun({
+      ...job.run,
+      phase: "queued",
+      error: null,
+      updatedAt: now,
+      progress: { ...job.run.progress, message: "Folder access confirmed. Queued." }
+    })
+  };
+}
+
+function replaceJob(queue: GatherQueueState, job: OutputGatherQueueJob): GatherQueueState {
+  return {
+    ...queue,
+    jobs: queue.jobs.map((candidate) => (candidate.run.id === job.run.id ? job : candidate))
+  };
+}
+
+function recordAndRemove(queue: GatherQueueState, run: GatherRunState): GatherQueueState {
+  return recordGatherQueueResult(
+    { ...queue, jobs: queue.jobs.filter((job) => job.run.id !== run.id) },
+    run
+  );
+}
+
+function asCollectingRun(run: GatherRunState): CollectingGatherQueueJob["run"] {
+  if (run.phase !== "collecting") {
+    throw new Error(`Expected collecting Gather Run, received ${run.phase}.`);
   }
+  return run as CollectingGatherQueueJob["run"];
+}
+
+function asOutputRun(run: GatherRunState): OutputGatherQueueJob["run"] {
+  if (isTerminalGatherRunPhase(run.phase) || run.phase === "collecting") {
+    throw new Error(`Expected executable Gather Run, received ${run.phase}.`);
+  }
+  return run as OutputGatherQueueJob["run"];
 }

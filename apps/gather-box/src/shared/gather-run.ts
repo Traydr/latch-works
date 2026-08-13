@@ -2,14 +2,15 @@ import type { DownloadFailure, LastRunLogEntry } from "./last-run";
 import type { SiteKey } from "./sites";
 import type { GalleryImage } from "./types";
 
-export const GATHER_RUN_STATE_KEY = "gather-box-active-run";
 export const GATHER_RUN_SCHEMA_VERSION = 1;
 
 export type GatherRunPhase =
   | "preparing"
   | "permission-required"
   | "collecting"
+  | "queued"
   | "writing"
+  | "cancelling"
   | "complete"
   | "failed"
   | "cancelled"
@@ -41,11 +42,12 @@ export interface GatherRunState {
   failedItems: DownloadFailure[];
   retryImages: GalleryImage[];
   error: string | null;
+  queuedCount: number;
 }
 
 export type GatherRunStartOutcome =
-  | { outcome: "started"; run: GatherRunState }
-  | { outcome: "already-running"; run: GatherRunState }
+  | { outcome: "started"; run: GatherRunState; queuedRunId: string; position: 0 }
+  | { outcome: "queued"; run: GatherRunState; queuedRunId: string; position: number }
   | { outcome: "unsupported-source" }
   | { outcome: "target-unavailable" }
   | { outcome: "failed"; message: string };
@@ -86,7 +88,8 @@ export function createGatherRunState(input: {
     folderSegments: [],
     failedItems: [],
     retryImages: [],
-    error: null
+    error: null,
+    queuedCount: 0
   };
 }
 
@@ -135,7 +138,8 @@ export function normalizeGatherRunState(value: unknown): GatherRunState | null {
     retryImages: Array.isArray(run.retryImages) ? run.retryImages : [],
     destinationPreview:
       typeof run.destinationPreview === "string" ? run.destinationPreview : null,
-    error: typeof run.error === "string" ? run.error : null
+    error: typeof run.error === "string" ? run.error : null,
+    queuedCount: Math.max(0, Math.round(Number(run.queuedCount) || 0))
   };
 }
 
@@ -144,6 +148,7 @@ function isGatherRunPhase(value: unknown): value is GatherRunPhase {
     value === "preparing" ||
     value === "permission-required" ||
     value === "collecting" ||
+    value === "queued" ||
     value === "writing" ||
     value === "complete" ||
     value === "failed" ||

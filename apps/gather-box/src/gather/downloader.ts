@@ -84,7 +84,8 @@ export async function downloadImages(
       const expectedTarget = mediaTransformer.expectedTarget(preparedImage.fileName);
       if (
         expectedTarget &&
-        (await getExistingFileHandle(destinationDirectory, expectedTarget))
+        (await getExistingFileHandle(destinationDirectory, expectedTarget)) &&
+        !(await hasPendingBlobCommit(destinationDirectory, expectedTarget))
       ) {
         summary.skipped += 1;
         callbacks.onSkipped?.(expectedTarget);
@@ -159,9 +160,19 @@ export async function saveBlobWithoutClobbering(
   signal?: AbortSignal
 ): Promise<CollisionSaveResult> {
   throwIfAborted(signal);
+  const recovered = await recoverPendingBlobCommit(
+    destinationDirectory,
+    preferredFileName,
+    blob,
+    signal
+  );
+  if (recovered) {
+    return { fileName: recovered, skipped: false };
+  }
+
   const preferredHandle = await getExistingFileHandle(destinationDirectory, preferredFileName);
   if (!preferredHandle) {
-    await writeBlob(destinationDirectory, preferredFileName, blob, signal);
+    await commitBlob(destinationDirectory, preferredFileName, preferredFileName, blob, signal);
     return { fileName: preferredFileName, skipped: false };
   }
 
@@ -174,7 +185,7 @@ export async function saveBlobWithoutClobbering(
     const candidateName = addFileNameSuffix(preferredFileName, randomSuffix());
     const candidateHandle = await getExistingFileHandle(destinationDirectory, candidateName);
     if (!candidateHandle) {
-      await writeBlob(destinationDirectory, candidateName, blob, signal);
+      await commitBlob(destinationDirectory, preferredFileName, candidateName, blob, signal);
       return { fileName: candidateName, skipped: false };
     }
 
@@ -268,7 +279,112 @@ async function hashBlob(blob: Blob): Promise<string> {
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-async function writeBlob(
+async function commitBlob(
+  destinationDirectory: FileSystemDirectoryHandle,
+  preferredFileName: string,
+  targetFileName: string,
+  blob: Blob,
+  signal?: AbortSignal
+): Promise<void> {
+  const markerName = await getCommitMarkerName(preferredFileName);
+  const marker = new Blob([JSON.stringify({ preferredFileName, targetFileName })], {
+    type: "application/json"
+  });
+  await writeBlobDirect(destinationDirectory, markerName, marker, signal);
+  try {
+    await writeBlobDirect(destinationDirectory, targetFileName, blob, signal);
+    await removeEntryIfPresent(destinationDirectory, markerName);
+  } catch (error) {
+    if (isAbortError(error) || signal?.aborted) {
+      await removeEntryIfPresent(destinationDirectory, targetFileName);
+      await removeEntryIfPresent(destinationDirectory, markerName);
+    }
+    throw error;
+  }
+}
+
+async function hasPendingBlobCommit(
+  destinationDirectory: FileSystemDirectoryHandle,
+  preferredFileName: string
+): Promise<boolean> {
+  return Boolean(
+    await getExistingFileHandle(destinationDirectory, await getCommitMarkerName(preferredFileName))
+  );
+}
+
+async function recoverPendingBlobCommit(
+  destinationDirectory: FileSystemDirectoryHandle,
+  preferredFileName: string,
+  blob: Blob,
+  signal?: AbortSignal
+): Promise<string | null> {
+  const markerName = await getCommitMarkerName(preferredFileName);
+  const markerHandle = await getExistingFileHandle(destinationDirectory, markerName);
+  if (!markerHandle) {
+    return null;
+  }
+
+  let targetFileName: string | null = null;
+  try {
+    const value = JSON.parse(await (await markerHandle.getFile()).text()) as {
+      preferredFileName?: unknown;
+      targetFileName?: unknown;
+    };
+    if (
+      value.preferredFileName === preferredFileName &&
+      typeof value.targetFileName === "string" &&
+      isSafeCommitTarget(value.targetFileName)
+    ) {
+      targetFileName = value.targetFileName;
+    }
+  } catch {
+    // An incomplete marker means the canonical file was never opened.
+  }
+
+  if (!targetFileName) {
+    await removeEntryIfPresent(destinationDirectory, markerName);
+    return null;
+  }
+
+  throwIfAborted(signal);
+  const targetHandle = await getExistingFileHandle(destinationDirectory, targetFileName);
+  if (!targetHandle || !(await fileContentsMatch(targetHandle, blob))) {
+    await removeEntryIfPresent(destinationDirectory, targetFileName);
+    await writeBlobDirect(destinationDirectory, targetFileName, blob, signal);
+  }
+  await removeEntryIfPresent(destinationDirectory, markerName);
+  return targetFileName;
+}
+
+async function getCommitMarkerName(preferredFileName: string): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(preferredFileName)
+  );
+  const key = Array.from(new Uint8Array(digest).slice(0, 12), (byte) =>
+    byte.toString(16).padStart(2, "0")
+  ).join("");
+  return `.gather-box-commit-${key}.json`;
+}
+
+function isSafeCommitTarget(fileName: string): boolean {
+  return fileName.length > 0 && fileName !== "." && fileName !== ".." && !/[\\/]/.test(fileName);
+}
+
+async function removeEntryIfPresent(
+  destinationDirectory: FileSystemDirectoryHandle,
+  fileName: string
+): Promise<void> {
+  try {
+    await destinationDirectory.removeEntry(fileName);
+  } catch (error) {
+    if (!(error instanceof DOMException) || error.name !== "NotFoundError") {
+      throw error;
+    }
+  }
+}
+
+async function writeBlobDirect(
   destinationDirectory: FileSystemDirectoryHandle,
   fileName: string,
   blob: Blob,

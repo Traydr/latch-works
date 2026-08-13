@@ -8,6 +8,7 @@ export const CANCEL_GATHER_RUN_REQUEST = "GATHER_BOX_RUN_CANCEL" as const;
 export const EXECUTE_GATHER_RUN = "GATHER_BOX_RUN_EXECUTE" as const;
 export const CANCEL_GATHER_RUN = "GATHER_BOX_RUN_ABORT" as const;
 export const GATHER_RUN_EVENT = "GATHER_BOX_RUN_EVENT" as const;
+export const GET_GATHER_EXECUTOR_STATUS = "GATHER_BOX_EXECUTOR_STATUS" as const;
 
 export interface StartGatherRunRequest {
   type: typeof START_GATHER_RUN_REQUEST;
@@ -41,8 +42,16 @@ export interface CancelGatherRunMessage {
   runId: string;
 }
 
+export interface GetGatherExecutorStatusMessage {
+  type: typeof GET_GATHER_EXECUTOR_STATUS;
+  target: "offscreen";
+}
+
+/** Which folder handle a paused job is waiting on, so the panel can say where to confirm it. */
+export type GatherFolderScope = "global" | "site";
+
 export type GatherRunEvent =
-  | { kind: "permission-required" }
+  | { kind: "permission-required"; scope: GatherFolderScope }
   | { kind: "writing"; destinationPreview: string; folderSegments: string[]; total: number }
   | { kind: "progress"; completed: number; total: number; message: string }
   | { kind: "log"; message: string; tone?: "error" | "success" }
@@ -96,6 +105,12 @@ export function isCancelGatherRunMessage(value: unknown): value is CancelGatherR
   return hasMessageShape(value, CANCEL_GATHER_RUN, "offscreen") && typeof value.runId === "string";
 }
 
+export function isGetGatherExecutorStatusMessage(
+  value: unknown
+): value is GetGatherExecutorStatusMessage {
+  return hasMessageShape(value, GET_GATHER_EXECUTOR_STATUS, "offscreen");
+}
+
 export function isGatherRunEventMessage(value: unknown): value is GatherRunEventMessage {
   return (
     hasMessageShape(value, GATHER_RUN_EVENT, "background") &&
@@ -103,6 +118,11 @@ export function isGatherRunEventMessage(value: unknown): value is GatherRunEvent
     "event" in value &&
     isGatherRunEvent(value.event)
   );
+}
+
+/** Events that end a run. The background dispatches the next queued output from exactly these. */
+export function isTerminalGatherRunEvent(event: GatherRunEvent): boolean {
+  return event.kind === "complete" || event.kind === "failed" || event.kind === "cancelled";
 }
 
 export function isGatherRunEvent(value: unknown): value is GatherRunEvent {
@@ -113,7 +133,7 @@ export function isGatherRunEvent(value: unknown): value is GatherRunEvent {
   const event = value as Record<string, unknown>;
   switch (event.kind) {
     case "permission-required":
-      return true;
+      return event.scope === "global" || event.scope === "site";
     case "writing":
       return (
         typeof event.destinationPreview === "string" &&

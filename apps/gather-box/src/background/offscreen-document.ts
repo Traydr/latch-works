@@ -1,9 +1,12 @@
+import { GET_GATHER_EXECUTOR_STATUS } from "../shared/gather-run-messages";
+
 const OFFSCREEN_PATH = "offscreen/offscreen.html";
 
 interface OffscreenPlatform {
   getContexts(documentUrl: string): Promise<unknown[]>;
   getUrl(path: string): string;
   createDocument(options: chrome.offscreen.CreateParameters): Promise<void>;
+  sendMessage(message: unknown): Promise<unknown>;
 }
 
 const chromeOffscreenPlatform: OffscreenPlatform = {
@@ -13,7 +16,8 @@ const chromeOffscreenPlatform: OffscreenPlatform = {
       documentUrls: [documentUrl]
     }),
   getUrl: (path) => chrome.runtime.getURL(path),
-  createDocument: (options) => chrome.offscreen.createDocument(options)
+  createDocument: (options) => chrome.offscreen.createDocument(options),
+  sendMessage: (message) => chrome.runtime.sendMessage(message)
 };
 
 export class OffscreenDocument {
@@ -30,6 +34,28 @@ export class OffscreenDocument {
       this.creating = null;
     });
     return this.creating;
+  }
+
+  async isOpen(): Promise<boolean> {
+    const offscreenUrl = this.platform.getUrl(OFFSCREEN_PATH);
+    const contexts = await this.platform.getContexts(offscreenUrl);
+    return contexts.length > 0;
+  }
+
+  async getActiveRunId(): Promise<string | null> {
+    try {
+      if (!(await this.isOpen())) {
+        return null;
+      }
+
+      const response = (await this.platform.sendMessage({
+        type: GET_GATHER_EXECUTOR_STATUS,
+        target: "offscreen"
+      })) as { activeRunId?: unknown } | undefined;
+      return typeof response?.activeRunId === "string" ? response.activeRunId : null;
+    } catch {
+      return null;
+    }
   }
 
   private async discoverOrCreate(): Promise<void> {

@@ -27,10 +27,13 @@ and save behavior.
 
 ### One Gather Run owner
 
-The extension service worker coordinates at most one active Gather Run per browser profile. A run
+The extension service worker coordinates at most one executing Gather Run per browser profile. A run
 has a stable identifier, exact `tabId` and `windowId`, source URL, creation time, phase, progress, and
 terminal outcome. That state is persisted so service-worker termination or UI reconnection does not
 silently lose the run.
+
+ADR 0002 extends this decision with a persisted FIFO of fully collected Gather Outputs while
+preserving the single-executor constraint.
 
 An offscreen extension document performs long-lived web work: remote fetches, collision-safe
 filesystem writes, Blob handling, DOM parsing, and generated story PDFs. This choice is gated by a
@@ -94,7 +97,7 @@ longer runs at `document_start`.
 ### Positive
 
 - Gather Run lifetime no longer depends on popup or side-panel lifetime.
-- One run lock prevents duplicate archive writes across windows and UI instances.
+- One executor lock prevents duplicate archive writes across windows and UI instances.
 - Exact target identity removes stale-tab and global-pending behavior.
 - The side panel can reconnect to progress after closing or navigating.
 - PDF implementation cost leaves the ordinary UI and image-gather paths.
