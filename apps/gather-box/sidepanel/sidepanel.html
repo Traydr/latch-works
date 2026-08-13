@@ -7,7 +7,57 @@
     <link rel="stylesheet" href="sidepanel.css">
   </head>
   <body>
-    <main id="trial-root"></main>
+    <main class="panel">
+      <button id="downloadBtn-mini" class="download-action" type="button" disabled>Download Content</button>
+
+      <div id="unsupportedBanner-mini" class="unsupported-note" hidden></div>
+
+      <div class="folder-line">
+        <span class="line-label">Folder</span>
+        <span id="folderName-mini" class="line-value truncate">No folder selected</span>
+        <button id="chooseFolder-mini" class="tool-btn" type="button">Choose</button>
+        <button id="clearFolder-mini" class="tool-btn" type="button" disabled>Clear</button>
+      </div>
+      <p id="folderDetail-mini" class="line-hint">Choose a writable folder for this run.</p>
+
+      <div id="saveBlock-mini" class="save-block" hidden>
+        <div class="save-row">
+          <span class="line-label">Saves to</span>
+          <span id="savePattern-mini" class="save-tag" hidden></span>
+        </div>
+        <code id="savePath-mini" class="save-path"></code>
+        <p id="saveSummary-mini" class="line-hint"></p>
+        <p id="saveFile-mini" class="line-hint mono" hidden></p>
+      </div>
+
+      <section class="history">
+        <header class="history-head">
+          <span class="line-label">Run log</span>
+          <div class="history-tools">
+            <button id="cancelBtn-mini" class="tool-btn" type="button" disabled>Cancel</button>
+            <button id="retryBtn-mini" class="tool-btn" type="button" disabled>Retry</button>
+            <button id="copyErrorsBtn-mini" class="tool-btn" type="button" disabled>Copy errors</button>
+          </div>
+        </header>
+        <div class="history-progress">
+          <progress id="progressBar-mini" class="run-progress" max="1" value="0"></progress>
+          <p class="status-line">
+            <span id="badge-mini" class="badge badge-idle">IDLE</span>
+            <span id="progressText-mini" class="status-text">Waiting for a supported page and folder.</span>
+          </p>
+          <p id="destinationPreview-mini" class="line-hint mono destination" hidden></p>
+        </div>
+        <details id="logDetails-mini" class="log-holder" open>
+          <summary>entries</summary>
+          <div id="resultLog-mini" class="run-log" role="log" aria-live="polite">
+            <p class="log-empty">No activity yet.</p>
+          </div>
+        </details>
+      </section>
+
+      <a class="settings-link" href="../options/options.html" target="_blank" rel="noreferrer">Settings</a>
+    </main>
+
     <script type="module" src="sidepanel.js"></script>
   </body>
 </html>
