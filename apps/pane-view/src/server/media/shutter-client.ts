@@ -1,21 +1,23 @@
 import { createSignedGetUrl } from "@latch-works/media-storage";
+import {
+  createShutterClient,
+  type PreviewJobResult,
+  type ShutterClient,
+  ShutterClientError,
+} from "@shutter/client";
 import { env } from "../../env/server";
 import type { MediaThumbnailContext } from "./repository";
-import { issueShutterCapability, shutterCapabilityClaimTimes } from "./shutter-capability";
+import { shutterCapabilityKeyConfig } from "./shutter-capability";
 import { validateCapabilityKeyConfig } from "./shutter-capability-config";
 import { createPaneViewStorageClient } from "./storage-client";
 
 const SHUTTER_WIDTHS = [320, 640, 750, 828, 960, 1080, 1280, 1668, 1920, 2048, 2560, 3200, 3840];
 const SOURCE_LOCATOR_LIFETIME_SECONDS = 24 * 60 * 60 + 5 * 60;
+const CAPABILITY_LIFETIME_SECONDS = 24 * 60 * 60;
 export type ShutterPreviewResult =
   | { status: "pending"; retryAfterMs: number }
   | { status: "ready"; url: string }
   | { action?: string; code?: string; status: "failed" };
-
-function retryAfterMs(response: Response): number {
-  const seconds = Number(response.headers.get("retry-after"));
-  return Number.isFinite(seconds) && seconds >= 0 ? seconds * 1_000 : 5_000;
-}
 
 export function normalizeShutterWidth(width: number): number {
   if (width <= 24) return 24;
@@ -38,8 +40,20 @@ async function sourceLocator(context: MediaThumbnailContext): Promise<string> {
   });
 }
 
-function edgeUrl(path: string): string {
-  return new URL(path, env.SHUTTER_EDGE_URL).toString();
+/**
+ * Built per call rather than memoized: the environment is mutable in tests and
+ * the Capability Key registry must stay evaluated lazily (see
+ * `ensureStartupCapabilityStatus`).
+ */
+function shutterClient(options: { capability: boolean }): ShutterClient {
+  return createShutterClient({
+    spaceId: env.SHUTTER_SPACE_ID,
+    controlBaseUrl: env.SHUTTER_CONTROL_URL,
+    edgeBaseUrl: env.SHUTTER_EDGE_URL,
+    spaceApiToken: env.SHUTTER_SPACE_API_TOKEN || undefined,
+    capabilityKey: options.capability ? shutterCapabilityKeyConfig() : undefined,
+    capabilityLifetimeSeconds: CAPABILITY_LIFETIME_SECONDS,
+  });
 }
 
 function assertSourceId(sha256: string): void {
@@ -54,15 +68,9 @@ export async function resolveShutterImageUrl(
 ): Promise<string> {
   ensureStartupCapabilityStatus();
   assertSourceId(context.sha256);
-  const capability = await issueShutterCapability({
-    space_id: env.SHUTTER_SPACE_ID,
-    source_id: context.sha256,
-    purpose: "image_source",
-    locator: await sourceLocator(context),
-    ...shutterCapabilityClaimTimes(),
-  });
-  return edgeUrl(
-    `/v1/private/${encodeURIComponent(env.SHUTTER_SPACE_ID)}/source/${encodeURIComponent(capability)}?w=${normalizeShutterWidth(width)}&q=75`,
+  return shutterClient({ capability: true }).privateSourceUrl(
+    { sourceId: context.sha256, locator: await sourceLocator(context) },
+    { width: normalizeShutterWidth(width), quality: 75 },
   );
 }
 
@@ -75,73 +83,43 @@ export async function resolveShutterPreview(
   if (!env.SHUTTER_SPACE_API_TOKEN) throw new Error("Shutter Space API is not configured");
   assertSourceId(context.sha256);
   const kind = context.mediaType;
-  const sourceCapability = await issueShutterCapability({
-    space_id: env.SHUTTER_SPACE_ID,
-    source_id: context.sha256,
-    purpose: "preview_job",
-    kind,
-    locator: await sourceLocator(context),
-    ...shutterCapabilityClaimTimes(),
-  });
-  const jobPath = `/v1/spaces/${encodeURIComponent(env.SHUTTER_SPACE_ID)}/sources/${encodeURIComponent(context.sha256)}/previews/${kind}`;
-  let response: Response;
+  const client = shutterClient({ capability: true });
+
+  let job: PreviewJobResult;
   try {
-    response = await fetch(new URL(jobPath, env.SHUTTER_CONTROL_URL), {
-      method: "PUT",
-      headers: {
-        authorization: `Bearer ${env.SHUTTER_SPACE_API_TOKEN}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ sourceCapability }),
-      signal: AbortSignal.timeout(10_000),
+    job = await client.submitPreviewJob({
+      sourceId: context.sha256,
+      kind,
+      locator: await sourceLocator(context),
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof ShutterClientError && error.status !== undefined) {
+      return error.status === 408 || error.status === 429 || error.status >= 500
+        ? { status: "pending", retryAfterMs: (error.retryAfterSeconds ?? 5) * 1_000 }
+        : { status: "failed" };
+    }
+    if (error instanceof ShutterClientError) throw error;
+    // Network-level failures are retryable, matching Control 5xx handling.
     return { status: "pending", retryAfterMs: 5_000 };
   }
-  if (!response.ok) {
-    return response.status === 408 || response.status === 429 || response.status >= 500
-      ? { status: "pending", retryAfterMs: retryAfterMs(response) }
-      : { status: "failed" };
+
+  if (job.status === "pending" || job.status === "processing") {
+    return { status: "pending", retryAfterMs: job.retryAfterSeconds * 1_000 };
   }
-  const result = (await response.json()) as {
-    failure?: { action?: unknown; code?: unknown };
-    status?: unknown;
-  };
-  if (result.status === "pending" || result.status === "processing") {
-    return { status: "pending", retryAfterMs: retryAfterMs(response) };
+  if (job.status === "failed") {
+    return { action: job.failure.action, code: job.failure.code, status: "failed" };
   }
-  if (result.status !== "ready") {
-    return {
-      action: typeof result.failure?.action === "string" ? result.failure.action : undefined,
-      code: typeof result.failure?.code === "string" ? result.failure.code : undefined,
-      status: "failed",
-    };
-  }
-  const capability = await issueShutterCapability({
-    space_id: env.SHUTTER_SPACE_ID,
-    source_id: context.sha256,
-    purpose: "master_preview",
-    kind,
-    ...shutterCapabilityClaimTimes(),
-  });
   return {
     status: "ready",
-    url: edgeUrl(
-      `/v1/private/${encodeURIComponent(env.SHUTTER_SPACE_ID)}/master/${encodeURIComponent(capability)}?w=${normalizeShutterWidth(width)}&q=75`,
+    url: await client.privateMasterUrl(
+      { sourceId: context.sha256, kind },
+      { width: normalizeShutterWidth(width), quality: 75 },
     ),
   };
 }
 
 export async function purgeShutterSource(sourceId: string): Promise<void> {
-  const path = `/v1/spaces/${encodeURIComponent(env.SHUTTER_SPACE_ID)}/sources/${encodeURIComponent(sourceId)}/purge`;
-  const response = await fetch(new URL(path, env.SHUTTER_CONTROL_URL), {
-    method: "POST",
-    headers: { authorization: `Bearer ${env.SHUTTER_SPACE_API_TOKEN}` },
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (response.status !== 204) {
-    throw new Error(`Shutter source purge failed with ${response.status}`);
-  }
+  await shutterClient({ capability: false }).purgeSource(sourceId);
 }
 
 let startupCapabilityStatusChecked = false;

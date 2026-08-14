@@ -13,7 +13,9 @@
     "apps/frame-view/scripts/ensure-electron.mjs": ["files"],
     "apps/frame-view/src/**": ["types"],
     "apps/showcase/src/**": ["exports", "types"],
-    "packages/media-domain/src/gather-box-sidecar.ts": ["exports", "types"]
+    "packages/media-domain/src/gather-box-sidecar.ts": ["exports", "types"],
+    "packages/shutter-protocol/src/**": ["exports", "types"],
+    "packages/shutter-client/src/**": ["exports", "types"]
   },
   "workspaces": {
     ".": {
@@ -80,6 +82,9 @@
       "entry": ["src/**/*.test.ts"]
     },
     "packages/lockstep-core": {
+      "entry": ["src/**/*.test.ts"]
+    },
+    "packages/shutter-client": {
       "entry": ["src/**/*.test.ts"]
     }
   }
