@@ -142,7 +142,18 @@ describe("Shutter Pane View client", () => {
   it("returns a private master URL when the job is ready", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => Response.json({ status: "ready" })),
+      vi.fn(async () =>
+        Response.json({
+          master: {
+            format: "webp",
+            height: 1080,
+            kind: "video",
+            sourceId: video.sha256,
+            width: 1920,
+          },
+          status: "ready",
+        }),
+      ),
     );
     const result = await resolveShutterPreview(video, 900);
     expect(result.status).toBe("ready");

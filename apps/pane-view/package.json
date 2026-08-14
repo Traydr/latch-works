@@ -18,6 +18,8 @@
     "@fontsource-variable/geist": "^5.2.9",
     "@latch-works/media-domain": "workspace:*",
     "@latch-works/media-storage": "workspace:*",
+    "@shutter/client": "workspace:*",
+    "@shutter/protocol": "workspace:*",
     "@t3-oss/env-core": "^0.13.11",
     "@tanstack/react-query": "^5.101.0",
     "@tanstack/react-router": "^1.120.20",
