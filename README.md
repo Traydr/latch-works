@@ -3,8 +3,7 @@
 </p>
 
 <p align="center">
-  <strong>Everything you need to keep a personal media archive under your own latch</strong><br/>
-  <strong>Gather • Organize • Sync • View</strong><br/>
+  <strong>Keep a personal media archive under your own latch.</strong><br/>
   <sub>Collect galleries from the browser, browse them on the desktop, push them to a private web viewer you own.</sub>
 </p>
 
@@ -23,64 +22,66 @@
 
 # Latch Works
 
-Latch Works is a private workshop for a personal media archive: a Chrome extension that collects, an Electron gallery that reads, a sync client that pushes, and a web viewer that serves it back to you on any device.
+Latch Works is a private workshop for a personal media archive: a Chrome extension that collects, an Electron gallery that reads, a sync client that pushes, and a web viewer that serves it all back to you on any device.
 
-**The local archive is the source of truth.** Nothing is public, nothing is inferred from a cloud service. Remote access is explicit, authenticated, and read-only — Lockstep is the only write path.
+The local archive is the source of truth. Nothing is public, nothing is inferred from a cloud service. Remote access is explicit, authenticated, and read-only. Lockstep is the only write path.
+
+The names follow a window-and-access metaphor: the latch controls access to the archive, Frame and Pane are the desktop and web viewing surfaces, the Box collects incoming media, and Lockstep keeps local and remote in step. The [brand kit](docs/latch-works-brand-kit.md) has the full vocabulary.
 
 <table>
 <tr>
-<td width="40%" valign="middle">
+<td width="50%" valign="middle">
 
 ### View the archive anywhere
 
-Pane View is a private web viewer for a synced archive — galleries, videos, and comics on desktop, tablet, and phone. TanStack Start, PostgreSQL, S3, signed renditions via Shutter.
+Pane View is a private web viewer for the synced archive. Galleries, videos, and comics on desktop, tablet, and phone. TanStack Start, PostgreSQL, S3, signed renditions via Shutter.
 
 </td>
-<td width="60%">
+<td width="50%">
 
 <img src="apps/showcase/public/screenshots/pane-view/gallery.png" alt="Pane View gallery grid" width="100%" />
 
 </td>
 </tr>
 <tr>
-<td width="40%" valign="middle">
-
-### Read it locally, first
-
-Frame View is a cross-platform Electron gallery for local images, videos, and comics. It's the UX north star for Pane View — whatever feels right here gets ported there.
-
-</td>
-<td width="60%">
+<td width="50%">
 
 <img src="apps/showcase/public/screenshots/frame-view/viewer.png" alt="Frame View desktop viewer" width="100%" />
 
 </td>
+<td width="50%" valign="middle">
+
+### Read it locally, first
+
+Frame View is a cross-platform Electron gallery for local images, videos, and comics. It's also where the UX gets decided. Whatever feels right here gets ported to Pane View, not the other way around.
+
+</td>
 </tr>
 <tr>
-<td width="40%" valign="middle">
+<td width="50%" valign="middle">
 
 ### Sync on your terms
 
-Lockstep plans and pushes archive changes to Pane View. Desktop app with profiles, encrypted token storage, and run history — or a scriptable CLI over the same engine.
+Lockstep plans and pushes archive changes to Pane View. It's a desktop app with profiles, encrypted token storage, and run history, or a scriptable CLI over the same engine. Your pick.
 
 </td>
-<td width="60%">
+<td width="50%">
 
 <img src="apps/showcase/public/screenshots/lockstep/plan.png" alt="Lockstep sync plan output" width="100%" />
 
 </td>
 </tr>
 <tr>
-<td width="40%" valign="middle">
+<td width="50%">
+
+<img src="apps/showcase/public/screenshots/gather-box/popup-active.png" alt="Gather Box extension popup mid-download" width="100%" />
+
+</td>
+<td width="50%" valign="middle">
 
 ### Collect from the browser
 
 Gather Box downloads image galleries and story PDFs from supported sites straight into inferred local folder structures, ready for the next scan.
-
-</td>
-<td width="60%">
-
-<img src="apps/showcase/public/screenshots/gather-box/popup-active.png" alt="Gather Box extension popup mid-download" width="100%" />
 
 </td>
 </tr>
@@ -88,16 +89,33 @@ Gather Box downloads image galleries and story PDFs from supported sites straigh
 
 ---
 
+## How it works
+
+```
+Gather Box downloads a gallery
+  -> lands in the local archive as an inferred folder structure
+  -> Frame View reads it directly off disk
+  -> Lockstep scans the tree and builds a sync plan
+  -> plan: read-only diff of local vs remote
+  -> push: originals to S3, metadata to PostgreSQL
+  -> Pane View serves it back, authenticated and read-only
+  -> Shutter signs thumbnail and preview renditions on demand
+```
+
+The scan, sort, grouping, and plan logic all live in `packages/`. Lockstep desktop and the CLI are two front ends over one engine, and Pane View reads the same domain types, so a sorting rule changed once changes everywhere.
+
+---
+
 ## What's in the repo
 
 | Name | Path | What it does |
 | --- | --- | --- |
-| **Pane View** | [`apps/pane-view`](apps/pane-view) | Private web viewer for a synced archive. TanStack Start + PostgreSQL + S3. |
-| **Frame View** | [`apps/frame-view`](apps/frame-view) | Electron desktop gallery for local images, videos, and comics. PDF reading is [planned](docs/plans/040-frame-view-pdf-spike.md), not shipped. |
-| **Gather Box** | [`apps/gather-box`](apps/gather-box) | Chrome extension that downloads galleries and story PDFs into local folder structures. |
-| **Lockstep** | [`apps/lockstep`](apps/lockstep) | Electron sync client — profiles, encrypted tokens, run history. |
-| **Lockstep CLI** | [`apps/lockstep-cli`](apps/lockstep-cli) | Scriptable `plan` / `push` / `verify` / `doctor`. npm package `@latch-works/lockstep`. |
-| **Showcase** | [`apps/showcase`](apps/showcase) | Astro product site and MDX docs — pages, screenshots, getting-started guides. |
+| Pane View | [`apps/pane-view`](apps/pane-view) | Private web viewer for a synced archive. TanStack Start + PostgreSQL + S3. |
+| Frame View | [`apps/frame-view`](apps/frame-view) | Electron desktop gallery for local images, videos, and comics. PDF reading is [planned](docs/plans/040-frame-view-pdf-spike.md), not shipped. |
+| Gather Box | [`apps/gather-box`](apps/gather-box) | Chrome extension that downloads galleries and story PDFs into local folder structures. |
+| Lockstep | [`apps/lockstep`](apps/lockstep) | Electron sync client with profiles, encrypted tokens, and run history. |
+| Lockstep CLI | [`apps/lockstep-cli`](apps/lockstep-cli) | Scriptable `plan` / `push` / `verify` / `doctor`. npm package `@latch-works/lockstep`. |
+| Showcase | [`apps/showcase`](apps/showcase) | Astro product site and MDX docs: pages, screenshots, getting-started guides. |
 
 ### Shared packages
 
@@ -112,7 +130,7 @@ Gather Box downloads image galleries and story PDFs from supported sites straigh
 
 ## Install
 
-Requires **Node.js 22+**, **pnpm 11** (`corepack enable`), and npm on `PATH` for Electron Forge packaging. Pane View additionally needs **PostgreSQL**, **S3-compatible storage**, and **Shutter** access for signed renditions.
+Requires Node.js 22+, pnpm 11 (`corepack enable`), and npm on `PATH` for Electron Forge packaging. Pane View additionally needs PostgreSQL, S3-compatible storage, and Shutter access for signed renditions.
 
 ```bash
 pnpm install
@@ -124,7 +142,7 @@ Shared packages build to `dist/` and app dev servers import from there, so build
 pnpm -r --filter './packages/*' build
 ```
 
-Then verify the whole workspace — build, checks, lint, knip:
+Then run the full workspace check. It builds everything, runs each package's checks, then lint and knip:
 
 ```bash
 pnpm check
@@ -146,7 +164,7 @@ pnpm --filter @latch-works/gather-box build    # Gather Box → dist/, load unpa
 
 ### Sync
 
-`plan` is read-only — it scans the source tree and prints what *would* change:
+`plan` is read-only. It scans the source tree and prints what *would* change:
 
 ```bash
 pnpm --filter @latch-works/lockstep start plan --source "/path/to/archive"
@@ -174,57 +192,6 @@ pnpm docs:check  # Docs link/consistency check
 
 ---
 
-## How it works
-
-```
-Gather Box downloads a gallery
-  -> lands in the local archive as an inferred folder structure
-  -> Frame View reads it directly off disk
-  -> Lockstep scans the tree and builds a sync plan
-  -> plan: read-only diff of local vs remote
-  -> push: originals to S3, metadata to PostgreSQL
-  -> Pane View serves it back, authenticated and read-only
-  -> Shutter signs thumbnail and preview renditions on demand
-```
-
-The scan, sort, grouping, and plan logic all live in `packages/` — Lockstep desktop and Lockstep CLI are two front ends over one engine, and Pane View shares the same domain types.
-
----
-
-## Workspace layout
-
-```text
-latch-works/
-├── apps/
-│   ├── pane-view/       # TanStack Start web viewer
-│   ├── frame-view/      # Electron desktop viewer
-│   ├── gather-box/      # Chrome extension
-│   ├── lockstep/        # Electron desktop sync client
-│   ├── lockstep-cli/    # Scriptable sync CLI
-│   └── showcase/        # Astro product site and docs
-├── packages/
-│   ├── media-domain/
-│   ├── media-index/
-│   ├── media-storage/
-│   └── lockstep-core/
-└── docs/
-    ├── ARCHITECTURE.md
-    ├── adr/
-    ├── plans/
-    └── runbooks/
-```
-
----
-
-## Design principles
-
-- **Private by default** — authentication gates web access. No public galleries, ever.
-- **Read-only remote** — Pane View browses; Lockstep writes. There is no third path.
-- **Local source of truth** — the desktop archive decides what exists.
-- **Shared domain logic** — sorting, grouping, scanning, and sync behavior live in packages, never duplicated per app.
-
----
-
 ## Documentation
 
 | Doc | Description |
@@ -235,20 +202,6 @@ latch-works/
 | [`docs/latch-works-brand-kit.md`](docs/latch-works-brand-kit.md) | Naming, tone, and product vocabulary |
 | [`docs/electron-macos-signing.md`](docs/electron-macos-signing.md) | Signing and notarizing the Electron apps |
 | [`apps/showcase/README.md`](apps/showcase/README.md) | Showcase dev server and screenshot capture |
-
----
-
-## Naming
-
-The product names follow a window-and-access metaphor:
-
-| Term | Meaning |
-| --- | --- |
-| **Latch** | Controls access to the archive |
-| **Frame** | The desktop viewing surface |
-| **Pane** | The web viewing surface |
-| **Box** | Collects and stores incoming media |
-| **Lockstep** | Keeps local and remote archives in sync |
 
 ---
 
