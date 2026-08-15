@@ -2,7 +2,8 @@
 
 Plans 024–040 were generated from the deep repository survey at commit `fd5693d` on 2026-07-13;
 plans 041–045 from the Gather Box architecture review on 2026-07-15; plans 046–047 from the
-open-sourcing test audit on 2026-07-27. Every open plan is written for an implementation agent and
+open-sourcing test audit on 2026-07-27; plans 048–050 from the Pane View architecture review at
+commit `7076ce8` on 2026-08-14. Every open plan is written for an implementation agent and
 begins with a drift check. Status changes belong in this index and the corresponding plan.
 
 Last audited 2026-07-28 at commit `8977ebe`. Completed plan files are removed once their outcome is
@@ -15,9 +16,13 @@ recorded below; recover full text with `git log --diff-filter=D --follow -- docs
 | [025](025-repair-drizzle-snapshot-baseline.md) | Restore a current Drizzle snapshot baseline | P1 | M | — | BLOCKED |
 | [037](037-batch-sync-registration.md) | Batch server registration and ancestor writes | P3 | L | 026, 030, 036 (all done) | TODO |
 | [040](040-frame-view-pdf-spike.md) | Validate and specify Frame PDF reading | P2 | M spike | 033, 034 (both done) | BLOCKED |
+| [048](048-gallery-browse-state-module.md) | One browse-state module for the gallery; sidebar stops fetching 500 media rows | P2 | L | — | TODO |
+| [049](049-maintenance-job-scheduler.md) | One maintenance scheduler and a validated progress seam for the cleanup worker | P2 | M | — | TODO |
+| [050](050-library-repository-seam.md) | Test the library repository at its seam; collapse duplicated query internals | P3 | M | — | TODO |
 
-Plan 037 is the only ready-to-execute item: all three of its dependencies landed. Plans 025 and 040
-are blocked on environment access rather than on code (see below); neither blocks 037.
+Plans 037, 048, 049, and 050 are ready to execute; 048–050 are independent of each other and of 037.
+Plans 025 and 040 are blocked on environment access rather than on code (see below); neither blocks
+the others. Plan 049 deliberately adds no migration because 025 is blocked; see its Decisions section.
 
 ## Execution blockers
 
