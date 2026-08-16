@@ -1,0 +1,29 @@
+-- 0017_schema_baseline: advance Drizzle's snapshot baseline. (Plan 025)
+--
+-- The newest snapshot before this migration was 0006, which still modelled the
+-- removed "thumbnails" table. Migrations 0007-0016 were hand-written past that
+-- stale snapshot, so `drizzle-kit generate` diffed 0006 against schema.ts and
+-- re-emitted the net effect of those migrations. Every generated statement
+-- below is already applied by an earlier migration and is kept as a comment so
+-- the file records what the accompanying 0017_snapshot.json now describes:
+--
+--   ALTER TYPE maintenance_job_status ADD VALUE 'cancelled'                    -- 0015
+--   ALTER TYPE maintenance_job_type   ADD VALUE 'soft_deleted_purge'           -- 0013
+--   ALTER TYPE maintenance_job_type   ADD VALUE 'shutter_source_purge'         -- 0016
+--   ALTER TYPE maintenance_job_type   ADD VALUE 'legacy_derivative_cleanup'    -- 0010
+--   CREATE TABLE login_throttle_attempts (...)                                 -- 0012
+--   CREATE INDEX login_throttle_attempts_expires_at_idx                        -- 0012
+--   CREATE TABLE shutter_source_cleanup (...)                                  -- 0016
+--   CREATE INDEX shutter_source_cleanup_pending_idx                            -- 0016
+--   DROP TABLE thumbnails; DROP TYPE thumbnail_status                          -- 0009
+--   CREATE UNIQUE INDEX maintenance_jobs_active_hard_wipe_unique               -- 0011
+--   CREATE UNIQUE INDEX maintenance_jobs_active_type_unique                    -- 0014
+--
+-- The pg_trgm extension and GIN indexes from 0008 are intentionally not
+-- modelled by schema.ts and are therefore absent from the snapshot.
+--
+-- One statement is genuinely unapplied and is kept live: 0005 created
+-- maintenance_jobs.progress with default phase "s3_derivatives"; 0010 rewrote
+-- the rows to "s3_originals" but never changed the column default, while
+-- schema.ts declares "s3_originals". This ALTER is metadata-only and idempotent.
+ALTER TABLE "maintenance_jobs" ALTER COLUMN "progress" SET DEFAULT '{"errorCount":0,"phase":"s3_originals","processedCount":0}'::jsonb;
