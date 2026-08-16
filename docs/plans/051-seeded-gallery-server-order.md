@@ -7,8 +7,8 @@
 >
 > **Drift check (run first)**:
 > `git diff --stat bf8b0c8..HEAD -- apps/pane-view/src/server/library apps/pane-view/src/features/library apps/pane-view/src/features/gallery/useGalleryPreferences.ts apps/pane-view/src/server/db/schema.ts apps/pane-view/drizzle packages/media-domain/src`
-> Plan 050 is a dependency, so its expected changes to `repository.ts` and `gallery-listing.ts` do not
-> count as drift. Re-read `repository.ts`, `gallery-listing.ts`, `library-service.ts`, and
+> Plan 050 was folded into this plan as Step 0 on 2026-08-17; it is no longer a separate dependency.
+> Re-read `repository.ts`, `gallery-listing.ts`, `library-service.ts`, and
 > `packages/media-domain/src/comics.ts` before Step 1. If Plan 048 has landed, the seed field lives in
 > its browse-state module rather than in `useGalleryPreferences.ts:59`; find it before Step 1.
 
@@ -18,8 +18,11 @@
 - **Priority**: P1
 - **Effort**: L
 - **Risk**: MEDIUM. The comic summary query is new SQL; this plan runs it under pglite before it
-  ships. The media cursor changes are pinned by Plan 050's rendered-SQL tests.
-- **Depends on**: 050. Plan 048 is not required; see the drift check for where the seed field lives.
+  ships. The media cursor changes are pinned by Step 0's rendered-SQL tests. The natural collation
+  (Decision 6) is proven against `compareByName` under pglite before any query uses it.
+- **Depends on**: — (Plan 048 is not required; see the drift check for where the seed field lives).
+- **Absorbs**: Plan 050 (2026-08-17) — its surviving steps are Step 0 below; its cursor tightening
+  is superseded by Step 3.
 - **Blocks**: 052
 - **Category**: correctness / gallery ordering
 - **Planned at**: commit `bf8b0c8`, 2026-08-15. Refined and split at `c8f46f4`, 2026-08-16; the
@@ -87,8 +90,8 @@ All references are to `apps/pane-view/src/` unless another root is named.
   modes order by `filename`/`mtimeMs` in PostgreSQL byte order (`:417-421`), not by the natural
   collator the client uses.
 - `server/library/gallery-listing.ts:16-24` cursor payload carries `randomSeed?: number` and
-  `randomHash?: string`; `:32-58` decode does not check them against the request. Plan 050 tightens
-  this for `sortMode` and `randomSeed`.
+  `randomHash?: string`; `:32-58` decode does not check them against the request. Step 3 tightens
+  this.
 - `features/library/library-service.ts:35` validates `randomSeed: z.number().int().nonnegative()`;
   `:136-138` rejects comic mode from `getGalleryListing`.
 - `features/gallery/useGalleryPreferences.ts:59,225` creates the seed with
@@ -109,9 +112,17 @@ All references are to `apps/pane-view/src/` unless another root is named.
   mtime column.
 - `drizzle/0008_gallery_query_indexes.sql` runs `CREATE EXTENSION IF NOT EXISTS pg_trgm`. Any
   in-process test database must load that extension before migrating.
-- No repository test executes SQL. Every server test mocks `../db` (`vi.mock("../db", ...)`); Plan
-  050 adds rendered-SQL string assertions and explicitly defers a pglite adapter to a later plan.
-  This is that plan.
+- No repository test executes SQL. Every server test mocks `../db` (`vi.mock("../db", ...)`).
+  `repository.test.ts` imports only `media-page.ts` and `query-helpers.ts`, nothing from
+  `repository.ts`; the 97-line keyset builder and the duplicated condition block (`repository.ts:57-91`
+  vs `:214-250`) and row mapper (`:151-167` vs `:530-548`) are untested. Step 0 pins them with
+  rendered SQL; Step 2 adds pglite for behaviour.
+- Regular media name modes order by `filename` in PostgreSQL byte order (`repository.ts:417`), so
+  Pane View lists `10.jpg` before `2.jpg` today while Frame View and the comic reader use the natural
+  collator. Decision 6 fixes this for media and comics alike.
+- Plan 025 landed on 2026-08-17: `drizzle/meta/0017_snapshot.json` is current, so
+  `drizzle-kit generate --custom` now copies a correct snapshot and is the right way to add the
+  hand-written `CREATE COLLATION` migration in Decision 6.
 - `features/comics/ComicReader.tsx` requires a full `ComicEntry` with every page. Returning every
   page for every comic in a listing page would make the listing payload unbounded.
 
@@ -124,10 +135,11 @@ Create these tests before the implementation. Fixed subject IDs, fixed seeds, no
 | Pure random key | `pnpm --dir apps/pane-view exec vitest run src/server/library/gallery-order.test.ts` | Key helper does not exist. |
 | Executed media cursor | `pnpm --dir apps/pane-view exec vitest run src/server/library/gallery-listing.pglite.test.ts` | Cursor with a mismatched seed or subject kind is accepted; concatenated random pages under the shared key differ from the oracle. |
 | Executed comic cursor | same file | `getGalleryListing` rejects comic mode; no comic summary rows exist. |
-| Rendered SQL | `pnpm --dir apps/pane-view exec vitest run src/server/library/repository.test.ts` | Plan 050's pinned SQL strings change without a recorded reason. |
+| Rendered SQL | `pnpm --dir apps/pane-view exec vitest run src/server/library/repository.test.ts` | Step 0's pinned SQL strings change without a recorded reason. |
+| Natural collation | same pglite file | `ORDER BY filename COLLATE "natural"` disagrees with `compareByName` over the fixture. |
 
 The pglite tests are the only place concatenation equality is proven against SQL that actually
-executes. The rendered-SQL tests from Plan 050 remain the cheap guard against accidental query
+executes. The rendered-SQL tests from Step 0 remain the cheap guard against accidental query
 rewrites. Both stay.
 
 ## Scope
@@ -141,8 +153,8 @@ the minimal client change required to send the new seed format.
 **Out of scope**: any change to how the client accumulates, sorts, or navigates pages (Plan 052);
 switching comic mode off `getLibrarySnapshot` (Plan 052); changing the persisted page size;
 randomizing folder cards; changing Frame View's local archive sort or `media-domain`'s
-`createRandomSeed`; cryptographic secrecy for the seed; schema or collation changes; comic-reader
-page virtualization.
+`createRandomSeed`; cryptographic secrecy for the seed; table or column changes (the one migration
+this plan adds is `CREATE COLLATION`, Decision 6); comic-reader page virtualization.
 
 ## Decisions taken in this plan
 
@@ -156,7 +168,7 @@ page virtualization.
 3. **The seed is a validated 32-character lowercase hex string**, generated from 16 bytes of
    `crypto.getRandomValues`. It is required on every listing request (it is required today) and is
    embedded in every cursor. A cursor whose seed, sort mode, or subject kind differs from the request
-   is rejected (`decode` returns `null` → first page), extending Plan 050's rule. Any persisted or
+   is rejected (`decode` returns `null` → first page). Any persisted or
    in-memory numeric seed is replaced with a fresh hex seed on load; nothing migrates old values.
 4. **Comic listing returns summaries.** `GalleryComicSummary` carries the canonical folder path as
    `id`, the display name, the cover `LibraryMediaItem`, and `pageCount`. Full pages load only when the
@@ -168,32 +180,50 @@ page virtualization.
    same cost class as the existing random media order (`ORDER BY md5(...)` sorts the whole population
    per page). Both `parent_path` columns are indexed. What must never happen is returning every media
    row to the service layer.
-6. **Cover choice and non-random comic order use PostgreSQL byte order, decided now.** The regular
-   media listing already uses byte order for `filename` (`repository.ts:417`), so this makes comics
-   consistent with media rather than introducing a new rule. Concretely:
-   - cover = the eligible page with the smallest `(filename, id)` bytewise;
-   - `name-asc` / `name-desc` = `folderPath` asc/desc, then `id`-free (folder path is unique);
-   - `date-newest` = `max(page mtime)` desc, then `folderPath` asc;
-   - `date-oldest` = `min(page mtime)` asc, then `folderPath` asc;
+6. **Name ordering and cover choice use a natural, case-insensitive collation on the server,
+   matching `compareByName`.** Product owner confirmed natural ordering on 2026-08-17; byte order was
+   rejected. Add one hand-written migration via
+   `SKIP_ENV_VALIDATION=1 pnpm --filter @latch-works/pane-view db:generate --custom --name natural_collation`
+   whose body is `CREATE COLLATION IF NOT EXISTS "natural" (provider = icu, locale = 'und-u-kn-true-ks-level1');`
+   (`kn-true` = numeric digit runs, `ks-level1` = primary strength, i.e. case- and accent-insensitive
+   like `Intl.Collator({ numeric: true, sensitivity: "base" })`). Keep the collation deterministic
+   (the default) so equal-at-primary strings still tie-break bytewise and `ILIKE`/`pg_trgm` on the
+   columns are unaffected — the collation is applied per expression (`filename COLLATE "natural"`),
+   never to the column definition. Drizzle does not model collations, so `0017_snapshot.json` stays
+   current and a later `db:generate` sees no drift. Concretely:
+   - regular media `name-asc`/`name-desc` = `filename COLLATE "natural"`, then
+     `logicalPath COLLATE "natural"`, then `id`; the keyset cursor compares with the same collation;
+   - cover = the eligible page with the smallest `(filename COLLATE "natural", id)` — the same page
+     `compareByName` puts first, so card cover and reader cover agree;
+   - comic `name-asc` / `name-desc` = `folderPath COLLATE "natural"` asc/desc (folder path is unique);
+   - `date-newest` = `max(page mtime)` desc, then `folderPath COLLATE "natural"` asc;
+   - `date-oldest` = `min(page mtime)` asc, then `folderPath COLLATE "natural"` asc;
    - `random` = shared key over `("comic", folderPath)`, then `folderPath` asc.
-   Known visible changes: a comic whose natural-first page is not its bytewise-first page (for
-   example `2.jpg` before `10.jpg` with no `1.jpg`) shows a different cover; comics were previously
-   ordered by cover filename, now by folder path; date order previously used the cover's mtime.
-   Reader page order is unchanged (Step 5 sorts pages with `compareByName` in TypeScript, bounded to
-   one comic). Record these in the PR description. A product objection is a STOP condition, not a
-   reason to defer the decision.
+   Prove it in pglite: sort the fixture's filenames with `ORDER BY filename COLLATE "natural", id` and
+   with `compareByName` (with an `id` tie-break added to the oracle, since the collator returns 0 for
+   primary-equal names such as `A.jpg`/`a.jpg`); the two lists must be identical. A disagreement on
+   the ASCII fixture is a STOP condition. Do not add expression indexes in this plan; note in the PR
+   whether `EXPLAIN` under Docker Postgres shows a full sort per page for name modes (random already
+   does), and leave indexes to a follow-up.
+   Known visible changes: regular media name order becomes natural (`2.jpg` before `10.jpg`); comics
+   were previously ordered by cover filename, now by folder path; date order uses newest/oldest page
+   instead of the cover's mtime. Record these in the PR description.
 7. **Comic eligibility matches `buildComicEntries` exactly**: `media_type IN ('image','gif')`;
    `deleted_at IS NULL`; entry inside the normalized browse scope (comic mode forces recursive, so
    subtree prefix); `parent_path <> currentPath`; `NOT EXISTS` a non-deleted `folders` row whose
    `parent_path` equals the entry's `parent_path`; the search query and `showImages`/`showVideos`
    apply to pages before grouping, so a search lists only comics with a matching page and counts only
    matching pages. `pageCount` is therefore the eligible page count under the current filters.
-8. **pglite is the repository test adapter.** Plan 050 chose rendered SQL and said "propose pglite
-   separately if needed"; a brand-new aggregate query with a keyset cursor is that need. Add
-   `@electric-sql/pglite` as a pane-view devDependency, build the schema by running the checked-in
-   `drizzle/` migrations through `drizzle-orm/pglite/migrator` with the `pg_trgm` contrib extension
-   loaded, and inject the resulting `db` via `vi.mock("../db", ...)`. Rendered-SQL tests stay for the
-   builders; pglite tests cover behaviour.
+8. **pglite is the repository test adapter.** A brand-new aggregate query with a keyset cursor and a
+   collation change need executed SQL, not string pins. Add `@electric-sql/pglite` as a pane-view
+   devDependency, build the schema by running the checked-in `drizzle/` migrations (through the
+   collation migration) via `drizzle-orm/pglite/migrator` with the `pg_trgm` contrib extension
+   loaded, and inject the resulting `db` via `vi.mock("../db", ...)`. PGlite is built with ICU
+   (`initDbStartParams` accepts `--locale-provider=icu`); the `und` root collation with `kn`/`ks`
+   attributes needs no extra locale data, but if `CREATE COLLATION` fails under the default build,
+   switch the devDependency to the `pglite-icu-full` build before falling back to hand-written DDL.
+   Rendered-SQL tests (Step 0) stay for the builders; pglite tests cover behaviour. This harness is
+   also the intended base for Plan 049's worker tests.
 9. **The wire changes are additive.** `getGalleryListing` accepts `comicMode: true` and returns
    summaries; the response type gains `subjectKind` and `comics`. `getLibrarySnapshot` is untouched.
    The only client change is the seed format, because the server schema will reject numeric seeds.
@@ -276,6 +306,37 @@ mismatch of `subjectKind`, `sortMode`, or `randomSeed`.
 
 ## Steps
 
+### Step 0: Prepare the repository (absorbed from Plan 050)
+
+Before touching ordering, pin and dedupe `server/library/repository.ts` (548 lines, no direct
+test):
+
+- Split query building from execution: export internal builders `buildGalleryListingMediaQuery`,
+  `buildGalleryListingOrderBy`, and `buildGalleryListingCursorCondition` for the test file; the
+  `readDatabase*` functions execute them. These are internal seams, not an interface for other
+  modules — reviewers should reject imports of `build*` from outside the test.
+- Extract `buildLibraryConditions({ currentPath, query, recursive })` returning
+  `{ mediaConditions, folderConditions }` from the duplicated block at `repository.ts:57-91` /
+  `:214-250`; both read paths call it, and Step 4's comic eligibility reuses it.
+- Delete the inline row mapper (`:151-167`) in favour of `mapMediaRowsToLibraryItems`; delete
+  `folderFromPath` (`:182-190`, no callers); collapse the twin `LibraryMediaItem` / `MediaPage`
+  declarations in `server/library/types.ts`, `features/library/types.ts`, and `media-page.ts` into
+  one, aliasing `LibraryMediaItem = MediaItem` if it adds nothing (STOP and keep it if it does).
+- Rewrite `repository.test.ts` so it imports from `./repository`, in the
+  `server/auth/login-throttle-sql.test.ts` style (stub executor, `.toSQL()`): render `ORDER BY` and
+  the cursor `WHERE` for all five sort modes and assert programmatically that direction agrees
+  (`desc` column ⇒ `<` in the leading disjunct, `asc` ⇒ `>`); render both read paths for root
+  non-recursive, recursive subtree with `%`/`_` escaping, search on path and filename,
+  `showImages=false`, and a `date-newest` cursor with `LIMIT limit+1`. Fold `media-page.ts` and
+  `query-helpers.ts` cases into this file and delete those files if trivially thin.
+
+Not carried over from Plan 050: its cursor-mismatch tightening (`expected` argument, `?? 0` / `?? ""`
+removal) — Step 3 replaces the cursor payload wholesale, so doing it twice is waste.
+
+**Verify**: rendered SQL for both read paths is identical before and after the dedupe except for
+parameter numbering (STOP if not); `repository.ts` shrinks by roughly 80 lines; `pnpm typecheck` and
+the pane test suite pass. Commit Step 0 on its own so the ordering diff in Step 3 is reviewable.
+
 ### Step 1: Pin the ordering key and the seed format
 
 Add `server/library/gallery-order.ts` per the interface above. `galleryRandomOrderKey` is
@@ -346,8 +407,10 @@ Keep the existing tie-breakers. Change the cursor payload to the discriminated s
 `subjectKind` and require `randomSeed`. `decodeGalleryListingCursor` takes the request and rejects
 any mismatch.
 
-Update Plan 050's rendered-SQL tests for the new key expression (this is a recorded, intended change
-to the pinned strings).
+Apply Decision 6 to the name modes: `filename COLLATE "natural"` (and `logicalPath COLLATE
+"natural"`) in `ORDER BY` and in the cursor comparison. Update Step 0's rendered-SQL tests for the
+new key expression and the collation (this is a recorded, intended change to the pinned strings).
+Add the collation migration first (Decision 6) so pglite and Docker both have it.
 
 In `gallery-listing.pglite.test.ts`, for each of these request shapes — non-recursive folder,
 recursive subtree, search, `showImages` only, `showVideos` only — and each sort mode, and page sizes
@@ -382,8 +445,8 @@ Encode the comic cursor from the last summary of the page. Change `getGalleryLis
 Add pglite tests: for page sizes `{3, 7, 48}`, every sort mode, two seeds, with and without the
 search term and each visibility filter, concatenated comic pages equal the oracle; page 1 is a prefix
 of the concatenation; the root-level media never forms a comic; a folder with a child folder is
-never a comic; a soft-deleted page is not counted; the unpadded-name comic's cover is the bytewise
-minimum. Add one rendered-SQL assertion for each phase so the query shape is pinned.
+never a comic; a soft-deleted page is not counted; the unpadded-name comic's cover is `1.jpg`/`2.jpg`, not
+`10.jpg` (natural minimum, agreeing with `compareByName`). Add one rendered-SQL assertion for each phase so the query shape is pinned.
 
 **Verify**: with one seed, a comic can appear on any page according to its global rank. Loading page 2
 never changes page 1. The listing payload contains no `pages` arrays.
@@ -394,8 +457,8 @@ Add `getGalleryComic` per the interface. It authorizes the web session, normaliz
 validates that `comicId` is a folder path inside the browse scope (reject otherwise). It selects
 every eligible page of that one folder under the same eligibility rules and the same `query`,
 `showImages`, `showVideos` as the listing, sorts them with `compareByName` in TypeScript, and returns
-a `ComicEntry<LibraryMediaItem>` whose `cover` is `pages[0]` under natural order (the reader's cover
-and the card's cover may differ for unpadded names; Decision 6 records this).
+a `ComicEntry<LibraryMediaItem>` whose `cover` is `pages[0]` under natural order — the same page
+the card shows, because Decision 6 uses the same natural collation server-side.
 
 Add a pglite test that resolves each fixture comic and compares page order to `buildComicEntries`
 run over the same fixture rows, proving that the reader sees exactly what the old client grouping
@@ -437,7 +500,11 @@ client reads `comics` yet.
       filtered, searched, and comic requests at three page sizes and two seeds each.
 - [ ] Filtering under one seed yields a subsequence of the unfiltered order.
 - [ ] Rendered-SQL tests are updated with a recorded reason for every changed string.
-- [ ] Decision 6's visible changes are listed in the PR description.
+- [ ] The `natural` collation exists via a hand-written migration; server name order and cover
+      choice agree with `compareByName` over the pglite fixture; Decision 6's visible changes are
+      listed in the PR description.
+- [ ] Step 0 landed first: `repository.test.ts` tests `repository.ts`, order/cursor direction
+      agreement is asserted for all five modes, and the condition builder and row mapper exist once.
 - [ ] The client still browses in every mode; Shuffle produces a hex seed.
 - [ ] `pnpm --filter @latch-works/pane-view check` passes.
 
@@ -445,9 +512,11 @@ client reads `comics` yet.
 
 - The product owner wants folder navigation cards included in the random permutation. This plan
   treats only media and comics as random subjects.
-- The product owner rejects byte-order cover selection or byte-order comic name/date order
-  (Decision 6). Reproducing the natural collator server-side needs an ICU collation (a schema
-  change, blocked behind Plan 025) or a natural-key SQL expression; choose and plan that separately.
+- `CREATE COLLATION … provider = icu` fails under pglite (even with `pglite-icu-full`) or under
+  the production PostgreSQL, or the collation disagrees with `compareByName` on the ASCII fixture.
+  Record the failure; the fallback is an immutable SQL natural-key function (`lower` + zero-padded
+  digit runs) used in the same `ORDER BY`/cursor positions, which is a different plan step, not a
+  silent substitution.
 - The comic summary query returns every eligible media row to the service layer before applying its
   page limit. Aggregation over eligible rows is expected; unbounded transfer is not.
 - pglite cannot run the checked-in migrations and the hand-written DDL fallback would need to
@@ -463,6 +532,6 @@ the shared seeded key, validate cursors against the request, and pass the concat
 tests under pglite. Reviewers should reject a listing that returns rows in an order other than the
 one the cursor continues.
 
-Plan 050's rendered-SQL tests remain the guard against accidental builder rewrites; the pglite tests
+Step 0's rendered-SQL tests remain the guard against accidental builder rewrites; the pglite tests
 are the guard for behaviour. Keep both. Plan 052 owns the client: accumulation, the population-change
 policy, and navigation across page boundaries.

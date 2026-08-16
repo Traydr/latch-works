@@ -8,67 +8,44 @@ commit `bf8b0c8` on 2026-08-15 (split into server and client halves at `c8f46f4`
 Every open plan is written for an implementation agent and
 begins with a drift check. Status changes belong in this index and the corresponding plan.
 
-Last audited 2026-07-28 at commit `8977ebe`. Completed plan files are removed once their outcome is
-recorded below; recover full text with `git log --diff-filter=D --follow -- docs/plans/<file>`.
+Last audited 2026-08-17 at commit `4ae457e` (plan 025 landed the same day; 037 rejected; 050 folded
+into 051; product-owner decisions recorded in 040, 048, 051, 052). Completed plan files are removed
+once their outcome is recorded below; recover full text with `git log --diff-filter=D --follow -- docs/plans/<file>`.
 
 ## Open work
 
 | Plan | Outcome | Priority | Effort | Depends on | Status |
 |---|---|---:|---:|---|---|
-| [025](025-repair-drizzle-snapshot-baseline.md) | Restore a current Drizzle snapshot baseline | P1 | M | — | BLOCKED |
-| [037](037-batch-sync-registration.md) | Batch server registration and ancestor writes | P3 | L | 026, 030, 036 (all done) | TODO |
-| [040](040-frame-view-pdf-spike.md) | Validate and specify Frame PDF reading | P2 | M spike | 033, 034 (both done) | BLOCKED |
-| [048](048-gallery-browse-state-module.md) | One browse-state module for the gallery; sidebar stops fetching 500 media rows | P2 | L | — | TODO |
-| [049](049-maintenance-job-scheduler.md) | One maintenance scheduler and a validated progress seam for the cleanup worker | P2 | M | — | TODO |
-| [050](050-library-repository-seam.md) | Test the library repository at its seam; collapse duplicated query internals | P3 | M | — | TODO |
-| [051](051-seeded-gallery-server-order.md) | One seeded server order for media and comic summaries, cursor-paginated and tested under pglite | P1 | L | 050 | TODO |
+| [048](048-gallery-browse-state-module.md) | One browse-state module for the gallery; sidebar stops fetching 500 media rows; seed persisted; root prefs kept behind an adapter | P2 | L | — | TODO |
+| [051](051-seeded-gallery-server-order.md) | One seeded server order for media and comic summaries, natural ICU collation, cursor-paginated and tested under pglite (absorbs 050) | P1 | L | — | TODO |
 | [052](052-gallery-browse-session-and-boundary-navigation.md) | One client browse session: no client sort, tolerant refetch, pagination-aware navigation, controlled viewer | P1 | L | 048, 051 | TODO |
+| [049](049-maintenance-job-scheduler.md) | One maintenance scheduler and a validated progress seam for the cleanup worker | P3 | M | soft: 051 (pglite harness) | TODO |
+| [040](040-frame-view-pdf-spike.md) | Validate and specify Frame PDF reading by porting Pane's windowed viewer | P2 | M spike | 033, 034 (both done) | TODO (Steps 2–3 need the product owner at a desktop) |
 
-Plans 037, 048, 049, and 050 are ready to execute; 048–050 are independent of each other and of 037.
-Plan 051 follows 050 because it extends the tested cursor seam and adds the pglite adapter 050
-deferred; it does not need 048. Plan 052 follows 048 and 051 because it consumes the browse-state
-selection intent and the comic summary listing. Plans
-025 and 040 are blocked on environment access rather than on code (see below); neither blocks the
-others. Plan 049 deliberately adds no migration because 025 is blocked; see its Decisions section.
+Recommended order (2026-08-17 review):
+
+1. **048 and 051 in parallel** — independent of each other. 051's Step 0 (the former Plan 050
+   dedupe and rendered-SQL pins) lands as its own commit first. If 048 lands before 051, 048 adds
+   `createGalleryRandomSeed` and 051 reuses it; otherwise the reverse.
+2. **052** after both — it consumes 048's selection intent and 051's comic summaries.
+3. **049** after 051 — its worker tests should use 051's pglite adapter rather than mocked `db`.
+4. **040** whenever the product owner has an hour at a desktop for Steps 2–3; the agent-side steps
+   can start any time.
+
+Decisions already taken by the product owner (do not re-ask; STOP conditions referring to them are
+resolved): root preferences stay and will grow a per-root recursive-exclusion list in a future plan
+(048); server ordering uses a natural, case-insensitive ICU collation, not byte order (051);
+backward navigation stays put on the first item until every page is loaded, and comic Delete is
+dropped from the gallery for now (052); Frame PDF reading is wanted and should port Pane's viewer
+(040); Plan 037 is rejected without measurement (below).
+
+Nothing is blocked on environment any more: Plan 025 landed, Docker (OrbStack) is available locally
+for disposable PostgreSQL, and `drizzle-kit generate` produces correct migrations again.
 
 ## Execution blockers
 
-### 025 — blocked on disposable PostgreSQL, and the drift has grown
-
-Still genuinely blocked, and worse than when the plan was written. The migration journal now records
-through `0012` while the newest snapshot is still `0006`, which continues to model the removed
-`thumbnails` table. Two migrations were hand-written past the stale baseline after this plan was
-filed: `0011_serialize_sync_hard_wipe` (Plan 030) and `0012_shared_login_throttle` (Plan 046). A
-`drizzle-kit generate` today would diff `0006` against the current schema and emit both the obsolete
-thumbnail teardown *and* re-creation of the `login_throttle_attempts` table and the active-hard-wipe
-partial unique index that are already applied.
-
-The original blocker — `drizzle-kit generate --custom` copies the latest snapshot instead of deriving
-one — was diagnosed correctly and the plan already specifies the fix (ordinary generation, then
-replace only the SQL body with comments). What is missing is execution: Steps 1 and 4 require two
-disposable PostgreSQL databases, which no agent run so far has had.
-
-**To resolve**: provide two throwaway PostgreSQL URLs (a fresh one and one migrated through `0012`),
-then run the plan as written with the drift corrections now recorded in its Current state section.
-The plan's target file is renumbered from `0011_*` to `0013_*`, and the expected snapshot must now
-*include* `login_throttle_attempts` and `maintenance_jobs_active_hard_wipe_unique` rather than treat
-them as unexplained. No local Docker/Postgres is required if a hosted scratch database is easier.
-
-### 040 — blocked on user-only desktop gates; urgency already relieved
-
-Still blocked, but the reason it was P2-urgent no longer applies. The spike stopped because
-`pnpm --filter @latch-works/frame-view package` and `make` produce a desktop distributable that an
-agent cannot launch or smoke-test, so Steps 2 and 3 (packaged worker resolution, first-page latency,
-bounded-canvas measurement) cannot be completed headlessly.
-
-The original risk was that the Showcase advertised a Frame PDF reader that does not exist. Plan 039
-fixed that: `frame-view/index.mdx`, `comics-and-stories.mdx`, and `troubleshooting.mdx` now all say
-PDF reading is planned and not shipped. Frame still has no `pdfjs-dist` dependency and no PDF in
-`shared/contracts.ts`, so the code and the docs agree.
-
-**To resolve**: this needs a human at a desktop, or it should be deferred. Either run Steps 2–3
-interactively on a supported OS and record the measurements, or downgrade the plan to P3/deferred
-until Frame PDF reading is actually wanted. Nothing else depends on it.
+None on environment. Plan 040's Steps 2–3 (packaged Electron smoke, latency and canvas measurements)
+need a person at a desktop; everything else in every open plan is agent-executable.
 
 ### Lost branches — both referenced work branches are gone
 
@@ -89,6 +66,7 @@ Two-sentence outcomes. The plan files are deleted; the landing commit is the rec
 | Plan | Commit | Outcome |
 |---|---|---|
 | 024 | `4cc6141` | Root `pnpm lint` walked the ignored `.pnpm-store` and emitted thousands of third-party diagnostics on any checkout with a local pnpm store. Biome's explicit traversal now excludes it, with a regression check that does not blanket-hide dot-directories. |
+| 025 | `1dc87b1` | Drizzle's newest snapshot was `0006`, still modelling the removed `thumbnails` table, while hand-written migrations `0007`–`0016` had moved the schema on; the generator was unusable and needed a TTY to answer rename-vs-create prompts. `0017_schema_baseline` now carries a current snapshot with a comments-only body — except one live `SET DEFAULT` that corrected genuine drift (`maintenance_jobs.progress` still defaulted to `s3_derivatives`) — verified equivalent on fresh and through-`0016` Postgres 16 containers, after which `db:generate` reports no changes. |
 | 026 | `458cda2` | Pane View derived object keys from a claimed SHA-256 without binding upload size or checksum, and registered client metadata without asking S3 what it actually stored. Uploads are now size-bounded, presigned with signed checksum/length headers using `unhoistableHeaders`, hashed in-flight by Lockstep, and HEAD-verified against storage before any database row is written. |
 | 027 | `13eda05` | Client finalization updated sync runs by ID alone and could overwrite a `cancelled` run with `completed` or `failed`. Terminal states are now monotonic while exact replay of a recorded completion stays safe. |
 | 028 | `3eb65e4` | The thumbnail resolver sent only the first 48 visible requests and never scheduled the rest once those resolved terminally. The client now drains successive bounded batches without raising the server's documented 48-item maximum. |
@@ -112,6 +90,17 @@ Two-sentence outcomes. The plan files are deleted; the landing commit is the rec
 
 ## Historical and rejected work
 
+- **037: Batch sync registration and ancestor upserts** — REJECTED 2026-08-17. The code claim
+  holds (`sync/store.ts` opens one transaction per uploaded object and re-upserts every ancestor,
+  ~5 + 2·depth statements per file), but pushes run three-wide behind an S3 PUT per item, so DB
+  registration is not the critical path and nobody has measured otherwise. Large effort, HIGH risk,
+  changes transactional boundaries. Revive only if a push profile shows registration as a material
+  share of wall time; if it does, first try a per-run memo of already-upserted ancestor paths
+  before building a batch endpoint. Full text: `git log --diff-filter=D --follow -- docs/plans/037-batch-sync-registration.md`.
+- **050: Library repository seam** — MERGED into Plan 051 as its Step 0 on 2026-08-17. Half of it
+  (cursor tightening, random-mode SQL pins) would have been rewritten by 051 within days; the
+  surviving half (condition/mapper dedupe, order/cursor agreement test, repository-level rendered
+  SQL) is now 051's first commit. Full text: `git log --diff-filter=D --follow -- docs/plans/050-library-repository-seam.md`.
 - **023: Gallery performance audit** — REJECTED / superseded. Its stored-derivative and prewarming
   recommendations predate the controlling Shutter-only architecture; re-measure gallery queries
   before reviving any still-relevant index idea.

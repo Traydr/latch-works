@@ -22,7 +22,9 @@
 - **Depends on**: 048 (browse state and selection intent), 051 (server order, comic summaries,
   `getGalleryComic`)
 - **Category**: correctness / gallery navigation
-- **Planned at**: commit `c8f46f4`, 2026-08-16 (split from Plan 051 as first written at `bf8b0c8`)
+- **Planned at**: commit `c8f46f4`, 2026-08-16 (split from Plan 051 as first written at `bf8b0c8`);
+  Decisions 7 and 10 (backward wrap stays put; comic Delete dropped) confirmed by the product owner
+  2026-08-17
 - **Original finding**: focus-view pagination and random comic-order investigation, 2026-08-15
 
 ## Why this matters
@@ -360,10 +362,10 @@ Manual, with `pnpm dev:pane` and a folder of more than two pages:
 ## STOP conditions
 
 - The product owner wants folder cards included in the random permutation.
-- The product owner wants comic deletion from the gallery. That is folder deletion, not cover
-  deletion, and needs its own plan.
-- Backward navigation from the first item must wrap to the true last item before all pages load.
-  That requires reverse cursors or loading the remaining result set and is outside this plan.
+- (Resolved 2026-08-17: the product owner confirmed dropping comic Delete from the gallery for now
+  and keeping backward navigation put on the first item while more pages exist. Neither is a STOP
+  condition any longer; if whole-comic deletion is wanted later it is folder deletion and needs its
+  own plan.)
 - Plan 051's `GalleryListingPage` shape differs from what this plan assumes in a way that changes
   the session interface. Reconcile the types before Step 1 rather than adapting mid-plan.
 

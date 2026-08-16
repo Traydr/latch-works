@@ -16,7 +16,8 @@
 - **Risk**: MEDIUM — touches the hottest file in the app; behaviour must not change
 - **Depends on**: —
 - **Category**: architecture / perf
-- **Planned at**: commit `7076ce8`, 2026-08-14
+- **Planned at**: commit `7076ce8`, 2026-08-14; decisions confirmed with the product owner 2026-08-17
+  (root preferences stay; seed becomes persisted and hex)
 - **Original finding**: Pane View architecture review 2026-08-14, candidate 3
 
 ## Why this matters
@@ -80,9 +81,11 @@ All references are to `apps/pane-view/src/`.
 ## Scope
 
 **In scope**: a new `features/gallery/useGalleryBrowseState.ts` module; retiring
-`useGalleryPreferences.ts`, `useGalleryState.ts`, `useRootPreferences`, `gallery-shell-context.tsx`,
-and `toGalleryRouteLoaderDeps`; rewiring `GalleryPage.tsx`, `GalleryLayout.tsx`,
-`routes/_gallery/index.tsx`; new tests at the module's interface.
+`useGalleryPreferences.ts`, `useGalleryState.ts`, `gallery-shell-context.tsx`, and
+`toGalleryRouteLoaderDeps`; moving the per-root preference storage (`useRootPreferences`,
+`readRootPreferences`/`writeRootPreferences`) behind the module's storage adapter; rewiring
+`GalleryPage.tsx`, `GalleryLayout.tsx`, `routes/_gallery/index.tsx`; new tests at the module's
+interface.
 
 **Out of scope**: `useGalleryBrowse.ts` pagination internals (it becomes a consumer of the new
 module's request, nothing more); server-side normalization in `library-service.ts` (keep exactly one
@@ -96,10 +99,23 @@ State them in the PR. If the user overrules any, the plan changes shape — see 
 1. **URL is the source of truth for `path`, `q`, `media`, `recursive`, `comic`.** localStorage seeds
    them only on a first visit with no `path` in the URL (existing behaviour at
    `useGalleryPreferences.ts:150-167`). After that, changes go URL-first; localStorage mirrors.
-2. **`sortMode`, `randomSeed`, `detailPanelOpen` stay localStorage-only** — they are not URL params
-   today and this plan does not add them.
-3. **Root preferences are deleted.** They are written and never read. If the user intends to read
-   them somewhere planned, STOP and ask.
+2. **`sortMode` and `detailPanelOpen` stay localStorage-only; `randomSeed` becomes localStorage-
+   persisted.** None are URL params today and this plan does not add them. Note that `randomSeed`
+   is currently plain React state (`useGalleryPreferences.ts:59`, `useState(() => createRandomSeed())`),
+   so a reload gives a new random order; Plan 051's Required behaviour 2 needs the same seed across a
+   reload, so this plan starts persisting it under `"pane-view.state"`. Type it as Plan 051's
+   `GalleryRandomSeed` (a 32-character lowercase hex string created by `createGalleryRandomSeed`)
+   from the start; if 051 has not landed yet, add that helper here (`crypto.getRandomValues`, 16
+   bytes) and 051 reuses it. A persisted value that is not 32 hex characters is replaced on load.
+3. **Root preferences are kept, behind the storage adapter.** `pane-view.root-preferences`
+   (`RootGalleryPreferences { comicMode, recursive, sortMode }` keyed by root) is written today and
+   read by nothing — but the product owner confirmed on 2026-08-17 that per-root settings are
+   intended: a follow-up plan brings Frame View's "exclude this folder from recursive browsing" to
+   Pane View, and per-root storage is where that exclusion list belongs. So: keep the type and the
+   localStorage key; route the existing write (mirror `recursive`/`comicMode`/`sortMode` per root
+   after each change) through the module's `storage` adapter so it is testable; do **not** add
+   read-back behaviour in this plan (restoring per-root flags on entry is a behaviour change for
+   the follow-up to decide). Add a one-line comment at the type pointing to that follow-up.
 4. **`lastSelectedId` is deleted** from persisted state for the same reason.
 5. **The override layer goes away.** A setter writes to the URL (for URL-owned fields) or to
    localStorage (for local-owned fields) directly. React state holds only what is neither: the
@@ -126,7 +142,7 @@ export interface GalleryBrowseState {
   comicMode: boolean;           // root ⇒ false
   folderModesEnabled: boolean;
   sortMode: GallerySortMode;
-  randomSeed: number;
+  randomSeed: GalleryRandomSeed;   // 32-hex string, persisted (Decision 2)
   detailPanelOpen: boolean;
   hydrated: boolean;            // URL + localStorage both read
   // one request every consumer uses
@@ -219,11 +235,12 @@ module (`recursiveToggleDisabled`, `effectiveComicMode`, `effectiveRecursive`, `
 ### Step 5: Delete the retired modules
 
 Remove `useGalleryPreferences.ts` + `.test.tsx`, `useGalleryState.ts`, `gallery-shell-context.tsx`,
-`useRootPreferences` and `readRootPreferences`/`writeRootPreferences` from `useAppSettings.ts`, and
-`toGalleryRouteLoaderDeps`. Run `pnpm knip` if configured (`knip.json` exists at repo root) to catch
+and `toGalleryRouteLoaderDeps`. Move `useRootPreferences` / `readRootPreferences` /
+`writeRootPreferences` out of `useAppSettings.ts` and behind the browse-state module's `storage`
+adapter (Decision 3); the `RootGalleryPreferences` type and `pane-view.root-preferences` key survive. Run `pnpm knip` if configured (`knip.json` exists at repo root) to catch
 stragglers.
 
-**Verify**: `pnpm --filter @latch-works/pane-view check` passes; `git grep -n "useGalleryPreferences\|useGalleryState\|useRootPreferences\|useGalleryShell\|toGalleryRouteLoaderDeps" apps/pane-view/src` returns nothing.
+**Verify**: `pnpm --filter @latch-works/pane-view check` passes; `git grep -n "useGalleryPreferences\|useGalleryState\|useGalleryShell\|toGalleryRouteLoaderDeps" apps/pane-view/src` returns nothing; `git grep -n "root-preferences" apps/pane-view/src` hits only the storage adapter.
 
 ### Step 6: Manual smoke
 
@@ -252,14 +269,16 @@ child folder stays at root" case, since it guards a real regression (`052081e`).
       route loader consume it.
 - [ ] `comic ⇒ recursive` appears once on the client and once on the server.
 - [ ] One `library-snapshot` query key per URL for page + sidebar; sidebar response carries no media.
-- [ ] Root preferences, `lastSelectedId`, override state, and `gallery-shell-context` are gone.
+- [ ] `lastSelectedId`, override state, and `gallery-shell-context` are gone; root preferences are
+      written only through the module's storage adapter and covered by a node test.
+- [ ] `randomSeed` survives a reload and is a 32-hex string.
 - [ ] Reconciliation is covered by node tests at the module interface.
 - [ ] Step 6 checklist passes; `pnpm --filter @latch-works/pane-view check` passes.
 
 ## STOP conditions
 
-- The user says root preferences are meant to be read somewhere planned (then keep them behind the
-  new module's `storage` adapter instead of deleting; re-scope Step 5).
+- Reading root preferences back turns out to be needed to keep current behaviour (it should not —
+  nothing reads them today); if so, pause and describe before adding a read path.
 - The user wants `sortMode` or `detailPanel` in the URL — a different plan; do not add URL params here.
 - The first-visit redirect cannot be expressed as a one-shot intent without reintroducing an
   override layer — pause and describe the case before adding state.

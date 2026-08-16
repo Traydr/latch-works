@@ -8,8 +8,10 @@
 
 ## Status
 
-- **Status**: BLOCKED on user-only desktop gates; start from scratch (audited 2026-07-28)
-- **Priority**: P2 — consider deferring; see Blocker analysis
+- **Status**: TODO — wanted; Steps 2–3 need the product owner at a desktop (re-audited 2026-08-17)
+- **Priority**: P2 — the product owner confirmed on 2026-08-17 that Frame PDF reading is wanted and
+  that Frame View and Pane View should broadly match in features; direction is to port Pane View's
+  windowed `PdfViewer` (Plan 034) rather than design from scratch
 - **Effort**: M (spike only; implementation to be re-estimated)
 - **Risk**: MED
 - **Depends on**: Plan 033, Plan 034
@@ -23,6 +25,16 @@ Gather Box produces story PDFs, Pane View reads PDFs, and the Showcase currently
 does too. Frame's actual catalog, IPC contracts, thumbnails, and modal support only image/video. A
 bounded spike should determine the secure Electron delivery boundary, PDF.js packaging model, and
 reader performance contract before this promise becomes a broad cross-process implementation.
+
+## Direction (2026-08-17)
+
+The product owner wants this feature and wants Frame View to match Pane View. So the spike should
+start from Pane's `PdfViewer` (Plan 034: stable geometry, visible-window rendering, overscan, ≤8 live
+canvases) and ask "what does it take to run this inside Frame's sandboxed Electron renderer with a
+constrained media protocol?" rather than open the design space. Steps 1, 4, and 5 are agent desk
+work; Steps 2 and 3 need the product owner to run the packaged app and record the numbers. Plan the
+work as: agent drafts the design and prototype, product owner runs the packaged smoke, agent
+finishes.
 
 ## Blocker analysis (audit 2026-07-28)
 

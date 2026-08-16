@@ -10,10 +10,13 @@
 ## Status
 
 - **Status**: TODO
-- **Priority**: P2
+- **Priority**: P3 (downgraded 2026-08-17: the cross-type phase leak is latent — only pre-Shutter
+  hard-wipe rows ever carried `s3_derivatives`, and the purge types did not exist then — so this is
+  hardening, dedupe, and test coverage rather than a live bug)
 - **Effort**: M
 - **Risk**: MEDIUM — durable job state; a wrong phase migration can strand a job
-- **Depends on**: —
+- **Depends on**: — (soft: land after Plan 051 so `cleanup-worker.test.ts` can use its pglite
+  `db` adapter instead of `vi.mock("../db")`; if 051 has landed, prefer that harness for Step 3)
 - **Category**: architecture / correctness
 - **Planned at**: commit `7076ce8`, 2026-08-14
 - **Original finding**: Pane View architecture review 2026-08-14, candidate 4
@@ -88,12 +91,13 @@ per-type descriptors; guard consistency for `deleteFolders`; removing `errorCoun
 
 ## Decisions taken in this plan
 
-1. **No migration.** Migrations in this repo are hand-written past a stale snapshot (Plan 025 is
-   BLOCKED on that). Cross-type "one active cleanup" stays app-level under the existing advisory
-   lock, which already serialises schedulers. Making it a DB constraint is a follow-up once 025
-   lands. The stale schema default (`s3_originals`) is likewise left in place — the scheduler always
-   supplies explicit progress, and the parser (Step 2) rejects a mismatched phase — but note it in
-   the PR as debt for the eventual migration.
+1. **No migration.** This plan is a refactor and keeps the schema untouched. Cross-type "one
+   active cleanup" stays app-level under the existing advisory lock, which already serialises
+   schedulers. Making it a DB constraint is a small follow-up (Plan 025 landed on 2026-08-17, so
+   `db:generate` produces correct migrations again; the executor may generate that index in a
+   separate commit if the user asks). The universal schema default (`s3_originals`, only valid for
+   hard wipes) is likewise left in place — the scheduler always supplies explicit progress, and the
+   parser (Step 2) rejects a mismatched phase — but note it in the PR as debt.
 2. **`errorCount` and `lastError` are removed** from the progress types and UI, not wired. The
    worker is fail-fast by design; a per-item error counter would need a policy for continuing past
    failures that nobody has asked for. Existing rows carrying `errorCount: 0` parse fine because the
@@ -247,7 +251,8 @@ test file count in `server/management/` should not grow by more than one.
 
 - The user wants `errorCount` wired (continue-past-failure semantics) — that is a behaviour design,
   not a refactor; write it up separately before touching the worker.
-- The user wants the cross-type constraint in the DB now — coordinate with Plan 025 first.
+- The user wants the cross-type constraint in the DB now — generate it as its own migration and
+  commit, rather than folding schema change into this refactor.
 - A live deployment has an active job at the moment of deploy: the parser change is
   backward-compatible with stored rows, but confirm no job is mid-flight before rolling out.
 
@@ -255,6 +260,6 @@ test file count in `server/management/` should not grow by more than one.
 
 New job types are one descriptor plus one phase list in `maintenance-progress.ts` plus a `switch`
 arm in the worker. Reviewers should reject any new `db.transaction` that re-implements the guard
-prologue outside `maintenance-scheduler.ts`. When Plan 025 lands, add a partial unique index on
+prologue outside `maintenance-scheduler.ts`. As a follow-up, add a partial unique index on
 `status in ('pending','running')` without the `type` column, and drop the app-level
 `readActiveCleanupJob` check inside the scheduler in favour of catching `23505`.
