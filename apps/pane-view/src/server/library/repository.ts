@@ -1,10 +1,10 @@
 import type { FolderNode, GallerySortMode } from "@latch-works/media-domain";
 import { buildBrowserEntries } from "@latch-works/media-domain";
-import { and, asc, desc, eq, gt, inArray, isNull, lt, or, type SQL, sql } from "drizzle-orm";
-import type { AnyPgColumn } from "drizzle-orm/pg-core";
+import { and, asc, desc, eq, gt, inArray, isNull, lt, or, type SQL } from "drizzle-orm";
 import { db } from "../db";
 import { folders, libraryEntries, mediaObjects } from "../db/schema";
 import {
+  cursorRandomKey,
   DEFAULT_GALLERY_LISTING_LIMIT,
   decodeGalleryListingCursor,
   encodeGalleryListingCursor,
@@ -15,6 +15,7 @@ import {
   type GalleryRandomSeed,
   galleryRandomOrderKey,
   galleryRandomOrderKeySql,
+  naturalOrder,
 } from "./gallery-order";
 import {
   buildLibraryConditions,
@@ -129,11 +130,6 @@ export function buildGalleryListingMediaQuery({
     .limit(limit + 1);
 }
 
-/** `expression COLLATE "natural"` — migration 0018's ICU natural, case-insensitive order. */
-export function naturalOrder(expression: SQL | AnyPgColumn): SQL {
-  return sql`${expression} COLLATE "natural"`;
-}
-
 /**
  * The listing order for regular media (Plan 051, Decision 6). Name modes use
  * the natural collation so "2.jpg" precedes "10.jpg" and case is ignored,
@@ -237,7 +233,7 @@ export function buildGalleryListingCursorCondition(
       );
     case "random": {
       const key = galleryRandomOrderKeySql(cursor.randomSeed, "media", libraryEntries.id);
-      const cursorKey = cursor.randomKey ?? "";
+      const cursorKey = cursorRandomKey(cursor);
       return requireCondition(
         or(
           gt(key, cursorKey),

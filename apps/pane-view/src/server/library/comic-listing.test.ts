@@ -194,13 +194,16 @@ describe("comic pages query", () => {
 });
 
 describe("comic scope and page order", () => {
-  it("accepts folders strictly inside the browse path", () => {
+  it("accepts folders strictly inside the browse path, or anywhere but the path itself when searching", () => {
     expect(isComicInBrowseScope("photos/comic-a", "photos")).toBe(true);
     expect(isComicInBrowseScope("photos/comic-a", "")).toBe(true);
     expect(isComicInBrowseScope("photos", "photos")).toBe(false);
     expect(isComicInBrowseScope("photosx/comic-a", "photos")).toBe(false);
     expect(isComicInBrowseScope("other/comic-a", "photos")).toBe(false);
     expect(isComicInBrowseScope("", "")).toBe(false);
+    // A search lists comics across the archive (like the media search); they must open.
+    expect(isComicInBrowseScope("other/comic-a", "photos", true)).toBe(true);
+    expect(isComicInBrowseScope("photos", "photos", true)).toBe(false);
   });
 
   it("orders pages naturally, then bytewise, then by id", () => {

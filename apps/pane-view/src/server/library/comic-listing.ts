@@ -21,6 +21,7 @@ import {
 import { db } from "../db";
 import { folders, libraryEntries, mediaObjects } from "../db/schema";
 import {
+  cursorRandomKey,
   DEFAULT_GALLERY_LISTING_LIMIT,
   decodeGalleryListingCursor,
   encodeGalleryListingCursor,
@@ -32,13 +33,13 @@ import {
   type GalleryRandomSeed,
   galleryRandomOrderKey,
   galleryRandomOrderKeySql,
+  naturalOrder,
 } from "./gallery-order";
 import {
   buildLibraryConditions,
   buildMediaVisibilityConditions,
   mapMediaRowsToLibraryItems,
 } from "./library-conditions";
-import { naturalOrder } from "./repository";
 import type { LibraryMediaItem } from "./types";
 
 export interface ComicListingReadRequest {
@@ -158,7 +159,7 @@ export function buildComicListingCursorCondition(cursor: ComicCursor): SQL {
       );
     case "random": {
       const key = galleryRandomOrderKeySql(cursor.randomSeed, "comic", folderPath);
-      const cursorKey = cursor.randomKey ?? "";
+      const cursorKey = cursorRandomKey(cursor);
       return requireCondition(
         or(gt(key, cursorKey), and(eq(key, cursorKey), gt(folderPath, cursor.folderPath))),
       );
@@ -357,19 +358,29 @@ function compareBytewise(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
-/** True when `comicId` names a folder strictly inside the browse scope. */
-export function isComicInBrowseScope(comicId: string, currentPath: string): boolean {
+/**
+ * True when `comicId` names a folder the listing could have returned for
+ * this scope. Browsing lists comics strictly inside the current path; a
+ * search — like the regular media search — matches across the whole archive
+ * and only excludes the current path itself, so a searched comic must open
+ * from wherever it was found.
+ */
+export function isComicInBrowseScope(
+  comicId: string,
+  currentPath: string,
+  searching = false,
+): boolean {
   if (!comicId || comicId === currentPath) {
     return false;
   }
-  return currentPath === "" || comicId.startsWith(`${currentPath}/`);
+  return searching || currentPath === "" || comicId.startsWith(`${currentPath}/`);
 }
 
 /** One complete comic in natural page order, or null when it has no eligible page. */
 export async function readDatabaseGalleryComic(
   request: ComicReadRequest,
 ): Promise<ComicEntry<LibraryMediaItem> | null> {
-  if (!isComicInBrowseScope(request.comicId, request.currentPath)) {
+  if (!isComicInBrowseScope(request.comicId, request.currentPath, Boolean(request.query?.trim()))) {
     return null;
   }
 

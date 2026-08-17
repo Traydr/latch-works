@@ -1,5 +1,9 @@
 import type { BrowserEntry, GallerySortMode } from "@latch-works/media-domain";
-import type { GalleryRandomSeed, GallerySubjectKind } from "./gallery-order";
+import {
+  type GalleryRandomSeed,
+  type GallerySubjectKind,
+  isGalleryRandomOrderKey,
+} from "./gallery-order";
 import type { LibraryMediaItem } from "./types";
 
 export const DEFAULT_GALLERY_LISTING_LIMIT = 60;
@@ -67,6 +71,14 @@ export type GalleryListingCursorPayload =
       mtimeMs: number;
     };
 
+/** The random-mode rank a decoded cursor carries; decode guarantees it is present. */
+export function cursorRandomKey(cursor: GalleryListingCursorPayload): string {
+  if (!cursor.randomKey) {
+    throw new Error("Random-mode gallery cursor without a rank");
+  }
+  return cursor.randomKey;
+}
+
 export function encodeGalleryListingCursor(payload: GalleryListingCursorPayload): string {
   return Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
 }
@@ -101,8 +113,17 @@ export function decodeGalleryListingCursor(
     record.subjectKind !== request.subjectKind ||
     record.sortMode !== request.sortMode ||
     record.randomSeed !== request.randomSeed ||
-    (record.randomKey !== undefined && typeof record.randomKey !== "string") ||
     typeof record.mtimeMs !== "number"
+  ) {
+    return null;
+  }
+  // Random mode continues from the last row's rank; anything else is not a
+  // continuation and must not be treated as one (a missing key would restart
+  // at page 1 while still hiding the first page's folder cards).
+  if (
+    request.sortMode === "random"
+      ? !isGalleryRandomOrderKey(record.randomKey)
+      : record.randomKey !== undefined
   ) {
     return null;
   }

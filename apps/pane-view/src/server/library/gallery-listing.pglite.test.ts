@@ -89,6 +89,8 @@ function nameOf(path: string): string {
   return path.slice(path.lastIndexOf("/") + 1);
 }
 
+// A search replaces the path scope for media and comics alike (the existing
+// resolveMediaScope contract): matches come from the whole archive.
 function inScope(
   entry: FixtureEntry,
   request: { currentPath: string; query?: string; recursive: boolean },
@@ -263,6 +265,12 @@ const COMIC_SHAPES: Record<string, Omit<OracleComicRequest, "randomSeed" | "sort
   "beta subtree": { currentPath: "beta", showImages: true, showVideos: true },
   "search from root": {
     currentPath: "",
+    query: FIXTURE_SEARCH_TERM,
+    showImages: true,
+    showVideos: true,
+  },
+  "search from a folder": {
+    currentPath: "alpha",
     query: FIXTURE_SEARCH_TERM,
     showImages: true,
     showVideos: true,
@@ -577,6 +585,23 @@ describe("comic listing serves summaries in one seeded order across pages", () =
     expect(coverName("alpha/series/vol-1")).toBe("bonus.gif");
     // Primary-equal names tie in the collation; the deterministic collation breaks the tie bytewise.
     expect(coverName("alpha/case-tie")).toBe("A.jpg");
+  });
+
+  it("searching from a folder finds comics across the archive, and each of them opens", async () => {
+    const request = {
+      ...COMIC_SHAPES["search from a folder"],
+      randomSeed: SEED_A,
+      sortMode: "name-asc" as const,
+    } as OracleComicRequest;
+    const comics = (await collectComicPages(request, 48)).flatMap((page) => page.comics);
+    expect(comics.map((comic) => comic.id)).toContain("gamma/heroes");
+    expect(comics.map((comic) => comic.id)).toContain("beta/set-009");
+    expect(comics.some((comic) => comic.id === "alpha")).toBe(false);
+    for (const comic of comics) {
+      const opened = await readDatabaseGalleryComic({ ...request, comicId: comic.id });
+      expect(opened?.pages.length).toBe(comic.pageCount);
+      expect(opened?.cover.id).toBe(comic.cover.id);
+    }
   });
 
   it("counts only pages that match the search and lists only comics with a matching page", async () => {

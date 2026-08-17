@@ -56,6 +56,23 @@ describe("gallery listing cursor", () => {
     ).toBeNull();
   });
 
+  it("requires a 32-hex rank in random mode and forbids one elsewhere", () => {
+    const withoutKey = Buffer.from(
+      JSON.stringify({ ...mediaCursor, randomKey: undefined }),
+    ).toString("base64url");
+    expect(decodeGalleryListingCursor(withoutKey, mediaCursor)).toBeNull();
+
+    const forgedKey = Buffer.from(JSON.stringify({ ...mediaCursor, randomKey: "zzz" })).toString(
+      "base64url",
+    );
+    expect(decodeGalleryListingCursor(forgedKey, mediaCursor)).toBeNull();
+
+    const strayKey = Buffer.from(
+      JSON.stringify({ ...comicCursor, randomKey: mediaCursor.randomKey }),
+    ).toString("base64url");
+    expect(decodeGalleryListingCursor(strayKey, comicCursor)).toBeNull();
+  });
+
   it("rejects a payload whose fields do not fit its subject kind", () => {
     const missingFilename = Buffer.from(
       JSON.stringify({ ...mediaCursor, filename: undefined }),
