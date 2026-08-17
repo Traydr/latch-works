@@ -1,5 +1,5 @@
 import type { MediaItem } from "@latch-works/media-domain";
-import { type JSX, useCallback, useEffect, useState } from "react";
+import { type JSX, useCallback, useEffect, useRef } from "react";
 import { MediaViewerSession } from "./MediaViewerSession";
 import { useResolvedMediaUrl } from "./useResolvedMediaUrl";
 
@@ -16,48 +16,92 @@ function usePrefetchNeighborPreview(item: MediaItem | undefined): void {
   }, [resolvedUrl]);
 }
 
-interface MediaViewerModalProps {
+export interface MediaViewerModalProps {
   autoplayVideos: boolean;
-  items: MediaItem[];
+  /** True while the browse session still has unloaded pages. */
+  hasMore: boolean;
+  /** The live media sequence from the browse session, in display order. */
+  items: readonly MediaItem[];
   loopNavigation: boolean;
   loopVideos: boolean;
+  /** The current media id (the browse selection). */
+  mediaId: string;
   onClose: () => void;
+  /** Called with the id to show next; the caller writes it to the selection. */
+  onSelect: (mediaId: string) => void;
   rememberViewerPosition: boolean;
-  startIndex: number;
+  /**
+   * Resolve one step from `mediaId`: the neighbour, the first item of a
+   * freshly loaded page, a wrap, or null to stay. Provided by the session.
+   */
+  stepMedia: (currentId: string, direction: -1 | 1, loop: boolean) => Promise<string | null>;
 }
 
+/**
+ * The viewer is controlled by media id (Plan 052, Decision 6): it renders the
+ * item the browse selection points at, sees pages appended while it is open,
+ * and asks the session to step so forward navigation loads before it loops
+ * and backward stays put on the first item while more pages exist.
+ */
 export function MediaViewerModal({
   autoplayVideos,
+  hasMore,
   items,
   loopNavigation,
   loopVideos,
+  mediaId,
   onClose,
+  onSelect,
   rememberViewerPosition,
-  startIndex,
+  stepMedia,
 }: MediaViewerModalProps): JSX.Element | null {
-  const [index, setIndex] = useState(startIndex);
-  const item = items[index];
+  const index = items.findIndex((candidate) => candidate.id === mediaId);
+  const lastItemRef = useRef<MediaItem | undefined>(undefined);
+  const current = index >= 0 ? items[index] : undefined;
+  if (current) {
+    lastItemRef.current = current;
+  }
+  // Keep the last item mounted if it left the sequence (deleted, filtered)
+  // until the selection moves on; never blank the dialog under the user.
+  const item = current ?? lastItemRef.current;
+
+  const steppingRef = useRef(false);
   const step = useCallback(
     (delta: -1 | 1) => {
-      setIndex((currentIndex) => {
-        if (items.length === 0) {
-          return 0;
-        }
-        return loopNavigation
-          ? (currentIndex + delta + items.length) % items.length
-          : Math.max(0, Math.min(items.length - 1, currentIndex + delta));
-      });
+      // Repeated forward presses during a page load must not queue extra
+      // steps or issue extra requests; Escape is handled by the session dialog.
+      if (steppingRef.current) {
+        return;
+      }
+      steppingRef.current = true;
+      void stepMedia(mediaId, delta, loopNavigation)
+        .then((nextId) => {
+          if (nextId && nextId !== mediaId) {
+            onSelect(nextId);
+          }
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          steppingRef.current = false;
+        });
     },
-    [items.length, loopNavigation],
+    [loopNavigation, mediaId, onSelect, stepMedia],
   );
 
+  const canStepForward =
+    index >= 0 && (index < items.length - 1 || hasMore || (loopNavigation && items.length > 1));
+  const canStepBackward =
+    index > 0 || (index >= 0 && loopNavigation && !hasMore && items.length > 1);
+
   const neighbor = (delta: -1 | 1): MediaItem | undefined => {
-    if (items.length < 2) {
+    if (index < 0 || items.length < 2) {
       return undefined;
     }
-    return loopNavigation
-      ? items[(index + delta + items.length) % items.length]
-      : items[index + delta];
+    const target = index + delta;
+    if (target >= 0 && target < items.length) {
+      return items[target];
+    }
+    return loopNavigation && !hasMore ? items[(target + items.length) % items.length] : undefined;
   };
   usePrefetchNeighborPreview(neighbor(-1));
   usePrefetchNeighborPreview(neighbor(1));
@@ -70,8 +114,8 @@ export function MediaViewerModal({
     <MediaViewerSession
       key={item.id}
       autoplayVideos={autoplayVideos}
-      canStepBackward={loopNavigation || index > 0}
-      canStepForward={loopNavigation || index < items.length - 1}
+      canStepBackward={canStepBackward}
+      canStepForward={canStepForward}
       item={item}
       loopVideos={loopVideos}
       onClose={onClose}

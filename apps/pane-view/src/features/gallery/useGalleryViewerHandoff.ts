@@ -1,57 +1,33 @@
-import type { MediaItem } from "@latch-works/media-domain";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 
 export interface GalleryViewerHandoffResult {
-  viewerOpen: boolean;
-  viewerItems: MediaItem[] | null;
-  viewerLockedMediaId: string | null;
-  openViewer: (
-    items: MediaItem[],
-    startMediaId: string,
-    options?: { lockSelectionToMediaId?: string },
-  ) => void;
   closeViewer: () => void;
+  /** Select `mediaId` through the browse state and open the viewer on it. */
+  openViewer: (mediaId: string) => void;
+  viewerOpen: boolean;
 }
 
 /**
- * Manages the viewer open/close state and the items/locked-id handoff to
- * MediaViewerModal. Calls `setSelectedId` when the viewer opens to synchronize
- * gallery selection.
+ * Whether the viewer is open. The viewer itself follows the live browse
+ * session and the selected media id (Plan 052, Decision 6), so nothing is
+ * captured here at open time.
  */
 export function useGalleryViewerHandoff(
-  setSelectedId: (id: string) => void,
+  selectMedia: (mediaId: string) => void,
 ): GalleryViewerHandoffResult {
   const [viewerOpen, setViewerOpen] = useState(false);
-  const [viewerItems, setViewerItems] = useState<MediaItem[] | null>(null);
-  const [viewerLockedMediaId, setViewerLockedMediaId] = useState<string | null>(null);
 
-  const openViewer = (
-    items: MediaItem[],
-    startMediaId: string,
-    options?: { lockSelectionToMediaId?: string },
-  ) => {
-    const startIndex = items.findIndex((item) => item.id === startMediaId);
-    if (startIndex < 0) {
-      return;
-    }
+  const openViewer = useCallback(
+    (mediaId: string) => {
+      selectMedia(mediaId);
+      setViewerOpen(true);
+    },
+    [selectMedia],
+  );
 
-    setViewerItems(items);
-    setViewerLockedMediaId(options?.lockSelectionToMediaId ?? null);
-    setSelectedId(options?.lockSelectionToMediaId ?? startMediaId);
-    setViewerOpen(true);
-  };
-
-  const closeViewer = () => {
+  const closeViewer = useCallback(() => {
     setViewerOpen(false);
-    setViewerItems(null);
-    setViewerLockedMediaId(null);
-  };
+  }, []);
 
-  return {
-    viewerOpen,
-    viewerItems,
-    viewerLockedMediaId,
-    openViewer,
-    closeViewer,
-  };
+  return { closeViewer, openViewer, viewerOpen };
 }

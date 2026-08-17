@@ -1,4 +1,4 @@
-import type { BrowserEntry, ComicEntry } from "@latch-works/media-domain";
+import type { ComicEntry } from "@latch-works/media-domain";
 import { Archive, ChevronUp, PanelRightClose, PanelRightOpen, Search } from "lucide-react";
 import {
   createContext,
@@ -29,6 +29,7 @@ import { buildBreadcrumbItems, getParentPath } from "@/features/gallery/browse-s
 import { FloatingToolbar } from "@/features/gallery/FloatingToolbar";
 import { GalleryBrowsePane } from "@/features/gallery/GalleryBrowsePane";
 import { GalleryGridSkeleton } from "@/features/gallery/GalleryGridSkeleton";
+import type { GalleryBrowseEntry } from "@/features/gallery/gallery-browse-entry";
 import { useGalleryLayout } from "@/features/gallery/gallery-layout-context";
 import { MediaViewerModal } from "@/features/gallery/MediaViewerModal";
 import { useGalleryBrowse } from "@/features/gallery/useGalleryBrowse";
@@ -73,36 +74,35 @@ function useGalleryPage() {
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [pathSheetOpen, setPathSheetOpen] = useState(false);
   const [activeComic, setActiveComic] = useState<ComicEntry | null>(null);
+  const [openingComicId, setOpeningComicId] = useState<string | null>(null);
   const [searchDraft, setSearchDraft] = useState(query ?? "");
   const [focusedEntryIndex, setFocusedEntryIndex] = useState(0);
   const [scrollRequestKey, setScrollRequestKey] = useState(0);
   const [deletingEntryIds, setDeletingEntryIds] = useState<ReadonlySet<string>>(() => new Set());
   const [deletedEntryIds, setDeletedEntryIds] = useState<ReadonlySet<string>>(() => new Set());
 
+  const session = useGalleryBrowse({
+    excludedMediaIds: deletedEntryIds,
+    hydrated,
+    listingRequest,
+    snapshotRequest,
+  });
   const {
     allMedia,
     browseKey,
     entries,
-    handleLoadMoreMedia,
     isReady,
     library,
-    loadingMoreMedia,
-    mediaPage,
+    loadNextPage,
+    media: navigableMedia,
+    openComic,
+    page,
     showFetching,
-    visibleMedia,
-  } = useGalleryBrowse({
-    displayPath,
-    effectiveComicMode,
-    effectiveRecursive,
-    hydrated,
-    listingRequest,
-    showImages: settings.showImages,
-    showVideos: settings.showVideos,
-    snapshotRequest,
-  });
+    stepEntry,
+    stepMedia,
+  } = session;
 
-  const { viewerOpen, viewerItems, viewerLockedMediaId, openViewer, closeViewer } =
-    useGalleryViewerHandoff(selectMedia);
+  const { viewerOpen, openViewer, closeViewer } = useGalleryViewerHandoff(selectMedia);
 
   const showDetailPanel = !isMobile && detailPanelOpen;
   const columnCountRef = useRef(4);
@@ -121,17 +121,19 @@ function useGalleryPage() {
     });
   }, [entries]);
 
-  const navigableMedia = useMemo(
-    () => visibleMedia.filter((item) => !deletedEntryIds.has(item.id)),
-    [deletedEntryIds, visibleMedia],
-  );
-
   const selected =
-    visibleMedia.find((item) => item.id === (viewerLockedMediaId ?? selectedId)) ??
-    navigableMedia[0] ??
-    visibleMedia[0] ??
-    null;
-  const selectedIndex = selected ? navigableMedia.findIndex((item) => item.id === selected.id) : -1;
+    allMedia.find((item) => item.id === selectedId) ?? navigableMedia[0] ?? allMedia[0] ?? null;
+  // In comic mode the media sequence is the covers; the selected comic is the
+  // one whose cover is selected.
+  const selectedComic = useMemo(() => {
+    if (!effectiveComicMode || !selected) {
+      return null;
+    }
+    const entry = entries.find(
+      (candidate) => candidate.kind === "comic" && candidate.comic.cover.id === selected.id,
+    );
+    return entry?.kind === "comic" ? entry.comic : null;
+  }, [effectiveComicMode, entries, selected]);
 
   useEffect(() => {
     if (!library) {
@@ -171,17 +173,44 @@ function useGalleryPage() {
     [displayPath, library, navigateToPath],
   );
 
+  // Keep the card visible with a loading affordance; open the reader only
+  // once the complete comic has arrived. A second activation hits the cache.
+  const openComicReader = useCallback(
+    (comicId: string) => {
+      setOpeningComicId(comicId);
+      void openComic(comicId)
+        .then((comic) => {
+          setActiveComic(comic);
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          setOpeningComicId((current) => (current === comicId ? null : current));
+        });
+    },
+    [openComic],
+  );
+
   const handleActivateEntry = useCallback(
-    (entry: BrowserEntry) => {
+    (entry: GalleryBrowseEntry) => {
       if (entry.kind === "folder") {
         navigateToPath(entry.path);
       } else if (entry.kind === "comic") {
-        setActiveComic(entry.comic);
+        openComicReader(entry.comic.id);
       } else {
-        openViewer(visibleMedia, entry.media.id);
+        openViewer(entry.media.id);
       }
     },
-    [navigateToPath, openViewer, visibleMedia],
+    [navigateToPath, openComicReader, openViewer],
+  );
+
+  const handleLoadMoreMedia = useCallback(() => {
+    void loadNextPage().catch(() => undefined);
+  }, [loadNextPage]);
+
+  const stepBeyondGrid = useCallback(
+    (currentKey: string | null, direction: -1 | 1) =>
+      stepEntry(currentKey, direction, settings.loopNavigation),
+    [settings.loopNavigation, stepEntry],
   );
 
   const closeOverlays = useCallback(() => {
@@ -211,6 +240,7 @@ function useGalleryPage() {
     onNavigateToPath: navigateToPath,
     onOpenHotkeys: openHotkeys,
     onSelectMedia: selectMedia,
+    onStepBeyondGrid: stepBeyondGrid,
     pathSheetOpen,
     setFocusedEntryIndex,
     requestScrollFocusedIntoView,
@@ -224,16 +254,11 @@ function useGalleryPage() {
   };
 
   const selectAdjacentMedia = (offset: -1 | 1) => {
-    if (viewerLockedMediaId || !navigableMedia.length) {
-      return;
-    }
-
-    const currentIndex = selectedIndex >= 0 ? selectedIndex : 0;
-    const nextIndex = (currentIndex + offset + navigableMedia.length) % navigableMedia.length;
-    const next = navigableMedia[nextIndex];
-    if (next) {
-      selectMedia(next.id);
-    }
+    void stepMedia(selected?.id ?? null, offset, settings.loopNavigation).then((nextId) => {
+      if (nextId) {
+        selectMedia(nextId);
+      }
+    });
   };
 
   const deleteSelectedMedia = () => {
@@ -283,7 +308,7 @@ function useGalleryPage() {
     })();
   };
 
-  const handleSelectEntry = (entry: BrowserEntry) => {
+  const handleSelectEntry = (entry: GalleryBrowseEntry) => {
     const entryIndex = entries.findIndex((candidate) => candidate.key === entry.key);
     if (entryIndex >= 0) {
       setFocusedEntryIndex(entryIndex);
@@ -327,19 +352,22 @@ function useGalleryPage() {
     invalidateLibrary,
     isMobile,
     isReady,
-    loadingMoreMedia,
-    mediaPage,
     mobileSearchOpen,
     navigateSiblingFolder,
     navigateToPath,
     navigableMedia,
+    openComicReader,
+    openingComicId,
     openViewer,
+    page,
     parentPath,
     pathSheetOpen,
     scrollRequestKey,
     searchDraft,
     selectAdjacentMedia,
     selected,
+    selectedComic,
+    selectMedia,
     setActiveComic,
     setComicMode,
     setDetailPanelOpen,
@@ -356,12 +384,10 @@ function useGalleryPage() {
     showFetching,
     shuffle,
     sortMode,
+    stepMedia,
     submitSearch,
     updateSettings,
-    viewerItems,
-    viewerLockedMediaId,
     viewerOpen,
-    visibleMedia,
   };
 }
 
@@ -551,22 +577,27 @@ function GalleryContent(): JSX.Element {
             deletingEntryIds={model.deletingEntryIds}
             entries={model.entries}
             focusedEntryIndex={model.focusedEntryIndex}
+            hasMore={model.page.hasMore}
             isFetching={model.showFetching}
-            loadingMoreMedia={model.loadingMoreMedia}
-            mediaPage={model.mediaPage}
+            loadingMoreMedia={model.page.loading}
             onActivateEntry={model.handleActivateEntry}
             onDelete={model.deleteSelectedMedia}
             onLoadMoreMedia={model.handleLoadMoreMedia}
             onNext={() => model.selectAdjacentMedia(1)}
             onOpenViewer={() => {
-              if (model.selected && !model.deletedEntryIds.has(model.selected.id))
-                model.openViewer(model.navigableMedia, model.selected.id);
+              if (model.selectedComic) {
+                model.openComicReader(model.selectedComic.id);
+              } else if (model.selected && !model.deletedEntryIds.has(model.selected.id)) {
+                model.openViewer(model.selected.id);
+              }
             }}
             onPrev={() => model.selectAdjacentMedia(-1)}
             onSelectEntry={model.handleSelectEntry}
+            openingComicId={model.openingComicId}
             scrollRequestKey={model.scrollRequestKey}
             selected={model.selected}
-            selectedId={model.viewerLockedMediaId ?? model.selected?.id ?? null}
+            selectedId={model.selected?.id ?? null}
+            showDelete={!model.effectiveComicMode}
             showDetailPanel={model.showDetailPanel}
             paginationResetKey={model.browseKey}
             thumbnailSize={model.settings.thumbnailSize}
@@ -600,7 +631,6 @@ function GalleryContent(): JSX.Element {
 
 function GalleryOverlays(): JSX.Element {
   const model = useGalleryPageModel();
-  const viewerMedia = model.viewerItems ?? model.visibleMedia;
   return (
     <>
       <SettingsDrawer
@@ -665,15 +695,15 @@ function GalleryOverlays(): JSX.Element {
       {model.viewerOpen && model.selected ? (
         <MediaViewerModal
           autoplayVideos={model.settings.autoplayVideos}
-          items={viewerMedia}
+          hasMore={model.page.hasMore}
+          items={model.navigableMedia}
           loopNavigation={model.settings.loopNavigation}
           loopVideos={model.settings.loopVideos}
-          rememberViewerPosition={model.settings.rememberViewerPosition}
+          mediaId={model.selected.id}
           onClose={model.closeViewer}
-          startIndex={Math.max(
-            0,
-            viewerMedia.findIndex((item) => item.id === model.selected?.id),
-          )}
+          onSelect={model.selectMedia}
+          rememberViewerPosition={model.settings.rememberViewerPosition}
+          stepMedia={model.stepMedia}
         />
       ) : null}
       {model.activeComic ? (

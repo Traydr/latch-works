@@ -103,7 +103,7 @@ describe("resolveBrowseState", () => {
 });
 
 describe("requests", () => {
-  it("builds one snapshot request with mediaLimit 0 unless comic mode", () => {
+  it("builds one snapshot request with mediaLimit 0 in every mode", () => {
     const folder = resolveBrowseState({ path: "photos", q: "x" }, persisted(), true);
     expect(snapshotRequestFor(folder)).toEqual({
       comicMode: false,
@@ -115,7 +115,7 @@ describe("requests", () => {
     const comic = resolveBrowseState({ comic: true, path: "photos" }, persisted(), true);
     expect(snapshotRequestFor(comic)).toEqual({
       comicMode: true,
-      mediaLimit: undefined,
+      mediaLimit: 0,
       path: "photos",
       query: undefined,
       recursive: true,

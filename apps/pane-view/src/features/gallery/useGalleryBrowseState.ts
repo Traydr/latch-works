@@ -120,10 +120,9 @@ export function snapshotRequestFor(
 ): LibrarySnapshotRequest {
   return {
     comicMode: state.comicMode,
-    // Comic mode still reads its media through the snapshot until Plan 052;
-    // every other mode lists media through the cursor listing, so the snapshot
-    // carries folders and archive state only.
-    mediaLimit: state.comicMode ? undefined : 0,
+    // Media (and comic summaries) come from the cursor listing; the snapshot
+    // is the folder and archive-state query only.
+    mediaLimit: 0,
     path: state.path || undefined,
     query: state.query,
     recursive: state.recursive,

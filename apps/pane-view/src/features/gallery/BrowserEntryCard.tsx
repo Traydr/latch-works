@@ -1,5 +1,5 @@
-import type { BrowserEntry } from "@latch-works/media-domain";
 import { formatBytes } from "@latch-works/media-domain";
+import type { GalleryBrowseEntry } from "@/features/gallery/gallery-browse-entry";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { DeleteOverlay } from "./DeleteOverlay";
 import { Poster } from "./Poster";
@@ -9,11 +9,13 @@ interface BrowserEntryCardProps {
   cardWidth: number;
   deletedEntryIds: ReadonlySet<string>;
   deletingEntryIds: ReadonlySet<string>;
-  entry: BrowserEntry;
+  entry: GalleryBrowseEntry;
   focused: boolean;
   left: number;
-  onActivate: (entry: BrowserEntry) => void;
-  onSelect: (entry: BrowserEntry) => void;
+  onActivate: (entry: GalleryBrowseEntry) => void;
+  onSelect: (entry: GalleryBrowseEntry) => void;
+  /** Comic cards: the full comic is loading for the reader. */
+  opening?: boolean;
   priority?: boolean;
   selected: boolean;
   thumbnailUrls: Readonly<Record<string, string>>;
@@ -30,6 +32,7 @@ export function BrowserEntryCard({
   left,
   onActivate,
   onSelect,
+  opening = false,
   priority = false,
   selected,
   thumbnailUrls,
@@ -69,6 +72,7 @@ export function BrowserEntryCard({
           deletingEntryIds={deletingEntryIds}
           entry={entry}
           focused={focused}
+          opening={opening}
           priority={priority}
           selected={selected}
           thumbnailUrls={thumbnailUrls}
@@ -94,7 +98,7 @@ function FolderCard({
   focused,
   selected,
 }: {
-  entry: Extract<BrowserEntry, { kind: "folder" }>;
+  entry: Extract<GalleryBrowseEntry, { kind: "folder" }>;
   focused: boolean;
   selected: boolean;
 }) {
@@ -139,6 +143,7 @@ function ComicCard({
   deletingEntryIds,
   entry,
   focused,
+  opening,
   priority,
   selected,
   thumbnailUrls,
@@ -146,15 +151,18 @@ function ComicCard({
   cardWidth: number;
   deletedEntryIds: ReadonlySet<string>;
   deletingEntryIds: ReadonlySet<string>;
-  entry: Extract<BrowserEntry, { kind: "comic" }>;
+  entry: Extract<GalleryBrowseEntry, { kind: "comic" }>;
   focused: boolean;
+  opening: boolean;
   priority?: boolean;
   selected: boolean;
   thumbnailUrls: Readonly<Record<string, string>>;
 }) {
   const comic = entry.comic;
-  const isDeleting = comic.pages.some((page) => deletingEntryIds.has(page.id));
-  const isDeleted = comic.pages.every((page) => deletedEntryIds.has(page.id));
+  // Summaries carry only the cover; the overlays follow it. Deleting a whole
+  // comic is folder deletion and is not offered from the gallery.
+  const isDeleting = deletingEntryIds.has(comic.cover.id);
+  const isDeleted = deletedEntryIds.has(comic.cover.id);
 
   return (
     <div
@@ -177,7 +185,9 @@ function ComicCard({
       <div className="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/75 via-black/10 to-transparent">
         <div className="px-3 pb-3">
           <p className="line-clamp-2 text-sm font-semibold text-white">{comic.name}</p>
-          <p className="tabular-nums text-[11px] text-white/75">{comic.pages.length} pages</p>
+          <p className="tabular-nums text-[11px] text-white/75">
+            {opening ? "Opening…" : `${comic.pageCount} pages`}
+          </p>
         </div>
       </div>
     </div>
@@ -197,7 +207,7 @@ function MediaCard({
   cardWidth: number;
   deletedEntryIds: ReadonlySet<string>;
   deletingEntryIds: ReadonlySet<string>;
-  entry: Extract<BrowserEntry, { kind: "media" }>;
+  entry: Extract<GalleryBrowseEntry, { kind: "media" }>;
   focused: boolean;
   priority?: boolean;
   selected: boolean;

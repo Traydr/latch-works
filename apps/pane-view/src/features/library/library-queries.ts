@@ -8,7 +8,6 @@ import {
 import {
   deleteLibraryEntry,
   type GalleryListingRequest,
-  getGalleryListing,
   getLibrarySnapshot,
   type LibrarySnapshot,
 } from "./library-service";
@@ -22,6 +21,11 @@ export interface LibrarySnapshotRequest {
 }
 
 export interface GalleryListingQueryRequest extends GalleryListingRequest {}
+
+/**
+ * Listing pages are fetched by the browse session through its page source;
+ * these keys exist so delete/refresh invalidation reaches page 1.
+ */
 
 export const librarySnapshotKeys = {
   all: ["library-snapshot"] as const,
@@ -50,37 +54,8 @@ export function librarySnapshotQueryOptions(request: LibrarySnapshotRequest) {
   };
 }
 
-export function galleryListingQueryOptions(request: GalleryListingQueryRequest) {
-  return {
-    queryKey: galleryListingKeys.listing(request),
-    queryFn: (): Promise<Awaited<ReturnType<typeof getGalleryListing>>> =>
-      getGalleryListing({
-        data: {
-          comicMode: request.comicMode,
-          cursor: request.cursor,
-          limit: request.limit,
-          path: request.path,
-          query: request.query,
-          randomSeed: request.randomSeed,
-          recursive: request.recursive,
-          showImages: request.showImages,
-          showVideos: request.showVideos,
-          sortMode: request.sortMode,
-        },
-      }),
-    placeholderData: keepPreviousData,
-  };
-}
-
 export function useLibrarySnapshotQuery(request: LibrarySnapshotRequest) {
   return useQuery(librarySnapshotQueryOptions(request));
-}
-
-export function useGalleryListingQuery(request: GalleryListingQueryRequest) {
-  return useQuery({
-    ...galleryListingQueryOptions(request),
-    enabled: !request.comicMode,
-  });
 }
 
 export function useLibrarySnapshotSuspense(request: LibrarySnapshotRequest) {
