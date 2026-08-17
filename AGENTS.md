@@ -34,6 +34,7 @@ Source lives in each package's `src/` directory. Tests are colocated as `*.test.
 - `pnpm test`: run all Vitest suites.
 - `pnpm typecheck`: run TypeScript checks across the workspace.
 - `pnpm lint`: run Biome checks from the repo root.
+- `pnpm lint:anti-slop`: run the Oxlint anti-slop rules (`.oxlintrc.json`, plugin vendored at `tools/oxlint/anti-slop/`). Pane View is clean apart from `no-module-mocking`; other packages still carry findings, so this is not part of `pnpm check` yet.
 - `pnpm format`: format the repo with Biome.
 
 ### App dev shortcuts (repo root)

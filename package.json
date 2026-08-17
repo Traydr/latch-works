@@ -10,6 +10,7 @@
     "check": "pnpm -r --sort build && pnpm run check:packages && pnpm run lint && pnpm run knip",
     "format": "biome format --write .",
     "lint": "biome check .",
+    "lint:anti-slop": "oxlint",
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
     "knip": "knip",
@@ -21,9 +22,11 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.10",
+    "@oxlint/plugins": "1.78.0",
     "@types/node": "^25.9.1",
     "knip": "^6.15.0",
     "lodash": "4.18.1",
+    "oxlint": "1.78.0",
     "railway": "^3.3.1",
     "typescript": "^6.0.2",
     "vitest": "^4.1.3"
