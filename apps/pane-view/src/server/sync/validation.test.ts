@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  parseSyncObjectPayload,
   validateSyncContentType,
   validateSyncLogicalPath,
-  validateSyncObjectPayload,
   validateUploadFilename,
 } from "./validation";
 
@@ -18,9 +18,9 @@ const validPayload = {
   syncRunId: "11111111-1111-4111-8111-111111111111",
 };
 
-describe("validateSyncObjectPayload", () => {
+describe("parseSyncObjectPayload", () => {
   it("accepts a valid image ingest payload", () => {
-    const result = validateSyncObjectPayload(validPayload);
+    const result = parseSyncObjectPayload(validPayload);
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.input.logicalPath).toBe("photos/cover.jpg");
@@ -29,12 +29,12 @@ describe("validateSyncObjectPayload", () => {
   });
 
   it("rejects unknown media", () => {
-    const result = validateSyncObjectPayload({ ...validPayload, mediaType: "unknown" });
+    const result = parseSyncObjectPayload({ ...validPayload, mediaType: "unknown" });
     expect(result).toEqual({ ok: false, error: "unsupported media type" });
   });
 
   it("rejects invalid sha256 values", () => {
-    const result = validateSyncObjectPayload({ ...validPayload, sha256: "abc" });
+    const result = parseSyncObjectPayload({ ...validPayload, sha256: "abc" });
     expect(result).toEqual({
       ok: false,
       error: "sha256 must be a 64-character hex string",
@@ -42,7 +42,7 @@ describe("validateSyncObjectPayload", () => {
   });
 
   it("rejects mismatched object keys", () => {
-    const result = validateSyncObjectPayload({
+    const result = parseSyncObjectPayload({
       ...validPayload,
       objectKey: "originals/sha256/00/00/wrong.jpg",
     });
@@ -53,7 +53,7 @@ describe("validateSyncObjectPayload", () => {
   });
 
   it("rejects filename and logicalPath mismatches", () => {
-    const result = validateSyncObjectPayload({
+    const result = parseSyncObjectPayload({
       ...validPayload,
       filename: "other.jpg",
     });
@@ -61,7 +61,7 @@ describe("validateSyncObjectPayload", () => {
   });
 
   it("rejects extension mismatches", () => {
-    const result = validateSyncObjectPayload({
+    const result = parseSyncObjectPayload({
       ...validPayload,
       extension: "png",
     });
@@ -69,7 +69,7 @@ describe("validateSyncObjectPayload", () => {
   });
 
   it("accepts jpeg extension aliases and stores them as jpg", () => {
-    const result = validateSyncObjectPayload({
+    const result = parseSyncObjectPayload({
       ...validPayload,
       extension: "jpeg",
       filename: "cover.jpeg",
@@ -85,7 +85,7 @@ describe("validateSyncObjectPayload", () => {
   });
 
   it("rejects unsupported filenames even when fields are internally consistent", () => {
-    const result = validateSyncObjectPayload({
+    const result = parseSyncObjectPayload({
       ...validPayload,
       extension: "txt",
       filename: "notes.txt",
@@ -96,7 +96,7 @@ describe("validateSyncObjectPayload", () => {
   });
 
   it("rejects mismatched content types", () => {
-    const result = validateSyncObjectPayload({
+    const result = parseSyncObjectPayload({
       ...validPayload,
       contentType: "image/png",
     });

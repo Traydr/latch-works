@@ -26,6 +26,6 @@ export const env = createEnv({
   clientPrefix: "VITE_",
   client: {},
   runtimeEnv: process.env,
-  skipValidation: typeof process !== "undefined" && Boolean(process.env.SKIP_ENV_VALIDATION),
+  skipValidation: Boolean(process.env.SKIP_ENV_VALIDATION),
   emptyStringAsUndefined: true,
 });

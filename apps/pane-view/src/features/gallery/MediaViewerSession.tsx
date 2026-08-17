@@ -22,6 +22,7 @@ import {
 } from "@/features/viewer/viewer-resume";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useViewerChromeIdle } from "@/hooks/use-viewer-chrome-idle";
+import { isTextInputTarget } from "./browse-search";
 import { GALLERY_PREVIEW_SIZE } from "./gallery-preview-size";
 import { PaneViewImage } from "./PaneViewImage";
 import { useResolvedMediaUrl } from "./useResolvedMediaUrl";
@@ -161,23 +162,16 @@ function useMediaViewerSession({
 
   useEffect(() => {
     const dialog = modalRef.current;
-    previousFocusRef.current = document.activeElement as HTMLElement | null;
+    const active = document.activeElement;
+    previousFocusRef.current = active instanceof HTMLElement ? active : null;
     if (dialog && !dialog.open) {
-      if (typeof dialog.showModal === "function") {
-        dialog.showModal();
-      } else {
-        dialog.setAttribute("open", "");
-      }
+      openDialog(dialog);
     }
     closeButtonRef.current?.focus();
 
     return () => {
       if (dialog) {
-        if (typeof dialog.close === "function") {
-          dialog.close();
-        } else {
-          dialog.removeAttribute("open");
-        }
+        closeDialog(dialog);
       }
       previousFocusRef.current?.focus();
     };
@@ -336,8 +330,10 @@ function useMediaViewerSession({
     const nextTime = Math.max(0, Math.min(safeTotal, rawTarget));
     const wasPlaying = !video.paused;
 
-    if ("fastSeek" in video && typeof video.fastSeek === "function") {
-      video.fastSeek(nextTime);
+    // Chrome and jsdom have no fastSeek, whatever the DOM lib types say.
+    const seeker: OptionalFastSeek = video;
+    if (seeker.fastSeek) {
+      seeker.fastSeek(nextTime);
     } else {
       video.currentTime = nextTime;
     }
@@ -803,13 +799,28 @@ const ViewerToolbarButton = forwardRef<
   );
 });
 
-function isTextInputTarget(target: EventTarget | null): boolean {
-  const element = target as HTMLElement | null;
-  return (
-    !!element &&
-    (element.isContentEditable ||
-      element.tagName === "INPUT" ||
-      element.tagName === "TEXTAREA" ||
-      element.tagName === "SELECT")
-  );
+/**
+ * The DOM lib declares these on every element; Chrome (fastSeek) and jsdom
+ * (fastSeek, showModal, close) do not have them, so the viewer reads them as
+ * optional and falls back.
+ */
+type OptionalFastSeek = Partial<Pick<HTMLMediaElement, "fastSeek">>;
+type OptionalModalDialog = Partial<Pick<HTMLDialogElement, "showModal" | "close">>;
+
+function openDialog(dialog: HTMLDialogElement): void {
+  const modal: OptionalModalDialog = dialog;
+  if (modal.showModal) {
+    modal.showModal();
+  } else {
+    dialog.setAttribute("open", "");
+  }
+}
+
+function closeDialog(dialog: HTMLDialogElement): void {
+  const modal: OptionalModalDialog = dialog;
+  if (modal.close) {
+    modal.close();
+  } else {
+    dialog.removeAttribute("open");
+  }
 }

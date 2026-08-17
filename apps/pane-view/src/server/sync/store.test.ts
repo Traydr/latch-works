@@ -2,7 +2,10 @@ import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { syncRuns } from "../db/schema";
 
-function createInsertChain(resolvedValue: unknown) {
+/** A row set a mocked drizzle chain resolves to; the store reads only these columns. */
+type MockRows = Array<{ id?: string; status?: string }> | undefined;
+
+function createInsertChain(resolvedValue: MockRows) {
   const returningMock = vi.fn().mockResolvedValue(resolvedValue);
   const onConflictDoUpdateMock = vi.fn().mockReturnValue({ returning: returningMock });
   const valuesMock = vi.fn().mockReturnValue({ onConflictDoUpdate: onConflictDoUpdateMock });
@@ -10,7 +13,7 @@ function createInsertChain(resolvedValue: unknown) {
   return { insertMock, onConflictDoUpdateMock, returningMock, valuesMock };
 }
 
-function createSelectChain(resolvedValue: unknown) {
+function createSelectChain(resolvedValue: MockRows) {
   const limitMock = vi.fn().mockResolvedValue(resolvedValue);
   const whereMock = vi.fn().mockReturnValue({ limit: limitMock });
   const fromMock = vi.fn().mockReturnValue({ where: whereMock });

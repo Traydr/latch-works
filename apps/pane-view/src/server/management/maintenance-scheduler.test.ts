@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 
 /**
  * The scheduling prologue exists once, in scheduleMaintenanceJob. These tests
@@ -7,16 +7,29 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * maintenance-descriptors.test.ts.
  */
 
-const mocks = vi.hoisted(() => ({
-  acquireLock: vi.fn(),
-  assertNoActiveSyncRun: vi.fn(),
-  calls: [] as string[],
-  insertReturning: vi.fn(),
-  processMaintenanceJob: vi.fn(),
-  readActiveCleanupJob: vi.fn(),
-  transaction: vi.fn(),
-  transactionSettled: false,
-}));
+interface SchedulerMocks {
+  acquireLock: Mock;
+  assertNoActiveSyncRun: Mock;
+  calls: string[];
+  insertReturning: Mock;
+  processMaintenanceJob: Mock;
+  readActiveCleanupJob: Mock;
+  transaction: Mock;
+  transactionSettled: boolean;
+}
+
+const mocks = vi.hoisted(
+  (): SchedulerMocks => ({
+    acquireLock: vi.fn(),
+    assertNoActiveSyncRun: vi.fn(),
+    calls: [],
+    insertReturning: vi.fn(),
+    processMaintenanceJob: vi.fn(),
+    readActiveCleanupJob: vi.fn(),
+    transaction: vi.fn(),
+    transactionSettled: false,
+  }),
+);
 
 vi.mock("../db", () => ({ db: { transaction: mocks.transaction } }));
 vi.mock("../db/library-coordination-lock", () => ({
@@ -28,8 +41,8 @@ vi.mock("./guards", () => ({
 }));
 vi.mock("./cleanup-worker", () => ({ processMaintenanceJob: mocks.processMaintenanceJob }));
 
-import type { MaintenanceJobType } from "./maintenance-progress";
-import { initialProgressFor } from "./maintenance-progress";
+import type { maintenanceJobs } from "../db/schema";
+import { initialProgressFor, type MaintenanceJobType } from "./maintenance-progress";
 import {
   CLEANUP_IN_PROGRESS_MESSAGE,
   type MaintenanceJobDescriptor,
@@ -56,15 +69,24 @@ function descriptor(
   };
 }
 
-const tx = {
+type MaintenanceJobInsert = typeof maintenanceJobs.$inferInsert;
+
+/** The scheduling transaction: records what was inserted and returns the mocked row. */
+interface FakeSchedulingTransaction {
+  insert: Mock;
+  lastInsert: MaintenanceJobInsert | undefined;
+}
+
+const tx: FakeSchedulingTransaction = {
   insert: vi.fn(() => ({
-    values: vi.fn((values: unknown) => {
+    values: vi.fn((values: MaintenanceJobInsert) => {
       mocks.calls.push("insert");
-      (tx as { lastInsert?: unknown }).lastInsert = values;
+      tx.lastInsert = values;
       return { returning: mocks.insertReturning };
     }),
   })),
-} as { insert: ReturnType<typeof vi.fn>; lastInsert?: unknown };
+  lastInsert: undefined,
+};
 
 describe("scheduleMaintenanceJob", () => {
   beforeEach(() => {
@@ -86,11 +108,13 @@ describe("scheduleMaintenanceJob", () => {
     mocks.processMaintenanceJob.mockImplementation(() => {
       mocks.calls.push(mocks.transactionSettled ? "worker-after-commit" : "worker-inside-tx");
     });
-    mocks.transaction.mockImplementation(async (callback: (t: typeof tx) => Promise<unknown>) => {
-      const result = await callback(tx);
-      mocks.transactionSettled = true;
-      return result;
-    });
+    mocks.transaction.mockImplementation(
+      async (callback: (t: typeof tx) => Promise<string | null>) => {
+        const result = await callback(tx);
+        mocks.transactionSettled = true;
+        return result;
+      },
+    );
   });
 
   it.each(

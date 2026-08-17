@@ -2,15 +2,25 @@
 
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({
-  documents: [] as FakeDocument[],
-  intersectionObservers: [] as FakeIntersectionObserver[],
-  resizeObservers: [] as FakeResizeObserver[],
-  renderTasks: [] as FakeRenderTask[],
-  scrollIntoView: vi.fn(),
-}));
+interface PdfViewerMocks {
+  documents: FakeDocument[];
+  intersectionObservers: FakeIntersectionObserver[];
+  resizeObservers: FakeResizeObserver[];
+  renderTasks: FakeRenderTask[];
+  scrollIntoView: Mock;
+}
+
+const mocks = vi.hoisted(
+  (): PdfViewerMocks => ({
+    documents: [],
+    intersectionObservers: [],
+    resizeObservers: [],
+    renderTasks: [],
+    scrollIntoView: vi.fn(),
+  }),
+);
 
 vi.mock("pdfjs-dist", () => ({
   GlobalWorkerOptions: {},
@@ -23,35 +33,41 @@ import { getDocument } from "pdfjs-dist";
 import { PdfViewer } from "./PdfViewer";
 import {
   getPdfPageRenderWindow,
+  type PdfPageIntersection,
   resolveVisiblePdfPage,
   scrollToPdfPage,
 } from "./pdf-viewer-helpers";
 
 interface Deferred<T> {
   promise: Promise<T>;
-  reject: (reason?: unknown) => void;
+  reject: (reason: Error) => void;
   resolve: (value: T) => void;
 }
 
 interface FakeRenderTask {
-  cancel: ReturnType<typeof vi.fn>;
+  cancel: Mock;
   pageNumber: number;
-  reject: (reason?: unknown) => void;
+  reject: (reason: Error) => void;
   resolve: () => void;
 }
 
 interface FakeDocument {
-  destroy: ReturnType<typeof vi.fn>;
-  getPage: ReturnType<typeof vi.fn>;
+  destroy: Mock;
+  getPage: Mock;
   numPages: number;
   promise: Promise<FakeDocument>;
 }
 
+/**
+ * Stand-in for the browser IntersectionObserver, installed with
+ * vi.stubGlobal. The viewer's callback reads only the PdfPageIntersection
+ * fields, so that is what `emit` delivers.
+ */
 class FakeIntersectionObserver {
   readonly disconnect = vi.fn();
   readonly observed = new Set<Element>();
 
-  constructor(private readonly callback: IntersectionObserverCallback) {
+  constructor(private readonly callback: (entries: PdfPageIntersection[]) => void) {
     mocks.intersectionObservers.push(this);
   }
 
@@ -63,22 +79,22 @@ class FakeIntersectionObserver {
 
   emit(pages: Array<[number, number, boolean]>): void {
     this.callback(
-      pages.map(([pageNumber, intersectionRatio, isIntersecting]) => {
+      pages.flatMap(([pageNumber, intersectionRatio, isIntersecting]) => {
         const target = [...this.observed].find(
           (element) => element.getAttribute("data-page-number") === String(pageNumber),
         );
-        return { intersectionRatio, isIntersecting, target } as IntersectionObserverEntry;
+        return target ? [{ intersectionRatio, isIntersecting, target }] : [];
       }),
-      this as unknown as IntersectionObserver,
     );
   }
 }
 
+/** Stand-in for ResizeObserver; the viewer's callback ignores its arguments. */
 class FakeResizeObserver {
   readonly disconnect = vi.fn();
   readonly observed = new Set<Element>();
 
-  constructor(private readonly callback: ResizeObserverCallback) {
+  constructor(private readonly callback: () => void) {
     mocks.resizeObservers.push(this);
   }
 
@@ -87,13 +103,13 @@ class FakeResizeObserver {
   };
 
   emit(): void {
-    this.callback([], this as unknown as ResizeObserver);
+    this.callback();
   }
 }
 
 function deferred<T>(): Deferred<T> {
   let resolve!: (value: T) => void;
-  let reject!: (reason?: unknown) => void;
+  let reject!: (reason: Error) => void;
   const promise = new Promise<T>((nextResolve, nextReject) => {
     resolve = nextResolve;
     reject = nextReject;
@@ -106,7 +122,9 @@ function fakeDocument(
   pendingPages = new Set<number>(),
   rejectedPages = new Set<number>(),
 ): FakeDocument {
-  const document: Omit<FakeDocument, "promise"> = {
+  // pdfjs resolves the loading task with the document itself.
+  let resolveDocument!: (document: FakeDocument) => void;
+  const document: FakeDocument = {
     destroy: vi.fn(),
     getPage: vi.fn(async (pageNumber: number) => ({
       cleanup: vi.fn(),
@@ -132,11 +150,12 @@ function fakeDocument(
       }),
     })),
     numPages: pageCount,
+    promise: new Promise<FakeDocument>((resolve) => {
+      resolveDocument = resolve;
+    }),
   };
-
-  const result = document as FakeDocument;
-  result.promise = Promise.resolve(result);
-  return result;
+  resolveDocument(document);
+  return document;
 }
 
 async function flush(): Promise<void> {
@@ -204,6 +223,8 @@ describe("PdfViewer", () => {
     vi.mocked(getDocument).mockClear();
     vi.stubGlobal("IntersectionObserver", FakeIntersectionObserver);
     vi.stubGlobal("ResizeObserver", FakeResizeObserver);
+    // SAFETY: jsdom has no canvas; the fake page.render never touches the
+    // context, it only needs to be non-null so rendering is attempted.
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(
       {} as CanvasRenderingContext2D,
     );
@@ -256,7 +277,8 @@ describe("PdfViewer", () => {
     mocks.documents.push(pdf);
     const viewer = mount();
     await flush();
-    const resizeTarget = [...mocks.resizeObservers[0]!.observed][0] as HTMLElement;
+    const resizeTarget = [...(mocks.resizeObservers[0]?.observed ?? [])][0];
+    if (!resizeTarget) throw new Error("expected the viewer to observe its container");
     Object.defineProperty(resizeTarget, "clientWidth", { configurable: true, value: 600 });
 
     mocks.resizeObservers[0]?.emit();
@@ -337,16 +359,8 @@ describe("resolveVisiblePdfPage", () => {
     pageTwo.dataset.pageNumber = "2";
     expect(
       resolveVisiblePdfPage([
-        {
-          intersectionRatio: 0.2,
-          isIntersecting: true,
-          target: pageOne,
-        } as unknown as IntersectionObserverEntry,
-        {
-          intersectionRatio: 0.8,
-          isIntersecting: true,
-          target: pageTwo,
-        } as unknown as IntersectionObserverEntry,
+        { intersectionRatio: 0.2, isIntersecting: true, target: pageOne },
+        { intersectionRatio: 0.8, isIntersecting: true, target: pageTwo },
       ]),
     ).toBe(2);
   });

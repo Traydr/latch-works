@@ -1,4 +1,4 @@
-import type { GallerySortMode } from "@latch-works/media-domain";
+import { type GallerySortMode, GallerySortModeSchema } from "@latch-works/media-domain";
 import { Archive, Search } from "lucide-react";
 import { type FormEvent, Fragment } from "react";
 import {
@@ -26,13 +26,13 @@ const sortModes: GallerySortMode[] = [
   "random",
 ];
 
-const sortLabels: Record<GallerySortMode, string> = {
+const sortLabels = {
   "date-newest": "Newest",
   "date-oldest": "Oldest",
   "name-asc": "A-Z",
   "name-desc": "Z-A",
   random: "Random",
-};
+} satisfies Record<GallerySortMode, string>;
 
 interface BrowserHeaderProps {
   archiveRoot: string;
@@ -118,7 +118,10 @@ export function BrowserHeader({
         <p className="m-0 hidden min-w-0 truncate text-sm text-muted-foreground sm:block">
           <span className="font-medium text-foreground">{entryCount}</span> entries
         </p>
-        <Select onValueChange={(value) => onSortChange(value as GallerySortMode)} value={sortMode}>
+        <Select
+          onValueChange={(value) => onSortChange(GallerySortModeSchema.parse(value))}
+          value={sortMode}
+        >
           <SelectTrigger aria-label="Sort mode" size="sm">
             <SelectValue />
           </SelectTrigger>

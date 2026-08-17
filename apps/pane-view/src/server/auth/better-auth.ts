@@ -32,12 +32,14 @@ export const auth = betterAuth({
   },
 });
 
-export function readConfiguredOwner(): {
+export interface ConfiguredOwner {
   email: string;
   name: string;
   password: string;
   username: string;
-} {
+}
+
+export function readConfiguredOwner(): ConfiguredOwner {
   const credentials = readSingleUserCredentials();
 
   return {
@@ -54,7 +56,7 @@ export function verifyConfiguredOwnerCredentials({
 }: {
   password: string;
   username: string;
-}): ReturnType<typeof readConfiguredOwner> | null {
+}): ConfiguredOwner | null {
   if (!verifySingleUserCredentials({ password, username })) {
     return null;
   }

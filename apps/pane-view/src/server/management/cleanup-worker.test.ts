@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
@@ -8,12 +8,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
  * left alone; a throwing batch marks the job failed and frees it to run again.
  */
 
-const harness = vi.hoisted(() => ({
-  handle: null as null | {
-    client: { exec(sql: string): Promise<unknown> };
-    close(): Promise<void>;
-  },
-}));
+const harness = vi.hoisted((): TestDatabaseHarness => ({ handle: null }));
 
 vi.mock("../db", async () => {
   const { createTestDatabase } = await import("../library/test-db");
@@ -28,19 +23,16 @@ vi.mock("./maintenance-storage", () => ({
   getMaintenanceStorageClient: vi.fn(),
 }));
 
+import type { JsonValue } from "@/lib/json";
 import { db } from "../db";
-import {
-  libraryEntries,
-  type MaintenanceJobProgress,
-  maintenanceJobs,
-  mediaObjects,
-} from "../db/schema";
+import { libraryEntries, maintenanceJobs, mediaObjects } from "../db/schema";
+import type { TestDatabaseHarness } from "../library/test-db";
 import {
   processMaintenanceJob,
   processMaintenanceJobBatch,
   readCleanupJobStatus,
 } from "./cleanup-worker";
-import type { MaintenanceJobType } from "./maintenance-progress";
+import { type MaintenanceJobType, MaintenanceJobTypeSchema } from "./maintenance-progress";
 import { deleteMaintenanceObjects } from "./maintenance-storage";
 
 afterAll(async () => {
@@ -54,21 +46,28 @@ async function reset() {
   vi.mocked(deleteMaintenanceObjects).mockClear();
 }
 
+/** Insert a job with raw jsonb progress, so malformed and legacy values reach the parser. */
 async function insertJob(
   type: MaintenanceJobType,
-  progress: unknown,
+  progress: JsonValue,
   status: "pending" | "running" | "completed" = "running",
 ): Promise<string> {
   const [job] = await db
     .insert(maintenanceJobs)
-    .values({ progress: progress as MaintenanceJobProgress, status, type })
+    .values({ progress: sql`${JSON.stringify(progress)}::jsonb`, status, type })
     .returning({ id: maintenanceJobs.id });
-  return (job as { id: string }).id;
+  if (!job) {
+    throw new Error("insert returned no row");
+  }
+  return job.id;
 }
 
 async function readJob(jobId: string) {
   const [job] = await db.select().from(maintenanceJobs).where(eq(maintenanceJobs.id, jobId));
-  return job as NonNullable<typeof job>;
+  if (!job) {
+    throw new Error(`job ${jobId} not found`);
+  }
+  return job;
 }
 
 async function waitFor(check: () => Promise<boolean>, timeoutMs = 2000): Promise<void> {
@@ -110,6 +109,7 @@ describe("processMaintenanceJobBatch", () => {
     const job = await readJob(jobId);
     expect(job.status).toBe("running");
     expect(job.progress).toEqual({
+      orphanContinuationToken: null,
       orphanPrefix: "originals/",
       phase: "s3_orphan_sweep",
       processedCount: 3,
@@ -121,11 +121,9 @@ describe("processMaintenanceJobBatch", () => {
     });
   });
 
-  it.each([
-    "library_hard_wipe",
-    "soft_deleted_purge",
-    "shutter_source_purge",
-  ] as MaintenanceJobType[])("%s: a completed phase returns false and leaves the row untouched", async (type) => {
+  it.each(
+    MaintenanceJobTypeSchema.options,
+  )("%s: a completed phase returns false and leaves the row untouched", async (type) => {
     const jobId = await insertJob(type, { phase: "completed", processedCount: 5 }, "running");
     const before = await readJob(jobId);
     await expect(processMaintenanceJobBatch(jobId)).resolves.toBe(false);

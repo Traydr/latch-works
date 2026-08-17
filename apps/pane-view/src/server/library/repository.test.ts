@@ -3,9 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("../db", async () => {
   const { drizzle } = await import("drizzle-orm/node-postgres");
-  return {
-    db: drizzle({ client: { query: async () => ({ rows: [] }) } as never }),
-  };
+  // A query builder with no connection: these tests read rendered SQL only.
+  return { db: drizzle.mock() };
 });
 
 import type { GalleryListingCursorPayload } from "./gallery-listing";

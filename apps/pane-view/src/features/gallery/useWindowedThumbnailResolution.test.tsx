@@ -3,6 +3,8 @@
 import { act, createElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { GalleryBrowseEntry } from "./gallery-browse-entry";
+import { mediaItem } from "./gallery-session-harness";
 import { useWindowedThumbnailResolution } from "./useWindowedThumbnailResolution";
 
 const mocks = vi.hoisted(() => ({
@@ -23,13 +25,15 @@ vi.mock("./gallery-page-helpers", () => ({
   supportsGalleryThumbnail: vi.fn(() => true),
 }));
 
-function renderHook(resetKey: string): {
+interface WindowedThumbnailHarness {
   setEntries: (mediaIds: string[]) => void;
   rerender: (nextResetKey: string) => void;
   unmount: () => void;
-} {
+}
+
+function renderHook(resetKey: string): WindowedThumbnailHarness {
   let currentResetKey = resetKey;
-  let currentEntries: never[] = [];
+  let currentEntries: GalleryBrowseEntry[] = [];
   let root: Root | undefined;
   const container = document.createElement("div");
 
@@ -46,9 +50,10 @@ function renderHook(resetKey: string): {
   return {
     setEntries: (mediaIds) => {
       currentEntries = mediaIds.map((id) => ({
+        key: `media:${id}`,
         kind: "media",
-        media: { id, mediaType: "image" },
-      })) as never[];
+        media: mediaItem(id),
+      }));
       act(() => {
         root?.render(createElement(Host));
       });

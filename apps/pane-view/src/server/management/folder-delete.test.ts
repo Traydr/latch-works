@@ -1,20 +1,38 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({
-  acquireLock: vi.fn(async (_tx: unknown) => undefined),
-  assertNoActiveCleanupJob: vi.fn(async (_tx?: unknown) => undefined),
-  assertNoActiveSyncRun: vi.fn(async (_tx?: unknown) => undefined),
-  committedMutations: [] as string[],
-  failureAt: 0,
-  failureError: null as Error | null,
-  returningMock: vi.fn(),
-  returningCallCount: 0,
-  setMock: vi.fn(),
-  transactionMock: vi.fn(),
-  txUpdateMock: vi.fn(),
-  updateMock: vi.fn(),
-  whereMock: vi.fn(),
-}));
+interface FolderDeleteMocks {
+  acquireLock: Mock;
+  assertNoActiveCleanupJob: Mock;
+  assertNoActiveSyncRun: Mock;
+  committedMutations: string[];
+  failureAt: number;
+  failureError: Error | null;
+  returningMock: Mock;
+  returningCallCount: number;
+  setMock: Mock;
+  transactionMock: Mock;
+  txUpdateMock: Mock;
+  updateMock: Mock;
+  whereMock: Mock;
+}
+
+const mocks = vi.hoisted(
+  (): FolderDeleteMocks => ({
+    acquireLock: vi.fn(),
+    assertNoActiveCleanupJob: vi.fn(),
+    assertNoActiveSyncRun: vi.fn(),
+    committedMutations: [],
+    failureAt: 0,
+    failureError: null,
+    returningMock: vi.fn(),
+    returningCallCount: 0,
+    setMock: vi.fn(),
+    transactionMock: vi.fn(),
+    txUpdateMock: vi.fn(),
+    updateMock: vi.fn(),
+    whereMock: vi.fn(),
+  }),
+);
 
 vi.mock("../db", () => ({
   db: {
@@ -122,7 +140,7 @@ describe("softDeleteFolderSubtree", () => {
   it("takes the library mutation lock and runs both guards on the mutation transaction", async () => {
     await softDeleteFolderSubtree({ folderPaths: ["photos/2026"] });
     expect(mocks.acquireLock).toHaveBeenCalledOnce();
-    const lockTx = (mocks.acquireLock.mock.calls as unknown[][])[0]?.[0];
+    const lockTx = mocks.acquireLock.mock.calls[0]?.[0];
     expect(lockTx).toBeDefined();
     expect(mocks.assertNoActiveSyncRun).toHaveBeenCalledWith(lockTx);
     expect(mocks.assertNoActiveCleanupJob).toHaveBeenCalledWith(lockTx);

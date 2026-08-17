@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { db } from "../db";
 import { acquireLibraryMutationStartupLock } from "../db/library-coordination-lock";
 import { maintenanceJobs } from "../db/schema";
@@ -39,27 +40,34 @@ const ACTIVE_JOB_UNIQUE_INDEXES = new Set([
   "maintenance_jobs_active_hard_wipe_unique",
 ]);
 
+/** The facets of a PostgreSQL driver error the active-job check reads. */
+const PgErrorFacetsSchema = z.object({
+  code: z.string().optional(),
+  constraint: z.string().optional(),
+});
+
+/** A thrown error that is, or wraps as `cause`, a PostgreSQL error. */
+const ThrownPgErrorSchema = PgErrorFacetsSchema.extend({
+  cause: PgErrorFacetsSchema.optional().catch(undefined),
+});
+
 /**
  * True for a unique violation raised by the active-job indexes — two
  * schedulers racing past the app-level guard. Other unique violations (a
  * descriptor's prepare step, for instance) are not "already in progress" and
  * are rethrown as they are. Drizzle surfaces the driver error as `cause` when
- * it wraps one, so both shapes are checked.
+ * it wraps one, so both the error and its cause are checked.
  */
-function isActiveJobUniqueViolation(error: unknown): boolean {
-  for (const candidate of [error, (error as { cause?: unknown } | null)?.cause]) {
-    if (typeof candidate !== "object" || candidate === null) {
-      continue;
-    }
-    const { code, constraint } = candidate as { code?: string; constraint?: string };
-    if (
-      code === "23505" &&
-      (constraint === undefined || ACTIVE_JOB_UNIQUE_INDEXES.has(constraint))
-    ) {
-      return true;
-    }
+function isActiveJobUniqueViolation(error: Error): boolean {
+  const parsed = ThrownPgErrorSchema.safeParse(error);
+  if (!parsed.success) {
+    return false;
   }
-  return false;
+  return [parsed.data, parsed.data.cause].some(
+    (candidate) =>
+      candidate?.code === "23505" &&
+      (candidate.constraint === undefined || ACTIVE_JOB_UNIQUE_INDEXES.has(candidate.constraint)),
+  );
 }
 
 export async function scheduleMaintenanceJob(
@@ -96,7 +104,7 @@ export async function scheduleMaintenanceJob(
       return job.id;
     });
   } catch (error) {
-    if (isActiveJobUniqueViolation(error)) {
+    if (error instanceof Error && isActiveJobUniqueViolation(error)) {
       throw new Error(CLEANUP_IN_PROGRESS_MESSAGE);
     }
     throw error;

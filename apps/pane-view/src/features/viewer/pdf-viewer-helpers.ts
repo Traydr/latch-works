@@ -55,7 +55,13 @@ export function getPdfPageRenderWindow(
   return [...selected].sort((left, right) => left - right);
 }
 
-export function resolveVisiblePdfPage(entries: IntersectionObserverEntry[]): number | null {
+/** What the visible-page rule reads from an intersection entry. */
+export type PdfPageIntersection = Pick<
+  IntersectionObserverEntry,
+  "intersectionRatio" | "isIntersecting" | "target"
+>;
+
+export function resolveVisiblePdfPage(entries: readonly PdfPageIntersection[]): number | null {
   let bestPage: number | null = null;
   let bestRatio = 0;
 

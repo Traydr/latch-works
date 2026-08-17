@@ -1,3 +1,4 @@
+import type { MediaType } from "@latch-works/media-domain";
 import { and, asc, count, desc, eq, exists, gte, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import { db } from "../db";
 import { folders, libraryEntries, mediaObjects, syncRuns } from "../db/schema";
@@ -21,7 +22,7 @@ export interface ArchiveStats {
   byMediaType: Array<{
     bytes: number;
     count: number;
-    mediaType: string;
+    mediaType: MediaType;
   }>;
   entriesOverTime: CumulativePoint[];
   funFacts: {
@@ -81,29 +82,6 @@ function utcDaysAgo(days: number): Date {
   return date;
 }
 
-function asNumber(value: unknown): number {
-  if (typeof value === "number") {
-    return value;
-  }
-  if (typeof value === "bigint") {
-    return Number(value);
-  }
-  if (typeof value === "string" && value.length > 0) {
-    return Number(value);
-  }
-  return 0;
-}
-
-function dayFromSql(value: unknown): string {
-  if (value instanceof Date) {
-    return toDayKey(value);
-  }
-  if (typeof value === "string") {
-    return value.slice(0, 10);
-  }
-  return toDayKey(new Date());
-}
-
 export async function readArchiveStats(): Promise<ArchiveStats> {
   const historyStart = utcDaysAgo(HISTORY_DAYS - 1);
   const growthStart = utcDaysAgo(GROWTH_WINDOW_DAYS - 1);
@@ -132,7 +110,7 @@ export async function readArchiveStats(): Promise<ArchiveStats> {
     db.select({ value: count() }).from(folders).where(isNull(folders.deletedAt)),
     db
       .select({
-        bytes: sql<number>`coalesce(sum(${mediaObjects.size}), 0)`,
+        bytes: sql`coalesce(sum(${mediaObjects.size}), 0)`.mapWith(Number),
         count: count(),
       })
       .from(mediaObjects),
@@ -144,7 +122,7 @@ export async function readArchiveStats(): Promise<ArchiveStats> {
       .from(mediaObjects),
     db
       .select({
-        bytes: sql<number>`coalesce(sum(${mediaObjects.size}), 0)`,
+        bytes: sql`coalesce(sum(${mediaObjects.size}), 0)`.mapWith(Number),
         count: count(),
         mediaType: mediaObjects.mediaType,
       })
@@ -153,7 +131,7 @@ export async function readArchiveStats(): Promise<ArchiveStats> {
       .orderBy(desc(sql`coalesce(sum(${mediaObjects.size}), 0)`)),
     db
       .select({
-        bytes: sql<number>`coalesce(sum(${mediaObjects.size}), 0)`,
+        bytes: sql`coalesce(sum(${mediaObjects.size}), 0)`.mapWith(Number),
         count: count(),
         extension: mediaObjects.extension,
       })
@@ -163,7 +141,7 @@ export async function readArchiveStats(): Promise<ArchiveStats> {
       .limit(TOP_LIMIT),
     db
       .select({
-        entryCount: sql<number>`count(*)::int`,
+        entryCount: sql`count(*)::int`.mapWith(Number),
         name: folders.name,
         path: folders.path,
       })
@@ -192,13 +170,13 @@ export async function readArchiveStats(): Promise<ArchiveStats> {
       .limit(1),
     db
       .select({
-        entryBytes: sql<number>`coalesce(sum(${libraryEntries.size}), 0)`,
+        entryBytes: sql`coalesce(sum(${libraryEntries.size}), 0)`.mapWith(Number),
       })
       .from(libraryEntries)
       .where(isNull(libraryEntries.deletedAt)),
     db
       .select({
-        objectBytes: sql<number>`coalesce(sum(${mediaObjects.size}), 0)`,
+        objectBytes: sql`coalesce(sum(${mediaObjects.size}), 0)`.mapWith(Number),
       })
       .from(mediaObjects)
       .where(
@@ -216,7 +194,7 @@ export async function readArchiveStats(): Promise<ArchiveStats> {
       ),
     db
       .select({
-        bytes: sql<number>`coalesce(sum(${mediaObjects.size}), 0)`,
+        bytes: sql`coalesce(sum(${mediaObjects.size}), 0)`.mapWith(Number),
         day: sql<string>`to_char(date_trunc('day', ${mediaObjects.createdAt} at time zone 'utc'), 'YYYY-MM-DD')`,
       })
       .from(mediaObjects)
@@ -234,9 +212,15 @@ export async function readArchiveStats(): Promise<ArchiveStats> {
       .orderBy(asc(sql`date_trunc('day', ${libraryEntries.firstSeenAt} at time zone 'utc')`)),
     db
       .select({
-        completed: sql<number>`coalesce(sum(case when ${syncRuns.status} = 'completed' then 1 else 0 end), 0)`,
+        completed:
+          sql`coalesce(sum(case when ${syncRuns.status} = 'completed' then 1 else 0 end), 0)`.mapWith(
+            Number,
+          ),
         day: sql<string>`to_char(date_trunc('day', ${syncRuns.startedAt} at time zone 'utc'), 'YYYY-MM-DD')`,
-        failed: sql<number>`coalesce(sum(case when ${syncRuns.status} = 'failed' then 1 else 0 end), 0)`,
+        failed:
+          sql`coalesce(sum(case when ${syncRuns.status} = 'failed' then 1 else 0 end), 0)`.mapWith(
+            Number,
+          ),
         started: count(),
       })
       .from(syncRuns)
@@ -245,19 +229,19 @@ export async function readArchiveStats(): Promise<ArchiveStats> {
       .orderBy(asc(sql`date_trunc('day', ${syncRuns.startedAt} at time zone 'utc')`)),
   ]);
 
-  const mediaObjectBytes = asNumber(mediaObjectStats[0]?.bytes);
+  const mediaObjectBytes = mediaObjectStats[0]?.bytes ?? 0;
   const mediaObjectCount = mediaObjectStats[0]?.count ?? 0;
   const oldestObjectAt = ageRow[0]?.oldest ? new Date(ageRow[0].oldest) : null;
   const newestObjectAt = ageRow[0]?.newest ? new Date(ageRow[0].newest) : null;
 
   // Baseline size before the visible window so the cumulative chart meets today's total.
-  const bytesInWindow = objectDailyRows.reduce((sum, row) => sum + asNumber(row.bytes), 0);
+  const bytesInWindow = objectDailyRows.reduce((sum, row) => sum + row.bytes, 0);
   const baselineBytes = Math.max(0, mediaObjectBytes - bytesInWindow);
 
   const objectDaily: DailyBucket[] = fillDailyBuckets(
     objectDailyRows.map((row) => ({
-      day: dayFromSql(row.day),
-      value: asNumber(row.bytes),
+      day: row.day,
+      value: row.bytes,
     })),
     { endDay: today, startDay: historyStartKey },
   );
@@ -276,7 +260,7 @@ export async function readArchiveStats(): Promise<ArchiveStats> {
   const baselineEntries = Math.max(0, activeEntries - entriesInWindow);
   const entryDaily: DailyBucket[] = fillDailyBuckets(
     entryDailyRows.map((row) => ({
-      day: dayFromSql(row.day),
+      day: row.day,
       value: row.count ?? 0,
     })),
     { endDay: today, startDay: historyStartKey },
@@ -296,14 +280,14 @@ export async function readArchiveStats(): Promise<ArchiveStats> {
 
   const growthDailyBytes = fillDailyBuckets(
     objectDailyRows.map((row) => ({
-      day: dayFromSql(row.day),
-      value: asNumber(row.bytes),
+      day: row.day,
+      value: row.bytes,
     })),
     { endDay: today, startDay: toDayKey(growthStart) },
   );
   const growthDailyEntries = fillDailyBuckets(
     entryDailyRows.map((row) => ({
-      day: dayFromSql(row.day),
+      day: row.day,
       value: row.count ?? 0,
     })),
     { endDay: today, startDay: toDayKey(growthStart) },
@@ -321,10 +305,10 @@ export async function readArchiveStats(): Promise<ArchiveStats> {
 
   const syncByDay = new Map(
     syncDailyRows.map((row) => [
-      dayFromSql(row.day),
+      row.day,
       {
-        completed: asNumber(row.completed),
-        failed: asNumber(row.failed),
+        completed: row.completed,
+        failed: row.failed,
         started: row.started ?? 0,
       },
     ]),
@@ -350,15 +334,15 @@ export async function readArchiveStats(): Promise<ArchiveStats> {
     label: formatDayLabel(bucket.day),
   }));
 
-  const entryBytes = asNumber(entryBytesRow[0]?.entryBytes);
-  const referencedObjectBytes = asNumber(referencedObjectBytesRow[0]?.objectBytes);
+  const entryBytes = entryBytesRow[0]?.entryBytes ?? 0;
+  const referencedObjectBytes = referencedObjectBytesRow[0]?.objectBytes ?? 0;
   // When multiple library paths share content-addressed objects, entry bytes exceed
   // unique object bytes. Treat that gap as "saved" by dedupe.
   const dedupeSavedBytes = Math.max(0, entryBytes - referencedObjectBytes);
 
   return {
     byMediaType: byMediaTypeRows.map((row) => ({
-      bytes: asNumber(row.bytes),
+      bytes: row.bytes,
       count: row.count,
       mediaType: row.mediaType,
     })),
@@ -380,12 +364,12 @@ export async function readArchiveStats(): Promise<ArchiveStats> {
     sizeOverTime,
     syncActivity,
     topExtensions: topExtensionRows.map((row) => ({
-      bytes: asNumber(row.bytes),
+      bytes: row.bytes,
       count: row.count,
       extension: row.extension.startsWith(".") ? row.extension : `.${row.extension}`,
     })),
     topFolders: topFolderRows.map((row) => ({
-      entryCount: asNumber(row.entryCount),
+      entryCount: row.entryCount,
       name: row.name,
       path: row.path,
     })),

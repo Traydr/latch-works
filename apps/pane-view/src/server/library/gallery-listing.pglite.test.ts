@@ -1,4 +1,4 @@
-import type { GallerySortMode, MediaType } from "@latch-works/media-domain";
+import type { GallerySortMode } from "@latch-works/media-domain";
 import { buildComicEntries } from "@latch-works/media-domain";
 import { afterAll, describe, expect, it, vi } from "vitest";
 
@@ -11,12 +11,7 @@ import { afterAll, describe, expect, it, vi } from "vitest";
  * key). The oracle is a test double, not production code.
  */
 
-const harness = vi.hoisted(() => ({
-  handle: null as null | {
-    close(): Promise<void>;
-    client: { query(sql: string): Promise<{ rows: unknown[] }> };
-  },
-}));
+const harness = vi.hoisted((): TestDatabaseHarness => ({ handle: null }));
 
 vi.mock("../db", async () => {
   const { createTestDatabase } = await import("./test-db");
@@ -31,6 +26,23 @@ import { readDatabaseComicListing, readDatabaseGalleryComic } from "./comic-list
 import { type GalleryRandomSeed, galleryRandomOrderKey } from "./gallery-order";
 import { buildLibraryFixture, FIXTURE_SEARCH_TERM, type FixtureEntry } from "./library-fixture";
 import { readDatabaseGalleryListing } from "./repository";
+import type { TestDatabaseHandle, TestDatabaseHarness } from "./test-db";
+
+/** A page's cursor when the test needs one to continue from. */
+function mustCursor(cursor: string | null): string {
+  if (cursor === null) {
+    throw new Error("expected a continuation cursor");
+  }
+  return cursor;
+}
+
+/** The seeded pglite client; the `../db` mock above creates it before any test runs. */
+function testClient(): TestDatabaseHandle["client"] {
+  if (!harness.handle) {
+    throw new Error("test database was not created");
+  }
+  return harness.handle.client;
+}
 
 afterAll(async () => {
   await harness.handle?.close();
@@ -124,7 +136,7 @@ function expectedMediaOrder(request: OracleMediaRequest): string[] {
   const byName = (a: FixtureEntry, b: FixtureEntry) =>
     natural(nameOf(a.path), nameOf(b.path)) || natural(a.path, b.path) || bytes(a.id, b.id);
   const byPathId = (a: FixtureEntry, b: FixtureEntry) => bytes(a.path, b.path) || bytes(a.id, b.id);
-  const comparators: Record<GallerySortMode, (a: FixtureEntry, b: FixtureEntry) => number> = {
+  const comparators = {
     "date-newest": (a, b) => b.mtimeMs - a.mtimeMs || byPathId(a, b),
     "date-oldest": (a, b) => a.mtimeMs - b.mtimeMs || byPathId(a, b),
     "name-asc": byName,
@@ -134,7 +146,7 @@ function expectedMediaOrder(request: OracleMediaRequest): string[] {
         galleryRandomOrderKey(request.randomSeed, "media", a.id),
         galleryRandomOrderKey(request.randomSeed, "media", b.id),
       ) || byPathId(a, b),
-  };
+  } satisfies Record<GallerySortMode, (a: FixtureEntry, b: FixtureEntry) => number>;
   return [...subjects].sort(comparators[request.sortMode]).map((entry) => entry.id);
 }
 
@@ -174,8 +186,10 @@ function eligibleComics(request: OracleComicRequest): Map<string, OracleComic> {
   const comics = new Map<string, OracleComic>();
   for (const [folderPath, pages] of byFolder) {
     const sorted = [...pages].sort(comicPageComparator);
+    const cover = sorted[0];
+    if (!cover) continue;
     comics.set(folderPath, {
-      cover: sorted[0] as FixtureEntry,
+      cover,
       folderPath,
       newest: Math.max(...pages.map((page) => page.mtimeMs)),
       oldest: Math.min(...pages.map((page) => page.mtimeMs)),
@@ -188,7 +202,7 @@ function eligibleComics(request: OracleComicRequest): Map<string, OracleComic> {
 
 function expectedComicOrder(request: OracleComicRequest): OracleComic[] {
   const comics = [...eligibleComics(request).values()];
-  const comparators: Record<GallerySortMode, (a: OracleComic, b: OracleComic) => number> = {
+  const comparators = {
     "date-newest": (a, b) => b.newest - a.newest || natural(a.folderPath, b.folderPath),
     "date-oldest": (a, b) => a.oldest - b.oldest || natural(a.folderPath, b.folderPath),
     "name-asc": (a, b) => natural(a.folderPath, b.folderPath),
@@ -198,7 +212,7 @@ function expectedComicOrder(request: OracleComicRequest): OracleComic[] {
         galleryRandomOrderKey(request.randomSeed, "comic", a.folderPath),
         galleryRandomOrderKey(request.randomSeed, "comic", b.folderPath),
       ) || bytes(a.folderPath, b.folderPath),
-  };
+  } satisfies Record<GallerySortMode, (a: OracleComic, b: OracleComic) => number>;
   return comics.sort(comparators[request.sortMode]);
 }
 
@@ -236,7 +250,7 @@ async function collectComicPages(request: OracleComicRequest, limit: number) {
   return pages;
 }
 
-const MEDIA_SHAPES: Record<string, Omit<OracleMediaRequest, "randomSeed" | "sortMode">> = {
+const MEDIA_SCOPES = {
   "non-recursive folder": {
     currentPath: "alpha",
     recursive: false,
@@ -258,9 +272,9 @@ const MEDIA_SHAPES: Record<string, Omit<OracleMediaRequest, "randomSeed" | "sort
   },
   "images only": { currentPath: "alpha", recursive: true, showImages: true, showVideos: false },
   "videos only": { currentPath: "", recursive: true, showImages: false, showVideos: true },
-};
+} satisfies Record<string, Omit<OracleMediaRequest, "randomSeed" | "sortMode">>;
 
-const COMIC_SHAPES: Record<string, Omit<OracleComicRequest, "randomSeed" | "sortMode">> = {
+const COMIC_SCOPES = {
   "alpha subtree": { currentPath: "alpha", showImages: true, showVideos: true },
   "beta subtree": { currentPath: "beta", showImages: true, showVideos: true },
   "search from root": {
@@ -277,7 +291,7 @@ const COMIC_SHAPES: Record<string, Omit<OracleComicRequest, "randomSeed" | "sort
   },
   "images hidden": { currentPath: "alpha", showImages: false, showVideos: true },
   "videos hidden": { currentPath: "alpha", showImages: true, showVideos: false },
-};
+} satisfies Record<string, Omit<OracleComicRequest, "randomSeed" | "sortMode">>;
 
 // ---------------------------------------------------------------------------
 // Fixture sanity
@@ -285,11 +299,9 @@ const COMIC_SHAPES: Record<string, Omit<OracleComicRequest, "randomSeed" | "sort
 
 describe("fixture", () => {
   it("has the row counts the oracle assumes", async () => {
-    const rows = (
-      await harness.handle?.client.query(
-        "select count(*)::int as n from library_entries where deleted_at is null",
-      )
-    )?.rows as { n: number }[];
+    const { rows } = await testClient().query<{ n: number }>(
+      "select count(*)::int as n from library_entries where deleted_at is null",
+    );
     expect(rows[0]?.n).toBe(liveEntries.length);
     expect(liveEntries.length).toBeGreaterThanOrEqual(1200);
   });
@@ -301,11 +313,9 @@ describe("fixture", () => {
 
 describe("natural collation", () => {
   it("orders the fixture filenames exactly as the client collator does", async () => {
-    const rows = (
-      await harness.handle?.client.query(
-        'select id from library_entries order by filename collate "natural", id',
-      )
-    )?.rows as { id: string }[];
+    const { rows } = await testClient().query<{ id: string }>(
+      'select id from library_entries order by filename collate "natural", id',
+    );
     const expected = [...fixture.entries]
       .sort((a, b) => natural(nameOf(a.path), nameOf(b.path)) || bytes(a.id, b.id))
       .map((entry) => entry.id);
@@ -313,12 +323,10 @@ describe("natural collation", () => {
   });
 
   it("puts 2.jpg before 10.jpg and ties a.jpg with A.jpg at primary strength", async () => {
-    const rows = (
-      await harness.handle?.client.query(
-        "select filename from library_entries where parent_path in ('alpha/comic-unpadded', 'alpha/case-tie') " +
-          'order by filename collate "natural", id',
-      )
-    )?.rows as { filename: string }[];
+    const { rows } = await testClient().query<{ filename: string }>(
+      "select filename from library_entries where parent_path in ('alpha/comic-unpadded', 'alpha/case-tie') " +
+        'order by filename collate "natural", id',
+    );
     expect(rows.map((row) => row.filename)).toEqual([
       "2.jpg",
       "3.jpg",
@@ -343,10 +351,10 @@ describe("natural collation", () => {
 // ---------------------------------------------------------------------------
 
 describe("media listing follows one seeded order across pages", () => {
-  const cases = Object.entries(MEDIA_SHAPES).flatMap(([label, shape]) =>
+  const cases = Object.entries(MEDIA_SCOPES).flatMap(([label, scope]) =>
     SORT_MODES.flatMap((sortMode) =>
       (sortMode === "random" ? [SEED_A, SEED_B] : [SEED_A]).flatMap((randomSeed) =>
-        [7, 48, 100].map((limit) => ({ label, limit, randomSeed, shape, sortMode })),
+        [7, 48, 100].map((limit) => ({ label, limit, randomSeed, scope, sortMode })),
       ),
     ),
   );
@@ -354,10 +362,10 @@ describe("media listing follows one seeded order across pages", () => {
   it.each(cases)("$label · $sortMode · limit $limit · seed $randomSeed", async ({
     limit,
     randomSeed,
-    shape,
+    scope,
     sortMode,
   }) => {
-    const request = { ...shape, randomSeed, sortMode };
+    const request = { ...scope, randomSeed, sortMode };
     const pages = await collectMediaPages(request, limit);
     const ids = pages.flatMap((page) => page.media.map((item) => item.id));
     const expected = expectedMediaOrder(request);
@@ -377,11 +385,7 @@ describe("media listing follows one seeded order across pages", () => {
 
   it("returns folder entries only on the first page of a non-recursive browse", async () => {
     const pages = await collectMediaPages(
-      {
-        ...MEDIA_SHAPES["non-recursive folder"],
-        randomSeed: SEED_A,
-        sortMode: "name-asc",
-      } as OracleMediaRequest,
+      { ...MEDIA_SCOPES["non-recursive folder"], randomSeed: SEED_A, sortMode: "name-asc" },
       7,
     );
     const firstFolders = pages[0]?.entries.filter((entry) => entry.kind === "folder") ?? [];
@@ -400,12 +404,9 @@ describe("media listing follows one seeded order across pages", () => {
   });
 
   it("rejects a cursor issued under another seed and restarts from page 1", async () => {
-    const shape = MEDIA_SHAPES["recursive subtree"] as Omit<
-      OracleMediaRequest,
-      "randomSeed" | "sortMode"
-    >;
+    const scope = MEDIA_SCOPES["recursive subtree"];
     const underA = await readDatabaseGalleryListing({
-      ...shape,
+      ...scope,
       limit: 7,
       randomSeed: SEED_A,
       sortMode: "random",
@@ -413,14 +414,14 @@ describe("media listing follows one seeded order across pages", () => {
     expect(underA.page.cursor).not.toBeNull();
 
     const spliced = await readDatabaseGalleryListing({
-      ...shape,
-      cursor: underA.page.cursor as string,
+      ...scope,
+      cursor: mustCursor(underA.page.cursor),
       limit: 7,
       randomSeed: SEED_B,
       sortMode: "random",
     });
     const firstUnderB = await readDatabaseGalleryListing({
-      ...shape,
+      ...scope,
       limit: 7,
       randomSeed: SEED_B,
       sortMode: "random",
@@ -429,25 +430,22 @@ describe("media listing follows one seeded order across pages", () => {
   });
 
   it("rejects a cursor issued under another sort mode", async () => {
-    const shape = MEDIA_SHAPES["recursive subtree"] as Omit<
-      OracleMediaRequest,
-      "randomSeed" | "sortMode"
-    >;
+    const scope = MEDIA_SCOPES["recursive subtree"];
     const byName = await readDatabaseGalleryListing({
-      ...shape,
+      ...scope,
       limit: 7,
       randomSeed: SEED_A,
       sortMode: "name-asc",
     });
     const spliced = await readDatabaseGalleryListing({
-      ...shape,
-      cursor: byName.page.cursor as string,
+      ...scope,
+      cursor: mustCursor(byName.page.cursor),
       limit: 7,
       randomSeed: SEED_A,
       sortMode: "date-newest",
     });
     const firstByDate = await readDatabaseGalleryListing({
-      ...shape,
+      ...scope,
       limit: 7,
       randomSeed: SEED_A,
       sortMode: "date-newest",
@@ -473,18 +471,15 @@ describe("media listing follows one seeded order across pages", () => {
   });
 
   it("changes the whole permutation, first page included, when the seed changes", async () => {
-    const shape = MEDIA_SHAPES["recursive subtree"] as Omit<
-      OracleMediaRequest,
-      "randomSeed" | "sortMode"
-    >;
+    const scope = MEDIA_SCOPES["recursive subtree"];
     const underA = await readDatabaseGalleryListing({
-      ...shape,
+      ...scope,
       limit: 48,
       randomSeed: SEED_A,
       sortMode: "random",
     });
     const underB = await readDatabaseGalleryListing({
-      ...shape,
+      ...scope,
       limit: 48,
       randomSeed: SEED_B,
       sortMode: "random",
@@ -498,10 +493,10 @@ describe("media listing follows one seeded order across pages", () => {
 // ---------------------------------------------------------------------------
 
 describe("comic listing serves summaries in one seeded order across pages", () => {
-  const cases = Object.entries(COMIC_SHAPES).flatMap(([label, shape]) =>
+  const cases = Object.entries(COMIC_SCOPES).flatMap(([label, scope]) =>
     SORT_MODES.flatMap((sortMode) =>
       (sortMode === "random" ? [SEED_A, SEED_B] : [SEED_A]).flatMap((randomSeed) =>
-        [3, 7, 48].map((limit) => ({ label, limit, randomSeed, shape, sortMode })),
+        [3, 7, 48].map((limit) => ({ label, limit, randomSeed, scope, sortMode })),
       ),
     ),
   );
@@ -510,10 +505,10 @@ describe("comic listing serves summaries in one seeded order across pages", () =
     label,
     limit,
     randomSeed,
-    shape,
+    scope,
     sortMode,
   }) => {
-    const request = { ...shape, randomSeed, sortMode };
+    const request = { ...scope, randomSeed, sortMode };
     const pages = await collectComicPages(request, limit);
     const comics = pages.flatMap((page) => page.comics);
     const expected = expectedComicOrder(request);
@@ -540,10 +535,10 @@ describe("comic listing serves summaries in one seeded order across pages", () =
 
   it("applies the eligibility rules: root media, parents, video-only and deleted folders never form comics", async () => {
     const request = {
-      ...COMIC_SHAPES["alpha subtree"],
+      ...COMIC_SCOPES["alpha subtree"],
       randomSeed: SEED_A,
       sortMode: "name-asc" as const,
-    } as OracleComicRequest;
+    };
     const ids = (await collectComicPages(request, 48)).flatMap((page) =>
       page.comics.map((comic) => comic.id),
     );
@@ -573,10 +568,10 @@ describe("comic listing serves summaries in one seeded order across pages", () =
 
   it("chooses the natural minimum as cover, agreeing with compareByName", async () => {
     const request = {
-      ...COMIC_SHAPES["alpha subtree"],
+      ...COMIC_SCOPES["alpha subtree"],
       randomSeed: SEED_A,
       sortMode: "name-asc" as const,
-    } as OracleComicRequest;
+    };
     const comics = (await collectComicPages(request, 48)).flatMap((page) => page.comics);
     const coverName = (id: string) => comics.find((comic) => comic.id === id)?.cover.name;
     expect(coverName("alpha/comic-unpadded")).toBe("2.jpg");
@@ -589,10 +584,10 @@ describe("comic listing serves summaries in one seeded order across pages", () =
 
   it("searching from a folder finds comics across the archive, and each of them opens", async () => {
     const request = {
-      ...COMIC_SHAPES["search from a folder"],
+      ...COMIC_SCOPES["search from a folder"],
       randomSeed: SEED_A,
       sortMode: "name-asc" as const,
-    } as OracleComicRequest;
+    };
     const comics = (await collectComicPages(request, 48)).flatMap((page) => page.comics);
     expect(comics.map((comic) => comic.id)).toContain("gamma/heroes");
     expect(comics.map((comic) => comic.id)).toContain("beta/set-009");
@@ -606,10 +601,10 @@ describe("comic listing serves summaries in one seeded order across pages", () =
 
   it("counts only pages that match the search and lists only comics with a matching page", async () => {
     const request = {
-      ...COMIC_SHAPES["search from root"],
+      ...COMIC_SCOPES["search from root"],
       randomSeed: SEED_A,
       sortMode: "name-asc" as const,
-    } as OracleComicRequest;
+    };
     const comics = (await collectComicPages(request, 48)).flatMap((page) => page.comics);
     const heroes = comics.find((comic) => comic.id === "gamma/heroes");
     expect(heroes?.pageCount).toBe(10); // the folder path matches, so every page does
@@ -619,25 +614,22 @@ describe("comic listing serves summaries in one seeded order across pages", () =
   });
 
   it("rejects a comic cursor issued under another seed or for media", async () => {
-    const shape = COMIC_SHAPES["beta subtree"] as Omit<
-      OracleComicRequest,
-      "randomSeed" | "sortMode"
-    >;
+    const scope = COMIC_SCOPES["beta subtree"];
     const underA = await readDatabaseComicListing({
-      ...shape,
+      ...scope,
       limit: 7,
       randomSeed: SEED_A,
       sortMode: "random",
     });
     const spliced = await readDatabaseComicListing({
-      ...shape,
-      cursor: underA.page.cursor as string,
+      ...scope,
+      cursor: mustCursor(underA.page.cursor),
       limit: 7,
       randomSeed: SEED_B,
       sortMode: "random",
     });
     const firstUnderB = await readDatabaseComicListing({
-      ...shape,
+      ...scope,
       limit: 7,
       randomSeed: SEED_B,
       sortMode: "random",
@@ -646,17 +638,19 @@ describe("comic listing serves summaries in one seeded order across pages", () =
       firstUnderB.comics.map((comic) => comic.id),
     );
 
-    const mediaCursor = (
-      await readDatabaseGalleryListing({
-        ...shape,
-        limit: 7,
-        randomSeed: SEED_A,
-        recursive: true,
-        sortMode: "random",
-      })
-    ).page.cursor as string;
+    const mediaCursor = mustCursor(
+      (
+        await readDatabaseGalleryListing({
+          ...scope,
+          limit: 7,
+          randomSeed: SEED_A,
+          recursive: true,
+          sortMode: "random",
+        })
+      ).page.cursor,
+    );
     const acrossKinds = await readDatabaseComicListing({
-      ...shape,
+      ...scope,
       cursor: mediaCursor,
       limit: 7,
       randomSeed: SEED_A,
@@ -680,7 +674,7 @@ describe("readDatabaseGalleryComic", () => {
       .filter((entry) => entry.path.startsWith(`${currentPath}/`))
       .map((entry) => ({
         id: entry.id,
-        mediaType: entry.mediaType as MediaType,
+        mediaType: entry.mediaType,
         mtimeMs: entry.mtimeMs,
         name: nameOf(entry.path),
         path: entry.path,

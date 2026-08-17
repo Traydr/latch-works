@@ -12,7 +12,12 @@ const CAPABILITY_LIFETIME_SECONDS = 24 * 60 * 60;
 
 export type CapabilityClaims = Exclude<SourceCapabilityClaims, { purpose: "source_delivery" }>;
 
-export function shutterCapabilityKeyConfig(): { kid: string; key: Uint8Array<ArrayBuffer> } {
+export interface ShutterCapabilityKeyConfig {
+  kid: string;
+  key: Uint8Array<ArrayBuffer>;
+}
+
+export function shutterCapabilityKeyConfig(): ShutterCapabilityKeyConfig {
   const status = validateCapabilityKeyConfig({
     capabilityKeys: env.SHUTTER_CAPABILITY_KEYS,
     capabilityKid: env.SHUTTER_CAPABILITY_KID,
@@ -41,7 +46,12 @@ export async function issueShutterCapability(
     : issueSourceCapabilityWithIv(claims, options, ivOverride);
 }
 
-export function shutterCapabilityClaimTimes(): { iat: number; exp: number } {
+export interface CapabilityClaimTimes {
+  iat: number;
+  exp: number;
+}
+
+export function shutterCapabilityClaimTimes(): CapabilityClaimTimes {
   const iat = Math.floor(Date.now() / 1000);
   return { iat, exp: iat + CAPABILITY_LIFETIME_SECONDS };
 }

@@ -287,11 +287,16 @@ export function applyBrowseIntent(
  * after storage is read, redirects to the last folder with the last flags.
  * Any later visit to the root (explicit navigation, back button) stays put.
  */
+export interface InitialRedirectDecision {
+  checked: boolean;
+  redirectTo: GalleryBrowseSearch | null;
+}
+
 export function resolveInitialRedirect(
   search: GalleryBrowseSearch,
   persisted: PersistedBrowseState | null,
   alreadyChecked: boolean,
-): { checked: boolean; redirectTo: GalleryBrowseSearch | null } {
+): InitialRedirectDecision {
   if (alreadyChecked) {
     return { checked: true, redirectTo: null };
   }
@@ -335,12 +340,15 @@ export interface GalleryBrowseState extends ResolvedBrowseState {
   buildBrowseSearch(patch: Partial<GalleryBrowseSearch>): GalleryBrowseSearch;
 }
 
-export type BrowseNavigate = (options: {
+export interface BrowseNavigateOptions {
   replace?: boolean;
   resetScroll?: boolean;
   search: GalleryBrowseSearch;
   to: "/";
-}) => unknown;
+}
+
+/** The router's navigate, narrowed to what the browse state needs. */
+export type BrowseNavigate = (options: BrowseNavigateOptions) => Promise<void> | void;
 
 export interface UseGalleryBrowseStateOptions {
   createSeed?: (previous?: GalleryRandomSeed | null) => GalleryRandomSeed;

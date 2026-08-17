@@ -5,10 +5,19 @@ const GRID_OVERSCAN_ROWS = 3;
 const MAIN_HORIZONTAL_PADDING_PX = 40;
 const DEFAULT_VIEWPORT_WIDTH = 1280;
 
-function areRowWindowsEqual(
-  left: { start: number; end: number },
-  right: { start: number; end: number },
-): boolean {
+/** An inclusive range of grid rows. */
+interface RowWindow {
+  start: number;
+  end: number;
+}
+
+interface WindowedGridItem {
+  index: number;
+  left: number;
+  top: number;
+}
+
+function areRowWindowsEqual(left: RowWindow, right: RowWindow): boolean {
   return left.start === right.start && left.end === right.end;
 }
 
@@ -18,7 +27,7 @@ function getVisibleRowWindow(
   rowCount: number,
   rowStride: number,
   overscanRows: number,
-): { start: number; end: number } {
+): RowWindow {
   if (rowCount === 0 || rowStride <= 0) {
     return { start: 0, end: 0 };
   }
@@ -35,11 +44,11 @@ interface UseVirtualGridMetricsResult {
   columnCount: number;
   gridWidth: number;
   mainRef: RefObject<HTMLElement | null>;
-  overscanWindow: { start: number; end: number };
+  overscanWindow: RowWindow;
   rowStride: number;
   totalGridHeight: number;
-  viewportWindow: { start: number; end: number };
-  windowedItems: Array<{ index: number; left: number; top: number }>;
+  viewportWindow: RowWindow;
+  windowedItems: WindowedGridItem[];
 }
 
 export function useVirtualGridMetrics(
@@ -191,9 +200,9 @@ export function useVirtualGridMetrics(
     };
   }, [rowCount, rowStride]);
 
-  const windowedItems = useMemo(() => {
+  const windowedItems = useMemo((): WindowedGridItem[] => {
     if (itemCount === 0) {
-      return [] as Array<{ index: number; left: number; top: number }>;
+      return [];
     }
 
     const startIndex = rowWindows.overscan.start * columnCount;

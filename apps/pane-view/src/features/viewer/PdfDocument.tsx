@@ -165,7 +165,7 @@ function usePdfDocument({ initialPage, mediaId, onPageChange }: Omit<PdfDocument
           const desiredPages = new Set(
             getPdfPageRenderWindow(visiblePages, pdf.numPages, focalPage),
           );
-          for (const pageNumber of [...renderTasks.keys()]) {
+          for (const pageNumber of renderTasks.keys()) {
             if (!desiredPages.has(pageNumber)) {
               cancelRender(pageNumber);
             }
@@ -282,7 +282,7 @@ function usePdfDocument({ initialPage, mediaId, onPageChange }: Omit<PdfDocument
           renderWidth = nextRenderWidth;
           renderVersion += 1;
           applyGeometry();
-          for (const pageNumber of [...renderTasks.keys()]) {
+          for (const pageNumber of renderTasks.keys()) {
             cancelRender(pageNumber);
           }
           for (const canvas of container.querySelectorAll<HTMLCanvasElement>("canvas")) {

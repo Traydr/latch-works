@@ -1,17 +1,20 @@
 import { useCallback, useEffect, useState } from "react";
-import { type AppSettings, type AppSettingsPatch, DEFAULT_APP_SETTINGS } from "./types";
+import { parseJsonWith } from "@/lib/parse-json";
+import {
+  type AppSettings,
+  type AppSettingsPatch,
+  AppSettingsSchema,
+  DEFAULT_APP_SETTINGS,
+} from "./types";
 
 const SETTINGS_KEY = "pane-view.settings";
 
 function readSettings(): AppSettings {
   try {
     const raw = window.localStorage.getItem(SETTINGS_KEY);
-    if (!raw) {
-      return DEFAULT_APP_SETTINGS;
-    }
-
-    const parsed = JSON.parse(raw) as Partial<AppSettings>;
-    return { ...DEFAULT_APP_SETTINGS, ...parsed };
+    return raw
+      ? (parseJsonWith(raw, AppSettingsSchema) ?? DEFAULT_APP_SETTINGS)
+      : DEFAULT_APP_SETTINGS;
   } catch {
     return DEFAULT_APP_SETTINGS;
   }

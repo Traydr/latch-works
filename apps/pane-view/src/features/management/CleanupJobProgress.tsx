@@ -13,24 +13,24 @@ interface CleanupJobProgressProps {
   onCancel: () => void;
 }
 
-const phaseLabels: Record<LibraryWipeJobProgress["phase"], string> = {
+const phaseLabels = {
   completed: "Completed",
   db_hard_delete: "Removing database records",
   s3_originals: "Deleting originals",
   s3_orphan_sweep: "Sweeping storage orphans",
-};
+} satisfies Record<LibraryWipeJobProgress["phase"], string>;
 
-const purgePhaseLabels: Record<SoftDeletedPurgeJobProgress["phase"], string> = {
+const purgePhaseLabels = {
   completed: "Completed",
   db_hard_delete: "Removing database records",
   orphaned_media: "Deleting unreferenced originals",
-};
+} satisfies Record<SoftDeletedPurgeJobProgress["phase"], string>;
 
-const shutterPhaseLabels: Record<ShutterSourcePurgeJobProgress["phase"], string> = {
+const shutterPhaseLabels = {
   completed: "Completed",
   queue_sources: "Finding deleted-item sources",
   shutter_sources: "Deleting Shutter sources",
-};
+} satisfies Record<ShutterSourcePurgeJobProgress["phase"], string>;
 
 export function CleanupJobProgress({
   cancelError,
@@ -117,16 +117,16 @@ function estimateProgress(job: CleanupJobStatus): number {
     return { completed: 100, db_hard_delete: 85, orphaned_media: 35 }[job.progress.phase];
   }
 
-  const phaseWeights: Record<LibraryWipeJobProgress["phase"], number> = {
+  const phaseWeights = {
     completed: 100,
     db_hard_delete: 90,
     s3_originals: 40,
     s3_orphan_sweep: 75,
-  };
+  } satisfies Record<LibraryWipeJobProgress["phase"], number>;
 
   if (job.status === "completed") {
     return 100;
   }
 
-  return phaseWeights[job.progress.phase] ?? 10;
+  return phaseWeights[job.progress.phase];
 }

@@ -196,9 +196,10 @@ export function useGalleryBrowse({
   );
   const allMedia = useMemo(
     () =>
-      entries.flatMap((entry) =>
-        entryMedia(entry) ? [entryMedia(entry) as LibraryMediaItem] : [],
-      ),
+      entries.flatMap((entry) => {
+        const item = entryMedia(entry);
+        return item ? [item] : [];
+      }),
     [entries],
   );
   const media = useMemo(
@@ -235,7 +236,9 @@ export function useGalleryBrowse({
     const key = live.browseKey;
     const requestCursor = live.cursor;
     updateAccumulation(key, (current) => ({ ...current, loading: true }));
-    const ticket: { promise: Promise<LoadNextPageResult> | null } = { promise: null };
+    // The promise compares against its own identity in `finally`, so it is
+    // assigned after construction and read through this binding.
+    let ownPromise: Promise<LoadNextPageResult> | null = null;
     const promise = (async (): Promise<LoadNextPageResult> => {
       try {
         const next = await source.loadPage({ ...live.listingRequest, cursor: requestCursor });
@@ -269,13 +272,13 @@ export function useGalleryBrowse({
         }
         throw error;
       } finally {
-        if (inFlightRef.current?.promise === ticket.promise) {
+        if (inFlightRef.current?.promise === ownPromise) {
           inFlightRef.current = null;
         }
         updateAccumulation(key, (current) => ({ ...current, loading: false }));
       }
     })();
-    ticket.promise = promise;
+    ownPromise = promise;
     inFlightRef.current = { browseKey: key, promise };
     return promise;
   }, [source, updateAccumulation]);
@@ -319,8 +322,10 @@ export function useGalleryBrowse({
         }
         return wrapForward();
       }
-      if (index > 0) return identify(sequence[index - 1] as T);
-      if (index < 0 && sequence.length > 0) return identify(sequence[0] as T);
+      const previous = index > 0 ? sequence[index - 1] : undefined;
+      if (previous) return identify(previous);
+      const first = index < 0 ? sequence[0] : undefined;
+      if (first) return identify(first);
       // Decision 7: no backward wrap while more pages exist.
       if (liveRef.current.hasMore) return null;
       const last = sequence.at(-1);

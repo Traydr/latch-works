@@ -112,11 +112,13 @@ describe("session.openComic", () => {
     const source = createMemoryGalleryPageSource({
       [memorySourceKey(request)]: { comics: [summary] },
     });
-    const pages = Array.from({ length: 90 }, (_, index) =>
+    const [firstPage, ...morePages] = Array.from({ length: 90 }, (_, index) =>
       mediaItem(`vol-1-p${index}`, { parentPath: summary.folderPath }),
     );
+    if (!firstPage) throw new Error("expected comic pages");
+    const pages = [firstPage, ...morePages];
     source.comics.set(summary.id, {
-      cover: pages[0] as (typeof pages)[number],
+      cover: firstPage,
       folderPath: summary.folderPath,
       id: summary.id,
       name: summary.name,

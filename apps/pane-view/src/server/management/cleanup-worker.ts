@@ -17,7 +17,7 @@ import {
   viewerState,
 } from "../db/schema";
 import { purgeShutterSource } from "../media/shutter-client";
-import { isMaintenanceJobType, parseMaintenanceProgress } from "./maintenance-progress";
+import { MaintenanceJobTypeSchema, parseMaintenanceProgress } from "./maintenance-progress";
 import { deleteMaintenanceObjects, getMaintenanceStorageClient } from "./maintenance-storage";
 import { orphanedMediaObjectCondition, orphanedShutterSourceCondition } from "./orphaned-sources";
 
@@ -70,13 +70,10 @@ export async function readCleanupJobStatus({
   }
 
   // Retired job types (legacy_derivative_cleanup) can still exist as historical
-  // rows. They have no progress shape we can report, so treat them as absent;
-  // the same goes for a row whose progress does not parse for its type.
-  if (!isMaintenanceJobType(job.type)) {
-    return null;
-  }
-  const parsed = parseMaintenanceProgress(job.type, job.progress);
-  if (!parsed.ok) {
+  // rows. They have no progress contract we can report, so treat them as
+  // absent; the same goes for a row whose progress does not parse for its type.
+  const type = MaintenanceJobTypeSchema.safeParse(job.type);
+  if (!type.success) {
     return null;
   }
 
@@ -88,13 +85,20 @@ export async function readCleanupJobStatus({
     status: job.status,
   };
 
-  if (job.type === "library_hard_wipe") {
-    return { ...base, progress: parsed.progress as LibraryWipeJobProgress, type: job.type };
+  switch (type.data) {
+    case "library_hard_wipe": {
+      const parsed = parseMaintenanceProgress(type.data, job.progress);
+      return parsed.ok ? { ...base, progress: parsed.progress, type: type.data } : null;
+    }
+    case "soft_deleted_purge": {
+      const parsed = parseMaintenanceProgress(type.data, job.progress);
+      return parsed.ok ? { ...base, progress: parsed.progress, type: type.data } : null;
+    }
+    case "shutter_source_purge": {
+      const parsed = parseMaintenanceProgress(type.data, job.progress);
+      return parsed.ok ? { ...base, progress: parsed.progress, type: type.data } : null;
+    }
   }
-  if (job.type === "soft_deleted_purge") {
-    return { ...base, progress: parsed.progress as SoftDeletedPurgeJobProgress, type: job.type };
-  }
-  return { ...base, progress: parsed.progress as ShutterSourcePurgeJobProgress, type: job.type };
 }
 
 export async function resumePendingMaintenanceJobs(): Promise<void> {
@@ -175,29 +179,36 @@ export async function processMaintenanceJobBatch(jobId: string): Promise<boolean
       .where(and(eq(maintenanceJobs.id, jobId), eq(maintenanceJobs.status, "pending")));
   }
 
-  if (!isMaintenanceJobType(job.type)) {
+  const type = MaintenanceJobTypeSchema.safeParse(job.type);
+  if (!type.success) {
     return false;
   }
 
   // Progress is jsonb; the parser is the only way it reaches a batch. A phase
   // that is not valid for this job's type fails the job instead of advancing
   // it (the cross-type phase leak the old inline s3_derivatives rewrite had).
-  const parsed = parseMaintenanceProgress(job.type, job.progress);
-  if (!parsed.ok) {
-    await failMaintenanceJob(jobId, `Unrecognised job progress: ${parsed.reason}`);
-    return false;
+  switch (type.data) {
+    case "library_hard_wipe": {
+      const parsed = parseMaintenanceProgress(type.data, job.progress);
+      if (!parsed.ok) return failUnrecognisedProgress(jobId, parsed.reason);
+      return processLibraryWipeBatch(jobId, parsed.progress);
+    }
+    case "soft_deleted_purge": {
+      const parsed = parseMaintenanceProgress(type.data, job.progress);
+      if (!parsed.ok) return failUnrecognisedProgress(jobId, parsed.reason);
+      return processSoftDeletedPurgeBatch(jobId, parsed.progress);
+    }
+    case "shutter_source_purge": {
+      const parsed = parseMaintenanceProgress(type.data, job.progress);
+      if (!parsed.ok) return failUnrecognisedProgress(jobId, parsed.reason);
+      return processShutterSourcePurgeBatch(jobId, parsed.progress);
+    }
   }
-  const progress = parsed.progress;
+}
 
-  if (job.type === "library_hard_wipe") {
-    return processLibraryWipeBatch(jobId, progress as LibraryWipeJobProgress);
-  }
-
-  if (job.type === "soft_deleted_purge") {
-    return processSoftDeletedPurgeBatch(jobId, progress as SoftDeletedPurgeJobProgress);
-  }
-
-  return processShutterSourcePurgeBatch(jobId, progress as ShutterSourcePurgeJobProgress);
+async function failUnrecognisedProgress(jobId: string, reason: string): Promise<false> {
+  await failMaintenanceJob(jobId, `Unrecognised job progress: ${reason}`);
+  return false;
 }
 
 async function processSoftDeletedPurgeBatch(
@@ -418,7 +429,7 @@ async function processLibraryWipeBatch(
         orphanPrefixes[0];
 
       const page = await listStoredObjectsByPrefix({
-        continuationToken: progress.orphanContinuationToken,
+        continuationToken: progress.orphanContinuationToken ?? undefined,
         limit: batchSize,
         prefix,
         storage: getMaintenanceStorageClient(),
@@ -430,7 +441,7 @@ async function processLibraryWipeBatch(
 
         await updateJobProgress(jobId, {
           ...progress,
-          orphanContinuationToken: page.nextContinuationToken,
+          orphanContinuationToken: page.nextContinuationToken ?? null,
           orphanPrefix: prefix,
           processedCount: progress.processedCount + page.keys.length,
         });
@@ -446,13 +457,15 @@ async function processLibraryWipeBatch(
         return true;
       }
 
-      const prefixIndex = orphanPrefixes.indexOf(prefix as (typeof orphanPrefixes)[number]);
-      const nextPrefix = orphanPrefixes[prefixIndex + 1];
+      // The stored prefix is a plain string; a prefix no longer in the list has no successor.
+      const knownPrefixes: readonly string[] = orphanPrefixes;
+      const prefixIndex = knownPrefixes.indexOf(prefix);
+      const nextPrefix = prefixIndex >= 0 ? orphanPrefixes[prefixIndex + 1] : undefined;
 
       if (nextPrefix) {
         await updateJobProgress(jobId, {
           ...progress,
-          orphanContinuationToken: undefined,
+          orphanContinuationToken: null,
           orphanPrefix: nextPrefix,
         });
         return true;
@@ -460,8 +473,8 @@ async function processLibraryWipeBatch(
 
       await updateJobProgress(jobId, {
         ...progress,
-        orphanContinuationToken: undefined,
-        orphanPrefix: undefined,
+        orphanContinuationToken: null,
+        orphanPrefix: null,
         phase: "db_hard_delete",
       });
       return true;

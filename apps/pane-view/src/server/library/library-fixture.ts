@@ -37,7 +37,7 @@ const MTIMES = [
   1_700_000_000_000, 1_700_000_100_000, 1_700_000_200_000, 1_700_000_300_000, 1_700_000_400_000,
   1_700_000_500_000, 1_700_000_600_000, 1_700_000_700_000, 1_700_000_800_000, 1_700_000_900_000,
   1_700_001_000_000, 1_700_001_100_000, 1_700_001_200_000,
-];
+] as const;
 
 function mediaTypeFor(name: string): MediaType {
   const extension = name.slice(name.lastIndexOf(".") + 1).toLowerCase();
@@ -70,7 +70,7 @@ export function buildLibraryFixture(): LibraryFixture {
       id,
       mediaType: mediaTypeFor(getBaseName(path)),
       // Duplicated mtimes on purpose: date modes must tie-break deterministically.
-      mtimeMs: MTIMES[(sequence * 7) % MTIMES.length] as number,
+      mtimeMs: MTIMES[(sequence * 7) % MTIMES.length] ?? MTIMES[0],
       path,
       size: 1000 + ((sequence * 131) % 9000),
     });

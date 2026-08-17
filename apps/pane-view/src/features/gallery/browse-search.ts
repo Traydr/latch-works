@@ -1,38 +1,29 @@
 import { getParentPath as getArchiveParentPath } from "@latch-works/media-domain";
+import { z } from "zod";
 
-export interface GalleryBrowseSearch {
-  comic?: boolean;
-  media?: string;
-  path?: string;
-  q?: string;
-  recursive?: boolean;
-}
+/** A free-text search param: trimmed, and absent when empty or not a string. */
+const searchTextSchema = z.string().trim().min(1).optional().catch(undefined);
 
-export function parseGalleryBrowseSearch(search: Record<string, unknown>): GalleryBrowseSearch {
-  return {
-    comic: normalizeBooleanSearchParam(search.comic),
-    media: normalizeSearchParam(search.media),
-    path: normalizeSearchParam(search.path),
-    q: normalizeSearchParam(search.q),
-    recursive: normalizeBooleanSearchParam(search.recursive),
-  };
-}
+/** A flag search param: JSON booleans as well as the "true"/"1"/"false"/"0" URL spellings. */
+const searchFlagSchema = z
+  .union([
+    z.boolean(),
+    z.enum(["true", "1"]).transform(() => true),
+    z.enum(["false", "0"]).transform(() => false),
+  ])
+  .optional()
+  .catch(undefined);
 
-export function normalizeSearchParam(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
+/** The gallery route's `validateSearch` contract; anything malformed is dropped, never rejected. */
+export const GalleryBrowseSearchSchema = z.object({
+  comic: searchFlagSchema,
+  media: searchTextSchema,
+  path: searchTextSchema,
+  q: searchTextSchema,
+  recursive: searchFlagSchema,
+});
 
-export function normalizeBooleanSearchParam(value: unknown): boolean | undefined {
-  if (value === true || value === "true" || value === "1") {
-    return true;
-  }
-
-  if (value === false || value === "false" || value === "0") {
-    return false;
-  }
-
-  return undefined;
-}
+export type GalleryBrowseSearch = z.infer<typeof GalleryBrowseSearchSchema>;
 
 export function displayPathFromSearch(path: string | undefined): string {
   return path ?? "";
@@ -59,12 +50,11 @@ export function getParentPath(path: string): string {
 }
 
 export function isTextInputTarget(target: EventTarget | null): boolean {
-  const element = target as HTMLElement | null;
   return (
-    !!element &&
-    (element.isContentEditable ||
-      element.tagName === "INPUT" ||
-      element.tagName === "TEXTAREA" ||
-      element.tagName === "SELECT")
+    target instanceof HTMLElement &&
+    (target.isContentEditable ||
+      target.tagName === "INPUT" ||
+      target.tagName === "TEXTAREA" ||
+      target.tagName === "SELECT")
   );
 }

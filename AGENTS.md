@@ -48,6 +48,8 @@ Source lives in each package's `src/` directory. Tests are colocated as `*.test.
 
 This repo uses TypeScript ESM, pnpm 11.1.0, and Biome. Formatting is 2-space indentation, 100-column line width, organized imports, and recommended lint rules. Prefer named exports in shared packages and route public package APIs through `src/index.ts`. Use kebab-case directories and descriptive file names such as `sync-plan.ts`.
 
+Parse external input with Zod at the boundary (request bodies, search params, localStorage, jsonb columns, env-provided JSON) and pass typed values inward — no `typeof` narrowing or `as` casts on unparsed data. Pane View keeps `parseJsonWith` (`src/lib/parse-json.ts`), `readJsonBody` (`src/server/http/json-body.ts`), and `JsonValue` (`src/lib/json.ts`) for this. Every remaining `as` needs a `// SAFETY:` comment stating the invariant.
+
 Electron apps (Frame View, Lockstep) follow main/preload/renderer separation with Zod-backed IPC contracts and `better-result` payloads — do not expose raw Node APIs in renderer code.
 
 ## Testing Guidelines
