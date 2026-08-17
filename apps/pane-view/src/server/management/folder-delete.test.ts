@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  assertNoActiveCleanupJob: vi.fn(async () => undefined),
+  assertNoActiveSyncRun: vi.fn(async () => undefined),
   committedMutations: [] as string[],
   failureAt: 0,
   failureError: null as Error | null,
@@ -25,10 +27,19 @@ vi.mock("../db", () => ({
   },
 }));
 
+vi.mock("./guards", () => ({
+  assertNoActiveCleanupJob: mocks.assertNoActiveCleanupJob,
+  assertNoActiveSyncRun: mocks.assertNoActiveSyncRun,
+}));
+
 import { softDeleteFolderSubtree } from "./folder-delete";
 
 describe("softDeleteFolderSubtree", () => {
   beforeEach(() => {
+    mocks.assertNoActiveCleanupJob.mockReset();
+    mocks.assertNoActiveCleanupJob.mockResolvedValue(undefined);
+    mocks.assertNoActiveSyncRun.mockReset();
+    mocks.assertNoActiveSyncRun.mockResolvedValue(undefined);
     mocks.updateMock.mockReset();
     mocks.setMock.mockReset();
     mocks.whereMock.mockReset();
@@ -79,6 +90,26 @@ describe("softDeleteFolderSubtree", () => {
     );
   });
 
+  it("refuses to delete while a cleanup job is active, before touching any row", async () => {
+    mocks.assertNoActiveCleanupJob.mockRejectedValueOnce(
+      new Error("A library cleanup job is still running."),
+    );
+
+    await expect(softDeleteFolderSubtree({ folderPaths: ["photos/2026"] })).rejects.toThrow(
+      "cleanup job is still running",
+    );
+    expect(mocks.transactionMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses to delete while a sync run is active", async () => {
+    mocks.assertNoActiveSyncRun.mockRejectedValueOnce(new Error("A sync run is currently active"));
+
+    await expect(softDeleteFolderSubtree({ folderPaths: ["photos/2026"] })).rejects.toThrow(
+      "sync run is currently active",
+    );
+    expect(mocks.transactionMock).not.toHaveBeenCalled();
+  });
+
   it("soft-deletes entries and folders in one transaction", async () => {
     const results = await softDeleteFolderSubtree({
       folderPaths: ["photos/2026/", "photos/2026", "photos/2025"],
@@ -96,6 +127,8 @@ describe("softDeleteFolderSubtree", () => {
         path: "photos/2025",
       },
     ]);
+    expect(mocks.assertNoActiveSyncRun).toHaveBeenCalledOnce();
+    expect(mocks.assertNoActiveCleanupJob).toHaveBeenCalledOnce();
     expect(mocks.transactionMock).toHaveBeenCalledTimes(1);
     expect(mocks.updateMock).not.toHaveBeenCalled();
     expect(mocks.txUpdateMock).toHaveBeenCalledTimes(4);

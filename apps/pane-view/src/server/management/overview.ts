@@ -6,7 +6,6 @@ import { listRunningSyncRuns, type RunningSyncRun } from "./sync-run-control";
 
 export interface ManagementOverview {
   activeCleanupJob: {
-    errorCount: number;
     id: string;
     phase: string;
     processedCount: number;

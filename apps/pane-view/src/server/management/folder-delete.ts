@@ -3,6 +3,7 @@ import { and, eq, ilike, isNull, or } from "drizzle-orm";
 import { db } from "../db";
 import { folders, libraryEntries } from "../db/schema";
 import { escapeLikePattern } from "../library/query-helpers";
+import { assertNoActiveCleanupJob, assertNoActiveSyncRun } from "./guards";
 
 export interface FolderDeleteResult {
   entriesDeleted: number;
@@ -45,6 +46,13 @@ export async function countEntriesUnderPath(path: string): Promise<number> {
   return rows.length;
 }
 
+/**
+ * Soft-delete folders and their subtrees. Guarded like the maintenance
+ * schedulers: never during a sync run (the sync would resurrect or fight the
+ * rows) and never during a cleanup job (a purge may be hard-deleting the very
+ * rows this marks). The guards live with the mutation so no caller can skip
+ * them.
+ */
 export async function softDeleteFolderSubtree({
   folderPaths,
 }: {
@@ -58,6 +66,9 @@ export async function softDeleteFolderSubtree({
   for (const path of normalizedPaths) {
     assertDeletableFolderPath(path);
   }
+
+  await assertNoActiveSyncRun();
+  await assertNoActiveCleanupJob();
 
   const now = new Date();
 

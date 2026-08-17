@@ -100,13 +100,6 @@ export function CleanupJobProgress({
         </div>
       </div>
 
-      {job.progress.errorCount > 0 ? (
-        <p className="tabular-nums text-xs text-destructive">
-          {job.progress.errorCount} storage delete error
-          {job.progress.errorCount === 1 ? "" : "s"} recorded.
-        </p>
-      ) : null}
-
       {job.error ? <p className="text-xs text-destructive">{job.error}</p> : null}
       {cancelError ? <p className="text-xs text-destructive">{cancelError}</p> : null}
     </section>
