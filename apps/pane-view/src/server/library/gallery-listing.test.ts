@@ -12,8 +12,8 @@ describe("gallery listing cursor", () => {
       id: "entry-1",
       logicalPath: "photos/2026/cover.jpg",
       mtimeMs: 1_700_000_000_000,
-      randomHash: galleryListingRandomHash(42, "entry-1"),
-      randomSeed: 42,
+      randomHash: galleryListingRandomHash("2a", "entry-1"),
+      randomSeed: "2a",
       sortMode: "random",
     });
 
@@ -22,8 +22,8 @@ describe("gallery listing cursor", () => {
       id: "entry-1",
       logicalPath: "photos/2026/cover.jpg",
       mtimeMs: 1_700_000_000_000,
-      randomHash: galleryListingRandomHash(42, "entry-1"),
-      randomSeed: 42,
+      randomHash: galleryListingRandomHash("2a", "entry-1"),
+      randomSeed: "2a",
       sortMode: "random",
     });
   });

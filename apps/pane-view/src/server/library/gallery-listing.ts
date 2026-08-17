@@ -20,11 +20,11 @@ export interface GalleryListingCursorPayload {
   logicalPath: string;
   mtimeMs: number;
   randomHash?: string;
-  randomSeed?: number;
+  randomSeed?: string;
   sortMode: GallerySortMode;
 }
 
-export function galleryListingRandomHash(seed: number, id: string): string {
+export function galleryListingRandomHash(seed: string, id: string): string {
   return createHash("md5").update(`${seed}:${id}`).digest("hex");
 }
 

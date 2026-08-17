@@ -11,6 +11,7 @@ import {
   type GalleryListingPage,
   galleryListingRandomHash,
 } from "./gallery-listing";
+import type { GalleryRandomSeed } from "./gallery-order";
 import {
   buildLibraryConditions,
   buildMediaVisibilityConditions,
@@ -42,7 +43,7 @@ export interface GalleryListingReadRequest {
   cursor?: string;
   limit?: number;
   query?: string;
-  randomSeed: number;
+  randomSeed: GalleryRandomSeed;
   recursive?: boolean;
   showImages: boolean;
   showVideos: boolean;
@@ -122,7 +123,10 @@ export function buildGalleryListingMediaQuery({
     .limit(limit + 1);
 }
 
-export function buildGalleryListingOrderBy(sortMode: GallerySortMode, randomSeed: number): SQL[] {
+export function buildGalleryListingOrderBy(
+  sortMode: GallerySortMode,
+  randomSeed: GalleryRandomSeed,
+): SQL[] {
   switch (sortMode) {
     case "name-desc":
       return [
@@ -211,19 +215,19 @@ export function buildGalleryListingCursorCondition(cursor: GalleryListingCursorP
       return requireCondition(
         or(
           gt(
-            sql`md5(concat(${cursor.randomSeed ?? 0}::text, ':', ${libraryEntries.id}::text))`,
+            sql`md5(concat(${cursor.randomSeed ?? ""}::text, ':', ${libraryEntries.id}::text))`,
             cursor.randomHash ?? "",
           ),
           and(
             eq(
-              sql`md5(concat(${cursor.randomSeed ?? 0}::text, ':', ${libraryEntries.id}::text))`,
+              sql`md5(concat(${cursor.randomSeed ?? ""}::text, ':', ${libraryEntries.id}::text))`,
               cursor.randomHash ?? "",
             ),
             gt(libraryEntries.logicalPath, cursor.logicalPath),
           ),
           and(
             eq(
-              sql`md5(concat(${cursor.randomSeed ?? 0}::text, ':', ${libraryEntries.id}::text))`,
+              sql`md5(concat(${cursor.randomSeed ?? ""}::text, ':', ${libraryEntries.id}::text))`,
               cursor.randomHash ?? "",
             ),
             eq(libraryEntries.logicalPath, cursor.logicalPath),

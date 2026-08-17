@@ -1,5 +1,4 @@
 import type { GallerySortMode } from "@latch-works/media-domain";
-import { createRandomSeed } from "@latch-works/media-domain";
 import {
   type Dispatch,
   type SetStateAction,
@@ -13,6 +12,7 @@ import {
   canUseFolderBrowseModes,
   type GalleryBrowseSearch,
 } from "@/features/gallery/browse-search";
+import { createGalleryRandomSeed } from "@/features/gallery/gallery-random-seed";
 import { GALLERY_STATE_DEFAULTS, useGalleryState } from "@/features/gallery/useGalleryState";
 import { resolveRootKey, useRootPreferences } from "@/features/settings/useAppSettings";
 
@@ -56,7 +56,7 @@ export function useGalleryPreferences({
   const [comicModeOverride, setComicModeOverride] = useState<boolean>();
   const [detailPanelOverride, setDetailPanelOverride] = useState<boolean>();
   const [sortModeOverride, setSortModeOverride] = useState<GallerySortMode>();
-  const [randomSeed, setRandomSeed] = useState(() => createRandomSeed());
+  const [randomSeed, setRandomSeed] = useState(() => createGalleryRandomSeed());
   const [selectedId, setSelectedId] = useState<string | null>(search.media ?? null);
   const hasCheckedInitialPathRef = useRef(false);
   const baseRecursive =
@@ -222,7 +222,7 @@ export function useGalleryPreferences({
 
   const shuffle = useCallback(() => {
     setSortMode("random");
-    setRandomSeed(createRandomSeed());
+    setRandomSeed((current) => createGalleryRandomSeed(current));
   }, [setSortMode]);
 
   return {

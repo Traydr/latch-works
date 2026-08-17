@@ -31,13 +31,15 @@ const SORT_MODES: GallerySortMode[] = [
   "random",
 ];
 
+const SEED = "0123456789abcdef0123456789abcdef";
+
 const cursorFixture: Omit<GalleryListingCursorPayload, "sortMode"> = {
   filename: "cover.jpg",
   id: "00000000-0000-4000-8000-000000000001",
   logicalPath: "photos/2026/cover.jpg",
   mtimeMs: 1_700_000_000_000,
-  randomHash: "0123456789abcdef0123456789abcdef",
-  randomSeed: 42,
+  randomHash: "89abcdef0123456789abcdef01234567",
+  randomSeed: SEED,
 };
 
 function render(query: { toSQL(): { sql: string; params: unknown[] } }) {
@@ -57,7 +59,7 @@ function listing(
     buildGalleryListingMediaQuery({
       currentPath: "photos",
       limit: 60,
-      randomSeed: 42,
+      randomSeed: SEED,
       recursive: false,
       showImages: true,
       showVideos: true,
@@ -138,16 +140,16 @@ describe("gallery listing order and cursor agree in direction", () => {
         `(${key(7)} = $8 and "library_entries"."logical_path" = $9 and "library_entries"."id" > $10))`,
     );
     expect(params.slice(1, 11)).toEqual([
-      42,
+      SEED,
       cursorFixture.randomHash,
-      42,
+      SEED,
       cursorFixture.randomHash,
       cursorFixture.logicalPath,
-      42,
+      SEED,
       cursorFixture.randomHash,
       cursorFixture.logicalPath,
       cursorFixture.id,
-      42,
+      SEED,
     ]);
   });
 });

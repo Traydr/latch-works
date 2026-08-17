@@ -11,6 +11,7 @@ import {
   sortMediaItems,
 } from "@latch-works/media-domain";
 import type { GalleryThumbnailRequest } from "@/features/gallery/batched-thumbnail-resolver";
+import type { GalleryRandomSeed } from "@/features/gallery/gallery-random-seed";
 import type { LibrarySnapshotRequest } from "@/features/library/library-queries";
 import type { GalleryBrowsePage, LibraryMediaItem, MediaPage } from "@/features/library/types";
 
@@ -132,7 +133,7 @@ export function buildBrowseKey(parts: {
   comicMode: boolean;
   path: string | undefined;
   query: string | undefined;
-  randomSeed?: number;
+  randomSeed?: GalleryRandomSeed;
   recursive: boolean;
   showImages?: boolean;
   showVideos?: boolean;
@@ -147,11 +148,20 @@ export function buildBrowseKey(parts: {
 
   return [
     ...base,
-    parts.randomSeed ?? 0,
+    parts.randomSeed ?? "",
     parts.showImages ?? true,
     parts.showVideos ?? true,
     parts.sortMode ?? "name-asc",
   ].join("|");
+}
+
+/**
+ * Comic mode still sorts on the client with media-domain's numeric-seed sort
+ * until Plan 052 moves it to the server listing. Fold the hex seed into the
+ * 32-bit seed those helpers take.
+ */
+function legacyNumericSeed(seed: GalleryRandomSeed): number {
+  return Number.parseInt(seed.slice(0, 8) || "0", 16) >>> 0;
 }
 
 export function filterMediaByVisibility(
@@ -179,7 +189,7 @@ export function resolveBrowseMedia(input: {
   comicMode: boolean;
   extraMedia: readonly LibraryMediaItem[];
   listingMedia: readonly LibraryMediaItem[] | undefined;
-  randomSeed: number;
+  randomSeed: GalleryRandomSeed;
   showImages: boolean;
   showVideos: boolean;
   snapshotMedia: readonly LibraryMediaItem[] | undefined;
@@ -192,7 +202,7 @@ export function resolveBrowseMedia(input: {
     return merged;
   }
 
-  const sorted = sortMediaItems(merged, input.sortMode, input.randomSeed);
+  const sorted = sortMediaItems(merged, input.sortMode, legacyNumericSeed(input.randomSeed));
   return filterMediaByVisibility(sorted, {
     showImages: input.showImages,
     showVideos: input.showVideos,
@@ -209,7 +219,7 @@ export function resolveBrowseEntries(input: {
   extraEntries: readonly BrowserEntry[];
   folders: readonly FolderNode[] | undefined;
   listingEntries: readonly BrowserEntry[] | undefined;
-  randomSeed: number;
+  randomSeed: GalleryRandomSeed;
   recursive: boolean;
   sortMode: GallerySortMode;
   visibleMedia: readonly LibraryMediaItem[];
@@ -226,7 +236,11 @@ export function resolveBrowseEntries(input: {
     folders: input.allFolders ?? [],
     leafFoldersOnly: true,
   });
-  const comics = sortComicEntries(groupedComics, input.sortMode, input.randomSeed);
+  const comics = sortComicEntries(
+    groupedComics,
+    input.sortMode,
+    legacyNumericSeed(input.randomSeed),
+  );
 
   return buildBrowserEntries({
     folders: input.folders,

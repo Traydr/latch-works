@@ -9,6 +9,10 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import type { GalleryListingPage } from "../../server/library/gallery-listing";
 import { DEFAULT_GALLERY_LISTING_LIMIT } from "../../server/library/gallery-listing";
+import {
+  GALLERY_RANDOM_SEED_PATTERN,
+  type GalleryRandomSeed,
+} from "../gallery/gallery-random-seed";
 import type { LibraryMediaItem, MediaPage } from "./types";
 
 const fixtureRoots = ["nsfw", "nsfw-stories", "sfw", "sfw/patreon"];
@@ -32,7 +36,7 @@ const galleryListingRequestSchema = z.object({
   limit: z.number().int().min(1).max(200).optional(),
   path: z.string().optional(),
   query: z.string().optional(),
-  randomSeed: z.number().int().nonnegative(),
+  randomSeed: z.string().regex(GALLERY_RANDOM_SEED_PATTERN),
   recursive: z.boolean().optional(),
   showImages: z.boolean(),
   showVideos: z.boolean(),
@@ -45,7 +49,7 @@ export interface GalleryListingRequest {
   limit?: number;
   path: string | undefined;
   query: string | undefined;
-  randomSeed: number;
+  randomSeed: GalleryRandomSeed;
   recursive: boolean;
   showImages: boolean;
   showVideos: boolean;
