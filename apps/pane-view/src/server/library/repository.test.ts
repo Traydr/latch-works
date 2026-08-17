@@ -33,13 +33,16 @@ const SORT_MODES: GallerySortMode[] = [
 
 const SEED = "0123456789abcdef0123456789abcdef";
 
-const cursorFixture: Omit<GalleryListingCursorPayload, "sortMode"> = {
+type MediaCursor = Extract<GalleryListingCursorPayload, { subjectKind: "media" }>;
+
+const cursorFixture: Omit<MediaCursor, "sortMode"> = {
   filename: "cover.jpg",
   id: "00000000-0000-4000-8000-000000000001",
   logicalPath: "photos/2026/cover.jpg",
   mtimeMs: 1_700_000_000_000,
-  randomHash: "89abcdef0123456789abcdef01234567",
+  randomKey: "89abcdef0123456789abcdef01234567",
   randomSeed: SEED,
+  subjectKind: "media",
 };
 
 function render(query: { toSQL(): { sql: string; params: unknown[] } }) {
@@ -104,15 +107,33 @@ describe("gallery listing order and cursor agree in direction", () => {
     expect(cursor).toContain('"library_entries"."id"');
   });
 
-  it("orders name-asc by filename, logical path, id and continues with > on each", () => {
+  // Plan 051 Decision 6: name modes order and continue under the natural
+  // collation (migration 0018) so server order matches the client collator.
+  it("orders name-asc by natural filename, natural logical path, id and continues with > on each", () => {
     const { sql } = listing({ continued: true, sortMode: "name-asc" });
+    const filename = '"library_entries"."filename" COLLATE "natural"';
+    const logicalPath = '"library_entries"."logical_path" COLLATE "natural"';
     expect(orderByClause(sql)).toBe(
-      '"library_entries"."filename" asc, "library_entries"."logical_path" asc, "library_entries"."id" asc',
+      `${filename} asc, ${logicalPath} asc, "library_entries"."id" asc`,
     );
     expect(cursorClause(sql)).toBe(
-      '("library_entries"."filename" > $2 or ' +
-        '("library_entries"."filename" = $3 and "library_entries"."logical_path" > $4) or ' +
-        '("library_entries"."filename" = $5 and "library_entries"."logical_path" = $6 and "library_entries"."id" > $7))',
+      `(${filename} > $2 or ` +
+        `(${filename} = $3 and ${logicalPath} > $4) or ` +
+        `(${filename} = $5 and ${logicalPath} = $6 and "library_entries"."id" > $7))`,
+    );
+  });
+
+  it("orders name-desc under the same collation with every comparison flipped", () => {
+    const { sql } = listing({ continued: true, sortMode: "name-desc" });
+    const filename = '"library_entries"."filename" COLLATE "natural"';
+    const logicalPath = '"library_entries"."logical_path" COLLATE "natural"';
+    expect(orderByClause(sql)).toBe(
+      `${filename} desc, ${logicalPath} desc, "library_entries"."id" desc`,
+    );
+    expect(cursorClause(sql)).toBe(
+      `(${filename} < $2 or ` +
+        `(${filename} = $3 and ${logicalPath} < $4) or ` +
+        `(${filename} = $5 and ${logicalPath} = $6 and "library_entries"."id" < $7))`,
     );
   });
 
@@ -128,28 +149,36 @@ describe("gallery listing order and cursor agree in direction", () => {
     );
   });
 
-  it("orders random by a seeded md5 of the entry id and continues from the cursor hash", () => {
+  // Plan 051 Decision 2: random ranks by the shared key md5(seed:kind:id) so
+  // media and comics never share a rank input, and the cursor carries the
+  // last row's key.
+  it("orders random by the shared seeded key over (media, id) and continues from the cursor key", () => {
     const { params, sql } = listing({ continued: true, sortMode: "random" });
-    const key = (n: number) => `md5(concat($${n}::text, ':', "library_entries"."id"::text))`;
+    const key = (seed: number, kind: number) =>
+      `md5(concat($${seed}::text, ':', $${kind}::text, ':', "library_entries"."id"::text))`;
     expect(orderByClause(sql)).toBe(
-      `${key(11)} asc, "library_entries"."logical_path" asc, "library_entries"."id" asc`,
+      `${key(14, 15)} asc, "library_entries"."logical_path" asc, "library_entries"."id" asc`,
     );
     expect(cursorClause(sql)).toBe(
-      `(${key(2)} > $3 or ` +
-        `(${key(4)} = $5 and "library_entries"."logical_path" > $6) or ` +
-        `(${key(7)} = $8 and "library_entries"."logical_path" = $9 and "library_entries"."id" > $10))`,
+      `(${key(2, 3)} > $4 or ` +
+        `(${key(5, 6)} = $7 and "library_entries"."logical_path" > $8) or ` +
+        `(${key(9, 10)} = $11 and "library_entries"."logical_path" = $12 and "library_entries"."id" > $13))`,
     );
-    expect(params.slice(1, 11)).toEqual([
+    expect(params.slice(1, 15)).toEqual([
       SEED,
-      cursorFixture.randomHash,
+      "media",
+      cursorFixture.randomKey,
       SEED,
-      cursorFixture.randomHash,
+      "media",
+      cursorFixture.randomKey,
       cursorFixture.logicalPath,
       SEED,
-      cursorFixture.randomHash,
+      "media",
+      cursorFixture.randomKey,
       cursorFixture.logicalPath,
       cursorFixture.id,
       SEED,
+      "media",
     ]);
   });
 });

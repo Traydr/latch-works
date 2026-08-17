@@ -1,6 +1,7 @@
 import type { FolderNode, GallerySortMode } from "@latch-works/media-domain";
 import { buildBrowserEntries } from "@latch-works/media-domain";
 import { and, asc, desc, eq, gt, inArray, isNull, lt, or, type SQL, sql } from "drizzle-orm";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { db } from "../db";
 import { folders, libraryEntries, mediaObjects } from "../db/schema";
 import {
@@ -9,9 +10,12 @@ import {
   encodeGalleryListingCursor,
   type GalleryListingCursorPayload,
   type GalleryListingPage,
-  galleryListingRandomHash,
 } from "./gallery-listing";
-import type { GalleryRandomSeed } from "./gallery-order";
+import {
+  type GalleryRandomSeed,
+  galleryRandomOrderKey,
+  galleryRandomOrderKeySql,
+} from "./gallery-order";
 import {
   buildLibraryConditions,
   buildMediaVisibilityConditions,
@@ -103,7 +107,9 @@ export function buildGalleryListingMediaQuery({
   showImages,
   showVideos,
   sortMode,
-}: Omit<GalleryListingReadRequest, "cursor"> & { cursor: GalleryListingCursorPayload | null }) {
+}: Omit<GalleryListingReadRequest, "cursor"> & {
+  cursor: Extract<GalleryListingCursorPayload, { subjectKind: "media" }> | null;
+}) {
   const { mediaConditions } = buildLibraryConditions({ currentPath, query, recursive });
   mediaConditions.push(...buildMediaVisibilityConditions({ showImages, showVideos }));
 
@@ -123,6 +129,18 @@ export function buildGalleryListingMediaQuery({
     .limit(limit + 1);
 }
 
+/** `expression COLLATE "natural"` — migration 0018's ICU natural, case-insensitive order. */
+export function naturalOrder(expression: SQL | AnyPgColumn): SQL {
+  return sql`${expression} COLLATE "natural"`;
+}
+
+/**
+ * The listing order for regular media (Plan 051, Decision 6). Name modes use
+ * the natural collation so "2.jpg" precedes "10.jpg" and case is ignored,
+ * matching the client's compareByName; date modes tie-break by logical path;
+ * random uses the shared seeded key over ("media", id). Every mode ends on
+ * the id so the keyset is total.
+ */
 export function buildGalleryListingOrderBy(
   sortMode: GallerySortMode,
   randomSeed: GalleryRandomSeed,
@@ -130,8 +148,8 @@ export function buildGalleryListingOrderBy(
   switch (sortMode) {
     case "name-desc":
       return [
-        desc(libraryEntries.filename),
-        desc(libraryEntries.logicalPath),
+        desc(naturalOrder(libraryEntries.filename)),
+        desc(naturalOrder(libraryEntries.logicalPath)),
         desc(libraryEntries.id),
       ];
     case "date-newest":
@@ -144,39 +162,45 @@ export function buildGalleryListingOrderBy(
       return [asc(libraryEntries.mtimeMs), asc(libraryEntries.logicalPath), asc(libraryEntries.id)];
     case "random":
       return [
-        asc(sql`md5(concat(${randomSeed}::text, ':', ${libraryEntries.id}::text))`),
+        asc(galleryRandomOrderKeySql(randomSeed, "media", libraryEntries.id)),
         asc(libraryEntries.logicalPath),
         asc(libraryEntries.id),
       ];
     default:
       return [
-        asc(libraryEntries.filename),
-        asc(libraryEntries.logicalPath),
+        asc(naturalOrder(libraryEntries.filename)),
+        asc(naturalOrder(libraryEntries.logicalPath)),
         asc(libraryEntries.id),
       ];
   }
 }
 
-export function buildGalleryListingCursorCondition(cursor: GalleryListingCursorPayload): SQL {
+/**
+ * Keyset continuation for buildGalleryListingOrderBy: rows strictly after the
+ * cursor row in that order, comparing each column with the same collation and
+ * direction the ORDER BY uses.
+ */
+export function buildGalleryListingCursorCondition(
+  cursor: Extract<GalleryListingCursorPayload, { subjectKind: "media" }>,
+): SQL {
   const requireCondition = (condition: SQL | undefined): SQL => {
     if (!condition) {
       throw new Error("Expected gallery listing cursor condition");
     }
     return condition;
   };
+  const filename = naturalOrder(libraryEntries.filename);
+  const logicalPath = naturalOrder(libraryEntries.logicalPath);
 
   switch (cursor.sortMode) {
     case "name-desc":
       return requireCondition(
         or(
-          lt(libraryEntries.filename, cursor.filename),
+          lt(filename, cursor.filename),
+          and(eq(filename, cursor.filename), lt(logicalPath, cursor.logicalPath)),
           and(
-            eq(libraryEntries.filename, cursor.filename),
-            lt(libraryEntries.logicalPath, cursor.logicalPath),
-          ),
-          and(
-            eq(libraryEntries.filename, cursor.filename),
-            eq(libraryEntries.logicalPath, cursor.logicalPath),
+            eq(filename, cursor.filename),
+            eq(logicalPath, cursor.logicalPath),
             lt(libraryEntries.id, cursor.id),
           ),
         ),
@@ -211,41 +235,29 @@ export function buildGalleryListingCursorCondition(cursor: GalleryListingCursorP
           ),
         ),
       );
-    case "random":
+    case "random": {
+      const key = galleryRandomOrderKeySql(cursor.randomSeed, "media", libraryEntries.id);
+      const cursorKey = cursor.randomKey ?? "";
       return requireCondition(
         or(
-          gt(
-            sql`md5(concat(${cursor.randomSeed ?? ""}::text, ':', ${libraryEntries.id}::text))`,
-            cursor.randomHash ?? "",
-          ),
+          gt(key, cursorKey),
+          and(eq(key, cursorKey), gt(libraryEntries.logicalPath, cursor.logicalPath)),
           and(
-            eq(
-              sql`md5(concat(${cursor.randomSeed ?? ""}::text, ':', ${libraryEntries.id}::text))`,
-              cursor.randomHash ?? "",
-            ),
-            gt(libraryEntries.logicalPath, cursor.logicalPath),
-          ),
-          and(
-            eq(
-              sql`md5(concat(${cursor.randomSeed ?? ""}::text, ':', ${libraryEntries.id}::text))`,
-              cursor.randomHash ?? "",
-            ),
+            eq(key, cursorKey),
             eq(libraryEntries.logicalPath, cursor.logicalPath),
             gt(libraryEntries.id, cursor.id),
           ),
         ),
       );
+    }
     default:
       return requireCondition(
         or(
-          gt(libraryEntries.filename, cursor.filename),
+          gt(filename, cursor.filename),
+          and(eq(filename, cursor.filename), gt(logicalPath, cursor.logicalPath)),
           and(
-            eq(libraryEntries.filename, cursor.filename),
-            gt(libraryEntries.logicalPath, cursor.logicalPath),
-          ),
-          and(
-            eq(libraryEntries.filename, cursor.filename),
-            eq(libraryEntries.logicalPath, cursor.logicalPath),
+            eq(filename, cursor.filename),
+            eq(logicalPath, cursor.logicalPath),
             gt(libraryEntries.id, cursor.id),
           ),
         ),
@@ -312,8 +324,12 @@ export async function readDatabaseGalleryListing({
   showVideos,
   sortMode,
 }: GalleryListingReadRequest): Promise<GalleryListingPage> {
-  const decodedCursor = decodeGalleryListingCursor(cursor);
-  const includeFolders = !recursive && !cursor;
+  const decodedCursor = decodeGalleryListingCursor(cursor, {
+    randomSeed,
+    sortMode,
+    subjectKind: "media",
+  });
+  const includeFolders = !recursive && !decodedCursor;
 
   const [folderRows, mediaRows] = await Promise.all([
     includeFolders
@@ -321,7 +337,7 @@ export async function readDatabaseGalleryListing({
       : Promise.resolve([]),
     buildGalleryListingMediaQuery({
       currentPath,
-      cursor: decodedCursor,
+      cursor: decodedCursor?.subjectKind === "media" ? decodedCursor : null,
       limit,
       query,
       randomSeed,
@@ -362,16 +378,18 @@ export async function readDatabaseGalleryListing({
           id: lastRow.entry.id,
           logicalPath: lastRow.entry.logicalPath,
           mtimeMs: lastRow.entry.mtimeMs,
-          randomHash:
+          randomKey:
             sortMode === "random"
-              ? galleryListingRandomHash(randomSeed, lastRow.entry.id)
+              ? galleryRandomOrderKey(randomSeed, "media", lastRow.entry.id)
               : undefined,
-          randomSeed: sortMode === "random" ? randomSeed : undefined,
+          randomSeed,
           sortMode,
+          subjectKind: "media",
         })
       : null;
 
   return {
+    comics: [],
     entries,
     media,
     page: {
@@ -379,6 +397,7 @@ export async function readDatabaseGalleryListing({
       hasMore,
       limit,
     },
+    subjectKind: "media",
   };
 }
 
