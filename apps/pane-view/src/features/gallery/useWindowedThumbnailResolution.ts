@@ -1,4 +1,3 @@
-import type { BrowserEntry } from "@latch-works/media-domain";
 import { useEffect, useMemo, useState } from "react";
 import {
   type GalleryThumbnailRequest,
@@ -7,6 +6,7 @@ import {
   readCachedGalleryThumbnailState,
   resolveGalleryThumbnailsBatch,
 } from "@/features/gallery/batched-thumbnail-resolver";
+import type { GalleryBrowseEntry } from "@/features/gallery/gallery-browse-entry";
 import {
   dedupeThumbnailRequests,
   supportsGalleryThumbnail,
@@ -22,7 +22,7 @@ export interface WindowedThumbnailResolutionResult {
  */
 export function useWindowedThumbnailResolution(
   resetKey: string,
-  windowedEntries: BrowserEntry[],
+  windowedEntries: GalleryBrowseEntry[],
 ): WindowedThumbnailResolutionResult {
   const [resolution, setResolution] = useState(() => {
     const cached = readCachedGalleryThumbnailState();

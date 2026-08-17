@@ -1,6 +1,6 @@
-import type { BrowserEntry } from "@latch-works/media-domain";
 import { Archive } from "lucide-react";
 import { type ReactNode, type RefObject, useEffect, useMemo } from "react";
+import type { GalleryBrowseEntry } from "@/features/gallery/gallery-browse-entry";
 import { BrowserEntryCard } from "./BrowserEntryCard";
 import { useVirtualGridMetrics } from "./useVirtualGridMetrics";
 import { useWindowedThumbnailResolution } from "./useWindowedThumbnailResolution";
@@ -11,11 +11,12 @@ interface BrowserGridProps {
   comicMode: boolean;
   deletedEntryIds: ReadonlySet<string>;
   deletingEntryIds: ReadonlySet<string>;
-  entries: BrowserEntry[];
+  entries: GalleryBrowseEntry[];
   footer?: ReactNode;
   focusedIndex: number;
-  onActivateEntry: (entry: BrowserEntry) => void;
-  onSelectEntry: (entry: BrowserEntry) => void;
+  onActivateEntry: (entry: GalleryBrowseEntry) => void;
+  onSelectEntry: (entry: GalleryBrowseEntry) => void;
+  openingComicId: string | null;
   scrollRequestKey: number;
   selectedId: string | null;
   thumbnailResetKey: string;
@@ -32,6 +33,7 @@ export function BrowserGrid({
   focusedIndex,
   onActivateEntry,
   onSelectEntry,
+  openingComicId,
   scrollRequestKey,
   selectedId,
   thumbnailResetKey,
@@ -51,7 +53,7 @@ export function BrowserGrid({
     () =>
       windowedItems
         .map((slot) => entries[slot.index])
-        .filter((entry): entry is BrowserEntry => Boolean(entry)),
+        .filter((entry): entry is GalleryBrowseEntry => Boolean(entry)),
     [entries, windowedItems],
   );
   const { resolvedThumbnailUrls } = useWindowedThumbnailResolution(
@@ -120,7 +122,7 @@ export function BrowserGrid({
               entry.kind === "folder"
                 ? false
                 : entry.kind === "comic"
-                  ? entry.comic.pages.some((page) => page.id === selectedId)
+                  ? entry.comic.cover.id === selectedId
                   : entry.media.id === selectedId;
             const focused = slot.index === focusedIndex;
 
@@ -136,6 +138,7 @@ export function BrowserGrid({
                 left={slot.left}
                 onActivate={onActivateEntry}
                 onSelect={onSelectEntry}
+                opening={entry.kind === "comic" && entry.comic.id === openingComicId}
                 priority={Math.abs(slot.index - focusedIndex) <= columnCount}
                 selected={selected}
                 thumbnailUrls={resolvedThumbnailUrls}

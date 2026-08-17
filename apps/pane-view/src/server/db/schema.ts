@@ -387,8 +387,6 @@ export const favorites = pgTable(
 );
 
 export interface LibraryWipeJobProgress {
-  errorCount: number;
-  lastError?: string;
   orphanPrefix?: string;
   orphanContinuationToken?: string;
   phase: "s3_originals" | "s3_orphan_sweep" | "db_hard_delete" | "completed";
@@ -396,15 +394,11 @@ export interface LibraryWipeJobProgress {
 }
 
 export interface SoftDeletedPurgeJobProgress {
-  errorCount: number;
-  lastError?: string;
   phase: "orphaned_media" | "db_hard_delete" | "completed";
   processedCount: number;
 }
 
 export interface ShutterSourcePurgeJobProgress {
-  errorCount: number;
-  lastError?: string;
   phase: "queue_sources" | "shutter_sources" | "completed";
   processedCount: number;
 }
@@ -420,11 +414,18 @@ export const maintenanceJobs = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     type: maintenanceJobTypeEnum("type").notNull(),
     status: maintenanceJobStatusEnum("status").notNull().default("pending"),
-    progress: jsonb("progress").$type<MaintenanceJobProgress>().notNull().default({
-      errorCount: 0,
-      phase: "s3_originals",
-      processedCount: 0,
-    }),
+    // The stored default still carries the retired errorCount and a phase that
+    // is only valid for hard wipes; every scheduler supplies explicit progress
+    // and the parser (maintenance-progress.ts) ignores unknown keys, so
+    // changing it is a migration for a follow-up rather than this refactor.
+    progress: jsonb("progress")
+      .$type<MaintenanceJobProgress>()
+      .notNull()
+      .default({
+        errorCount: 0,
+        phase: "s3_originals",
+        processedCount: 0,
+      } as LibraryWipeJobProgress),
     error: text("error"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     startedAt: timestamp("started_at", { withTimezone: true }),

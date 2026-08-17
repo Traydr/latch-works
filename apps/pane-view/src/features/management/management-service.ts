@@ -10,7 +10,6 @@ import {
   countEntriesUnderPath,
   softDeleteFolderSubtree,
 } from "../../server/management/folder-delete";
-import { assertNoActiveSyncRun } from "../../server/management/guards";
 import { scheduleLibraryWipe } from "../../server/management/library-wipe";
 import { readManagementOverview } from "../../server/management/overview";
 import { scheduleShutterSourcePurge } from "../../server/management/shutter-source-purge";
@@ -58,7 +57,6 @@ export const deleteFolders = createServerFn({ method: "POST" })
   .inputValidator(folderDeleteSchema)
   .handler(async ({ data }) => {
     await assertWebSessionAuthorized();
-    await assertNoActiveSyncRun();
     return softDeleteFolderSubtree({ folderPaths: data.folderPaths });
   });
 

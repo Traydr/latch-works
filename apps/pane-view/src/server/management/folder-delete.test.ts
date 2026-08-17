@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  acquireLock: vi.fn(async (_tx: unknown) => undefined),
+  assertNoActiveCleanupJob: vi.fn(async (_tx?: unknown) => undefined),
+  assertNoActiveSyncRun: vi.fn(async (_tx?: unknown) => undefined),
   committedMutations: [] as string[],
   failureAt: 0,
   failureError: null as Error | null,
@@ -25,10 +28,25 @@ vi.mock("../db", () => ({
   },
 }));
 
+vi.mock("./guards", () => ({
+  assertNoActiveCleanupJob: mocks.assertNoActiveCleanupJob,
+  assertNoActiveSyncRun: mocks.assertNoActiveSyncRun,
+}));
+
+vi.mock("../db/library-coordination-lock", () => ({
+  acquireLibraryMutationStartupLock: mocks.acquireLock,
+}));
+
 import { softDeleteFolderSubtree } from "./folder-delete";
 
 describe("softDeleteFolderSubtree", () => {
   beforeEach(() => {
+    mocks.acquireLock.mockReset();
+    mocks.acquireLock.mockResolvedValue(undefined);
+    mocks.assertNoActiveCleanupJob.mockReset();
+    mocks.assertNoActiveCleanupJob.mockResolvedValue(undefined);
+    mocks.assertNoActiveSyncRun.mockReset();
+    mocks.assertNoActiveSyncRun.mockResolvedValue(undefined);
     mocks.updateMock.mockReset();
     mocks.setMock.mockReset();
     mocks.whereMock.mockReset();
@@ -79,6 +97,45 @@ describe("softDeleteFolderSubtree", () => {
     );
   });
 
+  it("refuses to delete while a cleanup job is active, before touching any row", async () => {
+    mocks.assertNoActiveCleanupJob.mockRejectedValueOnce(
+      new Error("A library cleanup job is still running."),
+    );
+
+    await expect(softDeleteFolderSubtree({ folderPaths: ["photos/2026"] })).rejects.toThrow(
+      "cleanup job is still running",
+    );
+    expect(mocks.committedMutations).toEqual([]);
+    expect(mocks.txUpdateMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses to delete while a sync run is active", async () => {
+    mocks.assertNoActiveSyncRun.mockRejectedValueOnce(new Error("A sync run is currently active"));
+
+    await expect(softDeleteFolderSubtree({ folderPaths: ["photos/2026"] })).rejects.toThrow(
+      "sync run is currently active",
+    );
+    expect(mocks.committedMutations).toEqual([]);
+    expect(mocks.txUpdateMock).not.toHaveBeenCalled();
+  });
+
+  it("takes the library mutation lock and runs both guards on the mutation transaction", async () => {
+    await softDeleteFolderSubtree({ folderPaths: ["photos/2026"] });
+    expect(mocks.acquireLock).toHaveBeenCalledOnce();
+    const lockTx = (mocks.acquireLock.mock.calls as unknown[][])[0]?.[0];
+    expect(lockTx).toBeDefined();
+    expect(mocks.assertNoActiveSyncRun).toHaveBeenCalledWith(lockTx);
+    expect(mocks.assertNoActiveCleanupJob).toHaveBeenCalledWith(lockTx);
+    // Lock, then guards, then the first update.
+    const order = [
+      mocks.acquireLock.mock.invocationCallOrder[0],
+      mocks.assertNoActiveSyncRun.mock.invocationCallOrder[0],
+      mocks.assertNoActiveCleanupJob.mock.invocationCallOrder[0],
+      mocks.txUpdateMock.mock.invocationCallOrder[0],
+    ];
+    expect([...order].sort((a, b) => (a ?? 0) - (b ?? 0))).toEqual(order);
+  });
+
   it("soft-deletes entries and folders in one transaction", async () => {
     const results = await softDeleteFolderSubtree({
       folderPaths: ["photos/2026/", "photos/2026", "photos/2025"],
@@ -96,6 +153,9 @@ describe("softDeleteFolderSubtree", () => {
         path: "photos/2025",
       },
     ]);
+    expect(mocks.assertNoActiveSyncRun).toHaveBeenCalledOnce();
+    expect(mocks.assertNoActiveCleanupJob).toHaveBeenCalledOnce();
+    expect(mocks.acquireLock).toHaveBeenCalledOnce();
     expect(mocks.transactionMock).toHaveBeenCalledTimes(1);
     expect(mocks.updateMock).not.toHaveBeenCalled();
     expect(mocks.txUpdateMock).toHaveBeenCalledTimes(4);

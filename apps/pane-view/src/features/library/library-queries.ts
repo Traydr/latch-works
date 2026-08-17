@@ -5,12 +5,9 @@ import {
   useQueryClient,
   useSuspenseQuery,
 } from "@tanstack/react-query";
-import type { GalleryBrowseSearch } from "@/features/gallery/browse-search";
-import { canUseFolderBrowseModes } from "@/features/gallery/browse-search";
 import {
   deleteLibraryEntry,
   type GalleryListingRequest,
-  getGalleryListing,
   getLibrarySnapshot,
   type LibrarySnapshot,
 } from "./library-service";
@@ -25,6 +22,11 @@ export interface LibrarySnapshotRequest {
 
 export interface GalleryListingQueryRequest extends GalleryListingRequest {}
 
+/**
+ * Listing pages are fetched by the browse session through its page source;
+ * these keys exist so delete/refresh invalidation reaches page 1.
+ */
+
 export const librarySnapshotKeys = {
   all: ["library-snapshot"] as const,
   snapshot: (request: LibrarySnapshotRequest) => [...librarySnapshotKeys.all, request] as const,
@@ -34,34 +36,6 @@ export const galleryListingKeys = {
   all: ["gallery-listing"] as const,
   listing: (request: GalleryListingQueryRequest) => [...galleryListingKeys.all, request] as const,
 };
-
-export function toLibrarySnapshotRequest(search: GalleryBrowseSearch): LibrarySnapshotRequest {
-  const folderModesEnabled = canUseFolderBrowseModes(search.path);
-  const comicMode = folderModesEnabled ? (search.comic ?? false) : false;
-  const recursive = folderModesEnabled ? (search.recursive ?? false) || comicMode : false;
-
-  return {
-    comicMode,
-    path: search.path,
-    query: search.q,
-    recursive,
-  };
-}
-
-/** Route loader deps: folder-only snapshot for non-comic gallery (avoids 500-row media preload). */
-export function toGalleryRouteLoaderDeps(search: GalleryBrowseSearch): LibrarySnapshotRequest {
-  const folderModesEnabled = canUseFolderBrowseModes(search.path);
-  const comicMode = folderModesEnabled ? (search.comic ?? false) : false;
-  const recursive = folderModesEnabled ? (search.recursive ?? false) || comicMode : false;
-
-  return {
-    comicMode,
-    mediaLimit: comicMode ? undefined : 0,
-    path: search.path,
-    query: search.q,
-    recursive,
-  };
-}
 
 export function librarySnapshotQueryOptions(request: LibrarySnapshotRequest) {
   return {
@@ -80,37 +54,8 @@ export function librarySnapshotQueryOptions(request: LibrarySnapshotRequest) {
   };
 }
 
-export function galleryListingQueryOptions(request: GalleryListingQueryRequest) {
-  return {
-    queryKey: galleryListingKeys.listing(request),
-    queryFn: (): Promise<Awaited<ReturnType<typeof getGalleryListing>>> =>
-      getGalleryListing({
-        data: {
-          comicMode: request.comicMode,
-          cursor: request.cursor,
-          limit: request.limit,
-          path: request.path,
-          query: request.query,
-          randomSeed: request.randomSeed,
-          recursive: request.recursive,
-          showImages: request.showImages,
-          showVideos: request.showVideos,
-          sortMode: request.sortMode,
-        },
-      }),
-    placeholderData: keepPreviousData,
-  };
-}
-
 export function useLibrarySnapshotQuery(request: LibrarySnapshotRequest) {
   return useQuery(librarySnapshotQueryOptions(request));
-}
-
-export function useGalleryListingQuery(request: GalleryListingQueryRequest) {
-  return useQuery({
-    ...galleryListingQueryOptions(request),
-    enabled: !request.comicMode,
-  });
 }
 
 export function useLibrarySnapshotSuspense(request: LibrarySnapshotRequest) {

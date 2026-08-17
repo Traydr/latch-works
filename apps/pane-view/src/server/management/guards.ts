@@ -49,14 +49,13 @@ export async function assertNoActiveSyncRun(client: QueryClient = db): Promise<v
 
 export async function readActiveCleanupJob(client: QueryClient = db): Promise<{
   id: string;
+  /** The stored phase string as-is; the overview renders it, the worker validates it. */
   phase: string;
   processedCount: number;
-  errorCount: number;
   status: "pending" | "running";
 } | null> {
   const [job] = await client
     .select({
-      errorCount: sql<number>`(${maintenanceJobs.progress}->>'errorCount')::int`,
       id: maintenanceJobs.id,
       phase: sql<string>`${maintenanceJobs.progress}->>'phase'`,
       processedCount: sql<number>`(${maintenanceJobs.progress}->>'processedCount')::int`,
@@ -80,9 +79,8 @@ export async function readActiveCleanupJob(client: QueryClient = db): Promise<{
   }
 
   return {
-    errorCount: job.errorCount ?? 0,
     id: job.id,
-    phase: job.phase ?? "s3_originals",
+    phase: job.phase ?? "",
     processedCount: job.processedCount ?? 0,
     status: job.status,
   };

@@ -1,9 +1,9 @@
-import type { BrowserEntry, MediaItem } from "@latch-works/media-domain";
+import type { MediaItem } from "@latch-works/media-domain";
 import { type MutableRefObject, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { BrowserGrid } from "@/features/gallery/BrowserGrid";
 import { DetailPanel } from "@/features/gallery/DetailPanel";
-import type { MediaPage } from "@/features/library/types";
+import type { GalleryBrowseEntry } from "@/features/gallery/gallery-browse-entry";
 import { cn } from "@/lib/utils";
 
 export interface GalleryBrowsePaneProps {
@@ -11,21 +11,25 @@ export interface GalleryBrowsePaneProps {
   comicMode: boolean;
   deletedEntryIds: ReadonlySet<string>;
   deletingEntryIds: ReadonlySet<string>;
-  entries: BrowserEntry[];
+  entries: GalleryBrowseEntry[];
   focusedEntryIndex: number;
+  hasMore: boolean;
   isFetching: boolean;
   loadingMoreMedia: boolean;
-  mediaPage: MediaPage | null;
-  onActivateEntry: (entry: BrowserEntry) => void;
+  onActivateEntry: (entry: GalleryBrowseEntry) => void;
   onDelete: () => void;
   onLoadMoreMedia: () => void;
   onNext: () => void;
   onOpenViewer: () => void;
   onPrev: () => void;
-  onSelectEntry: (entry: BrowserEntry) => void;
+  onSelectEntry: (entry: GalleryBrowseEntry) => void;
+  /** The comic whose full entry is loading for the reader, if any. */
+  openingComicId: string | null;
   scrollRequestKey: number;
   selected: MediaItem | null;
   selectedId: string | null;
+  /** Hidden for comic summaries: deleting a comic is folder deletion. */
+  showDelete: boolean;
   showDetailPanel: boolean;
   paginationResetKey: string;
   thumbnailSize: number;
@@ -38,9 +42,9 @@ export function GalleryBrowsePane({
   deletingEntryIds,
   entries,
   focusedEntryIndex,
+  hasMore,
   isFetching,
   loadingMoreMedia,
-  mediaPage,
   onActivateEntry,
   onDelete,
   onLoadMoreMedia,
@@ -48,9 +52,11 @@ export function GalleryBrowsePane({
   onOpenViewer,
   onPrev,
   onSelectEntry,
+  openingComicId,
   scrollRequestKey,
   selected,
   selectedId,
+  showDelete,
   showDetailPanel,
   paginationResetKey,
   thumbnailSize,
@@ -68,7 +74,7 @@ export function GalleryBrowsePane({
   }, [paginationResetKey]);
 
   useEffect(() => {
-    if (!mediaPage?.hasMore || !loadMoreTrigger) {
+    if (!hasMore || !loadMoreTrigger) {
       return;
     }
 
@@ -87,7 +93,7 @@ export function GalleryBrowsePane({
 
     observer.observe(loadMoreTrigger);
     return () => observer.disconnect();
-  }, [loadMoreTrigger, mediaPage?.hasMore, onLoadMoreMedia]);
+  }, [hasMore, loadMoreTrigger, onLoadMoreMedia]);
 
   return (
     <div
@@ -105,7 +111,7 @@ export function GalleryBrowsePane({
           deletingEntryIds={deletingEntryIds}
           entries={entries}
           footer={
-            mediaPage?.hasMore ? (
+            hasMore ? (
               <div className="mt-4 flex justify-center border-t border-border pt-3">
                 <div ref={setLoadMoreTrigger} className="inline-flex">
                   <Button
@@ -124,6 +130,7 @@ export function GalleryBrowsePane({
           focusedIndex={focusedEntryIndex}
           onActivateEntry={onActivateEntry}
           onSelectEntry={onSelectEntry}
+          openingComicId={openingComicId}
           scrollRequestKey={scrollRequestKey}
           selectedId={selectedId}
           thumbnailResetKey={paginationResetKey}
@@ -150,7 +157,7 @@ export function GalleryBrowsePane({
             onOpenViewer={onOpenViewer}
             onPrev={onPrev}
             selected={selected}
-            showDelete
+            showDelete={showDelete}
           />
         </div>
       ) : null}

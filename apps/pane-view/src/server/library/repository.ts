@@ -1,33 +1,28 @@
 import type { FolderNode, GallerySortMode } from "@latch-works/media-domain";
-import { buildBrowserEntries, getBaseName } from "@latch-works/media-domain";
-import {
-  and,
-  asc,
-  desc,
-  eq,
-  gt,
-  ilike,
-  inArray,
-  isNull,
-  lt,
-  ne,
-  notInArray,
-  or,
-  type SQL,
-  sql,
-} from "drizzle-orm";
+import { buildBrowserEntries } from "@latch-works/media-domain";
+import { and, asc, desc, eq, gt, inArray, isNull, lt, or, type SQL } from "drizzle-orm";
 import { db } from "../db";
 import { folders, libraryEntries, mediaObjects } from "../db/schema";
 import {
+  cursorRandomKey,
   DEFAULT_GALLERY_LISTING_LIMIT,
   decodeGalleryListingCursor,
   encodeGalleryListingCursor,
+  type GalleryListingCursorPayload,
   type GalleryListingPage,
-  galleryListingRandomHash,
 } from "./gallery-listing";
-import { buildMediaPage, type MediaPage } from "./media-page";
-import { escapeLikePattern, resolveMediaScope } from "./query-helpers";
-import type { LibraryMediaItem } from "./types";
+import {
+  type GalleryRandomSeed,
+  galleryRandomOrderKey,
+  galleryRandomOrderKeySql,
+  naturalOrder,
+} from "./gallery-order";
+import {
+  buildLibraryConditions,
+  buildMediaVisibilityConditions,
+  mapMediaRowsToLibraryItems,
+} from "./library-conditions";
+import type { LibraryMediaItem, MediaPage } from "./types";
 
 export type { LibraryMediaItem, MediaPage } from "./types";
 
@@ -39,6 +34,237 @@ export interface DatabaseLibrarySnapshot {
   roots: string[];
 }
 
+export interface LibrarySnapshotReadRequest {
+  currentPath: string;
+  includeAllFolders?: boolean;
+  limit: number;
+  offset?: number;
+  query?: string;
+  recursive?: boolean;
+}
+
+export interface GalleryListingReadRequest {
+  currentPath: string;
+  cursor?: string;
+  limit?: number;
+  query?: string;
+  randomSeed: GalleryRandomSeed;
+  recursive?: boolean;
+  showImages: boolean;
+  showVideos: boolean;
+  sortMode: GallerySortMode;
+}
+
+// ---------------------------------------------------------------------------
+// Query builders. Exported for the rendered-SQL tests only; every other module
+// goes through the readDatabase* functions below.
+// ---------------------------------------------------------------------------
+
+/** Snapshot media page: logical-path order, offset paginated, overfetched by one. */
+export function buildLibrarySnapshotMediaQuery({
+  currentPath,
+  limit,
+  offset = 0,
+  query,
+  recursive = false,
+}: Pick<LibrarySnapshotReadRequest, "currentPath" | "limit" | "offset" | "query" | "recursive">) {
+  const { mediaConditions } = buildLibraryConditions({ currentPath, query, recursive });
+
+  return db
+    .select({
+      entry: libraryEntries,
+      object: mediaObjects,
+    })
+    .from(libraryEntries)
+    .innerJoin(mediaObjects, eq(libraryEntries.mediaObjectId, mediaObjects.id))
+    .where(and(...mediaConditions))
+    .orderBy(asc(libraryEntries.logicalPath), asc(libraryEntries.id))
+    .limit(limit + 1)
+    .offset(offset);
+}
+
+/** Visible folders for the current scope (direct children, or search matches). */
+export function buildLibraryFolderQuery({
+  currentPath,
+  query,
+  recursive = false,
+}: Pick<LibrarySnapshotReadRequest, "currentPath" | "query" | "recursive">) {
+  const { folderConditions } = buildLibraryConditions({ currentPath, query, recursive });
+
+  return db
+    .select()
+    .from(folders)
+    .where(and(...folderConditions));
+}
+
+/** Listing media page: sorted, filtered, keyset-continued, overfetched by one. */
+export function buildGalleryListingMediaQuery({
+  currentPath,
+  cursor,
+  limit = DEFAULT_GALLERY_LISTING_LIMIT,
+  query,
+  randomSeed,
+  recursive = false,
+  showImages,
+  showVideos,
+  sortMode,
+}: Omit<GalleryListingReadRequest, "cursor"> & {
+  cursor: Extract<GalleryListingCursorPayload, { subjectKind: "media" }> | null;
+}) {
+  const { mediaConditions } = buildLibraryConditions({ currentPath, query, recursive });
+  mediaConditions.push(...buildMediaVisibilityConditions({ showImages, showVideos }));
+
+  if (cursor) {
+    mediaConditions.push(buildGalleryListingCursorCondition(cursor));
+  }
+
+  return db
+    .select({
+      entry: libraryEntries,
+      object: mediaObjects,
+    })
+    .from(libraryEntries)
+    .innerJoin(mediaObjects, eq(libraryEntries.mediaObjectId, mediaObjects.id))
+    .where(and(...mediaConditions))
+    .orderBy(...buildGalleryListingOrderBy(sortMode, randomSeed))
+    .limit(limit + 1);
+}
+
+/**
+ * The listing order for regular media (Plan 051, Decision 6). Name modes use
+ * the natural collation so "2.jpg" precedes "10.jpg" and case is ignored,
+ * matching the client's compareByName; date modes tie-break by logical path;
+ * random uses the shared seeded key over ("media", id). Every mode ends on
+ * the id so the keyset is total.
+ */
+export function buildGalleryListingOrderBy(
+  sortMode: GallerySortMode,
+  randomSeed: GalleryRandomSeed,
+): SQL[] {
+  switch (sortMode) {
+    case "name-desc":
+      return [
+        desc(naturalOrder(libraryEntries.filename)),
+        desc(naturalOrder(libraryEntries.logicalPath)),
+        desc(libraryEntries.id),
+      ];
+    case "date-newest":
+      return [
+        desc(libraryEntries.mtimeMs),
+        asc(libraryEntries.logicalPath),
+        asc(libraryEntries.id),
+      ];
+    case "date-oldest":
+      return [asc(libraryEntries.mtimeMs), asc(libraryEntries.logicalPath), asc(libraryEntries.id)];
+    case "random":
+      return [
+        asc(galleryRandomOrderKeySql(randomSeed, "media", libraryEntries.id)),
+        asc(libraryEntries.logicalPath),
+        asc(libraryEntries.id),
+      ];
+    default:
+      return [
+        asc(naturalOrder(libraryEntries.filename)),
+        asc(naturalOrder(libraryEntries.logicalPath)),
+        asc(libraryEntries.id),
+      ];
+  }
+}
+
+/**
+ * Keyset continuation for buildGalleryListingOrderBy: rows strictly after the
+ * cursor row in that order, comparing each column with the same collation and
+ * direction the ORDER BY uses.
+ */
+export function buildGalleryListingCursorCondition(
+  cursor: Extract<GalleryListingCursorPayload, { subjectKind: "media" }>,
+): SQL {
+  const requireCondition = (condition: SQL | undefined): SQL => {
+    if (!condition) {
+      throw new Error("Expected gallery listing cursor condition");
+    }
+    return condition;
+  };
+  const filename = naturalOrder(libraryEntries.filename);
+  const logicalPath = naturalOrder(libraryEntries.logicalPath);
+
+  switch (cursor.sortMode) {
+    case "name-desc":
+      return requireCondition(
+        or(
+          lt(filename, cursor.filename),
+          and(eq(filename, cursor.filename), lt(logicalPath, cursor.logicalPath)),
+          and(
+            eq(filename, cursor.filename),
+            eq(logicalPath, cursor.logicalPath),
+            lt(libraryEntries.id, cursor.id),
+          ),
+        ),
+      );
+    case "date-newest":
+      return requireCondition(
+        or(
+          lt(libraryEntries.mtimeMs, cursor.mtimeMs),
+          and(
+            eq(libraryEntries.mtimeMs, cursor.mtimeMs),
+            gt(libraryEntries.logicalPath, cursor.logicalPath),
+          ),
+          and(
+            eq(libraryEntries.mtimeMs, cursor.mtimeMs),
+            eq(libraryEntries.logicalPath, cursor.logicalPath),
+            gt(libraryEntries.id, cursor.id),
+          ),
+        ),
+      );
+    case "date-oldest":
+      return requireCondition(
+        or(
+          gt(libraryEntries.mtimeMs, cursor.mtimeMs),
+          and(
+            eq(libraryEntries.mtimeMs, cursor.mtimeMs),
+            gt(libraryEntries.logicalPath, cursor.logicalPath),
+          ),
+          and(
+            eq(libraryEntries.mtimeMs, cursor.mtimeMs),
+            eq(libraryEntries.logicalPath, cursor.logicalPath),
+            gt(libraryEntries.id, cursor.id),
+          ),
+        ),
+      );
+    case "random": {
+      const key = galleryRandomOrderKeySql(cursor.randomSeed, "media", libraryEntries.id);
+      const cursorKey = cursorRandomKey(cursor);
+      return requireCondition(
+        or(
+          gt(key, cursorKey),
+          and(eq(key, cursorKey), gt(libraryEntries.logicalPath, cursor.logicalPath)),
+          and(
+            eq(key, cursorKey),
+            eq(libraryEntries.logicalPath, cursor.logicalPath),
+            gt(libraryEntries.id, cursor.id),
+          ),
+        ),
+      );
+    }
+    default:
+      return requireCondition(
+        or(
+          gt(filename, cursor.filename),
+          and(eq(filename, cursor.filename), gt(logicalPath, cursor.logicalPath)),
+          and(
+            eq(filename, cursor.filename),
+            eq(logicalPath, cursor.logicalPath),
+            gt(libraryEntries.id, cursor.id),
+          ),
+        ),
+      );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Reads
+// ---------------------------------------------------------------------------
+
 export async function readDatabaseLibrarySnapshot({
   currentPath,
   includeAllFolders = false,
@@ -46,73 +272,13 @@ export async function readDatabaseLibrarySnapshot({
   offset = 0,
   query,
   recursive = false,
-}: {
-  currentPath: string;
-  includeAllFolders?: boolean;
-  limit: number;
-  offset?: number;
-  query?: string;
-  recursive?: boolean;
-}): Promise<DatabaseLibrarySnapshot> {
-  const trimmedQuery = query?.trim();
-  const searching = Boolean(trimmedQuery);
-  const mediaScope = resolveMediaScope({ currentPath, recursive, searching });
-  const mediaConditions: SQL[] = [isNull(libraryEntries.deletedAt)];
-  const folderConditions: SQL[] = [isNull(folders.deletedAt)];
-
-  if (searching && trimmedQuery) {
-    const queryPattern = `%${escapeLikePattern(trimmedQuery)}%`;
-    const mediaQueryCondition = or(
-      ilike(libraryEntries.logicalPath, queryPattern),
-      ilike(libraryEntries.filename, queryPattern),
-    );
-    const folderQueryCondition = or(
-      ilike(folders.path, queryPattern),
-      ilike(folders.name, queryPattern),
-    );
-
-    if (mediaQueryCondition) {
-      mediaConditions.push(mediaQueryCondition);
-    }
-
-    if (folderQueryCondition) {
-      folderConditions.push(folderQueryCondition);
-    }
-  } else {
-    folderConditions.push(eq(folders.parentPath, currentPath));
-
-    if (mediaScope.mode === "subtree") {
-      mediaConditions.push(
-        ilike(libraryEntries.logicalPath, `${escapeLikePattern(mediaScope.pathPrefix)}/%`),
-      );
-    } else if (mediaScope.mode === "direct-children") {
-      mediaConditions.push(eq(libraryEntries.parentPath, mediaScope.parentPath));
-    }
-  }
-
-  const folderQueries = [
-    db
-      .select()
-      .from(folders)
-      .where(and(...folderConditions)),
+}: LibrarySnapshotReadRequest): Promise<DatabaseLibrarySnapshot> {
+  const [folderRows, mediaRows, rootRows, allFolderRows] = await Promise.all([
+    buildLibraryFolderQuery({ currentPath, query, recursive }),
     limit > 0
-      ? db
-          .select({
-            entry: libraryEntries,
-            object: mediaObjects,
-          })
-          .from(libraryEntries)
-          .innerJoin(mediaObjects, eq(libraryEntries.mediaObjectId, mediaObjects.id))
-          .where(and(...mediaConditions))
-          .orderBy(asc(libraryEntries.logicalPath), asc(libraryEntries.id))
-          .limit(limit + 1)
-          .offset(offset)
+      ? buildLibrarySnapshotMediaQuery({ currentPath, limit, offset, query, recursive })
       : Promise.resolve([]),
     db.select().from(folders).where(eq(folders.parentPath, "")),
-  ] as const;
-
-  const [folderRows, mediaRows, rootRows, allFolderRows] = await Promise.all([
-    ...folderQueries,
     includeAllFolders
       ? db.select().from(folders).where(isNull(folders.deletedAt))
       : Promise.resolve([]),
@@ -126,67 +292,20 @@ export async function readDatabaseLibrarySnapshot({
       .filter((parentPath): parentPath is string => Boolean(parentPath)),
   );
 
-  const mapVisibleFolderRow = (folder: (typeof folderRows)[number]): FolderNode => ({
-    folderCount: folder.folderCount ?? 0,
-    hasChildren: visibleParentPathsWithChildren.has(folder.path),
-    mediaCount: folder.entryCount ?? 0,
-    name: folder.name,
-    parentId: folder.parentId,
-    parentPath: folder.parentPath,
-    path: folder.path,
-  });
-
-  const mapAllFolderRow = (folder: (typeof allFolderRows)[number]): FolderNode => ({
-    folderCount: folder.folderCount ?? 0,
-    hasChildren: folderParentPathsWithChildFolders.has(folder.path),
-    mediaCount: folder.entryCount ?? 0,
-    name: folder.name,
-    parentId: folder.parentId,
-    parentPath: folder.parentPath,
-    path: folder.path,
-  });
-
   const { items: pageMediaRows, mediaPage } = buildMediaPage(mediaRows, limit, offset);
 
-  const media = pageMediaRows.map(({ entry, object }): LibraryMediaItem => {
-    return {
-      durationMs: object.durationMs ?? undefined,
-      extension: object.extension,
-      height: object.height ?? undefined,
-      id: entry.id,
-      mediaType: object.mediaType,
-      mtimeMs: entry.mtimeMs,
-      name: entry.filename,
-      pageCount: object.pageCount ?? undefined,
-      parentPath: entry.parentPath,
-      path: entry.logicalPath,
-      sha256: object.sha256,
-      size: object.size,
-      width: object.width ?? undefined,
-    };
-  });
-
   return {
-    allFolders: allFolderRows.map(mapAllFolderRow),
-    folders: folderRows.map(mapVisibleFolderRow),
-    media,
+    allFolders: allFolderRows.map((folder) =>
+      mapFolderRow(folder, folderParentPathsWithChildFolders),
+    ),
+    folders: folderRows.map((folder) => mapFolderRow(folder, visibleParentPathsWithChildren)),
+    media: mapMediaRowsToLibraryItems(pageMediaRows),
     mediaPage,
     roots: rootRows
       .map((folder) => folder.path)
       .concat(currentPath)
       .filter(Boolean)
       .filter(dedupe),
-  };
-}
-
-export function folderFromPath(path: string): FolderNode {
-  return {
-    folderCount: 0,
-    hasChildren: false,
-    mediaCount: 0,
-    name: getBaseName(path),
-    parentPath: "",
-    path,
   };
 }
 
@@ -200,84 +319,29 @@ export async function readDatabaseGalleryListing({
   showImages,
   showVideos,
   sortMode,
-}: {
-  currentPath: string;
-  cursor?: string;
-  limit?: number;
-  query?: string;
-  randomSeed: number;
-  recursive?: boolean;
-  showImages: boolean;
-  showVideos: boolean;
-  sortMode: GallerySortMode;
-}): Promise<GalleryListingPage> {
-  const trimmedQuery = query?.trim();
-  const searching = Boolean(trimmedQuery);
-  const decodedCursor = decodeGalleryListingCursor(cursor);
-  const includeFolders = !recursive && !cursor;
-  const mediaScope = resolveMediaScope({ currentPath, recursive, searching });
-  const mediaConditions: SQL[] = [isNull(libraryEntries.deletedAt)];
-  const folderConditions: SQL[] = [isNull(folders.deletedAt)];
-
-  if (searching && trimmedQuery) {
-    const queryPattern = `%${escapeLikePattern(trimmedQuery)}%`;
-    const mediaQueryCondition = or(
-      ilike(libraryEntries.logicalPath, queryPattern),
-      ilike(libraryEntries.filename, queryPattern),
-    );
-    const folderQueryCondition = or(
-      ilike(folders.path, queryPattern),
-      ilike(folders.name, queryPattern),
-    );
-
-    if (mediaQueryCondition) {
-      mediaConditions.push(mediaQueryCondition);
-    }
-
-    if (folderQueryCondition) {
-      folderConditions.push(folderQueryCondition);
-    }
-  } else {
-    folderConditions.push(eq(folders.parentPath, currentPath));
-
-    if (mediaScope.mode === "subtree") {
-      mediaConditions.push(
-        ilike(libraryEntries.logicalPath, `${escapeLikePattern(mediaScope.pathPrefix)}/%`),
-      );
-    } else if (mediaScope.mode === "direct-children") {
-      mediaConditions.push(eq(libraryEntries.parentPath, mediaScope.parentPath));
-    }
-  }
-
-  if (!showImages) {
-    mediaConditions.push(notInArray(mediaObjects.mediaType, ["image", "gif"]));
-  }
-
-  if (!showVideos) {
-    mediaConditions.push(ne(mediaObjects.mediaType, "video"));
-  }
-
-  if (decodedCursor) {
-    mediaConditions.push(buildGalleryListingCursorCondition(decodedCursor));
-  }
+}: GalleryListingReadRequest): Promise<GalleryListingPage> {
+  const decodedCursor = decodeGalleryListingCursor(cursor, {
+    randomSeed,
+    sortMode,
+    subjectKind: "media",
+  });
+  const includeFolders = !recursive && !decodedCursor;
 
   const [folderRows, mediaRows] = await Promise.all([
     includeFolders
-      ? db
-          .select()
-          .from(folders)
-          .where(and(...folderConditions))
+      ? buildLibraryFolderQuery({ currentPath, query, recursive })
       : Promise.resolve([]),
-    db
-      .select({
-        entry: libraryEntries,
-        object: mediaObjects,
-      })
-      .from(libraryEntries)
-      .innerJoin(mediaObjects, eq(libraryEntries.mediaObjectId, mediaObjects.id))
-      .where(and(...mediaConditions))
-      .orderBy(...buildGalleryListingOrderBy(sortMode, randomSeed))
-      .limit(limit + 1),
+    buildGalleryListingMediaQuery({
+      currentPath,
+      cursor: decodedCursor?.subjectKind === "media" ? decodedCursor : null,
+      limit,
+      query,
+      randomSeed,
+      recursive,
+      showImages,
+      showVideos,
+      sortMode,
+    }),
   ]);
 
   const hasMore = mediaRows.length > limit;
@@ -288,15 +352,9 @@ export async function readDatabaseGalleryListing({
     ? await readParentPathsWithChildren(visibleFolderPaths)
     : new Set<string>();
 
-  const folderNodes: FolderNode[] = folderRows.map((folder) => ({
-    folderCount: folder.folderCount ?? 0,
-    hasChildren: visibleParentPathsWithChildren.has(folder.path),
-    mediaCount: folder.entryCount ?? 0,
-    name: folder.name,
-    parentId: folder.parentId,
-    parentPath: folder.parentPath,
-    path: folder.path,
-  }));
+  const folderNodes = folderRows.map((folder) =>
+    mapFolderRow(folder, visibleParentPathsWithChildren),
+  );
 
   const media = mapMediaRowsToLibraryItems(pageMediaRows);
   const entries = buildBrowserEntries({
@@ -316,16 +374,18 @@ export async function readDatabaseGalleryListing({
           id: lastRow.entry.id,
           logicalPath: lastRow.entry.logicalPath,
           mtimeMs: lastRow.entry.mtimeMs,
-          randomHash:
+          randomKey:
             sortMode === "random"
-              ? galleryListingRandomHash(randomSeed, lastRow.entry.id)
+              ? galleryRandomOrderKey(randomSeed, "media", lastRow.entry.id)
               : undefined,
-          randomSeed: sortMode === "random" ? randomSeed : undefined,
+          randomSeed,
           sortMode,
+          subjectKind: "media",
         })
       : null;
 
   return {
+    comics: [],
     entries,
     media,
     page: {
@@ -333,6 +393,7 @@ export async function readDatabaseGalleryListing({
       hasMore,
       limit,
     },
+    subjectKind: "media",
   };
 }
 
@@ -344,6 +405,45 @@ export async function softDeleteLibraryEntry({ entryId }: { entryId: string }): 
     .returning({ id: libraryEntries.id });
 
   return Boolean(deleted);
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+type FolderRow = typeof folders.$inferSelect;
+
+function mapFolderRow(folder: FolderRow, parentPathsWithChildren: ReadonlySet<string>): FolderNode {
+  return {
+    folderCount: folder.folderCount ?? 0,
+    hasChildren: parentPathsWithChildren.has(folder.path),
+    mediaCount: folder.entryCount ?? 0,
+    name: folder.name,
+    parentId: folder.parentId,
+    parentPath: folder.parentPath,
+    path: folder.path,
+  };
+}
+
+/** Slice an overfetched (limit + 1) row set into a page plus offset metadata. */
+export function buildMediaPage<T>(
+  rows: readonly T[],
+  limit: number,
+  offset: number,
+): {
+  items: T[];
+  mediaPage: MediaPage;
+} {
+  const hasMore = rows.length > limit;
+  return {
+    items: hasMore ? rows.slice(0, limit) : [...rows],
+    mediaPage: {
+      hasMore,
+      limit,
+      nextOffset: hasMore ? offset + limit : null,
+      offset,
+    },
+  };
 }
 
 const parentPathLookupThreshold = 500;
@@ -391,158 +491,4 @@ async function readParentPathsWithChildren(paths: string[]): Promise<Set<string>
 
 function dedupe(value: string, index: number, values: string[]): boolean {
   return values.indexOf(value) === index;
-}
-
-function buildGalleryListingOrderBy(sortMode: GallerySortMode, randomSeed: number) {
-  switch (sortMode) {
-    case "name-desc":
-      return [
-        desc(libraryEntries.filename),
-        desc(libraryEntries.logicalPath),
-        desc(libraryEntries.id),
-      ];
-    case "date-newest":
-      return [
-        desc(libraryEntries.mtimeMs),
-        asc(libraryEntries.logicalPath),
-        asc(libraryEntries.id),
-      ];
-    case "date-oldest":
-      return [asc(libraryEntries.mtimeMs), asc(libraryEntries.logicalPath), asc(libraryEntries.id)];
-    case "random":
-      return [
-        asc(sql`md5(concat(${randomSeed}::text, ':', ${libraryEntries.id}::text))`),
-        asc(libraryEntries.logicalPath),
-        asc(libraryEntries.id),
-      ];
-    default:
-      return [
-        asc(libraryEntries.filename),
-        asc(libraryEntries.logicalPath),
-        asc(libraryEntries.id),
-      ];
-  }
-}
-
-function buildGalleryListingCursorCondition(
-  cursor: NonNullable<ReturnType<typeof decodeGalleryListingCursor>>,
-): SQL {
-  const requireCondition = (condition: SQL | undefined): SQL => {
-    if (!condition) {
-      throw new Error("Expected gallery listing cursor condition");
-    }
-    return condition;
-  };
-
-  switch (cursor.sortMode) {
-    case "name-desc":
-      return requireCondition(
-        or(
-          lt(libraryEntries.filename, cursor.filename),
-          and(
-            eq(libraryEntries.filename, cursor.filename),
-            lt(libraryEntries.logicalPath, cursor.logicalPath),
-          ),
-          and(
-            eq(libraryEntries.filename, cursor.filename),
-            eq(libraryEntries.logicalPath, cursor.logicalPath),
-            lt(libraryEntries.id, cursor.id),
-          ),
-        ),
-      );
-    case "date-newest":
-      return requireCondition(
-        or(
-          lt(libraryEntries.mtimeMs, cursor.mtimeMs),
-          and(
-            eq(libraryEntries.mtimeMs, cursor.mtimeMs),
-            gt(libraryEntries.logicalPath, cursor.logicalPath),
-          ),
-          and(
-            eq(libraryEntries.mtimeMs, cursor.mtimeMs),
-            eq(libraryEntries.logicalPath, cursor.logicalPath),
-            gt(libraryEntries.id, cursor.id),
-          ),
-        ),
-      );
-    case "date-oldest":
-      return requireCondition(
-        or(
-          gt(libraryEntries.mtimeMs, cursor.mtimeMs),
-          and(
-            eq(libraryEntries.mtimeMs, cursor.mtimeMs),
-            gt(libraryEntries.logicalPath, cursor.logicalPath),
-          ),
-          and(
-            eq(libraryEntries.mtimeMs, cursor.mtimeMs),
-            eq(libraryEntries.logicalPath, cursor.logicalPath),
-            gt(libraryEntries.id, cursor.id),
-          ),
-        ),
-      );
-    case "random":
-      return requireCondition(
-        or(
-          gt(
-            sql`md5(concat(${cursor.randomSeed ?? 0}::text, ':', ${libraryEntries.id}::text))`,
-            cursor.randomHash ?? "",
-          ),
-          and(
-            eq(
-              sql`md5(concat(${cursor.randomSeed ?? 0}::text, ':', ${libraryEntries.id}::text))`,
-              cursor.randomHash ?? "",
-            ),
-            gt(libraryEntries.logicalPath, cursor.logicalPath),
-          ),
-          and(
-            eq(
-              sql`md5(concat(${cursor.randomSeed ?? 0}::text, ':', ${libraryEntries.id}::text))`,
-              cursor.randomHash ?? "",
-            ),
-            eq(libraryEntries.logicalPath, cursor.logicalPath),
-            gt(libraryEntries.id, cursor.id),
-          ),
-        ),
-      );
-    default:
-      return requireCondition(
-        or(
-          gt(libraryEntries.filename, cursor.filename),
-          and(
-            eq(libraryEntries.filename, cursor.filename),
-            gt(libraryEntries.logicalPath, cursor.logicalPath),
-          ),
-          and(
-            eq(libraryEntries.filename, cursor.filename),
-            eq(libraryEntries.logicalPath, cursor.logicalPath),
-            gt(libraryEntries.id, cursor.id),
-          ),
-        ),
-      );
-  }
-}
-
-type MediaRow = {
-  entry: typeof libraryEntries.$inferSelect;
-  object: typeof mediaObjects.$inferSelect;
-};
-
-function mapMediaRowsToLibraryItems(pageMediaRows: MediaRow[]): LibraryMediaItem[] {
-  return pageMediaRows.map(({ entry, object }): LibraryMediaItem => {
-    return {
-      durationMs: object.durationMs ?? undefined,
-      extension: object.extension,
-      height: object.height ?? undefined,
-      id: entry.id,
-      mediaType: object.mediaType,
-      mtimeMs: entry.mtimeMs,
-      name: entry.filename,
-      pageCount: object.pageCount ?? undefined,
-      parentPath: entry.parentPath,
-      path: entry.logicalPath,
-      sha256: object.sha256,
-      size: object.size,
-      width: object.width ?? undefined,
-    };
-  });
 }

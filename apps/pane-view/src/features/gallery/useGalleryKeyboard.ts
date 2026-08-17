@@ -1,20 +1,26 @@
-import type { BrowserEntry } from "@latch-works/media-domain";
-import { type MutableRefObject, useEffect } from "react";
+import { type MutableRefObject, useCallback, useEffect, useRef } from "react";
 import { getParentPath, isTextInputTarget } from "@/features/gallery/browse-search";
+import type { GalleryBrowseEntry } from "@/features/gallery/gallery-browse-entry";
 
 export interface UseGalleryKeyboardOptions {
   columnCountRef: MutableRefObject<number>;
   displayPath: string;
-  entries: BrowserEntry[];
+  entries: GalleryBrowseEntry[];
   focusedEntryIndex: number;
   hotkeysOpen: boolean;
   mobileSearchOpen: boolean;
-  onActivateEntry: (entry: BrowserEntry) => void;
+  onActivateEntry: (entry: GalleryBrowseEntry) => void;
   onCloseOverlays: () => void;
   onNavigateSiblingFolder: (offset: -1 | 1) => void;
   onNavigateToPath: (path: string) => void;
   onOpenHotkeys: () => void;
   onSelectMedia: (mediaId: string) => void;
+  /**
+   * Called when a move leaves the loaded grid: forward past the last entry or
+   * backward before the first. Resolves to the entry key to focus, or null to
+   * stay put. The session decides whether that loads a page or wraps.
+   */
+  onStepBeyondGrid: (currentKey: string | null, direction: -1 | 1) => Promise<string | null>;
   pathSheetOpen: boolean;
   setFocusedEntryIndex: (index: number | ((current: number) => number)) => void;
   requestScrollFocusedIntoView: () => void;
@@ -38,12 +44,45 @@ export function useGalleryKeyboard({
   onNavigateToPath,
   onOpenHotkeys,
   onSelectMedia,
+  onStepBeyondGrid,
   pathSheetOpen,
   setFocusedEntryIndex,
   requestScrollFocusedIntoView,
   settingsOpen,
   viewerOpen,
 }: UseGalleryKeyboardOptions): void {
+  const entriesRef = useRef(entries);
+  entriesRef.current = entries;
+  const pendingFocusKeyRef = useRef<string | null>(null);
+
+  const focusEntryByKey = useCallback(
+    (key: string): boolean => {
+      const index = entriesRef.current.findIndex((entry) => entry.key === key);
+      if (index < 0) {
+        return false;
+      }
+      setFocusedEntryIndex(index);
+      requestScrollFocusedIntoView();
+      const entry = entriesRef.current[index];
+      if (entry?.kind === "media") {
+        onSelectMedia(entry.media.id);
+      } else if (entry?.kind === "comic") {
+        onSelectMedia(entry.comic.cover.id);
+      }
+      return true;
+    },
+    [onSelectMedia, requestScrollFocusedIntoView, setFocusedEntryIndex],
+  );
+
+  // A key resolved by the session before its page rendered: focus it once the
+  // entries include it. Depends on `entries` because that is the signal that
+  // the appended page has committed.
+  useEffect(() => {
+    if (pendingFocusKeyRef.current && focusEntryByKey(pendingFocusKeyRef.current)) {
+      pendingFocusKeyRef.current = null;
+    }
+  }, [entries, focusEntryByKey]);
+
   useEffect(() => {
     const moveGridFocus = (dx: number, dy: number) => {
       if (!entries.length) {
@@ -69,20 +108,38 @@ export function useGalleryKeyboard({
         }
       };
 
-      if (nextIndex < 0 || nextIndex >= entries.length) {
-        if (entries.length === 0) {
-          return;
-        }
-
-        const wrappedIndex =
-          nextIndex < 0 ? entries.length - 1 : nextIndex >= entries.length ? 0 : nextIndex;
-        applyFocus(wrappedIndex);
+      if (nextIndex >= 0 && nextIndex < entries.length) {
+        applyFocus(nextIndex);
         return;
       }
 
-      if (nextIndex >= 0 && nextIndex < entries.length) {
-        applyFocus(nextIndex);
+      // Off the loaded grid. Geometry stays here: only a move past the true
+      // sequence boundary (Left/Up from the first entry, Right/Down from the
+      // last row) is delegated to the session, which loads the next page,
+      // wraps, or stays put. Focus lands by key so an appended page cannot
+      // shift it. Any other overflow (Up from the top row, Down from the
+      // second-to-last row into a shorter last row) clamps.
+      const lastIndex = entries.length - 1;
+      const lastRow = Math.floor(lastIndex / columnCount);
+      const stepBeyond = (direction: -1 | 1) => {
+        const currentKey = entries[focusedEntryIndex]?.key ?? null;
+        void onStepBeyondGrid(currentKey, direction).then((key) => {
+          if (key && !focusEntryByKey(key)) {
+            pendingFocusKeyRef.current = key;
+          }
+        });
+      };
+      if (nextIndex < 0) {
+        if (focusedEntryIndex === 0) {
+          stepBeyond(-1);
+        }
+        return;
       }
+      if (dy > 0 && currentRow < lastRow) {
+        applyFocus(lastIndex);
+        return;
+      }
+      stepBeyond(1);
     };
 
     const handleGalleryKeyDown = (event: KeyboardEvent) => {
@@ -182,6 +239,7 @@ export function useGalleryKeyboard({
     columnCountRef,
     displayPath,
     entries,
+    focusEntryByKey,
     focusedEntryIndex,
     hotkeysOpen,
     mobileSearchOpen,
@@ -191,6 +249,7 @@ export function useGalleryKeyboard({
     onNavigateToPath,
     onOpenHotkeys,
     onSelectMedia,
+    onStepBeyondGrid,
     pathSheetOpen,
     setFocusedEntryIndex,
     requestScrollFocusedIntoView,

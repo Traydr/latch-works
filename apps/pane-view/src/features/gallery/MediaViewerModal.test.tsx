@@ -58,12 +58,15 @@ function renderModal(rememberViewerPosition = true): { root: Root; container: HT
     root.render(
       createElement(MediaViewerModal, {
         autoplayVideos: false,
+        hasMore: false,
         items: [videoItem],
         loopNavigation: false,
         loopVideos: false,
+        mediaId: videoItem.id,
         onClose: vi.fn(),
+        onSelect: vi.fn(),
         rememberViewerPosition,
-        startIndex: 0,
+        stepMedia: async () => null,
       }),
     );
   });
@@ -207,5 +210,221 @@ describe("MediaViewerModal resume state", () => {
 
     expect(scheduleSave).not.toHaveBeenCalled();
     expect(flushSave).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Controlled viewer (Plan 052 Step 4)
+// ---------------------------------------------------------------------------
+
+function imageItem(id: string): MediaItem {
+  return {
+    extension: "jpg",
+    id,
+    mediaType: "image",
+    mtimeMs: 1_700_000_000_000,
+    name: `${id}.jpg`,
+    parentPath: "photos",
+    path: `photos/${id}.jpg`,
+    size: 100,
+  };
+}
+
+interface ControlledProps {
+  hasMore: boolean;
+  items: MediaItem[];
+  loopNavigation: boolean;
+  mediaId: string;
+}
+
+function renderControlled(initial: ControlledProps) {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const onClose = vi.fn();
+  const onSelect = vi.fn();
+  const stepMedia =
+    vi.fn<(id: string, direction: -1 | 1, loop: boolean) => Promise<string | null>>();
+  let props = initial;
+
+  const render = () =>
+    act(() => {
+      root.render(
+        createElement(MediaViewerModal, {
+          autoplayVideos: false,
+          hasMore: props.hasMore,
+          items: props.items,
+          loopNavigation: props.loopNavigation,
+          loopVideos: false,
+          mediaId: props.mediaId,
+          onClose,
+          onSelect,
+          rememberViewerPosition: false,
+          stepMedia,
+        }),
+      );
+    });
+  render();
+
+  return {
+    container,
+    onClose,
+    onSelect,
+    press(key: string) {
+      act(() => {
+        window.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key }));
+      });
+    },
+    rerender(next: Partial<ControlledProps>) {
+      props = { ...props, ...next };
+      render();
+    },
+    root,
+    stepMedia,
+    async settle() {
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+    },
+  };
+}
+
+function shownName(container: HTMLElement): string | undefined {
+  return container.querySelector("dialog")?.getAttribute("aria-label")?.replace("Viewer for ", "");
+}
+
+describe("MediaViewerModal controlled by media id", () => {
+  let view: ReturnType<typeof renderControlled> | undefined;
+
+  beforeEach(() => {
+    vi.useRealTimers();
+  });
+
+  afterEach(() => {
+    act(() => {
+      view?.root.unmount();
+    });
+    view = undefined;
+    document.body.innerHTML = "";
+  });
+
+  it("forward at a partial-page boundary asks the session to step and selects the answer", async () => {
+    const items = [imageItem("a"), imageItem("b")];
+    view = renderControlled({ hasMore: true, items, loopNavigation: false, mediaId: "b" });
+    view.stepMedia.mockResolvedValueOnce("c");
+
+    view.press("ArrowRight");
+    await view.settle();
+
+    expect(view.stepMedia).toHaveBeenCalledWith("b", 1, false);
+    expect(view.onSelect).toHaveBeenCalledWith("c");
+    // The appended page reaches the open viewer; the selection then shows it.
+    view.rerender({ hasMore: false, items: [...items, imageItem("c")], mediaId: "c" });
+    expect(shownName(view.container)).toBe("c.jpg");
+  });
+
+  it("at the true end wraps only when loop navigation is on", async () => {
+    const items = [imageItem("a"), imageItem("b")];
+    view = renderControlled({ hasMore: false, items, loopNavigation: false, mediaId: "b" });
+    view.stepMedia.mockResolvedValueOnce(null);
+    view.press("ArrowRight");
+    await view.settle();
+    expect(view.stepMedia).toHaveBeenCalledWith("b", 1, false);
+    expect(view.onSelect).not.toHaveBeenCalled();
+    expect(shownName(view.container)).toBe("b.jpg");
+
+    view.rerender({ loopNavigation: true });
+    view.stepMedia.mockResolvedValueOnce("a");
+    view.press("ArrowRight");
+    await view.settle();
+    expect(view.stepMedia).toHaveBeenLastCalledWith("b", 1, true);
+    expect(view.onSelect).toHaveBeenCalledWith("a");
+  });
+
+  it("keeps the current media when other items are inserted or removed", () => {
+    view = renderControlled({
+      hasMore: false,
+      items: [imageItem("a"), imageItem("b"), imageItem("c")],
+      loopNavigation: false,
+      mediaId: "b",
+    });
+    expect(shownName(view.container)).toBe("b.jpg");
+    view.rerender({ items: [imageItem("x"), imageItem("a"), imageItem("b"), imageItem("c")] });
+    expect(shownName(view.container)).toBe("b.jpg");
+    view.rerender({ items: [imageItem("b"), imageItem("c")] });
+    expect(shownName(view.container)).toBe("b.jpg");
+    // Even if the current item leaves the sequence, the dialog does not blank.
+    view.rerender({ items: [imageItem("c")] });
+    expect(shownName(view.container)).toBe("b.jpg");
+  });
+
+  it("stays on the current media when the load fails and permits a retry", async () => {
+    view = renderControlled({
+      hasMore: true,
+      items: [imageItem("a")],
+      loopNavigation: true,
+      mediaId: "a",
+    });
+    view.stepMedia.mockResolvedValueOnce(null);
+    view.press("ArrowRight");
+    await view.settle();
+    expect(view.onSelect).not.toHaveBeenCalled();
+    expect(shownName(view.container)).toBe("a.jpg");
+
+    view.stepMedia.mockResolvedValueOnce("b");
+    view.press("ArrowRight");
+    await view.settle();
+    expect(view.stepMedia).toHaveBeenCalledTimes(2);
+    expect(view.onSelect).toHaveBeenCalledWith("b");
+  });
+
+  it("ignores repeated forward presses during a load but still closes on Escape", async () => {
+    view = renderControlled({
+      hasMore: true,
+      items: [imageItem("a")],
+      loopNavigation: false,
+      mediaId: "a",
+    });
+    let resolveStep: ((id: string | null) => void) | undefined;
+    view.stepMedia.mockImplementationOnce(
+      () =>
+        new Promise<string | null>((resolve) => {
+          resolveStep = resolve;
+        }),
+    );
+    view.press("ArrowRight");
+    view.press("ArrowRight");
+    view.press("ArrowRight");
+    expect(view.stepMedia).toHaveBeenCalledTimes(1);
+
+    view.press("Escape");
+    expect(view.onClose).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveStep?.("b");
+      await Promise.resolve();
+    });
+    expect(view.onSelect).toHaveBeenCalledWith("b");
+  });
+
+  it("disables backward on the first item while more pages exist and forward only at the true end without loop", () => {
+    view = renderControlled({
+      hasMore: true,
+      items: [imageItem("a"), imageItem("b")],
+      loopNavigation: true,
+      mediaId: "a",
+    });
+    const buttons = () => Array.from(view?.container.querySelectorAll("button") ?? []);
+    const disabledLabels = () =>
+      buttons()
+        .filter((button) => button.disabled)
+        .map((button) => button.getAttribute("aria-label"));
+    expect(disabledLabels()).toContain("Previous item");
+    expect(disabledLabels()).not.toContain("Next item");
+
+    view.rerender({ hasMore: false, loopNavigation: false, mediaId: "b" });
+    expect(disabledLabels()).toContain("Next item");
+    expect(disabledLabels()).not.toContain("Previous item");
   });
 });

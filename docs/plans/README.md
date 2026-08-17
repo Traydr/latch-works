@@ -16,19 +16,16 @@ once their outcome is recorded below; recover full text with `git log --diff-fil
 
 | Plan | Outcome | Priority | Effort | Depends on | Status |
 |---|---|---:|---:|---|---|
-| [048](048-gallery-browse-state-module.md) | One browse-state module for the gallery; sidebar stops fetching 500 media rows; seed persisted; root prefs kept behind an adapter | P2 | L | — | TODO |
-| [051](051-seeded-gallery-server-order.md) | One seeded server order for media and comic summaries, natural ICU collation, cursor-paginated and tested under pglite (absorbs 050) | P1 | L | — | TODO |
-| [052](052-gallery-browse-session-and-boundary-navigation.md) | One client browse session: no client sort, tolerant refetch, pagination-aware navigation, controlled viewer | P1 | L | 048, 051 | TODO |
-| [049](049-maintenance-job-scheduler.md) | One maintenance scheduler and a validated progress seam for the cleanup worker | P3 | M | soft: 051 (pglite harness) | TODO |
 | [040](040-frame-view-pdf-spike.md) | Validate and specify Frame PDF reading by porting Pane's windowed viewer | P2 | M spike | 033, 034 (both done) | TODO (Steps 2–3 need the product owner at a desktop) |
 
 Recommended order (2026-08-17 review):
 
-1. **048 and 051 in parallel** — independent of each other. 051's Step 0 (the former Plan 050
-   dedupe and rendered-SQL pins) lands as its own commit first. If 048 lands before 051, 048 adds
-   `createGalleryRandomSeed` and 051 reuses it; otherwise the reverse.
-2. **052** after both — it consumes 048's selection intent and 051's comic summaries.
-3. **049** after 051 — its worker tests should use 051's pglite adapter rather than mocked `db`.
+1. **048 and 051** — implemented as the bottom two PRs of the 2026-08-17 stack:
+   `agent/051-gallery-server-order` (PR #79) then `agent/048-gallery-browse-state` (PR #80,
+   reuses 051's `createGalleryRandomSeed`).
+2. **052** after both — `agent/052-gallery-browse-session` (PR #82), third in the stack.
+3. **049** after 051 — `agent/049-maintenance-scheduler` (PR #83), top of the stack; its worker
+   and descriptor tests use 051's pglite harness.
 4. **040** whenever the product owner has an hour at a desktop for Steps 2–3; the agent-side steps
    can start any time.
 
@@ -86,6 +83,10 @@ Two-sentence outcomes. The plan files are deleted; the landing commit is the rec
 | 044 | `3515b13` | A Gather Source was represented independently in URL regexes, host permissions, content-script matches, context-menu patterns, a dispatch chain, credential defaults, and download policy — six-plus synchronized edits per change, and they had already drifted. One catalog is now authoritative and derives the rest. |
 | 045 | `1a76202` | A 48.2 KB collector bundle loaded at `document_start` on every matched page and imported all eight source collectors, existing mainly to install two keyboard shortcuts. A small key adapter stays always-on; each source collector is now injected only when its Gather Run reaches collection. |
 | 046 | `eab6ed8` | Eight Pane View modules exported `__reset*ForTests` functions purely so tests could reach module-level mutable state, and the login throttle counters they exposed were per-process — lost on restart and not shared across replicas. Module state is now injected instead of exported, and the throttle moved to a shared `login_throttle_attempts` table. |
+| 049 | PR #83 (`agent/049-maintenance-scheduler`) | Three schedulers repeated the same guarded prologue (a fourth checked only the sync guard, a fifth none), the 581-line worker trusted its jsonb progress through unchecked casts and rewrote any `s3_derivatives` phase to `s3_originals` regardless of job type, and `errorCount`/`lastError` were rendered but never set. One `scheduleMaintenanceJob` owns the prologue with the three jobs as thin descriptors, `parseMaintenanceProgress` validates the phase against the job's own type and fails closed, the eligibility SQL exists once, `deleteFolders` is guarded like the schedulers, and the worker has pglite-backed tests. Manual Step 6 smoke was not run (no local archive). |
+| 052 | PR #82 (`agent/052-gallery-browse-session`) | Three navigation loops (viewer, detail panel, grid) wrapped over the *loaded* array with modulo arithmetic and knew nothing about further pages, the viewer captured its item list at open time, and comic mode fetched by offset and re-sorted merged pages on the client. `useGalleryBrowse` is now one browse session behind a `GalleryPageSource` port: server order is appended as-is, a refetched page 1 dedupes by key, one in-flight request is shared by button, observer, keyboard, detail panel, and viewer, `stepMedia`/`stepEntry` load before they loop and stay put backward while more pages exist, the viewer is controlled by media id, and comic cards render from summaries with the reader loading a complete comic on demand. Manual Step 5 smoke was not run (no local archive). |
+| 048 | PR #80 (`agent/048-gallery-browse-state`) | Gallery browse state was reconciled across six files with four candidate sources per flag, `comic ⇒ recursive` written six times, and three snapshot request builders — one of which made the sidebar fetch 500 media rows it never rendered. `useGalleryBrowseState` now owns browse state: the flags resolve from the URL only (a URL without a flag means off; the remembered in-folder flags seed the first-visit redirect and folder entry from the root, which is what the settings drawer's "default recursive browsing" toggle sets), every rule is stated once in `foldBrowseFlags` and pure, node-tested intents, the 32-hex random seed is persisted, root preferences stay behind the storage adapter, and page, sidebar, and loader share one snapshot request. Deliberate deltas, all reviewed: submitting an empty search now clears the query (previously kept the old one), toggling comic/recursive keeps the selected `media` in the URL (the old code kept it only in local state), and the single `useAppSettings` instance lives in the layout so the drawer and theme sync agree. Manual Step 6 smoke was not run (no local archive). |
+| 051 | PR #79 (`agent/051-gallery-server-order`) | Regular media used a keyset cursor over `md5(seed:id)` in byte order while comic mode fetched by offset and re-sorted on the client, so random comic pages moved under the user's scroll and `10.jpg` listed before `2.jpg`. The server now owns one seeded order over media and comic summaries (`md5(seed:kind:id)`, natural ICU collation via migration 0018, discriminated cursors rejected on any seed/mode/kind mismatch), serves cursor-paginated comic summaries plus `getGalleryComic`, and proves concatenated pages equal the fixed-seed order under pglite. Manual Step 6 smoke was not run (no local archive); the client change is limited to the hex seed. |
 | 047 | `eab6ed8` | With the repository public, two test files still carried literal fixture content that the documentation pass had removed everywhere else, readable by anyone scanning how the code is tested. The fixtures were neutralized without losing coverage. |
 
 ## Historical and rejected work

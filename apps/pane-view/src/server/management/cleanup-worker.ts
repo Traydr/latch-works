@@ -1,5 +1,5 @@
 import { listStoredObjectsByPrefix } from "@latch-works/media-storage";
-import { and, eq, exists, inArray, isNotNull, isNull, notExists, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, notExists, sql } from "drizzle-orm";
 import { db } from "../db";
 import {
   favorites,
@@ -17,7 +17,9 @@ import {
   viewerState,
 } from "../db/schema";
 import { purgeShutterSource } from "../media/shutter-client";
+import { isMaintenanceJobType, parseMaintenanceProgress } from "./maintenance-progress";
 import { deleteMaintenanceObjects, getMaintenanceStorageClient } from "./maintenance-storage";
+import { orphanedMediaObjectCondition, orphanedShutterSourceCondition } from "./orphaned-sources";
 
 const batchSize = 25;
 const nextBatchDelayMs = 25;
@@ -68,12 +70,13 @@ export async function readCleanupJobStatus({
   }
 
   // Retired job types (legacy_derivative_cleanup) can still exist as historical
-  // rows. They have no progress shape we can report, so treat them as absent.
-  if (
-    job.type !== "library_hard_wipe" &&
-    job.type !== "soft_deleted_purge" &&
-    job.type !== "shutter_source_purge"
-  ) {
+  // rows. They have no progress shape we can report, so treat them as absent;
+  // the same goes for a row whose progress does not parse for its type.
+  if (!isMaintenanceJobType(job.type)) {
+    return null;
+  }
+  const parsed = parseMaintenanceProgress(job.type, job.progress);
+  if (!parsed.ok) {
     return null;
   }
 
@@ -86,12 +89,12 @@ export async function readCleanupJobStatus({
   };
 
   if (job.type === "library_hard_wipe") {
-    return { ...base, progress: job.progress as LibraryWipeJobProgress, type: job.type };
+    return { ...base, progress: parsed.progress as LibraryWipeJobProgress, type: job.type };
   }
   if (job.type === "soft_deleted_purge") {
-    return { ...base, progress: job.progress as SoftDeletedPurgeJobProgress, type: job.type };
+    return { ...base, progress: parsed.progress as SoftDeletedPurgeJobProgress, type: job.type };
   }
-  return { ...base, progress: job.progress as ShutterSourcePurgeJobProgress, type: job.type };
+  return { ...base, progress: parsed.progress as ShutterSourcePurgeJobProgress, type: job.type };
 }
 
 export async function resumePendingMaintenanceJobs(): Promise<void> {
@@ -134,15 +137,7 @@ export function processMaintenanceJob(jobId: string): void {
       runningJobs.delete(jobId);
       const message = error instanceof Error ? error.message : "Maintenance job failed";
       try {
-        await db
-          .update(maintenanceJobs)
-          .set({ completedAt: new Date(), error: message, status: "failed" })
-          .where(
-            and(
-              eq(maintenanceJobs.id, jobId),
-              inArray(maintenanceJobs.status, [...activeJobStatuses]),
-            ),
-          );
+        await failMaintenanceJob(jobId, message);
       } catch (updateError) {
         console.error("[pane-view] Unable to record maintenance job failure", updateError);
       }
@@ -150,7 +145,12 @@ export function processMaintenanceJob(jobId: string): void {
   );
 }
 
-async function processMaintenanceJobBatch(jobId: string): Promise<boolean> {
+/**
+ * Run one batch of `jobId`. Resolves true when another batch should follow.
+ * Exported as an internal seam for cleanup-worker.test.ts; production drives
+ * it through processMaintenanceJob.
+ */
+export async function processMaintenanceJobBatch(jobId: string): Promise<boolean> {
   const [job] = await db
     .select({
       progress: maintenanceJobs.progress,
@@ -175,15 +175,19 @@ async function processMaintenanceJobBatch(jobId: string): Promise<boolean> {
       .where(and(eq(maintenanceJobs.id, jobId), eq(maintenanceJobs.status, "pending")));
   }
 
-  const progress = job.progress;
-  if ((progress as { phase?: string }).phase === "s3_derivatives") {
-    await updateJobProgress(jobId, {
-      errorCount: progress.errorCount,
-      phase: "s3_originals",
-      processedCount: progress.processedCount,
-    });
-    return true;
+  if (!isMaintenanceJobType(job.type)) {
+    return false;
   }
+
+  // Progress is jsonb; the parser is the only way it reaches a batch. A phase
+  // that is not valid for this job's type fails the job instead of advancing
+  // it (the cross-type phase leak the old inline s3_derivatives rewrite had).
+  const parsed = parseMaintenanceProgress(job.type, job.progress);
+  if (!parsed.ok) {
+    await failMaintenanceJob(jobId, `Unrecognised job progress: ${parsed.reason}`);
+    return false;
+  }
+  const progress = parsed.progress;
 
   if (job.type === "library_hard_wipe") {
     return processLibraryWipeBatch(jobId, progress as LibraryWipeJobProgress);
@@ -193,11 +197,7 @@ async function processMaintenanceJobBatch(jobId: string): Promise<boolean> {
     return processSoftDeletedPurgeBatch(jobId, progress as SoftDeletedPurgeJobProgress);
   }
 
-  if (job.type === "shutter_source_purge") {
-    return processShutterSourcePurgeBatch(jobId, progress as ShutterSourcePurgeJobProgress);
-  }
-
-  return false;
+  return processShutterSourcePurgeBatch(jobId, progress as ShutterSourcePurgeJobProgress);
 }
 
 async function processSoftDeletedPurgeBatch(
@@ -206,21 +206,6 @@ async function processSoftDeletedPurgeBatch(
 ): Promise<boolean> {
   switch (progress.phase) {
     case "orphaned_media": {
-      const deletedReference = db
-        .select({ value: sql`1` })
-        .from(libraryEntries)
-        .where(
-          and(
-            eq(libraryEntries.mediaObjectId, mediaObjects.id),
-            isNotNull(libraryEntries.deletedAt),
-          ),
-        );
-      const activeReference = db
-        .select({ value: sql`1` })
-        .from(libraryEntries)
-        .where(
-          and(eq(libraryEntries.mediaObjectId, mediaObjects.id), isNull(libraryEntries.deletedAt)),
-        );
       const rows = await db
         .select({
           id: mediaObjects.id,
@@ -228,7 +213,7 @@ async function processSoftDeletedPurgeBatch(
           sha256: mediaObjects.sha256,
         })
         .from(mediaObjects)
-        .where(and(exists(deletedReference), notExists(activeReference)))
+        .where(orphanedMediaObjectCondition())
         .limit(batchSize);
 
       if (rows.length === 0) {
@@ -274,7 +259,6 @@ async function processSoftDeletedPurgeBatch(
 
       await updateJobProgress(jobId, {
         ...progress,
-        lastError: undefined,
         processedCount: progress.processedCount + rows.length,
       });
       return true;
@@ -306,19 +290,7 @@ async function processSoftDeletedPurgeBatch(
         await tx.delete(libraryEntries).where(isNotNull(libraryEntries.deletedAt));
       });
 
-      await db
-        .update(maintenanceJobs)
-        .set({
-          completedAt: new Date(),
-          progress: { ...progress, phase: "completed" },
-          status: "completed",
-        })
-        .where(
-          and(
-            eq(maintenanceJobs.id, jobId),
-            inArray(maintenanceJobs.status, [...activeJobStatuses]),
-          ),
-        );
+      await completeMaintenanceJob(jobId, { ...progress, phase: "completed" });
       return false;
     }
 
@@ -333,29 +305,10 @@ async function processShutterSourcePurgeBatch(
 ): Promise<boolean> {
   switch (progress.phase) {
     case "queue_sources": {
-      const deletedReference = db
-        .select({ value: sql`1` })
-        .from(libraryEntries)
-        .where(
-          and(
-            eq(libraryEntries.mediaObjectId, mediaObjects.id),
-            isNotNull(libraryEntries.deletedAt),
-          ),
-        );
-      const activeReference = db
-        .select({ value: sql`1` })
-        .from(libraryEntries)
-        .where(
-          and(eq(libraryEntries.mediaObjectId, mediaObjects.id), isNull(libraryEntries.deletedAt)),
-        );
-      const alreadyQueued = db
-        .select({ value: sql`1` })
-        .from(shutterSourceCleanup)
-        .where(eq(shutterSourceCleanup.sha256, mediaObjects.sha256));
       const rows = await db
         .select({ sha256: mediaObjects.sha256 })
         .from(mediaObjects)
-        .where(and(exists(deletedReference), notExists(activeReference), notExists(alreadyQueued)))
+        .where(orphanedShutterSourceCondition())
         .limit(batchSize);
 
       if (rows.length === 0) {
@@ -385,19 +338,7 @@ async function processShutterSourcePurgeBatch(
         .limit(batchSize);
 
       if (rows.length === 0) {
-        await db
-          .update(maintenanceJobs)
-          .set({
-            completedAt: new Date(),
-            progress: { ...progress, phase: "completed" },
-            status: "completed",
-          })
-          .where(
-            and(
-              eq(maintenanceJobs.id, jobId),
-              inArray(maintenanceJobs.status, [...activeJobStatuses]),
-            ),
-          );
+        await completeMaintenanceJob(jobId, { ...progress, phase: "completed" });
         return false;
       }
 
@@ -535,28 +476,36 @@ async function processLibraryWipeBatch(
       await db.delete(folders);
       await db.delete(mediaObjects);
 
-      await db
-        .update(maintenanceJobs)
-        .set({
-          completedAt: new Date(),
-          progress: {
-            ...progress,
-            phase: "completed",
-          },
-          status: "completed",
-        })
-        .where(
-          and(
-            eq(maintenanceJobs.id, jobId),
-            inArray(maintenanceJobs.status, [...activeJobStatuses]),
-          ),
-        );
+      await completeMaintenanceJob(jobId, { ...progress, phase: "completed" });
       return false;
     }
 
     case "completed":
       return false;
   }
+}
+
+/** Mark an active job completed with its final progress; a no-op once it is no longer active. */
+async function completeMaintenanceJob(
+  jobId: string,
+  progress: MaintenanceJobProgress,
+): Promise<void> {
+  await db
+    .update(maintenanceJobs)
+    .set({ completedAt: new Date(), progress, status: "completed" })
+    .where(
+      and(eq(maintenanceJobs.id, jobId), inArray(maintenanceJobs.status, [...activeJobStatuses])),
+    );
+}
+
+/** Mark an active job failed with `message`; a no-op once it is no longer active. */
+async function failMaintenanceJob(jobId: string, message: string): Promise<void> {
+  await db
+    .update(maintenanceJobs)
+    .set({ completedAt: new Date(), error: message, status: "failed" })
+    .where(
+      and(eq(maintenanceJobs.id, jobId), inArray(maintenanceJobs.status, [...activeJobStatuses])),
+    );
 }
 
 async function updateJobProgress(jobId: string, progress: MaintenanceJobProgress): Promise<void> {
