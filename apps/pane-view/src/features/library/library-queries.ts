@@ -5,8 +5,6 @@ import {
   useQueryClient,
   useSuspenseQuery,
 } from "@tanstack/react-query";
-import type { GalleryBrowseSearch } from "@/features/gallery/browse-search";
-import { canUseFolderBrowseModes } from "@/features/gallery/browse-search";
 import {
   deleteLibraryEntry,
   type GalleryListingRequest,
@@ -34,34 +32,6 @@ export const galleryListingKeys = {
   all: ["gallery-listing"] as const,
   listing: (request: GalleryListingQueryRequest) => [...galleryListingKeys.all, request] as const,
 };
-
-export function toLibrarySnapshotRequest(search: GalleryBrowseSearch): LibrarySnapshotRequest {
-  const folderModesEnabled = canUseFolderBrowseModes(search.path);
-  const comicMode = folderModesEnabled ? (search.comic ?? false) : false;
-  const recursive = folderModesEnabled ? (search.recursive ?? false) || comicMode : false;
-
-  return {
-    comicMode,
-    path: search.path,
-    query: search.q,
-    recursive,
-  };
-}
-
-/** Route loader deps: folder-only snapshot for non-comic gallery (avoids 500-row media preload). */
-export function toGalleryRouteLoaderDeps(search: GalleryBrowseSearch): LibrarySnapshotRequest {
-  const folderModesEnabled = canUseFolderBrowseModes(search.path);
-  const comicMode = folderModesEnabled ? (search.comic ?? false) : false;
-  const recursive = folderModesEnabled ? (search.recursive ?? false) || comicMode : false;
-
-  return {
-    comicMode,
-    mediaLimit: comicMode ? undefined : 0,
-    path: search.path,
-    query: search.q,
-    recursive,
-  };
-}
 
 export function librarySnapshotQueryOptions(request: LibrarySnapshotRequest) {
   return {

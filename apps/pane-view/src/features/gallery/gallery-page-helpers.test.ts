@@ -1,6 +1,6 @@
 import type { BrowserEntry, FolderNode } from "@latch-works/media-domain";
 import { describe, expect, it } from "vitest";
-import { toLibrarySnapshotRequest } from "../library/library-queries";
+import type { LibrarySnapshotRequest } from "../library/library-queries";
 import type { LibraryMediaItem } from "../library/types";
 import {
   areThumbnailRequestsEqual,
@@ -67,18 +67,18 @@ describe("areThumbnailRequestsEqual", () => {
 
 describe("toLibrarySnapshotNextPageRequest", () => {
   it("preserves each browse key while omitting all folders on later pages", () => {
-    const photos = toLibrarySnapshotRequest({
-      comic: true,
+    const photos: LibrarySnapshotRequest = {
+      comicMode: true,
       path: "photos",
-      q: "cover",
+      query: "cover",
       recursive: true,
-    });
-    const videos = toLibrarySnapshotRequest({
-      comic: false,
+    };
+    const videos: LibrarySnapshotRequest = {
+      comicMode: false,
       path: "videos",
-      q: "trailer",
+      query: "trailer",
       recursive: false,
-    });
+    };
 
     expect(videos).not.toEqual(photos);
     expect(toLibrarySnapshotNextPageRequest(photos, 500)).toEqual({

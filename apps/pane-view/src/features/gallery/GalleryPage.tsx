@@ -1,5 +1,4 @@
 import type { BrowserEntry, ComicEntry } from "@latch-works/media-domain";
-import { getRouteApi } from "@tanstack/react-router";
 import { Archive, ChevronUp, PanelRightClose, PanelRightOpen, Search } from "lucide-react";
 import {
   createContext,
@@ -26,110 +25,59 @@ import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { ComicReader } from "@/features/comics/ComicReader";
-import {
-  buildBreadcrumbItems,
-  displayPathFromSearch,
-  getParentPath,
-} from "@/features/gallery/browse-search";
+import { buildBreadcrumbItems, getParentPath } from "@/features/gallery/browse-search";
 import { FloatingToolbar } from "@/features/gallery/FloatingToolbar";
 import { GalleryBrowsePane } from "@/features/gallery/GalleryBrowsePane";
 import { GalleryGridSkeleton } from "@/features/gallery/GalleryGridSkeleton";
-import { useGalleryShell } from "@/features/gallery/gallery-shell-context";
+import { useGalleryLayout } from "@/features/gallery/gallery-layout-context";
 import { MediaViewerModal } from "@/features/gallery/MediaViewerModal";
 import { useGalleryBrowse } from "@/features/gallery/useGalleryBrowse";
 import { useGalleryKeyboard } from "@/features/gallery/useGalleryKeyboard";
-import { useGalleryPreferences } from "@/features/gallery/useGalleryPreferences";
 import { useGalleryViewerHandoff } from "@/features/gallery/useGalleryViewerHandoff";
 import {
-  toLibrarySnapshotRequest,
   useDeleteLibraryEntryMutation,
   useInvalidateLibrarySnapshot,
 } from "@/features/library/library-queries";
 import { HotkeyOverlay } from "@/features/settings/HotkeyOverlay";
 import { SettingsDrawer } from "@/features/settings/SettingsDrawer";
-import { useAppSettings } from "@/features/settings/useAppSettings";
 import { useHydrated } from "@/hooks/use-hydrated";
 import { useIsMobile } from "@/hooks/use-mobile";
 
-const galleryIndexRoute = getRouteApi("/_gallery/");
-
 function useGalleryPage() {
-  const search = galleryIndexRoute.useSearch();
-  const navigate = galleryIndexRoute.useNavigate();
   const hydrated = useHydrated();
   const invalidateLibrary = useInvalidateLibrarySnapshot();
   const deleteEntryMutation = useDeleteLibraryEntryMutation();
-  const displayPath = displayPathFromSearch(search.path);
-  const { setOpenSettingsHandler } = useGalleryShell();
-
-  const { settings, updateSettings } = useAppSettings();
-  const isMobile = useIsMobile();
-
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [hotkeysOpen, setHotkeysOpen] = useState(false);
-  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
-  const [pathSheetOpen, setPathSheetOpen] = useState(false);
-  const [activeComic, setActiveComic] = useState<ComicEntry | null>(null);
-  const [searchDraft, setSearchDraft] = useState(search.q ?? "");
-  const [focusedEntryIndex, setFocusedEntryIndex] = useState(0);
-  const [scrollRequestKey, setScrollRequestKey] = useState(0);
-  const [deletingEntryIds, setDeletingEntryIds] = useState<ReadonlySet<string>>(() => new Set());
-  const [deletedEntryIds, setDeletedEntryIds] = useState<ReadonlySet<string>>(() => new Set());
-
+  const { browse, settings, settingsOpen, setSettingsOpen, updateSettings } = useGalleryLayout();
   const {
-    buildBrowseSearch,
+    comicMode: effectiveComicMode,
     detailPanelOpen,
-    effectiveComicMode,
-    effectiveRecursive,
-    randomSeed,
-    recursive,
-    recursiveToggleDisabled,
+    folderModesEnabled,
+    listingRequest,
+    navigateToPath,
+    path: displayPath,
+    query,
+    recursive: effectiveRecursive,
+    selectMedia,
     selectedId,
     setComicMode,
     setDetailPanelOpen,
     setRecursive,
-    setSelectedId,
     setSortMode,
     shuffle,
+    snapshotRequest,
     sortMode,
-  } = useGalleryPreferences({
-    displayPath,
-    hydrated,
-    navigate,
-    search,
-  });
+  } = browse;
+  const isMobile = useIsMobile();
 
-  const snapshotRequest = useMemo(
-    () => ({
-      ...toLibrarySnapshotRequest(search),
-      comicMode: effectiveComicMode,
-      recursive: effectiveRecursive,
-      mediaLimit: effectiveComicMode ? undefined : 0,
-    }),
-    [effectiveComicMode, effectiveRecursive, search],
-  );
-  const listingRequest = useMemo(
-    () => ({
-      comicMode: effectiveComicMode,
-      path: search.path,
-      query: search.q,
-      recursive: effectiveRecursive,
-      randomSeed,
-      showImages: settings.showImages,
-      showVideos: settings.showVideos,
-      sortMode,
-    }),
-    [
-      effectiveComicMode,
-      effectiveRecursive,
-      randomSeed,
-      search.path,
-      search.q,
-      settings.showImages,
-      settings.showVideos,
-      sortMode,
-    ],
-  );
+  const [hotkeysOpen, setHotkeysOpen] = useState(false);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const [pathSheetOpen, setPathSheetOpen] = useState(false);
+  const [activeComic, setActiveComic] = useState<ComicEntry | null>(null);
+  const [searchDraft, setSearchDraft] = useState(query ?? "");
+  const [focusedEntryIndex, setFocusedEntryIndex] = useState(0);
+  const [scrollRequestKey, setScrollRequestKey] = useState(0);
+  const [deletingEntryIds, setDeletingEntryIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [deletedEntryIds, setDeletedEntryIds] = useState<ReadonlySet<string>>(() => new Set());
 
   const {
     allMedia,
@@ -154,38 +102,14 @@ function useGalleryPage() {
   });
 
   const { viewerOpen, viewerItems, viewerLockedMediaId, openViewer, closeViewer } =
-    useGalleryViewerHandoff(setSelectedId);
+    useGalleryViewerHandoff(selectMedia);
 
   const showDetailPanel = !isMobile && detailPanelOpen;
   const columnCountRef = useRef(4);
 
   useEffect(() => {
-    setOpenSettingsHandler(() => setSettingsOpen(true));
-    return () => setOpenSettingsHandler(null);
-  }, [setOpenSettingsHandler]);
-
-  useEffect(() => {
-    setSearchDraft(search.q ?? "");
-  }, [search.q]);
-
-  useEffect(() => {
-    if (!library) {
-      return;
-    }
-
-    const selectedFromSearch = search.media
-      ? allMedia.find((item) => item.id === search.media)
-      : null;
-    const nextSelectedId = selectedFromSearch?.id ?? allMedia[0]?.id ?? null;
-
-    setSelectedId((currentId) => {
-      if (!search.media && currentId && allMedia.some((item) => item.id === currentId)) {
-        return currentId;
-      }
-
-      return nextSelectedId;
-    });
-  }, [allMedia, library, search.media, setSelectedId]);
+    setSearchDraft(query ?? "");
+  }, [query]);
 
   useEffect(() => {
     setFocusedEntryIndex((currentIndex) => {
@@ -226,25 +150,6 @@ function useGalleryPage() {
     });
   }, [allMedia, library]);
 
-  const navigateToPath = useCallback(
-    (path: string) => {
-      const nextRecursive = path === "" ? false : recursive;
-      if (path === "" && recursive) {
-        setRecursive(false);
-      }
-
-      void navigate({
-        search: buildBrowseSearch({
-          media: undefined,
-          path,
-          recursive: nextRecursive,
-        }),
-        to: "/",
-      });
-    },
-    [buildBrowseSearch, navigate, recursive, setRecursive],
-  );
-
   const navigateSiblingFolder = useCallback(
     (offset: -1 | 1) => {
       if (!library) {
@@ -266,21 +171,6 @@ function useGalleryPage() {
     [displayPath, library, navigateToPath],
   );
 
-  const selectMedia = useCallback(
-    (mediaId: string) => {
-      setSelectedId(mediaId);
-      void navigate({
-        search: buildBrowseSearch({
-          media: mediaId,
-        }),
-        to: "/",
-        replace: true,
-        resetScroll: false,
-      });
-    },
-    [buildBrowseSearch, navigate, setSelectedId],
-  );
-
   const handleActivateEntry = useCallback(
     (entry: BrowserEntry) => {
       if (entry.kind === "folder") {
@@ -299,7 +189,7 @@ function useGalleryPage() {
     setHotkeysOpen(false);
     setMobileSearchOpen(false);
     setPathSheetOpen(false);
-  }, []);
+  }, [setSettingsOpen]);
 
   const openHotkeys = useCallback(() => {
     setHotkeysOpen(true);
@@ -330,15 +220,7 @@ function useGalleryPage() {
 
   const submitSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const nextQuery = searchDraft.trim();
-    void navigate({
-      search: buildBrowseSearch({
-        media: undefined,
-        path: displayPath,
-        q: nextQuery || undefined,
-      }),
-      to: "/",
-    });
+    browse.submitSearch(searchDraft);
   };
 
   const selectAdjacentMedia = (offset: -1 | 1) => {
@@ -437,6 +319,7 @@ function useGalleryPage() {
     effectiveRecursive,
     entries,
     focusedEntryIndex,
+    folderModesEnabled,
     handleActivateEntry,
     handleLoadMoreMedia,
     handleSelectEntry,
@@ -453,12 +336,10 @@ function useGalleryPage() {
     openViewer,
     parentPath,
     pathSheetOpen,
-    recursiveToggleDisabled,
     scrollRequestKey,
     searchDraft,
     selectAdjacentMedia,
     selected,
-    selectedId,
     setActiveComic,
     setComicMode,
     setDetailPanelOpen,
@@ -537,7 +418,7 @@ function GalleryHeader(): JSX.Element {
           aria-expanded={model.showDetailPanel}
           aria-label={model.showDetailPanel ? "Hide preview panel" : "Show preview panel"}
           className="hidden shrink-0 lg:inline-flex"
-          onClick={() => model.setDetailPanelOpen((open) => !open)}
+          onClick={() => model.setDetailPanelOpen(!model.showDetailPanel)}
           size="icon"
           title={model.showDetailPanel ? "Hide preview panel" : "Show preview panel"}
           type="button"
@@ -685,7 +566,7 @@ function GalleryContent(): JSX.Element {
             onSelectEntry={model.handleSelectEntry}
             scrollRequestKey={model.scrollRequestKey}
             selected={model.selected}
-            selectedId={model.viewerLockedMediaId ?? model.selectedId}
+            selectedId={model.viewerLockedMediaId ?? model.selected?.id ?? null}
             showDetailPanel={model.showDetailPanel}
             paginationResetKey={model.browseKey}
             thumbnailSize={model.settings.thumbnailSize}
@@ -701,23 +582,15 @@ function GalleryContent(): JSX.Element {
         onChangeSortMode={model.setSortMode}
         onRefresh={() => void model.invalidateLibrary()}
         onToggleComicMode={() => {
-          if (model.displayPath === "") return;
-          model.setComicMode((current) => {
-            const next = !current;
-            model.setRecursive(next);
-            return next;
-          });
+          if (!model.folderModesEnabled) return;
+          model.setComicMode(!model.effectiveComicMode);
         }}
         onToggleRecursive={() => {
-          if (model.displayPath === "") return;
-          model.setRecursive((current) => {
-            const next = !current;
-            if (!next) model.setComicMode(false);
-            return next;
-          });
+          if (!model.folderModesEnabled) return;
+          model.setRecursive(!model.effectiveRecursive);
         }}
         recursive={model.effectiveRecursive}
-        recursiveDisabled={model.recursiveToggleDisabled}
+        recursiveDisabled={!model.folderModesEnabled}
         shuffle={model.shuffle}
         sortMode={model.sortMode}
       />

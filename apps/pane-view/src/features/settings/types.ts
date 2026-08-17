@@ -13,6 +13,13 @@ export interface AppSettings {
 
 export type AppSettingsPatch = Partial<AppSettings>;
 
+/**
+ * Per-root gallery flags, stored under `pane-view.root-preferences` and
+ * written by the browse-state storage adapter after each change. Nothing reads
+ * them back yet: a follow-up plan brings Frame View's "exclude this folder from
+ * recursive browsing" to Pane View, and per-root storage is where that
+ * exclusion list belongs. Do not delete.
+ */
 export interface RootGalleryPreferences {
   comicMode: boolean;
   recursive: boolean;
