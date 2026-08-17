@@ -24,13 +24,37 @@ import type {
 /**
  * The one owner of gallery browse state (Plan 048).
  *
- * Sources of truth: the URL owns `path`, `q`, `media`, `recursive`, `comic`;
- * localStorage owns `sortMode`, `detailPanelOpen`, `randomSeed` and mirrors the
- * URL-owned flags so a URL without them resolves to the last choice. Every rule
+ * Sources of truth: the URL owns `path`, `q`, `media`, `recursive`, `comic`
+ * and is the only thing the flags resolve from — a URL without a flag means
+ * off. localStorage owns `sortMode`, `detailPanelOpen`, `randomSeed`, and the
+ * remembered in-folder flags, which seed the URL in exactly two places: the
+ * one-shot first-visit redirect and entering a folder from the archive root
+ * (the "default recursive browsing" the settings drawer offers). Every rule
  * (`comic ⇒ recursive`, `root ⇒ neither`, the toolbar coupling) is stated once
  * in the pure functions below; the hook only wires them to the router and to
  * storage. Intents write straight to their owner — no override layer.
  */
+
+/** The browse flags after the two folding rules: comic ⇒ recursive; root ⇒ neither. */
+export interface BrowseFlags {
+  comicMode: boolean;
+  folderModesEnabled: boolean;
+  recursive: boolean;
+}
+
+/**
+ * The one client statement of the flag rules. Resolution, URL construction,
+ * the redirect, and folder entry from the root all go through it.
+ */
+export function foldBrowseFlags(
+  path: string,
+  flags: { comic?: boolean; recursive?: boolean },
+): BrowseFlags {
+  const folderModesEnabled = canUseFolderBrowseModes(path);
+  const comicMode = folderModesEnabled && (flags.comic ?? false);
+  const recursive = folderModesEnabled && ((flags.recursive ?? false) || comicMode);
+  return { comicMode, folderModesEnabled, recursive };
+}
 
 // ---------------------------------------------------------------------------
 // Resolved state
@@ -64,9 +88,7 @@ export function resolveBrowseState(
 ): ResolvedBrowseState {
   const base = hydrated && persisted ? persisted : PERSISTED_BROWSE_STATE_DEFAULTS;
   const path = displayPathFromSearch(search.path);
-  const folderModesEnabled = canUseFolderBrowseModes(path);
-  const comicMode = folderModesEnabled && (search.comic ?? base.comicMode);
-  const recursive = folderModesEnabled && ((search.recursive ?? base.recursive) || comicMode);
+  const { comicMode, folderModesEnabled, recursive } = foldBrowseFlags(path, search);
 
   return {
     comicMode,
@@ -135,25 +157,24 @@ export function listingRequestFor(
  * Build the next URL search from the current state and a patch. A key present
  * in the patch overrides the state even when its value is `undefined`, so
  * `{ q: undefined }` clears the query and `{ media: undefined }` clears the
- * selection. Flags are written only when true and only inside a folder.
+ * selection. Flags are folded once more and written only when true.
  */
 export function buildBrowseSearch(
   state: Pick<ResolvedBrowseState, "comicMode" | "path" | "query" | "recursive" | "selectedId">,
   patch: Partial<GalleryBrowseSearch>,
 ): GalleryBrowseSearch {
   const nextPath = Object.hasOwn(patch, "path") ? (patch.path ?? "") : state.path;
-  const nextFolderModesEnabled = canUseFolderBrowseModes(nextPath);
-  const comic = Object.hasOwn(patch, "comic") ? (patch.comic ?? false) : state.comicMode;
-  const recursive = Object.hasOwn(patch, "recursive")
-    ? (patch.recursive ?? false)
-    : state.recursive;
+  const flags = foldBrowseFlags(nextPath, {
+    comic: Object.hasOwn(patch, "comic") ? patch.comic : state.comicMode,
+    recursive: Object.hasOwn(patch, "recursive") ? patch.recursive : state.recursive,
+  });
 
   return {
-    comic: nextFolderModesEnabled && comic ? true : undefined,
+    comic: flags.comicMode || undefined,
     media: Object.hasOwn(patch, "media") ? patch.media : (state.selectedId ?? undefined),
     path: nextPath || undefined,
     q: Object.hasOwn(patch, "q") ? patch.q : state.query,
-    recursive: nextFolderModesEnabled && (recursive || comic) ? true : undefined,
+    recursive: flags.recursive || undefined,
   };
 }
 
@@ -181,28 +202,42 @@ export interface BrowseIntentResult {
 /**
  * What an intent does: URL-owned fields produce a navigation, local fields a
  * persisted patch. Rules stated here and nowhere else on the client:
- * - navigating to the root drops both flags;
+ * - navigating to the root drops both flags from the URL; entering a folder
+ *   from the root applies the remembered flags — the settings drawer's
+ *   "default recursive browsing" default, which is the last in-folder choice
+ *   or whatever the toggles set at the root;
  * - recursive off ⇒ comic off; recursive on leaves comic alone;
  * - comic on ⇒ recursive on; comic off ⇒ recursive off (the toolbar's
  *   long-standing coupling, preserved);
+ * - at the root, where the URL cannot hold the flags, the toggles write the
+ *   remembered default instead;
  * - shuffle switches to random and always changes the seed.
  */
 export function applyBrowseIntent(
   state: ResolvedBrowseState,
   intent: BrowseIntent,
+  remembered: Pick<PersistedBrowseState, "comicMode" | "recursive">,
   createSeed: (previous?: GalleryRandomSeed | null) => GalleryRandomSeed = createGalleryRandomSeed,
 ): BrowseIntentResult {
   switch (intent.type) {
-    case "navigateToPath":
+    case "navigateToPath": {
+      if (intent.path === "") {
+        return {
+          navigate: { search: buildBrowseSearch(state, { media: undefined, path: "" }) },
+        };
+      }
+      const flags = state.folderModesEnabled ? state : remembered;
       return {
         navigate: {
           search: buildBrowseSearch(state, {
+            comic: flags.comicMode,
             media: undefined,
             path: intent.path,
-            recursive: intent.path === "" ? false : state.recursive,
+            recursive: flags.recursive,
           }),
         },
       };
+    }
     case "submitSearch":
       return {
         navigate: {
@@ -221,25 +256,24 @@ export function applyBrowseIntent(
           search: buildBrowseSearch(state, { media: intent.mediaId ?? undefined }),
         },
       };
-    case "setRecursive":
+    case "setRecursive": {
+      const flags = { comic: intent.next ? state.comicMode : false, recursive: intent.next };
+      if (!state.folderModesEnabled) {
+        return { persisted: { comicMode: flags.comic, recursive: flags.recursive } };
+      }
       return {
-        navigate: {
-          replace: true,
-          resetScroll: false,
-          search: buildBrowseSearch(state, {
-            comic: intent.next ? state.comicMode : false,
-            recursive: intent.next,
-          }),
-        },
+        navigate: { replace: true, resetScroll: false, search: buildBrowseSearch(state, flags) },
       };
-    case "setComicMode":
+    }
+    case "setComicMode": {
+      const flags = { comic: intent.next, recursive: intent.next };
+      if (!state.folderModesEnabled) {
+        return { persisted: { comicMode: flags.comic, recursive: flags.recursive } };
+      }
       return {
-        navigate: {
-          replace: true,
-          resetScroll: false,
-          search: buildBrowseSearch(state, { comic: intent.next, recursive: intent.next }),
-        },
+        navigate: { replace: true, resetScroll: false, search: buildBrowseSearch(state, flags) },
       };
+    }
     case "setSortMode":
       return { persisted: { sortMode: intent.next } };
     case "shuffle":
@@ -268,15 +302,18 @@ export function resolveInitialRedirect(
   if (search.path || !persisted.lastPath) {
     return { checked: true, redirectTo: null };
   }
-  const comic = persisted.comicMode;
+  const flags = foldBrowseFlags(persisted.lastPath, {
+    comic: persisted.comicMode,
+    recursive: persisted.recursive,
+  });
   return {
     checked: true,
     redirectTo: {
-      comic: comic || undefined,
+      comic: flags.comicMode || undefined,
       media: undefined,
       path: persisted.lastPath,
       q: search.q,
-      recursive: persisted.recursive || comic || undefined,
+      recursive: flags.recursive || undefined,
     },
   };
 }
@@ -382,28 +419,49 @@ export function useGalleryBrowseState({
     }
   }, [navigate, persisted, search]);
 
-  // Mirror the resolved state into storage (and per-root prefs) after each change.
-  const { comicMode, detailPanelOpen, path, randomSeed, recursive, sortMode } = state;
+  // Mirror the resolved state into storage (and per-root prefs) after each
+  // change. The flags are remembered only inside a folder — at the root they
+  // are folded off, and overwriting the remembered default there would defeat
+  // the settings drawer's "default recursive browsing" toggle.
+  const { comicMode, detailPanelOpen, folderModesEnabled, path, randomSeed, recursive, sortMode } =
+    state;
+  const persistedRef = useRef(persisted);
+  persistedRef.current = persisted;
   useEffect(() => {
     if (!hydrated) {
       return;
     }
+    const base = persistedRef.current ?? PERSISTED_BROWSE_STATE_DEFAULTS;
     const next: PersistedBrowseState = {
-      comicMode,
+      comicMode: folderModesEnabled ? comicMode : base.comicMode,
       detailPanelOpen,
       lastPath: path,
       randomSeed,
-      recursive,
+      recursive: folderModesEnabled ? recursive : base.recursive,
       sortMode,
     };
-    setPersisted((current) => (current && samePersisted(current, next) ? current : next));
     storage.write(next);
-    storage.writeRootPreferences(resolveRootKey(path), { comicMode, recursive, sortMode });
-  }, [comicMode, detailPanelOpen, hydrated, path, randomSeed, recursive, sortMode, storage]);
+    if (folderModesEnabled) {
+      storage.writeRootPreferences(resolveRootKey(path), { comicMode, recursive, sortMode });
+    }
+    setPersisted((current) => (current && samePersisted(current, next) ? current : next));
+  }, [
+    comicMode,
+    detailPanelOpen,
+    folderModesEnabled,
+    hydrated,
+    path,
+    persisted,
+    randomSeed,
+    recursive,
+    sortMode,
+    storage,
+  ]);
 
   const dispatch = useCallback(
     (intent: BrowseIntent) => {
-      const result = applyBrowseIntent(stateRef.current, intent, createSeed);
+      const remembered = persistedRef.current ?? PERSISTED_BROWSE_STATE_DEFAULTS;
+      const result = applyBrowseIntent(stateRef.current, intent, remembered, createSeed);
       if (result.navigate) {
         const { search: nextSearch, ...options } = result.navigate;
         void navigate({ ...options, search: nextSearch, to: "/" });

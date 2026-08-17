@@ -10,6 +10,7 @@ import {
   applyBrowseIntent,
   browseSnapshotRequestFromSearch,
   buildBrowseSearch,
+  foldBrowseFlags,
   listingRequestFor,
   PLACEHOLDER_RANDOM_SEED,
   resolveBrowseState,
@@ -44,21 +45,37 @@ describe("resolveBrowseState", () => {
     expect(state).toMatchObject({ comicMode: true, folderModesEnabled: true, recursive: true });
   });
 
-  it("lets a URL flag win over the persisted flag and uses the persisted flag when the URL has none", () => {
+  it("resolves the flags from the URL only; remembered flags never resurrect an absent one", () => {
     const stored = persisted({ comicMode: true, recursive: true });
     expect(
-      resolveBrowseState({ path: "photos", recursive: false, comic: false }, stored, true),
-    ).toMatchObject({
+      resolveBrowseState({ comic: false, path: "photos", recursive: false }, stored, true),
+    ).toMatchObject({ comicMode: false, recursive: false });
+    // A URL without the flags means off — this is what lets a toggle turn a mode off.
+    expect(resolveBrowseState({ path: "photos" }, stored, true)).toMatchObject({
       comicMode: false,
       recursive: false,
     });
-    expect(resolveBrowseState({ path: "photos" }, stored, true)).toMatchObject({
-      comicMode: true,
-      recursive: true,
-    });
-    expect(resolveBrowseState({ path: "photos", comic: false }, stored, true)).toMatchObject({
+    expect(resolveBrowseState({ path: "photos", recursive: true }, stored, true)).toMatchObject({
       comicMode: false,
       recursive: true,
+    });
+  });
+
+  it("states the folding rules once", () => {
+    expect(foldBrowseFlags("", { comic: true, recursive: true })).toEqual({
+      comicMode: false,
+      folderModesEnabled: false,
+      recursive: false,
+    });
+    expect(foldBrowseFlags("photos", { comic: true })).toEqual({
+      comicMode: true,
+      folderModesEnabled: true,
+      recursive: true,
+    });
+    expect(foldBrowseFlags("photos", {})).toEqual({
+      comicMode: false,
+      folderModesEnabled: true,
+      recursive: false,
     });
   });
 
@@ -107,11 +124,18 @@ describe("requests", () => {
     expect(snapshotRequestFor(root).path).toBeUndefined();
   });
 
-  it("gives the loader the same request the page builds when the URL carries the flags", () => {
-    const search = { comic: true, path: "photos", q: "cover", recursive: true };
-    expect(browseSnapshotRequestFromSearch(search)).toEqual(
-      snapshotRequestFor(resolveBrowseState(search, persisted(), true)),
-    );
+  it("gives the loader exactly the request the page builds, whatever is remembered", () => {
+    const remembered = persisted({ comicMode: true, recursive: true });
+    for (const search of [
+      { comic: true, path: "photos", q: "cover", recursive: true },
+      { path: "photos" },
+      { path: "photos", recursive: true },
+      {},
+    ]) {
+      expect(browseSnapshotRequestFromSearch(search)).toEqual(
+        snapshotRequestFor(resolveBrowseState(search, remembered, true)),
+      );
+    }
     expect(browseSnapshotRequestFromSearch({ comic: true, recursive: true })).toMatchObject({
       comicMode: false,
       recursive: false,
@@ -183,19 +207,25 @@ describe("buildBrowseSearch", () => {
 });
 
 describe("applyBrowseIntent", () => {
+  const remembered = { comicMode: false, recursive: false };
   const folder = resolveBrowseState(
     { comic: true, media: "m-1", path: "photos/2026", q: "cover", recursive: true },
     persisted({ sortMode: "date-newest" }),
     true,
   );
 
-  it("navigates to a path, clears the selection, and keeps recursive except at the root", () => {
-    expect(applyBrowseIntent(folder, { path: "photos", type: "navigateToPath" })).toEqual({
+  it("navigates to a path, clears the selection, and keeps the flags between folders", () => {
+    expect(
+      applyBrowseIntent(folder, { path: "photos", type: "navigateToPath" }, remembered),
+    ).toEqual({
       navigate: {
         search: { comic: true, media: undefined, path: "photos", q: "cover", recursive: true },
       },
     });
-    expect(applyBrowseIntent(folder, { path: "", type: "navigateToPath" })).toEqual({
+  });
+
+  it("navigating to the root drops the flags from the URL", () => {
+    expect(applyBrowseIntent(folder, { path: "", type: "navigateToPath" }, remembered)).toEqual({
       navigate: {
         search: {
           comic: undefined,
@@ -208,22 +238,54 @@ describe("applyBrowseIntent", () => {
     });
   });
 
+  it("entering a folder from the root applies the remembered default flags", () => {
+    const root = resolveBrowseState({}, persisted(), true);
+    const enter = (flags: { comicMode: boolean; recursive: boolean }) =>
+      applyBrowseIntent(root, { path: "photos", type: "navigateToPath" }, flags).navigate?.search;
+    expect(enter({ comicMode: false, recursive: true })).toMatchObject({
+      comic: undefined,
+      path: "photos",
+      recursive: true,
+    });
+    expect(enter({ comicMode: true, recursive: false })).toMatchObject({
+      comic: true,
+      path: "photos",
+      recursive: true,
+    });
+    expect(enter(remembered)).toMatchObject({
+      comic: undefined,
+      path: "photos",
+      recursive: undefined,
+    });
+  });
+
+  it("at the root, the toggles write the remembered default instead of the URL", () => {
+    const root = resolveBrowseState({}, persisted(), true);
+    expect(applyBrowseIntent(root, { next: true, type: "setRecursive" }, remembered)).toEqual({
+      persisted: { comicMode: false, recursive: true },
+    });
+    expect(applyBrowseIntent(root, { next: true, type: "setComicMode" }, remembered)).toEqual({
+      persisted: { comicMode: true, recursive: true },
+    });
+  });
+
   it("submits a trimmed search and clears it on empty", () => {
     expect(
-      applyBrowseIntent(folder, { query: "  hero ", type: "submitSearch" }).navigate?.search,
+      applyBrowseIntent(folder, { query: "  hero ", type: "submitSearch" }, remembered).navigate
+        ?.search,
     ).toMatchObject({
       media: undefined,
       q: "hero",
     });
     expect(
-      applyBrowseIntent(folder, { query: "  ", type: "submitSearch" }).navigate?.search,
+      applyBrowseIntent(folder, { query: "  ", type: "submitSearch" }, remembered).navigate?.search,
     ).toMatchObject({
       q: undefined,
     });
   });
 
   it("selects media by replacing the URL without scrolling", () => {
-    expect(applyBrowseIntent(folder, { mediaId: "m-2", type: "selectMedia" })).toEqual({
+    expect(applyBrowseIntent(folder, { mediaId: "m-2", type: "selectMedia" }, remembered)).toEqual({
       navigate: {
         replace: true,
         resetScroll: false,
@@ -231,20 +293,21 @@ describe("applyBrowseIntent", () => {
       },
     });
     expect(
-      applyBrowseIntent(folder, { mediaId: null, type: "selectMedia" }).navigate?.search.media,
+      applyBrowseIntent(folder, { mediaId: null, type: "selectMedia" }, remembered).navigate?.search
+        .media,
     ).toBeUndefined();
   });
 
   it("turning recursive off turns comic off; turning it on leaves comic alone", () => {
     expect(
-      applyBrowseIntent(folder, { next: false, type: "setRecursive" }).navigate?.search,
+      applyBrowseIntent(folder, { next: false, type: "setRecursive" }, remembered).navigate?.search,
     ).toMatchObject({
       comic: undefined,
       recursive: undefined,
     });
     const plain = resolveBrowseState({ path: "photos" }, persisted(), true);
     expect(
-      applyBrowseIntent(plain, { next: true, type: "setRecursive" }).navigate?.search,
+      applyBrowseIntent(plain, { next: true, type: "setRecursive" }, remembered).navigate?.search,
     ).toMatchObject({
       comic: undefined,
       recursive: true,
@@ -254,13 +317,13 @@ describe("applyBrowseIntent", () => {
   it("turning comic on turns recursive on; turning comic off turns recursive off (toolbar semantics)", () => {
     const plain = resolveBrowseState({ path: "photos" }, persisted(), true);
     expect(
-      applyBrowseIntent(plain, { next: true, type: "setComicMode" }).navigate?.search,
+      applyBrowseIntent(plain, { next: true, type: "setComicMode" }, remembered).navigate?.search,
     ).toMatchObject({
       comic: true,
       recursive: true,
     });
     expect(
-      applyBrowseIntent(folder, { next: false, type: "setComicMode" }).navigate?.search,
+      applyBrowseIntent(folder, { next: false, type: "setComicMode" }, remembered).navigate?.search,
     ).toMatchObject({
       comic: undefined,
       recursive: undefined,
@@ -268,16 +331,20 @@ describe("applyBrowseIntent", () => {
   });
 
   it("writes local-only fields to persisted state, not the URL", () => {
-    expect(applyBrowseIntent(folder, { next: "name-desc", type: "setSortMode" })).toEqual({
+    expect(
+      applyBrowseIntent(folder, { next: "name-desc", type: "setSortMode" }, remembered),
+    ).toEqual({
       persisted: { sortMode: "name-desc" },
     });
-    expect(applyBrowseIntent(folder, { next: false, type: "setDetailPanelOpen" })).toEqual({
+    expect(
+      applyBrowseIntent(folder, { next: false, type: "setDetailPanelOpen" }, remembered),
+    ).toEqual({
       persisted: { detailPanelOpen: false },
     });
   });
 
   it("shuffle sets random and changes the seed", () => {
-    const result = applyBrowseIntent(folder, { type: "shuffle" }, (previous) => {
+    const result = applyBrowseIntent(folder, { type: "shuffle" }, remembered, (previous) => {
       expect(previous).toBe(SEED);
       return OTHER_SEED;
     });

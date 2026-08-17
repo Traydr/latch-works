@@ -5,7 +5,11 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { GalleryBrowseSearch } from "./browse-search";
 import { createMemoryBrowseStorage, type MemoryBrowseStorage } from "./gallery-browse-storage";
-import { type GalleryBrowseState, useGalleryBrowseState } from "./useGalleryBrowseState";
+import {
+  browseSnapshotRequestFromSearch,
+  type GalleryBrowseState,
+  useGalleryBrowseState,
+} from "./useGalleryBrowseState";
 
 /**
  * The hook wiring around the pure module: one-shot redirect, mirroring into
@@ -102,11 +106,80 @@ describe("useGalleryBrowseState", () => {
     });
 
     host.rerender({ path: "photos/2026" });
-    // The URL dropped the flags; the mirror keeps the last choice.
+    // The URL dropped the flags: they are off. The mirror recorded the last
+    // in-folder choice, but it never resurrects a flag the URL does not carry.
+    expect(latest).toMatchObject({ comicMode: false, recursive: false });
+    expect(storage.state).toMatchObject({ comicMode: false, recursive: false });
+
+    host.rerender({ path: "photos/2026", recursive: true });
+    expect(storage.state).toMatchObject({ comicMode: false, recursive: true });
+
+    // Visiting the root keeps the remembered in-folder flags (only navigateToPath("") forgets them).
+    host.rerender({});
+    expect(storage.state).toMatchObject({ comicMode: false, lastPath: "", recursive: true });
+  });
+
+  it("turns a mode off round-trip: the emitted URL resolves to off and stays off", () => {
+    const storage = createMemoryBrowseStorage({ randomSeed: SEED });
+    const host = mount({ path: "photos", recursive: true }, storage);
+    expect(latest?.recursive).toBe(true);
+    navigate.mockClear();
+
+    act(() => latest?.setRecursive(false));
+    const emitted = (navigate.mock.calls[0]?.[0] as { search: GalleryBrowseSearch }).search;
+    expect(emitted).toEqual({
+      comic: undefined,
+      media: undefined,
+      path: "photos",
+      q: undefined,
+      recursive: undefined,
+    });
+
+    host.rerender(emitted);
+    expect(latest).toMatchObject({ comicMode: false, recursive: false });
+    expect(latest?.snapshotRequest).toEqual(browseSnapshotRequestFromSearch(emitted));
+    expect(storage.state).toMatchObject({ comicMode: false, recursive: false });
+
+    act(() => latest?.setComicMode(true));
+    const withComic = (navigate.mock.calls[1]?.[0] as { search: GalleryBrowseSearch }).search;
+    expect(withComic).toMatchObject({ comic: true, recursive: true });
+    host.rerender(withComic);
     expect(latest).toMatchObject({ comicMode: true, recursive: true });
 
+    act(() => latest?.setComicMode(false));
+    const off = (navigate.mock.calls[2]?.[0] as { search: GalleryBrowseSearch }).search;
+    expect(off).toMatchObject({ comic: undefined, recursive: undefined });
+    host.rerender(off);
+    expect(latest).toMatchObject({ comicMode: false, recursive: false });
+  });
+
+  it("applies the settings-drawer default when entering a folder from the root", () => {
+    const storage = createMemoryBrowseStorage({ randomSeed: SEED });
+    const host = mount({}, storage);
+    act(() => latest?.setRecursive(true));
+    expect(navigate).not.toHaveBeenCalled();
+    expect(storage.state).toMatchObject({ recursive: true });
+
+    act(() => latest?.navigateToPath("photos"));
+    expect(navigate).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        search: expect.objectContaining({ path: "photos", recursive: true }),
+      }),
+    );
+
+    // Turning it off inside the folder updates the default too.
+    host.rerender({ path: "photos", recursive: true });
+    act(() => latest?.setRecursive(false));
+    host.rerender((navigate.mock.calls.at(-1)?.[0] as { search: GalleryBrowseSearch }).search);
+    expect(storage.state).toMatchObject({ comicMode: false, recursive: false });
+    act(() => latest?.navigateToPath(""));
     host.rerender({});
-    expect(storage.state).toMatchObject({ comicMode: false, lastPath: "", recursive: false });
+    act(() => latest?.navigateToPath("photos"));
+    expect(navigate).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        search: expect.objectContaining({ path: "photos", recursive: undefined }),
+      }),
+    );
   });
 
   it("creates and persists a seed when none is stored, and keeps it across renders", () => {
