@@ -164,14 +164,45 @@ describe("scheduleMaintenanceJob", () => {
     expect(mocks.processMaintenanceJob).not.toHaveBeenCalled();
   });
 
-  it.each(TYPES)("%s: maps a unique violation to the in-progress error", async (type) => {
+  it.each(
+    TYPES,
+  )("%s: maps an active-job unique violation to the in-progress error", async (type) => {
     mocks.transaction.mockRejectedValueOnce(
-      Object.assign(new Error("duplicate key"), { code: "23505" }),
+      Object.assign(new Error("duplicate key"), {
+        code: "23505",
+        constraint: "maintenance_jobs_active_type_unique",
+      }),
     );
     await expect(scheduleMaintenanceJob(descriptor(type))).rejects.toThrow(
       CLEANUP_IN_PROGRESS_MESSAGE,
     );
     expect(mocks.processMaintenanceJob).not.toHaveBeenCalled();
+  });
+
+  it("recognises the violation when the driver error is wrapped as the cause", async () => {
+    mocks.transaction.mockRejectedValueOnce(
+      new Error("Failed query", {
+        cause: Object.assign(new Error("duplicate key"), {
+          code: "23505",
+          constraint: "maintenance_jobs_active_hard_wipe_unique",
+        }),
+      }),
+    );
+    await expect(scheduleMaintenanceJob(descriptor("library_hard_wipe"))).rejects.toThrow(
+      CLEANUP_IN_PROGRESS_MESSAGE,
+    );
+  });
+
+  it("rethrows a unique violation on another constraint unchanged", async () => {
+    mocks.transaction.mockRejectedValueOnce(
+      Object.assign(new Error("duplicate key on shutter_source_cleanup_pkey"), {
+        code: "23505",
+        constraint: "shutter_source_cleanup_pkey",
+      }),
+    );
+    await expect(scheduleMaintenanceJob(descriptor("shutter_source_purge"))).rejects.toThrow(
+      "shutter_source_cleanup_pkey",
+    );
   });
 
   it("rethrows other transaction failures unchanged", async () => {

@@ -33,13 +33,33 @@ export interface ScheduleMaintenanceJobResult {
 
 export const CLEANUP_IN_PROGRESS_MESSAGE = "A cleanup job is already in progress.";
 
-function isUniqueViolation(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    (error as { code?: string }).code === "23505"
-  );
+/** The partial unique indexes that enforce one active job per type (migrations 0011, 0014). */
+const ACTIVE_JOB_UNIQUE_INDEXES = new Set([
+  "maintenance_jobs_active_type_unique",
+  "maintenance_jobs_active_hard_wipe_unique",
+]);
+
+/**
+ * True for a unique violation raised by the active-job indexes — two
+ * schedulers racing past the app-level guard. Other unique violations (a
+ * descriptor's prepare step, for instance) are not "already in progress" and
+ * are rethrown as they are. Drizzle surfaces the driver error as `cause` when
+ * it wraps one, so both shapes are checked.
+ */
+function isActiveJobUniqueViolation(error: unknown): boolean {
+  for (const candidate of [error, (error as { cause?: unknown } | null)?.cause]) {
+    if (typeof candidate !== "object" || candidate === null) {
+      continue;
+    }
+    const { code, constraint } = candidate as { code?: string; constraint?: string };
+    if (
+      code === "23505" &&
+      (constraint === undefined || ACTIVE_JOB_UNIQUE_INDEXES.has(constraint))
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export async function scheduleMaintenanceJob(
@@ -76,7 +96,7 @@ export async function scheduleMaintenanceJob(
       return job.id;
     });
   } catch (error) {
-    if (isUniqueViolation(error)) {
+    if (isActiveJobUniqueViolation(error)) {
       throw new Error(CLEANUP_IN_PROGRESS_MESSAGE);
     }
     throw error;

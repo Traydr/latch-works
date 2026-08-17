@@ -1,6 +1,7 @@
 import { toArchivePath, trimTrailingSlash } from "@latch-works/media-domain";
 import { and, eq, ilike, isNull, or } from "drizzle-orm";
 import { db } from "../db";
+import { acquireLibraryMutationStartupLock } from "../db/library-coordination-lock";
 import { folders, libraryEntries } from "../db/schema";
 import { escapeLikePattern } from "../library/query-helpers";
 import { assertNoActiveCleanupJob, assertNoActiveSyncRun } from "./guards";
@@ -50,8 +51,10 @@ export async function countEntriesUnderPath(path: string): Promise<number> {
  * Soft-delete folders and their subtrees. Guarded like the maintenance
  * schedulers: never during a sync run (the sync would resurrect or fight the
  * rows) and never during a cleanup job (a purge may be hard-deleting the very
- * rows this marks). The guards live with the mutation so no caller can skip
- * them.
+ * rows this marks). The guards run inside the mutation transaction under the
+ * same library mutation startup lock the schedulers take, so a job cannot be
+ * scheduled between the checks and the updates; and they live with the
+ * mutation so no caller can skip them.
  */
 export async function softDeleteFolderSubtree({
   folderPaths,
@@ -67,12 +70,13 @@ export async function softDeleteFolderSubtree({
     assertDeletableFolderPath(path);
   }
 
-  await assertNoActiveSyncRun();
-  await assertNoActiveCleanupJob();
-
   const now = new Date();
 
   return db.transaction(async (tx) => {
+    await acquireLibraryMutationStartupLock(tx);
+    await assertNoActiveSyncRun(tx);
+    await assertNoActiveCleanupJob(tx);
+
     const results: FolderDeleteResult[] = [];
 
     for (const path of normalizedPaths) {
