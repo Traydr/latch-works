@@ -74,12 +74,14 @@ export function useGalleryKeyboard({
     [onSelectMedia, requestScrollFocusedIntoView, setFocusedEntryIndex],
   );
 
-  // A key resolved by the session before its page rendered: focus it once it exists.
+  // A key resolved by the session before its page rendered: focus it once the
+  // entries include it. Depends on `entries` because that is the signal that
+  // the appended page has committed.
   useEffect(() => {
     if (pendingFocusKeyRef.current && focusEntryByKey(pendingFocusKeyRef.current)) {
       pendingFocusKeyRef.current = null;
     }
-  }, [focusEntryByKey]);
+  }, [entries, focusEntryByKey]);
 
   useEffect(() => {
     const moveGridFocus = (dx: number, dy: number) => {
@@ -111,14 +113,33 @@ export function useGalleryKeyboard({
         return;
       }
 
-      // Beyond the loaded grid: the session loads the next page, wraps, or
-      // stays put. Focus lands by key so an appended page cannot shift it.
-      const currentKey = entries[focusedEntryIndex]?.key ?? null;
-      void onStepBeyondGrid(currentKey, nextIndex < 0 ? -1 : 1).then((key) => {
-        if (key && !focusEntryByKey(key)) {
-          pendingFocusKeyRef.current = key;
+      // Off the loaded grid. Geometry stays here: only a move past the true
+      // sequence boundary (Left/Up from the first entry, Right/Down from the
+      // last row) is delegated to the session, which loads the next page,
+      // wraps, or stays put. Focus lands by key so an appended page cannot
+      // shift it. Any other overflow (Up from the top row, Down from the
+      // second-to-last row into a shorter last row) clamps.
+      const lastIndex = entries.length - 1;
+      const lastRow = Math.floor(lastIndex / columnCount);
+      const stepBeyond = (direction: -1 | 1) => {
+        const currentKey = entries[focusedEntryIndex]?.key ?? null;
+        void onStepBeyondGrid(currentKey, direction).then((key) => {
+          if (key && !focusEntryByKey(key)) {
+            pendingFocusKeyRef.current = key;
+          }
+        });
+      };
+      if (nextIndex < 0) {
+        if (focusedEntryIndex === 0) {
+          stepBeyond(-1);
         }
-      });
+        return;
+      }
+      if (dy > 0 && currentRow < lastRow) {
+        applyFocus(lastIndex);
+        return;
+      }
+      stepBeyond(1);
     };
 
     const handleGalleryKeyDown = (event: KeyboardEvent) => {

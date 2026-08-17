@@ -175,20 +175,38 @@ function useGalleryPage() {
 
   // Keep the card visible with a loading affordance; open the reader only
   // once the complete comic has arrived. A second activation hits the cache.
+  // Only the latest activation, in the browse it was made from, may open the
+  // reader: an earlier or superseded request resolving late is dropped.
+  const comicActivationRef = useRef<{ browseKey: string; comicId: string } | null>(null);
   const openComicReader = useCallback(
     (comicId: string) => {
+      const activation = { browseKey, comicId };
+      comicActivationRef.current = activation;
       setOpeningComicId(comicId);
       void openComic(comicId)
         .then((comic) => {
-          setActiveComic(comic);
+          if (comicActivationRef.current === activation) {
+            setActiveComic(comic);
+          }
         })
         .catch(() => undefined)
         .finally(() => {
-          setOpeningComicId((current) => (current === comicId ? null : current));
+          if (comicActivationRef.current === activation) {
+            comicActivationRef.current = null;
+            setOpeningComicId(null);
+          }
         });
     },
-    [openComic],
+    [browseKey, openComic],
   );
+
+  // Leaving the browse cancels a pending activation.
+  useEffect(() => {
+    if (comicActivationRef.current && comicActivationRef.current.browseKey !== browseKey) {
+      comicActivationRef.current = null;
+      setOpeningComicId(null);
+    }
+  }, [browseKey]);
 
   const handleActivateEntry = useCallback(
     (entry: GalleryBrowseEntry) => {

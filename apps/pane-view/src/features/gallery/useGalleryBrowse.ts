@@ -80,10 +80,12 @@ interface Accumulation {
   entries: GalleryBrowseEntry[];
   error: unknown | null;
   hasMore: boolean | null;
+  /** A next-page request for this browse key is in flight. */
+  loading: boolean;
 }
 
 function emptyAccumulation(browseKey: string): Accumulation {
-  return { browseKey, cursor: null, entries: [], error: null, hasMore: null };
+  return { browseKey, cursor: null, entries: [], error: null, hasMore: null, loading: false };
 }
 
 /** Keeps the first occurrence of each key; order is otherwise preserved. */
@@ -102,6 +104,14 @@ function dedupeEntries(...lists: readonly (readonly GalleryBrowseEntry[])[]): Ga
 }
 
 const defaultSource = createServerGalleryPageSource();
+
+/** Thrown internally when a page resolves for a browse key that is no longer live. */
+class StaleBrowseError extends Error {
+  constructor() {
+    super("Gallery browse changed while a page was loading");
+    this.name = "StaleBrowseError";
+  }
+}
 
 export function galleryComicQueryKey(comicId: string, request: GalleryListingQueryRequest) {
   return [
@@ -151,16 +161,19 @@ export function useGalleryBrowse({
 
   // Accumulated pages 2..n. Anything stored under another browse key is stale
   // and read as empty; the effect below drops it once the key has changed.
+  // Loading is part of the accumulation so it is keyed the same way.
   const [stored, setStored] = useState<Accumulation>(() => emptyAccumulation(browseKey));
   const accumulation = stored.browseKey === browseKey ? stored : emptyAccumulation(browseKey);
-  const [loading, setLoading] = useState(false);
   const inFlightRef = useRef<{ browseKey: string; promise: Promise<LoadNextPageResult> } | null>(
     null,
   );
 
+  // Only the browse key that issued a request may commit its result. A page
+  // that resolves after the user moved to another folder, seed, or filter is
+  // dropped: it must neither overwrite the live session nor revive the old one.
   const updateAccumulation = useCallback(
     (key: string, update: (current: Accumulation) => Accumulation) => {
-      setStored((current) => update(current.browseKey === key ? current : emptyAccumulation(key)));
+      setStored((current) => (current.browseKey === key ? update(current) : current));
     },
     [],
   );
@@ -201,8 +214,8 @@ export function useGalleryBrowse({
   const hasMore =
     accumulation.hasMore ?? (firstPageIsCurrent ? (firstPage?.page.hasMore ?? false) : false);
   const page: GalleryPageState = useMemo(
-    () => ({ cursor, error: accumulation.error, hasMore, loading }),
-    [accumulation.error, cursor, hasMore, loading],
+    () => ({ cursor, error: accumulation.error, hasMore, loading: accumulation.loading }),
+    [accumulation.error, accumulation.loading, cursor, hasMore],
   );
 
   // Refs so awaited results never depend on a stale render.
@@ -221,11 +234,14 @@ export function useGalleryBrowse({
 
     const key = live.browseKey;
     const requestCursor = live.cursor;
-    setLoading(true);
+    updateAccumulation(key, (current) => ({ ...current, loading: true }));
     const ticket: { promise: Promise<LoadNextPageResult> | null } = { promise: null };
     const promise = (async (): Promise<LoadNextPageResult> => {
       try {
         const next = await source.loadPage({ ...live.listingRequest, cursor: requestCursor });
+        if (liveRef.current.browseKey !== key) {
+          throw new StaleBrowseError();
+        }
         if (next.page.hasMore && next.page.cursor === requestCursor) {
           throw new Error("Gallery listing cursor did not advance");
         }
@@ -248,13 +264,15 @@ export function useGalleryBrowse({
           exhausted: !next.page.hasMore,
         };
       } catch (error) {
-        updateAccumulation(key, (current) => ({ ...current, error }));
+        if (!(error instanceof StaleBrowseError)) {
+          updateAccumulation(key, (current) => ({ ...current, error }));
+        }
         throw error;
       } finally {
         if (inFlightRef.current?.promise === ticket.promise) {
           inFlightRef.current = null;
         }
-        setLoading(false);
+        updateAccumulation(key, (current) => ({ ...current, loading: false }));
       }
     })();
     ticket.promise = promise;
@@ -262,65 +280,79 @@ export function useGalleryBrowse({
     return promise;
   }, [source, updateAccumulation]);
 
-  const stepMedia = useCallback(
-    async (currentId: string | null, direction: -1 | 1, loop: boolean): Promise<string | null> => {
-      const sequence = liveRef.current.media;
-      const index = currentId ? sequence.findIndex((item) => item.id === currentId) : -1;
+  // One boundary algorithm for media ids and entry keys (Plan 052, Step 3):
+  // move within the loaded sequence; at the loaded end load before looping;
+  // stay on the first item backward while more pages exist. Every read of the
+  // sequence after an await comes from the live ref, and a result that
+  // belongs to another browse key is discarded.
+  const stepThrough = useCallback(
+    async <T extends { id: string } | { key: string }>(
+      pick: () => readonly T[],
+      identify: (item: T) => string,
+      firstAppended: (result: LoadNextPageResult) => string | undefined,
+      current: string | null,
+      direction: -1 | 1,
+      loop: boolean,
+    ): Promise<string | null> => {
+      const key = liveRef.current.browseKey;
+      const wrapForward = () => {
+        // Read the sequence again: a page-1 refetch or a local deletion may
+        // have changed it while the load was in flight.
+        const first = pick()[0];
+        return loop && first && identify(first) !== current ? identify(first) : null;
+      };
+      const sequence = pick();
+      const index = current ? sequence.findIndex((item) => identify(item) === current) : -1;
       if (direction === 1) {
         const next = sequence[index + 1];
-        if (next) return next.id;
+        if (next) return identify(next);
         if (liveRef.current.hasMore) {
           try {
             const result = await loadNextPage();
-            const first = result.appendedMediaIds[0];
-            if (first) return first;
+            if (liveRef.current.browseKey !== key) return null;
+            const appended = firstAppended(result);
+            if (appended) return appended;
             if (!result.exhausted) return null;
           } catch {
             return null;
           }
         }
-        return loop && sequence.length > 0 && sequence[0]?.id !== currentId
-          ? (sequence[0]?.id ?? null)
-          : null;
+        return wrapForward();
       }
-      if (index > 0) return sequence[index - 1]?.id ?? null;
-      if (index < 0 && sequence.length > 0) return sequence[0]?.id ?? null;
+      if (index > 0) return identify(sequence[index - 1] as T);
+      if (index < 0 && sequence.length > 0) return identify(sequence[0] as T);
       // Decision 7: no backward wrap while more pages exist.
       if (liveRef.current.hasMore) return null;
       const last = sequence.at(-1);
-      return loop && last && last.id !== currentId ? last.id : null;
+      return loop && last && identify(last) !== current ? identify(last) : null;
     },
     [loadNextPage],
   );
 
+  const stepMedia = useCallback(
+    (currentId: string | null, direction: -1 | 1, loop: boolean) =>
+      stepThrough(
+        () => liveRef.current.media,
+        (item) => item.id,
+        (result) => result.appendedMediaIds[0],
+        currentId,
+        direction,
+        loop,
+      ),
+    [stepThrough],
+  );
+
   const stepEntry = useCallback(
-    async (currentKey: string | null, direction: -1 | 1, loop: boolean): Promise<string | null> => {
-      const sequence = liveRef.current.entries;
-      const index = currentKey ? sequence.findIndex((entry) => entry.key === currentKey) : -1;
-      if (direction === 1) {
-        const next = sequence[index + 1];
-        if (next) return next.key;
-        if (liveRef.current.hasMore) {
-          try {
-            const result = await loadNextPage();
-            const first = result.appendedEntryKeys[0];
-            if (first) return first;
-            if (!result.exhausted) return null;
-          } catch {
-            return null;
-          }
-        }
-        return loop && sequence.length > 0 && sequence[0]?.key !== currentKey
-          ? (sequence[0]?.key ?? null)
-          : null;
-      }
-      if (index > 0) return sequence[index - 1]?.key ?? null;
-      if (index < 0 && sequence.length > 0) return sequence[0]?.key ?? null;
-      if (liveRef.current.hasMore) return null;
-      const last = sequence.at(-1);
-      return loop && last && last.key !== currentKey ? last.key : null;
-    },
-    [loadNextPage],
+    (currentKey: string | null, direction: -1 | 1, loop: boolean) =>
+      stepThrough(
+        () => liveRef.current.entries,
+        (entry) => entry.key,
+        (result) => result.appendedEntryKeys[0],
+        currentKey,
+        direction,
+        loop,
+      ),
+    [stepThrough],
   );
 
   const openComic = useCallback(

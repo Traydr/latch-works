@@ -13,6 +13,7 @@ import {
   scriptedComics,
   scriptedMedia,
 } from "@/features/gallery/gallery-session-harness";
+import { galleryListingKeys } from "@/features/library/library-queries";
 
 /**
  * Boundary navigation behind the session (Plan 052 Step 3): forward loads
@@ -163,6 +164,45 @@ describe("stepMedia", () => {
     expect(
       await step(() => harness?.session.stepMedia("m-002", 1, false) ?? Promise.resolve(null)),
     ).toBeNull();
+  });
+
+  it("wraps using the sequence as it is after the load, not as it was before", async () => {
+    const request = listingRequest({ limit: 3 });
+    const key = memorySourceKey(request);
+    const media = scriptedMedia(4);
+    const source = createMemoryGalleryPageSource({ [key]: { media } });
+    harness = await renderSession({ request, source });
+    // The last item was deleted, and so was the first: the next load is
+    // exhausted and empty; wrapping must land on the current first item.
+    source.script(key, { media: media.slice(1, 3) });
+    await act(async () => {
+      await harness?.queryClient.invalidateQueries({ queryKey: galleryListingKeys.all });
+    });
+    await harness.flush();
+    expect(harness.session.media.map((item) => item.id)).toEqual(["m-001", "m-002"]);
+    expect(
+      await step(() => harness?.session.stepMedia("m-002", 1, true) ?? Promise.resolve(null)),
+    ).toBe("m-001");
+    expect(harness.session.page.hasMore).toBe(false);
+  });
+
+  it("returns nothing for a step whose page resolves after the browse changed", async () => {
+    const requestA = listingRequest({ limit: 3, path: "a" });
+    const requestB = listingRequest({ limit: 3, path: "b" });
+    const source = createMemoryGalleryPageSource({
+      [memorySourceKey(requestA)]: { media: scriptedMedia(9, "a") },
+      [memorySourceKey(requestB)]: { media: scriptedMedia(9, "b") },
+    });
+    harness = await renderSession({ request: requestA, source });
+    source.hold();
+    const pending = harness.session.stepMedia("a-002", 1, true);
+    await harness.rerender({ request: requestB });
+    await act(async () => {
+      await source.release();
+    });
+    await harness.flush();
+    expect(await pending).toBeNull();
+    expect(harness.session.media.map((item) => item.id)).toEqual(["b-000", "b-001", "b-002"]);
   });
 
   it("moves between comics in comic mode", async () => {

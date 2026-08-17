@@ -209,6 +209,44 @@ describe("useGalleryBrowse session accumulation", () => {
     expect(idsOf(harness)).toHaveLength(6);
   });
 
+  it("drops a page that resolves after the browse changed instead of overwriting the live session", async () => {
+    const requestA = listingRequest({ limit: 3, path: "a" });
+    const requestB = listingRequest({ limit: 3, path: "b" });
+    const source = createMemoryGalleryPageSource({
+      [memorySourceKey(requestA)]: { media: scriptedMedia(9, "a") },
+      [memorySourceKey(requestB)]: { media: scriptedMedia(9, "b") },
+    });
+    harness = await renderSession({ request: requestA, source });
+    source.hold();
+    const stale = harness.session.loadNextPage().catch((error: unknown) => error);
+    await harness.flush();
+    expect(harness.session.page.loading).toBe(true);
+
+    // Move to browse B while A's page 2 is in flight; B loads its own page 2.
+    await harness.rerender({ request: requestB });
+    // (The rerender is held too until release; both settle together.)
+    await act(async () => {
+      await source.release();
+    });
+    await harness.flush();
+    expect(idsOf(harness)).toEqual(["b-000", "b-001", "b-002"]);
+    expect(harness.session.page.loading).toBe(false);
+    await act(async () => {
+      await harness?.session.loadNextPage();
+    });
+    await harness.flush();
+    expect(idsOf(harness)).toEqual(["b-000", "b-001", "b-002", "b-003", "b-004", "b-005"]);
+
+    // A's late result: rejected as stale, and B's pages are intact.
+    const outcome = await stale;
+    expect(String(outcome)).toContain("changed while a page was loading");
+    await harness.flush();
+    expect(idsOf(harness)).toEqual(["b-000", "b-001", "b-002", "b-003", "b-004", "b-005"]);
+    expect(harness.session.page.error).toBeNull();
+    expect(harness.session.page.hasMore).toBe(true);
+    expect(source.calls.page.filter((call) => call.path === "a")).toHaveLength(2);
+  });
+
   it("excludes locally deleted media from the navigable sequence but not from entries", async () => {
     const request = listingRequest({ limit: 5 });
     const media = scriptedMedia(5);
