@@ -114,16 +114,16 @@ describe("useGalleryBrowse session accumulation", () => {
     harness = await renderSession({ request, source });
     source.stallNextCursor();
 
-    let error: unknown = null;
+    let message = "";
     await act(async () => {
       try {
         await harness?.session.loadNextPage();
       } catch (caught) {
-        error = caught;
+        message = String(caught);
       }
     });
     await harness.flush();
-    expect(String(error)).toContain("did not advance");
+    expect(message).toContain("did not advance");
     expect(harness.session.page.error).not.toBeNull();
     // Retry works: hasMore is unchanged and the next load succeeds.
     expect(harness.session.page.hasMore).toBe(true);
@@ -218,7 +218,10 @@ describe("useGalleryBrowse session accumulation", () => {
     });
     harness = await renderSession({ request: requestA, source });
     source.hold();
-    const stale = harness.session.loadNextPage().catch((error: unknown) => error);
+    const stale = harness.session.loadNextPage().then(
+      () => "resolved",
+      (error: Error) => String(error),
+    );
     await harness.flush();
     expect(harness.session.page.loading).toBe(true);
 
@@ -238,8 +241,7 @@ describe("useGalleryBrowse session accumulation", () => {
     expect(idsOf(harness)).toEqual(["b-000", "b-001", "b-002", "b-003", "b-004", "b-005"]);
 
     // A's late result: rejected as stale, and B's pages are intact.
-    const outcome = await stale;
-    expect(String(outcome)).toContain("changed while a page was loading");
+    expect(await stale).toContain("changed while a page was loading");
     await harness.flush();
     expect(idsOf(harness)).toEqual(["b-000", "b-001", "b-002", "b-003", "b-004", "b-005"]);
     expect(harness.session.page.error).toBeNull();
@@ -282,7 +284,7 @@ describe("useGalleryBrowse session accumulation", () => {
 });
 
 describe("useGalleryBrowse end-to-end order (Step 5)", () => {
-  const shapes = {
+  const scopes = {
     "comic subtree": listingRequest({ comicMode: true, recursive: true }),
     "image-only recursive": listingRequest({ recursive: true, showVideos: false }),
     "non-recursive folder": listingRequest(),
@@ -291,7 +293,7 @@ describe("useGalleryBrowse end-to-end order (Step 5)", () => {
     "video-only recursive": listingRequest({ recursive: true, showImages: false }),
   } as const;
 
-  const cases = Object.entries(shapes).flatMap(([label, base]) =>
+  const cases = Object.entries(scopes).flatMap(([label, base]) =>
     [7, 48].flatMap((limit) =>
       ["0123456789abcdef0123456789abcdef", SEED_B].map((randomSeed) => ({
         label,

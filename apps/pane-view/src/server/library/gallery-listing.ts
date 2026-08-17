@@ -1,8 +1,12 @@
 import type { BrowserEntry, GallerySortMode } from "@latch-works/media-domain";
+import { GallerySortModeSchema } from "@latch-works/media-domain";
+import { z } from "zod";
+import { parseJsonWith } from "@/lib/parse-json";
 import {
+  GalleryRandomOrderKeySchema,
   type GalleryRandomSeed,
+  GalleryRandomSeedSchema,
   type GallerySubjectKind,
-  isGalleryRandomOrderKey,
 } from "./gallery-order";
 import type { LibraryMediaItem } from "./types";
 
@@ -49,27 +53,31 @@ export interface GalleryListingCursorRequest {
   subjectKind: GallerySubjectKind;
 }
 
-export type GalleryListingCursorPayload =
-  | {
-      subjectKind: "media";
-      sortMode: GallerySortMode;
-      randomSeed: GalleryRandomSeed;
-      /** Present in random mode: the last row's shared random-order key. */
-      randomKey?: string;
-      filename: string;
-      id: string;
-      logicalPath: string;
-      mtimeMs: number;
-    }
-  | {
-      subjectKind: "comic";
-      sortMode: GallerySortMode;
-      randomSeed: GalleryRandomSeed;
-      randomKey?: string;
-      folderPath: string;
-      /** The comic's newest or oldest page mtime, whichever the sort mode orders by. */
-      mtimeMs: number;
-    };
+const cursorBaseSchema = z.object({
+  sortMode: GallerySortModeSchema,
+  randomSeed: GalleryRandomSeedSchema,
+  /** Present in random mode: the last row's shared random-order key. */
+  randomKey: GalleryRandomOrderKeySchema.optional(),
+  mtimeMs: z.number(),
+});
+
+/** Cursor payload schema; unknown keys are dropped so stale cursors stay tolerant. */
+export const GalleryListingCursorPayloadSchema = z.discriminatedUnion("subjectKind", [
+  cursorBaseSchema.extend({
+    subjectKind: z.literal("media"),
+    filename: z.string(),
+    id: z.string(),
+    logicalPath: z.string(),
+  }),
+  cursorBaseSchema.extend({
+    subjectKind: z.literal("comic"),
+    folderPath: z.string(),
+    /** The comic's newest or oldest page mtime, whichever the sort mode orders by. */
+    mtimeMs: z.number(),
+  }),
+]);
+
+export type GalleryListingCursorPayload = z.infer<typeof GalleryListingCursorPayloadSchema>;
 
 /** The random-mode rank a decoded cursor carries; decode guarantees it is present. */
 export function cursorRandomKey(cursor: GalleryListingCursorPayload): string {
@@ -97,23 +105,18 @@ export function decodeGalleryListingCursor(
     return null;
   }
 
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
-  } catch {
+  const parsed = parseJsonWith(
+    Buffer.from(encoded, "base64url").toString("utf8"),
+    GalleryListingCursorPayloadSchema,
+  );
+  if (!parsed) {
     return null;
   }
 
-  if (typeof parsed !== "object" || parsed === null) {
-    return null;
-  }
-
-  const record = parsed as Record<string, unknown>;
   if (
-    record.subjectKind !== request.subjectKind ||
-    record.sortMode !== request.sortMode ||
-    record.randomSeed !== request.randomSeed ||
-    typeof record.mtimeMs !== "number"
+    parsed.subjectKind !== request.subjectKind ||
+    parsed.sortMode !== request.sortMode ||
+    parsed.randomSeed !== request.randomSeed
   ) {
     return null;
   }
@@ -121,44 +124,10 @@ export function decodeGalleryListingCursor(
   // continuation and must not be treated as one (a missing key would restart
   // at page 1 while still hiding the first page's folder cards).
   if (
-    request.sortMode === "random"
-      ? !isGalleryRandomOrderKey(record.randomKey)
-      : record.randomKey !== undefined
+    request.sortMode === "random" ? parsed.randomKey === undefined : parsed.randomKey !== undefined
   ) {
     return null;
   }
 
-  if (record.subjectKind === "media") {
-    if (
-      typeof record.filename !== "string" ||
-      typeof record.id !== "string" ||
-      typeof record.logicalPath !== "string"
-    ) {
-      return null;
-    }
-
-    return {
-      filename: record.filename,
-      id: record.id,
-      logicalPath: record.logicalPath,
-      mtimeMs: record.mtimeMs,
-      randomKey: record.randomKey as string | undefined,
-      randomSeed: request.randomSeed,
-      sortMode: request.sortMode,
-      subjectKind: "media",
-    };
-  }
-
-  if (typeof record.folderPath !== "string") {
-    return null;
-  }
-
-  return {
-    folderPath: record.folderPath,
-    mtimeMs: record.mtimeMs,
-    randomKey: record.randomKey as string | undefined,
-    randomSeed: request.randomSeed,
-    sortMode: request.sortMode,
-    subjectKind: "comic",
-  };
+  return parsed;
 }

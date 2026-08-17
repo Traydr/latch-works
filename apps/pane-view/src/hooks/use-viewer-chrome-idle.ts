@@ -7,12 +7,14 @@ interface UseViewerChromeIdleOptions {
   pinned?: boolean;
 }
 
-export function useViewerChromeIdle(options: UseViewerChromeIdleOptions): {
+export interface ViewerChromeIdle {
   chromeVisible: boolean;
   revealChrome: () => void;
   toggleChrome: () => void;
   chromeVisibilityClass: string;
-} {
+}
+
+export function useViewerChromeIdle(options: UseViewerChromeIdleOptions): ViewerChromeIdle {
   const { isMobile, pinned = false } = options;
   const [chromeVisible, setChromeVisible] = useState(true);
   const idleTimerRef = useRef<number | null>(null);

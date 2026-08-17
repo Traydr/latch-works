@@ -24,6 +24,7 @@ export function orphanedMediaObjectCondition(): SQL {
       and(eq(libraryEntries.mediaObjectId, mediaObjects.id), isNull(libraryEntries.deletedAt)),
     );
 
+  // SAFETY: and() is only undefined when called with no conditions; two are given.
   return and(exists(deletedReference), notExists(activeReference)) as SQL;
 }
 
@@ -34,5 +35,6 @@ export function orphanedShutterSourceCondition(): SQL {
     .from(shutterSourceCleanup)
     .where(eq(shutterSourceCleanup.sha256, mediaObjects.sha256));
 
+  // SAFETY: and() is only undefined when called with no conditions; two are given.
   return and(orphanedMediaObjectCondition(), notExists(alreadyQueued)) as SQL;
 }

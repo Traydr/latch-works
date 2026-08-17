@@ -17,7 +17,15 @@ vi.mock("@/features/media/media-delivery-service", () => ({
   resolveMediaDeliveryUrl: mocks.resolveMediaDeliveryUrl,
 }));
 
-function renderHookPair(cache: ResolvedMediaUrlCache): { unmount: () => void } {
+interface HookHarness {
+  unmount: () => void;
+}
+
+interface SingleHookHarness extends HookHarness {
+  getState: () => ReturnType<typeof useResolvedMediaUrl> | undefined;
+}
+
+function renderHookPair(cache: ResolvedMediaUrlCache): HookHarness {
   let root: Root | undefined;
   const container = document.createElement("div");
 
@@ -51,10 +59,7 @@ function renderHookPair(cache: ResolvedMediaUrlCache): { unmount: () => void } {
   };
 }
 
-function renderSingleHook(cache: ResolvedMediaUrlCache): {
-  getState: () => ReturnType<typeof useResolvedMediaUrl> | undefined;
-  unmount: () => void;
-} {
+function renderSingleHook(cache: ResolvedMediaUrlCache): SingleHookHarness {
   let root: Root | undefined;
   let state: ReturnType<typeof useResolvedMediaUrl> | undefined;
   const container = document.createElement("div");

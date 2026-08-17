@@ -2,10 +2,11 @@
 
 import { act, createElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 import type { GalleryBrowseSearch } from "./browse-search";
 import { createMemoryBrowseStorage, type MemoryBrowseStorage } from "./gallery-browse-storage";
 import {
+  type BrowseNavigate,
   browseSnapshotRequestFromSearch,
   type GalleryBrowseState,
   useGalleryBrowseState,
@@ -22,8 +23,15 @@ const NEXT_SEED = "fedcba9876543210fedcba9876543210";
 const settings = { showImages: true, showVideos: true };
 
 describe("useGalleryBrowseState", () => {
+  /** The search of the nth navigate call (negative counts from the end); the calls are asserted to exist first. */
+  function emittedSearch(call: number): GalleryBrowseSearch {
+    const options = navigate.mock.calls.at(call)?.[0];
+    if (!options) throw new Error(`navigate call ${call} was not made`);
+    return options.search;
+  }
+
   let root: Root | undefined;
-  let navigate: ReturnType<typeof vi.fn>;
+  let navigate: Mock<BrowseNavigate>;
   let latest: GalleryBrowseState | null;
 
   function mount(initialSearch: GalleryBrowseSearch, storage: MemoryBrowseStorage) {
@@ -32,7 +40,7 @@ describe("useGalleryBrowseState", () => {
     function Host(): ReactNode {
       latest = useGalleryBrowseState({
         createSeed: () => NEXT_SEED,
-        navigate: navigate as never,
+        navigate,
         search,
         settings,
         storage,
@@ -53,7 +61,7 @@ describe("useGalleryBrowseState", () => {
 
   beforeEach(() => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-    navigate = vi.fn();
+    navigate = vi.fn<BrowseNavigate>();
     latest = null;
   });
 
@@ -126,7 +134,7 @@ describe("useGalleryBrowseState", () => {
     navigate.mockClear();
 
     act(() => latest?.setRecursive(false));
-    const emitted = (navigate.mock.calls[0]?.[0] as { search: GalleryBrowseSearch }).search;
+    const emitted = emittedSearch(0);
     expect(emitted).toEqual({
       comic: undefined,
       media: undefined,
@@ -141,13 +149,13 @@ describe("useGalleryBrowseState", () => {
     expect(storage.state).toMatchObject({ comicMode: false, recursive: false });
 
     act(() => latest?.setComicMode(true));
-    const withComic = (navigate.mock.calls[1]?.[0] as { search: GalleryBrowseSearch }).search;
+    const withComic = emittedSearch(1);
     expect(withComic).toMatchObject({ comic: true, recursive: true });
     host.rerender(withComic);
     expect(latest).toMatchObject({ comicMode: true, recursive: true });
 
     act(() => latest?.setComicMode(false));
-    const off = (navigate.mock.calls[2]?.[0] as { search: GalleryBrowseSearch }).search;
+    const off = emittedSearch(2);
     expect(off).toMatchObject({ comic: undefined, recursive: undefined });
     host.rerender(off);
     expect(latest).toMatchObject({ comicMode: false, recursive: false });
@@ -170,7 +178,7 @@ describe("useGalleryBrowseState", () => {
     // Turning it off inside the folder updates the default too.
     host.rerender({ path: "photos", recursive: true });
     act(() => latest?.setRecursive(false));
-    host.rerender((navigate.mock.calls.at(-1)?.[0] as { search: GalleryBrowseSearch }).search);
+    host.rerender(emittedSearch(-1));
     expect(storage.state).toMatchObject({ comicMode: false, recursive: false });
     act(() => latest?.navigateToPath(""));
     host.rerender({});

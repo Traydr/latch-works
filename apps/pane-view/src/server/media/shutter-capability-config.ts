@@ -1,11 +1,60 @@
-export type CapabilityKeyRegistry = Record<string, unknown>;
+import { z } from "zod";
+import { parseJsonWith } from "@/lib/parse-json";
+
+/** Encoded key material: 64 hex characters or base64url; decoded by decodeCapabilityKeyMaterial. */
+const KeyMaterialSchema = z.string();
+const SpaceKeyMapSchema = z.record(z.string(), KeyMaterialSchema);
+
+/** One top-level registry entry: key material (flat layout) or a space's kid → material map. */
+const RegistryEntrySchema = z.union([
+  KeyMaterialSchema.transform((material) => ({ kind: "flat" as const, material })),
+  SpaceKeyMapSchema.transform((keys) => ({ kind: "space" as const, keys })),
+]);
+
+/** The registry after parsing: flat kids and per-space kids kept apart. */
+export interface CapabilityKeyRegistry {
+  flat: Record<string, string>;
+  spaces: Record<string, Record<string, string>>;
+}
+
+/**
+ * SHUTTER_CAPABILITY_KEYS: either flat (`{ kid: material }`) or nested per
+ * space (`{ spaceId: { kid: material } }`); the two layouts may be mixed.
+ */
+export const CapabilityKeyRegistrySchema = z
+  .record(z.string(), RegistryEntrySchema)
+  .transform((entries): CapabilityKeyRegistry => {
+    const registry: CapabilityKeyRegistry = { flat: {}, spaces: {} };
+    for (const [key, entry] of Object.entries(entries)) {
+      if (entry.kind === "flat") {
+        registry.flat[key] = entry.material;
+      } else {
+        registry.spaces[key] = entry.keys;
+      }
+    }
+    return registry;
+  });
+
+/** The registry as it arrives from the environment: JSON, or JSON encoded once more as a string. */
+const CapabilityKeyRegistryEnvSchema = z.union([
+  CapabilityKeyRegistrySchema,
+  z.string().transform((text, context) => {
+    const registry = parseJsonWith(text, CapabilityKeyRegistrySchema);
+    if (registry === null) {
+      context.issues.push({ code: "custom", input: text, message: "not a key registry" });
+      return z.NEVER;
+    }
+    return registry;
+  }),
+]);
 
 export type CapabilityKeyConfigStatus =
   | { ok: true; kid: string; spaceId: string }
   | { ok: false; kid: string; spaceId: string; error: string };
 
-function isKeyMap(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+export interface CapabilityKeyIds {
+  flatKids: string[];
+  nestedKids: string[];
 }
 
 export function unwrapEnvJson(raw: string): string {
@@ -23,19 +72,13 @@ export function unwrapEnvScalar(raw: string): string {
   return unwrapEnvJson(raw).trim();
 }
 
-function assertCapabilityKeyRegistry(value: unknown): CapabilityKeyRegistry {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+/** Throws when the value is not JSON or does not fit the registry layouts. */
+export function parseCapabilityKeyRegistry(raw: string): CapabilityKeyRegistry {
+  const registry = parseJsonWith(unwrapEnvJson(raw), CapabilityKeyRegistryEnvSchema);
+  if (registry === null) {
     throw new SyntaxError("Invalid capability key registry");
   }
-  return value as CapabilityKeyRegistry;
-}
-
-export function parseCapabilityKeyRegistry(raw: string): CapabilityKeyRegistry {
-  let parsed: unknown = JSON.parse(unwrapEnvJson(raw));
-  if (typeof parsed === "string") {
-    parsed = JSON.parse(parsed);
-  }
-  return assertCapabilityKeyRegistry(parsed);
+  return registry;
 }
 
 export function decodeCapabilityKeyMaterial(encoded: string): Uint8Array<ArrayBuffer> {
@@ -49,23 +92,10 @@ export function decodeCapabilityKeyMaterial(encoded: string): Uint8Array<ArrayBu
 export function listCapabilityKeyIds(
   registry: CapabilityKeyRegistry,
   spaceId: string,
-): { flatKids: string[]; nestedKids: string[] } {
-  const nestedKids: string[] = [];
-  const flatKids: string[] = [];
-
-  for (const [key, value] of Object.entries(registry)) {
-    if (typeof value === "string") {
-      flatKids.push(key);
-      continue;
-    }
-    if (key === spaceId && isKeyMap(value)) {
-      nestedKids.push(...Object.keys(value).filter((kid) => typeof value[kid] === "string"));
-    }
-  }
-
+): CapabilityKeyIds {
   return {
-    flatKids: flatKids.sort(),
-    nestedKids: nestedKids.sort(),
+    flatKids: Object.keys(registry.flat).sort(),
+    nestedKids: Object.keys(registry.spaces[spaceId] ?? {}).sort(),
   };
 }
 
@@ -74,16 +104,7 @@ export function readCapabilityKeyMaterial(
   spaceId: string,
   kid: string,
 ): string | undefined {
-  const spaceKeys = registry[spaceId];
-  if (isKeyMap(spaceKeys)) {
-    const encoded = spaceKeys[kid];
-    if (typeof encoded === "string") {
-      return encoded;
-    }
-  }
-
-  const flat = registry[kid];
-  return typeof flat === "string" ? flat : undefined;
+  return registry.spaces[spaceId]?.[kid] ?? registry.flat[kid];
 }
 
 function formatRegistryHint(registry: CapabilityKeyRegistry, spaceId: string): string {
@@ -130,7 +151,7 @@ export function validateCapabilityKeyConfig({
       ok: false,
       kid,
       spaceId: normalizedSpaceId,
-      error: "SHUTTER_CAPABILITY_KEYS is not valid JSON",
+      error: "SHUTTER_CAPABILITY_KEYS is not a valid JSON key registry",
     };
   }
 

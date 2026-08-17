@@ -43,10 +43,10 @@ vi.mock("@latch-works/media-storage", async (importOriginal) => {
   };
 });
 
-import { Route as CompleteObjectRoute } from "../../routes/api.sync.complete-object";
-import { Route as SyncRunsRoute } from "../../routes/api.sync.runs";
-import { Route as SyncRunCompleteRoute } from "../../routes/api.sync.runs.$syncRunId.complete";
-import { Route as UploadUrlRoute } from "../../routes/api.sync.upload-url";
+import { postCompleteObject } from "../../routes/api.sync.complete-object";
+import { postSyncRuns } from "../../routes/api.sync.runs";
+import { postSyncRunComplete } from "../../routes/api.sync.runs.$syncRunId.complete";
+import { postUploadUrl } from "../../routes/api.sync.upload-url";
 
 const {
   completeSyncedObject,
@@ -71,36 +71,6 @@ const validUploadPayload = {
 
 function authHeaders(): HeadersInit {
   return { Authorization: "Bearer test-token" };
-}
-
-type SyncRunsPost = (ctx: { request: Request }) => Promise<Response>;
-type SyncRunCompletePost = (ctx: {
-  params: { syncRunId: string };
-  request: Request;
-}) => Promise<Response>;
-
-function getPostHandler<T>(handlers: unknown | undefined): T {
-  if (!handlers) {
-    throw new Error("Expected route server handlers");
-  }
-
-  return (handlers as { POST: T }).POST;
-}
-
-function postSyncRuns(): SyncRunsPost {
-  return getPostHandler(SyncRunsRoute.options.server?.handlers);
-}
-
-function postSyncRunComplete(): SyncRunCompletePost {
-  return getPostHandler(SyncRunCompleteRoute.options.server?.handlers);
-}
-
-function postCompleteObject(): SyncRunsPost {
-  return getPostHandler(CompleteObjectRoute.options.server?.handlers);
-}
-
-function postUploadUrl(): SyncRunsPost {
-  return getPostHandler(UploadUrlRoute.options.server?.handlers);
 }
 
 describe("sync route handlers", () => {
@@ -132,7 +102,7 @@ describe("sync route handlers", () => {
         method: "POST",
       });
 
-      const response = await postSyncRuns()({ request });
+      const response = await postSyncRuns({ request });
       const body = await response.json();
 
       expect(response.status).toBe(200);
@@ -155,7 +125,7 @@ describe("sync route handlers", () => {
         method: "POST",
       });
 
-      const response = await postSyncRuns()({ request });
+      const response = await postSyncRuns({ request });
 
       expect(response).toBe(unauthorized);
       expect(startSyncRun).not.toHaveBeenCalled();
@@ -170,7 +140,7 @@ describe("sync route handlers", () => {
         method: "POST",
       });
 
-      const response = await postSyncRunComplete()({
+      const response = await postSyncRunComplete({
         params: { syncRunId: "run-1" },
         request,
       });
@@ -191,7 +161,7 @@ describe("sync route handlers", () => {
         method: "POST",
       });
 
-      const response = await postSyncRunComplete()({
+      const response = await postSyncRunComplete({
         params: { syncRunId: "run-1" },
         request,
       });
@@ -213,7 +183,7 @@ describe("sync route handlers", () => {
         method: "POST",
       });
 
-      const response = await postCompleteObject()({ request });
+      const response = await postCompleteObject({ request });
       const body = await response.json();
 
       expect(response.status).toBe(200);
@@ -232,7 +202,7 @@ describe("sync route handlers", () => {
         method: "POST",
       });
 
-      const response = await postCompleteObject()({ request });
+      const response = await postCompleteObject({ request });
       const body = await response.json();
 
       expect(response.status).toBe(200);
@@ -254,7 +224,7 @@ describe("sync route handlers", () => {
         method: "POST",
       });
 
-      await expect(postCompleteObject()({ request })).rejects.toThrow(
+      await expect(postCompleteObject({ request })).rejects.toThrow(
         "Sync run is not accepting writes.",
       );
     });
@@ -269,7 +239,7 @@ describe("sync route handlers", () => {
         method: "POST",
       });
 
-      const response = await postCompleteObject()({ request });
+      const response = await postCompleteObject({ request });
 
       expect(response).toBe(unauthorized);
       expect(completeSyncedObject).not.toHaveBeenCalled();
@@ -300,7 +270,7 @@ describe("sync route handlers", () => {
         method: "POST",
       });
 
-      const response = await postUploadUrl()({ request });
+      const response = await postUploadUrl({ request });
       const body = await response.json();
 
       expect(response.status).toBe(200);
@@ -333,7 +303,7 @@ describe("sync route handlers", () => {
         method: "POST",
       });
 
-      const response = await postUploadUrl()({ request });
+      const response = await postUploadUrl({ request });
       const body = await response.json();
 
       expect(response.status).toBe(400);
@@ -353,7 +323,7 @@ describe("sync route handlers", () => {
         method: "POST",
       });
 
-      const response = await postUploadUrl()({ request });
+      const response = await postUploadUrl({ request });
       const body = await response.json();
 
       expect(response.status).toBe(400);

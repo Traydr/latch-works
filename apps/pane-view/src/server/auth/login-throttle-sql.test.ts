@@ -1,5 +1,6 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 
 vi.mock("../db", () => ({ db: {} }));
 
@@ -13,7 +14,11 @@ import { buildLoginThrottleUpsert } from "./login-throttle";
  * comparison or reading `excluded.*` instead of the existing row would leave
  * every other test green.
  */
-const executor = drizzle({ client: { query: async () => ({ rows: [] }) } as never });
+// A query builder with no connection: this suite reads rendered SQL only.
+const executor = drizzle.mock();
+
+/** The upsert binds its times as Dates or ISO strings; either way, compare instants. */
+const boundTime = z.coerce.date();
 
 const currentTime = new Date("2026-07-27T12:00:00.000Z");
 const nextExpiry = new Date("2026-07-27T12:05:00.000Z");
@@ -60,9 +65,9 @@ describe("login throttle upsert SQL", () => {
 
     // $5/$6/$8 are the three `case when` comparisons; all must be the current
     // time, never the new expiry, or an expired row would fail to reset.
-    expect(new Date(params[4] as string).toISOString()).toBe(currentTime.toISOString());
-    expect(new Date(params[5] as string).toISOString()).toBe(currentTime.toISOString());
-    expect(new Date(params[7] as string).toISOString()).toBe(currentTime.toISOString());
-    expect(new Date(params[8] as string).toISOString()).toBe(nextExpiry.toISOString());
+    expect(boundTime.parse(params[4])).toEqual(currentTime);
+    expect(boundTime.parse(params[5])).toEqual(currentTime);
+    expect(boundTime.parse(params[7])).toEqual(currentTime);
+    expect(boundTime.parse(params[8])).toEqual(nextExpiry);
   });
 });

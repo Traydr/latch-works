@@ -14,6 +14,8 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import type { JsonObject } from "@/lib/json";
+import type { MaintenanceJobProgress } from "../management/maintenance-progress";
 
 export const mediaTypeEnum = pgEnum("media_type", ["image", "gif", "video", "pdf", "unknown"]);
 export const collectionTypeEnum = pgEnum("collection_type", [
@@ -165,7 +167,7 @@ export const sources = pgTable(
     type: sourceTypeEnum("type").notNull(),
     name: text("name").notNull(),
     basePath: text("base_path"),
-    config: jsonb("config").$type<Record<string, unknown>>().notNull().default({}),
+    config: jsonb("config").$type<JsonObject>().notNull().default({}),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -205,7 +207,7 @@ export const mediaObjects = pgTable(
     storageProvider: text("storage_provider").notNull().default("s3"),
     bucket: text("bucket"),
     etag: text("etag"),
-    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    metadata: jsonb("metadata").$type<JsonObject>().notNull().default({}),
     createdBySyncRunId: uuid("created_by_sync_run_id").references(() => syncRuns.id),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -267,7 +269,7 @@ export const libraryEntries = pgTable(
     sourceId: text("source_id"),
     sourceRefId: uuid("source_ref_id").references(() => sources.id),
     lastSyncRunId: uuid("last_sync_run_id").references(() => syncRuns.id),
-    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    metadata: jsonb("metadata").$type<JsonObject>().notNull().default({}),
     hidden: boolean("hidden").notNull().default(false),
     firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).defaultNow().notNull(),
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).defaultNow().notNull(),
@@ -298,7 +300,7 @@ export const collections = pgTable(
     coverEntryId: uuid("cover_entry_id").references(() => libraryEntries.id, {
       onDelete: "set null",
     }),
-    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    metadata: jsonb("metadata").$type<JsonObject>().notNull().default({}),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
@@ -386,27 +388,12 @@ export const favorites = pgTable(
   }),
 );
 
-export interface LibraryWipeJobProgress {
-  orphanPrefix?: string;
-  orphanContinuationToken?: string;
-  phase: "s3_originals" | "s3_orphan_sweep" | "db_hard_delete" | "completed";
-  processedCount: number;
-}
-
-export interface SoftDeletedPurgeJobProgress {
-  phase: "orphaned_media" | "db_hard_delete" | "completed";
-  processedCount: number;
-}
-
-export interface ShutterSourcePurgeJobProgress {
-  phase: "queue_sources" | "shutter_sources" | "completed";
-  processedCount: number;
-}
-
-export type MaintenanceJobProgress =
-  | LibraryWipeJobProgress
-  | SoftDeletedPurgeJobProgress
-  | ShutterSourcePurgeJobProgress;
+export type {
+  LibraryWipeJobProgress,
+  MaintenanceJobProgress,
+  ShutterSourcePurgeJobProgress,
+  SoftDeletedPurgeJobProgress,
+} from "../management/maintenance-progress";
 
 export const maintenanceJobs = pgTable(
   "maintenance_jobs",
@@ -418,14 +405,11 @@ export const maintenanceJobs = pgTable(
     // is only valid for hard wipes; every scheduler supplies explicit progress
     // and the parser (maintenance-progress.ts) ignores unknown keys, so
     // changing it is a migration for a follow-up rather than this refactor.
+    // Written as SQL so the TypeScript progress type stays honest.
     progress: jsonb("progress")
       .$type<MaintenanceJobProgress>()
       .notNull()
-      .default({
-        errorCount: 0,
-        phase: "s3_originals",
-        processedCount: 0,
-      } as LibraryWipeJobProgress),
+      .default(sql`'{"errorCount":0,"phase":"s3_originals","processedCount":0}'::jsonb`),
     error: text("error"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     startedAt: timestamp("started_at", { withTimezone: true }),

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { GALLERY_HOTKEYS } from "./hotkeys";
-import type { AppSettings, AppSettingsPatch } from "./types";
+import { type AppSettings, type AppSettingsPatch, ThemeModeSchema } from "./types";
 
 interface SettingsDrawerProps {
   onClose: () => void;
@@ -31,14 +31,14 @@ export function SettingsDrawer({
     return null;
   }
 
-  const diagnostics = {
-    generatedAt: new Date().toISOString(),
-    location: typeof window !== "undefined" ? window.location.href : "",
-    settings,
-    userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "",
-  };
-
+  // Built on click, so the browser globals are only touched in an event handler.
   const copyDiagnostics = async () => {
+    const diagnostics = {
+      generatedAt: new Date().toISOString(),
+      location: window.location.href,
+      settings,
+      userAgent: navigator.userAgent,
+    };
     await navigator.clipboard.writeText(JSON.stringify(diagnostics, null, 2));
   };
 
@@ -80,9 +80,7 @@ export function SettingsDrawer({
               <select
                 className="rounded-lg border border-border bg-background px-3 py-2"
                 value={settings.theme}
-                onChange={(event) =>
-                  onUpdate({ theme: event.target.value as AppSettings["theme"] })
-                }
+                onChange={(event) => onUpdate({ theme: ThemeModeSchema.parse(event.target.value) })}
               >
                 {THEME_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>

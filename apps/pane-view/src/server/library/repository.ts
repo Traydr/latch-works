@@ -426,14 +426,16 @@ function mapFolderRow(folder: FolderRow, parentPathsWithChildren: ReadonlySet<st
 }
 
 /** Slice an overfetched (limit + 1) row set into a page plus offset metadata. */
+export interface MediaPageSlice<T> {
+  items: T[];
+  mediaPage: MediaPage;
+}
+
 export function buildMediaPage<T>(
   rows: readonly T[],
   limit: number,
   offset: number,
-): {
-  items: T[];
-  mediaPage: MediaPage;
-} {
+): MediaPageSlice<T> {
   const hasMore = rows.length > limit;
   return {
     items: hasMore ? rows.slice(0, limit) : [...rows],

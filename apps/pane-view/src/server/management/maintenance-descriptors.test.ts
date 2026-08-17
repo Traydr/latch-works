@@ -7,12 +7,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
  * scheduling prologue around them is covered in maintenance-scheduler.test.ts.
  */
 
-const harness = vi.hoisted(() => ({
-  handle: null as null | {
-    client: { exec(sql: string): Promise<unknown> };
-    close(): Promise<void>;
-  },
-}));
+const harness = vi.hoisted((): TestDatabaseHarness => ({ handle: null }));
 
 vi.mock("../db", async () => {
   const { createTestDatabase } = await import("../library/test-db");
@@ -34,6 +29,7 @@ import {
   mediaObjects,
   shutterSourceCleanup,
 } from "../db/schema";
+import type { TestDatabaseHarness } from "../library/test-db";
 import { processMaintenanceJob } from "./cleanup-worker";
 import {
   LIBRARY_WIPE_CONFIRMATION,

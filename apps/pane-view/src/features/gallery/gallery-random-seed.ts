@@ -3,7 +3,7 @@ import type { GalleryRandomSeed } from "../../server/library/gallery-random-seed
 export {
   GALLERY_RANDOM_SEED_PATTERN,
   type GalleryRandomSeed,
-  isGalleryRandomSeed,
+  GalleryRandomSeedSchema,
 } from "../../server/library/gallery-random-seed";
 
 export type RandomBytesSource = (bytes: Uint8Array<ArrayBuffer>) => void;

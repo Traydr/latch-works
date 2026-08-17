@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, createElement, type ReactNode } from "react";
+import { act, createElement, type MutableRefObject, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useLibraryViewerState } from "./use-library-viewer-state";
@@ -15,12 +15,14 @@ import { getViewerState, saveViewerState } from "./viewer-state-service";
 
 type HookApi = ReturnType<typeof useLibraryViewerState>;
 
-function renderHook(subjectId: string | undefined): {
+interface HookHarness {
   getApi: () => HookApi;
   rerender: (nextSubjectId: string | undefined) => void;
   unmount: () => void;
-} {
-  const latestApi = { current: null as HookApi | null };
+}
+
+function renderHook(subjectId: string | undefined): HookHarness {
+  const latestApi: MutableRefObject<HookApi | null> = { current: null };
   let currentSubjectId = subjectId;
   let root: Root | undefined;
   const container = document.createElement("div");

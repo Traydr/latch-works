@@ -3,7 +3,7 @@ import {
   createMemoryBrowseStorage,
   PERSISTED_BROWSE_STATE_DEFAULTS,
   type PersistedBrowseState,
-  parsePersistedBrowseState,
+  PersistedBrowseStateSchema,
   resolveRootKey,
 } from "./gallery-browse-storage";
 import {
@@ -388,7 +388,7 @@ describe("resolveInitialRedirect", () => {
 describe("storage", () => {
   it("parses tolerantly, drops lastSelectedId, and rejects a non-hex seed", () => {
     expect(
-      parsePersistedBrowseState({
+      PersistedBrowseStateSchema.parse({
         comicMode: true,
         detailPanelOpen: "yes",
         lastPath: "photos",
@@ -405,8 +405,8 @@ describe("storage", () => {
       recursive: true,
       sortMode: "name-asc",
     });
-    expect(parsePersistedBrowseState({ randomSeed: SEED }).randomSeed).toBe(SEED);
-    expect(parsePersistedBrowseState("junk")).toEqual(PERSISTED_BROWSE_STATE_DEFAULTS);
+    expect(PersistedBrowseStateSchema.parse({ randomSeed: SEED }).randomSeed).toBe(SEED);
+    expect(PersistedBrowseStateSchema.parse("junk")).toEqual(PERSISTED_BROWSE_STATE_DEFAULTS);
   });
 
   it("keys root preferences by the first path segment and mirrors through the adapter", () => {

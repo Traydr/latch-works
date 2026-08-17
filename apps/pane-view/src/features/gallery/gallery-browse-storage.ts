@@ -1,10 +1,11 @@
-import type { GallerySortMode } from "@latch-works/media-domain";
 import { GallerySortModeSchema } from "@latch-works/media-domain";
+import { z } from "zod";
+import { GalleryRandomSeedSchema } from "@/features/gallery/gallery-random-seed";
 import {
-  type GalleryRandomSeed,
-  isGalleryRandomSeed,
-} from "@/features/gallery/gallery-random-seed";
-import type { RootGalleryPreferences } from "@/features/settings/types";
+  type RootGalleryPreferences,
+  RootGalleryPreferencesSchema,
+} from "@/features/settings/types";
+import { parseJsonWith } from "@/lib/parse-json";
 
 /**
  * Local persistence for the gallery browse state (Plan 048). Two localStorage
@@ -18,24 +19,36 @@ import type { RootGalleryPreferences } from "@/features/settings/types";
 const STATE_KEY = "pane-view.state";
 const ROOT_PREFS_KEY = "pane-view.root-preferences";
 
-export interface PersistedBrowseState {
-  comicMode: boolean;
-  detailPanelOpen: boolean;
-  lastPath: string;
-  /** Null until a seed has been created; the hook fills it on first load. */
-  randomSeed: GalleryRandomSeed | null;
-  recursive: boolean;
-  sortMode: GallerySortMode;
-}
+/**
+ * Tolerant parse of the stored snapshot: each malformed or missing field falls
+ * back to its default independently, unknown keys are dropped, and a non-object
+ * value yields the defaults outright.
+ */
+export const PersistedBrowseStateSchema = z
+  .object({
+    comicMode: z.boolean().catch(false),
+    detailPanelOpen: z.boolean().catch(true),
+    lastPath: z.string().catch(""),
+    /** Null until a seed has been created; the hook fills it on first load. */
+    randomSeed: GalleryRandomSeedSchema.nullable().catch(null),
+    recursive: z.boolean().catch(false),
+    sortMode: GallerySortModeSchema.catch("name-asc"),
+  })
+  .catch({
+    comicMode: false,
+    detailPanelOpen: true,
+    lastPath: "",
+    randomSeed: null,
+    recursive: false,
+    sortMode: "name-asc",
+  });
 
-export const PERSISTED_BROWSE_STATE_DEFAULTS: PersistedBrowseState = {
-  comicMode: false,
-  detailPanelOpen: true,
-  lastPath: "",
-  randomSeed: null,
-  recursive: false,
-  sortMode: "name-asc",
-};
+export type PersistedBrowseState = z.infer<typeof PersistedBrowseStateSchema>;
+
+export const PERSISTED_BROWSE_STATE_DEFAULTS: PersistedBrowseState =
+  PersistedBrowseStateSchema.parse({});
+
+const RootPreferencesRecordSchema = z.record(z.string(), RootGalleryPreferencesSchema).catch({});
 
 export interface GalleryBrowseStorage {
   /** Null when nothing is stored or storage is unavailable (server render, quota, parse error). */
@@ -45,50 +58,24 @@ export interface GalleryBrowseStorage {
   writeRootPreferences(rootKey: string, preferences: RootGalleryPreferences): void;
 }
 
-/** Tolerant parse: unknown or malformed fields fall back to the defaults, extra keys are ignored. */
-export function parsePersistedBrowseState(raw: unknown): PersistedBrowseState {
-  if (typeof raw !== "object" || raw === null) {
-    return PERSISTED_BROWSE_STATE_DEFAULTS;
-  }
-  const record = raw as Record<string, unknown>;
-  const sortMode = GallerySortModeSchema.safeParse(record.sortMode);
-  return {
-    comicMode:
-      typeof record.comicMode === "boolean"
-        ? record.comicMode
-        : PERSISTED_BROWSE_STATE_DEFAULTS.comicMode,
-    detailPanelOpen:
-      typeof record.detailPanelOpen === "boolean"
-        ? record.detailPanelOpen
-        : PERSISTED_BROWSE_STATE_DEFAULTS.detailPanelOpen,
-    lastPath:
-      typeof record.lastPath === "string"
-        ? record.lastPath
-        : PERSISTED_BROWSE_STATE_DEFAULTS.lastPath,
-    randomSeed: isGalleryRandomSeed(record.randomSeed) ? record.randomSeed : null,
-    recursive:
-      typeof record.recursive === "boolean"
-        ? record.recursive
-        : PERSISTED_BROWSE_STATE_DEFAULTS.recursive,
-    sortMode: sortMode.success ? sortMode.data : PERSISTED_BROWSE_STATE_DEFAULTS.sortMode,
-  };
-}
-
 /** The first path segment; per-root preferences are keyed by it. */
 export function resolveRootKey(path: string): string {
   return path ? (path.split("/")[0] ?? "") : "";
 }
 
-function readJson(key: string): unknown {
+/** The stored text for `key`, or null when storage is unavailable or empty. */
+function readStoredText(key: string): string | null {
   try {
-    const raw = globalThis.localStorage?.getItem(key);
-    return raw ? JSON.parse(raw) : null;
+    return globalThis.localStorage?.getItem(key) ?? null;
   } catch {
     return null;
   }
 }
 
-function writeJson(key: string, value: unknown): void {
+function writeStoredJson(
+  key: string,
+  value: PersistedBrowseState | Record<string, RootGalleryPreferences>,
+): void {
   try {
     globalThis.localStorage?.setItem(key, JSON.stringify(value));
   } catch {
@@ -99,22 +86,24 @@ function writeJson(key: string, value: unknown): void {
 export function createLocalStorageBrowseStorage(): GalleryBrowseStorage {
   return {
     read() {
-      if (typeof window === "undefined") {
+      // The adapter is constructed at module load, which may be a server
+      // render; only a browser window has browse state to hydrate.
+      if (!("window" in globalThis)) {
         return null;
       }
       // Nothing stored (or unreadable) is still "hydrated": browse with defaults.
-      return parsePersistedBrowseState(readJson(STATE_KEY) ?? {});
+      const text = readStoredText(STATE_KEY);
+      return text === null
+        ? PERSISTED_BROWSE_STATE_DEFAULTS
+        : (parseJsonWith(text, PersistedBrowseStateSchema) ?? PERSISTED_BROWSE_STATE_DEFAULTS);
     },
     write(state) {
-      writeJson(STATE_KEY, state);
+      writeStoredJson(STATE_KEY, state);
     },
     writeRootPreferences(rootKey, preferences) {
-      const all = readJson(ROOT_PREFS_KEY);
-      const record =
-        typeof all === "object" && all !== null
-          ? (all as Record<string, RootGalleryPreferences>)
-          : {};
-      writeJson(ROOT_PREFS_KEY, { ...record, [rootKey]: preferences });
+      const text = readStoredText(ROOT_PREFS_KEY);
+      const record = text === null ? {} : (parseJsonWith(text, RootPreferencesRecordSchema) ?? {});
+      writeStoredJson(ROOT_PREFS_KEY, { ...record, [rootKey]: preferences });
     },
   };
 }

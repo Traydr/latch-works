@@ -18,10 +18,8 @@ type PaneViewImageProps = {
 
 function resolveThumbnailPixelSize(width?: number): number {
   if (width && width > 0) {
-    return Math.max(
-      1,
-      Math.round(width * (typeof window !== "undefined" ? window.devicePixelRatio : 1)),
-    );
+    const devicePixelRatio = "window" in globalThis ? window.devicePixelRatio : 1;
+    return Math.max(1, Math.round(width * devicePixelRatio));
   }
 
   return GALLERY_THUMBNAIL_SIZE;
@@ -30,7 +28,6 @@ function resolveThumbnailPixelSize(width?: number): number {
 export function PaneViewImage({
   alt,
   className,
-  height,
   layout: _layout = "constrained",
   mediaId,
   objectFit,

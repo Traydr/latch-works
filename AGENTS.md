@@ -34,6 +34,7 @@ Source lives in each package's `src/` directory. Tests are colocated as `*.test.
 - `pnpm test`: run all Vitest suites.
 - `pnpm typecheck`: run TypeScript checks across the workspace.
 - `pnpm lint`: run Biome checks from the repo root.
+- `pnpm lint:anti-slop`: run the Oxlint anti-slop rules (`.oxlintrc.json`, plugin vendored at `tools/oxlint/anti-slop/`). Pane View is clean apart from `no-module-mocking`; other packages still carry findings, so this is not part of `pnpm check` yet.
 - `pnpm format`: format the repo with Biome.
 
 ### App dev shortcuts (repo root)
@@ -46,6 +47,8 @@ Source lives in each package's `src/` directory. Tests are colocated as `*.test.
 ## Coding Style & Naming Conventions
 
 This repo uses TypeScript ESM, pnpm 11.1.0, and Biome. Formatting is 2-space indentation, 100-column line width, organized imports, and recommended lint rules. Prefer named exports in shared packages and route public package APIs through `src/index.ts`. Use kebab-case directories and descriptive file names such as `sync-plan.ts`.
+
+Parse external input with Zod at the boundary (request bodies, search params, localStorage, jsonb columns, env-provided JSON) and pass typed values inward — no `typeof` narrowing or `as` casts on unparsed data. Pane View keeps `parseJsonWith` (`src/lib/parse-json.ts`), `readJsonBody` (`src/server/http/json-body.ts`), and `JsonValue` (`src/lib/json.ts`) for this. Every remaining `as` needs a `// SAFETY:` comment stating the invariant.
 
 Electron apps (Frame View, Lockstep) follow main/preload/renderer separation with Zod-backed IPC contracts and `better-result` payloads — do not expose raw Node APIs in renderer code.
 

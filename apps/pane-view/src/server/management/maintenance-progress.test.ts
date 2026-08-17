@@ -1,15 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   initialProgressFor,
-  type MaintenanceJobType,
+  MaintenanceJobTypeSchema,
   parseMaintenanceProgress,
 } from "./maintenance-progress";
 
-const TYPES: MaintenanceJobType[] = [
-  "library_hard_wipe",
-  "soft_deleted_purge",
-  "shutter_source_purge",
-];
+const TYPES = MaintenanceJobTypeSchema.options;
 
 describe("parseMaintenanceProgress", () => {
   it.each(TYPES)("accepts each %s phase and the initial progress", (type) => {
@@ -17,7 +13,7 @@ describe("parseMaintenanceProgress", () => {
     expect(parseMaintenanceProgress(type, initial)).toEqual({ ok: true, progress: initial });
     expect(parseMaintenanceProgress(type, { phase: "completed", processedCount: 12 })).toEqual({
       ok: true,
-      progress: { phase: "completed", processedCount: 12 },
+      progress: { ...initial, phase: "completed", processedCount: 12 },
     });
   });
 
@@ -45,7 +41,12 @@ describe("parseMaintenanceProgress", () => {
       parseMaintenanceProgress("library_hard_wipe", { phase: "s3_derivatives", processedCount: 4 }),
     ).toEqual({
       ok: true,
-      progress: { phase: "s3_originals", processedCount: 4 },
+      progress: {
+        orphanContinuationToken: null,
+        orphanPrefix: null,
+        phase: "s3_originals",
+        processedCount: 4,
+      },
     });
     expect(
       parseMaintenanceProgress("soft_deleted_purge", {
@@ -76,7 +77,7 @@ describe("parseMaintenanceProgress", () => {
     ).toEqual({ ok: true, progress: { phase: "orphaned_media", processedCount: 3 } });
   });
 
-  it("passes the orphan sweep cursor through for a wipe and drops it for other types", () => {
+  it("passes the orphan sweep cursor through for a wipe, nulls it when malformed, drops it for other types", () => {
     expect(
       parseMaintenanceProgress("library_hard_wipe", {
         orphanContinuationToken: "token",
@@ -99,7 +100,15 @@ describe("parseMaintenanceProgress", () => {
         phase: "s3_orphan_sweep",
         processedCount: 9,
       }),
-    ).toEqual({ ok: true, progress: { phase: "s3_orphan_sweep", processedCount: 9 } });
+    ).toEqual({
+      ok: true,
+      progress: {
+        orphanContinuationToken: null,
+        orphanPrefix: null,
+        phase: "s3_orphan_sweep",
+        processedCount: 9,
+      },
+    });
     expect(
       parseMaintenanceProgress("soft_deleted_purge", {
         orphanPrefix: "originals/",

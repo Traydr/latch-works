@@ -1,4 +1,4 @@
-import { formatBytes } from "@latch-works/media-domain";
+import { formatBytes, type MediaType } from "@latch-works/media-domain";
 import { Link } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 import type { ReactNode } from "react";
@@ -21,13 +21,13 @@ import {
 import { bytesToMegabytes } from "./stats-chart-data";
 import { useArchiveStatsQuery } from "./stats-queries";
 
-const MEDIA_TYPE_COLORS: Record<string, DitherColor> = {
+const MEDIA_TYPE_COLORS = {
   gif: "pink",
   image: "blue",
   pdf: "orange",
   unknown: "grey",
   video: "purple",
-};
+} satisfies Record<MediaType, DitherColor>;
 
 const SIZE_CHART_CONFIG = {
   value: { color: "blue" as const, label: "Archive size (MB)" },
@@ -138,7 +138,7 @@ export function StatsPage() {
     mediaTypePieData.map((row) => [
       row.mediaType,
       {
-        color: MEDIA_TYPE_COLORS[row.mediaType] ?? ("grey" as DitherColor),
+        color: MEDIA_TYPE_COLORS[row.mediaType],
         label: row.mediaType,
       },
     ]),

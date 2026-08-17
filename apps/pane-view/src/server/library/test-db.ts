@@ -5,6 +5,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { pg_trgm } from "@electric-sql/pglite/contrib/pg_trgm";
 import { icuDataDir } from "@electric-sql/pglite-icu-full";
 import { drizzle, type PgliteDatabase } from "drizzle-orm/pglite";
+import { z } from "zod";
 import * as schema from "../db/schema";
 
 /**
@@ -28,16 +29,21 @@ export interface TestDatabaseHandle {
   db: TestDatabase;
 }
 
-const migrationsFolder = fileURLToPath(new URL("../../../drizzle", import.meta.url));
-
-interface MigrationJournal {
-  entries: { tag: string }[];
+/** The hoisted slot a suite's `../db` mock fills, so tests can reach the client and close it. */
+export interface TestDatabaseHarness {
+  handle: TestDatabaseHandle | null;
 }
 
+const migrationsFolder = fileURLToPath(new URL("../../../drizzle", import.meta.url));
+
+const MigrationJournalSchema = z.object({
+  entries: z.array(z.object({ tag: z.string() })),
+});
+
 async function applyCheckedInMigrations(client: PGlite): Promise<void> {
-  const journal = JSON.parse(
-    await readFile(join(migrationsFolder, "meta", "_journal.json"), "utf8"),
-  ) as MigrationJournal;
+  const journal = MigrationJournalSchema.parse(
+    JSON.parse(await readFile(join(migrationsFolder, "meta", "_journal.json"), "utf8")),
+  );
 
   for (const entry of journal.entries) {
     const script = await readFile(join(migrationsFolder, `${entry.tag}.sql`), "utf8");

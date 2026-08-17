@@ -49,7 +49,12 @@ vi.mock("@/features/viewer/use-library-viewer-state", () => ({
   }),
 }));
 
-function renderModal(rememberViewerPosition = true): { root: Root; container: HTMLDivElement } {
+interface MountedModal {
+  root: Root;
+  container: HTMLDivElement;
+}
+
+function renderModal(rememberViewerPosition = true): MountedModal {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);

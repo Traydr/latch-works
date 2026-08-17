@@ -3,9 +3,9 @@ import { createGalleryRandomSeed } from "@/features/gallery/gallery-random-seed"
 import {
   GALLERY_RANDOM_SEED_PATTERN,
   type GalleryRandomSeed,
+  GalleryRandomSeedSchema,
   type GallerySubjectKind,
   galleryRandomOrderKey,
-  isGalleryRandomSeed,
 } from "./gallery-order";
 
 /**
@@ -13,7 +13,7 @@ import {
  * this list; if a future edit to the list trips one, change the seeds, not
  * the bound. Each bound documents what a broken key would score.
  */
-const SEEDS: GalleryRandomSeed[] = [
+const SEEDS = [
   "00000000000000000000000000000000",
   "ffffffffffffffffffffffffffffffff",
   "0123456789abcdef0123456789abcdef",
@@ -30,7 +30,7 @@ const SEEDS: GalleryRandomSeed[] = [
   "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
   "77777777777777777777777777777777",
   "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f",
-];
+] as const satisfies readonly GalleryRandomSeed[];
 
 const PAGE_SIZE = 48;
 const SUBJECT_COUNT = 1000;
@@ -85,14 +85,19 @@ function shuffleDeterministically<T>(items: readonly T[]): T[] {
   for (let index = copy.length - 1; index > 0; index -= 1) {
     state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
     const swap = state % (index + 1);
-    [copy[index], copy[swap]] = [copy[swap] as T, copy[index] as T];
+    const swapped = copy[swap];
+    const current = copy[index];
+    if (swapped !== undefined && current !== undefined) {
+      copy[index] = swapped;
+      copy[swap] = current;
+    }
   }
   return copy;
 }
 
 describe("galleryRandomOrderKey", () => {
   it("is 32 lowercase hex characters", () => {
-    const key = galleryRandomOrderKey(SEEDS[2] as GalleryRandomSeed, "media", "x");
+    const key = galleryRandomOrderKey(SEEDS[2], "media", "x");
     expect(key).toMatch(/^[0-9a-f]{32}$/u);
   });
 
@@ -135,12 +140,15 @@ describe("galleryRandomOrderKey", () => {
   it("moves subjects between quartiles when the seed changes", () => {
     // Independent keys keep ~25% of subjects in the same quartile. A key that
     // ignores the seed, or a constant, scores 1.0. Bound: 0.35.
-    for (let index = 0; index + 1 < SEEDS.length; index += 1) {
-      const before = positions(permutation(SEEDS[index] as GalleryRandomSeed, SUBJECTS));
-      const after = positions(permutation(SEEDS[index + 1] as GalleryRandomSeed, SUBJECTS));
+    for (const [index, seed] of SEEDS.entries()) {
+      const nextSeed = SEEDS[index + 1];
+      if (nextSeed === undefined) break;
+      const before = positions(permutation(seed, SUBJECTS));
+      const after = positions(permutation(nextSeed, SUBJECTS));
       let same = 0;
       for (const [key, position] of before) {
-        if (quartile(position) === quartile(after.get(key) as number)) {
+        const afterPosition = after.get(key);
+        if (afterPosition !== undefined && quartile(position) === quartile(afterPosition)) {
           same += 1;
         }
       }
@@ -168,7 +176,7 @@ describe("galleryRandomOrderKey", () => {
   });
 
   it("keys media and comics separately even for the same id", () => {
-    const seed = SEEDS[3] as GalleryRandomSeed;
+    const seed = SEEDS[3];
     expect(galleryRandomOrderKey(seed, "media", "x")).not.toBe(
       galleryRandomOrderKey(seed, "comic", "x"),
     );
@@ -177,17 +185,19 @@ describe("galleryRandomOrderKey", () => {
 
 describe("gallery random seed", () => {
   it("validates 32 lowercase hex characters only", () => {
-    expect(isGalleryRandomSeed("0123456789abcdef0123456789abcdef")).toBe(true);
-    expect(isGalleryRandomSeed("0123456789ABCDEF0123456789ABCDEF")).toBe(false);
-    expect(isGalleryRandomSeed("0123456789abcdef0123456789abcde")).toBe(false);
-    expect(isGalleryRandomSeed(42)).toBe(false);
-    expect(isGalleryRandomSeed(null)).toBe(false);
+    const isSeed = (value: string | number | null) =>
+      GalleryRandomSeedSchema.safeParse(value).success;
+    expect(isSeed("0123456789abcdef0123456789abcdef")).toBe(true);
+    expect(isSeed("0123456789ABCDEF0123456789ABCDEF")).toBe(false);
+    expect(isSeed("0123456789abcdef0123456789abcde")).toBe(false);
+    expect(isSeed(42)).toBe(false);
+    expect(isSeed(null)).toBe(false);
     expect(GALLERY_RANDOM_SEED_PATTERN.source).toBe("^[0-9a-f]{32}$");
   });
 
   it("creates 32 lowercase hex characters from 16 random bytes", () => {
     const seed = createGalleryRandomSeed();
-    expect(isGalleryRandomSeed(seed)).toBe(true);
+    expect(GalleryRandomSeedSchema.safeParse(seed).success).toBe(true);
     expect(createGalleryRandomSeed()).not.toBe(seed);
   });
 

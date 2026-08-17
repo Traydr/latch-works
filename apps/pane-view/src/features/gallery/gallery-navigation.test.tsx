@@ -211,11 +211,11 @@ describe("stepMedia", () => {
     const source = createMemoryGalleryPageSource({ [memorySourceKey(request)]: { comics } });
     harness = await renderSession({ request, source });
     const covers = comics.map((comic) => comic.cover.id);
+    const secondCover = covers[1];
+    if (!secondCover) throw new Error("expected at least two comics");
     expect(harness.session.media.map((item) => item.id)).toEqual(covers.slice(0, 2));
     expect(
-      await step(
-        () => harness?.session.stepMedia(covers[1] as string, 1, true) ?? Promise.resolve(null),
-      ),
+      await step(() => harness?.session.stepMedia(secondCover, 1, true) ?? Promise.resolve(null)),
     ).toBe(covers[2]);
     expect(harness.session.entries.map((entry) => entry.key)).toEqual(
       comics.map((comic) => `comic:${comic.id}`),

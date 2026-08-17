@@ -1,12 +1,11 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
+import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { getSessionStatus } from "@/features/auth/session-service";
 
 export const Route = createFileRoute("/login")({
-  validateSearch: (search): { error?: string } => ({
-    error: typeof search.error === "string" ? search.error : undefined,
-  }),
+  validateSearch: z.object({ error: z.string().optional().catch(undefined) }),
   ssr: false,
   loader: async () => {
     const { authenticated } = await getSessionStatus();

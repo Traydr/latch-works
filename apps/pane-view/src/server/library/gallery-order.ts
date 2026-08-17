@@ -1,12 +1,13 @@
 import { createHash } from "node:crypto";
 import { type SQL, sql } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
+import { z } from "zod";
 import type { GalleryRandomSeed } from "./gallery-random-seed";
 
 export {
   GALLERY_RANDOM_SEED_PATTERN,
   type GalleryRandomSeed,
-  isGalleryRandomSeed,
+  GalleryRandomSeedSchema,
 } from "./gallery-random-seed";
 
 /**
@@ -52,7 +53,5 @@ export function galleryRandomOrderKeySql(
 
 export const GALLERY_RANDOM_ORDER_KEY_PATTERN = /^[0-9a-f]{32}$/u;
 
-/** The rank a random-mode cursor carries; validated by decodeGalleryListingCursor. */
-export function isGalleryRandomOrderKey(value: unknown): value is string {
-  return typeof value === "string" && GALLERY_RANDOM_ORDER_KEY_PATTERN.test(value);
-}
+/** The rank a random-mode cursor carries; decodeGalleryListingCursor parses it with this. */
+export const GalleryRandomOrderKeySchema = z.string().regex(GALLERY_RANDOM_ORDER_KEY_PATTERN);

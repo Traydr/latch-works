@@ -40,18 +40,7 @@ function copyHeader(source: Headers, target: Headers, name: string): void {
 }
 
 function copySetCookies(source: Headers, target: Headers): void {
-  const getSetCookie = (source as Headers & { getSetCookie?: () => string[] }).getSetCookie;
-  const setCookies = getSetCookie ? getSetCookie.call(source) : [];
-
-  if (setCookies.length) {
-    for (const cookie of setCookies) {
-      target.append("Set-Cookie", cookie);
-    }
-    return;
-  }
-
-  const cookie = source.get("Set-Cookie");
-  if (cookie) {
+  for (const cookie of source.getSetCookie()) {
     target.append("Set-Cookie", cookie);
   }
 }
