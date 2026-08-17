@@ -1,33 +1,22 @@
 import type { FolderNode, GallerySortMode } from "@latch-works/media-domain";
-import { buildBrowserEntries, getBaseName } from "@latch-works/media-domain";
-import {
-  and,
-  asc,
-  desc,
-  eq,
-  gt,
-  ilike,
-  inArray,
-  isNull,
-  lt,
-  ne,
-  notInArray,
-  or,
-  type SQL,
-  sql,
-} from "drizzle-orm";
+import { buildBrowserEntries } from "@latch-works/media-domain";
+import { and, asc, desc, eq, gt, inArray, isNull, lt, or, type SQL, sql } from "drizzle-orm";
 import { db } from "../db";
 import { folders, libraryEntries, mediaObjects } from "../db/schema";
 import {
   DEFAULT_GALLERY_LISTING_LIMIT,
   decodeGalleryListingCursor,
   encodeGalleryListingCursor,
+  type GalleryListingCursorPayload,
   type GalleryListingPage,
   galleryListingRandomHash,
 } from "./gallery-listing";
-import { buildMediaPage, type MediaPage } from "./media-page";
-import { escapeLikePattern, resolveMediaScope } from "./query-helpers";
-import type { LibraryMediaItem } from "./types";
+import {
+  buildLibraryConditions,
+  buildMediaVisibilityConditions,
+  mapMediaRowsToLibraryItems,
+} from "./library-conditions";
+import type { LibraryMediaItem, MediaPage } from "./types";
 
 export type { LibraryMediaItem, MediaPage } from "./types";
 
@@ -39,168 +28,16 @@ export interface DatabaseLibrarySnapshot {
   roots: string[];
 }
 
-export async function readDatabaseLibrarySnapshot({
-  currentPath,
-  includeAllFolders = false,
-  limit,
-  offset = 0,
-  query,
-  recursive = false,
-}: {
+export interface LibrarySnapshotReadRequest {
   currentPath: string;
   includeAllFolders?: boolean;
   limit: number;
   offset?: number;
   query?: string;
   recursive?: boolean;
-}): Promise<DatabaseLibrarySnapshot> {
-  const trimmedQuery = query?.trim();
-  const searching = Boolean(trimmedQuery);
-  const mediaScope = resolveMediaScope({ currentPath, recursive, searching });
-  const mediaConditions: SQL[] = [isNull(libraryEntries.deletedAt)];
-  const folderConditions: SQL[] = [isNull(folders.deletedAt)];
-
-  if (searching && trimmedQuery) {
-    const queryPattern = `%${escapeLikePattern(trimmedQuery)}%`;
-    const mediaQueryCondition = or(
-      ilike(libraryEntries.logicalPath, queryPattern),
-      ilike(libraryEntries.filename, queryPattern),
-    );
-    const folderQueryCondition = or(
-      ilike(folders.path, queryPattern),
-      ilike(folders.name, queryPattern),
-    );
-
-    if (mediaQueryCondition) {
-      mediaConditions.push(mediaQueryCondition);
-    }
-
-    if (folderQueryCondition) {
-      folderConditions.push(folderQueryCondition);
-    }
-  } else {
-    folderConditions.push(eq(folders.parentPath, currentPath));
-
-    if (mediaScope.mode === "subtree") {
-      mediaConditions.push(
-        ilike(libraryEntries.logicalPath, `${escapeLikePattern(mediaScope.pathPrefix)}/%`),
-      );
-    } else if (mediaScope.mode === "direct-children") {
-      mediaConditions.push(eq(libraryEntries.parentPath, mediaScope.parentPath));
-    }
-  }
-
-  const folderQueries = [
-    db
-      .select()
-      .from(folders)
-      .where(and(...folderConditions)),
-    limit > 0
-      ? db
-          .select({
-            entry: libraryEntries,
-            object: mediaObjects,
-          })
-          .from(libraryEntries)
-          .innerJoin(mediaObjects, eq(libraryEntries.mediaObjectId, mediaObjects.id))
-          .where(and(...mediaConditions))
-          .orderBy(asc(libraryEntries.logicalPath), asc(libraryEntries.id))
-          .limit(limit + 1)
-          .offset(offset)
-      : Promise.resolve([]),
-    db.select().from(folders).where(eq(folders.parentPath, "")),
-  ] as const;
-
-  const [folderRows, mediaRows, rootRows, allFolderRows] = await Promise.all([
-    ...folderQueries,
-    includeAllFolders
-      ? db.select().from(folders).where(isNull(folders.deletedAt))
-      : Promise.resolve([]),
-  ]);
-
-  const visibleFolderPaths = [...new Set(folderRows.map((folder) => folder.path))];
-  const visibleParentPathsWithChildren = await readParentPathsWithChildren(visibleFolderPaths);
-  const folderParentPathsWithChildFolders = new Set(
-    allFolderRows
-      .map((folder) => folder.parentPath)
-      .filter((parentPath): parentPath is string => Boolean(parentPath)),
-  );
-
-  const mapVisibleFolderRow = (folder: (typeof folderRows)[number]): FolderNode => ({
-    folderCount: folder.folderCount ?? 0,
-    hasChildren: visibleParentPathsWithChildren.has(folder.path),
-    mediaCount: folder.entryCount ?? 0,
-    name: folder.name,
-    parentId: folder.parentId,
-    parentPath: folder.parentPath,
-    path: folder.path,
-  });
-
-  const mapAllFolderRow = (folder: (typeof allFolderRows)[number]): FolderNode => ({
-    folderCount: folder.folderCount ?? 0,
-    hasChildren: folderParentPathsWithChildFolders.has(folder.path),
-    mediaCount: folder.entryCount ?? 0,
-    name: folder.name,
-    parentId: folder.parentId,
-    parentPath: folder.parentPath,
-    path: folder.path,
-  });
-
-  const { items: pageMediaRows, mediaPage } = buildMediaPage(mediaRows, limit, offset);
-
-  const media = pageMediaRows.map(({ entry, object }): LibraryMediaItem => {
-    return {
-      durationMs: object.durationMs ?? undefined,
-      extension: object.extension,
-      height: object.height ?? undefined,
-      id: entry.id,
-      mediaType: object.mediaType,
-      mtimeMs: entry.mtimeMs,
-      name: entry.filename,
-      pageCount: object.pageCount ?? undefined,
-      parentPath: entry.parentPath,
-      path: entry.logicalPath,
-      sha256: object.sha256,
-      size: object.size,
-      width: object.width ?? undefined,
-    };
-  });
-
-  return {
-    allFolders: allFolderRows.map(mapAllFolderRow),
-    folders: folderRows.map(mapVisibleFolderRow),
-    media,
-    mediaPage,
-    roots: rootRows
-      .map((folder) => folder.path)
-      .concat(currentPath)
-      .filter(Boolean)
-      .filter(dedupe),
-  };
 }
 
-export function folderFromPath(path: string): FolderNode {
-  return {
-    folderCount: 0,
-    hasChildren: false,
-    mediaCount: 0,
-    name: getBaseName(path),
-    parentPath: "",
-    path,
-  };
-}
-
-export async function readDatabaseGalleryListing({
-  currentPath,
-  cursor,
-  limit = DEFAULT_GALLERY_LISTING_LIMIT,
-  query,
-  randomSeed,
-  recursive = false,
-  showImages,
-  showVideos,
-  sortMode,
-}: {
+export interface GalleryListingReadRequest {
   currentPath: string;
   cursor?: string;
   limit?: number;
@@ -210,190 +47,82 @@ export async function readDatabaseGalleryListing({
   showImages: boolean;
   showVideos: boolean;
   sortMode: GallerySortMode;
-}): Promise<GalleryListingPage> {
-  const trimmedQuery = query?.trim();
-  const searching = Boolean(trimmedQuery);
-  const decodedCursor = decodeGalleryListingCursor(cursor);
-  const includeFolders = !recursive && !cursor;
-  const mediaScope = resolveMediaScope({ currentPath, recursive, searching });
-  const mediaConditions: SQL[] = [isNull(libraryEntries.deletedAt)];
-  const folderConditions: SQL[] = [isNull(folders.deletedAt)];
-
-  if (searching && trimmedQuery) {
-    const queryPattern = `%${escapeLikePattern(trimmedQuery)}%`;
-    const mediaQueryCondition = or(
-      ilike(libraryEntries.logicalPath, queryPattern),
-      ilike(libraryEntries.filename, queryPattern),
-    );
-    const folderQueryCondition = or(
-      ilike(folders.path, queryPattern),
-      ilike(folders.name, queryPattern),
-    );
-
-    if (mediaQueryCondition) {
-      mediaConditions.push(mediaQueryCondition);
-    }
-
-    if (folderQueryCondition) {
-      folderConditions.push(folderQueryCondition);
-    }
-  } else {
-    folderConditions.push(eq(folders.parentPath, currentPath));
-
-    if (mediaScope.mode === "subtree") {
-      mediaConditions.push(
-        ilike(libraryEntries.logicalPath, `${escapeLikePattern(mediaScope.pathPrefix)}/%`),
-      );
-    } else if (mediaScope.mode === "direct-children") {
-      mediaConditions.push(eq(libraryEntries.parentPath, mediaScope.parentPath));
-    }
-  }
-
-  if (!showImages) {
-    mediaConditions.push(notInArray(mediaObjects.mediaType, ["image", "gif"]));
-  }
-
-  if (!showVideos) {
-    mediaConditions.push(ne(mediaObjects.mediaType, "video"));
-  }
-
-  if (decodedCursor) {
-    mediaConditions.push(buildGalleryListingCursorCondition(decodedCursor));
-  }
-
-  const [folderRows, mediaRows] = await Promise.all([
-    includeFolders
-      ? db
-          .select()
-          .from(folders)
-          .where(and(...folderConditions))
-      : Promise.resolve([]),
-    db
-      .select({
-        entry: libraryEntries,
-        object: mediaObjects,
-      })
-      .from(libraryEntries)
-      .innerJoin(mediaObjects, eq(libraryEntries.mediaObjectId, mediaObjects.id))
-      .where(and(...mediaConditions))
-      .orderBy(...buildGalleryListingOrderBy(sortMode, randomSeed))
-      .limit(limit + 1),
-  ]);
-
-  const hasMore = mediaRows.length > limit;
-  const pageMediaRows = hasMore ? mediaRows.slice(0, limit) : mediaRows;
-
-  const visibleFolderPaths = [...new Set(folderRows.map((folder) => folder.path))];
-  const visibleParentPathsWithChildren = includeFolders
-    ? await readParentPathsWithChildren(visibleFolderPaths)
-    : new Set<string>();
-
-  const folderNodes: FolderNode[] = folderRows.map((folder) => ({
-    folderCount: folder.folderCount ?? 0,
-    hasChildren: visibleParentPathsWithChildren.has(folder.path),
-    mediaCount: folder.entryCount ?? 0,
-    name: folder.name,
-    parentId: folder.parentId,
-    parentPath: folder.parentPath,
-    path: folder.path,
-  }));
-
-  const media = mapMediaRowsToLibraryItems(pageMediaRows);
-  const entries = buildBrowserEntries({
-    folders: folderNodes,
-    comics: [],
-    items: media,
-    recursive,
-    comicMode: false,
-    sortMode,
-  });
-
-  const lastRow = pageMediaRows.at(-1);
-  const nextCursor =
-    hasMore && lastRow
-      ? encodeGalleryListingCursor({
-          filename: lastRow.entry.filename,
-          id: lastRow.entry.id,
-          logicalPath: lastRow.entry.logicalPath,
-          mtimeMs: lastRow.entry.mtimeMs,
-          randomHash:
-            sortMode === "random"
-              ? galleryListingRandomHash(randomSeed, lastRow.entry.id)
-              : undefined,
-          randomSeed: sortMode === "random" ? randomSeed : undefined,
-          sortMode,
-        })
-      : null;
-
-  return {
-    entries,
-    media,
-    page: {
-      cursor: nextCursor,
-      hasMore,
-      limit,
-    },
-  };
 }
 
-export async function softDeleteLibraryEntry({ entryId }: { entryId: string }): Promise<boolean> {
-  const [deleted] = await db
-    .update(libraryEntries)
-    .set({ deletedAt: new Date() })
-    .where(and(eq(libraryEntries.id, entryId), isNull(libraryEntries.deletedAt)))
-    .returning({ id: libraryEntries.id });
+// ---------------------------------------------------------------------------
+// Query builders. Exported for the rendered-SQL tests only; every other module
+// goes through the readDatabase* functions below.
+// ---------------------------------------------------------------------------
 
-  return Boolean(deleted);
+/** Snapshot media page: logical-path order, offset paginated, overfetched by one. */
+export function buildLibrarySnapshotMediaQuery({
+  currentPath,
+  limit,
+  offset = 0,
+  query,
+  recursive = false,
+}: Pick<LibrarySnapshotReadRequest, "currentPath" | "limit" | "offset" | "query" | "recursive">) {
+  const { mediaConditions } = buildLibraryConditions({ currentPath, query, recursive });
+
+  return db
+    .select({
+      entry: libraryEntries,
+      object: mediaObjects,
+    })
+    .from(libraryEntries)
+    .innerJoin(mediaObjects, eq(libraryEntries.mediaObjectId, mediaObjects.id))
+    .where(and(...mediaConditions))
+    .orderBy(asc(libraryEntries.logicalPath), asc(libraryEntries.id))
+    .limit(limit + 1)
+    .offset(offset);
 }
 
-const parentPathLookupThreshold = 500;
+/** Visible folders for the current scope (direct children, or search matches). */
+export function buildLibraryFolderQuery({
+  currentPath,
+  query,
+  recursive = false,
+}: Pick<LibrarySnapshotReadRequest, "currentPath" | "query" | "recursive">) {
+  const { folderConditions } = buildLibraryConditions({ currentPath, query, recursive });
 
-async function readParentPathsWithChildren(paths: string[]): Promise<Set<string>> {
-  if (paths.length === 0) {
-    return new Set();
+  return db
+    .select()
+    .from(folders)
+    .where(and(...folderConditions));
+}
+
+/** Listing media page: sorted, filtered, keyset-continued, overfetched by one. */
+export function buildGalleryListingMediaQuery({
+  currentPath,
+  cursor,
+  limit = DEFAULT_GALLERY_LISTING_LIMIT,
+  query,
+  randomSeed,
+  recursive = false,
+  showImages,
+  showVideos,
+  sortMode,
+}: Omit<GalleryListingReadRequest, "cursor"> & { cursor: GalleryListingCursorPayload | null }) {
+  const { mediaConditions } = buildLibraryConditions({ currentPath, query, recursive });
+  mediaConditions.push(...buildMediaVisibilityConditions({ showImages, showVideos }));
+
+  if (cursor) {
+    mediaConditions.push(buildGalleryListingCursorCondition(cursor));
   }
 
-  const pathSet = new Set(paths);
-  const [folderParents, entryParents] =
-    paths.length > parentPathLookupThreshold
-      ? await Promise.all([
-          db
-            .selectDistinct({ parentPath: folders.parentPath })
-            .from(folders)
-            .where(isNull(folders.deletedAt)),
-          db
-            .selectDistinct({ parentPath: libraryEntries.parentPath })
-            .from(libraryEntries)
-            .where(isNull(libraryEntries.deletedAt)),
-        ])
-      : await Promise.all([
-          db
-            .selectDistinct({ parentPath: folders.parentPath })
-            .from(folders)
-            .where(and(isNull(folders.deletedAt), inArray(folders.parentPath, paths))),
-          db
-            .selectDistinct({ parentPath: libraryEntries.parentPath })
-            .from(libraryEntries)
-            .where(
-              and(isNull(libraryEntries.deletedAt), inArray(libraryEntries.parentPath, paths)),
-            ),
-        ]);
-
-  const parents = new Set<string>();
-  for (const row of [...folderParents, ...entryParents]) {
-    if (row.parentPath && pathSet.has(row.parentPath)) {
-      parents.add(row.parentPath);
-    }
-  }
-
-  return parents;
+  return db
+    .select({
+      entry: libraryEntries,
+      object: mediaObjects,
+    })
+    .from(libraryEntries)
+    .innerJoin(mediaObjects, eq(libraryEntries.mediaObjectId, mediaObjects.id))
+    .where(and(...mediaConditions))
+    .orderBy(...buildGalleryListingOrderBy(sortMode, randomSeed))
+    .limit(limit + 1);
 }
 
-function dedupe(value: string, index: number, values: string[]): boolean {
-  return values.indexOf(value) === index;
-}
-
-function buildGalleryListingOrderBy(sortMode: GallerySortMode, randomSeed: number) {
+export function buildGalleryListingOrderBy(sortMode: GallerySortMode, randomSeed: number): SQL[] {
   switch (sortMode) {
     case "name-desc":
       return [
@@ -424,9 +153,7 @@ function buildGalleryListingOrderBy(sortMode: GallerySortMode, randomSeed: numbe
   }
 }
 
-function buildGalleryListingCursorCondition(
-  cursor: NonNullable<ReturnType<typeof decodeGalleryListingCursor>>,
-): SQL {
+export function buildGalleryListingCursorCondition(cursor: GalleryListingCursorPayload): SQL {
   const requireCondition = (condition: SQL | undefined): SQL => {
     if (!condition) {
       throw new Error("Expected gallery listing cursor condition");
@@ -522,27 +249,227 @@ function buildGalleryListingCursorCondition(
   }
 }
 
-type MediaRow = {
-  entry: typeof libraryEntries.$inferSelect;
-  object: typeof mediaObjects.$inferSelect;
-};
+// ---------------------------------------------------------------------------
+// Reads
+// ---------------------------------------------------------------------------
 
-function mapMediaRowsToLibraryItems(pageMediaRows: MediaRow[]): LibraryMediaItem[] {
-  return pageMediaRows.map(({ entry, object }): LibraryMediaItem => {
-    return {
-      durationMs: object.durationMs ?? undefined,
-      extension: object.extension,
-      height: object.height ?? undefined,
-      id: entry.id,
-      mediaType: object.mediaType,
-      mtimeMs: entry.mtimeMs,
-      name: entry.filename,
-      pageCount: object.pageCount ?? undefined,
-      parentPath: entry.parentPath,
-      path: entry.logicalPath,
-      sha256: object.sha256,
-      size: object.size,
-      width: object.width ?? undefined,
-    };
+export async function readDatabaseLibrarySnapshot({
+  currentPath,
+  includeAllFolders = false,
+  limit,
+  offset = 0,
+  query,
+  recursive = false,
+}: LibrarySnapshotReadRequest): Promise<DatabaseLibrarySnapshot> {
+  const [folderRows, mediaRows, rootRows, allFolderRows] = await Promise.all([
+    buildLibraryFolderQuery({ currentPath, query, recursive }),
+    limit > 0
+      ? buildLibrarySnapshotMediaQuery({ currentPath, limit, offset, query, recursive })
+      : Promise.resolve([]),
+    db.select().from(folders).where(eq(folders.parentPath, "")),
+    includeAllFolders
+      ? db.select().from(folders).where(isNull(folders.deletedAt))
+      : Promise.resolve([]),
+  ]);
+
+  const visibleFolderPaths = [...new Set(folderRows.map((folder) => folder.path))];
+  const visibleParentPathsWithChildren = await readParentPathsWithChildren(visibleFolderPaths);
+  const folderParentPathsWithChildFolders = new Set(
+    allFolderRows
+      .map((folder) => folder.parentPath)
+      .filter((parentPath): parentPath is string => Boolean(parentPath)),
+  );
+
+  const { items: pageMediaRows, mediaPage } = buildMediaPage(mediaRows, limit, offset);
+
+  return {
+    allFolders: allFolderRows.map((folder) =>
+      mapFolderRow(folder, folderParentPathsWithChildFolders),
+    ),
+    folders: folderRows.map((folder) => mapFolderRow(folder, visibleParentPathsWithChildren)),
+    media: mapMediaRowsToLibraryItems(pageMediaRows),
+    mediaPage,
+    roots: rootRows
+      .map((folder) => folder.path)
+      .concat(currentPath)
+      .filter(Boolean)
+      .filter(dedupe),
+  };
+}
+
+export async function readDatabaseGalleryListing({
+  currentPath,
+  cursor,
+  limit = DEFAULT_GALLERY_LISTING_LIMIT,
+  query,
+  randomSeed,
+  recursive = false,
+  showImages,
+  showVideos,
+  sortMode,
+}: GalleryListingReadRequest): Promise<GalleryListingPage> {
+  const decodedCursor = decodeGalleryListingCursor(cursor);
+  const includeFolders = !recursive && !cursor;
+
+  const [folderRows, mediaRows] = await Promise.all([
+    includeFolders
+      ? buildLibraryFolderQuery({ currentPath, query, recursive })
+      : Promise.resolve([]),
+    buildGalleryListingMediaQuery({
+      currentPath,
+      cursor: decodedCursor,
+      limit,
+      query,
+      randomSeed,
+      recursive,
+      showImages,
+      showVideos,
+      sortMode,
+    }),
+  ]);
+
+  const hasMore = mediaRows.length > limit;
+  const pageMediaRows = hasMore ? mediaRows.slice(0, limit) : mediaRows;
+
+  const visibleFolderPaths = [...new Set(folderRows.map((folder) => folder.path))];
+  const visibleParentPathsWithChildren = includeFolders
+    ? await readParentPathsWithChildren(visibleFolderPaths)
+    : new Set<string>();
+
+  const folderNodes = folderRows.map((folder) =>
+    mapFolderRow(folder, visibleParentPathsWithChildren),
+  );
+
+  const media = mapMediaRowsToLibraryItems(pageMediaRows);
+  const entries = buildBrowserEntries({
+    folders: folderNodes,
+    comics: [],
+    items: media,
+    recursive,
+    comicMode: false,
+    sortMode,
   });
+
+  const lastRow = pageMediaRows.at(-1);
+  const nextCursor =
+    hasMore && lastRow
+      ? encodeGalleryListingCursor({
+          filename: lastRow.entry.filename,
+          id: lastRow.entry.id,
+          logicalPath: lastRow.entry.logicalPath,
+          mtimeMs: lastRow.entry.mtimeMs,
+          randomHash:
+            sortMode === "random"
+              ? galleryListingRandomHash(randomSeed, lastRow.entry.id)
+              : undefined,
+          randomSeed: sortMode === "random" ? randomSeed : undefined,
+          sortMode,
+        })
+      : null;
+
+  return {
+    entries,
+    media,
+    page: {
+      cursor: nextCursor,
+      hasMore,
+      limit,
+    },
+  };
+}
+
+export async function softDeleteLibraryEntry({ entryId }: { entryId: string }): Promise<boolean> {
+  const [deleted] = await db
+    .update(libraryEntries)
+    .set({ deletedAt: new Date() })
+    .where(and(eq(libraryEntries.id, entryId), isNull(libraryEntries.deletedAt)))
+    .returning({ id: libraryEntries.id });
+
+  return Boolean(deleted);
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+type FolderRow = typeof folders.$inferSelect;
+
+function mapFolderRow(folder: FolderRow, parentPathsWithChildren: ReadonlySet<string>): FolderNode {
+  return {
+    folderCount: folder.folderCount ?? 0,
+    hasChildren: parentPathsWithChildren.has(folder.path),
+    mediaCount: folder.entryCount ?? 0,
+    name: folder.name,
+    parentId: folder.parentId,
+    parentPath: folder.parentPath,
+    path: folder.path,
+  };
+}
+
+/** Slice an overfetched (limit + 1) row set into a page plus offset metadata. */
+export function buildMediaPage<T>(
+  rows: readonly T[],
+  limit: number,
+  offset: number,
+): {
+  items: T[];
+  mediaPage: MediaPage;
+} {
+  const hasMore = rows.length > limit;
+  return {
+    items: hasMore ? rows.slice(0, limit) : [...rows],
+    mediaPage: {
+      hasMore,
+      limit,
+      nextOffset: hasMore ? offset + limit : null,
+      offset,
+    },
+  };
+}
+
+const parentPathLookupThreshold = 500;
+
+async function readParentPathsWithChildren(paths: string[]): Promise<Set<string>> {
+  if (paths.length === 0) {
+    return new Set();
+  }
+
+  const pathSet = new Set(paths);
+  const [folderParents, entryParents] =
+    paths.length > parentPathLookupThreshold
+      ? await Promise.all([
+          db
+            .selectDistinct({ parentPath: folders.parentPath })
+            .from(folders)
+            .where(isNull(folders.deletedAt)),
+          db
+            .selectDistinct({ parentPath: libraryEntries.parentPath })
+            .from(libraryEntries)
+            .where(isNull(libraryEntries.deletedAt)),
+        ])
+      : await Promise.all([
+          db
+            .selectDistinct({ parentPath: folders.parentPath })
+            .from(folders)
+            .where(and(isNull(folders.deletedAt), inArray(folders.parentPath, paths))),
+          db
+            .selectDistinct({ parentPath: libraryEntries.parentPath })
+            .from(libraryEntries)
+            .where(
+              and(isNull(libraryEntries.deletedAt), inArray(libraryEntries.parentPath, paths)),
+            ),
+        ]);
+
+  const parents = new Set<string>();
+  for (const row of [...folderParents, ...entryParents]) {
+    if (row.parentPath && pathSet.has(row.parentPath)) {
+      parents.add(row.parentPath);
+    }
+  }
+
+  return parents;
+}
+
+function dedupe(value: string, index: number, values: string[]): boolean {
+  return values.indexOf(value) === index;
 }
