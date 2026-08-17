@@ -1,4 +1,4 @@
-import type { FolderNode, GallerySortMode } from "@latch-works/media-domain";
+import type { ComicEntry, FolderNode, GallerySortMode } from "@latch-works/media-domain";
 import {
   GallerySortModeSchema,
   getParentPath,
@@ -137,7 +137,17 @@ export const getGalleryListing = createServerFn({ method: "GET" })
     const recursive = (data.recursive ?? false) || comicMode;
 
     if (comicMode) {
-      throw new Error("Gallery listing is not available in comic mode");
+      const { readDatabaseComicListing } = await import("../../server/library/comic-listing");
+      return readDatabaseComicListing({
+        currentPath,
+        cursor: data.cursor,
+        limit: data.limit ?? DEFAULT_GALLERY_LISTING_LIMIT,
+        query,
+        randomSeed: data.randomSeed,
+        showImages: data.showImages,
+        showVideos: data.showVideos,
+        sortMode: data.sortMode,
+      });
     }
 
     const { readDatabaseGalleryListing } = await import("../../server/library/repository");
@@ -152,6 +162,50 @@ export const getGalleryListing = createServerFn({ method: "GET" })
       showVideos: data.showVideos,
       sortMode: data.sortMode,
     });
+  });
+
+const galleryComicRequestSchema = z.object({
+  comicId: z.string().min(1),
+  path: z.string().optional(),
+  query: z.string().optional(),
+  showImages: z.boolean().optional(),
+  showVideos: z.boolean().optional(),
+});
+
+export interface GalleryComicRequest {
+  comicId: string;
+  path: string | undefined;
+  query: string | undefined;
+  showImages: boolean;
+  showVideos: boolean;
+}
+
+/**
+ * One complete comic (every eligible page in natural order) for the reader.
+ * The listing carries only summaries, so this is the only place full page
+ * arrays cross the wire; the payload size depends on that comic alone.
+ */
+export const getGalleryComic = createServerFn({ method: "GET" })
+  .inputValidator(galleryComicRequestSchema)
+  .handler(async ({ data }): Promise<ComicEntry<LibraryMediaItem>> => {
+    await assertWebSessionAuthorized();
+
+    const currentPath = normalizeLibraryPath(data.path);
+    const comicId = normalizeLibraryPath(data.comicId);
+    const { readDatabaseGalleryComic } = await import("../../server/library/comic-listing");
+    const comic = await readDatabaseGalleryComic({
+      comicId,
+      currentPath,
+      query: normalizeQuery(data.query),
+      showImages: data.showImages ?? true,
+      showVideos: data.showVideos ?? true,
+    });
+
+    if (!comic) {
+      throw new Error("Comic not found");
+    }
+
+    return comic;
   });
 
 export const getLibrarySnapshot = createServerFn({ method: "GET" })
