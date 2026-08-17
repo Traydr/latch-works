@@ -1,0 +1,14 @@
+-- 0018_natural_collation: one natural, case-insensitive collation for gallery
+-- name ordering (Plan 051, Decision 6).
+--
+-- Pane View's client and Frame View sort names with
+-- Intl.Collator({ numeric: true, sensitivity: "base" }), so "2.jpg" sorts
+-- before "10.jpg" and "a" ties "A". Server-side name order and comic cover
+-- selection now use this ICU collation so card order, cover choice, and the
+-- reader agree. kn-true = digit runs compare numerically; ks-level1 = primary
+-- strength (case- and accent-insensitive). The collation stays deterministic
+-- (the default), so primary-equal strings still tie-break bytewise and it is
+-- applied per expression (`filename COLLATE "natural"`), never to a column, so
+-- ILIKE and the pg_trgm indexes are unaffected. Drizzle does not model
+-- collations, so the accompanying snapshot is a copy of 0017.
+CREATE COLLATION IF NOT EXISTS "natural" (provider = icu, locale = 'und-u-kn-true-ks-level1');
