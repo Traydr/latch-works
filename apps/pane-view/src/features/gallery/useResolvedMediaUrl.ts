@@ -11,6 +11,13 @@ import {
 
 const PENDING_RETRY_DELAYS_MS = [5_000, 10_000, 20_000, 30_000, 60_000] as const;
 
+/**
+ * Original delivery is a 60s presigned storage URL (`planSignedOriginalDelivery`),
+ * so a cached one is dropped well before it expires. Renditions carry 24h Shutter
+ * capabilities and stay cached for the session.
+ */
+const ORIGINAL_URL_CACHE_TTL_MS = 45_000;
+
 type ResolveInput = {
   mediaId: string;
   size?: number;
@@ -27,7 +34,12 @@ type ResolveCacheEntry = {
   nextRetryAt?: number;
   pendingAttempt: number;
   url?: string;
+  urlExpiresAt?: number;
 };
+
+function urlExpiresAt(variant: ResolveInput["variant"], now: number): number | undefined {
+  return variant === "original" ? now + ORIGINAL_URL_CACHE_TTL_MS : undefined;
+}
 
 interface ResolveThrottle {
   acquireResolveSlot(): Promise<() => void>;
@@ -38,7 +50,12 @@ interface ResolveThrottle {
 }
 
 export interface ResolvedMediaUrlCache {
-  resolve(input: ResolveInput): Promise<ResolveOutcome>;
+  /**
+   * `refresh` discards a cached URL for this input before resolving, for a
+   * caller whose `<img>` kept failing on it (expired presigned original,
+   * expired Shutter capability). An in-flight resolve is joined as usual.
+   */
+  resolve(input: ResolveInput, options?: { refresh?: boolean }): Promise<ResolveOutcome>;
 }
 
 function resolveCacheKey({ mediaId, size, variant }: ResolveInput): string {
@@ -53,6 +70,11 @@ function pendingRetryDelayMs(attempt: number, serverRetryAfterMs?: number): numb
   return Math.max(serverRetryAfterMs ?? 0, Math.round(baseDelay * jitter));
 }
 
+/** The server function's call shape, so tests can supply a plain async function. */
+export type ResolveMediaDeliveryUrl = (options: {
+  data: ResolveInput;
+}) => Promise<{ pending: true; retryAfterMs: number } | { pending: false; url: string }>;
+
 export function createResolvedMediaUrlCache({
   resolve = resolveMediaDeliveryUrl,
   throttle = {
@@ -63,21 +85,27 @@ export function createResolvedMediaUrlCache({
     recordResolveSuccess,
   },
 }: {
-  resolve?: typeof resolveMediaDeliveryUrl;
+  resolve?: ResolveMediaDeliveryUrl;
   throttle?: ResolveThrottle;
 } = {}): ResolvedMediaUrlCache {
   const entries = new Map<string, ResolveCacheEntry>();
 
   return {
-    async resolve(input): Promise<ResolveOutcome> {
+    async resolve(input, options): Promise<ResolveOutcome> {
       const key = resolveCacheKey(input);
       const entry = entries.get(key) ?? { pendingAttempt: 0 };
       entries.set(key, entry);
 
-      if (entry.url) return { status: "ready", url: entry.url };
       if (entry.inFlight) return entry.inFlight;
-
       const now = Date.now();
+      if (options?.refresh || (entry.urlExpiresAt !== undefined && entry.urlExpiresAt <= now)) {
+        entry.url = undefined;
+        entry.urlExpiresAt = undefined;
+        entry.nextRetryAt = undefined;
+        entry.pendingAttempt = 0;
+      }
+      if (entry.url) return { status: "ready", url: entry.url };
+
       if (entry.nextRetryAt && entry.nextRetryAt > now) {
         return { retryAfterMs: entry.nextRetryAt - now, status: "pending" };
       }
@@ -101,6 +129,7 @@ export function createResolvedMediaUrlCache({
 
           throttle.recordResolveSuccess();
           entry.url = result.url;
+          entry.urlExpiresAt = urlExpiresAt(input.variant, Date.now());
           entry.nextRetryAt = undefined;
           entry.pendingAttempt = 0;
           return { status: "ready", url: result.url };
@@ -179,6 +208,7 @@ export function useResolvedMediaUrl({
   fallbackReadyUrl?: string;
   mediaId: string | undefined;
   readyUrl?: string;
+  /** Any value above 0 bypasses the shared URL cache; bump it to re-resolve. */
   refreshKey?: number;
   size?: number;
   variant: "thumbnail" | "preview" | "original";
@@ -204,10 +234,12 @@ export function useResolvedMediaUrl({
     }
 
     let cancelled = false;
+    let refresh = refreshKey > 0;
 
     void (async () => {
       while (!cancelled) {
-        const result = await cache.resolve({ mediaId, size, variant });
+        const result = await cache.resolve({ mediaId, size, variant }, { refresh });
+        refresh = false;
         if (cancelled) return;
 
         if (result.status === "ready") {
@@ -229,7 +261,17 @@ export function useResolvedMediaUrl({
     return () => {
       cancelled = true;
     };
-  }, [cache, fallbackReadyUrl, initialState, inputKey, mediaId, readyUrl, size, variant]);
+  }, [
+    cache,
+    fallbackReadyUrl,
+    initialState,
+    inputKey,
+    mediaId,
+    readyUrl,
+    refreshKey,
+    size,
+    variant,
+  ]);
 
   return {
     failed: state.failed,

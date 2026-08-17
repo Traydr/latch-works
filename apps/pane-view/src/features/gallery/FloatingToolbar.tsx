@@ -126,18 +126,19 @@ export function FloatingToolbar({
             </div>
           ) : null}
         </div>
-        <Button
-          aria-pressed={sortMode === "random"}
-          className={toolButtonClass(sortMode === "random")}
-          onClick={shuffle}
-          size="sm"
-          title={sortMode === "random" ? "Shuffle again" : "Random sort"}
-          type="button"
-          variant={sortMode === "random" ? "default" : "outline"}
-        >
-          <Shuffle className="size-4" />
-          <span className="hidden sm:inline">Shuffle</span>
-        </Button>
+        {sortMode === "random" ? (
+          <Button
+            className={toolButtonClass(false)}
+            onClick={shuffle}
+            size="sm"
+            title="Shuffle again"
+            type="button"
+            variant="outline"
+          >
+            <Shuffle className="size-4" />
+            <span className="hidden sm:inline">Shuffle</span>
+          </Button>
+        ) : null}
         <div className="h-5 w-px bg-border" />
         <Button
           className={toolButtonClass(false)}
