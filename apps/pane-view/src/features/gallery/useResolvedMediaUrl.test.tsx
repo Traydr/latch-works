@@ -6,16 +6,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createResolvedMediaUrlCache,
   type ResolvedMediaUrlCache,
+  type ResolveMediaDeliveryUrl,
   useResolvedMediaUrl,
 } from "./useResolvedMediaUrl";
 
-const mocks = vi.hoisted(() => ({
-  resolveMediaDeliveryUrl: vi.fn(),
-}));
-
-vi.mock("@/features/media/media-delivery-service", () => ({
-  resolveMediaDeliveryUrl: mocks.resolveMediaDeliveryUrl,
-}));
+const mocks = {
+  resolveMediaDeliveryUrl: vi.fn<ResolveMediaDeliveryUrl>(),
+};
 
 interface HookHarness {
   unmount: () => void;
@@ -59,7 +56,10 @@ function renderHookPair(cache: ResolvedMediaUrlCache): HookHarness {
   };
 }
 
-function renderSingleHook(cache: ResolvedMediaUrlCache): SingleHookHarness {
+function renderSingleHook(
+  cache: ResolvedMediaUrlCache,
+  options: { mediaId?: string; refreshKey?: number; size?: number } = {},
+): SingleHookHarness {
   let root: Root | undefined;
   let state: ReturnType<typeof useResolvedMediaUrl> | undefined;
   const container = document.createElement("div");
@@ -67,8 +67,9 @@ function renderSingleHook(cache: ResolvedMediaUrlCache): SingleHookHarness {
   function Host(): ReactNode {
     state = useResolvedMediaUrl({
       cache,
-      mediaId: "00000000-0000-4000-8000-000000000002",
-      size: 720,
+      mediaId: options.mediaId ?? "00000000-0000-4000-8000-000000000002",
+      refreshKey: options.refreshKey,
+      size: options.size ?? 720,
       variant: "thumbnail",
     });
     return null;
@@ -93,7 +94,7 @@ describe("useResolvedMediaUrl", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     mocks.resolveMediaDeliveryUrl.mockReset();
-    cache = createResolvedMediaUrlCache();
+    cache = createResolvedMediaUrlCache({ resolve: mocks.resolveMediaDeliveryUrl });
   });
 
   afterEach(() => {
@@ -102,7 +103,7 @@ describe("useResolvedMediaUrl", () => {
   });
 
   it("shares an in-flight pending resolve across matching mounted consumers", async () => {
-    mocks.resolveMediaDeliveryUrl.mockResolvedValue({ pending: true });
+    mocks.resolveMediaDeliveryUrl.mockResolvedValue({ pending: true, retryAfterMs: 5_000 });
     const { unmount } = renderHookPair(cache);
 
     await act(async () => {
@@ -159,8 +160,86 @@ describe("useResolvedMediaUrl", () => {
     };
 
     await cache.resolve(input);
-    await createResolvedMediaUrlCache().resolve(input);
+    await createResolvedMediaUrlCache({ resolve: mocks.resolveMediaDeliveryUrl }).resolve(input);
 
     expect(mocks.resolveMediaDeliveryUrl).toHaveBeenCalledTimes(2);
+  });
+
+  it("re-resolves a cached URL when asked to refresh", async () => {
+    mocks.resolveMediaDeliveryUrl
+      .mockResolvedValueOnce({ pending: false, url: "https://edge.shutter.test/stale" })
+      .mockResolvedValueOnce({ pending: false, url: "https://edge.shutter.test/fresh" });
+    const input = {
+      mediaId: "00000000-0000-4000-8000-000000000001",
+      size: 320,
+      variant: "thumbnail" as const,
+    };
+
+    await expect(cache.resolve(input)).resolves.toEqual({
+      status: "ready",
+      url: "https://edge.shutter.test/stale",
+    });
+    await expect(cache.resolve(input)).resolves.toEqual({
+      status: "ready",
+      url: "https://edge.shutter.test/stale",
+    });
+    await expect(cache.resolve(input, { refresh: true })).resolves.toEqual({
+      status: "ready",
+      url: "https://edge.shutter.test/fresh",
+    });
+    await expect(cache.resolve(input)).resolves.toEqual({
+      status: "ready",
+      url: "https://edge.shutter.test/fresh",
+    });
+    expect(mocks.resolveMediaDeliveryUrl).toHaveBeenCalledTimes(2);
+  });
+
+  it("drops a cached original URL before its presigned lifetime ends", async () => {
+    vi.setSystemTime(new Date("2026-08-18T00:00:00.000Z"));
+    mocks.resolveMediaDeliveryUrl
+      .mockResolvedValueOnce({ pending: false, url: "https://storage.test/original?sig=1" })
+      .mockResolvedValueOnce({ pending: false, url: "https://storage.test/original?sig=2" });
+    const input = { mediaId: "00000000-0000-4000-8000-000000000001", variant: "original" as const };
+
+    await expect(cache.resolve(input)).resolves.toMatchObject({
+      url: "https://storage.test/original?sig=1",
+    });
+    vi.advanceTimersByTime(30_000);
+    await expect(cache.resolve(input)).resolves.toMatchObject({
+      url: "https://storage.test/original?sig=1",
+    });
+    vi.advanceTimersByTime(20_000);
+    await expect(cache.resolve(input)).resolves.toMatchObject({
+      url: "https://storage.test/original?sig=2",
+    });
+    expect(mocks.resolveMediaDeliveryUrl).toHaveBeenCalledTimes(2);
+  });
+
+  it("bypasses the shared URL cache when the hook mounts with a refresh key", async () => {
+    mocks.resolveMediaDeliveryUrl
+      .mockResolvedValueOnce({ pending: false, url: "https://edge.shutter.test/stale" })
+      .mockResolvedValueOnce({ pending: false, url: "https://edge.shutter.test/fresh" });
+    await cache.resolve({
+      mediaId: "00000000-0000-4000-8000-000000000001",
+      size: 320,
+      variant: "thumbnail",
+    });
+
+    const hook = renderSingleHook(cache, {
+      mediaId: "00000000-0000-4000-8000-000000000001",
+      refreshKey: 1,
+      size: 320,
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(hook.getState()).toEqual({
+      failed: false,
+      loading: false,
+      resolvedUrl: "https://edge.shutter.test/fresh",
+    });
+    hook.unmount();
   });
 });
