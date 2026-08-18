@@ -7,7 +7,31 @@ interface ViewerStatePatch {
   positionMs?: number;
 }
 
-export function useLibraryViewerState(subjectId: string | undefined) {
+export interface ViewerStateSubject {
+  subjectId: string;
+  subjectType: "library_entry";
+}
+
+export interface ViewerStateWrite extends ViewerStateSubject {
+  page?: number;
+  positionMs?: number;
+}
+
+/**
+ * The two viewer-state calls the hook makes. The default talks to the server
+ * functions; tests pass an in-memory store.
+ */
+export interface ViewerStateStore {
+  getViewerState(options: { data: ViewerStateSubject }): Promise<ViewerStateSnapshot | null>;
+  saveViewerState(options: { data: ViewerStateWrite }): Promise<ViewerStateSnapshot | null>;
+}
+
+export const serverViewerStateStore: ViewerStateStore = { getViewerState, saveViewerState };
+
+export function useLibraryViewerState(
+  subjectId: string | undefined,
+  store: ViewerStateStore = serverViewerStateStore,
+) {
   const [snapshot, setSnapshot] = useState<ViewerStateSnapshot | null>(null);
   const pendingPatchRef = useRef<ViewerStatePatch | null>(null);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -34,7 +58,7 @@ export function useLibraryViewerState(subjectId: string | undefined) {
       pendingPatchRef.current = null;
       clearDebounceTimer();
 
-      const saved = await saveViewerState({
+      const saved = await store.saveViewerState({
         data: {
           subjectId: targetSubjectId,
           subjectType: "library_entry",
@@ -46,7 +70,7 @@ export function useLibraryViewerState(subjectId: string | undefined) {
         setSnapshot(saved);
       }
     },
-    [clearDebounceTimer],
+    [clearDebounceTimer, store],
   );
 
   const scheduleSave = useCallback(
@@ -78,7 +102,7 @@ export function useLibraryViewerState(subjectId: string | undefined) {
     setSnapshot(null);
 
     void (async () => {
-      const state = await getViewerState({
+      const state = await store.getViewerState({
         data: {
           subjectId,
           subjectType: "library_entry",
@@ -94,7 +118,7 @@ export function useLibraryViewerState(subjectId: string | undefined) {
       cancelled = true;
       void flushSave(subjectId);
     };
-  }, [subjectId, flushSave]);
+  }, [store, subjectId, flushSave]);
 
   useEffect(() => {
     return () => {

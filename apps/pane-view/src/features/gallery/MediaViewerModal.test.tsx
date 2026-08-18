@@ -4,8 +4,13 @@ import type { MediaItem } from "@latch-works/media-domain";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type {
+  ViewerStateStore,
+  ViewerStateWrite,
+} from "@/features/viewer/use-library-viewer-state";
 import { VIEWER_STATE_SAVE_DEBOUNCE_MS } from "@/features/viewer/viewer-resume";
 import { MediaViewerModal } from "./MediaViewerModal";
+import { createResolvedMediaUrlCache, type ResolvedMediaUrlCache } from "./useResolvedMediaUrl";
 
 const videoItem: MediaItem = {
   durationMs: 120_000,
@@ -19,42 +24,47 @@ const videoItem: MediaItem = {
   size: 12_345,
 };
 
-vi.mock("@/hooks/use-mobile", () => ({
-  useIsMobile: () => false,
-}));
+/** jsdom has no matchMedia; the viewer chrome only asks whether this is a phone. */
+function stubMatchMedia(): void {
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    value: vi.fn(() => ({
+      addEventListener: vi.fn(),
+      matches: false,
+      removeEventListener: vi.fn(),
+    })),
+  });
+}
 
-vi.mock("./useResolvedMediaUrl", () => ({
-  useResolvedMediaUrl: () => ({
-    failed: false,
-    loading: false,
-    resolvedUrl: "https://example.test/video.mp4",
-  }),
-}));
+function fakeUrlCache(url: string): ResolvedMediaUrlCache {
+  return createResolvedMediaUrlCache({ resolve: async () => ({ pending: false, url }) });
+}
 
-const flushSave = vi.fn();
-const scheduleSave = vi.fn();
-
-vi.mock("@/features/viewer/use-library-viewer-state", () => ({
-  useLibraryViewerState: (subjectId: string | undefined) => ({
-    flushSave: subjectId ? flushSave : vi.fn(),
-    scheduleSave: subjectId ? scheduleSave : vi.fn(),
-    snapshot: subjectId
-      ? {
-          positionMs: 45_000,
-          subjectId: videoItem.id,
-          subjectType: "library_entry" as const,
-          updatedAt: "2026-06-12T00:00:00.000Z",
-        }
-      : null,
-  }),
-}));
+/** In-memory stand-in for the viewer-state server functions. */
+function fakeViewerStateStore(saved: ViewerStateWrite[]) {
+  return {
+    getViewerState: vi.fn<ViewerStateStore["getViewerState"]>(async () => ({
+      positionMs: 45_000,
+      subjectId: videoItem.id,
+      subjectType: "library_entry",
+      updatedAt: "2026-06-12T00:00:00.000Z",
+    })),
+    saveViewerState: vi.fn<ViewerStateStore["saveViewerState"]>(async ({ data }) => {
+      saved.push(data);
+      return null;
+    }),
+  } satisfies ViewerStateStore;
+}
 
 interface MountedModal {
   root: Root;
   container: HTMLDivElement;
 }
 
-function renderModal(rememberViewerPosition = true): MountedModal {
+let saved: ViewerStateWrite[];
+let viewerStateStore: ReturnType<typeof fakeViewerStateStore>;
+
+async function renderModal(rememberViewerPosition = true): Promise<MountedModal> {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -63,6 +73,7 @@ function renderModal(rememberViewerPosition = true): MountedModal {
     root.render(
       createElement(MediaViewerModal, {
         autoplayVideos: false,
+        cache: fakeUrlCache("https://example.test/video.mp4"),
         hasMore: false,
         items: [videoItem],
         loopNavigation: false,
@@ -72,8 +83,14 @@ function renderModal(rememberViewerPosition = true): MountedModal {
         onSelect: vi.fn(),
         rememberViewerPosition,
         stepMedia: async () => null,
+        viewerStateStore,
       }),
     );
+  });
+
+  // Let the stored position load before the video reports its metadata.
+  await act(async () => {
+    await Promise.resolve();
   });
 
   return { container, root };
@@ -84,8 +101,9 @@ describe("MediaViewerModal resume state", () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
-    flushSave.mockReset();
-    scheduleSave.mockReset();
+    stubMatchMedia();
+    saved = [];
+    viewerStateStore = fakeViewerStateStore(saved);
   });
 
   afterEach(() => {
@@ -96,8 +114,8 @@ describe("MediaViewerModal resume state", () => {
     vi.useRealTimers();
   });
 
-  it("seeks the video after metadata loads", () => {
-    ({ root } = renderModal());
+  it("seeks the video after metadata loads", async () => {
+    ({ root } = await renderModal());
     const video = document.querySelector("video");
     expect(video).not.toBeNull();
 
@@ -112,8 +130,8 @@ describe("MediaViewerModal resume state", () => {
     expect(video?.currentTime).toBe(45);
   });
 
-  it("debounces save calls from time updates", () => {
-    ({ root } = renderModal());
+  it("debounces save calls from time updates", async () => {
+    ({ root } = await renderModal());
     const video = document.querySelector("video");
     expect(video).not.toBeNull();
 
@@ -127,13 +145,21 @@ describe("MediaViewerModal resume state", () => {
       video?.dispatchEvent(new Event("timeupdate"));
     });
 
-    expect(scheduleSave).toHaveBeenCalledTimes(2);
-    expect(scheduleSave).toHaveBeenCalledWith({ positionMs: 12_500 });
-    expect(flushSave).not.toHaveBeenCalled();
+    expect(viewerStateStore.saveViewerState).not.toHaveBeenCalled();
+
+    await act(async () => {
+      vi.advanceTimersByTime(VIEWER_STATE_SAVE_DEBOUNCE_MS);
+      await Promise.resolve();
+    });
+
+    expect(viewerStateStore.saveViewerState).toHaveBeenCalledTimes(1);
+    expect(saved).toEqual([
+      { positionMs: 12_500, subjectId: videoItem.id, subjectType: "library_entry" },
+    ]);
   });
 
-  it("flushes saved position on pause", () => {
-    ({ root } = renderModal());
+  it("flushes saved position on pause", async () => {
+    ({ root } = await renderModal());
     const video = document.querySelector("video");
     expect(video).not.toBeNull();
 
@@ -146,22 +172,38 @@ describe("MediaViewerModal resume state", () => {
       video?.dispatchEvent(new Event("pause"));
     });
 
-    expect(scheduleSave).toHaveBeenCalledWith({ positionMs: 30_000 });
-    expect(flushSave).toHaveBeenCalledTimes(1);
+    // Pause flushes immediately instead of waiting out the debounce window.
+    expect(saved).toEqual([
+      { positionMs: 30_000, subjectId: videoItem.id, subjectType: "library_entry" },
+    ]);
   });
 
-  it("flushes saved position when the modal unmounts", () => {
-    ({ root } = renderModal());
+  it("flushes saved position when the modal unmounts", async () => {
+    ({ root } = await renderModal());
+    const video = document.querySelector("video");
+
+    act(() => {
+      Object.defineProperty(video, "currentTime", {
+        configurable: true,
+        value: 20,
+        writable: true,
+      });
+      video?.dispatchEvent(new Event("timeupdate"));
+    });
+    expect(viewerStateStore.saveViewerState).not.toHaveBeenCalled();
 
     act(() => {
       root?.unmount();
     });
 
-    expect(flushSave).toHaveBeenCalledTimes(1);
+    expect(viewerStateStore.saveViewerState).toHaveBeenCalledTimes(1);
+    expect(saved).toEqual([
+      { positionMs: 20_000, subjectId: videoItem.id, subjectType: "library_entry" },
+    ]);
   });
 
-  it("does not schedule saves faster than the debounce window during playback", () => {
-    ({ root } = renderModal());
+  it("does not schedule saves faster than the debounce window during playback", async () => {
+    ({ root } = await renderModal());
     const video = document.querySelector("video");
     expect(video).not.toBeNull();
 
@@ -184,12 +226,22 @@ describe("MediaViewerModal resume state", () => {
       video?.dispatchEvent(new Event("timeupdate"));
     });
 
-    expect(scheduleSave).toHaveBeenCalledTimes(2);
-    expect(flushSave).not.toHaveBeenCalled();
+    // The second update restarts the window instead of writing its own save.
+    expect(viewerStateStore.saveViewerState).not.toHaveBeenCalled();
+
+    await act(async () => {
+      vi.advanceTimersByTime(VIEWER_STATE_SAVE_DEBOUNCE_MS);
+      await Promise.resolve();
+    });
+
+    expect(viewerStateStore.saveViewerState).toHaveBeenCalledTimes(1);
+    expect(saved).toEqual([
+      { positionMs: 6_000, subjectId: videoItem.id, subjectType: "library_entry" },
+    ]);
   });
 
-  it("does not resume or save position when rememberViewerPosition is disabled", () => {
-    ({ root } = renderModal(false));
+  it("does not resume or save position when rememberViewerPosition is disabled", async () => {
+    ({ root } = await renderModal(false));
     const video = document.querySelector("video");
     expect(video).not.toBeNull();
 
@@ -213,8 +265,8 @@ describe("MediaViewerModal resume state", () => {
       video?.dispatchEvent(new Event("pause"));
     });
 
-    expect(scheduleSave).not.toHaveBeenCalled();
-    expect(flushSave).not.toHaveBeenCalled();
+    expect(viewerStateStore.getViewerState).not.toHaveBeenCalled();
+    expect(viewerStateStore.saveViewerState).not.toHaveBeenCalled();
   });
 });
 
@@ -243,6 +295,7 @@ interface ControlledProps {
 }
 
 function renderControlled(initial: ControlledProps) {
+  const cache = fakeUrlCache("https://example.test/photo.jpg");
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -257,6 +310,7 @@ function renderControlled(initial: ControlledProps) {
       root.render(
         createElement(MediaViewerModal, {
           autoplayVideos: false,
+          cache,
           hasMore: props.hasMore,
           items: props.items,
           loopNavigation: props.loopNavigation,
@@ -304,6 +358,7 @@ describe("MediaViewerModal controlled by media id", () => {
 
   beforeEach(() => {
     vi.useRealTimers();
+    stubMatchMedia();
   });
 
   afterEach(() => {

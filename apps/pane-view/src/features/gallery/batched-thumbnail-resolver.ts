@@ -13,6 +13,22 @@ export interface GalleryThumbnailResolveState {
   urls: Record<string, string>;
 }
 
+/** The delivery call the batch makes, so tests can supply a plain async function. */
+export type ResolveMediaDeliveryUrls = (options: {
+  data: {
+    items: { mediaId: string; size: number; variant: "thumbnail" }[];
+  };
+}) => Promise<{ results: MediaDeliveryBatchResult[] }>;
+
+export interface GalleryThumbnailResolver {
+  getNextPendingThumbnailRetryMs(requests: GalleryThumbnailRequest[]): number | null;
+  hasEligibleGalleryThumbnailRequests(requests: GalleryThumbnailRequest[]): boolean;
+  readCachedGalleryThumbnailState(): GalleryThumbnailResolveState;
+  resolveGalleryThumbnailsBatch(
+    requests: GalleryThumbnailRequest[],
+  ): Promise<GalleryThumbnailResolveState>;
+}
+
 interface ThumbnailCacheEntry {
   inFlight: boolean;
   nextRetryAt?: number;
@@ -25,6 +41,7 @@ const PENDING_RETRY_DELAYS_MS = [5_000, 10_000, 20_000, 30_000, 60_000] as const
 interface ThumbnailResolverState {
   attempts: Map<string, number>;
   cache: Map<string, ThumbnailCacheEntry>;
+  resolveUrls: ResolveMediaDeliveryUrls;
 }
 
 function cacheKey(request: GalleryThumbnailRequest): string {
@@ -177,7 +194,7 @@ async function resolveGalleryThumbnailsBatchFor(
   }
 
   try {
-    const response = await resolveMediaDeliveryUrls({
+    const response = await state.resolveUrls({
       data: {
         items: batch.map(([, request]) => ({
           mediaId: request.mediaId,
@@ -217,10 +234,15 @@ async function resolveGalleryThumbnailsBatchFor(
   return readCachedGalleryThumbnailStateFor(state);
 }
 
-export function createThumbnailResolver() {
+export function createThumbnailResolver({
+  resolveUrls = resolveMediaDeliveryUrls,
+}: {
+  resolveUrls?: ResolveMediaDeliveryUrls;
+} = {}): GalleryThumbnailResolver {
   const state: ThumbnailResolverState = {
     attempts: new Map(),
     cache: new Map(),
+    resolveUrls,
   };
 
   return {
@@ -234,7 +256,7 @@ export function createThumbnailResolver() {
   };
 }
 
-const sharedThumbnailResolver = createThumbnailResolver();
+export const sharedThumbnailResolver = createThumbnailResolver();
 
 export const {
   getNextPendingThumbnailRetryMs,

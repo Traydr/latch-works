@@ -1,10 +1,15 @@
 import type { MediaItem } from "@latch-works/media-domain";
 import { type JSX, useCallback, useEffect, useRef } from "react";
+import type { ViewerStateStore } from "@/features/viewer/use-library-viewer-state";
 import { MediaViewerSession } from "./MediaViewerSession";
-import { useResolvedMediaUrl } from "./useResolvedMediaUrl";
+import { type ResolvedMediaUrlCache, useResolvedMediaUrl } from "./useResolvedMediaUrl";
 
-function usePrefetchNeighborPreview(item: MediaItem | undefined): void {
+function usePrefetchNeighborPreview(
+  item: MediaItem | undefined,
+  cache: ResolvedMediaUrlCache | undefined,
+): void {
   const { resolvedUrl } = useResolvedMediaUrl({
+    cache,
     mediaId: item?.mediaType === "image" ? item.id : undefined,
     variant: "preview",
   });
@@ -18,6 +23,8 @@ function usePrefetchNeighborPreview(item: MediaItem | undefined): void {
 
 export interface MediaViewerModalProps {
   autoplayVideos: boolean;
+  /** Overrides the shared URL cache; tests inject a cache with a fake resolver. */
+  cache?: ResolvedMediaUrlCache;
   /** True while the browse session still has unloaded pages. */
   hasMore: boolean;
   /** The live media sequence from the browse session, in display order. */
@@ -30,6 +37,8 @@ export interface MediaViewerModalProps {
   /** Called with the id to show next; the caller writes it to the selection. */
   onSelect: (mediaId: string) => void;
   rememberViewerPosition: boolean;
+  /** Overrides the viewer-state server calls; tests inject an in-memory store. */
+  viewerStateStore?: ViewerStateStore;
   /**
    * Resolve one step from `mediaId`: the neighbour, the first item of a
    * freshly loaded page, a wrap, or null to stay. Provided by the session.
@@ -45,6 +54,7 @@ export interface MediaViewerModalProps {
  */
 export function MediaViewerModal({
   autoplayVideos,
+  cache,
   hasMore,
   items,
   loopNavigation,
@@ -54,6 +64,7 @@ export function MediaViewerModal({
   onSelect,
   rememberViewerPosition,
   stepMedia,
+  viewerStateStore,
 }: MediaViewerModalProps): JSX.Element | null {
   const index = items.findIndex((candidate) => candidate.id === mediaId);
   const lastItemRef = useRef<MediaItem | undefined>(undefined);
@@ -103,8 +114,8 @@ export function MediaViewerModal({
     }
     return loopNavigation && !hasMore ? items[(target + items.length) % items.length] : undefined;
   };
-  usePrefetchNeighborPreview(neighbor(-1));
-  usePrefetchNeighborPreview(neighbor(1));
+  usePrefetchNeighborPreview(neighbor(-1), cache);
+  usePrefetchNeighborPreview(neighbor(1), cache);
 
   if (!item) {
     return null;
@@ -114,6 +125,7 @@ export function MediaViewerModal({
     <MediaViewerSession
       key={item.id}
       autoplayVideos={autoplayVideos}
+      cache={cache}
       canStepBackward={canStepBackward}
       canStepForward={canStepForward}
       item={item}
@@ -121,6 +133,7 @@ export function MediaViewerModal({
       onClose={onClose}
       onStep={step}
       rememberViewerPosition={rememberViewerPosition}
+      viewerStateStore={viewerStateStore}
     />
   );
 }

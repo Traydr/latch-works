@@ -1,16 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_MEDIA_PAGE_LIMIT, readLibrarySnapshotRequest } from "./library-service";
-
-vi.mock("../../server/auth/web-session", () => ({
-  isCurrentWebSessionValid: vi.fn(),
-}));
-
-vi.mock("../../server/library/repository", () => ({
-  readDatabaseLibrarySnapshot: vi.fn(),
-}));
-
-import { isCurrentWebSessionValid } from "../../server/auth/web-session";
-import { readDatabaseLibrarySnapshot } from "../../server/library/repository";
+import type { DatabaseLibrarySnapshot } from "../../server/library/repository";
+import {
+  DEFAULT_MEDIA_PAGE_LIMIT,
+  type LibrarySnapshotSource,
+  readLibrarySnapshotRequest,
+} from "./library-service";
 
 const emptyMediaPage = {
   hasMore: false,
@@ -19,25 +13,36 @@ const emptyMediaPage = {
   offset: 0,
 };
 
-describe("library snapshot auth", () => {
+function databaseSnapshot(roots: string[]): DatabaseLibrarySnapshot {
+  return {
+    allFolders: [],
+    folders: [],
+    media: [],
+    mediaPage: emptyMediaPage,
+    roots,
+  };
+}
+
+/** Records the read the service asks for and answers it from memory. */
+function fakeSnapshotSource(roots: string[] = []) {
+  return {
+    readDatabaseLibrarySnapshot: vi.fn<LibrarySnapshotSource["readDatabaseLibrarySnapshot"]>(
+      async () => databaseSnapshot(roots),
+    ),
+  } satisfies LibrarySnapshotSource;
+}
+
+describe("library snapshot reads", () => {
+  let source: ReturnType<typeof fakeSnapshotSource>;
+
   beforeEach(() => {
-    vi.mocked(isCurrentWebSessionValid).mockReset();
-    vi.mocked(readDatabaseLibrarySnapshot).mockReset();
+    source = fakeSnapshotSource(["photos"]);
   });
 
-  it("loads snapshots for authenticated requests", async () => {
-    vi.mocked(isCurrentWebSessionValid).mockResolvedValue(true);
-    vi.mocked(readDatabaseLibrarySnapshot).mockResolvedValue({
-      allFolders: [],
-      folders: [],
-      media: [],
-      mediaPage: emptyMediaPage,
-      roots: ["photos"],
-    });
+  it("loads snapshots through the archive reader", async () => {
+    const snapshot = await readLibrarySnapshotRequest({ path: "photos" }, source);
 
-    const snapshot = await readLibrarySnapshotRequest({ path: "photos" });
-
-    expect(readDatabaseLibrarySnapshot).toHaveBeenCalledWith({
+    expect(source.readDatabaseLibrarySnapshot).toHaveBeenCalledWith({
       currentPath: "photos",
       includeAllFolders: false,
       limit: DEFAULT_MEDIA_PAGE_LIMIT,
@@ -51,17 +56,9 @@ describe("library snapshot auth", () => {
   });
 
   it("includes all folders for initial comic snapshots", async () => {
-    vi.mocked(readDatabaseLibrarySnapshot).mockResolvedValue({
-      allFolders: [],
-      folders: [],
-      media: [],
-      mediaPage: emptyMediaPage,
-      roots: [],
-    });
+    await readLibrarySnapshotRequest({ comicMode: true, path: "photos" }, source);
 
-    await readLibrarySnapshotRequest({ comicMode: true, path: "photos" });
-
-    expect(readDatabaseLibrarySnapshot).toHaveBeenCalledWith(
+    expect(source.readDatabaseLibrarySnapshot).toHaveBeenCalledWith(
       expect.objectContaining({
         includeAllFolders: true,
         recursive: true,
@@ -71,21 +68,16 @@ describe("library snapshot auth", () => {
 });
 
 describe("library snapshot paging", () => {
+  let source: ReturnType<typeof fakeSnapshotSource>;
+
   beforeEach(() => {
-    vi.mocked(readDatabaseLibrarySnapshot).mockReset();
-    vi.mocked(readDatabaseLibrarySnapshot).mockResolvedValue({
-      allFolders: [],
-      folders: [],
-      media: [],
-      mediaPage: emptyMediaPage,
-      roots: [],
-    });
+    source = fakeSnapshotSource();
   });
 
   it("passes media offset and default limit for non-search requests", async () => {
-    await readLibrarySnapshotRequest({ mediaOffset: 500, path: "photos" });
+    await readLibrarySnapshotRequest({ mediaOffset: 500, path: "photos" }, source);
 
-    expect(readDatabaseLibrarySnapshot).toHaveBeenCalledWith(
+    expect(source.readDatabaseLibrarySnapshot).toHaveBeenCalledWith(
       expect.objectContaining({
         limit: DEFAULT_MEDIA_PAGE_LIMIT,
         offset: 500,
@@ -95,14 +87,17 @@ describe("library snapshot paging", () => {
   });
 
   it("omits all folders for paged comic snapshots when explicitly requested", async () => {
-    await readLibrarySnapshotRequest({
-      comicMode: true,
-      includeAllFolders: false,
-      mediaOffset: 500,
-      path: "photos",
-    });
+    await readLibrarySnapshotRequest(
+      {
+        comicMode: true,
+        includeAllFolders: false,
+        mediaOffset: 500,
+        path: "photos",
+      },
+      source,
+    );
 
-    expect(readDatabaseLibrarySnapshot).toHaveBeenCalledWith(
+    expect(source.readDatabaseLibrarySnapshot).toHaveBeenCalledWith(
       expect.objectContaining({
         includeAllFolders: false,
         offset: 500,
@@ -112,9 +107,9 @@ describe("library snapshot paging", () => {
   });
 
   it("passes search offset and search limit for search requests", async () => {
-    await readLibrarySnapshotRequest({ path: "photos", query: "cover", searchOffset: 200 });
+    await readLibrarySnapshotRequest({ path: "photos", query: "cover", searchOffset: 200 }, source);
 
-    expect(readDatabaseLibrarySnapshot).toHaveBeenCalledWith(
+    expect(source.readDatabaseLibrarySnapshot).toHaveBeenCalledWith(
       expect.objectContaining({
         limit: 200,
         offset: 200,
@@ -124,9 +119,9 @@ describe("library snapshot paging", () => {
   });
 
   it("honors custom media limit for non-search requests", async () => {
-    await readLibrarySnapshotRequest({ mediaLimit: 100, path: "photos" });
+    await readLibrarySnapshotRequest({ mediaLimit: 100, path: "photos" }, source);
 
-    expect(readDatabaseLibrarySnapshot).toHaveBeenCalledWith(
+    expect(source.readDatabaseLibrarySnapshot).toHaveBeenCalledWith(
       expect.objectContaining({
         limit: 100,
         offset: 0,
@@ -136,9 +131,9 @@ describe("library snapshot paging", () => {
   });
 
   it("honors explicit media limit for search requests", async () => {
-    await readLibrarySnapshotRequest({ mediaLimit: 0, path: "photos", query: "cover" });
+    await readLibrarySnapshotRequest({ mediaLimit: 0, path: "photos", query: "cover" }, source);
 
-    expect(readDatabaseLibrarySnapshot).toHaveBeenCalledWith(
+    expect(source.readDatabaseLibrarySnapshot).toHaveBeenCalledWith(
       expect.objectContaining({
         limit: 0,
         offset: 0,

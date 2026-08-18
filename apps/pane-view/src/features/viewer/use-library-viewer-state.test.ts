@@ -3,15 +3,13 @@
 import { act, createElement, type MutableRefObject, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useLibraryViewerState } from "./use-library-viewer-state";
+import { useLibraryViewerState, type ViewerStateStore } from "./use-library-viewer-state";
 import { VIEWER_STATE_SAVE_DEBOUNCE_MS } from "./viewer-resume";
 
-vi.mock("./viewer-state-service", () => ({
-  getViewerState: vi.fn(),
-  saveViewerState: vi.fn(),
-}));
-
-import { getViewerState, saveViewerState } from "./viewer-state-service";
+/** Stands in for the viewer-state server functions. */
+const getViewerState = vi.fn<ViewerStateStore["getViewerState"]>();
+const saveViewerState = vi.fn<ViewerStateStore["saveViewerState"]>();
+const store: ViewerStateStore = { getViewerState, saveViewerState };
 
 type HookApi = ReturnType<typeof useLibraryViewerState>;
 
@@ -28,7 +26,7 @@ function renderHook(subjectId: string | undefined): HookHarness {
   const container = document.createElement("div");
 
   function Host(): ReactNode {
-    latestApi.current = useLibraryViewerState(currentSubjectId);
+    latestApi.current = useLibraryViewerState(currentSubjectId, store);
     return null;
   }
 
@@ -65,8 +63,8 @@ function renderHook(subjectId: string | undefined): HookHarness {
 describe("useLibraryViewerState", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    vi.mocked(getViewerState).mockReset();
-    vi.mocked(saveViewerState).mockReset();
+    getViewerState.mockReset();
+    saveViewerState.mockReset();
   });
 
   afterEach(() => {
@@ -74,7 +72,7 @@ describe("useLibraryViewerState", () => {
   });
 
   it("loads viewer state for the selected library entry", async () => {
-    vi.mocked(getViewerState).mockResolvedValue({
+    getViewerState.mockResolvedValue({
       positionMs: 12_000,
       subjectId: "00000000-0000-4000-8000-000000000001",
       subjectType: "library_entry",
@@ -96,8 +94,8 @@ describe("useLibraryViewerState", () => {
   });
 
   it("debounces saveViewerState calls", async () => {
-    vi.mocked(getViewerState).mockResolvedValue(null);
-    vi.mocked(saveViewerState).mockResolvedValue(null);
+    getViewerState.mockResolvedValue(null);
+    saveViewerState.mockResolvedValue(null);
 
     const { getApi } = renderHook("00000000-0000-4000-8000-000000000002");
 
@@ -129,8 +127,8 @@ describe("useLibraryViewerState", () => {
   });
 
   it("flushes pending state when the subject changes", async () => {
-    vi.mocked(getViewerState).mockResolvedValue(null);
-    vi.mocked(saveViewerState).mockResolvedValue(null);
+    getViewerState.mockResolvedValue(null);
+    saveViewerState.mockResolvedValue(null);
 
     const { getApi, rerender } = renderHook("00000000-0000-4000-8000-000000000003");
 
@@ -158,8 +156,8 @@ describe("useLibraryViewerState", () => {
   });
 
   it("flushes pending state on unmount", async () => {
-    vi.mocked(getViewerState).mockResolvedValue(null);
-    vi.mocked(saveViewerState).mockResolvedValue(null);
+    getViewerState.mockResolvedValue(null);
+    saveViewerState.mockResolvedValue(null);
 
     const { getApi, unmount } = renderHook("00000000-0000-4000-8000-000000000005");
 

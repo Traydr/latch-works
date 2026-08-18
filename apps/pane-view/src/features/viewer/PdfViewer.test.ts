@@ -22,21 +22,29 @@ const mocks = vi.hoisted(
   }),
 );
 
-vi.mock("pdfjs-dist", () => ({
-  GlobalWorkerOptions: {},
-  getDocument: vi.fn(() => mocks.documents.shift()),
-}));
-
-vi.mock("pdfjs-dist/build/pdf.worker.min.mjs?url", () => ({ default: "pdf-worker" }));
-
-import { getDocument } from "pdfjs-dist";
 import { PdfViewer } from "./PdfViewer";
+import type { PdfEngine } from "./pdf-engine";
 import {
   getPdfPageRenderWindow,
   type PdfPageIntersection,
   resolveVisiblePdfPage,
   scrollToPdfPage,
 } from "./pdf-viewer-helpers";
+
+/** Stands in for the pdf.js adapter; each mount takes the next queued document. */
+let openDocument = vi.fn<PdfEngine["openDocument"]>();
+let engine: PdfEngine = { openDocument };
+
+function installFakeEngine(): void {
+  openDocument = vi.fn<PdfEngine["openDocument"]>(async () => {
+    const next = mocks.documents.shift();
+    if (!next) {
+      throw new Error("no fake PDF document was queued");
+    }
+    return next;
+  });
+  engine = { openDocument };
+}
 
 interface Deferred<T> {
   promise: Promise<T>;
@@ -176,6 +184,7 @@ function mount(
     act(() => {
       root.render(
         createElement(PdfViewer, {
+          engine,
           initialPage: nextProps.initialPage,
           mediaId: nextProps.mediaId ?? "media-a",
           onPageChange: nextProps.onPageChange,
@@ -220,7 +229,7 @@ describe("PdfViewer", () => {
     mocks.resizeObservers.length = 0;
     mocks.renderTasks.length = 0;
     mocks.scrollIntoView.mockReset();
-    vi.mocked(getDocument).mockClear();
+    installFakeEngine();
     vi.stubGlobal("IntersectionObserver", FakeIntersectionObserver);
     vi.stubGlobal("ResizeObserver", FakeResizeObserver);
     // SAFETY: jsdom has no canvas; the fake page.render never touches the
@@ -339,13 +348,13 @@ describe("PdfViewer", () => {
     mocks.documents.push(pdf);
     const viewer = mount({ mediaId: "media-a" });
     await flush();
-    expect(vi.mocked(getDocument)).toHaveBeenCalledTimes(1);
+    expect(openDocument).toHaveBeenCalledTimes(1);
 
     viewer.rerender({ mediaId: "media-a", initialPage: 12 });
     await flush();
 
     expect(pdf.destroy).not.toHaveBeenCalled();
-    expect(vi.mocked(getDocument)).toHaveBeenCalledTimes(1);
+    expect(openDocument).toHaveBeenCalledTimes(1);
     expect(mocks.scrollIntoView).toHaveBeenCalledWith({ block: "start" });
     viewer.unmount();
   });

@@ -21,12 +21,23 @@ import {
  * comic on demand through the session (Plan 052 Step 2, Decision 9).
  */
 
-vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => false }));
-
 let harness: SessionHarness | null = null;
+
+/** jsdom has no matchMedia; the cards only ask whether this is a phone. */
+function stubMatchMedia(): void {
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    value: vi.fn(() => ({
+      addEventListener: vi.fn(),
+      matches: false,
+      removeEventListener: vi.fn(),
+    })),
+  });
+}
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  stubMatchMedia();
 });
 
 afterEach(() => {

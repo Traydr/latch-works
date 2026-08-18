@@ -9,6 +9,10 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import type { GalleryListingPage } from "../../server/library/gallery-listing";
 import { DEFAULT_GALLERY_LISTING_LIMIT } from "../../server/library/gallery-listing";
+import type {
+  DatabaseLibrarySnapshot,
+  LibrarySnapshotReadRequest,
+} from "../../server/library/repository";
 import { type GalleryRandomSeed, GalleryRandomSeedSchema } from "../gallery/gallery-random-seed";
 import type { LibraryMediaItem, MediaPage } from "./types";
 
@@ -85,8 +89,26 @@ export async function assertWebSessionAuthorized(): Promise<void> {
   }
 }
 
+/**
+ * The one archive read a library snapshot needs. The default reads the
+ * database; tests pass an in-memory reader.
+ */
+export interface LibrarySnapshotSource {
+  readDatabaseLibrarySnapshot(
+    request: LibrarySnapshotReadRequest,
+  ): Promise<DatabaseLibrarySnapshot>;
+}
+
+const databaseLibrarySnapshotSource: LibrarySnapshotSource = {
+  async readDatabaseLibrarySnapshot(request) {
+    const { readDatabaseLibrarySnapshot } = await import("../../server/library/repository");
+    return readDatabaseLibrarySnapshot(request);
+  },
+};
+
 export async function readLibrarySnapshotRequest(
   data: z.infer<typeof libraryRequestSchema>,
+  source: LibrarySnapshotSource = databaseLibrarySnapshotSource,
 ): Promise<LibrarySnapshot> {
   const currentPath = normalizeLibraryPath(data.path);
   const query = normalizeQuery(data.query);
@@ -101,8 +123,7 @@ export async function readLibrarySnapshotRequest(
       : query
         ? SEARCH_RESULT_LIMIT
         : DEFAULT_MEDIA_PAGE_LIMIT;
-  const { readDatabaseLibrarySnapshot } = await import("../../server/library/repository");
-  const databaseSnapshot = await readDatabaseLibrarySnapshot({
+  const databaseSnapshot = await source.readDatabaseLibrarySnapshot({
     currentPath,
     includeAllFolders,
     limit: mediaLimit,
