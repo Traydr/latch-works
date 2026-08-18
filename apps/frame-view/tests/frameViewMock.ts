@@ -1,7 +1,7 @@
 import { Result } from 'better-result';
 import { vi } from 'vitest';
 
-import type { FrameViewApi } from '../src/shared/types';
+import type { AppSettingsPatch, FrameViewApi } from '../src/shared/types';
 import { DEFAULT_SETTINGS } from '../src/shared/types';
 
 /**
@@ -20,23 +20,20 @@ export function createFrameViewMock(overrides: Partial<FrameViewApi> = {}): Fram
     ffprobePath: 'ffprobe',
   };
 
-  return {
+  const api: FrameViewApi = {
     openFolderDialog: vi.fn(async () => Result.ok(null)),
     resolveInputPath: vi.fn(async () => Result.ok(null)),
     startScan: vi.fn(async () => Result.ok(undefined)),
     cancelScan: vi.fn(async () => Result.ok(undefined)),
     listFolderChildren: vi.fn(async () => Result.ok([])),
     getSettings: vi.fn(async () => Result.ok({ ...DEFAULT_SETTINGS, rememberLastFolder: false })),
-    updateSettings: vi.fn(async (patch) =>
+    updateSettings: vi.fn(async (patch: AppSettingsPatch) =>
       Result.ok({
         ...DEFAULT_SETTINGS,
-        filters:
-          typeof patch === 'object' && patch !== null && 'filters' in patch
-            ? {
-                ...DEFAULT_SETTINGS.filters,
-                ...(patch as { filters: typeof DEFAULT_SETTINGS.filters }).filters,
-              }
-            : DEFAULT_SETTINGS.filters,
+        filters: {
+          ...DEFAULT_SETTINGS.filters,
+          ...patch.filters,
+        },
       }),
     ),
     revealInFolder: vi.fn(async () => Result.ok(undefined)),
@@ -84,5 +81,7 @@ export function createFrameViewMock(overrides: Partial<FrameViewApi> = {}): Fram
     onAppCommand: vi.fn(() => () => undefined),
     onScanEvent: vi.fn(() => () => undefined),
     ...overrides,
-  } as FrameViewApi;
+  };
+
+  return api;
 }

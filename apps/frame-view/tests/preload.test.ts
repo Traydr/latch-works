@@ -1,78 +1,71 @@
-// @vitest-environment jsdom
-
 import { Result } from 'better-result';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { z } from 'zod';
 
+import { createFrameViewApi, type PreloadIpcTransport } from '../src/preload/frameViewApi';
+import type { JsonValue } from '../src/shared/contracts';
 import { serializeIpcResult } from '../src/shared/ipc';
 import { DEFAULT_SETTINGS } from '../src/shared/types';
 
-const exposeInMainWorld = vi.fn();
-const invoke = vi.fn();
-const on = vi.fn();
-const removeListener = vi.fn();
+function createTransport() {
+  const listeners = new Map<string, (payload: JsonValue) => void>();
+  const unsubscribedChannels: string[] = [];
+  const invoke = vi.fn<PreloadIpcTransport['invoke']>(async () => null);
 
-vi.mock('electron', () => ({
-  contextBridge: {
-    exposeInMainWorld,
-  },
-  ipcRenderer: {
+  const transport: PreloadIpcTransport = {
     invoke,
-    on,
-    removeListener,
-  },
-}));
+    subscribe: (channel, listener) => {
+      listeners.set(channel, listener);
+      return () => {
+        unsubscribedChannels.push(channel);
+        listeners.delete(channel);
+      };
+    },
+  };
 
-describe('preload', () => {
-  beforeEach(() => {
-    exposeInMainWorld.mockReset();
-    invoke.mockReset();
-    on.mockReset();
-    removeListener.mockReset();
-    vi.resetModules();
-  });
+  return { invoke, listeners, transport, unsubscribedChannels };
+}
 
+describe('frame view preload bridge', () => {
   it('deserializes invoke results through the exposed API', async () => {
-    invoke.mockResolvedValue(serializeIpcResult(Result.ok(DEFAULT_SETTINGS)));
+    const { invoke, transport } = createTransport();
+    // The real transport hands back whatever survived IPC serialization.
+    invoke.mockResolvedValue(z.json().parse(serializeIpcResult(Result.ok(DEFAULT_SETTINGS))));
 
-    await import('../src/preload');
-
-    const api = exposeInMainWorld.mock.calls[0]?.[1] as Window['frameView'];
-    const result = await api.getSettings();
+    const result = await createFrameViewApi(transport).getSettings();
 
     expect(Result.isOk(result)).toBe(true);
     expect(Result.isOk(result) ? result.value : null).toEqual(DEFAULT_SETTINGS);
     expect(invoke).toHaveBeenCalledWith('settings:get');
   });
 
-  it('parses app commands and removes listeners on unsubscribe', async () => {
-    await import('../src/preload');
-
-    const api = exposeInMainWorld.mock.calls[0]?.[1] as Window['frameView'];
+  it('parses app commands and unsubscribes the channel listener', () => {
+    const { listeners, transport, unsubscribedChannels } = createTransport();
     const listener = vi.fn();
-    const unsubscribe = api.onAppCommand(listener);
-    const wrappedListener = on.mock.calls[0]?.[1] as (event: unknown, payload: unknown) => void;
 
-    wrappedListener({}, { type: 'toggle-settings' });
-    wrappedListener({}, { type: 'unknown-command' });
+    const unsubscribe = createFrameViewApi(transport).onAppCommand(listener);
+    const deliver = listeners.get('app:command');
+
+    deliver?.({ type: 'toggle-settings' });
+    deliver?.({ type: 'unknown-command' });
 
     expect(listener).toHaveBeenCalledTimes(1);
     expect(listener).toHaveBeenCalledWith({ type: 'toggle-settings' });
 
     unsubscribe();
 
-    expect(removeListener).toHaveBeenCalledWith('app:command', wrappedListener);
+    expect(unsubscribedChannels).toEqual(['app:command']);
   });
 
-  it('parses scan events and ignores invalid payloads', async () => {
-    await import('../src/preload');
-
-    const api = exposeInMainWorld.mock.calls[0]?.[1] as Window['frameView'];
+  it('parses scan events and ignores invalid payloads', () => {
+    const { listeners, transport } = createTransport();
     const listener = vi.fn();
-    api.onScanEvent(listener);
-    const wrappedListener = on.mock.calls[0]?.[1] as (event: unknown, payload: unknown) => void;
 
-    wrappedListener({}, { type: 'reset', runId: 1, rootPath: 'C:\\media', recursive: false });
-    wrappedListener({}, { type: 'reset', rootPath: 'C:\\media' });
+    createFrameViewApi(transport).onScanEvent(listener);
+    const deliver = listeners.get('scan:event');
+
+    deliver?.({ type: 'reset', runId: 1, rootPath: 'C:\\media', recursive: false });
+    deliver?.({ type: 'reset', rootPath: 'C:\\media' });
 
     expect(listener).toHaveBeenCalledTimes(1);
     expect(listener).toHaveBeenCalledWith({
