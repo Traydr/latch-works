@@ -1,16 +1,15 @@
-import { z } from "zod";
+import * as z from "zod/mini";
 import { SiteKeySchema } from "./source-catalog";
 
 export const DownloadableFileSchema = z.object({
   pageNumber: z.number(),
-  thumbnailUrl: z.string().nullable(),
+  thumbnailUrl: z.nullable(z.string()),
   originalUrl: z.string(),
   fileName: z.string()
 });
 
 export type DownloadableFile = z.infer<typeof DownloadableFileSchema>;
 
-export const GalleryImageSchema = DownloadableFileSchema;
 export type GalleryImage = DownloadableFile;
 
 export const DownloadablePayloadSchema = z.object({
@@ -19,10 +18,10 @@ export const DownloadablePayloadSchema = z.object({
   site: SiteKeySchema,
   title: z.string(),
   pageUrl: z.string(),
-  galleryId: z.string().nullable(),
+  galleryId: z.nullable(z.string()),
   folderSegments: z.array(z.string()),
   skippedCount: z.number(),
-  images: z.array(GalleryImageSchema)
+  images: z.array(DownloadableFileSchema)
 });
 
 export type DownloadablePayload = z.infer<typeof DownloadablePayloadSchema>;

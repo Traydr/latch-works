@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod/mini";
 import type { GatherRunState } from "./gather-run";
 import { GatherRunStateSchema, isTerminalGatherRunPhase } from "./gather-run";
 import { GatherBoxSettingsSchema, type GatherBoxSettings } from "./settings";
@@ -46,30 +46,32 @@ export const EMPTY_GATHER_QUEUE: GatherQueueState = {
   results: []
 };
 
-const CollectingGatherQueueJobSchema = z
-  .object({ run: GatherRunStateSchema.extend({ phase: z.literal("collecting") }) })
-  .transform((job): CollectingGatherQueueJob => ({ kind: "collecting", run: job.run }));
+const CollectingGatherQueueJobSchema = z.pipe(
+  z.object({ run: z.extend(GatherRunStateSchema, { phase: z.literal("collecting") }) }),
+  z.transform((job): CollectingGatherQueueJob => ({ kind: "collecting", run: job.run }))
+);
 
 /**
  * `GatherRunStateSchema` never yields `cancelling`, so a job stored mid-cancel does not survive
  * a reload; the phases below are the ones a queued output job can actually be read back with.
  */
-const OutputGatherQueueJobSchema = z
-  .object({
-    run: GatherRunStateSchema.extend({
+const OutputGatherQueueJobSchema = z.pipe(
+  z.object({
+    run: z.extend(GatherRunStateSchema, {
       phase: z.enum(["preparing", "permission-required", "queued", "writing"])
     }),
     payload: z.union([DownloadablePayloadSchema, GeneratedStoryPayloadSchema]),
     settings: GatherBoxSettingsSchema
-  })
-  .transform(
+  }),
+  z.transform(
     (job): OutputGatherQueueJob => ({
       kind: "output",
       run: job.run,
       payload: job.payload,
       settings: job.settings
     })
-  );
+  )
+);
 
 /** A job's kind is re-derived from the run phase, so a stored `kind` field is ignored. */
 const GatherQueueJobSchema = z.union([
@@ -77,22 +79,25 @@ const GatherQueueJobSchema = z.union([
   OutputGatherQueueJobSchema
 ]);
 
-export const GatherQueueStateSchema = z
-  .object({
-    schemaVersion: z.literal(GATHER_QUEUE_SCHEMA_VERSION),
-    jobs: z.array(GatherQueueJobSchema.nullable().catch(null)),
-    results: lenientArrayOf(GatherRunStateSchema)
-  })
-  .transform(
-    (queue): GatherQueueState => ({
-      schemaVersion: queue.schemaVersion,
-      jobs: queue.jobs.filter((job) => job !== null).slice(0, MAX_GATHER_QUEUE_LENGTH),
-      results: queue.results
-        .filter((run) => isTerminalGatherRunPhase(run.phase))
-        .slice(-MAX_GATHER_QUEUE_RESULTS)
-    })
-  )
-  .catch(() => ({ ...EMPTY_GATHER_QUEUE, jobs: [], results: [] }));
+export const GatherQueueStateSchema = z.catch(
+  z.pipe(
+    z.object({
+      schemaVersion: z.literal(GATHER_QUEUE_SCHEMA_VERSION),
+      jobs: z.array(z.catch(z.nullable(GatherQueueJobSchema), null)),
+      results: lenientArrayOf(GatherRunStateSchema)
+    }),
+    z.transform(
+      (queue): GatherQueueState => ({
+        schemaVersion: queue.schemaVersion,
+        jobs: queue.jobs.filter((job) => job !== null).slice(0, MAX_GATHER_QUEUE_LENGTH),
+        results: queue.results
+          .filter((run) => isTerminalGatherRunPhase(run.phase))
+          .slice(-MAX_GATHER_QUEUE_RESULTS)
+      })
+    )
+  ),
+  () => ({ ...EMPTY_GATHER_QUEUE, jobs: [], results: [] })
+);
 
 export async function loadGatherQueue(): Promise<GatherQueueState> {
   const stored = await chrome.storage.local.get(GATHER_QUEUE_STATE_KEY);

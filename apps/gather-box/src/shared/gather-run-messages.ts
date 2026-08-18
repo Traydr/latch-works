@@ -1,10 +1,10 @@
-import { z } from "zod";
+import * as z from "zod/mini";
 import type { GatherRunStartOutcome, GatherRunState } from "./gather-run";
 import { DownloadFailureSchema, LastRunLogEntrySchema } from "./last-run";
 import { GatherBoxSettingsSchema } from "./settings";
 import {
   DownloadablePayloadSchema,
-  GalleryImageSchema,
+  DownloadableFileSchema,
   GeneratedStoryPayloadSchema
 } from "./types";
 
@@ -83,17 +83,17 @@ export const GatherRunEventSchema = z.discriminatedUnion("kind", [
     total: z.number(),
     message: z.string()
   }),
-  LastRunLogEntrySchema.extend({ kind: z.literal("log") }),
+  z.extend(LastRunLogEntrySchema, { kind: z.literal("log") }),
   z.object({
     kind: z.literal("complete"),
     saved: z.number(),
     skipped: z.number(),
     failed: z.number(),
     failedItems: z.array(DownloadFailureSchema),
-    retryImages: z.array(GalleryImageSchema)
+    retryImages: z.array(DownloadableFileSchema)
   }),
   z.object({ kind: z.literal("failed"), message: z.string() }),
-  z.object({ kind: z.literal("cancelled"), message: z.string().optional() })
+  z.object({ kind: z.literal("cancelled"), message: z.optional(z.string()) })
 ]);
 
 export type GatherRunEvent = z.infer<typeof GatherRunEventSchema>;

@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod/mini";
 import type { ResolveRedgifsMediaResponse, ResolvedRedgifsMedia } from "../shared/reddit-media";
 
 const REDGIFS_TEMPORARY_AUTH_URL = "https://api.redgifs.com/v2/auth/temporary";
@@ -6,19 +6,20 @@ const REQUEST_TIMEOUT_MS = 12_000;
 
 type Fetcher = typeof fetch;
 
-const RedgifsAuthResponseSchema = z.object({ token: z.string().min(1) });
+const RedgifsAuthResponseSchema = z.object({ token: z.string().check(z.minLength(1)) });
 
 /** RedGIFs only serves a handful of URL fields, and each is optional per gif. */
 const RedgifsUrlsSchema = z.object({
-  hd: z.string().optional(),
-  sd: z.string().optional(),
-  poster: z.string().optional(),
-  thumbnail: z.string().optional()
+  hd: z.optional(z.string()),
+  sd: z.optional(z.string()),
+  poster: z.optional(z.string()),
+  thumbnail: z.optional(z.string())
 });
 
-export const RedgifsGifResponseSchema = z
-  .object({ gif: z.object({ urls: RedgifsUrlsSchema }) })
-  .catch({ gif: { urls: {} } });
+export const RedgifsGifResponseSchema = z.catch(
+  z.object({ gif: z.object({ urls: RedgifsUrlsSchema }) }),
+  { gif: { urls: {} } }
+);
 
 export type RedgifsGifResponse = z.infer<typeof RedgifsGifResponseSchema>;
 

@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod/mini";
 import { ensureDirectoryPermission, loadDirectoryHandle } from "../gather/directory-store";
 import type { SiteKey } from "../shared/sites";
 import { SiteKeySchema } from "../shared/source-catalog";
@@ -8,8 +8,8 @@ export const OFFSCREEN_FILESYSTEM_PROOF_MESSAGE = "GATHER_BOX_OFFSCREEN_FILESYST
 export const OffscreenFilesystemProofMessageSchema = z.object({
   type: z.literal(OFFSCREEN_FILESYSTEM_PROOF_MESSAGE),
   target: z.literal("offscreen"),
-  siteKey: SiteKeySchema.nullable().catch(null),
-  useGlobalFolder: z.boolean().catch(false)
+  siteKey: z.catch(z.nullable(SiteKeySchema), null),
+  useGlobalFolder: z.catch(z.boolean(), false)
 });
 
 export interface OffscreenFilesystemProofResult {

@@ -1,11 +1,11 @@
-import { z } from "zod";
+import * as z from "zod/mini";
 import type { DownloadFailure, LastRunLogEntry } from "./last-run";
 import { DownloadFailureSchema, LastRunLogEntrySchema } from "./last-run";
 import type { SiteKey } from "./sites";
 import { SiteKeySchema } from "./source-catalog";
 import { lenientArrayOf } from "./lenient-array";
 import type { GalleryImage } from "./types";
-import { GalleryImageSchema } from "./types";
+import { DownloadableFileSchema } from "./types";
 
 export const GATHER_RUN_SCHEMA_VERSION = 1;
 
@@ -111,19 +111,30 @@ export function createGatherRunState(input: {
  * Phases a run may carry when it is read back from storage. `cancelling` is absent, so a run
  * persisted mid-cancel is dropped on load rather than recovered.
  */
-const StoredGatherRunPhaseSchema = GatherRunPhaseSchema.exclude(["cancelling"]);
+const StoredGatherRunPhaseSchema = z.enum([
+  "preparing",
+  "permission-required",
+  "collecting",
+  "queued",
+  "writing",
+  "complete",
+  "failed",
+  "cancelled",
+  "interrupted"
+]);
 
 /** Counters written by an older build may be missing or non-numeric; each falls back to zero. */
-const StoredGatherRunProgressSchema = z
-  .object({
-    completed: z.coerce.number().catch(0),
-    total: z.coerce.number().catch(0),
-    saved: z.coerce.number().catch(0),
-    skipped: z.coerce.number().catch(0),
-    failed: z.coerce.number().catch(0),
-    message: z.string().catch("")
-  })
-  .catch({ completed: 0, total: 0, saved: 0, skipped: 0, failed: 0, message: "" });
+const StoredGatherRunProgressSchema = z.catch(
+  z.object({
+    completed: z.catch(z.coerce.number(), 0),
+    total: z.catch(z.coerce.number(), 0),
+    saved: z.catch(z.coerce.number(), 0),
+    skipped: z.catch(z.coerce.number(), 0),
+    failed: z.catch(z.coerce.number(), 0),
+    message: z.catch(z.string(), "")
+  }),
+  { completed: 0, total: 0, saved: 0, skipped: 0, failed: 0, message: "" }
+);
 
 /**
  * A Gather Run as chrome.storage holds it. The identity fields are required — a record missing
@@ -141,13 +152,13 @@ export const GatherRunStateSchema = z.object({
   phase: StoredGatherRunPhaseSchema,
   progress: StoredGatherRunProgressSchema,
   log: lenientArrayOf(LastRunLogEntrySchema),
-  destinationPreview: z.string().nullable().catch(null),
+  destinationPreview: z.catch(z.nullable(z.string()), null),
   folderSegments: lenientArrayOf(z.string()),
   failedItems: lenientArrayOf(DownloadFailureSchema),
-  retryImages: lenientArrayOf(GalleryImageSchema),
-  error: z.string().nullable().catch(null),
-  queuedCount: z.coerce
-    .number()
-    .catch(0)
-    .transform((count) => Math.max(0, Math.round(count)))
+  retryImages: lenientArrayOf(DownloadableFileSchema),
+  error: z.catch(z.nullable(z.string()), null),
+  queuedCount: z.pipe(
+    z.catch(z.coerce.number(), 0),
+    z.transform((count) => Math.max(0, Math.round(count)))
+  )
 });

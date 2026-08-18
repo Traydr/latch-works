@@ -1,5 +1,5 @@
 import type { PageLocation } from "../collector-entry";
-import { z } from "zod";
+import * as z from "zod/mini";
 import { lenientArrayOf } from "../../shared/lenient-array";
 import type { GalleryCollectResponse, GalleryImage } from "../../shared/types";
 
@@ -22,12 +22,17 @@ const FanboxMetadataSchema = z.object({
 /** The JSON-LD block is either a single node or an array; only BlogPosting nodes are useful. */
 const FanboxBlogPostingSchema = z.object({
   "@type": z.literal("BlogPosting"),
-  author: z.object({ name: z.string() }).optional(),
-  headline: z.string().optional()
+  author: z.optional(z.object({ name: z.string() })),
+  headline: z.optional(z.string())
 });
 
-const FanboxJsonLdSchema = z
-  .union([lenientArrayOf(FanboxBlogPostingSchema), FanboxBlogPostingSchema.transform((post) => [post])]);
+const FanboxJsonLdSchema = z.union([
+  lenientArrayOf(FanboxBlogPostingSchema),
+  z.pipe(
+    FanboxBlogPostingSchema,
+    z.transform((post) => [post])
+  )
+]);
 
 export function collectFanboxData(document: Document, location: PageLocation): GalleryCollectResponse {
   if (!isFanboxPostUrl(location)) {

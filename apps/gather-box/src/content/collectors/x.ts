@@ -8,6 +8,7 @@ import {
   buildXFieldToggles,
   extractGraphqlMedia,
   parseXMedia,
+  XTweetDetailResponseSchema,
   type ResolveXMediaMessage,
   type ResolveXMediaResponse,
   type ResolvedXMedia,
@@ -245,7 +246,9 @@ async function resolveAuthenticatedXMedia(
       return [];
     }
 
-    return parseXMedia(extractGraphqlMedia(await response.json(), message.tweetId));
+    const body = XTweetDetailResponseSchema.parse(await response.json());
+
+    return parseXMedia(extractGraphqlMedia(body, message.tweetId));
   } catch {
     return [];
   }

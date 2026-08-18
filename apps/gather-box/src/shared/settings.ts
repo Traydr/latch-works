@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod/mini";
 import type { SiteKey } from "./sites";
 import { getGatherSource } from "./source-catalog";
 
@@ -33,37 +33,41 @@ export const DEFAULT_SETTINGS: GatherBoxSettings = {
  * its default. `shortcutsEnabled` is the pre-rename name of `pageShortcutsEnabled` and is only
  * consulted when the current name is absent.
  */
-export const GatherBoxSettingsSchema = z
-  .object({
-    downloadConcurrency: z.coerce
-      .number()
-      .catch(DEFAULT_SETTINGS.downloadConcurrency)
-      .transform((value) => Math.min(16, Math.max(1, Math.round(value)))),
-    mediaCompatibilityMode: z.coerce.boolean().catch(false),
-    useGlobalFolder: z.coerce.boolean().catch(false),
-    verboseLogging: z.coerce.boolean().catch(false),
-    pageShortcutsEnabled: z.coerce.boolean().optional(),
-    shortcutsEnabled: z.coerce.boolean().optional(),
-    credentialsMode: CredentialsModeSchema.catch(DEFAULT_SETTINGS.credentialsMode),
-    credentialsPerSite: z
-      .record(z.string(), CredentialsChoiceSchema.nullable().catch(null))
-      .catch({})
-  })
-  .transform(
-    (stored): GatherBoxSettings => ({
-      downloadConcurrency: stored.downloadConcurrency,
-      mediaCompatibilityMode: stored.mediaCompatibilityMode,
-      useGlobalFolder: stored.useGlobalFolder,
-      verboseLogging: stored.verboseLogging,
-      pageShortcutsEnabled:
-        stored.pageShortcutsEnabled ??
-        stored.shortcutsEnabled ??
-        DEFAULT_SETTINGS.pageShortcutsEnabled,
-      credentialsMode: stored.credentialsMode,
-      credentialsPerSite: keepKnownSources(stored.credentialsPerSite)
-    })
-  )
-  .catch(() => ({ ...DEFAULT_SETTINGS, credentialsPerSite: {} }));
+export const GatherBoxSettingsSchema = z.catch(
+  z.pipe(
+    z.object({
+      downloadConcurrency: z.pipe(
+        z.catch(z.coerce.number(), DEFAULT_SETTINGS.downloadConcurrency),
+        z.transform((value) => Math.min(16, Math.max(1, Math.round(value))))
+      ),
+      mediaCompatibilityMode: z.catch(z.coerce.boolean(), false),
+      useGlobalFolder: z.catch(z.coerce.boolean(), false),
+      verboseLogging: z.catch(z.coerce.boolean(), false),
+      pageShortcutsEnabled: z.optional(z.coerce.boolean()),
+      shortcutsEnabled: z.optional(z.coerce.boolean()),
+      credentialsMode: z.catch(CredentialsModeSchema, DEFAULT_SETTINGS.credentialsMode),
+      credentialsPerSite: z.catch(
+        z.record(z.string(), z.catch(z.nullable(CredentialsChoiceSchema), null)),
+        {}
+      )
+    }),
+    z.transform(
+      (stored): GatherBoxSettings => ({
+        downloadConcurrency: stored.downloadConcurrency,
+        mediaCompatibilityMode: stored.mediaCompatibilityMode,
+        useGlobalFolder: stored.useGlobalFolder,
+        verboseLogging: stored.verboseLogging,
+        pageShortcutsEnabled:
+          stored.pageShortcutsEnabled ??
+          stored.shortcutsEnabled ??
+          DEFAULT_SETTINGS.pageShortcutsEnabled,
+        credentialsMode: stored.credentialsMode,
+        credentialsPerSite: keepKnownSources(stored.credentialsPerSite)
+      })
+    )
+  ),
+  () => ({ ...DEFAULT_SETTINGS, credentialsPerSite: {} })
+);
 
 export const SETTINGS_KEY = "gather-box-settings";
 

@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod/mini";
 import {
   GET_GATHER_EXECUTOR_STATUS,
   type GetGatherExecutorStatusMessage
@@ -7,9 +7,10 @@ import {
 const OFFSCREEN_PATH = "offscreen/offscreen.html";
 
 /** The offscreen document runs at most one Gather Run at a time. */
-const GatherExecutorStatusSchema = z
-  .object({ activeRunId: z.string().nullable().catch(null) })
-  .catch({ activeRunId: null });
+const GatherExecutorStatusSchema = z.catch(
+  z.object({ activeRunId: z.catch(z.nullable(z.string()), null) }),
+  { activeRunId: null }
+);
 
 type GatherExecutorStatus = z.infer<typeof GatherExecutorStatusSchema>;
 

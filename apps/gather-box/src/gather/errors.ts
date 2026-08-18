@@ -1,9 +1,12 @@
-import { z } from "zod";
+import * as z from "zod/mini";
 
 /** A rejected promise can carry a bare string or a plain object rather than an Error. */
 const ThrownMessageSchema = z.union([
   z.string(),
-  z.object({ message: z.string() }).transform((thrown) => thrown.message)
+  z.pipe(
+    z.object({ message: z.string() }),
+    z.transform((thrown) => thrown.message)
+  )
 ]);
 
 /**

@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod/mini";
 import type { SiteKey } from "./sites";
 import { SiteKeySchema } from "./source-catalog";
 import type { GalleryCollectResponse } from "./types";

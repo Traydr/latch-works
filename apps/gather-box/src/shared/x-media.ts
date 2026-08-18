@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod/mini";
 import { lenientArrayOf } from "./lenient-array";
 
 export const RESOLVE_X_MEDIA_MESSAGE = "GATHER_BOX_RESOLVE_X_MEDIA" as const;
@@ -61,8 +61,8 @@ const X_DEFAULT_FEATURE_VALUES = new Map<string, boolean>(
 export const ResolveXMediaMessageSchema = z.object({
   type: z.literal(RESOLVE_X_MEDIA_MESSAGE),
   tweetId: z.string(),
-  mainScriptUrl: z.string().nullable().catch(null),
-  featureValues: z.record(z.string(), z.boolean()).catch({})
+  mainScriptUrl: z.catch(z.nullable(z.string()), null),
+  featureValues: z.catch(z.record(z.string(), z.boolean()), {})
 });
 
 export type ResolveXMediaMessage = z.infer<typeof ResolveXMediaMessageSchema>;
@@ -86,7 +86,7 @@ export type ResolveXMediaResponse =
 
 /** Only progressive MP4 variants are downloadable; the rest of the variant list is discarded. */
 const XVideoVariantSchema = z.object({
-  bitrate: z.coerce.number().catch(0),
+  bitrate: z.catch(z.coerce.number(), 0),
   content_type: z.literal("video/mp4"),
   url: z.string()
 });
@@ -98,10 +98,10 @@ const XPhotoEntrySchema = z.object({
 
 const XVideoEntrySchema = z.object({
   type: z.enum(["video", "animated_gif"]),
-  media_url_https: z.string().nullable().catch(null),
-  video_info: z
-    .object({ variants: lenientArrayOf(XVideoVariantSchema) })
-    .catch({ variants: [] })
+  media_url_https: z.catch(z.nullable(z.string()), null),
+  video_info: z.catch(z.object({ variants: lenientArrayOf(XVideoVariantSchema) }), {
+    variants: []
+  })
 });
 
 const XMediaEntrySchema = z.union([XPhotoEntrySchema, XVideoEntrySchema]);
@@ -111,31 +111,32 @@ export const XMediaListSchema = lenientArrayOf(XMediaEntrySchema);
 
 export type XMediaEntry = z.infer<typeof XMediaEntrySchema>;
 
-export const XSyndicationResponseSchema = z
-  .object({ mediaDetails: XMediaListSchema })
-  .catch({ mediaDetails: [] });
+export const XSyndicationResponseSchema = z.catch(
+  z.object({ mediaDetails: XMediaListSchema }),
+  { mediaDetails: [] }
+);
 
 const XLegacyMediaSchema = z.object({
-  extended_entities: z.object({ media: XMediaListSchema }).catch({ media: [] })
+  extended_entities: z.catch(z.object({ media: XMediaListSchema }), { media: [] })
 });
 
 /** X wraps a tweet in `tweet` when it carries visibility results. */
 const XRetweetResultSchema = z.object({
-  __typename: z.string().catch(""),
-  tweet: z.object({ legacy: XLegacyMediaSchema }).nullable().catch(null),
+  __typename: z.catch(z.string(), ""),
+  tweet: z.catch(z.nullable(z.object({ legacy: XLegacyMediaSchema })), null),
   legacy: XLegacyMediaSchema
 });
 
-const XTweetLegacySchema = XLegacyMediaSchema.extend({
-  retweeted_status_result: z
-    .object({ result: XRetweetResultSchema.nullable().catch(null) })
-    .nullable()
-    .catch(null)
+const XTweetLegacySchema = z.extend(XLegacyMediaSchema, {
+  retweeted_status_result: z.catch(
+    z.nullable(z.object({ result: z.catch(z.nullable(XRetweetResultSchema), null) })),
+    null
+  )
 });
 
 const XTweetResultSchema = z.object({
-  __typename: z.string().catch(""),
-  tweet: z.object({ legacy: XTweetLegacySchema }).nullable().catch(null),
+  __typename: z.catch(z.string(), ""),
+  tweet: z.catch(z.nullable(z.object({ legacy: XTweetLegacySchema })), null),
   legacy: XTweetLegacySchema
 });
 
@@ -153,17 +154,16 @@ const XTimelineInstructionSchema = z.object({
   entries: lenientArrayOf(XTimelineEntrySchema)
 });
 
-export const XTweetDetailResponseSchema = z
-  .object({
+export const XTweetDetailResponseSchema = z.catch(
+  z.object({
     data: z.object({
       threaded_conversation_with_injections_v2: z.object({
         instructions: lenientArrayOf(XTimelineInstructionSchema)
       })
     })
-  })
-  .catch({
-    data: { threaded_conversation_with_injections_v2: { instructions: [] } }
-  });
+  }),
+  { data: { threaded_conversation_with_injections_v2: { instructions: [] } } }
+);
 
 export type XTweetDetailResponse = z.infer<typeof XTweetDetailResponseSchema>;
 

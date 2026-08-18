@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod/mini";
 import sourceCatalogData from "../../source-catalog.json";
 
 export const SiteKeySchema = z.enum([
@@ -59,7 +59,7 @@ export interface GatherSource {
 const SerializedGatherSourceSchema = z.object({
   key: SiteKeySchema,
   label: z.string(),
-  unlisted: z.boolean().optional(),
+  unlisted: z.optional(z.boolean()),
   urlPatterns: z.array(z.string()),
   pageMatches: z.array(z.string()),
   hostPermissions: z.array(z.object({ pattern: z.string(), reason: z.string() })),

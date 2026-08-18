@@ -1,3 +1,4 @@
+import * as z from "zod/mini";
 import {
   CredentialsChoiceSchema,
   CredentialsModeSchema,
@@ -123,9 +124,9 @@ async function handleSave(elements: SettingsFormElements): Promise<void> {
     verboseLogging: elements.verboseLogging.checked,
     pageShortcutsEnabled: elements.pageShortcutsEnabled.checked,
     useGlobalFolder: folderMode === "global",
-    credentialsMode: CredentialsModeSchema.catch(DEFAULT_SETTINGS.credentialsMode).parse(
-      elements.credentialsMode.value
-    ),
+    credentialsMode: z
+      .catch(CredentialsModeSchema, DEFAULT_SETTINGS.credentialsMode)
+      .parse(elements.credentialsMode.value),
     credentialsPerSite: readPerSiteCredentials(elements.perSiteCredentials)
   };
 

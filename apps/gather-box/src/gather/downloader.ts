@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod/mini";
 import { prepareDownloadImage } from "../shared/download-policy";
 import type { SiteKey } from "../shared/sites";
 import type { GalleryImage } from "../shared/types";

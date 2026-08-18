@@ -1,11 +1,11 @@
-import { z } from "zod";
+import * as z from "zod/mini";
 
 export const RESOLVE_REDGIFS_MEDIA_MESSAGE = "GATHER_BOX_RESOLVE_REDGIFS_MEDIA" as const;
 
 export const ResolveRedgifsMediaMessageSchema = z.object({
   type: z.literal(RESOLVE_REDGIFS_MEDIA_MESSAGE),
   // The id is interpolated into a Redgifs API path, so only slug characters are accepted.
-  redgifsId: z.string().regex(/^[a-z0-9]{3,100}$/i)
+  redgifsId: z.string().check(z.regex(/^[a-z0-9]{3,100}$/i))
 });
 
 export type ResolveRedgifsMediaMessage = z.infer<typeof ResolveRedgifsMediaMessageSchema>;

@@ -1,32 +1,32 @@
-import { z } from "zod";
+import * as z from "zod/mini";
 import { SiteKeySchema } from "./source-catalog";
 import { lenientArrayOf } from "./lenient-array";
-import { GalleryImageSchema } from "./types";
+import { DownloadableFileSchema } from "./types";
 
 export const DownloadFailureSchema = z.object({
   fileName: z.string(),
   reason: z.string(),
-  originalUrl: z.string().optional()
+  originalUrl: z.optional(z.string())
 });
 
 export type DownloadFailure = z.infer<typeof DownloadFailureSchema>;
 
 export const LastRunLogEntrySchema = z.object({
   message: z.string(),
-  tone: z.enum(["error", "success"]).optional()
+  tone: z.optional(z.enum(["error", "success"]))
 });
 
 export type LastRunLogEntry = z.infer<typeof LastRunLogEntrySchema>;
 
 export const LastRunStateSchema = z.object({
-  timestamp: z.coerce.number().catch(0),
-  siteKey: SiteKeySchema.nullable().catch(null),
-  tabUrl: z.string().nullable().catch(null),
-  destinationPreview: z.string().nullable().catch(null),
+  timestamp: z.catch(z.coerce.number(), 0),
+  siteKey: z.catch(z.nullable(SiteKeySchema), null),
+  tabUrl: z.catch(z.nullable(z.string()), null),
+  destinationPreview: z.catch(z.nullable(z.string()), null),
   log: lenientArrayOf(LastRunLogEntrySchema),
   failedItems: lenientArrayOf(DownloadFailureSchema),
-  retryImages: lenientArrayOf(GalleryImageSchema),
-  canRetry: z.boolean().catch(false)
+  retryImages: lenientArrayOf(DownloadableFileSchema),
+  canRetry: z.catch(z.boolean(), false)
 });
 
 export type LastRunState = z.infer<typeof LastRunStateSchema>;

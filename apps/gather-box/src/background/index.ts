@@ -5,10 +5,8 @@ import {
   StartGatherRunRequestSchema
 } from "../shared/gather-run-messages";
 import { loadGatherQueue } from "../shared/gather-queue";
-import {
-  GatherRuntimeMessageSchema,
-  OPEN_EXTENSION_MESSAGE
-} from "../shared/runtime-messages";
+import { OPEN_EXTENSION_MESSAGE } from "../shared/runtime-messages";
+import { GatherRuntimeMessageSchema } from "./page-messages";
 import { ResolveRedgifsMediaMessageSchema } from "../shared/reddit-media";
 import { getContextMenuMatches } from "../shared/source-catalog";
 import { ResolveXMediaMessageSchema } from "../shared/x-media";

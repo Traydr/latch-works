@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod/mini";
 import type {
   ResolveXMediaMessage,
   ResolveXMediaResponse,
@@ -24,9 +24,10 @@ const REQUEST_TIMEOUT_MS = 12_000;
 /** The operation metadata X embeds in its main bundle is a JSON array of switch names. */
 const XOperationListSchema = z.array(z.string());
 
-const GuestTokenResponseSchema = z
-  .object({ guest_token: z.string().nullable().catch(null) })
-  .catch({ guest_token: null });
+const GuestTokenResponseSchema = z.catch(
+  z.object({ guest_token: z.catch(z.nullable(z.string()), null) }),
+  { guest_token: null }
+);
 
 const FALLBACK_FEATURE_SWITCHES = [
   "rweb_video_screen_enabled",
