@@ -1,7 +1,8 @@
-import type { Readable } from "node:stream";
+import { Readable } from "node:stream";
 import {
   DeleteObjectCommand,
   GetObjectCommand,
+  type GetObjectCommandInput,
   HeadObjectCommand,
   ListObjectsV2Command,
   PutObjectCommand,
@@ -17,8 +18,14 @@ export interface S3StorageConfig {
   secretAccessKey: string;
 }
 
-export interface S3StorageClient {
+/** A bucket plus the command-sending surface of an S3 client. */
+export interface S3CommandStorage {
   bucket: string;
+  client: Pick<S3Client, "send">;
+}
+
+/** A bucket plus a full S3 client; request presigning needs more than `send`. */
+export interface S3StorageClient extends S3CommandStorage {
   client: S3Client;
 }
 
@@ -102,7 +109,7 @@ export async function headStoredObject({
   storage,
 }: {
   key: string;
-  storage: S3StorageClient;
+  storage: S3CommandStorage;
 }): Promise<StoredObjectHead | null> {
   try {
     const response = await storage.client.send(
@@ -120,7 +127,7 @@ export async function headStoredObject({
       metadata: response.Metadata,
     };
   } catch (error) {
-    if (isNotFoundError(error)) {
+    if (isNotFoundError(toError(error))) {
       return null;
     }
 
@@ -135,23 +142,28 @@ export async function getStoredObject({
 }: {
   key: string;
   range?: string;
-  storage: S3StorageClient;
+  storage: S3CommandStorage;
 }): Promise<StoredObjectBody | null> {
+  const input: GetObjectCommandInput = {
+    Bucket: storage.bucket,
+    Key: key,
+  };
+  if (range) {
+    input.Range = range;
+  }
+
   try {
-    const response = await storage.client.send(
-      new GetObjectCommand({
-        Bucket: storage.bucket,
-        Key: key,
-        ...(range ? { Range: range } : {}),
-      }),
-    );
+    const response = await storage.client.send(new GetObjectCommand(input));
 
     if (!response.Body) {
       return null;
     }
+    if (!(response.Body instanceof Readable)) {
+      throw new TypeError(`S3 returned a non-Node stream body for key: ${key}`);
+    }
 
     return {
-      body: response.Body as Readable,
+      body: response.Body,
       contentLength: response.ContentLength,
       contentRange: response.ContentRange,
       contentType: response.ContentType,
@@ -159,7 +171,7 @@ export async function getStoredObject({
       statusCode: response.$metadata.httpStatusCode ?? (range ? 206 : 200),
     };
   } catch (error) {
-    if (isNotFoundError(error)) {
+    if (isNotFoundError(toError(error))) {
       return null;
     }
 
@@ -172,7 +184,7 @@ export async function deleteStoredObject({
   storage,
 }: {
   key: string;
-  storage: S3StorageClient;
+  storage: S3CommandStorage;
 }): Promise<void> {
   await storage.client.send(
     new DeleteObjectCommand({
@@ -206,7 +218,7 @@ export async function listStoredObjectSummariesByPrefix({
   continuationToken?: string;
   limit?: number;
   prefix: string;
-  storage: S3StorageClient;
+  storage: S3CommandStorage;
 }): Promise<ListStoredObjectSummariesPage> {
   const response = await storage.client.send(
     new ListObjectsV2Command({
@@ -237,7 +249,7 @@ export async function listStoredObjectsByPrefix({
   continuationToken?: string;
   limit?: number;
   prefix: string;
-  storage: S3StorageClient;
+  storage: S3CommandStorage;
 }): Promise<ListStoredObjectsPage> {
   const page = await listStoredObjectSummariesByPrefix({
     continuationToken,
@@ -260,8 +272,8 @@ export async function deleteStoredObjectsBatch({
 }: {
   keys: string[];
   maxConcurrent?: number;
-  onError?: (error: unknown, key: string) => void;
-  storage: S3StorageClient;
+  onError?: (error: Error, key: string) => void;
+  storage: S3CommandStorage;
 }): Promise<{ deleted: number; errors: number }> {
   let deleted = 0;
   let errors = 0;
@@ -278,7 +290,7 @@ export async function deleteStoredObjectsBatch({
           deleted += 1;
         } catch (error) {
           errors += 1;
-          onError?.(error, key);
+          onError?.(toError(error), key);
         }
       }
     }),
@@ -296,7 +308,7 @@ export async function putStoredObject({
   body: Buffer | Uint8Array;
   contentType: string;
   key: string;
-  storage: S3StorageClient;
+  storage: S3CommandStorage;
 }): Promise<void> {
   await storage.client.send(
     new PutObjectCommand({
@@ -313,7 +325,7 @@ export async function readStoredObjectBytes({
   storage,
 }: {
   key: string;
-  storage: S3StorageClient;
+  storage: S3CommandStorage;
 }): Promise<Buffer | null> {
   const object = await getStoredObject({ key, storage });
   if (!object) {
@@ -328,13 +340,13 @@ export async function readStoredObjectBytes({
   return Buffer.concat(chunks);
 }
 
-function isNotFoundError(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "name" in error &&
-    (error.name === "NotFound" || error.name === "NoSuchKey")
-  );
+function isNotFoundError(error: Error): boolean {
+  return error.name === "NotFound" || error.name === "NoSuchKey";
+}
+
+/** Narrow a caught value to an Error at the catch site so callees take a real domain type. */
+function toError(cause: unknown): Error {
+  return cause instanceof Error ? cause : new Error(String(cause), { cause });
 }
 
 export interface SignedPutUrlResult {
@@ -363,12 +375,12 @@ export async function createSignedPutUrl({
 
   const normalizedSha256 = sha256.toLowerCase();
   const checksumSHA256 = Buffer.from(normalizedSha256, "hex").toString("base64");
-  const candidateHeaders: Record<string, string> = {
+  const candidateHeaders = {
     "Content-Length": String(contentLength),
     "Content-Type": contentType,
     "x-amz-checksum-sha256": checksumSHA256,
     "x-amz-meta-sha256": normalizedSha256,
-  };
+  } satisfies Record<string, string>;
 
   const uploadUrl = await getSignedUrl(
     storage.client,

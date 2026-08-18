@@ -146,6 +146,11 @@ function normalizeFingerprint(fingerprint: ArchiveFileFingerprint): ArchiveFileF
   };
 }
 
+/** Narrow a caught value (abort reasons, rejected task results) to an Error at the catch site. */
+function toError(cause: unknown): Error {
+  return cause instanceof Error ? cause : new Error(String(cause), { cause });
+}
+
 function throwIfAborted(signal?: AbortSignal): void {
   if (signal?.aborted) {
     throw signal.reason ?? new DOMException("Aborted", "AbortError");
@@ -178,7 +183,7 @@ async function runQueue<T>({
   let settled = false;
 
   await new Promise<void>((resolve, reject) => {
-    const fail = (error: unknown): void => {
+    const fail = (error: Error): void => {
       if (!settled) {
         settled = true;
         reject(error);
@@ -191,7 +196,7 @@ async function runQueue<T>({
       try {
         throwIfAborted(signal);
       } catch (error) {
-        fail(error);
+        fail(toError(error));
         return;
       }
 
@@ -223,9 +228,9 @@ async function runQueue<T>({
               schedule();
             }
           },
-          (error: unknown) => {
+          (cause: unknown) => {
             active -= 1;
-            fail(error);
+            fail(toError(cause));
           },
         );
       }

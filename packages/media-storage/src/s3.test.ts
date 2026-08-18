@@ -1,12 +1,28 @@
+import { Readable } from "node:stream";
+import type {
+  DeleteObjectCommandOutput,
+  GetObjectCommandOutput,
+  ListObjectsV2CommandOutput,
+} from "@aws-sdk/client-s3";
 import { describe, expect, it, vi } from "vitest";
 import {
   createS3StorageClient,
   createSignedPutUrl,
   deleteStoredObjectsBatch,
+  getStoredObject,
   listStoredObjectSummariesByPrefix,
   readS3StorageConfig,
-  type S3StorageClient,
+  type S3CommandStorage,
 } from "./s3.js";
+
+/** The SDK hands back a payload stream carrying the `SdkStream` transform helpers. */
+const streamTransforms = {
+  transformToByteArray: () => Promise.resolve(new Uint8Array()),
+  transformToString: () => Promise.resolve(""),
+  transformToWebStream: (): never => {
+    throw new Error("not used by these tests");
+  },
+};
 
 describe("S3 storage config", () => {
   it("returns null until all required env vars exist", () => {
@@ -77,15 +93,17 @@ describe("presigned PUT URLs", () => {
 
 describe("S3 object inventory and deletion", () => {
   it("returns object keys and byte sizes with pagination", async () => {
-    const send = vi.fn().mockResolvedValue({
+    const listing: ListObjectsV2CommandOutput = {
+      $metadata: {},
       Contents: [
         { Key: "thumbnails/a.webp", Size: 12 },
         { Key: undefined, Size: 99 },
       ],
       IsTruncated: true,
       NextContinuationToken: "next-page",
-    });
-    const storage = { bucket: "bucket", client: { send } } as unknown as S3StorageClient;
+    };
+    const send = vi.fn(async () => listing);
+    const storage: S3CommandStorage = { bucket: "bucket", client: { send } };
 
     await expect(
       listStoredObjectSummariesByPrefix({ prefix: "thumbnails/", storage }),
@@ -98,14 +116,14 @@ describe("S3 object inventory and deletion", () => {
   it("caps concurrent delete requests", async () => {
     let active = 0;
     let maximum = 0;
-    const send = vi.fn(async () => {
+    const send = vi.fn(async (): Promise<DeleteObjectCommandOutput> => {
       active += 1;
       maximum = Math.max(maximum, active);
       await new Promise((resolve) => setTimeout(resolve, 1));
       active -= 1;
-      return {};
+      return { $metadata: {} };
     });
-    const storage = { bucket: "bucket", client: { send } } as unknown as S3StorageClient;
+    const storage: S3CommandStorage = { bucket: "bucket", client: { send } };
 
     await expect(
       deleteStoredObjectsBatch({
@@ -115,5 +133,66 @@ describe("S3 object inventory and deletion", () => {
       }),
     ).resolves.toEqual({ deleted: 25, errors: 0 });
     expect(maximum).toBe(10);
+  });
+});
+
+describe("stored object bodies", () => {
+  it("returns the Node stream body and the ranged status code", async () => {
+    const body = Object.assign(Readable.from(["chunk"]), streamTransforms);
+    const output: GetObjectCommandOutput = {
+      $metadata: { httpStatusCode: 206 },
+      Body: body,
+      ContentRange: "bytes 0-4/5",
+    };
+    const storage: S3CommandStorage = {
+      bucket: "bucket",
+      client: { send: vi.fn(async () => output) },
+    };
+
+    await expect(
+      getStoredObject({ key: "originals/a.png", range: "bytes=0-4", storage }),
+    ).resolves.toEqual({
+      body,
+      contentLength: undefined,
+      contentRange: "bytes 0-4/5",
+      contentType: undefined,
+      etag: undefined,
+      statusCode: 206,
+    });
+  });
+
+  it("rejects a payload that is not a Node stream", async () => {
+    const output: GetObjectCommandOutput = {
+      $metadata: {},
+      Body: Object.assign(new Blob(["chunk"]), streamTransforms),
+    };
+    const storage: S3CommandStorage = {
+      bucket: "bucket",
+      client: { send: vi.fn(async () => output) },
+    };
+
+    await expect(getStoredObject({ key: "originals/a.png", storage })).rejects.toThrow(
+      "S3 returned a non-Node stream body for key: originals/a.png",
+    );
+  });
+
+  it("reports batch delete failures as Errors", async () => {
+    const storage: S3CommandStorage = {
+      bucket: "bucket",
+      // A transport failure can surface as a non-Error rejection value.
+      client: { send: vi.fn(() => Promise.reject("connection reset")) },
+    };
+    const failures: { key: string; message: string; name: string }[] = [];
+
+    await expect(
+      deleteStoredObjectsBatch({
+        keys: ["previews/a.webp"],
+        onError: (error, key) => failures.push({ key, message: error.message, name: error.name }),
+        storage,
+      }),
+    ).resolves.toEqual({ deleted: 0, errors: 1 });
+    expect(failures).toEqual([
+      { key: "previews/a.webp", message: "connection reset", name: "Error" },
+    ]);
   });
 });
