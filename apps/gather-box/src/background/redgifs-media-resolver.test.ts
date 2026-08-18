@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { parseRedgifsMedia, resolveRedgifsMedia } from "./redgifs-media-resolver";
+import {
+  parseRedgifsMedia,
+  RedgifsGifResponseSchema,
+  resolveRedgifsMedia
+} from "./redgifs-media-resolver";
 
 describe("RedGIFs media resolver", () => {
   it("uses temporary authorization and prefers the HD MP4", async () => {
@@ -40,14 +44,14 @@ describe("RedGIFs media resolver", () => {
   it("rejects non-RedGIFs and non-MP4 media URLs", () => {
     expect(
       parseRedgifsMedia(
-        {
+        RedgifsGifResponseSchema.parse({
           gif: {
             urls: {
               hd: "https://evil.example/video.mp4",
               sd: "https://media.redgifs.com/video.webm"
             }
           }
-        },
+        }),
         "example"
       )
     ).toBeNull();

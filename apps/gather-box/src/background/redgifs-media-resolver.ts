@@ -1,12 +1,26 @@
-import type {
-  ResolveRedgifsMediaResponse,
-  ResolvedRedgifsMedia
-} from "../shared/reddit-media";
+import { z } from "zod";
+import type { ResolveRedgifsMediaResponse, ResolvedRedgifsMedia } from "../shared/reddit-media";
 
 const REDGIFS_TEMPORARY_AUTH_URL = "https://api.redgifs.com/v2/auth/temporary";
 const REQUEST_TIMEOUT_MS = 12_000;
 
 type Fetcher = typeof fetch;
+
+const RedgifsAuthResponseSchema = z.object({ token: z.string().min(1) });
+
+/** RedGIFs only serves a handful of URL fields, and each is optional per gif. */
+const RedgifsUrlsSchema = z.object({
+  hd: z.string().optional(),
+  sd: z.string().optional(),
+  poster: z.string().optional(),
+  thumbnail: z.string().optional()
+});
+
+export const RedgifsGifResponseSchema = z
+  .object({ gif: z.object({ urls: RedgifsUrlsSchema }) })
+  .catch({ gif: { urls: {} } });
+
+export type RedgifsGifResponse = z.infer<typeof RedgifsGifResponseSchema>;
 
 export async function resolveRedgifsMedia(
   redgifsId: string,
@@ -19,8 +33,8 @@ export async function resolveRedgifsMedia(
       return failed(`temporary authorization returned HTTP ${authResponse.status}`);
     }
 
-    const authBody = (await authResponse.json()) as { token?: unknown };
-    if (typeof authBody.token !== "string" || !authBody.token) {
+    const auth = RedgifsAuthResponseSchema.safeParse(await authResponse.json());
+    if (!auth.success) {
       return failed("temporary authorization did not return a token");
     }
 
@@ -29,7 +43,7 @@ export async function resolveRedgifsMedia(
       `https://api.redgifs.com/v2/gifs/${encodeURIComponent(normalizedId)}?views=yes`,
       {
         headers: {
-          authorization: `Bearer ${authBody.token}`,
+          authorization: `Bearer ${auth.data.token}`,
           "content-type": "application/json",
           "x-customheader": `https://www.redgifs.com/watch/${normalizedId}`
         }
@@ -39,28 +53,24 @@ export async function resolveRedgifsMedia(
       return failed(`media lookup returned HTTP ${gifResponse.status}`);
     }
 
-    const media = parseRedgifsMedia(await gifResponse.json(), normalizedId);
+    const media = parseRedgifsMedia(
+      RedgifsGifResponseSchema.parse(await gifResponse.json()),
+      normalizedId
+    );
     return media ? { ok: true, media } : failed("media lookup did not return a valid MP4 URL");
   } catch (error) {
     return failed(error instanceof Error ? error.message : "unknown RedGIFs error");
   }
 }
 
-export function parseRedgifsMedia(body: unknown, redgifsId: string): ResolvedRedgifsMedia | null {
-  if (!isObject(body)) {
-    return null;
-  }
-  const gif = body.gif;
-  if (!isObject(gif)) {
-    return null;
-  }
-  const urls = gif.urls;
-  if (!isObject(urls)) {
-    return null;
-  }
+export function parseRedgifsMedia(
+  body: RedgifsGifResponse,
+  redgifsId: string
+): ResolvedRedgifsMedia | null {
+  const { urls } = body.gif;
 
   const originalUrl = [urls.hd, urls.sd].find(isAllowedRedgifsMp4Url);
-  if (typeof originalUrl !== "string") {
+  if (originalUrl === undefined) {
     return null;
   }
 
@@ -69,12 +79,12 @@ export function parseRedgifsMedia(body: unknown, redgifsId: string): ResolvedRed
 
   return {
     originalUrl,
-    thumbnailUrl: typeof thumbnailUrl === "string" ? thumbnailUrl : null,
+    thumbnailUrl: thumbnailUrl ?? null,
     fileName: fileName.toLowerCase().endsWith(".mp4") ? fileName : `${redgifsId}.mp4`
   };
 }
 
-function isAllowedRedgifsMp4Url(value: unknown): value is string {
+function isAllowedRedgifsMp4Url(value: string | undefined): value is string {
   if (!isAllowedRedgifsUrl(value)) {
     return false;
   }
@@ -82,8 +92,8 @@ function isAllowedRedgifsMp4Url(value: unknown): value is string {
   return new URL(value).pathname.toLowerCase().endsWith(".mp4");
 }
 
-function isAllowedRedgifsUrl(value: unknown): value is string {
-  if (typeof value !== "string") {
+function isAllowedRedgifsUrl(value: string | undefined): value is string {
+  if (value === undefined) {
     return false;
   }
 
@@ -112,8 +122,4 @@ function fetchWithTimeout(
 
 function failed(message: string): ResolveRedgifsMediaResponse {
   return { ok: false, message: `Could not resolve RedGIFs media: ${message}.` };
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }
