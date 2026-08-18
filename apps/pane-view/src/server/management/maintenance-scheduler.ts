@@ -83,7 +83,8 @@ function isActiveJobUniqueViolation(error: Error): boolean {
   );
 }
 
-const defaultMaintenanceSchedulerDependencies: MaintenanceSchedulerDependencies = {
+/** The real prologue: this database, this lock, these guards, this worker. */
+export const maintenanceSchedulerDependencies: MaintenanceSchedulerDependencies = {
   acquireLibraryMutationStartupLock,
   assertNoActiveSyncRun,
   database: db,
@@ -93,7 +94,7 @@ const defaultMaintenanceSchedulerDependencies: MaintenanceSchedulerDependencies 
 
 export async function scheduleMaintenanceJob(
   descriptor: MaintenanceJobDescriptor,
-  dependencies: MaintenanceSchedulerDependencies = defaultMaintenanceSchedulerDependencies,
+  dependencies: MaintenanceSchedulerDependencies = maintenanceSchedulerDependencies,
 ): Promise<ScheduleMaintenanceJobResult> {
   let jobId: string | null;
   try {

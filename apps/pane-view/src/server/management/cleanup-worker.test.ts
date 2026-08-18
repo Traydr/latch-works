@@ -1,5 +1,6 @@
+import type { ListStoredObjectsPage } from "@latch-works/media-storage";
 import { eq, sql } from "drizzle-orm";
-import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * The maintenance worker against executed SQL: progress enters through the
@@ -8,42 +9,40 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
  * left alone; a throwing batch marks the job failed and frees it to run again.
  */
 
-const harness = vi.hoisted((): TestDatabaseHarness => ({ handle: null }));
-
-vi.mock("../db", async () => {
-  const { createTestDatabase } = await import("../library/test-db");
-  const handle = await createTestDatabase();
-  harness.handle = handle;
-  return { db: handle.db };
-});
-vi.mock("@latch-works/media-storage", () => ({ listStoredObjectsByPrefix: vi.fn() }));
-vi.mock("../media/shutter-client", () => ({ purgeShutterSource: vi.fn(async () => undefined) }));
-vi.mock("./maintenance-storage", () => ({
-  deleteMaintenanceObjects: vi.fn(async (keys: string[]) => ({ deleted: keys.length })),
-  getMaintenanceStorageClient: vi.fn(),
-}));
-
 import type { JsonValue } from "@/lib/json";
-import { db } from "../db";
 import { libraryEntries, maintenanceJobs, mediaObjects } from "../db/schema";
-import type { TestDatabaseHarness } from "../library/test-db";
+import { useTestDatabase } from "../library/test-db";
 import {
+  type MaintenanceWorkerDependencies,
   processMaintenanceJob,
   processMaintenanceJobBatch,
   readCleanupJobStatus,
 } from "./cleanup-worker";
 import { type MaintenanceJobType, MaintenanceJobTypeSchema } from "./maintenance-progress";
-import { deleteMaintenanceObjects } from "./maintenance-storage";
 
-afterAll(async () => {
-  await harness.handle?.close();
-});
+const testDatabase = useTestDatabase();
+
+const emptyPage: ListStoredObjectsPage = { keys: [], nextContinuationToken: undefined };
+
+/** Object storage and Shutter stand in; the archive database is real. */
+const deleteObjects = vi.fn(async (keys: string[]) => ({ deleted: keys.length }));
+
+function dependencies(): MaintenanceWorkerDependencies {
+  return {
+    database: testDatabase().db,
+    deleteObjects,
+    listObjectsByPrefix: async () => emptyPage,
+    purgeShutterSource: async () => undefined,
+  };
+}
+
+const db = () => testDatabase().db;
 
 async function reset() {
-  await harness.handle?.client.exec(
+  await testDatabase().client.exec(
     "delete from maintenance_jobs; delete from shutter_source_cleanup; delete from library_entries; delete from media_objects;",
   );
-  vi.mocked(deleteMaintenanceObjects).mockClear();
+  deleteObjects.mockClear();
 }
 
 /** Insert a job with raw jsonb progress, so malformed and legacy values reach the parser. */
@@ -52,7 +51,7 @@ async function insertJob(
   progress: JsonValue,
   status: "pending" | "running" | "completed" = "running",
 ): Promise<string> {
-  const [job] = await db
+  const [job] = await db()
     .insert(maintenanceJobs)
     .values({ progress: sql`${JSON.stringify(progress)}::jsonb`, status, type })
     .returning({ id: maintenanceJobs.id });
@@ -63,7 +62,7 @@ async function insertJob(
 }
 
 async function readJob(jobId: string) {
-  const [job] = await db.select().from(maintenanceJobs).where(eq(maintenanceJobs.id, jobId));
+  const [job] = await db().select().from(maintenanceJobs).where(eq(maintenanceJobs.id, jobId));
   if (!job) {
     throw new Error(`job ${jobId} not found`);
   }
@@ -88,14 +87,14 @@ describe("processMaintenanceJobBatch", () => {
       phase: "s3_derivatives",
       processedCount: 3,
     });
-    await expect(processMaintenanceJobBatch(jobId)).resolves.toBe(false);
+    await expect(processMaintenanceJobBatch(jobId, dependencies())).resolves.toBe(false);
     const job = await readJob(jobId);
     expect(job.status).toBe("failed");
     expect(job.error).toBe(
       'Unrecognised job progress: phase "s3_derivatives" is not valid for soft_deleted_purge',
     );
     expect(job.progress).toEqual({ errorCount: 0, phase: "s3_derivatives", processedCount: 3 });
-    expect(await readCleanupJobStatus({ jobId })).toBeNull();
+    expect(await readCleanupJobStatus({ jobId }, dependencies())).toBeNull();
   });
 
   it("resumes a hard wipe stored under the retired phase from s3_originals", async () => {
@@ -105,7 +104,7 @@ describe("processMaintenanceJobBatch", () => {
       processedCount: 3,
     });
     // No media objects: the s3_originals batch finds nothing and moves to the sweep.
-    await expect(processMaintenanceJobBatch(jobId)).resolves.toBe(true);
+    await expect(processMaintenanceJobBatch(jobId, dependencies())).resolves.toBe(true);
     const job = await readJob(jobId);
     expect(job.status).toBe("running");
     expect(job.progress).toEqual({
@@ -114,7 +113,7 @@ describe("processMaintenanceJobBatch", () => {
       phase: "s3_orphan_sweep",
       processedCount: 3,
     });
-    expect(await readCleanupJobStatus({ jobId })).toMatchObject({
+    expect(await readCleanupJobStatus({ jobId }, dependencies())).toMatchObject({
       progress: { phase: "s3_orphan_sweep", processedCount: 3 },
       status: "running",
       type: "library_hard_wipe",
@@ -126,11 +125,11 @@ describe("processMaintenanceJobBatch", () => {
   )("%s: a completed phase returns false and leaves the row untouched", async (type) => {
     const jobId = await insertJob(type, { phase: "completed", processedCount: 5 }, "running");
     const before = await readJob(jobId);
-    await expect(processMaintenanceJobBatch(jobId)).resolves.toBe(false);
+    await expect(processMaintenanceJobBatch(jobId, dependencies())).resolves.toBe(false);
     expect(await readJob(jobId)).toEqual(before);
     const done = await insertJob(type, { phase: "completed", processedCount: 5 }, "completed");
-    await expect(processMaintenanceJobBatch(done)).resolves.toBe(false);
-    expect(deleteMaintenanceObjects).not.toHaveBeenCalled();
+    await expect(processMaintenanceJobBatch(done, dependencies())).resolves.toBe(false);
+    expect(deleteObjects).not.toHaveBeenCalled();
   });
 
   it("marks a pending job running and drops the retired errorCount as it advances", async () => {
@@ -139,7 +138,7 @@ describe("processMaintenanceJobBatch", () => {
       { errorCount: 0, phase: "queue_sources", processedCount: 0 },
       "pending",
     );
-    await expect(processMaintenanceJobBatch(jobId)).resolves.toBe(true);
+    await expect(processMaintenanceJobBatch(jobId, dependencies())).resolves.toBe(true);
     const job = await readJob(jobId);
     expect(job.status).toBe("running");
     expect(job.startedAt).not.toBeNull();
@@ -152,16 +151,18 @@ describe("processMaintenanceJob", () => {
 
   it("marks the job failed with the batch error and lets it run again afterwards", async () => {
     // An orphaned media object gives the soft-deleted purge a storage delete to attempt.
-    await db.insert(mediaObjects).values({
-      contentType: "image/jpeg",
-      extension: "jpg",
-      id: "00000000-0000-4000-9000-000000000001",
-      mediaType: "image",
-      objectKey: "objects/1",
-      sha256: "sha-1".padEnd(64, "0"),
-      size: 1,
-    });
-    await db.insert(libraryEntries).values({
+    await db()
+      .insert(mediaObjects)
+      .values({
+        contentType: "image/jpeg",
+        extension: "jpg",
+        id: "00000000-0000-4000-9000-000000000001",
+        mediaType: "image",
+        objectKey: "objects/1",
+        sha256: "sha-1".padEnd(64, "0"),
+        size: 1,
+      });
+    await db().insert(libraryEntries).values({
       deletedAt: new Date(),
       filename: "gone.jpg",
       logicalPath: "a/gone.jpg",
@@ -173,26 +174,26 @@ describe("processMaintenanceJob", () => {
       phase: "orphaned_media",
       processedCount: 0,
     });
-    vi.mocked(deleteMaintenanceObjects).mockRejectedValueOnce(new Error("bucket unreachable"));
+    deleteObjects.mockRejectedValueOnce(new Error("bucket unreachable"));
 
-    processMaintenanceJob(jobId);
+    processMaintenanceJob(jobId, dependencies());
     await waitFor(async () => (await readJob(jobId)).status === "failed");
     expect((await readJob(jobId)).error).toBe("bucket unreachable");
-    expect(deleteMaintenanceObjects).toHaveBeenCalledTimes(1);
+    expect(deleteObjects).toHaveBeenCalledTimes(1);
 
     // The failed job is no longer held as running: re-arming the row and
     // kicking the worker runs another batch (which now succeeds).
-    await db
+    await db()
       .update(maintenanceJobs)
       .set({ error: null, status: "running" })
       .where(eq(maintenanceJobs.id, jobId));
-    processMaintenanceJob(jobId);
+    processMaintenanceJob(jobId, dependencies());
     await waitFor(async () => (await readJob(jobId)).status === "completed");
-    expect(deleteMaintenanceObjects).toHaveBeenCalledTimes(2);
+    expect(deleteObjects).toHaveBeenCalledTimes(2);
     expect((await readJob(jobId)).progress).toMatchObject({
       phase: "completed",
       processedCount: 1,
     });
-    expect(await db.select().from(mediaObjects)).toEqual([]);
+    expect(await db().select().from(mediaObjects)).toEqual([]);
   });
 });
