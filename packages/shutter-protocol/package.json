@@ -18,6 +18,9 @@
     "check": "pnpm typecheck",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
   "devDependencies": {
     "typescript": "^6.0.2"
   }
