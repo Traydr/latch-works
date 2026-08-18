@@ -26,8 +26,38 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --prod=false
 
-      - name: Run full workspace check
-        run: pnpm check:all
+      - name: Run Build
+        run: pnpm run build:all
+        env:
+          LOCKSTEP_API_URL: ""
+          LOCKSTEP_API_TOKEN: ""
+      
+      - name: Run Format
+        run: pnpm format
+        env:
+          LOCKSTEP_API_URL: ""
+          LOCKSTEP_API_TOKEN: ""
+
+      - name: Run Lint Biome
+        run: pnpm run lint:biome
+        env:
+          LOCKSTEP_API_URL: ""
+          LOCKSTEP_API_TOKEN: ""
+
+      - name: Run Lint Oxlint
+        run: pnpm run lint:oxlint
+        env:
+          LOCKSTEP_API_URL: ""
+          LOCKSTEP_API_TOKEN: ""
+
+      - name: Run Typecheck
+        run: pnpm run typecheck
+        env:
+          LOCKSTEP_API_URL: ""
+          LOCKSTEP_API_TOKEN: ""
+
+      - name: Run Knip
+        run: pnpm run knip
         env:
           LOCKSTEP_API_URL: ""
           LOCKSTEP_API_TOKEN: ""
