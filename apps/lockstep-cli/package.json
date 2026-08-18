@@ -16,7 +16,8 @@
   "dependencies": {
     "@inquirer/prompts": "^7.5.3",
     "@latch-works/lockstep-core": "workspace:*",
-    "@latch-works/media-domain": "workspace:*"
+    "@latch-works/media-domain": "workspace:*",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "tsx": "^4.21.0",

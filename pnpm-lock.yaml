@@ -322,6 +322,9 @@ importers:
       '@latch-works/media-domain':
         specifier: workspace:*
         version: link:../../packages/media-domain
+      zod:
+        specifier: ^4.3.6
+        version: 4.4.3
     devDependencies:
       tsx:
         specifier: ^4.21.0

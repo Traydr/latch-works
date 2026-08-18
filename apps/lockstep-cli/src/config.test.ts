@@ -19,21 +19,23 @@ async function createTempConfigDir(): Promise<string> {
 
 describe("parseConfig", () => {
   it("parses known fields, ignores unknown keys, and empties invalid input", () => {
-    expect(parseConfig(null)).toEqual({});
-    expect(parseConfig("nope")).toEqual({});
+    expect(parseConfig("null")).toEqual({});
+    expect(parseConfig('"nope"')).toEqual({});
     expect(
-      parseConfig({
-        source: "T:\\media",
-        apiUrl: "https://example.test",
-        lastCommand: "plan",
-        extra: true,
-        defaults: {
-          hashFiles: true,
-          maxChanges: 10,
-          showSkipped: false,
-          unknown: 1,
-        },
-      }),
+      parseConfig(
+        JSON.stringify({
+          source: "T:\\media",
+          apiUrl: "https://example.test",
+          lastCommand: "plan",
+          extra: true,
+          defaults: {
+            hashFiles: true,
+            maxChanges: 10,
+            showSkipped: false,
+            unknown: 1,
+          },
+        }),
+      ),
     ).toEqual({
       source: "T:\\media",
       apiUrl: "https://example.test",
@@ -43,6 +45,22 @@ describe("parseConfig", () => {
         maxChanges: 10,
         showSkipped: false,
       },
+    });
+  });
+
+  it("drops only the fields that fail validation", () => {
+    expect(
+      parseConfig(
+        JSON.stringify({
+          source: "",
+          apiUrl: "https://example.test",
+          lastCommand: "nope",
+          defaults: { hashFiles: true, uploadConcurrency: 99 },
+        }),
+      ),
+    ).toEqual({
+      apiUrl: "https://example.test",
+      defaults: { hashFiles: true },
     });
   });
 });

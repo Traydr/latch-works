@@ -18,7 +18,8 @@ async function run(): Promise<void> {
   }
 }
 
-run().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : error);
+run().catch((cause: unknown) => {
+  const error = cause instanceof Error ? cause : new Error(String(cause), { cause });
+  console.error(error.message);
   process.exit(1);
 });
