@@ -1,7 +1,12 @@
-import { formatPushError } from "./format.js";
+import { formatPushError, toError } from "./format.js";
 import { planSync } from "./plan-sync.js";
 import { selectChangedItems, selectDeleteItems } from "./push-helpers.js";
-import { deleteRemoteItem, postJson } from "./remote-api.js";
+import {
+  AcknowledgementSchema,
+  type PruneRemoteApi,
+  remoteApi,
+  SyncRunSchema,
+} from "./remote-api.js";
 import type { LockstepObserver, LockstepPlan, PruneDeletedOptions } from "./types.js";
 
 function throwIfAborted(signal?: AbortSignal): void {
@@ -13,6 +18,7 @@ function throwIfAborted(signal?: AbortSignal): void {
 export async function pruneDeleted(
   options: PruneDeletedOptions,
   observer?: LockstepObserver,
+  remote: PruneRemoteApi = remoteApi,
 ): Promise<{ failed: number; plan: LockstepPlan; pruned: number }> {
   const { signal } = options;
   throwIfAborted(signal);
@@ -65,7 +71,7 @@ export async function pruneDeleted(
   }
 
   observer?.onEvent({ type: "status", message: "Creating sync run..." });
-  const syncRun = await postJson<{ syncRunId: string }>(
+  const syncRun = await remote.postJson(
     options.apiUrl,
     "/api/sync/runs",
     options.apiToken,
@@ -73,6 +79,7 @@ export async function pruneDeleted(
       counts: plan.counts,
       sourceRoot: plan.sourceRoot,
     },
+    SyncRunSchema,
     signal,
   );
 
@@ -90,7 +97,7 @@ export async function pruneDeleted(
           type: "status",
           message: `[${current}/${itemsToPrune.length}] deleting ${item.path}`,
         });
-        await deleteRemoteItem({
+        await remote.deleteRemoteItem({
           apiToken: options.apiToken,
           apiUrl: options.apiUrl,
           logicalPath: item.path,
@@ -110,12 +117,13 @@ export async function pruneDeleted(
           cancelled = true;
           throw error;
         }
+        const failure = toError(error);
         failed += 1;
         observer?.onEvent({
           type: "item-failure",
           action: "delete",
           current,
-          error: formatPushError(error),
+          error: formatPushError(failure),
           path: item.path,
           total: itemsToPrune.length,
         });
@@ -129,31 +137,35 @@ export async function pruneDeleted(
     }
   } finally {
     const wasCancelled = cancelled || (signal?.aborted ?? false);
-    await postJson(
-      options.apiUrl,
-      `/api/sync/runs/${syncRun.syncRunId}/complete`,
-      options.apiToken,
-      {
-        counts: {
-          ...plan.counts,
-          capped: itemsToPrune.length,
-          failed,
-          planned: changedItems.length,
-          pushed: pruned,
+    await remote
+      .postJson(
+        options.apiUrl,
+        `/api/sync/runs/${syncRun.syncRunId}/complete`,
+        options.apiToken,
+        {
+          counts: {
+            ...plan.counts,
+            capped: itemsToPrune.length,
+            failed,
+            planned: changedItems.length,
+            pushed: pruned,
+          },
+          error: wasCancelled
+            ? "Run cancelled by user"
+            : failed > 0
+              ? `${failed} delete(s) failed during prune`
+              : undefined,
+          status: wasCancelled ? "cancelled" : failed > 0 ? "failed" : "completed",
         },
-        error: wasCancelled
-          ? "Run cancelled by user"
-          : failed > 0
-            ? `${failed} delete(s) failed during prune`
-            : undefined,
-        status: wasCancelled ? "cancelled" : failed > 0 ? "failed" : "completed",
-      },
-    ).catch((error) => {
-      observer?.onEvent({
-        type: "status",
-        message: `Warning: failed to finalize sync run: ${formatPushError(error)}`,
+        AcknowledgementSchema,
+      )
+      .catch((error) => {
+        const failure = toError(error);
+        observer?.onEvent({
+          type: "status",
+          message: `Warning: failed to finalize sync run: ${formatPushError(failure)}`,
+        });
       });
-    });
   }
 
   if (cancelled) {

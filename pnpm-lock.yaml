@@ -541,6 +541,9 @@ importers:
       '@latch-works/media-index':
         specifier: workspace:*
         version: link:../media-index
+      zod:
+        specifier: ^4.3.6
+        version: 4.4.3
     devDependencies:
       typescript:
         specifier: ^6.0.2

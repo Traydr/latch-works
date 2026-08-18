@@ -4,18 +4,89 @@ import { stat } from "node:fs/promises";
 import { Readable, Transform } from "node:stream";
 import { getBaseName, getExtension, type MediaItem } from "@latch-works/media-domain";
 import { hashFileContents } from "@latch-works/media-index";
+import { z } from "zod";
 import { formatBytes } from "./format.js";
 import { resolveLocalFilePath } from "./push-helpers.js";
+import type { LockstepPlanCounts } from "./types.js";
 
-export type PushStage = "deleting" | "hashing" | "registering" | "uploading";
+type PushStage = "deleting" | "hashing" | "registering" | "uploading";
 
-export async function postJson<T = unknown>(
+interface CreateSyncRunRequest {
+  counts: LockstepPlanCounts;
+  sourceRoot: string;
+}
+
+interface SyncRunOutcomeCounts extends LockstepPlanCounts {
+  capped: number;
+  failed: number;
+  planned: number;
+  pushed: number;
+}
+
+interface CompleteSyncRunRequest {
+  counts: SyncRunOutcomeCounts;
+  error: string | undefined;
+  status: "cancelled" | "completed" | "failed";
+}
+
+interface UploadUrlRequest {
+  contentType: string;
+  filename: string;
+  sha256: string;
+  size: number;
+}
+
+interface CompleteObjectRequest {
+  contentType: string;
+  extension: string;
+  filename: string;
+  logicalPath: string;
+  mediaType: MediaItem["mediaType"];
+  mtimeMs: number;
+  objectKey: string;
+  sha256: string;
+  size: number;
+  syncRunId: string;
+}
+
+interface DeleteObjectRequest {
+  action: "delete";
+  logicalPath: string;
+  syncRunId: string;
+}
+
+/** Every body this client posts to the Pane View sync API. */
+export type SyncRequestBody =
+  | CompleteObjectRequest
+  | CompleteSyncRunRequest
+  | CreateSyncRunRequest
+  | DeleteObjectRequest
+  | UploadUrlRequest;
+
+export const SyncRunSchema = z.object({ syncRunId: z.string() });
+
+const UploadTargetSchema = z.object({
+  headers: z.record(z.string(), z.string()).optional(),
+  objectKey: z.string(),
+  uploadUrl: z.string().nullable(),
+});
+
+/** Routes whose acknowledgement body is never read; only the HTTP status matters. */
+export const AcknowledgementSchema = z.unknown();
+
+/** Streaming request bodies need undici's `duplex` flag, which `RequestInit` omits. */
+interface StreamingRequestInit extends RequestInit {
+  duplex: "half";
+}
+
+async function postJson<TSchema extends z.ZodType>(
   apiUrl: string,
   route: string,
   apiToken: string,
-  body: unknown,
+  body: SyncRequestBody,
+  schema: TSchema,
   signal?: AbortSignal,
-): Promise<T> {
+): Promise<z.output<TSchema>> {
   const response = await fetch(new URL(route, apiUrl), {
     body: JSON.stringify(body),
     headers: {
@@ -30,10 +101,10 @@ export async function postJson<T = unknown>(
     throw new Error(`${route} failed with ${response.status}: ${await response.text()}`);
   }
 
-  return (await response.json()) as T;
+  return schema.parse(await response.json());
 }
 
-export async function hashLocalFile(
+async function hashLocalFile(
   filePath: string,
   onProgress?: (bytesHashed: number, fileSize: number) => void,
   signal?: AbortSignal,
@@ -62,7 +133,7 @@ export async function hashLocalFile(
   return sha256;
 }
 
-export async function pushMediaItem({
+async function pushMediaItem({
   apiToken,
   apiUrl,
   item,
@@ -101,11 +172,7 @@ export async function pushMediaItem({
     ));
 
   onStage("registering", "requesting upload URL");
-  const uploadTarget = await postJson<{
-    headers?: Record<string, string>;
-    objectKey: string;
-    uploadUrl: string | null;
-  }>(
+  const uploadTarget = await postJson(
     apiUrl,
     "/api/sync/upload-url",
     apiToken,
@@ -115,6 +182,7 @@ export async function pushMediaItem({
       sha256,
       size: preHashStat.size,
     },
+    UploadTargetSchema,
     signal,
   );
 
@@ -157,11 +225,12 @@ export async function pushMediaItem({
       size: preHashStat.size,
       syncRunId,
     },
+    AcknowledgementSchema,
     signal,
   );
 }
 
-export async function deleteRemoteItem({
+async function deleteRemoteItem({
   apiToken,
   apiUrl,
   logicalPath,
@@ -183,6 +252,7 @@ export async function deleteRemoteItem({
       logicalPath,
       syncRunId,
     },
+    AcknowledgementSchema,
     signal,
   );
 }
@@ -250,7 +320,9 @@ export async function uploadFile({
       throw new Error("Upload aborted.");
     }
 
-    const response = await fetch(uploadUrl, {
+    // SAFETY: `Readable.toWeb` returns a WHATWG ReadableStream, which fetch accepts as a
+    // streaming body; only the node:stream/web and DOM declarations of that class differ.
+    const request: StreamingRequestInit = {
       body: Readable.toWeb(body) as BodyInit,
       duplex: "half",
       headers: {
@@ -260,7 +332,8 @@ export async function uploadFile({
       },
       method: "PUT",
       signal,
-    } as RequestInit & { duplex: "half" });
+    };
+    const response = await fetch(uploadUrl, request);
 
     if (!response.ok) {
       throw new Error(`Upload failed with ${response.status}: ${await response.text()}`);
@@ -311,3 +384,23 @@ function contentTypeForExtension(extension: string): string {
       return "application/octet-stream";
   }
 }
+
+/** Remote calls `pushChanges` makes, injectable so tests can drive a faithful fake. */
+export interface PushRemoteApi {
+  hashLocalFile: typeof hashLocalFile;
+  postJson: typeof postJson;
+  pushMediaItem: typeof pushMediaItem;
+}
+
+/** Remote calls `pruneDeleted` makes, injectable so tests can drive a faithful fake. */
+export interface PruneRemoteApi {
+  deleteRemoteItem: typeof deleteRemoteItem;
+  postJson: typeof postJson;
+}
+
+export const remoteApi = {
+  deleteRemoteItem,
+  hashLocalFile,
+  postJson,
+  pushMediaItem,
+} satisfies PruneRemoteApi & PushRemoteApi;

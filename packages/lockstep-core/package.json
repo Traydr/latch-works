@@ -17,7 +17,8 @@
   },
   "dependencies": {
     "@latch-works/media-domain": "workspace:*",
-    "@latch-works/media-index": "workspace:*"
+    "@latch-works/media-index": "workspace:*",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "typescript": "^6.0.2",

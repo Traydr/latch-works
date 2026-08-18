@@ -1,7 +1,7 @@
 import { stat } from "node:fs/promises";
 import type { MediaItem } from "@latch-works/media-domain";
 import { type ArchiveFileFingerprint, fingerprintsMatch } from "@latch-works/media-index";
-import { formatBytes, formatPushError } from "./format.js";
+import { formatBytes, formatPushError, toError } from "./format.js";
 import { type HashCache, loadHashCache } from "./hash-cache.js";
 import { planSync } from "./plan-sync.js";
 import {
@@ -9,7 +9,12 @@ import {
   selectChangedItems,
   selectUploadUpdateItems,
 } from "./push-helpers.js";
-import { hashLocalFile, postJson, pushMediaItem } from "./remote-api.js";
+import {
+  AcknowledgementSchema,
+  type PushRemoteApi,
+  remoteApi,
+  SyncRunSchema,
+} from "./remote-api.js";
 import type { LockstepObserver, LockstepPlan, PushChangesOptions } from "./types.js";
 
 const DEFAULT_UPLOAD_CONCURRENCY = 3;
@@ -41,6 +46,7 @@ function resolveUploadConcurrency(value: number | undefined): number {
 export async function pushChanges(
   options: PushChangesOptions,
   observer?: LockstepObserver,
+  remote: PushRemoteApi = remoteApi,
 ): Promise<{ failed: number; plan: LockstepPlan; pushed: number }> {
   const { signal } = options;
   throwIfAborted(signal);
@@ -108,7 +114,7 @@ export async function pushChanges(
   }
 
   observer?.onEvent({ type: "status", message: "Creating sync run..." });
-  const syncRun = await postJson<{ syncRunId: string }>(
+  const syncRun = await remote.postJson(
     options.apiUrl,
     "/api/sync/runs",
     options.apiToken,
@@ -116,6 +122,7 @@ export async function pushChanges(
       counts: plan.counts,
       sourceRoot: plan.sourceRoot,
     },
+    SyncRunSchema,
     signal,
   );
 
@@ -145,11 +152,12 @@ export async function pushChanges(
             current,
             item: item.local,
             observer,
+            remote,
             signal,
             sourceRoot: plan.sourceRoot,
             total: itemsToPush.length,
           });
-          await pushMediaItem({
+          await remote.pushMediaItem({
             apiToken: options.apiToken,
             apiUrl: options.apiUrl,
             item: local,
@@ -179,12 +187,13 @@ export async function pushChanges(
             abortError = error;
             throw error;
           }
+          const failure = toError(error);
           failed += 1;
           observer?.onEvent({
             type: "item-failure",
             action: item.action,
             current,
-            error: formatPushError(error),
+            error: formatPushError(failure),
             path: item.path,
             total: itemsToPush.length,
           });
@@ -200,35 +209,40 @@ export async function pushChanges(
     }
   } finally {
     const wasCancelled = cancelled || (signal?.aborted ?? false);
-    await postJson(
-      options.apiUrl,
-      `/api/sync/runs/${syncRun.syncRunId}/complete`,
-      options.apiToken,
-      {
-        counts: {
-          ...plan.counts,
-          capped: itemsToPush.length,
-          failed,
-          planned: changedItems.length,
-          pushed,
+    await remote
+      .postJson(
+        options.apiUrl,
+        `/api/sync/runs/${syncRun.syncRunId}/complete`,
+        options.apiToken,
+        {
+          counts: {
+            ...plan.counts,
+            capped: itemsToPush.length,
+            failed,
+            planned: changedItems.length,
+            pushed,
+          },
+          error: wasCancelled
+            ? "Run cancelled by user"
+            : failed > 0
+              ? `${failed} item(s) failed during push`
+              : undefined,
+          status: wasCancelled ? "cancelled" : failed > 0 ? "failed" : "completed",
         },
-        error: wasCancelled
-          ? "Run cancelled by user"
-          : failed > 0
-            ? `${failed} item(s) failed during push`
-            : undefined,
-        status: wasCancelled ? "cancelled" : failed > 0 ? "failed" : "completed",
-      },
-    ).catch((error) => {
-      observer?.onEvent({
-        type: "status",
-        message: `Warning: failed to finalize sync run: ${formatPushError(error)}`,
+        AcknowledgementSchema,
+      )
+      .catch((error) => {
+        const failure = toError(error);
+        observer?.onEvent({
+          type: "status",
+          message: `Warning: failed to finalize sync run: ${formatPushError(failure)}`,
+        });
       });
-    });
     await hashCache.save().catch((error) => {
+      const failure = toError(error);
       observer?.onEvent({
         type: "status",
-        message: `Warning: hash cache could not be saved: ${formatPushError(error)}`,
+        message: `Warning: hash cache could not be saved: ${formatPushError(failure)}`,
       });
     });
   }
@@ -275,10 +289,10 @@ async function runBoundedQueue<T>({
   let nextIndex = 0;
   let active = 0;
   let settled = false;
-  let firstError: unknown;
+  let firstError: Error | undefined;
 
   await new Promise<void>((resolve, reject) => {
-    const fail = (error: unknown): void => {
+    const fail = (error: Error): void => {
       if (!settled) {
         settled = true;
         reject(error);
@@ -322,13 +336,14 @@ async function runBoundedQueue<T>({
         active += 1;
         void work(task)
           .catch((error) => {
+            const failure = toError(error);
             if (signal?.aborted) {
-              firstError = firstError ?? error;
+              firstError = firstError ?? failure;
             } else if (!settled) {
               // Unexpected non-abort failures from the worker wrapper should fail the queue.
               // Per-item failures are handled inside `work` and should not reject.
-              firstError = firstError ?? error;
-              fail(error);
+              firstError = firstError ?? failure;
+              fail(failure);
             }
           })
           .finally(() => {
@@ -362,6 +377,7 @@ async function resolvePushItemHash({
   current,
   item,
   observer,
+  remote,
   signal,
   sourceRoot,
   total,
@@ -370,6 +386,7 @@ async function resolvePushItemHash({
   current: number;
   item: MediaItem;
   observer?: LockstepObserver;
+  remote: PushRemoteApi;
   signal?: AbortSignal;
   sourceRoot: string;
   total: number;
@@ -391,7 +408,7 @@ async function resolvePushItemHash({
       type: "status",
       message: `[${current}/${total}] hashing ${item.path}`,
     });
-    sha256 = await hashLocalFile(
+    sha256 = await remote.hashLocalFile(
       filePath,
       (bytesHashed, fileSize) => {
         observer?.onEvent({

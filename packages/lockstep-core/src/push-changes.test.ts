@@ -4,26 +4,72 @@ import os from "node:os";
 import path from "node:path";
 import type { MediaItem } from "@latch-works/media-domain";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { z } from "zod";
+import { pushChanges } from "./push-changes.js";
+import type { PushRemoteApi, SyncRequestBody } from "./remote-api.js";
 import type { LockstepPlan, LockstepRunEvent } from "./types.js";
 
-const mocks = vi.hoisted(() => ({
-  hashLocalFile: vi.fn(),
-  postJson: vi.fn(),
-  pushMediaItem: vi.fn(),
-}));
+type PushMediaItemRequest = Parameters<PushRemoteApi["pushMediaItem"]>[0];
 
-vi.mock("./remote-api.js", () => ({
-  deleteRemoteItem: vi.fn(),
-  hashLocalFile: mocks.hashLocalFile,
-  postJson: mocks.postJson,
-  pushMediaItem: mocks.pushMediaItem,
-}));
+interface RecordedPostJson {
+  apiToken: string;
+  apiUrl: string;
+  body: SyncRequestBody;
+  route: string;
+  signal: AbortSignal | undefined;
+}
 
-const { hashLocalFile, postJson, pushMediaItem } = mocks;
+interface RemoteApiFake {
+  hashedPaths: string[];
+  postJsonCalls: RecordedPostJson[];
+  pushCalls: PushMediaItemRequest[];
+  remote: PushRemoteApi;
+}
 
-import { pushChanges } from "./push-changes.js";
+interface RemoteApiFakeBehaviour {
+  onPush?: (request: PushMediaItemRequest) => Promise<void>;
+  sha256: string;
+}
+
+function createRemoteApiFake(behaviour: RemoteApiFakeBehaviour): RemoteApiFake {
+  const hashedPaths: string[] = [];
+  const postJsonCalls: RecordedPostJson[] = [];
+  const pushCalls: PushMediaItemRequest[] = [];
+
+  const remote: PushRemoteApi = {
+    hashLocalFile: async (filePath) => {
+      hashedPaths.push(filePath);
+      return behaviour.sha256;
+    },
+    postJson: async <TSchema extends z.ZodType>(
+      apiUrl: string,
+      route: string,
+      apiToken: string,
+      body: SyncRequestBody,
+      schema: TSchema,
+      signal?: AbortSignal,
+    ) => {
+      postJsonCalls.push({ apiToken, apiUrl, body, route, signal });
+      return schema.parse(
+        route === "/api/sync/runs" ? { syncRunId: "run-1" } : { status: "database" },
+      );
+    },
+    pushMediaItem: async (request) => {
+      pushCalls.push(request);
+      await behaviour.onPush?.(request);
+    },
+  };
+
+  return { hashedPaths, postJsonCalls, pushCalls, remote };
+}
+
+function findFinalizeCall(calls: readonly RecordedPostJson[]): RecordedPostJson | undefined {
+  return calls.find((call) => call.route.endsWith("/complete"));
+}
 
 let cacheRoot: string;
+let contentSha256: string;
+let fake: RemoteApiFake;
 let localItem: MediaItem;
 let sourceRoot: string;
 let tempDir: string;
@@ -67,22 +113,19 @@ describe("pushChanges orchestration", () => {
     const filePath = path.join(sourceRoot, "photos", "photo.jpg");
     await writeFile(filePath, content);
     const fileStat = await stat(filePath);
-    const sha256 = createHash("sha256").update(content).digest("hex");
+    contentSha256 = createHash("sha256").update(content).digest("hex");
     localItem = {
       extension: "jpg",
-      id: sha256,
+      id: contentSha256,
       mediaType: "image",
       mtimeMs: Math.trunc(fileStat.mtimeMs),
       name: "photo.jpg",
       parentPath: "photos",
       path: "photos/photo.jpg",
-      sha256,
+      sha256: contentSha256,
       size: content.length,
     };
-    postJson.mockReset();
-    pushMediaItem.mockReset();
-    hashLocalFile.mockReset();
-    hashLocalFile.mockResolvedValue(sha256);
+    fake = createRemoteApiFake({ sha256: contentSha256 });
   });
 
   afterEach(async () => {
@@ -102,11 +145,12 @@ describe("pushChanges orchestration", () => {
         sourceRoot: plan.sourceRoot,
       },
       observer,
+      fake.remote,
     );
 
     expect(result).toEqual({ failed: 0, plan, pushed: 0 });
-    expect(postJson).not.toHaveBeenCalled();
-    expect(pushMediaItem).not.toHaveBeenCalled();
+    expect(fake.postJsonCalls).toHaveLength(0);
+    expect(fake.pushCalls).toHaveLength(0);
 
     const complete = events.find((event) => event.type === "complete");
     expect(complete).toMatchObject({
@@ -122,11 +166,6 @@ describe("pushChanges orchestration", () => {
 
   it("creates a sync run, pushes items, and finalizes as completed", async () => {
     const plan = createPlan([{ action: "upload", local: localItem, path: localItem.path }]);
-
-    postJson.mockResolvedValueOnce({ syncRunId: "run-1" });
-    pushMediaItem.mockResolvedValueOnce(undefined);
-    postJson.mockResolvedValueOnce({ status: "database" });
-
     const { events, observer } = collectEvents();
 
     const result = await pushChanges(
@@ -138,31 +177,28 @@ describe("pushChanges orchestration", () => {
         sourceRoot: plan.sourceRoot,
       },
       observer,
+      fake.remote,
     );
 
     expect(result).toEqual({ failed: 0, plan, pushed: 1 });
-    expect(postJson).toHaveBeenCalledTimes(2);
-    expect(postJson).toHaveBeenNthCalledWith(
-      1,
-      "http://127.0.0.1:3000",
-      "/api/sync/runs",
-      "token",
-      {
+    expect(fake.postJsonCalls).toHaveLength(2);
+    expect(fake.postJsonCalls[0]).toEqual({
+      apiToken: "token",
+      apiUrl: "http://127.0.0.1:3000",
+      body: {
         counts: plan.counts,
         sourceRoot: plan.sourceRoot,
       },
-      undefined,
-    );
-    expect(pushMediaItem).toHaveBeenCalledTimes(1);
-    expect(pushMediaItem).toHaveBeenCalledWith(
-      expect.objectContaining({
-        syncRunId: "run-1",
-        item: localItem,
-      }),
-    );
+      route: "/api/sync/runs",
+      signal: undefined,
+    });
+    expect(fake.pushCalls).toHaveLength(1);
+    expect(fake.pushCalls[0]).toMatchObject({
+      item: localItem,
+      syncRunId: "run-1",
+    });
 
-    const finalizeCall = postJson.mock.calls.find((call) => String(call[1]).endsWith("/complete"));
-    expect(finalizeCall?.[3]).toMatchObject({
+    expect(findFinalizeCall(fake.postJsonCalls)?.body).toMatchObject({
       status: "completed",
       counts: expect.objectContaining({ failed: 0, pushed: 1 }),
     });
@@ -194,34 +230,34 @@ describe("pushChanges orchestration", () => {
       { action: "upload", local: localItem, path: localItem.path },
       { action: "upload", local: secondItem, path: secondItem.path },
     ]);
-    postJson.mockResolvedValueOnce({ syncRunId: "run-1" });
-    pushMediaItem.mockResolvedValueOnce(undefined);
-    postJson.mockResolvedValueOnce({ status: "database" });
 
-    const result = await pushChanges({
-      apiToken: "token",
-      apiUrl: "http://127.0.0.1:3000",
-      hashCacheRoot: cacheRoot,
-      maxChanges: 1,
-      plan,
-      sourceRoot: plan.sourceRoot,
-    });
+    const result = await pushChanges(
+      {
+        apiToken: "token",
+        apiUrl: "http://127.0.0.1:3000",
+        hashCacheRoot: cacheRoot,
+        maxChanges: 1,
+        plan,
+        sourceRoot: plan.sourceRoot,
+      },
+      undefined,
+      fake.remote,
+    );
 
     expect(result.pushed).toBe(1);
-    expect(hashLocalFile).toHaveBeenCalledTimes(1);
-    expect(pushMediaItem).toHaveBeenCalledTimes(1);
-    expect(pushMediaItem).toHaveBeenCalledWith(
-      expect.objectContaining({ item: expect.objectContaining({ path: localItem.path }) }),
-    );
+    expect(fake.hashedPaths).toEqual([path.join(sourceRoot, "photos", "photo.jpg")]);
+    expect(fake.pushCalls).toHaveLength(1);
+    expect(fake.pushCalls[0]?.item.path).toBe(localItem.path);
   });
 
   it("finalizes as failed and increments failed when an item fails", async () => {
+    fake = createRemoteApiFake({
+      onPush: async () => {
+        throw new Error("upload failed");
+      },
+      sha256: contentSha256,
+    });
     const plan = createPlan([{ action: "upload", local: localItem, path: localItem.path }]);
-
-    postJson.mockResolvedValueOnce({ syncRunId: "run-1" });
-    pushMediaItem.mockRejectedValueOnce(new Error("upload failed"));
-    postJson.mockResolvedValueOnce({ status: "database" });
-
     const { events, observer } = collectEvents();
 
     const result = await pushChanges(
@@ -233,13 +269,13 @@ describe("pushChanges orchestration", () => {
         sourceRoot: plan.sourceRoot,
       },
       observer,
+      fake.remote,
     );
 
     expect(result.failed).toBe(1);
     expect(result.pushed).toBe(0);
 
-    const finalizeCall = postJson.mock.calls.find((call) => String(call[1]).endsWith("/complete"));
-    expect(finalizeCall?.[3]).toMatchObject({
+    expect(findFinalizeCall(fake.postJsonCalls)?.body).toMatchObject({
       status: "failed",
       counts: expect.objectContaining({ failed: 1, pushed: 0 }),
     });
@@ -256,15 +292,14 @@ describe("pushChanges orchestration", () => {
 
   it("finalizes as cancelled and rethrows when aborted during an item", async () => {
     const controller = new AbortController();
-    const plan = createPlan([{ action: "upload", local: localItem, path: localItem.path }]);
-
-    postJson.mockResolvedValueOnce({ syncRunId: "run-1" });
-    pushMediaItem.mockImplementation(async ({ signal }) => {
-      controller.abort();
-      throw signal?.reason ?? new DOMException("Aborted", "AbortError");
+    fake = createRemoteApiFake({
+      onPush: async ({ signal }) => {
+        controller.abort();
+        throw signal?.reason ?? new DOMException("Aborted", "AbortError");
+      },
+      sha256: contentSha256,
     });
-    postJson.mockResolvedValueOnce({ status: "database" });
-
+    const plan = createPlan([{ action: "upload", local: localItem, path: localItem.path }]);
     const { events, observer } = collectEvents();
 
     await expect(
@@ -278,13 +313,14 @@ describe("pushChanges orchestration", () => {
           sourceRoot: plan.sourceRoot,
         },
         observer,
+        fake.remote,
       ),
     ).rejects.toMatchObject({ name: "AbortError" });
 
-    const finalizeCall = postJson.mock.calls.find((call) => String(call[1]).endsWith("/complete"));
+    const finalizeCall = findFinalizeCall(fake.postJsonCalls);
     expect(finalizeCall).toBeDefined();
-    expect(finalizeCall?.[4]).toBeUndefined();
-    expect(finalizeCall?.[3]).toMatchObject({
+    expect(finalizeCall?.signal).toBeUndefined();
+    expect(finalizeCall?.body).toMatchObject({
       error: "Run cancelled by user",
       status: "cancelled",
     });
@@ -302,36 +338,48 @@ describe("pushChanges orchestration", () => {
     const plan = createPlan([{ action: "upload", local: localItem, path: localItem.path }]);
 
     await expect(
-      pushChanges({
-        apiToken: "token",
-        apiUrl: "http://127.0.0.1:3000",
-        hashCacheRoot: cacheRoot,
-        plan,
-        sourceRoot: plan.sourceRoot,
-        uploadConcurrency: 0,
-      }),
+      pushChanges(
+        {
+          apiToken: "token",
+          apiUrl: "http://127.0.0.1:3000",
+          hashCacheRoot: cacheRoot,
+          plan,
+          sourceRoot: plan.sourceRoot,
+          uploadConcurrency: 0,
+        },
+        undefined,
+        fake.remote,
+      ),
     ).rejects.toThrow(/uploadConcurrency must be an integer between 1 and 8/);
 
     await expect(
-      pushChanges({
-        apiToken: "token",
-        apiUrl: "http://127.0.0.1:3000",
-        hashCacheRoot: cacheRoot,
-        plan,
-        sourceRoot: plan.sourceRoot,
-        uploadConcurrency: 9,
-      }),
+      pushChanges(
+        {
+          apiToken: "token",
+          apiUrl: "http://127.0.0.1:3000",
+          hashCacheRoot: cacheRoot,
+          plan,
+          sourceRoot: plan.sourceRoot,
+          uploadConcurrency: 9,
+        },
+        undefined,
+        fake.remote,
+      ),
     ).rejects.toThrow(/uploadConcurrency must be an integer between 1 and 8/);
 
     await expect(
-      pushChanges({
-        apiToken: "token",
-        apiUrl: "http://127.0.0.1:3000",
-        hashCacheRoot: cacheRoot,
-        plan,
-        sourceRoot: plan.sourceRoot,
-        uploadConcurrency: 1.5,
-      }),
+      pushChanges(
+        {
+          apiToken: "token",
+          apiUrl: "http://127.0.0.1:3000",
+          hashCacheRoot: cacheRoot,
+          plan,
+          sourceRoot: plan.sourceRoot,
+          uploadConcurrency: 1.5,
+        },
+        undefined,
+        fake.remote,
+      ),
     ).rejects.toThrow(/uploadConcurrency must be an integer between 1 and 8/);
   });
 
@@ -359,15 +407,15 @@ describe("pushChanges orchestration", () => {
 
     let inflight = 0;
     let peak = 0;
-
-    postJson.mockResolvedValueOnce({ syncRunId: "run-1" });
-    pushMediaItem.mockImplementation(async () => {
-      inflight += 1;
-      peak = Math.max(peak, inflight);
-      await new Promise((resolve) => setTimeout(resolve, 25));
-      inflight -= 1;
+    fake = createRemoteApiFake({
+      onPush: async () => {
+        inflight += 1;
+        peak = Math.max(peak, inflight);
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        inflight -= 1;
+      },
+      sha256: contentSha256,
     });
-    postJson.mockResolvedValueOnce({ status: "database" });
 
     const { events, observer } = collectEvents();
     const result = await pushChanges(
@@ -380,11 +428,12 @@ describe("pushChanges orchestration", () => {
         uploadConcurrency: 3,
       },
       observer,
+      fake.remote,
     );
 
     expect(result).toEqual({ failed: 0, plan, pushed: 5 });
     expect(peak).toBe(3);
-    expect(pushMediaItem).toHaveBeenCalledTimes(5);
+    expect(fake.pushCalls).toHaveLength(5);
 
     const successes = events.filter((event) => event.type === "item-success");
     expect(successes).toHaveLength(5);
@@ -417,26 +466,30 @@ describe("pushChanges orchestration", () => {
     const controller = new AbortController();
     let started = 0;
     const releaseFirstBatch: Array<() => void> = [];
-
-    postJson.mockResolvedValueOnce({ syncRunId: "run-1" });
-    pushMediaItem.mockImplementation(async ({ signal }) => {
-      started += 1;
-      await new Promise<void>((resolve) => {
-        releaseFirstBatch.push(resolve);
-      });
-      throw signal?.reason ?? new DOMException("Aborted", "AbortError");
+    fake = createRemoteApiFake({
+      onPush: async ({ signal }) => {
+        started += 1;
+        await new Promise<void>((resolve) => {
+          releaseFirstBatch.push(resolve);
+        });
+        throw signal?.reason ?? new DOMException("Aborted", "AbortError");
+      },
+      sha256: contentSha256,
     });
-    postJson.mockResolvedValueOnce({ status: "database" });
 
-    const pushPromise = pushChanges({
-      apiToken: "token",
-      apiUrl: "http://127.0.0.1:3000",
-      hashCacheRoot: cacheRoot,
-      plan,
-      signal: controller.signal,
-      sourceRoot: plan.sourceRoot,
-      uploadConcurrency: 2,
-    });
+    const pushPromise = pushChanges(
+      {
+        apiToken: "token",
+        apiUrl: "http://127.0.0.1:3000",
+        hashCacheRoot: cacheRoot,
+        plan,
+        signal: controller.signal,
+        sourceRoot: plan.sourceRoot,
+        uploadConcurrency: 2,
+      },
+      undefined,
+      fake.remote,
+    );
 
     await vi.waitFor(() => {
       expect(started).toBe(2);
@@ -480,14 +533,14 @@ describe("pushChanges orchestration", () => {
       { action: "upload", local: secondItem, path: secondItem.path },
       { action: "upload", local: thirdItem, path: thirdItem.path },
     ]);
-
-    postJson.mockResolvedValueOnce({ syncRunId: "run-1" });
-    pushMediaItem.mockImplementation(async ({ item }) => {
-      if (item.path === secondItem.path) {
-        throw new Error("upload failed");
-      }
+    fake = createRemoteApiFake({
+      onPush: async ({ item }) => {
+        if (item.path === secondItem.path) {
+          throw new Error("upload failed");
+        }
+      },
+      sha256: contentSha256,
     });
-    postJson.mockResolvedValueOnce({ status: "database" });
 
     const { events, observer } = collectEvents();
     const result = await pushChanges(
@@ -500,6 +553,7 @@ describe("pushChanges orchestration", () => {
         uploadConcurrency: 3,
       },
       observer,
+      fake.remote,
     );
 
     expect(result).toEqual({ failed: 1, plan, pushed: 2 });
