@@ -2,7 +2,8 @@ import { ensureDirectoryPermission, loadDirectoryHandle } from "../gather/direct
 import {
   downloadImages,
   getOrCreateNestedDirectory,
-  type DownloadFailure
+  type DownloadFailure,
+  type WritableDirectory
 } from "../gather/downloader";
 import { formatError, isAbortError, toError } from "../gather/errors";
 import { resolveCompatibleFolderSegments } from "../gather/folder-compatibility";
@@ -72,7 +73,7 @@ export async function executeGatherOutput(input: {
 
 async function executeFiles(
   payload: DownloadablePayload,
-  destinationDirectory: FileSystemDirectoryHandle,
+  destinationDirectory: WritableDirectory,
   settings: GatherBoxSettings,
   emit: (event: GatherRunEvent) => Promise<void>,
   signal?: AbortSignal
@@ -131,7 +132,7 @@ async function executeFiles(
 
 async function executeStory(
   payload: GeneratedStoryPayload,
-  destinationDirectory: FileSystemDirectoryHandle,
+  destinationDirectory: WritableDirectory,
   settings: GatherBoxSettings,
   emit: (event: GatherRunEvent) => Promise<void>,
   signal?: AbortSignal

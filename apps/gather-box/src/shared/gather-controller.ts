@@ -1,11 +1,5 @@
 import { getActiveTab } from "../gather/active-tab";
-import {
-  clearDirectoryHandle,
-  ensureDirectoryPermission,
-  getDirectoryScopeLabel,
-  loadDirectoryHandle,
-  saveDirectoryHandle
-} from "../gather/directory-store";
+import { directoryStore, type DirectoryStore } from "../gather/directory-store";
 import {
   addLog,
   flashDownloadComplete,
@@ -79,6 +73,8 @@ export interface GatherControllerOptions {
   includeOpenSidePanel?: boolean;
   onOpenSidePanel?: () => void;
   onToggleShortcut?: () => void;
+  /** Replaceable so tests can drive folder permission outcomes without a real handle store. */
+  directoryStore?: DirectoryStore;
 }
 
 export class GatherController {
@@ -114,8 +110,11 @@ export class GatherController {
       ) => void)
     | null = null;
 
+  private readonly directories: DirectoryStore;
+
   constructor(options: GatherControllerOptions = {}) {
     this.options = options;
+    this.directories = options.directoryStore ?? directoryStore;
   }
 
   async init(document: Document): Promise<void> {
@@ -308,7 +307,7 @@ export class GatherController {
       });
       await this.setDirectoryHandle(directoryHandle);
       this.elements.folderDetail.textContent = this.state.siteKey
-        ? `Remembered for ${getDirectoryScopeLabel(this.state.settings.useGlobalFolder)}.`
+        ? `Remembered for ${this.directories.getDirectoryScopeLabel(this.state.settings.useGlobalFolder)}.`
         : "Available for this session.";
       this.appendLog(`Folder selected: ${directoryHandle.name}`, "success");
       this.setStatus("idle");
@@ -331,12 +330,12 @@ export class GatherController {
     }
 
     try {
-      await clearDirectoryHandle(this.state.siteKey, this.state.settings.useGlobalFolder);
+      await this.directories.clearDirectoryHandle(this.state.siteKey, this.state.settings.useGlobalFolder);
       this.state.directoryHandle = null;
       setFolder(
         this.elements,
         "No folder selected",
-        `Choose a writable folder for ${getDirectoryScopeLabel(this.state.settings.useGlobalFolder)}.`
+        `Choose a writable folder for ${this.directories.getDirectoryScopeLabel(this.state.settings.useGlobalFolder)}.`
       );
       this.appendLog("Cleared remembered folder.", "success");
       this.setStatus("idle");
@@ -368,7 +367,7 @@ export class GatherController {
     }
 
     if (allowPermissionPrompt) {
-      const permission = await ensureDirectoryPermission(this.state.directoryHandle, true);
+      const permission = await this.directories.ensureDirectoryPermission(this.state.directoryHandle, true);
       if (permission === "requires-user-activation") {
         this.appendLog("Folder access needs confirmation. Click Download Content again.", "error");
         this.syncPopupActions();
@@ -451,7 +450,7 @@ export class GatherController {
     // The executor reloads this same handle by the run's site, so confirm access to that folder
     // rather than the active tab's — the two differ whenever you retry from another tab.
     const scopeLabel = getGatherSource(target.siteKey)?.label ?? target.siteKey;
-    const directoryHandle = await loadDirectoryHandle(
+    const directoryHandle = await this.directories.loadDirectoryHandle(
       target.siteKey,
       this.state.settings.useGlobalFolder
     );
@@ -459,7 +458,7 @@ export class GatherController {
       this.appendLog(`Choose a folder for ${scopeLabel} before retrying.`, "error");
       return;
     }
-    const permission = await ensureDirectoryPermission(directoryHandle, true);
+    const permission = await this.directories.ensureDirectoryPermission(directoryHandle, true);
     if (permission === "requires-user-activation") {
       this.appendLog("Folder access needs confirmation. Click Retry Failed again.", "error");
       return;
@@ -496,7 +495,7 @@ export class GatherController {
   }
 
   private async restoreSavedDirectoryHandle(): Promise<void> {
-    const scopeLabel = getDirectoryScopeLabel(this.state.settings.useGlobalFolder);
+    const scopeLabel = this.directories.getDirectoryScopeLabel(this.state.settings.useGlobalFolder);
     this.state.directoryHandle = null;
 
     if (!this.state.siteKey && !this.state.settings.useGlobalFolder) {
@@ -505,7 +504,7 @@ export class GatherController {
     }
 
     try {
-      const directoryHandle = await loadDirectoryHandle(
+      const directoryHandle = await this.directories.loadDirectoryHandle(
         this.state.siteKey,
         this.state.settings.useGlobalFolder
       );
@@ -526,7 +525,7 @@ export class GatherController {
     this.elements.folderName.textContent = directoryHandle.name;
 
     try {
-      await saveDirectoryHandle(
+      await this.directories.saveDirectoryHandle(
         this.state.siteKey,
         directoryHandle,
         this.state.settings.useGlobalFolder

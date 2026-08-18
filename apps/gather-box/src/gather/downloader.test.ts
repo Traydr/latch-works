@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { addFileNameSuffix, downloadImages, saveBlobWithoutClobbering } from "./downloader";
+import {
+  addFileNameSuffix,
+  downloadImages,
+  saveBlobWithoutClobbering,
+  type WritableDirectory
+} from "./downloader";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -195,8 +200,11 @@ describe("collision-safe downloads", () => {
             };
           }
         };
+      },
+      async removeEntry(name: string) {
+        files.delete(name);
       }
-    } as unknown as FileSystemDirectoryHandle;
+    } satisfies WritableDirectory;
 
     const controller = new AbortController();
     const pending = saveBlobWithoutClobbering(
@@ -256,7 +264,7 @@ describe("collision-safe downloads", () => {
       async removeEntry(name: string) {
         files.delete(name);
       }
-    } as unknown as FileSystemDirectoryHandle;
+    } satisfies WritableDirectory;
 
     await expect(
       saveBlobWithoutClobbering(new Blob(["complete"]), handle, "recovered.jpg", () => "next")
@@ -274,10 +282,13 @@ describe("collision-safe downloads", () => {
   });
 });
 
-function createMemoryDirectory(initialFiles: Record<string, Blob>): {
+/** An in-memory stand-in for the archive folder the downloader writes through. */
+interface MemoryDirectory {
   files: Map<string, Blob>;
-  handle: FileSystemDirectoryHandle;
-} {
+  handle: WritableDirectory;
+}
+
+function createMemoryDirectory(initialFiles: Record<string, Blob>): MemoryDirectory {
   const files = new Map(Object.entries(initialFiles));
   const handle = {
     async getFileHandle(name: string, options?: { create?: boolean }) {
@@ -312,7 +323,7 @@ function createMemoryDirectory(initialFiles: Record<string, Blob>): {
     async removeEntry(name: string) {
       files.delete(name);
     }
-  } as unknown as FileSystemDirectoryHandle;
+  } satisfies WritableDirectory;
 
   return { files, handle };
 }

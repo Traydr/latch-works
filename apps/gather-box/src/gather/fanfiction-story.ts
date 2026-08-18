@@ -3,7 +3,7 @@ import { isAllowedDownloadUrl } from "../shared/download-policy";
 import type { GatherBoxSettings } from "../shared/settings";
 import type { GeneratedStoryPayload, StoryChapterReference } from "../shared/types";
 import { shouldIncludeCredentials } from "../shared/credentials";
-import { saveBlobWithoutClobbering } from "./downloader";
+import { saveBlobWithoutClobbering, type WritableDirectory } from "./downloader";
 import { throwIfAborted } from "./errors";
 
 const PAGE_SIZE = "letter";
@@ -77,7 +77,7 @@ interface TextLine {
 
 export async function saveFanfictionStoryPdf(
   payload: GeneratedStoryPayload,
-  destinationDirectory: FileSystemDirectoryHandle,
+  destinationDirectory: WritableDirectory,
   callbacks: FanfictionStoryCallbacks,
   options: FanfictionStoryOptions = {}
 ): Promise<void> {

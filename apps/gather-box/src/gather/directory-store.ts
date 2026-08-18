@@ -145,3 +145,20 @@ function isUserActivationError(error: Error): boolean {
     error.name === "SecurityError" && error.message.toLowerCase().includes("user activation")
   );
 }
+
+/** The persisted-handle operations the popup and side panel depend on. */
+export interface DirectoryStore {
+  clearDirectoryHandle: typeof clearDirectoryHandle;
+  ensureDirectoryPermission: typeof ensureDirectoryPermission;
+  getDirectoryScopeLabel: typeof getDirectoryScopeLabel;
+  loadDirectoryHandle: typeof loadDirectoryHandle;
+  saveDirectoryHandle: typeof saveDirectoryHandle;
+}
+
+export const directoryStore = {
+  clearDirectoryHandle,
+  ensureDirectoryPermission,
+  getDirectoryScopeLabel,
+  loadDirectoryHandle,
+  saveDirectoryHandle
+} satisfies DirectoryStore;

@@ -10,6 +10,31 @@ import {
 
 export const DEFAULT_DOWNLOAD_CONCURRENCY = 4;
 
+/**
+ * The slice of the File System Access API this module writes through. Naming it keeps the
+ * download path independent of the rest of a browser handle, which it never touches.
+ */
+export interface WritableFileStream {
+  write(data: FileSystemWriteChunkType): Promise<void>;
+  close(): Promise<void>;
+  abort?(): Promise<void>;
+}
+
+export interface WritableFile {
+  getFile(): Promise<File>;
+  createWritable(): Promise<WritableFileStream>;
+}
+
+export interface WritableDirectory {
+  getFileHandle(name: string, options?: { create?: boolean }): Promise<WritableFile>;
+  removeEntry(name: string): Promise<void>;
+}
+
+/** Only the archive root is walked segment by segment; the leaf folder is written to directly. */
+export interface NestableDirectory extends WritableDirectory {
+  getDirectoryHandle(name: string, options?: { create?: boolean }): Promise<NestableDirectory>;
+}
+
 export interface DownloadSummary {
   saved: number;
   failed: number;
@@ -46,7 +71,7 @@ export interface CollisionSaveResult {
 
 export async function downloadImages(
   images: GalleryImage[],
-  destinationDirectory: FileSystemDirectoryHandle,
+  destinationDirectory: WritableDirectory,
   callbacks: DownloadCallbacks,
   options: DownloadOptions = {}
 ): Promise<DownloadSummary> {
@@ -155,7 +180,7 @@ export async function downloadImages(
 
 export async function saveBlobWithoutClobbering(
   blob: Blob,
-  destinationDirectory: FileSystemDirectoryHandle,
+  destinationDirectory: WritableDirectory,
   preferredFileName: string,
   randomSuffix: () => string = createRandomSuffix,
   signal?: AbortSignal
@@ -234,9 +259,9 @@ export async function runPool<T>(
 }
 
 export async function getOrCreateNestedDirectory(
-  rootDirectory: FileSystemDirectoryHandle,
+  rootDirectory: NestableDirectory,
   segments: string[]
-): Promise<FileSystemDirectoryHandle> {
+): Promise<NestableDirectory> {
   let currentDirectory = rootDirectory;
 
   for (const segment of segments) {
@@ -247,9 +272,9 @@ export async function getOrCreateNestedDirectory(
 }
 
 async function getExistingFileHandle(
-  destinationDirectory: FileSystemDirectoryHandle,
+  destinationDirectory: WritableDirectory,
   fileName: string
-): Promise<FileSystemFileHandle | null> {
+): Promise<WritableFile | null> {
   try {
     return await destinationDirectory.getFileHandle(fileName);
   } catch (error) {
@@ -260,7 +285,7 @@ async function getExistingFileHandle(
   }
 }
 
-async function fileContentsMatch(fileHandle: FileSystemFileHandle, blob: Blob): Promise<boolean> {
+async function fileContentsMatch(fileHandle: WritableFile, blob: Blob): Promise<boolean> {
   try {
     const existingFile = await fileHandle.getFile();
     if (existingFile.size !== blob.size) {
@@ -287,7 +312,7 @@ const CommitMarkerSchema = z.object({
 });
 
 async function commitBlob(
-  destinationDirectory: FileSystemDirectoryHandle,
+  destinationDirectory: WritableDirectory,
   preferredFileName: string,
   targetFileName: string,
   blob: Blob,
@@ -311,7 +336,7 @@ async function commitBlob(
 }
 
 async function hasPendingBlobCommit(
-  destinationDirectory: FileSystemDirectoryHandle,
+  destinationDirectory: WritableDirectory,
   preferredFileName: string
 ): Promise<boolean> {
   return Boolean(
@@ -320,7 +345,7 @@ async function hasPendingBlobCommit(
 }
 
 async function recoverPendingBlobCommit(
-  destinationDirectory: FileSystemDirectoryHandle,
+  destinationDirectory: WritableDirectory,
   preferredFileName: string,
   blob: Blob,
   signal?: AbortSignal
@@ -375,7 +400,7 @@ function isSafeCommitTarget(fileName: string): boolean {
 }
 
 async function removeEntryIfPresent(
-  destinationDirectory: FileSystemDirectoryHandle,
+  destinationDirectory: WritableDirectory,
   fileName: string
 ): Promise<void> {
   try {
@@ -388,7 +413,7 @@ async function removeEntryIfPresent(
 }
 
 async function writeBlobDirect(
-  destinationDirectory: FileSystemDirectoryHandle,
+  destinationDirectory: WritableDirectory,
   fileName: string,
   blob: Blob,
   signal?: AbortSignal
@@ -408,7 +433,7 @@ async function writeBlobDirect(
   }
 }
 
-async function closeWritableSafely(writable: FileSystemWritableFileStream): Promise<void> {
+async function closeWritableSafely(writable: WritableFileStream): Promise<void> {
   try {
     const abort = writable.abort;
     if (abort) {
