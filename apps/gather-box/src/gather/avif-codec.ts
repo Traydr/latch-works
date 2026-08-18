@@ -41,10 +41,11 @@ export function encodeWithAvifModule(
   if (!encoded) {
     throw new Error("The AVIF encoder did not produce an image.");
   }
-  return encoded.buffer.slice(
-    encoded.byteOffset,
-    encoded.byteOffset + encoded.byteLength
-  ) as ArrayBuffer;
+  // The encoder writes into wasm memory, so the bytes are copied into an ArrayBuffer this
+  // caller owns rather than handing back a view over the module's heap.
+  const buffer = new ArrayBuffer(encoded.byteLength);
+  new Uint8Array(buffer).set(encoded);
+  return buffer;
 }
 
 function getAvifEncoder(): Promise<AVIFModule> {

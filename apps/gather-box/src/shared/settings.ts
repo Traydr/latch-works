@@ -78,9 +78,7 @@ export async function saveSettings(settings: GatherBoxSettings): Promise<void> {
 }
 
 /** Per-site overrides for sources the catalog no longer lists are dropped on read. */
-function keepKnownSources(
-  choices: Record<string, CredentialsChoice | null>
-): Partial<Record<SiteKey, CredentialsChoice>> {
+function keepKnownSources(choices: Record<string, CredentialsChoice | null>) {
   const known: Partial<Record<SiteKey, CredentialsChoice>> = {};
 
   for (const [siteKey, choice] of Object.entries(choices)) {

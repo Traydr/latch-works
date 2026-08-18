@@ -4,7 +4,6 @@ import {
   getNextQueuedGatherJob,
   getPermissionRequiredGatherJob,
   getRetryableGatherQueueResult,
-  loadGatherQueue,
   MAX_GATHER_QUEUE_LENGTH,
   recordGatherQueueResult,
   recoverStoppedGatherQueue,
@@ -53,7 +52,7 @@ export class GatherRunCoordinator {
   ) {}
 
   async startForTab(tab: chrome.tabs.Tab): Promise<GatherRunStartOutcome> {
-    if (typeof tab.id !== "number" || tab.windowId === undefined || !tab.url) {
+    if (tab.id === undefined || tab.windowId === undefined || !tab.url) {
       return { outcome: "target-unavailable" };
     }
     if (!isSupportedUrl(tab.url)) {
@@ -483,12 +482,12 @@ function asCollectingRun(run: GatherRunState): CollectingGatherQueueJob["run"] {
   if (run.phase !== "collecting") {
     throw new Error(`Expected collecting Gather Run, received ${run.phase}.`);
   }
-  return run as CollectingGatherQueueJob["run"];
+  return { ...run, phase: run.phase };
 }
 
 function asOutputRun(run: GatherRunState): OutputGatherQueueJob["run"] {
   if (isTerminalGatherRunPhase(run.phase) || run.phase === "collecting") {
     throw new Error(`Expected executable Gather Run, received ${run.phase}.`);
   }
-  return run as OutputGatherQueueJob["run"];
+  return { ...run, phase: run.phase };
 }

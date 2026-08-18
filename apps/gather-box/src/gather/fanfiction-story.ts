@@ -171,9 +171,8 @@ export function extractStoryBlocks(storyText: Element): StoryBlock[] {
   const blocks: StoryBlock[] = [];
 
   for (const child of Array.from(storyText.childNodes)) {
-    if (child.nodeType === Node.ELEMENT_NODE) {
-      const element = child as Element;
-      const tagName = element.tagName.toLowerCase();
+    if (child instanceof Element) {
+      const tagName = child.tagName.toLowerCase();
       if (tagName === "script" || tagName === "style") {
         continue;
       }
@@ -183,7 +182,7 @@ export function extractStoryBlocks(storyText: Element): StoryBlock[] {
         continue;
       }
 
-      const runs = normalizeRuns(collectRuns(element, false, false));
+      const runs = normalizeRuns(collectRuns(child, false, false));
       blocks.push(runs.length > 0 ? { kind: "paragraph", runs } : { kind: "blank", runs: [] });
       continue;
     }
@@ -204,12 +203,11 @@ function collectRuns(node: Node, bold: boolean, italic: boolean): StoryTextRun[]
     return [{ text: normalizeTextNode(node.textContent || ""), bold, italic }];
   }
 
-  if (node.nodeType !== Node.ELEMENT_NODE) {
+  if (!(node instanceof Element)) {
     return [];
   }
 
-  const element = node as Element;
-  const tagName = element.tagName.toLowerCase();
+  const tagName = node.tagName.toLowerCase();
   if (tagName === "script" || tagName === "style") {
     return [];
   }
@@ -221,7 +219,7 @@ function collectRuns(node: Node, bold: boolean, italic: boolean): StoryTextRun[]
   const nextBold = bold || tagName === "strong" || tagName === "b";
   const nextItalic = italic || tagName === "em" || tagName === "i";
 
-  return Array.from(element.childNodes).flatMap((child) => collectRuns(child, nextBold, nextItalic));
+  return Array.from(node.childNodes).flatMap((child) => collectRuns(child, nextBold, nextItalic));
 }
 
 function normalizeRuns(runs: StoryTextRun[]): StoryTextRun[] {

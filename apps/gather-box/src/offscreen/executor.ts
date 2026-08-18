@@ -23,10 +23,6 @@ export async function executeGatherOutput(input: {
   signal?: AbortSignal;
 }): Promise<void> {
   const { payload, settings, emit, signal } = input;
-  if (!isGatherOutputKind((payload as { outputKind?: unknown }).outputKind)) {
-    await emit({ kind: "failed", message: "The Gather Output kind is not supported." });
-    return;
-  }
   const directoryHandle = await loadDirectoryHandle(payload.site, settings.useGlobalFolder);
   if (!directoryHandle) {
     await emit({ kind: "failed", message: "Choose a destination folder before gathering." });
@@ -72,10 +68,6 @@ export async function executeGatherOutput(input: {
     }
     await emit({ kind: "failed", message: formatError(toError(error)) });
   }
-}
-
-export function isGatherOutputKind(value: unknown): value is DownloadablePayload["outputKind"] | GeneratedStoryPayload["outputKind"] {
-  return value === "downloadable-files" || value === "generated-story-pdf";
 }
 
 async function executeFiles(

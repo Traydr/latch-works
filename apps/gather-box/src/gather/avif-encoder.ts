@@ -1,9 +1,9 @@
-import { throwIfAborted } from "./errors";
+import { throwIfAborted, toError } from "./errors";
 import type { AvifWorkerRequest, AvifWorkerResponse } from "./avif-worker-messages";
 
 interface PendingEncode {
   resolve(buffer: ArrayBuffer): void;
-  reject(error: unknown): void;
+  reject(error: Error): void;
   removeAbortListener(): void;
 }
 
@@ -36,7 +36,7 @@ export class AvifEncoderClient {
         const request: AvifWorkerRequest = { id, blob };
         worker.postMessage(request);
       } catch (error) {
-        this.rejectRequest(id, error);
+        this.rejectRequest(id, toError(error));
       }
     });
   }
@@ -75,7 +75,7 @@ export class AvifEncoderClient {
     this.stop(new Error(event.message || "The AVIF encoder worker failed."));
   };
 
-  private rejectRequest(id: number, error: unknown): void {
+  private rejectRequest(id: number, error: Error): void {
     const request = this.pending.get(id);
     if (!request) {
       return;
@@ -85,7 +85,7 @@ export class AvifEncoderClient {
     request.reject(error);
   }
 
-  private stop(error: unknown): void {
+  private stop(error: Error): void {
     const worker = this.worker;
     this.worker = null;
     if (worker) {
@@ -93,7 +93,7 @@ export class AvifEncoderClient {
       worker.removeEventListener("error", this.handleError);
       worker.terminate();
     }
-    for (const id of [...this.pending.keys()]) {
+    for (const id of Array.from(this.pending.keys())) {
       this.rejectRequest(id, error);
     }
   }

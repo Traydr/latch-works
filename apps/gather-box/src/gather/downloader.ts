@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { prepareDownloadImage } from "../shared/download-policy";
 import type { SiteKey } from "../shared/sites";
 import type { GalleryImage } from "../shared/types";
@@ -279,6 +280,12 @@ async function hashBlob(blob: Blob): Promise<string> {
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+/** Written next to a partially saved file so an interrupted write can be finished or rolled back. */
+const CommitMarkerSchema = z.object({
+  preferredFileName: z.string(),
+  targetFileName: z.string()
+});
+
 async function commitBlob(
   destinationDirectory: FileSystemDirectoryHandle,
   preferredFileName: string,
@@ -326,16 +333,12 @@ async function recoverPendingBlobCommit(
 
   let targetFileName: string | null = null;
   try {
-    const value = JSON.parse(await (await markerHandle.getFile()).text()) as {
-      preferredFileName?: unknown;
-      targetFileName?: unknown;
-    };
+    const marker = CommitMarkerSchema.parse(JSON.parse(await (await markerHandle.getFile()).text()));
     if (
-      value.preferredFileName === preferredFileName &&
-      typeof value.targetFileName === "string" &&
-      isSafeCommitTarget(value.targetFileName)
+      marker.preferredFileName === preferredFileName &&
+      isSafeCommitTarget(marker.targetFileName)
     ) {
-      targetFileName = value.targetFileName;
+      targetFileName = marker.targetFileName;
     }
   } catch {
     // An incomplete marker means the canonical file was never opened.
@@ -407,8 +410,9 @@ async function writeBlobDirect(
 
 async function closeWritableSafely(writable: FileSystemWritableFileStream): Promise<void> {
   try {
-    if (typeof writable.abort === "function") {
-      await writable.abort();
+    const abort = writable.abort;
+    if (abort) {
+      await abort.call(writable);
       return;
     }
     await writable.close();

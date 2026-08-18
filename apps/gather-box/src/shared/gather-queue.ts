@@ -167,10 +167,16 @@ export function getPermissionRequiredGatherJob(
   );
 }
 
+/** Runs that could not be resumed after a browser restart are reported alongside the new queue. */
+export interface GatherQueueRecovery {
+  queue: GatherQueueState;
+  interrupted: GatherRunState[];
+}
+
 export function recoverStoppedGatherQueue(
   queue: GatherQueueState,
   now = Date.now()
-): { queue: GatherQueueState; interrupted: GatherRunState[] } {
+): GatherQueueRecovery {
   const jobs: GatherQueueJob[] = [];
   const interrupted: GatherRunState[] = [];
 

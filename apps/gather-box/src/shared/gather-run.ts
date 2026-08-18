@@ -62,7 +62,11 @@ export type GatherRunStartOutcome =
   | { outcome: "target-unavailable" }
   | { outcome: "failed"; message: string };
 
-export function isTerminalGatherRunPhase(phase: GatherRunPhase): boolean {
+export type TerminalGatherRunPhase = "complete" | "failed" | "cancelled" | "interrupted";
+
+export function isTerminalGatherRunPhase(
+  phase: GatherRunPhase
+): phase is TerminalGatherRunPhase {
   return phase === "complete" || phase === "failed" || phase === "cancelled" || phase === "interrupted";
 }
 
