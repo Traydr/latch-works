@@ -2,7 +2,14 @@ import type { Rectangle } from 'electron';
 
 import type { SettingsService } from './settingsService';
 
-interface PersistableWindow {
+/** The settings entry points that store window geometry. */
+export type WindowStateSettings = Pick<
+  SettingsService,
+  'flushNowSync' | 'updateWindowBounds' | 'updateWindowMaximized'
+>;
+
+/** The window measurements the persisted window state is built from. */
+export interface PersistableWindow {
   getBounds: () => Rectangle;
   getNormalBounds: () => Rectangle;
   isDestroyed: () => boolean;
@@ -17,7 +24,7 @@ interface PersistWindowStateResult {
 
 export async function persistWindowState(
   window: PersistableWindow,
-  settingsService: SettingsService,
+  settingsService: WindowStateSettings,
   options?: {
     flush?: boolean;
     immediate?: boolean;

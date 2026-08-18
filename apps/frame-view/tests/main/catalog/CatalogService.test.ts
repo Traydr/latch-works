@@ -10,12 +10,6 @@ import {
 import type { CatalogWorkerRequest } from '../../../src/shared/catalog';
 import type { ScanEvent } from '../../../src/shared/types';
 
-vi.mock('electron', () => ({
-  utilityProcess: {
-    fork: vi.fn(),
-  },
-}));
-
 class FakeCatalogChild extends EventEmitter implements CatalogChildProcessLike {
   public readonly postedMessages: CatalogWorkerRequest[] = [];
   public killed = false;

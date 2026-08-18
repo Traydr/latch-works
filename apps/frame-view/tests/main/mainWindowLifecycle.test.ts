@@ -21,14 +21,10 @@ describe('mainWindowLifecycle', () => {
     };
     const logErrorMessage = vi.fn();
     const preventDefault = vi.fn();
-    const handler = createMainWindowCloseHandler(
-      mainWindow as never,
-      settingsService as never,
-      logErrorMessage,
-    );
+    const handler = createMainWindowCloseHandler(mainWindow, settingsService, logErrorMessage);
 
-    handler({ preventDefault } as never);
-    handler({ preventDefault } as never);
+    handler({ preventDefault });
+    handler({ preventDefault });
     await waitForCondition(() => destroy.mock.calls.length === 1);
 
     expect(preventDefault).toHaveBeenCalledTimes(1);

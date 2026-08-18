@@ -53,16 +53,19 @@ interface ActiveJob {
   kind: 'image' | 'video';
 }
 
+/** The media-tools entry points the thumbnail runtime drives. */
+export type ThumbnailMediaTools = Pick<MediaToolsService, 'extractVideoFrame' | 'getStatus'>;
+
 interface ThumbnailWorkerRuntimeOptions {
   cacheRootPath?: string;
-  mediaToolsService?: MediaToolsService;
+  mediaToolsService?: ThumbnailMediaTools;
   userDataPath: string;
   workerPath?: string | null;
 }
 
 export class ThumbnailWorkerRuntime {
   private readonly diskCacheDir: string;
-  private readonly mediaToolsService: MediaToolsService;
+  private readonly mediaToolsService: ThumbnailMediaTools;
   private readonly activeJobs = new Map<number, ActiveJob>();
 
   private debugOptions: ThumbnailDebugOptions = {

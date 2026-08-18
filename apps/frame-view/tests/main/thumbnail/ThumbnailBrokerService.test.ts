@@ -9,12 +9,6 @@ import {
 import type { ThumbnailWorkerRequest } from '../../../src/shared/thumbnail';
 import { waitForCondition } from '../../testUtils';
 
-vi.mock('electron', () => ({
-  utilityProcess: {
-    fork: vi.fn(),
-  },
-}));
-
 class FakeThumbnailChild extends EventEmitter implements ThumbnailChildProcessLike {
   public killed = false;
   public readonly postedMessages: ThumbnailWorkerRequest[] = [];
@@ -29,33 +23,13 @@ class FakeThumbnailChild extends EventEmitter implements ThumbnailChildProcessLi
   }
 }
 
-class CountingAbortSignal extends EventTarget {
-  public aborted = false;
-  public addCount = 0;
-  public removeCount = 0;
-
-  override addEventListener(
-    type: string,
-    callback: EventListenerOrEventListenerObject | null,
-    options?: AddEventListenerOptions | boolean,
-  ): void {
-    this.addCount += 1;
-    super.addEventListener(type, callback, options);
+function requireChild(children: FakeThumbnailChild[], index: number): FakeThumbnailChild {
+  const child = children[index];
+  if (!child) {
+    throw new Error(`Expected a forked thumbnail worker at index ${index}`);
   }
 
-  override removeEventListener(
-    type: string,
-    callback: EventListenerOrEventListenerObject | null,
-    options?: EventListenerOptions | boolean,
-  ): void {
-    this.removeCount += 1;
-    super.removeEventListener(type, callback, options);
-  }
-
-  abort(): void {
-    this.aborted = true;
-    this.dispatchEvent(new Event('abort'));
-  }
+  return child;
 }
 
 function getGenerateMessages(child: FakeThumbnailChild): ThumbnailWorkerRequest[] {
@@ -102,12 +76,11 @@ describe('ThumbnailBrokerService', () => {
     await waitForCondition(
       () => children.length === 1 && getGenerateMessages(children[0]).length === 1,
     );
-    const firstChild = children[0];
-    expect(firstChild).toBeDefined();
-    expect(getGenerateMessages(firstChild as FakeThumbnailChild)).toHaveLength(1);
+    const firstChild = requireChild(children, 0);
+    expect(getGenerateMessages(firstChild)).toHaveLength(1);
 
-    const requestId = getGenerateMessages(firstChild as FakeThumbnailChild)[0]?.requestId;
-    firstChild?.emit('message', {
+    const requestId = getGenerateMessages(firstChild)[0]?.requestId;
+    firstChild.emit('message', {
       requestId,
       ok: true,
       result: {
@@ -297,7 +270,9 @@ describe('ThumbnailBrokerService', () => {
       videoWorkers: 1,
       workerModulePath: __filename,
     });
-    const signal = new CountingAbortSignal();
+    const controller = new AbortController();
+    const addEventListener = vi.spyOn(controller.signal, 'addEventListener');
+    const removeEventListener = vi.spyOn(controller.signal, 'removeEventListener');
 
     const requestPromise = broker.getThumbnail(
       {
@@ -307,7 +282,7 @@ describe('ThumbnailBrokerService', () => {
         priority: 1,
         thumbSize: 220,
       },
-      signal as AbortSignal,
+      controller.signal,
     );
 
     await waitForCondition(() => getGenerateMessages(child).length === 1);
@@ -323,8 +298,8 @@ describe('ThumbnailBrokerService', () => {
     });
 
     await expect(requestPromise).resolves.toMatchObject({ bytes: new Uint8Array([1]) });
-    expect(signal.addCount).toBe(2);
-    expect(signal.removeCount).toBe(2);
+    expect(addEventListener).toHaveBeenCalledTimes(2);
+    expect(removeEventListener).toHaveBeenCalledTimes(2);
   });
 
   it('cancels an active video request when all consumers abort', async () => {
@@ -527,12 +502,11 @@ describe('ThumbnailBrokerService', () => {
     await waitForCondition(
       () => children.length === 2 && getGenerateMessages(children[1]).length === 1,
     );
-    const secondChild = children[1];
-    expect(secondChild).toBeDefined();
+    const secondChild = requireChild(children, 1);
     expect(childFactory).toHaveBeenCalledTimes(2);
 
-    secondChild?.emit('message', {
-      requestId: getGenerateMessages(secondChild as FakeThumbnailChild)[0]?.requestId,
+    secondChild.emit('message', {
+      requestId: getGenerateMessages(secondChild)[0]?.requestId,
       ok: true,
       result: {
         bytes: new Uint8Array([9, 9]),

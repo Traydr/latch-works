@@ -2,69 +2,76 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import { Result } from 'better-result';
+import { Result, type Result as ResultType } from 'better-result';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import type { CatalogMediaIndex } from '../../../src/main/catalog/CatalogRuntime';
+import { DatabaseError } from '../../../src/main/errors';
 import type { CatalogWorkerEvent, CatalogWorkerResponse } from '../../../src/shared/catalog';
+import type { MediaIndexStats, MediaItem } from '../../../src/shared/types';
 import { waitForCondition } from '../../testUtils';
 
-vi.mock('../../../src/main/db/mediaIndexService', () => ({
-  MediaIndexService: class {
-    private readonly items = new Map<string, { rootPath: string; lastSeenScanId: number }>();
-    private nextScanId = 1;
+/**
+ * An in-memory stand-in for the SQLite media index: the runtime only needs scan bookkeeping,
+ * and every scan assertion here is about the events the runtime emits.
+ */
+class InMemoryMediaIndex implements CatalogMediaIndex {
+  private readonly items = new Map<string, { rootPath: string; lastSeenScanId: number }>();
+  private nextScanId = 1;
 
-    init() {
-      return Result.ok();
-    }
+  init(): ResultType<void, DatabaseError> {
+    return Result.ok();
+  }
 
-    async startScan(): Promise<ReturnType<typeof Result.ok<number>>> {
-      return Result.ok(this.nextScanId++);
-    }
+  async startScan(): Promise<ResultType<number, DatabaseError>> {
+    return Result.ok(this.nextScanId++);
+  }
 
-    async upsertBatch(
-      rootPath: string,
-      scanId: number,
-      items: Array<{ path: string }>,
-    ): Promise<ReturnType<typeof Result.ok>> {
-      for (const item of items) {
-        this.items.set(item.path, {
-          rootPath,
-          lastSeenScanId: scanId,
-        });
-      }
-      return Result.ok();
-    }
-
-    async finishScan(rootPath: string, scanId: number): Promise<ReturnType<typeof Result.ok>> {
-      for (const [itemPath, item] of this.items) {
-        if (item.rootPath === rootPath && item.lastSeenScanId !== scanId) {
-          this.items.delete(itemPath);
-        }
-      }
-      return Result.ok();
-    }
-
-    async cancelScan(): Promise<ReturnType<typeof Result.ok>> {
-      return Result.ok();
-    }
-
-    async clear(): Promise<ReturnType<typeof Result.ok>> {
-      this.items.clear();
-      return Result.ok();
-    }
-
-    async getStats(): Promise<
-      ReturnType<typeof Result.ok<{ totalItems: number; uniqueRoots: number; dbPath: string }>>
-    > {
-      const roots = new Set(Array.from(this.items.values(), (item) => item.rootPath));
-      return Result.ok({
-        totalItems: this.items.size,
-        uniqueRoots: roots.size,
-        dbPath: 'mock-media-index.sqlite',
+  async upsertBatch(
+    rootPath: string,
+    scanId: number,
+    items: MediaItem[],
+  ): Promise<ResultType<void, DatabaseError>> {
+    for (const item of items) {
+      this.items.set(item.path, {
+        rootPath,
+        lastSeenScanId: scanId,
       });
     }
-  },
-}));
+    return Result.ok();
+  }
+
+  async finishScan(rootPath: string, scanId: number): Promise<ResultType<void, DatabaseError>> {
+    for (const [itemPath, item] of this.items) {
+      if (item.rootPath === rootPath && item.lastSeenScanId !== scanId) {
+        this.items.delete(itemPath);
+      }
+    }
+    return Result.ok();
+  }
+
+  async cancelScan(): Promise<ResultType<void, DatabaseError>> {
+    return Result.ok();
+  }
+
+  async clear(): Promise<ResultType<void, DatabaseError>> {
+    this.items.clear();
+    return Result.ok();
+  }
+
+  async getStats(): Promise<ResultType<MediaIndexStats, DatabaseError>> {
+    const roots = new Set(Array.from(this.items.values(), (item) => item.rootPath));
+    return Result.ok({
+      totalItems: this.items.size,
+      uniqueRoots: roots.size,
+      dbPath: 'mock-media-index.sqlite',
+    });
+  }
+}
+
+function indexError(message: string): DatabaseError {
+  return new DatabaseError({ operation: 'media-index', message });
+}
 
 async function createTempDir(prefix: string): Promise<string> {
   return mkdtemp(path.join(os.tmpdir(), prefix));
@@ -114,6 +121,7 @@ describe('CatalogRuntime', () => {
       userDataPath,
       emitEvent: (event) => events.push(event),
       emitResponse: (response) => responses.push(response),
+      mediaIndexService: new InMemoryMediaIndex(),
     });
 
     await runtime.handleRequest({
@@ -165,6 +173,7 @@ describe('CatalogRuntime', () => {
       emitResponse: () => {
         // No-op.
       },
+      mediaIndexService: new InMemoryMediaIndex(),
     });
 
     await runtime.handleRequest({
@@ -220,6 +229,7 @@ describe('CatalogRuntime', () => {
       emitResponse: () => {
         // Responses are not relevant for this assertion.
       },
+      mediaIndexService: new InMemoryMediaIndex(),
     });
 
     await runtime.handleRequest({
@@ -271,6 +281,7 @@ describe('CatalogRuntime', () => {
         }
       },
       emitResponse: (response) => responses.push(response),
+      mediaIndexService: new InMemoryMediaIndex(),
     });
 
     await runtime.handleRequest({
@@ -334,7 +345,7 @@ describe('CatalogRuntime', () => {
     const runtime = new CatalogRuntime({
       emitEvent: (event) => events.push(event),
       emitResponse: (response) => responses.push(response),
-      mediaIndexService: mediaIndexService as never,
+      mediaIndexService,
     });
 
     await runtime.handleRequest({
@@ -381,6 +392,7 @@ describe('CatalogRuntime', () => {
       emitResponse: () => {
         // No-op.
       },
+      mediaIndexService: new InMemoryMediaIndex(),
     });
 
     await runtime.handleRequest({
@@ -418,6 +430,7 @@ describe('CatalogRuntime', () => {
       emitResponse: () => {
         // No-op.
       },
+      mediaIndexService: new InMemoryMediaIndex(),
     });
 
     await runtime.handleRequest({
@@ -460,6 +473,7 @@ describe('CatalogRuntime', () => {
       emitResponse: () => {
         // No-op.
       },
+      mediaIndexService: new InMemoryMediaIndex(),
     });
 
     await runtime.handleRequest({
@@ -503,7 +517,7 @@ describe('CatalogRuntime', () => {
       upsertBatch: async (rootPath: string, scanId: number, items: Array<{ path: string }>) => {
         upsertCalls += 1;
         if (upsertCalls === failedBatch) {
-          return Result.err(new Error('index unavailable'));
+          return Result.err(indexError('index unavailable'));
         }
 
         for (const item of items) {
@@ -532,7 +546,7 @@ describe('CatalogRuntime', () => {
       emitResponse: () => {
         // No-op.
       },
-      mediaIndexService: mediaIndexService as never,
+      mediaIndexService,
     });
 
     await runtime.handleRequest({
@@ -565,11 +579,11 @@ describe('CatalogRuntime', () => {
   });
 
   it('reports a durable cancellation failure but still emits a terminal cancelled event', async () => {
-    const cancelScan = vi.fn(async () => Result.err(new Error('database unavailable')));
+    const cancelScan = vi.fn(async () => Result.err(indexError('database unavailable')));
     const mediaIndexService = {
       init: () => Result.ok(),
       startScan: async () => Result.ok(1),
-      upsertBatch: async () => Result.err(new Error('index unavailable')),
+      upsertBatch: async () => Result.err(indexError('index unavailable')),
       finishScan: async () => Result.ok(),
       cancelScan,
       clear: async () => Result.ok(),
@@ -587,7 +601,7 @@ describe('CatalogRuntime', () => {
       emitResponse: () => {
         // No-op.
       },
-      mediaIndexService: mediaIndexService as never,
+      mediaIndexService,
     });
 
     await runtime.handleRequest({
@@ -618,7 +632,7 @@ describe('CatalogRuntime', () => {
   });
 
   it('does not report a failed durable finalization as a successful scan', async () => {
-    const finishScan = vi.fn(async () => Result.err(new Error('database unavailable')));
+    const finishScan = vi.fn(async () => Result.err(indexError('database unavailable')));
     const cancelScan = vi.fn(async () => Result.ok());
     const mediaIndexService = {
       init: () => Result.ok(),
@@ -641,7 +655,7 @@ describe('CatalogRuntime', () => {
       emitResponse: () => {
         // No-op.
       },
-      mediaIndexService: mediaIndexService as never,
+      mediaIndexService,
     });
 
     await runtime.handleRequest({
