@@ -163,7 +163,7 @@ function getXMainScriptUrl(document: Document): string | null {
   );
 }
 
-function getXFeatureValues(document: Document): Record<string, boolean> {
+function getXFeatureValues(document: Document) {
   const values: Record<string, boolean> = {};
   const pattern = /["']?([A-Za-z0-9_]+)["']?\s*:\s*\{\s*value\s*:\s*(true|false)/g;
 

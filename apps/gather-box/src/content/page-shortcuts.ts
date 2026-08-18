@@ -5,8 +5,9 @@ import {
 } from "../shared/runtime-messages";
 import { installShortcutKeyListener } from "../shared/shortcut-keys";
 
+/** The background acknowledges these messages with a payload no page shortcut reads. */
 interface RuntimeMessenger {
-  sendMessage(message: GatherRuntimeMessage): Promise<unknown>;
+  sendMessage(message: GatherRuntimeMessage): Promise<void>;
 }
 
 export interface PageShortcutSettings {

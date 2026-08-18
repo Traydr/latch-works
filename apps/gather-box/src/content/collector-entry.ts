@@ -5,15 +5,16 @@ import type { GalleryCollectResponse } from "../shared/types";
 type Collector = (document: Document, location: Location) => GalleryCollectResponse | Promise<GalleryCollectResponse>;
 
 /** Chrome hands listeners the message exactly as the sender posted it; the schema parses it. */
-type RuntimeMessageListener = Parameters<typeof chrome.runtime.onMessage.addListener>[0];
+export type RuntimeMessageListener = Parameters<typeof chrome.runtime.onMessage.addListener>[0];
 
-interface CollectorRegistrationGlobal {
-  __gatherBoxCollectorCleanup?: () => void;
+declare global {
+  /** Set by the collector this content script installs, so a re-injection can uninstall it. */
+  // eslint-disable-next-line no-var
+  var __gatherBoxCollectorCleanup: (() => void) | undefined;
 }
 
 export function installCollector(sourceKey: SiteKey, collect: Collector): void {
-  const registration = globalThis as typeof globalThis & CollectorRegistrationGlobal;
-  registration.__gatherBoxCollectorCleanup?.();
+  globalThis.__gatherBoxCollectorCleanup?.();
 
   const listener: RuntimeMessageListener = (rawMessage, _sender, sendResponse) => {
     const parsed = CollectComicGalleryMessageSchema.safeParse(rawMessage);
@@ -52,8 +53,8 @@ export function installCollector(sourceKey: SiteKey, collect: Collector): void {
   };
 
   chrome.runtime.onMessage.addListener(listener);
-  registration.__gatherBoxCollectorCleanup = () => {
+  globalThis.__gatherBoxCollectorCleanup = () => {
     chrome.runtime.onMessage.removeListener(listener);
-    delete registration.__gatherBoxCollectorCleanup;
+    globalThis.__gatherBoxCollectorCleanup = undefined;
   };
 }

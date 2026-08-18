@@ -3,7 +3,8 @@ import { GatherController } from "../shared/gather-controller";
 document.addEventListener("DOMContentLoaded", () => {
   const controller = new GatherController({
     onToggleShortcut: () => {
-      if (typeof chrome.sidePanel.close !== "function") {
+      // chrome.sidePanel.close arrived in Chrome 127; older builds simply keep the panel open.
+      if (!("close" in chrome.sidePanel)) {
         return;
       }
 

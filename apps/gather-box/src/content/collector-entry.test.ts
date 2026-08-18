@@ -2,18 +2,17 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { COLLECT_MESSAGE_TYPE } from "../shared/messages";
-import { installCollector } from "./collector-entry";
+import { installCollector, type RuntimeMessageListener } from "./collector-entry";
 
 afterEach(() => {
-  delete (globalThis as typeof globalThis & { __gatherBoxCollectorCleanup?: () => void })
-    .__gatherBoxCollectorCleanup;
+  globalThis.__gatherBoxCollectorCleanup = undefined;
   vi.unstubAllGlobals();
 });
 
 describe("collector entry registration", () => {
   it("replaces an earlier listener and returns request/source identity", async () => {
-    const listeners: Array<(...args: any[]) => boolean | undefined> = [];
-    const addListener = vi.fn((listener) => listeners.push(listener));
+    const listeners: RuntimeMessageListener[] = [];
+    const addListener = vi.fn((listener: RuntimeMessageListener) => listeners.push(listener));
     const removeListener = vi.fn();
     vi.stubGlobal("chrome", { runtime: { onMessage: { addListener, removeListener } } });
     const collect = vi.fn().mockResolvedValue({ ok: false, code: "GRID_NOT_FOUND", message: "fixture" });
@@ -44,11 +43,11 @@ describe("collector entry registration", () => {
   });
 
   it("does not collect after the captured page URL changes", () => {
-    let listener: ((...args: any[]) => boolean | undefined) | undefined;
+    let listener: RuntimeMessageListener | undefined;
     vi.stubGlobal("chrome", {
       runtime: {
         onMessage: {
-          addListener: vi.fn((value) => {
+          addListener: vi.fn((value: RuntimeMessageListener) => {
             listener = value;
           }),
           removeListener: vi.fn()

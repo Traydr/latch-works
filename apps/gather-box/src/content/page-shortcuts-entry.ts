@@ -1,6 +1,6 @@
+import { GatherBoxSettingsSchema, SETTINGS_KEY } from "../shared/settings";
 import { installPageShortcuts, type PageShortcutSettings } from "./page-shortcuts";
 
-const SETTINGS_KEY = "gather-box-settings";
 let settings: PageShortcutSettings = { enabled: true };
 
 installPageShortcuts(document, chrome.runtime, () => settings);
@@ -14,13 +14,5 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 
 async function refreshSettings(): Promise<void> {
   const stored = await chrome.storage.sync.get(SETTINGS_KEY);
-  const value = stored[SETTINGS_KEY] as
-    | { pageShortcutsEnabled?: unknown; shortcutsEnabled?: unknown }
-    | undefined;
-  settings = {
-    enabled:
-      value?.pageShortcutsEnabled === undefined && value?.shortcutsEnabled === undefined
-        ? true
-        : Boolean(value.pageShortcutsEnabled ?? value.shortcutsEnabled)
-  };
+  settings = { enabled: GatherBoxSettingsSchema.parse(stored[SETTINGS_KEY]).pageShortcutsEnabled };
 }

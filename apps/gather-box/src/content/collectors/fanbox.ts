@@ -1,3 +1,5 @@
+import { z } from "zod";
+import { lenientArrayOf } from "../../shared/lenient-array";
 import type { GalleryCollectResponse, GalleryImage } from "../../shared/types";
 
 const FANBOX_IMAGE_LINK_SELECTOR = 'a[href^="https://downloads.fanbox.cc/images/post/"]';
@@ -10,6 +12,21 @@ interface FanboxStructuredPost {
   authorName: string | null;
   headline: string | null;
 }
+
+/** FANBOX embeds the creator slug in a `meta[name="metadata"]` JSON blob. */
+const FanboxMetadataSchema = z.object({
+  urlContext: z.object({ host: z.object({ creatorId: z.string() }) })
+});
+
+/** The JSON-LD block is either a single node or an array; only BlogPosting nodes are useful. */
+const FanboxBlogPostingSchema = z.object({
+  "@type": z.literal("BlogPosting"),
+  author: z.object({ name: z.string() }).optional(),
+  headline: z.string().optional()
+});
+
+const FanboxJsonLdSchema = z
+  .union([lenientArrayOf(FanboxBlogPostingSchema), FanboxBlogPostingSchema.transform((post) => [post])]);
 
 export function collectFanboxData(document: Document, location: Location): GalleryCollectResponse {
   if (!isFanboxPostUrl(location)) {
@@ -129,16 +146,9 @@ function getMetadataCreatorId(document: Document): string {
   }
 
   try {
-    const parsed = JSON.parse(content) as {
-      urlContext?: {
-        host?: {
-          creatorId?: unknown;
-        };
-      };
-    };
-    const creatorId = parsed.urlContext?.host?.creatorId;
+    const metadataContent = FanboxMetadataSchema.parse(JSON.parse(content));
 
-    return typeof creatorId === "string" ? creatorId.trim() : "";
+    return metadataContent.urlContext.host.creatorId.trim();
   } catch {
     return "";
   }
@@ -165,18 +175,15 @@ function getStructuredPost(document: Document): FanboxStructuredPost {
     }
 
     try {
-      const parsed = JSON.parse(rawJson);
-      const nodes = Array.isArray(parsed) ? parsed : [parsed];
-      const post = nodes.find((node) => isObject(node) && node["@type"] === "BlogPosting");
-      if (!isObject(post)) {
+      const [post] = FanboxJsonLdSchema.parse(JSON.parse(rawJson));
+      if (!post) {
         continue;
       }
 
-      const author = post.author;
-      const authorName = isObject(author) && typeof author.name === "string" ? author.name.trim() : null;
-      const headline = typeof post.headline === "string" ? post.headline.trim() : null;
-
-      return { authorName, headline };
+      return {
+        authorName: post.author?.name.trim() ?? null,
+        headline: post.headline?.trim() ?? null
+      };
     } catch {
       continue;
     }
@@ -239,8 +246,4 @@ function getImageSource(image: HTMLImageElement, location: Location): string | n
 
 function getText(element: Element | null): string {
   return element ? element.textContent?.trim() || "" : "";
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }

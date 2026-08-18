@@ -216,14 +216,13 @@ async function requestTweetDetail(
     JSON.stringify(buildXFieldToggles(operation.fieldToggles))
   );
 
-  const headers: Record<string, string> = {
+  const headers = {
     authorization: `Bearer ${X_WEB_BEARER_TOKEN}`,
     "content-type": "application/json",
     "x-twitter-active-user": "yes",
-    "x-twitter-client-language": "en"
-  };
-
-  headers["x-guest-token"] = auth.guestToken;
+    "x-twitter-client-language": "en",
+    "x-guest-token": auth.guestToken
+  } satisfies Record<string, string>;
 
   try {
     const response = await fetchWithTimeout(url, {

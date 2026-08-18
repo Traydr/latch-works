@@ -172,12 +172,13 @@ function isExtensionOriginSender(sender: chrome.runtime.MessageSender): boolean 
 }
 
 async function authorizeMediaResolver(sender: chrome.runtime.MessageSender): Promise<boolean> {
-  if (sender.id !== chrome.runtime.id || typeof sender.tab?.id !== "number") {
+  const senderTabId = sender.tab?.id;
+  if (sender.id !== chrome.runtime.id || senderTabId === undefined) {
     return false;
   }
 
   const queue = await loadGatherQueue();
   return queue.jobs.some(
-    (job) => job.run.tabId === sender.tab?.id && job.run.phase === "collecting"
+    (job) => job.run.tabId === senderTabId && job.run.phase === "collecting"
   );
 }
