@@ -27,7 +27,7 @@ jobs:
         run: pnpm install --frozen-lockfile --prod=false
 
       - name: Run full workspace check
-        run: pnpm check
+        run: pnpm check:all
         env:
           LOCKSTEP_API_URL: ""
           LOCKSTEP_API_TOKEN: ""
