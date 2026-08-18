@@ -1,8 +1,12 @@
 import { useEffect, useEffectEvent, useRef } from 'react';
+import { z } from 'zod';
 
 import type { AppSettings, ScanEvent, ThemeMode } from '../../shared/types';
 import { frameViewClient } from '../services/frameViewClient';
 import { getRootGalleryPreferences } from '../utils/rootPreferences';
+
+/** Electron adds the absolute on-disk path to files dropped onto the window. */
+const DroppedFileSchema = z.object({ path: z.string().min(1) });
 
 interface UseAppBootstrapOptions {
   settingsTheme: ThemeMode;
@@ -169,14 +173,12 @@ export function useAppBootstrap({
 
     const onDrop = (event: DragEvent): void => {
       event.preventDefault();
-      const droppedFile = event.dataTransfer?.files?.[0] as File & { path?: string };
-      const rawPath = droppedFile?.path;
-
-      if (!rawPath) {
+      const droppedFile = DroppedFileSchema.safeParse(event.dataTransfer?.files?.[0]);
+      if (!droppedFile.success) {
         return;
       }
 
-      scanInputPathEvent(rawPath);
+      scanInputPathEvent(droppedFile.data.path);
     };
 
     window.addEventListener('dragover', onDragOver);

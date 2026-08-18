@@ -6,7 +6,7 @@ import { app, BrowserWindow, protocol } from 'electron';
 import started from 'electron-squirrel-startup';
 
 import { CatalogService } from './main/catalog/CatalogService';
-import { registerIpc } from './main/ipc/registerIpc';
+import { createElectronIpcRuntime, registerIpc } from './main/ipc/registerIpc';
 import { buildAppMenu } from './main/menu';
 import {
   authorizeRememberedMediaRoot,
@@ -161,7 +161,12 @@ async function createWindow(): Promise<void> {
     },
   });
 
-  registerIpc(mainWindow, settingsService, catalogService, mediaToolsService);
+  registerIpc(
+    createElectronIpcRuntime(mainWindow),
+    settingsService,
+    catalogService,
+    mediaToolsService,
+  );
 
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
     await mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);

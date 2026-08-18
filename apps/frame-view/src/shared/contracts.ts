@@ -1,5 +1,16 @@
 import { z } from 'zod';
 
+/** Any JSON value — what `JSON.parse` and the IPC transport hand back before parsing. */
+const JsonValueSchema = z.json();
+export type JsonValue = z.infer<typeof JsonValueSchema>;
+
+/** What a utility-process message carries before parsing: JSON plus binary buffers. */
+export type WorkerMessage =
+  | JsonValue
+  | Uint8Array
+  | WorkerMessage[]
+  | { [key: string]: WorkerMessage };
+
 const MAX_PATH_LENGTH = 4096;
 const MAX_EXTENSION_COUNT = 64;
 const MAX_EXTENSION_LENGTH = 16;
@@ -16,7 +27,7 @@ const normalizedExtensionSchema = z
       .max(MAX_EXTENSION_LENGTH),
   );
 
-const normalizedExtensionsSchema = z
+export const MediaExtensionsSchema = z
   .array(normalizedExtensionSchema)
   .max(MAX_EXTENSION_COUNT)
   .transform((values) => Array.from(new Set(values)));
@@ -35,8 +46,8 @@ export const GallerySortModeSchema = z.enum([
 export const MediaTypeSchema = z.enum(['image', 'video']);
 
 export const FileFilterSettingsSchema = z.object({
-  imageExtensions: normalizedExtensionsSchema,
-  videoExtensions: normalizedExtensionsSchema,
+  imageExtensions: MediaExtensionsSchema,
+  videoExtensions: MediaExtensionsSchema,
   showImages: z.boolean(),
   showVideos: z.boolean(),
 });
@@ -56,6 +67,12 @@ export const DebugSettingsSchema = z.object({
   enablePerformanceMonitoring: z.boolean(),
 });
 
+export const ThumbnailSizeSchema = finiteNumberSchema.transform((value) =>
+  Math.max(64, Math.min(1024, Math.round(value))),
+);
+export const RandomSeedSchema = integerNumberSchema;
+export const LastFolderPathSchema = PathInputSchema.nullable();
+
 export const AppSettingsSchema = z.object({
   theme: ThemeModeSchema,
   rememberLastFolder: z.boolean(),
@@ -65,14 +82,12 @@ export const AppSettingsSchema = z.object({
   loopViewerNavigation: z.boolean(),
   previewAudioEnabled: z.boolean(),
   loopVideos: z.boolean(),
-  thumbnailSize: finiteNumberSchema.transform((value) =>
-    Math.max(64, Math.min(1024, Math.round(value))),
-  ),
+  thumbnailSize: ThumbnailSizeSchema,
   sortMode: GallerySortModeSchema,
-  randomSeed: integerNumberSchema,
+  randomSeed: RandomSeedSchema,
   filters: FileFilterSettingsSchema,
   rootGalleryPreferences: RootGalleryPreferencesMapSchema,
-  lastFolderPath: PathInputSchema.nullable(),
+  lastFolderPath: LastFolderPathSchema,
   debug: DebugSettingsSchema,
 });
 
@@ -87,17 +102,17 @@ export const AppSettingsPatchSchema = z.strictObject({
   loopVideos: z.boolean().optional(),
   thumbnailSize: finiteNumberSchema.optional(),
   sortMode: GallerySortModeSchema.optional(),
-  randomSeed: integerNumberSchema.optional(),
+  randomSeed: RandomSeedSchema.optional(),
   rootGalleryPreferences: RootGalleryPreferencesMapSchema.optional(),
   filters: z
     .object({
-      imageExtensions: normalizedExtensionsSchema.optional(),
-      videoExtensions: normalizedExtensionsSchema.optional(),
+      imageExtensions: MediaExtensionsSchema.optional(),
+      videoExtensions: MediaExtensionsSchema.optional(),
       showImages: z.boolean().optional(),
       showVideos: z.boolean().optional(),
     })
     .optional(),
-  lastFolderPath: PathInputSchema.nullable().optional(),
+  lastFolderPath: LastFolderPathSchema.optional(),
   debug: z
     .object({
       enableDebugLogging: z.boolean().optional(),
@@ -395,10 +410,6 @@ export const CatalogWorkerEventSchema = z.object({
   type: z.literal('scan-event'),
   event: ScanEventSchema,
 });
-
-export function createTypeGuard<T>(schema: z.ZodType<T>): (value: unknown) => value is T {
-  return (value): value is T => schema.safeParse(value).success;
-}
 
 export function createSerializedResultSchema<T extends z.ZodTypeAny>(valueSchema: T) {
   return z.union([

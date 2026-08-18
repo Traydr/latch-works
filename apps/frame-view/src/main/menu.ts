@@ -38,9 +38,10 @@ export function buildAppMenu(onCommand: (command: AppCommand) => void): void {
     { role: 'togglefullscreen' },
   ];
 
+  const macWindowItems: MenuItemConstructorOptions[] = isMac ? [{ role: 'zoom' }] : [];
   const windowSubmenu: MenuItemConstructorOptions[] = [
     { role: 'minimize' },
-    ...(isMac ? ([{ role: 'zoom' }] as MenuItemConstructorOptions[]) : []),
+    ...macWindowItems,
     { role: 'close' },
   ];
 

@@ -34,10 +34,13 @@ export function appendRecentEntry(entries: string[], entry: string, maxEntries: 
   }
 }
 
-export function resolveThumbnailWorkerPath(overridePath?: string): {
+/** Where the thumbnail worker entry was found, and every path that was tried. */
+export interface ThumbnailWorkerPathResolution {
   checkedPaths: string[];
   resolvedPath: string;
-} {
+}
+
+export function resolveThumbnailWorkerPath(overridePath?: string): ThumbnailWorkerPathResolution {
   const candidates = [
     overridePath,
     path.join(__dirname, 'thumbnail.worker.js'),

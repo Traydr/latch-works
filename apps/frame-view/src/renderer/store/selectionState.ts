@@ -1,6 +1,13 @@
 import type { AppSettings, MediaItem } from '../../shared/types';
 import { sortMediaItems } from '../utils/sort';
 
+/** The sorted gallery together with the selection and viewer position it still supports. */
+interface SortedGallerySelection {
+  items: MediaItem[];
+  selectedId: string | null;
+  viewerIndex: number | null;
+}
+
 export function flattenLoadingChunks(chunks: MediaItem[][]): MediaItem[] {
   return chunks.flat();
 }
@@ -10,11 +17,7 @@ export function sortAndSyncSelection(
   settings: AppSettings,
   selectedId: string | null,
   viewerIndex: number | null,
-): {
-  items: MediaItem[];
-  selectedId: string | null;
-  viewerIndex: number | null;
-} {
+): SortedGallerySelection {
   const sortedItems = sortMediaItems(items, settings.sortMode, settings.randomSeed);
 
   let nextSelectedId = selectedId;

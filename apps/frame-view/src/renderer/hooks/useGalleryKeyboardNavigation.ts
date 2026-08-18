@@ -80,10 +80,10 @@ export function useGalleryKeyboardNavigation({
       selectBrowserEntryAction(nextEntry);
 
       window.requestAnimationFrame(() => {
-        const safeItemId =
-          typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
-            ? CSS.escape(nextEntry.key)
-            : nextEntry.key.replace(/"/g, '\\"');
+        const escapeSelectorValue = globalThis.CSS?.escape;
+        const safeItemId = escapeSelectorValue
+          ? escapeSelectorValue(nextEntry.key)
+          : nextEntry.key.replace(/"/g, '\\"');
         const nextCell = document.querySelector<HTMLElement>(
           `[data-gallery-item-id="${safeItemId}"]`,
         );

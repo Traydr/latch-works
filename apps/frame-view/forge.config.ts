@@ -10,6 +10,13 @@ import { AutoUnpackNativesPlugin } from '@electron-forge/plugin-auto-unpack-nati
 import { FusesPlugin } from '@electron-forge/plugin-fuses';
 import { VitePlugin } from '@electron-forge/plugin-vite';
 import type { ForgeConfig } from '@electron-forge/shared-types';
+import { z } from 'zod';
+
+/** The dependency lists forge walks when staging runtime packages. */
+const PackageManifestSchema = z.object({
+  dependencies: z.record(z.string(), z.string()).optional(),
+  optionalDependencies: z.record(z.string(), z.string()).optional(),
+});
 
 const appIconBasePath = path.resolve(__dirname, 'media', 'frame-view-icon');
 const appBundleId = 'dev.traydr.latchworks.frameview';
@@ -58,10 +65,9 @@ function copyRuntimePackage(packageName: string, visited: Set<string>): void {
     return;
   }
 
-  const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as {
-    dependencies?: Record<string, string>;
-    optionalDependencies?: Record<string, string>;
-  };
+  const packageJson = PackageManifestSchema.parse(
+    JSON.parse(readFileSync(packageJsonPath, 'utf8')),
+  );
 
   for (const dependencyName of Object.keys(packageJson.dependencies ?? {})) {
     copyRuntimePackage(dependencyName, visited);

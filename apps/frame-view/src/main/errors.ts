@@ -5,6 +5,7 @@ import {
   TaggedError,
 } from 'better-result';
 import type { ZodType } from 'zod';
+import type { JsonValue } from '../shared/contracts';
 import { serializeIpcResult } from '../shared/ipc';
 import type { IpcErrorPayload } from '../shared/types';
 
@@ -50,9 +51,14 @@ export class RequestAbortError extends Error {
 
 type AppError = ValidationError | FileSystemError | DatabaseError | MediaToolsError | WorkerError;
 
+/** Thrown values are `unknown` by design; wrap anything that is not already an `Error`. */
+export function toError(cause: unknown): Error {
+  return cause instanceof Error ? cause : new Error(String(cause), { cause });
+}
+
 export function parseWithSchema<T>(
   schema: ZodType<T>,
-  payload: unknown,
+  payload: JsonValue,
   operation: string,
 ): ResultType<T, ValidationError> {
   const parsed = schema.safeParse(payload);
@@ -72,23 +78,21 @@ export function parseWithSchema<T>(
 
 export function unexpectedFileSystemError(
   operation: string,
-  error: unknown,
+  error: Error,
   targetPath?: string,
 ): FileSystemError {
-  const message = error instanceof Error ? error.message : `Unexpected error: ${String(error)}`;
   return new FileSystemError({
     operation,
     path: targetPath,
-    message,
+    message: error.message,
     cause: error,
   });
 }
 
-export function unexpectedDatabaseError(operation: string, error: unknown): DatabaseError {
-  const message = error instanceof Error ? error.message : `Unexpected error: ${String(error)}`;
+export function unexpectedDatabaseError(operation: string, error: Error): DatabaseError {
   return new DatabaseError({
     operation,
-    message,
+    message: error.message,
     cause: error,
   });
 }

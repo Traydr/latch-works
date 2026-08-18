@@ -1,18 +1,17 @@
 import type { z } from 'zod';
 
-import {
-  createTypeGuard,
-  type ThumbnailDebugOptionsSchema,
-  type ThumbnailDiagnosticsSnapshotSchema,
-  type ThumbnailJobKindSchema,
-  type ThumbnailJobPrioritySchema,
-  type ThumbnailJobRequestSchema,
-  type ThumbnailPerformanceSnapshotSchema,
-  type ThumbnailTimingAggregateSchema,
-  type ThumbnailWorkerCapabilitiesSchema,
+import type {
+  ThumbnailDebugOptionsSchema,
+  ThumbnailDiagnosticsSnapshotSchema,
+  ThumbnailJobKindSchema,
+  ThumbnailJobPrioritySchema,
+  ThumbnailJobRequestSchema,
+  ThumbnailPerformanceSnapshotSchema,
+  ThumbnailTimingAggregateSchema,
+  ThumbnailWorkerCapabilitiesSchema,
   ThumbnailWorkerEventSchema,
-  type ThumbnailWorkerJobResultSchema,
-  type ThumbnailWorkerRequestSchema,
+  ThumbnailWorkerJobResultSchema,
+  ThumbnailWorkerRequestSchema,
   ThumbnailWorkerResponseSchema,
 } from './contracts';
 
@@ -28,6 +27,3 @@ export type ThumbnailWorkerJobResult = z.infer<typeof ThumbnailWorkerJobResultSc
 export type ThumbnailWorkerRequest = z.infer<typeof ThumbnailWorkerRequestSchema>;
 export type ThumbnailWorkerResponse = z.infer<typeof ThumbnailWorkerResponseSchema>;
 export type ThumbnailWorkerEvent = z.infer<typeof ThumbnailWorkerEventSchema>;
-
-export const isThumbnailWorkerResponse = createTypeGuard(ThumbnailWorkerResponseSchema);
-export const isThumbnailWorkerEvent = createTypeGuard(ThumbnailWorkerEventSchema);

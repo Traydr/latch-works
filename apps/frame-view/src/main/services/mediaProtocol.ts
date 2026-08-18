@@ -169,12 +169,13 @@ async function fetchMediaFile(request: Request, mediaPath: string): Promise<Resp
   const end = range.ok ? range.end : totalSize - 1;
   const contentLength = end - start + 1;
 
-  const headers = {
-    'accept-ranges': 'bytes',
-    'content-type': contentType,
-    'content-length': String(contentLength),
-    ...(isPartial ? { 'content-range': `bytes ${start}-${end}/${totalSize}` } : {}),
-  };
+  const headers: Record<string, string> = {};
+  headers['accept-ranges'] = 'bytes';
+  headers['content-type'] = contentType;
+  headers['content-length'] = String(contentLength);
+  if (isPartial) {
+    headers['content-range'] = `bytes ${start}-${end}/${totalSize}`;
+  }
 
   if (request.method === 'HEAD') {
     return new Response(null, {
@@ -184,7 +185,9 @@ async function fetchMediaFile(request: Request, mediaPath: string): Promise<Resp
   }
 
   const nodeStream = createReadStream(mediaPath, { start, end });
-  const webStream = Readable.toWeb(nodeStream) as unknown as ReadableStream<Uint8Array>;
+  // SAFETY: Readable.toWeb returns a WHATWG stream; node's `stream/web` and the DOM lib declare
+  // that same runtime object under two nominally distinct types, and Response needs the DOM one.
+  const webStream = Readable.toWeb(nodeStream) as ReadableStream<Uint8Array>;
 
   return new Response(webStream, {
     status: isPartial ? 206 : 200,

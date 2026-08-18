@@ -1,164 +1,142 @@
 import { Result } from 'better-result';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { z } from 'zod';
+import { describe, expect, it, vi } from 'vitest';
 
 import { WorkerError } from '../../../src/main/errors';
-import { deserializeIpcResult } from '../../../src/shared/ipc';
+import {
+  type IpcCatalogService,
+  type IpcMediaToolsService,
+  type IpcRuntime,
+  type IpcSettingsService,
+  registerIpc,
+} from '../../../src/main/ipc/registerIpc';
+import type { AppSettingsPatch } from '../../../src/shared/types';
 import { DEFAULT_SETTINGS } from '../../../src/shared/types';
 
-const handlers = new Map<string, (...args: unknown[]) => Promise<unknown>>();
-const removeHandler = vi.fn((channel: string) => {
-  handlers.delete(channel);
-});
-const handle = vi.fn((channel: string, handlerFn: (...args: unknown[]) => Promise<unknown>) => {
-  handlers.set(channel, handlerFn);
-});
-const showOpenDialog = vi.fn();
-const showItemInFolder = vi.fn();
+type RegisteredHandler = Parameters<IpcRuntime['handle']>[1];
 
-vi.mock('electron', () => ({
-  app: {
-    getVersion: () => '1.0.13',
-    isPackaged: false,
-  },
-  dialog: {
-    showOpenDialog,
-  },
-  ipcMain: {
-    handle,
-    removeHandler,
-  },
-  shell: {
+const MEDIA_TOOLS_STATUS = {
+  ffmpegAvailable: true,
+  ffprobeAvailable: true,
+  ffmpegPath: 'ffmpeg',
+  ffprobePath: 'ffprobe',
+};
+
+function setup() {
+  const handlers = new Map<string, RegisteredHandler>();
+
+  const authorizeMediaRoot = vi.fn<IpcRuntime['authorizeMediaRoot']>(async () => undefined);
+  const isAuthorizedMediaPath = vi.fn<IpcRuntime['isAuthorizedMediaPath']>(async () => true);
+  const listFolderChildren = vi.fn<IpcRuntime['listFolderChildren']>(async () => Result.ok([]));
+  const resolveFolderPath = vi.fn<IpcRuntime['resolveFolderPath']>(async () => Result.ok(null));
+  const sendScanEvent = vi.fn<IpcRuntime['sendScanEvent']>();
+  const showItemInFolder = vi.fn<IpcRuntime['showItemInFolder']>();
+  const showOpenFolderDialog = vi.fn<IpcRuntime['showOpenFolderDialog']>(async () => ({
+    canceled: true,
+    filePaths: [],
+  }));
+  const shrinkAuthorizedMediaRootsTo = vi.fn<IpcRuntime['shrinkAuthorizedMediaRootsTo']>(
+    async () => undefined,
+  );
+
+  const runtime: IpcRuntime = {
+    authorizeMediaRoot,
+    clearThumbnailCache: vi.fn<IpcRuntime['clearThumbnailCache']>(async () => undefined),
+    getAppVersion: () => '1.0.13',
+    getThumbnailDiagnostics: () => null,
+    getThumbnailWorkerCapabilities: () => null,
+    handle: (channel, handler) => {
+      handlers.set(channel, handler);
+    },
+    isAuthorizedMediaPath,
+    isPackaged: () => false,
+    isWindowDestroyed: () => false,
+    listFolderChildren,
+    removeHandler: (channel) => {
+      handlers.delete(channel);
+    },
+    resolveFolderPath,
+    sendScanEvent,
+    setThumbnailDebugOptions: vi.fn<IpcRuntime['setThumbnailDebugOptions']>(),
     showItemInFolder,
-  },
-}));
+    showOpenFolderDialog,
+    shrinkAuthorizedMediaRootsTo,
+  };
 
-const resolveFolderPath = vi.fn();
-const listFolderChildren = vi.fn();
+  const settingsService = {
+    getSettings: vi.fn<IpcSettingsService['getSettings']>(() => DEFAULT_SETTINGS),
+    updateSettings: vi.fn<IpcSettingsService['updateSettings']>(async (patch: AppSettingsPatch) =>
+      Result.ok({
+        ...DEFAULT_SETTINGS,
+        lastFolderPath: patch.lastFolderPath ?? DEFAULT_SETTINGS.lastFolderPath,
+      }),
+    ),
+  } satisfies IpcSettingsService;
 
-vi.mock('../../../src/main/services/folderService', () => ({
-  listFolderChildren,
-  resolveFolderPath,
-}));
+  const catalogService = {
+    cancelScan: vi.fn<IpcCatalogService['cancelScan']>(async () => Result.ok(undefined)),
+    clearIndex: vi.fn<IpcCatalogService['clearIndex']>(async () => Result.ok(undefined)),
+    getMediaIndexStats: vi.fn<IpcCatalogService['getMediaIndexStats']>(async () =>
+      Result.ok({
+        totalItems: 0,
+        uniqueRoots: 0,
+        dbPath: 'index.sqlite',
+      }),
+    ),
+    startScan: vi.fn<IpcCatalogService['startScan']>(async () => Result.ok(undefined)),
+  } satisfies IpcCatalogService;
 
-const authorizeMediaRoot = vi.fn();
-const clearThumbnailCache = vi.fn();
-const getThumbnailDiagnostics = vi.fn(() => null);
-const getThumbnailWorkerCapabilities = vi.fn(() => null);
-const isAuthorizedMediaPath = vi.fn();
-const setThumbnailDebugOptions = vi.fn();
-const shrinkAuthorizedMediaRootsTo = vi.fn();
+  const mediaToolsService = {
+    getStatus: vi.fn<IpcMediaToolsService['getStatus']>(() => MEDIA_TOOLS_STATUS),
+    probeVideo: vi.fn<IpcMediaToolsService['probeVideo']>(async () => null),
+  } satisfies IpcMediaToolsService;
 
-vi.mock('../../../src/main/services/mediaProtocol', () => ({
-  authorizeMediaRoot,
-  clearThumbnailCache,
-  getThumbnailDiagnostics,
-  getThumbnailWorkerCapabilities,
-  isAuthorizedMediaPath,
-  setThumbnailDebugOptions,
-  shrinkAuthorizedMediaRootsTo,
-}));
+  registerIpc(runtime, settingsService, catalogService, mediaToolsService);
+
+  return {
+    authorizeMediaRoot,
+    catalogService,
+    handlers,
+    isAuthorizedMediaPath,
+    listFolderChildren,
+    resolveFolderPath,
+    sendScanEvent,
+    settingsService,
+    showItemInFolder,
+    showOpenFolderDialog,
+    shrinkAuthorizedMediaRootsTo,
+  };
+}
 
 describe('registerIpc', () => {
-  beforeEach(() => {
-    handlers.clear();
-    removeHandler.mockClear();
-    handle.mockClear();
-    showOpenDialog.mockReset();
-    showItemInFolder.mockReset();
-    resolveFolderPath.mockReset();
-    listFolderChildren.mockReset();
-    authorizeMediaRoot.mockReset();
-    clearThumbnailCache.mockReset();
-    isAuthorizedMediaPath.mockReset();
-    setThumbnailDebugOptions.mockReset();
-    shrinkAuthorizedMediaRootsTo.mockReset();
-    vi.resetModules();
-  });
-
-  async function setup() {
-    const { registerIpc } = await import('../../../src/main/ipc/registerIpc');
-    const mainWindow = {
-      isDestroyed: () => false,
-      webContents: {
-        send: vi.fn(),
-      },
-    };
-    const settingsService = {
-      getSettings: vi.fn(() => DEFAULT_SETTINGS),
-      updateSettings: vi.fn(async (patch: unknown) =>
-        Result.ok({
-          ...DEFAULT_SETTINGS,
-          lastFolderPath:
-            typeof patch === 'object' && patch !== null && 'lastFolderPath' in patch
-              ? (patch as { lastFolderPath: string | null }).lastFolderPath
-              : DEFAULT_SETTINGS.lastFolderPath,
-        }),
-      ),
-    };
-    const catalogService = {
-      cancelScan: vi.fn(async () => Result.ok(undefined)),
-      clearIndex: vi.fn(async () => Result.ok(undefined)),
-      getMediaIndexStats: vi.fn(async () =>
-        Result.ok({
-          totalItems: 0,
-          uniqueRoots: 0,
-          dbPath: 'index.sqlite',
-        }),
-      ),
-      startScan: vi.fn(async () => Result.ok(undefined)),
-    };
-    const mediaToolsService = {
-      getStatus: vi.fn(() => ({
-        ffmpegAvailable: true,
-        ffprobeAvailable: true,
-        ffmpegPath: 'ffmpeg',
-        ffprobePath: 'ffprobe',
-      })),
-      probeVideo: vi.fn(async () => null),
-    };
-
-    registerIpc(
-      mainWindow as never,
-      settingsService as never,
-      catalogService as never,
-      mediaToolsService as never,
-    );
-
-    return {
-      catalogService,
-      mainWindow,
-      mediaToolsService,
-      settingsService,
-    };
-  }
-
   it('returns a validation error and emits a scan error for invalid scan options', async () => {
-    const { mainWindow } = await setup();
-    const scanStart = handlers.get('scan:start');
+    const { handlers, sendScanEvent } = setup();
 
-    const response = await scanStart?.({}, { rootPath: '' });
-    const result = deserializeIpcResult(response, z.undefined(), 'scan:start');
+    const response = await handlers.get('scan:start')?.({ rootPath: '' });
 
-    expect(Result.isError(result)).toBe(true);
-    expect(Result.isError(result) ? result.error._tag : null).toBe('ValidationError');
-    expect(mainWindow.webContents.send).toHaveBeenCalledWith('scan:event', {
+    expect(response?.status).toBe('error');
+    expect(response?.status === 'error' ? response.error._tag : null).toBe('ValidationError');
+    expect(sendScanEvent).toHaveBeenCalledWith({
       type: 'error',
       message: 'Invalid scan options',
     });
   });
 
   it('remembers the last folder path when opening a folder dialog', async () => {
-    const { settingsService } = await setup();
-    const openFolderDialog = handlers.get('dialog:open-folder');
+    const {
+      authorizeMediaRoot,
+      handlers,
+      resolveFolderPath,
+      settingsService,
+      showOpenFolderDialog,
+    } = setup();
 
-    showOpenDialog.mockResolvedValue({
+    showOpenFolderDialog.mockResolvedValue({
       canceled: false,
       filePaths: ['C:\\incoming'],
     });
     resolveFolderPath.mockResolvedValue(Result.ok('C:\\resolved'));
 
-    await openFolderDialog?.();
+    await handlers.get('dialog:open-folder')?.();
 
     expect(authorizeMediaRoot).toHaveBeenCalledWith('C:\\resolved');
     expect(settingsService.updateSettings).toHaveBeenCalledWith({
@@ -167,23 +145,20 @@ describe('registerIpc', () => {
   });
 
   it('returns a validation error when listing children for an unauthorized folder', async () => {
-    await setup();
-    const listFolderChildrenHandler = handlers.get('tree:list-children');
+    const { handlers, isAuthorizedMediaPath, listFolderChildren, resolveFolderPath } = setup();
 
     resolveFolderPath.mockResolvedValue(Result.ok('C:\\blocked'));
     isAuthorizedMediaPath.mockResolvedValue(false);
 
-    const response = await listFolderChildrenHandler?.({}, 'C:\\blocked');
-    const result = deserializeIpcResult(response, z.array(z.any()), 'tree:list-children');
+    const response = await handlers.get('tree:list-children')?.('C:\\blocked');
 
-    expect(Result.isError(result)).toBe(true);
-    expect(Result.isError(result) ? result.error._tag : null).toBe('ValidationError');
+    expect(response?.status).toBe('error');
+    expect(response?.status === 'error' ? response.error._tag : null).toBe('ValidationError');
     expect(listFolderChildren).not.toHaveBeenCalled();
   });
 
   it('lists children for authorized folders', async () => {
-    await setup();
-    const listFolderChildrenHandler = handlers.get('tree:list-children');
+    const { handlers, isAuthorizedMediaPath, listFolderChildren, resolveFolderPath } = setup();
 
     resolveFolderPath.mockResolvedValue(Result.ok('C:\\authorized'));
     isAuthorizedMediaPath.mockResolvedValue(true);
@@ -191,50 +166,50 @@ describe('registerIpc', () => {
       Result.ok([{ path: 'C:\\authorized\\child', name: 'child', hasChildren: false }]),
     );
 
-    const response = await listFolderChildrenHandler?.({}, 'C:\\authorized');
-    const result = deserializeIpcResult(response, z.array(z.any()), 'tree:list-children');
+    const response = await handlers.get('tree:list-children')?.('C:\\authorized');
 
-    expect(Result.isOk(result)).toBe(true);
+    expect(response?.status).toBe('ok');
     expect(listFolderChildren).toHaveBeenCalledWith('C:\\authorized');
   });
 
   it('returns a validation error when revealing an unauthorized media path', async () => {
-    await setup();
-    const revealInFolder = handlers.get('shell:reveal-in-folder');
+    const { handlers, isAuthorizedMediaPath, showItemInFolder } = setup();
 
     isAuthorizedMediaPath.mockResolvedValue(false);
 
-    const response = await revealInFolder?.({}, 'C:\\blocked\\file.jpg');
-    const result = deserializeIpcResult(response, z.undefined(), 'shell:reveal-in-folder');
+    const response = await handlers.get('shell:reveal-in-folder')?.('C:\\blocked\\file.jpg');
 
-    expect(Result.isError(result)).toBe(true);
-    expect(Result.isError(result) ? result.error._tag : null).toBe('ValidationError');
+    expect(response?.status).toBe('error');
+    expect(response?.status === 'error' ? response.error._tag : null).toBe('ValidationError');
     expect(showItemInFolder).not.toHaveBeenCalled();
   });
 
   it('rejects scan starts for paths that were not authorized via the folder dialog', async () => {
-    const { catalogService, mainWindow } = await setup();
-    const scanStart = handlers.get('scan:start');
+    const {
+      authorizeMediaRoot,
+      catalogService,
+      handlers,
+      isAuthorizedMediaPath,
+      resolveFolderPath,
+      sendScanEvent,
+      shrinkAuthorizedMediaRootsTo,
+    } = setup();
 
     resolveFolderPath.mockResolvedValue(Result.ok('C:\\untrusted'));
     isAuthorizedMediaPath.mockResolvedValue(false);
 
-    const response = await scanStart?.(
-      {},
-      {
-        rootPath: 'C:\\untrusted',
-        recursive: false,
-        filters: DEFAULT_SETTINGS.filters,
-      },
-    );
-    const result = deserializeIpcResult(response, z.undefined(), 'scan:start');
+    const response = await handlers.get('scan:start')?.({
+      rootPath: 'C:\\untrusted',
+      recursive: false,
+      filters: DEFAULT_SETTINGS.filters,
+    });
 
-    expect(Result.isError(result)).toBe(true);
-    expect(Result.isError(result) ? result.error._tag : null).toBe('ValidationError');
+    expect(response?.status).toBe('error');
+    expect(response?.status === 'error' ? response.error._tag : null).toBe('ValidationError');
     expect(authorizeMediaRoot).not.toHaveBeenCalled();
     expect(shrinkAuthorizedMediaRootsTo).not.toHaveBeenCalled();
     expect(catalogService.startScan).not.toHaveBeenCalled();
-    expect(mainWindow.webContents.send).toHaveBeenCalledWith('scan:event', {
+    expect(sendScanEvent).toHaveBeenCalledWith({
       type: 'error',
       message: 'Folder path is not authorized. Open a folder with the native dialog first.',
       path: 'C:\\untrusted',
@@ -243,43 +218,50 @@ describe('registerIpc', () => {
 
   it('re-authorizes the remembered last folder so auto-scan works after restart', async () => {
     const rememberedPath = 'C:\\gallery';
-    const { catalogService, settingsService } = await setup();
+    const {
+      authorizeMediaRoot,
+      catalogService,
+      handlers,
+      isAuthorizedMediaPath,
+      resolveFolderPath,
+      settingsService,
+      shrinkAuthorizedMediaRootsTo,
+    } = setup();
+
     settingsService.getSettings.mockReturnValue({
       ...DEFAULT_SETTINGS,
       rememberLastFolder: true,
       lastFolderPath: rememberedPath,
     });
-
-    const scanStart = handlers.get('scan:start');
     resolveFolderPath.mockResolvedValue(Result.ok(rememberedPath));
     isAuthorizedMediaPath.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
-    shrinkAuthorizedMediaRootsTo.mockResolvedValue(undefined);
-    catalogService.startScan.mockResolvedValue(Result.ok(undefined));
 
-    const response = await scanStart?.(
-      {},
-      {
-        rootPath: rememberedPath,
-        recursive: false,
-        filters: DEFAULT_SETTINGS.filters,
-        excludedRootChildPaths: [],
-      },
-    );
-    const result = deserializeIpcResult(response, z.undefined(), 'scan:start');
+    const response = await handlers.get('scan:start')?.({
+      rootPath: rememberedPath,
+      recursive: false,
+      filters: DEFAULT_SETTINGS.filters,
+      excludedRootChildPaths: [],
+    });
 
-    expect(Result.isOk(result)).toBe(true);
+    expect(response?.status).toBe('ok');
     expect(authorizeMediaRoot).toHaveBeenCalledWith(rememberedPath);
     expect(shrinkAuthorizedMediaRootsTo).toHaveBeenCalledWith(rememberedPath);
     expect(catalogService.startScan).toHaveBeenCalled();
   });
 
   it('emits a scan error when the catalog service fails to start a scan', async () => {
-    const { catalogService, mainWindow } = await setup();
-    const scanStart = handlers.get('scan:start');
+    const {
+      authorizeMediaRoot,
+      catalogService,
+      handlers,
+      isAuthorizedMediaPath,
+      resolveFolderPath,
+      sendScanEvent,
+      shrinkAuthorizedMediaRootsTo,
+    } = setup();
 
     resolveFolderPath.mockResolvedValue(Result.ok('C:\\resolved'));
     isAuthorizedMediaPath.mockResolvedValue(true);
-    shrinkAuthorizedMediaRootsTo.mockResolvedValue(undefined);
     catalogService.startScan.mockResolvedValue(
       Result.err(
         new WorkerError({
@@ -290,20 +272,16 @@ describe('registerIpc', () => {
       ),
     );
 
-    const response = await scanStart?.(
-      {},
-      {
-        rootPath: 'C:\\resolved',
-        recursive: false,
-        filters: DEFAULT_SETTINGS.filters,
-      },
-    );
-    const result = deserializeIpcResult(response, z.undefined(), 'scan:start');
+    const response = await handlers.get('scan:start')?.({
+      rootPath: 'C:\\resolved',
+      recursive: false,
+      filters: DEFAULT_SETTINGS.filters,
+    });
 
-    expect(Result.isError(result)).toBe(true);
+    expect(response?.status).toBe('error');
     expect(authorizeMediaRoot).not.toHaveBeenCalled();
     expect(shrinkAuthorizedMediaRootsTo).toHaveBeenCalledWith('C:\\resolved');
-    expect(mainWindow.webContents.send).toHaveBeenCalledWith('scan:event', {
+    expect(sendScanEvent).toHaveBeenCalledWith({
       type: 'error',
       message: 'Scan failed: worker crashed',
     });

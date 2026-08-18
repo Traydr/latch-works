@@ -165,8 +165,9 @@ export function ViewerModal({
     const nextTime = Math.max(0, Math.min(safeTotal, rawTarget));
     const wasPlaying = !video.paused;
 
-    if ('fastSeek' in video && typeof video.fastSeek === 'function') {
-      video.fastSeek(nextTime);
+    const fastSeek = video.fastSeek?.bind(video);
+    if (fastSeek) {
+      fastSeek(nextTime);
     } else {
       video.currentTime = nextTime;
     }
