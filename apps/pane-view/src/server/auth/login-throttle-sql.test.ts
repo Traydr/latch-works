@@ -1,8 +1,6 @@
 import { drizzle } from "drizzle-orm/node-postgres";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { z } from "zod";
-
-vi.mock("../db", () => ({ db: {} }));
 
 import { buildLoginThrottleUpsert } from "./login-throttle";
 

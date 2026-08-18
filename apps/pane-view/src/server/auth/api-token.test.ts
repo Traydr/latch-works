@@ -1,17 +1,6 @@
 import * as crypto from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const syncToken = "test-sync-token-value";
-let configuredSyncToken: string | undefined = syncToken;
-
-vi.mock("../../env/server", () => ({
-  env: {
-    get PANE_VIEW_SYNC_TOKEN() {
-      return configuredSyncToken;
-    },
-  },
-}));
-
 import {
   assertSyncApiTokenFromBody,
   createSyncApiTokenVerifier,
@@ -20,6 +9,18 @@ import {
   requireSyncApiToken,
   verifySyncApiToken,
 } from "./api-token";
+
+const syncToken = "test-sync-token-value";
+let configuredSyncToken: string | undefined = syncToken;
+
+/**
+ * Stands in for the process-wide verifier, which reads PANE_VIEW_SYNC_TOKEN.
+ * The guards take a verifier, so the suite controls the configured token
+ * without touching the environment.
+ */
+const verifier = createSyncApiTokenVerifier({
+  getConfiguredToken: () => configuredSyncToken,
+});
 
 function syncRequest(authorization?: string): Request {
   return new Request(
@@ -53,15 +54,15 @@ describe("verifySyncApiToken", () => {
   });
 
   it("accepts only an exact match against a configured token", () => {
-    expect(verifySyncApiToken({ token: syncToken })).toBe(true);
-    expect(verifySyncApiToken({ token: "wrong-token" })).toBe(false);
-    expect(verifySyncApiToken({ token: null })).toBe(false);
+    expect(verifySyncApiToken({ token: syncToken }, verifier)).toBe(true);
+    expect(verifySyncApiToken({ token: "wrong-token" }, verifier)).toBe(false);
+    expect(verifySyncApiToken({ token: null }, verifier)).toBe(false);
   });
 
   it("fails closed when no token is configured", () => {
     configuredSyncToken = undefined;
 
-    expect(verifySyncApiToken({ token: syncToken })).toBe(false);
+    expect(verifySyncApiToken({ token: syncToken }, verifier)).toBe(false);
   });
 
   it("caches the configured token digest across requests", () => {
@@ -83,8 +84,8 @@ describe("requireSyncApiToken", () => {
   });
 
   it("passes a valid bearer token through and 401s an invalid one", () => {
-    expect(requireSyncApiToken(syncRequest(`Bearer ${syncToken}`))).toBeNull();
-    expect(requireSyncApiToken(syncRequest("Bearer wrong-token"))?.status).toBe(401);
+    expect(requireSyncApiToken(syncRequest(`Bearer ${syncToken}`), verifier)).toBeNull();
+    expect(requireSyncApiToken(syncRequest("Bearer wrong-token"), verifier)?.status).toBe(401);
   });
 });
 
@@ -94,7 +95,9 @@ describe("assertSyncApiTokenFromBody", () => {
   });
 
   it("accepts a valid body token and throws on an invalid one", () => {
-    expect(() => assertSyncApiTokenFromBody(syncToken)).not.toThrow();
-    expect(() => assertSyncApiTokenFromBody("wrong-token")).toThrow("Invalid sync token.");
+    expect(() => assertSyncApiTokenFromBody(syncToken, verifier)).not.toThrow();
+    expect(() => assertSyncApiTokenFromBody("wrong-token", verifier)).toThrow(
+      "Invalid sync token.",
+    );
   });
 });
