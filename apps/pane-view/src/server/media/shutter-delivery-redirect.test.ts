@@ -1,80 +1,76 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({
-  readContext: vi.fn(),
-  resolveImage: vi.fn(),
-  resolvePreview: vi.fn(),
-}));
+import type { MediaThumbnailContext } from "./repository";
+import {
+  redirectToShutterRendition,
+  type ShutterRedirectDependencies,
+} from "./shutter-delivery-redirect";
 
-vi.mock("./repository", () => ({
-  readMediaThumbnailContext: mocks.readContext,
-}));
-vi.mock("./shutter-client", () => ({
-  resolveShutterImageUrl: mocks.resolveImage,
-  resolveShutterPreview: mocks.resolvePreview,
-}));
+const readThumbnailContext = vi.fn();
+const resolveImageUrl = vi.fn();
+const resolvePreview = vi.fn();
 
-import { redirectToShutterRendition } from "./shutter-delivery-redirect";
+const dependencies: ShutterRedirectDependencies = {
+  readThumbnailContext,
+  resolveImageUrl,
+  resolvePreview,
+};
 
-const image = {
+const image: MediaThumbnailContext = {
   extension: "jpg",
   mediaObjectId: "object-image",
-  mediaType: "image" as const,
+  mediaType: "image",
   originalObjectKey: "originals/image.jpg",
   sha256: "a".repeat(64),
+};
+
+const video: MediaThumbnailContext = {
+  ...image,
+  extension: "mp4",
+  mediaType: "video",
+  originalObjectKey: "originals/video.mp4",
+  sha256: "b".repeat(64),
 };
 
 describe("redirectToShutterRendition", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.readContext.mockResolvedValue(image);
-    mocks.resolveImage.mockResolvedValue("https://edge.shutter.test/image");
-    mocks.resolvePreview.mockResolvedValue({ status: "pending", retryAfterMs: 9_000 });
+    readThumbnailContext.mockResolvedValue(image);
+    resolveImageUrl.mockResolvedValue("https://edge.shutter.test/image");
+    resolvePreview.mockResolvedValue({ status: "pending", retryAfterMs: 9_000 });
   });
 
   it("redirects image thumbnails through Shutter", async () => {
-    const response = await redirectToShutterRendition({
-      mediaId: "image",
-      width: 320,
-    });
+    const response = await redirectToShutterRendition(
+      { mediaId: "image", width: 320 },
+      dependencies,
+    );
 
     expect(response.status).toBe(302);
     expect(response.headers.get("Location")).toBe("https://edge.shutter.test/image");
-    expect(mocks.resolveImage).toHaveBeenCalledWith(image, 320);
+    expect(resolveImageUrl).toHaveBeenCalledWith(image, 320);
   });
 
   it("returns 502 when preview issuance fails", async () => {
-    mocks.readContext.mockResolvedValue({
-      ...image,
-      extension: "mp4",
-      mediaType: "video",
-      originalObjectKey: "originals/video.mp4",
-      sha256: "b".repeat(64),
-    });
-    mocks.resolvePreview.mockRejectedValue(new Error("Shutter capability key ID is not active"));
+    readThumbnailContext.mockResolvedValue(video);
+    resolvePreview.mockRejectedValue(new Error("Shutter capability key ID is not active"));
 
-    const response = await redirectToShutterRendition({
-      mediaId: "video",
-      width: 640,
-    });
+    const response = await redirectToShutterRendition(
+      { mediaId: "video", width: 640 },
+      dependencies,
+    );
 
     expect(response.status).toBe(502);
     expect(await response.text()).toBe("Rendition unavailable");
   });
 
   it("returns retryable 503 while video previews are pending", async () => {
-    mocks.readContext.mockResolvedValue({
-      ...image,
-      extension: "mp4",
-      mediaType: "video",
-      originalObjectKey: "originals/video.mp4",
-      sha256: "b".repeat(64),
-    });
+    readThumbnailContext.mockResolvedValue(video);
 
-    const response = await redirectToShutterRendition({
-      mediaId: "video",
-      width: 640,
-    });
+    const response = await redirectToShutterRendition(
+      { mediaId: "video", width: 640 },
+      dependencies,
+    );
 
     expect(response.status).toBe(503);
     expect(response.headers.get("Retry-After")).toBe("9");

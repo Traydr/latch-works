@@ -1,24 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({
-  readContexts: vi.fn(),
-  resolveImage: vi.fn(),
-  resolvePreview: vi.fn(),
-}));
+import {
+  type MediaDeliveryDependencies,
+  resolveMediaDeliveryUrlsForVariants,
+} from "./resolve-delivery-url";
 
-vi.mock("./repository", () => ({
-  readMediaDeliveryRequest: vi.fn(),
-  readMediaThumbnailContext: vi.fn(),
-  readMediaThumbnailContextsByEntryIds: mocks.readContexts,
-}));
-vi.mock("./shutter-client", () => ({
-  resolveShutterImageUrl: mocks.resolveImage,
-  resolveShutterPreview: mocks.resolvePreview,
-}));
-vi.mock("./storage-client", () => ({ createPaneViewStorageClient: vi.fn() }));
-vi.mock("@latch-works/media-storage", () => ({ createSignedGetUrl: vi.fn() }));
+const readContexts = vi.fn();
+const resolveImage = vi.fn();
+const resolvePreview = vi.fn();
 
-import { resolveMediaDeliveryUrlsForVariants } from "./resolve-delivery-url";
+/** Nothing outside the batch logic runs: the archive and Shutter both stand in. */
+const dependencies: MediaDeliveryDependencies = {
+  createSignedOriginalUrl: async () => "https://storage.test/original?signature=test",
+  readDeliveryRequest: async () => null,
+  readThumbnailContext: async () => null,
+  readThumbnailContexts: readContexts,
+  resolveImageUrl: resolveImage,
+  resolvePreview,
+};
 
 const image = {
   extension: "jpg",
@@ -38,24 +37,27 @@ const video = {
 describe("resolveMediaDeliveryUrlsForVariants", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.readContexts.mockResolvedValue(
+    readContexts.mockResolvedValue(
       new Map<string, typeof image | typeof video>([
         ["image", image],
         ["video", video],
       ]),
     );
-    mocks.resolveImage.mockResolvedValue("https://edge.shutter.test/image");
-    mocks.resolvePreview.mockResolvedValue({
+    resolveImage.mockResolvedValue("https://edge.shutter.test/image");
+    resolvePreview.mockResolvedValue({
       status: "ready",
       url: "https://edge.shutter.test/master",
     });
   });
 
   it("deduplicates and returns private Shutter image URLs", async () => {
-    const results = await resolveMediaDeliveryUrlsForVariants([
-      { mediaId: "image", size: 321, variant: "thumbnail" },
-      { mediaId: "image", size: 321, variant: "thumbnail" },
-    ]);
+    const results = await resolveMediaDeliveryUrlsForVariants(
+      [
+        { mediaId: "image", size: 321, variant: "thumbnail" },
+        { mediaId: "image", size: 321, variant: "thumbnail" },
+      ],
+      dependencies,
+    );
     expect(results).toEqual([
       {
         mediaId: "image",
@@ -65,14 +67,17 @@ describe("resolveMediaDeliveryUrlsForVariants", () => {
         variant: "thumbnail",
       },
     ]);
-    expect(mocks.resolveImage).toHaveBeenCalledWith(image, 321);
-    expect(mocks.resolvePreview).not.toHaveBeenCalled();
+    expect(resolveImage).toHaveBeenCalledWith(image, 321);
+    expect(resolvePreview).not.toHaveBeenCalled();
   });
 
   it("returns pending until video renditions are ready", async () => {
-    mocks.resolvePreview.mockResolvedValueOnce({ status: "pending", retryAfterMs: 5_000 });
+    resolvePreview.mockResolvedValueOnce({ status: "pending", retryAfterMs: 5_000 });
     await expect(
-      resolveMediaDeliveryUrlsForVariants([{ mediaId: "video", size: 640, variant: "preview" }]),
+      resolveMediaDeliveryUrlsForVariants(
+        [{ mediaId: "video", size: 640, variant: "preview" }],
+        dependencies,
+      ),
     ).resolves.toEqual([
       {
         mediaId: "video",
@@ -82,15 +87,18 @@ describe("resolveMediaDeliveryUrlsForVariants", () => {
         variant: "preview",
       },
     ]);
-    expect(mocks.resolvePreview).toHaveBeenCalledWith(video, 640);
+    expect(resolvePreview).toHaveBeenCalledWith(video, 640);
   });
 
   it("isolates missing items without calling Shutter", async () => {
     await expect(
-      resolveMediaDeliveryUrlsForVariants([
-        { mediaId: "missing", variant: "thumbnail" },
-        { mediaId: "video", variant: "thumbnail" },
-      ]),
+      resolveMediaDeliveryUrlsForVariants(
+        [
+          { mediaId: "missing", variant: "thumbnail" },
+          { mediaId: "video", variant: "thumbnail" },
+        ],
+        dependencies,
+      ),
     ).resolves.toEqual([
       { mediaId: "missing", status: "failed", variant: "thumbnail" },
       {
@@ -109,10 +117,10 @@ describe("resolveMediaDeliveryUrlsForVariants", () => {
       contexts.set(mediaId, { ...video, mediaObjectId: mediaId, sha256: `${index}`.repeat(64) });
       return { mediaId, variant: "thumbnail" as const };
     });
-    mocks.readContexts.mockResolvedValue(contexts);
+    readContexts.mockResolvedValue(contexts);
     let active = 0;
     let maximum = 0;
-    mocks.resolvePreview.mockImplementation(async () => {
+    resolvePreview.mockImplementation(async () => {
       active += 1;
       maximum = Math.max(maximum, active);
       await new Promise((resolve) => setTimeout(resolve, 1));
@@ -120,7 +128,7 @@ describe("resolveMediaDeliveryUrlsForVariants", () => {
       return { status: "ready", url: "https://edge.shutter.test/master" };
     });
 
-    await resolveMediaDeliveryUrlsForVariants(items);
+    await resolveMediaDeliveryUrlsForVariants(items, dependencies);
     expect(maximum).toBe(6);
   });
 });

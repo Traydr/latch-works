@@ -17,15 +17,23 @@ export interface ShutterCapabilityKeyConfig {
   key: Uint8Array<ArrayBuffer>;
 }
 
-export function shutterCapabilityKeyConfig(): ShutterCapabilityKeyConfig {
+/** The configuration a capability is issued from; the process environment by default. */
+export type CapabilityEnvironment = Pick<
+  typeof env,
+  "SHUTTER_CAPABILITY_KEYS" | "SHUTTER_CAPABILITY_KID" | "SHUTTER_SPACE_ID"
+>;
+
+export function shutterCapabilityKeyConfig(
+  environment: CapabilityEnvironment = env,
+): ShutterCapabilityKeyConfig {
   const status = validateCapabilityKeyConfig({
-    capabilityKeys: env.SHUTTER_CAPABILITY_KEYS,
-    capabilityKid: env.SHUTTER_CAPABILITY_KID,
-    spaceId: env.SHUTTER_SPACE_ID,
+    capabilityKeys: environment.SHUTTER_CAPABILITY_KEYS,
+    capabilityKid: environment.SHUTTER_CAPABILITY_KID,
+    spaceId: environment.SHUTTER_SPACE_ID,
   });
   if (!status.ok) throw new Error(status.error);
 
-  const registry = parseCapabilityKeyRegistry(env.SHUTTER_CAPABILITY_KEYS);
+  const registry = parseCapabilityKeyRegistry(environment.SHUTTER_CAPABILITY_KEYS);
   const encoded = readCapabilityKeyMaterial(registry, status.spaceId, status.kid);
   if (!encoded) {
     throw new Error(
@@ -39,8 +47,9 @@ export function shutterCapabilityKeyConfig(): ShutterCapabilityKeyConfig {
 export async function issueShutterCapability(
   claims: CapabilityClaims,
   ivOverride?: Uint8Array<ArrayBuffer>,
+  environment: CapabilityEnvironment = env,
 ): Promise<string> {
-  const options = shutterCapabilityKeyConfig();
+  const options = shutterCapabilityKeyConfig(environment);
   return ivOverride === undefined
     ? issueSourceCapability(claims, options)
     : issueSourceCapabilityWithIv(claims, options, ivOverride);

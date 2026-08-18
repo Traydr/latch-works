@@ -1,7 +1,24 @@
-import { readMediaThumbnailContext } from "./repository";
-import { resolveShutterImageUrl, resolveShutterPreview } from "./shutter-client";
+import { type MediaThumbnailContext, readMediaThumbnailContext } from "./repository";
+import {
+  resolveShutterImageUrl,
+  resolveShutterPreview,
+  type ShutterPreviewResult,
+} from "./shutter-client";
 
 const API_PRIVATE_CACHE_CONTROL = "private, no-store";
+
+/** The archive read and the two Shutter reads a rendition redirect makes. */
+export interface ShutterRedirectDependencies {
+  readThumbnailContext(request: { mediaId: string }): Promise<MediaThumbnailContext | null>;
+  resolveImageUrl(context: MediaThumbnailContext, width: number): Promise<string>;
+  resolvePreview(context: MediaThumbnailContext, width: number): Promise<ShutterPreviewResult>;
+}
+
+const defaultShutterRedirectDependencies: ShutterRedirectDependencies = {
+  readThumbnailContext: readMediaThumbnailContext,
+  resolveImageUrl: resolveShutterImageUrl,
+  resolvePreview: resolveShutterPreview,
+};
 
 export function readDeliverySizeFromRequest(request: Request, fallback: number): number {
   const rawSize = new URL(request.url).searchParams.get("size");
@@ -9,14 +26,11 @@ export function readDeliverySizeFromRequest(request: Request, fallback: number):
   return Number.isInteger(size) && size > 0 ? size : fallback;
 }
 
-export async function redirectToShutterRendition({
-  mediaId,
-  width,
-}: {
-  mediaId: string;
-  width: number;
-}): Promise<Response> {
-  const context = await readMediaThumbnailContext({ mediaId });
+export async function redirectToShutterRendition(
+  { mediaId, width }: { mediaId: string; width: number },
+  dependencies: ShutterRedirectDependencies = defaultShutterRedirectDependencies,
+): Promise<Response> {
+  const context = await dependencies.readThumbnailContext({ mediaId });
   if (!context) {
     return new Response("Media not found", {
       headers: { "Cache-Control": API_PRIVATE_CACHE_CONTROL },
@@ -26,7 +40,7 @@ export async function redirectToShutterRendition({
 
   if (context.mediaType === "image" || context.mediaType === "gif") {
     try {
-      const location = await resolveShutterImageUrl(context, width);
+      const location = await dependencies.resolveImageUrl(context, width);
       return new Response(null, {
         headers: {
           "Cache-Control": API_PRIVATE_CACHE_CONTROL,
@@ -49,9 +63,9 @@ export async function redirectToShutterRendition({
     });
   }
 
-  let preview: Awaited<ReturnType<typeof resolveShutterPreview>>;
+  let preview: ShutterPreviewResult;
   try {
-    preview = await resolveShutterPreview(context, width);
+    preview = await dependencies.resolvePreview(context, width);
   } catch {
     return new Response("Rendition unavailable", {
       headers: { "Cache-Control": API_PRIVATE_CACHE_CONTROL },
