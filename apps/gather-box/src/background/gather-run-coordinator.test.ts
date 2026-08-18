@@ -109,9 +109,13 @@ describe("Gather Run transitions", () => {
   });
 
   it("rejects unknown event kinds instead of completing", () => {
-    expect(() =>
-      applyGatherRunEvent(run, { kind: "explode" } as never, 107)
-    ).toThrow(/Rejected unknown Gather Run event kind/);
+    // SAFETY: the reducer's default branch only runs for a kind GatherRunEvent cannot express,
+    // so driving it requires handing the reducer a value outside its own union.
+    const unknownEvent = { kind: "explode" } as never;
+
+    expect(() => applyGatherRunEvent(run, unknownEvent, 107)).toThrow(
+      /Rejected unknown Gather Run event kind/
+    );
   });
 });
 
@@ -124,17 +128,9 @@ describe("Gather queue orchestration", () => {
       jobs: [waitingJob]
     });
     harness.collect.mockResolvedValue(downloadablePayload());
-    harness.getTab.mockResolvedValue({
-      id: 99,
-      windowId: 2,
-      url: "https://www.pixiv.net/artworks/2"
-    } as chrome.tabs.Tab);
+    harness.getTab.mockResolvedValue(tabAt({ id: 99, windowId: 2, url: "https://www.pixiv.net/artworks/2" }));
 
-    const result = await harness.coordinator.startForTab({
-      id: 99,
-      windowId: 2,
-      url: "https://www.pixiv.net/artworks/2"
-    } as chrome.tabs.Tab);
+    const result = await harness.coordinator.startForTab(tabAt({ id: 99, windowId: 2, url: "https://www.pixiv.net/artworks/2" }));
 
     expect(harness.execute).toHaveBeenCalledWith(
       expect.objectContaining({ run: expect.objectContaining({ id: "waiting" }) })
@@ -154,11 +150,7 @@ describe("Gather queue orchestration", () => {
       jobs: [waitingJob]
     });
 
-    const result = await harness.coordinator.startForTab({
-      id: 1,
-      windowId: 1,
-      url: "https://www.pixiv.net/artworks/1"
-    } as chrome.tabs.Tab);
+    const result = await harness.coordinator.startForTab(tabAt({ id: 1, windowId: 1, url: "https://www.pixiv.net/artworks/1" }));
 
     expect(result.outcome).toBe("started");
     expect(harness.collect).not.toHaveBeenCalled();
@@ -177,17 +169,9 @@ describe("Gather queue orchestration", () => {
       jobs: [outputJob("writing", "writing")]
     });
     harness.collect.mockReturnValue(collection);
-    harness.getTab.mockResolvedValue({
-      id: 2,
-      windowId: 1,
-      url: "https://www.pixiv.net/artworks/2"
-    } as chrome.tabs.Tab);
+    harness.getTab.mockResolvedValue(tabAt({ id: 2, windowId: 1, url: "https://www.pixiv.net/artworks/2" }));
 
-    const pendingStart = harness.coordinator.startForTab({
-      id: 2,
-      windowId: 1,
-      url: "https://www.pixiv.net/artworks/2"
-    } as chrome.tabs.Tab);
+    const pendingStart = harness.coordinator.startForTab(tabAt({ id: 2, windowId: 1, url: "https://www.pixiv.net/artworks/2" }));
     await vi.waitFor(() => expect(harness.collect).toHaveBeenCalledOnce());
 
     await harness.coordinator.handleEvent({
@@ -316,7 +300,7 @@ function createHarness(initial: GatherQueueState) {
   const execute = vi.fn<GatherRunCoordinatorDependencies["execute"]>().mockResolvedValue(true);
   const abort = vi.fn<GatherRunCoordinatorDependencies["abort"]>().mockResolvedValue(true);
   const getTab = vi.fn<GatherRunCoordinatorDependencies["getTab"]>().mockResolvedValue(
-    { id: 1, windowId: 1, url: "https://www.pixiv.net/artworks/1" } as chrome.tabs.Tab
+    tabAt({ id: 1, windowId: 1, url: "https://www.pixiv.net/artworks/1" })
   );
   const dependencies: GatherRunCoordinatorDependencies = {
     loadQueue: async () => structuredClone(queue),
@@ -339,5 +323,22 @@ function createHarness(initial: GatherQueueState) {
     abort,
     getTab,
     getQueue: () => queue
+  };
+}
+
+/** A Chrome tab with every required field, so tests state only what the assertion depends on. */
+function tabAt(fields: Pick<chrome.tabs.Tab, "id" | "url" | "windowId">): chrome.tabs.Tab {
+  return {
+    active: true,
+    autoDiscardable: true,
+    discarded: false,
+    frozen: false,
+    groupId: -1,
+    highlighted: false,
+    incognito: false,
+    index: 0,
+    pinned: false,
+    selected: true,
+    ...fields
   };
 }

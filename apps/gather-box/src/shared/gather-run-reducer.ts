@@ -7,6 +7,9 @@ export function applyGatherRunEvent(
   event: GatherRunEvent,
   now = Date.now()
 ): GatherRunState {
+  // Read before the switch: inside `default` the event has already narrowed to `never`.
+  const { kind } = event;
+
   switch (event.kind) {
     case "permission-required": {
       // A paused job blocks the whole queue, and only a gather started from a tab that resolves to
@@ -90,9 +93,7 @@ export function applyGatherRunEvent(
             `failed ${event.failed}.`
         }
       };
-    default: {
-      const unknownKind = (event as { kind?: unknown }).kind;
-      throw new Error(`Rejected unknown Gather Run event kind: ${String(unknownKind)}`);
-    }
+    default:
+      throw new Error(`Rejected unknown Gather Run event kind: ${kind}`);
   }
 }

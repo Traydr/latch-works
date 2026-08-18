@@ -1,10 +1,29 @@
 import { toArchivePath, trimTrailingSlash } from "@latch-works/media-domain";
 import { and, eq, ilike, isNull, or } from "drizzle-orm";
-import { db } from "../db";
+import { type Database, db } from "../db";
 import { acquireLibraryMutationStartupLock } from "../db/library-coordination-lock";
 import { folders, libraryEntries } from "../db/schema";
 import { escapeLikePattern } from "../library/query-helpers";
 import { assertNoActiveCleanupJob, assertNoActiveSyncRun } from "./guards";
+
+/**
+ * The collaborators `softDeleteFolderSubtree` runs its prologue through. The
+ * default instance below wires the real database, lock, and guards; a suite
+ * substitutes its own to observe the prologue without a live archive.
+ */
+export interface FolderDeleteDependencies {
+  acquireLibraryMutationStartupLock(tx: Database): Promise<void>;
+  assertNoActiveCleanupJob(client: Database): Promise<void>;
+  assertNoActiveSyncRun(client: Database): Promise<void>;
+  database: Database;
+}
+
+const defaultFolderDeleteDependencies: FolderDeleteDependencies = {
+  acquireLibraryMutationStartupLock,
+  assertNoActiveCleanupJob,
+  assertNoActiveSyncRun,
+  database: db,
+};
 
 export interface FolderDeleteResult {
   entriesDeleted: number;
@@ -26,12 +45,15 @@ function assertDeletableFolderPath(path: string): void {
   }
 }
 
-export async function countEntriesUnderPath(path: string): Promise<number> {
+export async function countEntriesUnderPath(
+  path: string,
+  database: Database = db,
+): Promise<number> {
   const normalizedPath = normalizeFolderPath(path);
   assertDeletableFolderPath(normalizedPath);
 
   const pattern = `${escapeLikePattern(normalizedPath)}/%`;
-  const rows = await db
+  const rows = await database
     .select({ id: libraryEntries.id })
     .from(libraryEntries)
     .where(
@@ -56,11 +78,10 @@ export async function countEntriesUnderPath(path: string): Promise<number> {
  * scheduled between the checks and the updates; and they live with the
  * mutation so no caller can skip them.
  */
-export async function softDeleteFolderSubtree({
-  folderPaths,
-}: {
-  folderPaths: string[];
-}): Promise<FolderDeleteResult[]> {
+export async function softDeleteFolderSubtree(
+  { folderPaths }: { folderPaths: string[] },
+  dependencies: FolderDeleteDependencies = defaultFolderDeleteDependencies,
+): Promise<FolderDeleteResult[]> {
   const normalizedPaths = [...new Set(folderPaths.map(normalizeFolderPath))];
   if (normalizedPaths.length === 0) {
     throw new Error("Select at least one folder to delete.");
@@ -72,10 +93,10 @@ export async function softDeleteFolderSubtree({
 
   const now = new Date();
 
-  return db.transaction(async (tx) => {
-    await acquireLibraryMutationStartupLock(tx);
-    await assertNoActiveSyncRun(tx);
-    await assertNoActiveCleanupJob(tx);
+  return dependencies.database.transaction(async (tx) => {
+    await dependencies.acquireLibraryMutationStartupLock(tx);
+    await dependencies.assertNoActiveSyncRun(tx);
+    await dependencies.assertNoActiveCleanupJob(tx);
 
     const results: FolderDeleteResult[] = [];
 

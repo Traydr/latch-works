@@ -1,3 +1,4 @@
+import type { PageLocation } from "../collector-entry";
 import { buildStoryPdfFileName } from "../../shared/path";
 import type { GalleryCollectResponse } from "../../shared/types";
 
@@ -8,7 +9,7 @@ const AO3_AUTHOR_SELECTOR = '#workskin h3.byline.heading a[rel="author"]';
 
 export function collectArchiveOfOurOwnData(
   document: Document,
-  location: Location
+  location: PageLocation
 ): GalleryCollectResponse {
   if (location.hostname !== "archiveofourown.org" || !location.pathname.startsWith("/works/")) {
     return {
@@ -65,7 +66,7 @@ export function collectArchiveOfOurOwnData(
   };
 }
 
-function getPdfUrl(document: Document, location: Location): string | null {
+function getPdfUrl(document: Document, location: PageLocation): string | null {
   const links = Array.from(document.querySelectorAll<HTMLAnchorElement>(AO3_PDF_LINK_SELECTOR));
 
   for (const link of links) {
@@ -95,7 +96,7 @@ function getAuthors(document: Document): string {
   return getText(document.querySelector(AO3_BYLINE_SELECTOR));
 }
 
-function getWorkId(location: Location): string | null {
+function getWorkId(location: PageLocation): string | null {
   const match = location.pathname.match(/^\/works\/([^/]+)/);
   return match ? match[1] : null;
 }

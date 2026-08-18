@@ -3,10 +3,14 @@ import { DatabaseSync } from 'node:sqlite';
 import { Result, type Result as ResultType } from 'better-result';
 import { and, eq, ne, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/sqlite-proxy';
+import { z } from 'zod';
 
 import type { MediaIndexStats, MediaItem } from '../../shared/types';
-import { type DatabaseError, unexpectedDatabaseError } from '../errors';
+import { type DatabaseError, toError, unexpectedDatabaseError } from '../errors';
 import { mediaIndexTable, scanRunsTable } from './schema';
+
+/** `PRAGMA table_info` returns one row per column; only the column name is read here. */
+const TableColumnsSchema = z.array(z.object({ name: z.string() }));
 
 type MediaIndexDatabase = ReturnType<
   typeof drizzle<{
@@ -79,9 +83,7 @@ export class MediaIndexService {
               return { rows: row ? [row] : [] };
             }
             case 'values': {
-              const rows = statement
-                .all(...params)
-                .map((row) => Object.values(row as Record<string, unknown>));
+              const rows = statement.all(...params).map((row) => Object.values(row));
               return { rows };
             }
             default:
@@ -96,8 +98,8 @@ export class MediaIndexService {
         },
       );
       return Result.ok();
-    } catch (error) {
-      return Result.err(unexpectedDatabaseError('media-index-init', error));
+    } catch (cause) {
+      return Result.err(unexpectedDatabaseError('media-index-init', toError(cause)));
     }
   }
 
@@ -123,8 +125,8 @@ export class MediaIndexService {
         .get();
 
       return Result.ok(result.id);
-    } catch (error) {
-      return Result.err(unexpectedDatabaseError('media-index-start-scan', error));
+    } catch (cause) {
+      return Result.err(unexpectedDatabaseError('media-index-start-scan', toError(cause)));
     }
   }
 
@@ -183,8 +185,8 @@ export class MediaIndexService {
         );
       });
       return Result.ok();
-    } catch (error) {
-      return Result.err(unexpectedDatabaseError('media-index-upsert-batch', error));
+    } catch (cause) {
+      return Result.err(unexpectedDatabaseError('media-index-upsert-batch', toError(cause)));
     }
   }
 
@@ -210,8 +212,8 @@ export class MediaIndexService {
       });
 
       return Result.ok();
-    } catch (error) {
-      return Result.err(unexpectedDatabaseError('media-index-finish-scan', error));
+    } catch (cause) {
+      return Result.err(unexpectedDatabaseError('media-index-finish-scan', toError(cause)));
     }
   }
 
@@ -227,8 +229,8 @@ export class MediaIndexService {
         .run();
 
       return Result.ok();
-    } catch (error) {
-      return Result.err(unexpectedDatabaseError('media-index-cancel-scan', error));
+    } catch (cause) {
+      return Result.err(unexpectedDatabaseError('media-index-cancel-scan', toError(cause)));
     }
   }
 
@@ -247,8 +249,8 @@ export class MediaIndexService {
         uniqueRoots: totals?.uniqueRoots ?? 0,
         dbPath: this.dbPath,
       });
-    } catch (error) {
-      return Result.err(unexpectedDatabaseError('media-index-get-stats', error));
+    } catch (cause) {
+      return Result.err(unexpectedDatabaseError('media-index-get-stats', toError(cause)));
     }
   }
 
@@ -260,8 +262,8 @@ export class MediaIndexService {
       });
 
       return Result.ok();
-    } catch (error) {
-      return Result.err(unexpectedDatabaseError('media-index-clear', error));
+    } catch (cause) {
+      return Result.err(unexpectedDatabaseError('media-index-clear', toError(cause)));
     }
   }
 
@@ -283,9 +285,9 @@ export class MediaIndexService {
 
   private ensureColumn(tableName: string, columnName: string, columnType: string): void {
     const database = this.requireSqlite();
-    const columns = database.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{
-      name: string;
-    }>;
+    const columns = TableColumnsSchema.parse(
+      database.prepare(`PRAGMA table_info(${tableName})`).all(),
+    );
 
     if (columns.some((column) => column.name === columnName)) {
       return;

@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { isGatherOutputKind } from "./executor";
+import { GatherOutputKindSchema } from "../shared/source-catalog";
 
 describe("Gather Output selection", () => {
   it.each(["downloadable-files", "generated-story-pdf"])("accepts %s", (kind) => {
-    expect(isGatherOutputKind(kind)).toBe(true);
+    expect(GatherOutputKindSchema.safeParse(kind).success).toBe(true);
   });
 
   it("rejects unknown output implementations", () => {
-    expect(isGatherOutputKind("remote-script")).toBe(false);
-    expect(isGatherOutputKind(null)).toBe(false);
+    expect(GatherOutputKindSchema.safeParse("remote-script").success).toBe(false);
+    expect(GatherOutputKindSchema.safeParse(null).success).toBe(false);
   });
 });

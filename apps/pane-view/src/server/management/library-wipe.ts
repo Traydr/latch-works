@@ -10,11 +10,24 @@ import {
 } from "../db/schema";
 import {
   type MaintenanceJobDescriptor,
+  type MaintenanceSchedulerDependencies,
   type MaintenanceTransaction,
+  maintenanceSchedulerDependencies,
   scheduleMaintenanceJob,
 } from "./maintenance-scheduler";
 
 export const LIBRARY_WIPE_CONFIRMATION = "WIPE LIBRARY";
+
+/** The token check and the scheduler a wipe request runs through. */
+export interface LibraryWipeDependencies {
+  assertSyncApiToken(token: string): void;
+  scheduler: MaintenanceSchedulerDependencies;
+}
+
+const defaultLibraryWipeDependencies: LibraryWipeDependencies = {
+  assertSyncApiToken: assertSyncApiTokenFromBody,
+  scheduler: maintenanceSchedulerDependencies,
+};
 
 /**
  * Soft-delete every entry and folder and drop the derived rows inside the
@@ -40,21 +53,18 @@ export const libraryWipeDescriptor: MaintenanceJobDescriptor = {
   type: "library_hard_wipe",
 };
 
-export async function scheduleLibraryWipe({
-  confirmation,
-  syncToken,
-}: {
-  confirmation: string;
-  syncToken: string;
-}): Promise<{ jobId: string; phase: "scheduled" }> {
+export async function scheduleLibraryWipe(
+  { confirmation, syncToken }: { confirmation: string; syncToken: string },
+  dependencies: LibraryWipeDependencies = defaultLibraryWipeDependencies,
+): Promise<{ jobId: string; phase: "scheduled" }> {
   // Input validation stays outside the scheduler: it is about the request,
   // not about when a job may start.
   if (confirmation !== LIBRARY_WIPE_CONFIRMATION) {
     throw new Error(`Type "${LIBRARY_WIPE_CONFIRMATION}" to confirm.`);
   }
-  assertSyncApiTokenFromBody(syncToken);
+  dependencies.assertSyncApiToken(syncToken);
 
-  const { jobId } = await scheduleMaintenanceJob(libraryWipeDescriptor);
+  const { jobId } = await scheduleMaintenanceJob(libraryWipeDescriptor, dependencies.scheduler);
   if (!jobId) {
     throw new Error("Unable to schedule library wipe.");
   }

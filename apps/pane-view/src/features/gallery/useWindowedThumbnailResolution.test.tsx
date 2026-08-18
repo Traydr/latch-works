@@ -3,27 +3,26 @@
 import { act, createElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { GalleryThumbnailResolver } from "./batched-thumbnail-resolver";
 import type { GalleryBrowseEntry } from "./gallery-browse-entry";
 import { mediaItem } from "./gallery-session-harness";
 import { useWindowedThumbnailResolution } from "./useWindowedThumbnailResolution";
 
-const mocks = vi.hoisted(() => ({
-  getNextPendingThumbnailRetryMs: vi.fn(),
-  hasEligibleGalleryThumbnailRequests: vi.fn(),
-  resolveGalleryThumbnailsBatch: vi.fn(),
-}));
+/** Stands in for the shared batching resolver; the hook only drives these four calls. */
+const mocks = {
+  getNextPendingThumbnailRetryMs:
+    vi.fn<GalleryThumbnailResolver["getNextPendingThumbnailRetryMs"]>(),
+  hasEligibleGalleryThumbnailRequests:
+    vi.fn<GalleryThumbnailResolver["hasEligibleGalleryThumbnailRequests"]>(),
+  resolveGalleryThumbnailsBatch: vi.fn<GalleryThumbnailResolver["resolveGalleryThumbnailsBatch"]>(),
+};
 
-vi.mock("./batched-thumbnail-resolver", () => ({
+const resolver: GalleryThumbnailResolver = {
   getNextPendingThumbnailRetryMs: mocks.getNextPendingThumbnailRetryMs,
   hasEligibleGalleryThumbnailRequests: mocks.hasEligibleGalleryThumbnailRequests,
-  readCachedGalleryThumbnailState: vi.fn(() => ({ urls: {} })),
+  readCachedGalleryThumbnailState: () => ({ urls: {} }),
   resolveGalleryThumbnailsBatch: mocks.resolveGalleryThumbnailsBatch,
-}));
-
-vi.mock("./gallery-page-helpers", () => ({
-  dedupeThumbnailRequests: vi.fn((requests) => requests),
-  supportsGalleryThumbnail: vi.fn(() => true),
-}));
+};
 
 interface WindowedThumbnailHarness {
   setEntries: (mediaIds: string[]) => void;
@@ -38,7 +37,7 @@ function renderHook(resetKey: string): WindowedThumbnailHarness {
   const container = document.createElement("div");
 
   function Host(): ReactNode {
-    useWindowedThumbnailResolution(currentResetKey, currentEntries);
+    useWindowedThumbnailResolution(currentResetKey, currentEntries, resolver);
     return null;
   }
 

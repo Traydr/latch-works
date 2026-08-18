@@ -2,6 +2,9 @@ import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 
+import type { ZodType } from 'zod';
+import { z } from 'zod';
+
 import type { VideoProbeMetadata } from '../../shared/types';
 import { resolveBinaryPath } from './mediaBinaryResolver';
 
@@ -30,11 +33,19 @@ const MAX_PROBE_CACHE_ENTRIES = 2000;
 const MAX_FRAME_EXTRACTION_FAILURE_LOGS = 3;
 const nativeRequire = createRequire(__filename);
 
-interface FFProbeStaticModule {
-  path: string;
-}
+/** `ffmpeg-static` exports the binary path directly or as a CommonJS default export. */
+const BinaryPathModuleSchema = z.union([
+  z.string(),
+  z.object({ default: z.string() }).transform((module) => module.default),
+]);
 
-function tryRequireFromPackagedNodeModules<T>(packageName: string): T | null {
+/** `ffprobe-static` exports `{ path }`, directly or as a CommonJS default export. */
+const FfprobeModuleSchema = z.union([
+  z.object({ path: z.string() }).transform((module) => module.path),
+  z.object({ default: z.object({ path: z.string() }) }).transform((module) => module.default.path),
+]);
+
+function requireFromPackagedNodeModules<T>(packageName: string, schema: ZodType<T>): T | null {
   if (!process.resourcesPath) {
     return null;
   }
@@ -43,7 +54,8 @@ function tryRequireFromPackagedNodeModules<T>(packageName: string): T | null {
     const packagedRequire = createRequire(
       path.join(process.resourcesPath, 'node_modules', packageName, 'package.json'),
     );
-    return packagedRequire(packageName) as T;
+    const parsed = schema.safeParse(packagedRequire(packageName));
+    return parsed.success ? parsed.data : null;
   } catch {
     return null;
   }
@@ -249,24 +261,10 @@ export class MediaToolsService {
 
   private loadStringModule(moduleName: string): string | null {
     try {
-      const moduleValue = nativeRequire(moduleName) as string | { default?: string };
-      if (typeof moduleValue === 'string') {
-        return moduleValue;
-      }
-      return typeof moduleValue.default === 'string' ? moduleValue.default : null;
+      const parsed = BinaryPathModuleSchema.safeParse(nativeRequire(moduleName));
+      return parsed.success ? parsed.data : null;
     } catch {
-      const fallbackModuleValue = tryRequireFromPackagedNodeModules<string | { default?: string }>(
-        moduleName,
-      );
-      if (!fallbackModuleValue) {
-        return null;
-      }
-
-      if (typeof fallbackModuleValue === 'string') {
-        return fallbackModuleValue;
-      }
-
-      return typeof fallbackModuleValue.default === 'string' ? fallbackModuleValue.default : null;
+      return requireFromPackagedNodeModules(moduleName, BinaryPathModuleSchema);
     }
   }
 
@@ -276,22 +274,10 @@ export class MediaToolsService {
 
   private loadFfprobePath(): string | null {
     try {
-      const moduleValue = nativeRequire('ffprobe-static') as
-        | FFProbeStaticModule
-        | { default?: FFProbeStaticModule };
-      const resolvedModule = 'path' in moduleValue ? moduleValue : moduleValue.default;
-      return resolvedModule?.path ?? null;
+      const parsed = FfprobeModuleSchema.safeParse(nativeRequire('ffprobe-static'));
+      return parsed.success ? parsed.data : null;
     } catch {
-      const fallbackModuleValue = tryRequireFromPackagedNodeModules<
-        FFProbeStaticModule | { default?: FFProbeStaticModule }
-      >('ffprobe-static');
-      if (!fallbackModuleValue) {
-        return null;
-      }
-
-      const resolvedModule =
-        'path' in fallbackModuleValue ? fallbackModuleValue : fallbackModuleValue.default;
-      return resolvedModule?.path ?? null;
+      return requireFromPackagedNodeModules('ffprobe-static', FfprobeModuleSchema);
     }
   }
 
@@ -400,7 +386,7 @@ export class MediaToolsService {
           }
         : null;
 
-      if (abortSignal) {
+      if (abortSignal && abortHandler) {
         if (abortSignal.aborted) {
           clearTimeout(timeout);
           resolve({
@@ -412,7 +398,7 @@ export class MediaToolsService {
           return;
         }
 
-        abortSignal.addEventListener('abort', abortHandler as () => void, { once: true });
+        abortSignal.addEventListener('abort', abortHandler, { once: true });
       }
 
       child.stdout.on('data', (data: Buffer) => {

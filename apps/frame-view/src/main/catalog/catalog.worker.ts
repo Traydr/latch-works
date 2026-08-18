@@ -1,4 +1,5 @@
-import type { CatalogWorkerRequest, CatalogWorkerResponse } from '../../shared/catalog';
+import type { CatalogWorkerResponse } from '../../shared/catalog';
+import { CatalogWorkerRequestSchema } from '../../shared/contracts';
 import { CatalogRuntime } from './CatalogRuntime';
 
 const { parentPort } = process;
@@ -24,7 +25,12 @@ const runtime = new CatalogRuntime({
 });
 
 parentPort.on('message', (message) => {
-  const request = message.data as CatalogWorkerRequest;
+  const parsedRequest = CatalogWorkerRequestSchema.safeParse(message.data);
+  if (!parsedRequest.success) {
+    return;
+  }
+
+  const request = parsedRequest.data;
 
   void runtime.handleRequest(request).catch((error) => {
     const response: CatalogWorkerResponse = {

@@ -1,3 +1,4 @@
+import type { PageLocation } from "../collector-entry";
 import type { GalleryCollectResponse, GalleryImage } from "../../shared/types";
 import { lowercaseFirstAscii } from "../../shared/path";
 import {
@@ -7,6 +8,7 @@ import {
   buildXFieldToggles,
   extractGraphqlMedia,
   parseXMedia,
+  XTweetDetailResponseSchema,
   type ResolveXMediaMessage,
   type ResolveXMediaResponse,
   type ResolvedXMedia,
@@ -17,7 +19,7 @@ type XMediaResolver = (message: ResolveXMediaMessage) => Promise<ResolveXMediaRe
 
 export async function collectXData(
   document: Document,
-  location: Location,
+  location: PageLocation,
   resolveMedia: XMediaResolver = resolveXMedia
 ): Promise<GalleryCollectResponse> {
   const post = getXPost(location);
@@ -142,7 +144,7 @@ function normalizeXPhotoUrl(urlValue: string): { originalUrl: string; fileName: 
   };
 }
 
-function getXPost(location: Location): { username: string; id: string } | null {
+function getXPost(location: PageLocation): { username: string; id: string } | null {
   const match = location.pathname.match(/^\/([^/]+)\/status\/(\d+)/i);
   return match ? { username: decodeURIComponent(match[1]), id: match[2] } : null;
 }
@@ -163,7 +165,7 @@ function getXMainScriptUrl(document: Document): string | null {
   );
 }
 
-function getXFeatureValues(document: Document): Record<string, boolean> {
+function getXFeatureValues(document: Document) {
   const values: Record<string, boolean> = {};
   const pattern = /["']?([A-Za-z0-9_]+)["']?\s*:\s*\{\s*value\s*:\s*(true|false)/g;
 
@@ -244,7 +246,9 @@ async function resolveAuthenticatedXMedia(
       return [];
     }
 
-    return parseXMedia(extractGraphqlMedia(await response.json(), message.tweetId));
+    const body = XTweetDetailResponseSchema.parse(await response.json());
+
+    return parseXMedia(extractGraphqlMedia(body, message.tweetId));
   } catch {
     return [];
   }

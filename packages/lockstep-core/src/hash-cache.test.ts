@@ -46,6 +46,69 @@ describe("HashCache", () => {
     expect(loaded.cache.get("photos/a.jpg", { mtimeMs: 1, size: 1 })).toBeUndefined();
   });
 
+  it("loads a cache file written in the on-disk format", async () => {
+    tempDir = await mkdtemp(path.join(os.tmpdir(), "lockstep-hash-cache-"));
+    const sourceRoot = path.join(tempDir, "archive");
+    const filePath = hashCachePath(sourceRoot, tempDir);
+    await writeFile(
+      filePath,
+      `${JSON.stringify(
+        {
+          entries: [
+            {
+              ctimeMs: 8,
+              mtimeMs: 7.5,
+              path: "photos/a.jpg",
+              sha256: "A".repeat(64),
+              size: 6,
+            },
+          ],
+          sourceRoot: path.resolve(sourceRoot),
+          version: 1,
+        },
+        null,
+        2,
+      )}\n`,
+      "utf-8",
+    );
+
+    const loaded = await loadHashCache({ cacheRoot: tempDir, sourceRoot });
+
+    expect(loaded.warning).toBeUndefined();
+    expect(loaded.cache.get("photos/a.jpg", { ctimeMs: 8, mtimeMs: 7, size: 6 })).toBe(
+      "a".repeat(64),
+    );
+  });
+
+  it("warns and rebuilds on an unsupported version or an invalid entry", async () => {
+    tempDir = await mkdtemp(path.join(os.tmpdir(), "lockstep-hash-cache-"));
+    const sourceRoot = path.join(tempDir, "archive");
+    const filePath = hashCachePath(sourceRoot, tempDir);
+    const entry = { mtimeMs: 7, path: "photos/a.jpg", sha256: "a".repeat(64), size: 6 };
+
+    await writeFile(
+      filePath,
+      JSON.stringify({ entries: [entry], sourceRoot: path.resolve(sourceRoot), version: 2 }),
+      "utf-8",
+    );
+    const unsupportedVersion = await loadHashCache({ cacheRoot: tempDir, sourceRoot });
+    expect(unsupportedVersion.warning).toContain("will be rebuilt");
+    expect(unsupportedVersion.cache.get("photos/a.jpg", { mtimeMs: 7, size: 6 })).toBeUndefined();
+
+    await writeFile(
+      filePath,
+      JSON.stringify({
+        entries: [{ ...entry, sha256: "not-a-digest" }],
+        sourceRoot: path.resolve(sourceRoot),
+        version: 1,
+      }),
+      "utf-8",
+    );
+    const invalidEntry = await loadHashCache({ cacheRoot: tempDir, sourceRoot });
+    expect(invalidEntry.warning).toContain("will be rebuilt");
+    expect(invalidEntry.cache.get("photos/a.jpg", { mtimeMs: 7, size: 6 })).toBeUndefined();
+  });
+
   it("prunes entries only when explicitly retained", async () => {
     tempDir = await mkdtemp(path.join(os.tmpdir(), "lockstep-hash-cache-"));
     const loaded = await loadHashCache({ cacheRoot: tempDir, sourceRoot: "/archive" });

@@ -1,6 +1,7 @@
 import { Result, type Result as ResultType, TaggedError } from "better-result";
 import type { ZodType } from "zod";
 
+import type { JsonValue } from "../shared/contracts";
 import { serializeIpcResult } from "../shared/ipc";
 import type { IpcErrorPayload } from "../shared/types";
 
@@ -23,9 +24,14 @@ export class RunError extends TaggedError("RunError")<{
 
 type AppError = ValidationError | FileSystemError | RunError;
 
+/** Thrown values are `unknown` by design; wrap anything that is not already an `Error`. */
+export function toError(cause: unknown): Error {
+  return cause instanceof Error ? cause : new Error(String(cause), { cause });
+}
+
 export function parseWithSchema<T>(
   schema: ZodType<T>,
-  payload: unknown,
+  payload: JsonValue,
   operation: string,
 ): ResultType<T, ValidationError> {
   const parsed = schema.safeParse(payload);
@@ -44,13 +50,12 @@ export function parseWithSchema<T>(
 
 export function unexpectedFileSystemError(
   operation: string,
-  error: unknown,
+  error: Error,
   targetPath?: string,
 ): FileSystemError {
-  const message = error instanceof Error ? error.message : `Unexpected error: ${String(error)}`;
   return new FileSystemError({
     operation,
-    message,
+    message: error.message,
     path: targetPath,
   });
 }

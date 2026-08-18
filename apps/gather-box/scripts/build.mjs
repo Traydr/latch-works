@@ -354,7 +354,8 @@ function enforceBudgets(report, metafiles) {
     "total JS": 1_800_000,
     "total dist": 8_000_000
   };
-  for (const source of sourceCatalog) budgets[`collector ${source.key} JS`] = 40_000;
+  // Collectors parse their page and message inputs with zod/mini, which sets a ~35 kB floor.
+  for (const source of sourceCatalog) budgets[`collector ${source.key} JS`] = 48_000;
   const failures = Object.entries(budgets).filter(
     ([name, budget]) => report.categories[name].raw > budget
   );

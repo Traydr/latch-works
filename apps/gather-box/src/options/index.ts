@@ -1,11 +1,15 @@
+import * as z from "zod/mini";
 import {
+  CredentialsChoiceSchema,
+  CredentialsModeSchema,
+  DEFAULT_SETTINGS,
   loadSettings,
   saveSettings,
   type CredentialsChoice,
-  type CredentialsMode,
   type GatherBoxSettings
 } from "../shared/settings";
 import { LISTED_SITES, type SiteKey } from "../shared/sites";
+import { getGatherSource } from "../shared/source-catalog";
 
 interface SettingsFormElements {
   form: HTMLFormElement;
@@ -120,7 +124,9 @@ async function handleSave(elements: SettingsFormElements): Promise<void> {
     verboseLogging: elements.verboseLogging.checked,
     pageShortcutsEnabled: elements.pageShortcutsEnabled.checked,
     useGlobalFolder: folderMode === "global",
-    credentialsMode: elements.credentialsMode.value as CredentialsMode,
+    credentialsMode: z
+      .catch(CredentialsModeSchema, DEFAULT_SETTINGS.credentialsMode)
+      .parse(elements.credentialsMode.value),
     credentialsPerSite: readPerSiteCredentials(elements.perSiteCredentials)
   };
 
@@ -131,15 +137,15 @@ async function handleSave(elements: SettingsFormElements): Promise<void> {
   }, 2500);
 }
 
-function readPerSiteCredentials(
-  container: HTMLElement
-): Partial<Record<SiteKey, CredentialsChoice>> {
+function readPerSiteCredentials(container: HTMLElement) {
   const result: Partial<Record<SiteKey, CredentialsChoice>> = {};
 
   for (const select of container.querySelectorAll<HTMLSelectElement>("select[data-site-key]")) {
-    const siteKey = select.dataset.siteKey as SiteKey;
-    if (select.value === "include" || select.value === "omit") {
-      result[siteKey] = select.value;
+    // The option rows are rendered from GATHER_SOURCES, so every data-site-key is a catalog key.
+    const source = getGatherSource(select.dataset.siteKey ?? "");
+    const choice = CredentialsChoiceSchema.safeParse(select.value);
+    if (source && choice.success) {
+      result[source.key] = choice.data;
     }
   }
 

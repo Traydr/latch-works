@@ -15,7 +15,10 @@ import {
   useRef,
   useState,
 } from "react";
-import { useLibraryViewerState } from "@/features/viewer/use-library-viewer-state";
+import {
+  useLibraryViewerState,
+  type ViewerStateStore,
+} from "@/features/viewer/use-library-viewer-state";
 import {
   resolveVideoResumeSeconds,
   videoSecondsToPositionMs,
@@ -25,7 +28,7 @@ import { useViewerChromeIdle } from "@/hooks/use-viewer-chrome-idle";
 import { isTextInputTarget } from "./browse-search";
 import { GALLERY_PREVIEW_SIZE } from "./gallery-preview-size";
 import { PaneViewImage } from "./PaneViewImage";
-import { useResolvedMediaUrl } from "./useResolvedMediaUrl";
+import { type ResolvedMediaUrlCache, useResolvedMediaUrl } from "./useResolvedMediaUrl";
 
 const PdfViewer = lazy(() =>
   import("@/features/viewer/PdfViewer").then((module) => ({ default: module.PdfViewer })),
@@ -33,6 +36,8 @@ const PdfViewer = lazy(() =>
 
 export interface MediaViewerSessionProps {
   autoplayVideos: boolean;
+  /** Overrides the shared URL cache; tests inject a cache with a fake resolver. */
+  cache?: ResolvedMediaUrlCache;
   canStepBackward: boolean;
   canStepForward: boolean;
   item: MediaItem;
@@ -40,6 +45,8 @@ export interface MediaViewerSessionProps {
   onClose: () => void;
   onStep: (delta: -1 | 1) => void;
   rememberViewerPosition: boolean;
+  /** Overrides the viewer-state server calls; tests inject an in-memory store. */
+  viewerStateStore?: ViewerStateStore;
 }
 
 const VIEWER_VOLUME_STORAGE_KEY = "pane-view.viewer.volume";
@@ -71,6 +78,7 @@ function formatDuration(ms: number): string {
 
 function useMediaViewerSession({
   autoplayVideos,
+  cache,
   canStepBackward,
   canStepForward,
   item,
@@ -78,6 +86,7 @@ function useMediaViewerSession({
   onClose,
   onStep,
   rememberViewerPosition,
+  viewerStateStore,
 }: MediaViewerSessionProps) {
   const isMobile = useIsMobile();
   const isVideoItem = item.mediaType === "video";
@@ -101,6 +110,7 @@ function useMediaViewerSession({
     pinned: chromePinned,
   });
   const videoDelivery = useResolvedMediaUrl({
+    cache,
     mediaId: item.mediaType === "video" ? item.id : undefined,
     variant: "original",
   });
@@ -112,7 +122,7 @@ function useMediaViewerSession({
     flushSave,
     scheduleSave,
     snapshot: viewerState,
-  } = useLibraryViewerState(viewerStateSubjectId);
+  } = useLibraryViewerState(viewerStateSubjectId, viewerStateStore);
   const [resumePdfPage, setResumePdfPage] = useState<number | undefined>();
 
   useEffect(() => {
@@ -384,6 +394,7 @@ function useMediaViewerSession({
   return {
     applySpeed,
     autoplayVideos,
+    cache,
     canSeek,
     canStepBackward,
     canStepForward,
@@ -594,6 +605,7 @@ function ViewerMedia(): JSX.Element {
       ) : (
         <PaneViewImage
           alt={item.name}
+          cache={model.cache}
           className="max-h-full max-w-full object-contain"
           layout="fullWidth"
           mediaId={item.id}

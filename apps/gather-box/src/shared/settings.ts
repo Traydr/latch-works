@@ -1,8 +1,12 @@
+import * as z from "zod/mini";
 import type { SiteKey } from "./sites";
 import { getGatherSource } from "./source-catalog";
 
-export type CredentialsMode = "auto" | "always" | "never" | "perSite";
-export type CredentialsChoice = "include" | "omit";
+export const CredentialsModeSchema = z.enum(["auto", "always", "never", "perSite"]);
+export type CredentialsMode = z.infer<typeof CredentialsModeSchema>;
+
+export const CredentialsChoiceSchema = z.enum(["include", "omit"]);
+export type CredentialsChoice = z.infer<typeof CredentialsChoiceSchema>;
 
 export interface GatherBoxSettings {
   downloadConcurrency: number;
@@ -24,63 +28,69 @@ export const DEFAULT_SETTINGS: GatherBoxSettings = {
   credentialsPerSite: {}
 };
 
+/**
+ * Settings survive extension upgrades, so no field can reject the record: each one falls back to
+ * its default. `shortcutsEnabled` is the pre-rename name of `pageShortcutsEnabled` and is only
+ * consulted when the current name is absent.
+ */
+export const GatherBoxSettingsSchema = z.catch(
+  z.pipe(
+    z.object({
+      downloadConcurrency: z.pipe(
+        z.catch(z.coerce.number(), DEFAULT_SETTINGS.downloadConcurrency),
+        z.transform((value) => Math.min(16, Math.max(1, Math.round(value))))
+      ),
+      mediaCompatibilityMode: z.catch(z.coerce.boolean(), false),
+      useGlobalFolder: z.catch(z.coerce.boolean(), false),
+      verboseLogging: z.catch(z.coerce.boolean(), false),
+      pageShortcutsEnabled: z.optional(z.coerce.boolean()),
+      shortcutsEnabled: z.optional(z.coerce.boolean()),
+      credentialsMode: z.catch(CredentialsModeSchema, DEFAULT_SETTINGS.credentialsMode),
+      credentialsPerSite: z.catch(
+        z.record(z.string(), z.catch(z.nullable(CredentialsChoiceSchema), null)),
+        {}
+      )
+    }),
+    z.transform(
+      (stored): GatherBoxSettings => ({
+        downloadConcurrency: stored.downloadConcurrency,
+        mediaCompatibilityMode: stored.mediaCompatibilityMode,
+        useGlobalFolder: stored.useGlobalFolder,
+        verboseLogging: stored.verboseLogging,
+        pageShortcutsEnabled:
+          stored.pageShortcutsEnabled ??
+          stored.shortcutsEnabled ??
+          DEFAULT_SETTINGS.pageShortcutsEnabled,
+        credentialsMode: stored.credentialsMode,
+        credentialsPerSite: keepKnownSources(stored.credentialsPerSite)
+      })
+    )
+  ),
+  () => ({ ...DEFAULT_SETTINGS, credentialsPerSite: {} })
+);
+
 export const SETTINGS_KEY = "gather-box-settings";
 
 export async function loadSettings(): Promise<GatherBoxSettings> {
   const stored = await chrome.storage.sync.get(SETTINGS_KEY);
-  const value = stored[SETTINGS_KEY];
 
-  if (!value || typeof value !== "object") {
-    return { ...DEFAULT_SETTINGS };
-  }
-
-  return normalizeSettings(value as Partial<GatherBoxSettings>);
+  return GatherBoxSettingsSchema.parse(stored[SETTINGS_KEY]);
 }
 
 export async function saveSettings(settings: GatherBoxSettings): Promise<void> {
-  await chrome.storage.sync.set({ [SETTINGS_KEY]: normalizeSettings(settings) });
+  await chrome.storage.sync.set({ [SETTINGS_KEY]: GatherBoxSettingsSchema.parse(settings) });
 }
 
-export function normalizeSettings(settings: Partial<GatherBoxSettings>): GatherBoxSettings {
-  const legacy = settings as Partial<GatherBoxSettings> & { shortcutsEnabled?: unknown };
-  const concurrency = Number(settings.downloadConcurrency ?? DEFAULT_SETTINGS.downloadConcurrency);
+/** Per-site overrides for sources the catalog no longer lists are dropped on read. */
+function keepKnownSources(choices: Record<string, CredentialsChoice | null>) {
+  const known: Partial<Record<SiteKey, CredentialsChoice>> = {};
 
-  return {
-    downloadConcurrency: Number.isFinite(concurrency)
-      ? Math.min(16, Math.max(1, Math.round(concurrency)))
-      : DEFAULT_SETTINGS.downloadConcurrency,
-    mediaCompatibilityMode: Boolean(settings.mediaCompatibilityMode),
-    useGlobalFolder: Boolean(settings.useGlobalFolder),
-    verboseLogging: Boolean(settings.verboseLogging),
-    pageShortcutsEnabled:
-      settings.pageShortcutsEnabled === undefined && legacy.shortcutsEnabled === undefined
-        ? DEFAULT_SETTINGS.pageShortcutsEnabled
-        : Boolean(settings.pageShortcutsEnabled ?? legacy.shortcutsEnabled),
-    credentialsMode: isCredentialsMode(settings.credentialsMode)
-      ? settings.credentialsMode
-      : DEFAULT_SETTINGS.credentialsMode,
-    credentialsPerSite: sanitizeCredentialsPerSite(settings.credentialsPerSite)
-  };
-}
-
-function isCredentialsMode(value: unknown): value is CredentialsMode {
-  return value === "auto" || value === "always" || value === "never" || value === "perSite";
-}
-
-function sanitizeCredentialsPerSite(
-  value: Partial<Record<SiteKey, CredentialsChoice>> | undefined
-): Partial<Record<SiteKey, CredentialsChoice>> {
-  if (!value || typeof value !== "object") {
-    return {};
-  }
-
-  const sanitized: Partial<Record<SiteKey, CredentialsChoice>> = {};
-
-  for (const [siteKey, choice] of Object.entries(value)) {
-    if ((choice === "include" || choice === "omit") && getGatherSource(siteKey)) {
-      sanitized[siteKey as SiteKey] = choice;
+  for (const [siteKey, choice] of Object.entries(choices)) {
+    const source = getGatherSource(siteKey);
+    if (choice !== null && source !== null) {
+      known[source.key] = choice;
     }
   }
 
-  return sanitized;
+  return known;
 }

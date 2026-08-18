@@ -1,6 +1,6 @@
 import type { GallerySortMode } from "@latch-works/media-domain";
 import { buildComicEntries } from "@latch-works/media-domain";
-import { afterAll, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 /**
  * Executed-SQL proof of the gallery ordering contract (Plan 051). Every test
@@ -11,22 +11,20 @@ import { afterAll, describe, expect, it, vi } from "vitest";
  * key). The oracle is a test double, not production code.
  */
 
-const harness = vi.hoisted((): TestDatabaseHarness => ({ handle: null }));
-
-vi.mock("../db", async () => {
-  const { createTestDatabase } = await import("./test-db");
-  const { buildLibraryFixture, seedLibraryFixture } = await import("./library-fixture");
-  const handle = await createTestDatabase();
-  await seedLibraryFixture(handle.db, buildLibraryFixture());
-  harness.handle = handle;
-  return { db: handle.db };
-});
-
 import { readDatabaseComicListing, readDatabaseGalleryComic } from "./comic-listing";
 import { type GalleryRandomSeed, galleryRandomOrderKey } from "./gallery-order";
-import { buildLibraryFixture, FIXTURE_SEARCH_TERM, type FixtureEntry } from "./library-fixture";
+import {
+  buildLibraryFixture,
+  FIXTURE_SEARCH_TERM,
+  type FixtureEntry,
+  seedLibraryFixture,
+} from "./library-fixture";
 import { readDatabaseGalleryListing } from "./repository";
-import type { TestDatabaseHandle, TestDatabaseHarness } from "./test-db";
+import { type TestDatabaseHandle, testDatabaseForSuite } from "./test-db";
+
+const testDatabase = testDatabaseForSuite((database) =>
+  seedLibraryFixture(database, buildLibraryFixture()),
+);
 
 /** A page's cursor when the test needs one to continue from. */
 function mustCursor(cursor: string | null): string {
@@ -36,17 +34,10 @@ function mustCursor(cursor: string | null): string {
   return cursor;
 }
 
-/** The seeded pglite client; the `../db` mock above creates it before any test runs. */
+/** The seeded pglite client, for the tests that assert on raw SQL. */
 function testClient(): TestDatabaseHandle["client"] {
-  if (!harness.handle) {
-    throw new Error("test database was not created");
-  }
-  return harness.handle.client;
+  return testDatabase().client;
 }
-
-afterAll(async () => {
-  await harness.handle?.close();
-});
 
 const fixture = buildLibraryFixture();
 const liveEntries = fixture.entries.filter((entry) => !entry.deleted);
@@ -224,7 +215,7 @@ async function collectMediaPages(request: OracleMediaRequest, limit: number) {
   const pages: Awaited<ReturnType<typeof readDatabaseGalleryListing>>[] = [];
   let cursor: string | undefined;
   for (let guard = 0; guard < 500; guard += 1) {
-    const page = await readDatabaseGalleryListing({ ...request, cursor, limit });
+    const page = await readDatabaseGalleryListing({ ...request, cursor, limit }, testDatabase().db);
     pages.push(page);
     if (!page.page.hasMore) break;
     if (!page.page.cursor || page.page.cursor === cursor) {
@@ -239,7 +230,7 @@ async function collectComicPages(request: OracleComicRequest, limit: number) {
   const pages: Awaited<ReturnType<typeof readDatabaseComicListing>>[] = [];
   let cursor: string | undefined;
   for (let guard = 0; guard < 500; guard += 1) {
-    const page = await readDatabaseComicListing({ ...request, cursor, limit });
+    const page = await readDatabaseComicListing({ ...request, cursor, limit }, testDatabase().db);
     pages.push(page);
     if (!page.page.hasMore) break;
     if (!page.page.cursor || page.page.cursor === cursor) {
@@ -405,51 +396,69 @@ describe("media listing follows one seeded order across pages", () => {
 
   it("rejects a cursor issued under another seed and restarts from page 1", async () => {
     const scope = MEDIA_SCOPES["recursive subtree"];
-    const underA = await readDatabaseGalleryListing({
-      ...scope,
-      limit: 7,
-      randomSeed: SEED_A,
-      sortMode: "random",
-    });
+    const underA = await readDatabaseGalleryListing(
+      {
+        ...scope,
+        limit: 7,
+        randomSeed: SEED_A,
+        sortMode: "random",
+      },
+      testDatabase().db,
+    );
     expect(underA.page.cursor).not.toBeNull();
 
-    const spliced = await readDatabaseGalleryListing({
-      ...scope,
-      cursor: mustCursor(underA.page.cursor),
-      limit: 7,
-      randomSeed: SEED_B,
-      sortMode: "random",
-    });
-    const firstUnderB = await readDatabaseGalleryListing({
-      ...scope,
-      limit: 7,
-      randomSeed: SEED_B,
-      sortMode: "random",
-    });
+    const spliced = await readDatabaseGalleryListing(
+      {
+        ...scope,
+        cursor: mustCursor(underA.page.cursor),
+        limit: 7,
+        randomSeed: SEED_B,
+        sortMode: "random",
+      },
+      testDatabase().db,
+    );
+    const firstUnderB = await readDatabaseGalleryListing(
+      {
+        ...scope,
+        limit: 7,
+        randomSeed: SEED_B,
+        sortMode: "random",
+      },
+      testDatabase().db,
+    );
     expect(spliced.media.map((item) => item.id)).toEqual(firstUnderB.media.map((item) => item.id));
   });
 
   it("rejects a cursor issued under another sort mode", async () => {
     const scope = MEDIA_SCOPES["recursive subtree"];
-    const byName = await readDatabaseGalleryListing({
-      ...scope,
-      limit: 7,
-      randomSeed: SEED_A,
-      sortMode: "name-asc",
-    });
-    const spliced = await readDatabaseGalleryListing({
-      ...scope,
-      cursor: mustCursor(byName.page.cursor),
-      limit: 7,
-      randomSeed: SEED_A,
-      sortMode: "date-newest",
-    });
-    const firstByDate = await readDatabaseGalleryListing({
-      ...scope,
-      limit: 7,
-      randomSeed: SEED_A,
-      sortMode: "date-newest",
-    });
+    const byName = await readDatabaseGalleryListing(
+      {
+        ...scope,
+        limit: 7,
+        randomSeed: SEED_A,
+        sortMode: "name-asc",
+      },
+      testDatabase().db,
+    );
+    const spliced = await readDatabaseGalleryListing(
+      {
+        ...scope,
+        cursor: mustCursor(byName.page.cursor),
+        limit: 7,
+        randomSeed: SEED_A,
+        sortMode: "date-newest",
+      },
+      testDatabase().db,
+    );
+    const firstByDate = await readDatabaseGalleryListing(
+      {
+        ...scope,
+        limit: 7,
+        randomSeed: SEED_A,
+        sortMode: "date-newest",
+      },
+      testDatabase().db,
+    );
     expect(spliced.media.map((item) => item.id)).toEqual(firstByDate.media.map((item) => item.id));
   });
 
@@ -472,18 +481,24 @@ describe("media listing follows one seeded order across pages", () => {
 
   it("changes the whole permutation, first page included, when the seed changes", async () => {
     const scope = MEDIA_SCOPES["recursive subtree"];
-    const underA = await readDatabaseGalleryListing({
-      ...scope,
-      limit: 48,
-      randomSeed: SEED_A,
-      sortMode: "random",
-    });
-    const underB = await readDatabaseGalleryListing({
-      ...scope,
-      limit: 48,
-      randomSeed: SEED_B,
-      sortMode: "random",
-    });
+    const underA = await readDatabaseGalleryListing(
+      {
+        ...scope,
+        limit: 48,
+        randomSeed: SEED_A,
+        sortMode: "random",
+      },
+      testDatabase().db,
+    );
+    const underB = await readDatabaseGalleryListing(
+      {
+        ...scope,
+        limit: 48,
+        randomSeed: SEED_B,
+        sortMode: "random",
+      },
+      testDatabase().db,
+    );
     expect(underA.media.map((item) => item.id)).not.toEqual(underB.media.map((item) => item.id));
   });
 });
@@ -593,7 +608,10 @@ describe("comic listing serves summaries in one seeded order across pages", () =
     expect(comics.map((comic) => comic.id)).toContain("beta/set-009");
     expect(comics.some((comic) => comic.id === "alpha")).toBe(false);
     for (const comic of comics) {
-      const opened = await readDatabaseGalleryComic({ ...request, comicId: comic.id });
+      const opened = await readDatabaseGalleryComic(
+        { ...request, comicId: comic.id },
+        testDatabase().db,
+      );
       expect(opened?.pages.length).toBe(comic.pageCount);
       expect(opened?.cover.id).toBe(comic.cover.id);
     }
@@ -615,47 +633,62 @@ describe("comic listing serves summaries in one seeded order across pages", () =
 
   it("rejects a comic cursor issued under another seed or for media", async () => {
     const scope = COMIC_SCOPES["beta subtree"];
-    const underA = await readDatabaseComicListing({
-      ...scope,
-      limit: 7,
-      randomSeed: SEED_A,
-      sortMode: "random",
-    });
-    const spliced = await readDatabaseComicListing({
-      ...scope,
-      cursor: mustCursor(underA.page.cursor),
-      limit: 7,
-      randomSeed: SEED_B,
-      sortMode: "random",
-    });
-    const firstUnderB = await readDatabaseComicListing({
-      ...scope,
-      limit: 7,
-      randomSeed: SEED_B,
-      sortMode: "random",
-    });
+    const underA = await readDatabaseComicListing(
+      {
+        ...scope,
+        limit: 7,
+        randomSeed: SEED_A,
+        sortMode: "random",
+      },
+      testDatabase().db,
+    );
+    const spliced = await readDatabaseComicListing(
+      {
+        ...scope,
+        cursor: mustCursor(underA.page.cursor),
+        limit: 7,
+        randomSeed: SEED_B,
+        sortMode: "random",
+      },
+      testDatabase().db,
+    );
+    const firstUnderB = await readDatabaseComicListing(
+      {
+        ...scope,
+        limit: 7,
+        randomSeed: SEED_B,
+        sortMode: "random",
+      },
+      testDatabase().db,
+    );
     expect(spliced.comics.map((comic) => comic.id)).toEqual(
       firstUnderB.comics.map((comic) => comic.id),
     );
 
     const mediaCursor = mustCursor(
       (
-        await readDatabaseGalleryListing({
-          ...scope,
-          limit: 7,
-          randomSeed: SEED_A,
-          recursive: true,
-          sortMode: "random",
-        })
+        await readDatabaseGalleryListing(
+          {
+            ...scope,
+            limit: 7,
+            randomSeed: SEED_A,
+            recursive: true,
+            sortMode: "random",
+          },
+          testDatabase().db,
+        )
       ).page.cursor,
     );
-    const acrossKinds = await readDatabaseComicListing({
-      ...scope,
-      cursor: mediaCursor,
-      limit: 7,
-      randomSeed: SEED_A,
-      sortMode: "random",
-    });
+    const acrossKinds = await readDatabaseComicListing(
+      {
+        ...scope,
+        cursor: mediaCursor,
+        limit: 7,
+        randomSeed: SEED_A,
+        sortMode: "random",
+      },
+      testDatabase().db,
+    );
     expect(acrossKinds.comics.map((comic) => comic.id)).toEqual(
       underA.comics.map((comic) => comic.id),
     );
@@ -689,7 +722,10 @@ describe("readDatabaseGalleryComic", () => {
     expect(grouped.length).toBe(7);
 
     for (const expected of grouped) {
-      const comic = await readDatabaseGalleryComic({ ...request, comicId: expected.id });
+      const comic = await readDatabaseGalleryComic(
+        { ...request, comicId: expected.id },
+        testDatabase().db,
+      );
       expect(comic).not.toBeNull();
       expect(comic?.name).toBe(expected.name);
       expect(comic?.cover.id).toBe(comic?.pages[0]?.id);
@@ -706,30 +742,50 @@ describe("readDatabaseGalleryComic", () => {
   });
 
   it("returns only pages matching the search and honours visibility", async () => {
-    const searched = await readDatabaseGalleryComic({
-      comicId: "beta/set-009",
-      currentPath: "beta",
-      query: FIXTURE_SEARCH_TERM,
-      showImages: true,
-      showVideos: true,
-    });
+    const searched = await readDatabaseGalleryComic(
+      {
+        comicId: "beta/set-009",
+        currentPath: "beta",
+        query: FIXTURE_SEARCH_TERM,
+        showImages: true,
+        showVideos: true,
+      },
+      testDatabase().db,
+    );
     expect(searched?.pages.map((page) => page.name)).toEqual(["hero-3.jpg"]);
 
-    const hidden = await readDatabaseGalleryComic({
-      ...request,
-      comicId: "alpha/comic-padded",
-      showImages: false,
-    });
+    const hidden = await readDatabaseGalleryComic(
+      {
+        ...request,
+        comicId: "alpha/comic-padded",
+        showImages: false,
+      },
+      testDatabase().db,
+    );
     expect(hidden).toBeNull();
   });
 
   it("rejects a comic outside the browse scope, the scope itself, and non-comic folders", async () => {
-    expect(await readDatabaseGalleryComic({ ...request, comicId: "beta/set-001" })).toBeNull();
-    expect(await readDatabaseGalleryComic({ ...request, comicId: "alpha" })).toBeNull();
-    expect(await readDatabaseGalleryComic({ ...request, comicId: "alpha/series" })).toBeNull();
-    expect(await readDatabaseGalleryComic({ ...request, comicId: "alpha/videos-only" })).toBeNull();
     expect(
-      await readDatabaseGalleryComic({ ...request, comicId: "alpha/comic-paddedx" }),
+      await readDatabaseGalleryComic({ ...request, comicId: "beta/set-001" }, testDatabase().db),
+    ).toBeNull();
+    expect(
+      await readDatabaseGalleryComic({ ...request, comicId: "alpha" }, testDatabase().db),
+    ).toBeNull();
+    expect(
+      await readDatabaseGalleryComic({ ...request, comicId: "alpha/series" }, testDatabase().db),
+    ).toBeNull();
+    expect(
+      await readDatabaseGalleryComic(
+        { ...request, comicId: "alpha/videos-only" },
+        testDatabase().db,
+      ),
+    ).toBeNull();
+    expect(
+      await readDatabaseGalleryComic(
+        { ...request, comicId: "alpha/comic-paddedx" },
+        testDatabase().db,
+      ),
     ).toBeNull();
   });
 });

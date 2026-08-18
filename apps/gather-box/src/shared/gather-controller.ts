@@ -1,11 +1,5 @@
 import { getActiveTab } from "../gather/active-tab";
-import {
-  clearDirectoryHandle,
-  ensureDirectoryPermission,
-  getDirectoryScopeLabel,
-  loadDirectoryHandle,
-  saveDirectoryHandle
-} from "../gather/directory-store";
+import { directoryStore, type DirectoryStore } from "../gather/directory-store";
 import {
   addLog,
   flashDownloadComplete,
@@ -22,7 +16,7 @@ import {
   type LogTone,
   type PopupElements
 } from "../gather/dom";
-import { formatError, isAbortError } from "../gather/errors";
+import { formatError, isAbortError, toError } from "../gather/errors";
 import type { PopupStatus } from "../gather/status";
 import {
   getSiteKeyFromUrl,
@@ -54,7 +48,7 @@ import {
   getLatestGatherQueueResult,
   getRetryableGatherQueueResult,
   loadGatherQueue,
-  normalizeGatherQueueState,
+  GatherQueueStateSchema,
   type GatherQueueState
 } from "./gather-queue";
 import { DEFAULT_SETTINGS, loadSettings, type GatherBoxSettings } from "./settings";
@@ -79,6 +73,8 @@ export interface GatherControllerOptions {
   includeOpenSidePanel?: boolean;
   onOpenSidePanel?: () => void;
   onToggleShortcut?: () => void;
+  /** Replaceable so tests can drive folder permission outcomes without a real handle store. */
+  directoryStore?: DirectoryStore;
 }
 
 export class GatherController {
@@ -114,8 +110,11 @@ export class GatherController {
       ) => void)
     | null = null;
 
+  private readonly directories: DirectoryStore;
+
   constructor(options: GatherControllerOptions = {}) {
     this.options = options;
+    this.directories = options.directoryStore ?? directoryStore;
   }
 
   async init(document: Document): Promise<void> {
@@ -182,7 +181,7 @@ export class GatherController {
       }
       if (areaName === "local" && changes[GATHER_QUEUE_STATE_KEY]?.newValue) {
         this.applyGatherQueue(
-          normalizeGatherQueueState(changes[GATHER_QUEUE_STATE_KEY].newValue)
+          GatherQueueStateSchema.parse(changes[GATHER_QUEUE_STATE_KEY].newValue)
         );
       }
     };
@@ -250,7 +249,7 @@ export class GatherController {
       const tab = await getActiveTab();
       this.state.activeTab = tab;
 
-      if (!tab || typeof tab.id !== "number" || !tab.url) {
+      if (!tab || tab.id === undefined || !tab.url) {
         this.state.siteKey = null;
         setPageState(this.elements, false, "No active page detected. Open a supported post page, then reopen Gather Box.");
         updateSaveBehavior(this.state.siteKey);
@@ -280,7 +279,7 @@ export class GatherController {
     } catch (error) {
       this.state.siteKey = null;
       this.state.directoryHandle = null;
-      setPageState(this.elements, false, formatError(error));
+      setPageState(this.elements, false, formatError(toError(error)));
       updateSaveBehavior(this.state.siteKey);
       this.syncPopupActions();
     }
@@ -291,8 +290,9 @@ export class GatherController {
       return;
     }
 
-    const pickerWindow = window as DirectoryPickerWindow;
-    if (typeof pickerWindow.showDirectoryPicker !== "function") {
+    const pickerWindow: DirectoryPickerWindow = window;
+    const showDirectoryPicker = pickerWindow.showDirectoryPicker;
+    if (!showDirectoryPicker) {
       this.setStatus("error");
       this.appendLog("Folder picking is unavailable in this context.", "error");
       this.elements.folderDetail.textContent =
@@ -302,20 +302,22 @@ export class GatherController {
 
     try {
       this.setStatus("pickingFolder");
-      const directoryHandle = await pickerWindow.showDirectoryPicker({ mode: "readwrite" });
+      const directoryHandle = await showDirectoryPicker.call(pickerWindow, {
+        mode: "readwrite"
+      });
       await this.setDirectoryHandle(directoryHandle);
       this.elements.folderDetail.textContent = this.state.siteKey
-        ? `Remembered for ${getDirectoryScopeLabel(this.state.settings.useGlobalFolder)}.`
+        ? `Remembered for ${this.directories.getDirectoryScopeLabel(this.state.settings.useGlobalFolder)}.`
         : "Available for this session.";
       this.appendLog(`Folder selected: ${directoryHandle.name}`, "success");
       this.setStatus("idle");
     } catch (error) {
-      if (isAbortError(error)) {
+      if (isAbortError(toError(error))) {
         this.setStatus("idle");
         this.appendLog("Folder selection canceled.", "error");
       } else {
         this.setStatus("error");
-        this.appendLog(`Failed to choose folder: ${formatError(error)}`, "error");
+        this.appendLog(`Failed to choose folder: ${formatError(toError(error))}`, "error");
       }
     } finally {
       this.syncPopupActions();
@@ -328,18 +330,18 @@ export class GatherController {
     }
 
     try {
-      await clearDirectoryHandle(this.state.siteKey, this.state.settings.useGlobalFolder);
+      await this.directories.clearDirectoryHandle(this.state.siteKey, this.state.settings.useGlobalFolder);
       this.state.directoryHandle = null;
       setFolder(
         this.elements,
         "No folder selected",
-        `Choose a writable folder for ${getDirectoryScopeLabel(this.state.settings.useGlobalFolder)}.`
+        `Choose a writable folder for ${this.directories.getDirectoryScopeLabel(this.state.settings.useGlobalFolder)}.`
       );
       this.appendLog("Cleared remembered folder.", "success");
       this.setStatus("idle");
     } catch (error) {
       this.setStatus("error");
-      this.appendLog(`Failed to clear folder: ${formatError(error)}`, "error");
+      this.appendLog(`Failed to clear folder: ${formatError(toError(error))}`, "error");
     } finally {
       this.syncPopupActions();
     }
@@ -365,7 +367,7 @@ export class GatherController {
     }
 
     if (allowPermissionPrompt) {
-      const permission = await ensureDirectoryPermission(this.state.directoryHandle, true);
+      const permission = await this.directories.ensureDirectoryPermission(this.state.directoryHandle, true);
       if (permission === "requires-user-activation") {
         this.appendLog("Folder access needs confirmation. Click Download Content again.", "error");
         this.syncPopupActions();
@@ -379,7 +381,7 @@ export class GatherController {
     }
 
     const tabId = this.state.activeTab?.id;
-    if (typeof tabId !== "number") {
+    if (tabId === undefined) {
       this.appendLog("No active source tab is available.", "error");
       return;
     }
@@ -405,7 +407,7 @@ export class GatherController {
         this.appendLog(response.message, "error");
       }
     } catch (error) {
-      this.appendLog(`Could not start Gather Run: ${formatError(error)}`, "error");
+      this.appendLog(`Could not start Gather Run: ${formatError(toError(error))}`, "error");
     } finally {
       this.state.running = false;
       this.syncPopupActions();
@@ -430,7 +432,7 @@ export class GatherController {
         this.appendLog(response.message, "error");
       }
     } catch (error) {
-      this.appendLog(`Could not cancel Gather Run: ${formatError(error)}`, "error");
+      this.appendLog(`Could not cancel Gather Run: ${formatError(toError(error))}`, "error");
     }
   }
 
@@ -448,7 +450,7 @@ export class GatherController {
     // The executor reloads this same handle by the run's site, so confirm access to that folder
     // rather than the active tab's — the two differ whenever you retry from another tab.
     const scopeLabel = getGatherSource(target.siteKey)?.label ?? target.siteKey;
-    const directoryHandle = await loadDirectoryHandle(
+    const directoryHandle = await this.directories.loadDirectoryHandle(
       target.siteKey,
       this.state.settings.useGlobalFolder
     );
@@ -456,7 +458,7 @@ export class GatherController {
       this.appendLog(`Choose a folder for ${scopeLabel} before retrying.`, "error");
       return;
     }
-    const permission = await ensureDirectoryPermission(directoryHandle, true);
+    const permission = await this.directories.ensureDirectoryPermission(directoryHandle, true);
     if (permission === "requires-user-activation") {
       this.appendLog("Folder access needs confirmation. Click Retry Failed again.", "error");
       return;
@@ -487,13 +489,13 @@ export class GatherController {
       await navigator.clipboard.writeText(report);
       this.appendLog("Copied error report to clipboard.", "success");
     } catch (error) {
-      this.appendLog(`Could not copy error report: ${formatError(error)}`, "error");
+      this.appendLog(`Could not copy error report: ${formatError(toError(error))}`, "error");
       setLogExpanded(this.elements, true);
     }
   }
 
   private async restoreSavedDirectoryHandle(): Promise<void> {
-    const scopeLabel = getDirectoryScopeLabel(this.state.settings.useGlobalFolder);
+    const scopeLabel = this.directories.getDirectoryScopeLabel(this.state.settings.useGlobalFolder);
     this.state.directoryHandle = null;
 
     if (!this.state.siteKey && !this.state.settings.useGlobalFolder) {
@@ -502,7 +504,7 @@ export class GatherController {
     }
 
     try {
-      const directoryHandle = await loadDirectoryHandle(
+      const directoryHandle = await this.directories.loadDirectoryHandle(
         this.state.siteKey,
         this.state.settings.useGlobalFolder
       );
@@ -514,7 +516,7 @@ export class GatherController {
       this.state.directoryHandle = directoryHandle;
       setFolder(this.elements, directoryHandle.name, `Remembered for ${scopeLabel}.`);
     } catch (error) {
-      this.elements.folderDetail.textContent = `Could not restore folder: ${formatError(error)}`;
+      this.elements.folderDetail.textContent = `Could not restore folder: ${formatError(toError(error))}`;
     }
   }
 
@@ -523,13 +525,13 @@ export class GatherController {
     this.elements.folderName.textContent = directoryHandle.name;
 
     try {
-      await saveDirectoryHandle(
+      await this.directories.saveDirectoryHandle(
         this.state.siteKey,
         directoryHandle,
         this.state.settings.useGlobalFolder
       );
     } catch (error) {
-      this.appendLog(`Folder could not be persisted: ${formatError(error)}`, "error");
+      this.appendLog(`Folder could not be persisted: ${formatError(toError(error))}`, "error");
       this.elements.folderDetail.textContent = "Works for this session only.";
     }
   }

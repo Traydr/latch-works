@@ -2,9 +2,10 @@ import { ensureDirectoryPermission, loadDirectoryHandle } from "../gather/direct
 import {
   downloadImages,
   getOrCreateNestedDirectory,
-  type DownloadFailure
+  type DownloadFailure,
+  type WritableDirectory
 } from "../gather/downloader";
-import { formatError, isAbortError } from "../gather/errors";
+import { formatError, isAbortError, toError } from "../gather/errors";
 import { resolveCompatibleFolderSegments } from "../gather/folder-compatibility";
 import { shouldIncludeCredentials } from "../shared/credentials";
 import type { GatherRunEvent } from "../shared/gather-run-messages";
@@ -23,10 +24,6 @@ export async function executeGatherOutput(input: {
   signal?: AbortSignal;
 }): Promise<void> {
   const { payload, settings, emit, signal } = input;
-  if (!isGatherOutputKind((payload as { outputKind?: unknown }).outputKind)) {
-    await emit({ kind: "failed", message: "The Gather Output kind is not supported." });
-    return;
-  }
   const directoryHandle = await loadDirectoryHandle(payload.site, settings.useGlobalFolder);
   if (!directoryHandle) {
     await emit({ kind: "failed", message: "Choose a destination folder before gathering." });
@@ -66,21 +63,17 @@ export async function executeGatherOutput(input: {
     }
     await executeFiles(payload, destinationDirectory, settings, emit, signal);
   } catch (error) {
-    if (isAbortError(error) || signal?.aborted) {
+    if (isAbortError(toError(error)) || signal?.aborted) {
       await emit({ kind: "cancelled", message: "Gather Run cancelled." });
       return;
     }
-    await emit({ kind: "failed", message: formatError(error) });
+    await emit({ kind: "failed", message: formatError(toError(error)) });
   }
-}
-
-export function isGatherOutputKind(value: unknown): value is DownloadablePayload["outputKind"] | GeneratedStoryPayload["outputKind"] {
-  return value === "downloadable-files" || value === "generated-story-pdf";
 }
 
 async function executeFiles(
   payload: DownloadablePayload,
-  destinationDirectory: FileSystemDirectoryHandle,
+  destinationDirectory: WritableDirectory,
   settings: GatherBoxSettings,
   emit: (event: GatherRunEvent) => Promise<void>,
   signal?: AbortSignal
@@ -139,7 +132,7 @@ async function executeFiles(
 
 async function executeStory(
   payload: GeneratedStoryPayload,
-  destinationDirectory: FileSystemDirectoryHandle,
+  destinationDirectory: WritableDirectory,
   settings: GatherBoxSettings,
   emit: (event: GatherRunEvent) => Promise<void>,
   signal?: AbortSignal

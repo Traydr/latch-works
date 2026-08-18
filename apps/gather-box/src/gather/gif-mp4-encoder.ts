@@ -5,7 +5,66 @@ const DEFAULT_FRAME_DURATION_MICROSECONDS = 100_000;
 const MINIMUM_FRAME_DURATION_MICROSECONDS = 10_000;
 const MP4_VIDEO_QUALITY = new Quality("high");
 
-export async function encodeGifAsMp4(blob: Blob, signal?: AbortSignal): Promise<ArrayBuffer> {
+/**
+ * An MP4 muxer already wired to a canvas. Naming this seam keeps the GIF conversion loop free of
+ * the muxer library and lets a test drive frame timing without a real video encoder.
+ */
+export interface Mp4VideoSink {
+  addFrame(
+    timestampSeconds: number,
+    durationSeconds: number,
+    options: { keyFrame: boolean }
+  ): Promise<void>;
+  /** Resolves with the finished MP4, or rejects if the muxer produced nothing. */
+  finalize(): Promise<ArrayBuffer>;
+  /** Discards a partially written video. Safe to call on an already finished sink. */
+  cancel(): Promise<void>;
+}
+
+export interface Mp4Encoder {
+  open(canvas: OffscreenCanvas): Promise<Mp4VideoSink>;
+}
+
+export const mediabunnyMp4Encoder: Mp4Encoder = {
+  async open(canvas) {
+    const target = new BufferTarget();
+    const output = new Output({
+      format: new Mp4OutputFormat({ fastStart: "in-memory" }),
+      target
+    });
+    const source = new CanvasSource(canvas, {
+      codec: "avc",
+      quality: MP4_VIDEO_QUALITY,
+      alpha: "discard",
+      keyFrameInterval: 2
+    });
+    output.addVideoTrack(source);
+    await output.start();
+
+    return {
+      addFrame: (timestampSeconds, durationSeconds, options) =>
+        source.add(timestampSeconds, durationSeconds, options),
+      async finalize() {
+        await output.finalize();
+        if (!target.buffer) {
+          throw new Error("The MP4 encoder did not produce a video.");
+        }
+        return target.buffer;
+      },
+      async cancel() {
+        if (output.state !== "canceled" && output.state !== "finalized") {
+          await output.cancel().catch(() => undefined);
+        }
+      }
+    };
+  }
+};
+
+export async function encodeGifAsMp4(
+  blob: Blob,
+  signal?: AbortSignal,
+  encoder: Mp4Encoder = mediabunnyMp4Encoder
+): Promise<ArrayBuffer> {
   throwIfAborted(signal);
   if (!(await ImageDecoder.isTypeSupported("image/gif"))) {
     throw new Error("This Chrome version cannot decode GIF files.");
@@ -16,7 +75,7 @@ export async function encodeGifAsMp4(blob: Blob, signal?: AbortSignal): Promise<
     type: "image/gif",
     preferAnimation: true
   });
-  let output: Output<Mp4OutputFormat, BufferTarget> | null = null;
+  let sink: Mp4VideoSink | null = null;
   let pendingFirstFrame: ImageDecodeResult | null = null;
 
   try {
@@ -36,19 +95,7 @@ export async function encodeGifAsMp4(blob: Blob, signal?: AbortSignal): Promise<
       throw new Error("Could not create a GIF conversion canvas.");
     }
 
-    const target = new BufferTarget();
-    output = new Output({
-      format: new Mp4OutputFormat({ fastStart: "in-memory" }),
-      target
-    });
-    const source = new CanvasSource(canvas, {
-      codec: "avc",
-      quality: MP4_VIDEO_QUALITY,
-      alpha: "discard",
-      keyFrameInterval: 2
-    });
-    output.addVideoTrack(source);
-    await output.start();
+    sink = await encoder.open(canvas);
 
     let timestampMicroseconds = 0;
     for (let frameIndex = 0; frameIndex < track.frameCount; frameIndex += 1) {
@@ -69,7 +116,7 @@ export async function encodeGifAsMp4(blob: Blob, signal?: AbortSignal): Promise<
         context.fillStyle = "#000";
         context.fillRect(0, 0, width, height);
         context.drawImage(decoded.image, 0, 0);
-        await source.add(
+        await sink.addFrame(
           timestampMicroseconds / 1_000_000,
           durationMicroseconds / 1_000_000,
           { keyFrame: frameIndex === 0 }
@@ -83,16 +130,11 @@ export async function encodeGifAsMp4(blob: Blob, signal?: AbortSignal): Promise<
       }
     }
 
-    await output.finalize();
-    output = null;
-    if (!target.buffer) {
-      throw new Error("The MP4 encoder did not produce a video.");
-    }
-    return target.buffer;
+    const finished = await sink.finalize();
+    sink = null;
+    return finished;
   } catch (error) {
-    if (output && output.state !== "canceled" && output.state !== "finalized") {
-      await output.cancel().catch(() => undefined);
-    }
+    await sink?.cancel();
     throw error;
   } finally {
     pendingFirstFrame?.image.close();

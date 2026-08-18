@@ -6,11 +6,16 @@ interface UseViewerChromeIdleOptions {
   pinned?: boolean;
 }
 
-export function useViewerChromeIdle(options: UseViewerChromeIdleOptions = {}): {
+/** Viewer chrome visibility, its reveal trigger, and the class that fades it out. */
+interface ViewerChromeIdleState {
   chromeVisible: boolean;
   revealChrome: () => void;
   chromeVisibilityClass: string;
-} {
+}
+
+export function useViewerChromeIdle(
+  options: UseViewerChromeIdleOptions = {},
+): ViewerChromeIdleState {
   const { pinned = false } = options;
   const [chromeVisible, setChromeVisible] = useState(true);
   const idleTimerRef = useRef<number | null>(null);

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { db } from "../db";
+import { type Database, db } from "../db";
 import { acquireLibraryMutationStartupLock } from "../db/library-coordination-lock";
 import { maintenanceJobs } from "../db/schema";
 import { processMaintenanceJob } from "./cleanup-worker";
@@ -17,7 +17,20 @@ import { initialProgressFor, type MaintenanceJobType } from "./maintenance-progr
  * database error.
  */
 
-export type MaintenanceTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+export type MaintenanceTransaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
+
+/**
+ * The collaborators the scheduling prologue runs through. The default instance
+ * wires the real database, lock, guards, and worker; a suite substitutes its
+ * own to drive the prologue and the error mapping without a live archive.
+ */
+export interface MaintenanceSchedulerDependencies {
+  acquireLibraryMutationStartupLock(tx: MaintenanceTransaction): Promise<void>;
+  assertNoActiveSyncRun(tx: MaintenanceTransaction): Promise<void>;
+  database: Pick<Database, "transaction">;
+  processMaintenanceJob(jobId: string): void;
+  readActiveCleanupJob(tx: MaintenanceTransaction): Promise<{ id: string } | null>;
+}
 
 export interface MaintenanceJobDescriptor {
   /** Work that must land in the scheduling transaction before the job row exists (library wipe). */
@@ -70,16 +83,26 @@ function isActiveJobUniqueViolation(error: Error): boolean {
   );
 }
 
+/** The real prologue: this database, this lock, these guards, this worker. */
+export const maintenanceSchedulerDependencies: MaintenanceSchedulerDependencies = {
+  acquireLibraryMutationStartupLock,
+  assertNoActiveSyncRun,
+  database: db,
+  processMaintenanceJob,
+  readActiveCleanupJob,
+};
+
 export async function scheduleMaintenanceJob(
   descriptor: MaintenanceJobDescriptor,
+  dependencies: MaintenanceSchedulerDependencies = maintenanceSchedulerDependencies,
 ): Promise<ScheduleMaintenanceJobResult> {
   let jobId: string | null;
   try {
-    jobId = await db.transaction(async (tx) => {
-      await acquireLibraryMutationStartupLock(tx);
-      await assertNoActiveSyncRun(tx);
+    jobId = await dependencies.database.transaction(async (tx) => {
+      await dependencies.acquireLibraryMutationStartupLock(tx);
+      await dependencies.assertNoActiveSyncRun(tx);
 
-      if (await readActiveCleanupJob(tx)) {
+      if (await dependencies.readActiveCleanupJob(tx)) {
         throw new Error(CLEANUP_IN_PROGRESS_MESSAGE);
       }
 
@@ -114,6 +137,6 @@ export async function scheduleMaintenanceJob(
     return { jobId: null, phase: "empty" };
   }
 
-  processMaintenanceJob(jobId);
+  dependencies.processMaintenanceJob(jobId);
   return { jobId, phase: "scheduled" };
 }

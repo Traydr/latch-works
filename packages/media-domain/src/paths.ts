@@ -27,13 +27,11 @@ export function joinArchivePath(...parts: string[]): string {
 }
 
 /** Alias map so equivalent spellings share one sync/storage identity. */
-const EXTENSION_ALIASES: Record<string, string> = {
-  jpeg: "jpg",
-};
+const EXTENSION_ALIASES = new Map([["jpeg", "jpg"]]);
 
 export function canonicalizeExtension(extension: string): string {
   const normalized = extension.replace(/^\./, "").toLowerCase();
-  return EXTENSION_ALIASES[normalized] ?? normalized;
+  return EXTENSION_ALIASES.get(normalized) ?? normalized;
 }
 
 /**

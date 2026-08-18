@@ -4,10 +4,20 @@ const GRID_GAP_PX = 10;
 const GRID_OVERSCAN_ROWS = 4;
 const MAIN_HORIZONTAL_PADDING_PX = 24;
 
-function areRowWindowsEqual(
-  left: { start: number; end: number },
-  right: { start: number; end: number },
-): boolean {
+/** An inclusive range of grid rows. */
+interface RowWindow {
+  start: number;
+  end: number;
+}
+
+/** One virtualized cell: its item index and its position inside the scroll container. */
+interface WindowedGridItem {
+  index: number;
+  left: number;
+  top: number;
+}
+
+function areRowWindowsEqual(left: RowWindow, right: RowWindow): boolean {
   return left.start === right.start && left.end === right.end;
 }
 
@@ -17,7 +27,7 @@ function getVisibleRowWindow(
   rowCount: number,
   rowStride: number,
   overscanRows: number,
-): { start: number; end: number } {
+): RowWindow {
   if (rowCount === 0 || rowStride <= 0) {
     return { start: 0, end: 0 };
   }
@@ -192,12 +202,12 @@ export function useVirtualGridMetrics(
 
   const windowedItems = useMemo(() => {
     if (itemCount === 0) {
-      return [] as Array<{ index: number; left: number; top: number }>;
+      return [];
     }
 
     const startIndex = rowWindows.overscan.start * columnCount;
     const endIndex = Math.min(itemCount, (rowWindows.overscan.end + 1) * columnCount);
-    const nextItems: Array<{ index: number; left: number; top: number }> = [];
+    const nextItems: WindowedGridItem[] = [];
 
     for (let index = startIndex; index < endIndex; index += 1) {
       const row = Math.floor(index / columnCount);

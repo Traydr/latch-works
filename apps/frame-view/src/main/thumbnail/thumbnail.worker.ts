@@ -1,8 +1,5 @@
-import type {
-  ThumbnailWorkerEvent,
-  ThumbnailWorkerRequest,
-  ThumbnailWorkerResponse,
-} from '../../shared/thumbnail';
+import { ThumbnailWorkerRequestSchema } from '../../shared/contracts';
+import type { ThumbnailWorkerEvent, ThumbnailWorkerResponse } from '../../shared/thumbnail';
 import { ThumbnailWorkerRuntime } from './ThumbnailWorkerRuntime';
 
 const { parentPort } = process;
@@ -54,7 +51,12 @@ void runtime
   });
 
 parentPort.on('message', (message) => {
-  const request = message.data as ThumbnailWorkerRequest;
+  const parsedRequest = ThumbnailWorkerRequestSchema.safeParse(message.data);
+  if (!parsedRequest.success) {
+    return;
+  }
+
+  const request = parsedRequest.data;
 
   void runtime
     .handleRequest(request)

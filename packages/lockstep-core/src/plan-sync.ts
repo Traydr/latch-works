@@ -1,5 +1,6 @@
 import { createSyncPathIdentity } from "@latch-works/media-domain";
 import { createSyncPlan, hashArchiveItems, scanArchive } from "@latch-works/media-index";
+import { toError } from "./format.js";
 import { loadHashCache } from "./hash-cache.js";
 import { resolveHashMode } from "./push-helpers.js";
 import { fetchRemoteSnapshot, readRemoteSnapshot } from "./remote-snapshot.js";
@@ -97,9 +98,10 @@ export async function planSync(
       cache.updateFromItems(localItems, scan.fingerprints);
       cache.retain(new Set(localItems.map((item) => item.path)));
       await cache.save().catch((error) => {
+        const failure = toError(error);
         observer?.onEvent({
           type: "status",
-          message: `Warning: hash cache could not be saved: ${formatError(error)}`,
+          message: `Warning: hash cache could not be saved: ${failure.message}`,
         });
       });
     }
@@ -163,8 +165,4 @@ function selectPlanningHashPaths(
       })
       .map((item) => item.path),
   );
-}
-
-function formatError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

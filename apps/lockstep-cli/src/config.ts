@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { z } from "zod";
 import type { Command, LockstepConfig, LockstepConfigDefaults } from "./types.js";
 
 const CONFIG_FILE_NAME = "lockstep.json";
@@ -14,6 +15,23 @@ export interface ConfigStore {
 export interface CreateConfigStoreOptions {
   configDir?: string;
 }
+
+/** Each field falls back to absent so one malformed key never discards the rest of the file. */
+const LockstepConfigDefaultsSchema = z.object({
+  hashFiles: z.boolean().optional().catch(undefined),
+  maxChanges: z.number().int().optional().catch(undefined),
+  showSkipped: z.boolean().optional().catch(undefined),
+  uploadConcurrency: z.number().int().min(1).max(8).optional().catch(undefined),
+}) satisfies z.ZodType<LockstepConfigDefaults, unknown>;
+
+const LockstepConfigSchema = z
+  .object({
+    apiUrl: z.string().min(1).optional().catch(undefined),
+    defaults: LockstepConfigDefaultsSchema.optional().catch(undefined),
+    lastCommand: z.enum(["doctor", "plan", "push", "verify"]).optional().catch(undefined),
+    source: z.string().min(1).optional().catch(undefined),
+  })
+  .catch(() => ({})) satisfies z.ZodType<LockstepConfig, unknown>;
 
 export function defaultConfigDir(): string {
   return path.join(os.homedir(), ".latch-works");
@@ -30,80 +48,29 @@ export function createConfigStore(options: CreateConfigStoreOptions = {}): Confi
   };
 }
 
-export function parseConfig(raw: unknown): LockstepConfig {
-  if (typeof raw !== "object" || raw === null) {
-    return {};
-  }
-
-  const record = raw as Record<string, unknown>;
-  const config: LockstepConfig = {};
-
-  if (typeof record.source === "string" && record.source.length > 0) {
-    config.source = record.source;
-  }
-
-  if (typeof record.apiUrl === "string" && record.apiUrl.length > 0) {
-    config.apiUrl = record.apiUrl;
-  }
-
-  if (
-    record.lastCommand === "plan" ||
-    record.lastCommand === "push" ||
-    record.lastCommand === "verify" ||
-    record.lastCommand === "doctor"
-  ) {
-    config.lastCommand = record.lastCommand;
-  }
-
-  if (typeof record.defaults === "object" && record.defaults !== null) {
-    config.defaults = parseDefaults(record.defaults as Record<string, unknown>);
-  }
-
-  return config;
+/** Parses the contents of `lockstep.json`; anything that is not a config object reads as empty. */
+export function parseConfig(contents: string): LockstepConfig {
+  return LockstepConfigSchema.parse(JSON.parse(contents));
 }
 
-function parseDefaults(record: Record<string, unknown>): LockstepConfigDefaults {
-  const defaults: LockstepConfigDefaults = {};
-
-  if (typeof record.hashFiles === "boolean") {
-    defaults.hashFiles = record.hashFiles;
-  }
-
-  if (typeof record.showSkipped === "boolean") {
-    defaults.showSkipped = record.showSkipped;
-  }
-
-  if (typeof record.maxChanges === "number" && Number.isInteger(record.maxChanges)) {
-    defaults.maxChanges = record.maxChanges;
-  }
-
-  if (
-    typeof record.uploadConcurrency === "number" &&
-    Number.isInteger(record.uploadConcurrency) &&
-    record.uploadConcurrency >= 1 &&
-    record.uploadConcurrency <= 8
-  ) {
-    defaults.uploadConcurrency = record.uploadConcurrency;
-  }
-
-  return defaults;
-}
+/** Node's fs rejections carry an `errno` `code`; anything else fails the parse. */
+const FileSystemErrorSchema = z.object({ code: z.string() });
 
 async function loadConfig(configPath: string): Promise<LockstepConfig> {
   try {
-    const raw = await readFile(configPath, "utf-8");
-    return parseConfig(JSON.parse(raw) as unknown);
+    return parseConfig(await readFile(configPath, "utf-8"));
   } catch (error) {
-    if (
-      error instanceof Error &&
-      "code" in error &&
-      (error as NodeJS.ErrnoException).code === "ENOENT"
-    ) {
+    if (error instanceof Error && isMissingFileError(error)) {
       return {};
     }
 
     throw error;
   }
+}
+
+function isMissingFileError(error: Error): boolean {
+  const parsed = FileSystemErrorSchema.safeParse(error);
+  return parsed.success && parsed.data.code === "ENOENT";
 }
 
 async function saveConfig(

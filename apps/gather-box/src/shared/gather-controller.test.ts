@@ -1,18 +1,10 @@
-import { afterEach, describe, expect, it, vi, type Mock } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PopupElements } from "../gather/dom";
-import { ensureDirectoryPermission, loadDirectoryHandle } from "../gather/directory-store";
+import type { DirectoryStore } from "../gather/directory-store";
 import { GatherController } from "./gather-controller";
-import type { LastRunLogEntry, LastRunState } from "./last-run";
+import type { RetryGatherRunRequest, GatherRunResponse } from "./gather-run-messages";
+import type { LastRunState } from "./last-run";
 import type { GalleryImage } from "./types";
-import type { SiteKey } from "./sites";
-
-vi.mock("../gather/directory-store", () => ({
-  loadDirectoryHandle: vi.fn(),
-  ensureDirectoryPermission: vi.fn(),
-  saveDirectoryHandle: vi.fn(),
-  clearDirectoryHandle: vi.fn(),
-  getDirectoryScopeLabel: vi.fn(() => "this site")
-}));
 
 interface DeferredWrite {
   value: Record<string, LastRunState>;
@@ -20,6 +12,7 @@ interface DeferredWrite {
 }
 
 const writes: DeferredWrite[] = [];
+const sendMessage = vi.fn<(message: RetryGatherRunRequest) => Promise<GatherRunResponse>>();
 
 vi.stubGlobal("chrome", {
   storage: {
@@ -31,9 +24,7 @@ vi.stubGlobal("chrome", {
       )
     }
   },
-  runtime: {
-    sendMessage: vi.fn()
-  }
+  runtime: { sendMessage }
 });
 
 afterEach(() => {
@@ -41,19 +32,43 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+function stubDirectoryStore(overrides: Partial<DirectoryStore> = {}): DirectoryStore {
+  return {
+    clearDirectoryHandle: vi.fn(),
+    ensureDirectoryPermission: vi.fn().mockResolvedValue("denied"),
+    getDirectoryScopeLabel: vi.fn(() => "this site"),
+    loadDirectoryHandle: vi.fn().mockResolvedValue(null),
+    saveDirectoryHandle: vi.fn(),
+    ...overrides
+  };
+}
+
+function tabAt(url: string): chrome.tabs.Tab {
+  return {
+    active: true,
+    autoDiscardable: true,
+    discarded: false,
+    frozen: false,
+    groupId: -1,
+    highlighted: false,
+    incognito: false,
+    index: 0,
+    pinned: false,
+    selected: true,
+    url,
+    windowId: 1
+  };
+}
+
+function directoryHandleNamed(name: string): FileSystemDirectoryHandle {
+  // SAFETY: the controller only reads `name` off a restored handle (setDirectoryHandle and the
+  // retry path); every other member belongs to the browser-supplied handle it never fabricates.
+  return { kind: "directory", name } as FileSystemDirectoryHandle;
+}
+
 describe("GatherController last-run persistence", () => {
   it("flushes current retry state after an older log save", async () => {
-    const controller = new GatherController() as unknown as {
-      state: {
-        activeTab: chrome.tabs.Tab | null;
-        siteKey: "fanbox" | null;
-        directoryHandle: FileSystemDirectoryHandle | null;
-        lastRun: LastRunState;
-      };
-      elements: PopupElements;
-      logEntries: LastRunLogEntry[];
-      persistLastRun(patch: Partial<LastRunState>): Promise<void>;
-    };
+    const controller = new GatherController({ directoryStore: stubDirectoryStore() });
     const retryImage: GalleryImage = {
       fileName: "failed.jpg",
       originalUrl: "https://downloads.fanbox.cc/failed.jpg",
@@ -61,10 +76,12 @@ describe("GatherController last-run persistence", () => {
       thumbnailUrl: null
     };
 
-    controller.state.activeTab = { url: "https://www.fanbox.cc/@artist" } as chrome.tabs.Tab;
-    controller.state.siteKey = "fanbox";
-    controller.logEntries = [{ message: "Collecting content metadata..." }];
-    controller.elements = {
+    controller["state"].activeTab = tabAt("https://www.fanbox.cc/@artist");
+    controller["state"].siteKey = "fanbox";
+    controller["logEntries"] = [{ message: "Collecting content metadata..." }];
+    // SAFETY: persistLastRun only toggles the six buttons and folderName below; the rest of
+    // PopupElements is read by render paths this test never reaches.
+    controller["elements"] = {
       downloadButton: { disabled: false },
       cancelButton: { disabled: false },
       chooseFolder: { disabled: false },
@@ -74,9 +91,9 @@ describe("GatherController last-run persistence", () => {
       folderName: { textContent: "" }
     } as PopupElements;
 
-    const olderLogSave = controller.persistLastRun({});
-    controller.logEntries.push({ message: "Failed failed.jpg", tone: "error" });
-    const terminalSave = controller.persistLastRun({
+    const olderLogSave = controller["persistLastRun"]({});
+    controller["logEntries"].push({ message: "Failed failed.jpg", tone: "error" });
+    const terminalSave = controller["persistLastRun"]({
       failedItems: [{ fileName: "failed.jpg", reason: "network" }],
       retryImages: [retryImage],
       canRetry: true
@@ -98,25 +115,20 @@ describe("GatherController last-run persistence", () => {
 
 describe("GatherController retry", () => {
   it("confirms the failed run's folder, not the active tab's", async () => {
-    const controller = new GatherController() as unknown as {
-      state: {
-        activeTab: chrome.tabs.Tab | null;
-        siteKey: SiteKey | null;
-        directoryHandle: FileSystemDirectoryHandle | null;
-        lastRun: LastRunState;
-      };
-      retryTarget: { runId: string; siteKey: SiteKey } | null;
-      handleRetryFailed(): Promise<void>;
-    };
-    const activeTabHandle = { name: "Pixiv" } as FileSystemDirectoryHandle;
-    const failedRunHandle = { name: "Fanbox" } as FileSystemDirectoryHandle;
+    const activeTabHandle = directoryHandleNamed("Pixiv");
+    const failedRunHandle = directoryHandleNamed("Fanbox");
+    const directories = stubDirectoryStore({
+      loadDirectoryHandle: vi.fn().mockResolvedValue(failedRunHandle),
+      ensureDirectoryPermission: vi.fn().mockResolvedValue("granted")
+    });
+    const controller = new GatherController({ directoryStore: directories });
 
     // Browsing pixiv while the retryable run belongs to fanbox — the site-scoped handles differ.
-    controller.state.activeTab = { url: "https://www.pixiv.net/artworks/1" } as chrome.tabs.Tab;
-    controller.state.siteKey = "pixiv";
-    controller.state.directoryHandle = activeTabHandle;
-    controller.state.lastRun = {
-      ...controller.state.lastRun,
+    controller["state"].activeTab = tabAt("https://www.pixiv.net/artworks/1");
+    controller["state"].siteKey = "pixiv";
+    controller["state"].directoryHandle = activeTabHandle;
+    controller["state"].lastRun = {
+      ...controller["state"].lastRun,
       canRetry: true,
       retryImages: [
         {
@@ -127,18 +139,15 @@ describe("GatherController retry", () => {
         }
       ]
     };
-    controller.retryTarget = { runId: "run-9", siteKey: "fanbox" };
+    controller["retryTarget"] = { runId: "run-9", siteKey: "fanbox" };
 
-    const sendMessage = chrome.runtime.sendMessage as unknown as Mock;
-    vi.mocked(loadDirectoryHandle).mockResolvedValue(failedRunHandle);
-    vi.mocked(ensureDirectoryPermission).mockResolvedValue("granted");
     // Any outcome the controller does not render keeps this test off the DOM-backed log path.
     sendMessage.mockResolvedValue({ outcome: "target-unavailable" });
 
-    await controller.handleRetryFailed();
+    await controller["handleRetryFailed"]();
 
-    expect(loadDirectoryHandle).toHaveBeenCalledWith("fanbox", false);
-    expect(ensureDirectoryPermission).toHaveBeenCalledWith(failedRunHandle, true);
+    expect(directories.loadDirectoryHandle).toHaveBeenCalledWith("fanbox", false);
+    expect(directories.ensureDirectoryPermission).toHaveBeenCalledWith(failedRunHandle, true);
     expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({ runId: "run-9" }));
   });
 });

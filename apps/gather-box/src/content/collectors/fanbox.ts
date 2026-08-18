@@ -1,3 +1,6 @@
+import type { PageLocation } from "../collector-entry";
+import * as z from "zod/mini";
+import { lenientArrayOf } from "../../shared/lenient-array";
 import type { GalleryCollectResponse, GalleryImage } from "../../shared/types";
 
 const FANBOX_IMAGE_LINK_SELECTOR = 'a[href^="https://downloads.fanbox.cc/images/post/"]';
@@ -11,7 +14,27 @@ interface FanboxStructuredPost {
   headline: string | null;
 }
 
-export function collectFanboxData(document: Document, location: Location): GalleryCollectResponse {
+/** FANBOX embeds the creator slug in a `meta[name="metadata"]` JSON blob. */
+const FanboxMetadataSchema = z.object({
+  urlContext: z.object({ host: z.object({ creatorId: z.string() }) })
+});
+
+/** The JSON-LD block is either a single node or an array; only BlogPosting nodes are useful. */
+const FanboxBlogPostingSchema = z.object({
+  "@type": z.literal("BlogPosting"),
+  author: z.optional(z.object({ name: z.string() })),
+  headline: z.optional(z.string())
+});
+
+const FanboxJsonLdSchema = z.union([
+  lenientArrayOf(FanboxBlogPostingSchema),
+  z.pipe(
+    FanboxBlogPostingSchema,
+    z.transform((post) => [post])
+  )
+]);
+
+export function collectFanboxData(document: Document, location: PageLocation): GalleryCollectResponse {
   if (!isFanboxPostUrl(location)) {
     return {
       ok: false,
@@ -77,7 +100,7 @@ export function collectFanboxData(document: Document, location: Location): Galle
 function buildFanboxImageEntry(
   link: HTMLAnchorElement,
   index: number,
-  location: Location,
+  location: PageLocation,
   seenUrls: Set<string>
 ): GalleryImage | null {
   const href = link.getAttribute("href");
@@ -101,7 +124,7 @@ function buildFanboxImageEntry(
   };
 }
 
-function isFanboxPostUrl(location: Location): boolean {
+function isFanboxPostUrl(location: PageLocation): boolean {
   return location.hostname.toLowerCase().endsWith(".fanbox.cc") && location.pathname.startsWith("/posts/");
 }
 
@@ -112,7 +135,7 @@ function isFanboxImageUrl(value: string): boolean {
   return url.hostname === "downloads.fanbox.cc" && FANBOX_IMAGE_EXTENSIONS.has(extension);
 }
 
-function getCreatorId(document: Document, location: Location): string {
+function getCreatorId(document: Document, location: PageLocation): string {
   const metadataCreatorId = getMetadataCreatorId(document);
   if (metadataCreatorId) {
     return metadataCreatorId;
@@ -129,16 +152,9 @@ function getMetadataCreatorId(document: Document): string {
   }
 
   try {
-    const parsed = JSON.parse(content) as {
-      urlContext?: {
-        host?: {
-          creatorId?: unknown;
-        };
-      };
-    };
-    const creatorId = parsed.urlContext?.host?.creatorId;
+    const metadataContent = FanboxMetadataSchema.parse(JSON.parse(content));
 
-    return typeof creatorId === "string" ? creatorId.trim() : "";
+    return metadataContent.urlContext.host.creatorId.trim();
   } catch {
     return "";
   }
@@ -165,18 +181,15 @@ function getStructuredPost(document: Document): FanboxStructuredPost {
     }
 
     try {
-      const parsed = JSON.parse(rawJson);
-      const nodes = Array.isArray(parsed) ? parsed : [parsed];
-      const post = nodes.find((node) => isObject(node) && node["@type"] === "BlogPosting");
-      if (!isObject(post)) {
+      const [post] = FanboxJsonLdSchema.parse(JSON.parse(rawJson));
+      if (!post) {
         continue;
       }
 
-      const author = post.author;
-      const authorName = isObject(author) && typeof author.name === "string" ? author.name.trim() : null;
-      const headline = typeof post.headline === "string" ? post.headline.trim() : null;
-
-      return { authorName, headline };
+      return {
+        authorName: post.author?.name.trim() ?? null,
+        headline: post.headline?.trim() ?? null
+      };
     } catch {
       continue;
     }
@@ -206,7 +219,7 @@ function getTitleFromDocumentTitle(title: string, authorName: string | null): st
   return normalizedTitle.replace(/\bpixivFANBOX\b/i, "").trim();
 }
 
-function getPostId(location: Location): string | null {
+function getPostId(location: PageLocation): string | null {
   const match = location.pathname.match(/^\/posts\/([^/]+)/);
   return match ? match[1] : null;
 }
@@ -228,7 +241,7 @@ function getFileExtension(pathname: string): string {
   return extension ? extension.toLowerCase() : "";
 }
 
-function getImageSource(image: HTMLImageElement, location: Location): string | null {
+function getImageSource(image: HTMLImageElement, location: PageLocation): string | null {
   const rawSource = image.getAttribute("data-src") || image.getAttribute("src");
   if (!rawSource) {
     return null;
@@ -239,8 +252,4 @@ function getImageSource(image: HTMLImageElement, location: Location): string | n
 
 function getText(element: Element | null): string {
   return element ? element.textContent?.trim() || "" : "";
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }

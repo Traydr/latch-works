@@ -1,12 +1,25 @@
 import { createHash } from "node:crypto";
 import { mkdtemp, writeFile } from "node:fs/promises";
-import { createServer } from "node:http";
+import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { uploadFile } from "./remote-api.js";
 
+/** `Server.address()` widens to a pipe name or null; only a bound TCP address is usable. */
+const TcpAddressSchema = z.object({ port: z.number() });
+
 const tempDirs: string[] = [];
+
+async function listenOnLoopback(server: Server): Promise<number> {
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = TcpAddressSchema.safeParse(server.address());
+  if (!address.success) {
+    throw new Error("Expected TCP address");
+  }
+  return address.data.port;
+}
 
 afterEach(async () => {
   // Temp dirs are left for OS cleanup; tests write tiny files only.
@@ -42,11 +55,7 @@ describe("uploadFile", () => {
       response.end();
     });
 
-    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-    const address = server.address();
-    if (!address || typeof address === "string") {
-      throw new Error("Expected TCP address");
-    }
+    const port = await listenOnLoopback(server);
 
     try {
       await uploadFile({
@@ -59,7 +68,7 @@ describe("uploadFile", () => {
           "Content-Type": "application/octet-stream",
           "x-amz-checksum-sha256": Buffer.from(sha256, "hex").toString("base64"),
         },
-        uploadUrl: `http://127.0.0.1:${address.port}/upload`,
+        uploadUrl: `http://127.0.0.1:${port}/upload`,
       });
     } finally {
       await new Promise<void>((resolve, reject) =>
@@ -82,11 +91,7 @@ describe("uploadFile", () => {
       // Never respond; client abort should reject fetch.
     });
 
-    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-    const address = server.address();
-    if (!address || typeof address === "string") {
-      throw new Error("Expected TCP address");
-    }
+    const port = await listenOnLoopback(server);
 
     try {
       const uploadPromise = uploadFile({
@@ -99,7 +104,7 @@ describe("uploadFile", () => {
           "Content-Type": "application/octet-stream",
         },
         signal: controller.signal,
-        uploadUrl: `http://127.0.0.1:${address.port}/upload`,
+        uploadUrl: `http://127.0.0.1:${port}/upload`,
       });
       queueMicrotask(() => controller.abort());
       await expect(uploadPromise).rejects.toThrow();

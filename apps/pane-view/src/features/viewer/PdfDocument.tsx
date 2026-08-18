@@ -1,5 +1,5 @@
-import type { PDFPageProxy } from "pdfjs-dist";
 import { type JSX, useEffect, useRef, useState } from "react";
+import { type PdfEngine, type PdfPage, type PdfRenderTask, pdfjsEngine } from "./pdf-engine";
 import {
   getPageRenderWidth,
   getPdfPageRenderWindow,
@@ -8,6 +8,8 @@ import {
 } from "./pdf-viewer-helpers";
 
 export interface PdfDocumentProps {
+  /** Overrides the pdf.js adapter; tests render against a fake document. */
+  engine?: PdfEngine;
   initialPage?: number;
   mediaId: string;
   onPageChange?: (page: number) => void;
@@ -26,7 +28,12 @@ interface ActiveRender {
 const PAGE_CHANGE_DEBOUNCE_MS = 3_000;
 const GEOMETRY_CONCURRENCY = 4;
 
-function usePdfDocument({ initialPage, mediaId, onPageChange }: Omit<PdfDocumentProps, "title">) {
+function usePdfDocument({
+  engine = pdfjsEngine,
+  initialPage,
+  mediaId,
+  onPageChange,
+}: Omit<PdfDocumentProps, "title">) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const [pageCount, setPageCount] = useState(0);
@@ -104,17 +111,15 @@ function usePdfDocument({ initialPage, mediaId, onPageChange }: Omit<PdfDocument
 
     const render = async () => {
       try {
-        const [pdfjs, workerModule] = await Promise.all([
-          import("pdfjs-dist"),
-          import("pdfjs-dist/build/pdf.worker.min.mjs?url"),
-        ]);
+        const loadingTask = await engine.openDocument(`/api/media/${mediaId}/original`);
+        destroyLoadingTask = () => loadingTask.destroy();
         if (cancelled) {
+          // The effect was cleaned up while the engine was loading, so its
+          // cleanup could not reach this task.
+          destroyLoadingTask();
           return;
         }
 
-        pdfjs.GlobalWorkerOptions.workerSrc = workerModule.default;
-        const loadingTask = pdfjs.getDocument({ url: `/api/media/${mediaId}/original` });
-        destroyLoadingTask = () => loadingTask.destroy();
         const pdf = await loadingTask.promise;
         if (cancelled) {
           return;
@@ -192,8 +197,8 @@ function usePdfDocument({ initialPage, mediaId, onPageChange }: Omit<PdfDocument
             };
             renderTasks.set(pageNumber, task);
             void (async () => {
-              let page: PDFPageProxy | undefined;
-              let renderTask: ReturnType<PDFPageProxy["render"]> | undefined;
+              let page: PdfPage | undefined;
+              let renderTask: PdfRenderTask | undefined;
               try {
                 page = await pdf.getPage(pageNumber);
                 if (
@@ -314,7 +319,7 @@ function usePdfDocument({ initialPage, mediaId, onPageChange }: Omit<PdfDocument
     };
     // Keep document loading keyed to mediaId only. Late-arriving resume pages are applied by the
     // scroll effect above — including initialPage here would tear down and reload the PDF mid-view.
-  }, [mediaId]);
+  }, [engine, mediaId]);
 
   return { containerRef, error, pageCount, scrollContainerRef };
 }

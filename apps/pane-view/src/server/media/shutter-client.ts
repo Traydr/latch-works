@@ -7,7 +7,7 @@ import {
 } from "@shutter/client";
 import { env } from "../../env/server";
 import type { MediaThumbnailContext } from "./repository";
-import { shutterCapabilityKeyConfig } from "./shutter-capability";
+import { type CapabilityEnvironment, shutterCapabilityKeyConfig } from "./shutter-capability";
 import { validateCapabilityKeyConfig } from "./shutter-capability-config";
 import { createPaneViewStorageClient } from "./storage-client";
 
@@ -19,24 +19,47 @@ export type ShutterPreviewResult =
   | { status: "ready"; url: string }
   | { action?: string; code?: string; status: "failed" };
 
+/** The Shutter configuration this client reads; the process environment by default. */
+export type ShutterEnvironment = CapabilityEnvironment &
+  Pick<typeof env, "SHUTTER_CONTROL_URL" | "SHUTTER_EDGE_URL" | "SHUTTER_SPACE_API_TOKEN">;
+
+/**
+ * What the Shutter client needs from outside its own module: the Shutter
+ * configuration and a signed URL for the original object, which Shutter
+ * fetches the source from. The default instance reads the real environment
+ * and the real bucket.
+ */
+export interface ShutterClientDependencies {
+  createSourceLocator(request: { expiresInSeconds: number; key: string }): Promise<string>;
+  environment: ShutterEnvironment;
+}
+
+export const shutterClientDependencies: ShutterClientDependencies = {
+  createSourceLocator: (request) =>
+    createSignedGetUrl({ ...request, storage: createPaneViewStorageClient() }),
+  environment: env,
+};
+
 export function normalizeShutterWidth(width: number): number {
   if (width <= 24) return 24;
   return SHUTTER_WIDTHS.find((candidate) => candidate >= width) ?? 3840;
 }
 
-export function getShutterCapabilityKeyStatus() {
+export function getShutterCapabilityKeyStatus(environment: ShutterEnvironment = env) {
   return validateCapabilityKeyConfig({
-    capabilityKeys: env.SHUTTER_CAPABILITY_KEYS,
-    capabilityKid: env.SHUTTER_CAPABILITY_KID,
-    spaceId: env.SHUTTER_SPACE_ID,
+    capabilityKeys: environment.SHUTTER_CAPABILITY_KEYS,
+    capabilityKid: environment.SHUTTER_CAPABILITY_KID,
+    spaceId: environment.SHUTTER_SPACE_ID,
   });
 }
 
-async function sourceLocator(context: MediaThumbnailContext): Promise<string> {
-  return createSignedGetUrl({
+async function sourceLocator(
+  context: MediaThumbnailContext,
+  dependencies: ShutterClientDependencies,
+): Promise<string> {
+  return dependencies.createSourceLocator({
     expiresInSeconds: SOURCE_LOCATOR_LIFETIME_SECONDS,
     key: context.originalObjectKey,
-    storage: createPaneViewStorageClient(),
   });
 }
 
@@ -45,13 +68,17 @@ async function sourceLocator(context: MediaThumbnailContext): Promise<string> {
  * the Capability Key registry must stay evaluated lazily (see
  * `ensureStartupCapabilityStatus`).
  */
-function shutterClient(options: { capability: boolean }): ShutterClient {
+function shutterClient(options: {
+  capability: boolean;
+  environment: ShutterEnvironment;
+}): ShutterClient {
+  const { environment } = options;
   return createShutterClient({
-    spaceId: env.SHUTTER_SPACE_ID,
-    controlBaseUrl: env.SHUTTER_CONTROL_URL,
-    edgeBaseUrl: env.SHUTTER_EDGE_URL,
-    spaceApiToken: env.SHUTTER_SPACE_API_TOKEN || undefined,
-    capabilityKey: options.capability ? shutterCapabilityKeyConfig() : undefined,
+    spaceId: environment.SHUTTER_SPACE_ID,
+    controlBaseUrl: environment.SHUTTER_CONTROL_URL,
+    edgeBaseUrl: environment.SHUTTER_EDGE_URL,
+    spaceApiToken: environment.SHUTTER_SPACE_API_TOKEN || undefined,
+    capabilityKey: options.capability ? shutterCapabilityKeyConfig(environment) : undefined,
     capabilityLifetimeSeconds: CAPABILITY_LIFETIME_SECONDS,
   });
 }
@@ -65,11 +92,13 @@ function assertSourceId(sha256: string): void {
 export async function resolveShutterImageUrl(
   context: MediaThumbnailContext,
   width: number,
+  dependencies: ShutterClientDependencies = shutterClientDependencies,
 ): Promise<string> {
-  ensureStartupCapabilityStatus();
+  const { environment } = dependencies;
+  ensureStartupCapabilityStatus(environment);
   assertSourceId(context.sha256);
-  return shutterClient({ capability: true }).privateSourceUrl(
-    { sourceId: context.sha256, locator: await sourceLocator(context) },
+  return shutterClient({ capability: true, environment }).privateSourceUrl(
+    { sourceId: context.sha256, locator: await sourceLocator(context, dependencies) },
     { width: normalizeShutterWidth(width), quality: 75 },
   );
 }
@@ -77,20 +106,24 @@ export async function resolveShutterImageUrl(
 export async function resolveShutterPreview(
   context: MediaThumbnailContext,
   width: number,
+  dependencies: ShutterClientDependencies = shutterClientDependencies,
 ): Promise<ShutterPreviewResult> {
-  ensureStartupCapabilityStatus();
+  const { environment } = dependencies;
+  ensureStartupCapabilityStatus(environment);
   if (context.mediaType !== "video" && context.mediaType !== "pdf") return { status: "failed" };
-  if (!env.SHUTTER_SPACE_API_TOKEN) throw new Error("Shutter Space API is not configured");
+  if (!environment.SHUTTER_SPACE_API_TOKEN) {
+    throw new Error("Shutter Space API is not configured");
+  }
   assertSourceId(context.sha256);
   const kind = context.mediaType;
-  const client = shutterClient({ capability: true });
+  const client = shutterClient({ capability: true, environment });
 
   let job: PreviewJobResult;
   try {
     job = await client.submitPreviewJob({
       sourceId: context.sha256,
       kind,
-      locator: await sourceLocator(context),
+      locator: await sourceLocator(context, dependencies),
     });
   } catch (error) {
     if (error instanceof ShutterClientError && error.status !== undefined) {
@@ -118,8 +151,13 @@ export async function resolveShutterPreview(
   };
 }
 
-export async function purgeShutterSource(sourceId: string): Promise<void> {
-  await shutterClient({ capability: false }).purgeSource(sourceId);
+export async function purgeShutterSource(
+  sourceId: string,
+  dependencies: ShutterClientDependencies = shutterClientDependencies,
+): Promise<void> {
+  await shutterClient({ capability: false, environment: dependencies.environment }).purgeSource(
+    sourceId,
+  );
 }
 
 let startupCapabilityStatusChecked = false;
@@ -134,10 +172,10 @@ let startupCapabilityStatusChecked = false;
  * `getShutterCapabilityKeyStatus()` directly, so deploy-time checks should read
  * health rather than rely on startup logs.
  */
-function ensureStartupCapabilityStatus(): void {
+function ensureStartupCapabilityStatus(environment: ShutterEnvironment): void {
   if (startupCapabilityStatusChecked) return;
   startupCapabilityStatusChecked = true;
-  const status = getShutterCapabilityKeyStatus();
+  const status = getShutterCapabilityKeyStatus(environment);
   if (!status.ok) {
     console.error(`[pane-view] Shutter capability keys misconfigured: ${status.error}`);
   }

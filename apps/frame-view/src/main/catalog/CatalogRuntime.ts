@@ -44,15 +44,21 @@ interface ScanContext {
   startedAt: number;
 }
 
+/** The media-index entry points a scan run drives. */
+export type CatalogMediaIndex = Pick<
+  MediaIndexService,
+  'cancelScan' | 'clear' | 'finishScan' | 'getStats' | 'init' | 'startScan' | 'upsertBatch'
+>;
+
 interface CatalogRuntimeOptions {
   emitEvent: (event: CatalogWorkerEvent) => void;
   emitResponse: (response: CatalogWorkerResponse) => void;
-  mediaIndexService?: MediaIndexService;
+  mediaIndexService?: CatalogMediaIndex;
   userDataPath?: string;
 }
 
 export class CatalogRuntime {
-  private readonly mediaIndexService: MediaIndexService;
+  private readonly mediaIndexService: CatalogMediaIndex;
 
   private activeRun: ActiveRun | null = null;
   private runCounter = 0;

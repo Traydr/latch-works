@@ -1,13 +1,13 @@
 import path from 'node:path';
-import { Result } from 'better-result';
-import type { BrowserWindow } from 'electron';
+import { Result, type SerializedResult } from 'better-result';
+import type { BrowserWindow, OpenDialogReturnValue } from 'electron';
 import { app, dialog, ipcMain, shell } from 'electron';
 import type { ZodType } from 'zod';
 
-import { DiagnosticsSnapshotSchema, PathInputSchema } from '../../shared/contracts';
+import { DiagnosticsSnapshotSchema, type JsonValue, PathInputSchema } from '../../shared/contracts';
 import { serializeIpcResult } from '../../shared/ipc';
 import { InvokeIpcContractList, InvokeIpcContracts } from '../../shared/ipcContracts';
-import type { DiagnosticsSnapshot } from '../../shared/types';
+import type { DiagnosticsSnapshot, IpcErrorPayload, ScanEvent } from '../../shared/types';
 import type { CatalogService } from '../catalog/CatalogService';
 import { parseWithSchema, serializeAppResult, ValidationError } from '../errors';
 import { listFolderChildren, resolveFolderPath } from '../services/folderService';
@@ -22,6 +22,75 @@ import {
 } from '../services/mediaProtocol';
 import type { MediaToolsService } from '../services/mediaToolsService';
 import type { SettingsService } from '../services/settingsService';
+
+/** Every invoke handler answers with a serialized better-result envelope. */
+type IpcResponseHandler<T> = (
+  ...args: JsonValue[]
+) => Promise<SerializedResult<T, IpcErrorPayload>>;
+
+/** The parts of the settings, catalog, and media-tools services the IPC layer drives. */
+export type IpcSettingsService = Pick<SettingsService, 'getSettings' | 'updateSettings'>;
+export type IpcCatalogService = Pick<
+  CatalogService,
+  'cancelScan' | 'clearIndex' | 'getMediaIndexStats' | 'startScan'
+>;
+export type IpcMediaToolsService = Pick<MediaToolsService, 'getStatus' | 'probeVideo'>;
+
+/** Everything the IPC layer reaches outside itself: Electron, the folder tree, media access. */
+export interface IpcRuntime {
+  authorizeMediaRoot: typeof authorizeMediaRoot;
+  clearThumbnailCache: typeof clearThumbnailCache;
+  getAppVersion: () => string;
+  getThumbnailDiagnostics: typeof getThumbnailDiagnostics;
+  getThumbnailWorkerCapabilities: typeof getThumbnailWorkerCapabilities;
+  handle: <T>(channel: string, handler: IpcResponseHandler<T>) => void;
+  isAuthorizedMediaPath: typeof isAuthorizedMediaPath;
+  isPackaged: () => boolean;
+  isWindowDestroyed: () => boolean;
+  listFolderChildren: typeof listFolderChildren;
+  removeHandler: (channel: string) => void;
+  resolveFolderPath: typeof resolveFolderPath;
+  sendScanEvent: (event: ScanEvent) => void;
+  setThumbnailDebugOptions: typeof setThumbnailDebugOptions;
+  showItemInFolder: (fullPath: string) => void;
+  showOpenFolderDialog: () => Promise<OpenDialogReturnValue>;
+  shrinkAuthorizedMediaRootsTo: typeof shrinkAuthorizedMediaRootsTo;
+}
+
+/** The production runtime: Electron's main-process APIs bound to the app window. */
+export function createElectronIpcRuntime(mainWindow: BrowserWindow): IpcRuntime {
+  return {
+    authorizeMediaRoot,
+    clearThumbnailCache,
+    getAppVersion: () => app.getVersion(),
+    getThumbnailDiagnostics,
+    getThumbnailWorkerCapabilities,
+    handle: (channel, handler) => {
+      ipcMain.handle(channel, (_event, ...args: JsonValue[]) => handler(...args));
+    },
+    isAuthorizedMediaPath,
+    isPackaged: () => app.isPackaged,
+    isWindowDestroyed: () => mainWindow.isDestroyed(),
+    listFolderChildren,
+    removeHandler: (channel) => {
+      ipcMain.removeHandler(channel);
+    },
+    resolveFolderPath,
+    sendScanEvent: (event) => {
+      mainWindow.webContents.send('scan:event', event);
+    },
+    setThumbnailDebugOptions,
+    showItemInFolder: (fullPath) => {
+      shell.showItemInFolder(fullPath);
+    },
+    showOpenFolderDialog: () =>
+      dialog.showOpenDialog(mainWindow, {
+        properties: ['openDirectory'],
+        title: 'Open Folder',
+      }),
+    shrinkAuthorizedMediaRootsTo,
+  };
+}
 
 function validationFailure(operation: string, message: string) {
   return serializeAppResult(
@@ -40,7 +109,7 @@ function okResult<T>(value: T) {
 
 function validateIpcInput<T>(
   schema: ZodType<T>,
-  input: unknown,
+  input: JsonValue,
   channel: string,
 ): { ok: true; value: T } | { ok: false; serialized: ReturnType<typeof serializeAppResult> } {
   const parsed = parseWithSchema(schema, input, channel);
@@ -60,28 +129,25 @@ function requireRequestSchema<T>(schema: ZodType<T> | null): ZodType<T> {
 }
 
 export function registerIpc(
-  mainWindow: BrowserWindow,
-  settingsService: SettingsService,
-  catalogService: CatalogService,
-  mediaToolsService: MediaToolsService,
+  runtime: IpcRuntime,
+  settingsService: IpcSettingsService,
+  catalogService: IpcCatalogService,
+  mediaToolsService: IpcMediaToolsService,
 ): void {
   const channels = InvokeIpcContractList.map((contract) => contract.channel);
 
   for (const channel of channels) {
-    ipcMain.removeHandler(channel);
+    runtime.removeHandler(channel);
   }
 
-  ipcMain.handle(InvokeIpcContracts.openFolderDialog.channel, async () => {
-    const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
-      properties: ['openDirectory'],
-      title: 'Open Folder',
-    });
+  runtime.handle(InvokeIpcContracts.openFolderDialog.channel, async () => {
+    const { canceled, filePaths } = await runtime.showOpenFolderDialog();
 
     if (canceled || filePaths.length === 0) {
       return okResult<string | null>(null);
     }
 
-    const selectedPathResult = await resolveFolderPath(filePaths[0]);
+    const selectedPathResult = await runtime.resolveFolderPath(filePaths[0]);
     if (Result.isError(selectedPathResult)) {
       return serializeAppResult(Result.err(selectedPathResult.error));
     }
@@ -91,7 +157,7 @@ export function registerIpc(
       return okResult<string | null>(null);
     }
 
-    await authorizeMediaRoot(selectedPath);
+    await runtime.authorizeMediaRoot(selectedPath);
     const settings = settingsService.getSettings();
     if (settings.rememberLastFolder) {
       const updateResult = await settingsService.updateSettings({ lastFolderPath: selectedPath });
@@ -103,24 +169,21 @@ export function registerIpc(
     return okResult(selectedPath);
   });
 
-  ipcMain.handle(
-    InvokeIpcContracts.resolveInputPath.channel,
-    async (_event, candidatePath: unknown) => {
-      const validated = validateIpcInput(PathInputSchema, candidatePath, 'path:resolve-input');
-      if (!validated.ok) {
-        return validated.serialized;
-      }
+  runtime.handle(InvokeIpcContracts.resolveInputPath.channel, async (candidatePath: JsonValue) => {
+    const validated = validateIpcInput(PathInputSchema, candidatePath, 'path:resolve-input');
+    if (!validated.ok) {
+      return validated.serialized;
+    }
 
-      const resolvedPath = await resolveFolderPath(validated.value);
-      if (Result.isError(resolvedPath)) {
-        return serializeAppResult(Result.err(resolvedPath.error));
-      }
+    const resolvedPath = await runtime.resolveFolderPath(validated.value);
+    if (Result.isError(resolvedPath)) {
+      return serializeAppResult(Result.err(resolvedPath.error));
+    }
 
-      return okResult(resolvedPath.value);
-    },
-  );
+    return okResult(resolvedPath.value);
+  });
 
-  ipcMain.handle(InvokeIpcContracts.startScan.channel, async (_event, options: unknown) => {
+  runtime.handle(InvokeIpcContracts.startScan.channel, async (options: JsonValue) => {
     const validated = validateIpcInput(
       requireRequestSchema(InvokeIpcContracts.startScan.requestSchema),
       options,
@@ -128,8 +191,8 @@ export function registerIpc(
     );
     if (!validated.ok) {
       const error = validated.serialized;
-      if (!mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('scan:event', {
+      if (!runtime.isWindowDestroyed()) {
+        runtime.sendScanEvent({
           type: 'error',
           message: 'Invalid scan options',
         });
@@ -137,14 +200,14 @@ export function registerIpc(
       return error;
     }
 
-    const resolvedRootResult = await resolveFolderPath(validated.value.rootPath);
+    const resolvedRootResult = await runtime.resolveFolderPath(validated.value.rootPath);
     if (Result.isError(resolvedRootResult)) {
       return serializeAppResult(Result.err(resolvedRootResult.error));
     }
 
     const resolvedRoot = resolvedRootResult.value;
     if (!resolvedRoot) {
-      mainWindow.webContents.send('scan:event', {
+      runtime.sendScanEvent({
         type: 'error',
         message: 'Invalid folder path',
         path: validated.value.rootPath,
@@ -153,7 +216,7 @@ export function registerIpc(
     }
 
     const settings = settingsService.getSettings();
-    let authorized = await isAuthorizedMediaPath(resolvedRoot);
+    let authorized = await runtime.isAuthorizedMediaPath(resolvedRoot);
     // Remembered folders are chosen via the native dialog, then persisted. After a restart the
     // in-memory allowlist is empty — re-authorize the exact remembered path so auto-scan works.
     if (
@@ -162,12 +225,12 @@ export function registerIpc(
       settings.lastFolderPath &&
       path.resolve(resolvedRoot) === path.resolve(settings.lastFolderPath)
     ) {
-      await authorizeMediaRoot(resolvedRoot);
-      authorized = await isAuthorizedMediaPath(resolvedRoot);
+      await runtime.authorizeMediaRoot(resolvedRoot);
+      authorized = await runtime.isAuthorizedMediaPath(resolvedRoot);
     }
     if (!authorized) {
-      if (!mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('scan:event', {
+      if (!runtime.isWindowDestroyed()) {
+        runtime.sendScanEvent({
           type: 'error',
           message: 'Folder path is not authorized. Open a folder with the native dialog first.',
           path: resolvedRoot,
@@ -179,7 +242,7 @@ export function registerIpc(
       );
     }
 
-    await shrinkAuthorizedMediaRootsTo(resolvedRoot);
+    await runtime.shrinkAuthorizedMediaRootsTo(resolvedRoot);
 
     if (settings.rememberLastFolder) {
       const updateResult = await settingsService.updateSettings({ lastFolderPath: resolvedRoot });
@@ -202,8 +265,8 @@ export function registerIpc(
       excludedRootChildPaths,
     });
     if (Result.isError(startResult)) {
-      if (!mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('scan:event', {
+      if (!runtime.isWindowDestroyed()) {
+        runtime.sendScanEvent({
           type: 'error',
           message: `Scan failed: ${startResult.error.message}`,
         });
@@ -215,7 +278,7 @@ export function registerIpc(
     return okResult(undefined);
   });
 
-  ipcMain.handle(InvokeIpcContracts.cancelScan.channel, async () => {
+  runtime.handle(InvokeIpcContracts.cancelScan.channel, async () => {
     const cancelResult = await catalogService.cancelScan();
     if (Result.isError(cancelResult)) {
       return serializeAppResult(Result.err(cancelResult.error));
@@ -224,43 +287,40 @@ export function registerIpc(
     return okResult(undefined);
   });
 
-  ipcMain.handle(
-    InvokeIpcContracts.listFolderChildren.channel,
-    async (_event, folderPath: unknown) => {
-      const validated = validateIpcInput(PathInputSchema, folderPath, 'tree:list-children');
-      if (!validated.ok) {
-        return validated.serialized;
-      }
+  runtime.handle(InvokeIpcContracts.listFolderChildren.channel, async (folderPath: JsonValue) => {
+    const validated = validateIpcInput(PathInputSchema, folderPath, 'tree:list-children');
+    if (!validated.ok) {
+      return validated.serialized;
+    }
 
-      const resolvedPathResult = await resolveFolderPath(validated.value);
-      if (Result.isError(resolvedPathResult)) {
-        return serializeAppResult(Result.err(resolvedPathResult.error));
-      }
+    const resolvedPathResult = await runtime.resolveFolderPath(validated.value);
+    if (Result.isError(resolvedPathResult)) {
+      return serializeAppResult(Result.err(resolvedPathResult.error));
+    }
 
-      const resolvedPath = resolvedPathResult.value;
-      if (!resolvedPath) {
-        return validationFailure('tree:list-children', 'Invalid folder path');
-      }
+    const resolvedPath = resolvedPathResult.value;
+    if (!resolvedPath) {
+      return validationFailure('tree:list-children', 'Invalid folder path');
+    }
 
-      const authorized = await isAuthorizedMediaPath(resolvedPath);
-      if (!authorized) {
-        return validationFailure('tree:list-children', 'Folder path is not authorized');
-      }
+    const authorized = await runtime.isAuthorizedMediaPath(resolvedPath);
+    if (!authorized) {
+      return validationFailure('tree:list-children', 'Folder path is not authorized');
+    }
 
-      const childrenResult = await listFolderChildren(resolvedPath);
-      if (Result.isError(childrenResult)) {
-        return serializeAppResult(Result.err(childrenResult.error));
-      }
+    const childrenResult = await runtime.listFolderChildren(resolvedPath);
+    if (Result.isError(childrenResult)) {
+      return serializeAppResult(Result.err(childrenResult.error));
+    }
 
-      return okResult(childrenResult.value);
-    },
-  );
+    return okResult(childrenResult.value);
+  });
 
-  ipcMain.handle(InvokeIpcContracts.getSettings.channel, async () => {
+  runtime.handle(InvokeIpcContracts.getSettings.channel, async () => {
     return okResult(settingsService.getSettings());
   });
 
-  ipcMain.handle(InvokeIpcContracts.updateSettings.channel, async (_event, patch: unknown) => {
+  runtime.handle(InvokeIpcContracts.updateSettings.channel, async (patch: JsonValue) => {
     const validated = validateIpcInput(
       requireRequestSchema(InvokeIpcContracts.updateSettings.requestSchema),
       patch,
@@ -283,64 +343,61 @@ export function registerIpc(
       return serializeAppResult(Result.err(updatedSettings.error));
     }
 
-    setThumbnailDebugOptions(updatedSettings.value.debug);
+    runtime.setThumbnailDebugOptions(updatedSettings.value.debug);
     return okResult(updatedSettings.value);
   });
 
-  ipcMain.handle(InvokeIpcContracts.revealInFolder.channel, async (_event, filePath: unknown) => {
+  runtime.handle(InvokeIpcContracts.revealInFolder.channel, async (filePath: JsonValue) => {
     const validated = validateIpcInput(PathInputSchema, filePath, 'shell:reveal-in-folder');
     if (!validated.ok) {
       return validated.serialized;
     }
 
     const resolvedPath = path.resolve(validated.value);
-    const authorized = await isAuthorizedMediaPath(resolvedPath);
+    const authorized = await runtime.isAuthorizedMediaPath(resolvedPath);
     if (!authorized) {
       return validationFailure('shell:reveal-in-folder', 'Media path is not authorized');
     }
 
-    shell.showItemInFolder(resolvedPath);
+    runtime.showItemInFolder(resolvedPath);
     return okResult(undefined);
   });
 
-  ipcMain.handle(
-    InvokeIpcContracts.probeVideoMetadata.channel,
-    async (_event, request: unknown) => {
-      const validated = validateIpcInput(
-        requireRequestSchema(InvokeIpcContracts.probeVideoMetadata.requestSchema),
-        request,
-        InvokeIpcContracts.probeVideoMetadata.channel,
-      );
-      if (!validated.ok) {
-        return validated.serialized;
-      }
+  runtime.handle(InvokeIpcContracts.probeVideoMetadata.channel, async (request: JsonValue) => {
+    const validated = validateIpcInput(
+      requireRequestSchema(InvokeIpcContracts.probeVideoMetadata.requestSchema),
+      request,
+      InvokeIpcContracts.probeVideoMetadata.channel,
+    );
+    if (!validated.ok) {
+      return validated.serialized;
+    }
 
-      const sanitizedRequest = {
-        ...validated.value,
-        path: path.resolve(validated.value.path),
-      };
+    const sanitizedRequest = {
+      ...validated.value,
+      path: path.resolve(validated.value.path),
+    };
 
-      const authorized = await isAuthorizedMediaPath(sanitizedRequest.path);
-      if (!authorized) {
-        return validationFailure('media:probe-video', 'Media path is not authorized');
-      }
+    const authorized = await runtime.isAuthorizedMediaPath(sanitizedRequest.path);
+    if (!authorized) {
+      return validationFailure('media:probe-video', 'Media path is not authorized');
+    }
 
-      return okResult(
-        await mediaToolsService.probeVideo(
-          sanitizedRequest.path,
-          sanitizedRequest.mtimeMs,
-          sanitizedRequest.size,
-        ),
-      );
-    },
-  );
+    return okResult(
+      await mediaToolsService.probeVideo(
+        sanitizedRequest.path,
+        sanitizedRequest.mtimeMs,
+        sanitizedRequest.size,
+      ),
+    );
+  });
 
-  ipcMain.handle(InvokeIpcContracts.clearThumbnailCache.channel, async () => {
-    await clearThumbnailCache();
+  runtime.handle(InvokeIpcContracts.clearThumbnailCache.channel, async () => {
+    await runtime.clearThumbnailCache();
     return okResult(undefined);
   });
 
-  ipcMain.handle(InvokeIpcContracts.getMediaIndexStats.channel, async () => {
+  runtime.handle(InvokeIpcContracts.getMediaIndexStats.channel, async () => {
     const statsResult = await catalogService.getMediaIndexStats();
     if (Result.isError(statsResult)) {
       return serializeAppResult(Result.err(statsResult.error));
@@ -349,7 +406,7 @@ export function registerIpc(
     return okResult(statsResult.value);
   });
 
-  ipcMain.handle(InvokeIpcContracts.clearMediaIndex.channel, async () => {
+  runtime.handle(InvokeIpcContracts.clearMediaIndex.channel, async () => {
     const clearResult = await catalogService.clearIndex();
     if (Result.isError(clearResult)) {
       return serializeAppResult(Result.err(clearResult.error));
@@ -358,22 +415,22 @@ export function registerIpc(
     return okResult(undefined);
   });
 
-  ipcMain.handle(InvokeIpcContracts.getMediaToolsStatus.channel, async () => {
+  runtime.handle(InvokeIpcContracts.getMediaToolsStatus.channel, async () => {
     return okResult(mediaToolsService.getStatus());
   });
 
-  ipcMain.handle(InvokeIpcContracts.getDiagnosticsSnapshot.channel, async () => {
-    const thumbnailDiagnostics = getThumbnailDiagnostics();
-    const thumbnailWorker = getThumbnailWorkerCapabilities();
+  runtime.handle(InvokeIpcContracts.getDiagnosticsSnapshot.channel, async () => {
+    const thumbnailDiagnostics = runtime.getThumbnailDiagnostics();
+    const thumbnailWorker = runtime.getThumbnailWorkerCapabilities();
     const settings = settingsService.getSettings();
 
     const diagnostics: DiagnosticsSnapshot = {
-      appVersion: app.getVersion(),
+      appVersion: runtime.getAppVersion(),
       arch: process.arch,
       currentFolder: null,
       debug: settings.debug,
       electronVersion: process.versions.electron,
-      isPackaged: app.isPackaged,
+      isPackaged: runtime.isPackaged(),
       mediaTools: mediaToolsService.getStatus(),
       platform: process.platform,
       thumbnails: thumbnailDiagnostics ?? {

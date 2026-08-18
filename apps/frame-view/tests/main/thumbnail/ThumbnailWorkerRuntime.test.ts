@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import sharp from 'sharp';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { MediaToolsService } from '../../../src/main/services/mediaToolsService';
+import type { ThumbnailMediaTools } from '../../../src/main/thumbnail/ThumbnailWorkerRuntime';
 import { ThumbnailWorkerRuntime } from '../../../src/main/thumbnail/ThumbnailWorkerRuntime';
 
 async function createTempDir(prefix: string): Promise<string> {
@@ -116,8 +116,7 @@ describe('ThumbnailWorkerRuntime', () => {
         ffmpegPath: 'mock-ffmpeg',
         ffprobePath: 'mock-ffprobe',
       }),
-      probeVideo: async () => null,
-    } as unknown as MediaToolsService;
+    } satisfies ThumbnailMediaTools;
 
     const runtime = new ThumbnailWorkerRuntime({
       cacheRootPath,

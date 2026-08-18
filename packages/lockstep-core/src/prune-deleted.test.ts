@@ -1,20 +1,59 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
+import type { z } from "zod";
+import { pruneDeleted } from "./prune-deleted.js";
+import type { PruneRemoteApi, SyncRequestBody } from "./remote-api.js";
 import type { LockstepPlan, LockstepRunEvent } from "./types.js";
 
-const mocks = vi.hoisted(() => ({
-  deleteRemoteItem: vi.fn(),
-  postJson: vi.fn(),
-}));
+type DeleteRemoteItemRequest = Parameters<PruneRemoteApi["deleteRemoteItem"]>[0];
 
-vi.mock("./remote-api.js", () => ({
-  deleteRemoteItem: mocks.deleteRemoteItem,
-  postJson: mocks.postJson,
-  pushMediaItem: vi.fn(),
-}));
+interface RecordedPostJson {
+  apiToken: string;
+  apiUrl: string;
+  body: SyncRequestBody;
+  route: string;
+  signal: AbortSignal | undefined;
+}
 
-const { deleteRemoteItem, postJson } = mocks;
+interface RemoteApiFake {
+  deleteCalls: DeleteRemoteItemRequest[];
+  postJsonCalls: RecordedPostJson[];
+  remote: PruneRemoteApi;
+}
 
-import { pruneDeleted } from "./prune-deleted.js";
+interface RemoteApiFakeBehaviour {
+  onDelete?: (request: DeleteRemoteItemRequest) => Promise<void>;
+}
+
+function createRemoteApiFake(behaviour: RemoteApiFakeBehaviour = {}): RemoteApiFake {
+  const deleteCalls: DeleteRemoteItemRequest[] = [];
+  const postJsonCalls: RecordedPostJson[] = [];
+
+  const remote: PruneRemoteApi = {
+    deleteRemoteItem: async (request) => {
+      deleteCalls.push(request);
+      await behaviour.onDelete?.(request);
+    },
+    postJson: async <TSchema extends z.ZodType>(
+      apiUrl: string,
+      route: string,
+      apiToken: string,
+      body: SyncRequestBody,
+      schema: TSchema,
+      signal?: AbortSignal,
+    ) => {
+      postJsonCalls.push({ apiToken, apiUrl, body, route, signal });
+      return schema.parse(
+        route === "/api/sync/runs" ? { syncRunId: "run-1" } : { status: "database" },
+      );
+    },
+  };
+
+  return { deleteCalls, postJsonCalls, remote };
+}
+
+function findFinalizeCall(calls: readonly RecordedPostJson[]): RecordedPostJson | undefined {
+  return calls.find((call) => call.route.endsWith("/complete"));
+}
 
 function createPlan(items: LockstepPlan["items"]): LockstepPlan {
   return {
@@ -46,9 +85,10 @@ function collectEvents() {
 }
 
 describe("pruneDeleted orchestration", () => {
+  let fake: RemoteApiFake;
+
   beforeEach(() => {
-    postJson.mockReset();
-    deleteRemoteItem.mockReset();
+    fake = createRemoteApiFake();
   });
 
   it("emits complete without creating a sync run when nothing to prune", async () => {
@@ -63,11 +103,12 @@ describe("pruneDeleted orchestration", () => {
         sourceRoot: plan.sourceRoot,
       },
       observer,
+      fake.remote,
     );
 
     expect(result).toEqual({ failed: 0, plan, pruned: 0 });
-    expect(postJson).not.toHaveBeenCalled();
-    expect(deleteRemoteItem).not.toHaveBeenCalled();
+    expect(fake.postJsonCalls).toHaveLength(0);
+    expect(fake.deleteCalls).toHaveLength(0);
 
     const complete = events.find((event) => event.type === "complete");
     expect(complete).toMatchObject({
@@ -83,11 +124,6 @@ describe("pruneDeleted orchestration", () => {
 
   it("creates a sync run, deletes items, and finalizes as completed", async () => {
     const plan = createPlan([{ action: "delete", path: "photos/old.jpg" }]);
-
-    postJson.mockResolvedValueOnce({ syncRunId: "run-1" });
-    deleteRemoteItem.mockResolvedValueOnce(undefined);
-    postJson.mockResolvedValueOnce({ status: "database" });
-
     const { events, observer } = collectEvents();
 
     const result = await pruneDeleted(
@@ -98,19 +134,19 @@ describe("pruneDeleted orchestration", () => {
         sourceRoot: plan.sourceRoot,
       },
       observer,
+      fake.remote,
     );
 
     expect(result).toEqual({ failed: 0, plan, pruned: 1 });
-    expect(postJson).toHaveBeenCalledTimes(2);
-    expect(deleteRemoteItem).toHaveBeenCalledWith(
-      expect.objectContaining({
+    expect(fake.postJsonCalls).toHaveLength(2);
+    expect(fake.deleteCalls).toMatchObject([
+      {
         logicalPath: "photos/old.jpg",
         syncRunId: "run-1",
-      }),
-    );
+      },
+    ]);
 
-    const finalizeCall = postJson.mock.calls.find((call) => String(call[1]).endsWith("/complete"));
-    expect(finalizeCall?.[3]).toMatchObject({
+    expect(findFinalizeCall(fake.postJsonCalls)?.body).toMatchObject({
       status: "completed",
       counts: expect.objectContaining({ failed: 0, pushed: 1 }),
     });
@@ -127,12 +163,12 @@ describe("pruneDeleted orchestration", () => {
   });
 
   it("finalizes as failed and increments failed when a delete fails", async () => {
+    fake = createRemoteApiFake({
+      onDelete: async () => {
+        throw new Error("delete failed");
+      },
+    });
     const plan = createPlan([{ action: "delete", path: "photos/old.jpg" }]);
-
-    postJson.mockResolvedValueOnce({ syncRunId: "run-1" });
-    deleteRemoteItem.mockRejectedValueOnce(new Error("delete failed"));
-    postJson.mockResolvedValueOnce({ status: "database" });
-
     const { events, observer } = collectEvents();
 
     const result = await pruneDeleted(
@@ -143,13 +179,13 @@ describe("pruneDeleted orchestration", () => {
         sourceRoot: plan.sourceRoot,
       },
       observer,
+      fake.remote,
     );
 
     expect(result.failed).toBe(1);
     expect(result.pruned).toBe(0);
 
-    const finalizeCall = postJson.mock.calls.find((call) => String(call[1]).endsWith("/complete"));
-    expect(finalizeCall?.[3]).toMatchObject({
+    expect(findFinalizeCall(fake.postJsonCalls)?.body).toMatchObject({
       status: "failed",
       counts: expect.objectContaining({ failed: 1, pushed: 0 }),
     });
@@ -166,15 +202,13 @@ describe("pruneDeleted orchestration", () => {
 
   it("finalizes as cancelled and rethrows when aborted during a delete", async () => {
     const controller = new AbortController();
-    const plan = createPlan([{ action: "delete", path: "photos/old.jpg" }]);
-
-    postJson.mockResolvedValueOnce({ syncRunId: "run-1" });
-    deleteRemoteItem.mockImplementation(async ({ signal }) => {
-      controller.abort();
-      throw signal?.reason ?? new DOMException("Aborted", "AbortError");
+    fake = createRemoteApiFake({
+      onDelete: async ({ signal }) => {
+        controller.abort();
+        throw signal?.reason ?? new DOMException("Aborted", "AbortError");
+      },
     });
-    postJson.mockResolvedValueOnce({ status: "database" });
-
+    const plan = createPlan([{ action: "delete", path: "photos/old.jpg" }]);
     const { events, observer } = collectEvents();
 
     await expect(
@@ -187,13 +221,14 @@ describe("pruneDeleted orchestration", () => {
           sourceRoot: plan.sourceRoot,
         },
         observer,
+        fake.remote,
       ),
     ).rejects.toMatchObject({ name: "AbortError" });
 
-    const finalizeCall = postJson.mock.calls.find((call) => String(call[1]).endsWith("/complete"));
+    const finalizeCall = findFinalizeCall(fake.postJsonCalls);
     expect(finalizeCall).toBeDefined();
-    expect(finalizeCall?.[4]).toBeUndefined();
-    expect(finalizeCall?.[3]).toMatchObject({
+    expect(finalizeCall?.signal).toBeUndefined();
+    expect(finalizeCall?.body).toMatchObject({
       error: "Run cancelled by user",
       status: "cancelled",
     });

@@ -1,61 +1,55 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { eq } from "drizzle-orm";
+import { describe, expect, it } from "vitest";
 
-const mocks = vi.hoisted(() => ({
-  returningMock: vi.fn(),
-  setMock: vi.fn(),
-  updateMock: vi.fn(),
-  whereMock: vi.fn(),
-}));
-
-vi.mock("../db", () => ({
-  db: {
-    select: vi.fn(),
-    update: mocks.updateMock,
-  },
-}));
-
+import { syncRuns } from "../db/schema";
+import { testDatabaseForSuite } from "../library/test-db";
 import { forceCancelAllRunningSyncRuns, forceCancelSyncRun } from "./sync-run-control";
 
+const testDatabase = testDatabaseForSuite();
+
+async function insertRun(status: "running" | "completed", sourceRoot: string): Promise<string> {
+  const { db } = testDatabase();
+  const [run] = await db
+    .insert(syncRuns)
+    .values({ sourceRoot, status })
+    .returning({ id: syncRuns.id });
+  if (!run) throw new Error("failed to insert sync run");
+  return run.id;
+}
+
 describe("sync run control", () => {
-  beforeEach(() => {
-    mocks.updateMock.mockReset();
-    mocks.setMock.mockReset();
-    mocks.whereMock.mockReset();
-    mocks.returningMock.mockReset();
-
-    mocks.updateMock.mockReturnValue({ set: mocks.setMock });
-    mocks.setMock.mockReturnValue({ where: mocks.whereMock });
-    mocks.whereMock.mockReturnValue({ returning: mocks.returningMock });
-  });
-
   it("cancels a single running sync run", async () => {
-    mocks.returningMock.mockResolvedValue([{ id: "run-1" }]);
+    const { db } = testDatabase();
+    const syncRunId = await insertRun("running", "/archive");
 
-    const result = await forceCancelSyncRun({ syncRunId: "run-1" });
+    expect(await forceCancelSyncRun({ syncRunId }, db)).toEqual({ cancelled: true });
 
-    expect(result).toEqual({ cancelled: true });
-    expect(mocks.setMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        error: "Manually cancelled from Pane View management.",
-        status: "cancelled",
-      }),
-    );
+    const [run] = await db.select().from(syncRuns).where(eq(syncRuns.id, syncRunId));
+    expect(run?.status).toBe("cancelled");
+    expect(run?.error).toBe("Manually cancelled from Pane View management.");
+    expect(run?.completedAt).toBeInstanceOf(Date);
+
+    await db.delete(syncRuns);
   });
 
   it("returns false when the sync run is not running", async () => {
-    mocks.returningMock.mockResolvedValue([]);
+    const { db } = testDatabase();
+    const syncRunId = await insertRun("completed", "/archive");
 
-    const result = await forceCancelSyncRun({ syncRunId: "run-1" });
+    expect(await forceCancelSyncRun({ syncRunId }, db)).toEqual({ cancelled: false });
 
-    expect(result).toEqual({ cancelled: false });
+    await db.delete(syncRuns);
   });
 
   it("cancels all running sync runs", async () => {
-    mocks.returningMock.mockResolvedValue([{ id: "run-1" }, { id: "run-2" }]);
+    const { db } = testDatabase();
+    await insertRun("running", "/archive-one");
+    await insertRun("running", "/archive-two");
+    await insertRun("completed", "/archive-three");
 
-    const result = await forceCancelAllRunningSyncRuns();
+    expect(await forceCancelAllRunningSyncRuns(db)).toEqual({ cancelledCount: 2 });
+    expect(await forceCancelAllRunningSyncRuns(db)).toEqual({ cancelledCount: 0 });
 
-    expect(result).toEqual({ cancelledCount: 2 });
-    expect(mocks.updateMock).toHaveBeenCalledTimes(1);
+    await db.delete(syncRuns);
   });
 });

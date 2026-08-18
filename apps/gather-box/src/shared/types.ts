@@ -1,73 +1,93 @@
-import type { SiteKey } from "./sites";
+import * as z from "zod/mini";
+import { SiteKeySchema } from "./source-catalog";
 
-export interface DownloadableFile {
-  pageNumber: number;
-  thumbnailUrl: string | null;
-  originalUrl: string;
-  fileName: string;
-}
+export const DownloadableFileSchema = z.object({
+  pageNumber: z.number(),
+  thumbnailUrl: z.nullable(z.string()),
+  originalUrl: z.string(),
+  fileName: z.string()
+});
+
+export type DownloadableFile = z.infer<typeof DownloadableFileSchema>;
 
 export type GalleryImage = DownloadableFile;
 
-export interface DownloadablePayload {
-  ok: true;
-  outputKind: "downloadable-files";
-  site: SiteKey;
-  title: string;
-  pageUrl: string;
-  galleryId: string | null;
-  folderSegments: string[];
-  skippedCount: number;
-  images: GalleryImage[];
-}
+export const DownloadablePayloadSchema = z.object({
+  ok: z.literal(true),
+  outputKind: z.literal("downloadable-files"),
+  site: SiteKeySchema,
+  title: z.string(),
+  pageUrl: z.string(),
+  galleryId: z.nullable(z.string()),
+  folderSegments: z.array(z.string()),
+  skippedCount: z.number(),
+  images: z.array(DownloadableFileSchema)
+});
+
+export type DownloadablePayload = z.infer<typeof DownloadablePayloadSchema>;
 
 export type GalleryPayload = DownloadablePayload;
 
-export interface GeneratedStoryPayload {
-  ok: true;
-  outputKind: "generated-story-pdf";
-  site: "fanfiction-net";
-  title: string;
-  author: string;
-  pageUrl: string;
-  storyId: string;
-  folderSegments: string[];
-  skippedCount: number;
-  fileName: string;
-  summary: string;
-  metadataLine: string;
-  chapters: StoryChapterReference[];
-}
+export const StoryChapterReferenceSchema = z.object({
+  chapterNumber: z.number(),
+  label: z.string(),
+  url: z.string()
+});
 
-export interface StoryChapterReference {
-  chapterNumber: number;
-  label: string;
-  url: string;
-}
+export type StoryChapterReference = z.infer<typeof StoryChapterReferenceSchema>;
 
-export interface GalleryError {
-  ok: false;
-  code: CollectionErrorCode;
-  message: string;
-}
+export const GeneratedStoryPayloadSchema = z.object({
+  ok: z.literal(true),
+  outputKind: z.literal("generated-story-pdf"),
+  site: z.literal("fanfiction-net"),
+  title: z.string(),
+  author: z.string(),
+  pageUrl: z.string(),
+  storyId: z.string(),
+  folderSegments: z.array(z.string()),
+  skippedCount: z.number(),
+  fileName: z.string(),
+  summary: z.string(),
+  metadataLine: z.string(),
+  chapters: z.array(StoryChapterReferenceSchema)
+});
 
-export type GalleryCollectResponse = GalleryPayload | GeneratedStoryPayload | GalleryError;
+export type GeneratedStoryPayload = z.infer<typeof GeneratedStoryPayloadSchema>;
 
-export type CollectionErrorCode =
-  | "UNSUPPORTED_SITE"
-  | "GRID_NOT_FOUND"
-  | "NO_IMAGES_FOUND"
-  | "NO_VALID_IMAGES"
-  | "MEDIA_RESOLUTION_FAILED"
-  | "INVALID_KEMONO_PATH"
-  | "USER_NOT_FOUND"
-  | "TITLE_NOT_FOUND"
-  | "FILES_NOT_FOUND"
-  | "NO_FILES_FOUND"
-  | "NO_VALID_FILES"
-  | "PDF_LINK_NOT_FOUND"
-  | "AUTHOR_NOT_FOUND"
-  | "CHAPTERS_NOT_FOUND"
-  | "STORY_TEXT_NOT_FOUND"
-  | "PDF_GENERATION_FAILED"
-  | "COLLECTION_FAILED";
+export const CollectionErrorCodeSchema = z.enum([
+  "UNSUPPORTED_SITE",
+  "GRID_NOT_FOUND",
+  "NO_IMAGES_FOUND",
+  "NO_VALID_IMAGES",
+  "MEDIA_RESOLUTION_FAILED",
+  "INVALID_KEMONO_PATH",
+  "USER_NOT_FOUND",
+  "TITLE_NOT_FOUND",
+  "FILES_NOT_FOUND",
+  "NO_FILES_FOUND",
+  "NO_VALID_FILES",
+  "PDF_LINK_NOT_FOUND",
+  "AUTHOR_NOT_FOUND",
+  "CHAPTERS_NOT_FOUND",
+  "STORY_TEXT_NOT_FOUND",
+  "PDF_GENERATION_FAILED",
+  "COLLECTION_FAILED"
+]);
+
+export type CollectionErrorCode = z.infer<typeof CollectionErrorCodeSchema>;
+
+export const GalleryErrorSchema = z.object({
+  ok: z.literal(false),
+  code: CollectionErrorCodeSchema,
+  message: z.string()
+});
+
+export type GalleryError = z.infer<typeof GalleryErrorSchema>;
+
+export const GalleryCollectResponseSchema = z.union([
+  DownloadablePayloadSchema,
+  GeneratedStoryPayloadSchema,
+  GalleryErrorSchema
+]);
+
+export type GalleryCollectResponse = z.infer<typeof GalleryCollectResponseSchema>;

@@ -20,6 +20,12 @@ interface UseFolderOpenActionsOptions {
   settings: AppSettings;
 }
 
+/** The two entry points that start a scan: the native dialog and a typed-in path. */
+interface FolderOpenActions {
+  openFolderAction: () => void;
+  scanInputPathAction: (candidatePath: string) => void;
+}
+
 export function useFolderOpenActions({
   openFolderDialog,
   recursive,
@@ -28,10 +34,7 @@ export function useFolderOpenActions({
   setNavigationCeilingPath,
   setPendingFolderSelectionPath,
   settings,
-}: UseFolderOpenActionsOptions): {
-  openFolderAction: () => void;
-  scanInputPathAction: (candidatePath: string) => void;
-} {
+}: UseFolderOpenActionsOptions): FolderOpenActions {
   const startScanAtPath = useCallback(
     async (folderPath: string): Promise<void> => {
       setNavigationCeilingPath(folderPath);

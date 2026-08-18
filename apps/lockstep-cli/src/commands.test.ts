@@ -1,26 +1,19 @@
 import type { LockstepPlan } from "@latch-works/lockstep-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-const { planSync, pruneDeleted, pushChanges, runDoctorCore } = vi.hoisted(() => ({
-  planSync: vi.fn(),
-  pruneDeleted: vi.fn(),
-  pushChanges: vi.fn(),
-  runDoctorCore: vi.fn(),
-}));
-
-vi.mock("@latch-works/lockstep-core", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@latch-works/lockstep-core")>();
-  return {
-    ...actual,
-    doctor: runDoctorCore,
-    planSync,
-    pruneDeleted,
-    pushChanges,
-  };
-});
-
-import { executeCommand } from "./commands.js";
+import { type CoreCommands, executeCommand } from "./commands.js";
 import type { CliOptions } from "./types.js";
+
+const planSync = vi.fn();
+const pruneDeleted = vi.fn();
+const pushChanges = vi.fn();
+const runDoctorCore = vi.fn();
+
+const core: CoreCommands = {
+  doctor: runDoctorCore,
+  planSync,
+  pruneDeleted,
+  pushChanges,
+};
 
 function createPlan(overrides: Partial<LockstepPlan> = {}): LockstepPlan {
   return {
@@ -81,6 +74,7 @@ describe("executeCommand prune", () => {
     );
 
     await executeCommand(createPruneOptions(), {
+      core,
       isInteractive: () => false,
     });
 
@@ -93,10 +87,7 @@ describe("executeCommand prune", () => {
     planSync.mockResolvedValue(plan);
     pushChanges.mockResolvedValue({ failed: 0, plan, pushed: 0 });
 
-    await executeCommand({
-      ...createPruneOptions(),
-      command: "push",
-    });
+    await executeCommand(createPruneOptions({ command: "push" }), { core });
 
     expect(planSync).toHaveBeenCalledWith(
       expect.objectContaining({ hashMode: "remote-aware" }),
@@ -115,6 +106,7 @@ describe("executeCommand prune", () => {
     pruneDeleted.mockResolvedValue({ failed: 0, plan: createPlan(), pruned: 1 });
 
     await executeCommand(createPruneOptions({ yes: true }), {
+      core,
       isInteractive: () => false,
     });
 
@@ -128,6 +120,7 @@ describe("executeCommand prune", () => {
 
     await executeCommand(createPruneOptions(), {
       confirmPrune,
+      core,
       isInteractive: () => true,
     });
 
@@ -148,6 +141,7 @@ describe("executeCommand prune", () => {
 
     await executeCommand(createPruneOptions(), {
       confirmPrune,
+      core,
       isInteractive: () => true,
     });
 
@@ -166,6 +160,7 @@ describe("executeCommand prune", () => {
 
     await executeCommand(createPruneOptions(), {
       confirmPrune,
+      core,
       isInteractive: () => true,
     });
 

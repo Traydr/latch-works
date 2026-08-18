@@ -14,12 +14,28 @@ import {
   formatPushStatus,
   formatScanStatus,
   type LineReporter,
-  type PushStage,
+  PushStageSchema,
 } from "./progress.js";
 import type { CliOptions } from "./types.js";
 
+/** The lockstep-core entry points this module drives, injectable so tests can pass fakes. */
+export interface CoreCommands {
+  doctor: typeof runDoctorCore;
+  planSync: typeof planSync;
+  pruneDeleted: typeof pruneDeleted;
+  pushChanges: typeof pushChanges;
+}
+
+export const coreCommands = {
+  doctor: runDoctorCore,
+  planSync,
+  pruneDeleted,
+  pushChanges,
+} satisfies CoreCommands;
+
 export type ExecuteCommandDeps = {
   confirmPrune?: () => Promise<boolean>;
+  core?: CoreCommands;
   isInteractive?: () => boolean;
 };
 
@@ -29,11 +45,12 @@ export async function executeCommand(
 ): Promise<void> {
   const isInteractive = deps.isInteractive ?? isInteractiveTerminal;
   const confirmPrune = deps.confirmPrune ?? defaultConfirmPrune;
+  const core = deps.core ?? coreCommands;
   const reporter = createLineReporter();
   const observer = createCliObserver(reporter);
 
   if (options.command === "doctor") {
-    const result = await runDoctorCore(
+    const result = await core.doctor(
       {
         apiToken: process.env[options.apiTokenEnv],
         apiUrl: options.apiUrl ?? process.env.LOCKSTEP_API_URL,
@@ -89,7 +106,7 @@ export async function executeCommand(
     }
   }
 
-  const plan = await planSync(
+  const plan = await core.planSync(
     {
       apiToken,
       apiUrl,
@@ -125,7 +142,7 @@ export async function executeCommand(
   const requiredApiToken = requireConfiguredValue(apiToken, "Remote API token");
 
   if (options.command === "push") {
-    const result = await pushChanges(
+    const result = await core.pushChanges(
       {
         apiToken: requiredApiToken,
         apiUrl: requiredApiUrl,
@@ -178,7 +195,7 @@ export async function executeCommand(
       }
     }
 
-    const result = await pruneDeleted(
+    const result = await core.pruneDeleted(
       {
         apiToken: requiredApiToken,
         apiUrl: requiredApiUrl,
@@ -280,14 +297,15 @@ function createCliObserver(reporter: LineReporter): LockstepObserver {
       if (event.type === "status") {
         if (event.message.includes("] hashing ") || event.message.includes("] uploading ")) {
           const match = event.message.match(/^\[(\d+)\/(\d+)\] (\w+) ([^(]+)(?: \((.+)\))?$/);
-          if (match) {
-            const [, current, total, stage, itemPath, detail] = match;
+          const stage = PushStageSchema.safeParse(match?.[3]);
+          if (match && stage.success) {
+            const [, current, total, , itemPath, detail] = match;
             reporter.setStatus(
               formatPushStatus({
                 current: Number(current),
                 detail,
                 path: itemPath?.trim() ?? "",
-                stage: stage as PushStage,
+                stage: stage.data,
                 total: Number(total),
               }),
             );

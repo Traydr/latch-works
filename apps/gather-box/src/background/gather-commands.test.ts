@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { GatherCommands } from "./gather-commands";
 
-const tab = { id: 9, windowId: 3, url: "https://www.pixiv.net/artworks/1" } as chrome.tabs.Tab;
+const tab = tabAt({ id: 9, windowId: 3, url: "https://www.pixiv.net/artworks/1" });
 
 describe("GatherCommands", () => {
   it("opens and closes the same window deterministically", async () => {
@@ -32,8 +32,29 @@ describe("GatherCommands", () => {
 
   it("reports a missing Chrome-owned window identity", async () => {
     const commands = new GatherCommands({ startForTab: vi.fn() }, { open: vi.fn(), close: vi.fn() });
-    await expect(commands.gather({ id: 1 } as chrome.tabs.Tab)).resolves.toEqual({
+    // SAFETY: Chrome omits windowId for tabs it does not own, which chrome.tabs.Tab declares as
+    // always present; GatherCommands guards for exactly that and this drives the guard.
+    const unownedTab = { id: 1 } as chrome.tabs.Tab;
+
+    await expect(commands.gather(unownedTab)).resolves.toEqual({
       outcome: "target-unavailable"
     });
   });
 });
+
+/** A Chrome tab with every required field, so tests state only what the assertion depends on. */
+function tabAt(fields: Pick<chrome.tabs.Tab, "id" | "url" | "windowId">): chrome.tabs.Tab {
+  return {
+    active: true,
+    autoDiscardable: true,
+    discarded: false,
+    frozen: false,
+    groupId: -1,
+    highlighted: false,
+    incognito: false,
+    index: 0,
+    pinned: false,
+    selected: true,
+    ...fields
+  };
+}

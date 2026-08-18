@@ -4,6 +4,8 @@ import { homedir } from "node:os";
 import path from "node:path";
 import type { MediaItem } from "@latch-works/media-domain";
 import { type ArchiveFileFingerprint, fingerprintsMatch } from "@latch-works/media-index";
+import { z } from "zod";
+import { toError } from "./format.js";
 
 const CACHE_VERSION = 1;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/i;
@@ -13,15 +15,44 @@ export interface HashCacheEntry extends ArchiveFileFingerprint {
   sha256: string;
 }
 
-interface PersistedHashCache {
-  entries: HashCacheEntry[];
-  sourceRoot: string;
-  version: typeof CACHE_VERSION;
-}
+/** On-disk entry: `mtimeMs` is truncated and `sha256` lower-cased as it is read. */
+const HashCacheEntrySchema = z
+  .object({
+    ctimeMs: z.number().finite().optional(),
+    mtimeMs: z.number().finite(),
+    path: z.string(),
+    sha256: z.string().regex(SHA256_PATTERN),
+    size: z.number().int().nonnegative(),
+  })
+  .transform(
+    (entry): HashCacheEntry => ({
+      ctimeMs: entry.ctimeMs,
+      mtimeMs: Math.trunc(entry.mtimeMs),
+      path: entry.path,
+      sha256: entry.sha256.toLowerCase(),
+      size: entry.size,
+    }),
+  );
+
+const PersistedHashCacheSchema = z.object({
+  entries: z.array(HashCacheEntrySchema),
+  sourceRoot: z.string(),
+  version: z.literal(CACHE_VERSION),
+});
+
+type PersistedHashCache = z.output<typeof PersistedHashCacheSchema>;
+
+/** Node's fs rejections carry an `errno` `code`; anything else fails the parse. */
+const FileSystemErrorSchema = z.object({ code: z.string() });
 
 export interface LoadHashCacheOptions {
   cacheRoot?: string;
   sourceRoot: string;
+}
+
+export interface HashCacheHydration {
+  hits: number;
+  items: MediaItem[];
 }
 
 export class HashCache {
@@ -56,7 +87,7 @@ export class HashCache {
   hydrate(
     items: readonly MediaItem[],
     fingerprints: ReadonlyMap<string, ArchiveFileFingerprint>,
-  ): { hits: number; items: MediaItem[] } {
+  ): HashCacheHydration {
     let hits = 0;
     const hydratedItems = items.map((item) => {
       const fingerprint = fingerprints.get(item.path);
@@ -131,18 +162,19 @@ export async function loadHashCache({
 
   try {
     const raw = await readFile(filePath, "utf-8");
-    const persisted = parsePersistedCache(JSON.parse(raw) as unknown);
+    const persisted = PersistedHashCacheSchema.parse(JSON.parse(raw));
     if (canonicalSourceRoot(persisted.sourceRoot) !== canonicalRoot) {
       throw new Error("cache source root does not match");
     }
     return { cache: new HashCache(filePath, canonicalRoot, persisted.entries) };
   } catch (error) {
-    if (isMissingFileError(error)) {
+    const failure = toError(error);
+    if (isMissingFileError(failure)) {
       return { cache: new HashCache(filePath, canonicalRoot) };
     }
     return {
       cache: new HashCache(filePath, canonicalRoot),
-      warning: `Hash cache could not be read and will be rebuilt: ${formatError(error)}`,
+      warning: `Hash cache could not be read and will be rebuilt: ${failure.message}`,
     };
   }
 }
@@ -152,60 +184,7 @@ function canonicalSourceRoot(sourceRoot: string): string {
   return process.platform === "win32" ? resolved.toLowerCase() : resolved;
 }
 
-function parsePersistedCache(value: unknown): PersistedHashCache {
-  if (typeof value !== "object" || value === null) {
-    throw new Error("cache must be an object");
-  }
-  const record = value as Record<string, unknown>;
-  if (record.version !== CACHE_VERSION || typeof record.sourceRoot !== "string") {
-    throw new Error(`unsupported hash cache version`);
-  }
-  if (!Array.isArray(record.entries)) {
-    throw new Error("cache entries must be an array");
-  }
-
-  const entries = record.entries.map((entry, index) => parseEntry(entry, index));
-  return {
-    entries,
-    sourceRoot: record.sourceRoot,
-    version: CACHE_VERSION,
-  };
-}
-
-function parseEntry(value: unknown, index: number): HashCacheEntry {
-  if (typeof value !== "object" || value === null) {
-    throw new Error(`invalid hash cache entry at index ${index}`);
-  }
-  const record = value as Record<string, unknown>;
-  if (
-    typeof record.path !== "string" ||
-    typeof record.mtimeMs !== "number" ||
-    !Number.isFinite(record.mtimeMs) ||
-    typeof record.size !== "number" ||
-    !Number.isSafeInteger(record.size) ||
-    record.size < 0 ||
-    typeof record.sha256 !== "string" ||
-    !SHA256_PATTERN.test(record.sha256) ||
-    (record.ctimeMs !== undefined &&
-      (typeof record.ctimeMs !== "number" || !Number.isFinite(record.ctimeMs)))
-  ) {
-    throw new Error(`invalid hash cache entry at index ${index}`);
-  }
-  return {
-    ctimeMs: record.ctimeMs as number | undefined,
-    mtimeMs: Math.trunc(record.mtimeMs),
-    path: record.path,
-    sha256: record.sha256.toLowerCase(),
-    size: record.size,
-  };
-}
-
-function isMissingFileError(error: unknown): boolean {
-  return (
-    error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT"
-  );
-}
-
-function formatError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+function isMissingFileError(error: Error): boolean {
+  const parsed = FileSystemErrorSchema.safeParse(error);
+  return parsed.success && parsed.data.code === "ENOENT";
 }

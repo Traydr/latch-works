@@ -1,4 +1,10 @@
+import { toError } from "./errors";
 import type { SiteKey } from "../shared/sites";
+
+/** The archive root, narrowed to the lookup this compatibility probe performs. */
+export interface LegacyFolderLookup {
+  getDirectoryHandle(name: string): Promise<{ name: string }>;
+}
 
 export interface CompatibleFolderSegments {
   segments: string[];
@@ -6,7 +12,7 @@ export interface CompatibleFolderSegments {
 }
 
 export async function resolveCompatibleFolderSegments(
-  rootDirectory: FileSystemDirectoryHandle,
+  rootDirectory: LegacyFolderLookup,
   site: SiteKey,
   standardSegments: string[]
 ): Promise<CompatibleFolderSegments> {
@@ -26,7 +32,7 @@ export async function resolveCompatibleFolderSegments(
       return { segments: [legacyArtist], usedLegacyFolder: true };
     }
   } catch (error) {
-    if (!isNotFoundError(error)) {
+    if (!isNotFoundError(toError(error))) {
       throw error;
     }
   }
@@ -34,10 +40,6 @@ export async function resolveCompatibleFolderSegments(
   return { segments: standardSegments, usedLegacyFolder: false };
 }
 
-function isNotFoundError(error: unknown): boolean {
-  return (
-    error instanceof DOMException
-      ? error.name === "NotFoundError"
-      : typeof error === "object" && error !== null && "name" in error && error.name === "NotFoundError"
-  );
+function isNotFoundError(error: Error): boolean {
+  return error.name === "NotFoundError";
 }

@@ -1,24 +1,26 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createThumbnailResolver } from "./batched-thumbnail-resolver";
+import type { MediaDeliveryBatchResult } from "@/features/media/media-delivery-service";
+import {
+  createThumbnailResolver,
+  type GalleryThumbnailResolver,
+  type ResolveMediaDeliveryUrls,
+} from "./batched-thumbnail-resolver";
 
-const mocks = vi.hoisted(() => ({
-  resolveMediaDeliveryUrls: vi.fn(),
-}));
-
-vi.mock("@/features/media/media-delivery-service", () => ({
-  resolveMediaDeliveryUrls: mocks.resolveMediaDeliveryUrls,
-}));
+function mediaId(index: number): string {
+  return `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`;
+}
 
 describe("resolveGalleryThumbnailsBatch", () => {
-  let resolver: ReturnType<typeof createThumbnailResolver>;
+  let resolveUrls: ReturnType<typeof vi.fn<ResolveMediaDeliveryUrls>>;
+  let resolver: GalleryThumbnailResolver;
 
   beforeEach(() => {
-    vi.clearAllMocks();
-    resolver = createThumbnailResolver();
+    resolveUrls = vi.fn<ResolveMediaDeliveryUrls>();
+    resolver = createThumbnailResolver({ resolveUrls });
   });
 
   it("dedupes visible-window requests and respects ready/pending cache state", async () => {
-    mocks.resolveMediaDeliveryUrls.mockResolvedValueOnce({
+    resolveUrls.mockResolvedValueOnce({
       results: [
         {
           mediaId: "00000000-0000-4000-8000-000000000001",
@@ -43,8 +45,8 @@ describe("resolveGalleryThumbnailsBatch", () => {
       { mediaId: "00000000-0000-4000-8000-000000000002" },
     ]);
 
-    expect(mocks.resolveMediaDeliveryUrls).toHaveBeenCalledTimes(1);
-    expect(mocks.resolveMediaDeliveryUrls).toHaveBeenCalledWith({
+    expect(resolveUrls).toHaveBeenCalledTimes(1);
+    expect(resolveUrls).toHaveBeenCalledWith({
       data: {
         items: [
           {
@@ -71,12 +73,12 @@ describe("resolveGalleryThumbnailsBatch", () => {
       { mediaId: "00000000-0000-4000-8000-000000000002" },
     ]);
 
-    expect(mocks.resolveMediaDeliveryUrls).toHaveBeenCalledTimes(1);
+    expect(resolveUrls).toHaveBeenCalledTimes(1);
     expect(second).toEqual(first);
   });
 
   it("reports the earliest pending retry delay for visible requests", async () => {
-    mocks.resolveMediaDeliveryUrls.mockResolvedValueOnce({
+    resolveUrls.mockResolvedValueOnce({
       results: [
         {
           mediaId: "00000000-0000-4000-8000-000000000001",
@@ -111,7 +113,7 @@ describe("resolveGalleryThumbnailsBatch", () => {
   });
 
   it("caches terminal batch failures without scheduling another poll", async () => {
-    mocks.resolveMediaDeliveryUrls.mockResolvedValueOnce({
+    resolveUrls.mockResolvedValueOnce({
       results: [
         {
           mediaId: "00000000-0000-4000-8000-000000000003",
@@ -135,21 +137,22 @@ describe("resolveGalleryThumbnailsBatch", () => {
     await resolver.resolveGalleryThumbnailsBatch([
       { mediaId: "00000000-0000-4000-8000-000000000003" },
     ]);
-    expect(mocks.resolveMediaDeliveryUrls).toHaveBeenCalledTimes(1);
+    expect(resolveUrls).toHaveBeenCalledTimes(1);
   });
 
   it("drains 49 ready requests in batches no larger than 48", async () => {
     const requests = Array.from({ length: 49 }, (_, index) => ({
-      mediaId: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+      mediaId: mediaId(index),
     }));
-    mocks.resolveMediaDeliveryUrls.mockImplementation(({ data }) =>
+    resolveUrls.mockImplementation(({ data }) =>
       Promise.resolve({
-        results: data.items.map((item: { mediaId: string; size: number }) => ({
-          ...item,
-          status: "ready",
-          url: `https://edge.shutter.test/${item.mediaId}`,
-          variant: "thumbnail",
-        })),
+        results: data.items.map(
+          (item): MediaDeliveryBatchResult => ({
+            ...item,
+            status: "ready",
+            url: `https://edge.shutter.test/${item.mediaId}`,
+          }),
+        ),
       }),
     );
 
@@ -157,28 +160,25 @@ describe("resolveGalleryThumbnailsBatch", () => {
     expect(resolver.hasEligibleGalleryThumbnailRequests(requests)).toBe(true);
     await resolver.resolveGalleryThumbnailsBatch(requests);
 
-    expect(mocks.resolveMediaDeliveryUrls).toHaveBeenCalledTimes(2);
-    expect(mocks.resolveMediaDeliveryUrls.mock.calls.map(([call]) => call.data.items)).toHaveLength(
-      2,
-    );
-    expect(
-      mocks.resolveMediaDeliveryUrls.mock.calls.map(([call]) => call.data.items.length),
-    ).toEqual([48, 1]);
+    expect(resolveUrls).toHaveBeenCalledTimes(2);
+    expect(resolveUrls.mock.calls.map(([call]) => call.data.items)).toHaveLength(2);
+    expect(resolveUrls.mock.calls.map(([call]) => call.data.items.length)).toEqual([48, 1]);
     expect(resolver.hasEligibleGalleryThumbnailRequests(requests)).toBe(false);
   });
 
   it("keeps every batch bounded while draining 97 ready requests", async () => {
     const requests = Array.from({ length: 97 }, (_, index) => ({
-      mediaId: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+      mediaId: mediaId(index),
     }));
-    mocks.resolveMediaDeliveryUrls.mockImplementation(({ data }) =>
+    resolveUrls.mockImplementation(({ data }) =>
       Promise.resolve({
-        results: data.items.map((item: { mediaId: string; size: number }) => ({
-          ...item,
-          status: "ready",
-          url: `https://edge.shutter.test/${item.mediaId}`,
-          variant: "thumbnail",
-        })),
+        results: data.items.map(
+          (item): MediaDeliveryBatchResult => ({
+            ...item,
+            status: "ready",
+            url: `https://edge.shutter.test/${item.mediaId}`,
+          }),
+        ),
       }),
     );
 
@@ -186,37 +186,37 @@ describe("resolveGalleryThumbnailsBatch", () => {
       await resolver.resolveGalleryThumbnailsBatch(requests);
     }
 
-    expect(
-      mocks.resolveMediaDeliveryUrls.mock.calls.map(([call]) => call.data.items.length),
-    ).toEqual([48, 48, 1]);
+    expect(resolveUrls.mock.calls.map(([call]) => call.data.items.length)).toEqual([48, 48, 1]);
   });
 
   it("keeps immediately eligible work distinct from delayed pending retries", async () => {
     const requests = Array.from({ length: 49 }, (_, index) => ({
-      mediaId: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+      mediaId: mediaId(index),
     }));
-    mocks.resolveMediaDeliveryUrls
+    resolveUrls
       .mockResolvedValueOnce({
         results: [
           {
-            mediaId: requests[0]?.mediaId,
+            mediaId: mediaId(0),
             retryAfterMs: 15_000,
             size: 720,
             status: "pending",
             variant: "thumbnail",
           },
-          ...requests.slice(1, 48).map((request) => ({
-            mediaId: request.mediaId,
-            size: 720,
-            status: "failed",
-            variant: "thumbnail",
-          })),
+          ...requests.slice(1, 48).map(
+            (request): MediaDeliveryBatchResult => ({
+              mediaId: request.mediaId,
+              size: 720,
+              status: "failed",
+              variant: "thumbnail",
+            }),
+          ),
         ],
       })
       .mockResolvedValueOnce({
         results: [
           {
-            mediaId: requests[48]?.mediaId,
+            mediaId: mediaId(48),
             size: 720,
             status: "failed",
             variant: "thumbnail",
@@ -231,15 +231,13 @@ describe("resolveGalleryThumbnailsBatch", () => {
 
     await resolver.resolveGalleryThumbnailsBatch(requests);
 
-    expect(
-      mocks.resolveMediaDeliveryUrls.mock.calls.map(([call]) => call.data.items.length),
-    ).toEqual([48, 1]);
+    expect(resolveUrls.mock.calls.map(([call]) => call.data.items.length)).toEqual([48, 1]);
     expect(resolver.hasEligibleGalleryThumbnailRequests(requests)).toBe(false);
     expect(resolver.getNextPendingThumbnailRetryMs(requests)).toBeGreaterThan(0);
   });
 
   it("does not share cached results between resolver instances", async () => {
-    mocks.resolveMediaDeliveryUrls.mockResolvedValue({
+    resolveUrls.mockResolvedValue({
       results: [
         {
           mediaId: "00000000-0000-4000-8000-000000000001",
@@ -253,8 +251,8 @@ describe("resolveGalleryThumbnailsBatch", () => {
     const request = [{ mediaId: "00000000-0000-4000-8000-000000000001" }];
 
     await resolver.resolveGalleryThumbnailsBatch(request);
-    await createThumbnailResolver().resolveGalleryThumbnailsBatch(request);
+    await createThumbnailResolver({ resolveUrls }).resolveGalleryThumbnailsBatch(request);
 
-    expect(mocks.resolveMediaDeliveryUrls).toHaveBeenCalledTimes(2);
+    expect(resolveUrls).toHaveBeenCalledTimes(2);
   });
 });

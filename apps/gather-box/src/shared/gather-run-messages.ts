@@ -1,6 +1,12 @@
-import type { GatherRunState, GatherRunStartOutcome } from "./gather-run";
-import type { GatherBoxSettings } from "./settings";
-import type { DownloadablePayload, GeneratedStoryPayload } from "./types";
+import * as z from "zod/mini";
+import type { GatherRunStartOutcome, GatherRunState } from "./gather-run";
+import { DownloadFailureSchema, LastRunLogEntrySchema } from "./last-run";
+import { GatherBoxSettingsSchema } from "./settings";
+import {
+  DownloadablePayloadSchema,
+  DownloadableFileSchema,
+  GeneratedStoryPayloadSchema
+} from "./types";
 
 export const START_GATHER_RUN_REQUEST = "GATHER_BOX_RUN_START" as const;
 export const RETRY_GATHER_RUN_REQUEST = "GATHER_BOX_RUN_RETRY" as const;
@@ -10,68 +16,96 @@ export const CANCEL_GATHER_RUN = "GATHER_BOX_RUN_ABORT" as const;
 export const GATHER_RUN_EVENT = "GATHER_BOX_RUN_EVENT" as const;
 export const GET_GATHER_EXECUTOR_STATUS = "GATHER_BOX_EXECUTOR_STATUS" as const;
 
-export interface StartGatherRunRequest {
-  type: typeof START_GATHER_RUN_REQUEST;
-  target: "background";
-  tabId: number;
-}
+export const StartGatherRunRequestSchema = z.object({
+  type: z.literal(START_GATHER_RUN_REQUEST),
+  target: z.literal("background"),
+  tabId: z.number()
+});
 
-export interface RetryGatherRunRequest {
-  type: typeof RETRY_GATHER_RUN_REQUEST;
-  target: "background";
-  runId: string;
-}
+export type StartGatherRunRequest = z.infer<typeof StartGatherRunRequestSchema>;
 
-export interface CancelGatherRunRequest {
-  type: typeof CANCEL_GATHER_RUN_REQUEST;
-  target: "background";
-  runId: string;
-}
+export const RetryGatherRunRequestSchema = z.object({
+  type: z.literal(RETRY_GATHER_RUN_REQUEST),
+  target: z.literal("background"),
+  runId: z.string()
+});
 
-export interface ExecuteGatherRunMessage {
-  type: typeof EXECUTE_GATHER_RUN;
-  target: "offscreen";
-  runId: string;
-  payload: DownloadablePayload | GeneratedStoryPayload;
-  settings: GatherBoxSettings;
-}
+export type RetryGatherRunRequest = z.infer<typeof RetryGatherRunRequestSchema>;
 
-export interface CancelGatherRunMessage {
-  type: typeof CANCEL_GATHER_RUN;
-  target: "offscreen";
-  runId: string;
-}
+export const CancelGatherRunRequestSchema = z.object({
+  type: z.literal(CANCEL_GATHER_RUN_REQUEST),
+  target: z.literal("background"),
+  runId: z.string()
+});
 
-export interface GetGatherExecutorStatusMessage {
-  type: typeof GET_GATHER_EXECUTOR_STATUS;
-  target: "offscreen";
-}
+export type CancelGatherRunRequest = z.infer<typeof CancelGatherRunRequestSchema>;
+
+export const ExecuteGatherRunMessageSchema = z.object({
+  type: z.literal(EXECUTE_GATHER_RUN),
+  target: z.literal("offscreen"),
+  runId: z.string(),
+  payload: z.union([DownloadablePayloadSchema, GeneratedStoryPayloadSchema]),
+  settings: GatherBoxSettingsSchema
+});
+
+export type ExecuteGatherRunMessage = z.infer<typeof ExecuteGatherRunMessageSchema>;
+
+export const CancelGatherRunMessageSchema = z.object({
+  type: z.literal(CANCEL_GATHER_RUN),
+  target: z.literal("offscreen"),
+  runId: z.string()
+});
+
+export type CancelGatherRunMessage = z.infer<typeof CancelGatherRunMessageSchema>;
+
+export const GetGatherExecutorStatusMessageSchema = z.object({
+  type: z.literal(GET_GATHER_EXECUTOR_STATUS),
+  target: z.literal("offscreen")
+});
+
+export type GetGatherExecutorStatusMessage = z.infer<typeof GetGatherExecutorStatusMessageSchema>;
 
 /** Which folder handle a paused job is waiting on, so the panel can say where to confirm it. */
-export type GatherFolderScope = "global" | "site";
+export const GatherFolderScopeSchema = z.enum(["global", "site"]);
+export type GatherFolderScope = z.infer<typeof GatherFolderScopeSchema>;
 
-export type GatherRunEvent =
-  | { kind: "permission-required"; scope: GatherFolderScope }
-  | { kind: "writing"; destinationPreview: string; folderSegments: string[]; total: number }
-  | { kind: "progress"; completed: number; total: number; message: string }
-  | { kind: "log"; message: string; tone?: "error" | "success" }
-  | {
-      kind: "complete";
-      saved: number;
-      skipped: number;
-      failed: number;
-      failedItems: GatherRunState["failedItems"];
-      retryImages: GatherRunState["retryImages"];
-    }
-  | { kind: "failed"; message: string }
-  | { kind: "cancelled"; message?: string };
+export const GatherRunEventSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("permission-required"), scope: GatherFolderScopeSchema }),
+  z.object({
+    kind: z.literal("writing"),
+    destinationPreview: z.string(),
+    folderSegments: z.array(z.string()),
+    total: z.number()
+  }),
+  z.object({
+    kind: z.literal("progress"),
+    completed: z.number(),
+    total: z.number(),
+    message: z.string()
+  }),
+  z.extend(LastRunLogEntrySchema, { kind: z.literal("log") }),
+  z.object({
+    kind: z.literal("complete"),
+    saved: z.number(),
+    skipped: z.number(),
+    failed: z.number(),
+    failedItems: z.array(DownloadFailureSchema),
+    retryImages: z.array(DownloadableFileSchema)
+  }),
+  z.object({ kind: z.literal("failed"), message: z.string() }),
+  z.object({ kind: z.literal("cancelled"), message: z.optional(z.string()) })
+]);
 
-export interface GatherRunEventMessage {
-  type: typeof GATHER_RUN_EVENT;
-  target: "background";
-  runId: string;
-  event: GatherRunEvent;
-}
+export type GatherRunEvent = z.infer<typeof GatherRunEventSchema>;
+
+export const GatherRunEventMessageSchema = z.object({
+  type: z.literal(GATHER_RUN_EVENT),
+  target: z.literal("background"),
+  runId: z.string(),
+  event: GatherRunEventSchema
+});
+
+export type GatherRunEventMessage = z.infer<typeof GatherRunEventMessageSchema>;
 
 export type GatherRunResponse = GatherRunStartOutcome;
 
@@ -80,106 +114,7 @@ export type GatherRunCancelOutcome =
   | { outcome: "idle" }
   | { outcome: "failed"; message: string };
 
-export function isStartGatherRunRequest(value: unknown): value is StartGatherRunRequest {
-  return hasMessageShape(value, START_GATHER_RUN_REQUEST, "background") && typeof value.tabId === "number";
-}
-
-export function isRetryGatherRunRequest(value: unknown): value is RetryGatherRunRequest {
-  return hasMessageShape(value, RETRY_GATHER_RUN_REQUEST, "background") && typeof value.runId === "string";
-}
-
-export function isCancelGatherRunRequest(value: unknown): value is CancelGatherRunRequest {
-  return hasMessageShape(value, CANCEL_GATHER_RUN_REQUEST, "background") && typeof value.runId === "string";
-}
-
-export function isExecuteGatherRunMessage(value: unknown): value is ExecuteGatherRunMessage {
-  return (
-    hasMessageShape(value, EXECUTE_GATHER_RUN, "offscreen") &&
-    typeof value.runId === "string" &&
-    "payload" in value &&
-    "settings" in value
-  );
-}
-
-export function isCancelGatherRunMessage(value: unknown): value is CancelGatherRunMessage {
-  return hasMessageShape(value, CANCEL_GATHER_RUN, "offscreen") && typeof value.runId === "string";
-}
-
-export function isGetGatherExecutorStatusMessage(
-  value: unknown
-): value is GetGatherExecutorStatusMessage {
-  return hasMessageShape(value, GET_GATHER_EXECUTOR_STATUS, "offscreen");
-}
-
-export function isGatherRunEventMessage(value: unknown): value is GatherRunEventMessage {
-  return (
-    hasMessageShape(value, GATHER_RUN_EVENT, "background") &&
-    typeof value.runId === "string" &&
-    "event" in value &&
-    isGatherRunEvent(value.event)
-  );
-}
-
 /** Events that end a run. The background dispatches the next queued output from exactly these. */
 export function isTerminalGatherRunEvent(event: GatherRunEvent): boolean {
   return event.kind === "complete" || event.kind === "failed" || event.kind === "cancelled";
-}
-
-export function isGatherRunEvent(value: unknown): value is GatherRunEvent {
-  if (!value || typeof value !== "object" || !("kind" in value)) {
-    return false;
-  }
-
-  const event = value as Record<string, unknown>;
-  switch (event.kind) {
-    case "permission-required":
-      return event.scope === "global" || event.scope === "site";
-    case "writing":
-      return (
-        typeof event.destinationPreview === "string" &&
-        Array.isArray(event.folderSegments) &&
-        event.folderSegments.every((segment) => typeof segment === "string") &&
-        typeof event.total === "number"
-      );
-    case "progress":
-      return (
-        typeof event.completed === "number" &&
-        typeof event.total === "number" &&
-        typeof event.message === "string"
-      );
-    case "log":
-      return (
-        typeof event.message === "string" &&
-        (event.tone === undefined || event.tone === "error" || event.tone === "success")
-      );
-    case "complete":
-      return (
-        typeof event.saved === "number" &&
-        typeof event.skipped === "number" &&
-        typeof event.failed === "number" &&
-        Array.isArray(event.failedItems) &&
-        Array.isArray(event.retryImages)
-      );
-    case "failed":
-      return typeof event.message === "string";
-    case "cancelled":
-      return event.message === undefined || typeof event.message === "string";
-    default:
-      return false;
-  }
-}
-
-function hasMessageShape<TType extends string, TTarget extends string>(
-  value: unknown,
-  type: TType,
-  target: TTarget
-): value is Record<string, unknown> & { type: TType; target: TTarget } {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "type" in value &&
-    value.type === type &&
-    "target" in value &&
-    value.target === target
-  );
 }

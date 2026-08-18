@@ -1,12 +1,24 @@
-import { GET_GATHER_EXECUTOR_STATUS } from "../shared/gather-run-messages";
+import * as z from "zod/mini";
+import {
+  GET_GATHER_EXECUTOR_STATUS,
+  type GetGatherExecutorStatusMessage
+} from "../shared/gather-run-messages";
 
 const OFFSCREEN_PATH = "offscreen/offscreen.html";
 
+/** The offscreen document runs at most one Gather Run at a time. */
+const GatherExecutorStatusSchema = z.catch(
+  z.object({ activeRunId: z.catch(z.nullable(z.string()), null) }),
+  { activeRunId: null }
+);
+
+type GatherExecutorStatus = z.infer<typeof GatherExecutorStatusSchema>;
+
 interface OffscreenPlatform {
-  getContexts(documentUrl: string): Promise<unknown[]>;
+  getContexts(documentUrl: string): Promise<chrome.runtime.ExtensionContext[]>;
   getUrl(path: string): string;
   createDocument(options: chrome.offscreen.CreateParameters): Promise<void>;
-  sendMessage(message: unknown): Promise<unknown>;
+  sendMessage(message: GetGatherExecutorStatusMessage): Promise<GatherExecutorStatus>;
 }
 
 const chromeOffscreenPlatform: OffscreenPlatform = {
@@ -17,7 +29,8 @@ const chromeOffscreenPlatform: OffscreenPlatform = {
     }),
   getUrl: (path) => chrome.runtime.getURL(path),
   createDocument: (options) => chrome.offscreen.createDocument(options),
-  sendMessage: (message) => chrome.runtime.sendMessage(message)
+  sendMessage: async (message) =>
+    GatherExecutorStatusSchema.parse(await chrome.runtime.sendMessage(message))
 };
 
 export class OffscreenDocument {
@@ -48,11 +61,11 @@ export class OffscreenDocument {
         return null;
       }
 
-      const response = (await this.platform.sendMessage({
+      const status = await this.platform.sendMessage({
         type: GET_GATHER_EXECUTOR_STATUS,
         target: "offscreen"
-      })) as { activeRunId?: unknown } | undefined;
-      return typeof response?.activeRunId === "string" ? response.activeRunId : null;
+      });
+      return status.activeRunId;
     } catch {
       return null;
     }

@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { resolveCompatibleFolderSegments } from "./folder-compatibility";
+import {
+  resolveCompatibleFolderSegments,
+  type LegacyFolderLookup
+} from "./folder-compatibility";
 
 describe("folder compatibility", () => {
   it("reuses an existing all-lowercase Hentai Foundry artist folder", async () => {
@@ -38,20 +41,14 @@ describe("folder compatibility", () => {
   });
 });
 
-function createDirectoryLookup(entries: Record<string, string>): {
-  handle: FileSystemDirectoryHandle;
-  getDirectoryHandle: ReturnType<typeof vi.fn>;
-} {
+function createDirectoryLookup(entries: Record<string, string>) {
   const getDirectoryHandle = vi.fn(async (name: string) => {
     const actualName = entries[name];
     if (!actualName) {
       throw new DOMException("Not found", "NotFoundError");
     }
-    return { name: actualName } as FileSystemDirectoryHandle;
+    return { name: actualName };
   });
 
-  return {
-    handle: { getDirectoryHandle } as unknown as FileSystemDirectoryHandle,
-    getDirectoryHandle
-  };
+  return { handle: { getDirectoryHandle } satisfies LegacyFolderLookup, getDirectoryHandle };
 }

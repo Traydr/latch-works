@@ -1,5 +1,6 @@
 import { access, stat } from "node:fs/promises";
 import path from "node:path";
+import { z } from "zod";
 import type { ConfigStore } from "./config.js";
 import { runFullWizard, runPartialPrompts } from "./interactive.js";
 import type { CliOptions, Command, LockstepConfig } from "./types.js";
@@ -32,7 +33,10 @@ export type ParseArgvResult =
   | { kind: "empty" }
   | { kind: "parsed"; options: CliOptions };
 
-const COMMANDS = new Set<Command>(["doctor", "plan", "prune", "push", "verify"]);
+const CommandSchema = z.enum(["doctor", "plan", "prune", "push", "verify"]) satisfies z.ZodType<
+  Command,
+  unknown
+>;
 
 export function parseArgv(argv: string[]): ParseArgvResult {
   if (argv.length === 0) {
@@ -44,13 +48,14 @@ export function parseArgv(argv: string[]): ParseArgvResult {
   }
 
   const [rawCommand, ...rest] = argv;
-  if (!rawCommand || !COMMANDS.has(rawCommand as Command)) {
+  const command = CommandSchema.safeParse(rawCommand);
+  if (!command.success) {
     return { kind: "invalid" };
   }
 
   const options: CliOptions = {
     apiTokenEnv: "LOCKSTEP_API_TOKEN",
-    command: rawCommand as Command,
+    command: command.data,
     hashFiles: false,
     showSkipped: false,
     yes: false,

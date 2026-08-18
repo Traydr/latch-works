@@ -1,18 +1,22 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { requireSyncApiToken } from "../server/auth/api-token";
 import { readJsonBody } from "../server/http/json-body";
-import { assertNoActiveCleanupJob } from "../server/management/guards";
-import { completeSyncedObject, markRemoteDeleted } from "../server/sync/store";
+import {
+  type SyncRouteDependencies,
+  syncRouteDependencies,
+} from "../server/sync/route-dependencies";
 import { CompleteObjectBodySchema, validateSyncObjectPayload } from "../server/sync/validation";
 
-export async function postCompleteObject({ request }: { request: Request }): Promise<Response> {
-  const unauthorized = requireSyncApiToken(request);
+export async function postCompleteObject(
+  { request }: { request: Request },
+  dependencies: SyncRouteDependencies = syncRouteDependencies,
+): Promise<Response> {
+  const unauthorized = dependencies.requireSyncApiToken(request);
   if (unauthorized) {
     return unauthorized;
   }
 
   try {
-    await assertNoActiveCleanupJob();
+    await dependencies.assertNoActiveCleanupJob();
   } catch (error) {
     return Response.json(
       { error: error instanceof Error ? error.message : "Library wipe is active." },
@@ -28,7 +32,7 @@ export async function postCompleteObject({ request }: { request: Request }): Pro
 
   if (body.action === "delete") {
     return Response.json(
-      await markRemoteDeleted({
+      await dependencies.markRemoteDeleted({
         logicalPath: body.logicalPath,
         syncRunId: body.syncRunId,
       }),
@@ -41,7 +45,7 @@ export async function postCompleteObject({ request }: { request: Request }): Pro
   }
 
   return Response.json(
-    await completeSyncedObject({
+    await dependencies.completeSyncedObject({
       input: validated.input,
     }),
   );

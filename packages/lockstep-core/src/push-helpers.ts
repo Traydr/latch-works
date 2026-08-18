@@ -16,6 +16,12 @@ export function resolveHashMode(options: {
   return options.defaultMode ?? "none";
 }
 
+/** A capped slice of plan items plus the number the cap left behind. */
+export interface CappedPlanItems<T> {
+  items: T[];
+  omittedCount: number;
+}
+
 export function selectChangedItems<T extends { action: SyncPlanAction }>(items: T[]): T[] {
   return items.filter((item) => item.action !== "keep");
 }
@@ -23,7 +29,7 @@ export function selectChangedItems<T extends { action: SyncPlanAction }>(items: 
 export function selectUploadUpdateItems<T extends { action: SyncPlanAction }>(
   changedItems: T[],
   maxChanges?: number,
-): { items: T[]; omittedCount: number } {
+): CappedPlanItems<T> {
   const uploadUpdateItems = changedItems.filter(
     (item) => item.action === "upload" || item.action === "update",
   );
@@ -41,7 +47,7 @@ export function selectUploadUpdateItems<T extends { action: SyncPlanAction }>(
 export function selectDeleteItems<T extends { action: SyncPlanAction }>(
   changedItems: T[],
   maxChanges?: number,
-): { items: T[]; omittedCount: number } {
+): CappedPlanItems<T> {
   const deleteItems = changedItems.filter((item) => item.action === "delete");
 
   if (!maxChanges || deleteItems.length <= maxChanges) {

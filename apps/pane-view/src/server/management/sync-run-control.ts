@@ -1,5 +1,5 @@
 import { and, asc, eq } from "drizzle-orm";
-import { db } from "../db";
+import { type Database, db } from "../db";
 import { syncRuns } from "../db/schema";
 
 const manualCancelMessage = "Manually cancelled from Pane View management.";
@@ -10,8 +10,8 @@ export interface RunningSyncRun {
   startedAt: string;
 }
 
-export async function listRunningSyncRuns(): Promise<RunningSyncRun[]> {
-  const rows = await db
+export async function listRunningSyncRuns(database: Database = db): Promise<RunningSyncRun[]> {
+  const rows = await database
     .select({
       id: syncRuns.id,
       sourceRoot: syncRuns.sourceRoot,
@@ -28,12 +28,11 @@ export async function listRunningSyncRuns(): Promise<RunningSyncRun[]> {
   }));
 }
 
-export async function forceCancelSyncRun({
-  syncRunId,
-}: {
-  syncRunId: string;
-}): Promise<{ cancelled: boolean }> {
-  const [syncRun] = await db
+export async function forceCancelSyncRun(
+  { syncRunId }: { syncRunId: string },
+  database: Database = db,
+): Promise<{ cancelled: boolean }> {
+  const [syncRun] = await database
     .update(syncRuns)
     .set({
       completedAt: new Date(),
@@ -46,8 +45,10 @@ export async function forceCancelSyncRun({
   return { cancelled: Boolean(syncRun) };
 }
 
-export async function forceCancelAllRunningSyncRuns(): Promise<{ cancelledCount: number }> {
-  const cancelled = await db
+export async function forceCancelAllRunningSyncRuns(
+  database: Database = db,
+): Promise<{ cancelledCount: number }> {
+  const cancelled = await database
     .update(syncRuns)
     .set({
       completedAt: new Date(),

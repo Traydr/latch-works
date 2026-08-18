@@ -1,29 +1,21 @@
+import * as z from "zod/mini";
+import type { SiteKey } from "./sites";
+import { SiteKeySchema } from "./source-catalog";
+import type { GalleryCollectResponse } from "./types";
+
 export const COLLECT_MESSAGE_TYPE = "COLLECT_COMIC_GALLERY" as const;
 
-export interface CollectComicGalleryMessage {
-  type: typeof COLLECT_MESSAGE_TYPE;
-  requestId: string;
-  sourceKey: import("./sites").SiteKey;
-  pageUrl: string;
-}
+export const CollectComicGalleryMessageSchema = z.object({
+  type: z.literal(COLLECT_MESSAGE_TYPE),
+  requestId: z.string(),
+  sourceKey: SiteKeySchema,
+  pageUrl: z.string()
+});
+
+export type CollectComicGalleryMessage = z.infer<typeof CollectComicGalleryMessageSchema>;
 
 export interface CollectComicGalleryResponse {
   requestId: string;
-  sourceKey: import("./sites").SiteKey;
-  result: import("./types").GalleryCollectResponse;
-}
-
-export function isCollectComicGalleryMessage(value: unknown): value is CollectComicGalleryMessage {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "type" in value &&
-    value.type === COLLECT_MESSAGE_TYPE &&
-    "requestId" in value &&
-    typeof value.requestId === "string" &&
-    "sourceKey" in value &&
-    typeof value.sourceKey === "string" &&
-    "pageUrl" in value &&
-    typeof value.pageUrl === "string"
-  );
+  sourceKey: SiteKey;
+  result: GalleryCollectResponse;
 }

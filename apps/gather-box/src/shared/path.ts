@@ -5,8 +5,8 @@ export function lowercaseFirstAscii(value: string): string {
   return first >= "A" && first <= "Z" ? `${first.toLowerCase()}${value.slice(1)}` : value;
 }
 
-export function sanitizePathSegment(value: unknown): string {
-  const raw = String(value || "").trim();
+export function sanitizePathSegment(value: string): string {
+  const raw = value.trim();
   if (raw === "." || raw === "..") {
     return "";
   }
@@ -25,8 +25,8 @@ export function sanitizePathSegment(value: unknown): string {
   return sanitized || "";
 }
 
-export function sanitizeFileName(value: unknown): string {
-  const sanitized = String(value || "")
+export function sanitizeFileName(value: string): string {
+  const sanitized = value
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[<>:"/\\|?*]/g, " ")

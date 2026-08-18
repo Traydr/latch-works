@@ -1,35 +1,74 @@
-import { deleteStoredObjectsBatch, type S3StorageClient } from "@latch-works/media-storage";
+import {
+  deleteStoredObjectsBatch,
+  type S3CommandStorage,
+  type S3StorageClient,
+} from "@latch-works/media-storage";
 import { createPaneViewStorageClient } from "../media/storage-client";
 
 const deleteConcurrency = 8;
 
-let storageClient: S3StorageClient | undefined;
-
-export function getMaintenanceStorageClient(): S3StorageClient {
-  storageClient ??= createPaneViewStorageClient();
-  return storageClient;
+/** The object storage calls maintenance jobs make; the default wires the real bucket. */
+export interface MaintenanceStorageDependencies {
+  createStorageClient(): S3StorageClient;
+  deleteStoredObjectsBatch(request: {
+    keys: string[];
+    maxConcurrent?: number;
+    onError?: (error: Error, key: string) => void;
+    storage: S3CommandStorage;
+  }): Promise<{ deleted: number; errors: number }>;
 }
 
-export async function deleteMaintenanceObjects(keys: string[]): Promise<{ deleted: number }> {
-  let firstError: unknown;
-  const result = await deleteStoredObjectsBatch({
-    keys,
-    maxConcurrent: deleteConcurrency,
-    onError: (error) => {
-      firstError ??= error;
-    },
-    storage: getMaintenanceStorageClient(),
-  });
+const defaultMaintenanceStorageDependencies: MaintenanceStorageDependencies = {
+  createStorageClient: createPaneViewStorageClient,
+  deleteStoredObjectsBatch,
+};
 
-  if (result.errors > 0) {
-    const reason =
-      firstError instanceof Error
-        ? firstError.message
-        : firstError === undefined
-          ? "Unknown object storage error"
-          : String(firstError);
-    throw new Error(`${result.errors} object storage deletes failed: ${reason}`);
+export interface MaintenanceStorage {
+  /** The one client every maintenance job shares; created on first use. */
+  getStorageClient(): S3StorageClient;
+  deleteObjects(keys: string[]): Promise<{ deleted: number }>;
+}
+
+export function createMaintenanceStorage(
+  dependencies: MaintenanceStorageDependencies = defaultMaintenanceStorageDependencies,
+): MaintenanceStorage {
+  let storageClient: S3StorageClient | undefined;
+
+  function getStorageClient(): S3StorageClient {
+    storageClient ??= dependencies.createStorageClient();
+    return storageClient;
   }
 
-  return { deleted: result.deleted };
+  return {
+    getStorageClient,
+
+    async deleteObjects(keys) {
+      let firstError: Error | undefined;
+      const result = await dependencies.deleteStoredObjectsBatch({
+        keys,
+        maxConcurrent: deleteConcurrency,
+        onError: (error) => {
+          firstError ??= error;
+        },
+        storage: getStorageClient(),
+      });
+
+      if (result.errors > 0) {
+        const reason = firstError?.message ?? "Unknown object storage error";
+        throw new Error(`${result.errors} object storage deletes failed: ${reason}`);
+      }
+
+      return { deleted: result.deleted };
+    },
+  };
+}
+
+const sharedMaintenanceStorage = createMaintenanceStorage();
+
+export function getMaintenanceStorageClient(): S3StorageClient {
+  return sharedMaintenanceStorage.getStorageClient();
+}
+
+export function deleteMaintenanceObjects(keys: string[]): Promise<{ deleted: number }> {
+  return sharedMaintenanceStorage.deleteObjects(keys);
 }

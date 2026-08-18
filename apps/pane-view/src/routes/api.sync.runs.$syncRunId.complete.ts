@@ -1,8 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
-import { requireSyncApiToken } from "../server/auth/api-token";
 import { readJsonBody } from "../server/http/json-body";
-import { finalizeSyncRun } from "../server/sync/store";
+import {
+  type SyncRouteDependencies,
+  syncRouteDependencies,
+} from "../server/sync/route-dependencies";
 import { SyncRunCountsSchema } from "../server/sync/validation";
 
 const FinalizeSyncRunBodySchema = z.object({
@@ -13,14 +15,11 @@ const FinalizeSyncRunBodySchema = z.object({
   }),
 });
 
-export async function postSyncRunComplete({
-  params,
-  request,
-}: {
-  params: { syncRunId: string };
-  request: Request;
-}): Promise<Response> {
-  const unauthorized = requireSyncApiToken(request);
+export async function postSyncRunComplete(
+  { params, request }: { params: { syncRunId: string }; request: Request },
+  dependencies: SyncRouteDependencies = syncRouteDependencies,
+): Promise<Response> {
+  const unauthorized = dependencies.requireSyncApiToken(request);
   if (unauthorized) {
     return unauthorized;
   }
@@ -31,7 +30,7 @@ export async function postSyncRunComplete({
   }
 
   return Response.json(
-    await finalizeSyncRun({
+    await dependencies.finalizeSyncRun({
       input: {
         counts: parsed.body.counts,
         error: parsed.body.error,

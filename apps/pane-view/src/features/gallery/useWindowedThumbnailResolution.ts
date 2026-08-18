@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   type GalleryThumbnailRequest,
-  getNextPendingThumbnailRetryMs,
-  hasEligibleGalleryThumbnailRequests,
-  readCachedGalleryThumbnailState,
-  resolveGalleryThumbnailsBatch,
+  type GalleryThumbnailResolver,
+  type GalleryThumbnailResolveState,
+  sharedThumbnailResolver,
 } from "@/features/gallery/batched-thumbnail-resolver";
 import type { GalleryBrowseEntry } from "@/features/gallery/gallery-browse-entry";
 import {
@@ -23,9 +22,10 @@ export interface WindowedThumbnailResolutionResult {
 export function useWindowedThumbnailResolution(
   resetKey: string,
   windowedEntries: GalleryBrowseEntry[],
+  resolver: GalleryThumbnailResolver = sharedThumbnailResolver,
 ): WindowedThumbnailResolutionResult {
   const [resolution, setResolution] = useState(() => {
-    const cached = readCachedGalleryThumbnailState();
+    const cached = resolver.readCachedGalleryThumbnailState();
     return { resetKey, urls: cached.urls };
   });
   const windowedThumbnailRequests = useMemo(
@@ -43,7 +43,9 @@ export function useWindowedThumbnailResolution(
     [windowedEntries],
   );
   const resolvedThumbnailUrls =
-    resolution.resetKey === resetKey ? resolution.urls : readCachedGalleryThumbnailState().urls;
+    resolution.resetKey === resetKey
+      ? resolution.urls
+      : resolver.readCachedGalleryThumbnailState().urls;
 
   useEffect(() => {
     if (windowedThumbnailRequests.length === 0) {
@@ -55,14 +57,12 @@ export function useWindowedThumbnailResolution(
     let drainTimeoutId: number | undefined;
     let retryTimeoutId: number | undefined;
 
-    const applyResolvedState = (
-      resolved: Awaited<ReturnType<typeof resolveGalleryThumbnailsBatch>>,
-    ) => {
+    const applyResolvedState = (resolved: GalleryThumbnailResolveState) => {
       setResolution({ resetKey, urls: resolved.urls });
     };
 
     const resolveAndSchedule = () => {
-      void resolveGalleryThumbnailsBatch(windowedThumbnailRequests).then((resolved) => {
+      void resolver.resolveGalleryThumbnailsBatch(windowedThumbnailRequests).then((resolved) => {
         if (cancelled) {
           return;
         }
@@ -77,7 +77,7 @@ export function useWindowedThumbnailResolution(
         return;
       }
 
-      const retryDelayMs = getNextPendingThumbnailRetryMs(windowedThumbnailRequests);
+      const retryDelayMs = resolver.getNextPendingThumbnailRetryMs(windowedThumbnailRequests);
       if (retryDelayMs === null) {
         return;
       }
@@ -92,7 +92,7 @@ export function useWindowedThumbnailResolution(
         return;
       }
 
-      if (hasEligibleGalleryThumbnailRequests(windowedThumbnailRequests)) {
+      if (resolver.hasEligibleGalleryThumbnailRequests(windowedThumbnailRequests)) {
         drainTimeoutId = window.setTimeout(resolveAndSchedule, 0);
         return;
       }
@@ -116,7 +116,7 @@ export function useWindowedThumbnailResolution(
         window.clearTimeout(retryTimeoutId);
       }
     };
-  }, [resetKey, windowedThumbnailRequests]);
+  }, [resetKey, resolver, windowedThumbnailRequests]);
 
   return {
     resolvedThumbnailUrls,

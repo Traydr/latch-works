@@ -4,9 +4,19 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { z } from 'zod';
 
 import { SettingsService } from '../../../src/main/services/settingsService';
-import { DEFAULT_SETTINGS } from '../../../src/shared/types';
+import { AppSettingsSchema } from '../../../src/shared/contracts';
+import { type AppSettings, DEFAULT_SETTINGS } from '../../../src/shared/types';
+
+/** The settings file on disk wraps the settings the service persists. */
+const PersistedStateSchema = z.object({ settings: AppSettingsSchema });
+
+async function readPersistedSettings(filePath: string): Promise<AppSettings> {
+  const raw = await readFile(filePath, 'utf8');
+  return PersistedStateSchema.parse(JSON.parse(raw)).settings;
+}
 
 describe('SettingsService', () => {
   let userDataPath: string;
@@ -50,11 +60,12 @@ describe('SettingsService', () => {
     await service.flushNowSync();
     await pendingUpdate;
 
-    const raw = await readFile(path.join(userDataPath, 'frame-view-settings.json'), 'utf8');
-    const parsed = JSON.parse(raw) as { settings: { theme: string; loopVideos: boolean } };
+    const settings = await readPersistedSettings(
+      path.join(userDataPath, 'frame-view-settings.json'),
+    );
 
-    expect(parsed.settings.theme).toBe('dark');
-    expect(parsed.settings.loopVideos).toBe(false);
+    expect(settings.theme).toBe('dark');
+    expect(settings.loopVideos).toBe(false);
   });
 
   it('persists debug settings and applies defaults for older settings payloads', async () => {
@@ -92,12 +103,9 @@ describe('SettingsService', () => {
       },
     });
 
-    const raw = await readFile(settingsFilePath, 'utf8');
-    const parsed = JSON.parse(raw) as {
-      settings: { debug: { enableDebugLogging: boolean; enablePerformanceMonitoring: boolean } };
-    };
+    const settings = await readPersistedSettings(settingsFilePath);
 
-    expect(parsed.settings.debug).toEqual({
+    expect(settings.debug).toEqual({
       enableDebugLogging: true,
       enablePerformanceMonitoring: true,
     });
@@ -123,21 +131,13 @@ describe('SettingsService', () => {
     });
     await service.flushNowSync();
 
-    const raw = await readFile(settingsFilePath, 'utf8');
-    const parsed = JSON.parse(raw) as {
-      settings: {
-        rootGalleryPreferences: Record<
-          string,
-          { comicMode: boolean; excludedRootChildPaths: string[] }
-        >;
-      };
-    };
+    const settings = await readPersistedSettings(settingsFilePath);
 
-    expect(parsed.settings.rootGalleryPreferences['C:\\library']).toEqual({
+    expect(settings.rootGalleryPreferences['C:\\library']).toEqual({
       comicMode: true,
       excludedRootChildPaths: ['C:\\library\\skip'],
     });
-    expect(parsed.settings.rootGalleryPreferences['C:\\other']).toEqual({
+    expect(settings.rootGalleryPreferences['C:\\other']).toEqual({
       comicMode: false,
       excludedRootChildPaths: [],
     });

@@ -99,7 +99,7 @@ describe("planSync hash modes", () => {
 
   it("continues with warnings when the cache cannot be read or written", async () => {
     const fixture = await createFixture();
-    const blockedPath = path.join(tempDir as string, "blocked");
+    const blockedPath = path.join(fixture.root, "blocked");
     await writeFile(blockedPath, "file, not a directory", "utf-8");
     const events: LockstepRunEvent[] = [];
 
@@ -154,10 +154,11 @@ describe("planSync hash modes", () => {
   });
 
   async function createFixture() {
-    tempDir = await mkdtemp(path.join(os.tmpdir(), "lockstep-plan-sync-"));
-    const sourceRoot = path.join(tempDir, "archive");
-    const cacheRoot = path.join(tempDir, "cache");
-    const snapshotPath = path.join(tempDir, "snapshot.json");
+    const root = await mkdtemp(path.join(os.tmpdir(), "lockstep-plan-sync-"));
+    tempDir = root;
+    const sourceRoot = path.join(root, "archive");
+    const cacheRoot = path.join(root, "cache");
+    const snapshotPath = path.join(root, "snapshot.json");
     await mkdir(sourceRoot);
 
     const files = {
@@ -182,7 +183,7 @@ describe("planSync hash modes", () => {
       ]),
       "utf-8",
     );
-    return { cacheRoot, snapshotPath, sourceRoot };
+    return { cacheRoot, root, snapshotPath, sourceRoot };
   }
 });
 

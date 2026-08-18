@@ -1,10 +1,10 @@
 import { Result, type Result as ResultType, type SerializedResult } from 'better-result';
 import type { z } from 'zod';
 
-import { createSerializedResultSchema, IpcErrorPayloadSchema } from './contracts';
+import { createSerializedResultSchema, IpcErrorPayloadSchema, type JsonValue } from './contracts';
 import type { IpcErrorPayload } from './types';
 
-function protocolError(channel: string, payload: unknown): IpcErrorPayload {
+function protocolError(channel: string, payload: JsonValue): IpcErrorPayload {
   return {
     _tag: 'ProtocolError',
     message: `Invalid IPC result payload for ${channel}`,
@@ -20,7 +20,7 @@ export function serializeIpcResult<T>(
 }
 
 export function deserializeIpcResult<T>(
-  value: unknown,
+  value: JsonValue,
   schema: z.ZodType<T>,
   channel: string,
 ): ResultType<T, IpcErrorPayload> {

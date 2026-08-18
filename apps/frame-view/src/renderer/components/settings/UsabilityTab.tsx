@@ -29,7 +29,7 @@ export function UsabilityTab({ onUpdate, settings }: UsabilityTabProps): JSX.Ele
     }
 
     const onMouseDown = (event: MouseEvent): void => {
-      if (themeMenuRef.current?.contains(event.target as Node)) {
+      if (event.target instanceof Node && themeMenuRef.current?.contains(event.target)) {
         return;
       }
 

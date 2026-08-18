@@ -1,3 +1,4 @@
+import type { PageLocation } from "../collector-entry";
 import {
   RESOLVE_REDGIFS_MEDIA_MESSAGE,
   type ResolveRedgifsMediaMessage,
@@ -17,7 +18,7 @@ interface RedditPost {
 
 export async function collectRedditData(
   document: Document,
-  location: Location,
+  location: PageLocation,
   resolveRedgifs: RedgifsResolver = resolveRedgifsMedia
 ): Promise<GalleryCollectResponse> {
   const post = getRedditPost(document, location);
@@ -81,7 +82,7 @@ export async function collectRedditData(
   };
 }
 
-function getRedditPost(document: Document, location: Location): RedditPost | null {
+function getRedditPost(document: Document, location: PageLocation): RedditPost | null {
   const match = location.pathname.match(
     /^\/(?:r|user)\/[^/]+\/comments\/([a-z0-9]+)(?:\/[^/?#]+)?\/?$/i
   );

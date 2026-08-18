@@ -1,7 +1,7 @@
 import type { FolderNode, GallerySortMode } from "@latch-works/media-domain";
 import { buildBrowserEntries } from "@latch-works/media-domain";
 import { and, asc, desc, eq, gt, inArray, isNull, lt, or, type SQL } from "drizzle-orm";
-import { db } from "../db";
+import { type Database, db } from "../db";
 import { folders, libraryEntries, mediaObjects } from "../db/schema";
 import {
   cursorRandomKey,
@@ -61,16 +61,19 @@ export interface GalleryListingReadRequest {
 // ---------------------------------------------------------------------------
 
 /** Snapshot media page: logical-path order, offset paginated, overfetched by one. */
-export function buildLibrarySnapshotMediaQuery({
-  currentPath,
-  limit,
-  offset = 0,
-  query,
-  recursive = false,
-}: Pick<LibrarySnapshotReadRequest, "currentPath" | "limit" | "offset" | "query" | "recursive">) {
+export function buildLibrarySnapshotMediaQuery(
+  {
+    currentPath,
+    limit,
+    offset = 0,
+    query,
+    recursive = false,
+  }: Pick<LibrarySnapshotReadRequest, "currentPath" | "limit" | "offset" | "query" | "recursive">,
+  database: Database = db,
+) {
   const { mediaConditions } = buildLibraryConditions({ currentPath, query, recursive });
 
-  return db
+  return database
     .select({
       entry: libraryEntries,
       object: mediaObjects,
@@ -84,33 +87,39 @@ export function buildLibrarySnapshotMediaQuery({
 }
 
 /** Visible folders for the current scope (direct children, or search matches). */
-export function buildLibraryFolderQuery({
-  currentPath,
-  query,
-  recursive = false,
-}: Pick<LibrarySnapshotReadRequest, "currentPath" | "query" | "recursive">) {
+export function buildLibraryFolderQuery(
+  {
+    currentPath,
+    query,
+    recursive = false,
+  }: Pick<LibrarySnapshotReadRequest, "currentPath" | "query" | "recursive">,
+  database: Database = db,
+) {
   const { folderConditions } = buildLibraryConditions({ currentPath, query, recursive });
 
-  return db
+  return database
     .select()
     .from(folders)
     .where(and(...folderConditions));
 }
 
 /** Listing media page: sorted, filtered, keyset-continued, overfetched by one. */
-export function buildGalleryListingMediaQuery({
-  currentPath,
-  cursor,
-  limit = DEFAULT_GALLERY_LISTING_LIMIT,
-  query,
-  randomSeed,
-  recursive = false,
-  showImages,
-  showVideos,
-  sortMode,
-}: Omit<GalleryListingReadRequest, "cursor"> & {
-  cursor: Extract<GalleryListingCursorPayload, { subjectKind: "media" }> | null;
-}) {
+export function buildGalleryListingMediaQuery(
+  {
+    currentPath,
+    cursor,
+    limit = DEFAULT_GALLERY_LISTING_LIMIT,
+    query,
+    randomSeed,
+    recursive = false,
+    showImages,
+    showVideos,
+    sortMode,
+  }: Omit<GalleryListingReadRequest, "cursor"> & {
+    cursor: Extract<GalleryListingCursorPayload, { subjectKind: "media" }> | null;
+  },
+  database: Database = db,
+) {
   const { mediaConditions } = buildLibraryConditions({ currentPath, query, recursive });
   mediaConditions.push(...buildMediaVisibilityConditions({ showImages, showVideos }));
 
@@ -118,7 +127,7 @@ export function buildGalleryListingMediaQuery({
     mediaConditions.push(buildGalleryListingCursorCondition(cursor));
   }
 
-  return db
+  return database
     .select({
       entry: libraryEntries,
       object: mediaObjects,
@@ -265,27 +274,33 @@ export function buildGalleryListingCursorCondition(
 // Reads
 // ---------------------------------------------------------------------------
 
-export async function readDatabaseLibrarySnapshot({
-  currentPath,
-  includeAllFolders = false,
-  limit,
-  offset = 0,
-  query,
-  recursive = false,
-}: LibrarySnapshotReadRequest): Promise<DatabaseLibrarySnapshot> {
+export async function readDatabaseLibrarySnapshot(
+  {
+    currentPath,
+    includeAllFolders = false,
+    limit,
+    offset = 0,
+    query,
+    recursive = false,
+  }: LibrarySnapshotReadRequest,
+  database: Database = db,
+): Promise<DatabaseLibrarySnapshot> {
   const [folderRows, mediaRows, rootRows, allFolderRows] = await Promise.all([
-    buildLibraryFolderQuery({ currentPath, query, recursive }),
+    buildLibraryFolderQuery({ currentPath, query, recursive }, database),
     limit > 0
-      ? buildLibrarySnapshotMediaQuery({ currentPath, limit, offset, query, recursive })
+      ? buildLibrarySnapshotMediaQuery({ currentPath, limit, offset, query, recursive }, database)
       : Promise.resolve([]),
-    db.select().from(folders).where(eq(folders.parentPath, "")),
+    database.select().from(folders).where(eq(folders.parentPath, "")),
     includeAllFolders
-      ? db.select().from(folders).where(isNull(folders.deletedAt))
+      ? database.select().from(folders).where(isNull(folders.deletedAt))
       : Promise.resolve([]),
   ]);
 
   const visibleFolderPaths = [...new Set(folderRows.map((folder) => folder.path))];
-  const visibleParentPathsWithChildren = await readParentPathsWithChildren(visibleFolderPaths);
+  const visibleParentPathsWithChildren = await readParentPathsWithChildren(
+    visibleFolderPaths,
+    database,
+  );
   const folderParentPathsWithChildFolders = new Set(
     allFolderRows
       .map((folder) => folder.parentPath)
@@ -309,17 +324,20 @@ export async function readDatabaseLibrarySnapshot({
   };
 }
 
-export async function readDatabaseGalleryListing({
-  currentPath,
-  cursor,
-  limit = DEFAULT_GALLERY_LISTING_LIMIT,
-  query,
-  randomSeed,
-  recursive = false,
-  showImages,
-  showVideos,
-  sortMode,
-}: GalleryListingReadRequest): Promise<GalleryListingPage> {
+export async function readDatabaseGalleryListing(
+  {
+    currentPath,
+    cursor,
+    limit = DEFAULT_GALLERY_LISTING_LIMIT,
+    query,
+    randomSeed,
+    recursive = false,
+    showImages,
+    showVideos,
+    sortMode,
+  }: GalleryListingReadRequest,
+  database: Database = db,
+): Promise<GalleryListingPage> {
   const decodedCursor = decodeGalleryListingCursor(cursor, {
     randomSeed,
     sortMode,
@@ -329,19 +347,22 @@ export async function readDatabaseGalleryListing({
 
   const [folderRows, mediaRows] = await Promise.all([
     includeFolders
-      ? buildLibraryFolderQuery({ currentPath, query, recursive })
+      ? buildLibraryFolderQuery({ currentPath, query, recursive }, database)
       : Promise.resolve([]),
-    buildGalleryListingMediaQuery({
-      currentPath,
-      cursor: decodedCursor?.subjectKind === "media" ? decodedCursor : null,
-      limit,
-      query,
-      randomSeed,
-      recursive,
-      showImages,
-      showVideos,
-      sortMode,
-    }),
+    buildGalleryListingMediaQuery(
+      {
+        currentPath,
+        cursor: decodedCursor?.subjectKind === "media" ? decodedCursor : null,
+        limit,
+        query,
+        randomSeed,
+        recursive,
+        showImages,
+        showVideos,
+        sortMode,
+      },
+      database,
+    ),
   ]);
 
   const hasMore = mediaRows.length > limit;
@@ -349,7 +370,7 @@ export async function readDatabaseGalleryListing({
 
   const visibleFolderPaths = [...new Set(folderRows.map((folder) => folder.path))];
   const visibleParentPathsWithChildren = includeFolders
-    ? await readParentPathsWithChildren(visibleFolderPaths)
+    ? await readParentPathsWithChildren(visibleFolderPaths, database)
     : new Set<string>();
 
   const folderNodes = folderRows.map((folder) =>
@@ -397,8 +418,11 @@ export async function readDatabaseGalleryListing({
   };
 }
 
-export async function softDeleteLibraryEntry({ entryId }: { entryId: string }): Promise<boolean> {
-  const [deleted] = await db
+export async function softDeleteLibraryEntry(
+  { entryId }: { entryId: string },
+  database: Database = db,
+): Promise<boolean> {
+  const [deleted] = await database
     .update(libraryEntries)
     .set({ deletedAt: new Date() })
     .where(and(eq(libraryEntries.id, entryId), isNull(libraryEntries.deletedAt)))
@@ -450,7 +474,10 @@ export function buildMediaPage<T>(
 
 const parentPathLookupThreshold = 500;
 
-async function readParentPathsWithChildren(paths: string[]): Promise<Set<string>> {
+async function readParentPathsWithChildren(
+  paths: string[],
+  database: Database,
+): Promise<Set<string>> {
   if (paths.length === 0) {
     return new Set();
   }
@@ -459,21 +486,21 @@ async function readParentPathsWithChildren(paths: string[]): Promise<Set<string>
   const [folderParents, entryParents] =
     paths.length > parentPathLookupThreshold
       ? await Promise.all([
-          db
+          database
             .selectDistinct({ parentPath: folders.parentPath })
             .from(folders)
             .where(isNull(folders.deletedAt)),
-          db
+          database
             .selectDistinct({ parentPath: libraryEntries.parentPath })
             .from(libraryEntries)
             .where(isNull(libraryEntries.deletedAt)),
         ])
       : await Promise.all([
-          db
+          database
             .selectDistinct({ parentPath: folders.parentPath })
             .from(folders)
             .where(and(isNull(folders.deletedAt), inArray(folders.parentPath, paths))),
-          db
+          database
             .selectDistinct({ parentPath: libraryEntries.parentPath })
             .from(libraryEntries)
             .where(

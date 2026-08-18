@@ -9,36 +9,6 @@ import { useAppStore } from '../../src/renderer/store/useAppStore';
 import { DEFAULT_SETTINGS } from '../../src/shared/types';
 import { createFrameViewMock } from '../frameViewMock';
 
-vi.mock('../../src/renderer/layouts', () => ({
-  PrismLayout: ({ onOpenSettings }: { onOpenSettings: () => void }) => (
-    <button type="button" onClick={onOpenSettings}>
-      open-settings
-    </button>
-  ),
-}));
-
-vi.mock('../../src/renderer/components/SettingsDrawer', () => ({
-  SettingsDrawer: ({ onUpdate }: { onUpdate: (patch: unknown) => void }) => (
-    <button
-      type="button"
-      onClick={() =>
-        onUpdate({
-          filters: {
-            ...DEFAULT_SETTINGS.filters,
-            showVideos: false,
-          },
-        })
-      }
-    >
-      apply-filter
-    </button>
-  ),
-}));
-
-vi.mock('../../src/renderer/components/ViewerModal', () => ({
-  ViewerModal: () => null,
-}));
-
 describe('App', () => {
   const initialState = useAppStore.getState();
 
@@ -61,6 +31,24 @@ describe('App', () => {
       })),
     });
 
+    // jsdom ships no ResizeObserver; the virtualized gallery grid observes its scroll container.
+    Object.defineProperty(window, 'ResizeObserver', {
+      configurable: true,
+      value: class {
+        observe(): void {
+          // Layout never changes in jsdom.
+        }
+
+        unobserve(): void {
+          // Layout never changes in jsdom.
+        }
+
+        disconnect(): void {
+          // Layout never changes in jsdom.
+        }
+      },
+    });
+
     window.frameView = createFrameViewMock();
   });
 
@@ -76,8 +64,8 @@ describe('App', () => {
 
     render(<App />);
 
-    await user.click(screen.getByText('open-settings'));
-    await user.click(await screen.findByText('apply-filter'));
+    await user.click(screen.getByRole('button', { name: 'Settings' }));
+    await user.click(await screen.findByRole('checkbox', { name: 'Show videos' }));
 
     await waitFor(() => {
       expect(window.frameView.updateSettings).toHaveBeenCalledTimes(1);

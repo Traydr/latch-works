@@ -12,14 +12,3 @@ export interface OpenExtensionMessage {
 }
 
 export type GatherRuntimeMessage = TriggerDownloadMessage | OpenExtensionMessage;
-
-export function isPageGatherMessage(value: unknown): value is GatherRuntimeMessage {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "target" in value &&
-    value.target === "background" &&
-    "type" in value &&
-    (value.type === OPEN_EXTENSION_MESSAGE || value.type === TRIGGER_DOWNLOAD_MESSAGE)
-  );
-}

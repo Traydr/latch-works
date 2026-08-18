@@ -64,9 +64,9 @@ describe("GatherExecutionSlot", () => {
 
   it("releases the slot when an executor throws before returning a promise", async () => {
     const slot = new GatherExecutionSlot();
-    const result = slot.start("first", (() => {
+    const result = slot.start("first", (): Promise<void> => {
       throw new Error("startup failed");
-    }) as (signal: AbortSignal) => Promise<void>);
+    });
 
     expect(result).toBe("started");
     await vi.waitFor(() => expect(slot.activeRunId).toBeNull());

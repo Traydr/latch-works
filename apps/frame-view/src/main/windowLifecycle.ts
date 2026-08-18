@@ -1,17 +1,29 @@
 import { Result } from 'better-result';
-import type { BrowserWindow } from 'electron';
 
-import type { SettingsService } from './services/settingsService';
-import { persistWindowState } from './services/windowStatePersistence';
+import {
+  type PersistableWindow,
+  persistWindowState,
+  type WindowStateSettings,
+} from './services/windowStatePersistence';
+
+/** The window surface the close handler drives while it saves state. */
+export interface ClosableWindow extends PersistableWindow {
+  destroy: () => void;
+}
+
+/** The close event only has to be deferred until the window state is on disk. */
+export interface DeferrableCloseEvent {
+  preventDefault: () => void;
+}
 
 export function createMainWindowCloseHandler(
-  mainWindow: BrowserWindow,
-  settingsService: SettingsService,
+  mainWindow: ClosableWindow,
+  settingsService: WindowStateSettings,
   logErrorMessage: (operation: string, message: string) => void,
-): (event: Electron.Event) => void {
+): (event: DeferrableCloseEvent) => void {
   let isClosingWindow = false;
 
-  return (event: Electron.Event): void => {
+  return (event: DeferrableCloseEvent): void => {
     if (isClosingWindow) {
       return;
     }

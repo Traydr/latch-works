@@ -26,13 +26,15 @@ export function isPlainHotkeyEvent(event: KeyboardEvent): boolean {
 }
 
 export function isTextInputTarget(target: EventTarget | null): boolean {
-  const element = target as HTMLElement | null;
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
   return (
-    !!element &&
-    (element.isContentEditable ||
-      element.tagName === 'INPUT' ||
-      element.tagName === 'TEXTAREA' ||
-      element.tagName === 'SELECT')
+    target.isContentEditable ||
+    target.tagName === 'INPUT' ||
+    target.tagName === 'TEXTAREA' ||
+    target.tagName === 'SELECT'
   );
 }
 

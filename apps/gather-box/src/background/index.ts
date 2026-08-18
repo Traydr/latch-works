@@ -1,18 +1,15 @@
 import {
-  isCancelGatherRunRequest,
-  isGatherRunEventMessage,
-  isRetryGatherRunRequest,
-  isStartGatherRunRequest
+  CancelGatherRunRequestSchema,
+  GatherRunEventMessageSchema,
+  RetryGatherRunRequestSchema,
+  StartGatherRunRequestSchema
 } from "../shared/gather-run-messages";
 import { loadGatherQueue } from "../shared/gather-queue";
-import {
-  isPageGatherMessage,
-  OPEN_EXTENSION_MESSAGE,
-  TRIGGER_DOWNLOAD_MESSAGE
-} from "../shared/runtime-messages";
-import { isResolveRedgifsMediaMessage } from "../shared/reddit-media";
+import { OPEN_EXTENSION_MESSAGE } from "../shared/runtime-messages";
+import { GatherRuntimeMessageSchema } from "./page-messages";
+import { ResolveRedgifsMediaMessageSchema } from "../shared/reddit-media";
 import { getContextMenuMatches } from "../shared/source-catalog";
-import { isResolveXMediaMessage } from "../shared/x-media";
+import { ResolveXMediaMessageSchema } from "../shared/x-media";
 import { GatherCommands } from "./gather-commands";
 import { GatherRunCoordinator } from "./gather-run-coordinator";
 import { resolveRedgifsMedia } from "./redgifs-media-resolver";
@@ -63,13 +60,14 @@ chrome.commands.onCommand.addListener((command, tab) => {
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (isStartGatherRunRequest(message)) {
+  const startRequest = StartGatherRunRequestSchema.safeParse(message);
+  if (startRequest.success) {
     if (!isExtensionOriginSender(sender)) {
       sendResponse({ outcome: "failed", message: "Untrusted Gather Run target." });
       return false;
     }
     void chrome.tabs
-      .get(message.tabId)
+      .get(startRequest.data.tabId)
       .then((tab) => gatherCommands.gather(tab))
       .then(sendResponse, (error) =>
         sendResponse({
@@ -80,29 +78,32 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  if (isRetryGatherRunRequest(message)) {
+  const retryRequest = RetryGatherRunRequestSchema.safeParse(message);
+  if (retryRequest.success) {
     if (!isExtensionOriginSender(sender)) {
       sendResponse({ outcome: "failed", message: "Untrusted Gather Run retry." });
       return false;
     }
-    void gatherRuns.retry(message.runId).then(sendResponse);
+    void gatherRuns.retry(retryRequest.data.runId).then(sendResponse);
     return true;
   }
 
-  if (isCancelGatherRunRequest(message)) {
+  const cancelRequest = CancelGatherRunRequestSchema.safeParse(message);
+  if (cancelRequest.success) {
     if (!isExtensionOriginSender(sender)) {
       sendResponse({ outcome: "failed", message: "Untrusted Gather Run cancel." });
       return false;
     }
-    void gatherRuns.cancel(message.runId).then(sendResponse);
+    void gatherRuns.cancel(cancelRequest.data.runId).then(sendResponse);
     return true;
   }
 
-  if (isGatherRunEventMessage(message)) {
+  const runEvent = GatherRunEventMessageSchema.safeParse(message);
+  if (runEvent.success) {
     if (!isExtensionOriginSender(sender)) {
       return false;
     }
-    void gatherRuns.handleEvent(message).then(
+    void gatherRuns.handleEvent(runEvent.data).then(
       () => sendResponse({ accepted: true }),
       (error) =>
         sendResponse({
@@ -113,31 +114,34 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  if (isResolveXMediaMessage(message)) {
+  const xMediaRequest = ResolveXMediaMessageSchema.safeParse(message);
+  if (xMediaRequest.success) {
     void authorizeMediaResolver(sender).then((allowed) => {
       if (!allowed) {
         sendResponse({ ok: false, message: "Media resolution is only allowed for the active Gather Run tab." });
         return;
       }
-      return resolveXPostMedia(message).then(sendResponse);
+      return resolveXPostMedia(xMediaRequest.data).then(sendResponse);
     });
     return true;
   }
 
-  if (isResolveRedgifsMediaMessage(message)) {
+  const redgifsRequest = ResolveRedgifsMediaMessageSchema.safeParse(message);
+  if (redgifsRequest.success) {
     void authorizeMediaResolver(sender).then((allowed) => {
       if (!allowed) {
         sendResponse({ ok: false, message: "Media resolution is only allowed for the active Gather Run tab." });
         return;
       }
-      return resolveRedgifsMedia(message.redgifsId).then(sendResponse);
+      return resolveRedgifsMedia(redgifsRequest.data.redgifsId).then(sendResponse);
     });
     return true;
   }
 
-  if (isPageGatherMessage(message) && sender.tab) {
+  const pageRequest = GatherRuntimeMessageSchema.safeParse(message);
+  if (pageRequest.success && sender.tab) {
     const operation =
-      message.type === OPEN_EXTENSION_MESSAGE
+      pageRequest.data.type === OPEN_EXTENSION_MESSAGE
         ? gatherCommands.toggle(sender.tab)
         : gatherCommands.gather(sender.tab);
     void operation.then(sendResponse);
@@ -166,12 +170,13 @@ function isExtensionOriginSender(sender: chrome.runtime.MessageSender): boolean 
 }
 
 async function authorizeMediaResolver(sender: chrome.runtime.MessageSender): Promise<boolean> {
-  if (sender.id !== chrome.runtime.id || typeof sender.tab?.id !== "number") {
+  const senderTabId = sender.tab?.id;
+  if (sender.id !== chrome.runtime.id || senderTabId === undefined) {
     return false;
   }
 
   const queue = await loadGatherQueue();
   return queue.jobs.some(
-    (job) => job.run.tabId === sender.tab?.id && job.run.phase === "collecting"
+    (job) => job.run.tabId === senderTabId && job.run.phase === "collecting"
   );
 }

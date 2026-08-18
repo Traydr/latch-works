@@ -1,4 +1,5 @@
 import { formatBytes } from "@latch-works/media-domain";
+import { z } from "zod";
 
 export { formatBytes };
 
@@ -101,7 +102,8 @@ export function createLineReporter(options: CreateLineReporterOptions = {}): Lin
   };
 }
 
-export type PushStage = "deleting" | "hashing" | "registering" | "uploading";
+export const PushStageSchema = z.enum(["deleting", "hashing", "registering", "uploading"]);
+export type PushStage = z.infer<typeof PushStageSchema>;
 
 export function formatPushStatus({
   current,
@@ -116,12 +118,12 @@ export function formatPushStatus({
   stage: PushStage;
   total: number;
 }): string {
-  const stageLabel: Record<PushStage, string> = {
+  const stageLabel = {
     deleting: "Deleting",
     hashing: "Hashing",
     registering: "Registering",
     uploading: "Uploading",
-  };
+  } satisfies Record<PushStage, string>;
 
   const suffix = detail ? ` — ${detail}` : "";
   return `[${current}/${total}] ${stageLabel[stage]} ${path}${suffix}`;

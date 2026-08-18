@@ -1,11 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('electron', () => ({
-  protocol: {
-    handle: vi.fn(),
-  },
-}));
-
 describe('mediaProtocol helpers', () => {
   it('parses byte ranges correctly', async () => {
     const { readRange } = await import('../../../src/main/services/mediaProtocol');

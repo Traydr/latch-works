@@ -1,28 +1,31 @@
-import {
-  isCollectComicGalleryMessage,
-  type CollectComicGalleryResponse
-} from "../shared/messages";
+import { CollectComicGalleryMessageSchema } from "../shared/messages";
 import type { SiteKey } from "../shared/sites";
 import type { GalleryCollectResponse } from "../shared/types";
 
-type Collector = (document: Document, location: Location) => GalleryCollectResponse | Promise<GalleryCollectResponse>;
+/** The parts of the page address a collector reads; a `URL` supplies all of them. */
+export type PageLocation = Pick<Location, "href" | "hostname" | "pathname">;
 
-interface CollectorRegistrationGlobal {
-  __gatherBoxCollectorCleanup?: () => void;
+type Collector = (document: Document, location: PageLocation) => GalleryCollectResponse | Promise<GalleryCollectResponse>;
+
+/** Chrome hands listeners the message exactly as the sender posted it; the schema parses it. */
+export type RuntimeMessageListener = Parameters<typeof chrome.runtime.onMessage.addListener>[0];
+
+declare global {
+  /** Set by the collector this content script installs, so a re-injection can uninstall it. */
+  // eslint-disable-next-line no-var
+  var __gatherBoxCollectorCleanup: (() => void) | undefined;
 }
 
 export function installCollector(sourceKey: SiteKey, collect: Collector): void {
-  const registration = globalThis as typeof globalThis & CollectorRegistrationGlobal;
-  registration.__gatherBoxCollectorCleanup?.();
+  globalThis.__gatherBoxCollectorCleanup?.();
 
-  const listener = (
-    message: unknown,
-    _sender: chrome.runtime.MessageSender,
-    sendResponse: (response: CollectComicGalleryResponse) => void
-  ): boolean | undefined => {
-    if (!isCollectComicGalleryMessage(message) || message.sourceKey !== sourceKey) {
+  const listener: RuntimeMessageListener = (rawMessage, _sender, sendResponse) => {
+    const parsed = CollectComicGalleryMessageSchema.safeParse(rawMessage);
+    if (!parsed.success || parsed.data.sourceKey !== sourceKey) {
       return undefined;
     }
+
+    const message = parsed.data;
     if (message.pageUrl !== window.location.href) {
       sendResponse({
         requestId: message.requestId,
@@ -53,8 +56,8 @@ export function installCollector(sourceKey: SiteKey, collect: Collector): void {
   };
 
   chrome.runtime.onMessage.addListener(listener);
-  registration.__gatherBoxCollectorCleanup = () => {
+  globalThis.__gatherBoxCollectorCleanup = () => {
     chrome.runtime.onMessage.removeListener(listener);
-    delete registration.__gatherBoxCollectorCleanup;
+    globalThis.__gatherBoxCollectorCleanup = undefined;
   };
 }

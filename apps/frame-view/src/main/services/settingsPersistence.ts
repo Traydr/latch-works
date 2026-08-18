@@ -7,10 +7,14 @@ import { z } from 'zod';
 import {
   AppSettingsSchema,
   DebugSettingsSchema,
-  FileFilterSettingsSchema,
   GallerySortModeSchema,
+  type JsonValue,
+  LastFolderPathSchema,
+  MediaExtensionsSchema,
+  RandomSeedSchema,
   RootGalleryPreferencesMapSchema,
   ThemeModeSchema,
+  ThumbnailSizeSchema,
 } from '../../shared/contracts';
 import { type AppSettings, DEFAULT_SETTINGS } from '../../shared/types';
 
@@ -45,17 +49,22 @@ function cloneDefaultSettings(): AppSettings {
   };
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
+/** A JSON object as read from the settings file, before any field is parsed. */
+const PersistedRecordSchema = z.record(z.string(), z.json());
+type PersistedRecord = z.infer<typeof PersistedRecordSchema>;
+
+function toPersistedRecord(value: JsonValue): PersistedRecord {
+  const parsed = PersistedRecordSchema.safeParse(value);
+  return parsed.success ? parsed.data : {};
 }
 
-function parseOrFallback<T>(schema: z.ZodType<T>, value: unknown, fallback: T): T {
+function parseOrFallback<T>(schema: z.ZodType<T>, value: JsonValue, fallback: T): T {
   const parsed = schema.safeParse(value);
   return parsed.success ? parsed.data : fallback;
 }
 
-function normalizeExtensions(input: unknown, fallback: string[]): string[] {
-  const parsed = FileFilterSettingsSchema.shape.imageExtensions.safeParse(input);
+function normalizeExtensions(input: JsonValue, fallback: string[]): string[] {
+  const parsed = MediaExtensionsSchema.safeParse(input);
   if (!parsed.success || parsed.data.length === 0) {
     return [...fallback];
   }
@@ -63,15 +72,15 @@ function normalizeExtensions(input: unknown, fallback: string[]): string[] {
   return parsed.data;
 }
 
-export function normalizeAppSettings(candidate: unknown): AppSettings {
+export function normalizeAppSettings(candidate: JsonValue): AppSettings {
   const parsed = AppSettingsSchema.safeParse(candidate);
   if (parsed.success) {
     return parsed.data;
   }
 
-  const raw = isRecord(candidate) ? candidate : {};
-  const rawFilters = isRecord(raw.filters) ? raw.filters : {};
-  const rawDebug = isRecord(raw.debug) ? raw.debug : {};
+  const raw = toPersistedRecord(candidate);
+  const rawFilters = toPersistedRecord(raw.filters);
+  const rawDebug = toPersistedRecord(raw.debug);
 
   const mergedCandidate = {
     ...DEFAULT_SETTINGS,
@@ -152,16 +161,12 @@ export function normalizeAppSettings(candidate: unknown): AppSettings {
     ),
     loopVideos: parseOrFallback(z.boolean(), raw.loopVideos, DEFAULT_SETTINGS.loopVideos),
     thumbnailSize: parseOrFallback(
-      AppSettingsSchema.shape.thumbnailSize,
+      ThumbnailSizeSchema,
       raw.thumbnailSize,
       DEFAULT_SETTINGS.thumbnailSize,
     ),
     sortMode: parseOrFallback(GallerySortModeSchema, raw.sortMode, DEFAULT_SETTINGS.sortMode),
-    randomSeed: parseOrFallback(
-      AppSettingsSchema.shape.randomSeed,
-      raw.randomSeed,
-      DEFAULT_SETTINGS.randomSeed,
-    ),
+    randomSeed: parseOrFallback(RandomSeedSchema, raw.randomSeed, DEFAULT_SETTINGS.randomSeed),
     filters: {
       ...DEFAULT_SETTINGS.filters,
       imageExtensions,
@@ -183,7 +188,7 @@ export function normalizeAppSettings(candidate: unknown): AppSettings {
       DEFAULT_SETTINGS.rootGalleryPreferences,
     ),
     lastFolderPath: parseOrFallback(
-      AppSettingsSchema.shape.lastFolderPath,
+      LastFolderPathSchema,
       raw.lastFolderPath,
       DEFAULT_SETTINGS.lastFolderPath,
     ),
@@ -191,7 +196,7 @@ export function normalizeAppSettings(candidate: unknown): AppSettings {
   };
 }
 
-function normalizeWindowBounds(bounds: unknown): Rectangle | null {
+function normalizeWindowBounds(bounds: JsonValue): Rectangle | null {
   const parsed = WindowBoundsSchema.safeParse(bounds);
   if (!parsed.success) {
     return null;
@@ -214,8 +219,8 @@ export function createDefaultPersistedState(): PersistedStateV2 {
   };
 }
 
-function migratePersistedState(candidate: unknown): PersistedStateV2 {
-  const raw = isRecord(candidate) ? candidate : {};
+function migratePersistedState(candidate: JsonValue): PersistedStateV2 {
+  const raw = toPersistedRecord(candidate);
 
   return {
     version: PERSISTED_STATE_VERSION,

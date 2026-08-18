@@ -4,7 +4,7 @@ import { Result, type Result as ResultType } from 'better-result';
 import type { Rectangle } from 'electron';
 import { AppSettingsPatchSchema } from '../../shared/contracts';
 import type { AppSettings, AppSettingsPatch } from '../../shared/types';
-import { type FileSystemError, unexpectedFileSystemError } from '../errors';
+import { type FileSystemError, toError, unexpectedFileSystemError } from '../errors';
 import {
   createDefaultPersistedState,
   normalizeAppSettings,
@@ -28,7 +28,7 @@ export class SettingsService {
   private dirty = false;
   private pendingFlushPromise: Promise<void> | null = null;
   private pendingFlushResolve: (() => void) | null = null;
-  private pendingFlushReject: ((error: unknown) => void) | null = null;
+  private pendingFlushReject: ((error: Error) => void) | null = null;
 
   constructor(userDataPath: string) {
     this.filePath = path.join(userDataPath, 'frame-view-settings.json');
@@ -58,11 +58,11 @@ export class SettingsService {
       ...parsedPatch,
       debug: {
         ...this.state.settings.debug,
-        ...(parsedPatch.debug ?? {}),
+        ...parsedPatch.debug,
       },
       filters: {
         ...this.state.settings.filters,
-        ...(parsedPatch.filters ?? {}),
+        ...parsedPatch.filters,
       },
     };
 
@@ -71,8 +71,10 @@ export class SettingsService {
     try {
       await this.persist(options);
       return Result.ok(this.state.settings);
-    } catch (error) {
-      return Result.err(unexpectedFileSystemError('update-settings', error, this.filePath));
+    } catch (cause) {
+      return Result.err(
+        unexpectedFileSystemError('update-settings', toError(cause), this.filePath),
+      );
     }
   }
 
@@ -88,8 +90,10 @@ export class SettingsService {
     try {
       await this.persist(options);
       return Result.ok();
-    } catch (error) {
-      return Result.err(unexpectedFileSystemError('update-window-bounds', error, this.filePath));
+    } catch (cause) {
+      return Result.err(
+        unexpectedFileSystemError('update-window-bounds', toError(cause), this.filePath),
+      );
     }
   }
 
@@ -105,8 +109,10 @@ export class SettingsService {
     try {
       await this.persist(options);
       return Result.ok();
-    } catch (error) {
-      return Result.err(unexpectedFileSystemError('update-window-maximized', error, this.filePath));
+    } catch (cause) {
+      return Result.err(
+        unexpectedFileSystemError('update-window-maximized', toError(cause), this.filePath),
+      );
     }
   }
 
@@ -121,8 +127,8 @@ export class SettingsService {
       await this.commitPendingFlush();
       await promise;
       return Result.ok();
-    } catch (error) {
-      return Result.err(unexpectedFileSystemError('flush-settings', error, this.filePath));
+    } catch (cause) {
+      return Result.err(unexpectedFileSystemError('flush-settings', toError(cause), this.filePath));
     }
   }
 
@@ -195,8 +201,8 @@ export class SettingsService {
     try {
       await this.flushQueue;
       resolve();
-    } catch (error) {
-      reject(error);
+    } catch (cause) {
+      reject(toError(cause));
     }
 
     if (this.dirty && !this.flushTimer) {

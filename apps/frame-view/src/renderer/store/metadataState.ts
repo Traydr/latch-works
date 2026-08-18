@@ -1,13 +1,19 @@
 import type { MediaItem, VideoProbeMetadata } from '../../shared/types';
 import type { AppStoreSet } from './types';
 
+/** The item list after a metadata patch, plus whether anything actually changed. */
+interface MediaMetadataPatchResult {
+  changed: boolean;
+  items: MediaItem[];
+}
+
 function patchMediaMetadata(
   items: MediaItem[],
   path: string,
   mtimeMs: number,
   size: number,
   metadata: VideoProbeMetadata,
-): { changed: boolean; items: MediaItem[] } {
+): MediaMetadataPatchResult {
   const itemIndex = items.findIndex(
     (item) =>
       item.path === path &&

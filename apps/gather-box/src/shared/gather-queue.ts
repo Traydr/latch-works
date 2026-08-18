@@ -1,7 +1,14 @@
+import * as z from "zod/mini";
 import type { GatherRunState } from "./gather-run";
-import { isTerminalGatherRunPhase, normalizeGatherRunState } from "./gather-run";
-import { normalizeSettings, type GatherBoxSettings } from "./settings";
-import type { DownloadablePayload, GeneratedStoryPayload } from "./types";
+import { GatherRunStateSchema, isTerminalGatherRunPhase } from "./gather-run";
+import { GatherBoxSettingsSchema, type GatherBoxSettings } from "./settings";
+import { lenientArrayOf } from "./lenient-array";
+import {
+  DownloadablePayloadSchema,
+  GeneratedStoryPayloadSchema,
+  type DownloadablePayload,
+  type GeneratedStoryPayload
+} from "./types";
 import type { SiteKey } from "./sites";
 
 export const GATHER_QUEUE_STATE_KEY = "gather-box-run-queue";
@@ -39,42 +46,66 @@ export const EMPTY_GATHER_QUEUE: GatherQueueState = {
   results: []
 };
 
+const CollectingGatherQueueJobSchema = z.pipe(
+  z.object({ run: z.extend(GatherRunStateSchema, { phase: z.literal("collecting") }) }),
+  z.transform((job): CollectingGatherQueueJob => ({ kind: "collecting", run: job.run }))
+);
+
+/**
+ * `GatherRunStateSchema` never yields `cancelling`, so a job stored mid-cancel does not survive
+ * a reload; the phases below are the ones a queued output job can actually be read back with.
+ */
+const OutputGatherQueueJobSchema = z.pipe(
+  z.object({
+    run: z.extend(GatherRunStateSchema, {
+      phase: z.enum(["preparing", "permission-required", "queued", "writing"])
+    }),
+    payload: z.union([DownloadablePayloadSchema, GeneratedStoryPayloadSchema]),
+    settings: GatherBoxSettingsSchema
+  }),
+  z.transform(
+    (job): OutputGatherQueueJob => ({
+      kind: "output",
+      run: job.run,
+      payload: job.payload,
+      settings: job.settings
+    })
+  )
+);
+
+/** A job's kind is re-derived from the run phase, so a stored `kind` field is ignored. */
+const GatherQueueJobSchema = z.union([
+  CollectingGatherQueueJobSchema,
+  OutputGatherQueueJobSchema
+]);
+
+export const GatherQueueStateSchema = z.catch(
+  z.pipe(
+    z.object({
+      schemaVersion: z.literal(GATHER_QUEUE_SCHEMA_VERSION),
+      jobs: z.array(z.catch(z.nullable(GatherQueueJobSchema), null)),
+      results: lenientArrayOf(GatherRunStateSchema)
+    }),
+    z.transform(
+      (queue): GatherQueueState => ({
+        schemaVersion: queue.schemaVersion,
+        jobs: queue.jobs.filter((job) => job !== null).slice(0, MAX_GATHER_QUEUE_LENGTH),
+        results: queue.results
+          .filter((run) => isTerminalGatherRunPhase(run.phase))
+          .slice(-MAX_GATHER_QUEUE_RESULTS)
+      })
+    )
+  ),
+  () => ({ ...EMPTY_GATHER_QUEUE, jobs: [], results: [] })
+);
+
 export async function loadGatherQueue(): Promise<GatherQueueState> {
   const stored = await chrome.storage.local.get(GATHER_QUEUE_STATE_KEY);
-  return normalizeGatherQueueState(stored[GATHER_QUEUE_STATE_KEY]);
+  return GatherQueueStateSchema.parse(stored[GATHER_QUEUE_STATE_KEY]);
 }
 
 export async function saveGatherQueue(queue: GatherQueueState): Promise<void> {
   await chrome.storage.local.set({ [GATHER_QUEUE_STATE_KEY]: queue });
-}
-
-export function normalizeGatherQueueState(value: unknown): GatherQueueState {
-  if (!value || typeof value !== "object") {
-    return { ...EMPTY_GATHER_QUEUE };
-  }
-
-  const candidate = value as Partial<GatherQueueState>;
-  if (
-    candidate.schemaVersion !== GATHER_QUEUE_SCHEMA_VERSION ||
-    !Array.isArray(candidate.jobs)
-  ) {
-    return { ...EMPTY_GATHER_QUEUE };
-  }
-
-  return {
-    schemaVersion: GATHER_QUEUE_SCHEMA_VERSION,
-    jobs: candidate.jobs
-      .map(normalizeGatherQueueJob)
-      .filter((job): job is GatherQueueJob => Boolean(job))
-      .slice(0, MAX_GATHER_QUEUE_LENGTH),
-    results: Array.isArray(candidate.results)
-      ? candidate.results
-          .map(normalizeGatherRunState)
-          .filter((run): run is GatherRunState => run !== null)
-          .filter((run) => isTerminalGatherRunPhase(run.phase))
-          .slice(-MAX_GATHER_QUEUE_RESULTS)
-      : []
-  };
 }
 
 export function getLatestGatherQueueResult(queue: GatherQueueState): GatherRunState | null {
@@ -141,10 +172,16 @@ export function getPermissionRequiredGatherJob(
   );
 }
 
+/** Runs that could not be resumed after a browser restart are reported alongside the new queue. */
+export interface GatherQueueRecovery {
+  queue: GatherQueueState;
+  interrupted: GatherRunState[];
+}
+
 export function recoverStoppedGatherQueue(
   queue: GatherQueueState,
   now = Date.now()
-): { queue: GatherQueueState; interrupted: GatherRunState[] } {
+): GatherQueueRecovery {
   const jobs: GatherQueueJob[] = [];
   const interrupted: GatherRunState[] = [];
 
@@ -216,55 +253,3 @@ export function getGatherQueueDisplayRun(queue: GatherQueueState): GatherRunStat
   };
 }
 
-function normalizeGatherQueueJob(value: unknown): GatherQueueJob | null {
-  if (!value || typeof value !== "object") {
-    return null;
-  }
-
-  const candidate = value as {
-    run?: unknown;
-    payload?: unknown;
-    settings?: unknown;
-  };
-  const run = normalizeGatherRunState(candidate.run);
-  if (!run) {
-    return null;
-  }
-
-  if (run.phase === "collecting") {
-    return { kind: "collecting", run: run as CollectingGatherQueueJob["run"] };
-  }
-
-  if (
-    isTerminalGatherRunPhase(run.phase) ||
-    !isGatherOutput(candidate.payload) ||
-    !candidate.settings ||
-    typeof candidate.settings !== "object"
-  ) {
-    return null;
-  }
-
-  return {
-    kind: "output",
-    run: run as OutputGatherQueueJob["run"],
-    payload: candidate.payload,
-    settings: normalizeSettings(candidate.settings)
-  };
-}
-
-function isGatherOutput(value: unknown): value is GatherOutput {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-
-  const output = value as Partial<GatherOutput>;
-  return (
-    output.ok === true &&
-    typeof output.site === "string" &&
-    typeof output.title === "string" &&
-    typeof output.pageUrl === "string" &&
-    Array.isArray(output.folderSegments) &&
-    ((output.outputKind === "downloadable-files" && Array.isArray(output.images)) ||
-      (output.outputKind === "generated-story-pdf" && Array.isArray(output.chapters)))
-  );
-}

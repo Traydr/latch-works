@@ -7,6 +7,7 @@ import { BridgeUnavailable } from "./renderer/components/BridgeUnavailable";
 import { ErrorBoundary } from "./renderer/components/ErrorBoundary";
 
 const rootElement = document.getElementById("root");
+const lockstepBridge = window.lockstep;
 
 if (!rootElement) {
   throw new Error("Root element not found");
@@ -14,8 +15,6 @@ if (!rootElement) {
 
 createRoot(rootElement).render(
   <React.StrictMode>
-    <ErrorBoundary>
-      {typeof window.lockstep === "undefined" ? <BridgeUnavailable /> : <App />}
-    </ErrorBoundary>
+    <ErrorBoundary>{lockstepBridge ? <App /> : <BridgeUnavailable />}</ErrorBoundary>
   </React.StrictMode>,
 );

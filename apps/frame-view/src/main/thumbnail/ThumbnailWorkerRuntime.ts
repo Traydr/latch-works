@@ -10,7 +10,7 @@ import type {
   ThumbnailWorkerRequest,
   ThumbnailWorkerResponse,
 } from '../../shared/thumbnail';
-import { RequestAbortError } from '../errors';
+import { RequestAbortError, toError } from '../errors';
 import { resolveBinaryPath } from '../services/mediaBinaryResolver';
 import { MediaToolsAbortError, MediaToolsService } from '../services/mediaToolsService';
 
@@ -25,6 +25,14 @@ const SHARP_CACHE_ITEMS = 64;
 const nativeRequire = createRequire(__filename);
 const LOSSLESS_IMAGE_EXTENSIONS = new Set(['.png', '.bmp', '.gif']);
 
+/**
+ * `sharp` is a CommonJS module: `require` yields the callable library itself, or an ES-interop
+ * wrapper whose `default` is that library.
+ */
+function resolveSharpModule(sharpModule: SharpLib & { default?: SharpLib }): SharpLib {
+  return sharpModule.default ?? sharpModule;
+}
+
 function loadPackagedSharp(): SharpLib | null {
   if (!process.resourcesPath) {
     return null;
@@ -34,8 +42,7 @@ function loadPackagedSharp(): SharpLib | null {
     const packagedRequire = createRequire(
       path.join(process.resourcesPath, 'node_modules', 'sharp', 'package.json'),
     );
-    const sharpModule = packagedRequire('sharp') as { default?: SharpLib } & Partial<SharpLib>;
-    return sharpModule.default ?? (sharpModule as SharpLib);
+    return resolveSharpModule(packagedRequire('sharp'));
   } catch {
     return null;
   }
@@ -46,16 +53,19 @@ interface ActiveJob {
   kind: 'image' | 'video';
 }
 
+/** The media-tools entry points the thumbnail runtime drives. */
+export type ThumbnailMediaTools = Pick<MediaToolsService, 'extractVideoFrame' | 'getStatus'>;
+
 interface ThumbnailWorkerRuntimeOptions {
   cacheRootPath?: string;
-  mediaToolsService?: MediaToolsService;
+  mediaToolsService?: ThumbnailMediaTools;
   userDataPath: string;
   workerPath?: string | null;
 }
 
 export class ThumbnailWorkerRuntime {
   private readonly diskCacheDir: string;
-  private readonly mediaToolsService: MediaToolsService;
+  private readonly mediaToolsService: ThumbnailMediaTools;
   private readonly activeJobs = new Map<number, ActiveJob>();
 
   private debugOptions: ThumbnailDebugOptions = {
@@ -130,11 +140,8 @@ export class ThumbnailWorkerRuntime {
     console.info(`[thumbnailWorker] ${message}`);
   }
 
-  private toErrorResponse(requestId: number, error: unknown): ThumbnailWorkerResponse {
-    if (
-      error instanceof RequestAbortError ||
-      (error instanceof Error && error.name === 'AbortError')
-    ) {
+  private toErrorResponse(requestId: number, error: Error): ThumbnailWorkerResponse {
+    if (error instanceof RequestAbortError || error.name === 'AbortError') {
       return {
         requestId,
         ok: false,
@@ -143,7 +150,7 @@ export class ThumbnailWorkerRuntime {
       };
     }
 
-    if (error instanceof Error && error.message.startsWith('Sharp decode failed:')) {
+    if (error.message.startsWith('Sharp decode failed:')) {
       return {
         requestId,
         ok: false,
@@ -152,7 +159,7 @@ export class ThumbnailWorkerRuntime {
       };
     }
 
-    if (error instanceof Error && error.message.startsWith('Video frame extraction failed:')) {
+    if (error.message.startsWith('Video frame extraction failed:')) {
       return {
         requestId,
         ok: false,
@@ -161,7 +168,7 @@ export class ThumbnailWorkerRuntime {
       };
     }
 
-    if (error instanceof Error && error.message === 'Sharp is unavailable') {
+    if (error.message === 'Sharp is unavailable') {
       return {
         requestId,
         ok: false,
@@ -173,7 +180,7 @@ export class ThumbnailWorkerRuntime {
     return {
       requestId,
       ok: false,
-      error: error instanceof Error ? error.message : 'Thumbnail generation failed unexpectedly',
+      error: error.message,
       errorCode: 'unknown',
     };
   }
@@ -210,8 +217,8 @@ export class ThumbnailWorkerRuntime {
         ok: true,
         result,
       };
-    } catch (error) {
-      return this.toErrorResponse(request.requestId, error);
+    } catch (cause) {
+      return this.toErrorResponse(request.requestId, toError(cause));
     } finally {
       this.activeJobs.delete(request.requestId);
     }
@@ -317,17 +324,17 @@ export class ThumbnailWorkerRuntime {
 
   private loadSharp(): SharpLib | null {
     try {
-      const sharpModule = nativeRequire('sharp') as { default?: SharpLib } & Partial<SharpLib>;
+      const sharpLib = resolveSharpModule(nativeRequire('sharp'));
       this.lastSharpLoadError = null;
-      return sharpModule.default ?? (sharpModule as SharpLib);
-    } catch (error) {
+      return sharpLib;
+    } catch (cause) {
       const packagedSharp = loadPackagedSharp();
       if (packagedSharp) {
         this.lastSharpLoadError = null;
         return packagedSharp;
       }
 
-      this.lastSharpLoadError = error instanceof Error ? error.message : String(error);
+      this.lastSharpLoadError = toError(cause).message;
       if (!this.sharpLoadFailureLogged) {
         this.sharpLoadFailureLogged = true;
         console.warn(`[thumbnailWorker] sharp failed to load: ${this.lastSharpLoadError}`);

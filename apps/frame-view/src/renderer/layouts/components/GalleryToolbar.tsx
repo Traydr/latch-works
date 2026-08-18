@@ -39,7 +39,7 @@ export function GalleryToolbar({
     }
 
     const onMouseDown = (event: MouseEvent): void => {
-      if (sortMenuRef.current?.contains(event.target as Node)) {
+      if (event.target instanceof Node && sortMenuRef.current?.contains(event.target)) {
         return;
       }
 
@@ -61,13 +61,13 @@ export function GalleryToolbar({
   }, [sortMenuOpen]);
 
   const activeSortLabel = useMemo(() => {
-    const labels: Record<GallerySortMode, string> = {
+    const labels = {
       'name-asc': 'A-Z',
       'name-desc': 'Z-A',
       'date-newest': 'Newest',
       'date-oldest': 'Oldest',
       random: 'Random',
-    };
+    } satisfies Record<GallerySortMode, string>;
 
     return labels[settings.sortMode];
   }, [settings.sortMode]);

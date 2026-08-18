@@ -1,20 +1,48 @@
-import { throwIfAborted } from "./errors";
+import { throwIfAborted, toError } from "./errors";
 import type { AvifWorkerRequest, AvifWorkerResponse } from "./avif-worker-messages";
+
+/**
+ * The worker surface this client drives, stated as domain callbacks rather than DOM events so a
+ * test can supply a faithful in-process double. A terminated worker delivers nothing further,
+ * so there is no unsubscribe.
+ */
+export interface EncoderWorker {
+  postMessage(request: AvifWorkerRequest): void;
+  terminate(): void;
+  onResponse(listener: (response: AvifWorkerResponse) => void): void;
+  onFailure(listener: (message: string) => void): void;
+}
+
+function createBrowserEncoderWorker(): EncoderWorker {
+  const worker = new Worker(chrome.runtime.getURL("workers/avif-encoder.js"), { type: "module" });
+
+  return {
+    postMessage: (request) => worker.postMessage(request),
+    terminate: () => worker.terminate(),
+    onResponse: (listener) =>
+      worker.addEventListener("message", (event: MessageEvent<AvifWorkerResponse>) =>
+        listener(event.data)
+      ),
+    onFailure: (listener) =>
+      worker.addEventListener("error", (event) =>
+        listener(event.message || "The AVIF encoder worker failed.")
+      )
+  };
+}
 
 interface PendingEncode {
   resolve(buffer: ArrayBuffer): void;
-  reject(error: unknown): void;
+  reject(error: Error): void;
   removeAbortListener(): void;
 }
 
 export class AvifEncoderClient {
-  private worker: Worker | null = null;
+  private worker: EncoderWorker | null = null;
   private nextRequestId = 1;
   private readonly pending = new Map<number, PendingEncode>();
 
   constructor(
-    private readonly createWorker: () => Worker = () =>
-      new Worker(chrome.runtime.getURL("workers/avif-encoder.js"), { type: "module" })
+    private readonly createWorker: () => EncoderWorker = createBrowserEncoderWorker
   ) {}
 
   encode(blob: Blob, signal?: AbortSignal): Promise<ArrayBuffer> {
@@ -36,7 +64,7 @@ export class AvifEncoderClient {
         const request: AvifWorkerRequest = { id, blob };
         worker.postMessage(request);
       } catch (error) {
-        this.rejectRequest(id, error);
+        this.rejectRequest(id, toError(error));
       }
     });
   }
@@ -45,19 +73,18 @@ export class AvifEncoderClient {
     this.stop(new Error("The AVIF encoder was disposed."));
   }
 
-  private getWorker(): Worker {
+  private getWorker(): EncoderWorker {
     if (this.worker) {
       return this.worker;
     }
     const worker = this.createWorker();
-    worker.addEventListener("message", this.handleMessage);
-    worker.addEventListener("error", this.handleError);
+    worker.onResponse(this.handleResponse);
+    worker.onFailure(this.handleFailure);
     this.worker = worker;
     return worker;
   }
 
-  private readonly handleMessage = (event: MessageEvent<AvifWorkerResponse>): void => {
-    const response = event.data;
+  private readonly handleResponse = (response: AvifWorkerResponse): void => {
     const request = this.pending.get(response.id);
     if (!request) {
       return;
@@ -71,11 +98,11 @@ export class AvifEncoderClient {
     }
   };
 
-  private readonly handleError = (event: ErrorEvent): void => {
-    this.stop(new Error(event.message || "The AVIF encoder worker failed."));
+  private readonly handleFailure = (message: string): void => {
+    this.stop(new Error(message));
   };
 
-  private rejectRequest(id: number, error: unknown): void {
+  private rejectRequest(id: number, error: Error): void {
     const request = this.pending.get(id);
     if (!request) {
       return;
@@ -85,15 +112,11 @@ export class AvifEncoderClient {
     request.reject(error);
   }
 
-  private stop(error: unknown): void {
+  private stop(error: Error): void {
     const worker = this.worker;
     this.worker = null;
-    if (worker) {
-      worker.removeEventListener("message", this.handleMessage);
-      worker.removeEventListener("error", this.handleError);
-      worker.terminate();
-    }
-    for (const id of [...this.pending.keys()]) {
+    worker?.terminate();
+    for (const id of Array.from(this.pending.keys())) {
       this.rejectRequest(id, error);
     }
   }

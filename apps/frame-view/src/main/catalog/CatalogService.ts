@@ -2,15 +2,16 @@ import path from 'node:path';
 import { Result, type Result as ResultType } from 'better-result';
 import { utilityProcess } from 'electron';
 
+import type { CatalogWorkerRequest } from '../../shared/catalog';
 import {
-  type CatalogWorkerRequest,
-  isCatalogWorkerEvent,
-  isCatalogWorkerResponse,
-} from '../../shared/catalog';
+  CatalogWorkerEventSchema,
+  CatalogWorkerResponseSchema,
+  type JsonValue,
+} from '../../shared/contracts';
 import type { MediaIndexStats, ScanEvent, ScanOptions } from '../../shared/types';
-import { WorkerError } from '../errors';
+import { toError, WorkerError } from '../errors';
 
-type MessageListener = (message: unknown) => void;
+type MessageListener = (message: JsonValue) => void;
 type ExitListener = (code: number | null) => void;
 type ErrorListener = (type: 'FatalError', location: string, report: string) => void;
 
@@ -39,15 +40,18 @@ type CatalogWorkerRequestPayload =
       type: 'clear-index';
     };
 
-interface PendingRequest<T> {
-  resolve: (value: ResultType<T, WorkerError>) => void;
+/** A worker response either carries index stats or nothing at all. */
+type CatalogResponseValue = MediaIndexStats | undefined;
+
+interface PendingRequest {
+  resolve: (value: ResultType<CatalogResponseValue, WorkerError>) => void;
 }
 
 export class CatalogService {
   private child: CatalogChildProcessLike | null = null;
   private nextRequestId = 1;
   private activeScanRunId: number | null = null;
-  private readonly pendingRequests = new Map<number, PendingRequest<unknown>>();
+  private readonly pendingRequests = new Map<number, PendingRequest>();
 
   constructor(
     private readonly userDataPath: string,
@@ -57,26 +61,41 @@ export class CatalogService {
   ) {}
 
   async startScan(options: ScanOptions): Promise<ResultType<void, WorkerError>> {
-    return this.sendRequest<void>({
+    return this.sendAcknowledgedRequest({
       type: 'start-scan',
       options,
     });
   }
 
   async cancelScan(): Promise<ResultType<void, WorkerError>> {
-    return this.sendRequest<void>({
+    return this.sendAcknowledgedRequest({
       type: 'cancel-scan',
     });
   }
 
   async getMediaIndexStats(): Promise<ResultType<MediaIndexStats, WorkerError>> {
-    return this.sendRequest<MediaIndexStats>({
+    const response = await this.sendRequest({
       type: 'get-index-stats',
     });
+    if (Result.isError(response)) {
+      return response;
+    }
+
+    if (!response.value) {
+      return Result.err(
+        new WorkerError({
+          worker: 'catalog',
+          operation: 'get-index-stats',
+          message: 'Catalog worker returned no index stats',
+        }),
+      );
+    }
+
+    return Result.ok(response.value);
   }
 
   async clearIndex(): Promise<ResultType<void, WorkerError>> {
-    return this.sendRequest<void>({
+    return this.sendAcknowledgedRequest({
       type: 'clear-index',
     });
   }
@@ -122,9 +141,10 @@ export class CatalogService {
     return child;
   }
 
-  private handleChildMessage(message: unknown): void {
-    if (isCatalogWorkerEvent(message)) {
-      const scanEvent = message.event;
+  private handleChildMessage(message: JsonValue): void {
+    const workerEvent = CatalogWorkerEventSchema.safeParse(message);
+    if (workerEvent.success) {
+      const scanEvent = workerEvent.data.event;
 
       if (scanEvent.type === 'reset') {
         this.activeScanRunId = scanEvent.runId;
@@ -138,31 +158,33 @@ export class CatalogService {
       return;
     }
 
-    if (!isCatalogWorkerResponse(message)) {
+    const workerResponse = CatalogWorkerResponseSchema.safeParse(message);
+    if (!workerResponse.success) {
       return;
     }
 
-    const pending = this.pendingRequests.get(message.requestId);
+    const response = workerResponse.data;
+    const pending = this.pendingRequests.get(response.requestId);
     if (!pending) {
       return;
     }
 
-    this.pendingRequests.delete(message.requestId);
+    this.pendingRequests.delete(response.requestId);
 
-    if ('error' in message) {
+    if (!response.ok) {
       pending.resolve(
         Result.err(
           new WorkerError({
             worker: 'catalog',
             operation: 'worker-response',
-            message: message.error,
+            message: response.error,
           }),
         ),
       );
       return;
     }
 
-    pending.resolve(Result.ok(message.result as never));
+    pending.resolve(Result.ok(response.result));
   }
 
   private handleChildExit(message = 'Catalog worker exited unexpectedly'): void {
@@ -194,29 +216,35 @@ export class CatalogService {
     }
   }
 
-  private sendRequest<T>(
+  /** Requests whose response carries no value: the worker only acknowledges them. */
+  private async sendAcknowledgedRequest(
     request: CatalogWorkerRequestPayload,
-  ): Promise<ResultType<T, WorkerError>> {
+  ): Promise<ResultType<void, WorkerError>> {
+    const response = await this.sendRequest(request);
+    return Result.isError(response) ? response : Result.ok();
+  }
+
+  private sendRequest(
+    request: CatalogWorkerRequestPayload,
+  ): Promise<ResultType<CatalogResponseValue, WorkerError>> {
     const child = this.ensureChild();
     const requestId = this.nextRequestId++;
-    const payload = { ...request, requestId } as CatalogWorkerRequest;
+    const payload: CatalogWorkerRequest = { ...request, requestId };
 
-    return new Promise<ResultType<T, WorkerError>>((resolve) => {
-      this.pendingRequests.set(requestId, {
-        resolve: resolve as PendingRequest<unknown>['resolve'],
-      });
+    return new Promise<ResultType<CatalogResponseValue, WorkerError>>((resolve) => {
+      this.pendingRequests.set(requestId, { resolve });
 
       try {
         child.postMessage(payload);
-      } catch (error) {
+      } catch (cause) {
+        const error = toError(cause);
         this.pendingRequests.delete(requestId);
         resolve(
           Result.err(
             new WorkerError({
               worker: 'catalog',
               operation: 'send-request',
-              message:
-                error instanceof Error ? error.message : 'Failed to send catalog worker request',
+              message: error.message,
               cause: error,
             }),
           ),

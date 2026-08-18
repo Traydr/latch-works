@@ -1,13 +1,39 @@
+import * as z from "zod/mini";
 import { prepareDownloadImage } from "../shared/download-policy";
 import type { SiteKey } from "../shared/sites";
 import type { GalleryImage } from "../shared/types";
-import { formatError, isAbortError, throwIfAborted } from "./errors";
+import { formatError, isAbortError, throwIfAborted, toError } from "./errors";
 import {
   IDENTITY_MEDIA_TRANSFORMER,
   type MediaTransformer
 } from "./media-transformer";
 
 export const DEFAULT_DOWNLOAD_CONCURRENCY = 4;
+
+/**
+ * The slice of the File System Access API this module writes through. Naming it keeps the
+ * download path independent of the rest of a browser handle, which it never touches.
+ */
+export interface WritableFileStream {
+  write(data: Blob): Promise<void>;
+  close(): Promise<void>;
+  abort?(): Promise<void>;
+}
+
+export interface WritableFile {
+  getFile(): Promise<File>;
+  createWritable(): Promise<WritableFileStream>;
+}
+
+export interface WritableDirectory {
+  getFileHandle(name: string, options?: { create?: boolean }): Promise<WritableFile>;
+  removeEntry(name: string): Promise<void>;
+}
+
+/** Only the archive root is walked segment by segment; the leaf folder is written to directly. */
+export interface NestableDirectory extends WritableDirectory {
+  getDirectoryHandle(name: string, options?: { create?: boolean }): Promise<NestableDirectory>;
+}
 
 export interface DownloadSummary {
   saved: number;
@@ -45,7 +71,7 @@ export interface CollisionSaveResult {
 
 export async function downloadImages(
   images: GalleryImage[],
-  destinationDirectory: FileSystemDirectoryHandle,
+  destinationDirectory: WritableDirectory,
   callbacks: DownloadCallbacks,
   options: DownloadOptions = {}
 ): Promise<DownloadSummary> {
@@ -133,13 +159,13 @@ export async function downloadImages(
       summary.saved += 1;
       callbacks.onSaved(saved.fileName);
     } catch (error) {
-      if (isAbortError(error) || options.signal?.aborted) {
-        throw isAbortError(error) ? error : new DOMException("The operation was aborted.", "AbortError");
+      if (isAbortError(toError(error)) || options.signal?.aborted) {
+        throw isAbortError(toError(error)) ? error : new DOMException("The operation was aborted.", "AbortError");
       }
       summary.failed += 1;
       summary.failedItems.push({
         fileName: image.fileName,
-        reason: formatError(error),
+        reason: formatError(toError(error)),
         originalUrl: image.originalUrl,
       });
     } finally {
@@ -154,7 +180,7 @@ export async function downloadImages(
 
 export async function saveBlobWithoutClobbering(
   blob: Blob,
-  destinationDirectory: FileSystemDirectoryHandle,
+  destinationDirectory: WritableDirectory,
   preferredFileName: string,
   randomSuffix: () => string = createRandomSuffix,
   signal?: AbortSignal
@@ -233,9 +259,9 @@ export async function runPool<T>(
 }
 
 export async function getOrCreateNestedDirectory(
-  rootDirectory: FileSystemDirectoryHandle,
+  rootDirectory: NestableDirectory,
   segments: string[]
-): Promise<FileSystemDirectoryHandle> {
+): Promise<NestableDirectory> {
   let currentDirectory = rootDirectory;
 
   for (const segment of segments) {
@@ -246,9 +272,9 @@ export async function getOrCreateNestedDirectory(
 }
 
 async function getExistingFileHandle(
-  destinationDirectory: FileSystemDirectoryHandle,
+  destinationDirectory: WritableDirectory,
   fileName: string
-): Promise<FileSystemFileHandle | null> {
+): Promise<WritableFile | null> {
   try {
     return await destinationDirectory.getFileHandle(fileName);
   } catch (error) {
@@ -259,7 +285,7 @@ async function getExistingFileHandle(
   }
 }
 
-async function fileContentsMatch(fileHandle: FileSystemFileHandle, blob: Blob): Promise<boolean> {
+async function fileContentsMatch(fileHandle: WritableFile, blob: Blob): Promise<boolean> {
   try {
     const existingFile = await fileHandle.getFile();
     if (existingFile.size !== blob.size) {
@@ -279,8 +305,14 @@ async function hashBlob(blob: Blob): Promise<string> {
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+/** Written next to a partially saved file so an interrupted write can be finished or rolled back. */
+const CommitMarkerSchema = z.object({
+  preferredFileName: z.string(),
+  targetFileName: z.string()
+});
+
 async function commitBlob(
-  destinationDirectory: FileSystemDirectoryHandle,
+  destinationDirectory: WritableDirectory,
   preferredFileName: string,
   targetFileName: string,
   blob: Blob,
@@ -295,7 +327,7 @@ async function commitBlob(
     await writeBlobDirect(destinationDirectory, targetFileName, blob, signal);
     await removeEntryIfPresent(destinationDirectory, markerName);
   } catch (error) {
-    if (isAbortError(error) || signal?.aborted) {
+    if (isAbortError(toError(error)) || signal?.aborted) {
       await removeEntryIfPresent(destinationDirectory, targetFileName);
       await removeEntryIfPresent(destinationDirectory, markerName);
     }
@@ -304,7 +336,7 @@ async function commitBlob(
 }
 
 async function hasPendingBlobCommit(
-  destinationDirectory: FileSystemDirectoryHandle,
+  destinationDirectory: WritableDirectory,
   preferredFileName: string
 ): Promise<boolean> {
   return Boolean(
@@ -313,7 +345,7 @@ async function hasPendingBlobCommit(
 }
 
 async function recoverPendingBlobCommit(
-  destinationDirectory: FileSystemDirectoryHandle,
+  destinationDirectory: WritableDirectory,
   preferredFileName: string,
   blob: Blob,
   signal?: AbortSignal
@@ -326,16 +358,12 @@ async function recoverPendingBlobCommit(
 
   let targetFileName: string | null = null;
   try {
-    const value = JSON.parse(await (await markerHandle.getFile()).text()) as {
-      preferredFileName?: unknown;
-      targetFileName?: unknown;
-    };
+    const marker = CommitMarkerSchema.parse(JSON.parse(await (await markerHandle.getFile()).text()));
     if (
-      value.preferredFileName === preferredFileName &&
-      typeof value.targetFileName === "string" &&
-      isSafeCommitTarget(value.targetFileName)
+      marker.preferredFileName === preferredFileName &&
+      isSafeCommitTarget(marker.targetFileName)
     ) {
-      targetFileName = value.targetFileName;
+      targetFileName = marker.targetFileName;
     }
   } catch {
     // An incomplete marker means the canonical file was never opened.
@@ -372,7 +400,7 @@ function isSafeCommitTarget(fileName: string): boolean {
 }
 
 async function removeEntryIfPresent(
-  destinationDirectory: FileSystemDirectoryHandle,
+  destinationDirectory: WritableDirectory,
   fileName: string
 ): Promise<void> {
   try {
@@ -385,7 +413,7 @@ async function removeEntryIfPresent(
 }
 
 async function writeBlobDirect(
-  destinationDirectory: FileSystemDirectoryHandle,
+  destinationDirectory: WritableDirectory,
   fileName: string,
   blob: Blob,
   signal?: AbortSignal
@@ -405,10 +433,11 @@ async function writeBlobDirect(
   }
 }
 
-async function closeWritableSafely(writable: FileSystemWritableFileStream): Promise<void> {
+async function closeWritableSafely(writable: WritableFileStream): Promise<void> {
   try {
-    if (typeof writable.abort === "function") {
-      await writable.abort();
+    const abort = writable.abort;
+    if (abort) {
+      await abort.call(writable);
       return;
     }
     await writable.close();

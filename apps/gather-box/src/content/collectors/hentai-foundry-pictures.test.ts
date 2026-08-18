@@ -15,7 +15,7 @@ describe("Hentai Foundry picture collector", () => {
     );
 
     expect(
-      collectHentaiFoundryPicturesData(document, new URL(pictureUrl) as unknown as Location)
+      collectHentaiFoundryPicturesData(document, new URL(pictureUrl))
     ).toMatchObject({ ok: false, code: "NO_VALID_IMAGES" });
   });
 });

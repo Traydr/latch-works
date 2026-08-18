@@ -21,15 +21,22 @@ export const ARCHIVE_AVIF_OPTIONS: AvifEncodeOptions = {
   bitDepth: 8
 };
 
+/** The pixel buffer the encoder reads; a canvas `ImageData` supplies exactly this. */
+export interface RgbaImage {
+  data: Uint8ClampedArray<ArrayBuffer>;
+  width: number;
+  height: number;
+}
+
 let encoderPromise: Promise<AVIFModule> | null = null;
 
-export async function encodeAvifImageData(imageData: ImageData): Promise<ArrayBuffer> {
+export async function encodeAvifImageData(imageData: RgbaImage): Promise<ArrayBuffer> {
   const encoder = await getAvifEncoder();
   return encodeWithAvifModule(imageData, encoder);
 }
 
 export function encodeWithAvifModule(
-  imageData: ImageData,
+  imageData: RgbaImage,
   encoder: Pick<AVIFModule, "encode">
 ): ArrayBuffer {
   const encoded = encoder.encode(
@@ -41,10 +48,11 @@ export function encodeWithAvifModule(
   if (!encoded) {
     throw new Error("The AVIF encoder did not produce an image.");
   }
-  return encoded.buffer.slice(
-    encoded.byteOffset,
-    encoded.byteOffset + encoded.byteLength
-  ) as ArrayBuffer;
+  // The encoder writes into wasm memory, so the bytes are copied into an ArrayBuffer this
+  // caller owns rather than handing back a view over the module's heap.
+  const buffer = new ArrayBuffer(encoded.byteLength);
+  new Uint8Array(buffer).set(encoded);
+  return buffer;
 }
 
 function getAvifEncoder(): Promise<AVIFModule> {

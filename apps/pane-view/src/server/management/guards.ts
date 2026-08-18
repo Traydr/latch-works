@@ -1,17 +1,13 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
-import { db } from "../db";
+import { type Database, db } from "../db";
 import { maintenanceJobs, syncRuns } from "../db/schema";
 import { listRunningSyncRuns } from "./sync-run-control";
 
-type QueryClient = {
-  select: typeof db.select;
-};
-
-export async function readActiveSyncRun(): Promise<{
+export async function readActiveSyncRun(database: Database = db): Promise<{
   id: string;
   sourceRoot: string;
 } | null> {
-  const runningSyncRuns = await listRunningSyncRuns();
+  const runningSyncRuns = await listRunningSyncRuns(database);
   const first = runningSyncRuns[0];
   if (!first) {
     return null;
@@ -23,7 +19,7 @@ export async function readActiveSyncRun(): Promise<{
   };
 }
 
-export async function assertNoActiveSyncRun(client: QueryClient = db): Promise<void> {
+export async function assertNoActiveSyncRun(client: Database = db): Promise<void> {
   const runningSyncRuns = await client
     .select({
       id: syncRuns.id,
@@ -47,7 +43,7 @@ export async function assertNoActiveSyncRun(client: QueryClient = db): Promise<v
   );
 }
 
-export async function readActiveCleanupJob(client: QueryClient = db): Promise<{
+export async function readActiveCleanupJob(client: Database = db): Promise<{
   id: string;
   /** The stored phase string as-is; the overview renders it, the worker validates it. */
   phase: string;
@@ -86,7 +82,7 @@ export async function readActiveCleanupJob(client: QueryClient = db): Promise<{
   };
 }
 
-export async function assertNoActiveCleanupJob(client: QueryClient = db): Promise<void> {
+export async function assertNoActiveCleanupJob(client: Database = db): Promise<void> {
   const activeJob = await readActiveCleanupJob(client);
   if (activeJob) {
     throw new Error(

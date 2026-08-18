@@ -2,8 +2,12 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
 import { Result, type Result as ResultType } from 'better-result';
+import { z } from 'zod';
 import type { FolderNode } from '../../shared/types';
-import { type FileSystemError, unexpectedFileSystemError } from '../errors';
+import { type FileSystemError, toError, unexpectedFileSystemError } from '../errors';
+
+/** Node's filesystem rejections carry a numeric-ish `code` such as `ENOENT`. */
+const ErrnoErrorSchema = z.object({ code: z.string() });
 
 async function canonicalizePath(inputPath: string): Promise<string> {
   const resolved = path.resolve(inputPath);
@@ -34,8 +38,10 @@ export async function resolveFolderPath(
     }
 
     return Result.ok(null);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT') {
+  } catch (cause) {
+    const error = toError(cause);
+    const errno = ErrnoErrorSchema.safeParse(error);
+    if (errno.success && errno.data.code === 'ENOENT') {
       return Result.ok(null);
     }
 
@@ -64,7 +70,9 @@ export async function listFolderChildren(
     return Result.ok(
       nodes.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })),
     );
-  } catch (error) {
-    return Result.err(unexpectedFileSystemError('list-folder-children', error, folderPath));
+  } catch (cause) {
+    return Result.err(
+      unexpectedFileSystemError('list-folder-children', toError(cause), folderPath),
+    );
   }
 }
