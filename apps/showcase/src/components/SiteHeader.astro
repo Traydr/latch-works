@@ -5,16 +5,9 @@ import "@fontsource/barlow/400.css";
 import "@fontsource/barlow/500.css";
 import "@fontsource/jetbrains-mono/400.css";
 import "@fontsource/jetbrains-mono/700.css";
-import { pipelineProducts } from "@/data/products";
+import { pipelineProducts, productEnamel } from "@/data/products";
 
 const pathname = Astro.url.pathname;
-
-const enamel: Record<string, string> = {
-  "gather-box": "#F5A623",
-  "frame-view": "#8B7CF6",
-  lockstep: "#34C98E",
-  "pane-view": "#38A8E8",
-};
 
 function isActive(href: string, end = false): boolean {
   return end ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
@@ -38,7 +31,7 @@ function isActive(href: string, end = false): boolean {
           <a
             class:list={["nav-link", isActive(`/${product.slug}`) && "active"]}
             href={`/${product.slug}`}
-            style={`--enamel:${enamel[product.slug]}`}
+            style={`--enamel:${productEnamel[product.slug]}`}
           >
             {product.name}
           </a>
@@ -56,7 +49,7 @@ function isActive(href: string, end = false): boolean {
             <a
               class:list={[isActive(`/${product.slug}`) && "active"]}
               href={`/${product.slug}`}
-              style={`--enamel:${enamel[product.slug]}`}
+              style={`--enamel:${productEnamel[product.slug]}`}
             >
               {product.name}
             </a>

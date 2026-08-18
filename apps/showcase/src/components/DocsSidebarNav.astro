@@ -8,18 +8,19 @@ interface Props {
 
 const { sections, currentPath } = Astro.props;
 
-const sectionEnamel: Record<string, string> = {
-  "Gather Box": "#F5A623",
-  "Frame View": "#8B7CF6",
-  Lockstep: "#34C98E",
-  "Pane View": "#38A8E8",
-};
+/** Docs sections are named after products in content frontmatter; unknown sections get no accent. */
+const sectionEnamel = new Map([
+  ["Gather Box", "#F5A623"],
+  ["Frame View", "#8B7CF6"],
+  ["Lockstep", "#34C98E"],
+  ["Pane View", "#38A8E8"],
+]);
 ---
 
 <nav class="docs-nav" aria-label="Docs">
   {
     sections.map((section) => {
-      const enamel = sectionEnamel[section.name];
+      const enamel = sectionEnamel.get(section.name);
       return (
         <div class="section" style={enamel ? `--enamel:${enamel}` : undefined}>
           <p class="section-label">{section.name}</p>

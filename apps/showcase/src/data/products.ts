@@ -13,7 +13,7 @@ export type ProductFeature = {
 };
 
 export type Product = {
-  slug: string;
+  slug: PipelineSlug;
   name: string;
   kind: ProductKind;
   tagline: string;
@@ -39,6 +39,14 @@ export const pipeline = [
 export const pipelineSlugs = ["gather-box", "frame-view", "lockstep", "pane-view"] as const;
 
 export type PipelineSlug = (typeof pipelineSlugs)[number];
+
+/** Accent colour each product's chrome uses, keyed by slug. */
+export const productEnamel = {
+  "gather-box": "#F5A623",
+  "frame-view": "#8B7CF6",
+  lockstep: "#34C98E",
+  "pane-view": "#38A8E8",
+} satisfies Record<PipelineSlug, string>;
 
 export const products: Product[] = [
   {
