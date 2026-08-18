@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+/** Any JSON value — what `JSON.parse` and the IPC transport hand back before parsing. */
+const JsonValueSchema = z.json();
+export type JsonValue = z.infer<typeof JsonValueSchema>;
+
 export const IpcErrorPayloadSchema = z.discriminatedUnion("_tag", [
   z.object({
     _tag: z.literal("ValidationError"),
@@ -39,8 +43,11 @@ export const LockstepPlanCountsSchema = z.object({
   upload: z.number(),
 });
 
+/** What a plan says should happen to one archive path. */
+export const SyncPlanActionSchema = z.enum(["delete", "keep", "update", "upload"]);
+
 export const LockstepPlanItemSchema = z.object({
-  action: z.enum(["delete", "keep", "update", "upload"]),
+  action: SyncPlanActionSchema,
   path: z.string(),
 });
 

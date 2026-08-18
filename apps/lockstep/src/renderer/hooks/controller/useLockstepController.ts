@@ -8,6 +8,7 @@ import type {
   LockstepRunEvent,
   LockstepSettings,
 } from "../../../shared/types";
+import { requireLockstepApi } from "../../lib/bridge";
 import { shouldEndRunOnComplete } from "../../lib/run-lifecycle";
 import {
   emptyProfileForm,
@@ -65,7 +66,7 @@ export function useLockstepController(): LockstepController {
   }, [settings]);
 
   const refreshSettings = useCallback(async () => {
-    const result = await window.lockstep.getSettings();
+    const result = await requireLockstepApi().getSettings();
     if (Result.isError(result)) {
       setError(result.error.message);
       return;
@@ -189,7 +190,7 @@ export function useLockstepController(): LockstepController {
   );
 
   useEffect(() => {
-    const unsubscribe = window.lockstep.onRunEvent(applyRunEvent);
+    const unsubscribe = requireLockstepApi().onRunEvent(applyRunEvent);
     return unsubscribe;
   }, [applyRunEvent]);
 
@@ -212,7 +213,7 @@ export function useLockstepController(): LockstepController {
         setError("Enter a sync API token for this session before running remote operations.");
         return false;
       }
-      const result = await window.lockstep.updateProfile(profile.id, {
+      const result = await requireLockstepApi().updateProfile(profile.id, {
         token: sessionToken.trim(),
       });
       if (Result.isError(result)) {
@@ -251,7 +252,7 @@ export function useLockstepController(): LockstepController {
     async (event: React.FormEvent) => {
       event.preventDefault();
       setError(null);
-      const result = await window.lockstep.createProfile(profileForm);
+      const result = await requireLockstepApi().createProfile(profileForm);
       if (Result.isError(result)) {
         setError(result.error.message);
         return;
@@ -269,7 +270,7 @@ export function useLockstepController(): LockstepController {
     }
     setDoctorResult(null);
     beginRun("Running doctor...", "doctor");
-    const result = await window.lockstep.doctor(activeProfile.id);
+    const result = await requireLockstepApi().doctor(activeProfile.id);
     setRunning(false);
     if (Result.isError(result)) {
       setError(result.error.message);
@@ -292,7 +293,7 @@ export function useLockstepController(): LockstepController {
       return false;
     }
     beginRun("Planning sync...", "plan");
-    const result = await window.lockstep.plan({ profileId: activeProfile.id });
+    const result = await requireLockstepApi().plan({ profileId: activeProfile.id });
     setRunning(false);
     if (Result.isError(result)) {
       setError(result.error.message);
@@ -312,7 +313,7 @@ export function useLockstepController(): LockstepController {
     }
     beginRun("Pushing uploads and updates...", "push");
     setRunProgress((prev) => ({ ...prev, phase: "items", action: "push" }));
-    const result = await window.lockstep.push({ profileId: activeProfile.id });
+    const result = await requireLockstepApi().push({ profileId: activeProfile.id });
     setRunning(false);
     if (Result.isError(result)) {
       setError(result.error.message);
@@ -347,7 +348,7 @@ export function useLockstepController(): LockstepController {
     }
     beginRun("Applying remote deletes...", "prune");
     setRunProgress((prev) => ({ ...prev, phase: "items", action: "prune" }));
-    const result = await window.lockstep.prune({ profileId: activeProfile.id });
+    const result = await requireLockstepApi().prune({ profileId: activeProfile.id });
     setRunning(false);
     if (Result.isError(result)) {
       setError(result.error.message);
@@ -372,11 +373,11 @@ export function useLockstepController(): LockstepController {
   }, [activeProfile, ensureSessionToken, beginRun, refreshSettings]);
 
   const handleCancel = useCallback(async () => {
-    await window.lockstep.cancelRun();
+    await requireLockstepApi().cancelRun();
   }, []);
 
   const handlePickFolder = useCallback(async () => {
-    const result = await window.lockstep.pickSourceFolder();
+    const result = await requireLockstepApi().pickSourceFolder();
     if (Result.isError(result)) {
       setError(result.error.message);
       return;
@@ -387,7 +388,7 @@ export function useLockstepController(): LockstepController {
   }, []);
 
   const handleProfileChange = useCallback(async (profileId: string) => {
-    const result = await window.lockstep.setActiveProfile(profileId);
+    const result = await requireLockstepApi().setActiveProfile(profileId);
     if (Result.isError(result)) {
       setError(result.error.message);
       return;

@@ -1,10 +1,10 @@
 import { Result, type Result as ResultType, type SerializedResult } from "better-result";
 import type { z } from "zod";
 
-import { createSerializedResultSchema, IpcErrorPayloadSchema } from "./contracts";
+import { createSerializedResultSchema, IpcErrorPayloadSchema, type JsonValue } from "./contracts";
 import type { IpcErrorPayload } from "./types";
 
-function protocolError(channel: string, _payload: unknown): IpcErrorPayload {
+function protocolError(channel: string): IpcErrorPayload {
   return {
     _tag: "ProtocolError",
     channel,
@@ -19,20 +19,20 @@ export function serializeIpcResult<T>(
 }
 
 export function deserializeIpcResult<T>(
-  value: unknown,
+  value: JsonValue,
   schema: z.ZodType<T>,
   channel: string,
 ): ResultType<T, IpcErrorPayload> {
   const parsed = createSerializedResultSchema(schema).safeParse(value);
   if (!parsed.success) {
-    return Result.err(protocolError(channel, value));
+    return Result.err(protocolError(channel));
   }
 
   const result = Result.deserialize<T, IpcErrorPayload>(parsed.data);
   if (Result.isError(result)) {
     const errorParse = IpcErrorPayloadSchema.safeParse(result.error);
     if (!errorParse.success) {
-      return Result.err(protocolError(channel, value));
+      return Result.err(protocolError(channel));
     }
 
     return Result.err(errorParse.data);

@@ -4,8 +4,9 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { Result, type Result as ResultType } from "better-result";
-import { safeStorage } from "electron";
+import { z } from "zod";
 
+import { LockstepRunSummarySchema } from "../../shared/contracts";
 import type {
   LockstepProfileInput,
   LockstepProfilePatch,
@@ -13,49 +14,63 @@ import type {
   LockstepRunSummary,
   LockstepSettings,
 } from "../../shared/types";
-import { type FileSystemError, unexpectedFileSystemError } from "../errors";
+import { type FileSystemError, toError, unexpectedFileSystemError } from "../errors";
 
-interface PersistedProfile {
-  apiUrl: string;
-  encryptedToken?: string;
-  id: string;
-  lastRun?: LockstepRunSummary;
-  name: string;
-  sourceRoot: string;
+/** Electron's `safeStorage`, narrowed to what profile persistence uses. */
+export interface SecretStorage {
+  decryptString(encrypted: Buffer): string;
+  encryptString(plainText: string): Buffer;
+  isEncryptionAvailable(): boolean;
 }
 
-interface PersistedState {
-  activeProfileId: string | null;
-  profiles: PersistedProfile[];
-}
+const PersistedProfileSchema = z.object({
+  apiUrl: z.string(),
+  encryptedToken: z.string().optional(),
+  id: z.string(),
+  lastRun: LockstepRunSummarySchema.optional(),
+  name: z.string(),
+  sourceRoot: z.string(),
+});
 
-interface LegacyLockstepConfig {
-  apiUrl?: string;
-  source?: string;
+/** The on-disk `lockstep-settings.json` document. */
+const PersistedStateSchema = z.object({
+  activeProfileId: z.string().nullable(),
+  profiles: z.array(PersistedProfileSchema),
+});
+
+/** The pre-profiles `~/.latch-works/lockstep.json` file, migrated once on first run. */
+const LegacyLockstepConfigSchema = z.object({
+  apiUrl: z.string().optional(),
+  source: z.string().optional(),
+});
+
+type PersistedProfile = z.infer<typeof PersistedProfileSchema>;
+type PersistedState = z.infer<typeof PersistedStateSchema>;
+
+interface ProfileServiceOptions {
+  legacyConfigPath?: string;
+  secretStorage: SecretStorage;
 }
 
 export class ProfileService {
   private readonly filePath: string;
   private readonly legacyConfigPath: string;
+  private readonly secretStorage: SecretStorage;
   private readonly sessionTokens = new Map<string, string>();
   private state: PersistedState = { activeProfileId: null, profiles: [] };
 
-  constructor(
-    userDataPath: string,
-    options?: {
-      legacyConfigPath?: string;
-    },
-  ) {
+  constructor(userDataPath: string, options: ProfileServiceOptions) {
     this.filePath = path.join(userDataPath, "lockstep-settings.json");
     this.legacyConfigPath =
-      options?.legacyConfigPath ?? path.join(homedir(), ".latch-works", "lockstep.json");
+      options.legacyConfigPath ?? path.join(homedir(), ".latch-works", "lockstep.json");
+    this.secretStorage = options.secretStorage;
   }
 
   async init(): Promise<ResultType<void, FileSystemError>> {
     try {
       if (existsSync(this.filePath)) {
         const raw = await readFile(this.filePath, "utf-8");
-        this.state = JSON.parse(raw) as PersistedState;
+        this.state = PersistedStateSchema.parse(JSON.parse(raw));
       } else {
         await this.migrateLegacyConfig();
       }
@@ -63,7 +78,7 @@ export class ProfileService {
       return Result.ok();
     } catch (error) {
       this.state = { activeProfileId: null, profiles: [] };
-      return Result.err(unexpectedFileSystemError("init-profiles", error, this.filePath));
+      return Result.err(unexpectedFileSystemError("init-profiles", toError(error), this.filePath));
     }
   }
 
@@ -85,12 +100,12 @@ export class ProfileService {
     }
 
     const profile = this.getProfile(profileId);
-    if (!profile?.encryptedToken || !safeStorage.isEncryptionAvailable()) {
+    if (!profile?.encryptedToken || !this.secretStorage.isEncryptionAvailable()) {
       return undefined;
     }
 
     try {
-      return safeStorage.decryptString(Buffer.from(profile.encryptedToken, "base64"));
+      return this.secretStorage.decryptString(Buffer.from(profile.encryptedToken, "base64"));
     } catch {
       return undefined;
     }
@@ -115,12 +130,12 @@ export class ProfileService {
       return "none";
     }
 
-    if (!safeStorage.isEncryptionAvailable()) {
+    if (!this.secretStorage.isEncryptionAvailable()) {
       return "unreadable";
     }
 
     try {
-      safeStorage.decryptString(Buffer.from(profile.encryptedToken, "base64"));
+      this.secretStorage.decryptString(Buffer.from(profile.encryptedToken, "base64"));
       return "secure";
     } catch {
       return "unreadable";
@@ -262,11 +277,11 @@ export class ProfileService {
   }
 
   private encryptToken(token: string): string | undefined {
-    if (!safeStorage.isEncryptionAvailable()) {
+    if (!this.secretStorage.isEncryptionAvailable()) {
       return undefined;
     }
 
-    return safeStorage.encryptString(token).toString("base64");
+    return this.secretStorage.encryptString(token).toString("base64");
   }
 
   private async migrateLegacyConfig(): Promise<void> {
@@ -275,7 +290,12 @@ export class ProfileService {
     }
 
     const raw = await readFile(this.legacyConfigPath, "utf-8");
-    const legacy = JSON.parse(raw) as LegacyLockstepConfig;
+    const parsed = LegacyLockstepConfigSchema.safeParse(JSON.parse(raw));
+    if (!parsed.success) {
+      return;
+    }
+
+    const legacy = parsed.data;
     if (!legacy.source && !legacy.apiUrl) {
       return;
     }
@@ -298,7 +318,7 @@ export class ProfileService {
       await writeFile(this.filePath, `${JSON.stringify(this.state, null, 2)}\n`, "utf-8");
       return Result.ok();
     } catch (error) {
-      return Result.err(unexpectedFileSystemError("save-profiles", error, this.filePath));
+      return Result.err(unexpectedFileSystemError("save-profiles", toError(error), this.filePath));
     }
   }
 }

@@ -2,31 +2,24 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { ProfileService, type SecretStorage } from "../../src/main/services/profileService";
+import { type LockstepCore, RunService } from "../../src/main/services/runService";
 import type { LockstepRunEvent } from "../../src/shared/types";
 
-const pushChanges = vi.fn();
-const pruneDeleted = vi.fn();
-const planSync = vi.fn();
+/** Mirrors Electron's `safeStorage` round trip; the run service only needs a readable token. */
+const secretStorage: SecretStorage = {
+  decryptString: (buffer: Buffer) => buffer.toString("utf-8"),
+  encryptString: (value: string) => Buffer.from(value, "utf-8"),
+  isEncryptionAvailable: () => true,
+};
 
-vi.mock("electron", () => ({
-  safeStorage: {
-    decryptString: vi.fn((buffer: Buffer) => buffer.toString("utf-8")),
-    encryptString: vi.fn((value: string) => Buffer.from(value, "utf-8")),
-    isEncryptionAvailable: vi.fn(() => true),
-  },
-}));
+const pushChanges = vi.fn<LockstepCore["pushChanges"]>();
+const pruneDeleted = vi.fn<LockstepCore["pruneDeleted"]>();
+const planSync = vi.fn<LockstepCore["planSync"]>();
+const doctor = vi.fn<LockstepCore["doctor"]>();
 
-vi.mock("@latch-works/lockstep-core", async () => {
-  const actual = await vi.importActual<typeof import("@latch-works/lockstep-core")>(
-    "@latch-works/lockstep-core",
-  );
-  return {
-    ...actual,
-    planSync,
-    pruneDeleted,
-    pushChanges,
-  };
-});
+const core: LockstepCore = { doctor, planSync, pruneDeleted, pushChanges };
 
 describe("RunService cancellation summaries", () => {
   let tempDir: string;
@@ -39,7 +32,7 @@ describe("RunService cancellation summaries", () => {
     pushChanges.mockReset();
     pruneDeleted.mockReset();
     planSync.mockReset();
-    vi.resetModules();
+    doctor.mockReset();
   });
 
   afterEach(async () => {
@@ -47,11 +40,9 @@ describe("RunService cancellation summaries", () => {
   });
 
   async function createRunService() {
-    const { ProfileService } = await import("../../src/main/services/profileService");
-    const { RunService } = await import("../../src/main/services/runService");
-
     const profileService = new ProfileService(tempDir, {
       legacyConfigPath: path.join(tempDir, "missing-legacy.json"),
+      secretStorage,
     });
     await profileService.init();
 
@@ -66,14 +57,18 @@ describe("RunService cancellation summaries", () => {
     }
     profileId = created.value.id;
 
-    const runService = new RunService(profileService, () => ({
-      isDestroyed: () => false,
-      webContents: {
-        send: (_channel: string, event: LockstepRunEvent) => {
-          sentEvents.push(event);
+    const runService = new RunService(
+      profileService,
+      () => ({
+        isDestroyed: () => false,
+        webContents: {
+          send: (_channel: string, event: LockstepRunEvent) => {
+            sentEvents.push(event);
+          },
         },
-      },
-    }));
+      }),
+      core,
+    );
 
     return runService;
   }

@@ -13,6 +13,21 @@ import type { BrowserWindow } from "electron";
 import type { DoctorResult, RunRequest } from "../../shared/types";
 import type { ProfileService } from "./profileService";
 
+/** The lockstep-core entry points a run needs, injectable so tests can drive them. */
+export interface LockstepCore {
+  doctor: typeof runDoctor;
+  planSync: typeof planSync;
+  pruneDeleted: typeof pruneDeleted;
+  pushChanges: typeof pushChanges;
+}
+
+const lockstepCore = {
+  doctor: runDoctor,
+  planSync,
+  pruneDeleted,
+  pushChanges,
+} satisfies LockstepCore;
+
 export class RunService {
   private abortController: AbortController | null = null;
   private running = false;
@@ -20,6 +35,7 @@ export class RunService {
   constructor(
     private readonly profileService: ProfileService,
     private readonly getMainWindow: () => BrowserWindow | null,
+    private readonly core: LockstepCore = lockstepCore,
   ) {}
 
   isRunning(): boolean {
@@ -32,7 +48,7 @@ export class RunService {
 
   async plan(request: RunRequest): Promise<LockstepPlan> {
     return this.runWithCore("plan", request, async (credentials, observer, signal) => {
-      const plan = await planSync(
+      const plan = await this.core.planSync(
         {
           apiToken: credentials.apiToken,
           apiUrl: credentials.apiUrl,
@@ -59,7 +75,7 @@ export class RunService {
 
   async push(request: RunRequest): Promise<LockstepRunSummary> {
     return this.runWithCore("push", request, async (credentials, observer, signal) => {
-      const result = await pushChanges(
+      const result = await this.core.pushChanges(
         {
           apiToken: credentials.apiToken,
           apiUrl: credentials.apiUrl,
@@ -88,7 +104,7 @@ export class RunService {
 
   async prune(request: RunRequest): Promise<LockstepRunSummary> {
     return this.runWithCore("prune", request, async (credentials, observer, signal) => {
-      const result = await pruneDeleted(
+      const result = await this.core.pruneDeleted(
         {
           apiToken: credentials.apiToken,
           apiUrl: credentials.apiUrl,
@@ -121,7 +137,7 @@ export class RunService {
     }
 
     const observer = this.createObserver();
-    const result = await runDoctor(
+    const result = await this.core.doctor(
       {
         apiToken: this.profileService.getApiToken(profileId),
         apiUrl: profile.apiUrl,

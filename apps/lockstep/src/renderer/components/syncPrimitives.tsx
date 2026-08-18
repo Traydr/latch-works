@@ -1,24 +1,35 @@
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 
-const ACTION_BG: Record<string, string> = {
+import { SyncPlanActionSchema } from "../../shared/contracts";
+import type { LockstepPlanItem } from "../../shared/types";
+
+type SyncPlanAction = LockstepPlanItem["action"];
+
+const ACTION_BG = {
   upload: "bg-sky-500",
   update: "bg-amber-500",
   delete: "bg-red-500",
   keep: "bg-zinc-600",
-};
+} satisfies Record<SyncPlanAction, string>;
 
-const ACTION_CHIP: Record<string, string> = {
+const ACTION_CHIP = {
   upload: "border-sky-500/40 bg-sky-500/10 text-sky-300",
   update: "border-amber-500/40 bg-amber-500/10 text-amber-300",
   delete: "border-red-500/40 bg-red-500/10 text-red-300",
   keep: "border-zinc-600/50 bg-zinc-700/30 text-zinc-400",
-};
+} satisfies Record<SyncPlanAction, string>;
+
+/** Run events carry free-form action labels; unknown ones fall back to the neutral chip. */
+function actionChipClass(action: string): string {
+  const parsed = SyncPlanActionSchema.safeParse(action);
+  return parsed.success ? ACTION_CHIP[parsed.data] : ACTION_CHIP.keep;
+}
 
 export function ActionChip({ action, className = "" }: { action: string; className?: string }) {
   return (
     <span
-      className={`inline-flex items-center justify-center rounded border px-1.5 py-0.5 font-mono text-[10px] font-medium uppercase tracking-wide ${ACTION_CHIP[action] ?? ACTION_CHIP.keep} ${className}`}
+      className={`inline-flex items-center justify-center rounded border px-1.5 py-0.5 font-mono text-[10px] font-medium uppercase tracking-wide ${actionChipClass(action)} ${className}`}
     >
       {action}
     </span>

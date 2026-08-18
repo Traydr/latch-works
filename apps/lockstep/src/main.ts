@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { Result } from "better-result";
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, safeStorage } from "electron";
 import started from "electron-squirrel-startup";
 
 import { registerIpc } from "./main/ipc/registerIpc";
@@ -29,7 +29,7 @@ function resolveWindowIconPath(fileName: string): string | undefined {
 }
 
 async function createWindow(): Promise<void> {
-  profileService = new ProfileService(app.getPath("userData"));
+  profileService = new ProfileService(app.getPath("userData"), { secretStorage: safeStorage });
   const initResult = await profileService.init();
   if (Result.isError(initResult)) {
     console.error(`[profile-init] ${initResult.error.message}`);

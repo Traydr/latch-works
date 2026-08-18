@@ -18,7 +18,8 @@ export function ProfileSelect({ onChange, profiles, value }: ProfileSelectProps)
     }
 
     function handlePointerDown(event: MouseEvent) {
-      if (!rootRef.current?.contains(event.target as Node)) {
+      const target = event.target;
+      if (!(target instanceof Node) || !rootRef.current?.contains(target)) {
         setOpen(false);
       }
     }

@@ -2,7 +2,7 @@ import type { IpcRendererEvent } from "electron";
 import { contextBridge, ipcRenderer } from "electron";
 import type { ZodType } from "zod";
 
-import { LockstepRunEventSchema } from "./shared/contracts";
+import { type JsonValue, LockstepRunEventSchema } from "./shared/contracts";
 import { deserializeIpcResult } from "./shared/ipc";
 import { InvokeIpcContracts } from "./shared/ipcContracts";
 import type {
@@ -20,7 +20,7 @@ function invokeResult<T>(
 ): Promise<ReturnType<typeof deserializeIpcResult<T>>> {
   return ipcRenderer
     .invoke(channel, ...args)
-    .then((value) => deserializeIpcResult(value, schema, channel));
+    .then((value: JsonValue) => deserializeIpcResult(value, schema, channel));
 }
 
 const api: LockstepApi = {
@@ -50,7 +50,7 @@ const api: LockstepApi = {
       InvokeIpcContracts.getSettings.responseSchema,
     ),
   onRunEvent: (listener: (event: LockstepRunEvent) => void) => {
-    const handler = (_event: IpcRendererEvent, payload: unknown) => {
+    const handler = (_event: IpcRendererEvent, payload: JsonValue) => {
       const parsed = LockstepRunEventSchema.safeParse(payload);
       if (parsed.success) {
         listener(parsed.data);
