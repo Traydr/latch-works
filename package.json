@@ -5,20 +5,15 @@
   "type": "module",
   "packageManager": "pnpm@11.1.0",
   "scripts": {
-    "build": "pnpm -r build",
-    "check:packages": "pnpm -r --filter './apps/*' --filter './packages/*' --sort --if-present check",
-    "check": "pnpm -r --sort build && pnpm run check:packages && pnpm run lint && pnpm run knip",
+    "build:all": "pnpm -r build && pnpm -r make",
     "format": "biome format --write .",
-    "lint": "biome check .",
-    "lint:anti-slop": "oxlint",
+    "lint:biome": "biome check .",
+    "lint:oxlint": "oxlint",
+    "lint:all": "pnpm run lint:biome && pnpm run lint:oxlint",
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
     "knip": "knip",
-    "dev:lockstep": "pnpm --filter @latch-works/lockstep-app start",
-    "dev:pane": "pnpm --filter @latch-works/pane-view dev",
-    "dev:showcase": "pnpm --filter @latch-works/showcase dev",
-    "docs:check": "node scripts/check-docs.mjs",
-    "start:lockstep": "pnpm --filter @latch-works/lockstep start"
+    "check:all": "pnpm run build:all && pnpm run format && pnpm run lint:all && pnpm run typecheck && pnpm run knip"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.10",

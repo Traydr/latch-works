@@ -183,11 +183,10 @@ pnpm --filter @latch-works/lockstep start push --source "/path/to/archive"
 ### Repo checks
 
 ```bash
-pnpm lint        # Biome across the repo
+pnpm lint:all    # Runs both Biome and Oxlint with the Anti-slop plugin
 pnpm test        # Tests in all packages
 pnpm typecheck   # tsc across all packages
 pnpm knip        # Unused files, exports, dependencies
-pnpm docs:check  # Docs link/consistency check
 ```
 
 ---
