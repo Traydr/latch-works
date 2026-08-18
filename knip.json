@@ -41,7 +41,7 @@
         "tests/**/*.test.ts",
         "tests/testUtils.ts"
       ],
-      "ignoreDependencies": ["ffmpeg-static", "ffprobe-static", "scheduler"]
+      "ignoreDependencies": ["ffmpeg-static", "ffprobe-static"]
     },
     "apps/gather-box": {
       "entry": [
