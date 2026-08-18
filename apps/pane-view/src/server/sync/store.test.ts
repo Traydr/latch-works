@@ -1,325 +1,226 @@
-import { and, eq } from "drizzle-orm";
+import type { S3StorageClient, StoredObjectHead } from "@latch-works/media-storage";
+import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { syncRuns } from "../db/schema";
 
-/** A row set a mocked drizzle chain resolves to; the store reads only these columns. */
-type MockRows = Array<{ id?: string; status?: string }> | undefined;
-
-function createInsertChain(resolvedValue: MockRows) {
-  const returningMock = vi.fn().mockResolvedValue(resolvedValue);
-  const onConflictDoUpdateMock = vi.fn().mockReturnValue({ returning: returningMock });
-  const valuesMock = vi.fn().mockReturnValue({ onConflictDoUpdate: onConflictDoUpdateMock });
-  const insertMock = vi.fn().mockReturnValue({ values: valuesMock });
-  return { insertMock, onConflictDoUpdateMock, returningMock, valuesMock };
-}
-
-function createSelectChain(resolvedValue: MockRows) {
-  const limitMock = vi.fn().mockResolvedValue(resolvedValue);
-  const whereMock = vi.fn().mockReturnValue({ limit: limitMock });
-  const fromMock = vi.fn().mockReturnValue({ where: whereMock });
-  const selectMock = vi.fn().mockReturnValue({ from: fromMock });
-  return { fromMock, limitMock, selectMock, whereMock };
-}
-
-function createUpdateChain() {
-  const whereMock = vi.fn().mockResolvedValue(undefined);
-  const setMock = vi.fn().mockReturnValue({ where: whereMock });
-  const updateMock = vi.fn().mockReturnValue({ set: setMock });
-  return { setMock, updateMock, whereMock };
-}
-
-const mocks = vi.hoisted(() => {
-  const updateMock = vi.fn();
-  const whereMock = vi.fn();
-  const setMock = vi.fn();
-  const returningMock = vi.fn();
-  const transactionMock = vi.fn();
-  const rootInsertMock = vi.fn();
-  const rootSelectMock = vi.fn();
-  const headStoredObject = vi.fn();
-  const txClient = {
-    insert: vi.fn(),
-    select: vi.fn(),
-    update: vi.fn(),
-  };
-
-  return {
-    headStoredObject,
-    returningMock,
-    rootInsertMock,
-    rootSelectMock,
-    setMock,
-    transactionMock,
-    txClient,
-    updateMock,
-    whereMock,
-  };
-});
-
-vi.mock("../db", () => ({
-  db: {
-    insert: mocks.rootInsertMock,
-    select: mocks.rootSelectMock,
-    transaction: mocks.transactionMock,
-    update: mocks.updateMock,
-  },
-}));
-
-vi.mock("../../env/server", () => ({
-  env: {
-    S3_ACCESS_KEY_ID: "test-access-key",
-    S3_BUCKET: "test-bucket",
-    S3_ENDPOINT: "http://127.0.0.1:9000",
-    S3_REGION: "us-east-1",
-    S3_SECRET_ACCESS_KEY: "test-secret-key",
-  },
-}));
-
-vi.mock("@latch-works/media-storage", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@latch-works/media-storage")>();
-  return {
-    ...actual,
-    createS3StorageClient: vi.fn(() => ({ bucket: "test-bucket", client: {} })),
-    headStoredObject: mocks.headStoredObject,
-  };
-});
-
-vi.mock("../management/guards", () => ({
-  assertNoActiveCleanupJob: vi.fn(async () => undefined),
-}));
-
-vi.mock("../db/library-coordination-lock", () => ({
-  acquireLibraryMutationStartupLock: vi.fn(async () => undefined),
-}));
-
+import { folders, libraryEntries, mediaObjects, syncRunItems, syncRuns } from "../db/schema";
+import { testDatabaseForSuite } from "../library/test-db";
+import type { SyncStoreDependencies } from "./store";
 import { completeSyncedObject, finalizeSyncRun, markRemoteDeleted } from "./store";
 
+/**
+ * The sync writes against executed SQL: the archive is a real database, and
+ * only the two things a sync reaches outside it — the cleanup guard and the
+ * object storage HEAD attestation — stand in.
+ */
+
+const testDatabase = testDatabaseForSuite();
+
+const headStoredObject = vi.fn();
+
+// SAFETY: `headStoredObject` is the only call that receives this client and it
+// is faked below, so no S3Client method is ever invoked on it.
+const storage = { bucket: "test-bucket", client: {} as S3StorageClient["client"] };
+
+function dependencies(): SyncStoreDependencies {
+  return {
+    acquireLibraryMutationStartupLock: async () => undefined,
+    assertNoActiveCleanupJob: async () => undefined,
+    database: testDatabase().db,
+    headStoredObject,
+  };
+}
+
+const sha256 = "abc123".padEnd(64, "0");
+
+const attestedHead: StoredObjectHead = {
+  checksumSHA256: Buffer.from(sha256, "hex").toString("base64"),
+  contentLength: 1024,
+  contentType: "image/jpeg",
+  etag: '"etag"',
+  metadata: { sha256 },
+};
+
+const uploadInput = {
+  contentType: "image/jpeg",
+  extension: "jpg",
+  filename: "photo.jpg",
+  logicalPath: "photos/photo.jpg",
+  mediaType: "image" as const,
+  mtimeMs: 1_700_000_000_000,
+  objectKey: "objects/abc",
+  sha256,
+  size: 1024,
+  syncRunId: "",
+};
+
+async function insertRun(status: "running" | "completed" | "cancelled"): Promise<string> {
+  const [run] = await testDatabase()
+    .db.insert(syncRuns)
+    .values({ sourceRoot: "/archive", status })
+    .returning({ id: syncRuns.id });
+  if (!run) throw new Error("failed to insert sync run");
+  return run.id;
+}
+
+async function readRun(syncRunId: string) {
+  const [run] = await testDatabase().db.select().from(syncRuns).where(eq(syncRuns.id, syncRunId));
+  if (!run) throw new Error(`sync run ${syncRunId} not found`);
+  return run;
+}
+
+beforeEach(async () => {
+  const { db } = testDatabase();
+  await db.delete(syncRunItems);
+  await db.delete(libraryEntries);
+  await db.delete(mediaObjects);
+  await db.delete(folders);
+  await db.delete(syncRuns);
+  headStoredObject.mockReset();
+  headStoredObject.mockResolvedValue(attestedHead);
+});
+
 describe("finalizeSyncRun", () => {
-  beforeEach(() => {
-    mocks.updateMock.mockReset();
-    mocks.whereMock.mockReset();
-    mocks.setMock.mockReset();
-    mocks.returningMock.mockReset();
-    mocks.rootSelectMock.mockReset();
-
-    mocks.updateMock.mockReturnValue({ set: mocks.setMock });
-    mocks.setMock.mockReturnValue({ where: mocks.whereMock });
-    mocks.whereMock.mockReturnValue({ returning: mocks.returningMock });
-  });
-
   it("marks completed runs with final counts", async () => {
-    mocks.returningMock.mockResolvedValue([{ id: "run-1" }]);
+    const syncRunId = await insertRun("running");
 
-    const result = await finalizeSyncRun({
-      input: {
-        counts: { pushed: 2, planned: 2 },
-        status: "completed",
-        syncRunId: "run-1",
-      },
-    });
+    const result = await finalizeSyncRun(
+      { input: { counts: { pushed: 2, planned: 2 }, status: "completed", syncRunId } },
+      dependencies(),
+    );
 
     expect(result).toEqual({ status: "database" });
-    expect(mocks.setMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        counts: { pushed: 2, planned: 2 },
-        error: null,
-        status: "completed",
-      }),
-    );
-    expect(mocks.whereMock).toHaveBeenCalledWith(
-      and(eq(syncRuns.id, "run-1"), eq(syncRuns.status, "running")),
-    );
+    const run = await readRun(syncRunId);
+    expect(run.status).toBe("completed");
+    expect(run.counts).toEqual({ pushed: 2, planned: 2 });
+    expect(run.error).toBeNull();
+    expect(run.completedAt).toBeInstanceOf(Date);
   });
 
   it("marks cancelled runs with error text", async () => {
-    mocks.returningMock.mockResolvedValue([{ id: "run-1" }]);
+    const syncRunId = await insertRun("running");
 
-    await finalizeSyncRun({
-      input: {
-        counts: { failed: 0, planned: 2, pushed: 1 },
-        error: "Run cancelled by user",
-        status: "cancelled",
-        syncRunId: "run-1",
+    await finalizeSyncRun(
+      {
+        input: {
+          counts: { failed: 0, planned: 2, pushed: 1 },
+          error: "Run cancelled by user",
+          status: "cancelled",
+          syncRunId,
+        },
       },
-    });
-
-    expect(mocks.setMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        counts: { failed: 0, planned: 2, pushed: 1 },
-        error: "Run cancelled by user",
-        status: "cancelled",
-      }),
+      dependencies(),
     );
+
+    const run = await readRun(syncRunId);
+    expect(run.status).toBe("cancelled");
+    expect(run.counts).toEqual({ failed: 0, planned: 2, pushed: 1 });
+    expect(run.error).toBe("Run cancelled by user");
   });
 
   it("marks failed runs with error text", async () => {
-    mocks.returningMock.mockResolvedValue([{ id: "run-1" }]);
+    const syncRunId = await insertRun("running");
 
-    await finalizeSyncRun({
-      input: {
-        counts: { failed: 1, pushed: 0, planned: 1 },
-        error: "1 item(s) failed during push",
-        status: "failed",
-        syncRunId: "run-1",
+    await finalizeSyncRun(
+      {
+        input: {
+          counts: { failed: 1, pushed: 0, planned: 1 },
+          error: "1 item(s) failed during push",
+          status: "failed",
+          syncRunId,
+        },
       },
-    });
-
-    expect(mocks.setMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        error: "1 item(s) failed during push",
-        status: "failed",
-      }),
+      dependencies(),
     );
+
+    const run = await readRun(syncRunId);
+    expect(run.status).toBe("failed");
+    expect(run.error).toBe("1 item(s) failed during push");
   });
 
   it("accepts an exact terminal-status replay without updating details", async () => {
-    mocks.returningMock.mockResolvedValue([]);
-    const select = createSelectChain([{ status: "completed" }]);
-    mocks.rootSelectMock.mockReturnValue({ from: select.fromMock });
+    const syncRunId = await insertRun("completed");
 
-    const result = await finalizeSyncRun({
-      input: {
-        counts: { planned: 2, pushed: 2 },
-        status: "completed",
-        syncRunId: "run-1",
-      },
-    });
+    const result = await finalizeSyncRun(
+      { input: { counts: { planned: 2, pushed: 2 }, status: "completed", syncRunId } },
+      dependencies(),
+    );
 
     expect(result).toEqual({ status: "database" });
-    expect(select.whereMock).toHaveBeenCalledWith(eq(syncRuns.id, "run-1"));
+    // The row is only written by the guarded update, which matched nothing.
+    expect((await readRun(syncRunId)).counts).toEqual({});
   });
 
   it("rejects a cancelled run finalized as completed", async () => {
-    mocks.returningMock.mockResolvedValue([]);
-    const select = createSelectChain([{ status: "cancelled" }]);
-    mocks.rootSelectMock.mockReturnValue({ from: select.fromMock });
+    const syncRunId = await insertRun("cancelled");
 
     await expect(
-      finalizeSyncRun({
-        input: {
-          counts: { planned: 2, pushed: 2 },
-          status: "completed",
-          syncRunId: "run-1",
-        },
-      }),
+      finalizeSyncRun(
+        { input: { counts: { planned: 2, pushed: 2 }, status: "completed", syncRunId } },
+        dependencies(),
+      ),
     ).rejects.toThrow("Unable to finalize sync run.");
-
-    expect(select.whereMock).toHaveBeenCalledWith(eq(syncRuns.id, "run-1"));
+    expect((await readRun(syncRunId)).status).toBe("cancelled");
   });
 
   it("rejects a completed run finalized as failed", async () => {
-    mocks.returningMock.mockResolvedValue([]);
-    const select = createSelectChain([{ status: "completed" }]);
-    mocks.rootSelectMock.mockReturnValue({ from: select.fromMock });
+    const syncRunId = await insertRun("completed");
 
     await expect(
-      finalizeSyncRun({
-        input: {
-          error: "1 item(s) failed during push",
-          status: "failed",
-          syncRunId: "run-1",
-        },
-      }),
+      finalizeSyncRun(
+        { input: { error: "1 item(s) failed during push", status: "failed", syncRunId } },
+        dependencies(),
+      ),
     ).rejects.toThrow("Unable to finalize sync run.");
-
-    expect(select.whereMock).toHaveBeenCalledWith(eq(syncRuns.id, "run-1"));
+    expect((await readRun(syncRunId)).status).toBe("completed");
   });
 });
 
 describe("completeSyncedObject", () => {
-  beforeEach(() => {
-    mocks.transactionMock.mockReset();
-    mocks.rootInsertMock.mockReset();
-    mocks.txClient.insert.mockReset();
-    mocks.txClient.select.mockReset();
-    mocks.txClient.update.mockReset();
-    mocks.headStoredObject.mockReset();
+  it("performs all writes inside a transaction after HEAD attestation", async () => {
+    const { db } = testDatabase();
+    const syncRunId = await insertRun("running");
 
-    mocks.transactionMock.mockImplementation(async (callback) => callback(mocks.txClient));
-    mocks.headStoredObject.mockResolvedValue({
-      checksumSHA256: Buffer.from("abc123".padEnd(64, "0"), "hex").toString("base64"),
-      contentLength: 1024,
-      contentType: "image/jpeg",
-      etag: '"etag"',
-      metadata: { sha256: "abc123".padEnd(64, "0") },
-    });
-  });
-
-  it("performs all writes inside a transaction client after HEAD attestation", async () => {
-    const syncRunSelect = createSelectChain([{ id: "run-1", status: "running" }]);
-    const mediaInsert = createInsertChain([{ id: "media-1" }]);
-    const folderInsert = createInsertChain([{ id: "folder-1" }]);
-    const libraryInsert = createInsertChain(undefined);
-    const syncItemInsert = createInsertChain(undefined);
-
-    mocks.txClient.select.mockReturnValue({ from: syncRunSelect.fromMock });
-    mocks.txClient.insert
-      .mockReturnValueOnce({ values: mediaInsert.valuesMock })
-      .mockReturnValueOnce({ values: folderInsert.valuesMock })
-      .mockReturnValueOnce({ values: libraryInsert.valuesMock })
-      .mockReturnValueOnce({ values: syncItemInsert.valuesMock });
-
-    const sha256 = "abc123".padEnd(64, "0");
-    const result = await completeSyncedObject({
-      input: {
-        contentType: "image/jpeg",
-        extension: "jpg",
-        filename: "photo.jpg",
-        logicalPath: "photos/photo.jpg",
-        mediaType: "image",
-        mtimeMs: 1_700_000_000_000,
-        objectKey: "objects/abc",
-        sha256,
-        size: 1024,
-        syncRunId: "run-1",
-      },
-    });
+    const result = await completeSyncedObject(
+      { input: { ...uploadInput, syncRunId }, storage },
+      dependencies(),
+    );
 
     expect(result).toEqual({ status: "database" });
-    expect(mocks.headStoredObject).toHaveBeenCalledWith(
-      expect.objectContaining({ key: "objects/abc" }),
-    );
-    expect(mocks.transactionMock).toHaveBeenCalledTimes(1);
-    expect(mocks.rootInsertMock).not.toHaveBeenCalled();
-    expect(mocks.txClient.insert).toHaveBeenCalledTimes(4);
-    expect(mocks.txClient.select.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.txClient.insert.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
-    );
-    expect(syncItemInsert.valuesMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        action: "upload",
-        logicalPath: "photos/photo.jpg",
-        mediaObjectId: "media-1",
-        syncRunId: "run-1",
-      }),
-    );
+    expect(headStoredObject).toHaveBeenCalledWith(expect.objectContaining({ key: "objects/abc" }));
+
+    const [media] = await db.select().from(mediaObjects);
+    expect(media).toMatchObject({ objectKey: "objects/abc", sha256, size: 1024 });
+    expect(await db.select({ path: folders.path }).from(folders)).toEqual([{ path: "photos" }]);
+    const [entry] = await db.select().from(libraryEntries);
+    expect(entry).toMatchObject({
+      filename: "photo.jpg",
+      logicalPath: "photos/photo.jpg",
+      mediaObjectId: media?.id,
+      parentPath: "photos",
+    });
+    const [item] = await db.select().from(syncRunItems);
+    expect(item).toMatchObject({
+      action: "upload",
+      logicalPath: "photos/photo.jpg",
+      mediaObjectId: media?.id,
+      syncRunId,
+    });
   });
 
   it("rejects missing storage objects before opening a transaction", async () => {
-    mocks.headStoredObject.mockResolvedValue(null);
+    const syncRunId = await insertRun("running");
+    headStoredObject.mockResolvedValue(null);
 
     await expect(
-      completeSyncedObject({
-        input: {
-          contentType: "image/jpeg",
-          extension: "jpg",
-          filename: "photo.jpg",
-          logicalPath: "photos/photo.jpg",
-          mediaType: "image",
-          mtimeMs: 1_700_000_000_000,
-          objectKey: "objects/abc",
-          sha256: "abc123".padEnd(64, "0"),
-          size: 1024,
-          syncRunId: "run-1",
-        },
-      }),
+      completeSyncedObject({ input: { ...uploadInput, syncRunId }, storage }, dependencies()),
     ).rejects.toThrow("Uploaded object was not found in storage.");
 
-    expect(mocks.transactionMock).not.toHaveBeenCalled();
+    expect(await testDatabase().db.select().from(mediaObjects)).toEqual([]);
   });
 
   it("rejects size mismatches before opening a transaction", async () => {
-    mocks.headStoredObject.mockResolvedValue({
+    const syncRunId = await insertRun("running");
+    headStoredObject.mockResolvedValue({
       checksumSHA256: undefined,
       contentLength: 10,
       contentType: "image/jpeg",
@@ -328,126 +229,87 @@ describe("completeSyncedObject", () => {
     });
 
     await expect(
-      completeSyncedObject({
-        input: {
-          contentType: "image/jpeg",
-          extension: "jpg",
-          filename: "photo.jpg",
-          logicalPath: "photos/photo.jpg",
-          mediaType: "image",
-          mtimeMs: 1_700_000_000_000,
-          objectKey: "objects/abc",
-          sha256: "abc123".padEnd(64, "0"),
-          size: 1024,
-          syncRunId: "run-1",
-        },
-      }),
+      completeSyncedObject({ input: { ...uploadInput, syncRunId }, storage }, dependencies()),
     ).rejects.toThrow("Uploaded object size does not match declared size.");
 
-    expect(mocks.transactionMock).not.toHaveBeenCalled();
+    expect(await testDatabase().db.select().from(mediaObjects)).toEqual([]);
   });
 
   it("rejects non-running sync runs without mutating media objects", async () => {
-    const syncRunSelect = createSelectChain([{ id: "run-1", status: "completed" }]);
-    const mediaInsert = createInsertChain([{ id: "media-1" }]);
-
-    mocks.txClient.select.mockReturnValue({ from: syncRunSelect.fromMock });
-    mocks.txClient.insert.mockReturnValue({ values: mediaInsert.valuesMock });
+    const { db } = testDatabase();
+    const syncRunId = await insertRun("completed");
 
     await expect(
-      completeSyncedObject({
-        input: {
-          contentType: "image/jpeg",
-          extension: "jpg",
-          filename: "photo.jpg",
-          logicalPath: "photos/photo.jpg",
-          mediaType: "image",
-          mtimeMs: 1_700_000_000_000,
-          objectKey: "objects/abc",
-          sha256: "abc123".padEnd(64, "0"),
-          size: 1024,
-          syncRunId: "run-1",
-        },
-      }),
+      completeSyncedObject({ input: { ...uploadInput, syncRunId }, storage }, dependencies()),
     ).rejects.toThrow("Sync run is not accepting writes.");
 
-    expect(mediaInsert.valuesMock).not.toHaveBeenCalled();
-    expect(mocks.txClient.insert).not.toHaveBeenCalled();
+    expect(await db.select().from(mediaObjects)).toEqual([]);
+    expect(await db.select().from(libraryEntries)).toEqual([]);
+    expect(await db.select().from(syncRunItems)).toEqual([]);
   });
 });
 
 describe("markRemoteDeleted", () => {
-  beforeEach(() => {
-    mocks.transactionMock.mockReset();
-    mocks.txClient.insert.mockReset();
-    mocks.txClient.select.mockReset();
-    mocks.txClient.update.mockReset();
-
-    mocks.transactionMock.mockImplementation(async (callback) => callback(mocks.txClient));
-  });
+  async function seedEntry(syncRunId: string): Promise<void> {
+    await completeSyncedObject({ input: { ...uploadInput, syncRunId }, storage }, dependencies());
+  }
 
   it("validates the sync run before updating library entries", async () => {
-    const syncRunSelect = createSelectChain([{ id: "run-1", status: "running" }]);
-    const libraryUpdate = createUpdateChain();
-    const syncItemInsert = createInsertChain(undefined);
+    const { db } = testDatabase();
+    const syncRunId = await insertRun("running");
+    await seedEntry(syncRunId);
 
-    mocks.txClient.select.mockReturnValue({ from: syncRunSelect.fromMock });
-    mocks.txClient.update.mockReturnValue({ set: libraryUpdate.setMock });
-    mocks.txClient.insert.mockReturnValue({ values: syncItemInsert.valuesMock });
-
-    const result = await markRemoteDeleted({
-      logicalPath: "photos/photo.jpg",
-      syncRunId: "run-1",
-    });
+    const result = await markRemoteDeleted(
+      { logicalPath: "photos/photo.jpg", syncRunId },
+      dependencies(),
+    );
 
     expect(result).toEqual({ status: "database" });
-    expect(mocks.transactionMock).toHaveBeenCalledTimes(1);
-    expect(mocks.txClient.select.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.txClient.update.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
-    );
-    expect(libraryUpdate.setMock).toHaveBeenCalledWith({ deletedAt: expect.any(Date) });
-    expect(syncItemInsert.valuesMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        action: "delete",
-        logicalPath: "photos/photo.jpg",
-        syncRunId: "run-1",
-      }),
-    );
+    const [entry] = await db.select().from(libraryEntries);
+    expect(entry?.deletedAt).toBeInstanceOf(Date);
+    const items = await db.select().from(syncRunItems);
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      action: "delete",
+      logicalPath: "photos/photo.jpg",
+      syncRunId,
+    });
   });
 
   it("rejects missing sync runs without mutating library entries", async () => {
-    const syncRunSelect = createSelectChain([]);
-    const libraryUpdate = createUpdateChain();
-
-    mocks.txClient.select.mockReturnValue({ from: syncRunSelect.fromMock });
-    mocks.txClient.update.mockReturnValue({ set: libraryUpdate.setMock });
+    const { db } = testDatabase();
+    const syncRunId = await insertRun("running");
+    await seedEntry(syncRunId);
 
     await expect(
-      markRemoteDeleted({
-        logicalPath: "photos/photo.jpg",
-        syncRunId: "missing-run",
-      }),
+      markRemoteDeleted(
+        {
+          logicalPath: "photos/photo.jpg",
+          syncRunId: "00000000-0000-4000-8000-000000000001",
+        },
+        dependencies(),
+      ),
     ).rejects.toThrow("Sync run not found.");
 
-    expect(libraryUpdate.setMock).not.toHaveBeenCalled();
-    expect(mocks.txClient.insert).not.toHaveBeenCalled();
+    const [entry] = await db.select().from(libraryEntries);
+    expect(entry?.deletedAt).toBeNull();
   });
 
   it("rejects non-running sync runs without mutating library entries", async () => {
-    const syncRunSelect = createSelectChain([{ id: "run-1", status: "completed" }]);
-    const libraryUpdate = createUpdateChain();
-
-    mocks.txClient.select.mockReturnValue({ from: syncRunSelect.fromMock });
-    mocks.txClient.update.mockReturnValue({ set: libraryUpdate.setMock });
+    const { db } = testDatabase();
+    const syncRunId = await insertRun("running");
+    await seedEntry(syncRunId);
+    const closedRunId = await insertRun("completed");
 
     await expect(
-      markRemoteDeleted({
-        logicalPath: "photos/photo.jpg",
-        syncRunId: "run-1",
-      }),
+      markRemoteDeleted(
+        { logicalPath: "photos/photo.jpg", syncRunId: closedRunId },
+        dependencies(),
+      ),
     ).rejects.toThrow("Sync run is not accepting writes.");
 
-    expect(libraryUpdate.setMock).not.toHaveBeenCalled();
-    expect(mocks.txClient.insert).not.toHaveBeenCalled();
+    const [entry] = await db.select().from(libraryEntries);
+    expect(entry?.deletedAt).toBeNull();
+    expect(await db.select().from(syncRunItems)).toHaveLength(1);
   });
 });

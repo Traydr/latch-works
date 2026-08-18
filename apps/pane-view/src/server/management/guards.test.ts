@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import { maintenanceJobs, syncRuns } from "../db/schema";
-import { useTestDatabase } from "../library/test-db";
+import { testDatabaseForSuite } from "../library/test-db";
 import { assertNoActiveCleanupJob, assertNoActiveSyncRun } from "./guards";
 import { initialProgressFor } from "./maintenance-progress";
 
-const testDatabase = useTestDatabase();
+const testDatabase = testDatabaseForSuite();
 
 describe("management guards", () => {
   it("blocks destructive ops when a sync run is active", async () => {

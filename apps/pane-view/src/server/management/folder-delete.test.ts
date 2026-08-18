@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { Database } from "../db";
 import { acquireLibraryMutationStartupLock } from "../db/library-coordination-lock";
 import { folders, libraryEntries, maintenanceJobs, mediaObjects, syncRuns } from "../db/schema";
-import { useTestDatabase } from "../library/test-db";
+import { testDatabaseForSuite } from "../library/test-db";
 import {
   type FolderDeleteDependencies,
   type FolderDeleteResult,
@@ -12,7 +12,7 @@ import {
 import { assertNoActiveCleanupJob, assertNoActiveSyncRun } from "./guards";
 import { initialProgressFor } from "./maintenance-progress";
 
-const testDatabase = useTestDatabase();
+const testDatabase = testDatabaseForSuite();
 
 /** The prologue collaborators, recording the transaction each one is handed. */
 interface RecordedPrologue {

@@ -20,9 +20,9 @@ import {
   seedLibraryFixture,
 } from "./library-fixture";
 import { readDatabaseGalleryListing } from "./repository";
-import { type TestDatabaseHandle, useTestDatabase } from "./test-db";
+import { type TestDatabaseHandle, testDatabaseForSuite } from "./test-db";
 
-const testDatabase = useTestDatabase((database) =>
+const testDatabase = testDatabaseForSuite((database) =>
   seedLibraryFixture(database, buildLibraryFixture()),
 );
 

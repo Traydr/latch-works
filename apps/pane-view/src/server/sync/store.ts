@@ -3,16 +3,39 @@ import {
   createS3StorageClient,
   headStoredObject,
   type S3StorageClient,
+  type StoredObjectHead,
 } from "@latch-works/media-storage";
 import { and, eq, isNull } from "drizzle-orm";
 import { env } from "../../env/server";
-import { db } from "../db";
+import { type Database, db } from "../db";
 import { acquireLibraryMutationStartupLock } from "../db/library-coordination-lock";
 import { folders, libraryEntries, mediaObjects, syncRunItems, syncRuns } from "../db/schema";
 import { assertNoActiveCleanupJob } from "../management/guards";
 import { normalizeSyncLogicalPath, validateSyncLogicalPath } from "./validation";
 
-type SyncDbClient = Pick<typeof db, "insert" | "select" | "update">;
+type SyncDbClient = Pick<Database, "insert" | "select" | "update">;
+
+/**
+ * What the sync writes reach outside their own module: the archive database,
+ * the coordination lock and cleanup guard that keep a sync from racing a
+ * maintenance job, and the object storage HEAD that attests an upload.
+ */
+export interface SyncStoreDependencies {
+  acquireLibraryMutationStartupLock(tx: Database): Promise<void>;
+  assertNoActiveCleanupJob(client: Database): Promise<void>;
+  database: Database;
+  headStoredObject(request: {
+    key: string;
+    storage: S3StorageClient;
+  }): Promise<StoredObjectHead | null>;
+}
+
+const defaultSyncStoreDependencies: SyncStoreDependencies = {
+  acquireLibraryMutationStartupLock,
+  assertNoActiveCleanupJob,
+  database: db,
+  headStoredObject,
+};
 
 export interface StartSyncRunInput {
   counts?: Record<string, number>;
@@ -45,11 +68,13 @@ export interface RemoteSyncSnapshotEntry {
   size: number;
 }
 
-export async function listRemoteSyncSnapshot(): Promise<{
+export async function listRemoteSyncSnapshot(
+  dependencies: SyncStoreDependencies = defaultSyncStoreDependencies,
+): Promise<{
   entries: RemoteSyncSnapshotEntry[];
   status: "database";
 }> {
-  const entries = await db
+  const entries = await dependencies.database
     .select({
       path: libraryEntries.logicalPath,
       sha256: mediaObjects.sha256,
@@ -65,14 +90,13 @@ export async function listRemoteSyncSnapshot(): Promise<{
   };
 }
 
-export async function startSyncRun({
-  input,
-}: {
-  input: StartSyncRunInput;
-}): Promise<{ status: "database"; syncRunId: string }> {
-  const syncRunId = await db.transaction(async (tx) => {
-    await acquireLibraryMutationStartupLock(tx);
-    await assertNoActiveCleanupJob(tx);
+export async function startSyncRun(
+  { input }: { input: StartSyncRunInput },
+  dependencies: SyncStoreDependencies = defaultSyncStoreDependencies,
+): Promise<{ status: "database"; syncRunId: string }> {
+  const syncRunId = await dependencies.database.transaction(async (tx) => {
+    await dependencies.acquireLibraryMutationStartupLock(tx);
+    await dependencies.assertNoActiveCleanupJob(tx);
 
     const [syncRun] = await tx
       .insert(syncRuns)
@@ -96,26 +120,29 @@ export async function startSyncRun({
   };
 }
 
-export async function completeSyncedObject({
-  input,
-  storage = createS3StorageClient({
-    accessKeyId: env.S3_ACCESS_KEY_ID,
-    bucket: env.S3_BUCKET,
-    endpoint: env.S3_ENDPOINT,
-    region: env.S3_REGION,
-    secretAccessKey: env.S3_SECRET_ACCESS_KEY,
-  }),
-}: {
-  input: CompleteObjectInput;
-  storage?: S3StorageClient;
-}): Promise<{ status: "database" }> {
-  await assertNoActiveCleanupJob();
+export async function completeSyncedObject(
+  {
+    input,
+    storage = createS3StorageClient({
+      accessKeyId: env.S3_ACCESS_KEY_ID,
+      bucket: env.S3_BUCKET,
+      endpoint: env.S3_ENDPOINT,
+      region: env.S3_REGION,
+      secretAccessKey: env.S3_SECRET_ACCESS_KEY,
+    }),
+  }: {
+    input: CompleteObjectInput;
+    storage?: S3StorageClient;
+  },
+  dependencies: SyncStoreDependencies = defaultSyncStoreDependencies,
+): Promise<{ status: "database" }> {
+  await dependencies.assertNoActiveCleanupJob(dependencies.database);
 
   const parentPath = getParentPath(input.logicalPath);
   const objectKey = input.objectKey;
   const expectedChecksum = Buffer.from(input.sha256.toLowerCase(), "hex").toString("base64");
 
-  const head = await headStoredObject({ key: objectKey, storage });
+  const head = await dependencies.headStoredObject({ key: objectKey, storage });
   if (!head) {
     throw new Error("Uploaded object was not found in storage.");
   }
@@ -133,7 +160,7 @@ export async function completeSyncedObject({
     throw new Error("Uploaded object checksum does not match declared hash.");
   }
 
-  await db.transaction(async (tx) => {
+  await dependencies.database.transaction(async (tx) => {
     await assertWritableSyncRun(tx, input.syncRunId);
 
     const [mediaObject] = await tx
@@ -214,12 +241,11 @@ export async function completeSyncedObject({
   return { status: "database" };
 }
 
-export async function finalizeSyncRun({
-  input,
-}: {
-  input: FinalizeSyncRunInput;
-}): Promise<{ status: "database" }> {
-  const [syncRun] = await db
+export async function finalizeSyncRun(
+  { input }: { input: FinalizeSyncRunInput },
+  dependencies: SyncStoreDependencies = defaultSyncStoreDependencies,
+): Promise<{ status: "database" }> {
+  const [syncRun] = await dependencies.database
     .update(syncRuns)
     .set({
       completedAt: new Date(),
@@ -234,7 +260,7 @@ export async function finalizeSyncRun({
     return { status: "database" };
   }
 
-  const [existingSyncRun] = await db
+  const [existingSyncRun] = await dependencies.database
     .select({ status: syncRuns.status })
     .from(syncRuns)
     .where(eq(syncRuns.id, input.syncRunId))
@@ -247,14 +273,11 @@ export async function finalizeSyncRun({
   throw new Error("Unable to finalize sync run.");
 }
 
-export async function markRemoteDeleted({
-  logicalPath,
-  syncRunId,
-}: {
-  logicalPath: string;
-  syncRunId: string;
-}): Promise<{ status: "database" }> {
-  await assertNoActiveCleanupJob();
+export async function markRemoteDeleted(
+  { logicalPath, syncRunId }: { logicalPath: string; syncRunId: string },
+  dependencies: SyncStoreDependencies = defaultSyncStoreDependencies,
+): Promise<{ status: "database" }> {
+  await dependencies.assertNoActiveCleanupJob(dependencies.database);
 
   const normalizedPath = normalizeSyncLogicalPath(logicalPath);
   const pathError = validateSyncLogicalPath(normalizedPath);
@@ -262,7 +285,7 @@ export async function markRemoteDeleted({
     throw new Error(pathError);
   }
 
-  await db.transaction(async (tx) => {
+  await dependencies.database.transaction(async (tx) => {
     await assertWritableSyncRun(tx, syncRunId);
 
     await tx

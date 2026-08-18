@@ -2,11 +2,11 @@ import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 
 import { maintenanceJobs } from "../db/schema";
-import { useTestDatabase } from "../library/test-db";
+import { testDatabaseForSuite } from "../library/test-db";
 import { cancelMaintenanceJob } from "./cleanup-control";
 import { initialProgressFor } from "./maintenance-progress";
 
-const testDatabase = useTestDatabase();
+const testDatabase = testDatabaseForSuite();
 
 async function insertJob(status: "running" | "completed"): Promise<string> {
   const { db } = testDatabase();

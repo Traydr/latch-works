@@ -2,10 +2,10 @@ import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 
 import { syncRuns } from "../db/schema";
-import { useTestDatabase } from "../library/test-db";
+import { testDatabaseForSuite } from "../library/test-db";
 import { forceCancelAllRunningSyncRuns, forceCancelSyncRun } from "./sync-run-control";
 
-const testDatabase = useTestDatabase();
+const testDatabase = testDatabaseForSuite();
 
 async function insertRun(status: "running" | "completed", sourceRoot: string): Promise<string> {
   const { db } = testDatabase();

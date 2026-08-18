@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { maintenanceJobs } from "../db/schema";
-import { useTestDatabase } from "../library/test-db";
+import { testDatabaseForSuite } from "../library/test-db";
 import { initialProgressFor, type MaintenanceJobType } from "./maintenance-progress";
 import {
   CLEANUP_IN_PROGRESS_MESSAGE,
@@ -18,7 +18,7 @@ import {
  * against executed SQL in maintenance-descriptors.test.ts.
  */
 
-const testDatabase = useTestDatabase();
+const testDatabase = testDatabaseForSuite();
 
 const TYPES: MaintenanceJobType[] = [
   "library_hard_wipe",

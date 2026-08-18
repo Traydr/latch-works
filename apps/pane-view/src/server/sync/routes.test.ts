@@ -1,61 +1,29 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({
-  completeSyncedObject: vi.fn(),
-  createSignedPutUrl: vi.fn(),
-  finalizeSyncRun: vi.fn(),
-  markRemoteDeleted: vi.fn(),
-  requireSyncApiToken: vi.fn(),
-  startSyncRun: vi.fn(),
-}));
-
-vi.mock("../../env/server", () => ({
-  env: {
-    S3_ACCESS_KEY_ID: "test-access-key",
-    S3_BUCKET: "test-bucket",
-    S3_ENDPOINT: "http://127.0.0.1:9000",
-    S3_REGION: "us-east-1",
-    S3_SECRET_ACCESS_KEY: "test-secret-key",
-  },
-}));
-
-vi.mock("../auth/api-token", () => ({
-  requireSyncApiToken: mocks.requireSyncApiToken,
-}));
-
-vi.mock("../management/guards", () => ({
-  assertNoActiveCleanupJob: vi.fn(async () => undefined),
-}));
-
-vi.mock("./store", () => ({
-  completeSyncedObject: mocks.completeSyncedObject,
-  finalizeSyncRun: mocks.finalizeSyncRun,
-  markRemoteDeleted: mocks.markRemoteDeleted,
-  startSyncRun: mocks.startSyncRun,
-}));
-
-vi.mock("@latch-works/media-storage", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@latch-works/media-storage")>();
-  return {
-    ...actual,
-    createSignedPutUrl: mocks.createSignedPutUrl,
-    createS3StorageClient: vi.fn(() => ({})),
-  };
-});
-
 import { postCompleteObject } from "../../routes/api.sync.complete-object";
 import { postSyncRuns } from "../../routes/api.sync.runs";
 import { postSyncRunComplete } from "../../routes/api.sync.runs.$syncRunId.complete";
 import { postUploadUrl } from "../../routes/api.sync.upload-url";
+import type { SyncRouteDependencies } from "./route-dependencies";
 
-const {
+const assertNoActiveCleanupJob = vi.fn(async () => undefined);
+const completeSyncedObject = vi.fn();
+const createSignedUploadUrl = vi.fn();
+const finalizeSyncRun = vi.fn();
+const markRemoteDeleted = vi.fn();
+const requireSyncApiToken = vi.fn();
+const startSyncRun = vi.fn();
+
+/** The handlers are what is under test: the token check, the store, and the bucket stand in. */
+const dependencies: SyncRouteDependencies = {
+  assertNoActiveCleanupJob,
   completeSyncedObject,
-  createSignedPutUrl,
+  createSignedUploadUrl,
   finalizeSyncRun,
   markRemoteDeleted,
   requireSyncApiToken,
   startSyncRun,
-} = mocks;
+};
 
 const validUploadPayload = {
   contentType: "image/jpeg",
@@ -80,14 +48,14 @@ describe("sync route handlers", () => {
     finalizeSyncRun.mockReset();
     completeSyncedObject.mockReset();
     markRemoteDeleted.mockReset();
-    createSignedPutUrl.mockReset();
+    createSignedUploadUrl.mockReset();
 
     requireSyncApiToken.mockReturnValue(null);
     startSyncRun.mockResolvedValue({ syncRunId: "run-1" });
     finalizeSyncRun.mockResolvedValue({ status: "database" });
     completeSyncedObject.mockResolvedValue({ status: "database" });
     markRemoteDeleted.mockResolvedValue({ status: "database" });
-    createSignedPutUrl.mockResolvedValue({
+    createSignedUploadUrl.mockResolvedValue({
       headers: { "Content-Type": "image/jpeg" },
       uploadUrl: "https://storage.example/upload",
     });
@@ -102,7 +70,7 @@ describe("sync route handlers", () => {
         method: "POST",
       });
 
-      const response = await postSyncRuns({ request });
+      const response = await postSyncRuns({ request }, dependencies);
       const body = await response.json();
 
       expect(response.status).toBe(200);
@@ -125,7 +93,7 @@ describe("sync route handlers", () => {
         method: "POST",
       });
 
-      const response = await postSyncRuns({ request });
+      const response = await postSyncRuns({ request }, dependencies);
 
       expect(response).toBe(unauthorized);
       expect(startSyncRun).not.toHaveBeenCalled();
@@ -140,10 +108,13 @@ describe("sync route handlers", () => {
         method: "POST",
       });
 
-      const response = await postSyncRunComplete({
-        params: { syncRunId: "run-1" },
-        request,
-      });
+      const response = await postSyncRunComplete(
+        {
+          params: { syncRunId: "run-1" },
+          request,
+        },
+        dependencies,
+      );
       const body = await response.json();
 
       expect(response.status).toBe(400);
@@ -161,10 +132,13 @@ describe("sync route handlers", () => {
         method: "POST",
       });
 
-      const response = await postSyncRunComplete({
-        params: { syncRunId: "run-1" },
-        request,
-      });
+      const response = await postSyncRunComplete(
+        {
+          params: { syncRunId: "run-1" },
+          request,
+        },
+        dependencies,
+      );
 
       expect(response).toBe(unauthorized);
       expect(finalizeSyncRun).not.toHaveBeenCalled();
@@ -183,7 +157,7 @@ describe("sync route handlers", () => {
         method: "POST",
       });
 
-      const response = await postCompleteObject({ request });
+      const response = await postCompleteObject({ request }, dependencies);
       const body = await response.json();
 
       expect(response.status).toBe(200);
@@ -202,7 +176,7 @@ describe("sync route handlers", () => {
         method: "POST",
       });
 
-      const response = await postCompleteObject({ request });
+      const response = await postCompleteObject({ request }, dependencies);
       const body = await response.json();
 
       expect(response.status).toBe(200);
@@ -224,7 +198,7 @@ describe("sync route handlers", () => {
         method: "POST",
       });
 
-      await expect(postCompleteObject({ request })).rejects.toThrow(
+      await expect(postCompleteObject({ request }, dependencies)).rejects.toThrow(
         "Sync run is not accepting writes.",
       );
     });
@@ -239,7 +213,7 @@ describe("sync route handlers", () => {
         method: "POST",
       });
 
-      const response = await postCompleteObject({ request });
+      const response = await postCompleteObject({ request }, dependencies);
 
       expect(response).toBe(unauthorized);
       expect(completeSyncedObject).not.toHaveBeenCalled();
@@ -249,7 +223,7 @@ describe("sync route handlers", () => {
 
   describe("POST /api/sync/upload-url", () => {
     it("signs upload URLs with declared size and returns required headers", async () => {
-      createSignedPutUrl.mockResolvedValue({
+      createSignedUploadUrl.mockResolvedValue({
         headers: {
           "Content-Length": "128",
           "Content-Type": "image/jpeg",
@@ -270,11 +244,11 @@ describe("sync route handlers", () => {
         method: "POST",
       });
 
-      const response = await postUploadUrl({ request });
+      const response = await postUploadUrl({ request }, dependencies);
       const body = await response.json();
 
       expect(response.status).toBe(200);
-      expect(createSignedPutUrl).toHaveBeenCalledWith(
+      expect(createSignedUploadUrl).toHaveBeenCalledWith(
         expect.objectContaining({
           contentLength: 128,
           contentType: "image/jpeg",
@@ -303,12 +277,12 @@ describe("sync route handlers", () => {
         method: "POST",
       });
 
-      const response = await postUploadUrl({ request });
+      const response = await postUploadUrl({ request }, dependencies);
       const body = await response.json();
 
       expect(response.status).toBe(400);
       expect(body).toEqual({ error: "size is required" });
-      expect(createSignedPutUrl).not.toHaveBeenCalled();
+      expect(createSignedUploadUrl).not.toHaveBeenCalled();
     });
 
     it("rejects mismatched content types with 400", async () => {
@@ -323,12 +297,12 @@ describe("sync route handlers", () => {
         method: "POST",
       });
 
-      const response = await postUploadUrl({ request });
+      const response = await postUploadUrl({ request }, dependencies);
       const body = await response.json();
 
       expect(response.status).toBe(400);
       expect(body).toEqual({ error: "contentType does not match extension" });
-      expect(createSignedPutUrl).not.toHaveBeenCalled();
+      expect(createSignedUploadUrl).not.toHaveBeenCalled();
     });
   });
 });

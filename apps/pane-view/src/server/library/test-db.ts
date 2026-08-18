@@ -15,7 +15,7 @@ import * as schema from "../db/schema";
  * strings. Loads pg_trgm (migration 0008) and the full ICU data set so the
  * `natural` collation (migration 0018) behaves as it does on a Postgres server
  * built with ICU. Pass the returned `db` to the module under test through its
- * `database` seam; `useTestDatabase` below wires it to the suite lifecycle.
+ * `database` seam; `testDatabaseForSuite` below wires it to the suite lifecycle.
  *
  * Migrations are applied by reading `drizzle/meta/_journal.json` and running
  * each file as one script through the simple query protocol. Drizzle's pglite
@@ -72,7 +72,7 @@ const setupTimeoutMs = 120_000;
  * and closes it afterwards. Returns an accessor rather than the handle,
  * because `beforeAll` has not run when the suite body is evaluated.
  */
-export function useTestDatabase(
+export function testDatabaseForSuite(
   seed?: (database: TestDatabase) => Promise<void>,
 ): () => TestDatabaseHandle {
   let handle: TestDatabaseHandle | null = null;

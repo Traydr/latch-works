@@ -11,7 +11,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { JsonValue } from "@/lib/json";
 import { libraryEntries, maintenanceJobs, mediaObjects } from "../db/schema";
-import { useTestDatabase } from "../library/test-db";
+import { testDatabaseForSuite } from "../library/test-db";
 import {
   type MaintenanceWorkerDependencies,
   processMaintenanceJob,
@@ -20,7 +20,7 @@ import {
 } from "./cleanup-worker";
 import { type MaintenanceJobType, MaintenanceJobTypeSchema } from "./maintenance-progress";
 
-const testDatabase = useTestDatabase();
+const testDatabase = testDatabaseForSuite();
 
 const emptyPage: ListStoredObjectsPage = { keys: [], nextContinuationToken: undefined };
 

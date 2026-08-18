@@ -17,7 +17,7 @@ import {
   mediaObjects,
   shutterSourceCleanup,
 } from "../db/schema";
-import { useTestDatabase } from "../library/test-db";
+import { testDatabaseForSuite } from "../library/test-db";
 import { assertNoActiveSyncRun, readActiveCleanupJob } from "./guards";
 import {
   LIBRARY_WIPE_CONFIRMATION,
@@ -29,7 +29,7 @@ import { orphanedMediaObjectCondition, orphanedShutterSourceCondition } from "./
 import { hasPurgeableShutterSources } from "./shutter-source-purge";
 import { hasSoftDeletedEntries } from "./soft-deleted-purge";
 
-const testDatabase = useTestDatabase();
+const testDatabase = testDatabaseForSuite();
 const db = () => testDatabase().db;
 
 /** The token check and the worker kick are the only collaborators a wipe stands in for. */

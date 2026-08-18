@@ -1,15 +1,12 @@
 import { getExtension } from "@latch-works/media-domain";
-import {
-  createS3StorageClient,
-  createSignedPutUrl,
-  originalObjectKey,
-} from "@latch-works/media-storage";
+import { originalObjectKey } from "@latch-works/media-storage";
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
-import { env } from "../env/server";
-import { requireSyncApiToken } from "../server/auth/api-token";
 import { readJsonBody } from "../server/http/json-body";
-import { assertNoActiveCleanupJob } from "../server/management/guards";
+import {
+  type SyncRouteDependencies,
+  syncRouteDependencies,
+} from "../server/sync/route-dependencies";
 import {
   expectedContentTypeForExtension,
   MAX_SYNC_UPLOAD_BYTES,
@@ -29,14 +26,17 @@ const UploadUrlBodySchema = z.object({
   contentType: z.string({ error: "contentType must be a string" }).optional(),
 });
 
-export async function postUploadUrl({ request }: { request: Request }): Promise<Response> {
-  const unauthorized = requireSyncApiToken(request);
+export async function postUploadUrl(
+  { request }: { request: Request },
+  dependencies: SyncRouteDependencies = syncRouteDependencies,
+): Promise<Response> {
+  const unauthorized = dependencies.requireSyncApiToken(request);
   if (unauthorized) {
     return unauthorized;
   }
 
   try {
-    await assertNoActiveCleanupJob();
+    await dependencies.assertNoActiveCleanupJob();
   } catch (error) {
     return Response.json(
       { error: error instanceof Error ? error.message : "Library wipe is active." },
@@ -70,18 +70,11 @@ export async function postUploadUrl({ request }: { request: Request }): Promise<
     extension,
     sha256: body.sha256,
   });
-  const signed = await createSignedPutUrl({
+  const signed = await dependencies.createSignedUploadUrl({
     contentLength: size,
     contentType,
     key: objectKey,
     sha256: body.sha256,
-    storage: createS3StorageClient({
-      accessKeyId: env.S3_ACCESS_KEY_ID,
-      bucket: env.S3_BUCKET,
-      endpoint: env.S3_ENDPOINT,
-      region: env.S3_REGION,
-      secretAccessKey: env.S3_SECRET_ACCESS_KEY,
-    }),
   });
 
   return Response.json({
