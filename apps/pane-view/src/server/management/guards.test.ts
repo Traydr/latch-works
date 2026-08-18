@@ -1,58 +1,34 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
-const mocks = vi.hoisted(() => ({
-  limitMock: vi.fn(),
-  selectMock: vi.fn(),
-  whereMock: vi.fn(),
-}));
-
-vi.mock("../db", () => ({
-  db: {
-    select: mocks.selectMock,
-  },
-}));
-
+import { maintenanceJobs, syncRuns } from "../db/schema";
+import { useTestDatabase } from "../library/test-db";
 import { assertNoActiveCleanupJob, assertNoActiveSyncRun } from "./guards";
+import { initialProgressFor } from "./maintenance-progress";
+
+const testDatabase = useTestDatabase();
 
 describe("management guards", () => {
-  beforeEach(() => {
-    mocks.selectMock.mockReset();
-    mocks.whereMock.mockReset();
-    mocks.limitMock.mockReset();
-  });
-
   it("blocks destructive ops when a sync run is active", async () => {
-    mocks.selectMock.mockReturnValue({
-      from: vi.fn(() => ({
-        where: mocks.whereMock.mockResolvedValue([
-          {
-            id: "run-1",
-            sourceRoot: "/archive",
-          },
-        ]),
-      })),
-    });
+    const { db } = testDatabase();
+    await db.insert(syncRuns).values({ sourceRoot: "/archive", status: "running" });
 
-    await expect(assertNoActiveSyncRun()).rejects.toThrow("sync run is currently active");
+    await expect(assertNoActiveSyncRun(db)).rejects.toThrow("sync run is currently active");
+
+    await db.delete(syncRuns);
+    await expect(assertNoActiveSyncRun(db)).resolves.toBeUndefined();
   });
 
   it("blocks sync starts when a cleanup job is active", async () => {
-    mocks.selectMock.mockReturnValue({
-      from: vi.fn(() => ({
-        where: mocks.whereMock.mockReturnValue({
-          limit: mocks.limitMock.mockResolvedValue([
-            {
-              errorCount: 0,
-              id: "job-1",
-              phase: "s3_derivatives",
-              processedCount: 0,
-              status: "running",
-            },
-          ]),
-        }),
-      })),
+    const { db } = testDatabase();
+    await db.insert(maintenanceJobs).values({
+      progress: initialProgressFor("soft_deleted_purge"),
+      status: "running",
+      type: "soft_deleted_purge",
     });
 
-    await expect(assertNoActiveCleanupJob()).rejects.toThrow("cleanup job is still running");
+    await expect(assertNoActiveCleanupJob(db)).rejects.toThrow("cleanup job is still running");
+
+    await db.delete(maintenanceJobs);
+    await expect(assertNoActiveCleanupJob(db)).resolves.toBeUndefined();
   });
 });

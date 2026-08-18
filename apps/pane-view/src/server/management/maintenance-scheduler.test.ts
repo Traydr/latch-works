@@ -1,53 +1,24 @@
-import { beforeEach, describe, expect, it, type Mock, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-/**
- * The scheduling prologue exists once, in scheduleMaintenanceJob. These tests
- * pin its order and its outcomes for every job type; the descriptors' own
- * probes and prepare steps are covered against executed SQL in
- * maintenance-descriptors.test.ts.
- */
-
-interface SchedulerMocks {
-  acquireLock: Mock;
-  assertNoActiveSyncRun: Mock;
-  calls: string[];
-  insertReturning: Mock;
-  processMaintenanceJob: Mock;
-  readActiveCleanupJob: Mock;
-  transaction: Mock;
-  transactionSettled: boolean;
-}
-
-const mocks = vi.hoisted(
-  (): SchedulerMocks => ({
-    acquireLock: vi.fn(),
-    assertNoActiveSyncRun: vi.fn(),
-    calls: [],
-    insertReturning: vi.fn(),
-    processMaintenanceJob: vi.fn(),
-    readActiveCleanupJob: vi.fn(),
-    transaction: vi.fn(),
-    transactionSettled: false,
-  }),
-);
-
-vi.mock("../db", () => ({ db: { transaction: mocks.transaction } }));
-vi.mock("../db/library-coordination-lock", () => ({
-  acquireLibraryMutationStartupLock: mocks.acquireLock,
-}));
-vi.mock("./guards", () => ({
-  assertNoActiveSyncRun: mocks.assertNoActiveSyncRun,
-  readActiveCleanupJob: mocks.readActiveCleanupJob,
-}));
-vi.mock("./cleanup-worker", () => ({ processMaintenanceJob: mocks.processMaintenanceJob }));
-
-import type { maintenanceJobs } from "../db/schema";
+import { maintenanceJobs } from "../db/schema";
+import { useTestDatabase } from "../library/test-db";
 import { initialProgressFor, type MaintenanceJobType } from "./maintenance-progress";
 import {
   CLEANUP_IN_PROGRESS_MESSAGE,
   type MaintenanceJobDescriptor,
+  type MaintenanceSchedulerDependencies,
+  type MaintenanceTransaction,
   scheduleMaintenanceJob,
 } from "./maintenance-scheduler";
+
+/**
+ * The scheduling prologue exists once, in scheduleMaintenanceJob. These tests
+ * pin its order and its outcomes for every job type against a real scheduling
+ * transaction; the descriptors' own probes and prepare steps are covered
+ * against executed SQL in maintenance-descriptors.test.ts.
+ */
+
+const testDatabase = useTestDatabase();
 
 const TYPES: MaintenanceJobType[] = [
   "library_hard_wipe",
@@ -55,13 +26,71 @@ const TYPES: MaintenanceJobType[] = [
   "shutter_source_purge",
 ];
 
+/** What the prologue did, in the order it did it, and on which transaction. */
+interface RecordedPrologue {
+  calls: string[];
+  scheduled: string[];
+  transactionSettled: boolean;
+  transactions: MaintenanceTransaction[];
+}
+
+function recorded(): RecordedPrologue {
+  return { calls: [], scheduled: [], transactionSettled: false, transactions: [] };
+}
+
+function dependencies(
+  log: RecordedPrologue,
+  activeCleanupJob: { id: string } | null = null,
+): MaintenanceSchedulerDependencies {
+  return {
+    acquireLibraryMutationStartupLock: async (tx) => {
+      log.calls.push("lock");
+      log.transactions.push(tx);
+    },
+    assertNoActiveSyncRun: async (tx) => {
+      log.calls.push("sync-guard");
+      log.transactions.push(tx);
+    },
+    database: {
+      async transaction(work) {
+        const result = await testDatabase().db.transaction(work);
+        log.transactionSettled = true;
+        return result;
+      },
+    },
+    processMaintenanceJob: (jobId) => {
+      log.calls.push(log.transactionSettled ? "worker-after-commit" : "worker-inside-tx");
+      log.scheduled.push(jobId);
+    },
+    readActiveCleanupJob: async (tx) => {
+      log.calls.push("cleanup-guard");
+      log.transactions.push(tx);
+      return activeCleanupJob;
+    },
+  };
+}
+
+/** A scheduler whose transaction never starts, for the driver-error mapping. */
+function failingDependencies(
+  log: RecordedPrologue,
+  error: Error,
+): MaintenanceSchedulerDependencies {
+  return {
+    ...dependencies(log),
+    database: {
+      transaction: () => Promise.reject(error),
+    },
+  };
+}
+
 function descriptor(
   type: MaintenanceJobType,
   overrides: Partial<MaintenanceJobDescriptor> = {},
+  log?: RecordedPrologue,
 ): MaintenanceJobDescriptor {
   return {
     probe: vi.fn(async () => {
-      mocks.calls.push("probe");
+      log?.calls.push("probe");
       return true;
     }),
     type,
@@ -69,170 +98,185 @@ function descriptor(
   };
 }
 
-type MaintenanceJobInsert = typeof maintenanceJobs.$inferInsert;
-
-/** The scheduling transaction: records what was inserted and returns the mocked row. */
-interface FakeSchedulingTransaction {
-  insert: Mock;
-  lastInsert: MaintenanceJobInsert | undefined;
+async function readJobs() {
+  return testDatabase().db.select().from(maintenanceJobs);
 }
 
-const tx: FakeSchedulingTransaction = {
-  insert: vi.fn(() => ({
-    values: vi.fn((values: MaintenanceJobInsert) => {
-      mocks.calls.push("insert");
-      tx.lastInsert = values;
-      return { returning: mocks.insertReturning };
-    }),
-  })),
-  lastInsert: undefined,
-};
-
 describe("scheduleMaintenanceJob", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mocks.calls.length = 0;
-    mocks.transactionSettled = false;
-    tx.lastInsert = undefined;
-    mocks.acquireLock.mockImplementation(async () => {
-      mocks.calls.push("lock");
-    });
-    mocks.assertNoActiveSyncRun.mockImplementation(async () => {
-      mocks.calls.push("sync-guard");
-    });
-    mocks.readActiveCleanupJob.mockImplementation(async () => {
-      mocks.calls.push("cleanup-guard");
-      return null;
-    });
-    mocks.insertReturning.mockResolvedValue([{ id: "job-1" }]);
-    mocks.processMaintenanceJob.mockImplementation(() => {
-      mocks.calls.push(mocks.transactionSettled ? "worker-after-commit" : "worker-inside-tx");
-    });
-    mocks.transaction.mockImplementation(
-      async (callback: (t: typeof tx) => Promise<string | null>) => {
-        const result = await callback(tx);
-        mocks.transactionSettled = true;
-        return result;
-      },
-    );
+  beforeEach(async () => {
+    await testDatabase().db.delete(maintenanceJobs);
   });
 
   it.each(
     TYPES,
   )("%s: lock, sync guard, cleanup guard, probe, insert, then the worker after commit", async (type) => {
-    await expect(scheduleMaintenanceJob(descriptor(type))).resolves.toEqual({
-      jobId: "job-1",
-      phase: "scheduled",
-    });
-    expect(mocks.calls).toEqual([
+    const log = recorded();
+
+    const result = await scheduleMaintenanceJob(descriptor(type, {}, log), dependencies(log));
+
+    const [job] = await readJobs();
+    expect(result).toEqual({ jobId: job?.id, phase: "scheduled" });
+    expect(log.calls).toEqual([
       "lock",
       "sync-guard",
       "cleanup-guard",
       "probe",
-      "insert",
       "worker-after-commit",
     ]);
-    expect(mocks.acquireLock).toHaveBeenCalledWith(tx);
-    expect(mocks.assertNoActiveSyncRun).toHaveBeenCalledWith(tx);
-    expect(mocks.readActiveCleanupJob).toHaveBeenCalledWith(tx);
-    expect(tx.lastInsert).toEqual({
+    // Lock and both guards ran on the one scheduling transaction.
+    const [lockTx] = log.transactions;
+    expect(lockTx).toBeDefined();
+    expect(log.transactions).toEqual([lockTx, lockTx, lockTx]);
+    expect(job).toMatchObject({
       progress: initialProgressFor(type),
       status: "pending",
       type,
     });
-    expect(mocks.processMaintenanceJob).toHaveBeenCalledWith("job-1");
+    expect(log.scheduled).toEqual([job?.id]);
   });
 
   it("runs prepare inside the transaction after the guards and before the probe", async () => {
-    const prepare = vi.fn(async () => {
-      mocks.calls.push("prepare");
+    const log = recorded();
+    const transactions: MaintenanceTransaction[] = [];
+    const prepare = vi.fn(async (tx: MaintenanceTransaction) => {
+      log.calls.push("prepare");
+      transactions.push(tx);
     });
-    await scheduleMaintenanceJob(descriptor("library_hard_wipe", { prepare }));
-    expect(mocks.calls.slice(0, 5)).toEqual([
+
+    await scheduleMaintenanceJob(
+      descriptor("library_hard_wipe", { prepare }, log),
+      dependencies(log),
+    );
+
+    expect(log.calls.slice(0, 5)).toEqual([
       "lock",
       "sync-guard",
       "cleanup-guard",
       "prepare",
       "probe",
     ]);
-    expect(prepare).toHaveBeenCalledWith(tx);
+    expect(transactions).toEqual([log.transactions[0]]);
   });
 
   it("aborts before the probe when a sync run is active", async () => {
-    mocks.assertNoActiveSyncRun.mockImplementationOnce(async () => {
-      mocks.calls.push("sync-guard");
-      throw new Error("A sync run is currently active");
-    });
-    const spec = descriptor("soft_deleted_purge");
-    await expect(scheduleMaintenanceJob(spec)).rejects.toThrow("sync run is currently active");
+    const log = recorded();
+    const deps = dependencies(log);
+    const spec = descriptor("soft_deleted_purge", {}, log);
+
+    await expect(
+      scheduleMaintenanceJob(spec, {
+        ...deps,
+        assertNoActiveSyncRun: async () => {
+          log.calls.push("sync-guard");
+          throw new Error("A sync run is currently active");
+        },
+      }),
+    ).rejects.toThrow("sync run is currently active");
+
     expect(spec.probe).not.toHaveBeenCalled();
-    expect(mocks.calls).toEqual(["lock", "sync-guard"]);
-    expect(mocks.processMaintenanceJob).not.toHaveBeenCalled();
+    expect(log.calls).toEqual(["lock", "sync-guard"]);
+    expect(log.scheduled).toEqual([]);
+    expect(await readJobs()).toEqual([]);
   });
 
   it("aborts before the probe when a cleanup job is active", async () => {
-    mocks.readActiveCleanupJob.mockImplementationOnce(async () => {
-      mocks.calls.push("cleanup-guard");
-      return { id: "other", phase: "queue_sources", processedCount: 0, status: "running" as const };
-    });
-    const spec = descriptor("shutter_source_purge");
-    await expect(scheduleMaintenanceJob(spec)).rejects.toThrow(CLEANUP_IN_PROGRESS_MESSAGE);
+    const log = recorded();
+    const spec = descriptor("shutter_source_purge", {}, log);
+
+    await expect(scheduleMaintenanceJob(spec, dependencies(log, { id: "other" }))).rejects.toThrow(
+      CLEANUP_IN_PROGRESS_MESSAGE,
+    );
+
     expect(spec.probe).not.toHaveBeenCalled();
-    expect(mocks.calls).toEqual(["lock", "sync-guard", "cleanup-guard"]);
+    expect(log.calls).toEqual(["lock", "sync-guard", "cleanup-guard"]);
+    expect(await readJobs()).toEqual([]);
   });
 
   it("returns empty and inserts nothing when the probe finds no work", async () => {
-    const spec = descriptor("soft_deleted_purge", { probe: vi.fn(async () => false) });
-    await expect(scheduleMaintenanceJob(spec)).resolves.toEqual({ jobId: null, phase: "empty" });
-    expect(tx.insert).not.toHaveBeenCalled();
-    expect(mocks.processMaintenanceJob).not.toHaveBeenCalled();
+    const log = recorded();
+    const spec = descriptor("soft_deleted_purge", { probe: vi.fn(async () => false) }, log);
+
+    await expect(scheduleMaintenanceJob(spec, dependencies(log))).resolves.toEqual({
+      jobId: null,
+      phase: "empty",
+    });
+
+    expect(await readJobs()).toEqual([]);
+    expect(log.scheduled).toEqual([]);
   });
 
   it.each(
     TYPES,
   )("%s: maps an active-job unique violation to the in-progress error", async (type) => {
-    mocks.transaction.mockRejectedValueOnce(
-      Object.assign(new Error("duplicate key"), {
-        code: "23505",
-        constraint: "maintenance_jobs_active_type_unique",
-      }),
-    );
-    await expect(scheduleMaintenanceJob(descriptor(type))).rejects.toThrow(
-      CLEANUP_IN_PROGRESS_MESSAGE,
-    );
-    expect(mocks.processMaintenanceJob).not.toHaveBeenCalled();
+    const log = recorded();
+    const violation = Object.assign(new Error("duplicate key"), {
+      code: "23505",
+      constraint: "maintenance_jobs_active_type_unique",
+    });
+
+    await expect(
+      scheduleMaintenanceJob(descriptor(type, {}, log), failingDependencies(log, violation)),
+    ).rejects.toThrow(CLEANUP_IN_PROGRESS_MESSAGE);
+    expect(log.scheduled).toEqual([]);
+  });
+
+  it("maps the real unique violation raised by a concurrent active job", async () => {
+    const log = recorded();
+    await testDatabase()
+      .db.insert(maintenanceJobs)
+      .values({
+        progress: initialProgressFor("soft_deleted_purge"),
+        status: "running",
+        type: "soft_deleted_purge",
+      });
+
+    // The guard is stubbed out, so only the partial unique index stops the insert.
+    await expect(
+      scheduleMaintenanceJob(descriptor("soft_deleted_purge", {}, log), dependencies(log)),
+    ).rejects.toThrow(CLEANUP_IN_PROGRESS_MESSAGE);
+    expect(log.scheduled).toEqual([]);
   });
 
   it("recognises the violation when the driver error is wrapped as the cause", async () => {
-    mocks.transaction.mockRejectedValueOnce(
-      new Error("Failed query", {
-        cause: Object.assign(new Error("duplicate key"), {
-          code: "23505",
-          constraint: "maintenance_jobs_active_hard_wipe_unique",
-        }),
+    const log = recorded();
+    const wrapped = new Error("Failed query", {
+      cause: Object.assign(new Error("duplicate key"), {
+        code: "23505",
+        constraint: "maintenance_jobs_active_hard_wipe_unique",
       }),
-    );
-    await expect(scheduleMaintenanceJob(descriptor("library_hard_wipe"))).rejects.toThrow(
-      CLEANUP_IN_PROGRESS_MESSAGE,
-    );
+    });
+
+    await expect(
+      scheduleMaintenanceJob(
+        descriptor("library_hard_wipe", {}, log),
+        failingDependencies(log, wrapped),
+      ),
+    ).rejects.toThrow(CLEANUP_IN_PROGRESS_MESSAGE);
   });
 
   it("rethrows a unique violation on another constraint unchanged", async () => {
-    mocks.transaction.mockRejectedValueOnce(
-      Object.assign(new Error("duplicate key on shutter_source_cleanup_pkey"), {
-        code: "23505",
-        constraint: "shutter_source_cleanup_pkey",
-      }),
-    );
-    await expect(scheduleMaintenanceJob(descriptor("shutter_source_purge"))).rejects.toThrow(
-      "shutter_source_cleanup_pkey",
-    );
+    const log = recorded();
+    const violation = Object.assign(new Error("duplicate key on shutter_source_cleanup_pkey"), {
+      code: "23505",
+      constraint: "shutter_source_cleanup_pkey",
+    });
+
+    await expect(
+      scheduleMaintenanceJob(
+        descriptor("shutter_source_purge", {}, log),
+        failingDependencies(log, violation),
+      ),
+    ).rejects.toThrow("shutter_source_cleanup_pkey");
   });
 
   it("rethrows other transaction failures unchanged", async () => {
-    mocks.transaction.mockRejectedValueOnce(new Error("connection lost"));
-    await expect(scheduleMaintenanceJob(descriptor("soft_deleted_purge"))).rejects.toThrow(
-      "connection lost",
-    );
+    const log = recorded();
+
+    await expect(
+      scheduleMaintenanceJob(
+        descriptor("soft_deleted_purge", {}, log),
+        failingDependencies(log, new Error("connection lost")),
+      ),
+    ).rejects.toThrow("connection lost");
   });
 });

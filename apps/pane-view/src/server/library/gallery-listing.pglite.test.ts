@@ -1,6 +1,6 @@
 import type { GallerySortMode } from "@latch-works/media-domain";
 import { buildComicEntries } from "@latch-works/media-domain";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 /**
  * Executed-SQL proof of the gallery ordering contract (Plan 051). Every test
@@ -20,26 +20,11 @@ import {
   seedLibraryFixture,
 } from "./library-fixture";
 import { readDatabaseGalleryListing } from "./repository";
-import { createTestDatabase, type TestDatabaseHandle } from "./test-db";
+import { type TestDatabaseHandle, useTestDatabase } from "./test-db";
 
-let handle: TestDatabaseHandle | null = null;
-
-beforeAll(async () => {
-  handle = await createTestDatabase();
-  await seedLibraryFixture(handle.db, buildLibraryFixture());
-}, 120_000);
-
-afterAll(async () => {
-  await handle?.close();
-});
-
-/** The seeded pglite handle; `beforeAll` creates it before any test runs. */
-function testDatabase(): TestDatabaseHandle {
-  if (!handle) {
-    throw new Error("test database was not created");
-  }
-  return handle;
-}
+const testDatabase = useTestDatabase((database) =>
+  seedLibraryFixture(database, buildLibraryFixture()),
+);
 
 /** A page's cursor when the test needs one to continue from. */
 function mustCursor(cursor: string | null): string {

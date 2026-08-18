@@ -1,13 +1,12 @@
 import { and, eq, inArray } from "drizzle-orm";
-import { db } from "../db";
+import { type Database, db } from "../db";
 import { maintenanceJobs } from "../db/schema";
 
-export async function cancelMaintenanceJob({
-  jobId,
-}: {
-  jobId: string;
-}): Promise<{ cancelled: boolean }> {
-  const [job] = await db
+export async function cancelMaintenanceJob(
+  { jobId }: { jobId: string },
+  database: Database = db,
+): Promise<{ cancelled: boolean }> {
+  const [job] = await database
     .update(maintenanceJobs)
     .set({
       completedAt: new Date(),
