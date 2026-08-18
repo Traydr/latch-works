@@ -1,4 +1,4 @@
-import { formatError } from "../gather/errors";
+import { formatError, toError } from "../gather/errors";
 import {
   getGatherQueueDisplayRun,
   getNextQueuedGatherJob,
@@ -356,7 +356,7 @@ export class GatherRunCoordinator {
     } catch (error) {
       const failed = applyGatherRunEvent(
         reservation.run,
-        { kind: "failed", message: formatError(error) },
+        { kind: "failed", message: formatError(toError(error)) },
         this.dependencies.now()
       );
       await this.exclusive(async () => {

@@ -1,9 +1,14 @@
+import { z } from "zod";
+
 export const RESOLVE_REDGIFS_MEDIA_MESSAGE = "GATHER_BOX_RESOLVE_REDGIFS_MEDIA" as const;
 
-export interface ResolveRedgifsMediaMessage {
-  type: typeof RESOLVE_REDGIFS_MEDIA_MESSAGE;
-  redgifsId: string;
-}
+export const ResolveRedgifsMediaMessageSchema = z.object({
+  type: z.literal(RESOLVE_REDGIFS_MEDIA_MESSAGE),
+  // The id is interpolated into a Redgifs API path, so only slug characters are accepted.
+  redgifsId: z.string().regex(/^[a-z0-9]{3,100}$/i)
+});
+
+export type ResolveRedgifsMediaMessage = z.infer<typeof ResolveRedgifsMediaMessageSchema>;
 
 export interface ResolvedRedgifsMedia {
   originalUrl: string;
@@ -14,17 +19,3 @@ export interface ResolvedRedgifsMedia {
 export type ResolveRedgifsMediaResponse =
   | { ok: true; media: ResolvedRedgifsMedia }
   | { ok: false; message: string };
-
-export function isResolveRedgifsMediaMessage(
-  message: unknown
-): message is ResolveRedgifsMediaMessage {
-  return (
-    typeof message === "object" &&
-    message !== null &&
-    "type" in message &&
-    message.type === RESOLVE_REDGIFS_MEDIA_MESSAGE &&
-    "redgifsId" in message &&
-    typeof message.redgifsId === "string" &&
-    /^[a-z0-9]{3,100}$/i.test(message.redgifsId)
-  );
-}

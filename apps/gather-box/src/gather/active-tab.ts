@@ -5,7 +5,7 @@ import {
 } from "../shared/messages";
 import type { GatherSource } from "../shared/source-catalog";
 import type { GalleryCollectResponse } from "../shared/types";
-import { formatError } from "./errors";
+import { formatError, toError } from "./errors";
 
 export async function getActiveTab(): Promise<chrome.tabs.Tab | null> {
   const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -47,6 +47,6 @@ export async function injectCollectorAndCollect(input: {
     }
     return response.result;
   } catch (error) {
-    throw new Error(`Could not run the ${source.label} collector: ${formatError(error)}`);
+    throw new Error(`Could not run the ${source.label} collector: ${formatError(toError(error))}`);
   }
 }

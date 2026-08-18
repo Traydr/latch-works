@@ -1,7 +1,7 @@
 import { prepareDownloadImage } from "../shared/download-policy";
 import type { SiteKey } from "../shared/sites";
 import type { GalleryImage } from "../shared/types";
-import { formatError, isAbortError, throwIfAborted } from "./errors";
+import { formatError, isAbortError, throwIfAborted, toError } from "./errors";
 import {
   IDENTITY_MEDIA_TRANSFORMER,
   type MediaTransformer
@@ -133,13 +133,13 @@ export async function downloadImages(
       summary.saved += 1;
       callbacks.onSaved(saved.fileName);
     } catch (error) {
-      if (isAbortError(error) || options.signal?.aborted) {
-        throw isAbortError(error) ? error : new DOMException("The operation was aborted.", "AbortError");
+      if (isAbortError(toError(error)) || options.signal?.aborted) {
+        throw isAbortError(toError(error)) ? error : new DOMException("The operation was aborted.", "AbortError");
       }
       summary.failed += 1;
       summary.failedItems.push({
         fileName: image.fileName,
-        reason: formatError(error),
+        reason: formatError(toError(error)),
         originalUrl: image.originalUrl,
       });
     } finally {
@@ -295,7 +295,7 @@ async function commitBlob(
     await writeBlobDirect(destinationDirectory, targetFileName, blob, signal);
     await removeEntryIfPresent(destinationDirectory, markerName);
   } catch (error) {
-    if (isAbortError(error) || signal?.aborted) {
+    if (isAbortError(toError(error)) || signal?.aborted) {
       await removeEntryIfPresent(destinationDirectory, targetFileName);
       await removeEntryIfPresent(destinationDirectory, markerName);
     }

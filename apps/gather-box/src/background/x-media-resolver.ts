@@ -1,10 +1,15 @@
+import { z } from "zod";
 import type {
   ResolveXMediaMessage,
   ResolveXMediaResponse,
-  XOperationMetadata
+  XMediaEntry,
+  XOperationMetadata,
+  XTweetDetailResponse
 } from "../shared/x-media";
 import {
   X_WEB_BEARER_TOKEN,
+  XSyndicationResponseSchema,
+  XTweetDetailResponseSchema,
   buildXFeatureValues,
   buildXFieldToggles,
   extractGraphqlMedia,
@@ -15,6 +20,13 @@ const GUEST_TOKEN_URL = "https://api.x.com/1.1/guest/activate.json";
 const SYNDICATION_URL = "https://cdn.syndication.twimg.com/tweet-result";
 const FALLBACK_TWEET_DETAIL_QUERY_ID = "jd3V43oDY9cY7obs1YMfbQ";
 const REQUEST_TIMEOUT_MS = 12_000;
+
+/** The operation metadata X embeds in its main bundle is a JSON array of switch names. */
+const XOperationListSchema = z.array(z.string());
+
+const GuestTokenResponseSchema = z
+  .object({ guest_token: z.string().nullable().catch(null) })
+  .catch({ guest_token: null });
 
 const FALLBACK_FEATURE_SWITCHES = [
   "rweb_video_screen_enabled",
@@ -92,7 +104,9 @@ export async function resolveXPostMedia(
         authenticated: false,
         guestToken
       });
-      const guestMedia = parseXMedia(extractGraphqlMedia(guestBody, message.tweetId));
+      const guestMedia = parseXMedia(
+        guestBody === null ? [] : extractGraphqlMedia(guestBody, message.tweetId)
+      );
       if (guestMedia.length > 0) {
         return { ok: true, media: guestMedia };
       }
@@ -106,7 +120,7 @@ export async function resolveXPostMedia(
   } catch (error) {
     return {
       ok: false,
-      message: `Could not resolve X media: ${getErrorMessage(error)}`
+      message: `Could not resolve X media: ${getErrorMessage(error instanceof Error ? error : null)}`
     };
   }
 }
@@ -122,15 +136,15 @@ export function extractTweetDetailOperation(source: string): XOperationMetadata 
   try {
     return {
       queryId: operation[1],
-      featureSwitches: JSON.parse(operation[2]) as string[],
-      fieldToggles: JSON.parse(operation[3]) as string[]
+      featureSwitches: XOperationListSchema.parse(JSON.parse(operation[2])),
+      fieldToggles: XOperationListSchema.parse(JSON.parse(operation[3]))
     };
   } catch {
     return null;
   }
 }
 
-async function requestSyndicationMedia(tweetId: string): Promise<unknown> {
+async function requestSyndicationMedia(tweetId: string): Promise<XMediaEntry[]> {
   const url = new URL(SYNDICATION_URL);
   url.searchParams.set("id", tweetId);
   url.searchParams.set("token", getSyndicationToken(tweetId));
@@ -138,12 +152,11 @@ async function requestSyndicationMedia(tweetId: string): Promise<unknown> {
   try {
     const response = await fetchWithTimeout(url);
     if (!response.ok) {
-      return null;
+      return [];
     }
-    const body = (await response.json()) as { mediaDetails?: unknown };
-    return body.mediaDetails ?? null;
+    return XSyndicationResponseSchema.parse(await response.json()).mediaDetails;
   } catch {
-    return null;
+    return [];
   }
 }
 
@@ -179,7 +192,7 @@ async function requestTweetDetail(
   message: ResolveXMediaMessage,
   operation: XOperationMetadata,
   auth: { authenticated: false; guestToken: string }
-): Promise<unknown> {
+): Promise<XTweetDetailResponse | null> {
   const url = new URL(`https://api.x.com/graphql/${operation.queryId}/TweetDetail`);
   url.searchParams.set(
     "variables",
@@ -220,7 +233,7 @@ async function requestTweetDetail(
     if (!response.ok) {
       return null;
     }
-    return response.json();
+    return XTweetDetailResponseSchema.parse(await response.json());
   } catch {
     return null;
   }
@@ -239,8 +252,8 @@ async function getGuestToken(): Promise<string | null> {
     if (!response.ok) {
       return null;
     }
-    const body = (await response.json()) as { guest_token?: unknown };
-    if (typeof body.guest_token === "string") {
+    const body = GuestTokenResponseSchema.parse(await response.json());
+    if (body.guest_token !== null) {
       cachedGuestToken = body.guest_token;
     }
   } catch {
@@ -271,6 +284,6 @@ function fetchWithTimeout(input: URL | string, init: RequestInit = {}): Promise<
   });
 }
 
-function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Unknown X media error";
+function getErrorMessage(error: Error | null): string {
+  return error === null ? "Unknown X media error" : error.message;
 }

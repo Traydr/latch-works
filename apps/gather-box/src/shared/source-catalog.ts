@@ -1,20 +1,27 @@
+import { z } from "zod";
 import sourceCatalogData from "../../source-catalog.json";
 
-export type SiteKey =
-  | "myhentaigallery"
-  | "kemono"
-  | "fanbox"
-  | "x"
-  | "reddit"
-  | "pixiv"
-  | "archiveofourown"
-  | "hentaifoundry-stories"
-  | "hentaifoundry-pictures"
-  | "danbooru"
-  | "fanfiction-net";
+export const SiteKeySchema = z.enum([
+  "myhentaigallery",
+  "kemono",
+  "fanbox",
+  "x",
+  "reddit",
+  "pixiv",
+  "archiveofourown",
+  "hentaifoundry-stories",
+  "hentaifoundry-pictures",
+  "danbooru",
+  "fanfiction-net"
+]);
 
-export type GatherOutputKind = "downloadable-files" | "generated-story-pdf";
-export type SavePattern = "nested" | "single-folder" | "direct-file" | "conditional";
+export type SiteKey = z.infer<typeof SiteKeySchema>;
+
+export const GatherOutputKindSchema = z.enum(["downloadable-files", "generated-story-pdf"]);
+export type GatherOutputKind = z.infer<typeof GatherOutputKindSchema>;
+
+const SavePatternSchema = z.enum(["nested", "single-folder", "direct-file", "conditional"]);
+export type SavePattern = z.infer<typeof SavePatternSchema>;
 
 export interface SourceSaveBehavior {
   pattern: SavePattern;
@@ -48,28 +55,52 @@ export interface GatherSource {
   save: SourceSaveBehavior;
 }
 
-interface SerializedGatherSource extends Omit<GatherSource, "urlPatterns" | "downloadUrlPatterns"> {
-  urlPatterns: string[];
-  downloadUrlPatterns: string[];
-}
+/** `source-catalog.json` as it sits on disk: URL patterns are still regex source strings. */
+const SerializedGatherSourceSchema = z.object({
+  key: SiteKeySchema,
+  label: z.string(),
+  unlisted: z.boolean().optional(),
+  urlPatterns: z.array(z.string()),
+  pageMatches: z.array(z.string()),
+  hostPermissions: z.array(z.object({ pattern: z.string(), reason: z.string() })),
+  contextMenuMatches: z.array(z.string()),
+  collectorEntry: z.string(),
+  collectorModule: z.string(),
+  outputKinds: z.array(GatherOutputKindSchema),
+  includeCredentialsByDefault: z.boolean(),
+  downloadUrlPatterns: z.array(z.string()),
+  save: z.object({
+    pattern: SavePatternSchema,
+    folderDepth: z.number(),
+    summary: z.string(),
+    detail: z.string(),
+    pathTemplate: z.string(),
+    filePattern: z.string(),
+    tag: z.string(),
+    railCode: z.string()
+  })
+});
 
-export const GATHER_SOURCES: readonly GatherSource[] = (
-  sourceCatalogData as SerializedGatherSource[]
-).map((source) => ({
-  ...source,
-  urlPatterns: source.urlPatterns.map((pattern) => new RegExp(pattern, "i")),
-  downloadUrlPatterns: source.downloadUrlPatterns.map((pattern) => new RegExp(pattern, "i"))
-}));
+export const GATHER_SOURCES: readonly GatherSource[] = z
+  .array(SerializedGatherSourceSchema)
+  .parse(sourceCatalogData)
+  .map((source) => ({
+    ...source,
+    urlPatterns: source.urlPatterns.map((pattern) => new RegExp(pattern, "i")),
+    downloadUrlPatterns: source.downloadUrlPatterns.map((pattern) => new RegExp(pattern, "i"))
+  }));
 
 /** Sources safe to enumerate in UI and docs. Use this for any browsable list. */
 export const LISTED_GATHER_SOURCES: readonly GatherSource[] = GATHER_SOURCES.filter(
   (source) => !source.unlisted
 );
 
-const SOURCES_BY_KEY = new Map(GATHER_SOURCES.map((source) => [source.key, source]));
+const SOURCES_BY_KEY = new Map<string, GatherSource>(
+  GATHER_SOURCES.map((source) => [source.key, source])
+);
 
-export function getGatherSource(siteKey: unknown): GatherSource | null {
-  return typeof siteKey === "string" ? (SOURCES_BY_KEY.get(siteKey as SiteKey) ?? null) : null;
+export function getGatherSource(siteKey: string): GatherSource | null {
+  return SOURCES_BY_KEY.get(siteKey) ?? null;
 }
 
 export function getGatherSourceFromUrl(url: string): GatherSource | null {

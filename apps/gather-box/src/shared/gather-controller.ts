@@ -22,7 +22,7 @@ import {
   type LogTone,
   type PopupElements
 } from "../gather/dom";
-import { formatError, isAbortError } from "../gather/errors";
+import { formatError, isAbortError, toError } from "../gather/errors";
 import type { PopupStatus } from "../gather/status";
 import {
   getSiteKeyFromUrl,
@@ -54,7 +54,7 @@ import {
   getLatestGatherQueueResult,
   getRetryableGatherQueueResult,
   loadGatherQueue,
-  normalizeGatherQueueState,
+  GatherQueueStateSchema,
   type GatherQueueState
 } from "./gather-queue";
 import { DEFAULT_SETTINGS, loadSettings, type GatherBoxSettings } from "./settings";
@@ -182,7 +182,7 @@ export class GatherController {
       }
       if (areaName === "local" && changes[GATHER_QUEUE_STATE_KEY]?.newValue) {
         this.applyGatherQueue(
-          normalizeGatherQueueState(changes[GATHER_QUEUE_STATE_KEY].newValue)
+          GatherQueueStateSchema.parse(changes[GATHER_QUEUE_STATE_KEY].newValue)
         );
       }
     };
@@ -250,7 +250,7 @@ export class GatherController {
       const tab = await getActiveTab();
       this.state.activeTab = tab;
 
-      if (!tab || typeof tab.id !== "number" || !tab.url) {
+      if (!tab || tab.id === undefined || !tab.url) {
         this.state.siteKey = null;
         setPageState(this.elements, false, "No active page detected. Open a supported post page, then reopen Gather Box.");
         updateSaveBehavior(this.state.siteKey);
@@ -280,7 +280,7 @@ export class GatherController {
     } catch (error) {
       this.state.siteKey = null;
       this.state.directoryHandle = null;
-      setPageState(this.elements, false, formatError(error));
+      setPageState(this.elements, false, formatError(toError(error)));
       updateSaveBehavior(this.state.siteKey);
       this.syncPopupActions();
     }
@@ -291,8 +291,9 @@ export class GatherController {
       return;
     }
 
-    const pickerWindow = window as DirectoryPickerWindow;
-    if (typeof pickerWindow.showDirectoryPicker !== "function") {
+    const pickerWindow: DirectoryPickerWindow = window;
+    const showDirectoryPicker = pickerWindow.showDirectoryPicker;
+    if (!showDirectoryPicker) {
       this.setStatus("error");
       this.appendLog("Folder picking is unavailable in this context.", "error");
       this.elements.folderDetail.textContent =
@@ -302,7 +303,9 @@ export class GatherController {
 
     try {
       this.setStatus("pickingFolder");
-      const directoryHandle = await pickerWindow.showDirectoryPicker({ mode: "readwrite" });
+      const directoryHandle = await showDirectoryPicker.call(pickerWindow, {
+        mode: "readwrite"
+      });
       await this.setDirectoryHandle(directoryHandle);
       this.elements.folderDetail.textContent = this.state.siteKey
         ? `Remembered for ${getDirectoryScopeLabel(this.state.settings.useGlobalFolder)}.`
@@ -310,12 +313,12 @@ export class GatherController {
       this.appendLog(`Folder selected: ${directoryHandle.name}`, "success");
       this.setStatus("idle");
     } catch (error) {
-      if (isAbortError(error)) {
+      if (isAbortError(toError(error))) {
         this.setStatus("idle");
         this.appendLog("Folder selection canceled.", "error");
       } else {
         this.setStatus("error");
-        this.appendLog(`Failed to choose folder: ${formatError(error)}`, "error");
+        this.appendLog(`Failed to choose folder: ${formatError(toError(error))}`, "error");
       }
     } finally {
       this.syncPopupActions();
@@ -339,7 +342,7 @@ export class GatherController {
       this.setStatus("idle");
     } catch (error) {
       this.setStatus("error");
-      this.appendLog(`Failed to clear folder: ${formatError(error)}`, "error");
+      this.appendLog(`Failed to clear folder: ${formatError(toError(error))}`, "error");
     } finally {
       this.syncPopupActions();
     }
@@ -379,7 +382,7 @@ export class GatherController {
     }
 
     const tabId = this.state.activeTab?.id;
-    if (typeof tabId !== "number") {
+    if (tabId === undefined) {
       this.appendLog("No active source tab is available.", "error");
       return;
     }
@@ -405,7 +408,7 @@ export class GatherController {
         this.appendLog(response.message, "error");
       }
     } catch (error) {
-      this.appendLog(`Could not start Gather Run: ${formatError(error)}`, "error");
+      this.appendLog(`Could not start Gather Run: ${formatError(toError(error))}`, "error");
     } finally {
       this.state.running = false;
       this.syncPopupActions();
@@ -430,7 +433,7 @@ export class GatherController {
         this.appendLog(response.message, "error");
       }
     } catch (error) {
-      this.appendLog(`Could not cancel Gather Run: ${formatError(error)}`, "error");
+      this.appendLog(`Could not cancel Gather Run: ${formatError(toError(error))}`, "error");
     }
   }
 
@@ -487,7 +490,7 @@ export class GatherController {
       await navigator.clipboard.writeText(report);
       this.appendLog("Copied error report to clipboard.", "success");
     } catch (error) {
-      this.appendLog(`Could not copy error report: ${formatError(error)}`, "error");
+      this.appendLog(`Could not copy error report: ${formatError(toError(error))}`, "error");
       setLogExpanded(this.elements, true);
     }
   }
@@ -514,7 +517,7 @@ export class GatherController {
       this.state.directoryHandle = directoryHandle;
       setFolder(this.elements, directoryHandle.name, `Remembered for ${scopeLabel}.`);
     } catch (error) {
-      this.elements.folderDetail.textContent = `Could not restore folder: ${formatError(error)}`;
+      this.elements.folderDetail.textContent = `Could not restore folder: ${formatError(toError(error))}`;
     }
   }
 
@@ -529,7 +532,7 @@ export class GatherController {
         this.state.settings.useGlobalFolder
       );
     } catch (error) {
-      this.appendLog(`Folder could not be persisted: ${formatError(error)}`, "error");
+      this.appendLog(`Folder could not be persisted: ${formatError(toError(error))}`, "error");
       this.elements.folderDetail.textContent = "Works for this session only.";
     }
   }

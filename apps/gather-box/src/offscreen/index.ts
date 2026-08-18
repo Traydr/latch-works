@@ -1,14 +1,17 @@
 import {
+  CancelGatherRunMessageSchema,
+  ExecuteGatherRunMessageSchema,
   GATHER_RUN_EVENT,
-  isGetGatherExecutorStatusMessage,
-  isCancelGatherRunMessage,
-  isExecuteGatherRunMessage,
+  GetGatherExecutorStatusMessageSchema,
   type GatherRunEvent
 } from "../shared/gather-run-messages";
 import { executeGatherOutput } from "./executor";
 import { GatherExecutionSlot } from "./execution-slot";
+import {
+  OffscreenFilesystemProofMessageSchema,
+  proveOffscreenFilesystemAccess
+} from "./filesystem-proof";
 import { createGatherRunEventEmitter } from "./run-event-emitter";
-import { proveOffscreenFilesystemAccess } from "./filesystem-proof";
 
 const executionSlot = new GatherExecutionSlot();
 
@@ -17,13 +20,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 
-  if (
-    message?.type === "GATHER_BOX_OFFSCREEN_FILESYSTEM_PROOF" &&
-    message?.target === "offscreen"
-  ) {
+  const proofRequest = OffscreenFilesystemProofMessageSchema.safeParse(message);
+  if (proofRequest.success) {
     void proveOffscreenFilesystemAccess({
-      siteKey: message.siteKey ?? null,
-      useGlobalFolder: message.useGlobalFolder === true
+      siteKey: proofRequest.data.siteKey,
+      useGlobalFolder: proofRequest.data.useGlobalFolder
     }).then(sendResponse, (error) =>
       sendResponse({
         ok: false,
@@ -34,27 +35,30 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  if (isGetGatherExecutorStatusMessage(message)) {
+  if (GetGatherExecutorStatusMessageSchema.safeParse(message).success) {
     sendResponse({ activeRunId: executionSlot.activeRunId });
     return false;
   }
 
-  if (isCancelGatherRunMessage(message)) {
-    sendResponse({ aborted: executionSlot.abort(message.runId) });
+  const cancelRequest = CancelGatherRunMessageSchema.safeParse(message);
+  if (cancelRequest.success) {
+    sendResponse({ aborted: executionSlot.abort(cancelRequest.data.runId) });
     return false;
   }
 
-  if (!isExecuteGatherRunMessage(message)) {
+  const executeRequest = ExecuteGatherRunMessageSchema.safeParse(message);
+  if (!executeRequest.success) {
     return false;
   }
-  const emitter = createGatherRunEventEmitter((event) => emitRunEvent(message.runId, event));
+  const execute = executeRequest.data;
+  const emitter = createGatherRunEventEmitter((event) => emitRunEvent(execute.runId, event));
   const start = executionSlot.start(
-    message.runId,
+    execute.runId,
     async (signal) => {
       try {
         await executeGatherOutput({
-          payload: message.payload,
-          settings: message.settings,
+          payload: execute.payload,
+          settings: execute.settings,
           emit: emitter.emit,
           signal
         });

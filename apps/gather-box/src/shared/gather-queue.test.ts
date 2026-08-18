@@ -7,7 +7,7 @@ import {
   getRetryableGatherQueueResult,
   getNextQueuedGatherJob,
   getPermissionRequiredGatherJob,
-  normalizeGatherQueueState,
+  GatherQueueStateSchema,
   recoverStoppedGatherQueue,
   type GatherQueueState
 } from "./gather-queue";
@@ -56,7 +56,7 @@ function run<TPhase extends "collecting" | "queued" | "writing" | "permission-re
       failed: 0,
       message: phase === "writing" ? "Writing Gather Output..." : "Queued."
     }
-  } as ReturnType<typeof createGatherRunState> & { phase: TPhase };
+  };
 }
 
 describe("Gather queue state", () => {
@@ -89,7 +89,7 @@ describe("Gather queue state", () => {
   });
 
   it("restores collected jobs and drops malformed persisted entries", () => {
-    const restored = normalizeGatherQueueState({
+    const restored = GatherQueueStateSchema.parse({
       schemaVersion: GATHER_QUEUE_SCHEMA_VERSION,
       results: [],
       jobs: [
@@ -112,7 +112,7 @@ describe("Gather queue state", () => {
   });
 
   it("keeps a collecting placeholder until page capture finishes", () => {
-    const restored = normalizeGatherQueueState({
+    const restored = GatherQueueStateSchema.parse({
       schemaVersion: GATHER_QUEUE_SCHEMA_VERSION,
       jobs: [{ run: run("run-1", "collecting"), payload: null, settings: null }]
     });
@@ -207,7 +207,7 @@ describe("Gather queue state", () => {
 
     expect(getLatestGatherQueueResult(queue)?.id).toBe("run-2");
     expect(getRetryableGatherQueueResult(queue)?.id).toBe("run-1");
-    expect(normalizeGatherQueueState(queue).results).toHaveLength(2);
+    expect(GatherQueueStateSchema.parse(queue).results).toHaveLength(2);
   });
 
   it("requeues safe outputs and drops an interrupted page capture during recovery", () => {

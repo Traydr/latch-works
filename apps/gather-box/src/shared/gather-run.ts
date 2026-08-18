@@ -1,29 +1,39 @@
+import { z } from "zod";
 import type { DownloadFailure, LastRunLogEntry } from "./last-run";
+import { DownloadFailureSchema, LastRunLogEntrySchema } from "./last-run";
 import type { SiteKey } from "./sites";
+import { SiteKeySchema } from "./source-catalog";
+import { lenientArrayOf } from "./lenient-array";
 import type { GalleryImage } from "./types";
+import { GalleryImageSchema } from "./types";
 
 export const GATHER_RUN_SCHEMA_VERSION = 1;
 
-export type GatherRunPhase =
-  | "preparing"
-  | "permission-required"
-  | "collecting"
-  | "queued"
-  | "writing"
-  | "cancelling"
-  | "complete"
-  | "failed"
-  | "cancelled"
-  | "interrupted";
+export const GatherRunPhaseSchema = z.enum([
+  "preparing",
+  "permission-required",
+  "collecting",
+  "queued",
+  "writing",
+  "cancelling",
+  "complete",
+  "failed",
+  "cancelled",
+  "interrupted"
+]);
 
-export interface GatherRunProgress {
-  completed: number;
-  total: number;
-  saved: number;
-  skipped: number;
-  failed: number;
-  message: string;
-}
+export type GatherRunPhase = z.infer<typeof GatherRunPhaseSchema>;
+
+export const GatherRunProgressSchema = z.object({
+  completed: z.number(),
+  total: z.number(),
+  saved: z.number(),
+  skipped: z.number(),
+  failed: z.number(),
+  message: z.string()
+});
+
+export type GatherRunProgress = z.infer<typeof GatherRunProgressSchema>;
 
 export interface GatherRunState {
   schemaVersion: typeof GATHER_RUN_SCHEMA_VERSION;
@@ -93,66 +103,47 @@ export function createGatherRunState(input: {
   };
 }
 
-export function normalizeGatherRunState(value: unknown): GatherRunState | null {
-  if (!value || typeof value !== "object") {
-    return null;
-  }
-  const run = value as Partial<GatherRunState>;
-  if (
-    run.schemaVersion !== GATHER_RUN_SCHEMA_VERSION ||
-    typeof run.id !== "string" ||
-    typeof run.tabId !== "number" ||
-    typeof run.windowId !== "number" ||
-    typeof run.tabUrl !== "string" ||
-    typeof run.siteKey !== "string" ||
-    typeof run.createdAt !== "number" ||
-    typeof run.updatedAt !== "number" ||
-    !isGatherRunPhase(run.phase)
-  ) {
-    return null;
-  }
+/**
+ * Phases a run may carry when it is read back from storage. `cancelling` is absent, so a run
+ * persisted mid-cancel is dropped on load rather than recovered.
+ */
+const StoredGatherRunPhaseSchema = GatherRunPhaseSchema.exclude(["cancelling"]);
 
-  return {
-    ...createGatherRunState({
-      id: run.id,
-      tabId: run.tabId,
-      windowId: run.windowId,
-      tabUrl: run.tabUrl,
-      siteKey: run.siteKey as SiteKey,
-      now: run.createdAt
-    }),
-    ...run,
-    progress: {
-      completed: Number(run.progress?.completed) || 0,
-      total: Number(run.progress?.total) || 0,
-      saved: Number(run.progress?.saved) || 0,
-      skipped: Number(run.progress?.skipped) || 0,
-      failed: Number(run.progress?.failed) || 0,
-      message: typeof run.progress?.message === "string" ? run.progress.message : ""
-    },
-    log: Array.isArray(run.log) ? run.log : [],
-    folderSegments: Array.isArray(run.folderSegments)
-      ? run.folderSegments.filter((segment): segment is string => typeof segment === "string")
-      : [],
-    failedItems: Array.isArray(run.failedItems) ? run.failedItems : [],
-    retryImages: Array.isArray(run.retryImages) ? run.retryImages : [],
-    destinationPreview:
-      typeof run.destinationPreview === "string" ? run.destinationPreview : null,
-    error: typeof run.error === "string" ? run.error : null,
-    queuedCount: Math.max(0, Math.round(Number(run.queuedCount) || 0))
-  };
-}
+/** Counters written by an older build may be missing or non-numeric; each falls back to zero. */
+const StoredGatherRunProgressSchema = z
+  .object({
+    completed: z.coerce.number().catch(0),
+    total: z.coerce.number().catch(0),
+    saved: z.coerce.number().catch(0),
+    skipped: z.coerce.number().catch(0),
+    failed: z.coerce.number().catch(0),
+    message: z.string().catch("")
+  })
+  .catch({ completed: 0, total: 0, saved: 0, skipped: 0, failed: 0, message: "" });
 
-function isGatherRunPhase(value: unknown): value is GatherRunPhase {
-  return (
-    value === "preparing" ||
-    value === "permission-required" ||
-    value === "collecting" ||
-    value === "queued" ||
-    value === "writing" ||
-    value === "complete" ||
-    value === "failed" ||
-    value === "cancelled" ||
-    value === "interrupted"
-  );
-}
+/**
+ * A Gather Run as chrome.storage holds it. The identity fields are required — a record missing
+ * any of them is not a run this build can resume — while the accumulated state degrades to empty.
+ */
+export const GatherRunStateSchema = z.object({
+  schemaVersion: z.literal(GATHER_RUN_SCHEMA_VERSION),
+  id: z.string(),
+  tabId: z.number(),
+  windowId: z.number(),
+  tabUrl: z.string(),
+  siteKey: SiteKeySchema,
+  createdAt: z.number(),
+  updatedAt: z.number(),
+  phase: StoredGatherRunPhaseSchema,
+  progress: StoredGatherRunProgressSchema,
+  log: lenientArrayOf(LastRunLogEntrySchema),
+  destinationPreview: z.string().nullable().catch(null),
+  folderSegments: lenientArrayOf(z.string()),
+  failedItems: lenientArrayOf(DownloadFailureSchema),
+  retryImages: lenientArrayOf(GalleryImageSchema),
+  error: z.string().nullable().catch(null),
+  queuedCount: z.coerce
+    .number()
+    .catch(0)
+    .transform((count) => Math.max(0, Math.round(count)))
+});

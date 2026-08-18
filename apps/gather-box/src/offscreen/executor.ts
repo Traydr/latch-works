@@ -4,7 +4,7 @@ import {
   getOrCreateNestedDirectory,
   type DownloadFailure
 } from "../gather/downloader";
-import { formatError, isAbortError } from "../gather/errors";
+import { formatError, isAbortError, toError } from "../gather/errors";
 import { resolveCompatibleFolderSegments } from "../gather/folder-compatibility";
 import { shouldIncludeCredentials } from "../shared/credentials";
 import type { GatherRunEvent } from "../shared/gather-run-messages";
@@ -66,11 +66,11 @@ export async function executeGatherOutput(input: {
     }
     await executeFiles(payload, destinationDirectory, settings, emit, signal);
   } catch (error) {
-    if (isAbortError(error) || signal?.aborted) {
+    if (isAbortError(toError(error)) || signal?.aborted) {
       await emit({ kind: "cancelled", message: "Gather Run cancelled." });
       return;
     }
-    await emit({ kind: "failed", message: formatError(error) });
+    await emit({ kind: "failed", message: formatError(toError(error)) });
   }
 }
 

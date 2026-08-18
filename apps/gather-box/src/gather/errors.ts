@@ -1,38 +1,44 @@
-export function formatError(error: unknown): string {
-  if (!error) {
-    return "Unknown error";
+import { z } from "zod";
+
+/** A rejected promise can carry a bare string or a plain object rather than an Error. */
+const ThrownMessageSchema = z.union([
+  z.string(),
+  z.object({ message: z.string() }).transform((thrown) => thrown.message)
+]);
+
+/**
+ * JavaScript allows any value to be thrown, so a `catch` binding is the boundary where one
+ * becomes an Error. Everything downstream takes `Error` and reads `message` and `name` directly.
+ */
+export function toError(cause: unknown): Error {
+  if (cause instanceof Error) {
+    return cause;
   }
 
-  if (typeof error === "string") {
-    return error;
+  const thrown = ThrownMessageSchema.safeParse(cause);
+  if (thrown.success) {
+    return new Error(thrown.data || "Unknown error", { cause });
   }
 
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  if (typeof error === "object" && "message" in error) {
-    const message = error.message;
-    return typeof message === "string" ? message : String(message);
-  }
-
-  return String(error);
-}
-
-export function isAbortError(error: unknown): boolean {
-  return (
-    (typeof error === "object" && error !== null && "name" in error && error.name === "AbortError") ||
-    (error instanceof DOMException && error.name === "AbortError")
+  return new Error(
+    cause === null || cause === undefined ? "Unknown error" : String(cause),
+    { cause }
   );
 }
 
+export function formatError(error: Error): string {
+  return error.message;
+}
+
+export function isAbortError(error: Error): boolean {
+  return error.name === "AbortError";
+}
+
 export function throwIfAborted(signal?: AbortSignal): void {
-  if (signal?.aborted) {
-    const reason = signal.reason;
-    if (isAbortError(reason)) {
-      throw reason;
-    }
-    const error = new DOMException("The operation was aborted.", "AbortError");
-    throw error;
+  if (!signal?.aborted) {
+    return;
   }
+
+  const reason = toError(signal.reason);
+  throw isAbortError(reason) ? reason : new DOMException("The operation was aborted.", "AbortError");
 }
