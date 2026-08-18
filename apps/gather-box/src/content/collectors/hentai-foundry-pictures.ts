@@ -1,3 +1,4 @@
+import type { PageLocation } from "../collector-entry";
 import type { GalleryCollectResponse } from "../../shared/types";
 import { lowercaseFirstAscii } from "../../shared/path";
 
@@ -14,7 +15,7 @@ interface HentaiFoundryPicturePath {
 
 export function collectHentaiFoundryPicturesData(
   document: Document,
-  location: Location
+  location: PageLocation
 ): GalleryCollectResponse {
   const picturePath = parsePicturePath(location);
   if (location.hostname !== "www.hentai-foundry.com" || !picturePath) {
@@ -64,7 +65,7 @@ export function collectHentaiFoundryPicturesData(
   };
 }
 
-function parsePicturePath(location: Location): HentaiFoundryPicturePath | null {
+function parsePicturePath(location: PageLocation): HentaiFoundryPicturePath | null {
   const match = location.pathname.match(PICTURE_PATH_PATTERN);
   if (!match) {
     return null;
@@ -77,7 +78,7 @@ function parsePicturePath(location: Location): HentaiFoundryPicturePath | null {
   };
 }
 
-function getFullSizeImageUrl(image: HTMLImageElement, location: Location): string | null {
+function getFullSizeImageUrl(image: HTMLImageElement, location: PageLocation): string | null {
   const onclick = image.getAttribute("onclick") || "";
   const assignedSource = onclick.match(/this\.src\s*=\s*(['"])(.*?)\1/s)?.[2];
   const candidates = [assignedSource, image.getAttribute("src")];

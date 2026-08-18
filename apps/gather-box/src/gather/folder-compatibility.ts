@@ -1,13 +1,18 @@
 import { toError } from "./errors";
 import type { SiteKey } from "../shared/sites";
 
+/** The archive root, narrowed to the lookup this compatibility probe performs. */
+export interface LegacyFolderLookup {
+  getDirectoryHandle(name: string): Promise<{ name: string }>;
+}
+
 export interface CompatibleFolderSegments {
   segments: string[];
   usedLegacyFolder: boolean;
 }
 
 export async function resolveCompatibleFolderSegments(
-  rootDirectory: FileSystemDirectoryHandle,
+  rootDirectory: LegacyFolderLookup,
   site: SiteKey,
   standardSegments: string[]
 ): Promise<CompatibleFolderSegments> {

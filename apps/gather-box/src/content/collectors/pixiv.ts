@@ -1,8 +1,9 @@
+import type { PageLocation } from "../collector-entry";
 import type { GalleryCollectResponse, GalleryImage } from "../../shared/types";
 
 const ORIGINAL_IMAGE_PREFIX = "https://i.pximg.net/img-original/";
 
-export function collectPixivData(document: Document, location: Location): GalleryCollectResponse {
+export function collectPixivData(document: Document, location: PageLocation): GalleryCollectResponse {
   const artworkId = getArtworkId(location);
   if (!artworkId) {
     return {
@@ -94,7 +95,7 @@ function buildPixivImages(
 
 function getCreator(
   firstOriginal: HTMLAnchorElement,
-  location: Location
+  location: PageLocation
 ): { id: string; name: string } | null {
   const artworkSection = firstOriginal.closest("section");
   const candidates = artworkSection?.querySelectorAll<HTMLAnchorElement>('a[href*="/users/"]') ?? [];
@@ -122,7 +123,7 @@ function getPageCount(document: Document): number {
   return match ? Number(match[1]) : 1;
 }
 
-function getArtworkId(location: Location): string | null {
+function getArtworkId(location: PageLocation): string | null {
   return location.pathname.match(/^\/(?:[a-z]{2}\/)?artworks\/(\d+)/i)?.[1] ?? null;
 }
 

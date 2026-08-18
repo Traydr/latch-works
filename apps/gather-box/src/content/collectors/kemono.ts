@@ -1,3 +1,4 @@
+import type { PageLocation } from "../collector-entry";
 import type { GalleryCollectResponse, GalleryImage } from "../../shared/types";
 
 const KEMONO_USER_SELECTOR = "a.post__user-name[href*='/user/']";
@@ -5,7 +6,7 @@ const KEMONO_TITLE_SELECTOR = "h1.post__title";
 const KEMONO_FILES_SELECTOR = "div.post__files";
 const KEMONO_FILE_LINK_SELECTOR = "a.fileThumb.image-link[href]";
 
-export function collectKemonoData(document: Document, location: Location): GalleryCollectResponse {
+export function collectKemonoData(document: Document, location: PageLocation): GalleryCollectResponse {
   const pathMatch = location.pathname.match(/^\/([^/]+)\/user\/([^/]+)\/post\/([^/]+)/);
   if (!pathMatch) {
     return {
@@ -85,7 +86,7 @@ export function collectKemonoData(document: Document, location: Location): Galle
 function buildKemonoFileEntry(
   link: HTMLAnchorElement,
   index: number,
-  location: Location
+  location: PageLocation
 ): GalleryImage | null {
   const href = link.getAttribute("href");
   if (!href) {
@@ -115,7 +116,7 @@ function getKemonoPostTitle(titleElement: Element): string {
   return getText(primarySpan || titleElement);
 }
 
-function getImageSource(image: HTMLImageElement, location: Location): string | null {
+function getImageSource(image: HTMLImageElement, location: PageLocation): string | null {
   const rawSource = image.getAttribute("data-src") || image.getAttribute("src");
   if (!rawSource) {
     return null;

@@ -1,3 +1,4 @@
+import type { PageLocation } from "../collector-entry";
 import { z } from "zod";
 import { lenientArrayOf } from "../../shared/lenient-array";
 import type { GalleryCollectResponse, GalleryImage } from "../../shared/types";
@@ -28,7 +29,7 @@ const FanboxBlogPostingSchema = z.object({
 const FanboxJsonLdSchema = z
   .union([lenientArrayOf(FanboxBlogPostingSchema), FanboxBlogPostingSchema.transform((post) => [post])]);
 
-export function collectFanboxData(document: Document, location: Location): GalleryCollectResponse {
+export function collectFanboxData(document: Document, location: PageLocation): GalleryCollectResponse {
   if (!isFanboxPostUrl(location)) {
     return {
       ok: false,
@@ -94,7 +95,7 @@ export function collectFanboxData(document: Document, location: Location): Galle
 function buildFanboxImageEntry(
   link: HTMLAnchorElement,
   index: number,
-  location: Location,
+  location: PageLocation,
   seenUrls: Set<string>
 ): GalleryImage | null {
   const href = link.getAttribute("href");
@@ -118,7 +119,7 @@ function buildFanboxImageEntry(
   };
 }
 
-function isFanboxPostUrl(location: Location): boolean {
+function isFanboxPostUrl(location: PageLocation): boolean {
   return location.hostname.toLowerCase().endsWith(".fanbox.cc") && location.pathname.startsWith("/posts/");
 }
 
@@ -129,7 +130,7 @@ function isFanboxImageUrl(value: string): boolean {
   return url.hostname === "downloads.fanbox.cc" && FANBOX_IMAGE_EXTENSIONS.has(extension);
 }
 
-function getCreatorId(document: Document, location: Location): string {
+function getCreatorId(document: Document, location: PageLocation): string {
   const metadataCreatorId = getMetadataCreatorId(document);
   if (metadataCreatorId) {
     return metadataCreatorId;
@@ -213,7 +214,7 @@ function getTitleFromDocumentTitle(title: string, authorName: string | null): st
   return normalizedTitle.replace(/\bpixivFANBOX\b/i, "").trim();
 }
 
-function getPostId(location: Location): string | null {
+function getPostId(location: PageLocation): string | null {
   const match = location.pathname.match(/^\/posts\/([^/]+)/);
   return match ? match[1] : null;
 }
@@ -235,7 +236,7 @@ function getFileExtension(pathname: string): string {
   return extension ? extension.toLowerCase() : "";
 }
 
-function getImageSource(image: HTMLImageElement, location: Location): string | null {
+function getImageSource(image: HTMLImageElement, location: PageLocation): string | null {
   const rawSource = image.getAttribute("data-src") || image.getAttribute("src");
   if (!rawSource) {
     return null;

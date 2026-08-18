@@ -1,3 +1,4 @@
+import type { PageLocation } from "../collector-entry";
 import { buildStoryPdfFileName } from "../../shared/path";
 import type { GalleryCollectResponse } from "../../shared/types";
 
@@ -13,7 +14,7 @@ interface HentaiFoundryStoryPath {
 
 export function collectHentaiFoundryStoriesData(
   document: Document,
-  location: Location
+  location: PageLocation
 ): GalleryCollectResponse {
   if (location.hostname !== "www.hentai-foundry.com" || !location.pathname.startsWith("/stories/user/")) {
     return {
@@ -71,14 +72,14 @@ export function collectHentaiFoundryStoriesData(
   };
 }
 
-function getPdfUrl(document: Document, location: Location): string | null {
+function getPdfUrl(document: Document, location: PageLocation): string | null {
   const link = document.querySelector<HTMLAnchorElement>(HF_PDF_LINK_SELECTOR);
   const href = link?.getAttribute("href");
 
   return href ? new URL(href, location.href).toString() : null;
 }
 
-function parseStoryPath(location: Location): HentaiFoundryStoryPath | null {
+function parseStoryPath(location: PageLocation): HentaiFoundryStoryPath | null {
   const parts = location.pathname.split("/").filter(Boolean);
   if (
     parts.length < 5 ||

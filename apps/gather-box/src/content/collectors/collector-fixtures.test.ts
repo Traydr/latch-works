@@ -5,11 +5,12 @@ import { collectArchiveOfOurOwnData } from "./archiveofourown";
 import { collectFanboxData } from "./fanbox";
 import { collectFanfictionNetData } from "./fanfiction-net";
 import { collectHentaiFoundryStoriesData } from "./hentai-foundry-stories";
+import type { PageLocation } from "../collector-entry";
 import { collectKemonoData } from "./kemono";
 import { collectMyHentaiGalleryData } from "./my-hentai-gallery";
 
-function fixture(html: string, url: string): [Document, Location] {
-  return [new DOMParser().parseFromString(html, "text/html"), new URL(url) as unknown as Location];
+function fixture(html: string, url: string): [Document, PageLocation] {
+  return [new DOMParser().parseFromString(html, "text/html"), new URL(url)];
 }
 
 describe("MyHentaiGallery collector fixture", () => {

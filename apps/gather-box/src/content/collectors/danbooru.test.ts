@@ -9,7 +9,7 @@ const originalUrl =
 
 function collect(html: string, url = postUrl) {
   const document = new DOMParser().parseFromString(html, "text/html");
-  return collectDanbooruData(document, new URL(url) as unknown as Location);
+  return collectDanbooruData(document, new URL(url));
 }
 
 describe("Danbooru collector", () => {

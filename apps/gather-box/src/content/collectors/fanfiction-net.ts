@@ -1,3 +1,4 @@
+import type { PageLocation } from "../collector-entry";
 import { buildStoryPdfFileName } from "../../shared/path";
 import type { GalleryCollectResponse, StoryChapterReference } from "../../shared/types";
 
@@ -14,7 +15,7 @@ interface FanfictionStoryPath {
   slug: string;
 }
 
-export function collectFanfictionNetData(document: Document, location: Location): GalleryCollectResponse {
+export function collectFanfictionNetData(document: Document, location: PageLocation): GalleryCollectResponse {
   if (location.hostname !== FFN_HOSTNAME) {
     return {
       ok: false,
@@ -76,7 +77,7 @@ export function collectFanfictionNetData(document: Document, location: Location)
   };
 }
 
-function parseStoryPath(location: Location): FanfictionStoryPath | null {
+function parseStoryPath(location: PageLocation): FanfictionStoryPath | null {
   const parts = location.pathname.split("/").filter(Boolean);
   if (parts.length < 4 || parts[0] !== "s") {
     return null;
@@ -96,7 +97,7 @@ function parseStoryPath(location: Location): FanfictionStoryPath | null {
 
 function getChapters(
   document: Document,
-  location: Location,
+  location: PageLocation,
   storyPath: FanfictionStoryPath
 ): StoryChapterReference[] {
   const select = document.querySelector<HTMLSelectElement>(FFN_CHAPTER_SELECTOR);

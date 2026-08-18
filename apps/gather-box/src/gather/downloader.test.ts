@@ -185,8 +185,8 @@ describe("collision-safe downloads", () => {
           async createWritable() {
             let pending = new Blob();
             return {
-              async write(data: FileSystemWriteChunkType) {
-                pending = data instanceof Blob ? data : new Blob([data as BlobPart]);
+              async write(data: Blob) {
+                pending = data;
                 writeStarted();
                 await writeGate;
               },
@@ -243,8 +243,8 @@ describe("collision-safe downloads", () => {
           async createWritable() {
             let pending = new Blob();
             return {
-              async write(data: FileSystemWriteChunkType) {
-                pending = data instanceof Blob ? data : new Blob([data as BlobPart]);
+              async write(data: Blob) {
+                pending = data;
               },
               async close() {
                 if (name === "recovered.jpg" && failCanonicalOnce) {
@@ -307,8 +307,8 @@ function createMemoryDirectory(initialFiles: Record<string, Blob>): MemoryDirect
         async createWritable() {
           let pending = new Blob();
           return {
-            async write(data: FileSystemWriteChunkType) {
-              pending = data instanceof Blob ? data : new Blob([data as BlobPart]);
+            async write(data: Blob) {
+              pending = data;
             },
             async close() {
               files.set(name, pending);

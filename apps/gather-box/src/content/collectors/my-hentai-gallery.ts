@@ -1,10 +1,11 @@
+import type { PageLocation } from "../collector-entry";
 import type { GalleryCollectResponse, GalleryImage } from "../../shared/types";
 
 const MHG_TITLE_SUFFIX = "Hentai Comic - My Hentai Gallery";
 const MHG_GRID_SELECTOR = "ul.comics-grid.clear";
 const MHG_IMAGE_SELECTOR = "div.comic-thumb img[src]";
 
-export function collectMyHentaiGalleryData(document: Document, location: Location): GalleryCollectResponse {
+export function collectMyHentaiGalleryData(document: Document, location: PageLocation): GalleryCollectResponse {
   const grid = document.querySelector(MHG_GRID_SELECTOR);
   if (!grid) {
     return {
@@ -52,7 +53,7 @@ export function collectMyHentaiGalleryData(document: Document, location: Locatio
 function buildImageEntry(
   node: HTMLImageElement,
   index: number,
-  location: Location
+  location: PageLocation
 ): GalleryImage | null {
   const thumbnailUrl = node.getAttribute("src");
   if (!thumbnailUrl) {
@@ -72,7 +73,7 @@ function buildImageEntry(
   };
 }
 
-function rewriteToOriginalUrl(thumbnailUrl: string, location: Location): string | null {
+function rewriteToOriginalUrl(thumbnailUrl: string, location: PageLocation): string | null {
   const url = new URL(thumbnailUrl, location.href);
   if (!url.pathname.includes("/thumbnail/")) {
     return null;
@@ -92,7 +93,7 @@ function getComicTitle(document: Document): string {
   return document.title.replace(MHG_TITLE_SUFFIX, "").trim();
 }
 
-function getGalleryId(location: Location): string | null {
+function getGalleryId(location: PageLocation): string | null {
   const match = location.pathname.match(/^\/a\/([^/]+)/);
   return match ? match[1] : null;
 }

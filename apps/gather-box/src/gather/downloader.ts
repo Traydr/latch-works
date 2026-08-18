@@ -15,7 +15,7 @@ export const DEFAULT_DOWNLOAD_CONCURRENCY = 4;
  * download path independent of the rest of a browser handle, which it never touches.
  */
 export interface WritableFileStream {
-  write(data: FileSystemWriteChunkType): Promise<void>;
+  write(data: Blob): Promise<void>;
   close(): Promise<void>;
   abort?(): Promise<void>;
 }

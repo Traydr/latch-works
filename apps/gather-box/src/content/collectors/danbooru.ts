@@ -1,3 +1,4 @@
+import type { PageLocation } from "../collector-entry";
 import type { GalleryCollectResponse } from "../../shared/types";
 
 const POST_PATH_PATTERN = /^\/posts\/(\d+)\/?$/;
@@ -14,7 +15,7 @@ const ORIGINAL_MEDIA_HOST = "cdn.donmai.us";
 
 export function collectDanbooruData(
   document: Document,
-  location: Location
+  location: PageLocation
 ): GalleryCollectResponse {
   const postId = parsePostId(location);
   if (location.hostname !== "danbooru.donmai.us" || !postId) {
@@ -65,13 +66,13 @@ export function collectDanbooruData(
   };
 }
 
-function parsePostId(location: Location): string | null {
+function parsePostId(location: PageLocation): string | null {
   return location.pathname.match(POST_PATH_PATTERN)?.[1] ?? null;
 }
 
 function findOriginalMedia(
   document: Document,
-  location: Location
+  location: PageLocation
 ): { url: string; fileName: string } | null {
   const download = document.querySelector<HTMLAnchorElement>(DOWNLOAD_SELECTOR);
   if (download) {
@@ -95,7 +96,7 @@ function findOriginalMedia(
   return url ? { url, fileName: getUrlFileName(url) } : null;
 }
 
-function resolveOriginalUrl(value: string | null | undefined, location: Location): string | null {
+function resolveOriginalUrl(value: string | null | undefined, location: PageLocation): string | null {
   if (!value) {
     return null;
   }
@@ -108,7 +109,7 @@ function resolveOriginalUrl(value: string | null | undefined, location: Location
     : null;
 }
 
-function resolveUrl(value: string | null | undefined, location: Location): string | null {
+function resolveUrl(value: string | null | undefined, location: PageLocation): string | null {
   return value ? new URL(value, location.href).toString() : null;
 }
 

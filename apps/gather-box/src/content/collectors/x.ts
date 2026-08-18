@@ -1,3 +1,4 @@
+import type { PageLocation } from "../collector-entry";
 import type { GalleryCollectResponse, GalleryImage } from "../../shared/types";
 import { lowercaseFirstAscii } from "../../shared/path";
 import {
@@ -17,7 +18,7 @@ type XMediaResolver = (message: ResolveXMediaMessage) => Promise<ResolveXMediaRe
 
 export async function collectXData(
   document: Document,
-  location: Location,
+  location: PageLocation,
   resolveMedia: XMediaResolver = resolveXMedia
 ): Promise<GalleryCollectResponse> {
   const post = getXPost(location);
@@ -142,7 +143,7 @@ function normalizeXPhotoUrl(urlValue: string): { originalUrl: string; fileName: 
   };
 }
 
-function getXPost(location: Location): { username: string; id: string } | null {
+function getXPost(location: PageLocation): { username: string; id: string } | null {
   const match = location.pathname.match(/^\/([^/]+)\/status\/(\d+)/i);
   return match ? { username: decodeURIComponent(match[1]), id: match[2] } : null;
 }

@@ -2,7 +2,10 @@ import { CollectComicGalleryMessageSchema } from "../shared/messages";
 import type { SiteKey } from "../shared/sites";
 import type { GalleryCollectResponse } from "../shared/types";
 
-type Collector = (document: Document, location: Location) => GalleryCollectResponse | Promise<GalleryCollectResponse>;
+/** The parts of the page address a collector reads; a `URL` supplies all of them. */
+export type PageLocation = Pick<Location, "href" | "hostname" | "pathname">;
+
+type Collector = (document: Document, location: PageLocation) => GalleryCollectResponse | Promise<GalleryCollectResponse>;
 
 /** Chrome hands listeners the message exactly as the sender posted it; the schema parses it. */
 export type RuntimeMessageListener = Parameters<typeof chrome.runtime.onMessage.addListener>[0];

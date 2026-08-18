@@ -1,90 +1,67 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { encodeGifAsMp4 } from "./gif-mp4-encoder";
-
-const mediaMocks = vi.hoisted(() => ({
-  add: vi.fn<
-    (timestamp: number, duration: number, options: { keyFrame: boolean }) => Promise<void>
-  >(async () => undefined),
-  addVideoTrack: vi.fn(),
-  cancel: vi.fn(async () => undefined),
-  finalize: vi.fn(async () => undefined),
-  start: vi.fn(async () => undefined),
-  targetBuffer: new ArrayBuffer(2)
-}));
-
-vi.mock("mediabunny", () => ({
-  BufferTarget: class {
-    buffer = mediaMocks.targetBuffer;
-  },
-  CanvasSource: class {
-    constructor(canvas: OffscreenCanvas) {
-      void canvas;
-    }
-
-    add(timestamp: number, duration: number, options: { keyFrame: boolean }) {
-      return mediaMocks.add(timestamp, duration, options);
-    }
-  },
-  Mp4OutputFormat: class {},
-  Output: class {
-    state = "pending";
-
-    addVideoTrack(...args: unknown[]) {
-      return mediaMocks.addVideoTrack(...args);
-    }
-
-    async start() {
-      await mediaMocks.start();
-      this.state = "started";
-    }
-
-    async finalize() {
-      await mediaMocks.finalize();
-      this.state = "finalized";
-    }
-
-    async cancel() {
-      await mediaMocks.cancel();
-      this.state = "canceled";
-    }
-  },
-  Quality: class {}
-}));
-
-beforeEach(() => {
-  vi.clearAllMocks();
-  mediaMocks.targetBuffer = new ArrayBuffer(2);
-});
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { encodeGifAsMp4, type Mp4Encoder, type Mp4VideoSink } from "./gif-mp4-encoder";
 
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+interface CanvasSize {
+  width: number;
+  height: number;
+}
+
+interface RecordingEncoder extends Mp4Encoder {
+  addFrame: Mp4VideoSink["addFrame"];
+  cancel: Mp4VideoSink["cancel"];
+  finalize: Mp4VideoSink["finalize"];
+  video: ArrayBuffer;
+}
+
+/** Stands in for the mediabunny muxer, recording the frame timing the converter asks for. */
+function recordingEncoder(): RecordingEncoder {
+  const video = new ArrayBuffer(2);
+  const addFrame = vi.fn<Mp4VideoSink["addFrame"]>(async () => undefined);
+  const cancel = vi.fn<Mp4VideoSink["cancel"]>(async () => undefined);
+  const finalize = vi.fn<Mp4VideoSink["finalize"]>(async () => video);
+
+  return {
+    addFrame,
+    cancel,
+    finalize,
+    video,
+    open: async () => ({ addFrame, cancel, finalize })
+  };
+}
+
 describe("GIF MP4 encoder", () => {
   it("writes timed frames, pads odd dimensions, and closes decoder resources", async () => {
     const browser = installBrowserFakes([50_000, undefined]);
+    const encoder = recordingEncoder();
 
-    const result = await encodeGifAsMp4(new Blob(["gif"]));
+    const result = await encodeGifAsMp4(new Blob(["gif"]), undefined, encoder);
 
-    expect(result).toBe(mediaMocks.targetBuffer);
+    expect(result).toBe(encoder.video);
     expect(browser.canvasSize).toEqual({ width: 4, height: 6 });
-    expect(mediaMocks.add.mock.calls).toEqual([
+    expect(vi.mocked(encoder.addFrame).mock.calls).toEqual([
       [0, 0.05, { keyFrame: true }],
       [0.05, 0.1, { keyFrame: false }]
     ]);
     expect(browser.frameClose).toHaveBeenCalledTimes(2);
     expect(browser.decoderClose).toHaveBeenCalledOnce();
-    expect(mediaMocks.finalize).toHaveBeenCalledOnce();
-    expect(mediaMocks.cancel).not.toHaveBeenCalled();
+    expect(encoder.finalize).toHaveBeenCalledOnce();
+    expect(encoder.cancel).not.toHaveBeenCalled();
   });
 
   it("cancels the output and closes resources when finalization fails", async () => {
     const browser = installBrowserFakes([50_000]);
-    mediaMocks.finalize.mockRejectedValueOnce(new Error("finalize failed"));
+    const encoder = recordingEncoder();
+    vi.mocked(encoder.finalize).mockRejectedValueOnce(new Error("finalize failed"));
 
-    await expect(encodeGifAsMp4(new Blob(["gif"]))).rejects.toThrow("finalize failed");
+    await expect(encodeGifAsMp4(new Blob(["gif"]), undefined, encoder)).rejects.toThrow(
+      "finalize failed"
+    );
 
-    expect(mediaMocks.cancel).toHaveBeenCalledOnce();
+    expect(encoder.cancel).toHaveBeenCalledOnce();
     expect(browser.frameClose).toHaveBeenCalledOnce();
     expect(browser.decoderClose).toHaveBeenCalledOnce();
   });
@@ -92,27 +69,30 @@ describe("GIF MP4 encoder", () => {
   it("stops before another frame after cancellation", async () => {
     const controller = new AbortController();
     const browser = installBrowserFakes([50_000, 50_000]);
-    mediaMocks.add.mockImplementationOnce(async () => {
+    const encoder = recordingEncoder();
+    vi.mocked(encoder.addFrame).mockImplementationOnce(async () => {
       controller.abort();
     });
 
-    await expect(encodeGifAsMp4(new Blob(["gif"]), controller.signal)).rejects.toMatchObject({
-      name: "AbortError"
-    });
+    await expect(
+      encodeGifAsMp4(new Blob(["gif"]), controller.signal, encoder)
+    ).rejects.toMatchObject({ name: "AbortError" });
 
     expect(browser.decode).toHaveBeenCalledOnce();
     expect(browser.frameClose).toHaveBeenCalledOnce();
     expect(browser.decoderClose).toHaveBeenCalledOnce();
-    expect(mediaMocks.cancel).toHaveBeenCalledOnce();
+    expect(encoder.cancel).toHaveBeenCalledOnce();
   });
 });
 
-function installBrowserFakes(durations: Array<number | undefined>): {
-  canvasSize: { width: number; height: number } | null;
+interface BrowserFakes {
+  canvasSize: CanvasSize | null;
   decode: ReturnType<typeof vi.fn>;
   decoderClose: ReturnType<typeof vi.fn>;
   frameClose: ReturnType<typeof vi.fn>;
-} {
+}
+
+function installBrowserFakes(durations: Array<number | undefined>) {
   const frameClose = vi.fn();
   const decoderClose = vi.fn();
   const frames = durations.map((duration) => ({
@@ -136,12 +116,8 @@ function installBrowserFakes(durations: Array<number | undefined>): {
     close = decoderClose;
   }
 
-  const result = {
-    canvasSize: null as { width: number; height: number } | null,
-    decode,
-    decoderClose,
-    frameClose
-  };
+  const result: BrowserFakes = { canvasSize: null, decode, decoderClose, frameClose };
+
   class FakeOffscreenCanvas {
     constructor(width: number, height: number) {
       result.canvasSize = { width, height };
