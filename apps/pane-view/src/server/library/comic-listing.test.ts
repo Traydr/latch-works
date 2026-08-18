@@ -1,12 +1,8 @@
 import type { GallerySortMode } from "@latch-works/media-domain";
-import { describe, expect, it, vi } from "vitest";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { describe, expect, it } from "vitest";
 
-vi.mock("../db", async () => {
-  const { drizzle } = await import("drizzle-orm/node-postgres");
-  // A query builder with no connection: these tests read rendered SQL only.
-  return { db: drizzle.mock() };
-});
-
+import * as schema from "../db/schema";
 import {
   buildComicCoverQuery,
   buildComicPagesQuery,
@@ -23,6 +19,9 @@ import type { GalleryListingCursorPayload } from "./gallery-listing";
  * rewrite that returns page rows instead of aggregates, drops the leaf test,
  * or loses the natural collation.
  */
+
+/** A query builder with no connection: these tests read rendered SQL only. */
+const database = drizzle.mock({ schema });
 
 const SEED = "0123456789abcdef0123456789abcdef";
 const SORT_MODES: GallerySortMode[] = [
@@ -43,15 +42,18 @@ function summary(
   cursor: Extract<GalleryListingCursorPayload, { subjectKind: "comic" }> | null = null,
 ) {
   return render(
-    buildComicSummaryQuery({
-      currentPath: "photos",
-      cursor,
-      limit: 48,
-      randomSeed: SEED,
-      showImages: true,
-      showVideos: true,
-      sortMode,
-    }),
+    buildComicSummaryQuery(
+      {
+        currentPath: "photos",
+        cursor,
+        limit: 48,
+        randomSeed: SEED,
+        showImages: true,
+        showVideos: true,
+        sortMode,
+      },
+      database,
+    ),
   );
 }
 
@@ -127,16 +129,19 @@ describe("comic summary query (phase 1)", () => {
 
   it("applies the search to pages before grouping and the visibility toggles to page types", () => {
     const { params, sql } = render(
-      buildComicSummaryQuery({
-        currentPath: "photos",
-        cursor: null,
-        limit: 48,
-        query: "cover",
-        randomSeed: SEED,
-        showImages: false,
-        showVideos: false,
-        sortMode: "name-asc",
-      }),
+      buildComicSummaryQuery(
+        {
+          currentPath: "photos",
+          cursor: null,
+          limit: 48,
+          query: "cover",
+          randomSeed: SEED,
+          showImages: false,
+          showVideos: false,
+          sortMode: "name-asc",
+        },
+        database,
+      ),
     );
     expect(sql).toContain(
       '("library_entries"."logical_path" ilike $1 or "library_entries"."filename" ilike $2) ' +
@@ -158,12 +163,15 @@ describe("comic summary query (phase 1)", () => {
 describe("comic cover query (phase 2)", () => {
   it("selects one row per listed folder: the first page under the natural collation, then id", () => {
     const { params, sql } = render(
-      buildComicCoverQuery({
-        currentPath: "photos",
-        folderPaths: ["photos/comic-a", "photos/comic-b"],
-        showImages: true,
-        showVideos: true,
-      }),
+      buildComicCoverQuery(
+        {
+          currentPath: "photos",
+          folderPaths: ["photos/comic-a", "photos/comic-b"],
+          showImages: true,
+          showVideos: true,
+        },
+        database,
+      ),
     );
     expect(sql).toMatch(/^select distinct on \("library_entries"\."parent_path"\) /u);
     expect(sql).toContain(`where (${ELIGIBILITY} and "library_entries"."parent_path" in ($5, $6))`);
@@ -177,12 +185,15 @@ describe("comic cover query (phase 2)", () => {
 describe("comic pages query", () => {
   it("selects every eligible page of one leaf folder", () => {
     const { params, sql } = render(
-      buildComicPagesQuery({
-        comicId: "photos/comic-a",
-        currentPath: "photos",
-        showImages: true,
-        showVideos: true,
-      }),
+      buildComicPagesQuery(
+        {
+          comicId: "photos/comic-a",
+          currentPath: "photos",
+          showImages: true,
+          showVideos: true,
+        },
+        database,
+      ),
     );
     expect(sql).toContain(
       `where (${ELIGIBILITY} and "library_entries"."parent_path" = $5 and ${LEAF})`,

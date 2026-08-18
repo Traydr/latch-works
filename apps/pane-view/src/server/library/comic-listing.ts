@@ -18,7 +18,7 @@ import {
   type SQL,
   sql,
 } from "drizzle-orm";
-import { db } from "../db";
+import { type Database, db } from "../db";
 import { folders, libraryEntries, mediaObjects } from "../db/schema";
 import {
   cursorRandomKey,
@@ -91,9 +91,9 @@ export function buildComicPageConditions({
 }
 
 /** True when the entry's folder has no live child folder, i.e. it is a leaf. */
-function leafFolderCondition(): SQL {
+function leafFolderCondition(database: Database): SQL {
   return notExists(
-    db
+    database
       .select({ one: sql`1` })
       .from(folders)
       .where(and(eq(folders.parentPath, libraryEntries.parentPath), isNull(folders.deletedAt))),
@@ -174,19 +174,22 @@ export function buildComicListingCursorCondition(cursor: ComicCursor): SQL {
  * overfetched by one. Touches every eligible page (the same cost class as the
  * random media order) but returns only `limit + 1` rows.
  */
-export function buildComicSummaryQuery({
-  currentPath,
-  cursor,
-  limit = DEFAULT_GALLERY_LISTING_LIMIT,
-  query,
-  randomSeed,
-  showImages,
-  showVideos,
-  sortMode,
-}: Omit<ComicListingReadRequest, "cursor"> & { cursor: ComicCursor | null }) {
+export function buildComicSummaryQuery(
+  {
+    currentPath,
+    cursor,
+    limit = DEFAULT_GALLERY_LISTING_LIMIT,
+    query,
+    randomSeed,
+    showImages,
+    showVideos,
+    sortMode,
+  }: Omit<ComicListingReadRequest, "cursor"> & { cursor: ComicCursor | null },
+  database: Database = db,
+) {
   const conditions = buildComicPageConditions({ currentPath, query, showImages, showVideos });
 
-  return db
+  return database
     .select({
       folderPath: libraryEntries.parentPath,
       newestMtime,
@@ -195,7 +198,7 @@ export function buildComicSummaryQuery({
     })
     .from(libraryEntries)
     .innerJoin(mediaObjects, eq(libraryEntries.mediaObjectId, mediaObjects.id))
-    .where(and(...conditions, leafFolderCondition()))
+    .where(and(...conditions, leafFolderCondition(database)))
     .groupBy(libraryEntries.parentPath)
     .having(cursor ? buildComicListingCursorCondition(cursor) : undefined)
     .orderBy(...buildComicListingOrderBy(sortMode, randomSeed))
@@ -206,18 +209,21 @@ export function buildComicSummaryQuery({
  * Phase 2: the cover for each listed folder — its first eligible page under
  * the natural collation, then id, which is the page compareByName puts first.
  */
-export function buildComicCoverQuery({
-  currentPath,
-  folderPaths,
-  query,
-  showImages,
-  showVideos,
-}: Pick<ComicListingReadRequest, "currentPath" | "query" | "showImages" | "showVideos"> & {
-  folderPaths: string[];
-}) {
+export function buildComicCoverQuery(
+  {
+    currentPath,
+    folderPaths,
+    query,
+    showImages,
+    showVideos,
+  }: Pick<ComicListingReadRequest, "currentPath" | "query" | "showImages" | "showVideos"> & {
+    folderPaths: string[];
+  },
+  database: Database = db,
+) {
   const conditions = buildComicPageConditions({ currentPath, query, showImages, showVideos });
 
-  return db
+  return database
     .selectDistinctOn([libraryEntries.parentPath], {
       entry: libraryEntries,
       object: mediaObjects,
@@ -233,54 +239,59 @@ export function buildComicCoverQuery({
 }
 
 /** Every eligible page of one comic folder, unsorted; the caller orders them. */
-export function buildComicPagesQuery({
-  comicId,
-  currentPath,
-  query,
-  showImages,
-  showVideos,
-}: ComicReadRequest) {
+export function buildComicPagesQuery(
+  { comicId, currentPath, query, showImages, showVideos }: ComicReadRequest,
+  database: Database = db,
+) {
   const conditions = buildComicPageConditions({ currentPath, query, showImages, showVideos });
 
-  return db
+  return database
     .select({
       entry: libraryEntries,
       object: mediaObjects,
     })
     .from(libraryEntries)
     .innerJoin(mediaObjects, eq(libraryEntries.mediaObjectId, mediaObjects.id))
-    .where(and(...conditions, eq(libraryEntries.parentPath, comicId), leafFolderCondition()));
+    .where(
+      and(...conditions, eq(libraryEntries.parentPath, comicId), leafFolderCondition(database)),
+    );
 }
 
 // ---------------------------------------------------------------------------
 // Reads
 // ---------------------------------------------------------------------------
 
-export async function readDatabaseComicListing({
-  currentPath,
-  cursor,
-  limit = DEFAULT_GALLERY_LISTING_LIMIT,
-  query,
-  randomSeed,
-  showImages,
-  showVideos,
-  sortMode,
-}: ComicListingReadRequest): Promise<GalleryListingPage> {
-  const decodedCursor = decodeGalleryListingCursor(cursor, {
-    randomSeed,
-    sortMode,
-    subjectKind: "comic",
-  });
-  const summaryRows = await buildComicSummaryQuery({
+export async function readDatabaseComicListing(
+  {
     currentPath,
-    cursor: decodedCursor?.subjectKind === "comic" ? decodedCursor : null,
-    limit,
+    cursor,
+    limit = DEFAULT_GALLERY_LISTING_LIMIT,
     query,
     randomSeed,
     showImages,
     showVideos,
     sortMode,
+  }: ComicListingReadRequest,
+  database: Database = db,
+): Promise<GalleryListingPage> {
+  const decodedCursor = decodeGalleryListingCursor(cursor, {
+    randomSeed,
+    sortMode,
+    subjectKind: "comic",
   });
+  const summaryRows = await buildComicSummaryQuery(
+    {
+      currentPath,
+      cursor: decodedCursor?.subjectKind === "comic" ? decodedCursor : null,
+      limit,
+      query,
+      randomSeed,
+      showImages,
+      showVideos,
+      sortMode,
+    },
+    database,
+  );
 
   const hasMore = summaryRows.length > limit;
   const pageRows = hasMore ? summaryRows.slice(0, limit) : summaryRows;
@@ -288,7 +299,10 @@ export async function readDatabaseComicListing({
 
   const coverRows =
     folderPaths.length > 0
-      ? await buildComicCoverQuery({ currentPath, folderPaths, query, showImages, showVideos })
+      ? await buildComicCoverQuery(
+          { currentPath, folderPaths, query, showImages, showVideos },
+          database,
+        )
       : [];
   const coverByFolder = new Map(
     mapMediaRowsToLibraryItems(coverRows).map((cover) => [cover.parentPath, cover]),
@@ -379,12 +393,13 @@ export function isComicInBrowseScope(
 /** One complete comic in natural page order, or null when it has no eligible page. */
 export async function readDatabaseGalleryComic(
   request: ComicReadRequest,
+  database: Database = db,
 ): Promise<ComicEntry<LibraryMediaItem> | null> {
   if (!isComicInBrowseScope(request.comicId, request.currentPath, Boolean(request.query?.trim()))) {
     return null;
   }
 
-  const rows = await buildComicPagesQuery(request);
+  const rows = await buildComicPagesQuery(request, database);
   const pages = mapMediaRowsToLibraryItems(rows).sort(compareComicPages);
   const cover = pages[0];
   if (!cover) {

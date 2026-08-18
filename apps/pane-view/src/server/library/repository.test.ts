@@ -1,12 +1,8 @@
 import type { GallerySortMode } from "@latch-works/media-domain";
-import { describe, expect, it, vi } from "vitest";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { describe, expect, it } from "vitest";
 
-vi.mock("../db", async () => {
-  const { drizzle } = await import("drizzle-orm/node-postgres");
-  // A query builder with no connection: these tests read rendered SQL only.
-  return { db: drizzle.mock() };
-});
-
+import * as schema from "../db/schema";
 import type { GalleryListingCursorPayload } from "./gallery-listing";
 import {
   buildGalleryListingMediaQuery,
@@ -21,6 +17,9 @@ import {
  * comparison, a dropped tie-breaker, a lost LIKE escape) fails here instead of
  * in production. Behaviour against executed SQL lives in the pglite suite.
  */
+
+/** A query builder with no connection: these tests read rendered SQL only. */
+const database = drizzle.mock({ schema });
 
 const SORT_MODES: GallerySortMode[] = [
   "name-asc",
@@ -58,17 +57,20 @@ function listing(
   const { continued = false, ...request } = overrides;
   const sortMode = request.sortMode ?? "name-asc";
   return render(
-    buildGalleryListingMediaQuery({
-      currentPath: "photos",
-      limit: 60,
-      randomSeed: SEED,
-      recursive: false,
-      showImages: true,
-      showVideos: true,
-      ...request,
-      cursor: continued ? { ...cursorFixture, sortMode } : null,
-      sortMode,
-    }),
+    buildGalleryListingMediaQuery(
+      {
+        currentPath: "photos",
+        limit: 60,
+        randomSeed: SEED,
+        recursive: false,
+        showImages: true,
+        showVideos: true,
+        ...request,
+        cursor: continued ? { ...cursorFixture, sortMode } : null,
+        sortMode,
+      },
+      database,
+    ),
   );
 }
 
@@ -185,7 +187,7 @@ describe("gallery listing order and cursor agree in direction", () => {
 describe("browse scope renders identically for both read paths", () => {
   it("root, non-recursive: direct children of the empty parent path", () => {
     const snapshot = render(
-      buildLibrarySnapshotMediaQuery({ currentPath: "", limit: 500, recursive: false }),
+      buildLibrarySnapshotMediaQuery({ currentPath: "", limit: 500, recursive: false }, database),
     );
     const paged = listing({ currentPath: "" });
 
@@ -200,7 +202,7 @@ describe("browse scope renders identically for both read paths", () => {
   it("recursive subtree: escapes % and _ in the path prefix and appends /%", () => {
     const currentPath = "photos/2026_a%b";
     const snapshot = render(
-      buildLibrarySnapshotMediaQuery({ currentPath, limit: 500, recursive: true }),
+      buildLibrarySnapshotMediaQuery({ currentPath, limit: 500, recursive: true }, database),
     );
     const paged = listing({ currentPath, recursive: true });
 
@@ -213,12 +215,15 @@ describe("browse scope renders identically for both read paths", () => {
   it("search: matches logical path or filename with an escaped pattern, ignoring the path scope", () => {
     const query = "cov_er%";
     const snapshot = render(
-      buildLibrarySnapshotMediaQuery({
-        currentPath: "photos",
-        limit: 200,
-        query,
-        recursive: false,
-      }),
+      buildLibrarySnapshotMediaQuery(
+        {
+          currentPath: "photos",
+          limit: 200,
+          query,
+          recursive: false,
+        },
+        database,
+      ),
     );
     const paged = listing({ query });
 
@@ -232,8 +237,12 @@ describe("browse scope renders identically for both read paths", () => {
   });
 
   it("folder query searches path or name and otherwise lists direct children", () => {
-    const browsing = render(buildLibraryFolderQuery({ currentPath: "photos", recursive: false }));
-    const searching = render(buildLibraryFolderQuery({ currentPath: "photos", query: "x" }));
+    const browsing = render(
+      buildLibraryFolderQuery({ currentPath: "photos", recursive: false }, database),
+    );
+    const searching = render(
+      buildLibraryFolderQuery({ currentPath: "photos", query: "x" }, database),
+    );
 
     expect(browsing.sql).toBe(
       'select "id", "path", "parent_path", "parent_id", "name", "depth", "entry_count", ' +
@@ -265,7 +274,7 @@ describe("gallery listing filters and limits", () => {
     expect(paged.params.at(-1)).toBe(49);
 
     const snapshot = render(
-      buildLibrarySnapshotMediaQuery({ currentPath: "photos", limit: 500, offset: 500 }),
+      buildLibrarySnapshotMediaQuery({ currentPath: "photos", limit: 500, offset: 500 }, database),
     );
     expect(snapshot.sql).toMatch(/ limit \$\d+ offset \$\d+$/u);
     expect(snapshot.params.slice(-2)).toEqual([501, 500]);
