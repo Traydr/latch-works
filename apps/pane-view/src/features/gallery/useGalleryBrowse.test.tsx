@@ -362,4 +362,17 @@ describe("useGalleryBrowse end-to-end order (Step 5)", () => {
     await harness.flush();
     expect(idsOf(harness)).toEqual(before.filter((id) => id !== victim.id));
   });
+
+  it("is ready on the listing alone, before the sidebar snapshot arrives", async () => {
+    const request = listingRequest({ limit: 4 });
+    const media = scriptedMedia(4);
+    const source = createMemoryGalleryPageSource({ [memorySourceKey(request)]: { media } });
+    harness = await renderSession({ request, seedSnapshot: false, source });
+
+    // The grid is served entirely by the listing; gating it on the snapshot
+    // would cost a whole round trip on every folder open.
+    expect(harness.session.library).toBeUndefined();
+    expect(harness.session.isReady).toBe(true);
+    expect(idsOf(harness)).toEqual(media.map((item) => item.id));
+  });
 });

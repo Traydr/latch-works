@@ -380,7 +380,10 @@ export function useGalleryBrowse({
   );
 
   const showFetching = hydrated && (isSnapshotFetching || isListingFetching);
-  const isReady = Boolean(library && firstPage);
+  // The grid is served entirely by the listing, folder tiles included; the
+  // snapshot only feeds the sidebar and sibling-folder navigation. Waiting on
+  // it here would hold every tile for the slower of the two requests.
+  const isReady = Boolean(firstPage);
 
   return useMemo(
     () => ({

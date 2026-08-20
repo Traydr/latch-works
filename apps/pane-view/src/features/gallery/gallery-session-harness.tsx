@@ -88,6 +88,8 @@ export function stubSnapshot() {
 export interface HarnessOptions {
   excludedMediaIds?: ReadonlySet<string>;
   request: GalleryListingQueryRequest;
+  /** Defaults to true. Set false to render a session that has no snapshot yet. */
+  seedSnapshot?: boolean;
   source: GalleryPageSource;
 }
 
@@ -103,9 +105,13 @@ export async function renderSession(initial: HarnessOptions): Promise<SessionHar
   const queryClient = new QueryClient({
     defaultOptions: { queries: { gcTime: Number.POSITIVE_INFINITY, retry: false } },
   });
-  // Seed the snapshot so the session is "ready" without a snapshot server.
-  const seedSnapshot = (request: GalleryListingQueryRequest) =>
+  // Seed the snapshot so the sidebar data is present without a snapshot
+  // server. Readiness comes from the listing, so a session left unseeded is a
+  // faithful "listing arrived, snapshot has not" render.
+  const seedSnapshot = (request: GalleryListingQueryRequest) => {
+    if (initial.seedSnapshot === false) return;
     queryClient.setQueryData(["library-snapshot", snapshotRequestFor(request)], stubSnapshot());
+  };
   seedSnapshot(initial.request);
 
   let options = initial;
