@@ -16,33 +16,32 @@ export interface WindowedThumbnailResolutionResult {
 }
 
 /**
- * The first batch of a browse has nothing to coalesce, so it waits only long
- * enough for `useVirtualGridMetrics` to measure the grid and commit its real
- * overscan window — otherwise the batch would cover row 0 alone and a second
- * batch would follow for the rest. Later batches on the same browse come from
- * scrolling, where the longer debounce is what keeps one request per rest.
+ * Coalesces the window changes a scroll produces into one batch per rest. It
+ * applies only while the content is unchanged; new content resolves at once,
+ * because there is nothing yet to coalesce.
  */
-export const FIRST_BATCH_DELAY_MS = 32;
-export const WINDOW_CHANGE_DEBOUNCE_MS = 200;
+const WINDOW_CHANGE_DEBOUNCE_MS = 200;
 
 /**
- * Manages windowed thumbnail request batching and resolution.
- * When `resetKey` changes, clears pending requests and re-reads the cache.
+ * Resolves thumbnails for the rows currently in the grid's window.
+ *
+ * `contentKey` identifies the listing on screen and is null while a placeholder
+ * from another browse is showing — see `useGalleryBrowse`. Keying off the
+ * content rather than the browse is what makes the two cases separable: a new
+ * listing resolves immediately, a window that merely moved is debounced, and
+ * the outgoing folder is never resolved against at all.
  */
 export function useWindowedThumbnailResolution(
-  resetKey: string,
+  contentKey: string | null,
   windowedEntries: GalleryBrowseEntry[],
   resolver: GalleryThumbnailResolver = sharedThumbnailResolver,
 ): WindowedThumbnailResolutionResult {
   const [resolution, setResolution] = useState(() => {
     const cached = resolver.readCachedGalleryThumbnailState();
-    return { resetKey, urls: cached.urls };
+    return { resetKey: contentKey, urls: cached.urls };
   });
-  // The reset key a batch was last *issued* for. Tracked at the point of
-  // issue, not per effect run: the window settles over two renders, so an
-  // effect that is cancelled before its batch fires must not consume the
-  // browse's one short delay.
-  const batchedResetKeyRef = useRef<string | null>(null);
+  /** The content this hook last scheduled against; anything else is new content. */
+  const seenContentKeyRef = useRef<string | null>(null);
   const windowedThumbnailRequests = useMemo(
     () =>
       dedupeThumbnailRequests(
@@ -58,12 +57,15 @@ export function useWindowedThumbnailResolution(
     [windowedEntries],
   );
   const resolvedThumbnailUrls =
-    resolution.resetKey === resetKey
+    resolution.resetKey === contentKey
       ? resolution.urls
       : resolver.readCachedGalleryThumbnailState().urls;
 
   useEffect(() => {
-    if (windowedThumbnailRequests.length === 0) {
+    // A placeholder listing belongs to the folder being left. Its thumbnails
+    // are already cached, so resolving them buys nothing and would spend a
+    // retry attempt on rows nobody is going to look at.
+    if (contentKey === null || windowedThumbnailRequests.length === 0) {
       return;
     }
 
@@ -73,11 +75,10 @@ export function useWindowedThumbnailResolution(
     let retryTimeoutId: number | undefined;
 
     const applyResolvedState = (resolved: GalleryThumbnailResolveState) => {
-      setResolution({ resetKey, urls: resolved.urls });
+      setResolution({ resetKey: contentKey, urls: resolved.urls });
     };
 
     const resolveAndSchedule = () => {
-      batchedResetKeyRef.current = resetKey;
       void resolver.resolveGalleryThumbnailsBatch(windowedThumbnailRequests).then((resolved) => {
         if (cancelled) {
           return;
@@ -116,12 +117,18 @@ export function useWindowedThumbnailResolution(
       scheduleRetry();
     };
 
-    debounceTimeoutId = window.setTimeout(
-      () => {
+    const isNewContent = seenContentKeyRef.current !== contentKey;
+    seenContentKeyRef.current = contentKey;
+
+    if (isNewContent) {
+      // Synchronously, so there is no window in which a re-render can cancel
+      // the one resolve this listing gets before it has issued anything.
+      resolveAndSchedule();
+    } else {
+      debounceTimeoutId = window.setTimeout(() => {
         resolveAndSchedule();
-      },
-      batchedResetKeyRef.current === resetKey ? WINDOW_CHANGE_DEBOUNCE_MS : FIRST_BATCH_DELAY_MS,
-    );
+      }, WINDOW_CHANGE_DEBOUNCE_MS);
+    }
 
     return () => {
       cancelled = true;
@@ -135,7 +142,7 @@ export function useWindowedThumbnailResolution(
         window.clearTimeout(retryTimeoutId);
       }
     };
-  }, [resetKey, resolver, windowedThumbnailRequests]);
+  }, [contentKey, resolver, windowedThumbnailRequests]);
 
   return {
     resolvedThumbnailUrls,

@@ -375,4 +375,39 @@ describe("useGalleryBrowse end-to-end order (Step 5)", () => {
     expect(harness.session.isReady).toBe(true);
     expect(idsOf(harness)).toEqual(media.map((item) => item.id));
   });
+
+  /**
+   * `contentBrowseKey` is what thumbnail resolution keys off, so it must be
+   * null for exactly as long as the entries belong to the browse being left.
+   * If it ever led the entries, the outgoing folder's rows would be resolved
+   * against and the arriving ones would look like a scroll.
+   */
+  it("withholds the content key until the entries belong to the live browse", async () => {
+    const first = listingRequest({ limit: 4, path: "photos" });
+    const second = listingRequest({ limit: 4, path: "photos/beach" });
+    const firstMedia = scriptedMedia(4, "first");
+    const secondMedia = scriptedMedia(4, "second");
+    const source = createMemoryGalleryPageSource({
+      [memorySourceKey(first)]: { media: firstMedia },
+      [memorySourceKey(second)]: { media: secondMedia },
+    });
+    harness = await renderSession({ request: first, source });
+
+    const firstBrowseKey = harness.session.browseKey;
+    expect(harness.session.contentBrowseKey).toBe(firstBrowseKey);
+
+    // Navigate with the destination listing still in flight.
+    source.hold();
+    await harness.rerender({ request: second });
+
+    expect(harness.session.browseKey).not.toBe(firstBrowseKey);
+    expect(harness.session.contentBrowseKey).toBeNull();
+    expect(idsOf(harness)).toEqual(firstMedia.map((item) => item.id));
+
+    await source.release();
+    await harness.flush();
+
+    expect(harness.session.contentBrowseKey).toBe(harness.session.browseKey);
+    expect(idsOf(harness)).toEqual(secondMedia.map((item) => item.id));
+  });
 });

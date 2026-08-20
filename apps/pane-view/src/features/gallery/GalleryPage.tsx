@@ -90,6 +90,7 @@ function useGalleryPage() {
   const {
     allMedia,
     browseKey,
+    contentBrowseKey,
     entries,
     isReady,
     library,
@@ -352,6 +353,7 @@ function useGalleryPage() {
     breadcrumbs,
     browseKey,
     closeViewer,
+    contentBrowseKey,
     columnCountRef,
     currentFolderName,
     deleteSelectedMedia,
@@ -617,6 +619,7 @@ function GalleryContent(): JSX.Element {
             selectedId={model.selected?.id ?? null}
             showDelete={!model.effectiveComicMode}
             showDetailPanel={model.showDetailPanel}
+            contentKey={model.contentBrowseKey}
             paginationResetKey={model.browseKey}
             thumbnailSize={model.settings.thumbnailSize}
           />

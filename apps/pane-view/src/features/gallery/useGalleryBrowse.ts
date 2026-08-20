@@ -51,6 +51,8 @@ export interface GalleryBrowseSession {
   /** Every media item in display order, including ones excluded from navigation. */
   allMedia: LibraryMediaItem[];
   browseKey: string;
+  /** `browseKey` once its own listing is on screen; null while a placeholder is. */
+  contentBrowseKey: string | null;
   /** Folder, media, and comic-summary entries in display order. */
   entries: GalleryBrowseEntry[];
   isReady: boolean;
@@ -132,8 +134,7 @@ export function useGalleryBrowse({
   source = defaultSource,
 }: UseGalleryBrowseOptions): GalleryBrowseSession {
   const queryClient = useQueryClient();
-  const { data: library, isFetching: isSnapshotFetching } =
-    useLibrarySnapshotQuery(snapshotRequest);
+  const { data: library } = useLibrarySnapshotQuery(snapshotRequest);
   const {
     data: firstPage,
     isFetching: isListingFetching,
@@ -163,7 +164,11 @@ export function useGalleryBrowse({
   // and read as empty; the effect below drops it once the key has changed.
   // Loading is part of the accumulation so it is keyed the same way.
   const [stored, setStored] = useState<Accumulation>(() => emptyAccumulation(browseKey));
-  const accumulation = stored.browseKey === browseKey ? stored : emptyAccumulation(browseKey);
+  // Memoized, not rebuilt per render: while the stored key is stale this value
+  // feeds `entries`, and a fresh identity each render restarts every downstream
+  // effect — including the thumbnail resolver's debounce.
+  const staleAccumulation = useMemo(() => emptyAccumulation(browseKey), [browseKey]);
+  const accumulation = stored.browseKey === browseKey ? stored : staleAccumulation;
   const inFlightRef = useRef<{ browseKey: string; promise: Promise<LoadNextPageResult> } | null>(
     null,
   );
@@ -185,6 +190,13 @@ export function useGalleryBrowse({
   }, [browseKey, stored.browseKey]);
 
   const firstPageIsCurrent = Boolean(firstPage) && !isPlaceholderData;
+  /**
+   * The browse key of the listing on screen, or null while `keepPreviousData`
+   * still shows another browse's page. `browseKey` changes the moment the URL
+   * does, a round trip before the entries follow, so anything keyed to the
+   * content itself — thumbnail resolution above all — must use this instead.
+   */
+  const contentBrowseKey = firstPageIsCurrent ? browseKey : null;
   const firstPageEntries = useMemo(
     () => (firstPage ? toGalleryBrowseEntries(firstPage) : []),
     [firstPage],
@@ -379,7 +391,10 @@ export function useGalleryBrowse({
     [queryClient, source],
   );
 
-  const showFetching = hydrated && (isSnapshotFetching || isListingFetching);
+  // The listing alone: the snapshot fills the sidebar, which reports its own
+  // loading state, and folding it in here dimmed the grid for a request that
+  // cannot change a single tile.
+  const showFetching = hydrated && isListingFetching;
   // The grid is served entirely by the listing, folder tiles included; the
   // snapshot only feeds the sidebar and sibling-folder navigation. Waiting on
   // it here would hold every tile for the slower of the two requests.
@@ -389,6 +404,7 @@ export function useGalleryBrowse({
     () => ({
       allMedia,
       browseKey,
+      contentBrowseKey,
       entries,
       isReady,
       library,
@@ -403,6 +419,7 @@ export function useGalleryBrowse({
     [
       allMedia,
       browseKey,
+      contentBrowseKey,
       entries,
       isReady,
       library,

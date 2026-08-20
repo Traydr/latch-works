@@ -3,9 +3,10 @@ import { act, createElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { GalleryPageSource } from "@/features/gallery/gallery-page-source";
 import { type GalleryBrowseSession, useGalleryBrowse } from "@/features/gallery/useGalleryBrowse";
-import type {
-  GalleryListingQueryRequest,
-  LibrarySnapshotRequest,
+import {
+  type GalleryListingQueryRequest,
+  type LibrarySnapshotRequest,
+  librarySnapshotKeys,
 } from "@/features/library/library-queries";
 import type { LibraryMediaItem } from "@/features/library/types";
 import type { GalleryComicSummary } from "../../server/library/gallery-listing";
@@ -105,16 +106,20 @@ export async function renderSession(initial: HarnessOptions): Promise<SessionHar
   const queryClient = new QueryClient({
     defaultOptions: { queries: { gcTime: Number.POSITIVE_INFINITY, retry: false } },
   });
+  let options = initial;
+
   // Seed the snapshot so the sidebar data is present without a snapshot
   // server. Readiness comes from the listing, so a session left unseeded is a
-  // faithful "listing arrived, snapshot has not" render.
+  // faithful "listing arrived, snapshot has not" render. Reads `options`, not
+  // `initial`, so `rerender` can turn seeding on or off like any other option.
   const seedSnapshot = (request: GalleryListingQueryRequest) => {
-    if (initial.seedSnapshot === false) return;
-    queryClient.setQueryData(["library-snapshot", snapshotRequestFor(request)], stubSnapshot());
+    if (options.seedSnapshot === false) return;
+    queryClient.setQueryData(
+      librarySnapshotKeys.snapshot(snapshotRequestFor(request)),
+      stubSnapshot(),
+    );
   };
   seedSnapshot(initial.request);
-
-  let options = initial;
   let latest: GalleryBrowseSession | null = null;
 
   function Host(): ReactNode {

@@ -3,181 +3,239 @@
 import { act, createElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { GalleryThumbnailResolver } from "./batched-thumbnail-resolver";
+import type { MediaDeliveryBatchResult } from "@/features/media/media-delivery-service";
+import {
+  createThumbnailResolver,
+  type GalleryThumbnailResolver,
+  type ResolveMediaDeliveryUrls,
+} from "./batched-thumbnail-resolver";
 import type { GalleryBrowseEntry } from "./gallery-browse-entry";
 import { mediaItem } from "./gallery-session-harness";
-import {
-  FIRST_BATCH_DELAY_MS,
-  useWindowedThumbnailResolution,
-  WINDOW_CHANGE_DEBOUNCE_MS,
-} from "./useWindowedThumbnailResolution";
+import { useWindowedThumbnailResolution } from "./useWindowedThumbnailResolution";
 
-/** Stands in for the shared batching resolver; the hook only drives these four calls. */
-const mocks = {
-  getNextPendingThumbnailRetryMs:
-    vi.fn<GalleryThumbnailResolver["getNextPendingThumbnailRetryMs"]>(),
-  hasEligibleGalleryThumbnailRequests:
-    vi.fn<GalleryThumbnailResolver["hasEligibleGalleryThumbnailRequests"]>(),
-  resolveGalleryThumbnailsBatch: vi.fn<GalleryThumbnailResolver["resolveGalleryThumbnailsBatch"]>(),
-};
-
-const resolver: GalleryThumbnailResolver = {
-  getNextPendingThumbnailRetryMs: mocks.getNextPendingThumbnailRetryMs,
-  hasEligibleGalleryThumbnailRequests: mocks.hasEligibleGalleryThumbnailRequests,
-  readCachedGalleryThumbnailState: () => ({ urls: {} }),
-  resolveGalleryThumbnailsBatch: mocks.resolveGalleryThumbnailsBatch,
-};
-
-interface WindowedThumbnailHarness {
-  setEntries: (mediaIds: string[]) => void;
-  rerender: (nextResetKey: string) => void;
-  unmount: () => void;
+/**
+ * Drives the real resolver over a fake delivery call, so the cache, the
+ * eligibility rules, and the retry backoff under test are the production ones.
+ * Only the network boundary is scripted.
+ */
+function scriptedDelivery(outcome: (mediaId: string) => "ready" | "pending" | "failed") {
+  const calls: string[][] = [];
+  const resolveUrls: ResolveMediaDeliveryUrls = ({ data }) => {
+    calls.push(data.items.map((item) => item.mediaId));
+    return Promise.resolve({
+      results: data.items.map((item): MediaDeliveryBatchResult => {
+        const status = outcome(item.mediaId);
+        if (status === "ready") {
+          return {
+            mediaId: item.mediaId,
+            size: item.size,
+            status: "ready",
+            url: `https://example.test/${item.mediaId}`,
+            variant: item.variant,
+          };
+        }
+        if (status === "pending") {
+          return {
+            mediaId: item.mediaId,
+            retryAfterMs: 0,
+            size: item.size,
+            status: "pending",
+            variant: item.variant,
+          };
+        }
+        return { mediaId: item.mediaId, size: item.size, status: "failed", variant: item.variant };
+      }),
+    });
+  };
+  return { calls, resolveUrls };
 }
 
-function renderHook(resetKey: string): WindowedThumbnailHarness {
-  let currentResetKey = resetKey;
+interface Harness {
+  setContentKey: (next: string | null) => void;
+  setEntries: (mediaIds: string[]) => void;
+  /** One commit, as `useGalleryBrowse` produces: key and rows move together. */
+  setListing: (contentKey: string, mediaIds: string[]) => void;
+  unmount: () => void;
+  urls: () => Record<string, string>;
+}
+
+function entriesFor(mediaIds: string[]): GalleryBrowseEntry[] {
+  return mediaIds.map((id) => ({ key: `media:${id}`, kind: "media", media: mediaItem(id) }));
+}
+
+function renderHook(resolver: GalleryThumbnailResolver, contentKey: string | null): Harness {
+  let currentContentKey = contentKey;
   let currentEntries: GalleryBrowseEntry[] = [];
+  let latestUrls: Record<string, string> = {};
   let root: Root | undefined;
   const container = document.createElement("div");
 
   function Host(): ReactNode {
-    useWindowedThumbnailResolution(currentResetKey, currentEntries, resolver);
+    latestUrls = useWindowedThumbnailResolution(
+      currentContentKey,
+      currentEntries,
+      resolver,
+    ).resolvedThumbnailUrls;
     return null;
   }
 
-  act(() => {
-    root = createRoot(container);
-    root.render(createElement(Host));
-  });
+  const render = () => {
+    act(() => {
+      root ??= createRoot(container);
+      root.render(createElement(Host));
+    });
+  };
+  render();
 
   return {
-    setEntries: (mediaIds) => {
-      currentEntries = mediaIds.map((id) => ({
-        key: `media:${id}`,
-        kind: "media",
-        media: mediaItem(id),
-      }));
-      act(() => {
-        root?.render(createElement(Host));
-      });
+    setContentKey: (next) => {
+      currentContentKey = next;
+      render();
     },
-    rerender: (nextResetKey) => {
-      currentResetKey = nextResetKey;
-      act(() => root?.render(createElement(Host)));
+    setEntries: (mediaIds) => {
+      currentEntries = entriesFor(mediaIds);
+      render();
+    },
+    setListing: (contentKey, mediaIds) => {
+      currentContentKey = contentKey;
+      currentEntries = entriesFor(mediaIds);
+      render();
     },
     unmount: () => act(() => root?.unmount()),
+    urls: () => latestUrls,
   };
+}
+
+/** Lets queued promise callbacks run without advancing any timer. */
+async function settle(): Promise<void> {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
 }
 
 describe("useWindowedThumbnailResolution", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    mocks.getNextPendingThumbnailRetryMs.mockReset();
-    // The real resolver returns `number | null`; without a default the mock
-    // yields undefined and the hook schedules a retry that never settles.
-    mocks.getNextPendingThumbnailRetryMs.mockReturnValue(null);
-    mocks.hasEligibleGalleryThumbnailRequests.mockReset();
-    mocks.resolveGalleryThumbnailsBatch.mockReset();
-    mocks.resolveGalleryThumbnailsBatch.mockResolvedValue({ urls: {} });
   });
 
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  it("cancels a scheduled drain when the visible window is replaced", async () => {
-    mocks.hasEligibleGalleryThumbnailRequests.mockReturnValueOnce(true).mockReturnValue(false);
-    const hook = renderHook("library-a");
-    hook.setEntries(["old"]);
+  it("resolves a new listing without waiting for the scroll debounce", async () => {
+    const delivery = scriptedDelivery(() => "ready");
+    const hook = renderHook(createThumbnailResolver(delivery), "browse-a");
 
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(FIRST_BATCH_DELAY_MS);
-    });
-    expect(mocks.resolveGalleryThumbnailsBatch).toHaveBeenCalledWith([{ mediaId: "old" }]);
+    hook.setEntries(["a1", "a2"]);
+    await settle();
 
-    // Same browse, so replacing the window takes the scrolling debounce.
-    hook.setEntries(["new"]);
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(WINDOW_CHANGE_DEBOUNCE_MS);
-    });
-
-    expect(mocks.resolveGalleryThumbnailsBatch).toHaveBeenCalledWith([{ mediaId: "new" }]);
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(0);
-    });
-    expect(mocks.resolveGalleryThumbnailsBatch).toHaveBeenCalledTimes(2);
+    expect(delivery.calls).toEqual([["a1", "a2"]]);
+    expect(hook.urls()).toMatchObject({ a1: "https://example.test/a1" });
     hook.unmount();
   });
 
-  it("cancels a scheduled drain when the reset key changes", async () => {
-    mocks.hasEligibleGalleryThumbnailRequests.mockReturnValue(true);
-    const hook = renderHook("library-a");
-    hook.setEntries(["old"]);
+  it("debounces a window change within the same listing", async () => {
+    const delivery = scriptedDelivery(() => "ready");
+    const hook = renderHook(createThumbnailResolver(delivery), "browse-a");
+
+    hook.setEntries(["a1"]);
+    await settle();
+    expect(delivery.calls).toHaveLength(1);
+
+    // Scrolling: same listing, different rows in the window.
+    hook.setEntries(["a2"]);
+    await settle();
+    expect(delivery.calls).toHaveLength(1);
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(FIRST_BATCH_DELAY_MS);
+      await vi.advanceTimersByTimeAsync(200);
     });
-    hook.rerender("library-b");
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(0);
-    });
-    expect(mocks.resolveGalleryThumbnailsBatch).toHaveBeenCalledTimes(1);
+    expect(delivery.calls).toEqual([["a1"], ["a2"]]);
     hook.unmount();
   });
 
-  it("waits for a pending retry instead of scheduling another drain", async () => {
-    mocks.hasEligibleGalleryThumbnailRequests.mockReturnValue(false);
-    mocks.getNextPendingThumbnailRetryMs.mockReturnValueOnce(5_000).mockReturnValue(null);
-    const hook = renderHook("library-a");
-    hook.setEntries(["pending"]);
+  it("does not resolve the outgoing folder while its listing is still on screen", async () => {
+    const delivery = scriptedDelivery(() => "ready");
+    const hook = renderHook(createThumbnailResolver(delivery), "browse-a");
 
+    hook.setEntries(["a1"]);
+    await settle();
+    expect(delivery.calls).toEqual([["a1"]]);
+
+    // Navigating: keepPreviousData still shows folder A's rows, so the hook is
+    // handed a null content key until folder B's listing lands.
+    hook.setContentKey(null);
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(FIRST_BATCH_DELAY_MS);
+      await vi.advanceTimersByTimeAsync(5_000);
     });
-    expect(mocks.resolveGalleryThumbnailsBatch).toHaveBeenCalledTimes(1);
+    expect(delivery.calls).toEqual([["a1"]]);
+    hook.unmount();
+  });
 
+  /**
+   * Regression: the destination listing must not be treated as a scroll. The
+   * defect this replaces let the outgoing folder's window mark the browse as
+   * already batched, so the arriving rows waited the full debounce.
+   */
+  it("resolves the destination listing at once when it lands after the navigation", async () => {
+    const delivery = scriptedDelivery(() => "ready");
+    const hook = renderHook(createThumbnailResolver(delivery), "browse-a");
+
+    hook.setEntries(["a1"]);
+    await settle();
+
+    hook.setContentKey(null);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(100);
+    });
+
+    // Folder B's listing arrives: new key and new rows in the same commit,
+    // which is how `useGalleryBrowse` derives both from one `firstPage`.
+    hook.setListing("browse-b", ["b1"]);
+    await settle();
+
+    expect(delivery.calls).toEqual([["a1"], ["b1"]]);
+    hook.unmount();
+  });
+
+  it("retries a pending rendition on the resolver's backoff", async () => {
+    vi.spyOn(Math, "random").mockReturnValue(0.5);
+    let attempts = 0;
+    const delivery = scriptedDelivery(() => (attempts++ === 0 ? "pending" : "ready"));
+    const hook = renderHook(createThumbnailResolver(delivery), "browse-a");
+
+    hook.setEntries(["a1"]);
+    await settle();
+    expect(delivery.calls).toHaveLength(1);
+    expect(hook.urls()).toEqual({});
+
+    // First pending delay is 5s, jittered by the stubbed 0.5 to exactly 5s.
     await act(async () => {
       await vi.advanceTimersByTimeAsync(4_999);
     });
-    expect(mocks.resolveGalleryThumbnailsBatch).toHaveBeenCalledTimes(1);
+    expect(delivery.calls).toHaveLength(1);
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1);
     });
-    expect(mocks.resolveGalleryThumbnailsBatch).toHaveBeenCalledTimes(2);
+    expect(delivery.calls).toEqual([["a1"], ["a1"]]);
+    expect(hook.urls()).toMatchObject({ a1: "https://example.test/a1" });
     hook.unmount();
   });
 
-  it("gives a new browse the short delay and a same-browse window change the full debounce", async () => {
-    mocks.hasEligibleGalleryThumbnailRequests.mockReturnValue(false);
-    const hook = renderHook("library-a");
-    hook.setEntries(["a"]);
+  it("stops asking once a rendition has failed", async () => {
+    const delivery = scriptedDelivery(() => "failed");
+    const hook = renderHook(createThumbnailResolver(delivery), "browse-a");
 
-    // First batch of a browse: nothing to coalesce, so only the short delay.
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(FIRST_BATCH_DELAY_MS);
-    });
-    expect(mocks.resolveGalleryThumbnailsBatch).toHaveBeenCalledTimes(1);
+    hook.setEntries(["a1"]);
+    await settle();
+    expect(delivery.calls).toHaveLength(1);
 
-    // Same browse: a window change is scrolling, and still waits the debounce.
-    hook.setEntries(["b"]);
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(FIRST_BATCH_DELAY_MS);
+      await vi.advanceTimersByTimeAsync(60_000);
     });
-    expect(mocks.resolveGalleryThumbnailsBatch).toHaveBeenCalledTimes(1);
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(WINDOW_CHANGE_DEBOUNCE_MS - FIRST_BATCH_DELAY_MS);
-    });
-    expect(mocks.resolveGalleryThumbnailsBatch).toHaveBeenCalledTimes(2);
-
-    // A new browse is back to the short delay.
-    hook.rerender("library-b");
-    hook.setEntries(["c"]);
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(FIRST_BATCH_DELAY_MS);
-    });
-    expect(mocks.resolveGalleryThumbnailsBatch).toHaveBeenCalledTimes(3);
+    expect(delivery.calls).toHaveLength(1);
     hook.unmount();
   });
 });
