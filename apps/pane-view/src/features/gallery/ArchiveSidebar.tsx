@@ -20,6 +20,8 @@ import { cn } from "@/lib/utils";
 interface ArchiveSidebarProps {
   currentPath: string;
   folders: FolderNode[];
+  /** True while the listed folders belong to the folder being left. */
+  foldersDisabled?: boolean;
   isLoading?: boolean;
   onNavigateToPath: (path: string) => void;
   onOpenSettings: () => void;
@@ -28,6 +30,7 @@ interface ArchiveSidebarProps {
 export function ArchiveSidebar({
   currentPath,
   folders,
+  foldersDisabled = false,
   isLoading = false,
   onNavigateToPath,
   onOpenSettings,
@@ -113,6 +116,7 @@ export function ArchiveSidebar({
                         "rounded-none",
                         isCollapsed ? "" : "justify-start gap-1.5 px-2",
                       )}
+                      disabled={foldersDisabled}
                       onClick={() => onNavigateToPath(folder.path)}
                       title={folder.path}
                       tooltip={folder.path}

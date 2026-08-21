@@ -200,6 +200,56 @@ describe("useWindowedThumbnailResolution", () => {
     hook.unmount();
   });
 
+  /**
+   * Regression: a window change landing while the fresh listing's first
+   * batch is still in flight used to dead-end. The debounced resolve skipped
+   * the in-flight rows, scheduled nothing behind them, and pinned the stale
+   * cache under a matching key — so the held batch's results never showed.
+   */
+  it("chains onto an in-flight batch instead of dead-ending behind it", async () => {
+    const calls: string[][] = [];
+    let releaseFirstBatch!: () => void;
+    const resolveUrls: ResolveMediaDeliveryUrls = ({ data }) => {
+      calls.push(data.items.map((item) => item.mediaId));
+      return new Promise((resolve) => {
+        releaseFirstBatch = () => {
+          resolve({
+            results: data.items.map((item) => ({
+              mediaId: item.mediaId,
+              size: item.size,
+              status: "ready",
+              url: `https://example.test/${item.mediaId}`,
+              variant: item.variant,
+            })),
+          });
+        };
+      });
+    };
+    const hook = renderHook(createThumbnailResolver({ resolveUrls }), "browse-a");
+
+    // The fresh listing's first batch is issued at once and held in flight.
+    hook.setEntries(["a1"]);
+    await settle();
+    expect(calls).toEqual([["a1"]]);
+
+    // The measurement tick moves the window while that batch is outstanding:
+    // same row, fresh identity.
+    hook.setEntries(["a1"]);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    // Chained behind the held batch: nothing new requested, nothing applied.
+    expect(hook.urls()).toEqual({});
+
+    releaseFirstBatch();
+    await settle();
+
+    // The held batch's result flows through without a second request.
+    expect(calls).toEqual([["a1"]]);
+    expect(hook.urls()).toMatchObject({ a1: "https://example.test/a1" });
+    hook.unmount();
+  });
+
   it("retries a pending rendition on the resolver's backoff", async () => {
     vi.spyOn(Math, "random").mockReturnValue(0.5);
     let attempts = 0;

@@ -19,10 +19,18 @@ export function GalleryLayout() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   // The sidebar shares the page's snapshot key, so one request serves both
   // and the sidebar never fetches media rows.
-  const { data: library, isFetching } = useLibrarySnapshotQuery(browse.snapshotRequest);
+  const {
+    data: library,
+    isFetching,
+    isPlaceholderData,
+  } = useLibrarySnapshotQuery(browse.snapshotRequest);
   const hydrated = useHydrated();
   const showFetching = hydrated && isFetching;
   const folders = library?.folders ?? [];
+  // While keepPreviousData shows the folder being left, its children stay
+  // visible but inert: activating one would navigate somewhere the user
+  // cannot see selected.
+  const foldersDisabled = isPlaceholderData;
 
   const layoutValue = useMemo(
     () => ({ browse, setSettingsOpen, settings, settingsOpen, updateSettings }),
@@ -39,6 +47,7 @@ export function GalleryLayout() {
         <ArchiveSidebar
           currentPath={browse.path}
           folders={folders}
+          foldersDisabled={foldersDisabled}
           isLoading={showFetching}
           onNavigateToPath={browse.navigateToPath}
           onOpenSettings={() => setSettingsOpen(true)}

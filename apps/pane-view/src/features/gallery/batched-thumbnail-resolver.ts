@@ -30,6 +30,8 @@ export interface GalleryThumbnailResolver {
 }
 
 interface ThumbnailCacheEntry {
+  /** Settles when the batch fetching this row completes; absent otherwise. */
+  batch?: Promise<GalleryThumbnailResolveState>;
   inFlight: boolean;
   nextRetryAt?: number;
   status: "failed" | "pending" | "ready";
@@ -167,6 +169,26 @@ async function resolveGalleryThumbnailsBatchFor(
   state: ThumbnailResolverState,
   requests: GalleryThumbnailRequest[],
 ): Promise<GalleryThumbnailResolveState> {
+  // Attach to batches already fetching these rows instead of skipping past
+  // them: returning a cache snapshot while an earlier batch is still in
+  // flight hands back data that is stale on arrival and leaves the caller
+  // with neither an eligible row nor a scheduled retry behind it. Waiting
+  // here means every caller sees the post-batch state. Batches never
+  // reject; they settle to cache state.
+  for (;;) {
+    const inFlightBatches = new Set<Promise<GalleryThumbnailResolveState>>();
+    for (const request of requests) {
+      const cached = state.cache.get(cacheKey(request));
+      if (cached?.batch) {
+        inFlightBatches.add(cached.batch);
+      }
+    }
+    if (inFlightBatches.size === 0) {
+      break;
+    }
+    await Promise.all(inFlightBatches);
+  }
+
   const now = Date.now();
   const uniqueRequests = new Map<string, GalleryThumbnailRequest>();
 
@@ -189,49 +211,51 @@ async function resolveGalleryThumbnailsBatchFor(
     return readCachedGalleryThumbnailStateFor(state);
   }
 
-  for (const [key] of batch) {
-    state.cache.set(key, { inFlight: true, status: "pending" });
-  }
+  const items = batch.map(([, request]) => ({
+    mediaId: request.mediaId,
+    size: request.size ?? GALLERY_THUMBNAIL_SIZE,
+    variant: "thumbnail" as const,
+  }));
 
-  try {
-    const response = await state.resolveUrls({
-      data: {
-        items: batch.map(([, request]) => ({
-          mediaId: request.mediaId,
-          size: request.size ?? GALLERY_THUMBNAIL_SIZE,
-          variant: "thumbnail" as const,
-        })),
-      },
-    });
+  const execution = (async () => {
+    try {
+      const response = await state.resolveUrls({ data: { items } });
 
-    for (const result of response.results) {
-      applyResult(state, result);
-    }
+      for (const result of response.results) {
+        applyResult(state, result);
+      }
 
-    const resolvedKeys = new Set(
-      response.results.map((result) => cacheKey({ mediaId: result.mediaId, size: result.size })),
-    );
-    for (const [key] of batch) {
-      if (!resolvedKeys.has(key) && state.cache.get(key)?.inFlight) {
+      const resolvedKeys = new Set(
+        response.results.map((result) => cacheKey({ mediaId: result.mediaId, size: result.size })),
+      );
+      for (const [key] of batch) {
+        if (!resolvedKeys.has(key) && state.cache.get(key)?.inFlight) {
+          state.cache.set(key, {
+            inFlight: false,
+            nextRetryAt: Date.now() + pendingRetryDelayMs(state, key),
+            status: "pending",
+          });
+        }
+      }
+    } catch {
+      const retryAt = Date.now() + 30_000;
+      for (const [key] of batch) {
         state.cache.set(key, {
           inFlight: false,
-          nextRetryAt: Date.now() + pendingRetryDelayMs(state, key),
+          nextRetryAt: retryAt,
           status: "pending",
         });
       }
     }
-  } catch {
-    const retryAt = Date.now() + 30_000;
-    for (const [key] of batch) {
-      state.cache.set(key, {
-        inFlight: false,
-        nextRetryAt: retryAt,
-        status: "pending",
-      });
-    }
+
+    return readCachedGalleryThumbnailStateFor(state);
+  })();
+
+  for (const [key] of batch) {
+    state.cache.set(key, { batch: execution, inFlight: true, status: "pending" });
   }
 
-  return readCachedGalleryThumbnailStateFor(state);
+  return execution;
 }
 
 export function createThumbnailResolver({

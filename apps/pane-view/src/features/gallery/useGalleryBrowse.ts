@@ -65,6 +65,12 @@ export interface GalleryBrowseSession {
   showFetching: boolean;
   /** Either request in flight; spins the toolbar's refresh affordance. */
   showRefreshing: boolean;
+  /**
+   * True while the snapshot on screen belongs to the live browse; false while
+   * `keepPreviousData` still shows the folder being left. Gates interactive
+   * snapshot consumers — sidebar folders and sibling navigation.
+   */
+  snapshotIsCurrent: boolean;
   stepEntry(currentKey: string | null, direction: -1 | 1, loop: boolean): Promise<string | null>;
   stepMedia(currentId: string | null, direction: -1 | 1, loop: boolean): Promise<string | null>;
 }
@@ -136,8 +142,11 @@ export function useGalleryBrowse({
   source = defaultSource,
 }: UseGalleryBrowseOptions): GalleryBrowseSession {
   const queryClient = useQueryClient();
-  const { data: library, isFetching: isSnapshotFetching } =
-    useLibrarySnapshotQuery(snapshotRequest);
+  const {
+    data: library,
+    isFetching: isSnapshotFetching,
+    isPlaceholderData: isSnapshotPlaceholderData,
+  } = useLibrarySnapshotQuery(snapshotRequest);
   const {
     data: firstPage,
     isFetching: isListingFetching,
@@ -401,6 +410,10 @@ export function useGalleryBrowse({
   // The toolbar's refresh affordance, though, covers both requests: a
   // snapshot-only refetch should spin it even though no tile can change.
   const showRefreshing = hydrated && (isSnapshotFetching || isListingFetching);
+  // Same shape as contentBrowseKey, for the other query: until the snapshot
+  // belongs to this browse it describes the folder being left, so consumers
+  // that act on it — sidebar folders, sibling navigation — must wait.
+  const snapshotIsCurrent = !isSnapshotPlaceholderData;
   // The grid is served entirely by the listing, folder tiles included; the
   // snapshot only feeds the sidebar and sibling-folder navigation. Waiting on
   // it here would hold every tile for the slower of the two requests.
@@ -422,6 +435,7 @@ export function useGalleryBrowse({
     page,
     showFetching,
     showRefreshing,
+    snapshotIsCurrent,
     stepEntry,
     stepMedia,
   };
