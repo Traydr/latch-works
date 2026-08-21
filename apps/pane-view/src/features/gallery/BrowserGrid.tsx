@@ -56,7 +56,10 @@ export function BrowserGrid({
         .filter((entry): entry is GalleryBrowseEntry => Boolean(entry)),
     [entries, windowedItems],
   );
-  const { resolvedThumbnailUrls } = useWindowedThumbnailResolution(contentKey, windowedEntries);
+  const { resolvedThumbnailUrls } = useWindowedThumbnailResolution({
+    entries: windowedEntries,
+    key: contentKey,
+  });
 
   // Sync column count for keyboard navigation.
   if (columnCountRef.current !== columnCount) {

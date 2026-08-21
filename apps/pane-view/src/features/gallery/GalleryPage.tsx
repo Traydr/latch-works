@@ -99,6 +99,7 @@ function useGalleryPage() {
     openComic,
     page,
     showFetching,
+    showRefreshing,
     stepEntry,
     stepMedia,
   } = session;
@@ -402,6 +403,7 @@ function useGalleryPage() {
     settingsOpen,
     showDetailPanel,
     showFetching,
+    showRefreshing,
     shuffle,
     sortMode,
     stepMedia,
@@ -630,7 +632,7 @@ function GalleryContent(): JSX.Element {
       <FloatingToolbar
         comicMode={model.effectiveComicMode}
         currentPath={model.displayPath}
-        isRefreshing={model.showFetching}
+        isRefreshing={model.showRefreshing}
         onChangeSortMode={model.setSortMode}
         onRefresh={() => void model.invalidateLibrary()}
         onToggleComicMode={() => {

@@ -16,6 +16,21 @@ export interface WindowedThumbnailResolutionResult {
 }
 
 /**
+ * The listing on screen, as `useGalleryBrowse` produces it: its content key
+ * and its rows move together in one commit because both derive from one
+ * `firstPage`.
+ */
+export interface WindowedListing {
+  /** The rows of that listing currently inside the grid's window. */
+  entries: GalleryBrowseEntry[];
+  /**
+   * The browse key of the listing on screen, or null while a placeholder from
+   * another browse is showing — see `useGalleryBrowse`.
+   */
+  key: string | null;
+}
+
+/**
  * Coalesces the window changes a scroll produces into one batch per rest. It
  * applies only while the content is unchanged; new content resolves at once,
  * because there is nothing yet to coalesce.
@@ -25,20 +40,18 @@ const WINDOW_CHANGE_DEBOUNCE_MS = 200;
 /**
  * Resolves thumbnails for the rows currently in the grid's window.
  *
- * `contentKey` identifies the listing on screen and is null while a placeholder
- * from another browse is showing — see `useGalleryBrowse`. Keying off the
- * content rather than the browse is what makes the two cases separable: a new
- * listing resolves immediately, a window that merely moved is debounced, and
- * the outgoing folder is never resolved against at all.
+ * Keying off the listing on screen rather than the browse is what makes the
+ * cases separable: a new listing resolves immediately, a window that merely
+ * moved is debounced, and a placeholder from the outgoing folder — whose key
+ * is null — is never resolved against at all.
  */
 export function useWindowedThumbnailResolution(
-  contentKey: string | null,
-  windowedEntries: GalleryBrowseEntry[],
+  { entries: windowedEntries, key: contentKey }: WindowedListing,
   resolver: GalleryThumbnailResolver = sharedThumbnailResolver,
 ): WindowedThumbnailResolutionResult {
   const [resolution, setResolution] = useState(() => {
     const cached = resolver.readCachedGalleryThumbnailState();
-    return { resetKey: contentKey, urls: cached.urls };
+    return { contentKey, urls: cached.urls };
   });
   /** The content this hook last scheduled against; anything else is new content. */
   const seenContentKeyRef = useRef<string | null>(null);
@@ -57,7 +70,7 @@ export function useWindowedThumbnailResolution(
     [windowedEntries],
   );
   const resolvedThumbnailUrls =
-    resolution.resetKey === contentKey
+    resolution.contentKey === contentKey
       ? resolution.urls
       : resolver.readCachedGalleryThumbnailState().urls;
 
@@ -75,7 +88,7 @@ export function useWindowedThumbnailResolution(
     let retryTimeoutId: number | undefined;
 
     const applyResolvedState = (resolved: GalleryThumbnailResolveState) => {
-      setResolution({ resetKey: contentKey, urls: resolved.urls });
+      setResolution({ contentKey, urls: resolved.urls });
     };
 
     const resolveAndSchedule = () => {

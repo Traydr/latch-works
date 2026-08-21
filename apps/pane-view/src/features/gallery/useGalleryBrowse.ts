@@ -63,6 +63,8 @@ export interface GalleryBrowseSession {
   openComic(comicId: string): Promise<ComicEntry<LibraryMediaItem>>;
   page: GalleryPageState;
   showFetching: boolean;
+  /** Either request in flight; spins the toolbar's refresh affordance. */
+  showRefreshing: boolean;
   stepEntry(currentKey: string | null, direction: -1 | 1, loop: boolean): Promise<string | null>;
   stepMedia(currentId: string | null, direction: -1 | 1, loop: boolean): Promise<string | null>;
 }
@@ -134,7 +136,8 @@ export function useGalleryBrowse({
   source = defaultSource,
 }: UseGalleryBrowseOptions): GalleryBrowseSession {
   const queryClient = useQueryClient();
-  const { data: library } = useLibrarySnapshotQuery(snapshotRequest);
+  const { data: library, isFetching: isSnapshotFetching } =
+    useLibrarySnapshotQuery(snapshotRequest);
   const {
     data: firstPage,
     isFetching: isListingFetching,
@@ -395,41 +398,31 @@ export function useGalleryBrowse({
   // loading state, and folding it in here dimmed the grid for a request that
   // cannot change a single tile.
   const showFetching = hydrated && isListingFetching;
+  // The toolbar's refresh affordance, though, covers both requests: a
+  // snapshot-only refetch should spin it even though no tile can change.
+  const showRefreshing = hydrated && (isSnapshotFetching || isListingFetching);
   // The grid is served entirely by the listing, folder tiles included; the
   // snapshot only feeds the sidebar and sibling-folder navigation. Waiting on
   // it here would hold every tile for the slower of the two requests.
   const isReady = Boolean(firstPage);
 
-  return useMemo(
-    () => ({
-      allMedia,
-      browseKey,
-      contentBrowseKey,
-      entries,
-      isReady,
-      library,
-      loadNextPage,
-      media,
-      openComic,
-      page,
-      showFetching,
-      stepEntry,
-      stepMedia,
-    }),
-    [
-      allMedia,
-      browseKey,
-      contentBrowseKey,
-      entries,
-      isReady,
-      library,
-      loadNextPage,
-      media,
-      openComic,
-      page,
-      showFetching,
-      stepEntry,
-      stepMedia,
-    ],
-  );
+  // A fresh object per render: every consumer destructures fields, and no
+  // effect or memo depends on the session's container identity, so the memo
+  // (and its duplicated dependency list) bought nothing.
+  return {
+    allMedia,
+    browseKey,
+    contentBrowseKey,
+    entries,
+    isReady,
+    library,
+    loadNextPage,
+    media,
+    openComic,
+    page,
+    showFetching,
+    showRefreshing,
+    stepEntry,
+    stepMedia,
+  };
 }
