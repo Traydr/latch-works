@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   type GalleryThumbnailRequest,
   type GalleryThumbnailResolver,
@@ -16,18 +16,45 @@ export interface WindowedThumbnailResolutionResult {
 }
 
 /**
- * Manages windowed thumbnail request batching and resolution.
- * When `resetKey` changes, clears pending requests and re-reads the cache.
+ * The listing on screen, as `useGalleryBrowse` produces it: its content key
+ * and its rows move together in one commit because both derive from one
+ * `firstPage`.
+ */
+export interface WindowedListing {
+  /** The rows of that listing currently inside the grid's window. */
+  entries: GalleryBrowseEntry[];
+  /**
+   * The browse key of the listing on screen, or null while a placeholder from
+   * another browse is showing — see `useGalleryBrowse`.
+   */
+  key: string | null;
+}
+
+/**
+ * Coalesces the window changes a scroll produces into one batch per rest. It
+ * applies only while the content is unchanged; new content resolves at once,
+ * because there is nothing yet to coalesce.
+ */
+const WINDOW_CHANGE_DEBOUNCE_MS = 200;
+
+/**
+ * Resolves thumbnails for the rows currently in the grid's window.
+ *
+ * Keying off the listing on screen rather than the browse is what makes the
+ * cases separable: a new listing resolves immediately, a window that merely
+ * moved is debounced, and a placeholder from the outgoing folder — whose key
+ * is null — is never resolved against at all.
  */
 export function useWindowedThumbnailResolution(
-  resetKey: string,
-  windowedEntries: GalleryBrowseEntry[],
+  { entries: windowedEntries, key: contentKey }: WindowedListing,
   resolver: GalleryThumbnailResolver = sharedThumbnailResolver,
 ): WindowedThumbnailResolutionResult {
   const [resolution, setResolution] = useState(() => {
     const cached = resolver.readCachedGalleryThumbnailState();
-    return { resetKey, urls: cached.urls };
+    return { contentKey, urls: cached.urls };
   });
+  /** The content this hook last scheduled against; anything else is new content. */
+  const seenContentKeyRef = useRef<string | null>(null);
   const windowedThumbnailRequests = useMemo(
     () =>
       dedupeThumbnailRequests(
@@ -43,12 +70,15 @@ export function useWindowedThumbnailResolution(
     [windowedEntries],
   );
   const resolvedThumbnailUrls =
-    resolution.resetKey === resetKey
+    resolution.contentKey === contentKey
       ? resolution.urls
       : resolver.readCachedGalleryThumbnailState().urls;
 
   useEffect(() => {
-    if (windowedThumbnailRequests.length === 0) {
+    // A placeholder listing belongs to the folder being left. Its thumbnails
+    // are already cached, so resolving them buys nothing and would spend a
+    // retry attempt on rows nobody is going to look at.
+    if (contentKey === null || windowedThumbnailRequests.length === 0) {
       return;
     }
 
@@ -58,7 +88,7 @@ export function useWindowedThumbnailResolution(
     let retryTimeoutId: number | undefined;
 
     const applyResolvedState = (resolved: GalleryThumbnailResolveState) => {
-      setResolution({ resetKey, urls: resolved.urls });
+      setResolution({ contentKey, urls: resolved.urls });
     };
 
     const resolveAndSchedule = () => {
@@ -100,9 +130,18 @@ export function useWindowedThumbnailResolution(
       scheduleRetry();
     };
 
-    debounceTimeoutId = window.setTimeout(() => {
+    const isNewContent = seenContentKeyRef.current !== contentKey;
+    seenContentKeyRef.current = contentKey;
+
+    if (isNewContent) {
+      // Synchronously, so there is no window in which a re-render can cancel
+      // the one resolve this listing gets before it has issued anything.
       resolveAndSchedule();
-    }, 200);
+    } else {
+      debounceTimeoutId = window.setTimeout(() => {
+        resolveAndSchedule();
+      }, WINDOW_CHANGE_DEBOUNCE_MS);
+    }
 
     return () => {
       cancelled = true;
@@ -116,7 +155,7 @@ export function useWindowedThumbnailResolution(
         window.clearTimeout(retryTimeoutId);
       }
     };
-  }, [resetKey, resolver, windowedThumbnailRequests]);
+  }, [contentKey, resolver, windowedThumbnailRequests]);
 
   return {
     resolvedThumbnailUrls,

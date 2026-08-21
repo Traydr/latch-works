@@ -14,8 +14,10 @@ import {
   type SessionHarness,
   scriptedComics,
   scriptedMedia,
+  snapshotRequestFor,
 } from "@/features/gallery/gallery-session-harness";
-import { galleryListingKeys } from "@/features/library/library-queries";
+import { galleryListingKeys, librarySnapshotKeys } from "@/features/library/library-queries";
+import type { LibrarySnapshot } from "@/features/library/library-service";
 
 /**
  * Session accumulation (Plan 052 Step 1): pages append in server order, a
@@ -361,5 +363,92 @@ describe("useGalleryBrowse end-to-end order (Step 5)", () => {
     });
     await harness.flush();
     expect(idsOf(harness)).toEqual(before.filter((id) => id !== victim.id));
+  });
+
+  it("is ready on the listing alone, before the sidebar snapshot arrives", async () => {
+    const request = listingRequest({ limit: 4 });
+    const media = scriptedMedia(4);
+    const source = createMemoryGalleryPageSource({ [memorySourceKey(request)]: { media } });
+    harness = await renderSession({ request, seedSnapshot: false, source });
+
+    // The grid is served entirely by the listing; gating it on the snapshot
+    // would cost a whole round trip on every folder open.
+    expect(harness.session.library).toBeUndefined();
+    expect(harness.session.isReady).toBe(true);
+    expect(idsOf(harness)).toEqual(media.map((item) => item.id));
+  });
+
+  /**
+   * `contentBrowseKey` is what thumbnail resolution keys off, so it must be
+   * null for exactly as long as the entries belong to the browse being left.
+   * If it ever led the entries, the outgoing folder's rows would be resolved
+   * against and the arriving ones would look like a scroll.
+   */
+  it("withholds the content key until the entries belong to the live browse", async () => {
+    const first = listingRequest({ limit: 4, path: "photos" });
+    const second = listingRequest({ limit: 4, path: "photos/beach" });
+    const firstMedia = scriptedMedia(4, "first");
+    const secondMedia = scriptedMedia(4, "second");
+    const source = createMemoryGalleryPageSource({
+      [memorySourceKey(first)]: { media: firstMedia },
+      [memorySourceKey(second)]: { media: secondMedia },
+    });
+    harness = await renderSession({ request: first, source });
+
+    const firstBrowseKey = harness.session.browseKey;
+    expect(harness.session.contentBrowseKey).toBe(firstBrowseKey);
+
+    // Navigate with the destination listing still in flight.
+    source.hold();
+    await harness.rerender({ request: second });
+
+    expect(harness.session.browseKey).not.toBe(firstBrowseKey);
+    expect(harness.session.contentBrowseKey).toBeNull();
+    expect(idsOf(harness)).toEqual(firstMedia.map((item) => item.id));
+
+    await source.release();
+    await harness.flush();
+
+    expect(harness.session.contentBrowseKey).toBe(harness.session.browseKey);
+    expect(idsOf(harness)).toEqual(secondMedia.map((item) => item.id));
+  });
+
+  /**
+   * Sidebar folders and sibling navigation act on the snapshot, so the
+   * session must say when the snapshot on screen belongs to the browse being
+   * left — the same window in which contentBrowseKey goes null, for the
+   * other query.
+   */
+  it("marks the snapshot stale until it belongs to the live browse", async () => {
+    const first = listingRequest({ limit: 4, path: "photos" });
+    const second = listingRequest({ limit: 4, path: "photos/beach" });
+    const source = createMemoryGalleryPageSource({
+      [memorySourceKey(first)]: { media: scriptedMedia(4, "first") },
+      [memorySourceKey(second)]: { media: scriptedMedia(4, "second") },
+    });
+    harness = await renderSession({ request: first, source });
+
+    expect(harness.session.snapshotIsCurrent).toBe(true);
+
+    // Hold the destination snapshot in flight: a cache entry whose fetch
+    // never settles stays pending, so after the navigation keepPreviousData
+    // keeps showing photos' snapshot as a placeholder.
+    void harness.queryClient.prefetchQuery({
+      queryFn: () => new Promise<LibrarySnapshot>(() => {}),
+      queryKey: librarySnapshotKeys.snapshot(snapshotRequestFor(second)),
+    });
+    source.hold();
+    await harness.rerender({ request: second, seedSnapshot: false });
+
+    expect(harness.session.contentBrowseKey).toBeNull();
+    expect(harness.session.snapshotIsCurrent).toBe(false);
+
+    // The destination snapshot arriving makes the sidebar live again, even
+    // while its listing is still in flight.
+    await harness.rerender({ seedSnapshot: true });
+    expect(harness.session.snapshotIsCurrent).toBe(true);
+
+    await source.release();
+    await harness.flush();
   });
 });

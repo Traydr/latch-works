@@ -19,7 +19,7 @@ interface BrowserGridProps {
   openingComicId: string | null;
   scrollRequestKey: number;
   selectedId: string | null;
-  thumbnailResetKey: string;
+  contentKey: string | null;
 }
 
 export function BrowserGrid({
@@ -36,7 +36,7 @@ export function BrowserGrid({
   openingComicId,
   scrollRequestKey,
   selectedId,
-  thumbnailResetKey,
+  contentKey,
 }: BrowserGridProps) {
   const {
     cardHeight,
@@ -56,10 +56,10 @@ export function BrowserGrid({
         .filter((entry): entry is GalleryBrowseEntry => Boolean(entry)),
     [entries, windowedItems],
   );
-  const { resolvedThumbnailUrls } = useWindowedThumbnailResolution(
-    thumbnailResetKey,
-    windowedEntries,
-  );
+  const { resolvedThumbnailUrls } = useWindowedThumbnailResolution({
+    entries: windowedEntries,
+    key: contentKey,
+  });
 
   // Sync column count for keyboard navigation.
   if (columnCountRef.current !== columnCount) {

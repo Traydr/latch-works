@@ -51,6 +51,8 @@ export interface GalleryBrowseSession {
   /** Every media item in display order, including ones excluded from navigation. */
   allMedia: LibraryMediaItem[];
   browseKey: string;
+  /** `browseKey` once its own listing is on screen; null while a placeholder is. */
+  contentBrowseKey: string | null;
   /** Folder, media, and comic-summary entries in display order. */
   entries: GalleryBrowseEntry[];
   isReady: boolean;
@@ -61,6 +63,14 @@ export interface GalleryBrowseSession {
   openComic(comicId: string): Promise<ComicEntry<LibraryMediaItem>>;
   page: GalleryPageState;
   showFetching: boolean;
+  /** Either request in flight; spins the toolbar's refresh affordance. */
+  showRefreshing: boolean;
+  /**
+   * True while the snapshot on screen belongs to the live browse; false while
+   * `keepPreviousData` still shows the folder being left. Gates interactive
+   * snapshot consumers — sidebar folders and sibling navigation.
+   */
+  snapshotIsCurrent: boolean;
   stepEntry(currentKey: string | null, direction: -1 | 1, loop: boolean): Promise<string | null>;
   stepMedia(currentId: string | null, direction: -1 | 1, loop: boolean): Promise<string | null>;
 }
@@ -132,8 +142,11 @@ export function useGalleryBrowse({
   source = defaultSource,
 }: UseGalleryBrowseOptions): GalleryBrowseSession {
   const queryClient = useQueryClient();
-  const { data: library, isFetching: isSnapshotFetching } =
-    useLibrarySnapshotQuery(snapshotRequest);
+  const {
+    data: library,
+    isFetching: isSnapshotFetching,
+    isPlaceholderData: isSnapshotPlaceholderData,
+  } = useLibrarySnapshotQuery(snapshotRequest);
   const {
     data: firstPage,
     isFetching: isListingFetching,
@@ -163,7 +176,11 @@ export function useGalleryBrowse({
   // and read as empty; the effect below drops it once the key has changed.
   // Loading is part of the accumulation so it is keyed the same way.
   const [stored, setStored] = useState<Accumulation>(() => emptyAccumulation(browseKey));
-  const accumulation = stored.browseKey === browseKey ? stored : emptyAccumulation(browseKey);
+  // Memoized, not rebuilt per render: while the stored key is stale this value
+  // feeds `entries`, and a fresh identity each render restarts every downstream
+  // effect — including the thumbnail resolver's debounce.
+  const staleAccumulation = useMemo(() => emptyAccumulation(browseKey), [browseKey]);
+  const accumulation = stored.browseKey === browseKey ? stored : staleAccumulation;
   const inFlightRef = useRef<{ browseKey: string; promise: Promise<LoadNextPageResult> } | null>(
     null,
   );
@@ -185,6 +202,13 @@ export function useGalleryBrowse({
   }, [browseKey, stored.browseKey]);
 
   const firstPageIsCurrent = Boolean(firstPage) && !isPlaceholderData;
+  /**
+   * The browse key of the listing on screen, or null while `keepPreviousData`
+   * still shows another browse's page. `browseKey` changes the moment the URL
+   * does, a round trip before the entries follow, so anything keyed to the
+   * content itself — thumbnail resolution above all — must use this instead.
+   */
+  const contentBrowseKey = firstPageIsCurrent ? browseKey : null;
   const firstPageEntries = useMemo(
     () => (firstPage ? toGalleryBrowseEntries(firstPage) : []),
     [firstPage],
@@ -379,37 +403,40 @@ export function useGalleryBrowse({
     [queryClient, source],
   );
 
-  const showFetching = hydrated && (isSnapshotFetching || isListingFetching);
-  const isReady = Boolean(library && firstPage);
+  // The listing alone: the snapshot fills the sidebar, which reports its own
+  // loading state, and folding it in here dimmed the grid for a request that
+  // cannot change a single tile.
+  const showFetching = hydrated && isListingFetching;
+  // The toolbar's refresh affordance, though, covers both requests: a
+  // snapshot-only refetch should spin it even though no tile can change.
+  const showRefreshing = hydrated && (isSnapshotFetching || isListingFetching);
+  // Same shape as contentBrowseKey, for the other query: until the snapshot
+  // belongs to this browse it describes the folder being left, so consumers
+  // that act on it — sidebar folders, sibling navigation — must wait.
+  const snapshotIsCurrent = !isSnapshotPlaceholderData;
+  // The grid is served entirely by the listing, folder tiles included; the
+  // snapshot only feeds the sidebar and sibling-folder navigation. Waiting on
+  // it here would hold every tile for the slower of the two requests.
+  const isReady = Boolean(firstPage);
 
-  return useMemo(
-    () => ({
-      allMedia,
-      browseKey,
-      entries,
-      isReady,
-      library,
-      loadNextPage,
-      media,
-      openComic,
-      page,
-      showFetching,
-      stepEntry,
-      stepMedia,
-    }),
-    [
-      allMedia,
-      browseKey,
-      entries,
-      isReady,
-      library,
-      loadNextPage,
-      media,
-      openComic,
-      page,
-      showFetching,
-      stepEntry,
-      stepMedia,
-    ],
-  );
+  // A fresh object per render: every consumer destructures fields, and no
+  // effect or memo depends on the session's container identity, so the memo
+  // (and its duplicated dependency list) bought nothing.
+  return {
+    allMedia,
+    browseKey,
+    contentBrowseKey,
+    entries,
+    isReady,
+    library,
+    loadNextPage,
+    media,
+    openComic,
+    page,
+    showFetching,
+    showRefreshing,
+    snapshotIsCurrent,
+    stepEntry,
+    stepMedia,
+  };
 }

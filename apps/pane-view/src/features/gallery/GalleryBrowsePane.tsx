@@ -31,6 +31,8 @@ export interface GalleryBrowsePaneProps {
   /** Hidden for comic summaries: deleting a comic is folder deletion. */
   showDelete: boolean;
   showDetailPanel: boolean;
+  /** Null while a placeholder listing from another browse is on screen. */
+  contentKey: string | null;
   paginationResetKey: string;
   thumbnailSize: number;
 }
@@ -58,6 +60,7 @@ export function GalleryBrowsePane({
   selectedId,
   showDelete,
   showDetailPanel,
+  contentKey,
   paginationResetKey,
   thumbnailSize,
 }: GalleryBrowsePaneProps) {
@@ -133,7 +136,7 @@ export function GalleryBrowsePane({
           openingComicId={openingComicId}
           scrollRequestKey={scrollRequestKey}
           selectedId={selectedId}
-          thumbnailResetKey={paginationResetKey}
+          contentKey={contentKey}
         />
       </div>
 

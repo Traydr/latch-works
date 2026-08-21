@@ -90,6 +90,7 @@ function useGalleryPage() {
   const {
     allMedia,
     browseKey,
+    contentBrowseKey,
     entries,
     isReady,
     library,
@@ -98,6 +99,8 @@ function useGalleryPage() {
     openComic,
     page,
     showFetching,
+    showRefreshing,
+    snapshotIsCurrent,
     stepEntry,
     stepMedia,
   } = session;
@@ -154,7 +157,10 @@ function useGalleryPage() {
 
   const navigateSiblingFolder = useCallback(
     (offset: -1 | 1) => {
-      if (!library) {
+      // Until the snapshot belongs to this browse, its folders describe the
+      // folder being left; stepping through them would move along an
+      // ordering the user cannot see selected.
+      if (!library || !snapshotIsCurrent) {
         return;
       }
 
@@ -170,7 +176,7 @@ function useGalleryPage() {
         navigateToPath(next.path);
       }
     },
-    [displayPath, library, navigateToPath],
+    [displayPath, library, navigateToPath, snapshotIsCurrent],
   );
 
   // Keep the card visible with a loading affordance; open the reader only
@@ -342,7 +348,10 @@ function useGalleryPage() {
   };
 
   const breadcrumbs = useMemo(() => buildBreadcrumbItems(displayPath), [displayPath]);
-  const archiveRoot = library?.archiveRoot ?? "Synced archive";
+  // A stale snapshot's root label belongs to the folder being left.
+  const archiveRoot = snapshotIsCurrent
+    ? (library?.archiveRoot ?? "Synced archive")
+    : "Synced archive";
   const currentFolderName = breadcrumbs[breadcrumbs.length - 1]?.label ?? archiveRoot;
   const parentPath = getParentPath(displayPath);
 
@@ -352,6 +361,7 @@ function useGalleryPage() {
     breadcrumbs,
     browseKey,
     closeViewer,
+    contentBrowseKey,
     columnCountRef,
     currentFolderName,
     deleteSelectedMedia,
@@ -400,6 +410,7 @@ function useGalleryPage() {
     settingsOpen,
     showDetailPanel,
     showFetching,
+    showRefreshing,
     shuffle,
     sortMode,
     stepMedia,
@@ -617,6 +628,7 @@ function GalleryContent(): JSX.Element {
             selectedId={model.selected?.id ?? null}
             showDelete={!model.effectiveComicMode}
             showDetailPanel={model.showDetailPanel}
+            contentKey={model.contentBrowseKey}
             paginationResetKey={model.browseKey}
             thumbnailSize={model.settings.thumbnailSize}
           />
@@ -627,7 +639,7 @@ function GalleryContent(): JSX.Element {
       <FloatingToolbar
         comicMode={model.effectiveComicMode}
         currentPath={model.displayPath}
-        isRefreshing={model.showFetching}
+        isRefreshing={model.showRefreshing}
         onChangeSortMode={model.setSortMode}
         onRefresh={() => void model.invalidateLibrary()}
         onToggleComicMode={() => {

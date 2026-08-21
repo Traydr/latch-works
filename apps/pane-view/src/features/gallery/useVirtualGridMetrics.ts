@@ -1,4 +1,4 @@
-import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
+import { type RefObject, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 const GRID_GAP_PX = 12;
 const GRID_OVERSCAN_ROWS = 3;
@@ -100,7 +100,11 @@ export function useVirtualGridMetrics(
     return rowCount * cardHeight + Math.max(0, rowCount - 1) * GRID_GAP_PX;
   }, [cardHeight, rowCount]);
 
-  useEffect(() => {
+  // Layout, not passive: the first render has no measured width, so its window
+  // is row 0 alone. Measuring before paint means every consumer — the thumbnail
+  // resolver above all — sees the real window on the first frame it can act on,
+  // instead of racing a scheduler task against it.
+  useLayoutEffect(() => {
     const element = mainRef.current;
     if (!element) {
       return undefined;
