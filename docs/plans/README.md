@@ -5,7 +5,8 @@ plans 041–045 from the Gather Box architecture review on 2026-07-15; plans 046
 open-sourcing test audit on 2026-07-27; plans 048–050 from the Pane View architecture review at
 commit `7076ce8` on 2026-08-14; plans 051–052 from the Pane View gallery pagination investigation at
 commit `bf8b0c8` on 2026-08-15 (split into server and client halves at `c8f46f4` on 2026-08-16);
-plan 053 from the two-axis review of PR #98 at merge commit `d99af8e` on 2026-08-21.
+plan 053 from the two-axis review of PR #98 at merge commit `d99af8e` on 2026-08-21; plan 054 from
+a product-owner grilling session at commit `a7e9a6d` on 2026-08-21.
 Every open plan is written for an implementation agent and
 begins with a drift check. Status changes belong in this index and the corresponding plan.
 
@@ -19,6 +20,7 @@ once their outcome is recorded below; recover full text with `git log --diff-fil
 |---|---|---:|---:|---|---|
 | [040](040-frame-view-pdf-spike.md) | Validate and specify Frame PDF reading by porting Pane's windowed viewer | P2 | M spike | 033, 034 (both done) | TODO (Steps 2–3 need the product owner at a desktop) |
 | [053](053-gallery-waterfall-review-followups.md) | Land the five review follow-ups from PR #98: debounce edge, resolver rejection test, staleness dedupe, naming, `library` off the session | P3 | S | PR #98 (merged) | TODO |
+| [054](054-pane-view-recursive-folder-excludes.md) | Per-path folder excludes for Pane View recursive/comic mode: toolbar button + lean dialog, localStorage, server-side subtree subtraction | P2 | M | PR #98 (merged) | TODO |
 
 Recommended order (2026-08-17 review):
 
@@ -33,7 +35,8 @@ Recommended order (2026-08-17 review):
 
 Decisions already taken by the product owner (do not re-ask; STOP conditions referring to them are
 resolved): root preferences stay and will grow a per-root recursive-exclusion list in a future plan
-(048); server ordering uses a natural, case-insensitive ICU collation, not byte order (051);
+(048 — that plan now exists as 054, which settled the semantics as per-browse-path rather than
+per-root); server ordering uses a natural, case-insensitive ICU collation, not byte order (051);
 backward navigation stays put on the first item until every page is loaded, and comic Delete is
 dropped from the gallery for now (052); Frame PDF reading is wanted and should port Pane's viewer
 (040); Plan 037 is rejected without measurement (below).
