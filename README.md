@@ -74,7 +74,7 @@ Lockstep plans and pushes archive changes to Pane View. It's a desktop app with 
 <tr>
 <td width="50%">
 
-<img src="apps/showcase/public/screenshots/gather-box/popup-active.png" alt="Gather Box extension popup mid-download" width="100%" />
+<p align="center"><img src="apps/showcase/public/screenshots/gather-box/sidepanel-active.png" alt="Gather Box side panel on a supported page, ready to download" width="60%" /></p>
 
 </td>
 <td width="50%" valign="middle">
