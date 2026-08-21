@@ -58,15 +58,15 @@ export const products: Product[] = [
       "Gather Box is a Chrome extension that downloads image galleries and story PDFs from supported sites into inferred local folder structures — ready for Frame View browsing and Lockstep sync.",
     repoPath: "apps/gather-box",
     heroScreenshot: {
-      src: "/screenshots/gather-box/popup.png",
-      alt: "Gather Box side panel ready to download",
-      caption: "Side panel with page detection and folder selection",
+      src: "/screenshots/gather-box/sidepanel-active.png",
+      alt: "Gather Box side panel on a supported page, showing the save destination",
+      caption: "Side panel with page detection, folder selection, and save destination",
     },
     gallery: [
       {
-        src: "/screenshots/gather-box/popup-active.png",
-        alt: "Gather Box side panel showing supported page status",
-        caption: "Site-specific collectors detect supported pages",
+        src: "/screenshots/gather-box/sidepanel.png",
+        alt: "Gather Box side panel prompting to open a supported page",
+        caption: "The side panel flags unsupported pages and lists supported sites",
       },
     ],
     features: [
