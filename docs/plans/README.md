@@ -4,7 +4,8 @@ Plans 024–040 were generated from the deep repository survey at commit `fd5693
 plans 041–045 from the Gather Box architecture review on 2026-07-15; plans 046–047 from the
 open-sourcing test audit on 2026-07-27; plans 048–050 from the Pane View architecture review at
 commit `7076ce8` on 2026-08-14; plans 051–052 from the Pane View gallery pagination investigation at
-commit `bf8b0c8` on 2026-08-15 (split into server and client halves at `c8f46f4` on 2026-08-16).
+commit `bf8b0c8` on 2026-08-15 (split into server and client halves at `c8f46f4` on 2026-08-16);
+plan 053 from the two-axis review of PR #98 at merge commit `d99af8e` on 2026-08-21.
 Every open plan is written for an implementation agent and
 begins with a drift check. Status changes belong in this index and the corresponding plan.
 
@@ -17,6 +18,7 @@ once their outcome is recorded below; recover full text with `git log --diff-fil
 | Plan | Outcome | Priority | Effort | Depends on | Status |
 |---|---|---:|---:|---|---|
 | [040](040-frame-view-pdf-spike.md) | Validate and specify Frame PDF reading by porting Pane's windowed viewer | P2 | M spike | 033, 034 (both done) | TODO (Steps 2–3 need the product owner at a desktop) |
+| [053](053-gallery-waterfall-review-followups.md) | Land the five review follow-ups from PR #98: debounce edge, resolver rejection test, staleness dedupe, naming, `library` off the session | P3 | S | PR #98 (merged) | TODO |
 
 Recommended order (2026-08-17 review):
 
