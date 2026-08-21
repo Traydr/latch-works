@@ -71,7 +71,7 @@ describe("resolveMediaDeliveryUrlsForVariants", () => {
     expect(resolvePreview).not.toHaveBeenCalled();
   });
 
-  it("returns pending until video renditions are ready", async () => {
+  it("returns pending until video previews are ready", async () => {
     resolvePreview.mockResolvedValueOnce({ status: "pending", retryAfterMs: 5_000 });
     await expect(
       resolveMediaDeliveryUrlsForVariants(
