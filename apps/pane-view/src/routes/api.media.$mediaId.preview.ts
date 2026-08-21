@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { isRequestSessionValid } from "../server/auth/web-session-core";
 import {
   readDeliverySizeFromRequest,
-  redirectToShutterRendition,
+  redirectToMediaVariant,
 } from "../server/media/shutter-delivery-redirect";
 
 const API_PRIVATE_CACHE_CONTROL = "private, no-store";
@@ -19,7 +19,7 @@ export const Route = createFileRoute("/api/media/$mediaId/preview")({
           });
         }
 
-        return redirectToShutterRendition({
+        return redirectToMediaVariant({
           mediaId: params.mediaId,
           width: readDeliverySizeFromRequest(request, DEFAULT_PREVIEW_WIDTH),
         });

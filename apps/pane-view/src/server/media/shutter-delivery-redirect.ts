@@ -1,13 +1,10 @@
 import { type MediaThumbnailContext, readMediaThumbnailContext } from "./repository";
-import {
-  resolveShutterImageUrl,
-  resolveShutterPreview,
-  type ShutterPreviewResult,
-} from "./shutter-client";
+import type { ShutterPreviewResult } from "./shutter-client";
+import { resolveVariantImageUrl, resolveVariantPreview } from "./variant-provider";
 
 const API_PRIVATE_CACHE_CONTROL = "private, no-store";
 
-/** The archive read and the two Shutter reads a rendition redirect makes. */
+/** The archive read and the two Shutter reads a variant redirect makes. */
 export interface ShutterRedirectDependencies {
   readThumbnailContext(request: { mediaId: string }): Promise<MediaThumbnailContext | null>;
   resolveImageUrl(context: MediaThumbnailContext, width: number): Promise<string>;
@@ -16,8 +13,8 @@ export interface ShutterRedirectDependencies {
 
 const defaultShutterRedirectDependencies: ShutterRedirectDependencies = {
   readThumbnailContext: readMediaThumbnailContext,
-  resolveImageUrl: resolveShutterImageUrl,
-  resolvePreview: resolveShutterPreview,
+  resolveImageUrl: resolveVariantImageUrl,
+  resolvePreview: resolveVariantPreview,
 };
 
 export function readDeliverySizeFromRequest(request: Request, fallback: number): number {
@@ -26,7 +23,7 @@ export function readDeliverySizeFromRequest(request: Request, fallback: number):
   return Number.isInteger(size) && size > 0 ? size : fallback;
 }
 
-export async function redirectToShutterRendition(
+export async function redirectToMediaVariant(
   { mediaId, width }: { mediaId: string; width: number },
   dependencies: ShutterRedirectDependencies = defaultShutterRedirectDependencies,
 ): Promise<Response> {
@@ -57,7 +54,7 @@ export async function redirectToShutterRendition(
   }
 
   if (context.mediaType !== "video" && context.mediaType !== "pdf") {
-    return new Response("Rendition not found", {
+    return new Response("Variant not found", {
       headers: { "Cache-Control": API_PRIVATE_CACHE_CONTROL },
       status: 404,
     });
@@ -67,13 +64,13 @@ export async function redirectToShutterRendition(
   try {
     preview = await dependencies.resolvePreview(context, width);
   } catch {
-    return new Response("Rendition unavailable", {
+    return new Response("Preview unavailable", {
       headers: { "Cache-Control": API_PRIVATE_CACHE_CONTROL },
       status: 502,
     });
   }
   if (preview.status === "pending") {
-    return new Response("Rendition is being generated", {
+    return new Response("Preview is being generated", {
       headers: {
         "Cache-Control": API_PRIVATE_CACHE_CONTROL,
         "Retry-After": String(Math.max(1, Math.ceil(preview.retryAfterMs / 1_000))),
@@ -83,7 +80,7 @@ export async function redirectToShutterRendition(
   }
 
   if (preview.status === "failed") {
-    return new Response("Rendition not found", {
+    return new Response("Preview not found", {
       headers: { "Cache-Control": API_PRIVATE_CACHE_CONTROL },
       status: 404,
     });

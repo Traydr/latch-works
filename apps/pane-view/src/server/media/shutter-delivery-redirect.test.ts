@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { MediaThumbnailContext } from "./repository";
 import {
-  redirectToShutterRendition,
+  redirectToMediaVariant,
   type ShutterRedirectDependencies,
 } from "./shutter-delivery-redirect";
 
@@ -32,7 +32,7 @@ const video: MediaThumbnailContext = {
   sha256: "b".repeat(64),
 };
 
-describe("redirectToShutterRendition", () => {
+describe("redirectToMediaVariant", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     readThumbnailContext.mockResolvedValue(image);
@@ -41,10 +41,7 @@ describe("redirectToShutterRendition", () => {
   });
 
   it("redirects image thumbnails through Shutter", async () => {
-    const response = await redirectToShutterRendition(
-      { mediaId: "image", width: 320 },
-      dependencies,
-    );
+    const response = await redirectToMediaVariant({ mediaId: "image", width: 320 }, dependencies);
 
     expect(response.status).toBe(302);
     expect(response.headers.get("Location")).toBe("https://edge.shutter.test/image");
@@ -55,22 +52,16 @@ describe("redirectToShutterRendition", () => {
     readThumbnailContext.mockResolvedValue(video);
     resolvePreview.mockRejectedValue(new Error("Shutter capability key ID is not active"));
 
-    const response = await redirectToShutterRendition(
-      { mediaId: "video", width: 640 },
-      dependencies,
-    );
+    const response = await redirectToMediaVariant({ mediaId: "video", width: 640 }, dependencies);
 
     expect(response.status).toBe(502);
-    expect(await response.text()).toBe("Rendition unavailable");
+    expect(await response.text()).toBe("Preview unavailable");
   });
 
   it("returns retryable 503 while video previews are pending", async () => {
     readThumbnailContext.mockResolvedValue(video);
 
-    const response = await redirectToShutterRendition(
-      { mediaId: "video", width: 640 },
-      dependencies,
-    );
+    const response = await redirectToMediaVariant({ mediaId: "video", width: 640 }, dependencies);
 
     expect(response.status).toBe(503);
     expect(response.headers.get("Retry-After")).toBe("9");

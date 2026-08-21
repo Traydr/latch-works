@@ -15,7 +15,7 @@ Pane View is the **web counterpart** to [Frame View](../frame-view). It serves a
 - Sort modes: name, date, random
 - Search and detail panel
 - Planned: favorites and per-user viewer resume state (schema hooks exist; UI wiring is incomplete)
-- Shutter renditions for thumbnails and previews; presigned redirects for originals
+- Shutter-served thumbnails and previews; presigned redirects for originals
 - Sync API for Lockstep push/plan/verify workflows
 
 ## Tech stack
@@ -27,7 +27,7 @@ Pane View is the **web counterpart** to [Frame View](../frame-view). It serves a
 | Auth | [Better Auth](https://www.better-auth.com/) |
 | Database | PostgreSQL + [Drizzle ORM](https://orm.drizzle.team/) |
 | Storage | S3-compatible object storage |
-| Media | Shutter renditions and `pdfjs-dist` |
+| Media | Shutter delivery and `pdfjs-dist` |
 | Shared libs | `@latch-works/media-domain`, `media-storage` |
 
 ## Prerequisites
@@ -53,13 +53,18 @@ S3_SECRET_ACCESS_KEY=...
 PANE_VIEW_USERNAME=...
 PANE_VIEW_PASSWORD=...
 PANE_VIEW_SYNC_TOKEN=...           # bearer token for Lockstep
-SHUTTER_EDGE_URL=https://...
+SHUTTER_EDGE_URL=https://...       # optional; leave empty for pass-through delivery
 SHUTTER_CONTROL_URL=https://...
 SHUTTER_SPACE_ID=...
 SHUTTER_SPACE_API_TOKEN=...        # Shutter control-plane token
 SHUTTER_CAPABILITY_KEYS=...        # Shutter capability-key registry
 SHUTTER_CAPABILITY_KID=...
 ```
+
+The `SHUTTER_*` variables are optional. When `SHUTTER_EDGE_URL` is empty, Pane View runs in
+pass-through mode: thumbnails and previews redirect to signed original URLs served directly from
+S3 storage (no resized variants; video/PDF tiles show placeholders). `/api/health` reports the
+active mode in its `variants` field.
 
 `LOCKSTEP_API_TOKEN` on the CLI side should match `PANE_VIEW_SYNC_TOKEN`.
 
