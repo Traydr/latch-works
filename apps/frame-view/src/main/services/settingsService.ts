@@ -24,6 +24,9 @@ const FLUSH_DEBOUNCE_MS = 150;
  * current settings would clobber real values and fail schema normalization, so drop them.
  */
 function omitUndefinedKeys<T extends object>(value: T): Partial<T> {
+  // SAFETY: the entries come from `value` itself and filtering only removes keys, so the
+  // rebuilt object holds a subset of T's own properties; Object.fromEntries erases that
+  // per-key typing and Partial<T> restores it.
   return Object.fromEntries(
     Object.entries(value).filter(([, entry]) => entry !== undefined),
   ) as Partial<T>;
