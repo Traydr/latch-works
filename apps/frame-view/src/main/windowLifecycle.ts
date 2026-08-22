@@ -20,6 +20,7 @@ export function createMainWindowCloseHandler(
   mainWindow: ClosableWindow,
   settingsService: WindowStateSettings,
   logErrorMessage: (operation: string, message: string) => void,
+  onCloseComplete?: () => void,
 ): (event: DeferrableCloseEvent) => void {
   let isClosingWindow = false;
 
@@ -56,6 +57,8 @@ export function createMainWindowCloseHandler(
       if (!mainWindow.isDestroyed()) {
         mainWindow.destroy();
       }
+
+      onCloseComplete?.();
     })();
   };
 }

@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
+import { Result } from 'better-result';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
@@ -169,6 +170,18 @@ describe('SettingsService', () => {
     const { filters } = service.getSettings();
     expect(filters.imageExtensions).not.toContain('avif');
     expect(filters.videoExtensions).not.toContain('m4v');
+  });
+
+  it('applies a patch carrying an explicitly undefined optional key without resetting settings', async () => {
+    const service = new SettingsService(userDataPath);
+    await service.init();
+    await service.updateSettings({ theme: 'dark' });
+
+    const result = await service.updateSettings({ sortMode: 'random', lastFolderPath: undefined });
+
+    expect(Result.isOk(result)).toBe(true);
+    expect(service.getSettings().sortMode).toBe('random');
+    expect(service.getSettings().theme).toBe('dark');
   });
 
   it('persists per-root gallery preferences independently', async () => {

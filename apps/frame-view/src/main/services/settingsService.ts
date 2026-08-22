@@ -19,6 +19,16 @@ interface FlushOptions {
 
 const FLUSH_DEBOUNCE_MS = 150;
 
+/**
+ * Callers can pass optional patch keys as explicit `undefined`; spreading those over the
+ * current settings would clobber real values and fail schema normalization, so drop them.
+ */
+function omitUndefinedKeys<T extends object>(value: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, entry]) => entry !== undefined),
+  ) as Partial<T>;
+}
+
 export class SettingsService {
   private readonly filePath: string;
 
@@ -52,17 +62,17 @@ export class SettingsService {
     patch: AppSettingsPatch,
     options?: FlushOptions,
   ): Promise<ResultType<AppSettings, FileSystemError>> {
-    const parsedPatch = AppSettingsPatchSchema.parse(patch);
+    const parsedPatch = omitUndefinedKeys(AppSettingsPatchSchema.parse(patch));
     const merged = {
       ...this.state.settings,
       ...parsedPatch,
       debug: {
         ...this.state.settings.debug,
-        ...parsedPatch.debug,
+        ...omitUndefinedKeys(parsedPatch.debug ?? {}),
       },
       filters: {
         ...this.state.settings.filters,
-        ...parsedPatch.filters,
+        ...omitUndefinedKeys(parsedPatch.filters ?? {}),
       },
     };
 

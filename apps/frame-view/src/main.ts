@@ -45,6 +45,7 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 let mainWindow: BrowserWindow | null = null;
+let quitRequested = false;
 let settingsService: SettingsService;
 let catalogService: CatalogService;
 let mediaToolsService: MediaToolsService;
@@ -237,9 +238,20 @@ async function createWindow(): Promise<void> {
   mainWindow.on('unmaximize', persistWindowMaximized);
   mainWindow.on(
     'close',
-    createMainWindowCloseHandler(mainWindow, settingsService, (operation, message) => {
-      console.error(`[${operation}] ${message}`);
-    }),
+    createMainWindowCloseHandler(
+      mainWindow,
+      settingsService,
+      (operation, message) => {
+        console.error(`[${operation}] ${message}`);
+      },
+      // The close handler's preventDefault aborts an in-flight quit, so once state is
+      // persisted and the window destroyed, the quit has to be re-issued.
+      () => {
+        if (quitRequested) {
+          app.quit();
+        }
+      },
+    ),
   );
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -295,6 +307,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  quitRequested = true;
   catalogService?.shutdown();
   shutdownThumbnailService();
 });

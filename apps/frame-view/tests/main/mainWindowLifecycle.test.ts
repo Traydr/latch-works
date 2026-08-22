@@ -34,4 +34,36 @@ describe('mainWindowLifecycle', () => {
     expect(destroy).toHaveBeenCalledTimes(1);
     expect(logErrorMessage).not.toHaveBeenCalled();
   });
+
+  it('signals completion after the window is destroyed so an aborted quit can resume', async () => {
+    const callOrder: string[] = [];
+    const mainWindow = {
+      destroy: vi.fn(() => {
+        callOrder.push('destroy');
+      }),
+      getBounds: vi.fn(() => ({ x: 10, y: 10, width: 1200, height: 800 })),
+      getNormalBounds: vi.fn(() => ({ x: 10, y: 10, width: 1200, height: 800 })),
+      isDestroyed: vi.fn(() => false),
+      isMaximized: vi.fn(() => false),
+    };
+    const settingsService = {
+      flushNowSync: vi.fn(async () => Result.ok(undefined)),
+      updateWindowBounds: vi.fn(async () => Result.ok(undefined)),
+      updateWindowMaximized: vi.fn(async () => Result.ok(undefined)),
+    };
+    const onCloseComplete = vi.fn(() => {
+      callOrder.push('complete');
+    });
+    const handler = createMainWindowCloseHandler(
+      mainWindow,
+      settingsService,
+      vi.fn(),
+      onCloseComplete,
+    );
+
+    handler({ preventDefault: vi.fn() });
+    await waitForCondition(() => onCloseComplete.mock.calls.length === 1);
+
+    expect(callOrder).toEqual(['destroy', 'complete']);
+  });
 });

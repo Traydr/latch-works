@@ -121,6 +121,18 @@ describe('registerIpc', () => {
     });
   });
 
+  it('forwards settings patches without injecting keys the renderer did not send', async () => {
+    const { handlers, settingsService } = setup();
+
+    const response = await handlers.get('settings:update')?.({ sortMode: 'random' });
+
+    expect(response?.status).toBe('ok');
+    expect(settingsService.updateSettings).toHaveBeenCalledTimes(1);
+    const forwardedPatch = settingsService.updateSettings.mock.calls[0]?.[0];
+    expect(forwardedPatch).toEqual({ sortMode: 'random' });
+    expect(Object.keys(forwardedPatch ?? {})).toEqual(['sortMode']);
+  });
+
   it('remembers the last folder path when opening a folder dialog', async () => {
     const {
       authorizeMediaRoot,

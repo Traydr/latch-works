@@ -330,13 +330,10 @@ export function registerIpc(
       return validated.serialized;
     }
 
-    const normalizedPatch = {
-      ...validated.value,
-      lastFolderPath:
-        validated.value.lastFolderPath === undefined || validated.value.lastFolderPath === null
-          ? validated.value.lastFolderPath
-          : path.resolve(validated.value.lastFolderPath),
-    };
+    const normalizedPatch =
+      typeof validated.value.lastFolderPath === 'string'
+        ? { ...validated.value, lastFolderPath: path.resolve(validated.value.lastFolderPath) }
+        : validated.value;
 
     const updatedSettings = await settingsService.updateSettings(normalizedPatch);
     if (Result.isError(updatedSettings)) {
