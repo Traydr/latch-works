@@ -6,7 +6,8 @@ open-sourcing test audit on 2026-07-27; plans 048–050 from the Pane View archi
 commit `7076ce8` on 2026-08-14; plans 051–052 from the Pane View gallery pagination investigation at
 commit `bf8b0c8` on 2026-08-15 (split into server and client halves at `c8f46f4` on 2026-08-16);
 plan 053 from the two-axis review of PR #98 at merge commit `d99af8e` on 2026-08-21; plan 054 from
-a product-owner grilling session at commit `a7e9a6d` on 2026-08-21.
+a product-owner grilling session at commit `a7e9a6d` on 2026-08-21; and plan 055 from a Pixiv
+collection screenshot and saved page capture at commit `e9261d6` on 2026-08-22.
 Every open plan is written for an implementation agent and
 begins with a drift check. Status changes belong in this index and the corresponding plan.
 
@@ -93,6 +94,7 @@ Two-sentence outcomes. The plan files are deleted; the landing commit is the rec
 | 048 | PR #80 (`agent/048-gallery-browse-state`) | Gallery browse state was reconciled across six files with four candidate sources per flag, `comic ⇒ recursive` written six times, and three snapshot request builders — one of which made the sidebar fetch 500 media rows it never rendered. `useGalleryBrowseState` now owns browse state: the flags resolve from the URL only (a URL without a flag means off; the remembered in-folder flags seed the first-visit redirect and folder entry from the root, which is what the settings drawer's "default recursive browsing" toggle sets), every rule is stated once in `foldBrowseFlags` and pure, node-tested intents, the 32-hex random seed is persisted, root preferences stay behind the storage adapter, and page, sidebar, and loader share one snapshot request. Deliberate deltas, all reviewed: submitting an empty search now clears the query (previously kept the old one), toggling comic/recursive keeps the selected `media` in the URL (the old code kept it only in local state), and the single `useAppSettings` instance lives in the layout so the drawer and theme sync agree. Manual Step 6 smoke was not run (no local archive). |
 | 051 | PR #79 (`agent/051-gallery-server-order`) | Regular media used a keyset cursor over `md5(seed:id)` in byte order while comic mode fetched by offset and re-sorted on the client, so random comic pages moved under the user's scroll and `10.jpg` listed before `2.jpg`. The server now owns one seeded order over media and comic summaries (`md5(seed:kind:id)`, natural ICU collation via migration 0018, discriminated cursors rejected on any seed/mode/kind mismatch), serves cursor-paginated comic summaries plus `getGalleryComic`, and proves concatenated pages equal the fixed-seed order under pglite. Manual Step 6 smoke was not run (no local archive); the client change is limited to the hex seed. |
 | 047 | `eab6ed8` | With the repository public, two test files still carried literal fixture content that the documentation pass had removed everywhere else, readable by anyone scanning how the code is tested. The fixtures were neutralized without losing coverage. |
+| 055 | `14a96fa` | Pixiv creator extraction read the full profile-link text, so request-status descendants entered the creator folder name. The collector now reads only direct name text or the avatar alt text, with a DOM-built regression fixture for the nested request link. |
 
 ## Historical and rejected work
 
