@@ -78,7 +78,7 @@ export class CatalogService {
       type: 'get-index-stats',
     });
     if (Result.isError(response)) {
-      return response;
+      return Result.err(response.error);
     }
 
     if (!response.value) {
@@ -221,7 +221,7 @@ export class CatalogService {
     request: CatalogWorkerRequestPayload,
   ): Promise<ResultType<void, WorkerError>> {
     const response = await this.sendRequest(request);
-    return Result.isError(response) ? response : Result.ok();
+    return Result.isError(response) ? Result.err(response.error) : Result.ok();
   }
 
   private sendRequest(
