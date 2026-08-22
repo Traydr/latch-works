@@ -4,7 +4,6 @@
     "declaration": true,
     "declarationMap": true,
     "esModuleInterop": true,
-    "ignoreDeprecations": "6.0",
     "jsx": "react-jsx",
     "module": "ESNext",
     "moduleResolution": "Bundler",

@@ -11,7 +11,7 @@
     "check": "pnpm typecheck && pnpm build",
     "screenshots": "node scripts/prepare-showcase-media.mjs && node scripts/capture-screenshots.mjs",
     "screenshots:install-browser": "pnpm exec browsers install chrome@stable",
-    "typecheck": "astro check"
+    "typecheck": "tsc --noEmit && astro check"
   },
   "dependencies": {
     "@astrojs/check": "^0.9.6",
@@ -29,11 +29,12 @@
   "devDependencies": {
     "@puppeteer/browsers": "^3.0.4",
     "@tailwindcss/vite": "^4.3.0",
+    "@typescript/native": "npm:typescript@^7.0.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "puppeteer-core": "24.8.1",
     "tailwindcss": "^4.3.0",
-    "typescript": "^6.0.2"
+    "typescript": "npm:@typescript/typescript6@^6.0.2"
   },
   "packageManager": "pnpm@11.1.0"
 }
