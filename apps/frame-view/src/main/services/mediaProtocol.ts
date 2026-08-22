@@ -57,7 +57,7 @@ export async function isAuthorizedMediaPath(mediaPath: string): Promise<boolean>
   return false;
 }
 
-function getContentType(mediaPath: string): string {
+export function getMediaContentType(mediaPath: string): string {
   const extension = path.extname(mediaPath).toLowerCase();
 
   switch (extension) {
@@ -72,6 +72,8 @@ function getContentType(mediaPath: string): string {
       return 'image/gif';
     case '.bmp':
       return 'image/bmp';
+    case '.avif':
+      return 'image/avif';
     case '.mp4':
       return 'video/mp4';
     case '.webm':
@@ -150,7 +152,7 @@ async function fetchMediaFile(request: Request, mediaPath: string): Promise<Resp
   }
 
   const totalSize = fileStats.size;
-  const contentType = getContentType(mediaPath);
+  const contentType = getMediaContentType(mediaPath);
   const rangeHeader = request.headers.get('range');
   const range = readRange(rangeHeader, totalSize);
 

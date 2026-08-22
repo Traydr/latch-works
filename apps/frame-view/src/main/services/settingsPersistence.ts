@@ -25,10 +25,10 @@ const WindowBoundsSchema = z.object({
   height: z.number(),
 });
 
-const PERSISTED_STATE_VERSION = 2;
+const PERSISTED_STATE_VERSION = 3;
 
-export interface PersistedStateV2 {
-  version: 2;
+export interface PersistedStateV3 {
+  version: 3;
   settings: AppSettings;
   windowBounds: Rectangle | null;
   windowMaximized: boolean;
@@ -210,7 +210,7 @@ function normalizeWindowBounds(bounds: JsonValue): Rectangle | null {
   };
 }
 
-export function createDefaultPersistedState(): PersistedStateV2 {
+export function createDefaultPersistedState(): PersistedStateV3 {
   return {
     version: PERSISTED_STATE_VERSION,
     settings: cloneDefaultSettings(),
@@ -219,25 +219,41 @@ export function createDefaultPersistedState(): PersistedStateV2 {
   };
 }
 
-function migratePersistedState(candidate: JsonValue): PersistedStateV2 {
+function addAvifToImageExtensions(settings: AppSettings): AppSettings {
+  if (settings.filters.imageExtensions.includes('avif')) {
+    return settings;
+  }
+
+  return {
+    ...settings,
+    filters: {
+      ...settings.filters,
+      imageExtensions: [...settings.filters.imageExtensions, 'avif'],
+    },
+  };
+}
+
+function migratePersistedState(candidate: JsonValue): PersistedStateV3 {
   const raw = toPersistedRecord(candidate);
+  const settings = normalizeAppSettings(raw.settings);
 
   return {
     version: PERSISTED_STATE_VERSION,
-    settings: normalizeAppSettings(raw.settings),
+    settings:
+      raw.version === PERSISTED_STATE_VERSION ? settings : addAvifToImageExtensions(settings),
     windowBounds: normalizeWindowBounds(raw.windowBounds),
     windowMaximized: raw.windowMaximized === true || raw.windowFullscreen === true,
   };
 }
 
-export async function readPersistedState(filePath: string): Promise<PersistedStateV2> {
+export async function readPersistedState(filePath: string): Promise<PersistedStateV3> {
   const raw = await fs.readFile(filePath, 'utf8');
   return migratePersistedState(JSON.parse(raw));
 }
 
 export async function writePersistedState(
   filePath: string,
-  state: PersistedStateV2,
+  state: PersistedStateV3,
 ): Promise<void> {
   const payload = JSON.stringify(state, null, 2);
   const tempFilePath = `${filePath}.tmp`;

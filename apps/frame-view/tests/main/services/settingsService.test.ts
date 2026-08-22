@@ -111,6 +111,33 @@ describe('SettingsService', () => {
     });
   });
 
+  it('adds AVIF support when loading version 2 settings', async () => {
+    const settingsFilePath = path.join(userDataPath, 'frame-view-settings.json');
+    await fs.writeFile(
+      settingsFilePath,
+      JSON.stringify({
+        version: 2,
+        settings: {
+          ...DEFAULT_SETTINGS,
+          filters: {
+            ...DEFAULT_SETTINGS.filters,
+            imageExtensions: DEFAULT_SETTINGS.filters.imageExtensions.filter(
+              (extension) => extension !== 'avif',
+            ),
+          },
+        },
+        windowBounds: null,
+        windowMaximized: false,
+      }),
+      'utf8',
+    );
+
+    const service = new SettingsService(userDataPath);
+    await service.init();
+
+    expect(service.getSettings().filters.imageExtensions).toContain('avif');
+  });
+
   it('persists per-root gallery preferences independently', async () => {
     const settingsFilePath = path.join(userDataPath, 'frame-view-settings.json');
     const service = new SettingsService(userDataPath);

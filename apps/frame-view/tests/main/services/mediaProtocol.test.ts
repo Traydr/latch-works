@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { getMediaContentType } from '../../../src/main/services/mediaProtocol';
+
 describe('mediaProtocol helpers', () => {
+  it('returns the AVIF image content type', () => {
+    expect(getMediaContentType('/tmp/gallery/image.avif')).toBe('image/avif');
+    expect(getMediaContentType('/tmp/gallery/image.AVIF')).toBe('image/avif');
+  });
+
   it('parses byte ranges correctly', async () => {
     const { readRange } = await import('../../../src/main/services/mediaProtocol');
 
