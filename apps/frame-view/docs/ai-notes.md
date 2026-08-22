@@ -11,7 +11,7 @@
 - Toggle preference: recursive mode should be a highlighted button state, not a checkbox.
 - Navigation preference: when recursive is off and a folder has no direct media, show its immediate subfolders inline with parent/sibling folder controls in the top bar.
 - Folder hotkey preference: use `Shift+W/A/D` for parent/previous/next folder and `Shift+S` to open the selected folder.
-- Media support preference: GIF files should be included even for older persisted settings.
+- Media support preference: Frame View supports AVIF alongside JPEG, PNG, WebP, GIF, and BMP.
 - State/data preference: lazy incremental scanning and persistent cache/indexing.
 - Planning preference: maintain a persistent implementation plan with explicit progress tracking.
 - Documentation preference: keep this file updated with important context and implementation-style preferences.
@@ -67,7 +67,8 @@
 - Main/renderer command bridge: app-level commands are emitted on `app:command` and handled in renderer for open-folder, refresh, settings toggle, and scan-path actions.
 - Native menu shortcuts: Open Folder (`Ctrl/Cmd+O`), Refresh (`F5` or `Ctrl/Cmd+R`), Preferences (`Ctrl/Cmd+,`).
 - Desktop shell parity: supports `open-file` events and second-instance path forwarding to active window.
-- Settings migration behavior: ensure `gif` stays present in `filters.imageExtensions` when loading or updating persisted settings.
+- Settings migration behavior: migrating pre-version-3 settings backfills baseline extensions (`gif`/`avif` images, `m4v` videos) once without replacing custom extensions; version 3 payloads keep deliberate removals.
+- Media filter defaults: image and video extension lists both come from `@latch-works/media-domain` (`ImageExtensions`/`VideoExtensions`), and `frameview-media://` content types are a map keyed by those same constants.
 - Performance preference: prioritize scan responsiveness by deferring video metadata probing until items are visible.
 - Scan throughput optimization: file stat work now runs with bounded parallelism per directory instead of full serial processing.
 - Renderer scan optimization: incoming scan batches append unsorted during loading, then apply one final sort pass on `done`.

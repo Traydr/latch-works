@@ -2,6 +2,7 @@ import { createReadStream, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 
+import { ImageExtensions, VideoExtensions } from '@latch-works/media-domain';
 import { protocol } from 'electron';
 import type {
   ThumbnailDebugOptions,
@@ -57,32 +58,32 @@ export async function isAuthorizedMediaPath(mediaPath: string): Promise<boolean>
   return false;
 }
 
-function getContentType(mediaPath: string): string {
-  const extension = path.extname(mediaPath).toLowerCase();
+type KnownMediaExtension = (typeof ImageExtensions)[number] | (typeof VideoExtensions)[number];
 
-  switch (extension) {
-    case '.jpg':
-    case '.jpeg':
-      return 'image/jpeg';
-    case '.png':
-      return 'image/png';
-    case '.webp':
-      return 'image/webp';
-    case '.gif':
-      return 'image/gif';
-    case '.bmp':
-      return 'image/bmp';
-    case '.mp4':
-      return 'video/mp4';
-    case '.webm':
-      return 'video/webm';
-    case '.mov':
-      return 'video/quicktime';
-    case '.mkv':
-      return 'video/x-matroska';
-    default:
-      return 'application/octet-stream';
-  }
+const MEDIA_CONTENT_TYPES = {
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+  gif: 'image/gif',
+  bmp: 'image/bmp',
+  avif: 'image/avif',
+  mp4: 'video/mp4',
+  webm: 'video/webm',
+  mov: 'video/quicktime',
+  mkv: 'video/x-matroska',
+  m4v: 'video/mp4',
+} satisfies Record<KnownMediaExtension, string>;
+
+function isKnownMediaExtension(extension: string): extension is KnownMediaExtension {
+  return Object.hasOwn(MEDIA_CONTENT_TYPES, extension);
+}
+
+export function getMediaContentType(mediaPath: string): string {
+  const extension = path.extname(mediaPath).replace(/^\./, '').toLowerCase();
+  return isKnownMediaExtension(extension)
+    ? MEDIA_CONTENT_TYPES[extension]
+    : 'application/octet-stream';
 }
 
 type RangeParseResult =
@@ -150,7 +151,7 @@ async function fetchMediaFile(request: Request, mediaPath: string): Promise<Resp
   }
 
   const totalSize = fileStats.size;
-  const contentType = getContentType(mediaPath);
+  const contentType = getMediaContentType(mediaPath);
   const rangeHeader = request.headers.get('range');
   const range = readRange(rangeHeader, totalSize);
 

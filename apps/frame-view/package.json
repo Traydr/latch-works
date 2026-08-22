@@ -1,7 +1,7 @@
 {
   "name": "@latch-works/frame-view",
   "productName": "Frame View",
-  "version": "1.0.18",
+  "version": "1.0.19",
   "description": "Cross-platform image and video viewer",
   "main": ".vite/build/main.js",
   "private": true,

@@ -5,10 +5,10 @@ import path from 'node:path';
 import { Result, type Result as ResultType } from 'better-result';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { CatalogMediaIndex } from '../../../src/main/catalog/CatalogRuntime';
+import { type CatalogMediaIndex, CatalogRuntime } from '../../../src/main/catalog/CatalogRuntime';
 import { DatabaseError } from '../../../src/main/errors';
 import type { CatalogWorkerEvent, CatalogWorkerResponse } from '../../../src/shared/catalog';
-import type { MediaIndexStats, MediaItem } from '../../../src/shared/types';
+import { DEFAULT_SETTINGS, type MediaIndexStats, type MediaItem } from '../../../src/shared/types';
 import { waitForCondition } from '../../testUtils';
 
 /**
@@ -116,7 +116,6 @@ describe('CatalogRuntime', () => {
 
     const events: CatalogWorkerEvent[] = [];
     const responses: CatalogWorkerResponse[] = [];
-    const { CatalogRuntime } = await import('../../../src/main/catalog/CatalogRuntime');
     const runtime = new CatalogRuntime({
       userDataPath,
       emitEvent: (event) => events.push(event),
@@ -148,6 +147,47 @@ describe('CatalogRuntime', () => {
       type: 'done',
       totalItems: 2,
     });
+  });
+
+  it('discovers AVIF images with the default filters', async () => {
+    const rootPath = await createTempDir('frame-view-catalog-root-');
+    tempDirs.push(rootPath);
+    await writeFile(path.join(rootPath, 'image.avif'), 'frame-view');
+
+    const events: CatalogWorkerEvent[] = [];
+    const runtime = new CatalogRuntime({
+      emitEvent: (event) => events.push(event),
+      emitResponse: () => {
+        // No-op.
+      },
+      mediaIndexService: new InMemoryMediaIndex(),
+    });
+
+    await runtime.handleRequest({
+      requestId: 1,
+      type: 'start-scan',
+      options: {
+        rootPath,
+        recursive: false,
+        filters: DEFAULT_SETTINGS.filters,
+      },
+    });
+
+    await waitForCondition(() => events.some((event) => event.event.type === 'done'));
+
+    const scannedItems = events
+      .map((event) => event.event)
+      .filter((event) => event.type === 'batch')
+      .flatMap((event) => event.items);
+
+    expect(scannedItems).toEqual([
+      expect.objectContaining({
+        extension: 'avif',
+        mediaType: 'image',
+        name: 'image.avif',
+      }),
+    ]);
+    expect(events.at(-1)?.event).toMatchObject({ type: 'done', totalItems: 1 });
   });
 
   it('skips excluded direct root children but not nested names', async () => {

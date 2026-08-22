@@ -8,7 +8,7 @@ import { type FileSystemError, toError, unexpectedFileSystemError } from '../err
 import {
   createDefaultPersistedState,
   normalizeAppSettings,
-  type PersistedStateV2,
+  type PersistedState,
   readPersistedState,
   writePersistedState,
 } from './settingsPersistence';
@@ -22,7 +22,7 @@ const FLUSH_DEBOUNCE_MS = 150;
 export class SettingsService {
   private readonly filePath: string;
 
-  private state: PersistedStateV2 = createDefaultPersistedState();
+  private state: PersistedState = createDefaultPersistedState();
   private flushQueue: Promise<void> = Promise.resolve();
   private flushTimer: NodeJS.Timeout | null = null;
   private dirty = false;
