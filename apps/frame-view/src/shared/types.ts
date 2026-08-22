@@ -1,4 +1,4 @@
-import { ImageExtensions } from '@latch-works/media-domain';
+import { ImageExtensions, VideoExtensions } from '@latch-works/media-domain';
 import type { Result } from 'better-result';
 import type { z } from 'zod';
 
@@ -49,7 +49,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   randomSeed: 1,
   filters: {
     imageExtensions: [...ImageExtensions],
-    videoExtensions: ['mp4', 'webm', 'mov', 'mkv'],
+    videoExtensions: [...VideoExtensions],
     showImages: true,
     showVideos: true,
   },

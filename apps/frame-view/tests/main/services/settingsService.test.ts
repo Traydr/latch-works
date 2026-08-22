@@ -111,7 +111,7 @@ describe('SettingsService', () => {
     });
   });
 
-  it('adds AVIF support when loading version 2 settings', async () => {
+  it('backfills baseline extensions when loading version 2 settings', async () => {
     const settingsFilePath = path.join(userDataPath, 'frame-view-settings.json');
     await fs.writeFile(
       settingsFilePath,
@@ -121,8 +121,39 @@ describe('SettingsService', () => {
           ...DEFAULT_SETTINGS,
           filters: {
             ...DEFAULT_SETTINGS.filters,
+            imageExtensions: ['jpg', 'png', 'custom'],
+            videoExtensions: ['mp4', 'webm', 'mov', 'mkv'],
+          },
+        },
+        windowBounds: null,
+        windowMaximized: false,
+      }),
+      'utf8',
+    );
+
+    const service = new SettingsService(userDataPath);
+    await service.init();
+
+    const { filters } = service.getSettings();
+    expect(filters.imageExtensions).toEqual(['jpg', 'png', 'custom', 'gif', 'avif']);
+    expect(filters.videoExtensions).toEqual(['mp4', 'webm', 'mov', 'mkv', 'm4v']);
+  });
+
+  it('respects extensions deliberately removed from version 3 settings', async () => {
+    const settingsFilePath = path.join(userDataPath, 'frame-view-settings.json');
+    await fs.writeFile(
+      settingsFilePath,
+      JSON.stringify({
+        version: 3,
+        settings: {
+          ...DEFAULT_SETTINGS,
+          filters: {
+            ...DEFAULT_SETTINGS.filters,
             imageExtensions: DEFAULT_SETTINGS.filters.imageExtensions.filter(
               (extension) => extension !== 'avif',
+            ),
+            videoExtensions: DEFAULT_SETTINGS.filters.videoExtensions.filter(
+              (extension) => extension !== 'm4v',
             ),
           },
         },
@@ -135,7 +166,9 @@ describe('SettingsService', () => {
     const service = new SettingsService(userDataPath);
     await service.init();
 
-    expect(service.getSettings().filters.imageExtensions).toContain('avif');
+    const { filters } = service.getSettings();
+    expect(filters.imageExtensions).not.toContain('avif');
+    expect(filters.videoExtensions).not.toContain('m4v');
   });
 
   it('persists per-root gallery preferences independently', async () => {

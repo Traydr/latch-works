@@ -27,8 +27,8 @@ const WindowBoundsSchema = z.object({
 
 const PERSISTED_STATE_VERSION = 3;
 
-export interface PersistedStateV3 {
-  version: 3;
+export interface PersistedState {
+  version: typeof PERSISTED_STATE_VERSION;
   settings: AppSettings;
   windowBounds: Rectangle | null;
   windowMaximized: boolean;
@@ -117,9 +117,6 @@ export function normalizeAppSettings(candidate: JsonValue): AppSettings {
     rawFilters.imageExtensions,
     DEFAULT_SETTINGS.filters.imageExtensions,
   );
-  if (!imageExtensions.includes('gif')) {
-    imageExtensions.push('gif');
-  }
 
   const videoExtensions = normalizeExtensions(
     rawFilters.videoExtensions,
@@ -210,7 +207,7 @@ function normalizeWindowBounds(bounds: JsonValue): Rectangle | null {
   };
 }
 
-export function createDefaultPersistedState(): PersistedStateV3 {
+export function createDefaultPersistedState(): PersistedState {
   return {
     version: PERSISTED_STATE_VERSION,
     settings: cloneDefaultSettings(),
@@ -219,8 +216,32 @@ export function createDefaultPersistedState(): PersistedStateV3 {
   };
 }
 
-function addAvifToImageExtensions(settings: AppSettings): AppSettings {
-  if (settings.filters.imageExtensions.includes('avif')) {
+/**
+ * Extensions added to the defaults after users could already persist custom lists; migrating
+ * a pre-version-3 payload backfills them once, then deliberate removals are respected.
+ */
+const BACKFILLED_IMAGE_EXTENSIONS = ['gif', 'avif'];
+const BACKFILLED_VIDEO_EXTENSIONS = ['m4v'];
+
+function withBackfilledExtensions(existing: string[], additions: string[]): string[] {
+  const missing = additions.filter((extension) => !existing.includes(extension));
+  return missing.length === 0 ? existing : [...existing, ...missing];
+}
+
+function backfillBaselineExtensions(settings: AppSettings): AppSettings {
+  const imageExtensions = withBackfilledExtensions(
+    settings.filters.imageExtensions,
+    BACKFILLED_IMAGE_EXTENSIONS,
+  );
+  const videoExtensions = withBackfilledExtensions(
+    settings.filters.videoExtensions,
+    BACKFILLED_VIDEO_EXTENSIONS,
+  );
+
+  if (
+    imageExtensions === settings.filters.imageExtensions &&
+    videoExtensions === settings.filters.videoExtensions
+  ) {
     return settings;
   }
 
@@ -228,32 +249,33 @@ function addAvifToImageExtensions(settings: AppSettings): AppSettings {
     ...settings,
     filters: {
       ...settings.filters,
-      imageExtensions: [...settings.filters.imageExtensions, 'avif'],
+      imageExtensions,
+      videoExtensions,
     },
   };
 }
 
-function migratePersistedState(candidate: JsonValue): PersistedStateV3 {
+function migratePersistedState(candidate: JsonValue): PersistedState {
   const raw = toPersistedRecord(candidate);
   const settings = normalizeAppSettings(raw.settings);
 
   return {
     version: PERSISTED_STATE_VERSION,
     settings:
-      raw.version === PERSISTED_STATE_VERSION ? settings : addAvifToImageExtensions(settings),
+      raw.version === PERSISTED_STATE_VERSION ? settings : backfillBaselineExtensions(settings),
     windowBounds: normalizeWindowBounds(raw.windowBounds),
     windowMaximized: raw.windowMaximized === true || raw.windowFullscreen === true,
   };
 }
 
-export async function readPersistedState(filePath: string): Promise<PersistedStateV3> {
+export async function readPersistedState(filePath: string): Promise<PersistedState> {
   const raw = await fs.readFile(filePath, 'utf8');
   return migratePersistedState(JSON.parse(raw));
 }
 
 export async function writePersistedState(
   filePath: string,
-  state: PersistedStateV3,
+  state: PersistedState,
 ): Promise<void> {
   const payload = JSON.stringify(state, null, 2);
   const tempFilePath = `${filePath}.tmp`;

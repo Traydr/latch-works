@@ -67,7 +67,8 @@
 - Main/renderer command bridge: app-level commands are emitted on `app:command` and handled in renderer for open-folder, refresh, settings toggle, and scan-path actions.
 - Native menu shortcuts: Open Folder (`Ctrl/Cmd+O`), Refresh (`F5` or `Ctrl/Cmd+R`), Preferences (`Ctrl/Cmd+,`).
 - Desktop shell parity: supports `open-file` events and second-instance path forwarding to active window.
-- Settings migration behavior: version 3 adds `avif` to version 2 image filters without replacing custom extensions.
+- Settings migration behavior: migrating pre-version-3 settings backfills baseline extensions (`gif`/`avif` images, `m4v` videos) once without replacing custom extensions; version 3 payloads keep deliberate removals.
+- Media filter defaults: image and video extension lists both come from `@latch-works/media-domain` (`ImageExtensions`/`VideoExtensions`), and `frameview-media://` content types are a map keyed by those same constants.
 - Performance preference: prioritize scan responsiveness by deferring video metadata probing until items are visible.
 - Scan throughput optimization: file stat work now runs with bounded parallelism per directory instead of full serial processing.
 - Renderer scan optimization: incoming scan batches append unsorted during loading, then apply one final sort pass on `done`.
