@@ -6,7 +6,7 @@ export default defineConfig({
     rollupOptions: {
       external: [
         'ffmpeg-static',
-        'ffprobe-static',
+        '@ffprobe-installer/ffprobe',
         'sharp',
         /^@img\/sharp-/,
         /^@img\/sharp-libvips-/,
