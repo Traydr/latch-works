@@ -2,6 +2,12 @@ packages:
   - "."
   - "../../packages/media-domain"
 allowBuilds:
+  '@ffprobe-installer/darwin-arm64': true
+  '@ffprobe-installer/darwin-x64': true
+  '@ffprobe-installer/linux-arm64': true
+  '@ffprobe-installer/linux-x64': true
+  '@ffprobe-installer/win32-ia32': true
+  '@ffprobe-installer/win32-x64': true
   electron: true
   electron-winstaller: true
   esbuild: true

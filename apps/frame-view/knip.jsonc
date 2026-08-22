@@ -13,7 +13,7 @@
     "tests/testUtils.ts"
   ],
   "project": ["src/**/*.ts", "src/**/*.tsx", "tests/**/*.ts", "*.ts", "*.cjs", "*.json"],
-  "ignoreDependencies": ["ffmpeg-static", "ffprobe-static"],
+  "ignoreDependencies": ["ffmpeg-static", "@ffprobe-installer/ffprobe"],
   "ignoreIssues": {
     "src/shared/types.ts": ["types"]
   }

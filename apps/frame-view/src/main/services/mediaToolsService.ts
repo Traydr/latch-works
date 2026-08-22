@@ -39,7 +39,7 @@ const BinaryPathModuleSchema = z.union([
   z.object({ default: z.string() }).transform((module) => module.default),
 ]);
 
-/** `ffprobe-static` exports `{ path }`, directly or as a CommonJS default export. */
+/** `@ffprobe-installer/ffprobe` exports `{ path }`, directly or as a CommonJS default export. */
 const FfprobeModuleSchema = z.union([
   z.object({ path: z.string() }).transform((module) => module.path),
   z.object({ default: z.object({ path: z.string() }) }).transform((module) => module.default.path),
@@ -274,10 +274,10 @@ export class MediaToolsService {
 
   private loadFfprobePath(): string | null {
     try {
-      const parsed = FfprobeModuleSchema.safeParse(nativeRequire('ffprobe-static'));
+      const parsed = FfprobeModuleSchema.safeParse(nativeRequire('@ffprobe-installer/ffprobe'));
       return parsed.success ? parsed.data : null;
     } catch {
-      return requireFromPackagedNodeModules('ffprobe-static', FfprobeModuleSchema);
+      return requireFromPackagedNodeModules('@ffprobe-installer/ffprobe', FfprobeModuleSchema);
     }
   }
 

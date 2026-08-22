@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { FuseV1Options, FuseVersion } from '@electron/fuses';
 import { MakerDeb } from '@electron-forge/maker-deb';
@@ -33,7 +33,7 @@ const appName = 'frame-view';
 const appExecutableName = `${appName}.exe`;
 const appSetupExe = `${appName} Setup.exe`;
 const stagedRuntimeNodeModulesPath = path.resolve(__dirname, '.packaged-runtime', 'node_modules');
-const runtimeDependencyRoots = ['ffmpeg-static', 'ffprobe-static', 'sharp'];
+const runtimeDependencyRoots = ['ffmpeg-static', '@ffprobe-installer/ffprobe', 'sharp'];
 
 type PackagerConfig = NonNullable<ForgeConfig['packagerConfig']>;
 
@@ -78,22 +78,6 @@ function copyRuntimePackage(packageName: string, visited: Set<string>): void {
   }
 }
 
-function trimFfprobeStaticToCurrentPlatform(): void {
-  const ffprobeBinPath = path.join(stagedRuntimeNodeModulesPath, 'ffprobe-static', 'bin');
-  if (!existsSync(ffprobeBinPath)) {
-    return;
-  }
-
-  const keepDir =
-    process.platform === 'darwin' ? 'darwin' : process.platform === 'win32' ? 'win32' : 'linux';
-
-  for (const entry of readdirSync(ffprobeBinPath)) {
-    if (entry !== keepDir) {
-      rmSync(path.join(ffprobeBinPath, entry), { recursive: true, force: true });
-    }
-  }
-}
-
 function stageRuntimeDependencies(): void {
   rmSync(path.resolve(__dirname, '.packaged-runtime'), { force: true, recursive: true });
   mkdirSync(stagedRuntimeNodeModulesPath, { recursive: true });
@@ -102,8 +86,6 @@ function stageRuntimeDependencies(): void {
   for (const dependencyName of runtimeDependencyRoots) {
     copyRuntimePackage(dependencyName, visited);
   }
-
-  trimFfprobeStaticToCurrentPlatform();
 }
 
 function getPackagerIconPath(): string | undefined {
