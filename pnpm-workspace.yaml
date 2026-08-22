@@ -2,11 +2,31 @@ packages:
   - "apps/*"
   - "packages/*"
 blockExoticSubdeps: false
+# Explicit pnpm default. Electron Forge's system check refuses pnpm unless
+# node-linker is hoisted or a hoist pattern is declared; the default private
+# hoist keeps the isolated layout while satisfying that check.
+hoistPattern:
+  - "*"
+minimumReleaseAge: 10080
+trustPolicy: no-downgrade
+trustPolicyIgnoreAfter: 525600
+# Electron Forge transitively pins these mature dev-only releases without current trust evidence.
+trustPolicyExclude:
+  - semver@5.7.2
+  - semver@6.3.1
+  - undici-types@6.21.0
 overrides:
+  '@electron/node-gyp': 10.2.0-electron.2
   fs-xattr: "0.3.1"
   macos-alias: "0.2.12"
   yauzl: "3.3.1"
 allowBuilds:
+  '@ffprobe-installer/darwin-arm64': true
+  '@ffprobe-installer/darwin-x64': true
+  '@ffprobe-installer/linux-arm64': true
+  '@ffprobe-installer/linux-x64': true
+  '@ffprobe-installer/win32-ia32': true
+  '@ffprobe-installer/win32-x64': true
   '@napi-rs/canvas': true
   '@napi-rs/canvas-linux-x64-gnu': true
   electron: true

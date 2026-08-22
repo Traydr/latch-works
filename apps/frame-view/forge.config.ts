@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { FuseV1Options, FuseVersion } from '@electron/fuses';
 import { MakerDeb } from '@electron-forge/maker-deb';
@@ -33,22 +33,37 @@ const appName = 'frame-view';
 const appExecutableName = `${appName}.exe`;
 const appSetupExe = `${appName} Setup.exe`;
 const stagedRuntimeNodeModulesPath = path.resolve(__dirname, '.packaged-runtime', 'node_modules');
-const runtimeDependencyRoots = ['ffmpeg-static', 'ffprobe-static', 'sharp'];
+const runtimeDependencyRoots = ['ffmpeg-static', '@ffprobe-installer/ffprobe', 'sharp'];
 
 type PackagerConfig = NonNullable<ForgeConfig['packagerConfig']>;
 
-function resolvePackageDirectory(packageName: string): string {
-  const packagePathSegments = packageName.startsWith('@') ? packageName.split('/') : [packageName];
-  return path.resolve(__dirname, 'node_modules', ...packagePathSegments);
+// Walk up from `fromDirectory` looking in each `node_modules`, following pnpm's
+// symlinks into the virtual store so transitive and optional dependencies resolve
+// under the isolated (default) layout as well as a hoisted one. Missing packages
+// (e.g. other platforms' optional binaries) return null and are skipped.
+function findPackageDirectory(packageName: string, fromDirectory: string): string | null {
+  const packagePathSegments = packageName.split('/');
+  let currentDirectory = fromDirectory;
+  for (;;) {
+    const candidatePath = path.join(currentDirectory, 'node_modules', ...packagePathSegments);
+    if (existsSync(candidatePath)) {
+      return realpathSync(candidatePath);
+    }
+    const parentDirectory = path.dirname(currentDirectory);
+    if (parentDirectory === currentDirectory) {
+      return null;
+    }
+    currentDirectory = parentDirectory;
+  }
 }
 
-function copyRuntimePackage(packageName: string, visited: Set<string>): void {
+function copyRuntimePackage(packageName: string, fromDirectory: string, visited: Set<string>): void {
   if (visited.has(packageName)) {
     return;
   }
 
-  const sourcePath = resolvePackageDirectory(packageName);
-  if (!existsSync(sourcePath)) {
+  const sourcePath = findPackageDirectory(packageName, fromDirectory);
+  if (!sourcePath) {
     return;
   }
 
@@ -70,27 +85,11 @@ function copyRuntimePackage(packageName: string, visited: Set<string>): void {
   );
 
   for (const dependencyName of Object.keys(packageJson.dependencies ?? {})) {
-    copyRuntimePackage(dependencyName, visited);
+    copyRuntimePackage(dependencyName, sourcePath, visited);
   }
 
   for (const dependencyName of Object.keys(packageJson.optionalDependencies ?? {})) {
-    copyRuntimePackage(dependencyName, visited);
-  }
-}
-
-function trimFfprobeStaticToCurrentPlatform(): void {
-  const ffprobeBinPath = path.join(stagedRuntimeNodeModulesPath, 'ffprobe-static', 'bin');
-  if (!existsSync(ffprobeBinPath)) {
-    return;
-  }
-
-  const keepDir =
-    process.platform === 'darwin' ? 'darwin' : process.platform === 'win32' ? 'win32' : 'linux';
-
-  for (const entry of readdirSync(ffprobeBinPath)) {
-    if (entry !== keepDir) {
-      rmSync(path.join(ffprobeBinPath, entry), { recursive: true, force: true });
-    }
+    copyRuntimePackage(dependencyName, sourcePath, visited);
   }
 }
 
@@ -100,10 +99,14 @@ function stageRuntimeDependencies(): void {
   const visited = new Set<string>();
 
   for (const dependencyName of runtimeDependencyRoots) {
-    copyRuntimePackage(dependencyName, visited);
+    copyRuntimePackage(dependencyName, __dirname, visited);
   }
 
-  trimFfprobeStaticToCurrentPlatform();
+  for (const dependencyName of runtimeDependencyRoots) {
+    if (!visited.has(dependencyName)) {
+      throw new Error(`Runtime dependency ${dependencyName} was not found for staging`);
+    }
+  }
 }
 
 function getPackagerIconPath(): string | undefined {
