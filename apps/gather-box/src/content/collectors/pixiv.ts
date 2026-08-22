@@ -103,13 +103,37 @@ function getCreator(
   for (const link of candidates) {
     const url = new URL(link.href, location.href);
     const match = url.pathname.match(/^\/(?:[a-z]{2}\/)?users\/(\d+)\/?$/i);
-    const name = link.textContent?.trim() ?? "";
+    const name = getCreatorName(link);
     if (match && name) {
       return { id: match[1], name };
     }
   }
 
   return null;
+}
+
+function getCreatorName(profileLink: HTMLAnchorElement): string {
+  const linkText = getDirectText(profileLink);
+  if (linkText) {
+    return linkText;
+  }
+
+  for (const child of profileLink.children) {
+    const childText = getDirectText(child);
+    if (childText) {
+      return childText;
+    }
+  }
+
+  return profileLink.querySelector<HTMLImageElement>("img[alt]")?.alt.trim() ?? "";
+}
+
+function getDirectText(element: Element): string {
+  return Array.from(element.childNodes, (node) =>
+    node.nodeType === node.TEXT_NODE ? (node.textContent ?? "") : ""
+  )
+    .join("")
+    .trim();
 }
 
 function getArtworkTitle(document: Document): string {
