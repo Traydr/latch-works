@@ -36,6 +36,8 @@ export interface DatabaseLibrarySnapshot {
 
 export interface LibrarySnapshotReadRequest {
   currentPath: string;
+  /** Direct-child subtrees to subtract in recursive mode (Plan 054). */
+  excludedPaths?: readonly string[];
   includeAllFolders?: boolean;
   limit: number;
   offset?: number;
@@ -46,6 +48,8 @@ export interface LibrarySnapshotReadRequest {
 export interface GalleryListingReadRequest {
   currentPath: string;
   cursor?: string;
+  /** Direct-child subtrees to subtract in recursive mode (Plan 054). */
+  excludedPaths?: readonly string[];
   limit?: number;
   query?: string;
   randomSeed: GalleryRandomSeed;
@@ -64,14 +68,23 @@ export interface GalleryListingReadRequest {
 export function buildLibrarySnapshotMediaQuery(
   {
     currentPath,
+    excludedPaths,
     limit,
     offset = 0,
     query,
     recursive = false,
-  }: Pick<LibrarySnapshotReadRequest, "currentPath" | "limit" | "offset" | "query" | "recursive">,
+  }: Pick<
+    LibrarySnapshotReadRequest,
+    "currentPath" | "excludedPaths" | "limit" | "offset" | "query" | "recursive"
+  >,
   database: Database = db,
 ) {
-  const { mediaConditions } = buildLibraryConditions({ currentPath, query, recursive });
+  const { mediaConditions } = buildLibraryConditions({
+    currentPath,
+    excludedPaths,
+    query,
+    recursive,
+  });
 
   return database
     .select({
@@ -108,6 +121,7 @@ export function buildGalleryListingMediaQuery(
   {
     currentPath,
     cursor,
+    excludedPaths,
     limit = DEFAULT_GALLERY_LISTING_LIMIT,
     query,
     randomSeed,
@@ -120,7 +134,12 @@ export function buildGalleryListingMediaQuery(
   },
   database: Database = db,
 ) {
-  const { mediaConditions } = buildLibraryConditions({ currentPath, query, recursive });
+  const { mediaConditions } = buildLibraryConditions({
+    currentPath,
+    excludedPaths,
+    query,
+    recursive,
+  });
   mediaConditions.push(...buildMediaVisibilityConditions({ showImages, showVideos }));
 
   if (cursor) {
@@ -277,6 +296,7 @@ export function buildGalleryListingCursorCondition(
 export async function readDatabaseLibrarySnapshot(
   {
     currentPath,
+    excludedPaths,
     includeAllFolders = false,
     limit,
     offset = 0,
@@ -288,7 +308,10 @@ export async function readDatabaseLibrarySnapshot(
   const [folderRows, mediaRows, rootRows, allFolderRows] = await Promise.all([
     buildLibraryFolderQuery({ currentPath, query, recursive }, database),
     limit > 0
-      ? buildLibrarySnapshotMediaQuery({ currentPath, limit, offset, query, recursive }, database)
+      ? buildLibrarySnapshotMediaQuery(
+          { currentPath, excludedPaths, limit, offset, query, recursive },
+          database,
+        )
       : Promise.resolve([]),
     database.select().from(folders).where(eq(folders.parentPath, "")),
     includeAllFolders
@@ -328,6 +351,7 @@ export async function readDatabaseGalleryListing(
   {
     currentPath,
     cursor,
+    excludedPaths,
     limit = DEFAULT_GALLERY_LISTING_LIMIT,
     query,
     randomSeed,
@@ -353,6 +377,7 @@ export async function readDatabaseGalleryListing(
       {
         currentPath,
         cursor: decodedCursor?.subjectKind === "media" ? decodedCursor : null,
+        excludedPaths,
         limit,
         query,
         randomSeed,

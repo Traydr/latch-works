@@ -45,6 +45,12 @@ import type { LibraryMediaItem } from "./types";
 export interface ComicListingReadRequest {
   currentPath: string;
   cursor?: string;
+  /**
+   * Direct-child subtrees to subtract (Plan 054). Listing-only: the reader's
+   * single-comic fetch (ComicReadRequest) stays exclude-free — an excluded
+   * comic simply never appears in the listing.
+   */
+  excludedPaths?: readonly string[];
   limit?: number;
   query?: string;
   randomSeed: GalleryRandomSeed;
@@ -77,11 +83,20 @@ type ComicCursor = Extract<GalleryListingCursorPayload, { subjectKind: "comic" }
  */
 export function buildComicPageConditions({
   currentPath,
+  excludedPaths,
   query,
   showImages,
   showVideos,
-}: Pick<ComicListingReadRequest, "currentPath" | "query" | "showImages" | "showVideos">): SQL[] {
-  const { mediaConditions } = buildLibraryConditions({ currentPath, query, recursive: true });
+}: Pick<
+  ComicListingReadRequest,
+  "currentPath" | "excludedPaths" | "query" | "showImages" | "showVideos"
+>): SQL[] {
+  const { mediaConditions } = buildLibraryConditions({
+    currentPath,
+    excludedPaths,
+    query,
+    recursive: true,
+  });
   return [
     ...mediaConditions,
     inArray(mediaObjects.mediaType, ["image", "gif"]),
@@ -178,6 +193,7 @@ export function buildComicSummaryQuery(
   {
     currentPath,
     cursor,
+    excludedPaths,
     limit = DEFAULT_GALLERY_LISTING_LIMIT,
     query,
     randomSeed,
@@ -187,7 +203,13 @@ export function buildComicSummaryQuery(
   }: Omit<ComicListingReadRequest, "cursor"> & { cursor: ComicCursor | null },
   database: Database = db,
 ) {
-  const conditions = buildComicPageConditions({ currentPath, query, showImages, showVideos });
+  const conditions = buildComicPageConditions({
+    currentPath,
+    excludedPaths,
+    query,
+    showImages,
+    showVideos,
+  });
 
   return database
     .select({
@@ -265,6 +287,7 @@ export async function readDatabaseComicListing(
   {
     currentPath,
     cursor,
+    excludedPaths,
     limit = DEFAULT_GALLERY_LISTING_LIMIT,
     query,
     randomSeed,
@@ -283,6 +306,7 @@ export async function readDatabaseComicListing(
     {
       currentPath,
       cursor: decodedCursor?.subjectKind === "comic" ? decodedCursor : null,
+      excludedPaths,
       limit,
       query,
       randomSeed,
