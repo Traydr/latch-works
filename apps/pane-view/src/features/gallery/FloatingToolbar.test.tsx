@@ -139,6 +139,37 @@ describe("FloatingToolbar exclude button", () => {
     expect(props.onToggleExcludedChild).toHaveBeenCalledExactlyOnceWith("photos/teens");
   });
 
+  it("keeps the open dialog's element and rows mounted across a toggle", () => {
+    // Scroll position lives on the menu element; a remount (or a collapsed
+    // row list) would reset it to the top mid-interaction.
+    const props = toolbarProps({ childFolders: CHILDREN, recursive: true });
+    render(createElement(FloatingToolbar, props));
+    click(excludeButton());
+    const menu = container.querySelector('[role="menu"]');
+    expect(menu).not.toBeNull();
+
+    rerender(createElement(FloatingToolbar, { ...props, excludedChildPaths: ["photos/kids"] }));
+    expect(container.querySelector('[role="menu"]')).toBe(menu);
+    expect(container.querySelectorAll('[role="menuitemcheckbox"]')).toHaveLength(CHILDREN.length);
+  });
+
+  it("closes the dialog on navigation and when the excludable set empties", () => {
+    const props = toolbarProps({ childFolders: CHILDREN, recursive: true });
+    render(createElement(FloatingToolbar, props));
+    click(excludeButton());
+    expect(container.querySelector('[role="menu"]')).not.toBeNull();
+
+    rerender(createElement(FloatingToolbar, { ...props, currentPath: "photos/kids" }));
+    expect(container.querySelector('[role="menu"]')).toBeNull();
+
+    click(excludeButton());
+    expect(container.querySelector('[role="menu"]')).not.toBeNull();
+    rerender(
+      createElement(FloatingToolbar, { ...props, childFolders: [], currentPath: "photos/kids" }),
+    );
+    expect(container.querySelector('[role="menu"]')).toBeNull();
+  });
+
   it("withholds the auto-prune while the children are not current", () => {
     const props = toolbarProps({
       childFolders: CHILDREN,

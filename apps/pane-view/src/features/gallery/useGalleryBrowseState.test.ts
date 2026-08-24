@@ -142,12 +142,11 @@ describe("requests", () => {
     });
   });
 
-  it("carries excludes in both requests only while the folded recursive flag is on (Plan 054)", () => {
+  it("carries excludes on the listing only while the folded recursive flag is on (Plan 054)", () => {
     const settings = { showImages: true, showVideos: true };
     const excludes = ["photos/kids"];
 
     const recursive = resolveBrowseState({ path: "photos", recursive: true }, persisted(), true);
-    expect(snapshotRequestFor(recursive, excludes).excludedPaths).toEqual(excludes);
     expect(listingRequestFor(recursive, settings, excludes).excludedPaths).toEqual(excludes);
 
     // Comic mode folds into recursive, so excludes apply there too.
@@ -155,13 +154,14 @@ describe("requests", () => {
     expect(listingRequestFor(comic, settings, excludes).excludedPaths).toEqual(excludes);
 
     const plain = resolveBrowseState({ path: "photos" }, persisted(), true);
-    expect(snapshotRequestFor(plain, excludes).excludedPaths).toBeUndefined();
     expect(listingRequestFor(plain, settings, excludes).excludedPaths).toBeUndefined();
 
     // A path with no stored entry contributes nothing to the request.
-    expect(snapshotRequestFor(recursive, []).excludedPaths).toBeUndefined();
-    expect(snapshotRequestFor(recursive).excludedPaths).toBeUndefined();
     expect(listingRequestFor(recursive, settings, []).excludedPaths).toBeUndefined();
+
+    // The snapshot never carries excludes: they cannot change the folder
+    // list, and a toggled snapshot key would blank the open dialog.
+    expect(snapshotRequestFor(recursive)).not.toHaveProperty("excludedPaths");
   });
 
   it("is deterministic for the same input", () => {

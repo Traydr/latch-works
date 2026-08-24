@@ -160,15 +160,15 @@ function useGalleryPage() {
 
   // The excludable set is the current path's direct child folders, straight
   // from the snapshot (Plan 054). While searching, the snapshot's folders are
-  // search matches rather than children, so nothing is excludable; while the
-  // snapshot still shows the folder being left, the list is withheld from the
-  // auto-prune (and the button simply reads as having no subfolders).
+  // search matches rather than children, so nothing is excludable. A stale
+  // snapshot (folder being left) does NOT empty the list — collapsing it
+  // mid-interaction would blank the open dialog and reset its scroll; the
+  // dialog closes on navigation instead, and only the auto-prune is gated on
+  // the snapshot being current.
   const excludableChildFolders = useMemo(
     () =>
-      query || !snapshotIsCurrent
-        ? []
-        : [...(library?.folders ?? [])].sort((a, b) => a.name.localeCompare(b.name)),
-    [library, query, snapshotIsCurrent],
+      query ? [] : [...(library?.folders ?? [])].sort((a, b) => a.name.localeCompare(b.name)),
+    [library, query],
   );
   const childFoldersAreCurrent = !query && snapshotIsCurrent && Boolean(library);
   const handleExcludeDialogOpen = useCallback(() => {

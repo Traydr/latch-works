@@ -245,8 +245,10 @@ describe("useGalleryBrowseState", () => {
     );
     const host = mount({ path: "photos", recursive: true }, storage);
     expect(latest?.excludedChildPaths).toEqual(["photos/kids"]);
-    expect(latest?.snapshotRequest.excludedPaths).toEqual(["photos/kids"]);
     expect(latest?.listingRequest.excludedPaths).toEqual(["photos/kids"]);
+    // The snapshot never carries excludes: the folder list cannot change, and
+    // a churned snapshot key would blank the open exclude dialog.
+    expect(latest?.snapshotRequest).not.toHaveProperty("excludedPaths");
 
     // Navigating to another path swaps to that path's own list.
     host.rerender({ path: "videos", recursive: true });
@@ -256,10 +258,9 @@ describe("useGalleryBrowseState", () => {
     expect(latest?.excludedChildPaths).toEqual([]);
     expect(latest?.listingRequest.excludedPaths).toBeUndefined();
 
-    // Recursive off: the list stays readable but leaves every request.
+    // Recursive off: the list stays readable but leaves the listing request.
     host.rerender({ path: "photos" });
     expect(latest?.excludedChildPaths).toEqual(["photos/kids"]);
-    expect(latest?.snapshotRequest.excludedPaths).toBeUndefined();
     expect(latest?.listingRequest.excludedPaths).toBeUndefined();
   });
 
@@ -267,6 +268,7 @@ describe("useGalleryBrowseState", () => {
     const storage = createMemoryBrowseStorage({ randomSeed: SEED });
     mount({ path: "photos", recursive: true }, storage);
     const before = latest?.listingRequest;
+    const snapshotBefore = latest?.snapshotRequest;
     if (!before) throw new Error("listing request missing");
 
     act(() => latest?.toggleExcludedChild("photos/kids"));
@@ -276,6 +278,9 @@ describe("useGalleryBrowseState", () => {
     expect(JSON.stringify(galleryListingKeys.listing(before))).not.toBe(
       JSON.stringify(galleryListingKeys.listing(latest?.listingRequest ?? before)),
     );
+    // The snapshot request must not move: a refetch there would flip the
+    // snapshot to placeholder data mid-toggle and reset the dialog's scroll.
+    expect(latest?.snapshotRequest).toBe(snapshotBefore);
 
     act(() => latest?.toggleExcludedChild("photos/kids"));
     expect(storage.recursiveExcludes).toEqual({});

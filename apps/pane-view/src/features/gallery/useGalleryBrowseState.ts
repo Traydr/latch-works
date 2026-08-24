@@ -117,15 +117,14 @@ export function browseSnapshotRequestFromSearch(
 
 export function snapshotRequestFor(
   state: Pick<ResolvedBrowseState, "comicMode" | "path" | "query" | "recursive">,
-  excludedPaths: readonly string[] = [],
 ): LibrarySnapshotRequest {
   return {
     comicMode: state.comicMode,
-    // Excludes ride the request only while the folded recursive flag is on
-    // (Plan 054, Decision 3); a path with no stored entry contributes nothing.
-    excludedPaths: state.recursive && excludedPaths.length > 0 ? excludedPaths : undefined,
-    // Media (and comic summaries) come from the cursor listing; the snapshot
-    // is the folder and archive-state query only.
+    // Deliberately no excludedPaths: the snapshot is the folder and
+    // archive-state query only (mediaLimit 0), and excludes never prune
+    // folders. Sending them would churn the snapshot query key on every
+    // toggle, blanking the exclude dialog mid-interaction (and resetting its
+    // scroll) for a refetch that cannot change a single row.
     mediaLimit: 0,
     path: state.path || undefined,
     query: state.query,
@@ -143,6 +142,8 @@ export function listingRequestFor(
 ): GalleryListingQueryRequest {
   return {
     comicMode: state.comicMode,
+    // Excludes ride the request only while the folded recursive flag is on
+    // (Plan 054, Decision 3); a path with no stored entry contributes nothing.
     excludedPaths: state.recursive && excludedPaths.length > 0 ? excludedPaths : undefined,
     path: state.path || undefined,
     query: state.query,
@@ -509,9 +510,8 @@ export function useGalleryBrowseState({
   );
 
   const snapshotRequest = useMemo(
-    () =>
-      snapshotRequestFor({ comicMode, path, query: state.query, recursive }, excludedChildPaths),
-    [comicMode, excludedChildPaths, path, recursive, state.query],
+    () => snapshotRequestFor({ comicMode, path, query: state.query, recursive }),
+    [comicMode, path, recursive, state.query],
   );
   const listingRequest = useMemo(
     () =>

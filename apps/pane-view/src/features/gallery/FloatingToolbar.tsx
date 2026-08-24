@@ -67,14 +67,21 @@ export function FloatingToolbar({
   const activeLabel = SORT_OPTIONS.find((o) => o.value === sortMode)?.label ?? "Sort";
 
   // The exclude button exists only in recursive/comic mode (Plan 054,
-  // Decision 4); leaving those modes must not leave a phantom open dialog
-  // behind for the next time they are entered.
+  // Decision 4); leaving those modes, or losing the excludable set (a
+  // search), must not leave a phantom open dialog behind. Navigation closes
+  // it too: the dialog belongs to one browse path, and the snapshot's rows
+  // deliberately linger through refetches (see GalleryPage), so without this
+  // the old path's children would stay clickable while the next folder loads.
   const excludeButtonVisible = recursive || comicMode;
+  const excludeDialogAvailable = excludeButtonVisible && childFolders.length > 0;
   useEffect(() => {
-    if (!excludeButtonVisible) {
+    if (!excludeDialogAvailable) {
       setExcludeDialogOpen(false);
     }
-  }, [excludeButtonVisible]);
+  }, [excludeDialogAvailable]);
+  useEffect(() => {
+    setExcludeDialogOpen(false);
+  }, [currentPath]);
 
   return (
     <div className="pointer-events-none fixed bottom-5 left-1/2 z-20 -translate-x-1/2">
