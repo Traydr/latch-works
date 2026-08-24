@@ -10,7 +10,7 @@
 
 ## Status
 
-- **Status**: IN PROGRESS (branch `agent/054-recursive-folder-excludes`)
+- **Status**: IN REVIEW (branch `agent/054-recursive-folder-excludes`, implemented 2026-08-24; PR #106)
 - **Priority**: P2 — product feature the owner asked for; frame-view parity
 - **Effort**: M
 - **Risk**: LOW–MEDIUM (touches the one place browse scope becomes SQL; fully test-gated)
