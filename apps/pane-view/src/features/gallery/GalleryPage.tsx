@@ -1,4 +1,4 @@
-import type { ComicEntry } from "@latch-works/media-domain";
+import { type ComicEntry, compareByName } from "@latch-works/media-domain";
 import { Archive, ChevronUp, PanelRightClose, PanelRightOpen, Search } from "lucide-react";
 import {
   createContext,
@@ -159,21 +159,36 @@ function useGalleryPage() {
   }, [allMedia, library]);
 
   // The excludable set is the current path's direct child folders, straight
-  // from the snapshot (Plan 054). While searching, the snapshot's folders are
-  // search matches rather than children, so nothing is excludable. A stale
-  // snapshot (folder being left) does NOT empty the list — collapsing it
-  // mid-interaction would blank the open dialog and reset its scroll; the
-  // dialog closes on navigation instead, and only the auto-prune is gated on
-  // the snapshot being current.
+  // from the snapshot, in the gallery's natural name order (Plan 054). While
+  // searching, the snapshot's folders are search matches rather than
+  // children, so nothing is excludable. A stale snapshot (folder being left)
+  // does NOT empty the list — collapsing it mid-interaction would blank the
+  // open dialog and reset its scroll; instead the toolbar disables the button
+  // until the children are current, and the dialog remounts per path.
   const excludableChildFolders = useMemo(
-    () =>
-      query ? [] : [...(library?.folders ?? [])].sort((a, b) => a.name.localeCompare(b.name)),
+    () => (query ? [] : [...(library?.folders ?? [])].sort(compareByName)),
     [library, query],
   );
   const childFoldersAreCurrent = !query && snapshotIsCurrent && Boolean(library);
   const handleExcludeDialogOpen = useCallback(() => {
     pruneExcludedChildren(excludableChildFolders.map((folder) => folder.path));
   }, [excludableChildFolders, pruneExcludedChildren]);
+  const excludeControl = useMemo(
+    () => ({
+      childFolders: excludableChildFolders,
+      childFoldersAreCurrent,
+      excludedChildPaths,
+      onDialogOpen: handleExcludeDialogOpen,
+      onToggle: toggleExcludedChild,
+    }),
+    [
+      childFoldersAreCurrent,
+      excludableChildFolders,
+      excludedChildPaths,
+      handleExcludeDialogOpen,
+      toggleExcludedChild,
+    ],
+  );
 
   const navigateSiblingFolder = useCallback(
     (offset: -1 | 1) => {
@@ -380,7 +395,6 @@ function useGalleryPage() {
     archiveRoot,
     breadcrumbs,
     browseKey,
-    childFoldersAreCurrent,
     closeViewer,
     contentBrowseKey,
     columnCountRef,
@@ -392,9 +406,7 @@ function useGalleryPage() {
     effectiveComicMode,
     effectiveRecursive,
     entries,
-    excludableChildFolders,
-    excludedChildPaths,
-    handleExcludeDialogOpen,
+    exclude: excludeControl,
     focusedEntryIndex,
     folderModesEnabled,
     handleActivateEntry,
@@ -439,7 +451,6 @@ function useGalleryPage() {
     sortMode,
     stepMedia,
     submitSearch,
-    toggleExcludedChild,
     updateSettings,
     viewerOpen,
   };
@@ -662,16 +673,12 @@ function GalleryContent(): JSX.Element {
         )}
       </div>
       <FloatingToolbar
-        childFolders={model.excludableChildFolders}
-        childFoldersAreCurrent={model.childFoldersAreCurrent}
         comicMode={model.effectiveComicMode}
         currentPath={model.displayPath}
-        excludedChildPaths={model.excludedChildPaths}
+        exclude={model.exclude}
         isRefreshing={model.showRefreshing}
         onChangeSortMode={model.setSortMode}
-        onExcludeDialogOpen={model.handleExcludeDialogOpen}
         onRefresh={() => void model.invalidateLibrary()}
-        onToggleExcludedChild={model.toggleExcludedChild}
         onToggleComicMode={() => {
           if (!model.folderModesEnabled) return;
           model.setComicMode(!model.effectiveComicMode);

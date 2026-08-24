@@ -1,6 +1,6 @@
 import type { GallerySortMode } from "@latch-works/media-domain";
 import { ArrowUpDown, FolderMinus, ImageIcon, ListTree, RefreshCcw, Shuffle } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   type ExcludableChildFolder,
@@ -8,20 +8,26 @@ import {
 } from "@/features/gallery/FolderExcludeDialog";
 import { cn } from "@/lib/utils";
 
-interface FloatingToolbarProps {
+/** Everything the exclude button and its dialog need (Plan 054). */
+export interface ExcludeControlProps {
   /** Direct child folders of the current path, from the browse snapshot. */
   childFolders: readonly ExcludableChildFolder[];
-  /** False while the snapshot still shows the folder being left (or a search); gates the auto-prune. */
+  /** False while the snapshot still shows the folder being left (or a search). */
   childFoldersAreCurrent: boolean;
+  excludedChildPaths: readonly string[];
+  /** Fires when the dialog opens against current children: the auto-prune hook. */
+  onDialogOpen: () => void;
+  onToggle: (path: string) => void;
+}
+
+interface FloatingToolbarProps {
   comicMode: boolean;
   currentPath: string;
-  excludedChildPaths: readonly string[];
+  exclude: ExcludeControlProps;
   isRefreshing: boolean;
   onChangeSortMode: (mode: GallerySortMode) => void;
-  onExcludeDialogOpen: () => void;
   onRefresh: () => void;
   onToggleComicMode: () => void;
-  onToggleExcludedChild: (path: string) => void;
   onToggleRecursive: () => void;
   recursive: boolean;
   recursiveDisabled?: boolean;
@@ -44,18 +50,76 @@ function toolButtonClass(active: boolean): string {
   );
 }
 
-export function FloatingToolbar({
+/**
+ * The exclude button and its dialog (Plan 054, Decisions 4–5). Mounted only
+ * in recursive/comic mode and keyed by browse path, so leaving those modes or
+ * navigating drops the open state with the component — no effect needed.
+ * The button waits for the snapshot's children to be current: the snapshot's
+ * rows linger through a navigation, and enabling on the old folder's children
+ * would open the wrong list (and prune against it).
+ */
+function ExcludeControl({
   childFolders,
   childFoldersAreCurrent,
+  excludedChildPaths,
+  onDialogOpen,
+  onToggle,
+}: ExcludeControlProps) {
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const available = childFoldersAreCurrent && childFolders.length > 0;
+  // Losing the excludable set (a search, a folder with no children) closes
+  // the dialog for good; the next click must open, not toggle a stale flag.
+  if (dialogOpen && !available) {
+    setDialogOpen(false);
+  }
+  const showDialog = dialogOpen && available;
+
+  return (
+    <div className="relative">
+      <Button
+        aria-expanded={showDialog}
+        aria-haspopup="menu"
+        className={cn(toolButtonClass(false), "relative", showDialog && "bg-accent")}
+        disabled={!available}
+        onClick={() => {
+          if (!dialogOpen) {
+            onDialogOpen();
+          }
+          setDialogOpen(!dialogOpen);
+        }}
+        size="sm"
+        title={childFolders.length === 0 ? "No subfolders to exclude" : "Exclude subfolders"}
+        type="button"
+        variant="outline"
+      >
+        <FolderMinus className="size-4" />
+        <span className="hidden sm:inline">Exclude</span>
+        {excludedChildPaths.length > 0 ? (
+          <span
+            aria-hidden="true"
+            className="absolute -top-1 -right-1 size-2 rounded-full bg-primary"
+          />
+        ) : null}
+      </Button>
+      {showDialog ? (
+        <FolderExcludeDialog
+          childFolders={childFolders}
+          excludedChildPaths={excludedChildPaths}
+          onToggle={onToggle}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+export function FloatingToolbar({
   comicMode,
   currentPath,
-  excludedChildPaths,
+  exclude,
   isRefreshing,
   onChangeSortMode,
-  onExcludeDialogOpen,
   onRefresh,
   onToggleComicMode,
-  onToggleExcludedChild,
   onToggleRecursive,
   recursive,
   recursiveDisabled = false,
@@ -63,25 +127,7 @@ export function FloatingToolbar({
   sortMode,
 }: FloatingToolbarProps) {
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
-  const [excludeDialogOpen, setExcludeDialogOpen] = useState(false);
   const activeLabel = SORT_OPTIONS.find((o) => o.value === sortMode)?.label ?? "Sort";
-
-  // The exclude button exists only in recursive/comic mode (Plan 054,
-  // Decision 4); leaving those modes, or losing the excludable set (a
-  // search), must not leave a phantom open dialog behind. Navigation closes
-  // it too: the dialog belongs to one browse path, and the snapshot's rows
-  // deliberately linger through refetches (see GalleryPage), so without this
-  // the old path's children would stay clickable while the next folder loads.
-  const excludeButtonVisible = recursive || comicMode;
-  const excludeDialogAvailable = excludeButtonVisible && childFolders.length > 0;
-  useEffect(() => {
-    if (!excludeDialogAvailable) {
-      setExcludeDialogOpen(false);
-    }
-  }, [excludeDialogAvailable]);
-  useEffect(() => {
-    setExcludeDialogOpen(false);
-  }, [currentPath]);
 
   return (
     <div className="pointer-events-none fixed bottom-5 left-1/2 z-20 -translate-x-1/2">
@@ -114,43 +160,7 @@ export function FloatingToolbar({
           <ImageIcon className="size-4" />
           <span className="hidden sm:inline">Comic</span>
         </Button>
-        {excludeButtonVisible ? (
-          <div className="relative">
-            <Button
-              aria-expanded={excludeDialogOpen}
-              aria-haspopup="menu"
-              className={cn(toolButtonClass(false), "relative", excludeDialogOpen && "bg-accent")}
-              disabled={childFolders.length === 0}
-              onClick={() => {
-                const next = !excludeDialogOpen;
-                if (next && childFoldersAreCurrent) {
-                  onExcludeDialogOpen();
-                }
-                setExcludeDialogOpen(next);
-              }}
-              size="sm"
-              title={childFolders.length === 0 ? "No subfolders to exclude" : "Exclude subfolders"}
-              type="button"
-              variant="outline"
-            >
-              <FolderMinus className="size-4" />
-              <span className="hidden sm:inline">Exclude</span>
-              {excludedChildPaths.length > 0 ? (
-                <span
-                  aria-hidden="true"
-                  className="absolute -top-1 -right-1 size-2 rounded-full bg-primary"
-                />
-              ) : null}
-            </Button>
-            {excludeDialogOpen ? (
-              <FolderExcludeDialog
-                childFolders={childFolders}
-                excludedChildPaths={excludedChildPaths}
-                onToggle={onToggleExcludedChild}
-              />
-            ) : null}
-          </div>
-        ) : null}
+        {recursive || comicMode ? <ExcludeControl key={currentPath} {...exclude} /> : null}
         <div className="relative">
           <Button
             aria-expanded={sortMenuOpen}
