@@ -57,6 +57,25 @@ const RootPreferencesRecordSchema = z.record(z.string(), RootGalleryPreferencesS
 /** Browse path → excluded direct-child paths; a malformed record reads as empty. */
 const RecursiveExcludesRecordSchema = z.record(z.string(), z.array(z.string()).catch([])).catch({});
 
+export type RecursiveExcludesRecord = z.infer<typeof RecursiveExcludesRecordSchema>;
+
+/**
+ * The record with `path`'s entry replaced by the deduped `paths`, or removed
+ * when the list is empty so the record does not grow unboundedly. Both
+ * adapters write through this.
+ */
+export function withExcludedChildPaths(
+  record: RecursiveExcludesRecord,
+  path: string,
+  paths: readonly string[],
+): RecursiveExcludesRecord {
+  const others = Object.fromEntries(
+    Object.entries(record).filter(([storedPath]) => storedPath !== path),
+  );
+  const deduped = [...new Set(paths)];
+  return deduped.length > 0 ? { ...others, [path]: deduped } : others;
+}
+
 export interface GalleryBrowseStorage {
   /** Null when nothing is stored or storage is unavailable (server render, quota, parse error). */
   read(): PersistedBrowseState | null;
@@ -85,7 +104,7 @@ function readStoredText(key: string): string | null {
 
 function writeStoredJson(
   key: string,
-  value: PersistedBrowseState | Record<string, RootGalleryPreferences> | Record<string, string[]>,
+  value: PersistedBrowseState | Record<string, RootGalleryPreferences> | RecursiveExcludesRecord,
 ): void {
   try {
     globalThis.localStorage?.setItem(key, JSON.stringify(value));
@@ -120,25 +139,21 @@ export function createLocalStorageBrowseStorage(): GalleryBrowseStorage {
       return readExcludesRecord()[path] ?? [];
     },
     writeExcludedChildPaths(path, paths) {
-      const record = Object.fromEntries(
-        Object.entries(readExcludesRecord()).filter(([storedPath]) => storedPath !== path),
-      );
-      const deduped = [...new Set(paths)];
       writeStoredJson(
         RECURSIVE_EXCLUDES_KEY,
-        deduped.length > 0 ? { ...record, [path]: deduped } : record,
+        withExcludedChildPaths(readExcludesRecord(), path, paths),
       );
     },
   };
 }
 
-function readExcludesRecord(): Record<string, string[]> {
+function readExcludesRecord(): RecursiveExcludesRecord {
   const text = readStoredText(RECURSIVE_EXCLUDES_KEY);
   return text === null ? {} : (parseJsonWith(text, RecursiveExcludesRecordSchema) ?? {});
 }
 
 export interface MemoryBrowseStorage extends GalleryBrowseStorage {
-  recursiveExcludes: Record<string, string[]>;
+  recursiveExcludes: RecursiveExcludesRecord;
   rootPreferences: Record<string, RootGalleryPreferences>;
   state: PersistedBrowseState | null;
   writes: number;
@@ -147,7 +162,7 @@ export interface MemoryBrowseStorage extends GalleryBrowseStorage {
 /** In-memory adapter for tests. `null` simulates unavailable storage (server render). */
 export function createMemoryBrowseStorage(
   initial: Partial<PersistedBrowseState> | null = {},
-  recursiveExcludes: Record<string, string[]> = {},
+  recursiveExcludes: RecursiveExcludesRecord = {},
 ): MemoryBrowseStorage {
   const storage: MemoryBrowseStorage = {
     read() {
@@ -164,11 +179,7 @@ export function createMemoryBrowseStorage(
       storage.writes += 1;
     },
     writeExcludedChildPaths(path, paths) {
-      const record = Object.fromEntries(
-        Object.entries(storage.recursiveExcludes).filter(([storedPath]) => storedPath !== path),
-      );
-      const deduped = [...new Set(paths)];
-      storage.recursiveExcludes = deduped.length > 0 ? { ...record, [path]: deduped } : record;
+      storage.recursiveExcludes = withExcludedChildPaths(storage.recursiveExcludes, path, paths);
     },
     writeRootPreferences(rootKey, preferences) {
       storage.rootPreferences[rootKey] = { ...preferences };
