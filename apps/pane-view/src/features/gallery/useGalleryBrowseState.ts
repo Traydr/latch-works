@@ -20,6 +20,7 @@ import type {
   GalleryListingQueryRequest,
   LibrarySnapshotRequest,
 } from "@/features/library/library-queries";
+import { EXCLUDED_PATHS_LIMIT } from "@/features/library/library-service";
 
 /**
  * The one owner of gallery browse state (Plan 048).
@@ -144,7 +145,12 @@ export function listingRequestFor(
     comicMode: state.comicMode,
     // Excludes ride the request only while the folded recursive flag is on
     // (Plan 054, Decision 3); a path with no stored entry contributes nothing.
-    excludedPaths: state.recursive && excludedPaths.length > 0 ? excludedPaths : undefined,
+    // Trimmed to the server's cap so an oversized stored list degrades to a
+    // partial exclude instead of a rejected request.
+    excludedPaths:
+      state.recursive && excludedPaths.length > 0
+        ? excludedPaths.slice(0, EXCLUDED_PATHS_LIMIT)
+        : undefined,
     path: state.path || undefined,
     query: state.query,
     randomSeed: state.randomSeed,
