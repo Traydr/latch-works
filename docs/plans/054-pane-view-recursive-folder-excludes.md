@@ -10,7 +10,7 @@
 
 ## Status
 
-- **Status**: TODO
+- **Status**: IN PROGRESS (branch `agent/054-recursive-folder-excludes`)
 - **Priority**: P2 — product feature the owner asked for; frame-view parity
 - **Effort**: M
 - **Risk**: LOW–MEDIUM (touches the one place browse scope becomes SQL; fully test-gated)
