@@ -164,7 +164,10 @@ function useGalleryPage() {
   // snapshot still shows the folder being left, the list is withheld from the
   // auto-prune (and the button simply reads as having no subfolders).
   const excludableChildFolders = useMemo(
-    () => (query || !snapshotIsCurrent ? [] : (library?.folders ?? [])),
+    () =>
+      query || !snapshotIsCurrent
+        ? []
+        : [...(library?.folders ?? [])].sort((a, b) => a.name.localeCompare(b.name)),
     [library, query, snapshotIsCurrent],
   );
   const childFoldersAreCurrent = !query && snapshotIsCurrent && Boolean(library);
