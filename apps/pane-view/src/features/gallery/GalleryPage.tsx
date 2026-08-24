@@ -52,10 +52,12 @@ function useGalleryPage() {
   const {
     comicMode: effectiveComicMode,
     detailPanelOpen,
+    excludedChildPaths,
     folderModesEnabled,
     listingRequest,
     navigateToPath,
     path: displayPath,
+    pruneExcludedChildren,
     query,
     recursive: effectiveRecursive,
     selectMedia,
@@ -67,6 +69,7 @@ function useGalleryPage() {
     shuffle,
     snapshotRequest,
     sortMode,
+    toggleExcludedChild,
   } = browse;
   const isMobile = useIsMobile();
 
@@ -154,6 +157,20 @@ function useGalleryPage() {
       return next.size === current.size ? current : next;
     });
   }, [allMedia, library]);
+
+  // The excludable set is the current path's direct child folders, straight
+  // from the snapshot (Plan 054). While searching, the snapshot's folders are
+  // search matches rather than children, so nothing is excludable; while the
+  // snapshot still shows the folder being left, the list is withheld from the
+  // auto-prune (and the button simply reads as having no subfolders).
+  const excludableChildFolders = useMemo(
+    () => (query || !snapshotIsCurrent ? [] : (library?.folders ?? [])),
+    [library, query, snapshotIsCurrent],
+  );
+  const childFoldersAreCurrent = !query && snapshotIsCurrent && Boolean(library);
+  const handleExcludeDialogOpen = useCallback(() => {
+    pruneExcludedChildren(excludableChildFolders.map((folder) => folder.path));
+  }, [excludableChildFolders, pruneExcludedChildren]);
 
   const navigateSiblingFolder = useCallback(
     (offset: -1 | 1) => {
@@ -360,6 +377,7 @@ function useGalleryPage() {
     archiveRoot,
     breadcrumbs,
     browseKey,
+    childFoldersAreCurrent,
     closeViewer,
     contentBrowseKey,
     columnCountRef,
@@ -371,6 +389,9 @@ function useGalleryPage() {
     effectiveComicMode,
     effectiveRecursive,
     entries,
+    excludableChildFolders,
+    excludedChildPaths,
+    handleExcludeDialogOpen,
     focusedEntryIndex,
     folderModesEnabled,
     handleActivateEntry,
@@ -415,6 +436,7 @@ function useGalleryPage() {
     sortMode,
     stepMedia,
     submitSearch,
+    toggleExcludedChild,
     updateSettings,
     viewerOpen,
   };
@@ -637,11 +659,16 @@ function GalleryContent(): JSX.Element {
         )}
       </div>
       <FloatingToolbar
+        childFolders={model.excludableChildFolders}
+        childFoldersAreCurrent={model.childFoldersAreCurrent}
         comicMode={model.effectiveComicMode}
         currentPath={model.displayPath}
+        excludedChildPaths={model.excludedChildPaths}
         isRefreshing={model.showRefreshing}
         onChangeSortMode={model.setSortMode}
+        onExcludeDialogOpen={model.handleExcludeDialogOpen}
         onRefresh={() => void model.invalidateLibrary()}
+        onToggleExcludedChild={model.toggleExcludedChild}
         onToggleComicMode={() => {
           if (!model.folderModesEnabled) return;
           model.setComicMode(!model.effectiveComicMode);
