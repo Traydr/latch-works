@@ -10,7 +10,7 @@
 
 ## Status
 
-- **Status**: TODO
+- **Status**: IN REVIEW (branch `agent/054-recursive-folder-excludes`, implemented 2026-08-24; PR #106)
 - **Priority**: P2 — product feature the owner asked for; frame-view parity
 - **Effort**: M
 - **Risk**: LOW–MEDIUM (touches the one place browse scope becomes SQL; fully test-gated)
@@ -153,10 +153,16 @@ back to empty, storage unavailability (server render / quota) never throws.
 
 In `useGalleryBrowseState.ts` (and `useGalleryBrowse.ts` where the requests are actually issued),
 hold the current path's exclude list in state, hydrated from storage whenever `path` changes, with
-an intent to toggle a child (write-through to storage). Include the list in the snapshot and
-listing request builders **only when the folded `recursive` is true**, and make it part of the
-listing query key so toggling refetches immediately. A path with no stored entry contributes
-nothing to the request.
+an intent to toggle a child (write-through to storage). Include the list in the listing request
+builder **only when the folded `recursive` is true**, trimmed to the server cap, and make it part
+of the listing query key (and the browse key, so accumulated pages reset) so toggling refetches
+immediately. A path with no stored entry contributes nothing to the request.
+
+*Deviation (2026-08-24, implementation):* the snapshot request does **not** carry excludes. The
+browse snapshot is fetched with `mediaLimit: 0`, so excludes cannot change a row it returns, and
+putting them on its query key would refetch the snapshot on every toggle — flipping it to
+placeholder data and blanking the open dialog mid-interaction. Only the listing request carries
+`excludedPaths`; the snapshot schema and repository read never accept the field.
 
 Add the auto-prune: when the exclude dialog opens (Step 5) and the snapshot's children for the
 current path are loaded and current (not placeholder data), drop stored paths not present among
@@ -187,8 +193,8 @@ intent and storage.
 ### Step 6: Gates and index
 
 Run the focused pane-view suite, then `pnpm test`, `pnpm typecheck`, `pnpm lint:all`. Update the
-plan index row in the landing commit. Include a screenshot of the toolbar + dialog in the PR (UI
-change per CLAUDE.md).
+plan index row in the landing commit. Verify the toolbar + dialog live and describe what was seen
+in the PR body (the owner prefers prose over committed screenshots; leave any PNG in `/tmp`).
 
 ## Test plan
 
@@ -199,16 +205,17 @@ JSON, over-cap or out-of-scope `excludedPaths` in the request.
 
 ## Done criteria
 
-- [ ] Recursive and comic listings subtract excluded subtrees server-side; search and
+- [x] Recursive and comic listings subtract excluded subtrees server-side; search and
       non-recursive browsing are provably unaffected.
-- [ ] Excludes persist per browse path in localStorage behind the storage adapter, with
+- [x] Excludes persist per browse path in localStorage behind the storage adapter, with
       auto-prune on dialog open.
-- [ ] Toolbar shows the folder button only in recursive/comic mode, disabled without children,
+- [x] Toolbar shows the folder button only in recursive/comic mode, disabled without children,
       dot when excludes are active.
-- [ ] The dialog lists direct children with one-click include/exclude toggles and immediate
+- [x] The dialog lists direct children with one-click include/exclude toggles and immediate
       effect.
-- [ ] `excludedPaths` is absent from every request when recursive (post-fold) is false.
-- [ ] Plan index row updated in the landing commit; PR includes a toolbar + dialog screenshot.
+- [x] `excludedPaths` is absent from every request when recursive (post-fold) is false.
+- [x] Plan index row updated in the landing commit; PR describes the live toolbar + dialog
+      verification in prose.
 
 ## STOP conditions
 

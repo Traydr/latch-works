@@ -20,6 +20,7 @@ import type {
   GalleryListingQueryRequest,
   LibrarySnapshotRequest,
 } from "@/features/library/library-queries";
+import { EXCLUDED_PATHS_LIMIT } from "@/features/library/library-service";
 
 /**
  * The one owner of gallery browse state (Plan 048).
@@ -120,8 +121,11 @@ export function snapshotRequestFor(
 ): LibrarySnapshotRequest {
   return {
     comicMode: state.comicMode,
-    // Media (and comic summaries) come from the cursor listing; the snapshot
-    // is the folder and archive-state query only.
+    // Deliberately no excludedPaths: the snapshot is the folder and
+    // archive-state query only (mediaLimit 0), and excludes never prune
+    // folders. Sending them would churn the snapshot query key on every
+    // toggle, blanking the exclude dialog mid-interaction (and resetting its
+    // scroll) for a refetch that cannot change a single row.
     mediaLimit: 0,
     path: state.path || undefined,
     query: state.query,
@@ -135,9 +139,18 @@ export function listingRequestFor(
     "comicMode" | "path" | "query" | "randomSeed" | "recursive" | "sortMode"
   >,
   settings: { showImages: boolean; showVideos: boolean },
+  excludedPaths: readonly string[] = [],
 ): GalleryListingQueryRequest {
   return {
     comicMode: state.comicMode,
+    // Excludes ride the request only while the folded recursive flag is on
+    // (Plan 054, Decision 3); a path with no stored entry contributes nothing.
+    // Trimmed to the server's cap so an oversized stored list degrades to a
+    // partial exclude instead of a rejected request.
+    excludedPaths:
+      state.recursive && excludedPaths.length > 0
+        ? excludedPaths.slice(0, EXCLUDED_PATHS_LIMIT)
+        : undefined,
     path: state.path || undefined,
     query: state.query,
     randomSeed: state.randomSeed,
@@ -329,6 +342,8 @@ export function resolveInitialRedirect(
 export interface GalleryBrowseState extends ResolvedBrowseState {
   snapshotRequest: LibrarySnapshotRequest;
   listingRequest: GalleryListingQueryRequest;
+  /** The current path's excluded direct-child folders (Plan 054). */
+  excludedChildPaths: readonly string[];
   navigateToPath(path: string): void;
   submitSearch(query: string | undefined): void;
   selectMedia(mediaId: string | null): void;
@@ -337,6 +352,9 @@ export interface GalleryBrowseState extends ResolvedBrowseState {
   setSortMode(next: GallerySortMode): void;
   shuffle(): void;
   setDetailPanelOpen(next: boolean): void;
+  toggleExcludedChild(childPath: string): void;
+  /** Drop stored excludes not among the current path's live children (dialog open). */
+  pruneExcludedChildren(livePaths: readonly string[]): void;
   buildBrowseSearch(patch: Partial<GalleryBrowseSearch>): GalleryBrowseSearch;
 }
 
@@ -411,6 +429,19 @@ export function useGalleryBrowseState({
   );
   const stateRef = useRef(state);
   stateRef.current = state;
+
+  // Plan 054: the current path's exclude list, mirrored from storage. The
+  // render-time adjust rehydrates it the moment the path changes; the toggle
+  // and prune intents below write through to storage and keep the mirror in
+  // step even when a storage write fails silently.
+  const [excludes, setExcludes] = useState<{ list: string[]; path: string }>(() => ({
+    list: storage.readExcludedChildPaths(state.path),
+    path: state.path,
+  }));
+  if (excludes.path !== state.path) {
+    setExcludes({ list: storage.readExcludedChildPaths(state.path), path: state.path });
+  }
+  const excludedChildPaths = excludes.list;
 
   // First-visit redirect, once.
   const initialPathCheckedRef = useRef(false);
@@ -493,9 +524,11 @@ export function useGalleryBrowseState({
       listingRequestFor(
         { comicMode, path, query: state.query, randomSeed, recursive, sortMode },
         { showImages: settings.showImages, showVideos: settings.showVideos },
+        excludedChildPaths,
       ),
     [
       comicMode,
+      excludedChildPaths,
       path,
       randomSeed,
       recursive,
@@ -535,6 +568,32 @@ export function useGalleryBrowseState({
     (next: boolean) => dispatch({ next, type: "setDetailPanelOpen" }),
     [dispatch],
   );
+  const toggleExcludedChild = useCallback(
+    (childPath: string) => {
+      const currentPath = stateRef.current.path;
+      const stored = storage.readExcludedChildPaths(currentPath);
+      const next = stored.includes(childPath)
+        ? stored.filter((path) => path !== childPath)
+        : [...stored, childPath];
+      storage.writeExcludedChildPaths(currentPath, next);
+      setExcludes({ list: next, path: currentPath });
+    },
+    [storage],
+  );
+  const pruneExcludedChildren = useCallback(
+    (livePaths: readonly string[]) => {
+      const currentPath = stateRef.current.path;
+      const stored = storage.readExcludedChildPaths(currentPath);
+      const live = new Set(livePaths);
+      const pruned = stored.filter((path) => live.has(path));
+      if (pruned.length === stored.length) {
+        return;
+      }
+      storage.writeExcludedChildPaths(currentPath, pruned);
+      setExcludes({ list: pruned, path: currentPath });
+    },
+    [storage],
+  );
   const buildSearch = useCallback(
     (patch: Partial<GalleryBrowseSearch>) => buildBrowseSearch(stateRef.current, patch),
     [],
@@ -544,8 +603,10 @@ export function useGalleryBrowseState({
     () => ({
       ...state,
       buildBrowseSearch: buildSearch,
+      excludedChildPaths,
       listingRequest,
       navigateToPath,
+      pruneExcludedChildren,
       selectMedia,
       setComicMode,
       setDetailPanelOpen,
@@ -554,11 +615,14 @@ export function useGalleryBrowseState({
       shuffle,
       snapshotRequest,
       submitSearch,
+      toggleExcludedChild,
     }),
     [
       buildSearch,
+      excludedChildPaths,
       listingRequest,
       navigateToPath,
+      pruneExcludedChildren,
       selectMedia,
       setComicMode,
       setDetailPanelOpen,
@@ -568,6 +632,7 @@ export function useGalleryBrowseState({
       snapshotRequest,
       state,
       submitSearch,
+      toggleExcludedChild,
     ],
   );
 }

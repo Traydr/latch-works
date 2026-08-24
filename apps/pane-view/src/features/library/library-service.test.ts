@@ -2,7 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { DatabaseLibrarySnapshot } from "../../server/library/repository";
 import {
   DEFAULT_MEDIA_PAGE_LIMIT,
+  EXCLUDED_PATHS_LIMIT,
+  galleryListingRequestSchema,
   type LibrarySnapshotSource,
+  normalizeExcludedPaths,
   readLibrarySnapshotRequest,
 } from "./library-service";
 
@@ -64,6 +67,46 @@ describe("library snapshot reads", () => {
         recursive: true,
       }),
     );
+  });
+});
+
+describe("recursive folder excludes (Plan 054)", () => {
+  it("normalizes excluded paths like the browse path and leaves the rest to the conditions", () => {
+    expect(normalizeExcludedPaths(["/photos/kids/", "photos\\teens", "photos/kids"], true)).toEqual(
+      ["photos/kids", "photos/teens", "photos/kids"],
+    );
+  });
+
+  it("normalizes an empty or non-recursive list to an absent field", () => {
+    expect(normalizeExcludedPaths([], true)).toBeUndefined();
+    expect(normalizeExcludedPaths(undefined, true)).toBeUndefined();
+    expect(normalizeExcludedPaths(["photos/kids"], false)).toBeUndefined();
+  });
+
+  it("does not carry excludes on the snapshot read", async () => {
+    const source = fakeSnapshotSource();
+    await readLibrarySnapshotRequest({ path: "photos", recursive: true }, source);
+    expect(source.readDatabaseLibrarySnapshot.mock.calls[0]?.[0]).not.toHaveProperty(
+      "excludedPaths",
+    );
+  });
+
+  it("rejects a listing request with more excluded paths than the cap", () => {
+    const atCap = Array.from({ length: EXCLUDED_PATHS_LIMIT }, (_, index) => `photos/${index}`);
+    const overCap = atCap.concat("photos/one-too-many");
+    const listingBase = {
+      randomSeed: "0123456789abcdef0123456789abcdef",
+      showImages: true,
+      showVideos: true,
+      sortMode: "name-asc",
+    };
+
+    expect(
+      galleryListingRequestSchema.safeParse({ ...listingBase, excludedPaths: atCap }).success,
+    ).toBe(true);
+    expect(
+      galleryListingRequestSchema.safeParse({ ...listingBase, excludedPaths: overCap }).success,
+    ).toBe(false);
   });
 });
 

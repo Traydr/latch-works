@@ -696,6 +696,84 @@ describe("comic listing serves summaries in one seeded order across pages", () =
 });
 
 // ---------------------------------------------------------------------------
+// Recursive folder excludes (Plan 054)
+// ---------------------------------------------------------------------------
+
+describe("recursive folder excludes", () => {
+  const baseRequest = {
+    currentPath: "alpha",
+    randomSeed: SEED_A,
+    recursive: true,
+    showImages: true,
+    showVideos: true,
+    sortMode: "name-asc" as const,
+  };
+  const pathById = new Map(fixture.entries.map((entry) => [entry.id, entry.path]));
+  const underSeries = (id: string) => (pathById.get(id) ?? "").startsWith("alpha/series/");
+
+  it("subtracts the excluded subtree from a recursive listing", async () => {
+    const listing = await readDatabaseGalleryListing(
+      { ...baseRequest, excludedPaths: ["alpha/series"], limit: 500 },
+      testDatabase().db,
+    );
+    const expected = expectedMediaOrder(baseRequest).filter((id) => !underSeries(id));
+    expect(expected.length).toBeGreaterThan(0);
+    expect(listing.media.map((item) => item.id)).toEqual(expected);
+  });
+
+  it("drops every comic inside the excluded subtree and no other", async () => {
+    const listing = await readDatabaseComicListing(
+      { ...baseRequest, excludedPaths: ["alpha/series"], limit: 48 },
+      testDatabase().db,
+    );
+    expect(listing.comics.map((comic) => comic.id)).toEqual([
+      "alpha/case-tie",
+      "alpha/comic-padded",
+      "alpha/comic-unpadded",
+      "alpha/mixed",
+      "alpha/orphaned-child",
+    ]);
+  });
+
+  it("leaves a search untouched: matches still come from the excluded folder", async () => {
+    const listing = await readDatabaseGalleryListing(
+      {
+        ...baseRequest,
+        excludedPaths: ["alpha/series"],
+        limit: 500,
+        query: FIXTURE_SEARCH_TERM,
+      },
+      testDatabase().db,
+    );
+    expect(listing.media.map((item) => item.path)).toContain("alpha/series/hero-poster.png");
+  });
+
+  it("treats a non-recursive request with excludedPaths as if the field were absent", async () => {
+    const withExcludes = await readDatabaseGalleryListing(
+      { ...baseRequest, excludedPaths: ["alpha/series"], limit: 500, recursive: false },
+      testDatabase().db,
+    );
+    const without = await readDatabaseGalleryListing(
+      { ...baseRequest, limit: 500, recursive: false },
+      testDatabase().db,
+    );
+    expect(withExcludes).toEqual(without);
+  });
+
+  it("ignores entries that are not direct children of the browse path", async () => {
+    const withStaleExcludes = await readDatabaseGalleryListing(
+      {
+        ...baseRequest,
+        excludedPaths: ["beta/set-000", "alpha/series/vol-1", "alpha"],
+        limit: 500,
+      },
+      testDatabase().db,
+    );
+    expect(withStaleExcludes.media.map((item) => item.id)).toEqual(expectedMediaOrder(baseRequest));
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Comic by id
 // ---------------------------------------------------------------------------
 

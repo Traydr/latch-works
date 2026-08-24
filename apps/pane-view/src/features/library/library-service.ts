@@ -19,6 +19,8 @@ import type { LibraryMediaItem, MediaPage } from "./types";
 const fixtureRoots = ["nsfw", "nsfw-stories", "sfw", "sfw/patreon"];
 export const DEFAULT_MEDIA_PAGE_LIMIT = 500;
 const SEARCH_RESULT_LIMIT = 200;
+/** Most excluded child paths one listing request may carry; the client trims to it too. */
+export const EXCLUDED_PATHS_LIMIT = 200;
 
 const libraryRequestSchema = z.object({
   comicMode: z.boolean().optional(),
@@ -31,9 +33,11 @@ const libraryRequestSchema = z.object({
   searchOffset: z.number().int().min(0).optional(),
 });
 
-const galleryListingRequestSchema = z.object({
+/** The listing request boundary; exported so boundary tests can pin its limits. */
+export const galleryListingRequestSchema = z.object({
   comicMode: z.boolean().optional(),
   cursor: z.string().optional(),
+  excludedPaths: z.array(z.string()).max(EXCLUDED_PATHS_LIMIT).optional(),
   limit: z.number().int().min(1).max(200).optional(),
   path: z.string().optional(),
   query: z.string().optional(),
@@ -47,6 +51,8 @@ const galleryListingRequestSchema = z.object({
 export interface GalleryListingRequest {
   comicMode: boolean;
   cursor?: string;
+  /** Direct-child subtrees excluded from recursive/comic aggregation (Plan 054). */
+  excludedPaths?: readonly string[];
   limit?: number;
   path: string | undefined;
   query: string | undefined;
@@ -153,12 +159,14 @@ export const getGalleryListing = createServerFn({ method: "GET" })
     const query = normalizeQuery(data.query);
     const comicMode = data.comicMode ?? false;
     const recursive = (data.recursive ?? false) || comicMode;
+    const excludedPaths = normalizeExcludedPaths(data.excludedPaths, recursive);
 
     if (comicMode) {
       const { readDatabaseComicListing } = await import("../../server/library/comic-listing");
       return readDatabaseComicListing({
         currentPath,
         cursor: data.cursor,
+        excludedPaths,
         limit: data.limit ?? DEFAULT_GALLERY_LISTING_LIMIT,
         query,
         randomSeed: data.randomSeed,
@@ -172,6 +180,7 @@ export const getGalleryListing = createServerFn({ method: "GET" })
     return readDatabaseGalleryListing({
       currentPath,
       cursor: data.cursor,
+      excludedPaths,
       limit: data.limit ?? DEFAULT_GALLERY_LISTING_LIMIT,
       query,
       randomSeed: data.randomSeed,
@@ -235,6 +244,22 @@ export const getLibrarySnapshot = createServerFn({ method: "GET" })
 
 function normalizeLibraryPath(path: string | undefined): string {
   return trimTrailingSlash(toArchivePath(path ?? ""));
+}
+
+/**
+ * Excludes ride the request only while the (comic-folded) recursive flag is
+ * on (Plan 054, Decision 3); otherwise the field is dropped before it reaches
+ * the conditions. Entries get the same normalization as `path` and nothing
+ * more: `buildLibraryConditions` owns the direct-child guard and the dedupe.
+ */
+export function normalizeExcludedPaths(
+  excludedPaths: readonly string[] | undefined,
+  recursive: boolean,
+): string[] | undefined {
+  if (!recursive || !excludedPaths || excludedPaths.length === 0) {
+    return undefined;
+  }
+  return excludedPaths.map((path) => normalizeLibraryPath(path));
 }
 
 function normalizeQuery(query: string | undefined): string | undefined {

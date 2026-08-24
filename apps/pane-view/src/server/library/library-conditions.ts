@@ -1,10 +1,17 @@
-import { eq, ilike, isNull, ne, notInArray, or, type SQL } from "drizzle-orm";
+import { eq, ilike, isNull, ne, notIlike, notInArray, or, type SQL } from "drizzle-orm";
 import { folders, libraryEntries, mediaObjects } from "../db/schema";
 import { escapeLikePattern, resolveMediaScope } from "./query-helpers";
 import type { LibraryMediaItem } from "./types";
 
 export interface LibraryConditionsInput {
   currentPath: string;
+  /**
+   * Direct-child folders of `currentPath` whose subtrees a recursive browse
+   * subtracts (Plan 054). Entries that are not direct children — stale or
+   * malformed client data — are ignored, and the whole list is ignored
+   * outside subtree scope (non-recursive browsing, search, the root).
+   */
+  excludedPaths?: readonly string[];
   query?: string;
   recursive: boolean;
 }
@@ -24,6 +31,7 @@ export interface LibraryConditions {
  */
 export function buildLibraryConditions({
   currentPath,
+  excludedPaths,
   query,
   recursive,
 }: LibraryConditionsInput): LibraryConditions {
@@ -58,12 +66,32 @@ export function buildLibraryConditions({
       mediaConditions.push(
         ilike(libraryEntries.logicalPath, `${escapeLikePattern(mediaScope.pathPrefix)}/%`),
       );
+      for (const excluded of directChildExcludes(currentPath, excludedPaths)) {
+        mediaConditions.push(
+          notIlike(libraryEntries.logicalPath, `${escapeLikePattern(excluded)}/%`),
+        );
+      }
     } else if (mediaScope.mode === "direct-children") {
       mediaConditions.push(eq(libraryEntries.parentPath, mediaScope.parentPath));
     }
   }
 
   return { folderConditions, mediaConditions, searching };
+}
+
+/**
+ * The excludable set for a browse path is its direct child folders (Plan 054,
+ * Decision 1). This is the one owner of that rule and of the dedupe: the
+ * service only normalizes the strings, and anything else in the list is
+ * dropped here so stale or malformed client data is inert instead of an error.
+ */
+function directChildExcludes(currentPath: string, excludedPaths: readonly string[] = []): string[] {
+  const prefix = `${currentPath}/`;
+  const directChildren = excludedPaths.filter((excluded) => {
+    const segment = excluded.startsWith(prefix) ? excluded.slice(prefix.length) : "";
+    return segment !== "" && !segment.includes("/");
+  });
+  return [...new Set(directChildren)];
 }
 
 /** Media-type filters from the gallery visibility toggles. */

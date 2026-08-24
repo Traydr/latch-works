@@ -161,6 +161,7 @@ export function useGalleryBrowse({
     () =>
       buildBrowseKey({
         comicMode: listingRequest.comicMode,
+        excludedPaths: listingRequest.excludedPaths,
         path: listingRequest.path,
         query: listingRequest.query,
         randomSeed: listingRequest.randomSeed,

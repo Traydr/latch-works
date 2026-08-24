@@ -46,6 +46,8 @@ export interface LibrarySnapshotReadRequest {
 export interface GalleryListingReadRequest {
   currentPath: string;
   cursor?: string;
+  /** Direct-child subtrees to subtract in recursive mode (Plan 054). */
+  excludedPaths?: readonly string[];
   limit?: number;
   query?: string;
   randomSeed: GalleryRandomSeed;
@@ -108,6 +110,7 @@ export function buildGalleryListingMediaQuery(
   {
     currentPath,
     cursor,
+    excludedPaths,
     limit = DEFAULT_GALLERY_LISTING_LIMIT,
     query,
     randomSeed,
@@ -120,7 +123,12 @@ export function buildGalleryListingMediaQuery(
   },
   database: Database = db,
 ) {
-  const { mediaConditions } = buildLibraryConditions({ currentPath, query, recursive });
+  const { mediaConditions } = buildLibraryConditions({
+    currentPath,
+    excludedPaths,
+    query,
+    recursive,
+  });
   mediaConditions.push(...buildMediaVisibilityConditions({ showImages, showVideos }));
 
   if (cursor) {
@@ -328,6 +336,7 @@ export async function readDatabaseGalleryListing(
   {
     currentPath,
     cursor,
+    excludedPaths,
     limit = DEFAULT_GALLERY_LISTING_LIMIT,
     query,
     randomSeed,
@@ -353,6 +362,7 @@ export async function readDatabaseGalleryListing(
       {
         currentPath,
         cursor: decodedCursor?.subjectKind === "media" ? decodedCursor : null,
+        excludedPaths,
         limit,
         query,
         randomSeed,
