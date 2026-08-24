@@ -114,9 +114,7 @@ describe("FloatingToolbar exclude button", () => {
     render(createElement(FloatingToolbar, props));
     expect(excludeButton()?.querySelector(".rounded-full")).toBeNull();
 
-    rerender(
-      createElement(FloatingToolbar, { ...props, excludedChildPaths: ["photos/kids"] }),
-    );
+    rerender(createElement(FloatingToolbar, { ...props, excludedChildPaths: ["photos/kids"] }));
     expect(excludeButton()?.querySelector(".rounded-full")).not.toBeNull();
 
     rerender(createElement(FloatingToolbar, { ...props, excludedChildPaths: [] }));

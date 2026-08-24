@@ -509,7 +509,8 @@ export function useGalleryBrowseState({
   );
 
   const snapshotRequest = useMemo(
-    () => snapshotRequestFor({ comicMode, path, query: state.query, recursive }, excludedChildPaths),
+    () =>
+      snapshotRequestFor({ comicMode, path, query: state.query, recursive }, excludedChildPaths),
     [comicMode, excludedChildPaths, path, recursive, state.query],
   );
   const listingRequest = useMemo(

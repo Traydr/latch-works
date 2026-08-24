@@ -84,10 +84,7 @@ export function buildLibraryConditions({
  * Decision 1). Anything else in the list is dropped here so stale or malformed
  * client data is inert instead of an error.
  */
-function directChildExcludes(
-  currentPath: string,
-  excludedPaths: readonly string[] = [],
-): string[] {
+function directChildExcludes(currentPath: string, excludedPaths: readonly string[] = []): string[] {
   const prefix = `${currentPath}/`;
   const directChildren = excludedPaths.filter((excluded) => {
     const segment = excluded.startsWith(prefix) ? excluded.slice(prefix.length) : "";

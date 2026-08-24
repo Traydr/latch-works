@@ -777,9 +777,7 @@ describe("recursive folder excludes", () => {
       },
       testDatabase().db,
     );
-    expect(withStaleExcludes.media.map((item) => item.id)).toEqual(
-      expectedMediaOrder(baseRequest),
-    );
+    expect(withStaleExcludes.media.map((item) => item.id)).toEqual(expectedMediaOrder(baseRequest));
   });
 });
 

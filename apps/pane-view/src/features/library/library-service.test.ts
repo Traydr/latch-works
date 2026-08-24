@@ -3,8 +3,8 @@ import type { DatabaseLibrarySnapshot } from "../../server/library/repository";
 import {
   DEFAULT_MEDIA_PAGE_LIMIT,
   galleryListingRequestSchema,
-  libraryRequestSchema,
   type LibrarySnapshotSource,
+  libraryRequestSchema,
   normalizeExcludedPaths,
   readLibrarySnapshotRequest,
 } from "./library-service";
@@ -79,7 +79,11 @@ describe("recursive folder excludes (Plan 054)", () => {
 
   it("normalizes excluded paths like the browse path and threads them into the read", async () => {
     await readLibrarySnapshotRequest(
-      { excludedPaths: ["/photos/kids/", "photos\\teens", "photos/kids"], path: "photos", recursive: true },
+      {
+        excludedPaths: ["/photos/kids/", "photos\\teens", "photos/kids"],
+        path: "photos",
+        recursive: true,
+      },
       source,
     );
 

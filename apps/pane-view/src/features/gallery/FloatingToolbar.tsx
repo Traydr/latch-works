@@ -122,9 +122,7 @@ export function FloatingToolbar({
                 setExcludeDialogOpen(next);
               }}
               size="sm"
-              title={
-                childFolders.length === 0 ? "No subfolders to exclude" : "Exclude subfolders"
-              }
+              title={childFolders.length === 0 ? "No subfolders to exclude" : "Exclude subfolders"}
               type="button"
               variant="outline"
             >
