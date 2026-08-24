@@ -2,9 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { DatabaseLibrarySnapshot } from "../../server/library/repository";
 import {
   DEFAULT_MEDIA_PAGE_LIMIT,
+  EXCLUDED_PATHS_LIMIT,
   galleryListingRequestSchema,
   type LibrarySnapshotSource,
-  libraryRequestSchema,
   normalizeExcludedPaths,
   readLibrarySnapshotRequest,
 } from "./library-service";
@@ -71,57 +71,28 @@ describe("library snapshot reads", () => {
 });
 
 describe("recursive folder excludes (Plan 054)", () => {
-  let source: ReturnType<typeof fakeSnapshotSource>;
-
-  beforeEach(() => {
-    source = fakeSnapshotSource();
-  });
-
-  it("normalizes excluded paths like the browse path and threads them into the read", async () => {
-    await readLibrarySnapshotRequest(
-      {
-        excludedPaths: ["/photos/kids/", "photos\\teens", "photos/kids"],
-        path: "photos",
-        recursive: true,
-      },
-      source,
-    );
-
-    expect(source.readDatabaseLibrarySnapshot).toHaveBeenCalledWith(
-      expect.objectContaining({
-        excludedPaths: ["photos/kids", "photos/teens"],
-        recursive: true,
-      }),
+  it("normalizes excluded paths like the browse path and leaves the rest to the conditions", () => {
+    expect(normalizeExcludedPaths(["/photos/kids/", "photos\\teens", "photos/kids"], true)).toEqual(
+      ["photos/kids", "photos/teens", "photos/kids"],
     );
   });
 
-  it("keeps the excludes when comic mode alone implies recursive", async () => {
-    await readLibrarySnapshotRequest(
-      { comicMode: true, excludedPaths: ["photos/kids"], path: "photos" },
-      source,
-    );
-
-    expect(source.readDatabaseLibrarySnapshot).toHaveBeenCalledWith(
-      expect.objectContaining({ excludedPaths: ["photos/kids"], recursive: true }),
-    );
-  });
-
-  it("drops the field before the read when the request is not recursive", async () => {
-    await readLibrarySnapshotRequest({ excludedPaths: ["photos/kids"], path: "photos" }, source);
-
-    expect(source.readDatabaseLibrarySnapshot).toHaveBeenCalledWith(
-      expect.objectContaining({ excludedPaths: undefined, recursive: false }),
-    );
-  });
-
-  it("normalizes an empty list to an absent field", () => {
+  it("normalizes an empty or non-recursive list to an absent field", () => {
     expect(normalizeExcludedPaths([], true)).toBeUndefined();
     expect(normalizeExcludedPaths(undefined, true)).toBeUndefined();
     expect(normalizeExcludedPaths(["photos/kids"], false)).toBeUndefined();
   });
 
-  it("caps excludedPaths at 200 entries in both request schemas", () => {
-    const atCap = Array.from({ length: 200 }, (_, index) => `photos/${index}`);
+  it("does not carry excludes on the snapshot read", async () => {
+    const source = fakeSnapshotSource();
+    await readLibrarySnapshotRequest({ path: "photos", recursive: true }, source);
+    expect(source.readDatabaseLibrarySnapshot.mock.calls[0]?.[0]).not.toHaveProperty(
+      "excludedPaths",
+    );
+  });
+
+  it("rejects a listing request with more excluded paths than the cap", () => {
+    const atCap = Array.from({ length: EXCLUDED_PATHS_LIMIT }, (_, index) => `photos/${index}`);
     const overCap = atCap.concat("photos/one-too-many");
     const listingBase = {
       randomSeed: "0123456789abcdef0123456789abcdef",
@@ -130,8 +101,6 @@ describe("recursive folder excludes (Plan 054)", () => {
       sortMode: "name-asc",
     };
 
-    expect(libraryRequestSchema.safeParse({ excludedPaths: atCap }).success).toBe(true);
-    expect(libraryRequestSchema.safeParse({ excludedPaths: overCap }).success).toBe(false);
     expect(
       galleryListingRequestSchema.safeParse({ ...listingBase, excludedPaths: atCap }).success,
     ).toBe(true);

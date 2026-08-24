@@ -14,8 +14,6 @@ import {
 
 export interface LibrarySnapshotRequest {
   comicMode: boolean;
-  /** Direct-child subtrees excluded from recursive/comic aggregation (Plan 054). */
-  excludedPaths?: readonly string[];
   mediaLimit?: number;
   path: string | undefined;
   query: string | undefined;
@@ -46,7 +44,6 @@ export function librarySnapshotQueryOptions(request: LibrarySnapshotRequest) {
       getLibrarySnapshot({
         data: {
           comicMode: request.comicMode,
-          excludedPaths: request.excludedPaths ? [...request.excludedPaths] : undefined,
           mediaLimit: request.mediaLimit,
           path: request.path,
           query: request.query,

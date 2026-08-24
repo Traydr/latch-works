@@ -81,8 +81,9 @@ export function buildLibraryConditions({
 
 /**
  * The excludable set for a browse path is its direct child folders (Plan 054,
- * Decision 1). Anything else in the list is dropped here so stale or malformed
- * client data is inert instead of an error.
+ * Decision 1). This is the one owner of that rule and of the dedupe: the
+ * service only normalizes the strings, and anything else in the list is
+ * dropped here so stale or malformed client data is inert instead of an error.
  */
 function directChildExcludes(currentPath: string, excludedPaths: readonly string[] = []): string[] {
   const prefix = `${currentPath}/`;

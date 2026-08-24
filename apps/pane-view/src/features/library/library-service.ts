@@ -19,10 +19,11 @@ import type { LibraryMediaItem, MediaPage } from "./types";
 const fixtureRoots = ["nsfw", "nsfw-stories", "sfw", "sfw/patreon"];
 export const DEFAULT_MEDIA_PAGE_LIMIT = 500;
 const SEARCH_RESULT_LIMIT = 200;
+/** Most excluded child paths one listing request may carry; the client trims to it too. */
+export const EXCLUDED_PATHS_LIMIT = 200;
 
-export const libraryRequestSchema = z.object({
+const libraryRequestSchema = z.object({
   comicMode: z.boolean().optional(),
-  excludedPaths: z.array(z.string()).max(200).optional(),
   includeAllFolders: z.boolean().optional(),
   mediaLimit: z.number().int().min(0).max(5000).optional(),
   mediaOffset: z.number().int().min(0).optional(),
@@ -32,10 +33,11 @@ export const libraryRequestSchema = z.object({
   searchOffset: z.number().int().min(0).optional(),
 });
 
+/** The listing request boundary; exported so boundary tests can pin its limits. */
 export const galleryListingRequestSchema = z.object({
   comicMode: z.boolean().optional(),
   cursor: z.string().optional(),
-  excludedPaths: z.array(z.string()).max(200).optional(),
+  excludedPaths: z.array(z.string()).max(EXCLUDED_PATHS_LIMIT).optional(),
   limit: z.number().int().min(1).max(200).optional(),
   path: z.string().optional(),
   query: z.string().optional(),
@@ -129,7 +131,6 @@ export async function readLibrarySnapshotRequest(
         : DEFAULT_MEDIA_PAGE_LIMIT;
   const databaseSnapshot = await source.readDatabaseLibrarySnapshot({
     currentPath,
-    excludedPaths: normalizeExcludedPaths(data.excludedPaths, recursive),
     includeAllFolders,
     limit: mediaLimit,
     offset: mediaOffset,
@@ -248,9 +249,8 @@ function normalizeLibraryPath(path: string | undefined): string {
 /**
  * Excludes ride the request only while the (comic-folded) recursive flag is
  * on (Plan 054, Decision 3); otherwise the field is dropped before it reaches
- * the conditions. Entries get the same normalization as `path`; anything that
- * is still not a direct child of the browse path is ignored downstream in
- * buildLibraryConditions.
+ * the conditions. Entries get the same normalization as `path` and nothing
+ * more: `buildLibraryConditions` owns the direct-child guard and the dedupe.
  */
 export function normalizeExcludedPaths(
   excludedPaths: readonly string[] | undefined,
@@ -259,7 +259,7 @@ export function normalizeExcludedPaths(
   if (!recursive || !excludedPaths || excludedPaths.length === 0) {
     return undefined;
   }
-  return [...new Set(excludedPaths.map((path) => normalizeLibraryPath(path)))];
+  return excludedPaths.map((path) => normalizeLibraryPath(path));
 }
 
 function normalizeQuery(query: string | undefined): string | undefined {

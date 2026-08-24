@@ -19,7 +19,7 @@ import {
   type FixtureEntry,
   seedLibraryFixture,
 } from "./library-fixture";
-import { readDatabaseGalleryListing, readDatabaseLibrarySnapshot } from "./repository";
+import { readDatabaseGalleryListing } from "./repository";
 import { type TestDatabaseHandle, testDatabaseForSuite } from "./test-db";
 
 const testDatabase = testDatabaseForSuite((database) =>
@@ -711,7 +711,7 @@ describe("recursive folder excludes", () => {
   const pathById = new Map(fixture.entries.map((entry) => [entry.id, entry.path]));
   const underSeries = (id: string) => (pathById.get(id) ?? "").startsWith("alpha/series/");
 
-  it("subtracts the excluded subtree from a recursive listing but keeps the folder as a child", async () => {
+  it("subtracts the excluded subtree from a recursive listing", async () => {
     const listing = await readDatabaseGalleryListing(
       { ...baseRequest, excludedPaths: ["alpha/series"], limit: 500 },
       testDatabase().db,
@@ -719,14 +719,6 @@ describe("recursive folder excludes", () => {
     const expected = expectedMediaOrder(baseRequest).filter((id) => !underSeries(id));
     expect(expected.length).toBeGreaterThan(0);
     expect(listing.media.map((item) => item.id)).toEqual(expected);
-
-    const snapshot = await readDatabaseLibrarySnapshot(
-      { currentPath: "alpha", excludedPaths: ["alpha/series"], limit: 500, recursive: true },
-      testDatabase().db,
-    );
-    expect(snapshot.folders.map((folder) => folder.name)).toContain("series");
-    expect(snapshot.media.some((item) => item.path.startsWith("alpha/series/"))).toBe(false);
-    expect(snapshot.media.length).toBe(expected.length);
   });
 
   it("drops every comic inside the excluded subtree and no other", async () => {

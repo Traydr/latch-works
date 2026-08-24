@@ -36,8 +36,6 @@ export interface DatabaseLibrarySnapshot {
 
 export interface LibrarySnapshotReadRequest {
   currentPath: string;
-  /** Direct-child subtrees to subtract in recursive mode (Plan 054). */
-  excludedPaths?: readonly string[];
   includeAllFolders?: boolean;
   limit: number;
   offset?: number;
@@ -68,23 +66,14 @@ export interface GalleryListingReadRequest {
 export function buildLibrarySnapshotMediaQuery(
   {
     currentPath,
-    excludedPaths,
     limit,
     offset = 0,
     query,
     recursive = false,
-  }: Pick<
-    LibrarySnapshotReadRequest,
-    "currentPath" | "excludedPaths" | "limit" | "offset" | "query" | "recursive"
-  >,
+  }: Pick<LibrarySnapshotReadRequest, "currentPath" | "limit" | "offset" | "query" | "recursive">,
   database: Database = db,
 ) {
-  const { mediaConditions } = buildLibraryConditions({
-    currentPath,
-    excludedPaths,
-    query,
-    recursive,
-  });
+  const { mediaConditions } = buildLibraryConditions({ currentPath, query, recursive });
 
   return database
     .select({
@@ -296,7 +285,6 @@ export function buildGalleryListingCursorCondition(
 export async function readDatabaseLibrarySnapshot(
   {
     currentPath,
-    excludedPaths,
     includeAllFolders = false,
     limit,
     offset = 0,
@@ -308,10 +296,7 @@ export async function readDatabaseLibrarySnapshot(
   const [folderRows, mediaRows, rootRows, allFolderRows] = await Promise.all([
     buildLibraryFolderQuery({ currentPath, query, recursive }, database),
     limit > 0
-      ? buildLibrarySnapshotMediaQuery(
-          { currentPath, excludedPaths, limit, offset, query, recursive },
-          database,
-        )
+      ? buildLibrarySnapshotMediaQuery({ currentPath, limit, offset, query, recursive }, database)
       : Promise.resolve([]),
     database.select().from(folders).where(eq(folders.parentPath, "")),
     includeAllFolders
