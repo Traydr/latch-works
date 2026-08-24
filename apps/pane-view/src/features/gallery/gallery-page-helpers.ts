@@ -50,6 +50,7 @@ export function areThumbnailRequestsEqual(
  */
 export function buildBrowseKey(parts: {
   comicMode: boolean;
+  excludedPaths?: readonly string[];
   path: string | undefined;
   query: string | undefined;
   randomSeed: GalleryRandomSeed;
@@ -67,5 +68,7 @@ export function buildBrowseKey(parts: {
     parts.showImages,
     parts.showVideos,
     parts.sortMode,
+    // JSON, not a join: excluded paths may contain the separator.
+    JSON.stringify(parts.excludedPaths ?? []),
   ].join("|");
 }

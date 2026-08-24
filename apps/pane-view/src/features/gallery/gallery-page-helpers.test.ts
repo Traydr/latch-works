@@ -56,12 +56,16 @@ describe("buildBrowseKey", () => {
       sortMode: "date-newest" as const,
     };
     expect(buildBrowseKey(base)).toBe(
-      "videos||false|false|00000000000000000000000000000007|true|false|date-newest",
+      "videos||false|false|00000000000000000000000000000007|true|false|date-newest|[]",
     );
     expect(buildBrowseKey({ ...base, randomSeed: "00000000000000000000000000000008" })).not.toBe(
       buildBrowseKey(base),
     );
     expect(buildBrowseKey({ ...base, comicMode: true })).not.toBe(buildBrowseKey(base));
+    expect(buildBrowseKey({ ...base, excludedPaths: ["videos/raw"] })).not.toBe(
+      buildBrowseKey(base),
+    );
+    expect(buildBrowseKey({ ...base, excludedPaths: [] })).toBe(buildBrowseKey(base));
     expect(buildBrowseKey({ ...base })).toBe(buildBrowseKey(base));
   });
 });

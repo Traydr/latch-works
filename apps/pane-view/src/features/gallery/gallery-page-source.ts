@@ -28,6 +28,7 @@ export function createServerGalleryPageSource(): GalleryPageSource {
         data: {
           comicMode: request.comicMode,
           cursor: request.cursor,
+          excludedPaths: request.excludedPaths ? [...request.excludedPaths] : undefined,
           limit: request.limit,
           path: request.path,
           query: request.query,

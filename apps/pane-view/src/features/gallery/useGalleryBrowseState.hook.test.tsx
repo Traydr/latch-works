@@ -3,6 +3,7 @@
 import { act, createElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
+import { galleryListingKeys } from "@/features/library/library-queries";
 import type { GalleryBrowseSearch } from "./browse-search";
 import { createMemoryBrowseStorage, type MemoryBrowseStorage } from "./gallery-browse-storage";
 import {
@@ -235,6 +236,70 @@ describe("useGalleryBrowseState", () => {
         search: expect.objectContaining({ recursive: true }),
       }),
     );
+  });
+
+  it("threads the current path's stored excludes into the requests while recursive is on", () => {
+    const storage = createMemoryBrowseStorage(
+      { randomSeed: SEED },
+      { photos: ["photos/kids"], videos: ["videos/raw"] },
+    );
+    const host = mount({ path: "photos", recursive: true }, storage);
+    expect(latest?.excludedChildPaths).toEqual(["photos/kids"]);
+    expect(latest?.snapshotRequest.excludedPaths).toEqual(["photos/kids"]);
+    expect(latest?.listingRequest.excludedPaths).toEqual(["photos/kids"]);
+
+    // Navigating to another path swaps to that path's own list.
+    host.rerender({ path: "videos", recursive: true });
+    expect(latest?.excludedChildPaths).toEqual(["videos/raw"]);
+    expect(latest?.listingRequest.excludedPaths).toEqual(["videos/raw"]);
+    host.rerender({ path: "videos/raw", recursive: true });
+    expect(latest?.excludedChildPaths).toEqual([]);
+    expect(latest?.listingRequest.excludedPaths).toBeUndefined();
+
+    // Recursive off: the list stays readable but leaves every request.
+    host.rerender({ path: "photos" });
+    expect(latest?.excludedChildPaths).toEqual(["photos/kids"]);
+    expect(latest?.snapshotRequest.excludedPaths).toBeUndefined();
+    expect(latest?.listingRequest.excludedPaths).toBeUndefined();
+  });
+
+  it("toggling an exclude writes through to storage and changes the listing query key", () => {
+    const storage = createMemoryBrowseStorage({ randomSeed: SEED });
+    mount({ path: "photos", recursive: true }, storage);
+    const before = latest?.listingRequest;
+    if (!before) throw new Error("listing request missing");
+
+    act(() => latest?.toggleExcludedChild("photos/kids"));
+    expect(storage.recursiveExcludes).toEqual({ photos: ["photos/kids"] });
+    expect(latest?.listingRequest.excludedPaths).toEqual(["photos/kids"]);
+    // The query key hashes to JSON, so the toggled request refetches immediately.
+    expect(JSON.stringify(galleryListingKeys.listing(before))).not.toBe(
+      JSON.stringify(galleryListingKeys.listing(latest?.listingRequest ?? before)),
+    );
+
+    act(() => latest?.toggleExcludedChild("photos/kids"));
+    expect(storage.recursiveExcludes).toEqual({});
+    expect(latest?.listingRequest.excludedPaths).toBeUndefined();
+  });
+
+  it("prunes only genuinely absent paths and persists the pruned list", () => {
+    const storage = createMemoryBrowseStorage(
+      { randomSeed: SEED },
+      { photos: ["photos/kids", "photos/gone"], videos: ["videos/raw"] },
+    );
+    mount({ path: "photos", recursive: true }, storage);
+
+    act(() => latest?.pruneExcludedChildren(["photos/kids", "photos/other"]));
+    expect(storage.recursiveExcludes).toEqual({
+      photos: ["photos/kids"],
+      videos: ["videos/raw"],
+    });
+    expect(latest?.excludedChildPaths).toEqual(["photos/kids"]);
+
+    // Nothing absent: no write, no state change.
+    const list = latest?.excludedChildPaths;
+    act(() => latest?.pruneExcludedChildren(["photos/kids"]));
+    expect(latest?.excludedChildPaths).toBe(list);
   });
 
   it("keeps the snapshot request referentially stable across unrelated rerenders", () => {
