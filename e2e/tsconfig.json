@@ -1,0 +1,9 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "rootDir": "."
+  },
+  "include": ["playwright.config.ts", "scripts/**/*.ts", "src/**/*.ts", "tests/**/*.ts"]
+}

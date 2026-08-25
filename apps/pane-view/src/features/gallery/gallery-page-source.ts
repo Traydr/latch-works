@@ -10,8 +10,7 @@ import type { GalleryListingPage } from "../../server/library/gallery-listing";
 
 /**
  * The only I/O the gallery browse session performs (Plan 052, Decision 3).
- * Production talks to the server functions; tests inject an in-memory
- * adapter (gallery-page-source.memory.ts). Gallery callers never see this.
+ * Production talks to the server functions. Gallery callers never see this.
  */
 export interface GalleryPageSource {
   loadComic(request: GalleryComicRequest): Promise<ComicEntry<LibraryMediaItem>>;

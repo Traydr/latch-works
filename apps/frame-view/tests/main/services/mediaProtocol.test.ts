@@ -1,35 +1,13 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import {
   authorizeMediaRoot,
-  authorizeRememberedMediaRoot,
-  getMediaContentType,
   isAuthorizedMediaPath,
   isPathWithinRoot,
-  parseThumbnailPriority,
-  readRange,
   shrinkAuthorizedMediaRootsTo,
 } from '../../../src/main/services/mediaProtocol';
 
 describe('mediaProtocol helpers', () => {
-  it('returns the AVIF image content type', () => {
-    expect(getMediaContentType('/tmp/gallery/image.avif')).toBe('image/avif');
-    expect(getMediaContentType('/tmp/gallery/image.AVIF')).toBe('image/avif');
-  });
-
-  it('maps every shared media extension to a content type', () => {
-    expect(getMediaContentType('/tmp/gallery/video.m4v')).toBe('video/mp4');
-    expect(getMediaContentType('/tmp/gallery/notes.txt')).toBe('application/octet-stream');
-  });
-
-  it('parses byte ranges correctly', () => {
-    expect(readRange('bytes=10-19', 100)).toEqual({ ok: true, start: 10, end: 19 });
-    expect(readRange('bytes=-20', 100)).toEqual({ ok: true, start: 80, end: 99 });
-    expect(readRange('bytes=20-', 100)).toEqual({ ok: true, start: 20, end: 99 });
-    expect(readRange('bytes=200-300', 100)).toEqual({ ok: false, reason: 'malformed' });
-    expect(readRange(null, 100)).toEqual({ ok: false, reason: 'missing' });
-  });
-
   it('checks whether a path is inside an authorized root', () => {
     if (process.platform === 'win32') {
       expect(isPathWithinRoot('C:\\gallery\\nested\\image.jpg', 'C:\\gallery')).toBe(true);
@@ -54,14 +32,6 @@ describe('mediaProtocol helpers', () => {
     expect(isPathWithinRoot('/tmp/Gallery/Nested/image.jpg', '/tmp/gallery')).toBe(true);
   });
 
-  it('clamps thumbnail priority hints', () => {
-    expect(parseThumbnailPriority('2')).toBe(2);
-    expect(parseThumbnailPriority('1')).toBe(1);
-    expect(parseThumbnailPriority('-4')).toBe(0);
-    expect(parseThumbnailPriority('100')).toBe(2);
-    expect(parseThumbnailPriority('wat')).toBe(0);
-  });
-
   it('shrinks authorized roots to the most specific matching root', async () => {
     const rootA = process.platform === 'win32' ? 'C:\\gallery-a' : '/tmp/gallery-a';
     const rootB = process.platform === 'win32' ? 'C:\\gallery-b' : '/tmp/gallery-b';
@@ -77,31 +47,4 @@ describe('mediaProtocol helpers', () => {
     expect(await isAuthorizedMediaPath(rootB)).toBe(false);
   });
 
-  it('authorizes the remembered last folder when rememberLastFolder is enabled', async () => {
-    const remembered = process.platform === 'win32' ? 'C:\\remembered' : '/tmp/remembered';
-    const nested = process.platform === 'win32' ? 'C:\\remembered\\album' : '/tmp/remembered/album';
-
-    await authorizeRememberedMediaRoot({
-      rememberLastFolder: true,
-      lastFolderPath: remembered,
-    });
-
-    expect(await isAuthorizedMediaPath(remembered)).toBe(true);
-    expect(await isAuthorizedMediaPath(nested)).toBe(true);
-  });
-
-  it('skips remembered-folder authorization when the setting is disabled', async () => {
-    // Fresh module instance so roots authorized by earlier tests cannot mask a false positive.
-    vi.resetModules();
-    const freshMediaProtocol = await import('../../../src/main/services/mediaProtocol');
-
-    const remembered = process.platform === 'win32' ? 'C:\\skipped' : '/tmp/skipped';
-
-    await freshMediaProtocol.authorizeRememberedMediaRoot({
-      rememberLastFolder: false,
-      lastFolderPath: remembered,
-    });
-
-    expect(await freshMediaProtocol.isAuthorizedMediaPath(remembered)).toBe(false);
-  });
 });

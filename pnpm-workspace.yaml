@@ -1,6 +1,7 @@
 packages:
   - "apps/*"
   - "packages/*"
+  - "e2e"
 blockExoticSubdeps: false
 # Explicit pnpm default. Electron Forge's system check refuses pnpm unless
 # node-linker is hoisted or a hoist pattern is declared; the default private

@@ -1,0 +1,27 @@
+{
+  "name": "@latch-works/e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "e2e": "playwright test",
+    "e2e:frame": "playwright test --project frame-view",
+    "e2e:lockstep": "playwright test --project lockstep",
+    "e2e:pane": "playwright test --project pane-view",
+    "fixture": "tsx scripts/make-fixture.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.955.0",
+    "@latch-works/media-domain": "workspace:*",
+    "@playwright/test": "^1.62.1",
+    "pdf-lib": "^1.17.1",
+    "postgres": "^3.4.7",
+    "sharp": "^0.34.5",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "tsx": "^4.21.0",
+    "typescript": "^7.0.2"
+  }
+}

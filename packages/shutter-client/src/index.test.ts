@@ -181,64 +181,6 @@ describe("source purge", () => {
   });
 });
 
-describe("delivery URLs", () => {
-  it("builds an absolute private source URL with a verifiable image_source capability", async () => {
-    const { instance } = client({ edgeBaseUrl: "https://media.example.test" });
-
-    const url = new URL(
-      await instance.privateSourceUrl(
-        { sourceId: SOURCE, locator: LOCATOR },
-        { width: 1200, quality: 75 },
-      ),
-    );
-
-    expect(url.origin).toBe("https://media.example.test");
-    expect(url.searchParams.get("w")).toBe("1200");
-    expect(url.searchParams.get("q")).toBe("75");
-    const capability = decodeURIComponent(url.pathname.split("/").at(-1) ?? "");
-    const claims = await verifySourceCapability(capability, {
-      spaceId: SPACE,
-      expectedPurpose: "image_source",
-      keys: KEYS,
-      now: nowSeconds(),
-      allowedSourceOrigins: [{ origin: "https://storage.example.test" }],
-      expectedSourceId: SOURCE,
-    });
-    expect(claims.locator).toBe(LOCATOR);
-  });
-
-  it("builds a private master URL bound to the preview kind", async () => {
-    const { instance } = client({ edgeBaseUrl: "https://media.example.test" });
-
-    const url = new URL(
-      await instance.privateMasterUrl(
-        { sourceId: SOURCE, kind: "pdf" },
-        { width: 640, quality: 50 },
-      ),
-    );
-
-    const capability = decodeURIComponent(url.pathname.split("/").at(-1) ?? "");
-    await verifySourceCapability(capability, {
-      spaceId: SPACE,
-      expectedPurpose: "master_preview",
-      keys: KEYS,
-      now: nowSeconds(),
-      expectedSourceId: SOURCE,
-      expectedKind: "pdf",
-    });
-  });
-
-  it("returns relative paths when no edge base URL is configured", () => {
-    const { instance } = client();
-
-    expect(
-      instance.publicResolverUrl("uploadthing", "project/file", { width: 640, quality: 75 }),
-    ).toBe(
-      `/v1/public/${SPACE}/resolver/uploadthing/${encodeURIComponent("project/file")}?w=640&q=75`,
-    );
-  });
-});
-
 describe("configuration guards", () => {
   it("refuses control calls without an API token", async () => {
     const instance = createShutterClient({

@@ -32,10 +32,22 @@ Export shared APIs through `src/index.ts`. Preserve Electron's main/preload/rend
 
 ## Testing guidelines
 
-Use Vitest and name tests after the module, such as `scan.test.ts`. Add regression tests for
-behavior changes and cover failure paths for storage, network, and filesystem code.
-Run a focused suite first, for example `pnpm --filter @latch-works/media-index test`, then run
-`pnpm test` and `pnpm typecheck`. The repository does not define a numeric coverage threshold.
+Use Vitest and name tests after the module, such as `scan.test.ts`. Write whatever tests you
+need to prove your change works, but committing a test is a separate decision: commit one only
+when explicitly asked, or when it pins a feature's behavior that is worth keeping (ordering rules,
+sync invariants, parser output). Do not commit tests for one-off bug fixes, configuration
+choices, or the absence of something. Prefer tests that exercise real dependencies and assert on
+output over tests that mock a module's collaborators and assert on calls; the end-to-end suite is
+the place to confirm user-facing features. Run a focused suite first, for example
+`pnpm --filter @latch-works/media-index test`, then run `pnpm test` and `pnpm typecheck`. The
+repository does not define a numeric coverage threshold.
+
+The end-to-end suite lives in `e2e/` (Playwright) and is the final check before a PR is ready:
+`pnpm e2e:pane` runs Pane View against the local compose stack, seeded through the Lockstep CLI;
+`pnpm e2e:frame` drives the packaged Frame View build; `pnpm e2e:lockstep` pushes from the
+packaged Lockstep desktop app into that server.
+It is not part of `pnpm test`; see `docs/runbooks/e2e.md` for prerequisites and how to run one
+spec.
 
 ## Commit and pull request guidelines
 

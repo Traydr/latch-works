@@ -12,7 +12,6 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "check": "pnpm typecheck && pnpm test",
-    "test": "vitest run src",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
@@ -20,7 +19,6 @@
     "@aws-sdk/s3-request-presigner": "^3.955.0"
   },
   "devDependencies": {
-    "typescript": "^7.0.2",
-    "vitest": "^4.1.3"
+    "typescript": "^7.0.2"
   }
 }

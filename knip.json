@@ -38,8 +38,7 @@
         "src/main/catalog/catalog.worker.ts",
         "src/main/thumbnail/thumbnail.worker.ts",
         "src/showcase/preview.tsx",
-        "tests/**/*.test.ts",
-        "tests/testUtils.ts"
+        "tests/**/*.test.ts"
       ],
       "ignoreDependencies": ["ffmpeg-static", "@ffprobe-installer/ffprobe"]
     },
@@ -51,6 +50,7 @@
         "src/sidepanel/index.ts",
         "src/options/index.ts",
         "src/offscreen/index.ts",
+        "src/gather/avif-encoder.worker.ts",
         "src/**/*.test.ts"
       ]
     },
@@ -79,14 +79,14 @@
     "packages/media-index": {
       "entry": ["src/**/*.test.ts"]
     },
-    "packages/media-storage": {
-      "entry": ["src/**/*.test.ts"]
-    },
     "packages/lockstep-core": {
       "entry": ["src/**/*.test.ts"]
     },
     "packages/shutter-client": {
       "entry": ["src/**/*.test.ts"]
+    },
+    "e2e": {
+      "entry": ["scripts/*.ts", "tests/**/*.setup.ts", "tests/**/*.spec.ts"]
     }
   }
 }
