@@ -12,6 +12,8 @@ import { z } from "zod";
 export const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const E2E_ROOT = path.join(REPO_ROOT, "e2e");
 export const FIXTURE_ARCHIVE_DIR = path.join(E2E_ROOT, ".fixtures", "archive");
+/** A second, tiny archive the Lockstep desktop spec pushes on top of the seeded one. */
+export const LOCKSTEP_SOURCE_DIR = path.join(E2E_ROOT, ".fixtures", "lockstep-source");
 export const AUTH_STATE_PATH = path.join(E2E_ROOT, ".auth", "pane-view.json");
 
 const PANE_VIEW_PORT = 3100;
@@ -112,4 +114,17 @@ export function paneViewProcessEnv(environment: E2eEnvironment): NodeJS.ProcessE
     SHUTTER_SPACE_API_TOKEN: "",
     SHUTTER_SPACE_ID: "",
   };
+}
+
+/**
+ * The environment for a child Electron app. ELECTRON_RUN_AS_NODE (set in some
+ * agent shells) would turn the binary into plain Node; undefined values are
+ * dropped because Playwright wants a string map.
+ */
+export function electronChildEnv(extra: Record<string, string> = {}) {
+  const entries: [string, string][] = [];
+  for (const [key, value] of Object.entries(process.env)) {
+    if (key !== "ELECTRON_RUN_AS_NODE" && value !== undefined) entries.push([key, value]);
+  }
+  return { ...Object.fromEntries(entries), ...extra };
 }

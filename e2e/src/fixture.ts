@@ -176,3 +176,9 @@ export function fixtureComics(browsePath: string): FixtureComic[] {
   }
   return comics;
 }
+
+/** The Lockstep desktop spec's own source: pushed after the seed, so it must not overlap it. */
+export const LOCKSTEP_SOURCE_ITEMS: readonly FixtureItem[] = [
+  { kind: "image", mtimeMinutes: 0, name: "desk-1.png", path: "desk/desk-1.png" },
+  { kind: "image", mtimeMinutes: 1, name: "desk-2.png", path: "desk/desk-2.png" },
+];

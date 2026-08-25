@@ -8,7 +8,7 @@ import {
   type Locator,
   type Page,
 } from "@playwright/test";
-import { REPO_ROOT } from "./env.ts";
+import { electronChildEnv, REPO_ROOT } from "./env.ts";
 
 /**
  * Drives the packaged Frame View build (`.vite/build`, produced by
@@ -38,12 +38,10 @@ async function newUserDataDir(): Promise<string> {
 
 export async function launchFrameView(userDataDir?: string): Promise<FrameViewSession> {
   const dataDir = userDataDir ?? (await newUserDataDir());
-  // ELECTRON_RUN_AS_NODE in the parent environment would turn the binary into plain Node.
-  const { ELECTRON_RUN_AS_NODE: _runAsNode, ...env } = process.env;
   const app = await electron.launch({
     args: [path.join(FRAME_VIEW_DIR, ".vite", "build", "main.js"), `--user-data-dir=${dataDir}`],
     cwd: FRAME_VIEW_DIR,
-    env: { ...env, FRAME_VIEW_DISABLE_GPU: "1" },
+    env: electronChildEnv({ FRAME_VIEW_DISABLE_GPU: "1" }),
     executablePath: ELECTRON_BINARY,
   });
   const window = await app.firstWindow();

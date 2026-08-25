@@ -4,8 +4,13 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import sharp from "sharp";
-import { FIXTURE_ARCHIVE_DIR } from "../src/env.ts";
-import { FIXTURE_ITEMS, type FixtureItem, fixtureMtimeMs } from "../src/fixture.ts";
+import { FIXTURE_ARCHIVE_DIR, LOCKSTEP_SOURCE_DIR } from "../src/env.ts";
+import {
+  FIXTURE_ITEMS,
+  type FixtureItem,
+  fixtureMtimeMs,
+  LOCKSTEP_SOURCE_ITEMS,
+} from "../src/fixture.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -68,10 +73,10 @@ async function writePdf(target: string): Promise<void> {
   await writeFile(target, await document.save());
 }
 
-async function main(): Promise<void> {
-  await rm(FIXTURE_ARCHIVE_DIR, { force: true, recursive: true });
-  for (const [index, entry] of FIXTURE_ITEMS.entries()) {
-    const target = path.join(FIXTURE_ARCHIVE_DIR, ...entry.path.split("/"));
+async function writeArchive(root: string, items: readonly FixtureItem[]): Promise<void> {
+  await rm(root, { force: true, recursive: true });
+  for (const [index, entry] of items.entries()) {
+    const target = path.join(root, ...entry.path.split("/"));
     await mkdir(path.dirname(target), { recursive: true });
     switch (entry.kind) {
       case "image":
@@ -88,7 +93,12 @@ async function main(): Promise<void> {
     const mtime = new Date(fixtureMtimeMs(entry));
     await utimes(target, mtime, mtime);
   }
-  console.log(`fixture: ${FIXTURE_ITEMS.length} items written to ${FIXTURE_ARCHIVE_DIR}`);
+  console.log(`fixture: ${items.length} items written to ${root}`);
+}
+
+async function main(): Promise<void> {
+  await writeArchive(FIXTURE_ARCHIVE_DIR, FIXTURE_ITEMS);
+  await writeArchive(LOCKSTEP_SOURCE_DIR, LOCKSTEP_SOURCE_ITEMS);
 }
 
 await main();

@@ -44,7 +44,8 @@ repository does not define a numeric coverage threshold.
 
 The end-to-end suite lives in `e2e/` (Playwright) and is the final check before a PR is ready:
 `pnpm e2e:pane` runs Pane View against the local compose stack, seeded through the Lockstep CLI;
-`pnpm e2e:frame` drives the packaged Frame View build.
+`pnpm e2e:frame` drives the packaged Frame View build; `pnpm e2e:lockstep` pushes from the
+packaged Lockstep desktop app into that server.
 It is not part of `pnpm test`; see `docs/runbooks/e2e.md` for prerequisites and how to run one
 spec.
 

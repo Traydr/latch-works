@@ -21,6 +21,7 @@ the compose defaults apply.
 pnpm --filter @latch-works/e2e fixture   # render e2e/.fixtures/archive from the manifest (once)
 pnpm e2e:pane                            # Pane View, seeded through the Lockstep CLI
 pnpm e2e:frame                           # Frame View, through Playwright's Electron driver
+pnpm e2e:lockstep                        # Lockstep desktop, pushing into the Pane View server
 pnpm e2e                                 # every project
 ```
 
@@ -74,6 +75,16 @@ the remembered folder across a relaunch. Frame View indexes images and videos on
 fixture PDF is excluded from its expectations. One test ("a fresh scan lands in the configured
 sort order") is red today: a fresh scan shows discovery order until the sort is re-chosen. That is
 a product bug, and the suite stays red until it is fixed.
+
+## What the Lockstep project covers
+
+`tests/lockstep/sync.spec.ts` packages the Lockstep desktop app (setup project), launches it on
+a fresh userData directory, creates a profile against the e2e Pane View server with the
+`lockstep-source` fixture (two images that are not in the seeded archive), runs Plan (two uploads),
+Push (two pushed, zero failed, both paths in `/api/sync/snapshot`), Plan again (nothing to upload),
+and checks `lockstep-settings.json` never holds the token in the clear. The project depends on
+`pane-view`, so `pnpm e2e:lockstep` runs the Pane View suite first; `--no-deps` skips that while
+iterating (the server is still started or reused).
 
 ## Adding a spec
 

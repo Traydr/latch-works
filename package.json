@@ -16,7 +16,8 @@
     "typecheck": "pnpm -r typecheck",
     "knip": "knip",
     "check:all": "pnpm run build:all && pnpm run format && pnpm run lint:all && pnpm run typecheck && pnpm run knip",
-    "e2e:frame": "pnpm --filter @latch-works/e2e e2e:frame"
+    "e2e:frame": "pnpm --filter @latch-works/e2e e2e:frame",
+    "e2e:lockstep": "pnpm --filter @latch-works/e2e e2e:lockstep"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.10",
