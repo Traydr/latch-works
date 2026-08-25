@@ -23,7 +23,7 @@ once their outcome is recorded below; recover full text with `git log --diff-fil
 | [040](040-frame-view-pdf-spike.md) | Validate and specify Frame PDF reading by porting Pane's windowed viewer | P2 | M spike | 033, 034 (both done) | TODO (Steps 2–3 need the product owner at a desktop) |
 | [053](053-gallery-waterfall-review-followups.md) | Land the five review follow-ups from PR #98: debounce edge, resolver rejection test, staleness dedupe, naming, `library` off the session | P3 | S | PR #98 (merged) | TODO |
 | [054](054-pane-view-recursive-folder-excludes.md) | Per-path folder excludes for Pane View recursive/comic mode: toolbar button + lean dialog, localStorage, server-side subtree subtraction | P2 | M | PR #98 (merged) | IN REVIEW (branch `agent/054-recursive-folder-excludes`, 2026-08-24) |
-| [056](056-test-triage-and-e2e.md) | Tag every unit test keep/trim/e2e/delete, add a Playwright e2e workspace covering the baseline features of every app, delete the mock-shape and moment-in-time tests | P2 | L | none | TODO (tag table awaiting owner review) |
+| [056](056-test-triage-and-e2e.md) | Tag every unit test keep/trim/e2e/delete, add a Playwright e2e workspace covering the baseline features of every app, delete the mock-shape and moment-in-time tests | P2 | L | none | IN PROGRESS (PR 1 on `revise-testing`, 2026-08-25) |
 
 Recommended order (2026-08-17 review):
 

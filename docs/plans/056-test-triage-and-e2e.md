@@ -11,7 +11,7 @@
 
 ## Status
 
-- **Status**: TODO (awaiting owner review of the tag table)
+- **Status**: IN PROGRESS — PR 1 (e2e workspace + Pane View suite + pane-view deletions) on branch `revise-testing`, 2026-08-25; tag table approved as written
 - **Priority**: P2 — reduces agent drag on every future PR; unblocks honest "does the product
   work" signal
 - **Effort**: L (e2e harness M, deletions S per workspace)
@@ -390,18 +390,53 @@ run described in the PR body with its output.
 6. **Landing commit of each PR** updates the plan index; the last PR records the final counts
    here and removes this file per the index convention.
 
+## PR 1 record (2026-08-25)
+
+Landed on `revise-testing`:
+
+- `e2e/` workspace (`@latch-works/e2e`, Playwright 1.62) with `pnpm e2e` / `pnpm e2e:pane`; the
+  webServer script recreates a dedicated `latch_works_e2e` database and `latch-works-e2e` bucket
+  on the compose stack so the developer's synced archive is never touched. Fixture manifest +
+  generator (`e2e/src/fixture.ts`, `e2e/scripts/make-fixture.ts`), 96 items. Runbook at
+  `docs/runbooks/e2e.md`; AGENTS.md names the suite as the final pre-PR check.
+- Pane View cases 1–13 as 8 spec files (39 tests incl. the two setup steps); the seed step is the
+  Lockstep CLI push and doubles as the roundtrip test. Case 11's "second push refused while a run
+  is active" became "an active run blocks destructive maintenance until stopped", which is the
+  guard the UI actually exposes.
+- Deleted every pane-view file tagged DELETE or E2E (39 files) plus the orphaned helpers
+  `gallery-session-harness.tsx`, `gallery-page-source.memory.ts`, `library-fixture.ts`, and the
+  `@typescript/typescript6` devDependency only `production-export-names.test.ts` used. TRIMs
+  applied: spoofing case merged into `login-throttle.test.ts`; `gallery-order.test.ts` down to
+  determinism/distinct-seed/separate-keys; `maintenance-descriptors.test.ts` renamed
+  `library-wipe.test.ts` with only the confirmation/token guard. pane-view: 52 → 12 test files,
+  620 → 104 tests. `test-db.ts` stays (folder-delete, guards, store, library-wipe use it).
+
+Deviations and findings:
+
+- **Recursive listings carry no folder entries** (only page 1 of a non-recursive browse does); the
+  plan's case 3 wording assumed otherwise. The oracle follows the product.
+- **Folder entries follow the name direction only**: Z-A reverses them, date modes leave them A-Z.
+- **PDF viewing needs bucket CORS in pass-through mode**: pdf.js fetches the signed original from
+  the browser, so a bucket without a CORS rule for the app origin shows "Failed to fetch". The e2e
+  setup puts a `GET/HEAD` rule for the app origin on the e2e bucket. Worth a line in the deployment
+  docs; not fixed in product code here.
+- **Clearing a search does not restore the recursive flag** it was submitted under; the excludes
+  spec navigates back explicitly. Product call whether that is intended — flagged, not changed.
+- A dedicated `disposable/` fixture folder exists for the soft-delete case so no other spec's
+  expectations move.
+
 ## Done criteria
 
-- [ ] Owner has reviewed the tag table (strike-throughs or edits recorded in this file).
-- [ ] `pnpm e2e:pane` passes locally against the compose stack and covers cases 1–13.
+- [x] Owner has reviewed the tag table (approved as written, 2026-08-25).
+- [x] `pnpm e2e:pane` passes locally against the compose stack and covers cases 1–13 (PR 1).
 - [ ] `pnpm e2e:frame` passes locally and covers cases 1–5.
 - [ ] `pnpm e2e:lockstep` passes locally.
 - [ ] Every file tagged DELETE is gone; every E2E file is gone in the same PR as its coverage;
       every TRIM file has only the named cases left.
 - [ ] `pnpm test` still passes and runs in under 10 s.
 - [ ] Knip reports no orphaned test helpers or fixtures.
-- [ ] `docs/runbooks/e2e.md` exists and `CLAUDE.md` names `pnpm e2e:*` as the final check before
-      a PR is marked ready.
+- [x] `docs/runbooks/e2e.md` exists and `CLAUDE.md` names `pnpm e2e:*` as the final check before
+      a PR is marked ready (PR 1).
 
 ## STOP conditions
 
