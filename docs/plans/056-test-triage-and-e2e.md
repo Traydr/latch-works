@@ -462,16 +462,36 @@ Findings:
 - `ELECTRON_RUN_AS_NODE=1` in an agent shell makes Playwright's Electron launch fail with an
   unhelpful "Process failed to launch"; the helper strips it.
 
+## PR 4 record (2026-08-25)
+
+Branch `agent/056-lockstep-and-packages`, stacked on `agent/056-frame-view-e2e`. Lockstep desktop
+e2e project (`pnpm e2e:lockstep`, depends on the `pane-view` project so the server is up and
+seeded): Forge-packaged build, fresh userData, profile created against the e2e server with a
+second two-image fixture (`e2e/.fixtures/lockstep-source`), Plan → 2 uploads, Push → 2 pushed /
+0 failed and both paths in `/api/sync/snapshot`, Plan again → nothing to upload, and
+`lockstep-settings.json` free of the token. Trims and deletions per the table across
+`apps/lockstep`, `apps/lockstep-cli`, `packages/lockstep-core`, `packages/media-index`,
+`packages/media-storage` (no tests left; its `test` script and vitest devDependency are gone) and
+`packages/shutter-client`. Package suites: 24 + 15 + 9 tests; lockstep 7, lockstep-cli 12.
+
+Findings:
+
+- An unsigned Electron build has no OS keychain, so a saved token is session-only ("OS encryption
+  unavailable"); the spec's last case relies on exactly that to prove the token never lands in the
+  settings file. On a signed build the same assertion holds because the token is stored encrypted.
+- Playwright's Electron `env` wants a string map; `electronChildEnv()` in `e2e/src/env.ts` builds
+  it (dropping `ELECTRON_RUN_AS_NODE`) for both desktop apps and their Forge package steps.
+
 ## Done criteria
 
 - [x] Owner has reviewed the tag table (approved as written, 2026-08-25).
 - [x] `pnpm e2e:pane` passes locally against the compose stack and covers cases 1–13 (PR 1).
 - [x] `pnpm e2e:frame` passes locally and covers cases 1–5 (PR 3; case 5 quit-clean is implicit in every test's teardown).
-- [ ] `pnpm e2e:lockstep` passes locally.
-- [ ] Every file tagged DELETE is gone; every E2E file is gone in the same PR as its coverage;
-      every TRIM file has only the named cases left.
-- [ ] `pnpm test` still passes and runs in under 10 s.
-- [ ] Knip reports no orphaned test helpers or fixtures.
+- [x] `pnpm e2e:lockstep` passes locally (PR 4).
+- [x] Every file tagged DELETE is gone; every E2E file is gone in the same PR as its coverage;
+      every TRIM file has only the named cases left (PRs 1–4; Gather Box e2e deferred per STOP 2).
+- [x] `pnpm test` still passes and runs in under 10 s.
+- [x] Knip reports no orphaned test helpers or fixtures.
 - [x] `docs/runbooks/e2e.md` exists and `CLAUDE.md` names `pnpm e2e:*` as the final check before
       a PR is marked ready (PR 1).
 
