@@ -87,6 +87,9 @@
     },
     "packages/shutter-client": {
       "entry": ["src/**/*.test.ts"]
+    },
+    "e2e": {
+      "entry": ["scripts/*.ts", "tests/**/*.setup.ts", "tests/**/*.spec.ts"]
     }
   }
 }

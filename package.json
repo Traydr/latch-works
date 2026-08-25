@@ -11,6 +11,8 @@
     "lint:oxlint": "oxlint",
     "lint:all": "pnpm run lint:biome && pnpm run lint:oxlint",
     "test": "pnpm -r test",
+    "e2e": "pnpm --filter @latch-works/e2e e2e",
+    "e2e:pane": "pnpm --filter @latch-works/e2e e2e:pane",
     "typecheck": "pnpm -r typecheck",
     "knip": "knip",
     "check:all": "pnpm run build:all && pnpm run format && pnpm run lint:all && pnpm run typecheck && pnpm run knip"
