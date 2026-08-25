@@ -20,6 +20,7 @@ the compose defaults apply.
 ```bash
 pnpm --filter @latch-works/e2e fixture   # render e2e/.fixtures/archive from the manifest (once)
 pnpm e2e:pane                            # Pane View, seeded through the Lockstep CLI
+pnpm e2e:frame                           # Frame View, through Playwright's Electron driver
 pnpm e2e                                 # every project
 ```
 
@@ -56,6 +57,23 @@ expected order and count from it.
 
 The bucket gets a CORS rule for the app origin during setup: the PDF viewer fetches signed
 originals from the browser, as it does against a production bucket.
+
+## What the Frame View project covers
+
+`tests/frame-view/build.setup.ts` runs `electron-forge package` (about ten seconds; the only
+supported way to get a production `.vite/build`, skip with `E2E_SKIP_BUILD=1`). Each test launches
+the build with Playwright's `_electron` driver on a fresh userData directory and replaces
+`dialog.showOpenDialog` from the main process, so "Open" lands on a fixture folder without a
+native picker. `ELECTRON_RUN_AS_NODE` is stripped from the child environment; with it set, the
+Electron binary starts as plain Node and Playwright reports "Process failed to launch".
+
+`gallery.spec.ts` covers: open + child listing + recursive, root-child excludes through the
+Folders overlay, the image/video filters, the four ordered sort modes against the shared oracle,
+Random + Shuffle, thumbnail rendering, viewer stepping (keys and buttons), comic mode + reader, and
+the remembered folder across a relaunch. Frame View indexes images and videos only, so the
+fixture PDF is excluded from its expectations. One test is `test.fail()`-annotated for a known
+bug (a fresh scan shows discovery order until the sort is re-chosen); it turns red the day the
+bug is fixed, which is the reminder to drop the annotation.
 
 ## Adding a spec
 

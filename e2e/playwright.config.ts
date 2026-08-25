@@ -29,6 +29,17 @@ export default defineConfig({
         viewport: { height: 4000, width: 1400 },
       },
     },
+    {
+      name: "frame-view-setup",
+      testDir: "./tests/frame-view",
+      testMatch: /.*\.setup\.ts/,
+    },
+    {
+      dependencies: ["frame-view-setup"],
+      name: "frame-view",
+      testDir: "./tests/frame-view",
+      testMatch: /.*\.spec\.ts/,
+    },
   ],
   reporter: process.env.CI ? "github" : "list",
   retries: 0,

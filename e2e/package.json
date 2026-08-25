@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "e2e": "playwright test",
+    "e2e:frame": "playwright test --project frame-view",
     "e2e:pane": "playwright test --project pane-view",
     "fixture": "tsx scripts/make-fixture.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
