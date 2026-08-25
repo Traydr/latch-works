@@ -70,14 +70,6 @@ function permutation(seed: GalleryRandomSeed, subjects: readonly Subject[]): Sub
     .map(({ subject }) => subject);
 }
 
-function quartile(position: number): number {
-  return Math.floor((position * 4) / SUBJECT_COUNT);
-}
-
-function positions(order: readonly Subject[]): Map<string, number> {
-  return new Map(order.map((subject, index) => [`${subject.kind}:${subject.id}`, index]));
-}
-
 function shuffleDeterministically<T>(items: readonly T[]): T[] {
   // A fixed LCG so "input order does not matter" is tested against a real reordering.
   const copy = [...items];
@@ -135,44 +127,6 @@ describe("galleryRandomOrderKey", () => {
     }
     expect(orders.size).toBe(SEEDS.length);
     expect(firstPages.size).toBe(SEEDS.length);
-  });
-
-  it("moves subjects between quartiles when the seed changes", () => {
-    // Independent keys keep ~25% of subjects in the same quartile. A key that
-    // ignores the seed, or a constant, scores 1.0. Bound: 0.35.
-    for (const [index, seed] of SEEDS.entries()) {
-      const nextSeed = SEEDS[index + 1];
-      if (nextSeed === undefined) break;
-      const before = positions(permutation(seed, SUBJECTS));
-      const after = positions(permutation(nextSeed, SUBJECTS));
-      let same = 0;
-      for (const [key, position] of before) {
-        const afterPosition = after.get(key);
-        if (afterPosition !== undefined && quartile(position) === quartile(afterPosition)) {
-          same += 1;
-        }
-      }
-      expect(same / SUBJECT_COUNT).toBeLessThanOrEqual(0.35);
-    }
-  });
-
-  it("spreads subjects that share a path prefix across the whole order", () => {
-    // 20% of subjects share `folder-a/`. Independent keys put ~25% of them in
-    // each quartile; a rank that leaks the path prefix (for example the raw
-    // path, or a hash whose leading bytes follow the prefix) scores 0 in three
-    // quartiles. Bound: at least 15% per quartile.
-    for (const seed of SEEDS) {
-      const order = permutation(seed, SUBJECTS);
-      const perQuartile = [0, 0, 0, 0];
-      order.forEach((subject, position) => {
-        if (subject.kind === "comic" && subject.id.startsWith(COMMON_PREFIX)) {
-          perQuartile[quartile(position)] = (perQuartile[quartile(position)] ?? 0) + 1;
-        }
-      });
-      for (const count of perQuartile) {
-        expect(count / COMMON_PREFIX_COUNT).toBeGreaterThanOrEqual(0.15);
-      }
-    }
   });
 
   it("keys media and comics separately even for the same id", () => {

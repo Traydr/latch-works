@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { resolveClientIp } from "./client-ip";
 import { createLoginThrottle, type LoginThrottleStore } from "./login-throttle-core";
 
 interface StoredAttempt {
@@ -103,5 +104,22 @@ describe("login throttle", () => {
     const restartedProcess = createLoginThrottle({ store });
 
     await expect(restartedProcess.isLoginThrottled("127.0.0.1", "owner")).resolves.toBe(true);
+  });
+
+  it("does not bypass throttling by rotating x-forwarded-for when proxy trust is disabled", async () => {
+    const throttle = createLoginThrottle({ store: createMemoryStore() });
+    const requestWithForwardedFor = (value: string) =>
+      new Request("http://localhost:3000/api/auth/login", {
+        headers: { "x-forwarded-for": value },
+      });
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const clientIp = resolveClientIp(requestWithForwardedFor(`203.0.113.${attempt}`), false);
+      await throttle.recordFailedLogin(clientIp, "owner");
+    }
+
+    const rotatedIp = resolveClientIp(requestWithForwardedFor("198.51.100.99"), false);
+    expect(rotatedIp).toBe("unknown");
+    await expect(throttle.isLoginThrottled(rotatedIp, "owner")).resolves.toBe(true);
   });
 });
