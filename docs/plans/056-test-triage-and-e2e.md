@@ -434,11 +434,39 @@ worker (`src/gather/avif-encoder.worker.ts`, a build entry in `scripts/build.mjs
 graph, so that entry is now declared in `knip.json`. No Gather Box e2e in this PR (STOP 2 is
 deferred to PR 5).
 
+## PR 3 record (2026-08-25)
+
+Branch `agent/056-frame-view-e2e`, stacked on `agent/056-gather-box-deletions`. Frame View e2e
+project (`pnpm e2e:frame`): Playwright's Electron driver against the Forge-packaged build, fresh
+userData per launch, `dialog.showOpenDialog` replaced from the main process (no product hook was
+needed — the plan's `FRAME_VIEW_E2E_FOLDER` idea is moot). 13 tests: scan/recursive/excludes/
+filters, four ordered sort modes + Random/Shuffle against the shared oracle, thumbnails, viewer,
+comic reader, remembered folder across relaunch (quit-clean is implicit: every test closes the app
+and Playwright waits for exit). Deleted/trimmed per the table: 13 files gone, `mediaProtocol.test.ts`
+down to the authorized-root cases, orphaned `frameViewMock.ts`/`testUtils.ts`, the testing-library
+and jsdom devDependencies, and three `mediaProtocol` exports only tests used. 19 → 6 files,
+91 → 28 tests.
+
+Findings:
+
+- **Bug: a fresh scan renders discovery order, not the configured sort.** Right after "Open",
+  `comics/alpha` shows `10, b, A, 2, 1` in the grid and the viewer steps through that sequence;
+  choosing any sort mode (even the current one) fixes it. The deleted
+  `useAppStore.test.ts` "flattens and sorts loading chunks on done" passed, so the unsorted items
+  reach the grid by another path. `gallery.spec.ts` pins the expected behaviour under
+  `test.fail()`; remove the annotation with the fix. Not fixed in this PR (out of scope).
+- Frame View indexes images and videos only; the fixture PDF is invisible to it (plan 040 is the
+  PDF spike). The Frame View oracle filters it out.
+- The Frame View grid is virtualised (~55 tiles per window); the helper scrolls the container and
+  merges windows to read a full order.
+- `ELECTRON_RUN_AS_NODE=1` in an agent shell makes Playwright's Electron launch fail with an
+  unhelpful "Process failed to launch"; the helper strips it.
+
 ## Done criteria
 
 - [x] Owner has reviewed the tag table (approved as written, 2026-08-25).
 - [x] `pnpm e2e:pane` passes locally against the compose stack and covers cases 1–13 (PR 1).
-- [ ] `pnpm e2e:frame` passes locally and covers cases 1–5.
+- [x] `pnpm e2e:frame` passes locally and covers cases 1–5 (PR 3; case 5 quit-clean is implicit in every test's teardown).
 - [ ] `pnpm e2e:lockstep` passes locally.
 - [ ] Every file tagged DELETE is gone; every E2E file is gone in the same PR as its coverage;
       every TRIM file has only the named cases left.
