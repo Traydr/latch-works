@@ -7,7 +7,8 @@ commit `7076ce8` on 2026-08-14; plans 051–052 from the Pane View gallery pagin
 commit `bf8b0c8` on 2026-08-15 (split into server and client halves at `c8f46f4` on 2026-08-16);
 plan 053 from the two-axis review of PR #98 at merge commit `d99af8e` on 2026-08-21; plan 054 from
 a product-owner grilling session at commit `a7e9a6d` on 2026-08-21; and plan 055 from a Pixiv
-collection screenshot and saved page capture at commit `e9261d6` on 2026-08-22.
+collection screenshot and saved page capture at commit `e9261d6` on 2026-08-22; and plan 056 from
+a test-suite audit with the product owner at commit `0e70201` on 2026-08-25.
 Every open plan is written for an implementation agent and
 begins with a drift check. Status changes belong in this index and the corresponding plan.
 
@@ -22,6 +23,7 @@ once their outcome is recorded below; recover full text with `git log --diff-fil
 | [040](040-frame-view-pdf-spike.md) | Validate and specify Frame PDF reading by porting Pane's windowed viewer | P2 | M spike | 033, 034 (both done) | TODO (Steps 2–3 need the product owner at a desktop) |
 | [053](053-gallery-waterfall-review-followups.md) | Land the five review follow-ups from PR #98: debounce edge, resolver rejection test, staleness dedupe, naming, `library` off the session | P3 | S | PR #98 (merged) | TODO |
 | [054](054-pane-view-recursive-folder-excludes.md) | Per-path folder excludes for Pane View recursive/comic mode: toolbar button + lean dialog, localStorage, server-side subtree subtraction | P2 | M | PR #98 (merged) | IN REVIEW (branch `agent/054-recursive-folder-excludes`, 2026-08-24) |
+| [056](056-test-triage-and-e2e.md) | Tag every unit test keep/trim/e2e/delete, add a Playwright e2e workspace covering the baseline features of every app, delete the mock-shape and moment-in-time tests | P2 | L | none | TODO (tag table awaiting owner review) |
 
 Recommended order (2026-08-17 review):
 
