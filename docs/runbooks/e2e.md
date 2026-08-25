@@ -86,6 +86,21 @@ and checks `lockstep-settings.json` never holds the token in the clear. The proj
 `pane-view`, so `pnpm e2e:lockstep` runs the Pane View suite first; `--no-deps` skips that while
 iterating (the server is still started or reused).
 
+## Gather Box: manual smoke checklist
+
+Gather Box has no e2e project (plan 056, STOP 2): its output directory is a File System Access
+handle that only a native picker plus a user-gesture `requestPermission` can produce, there is no
+`chrome.downloads` fallback, and every source is bound to a real hostname, so nothing automatable
+would start a run. Before a Gather Box PR is ready, check by hand with the unpacked `dist/` build:
+
+1. Options page: pick an output folder; reopening the options page shows it as granted.
+2. On one listed source page (a Reddit post with images is the cheapest), open the side panel and
+   gather: the files land in the chosen folder under the source's folder convention.
+3. Gather the same page again: identical files are skipped, differing ones get the four-character
+   suffix, nothing is overwritten.
+4. With archive media conversion on, a GIF post produces an MP4 and a still produces an AVIF.
+5. Cancel a run mid-way: the panel shows it cancelled and no partial file is left behind.
+
 ## Adding a spec
 
 Use the helpers in `e2e/src/pane-view.ts` (`gotoBrowse`, `readCardPaths`, `expectEntryCount`,

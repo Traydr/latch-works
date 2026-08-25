@@ -482,6 +482,28 @@ Findings:
 - Playwright's Electron `env` wants a string map; `electronChildEnv()` in `e2e/src/env.ts` builds
   it (dropping `ELECTRON_RUN_AS_NODE`) for both desktop apps and their Forge package steps.
 
+## STOP 2 resolution and what is left (2026-08-25)
+
+**Gather Box e2e: not feasible without product code; resolved to option (c).** The output
+directory is a File System Access handle (`src/gather/directory-store.ts`) persisted as a live
+handle and re-armed with a user-gesture `requestPermission`; Playwright cannot drive the picker
+and Chromium exposes no automation switch that grants one. There is no `chrome.downloads`
+fallback to test through. Every catalog source is bound to real hostnames (`pageMatches`), so a
+local fixture page would not start a run either. Each workaround is product code beyond a flag
+(an e2e write path, a generic source, or a host override), so PR 5 is not opened; the runbook now
+carries a five-step manual smoke checklist. If the owner wants automation here, the cheapest
+product change is a `chrome.downloads`-based output mode, which would also give users without
+File System Access support a path — a product decision, not a test decision.
+
+Left after PRs 1–4:
+
+- The Frame View fresh-scan ordering bug (PR 3 record). `gallery.spec.ts` carries the
+  `test.fail()` pin.
+- STOP 4: e2e in CI (compose stack as a service for Pane View, `xvfb` for the Electron projects).
+  Follow-up plan.
+- The plan index entry moves to done, and this file is removed per the index convention, when
+  the four PRs have merged.
+
 ## Done criteria
 
 - [x] Owner has reviewed the tag table (approved as written, 2026-08-25).
