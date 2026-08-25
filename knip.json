@@ -79,9 +79,6 @@
     "packages/media-index": {
       "entry": ["src/**/*.test.ts"]
     },
-    "packages/media-storage": {
-      "entry": ["src/**/*.test.ts"]
-    },
     "packages/lockstep-core": {
       "entry": ["src/**/*.test.ts"]
     },
