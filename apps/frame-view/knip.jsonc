@@ -9,8 +9,7 @@
     "src/preload.ts",
     "src/main/catalog/catalog.worker.ts",
     "src/main/thumbnail/thumbnail.worker.ts",
-    "tests/**/*.test.ts",
-    "tests/testUtils.ts"
+    "tests/**/*.test.ts"
   ],
   "project": ["src/**/*.ts", "src/**/*.tsx", "tests/**/*.ts", "*.ts", "*.cjs", "*.json"],
   "ignoreDependencies": ["ffmpeg-static", "@ffprobe-installer/ffprobe"],

@@ -79,7 +79,7 @@ function isKnownMediaExtension(extension: string): extension is KnownMediaExtens
   return Object.hasOwn(MEDIA_CONTENT_TYPES, extension);
 }
 
-export function getMediaContentType(mediaPath: string): string {
+function getMediaContentType(mediaPath: string): string {
   const extension = path.extname(mediaPath).replace(/^\./, '').toLowerCase();
   return isKnownMediaExtension(extension)
     ? MEDIA_CONTENT_TYPES[extension]
@@ -90,7 +90,7 @@ type RangeParseResult =
   | { ok: true; start: number; end: number }
   | { ok: false; reason: 'missing' | 'malformed' };
 
-export function readRange(rangeHeader: string | null, totalSize: number): RangeParseResult {
+function readRange(rangeHeader: string | null, totalSize: number): RangeParseResult {
   if (!rangeHeader) {
     return { ok: false, reason: 'missing' };
   }
@@ -223,7 +223,7 @@ async function fetchThumbnail(
   }
 }
 
-export function parseThumbnailPriority(priorityRaw: string | null): ThumbnailJobPriority {
+function parseThumbnailPriority(priorityRaw: string | null): ThumbnailJobPriority {
   const priorityValue = Number(priorityRaw ?? '0');
   if (!Number.isFinite(priorityValue)) {
     return 0;

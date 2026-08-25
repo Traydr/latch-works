@@ -38,8 +38,7 @@
         "src/main/catalog/catalog.worker.ts",
         "src/main/thumbnail/thumbnail.worker.ts",
         "src/showcase/preview.tsx",
-        "tests/**/*.test.ts",
-        "tests/testUtils.ts"
+        "tests/**/*.test.ts"
       ],
       "ignoreDependencies": ["ffmpeg-static", "@ffprobe-installer/ffprobe"]
     },
