@@ -51,6 +51,7 @@
         "src/sidepanel/index.ts",
         "src/options/index.ts",
         "src/offscreen/index.ts",
+        "src/gather/avif-encoder.worker.ts",
         "src/**/*.test.ts"
       ]
     },

@@ -425,6 +425,15 @@ Deviations and findings:
 - A dedicated `disposable/` fixture folder exists for the soft-delete case so no other spec's
   expectations move.
 
+## PR 2 record (2026-08-25)
+
+Branch `agent/056-gather-box-deletions`, stacked on `revise-testing`. Applied the Gather Box table
+as written: 28 files deleted, `source-catalog.test.ts` trimmed to the HTTPS-permission guard.
+34 → 6 files, 145 → 35 tests. One knip follow-up: deleting `avif-codec.test.ts` hid the AVIF
+worker (`src/gather/avif-encoder.worker.ts`, a build entry in `scripts/build.mjs`) from knip's
+graph, so that entry is now declared in `knip.json`. No Gather Box e2e in this PR (STOP 2 is
+deferred to PR 5).
+
 ## Done criteria
 
 - [x] Owner has reviewed the tag table (approved as written, 2026-08-25).
