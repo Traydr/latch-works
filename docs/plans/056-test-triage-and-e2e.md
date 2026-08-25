@@ -416,10 +416,10 @@ Deviations and findings:
 - **Recursive listings carry no folder entries** (only page 1 of a non-recursive browse does); the
   plan's case 3 wording assumed otherwise. The oracle follows the product.
 - **Folder entries follow the name direction only**: Z-A reverses them, date modes leave them A-Z.
-- **PDF viewing needs bucket CORS in pass-through mode**: pdf.js fetches the signed original from
-  the browser, so a bucket without a CORS rule for the app origin shows "Failed to fetch". The e2e
-  setup puts a `GET/HEAD` rule for the app origin on the e2e bucket. Worth a line in the deployment
-  docs; not fixed in product code here.
+- **The PDF viewer needs a bucket CORS rule in pass-through mode** (images do not: `<img>` loads
+  cross-origin, pdf.js `fetch`es). Against local rustfs it shows "Failed to fetch" until the e2e
+  setup puts a `GET/HEAD` rule for the app origin on the e2e bucket. The owner reports production
+  pass-through works, so this is a localhost-stack gap: `docs/localhost` should set the same rule.
 - **Clearing a search does not restore the recursive flag** it was submitted under; the excludes
   spec navigates back explicitly. Product call whether that is intended — flagged, not changed.
 - A dedicated `disposable/` fixture folder exists for the soft-delete case so no other spec's
@@ -453,8 +453,8 @@ Findings:
   `comics/alpha` shows `10, b, A, 2, 1` in the grid and the viewer steps through that sequence;
   choosing any sort mode (even the current one) fixes it. The deleted
   `useAppStore.test.ts` "flattens and sorts loading chunks on done" passed, so the unsorted items
-  reach the grid by another path. `gallery.spec.ts` pins the expected behaviour under
-  `test.fail()`; remove the annotation with the fix. Not fixed in this PR (out of scope).
+  reach the grid by another path. `gallery.spec.ts` asserts the correct behaviour and is red
+  until the bug is fixed (owner's call: a known bug keeps the suite red). Not fixed in this PR.
 - Frame View indexes images and videos only; the fixture PDF is invisible to it (plan 040 is the
   PDF spike). The Frame View oracle filters it out.
 - The Frame View grid is virtualised (~55 tiles per window); the helper scrolls the container and
