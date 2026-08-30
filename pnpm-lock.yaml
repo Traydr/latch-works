@@ -187,6 +187,9 @@ importers:
       esbuild:
         specifier: latest
         version: 0.28.0
+      jsdom:
+        specifier: ^27.4.0
+        version: 27.4.0(@noble/hashes@2.2.0)
       typescript:
         specifier: ^7.0.2
         version: 7.0.2

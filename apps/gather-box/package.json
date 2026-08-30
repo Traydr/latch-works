@@ -14,6 +14,7 @@
   "devDependencies": {
     "@types/chrome": "latest",
     "esbuild": "latest",
+    "jsdom": "^27.4.0",
     "typescript": "^7.0.2",
     "vitest": "^4.1.3"
   },

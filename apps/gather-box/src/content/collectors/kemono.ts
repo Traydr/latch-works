@@ -5,6 +5,7 @@ const KEMONO_USER_SELECTOR = "a.post__user-name[href*='/user/']";
 const KEMONO_TITLE_SELECTOR = "h1.post__title";
 const KEMONO_FILES_SELECTOR = "div.post__files";
 const KEMONO_FILE_LINK_SELECTOR = "a.fileThumb.image-link[href]";
+const KEMONO_THUMBNAIL_IMAGE_SELECTOR = ".post__thumbnail img";
 
 export function collectKemonoData(document: Document, location: PageLocation): GalleryCollectResponse {
   const pathMatch = location.pathname.match(/^\/([^/]+)\/user\/([^/]+)\/post\/([^/]+)/);
@@ -48,15 +49,26 @@ export function collectKemonoData(document: Document, location: PageLocation): G
   const fileLinks = Array.from(
     filesContainer.querySelectorAll<HTMLAnchorElement>(KEMONO_FILE_LINK_SELECTOR)
   );
-  if (fileLinks.length === 0) {
+  const thumbnailImages =
+    fileLinks.length === 0
+      ? Array.from(
+          filesContainer.querySelectorAll<HTMLImageElement>(KEMONO_THUMBNAIL_IMAGE_SELECTOR)
+        )
+      : [];
+  if (fileLinks.length === 0 && thumbnailImages.length === 0) {
     return {
       ok: false,
       code: "NO_FILES_FOUND",
-      message: "The Kemono files section was found, but no file links were detected."
+      message: "The Kemono files section was found, but no downloadable files were detected."
     };
   }
 
-  const imageEntries = fileLinks.map((link, index) => buildKemonoFileEntry(link, index, location));
+  const imageEntries =
+    fileLinks.length > 0
+      ? fileLinks.map((link, index) => buildKemonoFileEntry(link, index, location))
+      : thumbnailImages.map((image, index) =>
+          buildKemonoThumbnailEntry(image, index, location)
+        );
   const images = imageEntries.filter((image): image is GalleryImage => Boolean(image));
   const skippedCount = imageEntries.length - images.length;
   const userName = getText(userNameElement);
@@ -102,6 +114,24 @@ function buildKemonoFileEntry(
     thumbnailUrl: image ? getImageSource(image, location) : null,
     originalUrl,
     fileName
+  };
+}
+
+function buildKemonoThumbnailEntry(
+  image: HTMLImageElement,
+  index: number,
+  location: PageLocation
+): GalleryImage | null {
+  const imageUrl = getImageSource(image, location);
+  if (!imageUrl) {
+    return null;
+  }
+
+  return {
+    pageNumber: index + 1,
+    thumbnailUrl: imageUrl,
+    originalUrl: imageUrl,
+    fileName: getFileName(imageUrl)
   };
 }
 
