@@ -72,6 +72,8 @@ export interface LibrarySnapshot {
   mediaPage: MediaPage;
   mediaUrlMode: "signed-url";
   roots: string[];
+  /** Folders sharing `currentPath`'s parent, itself included; empty at the root. */
+  siblings: FolderNode[];
 }
 
 const deleteLibraryEntrySchema = z.object({
@@ -147,6 +149,7 @@ export async function readLibrarySnapshotRequest(
     mediaPage: databaseSnapshot.mediaPage,
     mediaUrlMode: "signed-url",
     roots: databaseSnapshot.roots.length ? databaseSnapshot.roots : readFixtureRoots(currentPath),
+    siblings: databaseSnapshot.siblings,
   };
 }
 

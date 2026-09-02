@@ -46,4 +46,31 @@ test.describe("browse", () => {
     await expect(page).not.toHaveURL(/path=/);
     await expect(archiveBrowser(page)).toBeVisible();
   });
+
+  test("prev and next step through the sibling folders, wrapping at the ends", async ({ page }) => {
+    // comics has three children: alpha, beta, nested (natural name order).
+    const nextFolder = page.getByRole("button", { name: "Next folder", exact: true });
+    const prevFolder = page.getByRole("button", { name: "Prev folder", exact: true });
+    const settled = async (path: string, entryCount: number) => {
+      await expect(page).toHaveURL(new RegExp(`path=${encodeURIComponent(path)}(?!%2F)`));
+      await expectEntryCount(page, entryCount);
+      await expect(nextFolder).toBeEnabled();
+    };
+
+    await gotoBrowse(page, { path: "comics/alpha" });
+    await settled("comics/alpha", 5);
+    await nextFolder.click();
+    await settled("comics/beta", 4);
+    await nextFolder.click();
+    await settled("comics/nested", 1);
+    await nextFolder.click();
+    await settled("comics/alpha", 5);
+    await prevFolder.click();
+    await settled("comics/nested", 1);
+
+    await page.keyboard.press("Shift+A");
+    await settled("comics/beta", 4);
+    await page.keyboard.press("Shift+D");
+    await settled("comics/nested", 1);
+  });
 });
