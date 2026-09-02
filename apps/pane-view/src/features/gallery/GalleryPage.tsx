@@ -190,28 +190,32 @@ function useGalleryPage() {
     ],
   );
 
+  // The current folder's siblings (the snapshot's `siblings`, never its
+  // `folders`, which are the children) in the gallery's natural name order,
+  // the order the parent's grid shows them in. Until the snapshot belongs to
+  // this browse, its siblings describe the folder being left; stepping
+  // through them would move along an ordering the user cannot see selected,
+  // so the list is empty and the buttons disable for that window.
+  const siblingFolders = useMemo(
+    () => (library && snapshotIsCurrent ? [...library.siblings].sort(compareByName) : []),
+    [library, snapshotIsCurrent],
+  );
+  const canNavigateSiblings =
+    siblingFolders.length > 1 && siblingFolders.some((folder) => folder.path === displayPath);
   const navigateSiblingFolder = useCallback(
     (offset: -1 | 1) => {
-      // Until the snapshot belongs to this browse, its folders describe the
-      // folder being left; stepping through them would move along an
-      // ordering the user cannot see selected.
-      if (!library || !snapshotIsCurrent) {
-        return;
-      }
-
-      const siblings = library.folders;
-      const currentIndex = siblings.findIndex((f) => f.path === displayPath);
+      const currentIndex = siblingFolders.findIndex((folder) => folder.path === displayPath);
       if (currentIndex < 0) {
         return;
       }
 
-      const nextIndex = (currentIndex + offset + siblings.length) % siblings.length;
-      const next = siblings[nextIndex];
-      if (next) {
+      const nextIndex = (currentIndex + offset + siblingFolders.length) % siblingFolders.length;
+      const next = siblingFolders[nextIndex];
+      if (next && next.path !== displayPath) {
         navigateToPath(next.path);
       }
     },
-    [displayPath, library, navigateToPath, snapshotIsCurrent],
+    [displayPath, navigateToPath, siblingFolders],
   );
 
   // Keep the card visible with a loading affordance; open the reader only
@@ -395,6 +399,7 @@ function useGalleryPage() {
     archiveRoot,
     breadcrumbs,
     browseKey,
+    canNavigateSiblings,
     closeViewer,
     contentBrowseKey,
     columnCountRef,
@@ -570,6 +575,7 @@ function DesktopPathHeader(): JSX.Element {
           Parent
         </Button>
         <Button
+          disabled={!model.canNavigateSiblings}
           onClick={() => model.navigateSiblingFolder(-1)}
           size="sm"
           type="button"
@@ -578,6 +584,7 @@ function DesktopPathHeader(): JSX.Element {
           Prev folder
         </Button>
         <Button
+          disabled={!model.canNavigateSiblings}
           onClick={() => model.navigateSiblingFolder(1)}
           size="sm"
           type="button"

@@ -1,5 +1,5 @@
 import type { FolderNode, GallerySortMode } from "@latch-works/media-domain";
-import { buildBrowserEntries } from "@latch-works/media-domain";
+import { buildBrowserEntries, getParentPath } from "@latch-works/media-domain";
 import { and, asc, desc, eq, gt, inArray, isNull, lt, or, type SQL } from "drizzle-orm";
 import { type Database, db } from "../db";
 import { folders, libraryEntries, mediaObjects } from "../db/schema";
@@ -32,6 +32,12 @@ export interface DatabaseLibrarySnapshot {
   media: LibraryMediaItem[];
   mediaPage: MediaPage;
   roots: string[];
+  /**
+   * Non-deleted folders that share `currentPath`'s parent, `currentPath`
+   * itself included; empty at the root. Unordered: callers sort. Feeds
+   * previous/next sibling navigation, which `folders` (the children) cannot.
+   */
+  siblings: FolderNode[];
 }
 
 export interface LibrarySnapshotReadRequest {
@@ -293,7 +299,7 @@ export async function readDatabaseLibrarySnapshot(
   }: LibrarySnapshotReadRequest,
   database: Database = db,
 ): Promise<DatabaseLibrarySnapshot> {
-  const [folderRows, mediaRows, rootRows, allFolderRows] = await Promise.all([
+  const [folderRows, mediaRows, rootRows, allFolderRows, siblingRows] = await Promise.all([
     buildLibraryFolderQuery({ currentPath, query, recursive }, database),
     limit > 0
       ? buildLibrarySnapshotMediaQuery({ currentPath, limit, offset, query, recursive }, database)
@@ -302,9 +308,17 @@ export async function readDatabaseLibrarySnapshot(
     includeAllFolders
       ? database.select().from(folders).where(isNull(folders.deletedAt))
       : Promise.resolve([]),
+    currentPath
+      ? database
+          .select()
+          .from(folders)
+          .where(and(isNull(folders.deletedAt), eq(folders.parentPath, getParentPath(currentPath))))
+      : Promise.resolve([]),
   ]);
 
-  const visibleFolderPaths = [...new Set(folderRows.map((folder) => folder.path))];
+  const visibleFolderPaths = [
+    ...new Set([...folderRows, ...siblingRows].map((folder) => folder.path)),
+  ];
   const visibleParentPathsWithChildren = await readParentPathsWithChildren(
     visibleFolderPaths,
     database,
@@ -323,6 +337,7 @@ export async function readDatabaseLibrarySnapshot(
     ),
     folders: folderRows.map((folder) => mapFolderRow(folder, visibleParentPathsWithChildren)),
     media: mapMediaRowsToLibraryItems(pageMediaRows),
+    siblings: siblingRows.map((folder) => mapFolderRow(folder, visibleParentPathsWithChildren)),
     mediaPage,
     roots: rootRows
       .map((folder) => folder.path)

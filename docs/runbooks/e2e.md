@@ -49,7 +49,7 @@ expected order and count from it.
 |---|---|
 | `seed.setup.ts` | Lockstep push completes, a second push is a no-op, the remote snapshot matches |
 | `auth.spec.ts` | login redirect, wrong password, five-failure throttle, sign out |
-| `browse.spec.ts` | root and folder listings, sidebar navigation |
+| `browse.spec.ts` | root and folder listings, sidebar navigation, prev/next sibling folder (buttons and Shift+A/D) |
 | `sorting.spec.ts` | all five sort modes, paging past 60 items, random seed stability and Shuffle |
 | `modes.spec.ts` | image/video filters, recursive, recursive excludes, comic mode and the reader |
 | `search.spec.ts` | plain query, literal `%`/`_`, empty result |
