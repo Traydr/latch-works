@@ -72,9 +72,7 @@ Electron binary starts as plain Node and Playwright reports "Process failed to l
 Folders overlay, the image/video filters, the four ordered sort modes against the shared oracle,
 Random + Shuffle, thumbnail rendering, viewer stepping (keys and buttons), comic mode + reader, and
 the remembered folder across a relaunch. Frame View indexes images and videos only, so the
-fixture PDF is excluded from its expectations. One test ("a fresh scan lands in the configured
-sort order") is red today: a fresh scan shows discovery order until the sort is re-chosen. That is
-a product bug, and the suite stays red until it is fixed.
+fixture PDF is excluded from its expectations.
 
 ## What the Lockstep project covers
 

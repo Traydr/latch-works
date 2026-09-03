@@ -74,20 +74,19 @@ export class MediaIndexService {
           const database = this.requireSqlite();
           const statement = database.prepare(statementSql);
 
+          // The sqlite-proxy driver maps selected fields onto each row by position, so every
+          // read hands it the row as a value array rather than node:sqlite's row object. The
+          // schema has no joins, so column names never collide within a row.
           switch (method) {
             case 'run':
               statement.run(...params);
               return { rows: [] };
             case 'get': {
               const row = statement.get(...params);
-              return { rows: row ? [row] : [] };
-            }
-            case 'values': {
-              const rows = statement.all(...params).map((row) => Object.values(row));
-              return { rows };
+              return { rows: row ? Object.values(row) : [] };
             }
             default:
-              return { rows: statement.all(...params) };
+              return { rows: statement.all(...params).map((row) => Object.values(row)) };
           }
         },
         {

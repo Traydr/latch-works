@@ -110,7 +110,13 @@ export function createApplyScanEvent(set: AppStoreSet, get: AppStoreGet) {
         set((current) => ({
           activeScanRunId: null,
           items:
-            current.items.length > 0 ? current.items : flattenLoadingChunks(current.loadingChunks),
+            current.items.length > 0
+              ? current.items
+              : sortMediaItems(
+                  flattenLoadingChunks(current.loadingChunks),
+                  current.settings.sortMode,
+                  current.settings.randomSeed,
+                ),
           loadingChunks: [],
           loadingItemCount: 0,
           scanState: 'idle',

@@ -92,8 +92,6 @@ test.describe("scan", () => {
 
 test.describe("sorting", () => {
   test("a fresh scan lands in the configured sort order", async () => {
-    // Fails today (plan 056, PR 3 record): after a scan the grid shows discovery order until
-    // the sort is chosen again. Red until the bug is fixed; that is the point.
     const { window } = session;
     await openFolder(session, absolute("comics/alpha"));
     const expected = sortFixtureItems(fixtureItemsInScope("comics/alpha", false), "name-asc").map(
