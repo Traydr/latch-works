@@ -374,8 +374,10 @@ export interface HoldToBoost {
 }
 
 /**
- * Press and hold the middle of a playing video on a touch screen to play at 2×
- * until the finger lifts. Edges are left to the prev/next zones.
+ * Press and hold a playing video on a touch screen to play at 2× until the
+ * finger lifts. Any part of the picture works, so a thumb resting at the side
+ * of a tablet reaches it; the prev/next zones and the chrome sit above the
+ * picture and take their own presses.
  */
 export function useHoldToBoost(model: MediaViewerSessionModel): HoldToBoost {
   const timerRef = useRef<number | null>(null);
@@ -411,11 +413,7 @@ export function useHoldToBoost(model: MediaViewerSessionModel): HoldToBoost {
       },
       onPointerCancel: stop,
       onPointerDown: (event) => {
-        if (event.pointerType !== "touch" || item.mediaType !== "video" || !playing) return;
-        const rect = event.currentTarget.getBoundingClientRect();
-        const x = (event.clientX - rect.left) / rect.width;
-        const y = (event.clientY - rect.top) / rect.height;
-        if (x < 0.2 || x > 0.8 || y < 0.2 || y > 0.8) return;
+        if (event.pointerType === "mouse" || item.mediaType !== "video" || !playing) return;
         clearTimer();
         timerRef.current = window.setTimeout(() => {
           timerRef.current = null;
