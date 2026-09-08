@@ -1,17 +1,9 @@
-import {
-  ChevronLeft,
-  ChevronRight,
-  type LucideIcon,
-  RotateCcw,
-  RotateCw,
-  Volume1,
-  Volume2,
-  VolumeX,
-} from "lucide-react";
+import { type LucideIcon, RotateCcw, RotateCw, Volume1, Volume2, VolumeX } from "lucide-react";
 import {
   type CSSProperties,
   type JSX,
   type KeyboardEvent,
+  type MouseEvent,
   type PointerEvent,
   type ReactNode,
   type Ref,
@@ -367,35 +359,71 @@ export function useOutsideClose(
   }, [onClose, open, rootRef]);
 }
 
-/** Desktop-only previous/next chevrons on the frame's edges. */
-export function SideChevrons({ model }: { model: MediaViewerSessionModel }): JSX.Element {
-  const base = `absolute top-1/2 z-20 hidden h-[25dvh] min-h-11 w-12 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full text-white/80 transition-opacity duration-300 hover:bg-white/10 hover:text-white md:flex ${model.chromeVisibilityClass}`;
-  return (
-    <>
-      <button
-        type="button"
-        aria-label="Previous item"
-        className={`${base} left-3 ${model.canStepBackward ? "" : "pointer-events-none opacity-30"}`}
-        disabled={!model.canStepBackward}
-        onClick={(event) => {
-          event.stopPropagation();
-          model.onStep(-1);
-        }}
-      >
-        <ChevronLeft className="size-7" />
-      </button>
-      <button
-        type="button"
-        aria-label="Next item"
-        className={`${base} right-3 ${model.canStepForward ? "" : "pointer-events-none opacity-30"}`}
-        disabled={!model.canStepForward}
-        onClick={(event) => {
-          event.stopPropagation();
-          model.onStep(1);
-        }}
-      >
-        <ChevronRight className="size-7" />
-      </button>
-    </>
-  );
+const HOLD_BOOST_DELAY_MS = 350;
+
+export interface HoldToBoost {
+  /** True when the click that follows a finished hold should be ignored. */
+  consumeSuppressedClick: () => boolean;
+  handlers: {
+    onContextMenu: (event: MouseEvent<HTMLDivElement>) => void;
+    onPointerCancel: () => void;
+    onPointerDown: (event: PointerEvent<HTMLDivElement>) => void;
+    onPointerLeave: () => void;
+    onPointerUp: () => void;
+  };
+}
+
+/**
+ * Press and hold the middle of a playing video on a touch screen to play at 2×
+ * until the finger lifts. Edges are left to the prev/next zones.
+ */
+export function useHoldToBoost(model: MediaViewerSessionModel): HoldToBoost {
+  const timerRef = useRef<number | null>(null);
+  const suppressClickRef = useRef(false);
+  const { beginHoldBoost, endHoldBoost, holdBoosting, item, playing } = model;
+
+  const clearTimer = () => {
+    if (timerRef.current !== null) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+
+  const stop = () => {
+    clearTimer();
+    if (holdBoosting) {
+      endHoldBoost();
+      suppressClickRef.current = true;
+    }
+  };
+
+  useEffect(() => clearTimer, []);
+
+  return {
+    consumeSuppressedClick: () => {
+      const suppressed = suppressClickRef.current;
+      suppressClickRef.current = false;
+      return suppressed;
+    },
+    handlers: {
+      onContextMenu: (event) => {
+        if (holdBoosting || timerRef.current !== null) event.preventDefault();
+      },
+      onPointerCancel: stop,
+      onPointerDown: (event) => {
+        if (event.pointerType !== "touch" || item.mediaType !== "video" || !playing) return;
+        const rect = event.currentTarget.getBoundingClientRect();
+        const x = (event.clientX - rect.left) / rect.width;
+        const y = (event.clientY - rect.top) / rect.height;
+        if (x < 0.2 || x > 0.8 || y < 0.2 || y > 0.8) return;
+        clearTimer();
+        timerRef.current = window.setTimeout(() => {
+          timerRef.current = null;
+          beginHoldBoost();
+        }, HOLD_BOOST_DELAY_MS);
+      },
+      onPointerLeave: stop,
+      onPointerUp: stop,
+    },
+  };
 }

@@ -1,6 +1,6 @@
 import type { MediaItem } from "@latch-works/media-domain";
 import { formatBytes } from "@latch-works/media-domain";
-import { Copy, Download, Image, type LucideIcon, Maximize, X } from "lucide-react";
+import { Copy, Download, Image, type LucideIcon, Maximize, Minimize, X } from "lucide-react";
 import {
   createContext,
   forwardRef,
@@ -32,6 +32,7 @@ import { GALLERY_PREVIEW_SIZE } from "./gallery-preview-size";
 import { PaneViewImage } from "./PaneViewImage";
 import { type ResolvedMediaUrlCache, useResolvedMediaUrl } from "./useResolvedMediaUrl";
 import { VideoPlayerChrome } from "./video-player/VideoPlayerChrome";
+import { useHoldToBoost } from "./video-player/video-player-controls";
 
 const PdfViewer = lazy(() =>
   import("@/features/viewer/PdfViewer").then((module) => ({ default: module.PdfViewer })),
@@ -99,6 +100,7 @@ function useMediaViewerSession({
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const isScrubbingRef = useRef(false);
   const speedBoostHeldRef = useRef(false);
+  const speedBeforeHoldRef = useRef(1);
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const hasRestoredVideoRef = useRef(false);
 
@@ -109,6 +111,7 @@ function useMediaViewerSession({
   const [muted, setMuted] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [holdBoosting, setHoldBoosting] = useState(false);
   const [showOriginal, setShowOriginal] = useState(false);
   // Video chrome pins while paused and idles away during playback on every device;
   // other media keep the old rule (idle on desktop, tap to toggle on mobile).
@@ -424,6 +427,20 @@ function useMediaViewerSession({
     }
   };
 
+  /** Press-and-hold on the picture plays at 2× until the finger lifts. */
+  const beginHoldBoost = (): void => {
+    if (holdBoosting) return;
+    speedBeforeHoldRef.current = speed;
+    setHoldBoosting(true);
+    applySpeed(2);
+  };
+
+  const endHoldBoost = (): void => {
+    if (!holdBoosting) return;
+    setHoldBoosting(false);
+    applySpeed(speedBeforeHoldRef.current);
+  };
+
   const toggleMute = (): void => {
     const video = videoRef.current;
     const next = !muted;
@@ -444,6 +461,7 @@ function useMediaViewerSession({
   return {
     applySpeed,
     autoplayVideos,
+    beginHoldBoost,
     cache,
     canSeek,
     canStepBackward,
@@ -457,8 +475,10 @@ function useMediaViewerSession({
     details,
     downloadMedia,
     duration,
+    endHoldBoost,
     flushSave,
     hasRestoredVideoRef,
+    holdBoosting,
     isCoarsePointer,
     isFullscreen,
     isMobile,
@@ -545,8 +565,8 @@ function ViewerDialog(): JSX.Element {
         if (event.pointerType === "mouse") revealChrome();
       }}
     >
-      {isVideoItem ? null : <ViewerTopBar />}
-      {isVideoItem ? null : <ViewerNavigation />}
+      <ViewerTopBar />
+      <ViewerNavigation />
       <ViewerMedia />
       {isVideoItem ? <VideoPlayerChrome model={model} /> : null}
     </dialog>
@@ -560,6 +580,7 @@ function ViewerTopBar(): JSX.Element {
     copyPath,
     details,
     downloadMedia,
+    isFullscreen,
     item,
     onClose,
     setShowOriginal,
@@ -599,8 +620,8 @@ function ViewerTopBar(): JSX.Element {
           ) : null}
           <ViewerToolbarButton
             ariaLabel="Toggle fullscreen"
-            icon={Maximize}
-            label="Fullscreen"
+            icon={isFullscreen ? Minimize : Maximize}
+            label={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
             onClick={() => void toggleFullscreen()}
           />
           <ViewerToolbarButton
@@ -619,6 +640,8 @@ function ViewerTopBar(): JSX.Element {
 function ViewerNavigation(): JSX.Element {
   const { canStepBackward, canStepForward, chromeVisibilityClass, item, onStep } =
     useMediaViewerSessionModel();
+  // A video keeps its picture for play/pause and hold-to-boost; only the edges step.
+  const zoneWidth = item.mediaType === "video" ? "w-[10%]" : "w-1/2";
   return (
     <>
       {item.mediaType !== "pdf" ? (
@@ -626,13 +649,13 @@ function ViewerNavigation(): JSX.Element {
           <button
             type="button"
             aria-label="Previous item"
-            className={`absolute left-0 top-0 z-10 h-full w-1/2 ${canStepBackward ? "cursor-w-resize" : "cursor-default"} md:hidden`}
+            className={`absolute left-0 top-0 z-10 h-full ${zoneWidth} ${canStepBackward ? "cursor-w-resize" : "cursor-default"} md:hidden`}
             onClick={() => canStepBackward && onStep(-1)}
           />
           <button
             type="button"
             aria-label="Next item"
-            className={`absolute right-0 top-0 z-10 h-full w-1/2 ${canStepForward ? "cursor-e-resize" : "cursor-default"} md:hidden`}
+            className={`absolute right-0 top-0 z-10 h-full ${zoneWidth} ${canStepForward ? "cursor-e-resize" : "cursor-default"} md:hidden`}
             onClick={() => canStepForward && onStep(1)}
           />
         </>
@@ -662,12 +685,16 @@ function ViewerNavigation(): JSX.Element {
 function ViewerMedia(): JSX.Element {
   const model = useMediaViewerSessionModel();
   const { item } = model;
+  const hold = useHoldToBoost(model);
   return (
     <div
-      className="flex h-full items-center justify-center p-3 pb-[env(safe-area-inset-bottom)]"
+      className="flex h-full select-none items-center justify-center p-3 pb-[env(safe-area-inset-bottom)] [-webkit-touch-callout:none]"
+      {...hold.handlers}
       onClick={(event) => {
         event.stopPropagation();
         if (item.mediaType !== "video") return;
+        // The tap that ended a hold-to-boost is not a tap on the picture.
+        if (hold.consumeSuppressedClick()) return;
         // A tap on the picture shows or hides the controls; a click plays or pauses.
         if (model.isCoarsePointer) model.toggleChrome();
         else model.toggleVideoPlayback();

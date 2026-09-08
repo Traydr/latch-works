@@ -1,16 +1,4 @@
-import {
-  Copy,
-  Download,
-  Info,
-  Maximize,
-  Minimize,
-  Pause,
-  Play,
-  Settings,
-  SkipBack,
-  SkipForward,
-  X,
-} from "lucide-react";
+import { FastForward, Pause, Play, Settings } from "lucide-react";
 import { type JSX, type ReactNode, useRef, useState } from "react";
 import type { MediaViewerSessionModel } from "../MediaViewerSession";
 import {
@@ -19,7 +7,6 @@ import {
   formatSpeed,
   IconButton,
   SeekTrack,
-  SideChevrons,
   SkipButton,
   SPEEDS,
   useFractionDrag,
@@ -28,18 +15,17 @@ import {
   volumeIconFor,
 } from "./video-player-controls";
 
-type CapsulePanel = "info" | "settings" | "speed" | "volume";
+type CapsulePanel = "settings" | "speed" | "volume";
 
 export interface VideoPlayerChromeProps {
   model: MediaViewerSessionModel;
 }
 
 /**
- * The video player's controls: no top bar, one low capsule holding transport,
- * elapsed, timeline, duration and a row of glyphs on the right. Each glyph that
- * needs more (volume, speed, file details) opens a small panel straight up from
- * the capsule. Phones fold those three glyphs into one cog so the capsule stays
- * two rows tall.
+ * The video-only controls: one low capsule holding transport, elapsed, timeline,
+ * duration, volume and speed. Volume and speed open small panels straight up
+ * from the capsule; phones fold both behind one cog. Title, file actions,
+ * fullscreen, close and prev/next stay in the viewer's shared chrome.
  */
 export function VideoPlayerChrome({ model }: VideoPlayerChromeProps): JSX.Element {
   const seek = useSeek(model);
@@ -52,7 +38,16 @@ export function VideoPlayerChrome({ model }: VideoPlayerChromeProps): JSX.Elemen
 
   return (
     <>
-      <SideChevrons model={model} />
+      {model.holdBoosting ? (
+        <div
+          aria-live="polite"
+          className="pointer-events-none absolute inset-x-0 top-20 z-30 flex justify-center"
+        >
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-black/60 px-3 py-1.5 text-sm font-semibold tabular-nums text-white ring-1 ring-white/15 backdrop-blur">
+            <FastForward className="size-4 fill-current" /> 2×
+          </span>
+        </div>
+      ) : null}
 
       <div
         className={`pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center px-3 ${fade}`}
@@ -64,15 +59,6 @@ export function VideoPlayerChrome({ model }: VideoPlayerChromeProps): JSX.Elemen
             className="relative flex flex-wrap items-center gap-x-1 gap-y-0 rounded-3xl bg-zinc-900/65 px-2 py-1 shadow-2xl ring-1 ring-white/10 backdrop-blur-2xl sm:h-12 sm:flex-nowrap sm:rounded-full sm:px-3"
           >
             <div className="flex items-center gap-0.5">
-              <IconButton
-                className="md:hidden"
-                disabled={!model.canStepBackward}
-                icon={SkipBack}
-                label="Previous item"
-                onClick={() => model.onStep(-1)}
-                size="sm"
-                fill
-              />
               <SkipButton direction={-1} model={model} />
               <IconButton
                 icon={model.playing ? Pause : Play}
@@ -82,15 +68,6 @@ export function VideoPlayerChrome({ model }: VideoPlayerChromeProps): JSX.Elemen
                 fill
               />
               <SkipButton direction={1} model={model} />
-              <IconButton
-                className="md:hidden"
-                disabled={!model.canStepForward}
-                icon={SkipForward}
-                label="Next item"
-                onClick={() => model.onStep(1)}
-                size="sm"
-                fill
-              />
             </div>
             <div className="order-last flex basis-full items-center gap-2 px-1 text-xs tabular-nums text-white/80 sm:order-none sm:basis-auto sm:flex-1">
               <span className="w-9 shrink-0">{formatClock(model.position)}</span>
@@ -124,15 +101,6 @@ export function VideoPlayerChrome({ model }: VideoPlayerChromeProps): JSX.Elemen
                     {formatSpeed(model.speed)}
                   </button>
                 </Popup>
-                <Popup open={open === "info"} panel={<InfoPanel model={model} />} wide>
-                  <IconButton
-                    active={open === "info"}
-                    icon={Info}
-                    label="File details"
-                    onClick={() => toggle("info")}
-                    size="sm"
-                  />
-                </Popup>
               </div>
               <div className="sm:hidden">
                 <Popup open={open === "settings"} panel={<SettingsPanel model={model} />} wide>
@@ -145,19 +113,6 @@ export function VideoPlayerChrome({ model }: VideoPlayerChromeProps): JSX.Elemen
                   />
                 </Popup>
               </div>
-              <IconButton
-                icon={model.isFullscreen ? Minimize : Maximize}
-                label={model.isFullscreen ? "Exit fullscreen" : "Fullscreen"}
-                onClick={() => void model.toggleFullscreen()}
-                size="sm"
-              />
-              <IconButton
-                ref={model.closeButtonRef}
-                icon={X}
-                label="Close"
-                onClick={model.onClose}
-                size="sm"
-              />
             </div>
           </div>
         </ChromeRegion>
@@ -346,63 +301,12 @@ function SpeedRow({ model }: VideoPlayerChromeProps): JSX.Element {
   );
 }
 
-function FileDetails({ model }: VideoPlayerChromeProps): JSX.Element {
-  return (
-    <>
-      <p className="break-all font-medium text-white">{model.item.name}</p>
-      <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs text-white/70">
-        <dt>Size</dt>
-        <dd className="text-white/90">{model.details[0]}</dd>
-        <dt>Format</dt>
-        <dd className="text-white/90">{model.item.extension.toUpperCase()}</dd>
-        <dt>Length</dt>
-        <dd className="text-white/90">{formatClock(model.duration)}</dd>
-        {model.item.width && model.item.height ? (
-          <>
-            <dt>Frame</dt>
-            <dd className="text-white/90">
-              {model.item.width}×{model.item.height}
-            </dd>
-          </>
-        ) : null}
-      </dl>
-      <div className="mt-3 flex gap-2">
-        <button
-          type="button"
-          className="inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-white/20"
-          onClick={() => void model.copyPath()}
-        >
-          <Copy className="size-3.5" /> Copy path
-        </button>
-        <button
-          type="button"
-          className="inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-white/20"
-          onClick={model.downloadMedia}
-        >
-          <Download className="size-3.5" /> Download
-        </button>
-      </div>
-    </>
-  );
-}
-
-function InfoPanel({ model }: VideoPlayerChromeProps): JSX.Element {
-  return (
-    <div className="w-72 max-w-[calc(100vw-2rem)] p-4 text-sm">
-      <FileDetails model={model} />
-    </div>
-  );
-}
-
-/** Phone-only: volume, speed and file details behind the cog. */
+/** Phone-only: volume and speed behind the cog. */
 function SettingsPanel({ model }: VideoPlayerChromeProps): JSX.Element {
   return (
     <div className="flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-4 p-4 text-sm">
       <VolumeRow model={model} />
       <SpeedRow model={model} />
-      <div className="border-t border-white/10 pt-4">
-        <FileDetails model={model} />
-      </div>
     </div>
   );
 }
