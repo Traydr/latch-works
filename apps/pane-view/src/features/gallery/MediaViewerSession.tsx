@@ -123,9 +123,13 @@ function useMediaViewerSession({
   });
 
   useEffect(() => {
-    const onFullscreenChange = () => setIsFullscreen(document.fullscreenElement !== null);
+    const onFullscreenChange = () => setIsFullscreen(fullscreenElementOf(document) !== null);
     document.addEventListener("fullscreenchange", onFullscreenChange);
-    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+    document.addEventListener("webkitfullscreenchange", onFullscreenChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
+      document.removeEventListener("webkitfullscreenchange", onFullscreenChange);
+    };
   }, []);
   const videoDelivery = useResolvedMediaUrl({
     cache,
@@ -394,16 +398,29 @@ function useMediaViewerSession({
       return;
     }
 
-    if (document.fullscreenElement) {
-      await document.exitFullscreen();
+    const doc: WebkitFullscreenDocument = document;
+    if (fullscreenElementOf(document)) {
+      if (doc.exitFullscreen) await document.exitFullscreen();
+      else await doc.webkitExitFullscreen?.();
       return;
     }
 
-    // iPhone Safari has no element fullscreen; only the video itself can go full screen.
-    const host: OptionalFullscreen = dialog;
-    if (host.requestFullscreen) {
-      await dialog.requestFullscreen();
-      return;
+    // Element fullscreen where the browser allows it (Safari keeps the prefixed
+    // form; iPhone Safari has none, and iPad Safari can refuse it for a modal
+    // dialog). When it is unavailable or refused, the video itself can still go
+    // full screen with its native player.
+    const host: FullscreenHost = dialog;
+    try {
+      if (doc.fullscreenEnabled !== false && host.requestFullscreen) {
+        await dialog.requestFullscreen();
+        return;
+      }
+      if (host.webkitRequestFullscreen) {
+        await host.webkitRequestFullscreen();
+        return;
+      }
+    } catch {
+      // Fall through to the video's own fullscreen.
     }
     const video: WebkitFullscreenVideo | null = videoRef.current;
     video?.webkitEnterFullscreen?.();
@@ -820,7 +837,21 @@ const ViewerToolbarButton = forwardRef<
  */
 type OptionalFastSeek = Partial<Pick<HTMLMediaElement, "fastSeek">>;
 type OptionalModalDialog = Partial<Pick<HTMLDialogElement, "showModal" | "close">>;
-type OptionalFullscreen = Partial<Pick<HTMLElement, "requestFullscreen">>;
+type FullscreenHost = Partial<Pick<HTMLElement, "requestFullscreen">> &
+  Partial<{ webkitRequestFullscreen: () => Promise<void> | void }>;
+/** Safari's prefixed fullscreen document API, absent from the DOM lib. */
+type WebkitFullscreenDocument = Partial<
+  Pick<Document, "exitFullscreen" | "fullscreenElement" | "fullscreenEnabled">
+> &
+  Partial<{
+    webkitExitFullscreen: () => Promise<void> | void;
+    webkitFullscreenElement: Element | null;
+  }>;
+
+function fullscreenElementOf(document: Document): Element | null {
+  const doc: WebkitFullscreenDocument = document;
+  return doc.fullscreenElement ?? doc.webkitFullscreenElement ?? null;
+}
 /** iPhone Safari's video-only fullscreen entry point, absent from the DOM lib. */
 type WebkitFullscreenVideo = HTMLVideoElement & Partial<{ webkitEnterFullscreen: () => void }>;
 
