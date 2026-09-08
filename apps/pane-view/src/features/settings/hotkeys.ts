@@ -6,6 +6,7 @@ export const GALLERY_HOTKEYS = [
   { keys: "Shift+A / Shift+D", action: "Previous / next sibling folder" },
   { keys: "Q / E", action: "Previous / next media in viewer" },
   { keys: "Space / 2", action: "Play or pause video" },
+  { keys: "1 / 3", action: "Skip video back / forward 10 s" },
   { keys: "Escape", action: "Close viewer or overlay" },
   { keys: "?", action: "Show keyboard shortcuts" },
 ] as const;

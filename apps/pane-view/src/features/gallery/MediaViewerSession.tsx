@@ -1,6 +1,6 @@
 import type { MediaItem } from "@latch-works/media-domain";
 import { formatBytes } from "@latch-works/media-domain";
-import { Copy, Download, Image, type LucideIcon, Maximize, Pause, Play, X } from "lucide-react";
+import { Copy, Download, Image, type LucideIcon, Maximize, Minimize, X } from "lucide-react";
 import {
   createContext,
   forwardRef,
@@ -19,16 +19,20 @@ import {
   useLibraryViewerState,
   type ViewerStateStore,
 } from "@/features/viewer/use-library-viewer-state";
+import { VIDEO_SKIP_SECONDS } from "@/features/viewer/video-playback";
 import {
   resolveVideoResumeSeconds,
   videoSecondsToPositionMs,
 } from "@/features/viewer/viewer-resume";
+import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useViewerChromeIdle } from "@/hooks/use-viewer-chrome-idle";
 import { isTextInputTarget } from "./browse-search";
 import { GALLERY_PREVIEW_SIZE } from "./gallery-preview-size";
 import { PaneViewImage } from "./PaneViewImage";
 import { type ResolvedMediaUrlCache, useResolvedMediaUrl } from "./useResolvedMediaUrl";
+import { VideoPlayerChrome } from "./video-player/VideoPlayerChrome";
+import { useHoldToBoost } from "./video-player/video-player-controls";
 
 const PdfViewer = lazy(() =>
   import("@/features/viewer/PdfViewer").then((module) => ({ default: module.PdfViewer })),
@@ -89,12 +93,14 @@ function useMediaViewerSession({
   viewerStateStore,
 }: MediaViewerSessionProps) {
   const isMobile = useIsMobile();
+  const isCoarsePointer = useCoarsePointer();
   const isVideoItem = item.mediaType === "video";
   const modalRef = useRef<HTMLDialogElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const isScrubbingRef = useRef(false);
   const speedBoostHeldRef = useRef(false);
+  const speedBeforeHoldRef = useRef(1);
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const hasRestoredVideoRef = useRef(false);
 
@@ -102,13 +108,25 @@ function useMediaViewerSession({
   const [duration, setDuration] = useState(0);
   const [position, setPosition] = useState(0);
   const [volume, setVolume] = useState(() => readPersistedVolume());
+  const [muted, setMuted] = useState(false);
   const [speed, setSpeed] = useState(1);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [holdBoosting, setHoldBoosting] = useState(false);
   const [showOriginal, setShowOriginal] = useState(false);
+  // Video chrome pins while paused and idles away during playback on every device;
+  // other media keep the old rule (idle on desktop, tap to toggle on mobile).
   const chromePinned = isVideoItem && !playing;
   const { chromeVisible, revealChrome, toggleChrome, chromeVisibilityClass } = useViewerChromeIdle({
+    idleOnMobile: isVideoItem,
     isMobile,
     pinned: chromePinned,
   });
+
+  useEffect(() => {
+    const onFullscreenChange = () => setIsFullscreen(document.fullscreenElement !== null);
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+  }, []);
   const videoDelivery = useResolvedMediaUrl({
     cache,
     mediaId: item.mediaType === "video" ? item.id : undefined,
@@ -261,12 +279,12 @@ function useMediaViewerSession({
     }
     if (key === "1") {
       event.preventDefault();
-      skip(-5);
+      skip(-VIDEO_SKIP_SECONDS);
       return;
     }
     if (key === "3") {
       event.preventDefault();
-      skip(5);
+      skip(VIDEO_SKIP_SECONDS);
       return;
     }
     if (key === "4") {
@@ -371,7 +389,8 @@ function useMediaViewerSession({
   };
 
   const toggleFullscreen = async (): Promise<void> => {
-    if (!modalRef.current) {
+    const dialog = modalRef.current;
+    if (!dialog) {
       return;
     }
 
@@ -380,7 +399,55 @@ function useMediaViewerSession({
       return;
     }
 
-    await modalRef.current.requestFullscreen();
+    // iPhone Safari has no element fullscreen; only the video itself can go full screen.
+    const host: OptionalFullscreen = dialog;
+    if (host.requestFullscreen) {
+      await dialog.requestFullscreen();
+      return;
+    }
+    const video: WebkitFullscreenVideo | null = videoRef.current;
+    video?.webkitEnterFullscreen?.();
+  };
+
+  const changeVolume = (rawVolume: number): void => {
+    const clamped = Math.max(0, Math.min(1, rawVolume));
+    setVolume(clamped);
+    try {
+      window.localStorage.setItem(VIEWER_VOLUME_STORAGE_KEY, String(clamped));
+    } catch {
+      /* Ignore storage write errors. */
+    }
+    const video = videoRef.current;
+    if (video) {
+      video.volume = clamped;
+      if (clamped > 0 && video.muted) {
+        video.muted = false;
+        setMuted(false);
+      }
+    }
+  };
+
+  /** Press-and-hold on the picture plays at 2× until the finger lifts. */
+  const beginHoldBoost = (): void => {
+    if (holdBoosting) return;
+    speedBeforeHoldRef.current = speed;
+    setHoldBoosting(true);
+    applySpeed(2);
+  };
+
+  const endHoldBoost = (): void => {
+    if (!holdBoosting) return;
+    setHoldBoosting(false);
+    applySpeed(speedBeforeHoldRef.current);
+  };
+
+  const toggleMute = (): void => {
+    const video = videoRef.current;
+    const next = !muted;
+    setMuted(next);
+    if (video) {
+      video.muted = next;
+    }
   };
 
   const copyPath = async (): Promise<void> => {
@@ -394,10 +461,12 @@ function useMediaViewerSession({
   return {
     applySpeed,
     autoplayVideos,
+    beginHoldBoost,
     cache,
     canSeek,
     canStepBackward,
     canStepForward,
+    changeVolume,
     chromeVisibilityClass,
     chromeVisible,
     closeButtonRef,
@@ -406,13 +475,18 @@ function useMediaViewerSession({
     details,
     downloadMedia,
     duration,
+    endHoldBoost,
     flushSave,
     hasRestoredVideoRef,
+    holdBoosting,
+    isCoarsePointer,
+    isFullscreen,
     isMobile,
     isScrubbingRef,
     item,
     loopVideos,
     modalRef,
+    muted,
     onClose,
     onStep,
     playing,
@@ -424,12 +498,12 @@ function useMediaViewerSession({
     setPlaying,
     setPosition,
     setShowOriginal,
-    setVolume,
     showOriginal,
     skip,
     speed,
     toggleChrome,
     toggleFullscreen,
+    toggleMute,
     toggleVideoPlayback,
     videoDelivery,
     videoRef,
@@ -438,10 +512,10 @@ function useMediaViewerSession({
   };
 }
 
-type MediaViewerSessionModel = ReturnType<typeof useMediaViewerSession>;
+export type MediaViewerSessionModel = ReturnType<typeof useMediaViewerSession>;
 const MediaViewerSessionContext = createContext<MediaViewerSessionModel | null>(null);
 
-function useMediaViewerSessionModel(): MediaViewerSessionModel {
+export function useMediaViewerSessionModel(): MediaViewerSessionModel {
   const model = useContext(MediaViewerSessionContext);
   if (!model) {
     throw new Error("Media viewer session context is missing");
@@ -459,8 +533,18 @@ export function MediaViewerSession(props: MediaViewerSessionProps): JSX.Element 
 }
 
 function ViewerDialog(): JSX.Element {
-  const { chromeVisible, isMobile, item, modalRef, onClose, revealChrome, toggleChrome } =
-    useMediaViewerSessionModel();
+  const model = useMediaViewerSessionModel();
+  const {
+    chromeVisible,
+    isCoarsePointer,
+    isMobile,
+    item,
+    modalRef,
+    onClose,
+    revealChrome,
+    toggleChrome,
+  } = model;
+  const isVideoItem = item.mediaType === "video";
   return (
     // The dialog is the correct modal primitive; pointer handlers only manage transient chrome.
     // react-doctor-disable-next-line react-doctor/no-noninteractive-element-interactions
@@ -473,13 +557,18 @@ function ViewerDialog(): JSX.Element {
         onClose();
       }}
       onClick={toggleChrome}
-      onMouseMove={revealChrome}
-      onPointerDown={revealChrome}
+      onMouseMove={() => {
+        // Touch taps synthesize a mousemove; only a real cursor should wake the chrome.
+        if (!isCoarsePointer) revealChrome();
+      }}
+      onPointerDown={(event) => {
+        if (event.pointerType === "mouse") revealChrome();
+      }}
     >
       <ViewerTopBar />
       <ViewerNavigation />
       <ViewerMedia />
-      <ViewerVideoControls />
+      {isVideoItem ? <VideoPlayerChrome model={model} /> : null}
     </dialog>
   );
 }
@@ -491,6 +580,7 @@ function ViewerTopBar(): JSX.Element {
     copyPath,
     details,
     downloadMedia,
+    isFullscreen,
     item,
     onClose,
     setShowOriginal,
@@ -530,8 +620,8 @@ function ViewerTopBar(): JSX.Element {
           ) : null}
           <ViewerToolbarButton
             ariaLabel="Toggle fullscreen"
-            icon={Maximize}
-            label="Fullscreen"
+            icon={isFullscreen ? Minimize : Maximize}
+            label={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
             onClick={() => void toggleFullscreen()}
           />
           <ViewerToolbarButton
@@ -550,6 +640,8 @@ function ViewerTopBar(): JSX.Element {
 function ViewerNavigation(): JSX.Element {
   const { canStepBackward, canStepForward, chromeVisibilityClass, item, onStep } =
     useMediaViewerSessionModel();
+  // A video keeps its picture for play/pause and hold-to-boost; only the edges step.
+  const zoneWidth = item.mediaType === "video" ? "w-[10%]" : "w-1/2";
   return (
     <>
       {item.mediaType !== "pdf" ? (
@@ -557,13 +649,13 @@ function ViewerNavigation(): JSX.Element {
           <button
             type="button"
             aria-label="Previous item"
-            className={`absolute left-0 top-0 z-10 h-full w-1/2 ${canStepBackward ? "cursor-w-resize" : "cursor-default"} md:hidden`}
+            className={`absolute left-0 top-0 z-10 h-full ${zoneWidth} ${canStepBackward ? "cursor-w-resize" : "cursor-default"} md:hidden`}
             onClick={() => canStepBackward && onStep(-1)}
           />
           <button
             type="button"
             aria-label="Next item"
-            className={`absolute right-0 top-0 z-10 h-full w-1/2 ${canStepForward ? "cursor-e-resize" : "cursor-default"} md:hidden`}
+            className={`absolute right-0 top-0 z-10 h-full ${zoneWidth} ${canStepForward ? "cursor-e-resize" : "cursor-default"} md:hidden`}
             onClick={() => canStepForward && onStep(1)}
           />
         </>
@@ -593,10 +685,20 @@ function ViewerNavigation(): JSX.Element {
 function ViewerMedia(): JSX.Element {
   const model = useMediaViewerSessionModel();
   const { item } = model;
+  const hold = useHoldToBoost(model);
   return (
     <div
-      className="flex h-full items-center justify-center p-3 pb-[env(safe-area-inset-bottom)]"
-      onClick={(event) => event.stopPropagation()}
+      className="flex h-full select-none items-center justify-center p-3 pb-[env(safe-area-inset-bottom)] [-webkit-touch-callout:none]"
+      {...hold.handlers}
+      onClick={(event) => {
+        event.stopPropagation();
+        if (item.mediaType !== "video") return;
+        // The tap that ended a hold-to-boost is not a tap on the picture.
+        if (hold.consumeSuppressedClick()) return;
+        // A tap on the picture shows or hides the controls; a click plays or pauses.
+        if (model.isCoarsePointer) model.toggleChrome();
+        else model.toggleVideoPlayback();
+      }}
     >
       {item.mediaType === "pdf" ? (
         <ViewerPdf model={model} />
@@ -645,6 +747,7 @@ function ViewerVideo({ model }: { model: MediaViewerSessionModel }): JSX.Element
         const video = event.currentTarget;
         const loadedDuration = video.duration;
         video.volume = model.volume;
+        video.muted = model.muted;
         video.playbackRate = model.speed;
         if (Number.isFinite(loadedDuration)) model.setDuration(loadedDuration);
         if (!model.hasRestoredVideoRef.current) {
@@ -686,107 +789,6 @@ function ViewerVideo({ model }: { model: MediaViewerSessionModel }): JSX.Element
   );
 }
 
-function ViewerVideoControls(): JSX.Element | null {
-  const model = useMediaViewerSessionModel();
-  if (model.item.mediaType !== "video") return null;
-  return (
-    <div
-      className={`pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-black/70 via-black/30 to-transparent px-4 pb-4 pt-10 transition-opacity duration-300 ${model.chromeVisibilityClass}`}
-      style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}
-    >
-      <div className="pointer-events-auto space-y-2">
-        <input
-          aria-label="Video seek position"
-          type="range"
-          min={0}
-          max={model.canSeek ? model.duration : 1}
-          step={0.1}
-          value={model.position}
-          className="w-full accent-violet-400"
-          disabled={!model.canSeek}
-          onPointerDown={() => {
-            model.isScrubbingRef.current = true;
-          }}
-          onPointerUp={(event) => {
-            if (!model.canSeek) {
-              model.isScrubbingRef.current = false;
-              return;
-            }
-            const next = Number(event.currentTarget.value);
-            model.commitSeek(next);
-            model.isScrubbingRef.current = false;
-            model.scheduleSave({ positionMs: videoSecondsToPositionMs(next) });
-            void model.flushSave();
-          }}
-          onInput={(event) => model.setPosition(Number(event.currentTarget.value))}
-        />
-        <div className="flex flex-wrap items-center gap-2 text-sm text-white/90">
-          <button
-            type="button"
-            className="inline-flex size-9 cursor-pointer items-center justify-center rounded-full text-white/90 transition hover:bg-violet-500/25 hover:text-violet-100"
-            title={model.playing ? "Pause" : "Play"}
-            aria-label={model.playing ? "Pause" : "Play"}
-            onClick={model.toggleVideoPlayback}
-          >
-            {model.playing ? <Pause className="size-5" /> : <Play className="size-5" />}
-          </button>
-          <button
-            type="button"
-            className="inline-flex cursor-pointer items-center justify-center rounded-full px-3 py-1.5 text-xs font-medium text-white/90 transition hover:bg-violet-500/25 hover:text-violet-100"
-            onClick={() => model.skip(-5)}
-          >
-            -5s
-          </button>
-          <button
-            type="button"
-            className="inline-flex cursor-pointer items-center justify-center rounded-full px-3 py-1.5 text-xs font-medium text-white/90 transition hover:bg-violet-500/25 hover:text-violet-100"
-            onClick={() => model.skip(5)}
-          >
-            +5s
-          </button>
-          <label className="flex items-center gap-2 text-white/80">
-            Vol
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.01}
-              value={model.volume}
-              className="accent-violet-400"
-              onChange={(event) => {
-                const clamped = Math.max(0, Math.min(1, Number(event.target.value)));
-                model.setVolume(clamped);
-                try {
-                  window.localStorage.setItem(VIEWER_VOLUME_STORAGE_KEY, String(clamped));
-                } catch {
-                  /* Ignore storage write errors. */
-                }
-                if (model.videoRef.current) model.videoRef.current.volume = clamped;
-              }}
-            />
-          </label>
-          <label className="flex items-center gap-2 text-white/80">
-            Speed
-            <select
-              className="rounded-lg border-0 bg-white/15 px-2 py-1 text-xs text-white outline-none"
-              value={model.speed}
-              onChange={(event) => model.applySpeed(Number(event.target.value))}
-            >
-              <option value={0.5}>0.5x</option>
-              <option value={1}>1x</option>
-              <option value={1.5}>1.5x</option>
-              <option value={2}>2x</option>
-            </select>
-          </label>
-          <span className="tabular-nums text-white/70">
-            {Math.floor(model.position)}/{Math.floor(model.duration || 0)}s
-          </span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 const ViewerToolbarButton = forwardRef<
   HTMLButtonElement,
   {
@@ -818,6 +820,9 @@ const ViewerToolbarButton = forwardRef<
  */
 type OptionalFastSeek = Partial<Pick<HTMLMediaElement, "fastSeek">>;
 type OptionalModalDialog = Partial<Pick<HTMLDialogElement, "showModal" | "close">>;
+type OptionalFullscreen = Partial<Pick<HTMLElement, "requestFullscreen">>;
+/** iPhone Safari's video-only fullscreen entry point, absent from the DOM lib. */
+type WebkitFullscreenVideo = HTMLVideoElement & Partial<{ webkitEnterFullscreen: () => void }>;
 
 function openDialog(dialog: HTMLDialogElement): void {
   const modal: OptionalModalDialog = dialog;
