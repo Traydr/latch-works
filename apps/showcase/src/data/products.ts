@@ -20,6 +20,8 @@ export type Product = {
   description: string;
   repoPath: string;
   heroScreenshot: ProductScreenshot;
+  /** Shown on the home plate instead of the hero when the hero is not a landscape. */
+  homeScreenshot?: ProductScreenshot;
   gallery: ProductScreenshot[];
   features: ProductFeature[];
   highlights: string[];
@@ -61,6 +63,11 @@ export const products: Product[] = [
       src: "/screenshots/gather-box/sidepanel-active.png",
       alt: "Gather Box side panel on a supported page, showing the save destination",
       caption: "Side panel with page detection, folder selection, and save destination",
+    },
+    homeScreenshot: {
+      src: "/screenshots/gather-box/sidepanel-in-browser.png",
+      alt: "Chrome window with an Archive of Our Own work open and the Gather Box side panel docked on the right",
+      caption: "Side panel docked beside an AO3 work, ready to save",
     },
     gallery: [
       {

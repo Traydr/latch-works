@@ -41,7 +41,9 @@ const stages = pipelineProducts;
   <div class="seam"><span>ARCHIVE PIPELINE</span></div>
 
   {
-    stages.map((product, index) => (
+    stages.map((product, index) => {
+      const shot = product.homeScreenshot ?? product.heroScreenshot;
+      return (
       <section
         class:list={["product-plate", index % 2 === 1 && "reverse"]}
         style={`--enamel:${productEnamel[product.slug]};--ink:#151310`}
@@ -69,11 +71,12 @@ const stages = pipelineProducts;
           </a>
         </div>
         <figure class="shot">
-          <img src={product.heroScreenshot.src} alt={product.heroScreenshot.alt} />
-          <figcaption>{product.heroScreenshot.caption}</figcaption>
+          <img src={shot.src} alt={shot.alt} />
+          <figcaption>{shot.caption}</figcaption>
         </figure>
       </section>
-    ))
+      );
+    })
   }
 
   <section class="closing">
