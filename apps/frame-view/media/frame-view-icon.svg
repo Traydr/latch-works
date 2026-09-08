@@ -1,3 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
-  <image href="frame-view-icon.png" width="1024" height="1024" />
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+<path fill="#2d323a" d="M280 24H744C908 24 1000 116 1000 280V744C1000 908 908 1000 744 1000H280C116 1000 24 908 24 744V280C24 116 116 24 280 24Z"/>
+<defs><clipPath id="photo"><path d="M510 137C726 137 851 186 875 340C894 462 876 643 838 742C801 838 715 881 572 878C399 875 271 832 209 746C153 668 126 498 141 358C157 205 291 129 510 137Z"/></clipPath></defs>
+<g clip-path="url(#photo)">
+<path fill="#fbf3df" d="M120 120H900V900H120Z"/>
+<circle fill="#f4cb70" cx="407" cy="365" r="67"/>
+<path fill="#80b4b5" d="M360 685C511 574 642 433 744 446C819 451 863 491 900 515V900H120Z"/>
+<path fill="#aac69d" d="M120 529C296 471 409 565 532 655S771 792 900 786V900H120Z"/>
+</g>
 </svg>
