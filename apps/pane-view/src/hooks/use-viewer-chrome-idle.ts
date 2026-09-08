@@ -4,6 +4,8 @@ const CHROME_IDLE_MS = 2500;
 
 interface UseViewerChromeIdleOptions {
   isMobile: boolean;
+  /** Run the idle timer on mobile too (video playback hides its controls everywhere). */
+  idleOnMobile?: boolean;
   pinned?: boolean;
 }
 
@@ -15,7 +17,8 @@ export interface ViewerChromeIdle {
 }
 
 export function useViewerChromeIdle(options: UseViewerChromeIdleOptions): ViewerChromeIdle {
-  const { isMobile, pinned = false } = options;
+  const { isMobile, idleOnMobile = false, pinned = false } = options;
+  const idles = (!isMobile || idleOnMobile) && !pinned;
   const [chromeVisible, setChromeVisible] = useState(true);
   const idleTimerRef = useRef<number | null>(null);
 
@@ -30,21 +33,28 @@ export function useViewerChromeIdle(options: UseViewerChromeIdleOptions): Viewer
     setChromeVisible(true);
     clearIdleTimer();
 
-    if (!isMobile && !pinned) {
+    if (idles) {
       idleTimerRef.current = window.setTimeout(() => {
         setChromeVisible(false);
       }, CHROME_IDLE_MS);
     }
-  }, [clearIdleTimer, isMobile, pinned]);
+  }, [clearIdleTimer, idles]);
 
   const toggleChrome = useCallback((): void => {
-    if (!isMobile) {
-      return;
-    }
-
-    setChromeVisible((visible) => !visible);
-    clearIdleTimer();
-  }, [clearIdleTimer, isMobile]);
+    setChromeVisible((visible) => {
+      if (visible) {
+        clearIdleTimer();
+        return false;
+      }
+      if (idles) {
+        clearIdleTimer();
+        idleTimerRef.current = window.setTimeout(() => {
+          setChromeVisible(false);
+        }, CHROME_IDLE_MS);
+      }
+      return true;
+    });
+  }, [clearIdleTimer, idles]);
 
   useEffect(() => {
     if (pinned) {
@@ -53,14 +63,14 @@ export function useViewerChromeIdle(options: UseViewerChromeIdleOptions): Viewer
       return;
     }
 
-    if (!isMobile) {
+    if (idles) {
       revealChrome();
     }
 
     return () => {
       clearIdleTimer();
     };
-  }, [clearIdleTimer, isMobile, pinned, revealChrome]);
+  }, [clearIdleTimer, idles, pinned, revealChrome]);
 
   const chromeVisibilityClass = chromeVisible ? "opacity-100" : "opacity-0 pointer-events-none";
 

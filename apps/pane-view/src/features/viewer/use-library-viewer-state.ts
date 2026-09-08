@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { VIEWER_STATE_SAVE_DEBOUNCE_MS } from "./viewer-resume";
 import { getViewerState, saveViewerState, type ViewerStateSnapshot } from "./viewer-state-service";
 
-interface ViewerStatePatch {
+export interface ViewerStatePatch {
   page?: number;
   positionMs?: number;
 }
