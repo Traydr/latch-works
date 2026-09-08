@@ -1,3 +1,15 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
-  <image href="lockstep-icon.png" width="1024" height="1024" />
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+<path fill="#2d323a" d="M280 24H744C908 24 1000 116 1000 280V744C1000 908 908 1000 744 1000H280C116 1000 24 908 24 744V280C24 116 116 24 280 24Z"/>
+<path fill="#e99b89" d="M330 222H742C849 222 909 284 909 390V441C909 507 881 555 826 575C865 522 854 447 814 393C792 364 768 351 734 351H330Z"/>
+<path fill="#a5c8a4" d="M813 375C854 411 879 464 879 517C859 563 821 584 759 584H250C183 584 132 621 98 693C78 626 85 550 133 502C163 471 199 455 248 455H743C797 455 827 423 813 375Z"/>
+<path fill="#85a6dd" d="M179 592C159 655 185 690 250 690H768V817H248C152 817 104 777 98 693C114 646 140 613 179 592Z"/>
+<path fill="none" stroke="#c47e6f" stroke-width="16" stroke-linecap="round" stroke-dasharray="58 42" d="M430 287H739C762 287 780 290 794 296"/>
+<path fill="none" stroke="#83aa84" stroke-width="16" stroke-linecap="round" stroke-dasharray="58 42" d="M257 521H738C806 521 846 480 850 436"/>
+<path fill="none" stroke="#688dc2" stroke-width="16" stroke-linecap="round" stroke-dasharray="58 42" d="M218 749C230 753 241 754 257 754H608"/>
+<rect fill="#e99b89" x="202" y="154" width="170" height="221" rx="47"/>
+<rect fill="#f3cf88" x="150" y="174" width="171" height="218" rx="46"/>
+<rect fill="#fbf3df" x="103" y="192" width="170" height="216" rx="46"/>
+<rect fill="#a1a7d4" x="720" y="634" width="197" height="223" rx="49"/>
+<rect fill="#8cc2cb" x="667" y="655" width="198" height="225" rx="49"/>
+<rect fill="#fbf3df" x="620" y="676" width="188" height="221" rx="48"/>
 </svg>

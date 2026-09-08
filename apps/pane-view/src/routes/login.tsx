@@ -32,7 +32,7 @@ function LoginRoute() {
             aria-hidden="true"
             className="size-9 shrink-0 rounded-md"
             height={36}
-            src="/favicon-48.png"
+            src="/favicon.svg"
             width={36}
           />
           <div>

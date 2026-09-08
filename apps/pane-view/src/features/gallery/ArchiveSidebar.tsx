@@ -53,7 +53,7 @@ export function ArchiveSidebar({
             aria-hidden="true"
             className="size-8 shrink-0 rounded-md"
             height={32}
-            src="/favicon-48.png"
+            src="/favicon.svg"
             width={32}
           />
           <div className={cn("min-w-0 transition-opacity", isCollapsed && "opacity-0")}>

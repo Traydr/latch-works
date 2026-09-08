@@ -20,7 +20,7 @@
   },
   "workspaces": {
     ".": {
-      "entry": [".railway/railway.ts"],
+      "entry": [".railway/railway.ts", "scripts/*.ts"],
       "ignoreDependencies": ["lodash", "vitest"]
     },
     "apps/pane-view": {
@@ -70,8 +70,7 @@
       "entry": ["src/**/*.test.ts"]
     },
     "apps/showcase": {
-      "entry": ["src/pages/**/*.{astro,ts,tsx}", "scripts/*.mjs"],
-      "ignoreDependencies": ["sharp"]
+      "entry": ["src/pages/**/*.{astro,ts,tsx}", "scripts/*.mjs"]
     },
     "packages/media-domain": {
       "entry": ["src/**/*.test.ts"]
