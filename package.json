@@ -13,11 +13,12 @@
     "test": "pnpm -r test",
     "e2e": "pnpm --filter @latch-works/e2e e2e",
     "e2e:pane": "pnpm --filter @latch-works/e2e e2e:pane",
-    "typecheck": "pnpm -r typecheck",
+    "typecheck": "tsc -p scripts/tsconfig.json && pnpm -r typecheck",
     "knip": "knip",
     "check:all": "pnpm run build:all && pnpm run format && pnpm run lint:all && pnpm run typecheck && pnpm run knip",
     "e2e:frame": "pnpm --filter @latch-works/e2e e2e:frame",
-    "e2e:lockstep": "pnpm --filter @latch-works/e2e e2e:lockstep"
+    "e2e:lockstep": "pnpm --filter @latch-works/e2e e2e:lockstep",
+    "icons": "node scripts/generate-icons.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.10",
@@ -27,6 +28,7 @@
     "lodash": "4.18.1",
     "oxlint": "1.78.0",
     "railway": "^3.3.1",
+    "sharp": "^0.34.5",
     "typescript": "^7.0.2",
     "vitest": "^4.1.3"
   }

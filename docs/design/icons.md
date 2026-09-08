@@ -16,21 +16,20 @@ is available until October 8, 2026.
 
 ## Regenerate platform assets
 
-Run these commands from the repository root:
+Run this from the repository root after `pnpm install`:
 
 ```sh
-python3 -m venv /tmp/latch-icon-tools
-/tmp/latch-icon-tools/bin/pip install Pillow==11.3.0 resvg-py==0.3.2
-/tmp/latch-icon-tools/bin/python scripts/generate-icons.py
+pnpm icons
 ```
 
-The script renders each SVG at 2048 pixels and downsamples with Lanczos. It overwrites the
-22 logo PNGs, four ICO files, and two ICNS files. It also copies Lockstep's SVG into the CLI
-assets and its PNG into the macOS Icon Composer bundle. Screenshot PNGs are not regenerated.
+`scripts/generate-icons.ts` renders each SVG at 2048 pixels with sharp and downsamples with
+Lanczos. It overwrites ten PNGs, four ICO files, and two ICNS files, and copies Lockstep's PNG
+into the macOS Icon Composer bundle. Screenshot PNGs are not touched.
 
-Web pages use SVG for logos and favicons, with ICO and Apple touch PNG fallbacks. Chrome
-extension icons and Electron window icons retain PNG filenames. Desktop packagers retain
-ICO and ICNS filenames. These raster files are generated from the SVG masters.
+Web pages use the SVG directly for logos and favicons. The only rasters they keep are
+`favicon.ico` for legacy browsers and `apple-touch-icon.png` for iOS home screens. Chrome
+extension icons and Electron window icons retain PNG filenames. Desktop packagers retain ICO
+and ICNS filenames. Every raster is generated from the SVG masters; do not edit them by hand.
 
 Keep Lockstep's Icon Composer background matched to the SVG charcoal fill, `#2d323a`, with
 its group shadow opacity set to zero.

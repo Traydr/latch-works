@@ -15,7 +15,7 @@
 - State/data preference: lazy incremental scanning and persistent cache/indexing.
 - Planning preference: maintain a persistent implementation plan with explicit progress tracking.
 - Documentation preference: keep this file updated with important context and implementation-style preferences.
-- Branding preference: use the flat, smooth artwork in `media/frame-view-icon.svg` as the master. Regenerate PNG, ICO, and ICNS with `scripts/generate-icons.py` from the repository root. Avoid traced texture, bevels, and cast shadows.
+- Branding preference: use the flat, smooth artwork in `media/frame-view-icon.svg` as the master. Regenerate PNG, ICO, and ICNS with `pnpm icons` from the repository root. Avoid traced texture, bevels, and cast shadows.
 - Dev workflow preference: support one-command local build + install on Windows.
 - Documentation preference: maintain a root README and keep hotkeys listed in both README and Settings.
 - Testing preference: keep automated tests in a dedicated test directory rather than colocated with source files.
