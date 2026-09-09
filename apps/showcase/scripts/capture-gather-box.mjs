@@ -3,8 +3,14 @@
  * Captures real Gather Box side panel screenshots for the showcase site.
  *
  * Launches Chrome with the unpacked extension from apps/gather-box/dist and shoots:
- *   - sidepanel.png        — idle state (an open page the extension does not support)
- *   - sidepanel-active.png — active state on a real supported page (an AO3 work)
+ *   - sidepanel.png            — idle state (an open page the extension does not support)
+ *   - sidepanel-active.png     — active state on a real supported page (an AO3 work)
+ *   - sidepanel-in-browser.png — the active panel docked beside that work inside a 1440x900
+ *                                browser frame, so the home plate gets a landscape like the
+ *                                other products. The page and panel are real captures; the
+ *                                tab strip, toolbar, and panel header are drawn, because
+ *                                Chrome exposes neither its own chrome nor the side panel
+ *                                container to CDP screenshots.
  *
  * Build the extension first: pnpm --filter @latch-works/gather-box build
  */
@@ -32,11 +38,12 @@ const shots = [
   },
   {
     outFile: "sidepanel-active.png",
-    contentUrl: "https://archiveofourown.org/works/5627803",
+    contentUrl: "https://archiveofourown.org/works/19182319",
     tabPattern: "https://archiveofourown.org/works/*",
     // Persist a real directory handle first so the panel's restore path runs and
     // the Download button renders enabled, as it would after a folder pick.
     seedFolderHandle: true,
+    inBrowserOutFile: "sidepanel-in-browser.png",
     readyInPanel: () => {
       const banner = document.getElementById("unsupportedBanner-mini");
       const saveBlock = document.getElementById("saveBlock-mini");
@@ -271,9 +278,157 @@ async function captureShot(browser, panelUrl, shot) {
   await panelPage.screenshot({ path, type: "png" });
   console.log(`Saved ${path} (${approach})`);
 
+  if (shot.inBrowserOutFile) {
+    await captureInBrowser(browser, contentPage, panelPage, join(outputDir, shot.inBrowserOutFile));
+  }
+
   await panelPage.close().catch(() => {});
   await contentPage.close();
   return approach;
+}
+
+/** Window geometry for the in-browser composite, in CSS pixels at 2x. */
+const windowFrame = {
+  width: 1440,
+  height: 900,
+  chromeHeight: 80, // tab strip + toolbar
+  panelWidth: 440,
+  panelHeaderHeight: 40,
+};
+
+/**
+ * Re-shoots the content tab and the panel at the sizes they occupy inside a 1440x900 Chrome
+ * window, then lays them into a drawn window frame and saves the result.
+ */
+async function captureInBrowser(browser, contentPage, panelPage, path) {
+  const contentHeight = windowFrame.height - windowFrame.chromeHeight;
+  const pageWidth = windowFrame.width - windowFrame.panelWidth;
+  const panelHeight = contentHeight - windowFrame.panelHeaderHeight;
+
+  await contentPage.setViewport({ width: pageWidth, height: contentHeight, deviceScaleFactor: 2 });
+  await acceptArchiveTerms(contentPage);
+  await contentPage.evaluate(() => window.scrollTo(0, 0));
+  await sleep(500);
+  const pageImage = await contentPage.screenshot({ type: "png", encoding: "base64" });
+  const title = await contentPage.title();
+  const url = contentPage.url();
+
+  await panelPage
+    .setViewport({ width: windowFrame.panelWidth, height: panelHeight, deviceScaleFactor: 2 })
+    .catch(() => {
+      console.warn("Could not resize the side panel for the composite; using its current size.");
+    });
+  await sleep(300);
+  const panelImage = await panelPage.screenshot({ type: "png", encoding: "base64" });
+
+  const composer = await browser.newPage();
+  await composer.setViewport({
+    width: windowFrame.width,
+    height: windowFrame.height,
+    deviceScaleFactor: 2,
+  });
+  await composer.setContent(browserFrameHtml({ pageImage, panelImage, title, url }), {
+    waitUntil: "load",
+  });
+  await composer.screenshot({ path, type: "png" });
+  await composer.close();
+  console.log(`Saved ${path} (composited into a browser frame)`);
+}
+
+/**
+ * AO3 covers the work with a terms-of-service prompt on a fresh profile. Accept it the way a
+ * reader does (both checkboxes, then the button) so the composite shows the work itself.
+ */
+async function acceptArchiveTerms(page) {
+  const accepted = await page.evaluate(() => {
+    const prompt = document.getElementById("tos_prompt");
+    if (prompt === null || getComputedStyle(prompt).display === "none") {
+      return false;
+    }
+    for (const box of prompt.querySelectorAll("input[type=checkbox]")) {
+      box.click();
+    }
+    document.getElementById("accept_tos")?.click();
+    return true;
+  });
+  if (accepted) {
+    await page
+      .waitForFunction(
+        () => {
+          const prompt = document.getElementById("tos_prompt");
+          return prompt === null || getComputedStyle(prompt).display === "none";
+        },
+        { timeout: 5_000 },
+      )
+      .catch(() => {
+        console.warn("The AO3 terms prompt did not close; the composite may show it.");
+      });
+  }
+}
+
+function escapeHtml(text) {
+  return text
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+/** A dark-theme Chrome window: macOS window controls, one tab, toolbar, page, side panel. */
+function browserFrameHtml({ pageImage, panelImage, title, url }) {
+  const { width, height, chromeHeight, panelWidth, panelHeaderHeight } = windowFrame;
+  const tabStripHeight = chromeHeight / 2;
+  const displayUrl = url.replace(/^https?:\/\//, "");
+  return `<!doctype html>
+<html><head><meta charset="utf-8"><style>
+  * { box-sizing: border-box; margin: 0; }
+  html, body { width: ${width}px; height: ${height}px; overflow: hidden; background: #202124; }
+  body { font: 13px/1 -apple-system, "Segoe UI", system-ui, sans-serif; color: #e8eaed; }
+  .tabs { height: ${tabStripHeight}px; display: flex; align-items: flex-end; padding: 0 12px; gap: 8px; }
+  .lights { display: flex; gap: 8px; align-self: center; margin-right: 8px; }
+  .lights i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+  .tab { height: 34px; max-width: 260px; display: flex; align-items: center; gap: 8px; padding: 0 14px;
+         background: #35363a; border-radius: 8px 8px 0 0; font-size: 12px; overflow: hidden; }
+  .tab .favicon { width: 14px; height: 14px; border-radius: 3px; background: #990000; flex: none; }
+  .tab span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tab b { font-weight: 400; color: #9aa0a6; margin-left: 6px; }
+  .newtab { color: #9aa0a6; font-size: 18px; align-self: center; padding: 0 4px; }
+  .toolbar { height: ${tabStripHeight}px; background: #35363a; display: flex; align-items: center;
+             gap: 14px; padding: 0 12px; color: #9aa0a6; font-size: 16px; }
+  .omnibox { flex: 1; height: 28px; border-radius: 14px; background: #202124; display: flex;
+             align-items: center; padding: 0 14px; font-size: 13px; color: #e8eaed; gap: 8px; }
+  .omnibox i { width: 12px; height: 12px; border: 1.5px solid #9aa0a6; border-radius: 3px; display: block; }
+  .puzzle { width: 18px; height: 18px; border-radius: 4px; background: #5f6368; }
+  .content { display: grid; grid-template-columns: 1fr ${panelWidth}px; height: ${height - chromeHeight}px; }
+  .page img, .panel img { display: block; width: 100%; height: auto; }
+  .page { overflow: hidden; background: #fff; }
+  .panel { border-left: 1px solid #3c4043; background: #0a0a0c; display: grid;
+           grid-template-rows: ${panelHeaderHeight}px 1fr; }
+  .panel header { display: flex; align-items: center; justify-content: space-between;
+                  padding: 0 16px; background: #202124; border-bottom: 1px solid #3c4043;
+                  font-size: 13px; font-weight: 500; color: #e8eaed; }
+  .panel header span { color: #9aa0a6; font-size: 16px; }
+  .panel div { overflow: hidden; }
+</style></head>
+<body>
+  <div class="tabs">
+    <div class="lights"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i></div>
+    <div class="tab"><i class="favicon"></i><span>${escapeHtml(title)}</span><b>×</b></div>
+    <div class="newtab">+</div>
+  </div>
+  <div class="toolbar">
+    <span>←</span><span>→</span><span>↻</span>
+    <div class="omnibox"><i></i>${escapeHtml(displayUrl)}</div>
+    <div class="puzzle"></div><span>⋮</span>
+  </div>
+  <div class="content">
+    <div class="page"><img src="data:image/png;base64,${pageImage}" alt=""></div>
+    <div class="panel">
+      <header>Gather Box<span>×</span></header>
+      <div><img src="data:image/png;base64,${panelImage}" alt=""></div>
+    </div>
+  </div>
+</body></html>`;
 }
 
 async function main() {
