@@ -220,6 +220,8 @@ export const shutterSourceCleanup = pgTable(
   "shutter_source_cleanup",
   {
     sha256: text("sha256").primaryKey(),
+    /** The original's key, so a v2 resolver source can be purged after the media row is gone. */
+    objectKey: text("object_key"),
     queuedAt: timestamp("queued_at", { withTimezone: true }).defaultNow().notNull(),
     purgedAt: timestamp("purged_at", { withTimezone: true }),
   },

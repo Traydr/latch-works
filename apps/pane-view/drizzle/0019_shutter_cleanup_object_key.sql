@@ -1,0 +1,1 @@
+ALTER TABLE "shutter_source_cleanup" ADD COLUMN "object_key" text;

@@ -16,7 +16,7 @@ import {
   syncRuns,
   viewerState,
 } from "../db/schema";
-import { purgeShutterSource } from "../media/shutter-client";
+import { purgeShutterSource, type ShutterPurgeSource } from "../media/shutter-client";
 import { MaintenanceJobTypeSchema, parseMaintenanceProgress } from "./maintenance-progress";
 import { deleteMaintenanceObjects, getMaintenanceStorageClient } from "./maintenance-storage";
 import { orphanedMediaObjectCondition, orphanedShutterSourceCondition } from "./orphaned-sources";
@@ -45,7 +45,7 @@ export interface MaintenanceWorkerDependencies {
     limit: number;
     prefix: string;
   }): Promise<ListStoredObjectsPage>;
-  purgeShutterSource(sha256: string): Promise<void>;
+  purgeShutterSource(source: ShutterPurgeSource): Promise<void>;
 }
 
 const defaultMaintenanceWorkerDependencies: MaintenanceWorkerDependencies = {
@@ -283,7 +283,7 @@ async function processSoftDeletedPurgeBatch(
         await dependencies.database.transaction(async (tx) => {
           await tx
             .insert(shutterSourceCleanup)
-            .values({ sha256: row.sha256 })
+            .values({ objectKey: row.objectKey, sha256: row.sha256 })
             .onConflictDoNothing();
           await tx
             .delete(favorites)
@@ -359,7 +359,7 @@ async function processShutterSourcePurgeBatch(
   switch (progress.phase) {
     case "queue_sources": {
       const rows = await dependencies.database
-        .select({ sha256: mediaObjects.sha256 })
+        .select({ objectKey: mediaObjects.objectKey, sha256: mediaObjects.sha256 })
         .from(mediaObjects)
         .where(orphanedShutterSourceCondition())
         .limit(batchSize);
@@ -385,7 +385,7 @@ async function processShutterSourcePurgeBatch(
           ),
         );
       const rows = await dependencies.database
-        .select({ sha256: shutterSourceCleanup.sha256 })
+        .select({ objectKey: shutterSourceCleanup.objectKey, sha256: shutterSourceCleanup.sha256 })
         .from(shutterSourceCleanup)
         .where(and(isNull(shutterSourceCleanup.purgedAt), notExists(activeSourceReference)))
         .limit(batchSize);
@@ -397,7 +397,7 @@ async function processShutterSourcePurgeBatch(
 
       for (const row of rows) {
         // react-doctor-disable-next-line react-doctor/async-await-in-loop -- Mark each source only after Shutter confirms its purge.
-        await dependencies.purgeShutterSource(row.sha256);
+        await dependencies.purgeShutterSource(row);
         // react-doctor-disable-next-line react-doctor/async-await-in-loop -- The durable queue advances one confirmed source at a time.
         await dependencies.database
           .update(shutterSourceCleanup)
@@ -457,7 +457,7 @@ async function processLibraryWipeBatch(
       for (const row of rows) {
         try {
           // react-doctor-disable-next-line react-doctor/async-await-in-loop -- Stop at the first purge failure so the durable job cursor remains retry-safe.
-          await dependencies.purgeShutterSource(row.sha256);
+          await dependencies.purgeShutterSource({ objectKey: row.objectKey, sha256: row.sha256 });
         } catch (error) {
           const reason = error instanceof Error ? error.message : String(error);
           throw new Error(`Shutter source purge failed: ${reason}`);

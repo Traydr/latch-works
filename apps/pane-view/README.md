@@ -56,6 +56,7 @@ PANE_VIEW_SYNC_TOKEN=...           # bearer token for Lockstep
 SHUTTER_EDGE_URL=https://...       # optional; leave empty for pass-through delivery
 SHUTTER_CONTROL_URL=https://...
 SHUTTER_SPACE_ID=...
+SHUTTER_RESOLVER_ID=...            # optional; the Space's S3 resolver for the originals bucket (v2)
 SHUTTER_SPACE_API_TOKEN=...        # Shutter control-plane token
 SHUTTER_CAPABILITY_KEYS=...        # Shutter capability-key registry
 SHUTTER_CAPABILITY_KID=...
@@ -65,6 +66,19 @@ The `SHUTTER_*` variables are optional. When `SHUTTER_EDGE_URL` is empty, Pane V
 pass-through mode: thumbnails and previews redirect to signed original URLs served directly from
 S3 storage (no resized variants; video/PDF tiles show placeholders). `/api/health` reports the
 active mode in its `variants` field.
+
+`SHUTTER_EDGE_URL` alone still decides whether Shutter is used at all. With it and
+`SHUTTER_RESOLVER_ID` set, thumbnails and previews are v2 Delivery URLs
+(`/v2/{space}/{resolver}/{shard_a}/{shard_b}/{object}?token=…`): Shutter reads the
+originals bucket through the S3 resolver configured on the Space (read-only key,
+key template `originals/sha256/{shard_a}/{shard_b}/{object}`) and Pane View only
+issues an access token per URL. Without it, Pane View presigns a locator per
+request and seals it into a Source Capability (the v1 flow). The Shutter purge
+queue records each original's key so a v2 source can be purged after its media
+row is gone. A purge covers both the resolver source and the SHA-256 whenever the
+key is known, so what Shutter cached under either API is dropped; sources queued
+before that column existed are purged by SHA-256. `/api/health` reports `shutterApi`
+as `v2` or `v1`.
 
 `LOCKSTEP_API_TOKEN` on the CLI side should match `PANE_VIEW_SYNC_TOKEN`.
 
