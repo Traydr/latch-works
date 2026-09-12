@@ -21,6 +21,16 @@ export const env = createEnv({
     SHUTTER_EDGE_URL: z.url().or(z.literal("")).default(""),
     SHUTTER_CONTROL_URL: z.url().or(z.literal("")).default(""),
     SHUTTER_SPACE_ID: z.string().default(""),
+    // Optional: the Space's S3 resolver for the originals bucket. When set, images and
+    // previews are served from v2 Delivery URLs and nothing is presigned per request.
+    SHUTTER_RESOLVER_ID: z
+      .string()
+      .regex(
+        /^[a-z0-9](?:[a-z0-9_-]{0,62}[a-z0-9])?$/u,
+        "SHUTTER_RESOLVER_ID must be a Shutter identifier",
+      )
+      .or(z.literal(""))
+      .default(""),
     SHUTTER_SPACE_API_TOKEN: z.string().min(32).or(z.literal("")).default(""),
     SHUTTER_CAPABILITY_KEYS: z.string().default(""),
     SHUTTER_CAPABILITY_KID: z.string().default(""),

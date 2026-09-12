@@ -1,5 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { getShutterCapabilityKeyStatus } from "../server/media/shutter-client";
+import {
+  getShutterCapabilityKeyStatus,
+  isShutterResolverConfigured,
+} from "../server/media/shutter-client";
 import { isShutterConfigured } from "../server/media/variant-provider";
 
 export const Route = createFileRoute("/api/health")({
@@ -10,6 +13,7 @@ export const Route = createFileRoute("/api/health")({
         return Response.json({
           ok: shutter ? getShutterCapabilityKeyStatus().ok : true,
           variants: shutter ? "shutter" : "pass-through",
+          shutterApi: shutter ? (isShutterResolverConfigured() ? "v2" : "v1") : null,
           service: "pane-view",
         });
       },
