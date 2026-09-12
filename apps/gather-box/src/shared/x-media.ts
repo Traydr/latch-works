@@ -120,11 +120,13 @@ const XLegacyMediaSchema = z.object({
   extended_entities: z.catch(z.object({ media: XMediaListSchema }), { media: [] })
 });
 
-/** X wraps a tweet in `tweet` when it carries visibility results. */
+/**
+ * X nests the tweet under `tweet` when it carries visibility results (age-restricted media, reply
+ * limits) and puts nothing at the top-level `legacy`, so neither location can be required.
+ */
 const XRetweetResultSchema = z.object({
-  __typename: z.catch(z.string(), ""),
   tweet: z.catch(z.nullable(z.object({ legacy: XLegacyMediaSchema })), null),
-  legacy: XLegacyMediaSchema
+  legacy: z.catch(z.nullable(XLegacyMediaSchema), null)
 });
 
 const XTweetLegacySchema = z.extend(XLegacyMediaSchema, {
@@ -135,9 +137,8 @@ const XTweetLegacySchema = z.extend(XLegacyMediaSchema, {
 });
 
 const XTweetResultSchema = z.object({
-  __typename: z.catch(z.string(), ""),
   tweet: z.catch(z.nullable(z.object({ legacy: XTweetLegacySchema })), null),
-  legacy: XTweetLegacySchema
+  legacy: z.catch(z.nullable(XTweetLegacySchema), null)
 });
 
 const XTimelineEntrySchema = z.object({
@@ -251,15 +252,9 @@ export function extractGraphqlMedia(
     return [];
   }
 
-  const legacy =
-    tweetResult.__typename === "TweetWithVisibilityResults"
-      ? tweetResult.tweet?.legacy
-      : tweetResult.legacy;
+  const legacy = tweetResult.tweet?.legacy ?? tweetResult.legacy;
   const retweetResult = legacy?.retweeted_status_result?.result;
-  const retweetLegacy =
-    retweetResult?.__typename === "TweetWithVisibilityResults"
-      ? retweetResult.tweet?.legacy
-      : retweetResult?.legacy;
+  const retweetLegacy = retweetResult?.tweet?.legacy ?? retweetResult?.legacy;
 
   return retweetLegacy?.extended_entities.media ?? legacy?.extended_entities.media ?? [];
 }
