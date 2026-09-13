@@ -221,9 +221,10 @@ function AppInner(): JSX.Element {
     cacheStatusMessage,
     onOpenFolder: openFolderAction,
     onRefresh: refreshCurrentFolderAction,
+    // Per-session only: "Enable recursive mode by default" in Preferences is
+    // the one writer of `recursiveDefault`, which seeds the flag on launch.
     onToggleRecursive: (value: boolean) => {
       setRecursive(value);
-      void updateSettings({ recursiveDefault: value });
       if (rootPath) {
         void runScan(rootPath, {
           recursive: value || comicMode,

@@ -126,6 +126,8 @@ export function PrismLayout({
       />
 
       <GalleryToolbar
+        hasRootFolder={rootPath !== null}
+        isRefreshing={isScanning}
         onChangeSortMode={onChangeSortMode}
         onOpenFolder={onOpenFolder}
         onOpenSettings={onOpenSettings}
