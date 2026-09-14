@@ -14,7 +14,7 @@
 
 ## Status
 
-- **Status**: IN PROGRESS (PR 1 on `agent/057-1-toolbar`, 2026-09-14)
+- **Status**: IN REVIEW (stack `agent/057-1-toolbar` → `agent/057-2-settings` → `agent/057-3-video-player` → `agent/057-4-chrome-parity`, implemented 2026-09-14)
 - **Priority**: P2 — owner-requested parity
 - **Effort**: M overall (S · S · L · S)
 - **Risk**: LOW — renderer-only, no IPC or schema changes
@@ -88,7 +88,7 @@ Files: `components/SettingsDrawer.tsx`, `components/settings/UsabilityTab.tsx`, 
 - Wrapper `items-start pt-[7vh]`; aside `h-[min(78vh,760px)]` instead of `max-h`.
 - Reset the body's `scrollTop` when the active tab changes.
 - Escape closes; focus moves to Close on open and restores on unmount.
-- Theme becomes a three-segment control (`role="radiogroup"`), removing the only absolutely
+- Theme becomes three native radios styled as a segmented control, removing the only absolutely
   positioned menu inside the scroll body.
 - Keep the scrim button "Close settings"; the e2e clicks it at (4,4).
 

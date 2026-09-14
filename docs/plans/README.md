@@ -24,7 +24,7 @@ once their outcome is recorded below; recover full text with `git log --diff-fil
 | [053](053-gallery-waterfall-review-followups.md) | Land the five review follow-ups from PR #98: debounce edge, resolver rejection test, staleness dedupe, naming, `library` off the session | P3 | S | PR #98 (merged) | TODO |
 | [054](054-pane-view-recursive-folder-excludes.md) | Per-path folder excludes for Pane View recursive/comic mode: toolbar button + lean dialog, localStorage, server-side subtree subtraction | P2 | M | PR #98 (merged) | IN REVIEW (branch `agent/054-recursive-folder-excludes`, 2026-08-24) |
 | [056](056-test-triage-and-e2e.md) | Tag every unit test keep/trim/e2e/delete, add a Playwright e2e workspace covering the baseline features of every app, delete the mock-shape and moment-in-time tests | P2 | L | none | IN PROGRESS (PR 1 on `revise-testing`, 2026-08-25) |
-| [057](057-frame-view-pane-parity.md) | Bring Pane View's UX to Frame View: reordered icon toolbar, settings dialog locked to the top, capsule video player ported, chrome icons and Escape parity | P2 | M | none | IN PROGRESS (stack from `agent/057-1-toolbar`, 2026-09-14) |
+| [057](057-frame-view-pane-parity.md) | Bring Pane View's UX to Frame View: reordered icon toolbar, settings dialog locked to the top, capsule video player ported, chrome icons and Escape parity | P2 | M | none | IN REVIEW (four stacked PRs from `agent/057-1-toolbar` to `agent/057-4-chrome-parity`, 2026-09-14) |
 
 Recommended order (2026-08-17 review):
 
