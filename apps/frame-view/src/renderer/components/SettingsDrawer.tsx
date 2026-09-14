@@ -1,4 +1,4 @@
-import { type JSX, useState } from 'react';
+import { type JSX, useEffect, useEffectEvent, useRef, useState } from 'react';
 
 import type {
   AppSettings,
@@ -35,6 +35,11 @@ interface SettingsDrawerProps {
   settings: AppSettings;
 }
 
+/**
+ * Preferences is anchored to the top of the window at a fixed height, so
+ * switching tabs never resizes or moves it: short tabs leave room below, tall
+ * tabs scroll inside the body.
+ */
 export function SettingsDrawer({
   currentFolderSummary,
   diagnosticsSnapshot,
@@ -50,9 +55,34 @@ export function SettingsDrawer({
 }: SettingsDrawerProps): JSX.Element {
   const [activeTab, setActiveTab] = useState<SettingsTab>(SETTINGS_TABS[0]);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const closeEvent = useEffectEvent(onClose);
+
+  useEffect(() => {
+    bodyRef.current?.scrollTo({ top: 0 });
+  }, [activeTab]);
+
+  useEffect(() => {
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    closeButtonRef.current?.focus();
+
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeEvent();
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      previous?.focus();
+    };
+  }, []);
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/35 backdrop-blur-sm">
+    <div className="fixed inset-0 z-40 flex items-start justify-center bg-black/35 pt-[7vh] backdrop-blur-sm">
       <button
         type="button"
         className="absolute inset-0"
@@ -60,7 +90,10 @@ export function SettingsDrawer({
         aria-label="Close settings"
       />
 
-      <aside className="prism-surface z-10 mx-6 flex max-h-[78vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl">
+      <aside
+        aria-label="Preferences"
+        className="prism-surface z-10 mx-6 flex h-[min(78vh,760px)] w-full max-w-4xl flex-col overflow-hidden rounded-2xl"
+      >
         <div className="flex items-center justify-between border-b border-inherit px-5 py-3">
           <div>
             <h2 className="text-lg font-semibold text-balance text-zinc-900 dark:text-zinc-100">
@@ -70,7 +103,7 @@ export function SettingsDrawer({
               Organize usability, storage, shortcuts, and diagnostics in one place.
             </p>
           </div>
-          <button type="button" className="prism-btn" onClick={onClose}>
+          <button ref={closeButtonRef} type="button" className="prism-btn" onClick={onClose}>
             Close
           </button>
         </div>
@@ -79,7 +112,10 @@ export function SettingsDrawer({
           <SettingsTabNav activeTab={activeTab} onSelectTab={setActiveTab} />
         </div>
 
-        <div className="overflow-y-auto p-4 text-sm text-zinc-700 dark:text-zinc-200">
+        <div
+          ref={bodyRef}
+          className="min-h-0 flex-1 overflow-y-auto p-4 text-sm text-zinc-700 dark:text-zinc-200"
+        >
           {activeTab === 'Usability' ? (
             <UsabilityTab settings={settings} onUpdate={onUpdate} />
           ) : null}
