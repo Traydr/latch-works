@@ -1,6 +1,7 @@
 import type { JSX } from 'react';
 
 import { formatHotkeys, HOTKEYS } from '../../utils/hotkeys';
+import { VIDEO_SKIP_SECONDS } from '../../utils/videoPlayback';
 import { SettingsSection } from './SettingsSection';
 
 const HOTKEY_GROUPS: { title: string; entries: { action: string; keys: string }[] }[] = [
@@ -36,11 +37,12 @@ const HOTKEY_GROUPS: { title: string; entries: { action: string; keys: string }[
       { action: 'Next page/item', keys: formatHotkeys(HOTKEYS.viewerNext) },
       { action: 'Play/pause video', keys: formatHotkeys(HOTKEYS.videoPlayPause) },
       {
-        action: 'Seek video -/+ 5s',
+        action: `Seek video -/+ ${VIDEO_SKIP_SECONDS}s`,
         keys: `${formatHotkeys(HOTKEYS.videoSeekBackward)} / ${formatHotkeys(
           HOTKEYS.videoSeekForward,
         )}`,
       },
+      { action: 'Mute video', keys: formatHotkeys(HOTKEYS.videoMute) },
       { action: 'Hold 2x speed', keys: `Hold ${formatHotkeys(HOTKEYS.videoTemporarySpeed)}` },
     ],
   },
