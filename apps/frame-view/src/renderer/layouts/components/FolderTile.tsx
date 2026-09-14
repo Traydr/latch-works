@@ -1,3 +1,4 @@
+import { Folder } from 'lucide-react';
 import type { JSX } from 'react';
 
 import type { BrowserEntry } from '../../utils/browserEntries';
@@ -44,13 +45,7 @@ export function FolderTile({
       title={entry.path}
     >
       <div className="flex items-start justify-between gap-3">
-        <svg
-          viewBox="0 0 20 20"
-          fill="currentColor"
-          className="h-10 w-10 text-amber-500 transition group-hover:scale-105"
-        >
-          <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
-        </svg>
+        <Folder className="size-10 text-amber-500 transition group-hover:scale-105" />
         <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-500 dark:bg-zinc-800 dark:text-zinc-300">
           FOLDER
         </span>

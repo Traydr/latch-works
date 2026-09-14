@@ -1,4 +1,5 @@
-import { type JSX, useCallback, useEffect, useRef, useState } from 'react';
+import { ChevronLeft, Folder, FolderOpen, X } from 'lucide-react';
+import { type JSX, useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
 
 import type { FolderNode } from '../../shared/types';
 import { getFrameViewValue } from '../utils/frameViewResult';
@@ -67,6 +68,20 @@ export function FolderGridOverlay({
     };
   }, []);
 
+  const closeEvent = useEffectEvent(onClose);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeEvent();
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   useEffect(() => {
     document.body.dataset.frameViewFolderOverlay = 'open';
     return () => {
@@ -127,13 +142,7 @@ export function FolderGridOverlay({
       <div className="prism-surface z-10 mx-6 flex max-h-[72vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl">
         {/* Header with breadcrumbs */}
         <div className="flex items-center gap-2 border-b border-inherit px-5 py-3">
-          <svg
-            viewBox="0 0 20 20"
-            fill="currentColor"
-            className="h-5 w-5 flex-shrink-0 text-amber-500"
-          >
-            <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
-          </svg>
+          <Folder className="size-5 flex-shrink-0 text-amber-500" />
           <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto text-sm">
             {breadcrumbs.map((crumb, i) => {
               const isLast = i === breadcrumbs.length - 1;
@@ -157,22 +166,33 @@ export function FolderGridOverlay({
           </nav>
           <button
             type="button"
-            className={`prism-btn flex-shrink-0 ${breadcrumbs.length <= 1 ? 'pointer-events-none opacity-45' : ''}`}
+            className="prism-btn inline-flex flex-shrink-0 items-center gap-2"
+            disabled={breadcrumbs.length <= 1}
             onClick={goBack}
+            title="Back to the parent folder"
           >
+            <ChevronLeft className="size-4" />
             Back
           </button>
           {currentPath ? (
             <button
               type="button"
-              className="prism-btn flex-shrink-0"
+              className="prism-btn inline-flex flex-shrink-0 items-center gap-2"
               onClick={() => selectAndClose(currentPath)}
+              title="Open and scan this folder"
             >
+              <FolderOpen className="size-4" />
               Open
             </button>
           ) : null}
-          <button type="button" className="prism-btn flex-shrink-0" onClick={onClose}>
-            ✕
+          <button
+            type="button"
+            className="prism-btn inline-flex flex-shrink-0 items-center"
+            onClick={onClose}
+            title="Close"
+            aria-label="Close"
+          >
+            <X className="size-4" />
           </button>
         </div>
 
@@ -219,13 +239,9 @@ export function FolderGridOverlay({
                       onDoubleClick={() => selectAndClose(folder.path)}
                       title={`Click to browse into, double-click to open\n${folder.path}`}
                     >
-                      <svg
-                        viewBox="0 0 20 20"
-                        fill="currentColor"
-                        className={`h-8 w-8 ${isExcluded ? 'text-zinc-400 dark:text-zinc-600' : 'text-amber-500'}`}
-                      >
-                        <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
-                      </svg>
+                      <Folder
+                        className={`size-8 ${isExcluded ? 'text-zinc-400 dark:text-zinc-600' : 'text-amber-500'}`}
+                      />
                       <span className="w-full truncate text-center text-xs font-medium">
                         {folder.name}
                       </span>

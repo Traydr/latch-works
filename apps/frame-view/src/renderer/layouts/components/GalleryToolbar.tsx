@@ -13,6 +13,8 @@ import type { AppSettings, GallerySortMode } from '../../../shared/types';
 import { SortMenu } from './SortMenu';
 
 interface GalleryToolbarProps {
+  /** The opened root has child folders excluded from recursive scans: Folders shows a dot. */
+  excludesActive: boolean;
   /** Comic grouping and recursive browsing need an opened folder to act on. */
   hasRootFolder: boolean;
   isRefreshing: boolean;
@@ -34,6 +36,7 @@ function toolButtonClass(active = false): string {
 }
 
 export function GalleryToolbar({
+  excludesActive,
   hasRootFolder,
   isRefreshing,
   onChangeSortMode,
@@ -103,12 +106,18 @@ export function GalleryToolbar({
       </button>
       <button
         type="button"
-        className={toolButtonClass()}
+        className={`${toolButtonClass()} relative`}
         onClick={onToggleFolderOverlay}
-        title="Browse subfolders"
+        title={excludesActive ? 'Browse subfolders (some are excluded)' : 'Browse subfolders'}
       >
         <Folders className="size-4" />
         Folders
+        {excludesActive ? (
+          <span
+            aria-hidden="true"
+            className="absolute -top-1 -right-1 size-2 rounded-full bg-violet-500"
+          />
+        ) : null}
       </button>
       <div className="h-5 w-px bg-zinc-200 dark:bg-zinc-700" />
       <button
