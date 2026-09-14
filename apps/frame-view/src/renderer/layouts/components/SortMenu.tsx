@@ -1,3 +1,4 @@
+import { ArrowUpDown, Check, ChevronUp } from 'lucide-react';
 import type { JSX } from 'react';
 
 import type { GallerySortMode } from '../../../shared/types';
@@ -31,19 +32,15 @@ export function SortMenu({
     <>
       <button
         type="button"
-        className={`prism-btn flex items-center gap-2 ${sortMenuOpen ? 'bg-zinc-200 dark:bg-zinc-700' : ''}`}
+        className={`prism-btn inline-flex items-center gap-2 whitespace-nowrap ${sortMenuOpen ? 'bg-zinc-200 dark:bg-zinc-700' : ''}`}
         onClick={onToggleOpen}
         aria-haspopup="menu"
         aria-expanded={sortMenuOpen}
+        title="Sort"
       >
+        <ArrowUpDown className="size-4" />
         {activeSortLabel}
-        <svg
-          viewBox="0 0 20 20"
-          fill="currentColor"
-          className={`h-3 w-3 transition-transform ${sortMenuOpen ? 'rotate-180' : ''}`}
-        >
-          <path d="M5.5 7.5 10 12l4.5-4.5" />
-        </svg>
+        <ChevronUp className={`size-3 transition-transform ${sortMenuOpen ? 'rotate-180' : ''}`} />
       </button>
 
       {sortMenuOpen ? (
@@ -70,7 +67,7 @@ export function SortMenu({
                 }}
               >
                 <span>{option.label}</span>
-                {selected ? <span>•</span> : null}
+                {selected ? <Check className="size-3.5" /> : null}
               </button>
             );
           })}

@@ -1,3 +1,4 @@
+import { ArrowUp, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { JSX } from 'react';
 
 interface GalleryHeaderProps {
@@ -72,27 +73,33 @@ export function GalleryHeader({
             <>
               <button
                 type="button"
-                className={`prism-btn ${folderNavigation.canOpenParentFolder ? '' : 'pointer-events-none opacity-45'}`}
+                className="prism-btn inline-flex items-center gap-2"
                 onClick={folderNavigation.onOpenParentFolder}
                 disabled={!folderNavigation.canOpenParentFolder}
+                title="Open the parent folder"
               >
+                <ArrowUp className="size-4" />
                 Parent
               </button>
               <button
                 type="button"
-                className={`prism-btn ${folderNavigation.canGoToPreviousFolder ? '' : 'pointer-events-none opacity-45'}`}
+                className="prism-btn inline-flex items-center gap-2"
                 onClick={folderNavigation.onOpenPreviousFolder}
                 disabled={!folderNavigation.canGoToPreviousFolder}
+                title="Open the previous sibling folder"
               >
+                <ChevronLeft className="size-4" />
                 Prev Folder
               </button>
               <button
                 type="button"
-                className={`prism-btn ${folderNavigation.canGoToNextFolder ? '' : 'pointer-events-none opacity-45'}`}
+                className="prism-btn inline-flex items-center gap-2"
                 onClick={folderNavigation.onOpenNextFolder}
                 disabled={!folderNavigation.canGoToNextFolder}
+                title="Open the next sibling folder"
               >
                 Next Folder
+                <ChevronRight className="size-4" />
               </button>
             </>
           ) : null}

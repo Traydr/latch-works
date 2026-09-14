@@ -1,11 +1,14 @@
-import { type JSX, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type JSX, useCallback, useEffect, useRef } from 'react';
 
 import type { MediaItem } from '../../shared/types';
+import { useCoarsePointer } from '../hooks/useCoarsePointer';
 import { useViewerChromeIdle } from '../hooks/useViewerChromeIdle';
 import { useViewerKeyboardControls } from '../hooks/useViewerKeyboardControls';
+import { useViewerVideoModel, type ViewerVideoModel } from '../hooks/useViewerVideoModel';
 import { formatBytes, formatDuration, toFileUrl } from '../utils/path';
 import { ViewerChrome } from './viewer/ViewerChrome';
-import { ViewerVideoControls } from './viewer/ViewerVideoControls';
+import { VideoPlayerChrome } from './viewer/video-player/VideoPlayerChrome';
+import { useHoldToBoost } from './viewer/video-player/video-player-controls';
 
 interface ViewerModalProps {
   items: MediaItem[];
@@ -16,26 +19,6 @@ interface ViewerModalProps {
   canStepForward: boolean;
   onClose: () => void;
   onStep: (delta: number) => void;
-}
-
-const VIEWER_VOLUME_STORAGE_KEY = 'frameview.viewer.volume';
-
-function readPersistedVolume(): number {
-  try {
-    const raw = window.localStorage.getItem(VIEWER_VOLUME_STORAGE_KEY);
-    if (!raw) {
-      return 1;
-    }
-
-    const parsed = Number(raw);
-    if (!Number.isFinite(parsed)) {
-      return 1;
-    }
-
-    return Math.max(0, Math.min(1, parsed));
-  } catch {
-    return 1;
-  }
 }
 
 function buildViewerDetails(item: MediaItem, loadedDuration: number): string[] {
@@ -57,48 +40,46 @@ function buildViewerDetails(item: MediaItem, loadedDuration: number): string[] {
   ];
 }
 
-export function ViewerModal({
-  items,
-  index,
+export function ViewerModal({ items, index, ...rest }: ViewerModalProps): JSX.Element | null {
+  const item = items[index];
+  if (!item) {
+    return null;
+  }
+
+  return <ViewerDialog item={item} {...rest} />;
+}
+
+interface ViewerDialogProps extends Omit<ViewerModalProps, 'items' | 'index'> {
+  item: MediaItem;
+}
+
+function ViewerDialog({
+  item,
   autoplayVideos,
   loopVideos,
   canStepBackward,
   canStepForward,
   onClose,
   onStep,
-}: ViewerModalProps): JSX.Element | null {
-  const item = useMemo(() => items[index], [items, index]);
-  const isVideoItem = item?.mediaType === 'video';
+}: ViewerDialogProps): JSX.Element {
+  const isVideoItem = item.mediaType === 'video';
   const modalRef = useRef<HTMLDialogElement | null>(null);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const isScrubbingRef = useRef(false);
   const queuedStepRef = useRef(0);
   const stepFrameRef = useRef<number | null>(null);
-  const speedBoostHeldRef = useRef(false);
+  const isCoarsePointer = useCoarsePointer();
 
-  const [playing, setPlaying] = useState(false);
-  const [duration, setDuration] = useState(0);
-  const [position, setPosition] = useState(0);
-  const [volume, setVolume] = useState(() => readPersistedVolume());
-  const [speed, setSpeed] = useState(1);
-
-  const chromePinned = isVideoItem && !playing;
-  const { chromeVisible, revealChrome, chromeVisibilityClass } = useViewerChromeIdle({
+  const model = useViewerVideoModel({ autoplayVideos, item, loopVideos, modalRef });
+  // Video chrome pins while paused and idles away during playback.
+  const chromePinned = isVideoItem && !model.playing;
+  const { chromeVisible, revealChrome, toggleChrome, chromeVisibilityClass } = useViewerChromeIdle({
     pinned: chromePinned,
   });
+  const hold = useHoldToBoost(model);
 
   useEffect(() => {
     const dialog = modalRef.current;
     dialog?.showModal();
     return () => dialog?.close();
-  }, []);
-
-  const applySpeed = useCallback((nextSpeed: number): void => {
-    setSpeed(nextSpeed);
-
-    if (videoRef.current) {
-      videoRef.current.playbackRate = nextSpeed;
-    }
   }, []);
 
   const queueStep = useCallback(
@@ -131,113 +112,9 @@ export function ViewerModal({
     };
   }, []);
 
-  useViewerKeyboardControls({
-    applySpeed,
-    isVideoItem,
-    item,
-    onChangePosition: setPosition,
-    onClose,
-    queueStep,
-    revealChrome,
-    speedBoostHeldRef,
-    videoRef,
-  });
+  useViewerKeyboardControls({ isVideoItem, model, onClose, queueStep, revealChrome });
 
-  if (!item) {
-    return null;
-  }
-
-  const details = buildViewerDetails(item, duration);
-  const canSeek = Number.isFinite(duration) && duration > 0;
-
-  const commitSeek = (rawTarget: number): void => {
-    const video = videoRef.current;
-    if (!video) {
-      return;
-    }
-
-    const total = video.duration;
-    if (!Number.isFinite(total) || total <= 0) {
-      return;
-    }
-
-    const safeTotal = Math.max(0, total - 0.05);
-    const nextTime = Math.max(0, Math.min(safeTotal, rawTarget));
-    const wasPlaying = !video.paused;
-
-    const fastSeek = video.fastSeek?.bind(video);
-    if (fastSeek) {
-      fastSeek(nextTime);
-    } else {
-      video.currentTime = nextTime;
-    }
-
-    setPosition(nextTime);
-
-    if (wasPlaying) {
-      void video.play().catch(() => {
-        // Keep paused if resume cannot start.
-      });
-    }
-  };
-
-  const toggleVideoPlayback = (): void => {
-    const video = videoRef.current;
-    if (!video) {
-      return;
-    }
-
-    if (video.paused) {
-      void video.play();
-    } else {
-      video.pause();
-    }
-  };
-
-  const skip = (seconds: number): void => {
-    const video = videoRef.current;
-    if (!video) {
-      return;
-    }
-
-    const total = video.duration;
-    if (!Number.isFinite(total) || total <= 0) {
-      return;
-    }
-
-    commitSeek(video.currentTime + seconds);
-  };
-
-  const toggleFullscreen = async (): Promise<void> => {
-    if (!modalRef.current) {
-      return;
-    }
-
-    if (document.fullscreenElement) {
-      await document.exitFullscreen();
-      return;
-    }
-
-    await modalRef.current.requestFullscreen();
-  };
-
-  const changeVolume = (nextVolume: number): void => {
-    const clamped = Math.max(0, Math.min(1, nextVolume));
-    setVolume(clamped);
-    try {
-      window.localStorage.setItem(VIEWER_VOLUME_STORAGE_KEY, String(clamped));
-    } catch {
-      // Ignore storage write errors.
-    }
-    if (videoRef.current) {
-      videoRef.current.volume = clamped;
-    }
-  };
-
-  const changeSpeed = (nextSpeed: number): void => {
-    speedBoostHeldRef.current = false;
-    applySpeed(nextSpeed);
-  };
+  const details = buildViewerDetails(item, model.duration);
 
   return (
     <dialog
@@ -248,22 +125,40 @@ export function ViewerModal({
         event.preventDefault();
         onClose();
       }}
-      onMouseMove={revealChrome}
-      onPointerDown={revealChrome}
+      onMouseMove={() => {
+        // Touch taps synthesize a mousemove; only a real cursor should wake the chrome.
+        if (!isCoarsePointer) revealChrome();
+      }}
+      onPointerDown={(event) => {
+        if (event.pointerType === 'mouse') revealChrome();
+      }}
     >
       <ViewerChrome
         canStepBackward={canStepBackward}
         canStepForward={canStepForward}
         chromeVisibilityClass={chromeVisibilityClass}
         details={details}
+        isFullscreen={model.isFullscreen}
         item={item}
         onClose={onClose}
         onStep={onStep}
-        onToggleFullscreen={() => void toggleFullscreen()}
+        onToggleFullscreen={() => void model.toggleFullscreen()}
       />
 
-      {/* Center media */}
-      <div className="flex h-full items-center justify-center p-3">
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: the picture takes play/pause and hold-to-boost; the hotkeys cover the keyboard */}
+      {/* biome-ignore lint/a11y/useKeyWithClickEvents: see above */}
+      <div
+        className="flex h-full select-none items-center justify-center p-3 [-webkit-touch-callout:none]"
+        {...hold.handlers}
+        onClick={() => {
+          if (!isVideoItem) return;
+          // The tap that ended a hold-to-boost is not a tap on the picture.
+          if (hold.consumeSuppressedClick()) return;
+          // A tap on the picture shows or hides the controls; a click plays or pauses.
+          if (isCoarsePointer) toggleChrome();
+          else model.toggleVideoPlayback();
+        }}
+      >
         {item.mediaType === 'image' ? (
           <img
             src={toFileUrl(item.path)}
@@ -271,76 +166,67 @@ export function ViewerModal({
             className="max-h-full max-w-full object-contain [outline:1px_solid_rgba(255,255,255,0.1)]"
           />
         ) : (
-          <video
-            key={item.id}
-            ref={videoRef}
-            src={toFileUrl(item.path)}
-            className="max-h-full max-w-full bg-black object-contain"
-            autoPlay={autoplayVideos}
-            loop={loopVideos}
-            preload="auto"
-            playsInline
-            onLoadedMetadata={(event) => {
-              const loadedDuration = event.currentTarget.duration;
-              event.currentTarget.volume = volume;
-              event.currentTarget.playbackRate = speed;
-              if (Number.isFinite(loadedDuration)) {
-                setDuration(loadedDuration);
-              }
-              if (autoplayVideos) {
-                void event.currentTarget.play().catch(() => {
-                  // Ignore autoplay failures caused by platform policy.
-                });
-              }
-            }}
-            onDurationChange={(event) => {
-              const nextDuration = event.currentTarget.duration;
-              if (Number.isFinite(nextDuration)) {
-                setDuration(nextDuration);
-              }
-            }}
-            onTimeUpdate={(event) => {
-              if (!isScrubbingRef.current) {
-                setPosition(event.currentTarget.currentTime || 0);
-              }
-            }}
-            onPlay={() => setPlaying(true)}
-            onPause={() => setPlaying(false)}
-            onEnded={(event) => {
-              if (loopVideos) {
-                event.currentTarget.currentTime = 0;
-                void event.currentTarget.play().catch(() => {
-                  // Keep ended state if replay cannot start.
-                });
-              } else {
-                setPlaying(false);
-              }
-            }}
-          />
+          <ViewerVideo model={model} />
         )}
       </div>
 
-      {/* Video controls */}
-      {item.mediaType === 'video' ? (
-        <ViewerVideoControls
-          canSeek={canSeek}
-          chromeVisibilityClass={chromeVisibilityClass}
-          duration={duration}
-          onChangePosition={setPosition}
-          onChangeScrubbing={(scrubbing) => {
-            isScrubbingRef.current = scrubbing;
-          }}
-          onChangeSpeed={changeSpeed}
-          onChangeVolume={changeVolume}
-          onCommitSeek={commitSeek}
-          onSkip={skip}
-          onTogglePlayback={toggleVideoPlayback}
-          playing={playing}
-          position={position}
-          speed={speed}
-          volume={volume}
-        />
+      {isVideoItem ? (
+        <VideoPlayerChrome chromeVisibilityClass={chromeVisibilityClass} model={model} />
       ) : null}
     </dialog>
+  );
+}
+
+function ViewerVideo({ model }: { model: ViewerVideoModel }): JSX.Element {
+  const { item } = model;
+  return (
+    <video
+      key={item.id}
+      ref={model.videoRef}
+      src={toFileUrl(item.path)}
+      className="max-h-full max-w-full bg-black object-contain"
+      autoPlay={model.autoplayVideos}
+      loop={model.loopVideos}
+      preload="auto"
+      playsInline
+      onLoadedMetadata={(event) => {
+        const video = event.currentTarget;
+        const loadedDuration = video.duration;
+        video.volume = model.volume;
+        video.muted = model.muted;
+        video.playbackRate = model.speed;
+        if (Number.isFinite(loadedDuration)) {
+          model.setDuration(loadedDuration);
+        }
+        if (model.autoplayVideos) {
+          void video.play().catch(() => {
+            // Ignore autoplay failures caused by platform policy.
+          });
+        }
+      }}
+      onDurationChange={(event) => {
+        const nextDuration = event.currentTarget.duration;
+        if (Number.isFinite(nextDuration)) {
+          model.setDuration(nextDuration);
+        }
+      }}
+      onTimeUpdate={(event) => {
+        if (!model.isScrubbingRef.current) {
+          model.setPosition(event.currentTarget.currentTime || 0);
+        }
+      }}
+      onPlay={() => model.setPlaying(true)}
+      onPause={() => model.setPlaying(false)}
+      onEnded={(event) => {
+        if (model.loopVideos) {
+          event.currentTarget.currentTime = 0;
+          void event.currentTarget.play().catch(() => {
+            // Keep ended state if replay cannot start.
+          });
+        } else {
+          model.setPlaying(false);
+        }
+      }}
+    />
   );
 }

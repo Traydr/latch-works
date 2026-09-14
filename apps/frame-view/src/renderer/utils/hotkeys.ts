@@ -15,6 +15,7 @@ export const HOTKEYS = {
   videoSeekBackward: ['1'],
   videoSeekForward: ['3'],
   videoTemporarySpeed: ['4'],
+  videoMute: ['m'],
 } as const;
 
 export function eventKey(event: KeyboardEvent): string {

@@ -1,36 +1,26 @@
-import { type MutableRefObject, type RefObject, useEffect, useEffectEvent } from 'react';
+import { useEffect, useEffectEvent } from 'react';
 
-import type { MediaItem } from '../../shared/types';
 import { HOTKEYS, isPlainHotkeyEvent, isTextInputTarget, matchesAnyKey } from '../utils/hotkeys';
+import { VIDEO_SKIP_SECONDS } from '../utils/videoPlayback';
+import type { ViewerVideoModel } from './useViewerVideoModel';
 
 interface UseViewerKeyboardControlsOptions {
-  applySpeed: (speed: number) => void;
   isVideoItem: boolean;
-  item: MediaItem | undefined;
-  onChangePosition: (position: number) => void;
+  model: ViewerVideoModel;
   onClose: () => void;
   queueStep: (delta: number) => void;
   revealChrome: () => void;
-  speedBoostHeldRef: MutableRefObject<boolean>;
-  videoRef: RefObject<HTMLVideoElement | null>;
 }
 
+/** Window-level hotkeys while the viewer is open; video keys drive the playback model. */
 export function useViewerKeyboardControls({
-  applySpeed,
   isVideoItem,
-  item,
-  onChangePosition,
+  model,
   onClose,
   queueStep,
   revealChrome,
-  speedBoostHeldRef,
-  videoRef,
 }: UseViewerKeyboardControlsOptions): void {
   const handleKeyDown = useEffectEvent((event: KeyboardEvent): void => {
-    if (!item) {
-      return;
-    }
-
     revealChrome();
 
     if (isTextInputTarget(event.target) && !matchesAnyKey(event, HOTKEYS.close)) {
@@ -64,89 +54,48 @@ export function useViewerKeyboardControls({
 
     if (matchesAnyKey(event, HOTKEYS.videoPlayPause)) {
       event.preventDefault();
-      const video = videoRef.current;
-      if (!video) {
-        return;
-      }
-
-      if (video.paused) {
-        void video.play();
-      } else {
-        video.pause();
-      }
-
+      model.toggleVideoPlayback();
       return;
     }
 
-    if (matchesAnyKey(event, [...HOTKEYS.videoSeekBackward, ...HOTKEYS.videoSeekForward])) {
+    if (matchesAnyKey(event, HOTKEYS.videoSeekBackward)) {
       event.preventDefault();
-      const video = videoRef.current;
-      if (!video) {
-        return;
-      }
+      model.skip(-VIDEO_SKIP_SECONDS);
+      return;
+    }
 
-      const total = video.duration;
-      if (!Number.isFinite(total) || total <= 0) {
-        return;
-      }
+    if (matchesAnyKey(event, HOTKEYS.videoSeekForward)) {
+      event.preventDefault();
+      model.skip(VIDEO_SKIP_SECONDS);
+      return;
+    }
 
-      const targetTime =
-        video.currentTime + (matchesAnyKey(event, HOTKEYS.videoSeekBackward) ? -5 : 5);
-      const safeTotal = Math.max(0, total - 0.05);
-      const nextTime = Math.max(0, Math.min(safeTotal, targetTime));
-      const wasPlaying = !video.paused;
-
-      const fastSeek = video.fastSeek?.bind(video);
-      if (fastSeek) {
-        fastSeek(nextTime);
-      } else {
-        video.currentTime = nextTime;
-      }
-
-      onChangePosition(nextTime);
-
-      if (wasPlaying) {
-        void video.play().catch(() => {
-          // Keep paused if resume cannot start.
-        });
-      }
-
+    if (matchesAnyKey(event, HOTKEYS.videoMute)) {
+      event.preventDefault();
+      model.toggleMute();
       return;
     }
 
     if (matchesAnyKey(event, HOTKEYS.videoTemporarySpeed)) {
       event.preventDefault();
-      speedBoostHeldRef.current = true;
-      applySpeed(2);
+      model.beginHoldBoost();
     }
   });
 
   const handleKeyUp = useEffectEvent((event: KeyboardEvent): void => {
-    if (!isPlainHotkeyEvent(event)) {
-      return;
+    if (isPlainHotkeyEvent(event) && matchesAnyKey(event, HOTKEYS.videoTemporarySpeed)) {
+      model.endHoldBoost();
     }
-
-    if (!matchesAnyKey(event, HOTKEYS.videoTemporarySpeed) || !speedBoostHeldRef.current) {
-      return;
-    }
-
-    speedBoostHeldRef.current = false;
-    applySpeed(1);
   });
 
-  const resetHeldSpeed = useEffectEvent((): void => {
-    if (!speedBoostHeldRef.current) {
-      return;
-    }
-
-    speedBoostHeldRef.current = false;
-    applySpeed(1);
+  const releaseHeldSpeed = useEffectEvent((): void => {
+    model.endHoldBoost();
   });
 
   useEffect(() => {
     const keyDownListener = (event: KeyboardEvent): void => handleKeyDown(event);
     const keyUpListener = (event: KeyboardEvent): void => handleKeyUp(event);
-    const blurListener = (): void => resetHeldSpeed();
+    const blurListener = (): void => releaseHeldSpeed();
 
     window.addEventListener('keydown', keyDownListener);
     window.addEventListener('keyup', keyUpListener);

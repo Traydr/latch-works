@@ -1,9 +1,23 @@
+import {
+  FolderOpen,
+  Folders,
+  ImageIcon,
+  ListTree,
+  RefreshCcw,
+  Settings,
+  Shuffle,
+} from 'lucide-react';
 import { type JSX, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { AppSettings, GallerySortMode } from '../../../shared/types';
 import { SortMenu } from './SortMenu';
 
 interface GalleryToolbarProps {
+  /** The opened root has child folders excluded from recursive scans: Folders shows a dot. */
+  excludesActive: boolean;
+  /** Comic grouping and recursive browsing need an opened folder to act on. */
+  hasRootFolder: boolean;
+  isRefreshing: boolean;
   onChangeSortMode: (mode: GallerySortMode) => void;
   onOpenFolder: () => void;
   onOpenSettings: () => void;
@@ -17,7 +31,14 @@ interface GalleryToolbarProps {
   settings: AppSettings;
 }
 
+function toolButtonClass(active = false): string {
+  return `prism-btn inline-flex items-center gap-2 whitespace-nowrap ${active ? 'prism-btn-active' : ''}`;
+}
+
 export function GalleryToolbar({
+  excludesActive,
+  hasRootFolder,
+  isRefreshing,
   onChangeSortMode,
   onOpenFolder,
   onOpenSettings,
@@ -74,33 +95,51 @@ export function GalleryToolbar({
 
   return (
     <div className="prism-surface absolute bottom-6 left-1/2 z-20 inline-flex max-w-[96vw] -translate-x-1/2 items-center gap-2 overflow-visible px-3 py-2">
-      <button type="button" className="prism-btn" onClick={onOpenFolder}>
+      <button
+        type="button"
+        className={toolButtonClass()}
+        onClick={onOpenFolder}
+        title="Open a folder"
+      >
+        <FolderOpen className="size-4" />
         Open
       </button>
       <button
         type="button"
-        className="prism-btn"
+        className={`${toolButtonClass()} relative`}
         onClick={onToggleFolderOverlay}
-        title="Browse subfolders"
+        title={excludesActive ? 'Browse subfolders (some are excluded)' : 'Browse subfolders'}
       >
+        <Folders className="size-4" />
         Folders
-      </button>
-      <button type="button" className="prism-btn" onClick={onRefresh}>
-        Refresh
+        {excludesActive ? (
+          <span
+            aria-hidden="true"
+            className="absolute -top-1 -right-1 size-2 rounded-full bg-violet-500"
+          />
+        ) : null}
       </button>
       <div className="h-5 w-px bg-zinc-200 dark:bg-zinc-700" />
       <button
         type="button"
-        className={`prism-btn ${recursive ? 'prism-btn-active' : ''}`}
+        aria-pressed={recursive}
+        className={toolButtonClass(recursive)}
+        disabled={!hasRootFolder}
         onClick={() => onToggleRecursive(!recursive)}
+        title={hasRootFolder ? 'Recursive browsing' : 'Open a folder to enable recursive browsing'}
       >
+        <ListTree className="size-4" />
         Recursive
       </button>
       <button
         type="button"
-        className={`prism-btn ${comicMode ? 'prism-btn-active' : ''}`}
+        aria-pressed={comicMode}
+        className={toolButtonClass(comicMode)}
+        disabled={!hasRootFolder}
         onClick={() => onToggleComicMode(!comicMode)}
+        title={hasRootFolder ? 'Comic grouping' : 'Open a folder for comic grouping'}
       >
+        <ImageIcon className="size-4" />
         Comic
       </button>
       <div ref={sortMenuRef} className="relative">
@@ -114,12 +153,35 @@ export function GalleryToolbar({
         />
       </div>
       {settings.sortMode === 'random' ? (
-        <button type="button" className="prism-btn" onClick={onShuffleRandom}>
+        <button
+          type="button"
+          className={toolButtonClass()}
+          onClick={onShuffleRandom}
+          title="Shuffle again"
+        >
+          <Shuffle className="size-4" />
           Shuffle
         </button>
       ) : null}
       <div className="h-5 w-px bg-zinc-200 dark:bg-zinc-700" />
-      <button type="button" className="prism-btn" onClick={onOpenSettings}>
+      <button
+        type="button"
+        className={toolButtonClass()}
+        disabled={isRefreshing}
+        onClick={onRefresh}
+        title="Refresh"
+      >
+        <RefreshCcw className={`size-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+        {isRefreshing ? 'Refreshing' : 'Refresh'}
+      </button>
+      <div className="h-5 w-px bg-zinc-200 dark:bg-zinc-700" />
+      <button
+        type="button"
+        className={toolButtonClass()}
+        onClick={onOpenSettings}
+        title="Preferences"
+      >
+        <Settings className="size-4" />
         Settings
       </button>
     </div>

@@ -170,6 +170,57 @@ test.describe("thumbnails and viewer", () => {
     await expect(window.getByRole("dialog")).toHaveCount(0);
   });
 
+  test("a video opens in the capsule player: seek, skip, mute and play/pause", async () => {
+    const { window } = session;
+    await openSettingsTab(window, "Usability");
+    await setToggle(window, "Autoplay videos in viewer", false);
+    await closeSettings(window);
+    await openFolder(session, absolute("videos"));
+    // Video tiles carry a poster on a <video>, not an <img>, so address the tile by key.
+    await window
+      .locator(`[data-gallery-item-id^="media:${absolute("videos/clip-a.mp4")}:"]`)
+      .dblclick();
+    const dialog = window.getByRole("dialog", { name: "Viewer for clip-a.mp4" });
+    await expect(dialog).toBeVisible();
+    const video = dialog.locator("video");
+    await expect
+      .poll(() => video.evaluate((element: HTMLVideoElement) => element.readyState))
+      .toBeGreaterThan(0);
+    await expect(dialog.getByRole("slider", { name: "Video seek position" })).toBeVisible();
+
+    // The fixture clips are 4 s long, so a 10 s skip lands just short of the end.
+    await window.keyboard.press("3");
+    await expect
+      .poll(() => video.evaluate((element: HTMLVideoElement) => element.currentTime))
+      .toBeGreaterThanOrEqual(3.5);
+    await dialog.getByRole("button", { name: "Back 10 seconds" }).click();
+    await expect
+      .poll(() => video.evaluate((element: HTMLVideoElement) => element.currentTime))
+      .toBeLessThan(0.5);
+
+    await dialog.getByRole("button", { name: "Volume" }).click();
+    await dialog.getByRole("button", { name: "Mute" }).click();
+    await expect
+      .poll(() => video.evaluate((element: HTMLVideoElement) => element.muted))
+      .toBe(true);
+    await dialog.getByRole("button", { name: "Unmute" }).click();
+    await expect
+      .poll(() => video.evaluate((element: HTMLVideoElement) => element.muted))
+      .toBe(false);
+
+    await dialog.getByRole("button", { name: "Play", exact: true }).click();
+    await expect
+      .poll(() => video.evaluate((element: HTMLVideoElement) => element.paused))
+      .toBe(false);
+    await dialog.getByRole("button", { name: "Pause", exact: true }).click();
+    await expect
+      .poll(() => video.evaluate((element: HTMLVideoElement) => element.paused))
+      .toBe(true);
+
+    await window.keyboard.press("Escape");
+    await expect(window.getByRole("dialog")).toHaveCount(0);
+  });
+
   test("comic mode groups leaf folders and the reader opens one", async () => {
     const { window } = session;
     await openFolder(session, absolute("comics"));

@@ -1,4 +1,4 @@
-import { type JSX, useEffect, useRef, useState } from 'react';
+import { type JSX, useEffect, useState } from 'react';
 
 import type { AppSettings, AppSettingsPatch, ThemeMode } from '../../../shared/types';
 import { SettingsSection } from './SettingsSection';
@@ -16,39 +16,7 @@ interface UsabilityTabProps {
 }
 
 export function UsabilityTab({ onUpdate, settings }: UsabilityTabProps): JSX.Element {
-  const [themeMenuOpen, setThemeMenuOpen] = useState(false);
   const [thumbnailSizeDraft, setThumbnailSizeDraft] = useState(settings.thumbnailSize);
-  const themeMenuRef = useRef<HTMLDivElement | null>(null);
-
-  const activeThemeLabel =
-    THEME_OPTIONS.find((option) => option.value === settings.theme)?.label ?? 'System';
-
-  useEffect(() => {
-    if (!themeMenuOpen) {
-      return undefined;
-    }
-
-    const onMouseDown = (event: MouseEvent): void => {
-      if (event.target instanceof Node && themeMenuRef.current?.contains(event.target)) {
-        return;
-      }
-
-      setThemeMenuOpen(false);
-    };
-
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') {
-        setThemeMenuOpen(false);
-      }
-    };
-
-    window.addEventListener('mousedown', onMouseDown);
-    window.addEventListener('keydown', onKeyDown);
-    return () => {
-      window.removeEventListener('mousedown', onMouseDown);
-      window.removeEventListener('keydown', onKeyDown);
-    };
-  }, [themeMenuOpen]);
 
   useEffect(() => {
     setThumbnailSizeDraft(settings.thumbnailSize);
@@ -58,57 +26,25 @@ export function UsabilityTab({ onUpdate, settings }: UsabilityTabProps): JSX.Ele
     <div className="space-y-4">
       <SettingsSection className="space-y-1.5">
         <span className="text-zinc-500 dark:text-zinc-400">Theme</span>
-        <div ref={themeMenuRef} className="relative">
-          <button
-            type="button"
-            className={`prism-btn flex w-full items-center justify-between gap-2 ${
-              themeMenuOpen ? 'bg-zinc-200 dark:bg-zinc-700' : ''
-            }`}
-            onClick={() => setThemeMenuOpen((open) => !open)}
-            aria-haspopup="menu"
-            aria-expanded={themeMenuOpen}
-          >
-            <span>{activeThemeLabel}</span>
-            <svg
-              viewBox="0 0 20 20"
-              fill="currentColor"
-              className={`h-3 w-3 transition-transform ${themeMenuOpen ? 'rotate-180' : ''}`}
+        <fieldset className="m-0 inline-flex gap-1 rounded-2xl border-0 bg-zinc-100/80 p-1 dark:bg-zinc-900/60">
+          <legend className="sr-only">Theme</legend>
+          {THEME_OPTIONS.map((option) => (
+            <label
+              key={option.value}
+              className="cursor-pointer rounded-xl px-3 py-1.5 text-sm text-zinc-600 transition hover:bg-white/60 has-checked:bg-white has-checked:text-violet-700 has-checked:shadow-sm dark:text-zinc-300 dark:hover:bg-zinc-800/60 dark:has-checked:bg-zinc-800 dark:has-checked:text-violet-300"
             >
-              <path d="M5.5 7.5 10 12l4.5-4.5" />
-            </svg>
-          </button>
-
-          {themeMenuOpen ? (
-            <div
-              className="prism-surface absolute left-0 top-[calc(100%+0.5rem)] z-20 w-full p-1"
-              role="menu"
-            >
-              {THEME_OPTIONS.map((option) => {
-                const selected = option.value === settings.theme;
-                return (
-                  <button
-                    key={option.value}
-                    type="button"
-                    role="menuitemradio"
-                    aria-checked={selected}
-                    className={`flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-xs transition ${
-                      selected
-                        ? 'bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300'
-                        : 'text-zinc-700 hover:bg-zinc-200 dark:text-zinc-200 dark:hover:bg-zinc-700'
-                    }`}
-                    onClick={() => {
-                      onUpdate({ theme: option.value });
-                      setThemeMenuOpen(false);
-                    }}
-                  >
-                    <span>{option.label}</span>
-                    {selected ? <span>•</span> : null}
-                  </button>
-                );
-              })}
-            </div>
-          ) : null}
-        </div>
+              <input
+                type="radio"
+                name="theme"
+                value={option.value}
+                checked={option.value === settings.theme}
+                className="sr-only"
+                onChange={() => onUpdate({ theme: option.value })}
+              />
+              {option.label}
+            </label>
+          ))}
+        </fieldset>
       </SettingsSection>
 
       <div className="grid gap-4 md:grid-cols-2">
