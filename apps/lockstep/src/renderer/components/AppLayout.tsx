@@ -2,7 +2,6 @@ import { formatBytes } from "@latch-works/media-domain";
 import {
   ArrowUpCircle,
   CircleCheck,
-  Footprints,
   ListChecks,
   Play,
   Plus,
@@ -11,6 +10,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import lockstepIcon from "../../../media/lockstep-icon.svg";
 import type {
   LockstepController,
   PlanController,
@@ -53,7 +53,7 @@ export function AppLayout({ ctrl }: { ctrl: LockstepController }) {
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-zinc-100 text-zinc-800 dark:bg-zinc-950 dark:text-zinc-100">
       <header className="flex shrink-0 items-center gap-2 border-b border-zinc-200 px-3 py-1.5 dark:border-zinc-800">
-        <Footprints className="size-3.5 text-violet-500" aria-hidden />
+        <img src={lockstepIcon} className="size-3.5 shrink-0" alt="" />
         <span className="text-xs font-semibold tracking-tight">Lockstep</span>
         {settings && settings.profiles.length > 0 ? (
           <ProfileSelect
