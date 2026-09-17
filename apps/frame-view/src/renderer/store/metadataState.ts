@@ -27,6 +27,7 @@ function patchMediaMetadata(
   }
 
   const currentItem = items[itemIndex];
+
   if (!currentItem) {
     return { changed: false, items };
   }
@@ -62,9 +63,11 @@ export function createApplyVideoMetadata(set: AppStoreSet) {
       hasChanges = hasChanges || finalItemsPatch.changed;
 
       let nextLoadingChunks = state.loadingChunks;
+
       for (let chunkIndex = 0; chunkIndex < state.loadingChunks.length; chunkIndex += 1) {
         const chunk = state.loadingChunks[chunkIndex];
         const patchedChunk = patchMediaMetadata(chunk, path, mtimeMs, size, metadata);
+
         if (!patchedChunk.changed) {
           continue;
         }
@@ -78,6 +81,7 @@ export function createApplyVideoMetadata(set: AppStoreSet) {
       const viewerItemsPatch = state.viewerItemsSnapshot
         ? patchMediaMetadata(state.viewerItemsSnapshot, path, mtimeMs, size, metadata)
         : { changed: false, items: state.viewerItemsSnapshot };
+
       hasChanges = hasChanges || viewerItemsPatch.changed;
 
       if (!hasChanges) {

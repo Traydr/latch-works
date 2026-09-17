@@ -22,6 +22,7 @@ export interface FixtureItem {
 }
 
 const FIXTURE_EPOCH_MS = Date.UTC(2026, 0, 1, 12, 0, 0);
+
 const BULK_COUNT = 70;
 
 function item(folder: string, name: string, kind: FixtureKind): Omit<FixtureItem, "mtimeMinutes"> {
@@ -68,15 +69,18 @@ const orderedItems = [
 function mtimePermutation(count: number): number[] {
   const minutes = Array.from({ length: count }, (_, index) => index);
   let state = 0x9e3779b9;
+
   for (let index = count - 1; index > 0; index -= 1) {
     state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
     const swap = state % (index + 1);
     const left = minutes[index];
     const right = minutes[swap];
+
     if (left === undefined || right === undefined) throw new Error("permutation bounds");
     minutes[index] = right;
     minutes[swap] = left;
   }
+
   return minutes;
 }
 
@@ -84,7 +88,9 @@ const permutation = mtimePermutation(orderedItems.length);
 
 export const FIXTURE_ITEMS: readonly FixtureItem[] = orderedItems.map((entry, index) => {
   const minutes = permutation[index];
+
   if (minutes === undefined) throw new Error("permutation bounds");
+
   return { ...entry, mtimeMinutes: minutes };
 });
 
@@ -94,18 +100,22 @@ export function fixtureMtimeMs(entry: FixtureItem): number {
 
 function fixtureParentPath(entry: FixtureItem): string {
   const slash = entry.path.lastIndexOf("/");
+
   return slash === -1 ? "" : entry.path.slice(0, slash);
 }
 
 /** Every folder path in the archive, including intermediate ones. */
 export function fixtureFolderPaths(): string[] {
   const folders = new Set<string>();
+
   for (const entry of FIXTURE_ITEMS) {
     const segments = fixtureParentPath(entry).split("/").filter(Boolean);
+
     for (let depth = 1; depth <= segments.length; depth += 1) {
       folders.add(segments.slice(0, depth).join("/"));
     }
   }
+
   return [...folders].sort();
 }
 
@@ -121,7 +131,9 @@ export function isFixtureImageLike(entry: FixtureItem): boolean {
 export function fixtureItemsInScope(path: string, recursive: boolean): FixtureItem[] {
   return FIXTURE_ITEMS.filter((entry) => {
     const parent = fixtureParentPath(entry);
+
     if (!recursive) return parent === path;
+
     return path === "" || parent === path || parent.startsWith(`${path}/`);
   });
 }
@@ -159,14 +171,19 @@ export interface FixtureComic {
 export function fixtureComics(browsePath: string): FixtureComic[] {
   const folders = fixtureFolderPaths();
   const comics: FixtureComic[] = [];
+
   for (const folder of folders) {
     const inside = browsePath === "" || folder.startsWith(`${browsePath}/`);
+
     if (!inside) continue;
     const isLeaf = !folders.some((other) => other.startsWith(`${folder}/`));
+
     if (!isLeaf) continue;
+
     const pages = FIXTURE_ITEMS.filter(
       (entry) => fixtureParentPath(entry) === folder && isFixtureImageLike(entry),
     );
+
     if (pages.length === 0) continue;
     comics.push({
       folderPath: folder,
@@ -174,6 +191,7 @@ export function fixtureComics(browsePath: string): FixtureComic[] {
       pages: sortFixtureItems(pages, "name-asc").map((entry) => entry.path),
     });
   }
+
   return comics;
 }
 

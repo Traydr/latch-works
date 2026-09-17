@@ -64,6 +64,7 @@ export function useLibrarySnapshotSuspense(request: LibrarySnapshotRequest) {
 
 export function useInvalidateLibrarySnapshot() {
   const queryClient = useQueryClient();
+
   return () =>
     Promise.all([
       queryClient.invalidateQueries({ queryKey: librarySnapshotKeys.all }),

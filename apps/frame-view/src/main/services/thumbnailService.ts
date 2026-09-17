@@ -16,8 +16,11 @@ import {
 } from '../thumbnail/ThumbnailBrokerService';
 
 const MAX_THUMB_MEMORY_ENTRIES = 600;
+
 const MAX_THUMB_DISK_FILES = 5000;
+
 const MAX_THUMB_DISK_FILES_BEFORE_PRUNE = MAX_THUMB_DISK_FILES + 100;
+
 const THUMB_CACHE_VERSION = 'thumb-v2';
 
 type ThumbnailTaskKind = 'image' | 'video';
@@ -58,11 +61,13 @@ interface ThumbnailServiceOptions extends ThumbnailBrokerServiceOptions {
 function toArrayBuffer(data: Uint8Array): ArrayBuffer {
   const copy = new Uint8Array(data.byteLength);
   copy.set(data);
+
   return copy.buffer;
 }
 
 function isVideoPath(mediaPath: string): boolean {
   const extension = path.extname(mediaPath).toLowerCase();
+
   return ['.mp4', '.webm', '.mov', '.mkv'].includes(extension);
 }
 
@@ -135,16 +140,19 @@ export class ThumbnailService {
     await this.ready;
 
     const fileStats = await fs.stat(mediaPath);
+
     if (!fileStats.isFile()) {
       throw new Error('Media path is not a file');
     }
 
     const cacheKey = buildThumbCacheKey(mediaPath, thumbSize, fileStats.mtimeMs, fileStats.size);
     const memoryCached = this.memoryCache.get(cacheKey);
+
     if (memoryCached) {
       this.touchMemoryCache(cacheKey, memoryCached);
       this.memoryCacheHits += 1;
       this.broker.recordMemoryHit?.(performance.now() - requestStartedAt);
+
       return {
         bytes: memoryCached,
         cacheKey,
@@ -153,10 +161,12 @@ export class ThumbnailService {
     }
 
     const diskCached = await this.maybeReadDiskThumbnail(cacheKey);
+
     if (diskCached) {
       this.cacheThumbnailMemory(cacheKey, diskCached);
       this.diskCacheHits += 1;
       this.broker.recordDiskHit?.(performance.now() - requestStartedAt);
+
       return {
         bytes: diskCached,
         cacheKey,
@@ -177,6 +187,7 @@ export class ThumbnailService {
 
     this.cacheThumbnailMemory(cacheKey, generated.bytes);
     this.generatedCount += 1;
+
     if (generated.cacheCreated) {
       this.diskCacheFileCount += 1;
       this.scheduleDiskCachePruneIfNeeded();
@@ -197,6 +208,7 @@ export class ThumbnailService {
     try {
       const entries = await fs.readdir(this.diskCacheDir, { withFileTypes: true });
       const deletionTasks: Promise<void>[] = [];
+
       for (const entry of entries) {
         if (!entry.isFile() || (!entry.name.endsWith('.png') && !entry.name.endsWith('.webp'))) {
           continue;
@@ -265,6 +277,7 @@ export class ThumbnailService {
       this.memoryCache.delete(cacheKey);
     } else if (this.memoryCache.size >= MAX_THUMB_MEMORY_ENTRIES) {
       const oldestKey = this.memoryCache.keys().next().value;
+
       if (oldestKey) {
         this.memoryCache.delete(oldestKey);
       }
@@ -297,6 +310,7 @@ export class ThumbnailService {
   private async maybeReadDiskThumbnail(cacheKey: string): Promise<Uint8Array | null> {
     try {
       const raw = await fs.readFile(this.getDiskThumbPath(cacheKey));
+
       return new Uint8Array(raw);
     } catch {
       return null;
@@ -317,9 +331,11 @@ export class ThumbnailService {
   private async pruneDiskCache(): Promise<void> {
     try {
       const entries = await fs.readdir(this.diskCacheDir, { withFileTypes: true });
+
       const cachedFiles = entries.filter(
         (entry) => entry.isFile() && (entry.name.endsWith('.png') || entry.name.endsWith('.webp')),
       );
+
       this.diskCacheFileCount = cachedFiles.length;
 
       if (cachedFiles.length <= MAX_THUMB_DISK_FILES) {
@@ -329,8 +345,10 @@ export class ThumbnailService {
       const filesWithStats = await Promise.all(
         cachedFiles.map(async (entry) => {
           const fullPath = path.join(this.diskCacheDir, entry.name);
+
           try {
             const stats = await fs.stat(fullPath);
+
             return {
               fullPath,
               mtimeMs: stats.mtimeMs,
@@ -346,8 +364,10 @@ export class ThumbnailService {
         .sort((left, right) => left.mtimeMs - right.mtimeMs);
 
       const excess = validFiles.length - MAX_THUMB_DISK_FILES;
+
       if (excess <= 0) {
         this.diskCacheFileCount = validFiles.length;
+
         return;
       }
 

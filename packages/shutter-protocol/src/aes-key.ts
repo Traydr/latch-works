@@ -24,8 +24,10 @@ export async function importAesGcmKey(
   usage: KeyUsage,
 ): Promise<CryptoKey> {
   if (isCryptoKey(key)) return key;
+
   if (key.byteLength !== CAPABILITY_KEY_BYTES) {
     throw new ProtocolError("claims_invalid", "capability keys must be 256 bits");
   }
+
   return crypto.subtle.importKey("raw", copyBytes(key), { name: "AES-GCM" }, false, [usage]);
 }

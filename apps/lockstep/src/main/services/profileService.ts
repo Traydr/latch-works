@@ -45,6 +45,7 @@ const LegacyLockstepConfigSchema = z.object({
 });
 
 type PersistedProfile = z.infer<typeof PersistedProfileSchema>;
+
 type PersistedState = z.infer<typeof PersistedStateSchema>;
 
 interface ProfileServiceOptions {
@@ -78,6 +79,7 @@ export class ProfileService {
       return Result.ok();
     } catch (error) {
       this.state = { activeProfileId: null, profiles: [] };
+
       return Result.err(unexpectedFileSystemError("init-profiles", toError(error), this.filePath));
     }
   }
@@ -95,11 +97,13 @@ export class ProfileService {
 
   getApiToken(profileId: string): string | undefined {
     const sessionToken = this.sessionTokens.get(profileId);
+
     if (sessionToken) {
       return sessionToken;
     }
 
     const profile = this.getProfile(profileId);
+
     if (!profile?.encryptedToken || !this.secretStorage.isEncryptionAvailable()) {
       return undefined;
     }
@@ -117,6 +121,7 @@ export class ProfileService {
 
   isTokenConfigured(profileId: string): boolean {
     const tokenState = this.getTokenState(profileId);
+
     return tokenState === "session" || tokenState === "secure";
   }
 
@@ -126,6 +131,7 @@ export class ProfileService {
     }
 
     const profile = this.getProfile(profileId);
+
     if (!profile?.encryptedToken) {
       return "none";
     }
@@ -136,6 +142,7 @@ export class ProfileService {
 
     try {
       this.secretStorage.decryptString(Buffer.from(profile.encryptedToken, "base64"));
+
       return "secure";
     } catch {
       return "unreadable";
@@ -154,6 +161,7 @@ export class ProfileService {
 
     if (input.token) {
       const encrypted = this.encryptToken(input.token);
+
       if (encrypted) {
         profile.encryptedToken = encrypted;
       } else {
@@ -164,11 +172,13 @@ export class ProfileService {
     }
 
     this.state.profiles.push(profile);
+
     if (!this.state.activeProfileId) {
       this.state.activeProfileId = profile.id;
     }
 
     const saveResult = await this.save();
+
     if (Result.isError(saveResult)) {
       return saveResult;
     }
@@ -181,6 +191,7 @@ export class ProfileService {
     patch: LockstepProfilePatch,
   ): Promise<ResultType<LockstepProfilePublic, FileSystemError>> {
     const profile = this.getProfile(profileId);
+
     if (!profile) {
       return Result.err(
         unexpectedFileSystemError("update-profile", new Error("Profile not found"), profileId),
@@ -190,14 +201,18 @@ export class ProfileService {
     if (patch.name) {
       profile.name = patch.name;
     }
+
     if (patch.apiUrl) {
       profile.apiUrl = patch.apiUrl;
     }
+
     if (patch.sourceRoot) {
       profile.sourceRoot = patch.sourceRoot;
     }
+
     if (patch.token) {
       const encrypted = this.encryptToken(patch.token);
+
       if (encrypted) {
         profile.encryptedToken = encrypted;
       } else {
@@ -208,6 +223,7 @@ export class ProfileService {
     }
 
     const saveResult = await this.save();
+
     if (Result.isError(saveResult)) {
       return saveResult;
     }
@@ -218,11 +234,13 @@ export class ProfileService {
   async deleteProfile(profileId: string): Promise<ResultType<LockstepSettings, FileSystemError>> {
     this.sessionTokens.delete(profileId);
     this.state.profiles = this.state.profiles.filter((profile) => profile.id !== profileId);
+
     if (this.state.activeProfileId === profileId) {
       this.state.activeProfileId = this.state.profiles[0]?.id ?? null;
     }
 
     const saveResult = await this.save();
+
     if (Result.isError(saveResult)) {
       return saveResult;
     }
@@ -241,6 +259,7 @@ export class ProfileService {
 
     this.state.activeProfileId = profileId;
     const saveResult = await this.save();
+
     if (Result.isError(saveResult)) {
       return saveResult;
     }
@@ -253,11 +272,13 @@ export class ProfileService {
     summary: LockstepRunSummary,
   ): Promise<ResultType<void, FileSystemError>> {
     const profile = this.getProfile(profileId);
+
     if (!profile) {
       return Result.ok();
     }
 
     profile.lastRun = { ...summary, profileId };
+
     return this.save();
   }
 
@@ -291,11 +312,13 @@ export class ProfileService {
 
     const raw = await readFile(this.legacyConfigPath, "utf-8");
     const parsed = LegacyLockstepConfigSchema.safeParse(JSON.parse(raw));
+
     if (!parsed.success) {
       return;
     }
 
     const legacy = parsed.data;
+
     if (!legacy.source && !legacy.apiUrl) {
       return;
     }
@@ -316,6 +339,7 @@ export class ProfileService {
     try {
       await mkdir(path.dirname(this.filePath), { recursive: true });
       await writeFile(this.filePath, `${JSON.stringify(this.state, null, 2)}\n`, "utf-8");
+
       return Result.ok();
     } catch (error) {
       return Result.err(unexpectedFileSystemError("save-profiles", toError(error), this.filePath));

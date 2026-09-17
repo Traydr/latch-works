@@ -17,6 +17,7 @@ export function ViewerOverlay(): JSX.Element | null {
 
   const activeViewerItems = viewerItemsSnapshot ?? items;
   const canStepBackward = settings.loopViewerNavigation || viewerIndex > 0;
+
   const canStepForward =
     settings.loopViewerNavigation ||
     (activeViewerItems.length > 0 && viewerIndex < activeViewerItems.length - 1);

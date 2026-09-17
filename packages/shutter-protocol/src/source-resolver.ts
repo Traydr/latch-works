@@ -19,12 +19,17 @@ import type {
 
 /** A Space or resolver identifier: lowercase, at most 64 characters, no leading or trailing separator. */
 export const IDENTIFIER_PATTERN = /^[a-z0-9](?:[a-z0-9_-]{0,62}[a-z0-9])?$/u;
+
 const PLACEHOLDER_NAME_PATTERN = /^[a-z][a-z0-9_]{0,31}$/u;
+
 const PLACEHOLDER_PATTERN = /^\{([a-z][a-z0-9_]{0,31})\}$/u;
+
 /** One decoded reference segment. Never `.` or `..`, which the grammar cannot produce. */
 const REFERENCE_SEGMENT_PATTERN = /^(?!\.{1,2}$)[A-Za-z0-9._-]{1,512}$/u;
+
 /** A hostname label a placeholder may take. `_` is tolerated because existing UploadThing ids use it. */
 const HOST_LABEL_PATTERN = /^[A-Za-z0-9_-]{1,63}$/u;
+
 /** A literal path segment or key segment: unreserved characters only. */
 const LITERAL_SEGMENT_PATTERN = /^(?!\.{1,2}$)[A-Za-z0-9._~-]+$/u;
 
@@ -55,28 +60,37 @@ export class ResolverTemplateError extends Error {
 
 function templatePart(raw: string, literalPattern: RegExp, where: string): TemplatePart {
   const placeholder = PLACEHOLDER_PATTERN.exec(raw);
+
   if (placeholder !== null) {
     const name = placeholder[1] ?? "";
+
     return { kind: "placeholder", name };
   }
+
   if (raw.includes("{") || raw.includes("}")) {
     throw new ResolverTemplateError(`a placeholder must be one whole ${where}`);
   }
+
   if (!literalPattern.test(raw)) {
     throw new ResolverTemplateError(`a literal ${where} contains unsupported characters`);
   }
+
   return { kind: "literal", value: raw };
 }
 
 function placeholderNames(parts: readonly TemplatePart[]): string[] {
   const names: string[] = [];
+
   for (const part of parts) {
     if (part.kind !== "placeholder") continue;
+
     if (names.includes(part.name)) {
       throw new ResolverTemplateError(`placeholder {${part.name}} appears more than once`);
     }
+
     names.push(part.name);
   }
+
   return names;
 }
 
@@ -85,36 +99,47 @@ export function parseUrlTemplate(url: string): ParsedUrlTemplate {
   if (!url.startsWith("https://")) {
     throw new ResolverTemplateError("a resolver template must start with https://");
   }
+
   if (url.includes("?") || url.includes("#") || url.includes("@")) {
     throw new ResolverTemplateError(
       "a resolver template cannot contain credentials, a query, or a fragment",
     );
   }
+
   const rest = url.slice("https://".length);
   const slash = rest.indexOf("/");
   const host = slash < 0 ? rest : rest.slice(0, slash);
   const path = slash < 0 ? "" : rest.slice(slash + 1);
+
   if (host.length === 0) throw new ResolverTemplateError("a resolver template needs a hostname");
+
   const hostLabels = host
     .split(".")
     .map((label) => templatePart(label, HOST_LABEL_PATTERN, "hostname label"));
+
   const hostPlaceholders = placeholderNames(hostLabels);
+
   if (hostPlaceholders.length > 1) {
     throw new ResolverTemplateError("at most one placeholder may sit in the hostname");
   }
+
   const pathSegments =
     path.length === 0
       ? []
       : path
           .split("/")
           .map((segment) => templatePart(segment, LITERAL_SEGMENT_PATTERN, "path segment"));
+
   const placeholders = [...hostPlaceholders, ...placeholderNames(pathSegments)];
+
   if (new Set(placeholders).size !== placeholders.length) {
     throw new ResolverTemplateError("a placeholder name appears more than once");
   }
+
   if (placeholders.length === 0) {
     throw new ResolverTemplateError("a resolver template needs at least one placeholder");
   }
+
   return { hostLabels, pathSegments, placeholders, hostPlaceholder: hostPlaceholders[0] };
 }
 
@@ -123,13 +148,17 @@ export function parseKeyTemplate(keyTemplate: string): ParsedKeyTemplate {
   if (keyTemplate.length === 0 || keyTemplate.startsWith("/") || keyTemplate.endsWith("/")) {
     throw new ResolverTemplateError("a key template cannot be empty or start or end with /");
   }
+
   const segments = keyTemplate
     .split("/")
     .map((segment) => templatePart(segment, LITERAL_SEGMENT_PATTERN, "key segment"));
+
   const placeholders = placeholderNames(segments);
+
   if (placeholders.length === 0) {
     throw new ResolverTemplateError("a key template needs at least one placeholder");
   }
+
   return { segments, placeholders };
 }
 
@@ -187,18 +216,24 @@ export function parseSourceReference(
   segments: readonly string[],
 ): SourceReference | undefined {
   let placeholders: readonly string[];
+
   try {
     placeholders = resolverPlaceholders(resolver);
   } catch {
     return undefined;
   }
+
   if (segments.length !== placeholders.length) return undefined;
+
   for (const [index, name] of placeholders.entries()) {
     const value = segments[index];
+
     if (value === undefined || !isReferenceSegment(value)) return undefined;
     const allowed = allowedValues(resolver, name);
+
     if (allowed !== undefined && !allowed.includes(value)) return undefined;
   }
+
   return { sourceId: resolverSourceId(resolver.id, segments), values: segments };
 }
 
@@ -224,7 +259,9 @@ function substitute(
   return parts.map((part) => {
     if (part.kind === "literal") return part.value;
     const value = values.get(part.name);
+
     if (value === undefined) throw new ResolverTemplateError(`no value for {${part.name}}`);
+
     return encode(value);
   });
 }
@@ -240,6 +277,7 @@ function valuesByName(
   if (values.length !== placeholders.length) {
     throw new ResolverTemplateError("the reference has the wrong number of segments");
   }
+
   return new Map(placeholders.map((name, index) => [name, values[index] ?? ""]));
 }
 
@@ -255,6 +293,7 @@ export function expandTemplateResolver(
   const named = valuesByName(template.placeholders, values);
   const host = substitute(template.hostLabels, named, identity).join(".");
   const path = substitute(template.pathSegments, named, encodeURIComponent).join("/");
+
   return `https://${host}/${path}`;
 }
 
@@ -269,6 +308,7 @@ export function expandPublicResolver(
 ): string {
   if (resolver.type === "template") return expandTemplateResolver(resolver, values);
   const named = valuesByName(["project", "file"], values);
+
   return `https://${named.get("project") ?? ""}.ufs.sh/f/${encodeURIComponent(named.get("file") ?? "")}`;
 }
 
@@ -290,9 +330,11 @@ export function expandS3Resolver(
   const key = keySegments.join("/");
   const encodedKey = keySegments.map(encodeURIComponent).join("/");
   const endpoint = new URL(resolver.endpoint);
+
   const url = resolver.pathStyle
     ? `${endpoint.origin}/${encodeURIComponent(resolver.bucket)}/${encodedKey}`
     : `https://${resolver.bucket}.${endpoint.host}/${encodedKey}`;
+
   return { key, url };
 }
 
@@ -304,10 +346,12 @@ export function expandS3Resolver(
  */
 function literalPathPrefix(parts: readonly TemplatePart[]): string {
   const literal: string[] = [];
+
   for (const part of parts) {
     if (part.kind === "placeholder") break;
     literal.push(part.value);
   }
+
   return literal.length === 0 ? "/" : `/${literal.join("/")}`;
 }
 
@@ -324,21 +368,26 @@ export function resolverOriginPrefixes(resolver: SourceResolverPolicy): readonly
     case "template": {
       const template = parseUrlTemplate(resolver.url);
       const path = literalPathPrefix(template.pathSegments);
+
       const hostValues =
         template.hostPlaceholder === undefined
           ? [undefined]
           : (resolver.placeholders[template.hostPlaceholder]?.allowed ?? []);
+
       return hostValues.map((hostValue) => {
         const host = template.hostLabels
           .map((label) => (label.kind === "literal" ? label.value : (hostValue ?? "")))
           .join(".");
+
         return `https://${host}${path}`;
       });
     }
+
     case "s3": {
       const template = parseKeyTemplate(resolver.keyTemplate);
       const keyPrefix = literalPathPrefix(template.segments);
       const endpoint = new URL(resolver.endpoint);
+
       return [
         resolver.pathStyle
           ? `${endpoint.origin}/${encodeURIComponent(resolver.bucket)}${keyPrefix === "/" ? "" : keyPrefix}`

@@ -10,15 +10,22 @@ import { z } from "zod";
  * falling back to the compose defaults.
  */
 export const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+
 const E2E_ROOT = path.join(REPO_ROOT, "e2e");
+
 export const FIXTURE_ARCHIVE_DIR = path.join(E2E_ROOT, ".fixtures", "archive");
+
 /** A second, tiny archive the Lockstep desktop spec pushes on top of the seeded one. */
 export const LOCKSTEP_SOURCE_DIR = path.join(E2E_ROOT, ".fixtures", "lockstep-source");
+
 export const AUTH_STATE_PATH = path.join(E2E_ROOT, ".auth", "pane-view.json");
 
 const PANE_VIEW_PORT = 3100;
+
 export const PANE_VIEW_URL = `http://127.0.0.1:${PANE_VIEW_PORT}`;
+
 export const E2E_DATABASE_NAME = "latch_works_e2e";
+
 export const E2E_BUCKET = "latch-works-e2e";
 
 const DotEnvSchema = z.object({
@@ -56,13 +63,17 @@ export interface E2eEnvironment {
 
 function parseDotEnv(contents: string) {
   const entries: [string, string][] = [];
+
   for (const line of contents.split("\n")) {
     const trimmed = line.trim();
+
     if (trimmed === "" || trimmed.startsWith("#")) continue;
     const separator = trimmed.indexOf("=");
+
     if (separator === -1) continue;
     entries.push([trimmed.slice(0, separator), trimmed.slice(separator + 1).replace(/^"|"$/g, "")]);
   }
+
   return Object.fromEntries(entries);
 }
 
@@ -71,12 +82,14 @@ export async function loadE2eEnvironment(): Promise<E2eEnvironment> {
     .then(parseDotEnv)
     // No repo-root .env: the compose defaults apply.
     .catch(() => parseDotEnv(""));
+
   const values = DotEnvSchema.parse({ ...dotEnv, ...process.env });
   const base = new URL(values.DATABASE_URL);
   const adminUrl = new URL(base);
   adminUrl.pathname = "/postgres";
   const e2eUrl = new URL(base);
   e2eUrl.pathname = `/${E2E_DATABASE_NAME}`;
+
   return {
     adminDatabaseUrl: adminUrl.toString(),
     databaseUrl: e2eUrl.toString(),
@@ -123,8 +136,10 @@ export function paneViewProcessEnv(environment: E2eEnvironment): NodeJS.ProcessE
  */
 export function electronChildEnv(extra: Record<string, string> = {}) {
   const entries: [string, string][] = [];
+
   for (const [key, value] of Object.entries(process.env)) {
     if (key !== "ELECTRON_RUN_AS_NODE" && value !== undefined) entries.push([key, value]);
   }
+
   return { ...Object.fromEntries(entries), ...extra };
 }

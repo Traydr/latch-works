@@ -12,6 +12,7 @@ import { DEFAULT_SETTINGS } from '../shared/types';
 import { buildShowcaseMediaItems, SHOWCASE_FOLDER_PATH } from './sampleArchive';
 
 type ScanListener = (event: ScanEvent) => void;
+
 type CommandListener = (command: AppCommand) => void;
 
 let settingsState: AppSettings = {
@@ -23,6 +24,7 @@ let settingsState: AppSettings = {
 };
 
 const scanListeners = new Set<ScanListener>();
+
 const commandListeners = new Set<CommandListener>();
 
 function emitScanEvent(event: ScanEvent): void {
@@ -72,6 +74,7 @@ export function installShowcaseFrameViewMock(): void {
     resolveInputPath: async (candidatePath) => Result.ok(candidatePath),
     startScan: async (options) => {
       void emitShowcaseScan(options);
+
       return Result.ok(undefined);
     },
     cancelScan: async () => Result.ok(undefined),
@@ -89,6 +92,7 @@ export function installShowcaseFrameViewMock(): void {
           ? { ...settingsState.rootGalleryPreferences, ...patch.rootGalleryPreferences }
           : settingsState.rootGalleryPreferences,
       };
+
       return Result.ok(settingsState);
     },
     revealInFolder: async () => Result.ok(undefined),
@@ -153,10 +157,12 @@ export function installShowcaseFrameViewMock(): void {
     },
     onAppCommand: (listener) => {
       commandListeners.add(listener);
+
       return () => commandListeners.delete(listener);
     },
     onScanEvent: (listener) => {
       scanListeners.add(listener);
+
       return () => scanListeners.delete(listener);
     },
   };

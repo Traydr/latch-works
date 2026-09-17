@@ -28,5 +28,6 @@ function isConfiguredOwnerSession(
   session: Awaited<ReturnType<typeof auth.api.getSession>>,
 ): boolean {
   const owner = readConfiguredOwner();
+
   return Boolean(owner && session && session.user.email === owner.email);
 }

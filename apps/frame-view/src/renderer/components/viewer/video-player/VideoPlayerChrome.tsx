@@ -40,8 +40,10 @@ export function VideoPlayerChrome({
   const [open, setOpen] = useState<CapsulePanel | null>(null);
   const capsuleRef = useRef<HTMLDivElement | null>(null);
   useOutsideClose(capsuleRef, open !== null, () => setOpen(null));
+
   const toggle = (which: CapsulePanel): void =>
     setOpen((current) => (current === which ? null : which));
+
   const fade = `transition-opacity duration-300 ${chromeVisibilityClass}`;
   const level = model.muted ? 0 : model.volume;
 
@@ -159,18 +161,23 @@ function Popup({
 
 function volumeKeyDelta(key: string): number {
   if (key === 'ArrowUp' || key === 'ArrowRight') return 0.05;
+
   if (key === 'ArrowDown' || key === 'ArrowLeft') return -0.05;
+
   return 0;
 }
 
 function VolumePanel({ model }: ModelProps): JSX.Element {
   const level = model.muted ? 0 : model.volume;
+
   const drag = useFractionDrag({
     axis: 'y',
     onCommit: model.changeVolume,
     onScrub: model.changeVolume,
   });
+
   const percent = `${level * 100}%`;
+
   return (
     <div className="flex flex-col items-center gap-1 px-2 pb-1 pt-3">
       <div
@@ -185,6 +192,7 @@ function VolumePanel({ model }: ModelProps): JSX.Element {
         tabIndex={0}
         onKeyDown={(event) => {
           const delta = volumeKeyDelta(event.key);
+
           if (delta === 0) return;
           event.preventDefault();
           event.stopPropagation();
@@ -220,6 +228,7 @@ function VolumeRow({ model }: ModelProps): JSX.Element {
   const level = model.muted ? 0 : model.volume;
   const drag = useFractionDrag({ onCommit: model.changeVolume, onScrub: model.changeVolume });
   const percent = `${level * 100}%`;
+
   return (
     <div className="flex items-center gap-2">
       <IconButton
@@ -240,6 +249,7 @@ function VolumeRow({ model }: ModelProps): JSX.Element {
         tabIndex={0}
         onKeyDown={(event) => {
           const delta = volumeKeyDelta(event.key);
+
           if (delta === 0) return;
           event.preventDefault();
           event.stopPropagation();

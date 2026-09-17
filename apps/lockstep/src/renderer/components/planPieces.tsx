@@ -16,6 +16,7 @@ export function TokenInput({
   if (profile.tokenConfigured) {
     return null;
   }
+
   return (
     <label className="grid gap-1">
       <span className="ls-label">Sync API token</span>
@@ -45,6 +46,7 @@ export function PlanList({
   emptyHint?: string;
 }) {
   const { filter, setFilter, filteredItems } = plan;
+
   return (
     <div className={`flex min-h-0 flex-col gap-2 ${className}`}>
       <label className="ls-label" htmlFor="plan-path-filter">
@@ -99,6 +101,7 @@ export function PlanLegend({
     { key: "delete", label: "delete", value: counts.delete, dot: "bg-red-500" },
     { key: "keep", label: "keep", value: counts.keep, dot: "bg-zinc-600" },
   ];
+
   return (
     <div className={`flex flex-wrap items-center gap-x-3 gap-y-1 ${className}`}>
       {entries.map((entry) => (

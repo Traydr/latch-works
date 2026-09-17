@@ -75,6 +75,7 @@ export function GalleryToolbar({
 
     window.addEventListener('mousedown', onMouseDown);
     window.addEventListener('keydown', onKeyDown);
+
     return () => {
       window.removeEventListener('mousedown', onMouseDown);
       window.removeEventListener('keydown', onKeyDown);

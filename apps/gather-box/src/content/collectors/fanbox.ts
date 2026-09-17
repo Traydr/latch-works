@@ -4,9 +4,13 @@ import { lenientArrayOf } from "../../shared/lenient-array";
 import type { GalleryCollectResponse, GalleryImage } from "../../shared/types";
 
 const FANBOX_IMAGE_LINK_SELECTOR = 'a[href^="https://downloads.fanbox.cc/images/post/"]';
+
 const FANBOX_TITLE_SELECTOR = "article h1";
+
 const FANBOX_METADATA_SELECTOR = 'meta[name="metadata"]';
+
 const FANBOX_JSON_LD_SELECTOR = 'script[type="application/ld+json"]';
+
 const FANBOX_IMAGE_EXTENSIONS = new Set(["gif", "jpeg", "jpg", "png", "webp"]);
 
 interface FanboxStructuredPost {
@@ -44,6 +48,7 @@ export function collectFanboxData(document: Document, location: PageLocation): G
   }
 
   const creatorId = getCreatorId(document, location);
+
   if (!creatorId) {
     return {
       ok: false,
@@ -54,6 +59,7 @@ export function collectFanboxData(document: Document, location: PageLocation): G
 
   const postId = getPostId(location);
   const title = getPostTitle(document);
+
   if (!title) {
     return {
       ok: false,
@@ -63,6 +69,7 @@ export function collectFanboxData(document: Document, location: PageLocation): G
   }
 
   const links = Array.from(document.querySelectorAll<HTMLAnchorElement>(FANBOX_IMAGE_LINK_SELECTOR));
+
   if (links.length === 0) {
     return {
       ok: false,
@@ -104,11 +111,13 @@ function buildFanboxImageEntry(
   seenUrls: Set<string>
 ): GalleryImage | null {
   const href = link.getAttribute("href");
+
   if (!href) {
     return null;
   }
 
   const originalUrl = new URL(href, location.href).toString();
+
   if (seenUrls.has(originalUrl) || !isFanboxImageUrl(originalUrl)) {
     return null;
   }
@@ -137,6 +146,7 @@ function isFanboxImageUrl(value: string): boolean {
 
 function getCreatorId(document: Document, location: PageLocation): string {
   const metadataCreatorId = getMetadataCreatorId(document);
+
   if (metadataCreatorId) {
     return metadataCreatorId;
   }
@@ -147,6 +157,7 @@ function getCreatorId(document: Document, location: PageLocation): string {
 function getMetadataCreatorId(document: Document): string {
   const metadata = document.querySelector<HTMLMetaElement>(FANBOX_METADATA_SELECTOR);
   const content = metadata?.getAttribute("content");
+
   if (!content) {
     return "";
   }
@@ -176,12 +187,14 @@ function getStructuredPost(document: Document): FanboxStructuredPost {
 
   for (const script of scripts) {
     const rawJson = script.textContent?.trim();
+
     if (!rawJson) {
       continue;
     }
 
     try {
       const [post] = FanboxJsonLdSchema.parse(JSON.parse(rawJson));
+
       if (!post) {
         continue;
       }
@@ -200,6 +213,7 @@ function getStructuredPost(document: Document): FanboxStructuredPost {
 
 function getTitleFromOpenGraph(document: Document): string {
   const title = document.querySelector<HTMLMetaElement>('meta[property="og:title"]')?.content.trim();
+
   if (!title) {
     return "";
   }
@@ -221,6 +235,7 @@ function getTitleFromDocumentTitle(title: string, authorName: string | null): st
 
 function getPostId(location: PageLocation): string | null {
   const match = location.pathname.match(/^\/posts\/([^/]+)/);
+
   return match ? match[1] : null;
 }
 
@@ -231,6 +246,7 @@ function buildPostFolderName(title: string, postId: string | null): string {
 function getFileName(originalUrl: string): string {
   const url = new URL(originalUrl);
   const parts = url.pathname.split("/");
+
   return parts[parts.length - 1] || "image";
 }
 
@@ -243,6 +259,7 @@ function getFileExtension(pathname: string): string {
 
 function getImageSource(image: HTMLImageElement, location: PageLocation): string | null {
   const rawSource = image.getAttribute("data-src") || image.getAttribute("src");
+
   if (!rawSource) {
     return null;
   }

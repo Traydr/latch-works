@@ -9,6 +9,7 @@ export function formatPercent(numerator: number, denominator: number): string {
   }
 
   const percent = Math.min(100, Math.round((numerator / denominator) * 100));
+
   return `${percent}%`;
 }
 
@@ -38,12 +39,15 @@ export function createLineReporter(options: CreateLineReporterOptions = {}): Lin
     }
 
     const now = Date.now();
+
     if (!force && now - lastWrite < minIntervalMs) {
       pendingLine = line;
+
       if (!flushTimer) {
         flushTimer = setTimeout(
           () => {
             flushTimer = null;
+
             if (pendingLine) {
               const next = pendingLine;
               pendingLine = null;
@@ -53,6 +57,7 @@ export function createLineReporter(options: CreateLineReporterOptions = {}): Lin
           minIntervalMs - (now - lastWrite),
         );
       }
+
       return;
     }
 
@@ -62,6 +67,7 @@ export function createLineReporter(options: CreateLineReporterOptions = {}): Lin
 
     if (tty) {
       stream.write(`\r\x1b[2K${line}`);
+
       return;
     }
 
@@ -77,6 +83,7 @@ export function createLineReporter(options: CreateLineReporterOptions = {}): Lin
         clearTimeout(flushTimer);
         flushTimer = null;
       }
+
       pendingLine = null;
 
       if (tty && lastLine) {
@@ -90,6 +97,7 @@ export function createLineReporter(options: CreateLineReporterOptions = {}): Lin
         clearTimeout(flushTimer);
         flushTimer = null;
       }
+
       pendingLine = null;
 
       if (tty && lastLine) {
@@ -103,6 +111,7 @@ export function createLineReporter(options: CreateLineReporterOptions = {}): Lin
 }
 
 export const PushStageSchema = z.enum(["deleting", "hashing", "registering", "uploading"]);
+
 export type PushStage = z.infer<typeof PushStageSchema>;
 
 export function formatPushStatus({
@@ -126,6 +135,7 @@ export function formatPushStatus({
   } satisfies Record<PushStage, string>;
 
   const suffix = detail ? ` — ${detail}` : "";
+
   return `[${current}/${total}] ${stageLabel[stage]} ${path}${suffix}`;
 }
 

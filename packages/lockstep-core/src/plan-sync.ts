@@ -21,6 +21,7 @@ export async function planSync(
   throwIfAborted(signal);
 
   let remote: Awaited<ReturnType<typeof fetchRemoteSnapshot>> = [];
+
   if (options.remoteSnapshotPath) {
     observer?.onEvent({
       type: "status",
@@ -54,6 +55,7 @@ export async function planSync(
 
   let scan: Awaited<ReturnType<typeof scanArchive>>;
   let localItems: Awaited<ReturnType<typeof scanArchive>>["items"] = [];
+
   try {
     scan = await scanArchive({
       directoryConcurrency: options.directoryConcurrency,
@@ -70,6 +72,7 @@ export async function planSync(
         cacheRoot: options.hashCacheRoot,
         sourceRoot: scan.sourceRoot,
       });
+
       if (warning) {
         observer?.onEvent({ type: "status", message: `Warning: ${warning}` });
       }
@@ -105,6 +108,7 @@ export async function planSync(
         });
       });
     }
+
     progressCoalescer.flush();
   } finally {
     progressCoalescer.dispose();
@@ -153,14 +157,18 @@ function selectPlanningHashPaths(
     localItems.map((item) => item.path),
     remoteEntries.map((entry) => entry.path),
   );
+
   const remoteByPath = new Map(remoteEntries.map((entry) => [identity(entry.path), entry]));
+
   return new Set(
     localItems
       .filter((item) => {
         if (item.sha256) {
           return false;
         }
+
         const remote = remoteByPath.get(identity(item.path));
+
         return remote?.sha256 !== undefined && remote.size === item.size;
       })
       .map((item) => item.path),

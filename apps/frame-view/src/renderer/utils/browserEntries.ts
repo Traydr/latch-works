@@ -53,11 +53,13 @@ export class BrowserEntryCollection {
     this.mediaIndexById = new Map<string, number>();
 
     let runningOffset = 0;
+
     for (const chunk of mediaChunks) {
       this.mediaChunkOffsets.push(runningOffset);
 
       for (let itemIndex = 0; itemIndex < chunk.length; itemIndex += 1) {
         const item = chunk[itemIndex];
+
         if (!item) {
           continue;
         }
@@ -100,6 +102,7 @@ export class BrowserEntryCollection {
     }
 
     const comicIndex = index - this.folderEntries.length;
+
     if (comicIndex < this.comicEntries.length) {
       return this.comicEntries[comicIndex] ?? null;
     }
@@ -108,17 +111,20 @@ export class BrowserEntryCollection {
 
     for (let chunkIndex = this.mediaChunks.length - 1; chunkIndex >= 0; chunkIndex -= 1) {
       const chunkOffset = this.mediaChunkOffsets[chunkIndex] ?? 0;
+
       if (relativeMediaIndex < chunkOffset) {
         continue;
       }
 
       const chunk = this.mediaChunks[chunkIndex];
+
       if (!chunk) {
         continue;
       }
 
       const itemIndex = relativeMediaIndex - chunkOffset;
       const media = chunk[itemIndex];
+
       if (!media) {
         return null;
       }
@@ -141,6 +147,7 @@ export class BrowserEntryCollection {
 
     if (key.startsWith('comic:')) {
       const comicIndex = this.comicEntries.findIndex((entry) => entry.key === key);
+
       return comicIndex < 0 ? -1 : this.folderEntries.length + comicIndex;
     }
 
@@ -149,6 +156,7 @@ export class BrowserEntryCollection {
     }
 
     const itemId = key.slice('media:'.length);
+
     return this.mediaIndexById.get(itemId) ?? -1;
   }
 
@@ -187,6 +195,7 @@ export function buildBrowserEntryCollection(
       : [];
 
   const mediaChunks = comicMode ? [] : isLoading ? loadingChunks : items.length > 0 ? [items] : [];
+
   return new BrowserEntryCollection(folderEntries, comicEntries, mediaChunks);
 }
 

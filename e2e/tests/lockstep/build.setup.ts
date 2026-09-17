@@ -9,16 +9,20 @@ import { LOCKSTEP_APP_DIR } from "../../src/lockstep.ts";
 setup("package Lockstep", async () => {
   setup.setTimeout(300_000);
   const mainEntry = path.join(LOCKSTEP_APP_DIR, ".vite", "build", "main.js");
+
   if (process.env.E2E_SKIP_BUILD === "1") {
     await access(mainEntry);
+
     return;
   }
+
   await new Promise<void>((resolve, reject) => {
     const child = spawn("pnpm", ["exec", "electron-forge", "package"], {
       cwd: LOCKSTEP_APP_DIR,
       env: electronChildEnv(),
       stdio: "inherit",
     });
+
     child.on("error", reject);
     child.on("exit", (code) =>
       code === 0 ? resolve() : reject(new Error(`electron-forge package exited with ${code}`)),

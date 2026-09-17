@@ -50,6 +50,7 @@ function realDependencies(): FolderDeleteDependencies {
 
 async function seedFolders(): Promise<void> {
   const { db } = testDatabase();
+
   const [object] = await db
     .insert(mediaObjects)
     .values({
@@ -61,11 +62,13 @@ async function seedFolders(): Promise<void> {
       size: 1024,
     })
     .returning({ id: mediaObjects.id });
+
   if (!object) throw new Error("failed to insert media object");
 
   for (const path of ["photos", "photos/2026", "photos/2025"]) {
     await db.insert(folders).values({ name: path.split("/").at(-1) ?? path, path });
   }
+
   for (const parentPath of ["photos/2026", "photos/2025"]) {
     await db.insert(libraryEntries).values({
       filename: "seed.jpg",
@@ -80,19 +83,23 @@ async function seedFolders(): Promise<void> {
 
 async function liveEntryPaths(): Promise<string[]> {
   const { db } = testDatabase();
+
   const rows = await db
     .select({ logicalPath: libraryEntries.logicalPath })
     .from(libraryEntries)
     .where(isNull(libraryEntries.deletedAt));
+
   return rows.map((row) => row.logicalPath).sort();
 }
 
 async function liveFolderPaths(): Promise<string[]> {
   const { db } = testDatabase();
+
   const rows = await db
     .select({ path: folders.path })
     .from(folders)
     .where(isNull(folders.deletedAt));
+
   return rows.map((row) => row.path).sort();
 }
 
@@ -190,6 +197,7 @@ describe("softDeleteFolderSubtree", () => {
     const folderStamps = await db.select({ deletedAt: folders.deletedAt }).from(folders);
     const deletedAt = stamps[0]?.deletedAt;
     expect(deletedAt).toBeInstanceOf(Date);
+
     // One `now` for the whole call: every row carries the same instant.
     for (const row of [...stamps, ...folderStamps.filter((row) => row.deletedAt !== null)]) {
       expect(row.deletedAt).toEqual(deletedAt);
@@ -242,11 +250,13 @@ async function failFolderUpdates(path: string, message: string): Promise<void> {
 /** Drizzle reports the raise as the `cause` of its own "Failed query" error. */
 async function expectFailure(work: Promise<FolderDeleteResult[]>, message: string): Promise<void> {
   let thrown: Error | null = null;
+
   try {
     await work;
   } catch (error) {
     thrown = error instanceof Error ? error : new Error(String(error));
   }
+
   expect(thrown).not.toBeNull();
   const cause = thrown?.cause;
   expect(cause instanceof Error ? cause.message : (thrown?.message ?? "")).toContain(message);

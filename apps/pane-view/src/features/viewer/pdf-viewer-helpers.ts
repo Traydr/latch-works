@@ -1,14 +1,18 @@
 const MAX_PAGE_WIDTH_PX = 896;
+
 const MAX_RETAINED_CANVASES = 8;
+
 const PAGE_OVERSCAN = 2;
 
 export function getPageRenderWidth(container: HTMLElement): number {
   const width = container.clientWidth;
+
   if (width > 0) {
     return Math.min(width, MAX_PAGE_WIDTH_PX);
   }
 
   const parentWidth = container.parentElement?.clientWidth ?? window.innerWidth;
+
   return Math.min(Math.max(parentWidth - 24, 320), MAX_PAGE_WIDTH_PX);
 }
 
@@ -19,6 +23,7 @@ export function getPdfPageRenderWindow(
 ): number[] {
   const focal = Math.min(Math.max(focalPage, 1), pageCount);
   const visible = [...new Set(visiblePages)].filter((page) => page >= 1 && page <= pageCount);
+
   const selected = new Set(
     visible.length <= MAX_RETAINED_CANVASES
       ? visible
@@ -38,15 +43,18 @@ export function getPdfPageRenderWindow(
   ) {
     const candidates = [focal - distance, focal + distance];
     let added = false;
+
     for (const page of candidates) {
       if (page >= 1 && page <= pageCount && !selected.has(page)) {
         selected.add(page);
         added = true;
+
         if (selected.size === MAX_RETAINED_CANVASES) {
           break;
         }
       }
     }
+
     if (!added && focal - distance < 1 && focal + distance > pageCount) {
       break;
     }
@@ -72,6 +80,7 @@ export function resolveVisiblePdfPage(entries: readonly PdfPageIntersection[]): 
 
     const pageValue = entry.target.getAttribute("data-page-number");
     const pageNumber = pageValue ? Number(pageValue) : Number.NaN;
+
     if (!Number.isFinite(pageNumber) || pageNumber < 1) {
       continue;
     }

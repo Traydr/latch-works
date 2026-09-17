@@ -13,6 +13,7 @@ export function normalizeSourceOriginPathPrefix(pathPrefix: string | undefined):
   if (pathPrefix === undefined) return "/";
   const rooted = pathPrefix.startsWith("/") ? pathPrefix : `/${pathPrefix}`;
   const trimmed = rooted.replace(/\/+$/u, "");
+
   return trimmed === "" ? "/" : trimmed;
 }
 
@@ -28,6 +29,7 @@ export function validateSourceLocator(locator: string, rules: readonly SourceOri
   }
 
   let url: URL;
+
   try {
     url = new URL(locator);
   } catch {
@@ -43,16 +45,21 @@ export function validateSourceLocator(locator: string, rules: readonly SourceOri
 
   const allowed = rules.some((rule) => {
     let origin: URL;
+
     try {
       origin = new URL(rule.origin);
     } catch {
       return false;
     }
+
     if (origin.origin !== url.origin || origin.pathname !== "/" || origin.search || origin.hash) {
       return false;
     }
+
     const normalizedPrefix = normalizeSourceOriginPathPrefix(rule.pathPrefix);
+
     if (normalizedPrefix === "/") return true;
+
     return url.pathname === normalizedPrefix || url.pathname.startsWith(`${normalizedPrefix}/`);
   });
 

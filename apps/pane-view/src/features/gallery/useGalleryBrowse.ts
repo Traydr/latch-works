@@ -102,6 +102,7 @@ function emptyAccumulation(browseKey: string): Accumulation {
 function dedupeEntries(...lists: readonly (readonly GalleryBrowseEntry[])[]): GalleryBrowseEntry[] {
   const seen = new Set<string>();
   const merged: GalleryBrowseEntry[] = [];
+
   for (const list of lists) {
     for (const entry of list) {
       if (!seen.has(entry.key)) {
@@ -110,6 +111,7 @@ function dedupeEntries(...lists: readonly (readonly GalleryBrowseEntry[])[]): Ga
       }
     }
   }
+
   return merged;
 }
 
@@ -142,11 +144,13 @@ export function useGalleryBrowse({
   source = defaultSource,
 }: UseGalleryBrowseOptions): GalleryBrowseSession {
   const queryClient = useQueryClient();
+
   const {
     data: library,
     isFetching: isSnapshotFetching,
     isPlaceholderData: isSnapshotPlaceholderData,
   } = useLibrarySnapshotQuery(snapshotRequest);
+
   const {
     data: firstPage,
     isFetching: isListingFetching,
@@ -182,6 +186,7 @@ export function useGalleryBrowse({
   // effect — including the thumbnail resolver's debounce.
   const staleAccumulation = useMemo(() => emptyAccumulation(browseKey), [browseKey]);
   const accumulation = stored.browseKey === browseKey ? stored : staleAccumulation;
+
   const inFlightRef = useRef<{ browseKey: string; promise: Promise<LoadNextPageResult> } | null>(
     null,
   );
@@ -210,6 +215,7 @@ export function useGalleryBrowse({
    * content itself — thumbnail resolution above all — must use this instead.
    */
   const contentBrowseKey = firstPageIsCurrent ? browseKey : null;
+
   const firstPageEntries = useMemo(
     () => (firstPage ? toGalleryBrowseEntries(firstPage) : []),
     [firstPage],
@@ -219,14 +225,17 @@ export function useGalleryBrowse({
     () => dedupeEntries(firstPageEntries, accumulation.entries),
     [accumulation.entries, firstPageEntries],
   );
+
   const allMedia = useMemo(
     () =>
       entries.flatMap((entry) => {
         const item = entryMedia(entry);
+
         return item ? [item] : [];
       }),
     [entries],
   );
+
   const media = useMemo(
     () =>
       excludedMediaIds?.size ? allMedia.filter((item) => !excludedMediaIds.has(item.id)) : allMedia,
@@ -237,8 +246,10 @@ export function useGalleryBrowse({
   // rewind pagination.
   const cursor =
     accumulation.cursor ?? (firstPageIsCurrent ? (firstPage?.page.cursor ?? null) : null);
+
   const hasMore =
     accumulation.hasMore ?? (firstPageIsCurrent ? (firstPage?.page.hasMore ?? false) : false);
+
   const page: GalleryPageState = useMemo(
     () => ({ cursor, error: accumulation.error, hasMore, loading: accumulation.loading }),
     [accumulation.error, accumulation.loading, cursor, hasMore],
@@ -251,9 +262,11 @@ export function useGalleryBrowse({
   const loadNextPage = useCallback((): Promise<LoadNextPageResult> => {
     const live = liveRef.current;
     const inFlight = inFlightRef.current;
+
     if (inFlight && inFlight.browseKey === live.browseKey) {
       return inFlight.promise;
     }
+
     if (!live.hasMore || !live.cursor) {
       return Promise.resolve({ appendedEntryKeys: [], appendedMediaIds: [], exhausted: true });
     }
@@ -264,15 +277,19 @@ export function useGalleryBrowse({
     // The promise compares against its own identity in `finally`, so it is
     // assigned after construction and read through this binding.
     let ownPromise: Promise<LoadNextPageResult> | null = null;
+
     const promise = (async (): Promise<LoadNextPageResult> => {
       try {
         const next = await source.loadPage({ ...live.listingRequest, cursor: requestCursor });
+
         if (liveRef.current.browseKey !== key) {
           throw new StaleBrowseError();
         }
+
         if (next.page.hasMore && next.page.cursor === requestCursor) {
           throw new Error("Gallery listing cursor did not advance");
         }
+
         const nextEntries = toGalleryBrowseEntries(next);
         const known = new Set(liveRef.current.entries.map((entry) => entry.key));
         const appended = nextEntries.filter((entry) => !known.has(entry.key));
@@ -283,10 +300,12 @@ export function useGalleryBrowse({
           error: null,
           hasMore: next.page.hasMore,
         }));
+
         return {
           appendedEntryKeys: appended.map((entry) => entry.key),
           appendedMediaIds: appended.flatMap((entry) => {
             const item = entryMedia(entry);
+
             return item ? [item.id] : [];
           }),
           exhausted: !next.page.hasMore,
@@ -295,16 +314,20 @@ export function useGalleryBrowse({
         if (!(error instanceof StaleBrowseError)) {
           updateAccumulation(key, (current) => ({ ...current, error }));
         }
+
         throw error;
       } finally {
         if (inFlightRef.current?.promise === ownPromise) {
           inFlightRef.current = null;
         }
+
         updateAccumulation(key, (current) => ({ ...current, loading: false }));
       }
     })();
+
     ownPromise = promise;
     inFlightRef.current = { browseKey: key, promise };
+
     return promise;
   }, [source, updateAccumulation]);
 
@@ -323,37 +346,52 @@ export function useGalleryBrowse({
       loop: boolean,
     ): Promise<string | null> => {
       const key = liveRef.current.browseKey;
+
       const wrapForward = () => {
         // Read the sequence again: a page-1 refetch or a local deletion may
         // have changed it while the load was in flight.
         const first = pick()[0];
+
         return loop && first && identify(first) !== current ? identify(first) : null;
       };
+
       const sequence = pick();
       const index = current ? sequence.findIndex((item) => identify(item) === current) : -1;
+
       if (direction === 1) {
         const next = sequence[index + 1];
+
         if (next) return identify(next);
+
         if (liveRef.current.hasMore) {
           try {
             const result = await loadNextPage();
+
             if (liveRef.current.browseKey !== key) return null;
             const appended = firstAppended(result);
+
             if (appended) return appended;
+
             if (!result.exhausted) return null;
           } catch {
             return null;
           }
         }
+
         return wrapForward();
       }
+
       const previous = index > 0 ? sequence[index - 1] : undefined;
+
       if (previous) return identify(previous);
       const first = index < 0 ? sequence[0] : undefined;
+
       if (first) return identify(first);
+
       // Decision 7: no backward wrap while more pages exist.
       if (liveRef.current.hasMore) return null;
       const last = sequence.at(-1);
+
       return loop && last && identify(last) !== current ? identify(last) : null;
     },
     [loadNextPage],
@@ -388,6 +426,7 @@ export function useGalleryBrowse({
   const openComic = useCallback(
     (comicId: string): Promise<ComicEntry<LibraryMediaItem>> => {
       const request = liveRef.current.listingRequest;
+
       return queryClient.fetchQuery({
         queryFn: () =>
           source.loadComic({

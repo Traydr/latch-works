@@ -150,18 +150,23 @@ function Popup({
 
 function volumeKeyDelta(key: string): number {
   if (key === "ArrowUp" || key === "ArrowRight") return 0.05;
+
   if (key === "ArrowDown" || key === "ArrowLeft") return -0.05;
+
   return 0;
 }
 
 function VolumePanel({ model }: VideoPlayerChromeProps): JSX.Element {
   const level = model.muted ? 0 : model.volume;
+
   const drag = useFractionDrag({
     axis: "y",
     onCommit: model.changeVolume,
     onScrub: model.changeVolume,
   });
+
   const percent = `${level * 100}%`;
+
   return (
     <div className="flex flex-col items-center gap-1 px-2 pb-1 pt-3">
       <div
@@ -176,6 +181,7 @@ function VolumePanel({ model }: VideoPlayerChromeProps): JSX.Element {
         tabIndex={0}
         onKeyDown={(event) => {
           const delta = volumeKeyDelta(event.key);
+
           if (delta === 0) return;
           event.preventDefault();
           event.stopPropagation();
@@ -211,6 +217,7 @@ function VolumeRow({ model }: VideoPlayerChromeProps): JSX.Element {
   const level = model.muted ? 0 : model.volume;
   const drag = useFractionDrag({ onCommit: model.changeVolume, onScrub: model.changeVolume });
   const percent = `${level * 100}%`;
+
   return (
     <div className="flex items-center gap-2">
       <IconButton
@@ -231,6 +238,7 @@ function VolumeRow({ model }: VideoPlayerChromeProps): JSX.Element {
         tabIndex={0}
         onKeyDown={(event) => {
           const delta = volumeKeyDelta(event.key);
+
           if (delta === 0) return;
           event.preventDefault();
           event.stopPropagation();

@@ -4,6 +4,7 @@ export { formatBytes };
 
 export function formatPushError(error: Error): string {
   const cause = error.cause;
+
   if (cause instanceof Error) {
     return `${error.message} (${cause.message})`;
   }

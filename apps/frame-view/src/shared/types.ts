@@ -26,13 +26,21 @@ import type {
 } from './contracts';
 
 export type MediaType = z.infer<typeof MediaTypeSchema>;
+
 export type ThemeMode = z.infer<typeof ThemeModeSchema>;
+
 export type GallerySortMode = z.infer<typeof GallerySortModeSchema>;
+
 export type FileFilterSettings = z.infer<typeof FileFilterSettingsSchema>;
+
 export type DebugSettings = z.infer<typeof DebugSettingsSchema>;
+
 export type RootGalleryPreferences = z.infer<typeof RootGalleryPreferencesSchema>;
+
 export type RootGalleryPreferencesMap = z.infer<typeof RootGalleryPreferencesMapSchema>;
+
 export type AppSettings = z.infer<typeof AppSettingsSchema>;
+
 export type AppSettingsPatch = z.infer<typeof AppSettingsPatchSchema>;
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -62,15 +70,25 @@ export const DEFAULT_SETTINGS: AppSettings = {
 };
 
 export type MediaItem = z.infer<typeof MediaItemSchema>;
+
 export type VideoProbeRequest = z.infer<typeof VideoProbeRequestSchema>;
+
 export type VideoProbeMetadata = z.infer<typeof VideoProbeMetadataSchema>;
+
 export type ScanOptions = z.infer<typeof ScanOptionsSchema>;
+
 export type FolderNode = z.infer<typeof FolderNodeSchema>;
+
 export type ScanEvent = z.infer<typeof ScanEventSchema>;
+
 export type MediaIndexStats = z.infer<typeof MediaIndexStatsSchema>;
+
 export type MediaToolsStatus = z.infer<typeof MediaToolsStatusSchema>;
+
 export type DiagnosticsSnapshot = z.infer<typeof DiagnosticsSnapshotSchema>;
+
 export type AppCommand = z.infer<typeof AppCommandSchema>;
+
 export type IpcErrorPayload = z.infer<typeof IpcErrorPayloadSchema>;
 
 export type FrameViewResult<T> = Result<T, IpcErrorPayload>;

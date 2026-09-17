@@ -1,7 +1,9 @@
 import type { SHUTTER_FORMAT } from "./constants.js";
 
 export type RouteClass = "public" | "private";
+
 export type PreviewKind = "video" | "pdf";
+
 export type CapabilityPurpose =
   | "image_source"
   | "source_delivery"
@@ -135,6 +137,7 @@ export const FAILURE_ACTIONS = {
 } as const;
 
 export type JobFailureCode = keyof typeof FAILURE_ACTIONS;
+
 export type JobFailureAction = (typeof FAILURE_ACTIONS)[JobFailureCode];
 
 export type ActiveJobRepresentation = {

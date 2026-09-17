@@ -16,8 +16,11 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 /** The masters use a 1024-unit viewBox at 72 dpi, so doubling the density renders 2048 px. */
 const MASTER_DENSITY = 144;
+
 const MASTER_SIZE = 2048;
+
 const ICO_SIZES = [16, 32, 48, 64, 128, 256];
+
 /** ICNS element types by pixel size. The `@2x` types share pixels with the next size up. */
 const ICNS_TYPES: ReadonlyArray<readonly [type: string, size: number]> = [
   ["icp4", 16],
@@ -40,17 +43,23 @@ async function loadMaster(svgPath: string): Promise<RenderAt> {
     .resize(MASTER_SIZE, MASTER_SIZE)
     .png()
     .toBuffer();
+
   const cache = new Map<number, Promise<Buffer>>();
+
   return (size) => {
     const cached = cache.get(size);
+
     if (cached) {
       return cached;
     }
+
     const rendered = sharp(master)
       .resize(size, size, { kernel: sharp.kernel.lanczos3 })
       .png({ compressionLevel: 9 })
       .toBuffer();
+
     cache.set(size, rendered);
+
     return rendered;
   };
 }
@@ -81,6 +90,7 @@ function encodeIco(sizes: readonly number[], images: readonly Buffer[]): Buffer 
     directory.writeUInt32LE(offset, entry + 12);
     offset += png.length;
   });
+
   return Buffer.concat([header, directory, ...images]);
 }
 
@@ -90,12 +100,15 @@ function encodeIcns(types: readonly string[], images: readonly Buffer[]): Buffer
     const header = Buffer.alloc(8);
     header.write(types[index] ?? "", 0, "ascii");
     header.writeUInt32BE(header.length + png.length, 4);
+
     return Buffer.concat([header, png]);
   });
+
   const body = Buffer.concat(elements);
   const header = Buffer.alloc(8);
   header.write("icns", 0, "ascii");
   header.writeUInt32BE(header.length + body.length, 4);
+
   return Buffer.concat([header, body]);
 }
 
@@ -131,6 +144,7 @@ async function generateExtensionIcons(): Promise<void> {
   const directory = path.join("apps", "gather-box", "assets", "icons");
   const renderAt = await loadMaster(path.join(directory, "gather-box-icon.svg"));
   await write(path.join(directory, "gather-box-icon.png"), await renderAt(1024));
+
   for (const size of [16, 32, 48, 128]) {
     await write(path.join(directory, `icon${size}.png`), await renderAt(size));
   }
@@ -139,9 +153,11 @@ async function generateExtensionIcons(): Promise<void> {
 for (const app of ["pane-view", "showcase"]) {
   await generateWebIcons(app);
 }
+
 for (const app of ["frame-view", "lockstep"]) {
   await generateDesktopIcons(app);
 }
+
 await generateExtensionIcons();
 
 // macOS 26 packaging also reads the Icon Composer bundle, which wants the same 1024 px PNG.
@@ -149,4 +165,5 @@ await copyFile(
   path.join(root, "apps/lockstep/media/lockstep-icon.png"),
   path.join(root, "apps/lockstep/media/lockstep-icon.icon/Assets/lockstep-icon.png"),
 );
+
 console.log("copied apps/lockstep/media/lockstep-icon.icon/Assets/lockstep-icon.png");

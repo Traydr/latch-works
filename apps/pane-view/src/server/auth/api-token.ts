@@ -28,6 +28,7 @@ export function createSyncApiTokenVerifier({
   return {
     verify({ token }: { token: string | null }): boolean {
       const configured = getConfiguredToken();
+
       if (!configured || !token) return false;
 
       if (cachedConfiguredToken !== configured || !cachedConfiguredTokenDigest) {
@@ -46,11 +47,13 @@ const sharedSyncApiTokenVerifier = createSyncApiTokenVerifier({
 
 export function readBearerToken(request: Request): string | null {
   const authorization = request.headers.get("Authorization");
+
   if (!authorization?.startsWith("Bearer ")) {
     return null;
   }
 
   const token = authorization.slice("Bearer ".length).trim();
+
   return token.length > 0 ? token : null;
 }
 

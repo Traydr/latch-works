@@ -28,6 +28,7 @@ export function deserializeIpcResult<T>(
   channel: string,
 ): ResultType<T, IpcErrorPayload> {
   const parsed = createSerializedResultSchema(schema).safeParse(value);
+
   if (!parsed.success) {
     return Result.err(protocolError(channel));
   }

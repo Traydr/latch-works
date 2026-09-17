@@ -176,8 +176,10 @@ function buildAncestorItems(currentPath: string): Array<{ name: string; path: st
   }
 
   const segments = currentPath.split("/").filter(Boolean);
+
   return segments.map((segment, index) => {
     const path = segments.slice(0, index + 1).join("/");
+
     return {
       name: segment,
       path,

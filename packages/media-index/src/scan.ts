@@ -97,8 +97,10 @@ export async function hashFileContents({
     stream.on("data", (chunk) => {
       if (signal?.aborted) {
         stream.destroy(signal.reason);
+
         return;
       }
+
       hash.update(chunk);
       bytesHashed += chunk.length;
       onProgress?.(bytesHashed);
@@ -117,6 +119,7 @@ export async function hashFileContents({
   if (expected) {
     const after = normalizeFingerprint(await operations.stat(filePath));
     throwIfAborted(signal);
+
     if (!fingerprintsMatch(expected, after)) {
       throw new Error(`File changed while hashing: ${filePath}`);
     }
@@ -161,9 +164,11 @@ function concurrency(value: number | undefined): number {
   if (value === undefined) {
     return 4;
   }
+
   if (!Number.isInteger(value) || value < 1 || value > 16) {
     throw new RangeError("Scan concurrency must be an integer between 1 and 16");
   }
+
   return value;
 }
 
@@ -189,22 +194,27 @@ async function runQueue<T>({
         reject(error);
       }
     };
+
     const schedule = (): void => {
       if (settled) {
         return;
       }
+
       try {
         throwIfAborted(signal);
       } catch (error) {
         fail(toError(error));
+
         return;
       }
 
       while (active < workerCount && next < tasks.length) {
         const task = tasks[next++];
+
         if (task === undefined) {
           continue;
         }
+
         active += 1;
         void work(
           task,
@@ -218,9 +228,11 @@ async function runQueue<T>({
         ).then(
           () => {
             active -= 1;
+
             if (settled) {
               return;
             }
+
             if (next === tasks.length && active === 0) {
               settled = true;
               resolve();
@@ -269,9 +281,11 @@ export async function hashArchiveItems({
   sourceRoot,
 }: HashArchiveItemsOptions): Promise<MediaItem[]> {
   const root = path.resolve(sourceRoot);
+
   const tasks = items.filter(
     (item) => item.sha256 === undefined && (paths === undefined || paths.has(item.path)),
   );
+
   const hashes = new Map<string, string>();
 
   await runQueue({
@@ -282,6 +296,7 @@ export async function hashArchiveItems({
       throwIfAborted(signal);
       const filePath = path.resolve(root, ...item.path.split("/"));
       const relative = path.relative(root, filePath);
+
       if (relative.startsWith("..") || path.isAbsolute(relative)) {
         throw new Error(`Archive path escapes source root: ${item.path}`);
       }
@@ -290,6 +305,7 @@ export async function hashArchiveItems({
         mtimeMs: item.mtimeMs,
         size: item.size,
       };
+
       const sha256 = await hashFileContents({
         expected,
         filePath,
@@ -306,6 +322,7 @@ export async function hashArchiveItems({
         operations,
         signal,
       });
+
       if (isRunning()) {
         hashes.set(item.path, sha256);
       }
@@ -314,6 +331,7 @@ export async function hashArchiveItems({
 
   return items.map((item) => {
     const sha256 = hashes.get(item.path);
+
     return sha256 ? { ...item, id: sha256, sha256 } : item;
   });
 }
@@ -346,20 +364,25 @@ export async function scanArchive({
       throwIfAborted(signal);
       const entries = await operations.readdir(currentPath);
       throwIfAborted(signal);
+
       if (!isRunning()) {
         return;
       }
+
       for (const entry of [...entries].sort((left, right) => left.name.localeCompare(right.name))) {
         throwIfAborted(signal);
+
         if (!isRunning()) {
           return;
         }
+
         const absolutePath = path.join(currentPath, entry.name);
 
         if (entry.isDirectory()) {
           if (isSystemJunkDirectory(entry.name)) {
             continue;
           }
+
           throwIfAborted(signal);
           addDirectory(absolutePath);
           continue;
@@ -418,6 +441,7 @@ export async function scanArchive({
       throwIfAborted(signal);
       const fileStat = normalizeFingerprint(await operations.stat(candidate.absolutePath));
       throwIfAborted(signal);
+
       if (!isRunning()) {
         return;
       }
@@ -444,6 +468,7 @@ export async function scanArchive({
 
   for (const candidate of candidates) {
     const item = indexedItems.get(candidate.path);
+
     if (item) {
       items.push(item);
     }

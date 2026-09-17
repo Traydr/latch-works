@@ -4,9 +4,11 @@ import { canonicalizeExtension } from "./paths.js";
 export const ImageExtensions = ["jpg", "jpeg", "png", "webp", "gif", "bmp", "avif"] as const;
 
 export const VideoExtensions = ["mp4", "webm", "mov", "mkv", "m4v"] as const;
+
 export const PdfExtensions = ["pdf"] as const;
 
 export const MediaTypeSchema = z.enum(["image", "gif", "video", "pdf", "unknown"]);
+
 export type MediaType = z.infer<typeof MediaTypeSchema>;
 
 export const GallerySortModeSchema = z.enum([
@@ -16,6 +18,7 @@ export const GallerySortModeSchema = z.enum([
   "date-oldest",
   "random",
 ]);
+
 export type GallerySortMode = z.infer<typeof GallerySortModeSchema>;
 
 export const MediaItemSchema = z.object({
@@ -35,6 +38,7 @@ export const MediaItemSchema = z.object({
   thumbnailUrl: z.string().optional(),
   originalUrl: z.string().optional(),
 });
+
 export type MediaItem = z.infer<typeof MediaItemSchema>;
 
 export const FolderNodeSchema = z.object({
@@ -46,14 +50,18 @@ export const FolderNodeSchema = z.object({
   mediaCount: z.number().int().nonnegative(),
   folderCount: z.number().int().nonnegative(),
 });
+
 export type FolderNode = z.infer<typeof FolderNodeSchema>;
 
 const imageExtensionSet = new Set<string>(ImageExtensions);
+
 const videoExtensionSet = new Set<string>(VideoExtensions);
+
 const pdfExtensionSet = new Set<string>(PdfExtensions);
 
 export function getExtension(fileName: string): string {
   const dotIndex = fileName.lastIndexOf(".");
+
   if (dotIndex < 0 || dotIndex === fileName.length - 1) {
     return "";
   }

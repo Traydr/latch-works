@@ -32,6 +32,7 @@ export {
   sourceIdFor,
   transformDeliveryUrl,
 } from "./urls.js";
+
 export type { DeliveryUrlOptions, MasterPreviewDescriptor, PreviewKind };
 
 /** Omit that distributes over each member of a union of object types. */
@@ -132,11 +133,13 @@ function requireConfig<T>(value: T | undefined, name: string): T {
   if (value === undefined) {
     throw new ShutterClientError(`ShutterClient requires ${name} for this call`);
   }
+
   return value;
 }
 
 function retryAfterSeconds(response: Response): number {
   const seconds = Number(response.headers.get("retry-after"));
+
   return Number.isFinite(seconds) && seconds >= 0 ? seconds : 5;
 }
 
@@ -177,13 +180,17 @@ const jobRepresentationSchema = z.discriminatedUnion("status", [
 async function errorFromResponse(response: Response): Promise<ShutterClientError> {
   let code: string | undefined;
   let requestId: string | undefined;
+
   try {
     const body = errorBodySchema.safeParse(await response.json());
+
     if (body.success) ({ code, requestId } = body.data);
   } catch {
     // Non-JSON error bodies keep the HTTP status as the only detail.
   }
+
   const retryAfter = Number(response.headers.get("retry-after"));
+
   return new ShutterClientError(`Shutter responded ${response.status}`, {
     status: response.status,
     code,
@@ -194,12 +201,15 @@ async function errorFromResponse(response: Response): Promise<ShutterClientError
 
 function parseJobBody(body: JsonValue, response: Response): PreviewJobResult {
   const parsed = jobRepresentationSchema.safeParse(body);
+
   if (!parsed.success) {
     throw new ShutterClientError("Shutter returned a malformed job representation", {
       status: response.status,
     });
   }
+
   const record = parsed.data;
+
   switch (record.status) {
     case "pending":
     case "processing":
@@ -218,6 +228,7 @@ function parseJobBody(body: JsonValue, response: Response): PreviewJobResult {
 /** Configuration accepts raw key material or its base64url string form. */
 function keyMaterial(key: CapabilityKeyMaterial | string): CapabilityKeyMaterial {
   if (ArrayBuffer.isView(key) || key instanceof CryptoKey) return key;
+
   return decodeCapabilityKey(key);
 }
 
@@ -227,10 +238,12 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
       signal?.removeEventListener("abort", onAbort);
       resolve();
     }, ms);
+
     function onAbort() {
       clearTimeout(timer);
       reject(new ShutterClientError("Preview Job polling was aborted"));
     }
+
     signal?.addEventListener("abort", onAbort, { once: true });
   });
 }
@@ -258,6 +271,7 @@ export class ShutterClient {
     const key = keyMaterial(keyConfig.key);
     const iat = claims.iat ?? Math.floor(Date.now() / 1000);
     const exp = claims.exp ?? iat + (this.#config.capabilityLifetimeSeconds ?? 300);
+
     // SAFETY: `claims` is one member of the union minus the fields restored
     // here; TypeScript cannot re-attach the shared fields to a distributed Omit.
     const fullClaims = {
@@ -266,6 +280,7 @@ export class ShutterClient {
       iat,
       exp,
     } as SourceCapabilityClaims;
+
     return issueSourceCapability(fullClaims, { kid: keyConfig.kid, key });
   }
 
@@ -280,6 +295,7 @@ export class ShutterClient {
       purpose: "image_source",
       locator: input.locator,
     });
+
     return this.#edge(
       buildPublicLocatedSourceUrl(this.#config.spaceId, input.sourceId, capability, parameters),
     );
@@ -295,6 +311,7 @@ export class ShutterClient {
       purpose: "source_delivery",
       locator: input.locator,
     });
+
     return this.#edge(
       buildPublicLocatedDeliveryUrl(this.#config.spaceId, input.sourceId, capability),
     );
@@ -306,6 +323,7 @@ export class ShutterClient {
       purpose: "image_source",
       locator: input.locator,
     });
+
     return this.#edge(buildPrivateSourceUrl(this.#config.spaceId, capability, parameters));
   }
 
@@ -318,6 +336,7 @@ export class ShutterClient {
       purpose: "master_preview",
       kind: input.kind,
     });
+
     return this.#edge(buildPrivateMasterUrl(this.#config.spaceId, capability, parameters));
   }
 
@@ -327,6 +346,7 @@ export class ShutterClient {
       purpose: "source_delivery",
       locator: input.locator,
     });
+
     return this.#edge(buildPrivateDeliveryUrl(this.#config.spaceId, capability));
   }
 
@@ -345,6 +365,7 @@ export class ShutterClient {
     const keyConfig = requireConfig(this.#config.capabilityKey, "capabilityKey");
     const iat = claims.iat ?? Math.floor(Date.now() / 1000);
     const exp = claims.exp ?? iat + (this.#config.capabilityLifetimeSeconds ?? 300);
+
     const full: AccessTokenClaims = {
       space_id: this.#config.spaceId,
       source_id: claims.source_id,
@@ -352,7 +373,9 @@ export class ShutterClient {
       iat,
       exp,
     };
+
     if (claims.kind !== undefined) full.kind = claims.kind;
+
     return issueAccessToken(full, { kid: keyConfig.kid, key: keyMaterial(keyConfig.key) });
   }
 
@@ -366,6 +389,7 @@ export class ShutterClient {
     options: Omit<DeliveryUrlOptions, "token"> = {},
   ): Promise<string> {
     const sourceId = sourceIdFor(source.resolverId, source.reference);
+
     const token =
       options.preview !== undefined
         ? await this.issueAccessToken({
@@ -376,6 +400,7 @@ export class ShutterClient {
         : options.width !== undefined
           ? await this.issueAccessToken({ source_id: sourceId, purpose: "image_source" })
           : await this.issueAccessToken({ source_id: sourceId, purpose: "source_delivery" });
+
     return this.v2DeliveryUrl(source, { ...options, token });
   }
 
@@ -394,19 +419,23 @@ export class ShutterClient {
   /** Submits a Preview Job for a resolver source. Needs the Space API token and nothing else. */
   async submitV2PreviewJob(input: ResolverPreviewInput): Promise<PreviewJobResult> {
     const sourceId = sourceIdFor(input.resolverId, input.reference);
+
     const response = await this.#control(
       buildV2PreviewJobUrl(this.#config.spaceId, sourceId, input.kind),
       { method: "PUT", headers: { "content-type": "application/json" }, body: "{}" },
     );
+
     return this.#jobResult(response);
   }
 
   async getV2PreviewJob(source: ResolverSource, kind: PreviewKind): Promise<PreviewJobResult> {
     const sourceId = sourceIdFor(source.resolverId, source.reference);
+
     const response = await this.#control(
       buildV2PreviewJobUrl(this.#config.spaceId, sourceId, kind),
       { method: "GET" },
     );
+
     return this.#jobResult(response);
   }
 
@@ -416,20 +445,24 @@ export class ShutterClient {
   ): Promise<PreviewJobResult> {
     const deadline = Date.now() + (options?.maxWaitMs ?? 120_000);
     let result = await this.submitV2PreviewJob(input);
+
     while (result.status === "pending" || result.status === "processing") {
       if (Date.now() >= deadline) return result;
       await sleep(result.retryAfterSeconds * 1000, options?.signal);
       result = await this.getV2PreviewJob(input, input.kind);
     }
+
     return result;
   }
 
   /** Purges everything Shutter holds for a resolver source: `{resolver}/{reference}`. */
   async purgeV2Source(source: ResolverSource): Promise<void> {
     const sourceId = sourceIdFor(source.resolverId, source.reference);
+
     const response = await this.#control(buildV2SourcePurgeUrl(this.#config.spaceId, sourceId), {
       method: "POST",
     });
+
     if (response.status !== 204) throw await errorFromResponse(response);
   }
 
@@ -442,6 +475,7 @@ export class ShutterClient {
       kind: input.kind,
       locator: input.locator,
     });
+
     const response = await this.#control(
       buildPreviewJobUrl(this.#config.spaceId, input.sourceId, input.kind),
       {
@@ -450,6 +484,7 @@ export class ShutterClient {
         body: JSON.stringify({ sourceCapability }),
       },
     );
+
     return this.#jobResult(response);
   }
 
@@ -457,6 +492,7 @@ export class ShutterClient {
     const response = await this.#control(buildPreviewJobUrl(this.#config.spaceId, sourceId, kind), {
       method: "GET",
     });
+
     return this.#jobResult(response);
   }
 
@@ -467,11 +503,13 @@ export class ShutterClient {
   async waitForPreviewJob(input: PreviewInput, options?: WaitOptions): Promise<PreviewJobResult> {
     const deadline = Date.now() + (options?.maxWaitMs ?? 120_000);
     let result = await this.submitPreviewJob(input);
+
     while (result.status === "pending" || result.status === "processing") {
       if (Date.now() >= deadline) return result;
       await sleep(result.retryAfterSeconds * 1000, options?.signal);
       result = await this.getPreviewJob(input.sourceId, input.kind);
     }
+
     return result;
   }
 
@@ -481,6 +519,7 @@ export class ShutterClient {
     const response = await this.#control(buildSourcePurgeUrl(this.#config.spaceId, sourceId), {
       method: "POST",
     });
+
     if (response.status !== 204) throw await errorFromResponse(response);
   }
 
@@ -488,12 +527,14 @@ export class ShutterClient {
     if (response.status !== 200 && response.status !== 202) {
       throw await errorFromResponse(response);
     }
+
     return parseJobBody(await response.json(), response);
   }
 
   async #control(path: string, init: RequestInit): Promise<Response> {
     const base = requireConfig(this.#config.controlBaseUrl, "controlBaseUrl");
     const token = requireConfig(this.#config.spaceApiToken, "spaceApiToken");
+
     return this.#fetch(new URL(path, base), {
       ...init,
       headers: {
@@ -506,6 +547,7 @@ export class ShutterClient {
 
   #edge(path: string): string {
     const base = this.#config.edgeBaseUrl;
+
     return base === undefined ? path : new URL(path, base).toString();
   }
 }

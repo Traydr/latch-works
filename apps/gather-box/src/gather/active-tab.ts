@@ -9,6 +9,7 @@ import { formatError, toError } from "./errors";
 
 export async function getActiveTab(): Promise<chrome.tabs.Tab | null> {
   const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+
   return tabs[0] || null;
 }
 
@@ -20,6 +21,7 @@ export async function injectCollectorAndCollect(input: {
   onInjecting: () => void;
 }): Promise<GalleryCollectResponse> {
   const { tabId, pageUrl, requestId, source, onInjecting } = input;
+
   const message: CollectComicGalleryMessage = {
     type: COLLECT_MESSAGE_TYPE,
     requestId,
@@ -33,10 +35,12 @@ export async function injectCollectorAndCollect(input: {
       target: { tabId, frameIds: [0] },
       files: [source.collectorEntry]
     });
+
     const response = await chrome.tabs.sendMessage<
       CollectComicGalleryMessage,
       CollectComicGalleryResponse
     >(tabId, message, { frameId: 0 });
+
     if (
       !response ||
       response.requestId !== requestId ||
@@ -45,6 +49,7 @@ export async function injectCollectorAndCollect(input: {
     ) {
       throw new Error("The selected collector returned a stale or mismatched response.");
     }
+
     return response.result;
   } catch (error) {
     throw new Error(`Could not run the ${source.label} collector: ${formatError(toError(error))}`);

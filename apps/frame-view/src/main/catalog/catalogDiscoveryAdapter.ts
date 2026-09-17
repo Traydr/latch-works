@@ -45,6 +45,7 @@ export function classifyFrameCandidate(
   const extension = getExtension(name);
   const isImage = filters.showImages && filters.imageExtensions.has(extension);
   const isVideo = filters.showVideos && filters.videoExtensions.has(extension);
+
   if (!isImage && !isVideo) {
     return null;
   }

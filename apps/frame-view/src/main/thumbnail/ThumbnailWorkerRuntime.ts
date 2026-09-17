@@ -17,12 +17,19 @@ import { MediaToolsAbortError, MediaToolsService } from '../services/mediaToolsS
 type SharpLib = typeof import('sharp');
 
 const VIDEO_WEBP_QUALITY = 82;
+
 const VIDEO_WEBP_EFFORT = 4;
+
 const IMAGE_WEBP_QUALITY = 92;
+
 const IMAGE_WEBP_EFFORT = 5;
+
 const SHARP_CACHE_MEMORY_MB = 32;
+
 const SHARP_CACHE_ITEMS = 64;
+
 const nativeRequire = createRequire(__filename);
+
 const LOSSLESS_IMAGE_EXTENSIONS = new Set(['.png', '.bmp', '.gif']);
 
 /**
@@ -42,6 +49,7 @@ function loadPackagedSharp(): SharpLib | null {
     const packagedRequire = createRequire(
       path.join(process.resourcesPath, 'node_modules', 'sharp', 'package.json'),
     );
+
     return resolveSharpModule(packagedRequire('sharp'));
   } catch {
     return null;
@@ -101,6 +109,7 @@ export class ThumbnailWorkerRuntime {
     const mediaToolsStatus = this.mediaToolsService.getStatus();
     const ffmpegResolution = resolveBinaryPath(mediaToolsStatus.ffmpegPath);
     const ffprobeResolution = resolveBinaryPath(mediaToolsStatus.ffprobePath);
+
     const probeErrors = [
       this.lastSharpLoadError,
       ffmpegResolution.error,
@@ -188,11 +197,13 @@ export class ThumbnailWorkerRuntime {
   async handleRequest(request: ThumbnailWorkerRequest): Promise<ThumbnailWorkerResponse | null> {
     if (request.type === 'cancel-thumbnail') {
       this.activeJobs.get(request.requestId)?.abortController.abort();
+
       return null;
     }
 
     if (request.type === 'set-debug-options') {
       this.setDebugOptions(request.options);
+
       return null;
     }
 
@@ -212,6 +223,7 @@ export class ThumbnailWorkerRuntime {
 
     try {
       const result = await this.generateThumbnail(request.job, abortController.signal);
+
       return {
         requestId: request.requestId,
         ok: true,
@@ -229,6 +241,7 @@ export class ThumbnailWorkerRuntime {
     signal: AbortSignal,
   ): Promise<ThumbnailWorkerJobResult> {
     const sharp = this.sharp ?? this.loadSharp();
+
     if (!sharp) {
       throw new Error('Sharp is unavailable');
     }
@@ -237,6 +250,7 @@ export class ThumbnailWorkerRuntime {
 
     if (job.kind === 'video') {
       let frameBuffer: Buffer | null = null;
+
       try {
         frameBuffer = await this.mediaToolsService.extractVideoFrame(
           job.mediaPath,
@@ -250,6 +264,7 @@ export class ThumbnailWorkerRuntime {
         ) {
           throw new RequestAbortError();
         }
+
         throw error;
       }
 
@@ -274,6 +289,7 @@ export class ThumbnailWorkerRuntime {
       );
     } else {
       const sourceExtension = path.extname(job.mediaPath).toLowerCase();
+
       const imageWebpOptions = LOSSLESS_IMAGE_EXTENSIONS.has(sourceExtension)
         ? {
             effort: IMAGE_WEBP_EFFORT,
@@ -304,6 +320,7 @@ export class ThumbnailWorkerRuntime {
         const message = `Sharp decode failed: ${path.basename(job.mediaPath)}: ${
           error instanceof Error ? error.message : String(error)
         }`;
+
         this.logDebug(message);
         throw new Error(message);
       }
@@ -314,6 +331,7 @@ export class ThumbnailWorkerRuntime {
     }
 
     const cacheWrite = await this.writeDiskThumbnail(job.cacheKey, bytes);
+
     return {
       bytes: new Uint8Array(bytes),
       cacheCreated: cacheWrite.cacheCreated,
@@ -326,19 +344,24 @@ export class ThumbnailWorkerRuntime {
     try {
       const sharpLib = resolveSharpModule(nativeRequire('sharp'));
       this.lastSharpLoadError = null;
+
       return sharpLib;
     } catch (cause) {
       const packagedSharp = loadPackagedSharp();
+
       if (packagedSharp) {
         this.lastSharpLoadError = null;
+
         return packagedSharp;
       }
 
       this.lastSharpLoadError = toError(cause).message;
+
       if (!this.sharpLoadFailureLogged) {
         this.sharpLoadFailureLogged = true;
         console.warn(`[thumbnailWorker] sharp failed to load: ${this.lastSharpLoadError}`);
       }
+
       return null;
     }
   }
@@ -357,6 +380,7 @@ export class ThumbnailWorkerRuntime {
     }
 
     await fs.writeFile(diskPath, bytes);
+
     return { cacheCreated };
   }
 }

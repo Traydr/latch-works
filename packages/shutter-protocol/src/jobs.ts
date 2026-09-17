@@ -24,6 +24,7 @@ export function createFailedJobRepresentation(code: JobFailureCode): FailedJobRe
 }
 
 const nonEmptyString = z.string().min(1);
+
 const previewKindSchema = z.enum(["video", "pdf"], { error: "kind must be video or pdf" });
 
 const previewJobSubmissionSchema = z.strictObject({
@@ -77,6 +78,7 @@ function parseWith<Output>(
   label: string,
 ): Output {
   const result = schema.safeParse(input);
+
   if (result.success) return result.data;
   const detail = result.error.issues[0]?.message ?? "is invalid";
   throw new ProtocolError(code, `${label}: ${detail}`);
@@ -100,11 +102,14 @@ export function parseExecutorCompleteRequest(input: JsonValue): ExecutorComplete
 
 export function parseExecutorFailRequest(input: JsonValue): ExecutorFailRequest {
   const parsed = parseWith(executorFailRequestSchema, input, "request_invalid", "executor failure");
+
   const request: ExecutorFailRequest = {
     processingToken: parsed.processingToken,
     retryable: parsed.retryable,
   };
+
   if (parsed.code !== undefined) request.code = parsed.code;
+
   return request;
 }
 

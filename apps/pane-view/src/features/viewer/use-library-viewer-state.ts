@@ -51,6 +51,7 @@ export function useLibraryViewerState(
   const flushSave = useCallback(
     async (targetSubjectId = subjectIdRef.current): Promise<void> => {
       const pending = pendingPatchRef.current;
+
       if (!targetSubjectId || !pending) {
         return;
       }
@@ -95,6 +96,7 @@ export function useLibraryViewerState(
   useEffect(() => {
     if (!subjectId) {
       setSnapshot(null);
+
       return;
     }
 

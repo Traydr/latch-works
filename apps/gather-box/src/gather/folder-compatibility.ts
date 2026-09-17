@@ -22,12 +22,14 @@ export async function resolveCompatibleFolderSegments(
 
   const standardArtist = standardSegments[0];
   const legacyArtist = standardArtist.toLowerCase();
+
   if (legacyArtist === standardArtist) {
     return { segments: standardSegments, usedLegacyFolder: false };
   }
 
   try {
     const legacyDirectory = await rootDirectory.getDirectoryHandle(legacyArtist);
+
     if (legacyDirectory.name === legacyArtist) {
       return { segments: [legacyArtist], usedLegacyFolder: true };
     }

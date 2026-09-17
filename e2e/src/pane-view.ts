@@ -15,11 +15,16 @@ export interface BrowseOptions {
 
 function browseUrl(options: BrowseOptions = {}): string {
   const search = new URLSearchParams();
+
   if (options.path) search.set("path", options.path);
+
   if (options.q) search.set("q", options.q);
+
   if (options.recursive) search.set("recursive", "true");
+
   if (options.comic) search.set("comic", "true");
   const query = search.toString();
+
   return query === "" ? "/" : `/?${query}`;
 }
 
@@ -51,6 +56,7 @@ export async function readCardPaths(page: Page): Promise<string[]> {
     .evaluateAll((elements) =>
       elements.map((element) => {
         const card = element.parentElement;
+
         return {
           left: Number.parseFloat(card?.style.left ?? "0"),
           title: element.getAttribute("title") ?? "",
@@ -58,15 +64,19 @@ export async function readCardPaths(page: Page): Promise<string[]> {
         };
       }),
     );
+
   cards.sort((a, b) => a.top - b.top || a.left - b.left);
+
   return cards.map((card) => card.title);
 }
 
 /** Presses "Load more" until `total` cards are on screen. */
 export async function loadAllPages(page: Page, total: number): Promise<void> {
   const cards = archiveBrowser(page).locator("button > div[title]");
+
   for (let round = 0; round < 20; round += 1) {
     const before = await cards.count();
+
     if (before >= total) break;
     // The grid re-renders while a page lands, which can detach the button mid-click.
     await page
@@ -75,6 +85,7 @@ export async function loadAllPages(page: Page, total: number): Promise<void> {
       .catch(() => undefined);
     await expect.poll(() => cards.count()).toBeGreaterThan(before);
   }
+
   await expect(cards).toHaveCount(total);
 }
 
@@ -100,6 +111,7 @@ export async function openViewer(page: Page, path: string): Promise<Locator> {
   await card(page, path).dblclick();
   const dialog = page.getByRole("dialog", { name: /^Viewer for / });
   await expect(dialog).toBeVisible();
+
   return dialog;
 }
 
@@ -109,6 +121,7 @@ export function viewerFor(page: Page, name: string): Locator {
 
 export async function openSettings(page: Page): Promise<void> {
   const heading = page.getByRole("heading", { name: "Settings" });
+
   if (await heading.isVisible()) return;
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await expect(heading).toBeVisible();
@@ -122,6 +135,7 @@ export async function closeSettings(page: Page): Promise<void> {
 
 export async function setSettingToggle(page: Page, label: string, on: boolean): Promise<void> {
   const toggle = page.getByLabel(label, { exact: true });
+
   if ((await toggle.isChecked()) !== on) {
     await toggle.click();
   }

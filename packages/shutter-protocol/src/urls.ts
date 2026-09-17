@@ -2,6 +2,7 @@ import { isReferenceSegment, isResolverId, resolverSourceId } from "./source-res
 import type { PreviewKind } from "./types.js";
 
 export type { PreviewKind };
+
 /**
  * This module is also the package's `./urls` entry: URL construction with no
  * capability crypto behind it, so a browser bundle can import it alone.
@@ -15,6 +16,7 @@ interface OptimizationParameters {
 
 function segment(value: string): string {
   if (value.length === 0) throw new TypeError("path segments cannot be empty");
+
   return encodeURIComponent(value);
 }
 
@@ -100,23 +102,32 @@ export function buildV2DeliveryUrl(
   if (!isResolverId(resolverId)) {
     throw new TypeError("a resolver ID is a lowercase identifier of at most 64 characters");
   }
+
   if (reference.length === 0) throw new TypeError("a reference needs at least one segment");
+
   if (!reference.every(isReferenceSegment)) {
     throw new TypeError("a reference segment must match [A-Za-z0-9._-]{1,512} and not be . or ..");
   }
+
   if (
     options.width === undefined &&
     (options.quality !== undefined || options.preview !== undefined)
   ) {
     throw new TypeError("quality and preview require width");
   }
+
   const query = new URLSearchParams();
+
   if (options.preview !== undefined) query.set("preview", options.preview);
+
   if (options.width !== undefined) query.set("w", String(options.width));
+
   if (options.quality !== undefined) query.set("q", String(options.quality));
+
   if (options.token !== undefined) query.set("token", options.token);
   const path = `/v2/${segment(spaceId)}/${segment(resolverId)}/${reference.map(segment).join("/")}`;
   const search = query.toString();
+
   return search.length === 0 ? path : `${path}?${search}`;
 }
 

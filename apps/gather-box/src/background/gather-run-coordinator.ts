@@ -30,6 +30,7 @@ import {
 } from "./gather-run-coordinator-dependencies";
 
 export { applyGatherRunEvent } from "../shared/gather-run-reducer";
+
 export type { GatherRunCoordinatorDependencies } from "./gather-run-coordinator-dependencies";
 
 type Reservation =
@@ -55,21 +56,27 @@ export class GatherRunCoordinator {
     if (tab.id === undefined || tab.windowId === undefined || !tab.url) {
       return { outcome: "target-unavailable" };
     }
+
     if (!isSupportedUrl(tab.url)) {
       return { outcome: "unsupported-source" };
     }
+
     const siteKey = getSiteKeyFromUrl(tab.url);
+
     if (!siteKey) {
       return { outcome: "unsupported-source" };
     }
 
     const { reservation, resumed } = await this.reserve(tab, siteKey);
+
     if (resumed || reservation.kind === "existing") {
       await this.dispatchNext();
     }
+
     if (reservation.kind === "outcome") {
       return reservation.outcome;
     }
+
     if (reservation.kind === "existing") {
       return this.outcomeForJob(reservation.runId, reservation.position);
     }
@@ -81,13 +88,16 @@ export class GatherRunCoordinator {
     const previous = await this.exclusive(async () => {
       const queue = await this.dependencies.loadQueue();
       const result = getRetryableGatherQueueResult(queue);
+
       return result?.id === runId ? result : null;
     });
+
     if (!previous) {
       return { outcome: "failed", message: "No retryable Gather Run was found." };
     }
 
     const settings = await this.dependencies.loadSettings();
+
     const payload: DownloadablePayload = {
       ok: true,
       outputKind: "downloadable-files",
@@ -99,11 +109,14 @@ export class GatherRunCoordinator {
       skippedCount: 0,
       images: previous.retryImages
     };
+
     const reservation = await this.exclusive(async () => {
       let queue = await this.dependencies.loadQueue();
+
       if (queue.jobs.length >= MAX_GATHER_QUEUE_LENGTH) {
         return null;
       }
+
       const run = asOutputRun({
         ...createGatherRunState({
           id: this.dependencies.randomUUID(),
@@ -125,6 +138,7 @@ export class GatherRunCoordinator {
         },
         log: [{ message: `Queued retry for ${previous.retryImages.length} failed item(s).` }]
       });
+
       const position = queue.jobs.length;
       queue = {
         ...queue,
@@ -132,8 +146,10 @@ export class GatherRunCoordinator {
         results: queue.results.filter((result) => result.id !== previous.id)
       };
       await this.dependencies.saveQueue(queue);
+
       return { runId: run.id, position };
     });
+
     if (!reservation) {
       return {
         outcome: "failed",
@@ -142,6 +158,7 @@ export class GatherRunCoordinator {
     }
 
     await this.dispatchNext();
+
     return this.outcomeForJob(reservation.runId, reservation.position);
   }
 
@@ -149,6 +166,7 @@ export class GatherRunCoordinator {
     const decision = await this.exclusive(async () => {
       let queue = await this.dependencies.loadQueue();
       const job = queue.jobs.find((candidate) => candidate.run.id === runId);
+
       if (!job) {
         return { kind: "idle" } as const;
       }
@@ -165,8 +183,10 @@ export class GatherRunCoordinator {
           updatedAt: this.dependencies.now(),
           progress: { ...job.run.progress, message: "Cancelling Gather Run..." }
         });
+
         queue = replaceJob(queue, { ...job, run });
         await this.dependencies.saveQueue(queue);
+
         return { kind: "abort", run } as const;
       }
 
@@ -174,20 +194,25 @@ export class GatherRunCoordinator {
         kind: "cancelled",
         message: "Gather Run cancelled."
       }, this.dependencies.now());
+
       queue = recordAndRemove(queue, cancelled);
       await this.dependencies.saveQueue(queue);
+
       return { kind: "done", run: cancelled } as const;
     });
 
     if (decision.kind === "idle") {
       return { outcome: "idle" };
     }
+
     if (decision.kind === "done") {
       await this.dispatchNext();
+
       return { outcome: "cancelled", run: decision.run };
     }
 
     const aborted = await this.dependencies.abort(runId).catch(() => false);
+
     if (!aborted) {
       await this.handleEvent({
         type: "GATHER_BOX_RUN_EVENT",
@@ -196,6 +221,7 @@ export class GatherRunCoordinator {
         event: { kind: "cancelled", message: "Gather Run cancelled." }
       });
     }
+
     return { outcome: "cancelled", run: decision.run };
   }
 
@@ -203,22 +229,27 @@ export class GatherRunCoordinator {
     const shouldDispatch = await this.exclusive(async () => {
       let queue = await this.dependencies.loadQueue();
       const job = queue.jobs.find((candidate) => candidate.run.id === message.runId);
+
       if (!job || job.kind !== "output") {
         return false;
       }
+
       if (job.run.phase === "cancelling" && message.event.kind !== "cancelled") {
         return false;
       }
 
       const updated = applyGatherRunEvent(job.run, message.event, this.dependencies.now());
+
       if (isTerminalGatherRunPhase(updated.phase)) {
         queue = recordAndRemove(queue, updated);
         await this.dependencies.saveQueue(queue);
+
         return true;
       }
 
       queue = replaceJob(queue, { ...job, run: asOutputRun(updated) });
       await this.dependencies.saveQueue(queue);
+
       return false;
     });
 
@@ -231,6 +262,7 @@ export class GatherRunCoordinator {
     const activeRunId = await this.dependencies.getActiveRunId();
     await this.exclusive(async () => {
       let queue = await this.dependencies.loadQueue();
+
       if (activeRunId && queue.jobs.some((job) => job.run.id === activeRunId)) {
         return;
       }
@@ -248,13 +280,16 @@ export class GatherRunCoordinator {
       // Confirming folder access unblocks a paused job, but it is not a request to gather that
       // job's page again. The tab in hand still gets collected on its own.
       const permissionJob = getPermissionRequiredGatherJob(loaded, siteKey);
+
       let queue = permissionJob
         ? replaceJob(loaded, resumePermissionJob(permissionJob, this.dependencies.now()))
         : loaded;
+
       const resumed = permissionJob !== null;
       let reservation: Reservation;
 
       const duplicate = queue.jobs.find((job) => job.run.tabUrl === tab.url);
+
       if (duplicate) {
         reservation = {
           kind: "existing",
@@ -290,6 +325,7 @@ export class GatherRunCoordinator {
             message: "Collecting content metadata..."
           }
         });
+
         reservation = { kind: "collect", run, position: queue.jobs.length };
         queue = { ...queue, jobs: [...queue.jobs, { kind: "collecting", run }] };
       }
@@ -297,6 +333,7 @@ export class GatherRunCoordinator {
       if (queue !== loaded) {
         await this.dependencies.saveQueue(queue);
       }
+
       return { reservation, resumed };
     });
   }
@@ -308,6 +345,7 @@ export class GatherRunCoordinator {
   ): Promise<GatherRunStartOutcome> {
     try {
       const currentTab = await this.dependencies.getTab(tab.id!);
+
       if (
         !currentTab.url ||
         currentTab.url !== reservation.run.tabUrl ||
@@ -315,20 +353,25 @@ export class GatherRunCoordinator {
       ) {
         throw new Error("The source tab navigated before collection started.");
       }
+
       const [payload, settings] = await Promise.all([
         this.dependencies.collect(currentTab, reservation.run),
         this.dependencies.loadSettings()
       ]);
+
       const total =
         payload.outputKind === "generated-story-pdf"
           ? payload.chapters.length
           : payload.images.length;
+
       const completed = await this.exclusive(async () => {
         let queue = await this.dependencies.loadQueue();
         const index = queue.jobs.findIndex((job) => job.run.id === reservation.run.id);
+
         if (index < 0 || queue.jobs[index].kind !== "collecting") {
           return false;
         }
+
         const run = asOutputRun({
           ...reservation.run,
           phase: "queued",
@@ -340,17 +383,21 @@ export class GatherRunCoordinator {
             { message: `Queued ${total} item(s) from "${payload.title}".`, tone: "success" }
           ]
         });
+
         const jobs = [...queue.jobs];
         jobs[index] = { kind: "output", run, payload, settings };
         queue = { ...queue, jobs };
         await this.dependencies.saveQueue(queue);
+
         return true;
       });
+
       if (!completed) {
         return { outcome: "failed", message: "The queued Gather Run was cancelled." };
       }
 
       await this.dispatchNext();
+
       return this.outcomeForJob(reservation.run.id, reservation.position);
     } catch (error) {
       const failed = applyGatherRunEvent(
@@ -358,15 +405,19 @@ export class GatherRunCoordinator {
         { kind: "failed", message: formatError(toError(error)) },
         this.dependencies.now()
       );
+
       await this.exclusive(async () => {
         let queue = await this.dependencies.loadQueue();
+
         if (!queue.jobs.some((job) => job.run.id === reservation.run.id)) {
           return;
         }
+
         queue = recordAndRemove(queue, failed);
         await this.dependencies.saveQueue(queue);
       });
       await this.dispatchNext();
+
       return { outcome: "failed", message: failed.error ?? "Gather Run failed." };
     }
   }
@@ -376,9 +427,11 @@ export class GatherRunCoordinator {
       const job = await this.exclusive(async () => {
         let queue = await this.dependencies.loadQueue();
         const next = getNextQueuedGatherJob(queue);
+
         if (!next) {
           return null;
         }
+
         const run = asOutputRun({
           ...next.run,
           phase: "preparing",
@@ -389,16 +442,20 @@ export class GatherRunCoordinator {
             message: "Starting queued Gather Output..."
           }
         });
+
         const claimed = { ...next, run };
         queue = replaceJob(queue, claimed);
         await this.dependencies.saveQueue(queue);
+
         return claimed;
       });
+
       if (!job) {
         return;
       }
 
       const accepted = await this.dependencies.execute(job).catch(() => false);
+
       if (accepted) {
         return;
       }
@@ -408,11 +465,14 @@ export class GatherRunCoordinator {
         { kind: "failed", message: "The Gather executor did not accept the queued output." },
         this.dependencies.now()
       );
+
       await this.exclusive(async () => {
         let queue = await this.dependencies.loadQueue();
+
         if (!queue.jobs.some((candidate) => candidate.run.id === job.run.id)) {
           return;
         }
+
         queue = recordAndRemove(queue, failed);
         await this.dependencies.saveQueue(queue);
       });
@@ -426,13 +486,17 @@ export class GatherRunCoordinator {
     const queue = await this.exclusive(() => this.dependencies.loadQueue());
     const job = queue.jobs.find((candidate) => candidate.run.id === runId);
     const completed = queue.results.find((result) => result.id === runId);
+
     if (!job && !completed) {
       return { outcome: "failed", message: "The queued Gather Run could not be restored." };
     }
+
     const run = getGatherQueueDisplayRun(queue) ?? completed ?? job!.run;
+
     if (job?.kind === "output" && job.run.phase !== "queued") {
       return { outcome: "started", run, queuedRunId: runId, position: 0 };
     }
+
     return {
       outcome: "queued",
       run,
@@ -447,6 +511,7 @@ export class GatherRunCoordinator {
       () => undefined,
       () => undefined
     );
+
     return result;
   }
 }
@@ -482,6 +547,7 @@ function asCollectingRun(run: GatherRunState): CollectingGatherQueueJob["run"] {
   if (run.phase !== "collecting") {
     throw new Error(`Expected collecting Gather Run, received ${run.phase}.`);
   }
+
   return { ...run, phase: run.phase };
 }
 
@@ -489,5 +555,6 @@ function asOutputRun(run: GatherRunState): OutputGatherQueueJob["run"] {
   if (isTerminalGatherRunPhase(run.phase) || run.phase === "collecting") {
     throw new Error(`Expected executable Gather Run, received ${run.phase}.`);
   }
+
   return { ...run, phase: run.phase };
 }

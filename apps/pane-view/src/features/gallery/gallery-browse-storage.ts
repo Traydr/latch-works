@@ -20,7 +20,9 @@ import { parseJsonWith } from "@/lib/parse-json";
  */
 
 const STATE_KEY = "pane-view.state";
+
 const ROOT_PREFS_KEY = "pane-view.root-preferences";
+
 const RECURSIVE_EXCLUDES_KEY = "pane-view.recursive-excludes";
 
 /**
@@ -72,7 +74,9 @@ export function withExcludedChildPaths(
   const others = Object.fromEntries(
     Object.entries(record).filter(([storedPath]) => storedPath !== path),
   );
+
   const deduped = [...new Set(paths)];
+
   return deduped.length > 0 ? { ...others, [path]: deduped } : others;
 }
 
@@ -121,8 +125,10 @@ export function createLocalStorageBrowseStorage(): GalleryBrowseStorage {
       if (!("window" in globalThis)) {
         return null;
       }
+
       // Nothing stored (or unreadable) is still "hydrated": browse with defaults.
       const text = readStoredText(STATE_KEY);
+
       return text === null
         ? PERSISTED_BROWSE_STATE_DEFAULTS
         : (parseJsonWith(text, PersistedBrowseStateSchema) ?? PERSISTED_BROWSE_STATE_DEFAULTS);
@@ -149,6 +155,7 @@ export function createLocalStorageBrowseStorage(): GalleryBrowseStorage {
 
 function readExcludesRecord(): RecursiveExcludesRecord {
   const text = readStoredText(RECURSIVE_EXCLUDES_KEY);
+
   return text === null ? {} : (parseJsonWith(text, RecursiveExcludesRecordSchema) ?? {});
 }
 
@@ -186,5 +193,6 @@ export function createMemoryBrowseStorage(
     },
     writes: 0,
   };
+
   return storage;
 }

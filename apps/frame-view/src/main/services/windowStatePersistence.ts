@@ -39,10 +39,12 @@ export async function persistWindowState(
   }
 
   const persistOptions = options?.immediate ? { immediate: true } : undefined;
+
   const maximizedResult = await settingsService.updateWindowMaximized(
     window.isMaximized(),
     persistOptions,
   );
+
   const bounds = window.isMaximized() ? window.getNormalBounds() : window.getBounds();
   const boundsResult = await settingsService.updateWindowBounds(bounds, persistOptions);
   const flushResult = options?.flush ? await settingsService.flushNowSync() : null;

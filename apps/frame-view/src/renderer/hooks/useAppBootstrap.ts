@@ -66,6 +66,7 @@ export function useAppBootstrap({
 
   useEffect(() => {
     let mounted = true;
+
     const flushPendingScanEvents = (): void => {
       flushFrameIdRef.current = null;
 
@@ -108,9 +109,11 @@ export function useAppBootstrap({
 
     void (async () => {
       const loadedSettings = await frameViewClient.getSettings();
+
       if (!loadedSettings) {
         return;
       }
+
       if (!mounted) {
         return;
       }
@@ -121,10 +124,12 @@ export function useAppBootstrap({
       if (loadedSettings.rememberLastFolder && loadedSettings.lastFolderPath) {
         setNavigationCeilingPathEvent(loadedSettings.lastFolderPath);
         setPendingFolderSelectionPathEvent(null);
+
         const rootPreferences = getRootGalleryPreferences(
           loadedSettings,
           loadedSettings.lastFolderPath,
         );
+
         setRecursiveEvent(loadedSettings.recursiveDefault || rootPreferences.comicMode);
         await runScanEvent(loadedSettings.lastFolderPath, {
           recursive: loadedSettings.recursiveDefault || rootPreferences.comicMode,
@@ -158,11 +163,13 @@ export function useAppBootstrap({
     }
 
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+
     const onSchemeChange = (): void => {
       applyTheme('system');
     };
 
     mediaQuery.addEventListener('change', onSchemeChange);
+
     return () => mediaQuery.removeEventListener('change', onSchemeChange);
   }, [settingsTheme]);
 
@@ -174,6 +181,7 @@ export function useAppBootstrap({
     const onDrop = (event: DragEvent): void => {
       event.preventDefault();
       const droppedFile = DroppedFileSchema.safeParse(event.dataTransfer?.files?.[0]);
+
       if (!droppedFile.success) {
         return;
       }
@@ -194,16 +202,19 @@ export function useAppBootstrap({
     const unsubscribe = frameViewClient.onAppCommand((command) => {
       if (command.type === 'open-folder-dialog') {
         openFolderEvent();
+
         return;
       }
 
       if (command.type === 'refresh-current-folder') {
         refreshCurrentFolderEvent();
+
         return;
       }
 
       if (command.type === 'toggle-settings') {
         toggleSettingsEvent();
+
         return;
       }
 

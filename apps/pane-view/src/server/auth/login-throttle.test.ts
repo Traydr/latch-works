@@ -20,14 +20,17 @@ function createMemoryStore(): LoginThrottleStore {
       for (const [key, record] of attempts) {
         if (record.expiresAt < now) attempts.delete(key);
       }
+
       return keys.flatMap((key) => {
         const record = attempts.get(key);
+
         return record ? [record] : [];
       });
     },
     async record(keys, now, expiresAt) {
       for (const key of keys) {
         const record = attempts.get(key);
+
         if (!record || record.expiresAt < now) {
           attempts.set(key, { count: 1, expiresAt, key, windowStart: now });
         } else {
@@ -41,6 +44,7 @@ function createMemoryStore(): LoginThrottleStore {
 describe("login throttle", () => {
   it("blocks repeated failed attempts for the same ip and username", async () => {
     const throttle = createLoginThrottle({ store: createMemoryStore() });
+
     for (let attempt = 0; attempt < 5; attempt += 1) {
       await throttle.recordFailedLogin("127.0.0.1", "owner");
     }
@@ -50,6 +54,7 @@ describe("login throttle", () => {
 
   it("blocks the same username after failures from multiple ips", async () => {
     const throttle = createLoginThrottle({ store: createMemoryStore() });
+
     for (let attempt = 0; attempt < 5; attempt += 1) {
       await throttle.recordFailedLogin(`203.0.113.${attempt}`, "owner");
     }
@@ -59,6 +64,7 @@ describe("login throttle", () => {
 
   it("does not throttle a different username when only one account failed", async () => {
     const throttle = createLoginThrottle({ store: createMemoryStore() });
+
     for (let attempt = 0; attempt < 5; attempt += 1) {
       await throttle.recordFailedLogin(`203.0.113.${attempt}`, "owner");
     }
@@ -68,6 +74,7 @@ describe("login throttle", () => {
 
   it("clears both ip and username buckets after a successful login", async () => {
     const throttle = createLoginThrottle({ store: createMemoryStore() });
+
     for (let attempt = 0; attempt < 5; attempt += 1) {
       await throttle.recordFailedLogin(`203.0.113.${attempt}`, "owner");
     }
@@ -85,6 +92,7 @@ describe("login throttle", () => {
     for (let attempt = 0; attempt < 5; attempt += 1) {
       await throttle.recordFailedLogin(`203.0.113.${attempt}`, "owner");
     }
+
     await expect(throttle.isLoginThrottled("198.51.100.1", "owner")).resolves.toBe(true);
 
     now += 6 * 60 * 1_000;
@@ -97,6 +105,7 @@ describe("login throttle", () => {
   it("preserves counters when a new throttle instance uses the shared store", async () => {
     const store = createMemoryStore();
     const firstProcess = createLoginThrottle({ store });
+
     for (let attempt = 0; attempt < 5; attempt += 1) {
       await firstProcess.recordFailedLogin("127.0.0.1", "owner");
     }
@@ -108,6 +117,7 @@ describe("login throttle", () => {
 
   it("does not bypass throttling by rotating x-forwarded-for when proxy trust is disabled", async () => {
     const throttle = createLoginThrottle({ store: createMemoryStore() });
+
     const requestWithForwardedFor = (value: string) =>
       new Request("http://localhost:3000/api/auth/login", {
         headers: { "x-forwarded-for": value },

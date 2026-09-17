@@ -38,9 +38,11 @@ export function ManagementPage() {
   const [syncToken, setSyncToken] = useState("");
   const [trackedJobId, setTrackedJobId] = useState<string | null>(null);
   const [shutterPurgeMessage, setShutterPurgeMessage] = useState<string | null>(null);
+
   const [folderSnapshot, setFolderSnapshot] = useState<Awaited<
     ReturnType<typeof getLibrarySnapshot>
   > | null>(null);
+
   const [folderSnapshotError, setFolderSnapshotError] = useState<string | null>(null);
 
   const overview = overviewQuery.data;
@@ -54,6 +56,7 @@ export function ManagementPage() {
   }, [overview?.activeCleanupJob?.id]);
   const runningSyncCount = overview?.runningSyncRuns.length ?? 0;
   const maintenanceBlocked = Boolean(runningSyncCount > 0 || overview?.activeCleanupJob);
+
   const blockReason =
     runningSyncCount > 0
       ? runningSyncCount === 1
@@ -65,6 +68,7 @@ export function ManagementPage() {
 
   const loadFolders = async () => {
     setFolderSnapshotError(null);
+
     try {
       const snapshot = await getLibrarySnapshot({
         data: {
@@ -72,6 +76,7 @@ export function ManagementPage() {
           path: "",
         },
       });
+
       setFolderSnapshot(snapshot);
     } catch (error) {
       setFolderSnapshotError(error instanceof Error ? error.message : "Unable to load folders.");
@@ -107,6 +112,7 @@ export function ManagementPage() {
       confirmation: wipeConfirm,
       syncToken,
     });
+
     setTrackedJobId(result.jobId);
     setWipeConfirm("");
     setSyncToken("");
@@ -114,6 +120,7 @@ export function ManagementPage() {
 
   const handlePurgeSoftDeleted = async () => {
     const count = overview?.library.softDeletedEntries ?? 0;
+
     if (
       !window.confirm(
         `Permanently delete ${count.toLocaleString()} soft-deleted item${count === 1 ? "" : "s"}? This cannot be undone.`,
@@ -123,6 +130,7 @@ export function ManagementPage() {
     }
 
     const result = await purgeSoftDeletedMutation.mutateAsync();
+
     if (result.jobId) setTrackedJobId(result.jobId);
   };
 
@@ -137,6 +145,7 @@ export function ManagementPage() {
 
     setShutterPurgeMessage(null);
     const result = await purgeShutterSourcesMutation.mutateAsync();
+
     if (result.jobId) {
       setTrackedJobId(result.jobId);
     } else {

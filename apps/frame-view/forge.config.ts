@@ -19,20 +19,31 @@ const PackageManifestSchema = z.object({
 });
 
 const appIconBasePath = path.resolve(__dirname, 'media', 'frame-view-icon');
+
 const appBundleId = 'dev.traydr.latchworks.frameview';
+
 const windowsIconPath = `${appIconBasePath}.ico`;
+
 const macIconPath = `${appIconBasePath}.icns`;
+
 const linuxIconPath = `${appIconBasePath}.png`;
+
 const appMediaPath = path.resolve(__dirname, 'media');
+
 const localMacEntitlements = [
   'com.apple.security.cs.allow-jit',
   'com.apple.security.cs.allow-unsigned-executable-memory',
   'com.apple.security.cs.disable-library-validation',
 ];
+
 const appName = 'frame-view';
+
 const appExecutableName = `${appName}.exe`;
+
 const appSetupExe = `${appName} Setup.exe`;
+
 const stagedRuntimeNodeModulesPath = path.resolve(__dirname, '.packaged-runtime', 'node_modules');
+
 const runtimeDependencyRoots = ['ffmpeg-static', '@ffprobe-installer/ffprobe', 'sharp'];
 
 type PackagerConfig = NonNullable<ForgeConfig['packagerConfig']>;
@@ -44,15 +55,20 @@ type PackagerConfig = NonNullable<ForgeConfig['packagerConfig']>;
 function findPackageDirectory(packageName: string, fromDirectory: string): string | null {
   const packagePathSegments = packageName.split('/');
   let currentDirectory = fromDirectory;
+
   for (;;) {
     const candidatePath = path.join(currentDirectory, 'node_modules', ...packagePathSegments);
+
     if (existsSync(candidatePath)) {
       return realpathSync(candidatePath);
     }
+
     const parentDirectory = path.dirname(currentDirectory);
+
     if (parentDirectory === currentDirectory) {
       return null;
     }
+
     currentDirectory = parentDirectory;
   }
 }
@@ -63,6 +79,7 @@ function copyRuntimePackage(packageName: string, fromDirectory: string, visited:
   }
 
   const sourcePath = findPackageDirectory(packageName, fromDirectory);
+
   if (!sourcePath) {
     return;
   }
@@ -76,6 +93,7 @@ function copyRuntimePackage(packageName: string, fromDirectory: string, visited:
   });
 
   const packageJsonPath = path.join(sourcePath, 'package.json');
+
   if (!existsSync(packageJsonPath)) {
     return;
   }
@@ -127,6 +145,7 @@ function getMacCodeSignConfig(): PackagerConfig['osxSign'] | undefined {
   }
 
   const identity = process.env.FRAME_VIEW_MACOS_SIGN_IDENTITY?.trim();
+
   if (identity) {
     return { identity };
   }
@@ -153,9 +172,11 @@ const config: ForgeConfig = {
       if (!file) {
         return false;
       }
+
       if (file.startsWith('/.vite') || file === '/package.json') {
         return false;
       }
+
       return true;
     },
     prune: false,

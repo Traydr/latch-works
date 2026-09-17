@@ -31,9 +31,11 @@ const captures = [
 ];
 
 const failures = [];
+
 for (const script of captures) {
   console.log(`\n=== ${script} ===`);
   const result = spawnSync(process.execPath, [join(scriptsDir, script)], { stdio: "inherit" });
+
   if (result.status !== 0) {
     failures.push(script);
     console.error(`${script} failed with exit code ${result.status}.`);

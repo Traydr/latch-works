@@ -3,6 +3,7 @@ import { parseJsonWith } from "@/lib/parse-json";
 
 /** Encoded key material: 64 hex characters or base64url; decoded by decodeCapabilityKeyMaterial. */
 const KeyMaterialSchema = z.string();
+
 const SpaceKeyMapSchema = z.record(z.string(), KeyMaterialSchema);
 
 /** One top-level registry entry: key material (flat layout) or a space's kid → material map. */
@@ -25,6 +26,7 @@ export const CapabilityKeyRegistrySchema = z
   .record(z.string(), RegistryEntrySchema)
   .transform((entries): CapabilityKeyRegistry => {
     const registry: CapabilityKeyRegistry = { flat: {}, spaces: {} };
+
     for (const [key, entry] of Object.entries(entries)) {
       if (entry.kind === "flat") {
         registry.flat[key] = entry.material;
@@ -32,6 +34,7 @@ export const CapabilityKeyRegistrySchema = z
         registry.spaces[key] = entry.keys;
       }
     }
+
     return registry;
   });
 
@@ -40,10 +43,13 @@ const CapabilityKeyRegistryEnvSchema = z.union([
   CapabilityKeyRegistrySchema,
   z.string().transform((text, context) => {
     const registry = parseJsonWith(text, CapabilityKeyRegistrySchema);
+
     if (registry === null) {
       context.issues.push({ code: "custom", input: text, message: "not a key registry" });
+
       return z.NEVER;
     }
+
     return registry;
   }),
 ]);
@@ -59,12 +65,14 @@ export interface CapabilityKeyIds {
 
 export function unwrapEnvJson(raw: string): string {
   const trimmed = raw.trim();
+
   if (
     (trimmed.startsWith("'") && trimmed.endsWith("'")) ||
     (trimmed.startsWith('"') && trimmed.endsWith('"'))
   ) {
     return trimmed.slice(1, -1).trim();
   }
+
   return trimmed;
 }
 
@@ -75,17 +83,21 @@ export function unwrapEnvScalar(raw: string): string {
 /** Throws when the value is not JSON or does not fit the registry layouts. */
 export function parseCapabilityKeyRegistry(raw: string): CapabilityKeyRegistry {
   const registry = parseJsonWith(unwrapEnvJson(raw), CapabilityKeyRegistryEnvSchema);
+
   if (registry === null) {
     throw new SyntaxError("Invalid capability key registry");
   }
+
   return registry;
 }
 
 export function decodeCapabilityKeyMaterial(encoded: string): Uint8Array<ArrayBuffer> {
   const trimmed = encoded.trim();
+
   if (/^[0-9a-fA-F]{64}$/u.test(trimmed)) {
     return Uint8Array.from(Buffer.from(trimmed, "hex"));
   }
+
   return Uint8Array.from(Buffer.from(trimmed, "base64url"));
 }
 
@@ -110,15 +122,19 @@ export function readCapabilityKeyMaterial(
 function formatRegistryHint(registry: CapabilityKeyRegistry, spaceId: string): string {
   const { flatKids, nestedKids } = listCapabilityKeyIds(registry, spaceId);
   const parts: string[] = [];
+
   if (nestedKids.length > 0) {
     parts.push(`nested["${spaceId}"]: ${nestedKids.join(", ")}`);
   }
+
   if (flatKids.length > 0) {
     parts.push(`flat: ${flatKids.join(", ")}`);
   }
+
   if (parts.length === 0) {
     return "registry contains no capability key IDs";
   }
+
   return `available key IDs — ${parts.join("; ")}`;
 }
 
@@ -144,6 +160,7 @@ export function validateCapabilityKeyConfig({
   }
 
   let registry: CapabilityKeyRegistry;
+
   try {
     registry = parseCapabilityKeyRegistry(capabilityKeys);
   } catch {
@@ -156,6 +173,7 @@ export function validateCapabilityKeyConfig({
   }
 
   const encoded = readCapabilityKeyMaterial(registry, normalizedSpaceId, kid);
+
   if (!encoded) {
     return {
       ok: false,
@@ -166,6 +184,7 @@ export function validateCapabilityKeyConfig({
   }
 
   const key = decodeCapabilityKeyMaterial(encoded);
+
   if (key.byteLength !== 32) {
     return {
       ok: false,

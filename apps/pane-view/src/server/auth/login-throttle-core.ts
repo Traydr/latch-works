@@ -1,4 +1,5 @@
 const MAX_FAILED_ATTEMPTS = 5;
+
 const WINDOW_MS = 5 * 60 * 1000;
 
 interface AttemptRecord {
@@ -46,6 +47,7 @@ export function createLoginThrottle({
     async isLoginThrottled(ip: string, username: string): Promise<boolean> {
       const currentTime = now();
       const records = await store.read(keys(ip, username), currentTime);
+
       return records.some(
         (record) => record.expiresAt >= currentTime && record.count >= MAX_FAILED_ATTEMPTS,
       );

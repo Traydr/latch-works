@@ -21,11 +21,13 @@ export function verifySingleUserCredentials({
   username: string;
 }): boolean {
   const configured = readSingleUserCredentials();
+
   return safeCompare(username, configured.username) && safeCompare(password, configured.password);
 }
 
 function safeCompare(candidate: string, expected: string): boolean {
   const candidateHash = scryptSync(candidate, "pane-view-login", 32);
   const expectedHash = scryptSync(expected, "pane-view-login", 32);
+
   return timingSafeEqual(candidateHash, expectedHash);
 }

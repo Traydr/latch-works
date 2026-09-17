@@ -64,9 +64,12 @@ function resolveCacheKey({ mediaId, size, variant }: ResolveInput): string {
 
 function pendingRetryDelayMs(attempt: number, serverRetryAfterMs?: number): number {
   const fallbackDelay = 60_000;
+
   const baseDelay =
     PENDING_RETRY_DELAYS_MS[Math.min(attempt, PENDING_RETRY_DELAYS_MS.length - 1)] ?? fallbackDelay;
+
   const jitter = 0.75 + Math.random() * 0.5;
+
   return Math.max(serverRetryAfterMs ?? 0, Math.round(baseDelay * jitter));
 }
 
@@ -98,12 +101,14 @@ export function createResolvedMediaUrlCache({
 
       if (entry.inFlight) return entry.inFlight;
       const now = Date.now();
+
       if (options?.refresh || (entry.urlExpiresAt !== undefined && entry.urlExpiresAt <= now)) {
         entry.url = undefined;
         entry.urlExpiresAt = undefined;
         entry.nextRetryAt = undefined;
         entry.pendingAttempt = 0;
       }
+
       if (entry.url) return { status: "ready", url: entry.url };
 
       if (entry.nextRetryAt && entry.nextRetryAt > now) {
@@ -112,11 +117,13 @@ export function createResolvedMediaUrlCache({
 
       entry.inFlight = (async () => {
         const breakerWait = throttle.circuitWaitMs();
+
         if (throttle.isCircuitOpen() && breakerWait > 0) {
           await delay(breakerWait);
         }
 
         const release = await throttle.acquireResolveSlot();
+
         try {
           const result = await resolve({ data: input });
 
@@ -124,6 +131,7 @@ export function createResolvedMediaUrlCache({
             const retryAfterMs = pendingRetryDelayMs(entry.pendingAttempt, result.retryAfterMs);
             entry.pendingAttempt += 1;
             entry.nextRetryAt = Date.now() + retryAfterMs;
+
             return { retryAfterMs, status: "pending" };
           }
 
@@ -132,9 +140,11 @@ export function createResolvedMediaUrlCache({
           entry.urlExpiresAt = urlExpiresAt(input.variant, Date.now());
           entry.nextRetryAt = undefined;
           entry.pendingAttempt = 0;
+
           return { status: "ready", url: result.url };
         } catch {
           throttle.recordResolveFailure();
+
           return { status: "failed" };
         } finally {
           release();
@@ -169,15 +179,19 @@ function resolvedMediaReducer(
   if (action.type === "reset") {
     return action.state;
   }
+
   if (action.inputKey !== state.inputKey) {
     return state;
   }
+
   if (action.type === "ready") {
     return { ...state, failed: false, loading: false, resolvedUrl: action.url };
   }
+
   if (action.type === "failed") {
     return { ...state, failed: true, loading: false };
   }
+
   return { ...state, failed: false, loading: !action.url, resolvedUrl: action.url };
 }
 
@@ -214,10 +228,12 @@ export function useResolvedMediaUrl({
   variant: "thumbnail" | "preview" | "original";
 }) {
   const inputKey = `${mediaId ?? "none"}:${variant}:${size ?? "default"}:${refreshKey}:${readyUrl ?? ""}:${fallbackReadyUrl ?? ""}`;
+
   const initialState = useMemo(
     () => createResolvedMediaState(inputKey, mediaId, readyUrl, fallbackReadyUrl),
     [fallbackReadyUrl, inputKey, mediaId, readyUrl],
   );
+
   const [storedState, dispatch] = useReducer(resolvedMediaReducer, initialState);
   const state = storedState.inputKey === inputKey ? storedState : initialState;
 
@@ -225,6 +241,7 @@ export function useResolvedMediaUrl({
   // react-doctor-disable-next-line react-doctor/no-set-state-after-await-in-effect
   useEffect(() => {
     dispatch({ state: initialState, type: "reset" });
+
     if (!mediaId) {
       return;
     }
@@ -240,15 +257,18 @@ export function useResolvedMediaUrl({
       while (!cancelled) {
         const result = await cache.resolve({ mediaId, size, variant }, { refresh });
         refresh = false;
+
         if (cancelled) return;
 
         if (result.status === "ready") {
           dispatch({ inputKey, type: "ready", url: result.url });
+
           return;
         }
 
         if (result.status === "failed") {
           dispatch({ inputKey, type: "failed" });
+
           return;
         }
 

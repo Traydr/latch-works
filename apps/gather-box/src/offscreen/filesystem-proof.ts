@@ -28,6 +28,7 @@ export async function proveOffscreenFilesystemAccess(input: {
   useGlobalFolder: boolean;
 }): Promise<OffscreenFilesystemProofResult> {
   const directory = await loadDirectoryHandle(input.siteKey, input.useGlobalFolder);
+
   if (!directory) {
     return {
       ok: false,
@@ -37,6 +38,7 @@ export async function proveOffscreenFilesystemAccess(input: {
   }
 
   const permission = await ensureDirectoryPermission(directory, false);
+
   if (permission !== "granted") {
     return {
       ok: false,
@@ -47,15 +49,18 @@ export async function proveOffscreenFilesystemAccess(input: {
 
   const fileName = `.gather-box-offscreen-proof-${crypto.randomUUID()}.txt`;
   const expected = `Gather Box offscreen filesystem proof: ${fileName}`;
+
   try {
     const handle = await directory.getFileHandle(fileName, { create: true });
     const writable = await handle.createWritable();
     await writable.write(expected);
     await writable.close();
     const actual = await (await handle.getFile()).text();
+
     if (actual !== expected) {
       throw new Error("The proof file did not read back the bytes that were written.");
     }
+
     return {
       ok: true,
       permission,

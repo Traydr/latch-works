@@ -42,6 +42,7 @@ function buildViewerDetails(item: MediaItem, loadedDuration: number): string[] {
 
 export function ViewerModal({ items, index, ...rest }: ViewerModalProps): JSX.Element | null {
   const item = items[index];
+
   if (!item) {
     return null;
   }
@@ -71,20 +72,24 @@ function ViewerDialog({
   const model = useViewerVideoModel({ autoplayVideos, item, loopVideos, modalRef });
   // Video chrome pins while paused and idles away during playback.
   const chromePinned = isVideoItem && !model.playing;
+
   const { chromeVisible, revealChrome, toggleChrome, chromeVisibilityClass } = useViewerChromeIdle({
     pinned: chromePinned,
   });
+
   const hold = useHoldToBoost(model);
 
   useEffect(() => {
     const dialog = modalRef.current;
     dialog?.showModal();
+
     return () => dialog?.close();
   }, []);
 
   const queueStep = useCallback(
     (delta: number): void => {
       queuedStepRef.current += delta;
+
       if (stepFrameRef.current !== null) {
         return;
       }
@@ -107,6 +112,7 @@ function ViewerDialog({
       if (stepFrameRef.current !== null) {
         window.cancelAnimationFrame(stepFrameRef.current);
       }
+
       stepFrameRef.current = null;
       queuedStepRef.current = 0;
     };
@@ -152,8 +158,10 @@ function ViewerDialog({
         {...hold.handlers}
         onClick={() => {
           if (!isVideoItem) return;
+
           // The tap that ended a hold-to-boost is not a tap on the picture.
           if (hold.consumeSuppressedClick()) return;
+
           // A tap on the picture shows or hides the controls; a click plays or pauses.
           if (isCoarsePointer) toggleChrome();
           else model.toggleVideoPlayback();
@@ -179,6 +187,7 @@ function ViewerDialog({
 
 function ViewerVideo({ model }: { model: ViewerVideoModel }): JSX.Element {
   const { item } = model;
+
   return (
     <video
       key={item.id}
@@ -195,9 +204,11 @@ function ViewerVideo({ model }: { model: ViewerVideoModel }): JSX.Element {
         video.volume = model.volume;
         video.muted = model.muted;
         video.playbackRate = model.speed;
+
         if (Number.isFinite(loadedDuration)) {
           model.setDuration(loadedDuration);
         }
+
         if (model.autoplayVideos) {
           void video.play().catch(() => {
             // Ignore autoplay failures caused by platform policy.
@@ -206,6 +217,7 @@ function ViewerVideo({ model }: { model: ViewerVideoModel }): JSX.Element {
       }}
       onDurationChange={(event) => {
         const nextDuration = event.currentTarget.duration;
+
         if (Number.isFinite(nextDuration)) {
           model.setDuration(nextDuration);
         }

@@ -18,20 +18,25 @@ import type { JsonObject } from "@/lib/json";
 import type { MaintenanceJobProgress } from "../management/maintenance-progress";
 
 export const mediaTypeEnum = pgEnum("media_type", ["image", "gif", "video", "pdf", "unknown"]);
+
 export const collectionTypeEnum = pgEnum("collection_type", [
   "comic",
   "story-series",
   "folder",
   "source-post",
 ]);
+
 export const syncRunStatusEnum = pgEnum("sync_run_status", [
   "running",
   "completed",
   "failed",
   "cancelled",
 ]);
+
 export const syncActionEnum = pgEnum("sync_action", ["upload", "update", "keep", "delete"]);
+
 export const subjectTypeEnum = pgEnum("subject_type", ["library_entry", "collection"]);
+
 export const maintenanceJobTypeEnum = pgEnum("maintenance_job_type", [
   "library_hard_wipe",
   "soft_deleted_purge",
@@ -42,6 +47,7 @@ export const maintenanceJobTypeEnum = pgEnum("maintenance_job_type", [
   // reference it. Nothing schedules jobs of this type any more.
   "legacy_derivative_cleanup",
 ]);
+
 export const maintenanceJobStatusEnum = pgEnum("maintenance_job_status", [
   "pending",
   "running",
@@ -49,6 +55,7 @@ export const maintenanceJobStatusEnum = pgEnum("maintenance_job_status", [
   "failed",
   "cancelled",
 ]);
+
 export const sourceTypeEnum = pgEnum("source_type", [
   "cli",
   "local",

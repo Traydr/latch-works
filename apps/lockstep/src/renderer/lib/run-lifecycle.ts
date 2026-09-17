@@ -2,6 +2,7 @@ export function shouldEndRunOnComplete(summaryAction: string, activeRunAction: s
   if (summaryAction === "plan" && (activeRunAction === "push" || activeRunAction === "prune")) {
     return false;
   }
+
   return true;
 }
 

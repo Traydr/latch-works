@@ -16,6 +16,7 @@ export function toGalleryBrowseEntries(page: GalleryListingPage): GalleryBrowseE
   if (page.subjectKind === "comic") {
     return page.comics.map((comic) => ({ comic, key: `comic:${comic.id}`, kind: "comic" }));
   }
+
   return page.entries.flatMap((entry): GalleryBrowseEntry[] => {
     if (entry.kind === "folder") {
       return [
@@ -28,9 +29,11 @@ export function toGalleryBrowseEntries(page: GalleryListingPage): GalleryBrowseE
         },
       ];
     }
+
     if (entry.kind === "media") {
       return [{ key: `media:${entry.media.id}`, kind: "media", media: entry.media }];
     }
+
     return [];
   });
 }

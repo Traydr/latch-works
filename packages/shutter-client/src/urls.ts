@@ -50,24 +50,30 @@ export function sourceIdFor(resolverId: string, reference: string | readonly str
   if (!isResolverId(resolverId)) {
     throw new TypeError("a resolver ID is a lowercase identifier of at most 64 characters");
   }
+
   const values = segments(reference);
+
   if (values.length === 0 || !values.every(isReferenceSegment)) {
     throw new TypeError("a reference segment must match [A-Za-z0-9._-]{1,512} and not be . or ..");
   }
+
   return resolverSourceId(resolverId, values);
 }
 
 const V2_PATH = /^\/v2\/[^/]+\/[^/]+\/./u;
+
 const SCHEME = /^[a-z][a-z0-9+.-]*:/iu;
 
 /** A v2 Delivery URL on the edge, absolute or a path relative to it; nothing for any other value. */
 function deliveryUrlOn(value: string, edgeBaseUrl: string): URL | undefined {
   let url: URL;
+
   try {
     url = new URL(value, edgeBaseUrl);
   } catch {
     return undefined;
   }
+
   return url.origin === new URL(edgeBaseUrl).origin && V2_PATH.test(url.pathname) ? url : undefined;
 }
 
@@ -101,20 +107,28 @@ export function transformDeliveryUrl(
 ): string {
   const source = String(value);
   const url = deliveryUrlOn(source, edgeBaseUrl);
+
   if (url === undefined) return source;
   const preview = url.searchParams.get("preview");
   const token = url.searchParams.get("token");
   const hadWidth = url.searchParams.has("w");
   const width = options.width === undefined ? url.searchParams.get("w") : String(options.width);
+
   const quality =
     options.quality === undefined ? url.searchParams.get("q") : String(options.quality);
+
   const query = new URLSearchParams();
+
   if (preview !== null) query.set("preview", preview);
+
   if (width !== null) {
     query.set("w", width);
+
     if (quality !== null) query.set("q", quality);
   }
+
   if (token !== null && hadWidth === (width !== null)) query.set("token", token);
   url.search = query.toString();
+
   return SCHEME.test(source) ? url.toString() : `${url.pathname}${url.search}`;
 }

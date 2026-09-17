@@ -36,6 +36,7 @@ export function useBrowserSelection({
     setSelectedBrowserEntryKey((current) => {
       if (pendingFolderSelectionPath) {
         const pendingFolderKey = `folder:${pendingFolderSelectionPath}`;
+
         if (browserEntries.findIndexByKey(pendingFolderKey) >= 0) {
           return pendingFolderKey;
         }
@@ -43,6 +44,7 @@ export function useBrowserSelection({
 
       if (selectedId) {
         const selectedMediaKey = getMediaEntryKey(selectedId);
+
         if (browserEntries.findIndexByKey(selectedMediaKey) >= 0) {
           return selectedMediaKey;
         }
@@ -62,6 +64,7 @@ export function useBrowserSelection({
     }
 
     const pendingFolderKey = `folder:${pendingFolderSelectionPath}`;
+
     if (selectedBrowserEntryKey === pendingFolderKey) {
       setPendingFolderSelectionPath(null);
     }
@@ -86,8 +89,10 @@ export function useBrowserSelection({
   const selectBrowserEntryAction = useCallback(
     (entry: BrowserEntry): void => {
       setSelectedBrowserEntryKey(entry.key);
+
       if (entry.kind === 'media') {
         setSelectedId(entry.media.id);
+
         return;
       }
 
@@ -100,11 +105,13 @@ export function useBrowserSelection({
     (entry: BrowserEntry): void => {
       if (entry.kind === 'folder') {
         navigateToFolderAction(entry.path);
+
         return;
       }
 
       if (entry.kind === 'comic') {
         openComicReader(entry.comic);
+
         return;
       }
 

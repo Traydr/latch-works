@@ -11,6 +11,7 @@ import {
 } from "./api-token";
 
 const syncToken = "test-sync-token-value";
+
 let configuredSyncToken: string | undefined = syncToken;
 
 /**
@@ -67,6 +68,7 @@ describe("verifySyncApiToken", () => {
 
   it("caches the configured token digest across requests", () => {
     const digest = vi.fn((token: string) => crypto.createHash("sha256").update(token).digest());
+
     const verifier = createSyncApiTokenVerifier({
       digest,
       getConfiguredToken: () => syncToken,

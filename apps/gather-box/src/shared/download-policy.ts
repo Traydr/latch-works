@@ -12,6 +12,7 @@ export function prepareDownloadImage(site: SiteKey, image: GalleryImage): Galler
   }
 
   const fileName = sanitizeFileName(image.fileName);
+
   if (!fileName) {
     return null;
   }

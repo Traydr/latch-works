@@ -22,7 +22,9 @@ const { product } = Astro.props;
 const actions = [product.features[0], product.features[1], product.features[3]].filter(
   (feature) => feature !== undefined,
 );
+
 const applyDeletes = product.features[2];
+
 const supporting = product.features.slice(4);
 ---
 

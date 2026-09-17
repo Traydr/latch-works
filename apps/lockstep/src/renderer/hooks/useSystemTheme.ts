@@ -10,6 +10,7 @@ export function useSystemTheme(): void {
 
     apply();
     media.addEventListener("change", apply);
+
     return () => media.removeEventListener("change", apply);
   }, []);
 }

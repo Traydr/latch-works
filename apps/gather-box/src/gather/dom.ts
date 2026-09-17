@@ -76,6 +76,7 @@ export function setPageState(
   message?: string
 ): void {
   elements.unsupportedBanner.hidden = supported;
+
   if (!supported && message) {
     elements.unsupportedBanner.textContent = message;
   }
@@ -116,6 +117,7 @@ export function restoreLog(
 
   if (entries.length === 0) {
     elements.resultLog.innerHTML = '<p class="log-empty">No activity yet.</p>';
+
     return;
   }
 
@@ -189,25 +191,34 @@ export function updateSaveBehavior(siteKey: SiteKey | null): void {
 
   if (!behavior) {
     if (block) block.hidden = true;
+
     if (pattern) {
       pattern.textContent = "";
       pattern.removeAttribute("data-pattern");
       pattern.hidden = true;
     }
+
     if (summary) summary.textContent = "";
+
     if (path) path.textContent = "";
+
     if (file) file.hidden = true;
+
     return;
   }
 
   if (block) block.hidden = false;
+
   if (pattern) {
     pattern.textContent = behavior.tag;
     pattern.dataset.pattern = behavior.pattern;
     pattern.hidden = false;
   }
+
   if (summary) summary.textContent = behavior.summary;
+
   if (path) renderPathInline(path, behavior);
+
   if (file) {
     file.textContent = behavior.filePattern;
     file.hidden = false;
@@ -232,6 +243,7 @@ function requireElement<T extends HTMLElement>(
   constructor: new () => T
 ): T {
   const element = document.getElementById(id);
+
   if (!(element instanceof constructor)) {
     throw new Error(`Missing required popup element: ${id}`);
   }

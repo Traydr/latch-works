@@ -37,11 +37,13 @@ export function FolderGridOverlay({
   const loadFolder = useCallback(async (folderPath: string): Promise<void> => {
     const requestId = ++loadRequestIdRef.current;
     setPendingLoadRequestId(requestId);
+
     try {
       const nodes = getFrameViewValue(
         await window.frameView.listFolderChildren(folderPath),
         'list-folder-children',
       );
+
       if (requestId !== loadRequestIdRef.current) {
         return;
       }
@@ -79,11 +81,13 @@ export function FolderGridOverlay({
     };
 
     window.addEventListener('keydown', onKeyDown);
+
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
   useEffect(() => {
     document.body.dataset.frameViewFolderOverlay = 'open';
+
     return () => {
       delete document.body.dataset.frameViewFolderOverlay;
     };
@@ -95,9 +99,11 @@ export function FolderGridOverlay({
       setBreadcrumbs((prev) => {
         // If we're navigating back to an existing breadcrumb, truncate
         const existingIndex = prev.findIndex((b) => b.path === folderPath);
+
         if (existingIndex >= 0) {
           return prev.slice(0, existingIndex + 1);
         }
+
         return [...prev, { path: folderPath, name: folderName }];
       });
       void loadFolder(folderPath);
@@ -119,6 +125,7 @@ export function FolderGridOverlay({
     }
 
     const parent = breadcrumbs[breadcrumbs.length - 2];
+
     if (!parent) {
       return;
     }
@@ -146,6 +153,7 @@ export function FolderGridOverlay({
           <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto text-sm">
             {breadcrumbs.map((crumb, i) => {
               const isLast = i === breadcrumbs.length - 1;
+
               return (
                 <span key={crumb.path} className="flex items-center gap-1">
                   {i > 0 ? <span className="text-zinc-400 dark:text-zinc-500">/</span> : null}
@@ -220,6 +228,7 @@ export function FolderGridOverlay({
               {folders.map((folder) => {
                 const isActive = folder.path === activePath;
                 const isExcluded = isShowingOpenedRoot && excludedRootChildPathSet.has(folder.path);
+
                 return (
                   <div
                     key={folder.path}

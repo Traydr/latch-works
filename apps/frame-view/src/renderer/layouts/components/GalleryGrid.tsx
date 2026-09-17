@@ -46,6 +46,7 @@ export function GalleryGrid({
   settings,
 }: GalleryGridProps): JSX.Element {
   const requestVideoMetadata = useContext(VideoMetadataQueueContext);
+
   const {
     cardHeight,
     cardWidth,
@@ -70,6 +71,7 @@ export function GalleryGrid({
   useEffect(() => {
     for (const slot of windowedItems) {
       const entry = browserEntries.at(slot.index);
+
       if (entry?.kind !== 'media' || entry.media.mediaType !== 'video') {
         continue;
       }
@@ -121,11 +123,13 @@ export function GalleryGrid({
           >
             {windowedItems.map((slot) => {
               const entry = browserEntries.at(slot.index);
+
               if (!entry) {
                 return null;
               }
 
               const selected = entry.key === selectedBrowserEntryKey;
+
               if (entry.kind === 'folder') {
                 return (
                   <FolderTile

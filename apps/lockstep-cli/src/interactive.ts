@@ -38,6 +38,7 @@ export async function runFullWizard(
         message: `Check source directory ${base.source}?`,
         default: true,
       });
+
       if (!useSource) {
         base.source = undefined;
       }
@@ -46,6 +47,7 @@ export async function runFullWizard(
         message: "Check a local source directory?",
         default: false,
       });
+
       if (addSource) {
         base.source = await promptSource(base.source);
       }
@@ -115,6 +117,7 @@ export async function runPartialPrompts(
 
   if (current.command === "push") {
     const token = env[current.apiTokenEnv];
+
     if (!token) {
       throw new Error(
         `Push requires ${current.apiTokenEnv}. Set it in your environment and run lockstep doctor.`,
@@ -162,6 +165,7 @@ async function configurePushOptions(options: CliOptions, env: NodeJS.ProcessEnv)
 
 async function confirmPush(options: CliOptions, env: NodeJS.ProcessEnv): Promise<void> {
   const apiUrl = options.apiUrl ?? env.LOCKSTEP_API_URL;
+
   const cap =
     options.maxChanges !== undefined ? ` (max ${options.maxChanges} changes)` : " (all changes)";
 
@@ -183,6 +187,7 @@ async function promptSource(defaultValue?: string): Promise<string> {
     validate: async (value) => {
       try {
         await validateSourceDirectory(value);
+
         return true;
       } catch (error) {
         return error instanceof Error ? error.message : "Invalid source directory.";
@@ -199,6 +204,7 @@ async function promptRemoteSnapshot(defaultValue?: string): Promise<string> {
     validate: async (value) => {
       try {
         await validateSnapshotFile(value);
+
         return true;
       } catch (error) {
         return error instanceof Error ? error.message : "Snapshot file not found.";
@@ -215,6 +221,7 @@ async function promptApiUrl(defaultValue?: string): Promise<string> {
     validate: (value) => {
       try {
         new URL(value);
+
         return true;
       } catch {
         return "Enter a valid URL.";

@@ -22,6 +22,7 @@ import { deleteMaintenanceObjects, getMaintenanceStorageClient } from "./mainten
 import { orphanedMediaObjectCondition, orphanedShutterSourceCondition } from "./orphaned-sources";
 
 const batchSize = 25;
+
 const nextBatchDelayMs = 25;
 
 const orphanPrefixes = ["originals/"] as const;
@@ -29,6 +30,7 @@ const orphanPrefixes = ["originals/"] as const;
 const activeJobStatuses = ["pending", "running"] as const;
 
 let resumeStarted = false;
+
 const runningJobs = new Set<string>();
 
 /**
@@ -97,6 +99,7 @@ export async function readCleanupJobStatus(
   // rows. They have no progress contract we can report, so treat them as
   // absent; the same goes for a row whose progress does not parse for its type.
   const type = MaintenanceJobTypeSchema.safeParse(job.type);
+
   if (!type.success) {
     return null;
   }
@@ -112,14 +115,19 @@ export async function readCleanupJobStatus(
   switch (type.data) {
     case "library_hard_wipe": {
       const parsed = parseMaintenanceProgress(type.data, job.progress);
+
       return parsed.ok ? { ...base, progress: parsed.progress, type: type.data } : null;
     }
+
     case "soft_deleted_purge": {
       const parsed = parseMaintenanceProgress(type.data, job.progress);
+
       return parsed.ok ? { ...base, progress: parsed.progress, type: type.data } : null;
     }
+
     case "shutter_source_purge": {
       const parsed = parseMaintenanceProgress(type.data, job.progress);
+
       return parsed.ok ? { ...base, progress: parsed.progress, type: type.data } : null;
     }
   }
@@ -135,6 +143,7 @@ export async function resumePendingMaintenanceJobs(
   resumeStarted = true;
 
   let jobs: { id: string }[];
+
   try {
     jobs = await dependencies.database
       .select({ id: maintenanceJobs.id })
@@ -162,6 +171,7 @@ export function processMaintenanceJob(
   void processMaintenanceJobBatch(jobId, dependencies).then(
     (continueInNextTurn) => {
       runningJobs.delete(jobId);
+
       if (continueInNextTurn) {
         setTimeout(() => processMaintenanceJob(jobId, dependencies), nextBatchDelayMs);
       }
@@ -169,6 +179,7 @@ export function processMaintenanceJob(
     async (error) => {
       runningJobs.delete(jobId);
       const message = error instanceof Error ? error.message : "Maintenance job failed";
+
       try {
         await failMaintenanceJob(jobId, message, dependencies);
       } catch (updateError) {
@@ -212,6 +223,7 @@ export async function processMaintenanceJobBatch(
   }
 
   const type = MaintenanceJobTypeSchema.safeParse(job.type);
+
   if (!type.success) {
     return false;
   }
@@ -222,17 +234,25 @@ export async function processMaintenanceJobBatch(
   switch (type.data) {
     case "library_hard_wipe": {
       const parsed = parseMaintenanceProgress(type.data, job.progress);
+
       if (!parsed.ok) return failUnrecognisedProgress(jobId, parsed.reason, dependencies);
+
       return processLibraryWipeBatch(jobId, parsed.progress, dependencies);
     }
+
     case "soft_deleted_purge": {
       const parsed = parseMaintenanceProgress(type.data, job.progress);
+
       if (!parsed.ok) return failUnrecognisedProgress(jobId, parsed.reason, dependencies);
+
       return processSoftDeletedPurgeBatch(jobId, parsed.progress, dependencies);
     }
+
     case "shutter_source_purge": {
       const parsed = parseMaintenanceProgress(type.data, job.progress);
+
       if (!parsed.ok) return failUnrecognisedProgress(jobId, parsed.reason, dependencies);
+
       return processShutterSourcePurgeBatch(jobId, parsed.progress, dependencies);
     }
   }
@@ -244,6 +264,7 @@ async function failUnrecognisedProgress(
   dependencies: MaintenanceWorkerDependencies,
 ): Promise<false> {
   await failMaintenanceJob(jobId, `Unrecognised job progress: ${reason}`, dependencies);
+
   return false;
 }
 
@@ -266,10 +287,12 @@ async function processSoftDeletedPurgeBatch(
 
       if (rows.length === 0) {
         await updateJobProgress(jobId, { ...progress, phase: "db_hard_delete" }, dependencies);
+
         return true;
       }
 
       await dependencies.deleteObjects(rows.map((row) => row.objectKey));
+
       if (!(await isMaintenanceJobActive(jobId, dependencies))) return false;
 
       for (const row of rows) {
@@ -277,6 +300,7 @@ async function processSoftDeletedPurgeBatch(
           .select({ id: libraryEntries.id })
           .from(libraryEntries)
           .where(eq(libraryEntries.mediaObjectId, row.id));
+
         // Deleting an unshared media row cascades its soft-deleted library entries. Generic
         // subject state has no foreign key, so remove it explicitly in the same transaction.
         // react-doctor-disable-next-line react-doctor/async-await-in-loop -- Each transaction advances the durable cleanup cursor.
@@ -313,6 +337,7 @@ async function processSoftDeletedPurgeBatch(
         },
         dependencies,
       );
+
       return true;
     }
 
@@ -343,6 +368,7 @@ async function processSoftDeletedPurgeBatch(
       });
 
       await completeMaintenanceJob(jobId, { ...progress, phase: "completed" }, dependencies);
+
       return false;
     }
 
@@ -366,10 +392,12 @@ async function processShutterSourcePurgeBatch(
 
       if (rows.length === 0) {
         await updateJobProgress(jobId, { ...progress, phase: "shutter_sources" }, dependencies);
+
         return true;
       }
 
       await dependencies.database.insert(shutterSourceCleanup).values(rows).onConflictDoNothing();
+
       return true;
     }
 
@@ -384,6 +412,7 @@ async function processShutterSourcePurgeBatch(
             isNull(libraryEntries.deletedAt),
           ),
         );
+
       const rows = await dependencies.database
         .select({ objectKey: shutterSourceCleanup.objectKey, sha256: shutterSourceCleanup.sha256 })
         .from(shutterSourceCleanup)
@@ -392,6 +421,7 @@ async function processShutterSourcePurgeBatch(
 
       if (rows.length === 0) {
         await completeMaintenanceJob(jobId, { ...progress, phase: "completed" }, dependencies);
+
         return false;
       }
 
@@ -403,6 +433,7 @@ async function processShutterSourcePurgeBatch(
           .update(shutterSourceCleanup)
           .set({ purgedAt: new Date() })
           .where(eq(shutterSourceCleanup.sha256, row.sha256));
+
         if (!(await isMaintenanceJobActive(jobId, dependencies))) return false;
       }
 
@@ -414,6 +445,7 @@ async function processShutterSourcePurgeBatch(
         },
         dependencies,
       );
+
       return true;
     }
 
@@ -448,10 +480,12 @@ async function processLibraryWipeBatch(
           },
           dependencies,
         );
+
         return true;
       }
 
       await dependencies.deleteObjects(rows.map((row) => row.objectKey));
+
       if (!(await isMaintenanceJobActive(jobId, dependencies))) return false;
 
       for (const row of rows) {
@@ -462,6 +496,7 @@ async function processLibraryWipeBatch(
           const reason = error instanceof Error ? error.message : String(error);
           throw new Error(`Shutter source purge failed: ${reason}`);
         }
+
         // react-doctor-disable-next-line react-doctor/async-await-in-loop -- Delete only after this row's external source purge succeeds.
         await dependencies.database.delete(mediaObjects).where(eq(mediaObjects.id, row.id));
       }
@@ -474,6 +509,7 @@ async function processLibraryWipeBatch(
         },
         dependencies,
       );
+
       return true;
     }
 
@@ -491,6 +527,7 @@ async function processLibraryWipeBatch(
 
       if (page.keys.length > 0) {
         await dependencies.deleteObjects(page.keys);
+
         if (!(await isMaintenanceJobActive(jobId, dependencies))) return false;
 
         await updateJobProgress(
@@ -503,6 +540,7 @@ async function processLibraryWipeBatch(
           },
           dependencies,
         );
+
         return true;
       }
 
@@ -516,6 +554,7 @@ async function processLibraryWipeBatch(
           },
           dependencies,
         );
+
         return true;
       }
 
@@ -534,6 +573,7 @@ async function processLibraryWipeBatch(
           },
           dependencies,
         );
+
         return true;
       }
 
@@ -547,6 +587,7 @@ async function processLibraryWipeBatch(
         },
         dependencies,
       );
+
       return true;
     }
 
@@ -564,6 +605,7 @@ async function processLibraryWipeBatch(
       await dependencies.database.delete(mediaObjects);
 
       await completeMaintenanceJob(jobId, { ...progress, phase: "completed" }, dependencies);
+
       return false;
     }
 

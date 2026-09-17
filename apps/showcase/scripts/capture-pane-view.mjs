@@ -9,10 +9,15 @@ import { fileURLToPath } from "node:url";
 import puppeteer from "puppeteer-core";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 const repoRoot = join(root, "../..");
+
 const outputDir = join(root, "public", "screenshots", "pane-view");
+
 const paneBase = (process.env.PANE_VIEW_URL ?? "http://localhost:3000").replace(/\/$/, "");
+
 const galleryPath = process.env.PANE_VIEW_GALLERY_PATH ?? "sfw/photos";
+
 const expectedThumbnails = Number(process.env.PANE_VIEW_EXPECTED_THUMBNAILS ?? "18");
 
 function loadRepoEnv() {
@@ -23,17 +28,20 @@ function loadRepoEnv() {
 
     for (const line of readFileSync(envPath, "utf8").split("\n")) {
       const trimmed = line.trim();
+
       if (!trimmed || trimmed.startsWith("#")) {
         continue;
       }
 
       const separator = trimmed.indexOf("=");
+
       if (separator === -1) {
         continue;
       }
 
       const key = trimmed.slice(0, separator).trim();
       let value = trimmed.slice(separator + 1).trim();
+
       if (
         (value.startsWith('"') && value.endsWith('"')) ||
         (value.startsWith("'") && value.endsWith("'"))
@@ -51,7 +59,9 @@ function loadRepoEnv() {
 loadRepoEnv();
 
 const username = process.env.PANE_VIEW_USERNAME;
+
 const password = process.env.PANE_VIEW_PASSWORD;
+
 if (!username || !password) {
   console.error("PANE_VIEW_USERNAME / PANE_VIEW_PASSWORD not set (checked env and repo .env).");
   process.exit(1);
@@ -65,7 +75,9 @@ const chromeCandidates = [
     "Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
   ),
 ].filter(Boolean);
+
 const chromePath = chromeCandidates.find((candidate) => existsSync(candidate));
+
 if (!chromePath) {
   console.error(`Chrome not found. Tried:\n  ${chromeCandidates.join("\n  ")}\nSet CHROME_PATH.`);
   process.exit(1);
@@ -78,6 +90,7 @@ function sleep(ms) {
 async function checkHealth() {
   try {
     const response = await fetch(`${paneBase}/api/health`);
+
     if (!response.ok) {
       throw new Error(`status ${response.status}`);
     }
@@ -97,11 +110,13 @@ async function primeDarkTheme(page) {
     window.localStorage.setItem("theme", "dark");
     const raw = window.localStorage.getItem("pane-view.settings");
     let settings = {};
+
     try {
       settings = raw ? JSON.parse(raw) : {};
     } catch {
       settings = {};
     }
+
     window.localStorage.setItem(
       "pane-view.settings",
       JSON.stringify({ ...settings, theme: "dark" }),
@@ -142,6 +157,7 @@ async function captureGallery(page) {
       (expected) => {
         const images = [...document.querySelectorAll("main img, [data-slot] img, img")];
         const loaded = images.filter((img) => img.complete && img.naturalWidth > 0);
+
         return loaded.length >= expected;
       },
       { timeout: 60_000, polling: 500 },
@@ -153,6 +169,7 @@ async function captureGallery(page) {
         [...document.querySelectorAll("img")].filter((img) => img.complete && img.naturalWidth > 0)
           .length,
     );
+
     throw new Error(
       `Gallery thumbnails did not finish loading: ${loaded}/${expectedThumbnails} images loaded.`,
     );
@@ -171,22 +188,28 @@ async function captureViewer(page) {
   await page.waitForSelector('button[title*="sample"], main button.absolute', {
     timeout: 15_000,
   });
+
   const tile =
     (await page.$('[title*="sample-09"]')) ??
     (await page.$('button[title*="sample"], main button.absolute'));
+
   if (!tile) {
     throw new Error("No gallery tile found to open the viewer.");
   }
+
   await tile.click({ clickCount: 2 });
 
   await page.waitForSelector('dialog[open][aria-label^="Viewer for"]', { timeout: 15_000 });
   await page.waitForFunction(
     () => {
       const dialog = document.querySelector('dialog[open][aria-label^="Viewer for"]');
+
       if (!dialog) {
         return false;
       }
+
       const img = dialog.querySelector("img");
+
       return Boolean(img?.complete && img.naturalWidth > 0);
     },
     { timeout: 30_000, polling: 250 },

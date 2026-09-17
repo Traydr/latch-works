@@ -11,6 +11,7 @@ export function parseJsonWith<Schema extends z.ZodType>(
 ): z.output<Schema> | null {
   try {
     const result = schema.safeParse(JSON.parse(text));
+
     return result.success ? result.data : null;
   } catch {
     return null;

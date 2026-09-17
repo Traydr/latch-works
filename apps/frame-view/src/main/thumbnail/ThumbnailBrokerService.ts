@@ -35,7 +35,9 @@ export interface ThumbnailPipelineStatus {
 }
 
 type MessageListener = (message: WorkerMessage) => void;
+
 type ExitListener = (code: number | null) => void;
+
 type ErrorListener = (type: 'FatalError', location: string, report: string) => void;
 
 export interface ThumbnailChildProcessLike {
@@ -95,9 +97,13 @@ export interface ThumbnailBrokerServiceOptions {
 }
 
 const DEFAULT_IMAGE_WORKERS = 2;
+
 const DEFAULT_VIDEO_WORKERS = 1;
+
 const MAX_RECENT_FAILURES = 10;
+
 const MAX_RECENT_WORKER_EVENTS = 10;
+
 const QUEUE_WARNING_THRESHOLD = 100;
 
 export class ThumbnailBrokerService {
@@ -184,11 +190,13 @@ export class ThumbnailBrokerService {
     }
 
     let task = this.tasksByCacheKey.get(job.cacheKey);
+
     if (!task) {
       task = this.createTask(job);
       this.tasksByCacheKey.set(job.cacheKey, task);
       const resultPromise = this.waitForTask(task, signal);
       this.enqueueTask(task);
+
       return resultPromise;
     }
 
@@ -336,6 +344,7 @@ export class ThumbnailBrokerService {
 
   private addRecentWorkerEvent(message: string): void {
     appendRecentEntry(this.recentWorkerEvents, message, MAX_RECENT_WORKER_EVENTS);
+
     if (this.currentDebugOptions.enableDebugLogging) {
       console.info(`[thumbnailBroker] ${message}`);
     }
@@ -420,6 +429,7 @@ export class ThumbnailBrokerService {
   private handleWorkerExit(worker: WorkerSlot, message: string): void {
     if (worker.activeRequestId !== null) {
       const task = this.requestIdToTask.get(worker.activeRequestId);
+
       if (task) {
         this.requestIdToTask.delete(worker.activeRequestId);
         this.tasksByCacheKey.delete(task.cacheKey);
@@ -463,6 +473,7 @@ export class ThumbnailBrokerService {
       this.abortedCount += 1;
       task.reject(new RequestAbortError());
       this.pumpQueue(worker.kind);
+
       return;
     }
 
@@ -481,6 +492,7 @@ export class ThumbnailBrokerService {
 
   private handleWorkerMessage(worker: WorkerSlot, message: WorkerMessage): void {
     const workerEvent = ThumbnailWorkerEventSchema.safeParse(message);
+
     if (workerEvent.success) {
       const { capabilities } = workerEvent.data;
       worker.capabilities = capabilities;
@@ -493,20 +505,24 @@ export class ThumbnailBrokerService {
           `[thumbnailBroker] video worker ${worker.id} started without ffmpeg. Checked worker path candidates: ${this.memoryOfWorkerPathChecks.join(', ')}`,
         );
       }
+
       return;
     }
 
     const workerResponse = ThumbnailWorkerResponseSchema.safeParse(message);
+
     if (!workerResponse.success) {
       return;
     }
 
     const response = workerResponse.data;
+
     if (response.requestId === 0) {
       return;
     }
 
     const task = this.requestIdToTask.get(response.requestId);
+
     // Only clear the active slot when this response matches the current request.
     // A late response for a cancelled request must not free a newer in-flight job.
     if (response.requestId === worker.activeRequestId) {
@@ -515,6 +531,7 @@ export class ThumbnailBrokerService {
 
     if (!task) {
       this.pumpQueue(worker.kind);
+
       return;
     }
 
@@ -526,17 +543,21 @@ export class ThumbnailBrokerService {
 
     if (!response.ok) {
       this.handleWorkerFailure(task, worker, response.error, response.errorCode);
+
       return;
     }
 
     if ('bytes' in response.result) {
       this.generatedCount += 1;
+
       if (task.startedAtMs !== null) {
         this.recordTiming('workerGeneration', nowMs() - task.startedAtMs);
       }
+
       this.recordTiming('endToEnd', nowMs() - task.requestedAtMs);
       task.resolve(response.result);
       this.pumpQueue(worker.kind);
+
       return;
     }
 
@@ -547,6 +568,7 @@ export class ThumbnailBrokerService {
   private maybeWarnQueueDepth(kind: ThumbnailJobKind, queueDepth: number): void {
     if (queueDepth <= QUEUE_WARNING_THRESHOLD) {
       this.queueWarningLogged[kind] = false;
+
       return;
     }
 
@@ -560,15 +582,18 @@ export class ThumbnailBrokerService {
 
   private pumpQueue(kind: ThumbnailJobKind): void {
     const queue = kind === 'video' ? this.videoQueue : this.imageQueue;
+
     while (queue.length > 0) {
       const worker = this.workers.find(
         (candidate) => candidate.kind === kind && candidate.activeRequestId === null,
       );
+
       if (!worker) {
         break;
       }
 
       const task = queue.shift();
+
       if (!task) {
         continue;
       }
@@ -601,6 +626,7 @@ export class ThumbnailBrokerService {
       maxMs: 0,
       totalMs: 0,
     };
+
     aggregate.count += 1;
     aggregate.totalMs += durationMs;
     aggregate.maxMs = Math.max(aggregate.maxMs, durationMs);
@@ -610,6 +636,7 @@ export class ThumbnailBrokerService {
   private removeQueuedTask(task: ThumbnailBrokerTask): void {
     const queue = task.job.kind === 'video' ? this.videoQueue : this.imageQueue;
     const taskIndex = queue.indexOf(task);
+
     if (taskIndex >= 0) {
       queue.splice(taskIndex, 1);
     }
@@ -617,6 +644,7 @@ export class ThumbnailBrokerService {
 
   private insertQueuedTask(task: ThumbnailBrokerTask): ThumbnailBrokerTask[] {
     const queue = task.job.kind === 'video' ? this.videoQueue : this.imageQueue;
+
     const insertIndex = queue.findIndex((queuedTask) => {
       if (task.job.priority !== queuedTask.job.priority) {
         return task.job.priority > queuedTask.job.priority;
@@ -674,6 +702,7 @@ export class ThumbnailBrokerService {
     }
 
     const consumerId = this.nextConsumerId++;
+
     const abortHandler = signal
       ? (): void => {
           this.cleanupConsumer(task, consumerId);
@@ -702,6 +731,7 @@ export class ThumbnailBrokerService {
 
         if (signal.aborted) {
           reject(new RequestAbortError());
+
           return;
         }
 
@@ -717,6 +747,7 @@ export class ThumbnailBrokerService {
 
   private cleanupConsumer(task: ThumbnailBrokerTask, consumerId: number): void {
     const consumer = task.consumers.get(consumerId);
+
     if (!consumer) {
       return;
     }
@@ -735,6 +766,7 @@ export class ThumbnailBrokerService {
       this.removeQueuedTask(task);
       this.tasksByCacheKey.delete(task.cacheKey);
       task.reject(new RequestAbortError());
+
       return;
     }
 
@@ -743,6 +775,7 @@ export class ThumbnailBrokerService {
 
   private cancelActiveTask(task: ThumbnailBrokerTask): void {
     const requestId = task.requestId;
+
     if (requestId === null) {
       return;
     }
@@ -755,6 +788,7 @@ export class ThumbnailBrokerService {
     const worker = task.workerId
       ? (this.workers.find((candidate) => candidate.id === task.workerId) ?? null)
       : null;
+
     if (worker?.child) {
       try {
         worker.child.postMessage({
@@ -764,6 +798,7 @@ export class ThumbnailBrokerService {
       } catch {
         // Ignore worker cancellation send errors.
       }
+
       worker.activeRequestId = null;
     }
 

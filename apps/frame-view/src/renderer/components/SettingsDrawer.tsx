@@ -75,6 +75,7 @@ export function SettingsDrawer({
     };
 
     window.addEventListener('keydown', onKeyDown);
+
     return () => {
       window.removeEventListener('keydown', onKeyDown);
       previous?.focus();

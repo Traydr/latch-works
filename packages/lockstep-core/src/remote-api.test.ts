@@ -15,9 +15,11 @@ const tempDirs: string[] = [];
 async function listenOnLoopback(server: Server): Promise<number> {
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = TcpAddressSchema.safeParse(server.address());
+
   if (!address.success) {
     throw new Error("Expected TCP address");
   }
+
   return address.data.port;
 }
 
@@ -31,6 +33,7 @@ async function writeTempFile(contents: string | Buffer): Promise<string> {
   tempDirs.push(dir);
   const filePath = join(dir, "sample.bin");
   await writeFile(filePath, contents);
+
   return filePath;
 }
 
@@ -43,13 +46,16 @@ describe("uploadFile", () => {
     let receivedLength = 0;
     let receivedType = "";
     let receivedChecksum = "";
+
     const server = createServer(async (request, response) => {
       receivedType = String(request.headers["content-type"] ?? "");
       receivedChecksum = String(request.headers["x-amz-checksum-sha256"] ?? "");
       const chunks: Buffer[] = [];
+
       for await (const chunk of request) {
         chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
       }
+
       receivedLength = Buffer.concat(chunks).length;
       response.writeHead(200);
       response.end();
@@ -106,6 +112,7 @@ describe("uploadFile", () => {
         signal: controller.signal,
         uploadUrl: `http://127.0.0.1:${port}/upload`,
       });
+
       queueMicrotask(() => controller.abort());
       await expect(uploadPromise).rejects.toThrow();
     } finally {

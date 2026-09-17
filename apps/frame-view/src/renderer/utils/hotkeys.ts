@@ -41,6 +41,7 @@ export function isTextInputTarget(target: EventTarget | null): boolean {
 
 export function matchesAnyKey(event: KeyboardEvent, keys: readonly string[]): boolean {
   const key = eventKey(event);
+
   return keys.some((candidate) => candidate.toLowerCase() === key.toLowerCase());
 }
 

@@ -5,5 +5,6 @@ import { useSystemTheme } from "./hooks/useSystemTheme";
 export function App() {
   useSystemTheme();
   const ctrl = useLockstepController();
+
   return <AppLayout ctrl={ctrl} />;
 }

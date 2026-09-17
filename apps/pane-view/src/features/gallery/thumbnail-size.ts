@@ -10,6 +10,7 @@ export function snapThumbnailSize(requestedSize: number): number {
 
   for (const size of THUMBNAIL_SIZE_LADDER) {
     const distance = Math.abs(normalized - size);
+
     if (distance < closestDistance) {
       closest = size;
       closestDistance = distance;
@@ -25,5 +26,6 @@ export function resolveRequestedThumbnailSize(cardWidth: number, devicePixelRati
 
 export function buildThumbnailRequestUrl(mediaId: string, cardWidth: number): string {
   const size = resolveRequestedThumbnailSize(cardWidth);
+
   return `/api/media/${mediaId}/thumbnail?size=${size}`;
 }

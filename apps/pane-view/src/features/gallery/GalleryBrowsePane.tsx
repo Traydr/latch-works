@@ -95,6 +95,7 @@ export function GalleryBrowsePane({
     );
 
     observer.observe(loadMoreTrigger);
+
     return () => observer.disconnect();
   }, [hasMore, loadMoreTrigger, onLoadMoreMedia]);
 

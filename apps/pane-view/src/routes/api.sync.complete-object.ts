@@ -11,6 +11,7 @@ export async function postCompleteObject(
   dependencies: SyncRouteDependencies = syncRouteDependencies,
 ): Promise<Response> {
   const unauthorized = dependencies.requireSyncApiToken(request);
+
   if (unauthorized) {
     return unauthorized;
   }
@@ -25,9 +26,11 @@ export async function postCompleteObject(
   }
 
   const parsed = await readJsonBody(request, CompleteObjectBodySchema);
+
   if (!parsed.ok) {
     return Response.json({ error: parsed.error }, { status: 400 });
   }
+
   const body = parsed.body;
 
   if (body.action === "delete") {
@@ -40,6 +43,7 @@ export async function postCompleteObject(
   }
 
   const validated = validateSyncObjectPayload(body);
+
   if (!validated.ok) {
     return Response.json({ error: validated.error }, { status: 400 });
   }

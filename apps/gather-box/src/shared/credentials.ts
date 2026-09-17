@@ -16,6 +16,7 @@ export function shouldIncludeCredentials(
 
   if (settings.credentialsMode === "perSite") {
     const choice = settings.credentialsPerSite[payload.site];
+
     return choice
       ? choice === "include"
       : (getGatherSource(payload.site)?.includeCredentialsByDefault ?? false);

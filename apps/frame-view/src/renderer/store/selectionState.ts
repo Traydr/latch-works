@@ -21,14 +21,17 @@ export function sortAndSyncSelection(
   const sortedItems = sortMediaItems(items, settings.sortMode, settings.randomSeed);
 
   let nextSelectedId = selectedId;
+
   if (nextSelectedId && !sortedItems.some((item) => item.id === nextSelectedId)) {
     nextSelectedId = null;
   }
 
   let nextViewerIndex = viewerIndex;
+
   if (viewerIndex !== null) {
     if (nextSelectedId) {
       const selectedIndex = sortedItems.findIndex((item) => item.id === nextSelectedId);
+
       if (selectedIndex >= 0) {
         nextViewerIndex = selectedIndex;
       } else if (sortedItems.length > 0) {

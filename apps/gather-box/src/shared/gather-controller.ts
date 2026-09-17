@@ -160,6 +160,7 @@ export class GatherController {
       event.preventDefault();
       void this.handleDownload(true);
     };
+
     document.addEventListener("keydown", this.keydownHandler);
 
     this.shortcutCleanup = installShortcutKeyListener(
@@ -168,6 +169,7 @@ export class GatherController {
       (action) => {
         if (action === "toggle") {
           this.options.onToggleShortcut?.();
+
           return;
         }
 
@@ -179,22 +181,26 @@ export class GatherController {
       if (areaName === "sync" && changes["gather-box-settings"]) {
         void this.refreshSettings();
       }
+
       if (areaName === "local" && changes[GATHER_QUEUE_STATE_KEY]?.newValue) {
         this.applyGatherQueue(
           GatherQueueStateSchema.parse(changes[GATHER_QUEUE_STATE_KEY].newValue)
         );
       }
     };
+
     chrome.storage.onChanged.addListener(this.storageHandler);
 
     this.tabActivatedHandler = () => {
       void this.detectActiveTab();
     };
+
     this.tabUpdatedHandler = (_tabId, changeInfo) => {
       if (changeInfo.status === "complete" || changeInfo.url) {
         void this.detectActiveTab();
       }
     };
+
     chrome.tabs.onActivated.addListener(this.tabActivatedHandler);
     chrome.tabs.onUpdated.addListener(this.tabUpdatedHandler);
 
@@ -228,16 +234,20 @@ export class GatherController {
       document.removeEventListener("keydown", this.keydownHandler);
       this.keydownHandler = null;
     }
+
     this.shortcutCleanup?.();
     this.shortcutCleanup = null;
+
     if (this.storageHandler) {
       chrome.storage.onChanged.removeListener(this.storageHandler);
       this.storageHandler = null;
     }
+
     if (this.tabActivatedHandler) {
       chrome.tabs.onActivated.removeListener(this.tabActivatedHandler);
       this.tabActivatedHandler = null;
     }
+
     if (this.tabUpdatedHandler) {
       chrome.tabs.onUpdated.removeListener(this.tabUpdatedHandler);
       this.tabUpdatedHandler = null;
@@ -255,6 +265,7 @@ export class GatherController {
         updateSaveBehavior(this.state.siteKey);
         await this.restoreSavedDirectoryHandle();
         this.syncPopupActions();
+
         return;
       }
 
@@ -268,6 +279,7 @@ export class GatherController {
         updateSaveBehavior(this.state.siteKey);
         await this.restoreSavedDirectoryHandle();
         this.syncPopupActions();
+
         return;
       }
 
@@ -292,19 +304,23 @@ export class GatherController {
 
     const pickerWindow: DirectoryPickerWindow = window;
     const showDirectoryPicker = pickerWindow.showDirectoryPicker;
+
     if (!showDirectoryPicker) {
       this.setStatus("error");
       this.appendLog("Folder picking is unavailable in this context.", "error");
       this.elements.folderDetail.textContent =
         "This browser context does not support showDirectoryPicker().";
+
       return;
     }
 
     try {
       this.setStatus("pickingFolder");
+
       const directoryHandle = await showDirectoryPicker.call(pickerWindow, {
         mode: "readwrite"
       });
+
       await this.setDirectoryHandle(directoryHandle);
       this.elements.folderDetail.textContent = this.state.siteKey
         ? `Remembered for ${this.directories.getDirectoryScopeLabel(this.state.settings.useGlobalFolder)}.`
@@ -357,45 +373,56 @@ export class GatherController {
     if (!this.isSupportedTab()) {
       this.appendLog("Active tab is not a supported content page.", "error");
       this.syncPopupActions();
+
       return;
     }
 
     if (!this.state.directoryHandle) {
       this.appendLog("Choose a folder before downloading.", "error");
       this.syncPopupActions();
+
       return;
     }
 
     if (allowPermissionPrompt) {
       const permission = await this.directories.ensureDirectoryPermission(this.state.directoryHandle, true);
+
       if (permission === "requires-user-activation") {
         this.appendLog("Folder access needs confirmation. Click Download Content again.", "error");
         this.syncPopupActions();
+
         return;
       }
+
       if (permission !== "granted") {
         this.appendLog("Folder is no longer writable. Choose it again.", "error");
         this.syncPopupActions();
+
         return;
       }
     }
 
     const tabId = this.state.activeTab?.id;
+
     if (tabId === undefined) {
       this.appendLog("No active source tab is available.", "error");
+
       return;
     }
 
     this.state.running = true;
     this.setStatus("collecting");
     this.syncPopupActions();
+
     try {
       const response = await chrome.runtime.sendMessage<
         { type: typeof START_GATHER_RUN_REQUEST; target: "background"; tabId: number },
         GatherRunResponse
       >({ type: START_GATHER_RUN_REQUEST, target: "background", tabId });
+
       if (response.outcome === "started" || response.outcome === "queued") {
         this.applyGatherRun(response.run);
+
         if (response.outcome === "queued") {
           this.appendLog(`Added to queue at position ${response.position}.`, "success");
         }
@@ -416,6 +443,7 @@ export class GatherController {
 
   private async handleCancel(): Promise<void> {
     const runId = this.state.activeRunId;
+
     if (!runId) {
       return;
     }
@@ -425,6 +453,7 @@ export class GatherController {
         { type: typeof CANCEL_GATHER_RUN_REQUEST; target: "background"; runId: string },
         GatherRunCancelOutcome
       >({ type: CANCEL_GATHER_RUN_REQUEST, target: "background", runId });
+
       if (response.outcome === "cancelled") {
         this.applyGatherRun(response.run);
         this.appendLog("Gather Run cancelled.", "error");
@@ -442,35 +471,47 @@ export class GatherController {
     }
 
     const target = this.retryTarget;
+
     if (!target) {
       this.appendLog("No retryable Gather Run was found.", "error");
+
       return;
     }
 
     // The executor reloads this same handle by the run's site, so confirm access to that folder
     // rather than the active tab's — the two differ whenever you retry from another tab.
     const scopeLabel = getGatherSource(target.siteKey)?.label ?? target.siteKey;
+
     const directoryHandle = await this.directories.loadDirectoryHandle(
       target.siteKey,
       this.state.settings.useGlobalFolder
     );
+
     if (!directoryHandle) {
       this.appendLog(`Choose a folder for ${scopeLabel} before retrying.`, "error");
+
       return;
     }
+
     const permission = await this.directories.ensureDirectoryPermission(directoryHandle, true);
+
     if (permission === "requires-user-activation") {
       this.appendLog("Folder access needs confirmation. Click Retry Failed again.", "error");
+
       return;
     }
+
     if (permission !== "granted") {
       this.appendLog(`Folder for ${scopeLabel} is no longer writable. Choose it again.`, "error");
+
       return;
     }
+
     const response = await chrome.runtime.sendMessage<
       { type: typeof RETRY_GATHER_RUN_REQUEST; target: "background"; runId: string },
       GatherRunResponse
     >({ type: RETRY_GATHER_RUN_REQUEST, target: "background", runId: target.runId });
+
     if (response.outcome === "started" || response.outcome === "queued") {
       this.applyGatherRun(response.run);
     } else if (response.outcome === "failed") {
@@ -480,11 +521,13 @@ export class GatherController {
 
   private async handleCopyErrors(): Promise<void> {
     const failedItems = this.state.lastRun.failedItems;
+
     if (failedItems.length === 0) {
       return;
     }
 
     const report = buildErrorReport(failedItems, this.state.lastRun);
+
     try {
       await navigator.clipboard.writeText(report);
       this.appendLog("Copied error report to clipboard.", "success");
@@ -500,6 +543,7 @@ export class GatherController {
 
     if (!this.state.siteKey && !this.state.settings.useGlobalFolder) {
       setFolder(this.elements, "No folder selected", `Choose a writable folder for ${scopeLabel}.`);
+
       return;
     }
 
@@ -508,8 +552,10 @@ export class GatherController {
         this.state.siteKey,
         this.state.settings.useGlobalFolder
       );
+
       if (!directoryHandle) {
         setFolder(this.elements, "No folder selected", `Choose a writable folder for ${scopeLabel}.`);
+
         return;
       }
 
@@ -542,11 +588,13 @@ export class GatherController {
 
   private syncPopupActions(): void {
     const hasActiveJob = Boolean(this.state.activeRunId);
+
     const runInFlight =
       hasActiveJob &&
       (this.state.status === "collecting" ||
         this.state.status === "queued" ||
         this.state.status === "downloading");
+
     syncActions(
       this.elements,
       this.isSupportedTab() && Boolean(this.state.directoryHandle) && !this.state.running,
@@ -570,6 +618,7 @@ export class GatherController {
 
   private applyGatherRun(run: GatherRunState): void {
     this.state.activeRunId = isTerminalGatherRunPhase(run.phase) ? null : run.id;
+
     const status: PopupStatus =
       run.phase === "complete"
         ? "complete"
@@ -583,6 +632,7 @@ export class GatherController {
             : run.phase === "writing" || run.phase === "cancelling"
               ? "downloading"
               : "collecting";
+
     this.setStatus(status);
     setProgress(
       this.elements,
@@ -590,14 +640,18 @@ export class GatherController {
       run.progress.total || 1,
       run.progress.message
     );
+
     if (run.destinationPreview) {
       setDestinationPreview(this.elements, run.destinationPreview);
     }
+
     this.logEntries = [...run.log];
     restoreLog(this.elements, this.logEntries);
+
     if (run.phase === "complete") {
       flashDownloadComplete(this.elements);
     }
+
     this.syncPopupActions();
   }
 
@@ -613,12 +667,14 @@ export class GatherController {
     }
 
     const actionResult = retryable ?? latest;
+
     if (actionResult) {
       this.state.lastRun = lastRunFromGatherResult(actionResult);
       this.retryTarget = retryable ? { runId: retryable.id, siteKey: retryable.siteKey } : null;
     } else {
       this.retryTarget = null;
     }
+
     this.syncPopupActions();
   }
 
@@ -686,6 +742,7 @@ function buildErrorReport(failedItems: LastRunState["failedItems"], lastRun: Las
     "",
     ...failedItems.map((item) => {
       const url = item.originalUrl ? `\n  URL: ${item.originalUrl}` : "";
+
       return `- ${item.fileName}: ${item.reason}${url}`;
     })
   ];

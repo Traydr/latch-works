@@ -3,9 +3,11 @@ import type { SiteKey } from "./sites";
 import { getGatherSource } from "./source-catalog";
 
 export const CredentialsModeSchema = z.enum(["auto", "always", "never", "perSite"]);
+
 export type CredentialsMode = z.infer<typeof CredentialsModeSchema>;
 
 export const CredentialsChoiceSchema = z.enum(["include", "omit"]);
+
 export type CredentialsChoice = z.infer<typeof CredentialsChoiceSchema>;
 
 export interface GatherBoxSettings {
@@ -87,6 +89,7 @@ function keepKnownSources(choices: Record<string, CredentialsChoice | null>) {
 
   for (const [siteKey, choice] of Object.entries(choices)) {
     const source = getGatherSource(siteKey);
+
     if (choice !== null && source !== null) {
       known[source.key] = choice;
     }

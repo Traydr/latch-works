@@ -81,6 +81,7 @@ export async function downloadImages(
     skipped: 0,
     failedItems: []
   };
+
   let completed = 0;
   const total = images.length;
   const concurrency = options.concurrency ?? DEFAULT_DOWNLOAD_CONCURRENCY;
@@ -93,6 +94,7 @@ export async function downloadImages(
       () => undefined,
       () => undefined
     );
+
     return result;
   };
 
@@ -103,11 +105,13 @@ export async function downloadImages(
     try {
       throwIfAborted(options.signal);
       const preparedImage = options.site ? prepareDownloadImage(options.site, image) : image;
+
       if (!preparedImage) {
         throw new Error("Download URL or filename is not allowed");
       }
 
       const expectedTarget = mediaTransformer.expectedTarget(preparedImage.fileName);
+
       if (
         expectedTarget &&
         (await getExistingFileHandle(destinationDirectory, expectedTarget)) &&
@@ -116,30 +120,37 @@ export async function downloadImages(
         summary.skipped += 1;
         callbacks.onSkipped?.(expectedTarget);
         callbacks.onVerbose?.(`Skipped existing converted file ${expectedTarget}`);
+
         return;
       }
 
       callbacks.onVerbose?.(`Fetching ${preparedImage.originalUrl}`);
+
       const response = await fetch(preparedImage.originalUrl, {
         credentials: options.credentials ?? "omit",
         signal: options.signal
       });
+
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
 
       const downloadedBlob = await response.blob();
+
       const transformed = await mediaTransformer.transform(
         downloadedBlob,
         preparedImage.fileName,
         options.signal
       );
+
       if (transformed.converted) {
         callbacks.onVerbose?.(
           `Converted ${preparedImage.fileName} to ${transformed.fileName}`
         );
       }
+
       throwIfAborted(options.signal);
+
       const saved = await enqueueSave(() =>
         saveBlobWithoutClobbering(
           transformed.blob,
@@ -149,10 +160,12 @@ export async function downloadImages(
           options.signal
         )
       );
+
       if (saved.skipped) {
         summary.skipped += 1;
         callbacks.onSkipped?.(saved.fileName);
         callbacks.onVerbose?.(`Skipped identical existing file ${saved.fileName}`);
+
         return;
       }
 
@@ -162,6 +175,7 @@ export async function downloadImages(
       if (isAbortError(toError(error)) || options.signal?.aborted) {
         throw isAbortError(toError(error)) ? error : new DOMException("The operation was aborted.", "AbortError");
       }
+
       summary.failed += 1;
       summary.failedItems.push({
         fileName: image.fileName,
@@ -175,6 +189,7 @@ export async function downloadImages(
   });
 
   throwIfAborted(options.signal);
+
   return summary;
 }
 
@@ -186,19 +201,23 @@ export async function saveBlobWithoutClobbering(
   signal?: AbortSignal
 ): Promise<CollisionSaveResult> {
   throwIfAborted(signal);
+
   const recovered = await recoverPendingBlobCommit(
     destinationDirectory,
     preferredFileName,
     blob,
     signal
   );
+
   if (recovered) {
     return { fileName: recovered, skipped: false };
   }
 
   const preferredHandle = await getExistingFileHandle(destinationDirectory, preferredFileName);
+
   if (!preferredHandle) {
     await commitBlob(destinationDirectory, preferredFileName, preferredFileName, blob, signal);
+
     return { fileName: preferredFileName, skipped: false };
   }
 
@@ -210,8 +229,10 @@ export async function saveBlobWithoutClobbering(
     throwIfAborted(signal);
     const candidateName = addFileNameSuffix(preferredFileName, randomSuffix());
     const candidateHandle = await getExistingFileHandle(destinationDirectory, candidateName);
+
     if (!candidateHandle) {
       await commitBlob(destinationDirectory, preferredFileName, candidateName, blob, signal);
+
       return { fileName: candidateName, skipped: false };
     }
 
@@ -225,6 +246,7 @@ export async function saveBlobWithoutClobbering(
 
 export function addFileNameSuffix(fileName: string, suffix: string): string {
   const dotIndex = fileName.lastIndexOf(".");
+
   if (dotIndex <= 0) {
     return `${fileName}_${suffix}`;
   }
@@ -242,6 +264,7 @@ export async function runPool<T>(
   }
 
   let nextIndex = 0;
+
   const runners = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
     while (true) {
       const currentIndex = nextIndex;
@@ -281,6 +304,7 @@ async function getExistingFileHandle(
     if (error instanceof DOMException && error.name === "NotFoundError") {
       return null;
     }
+
     throw error;
   }
 }
@@ -288,12 +312,14 @@ async function getExistingFileHandle(
 async function fileContentsMatch(fileHandle: WritableFile, blob: Blob): Promise<boolean> {
   try {
     const existingFile = await fileHandle.getFile();
+
     if (existingFile.size !== blob.size) {
       return false;
     }
 
     const existingHash = await hashBlob(existingFile);
     const incomingHash = await hashBlob(blob);
+
     return existingHash === incomingHash;
   } catch {
     return false;
@@ -302,6 +328,7 @@ async function fileContentsMatch(fileHandle: WritableFile, blob: Blob): Promise<
 
 async function hashBlob(blob: Blob): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
+
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
@@ -319,10 +346,13 @@ async function commitBlob(
   signal?: AbortSignal
 ): Promise<void> {
   const markerName = await getCommitMarkerName(preferredFileName);
+
   const marker = new Blob([JSON.stringify({ preferredFileName, targetFileName })], {
     type: "application/json"
   });
+
   await writeBlobDirect(destinationDirectory, markerName, marker, signal);
+
   try {
     await writeBlobDirect(destinationDirectory, targetFileName, blob, signal);
     await removeEntryIfPresent(destinationDirectory, markerName);
@@ -331,6 +361,7 @@ async function commitBlob(
       await removeEntryIfPresent(destinationDirectory, targetFileName);
       await removeEntryIfPresent(destinationDirectory, markerName);
     }
+
     throw error;
   }
 }
@@ -352,13 +383,16 @@ async function recoverPendingBlobCommit(
 ): Promise<string | null> {
   const markerName = await getCommitMarkerName(preferredFileName);
   const markerHandle = await getExistingFileHandle(destinationDirectory, markerName);
+
   if (!markerHandle) {
     return null;
   }
 
   let targetFileName: string | null = null;
+
   try {
     const marker = CommitMarkerSchema.parse(JSON.parse(await (await markerHandle.getFile()).text()));
+
     if (
       marker.preferredFileName === preferredFileName &&
       isSafeCommitTarget(marker.targetFileName)
@@ -371,16 +405,20 @@ async function recoverPendingBlobCommit(
 
   if (!targetFileName) {
     await removeEntryIfPresent(destinationDirectory, markerName);
+
     return null;
   }
 
   throwIfAborted(signal);
   const targetHandle = await getExistingFileHandle(destinationDirectory, targetFileName);
+
   if (!targetHandle || !(await fileContentsMatch(targetHandle, blob))) {
     await removeEntryIfPresent(destinationDirectory, targetFileName);
     await writeBlobDirect(destinationDirectory, targetFileName, blob, signal);
   }
+
   await removeEntryIfPresent(destinationDirectory, markerName);
+
   return targetFileName;
 }
 
@@ -389,9 +427,11 @@ async function getCommitMarkerName(preferredFileName: string): Promise<string> {
     "SHA-256",
     new TextEncoder().encode(preferredFileName)
   );
+
   const key = Array.from(new Uint8Array(digest).slice(0, 12), (byte) =>
     byte.toString(16).padStart(2, "0")
   ).join("");
+
   return `.gather-box-commit-${key}.json`;
 }
 
@@ -421,6 +461,7 @@ async function writeBlobDirect(
   throwIfAborted(signal);
   const fileHandle = await destinationDirectory.getFileHandle(fileName, { create: true });
   const writable = await fileHandle.createWritable();
+
   try {
     throwIfAborted(signal);
     await writable.write(blob);
@@ -436,10 +477,13 @@ async function writeBlobDirect(
 async function closeWritableSafely(writable: WritableFileStream): Promise<void> {
   try {
     const abort = writable.abort;
+
     if (abort) {
       await abort.call(writable);
+
       return;
     }
+
     await writable.close();
   } catch {
     // Best-effort cleanup after a failed or aborted write.
@@ -449,5 +493,6 @@ async function closeWritableSafely(writable: WritableFileStream): Promise<void> 
 function createRandomSuffix(): string {
   const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
   const randomBytes = crypto.getRandomValues(new Uint8Array(4));
+
   return Array.from(randomBytes, (byte) => alphabet[byte % alphabet.length]).join("");
 }

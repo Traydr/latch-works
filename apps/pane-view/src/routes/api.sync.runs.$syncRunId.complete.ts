@@ -20,11 +20,13 @@ export async function postSyncRunComplete(
   dependencies: SyncRouteDependencies = syncRouteDependencies,
 ): Promise<Response> {
   const unauthorized = dependencies.requireSyncApiToken(request);
+
   if (unauthorized) {
     return unauthorized;
   }
 
   const parsed = await readJsonBody(request, FinalizeSyncRunBodySchema);
+
   if (!parsed.ok) {
     return Response.json({ error: parsed.error }, { status: 400 });
   }

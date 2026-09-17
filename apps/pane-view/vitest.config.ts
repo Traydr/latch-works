@@ -32,6 +32,7 @@ const testEnvDefaults = {
 } satisfies Record<string, string>;
 
 const testEnv: Record<string, string> = {};
+
 for (const [key, value] of Object.entries(testEnvDefaults)) {
   if (process.env[key] === undefined) testEnv[key] = value;
 }

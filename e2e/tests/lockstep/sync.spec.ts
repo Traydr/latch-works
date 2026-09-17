@@ -26,6 +26,7 @@ test.afterAll(async () => {
 async function readPlanCount(label: "upload" | "keep"): Promise<string> {
   // The plan list below also labels rows "upload"; the legend comes first in the DOM.
   const pair = session.window.locator("span", { hasText: new RegExp(`^${label}$`) }).locator("..");
+
   return (await pair.first().innerText()).replace(label, "").trim();
 }
 
@@ -41,10 +42,12 @@ test("a profile is created against the running Pane View", async () => {
   await window.getByRole("button", { name: "Save profile" }).click();
 
   const active = window.getByRole("button", { name: "Active profile" });
+
   if ((await active.innerText()).trim() !== PROFILE_NAME) {
     await active.click();
     await window.getByRole("option", { name: PROFILE_NAME }).click();
   }
+
   await expect(active).toHaveText(PROFILE_NAME);
   await expect(window.getByText(LOCKSTEP_SOURCE_DIR, { exact: true })).toBeVisible();
 });
@@ -66,10 +69,13 @@ test("plan reports the source as uploads, push lands them in Pane View", async (
   const snapshot = await request.get(`${PANE_VIEW_URL}/api/sync/snapshot`, {
     headers: { Authorization: `Bearer ${PANE_VIEW_CREDENTIALS.syncToken}` },
   });
+
   expect(snapshot.ok()).toBe(true);
+
   const remotePaths = SnapshotResponseSchema.parse(await snapshot.json()).entries.map(
     (entry) => entry.path,
   );
+
   for (const item of LOCKSTEP_SOURCE_ITEMS) expect(remotePaths).toContain(item.path);
 });
 

@@ -81,25 +81,35 @@ export interface OperationalEvent extends OperationalEventFields {
 }
 
 const EVENT_NAME_SCHEMA = z.enum(OPERATIONAL_EVENT_NAMES);
+
 const FAILURE_CODES = new Set<string>([
   ...Object.keys(FAILURE_ACTIONS),
   "service_unavailable",
   "stale_attempt",
 ]);
+
 const ERROR_TYPE = /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/u;
+
 const HASH = /^[A-Za-z0-9_-]{43}$/u;
+
 const REQUEST_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
+
 const HTTP_METHOD = /^[A-Z]{1,16}$/u;
+
 const FEATURE_ENTRY = "[A-Za-z][A-Za-z0-9]{0,63}=[A-Z][A-Z0-9_]{0,63}(?:,[A-Z][A-Z0-9_]{0,63})*";
+
 const FEATURES = new RegExp(`^${FEATURE_ENTRY}(?: ${FEATURE_ENTRY}){0,31}$`, "u");
+
 const CONTROL_HTTP_ROUTE_TEMPLATES = new Set<string>(Object.values(CONTROL_HTTP_ROUTES));
 
 type OptionalOperationalEventField = Exclude<keyof OperationalEvent, "event">;
+
 type FieldSchemas = {
   [Field in OptionalOperationalEventField]-?: z.ZodType<NonNullable<OperationalEvent[Field]>>;
 };
 
 type FailureCodeField = NonNullable<OperationalEventFields["failureCode"]>;
+
 type HttpRouteField = NonNullable<OperationalEventFields["httpRoute"]>;
 
 const nonNegativeInteger = z.int().nonnegative();
@@ -152,6 +162,7 @@ function isOptionalEventField(field: string): field is OptionalOperationalEventF
 
 export function operationalErrorType(cause: unknown): string {
   if (!(cause instanceof Error)) return "NonErrorThrown";
+
   return ERROR_TYPE.test(cause.name) ? cause.name : "Error";
 }
 
@@ -162,6 +173,7 @@ export function operationalErrorType(cause: unknown): string {
  */
 export function sanitizeOperationalEvent(event: OperationalEvent): OperationalEvent {
   const eventName = EVENT_NAME_SCHEMA.safeParse(event.event);
+
   if (!eventName.success) {
     return {
       event: "control.service.failed",
@@ -172,11 +184,14 @@ export function sanitizeOperationalEvent(event: OperationalEvent): OperationalEv
   }
 
   const sanitizedEvent: OperationalEvent = { event: eventName.data };
+
   for (const [field, candidate] of Object.entries(event)) {
     if (!isOptionalEventField(field)) continue;
     const value = FIELD_SCHEMAS[field].safeParse(candidate);
+
     if (value.success) Object.assign(sanitizedEvent, { [field]: value.data });
   }
+
   return sanitizedEvent;
 }
 
@@ -188,12 +203,15 @@ export async function operationalEvent(input: {
   fields?: OperationalEventFields;
 }): Promise<OperationalEvent> {
   const event: OperationalEvent = { ...input.fields, event: input.event };
+
   if (input.spaceId !== undefined && input.sourceId !== undefined) {
     event.sourceHash = await sourceFingerprint(input.spaceId, input.sourceId);
   }
+
   if (input.processingToken !== undefined) {
     event.processingTokenHash = await sourceFingerprint("processing-token", input.processingToken);
   }
+
   return sanitizeOperationalEvent(event);
 }
 

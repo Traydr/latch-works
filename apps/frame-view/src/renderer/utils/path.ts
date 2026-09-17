@@ -7,6 +7,7 @@ export function toDisplayName(inputPath: string | null): string {
 
   const normalized = inputPath.replace(/\\/g, '/');
   const parts = normalized.split('/').filter(Boolean);
+
   return parts.length ? parts[parts.length - 1] : inputPath;
 }
 
@@ -17,16 +18,19 @@ export function getParentPath(inputPath: string | null): string | null {
 
   const useBackslashes = /^[A-Za-z]:/.test(inputPath) || inputPath.includes('\\');
   const normalized = inputPath.replace(/\\/g, '/').replace(/\/+$/, '');
+
   if (!normalized || normalized === '/' || /^[A-Za-z]:$/.test(normalized)) {
     return null;
   }
 
   const lastSlashIndex = normalized.lastIndexOf('/');
+
   if (lastSlashIndex < 0) {
     return null;
   }
 
   const parent = normalized.slice(0, lastSlashIndex);
+
   if (!parent) {
     return '/';
   }
@@ -41,6 +45,7 @@ export function getParentPath(inputPath: string | null): string | null {
 function toShowcaseMediaUrl(filePath: string): string {
   const normalized = filePath.replace(/\\/g, '/');
   const fileName = normalized.split('/').pop() ?? normalized;
+
   return `/showcase-media/${encodeURIComponent(fileName)}`;
 }
 
@@ -58,8 +63,10 @@ export function toThumbnailUrl(filePath: string, size: number, priority?: 0 | 1 
   }
 
   const clampedSize = Math.max(64, Math.min(1024, Math.floor(size)));
+
   const prioritySuffix =
     priority === undefined ? '' : `&priority=${Math.max(0, Math.min(2, Math.floor(priority)))}`;
+
   return `frameview-media://thumb?path=${encodeURIComponent(filePath)}&size=${clampedSize}${prioritySuffix}`;
 }
 

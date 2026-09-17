@@ -37,6 +37,7 @@ describe("Gather Run transitions", () => {
       },
       102
     );
+
     expect(writing).toMatchObject({ phase: "writing", destinationPreview: "Archive/pixiv/1" });
 
     const progress = applyGatherRunEvent(
@@ -44,6 +45,7 @@ describe("Gather Run transitions", () => {
       { kind: "progress", completed: 1, total: 2, message: "Processed 1 of 2." },
       103
     );
+
     const complete = applyGatherRunEvent(
       progress,
       {
@@ -56,6 +58,7 @@ describe("Gather Run transitions", () => {
       },
       104
     );
+
     expect(complete).toMatchObject({
       phase: "complete",
       updatedAt: 104,
@@ -73,6 +76,7 @@ describe("Gather Run transitions", () => {
       { kind: "permission-required", scope: "global" },
       101
     );
+
     expect(globalScoped.progress.message).toContain("any supported page");
   });
 
@@ -83,6 +87,7 @@ describe("Gather Run transitions", () => {
       originalUrl: "https://example.test/1.jpg",
       fileName: "1.jpg"
     };
+
     const failed = applyGatherRunEvent(
       run,
       {
@@ -95,6 +100,7 @@ describe("Gather Run transitions", () => {
       },
       105
     );
+
     expect(failed.phase).toBe("failed");
     expect(failed.retryImages).toEqual([image]);
   });
@@ -123,10 +129,12 @@ describe("Gather queue orchestration", () => {
   it("resumes a site-scoped permission job and still queues the confirming tab", async () => {
     const waitingJob = outputJob("waiting", "permission-required");
     waitingJob.run.tabId = 1;
+
     const harness = createHarness({
       ...EMPTY_GATHER_QUEUE,
       jobs: [waitingJob]
     });
+
     harness.collect.mockResolvedValue(downloadablePayload());
     harness.getTab.mockResolvedValue(tabAt({ id: 99, windowId: 2, url: "https://www.pixiv.net/artworks/2" }));
 
@@ -145,6 +153,7 @@ describe("Gather queue orchestration", () => {
 
   it("resumes a permission job without re-collecting its own page", async () => {
     const waitingJob = outputJob("waiting", "permission-required");
+
     const harness = createHarness({
       ...EMPTY_GATHER_QUEUE,
       jobs: [waitingJob]
@@ -161,13 +170,16 @@ describe("Gather queue orchestration", () => {
 
   it("persists executor events while another tab is still collecting", async () => {
     let finishCollection!: (value: DownloadablePayload) => void;
+
     const collection = new Promise<DownloadablePayload>((resolve) => {
       finishCollection = resolve;
     });
+
     const harness = createHarness({
       ...EMPTY_GATHER_QUEUE,
       jobs: [outputJob("writing", "writing")]
     });
+
     harness.collect.mockReturnValue(collection);
     harness.getTab.mockResolvedValue(tabAt({ id: 2, windowId: 1, url: "https://www.pixiv.net/artworks/2" }));
 
@@ -299,9 +311,11 @@ function createHarness(initial: GatherQueueState) {
   const collect = vi.fn<GatherRunCoordinatorDependencies["collect"]>();
   const execute = vi.fn<GatherRunCoordinatorDependencies["execute"]>().mockResolvedValue(true);
   const abort = vi.fn<GatherRunCoordinatorDependencies["abort"]>().mockResolvedValue(true);
+
   const getTab = vi.fn<GatherRunCoordinatorDependencies["getTab"]>().mockResolvedValue(
     tabAt({ id: 1, windowId: 1, url: "https://www.pixiv.net/artworks/1" })
   );
+
   const dependencies: GatherRunCoordinatorDependencies = {
     loadQueue: async () => structuredClone(queue),
     saveQueue: async (next) => {
@@ -316,6 +330,7 @@ function createHarness(initial: GatherQueueState) {
     now: () => 1_000,
     randomUUID: () => "new-run"
   };
+
   return {
     coordinator: new GatherRunCoordinator(dependencies),
     collect,

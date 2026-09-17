@@ -12,6 +12,7 @@ export function SettingsTabNav({ activeTab, onSelectTab }: SettingsTabNavProps):
     <div className="inline-flex flex-wrap gap-2 rounded-2xl bg-zinc-100/80 p-1 dark:bg-zinc-900/60">
       {SETTINGS_TABS.map((tab) => {
         const selected = tab === activeTab;
+
         return (
           <button
             key={tab}

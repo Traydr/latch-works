@@ -30,6 +30,7 @@ export function useViewerChromeIdle(
 
   const armIdleTimer = useCallback((): void => {
     clearIdleTimer();
+
     if (!pinned) {
       idleTimerRef.current = window.setTimeout(() => {
         setChromeVisible(false);
@@ -47,9 +48,12 @@ export function useViewerChromeIdle(
     setChromeVisible((visible) => {
       if (visible) {
         clearIdleTimer();
+
         return false;
       }
+
       armIdleTimer();
+
       return true;
     });
   }, [armIdleTimer, clearIdleTimer]);
@@ -58,6 +62,7 @@ export function useViewerChromeIdle(
     if (pinned) {
       setChromeVisible(true);
       clearIdleTimer();
+
       return;
     }
 

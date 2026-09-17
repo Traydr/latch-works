@@ -17,8 +17,11 @@ import {
 } from "../shared/x-media";
 
 const GUEST_TOKEN_URL = "https://api.x.com/1.1/guest/activate.json";
+
 const SYNDICATION_URL = "https://cdn.syndication.twimg.com/tweet-result";
+
 const FALLBACK_TWEET_DETAIL_QUERY_ID = "jd3V43oDY9cY7obs1YMfbQ";
+
 const REQUEST_TIMEOUT_MS = 12_000;
 
 /** The operation metadata X embeds in its main bundle is a JSON array of switch names. */
@@ -83,6 +86,7 @@ const FALLBACK_FIELD_TOGGLES = [
 ];
 
 let cachedGuestToken: string | null = null;
+
 const operationCache = new Map<string, XOperationMetadata>();
 
 // Fallback order informed by Cobalt's X extractor:
@@ -93,6 +97,7 @@ export async function resolveXPostMedia(
   try {
     const syndicationMedia = await requestSyndicationMedia(message.tweetId);
     const parsedSyndication = parseXMedia(syndicationMedia);
+
     if (parsedSyndication.length > 0) {
       return { ok: true, media: parsedSyndication };
     }
@@ -100,14 +105,17 @@ export async function resolveXPostMedia(
     const operation = await getTweetDetailOperation(message.mainScriptUrl);
 
     const guestToken = await getGuestToken();
+
     if (guestToken) {
       const guestBody = await requestTweetDetail(message, operation, {
         authenticated: false,
         guestToken
       });
+
       const guestMedia = parseXMedia(
         guestBody === null ? [] : extractGraphqlMedia(guestBody, message.tweetId)
       );
+
       if (guestMedia.length > 0) {
         return { ok: true, media: guestMedia };
       }
@@ -130,6 +138,7 @@ export function extractTweetDetailOperation(source: string): XOperationMetadata 
   const operation = source.match(
     /queryId:"([^"]+)",operationName:"TweetDetail"[\s\S]{0,10000}?featureSwitches:(\[[^\]]*\]),fieldToggles:(\[[^\]]*\])/
   );
+
   if (!operation) {
     return null;
   }
@@ -152,9 +161,11 @@ async function requestSyndicationMedia(tweetId: string): Promise<XMediaEntry[]> 
 
   try {
     const response = await fetchWithTimeout(url);
+
     if (!response.ok) {
       return [];
     }
+
     return XSyndicationResponseSchema.parse(await response.json()).mediaDetails;
   } catch {
     return [];
@@ -164,16 +175,20 @@ async function requestSyndicationMedia(tweetId: string): Promise<XMediaEntry[]> 
 async function getTweetDetailOperation(mainScriptUrl: string | null): Promise<XOperationMetadata> {
   if (mainScriptUrl && isAllowedMainScriptUrl(mainScriptUrl)) {
     const cached = operationCache.get(mainScriptUrl);
+
     if (cached) {
       return cached;
     }
 
     try {
       const response = await fetchWithTimeout(mainScriptUrl);
+
       if (response.ok) {
         const operation = extractTweetDetailOperation(await response.text());
+
         if (operation) {
           operationCache.set(mainScriptUrl, operation);
+
           return operation;
         }
       }
@@ -230,9 +245,11 @@ async function requestTweetDetail(
       credentials: "omit",
       headers
     });
+
     if (!response.ok) {
       return null;
     }
+
     return XTweetDetailResponseSchema.parse(await response.json());
   } catch {
     return null;
@@ -249,10 +266,13 @@ async function getGuestToken(): Promise<string | null> {
       method: "POST",
       headers: { authorization: `Bearer ${X_WEB_BEARER_TOKEN}` }
     });
+
     if (!response.ok) {
       return null;
     }
+
     const body = GuestTokenResponseSchema.parse(await response.json());
+
     if (body.guest_token !== null) {
       cachedGuestToken = body.guest_token;
     }
@@ -269,6 +289,7 @@ function getSyndicationToken(tweetId: string): string {
 
 function isAllowedMainScriptUrl(value: string): boolean {
   const url = new URL(value);
+
   return (
     url.protocol === "https:" &&
     url.hostname === "abs.twimg.com" &&

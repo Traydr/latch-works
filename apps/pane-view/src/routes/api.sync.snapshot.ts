@@ -7,6 +7,7 @@ export const Route = createFileRoute("/api/sync/snapshot")({
     handlers: {
       GET: async ({ request }: { request: Request }) => {
         const unauthorized = requireSyncApiToken(request);
+
         if (unauthorized) {
           return unauthorized;
         }

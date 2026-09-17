@@ -10,9 +10,11 @@ export function resolveHashMode(options: {
   if (options.hashMode) {
     return options.hashMode;
   }
+
   if (options.hashFiles !== undefined) {
     return options.hashFiles ? "all" : "none";
   }
+
   return options.defaultMode ?? "none";
 }
 

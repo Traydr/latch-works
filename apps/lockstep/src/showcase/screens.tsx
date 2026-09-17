@@ -54,7 +54,9 @@ function pushProgress(): RunProgressState {
 }
 
 const noop = () => undefined;
+
 const noopAsync = async () => undefined;
+
 const noopPlan = async () => false;
 
 function createController(screen: Screen): LockstepController {

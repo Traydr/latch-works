@@ -4,5 +4,6 @@ import { assertWebSessionAuthorized } from "../library/library-service";
 
 export const getArchiveStats = createServerFn({ method: "GET" }).handler(async () => {
   await assertWebSessionAuthorized();
+
   return readArchiveStats();
 });

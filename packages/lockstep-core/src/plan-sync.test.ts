@@ -70,6 +70,7 @@ describe("planSync hash modes", () => {
   it("keeps exhaustive hashing semantics while reusing warm cache entries", async () => {
     const fixture = await createFixture();
     const coldEvents: LockstepRunEvent[] = [];
+
     const cold = await planSync(
       {
         hashCacheRoot: fixture.cacheRoot,
@@ -79,7 +80,9 @@ describe("planSync hash modes", () => {
       },
       { onEvent: (event) => coldEvents.push(event) },
     );
+
     const warmEvents: LockstepRunEvent[] = [];
+
     const warm = await planSync(
       {
         hashCacheRoot: fixture.cacheRoot,
@@ -168,6 +171,7 @@ describe("planSync hash modes", () => {
       "same.jpg": "same",
       "without-hash.jpg": "plain",
     };
+
     await Promise.all(
       Object.entries(files).map(([filename, content]) =>
         writeFile(path.join(sourceRoot, filename), content),
@@ -183,6 +187,7 @@ describe("planSync hash modes", () => {
       ]),
       "utf-8",
     );
+
     return { cacheRoot, root, snapshotPath, sourceRoot };
   }
 });
@@ -198,14 +203,17 @@ function hashedPaths(events: readonly LockstepRunEvent[]): Set<string> {
 
 function hashedBytes(events: readonly LockstepRunEvent[]): number {
   const maximumByPath = new Map<string, number>();
+
   for (const event of events) {
     if (event.type !== "scan-progress" || event.progress.stage !== "hashing") {
       continue;
     }
+
     maximumByPath.set(
       event.progress.path,
       Math.max(maximumByPath.get(event.progress.path) ?? 0, event.progress.bytesHashed),
     );
   }
+
   return [...maximumByPath.values()].reduce((sum, bytes) => sum + bytes, 0);
 }

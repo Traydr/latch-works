@@ -1,4 +1,5 @@
 export const TRIGGER_DOWNLOAD_MESSAGE = "GATHER_BOX_TRIGGER_DOWNLOAD" as const;
+
 export const OPEN_EXTENSION_MESSAGE = "GATHER_BOX_OPEN_EXTENSION" as const;
 
 export interface TriggerDownloadMessage {

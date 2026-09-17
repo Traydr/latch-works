@@ -21,7 +21,9 @@ import { fileURLToPath } from "node:url";
 import puppeteer from "puppeteer-core";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
 const extensionDir = join(root, "../gather-box/dist");
+
 const outputDir = join(root, "public", "screenshots", "gather-box");
 
 const shots = [
@@ -33,6 +35,7 @@ const shots = [
     tabPattern: "https://archiveofourown.org/",
     readyInPanel: () => {
       const banner = document.getElementById("unsupportedBanner-mini");
+
       return banner !== null && !banner.hidden && (banner.textContent ?? "").length > 0;
     },
   },
@@ -48,6 +51,7 @@ const shots = [
       const banner = document.getElementById("unsupportedBanner-mini");
       const saveBlock = document.getElementById("saveBlock-mini");
       const savePath = document.getElementById("savePath-mini");
+
       return (
         banner?.hidden === true &&
         saveBlock?.hidden === false &&
@@ -73,6 +77,7 @@ async function seedDirectoryHandle(browser, panelUrl) {
       open.onupgradeneeded = () => {
         open.result.createObjectStore("handles");
       };
+
       open.onsuccess = () => {
         const transaction = open.result.transaction("handles", "readwrite");
         const store = transaction.objectStore("handles");
@@ -81,6 +86,7 @@ async function seedDirectoryHandle(browser, panelUrl) {
         transaction.oncomplete = () => resolve(undefined);
         transaction.onerror = () => reject(transaction.error);
       };
+
       open.onerror = () => reject(open.error);
     });
   });
@@ -90,6 +96,7 @@ async function seedDirectoryHandle(browser, panelUrl) {
 
 function resolveBundledChrome() {
   const cacheRoot = join(root, "chrome");
+
   if (!existsSync(cacheRoot)) {
     return null;
   }
@@ -100,6 +107,7 @@ function resolveBundledChrome() {
     }
 
     const bundleRoot = join(cacheRoot, platformDir.name);
+
     const candidates = [
       join(
         bundleRoot,
@@ -114,6 +122,7 @@ function resolveBundledChrome() {
     ];
 
     const match = candidates.find((candidate) => existsSync(candidate));
+
     if (match) {
       return match;
     }
@@ -148,9 +157,11 @@ async function launchWithExtension(chromePath, profileDir, headless) {
         target.type() === "service_worker" && target.url().startsWith("chrome-extension://"),
       { timeout: 15_000 },
     );
+
     return { browser, extensionId: new URL(workerTarget.url()).host };
   } catch {
     await browser.close();
+
     return null;
   }
 }
@@ -164,14 +175,19 @@ async function framePanelPage(page) {
 async function findTabId(browser, panelUrl, tabPattern) {
   const helper = await browser.newPage();
   await helper.goto(panelUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
+
   const tabId = await helper.evaluate(async (pattern) => {
     const tabs = await chrome.tabs.query({ url: pattern });
+
     return tabs[0]?.id ?? null;
   }, tabPattern);
+
   await helper.close();
+
   if (tabId === null) {
     throw new Error(`No open tab matched ${tabPattern} from the extension's point of view.`);
   }
+
   return tabId;
 }
 
@@ -179,6 +195,7 @@ async function findTabId(browser, panelUrl, tabPattern) {
  * (for example the user-gesture requirement), so the caller can fall back. */
 async function tryRealSidePanel(browser, panelUrl, tabId) {
   const helper = await browser.newPage();
+
   try {
     await helper.goto(panelUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
     await helper.evaluate(async (targetTabId) => {
@@ -187,20 +204,26 @@ async function tryRealSidePanel(browser, panelUrl, tabId) {
   } catch (error) {
     console.warn(`Real side panel unavailable (${error.message.split("\n")[0]}); using fallback.`);
     await helper.close();
+
     return null;
   }
 
   const helperTarget = helper.target();
+
   const panelTarget = await browser
     .waitForTarget((target) => target.url() === panelUrl && target !== helperTarget, {
       timeout: 5_000,
     })
     .catch(() => null);
+
   await helper.close();
+
   if (!panelTarget) {
     console.warn("sidePanel.open() succeeded but no panel target appeared; using fallback.");
+
     return null;
   }
+
   return panelTarget.asPage();
 }
 
@@ -215,16 +238,21 @@ async function openPanelWithActiveTabWrapper(browser, panelUrl, tabPattern) {
     chrome.tabs.query = (queryInfo, callback) => {
       const wantsActiveTab =
         queryInfo != null && queryInfo.active === true && queryInfo.currentWindow === true;
+
       const result = wantsActiveTab ? originalQuery({ url: pattern }) : originalQuery(queryInfo);
+
       // chrome.tabs.query takes an optional trailing callback; absent means promise form.
       if (callback === undefined) {
         return result;
       }
+
       void result.then(callback);
+
       return undefined;
     };
   }, tabPattern);
   await page.goto(panelUrl, { waitUntil: "networkidle2", timeout: 30_000 });
+
   return page;
 }
 
@@ -232,20 +260,26 @@ async function openPanelWithActiveTabWrapper(browser, panelUrl, tabPattern) {
  * so a committed navigation is enough even when the page itself is still loading. */
 async function loadContentPage(page, url) {
   let lastError = null;
+
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
       await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60_000 });
+
       return;
     } catch (error) {
       lastError = error;
+
       if (page.url().startsWith(url)) {
         console.warn(`Content page ${url} is slow but the navigation committed; continuing.`);
+
         return;
       }
+
       console.warn(`Loading ${url} failed (attempt ${attempt + 1}/3): ${error.message}`);
       await sleep(3_000);
     }
   }
+
   throw new Error(`Could not load content page ${url}: ${lastError?.message}`);
 }
 
@@ -262,6 +296,7 @@ async function captureShot(browser, panelUrl, shot) {
 
   let approach = "real side panel";
   let panelPage = await tryRealSidePanel(browser, panelUrl, tabId);
+
   if (panelPage) {
     await framePanelPage(panelPage).catch(() => {
       console.warn("Could not emulate viewport on the side panel; capturing at natural size.");
@@ -284,6 +319,7 @@ async function captureShot(browser, panelUrl, shot) {
 
   await panelPage.close().catch(() => {});
   await contentPage.close();
+
   return approach;
 }
 
@@ -342,20 +378,26 @@ async function captureInBrowser(browser, contentPage, panelPage, path) {
 async function acceptArchiveTerms(page) {
   const accepted = await page.evaluate(() => {
     const prompt = document.getElementById("tos_prompt");
+
     if (prompt === null || getComputedStyle(prompt).display === "none") {
       return false;
     }
+
     for (const box of prompt.querySelectorAll("input[type=checkbox]")) {
       box.click();
     }
+
     document.getElementById("accept_tos")?.click();
+
     return true;
   });
+
   if (accepted) {
     await page
       .waitForFunction(
         () => {
           const prompt = document.getElementById("tos_prompt");
+
           return prompt === null || getComputedStyle(prompt).display === "none";
         },
         { timeout: 5_000 },
@@ -379,6 +421,7 @@ function browserFrameHtml({ pageImage, panelImage, title, url }) {
   const { width, height, chromeHeight, panelWidth, panelHeaderHeight } = windowFrame;
   const tabStripHeight = chromeHeight / 2;
   const displayUrl = url.replace(/^https?:\/\//, "");
+
   return `<!doctype html>
 <html><head><meta charset="utf-8"><style>
   * { box-sizing: border-box; margin: 0; }
@@ -439,6 +482,7 @@ async function main() {
   }
 
   const chromePath = process.env.CHROME_PATH ?? resolveBundledChrome();
+
   if (!chromePath || !existsSync(chromePath)) {
     throw new Error(
       "Chrome for Testing not found. Set CHROME_PATH or run: pnpm exec browsers install chrome@stable",
@@ -451,26 +495,31 @@ async function main() {
 
   try {
     let launched = await launchWithExtension(chromePath, profileDir, true);
+
     if (!launched) {
       console.warn("Extension did not load in headless Chrome; retrying headed.");
       rmSync(profileDir, { recursive: true, force: true });
       mkdirSync(profileDir, { recursive: true });
       launched = await launchWithExtension(chromePath, profileDir, false);
     }
+
     if (!launched) {
       throw new Error("Gather Box service worker never started; the extension failed to load.");
     }
 
     browser = launched.browser;
     const panelUrl = `chrome-extension://${launched.extensionId}/sidepanel/sidepanel.html`;
+
     for (const shot of shots) {
       await captureShot(browser, panelUrl, shot);
     }
+
     console.log("Gather Box capture complete.");
   } finally {
     if (browser) {
       await browser.close().catch(() => {});
     }
+
     rmSync(profileDir, { recursive: true, force: true });
   }
 }

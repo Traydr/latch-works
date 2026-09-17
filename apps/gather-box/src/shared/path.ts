@@ -2,11 +2,13 @@ import type { DownloadablePayload, GeneratedStoryPayload } from "./types";
 
 export function lowercaseFirstAscii(value: string): string {
   const first = value.charAt(0);
+
   return first >= "A" && first <= "Z" ? `${first.toLowerCase()}${value.slice(1)}` : value;
 }
 
 export function sanitizePathSegment(value: string): string {
   const raw = value.trim();
+
   if (raw === "." || raw === "..") {
     return "";
   }

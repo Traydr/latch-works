@@ -13,10 +13,12 @@ test.describe("search", () => {
   test("a plain query matches paths anywhere in the archive", async ({ page }) => {
     await gotoBrowse(page, { path: "docs" });
     await search(page, "photo");
+
     const expected = sortFixtureItems(
       FIXTURE_ITEMS.filter((entry) => entry.path.includes("photo")),
       "name-asc",
     );
+
     await expectEntryCount(page, expected.length);
     await expectCardPaths(
       page,

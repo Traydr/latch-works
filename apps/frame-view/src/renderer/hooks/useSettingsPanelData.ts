@@ -31,6 +31,7 @@ export function useSettingsPanelData(enabled: boolean): UseSettingsPanelDataResu
     const [nextMediaIndexStats, mediaToolsResult, diagnosticsResult] = await Promise.all([
       frameViewClient.getMediaIndexStats().catch((error) => {
         console.error('[frameView:get-media-index-stats]', error);
+
         return null;
       }),
       frameViewClientResult.getMediaToolsStatus(),

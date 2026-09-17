@@ -49,6 +49,7 @@ export function parseArgv(argv: string[]): ParseArgvResult {
 
   const [rawCommand, ...rest] = argv;
   const command = CommandSchema.safeParse(rawCommand);
+
   if (!command.success) {
     return { kind: "invalid" };
   }
@@ -63,6 +64,7 @@ export function parseArgv(argv: string[]): ParseArgvResult {
 
   for (let index = 0; index < rest.length; index += 1) {
     const arg = rest[index];
+
     switch (arg) {
       case "--source":
         options.source = rest[index + 1];
@@ -115,6 +117,7 @@ export function parseArgv(argv: string[]): ParseArgvResult {
 
 function parsePositiveInteger(value: string | undefined, name: string): number {
   const parsed = Number(value);
+
   if (!Number.isInteger(parsed) || parsed <= 0) {
     throw new Error(`${name} must be a positive integer.`);
   }
@@ -129,6 +132,7 @@ function parseBoundedInteger(
   max: number,
 ): number {
   const parsed = Number(value);
+
   if (!Number.isInteger(parsed) || parsed < min || parsed > max) {
     throw new Error(`${name} must be an integer between ${min} and ${max}.`);
   }
@@ -153,18 +157,21 @@ export async function resolveOptions(
 
   if (parsed.kind === "help") {
     printHelp();
+
     return null;
   }
 
   if (parsed.kind === "invalid") {
     printHelp();
     process.exitCode = 1;
+
     return null;
   }
 
   if (parsed.kind === "empty") {
     if (!isInteractive) {
       printHelp();
+
       return null;
     }
 
@@ -180,13 +187,16 @@ export async function resolveOptions(
 
   if (!isInteractive) {
     const [firstMissing] = missing;
+
     if (!firstMissing) {
       throw new Error("Expected at least one missing field");
     }
+
     throwMissingFieldError(firstMissing);
   }
 
   const resolved = await runPartialPrompts(merged, missing, config, env);
+
   return resolved;
 }
 
@@ -254,6 +264,7 @@ export function isInteractiveTerminal(): boolean {
 export async function validateSourceDirectory(source: string): Promise<string> {
   const resolved = path.resolve(source);
   const sourceStat = await stat(resolved);
+
   if (!sourceStat.isDirectory()) {
     throw new Error(`Source is not a directory: ${resolved}`);
   }
@@ -264,5 +275,6 @@ export async function validateSourceDirectory(source: string): Promise<string> {
 export async function validateSnapshotFile(snapshotPath: string): Promise<string> {
   const resolved = path.resolve(snapshotPath);
   await access(resolved);
+
   return resolved;
 }

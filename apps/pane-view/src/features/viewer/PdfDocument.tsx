@@ -26,6 +26,7 @@ interface ActiveRender {
 }
 
 const PAGE_CHANGE_DEBOUNCE_MS = 3_000;
+
 const GEOMETRY_CONCURRENCY = 4;
 
 function usePdfDocument({
@@ -56,6 +57,7 @@ function usePdfDocument({
     }
 
     const container = containerRef.current;
+
     if (!container || initialPage > pageCount) {
       return;
     }
@@ -66,6 +68,7 @@ function usePdfDocument({
 
   useEffect(() => {
     const container = containerRef.current;
+
     if (!container) {
       return;
     }
@@ -102,6 +105,7 @@ function usePdfDocument({
       renderTasks.delete(pageNumber);
       const slot = container.querySelector<HTMLElement>(`[data-page-number="${pageNumber}"]`);
       const canvas = slot?.querySelector("canvas");
+
       if (canvas) {
         canvas.width = 0;
         canvas.height = 0;
@@ -113,14 +117,17 @@ function usePdfDocument({
       try {
         const loadingTask = await engine.openDocument(`/api/media/${mediaId}/original`);
         destroyLoadingTask = () => loadingTask.destroy();
+
         if (cancelled) {
           // The effect was cleaned up while the engine was loading, so its
           // cleanup could not reach this task.
           destroyLoadingTask();
+
           return;
         }
 
         const pdf = await loadingTask.promise;
+
         if (cancelled) {
           return;
         }
@@ -133,9 +140,11 @@ function usePdfDocument({
             while (!cancelled) {
               const pageNumber = nextGeometryPage;
               nextGeometryPage += 1;
+
               if (pageNumber > pdf.numPages) {
                 return;
               }
+
               const page = await pdf.getPage(pageNumber);
               const viewport = page.getViewport({ scale: 1 });
               geometry.set(pageNumber, { height: viewport.height, width: viewport.width });
@@ -143,6 +152,7 @@ function usePdfDocument({
             }
           }),
         );
+
         if (cancelled) {
           return;
         }
@@ -150,6 +160,7 @@ function usePdfDocument({
         const applyGeometry = () => {
           for (const [pageNumber, dimensions] of geometry) {
             const slot = container.querySelector<HTMLElement>(`[data-page-number="${pageNumber}"]`);
+
             if (slot) {
               slot.style.width = `${Math.floor(renderWidth)}px`;
               slot.style.aspectRatio = `${dimensions.width} / ${dimensions.height}`;
@@ -163,6 +174,7 @@ function usePdfDocument({
           slot.dataset.pageNumber = String(pageNumber);
           container.append(slot);
         }
+
         applyGeometry();
         setPageCount(pdf.numPages);
 
@@ -170,21 +182,26 @@ function usePdfDocument({
           const desiredPages = new Set(
             getPdfPageRenderWindow(visiblePages, pdf.numPages, focalPage),
           );
+
           for (const pageNumber of renderTasks.keys()) {
             if (!desiredPages.has(pageNumber)) {
               cancelRender(pageNumber);
             }
           }
+
           for (const canvas of container.querySelectorAll<HTMLCanvasElement>("canvas")) {
             const pageNumber = Number(canvas.parentElement?.dataset.pageNumber);
+
             if (!desiredPages.has(pageNumber)) {
               cancelRender(pageNumber);
             }
           }
 
           const version = renderVersion;
+
           for (const pageNumber of desiredPages) {
             const slot = container.querySelector<HTMLElement>(`[data-page-number="${pageNumber}"]`);
+
             if (!slot || slot.querySelector("canvas") || renderTasks.has(pageNumber)) {
               continue;
             }
@@ -199,8 +216,10 @@ function usePdfDocument({
             void (async () => {
               let page: PdfPage | undefined;
               let renderTask: PdfRenderTask | undefined;
+
               try {
                 page = await pdf.getPage(pageNumber);
+
                 if (
                   cancelled ||
                   task !== renderTasks.get(pageNumber) ||
@@ -210,9 +229,11 @@ function usePdfDocument({
                 }
 
                 const dimensions = geometry.get(pageNumber);
+
                 if (!dimensions) {
                   return;
                 }
+
                 const scale = renderWidth / dimensions.width;
                 const viewport = page.getViewport({ scale });
                 const canvas = document.createElement("canvas");
@@ -221,6 +242,7 @@ function usePdfDocument({
                 canvas.height = Math.floor(viewport.height * outputScale);
                 canvas.className = "block h-full w-full";
                 const context = canvas.getContext("2d");
+
                 if (!context) {
                   return;
                 }
@@ -233,6 +255,7 @@ function usePdfDocument({
                 });
                 task.cancel = () => renderTask?.cancel();
                 await renderTask.promise;
+
                 if (
                   !cancelled &&
                   task === renderTasks.get(pageNumber) &&
@@ -244,6 +267,7 @@ function usePdfDocument({
                 // Cancelled and failed page paints leave their geometry placeholder in place.
               } finally {
                 page?.cleanup();
+
                 if (task === renderTasks.get(pageNumber)) {
                   renderTasks.delete(pageNumber);
                 }
@@ -256,43 +280,55 @@ function usePdfDocument({
           (entries) => {
             for (const entry of entries) {
               const pageNumber = Number(entry.target.getAttribute("data-page-number"));
+
               if (!Number.isFinite(pageNumber)) {
                 continue;
               }
+
               if (entry.isIntersecting) {
                 visiblePages.add(pageNumber);
               } else {
                 visiblePages.delete(pageNumber);
               }
             }
+
             const visiblePage = resolveVisiblePdfPage(entries);
+
             if (visiblePage) {
               focalPage = visiblePage;
               reportPage(visiblePage);
             }
+
             paintWindow();
           },
           { root: scrollContainerRef.current, threshold: [0, 0.25, 0.5, 0.75, 1] },
         );
+
         for (const slot of container.querySelectorAll("[data-page-number]")) {
           pageObserver.observe(slot);
         }
+
         paintWindow();
 
         resizeObserver = new ResizeObserver(() => {
           const nextRenderWidth = getPageRenderWidth(container);
+
           if (Math.abs(nextRenderWidth - renderWidth) < 8) {
             return;
           }
+
           renderWidth = nextRenderWidth;
           renderVersion += 1;
           applyGeometry();
+
           for (const pageNumber of renderTasks.keys()) {
             cancelRender(pageNumber);
           }
+
           for (const canvas of container.querySelectorAll<HTMLCanvasElement>("canvas")) {
             cancelRender(Number(canvas.parentElement?.dataset.pageNumber));
           }
+
           paintWindow();
         });
         resizeObserver.observe(container);
@@ -304,15 +340,19 @@ function usePdfDocument({
     };
 
     void render();
+
     return () => {
       cancelled = true;
       renderVersion += 1;
       destroyLoadingTask?.();
+
       for (const task of renderTasks.values()) {
         task.cancel();
       }
+
       resizeObserver?.disconnect();
       pageObserver?.disconnect();
+
       if (pageChangeTimer) {
         clearTimeout(pageChangeTimer);
       }

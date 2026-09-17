@@ -23,6 +23,7 @@ export async function collectXData(
   resolveMedia: XMediaResolver = resolveXMedia
 ): Promise<GalleryCollectResponse> {
   const post = getXPost(location);
+
   if (!post) {
     return {
       ok: false,
@@ -37,12 +38,14 @@ export async function collectXData(
 
   if (images.length === 0) {
     const csrfToken = getCookieValue(document.cookie, "ct0");
+
     const resolveMessage: ResolveXMediaMessage = {
       type: RESOLVE_X_MEDIA_MESSAGE,
       tweetId: post.id,
       mainScriptUrl: getXMainScriptUrl(document),
       featureValues: getXFeatureValues(document)
     };
+
     const response = await resolveMedia(resolveMessage);
     let resolvedMedia: ResolvedXMedia[] = response.ok ? response.media : [];
 
@@ -98,16 +101,20 @@ function collectVisibleXPhotos(
       '[role="dialog"] [data-testid="swipe-to-dismiss"] img[src*="pbs.twimg.com/media/"]'
     )
   );
+
   const postPath = `/${post.username}/status/${post.id}/photo/`;
+
   const inlineImages = Array.from(
     document.querySelectorAll<HTMLImageElement>(`a[href^="${postPath}"] img[src]`)
   );
+
   const candidates = dialogImages.length > 0 ? dialogImages : inlineImages;
   const seen = new Set<string>();
   const images: GalleryImage[] = [];
 
   for (const image of candidates) {
     const normalized = normalizeXPhotoUrl(image.src);
+
     if (!normalized || seen.has(normalized.originalUrl)) {
       continue;
     }
@@ -128,6 +135,7 @@ function normalizeXPhotoUrl(urlValue: string): { originalUrl: string; fileName: 
   const url = new URL(urlValue);
   const format = url.searchParams.get("format")?.toLowerCase();
   const baseName = decodeURIComponent(url.pathname.split("/").pop() ?? "");
+
   if (
     url.hostname !== "pbs.twimg.com" ||
     !url.pathname.startsWith("/media/") ||
@@ -138,6 +146,7 @@ function normalizeXPhotoUrl(urlValue: string): { originalUrl: string; fileName: 
   }
 
   url.searchParams.set("name", "orig");
+
   return {
     originalUrl: url.toString(),
     fileName: `${baseName}.${format}`
@@ -146,6 +155,7 @@ function normalizeXPhotoUrl(urlValue: string): { originalUrl: string; fileName: 
 
 function getXPost(location: PageLocation): { username: string; id: string } | null {
   const match = location.pathname.match(/^\/([^/]+)\/status\/(\d+)/i);
+
   return match ? { username: decodeURIComponent(match[1]), id: match[2] } : null;
 }
 
@@ -153,6 +163,7 @@ function getXPostTitle(document: Document, post: { username: string; id: string 
   const permalink = document.querySelector<HTMLAnchorElement>(
     `a[href="/${post.username}/status/${post.id}"]`
   );
+
   return permalink?.closest('[data-testid="tweet"]')?.querySelector('[data-testid="tweetText"]')
     ?.textContent?.trim() ?? "";
 }
@@ -171,6 +182,7 @@ function getXFeatureValues(document: Document) {
 
   for (const script of document.scripts) {
     const text = script.textContent ?? "";
+
     if (!text.includes("featureSwitch")) {
       continue;
     }
@@ -186,6 +198,7 @@ function getXFeatureValues(document: Document) {
 function getCookieValue(cookie: string, name: string): string | null {
   for (const part of cookie.split(";")) {
     const [key, ...valueParts] = part.trim().split("=");
+
     if (key === name) {
       return decodeURIComponent(valueParts.join("="));
     }
@@ -228,15 +241,18 @@ async function resolveAuthenticatedXMedia(
 
   try {
     const initialCsrfToken = getCsrfToken();
+
     if (!initialCsrfToken) {
       return [];
     }
 
     let response = await fetchAuthenticatedTweetDetail(url, initialCsrfToken);
+
     if (response.status === 403) {
       // X commonly rotates ct0 on a rejected request. Fetch processes Set-Cookie before resolving,
       // so read document.cookie again and retry once with the new CSRF token.
       const refreshedCsrfToken = getCsrfToken();
+
       if (refreshedCsrfToken && refreshedCsrfToken !== initialCsrfToken) {
         response = await fetchAuthenticatedTweetDetail(url, refreshedCsrfToken);
       }

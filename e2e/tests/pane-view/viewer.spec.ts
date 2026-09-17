@@ -16,6 +16,7 @@ import {
 const ALPHA = sortFixtureItems(fixtureItemsInScope("comics/alpha", false), "name-asc").map(
   (entry) => entry.name,
 );
+
 const BULK = sortFixtureItems(fixtureItemsInScope("bulk", false), "name-asc").map(
   (entry) => entry.path,
 );
@@ -48,6 +49,7 @@ test.describe("viewer", () => {
     const last = BULK[BULK.length - 1];
     const first = BULK[0];
     const sixtieth = BULK[59];
+
     if (!last || !first || !sixtieth) throw new Error("fixture bulk folder too small");
 
     await openSettings(page);

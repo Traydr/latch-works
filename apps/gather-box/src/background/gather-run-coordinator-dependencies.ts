@@ -27,6 +27,7 @@ export interface GatherRunCoordinatorDependencies {
 
 export function createChromeCoordinatorDependencies(): GatherRunCoordinatorDependencies {
   const offscreenDocument = new OffscreenDocument();
+
   return {
     loadQueue: loadGatherQueue,
     saveQueue: saveGatherQueue,
@@ -34,9 +35,11 @@ export function createChromeCoordinatorDependencies(): GatherRunCoordinatorDepen
     getTab: (tabId) => chrome.tabs.get(tabId),
     collect: async (tab, run) => {
       const source = getGatherSource(run.siteKey);
+
       if (!source) {
         throw new Error("The Gather Source no longer has a collector adapter.");
       }
+
       const response = await injectCollectorAndCollect({
         tabId: tab.id!,
         pageUrl: run.tabUrl,
@@ -44,14 +47,17 @@ export function createChromeCoordinatorDependencies(): GatherRunCoordinatorDepen
         source,
         onInjecting: () => undefined
       });
+
       if (!response || response.ok !== true) {
         throw new Error(response?.message || "The source page did not return collection data.");
       }
+
       return response;
     },
     loadSettings,
     execute: async (job) => {
       await offscreenDocument.ensure();
+
       const response = await chrome.runtime.sendMessage({
         type: EXECUTE_GATHER_RUN,
         target: "offscreen",
@@ -59,17 +65,20 @@ export function createChromeCoordinatorDependencies(): GatherRunCoordinatorDepen
         payload: job.payload,
         settings: job.settings
       });
+
       return response?.accepted === true;
     },
     abort: async (runId) => {
       if (!(await offscreenDocument.isOpen())) {
         return false;
       }
+
       const response = await chrome.runtime.sendMessage({
         type: CANCEL_GATHER_RUN,
         target: "offscreen",
         runId
       });
+
       return response?.aborted === true;
     },
     now: Date.now,

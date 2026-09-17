@@ -50,11 +50,13 @@ export function useLockstepController(): LockstepController {
   const [error, setError] = useState<string | null>(null);
   const [sessionToken, setSessionToken] = useState("");
   const [runProgress, setRunProgress] = useState<RunProgressState>(initialProgress);
+
   const [pipelineProgress, setPipelineProgress] = useState<PipelineProgressState>({
     reviewed: false,
     pushCompleted: false,
     pruneCompleted: false,
   });
+
   const lastLoggedScanProgressRef = useRef<string | null>(null);
   const activeRunActionRef = useRef("");
 
@@ -62,15 +64,19 @@ export function useLockstepController(): LockstepController {
     if (!settings?.activeProfileId) {
       return null;
     }
+
     return settings.profiles.find((profile) => profile.id === settings.activeProfileId) ?? null;
   }, [settings]);
 
   const refreshSettings = useCallback(async () => {
     const result = await requireLockstepApi().getSettings();
+
     if (Result.isError(result)) {
       setError(result.error.message);
+
       return;
     }
+
     setSettings(result.value);
   }, []);
 
@@ -83,6 +89,7 @@ export function useLockstepController(): LockstepController {
       if (event.type === "status") {
         setRunLabel(event.message);
         setLogs((current) => [...current.slice(-200), event.message]);
+
         if (/plan/i.test(event.message)) {
           setRunProgress((prev) => ({ ...prev, phase: "planning", action: "plan" }));
         } else if (/push|upload/i.test(event.message)) {
@@ -99,10 +106,12 @@ export function useLockstepController(): LockstepController {
           event.progress.stage === "hashing"
             ? `Hashing ${event.progress.path ?? ""} (${event.progress.filesFound} files)`
             : `Scanning (${event.progress.filesFound} files, ${event.progress.skipped} skipped)`;
+
         const logKey =
           event.progress.stage === "hashing"
             ? `hashing:${event.progress.path ?? ""}`
             : `scanning:${event.progress.path ?? ""}`;
+
         setRunLabel(message);
         setRunProgress((prev) => ({
           ...prev,
@@ -114,6 +123,7 @@ export function useLockstepController(): LockstepController {
           scanPath: event.progress.path ?? prev.scanPath,
           scanStage: event.progress.stage,
         }));
+
         if (lastLoggedScanProgressRef.current !== logKey) {
           lastLoggedScanProgressRef.current = logKey;
           setLogs((current) => [...current.slice(-200), message]);
@@ -155,12 +165,14 @@ export function useLockstepController(): LockstepController {
 
       if (event.type === "complete") {
         const activeRunAction = activeRunActionRef.current;
+
         if (!shouldEndRunOnComplete(event.summary.action, activeRunAction)) {
           setRunProgress((prev) => ({
             ...prev,
             phase: "items",
             endedAt: null,
           }));
+
           return;
         }
 
@@ -177,12 +189,15 @@ export function useLockstepController(): LockstepController {
           endedAt: Date.now(),
           summaryMessage: event.summary.message ?? null,
         }));
+
         if (event.summary.action === "push" && event.summary.status === "completed") {
           setPipelineProgress((prev) => ({ ...prev, pushCompleted: true }));
         }
+
         if (event.summary.action === "prune" && event.summary.status === "completed") {
           setPipelineProgress((prev) => ({ ...prev, pruneCompleted: true }));
         }
+
         void refreshSettings();
       }
     },
@@ -191,6 +206,7 @@ export function useLockstepController(): LockstepController {
 
   useEffect(() => {
     const unsubscribe = requireLockstepApi().onRunEvent(applyRunEvent);
+
     return unsubscribe;
   }, [applyRunEvent]);
 
@@ -198,7 +214,9 @@ export function useLockstepController(): LockstepController {
     if (!plan) {
       return [];
     }
+
     const query = filter.trim().toLowerCase();
+
     return plan.items.filter(
       (item) => item.action !== "keep" && (!query || item.path.toLowerCase().includes(query)),
     );
@@ -209,18 +227,25 @@ export function useLockstepController(): LockstepController {
       if (profile.tokenConfigured) {
         return true;
       }
+
       if (!sessionToken.trim()) {
         setError("Enter a sync API token for this session before running remote operations.");
+
         return false;
       }
+
       const result = await requireLockstepApi().updateProfile(profile.id, {
         token: sessionToken.trim(),
       });
+
       if (Result.isError(result)) {
         setError(result.error.message);
+
         return false;
       }
+
       await refreshSettings();
+
       return true;
     },
     [refreshSettings, sessionToken],
@@ -245,6 +270,7 @@ export function useLockstepController(): LockstepController {
     if (next === "plan") {
       setPipelineProgress((prev) => ({ ...prev, reviewed: true }));
     }
+
     setScreenState(next);
   }, []);
 
@@ -253,10 +279,13 @@ export function useLockstepController(): LockstepController {
       event.preventDefault();
       setError(null);
       const result = await requireLockstepApi().createProfile(profileForm);
+
       if (Result.isError(result)) {
         setError(result.error.message);
+
         return;
       }
+
       setProfileForm(emptyProfileForm);
       await refreshSettings();
       setScreen("dashboard");
@@ -268,15 +297,19 @@ export function useLockstepController(): LockstepController {
     if (!activeProfile || !(await ensureSessionToken(activeProfile))) {
       return;
     }
+
     setDoctorResult(null);
     beginRun("Running doctor...", "doctor");
     const result = await requireLockstepApi().doctor(activeProfile.id);
     setRunning(false);
+
     if (Result.isError(result)) {
       setError(result.error.message);
       setRunProgress((prev) => ({ ...prev, phase: "error", endedAt: Date.now() }));
+
       return;
     }
+
     setDoctorResult(result.value);
     setRunLabel(result.value.ok ? "Doctor passed." : "Doctor found issues.");
     setRunProgress((prev) => ({
@@ -292,18 +325,23 @@ export function useLockstepController(): LockstepController {
     if (!activeProfile || !(await ensureSessionToken(activeProfile))) {
       return false;
     }
+
     beginRun("Planning sync...", "plan");
     const result = await requireLockstepApi().plan({ profileId: activeProfile.id });
     setRunning(false);
+
     if (Result.isError(result)) {
       setError(result.error.message);
       setRunProgress((prev) => ({ ...prev, phase: "error", endedAt: Date.now() }));
+
       return false;
     }
+
     setPlan(result.value);
     setPipelineProgress({ reviewed: true, pushCompleted: false, pruneCompleted: false });
     setRunProgress((prev) => ({ ...prev, phase: "done", endedAt: Date.now() }));
     await refreshSettings();
+
     return true;
   }, [activeProfile, ensureSessionToken, beginRun, refreshSettings]);
 
@@ -311,15 +349,19 @@ export function useLockstepController(): LockstepController {
     if (!activeProfile || !(await ensureSessionToken(activeProfile))) {
       return;
     }
+
     beginRun("Pushing uploads and updates...", "push");
     setRunProgress((prev) => ({ ...prev, phase: "items", action: "push" }));
     const result = await requireLockstepApi().push({ profileId: activeProfile.id });
     setRunning(false);
+
     if (Result.isError(result)) {
       setError(result.error.message);
       setRunProgress((prev) => ({ ...prev, phase: "error", endedAt: Date.now() }));
+
       return;
     }
+
     setRunLabel(`Push ${result.value.status}: ${result.value.pushed} item(s).`);
     setRunProgress((prev) => ({
       ...prev,
@@ -330,9 +372,11 @@ export function useLockstepController(): LockstepController {
       endedAt: Date.now(),
       summaryMessage: `Push ${result.value.status}: ${result.value.pushed} item(s).`,
     }));
+
     if (result.value.status === "completed") {
       setPipelineProgress((prev) => ({ ...prev, pushCompleted: true }));
     }
+
     activeRunActionRef.current = "";
     await refreshSettings();
   }, [activeProfile, ensureSessionToken, beginRun, refreshSettings]);
@@ -341,20 +385,25 @@ export function useLockstepController(): LockstepController {
     if (!activeProfile || !(await ensureSessionToken(activeProfile))) {
       return;
     }
+
     if (
       !window.confirm("Apply planned remote deletes? This cannot be undone from the desktop app.")
     ) {
       return;
     }
+
     beginRun("Applying remote deletes...", "prune");
     setRunProgress((prev) => ({ ...prev, phase: "items", action: "prune" }));
     const result = await requireLockstepApi().prune({ profileId: activeProfile.id });
     setRunning(false);
+
     if (Result.isError(result)) {
       setError(result.error.message);
       setRunProgress((prev) => ({ ...prev, phase: "error", endedAt: Date.now() }));
+
       return;
     }
+
     setRunLabel(`Prune ${result.value.status}: ${result.value.pushed} delete(s).`);
     setRunProgress((prev) => ({
       ...prev,
@@ -365,9 +414,11 @@ export function useLockstepController(): LockstepController {
       endedAt: Date.now(),
       summaryMessage: `Prune ${result.value.status}: ${result.value.pushed} delete(s).`,
     }));
+
     if (result.value.status === "completed") {
       setPipelineProgress((prev) => ({ ...prev, pruneCompleted: true }));
     }
+
     activeRunActionRef.current = "";
     await refreshSettings();
   }, [activeProfile, ensureSessionToken, beginRun, refreshSettings]);
@@ -378,10 +429,13 @@ export function useLockstepController(): LockstepController {
 
   const handlePickFolder = useCallback(async () => {
     const result = await requireLockstepApi().pickSourceFolder();
+
     if (Result.isError(result)) {
       setError(result.error.message);
+
       return;
     }
+
     if (result.value) {
       setProfileForm((current) => ({ ...current, sourceRoot: result.value ?? "" }));
     }
@@ -389,10 +443,13 @@ export function useLockstepController(): LockstepController {
 
   const handleProfileChange = useCallback(async (profileId: string) => {
     const result = await requireLockstepApi().setActiveProfile(profileId);
+
     if (Result.isError(result)) {
       setError(result.error.message);
+
       return;
     }
+
     setSettings(result.value);
   }, []);
 

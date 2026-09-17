@@ -23,6 +23,7 @@ const ACTION_CHIP = {
 /** Run events carry free-form action labels; unknown ones fall back to the neutral chip. */
 function actionChipClass(action: string): string {
   const parsed = SyncPlanActionSchema.safeParse(action);
+
   return parsed.success ? ACTION_CHIP[parsed.data] : ACTION_CHIP.keep;
 }
 
@@ -49,7 +50,9 @@ function ProgressBar({
 }) {
   const toneClass =
     tone === "emerald" ? "bg-emerald-500" : tone === "red" ? "bg-red-500" : "bg-violet-500";
+
   const width = percent == null ? 0 : Math.max(0, Math.min(100, percent * 100));
+
   return (
     <div
       className={`relative h-1.5 w-full overflow-hidden rounded-full bg-zinc-800 dark:bg-zinc-800 ${className}`}
@@ -78,16 +81,20 @@ export function ProportionBar({
   className?: string;
 }) {
   const total = SEGMENT_ORDER.reduce((sum, key) => sum + counts[key], 0);
+
   if (total === 0) {
     return <div className={`h-2 w-full rounded-full bg-zinc-800 ${className}`} />;
   }
+
   return (
     <div className={`flex h-2 w-full overflow-hidden rounded-full bg-zinc-800 ${className}`}>
       {SEGMENT_ORDER.map((key) => {
         const value = counts[key];
+
         if (value === 0) {
           return null;
         }
+
         return (
           <div
             key={key}
@@ -128,9 +135,12 @@ export function useNow(active: boolean, intervalMs = 1000): number {
     if (!active) {
       return;
     }
+
     const id = setInterval(() => setNow(Date.now()), intervalMs);
+
     return () => clearInterval(id);
   }, [active, intervalMs]);
+
   return now;
 }
 

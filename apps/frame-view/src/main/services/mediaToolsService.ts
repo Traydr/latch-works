@@ -29,8 +29,11 @@ interface BinaryCommandResult {
 }
 
 const DEFAULT_TIMEOUT_MS = 12000;
+
 const MAX_PROBE_CACHE_ENTRIES = 2000;
+
 const MAX_FRAME_EXTRACTION_FAILURE_LOGS = 3;
+
 const nativeRequire = createRequire(__filename);
 
 /** `ffmpeg-static` exports the binary path directly or as a CommonJS default export. */
@@ -54,7 +57,9 @@ function requireFromPackagedNodeModules<T>(packageName: string, schema: ZodType<
     const packagedRequire = createRequire(
       path.join(process.resourcesPath, 'node_modules', packageName, 'package.json'),
     );
+
     const parsed = schema.safeParse(packagedRequire(packageName));
+
     return parsed.success ? parsed.data : null;
   } catch {
     return null;
@@ -108,9 +113,11 @@ export class MediaToolsService {
 
     const cacheKey = `${mediaPath}|${mtimeMs}|${fileSize}`;
     const cached = this.probeCache.get(cacheKey);
+
     if (cached) {
       this.probeCache.delete(cacheKey);
       this.probeCache.set(cacheKey, cached);
+
       return cached;
     }
 
@@ -147,6 +154,7 @@ export class MediaToolsService {
 
     const streamDuration = Number(videoStream?.duration ?? Number.NaN);
     const formatDuration = Number(parsed.format?.duration ?? Number.NaN);
+
     const durationSeconds = Number.isFinite(streamDuration)
       ? streamDuration
       : Number.isFinite(formatDuration)
@@ -164,12 +172,14 @@ export class MediaToolsService {
 
     if (this.probeCache.size >= MAX_PROBE_CACHE_ENTRIES) {
       const oldestKey = this.probeCache.keys().next().value;
+
       if (oldestKey) {
         this.probeCache.delete(oldestKey);
       }
     }
 
     this.probeCache.set(cacheKey, metadata);
+
     return metadata;
   }
 
@@ -232,12 +242,15 @@ export class MediaToolsService {
           DEFAULT_TIMEOUT_MS,
           abortSignal,
         );
+
         if (result.aborted) {
           throw new MediaToolsAbortError();
         }
+
         if (result.code === 0 && result.stdout.byteLength > 0) {
           return result.stdout;
         }
+
         if (result.stderr.trim()) {
           lastFailureReason = result.stderr.trim();
         }
@@ -246,6 +259,7 @@ export class MediaToolsService {
       if (error instanceof Error && error.name === 'AbortError') {
         throw error;
       }
+
       return null;
     }
 
@@ -262,6 +276,7 @@ export class MediaToolsService {
   private loadStringModule(moduleName: string): string | null {
     try {
       const parsed = BinaryPathModuleSchema.safeParse(nativeRequire(moduleName));
+
       return parsed.success ? parsed.data : null;
     } catch {
       return requireFromPackagedNodeModules(moduleName, BinaryPathModuleSchema);
@@ -275,6 +290,7 @@ export class MediaToolsService {
   private loadFfprobePath(): string | null {
     try {
       const parsed = FfprobeModuleSchema.safeParse(nativeRequire('@ffprobe-installer/ffprobe'));
+
       return parsed.success ? parsed.data : null;
     } catch {
       return requireFromPackagedNodeModules('@ffprobe-installer/ffprobe', FfprobeModuleSchema);
@@ -313,6 +329,7 @@ export class MediaToolsService {
         if (settled) {
           return;
         }
+
         settled = true;
         clearTimeout(timeout);
         resolve({
@@ -326,6 +343,7 @@ export class MediaToolsService {
         if (settled) {
           return;
         }
+
         settled = true;
         clearTimeout(timeout);
         resolve({
@@ -395,6 +413,7 @@ export class MediaToolsService {
             stderr: 'aborted',
             stdout: Buffer.alloc(0),
           });
+
           return;
         }
 

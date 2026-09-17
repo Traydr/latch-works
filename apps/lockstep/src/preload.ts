@@ -52,12 +52,14 @@ const api: LockstepApi = {
   onRunEvent: (listener: (event: LockstepRunEvent) => void) => {
     const handler = (_event: IpcRendererEvent, payload: JsonValue) => {
       const parsed = LockstepRunEventSchema.safeParse(payload);
+
       if (parsed.success) {
         listener(parsed.data);
       }
     };
 
     ipcRenderer.on("lockstep:run-event", handler);
+
     return () => {
       ipcRenderer.removeListener("lockstep:run-event", handler);
     };

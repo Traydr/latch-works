@@ -15,6 +15,7 @@ export const MaintenanceJobTypeSchema = z.enum([
   "soft_deleted_purge",
   "shutter_source_purge",
 ]);
+
 export type MaintenanceJobType = z.infer<typeof MaintenanceJobTypeSchema>;
 
 /** The phase hard-wipe jobs carried before the Shutter-only architecture (migration 0010). */
@@ -55,18 +56,21 @@ export const LibraryWipeJobProgressSchema = z.object({
   orphanPrefix: orphanCursorFieldSchema,
   orphanContinuationToken: orphanCursorFieldSchema,
 });
+
 export type LibraryWipeJobProgress = z.infer<typeof LibraryWipeJobProgressSchema>;
 
 export const SoftDeletedPurgeJobProgressSchema = z.object({
   phase: phaseSchema("soft_deleted_purge", ["orphaned_media", "db_hard_delete", "completed"]),
   processedCount: processedCountSchema,
 });
+
 export type SoftDeletedPurgeJobProgress = z.infer<typeof SoftDeletedPurgeJobProgressSchema>;
 
 export const ShutterSourcePurgeJobProgressSchema = z.object({
   phase: phaseSchema("shutter_source_purge", ["queue_sources", "shutter_sources", "completed"]),
   processedCount: processedCountSchema,
 });
+
 export type ShutterSourcePurgeJobProgress = z.infer<typeof ShutterSourcePurgeJobProgressSchema>;
 
 const progressSchemas = {
@@ -99,10 +103,13 @@ export function parseMaintenanceProgress(
   raw: JsonValue,
 ): ParsedMaintenanceProgress<MaintenanceJobType> {
   const result = progressSchemas[type].safeParse(raw);
+
   if (result.success) {
     return { ok: true, progress: result.data };
   }
+
   const first = result.error.issues[0];
+
   return { ok: false, reason: first ? describeIssue(first) : "progress does not fit its job type" };
 }
 
@@ -110,6 +117,7 @@ function describeIssue(issue: z.core.$ZodIssue): string {
   if (issue.path.length === 0 && issue.code === "invalid_type") {
     return "progress is not an object";
   }
+
   return issue.message;
 }
 
@@ -129,5 +137,6 @@ export function initialProgressFor<Type extends MaintenanceJobType>(
     soft_deleted_purge: { phase: "orphaned_media", processedCount: 0 },
     shutter_source_purge: { phase: "queue_sources", processedCount: 0 },
   };
+
   return initial[type];
 }

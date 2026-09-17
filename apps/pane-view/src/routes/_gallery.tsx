@@ -6,6 +6,7 @@ export const Route = createFileRoute("/_gallery")({
   ssr: false,
   loader: async () => {
     const { authenticated } = await getSessionStatus();
+
     if (!authenticated) {
       throw redirect({ to: "/login" });
     }

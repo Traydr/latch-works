@@ -11,6 +11,7 @@ export function createConcurrencyLimiter(maxConcurrent: number) {
       }
 
       active += 1;
+
       try {
         return await task();
       } finally {

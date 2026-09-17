@@ -50,6 +50,7 @@ export const pdfjsEngine: PdfEngine = {
     ]);
 
     pdfjs.GlobalWorkerOptions.workerSrc = workerModule.default;
+
     return pdfjs.getDocument({ url });
   },
 };

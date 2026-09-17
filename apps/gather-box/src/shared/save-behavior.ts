@@ -6,6 +6,7 @@ import {
 } from "./source-catalog";
 
 export type SaveBehavior = SourceSaveBehavior;
+
 export type { SavePattern } from "./source-catalog";
 
 export function getSaveBehavior(siteKey: SiteKey | null): SaveBehavior | null {

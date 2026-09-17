@@ -31,6 +31,7 @@ export async function postUploadUrl(
   dependencies: SyncRouteDependencies = syncRouteDependencies,
 ): Promise<Response> {
   const unauthorized = dependencies.requireSyncApiToken(request);
+
   if (unauthorized) {
     return unauthorized;
   }
@@ -45,20 +46,25 @@ export async function postUploadUrl(
   }
 
   const parsed = await readJsonBody(request, UploadUrlBodySchema);
+
   if (!parsed.ok) {
     return Response.json({ error: parsed.error }, { status: 400 });
   }
+
   const body = parsed.body;
 
   const filenameError = validateUploadFilename(body.filename);
+
   if (filenameError) {
     return Response.json({ error: filenameError }, { status: 400 });
   }
 
   const extension = getExtension(body.filename);
   const contentType = expectedContentTypeForExtension(extension);
+
   if (body.contentType !== undefined) {
     const contentTypeError = validateSyncContentType(extension, body.contentType);
+
     if (contentTypeError) {
       return Response.json({ error: contentTypeError }, { status: 400 });
     }
@@ -70,6 +76,7 @@ export async function postUploadUrl(
     extension,
     sha256: body.sha256,
   });
+
   const signed = await dependencies.createSignedUploadUrl({
     contentLength: size,
     contentType,

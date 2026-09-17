@@ -119,11 +119,13 @@ export function StatsPage() {
       ...point,
       value: bytesToMegabytes(point.value),
     })) ?? [];
+
   const recentGrowthChartData =
     stats?.recentGrowth.map((point) => ({
       ...point,
       bytesAdded: bytesToMegabytes(point.bytesAdded),
     })) ?? [];
+
   const sizeSpark = sizeChartData.map((point) => point.value);
   const entrySpark = stats?.entriesOverTime.map((point) => point.value) ?? [];
   const growthSpark = recentGrowthChartData.map((point) => point.bytesAdded);

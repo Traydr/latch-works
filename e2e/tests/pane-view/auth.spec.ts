@@ -25,18 +25,22 @@ test.describe("auth", () => {
     // password is refused afterwards. Use a throwaway username so the stored session
     // and the other specs are unaffected.
     const username = `throttled-${Date.now()}`;
+
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const response = await request.post("/api/auth/login", {
         form: { password: "wrong", username },
         maxRedirects: 0,
       });
+
       expect(response.status()).toBe(303);
       expect(response.headers().location).toBe("/login?error=invalid");
     }
+
     const locked = await request.post("/api/auth/login", {
       form: { password: PANE_VIEW_CREDENTIALS.password, username },
       maxRedirects: 0,
     });
+
     expect(locked.headers().location).toBe("/login?error=invalid");
   });
 

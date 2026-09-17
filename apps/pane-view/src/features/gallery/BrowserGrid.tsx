@@ -48,7 +48,9 @@ export function BrowserGrid({
     totalGridHeight,
     windowedItems,
   } = useVirtualGridMetrics(entries.length, cardWidth, comicMode ? "tall" : "wide");
+
   const resolvedCardWidth = measuredCardWidth || cardWidth;
+
   const windowedEntries = useMemo(
     () =>
       windowedItems
@@ -56,6 +58,7 @@ export function BrowserGrid({
         .filter((entry): entry is GalleryBrowseEntry => Boolean(entry)),
     [entries, windowedItems],
   );
+
   const { resolvedThumbnailUrls } = useWindowedThumbnailResolution({
     entries: windowedEntries,
     key: contentKey,
@@ -72,6 +75,7 @@ export function BrowserGrid({
     }
 
     const element = mainRef.current;
+
     if (!element) {
       return;
     }
@@ -114,6 +118,7 @@ export function BrowserGrid({
         >
           {windowedItems.map((slot) => {
             const entry = entries[slot.index];
+
             if (!entry) {
               return null;
             }
@@ -124,6 +129,7 @@ export function BrowserGrid({
                 : entry.kind === "comic"
                   ? entry.comic.cover.id === selectedId
                   : entry.media.id === selectedId;
+
             const focused = slot.index === focusedIndex;
 
             return (

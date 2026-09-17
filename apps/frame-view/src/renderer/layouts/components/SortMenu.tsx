@@ -50,6 +50,7 @@ export function SortMenu({
         >
           {SORT_OPTIONS.map((option) => {
             const selected = option.value === sortMode;
+
             return (
               <button
                 key={option.value}

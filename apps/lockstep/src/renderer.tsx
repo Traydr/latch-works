@@ -7,6 +7,7 @@ import { BridgeUnavailable } from "./renderer/components/BridgeUnavailable";
 import { ErrorBoundary } from "./renderer/components/ErrorBoundary";
 
 const rootElement = document.getElementById("root");
+
 const lockstepBridge = window.lockstep;
 
 if (!rootElement) {

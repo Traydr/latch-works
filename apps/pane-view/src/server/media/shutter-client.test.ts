@@ -15,8 +15,11 @@ import {
  * covers every Source ID the object may have been cached under.
  */
 const KEY = "1".repeat(64);
+
 const SHA256 = "ab".repeat(32);
+
 const KEYS = new Map([["key-id", Uint8Array.from(Buffer.from(KEY, "hex"))]]);
+
 const OBJECT_KEY = `originals/sha256/ab/ab/${SHA256}.jpg`;
 
 const environment: ShutterEnvironment = {
@@ -44,6 +47,7 @@ function dependencies(
   overrides: Partial<ShutterEnvironment> = {},
 ): ShutterClientDependencies & { requests: Request[] } {
   const requests: Request[] = [];
+
   return {
     createSourceLocator: vi.fn(
       async () => "https://bucket.example.test/originals?X-Amz-Signature=v1",
@@ -52,7 +56,9 @@ function dependencies(
     fetch: async (input, init) => {
       requests.push(new Request(input, init));
       const next = responses.shift();
+
       if (next === undefined) throw new Error("fetch stub exhausted");
+
       return next;
     },
     requests,
@@ -69,6 +75,7 @@ describe("shutter v2 resolver sources", () => {
     expect(url.pathname).toBe(`/v2/pane-view/originals/ab/ab/${SHA256}.jpg`);
     expect(url.searchParams.get("w")).toBe("320");
     expect(url.searchParams.get("q")).toBe("75");
+
     const claims = await verifyAccessToken(url.searchParams.get("token") ?? "", {
       spaceId: "pane-view",
       expectedPurpose: "image_source",
@@ -76,11 +83,13 @@ describe("shutter v2 resolver sources", () => {
       keys: KEYS,
       now: Math.floor(Date.now() / 1000),
     });
+
     expect(claims.purpose).toBe("image_source");
   });
 
   it("submits a v2 Preview Job and links the master with a master_preview token", async () => {
     const master = { sourceId: "x", kind: "video", width: 1920, height: 1080, format: "webp" };
+
     const deps = dependencies([
       new Response(JSON.stringify({ status: "ready", master }), {
         status: 200,
@@ -94,6 +103,7 @@ describe("shutter v2 resolver sources", () => {
     expect(new URL(deps.requests[0]?.url ?? "").pathname).toBe(
       `/v2/spaces/pane-view/sources/originals%2Fab%2Fab%2F${SHA256}.jpg/previews/video`,
     );
+
     if (preview.status !== "ready") throw new Error("preview should be ready");
     const url = new URL(preview.url);
     expect(url.searchParams.get("preview")).toBe("video");
@@ -132,6 +142,7 @@ describe("shutter v2 resolver sources", () => {
       300,
       dependencies(),
     );
+
     expect(new URL(legacy).pathname.startsWith("/v1/private/pane-view/source/")).toBe(true);
 
     const deps = dependencies([new Response(null, { status: 204 })], { SHUTTER_RESOLVER_ID: "" });

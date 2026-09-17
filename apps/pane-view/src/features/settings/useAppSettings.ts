@@ -12,6 +12,7 @@ const SETTINGS_KEY = "pane-view.settings";
 function readSettings(): AppSettings {
   try {
     const raw = window.localStorage.getItem(SETTINGS_KEY);
+
     return raw
       ? (parseJsonWith(raw, AppSettingsSchema) ?? DEFAULT_APP_SETTINGS)
       : DEFAULT_APP_SETTINGS;

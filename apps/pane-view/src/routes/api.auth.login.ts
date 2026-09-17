@@ -35,6 +35,7 @@ export const Route = createFileRoute("/api/auth/login")({
 
         if (!owner) {
           await recordFailedLogin(clientIp, username);
+
           return new Response(null, {
             headers: { Location: "/login?error=invalid" },
             status: 303,
@@ -43,6 +44,7 @@ export const Route = createFileRoute("/api/auth/login")({
 
         if (!(await ensureConfiguredOwnerCredentialAccount(owner))) {
           await recordFailedLogin(clientIp, username);
+
           return new Response(null, {
             headers: { Location: "/login?error=invalid" },
             status: 303,
@@ -57,10 +59,12 @@ export const Route = createFileRoute("/api/auth/login")({
 
         if (signInResponse.ok) {
           await clearLoginThrottle(clientIp, username);
+
           return redirectWithAuthCookies(signInResponse, "/");
         }
 
         await recordFailedLogin(clientIp, username);
+
         return new Response(null, {
           headers: { Location: "/login?error=invalid" },
           status: 303,
@@ -109,6 +113,7 @@ function redirectWithAuthCookies(authResponse: Response, location: string): Resp
 
 function copyHeader(source: Headers, target: Headers, name: string): void {
   const value = source.get(name);
+
   if (value) {
     target.set(name, value);
   }

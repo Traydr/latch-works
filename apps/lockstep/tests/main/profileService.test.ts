@@ -21,6 +21,7 @@ function createSecretStorage(): FakeSecretStorage {
     encrypted,
     encryptString: (value: string) => {
       encrypted.push(value);
+
       return Buffer.from(value, "utf-8");
     },
     isEncryptionAvailable: () => available,
@@ -59,12 +60,15 @@ describe("ProfileService", () => {
       legacyConfigPath: path.join(tempDir, "missing-legacy.json"),
       secretStorage,
     });
+
     await service.init();
+
     return service;
   }
 
   async function readPersistedFile() {
     const raw = await readFile(path.join(tempDir, "lockstep-settings.json"), "utf-8");
+
     return PersistedFileSchema.parse(JSON.parse(raw));
   }
 
@@ -79,6 +83,7 @@ describe("ProfileService", () => {
     });
 
     expect(created.status).toBe("ok");
+
     if (created.status !== "ok") {
       return;
     }
@@ -97,22 +102,27 @@ describe("ProfileService", () => {
 
   it("marks stored tokens unreadable when OS encryption is unavailable", async () => {
     const service = await createService();
+
     const created = await service.createProfile({
       apiUrl: "http://127.0.0.1:3000",
       name: "Remote",
       sourceRoot: "/tmp/archive",
       token: "secret-token",
     });
+
     expect(created.status).toBe("ok");
+
     if (created.status !== "ok") {
       return;
     }
 
     secretStorage.setEncryptionAvailable(false);
+
     const reloaded = new ProfileService(tempDir, {
       legacyConfigPath: path.join(tempDir, "missing-legacy.json"),
       secretStorage,
     });
+
     await reloaded.init();
 
     const profile = reloaded.getSettings().profiles[0];
@@ -124,13 +134,16 @@ describe("ProfileService", () => {
 
   it("clears persisted encryptedToken when updating a token without OS encryption", async () => {
     const service = await createService();
+
     const created = await service.createProfile({
       apiUrl: "http://127.0.0.1:3000",
       name: "Local",
       sourceRoot: "/tmp/archive",
       token: "old-token",
     });
+
     expect(created.status).toBe("ok");
+
     if (created.status !== "ok") {
       return;
     }
@@ -149,13 +162,16 @@ describe("ProfileService", () => {
     secretStorage.setEncryptionAvailable(false);
 
     const service = await createService();
+
     const created = await service.createProfile({
       apiUrl: "http://127.0.0.1:3000",
       name: "Local",
       sourceRoot: "/tmp/archive",
       token: "session-token",
     });
+
     expect(created.status).toBe("ok");
+
     if (created.status !== "ok") {
       return;
     }
@@ -201,6 +217,7 @@ describe("ProfileService", () => {
       legacyConfigPath: path.join(tempDir, "missing-legacy.json"),
       secretStorage,
     });
+
     const result = await service.init();
 
     expect(result.status).toBe("error");

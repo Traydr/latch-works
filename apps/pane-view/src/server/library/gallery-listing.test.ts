@@ -6,6 +6,7 @@ import {
 } from "./gallery-listing";
 
 const seedA = "0123456789abcdef0123456789abcdef";
+
 const seedB = "fedcba9876543210fedcba9876543210";
 
 const mediaCursor: GalleryListingCursorPayload = {
@@ -60,16 +61,19 @@ describe("gallery listing cursor", () => {
     const withoutKey = Buffer.from(
       JSON.stringify({ ...mediaCursor, randomKey: undefined }),
     ).toString("base64url");
+
     expect(decodeGalleryListingCursor(withoutKey, mediaCursor)).toBeNull();
 
     const forgedKey = Buffer.from(JSON.stringify({ ...mediaCursor, randomKey: "zzz" })).toString(
       "base64url",
     );
+
     expect(decodeGalleryListingCursor(forgedKey, mediaCursor)).toBeNull();
 
     const strayKey = Buffer.from(
       JSON.stringify({ ...comicCursor, randomKey: mediaCursor.randomKey }),
     ).toString("base64url");
+
     expect(decodeGalleryListingCursor(strayKey, comicCursor)).toBeNull();
   });
 
@@ -77,11 +81,13 @@ describe("gallery listing cursor", () => {
     const missingFilename = Buffer.from(
       JSON.stringify({ ...mediaCursor, filename: undefined }),
     ).toString("base64url");
+
     expect(decodeGalleryListingCursor(missingFilename, mediaCursor)).toBeNull();
 
     const missingFolder = Buffer.from(JSON.stringify({ ...comicCursor, folderPath: 7 })).toString(
       "base64url",
     );
+
     expect(decodeGalleryListingCursor(missingFolder, comicCursor)).toBeNull();
   });
 });

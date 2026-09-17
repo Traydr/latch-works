@@ -12,7 +12,9 @@ import { createPaneViewStorageClient } from "./storage-client";
 import { resolveVariantImageUrl, resolveVariantPreview } from "./variant-provider";
 
 const THUMBNAIL_WIDTH = 320;
+
 const PREVIEW_WIDTH = 960;
+
 const shutterControlLimiter = createConcurrencyLimiter(6);
 
 /** The archive reads, the signed original, and the Shutter reads a delivery makes. */
@@ -52,6 +54,7 @@ async function resolveVariant(
   dependencies: MediaDeliveryDependencies,
 ): Promise<MediaDeliveryResolveResult> {
   const width = variantWidth(variant, size);
+
   if (context.mediaType === "image" || context.mediaType === "gif") {
     return { pending: false, url: await dependencies.resolveImageUrl(context, width) };
   }
@@ -63,14 +66,17 @@ async function resolveVariant(
   const preview = await shutterControlLimiter.run(() =>
     dependencies.resolvePreview(context, width),
   );
+
   if (preview.status === "pending") {
     return { pending: true, retryAfterMs: preview.retryAfterMs };
   }
+
   if (preview.status === "failed") {
     throw new Error(
       preview.code ? `Shutter preview failed (${preview.code})` : "Shutter preview unavailable",
     );
   }
+
   return { pending: false, url: preview.url };
 }
 
@@ -79,8 +85,10 @@ async function resolveOriginalDeliveryUrl(
   dependencies: MediaDeliveryDependencies,
 ): Promise<string> {
   const media = await dependencies.readDeliveryRequest({ mediaId });
+
   if (!media) throw new Error("Media not found");
   const delivery = planSignedOriginalDelivery(media);
+
   return dependencies.createSignedOriginalUrl({
     expiresInSeconds: delivery.expiresInSeconds,
     key: delivery.objectKey,
@@ -102,8 +110,11 @@ export async function resolveMediaDeliveryUrlForVariant(
   if (variant === "original") {
     return { pending: false, url: await resolveOriginalDeliveryUrl(mediaId, dependencies) };
   }
+
   const context = await dependencies.readThumbnailContext({ mediaId });
+
   if (!context) throw new Error("Media not found");
+
   return resolveVariant(context, variant, size, dependencies);
 }
 
@@ -127,24 +138,31 @@ export async function resolveMediaDeliveryUrlsForVariants(
   dependencies: MediaDeliveryDependencies = defaultMediaDeliveryDependencies,
 ): Promise<MediaDeliveryBatchResolveResult[]> {
   const seen = new Set<string>();
+
   const uniqueItems = items.filter((item) => {
     const key = batchResolveKey(item);
+
     if (seen.has(key)) return false;
     seen.add(key);
+
     return true;
   });
+
   const variantIds: string[] = [];
+
   for (const item of uniqueItems) {
     if (item.variant !== "original") {
       variantIds.push(item.mediaId);
     }
   }
+
   const contexts = await dependencies.readThumbnailContexts({ mediaIds: variantIds });
 
   return Promise.all(
     uniqueItems.map(async (item): Promise<MediaDeliveryBatchResolveResult> => {
       try {
         const context = item.variant === "original" ? undefined : contexts.get(item.mediaId);
+
         if (item.variant !== "original" && !context) {
           return {
             mediaId: item.mediaId,
@@ -153,13 +171,16 @@ export async function resolveMediaDeliveryUrlsForVariants(
             variant: item.variant,
           };
         }
+
         let result: MediaDeliveryResolveResult;
+
         if (item.variant === "original") {
           result = await resolveMediaDeliveryUrlForVariant(item, dependencies);
         } else {
           if (!context) throw new Error("Media not found");
           result = await resolveVariant(context, item.variant, item.size, dependencies);
         }
+
         return result.pending
           ? {
               mediaId: item.mediaId,

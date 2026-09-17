@@ -111,6 +111,7 @@ async function hashLocalFile(
 ): Promise<string> {
   const fileStat = await stat(filePath);
   let lastReport = 0;
+
   const sha256 = await hashFileContents({
     expected: {
       ctimeMs: fileStat.ctimeMs,
@@ -120,6 +121,7 @@ async function hashLocalFile(
     filePath,
     onProgress: (bytesHashed) => {
       const now = Date.now();
+
       if (now - lastReport >= 100) {
         lastReport = now;
         onProgress?.(bytesHashed, fileStat.size);
@@ -130,6 +132,7 @@ async function hashLocalFile(
   });
 
   onProgress?.(fileStat.size, fileStat.size);
+
   return sha256;
 }
 
@@ -161,6 +164,7 @@ async function pushMediaItem({
   const registrationExtension = getExtension(registrationName);
   const contentType = contentTypeForExtension(registrationExtension);
   const preHashStat = await stat(filePath);
+
   const sha256 =
     item.sha256 ??
     (await hashLocalFile(
@@ -172,6 +176,7 @@ async function pushMediaItem({
     ));
 
   onStage("registering", "requesting upload URL");
+
   const uploadTarget = await postJson(
     apiUrl,
     "/api/sync/upload-url",
@@ -204,6 +209,7 @@ async function pushMediaItem({
   }
 
   const postUploadStat = await stat(filePath);
+
   if (postUploadStat.size !== preHashStat.size || postUploadStat.mtimeMs !== preHashStat.mtimeMs) {
     throw new Error("File changed during sync; retry this item.");
   }
@@ -277,6 +283,7 @@ export async function uploadFile({
   uploadUrl: string;
 }): Promise<void> {
   const fileStat = await stat(filePath);
+
   if (fileStat.size !== expectedSize) {
     throw new Error("File changed during sync; retry this item.");
   }
@@ -286,16 +293,19 @@ export async function uploadFile({
   let lastReport = 0;
   const digest = createHash("sha256");
   const source = createReadStream(filePath);
+
   const body = source.pipe(
     new Transform({
       transform(chunk, _encoding, callback) {
         bytesUploaded += chunk.length;
         digest.update(chunk);
         const now = Date.now();
+
         if (onProgress && now - lastReport >= 100) {
           lastReport = now;
           onProgress(bytesUploaded, total);
         }
+
         callback(null, chunk);
       },
     }),
@@ -305,6 +315,7 @@ export async function uploadFile({
     if (!source.destroyed) {
       source.destroy();
     }
+
     if (!body.destroyed) {
       body.destroy();
     }
@@ -313,6 +324,7 @@ export async function uploadFile({
   const onAbort = () => {
     destroyStreams();
   };
+
   signal?.addEventListener("abort", onAbort, { once: true });
 
   try {
@@ -333,6 +345,7 @@ export async function uploadFile({
       method: "PUT",
       signal,
     };
+
     const response = await fetch(uploadUrl, request);
 
     if (!response.ok) {
@@ -344,6 +357,7 @@ export async function uploadFile({
     }
 
     const uploadedSha256 = digest.digest("hex");
+
     if (uploadedSha256 !== expectedSha256.toLowerCase()) {
       throw new Error("Uploaded bytes do not match declared sha256.");
     }

@@ -220,10 +220,12 @@ function LogPanel({ run }: { run: RunController }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = ref.current;
+
     if (el && logs.length > 0) {
       el.scrollTop = el.scrollHeight;
     }
   }, [logs.length]);
+
   return (
     <section className="ls-surface mx-auto flex h-full max-w-2xl flex-col p-3">
       <div className="mb-2 flex shrink-0 items-center justify-between">
@@ -257,6 +259,7 @@ function CommandDock({
 }) {
   const { activeProfile, screen, setScreen } = session;
   const { plan, pipelineProgress } = planCtrl;
+
   const {
     running,
     runProgress,
@@ -267,6 +270,7 @@ function CommandDock({
     handlePrune,
     handleCancel,
   } = run;
+
   const clockActive = isElapsedClockActive(running, runProgress.startedAt, runProgress.endedAt);
   const now = useNow(clockActive);
   const hasProfile = !!activeProfile;
@@ -318,16 +322,20 @@ function CommandDock({
       : runProgress.itemTotal > 0
         ? runProgress.itemCurrent / runProgress.itemTotal
         : null;
+
   const indeterminate = percent == null && running && runProgress.phase !== "idle";
+
   const tone =
     runProgress.phase === "error" || runProgress.phase === "cancelled"
       ? "red"
       : runProgress.phase === "done"
         ? "emerald"
         : "violet";
+
   const showFill = running || runProgress.phase !== "idle";
   const elapsed = runProgress.startedAt ? (runProgress.endedAt ?? now) - runProgress.startedAt : 0;
   const idle = runProgress.phase === "idle" && !running;
+
   const counter =
     runProgress.itemTotal > 0 ? `${runProgress.itemCurrent}/${runProgress.itemTotal}` : null;
 
@@ -336,6 +344,7 @@ function CommandDock({
       <div className="flex shrink-0 items-center gap-1 px-3 py-2">
         {STAGES.map((stage, index) => {
           const state = states[index];
+
           return (
             <button
               key={stage.label}

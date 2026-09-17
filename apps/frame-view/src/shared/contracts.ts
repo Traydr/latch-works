@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 /** Any JSON value — what `JSON.parse` and the IPC transport hand back before parsing. */
 const JsonValueSchema = z.json();
+
 export type JsonValue = z.infer<typeof JsonValueSchema>;
 
 /** What a utility-process message carries before parsing: JSON plus binary buffers. */
@@ -12,7 +13,9 @@ export type WorkerMessage =
   | { [key: string]: WorkerMessage };
 
 const MAX_PATH_LENGTH = 4096;
+
 const MAX_EXTENSION_COUNT = 64;
+
 const MAX_EXTENSION_LENGTH = 16;
 
 export const PathInputSchema = z.string().trim().min(1).max(MAX_PATH_LENGTH);
@@ -33,9 +36,11 @@ export const MediaExtensionsSchema = z
   .transform((values) => Array.from(new Set(values)));
 
 const integerNumberSchema = z.number().int();
+
 const finiteNumberSchema = z.number();
 
 export const ThemeModeSchema = z.enum(['system', 'light', 'dark']);
+
 export const GallerySortModeSchema = z.enum([
   'name-asc',
   'name-desc',
@@ -43,6 +48,7 @@ export const GallerySortModeSchema = z.enum([
   'date-oldest',
   'random',
 ]);
+
 export const MediaTypeSchema = z.enum(['image', 'video']);
 
 export const FileFilterSettingsSchema = z.object({
@@ -70,7 +76,9 @@ export const DebugSettingsSchema = z.object({
 export const ThumbnailSizeSchema = finiteNumberSchema.transform((value) =>
   Math.max(64, Math.min(1024, Math.round(value))),
 );
+
 export const RandomSeedSchema = integerNumberSchema;
+
 export const LastFolderPathSchema = PathInputSchema.nullable();
 
 export const AppSettingsSchema = z.object({
@@ -176,6 +184,7 @@ export const MediaToolsStatusSchema = z.object({
 });
 
 export const ThumbnailJobKindSchema = z.enum(['image', 'video']);
+
 export const ThumbnailJobPrioritySchema = z.union([z.literal(0), z.literal(1), z.literal(2)]);
 
 export const ThumbnailDebugOptionsSchema = z.object({

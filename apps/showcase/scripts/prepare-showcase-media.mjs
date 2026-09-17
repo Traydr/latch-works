@@ -5,12 +5,17 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
+
 const showcaseRoot = join(scriptDir, "..");
+
 const frameMediaDir = join(showcaseRoot, "../frame-view/showcase-media");
+
 const archiveDir = process.env.LOCKSTEP_SOURCE ?? "/tmp/showcase-archive";
+
 const photosDir = join(archiveDir, "sfw/photos");
 
 const require = createRequire(join(showcaseRoot, "../frame-view/package.json"));
+
 const sharp = require("sharp");
 
 const palette = [
@@ -37,6 +42,7 @@ async function main() {
 
     if (!existsSync(archivePath)) {
       const label = String(index + 1).padStart(2, "0");
+
       const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1200" viewBox="0 0 1600 1200">
       <rect width="1600" height="1200" fill="${color}"/>
       <rect x="80" y="80" width="1440" height="1040" rx="48" fill="#09090b" opacity="0.25"/>

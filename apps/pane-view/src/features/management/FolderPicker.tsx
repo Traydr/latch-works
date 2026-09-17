@@ -30,6 +30,7 @@ export function FolderPicker({ folders, onChange, selectedPaths }: FolderPickerP
   const togglePath = (path: string) => {
     if (selectedPathSet.has(path)) {
       onChange(selectedPaths.filter((value) => value !== path));
+
       return;
     }
 
@@ -51,6 +52,7 @@ export function FolderPicker({ folders, onChange, selectedPaths }: FolderPickerP
           <ul className="divide-y divide-border">
             {visibleFolders.map((folder) => {
               const checked = selectedPathSet.has(folder.path);
+
               return (
                 <li key={folder.path}>
                   <label className="flex cursor-pointer items-start gap-3 px-3 py-2 text-sm hover:bg-muted/40">

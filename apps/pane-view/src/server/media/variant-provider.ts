@@ -55,6 +55,7 @@ export async function resolveVariantImageUrl(
   if (isShutterConfigured(dependencies.environment)) {
     return dependencies.resolveShutterImageUrl(context, width);
   }
+
   // The pass-through serves the original bytes, so the requested width is moot.
   return dependencies.createSignedOriginalUrl({
     expiresInSeconds: PASS_THROUGH_URL_LIFETIME_SECONDS,
@@ -70,6 +71,7 @@ export async function resolveVariantPreview(
   if (isShutterConfigured(dependencies.environment)) {
     return dependencies.resolveShutterPreview(context, width);
   }
+
   // Video and PDF stills require Shutter; without it the tile falls back to a
   // placeholder while the viewer keeps playing the signed original.
   return { status: "failed" };

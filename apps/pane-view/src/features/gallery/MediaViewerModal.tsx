@@ -69,14 +69,17 @@ export function MediaViewerModal({
   const index = items.findIndex((candidate) => candidate.id === mediaId);
   const lastItemRef = useRef<MediaItem | undefined>(undefined);
   const current = index >= 0 ? items[index] : undefined;
+
   if (current) {
     lastItemRef.current = current;
   }
+
   // Keep the last item mounted if it left the sequence (deleted, filtered)
   // until the selection moves on; never blank the dialog under the user.
   const item = current ?? lastItemRef.current;
 
   const steppingRef = useRef(false);
+
   const step = useCallback(
     (delta: -1 | 1) => {
       // Repeated forward presses during a page load must not queue extra
@@ -84,6 +87,7 @@ export function MediaViewerModal({
       if (steppingRef.current) {
         return;
       }
+
       steppingRef.current = true;
       void stepMedia(mediaId, delta, loopNavigation)
         .then((nextId) => {
@@ -101,6 +105,7 @@ export function MediaViewerModal({
 
   const canStepForward =
     index >= 0 && (index < items.length - 1 || hasMore || (loopNavigation && items.length > 1));
+
   const canStepBackward =
     index > 0 || (index >= 0 && loopNavigation && !hasMore && items.length > 1);
 
@@ -108,12 +113,16 @@ export function MediaViewerModal({
     if (index < 0 || items.length < 2) {
       return undefined;
     }
+
     const target = index + delta;
+
     if (target >= 0 && target < items.length) {
       return items[target];
     }
+
     return loopNavigation && !hasMore ? items[(target + items.length) % items.length] : undefined;
   };
+
   usePrefetchNeighborPreview(neighbor(-1), cache);
   usePrefetchNeighborPreview(neighbor(1), cache);
 

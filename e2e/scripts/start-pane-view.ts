@@ -39,6 +39,7 @@ function run(command: string, args: string[], env: NodeJS.ProcessEnv, cwd: strin
 
 async function recreateDatabase(environment: E2eEnvironment): Promise<void> {
   const sql = postgres(environment.adminDatabaseUrl, { max: 1 });
+
   try {
     await sql.unsafe(`drop database if exists ${E2E_DATABASE_NAME} with (force)`);
     await sql.unsafe(`create database ${E2E_DATABASE_NAME}`);
@@ -57,11 +58,13 @@ async function ensureBucket(environment: E2eEnvironment): Promise<void> {
     forcePathStyle: true,
     region: environment.s3.region,
   });
+
   try {
     await client.send(new HeadBucketCommand({ Bucket: E2E_BUCKET }));
   } catch {
     await client.send(new CreateBucketCommand({ Bucket: E2E_BUCKET }));
   }
+
   // The PDF viewer fetches signed originals from the browser; like a production
   // bucket, the e2e bucket must allow the app origin.
   await client.send(
@@ -101,6 +104,7 @@ async function main(): Promise<void> {
 
   const serverEntry = path.join(PANE_VIEW_DIR, ".output", "server", "index.mjs");
   const skipBuild = process.env.E2E_SKIP_BUILD === "1";
+
   if (skipBuild) {
     await access(serverEntry);
   } else {
@@ -114,9 +118,11 @@ async function main(): Promise<void> {
 
   console.log(`pane-view e2e server: ${PANE_VIEW_URL} (database ${E2E_DATABASE_NAME})`);
   const server = spawn("node", [serverEntry], { cwd: PANE_VIEW_DIR, env, stdio: "inherit" });
+
   const stop = () => {
     server.kill("SIGTERM");
   };
+
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);
   server.on("exit", (code) => process.exit(code ?? 0));

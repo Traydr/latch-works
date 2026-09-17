@@ -8,6 +8,7 @@ import { z } from "zod";
 import { toError } from "./format.js";
 
 const CACHE_VERSION = 1;
+
 const SHA256_PATTERN = /^[a-f0-9]{64}$/i;
 
 export interface HashCacheEntry extends ArchiveFileFingerprint {
@@ -68,6 +69,7 @@ export class HashCache {
 
   get(pathname: string, fingerprint: ArchiveFileFingerprint): string | undefined {
     const entry = this.entries.get(pathname);
+
     return entry && fingerprintsMatch(entry, fingerprint) ? entry.sha256 : undefined;
   }
 
@@ -75,6 +77,7 @@ export class HashCache {
     if (!SHA256_PATTERN.test(sha256)) {
       throw new Error(`Invalid SHA-256 for hash cache entry: ${pathname}`);
     }
+
     this.entries.set(pathname, {
       ctimeMs: fingerprint.ctimeMs,
       mtimeMs: Math.trunc(fingerprint.mtimeMs),
@@ -89,15 +92,20 @@ export class HashCache {
     fingerprints: ReadonlyMap<string, ArchiveFileFingerprint>,
   ): HashCacheHydration {
     let hits = 0;
+
     const hydratedItems = items.map((item) => {
       const fingerprint = fingerprints.get(item.path);
       const sha256 = fingerprint ? this.get(item.path, fingerprint) : undefined;
+
       if (!sha256) {
         return item;
       }
+
       hits += 1;
+
       return { ...item, id: sha256, sha256 };
     });
+
     return { hits, items: hydratedItems };
   }
 
@@ -107,6 +115,7 @@ export class HashCache {
   ): void {
     for (const item of items) {
       const fingerprint = fingerprints.get(item.path);
+
       if (fingerprint && item.sha256) {
         this.set(item.path, fingerprint, item.sha256);
       }
@@ -129,10 +138,12 @@ export class HashCache {
       sourceRoot: this.sourceRoot,
       version: CACHE_VERSION,
     };
+
     const directory = path.dirname(this.filePath);
     const temporaryPath = `${this.filePath}.${process.pid}.${randomUUID()}.tmp`;
 
     await mkdir(directory, { recursive: true });
+
     try {
       await writeFile(temporaryPath, `${JSON.stringify(persisted, null, 2)}\n`, "utf-8");
       await rename(temporaryPath, this.filePath);
@@ -150,6 +161,7 @@ function defaultHashCacheRoot(): string {
 export function hashCachePath(sourceRoot: string, cacheRoot = defaultHashCacheRoot()): string {
   const canonicalRoot = canonicalSourceRoot(sourceRoot);
   const sourceKey = createHash("sha256").update(canonicalRoot).digest("hex");
+
   return path.join(cacheRoot, `${sourceKey}.json`);
 }
 
@@ -163,15 +175,19 @@ export async function loadHashCache({
   try {
     const raw = await readFile(filePath, "utf-8");
     const persisted = PersistedHashCacheSchema.parse(JSON.parse(raw));
+
     if (canonicalSourceRoot(persisted.sourceRoot) !== canonicalRoot) {
       throw new Error("cache source root does not match");
     }
+
     return { cache: new HashCache(filePath, canonicalRoot, persisted.entries) };
   } catch (error) {
     const failure = toError(error);
+
     if (isMissingFileError(failure)) {
       return { cache: new HashCache(filePath, canonicalRoot) };
     }
+
     return {
       cache: new HashCache(filePath, canonicalRoot),
       warning: `Hash cache could not be read and will be rebuilt: ${failure.message}`,
@@ -181,10 +197,12 @@ export async function loadHashCache({
 
 function canonicalSourceRoot(sourceRoot: string): string {
   const resolved = path.normalize(path.resolve(sourceRoot));
+
   return process.platform === "win32" ? resolved.toLowerCase() : resolved;
 }
 
 function isMissingFileError(error: Error): boolean {
   const parsed = FileSystemErrorSchema.safeParse(error);
+
   return parsed.success && parsed.data.code === "ENOENT";
 }

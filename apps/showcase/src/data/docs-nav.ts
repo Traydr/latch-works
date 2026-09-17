@@ -11,6 +11,7 @@ export function groupDocsBySection(docs: CollectionEntry<"docs">[]): DocsSection
 
   for (const doc of docs) {
     const existing = bySection.get(doc.data.section);
+
     if (existing) {
       existing.pages.push(doc);
       continue;

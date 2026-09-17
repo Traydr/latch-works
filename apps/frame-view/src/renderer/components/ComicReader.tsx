@@ -22,6 +22,7 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
   useEffect(() => {
     const dialog = dialogRef.current;
     dialog?.showModal();
+
     return () => dialog?.close();
   }, []);
 
@@ -37,6 +38,7 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
 
       window.requestAnimationFrame(() => {
         const page = pageRefs.current[nextIndex];
+
         if (!page) {
           return;
         }
@@ -50,6 +52,7 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
 
       if (matchesAnyKey(event, HOTKEYS.close)) {
         onClose();
+
         return;
       }
 
@@ -60,6 +63,7 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
       if (matchesAnyKey(event, HOTKEYS.viewerNext)) {
         event.preventDefault();
         scrollToPage(currentPageIndexRef.current + 1);
+
         return;
       }
 
@@ -70,16 +74,19 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
     };
 
     window.addEventListener('keydown', keyListener);
+
     return () => window.removeEventListener('keydown', keyListener);
   }, [comic.pages.length, onClose, revealChrome]);
 
   useEffect(() => {
     const reader = readerRef.current;
+
     if (!reader) {
       return undefined;
     }
 
     let frameId: number | null = null;
+
     const syncCurrentPage = (): void => {
       frameId = null;
       let nearestIndex = currentPageIndex;
@@ -87,11 +94,13 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
 
       for (let index = 0; index < pageRefs.current.length; index += 1) {
         const page = pageRefs.current[index];
+
         if (!page) {
           continue;
         }
 
         const distance = Math.abs(page.offsetTop - reader.scrollTop);
+
         if (distance < nearestDistance) {
           nearestDistance = distance;
           nearestIndex = index;
@@ -103,6 +112,7 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
 
     const onScroll = (): void => {
       revealChrome();
+
       if (frameId !== null) {
         return;
       }
@@ -111,6 +121,7 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
     };
 
     reader.addEventListener('scroll', onScroll, { passive: true });
+
     return () => {
       if (frameId !== null) {
         window.cancelAnimationFrame(frameId);

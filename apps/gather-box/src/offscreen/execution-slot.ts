@@ -19,6 +19,7 @@ export class GatherExecutionSlot {
     if (this.active?.runId === runId) {
       return "duplicate";
     }
+
     if (this.active) {
       return "busy";
     }
@@ -32,12 +33,14 @@ export class GatherExecutionSlot {
         if (this.active?.runId === runId) {
           this.active = null;
         }
+
         try {
           onReleased?.();
         } catch {
           // Releasing the slot must not depend on how the run was reported.
         }
       });
+
     return "started";
   }
 
@@ -45,7 +48,9 @@ export class GatherExecutionSlot {
     if (this.active?.runId !== runId) {
       return false;
     }
+
     this.active.controller.abort();
+
     return true;
   }
 }

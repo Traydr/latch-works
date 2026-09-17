@@ -47,10 +47,13 @@ const generatedAtSchema = z
   .string({ error: "generatedAt must be an ISO timestamp" })
   .transform((value, context) => {
     const generatedAt = Date.parse(value);
+
     if (!Number.isFinite(generatedAt) || new Date(generatedAt).toISOString() !== value) {
       context.addIssue("generatedAt must be an ISO timestamp");
+
       return z.NEVER;
     }
+
     return generatedAt;
   });
 
@@ -61,6 +64,7 @@ const capabilityKeyEntrySchema = z
       return decodeCapabilityKey(encoded);
     } catch {
       context.addIssue("a Capability Key entry is invalid");
+
       return z.NEVER;
     }
   });
@@ -100,13 +104,17 @@ export function serializeEdgeConfigSnapshot(
   generatedAt: Date,
 ): EdgeConfigSnapshotWire {
   const capabilityKeys: Record<string, Record<string, string>> = Object.create(null);
+
   for (const space of snapshot.spaces) {
     const keys: Record<string, string> = Object.create(null);
+
     for (const [keyId, key] of snapshot.capabilityKeys.get(space.id) ?? []) {
       keys[keyId] = encodeCapabilityKey(key);
     }
+
     capabilityKeys[space.id] = keys;
   }
+
   return {
     schemaVersion: "v1",
     generation: snapshot.generation,
@@ -120,42 +128,53 @@ export function serializeEdgeConfigRefreshReport(generation: number): EdgeConfig
   if (!Number.isSafeInteger(generation) || generation < 0) {
     throw new EdgeConfigValidationError("generation must be a non-negative safe integer");
   }
+
   return { generation };
 }
 
 export function parseEdgeConfigRefreshReport(value: JsonValue): EdgeConfigRefreshReportWire {
   const result = refreshReportSchema.safeParse(value);
+
   if (!result.success) {
     throw new EdgeConfigValidationError(
       firstIssueMessage(result.error, "Edge configuration refresh report is invalid"),
     );
   }
+
   return result.data;
 }
 
 export function parseEdgeConfigSnapshot(value: JsonValue): ParsedEdgeConfigSnapshot {
   const result = snapshotSchema.safeParse(value);
+
   if (!result.success) {
     const message = firstIssueMessage(result.error, "Edge configuration snapshot is invalid");
     // Space policy issues are reported by SPACE_POLICY_SCHEMA under the "spaces" path.
     const policyInvalid = result.error.issues[0]?.path[0] === "spaces";
     throw new EdgeConfigValidationError(policyInvalid ? "a Space policy is invalid" : message);
   }
+
   const wire = result.data;
   const spaces = new Map<string, SpacePolicy>();
+
   for (const policy of wire.spaces) {
     if (spaces.has(policy.id)) throw new EdgeConfigValidationError("Space IDs must be unique");
     spaces.set(policy.id, policy);
   }
+
   const capabilityKeys = new Map<string, ReadonlyMap<string, Uint8Array>>();
+
   for (const [spaceId, keys] of Object.entries(wire.capabilityKeys)) {
     if (!spaces.has(spaceId)) {
       throw new EdgeConfigValidationError("capabilityKeys contains an unknown Space");
     }
+
     capabilityKeys.set(spaceId, new Map(Object.entries(keys)));
   }
+
   for (const spaceId of spaces.keys())
     capabilityKeys.set(spaceId, capabilityKeys.get(spaceId) ?? new Map());
+
   return Object.freeze({
     schemaVersion: "v1",
     generation: wire.generation,

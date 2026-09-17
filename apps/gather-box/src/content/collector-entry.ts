@@ -21,11 +21,13 @@ export function installCollector(sourceKey: SiteKey, collect: Collector): void {
 
   const listener: RuntimeMessageListener = (rawMessage, _sender, sendResponse) => {
     const parsed = CollectComicGalleryMessageSchema.safeParse(rawMessage);
+
     if (!parsed.success || parsed.data.sourceKey !== sourceKey) {
       return undefined;
     }
 
     const message = parsed.data;
+
     if (message.pageUrl !== window.location.href) {
       sendResponse({
         requestId: message.requestId,
@@ -36,6 +38,7 @@ export function installCollector(sourceKey: SiteKey, collect: Collector): void {
           message: "The source page navigated before its collector ran."
         }
       });
+
       return false;
     }
 
@@ -52,6 +55,7 @@ export function installCollector(sourceKey: SiteKey, collect: Collector): void {
           }
         })
     );
+
     return true;
   };
 

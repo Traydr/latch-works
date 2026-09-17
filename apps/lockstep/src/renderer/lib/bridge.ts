@@ -7,6 +7,7 @@ import type { LockstepApi } from "../../shared/types";
  */
 export function requireLockstepApi(): LockstepApi {
   const api = window.lockstep;
+
   if (!api) {
     throw new Error("The Lockstep desktop bridge is unavailable.");
   }

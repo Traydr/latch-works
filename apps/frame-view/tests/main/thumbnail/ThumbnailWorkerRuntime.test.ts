@@ -123,6 +123,7 @@ describe('ThumbnailWorkerRuntime', () => {
       mediaToolsService,
       userDataPath,
     });
+
     await runtime.init();
 
     const response = await runtime.handleRequest({

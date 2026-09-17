@@ -22,6 +22,7 @@ export function installPageShortcuts(
   let uninstall: () => void = () => undefined;
   uninstall = installShortcutKeyListener(document, () => getSettings()?.enabled ?? false, (action) => {
     const settings = getSettings();
+
     if (!settings) {
       return;
     }
@@ -30,6 +31,7 @@ export function installPageShortcuts(
       type: action === "toggle" ? OPEN_EXTENSION_MESSAGE : TRIGGER_DOWNLOAD_MESSAGE,
       target: "background"
     };
+
     try {
       void runtime.sendMessage(message).catch(uninstall);
     } catch {
@@ -38,5 +40,6 @@ export function installPageShortcuts(
       uninstall();
     }
   });
+
   return uninstall;
 }

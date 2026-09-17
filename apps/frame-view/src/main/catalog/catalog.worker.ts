@@ -26,6 +26,7 @@ const runtime = new CatalogRuntime({
 
 parentPort.on('message', (message) => {
   const parsedRequest = CatalogWorkerRequestSchema.safeParse(message.data);
+
   if (!parsedRequest.success) {
     return;
   }

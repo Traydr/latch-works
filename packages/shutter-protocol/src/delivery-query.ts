@@ -38,9 +38,11 @@ const OPERATION_PARAMETERS = new Set(["w", "q", "preview"]);
 
 function single(query: URLSearchParams, name: string): string | undefined {
   const values = query.getAll(name);
+
   if (values.length > 1) {
     throw new ProtocolError("query_invalid", `${name} may appear at most once`);
   }
+
   return values[0];
 }
 
@@ -67,15 +69,21 @@ export function parseDeliveryQuery(
 ): DeliveryQuery {
   for (const key of query.keys()) {
     if (OPERATION_PARAMETERS.has(key)) continue;
+
     if (key === "token" && options.token === "required") continue;
     throw new ProtocolError("query_invalid", `unknown delivery parameter: ${key}`);
   }
+
   const token = options.token === "required" ? single(query, "token") : undefined;
+
   if (options.token === "required" && (token === undefined || token.length === 0)) {
     throw new ProtocolError("capability_malformed", "a private Delivery URL requires a token");
   }
+
   const result: DeliveryQuery = { operation: parseOperation(query, policy) };
+
   if (token !== undefined) result.token = token;
+
   return result;
 }
 
@@ -85,20 +93,29 @@ function parseOperation(
 ): DeliveryOperation {
   const preview = single(query, "preview");
   const hasWidth = query.has("w");
+
   if (!hasWidth) {
     if (query.has("q")) throw new ProtocolError("query_invalid", "q requires w");
+
     if (preview !== undefined) throw new ProtocolError("query_invalid", "preview requires w");
+
     return { type: "source_delivery" };
   }
+
   const optimization = new URLSearchParams();
+
   for (const [key, value] of query) {
     if (key === "w" || key === "q") optimization.append(key, value);
   }
+
   const normalized = normalizeOptimizationQuery(optimization, policy);
+
   if (preview === undefined) return { type: "image_optimization", ...normalized };
+
   if (preview !== "video" && preview !== "pdf") {
     throw new ProtocolError("query_invalid", "preview must be video or pdf");
   }
+
   return { type: "master_preview", kind: preview, ...normalized };
 }
 

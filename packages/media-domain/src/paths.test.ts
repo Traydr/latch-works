@@ -41,6 +41,7 @@ describe("createSyncPathIdentity", () => {
       ["photos/photo.jpg", "photos/photo.jpeg"],
       ["photos/photo.jpg", "photos/photo.jpeg"],
     );
+
     expect(identity("photos/photo.jpg")).not.toBe(identity("photos/photo.jpeg"));
     expect(identity("photos/photo.jpg")).toBe("photos/photo.jpg");
     expect(identity("photos/photo.jpeg")).toBe("photos/photo.jpeg");

@@ -62,22 +62,28 @@ const claimsSchema = z.strictObject(
 
 function parseClaims(input: JsonValue | AccessTokenClaims): AccessTokenClaims {
   const parsed = claimsSchema.safeParse(input);
+
   if (!parsed.success) {
     throw new ProtocolError(
       "claims_invalid",
       parsed.error.issues[0]?.message ?? "access token claims are invalid",
     );
   }
+
   const claims = parsed.data;
+
   if ((claims.purpose === "master_preview") !== (claims.kind !== undefined)) {
     throw new ProtocolError("claims_invalid", "kind is present exactly for master_preview");
   }
+
   if (encodeUtf8(claims.source_id).byteLength > SOURCE_ID_MAX_BYTES) {
     throw new ProtocolError("claims_invalid", "source ID is too large");
   }
+
   if (claims.exp <= claims.iat || claims.exp - claims.iat > CAPABILITY_MAX_LIFETIME_SECONDS) {
     throw new ProtocolError("claims_invalid", "token lifetime is invalid");
   }
+
   const result: AccessTokenClaims = {
     space_id: claims.space_id,
     source_id: claims.source_id,
@@ -85,13 +91,16 @@ function parseClaims(input: JsonValue | AccessTokenClaims): AccessTokenClaims {
     iat: claims.iat,
     exp: claims.exp,
   };
+
   if (claims.kind !== undefined) result.kind = claims.kind;
+
   return result;
 }
 
 /** One canonical spelling per claim set, so the same claims always encrypt to the same bytes. */
 function canonicalJson(claims: AccessTokenClaims): string {
   const { space_id, source_id, purpose, kind, iat, exp } = claims;
+
   return JSON.stringify(
     kind === undefined
       ? { space_id, source_id, purpose, iat, exp }
@@ -118,12 +127,15 @@ export async function issueAccessTokenWithIvInternal(
   if (!KEY_ID_PATTERN.test(options.kid)) {
     throw new ProtocolError("capability_malformed", "key ID is not a valid envelope segment");
   }
+
   if (ivInput.byteLength !== CAPABILITY_IV_BYTES) {
     throw new ProtocolError("claims_invalid", "AES-GCM IV must be 96 bits");
   }
+
   const validated = parseClaims(claims);
   const key = await importAesGcmKey(options.key, "encrypt");
   const iv = copyBytes(ivInput);
+
   const ciphertext = await crypto.subtle.encrypt(
     {
       name: "AES-GCM",
@@ -134,10 +146,13 @@ export async function issueAccessTokenWithIvInternal(
     key,
     encodeUtf8(canonicalJson(validated)),
   );
+
   const token = `${ACCESS_TOKEN_VERSION}.${options.kid}.${encodeBase64Url(iv)}.${encodeBase64Url(new Uint8Array(ciphertext))}`;
+
   if (token.length > CAPABILITY_MAX_BYTES) {
     throw new ProtocolError("capability_too_large", "token exceeds the envelope limit");
   }
+
   return token;
 }
 
@@ -153,26 +168,36 @@ export async function verifyAccessToken<Purpose extends AccessTokenPurpose>(
   if (token.length > CAPABILITY_MAX_BYTES) {
     throw new ProtocolError("capability_too_large", "token exceeds the envelope limit");
   }
+
   const parts = token.split(".");
+
   if (parts.length !== 4) {
     throw new ProtocolError("capability_malformed", "token envelope must contain four segments");
   }
+
   // SAFETY: the length check above proves the split produced exactly four segments.
   const [version, kid, ivValue, ciphertextValue] = parts as [string, string, string, string];
+
   if (version !== ACCESS_TOKEN_VERSION) {
     throw new ProtocolError("unknown_version", "token version is not supported");
   }
+
   if (!KEY_ID_PATTERN.test(kid)) {
     throw new ProtocolError("capability_malformed", "key ID is not a valid envelope segment");
   }
+
   const keyMaterial = options.keys.get(kid);
+
   if (keyMaterial === undefined) throw new ProtocolError("unknown_key", "token key is not active");
   const iv = decodeBase64Url(ivValue);
+
   if (iv.byteLength !== CAPABILITY_IV_BYTES) {
     throw new ProtocolError("capability_malformed", "token IV must be 96 bits");
   }
+
   const key = await importAesGcmKey(keyMaterial, "decrypt");
   let plaintext: ArrayBuffer;
+
   try {
     plaintext = await crypto.subtle.decrypt(
       {
@@ -187,31 +212,41 @@ export async function verifyAccessToken<Purpose extends AccessTokenPurpose>(
   } catch {
     throw new ProtocolError("authentication_failed", "token authentication failed");
   }
+
   let decoded: JsonValue;
+
   try {
     decoded = JSON.parse(utf8Decoder.decode(plaintext));
   } catch {
     throw new ProtocolError("claims_invalid", "token plaintext is not valid UTF-8 JSON");
   }
+
   const claims = parseClaims(decoded);
+
   if (claims.space_id !== options.spaceId) {
     throw new ProtocolError("space_mismatch", "token Space does not match the route");
   }
+
   if (claims.purpose !== options.expectedPurpose) {
     throw new ProtocolError("purpose_mismatch", "token purpose does not match the operation");
   }
+
   if (claims.source_id !== options.expectedSourceId) {
     throw new ProtocolError("source_mismatch", "token Source ID does not match the reference");
   }
+
   if (options.expectedKind !== undefined && claims.kind !== options.expectedKind) {
     throw new ProtocolError("kind_mismatch", "token kind does not match the preview");
   }
+
   if (claims.iat > options.now) {
     throw new ProtocolError("capability_not_yet_valid", "token was issued in the future");
   }
+
   if (claims.exp <= options.now) {
     throw new ProtocolError("capability_expired", "token has expired");
   }
+
   // SAFETY: the purpose comparison above proved claims.purpose is options.expectedPurpose.
   return claims as AccessTokenClaims & { purpose: Purpose };
 }

@@ -77,20 +77,25 @@ export class AvifEncoderClient {
     if (this.worker) {
       return this.worker;
     }
+
     const worker = this.createWorker();
     worker.onResponse(this.handleResponse);
     worker.onFailure(this.handleFailure);
     this.worker = worker;
+
     return worker;
   }
 
   private readonly handleResponse = (response: AvifWorkerResponse): void => {
     const request = this.pending.get(response.id);
+
     if (!request) {
       return;
     }
+
     this.pending.delete(response.id);
     request.removeAbortListener();
+
     if (response.ok) {
       request.resolve(response.buffer);
     } else {
@@ -104,9 +109,11 @@ export class AvifEncoderClient {
 
   private rejectRequest(id: number, error: Error): void {
     const request = this.pending.get(id);
+
     if (!request) {
       return;
     }
+
     this.pending.delete(id);
     request.removeAbortListener();
     request.reject(error);
@@ -116,6 +123,7 @@ export class AvifEncoderClient {
     const worker = this.worker;
     this.worker = null;
     worker?.terminate();
+
     for (const id of Array.from(this.pending.keys())) {
       this.rejectRequest(id, error);
     }

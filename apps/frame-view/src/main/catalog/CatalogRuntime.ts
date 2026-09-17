@@ -69,6 +69,7 @@ export class CatalogRuntime {
 
     if (!options.mediaIndexService) {
       const initResult = this.mediaIndexService.init();
+
       if (Result.isError(initResult)) {
         throw initResult.error;
       }
@@ -79,19 +80,23 @@ export class CatalogRuntime {
     switch (request.type) {
       case 'start-scan':
         await this.startScan(request.requestId, request.options);
+
         return;
       case 'cancel-scan':
         this.cancelScan();
         this.options.emitResponse({ requestId: request.requestId, ok: true });
+
         return;
       case 'get-index-stats': {
         const statsResult = await this.mediaIndexService.getStats();
+
         if (Result.isError(statsResult)) {
           this.options.emitResponse({
             requestId: request.requestId,
             ok: false,
             error: statsResult.error.message,
           });
+
           return;
         }
 
@@ -100,10 +105,13 @@ export class CatalogRuntime {
           ok: true,
           result: statsResult.value,
         });
+
         return;
       }
+
       case 'clear-index':
         await this.clearIndex(request.requestId);
+
         return;
       default: {
         const exhaustiveCheck: never = request;
@@ -131,6 +139,7 @@ export class CatalogRuntime {
       .catch((error) => {
         const message =
           error instanceof Error ? `Scan failed: ${error.message}` : 'Scan failed unexpectedly';
+
         this.emitScanEvent({
           type: 'error',
           message,
@@ -160,8 +169,10 @@ export class CatalogRuntime {
     }
 
     const clearResult = await this.mediaIndexService.clear();
+
     if (Result.isError(clearResult)) {
       this.options.emitResponse({ requestId, ok: false, error: clearResult.error.message });
+
       return;
     }
 
@@ -195,6 +206,7 @@ export class CatalogRuntime {
 
     for (const excludedPath of excludedRootChildPaths) {
       const resolvedExcludedPath = path.resolve(excludedPath);
+
       if (path.dirname(resolvedExcludedPath) === resolvedRootPath) {
         validatedExcludedRootChildPaths.push(resolvedExcludedPath);
       }
@@ -223,6 +235,7 @@ export class CatalogRuntime {
     currentPath: string,
   ): Promise<FrameScanCandidate[] | null> {
     let directory: Awaited<ReturnType<typeof fs.opendir>>;
+
     try {
       directory = await fs.opendir(currentPath, { encoding: 'utf8' });
     } catch {
@@ -236,6 +249,7 @@ export class CatalogRuntime {
         path: currentPath,
         runId: run.id,
       });
+
       return [];
     }
 
@@ -248,6 +262,7 @@ export class CatalogRuntime {
     this.emitProgress(run, context);
 
     const candidateFiles: FrameScanCandidate[] = [];
+
     try {
       for await (const entry of directory) {
         if (!this.isRunActive(run)) {
@@ -255,6 +270,7 @@ export class CatalogRuntime {
         }
 
         const fullPath = path.join(currentPath, entry.name);
+
         if (entry.isDirectory()) {
           if (shouldSkipDirectoryName(entry.name)) {
             continue;
@@ -270,6 +286,7 @@ export class CatalogRuntime {
 
             context.queue.push(fullPath);
           }
+
           continue;
         }
 
@@ -278,6 +295,7 @@ export class CatalogRuntime {
         }
 
         const classified = classifyFrameCandidate(entry.name, context.filters);
+
         if (!classified) {
           continue;
         }
@@ -298,6 +316,7 @@ export class CatalogRuntime {
         path: currentPath,
         runId: run.id,
       });
+
       return [];
     }
 
@@ -311,6 +330,7 @@ export class CatalogRuntime {
       chunk.map(async (candidate) => {
         try {
           const stats = await fs.stat(candidate.fullPath);
+
           return {
             item: toFrameMediaItem(candidate, {
               mtimeMs: stats.mtimeMs,
@@ -330,6 +350,7 @@ export class CatalogRuntime {
     }
 
     const now = Date.now();
+
     if (!force && now - context.lastProgressEmittedAt < CATALOG_PROGRESS_EVENT_INTERVAL_MS) {
       return;
     }
@@ -368,6 +389,7 @@ export class CatalogRuntime {
         context.mediaIndexScanId,
         batchToEmit,
       );
+
       if (Result.isError(upsertResult)) {
         context.mediaIndexPersistenceFailed = true;
         this.emitScanEvent({
@@ -387,6 +409,7 @@ export class CatalogRuntime {
 
   private async cancelMediaIndexScan(run: ActiveRun, scanId: number): Promise<void> {
     const cancelResult = await this.mediaIndexService.cancelScan(scanId);
+
     if (Result.isError(cancelResult)) {
       this.emitScanEvent({
         type: 'error',
@@ -404,6 +427,7 @@ export class CatalogRuntime {
         options.rootPath,
         options.recursive,
       );
+
       if (Result.isError(startScanResult)) {
         throw startScanResult.error;
       }
@@ -443,11 +467,13 @@ export class CatalogRuntime {
     while (context.queueCursor < context.queue.length) {
       if (!this.isRunActive(run)) {
         cancelCurrentRun();
+
         return;
       }
 
       const currentPath = context.queue[context.queueCursor];
       context.queueCursor += 1;
+
       if (!currentPath) {
         continue;
       }
@@ -458,8 +484,10 @@ export class CatalogRuntime {
         context,
         currentPath,
       );
+
       if (candidateFiles === null) {
         cancelCurrentRun();
+
         return;
       }
 
@@ -470,13 +498,16 @@ export class CatalogRuntime {
       ) {
         if (!this.isRunActive(run)) {
           cancelCurrentRun();
+
           return;
         }
 
         const chunk = candidateFiles.slice(startIndex, startIndex + CATALOG_FILE_STAT_CONCURRENCY);
         const chunkResults = await this.statCandidateChunk(chunk);
+
         if (!this.isRunActive(run)) {
           cancelCurrentRun();
+
           return;
         }
 
@@ -499,6 +530,7 @@ export class CatalogRuntime {
             !(await this.flushIndexedBatch(run, options, context))
           ) {
             cancelCurrentRun();
+
             return;
           }
         }
@@ -511,11 +543,13 @@ export class CatalogRuntime {
 
     if (!this.isRunActive(run)) {
       cancelCurrentRun();
+
       return;
     }
 
     if (context.pendingBatch.length > 0 && !(await this.flushIndexedBatch(run, options, context))) {
       cancelCurrentRun();
+
       return;
     }
 
@@ -523,6 +557,7 @@ export class CatalogRuntime {
 
     if (!this.isRunActive(run)) {
       cancelCurrentRun();
+
       return;
     }
 
@@ -536,6 +571,7 @@ export class CatalogRuntime {
           options.rootPath,
           context.mediaIndexScanId,
         );
+
         if (Result.isError(finishResult)) {
           this.emitScanEvent({
             type: 'error',

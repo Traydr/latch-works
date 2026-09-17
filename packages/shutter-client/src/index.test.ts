@@ -7,10 +7,15 @@ import { describe, expect, it } from "vitest";
 import { createShutterClient, ShutterClientError } from "./index.js";
 
 const KID = "key-2026-08";
+
 const KEY = new Uint8Array(32).fill(7);
+
 const SPACE = "example-private";
+
 const SOURCE = "media_01H8EXAMPLE";
+
 const LOCATOR = "https://storage.example.test/objects/one?signature=abc";
+
 const KEYS = new Map([[KID, KEY]]);
 
 function nowSeconds(): number {
@@ -34,12 +39,15 @@ interface ClientHarness {
 
 function fetchStub(responses: Response[]): FetchStub {
   const requests: RecordedRequest[] = [];
+
   return {
     requests,
     fetch: async (input, init) => {
       requests.push({ url: new URL(String(input)), init: init ?? {} });
       const next = responses.shift();
+
       if (next === undefined) throw new Error("fetch stub exhausted");
+
       return next;
     },
   };
@@ -47,6 +55,7 @@ function fetchStub(responses: Response[]): FetchStub {
 
 function client(overrides?: { responses?: Response[]; edgeBaseUrl?: string }): ClientHarness {
   const stub = fetchStub(overrides?.responses ?? []);
+
   return {
     requests: stub.requests,
     instance: createShutterClient({
@@ -88,6 +97,7 @@ describe("preview jobs", () => {
     expect(new Headers(request?.init.headers).get("authorization")).toBe("Bearer space-token");
 
     const submission = parsePreviewJobSubmission(JSON.parse(String(request?.init.body)));
+
     const claims = await verifySourceCapability(submission.sourceCapability, {
       spaceId: SPACE,
       expectedPurpose: "preview_job",
@@ -97,6 +107,7 @@ describe("preview jobs", () => {
       expectedSourceId: SOURCE,
       expectedKind: "video",
     });
+
     expect(claims.locator).toBe(LOCATOR);
   });
 
@@ -126,6 +137,7 @@ describe("preview jobs", () => {
 
   it("polls until ready in waitForPreviewJob honoring Retry-After", async () => {
     const master = { sourceId: SOURCE, kind: "video", width: 1920, height: 1080, format: "webp" };
+
     const { instance, requests } = client({
       responses: [
         jsonResponse(202, { status: "pending" }, { "retry-after": "0" }),

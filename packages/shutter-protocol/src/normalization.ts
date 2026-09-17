@@ -18,10 +18,13 @@ function parsePositiveInteger(value: string, name: string): number {
   if (!POSITIVE_INTEGER_PATTERN.test(value)) {
     throw new ProtocolError("query_invalid", `${name} must be a positive base-10 integer`);
   }
+
   const parsed = Number(value);
+
   if (!Number.isSafeInteger(parsed)) {
     throw new ProtocolError("query_invalid", `${name} is outside the supported integer range`);
   }
+
   return parsed;
 }
 
@@ -29,7 +32,9 @@ export function normalizeWidth(requestedWidth: number): number {
   if (!Number.isSafeInteger(requestedWidth) || requestedWidth <= 0) {
     throw new ProtocolError("query_invalid", "width must be a positive integer");
   }
+
   if (requestedWidth === SHUTTER_PLACEHOLDER_WIDTH) return SHUTTER_PLACEHOLDER_WIDTH;
+
   return SHUTTER_WIDTHS.find((width) => width >= requestedWidth) ?? SHUTTER_WIDTHS[12];
 }
 
@@ -46,6 +51,7 @@ export function normalizeQuality(requestedQuality: number, permitted: readonly n
     .reduce((closest, candidate) => {
       const candidateDistance = Math.abs(candidate - requestedQuality);
       const closestDistance = Math.abs(closest - requestedQuality);
+
       return candidateDistance < closestDistance ||
         (candidateDistance === closestDistance && candidate > closest)
         ? candidate
@@ -62,6 +68,7 @@ export function normalizeOptimizationQuery(
       throw new ProtocolError("query_invalid", `unknown optimization parameter: ${key}`);
     }
   }
+
   if (query.getAll("w").length !== 1 || query.getAll("q").length > 1) {
     throw new ProtocolError(
       "query_invalid",
@@ -70,15 +77,19 @@ export function normalizeOptimizationQuery(
   }
 
   const widthValue = query.get("w");
+
   if (widthValue === null) throw new ProtocolError("query_invalid", "width is required");
+
   if (!policy.qualities.includes(policy.defaultQuality)) {
     throw new ProtocolError("query_invalid", "default quality must be permitted by the Space");
   }
 
   const requestedWidth = parsePositiveInteger(widthValue, "width");
   const qualityValue = query.get("q");
+
   const requestedQuality =
     qualityValue === null ? policy.defaultQuality : parsePositiveInteger(qualityValue, "quality");
+
   const width = normalizeWidth(requestedWidth);
   const quality = normalizeQuality(requestedQuality, policy.qualities);
 

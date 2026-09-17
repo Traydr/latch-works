@@ -12,6 +12,7 @@ export const Route = createFileRoute("/api/auth/logout")({
             method: "POST",
           }),
         );
+
         const headers = new Headers({ Location: "/login" });
         copySetCookies(signOutResponse.headers, headers);
 
@@ -29,11 +30,13 @@ function buildAuthHeaders(request: Request): Headers {
   copyHeader(request.headers, headers, "Cookie");
   copyHeader(request.headers, headers, "Origin");
   copyHeader(request.headers, headers, "User-Agent");
+
   return headers;
 }
 
 function copyHeader(source: Headers, target: Headers, name: string): void {
   const value = source.get(name);
+
   if (value) {
     target.set(name, value);
   }

@@ -50,9 +50,11 @@ export class SettingsService {
   async init(): Promise<ResultType<void, FileSystemError>> {
     try {
       this.state = await readPersistedState(this.filePath);
+
       return Result.ok();
     } catch {
       this.state = createDefaultPersistedState();
+
       return this.flushNowSync();
     }
   }
@@ -66,6 +68,7 @@ export class SettingsService {
     options?: FlushOptions,
   ): Promise<ResultType<AppSettings, FileSystemError>> {
     const parsedPatch = omitUndefinedKeys(AppSettingsPatchSchema.parse(patch));
+
     const merged = {
       ...this.state.settings,
       ...parsedPatch,
@@ -83,6 +86,7 @@ export class SettingsService {
 
     try {
       await this.persist(options);
+
       return Result.ok(this.state.settings);
     } catch (cause) {
       return Result.err(
@@ -100,8 +104,10 @@ export class SettingsService {
     options?: FlushOptions,
   ): Promise<ResultType<void, FileSystemError>> {
     this.state.windowBounds = bounds;
+
     try {
       await this.persist(options);
+
       return Result.ok();
     } catch (cause) {
       return Result.err(
@@ -119,8 +125,10 @@ export class SettingsService {
     options?: FlushOptions,
   ): Promise<ResultType<void, FileSystemError>> {
     this.state.windowMaximized = isMaximized;
+
     try {
       await this.persist(options);
+
       return Result.ok();
     } catch (cause) {
       return Result.err(
@@ -132,6 +140,7 @@ export class SettingsService {
   async flushNowSync(): Promise<ResultType<void, FileSystemError>> {
     try {
       const promise = this.markDirty();
+
       if (this.flushTimer) {
         clearTimeout(this.flushTimer);
         this.flushTimer = null;
@@ -139,6 +148,7 @@ export class SettingsService {
 
       await this.commitPendingFlush();
       await promise;
+
       return Result.ok();
     } catch (cause) {
       return Result.err(unexpectedFileSystemError('flush-settings', toError(cause), this.filePath));
@@ -148,6 +158,7 @@ export class SettingsService {
   private async persist(options?: FlushOptions): Promise<void> {
     if (options?.immediate) {
       await this.flushNowSync();
+
       return;
     }
 

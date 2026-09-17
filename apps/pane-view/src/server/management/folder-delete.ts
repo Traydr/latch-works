@@ -33,9 +33,11 @@ export interface FolderDeleteResult {
 
 function normalizeFolderPath(path: string): string {
   const normalized = trimTrailingSlash(toArchivePath(path));
+
   if (normalized.split("/").includes("..")) {
     throw new Error("Folder path must not contain '..' segments.");
   }
+
   return normalized;
 }
 
@@ -53,6 +55,7 @@ export async function countEntriesUnderPath(
   assertDeletableFolderPath(normalizedPath);
 
   const pattern = `${escapeLikePattern(normalizedPath)}/%`;
+
   const rows = await database
     .select({ id: libraryEntries.id })
     .from(libraryEntries)
@@ -83,6 +86,7 @@ export async function softDeleteFolderSubtree(
   dependencies: FolderDeleteDependencies = defaultFolderDeleteDependencies,
 ): Promise<FolderDeleteResult[]> {
   const normalizedPaths = [...new Set(folderPaths.map(normalizeFolderPath))];
+
   if (normalizedPaths.length === 0) {
     throw new Error("Select at least one folder to delete.");
   }

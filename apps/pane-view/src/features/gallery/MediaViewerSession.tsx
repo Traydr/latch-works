@@ -58,11 +58,13 @@ const VIEWER_VOLUME_STORAGE_KEY = "pane-view.viewer.volume";
 function readPersistedVolume(): number {
   try {
     const raw = window.localStorage.getItem(VIEWER_VOLUME_STORAGE_KEY);
+
     if (!raw) {
       return 1;
     }
 
     const parsed = Number(raw);
+
     if (!Number.isFinite(parsed)) {
       return 1;
     }
@@ -77,6 +79,7 @@ function formatDuration(ms: number): string {
   const totalSeconds = Math.floor(ms / 1000);
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
+
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
@@ -116,6 +119,7 @@ function useMediaViewerSession({
   // Video chrome pins while paused and idles away during playback on every device;
   // other media keep the old rule (idle on desktop, tap to toggle on mobile).
   const chromePinned = isVideoItem && !playing;
+
   const { chromeVisible, revealChrome, toggleChrome, chromeVisibilityClass } = useViewerChromeIdle({
     idleOnMobile: isVideoItem,
     isMobile,
@@ -126,25 +130,30 @@ function useMediaViewerSession({
     const onFullscreenChange = () => setIsFullscreen(fullscreenElementOf(document) !== null);
     document.addEventListener("fullscreenchange", onFullscreenChange);
     document.addEventListener("webkitfullscreenchange", onFullscreenChange);
+
     return () => {
       document.removeEventListener("fullscreenchange", onFullscreenChange);
       document.removeEventListener("webkitfullscreenchange", onFullscreenChange);
     };
   }, []);
+
   const videoDelivery = useResolvedMediaUrl({
     cache,
     mediaId: item.mediaType === "video" ? item.id : undefined,
     variant: "original",
   });
+
   const viewerStateSubjectId =
     rememberViewerPosition && (item.mediaType === "video" || item.mediaType === "pdf")
       ? item.id
       : undefined;
+
   const {
     flushSave,
     scheduleSave,
     snapshot: viewerState,
   } = useLibraryViewerState(viewerStateSubjectId, viewerStateStore);
+
   const [resumePdfPage, setResumePdfPage] = useState<number | undefined>();
 
   useEffect(() => {
@@ -173,16 +182,19 @@ function useMediaViewerSession({
     }
 
     const video = videoRef.current;
+
     if (!video) {
       return;
     }
 
     const loadedDuration = video.duration;
+
     if (!Number.isFinite(loadedDuration) || loadedDuration <= 0) {
       return;
     }
 
     const resumeSeconds = resolveVideoResumeSeconds(viewerState?.positionMs, loadedDuration);
+
     if (resumeSeconds === null) {
       return;
     }
@@ -196,26 +208,31 @@ function useMediaViewerSession({
     const dialog = modalRef.current;
     const active = document.activeElement;
     previousFocusRef.current = active instanceof HTMLElement ? active : null;
+
     if (dialog && !dialog.open) {
       openDialog(dialog);
     }
+
     closeButtonRef.current?.focus();
 
     return () => {
       if (dialog) {
         closeDialog(dialog);
       }
+
       previousFocusRef.current?.focus();
     };
   }, []);
 
   const skip = useCallback((seconds: number): void => {
     const video = videoRef.current;
+
     if (!video) {
       return;
     }
 
     const total = video.duration;
+
     if (!Number.isFinite(total) || total <= 0) {
       return;
     }
@@ -251,16 +268,21 @@ function useMediaViewerSession({
     if (key === "Escape") {
       event.preventDefault();
       onClose();
+
       return;
     }
+
     if (key === "ArrowRight" || key === "e") {
       event.preventDefault();
       onStep(1);
+
       return;
     }
+
     if (key === "ArrowLeft" || key === "q") {
       event.preventDefault();
       onStep(-1);
+
       return;
     }
 
@@ -271,26 +293,34 @@ function useMediaViewerSession({
     if (key === " " || key === "2") {
       event.preventDefault();
       const video = videoRef.current;
+
       if (!video) {
         return;
       }
+
       if (video.paused) {
         void video.play();
       } else {
         video.pause();
       }
+
       return;
     }
+
     if (key === "1") {
       event.preventDefault();
       skip(-VIDEO_SKIP_SECONDS);
+
       return;
     }
+
     if (key === "3") {
       event.preventDefault();
       skip(VIDEO_SKIP_SECONDS);
+
       return;
     }
+
     if (key === "4") {
       event.preventDefault();
       speedBoostHeldRef.current = true;
@@ -304,6 +334,7 @@ function useMediaViewerSession({
     }
 
     const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+
     if (key === "4" && speedBoostHeldRef.current) {
       speedBoostHeldRef.current = false;
       applySpeed(1);
@@ -322,6 +353,7 @@ function useMediaViewerSession({
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
     window.addEventListener("blur", resetHeldSpeed);
+
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
@@ -349,11 +381,13 @@ function useMediaViewerSession({
 
   const commitSeek = (rawTarget: number): void => {
     const video = videoRef.current;
+
     if (!video) {
       return;
     }
 
     const total = video.duration;
+
     if (!Number.isFinite(total) || total <= 0) {
       return;
     }
@@ -364,6 +398,7 @@ function useMediaViewerSession({
 
     // Chrome and jsdom have no fastSeek, whatever the DOM lib types say.
     const seeker: OptionalFastSeek = video;
+
     if (seeker.fastSeek) {
       seeker.fastSeek(nextTime);
     } else {
@@ -381,6 +416,7 @@ function useMediaViewerSession({
 
   const toggleVideoPlayback = (): void => {
     const video = videoRef.current;
+
     if (!video) {
       return;
     }
@@ -394,14 +430,17 @@ function useMediaViewerSession({
 
   const toggleFullscreen = async (): Promise<void> => {
     const dialog = modalRef.current;
+
     if (!dialog) {
       return;
     }
 
     const doc: WebkitFullscreenDocument = document;
+
     if (fullscreenElementOf(document)) {
       if (doc.exitFullscreen) await document.exitFullscreen();
       else await doc.webkitExitFullscreen?.();
+
       return;
     }
 
@@ -410,18 +449,23 @@ function useMediaViewerSession({
     // dialog). When it is unavailable or refused, the video itself can still go
     // full screen with its native player.
     const host: FullscreenHost = dialog;
+
     try {
       if (doc.fullscreenEnabled !== false && host.requestFullscreen) {
         await dialog.requestFullscreen();
+
         return;
       }
+
       if (host.webkitRequestFullscreen) {
         await host.webkitRequestFullscreen();
+
         return;
       }
     } catch {
       // Fall through to the video's own fullscreen.
     }
+
     const video: WebkitFullscreenVideo | null = videoRef.current;
     video?.webkitEnterFullscreen?.();
   };
@@ -429,14 +473,18 @@ function useMediaViewerSession({
   const changeVolume = (rawVolume: number): void => {
     const clamped = Math.max(0, Math.min(1, rawVolume));
     setVolume(clamped);
+
     try {
       window.localStorage.setItem(VIEWER_VOLUME_STORAGE_KEY, String(clamped));
     } catch {
       /* Ignore storage write errors. */
     }
+
     const video = videoRef.current;
+
     if (video) {
       video.volume = clamped;
+
       if (clamped > 0 && video.muted) {
         video.muted = false;
         setMuted(false);
@@ -462,6 +510,7 @@ function useMediaViewerSession({
     const video = videoRef.current;
     const next = !muted;
     setMuted(next);
+
     if (video) {
       video.muted = next;
     }
@@ -530,18 +579,22 @@ function useMediaViewerSession({
 }
 
 export type MediaViewerSessionModel = ReturnType<typeof useMediaViewerSession>;
+
 const MediaViewerSessionContext = createContext<MediaViewerSessionModel | null>(null);
 
 export function useMediaViewerSessionModel(): MediaViewerSessionModel {
   const model = useContext(MediaViewerSessionContext);
+
   if (!model) {
     throw new Error("Media viewer session context is missing");
   }
+
   return model;
 }
 
 export function MediaViewerSession(props: MediaViewerSessionProps): JSX.Element {
   const model = useMediaViewerSession(props);
+
   return (
     <MediaViewerSessionContext.Provider value={model}>
       <ViewerDialog />
@@ -551,6 +604,7 @@ export function MediaViewerSession(props: MediaViewerSessionProps): JSX.Element 
 
 function ViewerDialog(): JSX.Element {
   const model = useMediaViewerSessionModel();
+
   const {
     chromeVisible,
     isCoarsePointer,
@@ -561,7 +615,9 @@ function ViewerDialog(): JSX.Element {
     revealChrome,
     toggleChrome,
   } = model;
+
   const isVideoItem = item.mediaType === "video";
+
   return (
     // The dialog is the correct modal primitive; pointer handlers only manage transient chrome.
     // react-doctor-disable-next-line react-doctor/no-noninteractive-element-interactions
@@ -604,6 +660,7 @@ function ViewerTopBar(): JSX.Element {
     showOriginal,
     toggleFullscreen,
   } = useMediaViewerSessionModel();
+
   return (
     <div
       className={`pointer-events-none absolute inset-x-0 top-0 z-20 bg-gradient-to-b from-black/70 via-black/30 to-transparent px-3 pb-8 pt-3 transition-opacity duration-300 ${chromeVisibilityClass}`}
@@ -657,8 +714,10 @@ function ViewerTopBar(): JSX.Element {
 function ViewerNavigation(): JSX.Element {
   const { canStepBackward, canStepForward, chromeVisibilityClass, item, onStep } =
     useMediaViewerSessionModel();
+
   // A video keeps its picture for play/pause and hold-to-boost; only the edges step.
   const zoneWidth = item.mediaType === "video" ? "w-[10%]" : "w-1/2";
+
   return (
     <>
       {item.mediaType !== "pdf" ? (
@@ -703,15 +762,19 @@ function ViewerMedia(): JSX.Element {
   const model = useMediaViewerSessionModel();
   const { item } = model;
   const hold = useHoldToBoost(model);
+
   return (
     <div
       className="flex h-full select-none items-center justify-center p-3 pb-[env(safe-area-inset-bottom)] [-webkit-touch-callout:none]"
       {...hold.handlers}
       onClick={(event) => {
         event.stopPropagation();
+
         if (item.mediaType !== "video") return;
+
         // The tap that ended a hold-to-boost is not a tap on the picture.
         if (hold.consumeSuppressedClick()) return;
+
         // A tap on the picture shows or hides the controls; a click plays or pauses.
         if (model.isCoarsePointer) model.toggleChrome();
         else model.toggleVideoPlayback();
@@ -766,18 +829,22 @@ function ViewerVideo({ model }: { model: MediaViewerSessionModel }): JSX.Element
         video.volume = model.volume;
         video.muted = model.muted;
         video.playbackRate = model.speed;
+
         if (Number.isFinite(loadedDuration)) model.setDuration(loadedDuration);
+
         if (!model.hasRestoredVideoRef.current) {
           const resumeSeconds = resolveVideoResumeSeconds(
             model.viewerState?.positionMs,
             loadedDuration,
           );
+
           if (resumeSeconds !== null) {
             video.currentTime = resumeSeconds;
             model.setPosition(resumeSeconds);
             model.hasRestoredVideoRef.current = true;
           }
         }
+
         if (model.autoplayVideos) void video.play().catch(() => undefined);
       }}
       onDurationChange={(event) => {
@@ -793,6 +860,7 @@ function ViewerVideo({ model }: { model: MediaViewerSessionModel }): JSX.Element
       onPlay={() => model.setPlaying(true)}
       onPause={(event) => {
         model.setPlaying(false);
+
         if (!model.isScrubbingRef.current) {
           model.scheduleSave({
             positionMs: videoSecondsToPositionMs(event.currentTarget.currentTime || 0),
@@ -836,9 +904,12 @@ const ViewerToolbarButton = forwardRef<
  * optional and falls back.
  */
 type OptionalFastSeek = Partial<Pick<HTMLMediaElement, "fastSeek">>;
+
 type OptionalModalDialog = Partial<Pick<HTMLDialogElement, "showModal" | "close">>;
+
 type FullscreenHost = Partial<Pick<HTMLElement, "requestFullscreen">> &
   Partial<{ webkitRequestFullscreen: () => Promise<void> | void }>;
+
 /** Safari's prefixed fullscreen document API, absent from the DOM lib. */
 type WebkitFullscreenDocument = Partial<
   Pick<Document, "exitFullscreen" | "fullscreenElement" | "fullscreenEnabled">
@@ -850,13 +921,16 @@ type WebkitFullscreenDocument = Partial<
 
 function fullscreenElementOf(document: Document): Element | null {
   const doc: WebkitFullscreenDocument = document;
+
   return doc.fullscreenElement ?? doc.webkitFullscreenElement ?? null;
 }
+
 /** iPhone Safari's video-only fullscreen entry point, absent from the DOM lib. */
 type WebkitFullscreenVideo = HTMLVideoElement & Partial<{ webkitEnterFullscreen: () => void }>;
 
 function openDialog(dialog: HTMLDialogElement): void {
   const modal: OptionalModalDialog = dialog;
+
   if (modal.showModal) {
     modal.showModal();
   } else {
@@ -866,6 +940,7 @@ function openDialog(dialog: HTMLDialogElement): void {
 
 function closeDialog(dialog: HTMLDialogElement): void {
   const modal: OptionalModalDialog = dialog;
+
   if (modal.close) {
     modal.close();
   } else {

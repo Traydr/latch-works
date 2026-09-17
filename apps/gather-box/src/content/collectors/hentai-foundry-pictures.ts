@@ -3,8 +3,11 @@ import type { GalleryCollectResponse } from "../../shared/types";
 import { lowercaseFirstAscii } from "../../shared/path";
 
 const PICTURE_PATH_PATTERN = /^\/pictures\/user\/([^/]+)\/([^/]+)\/([^/?#]+)/;
+
 const FULL_SIZE_HOST = "pictures.hentai-foundry.com";
+
 const PICTURE_IMAGE_SELECTOR = "#picBox .boxbody img[src]";
+
 const TITLE_SELECTOR = "#picBox .imageTitle";
 
 interface HentaiFoundryPicturePath {
@@ -18,6 +21,7 @@ export function collectHentaiFoundryPicturesData(
   location: PageLocation
 ): GalleryCollectResponse {
   const picturePath = parsePicturePath(location);
+
   if (location.hostname !== "www.hentai-foundry.com" || !picturePath) {
     return {
       ok: false,
@@ -27,6 +31,7 @@ export function collectHentaiFoundryPicturesData(
   }
 
   const image = document.querySelector<HTMLImageElement>(PICTURE_IMAGE_SELECTOR);
+
   if (!image) {
     return {
       ok: false,
@@ -37,6 +42,7 @@ export function collectHentaiFoundryPicturesData(
 
   const originalUrl = getFullSizeImageUrl(image, location);
   const fileName = originalUrl ? getUrlFileName(originalUrl) : "";
+
   if (!originalUrl || !fileName) {
     return {
       ok: false,
@@ -67,6 +73,7 @@ export function collectHentaiFoundryPicturesData(
 
 function parsePicturePath(location: PageLocation): HentaiFoundryPicturePath | null {
   const match = location.pathname.match(PICTURE_PATH_PATTERN);
+
   if (!match) {
     return null;
   }
@@ -89,6 +96,7 @@ function getFullSizeImageUrl(image: HTMLImageElement, location: PageLocation): s
     }
 
     const url = new URL(candidate, location.href);
+
     if (url.protocol === "https:" && url.hostname === FULL_SIZE_HOST) {
       return url.toString();
     }
