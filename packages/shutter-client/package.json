@@ -21,10 +21,10 @@
   },
   "dependencies": {
     "@shutter/protocol": "workspace:*",
-    "zod": "^4.4.3"
+    "zod": "^4.6.1"
   },
   "devDependencies": {
     "typescript": "^7.0.2",
-    "vitest": "^4.1.3"
+    "vitest": "^5.0.0"
   }
 }

@@ -24,7 +24,7 @@
       "ignoreDependencies": ["lodash", "vitest"]
     },
     "apps/pane-view": {
-      "entry": ["drizzle.config.ts", "src/router.tsx", "src/routes/**/*.{ts,tsx}"],
+      "entry": ["drizzle.config.ts", "src/routes/**/*.{ts,tsx}"],
       "drizzle": false
     },
     "apps/frame-view": {
@@ -85,7 +85,8 @@
       "entry": ["src/**/*.test.ts"]
     },
     "e2e": {
-      "entry": ["scripts/*.ts", "tests/**/*.setup.ts", "tests/**/*.spec.ts"]
+      "entry": ["scripts/*.ts", "tests/**/*.setup.ts", "tests/**/*.spec.ts"],
+      "ignoreBinaries": ["electron-forge"]
     }
   }
 }

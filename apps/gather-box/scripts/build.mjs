@@ -355,6 +355,8 @@ function enforceBudgets(report, metafiles) {
     "total dist": 8_000_000
   };
   // Collectors parse their page and message inputs with zod/mini, which sets a ~35 kB floor.
+  // Zod 4.5 and later bundle core/util.js whole and add about 12 kB to every collector, so
+  // package.json holds zod at 4.4.x. Rebuild after a Zod bump before you raise this budget.
   for (const source of sourceCatalog) budgets[`collector ${source.key} JS`] = 48_000;
   const failures = Object.entries(budgets).filter(
     ([name, budget]) => report.categories[name].raw > budget

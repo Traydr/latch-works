@@ -3,6 +3,7 @@ import { fixtureFolderPaths, fixtureItemsInScope, sortFixtureItems } from "../..
 import {
   archiveBrowser,
   card,
+  expectCardPaths,
   expectEntryCount,
   gotoBrowse,
   readCardPaths,
@@ -28,13 +29,16 @@ test.describe("browse", () => {
     await card(page, "comics").dblclick();
     await expect(page).toHaveURL(/path=comics/);
     await expectEntryCount(page, 3);
-    expect(await readCardPaths(page)).toEqual(["comics/alpha", "comics/beta", "comics/nested"]);
+    await expectCardPaths(page, ["comics/alpha", "comics/beta", "comics/nested"]);
 
     await card(page, "comics/alpha").dblclick();
     await expect(page).toHaveURL(/path=comics%2Falpha/);
     const alpha = sortFixtureItems(fixtureItemsInScope("comics/alpha", false), "name-asc");
     await expectEntryCount(page, alpha.length);
-    expect(await readCardPaths(page)).toEqual(alpha.map((entry) => entry.path));
+    await expectCardPaths(
+      page,
+      alpha.map((entry) => entry.path),
+    );
   });
 
   test("the sidebar navigates between folders", async ({ page }) => {
