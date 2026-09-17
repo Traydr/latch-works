@@ -71,7 +71,7 @@ gather-box/
 │   ├── offscreen/       # Gather Output executor
 │   └── shared/          # Site detection, path helpers
 ├── scripts/
-│   ├── build.mjs        # esbuild bundle → dist/
+│   ├── build.mjs        # Rolldown bundle → dist/
 │   └── clean.mjs
 └── assets/icons/
 ```

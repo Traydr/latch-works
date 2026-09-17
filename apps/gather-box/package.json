@@ -13,8 +13,8 @@
   },
   "devDependencies": {
     "@types/chrome": "latest",
-    "esbuild": "latest",
     "jsdom": "^30.0.1",
+    "rolldown": "^1.2.8",
     "typescript": "^7.0.2",
     "vitest": "^5.0.0"
   },
@@ -22,6 +22,6 @@
     "@jsquash/avif": "2.1.1",
     "@libpdf/core": "^0.4.2",
     "mediabunny": "1.56.1",
-    "zod": "~4.4.3"
+    "zod": "^4.6.1"
   }
 }
