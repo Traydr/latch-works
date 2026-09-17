@@ -22,6 +22,6 @@
     "@jsquash/avif": "2.1.1",
     "@libpdf/core": "^0.4.2",
     "mediabunny": "1.56.1",
-    "zod": "^4.6.1"
+    "zod": "~4.4.3"
   }
 }
