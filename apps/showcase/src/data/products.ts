@@ -328,9 +328,11 @@ export const products: Product[] = [
   },
 ];
 
-export const pipelineProducts = pipelineSlugs
-  .map((slug) => products.find((product) => product.slug === slug))
-  .filter((product): product is Product => product !== undefined);
+export const pipelineProducts = pipelineSlugs.flatMap((slug) => {
+  const product = products.find((candidate) => candidate.slug === slug);
+
+  return product ? [product] : [];
+});
 
 export function getProduct(slug: string): Product | undefined {
   return products.find((product) => product.slug === slug);

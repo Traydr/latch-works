@@ -229,7 +229,7 @@ async function createArtifactReport(metafiles) {
   );
 
   const mediaConversionJs = await measureFiles(
-    [...mediaConversionOutputs].filter((path) => path.endsWith(".js")).map(outputPath)
+    [...mediaConversionOutputs].flatMap((path) => (path.endsWith(".js") ? [outputPath(path)] : []))
   );
 
   const mediaConversionWasm = await measureFiles([resolve(dist, "codecs/avif_enc.wasm")]);

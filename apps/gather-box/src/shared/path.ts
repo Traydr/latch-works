@@ -53,9 +53,9 @@ export function getFolderSegments(payload: DownloadablePayload | GeneratedStoryP
     return payload.folderSegments.map(sanitizePathSegment).filter(Boolean);
   }
 
-  const segments = [payload.title || "comic"].map(sanitizePathSegment).filter(Boolean);
+  const titleSegment = sanitizePathSegment(payload.title || "comic");
 
-  return segments.length > 0 ? segments : ["comic"];
+  return titleSegment ? [titleSegment] : ["comic"];
 }
 
 export function buildFolderPreview(rootName: string, segments: string[]): string {

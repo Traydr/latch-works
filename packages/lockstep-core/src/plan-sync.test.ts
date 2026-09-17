@@ -117,7 +117,7 @@ describe("planSync hash modes", () => {
     );
 
     expect(plan.counts).toEqual({ delete: 0, keep: 2, update: 2, upload: 1 });
-    expect(events.filter((event) => event.type === "status").map((event) => event.message)).toEqual(
+    expect(events.flatMap((event) => (event.type === "status" ? [event.message] : []))).toEqual(
       expect.arrayContaining([
         expect.stringContaining("Warning: Hash cache could not be read"),
         expect.stringContaining("Warning: hash cache could not be saved"),
@@ -194,10 +194,11 @@ describe("planSync hash modes", () => {
 
 function hashedPaths(events: readonly LockstepRunEvent[]): Set<string> {
   return new Set(
-    events
-      .filter((event) => event.type === "scan-progress" && event.progress.stage === "hashing")
-      .map((event) => (event.type === "scan-progress" ? event.progress.path : undefined))
-      .filter((pathname): pathname is string => pathname !== undefined),
+    events.flatMap((event) =>
+      event.type === "scan-progress" && event.progress.stage === "hashing"
+        ? [event.progress.path]
+        : [],
+    ),
   );
 }
 
