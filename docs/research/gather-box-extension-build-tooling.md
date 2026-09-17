@@ -2,6 +2,14 @@
 
 Research date: 2026-09-18
 
+## Decision
+
+2026-09-18: Gather Box stays on its own build script, now on Rolldown, and does not adopt a
+framework. The Rolldown swap fixed the size problem that started this research, and a dev server,
+browser launch and zip packaging do not justify rewriting 13 entry files and changing the output
+paths today. WXT stays the choice if that changes. Reasons to look again: Gather Box gains a UI
+framework, a second browser target, or a release flow that needs store uploads.
+
 ## Conclusion
 
 Use [WXT](https://wxt.dev) 0.21.x on Vite 8 if Gather Box adopts an extension framework. It is the
