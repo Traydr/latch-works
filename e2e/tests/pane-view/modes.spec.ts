@@ -9,10 +9,10 @@ import {
 import {
   card,
   closeSettings,
+  expectCardPaths,
   expectEntryCount,
   gotoBrowse,
   openSettings,
-  readCardPaths,
   setSettingToggle,
   toolbarButton,
 } from "../../src/pane-view.ts";
@@ -36,7 +36,10 @@ test.describe("filters", () => {
     await closeSettings(page);
     const imagesOnly = MIXED.filter((entry) => !isFixtureVideo(entry));
     await expectEntryCount(page, imagesOnly.length);
-    expect(await readCardPaths(page)).toEqual(imagesOnly.map((entry) => entry.path));
+    await expectCardPaths(
+      page,
+      imagesOnly.map((entry) => entry.path),
+    );
 
     await openSettings(page);
     await setSettingToggle(page, "Show videos", true);
@@ -44,7 +47,10 @@ test.describe("filters", () => {
     await closeSettings(page);
     const videosOnly = MIXED.filter(isFixtureVideo);
     await expectEntryCount(page, videosOnly.length);
-    expect(await readCardPaths(page)).toEqual(videosOnly.map((entry) => entry.path));
+    await expectCardPaths(
+      page,
+      videosOnly.map((entry) => entry.path),
+    );
   });
 });
 
@@ -59,7 +65,10 @@ test.describe("recursive", () => {
     await expect(page).toHaveURL(/recursive=true/);
     const subtree = sortFixtureItems(fixtureItemsInScope("comics", true), "name-asc");
     await expectEntryCount(page, subtree.length);
-    expect(await readCardPaths(page)).toEqual(subtree.map((entry) => entry.path));
+    await expectCardPaths(
+      page,
+      subtree.map((entry) => entry.path),
+    );
 
     await toolbarButton(page, "Comic").click();
     await expect(page).toHaveURL(/comic=true/);
@@ -105,7 +114,10 @@ test.describe("recursive excludes", () => {
 
     const withoutBeta = subtree.filter((entry) => !entry.path.startsWith("comics/beta/"));
     await expectEntryCount(page, withoutBeta.length);
-    expect(await readCardPaths(page)).toEqual(withoutBeta.map((entry) => entry.path));
+    await expectCardPaths(
+      page,
+      withoutBeta.map((entry) => entry.path),
+    );
 
     await page.reload();
     await expectEntryCount(page, withoutBeta.length);
@@ -114,7 +126,10 @@ test.describe("recursive excludes", () => {
     await toolbarButton(page, "Comic").click();
     const comics = fixtureComics("comics").filter((comic) => comic.folderPath !== "comics/beta");
     await expectEntryCount(page, comics.length);
-    expect(await readCardPaths(page)).toEqual(comics.map((comic) => comic.folderPath));
+    await expectCardPaths(
+      page,
+      comics.map((comic) => comic.folderPath),
+    );
     await toolbarButton(page, "Comic").click();
 
     // A search ignores excludes: beta's pages are still found.
@@ -138,7 +153,10 @@ test.describe("comic mode", () => {
     await gotoBrowse(page, { path: "comics", comic: true });
     const comics = fixtureComics("comics");
     await expectEntryCount(page, comics.length);
-    expect(await readCardPaths(page)).toEqual(comics.map((comic) => comic.folderPath));
+    await expectCardPaths(
+      page,
+      comics.map((comic) => comic.folderPath),
+    );
     for (const comic of comics) {
       await expect(card(page, comic.folderPath)).toContainText(`${comic.pages.length} pages`);
     }
@@ -182,7 +200,7 @@ test.describe("comic mode", () => {
   test("searching in comic mode finds comics across the archive", async ({ page }) => {
     await gotoBrowse(page, { path: "docs", comic: true, q: "inner" });
     await expectEntryCount(page, 1);
-    expect(await readCardPaths(page)).toEqual(["comics/nested/inner"]);
+    await expectCardPaths(page, ["comics/nested/inner"]);
     expect(
       fixtureItemsInScope("comics/nested/inner", false).filter(isFixtureImageLike),
     ).toHaveLength(3);

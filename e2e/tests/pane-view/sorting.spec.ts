@@ -7,6 +7,7 @@ import {
 } from "../../src/fixture.ts";
 import {
   chooseSort,
+  expectCardPaths,
   expectEntryCount,
   gotoBrowse,
   loadAllPages,
@@ -35,7 +36,7 @@ test.describe("sorting and paging", () => {
       );
       // A recursive listing carries no folder entries; every card is media.
       await expectEntryCount(page, expected.length);
-      expect(await readCardPaths(page)).toEqual(expected);
+      await expectCardPaths(page, expected);
     });
 
     test(`${label} keeps folders first, then media, in a plain folder listing`, async ({
@@ -47,7 +48,7 @@ test.describe("sorting and paging", () => {
       // Folders follow the name direction and ignore the date modes.
       if (mode === "name-desc") folders.reverse();
       await expectEntryCount(page, folders.length);
-      expect(await readCardPaths(page)).toEqual(folders);
+      await expectCardPaths(page, folders);
     });
   }
 
@@ -61,7 +62,7 @@ test.describe("sorting and paging", () => {
     await expect(page.getByRole("button", { name: "Load more" })).toBeVisible();
     await expectEntryCount(page, 60);
     await loadAllPages(page, expected.length);
-    expect(await readCardPaths(page)).toEqual(expected);
+    await expectCardPaths(page, expected);
   });
 
   test("Random is a permutation, stable across reloads, and changes on Shuffle", async ({
@@ -79,7 +80,7 @@ test.describe("sorting and paging", () => {
 
     await page.reload();
     await loadAllPages(page, expected.length);
-    expect(await readCardPaths(page)).toEqual(first);
+    await expectCardPaths(page, first);
 
     await toolbarButton(page, "Shuffle").click();
     await expect
@@ -97,6 +98,9 @@ test.describe("sorting and paging", () => {
     await gotoBrowse(page, { path: "unicode" });
     const expected = sortFixtureItems(fixtureItemsInScope("unicode", false), "name-desc");
     await expectEntryCount(page, expected.length);
-    expect(await readCardPaths(page)).toEqual(expected.map((entry) => entry.path));
+    await expectCardPaths(
+      page,
+      expected.map((entry) => entry.path),
+    );
   });
 });

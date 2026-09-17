@@ -78,6 +78,14 @@ export async function loadAllPages(page: Page, total: number): Promise<void> {
   await expect(cards).toHaveCount(total);
 }
 
+/**
+ * The grid keeps the previous listing until the next one arrives (`keepPreviousData`), so an
+ * order assertion after a sort, search or navigation has to wait for the cards to change.
+ */
+export async function expectCardPaths(page: Page, paths: string[]): Promise<void> {
+  await expect.poll(() => readCardPaths(page)).toEqual(paths);
+}
+
 export async function chooseSort(page: Page, label: SortLabel): Promise<void> {
   // The button's accessible name is the active sort label; its title is stable.
   await page.getByTitle("Sort", { exact: true }).click();

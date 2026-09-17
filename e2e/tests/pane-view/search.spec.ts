@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { FIXTURE_ITEMS, sortFixtureItems } from "../../src/fixture.ts";
-import { expectEntryCount, gotoBrowse, readCardPaths } from "../../src/pane-view.ts";
+import { expectCardPaths, expectEntryCount, gotoBrowse } from "../../src/pane-view.ts";
 
 async function search(page: Page, query: string): Promise<void> {
   const box = page.getByRole("searchbox", { name: "Search archive" });
@@ -18,14 +18,17 @@ test.describe("search", () => {
       "name-asc",
     );
     await expectEntryCount(page, expected.length);
-    expect(await readCardPaths(page)).toEqual(expected.map((entry) => entry.path));
+    await expectCardPaths(
+      page,
+      expected.map((entry) => entry.path),
+    );
   });
 
   test("% and _ in a query match literally, not as wildcards", async ({ page }) => {
     await gotoBrowse(page);
     await search(page, "100%_done");
     await expectEntryCount(page, 2);
-    expect(await readCardPaths(page)).toEqual(["docs/100%_done_1.png", "docs/100%_done_2.png"]);
+    await expectCardPaths(page, ["docs/100%_done_1.png", "docs/100%_done_2.png"]);
 
     // A lone "%" would match everything if it were a wildcard.
     await search(page, "%");
