@@ -1,7 +1,7 @@
 import { gzipSync } from "node:zlib";
 import { access, copyFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { basename, dirname, isAbsolute, resolve } from "node:path";
-import { build } from "esbuild";
+import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
+import { rolldown } from "rolldown";
 
 const root = resolve(import.meta.dirname, "..");
 
@@ -13,14 +13,22 @@ const development = process.env.NODE_ENV === "development";
 
 const sourceCatalog = JSON.parse(await readFile(resolve(root, "source-catalog.json"), "utf8"));
 
-const common = {
-  absWorkingDir: root,
-  bundle: true,
-  logLevel: "silent",
-  metafile: true,
+const bundlerWarnings = [];
+
+const input = {
+  cwd: root,
+  platform: "browser",
+  transform: { target: "chrome145" },
+  onLog: (level, log) => {
+    if (level === "warn") bundlerWarnings.push(`${log.code ?? "WARNING"}: ${log.message}`);
+  }
+};
+
+const output = {
+  dir: dist,
+  entryFileNames: "[name].js",
   minify: !development,
-  sourcemap: development ? "inline" : false,
-  target: "chrome145"
+  sourcemap: development ? "inline" : false
 };
 
 const packagedFiles = [
@@ -64,46 +72,43 @@ await copyFile(
 
 await writeFile(resolve(dist, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
 
-const pages = await build({
-  ...common,
-  entryPoints: {
-    "sidepanel/sidepanel": resolve(root, "src/sidepanel/index.ts"),
-    "options/options": resolve(root, "src/options/index.ts"),
-    "offscreen/offscreen": resolve(root, "src/offscreen/index.ts"),
-    "workers/avif-encoder": resolve(root, "src/gather/avif-encoder.worker.ts")
+const pages = await bundle(
+  {
+    "sidepanel/sidepanel": "src/sidepanel/index.ts",
+    "options/options": "src/options/index.ts",
+    "offscreen/offscreen": "src/offscreen/index.ts",
+    "workers/avif-encoder": "src/gather/avif-encoder.worker.ts"
   },
-  chunkNames: "chunks/[name]-[hash]",
-  entryNames: "[dir]/[name]",
-  format: "esm",
-  outdir: dist,
-  splitting: true
-});
+  { chunkFileNames: "chunks/[name]-[hash].js", format: "esm" }
+);
 
-const background = await build({
-  ...common,
-  entryPoints: {
-    "background/service-worker": resolve(root, "src/background/index.ts")
-  },
-  entryNames: "[dir]/[name]",
-  format: "esm",
-  outdir: dist
-});
+const background = await bundle(
+  { "background/service-worker": "src/background/index.ts" },
+  { codeSplitting: false, format: "esm" }
+);
 
-const content = await build({
-  ...common,
-  entryPoints: Object.fromEntries([
-    ["content/page-shortcuts", resolve(root, "src/content/page-shortcuts-entry.ts")],
-    ...sourceCatalog.map((source) => [
-      source.collectorEntry.replace(/\.js$/, ""),
-      resolve(root, "src/content/entries", `${basename(source.collectorEntry, ".js")}.ts`)
-    ])
-  ]),
-  entryNames: "[dir]/[name]",
-  format: "iife",
-  outdir: dist
-});
+// Rolldown rejects IIFE output for more than one entry, so every content script is its own build.
+const content = (
+  await Promise.all(
+    [
+      ["content/page-shortcuts", "src/content/page-shortcuts-entry.ts"],
+      ...sourceCatalog.map((source) => [
+        source.collectorEntry.replace(/\.js$/, ""),
+        `src/content/entries/${basename(source.collectorEntry, ".js")}.ts`
+      ])
+    ].map(([name, entry]) => bundle({ [name]: entry }, { codeSplitting: false, format: "iife" }))
+  )
+).flat();
 
-const metafiles = { pages: pages.metafile, background: background.metafile, content: content.metafile };
+if (bundlerWarnings.length > 0) {
+  throw new Error(`Rolldown reported warnings:\n${[...new Set(bundlerWarnings)].join("\n")}`);
+}
+
+const metafiles = {
+  pages: describeChunks(pages),
+  background: describeChunks(background),
+  content: describeChunks(content)
+};
 
 await mkdir(reports, { recursive: true });
 
@@ -119,10 +124,53 @@ const report = await createArtifactReport(metafiles);
 
 await writeFile(resolve(reports, "summary.json"), `${JSON.stringify(report, null, 2)}\n`);
 
-enforceBudgets(report, metafiles);
+// Development output is unminified and carries inline sourcemaps, so the budgets only fit a release.
+if (!development) enforceBudgets(report, metafiles);
 
 for (const [name, measurement] of Object.entries(report.categories)) {
   process.stdout.write(`${name.padEnd(24)} ${formatBytes(measurement.raw).padStart(9)} raw  ${formatBytes(measurement.gzip).padStart(9)} gzip\n`);
+}
+
+async function bundle(entries, format) {
+  const build = await rolldown({ ...input, input: entries });
+
+  try {
+    const written = await build.write({ ...output, ...format });
+
+    return written.output.filter((file) => file.type === "chunk");
+  } finally {
+    await build.close();
+  }
+}
+
+/**
+ * The report, isolation and budget checks read the shape of an esbuild metafile: outputs keyed by
+ * `dist/` path with their imports and source inputs. Static and dynamic imports both count.
+ */
+function describeChunks(chunks) {
+  const sources = (chunk) =>
+    Object.entries(chunk.modules).flatMap(([id, module]) =>
+      id.startsWith("\0") ? [] : [[relative(root, id), module.renderedLength]]
+    );
+
+  return {
+    inputs: Object.fromEntries(
+      chunks.flatMap((chunk) => sources(chunk).map(([path, bytes]) => [path, { bytes }]))
+    ),
+    outputs: Object.fromEntries(
+      chunks.map((chunk) => [
+        `dist/${chunk.fileName}`,
+        {
+          bytes: Buffer.byteLength(chunk.code),
+          isEntry: chunk.isEntry,
+          imports: [...chunk.imports, ...chunk.dynamicImports].map((path) => ({ path: `dist/${path}` })),
+          inputs: Object.fromEntries(
+            sources(chunk).map(([path, bytesInOutput]) => [path, { bytesInOutput }])
+          )
+        }
+      ])
+    )
+  };
 }
 
 async function copyPackagedFile(relativePath) {
@@ -320,6 +368,11 @@ function getOutputGraph(metafile, entries, excluded = new Set()) {
 
   const visit = (path) => {
     if (paths.has(path) || excluded.has(path)) return;
+
+    // Rolldown keeps code that a page shares with its lazy chunks in the page entry, so a lazy
+    // chunk imports that entry back. The page has already loaded it, so it is not the chunk's cost.
+    if (metafile.outputs[path]?.isEntry && !entries.includes(path)) return;
+
     paths.add(path);
 
     for (const imported of metafile.outputs[path]?.imports ?? []) {
@@ -408,8 +461,6 @@ function enforceBudgets(report, metafiles) {
   };
 
   // Collectors parse their page and message inputs with zod/mini, which sets a ~35 kB floor.
-  // Zod 4.5 and later bundle core/util.js whole and add about 12 kB to every collector, so
-  // package.json holds zod at 4.4.x. Rebuild after a Zod bump before you raise this budget.
   for (const source of sourceCatalog) budgets[`collector ${source.key} JS`] = 48_000;
 
   const failures = Object.entries(budgets).filter(
