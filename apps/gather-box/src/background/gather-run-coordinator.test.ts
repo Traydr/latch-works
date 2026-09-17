@@ -337,6 +337,7 @@ function tabAt(fields: Pick<chrome.tabs.Tab, "id" | "url" | "windowId">): chrome
     highlighted: false,
     incognito: false,
     index: 0,
+    lastAccessed: 0,
     pinned: false,
     selected: true,
     ...fields

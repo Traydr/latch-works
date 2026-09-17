@@ -14,14 +14,14 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@inquirer/prompts": "^7.5.3",
+    "@inquirer/prompts": "^7.10.1",
     "@latch-works/lockstep-core": "workspace:*",
     "@latch-works/media-domain": "workspace:*",
-    "zod": "^4.3.6"
+    "zod": "^4.6.1"
   },
   "devDependencies": {
-    "tsx": "^4.21.0",
+    "tsx": "^4.23.13",
     "typescript": "^7.0.2",
-    "vitest": "^4.1.3"
+    "vitest": "^4.1.11"
   }
 }

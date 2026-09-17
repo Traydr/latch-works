@@ -12,16 +12,16 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.955.0",
+    "@aws-sdk/client-s3": "^3.1130.0",
     "@latch-works/media-domain": "workspace:*",
-    "@playwright/test": "^1.62.1",
+    "@playwright/test": "^1.63.0",
     "pdf-lib": "^1.17.1",
-    "postgres": "^3.4.7",
-    "sharp": "^0.34.5",
-    "zod": "^4.4.3"
+    "postgres": "^3.4.9",
+    "sharp": "^0.35.4",
+    "zod": "^4.6.1"
   },
   "devDependencies": {
-    "tsx": "^4.21.0",
+    "tsx": "^4.23.13",
     "typescript": "^7.0.2"
   }
 }

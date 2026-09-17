@@ -76,11 +76,14 @@ export async function ensureConfiguredOwnerCredentialAccount(
   ]);
 
   if (!existingOwner) {
-    const createdOwner = await context.internalAdapter.createUser({
-      email: owner.email,
-      emailVerified: true,
-      name: owner.name,
-    });
+    const createdOwner = await context.internalAdapter.createUser(
+      {
+        email: owner.email,
+        emailVerified: true,
+        name: owner.name,
+      },
+      { method: "email-password" },
+    );
 
     await context.internalAdapter.linkAccount({
       accountId: createdOwner.id,
