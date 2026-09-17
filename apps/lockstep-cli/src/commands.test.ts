@@ -4,8 +4,11 @@ import { type CoreCommands, executeCommand } from "./commands.js";
 import type { CliOptions } from "./types.js";
 
 const planSync = vi.fn();
+
 const pruneDeleted = vi.fn();
+
 const pushChanges = vi.fn();
+
 const runDoctorCore = vi.fn();
 
 const core: CoreCommands = {

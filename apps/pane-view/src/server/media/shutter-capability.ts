@@ -31,10 +31,12 @@ export function shutterCapabilityKeyConfig(
     capabilityKid: environment.SHUTTER_CAPABILITY_KID,
     spaceId: environment.SHUTTER_SPACE_ID,
   });
+
   if (!status.ok) throw new Error(status.error);
 
   const registry = parseCapabilityKeyRegistry(environment.SHUTTER_CAPABILITY_KEYS);
   const encoded = readCapabilityKeyMaterial(registry, status.spaceId, status.kid);
+
   if (!encoded) {
     throw new Error(
       `Shutter capability key ID "${status.kid}" is not active for space "${status.spaceId}"`,
@@ -50,6 +52,7 @@ export async function issueShutterCapability(
   environment: CapabilityEnvironment = env,
 ): Promise<string> {
   const options = shutterCapabilityKeyConfig(environment);
+
   return ivOverride === undefined
     ? issueSourceCapability(claims, options)
     : issueSourceCapabilityWithIv(claims, options, ivOverride);
@@ -62,5 +65,6 @@ export interface CapabilityClaimTimes {
 
 export function shutterCapabilityClaimTimes(): CapabilityClaimTimes {
   const iat = Math.floor(Date.now() / 1000);
+
   return { iat, exp: iat + CAPABILITY_LIFETIME_SECONDS };
 }

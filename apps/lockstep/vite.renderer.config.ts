@@ -9,9 +9,11 @@ import { defineConfig } from "vite";
 function resolveSchedulerAlias(): Record<string, string> | undefined {
   try {
     const reactDomEntry = require.resolve("react-dom");
+
     const schedulerEntry = require.resolve("scheduler", {
       paths: [path.dirname(reactDomEntry)],
     });
+
     return { scheduler: path.dirname(schedulerEntry) };
   } catch {
     return undefined;

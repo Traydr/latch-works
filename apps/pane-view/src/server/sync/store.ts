@@ -143,19 +143,25 @@ export async function completeSyncedObject(
   const expectedChecksum = Buffer.from(input.sha256.toLowerCase(), "hex").toString("base64");
 
   const head = await dependencies.headStoredObject({ key: objectKey, storage });
+
   if (!head) {
     throw new Error("Uploaded object was not found in storage.");
   }
+
   if (head.contentLength !== input.size) {
     throw new Error("Uploaded object size does not match declared size.");
   }
+
   if (head.contentType && head.contentType !== input.contentType) {
     throw new Error("Uploaded object content type does not match declared type.");
   }
+
   const metadataSha = head.metadata?.sha256?.toLowerCase();
+
   if (metadataSha && metadataSha !== input.sha256.toLowerCase()) {
     throw new Error("Uploaded object sha256 metadata does not match declared hash.");
   }
+
   if (head.checksumSHA256 && head.checksumSHA256 !== expectedChecksum) {
     throw new Error("Uploaded object checksum does not match declared hash.");
   }
@@ -281,6 +287,7 @@ export async function markRemoteDeleted(
 
   const normalizedPath = normalizeSyncLogicalPath(logicalPath);
   const pathError = validateSyncLogicalPath(normalizedPath);
+
   if (pathError) {
     throw new Error(pathError);
   }

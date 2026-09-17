@@ -13,6 +13,7 @@ export async function hasSoftDeletedEntries(tx: MaintenanceTransaction): Promise
     .from(libraryEntries)
     .where(isNotNull(libraryEntries.deletedAt))
     .limit(1);
+
   return Boolean(softDeletedEntry);
 }
 

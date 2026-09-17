@@ -62,11 +62,14 @@ export async function scheduleLibraryWipe(
   if (confirmation !== LIBRARY_WIPE_CONFIRMATION) {
     throw new Error(`Type "${LIBRARY_WIPE_CONFIRMATION}" to confirm.`);
   }
+
   dependencies.assertSyncApiToken(syncToken);
 
   const { jobId } = await scheduleMaintenanceJob(libraryWipeDescriptor, dependencies.scheduler);
+
   if (!jobId) {
     throw new Error("Unable to schedule library wipe.");
   }
+
   return { jobId, phase: "scheduled" };
 }

@@ -13,10 +13,13 @@ if (started) {
 }
 
 app.disableHardwareAcceleration();
+
 app.commandLine.appendSwitch("disable-gpu");
 
 let mainWindow: BrowserWindow | null = null;
+
 let profileService: ProfileService;
+
 let runService: RunService;
 
 function resolveWindowIconPath(fileName: string): string | undefined {
@@ -31,6 +34,7 @@ function resolveWindowIconPath(fileName: string): string | undefined {
 async function createWindow(): Promise<void> {
   profileService = new ProfileService(app.getPath("userData"), { secretStorage: safeStorage });
   const initResult = await profileService.init();
+
   if (Result.isError(initResult)) {
     console.error(`[profile-init] ${initResult.error.message}`);
   }

@@ -21,9 +21,11 @@ export function applyMediaDeliverySecurityHeaders(headers: Headers): void {
 export function applySecurityHeadersToResponse(response: Response, pathname: string): Response {
   if (isMediaDeliveryPath(pathname)) {
     applyMediaDeliverySecurityHeaders(response.headers);
+
     return response;
   }
 
   applyAppSecurityHeaders(response.headers);
+
   return response;
 }

@@ -12,6 +12,7 @@ test.describe("sync guards", () => {
       data: { sourceRoot: "e2e" },
       headers: { Authorization: "Bearer not-the-token" },
     });
+
     expect(response.status()).toBe(401);
     const missing = await request.post("/api/sync/runs", { data: { sourceRoot: "e2e" } });
     expect(missing.status()).toBe(401);
@@ -25,6 +26,7 @@ test.describe("sync guards", () => {
       data: { sourceRoot: "e2e-guard" },
       headers: { Authorization: `Bearer ${PANE_VIEW_CREDENTIALS.syncToken}` },
     });
+
     expect(started.ok()).toBe(true);
     SyncRunSchema.parse(await started.json());
 

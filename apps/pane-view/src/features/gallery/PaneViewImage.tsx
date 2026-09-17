@@ -23,6 +23,7 @@ type PaneViewImageProps = {
 function resolveThumbnailPixelSize(width?: number): number {
   if (width && width > 0) {
     const devicePixelRatio = "window" in globalThis ? window.devicePixelRatio : 1;
+
     return Math.max(1, Math.round(width * devicePixelRatio));
   }
 
@@ -53,6 +54,7 @@ export function PaneViewImage({
   const size = variant === "thumbnail" ? resolveThumbnailPixelSize(width) : undefined;
   const canResolve = resolveMissing || Boolean(readyUrl);
   const retry = useImageLoadRetry(`${mediaId}:${variant}:${size ?? "default"}:${readyUrl ?? ""}`);
+
   const { failed, loading, resolvedUrl } = useResolvedMediaUrl({
     cache,
     mediaId: canResolve ? mediaId : undefined,

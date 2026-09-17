@@ -51,6 +51,7 @@ export function useFolderOpenActions({
   const openFolderAction = useCallback((): void => {
     void (async () => {
       const selectedPath = await openFolderDialog();
+
       if (selectedPath) {
         await startScanAtPath(selectedPath);
       }
@@ -61,6 +62,7 @@ export function useFolderOpenActions({
     (candidatePath: string): void => {
       void (async () => {
         const resolvedPath = await resolveScanInputPath(candidatePath);
+
         if (resolvedPath) {
           await startScanAtPath(resolvedPath);
         }

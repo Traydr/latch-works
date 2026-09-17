@@ -4,7 +4,9 @@ const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 export function encodeBase64Url(bytes: Uint8Array): string {
   let binary = "";
+
   for (const byte of bytes) binary += String.fromCharCode(byte);
+
   return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/u, "");
 }
 
@@ -17,6 +19,7 @@ export function decodeBase64Url(value: string): Uint8Array<ArrayBuffer> {
   const base64 = value.replaceAll("-", "+").replaceAll("_", "/") + "=".repeat(paddingLength);
 
   let binary: string;
+
   try {
     binary = atob(base64);
   } catch {
@@ -24,6 +27,7 @@ export function decodeBase64Url(value: string): Uint8Array<ArrayBuffer> {
   }
 
   const output = new Uint8Array(binary.length);
+
   for (let index = 0; index < binary.length; index += 1) {
     output[index] = binary.charCodeAt(index);
   }

@@ -68,6 +68,7 @@ export async function ensureConfiguredOwnerCredentialAccount(
   owner: ReturnType<typeof readConfiguredOwner>,
 ): Promise<boolean> {
   const context = await auth.$context;
+
   const [passwordHash, existingOwner] = await Promise.all([
     context.password.hash(owner.password),
     context.internalAdapter.findUserByEmail(owner.email, {

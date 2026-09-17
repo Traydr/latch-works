@@ -94,9 +94,11 @@ test.describe("sorting", () => {
   test("a fresh scan lands in the configured sort order", async () => {
     const { window } = session;
     await openFolder(session, absolute("comics/alpha"));
+
     const expected = sortFixtureItems(fixtureItemsInScope("comics/alpha", false), "name-asc").map(
       (entry) => absolute(entry.path),
     );
+
     await expectTileCount(window, expected.length);
     expect(await readTileKeys(window)).toEqual(expected);
   });
@@ -107,14 +109,17 @@ test.describe("sorting", () => {
     { label: "Newest", mode: "date-newest" },
     { label: "Oldest", mode: "date-oldest" },
   ];
+
   for (const { label, mode } of modes) {
     test(`${label} matches the shared ordering rules`, async () => {
       const { window } = session;
       await openFolder(session, absolute("comics/alpha"));
       await chooseSort(window, label);
+
       const expected = sortFixtureItems(fixtureItemsInScope("comics/alpha", false), mode).map(
         (entry) => absolute(entry.path),
       );
+
       await expectTileCount(window, expected.length);
       await expect.poll(() => readTileKeys(window)).toEqual(expected);
     });
@@ -156,6 +161,7 @@ test.describe("thumbnails and viewer", () => {
     // The viewer walks the grid in the order the grid shows (whatever that is today).
     const order = (await readTileKeys(window)).map((key) => path.basename(key));
     const [first, second, third] = order;
+
     if (!first || !second || !third) throw new Error("comics/alpha has fewer than 3 items");
     await tileFor(window, first).dblclick();
     await expect(window.getByRole("dialog", { name: `Viewer for ${first}` })).toBeVisible();

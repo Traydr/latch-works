@@ -43,6 +43,7 @@ export function buildComicEntries<T extends ComicMediaItem>(
   const pathAdapter = options.pathAdapter ?? archiveComicPathAdapter;
   const pagesByFolder = new Map<string, T[]>();
   const normalizedRootPath = rootPath ? pathAdapter.normalizePathForCompare(rootPath) : null;
+
   const pathsWithChildFolders =
     options.leafFoldersOnly && options.folders
       ? new Set(
@@ -58,6 +59,7 @@ export function buildComicEntries<T extends ComicMediaItem>(
     }
 
     const folderPath = pathAdapter.getParentPath(item.path);
+
     if (!folderPath) {
       continue;
     }
@@ -75,6 +77,7 @@ export function buildComicEntries<T extends ComicMediaItem>(
   }
 
   const comics: ComicEntry<T>[] = [];
+
   for (const [folderPath, pages] of pagesByFolder) {
     if (pathsWithChildFolders?.has(folderPath)) {
       continue;
@@ -82,6 +85,7 @@ export function buildComicEntries<T extends ComicMediaItem>(
 
     const sortedPages = [...pages].sort(compareByName);
     const cover = sortedPages[0];
+
     if (!cover) {
       continue;
     }
@@ -109,12 +113,14 @@ export function sortComicEntries<T extends ComicMediaItem>(
   randomSeed: number,
 ): ComicEntry<T>[] {
   const comicByCoverId = new Map(comics.map((comic) => [comic.cover.id, comic]));
+
   return sortMediaItems(
     comics.map((comic) => comic.cover),
     sortMode,
     randomSeed,
   ).flatMap((cover) => {
     const comic = comicByCoverId.get(cover.id);
+
     return comic ? [comic] : [];
   });
 }

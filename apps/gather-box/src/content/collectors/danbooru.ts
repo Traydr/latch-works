@@ -2,15 +2,21 @@ import type { PageLocation } from "../collector-entry";
 import type { GalleryCollectResponse } from "../../shared/types";
 
 const POST_PATH_PATTERN = /^\/posts\/(\d+)\/?$/;
+
 const ARTIST_SELECTOR = "#tag-list ul.artist-tag-list > li[data-tag-name]";
+
 const DOWNLOAD_SELECTOR = "#post-option-download a[download][href]";
+
 const ORIGINAL_LINK_SELECTORS = [
   "#post-option-view-original a[href]",
   "#post-info-size a[href]",
   ".image-view-original-link[href]"
 ];
+
 const IMAGE_CONTAINER_SELECTOR = ".image-container[data-file-url]";
+
 const THUMBNAIL_SELECTOR = ".image-container #image[src]";
+
 const ORIGINAL_MEDIA_HOST = "cdn.donmai.us";
 
 export function collectDanbooruData(
@@ -18,6 +24,7 @@ export function collectDanbooruData(
   location: PageLocation
 ): GalleryCollectResponse {
   const postId = parsePostId(location);
+
   if (location.hostname !== "danbooru.donmai.us" || !postId) {
     return {
       ok: false,
@@ -27,6 +34,7 @@ export function collectDanbooruData(
   }
 
   const artist = document.querySelector<HTMLElement>(ARTIST_SELECTOR)?.dataset.tagName?.trim();
+
   if (!artist) {
     return {
       ok: false,
@@ -36,6 +44,7 @@ export function collectDanbooruData(
   }
 
   const original = findOriginalMedia(document, location);
+
   if (!original) {
     return {
       ok: false,
@@ -75,9 +84,11 @@ function findOriginalMedia(
   location: PageLocation
 ): { url: string; fileName: string } | null {
   const download = document.querySelector<HTMLAnchorElement>(DOWNLOAD_SELECTOR);
+
   if (download) {
     const url = resolveOriginalUrl(download.getAttribute("href"), location);
     const fileName = download.getAttribute("download")?.trim();
+
     if (url && fileName) {
       return { url, fileName };
     }
@@ -86,6 +97,7 @@ function findOriginalMedia(
   for (const selector of ORIGINAL_LINK_SELECTORS) {
     const link = document.querySelector<HTMLAnchorElement>(selector);
     const url = resolveOriginalUrl(link?.getAttribute("href"), location);
+
     if (url) {
       return { url, fileName: getUrlFileName(url) };
     }
@@ -93,6 +105,7 @@ function findOriginalMedia(
 
   const container = document.querySelector<HTMLElement>(IMAGE_CONTAINER_SELECTOR);
   const url = resolveOriginalUrl(container?.dataset.fileUrl, location);
+
   return url ? { url, fileName: getUrlFileName(url) } : null;
 }
 
@@ -102,6 +115,7 @@ function resolveOriginalUrl(value: string | null | undefined, location: PageLoca
   }
 
   const url = new URL(value, location.href);
+
   return url.protocol === "https:" &&
     url.hostname === ORIGINAL_MEDIA_HOST &&
     url.pathname.startsWith("/original/")

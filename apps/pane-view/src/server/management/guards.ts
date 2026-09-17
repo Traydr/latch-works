@@ -9,6 +9,7 @@ export async function readActiveSyncRun(database: Database = db): Promise<{
 } | null> {
   const runningSyncRuns = await listRunningSyncRuns(database);
   const first = runningSyncRuns[0];
+
   if (!first) {
     return null;
   }
@@ -84,6 +85,7 @@ export async function readActiveCleanupJob(client: Database = db): Promise<{
 
 export async function assertNoActiveCleanupJob(client: Database = db): Promise<void> {
   const activeJob = await readActiveCleanupJob(client);
+
   if (activeJob) {
     throw new Error(
       "A library cleanup job is still running. Wait for it to finish before starting a sync.",

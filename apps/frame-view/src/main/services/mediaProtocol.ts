@@ -15,10 +15,12 @@ import { ThumbnailService, toThumbnailResponse } from './thumbnailService';
 export const MEDIA_PROTOCOL_SCHEME = 'frameview-media';
 
 let thumbnailService: ThumbnailService | null = null;
+
 const authorizedMediaRoots = new Set<string>();
 
 async function toCanonicalPath(inputPath: string): Promise<string> {
   const resolved = path.resolve(inputPath);
+
   try {
     return await fs.realpath(resolved);
   } catch {
@@ -32,6 +34,7 @@ function isCaseInsensitiveFilesystem(): boolean {
 
 function toComparablePath(inputPath: string): string {
   const resolved = path.resolve(inputPath);
+
   return isCaseInsensitiveFilesystem() ? resolved.toLowerCase() : resolved;
 }
 
@@ -49,6 +52,7 @@ export async function isAuthorizedMediaPath(mediaPath: string): Promise<boolean>
   }
 
   const canonicalMediaPath = await toCanonicalPath(mediaPath);
+
   for (const authorizedRoot of authorizedMediaRoots) {
     if (isPathWithinRoot(canonicalMediaPath, authorizedRoot)) {
       return true;
@@ -81,6 +85,7 @@ function isKnownMediaExtension(extension: string): extension is KnownMediaExtens
 
 function getMediaContentType(mediaPath: string): string {
   const extension = path.extname(mediaPath).replace(/^\./, '').toLowerCase();
+
   return isKnownMediaExtension(extension)
     ? MEDIA_CONTENT_TYPES[extension]
     : 'application/octet-stream';
@@ -96,6 +101,7 @@ function readRange(rangeHeader: string | null, totalSize: number): RangeParseRes
   }
 
   const match = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader.trim());
+
   if (!match) {
     return { ok: false, reason: 'malformed' };
   }
@@ -114,9 +120,11 @@ function readRange(rangeHeader: string | null, totalSize: number): RangeParseRes
     start = Number(startRaw);
   } else {
     const suffixLength = Number(endRaw);
+
     if (!Number.isFinite(suffixLength) || suffixLength <= 0) {
       return { ok: false, reason: 'malformed' };
     }
+
     start = Math.max(0, totalSize - suffixLength);
   }
 
@@ -140,6 +148,7 @@ function readRange(rangeHeader: string | null, totalSize: number): RangeParseRes
 
 async function fetchMediaFile(request: Request, mediaPath: string): Promise<Response> {
   let fileStats: Awaited<ReturnType<typeof fs.stat>>;
+
   try {
     fileStats = await fs.stat(mediaPath);
   } catch {
@@ -174,6 +183,7 @@ async function fetchMediaFile(request: Request, mediaPath: string): Promise<Resp
   headers['accept-ranges'] = 'bytes';
   headers['content-type'] = contentType;
   headers['content-length'] = String(contentLength);
+
   if (isPartial) {
     headers['content-range'] = `bytes ${start}-${end}/${totalSize}`;
   }
@@ -208,11 +218,13 @@ async function fetchThumbnail(
 
   try {
     const service = thumbnailService;
+
     if (!service) {
       return new Response('Thumbnail service unavailable', { status: 503 });
     }
 
     const result = await service.getThumbnail(mediaPath, thumbSize, abortSignal, priority);
+
     return toThumbnailResponse(result);
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
@@ -225,14 +237,17 @@ async function fetchThumbnail(
 
 function parseThumbnailPriority(priorityRaw: string | null): ThumbnailJobPriority {
   const priorityValue = Number(priorityRaw ?? '0');
+
   if (!Number.isFinite(priorityValue)) {
     return 0;
   }
 
   const clamped = Math.max(0, Math.min(2, Math.floor(priorityValue)));
+
   if (clamped === 0 || clamped === 1 || clamped === 2) {
     return clamped;
   }
+
   return 0;
 }
 
@@ -258,10 +273,13 @@ export function registerMediaProtocol(userDataPath: string, cachePath: string): 
 
       if (requestUrl.hostname === 'thumb') {
         const sizeRaw = Number(requestUrl.searchParams.get('size') ?? '256');
+
         const thumbSize = Number.isFinite(sizeRaw)
           ? Math.max(64, Math.min(1024, Math.floor(sizeRaw)))
           : 256;
+
         const priority = parseThumbnailPriority(requestUrl.searchParams.get('priority'));
+
         return fetchThumbnail(mediaPath, thumbSize, priority, request.signal);
       }
 
@@ -303,15 +321,18 @@ export async function shrinkAuthorizedMediaRootsTo(mediaPath: string): Promise<v
   }
 
   const canonicalMediaPath = await toCanonicalPath(mediaPath);
+
   const matchingRoots = [...authorizedMediaRoots].filter((authorizedRoot) =>
     isPathWithinRoot(canonicalMediaPath, authorizedRoot),
   );
+
   if (matchingRoots.length === 0) {
     return;
   }
 
   matchingRoots.sort((left, right) => right.length - left.length);
   const retainedRoot = matchingRoots[0];
+
   if (!retainedRoot) {
     return;
   }

@@ -22,8 +22,10 @@ function toCandidatePaths(requestedPath: string): string[] {
   candidates.add(rewriteAsarPath(normalizedRequestedPath));
 
   const nodeModulesIndex = normalizedRequestedPath.lastIndexOf(`node_modules${path.sep}`);
+
   if (nodeModulesIndex >= 0) {
     const nodeModulesSuffix = normalizedRequestedPath.slice(nodeModulesIndex);
+
     if (process.resourcesPath) {
       candidates.add(path.join(process.resourcesPath, 'app.asar.unpacked', nodeModulesSuffix));
       candidates.add(path.join(process.resourcesPath, nodeModulesSuffix));
@@ -47,6 +49,7 @@ export function resolveBinaryPath(
   }
 
   const checkedPaths = toCandidatePaths(requestedPath);
+
   for (const candidatePath of checkedPaths) {
     if (existsSync(candidatePath)) {
       return {

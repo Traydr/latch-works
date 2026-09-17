@@ -11,6 +11,7 @@ export function useCoarsePointer(): boolean {
     const onChange = (): void => setCoarse(query.matches);
     query.addEventListener('change', onChange);
     onChange();
+
     return () => query.removeEventListener('change', onChange);
   }, []);
 

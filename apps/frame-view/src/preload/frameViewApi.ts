@@ -115,6 +115,7 @@ export function createFrameViewApi(transport: PreloadIpcTransport): FrameViewApi
     onAppCommand: (listener: (command: AppCommand) => void) =>
       transport.subscribe('app:command', (payload) => {
         const parsedPayload = AppCommandSchema.safeParse(payload);
+
         if (parsedPayload.success) {
           listener(parsedPayload.data);
         }
@@ -122,6 +123,7 @@ export function createFrameViewApi(transport: PreloadIpcTransport): FrameViewApi
     onScanEvent: (listener: (event: ScanEvent) => void) =>
       transport.subscribe('scan:event', (payload) => {
         const parsedPayload = ScanEventSchema.safeParse(payload);
+
         if (parsedPayload.success) {
           listener(parsedPayload.data);
         }

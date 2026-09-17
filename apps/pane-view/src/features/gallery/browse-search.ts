@@ -39,6 +39,7 @@ export function buildBreadcrumbItems(path: string): Array<{ label: string; path:
   }
 
   const segments = path.split("/").filter(Boolean);
+
   return segments.map((segment, index) => ({
     label: segment,
     path: segments.slice(0, index + 1).join("/"),

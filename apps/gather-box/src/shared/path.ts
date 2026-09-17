@@ -2,11 +2,13 @@ import type { DownloadablePayload, GeneratedStoryPayload } from "./types";
 
 export function lowercaseFirstAscii(value: string): string {
   const first = value.charAt(0);
+
   return first >= "A" && first <= "Z" ? `${first.toLowerCase()}${value.slice(1)}` : value;
 }
 
 export function sanitizePathSegment(value: string): string {
   const raw = value.trim();
+
   if (raw === "." || raw === "..") {
     return "";
   }
@@ -51,9 +53,9 @@ export function getFolderSegments(payload: DownloadablePayload | GeneratedStoryP
     return payload.folderSegments.map(sanitizePathSegment).filter(Boolean);
   }
 
-  const segments = [payload.title || "comic"].map(sanitizePathSegment).filter(Boolean);
+  const titleSegment = sanitizePathSegment(payload.title || "comic");
 
-  return segments.length > 0 ? segments : ["comic"];
+  return titleSegment ? [titleSegment] : ["comic"];
 }
 
 export function buildFolderPreview(rootName: string, segments: string[]): string {

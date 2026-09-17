@@ -22,6 +22,7 @@ describe("parseSyncObjectPayload", () => {
   it("accepts a valid image ingest payload", () => {
     const result = parseSyncObjectPayload(validPayload);
     expect(result.ok).toBe(true);
+
     if (result.ok) {
       expect(result.input.logicalPath).toBe("photos/cover.jpg");
       expect(result.input.objectKey).toContain(validPayload.sha256);
@@ -46,6 +47,7 @@ describe("parseSyncObjectPayload", () => {
       ...validPayload,
       objectKey: "originals/sha256/00/00/wrong.jpg",
     });
+
     expect(result).toEqual({
       ok: false,
       error: "objectKey does not match derived storage key",
@@ -57,6 +59,7 @@ describe("parseSyncObjectPayload", () => {
       ...validPayload,
       filename: "other.jpg",
     });
+
     expect(result).toEqual({ ok: false, error: "filename must match logicalPath" });
   });
 
@@ -65,6 +68,7 @@ describe("parseSyncObjectPayload", () => {
       ...validPayload,
       extension: "png",
     });
+
     expect(result).toEqual({ ok: false, error: "extension must match filename" });
   });
 
@@ -75,7 +79,9 @@ describe("parseSyncObjectPayload", () => {
       filename: "cover.jpeg",
       logicalPath: "photos/cover.jpeg",
     });
+
     expect(result.ok).toBe(true);
+
     if (result.ok) {
       expect(result.input.extension).toBe("jpg");
       expect(result.input.objectKey).toBe(
@@ -92,6 +98,7 @@ describe("parseSyncObjectPayload", () => {
       logicalPath: "notes.txt",
       mediaType: "image",
     });
+
     expect(result).toEqual({ ok: false, error: "unsupported media filename" });
   });
 
@@ -100,6 +107,7 @@ describe("parseSyncObjectPayload", () => {
       ...validPayload,
       contentType: "image/png",
     });
+
     expect(result).toEqual({ ok: false, error: "contentType does not match extension" });
   });
 });

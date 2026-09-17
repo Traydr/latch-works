@@ -106,9 +106,11 @@ function applySettingsToForm(elements: SettingsFormElements, settings: GatherBox
   elements.perSiteCredentials.hidden = settings.credentialsMode !== "perSite";
 
   const folderMode = settings.useGlobalFolder ? "global" : "perSite";
+
   const folderInput = elements.form.querySelector<HTMLInputElement>(
     `input[name="folderMode"][value="${folderMode}"]`
   );
+
   if (folderInput) {
     folderInput.checked = true;
   }
@@ -118,6 +120,7 @@ function applySettingsToForm(elements: SettingsFormElements, settings: GatherBox
 async function handleSave(elements: SettingsFormElements): Promise<void> {
   const folderMode = elements.form.querySelector<HTMLInputElement>('input[name="folderMode"]:checked')
     ?.value;
+
   const settings: GatherBoxSettings = {
     downloadConcurrency: Number(elements.downloadConcurrency.value),
     mediaCompatibilityMode: elements.mediaCompatibilityMode.checked,
@@ -144,6 +147,7 @@ function readPerSiteCredentials(container: HTMLElement) {
     // The option rows are rendered from GATHER_SOURCES, so every data-site-key is a catalog key.
     const source = getGatherSource(select.dataset.siteKey ?? "");
     const choice = CredentialsChoiceSchema.safeParse(select.value);
+
     if (source && choice.success) {
       result[source.key] = choice.data;
     }
@@ -154,6 +158,7 @@ function readPerSiteCredentials(container: HTMLElement) {
 
 function requireElement<T extends HTMLElement>(id: string, constructor: new () => T): T {
   const element = document.getElementById(id);
+
   if (!(element instanceof constructor)) {
     throw new Error(`Missing required options element: ${id}`);
   }

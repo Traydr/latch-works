@@ -139,6 +139,7 @@ describe("Gather queue state", () => {
         }
       ]
     };
+
     expect(getNextQueuedGatherJob(queued)?.run.id).toBe("run-1");
 
     queued.jobs[0] = {
@@ -172,9 +173,11 @@ describe("Gather queue state", () => {
     expect(getPermissionRequiredGatherJob(siteScoped, "reddit")).toBeNull();
 
     const firstJob = siteScoped.jobs[0];
+
     if (firstJob.kind !== "output") {
       throw new Error("Expected an output job.");
     }
+
     firstJob.settings = { ...DEFAULT_SETTINGS, useGlobalFolder: true };
     expect(getPermissionRequiredGatherJob(siteScoped, "reddit")?.run.id).toBe("run-1");
   });
@@ -187,11 +190,13 @@ describe("Gather queue state", () => {
       failedItems: [{ fileName: "missing.jpg", reason: "network" }],
       retryImages: [payload("One").images[0]]
     };
+
     const complete = {
       ...run("run-2", "writing"),
       phase: "complete" as const,
       updatedAt: 300
     };
+
     const queue: GatherQueueState = {
       schemaVersion: GATHER_QUEUE_SCHEMA_VERSION,
       jobs: [

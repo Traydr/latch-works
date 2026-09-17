@@ -3,7 +3,9 @@ import { buildStoryPdfFileName } from "../../shared/path";
 import type { GalleryCollectResponse } from "../../shared/types";
 
 const HF_PDF_LINK_SELECTOR = 'a.pdfLink[href$=".pdf"]';
+
 const HF_STORY_TITLE_FALLBACK_SELECTOR = '.storyRow .titlebar a[href*="/stories/user/"]';
+
 const HF_AUTHOR_FALLBACK_SELECTOR = '.storyInfo a[href*="/profile"]';
 
 interface HentaiFoundryStoryPath {
@@ -25,6 +27,7 @@ export function collectHentaiFoundryStoriesData(
   }
 
   const pdfUrl = getPdfUrl(document, location);
+
   if (!pdfUrl) {
     return {
       ok: false,
@@ -35,6 +38,7 @@ export function collectHentaiFoundryStoriesData(
 
   const storyPath = parseStoryPath(location);
   const author = storyPath?.author || getText(document.querySelector(HF_AUTHOR_FALLBACK_SELECTOR));
+
   if (!author) {
     return {
       ok: false,
@@ -44,6 +48,7 @@ export function collectHentaiFoundryStoriesData(
   }
 
   const title = storyPath?.storyTitle || getText(document.querySelector(HF_STORY_TITLE_FALLBACK_SELECTOR));
+
   if (!title) {
     return {
       ok: false,
@@ -81,6 +86,7 @@ function getPdfUrl(document: Document, location: PageLocation): string | null {
 
 function parseStoryPath(location: PageLocation): HentaiFoundryStoryPath | null {
   const parts = location.pathname.split("/").filter(Boolean);
+
   if (
     parts.length < 5 ||
     parts[0] !== "stories" ||

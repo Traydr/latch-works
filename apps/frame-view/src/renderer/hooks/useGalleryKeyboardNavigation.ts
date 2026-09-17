@@ -41,26 +41,31 @@ export function useGalleryKeyboardNavigation({
 
     const getGridColumnCount = (): number => {
       const grid = document.querySelector<HTMLElement>('[data-gallery-grid="true"]');
+
       if (!grid) {
         return 1;
       }
 
       const configuredColumns = Number(grid.dataset.galleryColumns ?? Number.NaN);
+
       if (Number.isFinite(configuredColumns) && configuredColumns > 0) {
         return Math.max(1, Math.floor(configuredColumns));
       }
 
       const cells = Array.from(grid.querySelectorAll<HTMLElement>('[data-gallery-item="true"]'));
+
       if (cells.length === 0) {
         return 1;
       }
 
       const firstRowTop = cells[0]?.offsetTop ?? 0;
       let columns = 0;
+
       for (const cell of cells) {
         if (cell.offsetTop !== firstRowTop) {
           break;
         }
+
         columns += 1;
       }
 
@@ -73,6 +78,7 @@ export function useGalleryKeyboardNavigation({
 
     const selectIndex = (nextIndex: number): void => {
       const nextEntry = browserEntries.at(nextIndex);
+
       if (!nextEntry) {
         return;
       }
@@ -81,22 +87,27 @@ export function useGalleryKeyboardNavigation({
 
       window.requestAnimationFrame(() => {
         const escapeSelectorValue = globalThis.CSS?.escape;
+
         const safeItemId = escapeSelectorValue
           ? escapeSelectorValue(nextEntry.key)
           : nextEntry.key.replace(/"/g, '\\"');
+
         const nextCell = document.querySelector<HTMLElement>(
           `[data-gallery-item-id="${safeItemId}"]`,
         );
 
         if (nextCell) {
           nextCell.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+
           return;
         }
 
         const grid = document.querySelector<HTMLElement>('[data-gallery-grid="true"]');
+
         const scrollContainer = document.querySelector<HTMLElement>(
           '[data-gallery-scroll-container="true"]',
         );
+
         if (!grid || !scrollContainer) {
           return;
         }
@@ -145,6 +156,7 @@ export function useGalleryKeyboardNavigation({
         const startIndex = selectedBrowserEntryIndex >= 0 ? selectedBrowserEntryIndex : 0;
         const nextIndex = wrapIndex(startIndex + direction);
         selectIndex(nextIndex);
+
         return;
       }
 
@@ -162,6 +174,7 @@ export function useGalleryKeyboardNavigation({
         const startIndex = selectedBrowserEntryIndex >= 0 ? selectedBrowserEntryIndex : 0;
         const nextIndex = wrapIndex(startIndex + direction * rowSize);
         selectIndex(nextIndex);
+
         return;
       }
 
@@ -170,27 +183,33 @@ export function useGalleryKeyboardNavigation({
       if (event.shiftKey && key === 'w') {
         event.preventDefault();
         openParentFolderAction();
+
         return;
       }
 
       if (event.shiftKey && key === 'a') {
         event.preventDefault();
         openSiblingFolderAction(-1);
+
         return;
       }
 
       if (event.shiftKey && key === 'd') {
         event.preventDefault();
         openSiblingFolderAction(1);
+
         return;
       }
 
       if (event.shiftKey && key === 's') {
         const selectedFolderEntry =
           selectedBrowserEntry?.kind === 'folder' ? selectedBrowserEntry : null;
+
         let firstFolderEntry: BrowserEntry | null = null;
+
         for (let index = 0; index < browserEntries.length; index += 1) {
           const entry = browserEntries.at(index);
+
           if (entry?.kind === 'folder') {
             firstFolderEntry = entry;
             break;
@@ -198,12 +217,14 @@ export function useGalleryKeyboardNavigation({
         }
 
         const folderToOpen = selectedFolderEntry ?? firstFolderEntry;
+
         if (folderToOpen?.kind !== 'folder') {
           return;
         }
 
         event.preventDefault();
         navigateToFolderAction(folderToOpen.path);
+
         return;
       }
 
@@ -214,6 +235,7 @@ export function useGalleryKeyboardNavigation({
     };
 
     window.addEventListener('keydown', onKeyDown);
+
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [
     activateBrowserEntryAction,

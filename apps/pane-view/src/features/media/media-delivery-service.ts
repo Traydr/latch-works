@@ -26,6 +26,7 @@ export const resolveMediaDeliveryUrl = createServerFn({ method: "GET" })
   .inputValidator(resolveMediaDeliveryRequestSchema)
   .handler(async ({ data }) => {
     const { isCurrentWebSessionValid } = await import("../../server/auth/web-session");
+
     if (!(await isCurrentWebSessionValid())) {
       throw new Error("Unauthorized");
     }
@@ -49,6 +50,7 @@ export const resolveMediaDeliveryUrls = createServerFn({ method: "POST" })
   .inputValidator(resolveMediaDeliveryBatchRequestSchema)
   .handler(async ({ data }): Promise<{ results: MediaDeliveryBatchResult[] }> => {
     const { isCurrentWebSessionValid } = await import("../../server/auth/web-session");
+
     if (!(await isCurrentWebSessionValid())) {
       throw new Error("Unauthorized");
     }
@@ -58,13 +60,16 @@ export const resolveMediaDeliveryUrls = createServerFn({ method: "POST" })
     );
 
     const seen = new Set<string>();
+
     const uniqueItems = data.items.filter((item) => {
       const key = batchKey(item);
+
       if (seen.has(key)) {
         return false;
       }
 
       seen.add(key);
+
       return true;
     });
 

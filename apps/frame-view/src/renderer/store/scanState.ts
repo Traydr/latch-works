@@ -29,6 +29,7 @@ export function createApplyScanEvent(set: AppStoreSet, get: AppStoreGet) {
         if (state.activeScanRunId !== event.runId) {
           break;
         }
+
         set({
           scannedDirectories: event.scannedDirectories,
           discoveredItems: event.discoveredItems,
@@ -40,6 +41,7 @@ export function createApplyScanEvent(set: AppStoreSet, get: AppStoreGet) {
         if (state.activeScanRunId !== event.runId) {
           break;
         }
+
         set((current) => {
           if (current.activeScanRunId !== event.runId) {
             return {};
@@ -56,6 +58,7 @@ export function createApplyScanEvent(set: AppStoreSet, get: AppStoreGet) {
         if (state.activeScanRunId !== event.runId) {
           break;
         }
+
         set((current) => {
           if (current.activeScanRunId !== event.runId) {
             return {};
@@ -107,6 +110,7 @@ export function createApplyScanEvent(set: AppStoreSet, get: AppStoreGet) {
         if (state.activeScanRunId !== event.runId) {
           break;
         }
+
         set((current) => ({
           activeScanRunId: null,
           items:
@@ -136,6 +140,7 @@ export function createApplyScanEvent(set: AppStoreSet, get: AppStoreGet) {
         });
         break;
       }
+
       default:
         break;
     }

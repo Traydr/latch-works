@@ -42,6 +42,7 @@ function createRemoteApiFake(behaviour: RemoteApiFakeBehaviour = {}): RemoteApiF
       signal?: AbortSignal,
     ) => {
       postJsonCalls.push({ apiToken, apiUrl, body, route, signal });
+
       return schema.parse(
         route === "/api/sync/runs" ? { syncRunId: "run-1" } : { status: "database" },
       );
@@ -74,6 +75,7 @@ function createPlan(items: LockstepPlan["items"]): LockstepPlan {
 
 function collectEvents() {
   const events: LockstepRunEvent[] = [];
+
   return {
     events,
     observer: {

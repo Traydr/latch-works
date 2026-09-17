@@ -9,11 +9,17 @@ import {
 } from "./types";
 
 export const START_GATHER_RUN_REQUEST = "GATHER_BOX_RUN_START" as const;
+
 export const RETRY_GATHER_RUN_REQUEST = "GATHER_BOX_RUN_RETRY" as const;
+
 export const CANCEL_GATHER_RUN_REQUEST = "GATHER_BOX_RUN_CANCEL" as const;
+
 export const EXECUTE_GATHER_RUN = "GATHER_BOX_RUN_EXECUTE" as const;
+
 export const CANCEL_GATHER_RUN = "GATHER_BOX_RUN_ABORT" as const;
+
 export const GATHER_RUN_EVENT = "GATHER_BOX_RUN_EVENT" as const;
+
 export const GET_GATHER_EXECUTOR_STATUS = "GATHER_BOX_EXECUTOR_STATUS" as const;
 
 export const StartGatherRunRequestSchema = z.object({
@@ -67,6 +73,7 @@ export type GetGatherExecutorStatusMessage = z.infer<typeof GetGatherExecutorSta
 
 /** Which folder handle a paused job is waiting on, so the panel can say where to confirm it. */
 export const GatherFolderScopeSchema = z.enum(["global", "site"]);
+
 export type GatherFolderScope = z.infer<typeof GatherFolderScopeSchema>;
 
 export const GatherRunEventSchema = z.discriminatedUnion("kind", [

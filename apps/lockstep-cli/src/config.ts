@@ -70,6 +70,7 @@ async function loadConfig(configPath: string): Promise<LockstepConfig> {
 
 function isMissingFileError(error: Error): boolean {
   const parsed = FileSystemErrorSchema.safeParse(error);
+
   return parsed.success && parsed.data.code === "ENOENT";
 }
 
@@ -79,6 +80,7 @@ async function saveConfig(
   partial: LockstepConfig,
 ): Promise<void> {
   const existing = await loadConfig(configPath);
+
   const merged: LockstepConfig = {
     ...existing,
     ...partial,

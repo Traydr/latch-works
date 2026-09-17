@@ -5,6 +5,7 @@ const ORIGINAL_IMAGE_PREFIX = "https://i.pximg.net/img-original/";
 
 export function collectPixivData(document: Document, location: PageLocation): GalleryCollectResponse {
   const artworkId = getArtworkId(location);
+
   if (!artworkId) {
     return {
       ok: false,
@@ -16,6 +17,7 @@ export function collectPixivData(document: Document, location: PageLocation): Ga
   const firstOriginal = document.querySelector<HTMLAnchorElement>(
     `a[href^="${ORIGINAL_IMAGE_PREFIX}"][href*="/${artworkId}_p0."]`
   );
+
   if (!firstOriginal?.href) {
     return {
       ok: false,
@@ -25,6 +27,7 @@ export function collectPixivData(document: Document, location: PageLocation): Ga
   }
 
   const creator = getCreator(firstOriginal, location);
+
   if (!creator) {
     return {
       ok: false,
@@ -34,6 +37,7 @@ export function collectPixivData(document: Document, location: PageLocation): Ga
   }
 
   const images = buildPixivImages(document, firstOriginal.href, artworkId);
+
   if (images.length === 0) {
     return {
       ok: false,
@@ -61,12 +65,14 @@ function buildPixivImages(
   artworkId: string
 ): GalleryImage[] {
   const explicitUrls = new Map<number, string>();
+
   const originalLinks = document.querySelectorAll<HTMLAnchorElement>(
     `a[href^="${ORIGINAL_IMAGE_PREFIX}"][href*="/${artworkId}_p"]`
   );
 
   for (const link of originalLinks) {
     const pageNumber = getPixivPageNumber(link.href, artworkId);
+
     if (pageNumber !== null) {
       explicitUrls.set(pageNumber, link.href);
     }
@@ -78,6 +84,7 @@ function buildPixivImages(
 
   for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
     const originalUrl = explicitUrls.get(pageIndex) ?? derivePageUrl(firstOriginalUrl, pageIndex);
+
     if (!isOriginalPixivUrl(originalUrl, artworkId, pageIndex)) {
       continue;
     }
@@ -104,6 +111,7 @@ function getCreator(
     const url = new URL(link.href, location.href);
     const match = url.pathname.match(/^\/(?:[a-z]{2}\/)?users\/(\d+)\/?$/i);
     const name = getCreatorName(link);
+
     if (match && name) {
       return { id: match[1], name };
     }
@@ -114,12 +122,14 @@ function getCreator(
 
 function getCreatorName(profileLink: HTMLAnchorElement): string {
   const linkText = getDirectText(profileLink);
+
   if (linkText) {
     return linkText;
   }
 
   for (const child of profileLink.children) {
     const childText = getDirectText(child);
+
     if (childText) {
       return childText;
     }
@@ -138,12 +148,14 @@ function getDirectText(element: Element): string {
 
 function getArtworkTitle(document: Document): string {
   const original = document.querySelector<HTMLAnchorElement>(`a[href^="${ORIGINAL_IMAGE_PREFIX}"]`);
+
   return original?.closest("section")?.querySelector("h1")?.textContent?.trim() ?? "";
 }
 
 function getPageCount(document: Document): number {
   const previewText = document.querySelector('[aria-label="Preview"]')?.textContent ?? "";
   const match = previewText.match(/\d+\s*\/\s*(\d+)/);
+
   return match ? Number(match[1]) : 1;
 }
 
@@ -154,17 +166,20 @@ function getArtworkId(location: PageLocation): string | null {
 function getPixivPageNumber(urlValue: string, artworkId: string): number | null {
   const fileName = getUrlFileName(urlValue);
   const match = fileName.match(new RegExp(`^${artworkId}_p(\\d+)\\.[A-Za-z0-9]+$`));
+
   return match ? Number(match[1]) : null;
 }
 
 function derivePageUrl(firstOriginalUrl: string, pageIndex: number): string {
   const url = new URL(firstOriginalUrl);
   url.pathname = url.pathname.replace(/_p0(?=\.[A-Za-z0-9]+$)/, `_p${pageIndex}`);
+
   return url.toString();
 }
 
 function isOriginalPixivUrl(urlValue: string, artworkId: string, pageIndex: number): boolean {
   const url = new URL(urlValue);
+
   return (
     url.hostname === "i.pximg.net" &&
     url.pathname.startsWith("/img-original/") &&

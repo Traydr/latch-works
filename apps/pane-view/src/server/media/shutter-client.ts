@@ -12,11 +12,16 @@ import { validateCapabilityKeyConfig } from "./shutter-capability-config";
 import { createPaneViewStorageClient } from "./storage-client";
 
 const SHUTTER_WIDTHS = [320, 640, 750, 828, 960, 1080, 1280, 1668, 1920, 2048, 2560, 3200, 3840];
+
 const SHUTTER_QUALITY = 75;
+
 const SOURCE_LOCATOR_LIFETIME_SECONDS = 24 * 60 * 60 + 5 * 60;
+
 const CAPABILITY_LIFETIME_SECONDS = 24 * 60 * 60;
+
 /** Originals live under this prefix; the resolver's key template names the rest. */
 const ORIGINALS_KEY_PREFIX = "originals/sha256/";
+
 /** Two shard labels and `{sha256}.{extension}` (see originalObjectKey in media-storage). */
 const ORIGINALS_KEY_SEGMENTS = 3;
 
@@ -59,6 +64,7 @@ export const shutterClientDependencies: ShutterClientDependencies = {
 
 export function normalizeShutterWidth(width: number): number {
   if (width <= 24) return 24;
+
   return SHUTTER_WIDTHS.find((candidate) => candidate >= width) ?? 3840;
 }
 
@@ -90,9 +96,11 @@ export function isShutterResolverConfigured(environment: ShutterEnvironment = en
 function shutterSourceReference(objectKey: string): readonly string[] | undefined {
   if (!objectKey.startsWith(ORIGINALS_KEY_PREFIX)) return undefined;
   const segments = objectKey.slice(ORIGINALS_KEY_PREFIX.length).split("/");
+
   if (segments.length !== ORIGINALS_KEY_SEGMENTS || segments.some((part) => part === "")) {
     return undefined;
   }
+
   return segments;
 }
 
@@ -112,6 +120,7 @@ function resolverSource(
 ): ResolverSource | undefined {
   if (!isShutterResolverConfigured(environment)) return undefined;
   const reference = shutterSourceReference(objectKey);
+
   return reference === undefined
     ? undefined
     : { resolverId: environment.SHUTTER_RESOLVER_ID, reference };
@@ -137,6 +146,7 @@ function shutterClient(options: {
   dependencies: ShutterClientDependencies;
 }): ShutterClient {
   const { environment } = options.dependencies;
+
   return createShutterClient({
     spaceId: environment.SHUTTER_SPACE_ID,
     controlBaseUrl: environment.SHUTTER_CONTROL_URL,
@@ -163,14 +173,17 @@ export async function resolveShutterImageUrl(
   ensureStartupCapabilityStatus(environment);
   const parameters = { width: normalizeShutterWidth(width), quality: SHUTTER_QUALITY };
   const source = resolverSource(environment, context.originalObjectKey);
+
   if (source !== undefined) {
     return shutterClient({ capability: true, dependencies }).v2PrivateDeliveryUrl(
       source,
       parameters,
     );
   }
+
   assertSourceId(context.sha256);
   const client = shutterClient({ capability: true, dependencies });
+
   return client.privateSourceUrl(
     { sourceId: context.sha256, locator: await sourceLocator(context, dependencies) },
     parameters,
@@ -183,6 +196,7 @@ async function previewResult(
   readyUrl: () => Promise<string>,
 ): Promise<ShutterPreviewResult> {
   let job: PreviewJobResult;
+
   try {
     job = await submit();
   } catch (error) {
@@ -191,7 +205,9 @@ async function previewResult(
         ? { status: "pending", retryAfterMs: (error.retryAfterSeconds ?? 5) * 1_000 }
         : { status: "failed" };
     }
+
     if (error instanceof ShutterClientError) throw error;
+
     // Network-level failures are retryable, matching Control 5xx handling.
     return { status: "pending", retryAfterMs: 5_000 };
   }
@@ -199,9 +215,11 @@ async function previewResult(
   if (job.status === "pending" || job.status === "processing") {
     return { status: "pending", retryAfterMs: job.retryAfterSeconds * 1_000 };
   }
+
   if (job.status === "failed") {
     return { action: job.failure.action, code: job.failure.code, status: "failed" };
   }
+
   return { status: "ready", url: await readyUrl() };
 }
 
@@ -212,16 +230,20 @@ export async function resolveShutterPreview(
 ): Promise<ShutterPreviewResult> {
   const { environment } = dependencies;
   ensureStartupCapabilityStatus(environment);
+
   if (context.mediaType !== "video" && context.mediaType !== "pdf") return { status: "failed" };
+
   if (!environment.SHUTTER_SPACE_API_TOKEN) {
     throw new Error("Shutter Space API is not configured");
   }
+
   const kind = context.mediaType;
   const parameters = { width: normalizeShutterWidth(width), quality: SHUTTER_QUALITY };
   const source = resolverSource(environment, context.originalObjectKey);
 
   if (source !== undefined) {
     const client = shutterClient({ capability: true, dependencies });
+
     return previewResult(
       () => client.submitV2PreviewJob({ ...source, kind }),
       () => client.v2PrivateDeliveryUrl(source, { ...parameters, preview: kind }),
@@ -230,6 +252,7 @@ export async function resolveShutterPreview(
 
   assertSourceId(context.sha256);
   const client = shutterClient({ capability: true, dependencies });
+
   return previewResult(
     async () =>
       client.submitPreviewJob({
@@ -252,10 +275,12 @@ export async function purgeShutterSource(
   dependencies: ShutterClientDependencies = shutterClientDependencies,
 ): Promise<void> {
   const client = shutterClient({ capability: false, dependencies });
+
   const resolver =
     source.objectKey === null
       ? undefined
       : resolverSource(dependencies.environment, source.objectKey);
+
   if (resolver !== undefined) await client.purgeV2Source(resolver);
   await client.purgeSource(source.sha256);
 }
@@ -276,6 +301,7 @@ function ensureStartupCapabilityStatus(environment: ShutterEnvironment): void {
   if (startupCapabilityStatusChecked) return;
   startupCapabilityStatusChecked = true;
   const status = getShutterCapabilityKeyStatus(environment);
+
   if (!status.ok) {
     console.error(`[pane-view] Shutter capability keys misconfigured: ${status.error}`);
   }

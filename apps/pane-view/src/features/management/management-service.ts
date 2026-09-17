@@ -45,11 +45,13 @@ const cancelSyncRunSchema = z.object({
 export const getManagementOverview = createServerFn({ method: "GET" }).handler(async () => {
   await assertWebSessionAuthorized();
   await resumePendingMaintenanceJobs();
+
   return readManagementOverview();
 });
 
 export const getSyncRunHistory = createServerFn({ method: "GET" }).handler(async () => {
   await assertWebSessionAuthorized();
+
   return readSyncRunHistory();
 });
 
@@ -57,6 +59,7 @@ export const deleteFolders = createServerFn({ method: "POST" })
   .inputValidator(folderDeleteSchema)
   .handler(async ({ data }) => {
     await assertWebSessionAuthorized();
+
     return softDeleteFolderSubtree({ folderPaths: data.folderPaths });
   });
 
@@ -64,6 +67,7 @@ export const countFolderEntries = createServerFn({ method: "GET" })
   .inputValidator(folderCountSchema)
   .handler(async ({ data }) => {
     await assertWebSessionAuthorized();
+
     return { count: await countEntriesUnderPath(data.path) };
   });
 
@@ -71,6 +75,7 @@ export const wipeLibrary = createServerFn({ method: "POST" })
   .inputValidator(wipeLibrarySchema)
   .handler(async ({ data }) => {
     await assertWebSessionAuthorized();
+
     return scheduleLibraryWipe({
       confirmation: data.confirmation,
       syncToken: data.syncToken,
@@ -79,11 +84,13 @@ export const wipeLibrary = createServerFn({ method: "POST" })
 
 export const purgeSoftDeletedItems = createServerFn({ method: "POST" }).handler(async () => {
   await assertWebSessionAuthorized();
+
   return scheduleSoftDeletedPurge();
 });
 
 export const purgeDeletedShutterSources = createServerFn({ method: "POST" }).handler(async () => {
   await assertWebSessionAuthorized();
+
   return scheduleShutterSourcePurge();
 });
 
@@ -92,9 +99,11 @@ export const cancelCleanupJob = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     await assertWebSessionAuthorized();
     const result = await cancelMaintenanceJob({ jobId: data.jobId });
+
     if (!result.cancelled) {
       throw new Error("Cleanup job is not running or no longer exists.");
     }
+
     return result;
   });
 
@@ -103,6 +112,7 @@ export const cancelSyncRun = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     await assertWebSessionAuthorized();
     const result = await forceCancelSyncRun({ syncRunId: data.syncRunId });
+
     if (!result.cancelled) {
       throw new Error("Sync run is not running or no longer exists.");
     }
@@ -112,6 +122,7 @@ export const cancelSyncRun = createServerFn({ method: "POST" })
 
 export const cancelAllRunningSyncRuns = createServerFn({ method: "POST" }).handler(async () => {
   await assertWebSessionAuthorized();
+
   return forceCancelAllRunningSyncRuns();
 });
 
@@ -120,6 +131,7 @@ export const getCleanupJobStatus = createServerFn({ method: "GET" })
   .handler(async ({ data }) => {
     await assertWebSessionAuthorized();
     const status = await readCleanupJobStatus({ jobId: data.jobId });
+
     if (!status) {
       throw new Error("Cleanup job not found.");
     }

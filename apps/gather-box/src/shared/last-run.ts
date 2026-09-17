@@ -59,6 +59,7 @@ export class LastRunWriter {
 
   async flush(): Promise<void> {
     const version = this.acceptedVersion;
+
     if (this.completedVersion >= version) {
       return;
     }

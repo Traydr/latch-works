@@ -54,7 +54,9 @@ export interface ResolveResponse {
 }
 
 const nonEmpty = z.string().min(1);
+
 const referenceSchema = z.array(nonEmpty).nonempty().readonly();
+
 const previewKindSchema = z.enum(["video", "pdf"]);
 
 const optimizeInputSchema = z.discriminatedUnion("type", [
@@ -83,6 +85,7 @@ const resolveResponseSchema = z.strictObject({
 
 function parseWire<Output>(schema: z.ZodType<Output>, body: JsonValue, label: string): Output {
   const result = schema.safeParse(body);
+
   if (result.success) return result.data;
   const detail = result.error.issues[0]?.message ?? "is invalid";
   throw new ProtocolError("request_invalid", `${label}: ${detail}`);

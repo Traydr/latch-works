@@ -48,6 +48,7 @@ export function useFolderNavigationModel({
 
     const normalize = (value: string): string =>
       value.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+
     const parentNormalized = normalize(parentFolderPath);
     const ceilingNormalized = normalize(navigationCeilingPath);
 
@@ -90,11 +91,13 @@ export function useFolderNavigationModel({
       }
 
       const currentIndex = siblingFolders.findIndex((folder) => folder.path === rootPath);
+
       if (currentIndex < 0) {
         return;
       }
 
       const nextFolder = siblingFolders[currentIndex + direction];
+
       if (!nextFolder) {
         return;
       }
@@ -110,6 +113,7 @@ export function useFolderNavigationModel({
     if (!rootPath) {
       setCurrentFolderChildren([]);
       setFolderChildrenLoading(false);
+
       return;
     }
 
@@ -117,6 +121,7 @@ export function useFolderNavigationModel({
 
     void (async () => {
       const children = await frameViewClient.listFolderChildren(rootPath);
+
       if (folderChildrenRequestIdRef.current !== requestId) {
         return;
       }
@@ -134,11 +139,13 @@ export function useFolderNavigationModel({
 
     if (!rootPath || !parentFolderPath) {
       setSiblingFolders([]);
+
       return;
     }
 
     void (async () => {
       const siblings = await frameViewClient.listFolderChildren(parentFolderPath);
+
       if (siblingRequestIdRef.current !== requestId) {
         return;
       }
@@ -161,6 +168,7 @@ export function useFolderNavigationModel({
     }
 
     const folderName = toDisplayName(rootPath);
+
     if (!parentFolderPath) {
       return folderName;
     }

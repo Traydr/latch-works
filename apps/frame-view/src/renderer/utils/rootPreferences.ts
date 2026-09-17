@@ -37,6 +37,7 @@ export function toggleExcludedRootChildPath(
   folderPath: string,
 ): RootGalleryPreferences {
   const excluded = new Set(preferences.excludedRootChildPaths);
+
   if (excluded.has(folderPath)) {
     excluded.delete(folderPath);
   } else {

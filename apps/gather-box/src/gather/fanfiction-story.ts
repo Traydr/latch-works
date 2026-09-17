@@ -7,15 +7,25 @@ import { saveBlobWithoutClobbering, type WritableDirectory } from "./downloader"
 import { throwIfAborted } from "./errors";
 
 const PAGE_SIZE = "letter";
+
 const MARGIN = 54;
+
 const BODY_FONT_SIZE = 11;
+
 const BODY_LINE_HEIGHT = BODY_FONT_SIZE * 1.35;
+
 const TITLE_FONT_SIZE = 22;
+
 const CHAPTER_FONT_SIZE = 16;
+
 const META_FONT_SIZE = 9;
+
 const META_LINE_HEIGHT = META_FONT_SIZE * 1.35;
+
 const PARAGRAPH_GAP = BODY_LINE_HEIGHT * 0.65;
+
 const CHAPTER_GAP = BODY_LINE_HEIGHT;
+
 const CHAPTER_FETCH_DELAY_MS = 200;
 
 export interface FanfictionStoryCallbacks {
@@ -90,6 +100,7 @@ export async function saveFanfictionStoryPdf(
   throwIfAborted(options.signal);
   const pdfBytes = new ArrayBuffer(bytes.byteLength);
   new Uint8Array(pdfBytes).set(bytes);
+
   const saved = await saveBlobWithoutClobbering(
     new Blob([pdfBytes], { type: "application/pdf" }),
     destinationDirectory,
@@ -97,6 +108,7 @@ export async function saveFanfictionStoryPdf(
     undefined,
     options.signal
   );
+
   callbacks.onSaved(saved.fileName);
 }
 
@@ -107,11 +119,13 @@ export async function fetchChapterContents(
 ): Promise<StoryChapterContent[]> {
   const chapters: StoryChapterContent[] = [];
   const parser = new DOMParser();
+
   const credentials =
     options.settings && shouldIncludeCredentials(payload, options.settings) ? "include" : "omit";
 
   for (const [index, chapter] of payload.chapters.entries()) {
     throwIfAborted(options.signal);
+
     if (index > 0) {
       await delay(CHAPTER_FETCH_DELAY_MS, options.signal);
     }
@@ -124,6 +138,7 @@ export async function fetchChapterContents(
       credentials,
       signal: options.signal
     });
+
     if (!response.ok) {
       throw new Error(`Failed ${chapter.label}: HTTP ${response.status}`);
     }
@@ -132,6 +147,7 @@ export async function fetchChapterContents(
     throwIfAborted(options.signal);
     const document = parser.parseFromString(html, "text/html");
     const storyText = document.querySelector("#storytext");
+
     if (!storyText) {
       throw new Error(`Failed ${chapter.label}: story text was not found.`);
     }
@@ -150,6 +166,7 @@ function delay(milliseconds: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
       reject(new DOMException("The operation was aborted.", "AbortError"));
+
       return;
     }
 
@@ -173,6 +190,7 @@ export function extractStoryBlocks(storyText: Element): StoryBlock[] {
   for (const child of Array.from(storyText.childNodes)) {
     if (child instanceof Element) {
       const tagName = child.tagName.toLowerCase();
+
       if (tagName === "script" || tagName === "style") {
         continue;
       }
@@ -189,6 +207,7 @@ export function extractStoryBlocks(storyText: Element): StoryBlock[] {
 
     if (child.nodeType === Node.TEXT_NODE) {
       const runs = normalizeRuns([{ text: child.textContent || "", bold: false, italic: false }]);
+
       if (runs.length > 0) {
         blocks.push({ kind: "paragraph", runs });
       }
@@ -208,6 +227,7 @@ function collectRuns(node: Node, bold: boolean, italic: boolean): StoryTextRun[]
   }
 
   const tagName = node.tagName.toLowerCase();
+
   if (tagName === "script" || tagName === "style") {
     return [];
   }
@@ -227,11 +247,13 @@ function normalizeRuns(runs: StoryTextRun[]): StoryTextRun[] {
 
   for (const run of runs) {
     const text = run.text.replace(/[^\S\n]+/g, " ");
+
     if (!text) {
       continue;
     }
 
     const previous = normalized[normalized.length - 1];
+
     if (previous && previous.bold === run.bold && previous.italic === run.italic) {
       previous.text += text;
     } else {
@@ -240,24 +262,29 @@ function normalizeRuns(runs: StoryTextRun[]): StoryTextRun[] {
   }
 
   trimRuns(normalized);
+
   return normalized.filter((run) => run.text.length > 0);
 }
 
 function trimRuns(runs: StoryTextRun[]): void {
   while (runs.length > 0) {
     runs[0].text = runs[0].text.replace(/^[^\S\n]+/, "");
+
     if (runs[0].text) {
       break;
     }
+
     runs.shift();
   }
 
   while (runs.length > 0) {
     const lastRun = runs[runs.length - 1];
     lastRun.text = lastRun.text.replace(/[^\S\n]+$/, "");
+
     if (lastRun.text) {
       break;
     }
+
     runs.pop();
   }
 }
@@ -279,6 +306,7 @@ async function buildStoryPdf(
 
   const fonts = await loadFonts(pdf);
   const page = pdf.addPage({ size: PAGE_SIZE });
+
   const cursor: PdfCursor = {
     pdf,
     page,
@@ -330,6 +358,7 @@ async function loadFonts(pdf: PDF): Promise<PdfFonts> {
 
 async function loadFont(pdf: PDF, path: string): Promise<EmbeddedFont> {
   const response = await fetch(chrome.runtime.getURL(path));
+
   if (!response.ok) {
     throw new Error(`Could not load PDF font ${path}: HTTP ${response.status}`);
   }
@@ -427,6 +456,7 @@ function layoutRuns(
 
   const pushLine = (): void => {
     trimLineTokens(currentTokens);
+
     if (currentTokens.length > 0) {
       lines.push({
         tokens: currentTokens,
@@ -438,6 +468,7 @@ function layoutRuns(
     } else {
       lines.push({ tokens: [], width: 0 });
     }
+
     currentTokens = [];
     currentWidth = 0;
   };
@@ -455,8 +486,10 @@ function layoutRuns(
 
       const token = { text: part, bold: run.bold, italic: run.italic };
       const tokenWidth = getFont(fonts, token).widthOfTextAtSize(token.text, fontSize);
+
       if (currentTokens.length > 0 && currentWidth + tokenWidth > maxWidth) {
         pushLine();
+
         if (/^\s+$/.test(part)) {
           continue;
         }
@@ -468,6 +501,7 @@ function layoutRuns(
   }
 
   trimLineTokens(currentTokens);
+
   if (currentTokens.length > 0 || lines.length === 0) {
     lines.push({ tokens: currentTokens, width: currentWidth });
   }

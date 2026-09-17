@@ -51,10 +51,13 @@ export function useWindowedThumbnailResolution(
 ): WindowedThumbnailResolutionResult {
   const [resolution, setResolution] = useState(() => {
     const cached = resolver.readCachedGalleryThumbnailState();
+
     return { contentKey, urls: cached.urls };
   });
+
   /** The content this hook last scheduled against; anything else is new content. */
   const seenContentKeyRef = useRef<string | null>(null);
+
   const windowedThumbnailRequests = useMemo(
     () =>
       dedupeThumbnailRequests(
@@ -64,11 +67,13 @@ export function useWindowedThumbnailResolution(
           }
 
           const media = entry.kind === "comic" ? entry.comic.cover : entry.media;
+
           return supportsGalleryThumbnail(media) ? [{ mediaId: media.id }] : [];
         }),
       ),
     [windowedEntries],
   );
+
   const resolvedThumbnailUrls =
     resolution.contentKey === contentKey
       ? resolution.urls
@@ -108,6 +113,7 @@ export function useWindowedThumbnailResolution(
       }
 
       const retryDelayMs = resolver.getNextPendingThumbnailRetryMs(windowedThumbnailRequests);
+
       if (retryDelayMs === null) {
         return;
       }
@@ -124,6 +130,7 @@ export function useWindowedThumbnailResolution(
 
       if (resolver.hasEligibleGalleryThumbnailRequests(windowedThumbnailRequests)) {
         drainTimeoutId = window.setTimeout(resolveAndSchedule, 0);
+
         return;
       }
 
@@ -145,12 +152,15 @@ export function useWindowedThumbnailResolution(
 
     return () => {
       cancelled = true;
+
       if (debounceTimeoutId !== undefined) {
         window.clearTimeout(debounceTimeoutId);
       }
+
       if (drainTimeoutId !== undefined) {
         window.clearTimeout(drainTimeoutId);
       }
+
       if (retryTimeoutId !== undefined) {
         window.clearTimeout(retryTimeoutId);
       }

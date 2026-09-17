@@ -54,6 +54,7 @@ export function foldBrowseFlags(
   const folderModesEnabled = canUseFolderBrowseModes(path);
   const comicMode = folderModesEnabled && (flags.comic ?? false);
   const recursive = folderModesEnabled && ((flags.recursive ?? false) || comicMode);
+
   return { comicMode, folderModesEnabled, recursive };
 }
 
@@ -176,6 +177,7 @@ export function buildBrowseSearch(
   patch: Partial<GalleryBrowseSearch>,
 ): GalleryBrowseSearch {
   const nextPath = Object.hasOwn(patch, "path") ? (patch.path ?? "") : state.path;
+
   const flags = foldBrowseFlags(nextPath, {
     comic: Object.hasOwn(patch, "comic") ? patch.comic : state.comicMode,
     recursive: Object.hasOwn(patch, "recursive") ? patch.recursive : state.recursive,
@@ -238,7 +240,9 @@ export function applyBrowseIntent(
           navigate: { search: buildBrowseSearch(state, { media: undefined, path: "" }) },
         };
       }
+
       const flags = state.folderModesEnabled ? state : remembered;
+
       return {
         navigate: {
           search: buildBrowseSearch(state, {
@@ -250,6 +254,7 @@ export function applyBrowseIntent(
         },
       };
     }
+
     case "submitSearch":
       return {
         navigate: {
@@ -270,22 +275,28 @@ export function applyBrowseIntent(
       };
     case "setRecursive": {
       const flags = { comic: intent.next ? state.comicMode : false, recursive: intent.next };
+
       if (!state.folderModesEnabled) {
         return { persisted: { comicMode: flags.comic, recursive: flags.recursive } };
       }
+
       return {
         navigate: { replace: true, resetScroll: false, search: buildBrowseSearch(state, flags) },
       };
     }
+
     case "setComicMode": {
       const flags = { comic: intent.next, recursive: intent.next };
+
       if (!state.folderModesEnabled) {
         return { persisted: { comicMode: flags.comic, recursive: flags.recursive } };
       }
+
       return {
         navigate: { replace: true, resetScroll: false, search: buildBrowseSearch(state, flags) },
       };
     }
+
     case "setSortMode":
       return { persisted: { sortMode: intent.next } };
     case "shuffle":
@@ -313,16 +324,20 @@ export function resolveInitialRedirect(
   if (alreadyChecked) {
     return { checked: true, redirectTo: null };
   }
+
   if (!persisted) {
     return { checked: false, redirectTo: null };
   }
+
   if (search.path || !persisted.lastPath) {
     return { checked: true, redirectTo: null };
   }
+
   const flags = foldBrowseFlags(persisted.lastPath, {
     comic: persisted.comicMode,
     recursive: persisted.recursive,
   });
+
   return {
     checked: true,
     redirectTo: {
@@ -385,6 +400,7 @@ function withSeed(
   if (!state) {
     return null;
   }
+
   return state.randomSeed ? state : { ...state, randomSeed: createSeed() };
 }
 
@@ -416,6 +432,7 @@ export function useGalleryBrowseState({
   useEffect(() => {
     if (persisted === null) {
       const read = withSeed(storage.read(), createSeed);
+
       if (read) {
         setPersisted(read);
       }
@@ -423,10 +440,12 @@ export function useGalleryBrowseState({
   }, [createSeed, persisted, storage]);
 
   const hydrated = persisted !== null;
+
   const state = useMemo(
     () => resolveBrowseState(search, persisted, hydrated),
     [hydrated, persisted, search],
   );
+
   const stateRef = useRef(state);
   stateRef.current = state;
 
@@ -438,9 +457,11 @@ export function useGalleryBrowseState({
     list: storage.readExcludedChildPaths(state.path),
     path: state.path,
   }));
+
   if (excludes.path !== state.path) {
     setExcludes({ list: storage.readExcludedChildPaths(state.path), path: state.path });
   }
+
   const excludedChildPaths = excludes.list;
 
   // First-visit redirect, once.
@@ -451,7 +472,9 @@ export function useGalleryBrowseState({
       persisted,
       initialPathCheckedRef.current,
     );
+
     initialPathCheckedRef.current = checked;
+
     if (redirectTo) {
       void navigate({ search: redirectTo, to: "/" });
     }
@@ -463,13 +486,16 @@ export function useGalleryBrowseState({
   // the settings drawer's "default recursive browsing" toggle.
   const { comicMode, detailPanelOpen, folderModesEnabled, path, randomSeed, recursive, sortMode } =
     state;
+
   const persistedRef = useRef(persisted);
   persistedRef.current = persisted;
   useEffect(() => {
     if (!hydrated) {
       return;
     }
+
     const base = persistedRef.current ?? PERSISTED_BROWSE_STATE_DEFAULTS;
+
     const next: PersistedBrowseState = {
       comicMode: folderModesEnabled ? comicMode : base.comicMode,
       detailPanelOpen,
@@ -478,10 +504,13 @@ export function useGalleryBrowseState({
       recursive: folderModesEnabled ? recursive : base.recursive,
       sortMode,
     };
+
     storage.write(next);
+
     if (folderModesEnabled) {
       storage.writeRootPreferences(resolveRootKey(path), { comicMode, recursive, sortMode });
     }
+
     setPersisted((current) => (current && samePersisted(current, next) ? current : next));
   }, [
     comicMode,
@@ -500,10 +529,12 @@ export function useGalleryBrowseState({
     (intent: BrowseIntent) => {
       const remembered = persistedRef.current ?? PERSISTED_BROWSE_STATE_DEFAULTS;
       const result = applyBrowseIntent(stateRef.current, intent, remembered, createSeed);
+
       if (result.navigate) {
         const { search: nextSearch, ...options } = result.navigate;
         void navigate({ ...options, search: nextSearch, to: "/" });
       }
+
       if (result.persisted) {
         const patch = result.persisted;
         setPersisted((current) => ({
@@ -519,6 +550,7 @@ export function useGalleryBrowseState({
     () => snapshotRequestFor({ comicMode, path, query: state.query, recursive }),
     [comicMode, path, recursive, state.query],
   );
+
   const listingRequest = useMemo(
     () =>
       listingRequestFor(
@@ -543,57 +575,71 @@ export function useGalleryBrowseState({
     (nextPath: string) => dispatch({ path: nextPath, type: "navigateToPath" }),
     [dispatch],
   );
+
   const submitSearch = useCallback(
     (query: string | undefined) => dispatch({ query, type: "submitSearch" }),
     [dispatch],
   );
+
   const selectMedia = useCallback(
     (mediaId: string | null) => dispatch({ mediaId, type: "selectMedia" }),
     [dispatch],
   );
+
   const setRecursive = useCallback(
     (next: boolean) => dispatch({ next, type: "setRecursive" }),
     [dispatch],
   );
+
   const setComicMode = useCallback(
     (next: boolean) => dispatch({ next, type: "setComicMode" }),
     [dispatch],
   );
+
   const setSortMode = useCallback(
     (next: GallerySortMode) => dispatch({ next, type: "setSortMode" }),
     [dispatch],
   );
+
   const shuffle = useCallback(() => dispatch({ type: "shuffle" }), [dispatch]);
+
   const setDetailPanelOpen = useCallback(
     (next: boolean) => dispatch({ next, type: "setDetailPanelOpen" }),
     [dispatch],
   );
+
   const toggleExcludedChild = useCallback(
     (childPath: string) => {
       const currentPath = stateRef.current.path;
       const stored = storage.readExcludedChildPaths(currentPath);
+
       const next = stored.includes(childPath)
         ? stored.filter((path) => path !== childPath)
         : [...stored, childPath];
+
       storage.writeExcludedChildPaths(currentPath, next);
       setExcludes({ list: next, path: currentPath });
     },
     [storage],
   );
+
   const pruneExcludedChildren = useCallback(
     (livePaths: readonly string[]) => {
       const currentPath = stateRef.current.path;
       const stored = storage.readExcludedChildPaths(currentPath);
       const live = new Set(livePaths);
       const pruned = stored.filter((path) => live.has(path));
+
       if (pruned.length === stored.length) {
         return;
       }
+
       storage.writeExcludedChildPaths(currentPath, pruned);
       setExcludes({ list: pruned, path: currentPath });
     },
     [storage],
   );
+
   const buildSearch = useCallback(
     (patch: Partial<GalleryBrowseSearch>) => buildBrowseSearch(stateRef.current, patch),
     [],

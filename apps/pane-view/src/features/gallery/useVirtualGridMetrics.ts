@@ -1,8 +1,11 @@
 import { type RefObject, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 const GRID_GAP_PX = 12;
+
 const GRID_OVERSCAN_ROWS = 3;
+
 const MAIN_HORIZONTAL_PADDING_PX = 40;
+
 const DEFAULT_VIEWPORT_WIDTH = 1280;
 
 /** An inclusive range of grid rows. */
@@ -57,14 +60,17 @@ export function useVirtualGridMetrics(
   aspectRatio: "wide" | "tall" = "wide",
 ): UseVirtualGridMetricsResult {
   const [mainClientWidth, setMainClientWidth] = useState(0);
+
   const [rowWindows, setRowWindows] = useState({
     overscan: { start: 0, end: 0 },
     viewport: { start: 0, end: 0 },
   });
+
   const mainRef = useRef<HTMLElement | null>(null);
 
   const columnWidth = thumbnailSize + 20;
   const effectiveViewportWidth = mainClientWidth > 0 ? mainClientWidth : DEFAULT_VIEWPORT_WIDTH;
+
   const columnCount = useMemo(() => {
     return Math.min(6, Math.max(2, Math.floor((effectiveViewportWidth - 40) / columnWidth)));
   }, [columnWidth, effectiveViewportWidth]);
@@ -75,6 +81,7 @@ export function useVirtualGridMetrics(
 
   const cardWidth = useMemo(() => {
     const gapsWidth = GRID_GAP_PX * (columnCount - 1);
+
     return Math.max(120, Math.floor((gridWidth - gapsWidth) / columnCount));
   }, [columnCount, gridWidth]);
 
@@ -106,6 +113,7 @@ export function useVirtualGridMetrics(
   // instead of racing a scheduler task against it.
   useLayoutEffect(() => {
     const element = mainRef.current;
+
     if (!element) {
       return undefined;
     }
@@ -123,6 +131,7 @@ export function useVirtualGridMetrics(
           rowStride,
           0,
         );
+
         const nextOverscan = getVisibleRowWindow(
           element.scrollTop,
           nextHeight,
@@ -162,6 +171,7 @@ export function useVirtualGridMetrics(
             rowStride,
             0,
           );
+
           const nextOverscan = getVisibleRowWindow(
             element.scrollTop,
             element.clientHeight,

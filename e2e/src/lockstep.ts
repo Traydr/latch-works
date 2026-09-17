@@ -15,6 +15,7 @@ import { electronChildEnv, REPO_ROOT } from "./env.ts";
  * Playwright's Electron driver on a fresh userData directory.
  */
 export const LOCKSTEP_APP_DIR = path.join(REPO_ROOT, "apps", "lockstep");
+
 const ELECTRON_BINARY = path.join(
   LOCKSTEP_APP_DIR,
   "node_modules",
@@ -31,6 +32,7 @@ export interface LockstepSession {
 
 export async function launchLockstep(): Promise<LockstepSession> {
   const userDataDir = await mkdtemp(path.join(os.tmpdir(), "lockstep-e2e-"));
+
   const app = await electron.launch({
     args: [
       path.join(LOCKSTEP_APP_DIR, ".vite", "build", "main.js"),
@@ -40,8 +42,10 @@ export async function launchLockstep(): Promise<LockstepSession> {
     env: electronChildEnv(),
     executablePath: ELECTRON_BINARY,
   });
+
   const window = await app.firstWindow();
   await expect(window.getByText("Lockstep", { exact: true }).first()).toBeVisible();
+
   return { app, userDataDir, window };
 }
 
@@ -63,5 +67,6 @@ export async function readStat(
 ): Promise<string> {
   // The label is upper-cased by CSS; innerText follows the transform, so take the last token.
   const stat = window.getByText(label, { exact: true }).locator("..");
+
   return (await stat.innerText()).trim().split(/\s+/).pop() ?? "";
 }

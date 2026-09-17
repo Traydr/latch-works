@@ -10,6 +10,7 @@ export function installShortcutKeyListener(
   const handleKeydown = (event: KeyboardEvent) => {
     if (isRightShift(event)) {
       rightShiftDown = true;
+
       return;
     }
 
@@ -22,6 +23,7 @@ export function installShortcutKeyListener(
       : isLeftBracket(event)
         ? "download"
         : null;
+
     if (!action) {
       return;
     }
@@ -42,6 +44,7 @@ export function installShortcutKeyListener(
   };
 
   const pageWindow = document.defaultView;
+
   if (pageWindow) {
     pageWindow.addEventListener("keydown", handleKeydown, true);
     pageWindow.addEventListener("keyup", handleKeyup, true);

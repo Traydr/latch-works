@@ -79,6 +79,7 @@ export function createGatherRunState(input: {
   now?: number;
 }): GatherRunState {
   const now = input.now ?? Date.now();
+
   return {
     schemaVersion: GATHER_RUN_SCHEMA_VERSION,
     id: input.id,

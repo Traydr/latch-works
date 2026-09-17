@@ -29,9 +29,11 @@ export function imageLoadRetryDelayMs(
   random: () => number = Math.random,
 ): number | null {
   const base = IMAGE_LOAD_RETRY_DELAYS_MS[failures - 1];
+
   if (failures < 1 || base === undefined) {
     return null;
   }
+
   return Math.round(base * (0.5 + random() * 0.5));
 }
 
@@ -60,20 +62,25 @@ function imageLoadRetryReducer(
   if (action.type === "reset") {
     return action.state;
   }
+
   if (action.resetKey !== state.resetKey) {
     return state;
   }
+
   if (action.type === "error") {
     if (state.phase !== "loading") {
       return state;
     }
+
     const failures = state.failures + 1;
+
     return {
       ...state,
       failures,
       phase: failures >= IMAGE_LOAD_MAX_ATTEMPTS ? "failed" : "waiting",
     };
   }
+
   return state.phase === "waiting" ? { ...state, phase: "loading" } : state;
 }
 
@@ -106,13 +113,17 @@ export function useImageLoadRetry(resetKey: string): ImageLoadRetry {
     if (phase !== "waiting") {
       return;
     }
+
     const delayMs = imageLoadRetryDelayMs(failures);
+
     if (delayMs === null) {
       return;
     }
+
     const timeoutId = window.setTimeout(() => {
       dispatch({ resetKey, type: "retry" });
     }, delayMs);
+
     return () => {
       window.clearTimeout(timeoutId);
     };

@@ -18,6 +18,7 @@ function formatList(values: string[]): string {
 
 function formatTimings(snapshot: DiagnosticsSnapshot): string {
   const timings = snapshot.thumbnailWorkerPerformance;
+
   if (!timings) {
     return 'disabled';
   }

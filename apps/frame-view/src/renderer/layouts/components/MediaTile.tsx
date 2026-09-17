@@ -53,6 +53,7 @@ export function MediaTile({
         }
 
         const video = event.currentTarget.querySelector('video');
+
         if (!video) {
           return;
         }
@@ -67,6 +68,7 @@ export function MediaTile({
         }
 
         const video = event.currentTarget.querySelector('video');
+
         if (!video) {
           return;
         }

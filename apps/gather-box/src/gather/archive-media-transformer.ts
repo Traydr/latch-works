@@ -25,6 +25,7 @@ export function createArchiveMediaTransformer(
       () => undefined,
       () => undefined
     );
+
     return result;
   };
 
@@ -46,9 +47,11 @@ async function transformArchiveMedia(
 ): Promise<TransformedMedia> {
   throwIfAborted(signal);
   const plan = planArchiveMedia(fileName, blob.type);
+
   if (!plan) {
     return { blob, fileName, converted: false };
   }
+
   if (plan.action === "rename-avif" || plan.action === "rename-mp4") {
     return { blob, fileName: plan.fileName, converted: false };
   }
@@ -58,6 +61,7 @@ async function transformArchiveMedia(
       ? encoders.encodeGifAsMp4(blob, signal)
       : encoders.encodeStillAsAvif(blob, signal)
   );
+
   throwIfAborted(signal);
 
   return {

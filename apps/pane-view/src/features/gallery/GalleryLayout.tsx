@@ -17,6 +17,7 @@ export function GalleryLayout() {
   const { settings, updateSettings } = useAppSettings();
   const browse = useGalleryBrowseState({ navigate, search, settings });
   const [settingsOpen, setSettingsOpen] = useState(false);
+
   // The sidebar shares the page's snapshot key, so one request serves both
   // and the sidebar never fetches media rows.
   const {
@@ -24,6 +25,7 @@ export function GalleryLayout() {
     isFetching,
     isPlaceholderData,
   } = useLibrarySnapshotQuery(browse.snapshotRequest);
+
   const hydrated = useHydrated();
   const showFetching = hydrated && isFetching;
   const folders = library?.folders ?? [];

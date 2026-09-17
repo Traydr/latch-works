@@ -30,10 +30,12 @@ function setup() {
   const resolveFolderPath = vi.fn<IpcRuntime['resolveFolderPath']>(async () => Result.ok(null));
   const sendScanEvent = vi.fn<IpcRuntime['sendScanEvent']>();
   const showItemInFolder = vi.fn<IpcRuntime['showItemInFolder']>();
+
   const showOpenFolderDialog = vi.fn<IpcRuntime['showOpenFolderDialog']>(async () => ({
     canceled: true,
     filePaths: [],
   }));
+
   const shrinkAuthorizedMediaRootsTo = vi.fn<IpcRuntime['shrinkAuthorizedMediaRootsTo']>(
     async () => undefined,
   );
@@ -230,6 +232,7 @@ describe('registerIpc', () => {
 
   it('re-authorizes the remembered last folder so auto-scan works after restart', async () => {
     const rememberedPath = 'C:\\gallery';
+
     const {
       authorizeMediaRoot,
       catalogService,

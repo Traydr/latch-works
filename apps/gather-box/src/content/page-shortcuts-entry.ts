@@ -11,9 +11,11 @@ interface StoredPageShortcutSettings {
 }
 
 const SETTINGS_KEY = "gather-box-settings";
+
 let settings: PageShortcutSettings = { enabled: true };
 
 installPageShortcuts(document, chrome.runtime, () => settings);
+
 void refreshSettings();
 
 chrome.storage.onChanged.addListener((changes, areaName) => {

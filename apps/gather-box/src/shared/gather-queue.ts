@@ -12,8 +12,11 @@ import {
 import type { SiteKey } from "./sites";
 
 export const GATHER_QUEUE_STATE_KEY = "gather-box-run-queue";
+
 export const GATHER_QUEUE_SCHEMA_VERSION = 1;
+
 export const MAX_GATHER_QUEUE_LENGTH = 100;
+
 export const MAX_GATHER_QUEUE_RESULTS = 100;
 
 export type GatherOutput = DownloadablePayload | GeneratedStoryPayload;
@@ -101,6 +104,7 @@ export const GatherQueueStateSchema = z.catch(
 
 export async function loadGatherQueue(): Promise<GatherQueueState> {
   const stored = await chrome.storage.local.get(GATHER_QUEUE_STATE_KEY);
+
   return GatherQueueStateSchema.parse(stored[GATHER_QUEUE_STATE_KEY]);
 }
 
@@ -118,6 +122,7 @@ export function getRetryableGatherQueueResult(queue: GatherQueueState): GatherRu
       return queue.results[index];
     }
   }
+
   return null;
 }
 
@@ -128,6 +133,7 @@ export function recordGatherQueueResult(
   if (!isTerminalGatherRunPhase(run.phase)) {
     throw new Error(`Cannot record non-terminal Gather Run ${run.id}.`);
   }
+
   return {
     ...queue,
     results: [...queue.results.filter((result) => result.id !== run.id), run].slice(
@@ -155,6 +161,7 @@ export function getNextQueuedGatherJob(queue: GatherQueueState): OutputGatherQue
   }
 
   const first = queue.jobs[0];
+
   return first?.kind === "output" && first.run.phase === "queued" ? first : null;
 }
 
@@ -229,6 +236,7 @@ export function getGatherQueueDisplayRun(queue: GatherQueueState): GatherRunStat
     queue.jobs.find((job) => job.kind === "collecting") ??
     queue.jobs.find((job) => job.run.phase === "queued") ??
     null;
+
   if (!displayed) {
     return null;
   }
@@ -238,6 +246,7 @@ export function getGatherQueueDisplayRun(queue: GatherQueueState): GatherRunStat
       job.run.id !== displayed.run.id &&
       (job.run.phase === "collecting" || job.run.phase === "queued")
   ).length;
+
   const queueSuffix = queuedCount === 1 ? " · 1 queued" : ` · ${queuedCount} queued`;
 
   return {

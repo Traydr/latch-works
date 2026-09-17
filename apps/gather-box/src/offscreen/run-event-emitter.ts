@@ -25,6 +25,7 @@ export function createGatherRunEventEmitter(
   const send = (event: GatherRunEvent): Promise<void> => {
     const delivery = queue.then(() => deliver(event));
     queue = delivery.catch(() => undefined);
+
     return delivery;
   };
 
@@ -37,11 +38,13 @@ export function createGatherRunEventEmitter(
       // A run can report twice — an executor that finishes its own cancellation still unwinds
       // through the caller's abort check. The first report is the authoritative one.
       terminal ??= event;
+
       return Promise.resolve();
     },
     flush() {
       const event = terminal;
       terminal = null;
+
       if (event) {
         void send(event).catch(() => undefined);
       }

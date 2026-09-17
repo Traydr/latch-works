@@ -34,7 +34,9 @@ async function writeImage(target: string, entry: FixtureItem, index: number): Pr
   const base = sharp({
     create: { background: colourFor(index), channels: 3, height: 48, width: 64 },
   });
+
   const extension = path.extname(entry.name).toLowerCase();
+
   if (extension === ".png") {
     await base.png().toFile(target);
   } else if (extension === ".gif") {
@@ -66,18 +68,22 @@ async function writeVideo(target: string, index: number): Promise<void> {
 async function writePdf(target: string): Promise<void> {
   const document = await PDFDocument.create();
   const font = await document.embedFont(StandardFonts.Helvetica);
+
   for (let page = 1; page <= 3; page += 1) {
     const sheet = document.addPage([300, 400]);
     sheet.drawText(`Fixture page ${page}`, { font, size: 24, x: 40, y: 340 });
   }
+
   await writeFile(target, await document.save());
 }
 
 async function writeArchive(root: string, items: readonly FixtureItem[]): Promise<void> {
   await rm(root, { force: true, recursive: true });
+
   for (const [index, entry] of items.entries()) {
     const target = path.join(root, ...entry.path.split("/"));
     await mkdir(path.dirname(target), { recursive: true });
+
     switch (entry.kind) {
       case "image":
       case "gif":
@@ -90,9 +96,11 @@ async function writeArchive(root: string, items: readonly FixtureItem[]): Promis
         await writePdf(target);
         break;
     }
+
     const mtime = new Date(fixtureMtimeMs(entry));
     await utimes(target, mtime, mtime);
   }
+
   console.log(`fixture: ${items.length} items written to ${root}`);
 }
 

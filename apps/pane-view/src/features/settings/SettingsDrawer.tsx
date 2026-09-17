@@ -39,6 +39,7 @@ export function SettingsDrawer({
       settings,
       userAgent: navigator.userAgent,
     };
+
     await navigator.clipboard.writeText(JSON.stringify(diagnostics, null, 2));
   };
 

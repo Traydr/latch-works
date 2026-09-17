@@ -46,6 +46,7 @@ function validateIpcInput<T>(
   channel: string,
 ): ValidatedIpcInput<T> {
   const parsed = parseWithSchema(schema, input, channel);
+
   if (Result.isError(parsed)) {
     return { ok: false, serialized: serializeAppResult(Result.err(parsed.error)) };
   }
@@ -58,6 +59,7 @@ const ProfileIdSchema = z.string();
 
 function validateProfileId(profileId: JsonValue, channel: string): ValidatedIpcInput<string> {
   const parsed = ProfileIdSchema.safeParse(profileId);
+
   if (!parsed.success) {
     return { ok: false, serialized: validationFailure(channel, "Profile id is required.") };
   }
@@ -105,16 +107,19 @@ export function registerIpc(
       input,
       InvokeIpcContracts.createProfile.channel,
     );
+
     if (!validated.ok) {
       return validated.serialized;
     }
 
     const result = await profileService.createProfile(validated.value);
+
     return serializeAppResult(result);
   });
 
   ipcMain.handle(InvokeIpcContracts.updateProfile.channel, async (_event, profileId, patch) => {
     const validatedId = validateProfileId(profileId, InvokeIpcContracts.updateProfile.channel);
+
     if (!validatedId.ok) {
       return validatedId.serialized;
     }
@@ -124,42 +129,50 @@ export function registerIpc(
       patch,
       InvokeIpcContracts.updateProfile.channel,
     );
+
     if (!validated.ok) {
       return validated.serialized;
     }
 
     const result = await profileService.updateProfile(validatedId.value, validated.value);
+
     return serializeAppResult(result);
   });
 
   ipcMain.handle(InvokeIpcContracts.deleteProfile.channel, async (_event, profileId) => {
     const validatedId = validateProfileId(profileId, InvokeIpcContracts.deleteProfile.channel);
+
     if (!validatedId.ok) {
       return validatedId.serialized;
     }
 
     const result = await profileService.deleteProfile(validatedId.value);
+
     return serializeAppResult(result);
   });
 
   ipcMain.handle(InvokeIpcContracts.setActiveProfile.channel, async (_event, profileId) => {
     const validatedId = validateProfileId(profileId, InvokeIpcContracts.setActiveProfile.channel);
+
     if (!validatedId.ok) {
       return validatedId.serialized;
     }
 
     const result = await profileService.setActiveProfile(validatedId.value);
+
     return serializeAppResult(result);
   });
 
   ipcMain.handle(InvokeIpcContracts.doctor.channel, async (_event, profileId) => {
     const validatedId = validateProfileId(profileId, InvokeIpcContracts.doctor.channel);
+
     if (!validatedId.ok) {
       return validatedId.serialized;
     }
 
     try {
       const result = await runService.doctor(validatedId.value);
+
       return okResult(result);
     } catch (error) {
       return operationalFailure(InvokeIpcContracts.doctor.channel, toError(error));
@@ -172,12 +185,14 @@ export function registerIpc(
       request,
       InvokeIpcContracts.plan.channel,
     );
+
     if (!validated.ok) {
       return validated.serialized;
     }
 
     try {
       const plan = await runService.plan(validated.value);
+
       return okResult(plan);
     } catch (error) {
       return operationalFailure(InvokeIpcContracts.plan.channel, toError(error));
@@ -190,12 +205,14 @@ export function registerIpc(
       request,
       InvokeIpcContracts.push.channel,
     );
+
     if (!validated.ok) {
       return validated.serialized;
     }
 
     try {
       const summary = await runService.push(validated.value);
+
       return okResult(summary);
     } catch (error) {
       return operationalFailure(InvokeIpcContracts.push.channel, toError(error));
@@ -208,12 +225,14 @@ export function registerIpc(
       request,
       InvokeIpcContracts.prune.channel,
     );
+
     if (!validated.ok) {
       return validated.serialized;
     }
 
     try {
       const summary = await runService.prune(validated.value);
+
       return okResult(summary);
     } catch (error) {
       return operationalFailure(InvokeIpcContracts.prune.channel, toError(error));
@@ -222,6 +241,7 @@ export function registerIpc(
 
   ipcMain.handle(InvokeIpcContracts.cancelRun.channel, async () => {
     runService.cancel();
+
     return okResult(undefined);
   });
 }

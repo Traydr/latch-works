@@ -73,9 +73,11 @@ const ThrownPgErrorSchema = PgErrorFacetsSchema.extend({
  */
 function isActiveJobUniqueViolation(error: Error): boolean {
   const parsed = ThrownPgErrorSchema.safeParse(error);
+
   if (!parsed.success) {
     return false;
   }
+
   return [parsed.data, parsed.data.cause].some(
     (candidate) =>
       candidate?.code === "23505" &&
@@ -97,6 +99,7 @@ export async function scheduleMaintenanceJob(
   dependencies: MaintenanceSchedulerDependencies = maintenanceSchedulerDependencies,
 ): Promise<ScheduleMaintenanceJobResult> {
   let jobId: string | null;
+
   try {
     jobId = await dependencies.database.transaction(async (tx) => {
       await dependencies.acquireLibraryMutationStartupLock(tx);
@@ -124,12 +127,14 @@ export async function scheduleMaintenanceJob(
       if (!job) {
         throw new Error(`Unable to schedule ${descriptor.type}.`);
       }
+
       return job.id;
     });
   } catch (error) {
     if (error instanceof Error && isActiveJobUniqueViolation(error)) {
       throw new Error(CLEANUP_IN_PROGRESS_MESSAGE);
     }
+
     throw error;
   }
 
@@ -138,5 +143,6 @@ export async function scheduleMaintenanceJob(
   }
 
   dependencies.processMaintenanceJob(jobId);
+
   return { jobId, phase: "scheduled" };
 }

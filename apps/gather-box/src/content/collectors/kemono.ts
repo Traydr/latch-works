@@ -2,13 +2,18 @@ import type { PageLocation } from "../collector-entry";
 import type { GalleryCollectResponse, GalleryImage } from "../../shared/types";
 
 const KEMONO_USER_SELECTOR = "a.post__user-name[href*='/user/']";
+
 const KEMONO_TITLE_SELECTOR = "h1.post__title";
+
 const KEMONO_FILES_SELECTOR = "div.post__files";
+
 const KEMONO_FILE_LINK_SELECTOR = "a.fileThumb.image-link[href]";
+
 const KEMONO_THUMBNAIL_IMAGE_SELECTOR = ".post__thumbnail img";
 
 export function collectKemonoData(document: Document, location: PageLocation): GalleryCollectResponse {
   const pathMatch = location.pathname.match(/^\/([^/]+)\/user\/([^/]+)\/post\/([^/]+)/);
+
   if (!pathMatch) {
     return {
       ok: false,
@@ -49,12 +54,14 @@ export function collectKemonoData(document: Document, location: PageLocation): G
   const fileLinks = Array.from(
     filesContainer.querySelectorAll<HTMLAnchorElement>(KEMONO_FILE_LINK_SELECTOR)
   );
+
   const thumbnailImages =
     fileLinks.length === 0
       ? Array.from(
           filesContainer.querySelectorAll<HTMLImageElement>(KEMONO_THUMBNAIL_IMAGE_SELECTOR)
         )
       : [];
+
   if (fileLinks.length === 0 && thumbnailImages.length === 0) {
     return {
       ok: false,
@@ -69,6 +76,7 @@ export function collectKemonoData(document: Document, location: PageLocation): G
       : thumbnailImages.map((image, index) =>
           buildKemonoThumbnailEntry(image, index, location)
         );
+
   const images = imageEntries.filter((image): image is GalleryImage => Boolean(image));
   const skippedCount = imageEntries.length - images.length;
   const userName = getText(userNameElement);
@@ -101,6 +109,7 @@ function buildKemonoFileEntry(
   location: PageLocation
 ): GalleryImage | null {
   const href = link.getAttribute("href");
+
   if (!href) {
     return null;
   }
@@ -123,6 +132,7 @@ function buildKemonoThumbnailEntry(
   location: PageLocation
 ): GalleryImage | null {
   const imageUrl = getImageSource(image, location);
+
   if (!imageUrl) {
     return null;
   }
@@ -138,16 +148,19 @@ function buildKemonoThumbnailEntry(
 function getFileName(originalUrl: string): string {
   const url = new URL(originalUrl);
   const parts = url.pathname.split("/");
+
   return parts[parts.length - 1] || "image";
 }
 
 function getKemonoPostTitle(titleElement: Element): string {
   const primarySpan = titleElement.querySelector("span");
+
   return getText(primarySpan || titleElement);
 }
 
 function getImageSource(image: HTMLImageElement, location: PageLocation): string | null {
   const rawSource = image.getAttribute("data-src") || image.getAttribute("src");
+
   if (!rawSource) {
     return null;
   }

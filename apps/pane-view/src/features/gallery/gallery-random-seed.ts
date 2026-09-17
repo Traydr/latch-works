@@ -22,9 +22,11 @@ export function createGalleryRandomSeed(
   randomBytes: RandomBytesSource = defaultRandomBytes,
 ): GalleryRandomSeed {
   const bytes = new Uint8Array(new ArrayBuffer(16));
+
   for (;;) {
     randomBytes(bytes);
     const seed = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+
     if (seed !== previous) {
       return seed;
     }

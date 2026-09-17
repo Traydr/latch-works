@@ -14,6 +14,7 @@ export function resolveVideoResumeSeconds(
 
   const resumeSeconds = positionMs / 1_000;
   const maxSeconds = Math.max(0, durationSeconds - 1);
+
   return Math.max(0, Math.min(maxSeconds, resumeSeconds));
 }
 

@@ -37,10 +37,13 @@ export class GatherCommands {
       if (this.openWindowIds.has(tab.windowId)) {
         await this.sidePanel.close({ windowId: tab.windowId });
         this.panelClosed(tab.windowId);
+
         return { outcome: "closed" };
       }
+
       await this.sidePanel.open({ windowId: tab.windowId });
       this.panelOpened(tab.windowId);
+
       return { outcome: "opened" };
     } catch (error) {
       return {
@@ -58,6 +61,7 @@ export class GatherCommands {
     // Opening begins synchronously in the command event turn so Chrome retains user activation.
     const opening = this.sidePanel.open({ windowId: tab.windowId });
     const starting = this.runs.startForTab(tab);
+
     return Promise.allSettled([opening, starting]).then(([, result]) =>
       result.status === "fulfilled"
         ? result.value

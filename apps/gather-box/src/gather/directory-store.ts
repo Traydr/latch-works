@@ -2,9 +2,13 @@ import { toError } from "./errors";
 import type { SiteKey } from "../shared/sites";
 
 const DB_NAME = "comic-downloader";
+
 const DB_VERSION = 1;
+
 const STORE_NAME = "handles";
+
 const DIRECTORY_KEY_PREFIX = "last-directory:";
+
 export const GLOBAL_DIRECTORY_KEY = `${DIRECTORY_KEY_PREFIX}global`;
 
 export type DirectoryPermissionResult = "granted" | "requires-user-activation" | "denied";
@@ -21,6 +25,7 @@ export async function saveDirectoryHandle(
   useGlobalFolder: boolean
 ): Promise<void> {
   const directoryKey = getDirectoryKey(siteKey, useGlobalFolder);
+
   if (!directoryKey) {
     return;
   }
@@ -36,11 +41,13 @@ export async function loadDirectoryHandle(
   useGlobalFolder: boolean
 ): Promise<FileSystemDirectoryHandle | null> {
   const directoryKey = getDirectoryKey(siteKey, useGlobalFolder);
+
   if (!directoryKey) {
     return null;
   }
 
   const database = await openDatabase();
+
   return requestResult<FileSystemDirectoryHandle | undefined>(
     database.transaction(STORE_NAME, "readonly").objectStore(STORE_NAME).get(directoryKey)
   ).then((handle) => handle || null);
@@ -51,6 +58,7 @@ export async function clearDirectoryHandle(
   useGlobalFolder: boolean
 ): Promise<void> {
   const directoryKey = getDirectoryKey(siteKey, useGlobalFolder);
+
   if (!directoryKey) {
     return;
   }
@@ -71,14 +79,18 @@ export async function ensureDirectoryPermission(
     // requestPermission must be invoked before the first await in a click/key handler or Chrome may
     // discard the transient activation. Calling it for an already-granted handle is harmless.
     const requestPermission = directoryHandle.requestPermission;
+
     if (allowPermissionPrompt && requestPermission) {
       const requestedPermission = await requestPermission.call(directoryHandle, options);
+
       return requestedPermission === "granted" ? "granted" : "denied";
     }
 
     const queryPermission = directoryHandle.queryPermission;
+
     if (queryPermission) {
       const currentPermission = await queryPermission.call(directoryHandle, options);
+
       if (currentPermission === "granted") {
         return "granted";
       }
@@ -112,6 +124,7 @@ async function openDatabase(): Promise<IDBDatabase> {
 
     request.onupgradeneeded = () => {
       const database = request.result;
+
       if (!database.objectStoreNames.contains(STORE_NAME)) {
         database.createObjectStore(STORE_NAME);
       }

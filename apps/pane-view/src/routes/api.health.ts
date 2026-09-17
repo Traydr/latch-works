@@ -10,6 +10,7 @@ export const Route = createFileRoute("/api/health")({
     handlers: {
       GET: async () => {
         const shutter = isShutterConfigured();
+
         return Response.json({
           ok: shutter ? getShutterCapabilityKeyStatus().ok : true,
           variants: shutter ? "shutter" : "pass-through",

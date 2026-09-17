@@ -43,10 +43,12 @@ export function buildLibraryConditions({
 
   if (searching && trimmedQuery) {
     const queryPattern = `%${escapeLikePattern(trimmedQuery)}%`;
+
     const mediaQueryCondition = or(
       ilike(libraryEntries.logicalPath, queryPattern),
       ilike(libraryEntries.filename, queryPattern),
     );
+
     const folderQueryCondition = or(
       ilike(folders.path, queryPattern),
       ilike(folders.name, queryPattern),
@@ -66,6 +68,7 @@ export function buildLibraryConditions({
       mediaConditions.push(
         ilike(libraryEntries.logicalPath, `${escapeLikePattern(mediaScope.pathPrefix)}/%`),
       );
+
       for (const excluded of directChildExcludes(currentPath, excludedPaths)) {
         mediaConditions.push(
           notIlike(libraryEntries.logicalPath, `${escapeLikePattern(excluded)}/%`),
@@ -87,10 +90,13 @@ export function buildLibraryConditions({
  */
 function directChildExcludes(currentPath: string, excludedPaths: readonly string[] = []): string[] {
   const prefix = `${currentPath}/`;
+
   const directChildren = excludedPaths.filter((excluded) => {
     const segment = excluded.startsWith(prefix) ? excluded.slice(prefix.length) : "";
+
     return segment !== "" && !segment.includes("/");
   });
+
   return [...new Set(directChildren)];
 }
 

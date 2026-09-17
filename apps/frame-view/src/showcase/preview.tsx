@@ -7,9 +7,11 @@ import { installShowcaseFrameViewMock } from './mockFrameView';
 import { enableShowcasePreview } from './runtime';
 
 enableShowcasePreview();
+
 installShowcaseFrameViewMock();
 
 document.documentElement.classList.add('dark');
+
 document.body.classList.add('dark');
 
 const rootElement = document.getElementById('root');

@@ -84,6 +84,7 @@ export function cursorRandomKey(cursor: GalleryListingCursorPayload): string {
   if (!cursor.randomKey) {
     throw new Error("Random-mode gallery cursor without a rank");
   }
+
   return cursor.randomKey;
 }
 
@@ -109,6 +110,7 @@ export function decodeGalleryListingCursor(
     Buffer.from(encoded, "base64url").toString("utf8"),
     GalleryListingCursorPayloadSchema,
   );
+
   if (!parsed) {
     return null;
   }
@@ -120,6 +122,7 @@ export function decodeGalleryListingCursor(
   ) {
     return null;
   }
+
   // Random mode continues from the last row's rank; anything else is not a
   // continuation and must not be treated as one (a missing key would restart
   // at page 1 while still hiding the first page's folder cards).

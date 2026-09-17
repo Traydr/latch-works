@@ -69,6 +69,7 @@ function purposeClaimFields(purpose: CapabilityPurpose) {
 
 function expectedClaimKeys(purpose: CapabilityPurpose): readonly string[] {
   const fields = purposeClaimFields(purpose);
+
   return [
     "exp",
     "iat",
@@ -103,6 +104,7 @@ function parseClaimsCandidate(
   input: JsonValue | SourceCapabilityClaims,
 ): CapabilityClaimsCandidate {
   const parsed = claimsCandidateSchema.safeParse(input);
+
   if (parsed.success) return parsed.data;
   throw new ProtocolError(
     "claims_invalid",
@@ -116,6 +118,7 @@ function validateClaims(
 ): SourceCapabilityClaims {
   const actualKeys = Object.keys(record).sort();
   const expectedKeys = [...expectedClaimKeys(options.expectedPurpose)].sort();
+
   if (
     actualKeys.length !== expectedKeys.length ||
     actualKeys.some((key, index) => key !== expectedKeys[index])
@@ -129,27 +132,34 @@ function validateClaims(
   if (record.space_id !== options.spaceId) {
     throw new ProtocolError("space_mismatch", "capability Space does not match the route");
   }
+
   if (record.purpose !== options.expectedPurpose) {
     throw new ProtocolError("purpose_mismatch", "capability purpose does not match the route");
   }
+
   if (record.source_id.length === 0) {
     throw new ProtocolError("claims_invalid", "source ID must be a non-empty string");
   }
+
   if (encodeUtf8(record.source_id).byteLength > SOURCE_ID_MAX_BYTES) {
     throw new ProtocolError("claims_invalid", "source ID is too large");
   }
+
   if (options.expectedSourceId !== undefined && record.source_id !== options.expectedSourceId) {
     throw new ProtocolError("source_mismatch", "capability Source ID does not match the route");
   }
 
   const issuedAt = record.iat;
   const expiresAt = record.exp;
+
   if (issuedAt > options.now) {
     throw new ProtocolError("capability_not_yet_valid", "capability was issued in the future");
   }
+
   if (expiresAt <= options.now) {
     throw new ProtocolError("capability_expired", "capability has expired");
   }
+
   if (expiresAt <= issuedAt || expiresAt - issuedAt > CAPABILITY_MAX_LIFETIME_SECONDS) {
     throw new ProtocolError("claims_invalid", "capability lifetime is invalid");
   }
@@ -162,12 +172,15 @@ function validateClaims(
   };
 
   const locator = record.locator;
+
   if (locator !== undefined) validateSourceLocator(locator, options.allowedSourceOrigins ?? []);
   const kind = record.kind;
+
   if (kind !== undefined) {
     if (kind !== "video" && kind !== "pdf") {
       throw new ProtocolError("claims_invalid", "preview kind must be video or pdf");
     }
+
     if (options.expectedKind !== undefined && kind !== options.expectedKind) {
       throw new ProtocolError("kind_mismatch", "capability kind does not match the route");
     }
@@ -177,16 +190,22 @@ function validateClaims(
   // fields its representation requires; the branches below re-establish that
   // for the type system without asserting.
   const purpose = options.expectedPurpose;
+
   if (purpose === "image_source" || purpose === "source_delivery") {
     if (locator === undefined)
       throw new ProtocolError("claims_invalid", "purpose requires locator");
+
     return { ...common, purpose, locator };
   }
+
   if (kind !== "video" && kind !== "pdf") {
     throw new ProtocolError("claims_invalid", "purpose requires kind");
   }
+
   if (purpose === "master_preview") return { ...common, purpose, kind };
+
   if (locator === undefined) throw new ProtocolError("claims_invalid", "purpose requires locator");
+
   return { ...common, purpose, kind, locator };
 }
 
@@ -198,6 +217,7 @@ function canonicalClaimsJson(claims: SourceCapabilityClaims): string {
     iat: claims.iat,
     exp: claims.exp,
   };
+
   switch (claims.purpose) {
     case "image_source":
     case "source_delivery":
@@ -214,6 +234,7 @@ export async function issueSourceCapability(
   options: IssueCapabilityOptions,
 ): Promise<string> {
   const iv = crypto.getRandomValues(new Uint8Array(CAPABILITY_IV_BYTES));
+
   return issueSourceCapabilityWithIvInternal(claims, options, iv);
 }
 
@@ -223,6 +244,7 @@ export async function issueSourceCapabilityWithIvInternal(
   ivInput: Uint8Array,
 ): Promise<string> {
   validateKid(options.kid);
+
   if (ivInput.byteLength !== CAPABILITY_IV_BYTES) {
     throw new ProtocolError("claims_invalid", "AES-GCM IV must be 96 bits");
   }
@@ -230,6 +252,7 @@ export async function issueSourceCapabilityWithIvInternal(
   // Issuance applies the same strict field, lifetime, and locator checks as verification.
   const fields = purposeClaimFields(claims.purpose);
   let issuanceOrigin = "https://invalid.shutter.invalid";
+
   if ("locator" in claims) {
     try {
       issuanceOrigin = new URL(claims.locator).origin;
@@ -237,6 +260,7 @@ export async function issueSourceCapabilityWithIvInternal(
       // validateClaims returns the stable protocol error for malformed locators.
     }
   }
+
   validateClaims(parseClaimsCandidate(claims), {
     spaceId: claims.space_id,
     expectedPurpose: claims.purpose,
@@ -247,6 +271,7 @@ export async function issueSourceCapabilityWithIvInternal(
 
   const key = await importAesGcmKey(options.key, "encrypt");
   const iv = copyBytes(ivInput);
+
   const ciphertext = await crypto.subtle.encrypt(
     {
       name: "AES-GCM",
@@ -259,9 +284,11 @@ export async function issueSourceCapabilityWithIvInternal(
   );
 
   const token = `${PROTOCOL_VERSION}.${options.kid}.${encodeBase64Url(iv)}.${encodeBase64Url(new Uint8Array(ciphertext))}`;
+
   if (token.length > CAPABILITY_MAX_BYTES) {
     throw new ProtocolError("capability_too_large", "capability exceeds the v1 envelope limit");
   }
+
   return token;
 }
 
@@ -272,31 +299,40 @@ export async function verifySourceCapability<Purpose extends CapabilityPurpose>(
   if (token.length > CAPABILITY_MAX_BYTES) {
     throw new ProtocolError("capability_too_large", "capability exceeds the v1 envelope limit");
   }
+
   const parts = token.split(".");
+
   if (parts.length !== 4) {
     throw new ProtocolError(
       "capability_malformed",
       "capability envelope must contain four segments",
     );
   }
+
   // SAFETY: the length check above proves the split produced exactly four segments.
   const [version, kid, ivValue, ciphertextValue] = parts as [string, string, string, string];
+
   if (version !== PROTOCOL_VERSION) {
     throw new ProtocolError("unknown_version", "capability version is not supported");
   }
+
   validateKid(kid);
   const keyMaterial = options.keys.get(kid);
+
   if (keyMaterial === undefined)
     throw new ProtocolError("unknown_key", "capability key is not active");
 
   const iv = decodeBase64Url(ivValue);
+
   if (iv.byteLength !== CAPABILITY_IV_BYTES) {
     throw new ProtocolError("capability_malformed", "capability IV must be 96 bits");
   }
+
   const ciphertext = decodeBase64Url(ciphertextValue);
   const key = await importAesGcmKey(keyMaterial, "decrypt");
 
   let plaintext: ArrayBuffer;
+
   try {
     plaintext = await crypto.subtle.decrypt(
       {
@@ -313,6 +349,7 @@ export async function verifySourceCapability<Purpose extends CapabilityPurpose>(
   }
 
   let parsed: JsonValue;
+
   try {
     parsed = JSON.parse(utf8Decoder.decode(plaintext));
   } catch {

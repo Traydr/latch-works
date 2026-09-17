@@ -14,6 +14,7 @@ export function createOpenViewerAt(set: AppStoreSet) {
       }
 
       const item = sourceItems[index];
+
       if (!item) {
         return {};
       }
@@ -44,6 +45,7 @@ export function createShiftViewer(set: AppStoreSet) {
       }
 
       const rawIndex = state.viewerIndex + delta;
+
       const nextIndex = shouldWrap
         ? ((rawIndex % sourceItems.length) + sourceItems.length) % sourceItems.length
         : Math.max(0, Math.min(rawIndex, sourceItems.length - 1));
@@ -53,6 +55,7 @@ export function createShiftViewer(set: AppStoreSet) {
       }
 
       const nextItem = sourceItems[nextIndex];
+
       if (!nextItem) {
         return {};
       }

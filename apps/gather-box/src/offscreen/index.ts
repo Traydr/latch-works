@@ -21,6 +21,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   const proofRequest = OffscreenFilesystemProofMessageSchema.safeParse(message);
+
   if (proofRequest.success) {
     void proveOffscreenFilesystemAccess({
       siteKey: proofRequest.data.siteKey,
@@ -32,26 +33,33 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         message: error instanceof Error ? error.message : "Offscreen filesystem proof failed."
       })
     );
+
     return true;
   }
 
   if (GetGatherExecutorStatusMessageSchema.safeParse(message).success) {
     sendResponse({ activeRunId: executionSlot.activeRunId });
+
     return false;
   }
 
   const cancelRequest = CancelGatherRunMessageSchema.safeParse(message);
+
   if (cancelRequest.success) {
     sendResponse({ aborted: executionSlot.abort(cancelRequest.data.runId) });
+
     return false;
   }
 
   const executeRequest = ExecuteGatherRunMessageSchema.safeParse(message);
+
   if (!executeRequest.success) {
     return false;
   }
+
   const execute = executeRequest.data;
   const emitter = createGatherRunEventEmitter((event) => emitRunEvent(execute.runId, event));
+
   const start = executionSlot.start(
     execute.runId,
     async (signal) => {
@@ -71,19 +79,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 message: error instanceof Error ? error.message : "Gather execution failed."
               }
         );
+
         return;
       }
+
       if (signal.aborted) {
         await emitter.emit({ kind: "cancelled", message: "Gather Run cancelled." });
       }
     },
     emitter.flush
   );
+
   sendResponse({
     accepted: start !== "busy",
     duplicate: start === "duplicate",
     busy: start === "busy"
   });
+
   return false;
 });
 

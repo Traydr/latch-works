@@ -20,6 +20,7 @@ const defaultShutterRedirectDependencies: ShutterRedirectDependencies = {
 export function readDeliverySizeFromRequest(request: Request, fallback: number): number {
   const rawSize = new URL(request.url).searchParams.get("size");
   const size = rawSize ? Number(rawSize) : fallback;
+
   return Number.isInteger(size) && size > 0 ? size : fallback;
 }
 
@@ -28,6 +29,7 @@ export async function redirectToMediaVariant(
   dependencies: ShutterRedirectDependencies = defaultShutterRedirectDependencies,
 ): Promise<Response> {
   const context = await dependencies.readThumbnailContext({ mediaId });
+
   if (!context) {
     return new Response("Media not found", {
       headers: { "Cache-Control": API_PRIVATE_CACHE_CONTROL },
@@ -38,6 +40,7 @@ export async function redirectToMediaVariant(
   if (context.mediaType === "image" || context.mediaType === "gif") {
     try {
       const location = await dependencies.resolveImageUrl(context, width);
+
       return new Response(null, {
         headers: {
           "Cache-Control": API_PRIVATE_CACHE_CONTROL,
@@ -61,6 +64,7 @@ export async function redirectToMediaVariant(
   }
 
   let preview: ShutterPreviewResult;
+
   try {
     preview = await dependencies.resolvePreview(context, width);
   } catch {
@@ -69,6 +73,7 @@ export async function redirectToMediaVariant(
       status: 502,
     });
   }
+
   if (preview.status === "pending") {
     return new Response("Preview is being generated", {
       headers: {

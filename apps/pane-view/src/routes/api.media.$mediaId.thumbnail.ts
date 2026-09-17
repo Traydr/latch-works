@@ -6,6 +6,7 @@ import {
 } from "../server/media/shutter-delivery-redirect";
 
 const API_PRIVATE_CACHE_CONTROL = "private, no-store";
+
 const DEFAULT_THUMBNAIL_WIDTH = 320;
 
 export const Route = createFileRoute("/api/media/$mediaId/thumbnail")({

@@ -44,14 +44,17 @@ export function useViewerChromeIdle(options: UseViewerChromeIdleOptions): Viewer
     setChromeVisible((visible) => {
       if (visible) {
         clearIdleTimer();
+
         return false;
       }
+
       if (idles) {
         clearIdleTimer();
         idleTimerRef.current = window.setTimeout(() => {
           setChromeVisible(false);
         }, CHROME_IDLE_MS);
       }
+
       return true;
     });
   }, [clearIdleTimer, idles]);
@@ -60,6 +63,7 @@ export function useViewerChromeIdle(options: UseViewerChromeIdleOptions): Viewer
     if (pinned) {
       setChromeVisible(true);
       clearIdleTimer();
+
       return;
     }
 

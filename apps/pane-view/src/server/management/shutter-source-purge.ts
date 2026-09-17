@@ -14,6 +14,7 @@ export async function hasPurgeableShutterSources(tx: MaintenanceTransaction): Pr
     .from(shutterSourceCleanup)
     .where(isNull(shutterSourceCleanup.purgedAt))
     .limit(1);
+
   if (queuedSource) {
     return true;
   }
@@ -23,6 +24,7 @@ export async function hasPurgeableShutterSources(tx: MaintenanceTransaction): Pr
     .from(mediaObjects)
     .where(orphanedMediaObjectCondition())
     .limit(1);
+
   return Boolean(eligibleSource);
 }
 

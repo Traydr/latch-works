@@ -9,6 +9,7 @@ import type { MediaItem } from '../../../src/shared/types';
 
 function mediaItem(rootPath: string, name: string): MediaItem {
   const itemPath = path.join(rootPath, name);
+
   return {
     id: `${itemPath}:1:2`,
     path: itemPath,

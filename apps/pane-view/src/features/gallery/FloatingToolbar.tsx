@@ -67,11 +67,13 @@ function ExcludeControl({
 }: ExcludeControlProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const available = childFoldersAreCurrent && childFolders.length > 0;
+
   // Losing the excludable set (a search, a folder with no children) closes
   // the dialog for good; the next click must open, not toggle a stale flag.
   if (dialogOpen && !available) {
     setDialogOpen(false);
   }
+
   const showDialog = dialogOpen && available;
 
   return (
@@ -85,6 +87,7 @@ function ExcludeControl({
           if (!dialogOpen) {
             onDialogOpen();
           }
+
           setDialogOpen(!dialogOpen);
         }}
         size="sm"
@@ -182,6 +185,7 @@ export function FloatingToolbar({
             >
               {SORT_OPTIONS.map((option) => {
                 const selected = option.value === sortMode;
+
                 return (
                   <button
                     key={option.value}

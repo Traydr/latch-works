@@ -16,7 +16,7 @@
     "packages/media-domain/src/gather-box-sidecar.ts": ["exports", "types"],
     "packages/shutter-protocol/src/**": ["exports", "types"],
     "packages/shutter-client/src/**": ["exports", "types"],
-    "tools/oxlint/anti-slop/**": ["exports", "types"]
+    "tools/oxlint/anti-slop/**": ["exports", "types", "files"]
   },
   "workspaces": {
     ".": {

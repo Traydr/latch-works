@@ -2,6 +2,7 @@ import { GallerySortModeSchema } from "@latch-works/media-domain";
 import { z } from "zod";
 
 export const ThemeModeSchema = z.enum(["dark", "light", "system"]);
+
 export type ThemeMode = z.infer<typeof ThemeModeSchema>;
 
 /**
@@ -19,6 +20,7 @@ export const AppSettingsSchema = z.object({
   theme: ThemeModeSchema.catch("system"),
   thumbnailSize: z.number().positive().catch(220),
 });
+
 export type AppSettings = z.infer<typeof AppSettingsSchema>;
 
 export type AppSettingsPatch = Partial<AppSettings>;
@@ -35,6 +37,7 @@ export const RootGalleryPreferencesSchema = z.object({
   recursive: z.boolean(),
   sortMode: GallerySortModeSchema,
 });
+
 export type RootGalleryPreferences = z.infer<typeof RootGalleryPreferencesSchema>;
 
 export const DEFAULT_APP_SETTINGS: AppSettings = AppSettingsSchema.parse({});

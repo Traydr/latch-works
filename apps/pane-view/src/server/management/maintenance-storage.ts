@@ -36,6 +36,7 @@ export function createMaintenanceStorage(
 
   function getStorageClient(): S3StorageClient {
     storageClient ??= dependencies.createStorageClient();
+
     return storageClient;
   }
 
@@ -44,6 +45,7 @@ export function createMaintenanceStorage(
 
     async deleteObjects(keys) {
       let firstError: Error | undefined;
+
       const result = await dependencies.deleteStoredObjectsBatch({
         keys,
         maxConcurrent: deleteConcurrency,

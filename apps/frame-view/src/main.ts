@@ -45,10 +45,15 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 let mainWindow: BrowserWindow | null = null;
+
 let quitRequested = false;
+
 let settingsService: SettingsService;
+
 let catalogService: CatalogService;
+
 let mediaToolsService: MediaToolsService;
+
 const pendingCommands: AppCommand[] = [];
 
 function resolveWindowIconPath(fileName: string): string | undefined {
@@ -72,6 +77,7 @@ function logResultError<T, E extends { message: string }>(
 function queueOrSendCommand(command: AppCommand): void {
   if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isLoadingMainFrame()) {
     pendingCommands.push(command);
+
     return;
   }
 
@@ -85,6 +91,7 @@ function flushPendingCommands(): void {
 
   while (pendingCommands.length) {
     const command = pendingCommands.shift();
+
     if (command) {
       mainWindow.webContents.send('app:command', command);
     }
@@ -100,6 +107,7 @@ function extractLaunchPathFromArgv(argv: string[]): string | null {
     }
 
     const resolvedArg = path.resolve(arg);
+
     if (resolvedArg === executablePath) {
       continue;
     }
@@ -122,6 +130,7 @@ async function createWindow(): Promise<void> {
   if (!settingsService) {
     settingsService = new SettingsService(app.getPath('userData'));
     const initResult = await settingsService.init();
+
     if (Result.isError(initResult)) {
       logResultError('settings:init', initResult);
     }
@@ -189,9 +198,11 @@ async function createWindow(): Promise<void> {
       if (!mainWindow || mainWindow.isDestroyed()) {
         return Promise.resolve();
       }
+
       const { boundsResult } = await persistWindowState(mainWindow, settingsService, {
         immediate,
       });
+
       if (boundsResult && Result.isError(boundsResult)) {
         logResultError('settings:update-window-bounds', boundsResult);
       }
@@ -202,7 +213,9 @@ async function createWindow(): Promise<void> {
         clearTimeout(boundsPersistTimer);
         boundsPersistTimer = null;
       }
+
       void saveBounds();
+
       return;
     }
 
@@ -266,6 +279,7 @@ app.on('ready', () => {
 
   if (app.isPackaged) {
     const launchPath = extractLaunchPathFromArgv(process.argv.slice(1));
+
     if (launchPath) {
       queueOrSendCommand({ type: 'scan-path', path: launchPath });
     }
@@ -275,6 +289,7 @@ app.on('ready', () => {
 });
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
+
 if (!hasSingleInstanceLock) {
   app.quit();
 }
@@ -290,6 +305,7 @@ app.on('second-instance', (_event, argv) => {
 
   mainWindow.focus();
   const launchPath = extractLaunchPathFromArgv(argv.slice(1));
+
   if (launchPath) {
     queueOrSendCommand({ type: 'scan-path', path: launchPath });
   }

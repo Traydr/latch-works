@@ -46,12 +46,14 @@ export class OffscreenDocument {
     this.creating = this.discoverOrCreate().finally(() => {
       this.creating = null;
     });
+
     return this.creating;
   }
 
   async isOpen(): Promise<boolean> {
     const offscreenUrl = this.platform.getUrl(OFFSCREEN_PATH);
     const contexts = await this.platform.getContexts(offscreenUrl);
+
     return contexts.length > 0;
   }
 
@@ -65,6 +67,7 @@ export class OffscreenDocument {
         type: GET_GATHER_EXECUTOR_STATUS,
         target: "offscreen"
       });
+
       return status.activeRunId;
     } catch {
       return null;
@@ -74,6 +77,7 @@ export class OffscreenDocument {
   private async discoverOrCreate(): Promise<void> {
     const offscreenUrl = this.platform.getUrl(OFFSCREEN_PATH);
     const contexts = await this.platform.getContexts(offscreenUrl);
+
     if (contexts.length > 0) {
       return;
     }

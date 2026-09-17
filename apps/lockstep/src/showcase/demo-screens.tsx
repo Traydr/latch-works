@@ -9,7 +9,9 @@ import type {
 import { showcasePlan, showcaseSettings } from "./fixtures";
 
 const noop = () => undefined;
+
 const noopAsync = async () => undefined;
+
 const noopPlan = async () => false;
 
 const idleProgress: RunProgressState = {
@@ -107,6 +109,7 @@ export function ShowcasePushTimerDemo() {
 
   useEffect(() => {
     const id = setInterval(() => setTick((value) => value + 1), 1000);
+
     return () => clearInterval(id);
   }, []);
 
@@ -184,6 +187,7 @@ export function ShowcasePipelineStepsDemo() {
               if (next === "plan") {
                 setReviewed(true);
               }
+
               setScreen(next);
             },
           },

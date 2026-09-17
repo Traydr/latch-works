@@ -27,8 +27,10 @@ export function GalleryLayoutProvider({
 
 export function useGalleryLayout(): GalleryLayoutValue {
   const value = useContext(GalleryLayoutContext);
+
   if (!value) {
     throw new Error("useGalleryLayout must be used within GalleryLayoutProvider");
   }
+
   return value;
 }

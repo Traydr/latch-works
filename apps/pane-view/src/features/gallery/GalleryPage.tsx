@@ -49,6 +49,7 @@ function useGalleryPage() {
   const invalidateLibrary = useInvalidateLibrarySnapshot();
   const deleteEntryMutation = useDeleteLibraryEntryMutation();
   const { browse, settings, settingsOpen, setSettingsOpen, updateSettings } = useGalleryLayout();
+
   const {
     comicMode: effectiveComicMode,
     detailPanelOpen,
@@ -71,6 +72,7 @@ function useGalleryPage() {
     sortMode,
     toggleExcludedChild,
   } = browse;
+
   const isMobile = useIsMobile();
 
   const [hotkeysOpen, setHotkeysOpen] = useState(false);
@@ -90,6 +92,7 @@ function useGalleryPage() {
     listingRequest,
     snapshotRequest,
   });
+
   const {
     allMedia,
     browseKey,
@@ -129,15 +132,18 @@ function useGalleryPage() {
 
   const selected =
     allMedia.find((item) => item.id === selectedId) ?? navigableMedia[0] ?? allMedia[0] ?? null;
+
   // In comic mode the media sequence is the covers; the selected comic is the
   // one whose cover is selected.
   const selectedComic = useMemo(() => {
     if (!effectiveComicMode || !selected) {
       return null;
     }
+
     const entry = entries.find(
       (candidate) => candidate.kind === "comic" && candidate.comic.cover.id === selected.id,
     );
+
     return entry?.kind === "comic" ? entry.comic : null;
   }, [effectiveComicMode, entries, selected]);
 
@@ -149,11 +155,13 @@ function useGalleryPage() {
     setDeletedEntryIds((current) => {
       const liveIds = new Set(allMedia.map((item) => item.id));
       const next = new Set([...current].filter((id) => liveIds.has(id)));
+
       return next.size === current.size ? current : next;
     });
     setDeletingEntryIds((current) => {
       const liveIds = new Set(allMedia.map((item) => item.id));
       const next = new Set([...current].filter((id) => liveIds.has(id)));
+
       return next.size === current.size ? current : next;
     });
   }, [allMedia, library]);
@@ -169,10 +177,13 @@ function useGalleryPage() {
     () => (query ? [] : [...(library?.folders ?? [])].sort(compareByName)),
     [library, query],
   );
+
   const childFoldersAreCurrent = !query && snapshotIsCurrent && Boolean(library);
+
   const handleExcludeDialogOpen = useCallback(() => {
     pruneExcludedChildren(excludableChildFolders.map((folder) => folder.path));
   }, [excludableChildFolders, pruneExcludedChildren]);
+
   const excludeControl = useMemo(
     () => ({
       childFolders: excludableChildFolders,
@@ -200,17 +211,21 @@ function useGalleryPage() {
     () => (library && snapshotIsCurrent ? [...library.siblings].sort(compareByName) : []),
     [library, snapshotIsCurrent],
   );
+
   const canNavigateSiblings =
     siblingFolders.length > 1 && siblingFolders.some((folder) => folder.path === displayPath);
+
   const navigateSiblingFolder = useCallback(
     (offset: -1 | 1) => {
       const currentIndex = siblingFolders.findIndex((folder) => folder.path === displayPath);
+
       if (currentIndex < 0) {
         return;
       }
 
       const nextIndex = (currentIndex + offset + siblingFolders.length) % siblingFolders.length;
       const next = siblingFolders[nextIndex];
+
       if (next && next.path !== displayPath) {
         navigateToPath(next.path);
       }
@@ -223,6 +238,7 @@ function useGalleryPage() {
   // Only the latest activation, in the browse it was made from, may open the
   // reader: an earlier or superseded request resolving late is dropped.
   const comicActivationRef = useRef<{ browseKey: string; comicId: string } | null>(null);
+
   const openComicReader = useCallback(
     (comicId: string) => {
       const activation = { browseKey, comicId };
@@ -286,6 +302,7 @@ function useGalleryPage() {
   const openHotkeys = useCallback(() => {
     setHotkeysOpen(true);
   }, []);
+
   const requestScrollFocusedIntoView = useCallback(() => {
     setScrollRequestKey((current) => current + 1);
   }, []);
@@ -332,6 +349,7 @@ function useGalleryPage() {
     const confirmed = window.confirm(
       `Delete "${selected.name}" from the archive? This cannot be undone.`,
     );
+
     if (!confirmed) {
       return;
     }
@@ -344,6 +362,7 @@ function useGalleryPage() {
     void (async () => {
       try {
         const result = await deleteEntryMutation.mutateAsync(entryId);
+
         if (!result.deleted) {
           return;
         }
@@ -351,13 +370,16 @@ function useGalleryPage() {
         setDeletedEntryIds((current) => new Set([...current, entryId]));
 
         const remaining = navigableMedia.filter((item) => item.id !== entryId);
+
         const nextIndex =
           remaining.length > 0
             ? currentNavigableIndex >= 0
               ? Math.min(currentNavigableIndex, remaining.length - 1)
               : 0
             : -1;
+
         const next = nextIndex >= 0 ? remaining[nextIndex] : undefined;
+
         if (next) {
           selectMedia(next.id);
         }
@@ -365,6 +387,7 @@ function useGalleryPage() {
         setDeletingEntryIds((current) => {
           const next = new Set(current);
           next.delete(entryId);
+
           return next;
         });
       }
@@ -373,6 +396,7 @@ function useGalleryPage() {
 
   const handleSelectEntry = (entry: GalleryBrowseEntry) => {
     const entryIndex = entries.findIndex((candidate) => candidate.key === entry.key);
+
     if (entryIndex >= 0) {
       setFocusedEntryIndex(entryIndex);
     }
@@ -387,10 +411,12 @@ function useGalleryPage() {
   };
 
   const breadcrumbs = useMemo(() => buildBreadcrumbItems(displayPath), [displayPath]);
+
   // A stale snapshot's root label belongs to the folder being left.
   const archiveRoot = snapshotIsCurrent
     ? (library?.archiveRoot ?? "Synced archive")
     : "Synced archive";
+
   const currentFolderName = breadcrumbs[breadcrumbs.length - 1]?.label ?? archiveRoot;
   const parentPath = getParentPath(displayPath);
 
@@ -462,16 +488,20 @@ function useGalleryPage() {
 }
 
 type GalleryPageModel = ReturnType<typeof useGalleryPage>;
+
 const GalleryPageContext = createContext<GalleryPageModel | null>(null);
 
 function useGalleryPageModel(): GalleryPageModel {
   const model = useContext(GalleryPageContext);
+
   if (!model) throw new Error("Gallery page context is missing");
+
   return model;
 }
 
 export function GalleryPage(): JSX.Element {
   const model = useGalleryPage();
+
   return (
     <GalleryPageContext.Provider value={model}>
       <GalleryHeader />
@@ -483,6 +513,7 @@ export function GalleryPage(): JSX.Element {
 
 function GalleryHeader(): JSX.Element {
   const model = useGalleryPageModel();
+
   return (
     <header className="flex h-auto min-h-14 shrink-0 items-center justify-between gap-4 border-b border-border bg-background px-5 py-2">
       <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -533,6 +564,7 @@ function GalleryHeader(): JSX.Element {
 
 function MobilePathHeader(): JSX.Element {
   const model = useGalleryPageModel();
+
   return (
     <div className="min-w-0 flex-1">
       <div className="flex items-center gap-1">
@@ -562,6 +594,7 @@ function MobilePathHeader(): JSX.Element {
 
 function DesktopPathHeader(): JSX.Element {
   const model = useGalleryPageModel();
+
   return (
     <>
       <div className="hidden items-center gap-1 md:flex">
@@ -638,6 +671,7 @@ function DesktopPathHeader(): JSX.Element {
 
 function GalleryContent(): JSX.Element {
   const model = useGalleryPageModel();
+
   return (
     <>
       <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
@@ -705,6 +739,7 @@ function GalleryContent(): JSX.Element {
 
 function GalleryOverlays(): JSX.Element {
   const model = useGalleryPageModel();
+
   return (
     <>
       <SettingsDrawer

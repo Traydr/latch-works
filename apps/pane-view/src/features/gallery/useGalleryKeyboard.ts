@@ -58,17 +58,21 @@ export function useGalleryKeyboard({
   const focusEntryByKey = useCallback(
     (key: string): boolean => {
       const index = entriesRef.current.findIndex((entry) => entry.key === key);
+
       if (index < 0) {
         return false;
       }
+
       setFocusedEntryIndex(index);
       requestScrollFocusedIntoView();
       const entry = entriesRef.current[index];
+
       if (entry?.kind === "media") {
         onSelectMedia(entry.media.id);
       } else if (entry?.kind === "comic") {
         onSelectMedia(entry.comic.cover.id);
       }
+
       return true;
     },
     [onSelectMedia, requestScrollFocusedIntoView, setFocusedEntryIndex],
@@ -101,6 +105,7 @@ export function useGalleryKeyboard({
         setFocusedEntryIndex(index);
         requestScrollFocusedIntoView();
         const entry = entries[index];
+
         if (entry?.kind === "media") {
           onSelectMedia(entry.media.id);
         } else if (entry?.kind === "comic") {
@@ -110,6 +115,7 @@ export function useGalleryKeyboard({
 
       if (nextIndex >= 0 && nextIndex < entries.length) {
         applyFocus(nextIndex);
+
         return;
       }
 
@@ -121,6 +127,7 @@ export function useGalleryKeyboard({
       // second-to-last row into a shorter last row) clamps.
       const lastIndex = entries.length - 1;
       const lastRow = Math.floor(lastIndex / columnCount);
+
       const stepBeyond = (direction: -1 | 1) => {
         const currentKey = entries[focusedEntryIndex]?.key ?? null;
         void onStepBeyondGrid(currentKey, direction).then((key) => {
@@ -129,16 +136,21 @@ export function useGalleryKeyboard({
           }
         });
       };
+
       if (nextIndex < 0) {
         if (focusedEntryIndex === 0) {
           stepBeyond(-1);
         }
+
         return;
       }
+
       if (dy > 0 && currentRow < lastRow) {
         applyFocus(lastIndex);
+
         return;
       }
+
       stepBeyond(1);
     };
 
@@ -154,24 +166,32 @@ export function useGalleryKeyboard({
           event.preventDefault();
           const parent = getParentPath(displayPath);
           onNavigateToPath(parent ?? "");
+
           return;
         }
+
         if (key === "s") {
           event.preventDefault();
           const entry = entries[focusedEntryIndex];
+
           if (entry?.kind === "folder") {
             onNavigateToPath(entry.path);
           }
+
           return;
         }
+
         if (key === "a") {
           event.preventDefault();
           onNavigateSiblingFolder(-1);
+
           return;
         }
+
         if (key === "d") {
           event.preventDefault();
           onNavigateSiblingFolder(1);
+
           return;
         }
       }
@@ -179,27 +199,35 @@ export function useGalleryKeyboard({
       if (key === "ArrowRight" || key === "d") {
         event.preventDefault();
         moveGridFocus(1, 0);
+
         return;
       }
+
       if (key === "ArrowLeft" || key === "a") {
         event.preventDefault();
         moveGridFocus(-1, 0);
+
         return;
       }
+
       if (key === "ArrowDown" || key === "s") {
         event.preventDefault();
         moveGridFocus(0, 1);
+
         return;
       }
+
       if (key === "ArrowUp" || key === "w") {
         event.preventDefault();
         moveGridFocus(0, -1);
+
         return;
       }
 
       if (key === "Enter" || key === "f") {
         event.preventDefault();
         const entry = entries[focusedEntryIndex];
+
         if (entry) {
           onActivateEntry(entry);
         }
@@ -211,6 +239,7 @@ export function useGalleryKeyboard({
         if (event.key === "Escape") {
           onCloseOverlays();
         }
+
         return;
       }
 
@@ -221,6 +250,7 @@ export function useGalleryKeyboard({
       if (event.key === "?") {
         event.preventDefault();
         onOpenHotkeys();
+
         return;
       }
 
@@ -232,6 +262,7 @@ export function useGalleryKeyboard({
     };
 
     window.addEventListener("keydown", handleKeyDown);
+
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };

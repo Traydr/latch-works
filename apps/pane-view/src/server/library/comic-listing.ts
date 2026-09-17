@@ -97,6 +97,7 @@ export function buildComicPageConditions({
     query,
     recursive: true,
   });
+
   return [
     ...mediaConditions,
     inArray(mediaObjects.mediaType, ["image", "gif"]),
@@ -116,7 +117,9 @@ function leafFolderCondition(database: Database): SQL {
 }
 
 const pageCount = count().as("page_count");
+
 const newestMtime = max(libraryEntries.mtimeMs).as("newest_mtime");
+
 const oldestMtime = min(libraryEntries.mtimeMs).as("oldest_mtime");
 
 /**
@@ -130,6 +133,7 @@ export function buildComicListingOrderBy(
   randomSeed: GalleryRandomSeed,
 ): SQL[] {
   const folderPath = libraryEntries.parentPath;
+
   switch (sortMode) {
     case "name-desc":
       return [desc(naturalOrder(folderPath))];
@@ -150,8 +154,10 @@ export function buildComicListingCursorCondition(cursor: ComicCursor): SQL {
     if (!condition) {
       throw new Error("Expected comic listing cursor condition");
     }
+
     return condition;
   };
+
   const folderPath = libraryEntries.parentPath;
   const naturalPath = naturalOrder(folderPath);
 
@@ -175,10 +181,12 @@ export function buildComicListingCursorCondition(cursor: ComicCursor): SQL {
     case "random": {
       const key = galleryRandomOrderKeySql(cursor.randomSeed, "comic", folderPath);
       const cursorKey = cursorRandomKey(cursor);
+
       return requireCondition(
         or(gt(key, cursorKey), and(eq(key, cursorKey), gt(folderPath, cursor.folderPath))),
       );
     }
+
     default:
       return gt(naturalPath, cursor.folderPath);
   }
@@ -302,6 +310,7 @@ export async function readDatabaseComicListing(
     sortMode,
     subjectKind: "comic",
   });
+
   const summaryRows = await buildComicSummaryQuery(
     {
       currentPath,
@@ -328,17 +337,21 @@ export async function readDatabaseComicListing(
           database,
         )
       : [];
+
   const coverByFolder = new Map(
     mapMediaRowsToLibraryItems(coverRows).map((cover) => [cover.parentPath, cover]),
   );
 
   const comics: GalleryComicSummary[] = [];
+
   for (const row of pageRows) {
     const cover = coverByFolder.get(row.folderPath);
+
     if (!cover) {
       // A page vanished between the two phases; the next refetch reconciles.
       continue;
     }
+
     comics.push({
       cover,
       folderPath: row.folderPath,
@@ -349,6 +362,7 @@ export async function readDatabaseComicListing(
   }
 
   const lastRow = pageRows.at(-1);
+
   const nextCursor =
     hasMore && lastRow
       ? encodeGalleryListingCursor({
@@ -411,6 +425,7 @@ export function isComicInBrowseScope(
   if (!comicId || comicId === currentPath) {
     return false;
   }
+
   return searching || currentPath === "" || comicId.startsWith(`${currentPath}/`);
 }
 
@@ -426,6 +441,7 @@ export async function readDatabaseGalleryComic(
   const rows = await buildComicPagesQuery(request, database);
   const pages = mapMediaRowsToLibraryItems(rows).sort(compareComicPages);
   const cover = pages[0];
+
   if (!cover) {
     return null;
   }

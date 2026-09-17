@@ -29,6 +29,7 @@ export function createTimingAggregateSnapshot(
 
 export function appendRecentEntry(entries: string[], entry: string, maxEntries: number): void {
   entries.push(`${new Date().toISOString()} ${entry}`);
+
   if (entries.length > maxEntries) {
     entries.splice(0, entries.length - maxEntries);
   }

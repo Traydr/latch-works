@@ -9,6 +9,7 @@ if (!parentPort) {
 }
 
 const userDataPath = process.argv[2];
+
 const cacheRootPath = process.argv[4];
 
 if (!userDataPath) {
@@ -28,6 +29,7 @@ void runtime
       type: 'worker-ready',
       capabilities,
     };
+
     parentPort.postMessage(event);
   })
   .catch((error) => {
@@ -47,11 +49,13 @@ void runtime
         workerPath: __filename,
       },
     };
+
     parentPort.postMessage(event);
   });
 
 parentPort.on('message', (message) => {
   const parsedRequest = ThumbnailWorkerRequestSchema.safeParse(message.data);
+
   if (!parsedRequest.success) {
     return;
   }

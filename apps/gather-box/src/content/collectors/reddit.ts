@@ -22,6 +22,7 @@ export async function collectRedditData(
   resolveRedgifs: RedgifsResolver = resolveRedgifsMedia
 ): Promise<GalleryCollectResponse> {
   const post = getRedditPost(document, location);
+
   if (!post) {
     return {
       ok: false,
@@ -31,18 +32,22 @@ export async function collectRedditData(
   }
 
   let images = collectGalleryImages(post.element);
+
   if (images.length === 0) {
     const contentHref = post.element.getAttribute("content-href") ?? "";
     const redditMedia = collectRedditGifVideo(post.element) ?? normalizeRedditMediaUrl(contentHref);
+
     if (redditMedia) {
       images = [toGalleryImage(redditMedia, 1)];
     } else {
       const redgifsId = getRedgifsId(contentHref, post.element);
+
       if (redgifsId) {
         const resolved = await resolveRedgifs({
           type: RESOLVE_REDGIFS_MEDIA_MESSAGE,
           redgifsId
         });
+
         if (!resolved.ok) {
           return {
             ok: false,
@@ -50,6 +55,7 @@ export async function collectRedditData(
             message: resolved.message
           };
         }
+
         images = [{ pageNumber: 1, ...resolved.media }];
       }
     }
@@ -65,6 +71,7 @@ export async function collectRedditData(
   }
 
   const multipleMedia = images.length > 1;
+
   if (multipleMedia) {
     images = addOrderedFileNamePrefixes(images);
   }
@@ -86,12 +93,14 @@ function getRedditPost(document: Document, location: PageLocation): RedditPost |
   const match = location.pathname.match(
     /^\/(?:r|user)\/[^/]+\/comments\/([a-z0-9]+)(?:\/[^/?#]+)?\/?$/i
   );
+
   if (!match) {
     return null;
   }
 
   const id = match[1];
   const element = document.querySelector(`shreddit-post[id="t3_${id}"][post-title]`);
+
   if (!element) {
     return null;
   }
@@ -107,6 +116,7 @@ function collectGalleryImages(post: Element): GalleryImage[] {
   const items = Array.from(
     post.querySelectorAll<HTMLElement>('gallery-carousel li[slot^="page-"]')
   ).sort((left, right) => getPageNumber(left) - getPageNumber(right));
+
   const result: GalleryImage[] = [];
   const seen = new Set<string>();
 
@@ -114,6 +124,7 @@ function collectGalleryImages(post: Element): GalleryImage[] {
     const image = item.querySelector<HTMLImageElement>("figure img");
     const source = image?.getAttribute("data-lazy-src") || image?.getAttribute("src");
     const media = source ? normalizeRedditMediaUrl(source) : null;
+
     if (!media || seen.has(media.originalUrl)) {
       continue;
     }
@@ -133,8 +144,10 @@ function collectRedditGifVideo(
   }
 
   const player = post.querySelector("shreddit-player[gif]");
+
   const source =
     player?.getAttribute("src") || player?.querySelector("source")?.getAttribute("src");
+
   if (!source) {
     return null;
   }
@@ -142,6 +155,7 @@ function collectRedditGifVideo(
   try {
     const url = new URL(source);
     const sourceFileName = decodeURIComponent(url.pathname.split("/").pop() ?? "");
+
     if (
       url.protocol !== "https:" ||
       url.hostname !== "preview.redd.it" ||
@@ -166,14 +180,17 @@ function normalizeRedditMediaUrl(
 ): { originalUrl: string; thumbnailUrl: string; fileName: string } | null {
   try {
     const url = new URL(value);
+
     if (url.protocol !== "https:") {
       return null;
     }
 
     const pathFileName = decodeURIComponent(url.pathname.split("/").pop() ?? "");
+
     if (url.hostname === "i.redd.it" && isRedditMediaFileName(pathFileName)) {
       url.search = "";
       url.hash = "";
+
       return { originalUrl: url.toString(), thumbnailUrl: value, fileName: pathFileName };
     }
 
@@ -182,6 +199,7 @@ function normalizeRedditMediaUrl(
     }
 
     const originalFileName = getPreviewOriginalFileName(pathFileName);
+
     if (!originalFileName) {
       return null;
     }
@@ -198,6 +216,7 @@ function normalizeRedditMediaUrl(
 
 function getPreviewOriginalFileName(fileName: string): string | null {
   const slugged = fileName.match(/-v\d+-([a-z0-9]+\.(?:gif|jpe?g|png|webp))$/i)?.[1];
+
   if (slugged) {
     return slugged;
   }
@@ -217,13 +236,16 @@ function getRedgifsId(contentHref: string, post: Element): string | null {
 
     try {
       const url = new URL(value);
+
       if (
         url.protocol !== "https:" ||
         (url.hostname !== "redgifs.com" && !url.hostname.endsWith(".redgifs.com"))
       ) {
         continue;
       }
+
       const match = url.pathname.match(/^\/(?:watch|ifr)\/([a-z0-9]+)\/?$/i);
+
       if (match) {
         return match[1];
       }
@@ -237,11 +259,13 @@ function getRedgifsId(contentHref: string, post: Element): string | null {
 
 function getRedgifsEmbedUrl(post: Element): string | null {
   const html = post.querySelector("shreddit-embed")?.getAttribute("html") ?? "";
+
   return html.match(/src=["'](https:\/\/[^"']+)["']/i)?.[1] ?? null;
 }
 
 function addOrderedFileNamePrefixes(images: GalleryImage[]): GalleryImage[] {
   const width = Math.max(2, String(images.length).length);
+
   return images.map((image, index) => ({
     ...image,
     fileName: `${String(index + 1).padStart(width, "0")}_${image.fileName}`

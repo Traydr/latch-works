@@ -80,11 +80,14 @@ export class MediaIndexService {
           switch (method) {
             case 'run':
               statement.run(...params);
+
               return { rows: [] };
             case 'get': {
               const row = statement.get(...params);
+
               return { rows: row ? Object.values(row) : [] };
             }
+
             default:
               return { rows: statement.all(...params).map((row) => Object.values(row)) };
           }
@@ -96,6 +99,7 @@ export class MediaIndexService {
           },
         },
       );
+
       return Result.ok();
     } catch (cause) {
       return Result.err(unexpectedDatabaseError('media-index-init', toError(cause)));
@@ -112,6 +116,7 @@ export class MediaIndexService {
   ): Promise<ResultType<number, DatabaseError>> {
     try {
       const database = this.requireDb();
+
       const result = await database
         .insert(scanRunsTable)
         .values({
@@ -183,6 +188,7 @@ export class MediaIndexService {
           ),
         );
       });
+
       return Result.ok();
     } catch (cause) {
       return Result.err(unexpectedDatabaseError('media-index-upsert-batch', toError(cause)));
@@ -284,6 +290,7 @@ export class MediaIndexService {
 
   private ensureColumn(tableName: string, columnName: string, columnType: string): void {
     const database = this.requireSqlite();
+
     const columns = TableColumnsSchema.parse(
       database.prepare(`PRAGMA table_info(${tableName})`).all(),
     );

@@ -16,7 +16,9 @@ interface Props {
 }
 
 const { title, description } = Astro.props;
+
 const sections = groupDocsBySection(await getCollection("docs"));
+
 const currentPath = Astro.url.pathname;
 ---
 
@@ -54,20 +56,24 @@ const currentPath = Astro.url.pathname;
     for (const container of document.querySelectorAll("[data-docs-scroll]")) {
       if (!(container instanceof HTMLElement)) continue;
       const active = container.querySelector(".link.active");
+
       if (!(active instanceof HTMLElement)) continue;
 
       const containerRect = container.getBoundingClientRect();
       const activeRect = active.getBoundingClientRect();
+
       const delta =
         activeRect.top -
         containerRect.top -
         container.clientHeight / 2 +
         activeRect.height / 2;
+
       container.scrollTop += delta;
     }
   }
 
   scrollActiveDocsLink();
+
   document.addEventListener("astro:page-load", scrollActiveDocsLink);
 </script>
 

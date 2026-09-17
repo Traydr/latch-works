@@ -3,7 +3,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
 const repoRoot = path.resolve(appRoot, "../..");
+
 const lockstepCoreEntry = path.join(repoRoot, "packages/lockstep-core/dist/index.js");
 
 if (!existsSync(lockstepCoreEntry)) {

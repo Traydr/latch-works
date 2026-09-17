@@ -135,6 +135,7 @@ export function buildGalleryListingMediaQuery(
     query,
     recursive,
   });
+
   mediaConditions.push(...buildMediaVisibilityConditions({ showImages, showVideos }));
 
   if (cursor) {
@@ -206,8 +207,10 @@ export function buildGalleryListingCursorCondition(
     if (!condition) {
       throw new Error("Expected gallery listing cursor condition");
     }
+
     return condition;
   };
+
   const filename = naturalOrder(libraryEntries.filename);
   const logicalPath = naturalOrder(libraryEntries.logicalPath);
 
@@ -257,6 +260,7 @@ export function buildGalleryListingCursorCondition(
     case "random": {
       const key = galleryRandomOrderKeySql(cursor.randomSeed, "media", libraryEntries.id);
       const cursorKey = cursorRandomKey(cursor);
+
       return requireCondition(
         or(
           gt(key, cursorKey),
@@ -269,6 +273,7 @@ export function buildGalleryListingCursorCondition(
         ),
       );
     }
+
     default:
       return requireCondition(
         or(
@@ -319,10 +324,12 @@ export async function readDatabaseLibrarySnapshot(
   const visibleFolderPaths = [
     ...new Set([...folderRows, ...siblingRows].map((folder) => folder.path)),
   ];
+
   const visibleParentPathsWithChildren = await readParentPathsWithChildren(
     visibleFolderPaths,
     database,
   );
+
   const folderParentPathsWithChildFolders = new Set(
     allFolderRows
       .map((folder) => folder.parentPath)
@@ -367,6 +374,7 @@ export async function readDatabaseGalleryListing(
     sortMode,
     subjectKind: "media",
   });
+
   const includeFolders = !recursive && !decodedCursor;
 
   const [folderRows, mediaRows] = await Promise.all([
@@ -394,6 +402,7 @@ export async function readDatabaseGalleryListing(
   const pageMediaRows = hasMore ? mediaRows.slice(0, limit) : mediaRows;
 
   const visibleFolderPaths = [...new Set(folderRows.map((folder) => folder.path))];
+
   const visibleParentPathsWithChildren = includeFolders
     ? await readParentPathsWithChildren(visibleFolderPaths, database)
     : new Set<string>();
@@ -403,6 +412,7 @@ export async function readDatabaseGalleryListing(
   );
 
   const media = mapMediaRowsToLibraryItems(pageMediaRows);
+
   const entries = buildBrowserEntries({
     folders: folderNodes,
     comics: [],
@@ -413,6 +423,7 @@ export async function readDatabaseGalleryListing(
   });
 
   const lastRow = pageMediaRows.at(-1);
+
   const nextCursor =
     hasMore && lastRow
       ? encodeGalleryListingCursor({
@@ -486,6 +497,7 @@ export function buildMediaPage<T>(
   offset: number,
 ): MediaPageSlice<T> {
   const hasMore = rows.length > limit;
+
   return {
     items: hasMore ? rows.slice(0, limit) : [...rows],
     mediaPage: {
@@ -508,6 +520,7 @@ async function readParentPathsWithChildren(
   }
 
   const pathSet = new Set(paths);
+
   const [folderParents, entryParents] =
     paths.length > parentPathLookupThreshold
       ? await Promise.all([
@@ -534,6 +547,7 @@ async function readParentPathsWithChildren(
         ]);
 
   const parents = new Set<string>();
+
   for (const row of [...folderParents, ...entryParents]) {
     if (row.parentPath && pathSet.has(row.parentPath)) {
       parents.add(row.parentPath);

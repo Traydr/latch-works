@@ -2,6 +2,7 @@ import * as z from "zod/mini";
 import { lenientArrayOf } from "./lenient-array";
 
 export const RESOLVE_X_MEDIA_MESSAGE = "GATHER_BOX_RESOLVE_X_MEDIA" as const;
+
 export const X_WEB_BEARER_TOKEN =
   "AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA";
 
@@ -196,6 +197,7 @@ export function parseXMedia(rawMedia: XMediaEntry[]): ResolvedXMedia[] {
       url.searchParams.set("name", "orig");
       const format = url.searchParams.get("format") ?? getPathExtension(url.pathname);
       const baseName = getPathFileName(url.pathname).replace(/\.[A-Za-z0-9]+$/, "");
+
       if (!format || !baseName || seen.has(url.toString())) {
         continue;
       }
@@ -213,17 +215,20 @@ export function parseXMedia(rawMedia: XMediaEntry[]): ResolvedXMedia[] {
     const bestVariant = [...media.video_info.variants].sort(
       (left, right) => right.bitrate - left.bitrate
     )[0];
+
     if (!bestVariant) {
       continue;
     }
 
     const url = new URL(bestVariant.url);
     url.searchParams.delete("tag");
+
     if (seen.has(url.toString())) {
       continue;
     }
 
     const fileName = getPathFileName(url.pathname);
+
     if (!fileName) {
       continue;
     }
@@ -248,6 +253,7 @@ export function extractGraphqlMedia(
   const addEntries = instructions.find((instruction) => instruction.type === "TimelineAddEntries");
   const entry = addEntries?.entries.find((candidate) => candidate.entryId === `tweet-${tweetId}`);
   const tweetResult = entry?.content.itemContent.tweet_results.result;
+
   if (!tweetResult) {
     return [];
   }

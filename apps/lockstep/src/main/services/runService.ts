@@ -98,6 +98,7 @@ export class RunService {
       };
 
       await this.profileService.recordLastRun(request.profileId, summary);
+
       return summary;
     });
   }
@@ -126,17 +127,20 @@ export class RunService {
       };
 
       await this.profileService.recordLastRun(request.profileId, summary);
+
       return summary;
     });
   }
 
   async doctor(profileId: string): Promise<DoctorResult> {
     const profile = this.profileService.getProfile(profileId);
+
     if (!profile) {
       throw new Error("Profile not found.");
     }
 
     const observer = this.createObserver();
+
     const result = await this.core.doctor(
       {
         apiToken: this.profileService.getApiToken(profileId),
@@ -173,11 +177,13 @@ export class RunService {
     }
 
     const profile = this.profileService.getProfile(request.profileId);
+
     if (!profile) {
       throw new Error("Profile not found.");
     }
 
     const apiToken = this.profileService.getApiToken(request.profileId);
+
     if (!apiToken) {
       throw new Error("API token is not configured for this profile.");
     }
@@ -186,11 +192,13 @@ export class RunService {
     this.abortController = new AbortController();
     let completeObserved = false;
     const baseObserver = this.createObserver();
+
     const observer: LockstepObserver = {
       onEvent: (event: LockstepRunEvent) => {
         if (event.type === "complete") {
           completeObserved = true;
         }
+
         baseObserver.onEvent(event);
       },
     };
@@ -215,9 +223,11 @@ export class RunService {
           pushed: 0,
           status: "cancelled",
         };
+
         observer.onEvent({ type: "cancelled" });
         observer.onEvent({ type: "complete", summary });
       }
+
       throw error;
     } finally {
       this.running = false;
@@ -229,6 +239,7 @@ export class RunService {
     return {
       onEvent: (event: LockstepRunEvent) => {
         const window = this.getMainWindow();
+
         if (!window || window.isDestroyed()) {
           return;
         }

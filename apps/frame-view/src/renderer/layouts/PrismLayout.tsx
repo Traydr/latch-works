@@ -54,13 +54,16 @@ export function PrismLayout({
   useEffect(() => {
     if (scanState === 'done') {
       setShowReadyState(true);
+
       const timer = window.setTimeout(() => {
         setShowReadyState(false);
       }, 5000);
+
       return () => window.clearTimeout(timer);
     }
 
     setShowReadyState(false);
+
     return undefined;
   }, [scanMessage, scanState]);
 

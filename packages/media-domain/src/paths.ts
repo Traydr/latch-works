@@ -9,6 +9,7 @@ export function trimTrailingSlash(path: string): string {
 export function getParentPath(path: string): string {
   const normalized = trimTrailingSlash(toArchivePath(path));
   const separatorIndex = normalized.lastIndexOf("/");
+
   if (separatorIndex < 0) {
     return "";
   }
@@ -19,6 +20,7 @@ export function getParentPath(path: string): string {
 export function getBaseName(path: string): string {
   const normalized = trimTrailingSlash(toArchivePath(path));
   const separatorIndex = normalized.lastIndexOf("/");
+
   return separatorIndex >= 0 ? normalized.slice(separatorIndex + 1) : normalized;
 }
 
@@ -31,6 +33,7 @@ const EXTENSION_ALIASES = new Map([["jpeg", "jpg"]]);
 
 export function canonicalizeExtension(extension: string): string {
   const normalized = extension.replace(/^\./, "").toLowerCase();
+
   return EXTENSION_ALIASES.get(normalized) ?? normalized;
 }
 
@@ -43,9 +46,11 @@ export function normalizePathForCompare(
   options: { canonicalizeExtensions?: boolean } = {},
 ): string {
   const normalized = trimTrailingSlash(toArchivePath(path)).normalize("NFC").toLowerCase();
+
   if (options.canonicalizeExtensions === false) {
     return normalized;
   }
+
   return canonicalizePathExtension(normalized);
 }
 
@@ -65,10 +70,12 @@ export function createSyncPathIdentity(
 
   for (const paths of [localPaths, remotePaths]) {
     const counts = new Map<string, number>();
+
     for (const path of paths) {
       const key = normalizePathForCompare(path);
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
+
     for (const [key, count] of counts) {
       if (count > 1) {
         collidingAliasedKeys.add(key);
@@ -78,9 +85,11 @@ export function createSyncPathIdentity(
 
   return (path: string) => {
     const aliased = normalizePathForCompare(path);
+
     if (collidingAliasedKeys.has(aliased)) {
       return normalizePathForCompare(path, { canonicalizeExtensions: false });
     }
+
     return aliased;
   };
 }
@@ -90,12 +99,14 @@ function canonicalizePathExtension(path: string): string {
   const baseStart = separatorIndex + 1;
   const baseName = path.slice(baseStart);
   const dotIndex = baseName.lastIndexOf(".");
+
   if (dotIndex <= 0 || dotIndex === baseName.length - 1) {
     return path;
   }
 
   const extension = baseName.slice(dotIndex + 1);
   const canonicalExtension = canonicalizeExtension(extension);
+
   if (canonicalExtension === extension) {
     return path;
   }

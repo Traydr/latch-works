@@ -55,6 +55,7 @@ test.describe("browse", () => {
     // comics has three children: alpha, beta, nested (natural name order).
     const nextFolder = page.getByRole("button", { name: "Next folder", exact: true });
     const prevFolder = page.getByRole("button", { name: "Prev folder", exact: true });
+
     const settled = async (path: string, entryCount: number) => {
       await expect(page).toHaveURL(new RegExp(`path=${encodeURIComponent(path)}(?!%2F)`));
       await expectEntryCount(page, entryCount);

@@ -11,6 +11,7 @@ const ErrnoErrorSchema = z.object({ code: z.string() });
 
 async function canonicalizePath(inputPath: string): Promise<string> {
   const resolved = path.resolve(inputPath);
+
   try {
     return await fs.realpath(resolved);
   } catch {
@@ -29,6 +30,7 @@ export async function resolveFolderPath(
 
   try {
     const stats = await fs.stat(resolvedCandidatePath);
+
     if (stats.isDirectory()) {
       return Result.ok(await canonicalizePath(resolvedCandidatePath));
     }
@@ -41,6 +43,7 @@ export async function resolveFolderPath(
   } catch (cause) {
     const error = toError(cause);
     const errno = ErrnoErrorSchema.safeParse(error);
+
     if (errno.success && errno.data.code === 'ENOENT') {
       return Result.ok(null);
     }
@@ -60,6 +63,7 @@ export async function listFolderChildren(
 
     const nodes: FolderNode[] = directories.map((entry) => {
       const fullPath = path.join(folderPath, entry.name);
+
       return {
         path: fullPath,
         name: entry.name,

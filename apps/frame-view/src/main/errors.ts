@@ -62,6 +62,7 @@ export function parseWithSchema<T>(
   operation: string,
 ): ResultType<T, ValidationError> {
   const parsed = schema.safeParse(payload);
+
   if (!parsed.success) {
     return Result.err(
       new ValidationError({

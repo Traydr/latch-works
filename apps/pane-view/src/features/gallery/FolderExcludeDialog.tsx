@@ -31,6 +31,7 @@ export function FolderExcludeDialog({
     >
       {childFolders.map((folder) => {
         const isExcluded = excluded.has(folder.path);
+
         return (
           <button
             key={folder.path}

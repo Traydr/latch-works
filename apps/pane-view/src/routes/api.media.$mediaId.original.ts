@@ -27,6 +27,7 @@ export const Route = createFileRoute("/api/media/$mediaId/original")({
         }
 
         const delivery = planSignedOriginalDelivery(media);
+
         const signedUrl = await createSignedGetUrl({
           expiresInSeconds: delivery.expiresInSeconds,
           key: delivery.objectKey,

@@ -19,6 +19,7 @@ export function toDayKey(date: Date): string {
 /** Short chart label like "Jan 5". */
 export function formatDayLabel(dayKey: string): string {
   const date = new Date(`${dayKey}T00:00:00.000Z`);
+
   return date.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
@@ -39,6 +40,7 @@ export function fillDailyBuckets(
   const sortedKeys = [...byDay.keys()].sort();
   const start = options?.startDay ?? sortedKeys[0];
   const end = options?.endDay ?? sortedKeys[sortedKeys.length - 1];
+
   if (!start || !end) {
     return [];
   }
@@ -46,19 +48,23 @@ export function fillDailyBuckets(
   const filled: DailyBucket[] = [];
   const cursor = new Date(`${start}T00:00:00.000Z`);
   const endDate = new Date(`${end}T00:00:00.000Z`);
+
   while (cursor <= endDate) {
     const day = toDayKey(cursor);
     filled.push({ day, value: byDay.get(day) ?? 0 });
     cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
+
   return filled;
 }
 
 /** Turn daily deltas into a cumulative series for size-over-time charts. */
 export function toCumulativeSeries(buckets: DailyBucket[]): CumulativePoint[] {
   let running = 0;
+
   return buckets.map((bucket) => {
     running += Number(bucket.value) || 0;
+
     return {
       day: bucket.day,
       label: formatDayLabel(bucket.day),
@@ -90,6 +96,7 @@ export function averageDailyGrowth(
 
   let total = 0;
   const cursor = new Date(start);
+
   while (cursor <= end) {
     total += byDay.get(toDayKey(cursor)) ?? 0;
     cursor.setUTCDate(cursor.getUTCDate() + 1);
@@ -100,6 +107,7 @@ export function averageDailyGrowth(
   }
 
   const archiveStartedOn = options?.archiveStartedOn ?? null;
+
   if (archiveStartedOn && archiveStartedOn > endDay) {
     return 0;
   }
@@ -107,6 +115,7 @@ export function averageDailyGrowth(
   // Brand-new archives: start counting from birth. Established archives: full window.
   const effectiveStart =
     archiveStartedOn && archiveStartedOn > startKey ? archiveStartedOn : startKey;
+
   const effectiveDays =
     Math.floor((end.getTime() - new Date(`${effectiveStart}T00:00:00.000Z`).getTime()) / DAY_MS) +
     1;
@@ -118,7 +127,9 @@ export function daysBetween(start: Date | null, end: Date | null): number | null
   if (!start || !end) {
     return null;
   }
+
   const diff = Math.max(0, end.getTime() - start.getTime());
+
   return Math.max(1, Math.ceil(diff / DAY_MS));
 }
 

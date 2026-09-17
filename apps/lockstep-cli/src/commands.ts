@@ -73,6 +73,7 @@ export async function executeCommand(
     if (!result.ok) {
       process.exitCode = 1;
     }
+
     return;
   }
 
@@ -88,6 +89,7 @@ export async function executeCommand(
     options.command === "push" || options.command === "prune"
       ? (options.apiUrl ?? process.env.LOCKSTEP_API_URL)
       : undefined;
+
   const apiToken =
     options.command === "push" || options.command === "prune"
       ? process.env[options.apiTokenEnv]
@@ -102,6 +104,7 @@ export async function executeCommand(
     if (!apiUrl || !apiToken) {
       console.log(`${options.command} requires a remote API URL and token.`);
       process.exitCode = 2;
+
       return;
     }
   }
@@ -123,6 +126,7 @@ export async function executeCommand(
   if (options.command === "verify") {
     const changedItems = plan.items.filter((item) => item.action !== "keep");
     const driftCount = changedItems.length;
+
     if (driftCount > 0) {
       console.log("");
       console.log(`Verify failed: ${driftCount} path(s) differ from the remote snapshot.`);
@@ -131,6 +135,7 @@ export async function executeCommand(
       console.log("");
       console.log("Verify passed: local archive matches the remote snapshot.");
     }
+
     return;
   }
 
@@ -156,6 +161,7 @@ export async function executeCommand(
 
     reporter.clear();
     console.log("");
+
     if (result.failed > 0) {
       console.log(`Push finished: ${result.pushed} succeeded, ${result.failed} failed.`);
       process.exitCode = 1;
@@ -164,17 +170,20 @@ export async function executeCommand(
     } else {
       console.log(`Push finished: ${result.pushed} change(s) applied.`);
     }
+
     return;
   }
 
   if (options.command === "prune") {
     const deleteItems = plan.items.filter((item) => item.action === "delete");
+
     const itemsToPrune =
       options.maxChanges === undefined ? deleteItems : deleteItems.slice(0, options.maxChanges);
 
     if (itemsToPrune.length === 0) {
       console.log("");
       console.log("Nothing to prune.");
+
       return;
     }
 
@@ -183,14 +192,17 @@ export async function executeCommand(
         console.log("");
         console.log("Prune requires --yes in non-interactive mode.");
         process.exitCode = 1;
+
         return;
       }
 
       const confirmed = await confirmPrune();
+
       if (!confirmed) {
         console.log("");
         console.log("Prune cancelled.");
         process.exitCode = 1;
+
         return;
       }
     }
@@ -208,6 +220,7 @@ export async function executeCommand(
 
     reporter.clear();
     console.log("");
+
     if (result.failed > 0) {
       console.log(`Prune finished: ${result.pruned} succeeded, ${result.failed} failed.`);
       process.exitCode = 1;
@@ -226,6 +239,7 @@ function printPlanSummary(plan: LockstepPlan, options: CliOptions): void {
   if (options.showSkipped && plan.skippedEntries.length > 0) {
     console.log("");
     console.log("Skipped files");
+
     for (const skipped of plan.skippedEntries) {
       console.log(`  ${skipped.reason.padEnd(21)} ${skipped.path}`);
     }
@@ -241,12 +255,15 @@ function printPlanSummary(plan: LockstepPlan, options: CliOptions): void {
   const changedItems = plan.items.filter((item) => item.action !== "keep");
   const previewCount = options.command === "push" || options.command === "prune" ? 5 : 20;
   const changedPreview = changedItems.slice(0, previewCount);
+
   if (changedPreview.length > 0 && options.command !== "push" && options.command !== "prune") {
     console.log("");
     console.log(changedItems.length > previewCount ? "First changes" : "Changes");
+
     for (const item of changedPreview) {
       console.log(`  ${item.action.padEnd(6)} ${item.path}`);
     }
+
     if (changedItems.length > previewCount) {
       console.log(`  ... and ${changedItems.length - previewCount} more`);
     }
@@ -257,11 +274,13 @@ function printPlanSummary(plan: LockstepPlan, options: CliOptions): void {
       options.maxChanges === undefined
         ? changedItems.filter((item) => item.action === "delete")
         : changedItems.filter((item) => item.action === "delete").slice(0, options.maxChanges);
+
     const omittedCount = plan.counts.delete - deletesToApply.length;
     const deletePreviewLimit = 20;
     const deletePreview = deletesToApply.slice(0, deletePreviewLimit);
 
     console.log("");
+
     if (options.maxChanges !== undefined && omittedCount > 0) {
       console.log(
         `Deletes to apply: ${deletesToApply.length} of ${plan.counts.delete} (capped by --max-changes)`,
@@ -269,10 +288,13 @@ function printPlanSummary(plan: LockstepPlan, options: CliOptions): void {
     } else {
       console.log(`Deletes to apply: ${plan.counts.delete}`);
     }
+
     console.log(deletesToApply.length > deletePreviewLimit ? "First deletes" : "Deletes");
+
     for (const item of deletePreview) {
       console.log(`  delete ${item.path}`);
     }
+
     if (deletesToApply.length > deletePreviewLimit) {
       console.log(`  ... and ${deletesToApply.length - deletePreviewLimit} more`);
     }
@@ -281,6 +303,7 @@ function printPlanSummary(plan: LockstepPlan, options: CliOptions): void {
 
 async function defaultConfirmPrune(): Promise<boolean> {
   const { input } = await import("@inquirer/prompts");
+
   const answer = await input({
     message: 'Type "prune" to confirm remote deletes',
     validate: (value) => value === "prune" || 'Type "prune" to confirm.',
@@ -298,6 +321,7 @@ function createCliObserver(reporter: LineReporter): LockstepObserver {
         if (event.message.includes("] hashing ") || event.message.includes("] uploading ")) {
           const match = event.message.match(/^\[(\d+)\/(\d+)\] (\w+) ([^(]+)(?: \((.+)\))?$/);
           const stage = PushStageSchema.safeParse(match?.[3]);
+
           if (match && stage.success) {
             const [, current, total, , itemPath, detail] = match;
             reporter.setStatus(
@@ -309,15 +333,19 @@ function createCliObserver(reporter: LineReporter): LockstepObserver {
                 total: Number(total),
               }),
             );
+
             return;
           }
         }
+
         reporter.setStatus(event.message);
+
         return;
       }
 
       if (event.type === "scan-progress") {
         reporter.setStatus(formatScanStatus(event.progress));
+
         return;
       }
 
@@ -325,6 +353,7 @@ function createCliObserver(reporter: LineReporter): LockstepObserver {
         reporter.clear();
         reporter.log(`[${event.current}/${event.total}] ${event.action} ${event.path}`);
         _pushContext = null;
+
         return;
       }
 

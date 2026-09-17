@@ -31,9 +31,11 @@ test.describe("sorting and paging", () => {
     test(`${label} orders a recursive subtree by the documented rules`, async ({ page }) => {
       await gotoBrowse(page, { path: "comics", recursive: true });
       await chooseSort(page, label);
+
       const expected = sortFixtureItems(fixtureItemsInScope("comics", true), mode).map(
         (entry) => entry.path,
       );
+
       // A recursive listing carries no folder entries; every card is media.
       await expectEntryCount(page, expected.length);
       await expectCardPaths(page, expected);
@@ -45,6 +47,7 @@ test.describe("sorting and paging", () => {
       await gotoBrowse(page, { path: "comics" });
       await chooseSort(page, label);
       const folders = fixtureFolderPaths().filter((folder) => /^comics\/[^/]+$/.test(folder));
+
       // Folders follow the name direction and ignore the date modes.
       if (mode === "name-desc") folders.reverse();
       await expectEntryCount(page, folders.length);
@@ -54,9 +57,11 @@ test.describe("sorting and paging", () => {
 
   test("a folder larger than one page loads the rest in the same order", async ({ page }) => {
     await gotoBrowse(page, { path: SCOPE });
+
     const expected = sortFixtureItems(fixtureItemsInScope(SCOPE, false), "name-asc").map(
       (entry) => entry.path,
     );
+
     expect(expected.length).toBeGreaterThan(60);
     await chooseSort(page, "A-Z");
     await expect(page.getByRole("button", { name: "Load more" })).toBeVisible();

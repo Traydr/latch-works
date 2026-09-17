@@ -23,9 +23,11 @@ export function formatClock(seconds: number): string {
   const hours = Math.floor(total / 3600);
   const minutes = Math.floor((total % 3600) / 60);
   const secs = String(total % 60).padStart(2, '0');
+
   if (hours > 0) {
     return `${hours}:${String(minutes).padStart(2, '0')}:${secs}`;
   }
+
   return `${minutes}:${secs}`;
 }
 
@@ -112,8 +114,10 @@ export function SkipButton({
   model: ViewerVideoModel;
 }): JSX.Element {
   const Icon = direction < 0 ? RotateCcw : RotateCw;
+
   const label =
     direction < 0 ? `Back ${VIDEO_SKIP_SECONDS} seconds` : `Forward ${VIDEO_SKIP_SECONDS} seconds`;
+
   return (
     <button
       type="button"
@@ -172,8 +176,10 @@ export function useFractionDrag({
 
   const fractionAt = (clientX: number, clientY: number): number => {
     const track = trackRef.current;
+
     if (!track) return 0;
     const rect = track.getBoundingClientRect();
+
     const raw =
       axis === 'y'
         ? rect.height <= 0
@@ -182,6 +188,7 @@ export function useFractionDrag({
         : rect.width <= 0
           ? 0
           : (clientX - rect.left) / rect.width;
+
     return Math.max(0, Math.min(1, raw));
   };
 
@@ -197,8 +204,10 @@ export function useFractionDrag({
   const onPointerMove = (event: PointerEvent<HTMLDivElement>): void => {
     if (scrubbing) {
       onScrub(fractionAt(event.clientX, event.clientY));
+
       return;
     }
+
     if (event.pointerType === 'mouse' && !disabled) {
       setHoverFraction(fractionAt(event.clientX, event.clientY));
     }
@@ -254,10 +263,12 @@ export function useSeek(model: ViewerVideoModel): SeekControl {
     model.isScrubbingRef.current = true;
     model.setPosition(target);
     pendingRef.current = target;
+
     if (frameRef.current === null) {
       frameRef.current = window.requestAnimationFrame(() => {
         frameRef.current = null;
         const video = model.videoRef.current;
+
         if (video && pendingRef.current !== null) {
           video.currentTime = pendingRef.current;
         }
@@ -278,8 +289,10 @@ export function useSeek(model: ViewerVideoModel): SeekControl {
       event.preventDefault();
       event.stopPropagation();
       model.skip(event.key === 'ArrowLeft' ? -VIDEO_SKIP_SECONDS : VIDEO_SKIP_SECONDS);
+
       return;
     }
+
     if (event.key === 'Home' || event.key === 'End') {
       event.preventDefault();
       event.stopPropagation();
@@ -308,6 +321,7 @@ export function useSeek(model: ViewerVideoModel): SeekControl {
 export function SeekTrack({ seek }: { seek: SeekControl }): JSX.Element {
   const { drag, fraction } = seek;
   const played = `${fraction * 100}%`;
+
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: role="slider" arrives through ariaProps
     <div
@@ -349,12 +363,16 @@ export function useOutsideClose(
 ): void {
   useEffect(() => {
     if (!open) return;
+
     const onPointerDown = (event: globalThis.PointerEvent): void => {
       const root = rootRef.current;
+
       if (root && event.target instanceof Node && root.contains(event.target)) return;
       onClose();
     };
+
     document.addEventListener('pointerdown', onPointerDown, true);
+
     return () => document.removeEventListener('pointerdown', onPointerDown, true);
   }, [onClose, open, rootRef]);
 }
@@ -393,6 +411,7 @@ export function useHoldToBoost(model: ViewerVideoModel): HoldToBoost {
 
   const stop = (): void => {
     clearTimer();
+
     if (holdBoosting) {
       endHoldBoost();
       suppressClickRef.current = true;
@@ -405,6 +424,7 @@ export function useHoldToBoost(model: ViewerVideoModel): HoldToBoost {
     consumeSuppressedClick: () => {
       const suppressed = suppressClickRef.current;
       suppressClickRef.current = false;
+
       return suppressed;
     },
     handlers: {

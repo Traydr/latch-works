@@ -18,6 +18,7 @@ import { electronChildEnv, REPO_ROOT } from "./env.ts";
  * hands the same directory to a second launch.
  */
 export const FRAME_VIEW_DIR = path.join(REPO_ROOT, "apps", "frame-view");
+
 const ELECTRON_BINARY = path.join(
   FRAME_VIEW_DIR,
   "node_modules",
@@ -38,14 +39,17 @@ async function newUserDataDir(): Promise<string> {
 
 export async function launchFrameView(userDataDir?: string): Promise<FrameViewSession> {
   const dataDir = userDataDir ?? (await newUserDataDir());
+
   const app = await electron.launch({
     args: [path.join(FRAME_VIEW_DIR, ".vite", "build", "main.js"), `--user-data-dir=${dataDir}`],
     cwd: FRAME_VIEW_DIR,
     env: electronChildEnv({ FRAME_VIEW_DISABLE_GPU: "1" }),
     executablePath: ELECTRON_BINARY,
   });
+
   const window = await app.firstWindow();
   await expect(window.getByRole("button", { name: "Open", exact: true })).toBeVisible();
+
   return { app, userDataDir: dataDir, window };
 }
 
@@ -94,6 +98,7 @@ async function visibleTiles(window: Page): Promise<PositionedTile[]> {
   return tiles(window).evaluateAll((elements) =>
     elements.map((element) => {
       const tile = element instanceof HTMLElement ? element : null;
+
       return {
         key: element.getAttribute("data-gallery-item-id") ?? "",
         left: Number.parseFloat(tile?.style.left ?? "0"),
@@ -113,17 +118,21 @@ export async function readTileKeys(window: Page): Promise<string[]> {
   const seen = new Map<string, PositionedTile>();
   const scrollHeight = await container.evaluate((element) => element.scrollHeight);
   const step = await container.evaluate((element) => Math.max(200, element.clientHeight - 100));
+
   for (let offset = 0; offset <= scrollHeight; offset += step) {
     await container.evaluate((element, top) => {
       element.scrollTop = top;
     }, offset);
     // Give the windowed grid one frame to commit the new row window.
     await window.waitForTimeout(50);
+
     for (const tile of await visibleTiles(window)) seen.set(tile.key, tile);
   }
+
   await container.evaluate((element) => {
     element.scrollTop = 0;
   });
+
   return [...seen.values()]
     .sort((a, b) => a.top - b.top || a.left - b.left)
     .map((tile) => tilePath(tile.key));
@@ -161,5 +170,6 @@ export async function closeSettings(window: Page): Promise<void> {
 
 export async function setToggle(window: Page, label: string, on: boolean): Promise<void> {
   const toggle = window.getByLabel(label, { exact: true });
+
   if ((await toggle.isChecked()) !== on) await toggle.click();
 }

@@ -26,6 +26,7 @@ const SnapshotResponseSchema = z.object({
 function runLockstep(args: string[], home: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const output: string[] = [];
+
     const child = spawn("pnpm", ["--filter", "@latch-works/lockstep", "start", ...args], {
       cwd: REPO_ROOT,
       env: {
@@ -36,11 +37,13 @@ function runLockstep(args: string[], home: string): Promise<string> {
         LOCKSTEP_API_TOKEN: PANE_VIEW_CREDENTIALS.syncToken,
       },
     });
+
     child.stdout.on("data", (chunk: Buffer) => output.push(chunk.toString()));
     child.stderr.on("data", (chunk: Buffer) => output.push(chunk.toString()));
     child.on("error", reject);
     child.on("exit", (code) => {
       const text = output.join("");
+
       if (code === 0) resolve(text);
       else reject(new Error(`lockstep ${args.join(" ")} exited with ${code}\n${text}`));
     });
@@ -50,10 +53,12 @@ function runLockstep(args: string[], home: string): Promise<string> {
 setup("push the fixture archive through Lockstep", async ({ request }) => {
   setup.setTimeout(300_000);
   const home = await mkdtemp(path.join(os.tmpdir(), "lockstep-e2e-home-"));
+
   const output = await runLockstep(
     ["push", "--source", FIXTURE_ARCHIVE_DIR, "--api-url", PANE_VIEW_URL, "--yes"],
     home,
   );
+
   // A reused server is already seeded (see playwright.config.ts); a fresh one takes the push.
   expect(output).toMatch(/Push finished: \d+ change\(s\) applied\.|Nothing to push\./);
 
@@ -62,11 +67,13 @@ setup("push the fixture archive through Lockstep", async ({ request }) => {
     ["push", "--source", FIXTURE_ARCHIVE_DIR, "--api-url", PANE_VIEW_URL, "--yes"],
     home,
   );
+
   expect(again).toContain("Nothing to push.");
 
   const snapshot = await request.get("/api/sync/snapshot", {
     headers: { Authorization: `Bearer ${PANE_VIEW_CREDENTIALS.syncToken}` },
   });
+
   expect(snapshot.ok()).toBe(true);
   const body = SnapshotResponseSchema.parse(await snapshot.json());
   expect(body.entries.map((entry) => entry.path).sort()).toEqual(

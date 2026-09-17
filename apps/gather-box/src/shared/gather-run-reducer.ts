@@ -16,6 +16,7 @@ export function applyGatherRunEvent(
       // the same folder handle can confirm it. Name that tab instead of asking for "confirmation".
       const label = getGatherSource(run.siteKey)?.label ?? "this source";
       const target = event.scope === "global" ? "any supported page" : `a ${label} page`;
+
       return {
         ...run,
         updatedAt: now,
@@ -34,6 +35,7 @@ export function applyGatherRunEvent(
         ]
       };
     }
+
     case "writing":
       return {
         ...run,

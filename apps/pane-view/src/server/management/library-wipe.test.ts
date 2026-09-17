@@ -13,6 +13,7 @@ import {
 const testDatabase = testDatabaseForSuite();
 
 const assertSyncApiToken = vi.fn();
+
 const processMaintenanceJob = vi.fn();
 
 function wipeDependencies(): LibraryWipeDependencies {

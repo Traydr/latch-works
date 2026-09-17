@@ -12,6 +12,7 @@ describe('mediaProtocol helpers', () => {
     if (process.platform === 'win32') {
       expect(isPathWithinRoot('C:\\gallery\\nested\\image.jpg', 'C:\\gallery')).toBe(true);
       expect(isPathWithinRoot('C:\\gallery-other\\image.jpg', 'C:\\gallery')).toBe(false);
+
       return;
     }
 
@@ -26,6 +27,7 @@ describe('mediaProtocol helpers', () => {
 
     if (process.platform === 'win32') {
       expect(isPathWithinRoot('C:\\Gallery\\Nested\\image.jpg', 'C:\\gallery')).toBe(true);
+
       return;
     }
 

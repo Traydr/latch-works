@@ -82,12 +82,15 @@ export function createScanProgressCoalescer(
 
     if (keyChanged) {
       flush();
+
       return;
     }
 
     const elapsed = now() - lastEmitAt;
+
     if (elapsed >= throttleMs) {
       flush();
+
       return;
     }
 

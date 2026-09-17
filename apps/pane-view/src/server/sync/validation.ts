@@ -102,9 +102,11 @@ export const CompleteObjectBodySchema = z.discriminatedUnion("action", [
 /** Parse a raw completed-object payload and apply the cross-field rules. */
 export function parseSyncObjectPayload(raw: JsonValue): SyncObjectValidationResult {
   const parsed = SyncObjectPayloadBodySchema.safeParse(raw);
+
   if (!parsed.success) {
     return { ok: false, error: describeFirstIssue(parsed.error) };
   }
+
   return validateSyncObjectPayload(parsed.data);
 }
 
@@ -137,6 +139,7 @@ export function expectedContentTypeForExtension(extension: string): string {
 
 export function validateSyncContentType(extension: string, contentType: string): string | null {
   const expected = expectedContentTypeForExtension(extension);
+
   if (contentType !== expected) {
     return "contentType does not match extension";
   }
@@ -147,18 +150,21 @@ export function validateSyncContentType(extension: string, contentType: string):
 export function validateSyncObjectPayload(body: SyncObjectPayloadBody): SyncObjectValidationResult {
   const logicalPath = normalizeSyncLogicalPath(body.logicalPath);
   const pathError = validateSyncLogicalPath(logicalPath);
+
   if (pathError) {
     return { ok: false, error: pathError };
   }
 
   const filename = body.filename;
   const derivedFilename = getBaseName(logicalPath);
+
   if (filename !== derivedFilename) {
     return { ok: false, error: "filename must match logicalPath" };
   }
 
   const extension = canonicalizeExtension(body.extension);
   const derivedExtension = getExtension(filename);
+
   if (extension !== derivedExtension) {
     return { ok: false, error: "extension must match filename" };
   }
@@ -171,12 +177,15 @@ export function validateSyncObjectPayload(body: SyncObjectPayloadBody): SyncObje
     extension,
     sha256: body.sha256,
   });
+
   const objectKey = body.objectKey ?? derivedObjectKey;
+
   if (objectKey !== derivedObjectKey) {
     return { ok: false, error: "objectKey does not match derived storage key" };
   }
 
   const contentTypeError = validateSyncContentType(extension, body.contentType);
+
   if (contentTypeError) {
     return { ok: false, error: contentTypeError };
   }

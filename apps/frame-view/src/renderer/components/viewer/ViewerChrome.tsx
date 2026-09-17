@@ -119,6 +119,7 @@ function StepArrow({
   onStep: (delta: number) => void;
 }): JSX.Element {
   const Icon = direction < 0 ? ChevronLeft : ChevronRight;
+
   return (
     <button
       type="button"

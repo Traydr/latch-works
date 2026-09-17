@@ -11,9 +11,13 @@
  */
 
 const MAX_CONCURRENT_RESOLVES = 6;
+
 const BASE_BACKOFF_MS = 800;
+
 const MAX_BACKOFF_MS = 8_000;
+
 const CIRCUIT_FAILURE_THRESHOLD = 8;
+
 const CIRCUIT_COOLDOWN_MS = 10_000;
 
 type Releaser = () => void;
@@ -26,9 +30,11 @@ export function createResolveThrottle() {
 
   function releaseSlot(): void {
     const next = waiters.shift();
+
     if (next) {
       // Hand the slot directly to the next waiter without decrementing.
       next(releaseSlot);
+
       return;
     }
 
@@ -39,6 +45,7 @@ export function createResolveThrottle() {
     acquireResolveSlot(): Promise<Releaser> {
       if (activeCount < MAX_CONCURRENT_RESOLVES) {
         activeCount += 1;
+
         return Promise.resolve(releaseSlot);
       }
 
@@ -57,6 +64,7 @@ export function createResolveThrottle() {
 
     recordResolveFailure(now: number = Date.now()): void {
       consecutiveFailures += 1;
+
       if (consecutiveFailures >= CIRCUIT_FAILURE_THRESHOLD) {
         circuitOpenUntil = now + CIRCUIT_COOLDOWN_MS;
         consecutiveFailures = 0;
@@ -85,6 +93,7 @@ export const {
  */
 export function backoffDelayMs(attempt: number): number {
   const capped = Math.min(MAX_BACKOFF_MS, BASE_BACKOFF_MS * 2 ** attempt);
+
   return Math.round(Math.random() * capped);
 }
 

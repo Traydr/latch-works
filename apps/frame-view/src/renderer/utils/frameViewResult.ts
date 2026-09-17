@@ -5,6 +5,7 @@ import type { FrameViewResult } from '../../shared/types';
 export function getFrameViewValue<T>(result: FrameViewResult<T>, operation: string): T | null {
   if (Result.isError(result)) {
     console.error(`[frameView:${operation}]`, result.error);
+
     return null;
   }
 

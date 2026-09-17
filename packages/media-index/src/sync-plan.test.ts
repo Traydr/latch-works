@@ -213,6 +213,7 @@ describe("createSyncPlan", () => {
   it("treats NFC and NFD paths as the same identity", () => {
     const nfc = "sfw/café.jpg".normalize("NFC");
     const nfd = "sfw/café.jpg".normalize("NFD");
+
     const plan = createSyncPlan(
       [
         {

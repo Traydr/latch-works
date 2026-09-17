@@ -51,20 +51,24 @@ function cloneDefaultSettings(): AppSettings {
 
 /** A JSON object as read from the settings file, before any field is parsed. */
 const PersistedRecordSchema = z.record(z.string(), z.json());
+
 type PersistedRecord = z.infer<typeof PersistedRecordSchema>;
 
 function toPersistedRecord(value: JsonValue): PersistedRecord {
   const parsed = PersistedRecordSchema.safeParse(value);
+
   return parsed.success ? parsed.data : {};
 }
 
 function parseOrFallback<T>(schema: z.ZodType<T>, value: JsonValue, fallback: T): T {
   const parsed = schema.safeParse(value);
+
   return parsed.success ? parsed.data : fallback;
 }
 
 function normalizeExtensions(input: JsonValue, fallback: string[]): string[] {
   const parsed = MediaExtensionsSchema.safeParse(input);
+
   if (!parsed.success || parsed.data.length === 0) {
     return [...fallback];
   }
@@ -74,6 +78,7 @@ function normalizeExtensions(input: JsonValue, fallback: string[]): string[] {
 
 export function normalizeAppSettings(candidate: JsonValue): AppSettings {
   const parsed = AppSettingsSchema.safeParse(candidate);
+
   if (parsed.success) {
     return parsed.data;
   }
@@ -109,6 +114,7 @@ export function normalizeAppSettings(candidate: JsonValue): AppSettings {
   };
 
   const reParsed = AppSettingsSchema.safeParse(mergedCandidate);
+
   if (reParsed.success) {
     return reParsed.data;
   }
@@ -195,6 +201,7 @@ export function normalizeAppSettings(candidate: JsonValue): AppSettings {
 
 function normalizeWindowBounds(bounds: JsonValue): Rectangle | null {
   const parsed = WindowBoundsSchema.safeParse(bounds);
+
   if (!parsed.success) {
     return null;
   }
@@ -221,10 +228,12 @@ export function createDefaultPersistedState(): PersistedState {
  * a pre-version-3 payload backfills them once, then deliberate removals are respected.
  */
 const BACKFILLED_IMAGE_EXTENSIONS = ['gif', 'avif'];
+
 const BACKFILLED_VIDEO_EXTENSIONS = ['m4v'];
 
 function withBackfilledExtensions(existing: string[], additions: string[]): string[] {
   const missing = additions.filter((extension) => !existing.includes(extension));
+
   return missing.length === 0 ? existing : [...existing, ...missing];
 }
 
@@ -233,6 +242,7 @@ function backfillBaselineExtensions(settings: AppSettings): AppSettings {
     settings.filters.imageExtensions,
     BACKFILLED_IMAGE_EXTENSIONS,
   );
+
   const videoExtensions = withBackfilledExtensions(
     settings.filters.videoExtensions,
     BACKFILLED_VIDEO_EXTENSIONS,
@@ -270,6 +280,7 @@ function migratePersistedState(candidate: JsonValue): PersistedState {
 
 export async function readPersistedState(filePath: string): Promise<PersistedState> {
   const raw = await fs.readFile(filePath, 'utf8');
+
   return migratePersistedState(JSON.parse(raw));
 }
 

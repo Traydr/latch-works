@@ -50,6 +50,7 @@ function AppInner(): JSX.Element {
   const rootGalleryPreferences = useMemo(() => {
     return getRootGalleryPreferences(settings, rootPath);
   }, [rootPath, settings]);
+
   const comicMode = rootGalleryPreferences.comicMode;
   const effectiveRecursive = recursive || comicMode;
 
@@ -142,6 +143,7 @@ function AppInner(): JSX.Element {
 
   const { diagnosticsSnapshot, mediaIndexStats, mediaToolsStatus, refreshSettingsPanelData } =
     useSettingsPanelData(settingsOpen);
+
   const {
     cacheStatusMessage,
     clearMediaIndexAction,
@@ -225,6 +227,7 @@ function AppInner(): JSX.Element {
     // the one writer of `recursiveDefault`, which seeds the flag on launch.
     onToggleRecursive: (value: boolean) => {
       setRecursive(value);
+
       if (rootPath) {
         void runScan(rootPath, {
           recursive: value || comicMode,
@@ -241,12 +244,15 @@ function AppInner(): JSX.Element {
         ...rootGalleryPreferences,
         comicMode: value,
       };
+
       void updateSettings(createRootGalleryPreferencesPatch(settings, rootPath, nextPreferences));
+
       if (value) {
         setRecursive(true);
       } else {
         setActiveComic(null);
       }
+
       void runScan(rootPath, {
         recursive: value || recursive,
         excludedRootChildPaths: nextPreferences.excludedRootChildPaths,
@@ -259,6 +265,7 @@ function AppInner(): JSX.Element {
 
       const nextPreferences = toggleExcludedRootChildPath(rootGalleryPreferences, folderPath);
       void updateSettings(createRootGalleryPreferencesPatch(settings, rootPath, nextPreferences));
+
       if (effectiveRecursive) {
         void runScan(rootPath, {
           recursive: effectiveRecursive,

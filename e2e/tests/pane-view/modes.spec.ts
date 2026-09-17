@@ -157,6 +157,7 @@ test.describe("comic mode", () => {
       page,
       comics.map((comic) => comic.folderPath),
     );
+
     for (const comic of comics) {
       await expect(card(page, comic.folderPath)).toContainText(`${comic.pages.length} pages`);
     }
@@ -176,11 +177,13 @@ test.describe("comic mode", () => {
   test("opening a comic shows every page in natural order", async ({ page }) => {
     await gotoBrowse(page, { path: "comics", comic: true });
     const alpha = fixtureComics("comics").find((comic) => comic.folderPath === "comics/alpha");
+
     if (!alpha) throw new Error("fixture has no comics/alpha");
     await card(page, alpha.folderPath).dblclick();
     await expect(page.getByText(`1/${alpha.pages.length} pages`)).toBeVisible();
     const firstPage = alpha.pages[0];
     const lastPage = alpha.pages[alpha.pages.length - 1];
+
     if (!firstPage || !lastPage) throw new Error("comic without pages");
     const pageName = (path: string) => path.slice(path.lastIndexOf("/") + 1);
     // The detail panel also shows the cover; scope to the reader overlay. Every page is

@@ -12,7 +12,9 @@ import type { MediaIndexStats, ScanEvent, ScanOptions } from '../../shared/types
 import { toError, WorkerError } from '../errors';
 
 type MessageListener = (message: JsonValue) => void;
+
 type ExitListener = (code: number | null) => void;
+
 type ErrorListener = (type: 'FatalError', location: string, report: string) => void;
 
 export interface CatalogChildProcessLike {
@@ -77,6 +79,7 @@ export class CatalogService {
     const response = await this.sendRequest({
       type: 'get-index-stats',
     });
+
     if (Result.isError(response)) {
       return Result.err(response.error);
     }
@@ -138,11 +141,13 @@ export class CatalogService {
     });
 
     this.child = child;
+
     return child;
   }
 
   private handleChildMessage(message: JsonValue): void {
     const workerEvent = CatalogWorkerEventSchema.safeParse(message);
+
     if (workerEvent.success) {
       const scanEvent = workerEvent.data.event;
 
@@ -155,16 +160,19 @@ export class CatalogService {
       }
 
       this.emitScanEvent(scanEvent);
+
       return;
     }
 
     const workerResponse = CatalogWorkerResponseSchema.safeParse(message);
+
     if (!workerResponse.success) {
       return;
     }
 
     const response = workerResponse.data;
     const pending = this.pendingRequests.get(response.requestId);
+
     if (!pending) {
       return;
     }
@@ -181,6 +189,7 @@ export class CatalogService {
           }),
         ),
       );
+
       return;
     }
 
@@ -221,6 +230,7 @@ export class CatalogService {
     request: CatalogWorkerRequestPayload,
   ): Promise<ResultType<void, WorkerError>> {
     const response = await this.sendRequest(request);
+
     return Result.isError(response) ? Result.err(response.error) : Result.ok();
   }
 

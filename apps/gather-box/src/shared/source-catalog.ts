@@ -18,9 +18,11 @@ export const SiteKeySchema = z.enum([
 export type SiteKey = z.infer<typeof SiteKeySchema>;
 
 export const GatherOutputKindSchema = z.enum(["downloadable-files", "generated-story-pdf"]);
+
 export type GatherOutputKind = z.infer<typeof GatherOutputKindSchema>;
 
 const SavePatternSchema = z.enum(["nested", "single-folder", "direct-file", "conditional"]);
+
 export type SavePattern = z.infer<typeof SavePatternSchema>;
 
 export interface SourceSaveBehavior {

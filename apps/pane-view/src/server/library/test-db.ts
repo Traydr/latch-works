@@ -44,6 +44,7 @@ async function applyCheckedInMigrations(client: PGlite): Promise<void> {
 
   for (const entry of journal.entries) {
     const script = await readFile(join(migrationsFolder, `${entry.tag}.sql`), "utf8");
+
     try {
       await client.exec(script);
     } catch (error) {
@@ -59,8 +60,10 @@ export async function createTestDatabase(): Promise<TestDatabaseHandle> {
     extensions: { pg_trgm },
     icuDataDir: await icuDataDir(),
   });
+
   await applyCheckedInMigrations(client);
   const db = drizzle(client, { schema });
+
   return { client, close: () => client.close(), db };
 }
 
@@ -91,6 +94,7 @@ export function testDatabaseForSuite(
     if (!handle) {
       throw new Error("test database was not created");
     }
+
     return handle;
   };
 }

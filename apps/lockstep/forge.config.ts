@@ -12,12 +12,19 @@ import { VitePlugin } from "@electron-forge/plugin-vite";
 import type { ForgeConfig } from "@electron-forge/shared-types";
 
 const appIconBasePath = path.resolve(__dirname, "media", "lockstep-icon");
+
 const appBundleId = "dev.traydr.latchworks.lockstep";
+
 const windowsIconPath = `${appIconBasePath}.ico`;
+
 const macIconPath = `${appIconBasePath}.icns`;
+
 const macModernIconPath = `${appIconBasePath}.icon`;
+
 const linuxIconPath = `${appIconBasePath}.png`;
+
 const appMediaPath = path.resolve(__dirname, "media");
+
 const localMacEntitlements = [
   "com.apple.security.cs.allow-jit",
   "com.apple.security.cs.allow-unsigned-executable-memory",
@@ -35,6 +42,7 @@ function getPackagerIconPath(): PackagerConfig["icon"] {
     const macIconPaths = [macIconPath, macModernIconPath].filter((iconPath) =>
       existsSync(iconPath),
     );
+
     return macIconPaths.length > 0 ? macIconPaths : undefined;
   }
 
@@ -47,6 +55,7 @@ function getMacCodeSignConfig(): PackagerConfig["osxSign"] | undefined {
   }
 
   const identity = process.env.LOCKSTEP_MACOS_SIGN_IDENTITY?.trim();
+
   if (identity) {
     return { identity };
   }

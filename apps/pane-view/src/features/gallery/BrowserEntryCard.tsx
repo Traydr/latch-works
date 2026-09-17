@@ -43,6 +43,7 @@ export function BrowserEntryCard({
   const handleClick = () => {
     if (isMobile) {
       onActivate(entry);
+
       return;
     }
 

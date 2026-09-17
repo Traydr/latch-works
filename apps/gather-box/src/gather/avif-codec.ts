@@ -4,6 +4,7 @@ import createAvifEncoder, {
 } from "@jsquash/avif/codec/enc/avif_enc.js";
 
 export const ARCHIVE_AVIF_QUALITY = 70;
+
 export const ARCHIVE_AVIF_SPEED = 6;
 
 export const ARCHIVE_AVIF_OPTIONS: AvifEncodeOptions = {
@@ -32,6 +33,7 @@ let encoderPromise: Promise<AVIFModule> | null = null;
 
 export async function encodeAvifImageData(imageData: RgbaImage): Promise<ArrayBuffer> {
   const encoder = await getAvifEncoder();
+
   return encodeWithAvifModule(imageData, encoder);
 }
 
@@ -45,13 +47,16 @@ export function encodeWithAvifModule(
     imageData.height,
     ARCHIVE_AVIF_OPTIONS
   );
+
   if (!encoded) {
     throw new Error("The AVIF encoder did not produce an image.");
   }
+
   // The encoder writes into wasm memory, so the bytes are copied into an ArrayBuffer this
   // caller owns rather than handing back a view over the module's heap.
   const buffer = new ArrayBuffer(encoded.byteLength);
   new Uint8Array(buffer).set(encoded);
+
   return buffer;
 }
 
@@ -59,6 +64,7 @@ function getAvifEncoder(): Promise<AVIFModule> {
   if (encoderPromise) {
     return encoderPromise;
   }
+
   const created = createEncoder();
   encoderPromise = created;
   void created.catch(() => {
@@ -66,15 +72,18 @@ function getAvifEncoder(): Promise<AVIFModule> {
       encoderPromise = null;
     }
   });
+
   return created;
 }
 
 async function createEncoder(): Promise<AVIFModule> {
   const wasmUrl = new URL("../codecs/avif_enc.wasm", import.meta.url);
   const response = await fetch(wasmUrl);
+
   if (!response.ok) {
     throw new Error(`Could not load the AVIF encoder (${response.status}).`);
   }
+
   return createAvifEncoder({
     wasmBinary: await response.arrayBuffer(),
     noInitialRun: true

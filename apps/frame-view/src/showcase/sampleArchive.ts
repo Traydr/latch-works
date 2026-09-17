@@ -4,6 +4,7 @@ const SAMPLE_FOLDER = '/tmp/showcase-archive/sfw/photos';
 
 const SAMPLE_FILES = Array.from({ length: 18 }, (_, index) => {
   const number = String(index + 1).padStart(2, '0');
+
   return `sample-${number}.jpg`;
 });
 

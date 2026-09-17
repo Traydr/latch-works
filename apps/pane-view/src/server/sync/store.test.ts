@@ -58,13 +58,17 @@ async function insertRun(status: "running" | "completed" | "cancelled"): Promise
     .db.insert(syncRuns)
     .values({ sourceRoot: "/archive", status })
     .returning({ id: syncRuns.id });
+
   if (!run) throw new Error("failed to insert sync run");
+
   return run.id;
 }
 
 async function readRun(syncRunId: string) {
   const [run] = await testDatabase().db.select().from(syncRuns).where(eq(syncRuns.id, syncRunId));
+
   if (!run) throw new Error(`sync run ${syncRunId} not found`);
+
   return run;
 }
 

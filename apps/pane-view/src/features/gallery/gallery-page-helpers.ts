@@ -19,6 +19,7 @@ export function dedupeThumbnailRequests(
 
   for (const request of requests) {
     const key = `${request.mediaId}:${request.size ?? "default"}`;
+
     if (seen.has(key)) {
       continue;
     }

@@ -15,7 +15,9 @@ import {
 } from "./archive-stats-helpers";
 
 const GROWTH_WINDOW_DAYS = 30;
+
 const HISTORY_DAYS = 90;
+
 const TOP_LIMIT = 8;
 
 export interface ArchiveStats {
@@ -79,6 +81,7 @@ function utcDaysAgo(days: number): Date {
   const date = new Date();
   date.setUTCHours(0, 0, 0, 0);
   date.setUTCDate(date.getUTCDate() - days);
+
   return date;
 }
 
@@ -245,7 +248,9 @@ export async function readArchiveStats(): Promise<ArchiveStats> {
     })),
     { endDay: today, startDay: historyStartKey },
   );
+
   const firstObjectDay = objectDaily[0];
+
   if (firstObjectDay) {
     objectDaily[0] = {
       day: firstObjectDay.day,
@@ -258,6 +263,7 @@ export async function readArchiveStats(): Promise<ArchiveStats> {
   const activeEntries = activeEntriesRow[0]?.value ?? 0;
   const entriesInWindow = entryDailyRows.reduce((sum, row) => sum + (row.count ?? 0), 0);
   const baselineEntries = Math.max(0, activeEntries - entriesInWindow);
+
   const entryDaily: DailyBucket[] = fillDailyBuckets(
     entryDailyRows.map((row) => ({
       day: row.day,
@@ -265,7 +271,9 @@ export async function readArchiveStats(): Promise<ArchiveStats> {
     })),
     { endDay: today, startDay: historyStartKey },
   );
+
   const firstEntryDay = entryDaily[0];
+
   if (firstEntryDay) {
     entryDaily[0] = {
       day: firstEntryDay.day,
@@ -285,6 +293,7 @@ export async function readArchiveStats(): Promise<ArchiveStats> {
     })),
     { endDay: today, startDay: toDayKey(growthStart) },
   );
+
   const growthDailyEntries = fillDailyBuckets(
     entryDailyRows.map((row) => ({
       day: row.day,
@@ -296,9 +305,11 @@ export async function readArchiveStats(): Promise<ArchiveStats> {
   const bytesLast30Days = growthDailyBytes.reduce((sum, bucket) => sum + bucket.value, 0);
   const entriesLast30Days = growthDailyEntries.reduce((sum, bucket) => sum + bucket.value, 0);
   const archiveStartedOn = oldestObjectAt ? toDayKey(oldestObjectAt) : null;
+
   const bytesPerDay = averageDailyGrowth(growthDailyBytes, GROWTH_WINDOW_DAYS, today, {
     archiveStartedOn,
   });
+
   const entriesPerDay = averageDailyGrowth(growthDailyEntries, GROWTH_WINDOW_DAYS, today, {
     archiveStartedOn,
   });
@@ -313,11 +324,13 @@ export async function readArchiveStats(): Promise<ArchiveStats> {
       },
     ]),
   );
+
   const syncActivity = fillDailyBuckets(
     [...syncByDay.entries()].map(([day, values]) => ({ day, value: values.started })),
     { endDay: today, startDay: historyStartKey },
   ).map((bucket) => {
     const values = syncByDay.get(bucket.day) ?? { completed: 0, failed: 0, started: 0 };
+
     return {
       completed: values.completed,
       day: bucket.day,

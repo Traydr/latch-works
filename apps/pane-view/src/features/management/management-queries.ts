@@ -26,9 +26,11 @@ export function useManagementOverviewQuery() {
     queryFn: () => getManagementOverview(),
     refetchInterval: (query) => {
       const overview = query.state.data;
+
       if (overview?.activeCleanupJob || (overview?.runningSyncRuns.length ?? 0) > 0) {
         return 3_000;
       }
+
       return false;
     },
   });
@@ -41,9 +43,11 @@ export function useSyncRunHistoryQuery(enabled = true) {
     queryFn: () => getSyncRunHistory(),
     refetchInterval: (query) => {
       const runs = query.state.data;
+
       if (runs?.some((run) => run.status === "running")) {
         return 5_000;
       }
+
       return false;
     },
   });
@@ -56,9 +60,11 @@ export function useCleanupJobStatusQuery(jobId: string | null) {
     queryFn: () => getCleanupJobStatus({ data: { jobId: jobId ?? "" } }),
     refetchInterval: (query) => {
       const status = query.state.data?.status;
+
       if (status === "pending" || status === "running") {
         return 2_000;
       }
+
       return false;
     },
   });
@@ -79,6 +85,7 @@ export function useCancelCleanupJobMutation() {
 
 function useInvalidateManagement() {
   const queryClient = useQueryClient();
+
   return () => queryClient.invalidateQueries({ queryKey: managementKeys.all });
 }
 

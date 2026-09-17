@@ -17,6 +17,7 @@ export function orphanedMediaObjectCondition(): SQL {
     .where(
       and(eq(libraryEntries.mediaObjectId, mediaObjects.id), isNotNull(libraryEntries.deletedAt)),
     );
+
   const activeReference = db
     .select({ value: sql`1` })
     .from(libraryEntries)

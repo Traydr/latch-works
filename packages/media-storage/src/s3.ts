@@ -148,6 +148,7 @@ export async function getStoredObject({
     Bucket: storage.bucket,
     Key: key,
   };
+
   if (range) {
     input.Range = range;
   }
@@ -158,6 +159,7 @@ export async function getStoredObject({
     if (!response.Body) {
       return null;
     }
+
     if (!(response.Body instanceof Readable)) {
       throw new TypeError(`S3 returned a non-Node stream body for key: ${key}`);
     }
@@ -284,7 +286,9 @@ export async function deleteStoredObjectsBatch({
     Array.from({ length: workerCount }, async () => {
       while (queue.length > 0) {
         const key = queue.shift();
+
         if (!key) continue;
+
         try {
           await deleteStoredObject({ key, storage });
           deleted += 1;
@@ -328,11 +332,13 @@ export async function readStoredObjectBytes({
   storage: S3CommandStorage;
 }): Promise<Buffer | null> {
   const object = await getStoredObject({ key, storage });
+
   if (!object) {
     return null;
   }
 
   const chunks: Buffer[] = [];
+
   for await (const chunk of object.body) {
     chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
   }
@@ -375,6 +381,7 @@ export async function createSignedPutUrl({
 
   const normalizedSha256 = sha256.toLowerCase();
   const checksumSHA256 = Buffer.from(normalizedSha256, "hex").toString("base64");
+
   const candidateHeaders = {
     "Content-Length": String(contentLength),
     "Content-Type": contentType,
@@ -404,7 +411,9 @@ export async function createSignedPutUrl({
   const signedHeaderNames = new Set(
     (new URL(uploadUrl).searchParams.get("X-Amz-SignedHeaders") ?? "").split(";").filter(Boolean),
   );
+
   const headers: Record<string, string> = {};
+
   for (const [headerName, headerValue] of Object.entries(candidateHeaders)) {
     if (signedHeaderNames.has(headerName.toLowerCase())) {
       headers[headerName] = headerValue;

@@ -12,9 +12,11 @@ document.addEventListener("DOMContentLoaded", () => {
         if (tab?.windowId !== undefined) {
           return chrome.sidePanel.close({ windowId: tab.windowId });
         }
+
         return undefined;
       });
     }
   });
+
   void controller.init(document);
 });

@@ -38,6 +38,7 @@ export async function readMediaThumbnailContext({
   mediaId: string;
 }): Promise<MediaThumbnailContext | null> {
   const contexts = await readMediaThumbnailContextsByEntryIds({ mediaIds: [mediaId] });
+
   return contexts.get(mediaId) ?? null;
 }
 
@@ -47,6 +48,7 @@ export async function readMediaThumbnailContextsByEntryIds({
   mediaIds: string[];
 }): Promise<Map<string, MediaThumbnailContext>> {
   const uniqueIds = [...new Set(mediaIds)];
+
   if (uniqueIds.length === 0) {
     return new Map();
   }
@@ -65,6 +67,7 @@ export async function readMediaThumbnailContextsByEntryIds({
     .where(and(inArray(libraryEntries.id, uniqueIds), isNull(libraryEntries.deletedAt)));
 
   const contexts = new Map<string, MediaThumbnailContext>();
+
   for (const row of rows) {
     contexts.set(row.entryId, {
       extension: row.extension,

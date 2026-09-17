@@ -12,6 +12,7 @@ export async function readJsonBody<Schema extends z.ZodType>(
   schema: Schema,
 ): Promise<ParsedJsonBody<z.output<Schema>>> {
   const result = schema.safeParse(await request.json().catch(() => ({})));
+
   return result.success
     ? { ok: true, body: result.data }
     : { ok: false, error: describeFirstIssue(result.error) };
@@ -23,9 +24,11 @@ export async function readJsonBody<Schema extends z.ZodType>(
  */
 export function describeFirstIssue(error: z.ZodError): string {
   const issue = error.issues[0];
+
   if (!issue) {
     return "invalid request body";
   }
+
   return issue.path.length > 1
     ? `${issue.path.map(String).join(".")}: ${issue.message}`
     : issue.message;

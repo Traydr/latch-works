@@ -33,18 +33,21 @@ export function useViewerKeyboardControls({
 
     if (matchesAnyKey(event, HOTKEYS.close)) {
       onClose();
+
       return;
     }
 
     if (matchesAnyKey(event, HOTKEYS.viewerNext)) {
       event.preventDefault();
       queueStep(1);
+
       return;
     }
 
     if (matchesAnyKey(event, HOTKEYS.viewerPrevious)) {
       event.preventDefault();
       queueStep(-1);
+
       return;
     }
 
@@ -55,24 +58,28 @@ export function useViewerKeyboardControls({
     if (matchesAnyKey(event, HOTKEYS.videoPlayPause)) {
       event.preventDefault();
       model.toggleVideoPlayback();
+
       return;
     }
 
     if (matchesAnyKey(event, HOTKEYS.videoSeekBackward)) {
       event.preventDefault();
       model.skip(-VIDEO_SKIP_SECONDS);
+
       return;
     }
 
     if (matchesAnyKey(event, HOTKEYS.videoSeekForward)) {
       event.preventDefault();
       model.skip(VIDEO_SKIP_SECONDS);
+
       return;
     }
 
     if (matchesAnyKey(event, HOTKEYS.videoMute)) {
       event.preventDefault();
       model.toggleMute();
+
       return;
     }
 
@@ -100,6 +107,7 @@ export function useViewerKeyboardControls({
     window.addEventListener('keydown', keyDownListener);
     window.addEventListener('keyup', keyUpListener);
     window.addEventListener('blur', blurListener);
+
     return () => {
       window.removeEventListener('keydown', keyDownListener);
       window.removeEventListener('keyup', keyUpListener);

@@ -18,7 +18,9 @@ import {
 import type { LockstepObserver, LockstepPlan, PushChangesOptions } from "./types.js";
 
 const DEFAULT_UPLOAD_CONCURRENCY = 3;
+
 const MIN_UPLOAD_CONCURRENCY = 1;
+
 const MAX_UPLOAD_CONCURRENCY = 8;
 
 function throwIfAborted(signal?: AbortSignal): void {
@@ -31,6 +33,7 @@ function resolveUploadConcurrency(value: number | undefined): number {
   if (value === undefined) {
     return DEFAULT_UPLOAD_CONCURRENCY;
   }
+
   if (
     !Number.isInteger(value) ||
     value < MIN_UPLOAD_CONCURRENCY ||
@@ -40,6 +43,7 @@ function resolveUploadConcurrency(value: number | undefined): number {
       `uploadConcurrency must be an integer between ${MIN_UPLOAD_CONCURRENCY} and ${MAX_UPLOAD_CONCURRENCY}`,
     );
   }
+
   return value;
 }
 
@@ -72,6 +76,7 @@ export async function pushChanges(
   throwIfAborted(signal);
 
   const changedItems = selectChangedItems(plan.items);
+
   const { items: itemsToPush, omittedCount } = selectUploadUpdateItems(
     changedItems,
     options.maxChanges,
@@ -90,6 +95,7 @@ export async function pushChanges(
         status: "completed",
       },
     });
+
     return { failed: 0, plan, pushed: 0 };
   }
 
@@ -109,11 +115,13 @@ export async function pushChanges(
     cacheRoot: options.hashCacheRoot,
     sourceRoot: plan.sourceRoot,
   });
+
   if (cacheWarning) {
     observer?.onEvent({ type: "status", message: `Warning: ${cacheWarning}` });
   }
 
   observer?.onEvent({ type: "status", message: "Creating sync run..." });
+
   const syncRun = await remote.postJson(
     options.apiUrl,
     "/api/sync/runs",
@@ -157,6 +165,7 @@ export async function pushChanges(
             sourceRoot: plan.sourceRoot,
             total: itemsToPush.length,
           });
+
           await remote.pushMediaItem({
             apiToken: options.apiToken,
             apiUrl: options.apiUrl,
@@ -187,6 +196,7 @@ export async function pushChanges(
             abortError = error;
             throw error;
           }
+
           const failure = toError(error);
           failed += 1;
           observer?.onEvent({
@@ -272,6 +282,7 @@ export async function pushChanges(
   };
 
   observer?.onEvent({ type: "complete", summary });
+
   return { failed, plan, pushed };
 }
 
@@ -303,12 +314,16 @@ async function runBoundedQueue<T>({
       if (settled) {
         return;
       }
+
       if (active === 0 && (nextIndex >= tasks.length || signal?.aborted)) {
         settled = true;
+
         if (signal?.aborted) {
           reject(firstError ?? signal.reason ?? new DOMException("Aborted", "AbortError"));
+
           return;
         }
+
         resolve();
       }
     };
@@ -320,6 +335,7 @@ async function runBoundedQueue<T>({
 
       if (signal?.aborted) {
         settleIfDone();
+
         return;
       }
 
@@ -329,6 +345,7 @@ async function runBoundedQueue<T>({
         }
 
         const task = tasks[nextIndex++];
+
         if (task === undefined) {
           break;
         }
@@ -337,6 +354,7 @@ async function runBoundedQueue<T>({
         void work(task)
           .catch((error) => {
             const failure = toError(error);
+
             if (signal?.aborted) {
               firstError = firstError ?? failure;
             } else if (!settled) {
@@ -348,13 +366,17 @@ async function runBoundedQueue<T>({
           })
           .finally(() => {
             active -= 1;
+
             if (settled) {
               return;
             }
+
             if (signal?.aborted) {
               settleIfDone();
+
               return;
             }
+
             schedule();
             settleIfDone();
           });
@@ -365,6 +387,7 @@ async function runBoundedQueue<T>({
 
     if (tasks.length === 0) {
       resolve();
+
       return;
     }
 
@@ -393,16 +416,19 @@ async function resolvePushItemHash({
 }): Promise<MediaItem> {
   const filePath = resolveLocalFilePath(sourceRoot, item.path);
   const fileStat = await stat(filePath);
+
   const fingerprint: ArchiveFileFingerprint = {
     ctimeMs: fileStat.ctimeMs,
     mtimeMs: Math.trunc(fileStat.mtimeMs),
     size: fileStat.size,
   };
+
   if (fingerprint.size !== item.size || fingerprint.mtimeMs !== Math.trunc(item.mtimeMs)) {
     throw new Error(`Local file changed after planning; rerun sync: ${item.path}`);
   }
 
   let sha256 = cache.get(item.path, fingerprint);
+
   if (!sha256) {
     observer?.onEvent({
       type: "status",
@@ -419,14 +445,17 @@ async function resolvePushItemHash({
       signal,
     );
     const afterStat = await stat(filePath);
+
     const afterFingerprint: ArchiveFileFingerprint = {
       ctimeMs: afterStat.ctimeMs,
       mtimeMs: Math.trunc(afterStat.mtimeMs),
       size: afterStat.size,
     };
+
     if (!fingerprintsMatch(fingerprint, afterFingerprint)) {
       throw new Error(`Local file changed after planning; rerun sync: ${item.path}`);
     }
+
     cache.set(item.path, fingerprint, sha256);
   }
 

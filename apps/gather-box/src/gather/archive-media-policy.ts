@@ -20,17 +20,21 @@ export function planArchiveMedia(fileName: string, mimeType: string): ArchiveMed
       ? null
       : { action: "rename-avif", fileName: replaceFileExtension(fileName, "avif") };
   }
+
   if (normalizedMimeType === "video/mp4") {
     return extension === "mp4"
       ? null
       : { action: "rename-mp4", fileName: replaceFileExtension(fileName, "mp4") };
   }
+
   if (normalizedMimeType === "image/gif") {
     return { action: "convert-mp4", fileName: replaceFileExtension(fileName, "mp4") };
   }
+
   if (normalizedMimeType.startsWith("video/")) {
     return null;
   }
+
   if (normalizedMimeType.startsWith("image/") && normalizedMimeType !== "image/svg+xml") {
     return { action: "convert-avif", fileName: replaceFileExtension(fileName, "avif") };
   }
@@ -40,18 +44,22 @@ export function planArchiveMedia(fileName: string, mimeType: string): ArchiveMed
 
 function planFromExtension(fileName: string): ArchiveMediaPlan | null {
   const extension = getFileExtension(fileName);
+
   if (extension === "gif") {
     return { action: "convert-mp4", fileName: replaceFileExtension(fileName, "mp4") };
   }
+
   if (STILL_IMAGE_EXTENSIONS.has(extension)) {
     return { action: "convert-avif", fileName: replaceFileExtension(fileName, "avif") };
   }
+
   return null;
 }
 
 function getFileExtension(fileName: string): string {
   const lastSegment = fileName.split(/[\\/]/).at(-1) ?? fileName;
   const dotIndex = lastSegment.lastIndexOf(".");
+
   return dotIndex > 0 ? lastSegment.slice(dotIndex + 1).toLowerCase() : "";
 }
 
@@ -59,5 +67,6 @@ function replaceFileExtension(fileName: string, extension: string): string {
   const lastSlashIndex = Math.max(fileName.lastIndexOf("/"), fileName.lastIndexOf("\\"));
   const dotIndex = fileName.lastIndexOf(".");
   const baseName = dotIndex > lastSlashIndex + 1 ? fileName.slice(0, dotIndex) : fileName;
+
   return `${baseName}.${extension}`;
 }

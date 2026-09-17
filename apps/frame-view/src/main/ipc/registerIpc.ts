@@ -30,10 +30,12 @@ type IpcResponseHandler<T> = (
 
 /** The parts of the settings, catalog, and media-tools services the IPC layer drives. */
 export type IpcSettingsService = Pick<SettingsService, 'getSettings' | 'updateSettings'>;
+
 export type IpcCatalogService = Pick<
   CatalogService,
   'cancelScan' | 'clearIndex' | 'getMediaIndexStats' | 'startScan'
 >;
+
 export type IpcMediaToolsService = Pick<MediaToolsService, 'getStatus' | 'probeVideo'>;
 
 /** Everything the IPC layer reaches outside itself: Electron, the folder tree, media access. */
@@ -113,6 +115,7 @@ function validateIpcInput<T>(
   channel: string,
 ): { ok: true; value: T } | { ok: false; serialized: ReturnType<typeof serializeAppResult> } {
   const parsed = parseWithSchema(schema, input, channel);
+
   if (Result.isError(parsed)) {
     return { ok: false, serialized: serializeAppResult(Result.err(parsed.error)) };
   }
@@ -148,19 +151,23 @@ export function registerIpc(
     }
 
     const selectedPathResult = await runtime.resolveFolderPath(filePaths[0]);
+
     if (Result.isError(selectedPathResult)) {
       return serializeAppResult(Result.err(selectedPathResult.error));
     }
 
     const selectedPath = selectedPathResult.value;
+
     if (!selectedPath) {
       return okResult<string | null>(null);
     }
 
     await runtime.authorizeMediaRoot(selectedPath);
     const settings = settingsService.getSettings();
+
     if (settings.rememberLastFolder) {
       const updateResult = await settingsService.updateSettings({ lastFolderPath: selectedPath });
+
       if (Result.isError(updateResult)) {
         return serializeAppResult(Result.err(updateResult.error));
       }
@@ -171,11 +178,13 @@ export function registerIpc(
 
   runtime.handle(InvokeIpcContracts.resolveInputPath.channel, async (candidatePath: JsonValue) => {
     const validated = validateIpcInput(PathInputSchema, candidatePath, 'path:resolve-input');
+
     if (!validated.ok) {
       return validated.serialized;
     }
 
     const resolvedPath = await runtime.resolveFolderPath(validated.value);
+
     if (Result.isError(resolvedPath)) {
       return serializeAppResult(Result.err(resolvedPath.error));
     }
@@ -189,34 +198,41 @@ export function registerIpc(
       options,
       InvokeIpcContracts.startScan.channel,
     );
+
     if (!validated.ok) {
       const error = validated.serialized;
+
       if (!runtime.isWindowDestroyed()) {
         runtime.sendScanEvent({
           type: 'error',
           message: 'Invalid scan options',
         });
       }
+
       return error;
     }
 
     const resolvedRootResult = await runtime.resolveFolderPath(validated.value.rootPath);
+
     if (Result.isError(resolvedRootResult)) {
       return serializeAppResult(Result.err(resolvedRootResult.error));
     }
 
     const resolvedRoot = resolvedRootResult.value;
+
     if (!resolvedRoot) {
       runtime.sendScanEvent({
         type: 'error',
         message: 'Invalid folder path',
         path: validated.value.rootPath,
       });
+
       return validationFailure('scan:start', 'Invalid folder path');
     }
 
     const settings = settingsService.getSettings();
     let authorized = await runtime.isAuthorizedMediaPath(resolvedRoot);
+
     // Remembered folders are chosen via the native dialog, then persisted. After a restart the
     // in-memory allowlist is empty — re-authorize the exact remembered path so auto-scan works.
     if (
@@ -228,6 +244,7 @@ export function registerIpc(
       await runtime.authorizeMediaRoot(resolvedRoot);
       authorized = await runtime.isAuthorizedMediaPath(resolvedRoot);
     }
+
     if (!authorized) {
       if (!runtime.isWindowDestroyed()) {
         runtime.sendScanEvent({
@@ -236,6 +253,7 @@ export function registerIpc(
           path: resolvedRoot,
         });
       }
+
       return validationFailure(
         'scan:start',
         'Folder path is not authorized. Open a folder with the native dialog first.',
@@ -246,14 +264,17 @@ export function registerIpc(
 
     if (settings.rememberLastFolder) {
       const updateResult = await settingsService.updateSettings({ lastFolderPath: resolvedRoot });
+
       if (Result.isError(updateResult)) {
         return serializeAppResult(Result.err(updateResult.error));
       }
     }
 
     const excludedRootChildPaths: string[] = [];
+
     for (const excludedPath of validated.value.excludedRootChildPaths) {
       const resolvedExcludedPath = path.resolve(excludedPath);
+
       if (path.dirname(resolvedExcludedPath) === resolvedRoot) {
         excludedRootChildPaths.push(resolvedExcludedPath);
       }
@@ -264,6 +285,7 @@ export function registerIpc(
       rootPath: resolvedRoot,
       excludedRootChildPaths,
     });
+
     if (Result.isError(startResult)) {
       if (!runtime.isWindowDestroyed()) {
         runtime.sendScanEvent({
@@ -280,6 +302,7 @@ export function registerIpc(
 
   runtime.handle(InvokeIpcContracts.cancelScan.channel, async () => {
     const cancelResult = await catalogService.cancelScan();
+
     if (Result.isError(cancelResult)) {
       return serializeAppResult(Result.err(cancelResult.error));
     }
@@ -289,26 +312,31 @@ export function registerIpc(
 
   runtime.handle(InvokeIpcContracts.listFolderChildren.channel, async (folderPath: JsonValue) => {
     const validated = validateIpcInput(PathInputSchema, folderPath, 'tree:list-children');
+
     if (!validated.ok) {
       return validated.serialized;
     }
 
     const resolvedPathResult = await runtime.resolveFolderPath(validated.value);
+
     if (Result.isError(resolvedPathResult)) {
       return serializeAppResult(Result.err(resolvedPathResult.error));
     }
 
     const resolvedPath = resolvedPathResult.value;
+
     if (!resolvedPath) {
       return validationFailure('tree:list-children', 'Invalid folder path');
     }
 
     const authorized = await runtime.isAuthorizedMediaPath(resolvedPath);
+
     if (!authorized) {
       return validationFailure('tree:list-children', 'Folder path is not authorized');
     }
 
     const childrenResult = await runtime.listFolderChildren(resolvedPath);
+
     if (Result.isError(childrenResult)) {
       return serializeAppResult(Result.err(childrenResult.error));
     }
@@ -326,38 +354,45 @@ export function registerIpc(
       patch,
       InvokeIpcContracts.updateSettings.channel,
     );
+
     if (!validated.ok) {
       return validated.serialized;
     }
 
     const { lastFolderPath } = validated.value;
+
     const normalizedPatch =
       lastFolderPath === undefined || lastFolderPath === null
         ? validated.value
         : { ...validated.value, lastFolderPath: path.resolve(lastFolderPath) };
 
     const updatedSettings = await settingsService.updateSettings(normalizedPatch);
+
     if (Result.isError(updatedSettings)) {
       return serializeAppResult(Result.err(updatedSettings.error));
     }
 
     runtime.setThumbnailDebugOptions(updatedSettings.value.debug);
+
     return okResult(updatedSettings.value);
   });
 
   runtime.handle(InvokeIpcContracts.revealInFolder.channel, async (filePath: JsonValue) => {
     const validated = validateIpcInput(PathInputSchema, filePath, 'shell:reveal-in-folder');
+
     if (!validated.ok) {
       return validated.serialized;
     }
 
     const resolvedPath = path.resolve(validated.value);
     const authorized = await runtime.isAuthorizedMediaPath(resolvedPath);
+
     if (!authorized) {
       return validationFailure('shell:reveal-in-folder', 'Media path is not authorized');
     }
 
     runtime.showItemInFolder(resolvedPath);
+
     return okResult(undefined);
   });
 
@@ -367,6 +402,7 @@ export function registerIpc(
       request,
       InvokeIpcContracts.probeVideoMetadata.channel,
     );
+
     if (!validated.ok) {
       return validated.serialized;
     }
@@ -377,6 +413,7 @@ export function registerIpc(
     };
 
     const authorized = await runtime.isAuthorizedMediaPath(sanitizedRequest.path);
+
     if (!authorized) {
       return validationFailure('media:probe-video', 'Media path is not authorized');
     }
@@ -392,11 +429,13 @@ export function registerIpc(
 
   runtime.handle(InvokeIpcContracts.clearThumbnailCache.channel, async () => {
     await runtime.clearThumbnailCache();
+
     return okResult(undefined);
   });
 
   runtime.handle(InvokeIpcContracts.getMediaIndexStats.channel, async () => {
     const statsResult = await catalogService.getMediaIndexStats();
+
     if (Result.isError(statsResult)) {
       return serializeAppResult(Result.err(statsResult.error));
     }
@@ -406,6 +445,7 @@ export function registerIpc(
 
   runtime.handle(InvokeIpcContracts.clearMediaIndex.channel, async () => {
     const clearResult = await catalogService.clearIndex();
+
     if (Result.isError(clearResult)) {
       return serializeAppResult(Result.err(clearResult.error));
     }
@@ -454,6 +494,7 @@ export function registerIpc(
     };
 
     const parsedDiagnostics = DiagnosticsSnapshotSchema.safeParse(diagnostics);
+
     if (!parsedDiagnostics.success) {
       return validationFailure('debug:get-diagnostics', 'Invalid diagnostics snapshot');
     }

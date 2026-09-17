@@ -2,6 +2,7 @@ import { z } from "zod";
 
 /** Any JSON value — what `JSON.parse` and the IPC transport hand back before parsing. */
 const JsonValueSchema = z.json();
+
 export type JsonValue = z.infer<typeof JsonValueSchema>;
 
 export const IpcErrorPayloadSchema = z.discriminatedUnion("_tag", [

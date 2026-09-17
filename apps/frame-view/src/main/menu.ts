@@ -39,6 +39,7 @@ export function buildAppMenu(onCommand: (command: AppCommand) => void): void {
   ];
 
   const macWindowItems: MenuItemConstructorOptions[] = isMac ? [{ role: 'zoom' }] : [];
+
   const windowSubmenu: MenuItemConstructorOptions[] = [
     { role: 'minimize' },
     ...macWindowItems,

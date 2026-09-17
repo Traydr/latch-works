@@ -41,11 +41,13 @@ export function CleanupJobProgress({
   const isActive = job.status === "pending" || job.status === "running";
   const isWipe = job.type === "library_hard_wipe";
   const isShutterPurge = job.type === "shutter_source_purge";
+
   const phaseLabel = isWipe
     ? phaseLabels[job.progress.phase]
     : isShutterPurge
       ? shutterPhaseLabels[job.progress.phase]
       : purgePhaseLabels[job.progress.phase];
+
   const jobTitle = isWipe
     ? "Library wipe cleanup"
     : isShutterPurge
@@ -109,11 +111,13 @@ export function CleanupJobProgress({
 function estimateProgress(job: CleanupJobStatus): number {
   if (job.type === "shutter_source_purge") {
     if (job.status === "completed") return 100;
+
     return { completed: 100, queue_sources: 25, shutter_sources: 60 }[job.progress.phase];
   }
 
   if (job.type === "soft_deleted_purge") {
     if (job.status === "completed") return 100;
+
     return { completed: 100, db_hard_delete: 85, orphaned_media: 35 }[job.progress.phase];
   }
 

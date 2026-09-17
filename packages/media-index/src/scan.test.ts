@@ -16,11 +16,13 @@ function entry(name: string, type: "directory" | "file" | "other" = "file"): Dir
 
 function delayedStream(content: string, delay: number, onDestroy?: () => void): Readable {
   let sent = false;
+
   return new Readable({
     read() {
       if (sent) {
         return;
       }
+
       sent = true;
       setTimeout(() => {
         this.push(Buffer.from(content));
@@ -107,10 +109,12 @@ describe("scanArchive", () => {
       ["/archive/a", [entry("later.txt"), entry("first.jpg")]],
       ["/archive/z", [entry("last.png"), entry("socket", "other")]],
     ]);
+
     const operations: ScanArchiveOperations = {
       createReadStream: () => Readable.from([]),
       readdir: async (directoryPath) => {
         await new Promise((resolve) => setTimeout(resolve, directoryPath.endsWith("a") ? 20 : 1));
+
         return directories.get(directoryPath) ?? [];
       },
       stat: async () => ({ mtimeMs: 1, size: 1 }),
@@ -134,6 +138,7 @@ describe("scanArchive", () => {
   it("destroys an active hash stream when aborted", async () => {
     const controller = new AbortController();
     let destroyed = false;
+
     const operations: ScanArchiveOperations = {
       createReadStream: () =>
         delayedStream("image", 50, () => {
@@ -149,6 +154,7 @@ describe("scanArchive", () => {
       signal: controller.signal,
       sourceRoot: "/archive",
     });
+
     await new Promise((resolve) => setTimeout(resolve, 5));
     controller.abort(new Error("cancelled"));
 
@@ -158,11 +164,13 @@ describe("scanArchive", () => {
 
   it("rejects a file whose fingerprint changes while it is being hashed", async () => {
     let statCalls = 0;
+
     const operations: ScanArchiveOperations = {
       createReadStream: () => Readable.from([Buffer.from("image")]),
       readdir: async () => [entry("cover.jpg")],
       stat: async () => {
         statCalls += 1;
+
         return { ctimeMs: statCalls, mtimeMs: statCalls, size: 5 };
       },
     };

@@ -16,6 +16,7 @@ export interface SortableMediaItem extends NamedPath {
 
 export function compareByName(a: NamedPath, b: NamedPath) {
   const byName = nameCollator.compare(a.name, b.name);
+
   if (byName !== 0) {
     return byName;
   }
@@ -25,6 +26,7 @@ export function compareByName(a: NamedPath, b: NamedPath) {
 
 export function hashString(value: string): number {
   let hash = 2166136261;
+
   for (let index = 0; index < value.length; index += 1) {
     hash ^= value.charCodeAt(index);
     hash = Math.imul(hash, 16777619);
@@ -52,17 +54,23 @@ export function sortMediaItems<T extends SortableMediaItem>(
         return compareByName(b, a);
       case "date-newest": {
         const byDate = b.mtimeMs - a.mtimeMs;
+
         return byDate !== 0 ? byDate : compareByName(a, b);
       }
+
       case "date-oldest": {
         const byDate = a.mtimeMs - b.mtimeMs;
+
         return byDate !== 0 ? byDate : compareByName(a, b);
       }
+
       case "random": {
         const aScore = hashString(`${randomSeed}:${a.path}`);
         const bScore = hashString(`${randomSeed}:${b.path}`);
+
         return aScore !== bScore ? aScore - bScore : compareByName(a, b);
       }
+
       default:
         return compareByName(a, b);
     }

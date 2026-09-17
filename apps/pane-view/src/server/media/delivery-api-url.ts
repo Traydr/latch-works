@@ -8,6 +8,7 @@ export function snapThumbnailSize(requestedSize: number): number {
 
   for (const size of THUMBNAIL_SIZE_LADDER) {
     const distance = Math.abs(normalized - size);
+
     if (distance < closestDistance) {
       closest = size;
       closestDistance = distance;

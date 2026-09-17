@@ -55,6 +55,7 @@ export async function pruneDeleted(
         status: "completed",
       },
     });
+
     return { failed: 0, plan, pruned: 0 };
   }
 
@@ -71,6 +72,7 @@ export async function pruneDeleted(
   }
 
   observer?.onEvent({ type: "status", message: "Creating sync run..." });
+
   const syncRun = await remote.postJson(
     options.apiUrl,
     "/api/sync/runs",
@@ -92,6 +94,7 @@ export async function pruneDeleted(
       throwIfAborted(signal);
 
       const current = index + 1;
+
       try {
         observer?.onEvent({
           type: "status",
@@ -117,6 +120,7 @@ export async function pruneDeleted(
           cancelled = true;
           throw error;
         }
+
         const failure = toError(error);
         failed += 1;
         observer?.onEvent({
@@ -193,5 +197,6 @@ export async function pruneDeleted(
   };
 
   observer?.onEvent({ type: "complete", summary });
+
   return { failed, plan, pruned };
 }

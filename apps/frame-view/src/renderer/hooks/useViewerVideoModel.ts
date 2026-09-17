@@ -11,16 +11,19 @@ import {
 import type { MediaItem } from '../../shared/types';
 
 const VIEWER_VOLUME_STORAGE_KEY = 'frameview.viewer.volume';
+
 const VIEWER_MUTED_STORAGE_KEY = 'frameview.viewer.muted';
 
 function readPersistedVolume(): number {
   try {
     const raw = window.localStorage.getItem(VIEWER_VOLUME_STORAGE_KEY);
+
     if (!raw) {
       return 1;
     }
 
     const parsed = Number(raw);
+
     if (!Number.isFinite(parsed)) {
       return 1;
     }
@@ -52,8 +55,10 @@ function persist(key: string, value: string): void {
  * (prefixed fullscreen) differ, so the viewer reads them as optional.
  */
 type OptionalFastSeek = Partial<Pick<HTMLMediaElement, 'fastSeek'>>;
+
 type FullscreenHost = Partial<Pick<HTMLElement, 'requestFullscreen'>> &
   Partial<{ webkitRequestFullscreen: () => Promise<void> | void }>;
+
 type WebkitFullscreenDocument = Partial<
   Pick<Document, 'exitFullscreen' | 'fullscreenElement' | 'fullscreenEnabled'>
 > &
@@ -61,10 +66,12 @@ type WebkitFullscreenDocument = Partial<
     webkitExitFullscreen: () => Promise<void> | void;
     webkitFullscreenElement: Element | null;
   }>;
+
 type WebkitFullscreenVideo = HTMLVideoElement & Partial<{ webkitEnterFullscreen: () => void }>;
 
 function fullscreenElementOf(document: Document): Element | null {
   const doc: WebkitFullscreenDocument = document;
+
   return doc.fullscreenElement ?? doc.webkitFullscreenElement ?? null;
 }
 
@@ -134,6 +141,7 @@ export function useViewerVideoModel({
     const onFullscreenChange = (): void => setIsFullscreen(fullscreenElementOf(document) !== null);
     document.addEventListener('fullscreenchange', onFullscreenChange);
     document.addEventListener('webkitfullscreenchange', onFullscreenChange);
+
     return () => {
       document.removeEventListener('fullscreenchange', onFullscreenChange);
       document.removeEventListener('webkitfullscreenchange', onFullscreenChange);
@@ -142,6 +150,7 @@ export function useViewerVideoModel({
 
   const applySpeed = useCallback((nextSpeed: number): void => {
     setSpeed(nextSpeed);
+
     if (videoRef.current) {
       videoRef.current.playbackRate = nextSpeed;
     }
@@ -151,11 +160,13 @@ export function useViewerVideoModel({
 
   const commitSeek = useCallback((rawTarget: number): void => {
     const video = videoRef.current;
+
     if (!video) {
       return;
     }
 
     const total = video.duration;
+
     if (!Number.isFinite(total) || total <= 0) {
       return;
     }
@@ -165,6 +176,7 @@ export function useViewerVideoModel({
     const wasPlaying = !video.paused;
 
     const seeker: OptionalFastSeek = video;
+
     if (seeker.fastSeek) {
       seeker.fastSeek(nextTime);
     } else {
@@ -183,9 +195,11 @@ export function useViewerVideoModel({
   const skip = useCallback(
     (seconds: number): void => {
       const video = videoRef.current;
+
       if (!video) {
         return;
       }
+
       commitSeek(video.currentTime + seconds);
     },
     [commitSeek],
@@ -193,6 +207,7 @@ export function useViewerVideoModel({
 
   const toggleVideoPlayback = useCallback((): void => {
     const video = videoRef.current;
+
     if (!video) {
       return;
     }
@@ -206,32 +221,40 @@ export function useViewerVideoModel({
 
   const toggleFullscreen = useCallback(async (): Promise<void> => {
     const dialog = modalRef.current;
+
     if (!dialog) {
       return;
     }
 
     const doc: WebkitFullscreenDocument = document;
+
     if (fullscreenElementOf(document)) {
       if (doc.exitFullscreen) await document.exitFullscreen();
       else await doc.webkitExitFullscreen?.();
+
       return;
     }
 
     // Element fullscreen where the platform allows it; otherwise the video
     // itself can still go full screen with its native player.
     const host: FullscreenHost = dialog;
+
     try {
       if (doc.fullscreenEnabled !== false && host.requestFullscreen) {
         await dialog.requestFullscreen();
+
         return;
       }
+
       if (host.webkitRequestFullscreen) {
         await host.webkitRequestFullscreen();
+
         return;
       }
     } catch {
       // Fall through to the video's own fullscreen.
     }
+
     const video: WebkitFullscreenVideo | null = videoRef.current;
     video?.webkitEnterFullscreen?.();
   }, [modalRef]);
@@ -241,8 +264,10 @@ export function useViewerVideoModel({
     setVolume(clamped);
     persist(VIEWER_VOLUME_STORAGE_KEY, String(clamped));
     const video = videoRef.current;
+
     if (video) {
       video.volume = clamped;
+
       if (clamped > 0 && video.muted) {
         video.muted = false;
         setMuted(false);
@@ -254,9 +279,11 @@ export function useViewerVideoModel({
   const toggleMute = useCallback((): void => {
     const next = !muted;
     setMuted(next);
+
     if (videoRef.current) {
       videoRef.current.muted = next;
     }
+
     persist(VIEWER_MUTED_STORAGE_KEY, next ? '1' : '0');
   }, [muted]);
 

@@ -12,11 +12,13 @@ const RemoteEntrySchema = z.object({
 });
 
 const RemoteSnapshotFileSchema = z.array(RemoteEntrySchema);
+
 const RemoteSnapshotResponseSchema = z.object({ entries: RemoteSnapshotFileSchema });
 
 export async function readRemoteSnapshot(filePath: string): Promise<RemoteEntrySnapshot[]> {
   const raw = await readFile(filePath, "utf-8");
   const snapshot = RemoteSnapshotFileSchema.safeParse(JSON.parse(raw));
+
   if (!snapshot.success) {
     throw new Error(
       failedAtRoot(snapshot.error, 0) ? "Remote snapshot must be a JSON array." : ENTRY_ERROR,
@@ -44,6 +46,7 @@ export async function fetchRemoteSnapshot(
   }
 
   const snapshot = RemoteSnapshotResponseSchema.safeParse(await response.json());
+
   if (!snapshot.success) {
     throw new Error(
       failedAtRoot(snapshot.error, 1)

@@ -1,7 +1,11 @@
 export { doctor } from "./doctor.js";
+
 export { planSync } from "./plan-sync.js";
+
 export { pruneDeleted } from "./prune-deleted.js";
+
 export { pushChanges } from "./push-changes.js";
+
 export type {
   DoctorCheck,
   DoctorOptions,

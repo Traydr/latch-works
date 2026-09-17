@@ -54,6 +54,7 @@ export async function doctor(
 
   if (options.apiUrl && options.apiToken) {
     observer?.onEvent({ type: "status", message: "Checking API snapshot endpoint..." });
+
     try {
       const entries = await fetchRemoteSnapshot(options.apiUrl, options.apiToken, options.signal);
       checks.push({

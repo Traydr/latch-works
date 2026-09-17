@@ -17,8 +17,11 @@ import { type GalleryRandomSeed, GalleryRandomSeedSchema } from "../gallery/gall
 import type { LibraryMediaItem, MediaPage } from "./types";
 
 const fixtureRoots = ["nsfw", "nsfw-stories", "sfw", "sfw/patreon"];
+
 export const DEFAULT_MEDIA_PAGE_LIMIT = 500;
+
 const SEARCH_RESULT_LIMIT = 200;
+
 /** Most excluded child paths one listing request may carry; the client trims to it too. */
 export const EXCLUDED_PATHS_LIMIT = 200;
 
@@ -87,11 +90,13 @@ export const deleteLibraryEntry = createServerFn({ method: "POST" })
 
     const { softDeleteLibraryEntry } = await import("../../server/library/repository");
     const deleted = await softDeleteLibraryEntry({ entryId: data.entryId });
+
     return { deleted };
   });
 
 export async function assertWebSessionAuthorized(): Promise<void> {
   const { isCurrentWebSessionValid } = await import("../../server/auth/web-session");
+
   if (!(await isCurrentWebSessionValid())) {
     throw new Error("Unauthorized");
   }
@@ -110,6 +115,7 @@ export interface LibrarySnapshotSource {
 const databaseLibrarySnapshotSource: LibrarySnapshotSource = {
   async readDatabaseLibrarySnapshot(request) {
     const { readDatabaseLibrarySnapshot } = await import("../../server/library/repository");
+
     return readDatabaseLibrarySnapshot(request);
   },
 };
@@ -125,12 +131,14 @@ export async function readLibrarySnapshotRequest(
   const recursive = (data.recursive ?? false) || comicMode;
   const searchOffset = data.searchOffset ?? 0;
   const mediaOffset = query ? searchOffset : (data.mediaOffset ?? 0);
+
   const mediaLimit =
     data.mediaLimit !== undefined
       ? data.mediaLimit
       : query
         ? SEARCH_RESULT_LIMIT
         : DEFAULT_MEDIA_PAGE_LIMIT;
+
   const databaseSnapshot = await source.readDatabaseLibrarySnapshot({
     currentPath,
     includeAllFolders,
@@ -166,6 +174,7 @@ export const getGalleryListing = createServerFn({ method: "GET" })
 
     if (comicMode) {
       const { readDatabaseComicListing } = await import("../../server/library/comic-listing");
+
       return readDatabaseComicListing({
         currentPath,
         cursor: data.cursor,
@@ -180,6 +189,7 @@ export const getGalleryListing = createServerFn({ method: "GET" })
     }
 
     const { readDatabaseGalleryListing } = await import("../../server/library/repository");
+
     return readDatabaseGalleryListing({
       currentPath,
       cursor: data.cursor,
@@ -223,6 +233,7 @@ export const getGalleryComic = createServerFn({ method: "GET" })
     const currentPath = normalizeLibraryPath(data.path);
     const comicId = normalizeLibraryPath(data.comicId);
     const { readDatabaseGalleryComic } = await import("../../server/library/comic-listing");
+
     const comic = await readDatabaseGalleryComic({
       comicId,
       currentPath,
@@ -242,6 +253,7 @@ export const getLibrarySnapshot = createServerFn({ method: "GET" })
   .inputValidator(libraryRequestSchema)
   .handler(async ({ data }): Promise<LibrarySnapshot> => {
     await assertWebSessionAuthorized();
+
     return readLibrarySnapshotRequest(data);
   });
 
@@ -262,11 +274,13 @@ export function normalizeExcludedPaths(
   if (!recursive || !excludedPaths || excludedPaths.length === 0) {
     return undefined;
   }
+
   return excludedPaths.map((path) => normalizeLibraryPath(path));
 }
 
 function normalizeQuery(query: string | undefined): string | undefined {
   const trimmed = query?.trim();
+
   return trimmed ? trimmed : undefined;
 }
 

@@ -30,6 +30,7 @@ export function useVideoMetadataQueue({
       metadataProbeQueueRef.current.length > 0
     ) {
       const item = metadataProbeQueueRef.current.shift();
+
       if (!item) {
         continue;
       }

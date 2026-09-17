@@ -2,6 +2,7 @@ import * as z from "zod/mini";
 import type { ResolveRedgifsMediaResponse, ResolvedRedgifsMedia } from "../shared/reddit-media";
 
 const REDGIFS_TEMPORARY_AUTH_URL = "https://api.redgifs.com/v2/auth/temporary";
+
 const REQUEST_TIMEOUT_MS = 12_000;
 
 type Fetcher = typeof fetch;
@@ -30,11 +31,13 @@ export async function resolveRedgifsMedia(
   try {
     const normalizedId = redgifsId.toLowerCase();
     const authResponse = await fetchWithTimeout(fetcher, REDGIFS_TEMPORARY_AUTH_URL);
+
     if (!authResponse.ok) {
       return failed(`temporary authorization returned HTTP ${authResponse.status}`);
     }
 
     const auth = RedgifsAuthResponseSchema.safeParse(await authResponse.json());
+
     if (!auth.success) {
       return failed("temporary authorization did not return a token");
     }
@@ -50,6 +53,7 @@ export async function resolveRedgifsMedia(
         }
       }
     );
+
     if (!gifResponse.ok) {
       return failed(`media lookup returned HTTP ${gifResponse.status}`);
     }
@@ -58,6 +62,7 @@ export async function resolveRedgifsMedia(
       RedgifsGifResponseSchema.parse(await gifResponse.json()),
       normalizedId
     );
+
     return media ? { ok: true, media } : failed("media lookup did not return a valid MP4 URL");
   } catch (error) {
     return failed(error instanceof Error ? error.message : "unknown RedGIFs error");
@@ -71,6 +76,7 @@ export function parseRedgifsMedia(
   const { urls } = body.gif;
 
   const originalUrl = [urls.hd, urls.sd].find(isAllowedRedgifsMp4Url);
+
   if (originalUrl === undefined) {
     return null;
   }
@@ -100,6 +106,7 @@ function isAllowedRedgifsUrl(value: string | undefined): value is string {
 
   try {
     const url = new URL(value);
+
     return (
       url.protocol === "https:" &&
       (url.hostname === "redgifs.com" || url.hostname.endsWith(".redgifs.com"))

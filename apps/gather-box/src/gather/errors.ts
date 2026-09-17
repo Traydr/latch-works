@@ -19,6 +19,7 @@ export function toError(cause: unknown): Error {
   }
 
   const thrown = ThrownMessageSchema.safeParse(cause);
+
   if (thrown.success) {
     return new Error(thrown.data || "Unknown error", { cause });
   }

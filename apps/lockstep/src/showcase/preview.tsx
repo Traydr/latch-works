@@ -6,9 +6,11 @@ import { ShowcasePipelineStepsDemo, ShowcasePushTimerDemo } from "./demo-screens
 import { ShowcasePlanScreen, ShowcasePushScreen } from "./screens";
 
 document.documentElement.classList.add("dark");
+
 document.body.classList.add("dark", "bg-zinc-950");
 
 const screen = new URLSearchParams(window.location.search).get("screen") ?? "plan";
+
 const rootElement = document.getElementById("root");
 
 if (!rootElement) {

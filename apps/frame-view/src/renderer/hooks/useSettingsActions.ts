@@ -56,9 +56,11 @@ export function useSettingsActions({
     async (patch: AppSettingsPatch): Promise<void> => {
       const runUpdate = async (): Promise<void> => {
         const result = await frameViewClientResult.updateSettings(patch);
+
         if (Result.isError(result)) {
           console.error('[frameView:update-settings]', result.error);
           scheduleStatusReset(`Settings update failed: ${result.error.message}`);
+
           return;
         }
 
@@ -84,9 +86,11 @@ export function useSettingsActions({
   const copyDiagnosticsAction = useCallback((): void => {
     void (async () => {
       const result = await frameViewClientResult.getDiagnosticsSnapshot();
+
       if (Result.isError(result)) {
         console.error('[frameView:get-diagnostics-snapshot]', result.error);
         scheduleStatusReset('Diagnostics unavailable');
+
         return;
       }
 
@@ -96,6 +100,7 @@ export function useSettingsActions({
         recursive,
         scanState,
       });
+
       await navigator.clipboard.writeText(report);
       await refreshSettingsPanelData();
     })();
@@ -109,12 +114,14 @@ export function useSettingsActions({
     void (async () => {
       const result = await frameViewClientResult.clearThumbnailCache();
       const errorMessage = getFrameViewErrorMessage(result, 'Thumbnail cache clear failed');
+
       if (errorMessage) {
         console.error(
           '[frameView:clear-thumbnail-cache]',
           Result.isError(result) ? result.error : null,
         );
         scheduleStatusReset(errorMessage);
+
         return;
       }
 
@@ -127,12 +134,14 @@ export function useSettingsActions({
     void (async () => {
       const result = await frameViewClientResult.clearMediaIndex();
       const errorMessage = getFrameViewErrorMessage(result, 'Media index clear failed');
+
       if (errorMessage) {
         console.error(
           '[frameView:clear-media-index]',
           Result.isError(result) ? result.error : null,
         );
         scheduleStatusReset(errorMessage);
+
         return;
       }
 

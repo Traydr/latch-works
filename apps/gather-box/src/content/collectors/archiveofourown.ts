@@ -3,8 +3,11 @@ import { buildStoryPdfFileName } from "../../shared/path";
 import type { GalleryCollectResponse } from "../../shared/types";
 
 const AO3_PDF_LINK_SELECTOR = 'li.download a[href*=".pdf"]';
+
 const AO3_TITLE_SELECTOR = "#workskin h2.title.heading";
+
 const AO3_BYLINE_SELECTOR = "#workskin h3.byline.heading";
+
 const AO3_AUTHOR_SELECTOR = '#workskin h3.byline.heading a[rel="author"]';
 
 export function collectArchiveOfOurOwnData(
@@ -20,6 +23,7 @@ export function collectArchiveOfOurOwnData(
   }
 
   const pdfUrl = getPdfUrl(document, location);
+
   if (!pdfUrl) {
     return {
       ok: false,
@@ -29,6 +33,7 @@ export function collectArchiveOfOurOwnData(
   }
 
   const title = getText(document.querySelector(AO3_TITLE_SELECTOR));
+
   if (!title) {
     return {
       ok: false,
@@ -38,6 +43,7 @@ export function collectArchiveOfOurOwnData(
   }
 
   const author = getAuthors(document);
+
   if (!author) {
     return {
       ok: false,
@@ -71,11 +77,13 @@ function getPdfUrl(document: Document, location: PageLocation): string | null {
 
   for (const link of links) {
     const href = link.getAttribute("href");
+
     if (!href) {
       continue;
     }
 
     const url = new URL(href, location.href);
+
     if (url.pathname.toLowerCase().endsWith(".pdf")) {
       return url.toString();
     }
@@ -98,6 +106,7 @@ function getAuthors(document: Document): string {
 
 function getWorkId(location: PageLocation): string | null {
   const match = location.pathname.match(/^\/works\/([^/]+)/);
+
   return match ? match[1] : null;
 }
 

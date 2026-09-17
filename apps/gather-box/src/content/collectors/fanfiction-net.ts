@@ -3,10 +3,15 @@ import { buildStoryPdfFileName } from "../../shared/path";
 import type { GalleryCollectResponse, StoryChapterReference } from "../../shared/types";
 
 const FFN_HOSTNAME = "www.fanfiction.net";
+
 const FFN_TITLE_SELECTOR = "#profile_top b.xcontrast_txt";
+
 const FFN_AUTHOR_SELECTOR = '#profile_top a.xcontrast_txt[href^="/u/"]';
+
 const FFN_SUMMARY_SELECTOR = "#profile_top div.xcontrast_txt";
+
 const FFN_METADATA_SELECTOR = "#profile_top span.xgray.xcontrast_txt";
+
 const FFN_CHAPTER_SELECTOR = "select#chap_select";
 
 interface FanfictionStoryPath {
@@ -25,6 +30,7 @@ export function collectFanfictionNetData(document: Document, location: PageLocat
   }
 
   const storyPath = parseStoryPath(location);
+
   if (!storyPath) {
     return {
       ok: false,
@@ -34,6 +40,7 @@ export function collectFanfictionNetData(document: Document, location: PageLocat
   }
 
   const title = getText(document.querySelector(FFN_TITLE_SELECTOR)) || getTitleFallback(document);
+
   if (!title) {
     return {
       ok: false,
@@ -43,6 +50,7 @@ export function collectFanfictionNetData(document: Document, location: PageLocat
   }
 
   const author = getText(document.querySelector(FFN_AUTHOR_SELECTOR));
+
   if (!author) {
     return {
       ok: false,
@@ -52,6 +60,7 @@ export function collectFanfictionNetData(document: Document, location: PageLocat
   }
 
   const chapters = getChapters(document, location, storyPath);
+
   if (chapters.length === 0) {
     return {
       ok: false,
@@ -79,11 +88,13 @@ export function collectFanfictionNetData(document: Document, location: PageLocat
 
 function parseStoryPath(location: PageLocation): FanfictionStoryPath | null {
   const parts = location.pathname.split("/").filter(Boolean);
+
   if (parts.length < 4 || parts[0] !== "s") {
     return null;
   }
 
   const chapter = Number.parseInt(parts[2], 10);
+
   if (!parts[1] || !Number.isFinite(chapter) || chapter < 1 || !parts[3]) {
     return null;
   }
@@ -118,6 +129,7 @@ function getChapters(
 
   for (const option of options) {
     const chapterNumber = Number.parseInt(option.value, 10);
+
     if (!Number.isFinite(chapterNumber) || chapterNumber < 1 || seenChapterNumbers.has(chapterNumber)) {
       continue;
     }
@@ -136,6 +148,7 @@ function getChapters(
 function getTitleFallback(document: Document): string {
   const title = document.title || "";
   const chapterIndex = title.search(/\s+Chapter\s+\d+/i);
+
   if (chapterIndex > 0) {
     return title.slice(0, chapterIndex).trim();
   }

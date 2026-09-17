@@ -39,6 +39,7 @@ function createRemoteApiFake(behaviour: RemoteApiFakeBehaviour): RemoteApiFake {
   const remote: PushRemoteApi = {
     hashLocalFile: async (filePath) => {
       hashedPaths.push(filePath);
+
       return behaviour.sha256;
     },
     postJson: async <TSchema extends z.ZodType>(
@@ -50,6 +51,7 @@ function createRemoteApiFake(behaviour: RemoteApiFakeBehaviour): RemoteApiFake {
       signal?: AbortSignal,
     ) => {
       postJsonCalls.push({ apiToken, apiUrl, body, route, signal });
+
       return schema.parse(
         route === "/api/sync/runs" ? { syncRunId: "run-1" } : { status: "database" },
       );
@@ -68,10 +70,15 @@ function findFinalizeCall(calls: readonly RecordedPostJson[]): RecordedPostJson 
 }
 
 let cacheRoot: string;
+
 let contentSha256: string;
+
 let fake: RemoteApiFake;
+
 let localItem: MediaItem;
+
 let sourceRoot: string;
+
 let tempDir: string;
 
 function createPlan(items: LockstepPlan["items"]): LockstepPlan {
@@ -93,6 +100,7 @@ function createPlan(items: LockstepPlan["items"]): LockstepPlan {
 
 function collectEvents() {
   const events: LockstepRunEvent[] = [];
+
   return {
     events,
     observer: {
@@ -218,6 +226,7 @@ describe("pushChanges orchestration", () => {
     const secondPath = path.join(sourceRoot, "photos", "second.jpg");
     await writeFile(secondPath, Buffer.alloc(1024, 2));
     const secondStat = await stat(secondPath);
+
     const secondItem: MediaItem = {
       ...localItem,
       id: "second",
@@ -226,6 +235,7 @@ describe("pushChanges orchestration", () => {
       path: "photos/second.jpg",
       sha256: undefined,
     };
+
     const plan = createPlan([
       { action: "upload", local: localItem, path: localItem.path },
       { action: "upload", local: secondItem, path: secondItem.path },
@@ -336,6 +346,7 @@ describe("pushChanges orchestration", () => {
 
   it("stops scheduling new uploads after abort and awaits in-flight work", async () => {
     const items: MediaItem[] = [];
+
     for (let index = 0; index < 4; index += 1) {
       const content = Buffer.alloc(32, index + 1);
       const filePath = path.join(sourceRoot, "photos", `abort-${index}.jpg`);
@@ -355,6 +366,7 @@ describe("pushChanges orchestration", () => {
     const plan = createPlan(
       items.map((item) => ({ action: "upload" as const, local: item, path: item.path })),
     );
+
     const controller = new AbortController();
     let started = 0;
     const releaseFirstBatch: Array<() => void> = [];
@@ -389,6 +401,7 @@ describe("pushChanges orchestration", () => {
     });
 
     controller.abort();
+
     for (const release of releaseFirstBatch) {
       release();
     }
@@ -404,6 +417,7 @@ describe("pushChanges orchestration", () => {
     await writeFile(thirdPath, Buffer.alloc(1024, 3));
     const secondStat = await stat(secondPath);
     const thirdStat = await stat(thirdPath);
+
     const secondItem: MediaItem = {
       ...localItem,
       id: "second",
@@ -412,6 +426,7 @@ describe("pushChanges orchestration", () => {
       path: "photos/second.jpg",
       size: 1024,
     };
+
     const thirdItem: MediaItem = {
       ...localItem,
       id: "third",
@@ -420,11 +435,13 @@ describe("pushChanges orchestration", () => {
       path: "photos/third.jpg",
       size: 1024,
     };
+
     const plan = createPlan([
       { action: "upload", local: localItem, path: localItem.path },
       { action: "upload", local: secondItem, path: secondItem.path },
       { action: "upload", local: thirdItem, path: thirdItem.path },
     ]);
+
     fake = createRemoteApiFake({
       onPush: async ({ item }) => {
         if (item.path === secondItem.path) {
@@ -435,6 +452,7 @@ describe("pushChanges orchestration", () => {
     });
 
     const { events, observer } = collectEvents();
+
     const result = await pushChanges(
       {
         apiToken: "token",

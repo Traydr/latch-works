@@ -19,12 +19,14 @@ export function ProfileSelect({ onChange, profiles, value }: ProfileSelectProps)
 
     function handlePointerDown(event: MouseEvent) {
       const target = event.target;
+
       if (!(target instanceof Node) || !rootRef.current?.contains(target)) {
         setOpen(false);
       }
     }
 
     document.addEventListener("mousedown", handlePointerDown);
+
     return () => document.removeEventListener("mousedown", handlePointerDown);
   }, [open]);
 
