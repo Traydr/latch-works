@@ -50,7 +50,7 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",
     "drizzle-kit": "^0.31.10",
-    "electron": "41.1.1",
+    "electron": "44.3.0",
     "knip": "^6.35.1",
     "postcss": "^8.5.28",
     "tailwindcss": "^4.3.3",
