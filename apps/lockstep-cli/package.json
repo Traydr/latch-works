@@ -14,7 +14,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@inquirer/prompts": "^7.10.1",
+    "@inquirer/prompts": "^8.7.2",
     "@latch-works/lockstep-core": "workspace:*",
     "@latch-works/media-domain": "workspace:*",
     "zod": "^4.6.1"

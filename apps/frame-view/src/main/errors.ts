@@ -14,33 +14,33 @@ export class ValidationError extends TaggedError('ValidationError')<{
   message: string;
   issues?: string[];
   cause?: unknown;
-}>() {}
+}> {}
 
 export class FileSystemError extends TaggedError('FileSystemError')<{
   operation: string;
   message: string;
   path?: string;
   cause?: unknown;
-}>() {}
+}> {}
 
 export class DatabaseError extends TaggedError('DatabaseError')<{
   operation: string;
   message: string;
   cause?: unknown;
-}>() {}
+}> {}
 
 class MediaToolsError extends TaggedError('MediaToolsError')<{
   operation: string;
   message: string;
   cause?: unknown;
-}>() {}
+}> {}
 
 export class WorkerError extends TaggedError('WorkerError')<{
   worker: 'catalog' | 'thumbnail';
   operation: string;
   message: string;
   cause?: unknown;
-}>() {}
+}> {}
 
 export class RequestAbortError extends Error {
   constructor(message = 'Request aborted') {

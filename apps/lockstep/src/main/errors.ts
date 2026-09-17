@@ -9,18 +9,18 @@ export class ValidationError extends TaggedError("ValidationError")<{
   operation: string;
   message: string;
   issues?: string[];
-}>() {}
+}> {}
 
 export class FileSystemError extends TaggedError("FileSystemError")<{
   operation: string;
   message: string;
   path?: string;
-}>() {}
+}> {}
 
 export class RunError extends TaggedError("RunError")<{
   operation: string;
   message: string;
-}>() {}
+}> {}
 
 type AppError = ValidationError | FileSystemError | RunError;
 
