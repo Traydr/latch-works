@@ -13,7 +13,7 @@ const viewerStateWriteSchema = viewerStateSubjectSchema.extend({
 });
 
 export const getViewerState = createServerFn({ method: "GET" })
-  .inputValidator(viewerStateSubjectSchema)
+  .validator(viewerStateSubjectSchema)
   .handler(async ({ data }): Promise<ViewerStateSnapshot | null> => {
     const [{ readRequestSessionUserId }, { getRequest }, { readViewerState }] = await Promise.all([
       import("../../server/auth/web-session-core"),
@@ -37,7 +37,7 @@ export const getViewerState = createServerFn({ method: "GET" })
   });
 
 export const saveViewerState = createServerFn({ method: "POST" })
-  .inputValidator(viewerStateWriteSchema)
+  .validator(viewerStateWriteSchema)
   .handler(async ({ data }): Promise<ViewerStateSnapshot | null> => {
     const [{ readRequestSessionUserId }, { getRequest }, { upsertViewerState }] = await Promise.all(
       [

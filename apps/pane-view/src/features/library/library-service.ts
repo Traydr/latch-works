@@ -84,7 +84,7 @@ const deleteLibraryEntrySchema = z.object({
 });
 
 export const deleteLibraryEntry = createServerFn({ method: "POST" })
-  .inputValidator(deleteLibraryEntrySchema)
+  .validator(deleteLibraryEntrySchema)
   .handler(async ({ data }): Promise<{ deleted: boolean }> => {
     await assertWebSessionAuthorized();
 
@@ -162,7 +162,7 @@ export async function readLibrarySnapshotRequest(
 }
 
 export const getGalleryListing = createServerFn({ method: "GET" })
-  .inputValidator(galleryListingRequestSchema)
+  .validator(galleryListingRequestSchema)
   .handler(async ({ data }): Promise<GalleryListingPage> => {
     await assertWebSessionAuthorized();
 
@@ -226,7 +226,7 @@ export interface GalleryComicRequest {
  * arrays cross the wire; the payload size depends on that comic alone.
  */
 export const getGalleryComic = createServerFn({ method: "GET" })
-  .inputValidator(galleryComicRequestSchema)
+  .validator(galleryComicRequestSchema)
   .handler(async ({ data }): Promise<ComicEntry<LibraryMediaItem>> => {
     await assertWebSessionAuthorized();
 
@@ -250,7 +250,7 @@ export const getGalleryComic = createServerFn({ method: "GET" })
   });
 
 export const getLibrarySnapshot = createServerFn({ method: "GET" })
-  .inputValidator(libraryRequestSchema)
+  .validator(libraryRequestSchema)
   .handler(async ({ data }): Promise<LibrarySnapshot> => {
     await assertWebSessionAuthorized();
 

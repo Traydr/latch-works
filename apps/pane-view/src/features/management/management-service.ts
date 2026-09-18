@@ -56,7 +56,7 @@ export const getSyncRunHistory = createServerFn({ method: "GET" }).handler(async
 });
 
 export const deleteFolders = createServerFn({ method: "POST" })
-  .inputValidator(folderDeleteSchema)
+  .validator(folderDeleteSchema)
   .handler(async ({ data }) => {
     await assertWebSessionAuthorized();
 
@@ -64,7 +64,7 @@ export const deleteFolders = createServerFn({ method: "POST" })
   });
 
 export const countFolderEntries = createServerFn({ method: "GET" })
-  .inputValidator(folderCountSchema)
+  .validator(folderCountSchema)
   .handler(async ({ data }) => {
     await assertWebSessionAuthorized();
 
@@ -72,7 +72,7 @@ export const countFolderEntries = createServerFn({ method: "GET" })
   });
 
 export const wipeLibrary = createServerFn({ method: "POST" })
-  .inputValidator(wipeLibrarySchema)
+  .validator(wipeLibrarySchema)
   .handler(async ({ data }) => {
     await assertWebSessionAuthorized();
 
@@ -95,7 +95,7 @@ export const purgeDeletedShutterSources = createServerFn({ method: "POST" }).han
 });
 
 export const cancelCleanupJob = createServerFn({ method: "POST" })
-  .inputValidator(cleanupJobSchema)
+  .validator(cleanupJobSchema)
   .handler(async ({ data }) => {
     await assertWebSessionAuthorized();
     const result = await cancelMaintenanceJob({ jobId: data.jobId });
@@ -108,7 +108,7 @@ export const cancelCleanupJob = createServerFn({ method: "POST" })
   });
 
 export const cancelSyncRun = createServerFn({ method: "POST" })
-  .inputValidator(cancelSyncRunSchema)
+  .validator(cancelSyncRunSchema)
   .handler(async ({ data }) => {
     await assertWebSessionAuthorized();
     const result = await forceCancelSyncRun({ syncRunId: data.syncRunId });
@@ -127,7 +127,7 @@ export const cancelAllRunningSyncRuns = createServerFn({ method: "POST" }).handl
 });
 
 export const getCleanupJobStatus = createServerFn({ method: "GET" })
-  .inputValidator(cleanupJobSchema)
+  .validator(cleanupJobSchema)
   .handler(async ({ data }) => {
     await assertWebSessionAuthorized();
     const status = await readCleanupJobStatus({ jobId: data.jobId });

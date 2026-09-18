@@ -23,7 +23,7 @@ export type MediaDeliveryBatchResult =
   | { mediaId: string; size?: number; status: "failed"; variant: string };
 
 export const resolveMediaDeliveryUrl = createServerFn({ method: "GET" })
-  .inputValidator(resolveMediaDeliveryRequestSchema)
+  .validator(resolveMediaDeliveryRequestSchema)
   .handler(async ({ data }) => {
     const { isCurrentWebSessionValid } = await import("../../server/auth/web-session");
 
@@ -47,7 +47,7 @@ function batchKey(item: z.infer<typeof resolveMediaDeliveryRequestSchema>): stri
 }
 
 export const resolveMediaDeliveryUrls = createServerFn({ method: "POST" })
-  .inputValidator(resolveMediaDeliveryBatchRequestSchema)
+  .validator(resolveMediaDeliveryBatchRequestSchema)
   .handler(async ({ data }): Promise<{ results: MediaDeliveryBatchResult[] }> => {
     const { isCurrentWebSessionValid } = await import("../../server/auth/web-session");
 
