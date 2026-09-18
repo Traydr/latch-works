@@ -30,9 +30,9 @@
     "apps/frame-view": {
       "entry": [
         "forge.config.ts",
-        "vite.main.config.ts",
-        "vite.preload.config.ts",
-        "vite.renderer.config.ts",
+        "vite.main.config.mts",
+        "vite.preload.config.mts",
+        "vite.renderer.config.mts",
         "src/main.ts",
         "src/preload.ts",
         "src/main/catalog/catalog.worker.ts",
@@ -57,9 +57,9 @@
     "apps/lockstep": {
       "entry": [
         "forge.config.ts",
-        "vite.main.config.ts",
-        "vite.preload.config.ts",
-        "vite.renderer.config.ts",
+        "vite.main.config.mts",
+        "vite.preload.config.mts",
+        "vite.renderer.config.mts",
         "src/main.ts",
         "src/preload.ts",
         "src/showcase/preview.tsx"

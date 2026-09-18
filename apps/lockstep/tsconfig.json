@@ -14,5 +14,5 @@
     "types": ["node", "vite/client"],
     "lib": ["ESNext", "DOM", "DOM.Iterable"]
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.d.ts", "*.ts", "*.d.ts"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.d.ts", "*.ts", "*.mts", "*.d.ts"]
 }
