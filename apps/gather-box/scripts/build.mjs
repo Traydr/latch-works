@@ -1,6 +1,6 @@
 import { gzipSync } from "node:zlib";
 import { access, copyFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { rolldown } from "rolldown";
 
 const root = resolve(import.meta.dirname, "..");
@@ -145,12 +145,13 @@ async function bundle(entries, format) {
 
 /**
  * The report, isolation and budget checks read the shape of an esbuild metafile: outputs keyed by
- * `dist/` path with their imports and source inputs. Static and dynamic imports both count.
+ * `dist/` path with their imports and source inputs. Paths use forward slashes on every platform.
+ * Static and dynamic imports both count.
  */
 function describeChunks(chunks) {
   const sources = (chunk) =>
     Object.entries(chunk.modules).flatMap(([id, module]) =>
-      id.startsWith("\0") ? [] : [[relative(root, id), module.renderedLength]]
+      id.startsWith("\0") ? [] : [[relative(root, id).split(sep).join("/"), module.renderedLength]]
     );
 
   return {
