@@ -1,5 +1,5 @@
 import { getExpectedArchiveTarget, planArchiveMedia } from "./archive-media-policy";
-import { throwIfAborted } from "./errors";
+import { MediaEncodeError, throwIfAborted } from "./errors";
 import type { MediaTransformer, TransformedMedia } from "./media-transformer";
 
 export interface ArchiveMediaEncoders {
@@ -56,11 +56,23 @@ async function transformArchiveMedia(
     return { blob, fileName: plan.fileName, converted: false };
   }
 
-  const buffer = await enqueueConversion(() =>
-    plan.action === "convert-mp4"
-      ? encoders.encodeGifAsMp4(blob, signal)
-      : encoders.encodeStillAsAvif(blob, signal)
-  );
+  let buffer: ArrayBuffer;
+
+  try {
+    buffer = await enqueueConversion(() =>
+      plan.action === "convert-mp4"
+        ? encoders.encodeGifAsMp4(blob, signal)
+        : encoders.encodeStillAsAvif(blob, signal)
+    );
+  } catch (error) {
+    if (!(error instanceof MediaEncodeError)) {
+      throw error;
+    }
+
+    // An original the encoder cannot handle is still worth archiving; losing the item is worse
+    // than one unconverted file.
+    return { blob, fileName, converted: false, conversionFailure: error.message };
+  }
 
   throwIfAborted(signal);
 

@@ -53,6 +53,7 @@ export interface DownloadCallbacks {
   onProgress(completed: number, total: number): void;
   onSaved(fileName: string): void;
   onSkipped?(fileName: string): void;
+  onKeptOriginal?(fileName: string, reason: string): void;
   onVerbose?(message: string): void;
 }
 
@@ -147,6 +148,10 @@ export async function downloadImages(
         callbacks.onVerbose?.(
           `Converted ${preparedImage.fileName} to ${transformed.fileName}`
         );
+      }
+
+      if (transformed.conversionFailure) {
+        callbacks.onKeptOriginal?.(transformed.fileName, transformed.conversionFailure);
       }
 
       throwIfAborted(options.signal);

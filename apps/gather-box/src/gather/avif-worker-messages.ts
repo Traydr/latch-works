@@ -5,4 +5,4 @@ export interface AvifWorkerRequest {
 
 export type AvifWorkerResponse =
   | { id: number; ok: true; buffer: ArrayBuffer }
-  | { id: number; ok: false; message: string };
+  | { id: number; ok: false; encoderFailed: boolean; message: string };

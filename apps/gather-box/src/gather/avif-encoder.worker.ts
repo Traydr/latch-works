@@ -1,4 +1,5 @@
 import { encodeAvifImageData } from "./avif-codec";
+import { MediaEncodeError } from "./errors";
 import type { AvifWorkerRequest, AvifWorkerResponse } from "./avif-worker-messages";
 
 self.addEventListener("message", (event: MessageEvent<AvifWorkerRequest>) => {
@@ -15,6 +16,7 @@ async function encodeRequest(request: AvifWorkerRequest): Promise<void> {
     const response: AvifWorkerResponse = {
       id: request.id,
       ok: false,
+      encoderFailed: error instanceof MediaEncodeError,
       message: error instanceof Error ? error.message : "AVIF conversion failed."
     };
 

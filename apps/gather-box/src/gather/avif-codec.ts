@@ -2,10 +2,19 @@ import createAvifEncoder, {
   type AVIFModule,
   type EncodeOptions as AvifEncodeOptions
 } from "@jsquash/avif/codec/enc/avif_enc.js";
+import { MediaEncodeError, toError } from "./errors";
 
 export const ARCHIVE_AVIF_QUALITY = 70;
 
 export const ARCHIVE_AVIF_SPEED = 6;
+
+/**
+ * The codec's wasm heap stops at 2 GiB. Hard-edged line art makes the encoder build block-matching
+ * tables at speeds 6 and 7 that double its memory, so such an image fails from roughly 30
+ * megapixels up. Speed 8 skips those tables and fits anything up to about 64 megapixels, for a
+ * file around half again as large. Past that size no speed fits, so there is no third attempt.
+ */
+export const ARCHIVE_AVIF_LOW_MEMORY_SPEED = 8;
 
 export const ARCHIVE_AVIF_OPTIONS: AvifEncodeOptions = {
   quality: ARCHIVE_AVIF_QUALITY,
@@ -32,20 +41,42 @@ export interface RgbaImage {
 let encoderPromise: Promise<AVIFModule> | null = null;
 
 export async function encodeAvifImageData(imageData: RgbaImage): Promise<ArrayBuffer> {
-  const encoder = await getAvifEncoder();
+  try {
+    return await encodeAtSpeed(imageData, ARCHIVE_AVIF_SPEED);
+  } catch (error) {
+    if (!(error instanceof MediaEncodeError)) {
+      throw error;
+    }
 
-  return encodeWithAvifModule(imageData, encoder);
+    return encodeAtSpeed(imageData, ARCHIVE_AVIF_LOW_MEMORY_SPEED);
+  }
 }
 
-export function encodeWithAvifModule(
+async function encodeAtSpeed(imageData: RgbaImage, speed: number): Promise<ArrayBuffer> {
+  const encoder = await getAvifEncoder();
+
+  try {
+    return encodeWithAvifModule(imageData, encoder, speed);
+  } catch (error) {
+    // An encoder that runs out of heap returns nothing or traps ("memory access out of bounds").
+    // Either way the module is left holding a full heap in an unknown state, so the next encode
+    // gets a new one.
+    encoderPromise = null;
+
+    throw new MediaEncodeError(toError(error).message, { cause: error });
+  }
+}
+
+function encodeWithAvifModule(
   imageData: RgbaImage,
-  encoder: Pick<AVIFModule, "encode">
+  encoder: Pick<AVIFModule, "encode">,
+  speed: number
 ): ArrayBuffer {
   const encoded = encoder.encode(
     new Uint8Array(imageData.data.buffer),
     imageData.width,
     imageData.height,
-    ARCHIVE_AVIF_OPTIONS
+    { ...ARCHIVE_AVIF_OPTIONS, speed }
   );
 
   if (!encoded) {

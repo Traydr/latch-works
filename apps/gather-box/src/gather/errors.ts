@@ -30,6 +30,14 @@ export function toError(cause: unknown): Error {
   );
 }
 
+/**
+ * The source media decoded, but the encoder could not produce the converted file. The downloaded
+ * original is still good, so a caller can keep it instead of failing the item.
+ */
+export class MediaEncodeError extends Error {
+  override readonly name = "MediaEncodeError";
+}
+
 export function formatError(error: Error): string {
   return error.message;
 }

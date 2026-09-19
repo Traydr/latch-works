@@ -2,6 +2,8 @@ export interface TransformedMedia {
   blob: Blob;
   fileName: string;
   converted: boolean;
+  /** Why the original was kept although the archive wanted it converted. */
+  conversionFailure?: string;
 }
 
 export interface MediaTransformer {

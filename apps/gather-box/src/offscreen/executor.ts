@@ -115,6 +115,9 @@ async function executeFiles(
       onSkipped: (fileName) => {
         void emit({ kind: "log", message: `Skipped existing ${fileName}`, tone: "success" });
       },
+      onKeptOriginal: (fileName, reason) => {
+        void emit({ kind: "log", message: `Kept original ${fileName}: could not convert (${reason})` });
+      },
       onVerbose: settings.verboseLogging
         ? (message) => {
             void emit({ kind: "log", message });

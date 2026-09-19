@@ -53,7 +53,11 @@ The optional **Convert media for the AVIF archive** setting keeps Gather Box com
 archive normalized to AVIF and MP4. It converts JPEG, PNG, WebP, and BMP still images to AVIF at
 quality 70 / speed 6, converts downloaded GIFs to H.264 MP4, and leaves existing AVIF and MP4 media
 unchanged. Conversion runs locally in the extension. When the converted target filename already
-exists, Gather Box skips the item before fetching it.
+exists, Gather Box skips the item before fetching it. The AVIF encoder works inside a 2 GiB memory
+limit. Large hard-edged artwork (from roughly 30 megapixels) can exceed it at speed 6, so Gather Box
+retries such an image at speed 8, which needs half the memory and produces a somewhat larger file.
+Beyond about 64 megapixels no setting fits; Gather Box then saves the original file unconverted and
+notes it in the run log.
 
 ## Project structure
 

@@ -1,4 +1,4 @@
-import { throwIfAborted, toError } from "./errors";
+import { MediaEncodeError, throwIfAborted, toError } from "./errors";
 import type { AvifWorkerRequest, AvifWorkerResponse } from "./avif-worker-messages";
 
 /**
@@ -99,7 +99,11 @@ export class AvifEncoderClient {
     if (response.ok) {
       request.resolve(response.buffer);
     } else {
-      request.reject(new Error(response.message));
+      request.reject(
+        response.encoderFailed
+          ? new MediaEncodeError(response.message)
+          : new Error(response.message)
+      );
     }
   };
 
