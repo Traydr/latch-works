@@ -72,6 +72,7 @@ export default defineRailway(() => {
       SHUTTER_CAPABILITY_KID: preserve(),
       SHUTTER_CONTROL_URL: "https://shutter-control.traydr.dev",
       SHUTTER_EDGE_URL: "https://shutter-edge.traydr.dev",
+      SHUTTER_RESOLVER_ID: "originals",
       SHUTTER_SPACE_API_TOKEN: preserve(),
       SHUTTER_SPACE_ID: "pane-view",
       ...s3Env,

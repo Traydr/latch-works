@@ -49,9 +49,10 @@ thumbnail and preview derivatives.
 flowchart LR
   Browser -->|authenticated resolve request| PaneView
   PaneView -->|Source Capability| Browser
-  Browser -->|private Rendition URL| ShutterEdge
+  Browser -->|private Rendition or original URL| ShutterEdge
   ShutterEdge --> Imgproxy
   Imgproxy -->|presigned Source Locator| PaneStorage
+  ShutterEdge -->|Source Delivery, cached at the edge| PaneStorage
   PaneView -->|video/PDF preview job| ShutterControl
   ShutterControl --> Executors
   Executors --> ShutterStore
@@ -61,8 +62,11 @@ flowchart LR
 - Images and GIFs use request-driven Shutter Image Optimization.
 - Videos and PDFs use a durable Shutter Master Preview, resized by Shutter for gallery and detail
   widths.
-- Original delivery remains a short-lived Pane View presigned redirect for playback and explicit
-  original viewing or download.
+- Originals (video playback, the PDF viewer, and download) are Shutter Source Delivery: the
+  same `/v2` URL as the renditions with no query, carrying a one-day `source_delivery` token.
+  Cloudflare caches a complete original of at most 512 MB at the edge and answers seeks from it;
+  a larger original streams through uncached. An original whose content type Shutter does not
+  pass through (`mkv`, `bmp`, unknown extensions) stays a one-day Pane View presigned URL.
 - Pane View issues encrypted, purpose-bound Source Capabilities only after its own session checks.
 - SHA-256 is the immutable Shutter Source ID; a presigned S3 URL is the replaceable Source Locator.
 - A hard library wipe or deleted-item purge deletes each now-unreferenced original, requests Shutter

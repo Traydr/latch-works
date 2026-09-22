@@ -1,6 +1,5 @@
-import { createSignedGetUrl } from "@latch-works/media-storage";
 import { createConcurrencyLimiter } from "./concurrency-limiter";
-import { type MediaDeliveryRequest, planSignedOriginalDelivery } from "./delivery";
+import type { MediaDeliveryRequest } from "./delivery";
 import {
   type MediaThumbnailContext,
   readMediaDeliveryRequest,
@@ -8,8 +7,11 @@ import {
   readMediaThumbnailContextsByEntryIds,
 } from "./repository";
 import type { ShutterPreviewResult } from "./shutter-client";
-import { createPaneViewStorageClient } from "./storage-client";
-import { resolveVariantImageUrl, resolveVariantPreview } from "./variant-provider";
+import {
+  resolveVariantImageUrl,
+  resolveVariantOriginalUrl,
+  resolveVariantPreview,
+} from "./variant-provider";
 
 const THUMBNAIL_WIDTH = 320;
 
@@ -17,25 +19,24 @@ const PREVIEW_WIDTH = 960;
 
 const shutterControlLimiter = createConcurrencyLimiter(6);
 
-/** The archive reads, the signed original, and the Shutter reads a delivery makes. */
+/** The archive reads and the three resolutions a delivery makes. */
 export interface MediaDeliveryDependencies {
-  createSignedOriginalUrl(request: { expiresInSeconds: number; key: string }): Promise<string>;
   readDeliveryRequest(request: { mediaId: string }): Promise<MediaDeliveryRequest | null>;
   readThumbnailContext(request: { mediaId: string }): Promise<MediaThumbnailContext | null>;
   readThumbnailContexts(request: {
     mediaIds: string[];
   }): Promise<Map<string, MediaThumbnailContext>>;
   resolveImageUrl(context: MediaThumbnailContext, width: number): Promise<string>;
+  resolveOriginalUrl(request: MediaDeliveryRequest): Promise<string>;
   resolvePreview(context: MediaThumbnailContext, width: number): Promise<ShutterPreviewResult>;
 }
 
 const defaultMediaDeliveryDependencies: MediaDeliveryDependencies = {
-  createSignedOriginalUrl: (request) =>
-    createSignedGetUrl({ ...request, storage: createPaneViewStorageClient() }),
   readDeliveryRequest: readMediaDeliveryRequest,
   readThumbnailContext: readMediaThumbnailContext,
   readThumbnailContexts: readMediaThumbnailContextsByEntryIds,
   resolveImageUrl: resolveVariantImageUrl,
+  resolveOriginalUrl: resolveVariantOriginalUrl,
   resolvePreview: resolveVariantPreview,
 };
 
@@ -87,12 +88,8 @@ async function resolveOriginalDeliveryUrl(
   const media = await dependencies.readDeliveryRequest({ mediaId });
 
   if (!media) throw new Error("Media not found");
-  const delivery = planSignedOriginalDelivery(media);
 
-  return dependencies.createSignedOriginalUrl({
-    expiresInSeconds: delivery.expiresInSeconds,
-    key: delivery.objectKey,
-  });
+  return dependencies.resolveOriginalUrl(media);
 }
 
 export async function resolveMediaDeliveryUrlForVariant(

@@ -127,7 +127,7 @@ function resolverSource(
 }
 
 async function sourceLocator(
-  context: MediaThumbnailContext,
+  context: Pick<MediaThumbnailContext, "originalObjectKey">,
   dependencies: ShutterClientDependencies,
 ): Promise<string> {
   return dependencies.createSourceLocator({
@@ -188,6 +188,33 @@ export async function resolveShutterImageUrl(
     { sourceId: context.sha256, locator: await sourceLocator(context, dependencies) },
     parameters,
   );
+}
+
+/** What Source Delivery of an original needs: its key for the reference and its SHA-256 for v1. */
+export type ShutterOriginalSource = Pick<MediaThumbnailContext, "originalObjectKey" | "sha256">;
+
+/**
+ * The original's own bytes through Shutter, so playback, the PDF viewer, and
+ * downloads share the edge cache with the renditions. The token's purpose is
+ * `source_delivery`, which the Edge accepts for no other operation.
+ */
+export async function resolveShutterOriginalUrl(
+  source: ShutterOriginalSource,
+  dependencies: ShutterClientDependencies = shutterClientDependencies,
+): Promise<string> {
+  const { environment } = dependencies;
+  ensureStartupCapabilityStatus(environment);
+  const client = shutterClient({ capability: true, dependencies });
+  const resolver = resolverSource(environment, source.originalObjectKey);
+
+  if (resolver !== undefined) return client.v2PrivateDeliveryUrl(resolver);
+
+  assertSourceId(source.sha256);
+
+  return client.privateDeliveryUrl({
+    sourceId: source.sha256,
+    locator: await sourceLocator(source, dependencies),
+  });
 }
 
 /** Maps a Preview Job submission outcome onto the redirect's retry, ready, and failed states. */

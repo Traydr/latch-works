@@ -1,9 +1,7 @@
-import { createS3StorageClient, createSignedGetUrl } from "@latch-works/media-storage";
 import { createFileRoute } from "@tanstack/react-router";
-import { env } from "../env/server";
 import { isRequestSessionValid } from "../server/auth/web-session-core";
-import { planSignedOriginalDelivery } from "../server/media/delivery";
 import { readMediaDeliveryRequest } from "../server/media/repository";
+import { resolveVariantOriginalUrl } from "../server/media/variant-provider";
 
 const API_PRIVATE_CACHE_CONTROL = "private, no-store";
 
@@ -26,24 +24,21 @@ export const Route = createFileRoute("/api/media/$mediaId/original")({
           return new Response("Media not found", { status: 404 });
         }
 
-        const delivery = planSignedOriginalDelivery(media);
+        let location: string;
 
-        const signedUrl = await createSignedGetUrl({
-          expiresInSeconds: delivery.expiresInSeconds,
-          key: delivery.objectKey,
-          storage: createS3StorageClient({
-            accessKeyId: env.S3_ACCESS_KEY_ID,
-            bucket: env.S3_BUCKET,
-            endpoint: env.S3_ENDPOINT,
-            region: env.S3_REGION,
-            secretAccessKey: env.S3_SECRET_ACCESS_KEY,
-          }),
-        });
+        try {
+          location = await resolveVariantOriginalUrl(media);
+        } catch {
+          return new Response("Original unavailable", {
+            headers: { "Cache-Control": API_PRIVATE_CACHE_CONTROL },
+            status: 502,
+          });
+        }
 
         return new Response(null, {
           headers: {
             "Cache-Control": API_PRIVATE_CACHE_CONTROL,
-            Location: signedUrl,
+            Location: location,
           },
           status: 302,
         });

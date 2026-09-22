@@ -11,13 +11,6 @@ import {
 
 const PENDING_RETRY_DELAYS_MS = [5_000, 10_000, 20_000, 30_000, 60_000] as const;
 
-/**
- * Original delivery is a 60s presigned storage URL (`planSignedOriginalDelivery`),
- * so a cached one is dropped well before it expires. Renditions carry 24h Shutter
- * capabilities and stay cached for the session.
- */
-const ORIGINAL_URL_CACHE_TTL_MS = 45_000;
-
 type ResolveInput = {
   mediaId: string;
   size?: number;
@@ -29,17 +22,17 @@ type ResolveOutcome =
   | { retryAfterMs: number; status: "pending" }
   | { status: "failed" };
 
+/**
+ * Every delivery URL, original included, is good for a day (the Shutter token
+ * lifetime, matched by the signed-URL fallback), so a resolved URL stays
+ * cached for the session and `refresh` is the only way out.
+ */
 type ResolveCacheEntry = {
   inFlight?: Promise<ResolveOutcome>;
   nextRetryAt?: number;
   pendingAttempt: number;
   url?: string;
-  urlExpiresAt?: number;
 };
-
-function urlExpiresAt(variant: ResolveInput["variant"], now: number): number | undefined {
-  return variant === "original" ? now + ORIGINAL_URL_CACHE_TTL_MS : undefined;
-}
 
 interface ResolveThrottle {
   acquireResolveSlot(): Promise<() => void>;
@@ -102,9 +95,8 @@ export function createResolvedMediaUrlCache({
       if (entry.inFlight) return entry.inFlight;
       const now = Date.now();
 
-      if (options?.refresh || (entry.urlExpiresAt !== undefined && entry.urlExpiresAt <= now)) {
+      if (options?.refresh) {
         entry.url = undefined;
-        entry.urlExpiresAt = undefined;
         entry.nextRetryAt = undefined;
         entry.pendingAttempt = 0;
       }
@@ -137,7 +129,6 @@ export function createResolvedMediaUrlCache({
 
           throttle.recordResolveSuccess();
           entry.url = result.url;
-          entry.urlExpiresAt = urlExpiresAt(input.variant, Date.now());
           entry.nextRetryAt = undefined;
           entry.pendingAttempt = 0;
 
