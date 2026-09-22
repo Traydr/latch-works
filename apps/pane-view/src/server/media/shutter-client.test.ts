@@ -4,6 +4,7 @@ import type { MediaThumbnailContext } from "./repository";
 import {
   purgeShutterSource,
   resolveShutterImageUrl,
+  resolveShutterOriginalUrl,
   resolveShutterPreview,
   type ShutterClientDependencies,
   type ShutterEnvironment,
@@ -85,6 +86,25 @@ describe("shutter v2 resolver sources", () => {
     });
 
     expect(claims.purpose).toBe("image_source");
+  });
+
+  it("serves an original as a bare v2 Delivery URL with a source_delivery token", async () => {
+    const deps = dependencies();
+    const url = new URL(await resolveShutterOriginalUrl(context("video"), deps));
+
+    expect(deps.createSourceLocator).not.toHaveBeenCalled();
+    expect(url.pathname).toBe(`/v2/pane-view/originals/ab/ab/${SHA256}.jpg`);
+    expect([...url.searchParams.keys()]).toEqual(["token"]);
+
+    const claims = await verifyAccessToken(url.searchParams.get("token") ?? "", {
+      spaceId: "pane-view",
+      expectedPurpose: "source_delivery",
+      expectedSourceId: `originals/ab/ab/${SHA256}.jpg`,
+      keys: KEYS,
+      now: Math.floor(Date.now() / 1000),
+    });
+
+    expect(claims.purpose).toBe("source_delivery");
   });
 
   it("submits a v2 Preview Job and links the master with a master_preview token", async () => {

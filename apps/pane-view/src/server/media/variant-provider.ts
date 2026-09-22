@@ -1,20 +1,20 @@
 import { createSignedGetUrl } from "@latch-works/media-storage";
 import { env } from "../../env/server";
+import {
+  type MediaDeliveryRequest,
+  planOriginalDelivery,
+  SIGNED_URL_LIFETIME_SECONDS,
+} from "./delivery";
 import type { MediaThumbnailContext } from "./repository";
 import {
   resolveShutterImageUrl,
+  resolveShutterOriginalUrl,
   resolveShutterPreview,
   type ShutterEnvironment,
+  type ShutterOriginalSource,
   type ShutterPreviewResult,
 } from "./shutter-client";
 import { createPaneViewStorageClient } from "./storage-client";
-
-/**
- * Pass-through URLs must outlive the client caches, which assume variant
- * URLs are good for a day (the Shutter capability lifetime). A shorter expiry
- * would 403 while the batch resolver keeps serving the cached URL.
- */
-const PASS_THROUGH_URL_LIFETIME_SECONDS = 24 * 60 * 60;
 
 /**
  * What a variant resolution needs from outside: the Shutter configuration,
@@ -24,6 +24,7 @@ export interface VariantProviderDependencies {
   createSignedOriginalUrl(request: { expiresInSeconds: number; key: string }): Promise<string>;
   environment: ShutterEnvironment;
   resolveShutterImageUrl(context: MediaThumbnailContext, width: number): Promise<string>;
+  resolveShutterOriginalUrl(source: ShutterOriginalSource): Promise<string>;
   resolveShutterPreview(
     context: MediaThumbnailContext,
     width: number,
@@ -35,6 +36,7 @@ const defaultVariantProviderDependencies: VariantProviderDependencies = {
     createSignedGetUrl({ ...request, storage: createPaneViewStorageClient() }),
   environment: env,
   resolveShutterImageUrl,
+  resolveShutterOriginalUrl,
   resolveShutterPreview,
 };
 
@@ -58,7 +60,7 @@ export async function resolveVariantImageUrl(
 
   // The pass-through serves the original bytes, so the requested width is moot.
   return dependencies.createSignedOriginalUrl({
-    expiresInSeconds: PASS_THROUGH_URL_LIFETIME_SECONDS,
+    expiresInSeconds: SIGNED_URL_LIFETIME_SECONDS,
     key: context.originalObjectKey,
   });
 }
@@ -75,4 +77,31 @@ export async function resolveVariantPreview(
   // Video and PDF stills require Shutter; without it the tile falls back to a
   // placeholder while the viewer keeps playing the signed original.
   return { status: "failed" };
+}
+
+/**
+ * The original itself: playback, the PDF viewer, and the download link. It
+ * goes through Shutter when Shutter is on and passes the object's content
+ * type through, so the Cloudflare edge answers repeat plays and seeks; the
+ * rest is a signed bucket URL, as before.
+ */
+export async function resolveVariantOriginalUrl(
+  request: MediaDeliveryRequest,
+  dependencies: VariantProviderDependencies = defaultVariantProviderDependencies,
+): Promise<string> {
+  const plan = planOriginalDelivery(request, {
+    shutter: isShutterConfigured(dependencies.environment),
+  });
+
+  if (plan.strategy === "shutter") {
+    return dependencies.resolveShutterOriginalUrl({
+      originalObjectKey: plan.objectKey,
+      sha256: plan.sha256,
+    });
+  }
+
+  return dependencies.createSignedOriginalUrl({
+    expiresInSeconds: plan.expiresInSeconds,
+    key: plan.objectKey,
+  });
 }
