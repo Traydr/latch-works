@@ -69,6 +69,7 @@
 - Desktop shell parity: supports `open-file` events and second-instance path forwarding to active window.
 - Settings migration behavior: migrating pre-version-3 settings backfills baseline extensions (`gif`/`avif` images, `m4v` videos) once without replacing custom extensions; version 3 payloads keep deliberate removals.
 - Media filter defaults: image and video extension lists both come from `@latch-works/media-domain` (`ImageExtensions`/`VideoExtensions`), and `frameview-media://` content types are a map keyed by those same constants.
+- Thumbnail fidelity preference: preserve the existing 2x request resolution and image/video quality settings; optimize scheduling and CPU work instead.
 - Performance preference: prioritize scan responsiveness by deferring video metadata probing until items are visible.
 - Scan throughput optimization: file stat work now runs with bounded parallelism per directory instead of full serial processing.
 - Renderer scan optimization: incoming scan batches append unsorted during loading, then apply one final sort pass on `done`.

@@ -44,6 +44,13 @@ export function sortMediaItems<T extends SortableMediaItem>(
   sortMode: GallerySortMode,
   randomSeed: number,
 ): T[] {
+  if (sortMode === "random") {
+    return items
+      .map((item) => ({ item, score: hashString(`${randomSeed}:${item.path}`) }))
+      .sort((a, b) => a.score - b.score || compareByName(a.item, b.item))
+      .map(({ item }) => item);
+  }
+
   const sorted = [...items];
 
   sorted.sort((a, b) => {
@@ -62,13 +69,6 @@ export function sortMediaItems<T extends SortableMediaItem>(
         const byDate = a.mtimeMs - b.mtimeMs;
 
         return byDate !== 0 ? byDate : compareByName(a, b);
-      }
-
-      case "random": {
-        const aScore = hashString(`${randomSeed}:${a.path}`);
-        const bScore = hashString(`${randomSeed}:${b.path}`);
-
-        return aScore !== bScore ? aScore - bScore : compareByName(a, b);
       }
 
       default:
