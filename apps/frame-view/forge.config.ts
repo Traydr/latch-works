@@ -1,3 +1,4 @@
+import { execSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { FuseV1Options, FuseVersion } from '@electron/fuses';
@@ -111,6 +112,15 @@ function copyRuntimePackage(packageName: string, fromDirectory: string, visited:
   }
 }
 
+// Vite bundles workspace packages from their `dist`, which nothing else rebuilds before a
+// direct `electron-forge package` or `make`.
+function buildWorkspaceDependencies(): void {
+  execSync('pnpm --filter "@latch-works/frame-view^..." run build', {
+    cwd: path.resolve(__dirname, '../..'),
+    stdio: 'inherit',
+  });
+}
+
 function stageRuntimeDependencies(): void {
   rmSync(path.resolve(__dirname, '.packaged-runtime'), { force: true, recursive: true });
   mkdirSync(stagedRuntimeNodeModulesPath, { recursive: true });
@@ -190,6 +200,7 @@ const config: ForgeConfig = {
   },
   hooks: {
     prePackage: async () => {
+      buildWorkspaceDependencies();
       stageRuntimeDependencies();
     },
   },

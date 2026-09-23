@@ -1,3 +1,4 @@
+import { execSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { FuseV1Options, FuseVersion } from "@electron/fuses";
@@ -70,6 +71,15 @@ function getMacCodeSignConfig(): PackagerConfig["osxSign"] | undefined {
   };
 }
 
+// Vite bundles workspace packages from their `dist`, which nothing else rebuilds before a
+// direct `electron-forge package` or `make`.
+function buildWorkspaceDependencies(): void {
+  execSync('pnpm --filter "@latch-works/lockstep-app^..." run build', {
+    cwd: path.resolve(__dirname, "../.."),
+    stdio: "inherit",
+  });
+}
+
 const config: ForgeConfig = {
   packagerConfig: {
     appBundleId,
@@ -80,6 +90,11 @@ const config: ForgeConfig = {
     osxSign: getMacCodeSignConfig(),
   },
   rebuildConfig: {},
+  hooks: {
+    prePackage: async () => {
+      buildWorkspaceDependencies();
+    },
+  },
   makers: [
     new MakerSquirrel({
       name: "lockstep",
