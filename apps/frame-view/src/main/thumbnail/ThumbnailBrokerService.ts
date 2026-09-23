@@ -1,3 +1,4 @@
+import { availableParallelism, totalmem } from 'node:os';
 import { utilityProcess } from 'electron';
 
 import {
@@ -96,7 +97,11 @@ export interface ThumbnailBrokerServiceOptions {
   workerModulePath?: string;
 }
 
-const DEFAULT_IMAGE_WORKERS = 2;
+// Reserve CPU capacity for the renderer and cap process overhead on smaller machines.
+const DEFAULT_IMAGE_WORKERS = Math.max(
+  2,
+  Math.min(6, Math.floor(availableParallelism() / 2), Math.floor(totalmem() / (2 * 1024 ** 3))),
+);
 
 const DEFAULT_VIDEO_WORKERS = 1;
 

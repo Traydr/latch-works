@@ -100,6 +100,72 @@ describe('ThumbnailWorkerRuntime', () => {
     ).toBeDefined();
   });
 
+  it.each(['png', 'gif', 'avif'] as const)(
+    'preserves %s thumbnail pixels and dimensions',
+    async (format) => {
+      const userDataPath = await createTempDir('frame-view-thumb-fidelity-');
+      tempDirs.push(userDataPath);
+      const imagePath = path.join(userDataPath, `sample.${format}`);
+      const width = 96;
+      const height = 64;
+      const pixels = Buffer.alloc(width * height * 4);
+
+      for (let index = 0; index < width * height; index += 1) {
+        pixels[index * 4] = (index * 17) % 256;
+        pixels[index * 4 + 1] = (index * 31) % 256;
+        pixels[index * 4 + 2] = (index * 53) % 256;
+        pixels[index * 4 + 3] = index % 5 === 0 ? 0 : index % 3 === 0 ? 128 : 255;
+      }
+
+      await sharp(pixels, { raw: { width, height, channels: 4 } })
+        .toFormat(format)
+        .toFile(imagePath);
+      const runtime = new ThumbnailWorkerRuntime({ userDataPath });
+      await runtime.init();
+
+      const response = await runtime.handleRequest({
+        requestId: 1,
+        type: 'generate-thumbnail',
+        job: {
+          cacheKey: 'fidelity',
+          kind: 'image',
+          mediaPath: imagePath,
+          priority: 2,
+          thumbSize: 440,
+        },
+      });
+
+      if (!response?.ok || !('bytes' in response.result)) {
+        throw new Error('Expected image thumbnail worker response');
+      }
+
+      // Compare against the previous encoder, including transparency and upscaling.
+      const previous = await sharp(imagePath, { animated: false, sequentialRead: true })
+        .rotate()
+        .resize({ width: 440, height: 440, fit: 'inside', withoutEnlargement: false })
+        .webp(format === 'avif' ? { quality: 92, effort: 5 } : { lossless: true, effort: 5 })
+        .toBuffer();
+
+      if (format === 'avif') {
+        expect(Buffer.from(response.result.bytes).equals(previous)).toBe(true);
+      }
+
+      const expected = await sharp(previous).raw().toBuffer({ resolveWithObject: true });
+      const actual = await sharp(response.result.bytes).raw().toBuffer({ resolveWithObject: true });
+      expect(actual.info).toEqual(expected.info);
+
+      // WebP may discard RGB beneath fully transparent pixels at either effort.
+      // Compare every alpha byte and all RGB values that can affect rendering.
+      for (const data of [actual.data, expected.data]) {
+        for (let offset = 0; offset < data.length; offset += 4) {
+          if (data[offset + 3] === 0) data.fill(0, offset, offset + 3);
+        }
+      }
+
+      expect(actual.data.equals(expected.data)).toBe(true);
+    },
+  );
+
   it('generates video thumbnails from extracted frames and writes them to disk', async () => {
     const userDataPath = await createTempDir('frame-view-thumb-worker-');
     const cacheRootPath = await createTempDir('frame-view-thumb-worker-cache-');

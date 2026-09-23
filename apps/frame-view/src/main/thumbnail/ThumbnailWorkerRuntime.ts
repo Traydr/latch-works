@@ -24,6 +24,9 @@ const IMAGE_WEBP_QUALITY = 92;
 
 const IMAGE_WEBP_EFFORT = 5;
 
+// Lossless effort controls compression time and file size, not decoded pixels.
+const LOSSLESS_IMAGE_WEBP_EFFORT = 0;
+
 const SHARP_CACHE_MEMORY_MB = 32;
 
 const SHARP_CACHE_ITEMS = 64;
@@ -292,7 +295,7 @@ export class ThumbnailWorkerRuntime {
 
       const imageWebpOptions = LOSSLESS_IMAGE_EXTENSIONS.has(sourceExtension)
         ? {
-            effort: IMAGE_WEBP_EFFORT,
+            effort: LOSSLESS_IMAGE_WEBP_EFFORT,
             lossless: true as const,
           }
         : {
