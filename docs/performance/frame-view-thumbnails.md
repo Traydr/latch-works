@@ -40,8 +40,9 @@ longest thumbnail dimension remains 440, the default 220 setting at the existing
 
 The image worker pool now uses half the available logical CPUs, capped at six workers and
 one worker per 2 GiB of system RAM, with the previous two-worker floor. This machine uses
-six workers. Four logical CPUs still select two; eight CPUs with 8 GiB select four.
-Workers start on demand. Video concurrency remains one.
+six workers. Four logical CPUs still select two. Eight CPUs select four only when
+`os.totalmem()` reports at least 8 GiB. It reports usable memory, so an 8 GB Windows machine
+reports about 7.8 GiB and selects three. Workers start on demand. Video concurrency remains one.
 
 This is a resource heuristic, not a hard memory limit. In the final confirmation, the sum
 of Electron-reported process working sets rose from about 1.38 GiB with two workers to
