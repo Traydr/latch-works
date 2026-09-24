@@ -1,12 +1,12 @@
 import { isNotNull } from "drizzle-orm";
-import { libraryEntries } from "../db/schema";
+import { folders, libraryEntries } from "../db/schema";
 import {
   type MaintenanceJobDescriptor,
   type MaintenanceTransaction,
   scheduleMaintenanceJob,
 } from "./maintenance-scheduler";
 
-/** There is work when any library entry is soft-deleted. */
+/** There is work when any library entry or folder is soft-deleted. */
 export async function hasSoftDeletedEntries(tx: MaintenanceTransaction): Promise<boolean> {
   const [softDeletedEntry] = await tx
     .select({ id: libraryEntries.id })
@@ -14,7 +14,17 @@ export async function hasSoftDeletedEntries(tx: MaintenanceTransaction): Promise
     .where(isNotNull(libraryEntries.deletedAt))
     .limit(1);
 
-  return Boolean(softDeletedEntry);
+  if (softDeletedEntry) {
+    return true;
+  }
+
+  const [softDeletedFolder] = await tx
+    .select({ id: folders.id })
+    .from(folders)
+    .where(isNotNull(folders.deletedAt))
+    .limit(1);
+
+  return Boolean(softDeletedFolder);
 }
 
 export const softDeletedPurgeDescriptor: MaintenanceJobDescriptor = {
