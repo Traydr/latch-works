@@ -1,17 +1,6 @@
 import type { MediaItem } from "@latch-works/media-domain";
 import { formatBytes } from "@latch-works/media-domain";
-import {
-  Check,
-  CircleAlert,
-  Copy,
-  Download,
-  Image,
-  type LucideIcon,
-  Maximize,
-  Minimize,
-  VideoOff,
-  X,
-} from "lucide-react";
+import { Download, Image, type LucideIcon, Maximize, Minimize, VideoOff, X } from "lucide-react";
 import {
   createContext,
   forwardRef,
@@ -38,11 +27,12 @@ import {
   videoSecondsToPositionMs,
 } from "@/features/viewer/viewer-resume";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
-import { type CopyStatus, useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
+import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useViewerChromeIdle } from "@/hooks/use-viewer-chrome-idle";
 import { closeDialog, openDialog } from "@/lib/modal-dialog";
 import { isTextInputTarget } from "./browse-search";
+import { COPY_PATH_ICONS, COPY_PATH_LABELS } from "./copy-path-status";
 import { GALLERY_PREVIEW_SIZE } from "./gallery-preview-size";
 import { PaneViewImage } from "./PaneViewImage";
 import { type ResolvedMediaUrlCache, useResolvedMediaUrl } from "./useResolvedMediaUrl";
@@ -70,18 +60,6 @@ export interface MediaViewerSessionProps {
 }
 
 const VIEWER_VOLUME_STORAGE_KEY = "pane-view.viewer.volume";
-
-const COPY_PATH_ICONS: Record<CopyStatus, LucideIcon> = {
-  copied: Check,
-  failed: CircleAlert,
-  idle: Copy,
-};
-
-const COPY_PATH_LABELS: Record<CopyStatus, string> = {
-  copied: "Path copied",
-  failed: "Copy failed",
-  idle: "Copy path",
-};
 
 function readPersistedVolume(): number {
   try {

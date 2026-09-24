@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { BrowserGrid } from "@/features/gallery/BrowserGrid";
 import { DetailPanel } from "@/features/gallery/DetailPanel";
 import type { GalleryBrowseEntry } from "@/features/gallery/gallery-browse-entry";
+import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 import { cn } from "@/lib/utils";
 
 export interface GalleryBrowsePaneProps {
@@ -70,6 +71,7 @@ export function GalleryBrowsePane({
   const [loadMoreTrigger, setLoadMoreTrigger] = useState<HTMLDivElement | null>(null);
   const loadMoreTriggerIntersectingRef = useRef(false);
   const loadingMoreMediaRef = useRef(loadingMoreMedia);
+  const pathCopy = useCopyToClipboard();
 
   useEffect(() => {
     loadingMoreMediaRef.current = loadingMoreMedia;
@@ -147,12 +149,13 @@ export function GalleryBrowsePane({
       {showDetailPanel ? (
         <div className="hidden min-h-0 min-w-0 max-w-[360px] shrink-0 lg:block">
           <DetailPanel
+            copyStatus={pathCopy.status}
             deleteError={deleteError}
             isDeleted={selected ? deletedEntryIds.has(selected.id) : false}
             isDeleting={selected ? deletingEntryIds.has(selected.id) : false}
             onCopyPath={() => {
               if (selected) {
-                void navigator.clipboard.writeText(selected.path);
+                void pathCopy.copy(selected.path);
               }
             }}
             onDelete={onDelete}
