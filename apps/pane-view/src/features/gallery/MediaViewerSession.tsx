@@ -572,15 +572,8 @@ function useMediaViewerSession({
     const nextTime = Math.max(0, Math.min(safeTotal, rawTarget));
     const wasPlaying = !video.paused;
 
-    // Chrome and jsdom have no fastSeek, whatever the DOM lib types say.
-    const seeker: OptionalFastSeek = video;
-
-    if (seeker.fastSeek) {
-      seeker.fastSeek(nextTime);
-    } else {
-      video.currentTime = nextTime;
-    }
-
+    // Exact, like the scrub preview: fastSeek would snap to a keyframe away from the pick.
+    video.currentTime = nextTime;
     playbackPosition.set(nextTime);
 
     if (wasPlaying) {
@@ -1012,12 +1005,9 @@ const ViewerToolbarButton = forwardRef<
 });
 
 /**
- * The DOM lib declares these on every element; Chrome (fastSeek) and jsdom
- * (fastSeek, showModal, close) do not have them, so the viewer reads them as
- * optional and falls back.
+ * The DOM lib declares these on every dialog; jsdom does not have them, so
+ * the viewer reads them as optional and falls back.
  */
-type OptionalFastSeek = Partial<Pick<HTMLMediaElement, "fastSeek">>;
-
 type OptionalModalDialog = Partial<Pick<HTMLDialogElement, "showModal" | "close">>;
 
 type FullscreenHost = Partial<Pick<HTMLElement, "requestFullscreen">> &
