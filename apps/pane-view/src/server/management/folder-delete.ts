@@ -1,5 +1,5 @@
 import { toArchivePath, trimTrailingSlash } from "@latch-works/media-domain";
-import { and, eq, ilike, isNull, or } from "drizzle-orm";
+import { and, eq, isNull, like, or } from "drizzle-orm";
 import { type Database, db } from "../db";
 import { acquireLibraryMutationStartupLock } from "../db/library-coordination-lock";
 import { folders, libraryEntries } from "../db/schema";
@@ -64,7 +64,7 @@ export async function countEntriesUnderPath(
         isNull(libraryEntries.deletedAt),
         or(
           eq(libraryEntries.parentPath, normalizedPath),
-          ilike(libraryEntries.logicalPath, pattern),
+          like(libraryEntries.logicalPath, pattern),
         ),
       ),
     );
@@ -105,6 +105,7 @@ export async function softDeleteFolderSubtree(
     const results: FolderDeleteResult[] = [];
 
     for (const path of normalizedPaths) {
+      // Case-sensitive like the stored paths: deleting `photos` must not reach `Photos/…`.
       const pattern = `${escapeLikePattern(path)}/%`;
 
       // react-doctor-disable-next-line react-doctor/async-await-in-loop -- Overlapping folder selections must be updated in deterministic input order on one transaction.
@@ -114,7 +115,7 @@ export async function softDeleteFolderSubtree(
         .where(
           and(
             isNull(libraryEntries.deletedAt),
-            or(eq(libraryEntries.parentPath, path), ilike(libraryEntries.logicalPath, pattern)),
+            or(eq(libraryEntries.parentPath, path), like(libraryEntries.logicalPath, pattern)),
           ),
         )
         .returning({ id: libraryEntries.id });
@@ -124,7 +125,7 @@ export async function softDeleteFolderSubtree(
         .update(folders)
         .set({ deletedAt: now })
         .where(
-          and(isNull(folders.deletedAt), or(eq(folders.path, path), ilike(folders.path, pattern))),
+          and(isNull(folders.deletedAt), or(eq(folders.path, path), like(folders.path, pattern))),
         )
         .returning({ id: folders.id });
 

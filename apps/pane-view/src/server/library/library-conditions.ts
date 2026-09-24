@@ -1,4 +1,4 @@
-import { eq, ilike, isNull, ne, notIlike, notInArray, or, type SQL } from "drizzle-orm";
+import { eq, ilike, isNull, like, ne, notInArray, notLike, or, type SQL } from "drizzle-orm";
 import { folders, libraryEntries, mediaObjects } from "../db/schema";
 import { escapeLikePattern, resolveMediaScope } from "./query-helpers";
 import type { LibraryMediaItem } from "./types";
@@ -65,13 +65,14 @@ export function buildLibraryConditions({
     folderConditions.push(eq(folders.parentPath, currentPath));
 
     if (mediaScope.mode === "subtree") {
+      // Paths are case-sensitive, so the subtree is too: `photos` never reaches `Photos/…`.
       mediaConditions.push(
-        ilike(libraryEntries.logicalPath, `${escapeLikePattern(mediaScope.pathPrefix)}/%`),
+        like(libraryEntries.logicalPath, `${escapeLikePattern(mediaScope.pathPrefix)}/%`),
       );
 
       for (const excluded of directChildExcludes(currentPath, excludedPaths)) {
         mediaConditions.push(
-          notIlike(libraryEntries.logicalPath, `${escapeLikePattern(excluded)}/%`),
+          notLike(libraryEntries.logicalPath, `${escapeLikePattern(excluded)}/%`),
         );
       }
     } else if (mediaScope.mode === "direct-children") {
