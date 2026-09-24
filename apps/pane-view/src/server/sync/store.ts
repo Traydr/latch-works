@@ -138,8 +138,6 @@ export async function completeSyncedObject(
   },
   dependencies: SyncStoreDependencies = defaultSyncStoreDependencies,
 ): Promise<{ status: "database" }> {
-  await dependencies.assertNoActiveCleanupJob(dependencies.database);
-
   const parentPath = getParentPath(input.logicalPath);
   const objectKey = input.objectKey;
   const expectedChecksum = Buffer.from(input.sha256.toLowerCase(), "hex").toString("base64");
@@ -303,8 +301,6 @@ export async function markRemoteDeleted(
   { logicalPath, syncRunId }: { logicalPath: string; syncRunId: string },
   dependencies: SyncStoreDependencies = defaultSyncStoreDependencies,
 ): Promise<{ status: "database" }> {
-  await dependencies.assertNoActiveCleanupJob(dependencies.database);
-
   const normalizedPath = normalizeSyncLogicalPath(logicalPath);
   const pathError = validateSyncLogicalPath(normalizedPath);
 

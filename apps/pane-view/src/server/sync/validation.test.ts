@@ -35,6 +35,7 @@ async function postUpload(body: JsonValue): Promise<UploadResult> {
     },
     createSignedUploadUrl: unused,
     finalizeSyncRun: unused,
+    listRemoteSyncSnapshot: unused,
     markRemoteDeleted: unused,
     requireSyncApiToken: () => null,
     startSyncRun: unused,

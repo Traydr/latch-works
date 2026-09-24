@@ -8,15 +8,17 @@ import {
   completeSyncedObject,
   type FinalizeSyncRunInput,
   finalizeSyncRun,
+  listRemoteSyncSnapshot,
   markRemoteDeleted,
+  type RemoteSyncSnapshotEntry,
   type StartSyncRunInput,
   startSyncRun,
 } from "./store";
 
 /**
- * Everything the four sync route handlers reach for: the bearer token check,
- * the cleanup guard that closes the API during a wipe, the store writes, and
- * the signed upload URL. Handlers take this so a suite can drive request
+ * Everything the five sync route handlers reach for: the bearer token check,
+ * the cleanup guard that closes the API during a wipe, the store reads and
+ * writes, and the signed upload URL. Handlers take this so a suite can drive request
  * parsing, status codes, and routing without an archive or a bucket.
  */
 export interface SyncRouteDependencies {
@@ -29,6 +31,7 @@ export interface SyncRouteDependencies {
     sha256: string;
   }): Promise<SignedPutUrlResult>;
   finalizeSyncRun(request: { input: FinalizeSyncRunInput }): Promise<{ status: "database" }>;
+  listRemoteSyncSnapshot(): Promise<{ entries: RemoteSyncSnapshotEntry[]; status: "database" }>;
   markRemoteDeleted(request: {
     logicalPath: string;
     syncRunId: string;
@@ -45,6 +48,7 @@ export const syncRouteDependencies: SyncRouteDependencies = {
   createSignedUploadUrl: (request) =>
     createSignedPutUrl({ ...request, storage: getPaneViewStorageClient() }),
   finalizeSyncRun,
+  listRemoteSyncSnapshot: () => listRemoteSyncSnapshot(),
   markRemoteDeleted,
   requireSyncApiToken,
   startSyncRun,

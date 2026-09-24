@@ -7,6 +7,7 @@ import {
 } from "../server/auth/better-auth";
 import { resolveClientIp } from "../server/auth/client-ip";
 import { clearLoginThrottle, reserveLoginAttempt } from "../server/auth/login-throttle";
+import { forwardedAuthHeaders, redirectWithAuthCookies } from "../server/http/auth-forwarding";
 
 export const Route = createFileRoute("/api/auth/login")({
   server: {
@@ -71,42 +72,11 @@ async function callBetterAuthEndpoint(
   pathname: string,
   body: EmailSignInBody,
 ): Promise<Response> {
-  const url = new URL(pathname, incomingRequest.url);
-  const headers = new Headers();
-  copyHeader(incomingRequest.headers, headers, "Cookie");
-  copyHeader(incomingRequest.headers, headers, "Origin");
-  copyHeader(incomingRequest.headers, headers, "User-Agent");
-  headers.set("Content-Type", "application/json");
-
   return auth.handler(
-    new Request(url, {
+    new Request(new URL(pathname, incomingRequest.url), {
       body: JSON.stringify(body),
-      headers,
+      headers: forwardedAuthHeaders(incomingRequest),
       method: "POST",
     }),
   );
-}
-
-function redirectWithAuthCookies(authResponse: Response, location: string): Response {
-  const headers = new Headers({ Location: location });
-  copySetCookies(authResponse.headers, headers);
-
-  return new Response(null, {
-    headers,
-    status: 303,
-  });
-}
-
-function copyHeader(source: Headers, target: Headers, name: string): void {
-  const value = source.get(name);
-
-  if (value) {
-    target.set(name, value);
-  }
-}
-
-function copySetCookies(source: Headers, target: Headers): void {
-  for (const cookie of source.getSetCookie()) {
-    target.append("Set-Cookie", cookie);
-  }
 }
