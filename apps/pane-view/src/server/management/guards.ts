@@ -88,7 +88,7 @@ export async function assertNoActiveCleanupJob(client: Database = db): Promise<v
 
   if (activeJob) {
     throw new Error(
-      "A library cleanup job is still running. Wait for it to finish before starting a sync.",
+      "A library cleanup job is still running. Wait for it to finish before changing the library.",
     );
   }
 }
