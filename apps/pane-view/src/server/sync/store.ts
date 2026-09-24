@@ -9,7 +9,14 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { env } from "../../env/server";
 import { type Database, db } from "../db";
 import { acquireLibraryMutationStartupLock } from "../db/library-coordination-lock";
-import { folders, libraryEntries, mediaObjects, syncRunItems, syncRuns } from "../db/schema";
+import {
+  folders,
+  libraryEntries,
+  mediaObjects,
+  shutterSourceCleanup,
+  syncRunItems,
+  syncRuns,
+} from "../db/schema";
 import { withAncestorPaths } from "../library/query-helpers";
 import { assertNoActiveCleanupJob } from "../management/guards";
 import { normalizeSyncLogicalPath, validateSyncLogicalPath } from "./validation";
@@ -226,6 +233,10 @@ export async function completeSyncedObject(
         },
         target: libraryEntries.logicalPath,
       });
+
+    // The content is live again and Shutter will cache it again, so forget any
+    // queued or finished purge of it: its next delete queues a fresh one.
+    await tx.delete(shutterSourceCleanup).where(eq(shutterSourceCleanup.sha256, input.sha256));
 
     await tx
       .insert(syncRunItems)

@@ -1,5 +1,5 @@
 import { type ListStoredObjectsPage, listStoredObjectsByPrefix } from "@latch-works/media-storage";
-import { and, eq, inArray, isNotNull, isNull, notExists, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, not, sql } from "drizzle-orm";
 import { type Database, db } from "../db";
 import {
   favorites,
@@ -20,7 +20,11 @@ import { withAncestorPaths } from "../library/query-helpers";
 import { purgeShutterSource, type ShutterPurgeSource } from "../media/shutter-client";
 import { MaintenanceJobTypeSchema, parseMaintenanceProgress } from "./maintenance-progress";
 import { deleteMaintenanceObjects, getMaintenanceStorageClient } from "./maintenance-storage";
-import { orphanedMediaObjectCondition, orphanedShutterSourceCondition } from "./orphaned-sources";
+import {
+  liveShutterSourceCondition,
+  orphanedMediaObjectCondition,
+  orphanedShutterSourceCondition,
+} from "./orphaned-sources";
 
 const batchSize = 25;
 
@@ -421,21 +425,14 @@ async function processShutterSourcePurgeBatch(
     }
 
     case "shutter_sources": {
-      const activeSourceReference = dependencies.database
-        .select({ value: sql`1` })
-        .from(libraryEntries)
-        .innerJoin(mediaObjects, eq(mediaObjects.id, libraryEntries.mediaObjectId))
-        .where(
-          and(
-            eq(mediaObjects.sha256, shutterSourceCleanup.sha256),
-            isNull(libraryEntries.deletedAt),
-          ),
-        );
+      // Sync drops a source's row when its content goes live again; rows from
+      // before it did, pending or purged, are dropped here instead of lingering.
+      await dependencies.database.delete(shutterSourceCleanup).where(liveShutterSourceCondition());
 
       const rows = await dependencies.database
         .select({ objectKey: shutterSourceCleanup.objectKey, sha256: shutterSourceCleanup.sha256 })
         .from(shutterSourceCleanup)
-        .where(and(isNull(shutterSourceCleanup.purgedAt), notExists(activeSourceReference)))
+        .where(and(isNull(shutterSourceCleanup.purgedAt), not(liveShutterSourceCondition())))
         .limit(batchSize);
 
       if (rows.length === 0) {

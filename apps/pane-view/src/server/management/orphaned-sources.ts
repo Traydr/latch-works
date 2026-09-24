@@ -1,4 +1,4 @@
-import { and, eq, isNull, notExists, type SQL, sql } from "drizzle-orm";
+import { and, eq, exists, isNull, notExists, type SQL, sql } from "drizzle-orm";
 import { db } from "../db";
 import { libraryEntries, mediaObjects, shutterSourceCleanup } from "../db/schema";
 
@@ -27,7 +27,12 @@ export function orphanedMediaObjectCondition(): SQL {
   return notExists(activeReference);
 }
 
-/** Orphaned media objects whose Shutter source has not been queued for purge yet. */
+/**
+ * Orphaned media objects whose Shutter source has no row in the purge queue.
+ * A purged row still counts: sync drops a source's row when its content goes
+ * live again (completeSyncedObject), so a purged row means purged since the
+ * content was last served, and a later delete queues it afresh.
+ */
 export function orphanedShutterSourceCondition(): SQL {
   const alreadyQueued = db
     .select({ value: sql`1` })
@@ -36,4 +41,17 @@ export function orphanedShutterSourceCondition(): SQL {
 
   // SAFETY: and() is only undefined when called with no conditions; two are given.
   return and(orphanedMediaObjectCondition(), notExists(alreadyQueued)) as SQL;
+}
+
+/** Queued Shutter sources whose content a live library entry serves again. */
+export function liveShutterSourceCondition(): SQL {
+  const activeSourceReference = db
+    .select({ value: sql`1` })
+    .from(libraryEntries)
+    .innerJoin(mediaObjects, eq(mediaObjects.id, libraryEntries.mediaObjectId))
+    .where(
+      and(eq(mediaObjects.sha256, shutterSourceCleanup.sha256), isNull(libraryEntries.deletedAt)),
+    );
+
+  return exists(activeSourceReference);
 }

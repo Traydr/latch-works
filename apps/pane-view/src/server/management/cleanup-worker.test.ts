@@ -1,3 +1,4 @@
+import type { S3StorageClient } from "@latch-works/media-storage";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   folders,
@@ -5,10 +6,14 @@ import {
   maintenanceJobs,
   mediaObjects,
   shutterSourceCleanup,
+  syncRunItems,
+  syncRuns,
 } from "../db/schema";
 import { testDatabaseForSuite } from "../library/test-db";
+import { completeSyncedObject, markRemoteDeleted, type SyncStoreDependencies } from "../sync/store";
 import { type MaintenanceWorkerDependencies, processMaintenanceJobBatch } from "./cleanup-worker";
 import { initialProgressFor } from "./maintenance-progress";
+import { hasPurgeableShutterSources } from "./shutter-source-purge";
 
 const testDatabase = testDatabaseForSuite();
 
@@ -225,5 +230,97 @@ describe("soft-deleted purge", () => {
         (row) => row.path,
       ),
     ).toEqual(["kept/sub/b.jpg"]);
+  });
+});
+
+describe("Shutter source purge", () => {
+  beforeEach(async () => {
+    const { db } = testDatabase();
+    await db.delete(syncRunItems);
+    await db.delete(syncRuns);
+    await db.delete(libraryEntries);
+    await db.delete(mediaObjects);
+    await db.delete(maintenanceJobs);
+    await db.delete(shutterSourceCleanup);
+  });
+
+  function hasPurgeableSources(): Promise<boolean> {
+    return testDatabase().db.transaction((tx) => hasPurgeableShutterSources(tx));
+  }
+
+  it("purges a source again after its content is synced and deleted again", async () => {
+    const { db } = testDatabase();
+    const sha256 = "e".repeat(64);
+    const objectKey = `originals/${sha256}.jpg`;
+    await insertEntry(await insertMediaObject(sha256), "gone/e.jpg", new Date());
+
+    const deletes: ExternalDeletes = { objectKeys: [], shutterSources: [] };
+    await runJobToCompletion(await insertJob("shutter_source_purge"), deletes);
+    expect(deletes.shutterSources).toEqual([sha256]);
+    expect(await hasPurgeableSources()).toBe(false);
+
+    // Synced again, served again, then deleted again.
+    const [run] = await db
+      .insert(syncRuns)
+      .values({ sourceRoot: "/archive", status: "running" })
+      .returning({ id: syncRuns.id });
+
+    if (!run) throw new Error("failed to insert sync run");
+
+    const syncDependencies: SyncStoreDependencies = {
+      acquireLibraryMutationStartupLock: async () => undefined,
+      assertNoActiveCleanupJob: async () => undefined,
+      database: db,
+      headStoredObject: async () => ({
+        checksumSHA256: Buffer.from(sha256, "hex").toString("base64"),
+        contentLength: 1024,
+        contentType: "image/jpeg",
+        etag: '"etag"',
+        metadata: { sha256 },
+      }),
+    };
+
+    // SAFETY: the faked headStoredObject is the only call that receives this client.
+    const storage = { bucket: "test-bucket", client: {} as S3StorageClient["client"] };
+
+    await completeSyncedObject(
+      {
+        input: {
+          contentType: "image/jpeg",
+          extension: "jpg",
+          filename: "e.jpg",
+          logicalPath: "gone/e.jpg",
+          mediaType: "image",
+          mtimeMs: 1_700_000_000_000,
+          objectKey,
+          sha256,
+          size: 1024,
+          syncRunId: run.id,
+        },
+        storage,
+      },
+      syncDependencies,
+    );
+    await markRemoteDeleted({ logicalPath: "gone/e.jpg", syncRunId: run.id }, syncDependencies);
+    await db.delete(maintenanceJobs);
+
+    expect(await hasPurgeableSources()).toBe(true);
+    await runJobToCompletion(await insertJob("shutter_source_purge"), deletes);
+    expect(deletes.shutterSources).toEqual([sha256, sha256]);
+  });
+
+  it("drops a queued source whose content is live again instead of purging it", async () => {
+    const { db } = testDatabase();
+    const sha256 = "f".repeat(64);
+    await insertEntry(await insertMediaObject(sha256), "kept/f.jpg", null);
+    await db.insert(shutterSourceCleanup).values({ objectKey: `originals/${sha256}.jpg`, sha256 });
+
+    expect(await hasPurgeableSources()).toBe(false);
+
+    const deletes: ExternalDeletes = { objectKeys: [], shutterSources: [] };
+    await runJobToCompletion(await insertJob("shutter_source_purge"), deletes);
+
+    expect(deletes.shutterSources).toEqual([]);
+    expect(await db.select().from(shutterSourceCleanup)).toEqual([]);
   });
 });
