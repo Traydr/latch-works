@@ -134,7 +134,10 @@ export function FloatingToolbar({
 
   return (
     <div className="pointer-events-none fixed bottom-5 left-1/2 z-20 -translate-x-1/2">
-      <div className="pointer-events-auto flex max-w-[96vw] items-center gap-2 rounded-xl border border-border bg-background/95 px-3 py-2 shadow-lg backdrop-blur-sm">
+      <div
+        data-floating-toolbar=""
+        className="pointer-events-auto flex max-w-[96vw] items-center gap-2 rounded-xl border border-border bg-background/95 px-3 py-2 shadow-lg backdrop-blur-sm"
+      >
         <Button
           aria-pressed={recursive}
           className={toolButtonClass(recursive)}

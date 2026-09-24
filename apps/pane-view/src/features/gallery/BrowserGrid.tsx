@@ -1,9 +1,21 @@
 import { Archive } from "lucide-react";
-import { type ReactNode, type RefObject, useEffect, useMemo } from "react";
+import { type ReactNode, type RefObject, useEffect, useMemo, useRef } from "react";
 import type { GalleryBrowseEntry } from "@/features/gallery/gallery-browse-entry";
 import { BrowserEntryCard } from "./BrowserEntryCard";
+import { FLOATING_TOOLBAR_SELECTOR, GALLERY_GRID_SCROLL_ID } from "./gallery-grid-scroll";
 import { useVirtualGridMetrics } from "./useVirtualGridMetrics";
 import { useWindowedThumbnailResolution } from "./useWindowedThumbnailResolution";
+
+/** How much of the grid's bottom edge the fixed FloatingToolbar covers, measured from the DOM. */
+function floatingToolbarInset(grid: HTMLElement): number {
+  const toolbar = document.querySelector(FLOATING_TOOLBAR_SELECTOR);
+
+  if (!toolbar) {
+    return 0;
+  }
+
+  return Math.max(0, grid.getBoundingClientRect().bottom - toolbar.getBoundingClientRect().top);
+}
 
 interface BrowserGridProps {
   cardWidth: number;
@@ -69,8 +81,13 @@ export function BrowserGrid({
     columnCountRef.current = columnCount;
   }
 
+  // Scroll only for a new request: the effect also re-runs when a page loads
+  // or the grid resizes, and snapping back to the focused card then would
+  // fight the user's own scrolling. Mounting is not a request either.
+  const handledScrollRequestKeyRef = useRef(scrollRequestKey);
+
   useEffect(() => {
-    if (scrollRequestKey === 0 || entries.length === 0) {
+    if (scrollRequestKey === handledScrollRequestKeyRef.current || entries.length === 0) {
       return;
     }
 
@@ -80,17 +97,22 @@ export function BrowserGrid({
       return;
     }
 
+    handledScrollRequestKeyRef.current = scrollRequestKey;
+
+    // The grid starts below the section's top padding.
+    const gridTop = Number.parseFloat(getComputedStyle(element).paddingTop) || 0;
+    const bottomInset = floatingToolbarInset(element);
     const row = Math.floor(focusedIndex / columnCount);
-    const itemTop = row * rowStride;
+    const itemTop = gridTop + row * rowStride;
     const itemBottom = itemTop + cardHeight;
     const padding = 24;
     const viewTop = element.scrollTop;
-    const viewBottom = viewTop + element.clientHeight;
+    const viewBottom = viewTop + element.clientHeight - bottomInset;
 
     if (itemTop < viewTop + padding) {
       element.scrollTop = Math.max(0, itemTop - padding);
     } else if (itemBottom > viewBottom - padding) {
-      element.scrollTop = itemBottom - element.clientHeight + padding;
+      element.scrollTop = itemBottom - element.clientHeight + bottomInset + padding;
     }
   }, [cardHeight, columnCount, entries.length, focusedIndex, mainRef, rowStride, scrollRequestKey]);
 
@@ -99,6 +121,7 @@ export function BrowserGrid({
       ref={mainRef}
       className="min-h-0 min-w-0 flex-1 overflow-auto px-5 pb-28 pt-5"
       aria-label="Archive browser"
+      data-scroll-restoration-id={GALLERY_GRID_SCROLL_ID}
     >
       {entries.length === 0 ? (
         <div className="grid min-h-60 place-items-center rounded-lg border border-dashed border-zinc-800 text-center">

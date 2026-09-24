@@ -274,11 +274,18 @@ export function applyBrowseIntent(
         },
       };
     case "setRecursive": {
-      const flags = { comic: intent.next ? state.comicMode : false, recursive: intent.next };
-
+      // At the root the URL holds no flags, so "leave comic alone" means the
+      // remembered comic flag, not the folded-off one.
       if (!state.folderModesEnabled) {
-        return { persisted: { comicMode: flags.comic, recursive: flags.recursive } };
+        return {
+          persisted: {
+            comicMode: intent.next ? remembered.comicMode : false,
+            recursive: intent.next,
+          },
+        };
       }
+
+      const flags = { comic: intent.next ? state.comicMode : false, recursive: intent.next };
 
       return {
         navigate: { replace: true, resetScroll: false, search: buildBrowseSearch(state, flags) },
@@ -355,6 +362,11 @@ export function resolveInitialRedirect(
 // ---------------------------------------------------------------------------
 
 export interface GalleryBrowseState extends ResolvedBrowseState {
+  /**
+   * The remembered in-folder recursive flag: the settings drawer's "default
+   * recursive browsing". Unlike `recursive`, it is not folded off at the root.
+   */
+  rememberedRecursive: boolean;
   snapshotRequest: LibrarySnapshotRequest;
   listingRequest: GalleryListingQueryRequest;
   /** The current path's excluded direct-child folders (Plan 054). */
@@ -463,6 +475,7 @@ export function useGalleryBrowseState({
   }
 
   const excludedChildPaths = excludes.list;
+  const rememberedRecursive = (persisted ?? PERSISTED_BROWSE_STATE_DEFAULTS).recursive;
 
   // First-visit redirect, once.
   const initialPathCheckedRef = useRef(false);
@@ -653,6 +666,7 @@ export function useGalleryBrowseState({
       listingRequest,
       navigateToPath,
       pruneExcludedChildren,
+      rememberedRecursive,
       selectMedia,
       setComicMode,
       setDetailPanelOpen,
@@ -669,6 +683,7 @@ export function useGalleryBrowseState({
       listingRequest,
       navigateToPath,
       pruneExcludedChildren,
+      rememberedRecursive,
       selectMedia,
       setComicMode,
       setDetailPanelOpen,

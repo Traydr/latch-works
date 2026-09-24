@@ -1,5 +1,9 @@
 import { type MutableRefObject, useCallback, useEffect, useRef } from "react";
-import { getParentPath, isTextInputTarget } from "@/features/gallery/browse-search";
+import {
+  getParentPath,
+  isInteractiveTarget,
+  isTextInputTarget,
+} from "@/features/gallery/browse-search";
 import type { GalleryBrowseEntry } from "@/features/gallery/gallery-browse-entry";
 
 export interface UseGalleryKeyboardOptions {
@@ -7,10 +11,14 @@ export interface UseGalleryKeyboardOptions {
   displayPath: string;
   entries: GalleryBrowseEntry[];
   focusedEntryIndex: number;
+  /** More listing pages exist beyond the loaded entries. */
+  hasMore: boolean;
   hotkeysOpen: boolean;
   mobileSearchOpen: boolean;
   onActivateEntry: (entry: GalleryBrowseEntry) => void;
   onCloseOverlays: () => void;
+  /** Loads the next listing page; resolves to the keys it appended, in order. */
+  onLoadNextPage: () => Promise<{ appendedEntryKeys: string[] }>;
   onNavigateSiblingFolder: (offset: -1 | 1) => void;
   onNavigateToPath: (path: string) => void;
   onOpenHotkeys: () => void;
@@ -22,6 +30,8 @@ export interface UseGalleryKeyboardOptions {
    */
   onStepBeyondGrid: (currentKey: string | null, direction: -1 | 1) => Promise<string | null>;
   pathSheetOpen: boolean;
+  /** The comic reader is open; like the viewer, it owns the keyboard. */
+  readerOpen: boolean;
   setFocusedEntryIndex: (index: number | ((current: number) => number)) => void;
   requestScrollFocusedIntoView: () => void;
   settingsOpen: boolean;
@@ -36,16 +46,19 @@ export function useGalleryKeyboard({
   displayPath,
   entries,
   focusedEntryIndex,
+  hasMore,
   hotkeysOpen,
   mobileSearchOpen,
   onActivateEntry,
   onCloseOverlays,
+  onLoadNextPage,
   onNavigateSiblingFolder,
   onNavigateToPath,
   onOpenHotkeys,
   onSelectMedia,
   onStepBeyondGrid,
   pathSheetOpen,
+  readerOpen,
   setFocusedEntryIndex,
   requestScrollFocusedIntoView,
   settingsOpen,
@@ -128,13 +141,15 @@ export function useGalleryKeyboard({
       const lastIndex = entries.length - 1;
       const lastRow = Math.floor(lastIndex / columnCount);
 
+      const focusResolvedKey = (key: string | null | undefined) => {
+        if (key && !focusEntryByKey(key)) {
+          pendingFocusKeyRef.current = key;
+        }
+      };
+
       const stepBeyond = (direction: -1 | 1) => {
         const currentKey = entries[focusedEntryIndex]?.key ?? null;
-        void onStepBeyondGrid(currentKey, direction).then((key) => {
-          if (key && !focusEntryByKey(key)) {
-            pendingFocusKeyRef.current = key;
-          }
-        });
+        void onStepBeyondGrid(currentKey, direction).then(focusResolvedKey);
       };
 
       if (nextIndex < 0) {
@@ -147,6 +162,20 @@ export function useGalleryKeyboard({
 
       if (dy > 0 && currentRow < lastRow) {
         applyFocus(lastIndex);
+
+        return;
+      }
+
+      // Down from the last loaded row with more to load: the row below is on
+      // the next page. Land in this column, or on the page's last entry if it
+      // is shorter.
+      if (dy > 0 && hasMore) {
+        const offset = nextIndex - entries.length;
+        void onLoadNextPage()
+          .then(({ appendedEntryKeys }) =>
+            focusResolvedKey(appendedEntryKeys[Math.min(offset, appendedEntryKeys.length - 1)]),
+          )
+          .catch(() => undefined);
 
         return;
       }
@@ -224,7 +253,10 @@ export function useGalleryKeyboard({
         return;
       }
 
-      if (key === "Enter" || key === "f") {
+      // A focused button or link handles its own Enter; taking it here would
+      // open the focused grid entry instead of pressing the control. `f` is
+      // ours alone, so it opens the entry wherever focus sits.
+      if ((key === "Enter" && !isInteractiveTarget(event.target)) || key === "f") {
         event.preventDefault();
         const entry = entries[focusedEntryIndex];
 
@@ -247,14 +279,16 @@ export function useGalleryKeyboard({
         return;
       }
 
+      // The viewer and the reader own the keyboard, `?` included: the hotkey
+      // overlay would open underneath them.
+      if (viewerOpen || readerOpen) {
+        return;
+      }
+
       if (event.key === "?") {
         event.preventDefault();
         onOpenHotkeys();
 
-        return;
-      }
-
-      if (viewerOpen) {
         return;
       }
 
@@ -272,16 +306,19 @@ export function useGalleryKeyboard({
     entries,
     focusEntryByKey,
     focusedEntryIndex,
+    hasMore,
     hotkeysOpen,
     mobileSearchOpen,
     onActivateEntry,
     onCloseOverlays,
+    onLoadNextPage,
     onNavigateSiblingFolder,
     onNavigateToPath,
     onOpenHotkeys,
     onSelectMedia,
     onStepBeyondGrid,
     pathSheetOpen,
+    readerOpen,
     setFocusedEntryIndex,
     requestScrollFocusedIntoView,
     settingsOpen,

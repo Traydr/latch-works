@@ -29,7 +29,7 @@ import { buildBreadcrumbItems, getParentPath } from "@/features/gallery/browse-s
 import { FloatingToolbar } from "@/features/gallery/FloatingToolbar";
 import { GalleryBrowsePane } from "@/features/gallery/GalleryBrowsePane";
 import { GalleryGridSkeleton } from "@/features/gallery/GalleryGridSkeleton";
-import type { GalleryBrowseEntry } from "@/features/gallery/gallery-browse-entry";
+import { entryMedia, type GalleryBrowseEntry } from "@/features/gallery/gallery-browse-entry";
 import { useGalleryLayout } from "@/features/gallery/gallery-layout-context";
 import { MediaViewerModal } from "@/features/gallery/MediaViewerModal";
 import { useGalleryBrowse } from "@/features/gallery/useGalleryBrowse";
@@ -61,6 +61,7 @@ function useGalleryPage() {
     pruneExcludedChildren,
     query,
     recursive: effectiveRecursive,
+    rememberedRecursive,
     selectMedia,
     selectedId,
     setComicMode,
@@ -85,6 +86,7 @@ function useGalleryPage() {
   const [scrollRequestKey, setScrollRequestKey] = useState(0);
   const [deletingEntryIds, setDeletingEntryIds] = useState<ReadonlySet<string>>(() => new Set());
   const [deletedEntryIds, setDeletedEntryIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [deleteError, setDeleteError] = useState<{ entryId: string; message: string } | null>(null);
 
   const session = useGalleryBrowse({
     excludedMediaIds: deletedEntryIds,
@@ -111,7 +113,51 @@ function useGalleryPage() {
     stepMedia,
   } = session;
 
-  const { viewerOpen, openViewer, closeViewer } = useGalleryViewerHandoff(selectMedia);
+  // Grid focus follows a selection made outside the grid keys (the viewer
+  // stepping, the detail panel's Prev/Next) once its entry has rendered: a
+  // step may have loaded the page the entry is on.
+  const entriesRef = useRef(entries);
+  entriesRef.current = entries;
+  const pendingFocusMediaIdRef = useRef<string | null>(null);
+
+  const focusMediaEntry = useCallback((mediaId: string): boolean => {
+    const index = entriesRef.current.findIndex((entry) => entryMedia(entry)?.id === mediaId);
+
+    if (index < 0) {
+      return false;
+    }
+
+    pendingFocusMediaIdRef.current = null;
+    setFocusedEntryIndex(index);
+
+    return true;
+  }, []);
+
+  const selectMediaAndFocus = useCallback(
+    (mediaId: string) => {
+      if (!focusMediaEntry(mediaId)) {
+        pendingFocusMediaIdRef.current = mediaId;
+      }
+
+      selectMedia(mediaId);
+    },
+    [focusMediaEntry, selectMedia],
+  );
+
+  useEffect(() => {
+    if (pendingFocusMediaIdRef.current) {
+      focusMediaEntry(pendingFocusMediaIdRef.current);
+    }
+  }, [entries, focusMediaEntry]);
+
+  // A new folder or search starts on its first entry. Sorting, shuffling, and
+  // mode toggles keep the scroll position, so they keep the focus index too.
+  useEffect(() => {
+    pendingFocusMediaIdRef.current = null;
+    setFocusedEntryIndex(0);
+  }, [displayPath, query]);
+
+  const { viewerOpen, openViewer, closeViewer } = useGalleryViewerHandoff(selectMediaAndFocus);
 
   const showDetailPanel = !isMobile && detailPanelOpen;
   const columnCountRef = useRef(4);
@@ -312,16 +358,19 @@ function useGalleryPage() {
     displayPath,
     entries,
     focusedEntryIndex,
+    hasMore: page.hasMore,
     hotkeysOpen,
     mobileSearchOpen,
     onActivateEntry: handleActivateEntry,
     onCloseOverlays: closeOverlays,
+    onLoadNextPage: loadNextPage,
     onNavigateSiblingFolder: navigateSiblingFolder,
     onNavigateToPath: navigateToPath,
     onOpenHotkeys: openHotkeys,
     onSelectMedia: selectMedia,
     onStepBeyondGrid: stepBeyondGrid,
     pathSheetOpen,
+    readerOpen: activeComic !== null,
     setFocusedEntryIndex,
     requestScrollFocusedIntoView,
     settingsOpen,
@@ -336,10 +385,15 @@ function useGalleryPage() {
   const selectAdjacentMedia = (offset: -1 | 1) => {
     void stepMedia(selected?.id ?? null, offset, settings.loopNavigation).then((nextId) => {
       if (nextId) {
-        selectMedia(nextId);
+        selectMediaAndFocus(nextId);
       }
     });
   };
+
+  // A delete settles after the render it started in: it reads the live
+  // browse, sequence, and selection from here.
+  const liveDeleteRef = useRef({ browseKey, navigableMedia, selectedId: selected?.id ?? null });
+  liveDeleteRef.current = { browseKey, navigableMedia, selectedId: selected?.id ?? null };
 
   const deleteSelectedMedia = () => {
     if (!selected || deletedEntryIds.has(selected.id) || deletingEntryIds.has(selected.id)) {
@@ -355,34 +409,38 @@ function useGalleryPage() {
     }
 
     const entryId = selected.id;
-    const currentNavigableIndex = navigableMedia.findIndex((item) => item.id === entryId);
+    const startBrowseKey = browseKey;
 
+    setDeleteError(null);
     setDeletingEntryIds((current) => new Set([...current, entryId]));
 
     void (async () => {
       try {
-        const result = await deleteEntryMutation.mutateAsync(entryId);
-
-        if (!result.deleted) {
-          return;
-        }
+        // `deleted: false` means no live row matched: the item is already
+        // gone, so hide it like a delete that just landed.
+        await deleteEntryMutation.mutateAsync(entryId);
 
         setDeletedEntryIds((current) => new Set([...current, entryId]));
 
-        const remaining = navigableMedia.filter((item) => item.id !== entryId);
+        // Move to the neighbour only if the user has not moved on meanwhile.
+        const live = liveDeleteRef.current;
 
-        const nextIndex =
-          remaining.length > 0
-            ? currentNavigableIndex >= 0
-              ? Math.min(currentNavigableIndex, remaining.length - 1)
-              : 0
-            : -1;
+        if (live.browseKey !== startBrowseKey || live.selectedId !== entryId) {
+          return;
+        }
 
-        const next = nextIndex >= 0 ? remaining[nextIndex] : undefined;
+        const liveIndex = live.navigableMedia.findIndex((item) => item.id === entryId);
+        const remaining = live.navigableMedia.filter((item) => item.id !== entryId);
+        const next = remaining[liveIndex >= 0 ? Math.min(liveIndex, remaining.length - 1) : 0];
 
         if (next) {
-          selectMedia(next.id);
+          selectMediaAndFocus(next.id);
         }
+      } catch (error) {
+        setDeleteError({
+          entryId,
+          message: error instanceof Error ? error.message : "Delete failed.",
+        });
       } finally {
         setDeletingEntryIds((current) => {
           const next = new Set(current);
@@ -430,6 +488,7 @@ function useGalleryPage() {
     contentBrowseKey,
     columnCountRef,
     currentFolderName,
+    deleteError,
     deleteSelectedMedia,
     deletedEntryIds,
     deletingEntryIds,
@@ -457,12 +516,13 @@ function useGalleryPage() {
     page,
     parentPath,
     pathSheetOpen,
+    rememberedRecursive,
     scrollRequestKey,
     searchDraft,
     selectAdjacentMedia,
     selected,
     selectedComic,
-    selectMedia,
+    selectMediaAndFocus,
     setActiveComic,
     setComicMode,
     setDetailPanelOpen,
@@ -679,6 +739,11 @@ function GalleryContent(): JSX.Element {
           <GalleryBrowsePane
             columnCountRef={model.columnCountRef}
             comicMode={model.effectiveComicMode}
+            deleteError={
+              model.deleteError && model.deleteError.entryId === model.selected?.id
+                ? model.deleteError.message
+                : null
+            }
             deletedEntryIds={model.deletedEntryIds}
             deletingEntryIds={model.deletingEntryIds}
             entries={model.entries}
@@ -747,7 +812,7 @@ function GalleryOverlays(): JSX.Element {
         onUpdate={model.updateSettings}
         onUpdateRecursiveDefault={model.setRecursive}
         open={model.settingsOpen}
-        recursiveDefault={model.effectiveRecursive}
+        recursiveDefault={model.rememberedRecursive}
         settings={model.settings}
       />
       {model.hotkeysOpen ? <HotkeyOverlay onClose={() => model.setHotkeysOpen(false)} /> : null}
@@ -810,7 +875,7 @@ function GalleryOverlays(): JSX.Element {
           loopVideos={model.settings.loopVideos}
           mediaId={model.selected.id}
           onClose={model.closeViewer}
-          onSelect={model.selectMedia}
+          onSelect={model.selectMediaAndFocus}
           rememberViewerPosition={model.settings.rememberViewerPosition}
           stepMedia={model.stepMedia}
         />

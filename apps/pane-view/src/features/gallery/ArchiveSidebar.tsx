@@ -1,4 +1,4 @@
-import type { FolderNode } from "@latch-works/media-domain";
+import { compareByName, type FolderNode } from "@latch-works/media-domain";
 import { Link } from "@tanstack/react-router";
 import { Archive, BarChart3, ChevronRight, Folder, LogOut, Settings, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -38,7 +38,7 @@ export function ArchiveSidebar({
   const { state } = useSidebar();
   const isCollapsed = state === "collapsed";
   const ancestors = buildAncestorItems(currentPath);
-  const childFolders = [...folders].sort((a, b) => a.name.localeCompare(b.name));
+  const childFolders = [...folders].sort(compareByName);
 
   return (
     <Sidebar
