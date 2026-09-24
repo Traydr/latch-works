@@ -47,7 +47,7 @@ import { PaneViewImage } from "./PaneViewImage";
 import { type ResolvedMediaUrlCache, useResolvedMediaUrl } from "./useResolvedMediaUrl";
 import { createPlaybackPosition } from "./video-player/playback-position";
 import { VideoPlayerChrome } from "./video-player/VideoPlayerChrome";
-import { ChromeRegion, useHoldToBoost } from "./video-player/video-player-controls";
+import { ChromeRegion, formatClock, useHoldToBoost } from "./video-player/video-player-controls";
 
 const PdfViewer = lazy(() =>
   import("@/features/viewer/PdfViewer").then((module) => ({ default: module.PdfViewer })),
@@ -100,14 +100,6 @@ function readPersistedVolume(): number {
   } catch {
     return 1;
   }
-}
-
-function formatDuration(ms: number): string {
-  const totalSeconds = Math.floor(ms / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-
-  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
 /** The viewer's name for a key press, or null when the press belongs to a text field or a chord. */
@@ -267,7 +259,7 @@ function useViewerShell({
   const details = [
     formatBytes(item.size),
     item.extension.toUpperCase(),
-    ...(resolvedDurationMs ? [formatDuration(resolvedDurationMs)] : []),
+    ...(resolvedDurationMs ? [formatClock(resolvedDurationMs / 1000)] : []),
     ...(item.width && item.height ? [`${item.width}×${item.height}`] : []),
   ];
 
