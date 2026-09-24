@@ -1,24 +1,20 @@
 import { inArray, lt, sql } from "drizzle-orm";
-import { db } from "../db";
+import { type Database, db } from "../db";
 import { loginThrottleAttempts } from "../db/schema";
 import { createLoginThrottle, type LoginThrottleStore } from "./login-throttle-core";
 
-type ThrottleExecutor = Pick<typeof db, "insert">;
+type ThrottleExecutor = Pick<Database, "insert">;
 
 /**
- * Builds the atomic attempt upsert.
+ * Builds the atomic attempt upsert, returning the key's count after it.
  *
  * Every `case` reads the *existing* row: in `on conflict do update`, PostgreSQL
  * evaluates all `set` right-hand sides against the pre-update tuple, so
  * assigning `expires_at` last cannot disturb the `count` and `window_start`
  * branches. An expired row therefore restarts the window at 1 rather than
  * continuing to accumulate, which is what makes the fixed window fixed.
- *
- * Exported so `login-throttle-sql.test.ts` can assert the rendered SQL. That
- * suite is the only coverage this branch logic has — the in-memory stores used
- * by the behavioral suites are separate implementations of the same contract.
  */
-export function buildLoginThrottleUpsert(
+function buildLoginThrottleUpsert(
   executor: ThrottleExecutor,
   key: string,
   currentTime: Date,
@@ -48,49 +44,51 @@ export function buildLoginThrottleUpsert(
           else ${loginThrottleAttempts.windowStart}
         end`,
       },
-    });
+    })
+    .returning({ count: loginThrottleAttempts.count });
 }
 
-const databaseLoginThrottleStore: LoginThrottleStore = {
-  async clear(keys) {
-    await db.delete(loginThrottleAttempts).where(inArray(loginThrottleAttempts.key, keys));
-  },
+function createDatabaseLoginThrottleStore(database: Database): LoginThrottleStore {
+  return {
+    async clear(keys) {
+      await database.delete(loginThrottleAttempts).where(inArray(loginThrottleAttempts.key, keys));
+    },
 
-  async read(keys) {
-    // Read-only on purpose: this runs on every login attempt, including
-    // successful ones. Expired rows are filtered by the caller, and pruning
-    // happens on the write path instead.
-    const rows = await db
-      .select()
-      .from(loginThrottleAttempts)
-      .where(inArray(loginThrottleAttempts.key, keys));
+    async reserve(keys, now, expiresAt) {
+      const currentTime = new Date(now);
+      const nextExpiry = new Date(expiresAt);
 
-    return rows.map((row) => ({
-      count: row.count,
-      expiresAt: row.expiresAt.getTime(),
-      key: row.key,
-      windowStart: row.windowStart.getTime(),
-    }));
-  },
+      // Prune before the transaction, not inside it. A global delete holds locks
+      // in scan order, so folding it into the upsert transaction would let two
+      // concurrent login attempts acquire row locks in opposite orders.
+      await database
+        .delete(loginThrottleAttempts)
+        .where(lt(loginThrottleAttempts.expiresAt, currentTime));
 
-  async record(keys, now, expiresAt) {
-    const currentTime = new Date(now);
-    const nextExpiry = new Date(expiresAt);
+      return database.transaction(async (tx) => {
+        const counts: number[] = [];
 
-    // Prune before the transaction, not inside it. A global delete holds locks
-    // in scan order, so folding it into the upsert transaction would let two
-    // concurrent failed logins acquire row locks in opposite orders.
-    await db.delete(loginThrottleAttempts).where(lt(loginThrottleAttempts.expiresAt, currentTime));
+        for (const key of keys) {
+          // react-doctor-disable-next-line react-doctor/async-await-in-loop -- Stable lock order prevents concurrent login transactions from deadlocking.
+          const [row] = await buildLoginThrottleUpsert(tx, key, currentTime, nextExpiry);
 
-    await db.transaction(async (tx) => {
-      for (const key of keys) {
-        // react-doctor-disable-next-line react-doctor/async-await-in-loop -- Stable lock order prevents concurrent login transactions from deadlocking.
-        await buildLoginThrottleUpsert(tx, key, currentTime, nextExpiry);
-      }
-    });
-  },
-};
+          if (!row) {
+            throw new Error(`login throttle upsert returned no row for ${key}`);
+          }
 
-const sharedLoginThrottle = createLoginThrottle({ store: databaseLoginThrottleStore });
+          counts.push(row.count);
+        }
 
-export const { clearLoginThrottle, isLoginThrottled, recordFailedLogin } = sharedLoginThrottle;
+        return counts;
+      });
+    },
+  };
+}
+
+export function createDatabaseLoginThrottle(database: Database, now?: () => number) {
+  return createLoginThrottle({ now, store: createDatabaseLoginThrottleStore(database) });
+}
+
+const sharedLoginThrottle = createDatabaseLoginThrottle(db);
+
+export const { clearLoginThrottle, reserveLoginAttempt } = sharedLoginThrottle;
