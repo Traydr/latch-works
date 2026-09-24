@@ -1,11 +1,9 @@
 import type { MediaItem } from "@latch-works/media-domain";
 import { formatBytes } from "@latch-works/media-domain";
-import { Download, Image, type LucideIcon, Maximize, Minimize, X } from "lucide-react";
+import { Download, Image, Maximize, Minimize, X } from "lucide-react";
 import {
-  forwardRef,
   type JSX,
   lazy,
-  type MouseEvent,
   type RefObject,
   Suspense,
   useCallback,
@@ -32,6 +30,7 @@ import { ViewerStage } from "./ViewerStage";
 import type { VideoStatus } from "./video-player/useVideoPlayback";
 import { VideoViewer } from "./video-player/VideoViewer";
 import { ChromeRegion, formatClock } from "./video-player/video-player-controls";
+import { IconButton, ViewerTopBar } from "./viewer-chrome";
 
 const PdfViewer = lazy(() =>
   import("@/features/viewer/PdfViewer").then((module) => ({ default: module.PdfViewer })),
@@ -140,7 +139,7 @@ export function MediaViewerSession({
         if (event.pointerType === "mouse") revealChrome();
       }}
     >
-      <ViewerTopBar
+      <ViewerTitleBar
         chrome={chrome}
         closeButtonRef={dialog.closeButtonRef}
         copyStatus={pathCopy.status}
@@ -227,7 +226,7 @@ function itemDetails(item: MediaItem, measuredDuration: number): string[] {
   ];
 }
 
-function ViewerTopBar({
+function ViewerTitleBar({
   chrome,
   closeButtonRef,
   copyStatus,
@@ -254,10 +253,7 @@ function ViewerTopBar({
   showOriginal: boolean;
 }): JSX.Element {
   return (
-    <div
-      className={`pointer-events-none absolute inset-x-0 top-0 z-20 bg-gradient-to-b from-black/70 via-black/30 to-transparent px-3 pb-8 pt-3 transition-opacity duration-300 ${chrome.chromeVisibilityClass}`}
-      style={{ paddingTop: "max(0.75rem, env(safe-area-inset-top))" }}
-    >
+    <ViewerTopBar visibilityClass={chrome.chromeVisibilityClass}>
       <ChromeRegion
         className="flex items-center justify-between gap-2 sm:gap-3"
         hidden={!chrome.chromeVisible}
@@ -270,47 +266,56 @@ function ViewerTopBar({
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
-          <ViewerToolbarButton
-            ariaLabel="Copy path"
+          <IconButton
             icon={COPY_PATH_ICONS[copyStatus]}
-            label={COPY_PATH_LABELS[copyStatus]}
+            label="Copy path"
             onClick={onCopyPath}
+            size="sm"
+            title={COPY_PATH_LABELS[copyStatus]}
+            tone="bar"
           />
           <span aria-live="polite" className="sr-only">
             {copyStatus === "idle" ? "" : COPY_PATH_LABELS[copyStatus]}
           </span>
-          <ViewerToolbarButton
-            ariaLabel="Download"
+          <IconButton
             icon={Download}
             label="Download"
             onClick={() =>
               window.open(`/api/media/${item.id}/original`, "_blank", "noopener,noreferrer")
             }
+            size="sm"
+            tone="bar"
           />
           {item.mediaType === "image" ? (
-            <ViewerToolbarButton
-              ariaLabel={showOriginal ? "Show preview" : "Show original"}
+            <IconButton
               icon={Image}
-              label={showOriginal ? "Preview" : "Original"}
+              label={showOriginal ? "Show preview" : "Show original"}
               onClick={onToggleOriginal}
+              size="sm"
+              title={showOriginal ? "Preview" : "Original"}
+              tone="bar"
             />
           ) : null}
-          <ViewerToolbarButton
-            ariaLabel="Toggle fullscreen"
+          <IconButton
             icon={isFullscreen ? Minimize : Maximize}
-            label={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+            label="Toggle fullscreen"
             onClick={onToggleFullscreen}
+            size="sm"
+            title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+            tone="bar"
           />
-          <ViewerToolbarButton
+          <IconButton
             ref={closeButtonRef}
-            ariaLabel="Close viewer"
             icon={X}
-            label="Close"
+            label="Close viewer"
             onClick={onClose}
+            size="sm"
+            title="Close"
+            tone="bar"
           />
         </div>
       </ChromeRegion>
-    </div>
+    </ViewerTopBar>
   );
 }
 
@@ -403,27 +408,3 @@ function ViewerPdf({
     </Suspense>
   );
 }
-
-const ViewerToolbarButton = forwardRef<
-  HTMLButtonElement,
-  {
-    ariaLabel: string;
-    icon: LucideIcon;
-    label: string;
-    onClick: (event: MouseEvent<HTMLButtonElement>) => void;
-  }
->(function ViewerToolbarButton({ ariaLabel, icon: Icon, label, onClick }, ref) {
-  return (
-    <button
-      ref={ref}
-      type="button"
-      aria-label={ariaLabel}
-      title={label}
-      className="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-white/90 transition hover:bg-violet-500/25 hover:text-violet-100"
-      onClick={onClick}
-    >
-      <Icon className="size-4" />
-      <span className="sr-only">{label}</span>
-    </button>
-  );
-});

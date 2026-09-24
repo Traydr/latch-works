@@ -6,13 +6,13 @@ import {
   type MouseEvent,
   type PointerEvent,
   type ReactNode,
-  type Ref,
   type RefObject,
   useEffect,
   useRef,
   useState,
 } from "react";
 import { VIDEO_SKIP_SECONDS } from "@/features/viewer/video-playback";
+import { IconButton } from "../viewer-chrome";
 import { type PlaybackPosition, usePlaybackPosition } from "./playback-position";
 import type { VideoPlayback } from "./useVideoPlayback";
 
@@ -83,49 +83,6 @@ export function ChromeRegion({
   );
 }
 
-const ICON_BUTTON_SIZE = {
-  sm: "size-8 [&>svg]:size-4",
-  md: "size-10 [&>svg]:size-5",
-} as const;
-
-export interface IconButtonProps {
-  active?: boolean;
-  className?: string;
-  disabled?: boolean;
-  fill?: boolean;
-  icon: LucideIcon;
-  label: string;
-  onClick: () => void;
-  ref?: Ref<HTMLButtonElement>;
-  size?: keyof typeof ICON_BUTTON_SIZE;
-}
-
-export function IconButton({
-  active = false,
-  className = "",
-  disabled = false,
-  fill = false,
-  icon: Icon,
-  label,
-  onClick,
-  ref,
-  size = "md",
-}: IconButtonProps): JSX.Element {
-  return (
-    <button
-      ref={ref}
-      type="button"
-      aria-label={label}
-      title={label}
-      disabled={disabled}
-      className={`inline-flex shrink-0 cursor-pointer items-center justify-center rounded-full transition hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-violet-400 disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent ${ICON_BUTTON_SIZE[size]} ${active ? "text-violet-300" : "text-white/90"} ${className}`}
-      onClick={onClick}
-    >
-      <Icon className={fill ? "fill-current" : ""} />
-    </button>
-  );
-}
-
 /** The ±10 s button: a circular arrow with the second count inside. */
 export function SkipButton({
   direction,
@@ -134,27 +91,24 @@ export function SkipButton({
   direction: -1 | 1;
   playback: VideoPlayback;
 }): JSX.Element {
-  const Icon = direction < 0 ? RotateCcw : RotateCw;
-
   const label =
     direction < 0 ? `Back ${VIDEO_SKIP_SECONDS} seconds` : `Forward ${VIDEO_SKIP_SECONDS} seconds`;
 
   return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      className={`relative inline-flex shrink-0 cursor-pointer items-center justify-center rounded-full text-white/90 transition hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-violet-400 ${ICON_BUTTON_SIZE.sm}`}
+    <IconButton
+      className="relative"
+      icon={direction < 0 ? RotateCcw : RotateCw}
+      label={label}
       onClick={() => playback.skip(direction * VIDEO_SKIP_SECONDS)}
+      size="sm"
     >
-      <Icon />
       <span
         aria-hidden="true"
         className="absolute inset-0 flex items-center justify-center pt-px text-[7px] font-bold tabular-nums"
       >
         {VIDEO_SKIP_SECONDS}
       </span>
-    </button>
+    </IconButton>
   );
 }
 

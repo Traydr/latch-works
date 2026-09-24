@@ -1,6 +1,7 @@
 import { FastForward, Pause, Play, Settings } from "lucide-react";
 import { type JSX, type ReactNode, useRef, useState } from "react";
 import type { ViewerChromeIdle } from "@/hooks/use-viewer-chrome-idle";
+import { IconButton } from "../viewer-chrome";
 import type { VideoPlayback } from "./useVideoPlayback";
 import {
   ChromeRegion,
@@ -8,7 +9,6 @@ import {
   ElapsedClock,
   formatClock,
   formatSpeed,
-  IconButton,
   SeekTrack,
   SkipButton,
   SPEEDS,
@@ -102,7 +102,9 @@ export function VideoPlayerChrome({ chrome, playback }: VideoPlayerChromeProps):
                 )}
                 <Popup
                   open={open === "speed"}
-                  panel={<SpeedPanel playback={playback} onPick={() => setOpen(null)} />}
+                  panel={
+                    <SpeedList layout="column" onPick={() => setOpen(null)} playback={playback} />
+                  }
                 >
                   <button
                     type="button"
@@ -174,50 +176,70 @@ function volumeKeyDelta(key: string): number {
   return 0;
 }
 
+const VOLUME_SLIDER = {
+  x: {
+    fill: "absolute inset-y-0 left-0 rounded-full bg-white",
+    root: "flex h-8 flex-1 cursor-pointer items-center",
+    thumb: "top-1/2 -translate-y-1/2",
+    track: "h-1.5 w-full",
+  },
+  y: {
+    fill: "absolute inset-x-0 bottom-0 rounded-full bg-white",
+    root: "flex h-28 w-8 cursor-pointer justify-center",
+    thumb: "left-1/2 translate-y-1/2",
+    track: "h-full w-1.5",
+  },
+} as const;
+
+/** The volume slider: vertical in the desktop panel, horizontal in the phone's settings. */
+function VolumeSlider({ axis, playback }: PlaybackProps & { axis: "x" | "y" }): JSX.Element {
+  const level = playback.muted ? 0 : playback.volume;
+  const drag = useFractionDrag({ axis, onCommit: playback.setVolume, onScrub: playback.setVolume });
+  const percent = `${level * 100}%`;
+  const classes = VOLUME_SLIDER[axis];
+
+  return (
+    <div
+      ref={drag.trackRef}
+      {...drag.trackProps}
+      role="slider"
+      aria-label="Volume"
+      aria-orientation={axis === "y" ? "vertical" : undefined}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={Math.round(level * 100)}
+      tabIndex={0}
+      onKeyDown={(event) => {
+        const delta = volumeKeyDelta(event.key);
+
+        if (delta === 0) return;
+        event.preventDefault();
+        event.stopPropagation();
+        playback.setVolume(playback.volume + delta);
+      }}
+      className={`${classes.root} outline-none focus-visible:[&>div]:ring-2 focus-visible:[&>div]:ring-violet-400/70`}
+    >
+      <div className={`relative rounded-full bg-white/25 ${classes.track}`}>
+        <div
+          className={classes.fill}
+          style={axis === "y" ? { height: percent } : { width: percent }}
+        />
+        <div
+          aria-hidden="true"
+          className={`pointer-events-none absolute size-3.5 -translate-x-1/2 rounded-full bg-white shadow ${classes.thumb}`}
+          style={axis === "y" ? { bottom: percent } : { left: percent }}
+        />
+      </div>
+    </div>
+  );
+}
+
 function VolumePanel({ playback }: PlaybackProps): JSX.Element {
   const level = playback.muted ? 0 : playback.volume;
 
-  const drag = useFractionDrag({
-    axis: "y",
-    onCommit: playback.setVolume,
-    onScrub: playback.setVolume,
-  });
-
-  const percent = `${level * 100}%`;
-
   return (
     <div className="flex flex-col items-center gap-1 px-2 pb-1 pt-3">
-      <div
-        ref={drag.trackRef}
-        {...drag.trackProps}
-        role="slider"
-        aria-label="Volume"
-        aria-orientation="vertical"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={Math.round(level * 100)}
-        tabIndex={0}
-        onKeyDown={(event) => {
-          const delta = volumeKeyDelta(event.key);
-
-          if (delta === 0) return;
-          event.preventDefault();
-          event.stopPropagation();
-          playback.setVolume(playback.volume + delta);
-        }}
-        className="flex h-28 w-8 cursor-pointer justify-center outline-none focus-visible:[&>div]:ring-2 focus-visible:[&>div]:ring-violet-400/70"
-      >
-        <div className="relative h-full w-1.5 rounded-full bg-white/25">
-          <div
-            className="absolute inset-x-0 bottom-0 rounded-full bg-white"
-            style={{ height: percent }}
-          />
-          <div
-            className="absolute left-1/2 size-3.5 -translate-x-1/2 translate-y-1/2 rounded-full bg-white shadow"
-            style={{ bottom: percent }}
-          />
-        </div>
-      </div>
+      <VolumeSlider axis="y" playback={playback} />
       <span className="text-[11px] tabular-nums text-white/60">{Math.round(level * 100)}%</span>
       <MuteButton playback={playback} />
     </div>
@@ -239,8 +261,6 @@ function MuteButton({ playback }: PlaybackProps): JSX.Element {
 /** The phone form of the volume control: speaker, level bar and percentage in one row. */
 function VolumeRow({ playback }: PlaybackProps): JSX.Element {
   const level = playback.muted ? 0 : playback.volume;
-  const drag = useFractionDrag({ onCommit: playback.setVolume, onScrub: playback.setVolume });
-  const percent = `${level * 100}%`;
 
   return (
     <div className="flex items-center gap-2">
@@ -251,37 +271,7 @@ function VolumeRow({ playback }: PlaybackProps): JSX.Element {
         onClick={playback.toggleMute}
         size="sm"
       />
-      <div
-        ref={drag.trackRef}
-        {...drag.trackProps}
-        role="slider"
-        aria-label="Volume"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={Math.round(level * 100)}
-        tabIndex={0}
-        onKeyDown={(event) => {
-          const delta = volumeKeyDelta(event.key);
-
-          if (delta === 0) return;
-          event.preventDefault();
-          event.stopPropagation();
-          playback.setVolume(playback.volume + delta);
-        }}
-        className="relative flex h-8 flex-1 cursor-pointer items-center outline-none focus-visible:[&>div:first-child]:ring-2 focus-visible:[&>div:first-child]:ring-violet-400/70"
-      >
-        <div className="relative h-1.5 w-full rounded-full bg-white/25">
-          <div
-            className="absolute inset-y-0 left-0 rounded-full bg-white"
-            style={{ width: percent }}
-          />
-        </div>
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute top-1/2 size-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow"
-          style={{ left: percent }}
-        />
-      </div>
+      <VolumeSlider axis="x" playback={playback} />
       <span className="w-9 text-right text-[11px] tabular-nums text-white/60">
         {Math.round(level * 100)}%
       </span>
@@ -289,42 +279,47 @@ function VolumeRow({ playback }: PlaybackProps): JSX.Element {
   );
 }
 
-function SpeedPanel({ playback, onPick }: PlaybackProps & { onPick: () => void }): JSX.Element {
-  return (
-    <fieldset aria-label="Playback speed" className="flex flex-col py-1">
-      {[...SPEEDS].reverse().map((speed) => (
-        <button
-          key={speed}
-          type="button"
-          aria-pressed={speed === playback.speed}
-          className={`cursor-pointer px-4 py-1.5 text-center text-sm tabular-nums transition hover:bg-white/10 ${speed === playback.speed ? "font-semibold text-violet-300" : "text-white/90"}`}
-          onClick={() => {
-            playback.setSpeed(speed);
-            onPick();
-          }}
-        >
-          {formatSpeed(speed)}
-        </button>
-      ))}
-    </fieldset>
-  );
-}
+/**
+ * The speed choices: a column, fastest first, in the desktop panel; a row of
+ * pills in the phone's settings.
+ */
+function SpeedList({
+  layout,
+  onPick,
+  playback,
+}: PlaybackProps & { layout: "column" | "row"; onPick?: () => void }): JSX.Element {
+  const speeds = layout === "column" ? [...SPEEDS].reverse() : SPEEDS;
 
-/** The phone form of the speed picker: one row of pills. */
-function SpeedRow({ playback }: PlaybackProps): JSX.Element {
-  return (
+  const buttons = speeds.map((speed) => {
+    const current = speed === playback.speed;
+
+    return (
+      <button
+        key={speed}
+        type="button"
+        aria-pressed={current}
+        className={
+          layout === "column"
+            ? `cursor-pointer px-4 py-1.5 text-center text-sm tabular-nums transition hover:bg-white/10 ${current ? "font-semibold text-violet-300" : "text-white/90"}`
+            : `h-8 flex-1 cursor-pointer rounded-full text-xs tabular-nums transition ${current ? "bg-violet-500/90 font-semibold text-white" : "bg-white/10 text-white/80 hover:bg-white/20"}`
+        }
+        onClick={() => {
+          playback.setSpeed(speed);
+          onPick?.();
+        }}
+      >
+        {formatSpeed(speed)}
+      </button>
+    );
+  });
+
+  return layout === "column" ? (
+    <fieldset aria-label="Playback speed" className="flex flex-col py-1">
+      {buttons}
+    </fieldset>
+  ) : (
     <div role="radiogroup" aria-label="Playback speed" className="flex gap-1">
-      {SPEEDS.map((speed) => (
-        <button
-          key={speed}
-          type="button"
-          aria-pressed={speed === playback.speed}
-          className={`h-8 flex-1 cursor-pointer rounded-full text-xs tabular-nums transition ${speed === playback.speed ? "bg-violet-500/90 font-semibold text-white" : "bg-white/10 text-white/80 hover:bg-white/20"}`}
-          onClick={() => playback.setSpeed(speed)}
-        >
-          {formatSpeed(speed)}
-        </button>
-      ))}
+      {buttons}
     </div>
   );
 }
@@ -337,7 +332,7 @@ function SettingsPanel({
   return (
     <div className="flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-4 p-4 text-sm">
       {volumeSettable ? <VolumeRow playback={playback} /> : <MuteButton playback={playback} />}
-      <SpeedRow playback={playback} />
+      <SpeedList layout="row" playback={playback} />
     </div>
   );
 }
