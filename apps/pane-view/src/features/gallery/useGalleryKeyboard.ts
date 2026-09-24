@@ -1,5 +1,9 @@
 import { type MutableRefObject, useCallback, useEffect, useRef } from "react";
-import { getParentPath, isTextInputTarget } from "@/features/gallery/browse-search";
+import {
+  getParentPath,
+  isInteractiveTarget,
+  isTextInputTarget,
+} from "@/features/gallery/browse-search";
 import type { GalleryBrowseEntry } from "@/features/gallery/gallery-browse-entry";
 
 export interface UseGalleryKeyboardOptions {
@@ -227,7 +231,10 @@ export function useGalleryKeyboard({
         return;
       }
 
-      if (key === "Enter" || key === "f") {
+      // A focused button or link handles its own Enter; taking it here would
+      // open the focused grid entry instead of pressing the control. `f` is
+      // ours alone, so it opens the entry wherever focus sits.
+      if ((key === "Enter" && !isInteractiveTarget(event.target)) || key === "f") {
         event.preventDefault();
         const entry = entries[focusedEntryIndex];
 

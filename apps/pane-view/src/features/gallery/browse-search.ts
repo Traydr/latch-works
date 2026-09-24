@@ -59,3 +59,32 @@ export function isTextInputTarget(target: EventTarget | null): boolean {
       target.tagName === "SELECT")
   );
 }
+
+const INTERACTIVE_TARGET_SELECTOR = [
+  "a[href]",
+  "button",
+  "summary",
+  '[role="button"]',
+  '[role="checkbox"]',
+  '[role="link"]',
+  '[role^="menuitem"]',
+  '[role="option"]',
+  '[role="radio"]',
+  '[role="switch"]',
+  '[role="tab"]',
+].join(", ");
+
+/**
+ * A focused control that acts on Enter itself (a toolbar button, a link, a
+ * menu item). The grid's own entry cards are exempt: activating the focused
+ * grid entry is what the gallery's Enter is for.
+ */
+export function isInteractiveTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) {
+    return false;
+  }
+
+  const control = target.closest(INTERACTIVE_TARGET_SELECTOR);
+
+  return control !== null && !control.hasAttribute("data-browser-entry");
+}
