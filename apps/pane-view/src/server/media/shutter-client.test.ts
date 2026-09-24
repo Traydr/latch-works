@@ -8,6 +8,7 @@ import {
   resolveShutterPreview,
   type ShutterClientDependencies,
   type ShutterEnvironment,
+  shutterPurgeReadiness,
 } from "./shutter-client";
 
 /**
@@ -173,5 +174,35 @@ describe("shutter v2 resolver sources", () => {
     expect(deps.requests.map((request) => new URL(request.url).pathname)).toEqual([
       `/v1/spaces/pane-view/sources/${SHA256}/purge`,
     ]);
+  });
+});
+
+describe("shutter purge readiness", () => {
+  const noShutter = {
+    SHUTTER_CONTROL_URL: "",
+    SHUTTER_EDGE_URL: "",
+    SHUTTER_SPACE_API_TOKEN: "",
+    SHUTTER_SPACE_ID: "",
+  };
+
+  it("is ready only with every value a purge needs", () => {
+    expect(shutterPurgeReadiness(environment)).toBe("ready");
+    expect(shutterPurgeReadiness({ ...environment, SHUTTER_EDGE_URL: "" })).toBe("ready");
+    expect(shutterPurgeReadiness({ ...environment, SHUTTER_SPACE_ID: "" })).toBe("incomplete");
+    expect(shutterPurgeReadiness({ ...environment, SHUTTER_CONTROL_URL: "" })).toBe("incomplete");
+    expect(shutterPurgeReadiness({ ...environment, SHUTTER_SPACE_API_TOKEN: "" })).toBe(
+      "incomplete",
+    );
+  });
+
+  it("counts edge-only delivery as incomplete and no Shutter at all as off", () => {
+    expect(
+      shutterPurgeReadiness({
+        ...environment,
+        ...noShutter,
+        SHUTTER_EDGE_URL: "https://edge.test",
+      }),
+    ).toBe("incomplete");
+    expect(shutterPurgeReadiness({ ...environment, ...noShutter })).toBe("off");
   });
 });

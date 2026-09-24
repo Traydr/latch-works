@@ -5,7 +5,7 @@ import { acquireLibraryMutationStartupLock } from "../db/library-coordination-lo
 import { folders, libraryEntries, maintenanceJobs, mediaObjects, syncRuns } from "../db/schema";
 import { testDatabaseForSuite } from "../library/test-db";
 import {
-  countEntriesUnderPath,
+  countEntriesUnderPaths,
   type FolderDeleteDependencies,
   type FolderDeleteResult,
   softDeleteFolderSubtree,
@@ -225,7 +225,7 @@ describe("softDeleteFolderSubtree", () => {
       size: 1024,
     });
 
-    expect(await countEntriesUnderPath("photos", db)).toBe(2);
+    expect(await countEntriesUnderPaths(["photos", "photos/2026"], db)).toBe(2);
 
     const results = await softDeleteFolderSubtree({ folderPaths: ["photos"] }, realDependencies());
 

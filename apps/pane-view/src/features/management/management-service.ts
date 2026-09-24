@@ -7,7 +7,7 @@ import {
   resumePendingMaintenanceJobs,
 } from "../../server/management/cleanup-worker";
 import {
-  countEntriesUnderPath,
+  countEntriesUnderPaths,
   softDeleteFolderSubtree,
 } from "../../server/management/folder-delete";
 import { scheduleLibraryWipe } from "../../server/management/library-wipe";
@@ -23,10 +23,6 @@ import { assertWebSessionAuthorized } from "../library/library-service";
 
 const folderDeleteSchema = z.object({
   folderPaths: z.array(z.string().min(1)).min(1),
-});
-
-const folderCountSchema = z.object({
-  path: z.string().min(1),
 });
 
 const wipeLibrarySchema = z.object({
@@ -64,11 +60,11 @@ export const deleteFolders = createServerFn({ method: "POST" })
   });
 
 export const countFolderEntries = createServerFn({ method: "GET" })
-  .validator(folderCountSchema)
+  .validator(folderDeleteSchema)
   .handler(async ({ data }) => {
     await assertWebSessionAuthorized();
 
-    return { count: await countEntriesUnderPath(data.path) };
+    return { count: await countEntriesUnderPaths(data.folderPaths) };
   });
 
 export const wipeLibrary = createServerFn({ method: "POST" })

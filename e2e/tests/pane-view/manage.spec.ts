@@ -59,7 +59,14 @@ test.describe("folder delete", () => {
     await page.getByRole("button", { name: "Load folders" }).click();
     await page.getByPlaceholder("Search folders").fill("disposable");
     await page.getByRole("checkbox").first().check();
+
+    const confirmation = page.waitForEvent("dialog");
     await page.getByRole("button", { name: "Delete selected folders" }).click();
+    const dialog = await confirmation;
+    expect(dialog.message()).toContain("Delete 1 folder and the 2 items inside?");
+    await dialog.accept();
+    // The picker reloads once the delete lands.
+    await expect(page.getByText("No folders match this search.")).toBeVisible();
 
     await gotoBrowse(page);
     const topLevel = fixtureFolderPaths().filter((folder) => !folder.includes("/"));

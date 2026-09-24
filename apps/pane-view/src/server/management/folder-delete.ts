@@ -1,5 +1,5 @@
 import { toArchivePath, trimTrailingSlash } from "@latch-works/media-domain";
-import { and, eq, isNull, like, or } from "drizzle-orm";
+import { and, count, eq, isNull, like, or, type SQL } from "drizzle-orm";
 import { type Database, db } from "../db";
 import { acquireLibraryMutationStartupLock } from "../db/library-coordination-lock";
 import { folders, libraryEntries } from "../db/schema";
@@ -47,29 +47,40 @@ function assertDeletableFolderPath(path: string): void {
   }
 }
 
-export async function countEntriesUnderPath(
-  path: string,
+/**
+ * Live entries in the folder at `path` or beneath it. Case-sensitive like the
+ * stored paths: `photos` must not reach `Photos/…`.
+ */
+function liveEntriesUnderPath(path: string): SQL | undefined {
+  const pattern = `${escapeLikePattern(path)}/%`;
+
+  return and(
+    isNull(libraryEntries.deletedAt),
+    or(eq(libraryEntries.parentPath, path), like(libraryEntries.logicalPath, pattern)),
+  );
+}
+
+/** How many live entries deleting `folderPaths` would soft-delete, each counted once. */
+export async function countEntriesUnderPaths(
+  folderPaths: string[],
   database: Database = db,
 ): Promise<number> {
-  const normalizedPath = normalizeFolderPath(path);
-  assertDeletableFolderPath(normalizedPath);
+  const normalizedPaths = [...new Set(folderPaths.map(normalizeFolderPath))];
 
-  const pattern = `${escapeLikePattern(normalizedPath)}/%`;
+  if (normalizedPaths.length === 0) {
+    throw new Error("Select at least one folder to delete.");
+  }
 
-  const rows = await database
-    .select({ id: libraryEntries.id })
+  for (const path of normalizedPaths) {
+    assertDeletableFolderPath(path);
+  }
+
+  const [row] = await database
+    .select({ value: count() })
     .from(libraryEntries)
-    .where(
-      and(
-        isNull(libraryEntries.deletedAt),
-        or(
-          eq(libraryEntries.parentPath, normalizedPath),
-          like(libraryEntries.logicalPath, pattern),
-        ),
-      ),
-    );
+    .where(or(...normalizedPaths.map(liveEntriesUnderPath)));
 
-  return rows.length;
+  return row?.value ?? 0;
 }
 
 /**
@@ -112,12 +123,7 @@ export async function softDeleteFolderSubtree(
       const deletedEntries = await tx
         .update(libraryEntries)
         .set({ deletedAt: now })
-        .where(
-          and(
-            isNull(libraryEntries.deletedAt),
-            or(eq(libraryEntries.parentPath, path), like(libraryEntries.logicalPath, pattern)),
-          ),
-        )
+        .where(liveEntriesUnderPath(path))
         .returning({ id: libraryEntries.id });
 
       // react-doctor-disable-next-line react-doctor/async-await-in-loop -- Keep entry/folder counts paired before advancing to the next possibly overlapping subtree.

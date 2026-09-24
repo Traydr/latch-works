@@ -87,6 +87,41 @@ export function isShutterResolverConfigured(environment: ShutterEnvironment = en
 }
 
 /**
+ * Whether maintenance can purge what Shutter cached. A purge is a Control call
+ * and needs the Control URL, the Space ID, and the Space API token.
+ * - `ready`: all three are set.
+ * - `off`: no Shutter at all (no edge URL, Control URL, or token), so Shutter
+ *   holds nothing of this archive and there is nothing to purge.
+ * - `incomplete`: Shutter may hold cached copies (delivery needs only the edge
+ *   URL) but a purge cannot run. Wipes and purges refuse to start rather than
+ *   delete the rows that are the only record of those copies.
+ */
+export type ShutterPurgeReadiness = "incomplete" | "off" | "ready";
+
+export const SHUTTER_PURGE_INCOMPLETE_MESSAGE =
+  "Shutter is partly configured: purging its cached copies needs SHUTTER_CONTROL_URL, SHUTTER_SPACE_ID, and SHUTTER_SPACE_API_TOKEN. Set them before wiping the library or purging Shutter sources.";
+
+export function shutterPurgeReadiness(
+  environment: ShutterEnvironment = env,
+): ShutterPurgeReadiness {
+  const purgeValues = [
+    environment.SHUTTER_CONTROL_URL,
+    environment.SHUTTER_SPACE_ID,
+    environment.SHUTTER_SPACE_API_TOKEN,
+  ];
+
+  if (purgeValues.every((value) => value !== "")) return "ready";
+
+  const shutterInUse = [
+    environment.SHUTTER_EDGE_URL,
+    environment.SHUTTER_CONTROL_URL,
+    environment.SHUTTER_SPACE_API_TOKEN,
+  ].some((value) => value !== "");
+
+  return shutterInUse ? "incomplete" : "off";
+}
+
+/**
  * The reference a v2 Delivery URL carries: the object key's segments after
  * the originals prefix, or nothing for a key outside that layout. The
  * resolver's key template in Shutter's admin is

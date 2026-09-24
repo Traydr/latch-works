@@ -19,6 +19,7 @@ import {
   useSyncRunHistoryQuery,
   useWipeLibraryMutation,
 } from "./management-queries";
+import { countFolderEntries } from "./management-service";
 import { SyncRunHistoryTable } from "./SyncRunHistoryTable";
 
 export function ManagementPage() {
@@ -44,6 +45,7 @@ export function ManagementPage() {
   > | null>(null);
 
   const [folderSnapshotError, setFolderSnapshotError] = useState<string | null>(null);
+  const [folderCountError, setFolderCountError] = useState<string | null>(null);
 
   const overview = overviewQuery.data;
   const activeJobId = trackedJobId ?? overview?.activeCleanupJob?.id ?? null;
@@ -66,6 +68,7 @@ export function ManagementPage() {
       ? `${softDeletedFolders.toLocaleString()} deleted folder${softDeletedFolders === 1 ? "" : "s"}`
       : `${softDeletedEntries.toLocaleString()} item${softDeletedEntries === 1 ? "" : "s"}`;
 
+  const shutterPurge = overview?.shutterPurge;
   const maintenanceBlocked = Boolean(runningSyncCount > 0 || overview?.activeCleanupJob);
 
   const blockReason =
@@ -114,8 +117,35 @@ export function ManagementPage() {
   }, [overview]);
 
   const handleDeleteFolders = async () => {
-    await deleteFoldersMutation.mutateAsync(selectedFolders);
-    setSelectedFolders([]);
+    setFolderCountError(null);
+    let entryCount: number;
+
+    try {
+      const result = await countFolderEntries({ data: { folderPaths: selectedFolders } });
+      entryCount = result.count;
+    } catch (error) {
+      setFolderCountError(error instanceof Error ? error.message : "Unable to count folder items.");
+
+      return;
+    }
+
+    const folderCount = selectedFolders.length;
+
+    if (
+      !window.confirm(
+        `Delete ${folderCount.toLocaleString()} folder${folderCount === 1 ? "" : "s"} and the ${entryCount.toLocaleString()} item${entryCount === 1 ? "" : "s"} inside? Their originals remain until deleted items are purged.`,
+      )
+    ) {
+      return;
+    }
+
+    // The mutation's error renders below the button.
+    deleteFoldersMutation.mutate(selectedFolders, {
+      onSuccess: () => {
+        setSelectedFolders([]);
+        void loadFolders();
+      },
+    });
   };
 
   const handleWipe = async () => {
@@ -285,6 +315,16 @@ export function ManagementPage() {
               >
                 Delete selected folders
               </Button>
+              {folderCountError ? (
+                <p className="text-sm text-destructive">{folderCountError}</p>
+              ) : null}
+              {deleteFoldersMutation.error ? (
+                <p className="text-sm text-destructive">
+                  {deleteFoldersMutation.error instanceof Error
+                    ? deleteFoldersMutation.error.message
+                    : "Folder delete failed."}
+                </p>
+              ) : null}
             </>
           ) : null}
         </section>
@@ -319,8 +359,23 @@ export function ManagementPage() {
             Delete Shutter sources associated only with soft-deleted items. This can run before or
             after Pane View storage cleanup, and never targets media referenced by an active item.
           </p>
+          {shutterPurge === "off" ? (
+            <p className="text-sm text-muted-foreground">
+              Shutter is not configured on this server, so there is nothing to purge.
+            </p>
+          ) : null}
+          {shutterPurge === "incomplete" ? (
+            <p className="text-sm text-destructive">
+              Shutter is partly configured: purging needs SHUTTER_CONTROL_URL, SHUTTER_SPACE_ID, and
+              SHUTTER_SPACE_API_TOKEN. Library wipes are refused until they are set.
+            </p>
+          ) : null}
           <Button
-            disabled={maintenanceBlocked || purgeShutterSourcesMutation.isPending}
+            disabled={
+              maintenanceBlocked ||
+              shutterPurge !== "ready" ||
+              purgeShutterSourcesMutation.isPending
+            }
             onClick={() => void handlePurgeShutterSources()}
             type="button"
             variant="destructive"
