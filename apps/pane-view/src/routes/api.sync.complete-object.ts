@@ -1,10 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { withHttpErrors } from "../server/http/http-error";
 import { readJsonBody } from "../server/http/json-body";
 import {
   type SyncRouteDependencies,
   syncRouteDependencies,
 } from "../server/sync/route-dependencies";
+import { withSyncRouteErrors } from "../server/sync/route-errors";
 import { CompleteObjectBodySchema, validateSyncObjectPayload } from "../server/sync/validation";
 
 export async function postCompleteObject(
@@ -51,6 +51,6 @@ export async function postCompleteObject(
 
 export const Route = createFileRoute("/api/sync/complete-object")({
   server: {
-    handlers: { POST: withHttpErrors(postCompleteObject) },
+    handlers: { POST: withSyncRouteErrors(postCompleteObject) },
   },
 });

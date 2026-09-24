@@ -1,9 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { withHttpErrors } from "../server/http/http-error";
 import {
   type SyncRouteDependencies,
   syncRouteDependencies,
 } from "../server/sync/route-dependencies";
+import { withSyncRouteErrors } from "../server/sync/route-errors";
 
 export async function getSyncSnapshot(
   { request }: { request: Request },
@@ -20,6 +20,6 @@ export async function getSyncSnapshot(
 
 export const Route = createFileRoute("/api/sync/snapshot")({
   server: {
-    handlers: { GET: withHttpErrors(getSyncSnapshot) },
+    handlers: { GET: withSyncRouteErrors(getSyncSnapshot) },
   },
 });

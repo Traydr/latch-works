@@ -2,12 +2,12 @@ import { getExtension } from "@latch-works/media-domain";
 import { originalObjectKey } from "@latch-works/media-storage";
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
-import { withHttpErrors } from "../server/http/http-error";
 import { readJsonBody } from "../server/http/json-body";
 import {
   type SyncRouteDependencies,
   syncRouteDependencies,
 } from "../server/sync/route-dependencies";
+import { withSyncRouteErrors } from "../server/sync/route-errors";
 import {
   expectedContentTypeForExtension,
   MAX_SYNC_UPLOAD_BYTES,
@@ -91,6 +91,6 @@ export async function postUploadUrl(
 
 export const Route = createFileRoute("/api/sync/upload-url")({
   server: {
-    handlers: { POST: withHttpErrors(postUploadUrl) },
+    handlers: { POST: withSyncRouteErrors(postUploadUrl) },
   },
 });

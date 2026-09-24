@@ -1,11 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
-import { withHttpErrors } from "../server/http/http-error";
 import { readJsonBody } from "../server/http/json-body";
 import {
   type SyncRouteDependencies,
   syncRouteDependencies,
 } from "../server/sync/route-dependencies";
+import { withSyncRouteErrors } from "../server/sync/route-errors";
 import { SyncRunCountsSchema } from "../server/sync/validation";
 
 const StartSyncRunBodySchema = z.object({
@@ -41,6 +41,6 @@ export async function postSyncRuns(
 
 export const Route = createFileRoute("/api/sync/runs")({
   server: {
-    handlers: { POST: withHttpErrors(postSyncRuns) },
+    handlers: { POST: withSyncRouteErrors(postSyncRuns) },
   },
 });
