@@ -3,6 +3,7 @@ import { type JSX, type ReactNode, useRef, useState } from "react";
 import type { MediaViewerSessionModel } from "../MediaViewerSession";
 import {
   ChromeRegion,
+  ElapsedClock,
   formatClock,
   formatSpeed,
   IconButton,
@@ -11,7 +12,6 @@ import {
   SPEEDS,
   useFractionDrag,
   useOutsideClose,
-  useSeek,
   volumeIconFor,
 } from "./video-player-controls";
 
@@ -28,7 +28,6 @@ export interface VideoPlayerChromeProps {
  * fullscreen, close and prev/next stay in the viewer's shared chrome.
  */
 export function VideoPlayerChrome({ model }: VideoPlayerChromeProps): JSX.Element {
-  const seek = useSeek(model);
   const [open, setOpen] = useState<CapsulePanel | null>(null);
   const capsuleRef = useRef<HTMLDivElement | null>(null);
   useOutsideClose(capsuleRef, open !== null, () => setOpen(null));
@@ -70,8 +69,8 @@ export function VideoPlayerChrome({ model }: VideoPlayerChromeProps): JSX.Elemen
               <SkipButton direction={1} model={model} />
             </div>
             <div className="order-last flex basis-full items-center gap-2 px-1 text-xs tabular-nums text-white/80 sm:order-none sm:basis-auto sm:flex-1">
-              <span className="w-9 shrink-0">{formatClock(model.position)}</span>
-              <SeekTrack seek={seek} />
+              <ElapsedClock position={model.playbackPosition} />
+              <SeekTrack model={model} />
               <span className="w-9 shrink-0 text-right">{formatClock(model.duration)}</span>
             </div>
             <div className="ml-auto flex items-center gap-0.5 sm:ml-0">

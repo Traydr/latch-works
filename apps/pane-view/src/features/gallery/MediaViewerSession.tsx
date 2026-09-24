@@ -33,6 +33,7 @@ import { isTextInputTarget } from "./browse-search";
 import { GALLERY_PREVIEW_SIZE } from "./gallery-preview-size";
 import { PaneViewImage } from "./PaneViewImage";
 import { type ResolvedMediaUrlCache, useResolvedMediaUrl } from "./useResolvedMediaUrl";
+import { createPlaybackPosition } from "./video-player/playback-position";
 import { VideoPlayerChrome } from "./video-player/VideoPlayerChrome";
 import { useHoldToBoost } from "./video-player/video-player-controls";
 
@@ -358,7 +359,7 @@ function useMediaViewerSession({
   const speedBeforeHoldRef = useRef(1);
   const hasRestoredVideoRef = useRef(false);
 
-  const [position, setPosition] = useState(0);
+  const [playbackPosition] = useState(createPlaybackPosition);
   const [volume, setVolume] = useState(() => readPersistedVolume());
   const [muted, setMuted] = useState(false);
   const [speed, setSpeed] = useState(1);
@@ -440,7 +441,7 @@ function useMediaViewerSession({
     }
 
     video.currentTime = resumeSeconds;
-    setPosition(resumeSeconds);
+    playbackPosition.set(resumeSeconds);
     hasRestoredVideoRef.current = true;
   }, [item?.id, item?.mediaType, videoRef, viewerState?.positionMs]);
 
@@ -464,7 +465,7 @@ function useMediaViewerSession({
       const wasPlaying = !video.paused;
 
       video.currentTime = clamped;
-      setPosition(clamped);
+      playbackPosition.set(clamped);
 
       if (wasPlaying) {
         void video.play().catch(() => {
@@ -581,7 +582,7 @@ function useMediaViewerSession({
       video.currentTime = nextTime;
     }
 
-    setPosition(nextTime);
+    playbackPosition.set(nextTime);
 
     if (wasPlaying) {
       void video.play().catch(() => {
@@ -670,12 +671,11 @@ function useMediaViewerSession({
     loopVideos,
     muted,
     playing,
-    position,
+    playbackPosition,
     resumePdfPage,
     scheduleSave,
     setDuration,
     setPlaying,
-    setPosition,
     showOriginal: shell.showOriginal,
     skip,
     speed,
@@ -959,7 +959,7 @@ function ViewerVideo({ model }: { model: MediaViewerSessionModel }): JSX.Element
 
           if (resumeSeconds !== null) {
             video.currentTime = resumeSeconds;
-            model.setPosition(resumeSeconds);
+            model.playbackPosition.set(resumeSeconds);
             model.hasRestoredVideoRef.current = true;
           }
         }
@@ -973,7 +973,7 @@ function ViewerVideo({ model }: { model: MediaViewerSessionModel }): JSX.Element
       onTimeUpdate={(event) => {
         if (model.isScrubbingRef.current) return;
         const currentTime = event.currentTarget.currentTime || 0;
-        model.setPosition(currentTime);
+        model.playbackPosition.set(currentTime);
         model.scheduleSave({ positionMs: videoSecondsToPositionMs(currentTime) });
       }}
       onPlay={() => model.setPlaying(true)}
