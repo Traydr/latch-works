@@ -364,7 +364,7 @@ function useMediaViewerSession({
   const { duration, playing, reportVideo, videoRef } = shell;
   const isVideoItem = item.mediaType === "video";
   const isScrubbingRef = useRef(false);
-  const speedBoostHeldRef = useRef(false);
+  const holdBoostActiveRef = useRef(false);
   const speedBeforeHoldRef = useRef(1);
   const hasRestoredVideoRef = useRef(false);
 
@@ -496,6 +496,25 @@ function useMediaViewerSession({
     [videoRef],
   );
 
+  /**
+   * Holding a finger on the picture, or the 4 key, plays at 2× until released,
+   * then returns to the speed from before the hold.
+   */
+  const beginHoldBoost = (): void => {
+    if (holdBoostActiveRef.current) return;
+    holdBoostActiveRef.current = true;
+    speedBeforeHoldRef.current = speed;
+    setHoldBoosting(true);
+    applySpeed(2);
+  };
+
+  const endHoldBoost = (): void => {
+    if (!holdBoostActiveRef.current) return;
+    holdBoostActiveRef.current = false;
+    setHoldBoosting(false);
+    applySpeed(speedBeforeHoldRef.current);
+  };
+
   const handleKeyDown = useEffectEvent((event: KeyboardEvent) => {
     if (!isVideoItem) {
       return;
@@ -536,30 +555,15 @@ function useMediaViewerSession({
 
     if (key === "4") {
       event.preventDefault();
-      speedBoostHeldRef.current = true;
-      applySpeed(2);
+      beginHoldBoost();
     }
   });
 
   const handleKeyUp = useEffectEvent((event: KeyboardEvent) => {
-    if (event.metaKey || event.ctrlKey || event.altKey) {
-      return;
-    }
-
-    const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
-
-    if (key === "4" && speedBoostHeldRef.current) {
-      speedBoostHeldRef.current = false;
-      applySpeed(1);
-    }
+    if (event.key === "4") endHoldBoost();
   });
 
-  const resetHeldSpeed = useEffectEvent(() => {
-    if (speedBoostHeldRef.current) {
-      speedBoostHeldRef.current = false;
-      applySpeed(1);
-    }
-  });
+  const resetHeldSpeed = useEffectEvent(() => endHoldBoost());
 
   // Video keys; Escape and stepping belong to the shell.
   useEffect(() => {
@@ -638,20 +642,6 @@ function useMediaViewerSession({
         setMuted(false);
       }
     }
-  };
-
-  /** Press-and-hold on the picture plays at 2× until the finger lifts. */
-  const beginHoldBoost = (): void => {
-    if (holdBoosting) return;
-    speedBeforeHoldRef.current = speed;
-    setHoldBoosting(true);
-    applySpeed(2);
-  };
-
-  const endHoldBoost = (): void => {
-    if (!holdBoosting) return;
-    setHoldBoosting(false);
-    applySpeed(speedBeforeHoldRef.current);
   };
 
   const toggleMute = (): void => {
