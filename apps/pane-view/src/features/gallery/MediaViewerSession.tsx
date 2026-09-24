@@ -1,6 +1,15 @@
 import type { MediaItem } from "@latch-works/media-domain";
 import { formatBytes } from "@latch-works/media-domain";
-import { Copy, Download, Image, type LucideIcon, Maximize, Minimize, X } from "lucide-react";
+import {
+  Copy,
+  Download,
+  Image,
+  type LucideIcon,
+  Maximize,
+  Minimize,
+  VideoOff,
+  X,
+} from "lucide-react";
 import {
   createContext,
   forwardRef,
@@ -375,11 +384,23 @@ function useMediaViewerSession({
     [item.id, reportVideo],
   );
 
+  const [videoRefreshKey, setVideoRefreshKey] = useState(0);
+  const [videoLoadFailed, setVideoLoadFailed] = useState(false);
+
   const videoDelivery = useResolvedMediaUrl({
     cache,
     mediaId: item.mediaType === "video" ? item.id : undefined,
+    refreshKey: videoRefreshKey,
     variant: "original",
   });
+
+  const videoFailed = videoDelivery.failed || videoLoadFailed;
+
+  /** The cached URL may have expired: resolve a fresh one once before giving up. */
+  const handleVideoError = (): void => {
+    if (videoRefreshKey === 0) setVideoRefreshKey(1);
+    else setVideoLoadFailed(true);
+  };
 
   const viewerStateSubjectId =
     rememberViewerPosition && (item.mediaType === "video" || item.mediaType === "pdf")
@@ -655,6 +676,7 @@ function useMediaViewerSession({
     duration,
     endHoldBoost,
     flushSave,
+    handleVideoError,
     holdBoosting,
     isCoarsePointer: shell.isCoarsePointer,
     isScrubbingRef,
@@ -675,6 +697,7 @@ function useMediaViewerSession({
     toggleMute,
     toggleVideoPlayback,
     videoDelivery,
+    videoFailed,
     videoRef,
     volume,
   };
@@ -712,7 +735,10 @@ function ViewerItem(props: MediaViewerSessionProps): JSX.Element {
   return (
     <MediaViewerSessionContext.Provider value={model}>
       <ViewerMedia />
-      {model.item.mediaType === "video" ? <VideoPlayerChrome model={model} /> : null}
+      {/* A video that failed to load has nothing for the controls to drive. */}
+      {model.item.mediaType === "video" && !model.videoFailed ? (
+        <VideoPlayerChrome model={model} />
+      ) : null}
     </MediaViewerSessionContext.Provider>
   );
 }
@@ -900,7 +926,14 @@ function ViewerMedia(): JSX.Element {
       {item.mediaType === "pdf" ? (
         <ViewerPdf model={model} />
       ) : item.mediaType === "video" ? (
-        <ViewerVideo model={model} />
+        model.videoFailed ? (
+          <p className="flex flex-col items-center gap-2 text-sm text-zinc-400">
+            <VideoOff className="size-6" />
+            This video could not be loaded.
+          </p>
+        ) : (
+          <ViewerVideo model={model} />
+        )
       ) : (
         <PaneViewImage
           alt={item.name}
@@ -975,6 +1008,7 @@ function ViewerVideo({ model }: { model: MediaViewerSessionModel }): JSX.Element
         }
       }}
       onEnded={() => model.setPlaying(false)}
+      onError={model.handleVideoError}
       src={model.videoDelivery.resolvedUrl ?? undefined}
     />
   );
