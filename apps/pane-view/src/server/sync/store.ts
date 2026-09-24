@@ -1,12 +1,10 @@
 import { getBaseName, getParentPath, type MediaType } from "@latch-works/media-domain";
 import {
-  createS3StorageClient,
   headStoredObject,
   type S3StorageClient,
   type StoredObjectHead,
 } from "@latch-works/media-storage";
 import { and, eq, isNull, sql } from "drizzle-orm";
-import { env } from "../../env/server";
 import { type Database, db } from "../db";
 import { acquireLibraryMutationStartupLock } from "../db/library-coordination-lock";
 import {
@@ -20,6 +18,7 @@ import {
 import { HttpError } from "../http/http-error";
 import { withAncestorPaths } from "../library/query-helpers";
 import { assertNoActiveCleanupJob } from "../management/guards";
+import { getPaneViewStorageClient } from "../media/storage-client";
 import { normalizeSyncLogicalPath, validateSyncLogicalPath } from "./validation";
 
 type SyncDbClient = Pick<Database, "insert" | "select" | "update">;
@@ -132,13 +131,7 @@ export async function startSyncRun(
 export async function completeSyncedObject(
   {
     input,
-    storage = createS3StorageClient({
-      accessKeyId: env.S3_ACCESS_KEY_ID,
-      bucket: env.S3_BUCKET,
-      endpoint: env.S3_ENDPOINT,
-      region: env.S3_REGION,
-      secretAccessKey: env.S3_SECRET_ACCESS_KEY,
-    }),
+    storage = getPaneViewStorageClient(),
   }: {
     input: CompleteObjectInput;
     storage?: S3StorageClient;

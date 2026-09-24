@@ -1,12 +1,8 @@
-import {
-  createS3StorageClient,
-  createSignedPutUrl,
-  type SignedPutUrlResult,
-} from "@latch-works/media-storage";
+import { createSignedPutUrl, type SignedPutUrlResult } from "@latch-works/media-storage";
 
-import { env } from "../../env/server";
 import { requireSyncApiToken } from "../auth/api-token";
 import { assertNoActiveCleanupJob } from "../management/guards";
+import { getPaneViewStorageClient } from "../media/storage-client";
 import {
   type CompleteObjectInput,
   completeSyncedObject,
@@ -47,16 +43,7 @@ export const syncRouteDependencies: SyncRouteDependencies = {
   assertNoActiveCleanupJob: () => assertNoActiveCleanupJob(),
   completeSyncedObject,
   createSignedUploadUrl: (request) =>
-    createSignedPutUrl({
-      ...request,
-      storage: createS3StorageClient({
-        accessKeyId: env.S3_ACCESS_KEY_ID,
-        bucket: env.S3_BUCKET,
-        endpoint: env.S3_ENDPOINT,
-        region: env.S3_REGION,
-        secretAccessKey: env.S3_SECRET_ACCESS_KEY,
-      }),
-    }),
+    createSignedPutUrl({ ...request, storage: getPaneViewStorageClient() }),
   finalizeSyncRun,
   markRemoteDeleted,
   requireSyncApiToken,

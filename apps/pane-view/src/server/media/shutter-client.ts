@@ -9,7 +9,7 @@ import { env } from "../../env/server";
 import type { MediaThumbnailContext } from "./repository";
 import { type CapabilityEnvironment, shutterCapabilityKeyConfig } from "./shutter-capability";
 import { validateCapabilityKeyConfig } from "./shutter-capability-config";
-import { createPaneViewStorageClient } from "./storage-client";
+import { getPaneViewStorageClient } from "./storage-client";
 
 const SHUTTER_WIDTHS = [320, 640, 750, 828, 960, 1080, 1280, 1668, 1920, 2048, 2560, 3200, 3840];
 
@@ -58,7 +58,7 @@ export interface ShutterClientDependencies {
 
 export const shutterClientDependencies: ShutterClientDependencies = {
   createSourceLocator: (request) =>
-    createSignedGetUrl({ ...request, storage: createPaneViewStorageClient() }),
+    createSignedGetUrl({ ...request, storage: getPaneViewStorageClient() }),
   environment: env,
 };
 
