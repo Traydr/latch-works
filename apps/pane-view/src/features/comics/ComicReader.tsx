@@ -2,6 +2,7 @@ import type { ComicEntry, MediaItem } from "@latch-works/media-domain";
 import { ArrowUp, X } from "lucide-react";
 import { type JSX, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 import { ResolvedMediaImage } from "@/features/gallery/ResolvedMediaImage";
+import { IconButton, ViewerTopBar } from "@/features/gallery/viewer-chrome";
 import { useViewerChromeIdle } from "@/hooks/use-viewer-chrome-idle";
 import { closeDialog, openDialog } from "@/lib/modal-dialog";
 
@@ -265,10 +266,7 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
       onMouseMove={revealChrome}
       onPointerDown={revealChrome}
     >
-      <div
-        className={`pointer-events-none absolute inset-x-0 top-0 z-20 bg-gradient-to-b from-black/70 via-black/30 to-transparent px-3 pb-8 pt-3 transition-opacity duration-300 ${chromeVisibilityClass}`}
-        style={{ paddingTop: "max(0.75rem, env(safe-area-inset-top))" }}
-      >
+      <ViewerTopBar visibilityClass={chromeVisibilityClass}>
         <div className="pointer-events-auto flex items-center justify-between gap-3">
           <div className="min-w-0">
             <p className="truncate text-sm font-medium text-white">{comic.name}</p>
@@ -277,27 +275,17 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
-            <button
-              type="button"
-              className="inline-flex size-8 cursor-pointer items-center justify-center rounded-full text-white/90 transition hover:bg-violet-500/25 hover:text-violet-100"
-              title="Scroll to top"
-              aria-label="Scroll to top"
+            <IconButton
+              icon={ArrowUp}
+              label="Scroll to top"
               onClick={scrollToTop}
-            >
-              <ArrowUp className="size-4" />
-            </button>
-            <button
-              type="button"
-              className="inline-flex size-8 cursor-pointer items-center justify-center rounded-full text-white/90 transition hover:bg-violet-500/25 hover:text-violet-100"
-              title="Close"
-              aria-label="Close"
-              onClick={onClose}
-            >
-              <X className="size-4" />
-            </button>
+              size="sm"
+              tone="bar"
+            />
+            <IconButton icon={X} label="Close" onClick={onClose} size="sm" tone="bar" />
           </div>
         </div>
-      </div>
+      </ViewerTopBar>
 
       <div
         ref={readerRef}

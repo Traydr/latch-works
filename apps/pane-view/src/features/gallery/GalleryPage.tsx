@@ -1,77 +1,40 @@
-import { type ComicEntry, compareByName } from "@latch-works/media-domain";
-import { Archive, ChevronUp, PanelRightClose, PanelRightOpen, Search } from "lucide-react";
-import {
-  createContext,
-  type FormEvent,
-  Fragment,
-  type JSX,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { SidebarTrigger } from "@/components/ui/sidebar";
-import { ComicReader } from "@/features/comics/ComicReader";
-import { buildBreadcrumbItems, getParentPath } from "@/features/gallery/browse-search";
+import { type FormEvent, type JSX, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FloatingToolbar } from "@/features/gallery/FloatingToolbar";
 import { GalleryBrowsePane } from "@/features/gallery/GalleryBrowsePane";
 import { GalleryGridSkeleton } from "@/features/gallery/GalleryGridSkeleton";
+import { GalleryHeader } from "@/features/gallery/GalleryHeader";
+import { GalleryOverlays } from "@/features/gallery/GalleryOverlays";
 import { entryMedia, type GalleryBrowseEntry } from "@/features/gallery/gallery-browse-entry";
 import { useGalleryLayout } from "@/features/gallery/gallery-layout-context";
-import { MediaViewerModal } from "@/features/gallery/MediaViewerModal";
+import { useComicActivation } from "@/features/gallery/useComicActivation";
+import { useFolderNeighbours } from "@/features/gallery/useFolderNeighbours";
 import { useGalleryBrowse } from "@/features/gallery/useGalleryBrowse";
 import { useGalleryKeyboard } from "@/features/gallery/useGalleryKeyboard";
 import { useGalleryViewerHandoff } from "@/features/gallery/useGalleryViewerHandoff";
-import {
-  useDeleteLibraryEntryMutation,
-  useInvalidateLibrarySnapshot,
-} from "@/features/library/library-queries";
-import { HotkeyOverlay } from "@/features/settings/HotkeyOverlay";
-import { SettingsDrawer } from "@/features/settings/SettingsDrawer";
+import { useDeletedMediaIds, useMediaDeletion } from "@/features/gallery/useMediaDeletion";
+import { useInvalidateLibrarySnapshot } from "@/features/library/library-queries";
 import { useHydrated } from "@/hooks/use-hydrated";
 import { useIsMobile } from "@/hooks/use-mobile";
 
-function useGalleryPage() {
+export function GalleryPage(): JSX.Element {
   const hydrated = useHydrated();
   const invalidateLibrary = useInvalidateLibrarySnapshot();
-  const deleteEntryMutation = useDeleteLibraryEntryMutation();
   const { browse, settings, settingsOpen, setSettingsOpen, updateSettings } = useGalleryLayout();
 
   const {
     comicMode: effectiveComicMode,
     detailPanelOpen,
-    excludedChildPaths,
     folderModesEnabled,
     listingRequest,
     navigateToPath,
     path: displayPath,
-    pruneExcludedChildren,
     query,
     recursive: effectiveRecursive,
-    rememberedRecursive,
     selectMedia,
     selectedId,
     setComicMode,
-    setDetailPanelOpen,
     setRecursive,
-    setSortMode,
-    shuffle,
     snapshotRequest,
-    sortMode,
-    toggleExcludedChild,
   } = browse;
 
   const isMobile = useIsMobile();
@@ -79,21 +42,10 @@ function useGalleryPage() {
   const [hotkeysOpen, setHotkeysOpen] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [pathSheetOpen, setPathSheetOpen] = useState(false);
-  const [activeComic, setActiveComic] = useState<ComicEntry | null>(null);
-  const [openingComicId, setOpeningComicId] = useState<string | null>(null);
   const [searchDraft, setSearchDraft] = useState(query ?? "");
   const [focusedEntryIndex, setFocusedEntryIndex] = useState(0);
   const [scrollRequestKey, setScrollRequestKey] = useState(0);
-  const [deletingEntryIds, setDeletingEntryIds] = useState<ReadonlySet<string>>(() => new Set());
-  const [deletedEntryIds, setDeletedEntryIds] = useState<ReadonlySet<string>>(() => new Set());
-  const [deleteError, setDeleteError] = useState<{ entryId: string; message: string } | null>(null);
-
-  const session = useGalleryBrowse({
-    excludedMediaIds: deletedEntryIds,
-    hydrated,
-    listingRequest,
-    snapshotRequest,
-  });
+  const deletedMedia = useDeletedMediaIds();
 
   const {
     allMedia,
@@ -111,7 +63,12 @@ function useGalleryPage() {
     snapshotIsCurrent,
     stepEntry,
     stepMedia,
-  } = session;
+  } = useGalleryBrowse({
+    excludedMediaIds: deletedMedia.ids,
+    hydrated,
+    listingRequest,
+    snapshotRequest,
+  });
 
   // Grid focus follows a selection made outside the grid keys (the viewer
   // stepping, the detail panel's Prev/Next) once its entry has rendered: a
@@ -193,127 +150,19 @@ function useGalleryPage() {
     return entry?.kind === "comic" ? entry.comic : null;
   }, [effectiveComicMode, entries, selected]);
 
-  useEffect(() => {
-    if (!library) {
-      return;
-    }
+  const deletion = useMediaDeletion({
+    allMedia,
+    browseKey,
+    deletedMedia,
+    library,
+    navigableMedia,
+    onSelectNeighbour: selectMediaAndFocus,
+    selected,
+  });
 
-    setDeletedEntryIds((current) => {
-      const liveIds = new Set(allMedia.map((item) => item.id));
-      const next = new Set([...current].filter((id) => liveIds.has(id)));
-
-      return next.size === current.size ? current : next;
-    });
-    setDeletingEntryIds((current) => {
-      const liveIds = new Set(allMedia.map((item) => item.id));
-      const next = new Set([...current].filter((id) => liveIds.has(id)));
-
-      return next.size === current.size ? current : next;
-    });
-  }, [allMedia, library]);
-
-  // The excludable set is the current path's direct child folders, straight
-  // from the snapshot, in the gallery's natural name order (Plan 054). While
-  // searching, the snapshot's folders are search matches rather than
-  // children, so nothing is excludable. A stale snapshot (folder being left)
-  // does NOT empty the list — collapsing it mid-interaction would blank the
-  // open dialog and reset its scroll; instead the toolbar disables the button
-  // until the children are current, and the dialog remounts per path.
-  const excludableChildFolders = useMemo(
-    () => (query ? [] : [...(library?.folders ?? [])].sort(compareByName)),
-    [library, query],
-  );
-
-  const childFoldersAreCurrent = !query && snapshotIsCurrent && Boolean(library);
-
-  const handleExcludeDialogOpen = useCallback(() => {
-    pruneExcludedChildren(excludableChildFolders.map((folder) => folder.path));
-  }, [excludableChildFolders, pruneExcludedChildren]);
-
-  const excludeControl = useMemo(
-    () => ({
-      childFolders: excludableChildFolders,
-      childFoldersAreCurrent,
-      excludedChildPaths,
-      onDialogOpen: handleExcludeDialogOpen,
-      onToggle: toggleExcludedChild,
-    }),
-    [
-      childFoldersAreCurrent,
-      excludableChildFolders,
-      excludedChildPaths,
-      handleExcludeDialogOpen,
-      toggleExcludedChild,
-    ],
-  );
-
-  // The current folder's siblings (the snapshot's `siblings`, never its
-  // `folders`, which are the children) in the gallery's natural name order,
-  // the order the parent's grid shows them in. Until the snapshot belongs to
-  // this browse, its siblings describe the folder being left; stepping
-  // through them would move along an ordering the user cannot see selected,
-  // so the list is empty and the buttons disable for that window.
-  const siblingFolders = useMemo(
-    () => (library && snapshotIsCurrent ? [...library.siblings].sort(compareByName) : []),
-    [library, snapshotIsCurrent],
-  );
-
-  const canNavigateSiblings =
-    siblingFolders.length > 1 && siblingFolders.some((folder) => folder.path === displayPath);
-
-  const navigateSiblingFolder = useCallback(
-    (offset: -1 | 1) => {
-      const currentIndex = siblingFolders.findIndex((folder) => folder.path === displayPath);
-
-      if (currentIndex < 0) {
-        return;
-      }
-
-      const nextIndex = (currentIndex + offset + siblingFolders.length) % siblingFolders.length;
-      const next = siblingFolders[nextIndex];
-
-      if (next && next.path !== displayPath) {
-        navigateToPath(next.path);
-      }
-    },
-    [displayPath, navigateToPath, siblingFolders],
-  );
-
-  // Keep the card visible with a loading affordance; open the reader only
-  // once the complete comic has arrived. A second activation hits the cache.
-  // Only the latest activation, in the browse it was made from, may open the
-  // reader: an earlier or superseded request resolving late is dropped.
-  const comicActivationRef = useRef<{ browseKey: string; comicId: string } | null>(null);
-
-  const openComicReader = useCallback(
-    (comicId: string) => {
-      const activation = { browseKey, comicId };
-      comicActivationRef.current = activation;
-      setOpeningComicId(comicId);
-      void openComic(comicId)
-        .then((comic) => {
-          if (comicActivationRef.current === activation) {
-            setActiveComic(comic);
-          }
-        })
-        .catch(() => undefined)
-        .finally(() => {
-          if (comicActivationRef.current === activation) {
-            comicActivationRef.current = null;
-            setOpeningComicId(null);
-          }
-        });
-    },
-    [browseKey, openComic],
-  );
-
-  // Leaving the browse cancels a pending activation.
-  useEffect(() => {
-    if (comicActivationRef.current && comicActivationRef.current.browseKey !== browseKey) {
-      comicActivationRef.current = null;
-      setOpeningComicId(null);
-    }
-  }, [browseKey]);
+  const folders = useFolderNeighbours({ browse, library, snapshotIsCurrent });
+  const comics = useComicActivation(browseKey, openComic);
+  const { openComicReader } = comics;
 
   const handleActivateEntry = useCallback(
     (entry: GalleryBrowseEntry) => {
@@ -364,13 +213,13 @@ function useGalleryPage() {
     onActivateEntry: handleActivateEntry,
     onCloseOverlays: closeOverlays,
     onLoadNextPage: loadNextPage,
-    onNavigateSiblingFolder: navigateSiblingFolder,
+    onNavigateSiblingFolder: folders.navigateSiblingFolder,
     onNavigateToPath: navigateToPath,
     onOpenHotkeys: openHotkeys,
     onSelectMedia: selectMedia,
     onStepBeyondGrid: stepBeyondGrid,
     pathSheetOpen,
-    readerOpen: activeComic !== null,
+    readerOpen: comics.activeComic !== null,
     setFocusedEntryIndex,
     requestScrollFocusedIntoView,
     settingsOpen,
@@ -397,6 +246,7 @@ function useGalleryPage() {
 
   const selectNextMedia = useCallback(() => selectAdjacentMedia(1), [selectAdjacentMedia]);
   const selectPreviousMedia = useCallback(() => selectAdjacentMedia(-1), [selectAdjacentMedia]);
+  const deletedEntryIds = deletedMedia.ids;
 
   const openSelectedInViewer = useCallback(() => {
     if (selectedComic) {
@@ -405,70 +255,6 @@ function useGalleryPage() {
       openViewer(selected.id);
     }
   }, [deletedEntryIds, openComicReader, openViewer, selected, selectedComic]);
-
-  // A delete settles after the render it started in: it reads the live
-  // browse, sequence, and selection from here.
-  const liveDeleteRef = useRef({ browseKey, navigableMedia, selectedId: selected?.id ?? null });
-  liveDeleteRef.current = { browseKey, navigableMedia, selectedId: selected?.id ?? null };
-
-  const { mutateAsync: deleteEntry } = deleteEntryMutation;
-
-  const deleteSelectedMedia = useCallback(() => {
-    if (!selected || deletedEntryIds.has(selected.id) || deletingEntryIds.has(selected.id)) {
-      return;
-    }
-
-    const confirmed = window.confirm(
-      `Delete "${selected.name}" from the archive? This cannot be undone.`,
-    );
-
-    if (!confirmed) {
-      return;
-    }
-
-    const entryId = selected.id;
-    const startBrowseKey = browseKey;
-
-    setDeleteError(null);
-    setDeletingEntryIds((current) => new Set([...current, entryId]));
-
-    void (async () => {
-      try {
-        // `deleted: false` means no live row matched: the item is already
-        // gone, so hide it like a delete that just landed.
-        await deleteEntry(entryId);
-
-        setDeletedEntryIds((current) => new Set([...current, entryId]));
-
-        // Move to the neighbour only if the user has not moved on meanwhile.
-        const live = liveDeleteRef.current;
-
-        if (live.browseKey !== startBrowseKey || live.selectedId !== entryId) {
-          return;
-        }
-
-        const liveIndex = live.navigableMedia.findIndex((item) => item.id === entryId);
-        const remaining = live.navigableMedia.filter((item) => item.id !== entryId);
-        const next = remaining[liveIndex >= 0 ? Math.min(liveIndex, remaining.length - 1) : 0];
-
-        if (next) {
-          selectMediaAndFocus(next.id);
-        }
-      } catch (error) {
-        setDeleteError({
-          entryId,
-          message: error instanceof Error ? error.message : "Delete failed.",
-        });
-      } finally {
-        setDeletingEntryIds((current) => {
-          const next = new Set(current);
-          next.delete(entryId);
-
-          return next;
-        });
-      }
-    })();
-  }, [browseKey, deleteEntry, deletedEntryIds, deletingEntryIds, selectMediaAndFocus, selected]);
 
   const handleSelectEntry = useCallback(
     (entry: GalleryBrowseEntry) => {
@@ -489,419 +275,117 @@ function useGalleryPage() {
     [navigateToPath, selectMedia],
   );
 
-  const breadcrumbs = useMemo(() => buildBreadcrumbItems(displayPath), [displayPath]);
+  const openMobileSearch = useCallback(() => setMobileSearchOpen(true), []);
+  const closeHotkeys = useCallback(() => setHotkeysOpen(false), []);
+  const closeSettings = useCallback(() => setSettingsOpen(false), [setSettingsOpen]);
 
   // A stale snapshot's root label belongs to the folder being left.
   const archiveRoot = snapshotIsCurrent
     ? (library?.archiveRoot ?? "Synced archive")
     : "Synced archive";
 
-  const currentFolderName = breadcrumbs[breadcrumbs.length - 1]?.label ?? archiveRoot;
-  const parentPath = getParentPath(displayPath);
-
-  return {
-    activeComic,
-    archiveRoot,
-    breadcrumbs,
-    browseKey,
-    canNavigateSiblings,
-    closeViewer,
-    contentBrowseKey,
-    columnCountRef,
-    currentFolderName,
-    deleteError,
-    deleteSelectedMedia,
-    deletedEntryIds,
-    deletingEntryIds,
-    displayPath,
-    effectiveComicMode,
-    effectiveRecursive,
-    entries,
-    exclude: excludeControl,
-    focusedEntryIndex,
-    folderModesEnabled,
-    handleActivateEntry,
-    handleLoadMoreMedia,
-    handleSelectEntry,
-    hotkeysOpen,
-    invalidateLibrary,
-    isMobile,
-    isReady,
-    mobileSearchOpen,
-    navigateSiblingFolder,
-    navigateToPath,
-    navigableMedia,
-    openingComicId,
-    openSelectedInViewer,
-    page,
-    parentPath,
-    pathSheetOpen,
-    rememberedRecursive,
-    scrollRequestKey,
-    searchDraft,
-    selected,
-    selectMediaAndFocus,
-    selectNextMedia,
-    selectPreviousMedia,
-    setActiveComic,
-    setComicMode,
-    setDetailPanelOpen,
-    setHotkeysOpen,
-    setMobileSearchOpen,
-    setPathSheetOpen,
-    setRecursive,
-    setSearchDraft,
-    setSettingsOpen,
-    setSortMode,
-    settings,
-    settingsOpen,
-    showDetailPanel,
-    showFetching,
-    showRefreshing,
-    shuffle,
-    sortMode,
-    stepMedia,
-    submitSearch,
-    updateSettings,
-    viewerOpen,
-  };
-}
-
-type GalleryPageModel = ReturnType<typeof useGalleryPage>;
-
-const GalleryPageContext = createContext<GalleryPageModel | null>(null);
-
-function useGalleryPageModel(): GalleryPageModel {
-  const model = useContext(GalleryPageContext);
-
-  if (!model) throw new Error("Gallery page context is missing");
-
-  return model;
-}
-
-export function GalleryPage(): JSX.Element {
-  const model = useGalleryPage();
-
-  return (
-    <GalleryPageContext.Provider value={model}>
-      <GalleryHeader />
-      <GalleryContent />
-      <GalleryOverlays />
-    </GalleryPageContext.Provider>
-  );
-}
-
-function GalleryHeader(): JSX.Element {
-  const model = useGalleryPageModel();
-
-  return (
-    <header className="flex h-auto min-h-14 shrink-0 items-center justify-between gap-4 border-b border-border bg-background px-5 py-2">
-      <div className="flex min-w-0 flex-1 items-center gap-2">
-        <SidebarTrigger className="-ml-1 shrink-0" />
-        {model.isMobile ? <MobilePathHeader /> : <DesktopPathHeader />}
-      </div>
-      <div className="flex shrink-0 items-center gap-1">
-        <Button
-          className="md:hidden"
-          onClick={() => model.setMobileSearchOpen(true)}
-          size="icon"
-          type="button"
-          variant="outline"
-        >
-          <Search className="size-4" />
-        </Button>
-        <form className="relative hidden w-72 items-center md:flex" onSubmit={model.submitSearch}>
-          <Search className="pointer-events-none absolute left-2.5 size-4 text-muted-foreground" />
-          <Input
-            aria-label="Search archive"
-            className="pl-8"
-            onChange={(event) => model.setSearchDraft(event.target.value)}
-            placeholder="Search paths"
-            type="search"
-            value={model.searchDraft}
-          />
-        </form>
-        <Button
-          aria-expanded={model.showDetailPanel}
-          aria-label={model.showDetailPanel ? "Hide preview panel" : "Show preview panel"}
-          className="hidden shrink-0 lg:inline-flex"
-          onClick={() => model.setDetailPanelOpen(!model.showDetailPanel)}
-          size="icon"
-          title={model.showDetailPanel ? "Hide preview panel" : "Show preview panel"}
-          type="button"
-          variant="outline"
-        >
-          {model.showDetailPanel ? (
-            <PanelRightClose className="size-4" />
-          ) : (
-            <PanelRightOpen className="size-4" />
-          )}
-        </Button>
-      </div>
-    </header>
-  );
-}
-
-function MobilePathHeader(): JSX.Element {
-  const model = useGalleryPageModel();
-
-  return (
-    <div className="min-w-0 flex-1">
-      <div className="flex items-center gap-1">
-        <Button
-          disabled={!model.parentPath && model.displayPath === ""}
-          onClick={() => model.navigateToPath(model.parentPath ?? "")}
-          size="icon"
-          type="button"
-          variant="ghost"
-        >
-          <ChevronUp className="size-4" />
-        </Button>
-        <button
-          className="min-w-0 flex-1 truncate text-left text-base font-semibold"
-          onClick={() => model.setPathSheetOpen(true)}
-          type="button"
-        >
-          {model.currentFolderName}
-        </button>
-      </div>
-      {model.displayPath ? (
-        <p className="truncate text-xs text-muted-foreground">{model.displayPath}</p>
-      ) : null}
-    </div>
-  );
-}
-
-function DesktopPathHeader(): JSX.Element {
-  const model = useGalleryPageModel();
-
   return (
     <>
-      <div className="hidden items-center gap-1 md:flex">
-        <Button
-          disabled={!model.displayPath}
-          onClick={() => model.navigateToPath(model.parentPath ?? "")}
-          size="sm"
-          type="button"
-          variant="outline"
-        >
-          Parent
-        </Button>
-        <Button
-          disabled={!model.canNavigateSiblings}
-          onClick={() => model.navigateSiblingFolder(-1)}
-          size="sm"
-          type="button"
-          variant="outline"
-        >
-          Prev folder
-        </Button>
-        <Button
-          disabled={!model.canNavigateSiblings}
-          onClick={() => model.navigateSiblingFolder(1)}
-          size="sm"
-          type="button"
-          variant="outline"
-        >
-          Next folder
-        </Button>
-      </div>
-      <Breadcrumb className="flex min-w-0 items-center gap-2">
-        <Archive className="size-4 shrink-0 text-muted-foreground" />
-        <BreadcrumbList className="min-w-0 flex-nowrap overflow-hidden">
-          <BreadcrumbItem>
-            <BreadcrumbLink asChild>
-              <button
-                className="max-w-40 min-h-10 cursor-pointer truncate rounded-md px-2 py-1.5"
-                onClick={() => model.navigateToPath("")}
-                type="button"
-              >
-                {model.archiveRoot}
-              </button>
-            </BreadcrumbLink>
-          </BreadcrumbItem>
-          {model.breadcrumbs.map((crumb, index) => (
-            <Fragment key={crumb.path}>
-              <BreadcrumbSeparator />
-              <BreadcrumbItem className="min-w-0">
-                {index === model.breadcrumbs.length - 1 ? (
-                  <BreadcrumbPage className="max-w-72 truncate px-2 py-1.5" title={crumb.path}>
-                    {crumb.label}
-                  </BreadcrumbPage>
-                ) : (
-                  <BreadcrumbLink asChild>
-                    <button
-                      className="max-w-40 min-h-10 cursor-pointer truncate rounded-md px-2 py-1.5"
-                      onClick={() => model.navigateToPath(crumb.path)}
-                      title={crumb.path}
-                      type="button"
-                    >
-                      {crumb.label}
-                    </button>
-                  </BreadcrumbLink>
-                )}
-              </BreadcrumbItem>
-            </Fragment>
-          ))}
-        </BreadcrumbList>
-      </Breadcrumb>
-    </>
-  );
-}
-
-function GalleryContent(): JSX.Element {
-  const model = useGalleryPageModel();
-
-  return (
-    <>
+      <GalleryHeader
+        archiveRoot={archiveRoot}
+        canNavigateSiblings={folders.canNavigateSiblings}
+        displayPath={displayPath}
+        isMobile={isMobile}
+        onDetailPanelOpenChange={browse.setDetailPanelOpen}
+        onNavigateSiblingFolder={folders.navigateSiblingFolder}
+        onNavigateToPath={navigateToPath}
+        onOpenMobileSearch={openMobileSearch}
+        onPathSheetOpenChange={setPathSheetOpen}
+        onSearchDraftChange={setSearchDraft}
+        onSubmitSearch={submitSearch}
+        pathSheetOpen={pathSheetOpen}
+        searchDraft={searchDraft}
+        showDetailPanel={showDetailPanel}
+      />
       <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-        {model.isReady ? (
+        {isReady ? (
           <GalleryBrowsePane
-            columnCountRef={model.columnCountRef}
-            comicMode={model.effectiveComicMode}
-            deleteError={
-              model.deleteError && model.deleteError.entryId === model.selected?.id
-                ? model.deleteError.message
-                : null
-            }
-            deletedEntryIds={model.deletedEntryIds}
-            deletingEntryIds={model.deletingEntryIds}
-            entries={model.entries}
-            focusedEntryIndex={model.focusedEntryIndex}
-            hasMore={model.page.hasMore}
-            isFetching={model.showFetching}
-            isMobile={model.isMobile}
-            loadingMoreMedia={model.page.loading}
-            onActivateEntry={model.handleActivateEntry}
-            onDelete={model.deleteSelectedMedia}
-            onLoadMoreMedia={model.handleLoadMoreMedia}
-            onNext={model.selectNextMedia}
-            onOpenViewer={model.openSelectedInViewer}
-            onPrev={model.selectPreviousMedia}
-            onSelectEntry={model.handleSelectEntry}
-            openingComicId={model.openingComicId}
-            scrollRequestKey={model.scrollRequestKey}
-            selected={model.selected}
-            selectedId={model.selected?.id ?? null}
-            showDelete={!model.effectiveComicMode}
-            showDetailPanel={model.showDetailPanel}
-            contentKey={model.contentBrowseKey}
-            paginationResetKey={model.browseKey}
-            thumbnailSize={model.settings.thumbnailSize}
+            columnCountRef={columnCountRef}
+            comicMode={effectiveComicMode}
+            deleteError={deletion.selectedDeleteError}
+            deletedEntryIds={deletedEntryIds}
+            deletingEntryIds={deletion.deletingEntryIds}
+            entries={entries}
+            focusedEntryIndex={focusedEntryIndex}
+            hasMore={page.hasMore}
+            isFetching={showFetching}
+            isMobile={isMobile}
+            loadingMoreMedia={page.loading}
+            onActivateEntry={handleActivateEntry}
+            onDelete={deletion.deleteSelectedMedia}
+            onLoadMoreMedia={handleLoadMoreMedia}
+            onNext={selectNextMedia}
+            onOpenViewer={openSelectedInViewer}
+            onPrev={selectPreviousMedia}
+            onSelectEntry={handleSelectEntry}
+            openingComicId={comics.openingComicId}
+            scrollRequestKey={scrollRequestKey}
+            selected={selected}
+            selectedId={selected?.id ?? null}
+            showDelete={!effectiveComicMode}
+            showDetailPanel={showDetailPanel}
+            contentKey={contentBrowseKey}
+            paginationResetKey={browseKey}
+            thumbnailSize={settings.thumbnailSize}
           />
         ) : (
           <GalleryGridSkeleton />
         )}
       </div>
       <FloatingToolbar
-        comicMode={model.effectiveComicMode}
-        currentPath={model.displayPath}
-        exclude={model.exclude}
-        isRefreshing={model.showRefreshing}
-        onChangeSortMode={model.setSortMode}
-        onRefresh={() => void model.invalidateLibrary()}
+        comicMode={effectiveComicMode}
+        currentPath={displayPath}
+        exclude={folders.exclude}
+        isRefreshing={showRefreshing}
+        onChangeSortMode={browse.setSortMode}
+        onRefresh={() => void invalidateLibrary()}
         onToggleComicMode={() => {
-          if (!model.folderModesEnabled) return;
-          model.setComicMode(!model.effectiveComicMode);
+          if (!folderModesEnabled) return;
+          setComicMode(!effectiveComicMode);
         }}
         onToggleRecursive={() => {
-          if (!model.folderModesEnabled) return;
-          model.setRecursive(!model.effectiveRecursive);
+          if (!folderModesEnabled) return;
+          setRecursive(!effectiveRecursive);
         }}
-        recursive={model.effectiveRecursive}
-        recursiveDisabled={!model.folderModesEnabled}
-        shuffle={model.shuffle}
-        sortMode={model.sortMode}
+        recursive={effectiveRecursive}
+        recursiveDisabled={!folderModesEnabled}
+        shuffle={browse.shuffle}
+        sortMode={browse.sortMode}
       />
-    </>
-  );
-}
-
-function GalleryOverlays(): JSX.Element {
-  const model = useGalleryPageModel();
-
-  return (
-    <>
-      <SettingsDrawer
-        onClose={() => model.setSettingsOpen(false)}
-        onUpdate={model.updateSettings}
-        onUpdateRecursiveDefault={model.setRecursive}
-        open={model.settingsOpen}
-        recursiveDefault={model.rememberedRecursive}
-        settings={model.settings}
+      <GalleryOverlays
+        activeComic={comics.activeComic}
+        hotkeysOpen={hotkeysOpen}
+        mobileSearchOpen={mobileSearchOpen}
+        onCloseComicReader={comics.closeComicReader}
+        onCloseHotkeys={closeHotkeys}
+        onCloseSettings={closeSettings}
+        onMobileSearchOpenChange={setMobileSearchOpen}
+        onSearchDraftChange={setSearchDraft}
+        onSubmitSearch={submitSearch}
+        onUpdateRecursiveDefault={setRecursive}
+        onUpdateSettings={updateSettings}
+        recursiveDefault={browse.rememberedRecursive}
+        searchDraft={searchDraft}
+        settings={settings}
+        settingsOpen={settingsOpen}
+        viewer={
+          viewerOpen && selected
+            ? {
+                hasMore: page.hasMore,
+                items: navigableMedia,
+                mediaId: selected.id,
+                onClose: closeViewer,
+                onSelect: selectMediaAndFocus,
+                stepMedia,
+              }
+            : null
+        }
       />
-      {model.hotkeysOpen ? <HotkeyOverlay onClose={() => model.setHotkeysOpen(false)} /> : null}
-      <Sheet onOpenChange={model.setMobileSearchOpen} open={model.mobileSearchOpen}>
-        <SheetContent className="p-5" side="bottom">
-          <SheetHeader>
-            <SheetTitle>Search archive</SheetTitle>
-          </SheetHeader>
-          <form className="mt-4 grid gap-3" onSubmit={model.submitSearch}>
-            <Input
-              aria-label="Search archive"
-              autoFocus
-              onChange={(event) => model.setSearchDraft(event.target.value)}
-              placeholder="Search paths"
-              type="search"
-              value={model.searchDraft}
-            />
-            <Button type="submit">Search</Button>
-          </form>
-        </SheetContent>
-      </Sheet>
-      <Sheet onOpenChange={model.setPathSheetOpen} open={model.pathSheetOpen}>
-        <SheetContent className="p-5" side="bottom">
-          <SheetHeader>
-            <SheetTitle>Folder path</SheetTitle>
-          </SheetHeader>
-          <div className="mt-4 grid gap-2">
-            <button
-              className="min-h-10 rounded-lg border border-border px-3 py-2 text-left text-sm"
-              onClick={() => {
-                model.navigateToPath("");
-                model.setPathSheetOpen(false);
-              }}
-              type="button"
-            >
-              {model.archiveRoot}
-            </button>
-            {model.breadcrumbs.map((crumb) => (
-              <button
-                key={crumb.path}
-                className="min-h-10 rounded-lg border border-border px-3 py-2 text-left text-sm"
-                onClick={() => {
-                  model.navigateToPath(crumb.path);
-                  model.setPathSheetOpen(false);
-                }}
-                type="button"
-              >
-                {crumb.label}
-              </button>
-            ))}
-          </div>
-        </SheetContent>
-      </Sheet>
-      {model.viewerOpen && model.selected ? (
-        <MediaViewerModal
-          autoplayVideos={model.settings.autoplayVideos}
-          hasMore={model.page.hasMore}
-          items={model.navigableMedia}
-          loopNavigation={model.settings.loopNavigation}
-          loopVideos={model.settings.loopVideos}
-          mediaId={model.selected.id}
-          onClose={model.closeViewer}
-          onSelect={model.selectMediaAndFocus}
-          rememberViewerPosition={model.settings.rememberViewerPosition}
-          stepMedia={model.stepMedia}
-        />
-      ) : null}
-      {model.activeComic ? (
-        <ComicReader
-          key={model.activeComic.id}
-          comic={model.activeComic}
-          onClose={() => model.setActiveComic(null)}
-        />
-      ) : null}
     </>
   );
 }

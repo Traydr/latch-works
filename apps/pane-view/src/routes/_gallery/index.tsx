@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { GalleryBrowseSearchSchema } from "@/features/gallery/browse-search";
+import { browseSnapshotRequestFromSearch } from "@/features/gallery/browse-state-rules";
 import { GalleryPage } from "@/features/gallery/GalleryPage";
-import { browseSnapshotRequestFromSearch } from "@/features/gallery/useGalleryBrowseState";
 import { librarySnapshotQueryOptions } from "@/features/library/library-queries";
 
 export const Route = createFileRoute("/_gallery/")({
