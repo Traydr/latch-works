@@ -35,7 +35,7 @@ import { PaneViewImage } from "./PaneViewImage";
 import { type ResolvedMediaUrlCache, useResolvedMediaUrl } from "./useResolvedMediaUrl";
 import { createPlaybackPosition } from "./video-player/playback-position";
 import { VideoPlayerChrome } from "./video-player/VideoPlayerChrome";
-import { useHoldToBoost } from "./video-player/video-player-controls";
+import { ChromeRegion, useHoldToBoost } from "./video-player/video-player-controls";
 
 const PdfViewer = lazy(() =>
   import("@/features/viewer/PdfViewer").then((module) => ({ default: module.PdfViewer })),
@@ -783,7 +783,7 @@ function ViewerTopBar(): JSX.Element {
       className={`pointer-events-none absolute inset-x-0 top-0 z-20 bg-gradient-to-b from-black/70 via-black/30 to-transparent px-3 pb-8 pt-3 transition-opacity duration-300 ${chromeVisibilityClass}`}
       style={{ paddingTop: "max(0.75rem, env(safe-area-inset-top))" }}
     >
-      <div className="pointer-events-auto flex items-center justify-between gap-2 sm:gap-3">
+      <ChromeRegion className="flex items-center justify-between gap-2 sm:gap-3">
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-white">{item.name}</p>
           <p className="truncate text-xs text-white/70">{details.join(" · ")}</p>
@@ -823,7 +823,7 @@ function ViewerTopBar(): JSX.Element {
             onClick={onClose}
           />
         </div>
-      </div>
+      </ChromeRegion>
     </div>
   );
 }
@@ -853,24 +853,26 @@ function ViewerNavigation(): JSX.Element {
           />
         </>
       ) : null}
-      <button
-        type="button"
-        aria-label="Previous item"
-        className={`absolute left-3 top-1/2 z-20 hidden h-[25dvh] min-h-11 w-12 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full text-xl text-white/90 transition-opacity duration-300 hover:bg-violet-500/25 hover:text-violet-100 md:flex ${chromeVisibilityClass} ${canStepBackward ? "" : "pointer-events-none opacity-40"}`}
-        onClick={() => onStep(-1)}
-        disabled={!canStepBackward}
-      >
-        {"<"}
-      </button>
-      <button
-        type="button"
-        aria-label="Next item"
-        className={`absolute right-3 top-1/2 z-20 hidden h-[25dvh] min-h-11 w-12 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full text-xl text-white/90 transition-opacity duration-300 hover:bg-violet-500/25 hover:text-violet-100 md:flex ${chromeVisibilityClass} ${canStepForward ? "" : "pointer-events-none opacity-40"}`}
-        onClick={() => onStep(1)}
-        disabled={!canStepForward}
-      >
-        {">"}
-      </button>
+      <ChromeRegion>
+        <button
+          type="button"
+          aria-label="Previous item"
+          className={`absolute left-3 top-1/2 z-20 hidden h-[25dvh] min-h-11 w-12 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full text-xl text-white/90 transition-opacity duration-300 hover:bg-violet-500/25 hover:text-violet-100 md:flex ${chromeVisibilityClass} ${canStepBackward ? "" : "pointer-events-none opacity-40"}`}
+          onClick={() => onStep(-1)}
+          disabled={!canStepBackward}
+        >
+          {"<"}
+        </button>
+        <button
+          type="button"
+          aria-label="Next item"
+          className={`absolute right-3 top-1/2 z-20 hidden h-[25dvh] min-h-11 w-12 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full text-xl text-white/90 transition-opacity duration-300 hover:bg-violet-500/25 hover:text-violet-100 md:flex ${chromeVisibilityClass} ${canStepForward ? "" : "pointer-events-none opacity-40"}`}
+          onClick={() => onStep(1)}
+          disabled={!canStepForward}
+        >
+          {">"}
+        </button>
+      </ChromeRegion>
     </>
   );
 }
@@ -887,7 +889,12 @@ function ViewerMedia(): JSX.Element {
       onClick={(event) => {
         event.stopPropagation();
 
-        if (item.mediaType !== "video") return;
+        if (item.mediaType !== "video") {
+          // Touch has no cursor to wake the chrome; a tap on the image or page shows or hides it.
+          if (model.isCoarsePointer) model.toggleChrome();
+
+          return;
+        }
 
         // The tap that ended a hold-to-boost is not a tap on the picture.
         if (hold.consumeSuppressedClick()) return;
