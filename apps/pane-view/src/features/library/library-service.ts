@@ -9,6 +9,7 @@ import type {
   LibrarySnapshotReadRequest,
   SnapshotFolderNode,
 } from "../../server/library/repository";
+import { assertWebSessionAuthorized } from "../auth/assert-web-session";
 import { type GalleryRandomSeed, GalleryRandomSeedSchema } from "../gallery/gallery-random-seed";
 import type { LibraryMediaItem } from "./types";
 
@@ -76,14 +77,6 @@ export const deleteLibraryEntry = createServerFn({ method: "POST" })
 
     return { deleted };
   });
-
-export async function assertWebSessionAuthorized(): Promise<void> {
-  const { isCurrentWebSessionValid } = await import("../../server/auth/web-session");
-
-  if (!(await isCurrentWebSessionValid())) {
-    throw new Error("Unauthorized");
-  }
-}
 
 /**
  * The one archive read a library snapshot needs. The default reads the

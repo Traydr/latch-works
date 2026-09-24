@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import type { MediaDeliveryBatchResult } from "../../server/media/resolve-delivery-url";
+import { assertWebSessionAuthorized } from "../auth/assert-web-session";
 
 const resolveMediaDeliveryRequestSchema = z.object({
   mediaId: z.uuid(),
@@ -15,11 +16,7 @@ const resolveMediaDeliveryBatchRequestSchema = z.object({
 export const resolveMediaDeliveryUrl = createServerFn({ method: "GET" })
   .validator(resolveMediaDeliveryRequestSchema)
   .handler(async ({ data }) => {
-    const { isCurrentWebSessionValid } = await import("../../server/auth/web-session");
-
-    if (!(await isCurrentWebSessionValid())) {
-      throw new Error("Unauthorized");
-    }
+    await assertWebSessionAuthorized();
 
     const { resolveMediaDeliveryUrlForVariant } = await import(
       "../../server/media/resolve-delivery-url"
@@ -35,11 +32,7 @@ export const resolveMediaDeliveryUrl = createServerFn({ method: "GET" })
 export const resolveMediaDeliveryUrls = createServerFn({ method: "POST" })
   .validator(resolveMediaDeliveryBatchRequestSchema)
   .handler(async ({ data }): Promise<{ results: MediaDeliveryBatchResult[] }> => {
-    const { isCurrentWebSessionValid } = await import("../../server/auth/web-session");
-
-    if (!(await isCurrentWebSessionValid())) {
-      throw new Error("Unauthorized");
-    }
+    await assertWebSessionAuthorized();
 
     const { resolveMediaDeliveryUrlsForVariants } = await import(
       "../../server/media/resolve-delivery-url"
