@@ -56,6 +56,9 @@ export function useLibraryViewerState(
   // landed last would overwrite newer progress.
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const subjectIdRef = useRef(subjectId);
+  // The subject whose saved state has loaded. Until then a report (a PDF's page 1
+  // before it scrolls to the saved page) would overwrite the state about to be resumed.
+  const loadedSubjectIdRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     subjectIdRef.current = subjectId;
@@ -101,7 +104,7 @@ export function useLibraryViewerState(
   // a timer restarted on each report would never fire while the video plays.
   const scheduleSave = useCallback(
     (patch: ViewerStatePatch): void => {
-      if (!subjectIdRef.current) {
+      if (!subjectIdRef.current || loadedSubjectIdRef.current !== subjectIdRef.current) {
         return;
       }
 
@@ -140,6 +143,7 @@ export function useLibraryViewerState(
         .catch(() => null);
 
       if (!cancelled) {
+        loadedSubjectIdRef.current = subjectId;
         setInitial({ loaded: true, snapshot, subjectId });
       }
     })();

@@ -25,8 +25,6 @@ interface ActiveRender {
   cancel: () => void;
 }
 
-const PAGE_CHANGE_DEBOUNCE_MS = 3_000;
-
 const GEOMETRY_CONCURRENCY = 4;
 
 function usePdfDocument({
@@ -76,28 +74,26 @@ function usePdfDocument({
     let cancelled = false;
     let resizeObserver: ResizeObserver | undefined;
     let pageObserver: IntersectionObserver | undefined;
-    let pageChangeTimer: ReturnType<typeof setTimeout> | undefined;
     let destroyLoadingTask: (() => void) | undefined;
     let renderWidth = getPageRenderWidth(container);
     let renderVersion = 0;
     // Snapshot resume page at load time; later resume updates use the scroll effect, not a reload.
     let focalPage = initialPageRef.current ?? 1;
-    const visiblePages = new Set<number>();
+    let reportedPage: number | undefined;
+    // Every intersecting page's latest ratio: one observer callback only carries the pages that
+    // crossed a threshold, so picking from its entries alone could crown a sliver of a neighbour.
+    const visibleRatios = new Map<number, number>();
     const renderTasks = new Map<number, ActiveRender>();
     container.replaceChildren();
 
+    // Reported at once: the viewer session throttles saves and flushes the last one on close.
     const reportPage = (page: number): void => {
-      if (!onPageChangeRef.current) {
+      if (page === reportedPage) {
         return;
       }
 
-      if (pageChangeTimer) {
-        clearTimeout(pageChangeTimer);
-      }
-
-      pageChangeTimer = setTimeout(() => {
-        onPageChangeRef.current?.(page);
-      }, PAGE_CHANGE_DEBOUNCE_MS);
+      reportedPage = page;
+      onPageChangeRef.current?.(page);
     };
 
     const cancelRender = (pageNumber: number): void => {
@@ -180,7 +176,7 @@ function usePdfDocument({
 
         const paintWindow = () => {
           const desiredPages = new Set(
-            getPdfPageRenderWindow(visiblePages, pdf.numPages, focalPage),
+            getPdfPageRenderWindow(visibleRatios.keys(), pdf.numPages, focalPage),
           );
 
           for (const pageNumber of renderTasks.keys()) {
@@ -286,13 +282,13 @@ function usePdfDocument({
               }
 
               if (entry.isIntersecting) {
-                visiblePages.add(pageNumber);
+                visibleRatios.set(pageNumber, entry.intersectionRatio);
               } else {
-                visiblePages.delete(pageNumber);
+                visibleRatios.delete(pageNumber);
               }
             }
 
-            const visiblePage = resolveVisiblePdfPage(entries);
+            const visiblePage = resolveVisiblePdfPage(visibleRatios);
 
             if (visiblePage) {
               focalPage = visiblePage;
@@ -352,10 +348,6 @@ function usePdfDocument({
 
       resizeObserver?.disconnect();
       pageObserver?.disconnect();
-
-      if (pageChangeTimer) {
-        clearTimeout(pageChangeTimer);
-      }
     };
     // Keep document loading keyed to mediaId only. Late-arriving resume pages are applied by the
     // scroll effect above — including initialPage here would tear down and reload the PDF mid-view.
