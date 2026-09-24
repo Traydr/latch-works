@@ -15,7 +15,7 @@ export const env = createEnv({
     PANE_VIEW_USERNAME: z.string(),
     PANE_VIEW_PASSWORD: z.string(),
     PANE_VIEW_SYNC_TOKEN: z.string(),
-    PANE_VIEW_TRUST_PROXY_HEADERS: z.coerce.boolean().default(false),
+    PANE_VIEW_TRUST_PROXY_HEADERS: z.stringbool().default(false),
     // Optional: when SHUTTER_EDGE_URL is unset, variant delivery falls back to signed
     // original URLs (see server/media/variant-provider.ts).
     SHUTTER_EDGE_URL: z.url().or(z.literal("")).default(""),
