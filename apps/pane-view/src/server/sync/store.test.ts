@@ -356,4 +356,41 @@ describe("folder lifecycle", () => {
 
     expect(await liveFolderPaths()).toEqual(["photos", "photos/2026"]);
   });
+
+  it("soft-deletes folders a run emptied or renamed away, up the tree", async () => {
+    const seedRun = await insertRun("running");
+
+    for (const path of [
+      "photos/old/2026/photo.jpg",
+      "photos/keep/photo.jpg",
+      "Photos/photo.jpg",
+      "trips/photo.jpg",
+    ]) {
+      await upload(seedRun, path);
+    }
+
+    await finalize(seedRun);
+
+    const run = await insertRun("running");
+    // A local rename of photos/old to photos/new, and trips emptied outright.
+    await upload(run, "photos/new/2026/photo.jpg");
+    await markRemoteDeleted(
+      { logicalPath: "photos/old/2026/photo.jpg", syncRunId: run },
+      dependencies(),
+    );
+    await markRemoteDeleted({ logicalPath: "trips/photo.jpg", syncRunId: run }, dependencies());
+
+    // Nothing moves until the run finalizes.
+    expect(await liveFolderPaths()).toContain("photos/old/2026");
+
+    await finalize(run);
+
+    expect(await liveFolderPaths()).toEqual([
+      "Photos",
+      "photos",
+      "photos/keep",
+      "photos/new",
+      "photos/new/2026",
+    ]);
+  });
 });

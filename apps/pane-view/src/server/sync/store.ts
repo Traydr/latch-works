@@ -5,11 +5,12 @@ import {
   type S3StorageClient,
   type StoredObjectHead,
 } from "@latch-works/media-storage";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { env } from "../../env/server";
 import { type Database, db } from "../db";
 import { acquireLibraryMutationStartupLock } from "../db/library-coordination-lock";
 import { folders, libraryEntries, mediaObjects, syncRunItems, syncRuns } from "../db/schema";
+import { withAncestorPaths } from "../library/query-helpers";
 import { assertNoActiveCleanupJob } from "../management/guards";
 import { normalizeSyncLogicalPath, validateSyncLogicalPath } from "./validation";
 
@@ -251,18 +252,28 @@ export async function finalizeSyncRun(
   { input }: { input: FinalizeSyncRunInput },
   dependencies: SyncStoreDependencies = defaultSyncStoreDependencies,
 ): Promise<{ status: "database" }> {
-  const [syncRun] = await dependencies.database
-    .update(syncRuns)
-    .set({
-      completedAt: new Date(),
-      counts: input.counts ?? {},
-      error: input.error ?? null,
-      status: input.status,
-    })
-    .where(and(eq(syncRuns.id, input.syncRunId), eq(syncRuns.status, "running")))
-    .returning({ id: syncRuns.id });
+  const finalized = await dependencies.database.transaction(async (tx) => {
+    const [syncRun] = await tx
+      .update(syncRuns)
+      .set({
+        completedAt: new Date(),
+        counts: input.counts ?? {},
+        error: input.error ?? null,
+        status: input.status,
+      })
+      .where(and(eq(syncRuns.id, input.syncRunId), eq(syncRuns.status, "running")))
+      .returning({ id: syncRuns.id });
 
-  if (syncRun) {
+    if (!syncRun) {
+      return false;
+    }
+
+    await softDeleteEmptiedFolders(tx);
+
+    return true;
+  });
+
+  if (finalized) {
     return { status: "database" };
   }
 
@@ -396,4 +407,24 @@ async function upsertContainingFolders(path: string, dbClient: SyncDbClient): Pr
       parentIdByPath.set(folderPath, folder.id);
     }
   }
+}
+
+/**
+ * Sync only creates a folder row for a folder that holds files, so a folder
+ * with no live entry anywhere beneath it was emptied or renamed locally.
+ * Soft-delete it with the entries that left it, or it lingers as an empty card
+ * and stops its parent counting as a comic leaf.
+ */
+export async function softDeleteEmptiedFolders(tx: SyncDbClient): Promise<void> {
+  const occupiedPaths = withAncestorPaths(
+    tx
+      .select({ path: libraryEntries.parentPath })
+      .from(libraryEntries)
+      .where(isNull(libraryEntries.deletedAt)),
+  );
+
+  await tx
+    .update(folders)
+    .set({ deletedAt: new Date() })
+    .where(and(isNull(folders.deletedAt), sql`${folders.path} not in (${occupiedPaths})`));
 }
