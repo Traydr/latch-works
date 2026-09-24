@@ -1,9 +1,15 @@
 import { Archive } from "lucide-react";
-import { type ReactNode, type RefObject, useEffect, useMemo } from "react";
+import { type ReactNode, type RefObject, useEffect, useMemo, useRef } from "react";
 import type { GalleryBrowseEntry } from "@/features/gallery/gallery-browse-entry";
 import { BrowserEntryCard } from "./BrowserEntryCard";
 import { useVirtualGridMetrics } from "./useVirtualGridMetrics";
 import { useWindowedThumbnailResolution } from "./useWindowedThumbnailResolution";
+
+/** The section's `pt-5`: the grid starts this far down the scrolled content. */
+const GRID_TOP_OFFSET_PX = 20;
+
+/** The fixed FloatingToolbar (`bottom-5` plus its ~56px height) covers this much of the bottom. */
+const FLOATING_TOOLBAR_INSET_PX = 76;
 
 interface BrowserGridProps {
   cardWidth: number;
@@ -69,8 +75,13 @@ export function BrowserGrid({
     columnCountRef.current = columnCount;
   }
 
+  // Scroll only for a new request: the effect also re-runs when a page loads
+  // or the grid resizes, and snapping back to the focused card then would
+  // fight the user's own scrolling. Mounting is not a request either.
+  const handledScrollRequestKeyRef = useRef(scrollRequestKey);
+
   useEffect(() => {
-    if (scrollRequestKey === 0 || entries.length === 0) {
+    if (scrollRequestKey === handledScrollRequestKeyRef.current || entries.length === 0) {
       return;
     }
 
@@ -80,17 +91,19 @@ export function BrowserGrid({
       return;
     }
 
+    handledScrollRequestKeyRef.current = scrollRequestKey;
+
     const row = Math.floor(focusedIndex / columnCount);
-    const itemTop = row * rowStride;
+    const itemTop = GRID_TOP_OFFSET_PX + row * rowStride;
     const itemBottom = itemTop + cardHeight;
     const padding = 24;
     const viewTop = element.scrollTop;
-    const viewBottom = viewTop + element.clientHeight;
+    const viewBottom = viewTop + element.clientHeight - FLOATING_TOOLBAR_INSET_PX;
 
     if (itemTop < viewTop + padding) {
       element.scrollTop = Math.max(0, itemTop - padding);
     } else if (itemBottom > viewBottom - padding) {
-      element.scrollTop = itemBottom - element.clientHeight + padding;
+      element.scrollTop = itemBottom - element.clientHeight + FLOATING_TOOLBAR_INSET_PX + padding;
     }
   }, [cardHeight, columnCount, entries.length, focusedIndex, mainRef, rowStride, scrollRequestKey]);
 
