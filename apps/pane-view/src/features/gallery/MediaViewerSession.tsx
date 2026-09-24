@@ -7,11 +7,13 @@ import {
   type JSX,
   lazy,
   type MouseEvent,
+  type ReactNode,
   Suspense,
   useCallback,
   useContext,
   useEffect,
   useEffectEvent,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -83,17 +85,38 @@ function formatDuration(ms: number): string {
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
-function useMediaViewerSession({
-  autoplayVideos,
-  cache,
+/** The viewer's name for a key press, or null when the press belongs to a text field or a chord. */
+function viewerKey(event: KeyboardEvent): string | null {
+  if (isTextInputTarget(event.target) || event.metaKey || event.ctrlKey || event.altKey) {
+    return null;
+  }
+
+  return event.key.length === 1 ? event.key.toLowerCase() : event.key;
+}
+
+/** The gallery tile for `mediaId`, when the grid has it rendered. */
+function renderedMediaTile(mediaId: string): HTMLElement | null {
+  return document.querySelector<HTMLElement>(`[data-browser-entry="media:${CSS.escape(mediaId)}"]`);
+}
+
+/** What the shared chrome needs from the current video; the item's session reports it. */
+interface VideoStatus {
+  duration: number;
+  mediaId: string;
+  playing: boolean;
+}
+
+/**
+ * The part of the viewer that outlives a step: the dialog (and the fullscreen
+ * it may hold), the idle chrome, the title bar and prev/next. Only the media
+ * and its playback state remount per item.
+ */
+function useViewerShell({
   canStepBackward,
   canStepForward,
   item,
-  loopVideos,
   onClose,
   onStep,
-  rememberViewerPosition,
-  viewerStateStore,
 }: MediaViewerSessionProps) {
   const isMobile = useIsMobile();
   const isCoarsePointer = useCoarsePointer();
@@ -101,21 +124,16 @@ function useMediaViewerSession({
   const modalRef = useRef<HTMLDialogElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
-  const isScrubbingRef = useRef(false);
-  const speedBoostHeldRef = useRef(false);
-  const speedBeforeHoldRef = useRef(1);
-  const previousFocusRef = useRef<HTMLElement | null>(null);
-  const hasRestoredVideoRef = useRef(false);
+  const itemIdRef = useRef(item.id);
 
-  const [playing, setPlaying] = useState(false);
-  const [duration, setDuration] = useState(0);
-  const [position, setPosition] = useState(0);
-  const [volume, setVolume] = useState(() => readPersistedVolume());
-  const [muted, setMuted] = useState(false);
-  const [speed, setSpeed] = useState(1);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [holdBoosting, setHoldBoosting] = useState(false);
-  const [showOriginal, setShowOriginal] = useState(false);
+  const [videoStatus, setVideoStatus] = useState<VideoStatus | null>(null);
+  const [originalShownFor, setOriginalShownFor] = useState<string | null>(null);
+  // Tagged with the media id, so a step starts the next item paused and unmeasured.
+  const currentVideo = videoStatus?.mediaId === item.id ? videoStatus : null;
+  const playing = currentVideo?.playing ?? false;
+  const duration = currentVideo?.duration ?? 0;
+  const showOriginal = originalShownFor === item.id;
   // Video chrome pins while paused and idles away during playback on every device;
   // other media keep the old rule (idle on desktop, tap to toggle on mobile).
   const chromePinned = isVideoItem && !playing;
@@ -125,6 +143,15 @@ function useMediaViewerSession({
     isMobile,
     pinned: chromePinned,
   });
+
+  const revealForItem = useEffectEvent(() => revealChrome());
+
+  useEffect(() => {
+    itemIdRef.current = item.id;
+    // Each item arrives with the chrome showing, as when every step remounted the viewer;
+    // a phone's step zone also toggles the chrome, which would otherwise hide it every other step.
+    revealForItem();
+  }, [item.id]);
 
   useEffect(() => {
     const onFullscreenChange = () => setIsFullscreen(fullscreenElementOf(document) !== null);
@@ -136,6 +163,216 @@ function useMediaViewerSession({
       document.removeEventListener("webkitfullscreenchange", onFullscreenChange);
     };
   }, []);
+
+  // Opened before paint so the gallery never shows through for a frame.
+  useLayoutEffect(() => {
+    const dialog = modalRef.current;
+    const active = document.activeElement;
+    const openedFrom = active instanceof HTMLElement ? active : null;
+
+    if (dialog && !dialog.open) {
+      openDialog(dialog);
+    }
+
+    closeButtonRef.current?.focus();
+
+    return () => {
+      if (dialog) {
+        closeDialog(dialog);
+      }
+
+      // Back to the tile of the item on screen at close, else where the viewer opened from.
+      (renderedMediaTile(itemIdRef.current) ?? openedFrom)?.focus();
+    };
+  }, []);
+
+  const reportVideo = useCallback(
+    (mediaId: string, patch: Partial<Pick<VideoStatus, "duration" | "playing">>): void => {
+      setVideoStatus((current) => {
+        const base =
+          current?.mediaId === mediaId ? current : { duration: 0, mediaId, playing: false };
+
+        return { ...base, ...patch };
+      });
+    },
+    [],
+  );
+
+  const handleKeyDown = useEffectEvent((event: KeyboardEvent) => {
+    revealChrome();
+
+    const key = viewerKey(event);
+
+    if (key === "Escape") {
+      event.preventDefault();
+      onClose();
+
+      return;
+    }
+
+    if (key === "ArrowRight" || key === "e") {
+      event.preventDefault();
+      onStep(1);
+
+      return;
+    }
+
+    if (key === "ArrowLeft" || key === "q") {
+      event.preventDefault();
+      onStep(-1);
+    }
+  });
+
+  useEffect(() => {
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  const resolvedDurationMs =
+    item.mediaType === "video"
+      ? item.durationMs && item.durationMs > 0
+        ? item.durationMs
+        : duration > 0
+          ? Math.round(duration * 1000)
+          : undefined
+      : undefined;
+
+  const details = [
+    formatBytes(item.size),
+    item.extension.toUpperCase(),
+    ...(resolvedDurationMs ? [formatDuration(resolvedDurationMs)] : []),
+    ...(item.width && item.height ? [`${item.width}×${item.height}`] : []),
+  ];
+
+  const toggleFullscreen = async (): Promise<void> => {
+    const dialog = modalRef.current;
+
+    if (!dialog) {
+      return;
+    }
+
+    const doc: WebkitFullscreenDocument = document;
+
+    if (fullscreenElementOf(document)) {
+      if (doc.exitFullscreen) await document.exitFullscreen();
+      else await doc.webkitExitFullscreen?.();
+
+      return;
+    }
+
+    // Element fullscreen where the browser allows it (Safari keeps the prefixed
+    // form; iPhone Safari has none, and iPad Safari can refuse it for a modal
+    // dialog). When it is unavailable or refused, the video itself can still go
+    // full screen with its native player.
+    const host: FullscreenHost = dialog;
+
+    try {
+      if (doc.fullscreenEnabled !== false && host.requestFullscreen) {
+        await dialog.requestFullscreen();
+
+        return;
+      }
+
+      if (host.webkitRequestFullscreen) {
+        await host.webkitRequestFullscreen();
+
+        return;
+      }
+    } catch {
+      // Fall through to the video's own fullscreen.
+    }
+
+    const video: WebkitFullscreenVideo | null = videoRef.current;
+    video?.webkitEnterFullscreen?.();
+  };
+
+  const toggleOriginal = (): void => {
+    setOriginalShownFor((current) => (current === item.id ? null : item.id));
+  };
+
+  const copyPath = async (): Promise<void> => {
+    await navigator.clipboard.writeText(item.path);
+  };
+
+  const downloadMedia = (): void => {
+    window.open(`/api/media/${item.id}/original`, "_blank", "noopener,noreferrer");
+  };
+
+  return {
+    canStepBackward,
+    canStepForward,
+    chromeVisibilityClass,
+    chromeVisible,
+    closeButtonRef,
+    copyPath,
+    details,
+    downloadMedia,
+    duration,
+    isCoarsePointer,
+    isFullscreen,
+    isMobile,
+    item,
+    modalRef,
+    onClose,
+    onStep,
+    playing,
+    reportVideo,
+    revealChrome,
+    showOriginal,
+    toggleChrome,
+    toggleFullscreen,
+    toggleOriginal,
+    videoRef,
+  };
+}
+
+type ViewerShellModel = ReturnType<typeof useViewerShell>;
+
+const ViewerShellContext = createContext<ViewerShellModel | null>(null);
+
+function useViewerShellModel(): ViewerShellModel {
+  const shell = useContext(ViewerShellContext);
+
+  if (!shell) {
+    throw new Error("Media viewer shell context is missing");
+  }
+
+  return shell;
+}
+
+/** Media and playback state for one item; remounts on every step. */
+function useMediaViewerSession({
+  autoplayVideos,
+  cache,
+  item,
+  loopVideos,
+  rememberViewerPosition,
+  viewerStateStore,
+}: MediaViewerSessionProps) {
+  const shell = useViewerShellModel();
+  const { duration, playing, reportVideo, videoRef } = shell;
+  const isVideoItem = item.mediaType === "video";
+  const isScrubbingRef = useRef(false);
+  const speedBoostHeldRef = useRef(false);
+  const speedBeforeHoldRef = useRef(1);
+  const hasRestoredVideoRef = useRef(false);
+
+  const [position, setPosition] = useState(0);
+  const [volume, setVolume] = useState(() => readPersistedVolume());
+  const [muted, setMuted] = useState(false);
+  const [speed, setSpeed] = useState(1);
+  const [holdBoosting, setHoldBoosting] = useState(false);
+
+  const setPlaying = useCallback(
+    (nextPlaying: boolean): void => reportVideo(item.id, { playing: nextPlaying }),
+    [item.id, reportVideo],
+  );
+
+  const setDuration = useCallback(
+    (nextDuration: number): void => reportVideo(item.id, { duration: nextDuration }),
+    [item.id, reportVideo],
+  );
 
   const videoDelivery = useResolvedMediaUrl({
     cache,
@@ -162,13 +399,16 @@ function useMediaViewerSession({
     }
   }, [viewerState?.page]);
 
-  const applySpeed = useCallback((nextSpeed: number): void => {
-    setSpeed(nextSpeed);
+  const applySpeed = useCallback(
+    (nextSpeed: number): void => {
+      setSpeed(nextSpeed);
 
-    if (videoRef.current) {
-      videoRef.current.playbackRate = nextSpeed;
-    }
-  }, []);
+      if (videoRef.current) {
+        videoRef.current.playbackRate = nextSpeed;
+      }
+    },
+    [videoRef],
+  );
 
   useEffect(() => {
     return () => {
@@ -202,93 +442,45 @@ function useMediaViewerSession({
     video.currentTime = resumeSeconds;
     setPosition(resumeSeconds);
     hasRestoredVideoRef.current = true;
-  }, [item?.id, item?.mediaType, viewerState?.positionMs]);
+  }, [item?.id, item?.mediaType, videoRef, viewerState?.positionMs]);
 
-  useEffect(() => {
-    const dialog = modalRef.current;
-    const active = document.activeElement;
-    previousFocusRef.current = active instanceof HTMLElement ? active : null;
+  const skip = useCallback(
+    (seconds: number): void => {
+      const video = videoRef.current;
 
-    if (dialog && !dialog.open) {
-      openDialog(dialog);
-    }
-
-    closeButtonRef.current?.focus();
-
-    return () => {
-      if (dialog) {
-        closeDialog(dialog);
+      if (!video) {
+        return;
       }
 
-      previousFocusRef.current?.focus();
-    };
-  }, []);
+      const total = video.duration;
 
-  const skip = useCallback((seconds: number): void => {
-    const video = videoRef.current;
+      if (!Number.isFinite(total) || total <= 0) {
+        return;
+      }
 
-    if (!video) {
-      return;
-    }
+      const nextTime = video.currentTime + seconds;
+      const safeTotal = Math.max(0, total - 0.05);
+      const clamped = Math.max(0, Math.min(safeTotal, nextTime));
+      const wasPlaying = !video.paused;
 
-    const total = video.duration;
+      video.currentTime = clamped;
+      setPosition(clamped);
 
-    if (!Number.isFinite(total) || total <= 0) {
-      return;
-    }
-
-    const nextTime = video.currentTime + seconds;
-    const safeTotal = Math.max(0, total - 0.05);
-    const clamped = Math.max(0, Math.min(safeTotal, nextTime));
-    const wasPlaying = !video.paused;
-
-    video.currentTime = clamped;
-    setPosition(clamped);
-
-    if (wasPlaying) {
-      void video.play().catch(() => {
-        // Keep paused if resume cannot start.
-      });
-    }
-  }, []);
+      if (wasPlaying) {
+        void video.play().catch(() => {
+          // Keep paused if resume cannot start.
+        });
+      }
+    },
+    [videoRef],
+  );
 
   const handleKeyDown = useEffectEvent((event: KeyboardEvent) => {
-    revealChrome();
-
-    if (isTextInputTarget(event.target)) {
-      return;
-    }
-
-    if (event.metaKey || event.ctrlKey || event.altKey) {
-      return;
-    }
-
-    const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
-
-    if (key === "Escape") {
-      event.preventDefault();
-      onClose();
-
-      return;
-    }
-
-    if (key === "ArrowRight" || key === "e") {
-      event.preventDefault();
-      onStep(1);
-
-      return;
-    }
-
-    if (key === "ArrowLeft" || key === "q") {
-      event.preventDefault();
-      onStep(-1);
-
-      return;
-    }
-
     if (!isVideoItem) {
       return;
     }
+
+    const key = viewerKey(event);
 
     if (key === " " || key === "2") {
       event.preventDefault();
@@ -348,7 +540,7 @@ function useMediaViewerSession({
     }
   });
 
-  // Keyboard handling.
+  // Video keys; Escape and stepping belong to the shell.
   useEffect(() => {
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
@@ -360,22 +552,6 @@ function useMediaViewerSession({
       window.removeEventListener("blur", resetHeldSpeed);
     };
   }, []);
-
-  const resolvedDurationMs =
-    item.mediaType === "video"
-      ? item.durationMs && item.durationMs > 0
-        ? item.durationMs
-        : duration > 0
-          ? Math.round(duration * 1000)
-          : undefined
-      : undefined;
-
-  const details = [
-    formatBytes(item.size),
-    item.extension.toUpperCase(),
-    ...(resolvedDurationMs ? [formatDuration(resolvedDurationMs)] : []),
-    ...(item.width && item.height ? [`${item.width}×${item.height}`] : []),
-  ];
 
   const canSeek = Number.isFinite(duration) && duration > 0;
 
@@ -428,48 +604,6 @@ function useMediaViewerSession({
     }
   };
 
-  const toggleFullscreen = async (): Promise<void> => {
-    const dialog = modalRef.current;
-
-    if (!dialog) {
-      return;
-    }
-
-    const doc: WebkitFullscreenDocument = document;
-
-    if (fullscreenElementOf(document)) {
-      if (doc.exitFullscreen) await document.exitFullscreen();
-      else await doc.webkitExitFullscreen?.();
-
-      return;
-    }
-
-    // Element fullscreen where the browser allows it (Safari keeps the prefixed
-    // form; iPhone Safari has none, and iPad Safari can refuse it for a modal
-    // dialog). When it is unavailable or refused, the video itself can still go
-    // full screen with its native player.
-    const host: FullscreenHost = dialog;
-
-    try {
-      if (doc.fullscreenEnabled !== false && host.requestFullscreen) {
-        await dialog.requestFullscreen();
-
-        return;
-      }
-
-      if (host.webkitRequestFullscreen) {
-        await host.webkitRequestFullscreen();
-
-        return;
-      }
-    } catch {
-      // Fall through to the video's own fullscreen.
-    }
-
-    const video: WebkitFullscreenVideo | null = videoRef.current;
-    video?.webkitEnterFullscreen?.();
-  };
-
   const changeVolume = (rawVolume: number): void => {
     const clamped = Math.max(0, Math.min(1, rawVolume));
     setVolume(clamped);
@@ -516,59 +650,36 @@ function useMediaViewerSession({
     }
   };
 
-  const copyPath = async (): Promise<void> => {
-    await navigator.clipboard.writeText(item.path);
-  };
-
-  const downloadMedia = (): void => {
-    window.open(`/api/media/${item.id}/original`, "_blank", "noopener,noreferrer");
-  };
-
   return {
     applySpeed,
     autoplayVideos,
     beginHoldBoost,
     cache,
     canSeek,
-    canStepBackward,
-    canStepForward,
     changeVolume,
-    chromeVisibilityClass,
-    chromeVisible,
-    closeButtonRef,
+    chromeVisibilityClass: shell.chromeVisibilityClass,
     commitSeek,
-    copyPath,
-    details,
-    downloadMedia,
     duration,
     endHoldBoost,
     flushSave,
     hasRestoredVideoRef,
     holdBoosting,
-    isCoarsePointer,
-    isFullscreen,
-    isMobile,
+    isCoarsePointer: shell.isCoarsePointer,
     isScrubbingRef,
     item,
     loopVideos,
-    modalRef,
     muted,
-    onClose,
-    onStep,
     playing,
     position,
     resumePdfPage,
-    revealChrome,
     scheduleSave,
     setDuration,
     setPlaying,
     setPosition,
-    setShowOriginal,
-    showOriginal,
+    showOriginal: shell.showOriginal,
     skip,
     speed,
-    toggleChrome,
-    toggleFullscreen,
+    toggleChrome: shell.toggleChrome,
     toggleMute,
     toggleVideoPlayback,
     videoDelivery,
@@ -593,18 +704,29 @@ export function useMediaViewerSessionModel(): MediaViewerSessionModel {
 }
 
 export function MediaViewerSession(props: MediaViewerSessionProps): JSX.Element {
+  const shell = useViewerShell(props);
+
+  return (
+    <ViewerShellContext.Provider value={shell}>
+      <ViewerDialog>
+        <ViewerItem key={props.item.id} {...props} />
+      </ViewerDialog>
+    </ViewerShellContext.Provider>
+  );
+}
+
+function ViewerItem(props: MediaViewerSessionProps): JSX.Element {
   const model = useMediaViewerSession(props);
 
   return (
     <MediaViewerSessionContext.Provider value={model}>
-      <ViewerDialog />
+      <ViewerMedia />
+      {model.item.mediaType === "video" ? <VideoPlayerChrome model={model} /> : null}
     </MediaViewerSessionContext.Provider>
   );
 }
 
-function ViewerDialog(): JSX.Element {
-  const model = useMediaViewerSessionModel();
-
+function ViewerDialog({ children }: { children: ReactNode }): JSX.Element {
   const {
     chromeVisible,
     isCoarsePointer,
@@ -614,9 +736,7 @@ function ViewerDialog(): JSX.Element {
     onClose,
     revealChrome,
     toggleChrome,
-  } = model;
-
-  const isVideoItem = item.mediaType === "video";
+  } = useViewerShellModel();
 
   return (
     // The dialog is the correct modal primitive; pointer handlers only manage transient chrome.
@@ -640,8 +760,7 @@ function ViewerDialog(): JSX.Element {
     >
       <ViewerTopBar />
       <ViewerNavigation />
-      <ViewerMedia />
-      {isVideoItem ? <VideoPlayerChrome model={model} /> : null}
+      {children}
     </dialog>
   );
 }
@@ -656,10 +775,10 @@ function ViewerTopBar(): JSX.Element {
     isFullscreen,
     item,
     onClose,
-    setShowOriginal,
     showOriginal,
     toggleFullscreen,
-  } = useMediaViewerSessionModel();
+    toggleOriginal,
+  } = useViewerShellModel();
 
   return (
     <div
@@ -689,7 +808,7 @@ function ViewerTopBar(): JSX.Element {
               ariaLabel={showOriginal ? "Show preview" : "Show original"}
               icon={Image}
               label={showOriginal ? "Preview" : "Original"}
-              onClick={() => setShowOriginal((current) => !current)}
+              onClick={toggleOriginal}
             />
           ) : null}
           <ViewerToolbarButton
@@ -713,7 +832,7 @@ function ViewerTopBar(): JSX.Element {
 
 function ViewerNavigation(): JSX.Element {
   const { canStepBackward, canStepForward, chromeVisibilityClass, item, onStep } =
-    useMediaViewerSessionModel();
+    useViewerShellModel();
 
   // A video keeps its picture for play/pause and hold-to-boost; only the edges step.
   const zoneWidth = item.mediaType === "video" ? "w-[10%]" : "w-1/2";
