@@ -2,6 +2,7 @@ import { getExtension } from "@latch-works/media-domain";
 import { originalObjectKey } from "@latch-works/media-storage";
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
+import { withHttpErrors } from "../server/http/http-error";
 import { readJsonBody } from "../server/http/json-body";
 import {
   type SyncRouteDependencies,
@@ -36,14 +37,7 @@ export async function postUploadUrl(
     return unauthorized;
   }
 
-  try {
-    await dependencies.assertNoActiveCleanupJob();
-  } catch (error) {
-    return Response.json(
-      { error: error instanceof Error ? error.message : "Library wipe is active." },
-      { status: 409 },
-    );
-  }
+  await dependencies.assertNoActiveCleanupJob();
 
   const parsed = await readJsonBody(request, UploadUrlBodySchema);
 
@@ -95,6 +89,6 @@ export async function postUploadUrl(
 
 export const Route = createFileRoute("/api/sync/upload-url")({
   server: {
-    handlers: { POST: postUploadUrl },
+    handlers: { POST: withHttpErrors(postUploadUrl) },
   },
 });

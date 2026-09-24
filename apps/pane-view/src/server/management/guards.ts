@@ -1,6 +1,7 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { type Database, db } from "../db";
 import { maintenanceJobs, syncRuns } from "../db/schema";
+import { HttpError } from "../http/http-error";
 import { listRunningSyncRuns } from "./sync-run-control";
 
 export async function readActiveSyncRun(database: Database = db): Promise<{
@@ -87,7 +88,8 @@ export async function assertNoActiveCleanupJob(client: Database = db): Promise<v
   const activeJob = await readActiveCleanupJob(client);
 
   if (activeJob) {
-    throw new Error(
+    throw new HttpError(
+      409,
       "A library cleanup job is still running. Wait for it to finish before changing the library.",
     );
   }

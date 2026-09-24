@@ -17,6 +17,7 @@ import {
   syncRunItems,
   syncRuns,
 } from "../db/schema";
+import { HttpError } from "../http/http-error";
 import { withAncestorPaths } from "../library/query-helpers";
 import { assertNoActiveCleanupJob } from "../management/guards";
 import { normalizeSyncLogicalPath, validateSyncLogicalPath } from "./validation";
@@ -153,25 +154,25 @@ export async function completeSyncedObject(
   const head = await dependencies.headStoredObject({ key: objectKey, storage });
 
   if (!head) {
-    throw new Error("Uploaded object was not found in storage.");
+    throw new HttpError(422, "Uploaded object was not found in storage.");
   }
 
   if (head.contentLength !== input.size) {
-    throw new Error("Uploaded object size does not match declared size.");
+    throw new HttpError(422, "Uploaded object size does not match declared size.");
   }
 
   if (head.contentType && head.contentType !== input.contentType) {
-    throw new Error("Uploaded object content type does not match declared type.");
+    throw new HttpError(422, "Uploaded object content type does not match declared type.");
   }
 
   const metadataSha = head.metadata?.sha256?.toLowerCase();
 
   if (metadataSha && metadataSha !== input.sha256.toLowerCase()) {
-    throw new Error("Uploaded object sha256 metadata does not match declared hash.");
+    throw new HttpError(422, "Uploaded object sha256 metadata does not match declared hash.");
   }
 
   if (head.checksumSHA256 && head.checksumSHA256 !== expectedChecksum) {
-    throw new Error("Uploaded object checksum does not match declared hash.");
+    throw new HttpError(422, "Uploaded object checksum does not match declared hash.");
   }
 
   await dependencies.database.transaction(async (tx) => {
@@ -294,11 +295,15 @@ export async function finalizeSyncRun(
     .where(eq(syncRuns.id, input.syncRunId))
     .limit(1);
 
-  if (existingSyncRun?.status === input.status) {
+  if (!existingSyncRun) {
+    throw new HttpError(404, "Sync run not found.");
+  }
+
+  if (existingSyncRun.status === input.status) {
     return { status: "database" };
   }
 
-  throw new Error("Unable to finalize sync run.");
+  throw new HttpError(409, `Sync run is already ${existingSyncRun.status}.`);
 }
 
 export async function markRemoteDeleted(
@@ -311,7 +316,7 @@ export async function markRemoteDeleted(
   const pathError = validateSyncLogicalPath(normalizedPath);
 
   if (pathError) {
-    throw new Error(pathError);
+    throw new HttpError(400, pathError);
   }
 
   await dependencies.database.transaction(async (tx) => {
@@ -359,11 +364,11 @@ async function assertWritableSyncRun(tx: SyncDbClient, syncRunId: string): Promi
     .limit(1);
 
   if (!syncRun) {
-    throw new Error("Sync run not found.");
+    throw new HttpError(404, "Sync run not found.");
   }
 
   if (syncRun.status !== "running") {
-    throw new Error("Sync run is not accepting writes.");
+    throw new HttpError(409, "Sync run is not accepting writes.");
   }
 }
 
