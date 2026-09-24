@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { env } from "../env/server";
 import {
   auth,
-  ensureConfiguredOwnerCredentialAccount,
+  reconcileConfiguredOwner,
   verifyConfiguredOwnerCredentials,
 } from "../server/auth/better-auth";
 import { resolveClientIp } from "../server/auth/client-ip";
@@ -37,7 +37,7 @@ export const Route = createFileRoute("/api/auth/login")({
           });
         }
 
-        if (!(await ensureConfiguredOwnerCredentialAccount(owner))) {
+        if (!(await reconcileConfiguredOwner())) {
           return new Response(null, {
             headers: { Location: "/login?error=invalid" },
             status: 303,
