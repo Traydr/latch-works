@@ -362,6 +362,11 @@ export const syncRunItems = pgTable(
   },
   (table) => ({
     pk: primaryKey({ columns: [table.syncRunId, table.logicalPath] }),
+    // Back the ON DELETE SET NULL foreign keys so a media delete doesn't scan the table.
+    mediaObjectIndex: index("sync_run_items_media_object_id_idx").on(table.mediaObjectId),
+    previousMediaObjectIndex: index("sync_run_items_previous_media_object_id_idx").on(
+      table.previousMediaObjectId,
+    ),
   }),
 );
 

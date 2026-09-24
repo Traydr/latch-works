@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { type MediaThumbnailContext, readMediaThumbnailContext } from "./repository";
 import type { ShutterPreviewResult } from "./shutter-client";
 import { resolveVariantImageUrl, resolveVariantPreview } from "./variant-provider";
@@ -28,7 +29,10 @@ export async function redirectToMediaVariant(
   { mediaId, width }: { mediaId: string; width: number },
   dependencies: ShutterRedirectDependencies = defaultShutterRedirectDependencies,
 ): Promise<Response> {
-  const context = await dependencies.readThumbnailContext({ mediaId });
+  // A media id that is not a UUID names no entry; don't hand it to Postgres.
+  const context = z.uuid().safeParse(mediaId).success
+    ? await dependencies.readThumbnailContext({ mediaId })
+    : null;
 
   if (!context) {
     return new Response("Media not found", {

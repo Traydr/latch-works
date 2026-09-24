@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { z } from "zod";
 import { isRequestSessionValid } from "../server/auth/web-session-core";
 import { readMediaDeliveryRequest } from "../server/media/repository";
 import { resolveVariantOriginalUrl } from "../server/media/variant-provider";
@@ -16,12 +17,16 @@ export const Route = createFileRoute("/api/media/$mediaId/original")({
           });
         }
 
-        const media = await readMediaDeliveryRequest({
-          mediaId: params.mediaId,
-        });
+        // A media id that is not a UUID names no entry; don't hand it to Postgres.
+        const media = z.uuid().safeParse(params.mediaId).success
+          ? await readMediaDeliveryRequest({ mediaId: params.mediaId })
+          : null;
 
         if (!media) {
-          return new Response("Media not found", { status: 404 });
+          return new Response("Media not found", {
+            headers: { "Cache-Control": API_PRIVATE_CACHE_CONTROL },
+            status: 404,
+          });
         }
 
         let location: string;

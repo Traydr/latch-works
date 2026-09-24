@@ -10,3 +10,12 @@ export function createPaneViewStorageClient(): S3StorageClient {
     secretAccessKey: env.S3_SECRET_ACCESS_KEY,
   });
 }
+
+let sharedStorageClient: S3StorageClient | undefined;
+
+/** The one client request handlers share, created on first use; an S3 client pools its connections. */
+export function getPaneViewStorageClient(): S3StorageClient {
+  sharedStorageClient ??= createPaneViewStorageClient();
+
+  return sharedStorageClient;
+}

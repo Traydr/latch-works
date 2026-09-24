@@ -162,7 +162,7 @@ describe("finalizeSyncRun", () => {
         { input: { counts: { planned: 2, pushed: 2 }, status: "completed", syncRunId } },
         dependencies(),
       ),
-    ).rejects.toThrow("Unable to finalize sync run.");
+    ).rejects.toThrow("Sync run is already cancelled.");
     expect((await readRun(syncRunId)).status).toBe("cancelled");
   });
 
@@ -174,7 +174,7 @@ describe("finalizeSyncRun", () => {
         { input: { error: "1 item(s) failed during push", status: "failed", syncRunId } },
         dependencies(),
       ),
-    ).rejects.toThrow("Unable to finalize sync run.");
+    ).rejects.toThrow("Sync run is already completed.");
     expect((await readRun(syncRunId)).status).toBe("completed");
   });
 });

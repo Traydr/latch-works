@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
+import { withHttpErrors } from "../server/http/http-error";
 import { readJsonBody } from "../server/http/json-body";
 import {
   type SyncRouteDependencies,
@@ -40,6 +41,6 @@ export async function postSyncRuns(
 
 export const Route = createFileRoute("/api/sync/runs")({
   server: {
-    handlers: { POST: postSyncRuns },
+    handlers: { POST: withHttpErrors(postSyncRuns) },
   },
 });

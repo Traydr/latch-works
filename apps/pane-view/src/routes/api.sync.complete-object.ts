@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { withHttpErrors } from "../server/http/http-error";
 import { readJsonBody } from "../server/http/json-body";
 import {
   type SyncRouteDependencies,
@@ -16,14 +17,7 @@ export async function postCompleteObject(
     return unauthorized;
   }
 
-  try {
-    await dependencies.assertNoActiveCleanupJob();
-  } catch (error) {
-    return Response.json(
-      { error: error instanceof Error ? error.message : "Library wipe is active." },
-      { status: 409 },
-    );
-  }
+  await dependencies.assertNoActiveCleanupJob();
 
   const parsed = await readJsonBody(request, CompleteObjectBodySchema);
 
@@ -57,6 +51,6 @@ export async function postCompleteObject(
 
 export const Route = createFileRoute("/api/sync/complete-object")({
   server: {
-    handlers: { POST: postCompleteObject },
+    handlers: { POST: withHttpErrors(postCompleteObject) },
   },
 });

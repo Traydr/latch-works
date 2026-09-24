@@ -115,6 +115,8 @@ export async function headStoredObject({
     const response = await storage.client.send(
       new HeadObjectCommand({
         Bucket: storage.bucket,
+        // Without it S3 leaves out the stored checksum, so ChecksumSHA256 is never set.
+        ChecksumMode: "ENABLED",
         Key: key,
       }),
     );

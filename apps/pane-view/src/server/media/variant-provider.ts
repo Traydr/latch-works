@@ -14,7 +14,7 @@ import {
   type ShutterOriginalSource,
   type ShutterPreviewResult,
 } from "./shutter-client";
-import { createPaneViewStorageClient } from "./storage-client";
+import { getPaneViewStorageClient } from "./storage-client";
 
 /**
  * What a variant resolution needs from outside: the Shutter configuration,
@@ -33,7 +33,7 @@ export interface VariantProviderDependencies {
 
 const defaultVariantProviderDependencies: VariantProviderDependencies = {
   createSignedOriginalUrl: (request) =>
-    createSignedGetUrl({ ...request, storage: createPaneViewStorageClient() }),
+    createSignedGetUrl({ ...request, storage: getPaneViewStorageClient() }),
   environment: env,
   resolveShutterImageUrl,
   resolveShutterOriginalUrl,
