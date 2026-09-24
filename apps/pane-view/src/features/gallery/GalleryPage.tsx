@@ -61,6 +61,7 @@ function useGalleryPage() {
     pruneExcludedChildren,
     query,
     recursive: effectiveRecursive,
+    rememberedRecursive,
     selectMedia,
     selectedId,
     setComicMode,
@@ -458,6 +459,7 @@ function useGalleryPage() {
     page,
     parentPath,
     pathSheetOpen,
+    rememberedRecursive,
     scrollRequestKey,
     searchDraft,
     selectAdjacentMedia,
@@ -748,7 +750,7 @@ function GalleryOverlays(): JSX.Element {
         onUpdate={model.updateSettings}
         onUpdateRecursiveDefault={model.setRecursive}
         open={model.settingsOpen}
-        recursiveDefault={model.effectiveRecursive}
+        recursiveDefault={model.rememberedRecursive}
         settings={model.settings}
       />
       {model.hotkeysOpen ? <HotkeyOverlay onClose={() => model.setHotkeysOpen(false)} /> : null}

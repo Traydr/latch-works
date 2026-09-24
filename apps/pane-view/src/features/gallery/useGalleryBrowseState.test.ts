@@ -299,6 +299,17 @@ describe("applyBrowseIntent", () => {
     });
   });
 
+  it("at the root, recursive on keeps the remembered comic flag and off clears it", () => {
+    const root = resolveBrowseState({}, persisted(), true);
+    const comic = { comicMode: true, recursive: true };
+    expect(applyBrowseIntent(root, { next: true, type: "setRecursive" }, comic)).toEqual({
+      persisted: { comicMode: true, recursive: true },
+    });
+    expect(applyBrowseIntent(root, { next: false, type: "setRecursive" }, comic)).toEqual({
+      persisted: { comicMode: false, recursive: false },
+    });
+  });
+
   it("submits a trimmed search and clears it on empty", () => {
     expect(
       applyBrowseIntent(folder, { query: "  hero ", type: "submitSearch" }, remembered).navigate
