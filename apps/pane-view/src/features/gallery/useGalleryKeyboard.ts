@@ -11,10 +11,14 @@ export interface UseGalleryKeyboardOptions {
   displayPath: string;
   entries: GalleryBrowseEntry[];
   focusedEntryIndex: number;
+  /** More listing pages exist beyond the loaded entries. */
+  hasMore: boolean;
   hotkeysOpen: boolean;
   mobileSearchOpen: boolean;
   onActivateEntry: (entry: GalleryBrowseEntry) => void;
   onCloseOverlays: () => void;
+  /** Loads the next listing page; resolves to the keys it appended, in order. */
+  onLoadNextPage: () => Promise<{ appendedEntryKeys: string[] }>;
   onNavigateSiblingFolder: (offset: -1 | 1) => void;
   onNavigateToPath: (path: string) => void;
   onOpenHotkeys: () => void;
@@ -42,10 +46,12 @@ export function useGalleryKeyboard({
   displayPath,
   entries,
   focusedEntryIndex,
+  hasMore,
   hotkeysOpen,
   mobileSearchOpen,
   onActivateEntry,
   onCloseOverlays,
+  onLoadNextPage,
   onNavigateSiblingFolder,
   onNavigateToPath,
   onOpenHotkeys,
@@ -135,13 +141,15 @@ export function useGalleryKeyboard({
       const lastIndex = entries.length - 1;
       const lastRow = Math.floor(lastIndex / columnCount);
 
+      const focusResolvedKey = (key: string | null | undefined) => {
+        if (key && !focusEntryByKey(key)) {
+          pendingFocusKeyRef.current = key;
+        }
+      };
+
       const stepBeyond = (direction: -1 | 1) => {
         const currentKey = entries[focusedEntryIndex]?.key ?? null;
-        void onStepBeyondGrid(currentKey, direction).then((key) => {
-          if (key && !focusEntryByKey(key)) {
-            pendingFocusKeyRef.current = key;
-          }
-        });
+        void onStepBeyondGrid(currentKey, direction).then(focusResolvedKey);
       };
 
       if (nextIndex < 0) {
@@ -154,6 +162,20 @@ export function useGalleryKeyboard({
 
       if (dy > 0 && currentRow < lastRow) {
         applyFocus(lastIndex);
+
+        return;
+      }
+
+      // Down from the last loaded row with more to load: the row below is on
+      // the next page. Land in this column, or on the page's last entry if it
+      // is shorter.
+      if (dy > 0 && hasMore) {
+        const offset = nextIndex - entries.length;
+        void onLoadNextPage()
+          .then(({ appendedEntryKeys }) =>
+            focusResolvedKey(appendedEntryKeys[Math.min(offset, appendedEntryKeys.length - 1)]),
+          )
+          .catch(() => undefined);
 
         return;
       }
@@ -284,10 +306,12 @@ export function useGalleryKeyboard({
     entries,
     focusEntryByKey,
     focusedEntryIndex,
+    hasMore,
     hotkeysOpen,
     mobileSearchOpen,
     onActivateEntry,
     onCloseOverlays,
+    onLoadNextPage,
     onNavigateSiblingFolder,
     onNavigateToPath,
     onOpenHotkeys,
