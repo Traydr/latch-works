@@ -322,6 +322,7 @@ function useGalleryPage() {
     onSelectMedia: selectMedia,
     onStepBeyondGrid: stepBeyondGrid,
     pathSheetOpen,
+    readerOpen: activeComic !== null,
     setFocusedEntryIndex,
     requestScrollFocusedIntoView,
     settingsOpen,

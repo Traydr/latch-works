@@ -22,6 +22,8 @@ export interface UseGalleryKeyboardOptions {
    */
   onStepBeyondGrid: (currentKey: string | null, direction: -1 | 1) => Promise<string | null>;
   pathSheetOpen: boolean;
+  /** The comic reader is open; like the viewer, it owns the keyboard. */
+  readerOpen: boolean;
   setFocusedEntryIndex: (index: number | ((current: number) => number)) => void;
   requestScrollFocusedIntoView: () => void;
   settingsOpen: boolean;
@@ -46,6 +48,7 @@ export function useGalleryKeyboard({
   onSelectMedia,
   onStepBeyondGrid,
   pathSheetOpen,
+  readerOpen,
   setFocusedEntryIndex,
   requestScrollFocusedIntoView,
   settingsOpen,
@@ -247,14 +250,16 @@ export function useGalleryKeyboard({
         return;
       }
 
+      // The viewer and the reader own the keyboard, `?` included: the hotkey
+      // overlay would open underneath them.
+      if (viewerOpen || readerOpen) {
+        return;
+      }
+
       if (event.key === "?") {
         event.preventDefault();
         onOpenHotkeys();
 
-        return;
-      }
-
-      if (viewerOpen) {
         return;
       }
 
@@ -282,6 +287,7 @@ export function useGalleryKeyboard({
     onSelectMedia,
     onStepBeyondGrid,
     pathSheetOpen,
+    readerOpen,
     setFocusedEntryIndex,
     requestScrollFocusedIntoView,
     settingsOpen,
