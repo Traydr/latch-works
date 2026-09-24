@@ -2,6 +2,7 @@ import { Archive } from "lucide-react";
 import { type ReactNode, type RefObject, useEffect, useMemo, useRef } from "react";
 import type { GalleryBrowseEntry } from "@/features/gallery/gallery-browse-entry";
 import { BrowserEntryCard } from "./BrowserEntryCard";
+import { GALLERY_GRID_SCROLL_ID } from "./gallery-grid-scroll";
 import { useVirtualGridMetrics } from "./useVirtualGridMetrics";
 import { useWindowedThumbnailResolution } from "./useWindowedThumbnailResolution";
 
@@ -112,6 +113,7 @@ export function BrowserGrid({
       ref={mainRef}
       className="min-h-0 min-w-0 flex-1 overflow-auto px-5 pb-28 pt-5"
       aria-label="Archive browser"
+      data-scroll-restoration-id={GALLERY_GRID_SCROLL_ID}
     >
       {entries.length === 0 ? (
         <div className="grid min-h-60 place-items-center rounded-lg border border-dashed border-zinc-800 text-center">
