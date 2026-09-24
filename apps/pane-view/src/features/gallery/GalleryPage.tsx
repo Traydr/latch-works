@@ -29,7 +29,7 @@ import { buildBreadcrumbItems, getParentPath } from "@/features/gallery/browse-s
 import { FloatingToolbar } from "@/features/gallery/FloatingToolbar";
 import { GalleryBrowsePane } from "@/features/gallery/GalleryBrowsePane";
 import { GalleryGridSkeleton } from "@/features/gallery/GalleryGridSkeleton";
-import type { GalleryBrowseEntry } from "@/features/gallery/gallery-browse-entry";
+import { entryMedia, type GalleryBrowseEntry } from "@/features/gallery/gallery-browse-entry";
 import { useGalleryLayout } from "@/features/gallery/gallery-layout-context";
 import { MediaViewerModal } from "@/features/gallery/MediaViewerModal";
 import { useGalleryBrowse } from "@/features/gallery/useGalleryBrowse";
@@ -112,7 +112,51 @@ function useGalleryPage() {
     stepMedia,
   } = session;
 
-  const { viewerOpen, openViewer, closeViewer } = useGalleryViewerHandoff(selectMedia);
+  // Grid focus follows a selection made outside the grid keys (the viewer
+  // stepping, the detail panel's Prev/Next) once its entry has rendered: a
+  // step may have loaded the page the entry is on.
+  const entriesRef = useRef(entries);
+  entriesRef.current = entries;
+  const pendingFocusMediaIdRef = useRef<string | null>(null);
+
+  const focusMediaEntry = useCallback((mediaId: string): boolean => {
+    const index = entriesRef.current.findIndex((entry) => entryMedia(entry)?.id === mediaId);
+
+    if (index < 0) {
+      return false;
+    }
+
+    pendingFocusMediaIdRef.current = null;
+    setFocusedEntryIndex(index);
+
+    return true;
+  }, []);
+
+  const selectMediaAndFocus = useCallback(
+    (mediaId: string) => {
+      if (!focusMediaEntry(mediaId)) {
+        pendingFocusMediaIdRef.current = mediaId;
+      }
+
+      selectMedia(mediaId);
+    },
+    [focusMediaEntry, selectMedia],
+  );
+
+  useEffect(() => {
+    if (pendingFocusMediaIdRef.current) {
+      focusMediaEntry(pendingFocusMediaIdRef.current);
+    }
+  }, [entries, focusMediaEntry]);
+
+  // A new folder or search starts on its first entry. Sorting, shuffling, and
+  // mode toggles keep the scroll position, so they keep the focus index too.
+  useEffect(() => {
+    pendingFocusMediaIdRef.current = null;
+    setFocusedEntryIndex(0);
+  }, [displayPath, query]);
+
+  const { viewerOpen, openViewer, closeViewer } = useGalleryViewerHandoff(selectMediaAndFocus);
 
   const showDetailPanel = !isMobile && detailPanelOpen;
   const columnCountRef = useRef(4);
@@ -338,7 +382,7 @@ function useGalleryPage() {
   const selectAdjacentMedia = (offset: -1 | 1) => {
     void stepMedia(selected?.id ?? null, offset, settings.loopNavigation).then((nextId) => {
       if (nextId) {
-        selectMedia(nextId);
+        selectMediaAndFocus(nextId);
       }
     });
   };
@@ -465,7 +509,7 @@ function useGalleryPage() {
     selectAdjacentMedia,
     selected,
     selectedComic,
-    selectMedia,
+    selectMediaAndFocus,
     setActiveComic,
     setComicMode,
     setDetailPanelOpen,
@@ -813,7 +857,7 @@ function GalleryOverlays(): JSX.Element {
           loopVideos={model.settings.loopVideos}
           mediaId={model.selected.id}
           onClose={model.closeViewer}
-          onSelect={model.selectMedia}
+          onSelect={model.selectMediaAndFocus}
           rememberViewerPosition={model.settings.rememberViewerPosition}
           stepMedia={model.stepMedia}
         />
