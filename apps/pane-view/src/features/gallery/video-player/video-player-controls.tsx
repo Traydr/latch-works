@@ -13,9 +13,8 @@ import {
   useState,
 } from "react";
 import { VIDEO_SKIP_SECONDS } from "@/features/viewer/video-playback";
-import { videoSecondsToPositionMs } from "@/features/viewer/viewer-resume";
-import type { MediaViewerSessionModel } from "../MediaViewerSession";
 import { type PlaybackPosition, usePlaybackPosition } from "./playback-position";
+import type { VideoPlayback } from "./useVideoPlayback";
 
 export const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
 
@@ -130,10 +129,10 @@ export function IconButton({
 /** The ±10 s button: a circular arrow with the second count inside. */
 export function SkipButton({
   direction,
-  model,
+  playback,
 }: {
   direction: -1 | 1;
-  model: MediaViewerSessionModel;
+  playback: VideoPlayback;
 }): JSX.Element {
   const Icon = direction < 0 ? RotateCcw : RotateCw;
 
@@ -146,7 +145,7 @@ export function SkipButton({
       aria-label={label}
       title={label}
       className={`relative inline-flex shrink-0 cursor-pointer items-center justify-center rounded-full text-white/90 transition hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-violet-400 ${ICON_BUTTON_SIZE.sm}`}
-      onClick={() => model.skip(direction * VIDEO_SKIP_SECONDS)}
+      onClick={() => playback.skip(direction * VIDEO_SKIP_SECONDS)}
     >
       <Icon />
       <span
@@ -275,46 +274,25 @@ interface SeekControl {
 }
 
 /** Seek state and gestures against the session's video: tap to jump, drag to scrub. */
-function useSeek(model: MediaViewerSessionModel): SeekControl {
-  const { canSeek, duration, playbackPosition } = model;
-  const position = usePlaybackPosition(playbackPosition);
-  const frameRef = useRef<number | null>(null);
-  const pendingRef = useRef<number | null>(null);
+function useSeek(playback: VideoPlayback): SeekControl {
+  const { duration } = playback;
+  const canSeek = Number.isFinite(duration) && duration > 0;
+  const position = usePlaybackPosition(playback.position);
+  const commit = (fraction: number) => playback.commitSeek(fraction * duration);
 
-  const previewSeek = (fraction: number) => {
-    const target = fraction * duration;
-    model.isScrubbingRef.current = true;
-    playbackPosition.set(target);
-    pendingRef.current = target;
+  const drag = useFractionDrag({
+    disabled: !canSeek,
+    onCommit: commit,
+    onScrub: (fraction) => playback.scrubTo(fraction * duration),
+  });
 
-    if (frameRef.current === null) {
-      frameRef.current = window.requestAnimationFrame(() => {
-        frameRef.current = null;
-        const video = model.videoRef.current;
-
-        if (video && pendingRef.current !== null) {
-          video.currentTime = pendingRef.current;
-        }
-      });
-    }
-  };
-
-  const commit = (fraction: number) => {
-    const target = fraction * duration;
-    model.isScrubbingRef.current = false;
-    model.commitSeek(target);
-    model.scheduleSave({ positionMs: videoSecondsToPositionMs(target) });
-    void model.flushSave();
-  };
-
-  const drag = useFractionDrag({ disabled: !canSeek, onCommit: commit, onScrub: previewSeek });
   const fraction = canSeek ? Math.max(0, Math.min(1, position / duration)) : 0;
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
       event.preventDefault();
       event.stopPropagation();
-      model.skip(event.key === "ArrowLeft" ? -VIDEO_SKIP_SECONDS : VIDEO_SKIP_SECONDS);
+      playback.skip(event.key === "ArrowLeft" ? -VIDEO_SKIP_SECONDS : VIDEO_SKIP_SECONDS);
 
       return;
     }
@@ -344,8 +322,8 @@ function useSeek(model: MediaViewerSessionModel): SeekControl {
 }
 
 /** The horizontal seek bar: played fill, thumb, hover time on desktop. */
-export function SeekTrack({ model }: { model: MediaViewerSessionModel }): JSX.Element {
-  const seek = useSeek(model);
+export function SeekTrack({ playback }: { playback: VideoPlayback }): JSX.Element {
+  const seek = useSeek(playback);
   const { drag, fraction } = seek;
   const played = `${fraction * 100}%`;
 
@@ -441,10 +419,10 @@ export interface HoldToBoost {
  * of a tablet reaches it; the prev/next zones and the chrome sit above the
  * picture and take their own presses.
  */
-export function useHoldToBoost(model: MediaViewerSessionModel): HoldToBoost {
+export function useHoldToBoost(playback: VideoPlayback): HoldToBoost {
   const timerRef = useRef<number | null>(null);
   const suppressClickRef = useRef(false);
-  const { beginHoldBoost, endHoldBoost, holdBoosting, item, playing } = model;
+  const { beginHoldBoost, endHoldBoost, holdBoosting, playing } = playback;
 
   const clearTimer = () => {
     if (timerRef.current !== null) {
@@ -477,7 +455,7 @@ export function useHoldToBoost(model: MediaViewerSessionModel): HoldToBoost {
       },
       onPointerCancel: stop,
       onPointerDown: (event) => {
-        if (event.pointerType === "mouse" || item.mediaType !== "video" || !playing) return;
+        if (event.pointerType === "mouse" || !playing) return;
         clearTimer();
         timerRef.current = window.setTimeout(() => {
           timerRef.current = null;
