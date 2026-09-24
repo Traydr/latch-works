@@ -1,5 +1,6 @@
 import type { MediaItem } from "@latch-works/media-domain";
 import { cn } from "@/lib/utils";
+import { supportsGalleryThumbnail } from "./gallery-page-helpers";
 import { MediaPlaceholder } from "./MediaPlaceholder";
 import { PaneViewImage } from "./PaneViewImage";
 
@@ -14,11 +15,7 @@ export function Poster({
   priority?: boolean;
   resolvedThumbnailUrl?: string;
 }) {
-  const supportsThumbnail =
-    media.mediaType === "image" ||
-    media.mediaType === "gif" ||
-    media.mediaType === "video" ||
-    media.mediaType === "pdf";
+  const supportsThumbnail = supportsGalleryThumbnail(media);
 
   return (
     <div
