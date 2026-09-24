@@ -1,6 +1,7 @@
 import { and, asc, eq } from "drizzle-orm";
 import { type Database, db } from "../db";
 import { syncRuns } from "../db/schema";
+import { softDeleteEmptiedFolders } from "../sync/store";
 
 const manualCancelMessage = "Manually cancelled from Pane View management.";
 
@@ -32,31 +33,44 @@ export async function forceCancelSyncRun(
   { syncRunId }: { syncRunId: string },
   database: Database = db,
 ): Promise<{ cancelled: boolean }> {
-  const [syncRun] = await database
-    .update(syncRuns)
-    .set({
-      completedAt: new Date(),
-      error: manualCancelMessage,
-      status: "cancelled",
-    })
-    .where(and(eq(syncRuns.id, syncRunId), eq(syncRuns.status, "running")))
-    .returning({ id: syncRuns.id });
+  // A cancel ends the run like a finalize does, so it drops emptied folders too.
+  return database.transaction(async (tx) => {
+    const [syncRun] = await tx
+      .update(syncRuns)
+      .set({
+        completedAt: new Date(),
+        error: manualCancelMessage,
+        status: "cancelled",
+      })
+      .where(and(eq(syncRuns.id, syncRunId), eq(syncRuns.status, "running")))
+      .returning({ id: syncRuns.id });
 
-  return { cancelled: Boolean(syncRun) };
+    if (syncRun) {
+      await softDeleteEmptiedFolders(tx);
+    }
+
+    return { cancelled: Boolean(syncRun) };
+  });
 }
 
 export async function forceCancelAllRunningSyncRuns(
   database: Database = db,
 ): Promise<{ cancelledCount: number }> {
-  const cancelled = await database
-    .update(syncRuns)
-    .set({
-      completedAt: new Date(),
-      error: manualCancelMessage,
-      status: "cancelled",
-    })
-    .where(eq(syncRuns.status, "running"))
-    .returning({ id: syncRuns.id });
+  return database.transaction(async (tx) => {
+    const cancelled = await tx
+      .update(syncRuns)
+      .set({
+        completedAt: new Date(),
+        error: manualCancelMessage,
+        status: "cancelled",
+      })
+      .where(eq(syncRuns.status, "running"))
+      .returning({ id: syncRuns.id });
 
-  return { cancelledCount: cancelled.length };
+    if (cancelled.length > 0) {
+      await softDeleteEmptiedFolders(tx);
+    }
+
+    return { cancelledCount: cancelled.length };
+  });
 }

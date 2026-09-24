@@ -5,6 +5,7 @@ import { acquireLibraryMutationStartupLock } from "../db/library-coordination-lo
 import { folders, libraryEntries, maintenanceJobs, mediaObjects, syncRuns } from "../db/schema";
 import { testDatabaseForSuite } from "../library/test-db";
 import {
+  countEntriesUnderPath,
   type FolderDeleteDependencies,
   type FolderDeleteResult,
   softDeleteFolderSubtree,
@@ -202,6 +203,35 @@ describe("softDeleteFolderSubtree", () => {
     for (const row of [...stamps, ...folderStamps.filter((row) => row.deletedAt !== null)]) {
       expect(row.deletedAt).toEqual(deletedAt);
     }
+  });
+
+  it("leaves a folder whose path differs only in case alone", async () => {
+    const { db } = testDatabase();
+    await seedFolders();
+    const [object] = await db.select({ id: mediaObjects.id }).from(mediaObjects);
+
+    if (!object) throw new Error("seed media object missing");
+
+    await db.insert(folders).values([
+      { name: "Photos", path: "Photos" },
+      { name: "2026", parentPath: "Photos", path: "Photos/2026" },
+    ]);
+    await db.insert(libraryEntries).values({
+      filename: "seed.jpg",
+      logicalPath: "Photos/2026/seed.jpg",
+      mediaObjectId: object.id,
+      mtimeMs: 1_700_000_000_000,
+      parentPath: "Photos/2026",
+      size: 1024,
+    });
+
+    expect(await countEntriesUnderPath("photos", db)).toBe(2);
+
+    const results = await softDeleteFolderSubtree({ folderPaths: ["photos"] }, realDependencies());
+
+    expect(results).toEqual([{ entriesDeleted: 2, foldersDeleted: 3, path: "photos" }]);
+    expect(await liveEntryPaths()).toEqual(["Photos/2026/seed.jpg"]);
+    expect(await liveFolderPaths()).toEqual(["Photos", "Photos/2026"]);
   });
 
   it("rolls back when the folder update fails", async () => {

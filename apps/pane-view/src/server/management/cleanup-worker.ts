@@ -16,6 +16,7 @@ import {
   syncRuns,
   viewerState,
 } from "../db/schema";
+import { withAncestorPaths } from "../library/query-helpers";
 import { purgeShutterSource, type ShutterPurgeSource } from "../media/shutter-client";
 import { MaintenanceJobTypeSchema, parseMaintenanceProgress } from "./maintenance-progress";
 import { deleteMaintenanceObjects, getMaintenanceStorageClient } from "./maintenance-storage";
@@ -365,6 +366,24 @@ async function processSoftDeletedPurgeBatch(
             ),
           );
         await tx.delete(libraryEntries).where(isNotNull(libraryEntries.deletedAt));
+
+        // A folder row cascades to its child folders, so a deleted folder that
+        // still holds anything live (a re-synced file, a live subfolder) stays.
+        const liveEntryFolders = tx
+          .select({ path: libraryEntries.parentPath })
+          .from(libraryEntries)
+          .where(isNull(libraryEntries.deletedAt));
+
+        const liveFolders = tx
+          .select({ path: folders.path })
+          .from(folders)
+          .where(isNull(folders.deletedAt));
+
+        const occupiedPaths = withAncestorPaths(sql`${liveEntryFolders} union ${liveFolders}`);
+
+        await tx
+          .delete(folders)
+          .where(and(isNotNull(folders.deletedAt), sql`${folders.path} not in (${occupiedPaths})`));
       });
 
       await completeMaintenanceJob(jobId, { ...progress, phase: "completed" }, dependencies);

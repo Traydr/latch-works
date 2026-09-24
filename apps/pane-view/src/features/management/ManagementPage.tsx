@@ -55,6 +55,17 @@ export function ManagementPage() {
     }
   }, [overview?.activeCleanupJob?.id]);
   const runningSyncCount = overview?.runningSyncRuns.length ?? 0;
+
+  const softDeletedEntries = overview?.library.softDeletedEntries ?? 0;
+  const softDeletedFolders = overview?.library.softDeletedFolders ?? 0;
+  const hasPurgeTarget = softDeletedEntries > 0 || softDeletedFolders > 0;
+
+  // Deleted folders are purged with the items; name them only when nothing else is left.
+  const purgeTargetLabel =
+    softDeletedEntries === 0 && softDeletedFolders > 0
+      ? `${softDeletedFolders.toLocaleString()} deleted folder${softDeletedFolders === 1 ? "" : "s"}`
+      : `${softDeletedEntries.toLocaleString()} item${softDeletedEntries === 1 ? "" : "s"}`;
+
   const maintenanceBlocked = Boolean(runningSyncCount > 0 || overview?.activeCleanupJob);
 
   const blockReason =
@@ -119,13 +130,7 @@ export function ManagementPage() {
   };
 
   const handlePurgeSoftDeleted = async () => {
-    const count = overview?.library.softDeletedEntries ?? 0;
-
-    if (
-      !window.confirm(
-        `Permanently delete ${count.toLocaleString()} soft-deleted item${count === 1 ? "" : "s"}? This cannot be undone.`,
-      )
-    ) {
+    if (!window.confirm(`Permanently delete ${purgeTargetLabel}? This cannot be undone.`)) {
       return;
     }
 
@@ -292,16 +297,12 @@ export function ManagementPage() {
             separate cleanup action below.
           </p>
           <Button
-            disabled={
-              maintenanceBlocked ||
-              purgeSoftDeletedMutation.isPending ||
-              (overview?.library.softDeletedEntries ?? 0) === 0
-            }
+            disabled={maintenanceBlocked || purgeSoftDeletedMutation.isPending || !hasPurgeTarget}
             onClick={() => void handlePurgeSoftDeleted()}
             type="button"
             variant="destructive"
           >
-            Permanently delete {overview?.library.softDeletedEntries.toLocaleString() ?? 0} items
+            Permanently delete {purgeTargetLabel}
           </Button>
           {purgeSoftDeletedMutation.error ? (
             <p className="text-sm text-destructive">

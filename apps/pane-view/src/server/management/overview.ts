@@ -21,6 +21,7 @@ export interface ManagementOverview {
     activeFolders: number;
     collections: number;
     softDeletedEntries: number;
+    softDeletedFolders: number;
   };
   storage: {
     mediaObjectBytes: number;
@@ -33,6 +34,7 @@ export async function readManagementOverview(): Promise<ManagementOverview> {
     activeEntriesRow,
     softDeletedEntriesRow,
     activeFoldersRow,
+    softDeletedFoldersRow,
     collectionsRow,
     mediaObjectStats,
     runningSyncRuns,
@@ -41,6 +43,7 @@ export async function readManagementOverview(): Promise<ManagementOverview> {
     db.select({ value: count() }).from(libraryEntries).where(isNull(libraryEntries.deletedAt)),
     db.select({ value: count() }).from(libraryEntries).where(isNotNull(libraryEntries.deletedAt)),
     db.select({ value: count() }).from(folders).where(isNull(folders.deletedAt)),
+    db.select({ value: count() }).from(folders).where(isNotNull(folders.deletedAt)),
     db.select({ value: count() }).from(collections),
     db
       .select({
@@ -68,6 +71,7 @@ export async function readManagementOverview(): Promise<ManagementOverview> {
       activeFolders: activeFoldersRow[0]?.value ?? 0,
       collections: collectionsRow[0]?.value ?? 0,
       softDeletedEntries: softDeletedEntriesRow[0]?.value ?? 0,
+      softDeletedFolders: softDeletedFoldersRow[0]?.value ?? 0,
     },
     storage: {
       mediaObjectBytes: Number(mediaObjectStats[0]?.bytes ?? 0),

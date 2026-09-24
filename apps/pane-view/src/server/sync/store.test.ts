@@ -1,5 +1,5 @@
 import type { S3StorageClient, StoredObjectHead } from "@latch-works/media-storage";
-import { eq } from "drizzle-orm";
+import { eq, isNull } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { folders, libraryEntries, mediaObjects, syncRunItems, syncRuns } from "../db/schema";
@@ -315,5 +315,82 @@ describe("markRemoteDeleted", () => {
     const [entry] = await db.select().from(libraryEntries);
     expect(entry?.deletedAt).toBeNull();
     expect(await db.select().from(syncRunItems)).toHaveLength(1);
+  });
+});
+
+describe("folder lifecycle", () => {
+  async function upload(syncRunId: string, logicalPath: string): Promise<void> {
+    const filename = logicalPath.split("/").at(-1) ?? logicalPath;
+
+    await completeSyncedObject(
+      { input: { ...uploadInput, filename, logicalPath, syncRunId }, storage },
+      dependencies(),
+    );
+  }
+
+  async function finalize(syncRunId: string): Promise<void> {
+    await finalizeSyncRun({ input: { status: "completed", syncRunId } }, dependencies());
+  }
+
+  async function liveFolderPaths(): Promise<string[]> {
+    const rows = await testDatabase()
+      .db.select({ path: folders.path })
+      .from(folders)
+      .where(isNull(folders.deletedAt));
+
+    return rows.map((row) => row.path).sort();
+  }
+
+  it("brings a deleted folder back when its files are synced again", async () => {
+    const { db } = testDatabase();
+    const firstRun = await insertRun("running");
+    await upload(firstRun, "photos/2026/photo.jpg");
+    await finalize(firstRun);
+    // What Manage's folder delete leaves behind.
+    await db.update(libraryEntries).set({ deletedAt: new Date() });
+    await db.update(folders).set({ deletedAt: new Date() });
+
+    const secondRun = await insertRun("running");
+    await upload(secondRun, "photos/2026/photo.jpg");
+    await finalize(secondRun);
+
+    expect(await liveFolderPaths()).toEqual(["photos", "photos/2026"]);
+  });
+
+  it("soft-deletes folders a run emptied or renamed away, up the tree", async () => {
+    const seedRun = await insertRun("running");
+
+    for (const path of [
+      "photos/old/2026/photo.jpg",
+      "photos/keep/photo.jpg",
+      "Photos/photo.jpg",
+      "trips/photo.jpg",
+    ]) {
+      await upload(seedRun, path);
+    }
+
+    await finalize(seedRun);
+
+    const run = await insertRun("running");
+    // A local rename of photos/old to photos/new, and trips emptied outright.
+    await upload(run, "photos/new/2026/photo.jpg");
+    await markRemoteDeleted(
+      { logicalPath: "photos/old/2026/photo.jpg", syncRunId: run },
+      dependencies(),
+    );
+    await markRemoteDeleted({ logicalPath: "trips/photo.jpg", syncRunId: run }, dependencies());
+
+    // Nothing moves until the run finalizes.
+    expect(await liveFolderPaths()).toContain("photos/old/2026");
+
+    await finalize(run);
+
+    expect(await liveFolderPaths()).toEqual([
+      "Photos",
+      "photos",
+      "photos/keep",
+      "photos/new",
+      "photos/new/2026",
+    ]);
   });
 });
