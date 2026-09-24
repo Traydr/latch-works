@@ -9,6 +9,8 @@ import { cn } from "@/lib/utils";
 export interface GalleryBrowsePaneProps {
   columnCountRef: MutableRefObject<number>;
   comicMode: boolean;
+  /** Why the selected item's last delete failed, if it did. */
+  deleteError: string | null;
   deletedEntryIds: ReadonlySet<string>;
   deletingEntryIds: ReadonlySet<string>;
   entries: GalleryBrowseEntry[];
@@ -40,6 +42,7 @@ export interface GalleryBrowsePaneProps {
 export function GalleryBrowsePane({
   columnCountRef,
   comicMode,
+  deleteError,
   deletedEntryIds,
   deletingEntryIds,
   entries,
@@ -144,6 +147,7 @@ export function GalleryBrowsePane({
       {showDetailPanel ? (
         <div className="hidden min-h-0 min-w-0 max-w-[360px] shrink-0 lg:block">
           <DetailPanel
+            deleteError={deleteError}
             isDeleted={selected ? deletedEntryIds.has(selected.id) : false}
             isDeleting={selected ? deletingEntryIds.has(selected.id) : false}
             onCopyPath={() => {

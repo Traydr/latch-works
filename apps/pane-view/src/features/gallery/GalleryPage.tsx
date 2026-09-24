@@ -86,6 +86,7 @@ function useGalleryPage() {
   const [scrollRequestKey, setScrollRequestKey] = useState(0);
   const [deletingEntryIds, setDeletingEntryIds] = useState<ReadonlySet<string>>(() => new Set());
   const [deletedEntryIds, setDeletedEntryIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [deleteError, setDeleteError] = useState<{ entryId: string; message: string } | null>(null);
 
   const session = useGalleryBrowse({
     excludedMediaIds: deletedEntryIds,
@@ -389,6 +390,11 @@ function useGalleryPage() {
     });
   };
 
+  // A delete settles after the render it started in: it reads the live
+  // browse, sequence, and selection from here.
+  const liveDeleteRef = useRef({ browseKey, navigableMedia, selectedId: selected?.id ?? null });
+  liveDeleteRef.current = { browseKey, navigableMedia, selectedId: selected?.id ?? null };
+
   const deleteSelectedMedia = () => {
     if (!selected || deletedEntryIds.has(selected.id) || deletingEntryIds.has(selected.id)) {
       return;
@@ -403,34 +409,38 @@ function useGalleryPage() {
     }
 
     const entryId = selected.id;
-    const currentNavigableIndex = navigableMedia.findIndex((item) => item.id === entryId);
+    const startBrowseKey = browseKey;
 
+    setDeleteError(null);
     setDeletingEntryIds((current) => new Set([...current, entryId]));
 
     void (async () => {
       try {
-        const result = await deleteEntryMutation.mutateAsync(entryId);
-
-        if (!result.deleted) {
-          return;
-        }
+        // `deleted: false` means no live row matched: the item is already
+        // gone, so hide it like a delete that just landed.
+        await deleteEntryMutation.mutateAsync(entryId);
 
         setDeletedEntryIds((current) => new Set([...current, entryId]));
 
-        const remaining = navigableMedia.filter((item) => item.id !== entryId);
+        // Move to the neighbour only if the user has not moved on meanwhile.
+        const live = liveDeleteRef.current;
 
-        const nextIndex =
-          remaining.length > 0
-            ? currentNavigableIndex >= 0
-              ? Math.min(currentNavigableIndex, remaining.length - 1)
-              : 0
-            : -1;
+        if (live.browseKey !== startBrowseKey || live.selectedId !== entryId) {
+          return;
+        }
 
-        const next = nextIndex >= 0 ? remaining[nextIndex] : undefined;
+        const liveIndex = live.navigableMedia.findIndex((item) => item.id === entryId);
+        const remaining = live.navigableMedia.filter((item) => item.id !== entryId);
+        const next = remaining[liveIndex >= 0 ? Math.min(liveIndex, remaining.length - 1) : 0];
 
         if (next) {
-          selectMedia(next.id);
+          selectMediaAndFocus(next.id);
         }
+      } catch (error) {
+        setDeleteError({
+          entryId,
+          message: error instanceof Error ? error.message : "Delete failed.",
+        });
       } finally {
         setDeletingEntryIds((current) => {
           const next = new Set(current);
@@ -478,6 +488,7 @@ function useGalleryPage() {
     contentBrowseKey,
     columnCountRef,
     currentFolderName,
+    deleteError,
     deleteSelectedMedia,
     deletedEntryIds,
     deletingEntryIds,
@@ -728,6 +739,11 @@ function GalleryContent(): JSX.Element {
           <GalleryBrowsePane
             columnCountRef={model.columnCountRef}
             comicMode={model.effectiveComicMode}
+            deleteError={
+              model.deleteError && model.deleteError.entryId === model.selected?.id
+                ? model.deleteError.message
+                : null
+            }
             deletedEntryIds={model.deletedEntryIds}
             deletingEntryIds={model.deletingEntryIds}
             entries={model.entries}

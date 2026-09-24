@@ -9,6 +9,7 @@ import { PaneViewImage } from "./PaneViewImage";
 const detailPreviewWidth = 360;
 
 interface DetailPanelProps {
+  deleteError?: string | null;
   isDeleted?: boolean;
   isDeleting?: boolean;
   onCopyPath: () => void;
@@ -22,6 +23,7 @@ interface DetailPanelProps {
 }
 
 export function DetailPanel({
+  deleteError = null,
   isDeleted = false,
   isDeleting = false,
   onCopyPath,
@@ -130,6 +132,9 @@ export function DetailPanel({
               <Trash2 className="size-4" />
               Delete
             </Button>
+          ) : null}
+          {showDelete && deleteError ? (
+            <p className="text-sm text-destructive">{deleteError}</p>
           ) : null}
 
           <dl className="grid min-w-0 max-w-full gap-3 text-sm">
