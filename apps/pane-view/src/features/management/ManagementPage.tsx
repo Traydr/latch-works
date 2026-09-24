@@ -19,6 +19,7 @@ import {
   useSyncRunHistoryQuery,
   useWipeLibraryMutation,
 } from "./management-queries";
+import { countFolderEntries } from "./management-service";
 import { SyncRunHistoryTable } from "./SyncRunHistoryTable";
 
 export function ManagementPage() {
@@ -44,6 +45,7 @@ export function ManagementPage() {
   > | null>(null);
 
   const [folderSnapshotError, setFolderSnapshotError] = useState<string | null>(null);
+  const [folderCountError, setFolderCountError] = useState<string | null>(null);
 
   const overview = overviewQuery.data;
   const activeJobId = trackedJobId ?? overview?.activeCleanupJob?.id ?? null;
@@ -115,8 +117,35 @@ export function ManagementPage() {
   }, [overview]);
 
   const handleDeleteFolders = async () => {
-    await deleteFoldersMutation.mutateAsync(selectedFolders);
-    setSelectedFolders([]);
+    setFolderCountError(null);
+    let entryCount: number;
+
+    try {
+      const result = await countFolderEntries({ data: { folderPaths: selectedFolders } });
+      entryCount = result.count;
+    } catch (error) {
+      setFolderCountError(error instanceof Error ? error.message : "Unable to count folder items.");
+
+      return;
+    }
+
+    const folderCount = selectedFolders.length;
+
+    if (
+      !window.confirm(
+        `Delete ${folderCount.toLocaleString()} folder${folderCount === 1 ? "" : "s"} and the ${entryCount.toLocaleString()} item${entryCount === 1 ? "" : "s"} inside? Their originals remain until deleted items are purged.`,
+      )
+    ) {
+      return;
+    }
+
+    // The mutation's error renders below the button.
+    deleteFoldersMutation.mutate(selectedFolders, {
+      onSuccess: () => {
+        setSelectedFolders([]);
+        void loadFolders();
+      },
+    });
   };
 
   const handleWipe = async () => {
@@ -286,6 +315,16 @@ export function ManagementPage() {
               >
                 Delete selected folders
               </Button>
+              {folderCountError ? (
+                <p className="text-sm text-destructive">{folderCountError}</p>
+              ) : null}
+              {deleteFoldersMutation.error ? (
+                <p className="text-sm text-destructive">
+                  {deleteFoldersMutation.error instanceof Error
+                    ? deleteFoldersMutation.error.message
+                    : "Folder delete failed."}
+                </p>
+              ) : null}
             </>
           ) : null}
         </section>
