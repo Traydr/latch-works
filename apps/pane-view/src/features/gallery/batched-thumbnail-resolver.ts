@@ -1,7 +1,5 @@
-import {
-  type MediaDeliveryBatchResult,
-  resolveMediaDeliveryUrls,
-} from "@/features/media/media-delivery-service";
+import { resolveMediaDeliveryUrls } from "@/features/media/media-delivery-service";
+import type { MediaDeliveryBatchResult } from "../../server/media/resolve-delivery-url";
 import { GALLERY_THUMBNAIL_SIZE } from "./gallery-thumbnail-size";
 
 export interface GalleryThumbnailRequest {
@@ -110,16 +108,6 @@ function applyResult(state: ThumbnailResolverState, result: MediaDeliveryBatchRe
   });
 
   if (result.status === "ready") {
-    if (!result.url) {
-      setCacheEntry(state, key, {
-        inFlight: false,
-        nextRetryAt: Date.now() + pendingRetryDelayMs(state, key),
-        status: "pending",
-      });
-
-      return;
-    }
-
     state.attempts.delete(key);
     setCacheEntry(state, key, {
       status: "ready",

@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import type { MediaDeliveryBatchResult } from "../../server/media/resolve-delivery-url";
 
 const resolveMediaDeliveryRequestSchema = z.object({
   mediaId: z.uuid(),
@@ -10,17 +11,6 @@ const resolveMediaDeliveryRequestSchema = z.object({
 const resolveMediaDeliveryBatchRequestSchema = z.object({
   items: z.array(resolveMediaDeliveryRequestSchema).min(1).max(48),
 });
-
-export type MediaDeliveryBatchResult =
-  | { mediaId: string; retryAfterMs: number; size?: number; status: "pending"; variant: string }
-  | {
-      mediaId: string;
-      size?: number;
-      status: "ready";
-      url?: string;
-      variant: string;
-    }
-  | { mediaId: string; size?: number; status: "failed"; variant: string };
 
 export const resolveMediaDeliveryUrl = createServerFn({ method: "GET" })
   .validator(resolveMediaDeliveryRequestSchema)
@@ -42,10 +32,6 @@ export const resolveMediaDeliveryUrl = createServerFn({ method: "GET" })
     });
   });
 
-function batchKey(item: z.infer<typeof resolveMediaDeliveryRequestSchema>): string {
-  return `${item.variant}:${item.mediaId}:${item.size ?? "default"}`;
-}
-
 export const resolveMediaDeliveryUrls = createServerFn({ method: "POST" })
   .validator(resolveMediaDeliveryBatchRequestSchema)
   .handler(async ({ data }): Promise<{ results: MediaDeliveryBatchResult[] }> => {
@@ -59,21 +45,7 @@ export const resolveMediaDeliveryUrls = createServerFn({ method: "POST" })
       "../../server/media/resolve-delivery-url"
     );
 
-    const seen = new Set<string>();
-
-    const uniqueItems = data.items.filter((item) => {
-      const key = batchKey(item);
-
-      if (seen.has(key)) {
-        return false;
-      }
-
-      seen.add(key);
-
-      return true;
-    });
-
-    const results = await resolveMediaDeliveryUrlsForVariants(uniqueItems);
+    const results = await resolveMediaDeliveryUrlsForVariants(data.items);
 
     return { results };
   });
