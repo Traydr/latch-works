@@ -41,6 +41,7 @@ import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { type CopyStatus, useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useViewerChromeIdle } from "@/hooks/use-viewer-chrome-idle";
+import { closeDialog, openDialog } from "@/lib/modal-dialog";
 import { isTextInputTarget } from "./browse-search";
 import { GALLERY_PREVIEW_SIZE } from "./gallery-preview-size";
 import { PaneViewImage } from "./PaneViewImage";
@@ -1055,12 +1056,6 @@ const ViewerToolbarButton = forwardRef<
   );
 });
 
-/**
- * The DOM lib declares these on every dialog; jsdom does not have them, so
- * the viewer reads them as optional and falls back.
- */
-type OptionalModalDialog = Partial<Pick<HTMLDialogElement, "showModal" | "close">>;
-
 type FullscreenHost = Partial<Pick<HTMLElement, "requestFullscreen">> &
   Partial<{ webkitRequestFullscreen: () => Promise<void> | void }>;
 
@@ -1081,23 +1076,3 @@ function fullscreenElementOf(document: Document): Element | null {
 
 /** iPhone Safari's video-only fullscreen entry point, absent from the DOM lib. */
 type WebkitFullscreenVideo = HTMLVideoElement & Partial<{ webkitEnterFullscreen: () => void }>;
-
-function openDialog(dialog: HTMLDialogElement): void {
-  const modal: OptionalModalDialog = dialog;
-
-  if (modal.showModal) {
-    modal.showModal();
-  } else {
-    dialog.setAttribute("open", "");
-  }
-}
-
-function closeDialog(dialog: HTMLDialogElement): void {
-  const modal: OptionalModalDialog = dialog;
-
-  if (modal.close) {
-    modal.close();
-  } else {
-    dialog.removeAttribute("open");
-  }
-}

@@ -1,8 +1,9 @@
 import type { ComicEntry } from "@latch-works/media-domain";
 import { ArrowUp, X } from "lucide-react";
-import { type JSX, useEffect, useRef, useState } from "react";
+import { type JSX, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 import { ResolvedMediaImage } from "@/features/gallery/ResolvedMediaImage";
 import { useViewerChromeIdle } from "@/hooks/use-viewer-chrome-idle";
+import { closeDialog, openDialog } from "@/lib/modal-dialog";
 
 interface ComicReaderProps {
   comic: ComicEntry;
@@ -10,6 +11,7 @@ interface ComicReaderProps {
 }
 
 export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
+  const dialogRef = useRef<HTMLDialogElement | null>(null);
   const readerRef = useRef<HTMLDivElement | null>(null);
   const pageRefs = useRef<Array<HTMLDivElement | null>>([]);
   const currentPageIndexRef = useRef(0);
@@ -24,43 +26,68 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
     setCurrentPageIndex(index);
   };
 
+  // Opened before paint so the gallery never shows through for a frame.
+  useLayoutEffect(() => {
+    const dialog = dialogRef.current;
+    const active = document.activeElement;
+    const openedFrom = active instanceof HTMLElement ? active : null;
+
+    if (dialog && !dialog.open) {
+      openDialog(dialog);
+    }
+
+    // The pages, not a button, take focus: Space and Page Down keep scrolling them.
+    readerRef.current?.focus({ preventScroll: true });
+
+    return () => {
+      if (dialog) {
+        closeDialog(dialog);
+      }
+
+      openedFrom?.focus();
+    };
+  }, []);
+
+  const handleKeyDown = useEffectEvent((event: KeyboardEvent) => {
+    revealChrome();
+
+    if (event.key === "Escape") {
+      event.preventDefault();
+      onClose();
+
+      return;
+    }
+
+    const delta =
+      event.key === "ArrowRight" || event.key.toLowerCase() === "e"
+        ? 1
+        : event.key === "ArrowLeft" || event.key.toLowerCase() === "q"
+          ? -1
+          : 0;
+
+    if (delta === 0) {
+      return;
+    }
+
+    event.preventDefault();
+
+    const nextIndex = Math.max(
+      0,
+      Math.min(comic.pages.length - 1, currentPageIndexRef.current + delta),
+    );
+
+    setCurrentPage(nextIndex);
+
+    window.requestAnimationFrame(() => {
+      pageRefs.current[nextIndex]?.scrollIntoView({ block: "start", behavior: "smooth" });
+    });
+  });
+
   useEffect(() => {
-    const scrollToPage = (index: number): void => {
-      const nextIndex = Math.max(0, Math.min(comic.pages.length - 1, index));
-      setCurrentPage(nextIndex);
+    window.addEventListener("keydown", handleKeyDown);
 
-      window.requestAnimationFrame(() => {
-        const page = pageRefs.current[nextIndex];
-        page?.scrollIntoView({ block: "start", behavior: "smooth" });
-      });
-    };
-
-    const keyListener = (event: KeyboardEvent): void => {
-      revealChrome();
-
-      if (event.key === "Escape") {
-        onClose();
-
-        return;
-      }
-
-      if (event.key === "ArrowRight" || event.key.toLowerCase() === "e") {
-        event.preventDefault();
-        scrollToPage(currentPageIndexRef.current + 1);
-
-        return;
-      }
-
-      if (event.key === "ArrowLeft" || event.key.toLowerCase() === "q") {
-        event.preventDefault();
-        scrollToPage(currentPageIndexRef.current - 1);
-      }
-    };
-
-    window.addEventListener("keydown", keyListener);
-
-    return () => window.removeEventListener("keydown", keyListener);
-  }, [comic.pages.length, onClose, revealChrome]);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   useEffect(() => {
     const reader = readerRef.current;
@@ -120,8 +147,14 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
   };
 
   return (
-    <div
-      className={`fixed inset-0 z-50 bg-zinc-950 text-zinc-100 ${chromeVisible ? "" : "cursor-none"}`}
+    <dialog
+      ref={dialogRef}
+      aria-label={`Reader for ${comic.name}`}
+      className={`fixed inset-0 z-50 m-0 h-dvh max-h-none w-screen max-w-none border-0 bg-zinc-950 p-0 text-zinc-100 ${chromeVisible ? "" : "cursor-none"}`}
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
       onMouseMove={revealChrome}
       onPointerDown={revealChrome}
     >
@@ -159,7 +192,11 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
         </div>
       </div>
 
-      <div ref={readerRef} className="h-full overflow-auto px-3 pb-6 pt-3">
+      <div
+        ref={readerRef}
+        className="h-full overflow-auto px-3 pb-6 pt-3 outline-none"
+        tabIndex={-1}
+      >
         <div className="mx-auto flex w-[min(100%,980px)] flex-col items-center gap-3">
           {comic.pages.map((page, index) => (
             <div
@@ -181,6 +218,6 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
           ))}
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }

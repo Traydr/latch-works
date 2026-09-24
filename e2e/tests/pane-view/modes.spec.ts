@@ -186,9 +186,9 @@ test.describe("comic mode", () => {
 
     if (!firstPage || !lastPage) throw new Error("comic without pages");
     const pageName = (path: string) => path.slice(path.lastIndexOf("/") + 1);
-    // The detail panel also shows the cover; scope to the reader overlay. Every page is
+    // The detail panel also shows the cover; scope to the reader dialog. Every page is
     // rendered in reading order.
-    const reader = page.locator("div.fixed.inset-0").filter({ hasText: /\/\d+ pages/ });
+    const reader = page.getByRole("dialog", { name: `Reader for ${alpha.name}` });
     await expect
       .poll(() =>
         reader
@@ -196,7 +196,7 @@ test.describe("comic mode", () => {
           .evaluateAll((images) => images.map((image) => image.getAttribute("alt"))),
       )
       .toEqual(alpha.pages.map(pageName));
-    await page.getByRole("button", { name: "Close", exact: true }).click();
+    await reader.getByRole("button", { name: "Close", exact: true }).click();
     await expect(page.getByText(/\/\d+ pages/)).toHaveCount(0);
   });
 
