@@ -25,6 +25,7 @@ import {
   type ShutterPurgeSource,
   shutterPurgeReadiness,
 } from "../media/shutter-client";
+import { getPaneViewStorageClient } from "../media/storage-client";
 import {
   type MaintenanceJobType,
   MaintenanceJobTypeSchema,
@@ -32,7 +33,7 @@ import {
   ORPHAN_SWEEP_PREFIX,
   parseMaintenanceProgress,
 } from "./maintenance-progress";
-import { deleteMaintenanceObjects, getMaintenanceStorageClient } from "./maintenance-storage";
+import { deleteMaintenanceObjects } from "./maintenance-storage";
 import {
   liveShutterSourceCondition,
   orphanedMediaObjectCondition,
@@ -82,9 +83,9 @@ export interface MaintenanceWorkerDependencies {
 const defaultMaintenanceWorkerDependencies: MaintenanceWorkerDependencies = {
   claimJobBatch: (jobId, batch) => claimMaintenanceJobBatch(db, jobId, batch),
   database: db,
-  deleteObjects: deleteMaintenanceObjects,
+  deleteObjects: (keys) => deleteMaintenanceObjects(keys),
   listObjectsByPrefix: (request) =>
-    listStoredObjectsByPrefix({ ...request, storage: getMaintenanceStorageClient() }),
+    listStoredObjectsByPrefix({ ...request, storage: getPaneViewStorageClient() }),
   purgeShutterSource,
   shutterPurgeReadiness: () => shutterPurgeReadiness(),
 };
