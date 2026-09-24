@@ -29,5 +29,5 @@ function isConfiguredOwnerSession(
 ): boolean {
   const owner = readConfiguredOwner();
 
-  return Boolean(owner && session && session.user.email === owner.email);
+  return Boolean(owner && session && session.user.email.toLowerCase() === owner.email);
 }

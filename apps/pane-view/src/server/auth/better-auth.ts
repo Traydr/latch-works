@@ -129,6 +129,9 @@ function createAuthDatabase() {
   });
 }
 
+/** Lowercased because Better Auth stores and looks up emails lowercased. */
 function toOwnerEmail(username: string): string {
-  return username.includes("@") ? username.toLowerCase() : `${username}@pane-view.local`;
+  const email = username.includes("@") ? username : `${username}@pane-view.local`;
+
+  return email.toLowerCase();
 }
