@@ -16,7 +16,7 @@ import {
   syncRuns,
 } from "../db/schema";
 import { HttpError } from "../http/http-error";
-import { withAncestorPaths } from "../library/query-helpers";
+import { withAncestorPaths } from "../library/folder-path-sql";
 import { assertNoActiveCleanupJob } from "../management/guards";
 import { getPaneViewStorageClient } from "../media/storage-client";
 import { normalizeSyncLogicalPath, validateSyncLogicalPath } from "./validation";

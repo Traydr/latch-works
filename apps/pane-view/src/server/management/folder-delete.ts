@@ -1,9 +1,9 @@
 import { toArchivePath, trimTrailingSlash } from "@latch-works/media-domain";
-import { and, count, eq, isNull, like, or, type SQL } from "drizzle-orm";
+import { and, count, eq, isNull, or, type SQL } from "drizzle-orm";
 import { type Database, db } from "../db";
 import { acquireLibraryMutationStartupLock } from "../db/library-coordination-lock";
 import { folders, libraryEntries } from "../db/schema";
-import { escapeLikePattern } from "../library/query-helpers";
+import { isAtOrUnderPath, isUnderPath } from "../library/folder-path-sql";
 import { assertNoActiveCleanupJob, assertNoActiveSyncRun } from "./guards";
 
 /**
@@ -47,16 +47,11 @@ function assertDeletableFolderPath(path: string): void {
   }
 }
 
-/**
- * Live entries in the folder at `path` or beneath it. Case-sensitive like the
- * stored paths: `photos` must not reach `Photos/…`.
- */
+/** Live entries in the folder at `path` or beneath it. */
 function liveEntriesUnderPath(path: string): SQL | undefined {
-  const pattern = `${escapeLikePattern(path)}/%`;
-
   return and(
     isNull(libraryEntries.deletedAt),
-    or(eq(libraryEntries.parentPath, path), like(libraryEntries.logicalPath, pattern)),
+    or(eq(libraryEntries.parentPath, path), isUnderPath(libraryEntries.logicalPath, path)),
   );
 }
 
@@ -116,9 +111,6 @@ export async function softDeleteFolderSubtree(
     const results: FolderDeleteResult[] = [];
 
     for (const path of normalizedPaths) {
-      // Case-sensitive like the stored paths: deleting `photos` must not reach `Photos/…`.
-      const pattern = `${escapeLikePattern(path)}/%`;
-
       // react-doctor-disable-next-line react-doctor/async-await-in-loop -- Overlapping folder selections must be updated in deterministic input order on one transaction.
       const deletedEntries = await tx
         .update(libraryEntries)
@@ -130,9 +122,7 @@ export async function softDeleteFolderSubtree(
       const deletedFolders = await tx
         .update(folders)
         .set({ deletedAt: now })
-        .where(
-          and(isNull(folders.deletedAt), or(eq(folders.path, path), like(folders.path, pattern))),
-        )
+        .where(and(isNull(folders.deletedAt), isAtOrUnderPath(folders.path, path)))
         .returning({ id: folders.id });
 
       results.push({

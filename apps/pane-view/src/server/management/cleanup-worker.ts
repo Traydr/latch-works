@@ -17,7 +17,7 @@ import {
   syncRuns,
   viewerState,
 } from "../db/schema";
-import { withAncestorPaths } from "../library/query-helpers";
+import { withAncestorPaths } from "../library/folder-path-sql";
 import {
   purgeShutterSource,
   SHUTTER_PURGE_INCOMPLETE_MESSAGE,
