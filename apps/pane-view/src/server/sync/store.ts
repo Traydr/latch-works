@@ -356,12 +356,18 @@ export function collectContainingFolderPaths(path: string): string[] {
   return folders;
 }
 
+/**
+ * Holds the run row FOR SHARE until the write's transaction ends, so a
+ * force-cancel waits for the write instead of letting a purge scheduled after
+ * the cancel miss the entry it relinks.
+ */
 async function assertWritableSyncRun(tx: SyncDbClient, syncRunId: string): Promise<void> {
   const [syncRun] = await tx
     .select({ id: syncRuns.id, status: syncRuns.status })
     .from(syncRuns)
     .where(eq(syncRuns.id, syncRunId))
-    .limit(1);
+    .limit(1)
+    .for("share");
 
   if (!syncRun) {
     throw new HttpError(404, "Sync run not found.");
