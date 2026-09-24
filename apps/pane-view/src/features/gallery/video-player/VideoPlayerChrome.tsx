@@ -3,6 +3,8 @@ import { type JSX, type ReactNode, useRef, useState } from "react";
 import type { MediaViewerSessionModel } from "../MediaViewerSession";
 import {
   ChromeRegion,
+  canSetVideoVolume,
+  ElapsedClock,
   formatClock,
   formatSpeed,
   IconButton,
@@ -11,7 +13,6 @@ import {
   SPEEDS,
   useFractionDrag,
   useOutsideClose,
-  useSeek,
   volumeIconFor,
 } from "./video-player-controls";
 
@@ -28,8 +29,8 @@ export interface VideoPlayerChromeProps {
  * fullscreen, close and prev/next stay in the viewer's shared chrome.
  */
 export function VideoPlayerChrome({ model }: VideoPlayerChromeProps): JSX.Element {
-  const seek = useSeek(model);
   const [open, setOpen] = useState<CapsulePanel | null>(null);
+  const [volumeSettable] = useState(canSetVideoVolume);
   const capsuleRef = useRef<HTMLDivElement | null>(null);
   useOutsideClose(capsuleRef, open !== null, () => setOpen(null));
   const toggle = (which: CapsulePanel) => setOpen((current) => (current === which ? null : which));
@@ -70,21 +71,25 @@ export function VideoPlayerChrome({ model }: VideoPlayerChromeProps): JSX.Elemen
               <SkipButton direction={1} model={model} />
             </div>
             <div className="order-last flex basis-full items-center gap-2 px-1 text-xs tabular-nums text-white/80 sm:order-none sm:basis-auto sm:flex-1">
-              <span className="w-9 shrink-0">{formatClock(model.position)}</span>
-              <SeekTrack seek={seek} />
+              <ElapsedClock position={model.playbackPosition} />
+              <SeekTrack model={model} />
               <span className="w-9 shrink-0 text-right">{formatClock(model.duration)}</span>
             </div>
             <div className="ml-auto flex items-center gap-0.5 sm:ml-0">
               <div className="hidden items-center gap-0.5 sm:flex">
-                <Popup open={open === "volume"} panel={<VolumePanel model={model} />}>
-                  <IconButton
-                    active={open === "volume"}
-                    icon={volumeIconFor(level)}
-                    label="Volume"
-                    onClick={() => toggle("volume")}
-                    size="sm"
-                  />
-                </Popup>
+                {volumeSettable ? (
+                  <Popup open={open === "volume"} panel={<VolumePanel model={model} />}>
+                    <IconButton
+                      active={open === "volume"}
+                      icon={volumeIconFor(level)}
+                      label="Volume"
+                      onClick={() => toggle("volume")}
+                      size="sm"
+                    />
+                  </Popup>
+                ) : (
+                  <MuteButton model={model} />
+                )}
                 <Popup
                   open={open === "speed"}
                   panel={<SpeedPanel model={model} onPick={() => setOpen(null)} />}
@@ -92,7 +97,6 @@ export function VideoPlayerChrome({ model }: VideoPlayerChromeProps): JSX.Elemen
                   <button
                     type="button"
                     aria-label="Playback speed"
-                    aria-haspopup="menu"
                     aria-expanded={open === "speed"}
                     title="Playback speed"
                     className={`inline-flex h-8 min-w-9 cursor-pointer items-center justify-center rounded-full px-1.5 text-[11px] font-semibold tabular-nums transition hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-violet-400 ${model.speed === 1 && open !== "speed" ? "text-white/90" : "text-violet-300"}`}
@@ -103,7 +107,11 @@ export function VideoPlayerChrome({ model }: VideoPlayerChromeProps): JSX.Elemen
                 </Popup>
               </div>
               <div className="sm:hidden">
-                <Popup open={open === "settings"} panel={<SettingsPanel model={model} />} wide>
+                <Popup
+                  open={open === "settings"}
+                  panel={<SettingsPanel model={model} volumeSettable={volumeSettable} />}
+                  wide
+                >
                   <IconButton
                     active={open === "settings" || model.speed !== 1 || model.muted}
                     icon={Settings}
@@ -201,14 +209,20 @@ function VolumePanel({ model }: VideoPlayerChromeProps): JSX.Element {
         </div>
       </div>
       <span className="text-[11px] tabular-nums text-white/60">{Math.round(level * 100)}%</span>
-      <IconButton
-        active={model.muted}
-        icon={volumeIconFor(model.muted ? 0 : 1)}
-        label={model.muted ? "Unmute" : "Mute"}
-        onClick={model.toggleMute}
-        size="sm"
-      />
+      <MuteButton model={model} />
     </div>
+  );
+}
+
+function MuteButton({ model }: VideoPlayerChromeProps): JSX.Element {
+  return (
+    <IconButton
+      active={model.muted}
+      icon={volumeIconFor(model.muted ? 0 : 1)}
+      label={model.muted ? "Unmute" : "Mute"}
+      onClick={model.toggleMute}
+      size="sm"
+    />
   );
 }
 
@@ -270,13 +284,12 @@ function SpeedPanel({
   onPick,
 }: VideoPlayerChromeProps & { onPick: () => void }): JSX.Element {
   return (
-    <div role="menu" aria-label="Playback speed" className="flex flex-col py-1">
+    <fieldset aria-label="Playback speed" className="flex flex-col py-1">
       {[...SPEEDS].reverse().map((speed) => (
         <button
           key={speed}
           type="button"
-          role="menuitemradio"
-          aria-checked={speed === model.speed}
+          aria-pressed={speed === model.speed}
           className={`cursor-pointer px-4 py-1.5 text-center text-sm tabular-nums transition hover:bg-white/10 ${speed === model.speed ? "font-semibold text-violet-300" : "text-white/90"}`}
           onClick={() => {
             model.applySpeed(speed);
@@ -286,7 +299,7 @@ function SpeedPanel({
           {formatSpeed(speed)}
         </button>
       ))}
-    </div>
+    </fieldset>
   );
 }
 
@@ -309,11 +322,14 @@ function SpeedRow({ model }: VideoPlayerChromeProps): JSX.Element {
   );
 }
 
-/** Phone-only: volume and speed behind the cog. */
-function SettingsPanel({ model }: VideoPlayerChromeProps): JSX.Element {
+/** Phone-only: volume and speed behind the cog; only mute where volume cannot be set. */
+function SettingsPanel({
+  model,
+  volumeSettable,
+}: VideoPlayerChromeProps & { volumeSettable: boolean }): JSX.Element {
   return (
     <div className="flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-4 p-4 text-sm">
-      <VolumeRow model={model} />
+      {volumeSettable ? <VolumeRow model={model} /> : <MuteButton model={model} />}
       <SpeedRow model={model} />
     </div>
   );

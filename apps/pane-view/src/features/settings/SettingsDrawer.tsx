@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { type CopyStatus, useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 import { GALLERY_HOTKEYS } from "./hotkeys";
 import { type AppSettings, type AppSettingsPatch, ThemeModeSchema } from "./types";
 
@@ -9,6 +10,28 @@ interface SettingsDrawerProps {
   open: boolean;
   recursiveDefault: boolean;
   settings: AppSettings;
+}
+
+const DIAGNOSTICS_COPY_LABELS: Record<CopyStatus, string> = {
+  copied: "Diagnostics copied",
+  failed: "Copy failed: clipboard unavailable",
+  idle: "Copy diagnostics JSON",
+};
+
+/** Every key Pane View stores on the device starts with this, so a new one cannot be missed. */
+const LOCAL_PREFERENCES_PREFIX = "pane-view.";
+
+function clearLocalPreferences(): void {
+  const storage = window.localStorage;
+  const keys: string[] = [];
+
+  for (let index = 0; index < storage.length; index += 1) {
+    const key = storage.key(index);
+
+    if (key?.startsWith(LOCAL_PREFERENCES_PREFIX)) keys.push(key);
+  }
+
+  for (const key of keys) storage.removeItem(key);
 }
 
 const THEME_OPTIONS = [
@@ -26,6 +49,7 @@ export function SettingsDrawer({
   settings,
 }: SettingsDrawerProps) {
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const diagnosticsCopy = useCopyToClipboard();
 
   if (!open) {
     return null;
@@ -40,7 +64,7 @@ export function SettingsDrawer({
       userAgent: navigator.userAgent,
     };
 
-    await navigator.clipboard.writeText(JSON.stringify(diagnostics, null, 2));
+    await diagnosticsCopy.copy(JSON.stringify(diagnostics, null, 2));
   };
 
   return (
@@ -156,7 +180,7 @@ export function SettingsDrawer({
               className="rounded-lg border border-border px-3 py-2 text-sm"
               onClick={() => void copyDiagnostics()}
             >
-              Copy diagnostics JSON
+              {DIAGNOSTICS_COPY_LABELS[diagnosticsCopy.status]}
             </button>
             <button
               type="button"
@@ -182,9 +206,7 @@ export function SettingsDrawer({
                     type="button"
                     className="rounded-lg bg-destructive px-3 py-1.5 text-destructive-foreground"
                     onClick={() => {
-                      window.localStorage.removeItem("pane-view.state");
-                      window.localStorage.removeItem("pane-view.settings");
-                      window.localStorage.removeItem("pane-view.root-preferences");
+                      clearLocalPreferences();
                       setConfirmOpen(false);
                       window.location.reload();
                     }}

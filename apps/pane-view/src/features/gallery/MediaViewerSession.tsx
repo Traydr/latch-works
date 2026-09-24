@@ -1,17 +1,30 @@
 import type { MediaItem } from "@latch-works/media-domain";
 import { formatBytes } from "@latch-works/media-domain";
-import { Copy, Download, Image, type LucideIcon, Maximize, Minimize, X } from "lucide-react";
+import {
+  Check,
+  CircleAlert,
+  Copy,
+  Download,
+  Image,
+  type LucideIcon,
+  Maximize,
+  Minimize,
+  VideoOff,
+  X,
+} from "lucide-react";
 import {
   createContext,
   forwardRef,
   type JSX,
   lazy,
   type MouseEvent,
+  type ReactNode,
   Suspense,
   useCallback,
   useContext,
   useEffect,
   useEffectEvent,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -25,14 +38,16 @@ import {
   videoSecondsToPositionMs,
 } from "@/features/viewer/viewer-resume";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
+import { type CopyStatus, useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useViewerChromeIdle } from "@/hooks/use-viewer-chrome-idle";
 import { isTextInputTarget } from "./browse-search";
 import { GALLERY_PREVIEW_SIZE } from "./gallery-preview-size";
 import { PaneViewImage } from "./PaneViewImage";
 import { type ResolvedMediaUrlCache, useResolvedMediaUrl } from "./useResolvedMediaUrl";
+import { createPlaybackPosition } from "./video-player/playback-position";
 import { VideoPlayerChrome } from "./video-player/VideoPlayerChrome";
-import { useHoldToBoost } from "./video-player/video-player-controls";
+import { ChromeRegion, formatClock, useHoldToBoost } from "./video-player/video-player-controls";
 
 const PdfViewer = lazy(() =>
   import("@/features/viewer/PdfViewer").then((module) => ({ default: module.PdfViewer })),
@@ -55,6 +70,18 @@ export interface MediaViewerSessionProps {
 
 const VIEWER_VOLUME_STORAGE_KEY = "pane-view.viewer.volume";
 
+const COPY_PATH_ICONS: Record<CopyStatus, LucideIcon> = {
+  copied: Check,
+  failed: CircleAlert,
+  idle: Copy,
+};
+
+const COPY_PATH_LABELS: Record<CopyStatus, string> = {
+  copied: "Path copied",
+  failed: "Copy failed",
+  idle: "Copy path",
+};
+
 function readPersistedVolume(): number {
   try {
     const raw = window.localStorage.getItem(VIEWER_VOLUME_STORAGE_KEY);
@@ -75,25 +102,38 @@ function readPersistedVolume(): number {
   }
 }
 
-function formatDuration(ms: number): string {
-  const totalSeconds = Math.floor(ms / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
+/** The viewer's name for a key press, or null when the press belongs to a text field or a chord. */
+function viewerKey(event: KeyboardEvent): string | null {
+  if (isTextInputTarget(event.target) || event.metaKey || event.ctrlKey || event.altKey) {
+    return null;
+  }
 
-  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+  return event.key.length === 1 ? event.key.toLowerCase() : event.key;
 }
 
-function useMediaViewerSession({
-  autoplayVideos,
-  cache,
+/** The gallery tile for `mediaId`, when the grid has it rendered. */
+function renderedMediaTile(mediaId: string): HTMLElement | null {
+  return document.querySelector<HTMLElement>(`[data-browser-entry="media:${CSS.escape(mediaId)}"]`);
+}
+
+/** What the shared chrome needs from the current video; the item's session reports it. */
+interface VideoStatus {
+  duration: number;
+  mediaId: string;
+  playing: boolean;
+}
+
+/**
+ * The part of the viewer that outlives a step: the dialog (and the fullscreen
+ * it may hold), the idle chrome, the title bar and prev/next. Only the media
+ * and its playback state remount per item.
+ */
+function useViewerShell({
   canStepBackward,
   canStepForward,
   item,
-  loopVideos,
   onClose,
   onStep,
-  rememberViewerPosition,
-  viewerStateStore,
 }: MediaViewerSessionProps) {
   const isMobile = useIsMobile();
   const isCoarsePointer = useCoarsePointer();
@@ -101,21 +141,17 @@ function useMediaViewerSession({
   const modalRef = useRef<HTMLDialogElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
-  const isScrubbingRef = useRef(false);
-  const speedBoostHeldRef = useRef(false);
-  const speedBeforeHoldRef = useRef(1);
-  const previousFocusRef = useRef<HTMLElement | null>(null);
-  const hasRestoredVideoRef = useRef(false);
+  const itemIdRef = useRef(item.id);
 
-  const [playing, setPlaying] = useState(false);
-  const [duration, setDuration] = useState(0);
-  const [position, setPosition] = useState(0);
-  const [volume, setVolume] = useState(() => readPersistedVolume());
-  const [muted, setMuted] = useState(false);
-  const [speed, setSpeed] = useState(1);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [holdBoosting, setHoldBoosting] = useState(false);
-  const [showOriginal, setShowOriginal] = useState(false);
+  const [videoStatus, setVideoStatus] = useState<VideoStatus | null>(null);
+  const [originalShownFor, setOriginalShownFor] = useState<string | null>(null);
+  const pathCopy = useCopyToClipboard();
+  // Tagged with the media id, so a step starts the next item paused and unmeasured.
+  const currentVideo = videoStatus?.mediaId === item.id ? videoStatus : null;
+  const playing = currentVideo?.playing ?? false;
+  const duration = currentVideo?.duration ?? 0;
+  const showOriginal = originalShownFor === item.id;
   // Video chrome pins while paused and idles away during playback on every device;
   // other media keep the old rule (idle on desktop, tap to toggle on mobile).
   const chromePinned = isVideoItem && !playing;
@@ -125,6 +161,15 @@ function useMediaViewerSession({
     isMobile,
     pinned: chromePinned,
   });
+
+  const revealForItem = useEffectEvent(() => revealChrome());
+
+  useEffect(() => {
+    itemIdRef.current = item.id;
+    // Each item arrives with the chrome showing, as when every step remounted the viewer;
+    // a phone's step zone also toggles the chrome, which would otherwise hide it every other step.
+    revealForItem();
+  }, [item.id]);
 
   useEffect(() => {
     const onFullscreenChange = () => setIsFullscreen(fullscreenElementOf(document) !== null);
@@ -137,77 +182,11 @@ function useMediaViewerSession({
     };
   }, []);
 
-  const videoDelivery = useResolvedMediaUrl({
-    cache,
-    mediaId: item.mediaType === "video" ? item.id : undefined,
-    variant: "original",
-  });
-
-  const viewerStateSubjectId =
-    rememberViewerPosition && (item.mediaType === "video" || item.mediaType === "pdf")
-      ? item.id
-      : undefined;
-
-  const {
-    flushSave,
-    scheduleSave,
-    snapshot: viewerState,
-  } = useLibraryViewerState(viewerStateSubjectId, viewerStateStore);
-
-  const [resumePdfPage, setResumePdfPage] = useState<number | undefined>();
-
-  useEffect(() => {
-    if (viewerState?.page !== undefined) {
-      setResumePdfPage((current) => current ?? viewerState.page);
-    }
-  }, [viewerState?.page]);
-
-  const applySpeed = useCallback((nextSpeed: number): void => {
-    setSpeed(nextSpeed);
-
-    if (videoRef.current) {
-      videoRef.current.playbackRate = nextSpeed;
-    }
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      void flushSave();
-    };
-  }, [flushSave]);
-
-  useEffect(() => {
-    if (item?.mediaType !== "video" || hasRestoredVideoRef.current) {
-      return;
-    }
-
-    const video = videoRef.current;
-
-    if (!video) {
-      return;
-    }
-
-    const loadedDuration = video.duration;
-
-    if (!Number.isFinite(loadedDuration) || loadedDuration <= 0) {
-      return;
-    }
-
-    const resumeSeconds = resolveVideoResumeSeconds(viewerState?.positionMs, loadedDuration);
-
-    if (resumeSeconds === null) {
-      return;
-    }
-
-    video.currentTime = resumeSeconds;
-    setPosition(resumeSeconds);
-    hasRestoredVideoRef.current = true;
-  }, [item?.id, item?.mediaType, viewerState?.positionMs]);
-
-  useEffect(() => {
+  // Opened before paint so the gallery never shows through for a frame.
+  useLayoutEffect(() => {
     const dialog = modalRef.current;
     const active = document.activeElement;
-    previousFocusRef.current = active instanceof HTMLElement ? active : null;
+    const openedFrom = active instanceof HTMLElement ? active : null;
 
     if (dialog && !dialog.open) {
       openDialog(dialog);
@@ -220,50 +199,27 @@ function useMediaViewerSession({
         closeDialog(dialog);
       }
 
-      previousFocusRef.current?.focus();
+      // Back to the tile of the item on screen at close, else where the viewer opened from.
+      (renderedMediaTile(itemIdRef.current) ?? openedFrom)?.focus();
     };
   }, []);
 
-  const skip = useCallback((seconds: number): void => {
-    const video = videoRef.current;
+  const reportVideo = useCallback(
+    (mediaId: string, patch: Partial<Pick<VideoStatus, "duration" | "playing">>): void => {
+      setVideoStatus((current) => {
+        const base =
+          current?.mediaId === mediaId ? current : { duration: 0, mediaId, playing: false };
 
-    if (!video) {
-      return;
-    }
-
-    const total = video.duration;
-
-    if (!Number.isFinite(total) || total <= 0) {
-      return;
-    }
-
-    const nextTime = video.currentTime + seconds;
-    const safeTotal = Math.max(0, total - 0.05);
-    const clamped = Math.max(0, Math.min(safeTotal, nextTime));
-    const wasPlaying = !video.paused;
-
-    video.currentTime = clamped;
-    setPosition(clamped);
-
-    if (wasPlaying) {
-      void video.play().catch(() => {
-        // Keep paused if resume cannot start.
+        return { ...base, ...patch };
       });
-    }
-  }, []);
+    },
+    [],
+  );
 
   const handleKeyDown = useEffectEvent((event: KeyboardEvent) => {
     revealChrome();
 
-    if (isTextInputTarget(event.target)) {
-      return;
-    }
-
-    if (event.metaKey || event.ctrlKey || event.altKey) {
-      return;
-    }
-
-    const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+    const key = viewerKey(event);
 
     if (key === "Escape") {
       event.preventDefault();
@@ -282,83 +238,13 @@ function useMediaViewerSession({
     if (key === "ArrowLeft" || key === "q") {
       event.preventDefault();
       onStep(-1);
-
-      return;
-    }
-
-    if (!isVideoItem) {
-      return;
-    }
-
-    if (key === " " || key === "2") {
-      event.preventDefault();
-      const video = videoRef.current;
-
-      if (!video) {
-        return;
-      }
-
-      if (video.paused) {
-        void video.play();
-      } else {
-        video.pause();
-      }
-
-      return;
-    }
-
-    if (key === "1") {
-      event.preventDefault();
-      skip(-VIDEO_SKIP_SECONDS);
-
-      return;
-    }
-
-    if (key === "3") {
-      event.preventDefault();
-      skip(VIDEO_SKIP_SECONDS);
-
-      return;
-    }
-
-    if (key === "4") {
-      event.preventDefault();
-      speedBoostHeldRef.current = true;
-      applySpeed(2);
     }
   });
 
-  const handleKeyUp = useEffectEvent((event: KeyboardEvent) => {
-    if (event.metaKey || event.ctrlKey || event.altKey) {
-      return;
-    }
-
-    const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
-
-    if (key === "4" && speedBoostHeldRef.current) {
-      speedBoostHeldRef.current = false;
-      applySpeed(1);
-    }
-  });
-
-  const resetHeldSpeed = useEffectEvent(() => {
-    if (speedBoostHeldRef.current) {
-      speedBoostHeldRef.current = false;
-      applySpeed(1);
-    }
-  });
-
-  // Keyboard handling.
   useEffect(() => {
     window.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("keyup", handleKeyUp);
-    window.addEventListener("blur", resetHeldSpeed);
 
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("keyup", handleKeyUp);
-      window.removeEventListener("blur", resetHeldSpeed);
-    };
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
   const resolvedDurationMs =
@@ -373,60 +259,9 @@ function useMediaViewerSession({
   const details = [
     formatBytes(item.size),
     item.extension.toUpperCase(),
-    ...(resolvedDurationMs ? [formatDuration(resolvedDurationMs)] : []),
+    ...(resolvedDurationMs ? [formatClock(resolvedDurationMs / 1000)] : []),
     ...(item.width && item.height ? [`${item.width}×${item.height}`] : []),
   ];
-
-  const canSeek = Number.isFinite(duration) && duration > 0;
-
-  const commitSeek = (rawTarget: number): void => {
-    const video = videoRef.current;
-
-    if (!video) {
-      return;
-    }
-
-    const total = video.duration;
-
-    if (!Number.isFinite(total) || total <= 0) {
-      return;
-    }
-
-    const safeTotal = Math.max(0, total - 0.05);
-    const nextTime = Math.max(0, Math.min(safeTotal, rawTarget));
-    const wasPlaying = !video.paused;
-
-    // Chrome and jsdom have no fastSeek, whatever the DOM lib types say.
-    const seeker: OptionalFastSeek = video;
-
-    if (seeker.fastSeek) {
-      seeker.fastSeek(nextTime);
-    } else {
-      video.currentTime = nextTime;
-    }
-
-    setPosition(nextTime);
-
-    if (wasPlaying) {
-      void video.play().catch(() => {
-        // Keep paused if resume cannot start.
-      });
-    }
-  };
-
-  const toggleVideoPlayback = (): void => {
-    const video = videoRef.current;
-
-    if (!video) {
-      return;
-    }
-
-    if (video.paused) {
-      void video.play();
-    } else {
-      video.pause();
-    }
-  };
 
   const toggleFullscreen = async (): Promise<void> => {
     const dialog = modalRef.current;
@@ -470,6 +305,332 @@ function useMediaViewerSession({
     video?.webkitEnterFullscreen?.();
   };
 
+  const toggleOriginal = (): void => {
+    setOriginalShownFor((current) => (current === item.id ? null : item.id));
+  };
+
+  const copyPath = (): void => {
+    void pathCopy.copy(item.path);
+  };
+
+  const downloadMedia = (): void => {
+    window.open(`/api/media/${item.id}/original`, "_blank", "noopener,noreferrer");
+  };
+
+  return {
+    canStepBackward,
+    canStepForward,
+    chromeVisibilityClass,
+    chromeVisible,
+    closeButtonRef,
+    copyPath,
+    copyStatus: pathCopy.status,
+    details,
+    downloadMedia,
+    duration,
+    isCoarsePointer,
+    isFullscreen,
+    isMobile,
+    item,
+    modalRef,
+    onClose,
+    onStep,
+    playing,
+    reportVideo,
+    revealChrome,
+    showOriginal,
+    toggleChrome,
+    toggleFullscreen,
+    toggleOriginal,
+    videoRef,
+  };
+}
+
+type ViewerShellModel = ReturnType<typeof useViewerShell>;
+
+const ViewerShellContext = createContext<ViewerShellModel | null>(null);
+
+function useViewerShellModel(): ViewerShellModel {
+  const shell = useContext(ViewerShellContext);
+
+  if (!shell) {
+    throw new Error("Media viewer shell context is missing");
+  }
+
+  return shell;
+}
+
+/** Media and playback state for one item; remounts on every step. */
+function useMediaViewerSession({
+  autoplayVideos,
+  cache,
+  item,
+  loopVideos,
+  rememberViewerPosition,
+  viewerStateStore,
+}: MediaViewerSessionProps) {
+  const shell = useViewerShellModel();
+  const { duration, playing, reportVideo, videoRef } = shell;
+  const isVideoItem = item.mediaType === "video";
+  const isScrubbingRef = useRef(false);
+  const holdBoostActiveRef = useRef(false);
+  const speedBeforeHoldRef = useRef(1);
+  const hasRestoredVideoRef = useRef(false);
+
+  const [playbackPosition] = useState(createPlaybackPosition);
+  const [volume, setVolume] = useState(() => readPersistedVolume());
+  const [muted, setMuted] = useState(false);
+  const [speed, setSpeed] = useState(1);
+  const [holdBoosting, setHoldBoosting] = useState(false);
+
+  const setPlaying = useCallback(
+    (nextPlaying: boolean): void => reportVideo(item.id, { playing: nextPlaying }),
+    [item.id, reportVideo],
+  );
+
+  const setDuration = useCallback(
+    (nextDuration: number): void => reportVideo(item.id, { duration: nextDuration }),
+    [item.id, reportVideo],
+  );
+
+  const [videoRefreshKey, setVideoRefreshKey] = useState(0);
+  const [videoLoadFailed, setVideoLoadFailed] = useState(false);
+
+  const videoDelivery = useResolvedMediaUrl({
+    cache,
+    mediaId: item.mediaType === "video" ? item.id : undefined,
+    refreshKey: videoRefreshKey,
+    variant: "original",
+  });
+
+  const videoFailed = videoDelivery.failed || videoLoadFailed;
+
+  /** The cached URL may have expired: resolve a fresh one once before giving up. */
+  const handleVideoError = (): void => {
+    if (videoRefreshKey === 0) setVideoRefreshKey(1);
+    else setVideoLoadFailed(true);
+  };
+
+  const viewerStateSubjectId =
+    rememberViewerPosition && (item.mediaType === "video" || item.mediaType === "pdf")
+      ? item.id
+      : undefined;
+
+  const {
+    flushSave,
+    initialSnapshot,
+    loaded: viewerStateLoaded,
+    scheduleSave,
+  } = useLibraryViewerState(viewerStateSubjectId, viewerStateStore);
+
+  const resumePdfPage = initialSnapshot?.page;
+
+  const applySpeed = useCallback(
+    (nextSpeed: number): void => {
+      setSpeed(nextSpeed);
+
+      if (videoRef.current) {
+        videoRef.current.playbackRate = nextSpeed;
+      }
+    },
+    [videoRef],
+  );
+
+  useEffect(() => {
+    return () => {
+      void flushSave();
+    };
+  }, [flushSave]);
+
+  /**
+   * Seeks to the saved position once both the saved state and the video's
+   * duration are known; runs at most once per item, saved position or not.
+   */
+  const restoreVideoPosition = useCallback((): void => {
+    const video = videoRef.current;
+
+    if (hasRestoredVideoRef.current || !viewerStateLoaded || !video) {
+      return;
+    }
+
+    const loadedDuration = video.duration;
+
+    if (!Number.isFinite(loadedDuration) || loadedDuration <= 0) {
+      return;
+    }
+
+    hasRestoredVideoRef.current = true;
+    const resumeSeconds = resolveVideoResumeSeconds(initialSnapshot?.positionMs, loadedDuration);
+
+    if (resumeSeconds === null) {
+      return;
+    }
+
+    video.currentTime = resumeSeconds;
+    playbackPosition.set(resumeSeconds);
+  }, [initialSnapshot?.positionMs, playbackPosition, videoRef, viewerStateLoaded]);
+
+  useEffect(() => {
+    if (isVideoItem) restoreVideoPosition();
+  }, [isVideoItem, restoreVideoPosition]);
+
+  const skip = useCallback(
+    (seconds: number): void => {
+      const video = videoRef.current;
+
+      if (!video) {
+        return;
+      }
+
+      const total = video.duration;
+
+      if (!Number.isFinite(total) || total <= 0) {
+        return;
+      }
+
+      const nextTime = video.currentTime + seconds;
+      const safeTotal = Math.max(0, total - 0.05);
+      const clamped = Math.max(0, Math.min(safeTotal, nextTime));
+      const wasPlaying = !video.paused;
+
+      video.currentTime = clamped;
+      playbackPosition.set(clamped);
+
+      if (wasPlaying) {
+        void video.play().catch(() => {
+          // Keep paused if resume cannot start.
+        });
+      }
+    },
+    [videoRef],
+  );
+
+  /**
+   * Holding a finger on the picture, or the 4 key, plays at 2× until released,
+   * then returns to the speed from before the hold.
+   */
+  const beginHoldBoost = (): void => {
+    if (holdBoostActiveRef.current) return;
+    holdBoostActiveRef.current = true;
+    speedBeforeHoldRef.current = speed;
+    setHoldBoosting(true);
+    applySpeed(2);
+  };
+
+  const endHoldBoost = (): void => {
+    if (!holdBoostActiveRef.current) return;
+    holdBoostActiveRef.current = false;
+    setHoldBoosting(false);
+    applySpeed(speedBeforeHoldRef.current);
+  };
+
+  const handleKeyDown = useEffectEvent((event: KeyboardEvent) => {
+    if (!isVideoItem) {
+      return;
+    }
+
+    const key = viewerKey(event);
+
+    if (key === " " || key === "2") {
+      event.preventDefault();
+      const video = videoRef.current;
+
+      if (!video) {
+        return;
+      }
+
+      if (video.paused) {
+        void video.play();
+      } else {
+        video.pause();
+      }
+
+      return;
+    }
+
+    if (key === "1") {
+      event.preventDefault();
+      skip(-VIDEO_SKIP_SECONDS);
+
+      return;
+    }
+
+    if (key === "3") {
+      event.preventDefault();
+      skip(VIDEO_SKIP_SECONDS);
+
+      return;
+    }
+
+    if (key === "4") {
+      event.preventDefault();
+      beginHoldBoost();
+    }
+  });
+
+  const handleKeyUp = useEffectEvent((event: KeyboardEvent) => {
+    if (event.key === "4") endHoldBoost();
+  });
+
+  const resetHeldSpeed = useEffectEvent(() => endHoldBoost());
+
+  // Video keys; Escape and stepping belong to the shell.
+  useEffect(() => {
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("blur", resetHeldSpeed);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("blur", resetHeldSpeed);
+    };
+  }, []);
+
+  const canSeek = Number.isFinite(duration) && duration > 0;
+
+  const commitSeek = (rawTarget: number): void => {
+    const video = videoRef.current;
+
+    if (!video) {
+      return;
+    }
+
+    const total = video.duration;
+
+    if (!Number.isFinite(total) || total <= 0) {
+      return;
+    }
+
+    const safeTotal = Math.max(0, total - 0.05);
+    const nextTime = Math.max(0, Math.min(safeTotal, rawTarget));
+    const wasPlaying = !video.paused;
+
+    // Exact, like the scrub preview: fastSeek would snap to a keyframe away from the pick.
+    video.currentTime = nextTime;
+    playbackPosition.set(nextTime);
+
+    if (wasPlaying) {
+      void video.play().catch(() => {
+        // Keep paused if resume cannot start.
+      });
+    }
+  };
+
+  const toggleVideoPlayback = (): void => {
+    const video = videoRef.current;
+
+    if (!video) {
+      return;
+    }
+
+    if (video.paused) {
+      void video.play();
+    } else {
+      video.pause();
+    }
+  };
+
   const changeVolume = (rawVolume: number): void => {
     const clamped = Math.max(0, Math.min(1, rawVolume));
     setVolume(clamped);
@@ -492,20 +653,6 @@ function useMediaViewerSession({
     }
   };
 
-  /** Press-and-hold on the picture plays at 2× until the finger lifts. */
-  const beginHoldBoost = (): void => {
-    if (holdBoosting) return;
-    speedBeforeHoldRef.current = speed;
-    setHoldBoosting(true);
-    applySpeed(2);
-  };
-
-  const endHoldBoost = (): void => {
-    if (!holdBoosting) return;
-    setHoldBoosting(false);
-    applySpeed(speedBeforeHoldRef.current);
-  };
-
   const toggleMute = (): void => {
     const video = videoRef.current;
     const next = !muted;
@@ -516,64 +663,41 @@ function useMediaViewerSession({
     }
   };
 
-  const copyPath = async (): Promise<void> => {
-    await navigator.clipboard.writeText(item.path);
-  };
-
-  const downloadMedia = (): void => {
-    window.open(`/api/media/${item.id}/original`, "_blank", "noopener,noreferrer");
-  };
-
   return {
     applySpeed,
     autoplayVideos,
     beginHoldBoost,
     cache,
     canSeek,
-    canStepBackward,
-    canStepForward,
     changeVolume,
-    chromeVisibilityClass,
-    chromeVisible,
-    closeButtonRef,
+    chromeVisibilityClass: shell.chromeVisibilityClass,
     commitSeek,
-    copyPath,
-    details,
-    downloadMedia,
     duration,
     endHoldBoost,
     flushSave,
-    hasRestoredVideoRef,
+    handleVideoError,
     holdBoosting,
-    isCoarsePointer,
-    isFullscreen,
-    isMobile,
+    isCoarsePointer: shell.isCoarsePointer,
     isScrubbingRef,
     item,
     loopVideos,
-    modalRef,
     muted,
-    onClose,
-    onStep,
     playing,
-    position,
+    playbackPosition,
+    restoreVideoPosition,
     resumePdfPage,
-    revealChrome,
     scheduleSave,
     setDuration,
     setPlaying,
-    setPosition,
-    setShowOriginal,
-    showOriginal,
+    showOriginal: shell.showOriginal,
     skip,
     speed,
-    toggleChrome,
-    toggleFullscreen,
+    toggleChrome: shell.toggleChrome,
     toggleMute,
     toggleVideoPlayback,
     videoDelivery,
+    videoFailed,
     videoRef,
-    viewerState,
     volume,
   };
 }
@@ -593,18 +717,32 @@ export function useMediaViewerSessionModel(): MediaViewerSessionModel {
 }
 
 export function MediaViewerSession(props: MediaViewerSessionProps): JSX.Element {
+  const shell = useViewerShell(props);
+
+  return (
+    <ViewerShellContext.Provider value={shell}>
+      <ViewerDialog>
+        <ViewerItem key={props.item.id} {...props} />
+      </ViewerDialog>
+    </ViewerShellContext.Provider>
+  );
+}
+
+function ViewerItem(props: MediaViewerSessionProps): JSX.Element {
   const model = useMediaViewerSession(props);
 
   return (
     <MediaViewerSessionContext.Provider value={model}>
-      <ViewerDialog />
+      <ViewerMedia />
+      {/* A video that failed to load has nothing for the controls to drive. */}
+      {model.item.mediaType === "video" && !model.videoFailed ? (
+        <VideoPlayerChrome model={model} />
+      ) : null}
     </MediaViewerSessionContext.Provider>
   );
 }
 
-function ViewerDialog(): JSX.Element {
-  const model = useMediaViewerSessionModel();
-
+function ViewerDialog({ children }: { children: ReactNode }): JSX.Element {
   const {
     chromeVisible,
     isCoarsePointer,
@@ -614,9 +752,7 @@ function ViewerDialog(): JSX.Element {
     onClose,
     revealChrome,
     toggleChrome,
-  } = model;
-
-  const isVideoItem = item.mediaType === "video";
+  } = useViewerShellModel();
 
   return (
     // The dialog is the correct modal primitive; pointer handlers only manage transient chrome.
@@ -640,8 +776,7 @@ function ViewerDialog(): JSX.Element {
     >
       <ViewerTopBar />
       <ViewerNavigation />
-      <ViewerMedia />
-      {isVideoItem ? <VideoPlayerChrome model={model} /> : null}
+      {children}
     </dialog>
   );
 }
@@ -651,22 +786,23 @@ function ViewerTopBar(): JSX.Element {
     chromeVisibilityClass,
     closeButtonRef,
     copyPath,
+    copyStatus,
     details,
     downloadMedia,
     isFullscreen,
     item,
     onClose,
-    setShowOriginal,
     showOriginal,
     toggleFullscreen,
-  } = useMediaViewerSessionModel();
+    toggleOriginal,
+  } = useViewerShellModel();
 
   return (
     <div
       className={`pointer-events-none absolute inset-x-0 top-0 z-20 bg-gradient-to-b from-black/70 via-black/30 to-transparent px-3 pb-8 pt-3 transition-opacity duration-300 ${chromeVisibilityClass}`}
       style={{ paddingTop: "max(0.75rem, env(safe-area-inset-top))" }}
     >
-      <div className="pointer-events-auto flex items-center justify-between gap-2 sm:gap-3">
+      <ChromeRegion className="flex items-center justify-between gap-2 sm:gap-3">
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-white">{item.name}</p>
           <p className="truncate text-xs text-white/70">{details.join(" · ")}</p>
@@ -674,10 +810,13 @@ function ViewerTopBar(): JSX.Element {
         <div className="flex shrink-0 items-center gap-1.5">
           <ViewerToolbarButton
             ariaLabel="Copy path"
-            icon={Copy}
-            label="Copy path"
-            onClick={() => void copyPath()}
+            icon={COPY_PATH_ICONS[copyStatus]}
+            label={COPY_PATH_LABELS[copyStatus]}
+            onClick={copyPath}
           />
+          <span aria-live="polite" className="sr-only">
+            {copyStatus === "idle" ? "" : COPY_PATH_LABELS[copyStatus]}
+          </span>
           <ViewerToolbarButton
             ariaLabel="Download"
             icon={Download}
@@ -689,7 +828,7 @@ function ViewerTopBar(): JSX.Element {
               ariaLabel={showOriginal ? "Show preview" : "Show original"}
               icon={Image}
               label={showOriginal ? "Preview" : "Original"}
-              onClick={() => setShowOriginal((current) => !current)}
+              onClick={toggleOriginal}
             />
           ) : null}
           <ViewerToolbarButton
@@ -706,14 +845,14 @@ function ViewerTopBar(): JSX.Element {
             onClick={onClose}
           />
         </div>
-      </div>
+      </ChromeRegion>
     </div>
   );
 }
 
 function ViewerNavigation(): JSX.Element {
   const { canStepBackward, canStepForward, chromeVisibilityClass, item, onStep } =
-    useMediaViewerSessionModel();
+    useViewerShellModel();
 
   // A video keeps its picture for play/pause and hold-to-boost; only the edges step.
   const zoneWidth = item.mediaType === "video" ? "w-[10%]" : "w-1/2";
@@ -736,24 +875,26 @@ function ViewerNavigation(): JSX.Element {
           />
         </>
       ) : null}
-      <button
-        type="button"
-        aria-label="Previous item"
-        className={`absolute left-3 top-1/2 z-20 hidden h-[25dvh] min-h-11 w-12 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full text-xl text-white/90 transition-opacity duration-300 hover:bg-violet-500/25 hover:text-violet-100 md:flex ${chromeVisibilityClass} ${canStepBackward ? "" : "pointer-events-none opacity-40"}`}
-        onClick={() => onStep(-1)}
-        disabled={!canStepBackward}
-      >
-        {"<"}
-      </button>
-      <button
-        type="button"
-        aria-label="Next item"
-        className={`absolute right-3 top-1/2 z-20 hidden h-[25dvh] min-h-11 w-12 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full text-xl text-white/90 transition-opacity duration-300 hover:bg-violet-500/25 hover:text-violet-100 md:flex ${chromeVisibilityClass} ${canStepForward ? "" : "pointer-events-none opacity-40"}`}
-        onClick={() => onStep(1)}
-        disabled={!canStepForward}
-      >
-        {">"}
-      </button>
+      <ChromeRegion>
+        <button
+          type="button"
+          aria-label="Previous item"
+          className={`absolute left-3 top-1/2 z-20 hidden h-[25dvh] min-h-11 w-12 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full text-xl text-white/90 transition-opacity duration-300 hover:bg-violet-500/25 hover:text-violet-100 md:flex ${chromeVisibilityClass} ${canStepBackward ? "" : "pointer-events-none opacity-40"}`}
+          onClick={() => onStep(-1)}
+          disabled={!canStepBackward}
+        >
+          {"<"}
+        </button>
+        <button
+          type="button"
+          aria-label="Next item"
+          className={`absolute right-3 top-1/2 z-20 hidden h-[25dvh] min-h-11 w-12 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full text-xl text-white/90 transition-opacity duration-300 hover:bg-violet-500/25 hover:text-violet-100 md:flex ${chromeVisibilityClass} ${canStepForward ? "" : "pointer-events-none opacity-40"}`}
+          onClick={() => onStep(1)}
+          disabled={!canStepForward}
+        >
+          {">"}
+        </button>
+      </ChromeRegion>
     </>
   );
 }
@@ -770,7 +911,12 @@ function ViewerMedia(): JSX.Element {
       onClick={(event) => {
         event.stopPropagation();
 
-        if (item.mediaType !== "video") return;
+        if (item.mediaType !== "video") {
+          // Touch has no cursor to wake the chrome; a tap on the image or page shows or hides it.
+          if (model.isCoarsePointer) model.toggleChrome();
+
+          return;
+        }
 
         // The tap that ended a hold-to-boost is not a tap on the picture.
         if (hold.consumeSuppressedClick()) return;
@@ -783,7 +929,14 @@ function ViewerMedia(): JSX.Element {
       {item.mediaType === "pdf" ? (
         <ViewerPdf model={model} />
       ) : item.mediaType === "video" ? (
-        <ViewerVideo model={model} />
+        model.videoFailed ? (
+          <p className="flex flex-col items-center gap-2 text-sm text-zinc-400">
+            <VideoOff className="size-6" />
+            This video could not be loaded.
+          </p>
+        ) : (
+          <ViewerVideo model={model} />
+        )
       ) : (
         <PaneViewImage
           alt={item.name}
@@ -814,6 +967,20 @@ function ViewerPdf({ model }: { model: MediaViewerSessionModel }): JSX.Element {
 }
 
 function ViewerVideo({ model }: { model: MediaViewerSessionModel }): JSX.Element {
+  const { videoRef } = model;
+
+  // A removed <video preload="auto"> keeps downloading until its source is released.
+  useEffect(() => {
+    const video = videoRef.current;
+
+    return () => {
+      if (!video) return;
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+    };
+  }, [videoRef]);
+
   return (
     // biome-ignore lint/a11y/useMediaCaption: Caption sidecars are not ingested yet.
     <video
@@ -832,18 +999,7 @@ function ViewerVideo({ model }: { model: MediaViewerSessionModel }): JSX.Element
 
         if (Number.isFinite(loadedDuration)) model.setDuration(loadedDuration);
 
-        if (!model.hasRestoredVideoRef.current) {
-          const resumeSeconds = resolveVideoResumeSeconds(
-            model.viewerState?.positionMs,
-            loadedDuration,
-          );
-
-          if (resumeSeconds !== null) {
-            video.currentTime = resumeSeconds;
-            model.setPosition(resumeSeconds);
-            model.hasRestoredVideoRef.current = true;
-          }
-        }
+        model.restoreVideoPosition();
 
         if (model.autoplayVideos) void video.play().catch(() => undefined);
       }}
@@ -854,7 +1010,7 @@ function ViewerVideo({ model }: { model: MediaViewerSessionModel }): JSX.Element
       onTimeUpdate={(event) => {
         if (model.isScrubbingRef.current) return;
         const currentTime = event.currentTarget.currentTime || 0;
-        model.setPosition(currentTime);
+        model.playbackPosition.set(currentTime);
         model.scheduleSave({ positionMs: videoSecondsToPositionMs(currentTime) });
       }}
       onPlay={() => model.setPlaying(true)}
@@ -869,6 +1025,7 @@ function ViewerVideo({ model }: { model: MediaViewerSessionModel }): JSX.Element
         }
       }}
       onEnded={() => model.setPlaying(false)}
+      onError={model.handleVideoError}
       src={model.videoDelivery.resolvedUrl ?? undefined}
     />
   );
@@ -899,12 +1056,9 @@ const ViewerToolbarButton = forwardRef<
 });
 
 /**
- * The DOM lib declares these on every element; Chrome (fastSeek) and jsdom
- * (fastSeek, showModal, close) do not have them, so the viewer reads them as
- * optional and falls back.
+ * The DOM lib declares these on every dialog; jsdom does not have them, so
+ * the viewer reads them as optional and falls back.
  */
-type OptionalFastSeek = Partial<Pick<HTMLMediaElement, "fastSeek">>;
-
 type OptionalModalDialog = Partial<Pick<HTMLDialogElement, "showModal" | "close">>;
 
 type FullscreenHost = Partial<Pick<HTMLElement, "requestFullscreen">> &

@@ -15,6 +15,7 @@ import {
 import { VIDEO_SKIP_SECONDS } from "@/features/viewer/video-playback";
 import { videoSecondsToPositionMs } from "@/features/viewer/viewer-resume";
 import type { MediaViewerSessionModel } from "../MediaViewerSession";
+import { type PlaybackPosition, usePlaybackPosition } from "./playback-position";
 
 export const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
 
@@ -37,6 +38,17 @@ export function formatSpeed(speed: number): string {
 
 export function volumeIconFor(level: number): LucideIcon {
   return level === 0 ? VolumeX : level < 0.5 ? Volume1 : Volume2;
+}
+
+/**
+ * False where the page cannot set a video's volume: iOS leaves it to the
+ * hardware buttons and ignores the write, which a read-back reveals.
+ */
+export function canSetVideoVolume(): boolean {
+  const probe = document.createElement("video");
+  probe.volume = 0.5;
+
+  return probe.volume === 0.5;
 }
 
 /** A chrome surface: clicks inside never reach the dialog's tap-to-toggle handler. */
@@ -252,14 +264,15 @@ export interface SeekControl {
 
 /** Seek state and gestures against the session's video: tap to jump, drag to scrub. */
 export function useSeek(model: MediaViewerSessionModel): SeekControl {
-  const { canSeek, duration, position } = model;
+  const { canSeek, duration, playbackPosition } = model;
+  const position = usePlaybackPosition(playbackPosition);
   const frameRef = useRef<number | null>(null);
   const pendingRef = useRef<number | null>(null);
 
   const previewSeek = (fraction: number) => {
     const target = fraction * duration;
     model.isScrubbingRef.current = true;
-    model.setPosition(target);
+    playbackPosition.set(target);
     pendingRef.current = target;
 
     if (frameRef.current === null) {
@@ -319,7 +332,8 @@ export function useSeek(model: MediaViewerSessionModel): SeekControl {
 }
 
 /** The horizontal seek bar: played fill, thumb, hover time on desktop. */
-export function SeekTrack({ seek }: { seek: SeekControl }): JSX.Element {
+export function SeekTrack({ model }: { model: MediaViewerSessionModel }): JSX.Element {
+  const seek = useSeek(model);
   const { drag, fraction } = seek;
   const played = `${fraction * 100}%`;
 
@@ -355,7 +369,12 @@ export function SeekTrack({ seek }: { seek: SeekControl }): JSX.Element {
   );
 }
 
-/** Closes a panel on a pointer press outside `rootRef`. */
+/** The elapsed-time label; the only other subscriber to the playhead. */
+export function ElapsedClock({ position }: { position: PlaybackPosition }): JSX.Element {
+  return <span className="w-9 shrink-0">{formatClock(usePlaybackPosition(position))}</span>;
+}
+
+/** Closes a panel on a pointer press outside `rootRef`, or on Escape. */
 export function useOutsideClose(
   rootRef: RefObject<HTMLElement | null>,
   open: boolean,
@@ -371,9 +390,22 @@ export function useOutsideClose(
       onClose();
     };
 
-    document.addEventListener("pointerdown", onPointerDown, true);
+    // Window capture runs before the viewer's own Escape handling, so an open
+    // panel takes the first Escape and the viewer (and its dialog) the next.
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      onClose();
+    };
 
-    return () => document.removeEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("pointerdown", onPointerDown, true);
+    window.addEventListener("keydown", onKeyDown, true);
+
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      window.removeEventListener("keydown", onKeyDown, true);
+    };
   }, [onClose, open, rootRef]);
 }
 

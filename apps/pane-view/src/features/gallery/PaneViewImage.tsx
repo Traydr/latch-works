@@ -64,10 +64,7 @@ export function PaneViewImage({
     variant,
   });
 
-  if (!canResolve || loading || !resolvedUrl || retry.phase === "waiting") {
-    return <div aria-hidden className={cn(className, "bg-zinc-800/80")} />;
-  }
-
+  // Checked first: a failed resolve has no URL and would otherwise sit as a loading box.
   if (failed || retry.phase === "failed") {
     return (
       <div
@@ -77,6 +74,10 @@ export function PaneViewImage({
         <ImageOff size={20} />
       </div>
     );
+  }
+
+  if (!canResolve || loading || !resolvedUrl || retry.phase === "waiting") {
+    return <div aria-hidden className={cn(className, "bg-zinc-800/80")} />;
   }
 
   return (

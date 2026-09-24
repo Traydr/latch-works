@@ -54,7 +54,7 @@ export function BrowserEntryCard({
     <button
       type="button"
       className="absolute cursor-pointer text-left transition"
-      data-browser-entry=""
+      data-browser-entry={entry.key}
       onClick={handleClick}
       onDoubleClick={isMobile ? undefined : () => onActivate(entry)}
       onMouseDown={(event) => event.preventDefault()}

@@ -132,7 +132,6 @@ export function MediaViewerModal({
 
   return (
     <MediaViewerSession
-      key={item.id}
       autoplayVideos={autoplayVideos}
       cache={cache}
       canStepBackward={canStepBackward}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { VIEWER_STATE_SAVE_DEBOUNCE_MS } from "./viewer-resume";
+import { VIEWER_STATE_SAVE_INTERVAL_MS } from "./viewer-resume";
 import { getViewerState, saveViewerState, type ViewerStateSnapshot } from "./viewer-state-service";
 
 export interface ViewerStatePatch {
@@ -28,23 +28,43 @@ export interface ViewerStateStore {
 
 export const serverViewerStateStore: ViewerStateStore = { getViewerState, saveViewerState };
 
+interface InitialViewerState {
+  loaded: boolean;
+  snapshot: ViewerStateSnapshot | null;
+  subjectId: string | undefined;
+}
+
+/**
+ * Loads the saved state for `subjectId` once and saves progress back. The
+ * resume target is only ever the state loaded on open: saves made while the
+ * item is on screen never feed back into it, or a first view would jump to
+ * its own progress.
+ */
 export function useLibraryViewerState(
   subjectId: string | undefined,
   store: ViewerStateStore = serverViewerStateStore,
 ) {
-  const [snapshot, setSnapshot] = useState<ViewerStateSnapshot | null>(null);
+  const [initial, setInitial] = useState<InitialViewerState>({
+    loaded: false,
+    snapshot: null,
+    subjectId,
+  });
+
   const pendingPatchRef = useRef<ViewerStatePatch | null>(null);
-  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Saves run one after another: the server upserts, so a slow older save that
+  // landed last would overwrite newer progress.
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const subjectIdRef = useRef(subjectId);
 
   useEffect(() => {
     subjectIdRef.current = subjectId;
   }, [subjectId]);
 
-  const clearDebounceTimer = useCallback((): void => {
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
-      debounceTimerRef.current = null;
+  const clearSaveTimer = useCallback((): void => {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
     }
   }, []);
 
@@ -57,23 +77,28 @@ export function useLibraryViewerState(
       }
 
       pendingPatchRef.current = null;
-      clearDebounceTimer();
+      clearSaveTimer();
 
-      const saved = await store.saveViewerState({
-        data: {
-          subjectId: targetSubjectId,
-          subjectType: "library_entry",
-          ...pending,
-        },
+      const save = saveQueueRef.current.then(async () => {
+        await store.saveViewerState({
+          data: {
+            subjectId: targetSubjectId,
+            subjectType: "library_entry",
+            ...pending,
+          },
+        });
       });
 
-      if (saved && targetSubjectId === subjectIdRef.current) {
-        setSnapshot(saved);
-      }
+      // A failed save must not block the ones queued behind it.
+      saveQueueRef.current = save.catch(() => undefined);
+
+      await save;
     },
-    [clearDebounceTimer, store],
+    [clearSaveTimer, store],
   );
 
+  // A throttle, not a debounce: playback reports several times a second, and
+  // a timer restarted on each report would never fire while the video plays.
   const scheduleSave = useCallback(
     (patch: ViewerStatePatch): void => {
       if (!subjectIdRef.current) {
@@ -85,34 +110,37 @@ export function useLibraryViewerState(
         ...patch,
       };
 
-      clearDebounceTimer();
-      debounceTimerRef.current = setTimeout(() => {
+      if (saveTimerRef.current) {
+        return;
+      }
+
+      saveTimerRef.current = setTimeout(() => {
+        saveTimerRef.current = null;
         void flushSave();
-      }, VIEWER_STATE_SAVE_DEBOUNCE_MS);
+      }, VIEWER_STATE_SAVE_INTERVAL_MS);
     },
-    [clearDebounceTimer, flushSave],
+    [flushSave],
   );
 
   useEffect(() => {
     if (!subjectId) {
-      setSnapshot(null);
-
       return;
     }
 
     let cancelled = false;
-    setSnapshot(null);
 
     void (async () => {
-      const state = await store.getViewerState({
-        data: {
-          subjectId,
-          subjectType: "library_entry",
-        },
-      });
+      const snapshot = await store
+        .getViewerState({
+          data: {
+            subjectId,
+            subjectType: "library_entry",
+          },
+        })
+        .catch(() => null);
 
       if (!cancelled) {
-        setSnapshot(state);
+        setInitial({ loaded: true, snapshot, subjectId });
       }
     })();
 
@@ -122,15 +150,38 @@ export function useLibraryViewerState(
     };
   }, [store, subjectId, flushSave]);
 
+  // Closing or backgrounding the tab may be the last chance to save.
+  useEffect(() => {
+    const flush = () => void flushSave();
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") flush();
+    };
+
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [flushSave]);
+
   useEffect(() => {
     return () => {
-      clearDebounceTimer();
+      clearSaveTimer();
     };
-  }, [clearDebounceTimer]);
+  }, [clearSaveTimer]);
+
+  // Keyed by subject, so a change of subject reads as not loaded until its own load lands.
+  const current = initial.subjectId === subjectId ? initial : null;
 
   return {
     flushSave,
+    /** The state saved before this view; null when there is none (or not loaded yet). */
+    initialSnapshot: current?.snapshot ?? null,
+    /** True once the initial state has loaded; immediately when nothing is remembered. */
+    loaded: !subjectId || (current?.loaded ?? false),
     scheduleSave,
-    snapshot,
   };
 }

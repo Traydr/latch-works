@@ -11,6 +11,9 @@ import {
 
 const PENDING_RETRY_DELAYS_MS = [5_000, 10_000, 20_000, 30_000, 60_000] as const;
 
+/** Retries after a failed resolve (network or server error) before settling as failed. */
+const FAILED_RETRY_DELAYS_MS = [2_000, 8_000] as const;
+
 type ResolveInput = {
   mediaId: string;
   size?: number;
@@ -243,6 +246,7 @@ export function useResolvedMediaUrl({
 
     let cancelled = false;
     let refresh = refreshKey > 0;
+    let failures = 0;
 
     void (async () => {
       while (!cancelled) {
@@ -258,9 +262,18 @@ export function useResolvedMediaUrl({
         }
 
         if (result.status === "failed") {
-          dispatch({ inputKey, type: "failed" });
+          const retryDelayMs = FAILED_RETRY_DELAYS_MS[failures];
 
-          return;
+          if (retryDelayMs === undefined) {
+            dispatch({ inputKey, type: "failed" });
+
+            return;
+          }
+
+          failures += 1;
+          await delay(retryDelayMs);
+
+          continue;
         }
 
         dispatch({ inputKey, type: "pending", url: fallbackReadyUrl });
