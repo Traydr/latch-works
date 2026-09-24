@@ -954,6 +954,20 @@ function ViewerPdf({ model }: { model: MediaViewerSessionModel }): JSX.Element {
 }
 
 function ViewerVideo({ model }: { model: MediaViewerSessionModel }): JSX.Element {
+  const { videoRef } = model;
+
+  // A removed <video preload="auto"> keeps downloading until its source is released.
+  useEffect(() => {
+    const video = videoRef.current;
+
+    return () => {
+      if (!video) return;
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+    };
+  }, [videoRef]);
+
   return (
     // biome-ignore lint/a11y/useMediaCaption: Caption sidecars are not ingested yet.
     <video
