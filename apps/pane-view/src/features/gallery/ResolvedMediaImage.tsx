@@ -3,7 +3,6 @@ import { PaneViewImage } from "./PaneViewImage";
 export function ResolvedMediaImage({
   alt,
   className,
-  layout = "constrained",
   mediaId,
   mediaType,
   priority = false,
@@ -13,7 +12,6 @@ export function ResolvedMediaImage({
 }: {
   alt: string;
   className?: string;
-  layout?: "fixed" | "constrained" | "fullWidth";
   mediaId: string;
   mediaType: "image" | "gif" | "video" | "pdf" | "unknown";
   priority?: boolean;
@@ -28,7 +26,6 @@ export function ResolvedMediaImage({
     <PaneViewImage
       alt={alt}
       className={className}
-      layout={layout}
       mediaId={mediaId}
       objectFit="contain"
       priority={priority}

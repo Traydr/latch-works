@@ -936,7 +936,6 @@ function ViewerMedia(): JSX.Element {
           alt={item.name}
           cache={model.cache}
           className="max-h-full max-w-full object-contain"
-          layout="fullWidth"
           mediaId={item.id}
           objectFit="contain"
           variant={model.showOriginal || item.mediaType !== "image" ? "original" : "preview"}

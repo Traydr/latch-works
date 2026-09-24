@@ -13,7 +13,7 @@ export const IMAGE_LOAD_MAX_ATTEMPTS = IMAGE_LOAD_RETRY_DELAYS_MS.length + 1;
 
 /**
  * Failures on the initially resolved URL before the tile asks the server for a
- * fresh one. Cached URLs expire (60s presigned originals, 24h Shutter
+ * fresh one. Cached URLs expire (24h presigned originals and Shutter
  * capabilities) and a browser cannot tell a 403 from a 503, so a stubborn
  * failure is answered with a re-resolve partway through the schedule.
  */

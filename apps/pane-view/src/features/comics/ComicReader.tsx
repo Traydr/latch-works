@@ -318,7 +318,6 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
                 <ResolvedMediaImage
                   alt={page.name}
                   className="h-full w-full object-contain"
-                  layout="fullWidth"
                   mediaId={page.id}
                   mediaType={page.mediaType}
                   variant="preview"

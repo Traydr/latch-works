@@ -32,7 +32,6 @@ export function Poster({
         <PaneViewImage
           alt=""
           className="h-full w-full object-cover"
-          layout="constrained"
           mediaId={media.id}
           objectFit="cover"
           priority={priority}
