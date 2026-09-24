@@ -388,17 +388,12 @@ function useMediaViewerSession({
 
   const {
     flushSave,
+    initialSnapshot,
+    loaded: viewerStateLoaded,
     scheduleSave,
-    snapshot: viewerState,
   } = useLibraryViewerState(viewerStateSubjectId, viewerStateStore);
 
-  const [resumePdfPage, setResumePdfPage] = useState<number | undefined>();
-
-  useEffect(() => {
-    if (viewerState?.page !== undefined) {
-      setResumePdfPage((current) => current ?? viewerState.page);
-    }
-  }, [viewerState?.page]);
+  const resumePdfPage = initialSnapshot?.page;
 
   const applySpeed = useCallback(
     (nextSpeed: number): void => {
@@ -417,14 +412,14 @@ function useMediaViewerSession({
     };
   }, [flushSave]);
 
-  useEffect(() => {
-    if (item?.mediaType !== "video" || hasRestoredVideoRef.current) {
-      return;
-    }
-
+  /**
+   * Seeks to the saved position once both the saved state and the video's
+   * duration are known; runs at most once per item, saved position or not.
+   */
+  const restoreVideoPosition = useCallback((): void => {
     const video = videoRef.current;
 
-    if (!video) {
+    if (hasRestoredVideoRef.current || !viewerStateLoaded || !video) {
       return;
     }
 
@@ -434,7 +429,8 @@ function useMediaViewerSession({
       return;
     }
 
-    const resumeSeconds = resolveVideoResumeSeconds(viewerState?.positionMs, loadedDuration);
+    hasRestoredVideoRef.current = true;
+    const resumeSeconds = resolveVideoResumeSeconds(initialSnapshot?.positionMs, loadedDuration);
 
     if (resumeSeconds === null) {
       return;
@@ -442,8 +438,11 @@ function useMediaViewerSession({
 
     video.currentTime = resumeSeconds;
     playbackPosition.set(resumeSeconds);
-    hasRestoredVideoRef.current = true;
-  }, [item?.id, item?.mediaType, videoRef, viewerState?.positionMs]);
+  }, [initialSnapshot?.positionMs, playbackPosition, videoRef, viewerStateLoaded]);
+
+  useEffect(() => {
+    if (isVideoItem) restoreVideoPosition();
+  }, [isVideoItem, restoreVideoPosition]);
 
   const skip = useCallback(
     (seconds: number): void => {
@@ -663,7 +662,6 @@ function useMediaViewerSession({
     duration,
     endHoldBoost,
     flushSave,
-    hasRestoredVideoRef,
     holdBoosting,
     isCoarsePointer: shell.isCoarsePointer,
     isScrubbingRef,
@@ -672,6 +670,7 @@ function useMediaViewerSession({
     muted,
     playing,
     playbackPosition,
+    restoreVideoPosition,
     resumePdfPage,
     scheduleSave,
     setDuration,
@@ -684,7 +683,6 @@ function useMediaViewerSession({
     toggleVideoPlayback,
     videoDelivery,
     videoRef,
-    viewerState,
     volume,
   };
 }
@@ -951,18 +949,7 @@ function ViewerVideo({ model }: { model: MediaViewerSessionModel }): JSX.Element
 
         if (Number.isFinite(loadedDuration)) model.setDuration(loadedDuration);
 
-        if (!model.hasRestoredVideoRef.current) {
-          const resumeSeconds = resolveVideoResumeSeconds(
-            model.viewerState?.positionMs,
-            loadedDuration,
-          );
-
-          if (resumeSeconds !== null) {
-            video.currentTime = resumeSeconds;
-            model.playbackPosition.set(resumeSeconds);
-            model.hasRestoredVideoRef.current = true;
-          }
-        }
+        model.restoreVideoPosition();
 
         if (model.autoplayVideos) void video.play().catch(() => undefined);
       }}
