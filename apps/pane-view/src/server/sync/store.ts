@@ -4,7 +4,7 @@ import {
   type S3StorageClient,
   type StoredObjectHead,
 } from "@latch-works/media-storage";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { type Database, db } from "../db";
 import { acquireLibraryMutationStartupLock } from "../db/library-coordination-lock";
 import {
@@ -377,23 +377,31 @@ async function upsertContainingFolders(path: string, dbClient: SyncDbClient): Pr
     return;
   }
 
+  const folderPaths = collectContainingFolderPaths(path);
+
+  const existingRows = await dbClient
+    .select({
+      deletedAt: folders.deletedAt,
+      id: folders.id,
+      parentId: folders.parentId,
+      path: folders.path,
+    })
+    .from(folders)
+    .where(inArray(folders.path, folderPaths));
+
+  const existingByPath = new Map(existingRows.map((row) => [row.path, row]));
   const parentIdByPath = new Map<string, string>();
 
-  for (const folderPath of collectContainingFolderPaths(path)) {
+  for (const folderPath of folderPaths) {
     const parentPath = getParentPath(folderPath);
     const depth = folderPath.split("/").filter(Boolean).length;
     // Paths run root first, so a parent's row was already read or written above.
     const parentId = parentPath ? (parentIdByPath.get(parentPath) ?? null) : null;
+    const existing = existingByPath.get(folderPath);
 
     // Most files land in folders that are already live and linked. Leave those
     // rows alone: an upsert would rewrite and row-lock every ancestor (the root
     // included) until commit, serializing concurrent uploads on them.
-    const [existing] = await dbClient
-      .select({ deletedAt: folders.deletedAt, id: folders.id, parentId: folders.parentId })
-      .from(folders)
-      .where(eq(folders.path, folderPath))
-      .limit(1);
-
     if (existing && existing.deletedAt === null && existing.parentId === parentId) {
       parentIdByPath.set(folderPath, existing.id);
       continue;
