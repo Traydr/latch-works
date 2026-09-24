@@ -1,1 +1,1 @@
-export type { LibraryMediaItem, MediaPage } from "../../server/library/types";
+export type { LibraryMediaItem } from "../../server/library/types";

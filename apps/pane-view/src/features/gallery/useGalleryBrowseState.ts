@@ -122,12 +122,10 @@ export function snapshotRequestFor(
 ): LibrarySnapshotRequest {
   return {
     comicMode: state.comicMode,
-    // Deliberately no excludedPaths: the snapshot is the folder and
-    // archive-state query only (mediaLimit 0), and excludes never prune
-    // folders. Sending them would churn the snapshot query key on every
-    // toggle, blanking the exclude dialog mid-interaction (and resetting its
-    // scroll) for a refetch that cannot change a single row.
-    mediaLimit: 0,
+    // Deliberately no excludedPaths: the snapshot is the folder query only,
+    // and excludes never prune folders. Sending them would churn the snapshot
+    // query key on every toggle, blanking the exclude dialog mid-interaction
+    // (and resetting its scroll) for a refetch that cannot change a single row.
     path: state.path || undefined,
     query: state.query,
     recursive: state.recursive,

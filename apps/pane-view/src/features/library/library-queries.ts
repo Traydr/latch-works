@@ -14,7 +14,6 @@ import {
 
 export interface LibrarySnapshotRequest {
   comicMode: boolean;
-  mediaLimit?: number;
   path: string | undefined;
   query: string | undefined;
   recursive: boolean;
@@ -44,7 +43,6 @@ export function librarySnapshotQueryOptions(request: LibrarySnapshotRequest) {
       getLibrarySnapshot({
         data: {
           comicMode: request.comicMode,
-          mediaLimit: request.mediaLimit,
           path: request.path,
           query: request.query,
           recursive: request.recursive,

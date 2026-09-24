@@ -1,10 +1,5 @@
 import type { ComicEntry, FolderNode, GallerySortMode } from "@latch-works/media-domain";
-import {
-  GallerySortModeSchema,
-  getParentPath,
-  toArchivePath,
-  trimTrailingSlash,
-} from "@latch-works/media-domain";
+import { GallerySortModeSchema, toArchivePath, trimTrailingSlash } from "@latch-works/media-domain";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import type { GalleryListingPage } from "../../server/library/gallery-listing";
@@ -15,13 +10,7 @@ import type {
   SnapshotFolderNode,
 } from "../../server/library/repository";
 import { type GalleryRandomSeed, GalleryRandomSeedSchema } from "../gallery/gallery-random-seed";
-import type { LibraryMediaItem, MediaPage } from "./types";
-
-const fixtureRoots = ["nsfw", "nsfw-stories", "sfw", "sfw/patreon"];
-
-export const DEFAULT_MEDIA_PAGE_LIMIT = 500;
-
-const SEARCH_RESULT_LIMIT = 200;
+import type { LibraryMediaItem } from "./types";
 
 /** Most excluded child paths one listing request may carry; the client trims to it too. */
 export const EXCLUDED_PATHS_LIMIT = 200;
@@ -29,12 +18,9 @@ export const EXCLUDED_PATHS_LIMIT = 200;
 const libraryRequestSchema = z.object({
   comicMode: z.boolean().optional(),
   includeAllFolders: z.boolean().optional(),
-  mediaLimit: z.number().int().min(0).max(5000).optional(),
-  mediaOffset: z.number().int().min(0).optional(),
   path: z.string().optional(),
   query: z.string().optional(),
   recursive: z.boolean().optional(),
-  searchOffset: z.number().int().min(0).optional(),
 });
 
 /** The listing request boundary; exported so boundary tests can pin its limits. */
@@ -72,10 +58,6 @@ export interface LibrarySnapshot {
   archiveRoot: string;
   currentPath: string;
   folders: SnapshotFolderNode[];
-  media: LibraryMediaItem[];
-  mediaPage: MediaPage;
-  mediaUrlMode: "signed-url";
-  roots: string[];
   /** Folders sharing `currentPath`'s parent, itself included; empty at the root. */
   siblings: SnapshotFolderNode[];
 }
@@ -130,21 +112,10 @@ export async function readLibrarySnapshotRequest(
   const comicMode = data.comicMode ?? false;
   const includeAllFolders = data.includeAllFolders ?? false;
   const recursive = (data.recursive ?? false) || comicMode;
-  const searchOffset = data.searchOffset ?? 0;
-  const mediaOffset = query ? searchOffset : (data.mediaOffset ?? 0);
-
-  const mediaLimit =
-    data.mediaLimit !== undefined
-      ? data.mediaLimit
-      : query
-        ? SEARCH_RESULT_LIMIT
-        : DEFAULT_MEDIA_PAGE_LIMIT;
 
   const databaseSnapshot = await source.readDatabaseLibrarySnapshot({
     currentPath,
     includeAllFolders,
-    limit: mediaLimit,
-    offset: mediaOffset,
     query,
     recursive,
   });
@@ -154,10 +125,6 @@ export async function readLibrarySnapshotRequest(
     archiveRoot: "Synced archive",
     currentPath,
     folders: databaseSnapshot.folders,
-    media: databaseSnapshot.media,
-    mediaPage: databaseSnapshot.mediaPage,
-    mediaUrlMode: "signed-url",
-    roots: databaseSnapshot.roots.length ? databaseSnapshot.roots : readFixtureRoots(currentPath),
     siblings: databaseSnapshot.siblings,
   };
 }
@@ -283,8 +250,4 @@ function normalizeQuery(query: string | undefined): string | undefined {
   const trimmed = query?.trim();
 
   return trimmed ? trimmed : undefined;
-}
-
-function readFixtureRoots(currentPath: string): string[] {
-  return [...new Set(fixtureRoots.concat(currentPath, getParentPath(currentPath)).filter(Boolean))];
 }
