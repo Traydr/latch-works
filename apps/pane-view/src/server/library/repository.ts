@@ -1,6 +1,6 @@
 import type { FolderNode, GallerySortMode } from "@latch-works/media-domain";
 import { buildBrowserEntries, getParentPath } from "@latch-works/media-domain";
-import { and, asc, desc, eq, gt, inArray, isNull, lt, or, type SQL } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { type Database, db } from "../db";
 import { folders, libraryEntries, mediaObjects } from "../db/schema";
 import {
@@ -17,6 +17,7 @@ import {
   galleryRandomOrderKeySql,
   naturalOrder,
 } from "./gallery-order";
+import { type KeysetColumn, keysetAfter, keysetOrderBy } from "./keyset-order";
 import {
   buildLibraryConditions,
   buildMediaVisibilityConditions,
@@ -113,7 +114,7 @@ function buildGalleryListingMediaQuery(
     showVideos,
     sortMode,
   }: Omit<GalleryListingReadRequest, "cursor"> & {
-    cursor: Extract<GalleryListingCursorPayload, { subjectKind: "media" }> | null;
+    cursor: MediaCursor | null;
   },
   database: Database = db,
 ) {
@@ -126,8 +127,10 @@ function buildGalleryListingMediaQuery(
 
   mediaConditions.push(...buildMediaVisibilityConditions({ showImages, showVideos }));
 
+  const order = galleryListingOrder(sortMode, randomSeed);
+
   if (cursor) {
-    mediaConditions.push(buildGalleryListingCursorCondition(cursor));
+    mediaConditions.push(keysetAfter(order, cursor));
   }
 
   return database
@@ -138,9 +141,11 @@ function buildGalleryListingMediaQuery(
     .from(libraryEntries)
     .innerJoin(mediaObjects, eq(libraryEntries.mediaObjectId, mediaObjects.id))
     .where(and(...mediaConditions))
-    .orderBy(...buildGalleryListingOrderBy(sortMode, randomSeed))
+    .orderBy(...keysetOrderBy(order))
     .limit(limit + 1);
 }
+
+type MediaCursor = Extract<GalleryListingCursorPayload, { subjectKind: "media" }>;
 
 /**
  * The listing order for regular media (Plan 051, Decision 6). Name modes use
@@ -149,131 +154,62 @@ function buildGalleryListingMediaQuery(
  * random uses the shared seeded key over ("media", id). Every mode ends on
  * the id so the keyset is total.
  */
-function buildGalleryListingOrderBy(
+function galleryListingOrder(
   sortMode: GallerySortMode,
   randomSeed: GalleryRandomSeed,
-): SQL[] {
-  switch (sortMode) {
-    case "name-desc":
-      return [
-        desc(naturalOrder(libraryEntries.filename)),
-        desc(naturalOrder(libraryEntries.logicalPath)),
-        desc(libraryEntries.id),
-      ];
-    case "date-newest":
-      return [
-        desc(libraryEntries.mtimeMs),
-        asc(libraryEntries.logicalPath),
-        asc(libraryEntries.id),
-      ];
-    case "date-oldest":
-      return [asc(libraryEntries.mtimeMs), asc(libraryEntries.logicalPath), asc(libraryEntries.id)];
-    case "random":
-      return [
-        asc(galleryRandomOrderKeySql(randomSeed, "media", libraryEntries.id)),
-        asc(libraryEntries.logicalPath),
-        asc(libraryEntries.id),
-      ];
-    default:
-      return [
-        asc(naturalOrder(libraryEntries.filename)),
-        asc(naturalOrder(libraryEntries.logicalPath)),
-        asc(libraryEntries.id),
-      ];
-  }
-}
+): KeysetColumn<MediaCursor>[] {
+  const id = (direction: "asc" | "desc"): KeysetColumn<MediaCursor> => ({
+    cursorValue: (cursor) => cursor.id,
+    direction,
+    expression: libraryEntries.id,
+  });
 
-/**
- * Keyset continuation for buildGalleryListingOrderBy: rows strictly after the
- * cursor row in that order, comparing each column with the same collation and
- * direction the ORDER BY uses.
- */
-function buildGalleryListingCursorCondition(
-  cursor: Extract<GalleryListingCursorPayload, { subjectKind: "media" }>,
-): SQL {
-  const requireCondition = (condition: SQL | undefined): SQL => {
-    if (!condition) {
-      throw new Error("Expected gallery listing cursor condition");
-    }
+  const naturalName = (direction: "asc" | "desc"): KeysetColumn<MediaCursor>[] => [
+    {
+      cursorValue: (cursor) => cursor.filename,
+      direction,
+      expression: naturalOrder(libraryEntries.filename),
+    },
+    {
+      cursorValue: (cursor) => cursor.logicalPath,
+      direction,
+      expression: naturalOrder(libraryEntries.logicalPath),
+    },
+    id(direction),
+  ];
 
-    return condition;
+  const logicalPath: KeysetColumn<MediaCursor> = {
+    cursorValue: (cursor) => cursor.logicalPath,
+    direction: "asc",
+    expression: libraryEntries.logicalPath,
   };
 
-  const filename = naturalOrder(libraryEntries.filename);
-  const logicalPath = naturalOrder(libraryEntries.logicalPath);
-
-  switch (cursor.sortMode) {
+  switch (sortMode) {
     case "name-desc":
-      return requireCondition(
-        or(
-          lt(filename, cursor.filename),
-          and(eq(filename, cursor.filename), lt(logicalPath, cursor.logicalPath)),
-          and(
-            eq(filename, cursor.filename),
-            eq(logicalPath, cursor.logicalPath),
-            lt(libraryEntries.id, cursor.id),
-          ),
-        ),
-      );
+      return naturalName("desc");
     case "date-newest":
-      return requireCondition(
-        or(
-          lt(libraryEntries.mtimeMs, cursor.mtimeMs),
-          and(
-            eq(libraryEntries.mtimeMs, cursor.mtimeMs),
-            gt(libraryEntries.logicalPath, cursor.logicalPath),
-          ),
-          and(
-            eq(libraryEntries.mtimeMs, cursor.mtimeMs),
-            eq(libraryEntries.logicalPath, cursor.logicalPath),
-            gt(libraryEntries.id, cursor.id),
-          ),
-        ),
-      );
     case "date-oldest":
-      return requireCondition(
-        or(
-          gt(libraryEntries.mtimeMs, cursor.mtimeMs),
-          and(
-            eq(libraryEntries.mtimeMs, cursor.mtimeMs),
-            gt(libraryEntries.logicalPath, cursor.logicalPath),
-          ),
-          and(
-            eq(libraryEntries.mtimeMs, cursor.mtimeMs),
-            eq(libraryEntries.logicalPath, cursor.logicalPath),
-            gt(libraryEntries.id, cursor.id),
-          ),
-        ),
-      );
-    case "random": {
-      const key = galleryRandomOrderKeySql(cursor.randomSeed, "media", libraryEntries.id);
-      const cursorKey = cursorRandomKey(cursor);
-
-      return requireCondition(
-        or(
-          gt(key, cursorKey),
-          and(eq(key, cursorKey), gt(libraryEntries.logicalPath, cursor.logicalPath)),
-          and(
-            eq(key, cursorKey),
-            eq(libraryEntries.logicalPath, cursor.logicalPath),
-            gt(libraryEntries.id, cursor.id),
-          ),
-        ),
-      );
-    }
-
+      return [
+        {
+          cursorValue: (cursor) => cursor.mtimeMs,
+          direction: sortMode === "date-newest" ? "desc" : "asc",
+          expression: libraryEntries.mtimeMs,
+        },
+        logicalPath,
+        id("asc"),
+      ];
+    case "random":
+      return [
+        {
+          cursorValue: cursorRandomKey,
+          direction: "asc",
+          expression: galleryRandomOrderKeySql(randomSeed, "media", libraryEntries.id),
+        },
+        logicalPath,
+        id("asc"),
+      ];
     default:
-      return requireCondition(
-        or(
-          gt(filename, cursor.filename),
-          and(eq(filename, cursor.filename), gt(logicalPath, cursor.logicalPath)),
-          and(
-            eq(filename, cursor.filename),
-            eq(logicalPath, cursor.logicalPath),
-            gt(libraryEntries.id, cursor.id),
-          ),
-        ),
-      );
+      return naturalName("asc");
   }
 }
 

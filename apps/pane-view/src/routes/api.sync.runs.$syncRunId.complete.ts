@@ -1,11 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
-import { HttpError, withHttpErrors } from "../server/http/http-error";
 import { readJsonBody } from "../server/http/json-body";
+import { SyncRunNotFoundError } from "../server/sync/errors";
 import {
   type SyncRouteDependencies,
   syncRouteDependencies,
 } from "../server/sync/route-dependencies";
+import { withSyncRouteErrors } from "../server/sync/route-errors";
 import { SyncRunCountsSchema } from "../server/sync/validation";
 
 const FinalizeSyncRunBodySchema = z.object({
@@ -27,7 +28,7 @@ export async function postSyncRunComplete(
   }
 
   if (!z.uuid().safeParse(params.syncRunId).success) {
-    throw new HttpError(404, "Sync run not found.");
+    throw new SyncRunNotFoundError();
   }
 
   const parsed = await readJsonBody(request, FinalizeSyncRunBodySchema);
@@ -50,6 +51,6 @@ export async function postSyncRunComplete(
 
 export const Route = createFileRoute("/api/sync/runs/$syncRunId/complete")({
   server: {
-    handlers: { POST: withHttpErrors(postSyncRunComplete) },
+    handlers: { POST: withSyncRouteErrors(postSyncRunComplete) },
   },
 });

@@ -16,6 +16,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
+import { buildBreadcrumbItems } from "./browse-search";
 
 interface ArchiveSidebarProps {
   currentPath: string;
@@ -38,7 +39,8 @@ export function ArchiveSidebar({
 }: ArchiveSidebarProps) {
   const { state } = useSidebar();
   const isCollapsed = state === "collapsed";
-  const ancestors = buildAncestorItems(currentPath);
+  // The "Archive root" row below stands for the root, so it adds no crumb of its own.
+  const ancestors = currentPath ? buildBreadcrumbItems(currentPath) : [];
   const childFolders = [...folders].sort(compareByName);
 
   return (
@@ -98,7 +100,7 @@ export function ArchiveSidebar({
                       style={isCollapsed ? undefined : { paddingLeft: `${12 + depth * 12}px` }}
                     >
                       <Folder className="size-3.5 shrink-0 text-amber-500" />
-                      <span className="min-w-0 flex-1 truncate text-xs">{ancestor.name}</span>
+                      <span className="min-w-0 flex-1 truncate text-xs">{ancestor.label}</span>
                       {ancestor.path !== currentPath && !isCollapsed ? (
                         <ChevronRight className="size-3 shrink-0 opacity-60" />
                       ) : null}
@@ -169,21 +171,4 @@ export function ArchiveSidebar({
       <SidebarRail />
     </Sidebar>
   );
-}
-
-function buildAncestorItems(currentPath: string): Array<{ name: string; path: string }> {
-  if (!currentPath) {
-    return [];
-  }
-
-  const segments = currentPath.split("/").filter(Boolean);
-
-  return segments.map((segment, index) => {
-    const path = segments.slice(0, index + 1).join("/");
-
-    return {
-      name: segment,
-      path,
-    };
-  });
 }

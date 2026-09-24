@@ -4,7 +4,7 @@ import {
   type S3StorageClient,
   type StoredObjectHead,
 } from "@latch-works/media-storage";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { type Database, db } from "../db";
 import { acquireLibraryMutationStartupLock } from "../db/library-coordination-lock";
 import {
@@ -15,10 +15,15 @@ import {
   syncRunItems,
   syncRuns,
 } from "../db/schema";
-import { HttpError } from "../http/http-error";
-import { withAncestorPaths } from "../library/query-helpers";
+import { withAncestorPaths } from "../library/folder-path-sql";
 import { assertNoActiveCleanupJob } from "../management/guards";
 import { getPaneViewStorageClient } from "../media/storage-client";
+import {
+  InvalidSyncPathError,
+  SyncRunConflictError,
+  SyncRunNotFoundError,
+  UploadMismatchError,
+} from "./errors";
 import { normalizeSyncLogicalPath, validateSyncLogicalPath } from "./validation";
 
 type SyncDbClient = Pick<Database, "insert" | "select" | "update">;
@@ -138,8 +143,6 @@ export async function completeSyncedObject(
   },
   dependencies: SyncStoreDependencies = defaultSyncStoreDependencies,
 ): Promise<{ status: "database" }> {
-  await dependencies.assertNoActiveCleanupJob(dependencies.database);
-
   const parentPath = getParentPath(input.logicalPath);
   const objectKey = input.objectKey;
   const expectedChecksum = Buffer.from(input.sha256.toLowerCase(), "hex").toString("base64");
@@ -147,25 +150,25 @@ export async function completeSyncedObject(
   const head = await dependencies.headStoredObject({ key: objectKey, storage });
 
   if (!head) {
-    throw new HttpError(422, "Uploaded object was not found in storage.");
+    throw new UploadMismatchError("Uploaded object was not found in storage.");
   }
 
   if (head.contentLength !== input.size) {
-    throw new HttpError(422, "Uploaded object size does not match declared size.");
+    throw new UploadMismatchError("Uploaded object size does not match declared size.");
   }
 
   if (head.contentType && head.contentType !== input.contentType) {
-    throw new HttpError(422, "Uploaded object content type does not match declared type.");
+    throw new UploadMismatchError("Uploaded object content type does not match declared type.");
   }
 
   const metadataSha = head.metadata?.sha256?.toLowerCase();
 
   if (metadataSha && metadataSha !== input.sha256.toLowerCase()) {
-    throw new HttpError(422, "Uploaded object sha256 metadata does not match declared hash.");
+    throw new UploadMismatchError("Uploaded object sha256 metadata does not match declared hash.");
   }
 
   if (head.checksumSHA256 && head.checksumSHA256 !== expectedChecksum) {
-    throw new HttpError(422, "Uploaded object checksum does not match declared hash.");
+    throw new UploadMismatchError("Uploaded object checksum does not match declared hash.");
   }
 
   await dependencies.database.transaction(async (tx) => {
@@ -289,27 +292,25 @@ export async function finalizeSyncRun(
     .limit(1);
 
   if (!existingSyncRun) {
-    throw new HttpError(404, "Sync run not found.");
+    throw new SyncRunNotFoundError();
   }
 
   if (existingSyncRun.status === input.status) {
     return { status: "database" };
   }
 
-  throw new HttpError(409, `Sync run is already ${existingSyncRun.status}.`);
+  throw new SyncRunConflictError(`Sync run is already ${existingSyncRun.status}.`);
 }
 
 export async function markRemoteDeleted(
   { logicalPath, syncRunId }: { logicalPath: string; syncRunId: string },
   dependencies: SyncStoreDependencies = defaultSyncStoreDependencies,
 ): Promise<{ status: "database" }> {
-  await dependencies.assertNoActiveCleanupJob(dependencies.database);
-
   const normalizedPath = normalizeSyncLogicalPath(logicalPath);
   const pathError = validateSyncLogicalPath(normalizedPath);
 
   if (pathError) {
-    throw new HttpError(400, pathError);
+    throw new InvalidSyncPathError(pathError);
   }
 
   await dependencies.database.transaction(async (tx) => {
@@ -363,11 +364,11 @@ async function assertWritableSyncRun(tx: SyncDbClient, syncRunId: string): Promi
     .for("share");
 
   if (!syncRun) {
-    throw new HttpError(404, "Sync run not found.");
+    throw new SyncRunNotFoundError();
   }
 
   if (syncRun.status !== "running") {
-    throw new HttpError(409, "Sync run is not accepting writes.");
+    throw new SyncRunConflictError("Sync run is not accepting writes.");
   }
 }
 
@@ -376,23 +377,31 @@ async function upsertContainingFolders(path: string, dbClient: SyncDbClient): Pr
     return;
   }
 
+  const folderPaths = collectContainingFolderPaths(path);
+
+  const existingRows = await dbClient
+    .select({
+      deletedAt: folders.deletedAt,
+      id: folders.id,
+      parentId: folders.parentId,
+      path: folders.path,
+    })
+    .from(folders)
+    .where(inArray(folders.path, folderPaths));
+
+  const existingByPath = new Map(existingRows.map((row) => [row.path, row]));
   const parentIdByPath = new Map<string, string>();
 
-  for (const folderPath of collectContainingFolderPaths(path)) {
+  for (const folderPath of folderPaths) {
     const parentPath = getParentPath(folderPath);
     const depth = folderPath.split("/").filter(Boolean).length;
     // Paths run root first, so a parent's row was already read or written above.
     const parentId = parentPath ? (parentIdByPath.get(parentPath) ?? null) : null;
+    const existing = existingByPath.get(folderPath);
 
     // Most files land in folders that are already live and linked. Leave those
     // rows alone: an upsert would rewrite and row-lock every ancestor (the root
     // included) until commit, serializing concurrent uploads on them.
-    const [existing] = await dbClient
-      .select({ deletedAt: folders.deletedAt, id: folders.id, parentId: folders.parentId })
-      .from(folders)
-      .where(eq(folders.path, folderPath))
-      .limit(1);
-
     if (existing && existing.deletedAt === null && existing.parentId === parentId) {
       parentIdByPath.set(folderPath, existing.id);
       continue;

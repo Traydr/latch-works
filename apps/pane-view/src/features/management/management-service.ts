@@ -19,7 +19,7 @@ import {
   forceCancelSyncRun,
 } from "../../server/management/sync-run-control";
 import { readSyncRunHistory } from "../../server/management/sync-run-history";
-import { assertWebSessionAuthorized } from "../library/library-service";
+import { assertWebSessionAuthorized } from "../auth/assert-web-session";
 
 const folderDeleteSchema = z.object({
   folderPaths: z.array(z.string().min(1)).min(1),

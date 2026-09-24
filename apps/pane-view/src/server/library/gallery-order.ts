@@ -32,7 +32,8 @@ export type GallerySubjectKind = "media" | "comic";
  * deterministic 32-hex rank; sorting by that rank is the full permutation that
  * every page slices. `galleryRandomOrderKey` and `galleryRandomOrderKeySql`
  * must agree byte for byte: both are the md5 hex of the same
- * `seed:kind:id` text. Fixed-width lowercase hex keeps SQL text order and JS
+ * `seed:kind:id` text, and keyset-order.test.ts checks them against each
+ * other under pglite. Fixed-width lowercase hex keeps SQL text order and JS
  * string order equal.
  * This is an ordering key, not a secret.
  */

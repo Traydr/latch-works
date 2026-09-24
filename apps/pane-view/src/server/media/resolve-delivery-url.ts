@@ -13,9 +13,8 @@ import {
   resolveVariantPreview,
 } from "./variant-provider";
 
-const THUMBNAIL_WIDTH = 320;
-
-const PREVIEW_WIDTH = 960;
+/** The width a variant resolves at when the caller names none. */
+const DEFAULT_VARIANT_WIDTH = { preview: 960, thumbnail: 320 } as const;
 
 const shutterControlLimiter = createConcurrencyLimiter(6);
 
@@ -40,12 +39,43 @@ const defaultMediaDeliveryDependencies: MediaDeliveryDependencies = {
   resolvePreview: resolveVariantPreview,
 };
 
+type MediaDeliveryVariant = "thumbnail" | "preview" | "original";
+
 export type MediaDeliveryResolveResult =
   | { pending: true; retryAfterMs: number }
   | { pending: false; url: string };
 
-function variantWidth(variant: "thumbnail" | "preview", size?: number): number {
-  return size ?? (variant === "preview" ? PREVIEW_WIDTH : THUMBNAIL_WIDTH);
+/** There is nothing to deliver: no such media, no variant for its type, or no Shutter preview. */
+export class MediaDeliveryNotFoundError extends Error {
+  readonly missing: "media" | "variant" | "preview";
+
+  constructor(missing: "media" | "variant" | "preview", message: string) {
+    super(message);
+    this.name = "MediaDeliveryNotFoundError";
+    this.missing = missing;
+  }
+}
+
+/** Shutter or the bucket signer failed to produce a URL; the message is the resolver's own. */
+export class MediaDeliveryUnavailableError extends Error {
+  readonly resolver: "image" | "original" | "preview";
+
+  constructor(resolver: "image" | "original" | "preview", cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause), { cause });
+    this.name = "MediaDeliveryUnavailableError";
+    this.resolver = resolver;
+  }
+}
+
+async function resolveWith<Result>(
+  resolver: MediaDeliveryUnavailableError["resolver"],
+  resolve: () => Promise<Result>,
+): Promise<Result> {
+  try {
+    return await resolve();
+  } catch (error) {
+    throw new MediaDeliveryUnavailableError(resolver, error);
+  }
 }
 
 async function resolveVariant(
@@ -54,18 +84,24 @@ async function resolveVariant(
   size: number | undefined,
   dependencies: MediaDeliveryDependencies,
 ): Promise<MediaDeliveryResolveResult> {
-  const width = variantWidth(variant, size);
+  const width = size ?? DEFAULT_VARIANT_WIDTH[variant];
 
   if (context.mediaType === "image" || context.mediaType === "gif") {
-    return { pending: false, url: await dependencies.resolveImageUrl(context, width) };
+    return {
+      pending: false,
+      url: await resolveWith("image", () => dependencies.resolveImageUrl(context, width)),
+    };
   }
 
   if (context.mediaType !== "video" && context.mediaType !== "pdf") {
-    throw new Error("Variant unavailable for unsupported media type");
+    throw new MediaDeliveryNotFoundError(
+      "variant",
+      "Variant unavailable for unsupported media type",
+    );
   }
 
-  const preview = await shutterControlLimiter.run(() =>
-    dependencies.resolvePreview(context, width),
+  const preview = await resolveWith("preview", () =>
+    shutterControlLimiter.run(() => dependencies.resolvePreview(context, width)),
   );
 
   if (preview.status === "pending") {
@@ -73,7 +109,8 @@ async function resolveVariant(
   }
 
   if (preview.status === "failed") {
-    throw new Error(
+    throw new MediaDeliveryNotFoundError(
+      "preview",
       preview.code ? `Shutter preview failed (${preview.code})` : "Shutter preview unavailable",
     );
   }
@@ -81,17 +118,11 @@ async function resolveVariant(
   return { pending: false, url: preview.url };
 }
 
-async function resolveOriginalDeliveryUrl(
-  mediaId: string,
-  dependencies: MediaDeliveryDependencies,
-): Promise<string> {
-  const media = await dependencies.readDeliveryRequest({ mediaId });
-
-  if (!media) throw new Error("Media not found");
-
-  return dependencies.resolveOriginalUrl(media);
-}
-
+/**
+ * The one delivery dispatch: the server functions and the redirect routes all
+ * come through here. Throws MediaDeliveryNotFoundError when there is nothing
+ * to deliver and MediaDeliveryUnavailableError when a resolver fails.
+ */
 export async function resolveMediaDeliveryUrlForVariant(
   {
     mediaId,
@@ -100,28 +131,35 @@ export async function resolveMediaDeliveryUrlForVariant(
   }: {
     mediaId: string;
     size?: number;
-    variant: "thumbnail" | "preview" | "original";
+    variant: MediaDeliveryVariant;
   },
   dependencies: MediaDeliveryDependencies = defaultMediaDeliveryDependencies,
 ): Promise<MediaDeliveryResolveResult> {
   if (variant === "original") {
-    return { pending: false, url: await resolveOriginalDeliveryUrl(mediaId, dependencies) };
+    const media = await dependencies.readDeliveryRequest({ mediaId });
+
+    if (!media) throw new MediaDeliveryNotFoundError("media", "Media not found");
+
+    return {
+      pending: false,
+      url: await resolveWith("original", () => dependencies.resolveOriginalUrl(media)),
+    };
   }
 
   const context = await dependencies.readThumbnailContext({ mediaId });
 
-  if (!context) throw new Error("Media not found");
+  if (!context) throw new MediaDeliveryNotFoundError("media", "Media not found");
 
   return resolveVariant(context, variant, size, dependencies);
 }
 
-export interface MediaDeliveryBatchResolveItem {
+interface MediaDeliveryBatchResolveItem {
   mediaId: string;
   size?: number;
-  variant: "thumbnail" | "preview" | "original";
+  variant: MediaDeliveryVariant;
 }
 
-export type MediaDeliveryBatchResolveResult =
+export type MediaDeliveryBatchResult =
   | { mediaId: string; retryAfterMs: number; size?: number; status: "pending"; variant: string }
   | { mediaId: string; size?: number; status: "ready"; url: string; variant: string }
   | { mediaId: string; size?: number; status: "failed"; variant: string };
@@ -130,10 +168,11 @@ function batchResolveKey(item: MediaDeliveryBatchResolveItem): string {
   return `${item.variant}:${item.mediaId}:${item.size ?? "default"}`;
 }
 
+/** Resolve each distinct item once; repeats of an item are dropped from the results. */
 export async function resolveMediaDeliveryUrlsForVariants(
   items: MediaDeliveryBatchResolveItem[],
   dependencies: MediaDeliveryDependencies = defaultMediaDeliveryDependencies,
-): Promise<MediaDeliveryBatchResolveResult[]> {
+): Promise<MediaDeliveryBatchResult[]> {
   const seen = new Set<string>();
 
   const uniqueItems = items.filter((item) => {
@@ -156,7 +195,7 @@ export async function resolveMediaDeliveryUrlsForVariants(
   const contexts = await dependencies.readThumbnailContexts({ mediaIds: variantIds });
 
   return Promise.all(
-    uniqueItems.map(async (item): Promise<MediaDeliveryBatchResolveResult> => {
+    uniqueItems.map(async (item): Promise<MediaDeliveryBatchResult> => {
       try {
         const context = item.variant === "original" ? undefined : contexts.get(item.mediaId);
 

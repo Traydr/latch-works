@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import type { CopyStatus } from "@/hooks/use-copy-to-clipboard";
 import { COPY_PATH_ICONS, COPY_PATH_LABELS } from "./copy-path-status";
 import { DeleteOverlay } from "./DeleteOverlay";
+import { supportsGalleryThumbnail } from "./gallery-page-helpers";
 import { MediaPlaceholder } from "./MediaPlaceholder";
 import { PaneViewImage } from "./PaneViewImage";
 
@@ -41,11 +42,7 @@ export function DetailPanel({
 }: DetailPanelProps) {
   const CopyIcon = COPY_PATH_ICONS[copyStatus];
 
-  const supportsThumbnail =
-    selected?.mediaType === "image" ||
-    selected?.mediaType === "gif" ||
-    selected?.mediaType === "video" ||
-    selected?.mediaType === "pdf";
+  const supportsThumbnail = selected !== null && supportsGalleryThumbnail(selected);
 
   return (
     <aside

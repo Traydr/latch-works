@@ -1,7 +1,7 @@
 import { createS3StorageClient, type S3StorageClient } from "@latch-works/media-storage";
 import { env } from "../../env/server";
 
-export function createPaneViewStorageClient(): S3StorageClient {
+function createPaneViewStorageClient(): S3StorageClient {
   return createS3StorageClient({
     accessKeyId: env.S3_ACCESS_KEY_ID,
     bucket: env.S3_BUCKET,
@@ -13,7 +13,10 @@ export function createPaneViewStorageClient(): S3StorageClient {
 
 let sharedStorageClient: S3StorageClient | undefined;
 
-/** The one client request handlers share, created on first use; an S3 client pools its connections. */
+/**
+ * The one client request handlers and maintenance jobs share, created on
+ * first use; an S3 client pools its connections.
+ */
 export function getPaneViewStorageClient(): S3StorageClient {
   sharedStorageClient ??= createPaneViewStorageClient();
 
