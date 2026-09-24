@@ -9,6 +9,11 @@ import {
   viewerState,
 } from "../db/schema";
 import {
+  SHUTTER_PURGE_INCOMPLETE_MESSAGE,
+  type ShutterPurgeReadiness,
+  shutterPurgeReadiness,
+} from "../media/shutter-client";
+import {
   type MaintenanceJobDescriptor,
   type MaintenanceSchedulerDependencies,
   type MaintenanceTransaction,
@@ -18,15 +23,17 @@ import {
 
 export const LIBRARY_WIPE_CONFIRMATION = "WIPE LIBRARY";
 
-/** The token check and the scheduler a wipe request runs through. */
+/** The token check, the Shutter configuration, and the scheduler a wipe request runs through. */
 export interface LibraryWipeDependencies {
   assertSyncApiToken(token: string): void;
   scheduler: MaintenanceSchedulerDependencies;
+  shutterPurgeReadiness(): ShutterPurgeReadiness;
 }
 
 const defaultLibraryWipeDependencies: LibraryWipeDependencies = {
   assertSyncApiToken: assertSyncApiTokenFromBody,
   scheduler: maintenanceSchedulerDependencies,
+  shutterPurgeReadiness: () => shutterPurgeReadiness(),
 };
 
 /**
@@ -64,6 +71,12 @@ export async function scheduleLibraryWipe(
   }
 
   dependencies.assertSyncApiToken(syncToken);
+
+  // The wipe deletes the rows that name Shutter's copies; refuse before
+  // anything is touched when those copies could not be purged.
+  if (dependencies.shutterPurgeReadiness() === "incomplete") {
+    throw new Error(SHUTTER_PURGE_INCOMPLETE_MESSAGE);
+  }
 
   const { jobId } = await scheduleMaintenanceJob(libraryWipeDescriptor, dependencies.scheduler);
 

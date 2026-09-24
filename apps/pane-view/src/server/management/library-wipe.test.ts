@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { acquireLibraryMutationStartupLock } from "../db/library-coordination-lock";
-import { maintenanceJobs } from "../db/schema";
+import { libraryEntries, maintenanceJobs, mediaObjects } from "../db/schema";
 import { testDatabaseForSuite } from "../library/test-db";
 import { assertNoActiveSyncRun, readActiveCleanupJob } from "./guards";
 import {
@@ -26,6 +26,7 @@ function wipeDependencies(): LibraryWipeDependencies {
       processMaintenanceJob,
       readActiveCleanupJob,
     },
+    shutterPurgeReadiness: () => "ready",
   };
 }
 
@@ -47,5 +48,43 @@ describe("library wipe", () => {
     ).rejects.toThrow("bad token");
     expect(await testDatabase().db.select().from(maintenanceJobs)).toEqual([]);
     expect(processMaintenanceJob).not.toHaveBeenCalled();
+  });
+
+  it("refuses while Shutter is partly configured, before it touches a row", async () => {
+    const { db } = testDatabase();
+
+    const [object] = await db
+      .insert(mediaObjects)
+      .values({
+        contentType: "image/jpeg",
+        extension: "jpg",
+        mediaType: "image",
+        objectKey: "originals/seed.jpg",
+        sha256: "a".repeat(64),
+        size: 1024,
+      })
+      .returning({ id: mediaObjects.id });
+
+    if (!object) throw new Error("failed to insert media object");
+
+    await db.insert(libraryEntries).values({
+      filename: "seed.jpg",
+      logicalPath: "seed.jpg",
+      mediaObjectId: object.id,
+      mtimeMs: 1_700_000_000_000,
+    });
+
+    await expect(
+      scheduleLibraryWipe(
+        { confirmation: LIBRARY_WIPE_CONFIRMATION, syncToken: "t" },
+        { ...wipeDependencies(), shutterPurgeReadiness: () => "incomplete" },
+      ),
+    ).rejects.toThrow("Shutter is partly configured");
+    expect(await db.select().from(maintenanceJobs)).toEqual([]);
+    expect(
+      (await db.select({ deletedAt: libraryEntries.deletedAt }).from(libraryEntries)).map(
+        (row) => row.deletedAt,
+      ),
+    ).toEqual([null]);
   });
 });

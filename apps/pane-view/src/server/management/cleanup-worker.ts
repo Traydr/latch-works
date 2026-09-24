@@ -17,7 +17,13 @@ import {
   viewerState,
 } from "../db/schema";
 import { withAncestorPaths } from "../library/query-helpers";
-import { purgeShutterSource, type ShutterPurgeSource } from "../media/shutter-client";
+import {
+  purgeShutterSource,
+  SHUTTER_PURGE_INCOMPLETE_MESSAGE,
+  type ShutterPurgeReadiness,
+  type ShutterPurgeSource,
+  shutterPurgeReadiness,
+} from "../media/shutter-client";
 import { MaintenanceJobTypeSchema, parseMaintenanceProgress } from "./maintenance-progress";
 import { deleteMaintenanceObjects, getMaintenanceStorageClient } from "./maintenance-storage";
 import {
@@ -47,6 +53,8 @@ const runningJobs = new Set<string>();
 export interface MaintenanceWorkerDependencies {
   database: Database;
   deleteObjects(keys: string[]): Promise<{ deleted: number }>;
+  /** Whether this deployment can purge Shutter's copies (see shutterPurgeReadiness). */
+  shutterPurgeReadiness(): ShutterPurgeReadiness;
   listObjectsByPrefix(request: {
     continuationToken?: string;
     limit: number;
@@ -61,6 +69,7 @@ const defaultMaintenanceWorkerDependencies: MaintenanceWorkerDependencies = {
   listObjectsByPrefix: (request) =>
     listStoredObjectsByPrefix({ ...request, storage: getMaintenanceStorageClient() }),
   purgeShutterSource,
+  shutterPurgeReadiness: () => shutterPurgeReadiness(),
 };
 
 interface CleanupJobStatusBase {
@@ -500,14 +509,22 @@ async function processLibraryWipeBatch(
         return true;
       }
 
+      // Without Shutter there is nothing to purge. Partly configured, the purge
+      // cannot run, so stop before the originals and the rows naming them go.
+      const shutterPurge = dependencies.shutterPurgeReadiness();
+
+      if (shutterPurge === "incomplete") throw new Error(SHUTTER_PURGE_INCOMPLETE_MESSAGE);
+
       await dependencies.deleteObjects(rows.map((row) => row.objectKey));
 
       if (!(await isMaintenanceJobActive(jobId, dependencies))) return false;
 
       for (const row of rows) {
         try {
-          // react-doctor-disable-next-line react-doctor/async-await-in-loop -- Stop at the first purge failure so the durable job cursor remains retry-safe.
-          await dependencies.purgeShutterSource({ objectKey: row.objectKey, sha256: row.sha256 });
+          if (shutterPurge === "ready") {
+            // react-doctor-disable-next-line react-doctor/async-await-in-loop -- Stop at the first purge failure so the durable job cursor remains retry-safe.
+            await dependencies.purgeShutterSource({ objectKey: row.objectKey, sha256: row.sha256 });
+          }
         } catch (error) {
           const reason = error instanceof Error ? error.message : String(error);
           throw new Error(`Shutter source purge failed: ${reason}`);

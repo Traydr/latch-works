@@ -35,6 +35,7 @@ function dependencies(deletes?: ExternalDeletes): MaintenanceWorkerDependencies 
     purgeShutterSource: async (source) => {
       deletes?.shutterSources.push(source.sha256);
     },
+    shutterPurgeReadiness: () => "ready",
   };
 }
 
@@ -322,5 +323,50 @@ describe("Shutter source purge", () => {
 
     expect(deletes.shutterSources).toEqual([]);
     expect(await db.select().from(shutterSourceCleanup)).toEqual([]);
+  });
+});
+
+describe("library wipe", () => {
+  beforeEach(async () => {
+    const { db } = testDatabase();
+    await db.delete(libraryEntries);
+    await db.delete(mediaObjects);
+    await db.delete(maintenanceJobs);
+  });
+
+  it("deletes nothing while Shutter is partly configured", async () => {
+    const sha256 = "9".repeat(64);
+    await insertEntry(await insertMediaObject(sha256), "gone/9.jpg", new Date());
+    const jobId = await insertJob("library_hard_wipe");
+    const deletes: ExternalDeletes = { objectKeys: [], shutterSources: [] };
+
+    await expect(
+      processMaintenanceJobBatch(jobId, {
+        ...dependencies(deletes),
+        shutterPurgeReadiness: () => "incomplete",
+      }),
+    ).rejects.toThrow("Shutter is partly configured");
+    expect(deletes).toEqual({ objectKeys: [], shutterSources: [] });
+    expect(await remainingMediaSha256s()).toEqual([sha256]);
+  });
+
+  it("skips the purge but still wipes when there is no Shutter at all", async () => {
+    const sha256 = "8".repeat(64);
+    await insertEntry(await insertMediaObject(sha256), "gone/8.jpg", new Date());
+    const deletes: ExternalDeletes = { objectKeys: [], shutterSources: [] };
+
+    const jobId = await insertJob("library_hard_wipe");
+
+    while (
+      await processMaintenanceJobBatch(jobId, {
+        ...dependencies(deletes),
+        shutterPurgeReadiness: () => "off",
+      })
+    ) {
+      // Each batch advances the durable cursor; the job reports when it is done.
+    }
+
+    expect(deletes).toEqual({ objectKeys: [`originals/${sha256}.jpg`], shutterSources: [] });
+    expect(await remainingMediaSha256s()).toEqual([]);
   });
 });

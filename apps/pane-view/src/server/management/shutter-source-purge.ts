@@ -1,5 +1,6 @@
 import { and, isNull, not } from "drizzle-orm";
 import { mediaObjects, shutterSourceCleanup } from "../db/schema";
+import { SHUTTER_PURGE_INCOMPLETE_MESSAGE, shutterPurgeReadiness } from "../media/shutter-client";
 import {
   type MaintenanceJobDescriptor,
   type MaintenanceTransaction,
@@ -36,9 +37,19 @@ export const shutterSourcePurgeDescriptor: MaintenanceJobDescriptor = {
   type: "shutter_source_purge",
 };
 
-export function scheduleShutterSourcePurge(): Promise<{
+export async function scheduleShutterSourcePurge(): Promise<{
   jobId: string | null;
   phase: "empty" | "scheduled";
 }> {
+  const readiness = shutterPurgeReadiness();
+
+  if (readiness === "off") {
+    throw new Error("Shutter is not configured, so there are no Shutter sources to purge.");
+  }
+
+  if (readiness === "incomplete") {
+    throw new Error(SHUTTER_PURGE_INCOMPLETE_MESSAGE);
+  }
+
   return scheduleMaintenanceJob(shutterSourcePurgeDescriptor);
 }

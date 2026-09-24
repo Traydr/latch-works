@@ -1,6 +1,7 @@
 import { count, isNotNull, isNull, sql } from "drizzle-orm";
 import { db } from "../db";
 import { collections, folders, libraryEntries, mediaObjects } from "../db/schema";
+import { type ShutterPurgeReadiness, shutterPurgeReadiness } from "../media/shutter-client";
 import { readActiveCleanupJob } from "./guards";
 import { listRunningSyncRuns, type RunningSyncRun } from "./sync-run-control";
 
@@ -16,6 +17,8 @@ export interface ManagementOverview {
     sourceRoot: string;
   } | null;
   runningSyncRuns: RunningSyncRun[];
+  /** Whether this deployment can purge Shutter's copies (see shutterPurgeReadiness). */
+  shutterPurge: ShutterPurgeReadiness;
   library: {
     activeEntries: number;
     activeFolders: number;
@@ -66,6 +69,7 @@ export async function readManagementOverview(): Promise<ManagementOverview> {
     activeCleanupJob,
     activeSyncRun,
     runningSyncRuns,
+    shutterPurge: shutterPurgeReadiness(),
     library: {
       activeEntries: activeEntriesRow[0]?.value ?? 0,
       activeFolders: activeFoldersRow[0]?.value ?? 0,
