@@ -67,7 +67,7 @@ export function CleanupJobProgress({
               : job.status === "failed"
                 ? "Cleanup failed. Review the error and retry the matching action below if needed."
                 : job.status === "cancelled"
-                  ? "Cleanup was cancelled. Work not yet processed remains queued."
+                  ? "Cleanup was cancelled. What it already deleted stays deleted; run the matching action below again to finish the rest."
                   : "Cleanup finished."}
           </p>
         </div>

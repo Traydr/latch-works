@@ -305,9 +305,9 @@ async function processSoftDeletedPurgeBatch(
         return true;
       }
 
-      await dependencies.deleteObjects(rows.map((row) => row.objectKey));
-
       if (!(await isMaintenanceJobActive(jobId, dependencies))) return false;
+
+      await dependencies.deleteObjects(rows.map((row) => row.objectKey));
 
       for (const row of rows) {
         const entryIds = dependencies.database
@@ -317,8 +317,11 @@ async function processSoftDeletedPurgeBatch(
 
         // Deleting an unshared media row cascades its soft-deleted library entries. Generic
         // subject state has no foreign key, so remove it explicitly in the same transaction.
+        // A cancel stops the batch before its next media row.
         // react-doctor-disable-next-line react-doctor/async-await-in-loop -- Each transaction advances the durable cleanup cursor.
-        await dependencies.database.transaction(async (tx) => {
+        const active = await dependencies.database.transaction(async (tx) => {
+          if (!(await lockActiveMaintenanceJob(tx, jobId))) return false;
+
           await tx
             .insert(shutterSourceCleanup)
             .values({ objectKey: row.objectKey, sha256: row.sha256 })
@@ -340,7 +343,11 @@ async function processSoftDeletedPurgeBatch(
               ),
             );
           await tx.delete(mediaObjects).where(eq(mediaObjects.id, row.id));
+
+          return true;
         });
+
+        if (!active) return false;
       }
 
       await updateJobProgress(
@@ -361,7 +368,9 @@ async function processSoftDeletedPurgeBatch(
         .from(libraryEntries)
         .where(isNotNull(libraryEntries.deletedAt));
 
-      await dependencies.database.transaction(async (tx) => {
+      const active = await dependencies.database.transaction(async (tx) => {
+        if (!(await lockActiveMaintenanceJob(tx, jobId))) return false;
+
         await tx
           .delete(favorites)
           .where(
@@ -397,7 +406,11 @@ async function processSoftDeletedPurgeBatch(
         await tx
           .delete(folders)
           .where(and(isNotNull(folders.deletedAt), sql`${folders.path} not in (${occupiedPaths})`));
+
+        return true;
       });
+
+      if (!active) return false;
 
       await completeMaintenanceJob(jobId, { ...progress, phase: "completed" }, dependencies);
 
@@ -451,6 +464,9 @@ async function processShutterSourcePurgeBatch(
       }
 
       for (const row of rows) {
+        // react-doctor-disable-next-line react-doctor/async-await-in-loop -- A cancel stops the batch before its next purge.
+        if (!(await isMaintenanceJobActive(jobId, dependencies))) return false;
+
         // react-doctor-disable-next-line react-doctor/async-await-in-loop -- Mark each source only after Shutter confirms its purge.
         await dependencies.purgeShutterSource(row);
         // react-doctor-disable-next-line react-doctor/async-await-in-loop -- The durable queue advances one confirmed source at a time.
@@ -458,8 +474,6 @@ async function processShutterSourcePurgeBatch(
           .update(shutterSourceCleanup)
           .set({ purgedAt: new Date() })
           .where(eq(shutterSourceCleanup.sha256, row.sha256));
-
-        if (!(await isMaintenanceJobActive(jobId, dependencies))) return false;
       }
 
       await updateJobProgress(
@@ -515,11 +529,14 @@ async function processLibraryWipeBatch(
 
       if (shutterPurge === "incomplete") throw new Error(SHUTTER_PURGE_INCOMPLETE_MESSAGE);
 
-      await dependencies.deleteObjects(rows.map((row) => row.objectKey));
-
       if (!(await isMaintenanceJobActive(jobId, dependencies))) return false;
 
+      await dependencies.deleteObjects(rows.map((row) => row.objectKey));
+
       for (const row of rows) {
+        // react-doctor-disable-next-line react-doctor/async-await-in-loop -- A cancel stops the batch before its next purge and delete.
+        if (!(await isMaintenanceJobActive(jobId, dependencies))) return false;
+
         try {
           if (shutterPurge === "ready") {
             // react-doctor-disable-next-line react-doctor/async-await-in-loop -- Stop at the first purge failure so the durable job cursor remains retry-safe.
@@ -559,6 +576,8 @@ async function processLibraryWipeBatch(
       });
 
       if (page.keys.length > 0) {
+        if (!(await isMaintenanceJobActive(jobId, dependencies))) return false;
+
         await dependencies.deleteObjects(page.keys);
 
         if (!(await isMaintenanceJobActive(jobId, dependencies))) return false;
@@ -625,7 +644,9 @@ async function processLibraryWipeBatch(
     }
 
     case "db_hard_delete": {
-      await dependencies.database.transaction(async (tx) => {
+      const active = await dependencies.database.transaction(async (tx) => {
+        if (!(await lockActiveMaintenanceJob(tx, jobId))) return false;
+
         await tx.delete(favorites).where(eq(favorites.subjectType, "library_entry"));
         await tx.delete(viewerState).where(eq(viewerState.subjectType, "library_entry"));
         await tx.delete(syncRunItems);
@@ -633,7 +654,11 @@ async function processLibraryWipeBatch(
         await tx.delete(libraryEntries);
         await tx.delete(folders);
         await tx.delete(mediaObjects);
+
+        return true;
       });
+
+      if (!active) return false;
 
       await completeMaintenanceJob(jobId, { ...progress, phase: "completed" }, dependencies);
 
@@ -684,6 +709,25 @@ async function updateJobProgress(
     .where(
       and(eq(maintenanceJobs.id, jobId), inArray(maintenanceJobs.status, [...activeJobStatuses])),
     );
+}
+
+/**
+ * Lock the job row until `tx` ends and report whether the job is still active,
+ * so a cancel either lands before the transaction's deletes or waits for them.
+ */
+async function lockActiveMaintenanceJob(
+  tx: Pick<Database, "select">,
+  jobId: string,
+): Promise<boolean> {
+  const [job] = await tx
+    .select({ id: maintenanceJobs.id })
+    .from(maintenanceJobs)
+    .where(
+      and(eq(maintenanceJobs.id, jobId), inArray(maintenanceJobs.status, [...activeJobStatuses])),
+    )
+    .for("update");
+
+  return Boolean(job);
 }
 
 async function isMaintenanceJobActive(

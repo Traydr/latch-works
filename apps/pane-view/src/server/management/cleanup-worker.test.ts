@@ -11,6 +11,7 @@ import {
 } from "../db/schema";
 import { testDatabaseForSuite } from "../library/test-db";
 import { completeSyncedObject, markRemoteDeleted, type SyncStoreDependencies } from "../sync/store";
+import { cancelMaintenanceJob } from "./cleanup-control";
 import { type MaintenanceWorkerDependencies, processMaintenanceJobBatch } from "./cleanup-worker";
 import { initialProgressFor } from "./maintenance-progress";
 import { hasPurgeableShutterSources } from "./shutter-source-purge";
@@ -141,6 +142,29 @@ describe("soft-deleted purge", () => {
       .from(shutterSourceCleanup);
 
     expect(queued.map((row) => row.sha256).sort()).toEqual([unreferenced, deletedOnly]);
+  });
+
+  it("keeps every media row when a cancel lands during the storage delete", async () => {
+    const sha256s = ["1", "2", "3"].map((digit) => digit.repeat(64));
+
+    for (const sha256 of sha256s) {
+      await insertEntry(await insertMediaObject(sha256), `gone/${sha256[0]}.jpg`, new Date());
+    }
+
+    const jobId = await insertJob("soft_deleted_purge");
+
+    const cancelling: MaintenanceWorkerDependencies = {
+      ...dependencies(),
+      deleteObjects: async (keys) => {
+        await cancelMaintenanceJob({ jobId }, testDatabase().db);
+
+        return { deleted: keys.length };
+      },
+    };
+
+    expect(await processMaintenanceJobBatch(jobId, cancelling)).toBe(false);
+    expect(await remainingMediaSha256s()).toEqual(sha256s);
+    expect(await testDatabase().db.select().from(shutterSourceCleanup)).toEqual([]);
   });
 
   it("hard-deletes deleted folders unless something live sits beneath them", async () => {
