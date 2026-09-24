@@ -186,8 +186,8 @@ test.describe("comic mode", () => {
 
     if (!firstPage || !lastPage) throw new Error("comic without pages");
     const pageName = (path: string) => path.slice(path.lastIndexOf("/") + 1);
-    // The detail panel also shows the cover; scope to the reader dialog. Every page is
-    // rendered in reading order.
+    // The detail panel also shows the cover; scope to the reader dialog. Pages load as they
+    // near the view, and this viewport holds all of them: every page renders in reading order.
     const reader = page.getByRole("dialog", { name: `Reader for ${alpha.name}` });
     await expect
       .poll(() =>

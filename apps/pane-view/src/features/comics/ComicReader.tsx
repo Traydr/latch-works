@@ -1,4 +1,4 @@
-import type { ComicEntry } from "@latch-works/media-domain";
+import type { ComicEntry, MediaItem } from "@latch-works/media-domain";
 import { ArrowUp, X } from "lucide-react";
 import { type JSX, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 import { ResolvedMediaImage } from "@/features/gallery/ResolvedMediaImage";
@@ -10,12 +10,23 @@ interface ComicReaderProps {
   onClose: () => void;
 }
 
+/** Pages start loading this far (in reader heights) before they scroll into view. */
+const PAGE_LOAD_MARGIN = "200% 0px";
+
+/** A portrait page's shape, for pages whose size was never recorded. */
+const FALLBACK_PAGE_ASPECT_RATIO = "2 / 3";
+
+function pageAspectRatio(page: MediaItem): string {
+  return page.width && page.height ? `${page.width} / ${page.height}` : FALLBACK_PAGE_ASPECT_RATIO;
+}
+
 export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
   const dialogRef = useRef<HTMLDialogElement | null>(null);
   const readerRef = useRef<HTMLDivElement | null>(null);
   const pageRefs = useRef<Array<HTMLDivElement | null>>([]);
   const currentPageIndexRef = useRef(0);
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
+  const [nearPageIds, setNearPageIds] = useState<ReadonlySet<string>>(() => new Set());
 
   const { chromeVisible, revealChrome, chromeVisibilityClass } = useViewerChromeIdle({
     isMobile: false,
@@ -142,6 +153,48 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
     };
   }, [revealChrome]);
 
+  // Pages resolve and download only as they come near; once loaded they stay.
+  useEffect(() => {
+    const reader = readerRef.current;
+
+    if (!reader) {
+      return undefined;
+    }
+
+    const pageIdByElement = new Map<Element, string>();
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const arrived: string[] = [];
+
+        for (const entry of entries) {
+          const pageId = pageIdByElement.get(entry.target);
+
+          if (entry.isIntersecting && pageId) {
+            arrived.push(pageId);
+            observer.unobserve(entry.target);
+          }
+        }
+
+        if (arrived.length > 0) {
+          setNearPageIds((current) => new Set([...current, ...arrived]));
+        }
+      },
+      { root: reader, rootMargin: PAGE_LOAD_MARGIN },
+    );
+
+    comic.pages.forEach((page, index) => {
+      const element = pageRefs.current[index];
+
+      if (element) {
+        pageIdByElement.set(element, page.id);
+        observer.observe(element);
+      }
+    });
+
+    return () => observer.disconnect();
+  }, [comic.pages]);
+
   const scrollToTop = (): void => {
     readerRef.current?.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -204,16 +257,20 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
               ref={(element) => {
                 pageRefs.current[index] = element;
               }}
+              className="w-full bg-zinc-900"
+              style={{ aspectRatio: pageAspectRatio(page) }}
             >
-              <ResolvedMediaImage
-                alt={page.name}
-                className="max-h-none w-full max-w-full bg-zinc-900 object-contain"
-                layout="fullWidth"
-                mediaId={page.id}
-                mediaType={page.mediaType}
-                variant="preview"
-                width={960}
-              />
+              {nearPageIds.has(page.id) ? (
+                <ResolvedMediaImage
+                  alt={page.name}
+                  className="h-full w-full object-contain"
+                  layout="fullWidth"
+                  mediaId={page.id}
+                  mediaType={page.mediaType}
+                  variant="preview"
+                  width={960}
+                />
+              ) : null}
             </div>
           ))}
         </div>
