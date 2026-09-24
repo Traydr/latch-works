@@ -403,6 +403,20 @@ async function upsertContainingFolders(path: string, dbClient: SyncDbClient): Pr
         null;
     }
 
+    // Most files land in folders that are already live and linked. Leave those
+    // rows alone: an upsert would rewrite and row-lock every ancestor (the root
+    // included) until commit, serializing concurrent uploads on them.
+    const [existing] = await dbClient
+      .select({ deletedAt: folders.deletedAt, id: folders.id, parentId: folders.parentId })
+      .from(folders)
+      .where(eq(folders.path, folderPath))
+      .limit(1);
+
+    if (existing && existing.deletedAt === null && existing.parentId === parentId) {
+      parentIdByPath.set(folderPath, existing.id);
+      continue;
+    }
+
     const [folder] = await dbClient
       .insert(folders)
       .values({
