@@ -26,9 +26,16 @@ import type { LibraryMediaItem, MediaPage } from "./types";
 
 export type { LibraryMediaItem, MediaPage } from "./types";
 
+/**
+ * A snapshot's `folders` and `siblings` feed the sidebar, the exclude dialog,
+ * and sibling navigation, none of which shows whether a folder has children,
+ * so the snapshot skips that lookup.
+ */
+export type SnapshotFolderNode = Omit<FolderNode, "hasChildren">;
+
 export interface DatabaseLibrarySnapshot {
   allFolders: FolderNode[];
-  folders: FolderNode[];
+  folders: SnapshotFolderNode[];
   media: LibraryMediaItem[];
   mediaPage: MediaPage;
   roots: string[];
@@ -37,7 +44,7 @@ export interface DatabaseLibrarySnapshot {
    * itself included; empty at the root. Unordered: callers sort. Feeds
    * previous/next sibling navigation, which `folders` (the children) cannot.
    */
-  siblings: FolderNode[];
+  siblings: SnapshotFolderNode[];
 }
 
 export interface LibrarySnapshotReadRequest {
@@ -321,15 +328,6 @@ export async function readDatabaseLibrarySnapshot(
       : Promise.resolve([]),
   ]);
 
-  const visibleFolderPaths = [
-    ...new Set([...folderRows, ...siblingRows].map((folder) => folder.path)),
-  ];
-
-  const visibleParentPathsWithChildren = await readParentPathsWithChildren(
-    visibleFolderPaths,
-    database,
-  );
-
   const folderParentPathsWithChildFolders = new Set(
     allFolderRows
       .map((folder) => folder.parentPath)
@@ -342,9 +340,9 @@ export async function readDatabaseLibrarySnapshot(
     allFolders: allFolderRows.map((folder) =>
       mapFolderRow(folder, folderParentPathsWithChildFolders),
     ),
-    folders: folderRows.map((folder) => mapFolderRow(folder, visibleParentPathsWithChildren)),
+    folders: folderRows.map(mapSnapshotFolderRow),
     media: mapMediaRowsToLibraryItems(pageMediaRows),
-    siblings: siblingRows.map((folder) => mapFolderRow(folder, visibleParentPathsWithChildren)),
+    siblings: siblingRows.map(mapSnapshotFolderRow),
     mediaPage,
     roots: rootRows
       .map((folder) => folder.path)
@@ -474,9 +472,12 @@ export async function softDeleteLibraryEntry(
 type FolderRow = typeof folders.$inferSelect;
 
 function mapFolderRow(folder: FolderRow, parentPathsWithChildren: ReadonlySet<string>): FolderNode {
+  return { ...mapSnapshotFolderRow(folder), hasChildren: parentPathsWithChildren.has(folder.path) };
+}
+
+function mapSnapshotFolderRow(folder: FolderRow): SnapshotFolderNode {
   return {
     folderCount: folder.folderCount ?? 0,
-    hasChildren: parentPathsWithChildren.has(folder.path),
     mediaCount: folder.entryCount ?? 0,
     name: folder.name,
     parentId: folder.parentId,
