@@ -91,7 +91,6 @@ export function VideoPlayerChrome({ model }: VideoPlayerChromeProps): JSX.Elemen
                   <button
                     type="button"
                     aria-label="Playback speed"
-                    aria-haspopup="menu"
                     aria-expanded={open === "speed"}
                     title="Playback speed"
                     className={`inline-flex h-8 min-w-9 cursor-pointer items-center justify-center rounded-full px-1.5 text-[11px] font-semibold tabular-nums transition hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-violet-400 ${model.speed === 1 && open !== "speed" ? "text-white/90" : "text-violet-300"}`}
@@ -269,13 +268,12 @@ function SpeedPanel({
   onPick,
 }: VideoPlayerChromeProps & { onPick: () => void }): JSX.Element {
   return (
-    <div role="menu" aria-label="Playback speed" className="flex flex-col py-1">
+    <fieldset aria-label="Playback speed" className="flex flex-col py-1">
       {[...SPEEDS].reverse().map((speed) => (
         <button
           key={speed}
           type="button"
-          role="menuitemradio"
-          aria-checked={speed === model.speed}
+          aria-pressed={speed === model.speed}
           className={`cursor-pointer px-4 py-1.5 text-center text-sm tabular-nums transition hover:bg-white/10 ${speed === model.speed ? "font-semibold text-violet-300" : "text-white/90"}`}
           onClick={() => {
             model.applySpeed(speed);
@@ -285,7 +283,7 @@ function SpeedPanel({
           {formatSpeed(speed)}
         </button>
       ))}
-    </div>
+    </fieldset>
   );
 }
 

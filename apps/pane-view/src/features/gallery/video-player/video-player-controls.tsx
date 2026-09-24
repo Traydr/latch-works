@@ -363,7 +363,7 @@ export function ElapsedClock({ position }: { position: PlaybackPosition }): JSX.
   return <span className="w-9 shrink-0">{formatClock(usePlaybackPosition(position))}</span>;
 }
 
-/** Closes a panel on a pointer press outside `rootRef`. */
+/** Closes a panel on a pointer press outside `rootRef`, or on Escape. */
 export function useOutsideClose(
   rootRef: RefObject<HTMLElement | null>,
   open: boolean,
@@ -379,9 +379,22 @@ export function useOutsideClose(
       onClose();
     };
 
-    document.addEventListener("pointerdown", onPointerDown, true);
+    // Window capture runs before the viewer's own Escape handling, so an open
+    // panel takes the first Escape and the viewer (and its dialog) the next.
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      onClose();
+    };
 
-    return () => document.removeEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("pointerdown", onPointerDown, true);
+    window.addEventListener("keydown", onKeyDown, true);
+
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      window.removeEventListener("keydown", onKeyDown, true);
+    };
   }, [onClose, open, rootRef]);
 }
 
