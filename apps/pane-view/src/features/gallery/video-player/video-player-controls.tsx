@@ -40,6 +40,17 @@ export function volumeIconFor(level: number): LucideIcon {
   return level === 0 ? VolumeX : level < 0.5 ? Volume1 : Volume2;
 }
 
+/**
+ * False where the page cannot set a video's volume: iOS leaves it to the
+ * hardware buttons and ignores the write, which a read-back reveals.
+ */
+export function canSetVideoVolume(): boolean {
+  const probe = document.createElement("video");
+  probe.volume = 0.5;
+
+  return probe.volume === 0.5;
+}
+
 /** A chrome surface: clicks inside never reach the dialog's tap-to-toggle handler. */
 export function ChromeRegion({
   children,
