@@ -1,4 +1,5 @@
-export const VIEWER_STATE_SAVE_DEBOUNCE_MS = 3_000;
+/** At most one viewer-state save per interval while the position keeps changing. */
+export const VIEWER_STATE_SAVE_INTERVAL_MS = 3_000;
 
 export function resolveVideoResumeSeconds(
   positionMs: number | undefined,

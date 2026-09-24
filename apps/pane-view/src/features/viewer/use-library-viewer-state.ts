@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { VIEWER_STATE_SAVE_DEBOUNCE_MS } from "./viewer-resume";
+import { VIEWER_STATE_SAVE_INTERVAL_MS } from "./viewer-resume";
 import { getViewerState, saveViewerState, type ViewerStateSnapshot } from "./viewer-state-service";
 
 export interface ViewerStatePatch {
@@ -52,6 +52,9 @@ export function useLibraryViewerState(
 
   const pendingPatchRef = useRef<ViewerStatePatch | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Saves run one after another: the server upserts, so a slow older save that
+  // landed last would overwrite newer progress.
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const subjectIdRef = useRef(subjectId);
 
   useEffect(() => {
@@ -76,17 +79,26 @@ export function useLibraryViewerState(
       pendingPatchRef.current = null;
       clearSaveTimer();
 
-      await store.saveViewerState({
-        data: {
-          subjectId: targetSubjectId,
-          subjectType: "library_entry",
-          ...pending,
-        },
+      const save = saveQueueRef.current.then(async () => {
+        await store.saveViewerState({
+          data: {
+            subjectId: targetSubjectId,
+            subjectType: "library_entry",
+            ...pending,
+          },
+        });
       });
+
+      // A failed save must not block the ones queued behind it.
+      saveQueueRef.current = save.catch(() => undefined);
+
+      await save;
     },
     [clearSaveTimer, store],
   );
 
+  // A throttle, not a debounce: playback reports several times a second, and
+  // a timer restarted on each report would never fire while the video plays.
   const scheduleSave = useCallback(
     (patch: ViewerStatePatch): void => {
       if (!subjectIdRef.current) {
@@ -98,12 +110,16 @@ export function useLibraryViewerState(
         ...patch,
       };
 
-      clearSaveTimer();
+      if (saveTimerRef.current) {
+        return;
+      }
+
       saveTimerRef.current = setTimeout(() => {
+        saveTimerRef.current = null;
         void flushSave();
-      }, VIEWER_STATE_SAVE_DEBOUNCE_MS);
+      }, VIEWER_STATE_SAVE_INTERVAL_MS);
     },
-    [clearSaveTimer, flushSave],
+    [flushSave],
   );
 
   useEffect(() => {
@@ -133,6 +149,23 @@ export function useLibraryViewerState(
       void flushSave(subjectId);
     };
   }, [store, subjectId, flushSave]);
+
+  // Closing or backgrounding the tab may be the last chance to save.
+  useEffect(() => {
+    const flush = () => void flushSave();
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") flush();
+    };
+
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [flushSave]);
 
   useEffect(() => {
     return () => {
