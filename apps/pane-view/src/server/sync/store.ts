@@ -381,6 +381,7 @@ async function upsertContainingFolders(path: string, dbClient: SyncDbClient): Pr
       })
       .onConflictDoUpdate({
         set: {
+          deletedAt: null,
           depth,
           name: getBaseName(folderPath),
           parentId,

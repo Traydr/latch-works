@@ -1,5 +1,5 @@
 import type { S3StorageClient, StoredObjectHead } from "@latch-works/media-storage";
-import { eq } from "drizzle-orm";
+import { eq, isNull } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { folders, libraryEntries, mediaObjects, syncRunItems, syncRuns } from "../db/schema";
@@ -315,5 +315,45 @@ describe("markRemoteDeleted", () => {
     const [entry] = await db.select().from(libraryEntries);
     expect(entry?.deletedAt).toBeNull();
     expect(await db.select().from(syncRunItems)).toHaveLength(1);
+  });
+});
+
+describe("folder lifecycle", () => {
+  async function upload(syncRunId: string, logicalPath: string): Promise<void> {
+    const filename = logicalPath.split("/").at(-1) ?? logicalPath;
+
+    await completeSyncedObject(
+      { input: { ...uploadInput, filename, logicalPath, syncRunId }, storage },
+      dependencies(),
+    );
+  }
+
+  async function finalize(syncRunId: string): Promise<void> {
+    await finalizeSyncRun({ input: { status: "completed", syncRunId } }, dependencies());
+  }
+
+  async function liveFolderPaths(): Promise<string[]> {
+    const rows = await testDatabase()
+      .db.select({ path: folders.path })
+      .from(folders)
+      .where(isNull(folders.deletedAt));
+
+    return rows.map((row) => row.path).sort();
+  }
+
+  it("brings a deleted folder back when its files are synced again", async () => {
+    const { db } = testDatabase();
+    const firstRun = await insertRun("running");
+    await upload(firstRun, "photos/2026/photo.jpg");
+    await finalize(firstRun);
+    // What Manage's folder delete leaves behind.
+    await db.update(libraryEntries).set({ deletedAt: new Date() });
+    await db.update(folders).set({ deletedAt: new Date() });
+
+    const secondRun = await insertRun("running");
+    await upload(secondRun, "photos/2026/photo.jpg");
+    await finalize(secondRun);
+
+    expect(await liveFolderPaths()).toEqual(["photos", "photos/2026"]);
   });
 });
