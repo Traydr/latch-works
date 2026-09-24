@@ -2,15 +2,11 @@ import { createFileRoute } from "@tanstack/react-router";
 import { env } from "../env/server";
 import {
   auth,
-  ensureConfiguredOwnerCredentialAccount,
+  reconcileConfiguredOwner,
   verifyConfiguredOwnerCredentials,
 } from "../server/auth/better-auth";
 import { resolveClientIp } from "../server/auth/client-ip";
-import {
-  clearLoginThrottle,
-  isLoginThrottled,
-  recordFailedLogin,
-} from "../server/auth/login-throttle";
+import { clearLoginThrottle, reserveLoginAttempt } from "../server/auth/login-throttle";
 
 export const Route = createFileRoute("/api/auth/login")({
   server: {
@@ -21,7 +17,8 @@ export const Route = createFileRoute("/api/auth/login")({
         const password = String(formData.get("password") ?? "");
         const clientIp = resolveClientIp(request, env.PANE_VIEW_TRUST_PROXY_HEADERS);
 
-        if (await isLoginThrottled(clientIp, username)) {
+        // Counted before verifying, so parallel guesses cannot all pass the check at once.
+        if (!(await reserveLoginAttempt(clientIp, username))) {
           return new Response(null, {
             headers: { Location: "/login?error=invalid" },
             status: 303,
@@ -34,17 +31,13 @@ export const Route = createFileRoute("/api/auth/login")({
         });
 
         if (!owner) {
-          await recordFailedLogin(clientIp, username);
-
           return new Response(null, {
             headers: { Location: "/login?error=invalid" },
             status: 303,
           });
         }
 
-        if (!(await ensureConfiguredOwnerCredentialAccount(owner))) {
-          await recordFailedLogin(clientIp, username);
-
+        if (!(await reconcileConfiguredOwner())) {
           return new Response(null, {
             headers: { Location: "/login?error=invalid" },
             status: 303,
@@ -62,8 +55,6 @@ export const Route = createFileRoute("/api/auth/login")({
 
           return redirectWithAuthCookies(signInResponse, "/");
         }
-
-        await recordFailedLogin(clientIp, username);
 
         return new Response(null, {
           headers: { Location: "/login?error=invalid" },

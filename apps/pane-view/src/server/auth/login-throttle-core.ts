@@ -2,22 +2,15 @@ const MAX_FAILED_ATTEMPTS = 5;
 
 const WINDOW_MS = 5 * 60 * 1000;
 
-interface AttemptRecord {
-  count: number;
-  expiresAt: number;
-  key: string;
-  windowStart: number;
-}
-
 export interface LoginThrottleStore {
   clear(keys: string[]): Promise<void>;
   /**
-   * Returns whatever rows exist for `keys`. Implementations may return expired
-   * records — the caller filters on `expiresAt`, so a store is free to keep the
-   * read path free of writes and prune elsewhere.
+   * Atomically counts one attempt against every key and returns each key's
+   * count within its current window, including this attempt. Concurrent calls
+   * must each observe a distinct count, so a burst cannot all read the same
+   * pre-attempt total.
    */
-  read(keys: string[], now: number): Promise<AttemptRecord[]>;
-  record(keys: string[], now: number, expiresAt: number): Promise<void>;
+  reserve(keys: string[], now: number, expiresAt: number): Promise<number[]>;
 }
 
 function throttleKey(ip: string, username: string): string {
@@ -44,18 +37,17 @@ export function createLoginThrottle({
       await store.clear(keys(ip, username));
     },
 
-    async isLoginThrottled(ip: string, username: string): Promise<boolean> {
+    /**
+     * Counts an attempt before the credentials are checked and reports whether
+     * it may proceed. Every attempt counts as a failure until a successful
+     * sign-in clears the buckets, so parallel guesses cannot slip past the
+     * limit between a check and a later write.
+     */
+    async reserveLoginAttempt(ip: string, username: string): Promise<boolean> {
       const currentTime = now();
-      const records = await store.read(keys(ip, username), currentTime);
+      const counts = await store.reserve(keys(ip, username), currentTime, currentTime + WINDOW_MS);
 
-      return records.some(
-        (record) => record.expiresAt >= currentTime && record.count >= MAX_FAILED_ATTEMPTS,
-      );
-    },
-
-    async recordFailedLogin(ip: string, username: string): Promise<void> {
-      const currentTime = now();
-      await store.record(keys(ip, username), currentTime, currentTime + WINDOW_MS);
+      return counts.every((count) => count <= MAX_FAILED_ATTEMPTS);
     },
   };
 }

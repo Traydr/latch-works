@@ -16,7 +16,7 @@ const testEnvDefaults = {
   BETTER_AUTH_URL: "http://127.0.0.1:3000",
   DATABASE_URL: "postgres://test:test@127.0.0.1:5432/pane_view_test",
   PANE_VIEW_PASSWORD: "test-password",
-  PANE_VIEW_SYNC_TOKEN: "test-sync-token",
+  PANE_VIEW_SYNC_TOKEN: "test-sync-token-at-least-16",
   PANE_VIEW_USERNAME: "test-user",
   S3_ACCESS_KEY_ID: "test-access-key",
   S3_BUCKET: "test-bucket",

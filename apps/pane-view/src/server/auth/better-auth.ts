@@ -69,12 +69,12 @@ export async function ensureConfiguredOwnerCredentialAccount(
 ): Promise<boolean> {
   const context = await auth.$context;
 
-  const [passwordHash, existingOwner] = await Promise.all([
-    context.password.hash(owner.password),
-    context.internalAdapter.findUserByEmail(owner.email, {
-      includeAccounts: true,
-    }),
-  ]);
+  const existingOwner = await context.internalAdapter.findUserByEmail(owner.email, {
+    includeAccounts: true,
+  });
+
+  // Hashed only when the stored credential has to change: it is a deliberate scrypt.
+  const hashPassword = () => context.password.hash(owner.password);
 
   if (!existingOwner) {
     const createdOwner = await context.internalAdapter.createUser(
@@ -88,7 +88,7 @@ export async function ensureConfiguredOwnerCredentialAccount(
 
     await context.internalAdapter.linkAccount({
       accountId: createdOwner.id,
-      password: passwordHash,
+      password: await hashPassword(),
       providerId: "credential",
       userId: createdOwner.id,
     });
@@ -96,14 +96,14 @@ export async function ensureConfiguredOwnerCredentialAccount(
     return true;
   }
 
-  const hasCredentialAccount = existingOwner.accounts.some(
+  const credentialAccount = existingOwner.accounts.find(
     (account) => account.providerId === "credential",
   );
 
-  if (!hasCredentialAccount) {
+  if (!credentialAccount) {
     await context.internalAdapter.linkAccount({
       accountId: existingOwner.user.id,
-      password: passwordHash,
+      password: await hashPassword(),
       providerId: "credential",
       userId: existingOwner.user.id,
     });
@@ -111,9 +111,42 @@ export async function ensureConfiguredOwnerCredentialAccount(
     return true;
   }
 
-  await context.internalAdapter.updatePassword(existingOwner.user.id, passwordHash);
+  const passwordUnchanged = credentialAccount.password
+    ? await context.password.verify({ hash: credentialAccount.password, password: owner.password })
+    : false;
+
+  if (passwordUnchanged) {
+    return true;
+  }
+
+  // PANE_VIEW_PASSWORD was rotated: sign out every session opened with the old one.
+  await context.internalAdapter.deleteUserSessions(existingOwner.user.id);
+  await context.internalAdapter.updatePassword(existingOwner.user.id, await hashPassword());
 
   return true;
+}
+
+let ownerReconciliation: Promise<boolean> | null = null;
+
+/**
+ * Brings the stored owner account in line with the configured credentials once
+ * per process. Session checks await it too, so a rotated PANE_VIEW_PASSWORD
+ * signs out old sessions on the first request after the restart that applied
+ * it, not at the next sign-in. Concurrent callers share one run, so two
+ * sign-ins cannot both revoke sessions and delete each other's new one.
+ */
+export function reconcileConfiguredOwner(): Promise<boolean> {
+  if (!ownerReconciliation) {
+    const reconciliation = ensureConfiguredOwnerCredentialAccount(readConfiguredOwner());
+    ownerReconciliation = reconciliation;
+
+    // A failed run (the database was down) is retried by the next caller.
+    reconciliation.catch(() => {
+      if (ownerReconciliation === reconciliation) ownerReconciliation = null;
+    });
+  }
+
+  return ownerReconciliation;
 }
 
 function createAuthDatabase() {
@@ -129,6 +162,9 @@ function createAuthDatabase() {
   });
 }
 
+/** Lowercased because Better Auth stores and looks up emails lowercased. */
 function toOwnerEmail(username: string): string {
-  return username.includes("@") ? username.toLowerCase() : `${username}@pane-view.local`;
+  const email = username.includes("@") ? username : `${username}@pane-view.local`;
+
+  return email.toLowerCase();
 }
