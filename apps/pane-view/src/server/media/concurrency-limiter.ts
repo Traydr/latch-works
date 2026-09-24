@@ -5,19 +5,25 @@ export function createConcurrencyLimiter(maxConcurrent: number) {
   return {
     async run<T>(task: () => Promise<T>): Promise<T> {
       if (active >= maxConcurrent) {
+        // The slot is handed over by the call that frees it, still counted
+        // as active, so a call arriving before this one wakes cannot take it.
         await new Promise<void>((resolve) => {
           queue.push(resolve);
         });
+      } else {
+        active += 1;
       }
-
-      active += 1;
 
       try {
         return await task();
       } finally {
-        active -= 1;
         const next = queue.shift();
-        next?.();
+
+        if (next) {
+          next();
+        } else {
+          active -= 1;
+        }
       }
     },
   };
