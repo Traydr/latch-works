@@ -18,6 +18,22 @@ const DIAGNOSTICS_COPY_LABELS: Record<CopyStatus, string> = {
   idle: "Copy diagnostics JSON",
 };
 
+/** Every key Pane View stores on the device starts with this, so a new one cannot be missed. */
+const LOCAL_PREFERENCES_PREFIX = "pane-view.";
+
+function clearLocalPreferences(): void {
+  const storage = window.localStorage;
+  const keys: string[] = [];
+
+  for (let index = 0; index < storage.length; index += 1) {
+    const key = storage.key(index);
+
+    if (key?.startsWith(LOCAL_PREFERENCES_PREFIX)) keys.push(key);
+  }
+
+  for (const key of keys) storage.removeItem(key);
+}
+
 const THEME_OPTIONS = [
   { value: "system", label: "System" },
   { value: "light", label: "Light" },
@@ -190,9 +206,7 @@ export function SettingsDrawer({
                     type="button"
                     className="rounded-lg bg-destructive px-3 py-1.5 text-destructive-foreground"
                     onClick={() => {
-                      window.localStorage.removeItem("pane-view.state");
-                      window.localStorage.removeItem("pane-view.settings");
-                      window.localStorage.removeItem("pane-view.root-preferences");
+                      clearLocalPreferences();
                       setConfirmOpen(false);
                       window.location.reload();
                     }}
