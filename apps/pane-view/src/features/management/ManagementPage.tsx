@@ -84,11 +84,9 @@ export function ManagementPage() {
     setFolderSnapshotError(null);
 
     try {
-      // The picker reads only the folder list, so skip the media page.
       const snapshot = await getLibrarySnapshot({
         data: {
           includeAllFolders: true,
-          mediaLimit: 0,
           path: "",
         },
       });

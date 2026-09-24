@@ -6,25 +6,25 @@ import { useEffect, useMemo, useReducer } from "react";
  * tiles can overrun imgproxy and answer 503 for a while; the schedule spreads
  * the retries out instead of hammering it again at once.
  */
-export const IMAGE_LOAD_RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 16_000, 32_000] as const;
+const IMAGE_LOAD_RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 16_000, 32_000] as const;
 
 /** Total `<img>` loads before the tile gives up: the first plus one per delay. */
-export const IMAGE_LOAD_MAX_ATTEMPTS = IMAGE_LOAD_RETRY_DELAYS_MS.length + 1;
+const IMAGE_LOAD_MAX_ATTEMPTS = IMAGE_LOAD_RETRY_DELAYS_MS.length + 1;
 
 /**
  * Failures on the initially resolved URL before the tile asks the server for a
- * fresh one. Cached URLs expire (60s presigned originals, 24h Shutter
+ * fresh one. Cached URLs expire (24h presigned originals and Shutter
  * capabilities) and a browser cannot tell a 403 from a 503, so a stubborn
  * failure is answered with a re-resolve partway through the schedule.
  */
-export const IMAGE_LOAD_REFRESH_URL_AFTER_FAILURES = 3;
+const IMAGE_LOAD_REFRESH_URL_AFTER_FAILURES = 3;
 
 /**
  * Delay before the next load once `failures` loads have failed. `null` when
  * the schedule is exhausted. Jitter keeps a batch of tiles that failed together
  * from retrying together.
  */
-export function imageLoadRetryDelayMs(
+function imageLoadRetryDelayMs(
   failures: number,
   random: () => number = Math.random,
 ): number | null {
@@ -37,7 +37,7 @@ export function imageLoadRetryDelayMs(
   return Math.round(base * (0.5 + random() * 0.5));
 }
 
-export type ImageLoadPhase = "loading" | "waiting" | "failed";
+type ImageLoadPhase = "loading" | "waiting" | "failed";
 
 interface ImageLoadRetryState {
   /** Loads that have failed since the last reset. */

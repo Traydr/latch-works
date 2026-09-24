@@ -7,12 +7,12 @@ export interface ViewerStatePatch {
   positionMs?: number;
 }
 
-export interface ViewerStateSubject {
+interface ViewerStateSubject {
   subjectId: string;
   subjectType: "library_entry";
 }
 
-export interface ViewerStateWrite extends ViewerStateSubject {
+interface ViewerStateWrite extends ViewerStateSubject {
   page?: number;
   positionMs?: number;
 }
@@ -26,7 +26,7 @@ export interface ViewerStateStore {
   saveViewerState(options: { data: ViewerStateWrite }): Promise<ViewerStateSnapshot | null>;
 }
 
-export const serverViewerStateStore: ViewerStateStore = { getViewerState, saveViewerState };
+const serverViewerStateStore: ViewerStateStore = { getViewerState, saveViewerState };
 
 interface InitialViewerState {
   loaded: boolean;

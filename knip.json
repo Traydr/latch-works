@@ -5,8 +5,6 @@
     "apps/pane-view/src/components/dither-kit/**": ["exports", "types", "files"],
     "apps/pane-view/src/components/ui/**": ["exports", "types"],
     "apps/pane-view/src/components/ui/select.tsx": ["files"],
-    "apps/pane-view/src/features/**": ["exports", "files", "types"],
-    "apps/pane-view/src/server/**": ["exports", "types", "files"],
     "apps/gather-box/**": ["exports", "types", "files"],
     "apps/lockstep-cli/src/**": ["exports"],
     "apps/lockstep/src/**": ["exports", "types", "files"],
@@ -24,7 +22,7 @@
       "ignoreDependencies": ["lodash", "vitest"]
     },
     "apps/pane-view": {
-      "entry": ["drizzle.config.ts", "src/routes/**/*.{ts,tsx}"],
+      "entry": ["drizzle.config.ts", "src/routes/**/*.{ts,tsx}", "src/server/db/schema.ts"],
       "drizzle": false
     },
     "apps/frame-view": {

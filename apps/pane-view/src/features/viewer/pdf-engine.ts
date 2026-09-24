@@ -4,7 +4,7 @@
  * owns the dynamic import and the worker URL.
  */
 
-export interface PdfViewport {
+interface PdfViewport {
   height: number;
   width: number;
 }
@@ -14,7 +14,7 @@ export interface PdfRenderTask {
   promise: Promise<void>;
 }
 
-export interface PdfPageRenderOptions {
+interface PdfPageRenderOptions {
   canvas: HTMLCanvasElement | null;
   canvasContext?: CanvasRenderingContext2D;
   transform?: number[];
@@ -27,12 +27,12 @@ export interface PdfPage {
   render(options: PdfPageRenderOptions): PdfRenderTask;
 }
 
-export interface PdfDocumentHandle {
+interface PdfDocumentHandle {
   getPage(pageNumber: number): Promise<PdfPage>;
   numPages: number;
 }
 
-export interface PdfLoadingTask {
+interface PdfLoadingTask {
   destroy(): void;
   promise: Promise<PdfDocumentHandle>;
 }

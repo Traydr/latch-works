@@ -22,7 +22,7 @@ export interface CapabilityKeyRegistry {
  * SHUTTER_CAPABILITY_KEYS: either flat (`{ kid: material }`) or nested per
  * space (`{ spaceId: { kid: material } }`); the two layouts may be mixed.
  */
-export const CapabilityKeyRegistrySchema = z
+const CapabilityKeyRegistrySchema = z
   .record(z.string(), RegistryEntrySchema)
   .transform((entries): CapabilityKeyRegistry => {
     const registry: CapabilityKeyRegistry = { flat: {}, spaces: {} };
@@ -58,12 +58,12 @@ export type CapabilityKeyConfigStatus =
   | { ok: true; kid: string; spaceId: string }
   | { ok: false; kid: string; spaceId: string; error: string };
 
-export interface CapabilityKeyIds {
+interface CapabilityKeyIds {
   flatKids: string[];
   nestedKids: string[];
 }
 
-export function unwrapEnvJson(raw: string): string {
+function unwrapEnvJson(raw: string): string {
   const trimmed = raw.trim();
 
   if (
@@ -76,7 +76,7 @@ export function unwrapEnvJson(raw: string): string {
   return trimmed;
 }
 
-export function unwrapEnvScalar(raw: string): string {
+function unwrapEnvScalar(raw: string): string {
   return unwrapEnvJson(raw).trim();
 }
 
@@ -101,10 +101,7 @@ export function decodeCapabilityKeyMaterial(encoded: string): Uint8Array<ArrayBu
   return Uint8Array.from(Buffer.from(trimmed, "base64url"));
 }
 
-export function listCapabilityKeyIds(
-  registry: CapabilityKeyRegistry,
-  spaceId: string,
-): CapabilityKeyIds {
+function listCapabilityKeyIds(registry: CapabilityKeyRegistry, spaceId: string): CapabilityKeyIds {
   return {
     flatKids: Object.keys(registry.flat).sort(),
     nestedKids: Object.keys(registry.spaces[spaceId] ?? {}).sort(),

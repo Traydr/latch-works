@@ -57,10 +57,6 @@ export function readBearerToken(request: Request): string | null {
   return token.length > 0 ? token : null;
 }
 
-export function hashApiToken(token: string): string {
-  return createHash("sha256").update(token).digest("hex");
-}
-
 export function verifySyncApiToken(
   { token }: { token: string | null },
   verifier: SyncApiTokenVerifier = sharedSyncApiTokenVerifier,

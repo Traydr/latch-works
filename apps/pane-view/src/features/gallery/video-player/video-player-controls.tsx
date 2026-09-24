@@ -256,7 +256,7 @@ export function useFractionDrag({
   };
 }
 
-export interface SeekControl {
+interface SeekControl {
   ariaProps: {
     "aria-label": string;
     "aria-valuemax": number;
@@ -275,7 +275,7 @@ export interface SeekControl {
 }
 
 /** Seek state and gestures against the session's video: tap to jump, drag to scrub. */
-export function useSeek(model: MediaViewerSessionModel): SeekControl {
+function useSeek(model: MediaViewerSessionModel): SeekControl {
   const { canSeek, duration, playbackPosition } = model;
   const position = usePlaybackPosition(playbackPosition);
   const frameRef = useRef<number | null>(null);

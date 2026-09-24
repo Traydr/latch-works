@@ -1,10 +1,4 @@
-import {
-  keepPreviousData,
-  useMutation,
-  useQuery,
-  useQueryClient,
-  useSuspenseQuery,
-} from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   deleteLibraryEntry,
   type GalleryListingRequest,
@@ -14,7 +8,6 @@ import {
 
 export interface LibrarySnapshotRequest {
   comicMode: boolean;
-  mediaLimit?: number;
   path: string | undefined;
   query: string | undefined;
   recursive: boolean;
@@ -44,7 +37,6 @@ export function librarySnapshotQueryOptions(request: LibrarySnapshotRequest) {
       getLibrarySnapshot({
         data: {
           comicMode: request.comicMode,
-          mediaLimit: request.mediaLimit,
           path: request.path,
           query: request.query,
           recursive: request.recursive,
@@ -56,10 +48,6 @@ export function librarySnapshotQueryOptions(request: LibrarySnapshotRequest) {
 
 export function useLibrarySnapshotQuery(request: LibrarySnapshotRequest) {
   return useQuery(librarySnapshotQueryOptions(request));
-}
-
-export function useLibrarySnapshotSuspense(request: LibrarySnapshotRequest) {
-  return useSuspenseQuery(librarySnapshotQueryOptions(request));
 }
 
 export function useInvalidateLibrarySnapshot() {

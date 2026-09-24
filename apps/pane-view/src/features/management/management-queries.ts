@@ -13,7 +13,7 @@ import {
   wipeLibrary,
 } from "./management-service";
 
-export const managementKeys = {
+const managementKeys = {
   all: ["management"] as const,
   cleanupJob: (jobId: string) => [...managementKeys.all, "cleanup-job", jobId] as const,
   overview: () => [...managementKeys.all, "overview"] as const,

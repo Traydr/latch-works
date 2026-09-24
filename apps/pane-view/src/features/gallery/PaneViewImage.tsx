@@ -9,8 +9,6 @@ type PaneViewImageProps = {
   /** Overrides the shared URL cache; tests inject a cache with a fake resolver. */
   cache?: ResolvedMediaUrlCache;
   className?: string;
-  height?: number;
-  layout?: "fixed" | "constrained" | "fullWidth";
   mediaId: string;
   objectFit?: "contain" | "cover" | "fill" | "none" | "scale-down";
   priority?: boolean;
@@ -42,7 +40,6 @@ export function PaneViewImage({
   alt,
   cache,
   className,
-  layout: _layout = "constrained",
   mediaId,
   objectFit,
   priority = false,

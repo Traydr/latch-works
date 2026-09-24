@@ -8,7 +8,7 @@ import { createPaneViewStorageClient } from "../media/storage-client";
 const deleteConcurrency = 8;
 
 /** The object storage calls maintenance jobs make; the default wires the real bucket. */
-export interface MaintenanceStorageDependencies {
+interface MaintenanceStorageDependencies {
   createStorageClient(): S3StorageClient;
   deleteStoredObjectsBatch(request: {
     keys: string[];
@@ -23,13 +23,13 @@ const defaultMaintenanceStorageDependencies: MaintenanceStorageDependencies = {
   deleteStoredObjectsBatch,
 };
 
-export interface MaintenanceStorage {
+interface MaintenanceStorage {
   /** The one client every maintenance job shares; created on first use. */
   getStorageClient(): S3StorageClient;
   deleteObjects(keys: string[]): Promise<{ deleted: number }>;
 }
 
-export function createMaintenanceStorage(
+function createMaintenanceStorage(
   dependencies: MaintenanceStorageDependencies = defaultMaintenanceStorageDependencies,
 ): MaintenanceStorage {
   let storageClient: S3StorageClient | undefined;

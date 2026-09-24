@@ -37,12 +37,7 @@ export const Route = createFileRoute("/api/auth/login")({
           });
         }
 
-        if (!(await reconcileConfiguredOwner())) {
-          return new Response(null, {
-            headers: { Location: "/login?error=invalid" },
-            status: 303,
-          });
-        }
+        await reconcileConfiguredOwner();
 
         const signInResponse = await callBetterAuthEndpoint(request, "/api/auth/sign-in/email", {
           email: owner.email,

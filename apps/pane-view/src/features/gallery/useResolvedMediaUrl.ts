@@ -70,11 +70,11 @@ function pendingRetryDelayMs(attempt: number, serverRetryAfterMs?: number): numb
 }
 
 /** The server function's call shape, so tests can supply a plain async function. */
-export type ResolveMediaDeliveryUrl = (options: {
+type ResolveMediaDeliveryUrl = (options: {
   data: ResolveInput;
 }) => Promise<{ pending: true; retryAfterMs: number } | { pending: false; url: string }>;
 
-export function createResolvedMediaUrlCache({
+function createResolvedMediaUrlCache({
   resolve = resolveMediaDeliveryUrl,
   throttle = {
     acquireResolveSlot,

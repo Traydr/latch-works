@@ -56,13 +56,13 @@ export interface ShutterClientDependencies {
   fetch?: typeof globalThis.fetch | undefined;
 }
 
-export const shutterClientDependencies: ShutterClientDependencies = {
+const shutterClientDependencies: ShutterClientDependencies = {
   createSourceLocator: (request) =>
     createSignedGetUrl({ ...request, storage: getPaneViewStorageClient() }),
   environment: env,
 };
 
-export function normalizeShutterWidth(width: number): number {
+function normalizeShutterWidth(width: number): number {
   if (width <= 24) return 24;
 
   return SHUTTER_WIDTHS.find((candidate) => candidate >= width) ?? 3840;

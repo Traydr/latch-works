@@ -338,7 +338,7 @@ export async function markRemoteDeleted(
   return { status: "database" };
 }
 
-export function collectContainingFolderPaths(path: string): string[] {
+function collectContainingFolderPaths(path: string): string[] {
   const parts = path.split("/").filter(Boolean);
   const folders: string[] = [];
 
@@ -381,20 +381,8 @@ async function upsertContainingFolders(path: string, dbClient: SyncDbClient): Pr
   for (const folderPath of collectContainingFolderPaths(path)) {
     const parentPath = getParentPath(folderPath);
     const depth = folderPath.split("/").filter(Boolean).length;
-    let parentId: string | null = null;
-
-    if (parentPath) {
-      parentId =
-        parentIdByPath.get(parentPath) ??
-        (
-          await dbClient
-            .select({ id: folders.id })
-            .from(folders)
-            .where(eq(folders.path, parentPath))
-            .limit(1)
-        )[0]?.id ??
-        null;
-    }
+    // Paths run root first, so a parent's row was already read or written above.
+    const parentId = parentPath ? (parentIdByPath.get(parentPath) ?? null) : null;
 
     // Most files land in folders that are already live and linked. Leave those
     // rows alone: an upsert would rewrite and row-lock every ancestor (the root

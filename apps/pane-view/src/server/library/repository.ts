@@ -22,9 +22,6 @@ import {
   buildMediaVisibilityConditions,
   mapMediaRowsToLibraryItems,
 } from "./library-conditions";
-import type { LibraryMediaItem, MediaPage } from "./types";
-
-export type { LibraryMediaItem, MediaPage } from "./types";
 
 /**
  * A snapshot's `folders` and `siblings` feed the sidebar, the exclude dialog,
@@ -36,9 +33,6 @@ export type SnapshotFolderNode = Omit<FolderNode, "hasChildren">;
 export interface DatabaseLibrarySnapshot {
   allFolders: FolderNode[];
   folders: SnapshotFolderNode[];
-  media: LibraryMediaItem[];
-  mediaPage: MediaPage;
-  roots: string[];
   /**
    * Non-deleted folders that share `currentPath`'s parent, `currentPath`
    * itself included; empty at the root. Unordered: callers sort. Feeds
@@ -50,8 +44,6 @@ export interface DatabaseLibrarySnapshot {
 export interface LibrarySnapshotReadRequest {
   currentPath: string;
   includeAllFolders?: boolean;
-  limit: number;
-  offset?: number;
   query?: string;
   recursive?: boolean;
 }
@@ -71,44 +63,17 @@ export interface GalleryListingReadRequest {
 }
 
 // ---------------------------------------------------------------------------
-// Query builders. Exported for the rendered-SQL tests only; every other module
-// goes through the readDatabase* functions below.
+// Query builders, used only by the readDatabase* functions below.
 // ---------------------------------------------------------------------------
 
-/** Snapshot media page: logical-path order, offset paginated, overfetched by one. */
-export function buildLibrarySnapshotMediaQuery(
-  {
-    currentPath,
-    limit,
-    offset = 0,
-    query,
-    recursive = false,
-  }: Pick<LibrarySnapshotReadRequest, "currentPath" | "limit" | "offset" | "query" | "recursive">,
-  database: Database = db,
-) {
-  const { mediaConditions } = buildLibraryConditions({ currentPath, query, recursive });
-
-  return database
-    .select({
-      entry: libraryEntries,
-      object: mediaObjects,
-    })
-    .from(libraryEntries)
-    .innerJoin(mediaObjects, eq(libraryEntries.mediaObjectId, mediaObjects.id))
-    .where(and(...mediaConditions))
-    .orderBy(asc(libraryEntries.logicalPath), asc(libraryEntries.id))
-    .limit(limit + 1)
-    .offset(offset);
-}
-
-/** Most folders one search returns: the size of a search's media page. */
+/** Most folders one search returns. */
 const FOLDER_SEARCH_LIMIT = 200;
 
 /**
  * Visible folders for the current scope: direct children, or search matches
  * capped to the first FOLDER_SEARCH_LIMIT in natural name order.
  */
-export function buildLibraryFolderQuery(
+function buildLibraryFolderQuery(
   {
     currentPath,
     query,
@@ -135,7 +100,7 @@ export function buildLibraryFolderQuery(
 }
 
 /** Listing media page: sorted, filtered, keyset-continued, overfetched by one. */
-export function buildGalleryListingMediaQuery(
+function buildGalleryListingMediaQuery(
   {
     currentPath,
     cursor,
@@ -184,7 +149,7 @@ export function buildGalleryListingMediaQuery(
  * random uses the shared seeded key over ("media", id). Every mode ends on
  * the id so the keyset is total.
  */
-export function buildGalleryListingOrderBy(
+function buildGalleryListingOrderBy(
   sortMode: GallerySortMode,
   randomSeed: GalleryRandomSeed,
 ): SQL[] {
@@ -223,7 +188,7 @@ export function buildGalleryListingOrderBy(
  * cursor row in that order, comparing each column with the same collation and
  * direction the ORDER BY uses.
  */
-export function buildGalleryListingCursorCondition(
+function buildGalleryListingCursorCondition(
   cursor: Extract<GalleryListingCursorPayload, { subjectKind: "media" }>,
 ): SQL {
   const requireCondition = (condition: SQL | undefined): SQL => {
@@ -317,22 +282,11 @@ export function buildGalleryListingCursorCondition(
 // ---------------------------------------------------------------------------
 
 export async function readDatabaseLibrarySnapshot(
-  {
-    currentPath,
-    includeAllFolders = false,
-    limit,
-    offset = 0,
-    query,
-    recursive = false,
-  }: LibrarySnapshotReadRequest,
+  { currentPath, includeAllFolders = false, query, recursive = false }: LibrarySnapshotReadRequest,
   database: Database = db,
 ): Promise<DatabaseLibrarySnapshot> {
-  const [folderRows, mediaRows, rootRows, allFolderRows, siblingRows] = await Promise.all([
+  const [folderRows, allFolderRows, siblingRows] = await Promise.all([
     buildLibraryFolderQuery({ currentPath, query, recursive }, database),
-    limit > 0
-      ? buildLibrarySnapshotMediaQuery({ currentPath, limit, offset, query, recursive }, database)
-      : Promise.resolve([]),
-    database.select().from(folders).where(eq(folders.parentPath, "")),
     includeAllFolders
       ? database.select().from(folders).where(isNull(folders.deletedAt))
       : Promise.resolve([]),
@@ -350,21 +304,12 @@ export async function readDatabaseLibrarySnapshot(
       .filter((parentPath): parentPath is string => Boolean(parentPath)),
   );
 
-  const { items: pageMediaRows, mediaPage } = buildMediaPage(mediaRows, limit, offset);
-
   return {
     allFolders: allFolderRows.map((folder) =>
       mapFolderRow(folder, folderParentPathsWithChildFolders),
     ),
     folders: folderRows.map(mapSnapshotFolderRow),
-    media: mapMediaRowsToLibraryItems(pageMediaRows),
     siblings: siblingRows.map(mapSnapshotFolderRow),
-    mediaPage,
-    roots: rootRows
-      .map((folder) => folder.path)
-      .concat(currentPath)
-      .filter(Boolean)
-      .filter(dedupe),
   };
 }
 
@@ -493,36 +438,10 @@ function mapFolderRow(folder: FolderRow, parentPathsWithChildren: ReadonlySet<st
 
 function mapSnapshotFolderRow(folder: FolderRow): SnapshotFolderNode {
   return {
-    folderCount: folder.folderCount ?? 0,
-    mediaCount: folder.entryCount ?? 0,
     name: folder.name,
     parentId: folder.parentId,
     parentPath: folder.parentPath,
     path: folder.path,
-  };
-}
-
-/** Slice an overfetched (limit + 1) row set into a page plus offset metadata. */
-export interface MediaPageSlice<T> {
-  items: T[];
-  mediaPage: MediaPage;
-}
-
-export function buildMediaPage<T>(
-  rows: readonly T[],
-  limit: number,
-  offset: number,
-): MediaPageSlice<T> {
-  const hasMore = rows.length > limit;
-
-  return {
-    items: hasMore ? rows.slice(0, limit) : [...rows],
-    mediaPage: {
-      hasMore,
-      limit,
-      nextOffset: hasMore ? offset + limit : null,
-      offset,
-    },
   };
 }
 
@@ -564,8 +483,4 @@ async function readParentPathsWithChildren(
   }
 
   return parents;
-}
-
-function dedupe(value: string, index: number, values: string[]): boolean {
-  return values.indexOf(value) === index;
 }

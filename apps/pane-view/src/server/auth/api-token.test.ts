@@ -4,7 +4,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   assertSyncApiTokenFromBody,
   createSyncApiTokenVerifier,
-  hashApiToken,
   readBearerToken,
   requireSyncApiToken,
   verifySyncApiToken,
@@ -38,14 +37,6 @@ describe("readBearerToken", () => {
     ["token has surrounding whitespace", "Bearer  sync-token  ", "sync-token"],
   ])("reads %s", (_case, authorization, expected) => {
     expect(readBearerToken(syncRequest(authorization))).toBe(expected);
-  });
-});
-
-describe("hashApiToken", () => {
-  it("returns the SHA-256 hex digest of the token", () => {
-    const expected = crypto.createHash("sha256").update("sync-token").digest("hex");
-
-    expect(hashApiToken("sync-token")).toBe(expected);
   });
 });
 

@@ -9,10 +9,8 @@ import {
 } from "@latch-works/media-domain";
 import { originalObjectKey } from "@latch-works/media-storage";
 import { z } from "zod";
-import type { JsonValue } from "@/lib/json";
-import { describeFirstIssue } from "../http/json-body";
 
-export interface SyncObjectPayload {
+interface SyncObjectPayload {
   contentType: string;
   extension: string;
   filename: string;
@@ -78,7 +76,7 @@ export const UploadSizeSchema = z
  * errors are reported. Cross-field rules (filename vs. logicalPath, derived
  * object key, content type) follow in validateSyncObjectPayload.
  */
-export const SyncObjectPayloadBodySchema = z.object({
+const SyncObjectPayloadBodySchema = z.object({
   mediaType: z.enum(["image", "gif", "video", "pdf"], {
     error: (issue) =>
       issue.input === "unknown" ? "unsupported media type" : "mediaType is invalid",
@@ -107,17 +105,6 @@ export const CompleteObjectBodySchema = z.discriminatedUnion("action", [
   }),
   SyncObjectPayloadBodySchema.extend({ action: z.literal("upload").optional() }),
 ]);
-
-/** Parse a raw completed-object payload and apply the cross-field rules. */
-export function parseSyncObjectPayload(raw: JsonValue): SyncObjectValidationResult {
-  const parsed = SyncObjectPayloadBodySchema.safeParse(raw);
-
-  if (!parsed.success) {
-    return { ok: false, error: describeFirstIssue(parsed.error) };
-  }
-
-  return validateSyncObjectPayload(parsed.data);
-}
 
 export function expectedContentTypeForExtension(extension: string): string {
   switch (extension.toLowerCase()) {

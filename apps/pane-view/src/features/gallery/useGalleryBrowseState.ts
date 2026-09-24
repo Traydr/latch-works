@@ -122,12 +122,10 @@ export function snapshotRequestFor(
 ): LibrarySnapshotRequest {
   return {
     comicMode: state.comicMode,
-    // Deliberately no excludedPaths: the snapshot is the folder and
-    // archive-state query only (mediaLimit 0), and excludes never prune
-    // folders. Sending them would churn the snapshot query key on every
-    // toggle, blanking the exclude dialog mid-interaction (and resetting its
-    // scroll) for a refetch that cannot change a single row.
-    mediaLimit: 0,
+    // Deliberately no excludedPaths: the snapshot is the folder query only,
+    // and excludes never prune folders. Sending them would churn the snapshot
+    // query key on every toggle, blanking the exclude dialog mid-interaction
+    // (and resetting its scroll) for a refetch that cannot change a single row.
     path: state.path || undefined,
     query: state.query,
     recursive: state.recursive,
@@ -202,7 +200,7 @@ export type BrowseIntent =
   | { type: "shuffle" }
   | { type: "setDetailPanelOpen"; next: boolean };
 
-export interface BrowseNavigation {
+interface BrowseNavigation {
   replace?: boolean;
   resetScroll?: boolean;
   search: GalleryBrowseSearch;
@@ -385,7 +383,7 @@ export interface GalleryBrowseState extends ResolvedBrowseState {
   buildBrowseSearch(patch: Partial<GalleryBrowseSearch>): GalleryBrowseSearch;
 }
 
-export interface BrowseNavigateOptions {
+interface BrowseNavigateOptions {
   replace?: boolean;
   resetScroll?: boolean;
   search: GalleryBrowseSearch;
@@ -393,7 +391,7 @@ export interface BrowseNavigateOptions {
 }
 
 /** The router's navigate, narrowed to what the browse state needs. */
-export type BrowseNavigate = (options: BrowseNavigateOptions) => Promise<void> | void;
+type BrowseNavigate = (options: BrowseNavigateOptions) => Promise<void> | void;
 
 export interface UseGalleryBrowseStateOptions {
   createSeed?: (previous?: GalleryRandomSeed | null) => GalleryRandomSeed;

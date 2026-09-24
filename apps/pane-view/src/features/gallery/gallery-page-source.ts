@@ -17,8 +17,6 @@ export interface GalleryPageSource {
   loadPage(request: GalleryListingQueryRequest): Promise<GalleryListingPage>;
 }
 
-export type { GalleryComicRequest };
-
 export function createServerGalleryPageSource(): GalleryPageSource {
   return {
     loadComic: (request) => getGalleryComic({ data: request }),

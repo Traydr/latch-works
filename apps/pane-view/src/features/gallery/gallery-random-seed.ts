@@ -1,7 +1,6 @@
 import type { GalleryRandomSeed } from "../../server/library/gallery-random-seed";
 
 export {
-  GALLERY_RANDOM_SEED_PATTERN,
   type GalleryRandomSeed,
   GalleryRandomSeedSchema,
 } from "../../server/library/gallery-random-seed";

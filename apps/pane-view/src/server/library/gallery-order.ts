@@ -31,8 +31,9 @@ export type GallerySubjectKind = "media" | "comic";
  * The one random-order key. For a fixed seed every subject gets one
  * deterministic 32-hex rank; sorting by that rank is the full permutation that
  * every page slices. `galleryRandomOrderKey` and `galleryRandomOrderKeySql`
- * must agree byte for byte — gallery-order.test.ts and the pglite suite prove
- * it. Fixed-width lowercase hex keeps SQL text order and JS string order equal.
+ * must agree byte for byte: both are the md5 hex of the same
+ * `seed:kind:id` text. Fixed-width lowercase hex keeps SQL text order and JS
+ * string order equal.
  * This is an ordering key, not a secret.
  */
 export function galleryRandomOrderKey(
@@ -51,7 +52,7 @@ export function galleryRandomOrderKeySql(
   return sql`md5(concat(${seed}::text, ':', ${subjectKind}::text, ':', ${subjectId}::text))`;
 }
 
-export const GALLERY_RANDOM_ORDER_KEY_PATTERN = /^[0-9a-f]{32}$/u;
+const GALLERY_RANDOM_ORDER_KEY_PATTERN = /^[0-9a-f]{32}$/u;
 
 /** The rank a random-mode cursor carries; decodeGalleryListingCursor parses it with this. */
 export const GalleryRandomOrderKeySchema = z.string().regex(GALLERY_RANDOM_ORDER_KEY_PATTERN);

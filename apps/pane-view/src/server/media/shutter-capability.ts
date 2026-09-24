@@ -1,5 +1,3 @@
-import { issueSourceCapability, type SourceCapabilityClaims } from "@shutter/protocol";
-import { issueSourceCapabilityWithIv } from "@shutter/protocol/testing";
 import { env } from "../../env/server";
 import {
   decodeCapabilityKeyMaterial,
@@ -7,10 +5,6 @@ import {
   readCapabilityKeyMaterial,
   validateCapabilityKeyConfig,
 } from "./shutter-capability-config";
-
-const CAPABILITY_LIFETIME_SECONDS = 24 * 60 * 60;
-
-export type CapabilityClaims = Exclude<SourceCapabilityClaims, { purpose: "source_delivery" }>;
 
 export interface ShutterCapabilityKeyConfig {
   kid: string;
@@ -81,27 +75,4 @@ function readShutterCapabilityKeyConfig(
   }
 
   return { kid: status.kid, key: decodeCapabilityKeyMaterial(encoded) };
-}
-
-export async function issueShutterCapability(
-  claims: CapabilityClaims,
-  ivOverride?: Uint8Array<ArrayBuffer>,
-  environment: CapabilityEnvironment = env,
-): Promise<string> {
-  const options = shutterCapabilityKeyConfig(environment);
-
-  return ivOverride === undefined
-    ? issueSourceCapability(claims, options)
-    : issueSourceCapabilityWithIv(claims, options, ivOverride);
-}
-
-export interface CapabilityClaimTimes {
-  iat: number;
-  exp: number;
-}
-
-export function shutterCapabilityClaimTimes(): CapabilityClaimTimes {
-  const iat = Math.floor(Date.now() / 1000);
-
-  return { iat, exp: iat + CAPABILITY_LIFETIME_SECONDS };
 }

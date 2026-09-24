@@ -22,7 +22,7 @@ export async function readJsonBody<Schema extends z.ZodType>(
  * One-line description of the first issue. Top-level body fields carry
  * messages that name themselves; nested paths (record entries) are prefixed.
  */
-export function describeFirstIssue(error: z.ZodError): string {
+function describeFirstIssue(error: z.ZodError): string {
   const issue = error.issues[0];
 
   if (!issue) {

@@ -59,7 +59,6 @@ export function DetailPanel({
               <PaneViewImage
                 alt={selected.name}
                 className="h-full w-full object-cover"
-                layout="constrained"
                 mediaId={selected.id}
                 objectFit="cover"
                 variant="preview"

@@ -55,7 +55,7 @@ async function applyCheckedInMigrations(client: PGlite): Promise<void> {
   }
 }
 
-export async function createTestDatabase(): Promise<TestDatabaseHandle> {
+async function createTestDatabase(): Promise<TestDatabaseHandle> {
   const client = await PGlite.create({
     extensions: { pg_trgm },
     icuDataDir: await icuDataDir(),

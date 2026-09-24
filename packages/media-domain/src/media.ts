@@ -47,8 +47,6 @@ export const FolderNodeSchema = z.object({
   parentId: z.uuid().nullable().optional(),
   name: z.string(),
   hasChildren: z.boolean(),
-  mediaCount: z.number().int().nonnegative(),
-  folderCount: z.number().int().nonnegative(),
 });
 
 export type FolderNode = z.infer<typeof FolderNodeSchema>;

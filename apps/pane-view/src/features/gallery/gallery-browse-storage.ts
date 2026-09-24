@@ -66,7 +66,7 @@ export type RecursiveExcludesRecord = z.infer<typeof RecursiveExcludesRecordSche
  * when the list is empty so the record does not grow unboundedly. Both
  * adapters write through this.
  */
-export function withExcludedChildPaths(
+function withExcludedChildPaths(
   record: RecursiveExcludesRecord,
   path: string,
   paths: readonly string[],

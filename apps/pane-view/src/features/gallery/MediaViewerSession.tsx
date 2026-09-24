@@ -687,7 +687,7 @@ export type MediaViewerSessionModel = ReturnType<typeof useMediaViewerSession>;
 
 const MediaViewerSessionContext = createContext<MediaViewerSessionModel | null>(null);
 
-export function useMediaViewerSessionModel(): MediaViewerSessionModel {
+function useMediaViewerSessionModel(): MediaViewerSessionModel {
   const model = useContext(MediaViewerSessionContext);
 
   if (!model) {
@@ -936,7 +936,6 @@ function ViewerMedia(): JSX.Element {
           alt={item.name}
           cache={model.cache}
           className="max-h-full max-w-full object-contain"
-          layout="fullWidth"
           mediaId={item.id}
           objectFit="contain"
           variant={model.showOriginal || item.mediaType !== "image" ? "original" : "preview"}
