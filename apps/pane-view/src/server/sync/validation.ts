@@ -29,7 +29,7 @@ export type SyncObjectValidationResult =
   | { ok: true; input: SyncObjectPayload }
   | { ok: false; error: string };
 
-const SHA256_PATTERN = /^[a-f0-9]{64}$/i;
+export const SHA256_PATTERN = /^[a-f0-9]{64}$/i;
 
 /** S3 single-PUT object size limit (multipart required above this). */
 export const MAX_SYNC_UPLOAD_BYTES = 5 * 1024 * 1024 * 1024;
@@ -38,6 +38,15 @@ export const MAX_SYNC_UPLOAD_BYTES = 5 * 1024 * 1024 * 1024;
 export const SyncRunCountsSchema = z.record(z.string(), z.number(), {
   error: "counts must be an object of numbers",
 });
+
+/** A sync run id: a UUID, so a malformed one is a bad request rather than a database error. */
+const syncRunIdSchema = (requiredMessage: string) =>
+  z.uuid({
+    error: (issue) =>
+      issue.input === undefined || issue.input === null
+        ? requiredMessage
+        : "syncRunId must be a UUID",
+  });
 
 /** A JSON number the client may send with a fractional part (fs mtimes); stored truncated. */
 const truncatedSafeIntegerSchema = (label: string) =>
@@ -84,7 +93,7 @@ export const SyncObjectPayloadBodySchema = z.object({
   size: UploadSizeSchema,
   objectKey: z.string({ error: "objectKey must be a string" }).optional(),
   contentType: z.string({ error: "contentType is required" }),
-  syncRunId: z.string({ error: "syncRunId is required" }),
+  syncRunId: syncRunIdSchema("syncRunId is required"),
 });
 
 export type SyncObjectPayloadBody = z.infer<typeof SyncObjectPayloadBodySchema>;
@@ -94,7 +103,7 @@ export const CompleteObjectBodySchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("delete"),
     logicalPath: z.string({ error: "logicalPath and syncRunId are required" }),
-    syncRunId: z.string({ error: "logicalPath and syncRunId are required" }),
+    syncRunId: syncRunIdSchema("logicalPath and syncRunId are required"),
   }),
   SyncObjectPayloadBodySchema.extend({ action: z.literal("upload").optional() }),
 ]);

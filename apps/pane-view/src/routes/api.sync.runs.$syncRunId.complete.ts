@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
-import { withHttpErrors } from "../server/http/http-error";
+import { HttpError, withHttpErrors } from "../server/http/http-error";
 import { readJsonBody } from "../server/http/json-body";
 import {
   type SyncRouteDependencies,
@@ -24,6 +24,10 @@ export async function postSyncRunComplete(
 
   if (unauthorized) {
     return unauthorized;
+  }
+
+  if (!z.uuid().safeParse(params.syncRunId).success) {
+    throw new HttpError(404, "Sync run not found.");
   }
 
   const parsed = await readJsonBody(request, FinalizeSyncRunBodySchema);

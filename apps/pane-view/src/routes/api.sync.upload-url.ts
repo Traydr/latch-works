@@ -11,6 +11,7 @@ import {
 import {
   expectedContentTypeForExtension,
   MAX_SYNC_UPLOAD_BYTES,
+  SHA256_PATTERN,
   UploadSizeSchema,
   validateSyncContentType,
   validateUploadFilename,
@@ -20,9 +21,10 @@ const UploadUrlBodySchema = z.object({
   filename: z.string({ error: "filename and sha256 are required" }).min(1, {
     error: "filename and sha256 are required",
   }),
-  sha256: z.string({ error: "filename and sha256 are required" }).min(1, {
-    error: "filename and sha256 are required",
-  }),
+  sha256: z
+    .string({ error: "filename and sha256 are required" })
+    .min(1, { error: "filename and sha256 are required" })
+    .regex(SHA256_PATTERN, { error: "sha256 must be a 64-character hex string" }),
   size: UploadSizeSchema,
   contentType: z.string({ error: "contentType must be a string" }).optional(),
 });
