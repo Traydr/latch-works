@@ -1,28 +1,27 @@
 import { describe, expect, it } from "vitest";
 import {
-  createMemoryBrowseStorage,
-  PERSISTED_BROWSE_STATE_DEFAULTS,
-  type PersistedBrowseState,
-  PersistedBrowseStateSchema,
-  resolveRootKey,
-} from "./gallery-browse-storage";
-import {
   applyBrowseIntent,
   browseSnapshotRequestFromSearch,
   buildBrowseSearch,
   foldBrowseFlags,
   listingRequestFor,
-  PLACEHOLDER_RANDOM_SEED,
   resolveBrowseState,
   resolveInitialRedirect,
+  type SeededBrowseState,
   snapshotRequestFor,
-} from "./useGalleryBrowseState";
+} from "./browse-state-rules";
+import {
+  createMemoryBrowseStorage,
+  PERSISTED_BROWSE_STATE_DEFAULTS,
+  PersistedBrowseStateSchema,
+  resolveRootKey,
+} from "./gallery-browse-storage";
 
 const SEED = "0123456789abcdef0123456789abcdef";
 
 const OTHER_SEED = "fedcba9876543210fedcba9876543210";
 
-function persisted(overrides: Partial<PersistedBrowseState> = {}): PersistedBrowseState {
+function persisted(overrides: Partial<SeededBrowseState> = {}): SeededBrowseState {
   return { ...PERSISTED_BROWSE_STATE_DEFAULTS, randomSeed: SEED, ...overrides };
 }
 
@@ -31,7 +30,6 @@ describe("resolveBrowseState", () => {
     const state = resolveBrowseState(
       { comic: true, recursive: true },
       persisted({ comicMode: true, recursive: true }),
-      true,
     );
 
     expect(state).toMatchObject({
@@ -43,21 +41,21 @@ describe("resolveBrowseState", () => {
   });
 
   it("implies recursive when comic is on inside a folder", () => {
-    const state = resolveBrowseState({ comic: true, path: "photos" }, persisted(), true);
+    const state = resolveBrowseState({ comic: true, path: "photos" }, persisted());
     expect(state).toMatchObject({ comicMode: true, folderModesEnabled: true, recursive: true });
   });
 
   it("resolves the flags from the URL only; remembered flags never resurrect an absent one", () => {
     const stored = persisted({ comicMode: true, recursive: true });
     expect(
-      resolveBrowseState({ comic: false, path: "photos", recursive: false }, stored, true),
+      resolveBrowseState({ comic: false, path: "photos", recursive: false }, stored),
     ).toMatchObject({ comicMode: false, recursive: false });
     // A URL without the flags means off — this is what lets a toggle turn a mode off.
-    expect(resolveBrowseState({ path: "photos" }, stored, true)).toMatchObject({
+    expect(resolveBrowseState({ path: "photos" }, stored)).toMatchObject({
       comicMode: false,
       recursive: false,
     });
-    expect(resolveBrowseState({ path: "photos", recursive: true }, stored, true)).toMatchObject({
+    expect(resolveBrowseState({ path: "photos", recursive: true }, stored)).toMatchObject({
       comicMode: false,
       recursive: true,
     });
@@ -81,47 +79,45 @@ describe("resolveBrowseState", () => {
     });
   });
 
-  it("uses defaults and the placeholder seed before storage is read", () => {
-    const state = resolveBrowseState({ path: "photos" }, persisted({ sortMode: "random" }), false);
+  it("takes the sort mode, seed, and panel flag from storage", () => {
+    const state = resolveBrowseState(
+      { path: "photos" },
+      persisted({ detailPanelOpen: false, sortMode: "random" }),
+    );
+
     expect(state).toMatchObject({
-      detailPanelOpen: true,
-      hydrated: false,
-      randomSeed: PLACEHOLDER_RANDOM_SEED,
-      sortMode: "name-asc",
+      detailPanelOpen: false,
+      randomSeed: SEED,
+      sortMode: "random",
     });
-    expect(resolveBrowseState({ path: "photos" }, null, true).hydrated).toBe(true);
   });
 
   it("takes query and selection from the URL only", () => {
-    const state = resolveBrowseState(
-      { media: "m-1", path: "photos", q: "cover" },
-      persisted(),
-      true,
-    );
+    const state = resolveBrowseState({ media: "m-1", path: "photos", q: "cover" }, persisted());
 
     expect(state.query).toBe("cover");
     expect(state.selectedId).toBe("m-1");
-    expect(resolveBrowseState({ path: "photos" }, persisted(), true).selectedId).toBeNull();
+    expect(resolveBrowseState({ path: "photos" }, persisted()).selectedId).toBeNull();
   });
 });
 
 describe("requests", () => {
   it("builds one snapshot request in every mode", () => {
-    const folder = resolveBrowseState({ path: "photos", q: "x" }, persisted(), true);
+    const folder = resolveBrowseState({ path: "photos", q: "x" }, persisted());
     expect(snapshotRequestFor(folder)).toEqual({
       comicMode: false,
       path: "photos",
       query: "x",
       recursive: false,
     });
-    const comic = resolveBrowseState({ comic: true, path: "photos" }, persisted(), true);
+    const comic = resolveBrowseState({ comic: true, path: "photos" }, persisted());
     expect(snapshotRequestFor(comic)).toEqual({
       comicMode: true,
       path: "photos",
       query: undefined,
       recursive: true,
     });
-    const root = resolveBrowseState({}, persisted(), true);
+    const root = resolveBrowseState({}, persisted());
     expect(snapshotRequestFor(root).path).toBeUndefined();
   });
 
@@ -135,7 +131,7 @@ describe("requests", () => {
       {},
     ]) {
       expect(browseSnapshotRequestFromSearch(search)).toEqual(
-        snapshotRequestFor(resolveBrowseState(search, remembered, true)),
+        snapshotRequestFor(resolveBrowseState(search, remembered)),
       );
     }
 
@@ -149,14 +145,14 @@ describe("requests", () => {
     const settings = { showImages: true, showVideos: true };
     const excludes = ["photos/kids"];
 
-    const recursive = resolveBrowseState({ path: "photos", recursive: true }, persisted(), true);
+    const recursive = resolveBrowseState({ path: "photos", recursive: true }, persisted());
     expect(listingRequestFor(recursive, settings, excludes).excludedPaths).toEqual(excludes);
 
     // Comic mode folds into recursive, so excludes apply there too.
-    const comic = resolveBrowseState({ comic: true, path: "photos" }, persisted(), true);
+    const comic = resolveBrowseState({ comic: true, path: "photos" }, persisted());
     expect(listingRequestFor(comic, settings, excludes).excludedPaths).toEqual(excludes);
 
-    const plain = resolveBrowseState({ path: "photos" }, persisted(), true);
+    const plain = resolveBrowseState({ path: "photos" }, persisted());
     expect(listingRequestFor(plain, settings, excludes).excludedPaths).toBeUndefined();
 
     // A path with no stored entry contributes nothing to the request.
@@ -168,7 +164,7 @@ describe("requests", () => {
   });
 
   it("is deterministic for the same input", () => {
-    const state = resolveBrowseState({ path: "photos" }, persisted(), true);
+    const state = resolveBrowseState({ path: "photos" }, persisted());
     expect(snapshotRequestFor(state)).toEqual(snapshotRequestFor(state));
     const settings = { showImages: true, showVideos: false };
     expect(listingRequestFor(state, settings)).toEqual(listingRequestFor(state, settings));
@@ -189,7 +185,6 @@ describe("buildBrowseSearch", () => {
   const state = resolveBrowseState(
     { media: "m-1", path: "photos", q: "cover", recursive: true },
     persisted(),
-    true,
   );
 
   it("keeps the current fields when the patch does not name them", () => {
@@ -237,7 +232,6 @@ describe("applyBrowseIntent", () => {
   const folder = resolveBrowseState(
     { comic: true, media: "m-1", path: "photos/2026", q: "cover", recursive: true },
     persisted({ sortMode: "date-newest" }),
-    true,
   );
 
   it("navigates to a path, clears the selection, and keeps the flags between folders", () => {
@@ -265,7 +259,7 @@ describe("applyBrowseIntent", () => {
   });
 
   it("entering a folder from the root applies the remembered default flags", () => {
-    const root = resolveBrowseState({}, persisted(), true);
+    const root = resolveBrowseState({}, persisted());
 
     const enter = (flags: { comicMode: boolean; recursive: boolean }) =>
       applyBrowseIntent(root, { path: "photos", type: "navigateToPath" }, flags).navigate?.search;
@@ -288,7 +282,7 @@ describe("applyBrowseIntent", () => {
   });
 
   it("at the root, the toggles write the remembered default instead of the URL", () => {
-    const root = resolveBrowseState({}, persisted(), true);
+    const root = resolveBrowseState({}, persisted());
     expect(applyBrowseIntent(root, { next: true, type: "setRecursive" }, remembered)).toEqual({
       persisted: { comicMode: false, recursive: true },
     });
@@ -298,7 +292,7 @@ describe("applyBrowseIntent", () => {
   });
 
   it("at the root, recursive on keeps the remembered comic flag and off clears it", () => {
-    const root = resolveBrowseState({}, persisted(), true);
+    const root = resolveBrowseState({}, persisted());
     const comic = { comicMode: true, recursive: true };
     expect(applyBrowseIntent(root, { next: true, type: "setRecursive" }, comic)).toEqual({
       persisted: { comicMode: true, recursive: true },
@@ -344,7 +338,7 @@ describe("applyBrowseIntent", () => {
       comic: undefined,
       recursive: undefined,
     });
-    const plain = resolveBrowseState({ path: "photos" }, persisted(), true);
+    const plain = resolveBrowseState({ path: "photos" }, persisted());
     expect(
       applyBrowseIntent(plain, { next: true, type: "setRecursive" }, remembered).navigate?.search,
     ).toMatchObject({
@@ -354,7 +348,7 @@ describe("applyBrowseIntent", () => {
   });
 
   it("turning comic on turns recursive on; turning comic off turns recursive off (toolbar semantics)", () => {
-    const plain = resolveBrowseState({ path: "photos" }, persisted(), true);
+    const plain = resolveBrowseState({ path: "photos" }, persisted());
     expect(
       applyBrowseIntent(plain, { next: true, type: "setComicMode" }, remembered).navigate?.search,
     ).toMatchObject({
@@ -396,33 +390,24 @@ describe("applyBrowseIntent", () => {
 describe("resolveInitialRedirect", () => {
   it("redirects once to the last folder with its flags on a first visit without a path", () => {
     const stored = persisted({ comicMode: true, lastPath: "photos", recursive: false });
-    const first = resolveInitialRedirect({ q: "cover" }, stored, false);
-    expect(first).toEqual({
-      checked: true,
-      redirectTo: { comic: true, media: undefined, path: "photos", q: "cover", recursive: true },
+    expect(resolveInitialRedirect({ q: "cover" }, stored, false)).toEqual({
+      comic: true,
+      media: undefined,
+      path: "photos",
+      q: "cover",
+      recursive: true,
     });
-    expect(resolveInitialRedirect({}, stored, first.checked)).toEqual({
-      checked: true,
-      redirectTo: null,
-    });
+    expect(resolveInitialRedirect({}, stored, true)).toBeNull();
   });
 
   it("stays at the root after an explicit navigation from a persisted child folder", () => {
     const stored = persisted({ lastPath: "photos" });
-    const first = resolveInitialRedirect({ path: "photos" }, stored, false);
-    expect(first).toEqual({ checked: true, redirectTo: null });
-    expect(resolveInitialRedirect({}, stored, first.checked)).toEqual({
-      checked: true,
-      redirectTo: null,
-    });
+    expect(resolveInitialRedirect({ path: "photos" }, stored, false)).toBeNull();
+    expect(resolveInitialRedirect({}, stored, true)).toBeNull();
   });
 
-  it("waits for storage and does nothing without a last path", () => {
-    expect(resolveInitialRedirect({}, null, false)).toEqual({ checked: false, redirectTo: null });
-    expect(resolveInitialRedirect({}, persisted({ lastPath: "" }), false)).toEqual({
-      checked: true,
-      redirectTo: null,
-    });
+  it("does nothing without a last path", () => {
+    expect(resolveInitialRedirect({}, persisted({ lastPath: "" }), false)).toBeNull();
   });
 });
 
