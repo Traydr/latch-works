@@ -1,5 +1,6 @@
 import { type ListStoredObjectsPage, listStoredObjectsByPrefix } from "@latch-works/media-storage";
 import { and, eq, inArray, isNotNull, isNull, not, sql } from "drizzle-orm";
+import type { JsonValue } from "@/lib/json";
 import { type Database, db } from "../db";
 import {
   favorites,
@@ -24,7 +25,12 @@ import {
   type ShutterPurgeSource,
   shutterPurgeReadiness,
 } from "../media/shutter-client";
-import { MaintenanceJobTypeSchema, parseMaintenanceProgress } from "./maintenance-progress";
+import {
+  type MaintenanceJobType,
+  MaintenanceJobTypeSchema,
+  type MaintenanceProgressFor,
+  parseMaintenanceProgress,
+} from "./maintenance-progress";
 import { deleteMaintenanceObjects, getMaintenanceStorageClient } from "./maintenance-storage";
 import {
   liveShutterSourceCondition,
@@ -92,12 +98,48 @@ interface CleanupJobStatusBase {
   status: "pending" | "running" | "completed" | "failed" | "cancelled";
 }
 
-export type CleanupJobStatus = CleanupJobStatusBase &
-  (
-    | { progress: LibraryWipeJobProgress; type: "library_hard_wipe" }
-    | { progress: SoftDeletedPurgeJobProgress; type: "soft_deleted_purge" }
-    | { progress: ShutterSourcePurgeJobProgress; type: "shutter_source_purge" }
-  );
+type CleanupJobStatusByType = {
+  [Type in MaintenanceJobType]: CleanupJobStatusBase & {
+    progress: MaintenanceProgressFor<Type>;
+    type: Type;
+  };
+};
+
+export type CleanupJobStatus = CleanupJobStatusByType[MaintenanceJobType];
+
+/**
+ * What each job type does with its parsed progress: `run` advances one batch,
+ * `toStatus` reports it. Both lookups go through a generic `Type`, so a type's
+ * entry only ever sees progress that parsed for that type.
+ */
+type MaintenanceJobHandlers = {
+  [Type in MaintenanceJobType]: {
+    run(
+      jobId: string,
+      progress: MaintenanceProgressFor<Type>,
+      dependencies: MaintenanceWorkerDependencies,
+    ): Promise<boolean>;
+    toStatus(
+      base: CleanupJobStatusBase,
+      progress: MaintenanceProgressFor<Type>,
+      type: Type,
+    ): CleanupJobStatusByType[Type];
+  };
+};
+
+function toCleanupJobStatus<Type extends MaintenanceJobType>(
+  base: CleanupJobStatusBase,
+  progress: MaintenanceProgressFor<Type>,
+  type: Type,
+): CleanupJobStatusBase & { progress: MaintenanceProgressFor<Type>; type: Type } {
+  return { ...base, progress, type };
+}
+
+const maintenanceJobHandlers: MaintenanceJobHandlers = {
+  library_hard_wipe: { run: processLibraryWipeBatch, toStatus: toCleanupJobStatus },
+  shutter_source_purge: { run: processShutterSourcePurgeBatch, toStatus: toCleanupJobStatus },
+  soft_deleted_purge: { run: processSoftDeletedPurgeBatch, toStatus: toCleanupJobStatus },
+};
 
 export async function readCleanupJobStatus(
   { jobId }: { jobId: string },
@@ -130,33 +172,23 @@ export async function readCleanupJobStatus(
     return null;
   }
 
-  const base = {
+  return cleanupJobStatusFor(type.data, job.progress, {
     completedAt: job.completedAt?.toISOString() ?? null,
     error: job.error,
     id: job.id,
     startedAt: job.startedAt?.toISOString() ?? null,
     status: job.status,
-  };
+  });
+}
 
-  switch (type.data) {
-    case "library_hard_wipe": {
-      const parsed = parseMaintenanceProgress(type.data, job.progress);
+function cleanupJobStatusFor<Type extends MaintenanceJobType>(
+  type: Type,
+  rawProgress: JsonValue,
+  base: CleanupJobStatusBase,
+): CleanupJobStatusByType[Type] | null {
+  const parsed = parseMaintenanceProgress(type, rawProgress);
 
-      return parsed.ok ? { ...base, progress: parsed.progress, type: type.data } : null;
-    }
-
-    case "soft_deleted_purge": {
-      const parsed = parseMaintenanceProgress(type.data, job.progress);
-
-      return parsed.ok ? { ...base, progress: parsed.progress, type: type.data } : null;
-    }
-
-    case "shutter_source_purge": {
-      const parsed = parseMaintenanceProgress(type.data, job.progress);
-
-      return parsed.ok ? { ...base, progress: parsed.progress, type: type.data } : null;
-    }
-  }
+  return parsed.ok ? maintenanceJobHandlers[type].toStatus(base, parsed.progress, type) : null;
 }
 
 export async function resumePendingMaintenanceJobs(
@@ -286,34 +318,25 @@ export async function processMaintenanceJobBatch(
     return false;
   }
 
-  // Progress is jsonb; the parser is the only way it reaches a batch. A phase
-  // that is not valid for this job's type fails the job instead of advancing
-  // it (the cross-type phase leak the old inline s3_derivatives rewrite had).
-  switch (type.data) {
-    case "library_hard_wipe": {
-      const parsed = parseMaintenanceProgress(type.data, job.progress);
+  return runJobBatch(type.data, jobId, job.progress, dependencies);
+}
 
-      if (!parsed.ok) return failUnrecognisedProgress(jobId, parsed.reason, dependencies);
+/**
+ * Progress is jsonb; the parser is the only way it reaches a batch. A phase
+ * that is not valid for this job's type fails the job instead of advancing it
+ * (the cross-type phase leak the old inline s3_derivatives rewrite had).
+ */
+async function runJobBatch<Type extends MaintenanceJobType>(
+  type: Type,
+  jobId: string,
+  rawProgress: JsonValue,
+  dependencies: MaintenanceWorkerDependencies,
+): Promise<boolean> {
+  const parsed = parseMaintenanceProgress(type, rawProgress);
 
-      return processLibraryWipeBatch(jobId, parsed.progress, dependencies);
-    }
+  if (!parsed.ok) return failUnrecognisedProgress(jobId, parsed.reason, dependencies);
 
-    case "soft_deleted_purge": {
-      const parsed = parseMaintenanceProgress(type.data, job.progress);
-
-      if (!parsed.ok) return failUnrecognisedProgress(jobId, parsed.reason, dependencies);
-
-      return processSoftDeletedPurgeBatch(jobId, parsed.progress, dependencies);
-    }
-
-    case "shutter_source_purge": {
-      const parsed = parseMaintenanceProgress(type.data, job.progress);
-
-      if (!parsed.ok) return failUnrecognisedProgress(jobId, parsed.reason, dependencies);
-
-      return processShutterSourcePurgeBatch(jobId, parsed.progress, dependencies);
-    }
-  }
+  return maintenanceJobHandlers[type].run(jobId, parsed.progress, dependencies);
 }
 
 async function failUnrecognisedProgress(
