@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { type CopyStatus, useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 import { GALLERY_HOTKEYS } from "./hotkeys";
 import { type AppSettings, type AppSettingsPatch, ThemeModeSchema } from "./types";
 
@@ -10,6 +11,12 @@ interface SettingsDrawerProps {
   recursiveDefault: boolean;
   settings: AppSettings;
 }
+
+const DIAGNOSTICS_COPY_LABELS: Record<CopyStatus, string> = {
+  copied: "Diagnostics copied",
+  failed: "Copy failed: clipboard unavailable",
+  idle: "Copy diagnostics JSON",
+};
 
 const THEME_OPTIONS = [
   { value: "system", label: "System" },
@@ -26,6 +33,7 @@ export function SettingsDrawer({
   settings,
 }: SettingsDrawerProps) {
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const diagnosticsCopy = useCopyToClipboard();
 
   if (!open) {
     return null;
@@ -40,7 +48,7 @@ export function SettingsDrawer({
       userAgent: navigator.userAgent,
     };
 
-    await navigator.clipboard.writeText(JSON.stringify(diagnostics, null, 2));
+    await diagnosticsCopy.copy(JSON.stringify(diagnostics, null, 2));
   };
 
   return (
@@ -156,7 +164,7 @@ export function SettingsDrawer({
               className="rounded-lg border border-border px-3 py-2 text-sm"
               onClick={() => void copyDiagnostics()}
             >
-              Copy diagnostics JSON
+              {DIAGNOSTICS_COPY_LABELS[diagnosticsCopy.status]}
             </button>
             <button
               type="button"

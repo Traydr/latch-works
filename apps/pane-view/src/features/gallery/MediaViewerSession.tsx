@@ -1,6 +1,8 @@
 import type { MediaItem } from "@latch-works/media-domain";
 import { formatBytes } from "@latch-works/media-domain";
 import {
+  Check,
+  CircleAlert,
   Copy,
   Download,
   Image,
@@ -36,6 +38,7 @@ import {
   videoSecondsToPositionMs,
 } from "@/features/viewer/viewer-resume";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
+import { type CopyStatus, useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useViewerChromeIdle } from "@/hooks/use-viewer-chrome-idle";
 import { isTextInputTarget } from "./browse-search";
@@ -66,6 +69,18 @@ export interface MediaViewerSessionProps {
 }
 
 const VIEWER_VOLUME_STORAGE_KEY = "pane-view.viewer.volume";
+
+const COPY_PATH_ICONS: Record<CopyStatus, LucideIcon> = {
+  copied: Check,
+  failed: CircleAlert,
+  idle: Copy,
+};
+
+const COPY_PATH_LABELS: Record<CopyStatus, string> = {
+  copied: "Path copied",
+  failed: "Copy failed",
+  idle: "Copy path",
+};
 
 function readPersistedVolume(): number {
   try {
@@ -139,6 +154,7 @@ function useViewerShell({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [videoStatus, setVideoStatus] = useState<VideoStatus | null>(null);
   const [originalShownFor, setOriginalShownFor] = useState<string | null>(null);
+  const pathCopy = useCopyToClipboard();
   // Tagged with the media id, so a step starts the next item paused and unmeasured.
   const currentVideo = videoStatus?.mediaId === item.id ? videoStatus : null;
   const playing = currentVideo?.playing ?? false;
@@ -301,8 +317,8 @@ function useViewerShell({
     setOriginalShownFor((current) => (current === item.id ? null : item.id));
   };
 
-  const copyPath = async (): Promise<void> => {
-    await navigator.clipboard.writeText(item.path);
+  const copyPath = (): void => {
+    void pathCopy.copy(item.path);
   };
 
   const downloadMedia = (): void => {
@@ -316,6 +332,7 @@ function useViewerShell({
     chromeVisible,
     closeButtonRef,
     copyPath,
+    copyStatus: pathCopy.status,
     details,
     downloadMedia,
     duration,
@@ -777,6 +794,7 @@ function ViewerTopBar(): JSX.Element {
     chromeVisibilityClass,
     closeButtonRef,
     copyPath,
+    copyStatus,
     details,
     downloadMedia,
     isFullscreen,
@@ -800,10 +818,13 @@ function ViewerTopBar(): JSX.Element {
         <div className="flex shrink-0 items-center gap-1.5">
           <ViewerToolbarButton
             ariaLabel="Copy path"
-            icon={Copy}
-            label="Copy path"
-            onClick={() => void copyPath()}
+            icon={COPY_PATH_ICONS[copyStatus]}
+            label={COPY_PATH_LABELS[copyStatus]}
+            onClick={copyPath}
           />
+          <span aria-live="polite" className="sr-only">
+            {copyStatus === "idle" ? "" : COPY_PATH_LABELS[copyStatus]}
+          </span>
           <ViewerToolbarButton
             ariaLabel="Download"
             icon={Download}
