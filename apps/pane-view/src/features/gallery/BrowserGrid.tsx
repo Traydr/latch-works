@@ -1,6 +1,6 @@
 import { Archive } from "lucide-react";
 import { type ReactNode, type RefObject, useEffect, useMemo, useRef } from "react";
-import type { GalleryBrowseEntry } from "@/features/gallery/gallery-browse-entry";
+import { entryMedia, type GalleryBrowseEntry } from "@/features/gallery/gallery-browse-entry";
 import { BrowserEntryCard } from "./BrowserEntryCard";
 import { FLOATING_TOOLBAR_SELECTOR, GALLERY_GRID_SCROLL_ID } from "./gallery-grid-scroll";
 import { useVirtualGridMetrics } from "./useVirtualGridMetrics";
@@ -26,6 +26,7 @@ interface BrowserGridProps {
   entries: GalleryBrowseEntry[];
   footer?: ReactNode;
   focusedIndex: number;
+  isMobile: boolean;
   onActivateEntry: (entry: GalleryBrowseEntry) => void;
   onSelectEntry: (entry: GalleryBrowseEntry) => void;
   openingComicId: string | null;
@@ -43,6 +44,7 @@ export function BrowserGrid({
   entries,
   footer,
   focusedIndex,
+  isMobile,
   onActivateEntry,
   onSelectEntry,
   openingComicId,
@@ -146,12 +148,8 @@ export function BrowserGrid({
               return null;
             }
 
-            const selected =
-              entry.kind === "folder"
-                ? false
-                : entry.kind === "comic"
-                  ? entry.comic.cover.id === selectedId
-                  : entry.media.id === selectedId;
+            const mediaId = entryMedia(entry)?.id;
+            const selected = mediaId !== undefined && mediaId === selectedId;
 
             const focused = slot.index === focusedIndex;
 
@@ -164,13 +162,14 @@ export function BrowserGrid({
                 deletingEntryIds={deletingEntryIds}
                 entry={entry}
                 focused={focused}
+                isMobile={isMobile}
                 left={slot.left}
                 onActivate={onActivateEntry}
                 onSelect={onSelectEntry}
                 opening={entry.kind === "comic" && entry.comic.id === openingComicId}
                 priority={Math.abs(slot.index - focusedIndex) <= columnCount}
                 selected={selected}
-                thumbnailUrls={resolvedThumbnailUrls}
+                thumbnailUrl={mediaId === undefined ? undefined : resolvedThumbnailUrls[mediaId]}
                 top={slot.top}
               />
             );

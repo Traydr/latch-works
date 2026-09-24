@@ -1,5 +1,5 @@
 import type { MediaItem } from "@latch-works/media-domain";
-import { type MutableRefObject, useEffect, useRef, useState } from "react";
+import { type MutableRefObject, memo, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { BrowserGrid } from "@/features/gallery/BrowserGrid";
 import { DetailPanel } from "@/features/gallery/DetailPanel";
@@ -18,6 +18,7 @@ export interface GalleryBrowsePaneProps {
   focusedEntryIndex: number;
   hasMore: boolean;
   isFetching: boolean;
+  isMobile: boolean;
   loadingMoreMedia: boolean;
   onActivateEntry: (entry: GalleryBrowseEntry) => void;
   onDelete: () => void;
@@ -40,7 +41,11 @@ export interface GalleryBrowsePaneProps {
   thumbnailSize: number;
 }
 
-export function GalleryBrowsePane({
+/**
+ * Memoised with every callback prop stable, so page state the grid does not
+ * show (the search draft, sheets, the hotkey overlay) re-renders none of it.
+ */
+export const GalleryBrowsePane = memo(function GalleryBrowsePane({
   columnCountRef,
   comicMode,
   deleteError,
@@ -50,6 +55,7 @@ export function GalleryBrowsePane({
   focusedEntryIndex,
   hasMore,
   isFetching,
+  isMobile,
   loadingMoreMedia,
   onActivateEntry,
   onDelete,
@@ -137,6 +143,7 @@ export function GalleryBrowsePane({
             ) : null
           }
           focusedIndex={focusedEntryIndex}
+          isMobile={isMobile}
           onActivateEntry={onActivateEntry}
           onSelectEntry={onSelectEntry}
           openingComicId={openingComicId}
@@ -174,4 +181,4 @@ export function GalleryBrowsePane({
       ) : null}
     </div>
   );
-}
+});

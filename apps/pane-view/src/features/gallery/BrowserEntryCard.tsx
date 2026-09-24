@@ -1,6 +1,6 @@
 import { formatBytes } from "@latch-works/media-domain";
+import { memo } from "react";
 import type { GalleryBrowseEntry } from "@/features/gallery/gallery-browse-entry";
-import { useIsMobile } from "@/hooks/use-mobile";
 import { DeleteOverlay } from "./DeleteOverlay";
 import { Poster } from "./Poster";
 
@@ -11,6 +11,8 @@ interface BrowserEntryCardProps {
   deletingEntryIds: ReadonlySet<string>;
   entry: GalleryBrowseEntry;
   focused: boolean;
+  /** Mobile activates on a tap; desktop selects on a click and activates on a double click. */
+  isMobile: boolean;
   left: number;
   onActivate: (entry: GalleryBrowseEntry) => void;
   onSelect: (entry: GalleryBrowseEntry) => void;
@@ -18,28 +20,32 @@ interface BrowserEntryCardProps {
   opening?: boolean;
   priority?: boolean;
   selected: boolean;
-  thumbnailUrls: Readonly<Record<string, string>>;
+  /** The resolved thumbnail for the card's media or comic cover, once there is one. */
+  thumbnailUrl: string | undefined;
   top: number;
 }
 
-export function BrowserEntryCard({
+/**
+ * Memoised: the page re-renders on every search keystroke, focus move, and
+ * sheet toggle, and a card's props change only when that card does.
+ */
+export const BrowserEntryCard = memo(function BrowserEntryCard({
   cardHeight,
   cardWidth,
   deletedEntryIds,
   deletingEntryIds,
   entry,
   focused,
+  isMobile,
   left,
   onActivate,
   onSelect,
   opening = false,
   priority = false,
   selected,
-  thumbnailUrls,
+  thumbnailUrl,
   top,
 }: BrowserEntryCardProps) {
-  const isMobile = useIsMobile();
-
   const handleClick = () => {
     if (isMobile) {
       onActivate(entry);
@@ -77,7 +83,7 @@ export function BrowserEntryCard({
           opening={opening}
           priority={priority}
           selected={selected}
-          thumbnailUrls={thumbnailUrls}
+          thumbnailUrl={thumbnailUrl}
         />
       ) : (
         <MediaCard
@@ -88,12 +94,12 @@ export function BrowserEntryCard({
           focused={focused}
           priority={priority}
           selected={selected}
-          thumbnailUrls={thumbnailUrls}
+          thumbnailUrl={thumbnailUrl}
         />
       )}
     </button>
   );
-}
+});
 
 function FolderCard({
   entry,
@@ -148,7 +154,7 @@ function ComicCard({
   opening,
   priority,
   selected,
-  thumbnailUrls,
+  thumbnailUrl,
 }: {
   cardWidth: number;
   deletedEntryIds: ReadonlySet<string>;
@@ -158,7 +164,7 @@ function ComicCard({
   opening: boolean;
   priority?: boolean;
   selected: boolean;
-  thumbnailUrls: Readonly<Record<string, string>>;
+  thumbnailUrl: string | undefined;
 }) {
   const comic = entry.comic;
   // Summaries carry only the cover; the overlays follow it. Deleting a whole
@@ -181,7 +187,7 @@ function ComicCard({
         cardWidth={cardWidth}
         media={comic.cover}
         priority={priority}
-        resolvedThumbnailUrl={thumbnailUrls[comic.cover.id]}
+        resolvedThumbnailUrl={thumbnailUrl}
       />
       {isDeleting || isDeleted ? <DeleteOverlay animated={isDeleting} /> : null}
       <div className="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/75 via-black/10 to-transparent">
@@ -204,7 +210,7 @@ function MediaCard({
   focused,
   priority,
   selected,
-  thumbnailUrls,
+  thumbnailUrl,
 }: {
   cardWidth: number;
   deletedEntryIds: ReadonlySet<string>;
@@ -213,7 +219,7 @@ function MediaCard({
   focused: boolean;
   priority?: boolean;
   selected: boolean;
-  thumbnailUrls: Readonly<Record<string, string>>;
+  thumbnailUrl: string | undefined;
 }) {
   const item = entry.media;
   const isDeleting = deletingEntryIds.has(item.id);
@@ -234,7 +240,7 @@ function MediaCard({
         cardWidth={cardWidth}
         media={item}
         priority={priority}
-        resolvedThumbnailUrl={thumbnailUrls[item.id]}
+        resolvedThumbnailUrl={thumbnailUrl}
       />
       {isDeleting || isDeleted ? <DeleteOverlay animated={isDeleting} /> : null}
       <div className="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 transition-opacity group-hover:opacity-100">
