@@ -64,9 +64,9 @@ export function verifyConfiguredOwnerCredentials({
   return readConfiguredOwner();
 }
 
-export async function ensureConfiguredOwnerCredentialAccount(
+async function ensureConfiguredOwnerCredentialAccount(
   owner: ReturnType<typeof readConfiguredOwner>,
-): Promise<boolean> {
+): Promise<void> {
   const context = await auth.$context;
 
   const existingOwner = await context.internalAdapter.findUserByEmail(owner.email, {
@@ -93,7 +93,7 @@ export async function ensureConfiguredOwnerCredentialAccount(
       userId: createdOwner.id,
     });
 
-    return true;
+    return;
   }
 
   const credentialAccount = existingOwner.accounts.find(
@@ -108,7 +108,7 @@ export async function ensureConfiguredOwnerCredentialAccount(
       userId: existingOwner.user.id,
     });
 
-    return true;
+    return;
   }
 
   const passwordUnchanged = credentialAccount.password
@@ -116,17 +116,15 @@ export async function ensureConfiguredOwnerCredentialAccount(
     : false;
 
   if (passwordUnchanged) {
-    return true;
+    return;
   }
 
   // PANE_VIEW_PASSWORD was rotated: sign out every session opened with the old one.
   await context.internalAdapter.deleteUserSessions(existingOwner.user.id);
   await context.internalAdapter.updatePassword(existingOwner.user.id, await hashPassword());
-
-  return true;
 }
 
-let ownerReconciliation: Promise<boolean> | null = null;
+let ownerReconciliation: Promise<void> | null = null;
 
 /**
  * Brings the stored owner account in line with the configured credentials once
@@ -135,7 +133,7 @@ let ownerReconciliation: Promise<boolean> | null = null;
  * it, not at the next sign-in. Concurrent callers share one run, so two
  * sign-ins cannot both revoke sessions and delete each other's new one.
  */
-export function reconcileConfiguredOwner(): Promise<boolean> {
+export function reconcileConfiguredOwner(): Promise<void> {
   if (!ownerReconciliation) {
     const reconciliation = ensureConfiguredOwnerCredentialAccount(readConfiguredOwner());
     ownerReconciliation = reconciliation;
