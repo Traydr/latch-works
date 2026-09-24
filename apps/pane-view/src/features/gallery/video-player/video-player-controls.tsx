@@ -51,21 +51,33 @@ export function canSetVideoVolume(): boolean {
   return probe.volume === 0.5;
 }
 
-/** A chrome surface: clicks inside never reach the dialog's tap-to-toggle handler. */
+/**
+ * A chrome surface: clicks inside never reach the dialog's tap-to-toggle handler.
+ * While the chrome is hidden nothing in it takes a click or tap; one on the region
+ * only brings the chrome back. Its controls stay reachable from the keyboard.
+ */
 export function ChromeRegion({
   children,
   className = "",
+  hidden,
+  onReveal,
   style,
 }: {
   children: ReactNode;
   className?: string;
+  hidden: boolean;
+  onReveal: () => void;
   style?: CSSProperties;
 }): JSX.Element {
   return (
     <div
-      className={`pointer-events-auto ${className}`}
+      className={`pointer-events-auto ${hidden ? "**:pointer-events-none" : ""} ${className}`}
       style={style}
-      onClick={(event) => event.stopPropagation()}
+      onClick={(event) => {
+        event.stopPropagation();
+
+        if (hidden) onReveal();
+      }}
     >
       {children}
     </div>

@@ -1,17 +1,6 @@
 import type { MediaItem } from "@latch-works/media-domain";
 import { formatBytes } from "@latch-works/media-domain";
-import {
-  Check,
-  CircleAlert,
-  Copy,
-  Download,
-  Image,
-  type LucideIcon,
-  Maximize,
-  Minimize,
-  VideoOff,
-  X,
-} from "lucide-react";
+import { Download, Image, type LucideIcon, Maximize, Minimize, VideoOff, X } from "lucide-react";
 import {
   createContext,
   forwardRef,
@@ -38,10 +27,12 @@ import {
   videoSecondsToPositionMs,
 } from "@/features/viewer/viewer-resume";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
-import { type CopyStatus, useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
+import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useViewerChromeIdle } from "@/hooks/use-viewer-chrome-idle";
+import { closeDialog, openDialog } from "@/lib/modal-dialog";
 import { isTextInputTarget } from "./browse-search";
+import { COPY_PATH_ICONS, COPY_PATH_LABELS } from "./copy-path-status";
 import { GALLERY_PREVIEW_SIZE } from "./gallery-preview-size";
 import { PaneViewImage } from "./PaneViewImage";
 import { type ResolvedMediaUrlCache, useResolvedMediaUrl } from "./useResolvedMediaUrl";
@@ -69,18 +60,6 @@ export interface MediaViewerSessionProps {
 }
 
 const VIEWER_VOLUME_STORAGE_KEY = "pane-view.viewer.volume";
-
-const COPY_PATH_ICONS: Record<CopyStatus, LucideIcon> = {
-  copied: Check,
-  failed: CircleAlert,
-  idle: Copy,
-};
-
-const COPY_PATH_LABELS: Record<CopyStatus, string> = {
-  copied: "Path copied",
-  failed: "Copy failed",
-  idle: "Copy path",
-};
 
 function readPersistedVolume(): number {
   try {
@@ -671,6 +650,7 @@ function useMediaViewerSession({
     canSeek,
     changeVolume,
     chromeVisibilityClass: shell.chromeVisibilityClass,
+    chromeVisible: shell.chromeVisible,
     commitSeek,
     duration,
     endHoldBoost,
@@ -686,6 +666,7 @@ function useMediaViewerSession({
     playbackPosition,
     restoreVideoPosition,
     resumePdfPage,
+    revealChrome: shell.revealChrome,
     scheduleSave,
     setDuration,
     setPlaying,
@@ -784,6 +765,7 @@ function ViewerDialog({ children }: { children: ReactNode }): JSX.Element {
 function ViewerTopBar(): JSX.Element {
   const {
     chromeVisibilityClass,
+    chromeVisible,
     closeButtonRef,
     copyPath,
     copyStatus,
@@ -792,6 +774,7 @@ function ViewerTopBar(): JSX.Element {
     isFullscreen,
     item,
     onClose,
+    revealChrome,
     showOriginal,
     toggleFullscreen,
     toggleOriginal,
@@ -802,7 +785,11 @@ function ViewerTopBar(): JSX.Element {
       className={`pointer-events-none absolute inset-x-0 top-0 z-20 bg-gradient-to-b from-black/70 via-black/30 to-transparent px-3 pb-8 pt-3 transition-opacity duration-300 ${chromeVisibilityClass}`}
       style={{ paddingTop: "max(0.75rem, env(safe-area-inset-top))" }}
     >
-      <ChromeRegion className="flex items-center justify-between gap-2 sm:gap-3">
+      <ChromeRegion
+        className="flex items-center justify-between gap-2 sm:gap-3"
+        hidden={!chromeVisible}
+        onReveal={revealChrome}
+      >
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-white">{item.name}</p>
           <p className="truncate text-xs text-white/70">{details.join(" · ")}</p>
@@ -851,8 +838,15 @@ function ViewerTopBar(): JSX.Element {
 }
 
 function ViewerNavigation(): JSX.Element {
-  const { canStepBackward, canStepForward, chromeVisibilityClass, item, onStep } =
-    useViewerShellModel();
+  const {
+    canStepBackward,
+    canStepForward,
+    chromeVisibilityClass,
+    chromeVisible,
+    item,
+    onStep,
+    revealChrome,
+  } = useViewerShellModel();
 
   // A video keeps its picture for play/pause and hold-to-boost; only the edges step.
   const zoneWidth = item.mediaType === "video" ? "w-[10%]" : "w-1/2";
@@ -875,7 +869,7 @@ function ViewerNavigation(): JSX.Element {
           />
         </>
       ) : null}
-      <ChromeRegion>
+      <ChromeRegion hidden={!chromeVisible} onReveal={revealChrome}>
         <button
           type="button"
           aria-label="Previous item"
@@ -1055,12 +1049,6 @@ const ViewerToolbarButton = forwardRef<
   );
 });
 
-/**
- * The DOM lib declares these on every dialog; jsdom does not have them, so
- * the viewer reads them as optional and falls back.
- */
-type OptionalModalDialog = Partial<Pick<HTMLDialogElement, "showModal" | "close">>;
-
 type FullscreenHost = Partial<Pick<HTMLElement, "requestFullscreen">> &
   Partial<{ webkitRequestFullscreen: () => Promise<void> | void }>;
 
@@ -1081,23 +1069,3 @@ function fullscreenElementOf(document: Document): Element | null {
 
 /** iPhone Safari's video-only fullscreen entry point, absent from the DOM lib. */
 type WebkitFullscreenVideo = HTMLVideoElement & Partial<{ webkitEnterFullscreen: () => void }>;
-
-function openDialog(dialog: HTMLDialogElement): void {
-  const modal: OptionalModalDialog = dialog;
-
-  if (modal.showModal) {
-    modal.showModal();
-  } else {
-    dialog.setAttribute("open", "");
-  }
-}
-
-function closeDialog(dialog: HTMLDialogElement): void {
-  const modal: OptionalModalDialog = dialog;
-
-  if (modal.close) {
-    modal.close();
-  } else {
-    dialog.removeAttribute("open");
-  }
-}

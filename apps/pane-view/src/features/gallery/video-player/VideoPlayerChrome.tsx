@@ -54,7 +54,11 @@ export function VideoPlayerChrome({ model }: VideoPlayerChromeProps): JSX.Elemen
         className={`pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center px-3 ${fade}`}
         style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}
       >
-        <ChromeRegion className="w-full max-w-4xl">
+        <ChromeRegion
+          className="w-full max-w-4xl"
+          hidden={!model.chromeVisible}
+          onReveal={model.revealChrome}
+        >
           <div
             ref={capsuleRef}
             className="relative flex flex-wrap items-center gap-x-1 gap-y-0 rounded-3xl bg-zinc-900/65 px-2 py-1 shadow-2xl ring-1 ring-white/10 backdrop-blur-2xl sm:h-12 sm:flex-nowrap sm:rounded-full sm:px-3"

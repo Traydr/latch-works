@@ -1,7 +1,9 @@
 import type { MediaItem } from "@latch-works/media-domain";
 import { formatBytes } from "@latch-works/media-domain";
-import { ChevronLeft, ChevronRight, Copy, Download, ImageIcon, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, ImageIcon, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import type { CopyStatus } from "@/hooks/use-copy-to-clipboard";
+import { COPY_PATH_ICONS, COPY_PATH_LABELS } from "./copy-path-status";
 import { DeleteOverlay } from "./DeleteOverlay";
 import { MediaPlaceholder } from "./MediaPlaceholder";
 import { PaneViewImage } from "./PaneViewImage";
@@ -9,6 +11,7 @@ import { PaneViewImage } from "./PaneViewImage";
 const detailPreviewWidth = 360;
 
 interface DetailPanelProps {
+  copyStatus: CopyStatus;
   deleteError?: string | null;
   isDeleted?: boolean;
   isDeleting?: boolean;
@@ -23,6 +26,7 @@ interface DetailPanelProps {
 }
 
 export function DetailPanel({
+  copyStatus,
   deleteError = null,
   isDeleted = false,
   isDeleting = false,
@@ -35,6 +39,8 @@ export function DetailPanel({
   selected,
   showDelete = false,
 }: DetailPanelProps) {
+  const CopyIcon = COPY_PATH_ICONS[copyStatus];
+
   const supportsThumbnail =
     selected?.mediaType === "image" ||
     selected?.mediaType === "gif" ||
@@ -107,9 +113,12 @@ export function DetailPanel({
               type="button"
               variant="outline"
             >
-              <Copy className="size-4 shrink-0" />
-              <span className="truncate">Copy path</span>
+              <CopyIcon className="size-4 shrink-0" />
+              <span className="truncate">{COPY_PATH_LABELS[copyStatus]}</span>
             </Button>
+            <span aria-live="polite" className="sr-only">
+              {copyStatus === "idle" ? "" : COPY_PATH_LABELS[copyStatus]}
+            </span>
             <Button
               className="min-w-0 flex-1 gap-2"
               onClick={onDownload}

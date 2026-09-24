@@ -63,30 +63,14 @@ export function getPdfPageRenderWindow(
   return [...selected].sort((left, right) => left - right);
 }
 
-/** What the visible-page rule reads from an intersection entry. */
-export type PdfPageIntersection = Pick<
-  IntersectionObserverEntry,
-  "intersectionRatio" | "isIntersecting" | "target"
->;
-
-export function resolveVisiblePdfPage(entries: readonly PdfPageIntersection[]): number | null {
+/** The page showing the largest share of itself; ties go to the earlier page. */
+export function resolveVisiblePdfPage(visibleRatios: ReadonlyMap<number, number>): number | null {
   let bestPage: number | null = null;
   let bestRatio = 0;
 
-  for (const entry of entries) {
-    if (!entry.isIntersecting) {
-      continue;
-    }
-
-    const pageValue = entry.target.getAttribute("data-page-number");
-    const pageNumber = pageValue ? Number(pageValue) : Number.NaN;
-
-    if (!Number.isFinite(pageNumber) || pageNumber < 1) {
-      continue;
-    }
-
-    if (entry.intersectionRatio > bestRatio) {
-      bestRatio = entry.intersectionRatio;
+  for (const [pageNumber, ratio] of visibleRatios) {
+    if (ratio > bestRatio || (ratio === bestRatio && bestPage !== null && pageNumber < bestPage)) {
+      bestRatio = ratio;
       bestPage = pageNumber;
     }
   }
