@@ -2,15 +2,20 @@ import { Archive } from "lucide-react";
 import { type ReactNode, type RefObject, useEffect, useMemo, useRef } from "react";
 import type { GalleryBrowseEntry } from "@/features/gallery/gallery-browse-entry";
 import { BrowserEntryCard } from "./BrowserEntryCard";
-import { GALLERY_GRID_SCROLL_ID } from "./gallery-grid-scroll";
+import { FLOATING_TOOLBAR_SELECTOR, GALLERY_GRID_SCROLL_ID } from "./gallery-grid-scroll";
 import { useVirtualGridMetrics } from "./useVirtualGridMetrics";
 import { useWindowedThumbnailResolution } from "./useWindowedThumbnailResolution";
 
-/** The section's `pt-5`: the grid starts this far down the scrolled content. */
-const GRID_TOP_OFFSET_PX = 20;
+/** How much of the grid's bottom edge the fixed FloatingToolbar covers, measured from the DOM. */
+function floatingToolbarInset(grid: HTMLElement): number {
+  const toolbar = document.querySelector(FLOATING_TOOLBAR_SELECTOR);
 
-/** The fixed FloatingToolbar (`bottom-5` plus its ~56px height) covers this much of the bottom. */
-const FLOATING_TOOLBAR_INSET_PX = 76;
+  if (!toolbar) {
+    return 0;
+  }
+
+  return Math.max(0, grid.getBoundingClientRect().bottom - toolbar.getBoundingClientRect().top);
+}
 
 interface BrowserGridProps {
   cardWidth: number;
@@ -94,17 +99,20 @@ export function BrowserGrid({
 
     handledScrollRequestKeyRef.current = scrollRequestKey;
 
+    // The grid starts below the section's top padding.
+    const gridTop = Number.parseFloat(getComputedStyle(element).paddingTop) || 0;
+    const bottomInset = floatingToolbarInset(element);
     const row = Math.floor(focusedIndex / columnCount);
-    const itemTop = GRID_TOP_OFFSET_PX + row * rowStride;
+    const itemTop = gridTop + row * rowStride;
     const itemBottom = itemTop + cardHeight;
     const padding = 24;
     const viewTop = element.scrollTop;
-    const viewBottom = viewTop + element.clientHeight - FLOATING_TOOLBAR_INSET_PX;
+    const viewBottom = viewTop + element.clientHeight - bottomInset;
 
     if (itemTop < viewTop + padding) {
       element.scrollTop = Math.max(0, itemTop - padding);
     } else if (itemBottom > viewBottom - padding) {
-      element.scrollTop = itemBottom - element.clientHeight + FLOATING_TOOLBAR_INSET_PX + padding;
+      element.scrollTop = itemBottom - element.clientHeight + bottomInset + padding;
     }
   }, [cardHeight, columnCount, entries.length, focusedIndex, mainRef, rowStride, scrollRequestKey]);
 
