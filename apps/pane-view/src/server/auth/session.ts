@@ -1,4 +1,4 @@
-import { scryptSync, timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { env } from "../../env/server";
 
 export interface SingleUserCredentials {
@@ -21,13 +21,17 @@ export function verifySingleUserCredentials({
   username: string;
 }): boolean {
   const configured = readSingleUserCredentials();
+  // Both comparisons always run, so a wrong username costs as much as a wrong password.
+  const usernameMatches = safeCompare(username, configured.username);
+  const passwordMatches = safeCompare(password, configured.password);
 
-  return safeCompare(username, configured.username) && safeCompare(password, configured.password);
+  return usernameMatches && passwordMatches;
 }
 
+/** Compares fixed-size digests, so neither the length nor the content of `expected` leaks. */
 function safeCompare(candidate: string, expected: string): boolean {
-  const candidateHash = scryptSync(candidate, "pane-view-login", 32);
-  const expectedHash = scryptSync(expected, "pane-view-login", 32);
+  const candidateDigest = createHash("sha256").update(candidate).digest();
+  const expectedDigest = createHash("sha256").update(expected).digest();
 
-  return timingSafeEqual(candidateHash, expectedHash);
+  return timingSafeEqual(candidateDigest, expectedDigest);
 }
