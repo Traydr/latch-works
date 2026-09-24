@@ -4,17 +4,13 @@ import {
   and,
   asc,
   count,
-  desc,
   eq,
-  gt,
   inArray,
   isNull,
-  lt,
   max,
   min,
   ne,
   notExists,
-  or,
   type SQL,
   sql,
 } from "drizzle-orm";
@@ -35,6 +31,7 @@ import {
   galleryRandomOrderKeySql,
   naturalOrder,
 } from "./gallery-order";
+import { type KeysetColumn, keysetAfter, keysetOrderBy } from "./keyset-order";
 import {
   buildLibraryConditions,
   buildMediaVisibilityConditions,
@@ -123,66 +120,45 @@ const oldestMtime = min(libraryEntries.mtimeMs).as("oldest_mtime");
  * Comic listing order (Plan 051, Decision 6). Name modes use the natural
  * collation over the folder path (unique, so no further tie-break); date
  * modes rank by the newest or oldest page and tie-break by natural path;
- * random uses the shared seeded key over ("comic", folderPath).
+ * random uses the shared seeded key over ("comic", folderPath). The cursor
+ * condition goes in HAVING, since the date modes order by aggregates.
  */
-function buildComicListingOrderBy(sortMode: GallerySortMode, randomSeed: GalleryRandomSeed): SQL[] {
+function comicListingOrder(
+  sortMode: GallerySortMode,
+  randomSeed: GalleryRandomSeed,
+): KeysetColumn<ComicCursor>[] {
   const folderPath = libraryEntries.parentPath;
+
+  const naturalPath = (direction: "asc" | "desc"): KeysetColumn<ComicCursor> => ({
+    cursorValue: (cursor) => cursor.folderPath,
+    direction,
+    expression: naturalOrder(folderPath),
+  });
+
+  const pageMtime = (direction: "asc" | "desc", mtime: SQL): KeysetColumn<ComicCursor> => ({
+    cursorValue: (cursor) => cursor.mtimeMs,
+    direction,
+    expression: mtime,
+  });
 
   switch (sortMode) {
     case "name-desc":
-      return [desc(naturalOrder(folderPath))];
+      return [naturalPath("desc")];
     case "date-newest":
-      return [desc(max(libraryEntries.mtimeMs)), asc(naturalOrder(folderPath))];
+      return [pageMtime("desc", max(libraryEntries.mtimeMs)), naturalPath("asc")];
     case "date-oldest":
-      return [asc(min(libraryEntries.mtimeMs)), asc(naturalOrder(folderPath))];
+      return [pageMtime("asc", min(libraryEntries.mtimeMs)), naturalPath("asc")];
     case "random":
-      return [asc(galleryRandomOrderKeySql(randomSeed, "comic", folderPath)), asc(folderPath)];
+      return [
+        {
+          cursorValue: cursorRandomKey,
+          direction: "asc",
+          expression: galleryRandomOrderKeySql(randomSeed, "comic", folderPath),
+        },
+        { cursorValue: (cursor) => cursor.folderPath, direction: "asc", expression: folderPath },
+      ];
     default:
-      return [asc(naturalOrder(folderPath))];
-  }
-}
-
-/** Keyset continuation for buildComicListingOrderBy; goes in HAVING (date modes read aggregates). */
-function buildComicListingCursorCondition(cursor: ComicCursor): SQL {
-  const requireCondition = (condition: SQL | undefined): SQL => {
-    if (!condition) {
-      throw new Error("Expected comic listing cursor condition");
-    }
-
-    return condition;
-  };
-
-  const folderPath = libraryEntries.parentPath;
-  const naturalPath = naturalOrder(folderPath);
-
-  switch (cursor.sortMode) {
-    case "name-desc":
-      return lt(naturalPath, cursor.folderPath);
-    case "date-newest":
-      return requireCondition(
-        or(
-          lt(max(libraryEntries.mtimeMs), cursor.mtimeMs),
-          and(eq(max(libraryEntries.mtimeMs), cursor.mtimeMs), gt(naturalPath, cursor.folderPath)),
-        ),
-      );
-    case "date-oldest":
-      return requireCondition(
-        or(
-          gt(min(libraryEntries.mtimeMs), cursor.mtimeMs),
-          and(eq(min(libraryEntries.mtimeMs), cursor.mtimeMs), gt(naturalPath, cursor.folderPath)),
-        ),
-      );
-    case "random": {
-      const key = galleryRandomOrderKeySql(cursor.randomSeed, "comic", folderPath);
-      const cursorKey = cursorRandomKey(cursor);
-
-      return requireCondition(
-        or(gt(key, cursorKey), and(eq(key, cursorKey), gt(folderPath, cursor.folderPath))),
-      );
-    }
-
-    default:
-      return gt(naturalPath, cursor.folderPath);
+      return [naturalPath("asc")];
   }
 }
 
@@ -213,6 +189,8 @@ function buildComicSummaryQuery(
     showVideos,
   });
 
+  const order = comicListingOrder(sortMode, randomSeed);
+
   return database
     .select({
       folderPath: libraryEntries.parentPath,
@@ -224,8 +202,8 @@ function buildComicSummaryQuery(
     .innerJoin(mediaObjects, eq(libraryEntries.mediaObjectId, mediaObjects.id))
     .where(and(...conditions, leafFolderCondition(database)))
     .groupBy(libraryEntries.parentPath)
-    .having(cursor ? buildComicListingCursorCondition(cursor) : undefined)
-    .orderBy(...buildComicListingOrderBy(sortMode, randomSeed))
+    .having(cursor ? keysetAfter(order, cursor) : undefined)
+    .orderBy(...keysetOrderBy(order))
     .limit(limit + 1);
 }
 
