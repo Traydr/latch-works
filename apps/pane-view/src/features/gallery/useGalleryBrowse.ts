@@ -187,9 +187,17 @@ export function useGalleryBrowse({
   const staleAccumulation = useMemo(() => emptyAccumulation(browseKey), [browseKey]);
   const accumulation = stored.browseKey === browseKey ? stored : staleAccumulation;
 
-  const inFlightRef = useRef<{ browseKey: string; promise: Promise<LoadNextPageResult> } | null>(
-    null,
-  );
+  // The latest page load: shared while it runs, and after it lands until the
+  // render that appends its page moves the live cursor on. Until then the live
+  // cursor still names the page just fetched, so a second caller (the viewer
+  // stepping while infinite scroll loaded the page) would fetch it again, find
+  // every entry already known, and report nothing appended.
+  const lastLoadRef = useRef<{
+    browseKey: string;
+    cursor: string;
+    promise: Promise<LoadNextPageResult>;
+    settled: boolean;
+  } | null>(null);
 
   // Only the browse key that issued a request may commit its result. A page
   // that resolves after the user moved to another folder, seed, or filter is
@@ -261,10 +269,14 @@ export function useGalleryBrowse({
 
   const loadNextPage = useCallback((): Promise<LoadNextPageResult> => {
     const live = liveRef.current;
-    const inFlight = inFlightRef.current;
+    const lastLoad = lastLoadRef.current;
 
-    if (inFlight && inFlight.browseKey === live.browseKey) {
-      return inFlight.promise;
+    if (
+      lastLoad &&
+      lastLoad.browseKey === live.browseKey &&
+      (!lastLoad.settled || lastLoad.cursor === live.cursor)
+    ) {
+      return lastLoad.promise;
     }
 
     if (!live.hasMore || !live.cursor) {
@@ -311,14 +323,19 @@ export function useGalleryBrowse({
           exhausted: !next.page.hasMore,
         };
       } catch (error) {
+        // A failed load is not reused: the next caller retries it.
+        if (lastLoadRef.current?.promise === ownPromise) {
+          lastLoadRef.current = null;
+        }
+
         if (!(error instanceof StaleBrowseError)) {
           updateAccumulation(key, (current) => ({ ...current, error }));
         }
 
         throw error;
       } finally {
-        if (inFlightRef.current?.promise === ownPromise) {
-          inFlightRef.current = null;
+        if (lastLoadRef.current?.promise === ownPromise) {
+          lastLoadRef.current.settled = true;
         }
 
         updateAccumulation(key, (current) => ({ ...current, loading: false }));
@@ -326,7 +343,7 @@ export function useGalleryBrowse({
     })();
 
     ownPromise = promise;
-    inFlightRef.current = { browseKey: key, promise };
+    lastLoadRef.current = { browseKey: key, cursor: requestCursor, promise, settled: false };
 
     return promise;
   }, [source, updateAccumulation]);
