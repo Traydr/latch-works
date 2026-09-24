@@ -1,0 +1,2 @@
+CREATE INDEX "sync_run_items_media_object_id_idx" ON "sync_run_items" USING btree ("media_object_id");--> statement-breakpoint
+CREATE INDEX "sync_run_items_previous_media_object_id_idx" ON "sync_run_items" USING btree ("previous_media_object_id");

@@ -141,6 +141,13 @@
       "when": 1789032981764,
       "tag": "0019_shutter_cleanup_object_key",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1790276702303,
+      "tag": "0020_sync_run_items_media_indexes",
+      "breakpoints": true
     }
   ]
 }
