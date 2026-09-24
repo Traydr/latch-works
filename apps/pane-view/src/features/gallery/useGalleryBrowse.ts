@@ -34,14 +34,14 @@ import type { GalleryListingPage } from "../../server/library/gallery-listing";
  * anything.
  */
 
-export interface GalleryPageState {
+interface GalleryPageState {
   cursor: string | null;
   error: unknown | null;
   hasMore: boolean;
   loading: boolean;
 }
 
-export interface LoadNextPageResult {
+interface LoadNextPageResult {
   appendedEntryKeys: string[];
   appendedMediaIds: string[];
   exhausted: boolean;
@@ -125,7 +125,7 @@ class StaleBrowseError extends Error {
   }
 }
 
-export function galleryComicQueryKey(comicId: string, request: GalleryListingQueryRequest) {
+function galleryComicQueryKey(comicId: string, request: GalleryListingQueryRequest) {
   return [
     "gallery-comic",
     comicId,

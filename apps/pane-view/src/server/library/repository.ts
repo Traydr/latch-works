@@ -63,8 +63,7 @@ export interface GalleryListingReadRequest {
 }
 
 // ---------------------------------------------------------------------------
-// Query builders. Exported for the rendered-SQL tests only; every other module
-// goes through the readDatabase* functions below.
+// Query builders, used only by the readDatabase* functions below.
 // ---------------------------------------------------------------------------
 
 /** Most folders one search returns. */
@@ -74,7 +73,7 @@ const FOLDER_SEARCH_LIMIT = 200;
  * Visible folders for the current scope: direct children, or search matches
  * capped to the first FOLDER_SEARCH_LIMIT in natural name order.
  */
-export function buildLibraryFolderQuery(
+function buildLibraryFolderQuery(
   {
     currentPath,
     query,
@@ -101,7 +100,7 @@ export function buildLibraryFolderQuery(
 }
 
 /** Listing media page: sorted, filtered, keyset-continued, overfetched by one. */
-export function buildGalleryListingMediaQuery(
+function buildGalleryListingMediaQuery(
   {
     currentPath,
     cursor,
@@ -150,7 +149,7 @@ export function buildGalleryListingMediaQuery(
  * random uses the shared seeded key over ("media", id). Every mode ends on
  * the id so the keyset is total.
  */
-export function buildGalleryListingOrderBy(
+function buildGalleryListingOrderBy(
   sortMode: GallerySortMode,
   randomSeed: GalleryRandomSeed,
 ): SQL[] {
@@ -189,7 +188,7 @@ export function buildGalleryListingOrderBy(
  * cursor row in that order, comparing each column with the same collation and
  * direction the ORDER BY uses.
  */
-export function buildGalleryListingCursorCondition(
+function buildGalleryListingCursorCondition(
   cursor: Extract<GalleryListingCursorPayload, { subjectKind: "media" }>,
 ): SQL {
   const requireCondition = (condition: SQL | undefined): SQL => {

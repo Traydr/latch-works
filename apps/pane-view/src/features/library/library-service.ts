@@ -23,8 +23,8 @@ const libraryRequestSchema = z.object({
   recursive: z.boolean().optional(),
 });
 
-/** The listing request boundary; exported so boundary tests can pin its limits. */
-export const galleryListingRequestSchema = z.object({
+/** The listing request boundary. */
+const galleryListingRequestSchema = z.object({
   comicMode: z.boolean().optional(),
   cursor: z.string().optional(),
   excludedPaths: z.array(z.string()).max(EXCLUDED_PATHS_LIMIT).optional(),
@@ -89,7 +89,7 @@ export async function assertWebSessionAuthorized(): Promise<void> {
  * The one archive read a library snapshot needs. The default reads the
  * database; tests pass an in-memory reader.
  */
-export interface LibrarySnapshotSource {
+interface LibrarySnapshotSource {
   readDatabaseLibrarySnapshot(
     request: LibrarySnapshotReadRequest,
   ): Promise<DatabaseLibrarySnapshot>;
@@ -103,7 +103,7 @@ const databaseLibrarySnapshotSource: LibrarySnapshotSource = {
   },
 };
 
-export async function readLibrarySnapshotRequest(
+async function readLibrarySnapshotRequest(
   data: z.infer<typeof libraryRequestSchema>,
   source: LibrarySnapshotSource = databaseLibrarySnapshotSource,
 ): Promise<LibrarySnapshot> {
@@ -235,7 +235,7 @@ function normalizeLibraryPath(path: string | undefined): string {
  * the conditions. Entries get the same normalization as `path` and nothing
  * more: `buildLibraryConditions` owns the direct-child guard and the dedupe.
  */
-export function normalizeExcludedPaths(
+function normalizeExcludedPaths(
   excludedPaths: readonly string[] | undefined,
   recursive: boolean,
 ): string[] | undefined {

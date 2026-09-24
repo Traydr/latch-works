@@ -338,7 +338,7 @@ export async function markRemoteDeleted(
   return { status: "database" };
 }
 
-export function collectContainingFolderPaths(path: string): string[] {
+function collectContainingFolderPaths(path: string): string[] {
   const parts = path.split("/").filter(Boolean);
   const folders: string[] = [];
 

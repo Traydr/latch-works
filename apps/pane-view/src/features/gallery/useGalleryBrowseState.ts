@@ -200,7 +200,7 @@ export type BrowseIntent =
   | { type: "shuffle" }
   | { type: "setDetailPanelOpen"; next: boolean };
 
-export interface BrowseNavigation {
+interface BrowseNavigation {
   replace?: boolean;
   resetScroll?: boolean;
   search: GalleryBrowseSearch;
@@ -383,7 +383,7 @@ export interface GalleryBrowseState extends ResolvedBrowseState {
   buildBrowseSearch(patch: Partial<GalleryBrowseSearch>): GalleryBrowseSearch;
 }
 
-export interface BrowseNavigateOptions {
+interface BrowseNavigateOptions {
   replace?: boolean;
   resetScroll?: boolean;
   search: GalleryBrowseSearch;
@@ -391,7 +391,7 @@ export interface BrowseNavigateOptions {
 }
 
 /** The router's navigate, narrowed to what the browse state needs. */
-export type BrowseNavigate = (options: BrowseNavigateOptions) => Promise<void> | void;
+type BrowseNavigate = (options: BrowseNavigateOptions) => Promise<void> | void;
 
 export interface UseGalleryBrowseStateOptions {
   createSeed?: (previous?: GalleryRandomSeed | null) => GalleryRandomSeed;

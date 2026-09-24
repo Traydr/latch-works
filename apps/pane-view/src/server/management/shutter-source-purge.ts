@@ -32,7 +32,7 @@ export async function hasPurgeableShutterSources(tx: MaintenanceTransaction): Pr
   return Boolean(eligibleSource);
 }
 
-export const shutterSourcePurgeDescriptor: MaintenanceJobDescriptor = {
+const shutterSourcePurgeDescriptor: MaintenanceJobDescriptor = {
   probe: hasPurgeableShutterSources,
   type: "shutter_source_purge",
 };

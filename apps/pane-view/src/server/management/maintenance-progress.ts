@@ -40,7 +40,7 @@ function phaseSchema<const Phases extends readonly [string, ...string[]]>(
 /** An optional string carried by the orphan sweep; anything else stored there is dropped. */
 const orphanCursorFieldSchema = z.string().nullable().catch(null);
 
-export const LibraryWipeJobProgressSchema = z.object({
+const LibraryWipeJobProgressSchema = z.object({
   phase: z
     .literal(RETIRED_LIBRARY_WIPE_PHASE)
     .transform(() => "s3_originals" as const)
@@ -59,14 +59,14 @@ export const LibraryWipeJobProgressSchema = z.object({
 
 export type LibraryWipeJobProgress = z.infer<typeof LibraryWipeJobProgressSchema>;
 
-export const SoftDeletedPurgeJobProgressSchema = z.object({
+const SoftDeletedPurgeJobProgressSchema = z.object({
   phase: phaseSchema("soft_deleted_purge", ["orphaned_media", "db_hard_delete", "completed"]),
   processedCount: processedCountSchema,
 });
 
 export type SoftDeletedPurgeJobProgress = z.infer<typeof SoftDeletedPurgeJobProgressSchema>;
 
-export const ShutterSourcePurgeJobProgressSchema = z.object({
+const ShutterSourcePurgeJobProgressSchema = z.object({
   phase: phaseSchema("shutter_source_purge", ["queue_sources", "shutter_sources", "completed"]),
   processedCount: processedCountSchema,
 });

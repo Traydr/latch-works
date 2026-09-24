@@ -45,7 +45,7 @@ export interface ScheduleMaintenanceJobResult {
   phase: "empty" | "scheduled";
 }
 
-export const CLEANUP_IN_PROGRESS_MESSAGE = "A cleanup job is already in progress.";
+const CLEANUP_IN_PROGRESS_MESSAGE = "A cleanup job is already in progress.";
 
 /** The partial unique indexes that enforce one active job per type (migrations 0011, 0014). */
 const ACTIVE_JOB_UNIQUE_INDEXES = new Set([

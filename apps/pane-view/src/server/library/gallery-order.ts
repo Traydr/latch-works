@@ -51,7 +51,7 @@ export function galleryRandomOrderKeySql(
   return sql`md5(concat(${seed}::text, ':', ${subjectKind}::text, ':', ${subjectId}::text))`;
 }
 
-export const GALLERY_RANDOM_ORDER_KEY_PATTERN = /^[0-9a-f]{32}$/u;
+const GALLERY_RANDOM_ORDER_KEY_PATTERN = /^[0-9a-f]{32}$/u;
 
 /** The rank a random-mode cursor carries; decodeGalleryListingCursor parses it with this. */
 export const GalleryRandomOrderKeySchema = z.string().regex(GALLERY_RANDOM_ORDER_KEY_PATTERN);

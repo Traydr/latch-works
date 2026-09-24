@@ -9,7 +9,7 @@ import {
 import { cn } from "@/lib/utils";
 
 /** Everything the exclude button and its dialog need (Plan 054). */
-export interface ExcludeControlProps {
+interface ExcludeControlProps {
   /** Direct child folders of the current path, from the browse snapshot. */
   childFolders: readonly ExcludableChildFolder[];
   /** False while the snapshot still shows the folder being left (or a search). */

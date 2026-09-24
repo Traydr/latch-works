@@ -687,7 +687,7 @@ export type MediaViewerSessionModel = ReturnType<typeof useMediaViewerSession>;
 
 const MediaViewerSessionContext = createContext<MediaViewerSessionModel | null>(null);
 
-export function useMediaViewerSessionModel(): MediaViewerSessionModel {
+function useMediaViewerSessionModel(): MediaViewerSessionModel {
   const model = useContext(MediaViewerSessionContext);
 
   if (!model) {

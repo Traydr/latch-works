@@ -77,11 +77,8 @@ type ComicCursor = Extract<GalleryListingCursorPayload, { subjectKind: "comic" }
 // apply to pages before grouping.
 // ---------------------------------------------------------------------------
 
-/**
- * Page-level eligibility for a comic subject in scope. Exported for the
- * rendered-SQL tests only.
- */
-export function buildComicPageConditions({
+/** Page-level eligibility for a comic subject in scope. */
+function buildComicPageConditions({
   currentPath,
   excludedPaths,
   query,
@@ -128,10 +125,7 @@ const oldestMtime = min(libraryEntries.mtimeMs).as("oldest_mtime");
  * modes rank by the newest or oldest page and tie-break by natural path;
  * random uses the shared seeded key over ("comic", folderPath).
  */
-export function buildComicListingOrderBy(
-  sortMode: GallerySortMode,
-  randomSeed: GalleryRandomSeed,
-): SQL[] {
+function buildComicListingOrderBy(sortMode: GallerySortMode, randomSeed: GalleryRandomSeed): SQL[] {
   const folderPath = libraryEntries.parentPath;
 
   switch (sortMode) {
@@ -149,7 +143,7 @@ export function buildComicListingOrderBy(
 }
 
 /** Keyset continuation for buildComicListingOrderBy; goes in HAVING (date modes read aggregates). */
-export function buildComicListingCursorCondition(cursor: ComicCursor): SQL {
+function buildComicListingCursorCondition(cursor: ComicCursor): SQL {
   const requireCondition = (condition: SQL | undefined): SQL => {
     if (!condition) {
       throw new Error("Expected comic listing cursor condition");
@@ -197,7 +191,7 @@ export function buildComicListingCursorCondition(cursor: ComicCursor): SQL {
  * overfetched by one. Touches every eligible page (the same cost class as the
  * random media order) but returns only `limit + 1` rows.
  */
-export function buildComicSummaryQuery(
+function buildComicSummaryQuery(
   {
     currentPath,
     cursor,
@@ -239,7 +233,7 @@ export function buildComicSummaryQuery(
  * Phase 2: the cover for each listed folder — its first eligible page under
  * the natural collation, then id, which is the page compareByName puts first.
  */
-export function buildComicCoverQuery(
+function buildComicCoverQuery(
   {
     currentPath,
     folderPaths,
@@ -269,7 +263,7 @@ export function buildComicCoverQuery(
 }
 
 /** Every eligible page of one comic folder, unsorted; the caller orders them. */
-export function buildComicPagesQuery(
+function buildComicPagesQuery(
   { comicId, currentPath, query, showImages, showVideos }: ComicReadRequest,
   database: Database = db,
 ) {
@@ -398,7 +392,7 @@ export async function readDatabaseComicListing(
  * then id. Card cover and reader cover therefore always agree, even for
  * primary-equal names such as "a.jpg" and "A.jpg".
  */
-export function compareComicPages(left: LibraryMediaItem, right: LibraryMediaItem): number {
+function compareComicPages(left: LibraryMediaItem, right: LibraryMediaItem): number {
   return (
     compareByName(left, right) ||
     compareBytewise(left.name, right.name) ||
@@ -417,11 +411,7 @@ function compareBytewise(left: string, right: string): number {
  * and only excludes the current path itself, so a searched comic must open
  * from wherever it was found.
  */
-export function isComicInBrowseScope(
-  comicId: string,
-  currentPath: string,
-  searching = false,
-): boolean {
+function isComicInBrowseScope(comicId: string, currentPath: string, searching = false): boolean {
   if (!comicId || comicId === currentPath) {
     return false;
   }

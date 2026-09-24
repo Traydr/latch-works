@@ -41,7 +41,7 @@ const defaultLibraryWipeDependencies: LibraryWipeDependencies = {
  * scheduling transaction, so the archive is gone from the gallery the moment
  * the wipe is accepted and the worker only has storage and hard deletes left.
  */
-export async function softDeleteWholeLibrary(tx: MaintenanceTransaction): Promise<void> {
+async function softDeleteWholeLibrary(tx: MaintenanceTransaction): Promise<void> {
   const now = new Date();
 
   await tx.update(libraryEntries).set({ deletedAt: now }).where(isNull(libraryEntries.deletedAt));
@@ -52,7 +52,7 @@ export async function softDeleteWholeLibrary(tx: MaintenanceTransaction): Promis
   await tx.delete(viewerState).where(eq(viewerState.subjectType, "library_entry"));
 }
 
-export const libraryWipeDescriptor: MaintenanceJobDescriptor = {
+const libraryWipeDescriptor: MaintenanceJobDescriptor = {
   prepare: softDeleteWholeLibrary,
   // A wipe always has work: the storage sweep and the hard delete run even
   // when the library was already empty.

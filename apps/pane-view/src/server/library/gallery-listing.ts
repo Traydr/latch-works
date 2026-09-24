@@ -62,7 +62,7 @@ const cursorBaseSchema = z.object({
 });
 
 /** Cursor payload schema; unknown keys are dropped so stale cursors stay tolerant. */
-export const GalleryListingCursorPayloadSchema = z.discriminatedUnion("subjectKind", [
+const GalleryListingCursorPayloadSchema = z.discriminatedUnion("subjectKind", [
   cursorBaseSchema.extend({
     subjectKind: z.literal("media"),
     filename: z.string(),

@@ -3,8 +3,6 @@ import { z } from "zod";
 
 export const ThemeModeSchema = z.enum(["dark", "light", "system"]);
 
-export type ThemeMode = z.infer<typeof ThemeModeSchema>;
-
 /**
  * App settings as persisted under `pane-view.settings`. Every field falls
  * back to its default independently, so a stale or hand-edited blob keeps

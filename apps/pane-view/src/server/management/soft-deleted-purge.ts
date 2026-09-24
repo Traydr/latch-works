@@ -7,7 +7,7 @@ import {
 } from "./maintenance-scheduler";
 
 /** There is work when any library entry or folder is soft-deleted. */
-export async function hasSoftDeletedEntries(tx: MaintenanceTransaction): Promise<boolean> {
+async function hasSoftDeletedEntries(tx: MaintenanceTransaction): Promise<boolean> {
   const [softDeletedEntry] = await tx
     .select({ id: libraryEntries.id })
     .from(libraryEntries)
@@ -27,7 +27,7 @@ export async function hasSoftDeletedEntries(tx: MaintenanceTransaction): Promise
   return Boolean(softDeletedFolder);
 }
 
-export const softDeletedPurgeDescriptor: MaintenanceJobDescriptor = {
+const softDeletedPurgeDescriptor: MaintenanceJobDescriptor = {
   probe: hasSoftDeletedEntries,
   type: "soft_deleted_purge",
 };

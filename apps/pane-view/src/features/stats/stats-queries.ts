@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { getArchiveStats } from "./stats-service";
 
-export const statsKeys = {
+const statsKeys = {
   all: ["stats"] as const,
   archive: () => [...statsKeys.all, "archive"] as const,
 };
