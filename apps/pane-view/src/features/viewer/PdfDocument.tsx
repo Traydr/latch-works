@@ -202,25 +202,25 @@ function usePdfDocument({
               continue;
             }
 
-            let task: ActiveRender | undefined;
-            task = {
+            let taskCancelled = false;
+            let renderTask: PdfRenderTask | undefined;
+            let canvas: HTMLCanvasElement | undefined;
+
+            const task: ActiveRender = {
               cancel: () => {
-                task = undefined;
+                taskCancelled = true;
+                renderTask?.cancel();
               },
             };
+
             renderTasks.set(pageNumber, task);
             void (async () => {
               let page: PdfPage | undefined;
-              let renderTask: PdfRenderTask | undefined;
 
               try {
                 page = await pdf.getPage(pageNumber);
 
-                if (
-                  cancelled ||
-                  task !== renderTasks.get(pageNumber) ||
-                  version !== renderVersion
-                ) {
+                if (cancelled || taskCancelled || version !== renderVersion) {
                   return;
                 }
 
@@ -232,7 +232,7 @@ function usePdfDocument({
 
                 const scale = renderWidth / dimensions.width;
                 const viewport = page.getViewport({ scale });
-                const canvas = document.createElement("canvas");
+                canvas = document.createElement("canvas");
                 const outputScale = window.devicePixelRatio || 1;
                 canvas.width = Math.floor(viewport.width * outputScale);
                 canvas.height = Math.floor(viewport.height * outputScale);
@@ -249,20 +249,21 @@ function usePdfDocument({
                   transform: outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : undefined,
                   viewport,
                 });
-                task.cancel = () => renderTask?.cancel();
                 await renderTask.promise;
 
-                if (
-                  !cancelled &&
-                  task === renderTasks.get(pageNumber) &&
-                  version === renderVersion
-                ) {
+                if (!cancelled && !taskCancelled && version === renderVersion) {
                   slot.replaceChildren(canvas);
                 }
               } catch {
                 // Cancelled and failed page paints leave their geometry placeholder in place.
               } finally {
                 page?.cleanup();
+
+                // A paint that never reached the page gives its backing store back now.
+                if (canvas && !canvas.isConnected) {
+                  canvas.width = 0;
+                  canvas.height = 0;
+                }
 
                 if (task === renderTasks.get(pageNumber)) {
                   renderTasks.delete(pageNumber);
@@ -348,6 +349,12 @@ function usePdfDocument({
 
       resizeObserver?.disconnect();
       pageObserver?.disconnect();
+
+      // Painted pages hold large backing stores; iPad Safari caps total canvas memory.
+      for (const canvas of container.querySelectorAll("canvas")) {
+        canvas.width = 0;
+        canvas.height = 0;
+      }
     };
     // Keep document loading keyed to mediaId only. Late-arriving resume pages are applied by the
     // scroll effect above — including initialPage here would tear down and reload the PDF mid-view.
