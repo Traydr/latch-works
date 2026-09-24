@@ -31,20 +31,6 @@ export function dedupeThumbnailRequests(
   return deduped;
 }
 
-export function areThumbnailRequestsEqual(
-  left: readonly GalleryThumbnailRequest[],
-  right: readonly GalleryThumbnailRequest[],
-): boolean {
-  if (left.length !== right.length) {
-    return false;
-  }
-
-  return left.every(
-    (request, index) =>
-      request.mediaId === right[index]?.mediaId && request.size === right[index]?.size,
-  );
-}
-
 /**
  * Identity of one browse population. When it changes, accumulated pages,
  * pagination state, and thumbnail resolution all start over.

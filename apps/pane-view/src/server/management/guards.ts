@@ -2,24 +2,6 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { type Database, db } from "../db";
 import { maintenanceJobs, syncRuns } from "../db/schema";
 import { HttpError } from "../http/http-error";
-import { listRunningSyncRuns } from "./sync-run-control";
-
-export async function readActiveSyncRun(database: Database = db): Promise<{
-  id: string;
-  sourceRoot: string;
-} | null> {
-  const runningSyncRuns = await listRunningSyncRuns(database);
-  const first = runningSyncRuns[0];
-
-  if (!first) {
-    return null;
-  }
-
-  return {
-    id: first.id,
-    sourceRoot: first.sourceRoot,
-  };
-}
 
 export async function assertNoActiveSyncRun(client: Database = db): Promise<void> {
   const runningSyncRuns = await client

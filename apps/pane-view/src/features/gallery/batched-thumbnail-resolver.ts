@@ -14,7 +14,7 @@ export interface GalleryThumbnailResolveState {
 }
 
 /** The delivery call the batch makes, so tests can supply a plain async function. */
-export type ResolveMediaDeliveryUrls = (options: {
+type ResolveMediaDeliveryUrls = (options: {
   data: {
     items: { mediaId: string; size: number; variant: "thumbnail" }[];
   };
@@ -315,7 +315,7 @@ async function resolveGalleryThumbnailsBatchFor(
   return execution;
 }
 
-export function createThumbnailResolver({
+function createThumbnailResolver({
   resolveUrls = resolveMediaDeliveryUrls,
 }: {
   resolveUrls?: ResolveMediaDeliveryUrls;
@@ -340,10 +340,3 @@ export function createThumbnailResolver({
 }
 
 export const sharedThumbnailResolver = createThumbnailResolver();
-
-export const {
-  getNextPendingThumbnailRetryMs,
-  hasEligibleGalleryThumbnailRequests,
-  readCachedGalleryThumbnailState,
-  resolveGalleryThumbnailsBatch,
-} = sharedThumbnailResolver;

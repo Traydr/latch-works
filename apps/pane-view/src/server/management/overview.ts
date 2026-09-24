@@ -12,10 +12,6 @@ export interface ManagementOverview {
     processedCount: number;
     status: "pending" | "running";
   } | null;
-  activeSyncRun: {
-    id: string;
-    sourceRoot: string;
-  } | null;
   runningSyncRuns: RunningSyncRun[];
   /** Whether this deployment can purge Shutter's copies (see shutterPurgeReadiness). */
   shutterPurge: ShutterPurgeReadiness;
@@ -58,16 +54,8 @@ export async function readManagementOverview(): Promise<ManagementOverview> {
     readActiveCleanupJob(),
   ]);
 
-  const activeSyncRun = runningSyncRuns[0]
-    ? {
-        id: runningSyncRuns[0].id,
-        sourceRoot: runningSyncRuns[0].sourceRoot,
-      }
-    : null;
-
   return {
     activeCleanupJob,
-    activeSyncRun,
     runningSyncRuns,
     shutterPurge: shutterPurgeReadiness(),
     library: {
