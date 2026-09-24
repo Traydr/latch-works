@@ -1,5 +1,6 @@
 import type { S3StorageClient } from "@latch-works/media-storage";
-import { beforeEach, describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   folders,
   libraryEntries,
@@ -12,7 +13,11 @@ import {
 import { testDatabaseForSuite } from "../library/test-db";
 import { completeSyncedObject, markRemoteDeleted, type SyncStoreDependencies } from "../sync/store";
 import { cancelMaintenanceJob } from "./cleanup-control";
-import { type MaintenanceWorkerDependencies, processMaintenanceJobBatch } from "./cleanup-worker";
+import {
+  type MaintenanceWorkerDependencies,
+  processMaintenanceJob,
+  processMaintenanceJobBatch,
+} from "./cleanup-worker";
 import { initialProgressFor } from "./maintenance-progress";
 import { hasPurgeableShutterSources } from "./shutter-source-purge";
 
@@ -26,6 +31,8 @@ interface ExternalDeletes {
 
 function dependencies(deletes?: ExternalDeletes): MaintenanceWorkerDependencies {
   return {
+    // pglite is one session, so an advisory claim could never contend; run the batch unclaimed.
+    claimJobBatch: (_jobId, batch) => batch(),
     database: testDatabase().db,
     deleteObjects: async (keys) => {
       deletes?.objectKeys.push(...keys);
@@ -392,5 +399,49 @@ describe("library wipe", () => {
 
     expect(deletes).toEqual({ objectKeys: [`originals/${sha256}.jpg`], shutterSources: [] });
     expect(await remainingMediaSha256s()).toEqual([]);
+  });
+});
+
+describe("maintenance job claims", () => {
+  beforeEach(async () => {
+    const { db } = testDatabase();
+    await db.delete(libraryEntries);
+    await db.delete(mediaObjects);
+    await db.delete(maintenanceJobs);
+  });
+
+  it("retries a job another worker holds instead of abandoning it", async () => {
+    vi.useFakeTimers();
+
+    try {
+      const jobId = await insertJob("soft_deleted_purge");
+      let attempts = 0;
+
+      const readStatus = async () => {
+        const [job] = await testDatabase()
+          .db.select({ status: maintenanceJobs.status })
+          .from(maintenanceJobs)
+          .where(eq(maintenanceJobs.id, jobId));
+
+        return job?.status;
+      };
+
+      processMaintenanceJob(jobId, {
+        ...dependencies(),
+        claimJobBatch: async (_jobId, batch) => {
+          attempts += 1;
+
+          return attempts === 1 ? "contended" : batch();
+        },
+      });
+
+      await vi.waitFor(() => expect(attempts).toBe(1));
+      expect(await readStatus()).toBe("pending");
+
+      await vi.advanceTimersByTimeAsync(30_000);
+      await vi.waitFor(async () => expect(await readStatus()).toBe("completed"));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

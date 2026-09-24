@@ -36,9 +36,15 @@ const batchSize = 25;
 
 const nextBatchDelayMs = 25;
 
+/** How long to wait before retrying a job whose claim another worker holds. */
+const contendedRetryDelayMs = 30_000;
+
 const orphanPrefixes = ["originals/"] as const;
 
 const activeJobStatuses = ["pending", "running"] as const;
+
+/** Advisory lock namespace ("LWMJ") for per-job batch claims; the job id hash is the key. */
+const MAINTENANCE_JOB_CLAIM_LOCK_NAMESPACE = 0x4c57_4d4a;
 
 let resumeStarted = false;
 
@@ -51,6 +57,11 @@ const runningJobs = new Set<string>();
  * and fakes for the two external services.
  */
 export interface MaintenanceWorkerDependencies {
+  /**
+   * Run `batch` while holding the job's claim, or resolve "contended" without
+   * running it when another worker holds the claim.
+   */
+  claimJobBatch(jobId: string, batch: () => Promise<boolean>): Promise<boolean | "contended">;
   database: Database;
   deleteObjects(keys: string[]): Promise<{ deleted: number }>;
   /** Whether this deployment can purge Shutter's copies (see shutterPurgeReadiness). */
@@ -64,6 +75,7 @@ export interface MaintenanceWorkerDependencies {
 }
 
 const defaultMaintenanceWorkerDependencies: MaintenanceWorkerDependencies = {
+  claimJobBatch: (jobId, batch) => claimMaintenanceJobBatch(db, jobId, batch),
   database: db,
   deleteObjects: deleteMaintenanceObjects,
   listObjectsByPrefix: (request) =>
@@ -182,25 +194,57 @@ export function processMaintenanceJob(
   }
 
   runningJobs.add(jobId);
-  void processMaintenanceJobBatch(jobId, dependencies).then(
-    (continueInNextTurn) => {
-      runningJobs.delete(jobId);
+  void dependencies
+    .claimJobBatch(jobId, () => processMaintenanceJobBatch(jobId, dependencies))
+    .then(
+      (outcome) => {
+        runningJobs.delete(jobId);
 
-      if (continueInNextTurn) {
-        setTimeout(() => processMaintenanceJob(jobId, dependencies), nextBatchDelayMs);
-      }
-    },
-    async (error) => {
-      runningJobs.delete(jobId);
-      const message = error instanceof Error ? error.message : "Maintenance job failed";
+        // Another worker holds the claim. Keep trying, so the job is taken
+        // back if that worker dies with it unfinished.
+        if (outcome === "contended") {
+          setTimeout(() => processMaintenanceJob(jobId, dependencies), contendedRetryDelayMs);
+        } else if (outcome) {
+          setTimeout(() => processMaintenanceJob(jobId, dependencies), nextBatchDelayMs);
+        }
+      },
+      async (error) => {
+        runningJobs.delete(jobId);
+        const message = error instanceof Error ? error.message : "Maintenance job failed";
 
-      try {
-        await failMaintenanceJob(jobId, message, dependencies);
-      } catch (updateError) {
-        console.error("[pane-view] Unable to record maintenance job failure", updateError);
-      }
-    },
-  );
+        try {
+          await failMaintenanceJob(jobId, message, dependencies);
+        } catch (updateError) {
+          console.error("[pane-view] Unable to record maintenance job failure", updateError);
+        }
+      },
+    );
+}
+
+/**
+ * Run one batch under the job's claim: a transaction-scoped advisory lock
+ * keyed by the job id, taken on a connection of its own while the batch runs
+ * through the pool as before. The in-memory set only keeps this process from
+ * running a job twice; the claim also keeps a second process from running a
+ * batch alongside it. Without the claim this resolves "contended".
+ */
+async function claimMaintenanceJobBatch(
+  database: Database,
+  jobId: string,
+  batch: () => Promise<boolean>,
+): Promise<boolean | "contended"> {
+  return database.transaction(async (claim) => {
+    const [row] = await claim
+      .select({
+        claimed: sql<boolean>`pg_try_advisory_xact_lock(${MAINTENANCE_JOB_CLAIM_LOCK_NAMESPACE}, hashtext(${jobId}))`,
+      })
+      .from(maintenanceJobs)
+      .where(eq(maintenanceJobs.id, jobId));
+
+    if (row?.claimed !== true) return "contended";
+
+    return batch();
+  });
 }
 
 /**
