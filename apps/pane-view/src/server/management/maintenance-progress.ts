@@ -37,25 +37,39 @@ function phaseSchema<const Phases extends readonly [string, ...string[]]>(
   });
 }
 
+/** The one prefix a hard wipe's orphan sweep lists: every object a sync uploads lives under it. */
+export const ORPHAN_SWEEP_PREFIX = "originals/";
+
 /** An optional string carried by the orphan sweep; anything else stored there is dropped. */
 const orphanCursorFieldSchema = z.string().nullable().catch(null);
 
-const LibraryWipeJobProgressSchema = z.object({
-  phase: z
-    .literal(RETIRED_LIBRARY_WIPE_PHASE)
-    .transform(() => "s3_originals" as const)
-    .or(
-      phaseSchema("library_hard_wipe", [
-        "s3_originals",
-        "s3_orphan_sweep",
-        "db_hard_delete",
-        "completed",
-      ]),
-    ),
-  processedCount: processedCountSchema,
-  orphanPrefix: orphanCursorFieldSchema,
-  orphanContinuationToken: orphanCursorFieldSchema,
-});
+const LibraryWipeJobProgressSchema = z
+  .object({
+    phase: z
+      .literal(RETIRED_LIBRARY_WIPE_PHASE)
+      .transform(() => "s3_originals" as const)
+      .or(
+        phaseSchema("library_hard_wipe", [
+          "s3_originals",
+          "s3_orphan_sweep",
+          "db_hard_delete",
+          "completed",
+        ]),
+      ),
+    processedCount: processedCountSchema,
+    orphanContinuationToken: orphanCursorFieldSchema,
+    // Written by the sweep while it rotated through several prefixes; read only
+    // to tell which listing a stored token continues.
+    orphanPrefix: orphanCursorFieldSchema,
+  })
+  .transform(({ orphanPrefix, ...progress }) => ({
+    ...progress,
+    // A token from a retired prefix's listing cannot continue this one's.
+    orphanContinuationToken:
+      orphanPrefix === null || orphanPrefix === ORPHAN_SWEEP_PREFIX
+        ? progress.orphanContinuationToken
+        : null,
+  }));
 
 export type LibraryWipeJobProgress = z.infer<typeof LibraryWipeJobProgressSchema>;
 
@@ -130,7 +144,6 @@ export function initialProgressFor<Type extends MaintenanceJobType>(
   const initial: InitialProgressByType = {
     library_hard_wipe: {
       orphanContinuationToken: null,
-      orphanPrefix: null,
       phase: "s3_originals",
       processedCount: 0,
     },

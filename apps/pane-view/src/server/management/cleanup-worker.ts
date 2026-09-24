@@ -29,6 +29,7 @@ import {
   type MaintenanceJobType,
   MaintenanceJobTypeSchema,
   type MaintenanceProgressFor,
+  ORPHAN_SWEEP_PREFIX,
   parseMaintenanceProgress,
 } from "./maintenance-progress";
 import { deleteMaintenanceObjects, getMaintenanceStorageClient } from "./maintenance-storage";
@@ -44,8 +45,6 @@ const nextBatchDelayMs = 25;
 
 /** How long to wait before retrying a job whose claim another worker holds. */
 const contendedRetryDelayMs = 30_000;
-
-const orphanPrefixes = ["originals/"] as const;
 
 const activeJobStatuses = ["pending", "running"] as const;
 
@@ -577,15 +576,7 @@ async function processLibraryWipeBatch(
         .limit(batchSize);
 
       if (rows.length === 0) {
-        await updateJobProgress(
-          jobId,
-          {
-            ...progress,
-            orphanPrefix: orphanPrefixes[0],
-            phase: "s3_orphan_sweep",
-          },
-          dependencies,
-        );
+        await updateJobProgress(jobId, { ...progress, phase: "s3_orphan_sweep" }, dependencies);
 
         return true;
       }
@@ -631,15 +622,10 @@ async function processLibraryWipeBatch(
     }
 
     case "s3_orphan_sweep": {
-      const prefix =
-        progress.orphanPrefix ??
-        orphanPrefixes[progress.processedCount % orphanPrefixes.length] ??
-        orphanPrefixes[0];
-
       const page = await dependencies.listObjectsByPrefix({
         continuationToken: progress.orphanContinuationToken ?? undefined,
         limit: batchSize,
-        prefix,
+        prefix: ORPHAN_SWEEP_PREFIX,
       });
 
       if (page.keys.length > 0) {
@@ -654,41 +640,7 @@ async function processLibraryWipeBatch(
           {
             ...progress,
             orphanContinuationToken: page.nextContinuationToken ?? null,
-            orphanPrefix: prefix,
             processedCount: progress.processedCount + page.keys.length,
-          },
-          dependencies,
-        );
-
-        return true;
-      }
-
-      if (page.nextContinuationToken) {
-        await updateJobProgress(
-          jobId,
-          {
-            ...progress,
-            orphanContinuationToken: page.nextContinuationToken,
-            orphanPrefix: prefix,
-          },
-          dependencies,
-        );
-
-        return true;
-      }
-
-      // The stored prefix is a plain string; a prefix no longer in the list has no successor.
-      const knownPrefixes: readonly string[] = orphanPrefixes;
-      const prefixIndex = knownPrefixes.indexOf(prefix);
-      const nextPrefix = prefixIndex >= 0 ? orphanPrefixes[prefixIndex + 1] : undefined;
-
-      if (nextPrefix) {
-        await updateJobProgress(
-          jobId,
-          {
-            ...progress,
-            orphanContinuationToken: null,
-            orphanPrefix: nextPrefix,
           },
           dependencies,
         );
@@ -698,12 +650,9 @@ async function processLibraryWipeBatch(
 
       await updateJobProgress(
         jobId,
-        {
-          ...progress,
-          orphanContinuationToken: null,
-          orphanPrefix: null,
-          phase: "db_hard_delete",
-        },
+        page.nextContinuationToken
+          ? { ...progress, orphanContinuationToken: page.nextContinuationToken }
+          : { ...progress, orphanContinuationToken: null, phase: "db_hard_delete" },
         dependencies,
       );
 
