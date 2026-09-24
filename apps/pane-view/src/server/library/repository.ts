@@ -26,9 +26,16 @@ import type { LibraryMediaItem, MediaPage } from "./types";
 
 export type { LibraryMediaItem, MediaPage } from "./types";
 
+/**
+ * A snapshot's `folders` and `siblings` feed the sidebar, the exclude dialog,
+ * and sibling navigation, none of which shows whether a folder has children,
+ * so the snapshot skips that lookup.
+ */
+export type SnapshotFolderNode = Omit<FolderNode, "hasChildren">;
+
 export interface DatabaseLibrarySnapshot {
   allFolders: FolderNode[];
-  folders: FolderNode[];
+  folders: SnapshotFolderNode[];
   media: LibraryMediaItem[];
   mediaPage: MediaPage;
   roots: string[];
@@ -37,7 +44,7 @@ export interface DatabaseLibrarySnapshot {
    * itself included; empty at the root. Unordered: callers sort. Feeds
    * previous/next sibling navigation, which `folders` (the children) cannot.
    */
-  siblings: FolderNode[];
+  siblings: SnapshotFolderNode[];
 }
 
 export interface LibrarySnapshotReadRequest {
@@ -94,7 +101,13 @@ export function buildLibrarySnapshotMediaQuery(
     .offset(offset);
 }
 
-/** Visible folders for the current scope (direct children, or search matches). */
+/** Most folders one search returns: the size of a search's media page. */
+const FOLDER_SEARCH_LIMIT = 200;
+
+/**
+ * Visible folders for the current scope: direct children, or search matches
+ * capped to the first FOLDER_SEARCH_LIMIT in natural name order.
+ */
 export function buildLibraryFolderQuery(
   {
     currentPath,
@@ -103,12 +116,22 @@ export function buildLibraryFolderQuery(
   }: Pick<LibrarySnapshotReadRequest, "currentPath" | "query" | "recursive">,
   database: Database = db,
 ) {
-  const { folderConditions } = buildLibraryConditions({ currentPath, query, recursive });
+  const { folderConditions, searching } = buildLibraryConditions({
+    currentPath,
+    query,
+    recursive,
+  });
 
-  return database
+  const folderQuery = database
     .select()
     .from(folders)
     .where(and(...folderConditions));
+
+  return searching
+    ? folderQuery
+        .orderBy(asc(naturalOrder(folders.name)), asc(folders.path))
+        .limit(FOLDER_SEARCH_LIMIT)
+    : folderQuery;
 }
 
 /** Listing media page: sorted, filtered, keyset-continued, overfetched by one. */
@@ -321,15 +344,6 @@ export async function readDatabaseLibrarySnapshot(
       : Promise.resolve([]),
   ]);
 
-  const visibleFolderPaths = [
-    ...new Set([...folderRows, ...siblingRows].map((folder) => folder.path)),
-  ];
-
-  const visibleParentPathsWithChildren = await readParentPathsWithChildren(
-    visibleFolderPaths,
-    database,
-  );
-
   const folderParentPathsWithChildFolders = new Set(
     allFolderRows
       .map((folder) => folder.parentPath)
@@ -342,9 +356,9 @@ export async function readDatabaseLibrarySnapshot(
     allFolders: allFolderRows.map((folder) =>
       mapFolderRow(folder, folderParentPathsWithChildFolders),
     ),
-    folders: folderRows.map((folder) => mapFolderRow(folder, visibleParentPathsWithChildren)),
+    folders: folderRows.map(mapSnapshotFolderRow),
     media: mapMediaRowsToLibraryItems(pageMediaRows),
-    siblings: siblingRows.map((folder) => mapFolderRow(folder, visibleParentPathsWithChildren)),
+    siblings: siblingRows.map(mapSnapshotFolderRow),
     mediaPage,
     roots: rootRows
       .map((folder) => folder.path)
@@ -474,9 +488,12 @@ export async function softDeleteLibraryEntry(
 type FolderRow = typeof folders.$inferSelect;
 
 function mapFolderRow(folder: FolderRow, parentPathsWithChildren: ReadonlySet<string>): FolderNode {
+  return { ...mapSnapshotFolderRow(folder), hasChildren: parentPathsWithChildren.has(folder.path) };
+}
+
+function mapSnapshotFolderRow(folder: FolderRow): SnapshotFolderNode {
   return {
     folderCount: folder.folderCount ?? 0,
-    hasChildren: parentPathsWithChildren.has(folder.path),
     mediaCount: folder.entryCount ?? 0,
     name: folder.name,
     parentId: folder.parentId,
@@ -509,48 +526,40 @@ export function buildMediaPage<T>(
   };
 }
 
-const parentPathLookupThreshold = 500;
+/** Most paths one `IN (…)` lookup carries; longer lists are looked up in batches, one at a time. */
+const parentPathLookupBatchSize = 500;
 
 async function readParentPathsWithChildren(
   paths: string[],
   database: Database,
 ): Promise<Set<string>> {
-  if (paths.length === 0) {
-    return new Set();
+  const batches: string[][] = [];
+
+  for (let start = 0; start < paths.length; start += parentPathLookupBatchSize) {
+    batches.push(paths.slice(start, start + parentPathLookupBatchSize));
   }
 
   const pathSet = new Set(paths);
-
-  const [folderParents, entryParents] =
-    paths.length > parentPathLookupThreshold
-      ? await Promise.all([
-          database
-            .selectDistinct({ parentPath: folders.parentPath })
-            .from(folders)
-            .where(isNull(folders.deletedAt)),
-          database
-            .selectDistinct({ parentPath: libraryEntries.parentPath })
-            .from(libraryEntries)
-            .where(isNull(libraryEntries.deletedAt)),
-        ])
-      : await Promise.all([
-          database
-            .selectDistinct({ parentPath: folders.parentPath })
-            .from(folders)
-            .where(and(isNull(folders.deletedAt), inArray(folders.parentPath, paths))),
-          database
-            .selectDistinct({ parentPath: libraryEntries.parentPath })
-            .from(libraryEntries)
-            .where(
-              and(isNull(libraryEntries.deletedAt), inArray(libraryEntries.parentPath, paths)),
-            ),
-        ]);
-
   const parents = new Set<string>();
 
-  for (const row of [...folderParents, ...entryParents]) {
-    if (row.parentPath && pathSet.has(row.parentPath)) {
-      parents.add(row.parentPath);
+  // One batch at a time, so a huge folder can't queue dozens of queries on the pool.
+  for (const batch of batches) {
+    // react-doctor-disable-next-line react-doctor/async-await-in-loop -- Bounded concurrency: two queries per batch, one batch at a time.
+    const rows = await Promise.all([
+      database
+        .selectDistinct({ parentPath: folders.parentPath })
+        .from(folders)
+        .where(and(isNull(folders.deletedAt), inArray(folders.parentPath, batch))),
+      database
+        .selectDistinct({ parentPath: libraryEntries.parentPath })
+        .from(libraryEntries)
+        .where(and(isNull(libraryEntries.deletedAt), inArray(libraryEntries.parentPath, batch))),
+    ]);
+
+    for (const row of rows.flat()) {
+      if (row.parentPath && pathSet.has(row.parentPath)) {
+        parents.add(row.parentPath);
+      }
     }
   }
 

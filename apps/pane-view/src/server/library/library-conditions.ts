@@ -17,7 +17,7 @@ export interface LibraryConditionsInput {
 }
 
 export interface LibraryConditions {
-  /** Non-deleted folders in scope: direct children when browsing, path/name matches when searching. */
+  /** Non-deleted folders in scope: direct children when browsing, name matches when searching. */
   folderConditions: SQL[];
   /** Non-deleted entries in scope: direct children, subtree, or path/filename matches. */
   mediaConditions: SQL[];
@@ -49,18 +49,12 @@ export function buildLibraryConditions({
       ilike(libraryEntries.filename, queryPattern),
     );
 
-    const folderQueryCondition = or(
-      ilike(folders.path, queryPattern),
-      ilike(folders.name, queryPattern),
-    );
-
     if (mediaQueryCondition) {
       mediaConditions.push(mediaQueryCondition);
     }
 
-    if (folderQueryCondition) {
-      folderConditions.push(folderQueryCondition);
-    }
+    // Names only: a path match would pull in every folder under a matching one.
+    folderConditions.push(ilike(folders.name, queryPattern));
   } else {
     folderConditions.push(eq(folders.parentPath, currentPath));
 

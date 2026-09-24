@@ -49,11 +49,11 @@ export function useWindowedThumbnailResolution(
   { entries: windowedEntries, key: contentKey }: WindowedListing,
   resolver: GalleryThumbnailResolver = sharedThumbnailResolver,
 ): WindowedThumbnailResolutionResult {
-  const [resolution, setResolution] = useState(() => {
-    const cached = resolver.readCachedGalleryThumbnailState();
-
-    return { contentKey, urls: cached.urls };
-  });
+  /** The last batch's URLs, with the window requests they answer. */
+  const [resolution, setResolution] = useState<{
+    requests: GalleryThumbnailRequest[];
+    urls: Record<string, string>;
+  } | null>(null);
 
   /** The content this hook last scheduled against; anything else is new content. */
   const seenContentKeyRef = useRef<string | null>(null);
@@ -74,10 +74,14 @@ export function useWindowedThumbnailResolution(
     [windowedEntries],
   );
 
+  // A window no batch has answered yet shows what the cache already holds for it.
+  const cachedThumbnailUrls = useMemo(
+    () => resolver.readCachedGalleryThumbnailState(windowedThumbnailRequests).urls,
+    [resolver, windowedThumbnailRequests],
+  );
+
   const resolvedThumbnailUrls =
-    resolution.contentKey === contentKey
-      ? resolution.urls
-      : resolver.readCachedGalleryThumbnailState().urls;
+    resolution?.requests === windowedThumbnailRequests ? resolution.urls : cachedThumbnailUrls;
 
   useEffect(() => {
     // A placeholder listing belongs to the folder being left. Its thumbnails
@@ -93,7 +97,7 @@ export function useWindowedThumbnailResolution(
     let retryTimeoutId: number | undefined;
 
     const applyResolvedState = (resolved: GalleryThumbnailResolveState) => {
-      setResolution({ contentKey, urls: resolved.urls });
+      setResolution({ requests: windowedThumbnailRequests, urls: resolved.urls });
     };
 
     const resolveAndSchedule = () => {

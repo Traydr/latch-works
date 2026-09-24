@@ -19,7 +19,8 @@ import { cn } from "@/lib/utils";
 
 interface ArchiveSidebarProps {
   currentPath: string;
-  folders: FolderNode[];
+  /** Only what the list shows and navigates to. */
+  folders: Pick<FolderNode, "name" | "path">[];
   /** True while the listed folders belong to the folder being left. */
   foldersDisabled?: boolean;
   isLoading?: boolean;

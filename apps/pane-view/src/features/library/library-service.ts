@@ -12,6 +12,7 @@ import { DEFAULT_GALLERY_LISTING_LIMIT } from "../../server/library/gallery-list
 import type {
   DatabaseLibrarySnapshot,
   LibrarySnapshotReadRequest,
+  SnapshotFolderNode,
 } from "../../server/library/repository";
 import { type GalleryRandomSeed, GalleryRandomSeedSchema } from "../gallery/gallery-random-seed";
 import type { LibraryMediaItem, MediaPage } from "./types";
@@ -70,13 +71,13 @@ export interface LibrarySnapshot {
   allFolders: FolderNode[];
   archiveRoot: string;
   currentPath: string;
-  folders: FolderNode[];
+  folders: SnapshotFolderNode[];
   media: LibraryMediaItem[];
   mediaPage: MediaPage;
   mediaUrlMode: "signed-url";
   roots: string[];
   /** Folders sharing `currentPath`'s parent, itself included; empty at the root. */
-  siblings: FolderNode[];
+  siblings: SnapshotFolderNode[];
 }
 
 const deleteLibraryEntrySchema = z.object({
@@ -127,7 +128,7 @@ export async function readLibrarySnapshotRequest(
   const currentPath = normalizeLibraryPath(data.path);
   const query = normalizeQuery(data.query);
   const comicMode = data.comicMode ?? false;
-  const includeAllFolders = data.includeAllFolders ?? comicMode;
+  const includeAllFolders = data.includeAllFolders ?? false;
   const recursive = (data.recursive ?? false) || comicMode;
   const searchOffset = data.searchOffset ?? 0;
   const mediaOffset = query ? searchOffset : (data.mediaOffset ?? 0);

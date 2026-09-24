@@ -382,20 +382,38 @@ function useGalleryPage() {
     browse.submitSearch(searchDraft);
   };
 
-  const selectAdjacentMedia = (offset: -1 | 1) => {
-    void stepMedia(selected?.id ?? null, offset, settings.loopNavigation).then((nextId) => {
-      if (nextId) {
-        selectMediaAndFocus(nextId);
-      }
-    });
-  };
+  const selectedMediaId = selected?.id ?? null;
+
+  const selectAdjacentMedia = useCallback(
+    (offset: -1 | 1) => {
+      void stepMedia(selectedMediaId, offset, settings.loopNavigation).then((nextId) => {
+        if (nextId) {
+          selectMediaAndFocus(nextId);
+        }
+      });
+    },
+    [selectMediaAndFocus, selectedMediaId, settings.loopNavigation, stepMedia],
+  );
+
+  const selectNextMedia = useCallback(() => selectAdjacentMedia(1), [selectAdjacentMedia]);
+  const selectPreviousMedia = useCallback(() => selectAdjacentMedia(-1), [selectAdjacentMedia]);
+
+  const openSelectedInViewer = useCallback(() => {
+    if (selectedComic) {
+      openComicReader(selectedComic.id);
+    } else if (selected && !deletedEntryIds.has(selected.id)) {
+      openViewer(selected.id);
+    }
+  }, [deletedEntryIds, openComicReader, openViewer, selected, selectedComic]);
 
   // A delete settles after the render it started in: it reads the live
   // browse, sequence, and selection from here.
   const liveDeleteRef = useRef({ browseKey, navigableMedia, selectedId: selected?.id ?? null });
   liveDeleteRef.current = { browseKey, navigableMedia, selectedId: selected?.id ?? null };
 
-  const deleteSelectedMedia = () => {
+  const { mutateAsync: deleteEntry } = deleteEntryMutation;
+
+  const deleteSelectedMedia = useCallback(() => {
     if (!selected || deletedEntryIds.has(selected.id) || deletingEntryIds.has(selected.id)) {
       return;
     }
@@ -418,7 +436,7 @@ function useGalleryPage() {
       try {
         // `deleted: false` means no live row matched: the item is already
         // gone, so hide it like a delete that just landed.
-        await deleteEntryMutation.mutateAsync(entryId);
+        await deleteEntry(entryId);
 
         setDeletedEntryIds((current) => new Set([...current, entryId]));
 
@@ -450,23 +468,26 @@ function useGalleryPage() {
         });
       }
     })();
-  };
+  }, [browseKey, deleteEntry, deletedEntryIds, deletingEntryIds, selectMediaAndFocus, selected]);
 
-  const handleSelectEntry = (entry: GalleryBrowseEntry) => {
-    const entryIndex = entries.findIndex((candidate) => candidate.key === entry.key);
+  const handleSelectEntry = useCallback(
+    (entry: GalleryBrowseEntry) => {
+      const entryIndex = entriesRef.current.findIndex((candidate) => candidate.key === entry.key);
 
-    if (entryIndex >= 0) {
-      setFocusedEntryIndex(entryIndex);
-    }
+      if (entryIndex >= 0) {
+        setFocusedEntryIndex(entryIndex);
+      }
 
-    if (entry.kind === "folder") {
-      navigateToPath(entry.path);
-    } else if (entry.kind === "comic") {
-      selectMedia(entry.comic.cover.id);
-    } else {
-      selectMedia(entry.media.id);
-    }
-  };
+      if (entry.kind === "folder") {
+        navigateToPath(entry.path);
+      } else if (entry.kind === "comic") {
+        selectMedia(entry.comic.cover.id);
+      } else {
+        selectMedia(entry.media.id);
+      }
+    },
+    [navigateToPath, selectMedia],
+  );
 
   const breadcrumbs = useMemo(() => buildBreadcrumbItems(displayPath), [displayPath]);
 
@@ -510,19 +531,18 @@ function useGalleryPage() {
     navigateSiblingFolder,
     navigateToPath,
     navigableMedia,
-    openComicReader,
     openingComicId,
-    openViewer,
+    openSelectedInViewer,
     page,
     parentPath,
     pathSheetOpen,
     rememberedRecursive,
     scrollRequestKey,
     searchDraft,
-    selectAdjacentMedia,
     selected,
-    selectedComic,
     selectMediaAndFocus,
+    selectNextMedia,
+    selectPreviousMedia,
     setActiveComic,
     setComicMode,
     setDetailPanelOpen,
@@ -750,19 +770,14 @@ function GalleryContent(): JSX.Element {
             focusedEntryIndex={model.focusedEntryIndex}
             hasMore={model.page.hasMore}
             isFetching={model.showFetching}
+            isMobile={model.isMobile}
             loadingMoreMedia={model.page.loading}
             onActivateEntry={model.handleActivateEntry}
             onDelete={model.deleteSelectedMedia}
             onLoadMoreMedia={model.handleLoadMoreMedia}
-            onNext={() => model.selectAdjacentMedia(1)}
-            onOpenViewer={() => {
-              if (model.selectedComic) {
-                model.openComicReader(model.selectedComic.id);
-              } else if (model.selected && !model.deletedEntryIds.has(model.selected.id)) {
-                model.openViewer(model.selected.id);
-              }
-            }}
-            onPrev={() => model.selectAdjacentMedia(-1)}
+            onNext={model.selectNextMedia}
+            onOpenViewer={model.openSelectedInViewer}
+            onPrev={model.selectPreviousMedia}
             onSelectEntry={model.handleSelectEntry}
             openingComicId={model.openingComicId}
             scrollRequestKey={model.scrollRequestKey}
