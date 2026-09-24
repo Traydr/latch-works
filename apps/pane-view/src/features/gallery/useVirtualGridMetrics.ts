@@ -47,10 +47,8 @@ interface UseVirtualGridMetricsResult {
   columnCount: number;
   gridWidth: number;
   mainRef: RefObject<HTMLElement | null>;
-  overscanWindow: RowWindow;
   rowStride: number;
   totalGridHeight: number;
-  viewportWindow: RowWindow;
   windowedItems: WindowedGridItem[];
 }
 
@@ -61,10 +59,8 @@ export function useVirtualGridMetrics(
 ): UseVirtualGridMetricsResult {
   const [mainClientWidth, setMainClientWidth] = useState(0);
 
-  const [rowWindows, setRowWindows] = useState({
-    overscan: { start: 0, end: 0 },
-    viewport: { start: 0, end: 0 },
-  });
+  /** The rendered rows: the visible ones plus the overscan either side. */
+  const [rowWindow, setRowWindow] = useState<RowWindow>({ start: 0, end: 0 });
 
   const mainRef = useRef<HTMLElement | null>(null);
 
@@ -123,16 +119,8 @@ export function useVirtualGridMetrics(
       const nextHeight = element.clientHeight;
 
       setMainClientWidth((current) => (current === nextWidth ? current : nextWidth));
-      setRowWindows((current) => {
-        const nextViewport = getVisibleRowWindow(
-          element.scrollTop,
-          nextHeight,
-          rowCount,
-          rowStride,
-          0,
-        );
-
-        const nextOverscan = getVisibleRowWindow(
+      setRowWindow((current) => {
+        const next = getVisibleRowWindow(
           element.scrollTop,
           nextHeight,
           rowCount,
@@ -140,17 +128,7 @@ export function useVirtualGridMetrics(
           GRID_OVERSCAN_ROWS,
         );
 
-        if (
-          areRowWindowsEqual(current.viewport, nextViewport) &&
-          areRowWindowsEqual(current.overscan, nextOverscan)
-        ) {
-          return current;
-        }
-
-        return {
-          overscan: nextOverscan,
-          viewport: nextViewport,
-        };
+        return areRowWindowsEqual(current, next) ? current : next;
       });
     };
 
@@ -163,16 +141,8 @@ export function useVirtualGridMetrics(
 
       frameId = window.requestAnimationFrame(() => {
         frameId = null;
-        setRowWindows((current) => {
-          const nextViewport = getVisibleRowWindow(
-            element.scrollTop,
-            element.clientHeight,
-            rowCount,
-            rowStride,
-            0,
-          );
-
-          const nextOverscan = getVisibleRowWindow(
+        setRowWindow((current) => {
+          const next = getVisibleRowWindow(
             element.scrollTop,
             element.clientHeight,
             rowCount,
@@ -180,17 +150,7 @@ export function useVirtualGridMetrics(
             GRID_OVERSCAN_ROWS,
           );
 
-          if (
-            areRowWindowsEqual(current.viewport, nextViewport) &&
-            areRowWindowsEqual(current.overscan, nextOverscan)
-          ) {
-            return current;
-          }
-
-          return {
-            overscan: nextOverscan,
-            viewport: nextViewport,
-          };
+          return areRowWindowsEqual(current, next) ? current : next;
         });
       });
     };
@@ -219,8 +179,8 @@ export function useVirtualGridMetrics(
       return [];
     }
 
-    const startIndex = rowWindows.overscan.start * columnCount;
-    const endIndex = Math.min(itemCount, (rowWindows.overscan.end + 1) * columnCount);
+    const startIndex = rowWindow.start * columnCount;
+    const endIndex = Math.min(itemCount, (rowWindow.end + 1) * columnCount);
     const nextItems: Array<{ index: number; left: number; top: number }> = [];
 
     for (let index = startIndex; index < endIndex; index += 1) {
@@ -234,14 +194,7 @@ export function useVirtualGridMetrics(
     }
 
     return nextItems;
-  }, [
-    cardWidth,
-    columnCount,
-    itemCount,
-    rowStride,
-    rowWindows.overscan.end,
-    rowWindows.overscan.start,
-  ]);
+  }, [cardWidth, columnCount, itemCount, rowStride, rowWindow.end, rowWindow.start]);
 
   return {
     cardHeight,
@@ -249,10 +202,8 @@ export function useVirtualGridMetrics(
     columnCount,
     gridWidth,
     mainRef,
-    overscanWindow: rowWindows.overscan,
     rowStride,
     totalGridHeight,
-    viewportWindow: rowWindows.viewport,
     windowedItems,
   };
 }
