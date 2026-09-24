@@ -625,17 +625,15 @@ async function processLibraryWipeBatch(
     }
 
     case "db_hard_delete": {
-      await dependencies.database
-        .delete(favorites)
-        .where(eq(favorites.subjectType, "library_entry"));
-      await dependencies.database
-        .delete(viewerState)
-        .where(eq(viewerState.subjectType, "library_entry"));
-      await dependencies.database.delete(syncRunItems);
-      await dependencies.database.delete(syncRuns);
-      await dependencies.database.delete(libraryEntries);
-      await dependencies.database.delete(folders);
-      await dependencies.database.delete(mediaObjects);
+      await dependencies.database.transaction(async (tx) => {
+        await tx.delete(favorites).where(eq(favorites.subjectType, "library_entry"));
+        await tx.delete(viewerState).where(eq(viewerState.subjectType, "library_entry"));
+        await tx.delete(syncRunItems);
+        await tx.delete(syncRuns);
+        await tx.delete(libraryEntries);
+        await tx.delete(folders);
+        await tx.delete(mediaObjects);
+      });
 
       await completeMaintenanceJob(jobId, { ...progress, phase: "completed" }, dependencies);
 
