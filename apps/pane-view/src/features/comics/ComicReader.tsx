@@ -16,6 +16,9 @@ const PAGE_LOAD_MARGIN = "200% 0px";
 /** A portrait page's shape, for pages whose size was never recorded. */
 const FALLBACK_PAGE_ASPECT_RATIO = "2 / 3";
 
+/** Where `scrollend` is unsupported, a scroll that goes quiet this long has ended. */
+const SCROLL_SETTLE_MS = 200;
+
 function pageAspectRatio(page: MediaItem): string {
   return page.width && page.height ? `${page.width} / ${page.height}` : FALLBACK_PAGE_ASPECT_RATIO;
 }
@@ -25,6 +28,12 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
   const readerRef = useRef<HTMLDivElement | null>(null);
   const pageRefs = useRef<Array<HTMLDivElement | null>>([]);
   const currentPageIndexRef = useRef(0);
+  // The page an arrow key is scrolling to: the smooth scroll passes nearer pages on its way,
+  // and neither they nor the next press may start from anywhere else.
+  const scrollTargetRef = useRef<number | null>(null);
+  const settleTimerRef = useRef<number | null>(null);
+  // What ends a programmatic scroll; the scroll effect swaps in a version that also re-syncs.
+  const settleScrollRef = useRef<() => void>(() => undefined);
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
   const [nearPageIds, setNearPageIds] = useState<ReadonlySet<string>>(() => new Set());
 
@@ -35,6 +44,23 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
   const setCurrentPage = (index: number): void => {
     currentPageIndexRef.current = index;
     setCurrentPageIndex(index);
+  };
+
+  const releaseScrollTarget = (): void => {
+    scrollTargetRef.current = null;
+
+    if (settleTimerRef.current !== null) {
+      window.clearTimeout(settleTimerRef.current);
+      settleTimerRef.current = null;
+    }
+  };
+
+  const armScrollSettle = (): void => {
+    if (settleTimerRef.current !== null) {
+      window.clearTimeout(settleTimerRef.current);
+    }
+
+    settleTimerRef.current = window.setTimeout(() => settleScrollRef.current(), SCROLL_SETTLE_MS);
   };
 
   // Opened before paint so the gallery never shows through for a frame.
@@ -53,6 +79,10 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
     return () => {
       if (dialog) {
         closeDialog(dialog);
+      }
+
+      if (settleTimerRef.current !== null) {
+        window.clearTimeout(settleTimerRef.current);
       }
 
       openedFrom?.focus();
@@ -81,12 +111,10 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
     }
 
     event.preventDefault();
-
-    const nextIndex = Math.max(
-      0,
-      Math.min(comic.pages.length - 1, currentPageIndexRef.current + delta),
-    );
-
+    const from = scrollTargetRef.current ?? currentPageIndexRef.current;
+    const nextIndex = Math.max(0, Math.min(comic.pages.length - 1, from + delta));
+    scrollTargetRef.current = nextIndex;
+    armScrollSettle();
     setCurrentPage(nextIndex);
 
     window.requestAnimationFrame(() => {
@@ -111,6 +139,11 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
 
     const syncCurrentPage = (): void => {
       frameId = null;
+
+      if (scrollTargetRef.current !== null) {
+        return;
+      }
+
       let nearestIndex = currentPageIndexRef.current;
       let nearestDistance = Number.POSITIVE_INFINITY;
 
@@ -132,8 +165,27 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
       setCurrentPage(nearestIndex);
     };
 
+    // A touch or wheel can cut a smooth scroll short of its target, so count
+    // from where it stopped. At the bottom the last pages can't reach the top
+    // of the view, and the page asked for stands.
+    const settleScroll = (): void => {
+      releaseScrollTarget();
+
+      if (reader.scrollTop + reader.clientHeight < reader.scrollHeight - 1) {
+        syncCurrentPage();
+      }
+    };
+
+    settleScrollRef.current = settleScroll;
+
     const onScroll = (): void => {
       revealChrome();
+
+      if (scrollTargetRef.current !== null) {
+        armScrollSettle();
+
+        return;
+      }
 
       if (frameId !== null) {
         return;
@@ -143,6 +195,7 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
     };
 
     reader.addEventListener("scroll", onScroll, { passive: true });
+    reader.addEventListener("scrollend", settleScroll);
 
     return () => {
       if (frameId !== null) {
@@ -150,6 +203,7 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
       }
 
       reader.removeEventListener("scroll", onScroll);
+      reader.removeEventListener("scrollend", settleScroll);
     };
   }, [revealChrome]);
 
