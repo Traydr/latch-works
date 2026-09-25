@@ -11,6 +11,12 @@ export interface PipelineProgressState {
   pruneCompleted: boolean;
 }
 
+export const initialPipelineProgress: PipelineProgressState = {
+  reviewed: false,
+  pushCompleted: false,
+  pruneCompleted: false,
+};
+
 export type Screen = "dashboard" | "plan" | "profile" | "run";
 
 export type RunPhase =
@@ -65,6 +71,8 @@ export const initialProgress: RunProgressState = {
 
 export const emptyProfileForm = {
   apiUrl: "http://localhost:3000",
+  /** Edit mode only: forget the saved token instead of keeping or replacing it. */
+  clearToken: false,
   name: "",
   sourceRoot: "",
   token: "",
@@ -84,11 +92,17 @@ export interface SessionController {
   handleProfileChange: (profileId: string) => Promise<void>;
 }
 
-/** Profile setup screen. */
+/** Profile setup screen (create or edit) and profile deletion. */
 export interface ProfileController {
   profileForm: ProfileFormState;
   setProfileForm: React.Dispatch<React.SetStateAction<ProfileFormState>>;
-  handleCreateProfile: (event: React.FormEvent) => Promise<void>;
+  /** The saved profile the form edits, or null when it creates a new one. */
+  editingProfile: LockstepProfilePublic | null;
+  startCreateProfile: () => void;
+  startEditProfile: (profileId: string) => void;
+  cancelProfileForm: () => void;
+  handleSubmitProfile: (event: React.FormEvent) => Promise<void>;
+  handleDeleteProfile: (profileId: string) => Promise<void>;
   handlePickFolder: () => Promise<void>;
 }
 

@@ -3,6 +3,7 @@ import {
   ArrowUpCircle,
   CircleCheck,
   ListChecks,
+  Pencil,
   Play,
   Plus,
   Stethoscope,
@@ -40,7 +41,9 @@ type Tab = "dashboard" | "plan" | "log";
 export function AppLayout({ ctrl }: { ctrl: LockstepController }) {
   const { session, profile, plan: planCtrl, run } = ctrl;
   const { screen, setScreen, settings, activeProfile, error } = session;
-  const [tab, setTab] = useState<Tab>(() => (screen === "plan" ? "plan" : "dashboard"));
+  const [selectedTab, setTab] = useState<Tab>(() => (screen === "plan" ? "plan" : "dashboard"));
+  // Switching, editing, or deleting a profile can drop the plan out from under the Plan tab.
+  const tab = selectedTab === "plan" && !planCtrl.plan ? "dashboard" : selectedTab;
   const showProfile = screen === "profile";
   const showWorkspace = !showProfile && !!activeProfile;
 
@@ -62,10 +65,32 @@ export function AppLayout({ ctrl }: { ctrl: LockstepController }) {
             onChange={(id) => void session.handleProfileChange(id)}
           />
         ) : null}
+        {activeProfile ? (
+          <>
+            <button
+              type="button"
+              className="ls-btn ls-btn-ghost h-6 px-1"
+              disabled={run.running}
+              onClick={() => profile.startEditProfile(activeProfile.id)}
+              title="Edit profile"
+            >
+              <Pencil className="size-3" aria-hidden />
+            </button>
+            <button
+              type="button"
+              className="ls-btn ls-btn-ghost h-6 px-1 hover:text-red-600 dark:hover:text-red-300"
+              disabled={run.running}
+              onClick={() => void profile.handleDeleteProfile(activeProfile.id)}
+              title="Delete profile"
+            >
+              <Trash2 className="size-3" aria-hidden />
+            </button>
+          </>
+        ) : null}
         <button
           type="button"
           className="ls-btn ls-btn-ghost ml-auto h-6 px-1"
-          onClick={() => setScreen("profile")}
+          onClick={profile.startCreateProfile}
           title="Add profile"
         >
           <Plus className="size-3" aria-hidden />
@@ -81,18 +106,19 @@ export function AppLayout({ ctrl }: { ctrl: LockstepController }) {
       {showProfile ? (
         <div className="flex-1 overflow-y-auto p-4">
           <ProfileSetupView
+            editingProfile={profile.editingProfile}
             form={profile.profileForm}
-            onCancel={() => setScreen("dashboard")}
+            onCancel={profile.cancelProfileForm}
             onChange={(patch) => profile.setProfileForm((c) => ({ ...c, ...patch }))}
             onPickFolder={() => void profile.handlePickFolder()}
-            onSubmit={(e) => void profile.handleCreateProfile(e)}
+            onSubmit={(e) => void profile.handleSubmitProfile(e)}
           />
         </div>
       ) : null}
 
       {!showProfile && !activeProfile ? (
         <div className="flex flex-1 items-center justify-center p-4">
-          <Welcome onCreate={() => setScreen("profile")} />
+          <Welcome onCreate={profile.startCreateProfile} />
         </div>
       ) : null}
 

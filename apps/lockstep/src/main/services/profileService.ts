@@ -186,64 +186,102 @@ export class ProfileService {
     return Result.ok(this.toPublicProfile(profile));
   }
 
+  /**
+   * Applies an edit. A new token replaces the saved one, `clearToken` forgets it, and moving the
+   * source folder or API URL drops the last-run summary, which described the old target.
+   */
   async updateProfile(
     profileId: string,
     patch: LockstepProfilePatch,
   ): Promise<ResultType<LockstepProfilePublic, FileSystemError>> {
-    const profile = this.getProfile(profileId);
+    const current = this.getProfile(profileId);
 
-    if (!profile) {
+    if (!current) {
       return Result.err(
         unexpectedFileSystemError("update-profile", new Error("Profile not found"), profileId),
       );
     }
 
-    if (patch.name) {
-      profile.name = patch.name;
+    const next: PersistedProfile = {
+      ...current,
+      apiUrl: patch.apiUrl || current.apiUrl,
+      name: patch.name || current.name,
+      sourceRoot: patch.sourceRoot || current.sourceRoot,
+    };
+
+    if (next.apiUrl !== current.apiUrl || next.sourceRoot !== current.sourceRoot) {
+      delete next.lastRun;
     }
 
-    if (patch.apiUrl) {
-      profile.apiUrl = patch.apiUrl;
-    }
-
-    if (patch.sourceRoot) {
-      profile.sourceRoot = patch.sourceRoot;
-    }
+    let sessionToken = this.sessionTokens.get(profileId);
 
     if (patch.token) {
       const encrypted = this.encryptToken(patch.token);
 
       if (encrypted) {
-        profile.encryptedToken = encrypted;
+        next.encryptedToken = encrypted;
+        sessionToken = undefined;
       } else {
         // Clear any previously persisted ciphertext so a later restart cannot revive a stale token.
-        delete profile.encryptedToken;
-        this.sessionTokens.set(profileId, patch.token);
+        delete next.encryptedToken;
+        sessionToken = patch.token;
       }
+    } else if (patch.clearToken) {
+      delete next.encryptedToken;
+      sessionToken = undefined;
     }
 
-    const saveResult = await this.save();
+    const nextState: PersistedState = {
+      ...this.state,
+      profiles: this.state.profiles.map((profile) => (profile.id === profileId ? next : profile)),
+    };
+
+    const saveResult = await this.save(nextState);
 
     if (Result.isError(saveResult)) {
       return saveResult;
     }
 
-    return Result.ok(this.toPublicProfile(profile));
+    this.state = nextState;
+
+    if (sessionToken) {
+      this.sessionTokens.set(profileId, sessionToken);
+    } else {
+      this.sessionTokens.delete(profileId);
+    }
+
+    return Result.ok(this.toPublicProfile(next));
   }
 
+  /**
+   * Removes a profile with its saved token. Deleting the active profile activates its neighbour in
+   * list order, or none when it was the last one.
+   */
   async deleteProfile(profileId: string): Promise<ResultType<LockstepSettings, FileSystemError>> {
-    this.sessionTokens.delete(profileId);
-    this.state.profiles = this.state.profiles.filter((profile) => profile.id !== profileId);
+    const index = this.state.profiles.findIndex((profile) => profile.id === profileId);
 
-    if (this.state.activeProfileId === profileId) {
-      this.state.activeProfileId = this.state.profiles[0]?.id ?? null;
+    if (index === -1) {
+      return Result.err(
+        unexpectedFileSystemError("delete-profile", new Error("Profile not found"), profileId),
+      );
     }
 
-    const saveResult = await this.save();
+    const profiles = this.state.profiles.filter((profile) => profile.id !== profileId);
+
+    const activeProfileId =
+      this.state.activeProfileId === profileId
+        ? (profiles[Math.min(index, profiles.length - 1)]?.id ?? null)
+        : this.state.activeProfileId;
+
+    const nextState: PersistedState = { activeProfileId, profiles };
+    const saveResult = await this.save(nextState);
 
     if (Result.isError(saveResult)) {
       return saveResult;
     }
+
+    this.state = nextState;
+    this.sessionTokens.delete(profileId);
 
     return Result.ok(this.getSettings());
   }
@@ -335,10 +373,13 @@ export class ProfileService {
     await this.save();
   }
 
-  private async save(): Promise<ResultType<void, FileSystemError>> {
+  /** Writes `state` (the current state by default) so callers can commit only after it lands. */
+  private async save(
+    state: PersistedState = this.state,
+  ): Promise<ResultType<void, FileSystemError>> {
     try {
       await mkdir(path.dirname(this.filePath), { recursive: true });
-      await writeFile(this.filePath, `${JSON.stringify(this.state, null, 2)}\n`, "utf-8");
+      await writeFile(this.filePath, `${JSON.stringify(state, null, 2)}\n`, "utf-8");
 
       return Result.ok();
     } catch (error) {

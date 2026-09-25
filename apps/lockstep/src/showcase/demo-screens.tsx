@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { AppLayout } from "../renderer/components/AppLayout";
+import { emptyProfileForm } from "../renderer/hooks/controller/types";
 import type {
   LockstepController,
   RunProgressState,
@@ -59,14 +60,14 @@ function createBaseController(
       ...overrides.session,
     },
     profile: {
-      profileForm: {
-        apiUrl: "http://localhost:3000",
-        name: "",
-        sourceRoot: "",
-        token: "",
-      },
+      profileForm: emptyProfileForm,
       setProfileForm: noop,
-      handleCreateProfile: noopAsync,
+      editingProfile: null,
+      startCreateProfile: noop,
+      startEditProfile: noop,
+      cancelProfileForm: noop,
+      handleSubmitProfile: noopAsync,
+      handleDeleteProfile: noopAsync,
       handlePickFolder: noopAsync,
       ...overrides.profile,
     },

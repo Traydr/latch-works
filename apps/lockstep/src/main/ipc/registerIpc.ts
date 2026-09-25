@@ -36,6 +36,14 @@ function operationalFailure(operation: string, error: Error) {
   );
 }
 
+/** A run reads its profile once at start; editing or deleting it mid-run would orphan the result. */
+function runInProgressFailure(operation: string) {
+  return operationalFailure(
+    operation,
+    new Error("Wait for the current sync run to finish before changing profiles."),
+  );
+}
+
 type ValidatedIpcInput<T> =
   | { ok: true; value: T }
   | { ok: false; serialized: ReturnType<typeof serializeAppResult> };
@@ -124,6 +132,10 @@ export function registerIpc(
       return validatedId.serialized;
     }
 
+    if (runService.isRunning()) {
+      return runInProgressFailure(InvokeIpcContracts.updateProfile.channel);
+    }
+
     const validated = validateIpcInput(
       requireRequestSchema(InvokeIpcContracts.updateProfile.requestSchema),
       patch,
@@ -144,6 +156,10 @@ export function registerIpc(
 
     if (!validatedId.ok) {
       return validatedId.serialized;
+    }
+
+    if (runService.isRunning()) {
+      return runInProgressFailure(InvokeIpcContracts.deleteProfile.channel);
     }
 
     const result = await profileService.deleteProfile(validatedId.value);
