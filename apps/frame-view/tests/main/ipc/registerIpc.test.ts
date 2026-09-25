@@ -1,6 +1,10 @@
+import { mkdtemp, realpath } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { Result } from 'better-result';
 import { describe, expect, it, vi } from 'vitest';
 
+import { ScanQueue } from '../../../src/main/catalog/ScanQueue';
 import { WorkerError } from '../../../src/main/errors';
 import {
   type IpcCatalogService,
@@ -9,6 +13,14 @@ import {
   type IpcSettingsService,
   registerIpc,
 } from '../../../src/main/ipc/registerIpc';
+import { resolveFolderPath as resolveRealFolderPath } from '../../../src/main/services/folderService';
+import {
+  authorizeMediaRoot as authorizeRealMediaRoot,
+  claimChosenMediaRoot as claimRealChosenMediaRoot,
+  grantChosenMediaRoot as grantRealChosenMediaRoot,
+  isAuthorizedMediaPath as isRealAuthorizedMediaPath,
+  shrinkAuthorizedMediaRootsTo as shrinkRealAuthorizedMediaRootsTo,
+} from '../../../src/main/services/mediaProtocol';
 import type { AppSettingsPatch } from '../../../src/shared/types';
 import { DEFAULT_SETTINGS } from '../../../src/shared/types';
 
@@ -21,7 +33,16 @@ const MEDIA_TOOLS_STATUS = {
   ffprobePath: 'ffprobe',
 };
 
-function setup() {
+interface SetupOptions {
+  /** Real implementations to use in place of the mocked runtime entries. */
+  runtime?: Partial<IpcRuntime>;
+  waitForScan?: () => Promise<void>;
+}
+
+function setup({
+  runtime: runtimeOverrides,
+  waitForScan = async () => undefined,
+}: SetupOptions = {}) {
   const handlers = new Map<string, RegisteredHandler>();
 
   const authorizeMediaRoot = vi.fn<IpcRuntime['authorizeMediaRoot']>(async () => undefined);
@@ -40,13 +61,17 @@ function setup() {
     async () => undefined,
   );
 
+  const claimChosenMediaRoot = vi.fn<IpcRuntime['claimChosenMediaRoot']>(async () => false);
+  const grantChosenMediaRoot = vi.fn<IpcRuntime['grantChosenMediaRoot']>(async () => undefined);
+
   const runtime: IpcRuntime = {
     authorizeMediaRoot,
-    claimLaunchMediaRoot: vi.fn<IpcRuntime['claimLaunchMediaRoot']>(async () => false),
+    claimChosenMediaRoot,
     clearThumbnailCache: vi.fn<IpcRuntime['clearThumbnailCache']>(async () => undefined),
     getAppVersion: () => '1.0.13',
     getThumbnailDiagnostics: () => null,
     getThumbnailWorkerCapabilities: () => null,
+    grantChosenMediaRoot,
     handle: (channel, handler) => {
       handlers.set(channel, handler);
     },
@@ -63,6 +88,7 @@ function setup() {
     showItemInFolder,
     showOpenFolderDialog,
     shrinkAuthorizedMediaRootsTo,
+    ...runtimeOverrides,
   };
 
   const settingsService = {
@@ -93,11 +119,24 @@ function setup() {
     probeVideo: vi.fn<IpcMediaToolsService['probeVideo']>(async () => null),
   } satisfies IpcMediaToolsService;
 
-  registerIpc(runtime, settingsService, catalogService, mediaToolsService);
+  registerIpc(
+    runtime,
+    settingsService,
+    catalogService,
+    mediaToolsService,
+    new ScanQueue({
+      cancelScan: async () => {
+        await catalogService.cancelScan();
+      },
+      waitForScan,
+    }),
+  );
 
   return {
     authorizeMediaRoot,
     catalogService,
+    claimChosenMediaRoot,
+    grantChosenMediaRoot,
     handlers,
     isAuthorizedMediaPath,
     listFolderChildren,
@@ -138,7 +177,7 @@ describe('registerIpc', () => {
 
   it('remembers the last folder path when opening a folder dialog', async () => {
     const {
-      authorizeMediaRoot,
+      grantChosenMediaRoot,
       handlers,
       resolveFolderPath,
       settingsService,
@@ -153,7 +192,7 @@ describe('registerIpc', () => {
 
     await handlers.get('dialog:open-folder')?.();
 
-    expect(authorizeMediaRoot).toHaveBeenCalledWith('C:\\resolved');
+    expect(grantChosenMediaRoot).toHaveBeenCalledWith('C:\\resolved');
     expect(settingsService.updateSettings).toHaveBeenCalledWith({
       lastFolderPath: 'C:\\resolved',
     });
@@ -301,5 +340,111 @@ describe('registerIpc', () => {
       type: 'error',
       message: 'Scan failed: worker crashed',
     });
+  });
+
+  it('cancels a running scan for a queued launch folder and claims it once that scan ended', async () => {
+    let endScan: () => void = () => undefined;
+
+    const {
+      catalogService,
+      claimChosenMediaRoot,
+      handlers,
+      isAuthorizedMediaPath,
+      resolveFolderPath,
+    } = setup({
+      waitForScan: () =>
+        new Promise<void>((resolve) => {
+          endScan = resolve;
+        }),
+    });
+
+    resolveFolderPath.mockImplementation(async (folderPath) => Result.ok(folderPath));
+    // The launch folder is only scannable through its grant: another scan shrank the roots.
+    claimChosenMediaRoot.mockImplementation(async (folderPath) => folderPath === '/opened');
+    isAuthorizedMediaPath.mockImplementation(async (folderPath) => folderPath !== '/opened');
+
+    const scanFolder = (rootPath: string) =>
+      handlers.get('scan:start')?.({
+        rootPath,
+        recursive: false,
+        filters: DEFAULT_SETTINGS.filters,
+      });
+
+    await expect(scanFolder('/remembered')).resolves.toMatchObject({ status: 'ok' });
+
+    const stale = scanFolder('/stale');
+    const opened = scanFolder('/opened');
+
+    await expect(stale).resolves.toMatchObject({ status: 'ok' });
+    expect(catalogService.cancelScan).toHaveBeenCalled();
+    // The cancelled scan is still winding down: the launch folder keeps its grant until it ends.
+    expect(claimChosenMediaRoot).not.toHaveBeenCalledWith('/opened');
+
+    endScan();
+
+    await expect(opened).resolves.toMatchObject({ status: 'ok' });
+    expect(claimChosenMediaRoot).toHaveBeenCalledWith('/opened');
+    expect(catalogService.startScan.mock.calls.map(([options]) => options.rootPath)).toEqual([
+      '/remembered',
+      '/opened',
+    ]);
+  });
+
+  it('scans an Open pick made just before an OS open, with no authorization error', async () => {
+    const tempRoot = await realpath(await mkdtemp(path.join(os.tmpdir(), 'frame-view-ipc-')));
+    const picked = await mkdtemp(path.join(tempRoot, 'picked-'));
+    const opened = await mkdtemp(path.join(tempRoot, 'opened-'));
+    let running = Promise.resolve();
+    let endScan: () => void = () => undefined;
+
+    const { catalogService, handlers, sendScanEvent, showOpenFolderDialog } = setup({
+      runtime: {
+        authorizeMediaRoot: authorizeRealMediaRoot,
+        claimChosenMediaRoot: claimRealChosenMediaRoot,
+        grantChosenMediaRoot: grantRealChosenMediaRoot,
+        isAuthorizedMediaPath: isRealAuthorizedMediaPath,
+        resolveFolderPath: resolveRealFolderPath,
+        shrinkAuthorizedMediaRootsTo: shrinkRealAuthorizedMediaRootsTo,
+      },
+      waitForScan: () => running,
+    });
+
+    // A started scan runs until it is cancelled.
+    catalogService.startScan.mockImplementation(async () => {
+      running = new Promise<void>((resolve) => {
+        endScan = resolve;
+      });
+
+      return Result.ok(undefined);
+    });
+    catalogService.cancelScan.mockImplementation(async () => {
+      endScan();
+
+      return Result.ok(undefined);
+    });
+
+    const scanFolder = (rootPath: string) =>
+      handlers.get('scan:start')?.({
+        rootPath,
+        recursive: false,
+        filters: DEFAULT_SETTINGS.filters,
+      });
+
+    showOpenFolderDialog.mockResolvedValue({ canceled: false, filePaths: [picked] });
+    await handlers.get('dialog:open-folder')?.();
+    // Milliseconds later the OS opens another folder (what `openLaunchPath` does), and its scan
+    // request reaches the main process first, shrinking the roots to that folder.
+    await grantRealChosenMediaRoot(opened);
+    await expect(scanFolder(opened)).resolves.toMatchObject({ status: 'ok' });
+    await expect(scanFolder(picked)).resolves.toMatchObject({ status: 'ok' });
+
+    expect(sendScanEvent).not.toHaveBeenCalled();
+    expect(catalogService.cancelScan).toHaveBeenCalled();
+    expect(catalogService.startScan.mock.calls.map(([options]) => options.rootPath)).toEqual([
+      opened,
+      picked,
+    ]);
+    expect(await isRealAuthorizedMediaPath(picked)).toBe(true);
+    expect(await isRealAuthorizedMediaPath(opened)).toBe(false);
   });
 });

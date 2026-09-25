@@ -398,6 +398,7 @@ export const CatalogWorkerRequestSchema = z.discriminatedUnion('type', [
     options: ScanOptionsSchema,
   }),
   z.object({ requestId: integerNumberSchema, type: z.literal('cancel-scan') }),
+  z.object({ requestId: integerNumberSchema, type: z.literal('wait-for-scan') }),
   z.object({ requestId: integerNumberSchema, type: z.literal('get-index-stats') }),
   z.object({ requestId: integerNumberSchema, type: z.literal('clear-index') }),
 ]);

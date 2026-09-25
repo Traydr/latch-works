@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 
 import type { AppSettings } from '../../shared/types';
 import { getRootGalleryPreferences } from '../utils/rootPreferences';
@@ -58,12 +58,19 @@ export function useFolderOpenActions({
     })();
   }, [openFolderDialog, startScanAtPath]);
 
+  const latestInputPathRef = useRef(0);
+
+  // Paths resolve asynchronously, so two handed over back to back (two OS opens) could resolve
+  // out of order. Only the newest one is scanned.
   const scanInputPathAction = useCallback(
     (candidatePath: string): void => {
+      latestInputPathRef.current += 1;
+      const inputPathId = latestInputPathRef.current;
+
       void (async () => {
         const resolvedPath = await resolveScanInputPath(candidatePath);
 
-        if (resolvedPath) {
+        if (resolvedPath && inputPathId === latestInputPathRef.current) {
           await startScanAtPath(resolvedPath);
         }
       })();

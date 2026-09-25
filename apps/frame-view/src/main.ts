@@ -6,12 +6,13 @@ import { app, BrowserWindow, protocol } from 'electron';
 import started from 'electron-squirrel-startup';
 
 import { CatalogService } from './main/catalog/CatalogService';
+import { ScanQueue } from './main/catalog/ScanQueue';
 import { createElectronIpcRuntime, registerIpc } from './main/ipc/registerIpc';
 import { buildAppMenu } from './main/menu';
 import { resolveFolderPath } from './main/services/folderService';
 import {
   authorizeRememberedMediaRoot,
-  grantLaunchMediaRoot,
+  grantChosenMediaRoot,
   MEDIA_PROTOCOL_SCHEME,
   registerMediaProtocol,
   setThumbnailDebugOptions,
@@ -53,6 +54,8 @@ let quitRequested = false;
 let settingsService: SettingsService;
 
 let catalogService: CatalogService;
+
+let scanQueue: ScanQueue;
 
 let mediaToolsService: MediaToolsService;
 
@@ -127,7 +130,7 @@ function extractLaunchPathFromArgv(argv: string[]): string | null {
  * native dialog, this is the user's choice, so the main process authorizes the folder itself (a
  * file's parent folder) before asking the renderer to scan it.
  */
-async function openLaunchPath(candidatePath: string): Promise<void> {
+async function openLaunchPathNow(candidatePath: string): Promise<void> {
   const resolvedPath = await resolveFolderPath(candidatePath);
 
   if (Result.isError(resolvedPath)) {
@@ -140,8 +143,15 @@ async function openLaunchPath(candidatePath: string): Promise<void> {
     return;
   }
 
-  await grantLaunchMediaRoot(resolvedPath.value);
+  await grantChosenMediaRoot(resolvedPath.value);
   queueOrSendCommand({ type: 'scan-path', path: resolvedPath.value });
+}
+
+let launchPathsOpened = Promise.resolve();
+
+/** Opens OS-handed paths one after another, so their scans are asked for in the order given. */
+function openLaunchPath(candidatePath: string): void {
+  launchPathsOpened = launchPathsOpened.then(() => openLaunchPathNow(candidatePath));
 }
 
 async function createWindow(): Promise<void> {
@@ -166,11 +176,22 @@ async function createWindow(): Promise<void> {
 
   if (!catalogService) {
     catalogService = new CatalogService(app.getPath('userData'), (event) => {
-      if (!mainWindow || mainWindow.isDestroyed()) {
+      // Once a newer request is queued, the running scan is being cancelled and what it still
+      // reports is stale: only the newest request's scan reaches the renderer.
+      if (!mainWindow || mainWindow.isDestroyed() || !scanQueue.isRunningLatest()) {
         return;
       }
 
       mainWindow.webContents.send('scan:event', event);
+    });
+    // A failed cancel or wait means the catalog worker exited, so no scan is running either way.
+    scanQueue = new ScanQueue({
+      cancelScan: async () => {
+        await catalogService.cancelScan();
+      },
+      waitForScan: async () => {
+        await catalogService.waitForScan();
+      },
     });
   }
 
@@ -200,6 +221,7 @@ async function createWindow(): Promise<void> {
     settingsService,
     catalogService,
     mediaToolsService,
+    scanQueue,
   );
 
   // Registered before the first load: commands queued at a cold start (a launch path) are sent
@@ -308,7 +330,7 @@ app.on('ready', () => {
     const launchPath = extractLaunchPathFromArgv(process.argv.slice(1));
 
     if (launchPath) {
-      void openLaunchPath(launchPath);
+      openLaunchPath(launchPath);
     }
   }
 
@@ -334,13 +356,13 @@ app.on('second-instance', (_event, argv) => {
   const launchPath = extractLaunchPathFromArgv(argv.slice(1));
 
   if (launchPath) {
-    void openLaunchPath(launchPath);
+    openLaunchPath(launchPath);
   }
 });
 
 app.on('open-file', (event, filePath) => {
   event.preventDefault();
-  void openLaunchPath(filePath);
+  openLaunchPath(filePath);
 });
 
 app.on('window-all-closed', () => {

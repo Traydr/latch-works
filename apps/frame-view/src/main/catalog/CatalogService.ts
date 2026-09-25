@@ -36,6 +36,9 @@ type CatalogWorkerRequestPayload =
       type: 'cancel-scan';
     }
   | {
+      type: 'wait-for-scan';
+    }
+  | {
       type: 'get-index-stats';
     }
   | {
@@ -69,9 +72,28 @@ export class CatalogService {
     });
   }
 
+  /** Cancels the running scan, if any. Does not start the worker just to cancel nothing. */
   async cancelScan(): Promise<ResultType<void, WorkerError>> {
+    if (!this.child) {
+      return Result.ok();
+    }
+
     return this.sendAcknowledgedRequest({
       type: 'cancel-scan',
+    });
+  }
+
+  /**
+   * Resolves once the worker has no scan running, however the last one ended. Resolves at once
+   * when the worker has not been started, since no scan can be running then.
+   */
+  async waitForScan(): Promise<ResultType<void, WorkerError>> {
+    if (!this.child) {
+      return Result.ok();
+    }
+
+    return this.sendAcknowledgedRequest({
+      type: 'wait-for-scan',
     });
   }
 

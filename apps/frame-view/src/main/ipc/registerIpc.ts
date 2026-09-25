@@ -7,16 +7,23 @@ import type { ZodType } from 'zod';
 import { DiagnosticsSnapshotSchema, type JsonValue, PathInputSchema } from '../../shared/contracts';
 import { serializeIpcResult } from '../../shared/ipc';
 import { InvokeIpcContractList, InvokeIpcContracts } from '../../shared/ipcContracts';
-import type { DiagnosticsSnapshot, IpcErrorPayload, ScanEvent } from '../../shared/types';
+import type {
+  DiagnosticsSnapshot,
+  IpcErrorPayload,
+  ScanEvent,
+  ScanOptions,
+} from '../../shared/types';
 import type { CatalogService } from '../catalog/CatalogService';
+import type { ScanQueue } from '../catalog/ScanQueue';
 import { parseWithSchema, serializeAppResult, ValidationError } from '../errors';
 import { listFolderChildren, resolveFolderPath } from '../services/folderService';
 import {
   authorizeMediaRoot,
-  claimLaunchMediaRoot,
+  claimChosenMediaRoot,
   clearThumbnailCache,
   getThumbnailDiagnostics,
   getThumbnailWorkerCapabilities,
+  grantChosenMediaRoot,
   isAuthorizedMediaPath,
   setThumbnailDebugOptions,
   shrinkAuthorizedMediaRootsTo,
@@ -39,14 +46,17 @@ export type IpcCatalogService = Pick<
 
 export type IpcMediaToolsService = Pick<MediaToolsService, 'getStatus' | 'probeVideo'>;
 
+export type IpcScanQueue = Pick<ScanQueue, 'request'>;
+
 /** Everything the IPC layer reaches outside itself: Electron, the folder tree, media access. */
 export interface IpcRuntime {
   authorizeMediaRoot: typeof authorizeMediaRoot;
-  claimLaunchMediaRoot: typeof claimLaunchMediaRoot;
+  claimChosenMediaRoot: typeof claimChosenMediaRoot;
   clearThumbnailCache: typeof clearThumbnailCache;
   getAppVersion: () => string;
   getThumbnailDiagnostics: typeof getThumbnailDiagnostics;
   getThumbnailWorkerCapabilities: typeof getThumbnailWorkerCapabilities;
+  grantChosenMediaRoot: typeof grantChosenMediaRoot;
   handle: <T>(channel: string, handler: IpcResponseHandler<T>) => void;
   isAuthorizedMediaPath: typeof isAuthorizedMediaPath;
   isPackaged: () => boolean;
@@ -65,11 +75,12 @@ export interface IpcRuntime {
 export function createElectronIpcRuntime(mainWindow: BrowserWindow): IpcRuntime {
   return {
     authorizeMediaRoot,
-    claimLaunchMediaRoot,
+    claimChosenMediaRoot,
     clearThumbnailCache,
     getAppVersion: () => app.getVersion(),
     getThumbnailDiagnostics,
     getThumbnailWorkerCapabilities,
+    grantChosenMediaRoot,
     handle: (channel, handler) => {
       ipcMain.handle(channel, (_event, ...args: JsonValue[]) => handler(...args));
     },
@@ -139,6 +150,7 @@ export function registerIpc(
   settingsService: IpcSettingsService,
   catalogService: IpcCatalogService,
   mediaToolsService: IpcMediaToolsService,
+  scanQueue: IpcScanQueue,
 ): void {
   const channels = InvokeIpcContractList.map((contract) => contract.channel);
 
@@ -165,7 +177,8 @@ export function registerIpc(
       return okResult<string | null>(null);
     }
 
-    await runtime.authorizeMediaRoot(selectedPath);
+    // Claimable until its scan starts, so another request's scan cannot shrink it away first.
+    await runtime.grantChosenMediaRoot(selectedPath);
     const settings = settingsService.getSettings();
 
     if (settings.rememberLastFolder) {
@@ -197,7 +210,7 @@ export function registerIpc(
 
   // The preload is the only caller, with the path `webUtils.getPathForFile` read off a File the
   // user dropped onto the window; the renderer cannot send a bare path here. A drop is a user
-  // choice like the native dialog, so it authorizes the folder the same way.
+  // choice like the native dialog, so it grants the folder the same way.
   runtime.handle(
     InvokeIpcContracts.authorizeDroppedPath.channel,
     async (droppedPath: JsonValue) => {
@@ -217,11 +230,134 @@ export function registerIpc(
         return okResult<string | null>(null);
       }
 
-      await runtime.authorizeMediaRoot(resolvedPath.value);
+      await runtime.grantChosenMediaRoot(resolvedPath.value);
 
       return okResult(resolvedPath.value);
     },
   );
+
+  /**
+   * Authorizes and starts one scan request once the queue lets it run. `isLatest` turns false when
+   * a newer request arrives: from then on this request stays quiet and does not start its scan.
+   */
+  async function startQueuedScan(options: ScanOptions, isLatest: () => boolean) {
+    const superseded = okResult(undefined);
+
+    const sendScanEvent = (event: ScanEvent): void => {
+      if (isLatest() && !runtime.isWindowDestroyed()) {
+        runtime.sendScanEvent(event);
+      }
+    };
+
+    const resolvedRootResult = await runtime.resolveFolderPath(options.rootPath);
+
+    // Every failure reports a scan event, so the renderer's "Scanning" state never waits forever.
+    if (Result.isError(resolvedRootResult)) {
+      sendScanEvent({
+        type: 'error',
+        message: `Unable to open folder: ${resolvedRootResult.error.message}`,
+        path: options.rootPath,
+      });
+
+      return serializeAppResult(Result.err(resolvedRootResult.error));
+    }
+
+    const resolvedRoot = resolvedRootResult.value;
+
+    if (!resolvedRoot) {
+      sendScanEvent({
+        type: 'error',
+        message: 'Invalid folder path',
+        path: options.rootPath,
+      });
+
+      return validationFailure('scan:start', 'Invalid folder path');
+    }
+
+    const settings = settingsService.getSettings();
+    // A folder the user chose (Open dialog, drop, or the OS) stays scannable even if another scan
+    // shrank the roots. It is claimed here, when its request runs, so a chosen folder queued
+    // behind a running scan keeps its grant until its turn.
+    const claimedChosenRoot = await runtime.claimChosenMediaRoot(resolvedRoot);
+    let authorized = claimedChosenRoot || (await runtime.isAuthorizedMediaPath(resolvedRoot));
+
+    // Remembered folders are chosen via the native dialog, then persisted. After a restart the
+    // in-memory allowlist is empty — re-authorize the exact remembered path so auto-scan works.
+    if (
+      !authorized &&
+      settings.rememberLastFolder &&
+      settings.lastFolderPath &&
+      path.resolve(resolvedRoot) === path.resolve(settings.lastFolderPath)
+    ) {
+      await runtime.authorizeMediaRoot(resolvedRoot);
+      authorized = await runtime.isAuthorizedMediaPath(resolvedRoot);
+    }
+
+    if (!authorized) {
+      sendScanEvent({
+        type: 'error',
+        message: 'Folder path is not authorized. Open a folder with the native dialog first.',
+        path: resolvedRoot,
+      });
+
+      return validationFailure(
+        'scan:start',
+        'Folder path is not authorized. Open a folder with the native dialog first.',
+      );
+    }
+
+    // Shrinking the roots would drop the folder the newer request is about to scan.
+    if (!isLatest()) {
+      return superseded;
+    }
+
+    await runtime.shrinkAuthorizedMediaRootsTo(resolvedRoot);
+
+    if (settings.rememberLastFolder) {
+      const updateResult = await settingsService.updateSettings({ lastFolderPath: resolvedRoot });
+
+      if (Result.isError(updateResult)) {
+        sendScanEvent({
+          type: 'error',
+          message: `Scan failed: ${updateResult.error.message}`,
+          path: resolvedRoot,
+        });
+
+        return serializeAppResult(Result.err(updateResult.error));
+      }
+    }
+
+    if (!isLatest()) {
+      return superseded;
+    }
+
+    const excludedRootChildPaths: string[] = [];
+
+    for (const excludedPath of options.excludedRootChildPaths) {
+      const resolvedExcludedPath = path.resolve(excludedPath);
+
+      if (path.dirname(resolvedExcludedPath) === resolvedRoot) {
+        excludedRootChildPaths.push(resolvedExcludedPath);
+      }
+    }
+
+    const startResult = await catalogService.startScan({
+      ...options,
+      rootPath: resolvedRoot,
+      excludedRootChildPaths,
+    });
+
+    if (Result.isError(startResult)) {
+      sendScanEvent({
+        type: 'error',
+        message: `Scan failed: ${startResult.error.message}`,
+      });
+
+      return serializeAppResult(Result.err(startResult.error));
+    }
+
+    return okResult(undefined);
+  }
 
   runtime.handle(InvokeIpcContracts.startScan.channel, async (options: JsonValue) => {
     const validated = validateIpcInput(
@@ -243,94 +379,11 @@ export function registerIpc(
       return error;
     }
 
-    const resolvedRootResult = await runtime.resolveFolderPath(validated.value.rootPath);
-
-    if (Result.isError(resolvedRootResult)) {
-      return serializeAppResult(Result.err(resolvedRootResult.error));
-    }
-
-    const resolvedRoot = resolvedRootResult.value;
-
-    if (!resolvedRoot) {
-      runtime.sendScanEvent({
-        type: 'error',
-        message: 'Invalid folder path',
-        path: validated.value.rootPath,
-      });
-
-      return validationFailure('scan:start', 'Invalid folder path');
-    }
-
-    const settings = settingsService.getSettings();
-    // A folder the OS asked the app to open stays scannable even if another scan shrank the roots.
-    const claimedLaunchRoot = await runtime.claimLaunchMediaRoot(resolvedRoot);
-    let authorized = claimedLaunchRoot || (await runtime.isAuthorizedMediaPath(resolvedRoot));
-
-    // Remembered folders are chosen via the native dialog, then persisted. After a restart the
-    // in-memory allowlist is empty — re-authorize the exact remembered path so auto-scan works.
-    if (
-      !authorized &&
-      settings.rememberLastFolder &&
-      settings.lastFolderPath &&
-      path.resolve(resolvedRoot) === path.resolve(settings.lastFolderPath)
-    ) {
-      await runtime.authorizeMediaRoot(resolvedRoot);
-      authorized = await runtime.isAuthorizedMediaPath(resolvedRoot);
-    }
-
-    if (!authorized) {
-      if (!runtime.isWindowDestroyed()) {
-        runtime.sendScanEvent({
-          type: 'error',
-          message: 'Folder path is not authorized. Open a folder with the native dialog first.',
-          path: resolvedRoot,
-        });
-      }
-
-      return validationFailure(
-        'scan:start',
-        'Folder path is not authorized. Open a folder with the native dialog first.',
-      );
-    }
-
-    await runtime.shrinkAuthorizedMediaRootsTo(resolvedRoot);
-
-    if (settings.rememberLastFolder) {
-      const updateResult = await settingsService.updateSettings({ lastFolderPath: resolvedRoot });
-
-      if (Result.isError(updateResult)) {
-        return serializeAppResult(Result.err(updateResult.error));
-      }
-    }
-
-    const excludedRootChildPaths: string[] = [];
-
-    for (const excludedPath of validated.value.excludedRootChildPaths) {
-      const resolvedExcludedPath = path.resolve(excludedPath);
-
-      if (path.dirname(resolvedExcludedPath) === resolvedRoot) {
-        excludedRootChildPaths.push(resolvedExcludedPath);
-      }
-    }
-
-    const startResult = await catalogService.startScan({
-      ...validated.value,
-      rootPath: resolvedRoot,
-      excludedRootChildPaths,
-    });
-
-    if (Result.isError(startResult)) {
-      if (!runtime.isWindowDestroyed()) {
-        runtime.sendScanEvent({
-          type: 'error',
-          message: `Scan failed: ${startResult.error.message}`,
-        });
-      }
-
-      return serializeAppResult(Result.err(startResult.error));
-    }
-
-    return okResult(undefined);
+    // Scans run one at a time; a request made while one runs cancels it and starts once it ends.
+    return scanQueue.request(
+      (isLatest) => startQueuedScan(validated.value, isLatest),
+      okResult(undefined),
+    );
   });
 
   runtime.handle(InvokeIpcContracts.cancelScan.channel, async () => {

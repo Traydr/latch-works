@@ -19,12 +19,20 @@ let thumbnailService: ThumbnailService | null = null;
 const authorizedMediaRoots = new Set<string>();
 
 /**
- * Folders the OS asked the app to open (launch argv, a second launch, macOS `open-file`) that the
- * renderer has not scanned yet. A scan of another root shrinks `authorizedMediaRoots`, so these
- * stay claimable until their own scan starts; the remembered-folder scan at startup can otherwise
- * drop a launch folder before the renderer gets to it.
+ * Folders the user chose that no scan has claimed yet: picked in the native Open dialog, dropped
+ * onto the window, or handed over by the OS (launch argv, a second launch, macOS `open-file`). A
+ * scan of another root shrinks `authorizedMediaRoots`, and another request's scan can start
+ * between a choice and its own scan request (the remembered-folder scan at startup, or an OS open
+ * right after an Open pick), so these stay claimable until their own scan starts.
  */
-const pendingLaunchMediaRoots = new Set<string>();
+const pendingChosenMediaRoots = new Set<string>();
+
+/**
+ * A choice whose scan never runs (a newer request superseded it) is never claimed. Only the most
+ * recent grants are kept; a real choice waits only for a running scan to be cancelled, so it is
+ * never this far back.
+ */
+const MAX_PENDING_CHOSEN_MEDIA_ROOTS = 4;
 
 async function toCanonicalPath(inputPath: string): Promise<string> {
   const resolved = path.resolve(inputPath);
@@ -307,21 +315,31 @@ export async function authorizeMediaRoot(rootPath: string): Promise<void> {
   authorizedMediaRoots.add(canonicalRoot);
 }
 
-/** Authorizes a folder the OS asked the app to open and keeps it claimable by its scan. */
-export async function grantLaunchMediaRoot(rootPath: string): Promise<void> {
+/** Authorizes a folder the user chose and keeps it claimable by its scan. */
+export async function grantChosenMediaRoot(rootPath: string): Promise<void> {
   const canonicalRoot = await toCanonicalPath(rootPath);
   authorizedMediaRoots.add(canonicalRoot);
-  pendingLaunchMediaRoots.add(canonicalRoot);
+  // Re-adding moves a repeated choice to the newest end.
+  pendingChosenMediaRoots.delete(canonicalRoot);
+  pendingChosenMediaRoots.add(canonicalRoot);
+
+  for (const oldestRoot of pendingChosenMediaRoots) {
+    if (pendingChosenMediaRoots.size <= MAX_PENDING_CHOSEN_MEDIA_ROOTS) {
+      break;
+    }
+
+    pendingChosenMediaRoots.delete(oldestRoot);
+  }
 }
 
 /**
- * Called as a scan of `rootPath` starts: when it is a pending launch folder, re-authorizes it and
+ * Called as a scan of `rootPath` starts: when it is a pending chosen folder, re-authorizes it and
  * clears the grant. Returns whether a grant was claimed.
  */
-export async function claimLaunchMediaRoot(rootPath: string): Promise<boolean> {
+export async function claimChosenMediaRoot(rootPath: string): Promise<boolean> {
   const canonicalRoot = await toCanonicalPath(rootPath);
 
-  if (!pendingLaunchMediaRoots.delete(canonicalRoot)) {
+  if (!pendingChosenMediaRoots.delete(canonicalRoot)) {
     return false;
   }
 

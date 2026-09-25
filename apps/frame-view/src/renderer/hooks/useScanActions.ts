@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 
 import type { AppSettings, FileFilterSettings } from '../../shared/types';
 import { frameViewClient } from '../services/frameViewClient';
+import { useAppStore } from '../store/useAppStore';
 
 interface RunScanOptions {
   excludedRootChildPaths?: string[];
@@ -27,8 +28,13 @@ export function useScanActions({
   recursive: boolean;
   rootPath: string | null;
 }): UseScanActionsResult {
+  const supersedeActiveScan = useAppStore((state) => state.supersedeActiveScan);
+
+  // Resolves once the request has started its scan, after a running scan has been cancelled.
   const runScan = useCallback(
     async (folderPath: string, options?: RunScanOptions): Promise<boolean> => {
+      supersedeActiveScan();
+
       return frameViewClient.startScan({
         rootPath: folderPath,
         recursive: options?.recursive ?? recursive,
@@ -36,7 +42,7 @@ export function useScanActions({
         excludedRootChildPaths: options?.excludedRootChildPaths ?? excludedRootChildPaths,
       });
     },
-    [excludedRootChildPaths, filters, recursive],
+    [excludedRootChildPaths, filters, recursive, supersedeActiveScan],
   );
 
   const openFolderDialogAction = useCallback(async (): Promise<string | null> => {

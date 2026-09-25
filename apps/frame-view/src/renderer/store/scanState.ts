@@ -3,6 +3,27 @@ import { sortMediaItems } from '../utils/sort';
 import { flattenLoadingChunks, sortAndSyncSelection } from './selectionState';
 import type { AppStoreGet, AppStoreSet } from './types';
 
+/**
+ * Called as the renderer asks for a new scan. A scan still running is now stale: the main
+ * process cancels it before the new one starts, so its partial results are dropped here and any
+ * of its events still in flight are ignored. The new scan's `reset` takes over from there.
+ */
+export function createSupersedeActiveScan(set: AppStoreSet) {
+  return (): void => {
+    set((current) =>
+      current.activeScanRunId === null
+        ? {}
+        : {
+            activeScanRunId: null,
+            loadingChunks: [],
+            loadingItemCount: 0,
+            scanMessage: 'Scanning folder...',
+            scanMessagePath: null,
+          },
+    );
+  };
+}
+
 export function createApplyScanEvent(set: AppStoreSet, get: AppStoreGet) {
   return (event: ScanEvent): void => {
     const state = get();

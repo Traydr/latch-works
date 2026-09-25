@@ -26,6 +26,7 @@ export interface AppState {
   closeViewer: () => void;
   shiftViewer: (delta: number, shouldWrap: boolean) => void;
   applyScanEvent: (event: ScanEvent) => void;
+  supersedeActiveScan: () => void;
   applyVideoMetadata: (
     path: string,
     mtimeMs: number,

@@ -67,8 +67,10 @@ export function useSettingsActions({
         const updated = result.value;
         initializeSettings(updated);
 
+        // Not awaited: a scan request waits for a running scan to wind down, and later settings
+        // updates must not queue behind it.
         if (rootPath && patch.filters) {
-          await runScan(rootPath, {
+          void runScan(rootPath, {
             filters: updated.filters,
             recursive,
           });
