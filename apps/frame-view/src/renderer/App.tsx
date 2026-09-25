@@ -225,15 +225,28 @@ function AppInner(): JSX.Element {
     onRefresh: refreshCurrentFolderAction,
     // Per-session only: "Enable recursive mode by default" in Preferences is
     // the one writer of `recursiveDefault`, which seeds the flag on launch.
+    // Recursive off also turns this root's comic mode off (Pane View's rule); on leaves it alone.
     onToggleRecursive: (value: boolean) => {
       setRecursive(value);
 
-      if (rootPath) {
-        void runScan(rootPath, {
-          recursive: value || comicMode,
-          excludedRootChildPaths: rootGalleryPreferences.excludedRootChildPaths,
-        });
+      if (!rootPath) {
+        return;
       }
+
+      if (!value && comicMode) {
+        void updateSettings(
+          createRootGalleryPreferencesPatch(settings, rootPath, {
+            ...rootGalleryPreferences,
+            comicMode: false,
+          }),
+        );
+        setActiveComic(null);
+      }
+
+      void runScan(rootPath, {
+        recursive: value,
+        excludedRootChildPaths: rootGalleryPreferences.excludedRootChildPaths,
+      });
     },
     onToggleComicMode: (value: boolean) => {
       if (!rootPath) {
@@ -247,14 +260,15 @@ function AppInner(): JSX.Element {
 
       void updateSettings(createRootGalleryPreferencesPatch(settings, rootPath, nextPreferences));
 
-      if (value) {
-        setRecursive(true);
-      } else {
+      // Comic on forces recursive on, comic off turns it back off (Pane View's rule).
+      setRecursive(value);
+
+      if (!value) {
         setActiveComic(null);
       }
 
       void runScan(rootPath, {
-        recursive: value || recursive,
+        recursive: value,
         excludedRootChildPaths: nextPreferences.excludedRootChildPaths,
       });
     },
