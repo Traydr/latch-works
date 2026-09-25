@@ -3,26 +3,45 @@ import path from "node:path";
 import { z } from "zod";
 import type { ConfigStore } from "./config.js";
 import { runFullWizard, runPartialPrompts } from "./interactive.js";
-import type { CliOptions, Command, LockstepConfig } from "./types.js";
+import type {
+  CliArgs,
+  CliOptions,
+  Command,
+  LockstepConfig,
+  RememberedSettings,
+  ResolvedRun,
+} from "./types.js";
 
 export function printHelp(): void {
   console.log(`Lockstep
 
 Usage:
   lockstep
-  lockstep plan --source "T:\\cloud-desktop\\media" [--hash] [--remote-snapshot snapshot.json]
-  lockstep plan --source "T:\\cloud-desktop\\media" --show-skipped
+  lockstep plan --source "T:\\cloud-desktop\\media" [--api-url http://localhost:3000] [--hash] [--show-skipped]
+  lockstep plan --source "T:\\cloud-desktop\\media" --remote-snapshot snapshot.json [--hash]
   lockstep verify --source "T:\\cloud-desktop\\media" --remote-snapshot snapshot.json [--hash]
-  lockstep push --source "T:\\cloud-desktop\\media" --api-url http://localhost:3000 [--hash] [--max-changes 25] [--upload-concurrency 3] [--yes]
-  lockstep prune --source "T:\\cloud-desktop\\media" --api-url http://localhost:3000 [--max-changes 25] [--yes]
-  lockstep doctor [--source "T:\\cloud-desktop\\media"]
+  lockstep push --source "T:\\cloud-desktop\\media" --api-url http://localhost:3000 [--max-changes 25] [--upload-concurrency 3] [--yes]
+  lockstep prune --source "T:\\cloud-desktop\\media" --api-url http://localhost:3000 [--hash] [--max-changes 25] [--yes]
+  lockstep doctor [--source "T:\\cloud-desktop\\media"] [--api-url http://localhost:3000]
 
 Notes:
   plan and verify are read-only.
-  push uploads and updates only; it never applies remote deletes.
+  plan compares against the live Pane View snapshot when an API URL (--api-url,
+    LOCKSTEP_API_URL, or the saved config) and a token are available. --remote-snapshot
+    compares against a saved snapshot file instead. With neither, plan warns and compares
+    against an empty remote: every file shows as an upload and no deletes appear.
+  verify always compares against --remote-snapshot and exits 1 on drift.
+  Snapshot files are a JSON array of {path, size, sha256?} entries, or a saved
+    GET /api/sync/snapshot response ({ "entries": [...] }).
+  push uploads and updates only; it never applies remote deletes. It hashes what the
+    comparison needs on its own, so --hash does not change it.
   prune applies planned remote deletes explicitly; confirmation or --yes is required.
-  API tokens are read from LOCKSTEP_API_TOKEN by default.
+  API tokens are read from LOCKSTEP_API_TOKEN, or the variable named by --api-token-env.
   --upload-concurrency bounds parallel uploads (1-8, default 3).
+  Flags apply to the current run only. ~/.latch-works/lockstep.json remembers the source
+    and API URL you last passed or chose; its "defaults" block (hashFiles, showSkipped,
+    maxChanges, uploadConcurrency) is read but never written, so edit it by hand.
+  --no-hash and --no-show-skipped override those defaults for one run.
   Run lockstep with no arguments for interactive mode (TTY required).
 `);
 }
@@ -31,7 +50,7 @@ export type ParseArgvResult =
   | { kind: "help" }
   | { kind: "invalid" }
   | { kind: "empty" }
-  | { kind: "parsed"; options: CliOptions };
+  | { kind: "parsed"; options: CliArgs };
 
 const CommandSchema = z.enum(["doctor", "plan", "prune", "push", "verify"]) satisfies z.ZodType<
   Command,
@@ -54,11 +73,9 @@ export function parseArgv(argv: string[]): ParseArgvResult {
     return { kind: "invalid" };
   }
 
-  const options: CliOptions = {
+  const options: CliArgs = {
     apiTokenEnv: "LOCKSTEP_API_TOKEN",
     command: command.data,
-    hashFiles: false,
-    showSkipped: false,
     yes: false,
   };
 
@@ -72,6 +89,9 @@ export function parseArgv(argv: string[]): ParseArgvResult {
         break;
       case "--hash":
         options.hashFiles = true;
+        break;
+      case "--no-hash":
+        options.hashFiles = false;
         break;
       case "--api-url":
         options.apiUrl = rest[index + 1];
@@ -96,6 +116,9 @@ export function parseArgv(argv: string[]): ParseArgvResult {
         break;
       case "--show-skipped":
         options.showSkipped = true;
+        break;
+      case "--no-show-skipped":
+        options.showSkipped = false;
         break;
       case "--remote-snapshot":
         options.remoteSnapshot = rest[index + 1];
@@ -146,10 +169,15 @@ export interface ResolveOptionsDeps {
   isInteractive?: boolean;
 }
 
+/**
+ * Resolves one run's options: flags first, then env, then the config file. Only the source and
+ * API URL the user passed or chose (and the wizard's command) come back as settings to remember;
+ * run toggles such as `--hash` apply to this run alone.
+ */
 export async function resolveOptions(
   argv: string[],
   deps: ResolveOptionsDeps,
-): Promise<CliOptions | null> {
+): Promise<ResolvedRun | null> {
   const parsed = parseArgv(argv);
   const env = deps.env ?? process.env;
   const isInteractive = deps.isInteractive ?? isInteractiveTerminal();
@@ -175,14 +203,19 @@ export async function resolveOptions(
       return null;
     }
 
-    return runFullWizard(config, env);
+    return withAbsoluteSource(await runFullWizard(config, env));
   }
 
   const merged = mergeWithConfigAndEnv(parsed.options, config, env);
   const missing = getMissingFields(merged, env);
 
+  const remember: RememberedSettings = {
+    apiUrl: parsed.options.apiUrl,
+    source: parsed.options.source,
+  };
+
   if (missing.length === 0) {
-    return merged;
+    return withAbsoluteSource({ options: merged, remember });
   }
 
   if (!isInteractive) {
@@ -197,24 +230,38 @@ export async function resolveOptions(
 
   const resolved = await runPartialPrompts(merged, missing, config, env);
 
-  return resolved;
+  return withAbsoluteSource({
+    options: resolved,
+    remember: {
+      apiUrl: missing.includes("apiUrl") ? resolved.apiUrl : remember.apiUrl,
+      source: missing.includes("source") ? resolved.source : remember.source,
+    },
+  });
 }
 
+/** A remembered relative source would point somewhere else when the next run starts elsewhere. */
+function withAbsoluteSource(run: ResolvedRun): ResolvedRun {
+  const { source } = run.remember;
+
+  return source ? { ...run, remember: { ...run.remember, source: path.resolve(source) } } : run;
+}
+
+/** Flags win over env, env over the config file, and the config file over built-in defaults. */
 export function mergeWithConfigAndEnv(
-  options: CliOptions,
+  args: CliArgs,
   config: LockstepConfig,
   env: NodeJS.ProcessEnv,
 ): CliOptions {
   const defaults = config.defaults ?? {};
 
   return {
-    ...options,
-    source: options.source ?? env.LOCKSTEP_SOURCE ?? config.source,
-    apiUrl: options.apiUrl ?? env.LOCKSTEP_API_URL ?? config.apiUrl,
-    hashFiles: options.hashFiles || defaults.hashFiles === true,
-    showSkipped: options.showSkipped || defaults.showSkipped === true,
-    maxChanges: options.maxChanges ?? defaults.maxChanges,
-    uploadConcurrency: options.uploadConcurrency ?? defaults.uploadConcurrency,
+    ...args,
+    source: args.source ?? env.LOCKSTEP_SOURCE ?? config.source,
+    apiUrl: args.apiUrl ?? env.LOCKSTEP_API_URL ?? config.apiUrl,
+    hashFiles: args.hashFiles ?? defaults.hashFiles ?? false,
+    showSkipped: args.showSkipped ?? defaults.showSkipped ?? false,
+    maxChanges: args.maxChanges ?? defaults.maxChanges,
+    uploadConcurrency: args.uploadConcurrency ?? defaults.uploadConcurrency,
   };
 }
 
