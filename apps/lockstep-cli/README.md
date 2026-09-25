@@ -60,7 +60,23 @@ Lockstep remembers non-secret settings between runs:
 %USERPROFILE%\.latch-works\lockstep.json
 ```
 
-Stored values include the last source directory and API URL. **API tokens are never written to disk** — use environment variables.
+After a run, Lockstep records the source directory (as an absolute path) and API URL you passed
+with `--source`/`--api-url` or picked in a prompt, plus the wizard's last command. Values that
+came from environment variables are not recorded, and the file is left untouched when nothing
+changed. **API tokens are never written to disk** — use environment variables.
+
+Run flags such as `--hash`, `--show-skipped`, `--max-changes`, and `--upload-concurrency` apply to
+that run only. To make one a default, add it to the `defaults` block by hand; Lockstep reads that
+block but never writes it:
+
+```json
+{
+  "source": "T:\\cloud-desktop\\media",
+  "defaults": { "hashFiles": true, "showSkipped": false, "maxChanges": 25, "uploadConcurrency": 3 }
+}
+```
+
+`--no-hash` and `--no-show-skipped` turn a configured default off for one run.
 
 | Variable | Purpose |
 | --- | --- |
@@ -68,7 +84,7 @@ Stored values include the last source directory and API URL. **API tokens are ne
 | `LOCKSTEP_API_URL` | Pane View base URL |
 | `LOCKSTEP_API_TOKEN` | Sync API bearer token (matches `PANE_VIEW_SYNC_TOKEN`) |
 
-CLI flags override config and env. Use `--api-token-env` to read the token from a different variable name.
+CLI flags override env, and env overrides the config file. Use `--api-token-env` to read the token from a different variable name.
 
 ## Useful flags
 

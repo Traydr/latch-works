@@ -2,14 +2,18 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { z } from "zod";
-import type { Command, LockstepConfig, LockstepConfigDefaults } from "./types.js";
+import type { LockstepConfig, LockstepConfigDefaults, RememberedSettings } from "./types.js";
 
 const CONFIG_FILE_NAME = "lockstep.json";
 
 export interface ConfigStore {
   load(): Promise<LockstepConfig>;
   path: string;
-  save(partial: LockstepConfig): Promise<void>;
+  /**
+   * Writes the given settings into the file and keeps every other key as the user left it.
+   * Resolves `false` without touching the file when nothing would change.
+   */
+  remember(settings: RememberedSettings): Promise<boolean>;
 }
 
 export interface CreateConfigStoreOptions {
@@ -33,7 +37,13 @@ const LockstepConfigSchema = z
   })
   .catch(() => ({})) satisfies z.ZodType<LockstepConfig, unknown>;
 
-export function defaultConfigDir(): string {
+/** The file as written, unknown and malformed keys included, so a rewrite never drops them. */
+const RawConfigSchema = z.record(z.string(), z.unknown()).catch(() => ({}));
+
+/** Node's fs rejections carry an `errno` `code`; anything else fails the parse. */
+const FileSystemErrorSchema = z.object({ code: z.string() });
+
+function defaultConfigDir(): string {
   return path.join(os.homedir(), ".latch-works");
 }
 
@@ -43,25 +53,18 @@ export function createConfigStore(options: CreateConfigStoreOptions = {}): Confi
 
   return {
     path: configPath,
-    load: () => loadConfig(configPath),
-    save: (partial) => saveConfig(configDir, configPath, partial),
+    load: () => readConfigFile(configPath, LockstepConfigSchema),
+    remember: (settings) => rememberSettings(configDir, configPath, settings),
   };
 }
 
-/** Parses the contents of `lockstep.json`; anything that is not a config object reads as empty. */
-export function parseConfig(contents: string): LockstepConfig {
-  return LockstepConfigSchema.parse(JSON.parse(contents));
-}
-
-/** Node's fs rejections carry an `errno` `code`; anything else fails the parse. */
-const FileSystemErrorSchema = z.object({ code: z.string() });
-
-async function loadConfig(configPath: string): Promise<LockstepConfig> {
+/** A missing file reads as an empty object; invalid JSON still fails the run. */
+async function readConfigFile<T>(configPath: string, schema: z.ZodType<T, unknown>): Promise<T> {
   try {
-    return parseConfig(await readFile(configPath, "utf-8"));
+    return schema.parse(JSON.parse(await readFile(configPath, "utf-8")));
   } catch (error) {
     if (error instanceof Error && isMissingFileError(error)) {
-      return {};
+      return schema.parse({});
     }
 
     throw error;
@@ -74,44 +77,24 @@ function isMissingFileError(error: Error): boolean {
   return parsed.success && parsed.data.code === "ENOENT";
 }
 
-async function saveConfig(
+async function rememberSettings(
   configDir: string,
   configPath: string,
-  partial: LockstepConfig,
-): Promise<void> {
-  const existing = await loadConfig(configPath);
+  settings: RememberedSettings,
+): Promise<boolean> {
+  const existing = await readConfigFile(configPath, RawConfigSchema);
 
-  const merged: LockstepConfig = {
-    ...existing,
-    ...partial,
-    defaults: {
-      ...existing.defaults,
-      ...partial.defaults,
-    },
-  };
+  const changes = Object.entries(settings).filter(
+    ([key, value]) => value !== undefined && existing[key] !== value,
+  );
 
+  if (changes.length === 0) {
+    return false;
+  }
+
+  const updated = { ...existing, ...Object.fromEntries(changes) };
   await mkdir(configDir, { recursive: true });
-  await writeFile(configPath, `${JSON.stringify(merged, null, 2)}\n`, "utf-8");
-}
+  await writeFile(configPath, `${JSON.stringify(updated, null, 2)}\n`, "utf-8");
 
-export function configFromOptions(options: {
-  apiUrl?: string;
-  command: Command;
-  hashFiles: boolean;
-  maxChanges?: number;
-  showSkipped: boolean;
-  source?: string;
-  uploadConcurrency?: number;
-}): LockstepConfig {
-  return {
-    apiUrl: options.apiUrl,
-    lastCommand: options.command,
-    source: options.source,
-    defaults: {
-      hashFiles: options.hashFiles,
-      maxChanges: options.maxChanges,
-      showSkipped: options.showSkipped,
-      uploadConcurrency: options.uploadConcurrency,
-    },
-  };
+  return true;
 }

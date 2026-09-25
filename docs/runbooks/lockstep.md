@@ -18,8 +18,13 @@ Lockstep remembers non-secret settings between runs in:
 %USERPROFILE%\.latch-works\lockstep.json
 ```
 
-The CLI config file stores values such as your last source directory and API URL. CLI API tokens
-are never written to disk; keep using `LOCKSTEP_API_TOKEN` (or `--api-token-env`).
+The CLI config file stores the last source directory and API URL you passed as a flag or picked in
+a prompt, and the wizard's last command. Environment values are not copied into it, and the file
+is not rewritten when nothing changed. Run flags (`--hash`, `--show-skipped`, `--max-changes`,
+`--upload-concurrency`) apply to one run only; set lasting defaults by hand in the file's
+`defaults` block, and turn a boolean default off for one run with `--no-hash` or
+`--no-show-skipped`. CLI API tokens are never written to disk; keep using `LOCKSTEP_API_TOKEN`
+(or `--api-token-env`).
 
 Optional environment overrides:
 

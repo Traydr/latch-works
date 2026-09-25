@@ -1,21 +1,18 @@
 #!/usr/bin/env node
 import { executeCommand } from "./commands.js";
-import { configFromOptions, createConfigStore } from "./config.js";
+import { createConfigStore } from "./config.js";
 import { resolveOptions } from "./options.js";
 
 async function run(): Promise<void> {
   const configStore = createConfigStore();
-  const options = await resolveOptions(process.argv.slice(2), { configStore });
+  const resolved = await resolveOptions(process.argv.slice(2), { configStore });
 
-  if (!options) {
+  if (!resolved) {
     return;
   }
 
-  await executeCommand(options);
-
-  if (options.command !== "doctor" || options.source) {
-    await configStore.save(configFromOptions(options));
-  }
+  await executeCommand(resolved.options);
+  await configStore.remember(resolved.remember);
 }
 
 run().catch((cause: unknown) => {

@@ -1,12 +1,13 @@
 import { confirm, input, number, select } from "@inquirer/prompts";
 import type { MissingField } from "./options.js";
 import { validateSnapshotFile, validateSourceDirectory } from "./options.js";
-import type { CliOptions, Command, LockstepConfig } from "./types.js";
+import type { CliOptions, Command, LockstepConfig, ResolvedRun } from "./types.js";
 
+/** Wizard answers are the user's picks, so the command, source, and prompted URL are remembered. */
 export async function runFullWizard(
   config: LockstepConfig,
   env: NodeJS.ProcessEnv,
-): Promise<CliOptions> {
+): Promise<ResolvedRun> {
   console.log("Lockstep");
   console.log("Sync your local media archive with Pane View.\n");
 
@@ -53,7 +54,7 @@ export async function runFullWizard(
       }
     }
 
-    return base;
+    return { options: base, remember: { lastCommand: command, source: base.source } };
   }
 
   base.source = await promptSource(base.source);
@@ -81,7 +82,15 @@ export async function runFullWizard(
     await configurePushOptions(base, env);
   }
 
-  return base;
+  return {
+    options: base,
+    remember: {
+      // Only push prompts for the URL; the other commands use the env or saved value unasked.
+      apiUrl: command === "push" ? base.apiUrl : undefined,
+      lastCommand: command,
+      source: base.source,
+    },
+  };
 }
 
 export async function runPartialPrompts(
