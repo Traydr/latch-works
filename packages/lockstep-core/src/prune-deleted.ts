@@ -1,6 +1,7 @@
+import { lstat, stat } from "node:fs/promises";
+import { z } from "zod";
 import { formatPushError, toError } from "./format.js";
-import { planSync } from "./plan-sync.js";
-import { selectChangedItems, selectDeleteItems } from "./push-helpers.js";
+import { resolveLocalFilePath, selectChangedItems, selectDeleteItems } from "./push-helpers.js";
 import {
   AcknowledgementSchema,
   type PruneRemoteApi,
@@ -9,34 +10,59 @@ import {
 } from "./remote-api.js";
 import type { LockstepObserver, LockstepPlan, PruneDeletedOptions } from "./types.js";
 
+/** Why a planned delete was left alone; shown next to the path in progress output. */
+const BACK_IN_SOURCE_REASON = "the file is back in the source folder";
+
 function throwIfAborted(signal?: AbortSignal): void {
   if (signal?.aborted) {
     throw signal.reason ?? new DOMException("Aborted", "AbortError");
   }
 }
 
+/** The fs error codes that mean nothing exists at a path. */
+const MissingPathErrorSchema = z.object({ code: z.enum(["ENOENT", "ENOTDIR"]) });
+
+/**
+ * A planned delete is only safe while the file is still missing locally. Anything at the path
+ * (file, folder, or link) means it came back after the plan; errors other than "missing" throw so
+ * the entry counts as failed rather than deleted.
+ */
+async function isAbsentLocally(sourceRoot: string, archivePath: string): Promise<boolean> {
+  try {
+    await lstat(resolveLocalFilePath(sourceRoot, archivePath));
+
+    return false;
+  } catch (error) {
+    if (MissingPathErrorSchema.safeParse(error).success) {
+      return true;
+    }
+
+    throw error;
+  }
+}
+
+/** An unmounted drive would make every file look absent; refuse to prune against it. */
+async function assertSourceRootAvailable(sourceRoot: string): Promise<void> {
+  const rootStat = await stat(sourceRoot).catch(() => null);
+
+  if (!rootStat?.isDirectory()) {
+    throw new Error(
+      `Source folder is not available: ${sourceRoot}. Prune needs it to confirm each file is still gone.`,
+    );
+  }
+}
+
+/**
+ * Deletes the remote entries the reviewed plan lists as deletes, capped by `maxChanges`. It never
+ * plans again: an entry is skipped when its file is back in the source folder, and nothing outside
+ * the plan is touched.
+ */
 export async function pruneDeleted(
   options: PruneDeletedOptions,
   observer?: LockstepObserver,
   remote: PruneRemoteApi = remoteApi,
-): Promise<{ failed: number; plan: LockstepPlan; pruned: number }> {
-  const { signal } = options;
-  throwIfAborted(signal);
-
-  const plan =
-    options.plan ??
-    (await planSync(
-      {
-        apiToken: options.apiToken,
-        apiUrl: options.apiUrl,
-        hashFiles: options.hashFiles ?? false,
-        remoteSnapshotPath: options.remoteSnapshotPath,
-        signal,
-        sourceRoot: options.sourceRoot,
-      },
-      observer,
-    ));
-
+): Promise<{ failed: number; plan: LockstepPlan; pruned: number; skipped: number }> {
+  const { plan, signal } = options;
   throwIfAborted(signal);
 
   const changedItems = selectChangedItems(plan.items);
@@ -56,8 +82,11 @@ export async function pruneDeleted(
       },
     });
 
-    return { failed: 0, plan, pruned: 0 };
+    return { failed: 0, plan, pruned: 0, skipped: 0 };
   }
+
+  await assertSourceRootAvailable(plan.sourceRoot);
+  throwIfAborted(signal);
 
   if (omittedCount > 0) {
     observer?.onEvent({
@@ -86,6 +115,7 @@ export async function pruneDeleted(
   );
 
   let pruned = 0;
+  let skipped = 0;
   let failed = 0;
   let cancelled = false;
 
@@ -96,6 +126,20 @@ export async function pruneDeleted(
       const current = index + 1;
 
       try {
+        if (!(await isAbsentLocally(plan.sourceRoot, item.path))) {
+          skipped += 1;
+          observer?.onEvent({
+            type: "item-skipped",
+            action: "delete",
+            current,
+            path: item.path,
+            reason: BACK_IN_SOURCE_REASON,
+            total: itemsToPrune.length,
+          });
+
+          continue;
+        }
+
         observer?.onEvent({
           type: "status",
           message: `[${current}/${itemsToPrune.length}] deleting ${item.path}`,
@@ -181,6 +225,7 @@ export async function pruneDeleted(
         failed,
         planCounts: plan.counts,
         pushed: pruned,
+        skipped,
         status: "cancelled",
       },
     });
@@ -191,12 +236,15 @@ export async function pruneDeleted(
     action: "prune" as const,
     completedAt: new Date().toISOString(),
     failed,
+    message:
+      skipped > 0 ? `${skipped} delete(s) skipped because ${BACK_IN_SOURCE_REASON}.` : undefined,
     planCounts: plan.counts,
     pushed: pruned,
+    skipped,
     status: failed > 0 ? ("failed" as const) : ("completed" as const),
   };
 
   observer?.onEvent({ type: "complete", summary });
 
-  return { failed, plan, pruned };
+  return { failed, plan, pruned, skipped };
 }

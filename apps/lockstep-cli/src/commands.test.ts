@@ -99,21 +99,25 @@ describe("executeCommand prune", () => {
     expect(pushChanges).toHaveBeenCalledOnce();
   });
 
-  it("calls pruneDeleted with --yes", async () => {
-    planSync.mockResolvedValue(
-      createPlan({
-        counts: { delete: 1, keep: 0, update: 0, upload: 0 },
-        items: [{ action: "delete", path: "old.jpg" }],
-      }),
-    );
-    pruneDeleted.mockResolvedValue({ failed: 0, plan: createPlan(), pruned: 1 });
+  it("prunes the plan it printed with --yes, without planning again", async () => {
+    const printedPlan = createPlan({
+      counts: { delete: 1, keep: 0, update: 0, upload: 0 },
+      items: [{ action: "delete", path: "old.jpg" }],
+    });
 
-    await executeCommand(createPruneOptions({ yes: true }), {
+    planSync.mockResolvedValue(printedPlan);
+    pruneDeleted.mockResolvedValue({ failed: 0, plan: printedPlan, pruned: 1, skipped: 0 });
+
+    await executeCommand(createPruneOptions({ maxChanges: 5, yes: true }), {
       core,
       isInteractive: () => false,
     });
 
-    expect(pruneDeleted).toHaveBeenCalledOnce();
+    expect(planSync).toHaveBeenCalledOnce();
+    expect(pruneDeleted).toHaveBeenCalledWith(
+      expect.objectContaining({ maxChanges: 5, plan: printedPlan }),
+      expect.anything(),
+    );
     expect(process.exitCode).toBeUndefined();
   });
 
@@ -139,7 +143,7 @@ describe("executeCommand prune", () => {
         items: [{ action: "delete", path: "old.jpg" }],
       }),
     );
-    pruneDeleted.mockResolvedValue({ failed: 0, plan: createPlan(), pruned: 1 });
+    pruneDeleted.mockResolvedValue({ failed: 0, plan: createPlan(), pruned: 1, skipped: 0 });
     const confirmPrune = vi.fn().mockResolvedValue(true);
 
     await executeCommand(createPruneOptions(), {
@@ -148,7 +152,7 @@ describe("executeCommand prune", () => {
       isInteractive: () => true,
     });
 
-    expect(confirmPrune).toHaveBeenCalledOnce();
+    expect(confirmPrune).toHaveBeenCalledExactlyOnceWith(1);
     expect(pruneDeleted).toHaveBeenCalledOnce();
   });
 

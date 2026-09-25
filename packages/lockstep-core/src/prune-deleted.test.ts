@@ -1,4 +1,7 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { z } from "zod";
 import { pruneDeleted } from "./prune-deleted.js";
 import type { PruneRemoteApi, SyncRequestBody } from "./remote-api.js";
@@ -56,7 +59,7 @@ function findFinalizeCall(calls: readonly RecordedPostJson[]): RecordedPostJson 
   return calls.find((call) => call.route.endsWith("/complete"));
 }
 
-function createPlan(items: LockstepPlan["items"]): LockstepPlan {
+function createPlan(items: LockstepPlan["items"], sourceRoot: string): LockstepPlan {
   return {
     counts: {
       delete: items.filter((item) => item.action === "delete").length,
@@ -67,7 +70,7 @@ function createPlan(items: LockstepPlan["items"]): LockstepPlan {
     items,
     skipped: 0,
     skippedEntries: [],
-    sourceRoot: "/tmp/archive",
+    sourceRoot,
     totalBytes: 0,
     totalFiles: items.length,
   };
@@ -86,15 +89,27 @@ function collectEvents() {
   };
 }
 
+async function writeSourceFile(sourceRoot: string, archivePath: string): Promise<void> {
+  const filePath = path.join(sourceRoot, ...archivePath.split("/"));
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(filePath, "local bytes");
+}
+
 describe("pruneDeleted orchestration", () => {
   let fake: RemoteApiFake;
+  let sourceRoot: string;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     fake = createRemoteApiFake();
+    sourceRoot = await mkdtemp(path.join(os.tmpdir(), "lockstep-prune-"));
+  });
+
+  afterEach(async () => {
+    await rm(sourceRoot, { force: true, recursive: true });
   });
 
   it("emits complete without creating a sync run when nothing to prune", async () => {
-    const plan = createPlan([{ action: "keep", path: "photos/existing.jpg" }]);
+    const plan = createPlan([{ action: "keep", path: "photos/existing.jpg" }], sourceRoot);
     const { events, observer } = collectEvents();
 
     const result = await pruneDeleted(
@@ -102,13 +117,12 @@ describe("pruneDeleted orchestration", () => {
         apiToken: "token",
         apiUrl: "http://127.0.0.1:3000",
         plan,
-        sourceRoot: plan.sourceRoot,
       },
       observer,
       fake.remote,
     );
 
-    expect(result).toEqual({ failed: 0, plan, pruned: 0 });
+    expect(result).toEqual({ failed: 0, plan, pruned: 0, skipped: 0 });
     expect(fake.postJsonCalls).toHaveLength(0);
     expect(fake.deleteCalls).toHaveLength(0);
 
@@ -125,7 +139,7 @@ describe("pruneDeleted orchestration", () => {
   });
 
   it("creates a sync run, deletes items, and finalizes as completed", async () => {
-    const plan = createPlan([{ action: "delete", path: "photos/old.jpg" }]);
+    const plan = createPlan([{ action: "delete", path: "photos/old.jpg" }], sourceRoot);
     const { events, observer } = collectEvents();
 
     const result = await pruneDeleted(
@@ -133,13 +147,12 @@ describe("pruneDeleted orchestration", () => {
         apiToken: "token",
         apiUrl: "http://127.0.0.1:3000",
         plan,
-        sourceRoot: plan.sourceRoot,
       },
       observer,
       fake.remote,
     );
 
-    expect(result).toEqual({ failed: 0, plan, pruned: 1 });
+    expect(result).toEqual({ failed: 0, plan, pruned: 1, skipped: 0 });
     expect(fake.postJsonCalls).toHaveLength(2);
     expect(fake.deleteCalls).toMatchObject([
       {
@@ -170,7 +183,7 @@ describe("pruneDeleted orchestration", () => {
         throw new Error("delete failed");
       },
     });
-    const plan = createPlan([{ action: "delete", path: "photos/old.jpg" }]);
+    const plan = createPlan([{ action: "delete", path: "photos/old.jpg" }], sourceRoot);
     const { events, observer } = collectEvents();
 
     const result = await pruneDeleted(
@@ -178,7 +191,6 @@ describe("pruneDeleted orchestration", () => {
         apiToken: "token",
         apiUrl: "http://127.0.0.1:3000",
         plan,
-        sourceRoot: plan.sourceRoot,
       },
       observer,
       fake.remote,
@@ -210,7 +222,7 @@ describe("pruneDeleted orchestration", () => {
         throw signal?.reason ?? new DOMException("Aborted", "AbortError");
       },
     });
-    const plan = createPlan([{ action: "delete", path: "photos/old.jpg" }]);
+    const plan = createPlan([{ action: "delete", path: "photos/old.jpg" }], sourceRoot);
     const { events, observer } = collectEvents();
 
     await expect(
@@ -220,7 +232,6 @@ describe("pruneDeleted orchestration", () => {
           apiUrl: "http://127.0.0.1:3000",
           plan,
           signal: controller.signal,
-          sourceRoot: plan.sourceRoot,
         },
         observer,
         fake.remote,
@@ -242,5 +253,86 @@ describe("pruneDeleted orchestration", () => {
         status: "cancelled",
       },
     });
+  });
+
+  it("deletes exactly the reviewed plan's deletes and skips paths that reappeared locally", async () => {
+    // Files that are not in the plan at all must not matter: prune never plans again.
+    await writeSourceFile(sourceRoot, "photos/new-upload.jpg");
+    await writeSourceFile(sourceRoot, "photos/back-again.jpg");
+
+    const plan = createPlan(
+      [
+        { action: "delete", path: "photos/gone-1.jpg" },
+        { action: "keep", path: "photos/kept.jpg" },
+        { action: "delete", path: "photos/back-again.jpg" },
+        { action: "upload", path: "photos/new-upload.jpg" },
+        { action: "delete", path: "photos/gone-2.jpg" },
+      ],
+      sourceRoot,
+    );
+
+    const { events, observer } = collectEvents();
+
+    const result = await pruneDeleted(
+      { apiToken: "token", apiUrl: "http://127.0.0.1:3000", plan },
+      observer,
+      fake.remote,
+    );
+
+    expect(fake.deleteCalls.map((call) => call.logicalPath)).toEqual([
+      "photos/gone-1.jpg",
+      "photos/gone-2.jpg",
+    ]);
+    expect(result).toEqual({ failed: 0, plan, pruned: 2, skipped: 1 });
+    expect(events.filter((event) => event.type === "item-skipped")).toEqual([
+      {
+        type: "item-skipped",
+        action: "delete",
+        current: 2,
+        path: "photos/back-again.jpg",
+        reason: "the file is back in the source folder",
+        total: 3,
+      },
+    ]);
+    expect(events.find((event) => event.type === "complete")).toMatchObject({
+      summary: { action: "prune", failed: 0, pushed: 2, skipped: 1, status: "completed" },
+    });
+  });
+
+  it("applies only the first max-changes deletes of the reviewed plan", async () => {
+    const plan = createPlan(
+      [
+        { action: "delete", path: "a.jpg" },
+        { action: "delete", path: "b.jpg" },
+        { action: "delete", path: "c.jpg" },
+      ],
+      sourceRoot,
+    );
+
+    const result = await pruneDeleted(
+      { apiToken: "token", apiUrl: "http://127.0.0.1:3000", maxChanges: 2, plan },
+      undefined,
+      fake.remote,
+    );
+
+    expect(fake.deleteCalls.map((call) => call.logicalPath)).toEqual(["a.jpg", "b.jpg"]);
+    expect(result.pruned).toBe(2);
+  });
+
+  it("refuses to prune when the source folder is missing", async () => {
+    const plan = createPlan(
+      [{ action: "delete", path: "a.jpg" }],
+      path.join(sourceRoot, "unmounted-drive"),
+    );
+
+    await expect(
+      pruneDeleted(
+        { apiToken: "token", apiUrl: "http://127.0.0.1:3000", plan },
+        undefined,
+        fake.remote,
+      ),
+    ).rejects.toThrow(/Source folder is not available/);
+    expect(fake.postJsonCalls).toHaveLength(0);
+    expect(fake.deleteCalls).toHaveLength(0);
   });
 });

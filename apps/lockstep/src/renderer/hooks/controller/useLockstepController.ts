@@ -11,7 +11,11 @@ import type {
   LockstepSettings,
 } from "../../../shared/types";
 import { requireLockstepApi } from "../../lib/bridge";
-import { shouldEndRunOnComplete } from "../../lib/run-lifecycle";
+import {
+  describeRemoteEntries,
+  pruneAvailability as getPruneAvailability,
+  shouldEndRunOnComplete,
+} from "../../lib/run-lifecycle";
 import {
   emptyProfileForm,
   initialPipelineProgress,
@@ -46,6 +50,8 @@ export function useLockstepController(): LockstepController {
   const [profileForm, setProfileForm] = useState<ProfileFormState>(emptyProfileForm);
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
   const [plan, setPlan] = useState<LockstepPlan | null>(null);
+  /** The plan whose deletes went to Prune; the main process has already discarded it. */
+  const [prunedPlanId, setPrunedPlanId] = useState<string | null>(null);
   const [doctorResult, setDoctorResult] = useState<DoctorResult | null>(null);
   const [filter, setFilter] = useState("");
   const [running, setRunning] = useState(false);
@@ -153,6 +159,19 @@ export function useLockstepController(): LockstepController {
         }));
       }
 
+      if (event.type === "item-skipped") {
+        const message = `[${event.current}/${event.total}] skipped ${event.path}: ${event.reason}`;
+        setLogs((current) => [...current.slice(-200), message]);
+        setRunProgress((prev) => ({
+          ...prev,
+          phase: "items",
+          itemCurrent: event.current,
+          itemTotal: event.total,
+          currentPath: event.path,
+          currentAction: "skip",
+        }));
+      }
+
       if (event.type === "item-failure") {
         const message = `[${event.current}/${event.total}] failed ${event.path}: ${event.error}`;
         setLogs((current) => [...current.slice(-200), message]);
@@ -230,6 +249,11 @@ export function useLockstepController(): LockstepController {
       (item) => item.action !== "keep" && (!query || item.path.toLowerCase().includes(query)),
     );
   }, [filter, plan]);
+
+  const pruneAvailability = useMemo(
+    () => getPruneAvailability(plan, prunedPlanId),
+    [plan, prunedPlanId],
+  );
 
   const ensureSessionToken = useCallback(
     async (profile: LockstepProfilePublic): Promise<boolean> => {
@@ -565,20 +589,29 @@ export function useLockstepController(): LockstepController {
   }, [activeProfile, ensureSessionToken, beginRun, refreshSettings]);
 
   const handlePrune = useCallback(async () => {
-    if (!activeProfile || !(await ensureSessionToken(activeProfile))) {
+    if (!activeProfile || !plan || !pruneAvailability.enabled) {
+      return;
+    }
+
+    if (!(await ensureSessionToken(activeProfile))) {
       return;
     }
 
     if (
-      !window.confirm("Apply planned remote deletes? This cannot be undone from the desktop app.")
+      !window.confirm(
+        `Delete ${describeRemoteEntries(pruneAvailability.deleteCount)} from ${activeProfile.apiUrl}? These are the deletes in the plan you reviewed; any whose file is back in the source folder is skipped. This cannot be undone from the desktop app.`,
+      )
     ) {
       return;
     }
 
+    const planId = plan.planId;
     beginRun("Applying remote deletes...", "prune");
     setRunProgress((prev) => ({ ...prev, phase: "items", action: "prune" }));
-    const result = await requireLockstepApi().prune({ profileId: activeProfile.id });
+    const result = await requireLockstepApi().prune({ planId, profileId: activeProfile.id });
     setRunning(false);
+    // The main process uses a plan for one Prune only, whatever the outcome.
+    setPrunedPlanId(planId);
 
     if (Result.isError(result)) {
       setError(result.error.message);
@@ -587,7 +620,10 @@ export function useLockstepController(): LockstepController {
       return;
     }
 
-    setRunLabel(`Prune ${result.value.status}: ${result.value.pushed} delete(s).`);
+    const skipped = result.value.skipped ?? 0;
+    const skippedNote = skipped > 0 ? `, ${skipped} skipped (back in the source folder)` : "";
+    const label = `Prune ${result.value.status}: ${result.value.pushed} deleted${skippedNote}.`;
+    setRunLabel(label);
     setRunProgress((prev) => ({
       ...prev,
       phase: result.value.status === "cancelled" ? "cancelled" : "done",
@@ -595,7 +631,7 @@ export function useLockstepController(): LockstepController {
       failed: result.value.failed,
       itemCurrent: result.value.status === "cancelled" ? prev.itemCurrent : prev.itemTotal,
       endedAt: Date.now(),
-      summaryMessage: `Prune ${result.value.status}: ${result.value.pushed} delete(s).`,
+      summaryMessage: label,
     }));
 
     if (result.value.status === "completed") {
@@ -604,7 +640,7 @@ export function useLockstepController(): LockstepController {
 
     activeRunActionRef.current = "";
     await refreshSettings();
-  }, [activeProfile, ensureSessionToken, beginRun, refreshSettings]);
+  }, [activeProfile, plan, pruneAvailability, ensureSessionToken, beginRun, refreshSettings]);
 
   const handleCancel = useCallback(async () => {
     await requireLockstepApi().cancelRun();
@@ -673,6 +709,7 @@ export function useLockstepController(): LockstepController {
       filteredItems,
       pipelineProgress,
       markReviewVisited,
+      pruneAvailability,
     },
     run: {
       running,

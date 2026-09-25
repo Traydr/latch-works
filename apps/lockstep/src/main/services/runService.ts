@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   type LockstepObserver,
   type LockstepPlan,
@@ -10,7 +11,7 @@ import {
 } from "@latch-works/lockstep-core";
 import type { BrowserWindow } from "electron";
 
-import type { DoctorResult, RunRequest } from "../../shared/types";
+import type { DoctorResult, PruneRequest, RunRequest } from "../../shared/types";
 import type { ProfileService } from "./profileService";
 
 /** The lockstep-core entry points a run needs, injectable so tests can drive them. */
@@ -28,9 +29,20 @@ const lockstepCore = {
   pushChanges,
 } satisfies LockstepCore;
 
+/** The last plan made for a profile, kept here so Prune applies what the user reviewed. */
+interface ReviewedPlan {
+  apiUrl: string;
+  plan: LockstepPlan;
+  planId: string;
+  sourceRoot: string;
+}
+
+type RunCredentials = { apiToken: string; apiUrl: string; sourceRoot: string };
+
 export class RunService {
   private abortController: AbortController | null = null;
   private running = false;
+  private readonly reviewedPlans = new Map<string, ReviewedPlan>();
 
   constructor(
     private readonly profileService: ProfileService,
@@ -46,7 +58,7 @@ export class RunService {
     this.abortController?.abort();
   }
 
-  async plan(request: RunRequest): Promise<LockstepPlan> {
+  async plan(request: RunRequest): Promise<LockstepPlan & { planId: string }> {
     return this.runWithCore("plan", request, async (credentials, observer, signal) => {
       const plan = await this.core.planSync(
         {
@@ -69,7 +81,15 @@ export class RunService {
         status: "completed",
       });
 
-      return plan;
+      const planId = randomUUID();
+      this.reviewedPlans.set(request.profileId, {
+        apiUrl: credentials.apiUrl,
+        plan,
+        planId,
+        sourceRoot: credentials.sourceRoot,
+      });
+
+      return { ...plan, planId };
     });
   }
 
@@ -103,15 +123,20 @@ export class RunService {
     });
   }
 
-  async prune(request: RunRequest): Promise<LockstepRunSummary> {
+  /**
+   * Deletes the remote entries listed as deletes in the plan `request.planId` names. That plan is
+   * used once: a second Prune needs a new Plan.
+   */
+  async prune(request: PruneRequest): Promise<LockstepRunSummary> {
     return this.runWithCore("prune", request, async (credentials, observer, signal) => {
+      const reviewed = this.takeReviewedPlan(request, credentials);
+
       const result = await this.core.pruneDeleted(
         {
           apiToken: credentials.apiToken,
           apiUrl: credentials.apiUrl,
-          maxChanges: request.maxChanges,
+          plan: reviewed.plan,
           signal,
-          sourceRoot: credentials.sourceRoot,
         },
         observer,
       );
@@ -123,6 +148,7 @@ export class RunService {
         planCounts: result.plan.counts,
         profileId: request.profileId,
         pushed: result.pruned,
+        skipped: result.skipped,
         status: result.failed > 0 ? "failed" : "completed",
       };
 
@@ -163,11 +189,33 @@ export class RunService {
     return result;
   }
 
+  /**
+   * Hands out the profile's reviewed plan once. It must be the plan the renderer names and still
+   * describe the profile's server and source folder.
+   */
+  private takeReviewedPlan(request: PruneRequest, credentials: RunCredentials): ReviewedPlan {
+    const reviewed = this.reviewedPlans.get(request.profileId);
+
+    if (!reviewed || reviewed.planId !== request.planId) {
+      throw new Error("This plan is no longer current. Run Plan again and review it first.");
+    }
+
+    this.reviewedPlans.delete(request.profileId);
+
+    if (reviewed.apiUrl !== credentials.apiUrl || reviewed.sourceRoot !== credentials.sourceRoot) {
+      throw new Error(
+        "The profile's server or source folder changed since this plan. Run Plan again.",
+      );
+    }
+
+    return reviewed;
+  }
+
   private async runWithCore<T>(
     operation: LockstepRunSummary["action"],
-    request: RunRequest,
+    request: { profileId: string },
     runner: (
-      credentials: { apiToken: string; apiUrl: string; sourceRoot: string },
+      credentials: RunCredentials,
       observer: LockstepObserver,
       signal: AbortSignal,
     ) => Promise<T>,

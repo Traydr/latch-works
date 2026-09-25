@@ -42,11 +42,13 @@ pnpm exec tsx src/cli.ts plan --source /path/to/archive
 | --- | --- |
 | `plan` | Read-only diff summary against Pane View (or a `--remote-snapshot` file) |
 | `push` | Upload and register new/changed originals (never deletes) |
-| `prune` | Remove remote entries that no longer exist locally (requires confirm or `--yes`) |
+| `prune` | Remove the remote entries the printed plan lists as deletes (requires confirm or `--yes`) |
 | `verify` | Compare tree to `--remote-snapshot`; exits non-zero on drift |
 | `doctor` | Environment and connectivity checks |
 
 Push and prune are separate, the same split as **Push** and **Prune** in the desktop app.
+
+`prune` plans once, prints the deletes it will apply (the first `--max-changes` of them when you pass that flag), and after you confirm, deletes exactly those remote entries. It does not plan a second time. A delete whose file is back in the source folder by then is skipped and counted as skipped, and prune stops without deleting anything if the source folder is missing. With `--remote-snapshot`, the deletes come from the plan against that file and are sent to the Pane View API.
 
 `plan`, `push`, and `prune` compare against the live snapshot from Pane View, or against a file passed with `--remote-snapshot` (the file wins when both are available). If `plan` has neither an API URL and token nor a snapshot file, it warns and compares against an empty remote, so every local file shows as an upload.
 
@@ -78,7 +80,7 @@ Running with no arguments in a terminal starts a wizard for **plan / push / veri
 
 ## Safety
 
-- Run prune only when you intend to remove remote entries that no longer exist locally.
+- Run prune only when you intend to remove remote entries that no longer exist locally, and read the printed deletes before you confirm.
 - Prefer `--max-changes` on first pushes to a new remote library.
 - Run `doctor` before the first automated push to a new remote library.
 

@@ -56,7 +56,11 @@ If a run fails mid-batch, fix any errors and push again. Files that already arri
 
 **Push never applies deletes.** Review the plan, push uploads and updates, then use **Prune** (desktop or CLI) when you intend to remove remote entries that no longer exist locally.
 
-Desktop Prune asks for confirmation ("Apply planned remote deletes? This cannot be undone from the desktop app."). It plans again before deleting, so it acts on the current state of your folder, not on an older plan you reviewed.
+Prune deletes exactly the remote entries that the plan you reviewed lists as deletes. It does not plan again, so a remote entry that appeared after your plan stays until you plan and prune again. Before each delete, Prune checks your source folder: if the file is back at that path, Prune skips it and reports it as skipped. If the source folder itself is missing, for example on an unplugged drive, Prune stops without deleting anything.
+
+In the desktop app, the **Prune** stage is available only when the latest plan for the active profile lists at least one delete. Hover over the stage to see why it is unavailable. Prune asks you to confirm how many remote entries it will delete, and the command dock reports how many were deleted, skipped, and failed.
+
+Each plan can be pruned once. After Prune runs, run **Plan** again before pruning more. Editing the profile's server or source folder, or switching profiles, also clears the plan.
 
 Skipping prune leaves remote files in place even when the plan listed them as deletes.
 

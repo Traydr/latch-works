@@ -4,6 +4,7 @@ import type {
   LockstepProfilePublic,
   LockstepSettings,
 } from "../../../shared/types";
+import type { PruneAvailability } from "../../lib/run-lifecycle";
 
 export interface PipelineProgressState {
   reviewed: boolean;
@@ -115,6 +116,8 @@ export interface PlanController {
   filteredItems: Array<{ action: string; path: string }>;
   pipelineProgress: PipelineProgressState;
   markReviewVisited: () => void;
+  /** Whether the Prune stage can apply this plan's deletes. */
+  pruneAvailability: PruneAvailability;
 }
 
 /** Run / command dock: progress, logs, and sync actions. */

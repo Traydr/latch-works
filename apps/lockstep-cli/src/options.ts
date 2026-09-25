@@ -35,7 +35,8 @@ Notes:
     GET /api/sync/snapshot response ({ "entries": [...] }).
   push uploads and updates only; it never applies remote deletes. It hashes what the
     comparison needs on its own, so --hash does not change it.
-  prune applies planned remote deletes explicitly; confirmation or --yes is required.
+  prune plans once, prints the deletes, and after confirmation (or --yes) deletes exactly
+    those remote entries. A delete whose file is back in the source folder is skipped.
   API tokens are read from LOCKSTEP_API_TOKEN, or the variable named by --api-token-env.
   --upload-concurrency bounds parallel uploads (1-8, default 3).
   Flags apply to the current run only. ~/.latch-works/lockstep.json remembers the source

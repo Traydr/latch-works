@@ -79,8 +79,12 @@ fixture PDF is excluded from its expectations.
 `tests/lockstep/sync.spec.ts` packages the Lockstep desktop app (setup project), launches it on
 a fresh userData directory, creates a profile against the e2e Pane View server with the
 `lockstep-source` fixture (two images that are not in the seeded archive), runs Plan (two uploads),
-Push (two pushed, zero failed, both paths in `/api/sync/snapshot`), Plan again (nothing to upload),
-and checks `lockstep-settings.json` never holds the token in the clear. The project depends on
+Push (two pushed, zero failed, both paths in `/api/sync/snapshot`), Plan again (nothing to upload;
+every seeded path is a delete from this source), then Prune: one planned delete's file is copied
+back into the source first, so Prune deletes every other planned path, skips that one, and leaves
+the Prune stage disabled until the next Plan. It also checks `lockstep-settings.json` never holds
+the token in the clear. Prune empties the seeded archive in the e2e database, which is recreated
+the next time the e2e server starts. The project depends on
 `pane-view`, so `pnpm e2e:lockstep` runs the Pane View suite first; `--no-deps` skips that while
 iterating (the server is still started or reused).
 

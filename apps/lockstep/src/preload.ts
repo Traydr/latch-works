@@ -10,6 +10,7 @@ import type {
   LockstepProfileInput,
   LockstepProfilePatch,
   LockstepRunEvent,
+  PruneRequest,
   RunRequest,
 } from "./shared/types";
 
@@ -71,7 +72,7 @@ const api: LockstepApi = {
     ),
   plan: (request: RunRequest) =>
     invokeResult(InvokeIpcContracts.plan.channel, InvokeIpcContracts.plan.responseSchema, request),
-  prune: (request: RunRequest) =>
+  prune: (request: PruneRequest) =>
     invokeResult(
       InvokeIpcContracts.prune.channel,
       InvokeIpcContracts.prune.responseSchema,
