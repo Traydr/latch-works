@@ -33,6 +33,10 @@ The CLI `plan` command does the same comparison from a terminal. See [Lockstep C
 
 Treat **keep** as reassurance; focus on upload and update before pushing.
 
+## Deletes and Prune
+
+The deletes you review here are the ones **Prune** applies. Prune does not plan again: it deletes those remote entries and skips any whose file is back in your source folder. If your folder or the remote library changed since this plan, run **Plan** again before pruning. See [Deletes are separate](/docs/lockstep/push#deletes-are-separate).
+
 ## Hashing note
 
 Desktop **Plan** compares by path and size only. A content change that keeps the same file size shows as **keep** until push.

@@ -20,7 +20,7 @@ import type {
 } from "../hooks/useLockstepController";
 import { profileFieldList } from "../lib/profile-fields";
 import { formatDuration } from "../lib/run-formatters";
-import { isElapsedClockActive } from "../lib/run-lifecycle";
+import { describeRemoteEntries, isElapsedClockActive } from "../lib/run-lifecycle";
 import { ProfileSetupView } from "../views/ProfileSetupView";
 import { AlertBanner } from "./AlertBanner";
 import { DoctorCheckList } from "./DoctorCheckList";
@@ -284,7 +284,7 @@ function CommandDock({
   onShowPlan: () => void;
 }) {
   const { activeProfile, screen, setScreen } = session;
-  const { plan, pipelineProgress } = planCtrl;
+  const { plan, pipelineProgress, pruneAvailability } = planCtrl;
 
   const {
     running,
@@ -303,7 +303,13 @@ function CommandDock({
   const hasPlan = !!plan;
   const activeAction = runProgress.action;
 
-  const states = [
+  const states: Array<{
+    active: boolean;
+    disabled: boolean;
+    done: boolean;
+    onClick: () => void;
+    title?: string;
+  }> = [
     {
       done: hasProfile,
       active: !hasProfile || screen === "profile",
@@ -337,8 +343,11 @@ function CommandDock({
     {
       done: pipelineProgress.pruneCompleted,
       active: running && activeAction === "prune",
-      disabled: running || !hasProfile,
+      disabled: running || !pruneAvailability.enabled,
       onClick: () => void handlePrune(),
+      title: pruneAvailability.enabled
+        ? `Delete the ${describeRemoteEntries(pruneAvailability.deleteCount)} the reviewed plan lists`
+        : pruneAvailability.reason,
     },
   ];
 
@@ -377,6 +386,7 @@ function CommandDock({
               type="button"
               disabled={state.disabled}
               onClick={state.onClick}
+              title={state.title}
               className={`flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1 text-xs transition disabled:opacity-40 ${state.active ? "bg-violet-500/15 text-violet-700 dark:text-violet-200" : state.done ? "text-emerald-600 dark:text-emerald-300" : "text-zinc-500 hover:bg-zinc-200/60 dark:hover:bg-zinc-800/60"}`}
             >
               <span

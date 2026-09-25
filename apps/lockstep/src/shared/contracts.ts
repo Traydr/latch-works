@@ -52,9 +52,15 @@ export const LockstepPlanItemSchema = z.object({
   path: z.string(),
 });
 
+/**
+ * A plan as the main process hands it to the renderer. `planId` names the copy the main process
+ * keeps for its profile; Prune sends the id back and deletes that copy's deletes, so the renderer
+ * never supplies the paths itself.
+ */
 export const LockstepPlanSchema = z.object({
   counts: LockstepPlanCountsSchema,
   items: z.array(LockstepPlanItemSchema),
+  planId: z.string(),
   skipped: z.number(),
   skippedEntries: z.array(
     z.object({
@@ -75,6 +81,7 @@ export const LockstepRunSummarySchema = z.object({
   planCounts: LockstepPlanCountsSchema.optional(),
   profileId: z.string().optional(),
   pushed: z.number(),
+  skipped: z.number().optional(),
   status: z.enum(["cancelled", "completed", "failed"]),
 });
 
@@ -87,6 +94,14 @@ export const LockstepRunEventSchema = z.discriminatedUnion("type", [
     current: z.number(),
     error: z.string(),
     path: z.string(),
+    total: z.number(),
+  }),
+  z.object({
+    type: z.literal("item-skipped"),
+    action: z.string(),
+    current: z.number(),
+    path: z.string(),
+    reason: z.string(),
     total: z.number(),
   }),
   z.object({
@@ -157,5 +172,11 @@ export const DoctorResultSchema = z.object({
 export const RunRequestSchema = z.object({
   hashFiles: z.boolean().optional(),
   maxChanges: z.number().int().positive().optional(),
+  profileId: z.string(),
+});
+
+/** Prune names a plan the main process made; it carries no paths of its own. */
+export const PruneRequestSchema = z.object({
+  planId: z.string().min(1),
   profileId: z.string(),
 });

@@ -4,7 +4,7 @@
 
 Lockstep is the **local → remote bridge** in Latch Works. It walks a source directory, detects media files using shared [`@latch-works/media-index`](../../packages/media-index) logic, compares against a remote snapshot, and uploads changed originals through the Pane View sync API.
 
-`plan` and `verify` are **read-only**. `push` uploads and updates remote files; it never applies deletes. `prune` applies planned remote deletes explicitly and requires confirmation (`--yes` for scripts, or type `prune` at an interactive prompt). `push` always hashes during scan; use `--hash` with `plan` or `verify` for content-accurate comparisons. Capped pushes warn when delete actions are delayed by `--max-changes`, and each run is finalized through `/api/sync/runs/{id}/complete`.
+`plan` and `verify` are **read-only**. `push` uploads and updates remote files; it never applies deletes. `prune` plans once, prints the deletes, and after confirmation (`--yes` for scripts, or type `prune` at an interactive prompt) deletes exactly the remote entries that plan listed; it never plans a second time, and it skips any delete whose file is back in the source folder. `push` always hashes during scan; use `--hash` with `plan` or `verify` for content-accurate comparisons. Capped pushes warn when delete actions are delayed by `--max-changes`, and each run is finalized through `/api/sync/runs/{id}/complete`.
 
 ## Commands
 
@@ -12,7 +12,7 @@ Lockstep is the **local → remote bridge** in Latch Works. It walks a source di
 | --- | --- |
 | `plan` | Scan the source tree and print a sync plan against the live Pane View snapshot, or a `--remote-snapshot` file (no uploads) |
 | `push` | Hash, upload, and register changed files with Pane View |
-| `prune` | Apply planned remote deletes (requires `--yes` or interactive confirmation) |
+| `prune` | Delete the remote entries the printed plan lists as deletes (requires `--yes` or interactive confirmation) |
 | `verify` | Compare local archive against a remote snapshot file; exits `1` on drift |
 | `doctor` | Check Node, config, env vars, and API reachability |
 

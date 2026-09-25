@@ -1,8 +1,13 @@
-import { readFile } from "node:fs/promises";
+import { copyFile, readFile, rm } from "node:fs/promises";
 import path from "node:path";
-import { expect, test } from "@playwright/test";
+import { type APIRequestContext, expect, test } from "@playwright/test";
 import { z } from "zod";
-import { LOCKSTEP_SOURCE_DIR, PANE_VIEW_CREDENTIALS, PANE_VIEW_URL } from "../../src/env.ts";
+import {
+  FIXTURE_ARCHIVE_DIR,
+  LOCKSTEP_SOURCE_DIR,
+  PANE_VIEW_CREDENTIALS,
+  PANE_VIEW_URL,
+} from "../../src/env.ts";
 import { LOCKSTEP_SOURCE_ITEMS } from "../../src/fixture.ts";
 import { type LockstepSession, launchLockstep, readStat, stageButton } from "../../src/lockstep.ts";
 
@@ -23,11 +28,21 @@ test.afterAll(async () => {
 });
 
 /** The header's plan legend renders "<label> <count>" pairs; read one count. */
-async function readPlanCount(label: "upload" | "keep"): Promise<string> {
-  // The plan list below also labels rows "upload"; the legend comes first in the DOM.
+async function readPlanCount(label: "delete" | "keep" | "upload"): Promise<string> {
+  // The plan list below also labels rows "upload" or "delete"; the legend comes first in the DOM.
   const pair = session.window.locator("span", { hasText: new RegExp(`^${label}$`) }).locator("..");
 
   return (await pair.first().innerText()).replace(label, "").trim();
+}
+
+async function readRemotePaths(request: APIRequestContext): Promise<string[]> {
+  const snapshot = await request.get(`${PANE_VIEW_URL}/api/sync/snapshot`, {
+    headers: { Authorization: `Bearer ${PANE_VIEW_CREDENTIALS.syncToken}` },
+  });
+
+  expect(snapshot.ok()).toBe(true);
+
+  return SnapshotResponseSchema.parse(await snapshot.json()).entries.map((entry) => entry.path);
 }
 
 test.describe.configure({ mode: "serial" });
@@ -66,15 +81,7 @@ test("plan reports the source as uploads, push lands them in Pane View", async (
   await expect(stageButton(window, "Push")).toBeEnabled({ timeout: 60_000 });
   expect(await readStat(window, "failed")).toBe("0");
 
-  const snapshot = await request.get(`${PANE_VIEW_URL}/api/sync/snapshot`, {
-    headers: { Authorization: `Bearer ${PANE_VIEW_CREDENTIALS.syncToken}` },
-  });
-
-  expect(snapshot.ok()).toBe(true);
-
-  const remotePaths = SnapshotResponseSchema.parse(await snapshot.json()).entries.map(
-    (entry) => entry.path,
-  );
+  const remotePaths = await readRemotePaths(request);
 
   for (const item of LOCKSTEP_SOURCE_ITEMS) expect(remotePaths).toContain(item.path);
 });
@@ -86,6 +93,48 @@ test("a second plan has nothing to upload", async () => {
     .poll(() => readPlanCount("keep"), { timeout: 60_000 })
     .toBe(String(LOCKSTEP_SOURCE_ITEMS.length));
   expect(await readPlanCount("upload")).toBe("0");
+});
+
+test("prune deletes the reviewed plan's deletes once, skipping a file back in the source", async ({
+  request,
+}) => {
+  const { window } = session;
+  // The previous test's plan is the reviewed one: every seeded path is a delete from this source.
+  const localPaths = LOCKSTEP_SOURCE_ITEMS.map((item) => item.path);
+  const plannedDeletes = (await readRemotePaths(request)).filter((p) => !localPaths.includes(p));
+  expect(await readPlanCount("delete")).toBe(String(plannedDeletes.length));
+
+  // After review, one planned delete's file comes back locally; prune must leave it alone.
+  const returning = "root-image.png";
+  expect(plannedDeletes).toContain(returning);
+  await copyFile(
+    path.join(FIXTURE_ARCHIVE_DIR, returning),
+    path.join(LOCKSTEP_SOURCE_DIR, returning),
+  );
+
+  try {
+    let confirmMessage = "";
+    window.once("dialog", (dialog) => {
+      confirmMessage = dialog.message();
+      void dialog.accept();
+    });
+
+    await stageButton(window, "Prune").click();
+    await expect
+      .poll(() => readStat(window, "pushed"), { timeout: 120_000 })
+      .toBe(String(plannedDeletes.length - 1));
+    await expect(stageButton(window, "Push")).toBeEnabled({ timeout: 60_000 });
+    expect(confirmMessage).toContain(`Delete ${plannedDeletes.length} remote entries`);
+    expect(await readStat(window, "failed")).toBe("0");
+
+    // The plan is spent: a second Prune cannot re-run the same list.
+    await expect(stageButton(window, "Prune")).toBeDisabled();
+    await expect(stageButton(window, "Prune")).toHaveAttribute("title", /Run Plan again/);
+
+    expect((await readRemotePaths(request)).sort()).toEqual([...localPaths, returning].sort());
+  } finally {
+    await rm(path.join(LOCKSTEP_SOURCE_DIR, returning), { force: true });
+  }
 });
 
 test("the sync token never reaches the settings file in the clear", async () => {

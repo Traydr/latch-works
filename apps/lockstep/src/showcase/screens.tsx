@@ -5,6 +5,7 @@ import type {
   RunProgressState,
   Screen,
 } from "../renderer/hooks/useLockstepController";
+import { pruneAvailability } from "../renderer/lib/run-lifecycle";
 import { showcasePlan, showcaseSettings } from "./fixtures";
 
 const pushLogs = [
@@ -98,6 +99,7 @@ function createController(screen: Screen): LockstepController {
         pruneCompleted: false,
       },
       markReviewVisited: noop,
+      pruneAvailability: pruneAvailability(showcasePlan, null),
     },
     run: {
       running,

@@ -37,6 +37,8 @@ export interface LockstepRunSummary {
   planCounts?: LockstepPlanCounts;
   profileId?: string;
   pushed: number;
+  /** Prune only: planned deletes left alone because the file is back in the source folder. */
+  skipped?: number;
   status: "cancelled" | "completed" | "failed";
 }
 
@@ -49,6 +51,14 @@ export type LockstepRunEvent =
       current: number;
       error: string;
       path: string;
+      total: number;
+    }
+  | {
+      type: "item-skipped";
+      action: string;
+      current: number;
+      path: string;
+      reason: string;
       total: number;
     }
   | {
@@ -98,12 +108,15 @@ export interface PushChangesOptions {
 export interface PruneDeletedOptions {
   apiToken: string;
   apiUrl: string;
-  hashFiles?: boolean;
+  /** Applies at most this many of the plan's deletes, in plan order. */
   maxChanges?: number;
-  plan?: LockstepPlan;
-  remoteSnapshotPath?: string;
+  /**
+   * The plan the user reviewed. Prune applies its delete entries and nothing else; it never plans
+   * again. Each delete is re-checked against `plan.sourceRoot` first and skipped when the file is
+   * back in the source folder.
+   */
+  plan: LockstepPlan;
   signal?: AbortSignal;
-  sourceRoot: string;
 }
 
 export interface DoctorOptions {

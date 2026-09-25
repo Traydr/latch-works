@@ -7,6 +7,7 @@ import type {
   RunProgressState,
   Screen,
 } from "../renderer/hooks/useLockstepController";
+import { pruneAvailability } from "../renderer/lib/run-lifecycle";
 import { showcasePlan, showcaseSettings } from "./fixtures";
 
 const noop = () => undefined;
@@ -79,6 +80,10 @@ function createBaseController(
       filteredItems: showcasePlan.items.filter((item) => item.action !== "keep"),
       pipelineProgress,
       markReviewVisited: noop,
+      pruneAvailability: pruneAvailability(
+        showcasePlan,
+        pipelineProgress.pruneCompleted ? showcasePlan.planId : null,
+      ),
       ...overrides.plan,
     },
     run: {

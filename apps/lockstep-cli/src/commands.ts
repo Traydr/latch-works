@@ -34,7 +34,7 @@ export const coreCommands = {
 } satisfies CoreCommands;
 
 export type ExecuteCommandDeps = {
-  confirmPrune?: () => Promise<boolean>;
+  confirmPrune?: (deleteCount: number) => Promise<boolean>;
   core?: CoreCommands;
   isInteractive?: () => boolean;
 };
@@ -198,7 +198,7 @@ export async function executeCommand(
         return;
       }
 
-      const confirmed = await confirmPrune();
+      const confirmed = await confirmPrune(itemsToPrune.length);
 
       if (!confirmed) {
         console.log("");
@@ -209,13 +209,13 @@ export async function executeCommand(
       }
     }
 
+    // Apply the deletes printed above and just confirmed; pruneDeleted never plans again.
     const result = await core.pruneDeleted(
       {
         apiToken: requiredApiToken,
         apiUrl: requiredApiUrl,
         maxChanges: options.maxChanges,
         plan,
-        sourceRoot: options.source,
       },
       observer,
     );
@@ -223,11 +223,16 @@ export async function executeCommand(
     reporter.clear();
     console.log("");
 
+    const skippedNote =
+      result.skipped > 0 ? `, ${result.skipped} skipped (back in the source folder)` : "";
+
     if (result.failed > 0) {
-      console.log(`Prune finished: ${result.pruned} succeeded, ${result.failed} failed.`);
+      console.log(
+        `Prune finished: ${result.pruned} succeeded${skippedNote}, ${result.failed} failed.`,
+      );
       process.exitCode = 1;
     } else {
-      console.log(`Prune finished: ${result.pruned} delete(s) applied.`);
+      console.log(`Prune finished: ${result.pruned} delete(s) applied${skippedNote}.`);
     }
   }
 }
@@ -367,11 +372,11 @@ function printPlanSummary(plan: LockstepPlan, options: CliOptions, remote: Remot
   }
 }
 
-async function defaultConfirmPrune(): Promise<boolean> {
+async function defaultConfirmPrune(deleteCount: number): Promise<boolean> {
   const { input } = await import("@inquirer/prompts");
 
   const answer = await input({
-    message: 'Type "prune" to confirm remote deletes',
+    message: `Type "prune" to delete the ${deleteCount} remote ${deleteCount === 1 ? "entry" : "entries"} listed above`,
     validate: (value) => value === "prune" || 'Type "prune" to confirm.',
   });
 
@@ -419,6 +424,15 @@ function createCliObserver(reporter: LineReporter): LockstepObserver {
         reporter.clear();
         reporter.log(`[${event.current}/${event.total}] ${event.action} ${event.path}`);
         _pushContext = null;
+
+        return;
+      }
+
+      if (event.type === "item-skipped") {
+        reporter.clear();
+        reporter.log(
+          `[${event.current}/${event.total}] Skipped ${event.action} ${event.path}: ${event.reason}`,
+        );
 
         return;
       }

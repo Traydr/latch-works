@@ -8,6 +8,7 @@ import {
   LockstepProfilePublicSchema,
   LockstepRunSummarySchema,
   LockstepSettingsSchema,
+  PruneRequestSchema,
   RunRequestSchema,
 } from "./contracts";
 
@@ -60,9 +61,9 @@ export const InvokeIpcContracts = {
   ),
   prune: defineInvokeContract(
     "lockstep:prune",
-    z.tuple([RunRequestSchema]),
+    z.tuple([PruneRequestSchema]),
     LockstepRunSummarySchema,
-    RunRequestSchema,
+    PruneRequestSchema,
   ),
   push: defineInvokeContract(
     "lockstep:push",

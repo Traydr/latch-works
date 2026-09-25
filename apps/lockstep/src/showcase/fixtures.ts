@@ -30,6 +30,7 @@ export const showcasePlan: LockstepPlan = {
     upload: 12,
   },
   items: showcasePlanItems(),
+  planId: "showcase-plan",
   skipped: 3,
   skippedEntries: [{ path: "sfw/.DS_Store", reason: "not media" }],
   sourceRoot: "/Volumes/Media/archive",

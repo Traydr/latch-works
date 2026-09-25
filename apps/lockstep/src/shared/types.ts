@@ -9,6 +9,7 @@ import type {
   LockstepRunEventSchema,
   LockstepRunSummarySchema,
   LockstepSettingsSchema,
+  PruneRequestSchema,
   RunRequestSchema,
 } from "./contracts";
 import type { deserializeIpcResult } from "./ipc";
@@ -37,6 +38,8 @@ export type DoctorResult = z.infer<typeof DoctorResultSchema>;
 
 export type RunRequest = z.infer<typeof RunRequestSchema>;
 
+export type PruneRequest = z.infer<typeof PruneRequestSchema>;
+
 export type LockstepResult<T> = ReturnType<typeof deserializeIpcResult<T>>;
 
 export interface LockstepApi {
@@ -48,7 +51,7 @@ export interface LockstepApi {
   onRunEvent: (listener: (event: LockstepRunEvent) => void) => () => void;
   pickSourceFolder: () => Promise<LockstepResult<string | null>>;
   plan: (request: RunRequest) => Promise<LockstepResult<LockstepPlan>>;
-  prune: (request: RunRequest) => Promise<LockstepResult<LockstepRunSummary>>;
+  prune: (request: PruneRequest) => Promise<LockstepResult<LockstepRunSummary>>;
   push: (request: RunRequest) => Promise<LockstepResult<LockstepRunSummary>>;
   setActiveProfile: (profileId: string) => Promise<LockstepResult<LockstepSettings>>;
   updateProfile: (

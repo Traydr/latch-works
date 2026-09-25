@@ -189,7 +189,11 @@ not prevent synchronization.
 
 `prune` applies planned remote deletes for paths that exist in the remote snapshot but not locally. It is separate from `push` so destructive sync actions require an explicit operator decision.
 
-When delete items are present, Lockstep prints the paths (respecting `--max-changes` if set) and requires `--yes` or interactive confirmation before applying deletes. Use `prune --yes` only in scripted automation after reviewing a read-only `plan`.
+When delete items are present, Lockstep prints the paths (respecting `--max-changes` if set) and requires `--yes` or interactive confirmation before applying deletes. It then deletes exactly the printed entries from that same plan; it does not plan again, so a remote entry that appeared in the meantime is not touched. Use `prune --yes` only in scripted automation after reviewing a read-only `plan`, and note that `--yes` prunes whatever that run's own plan lists.
+
+Before each delete, prune checks the local path again. If the file is back in the source folder, the delete is skipped and reported as `Skipped delete <path>`; the final line counts deleted, skipped, and failed entries. If the source folder itself is missing (an unmounted drive, for example), prune stops before creating a sync run and deletes nothing.
+
+The desktop app follows the same rule. The main process keeps the last plan for each profile and gives it an id; the **Prune** stage is enabled only when that plan lists at least one delete, its confirmation states how many remote entries will be deleted, and it sends only the plan id back, never paths. A plan can be pruned once: the main process discards it when a prune starts, and a prune is refused if the profile's API URL or source folder changed since the plan.
 
 ```powershell
 $env:LOCKSTEP_API_URL = "http://localhost:3000"
