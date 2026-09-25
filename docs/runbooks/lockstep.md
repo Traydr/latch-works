@@ -93,6 +93,12 @@ Lockstep prints live progress to stderr while it works: indexing paths, hash byt
 pnpm --filter @latch-works/lockstep start plan --source "T:\cloud-desktop\media"
 ```
 
+`plan` fetches the live remote snapshot from Pane View when an API URL (`--api-url`,
+`LOCKSTEP_API_URL`, or the saved config) and a token are available, like the desktop app's Plan.
+`--remote-snapshot` compares against a saved snapshot file instead. With neither, `plan` warns
+and compares against an empty remote, so every local file shows as an upload and no deletes
+appear.
+
 Add `--hash` when the plan needs content hashes. Hashing a 35.9 GB archive will take longer but gives better change detection.
 
 ```powershell
