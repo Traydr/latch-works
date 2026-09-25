@@ -1,4 +1,5 @@
 import { AppLayout } from "../renderer/components/AppLayout";
+import { emptyProfileForm } from "../renderer/hooks/controller/types";
 import type {
   LockstepController,
   RunProgressState,
@@ -75,14 +76,14 @@ function createController(screen: Screen): LockstepController {
       handleProfileChange: noopAsync,
     },
     profile: {
-      profileForm: {
-        apiUrl: "http://localhost:3000",
-        name: "",
-        sourceRoot: "",
-        token: "",
-      },
+      profileForm: emptyProfileForm,
       setProfileForm: noop,
-      handleCreateProfile: noopAsync,
+      editingProfile: null,
+      startCreateProfile: noop,
+      startEditProfile: noop,
+      cancelProfileForm: noop,
+      handleSubmitProfile: noopAsync,
+      handleDeleteProfile: noopAsync,
       handlePickFolder: noopAsync,
     },
     plan: {

@@ -128,12 +128,15 @@ export const LockstepProfileInputSchema = z.object({
   token: z.string().optional(),
 });
 
-export const LockstepProfilePatchSchema = z.object({
-  apiUrl: z.string().min(1).optional(),
-  name: z.string().min(1).optional(),
-  sourceRoot: z.string().min(1).optional(),
-  token: z.string().optional(),
-});
+/**
+ * An edit to a saved profile. Fields share creation's rules; an omitted or empty `token` keeps the
+ * saved one, and `clearToken` forgets it (the two cannot be combined).
+ */
+export const LockstepProfilePatchSchema = LockstepProfileInputSchema.partial()
+  .extend({ clearToken: z.boolean().optional() })
+  .refine((patch) => !(patch.clearToken && patch.token), {
+    message: "Provide a new token or clear the saved one, not both.",
+  });
 
 export const LockstepSettingsSchema = z.object({
   activeProfileId: z.string().nullable(),

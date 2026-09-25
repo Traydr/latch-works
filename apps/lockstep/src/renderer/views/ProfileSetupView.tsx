@@ -1,13 +1,11 @@
 import { FolderOpen } from "lucide-react";
 
-interface ProfileFormState {
-  apiUrl: string;
-  name: string;
-  sourceRoot: string;
-  token: string;
-}
+import type { LockstepProfilePublic } from "../../shared/types";
+import type { ProfileFormState } from "../hooks/useLockstepController";
 
 interface ProfileSetupViewProps {
+  /** The saved profile being edited; omit to create a new profile. */
+  editingProfile?: LockstepProfilePublic | null;
   form: ProfileFormState;
   onCancel: () => void;
   onChange: (patch: Partial<ProfileFormState>) => void;
@@ -15,19 +13,50 @@ interface ProfileSetupViewProps {
   onSubmit: (event: React.FormEvent) => void;
 }
 
+const SAVED_TOKEN_PLACEHOLDER = "Saved with OS encryption when available";
+
+/** How the edited profile currently holds its token, phrased for the hint under the field. */
+function savedTokenHint(profile: LockstepProfilePublic): string | null {
+  if (profile.tokenInSession) {
+    return "The current token is kept in memory until quit because OS encryption is unavailable.";
+  }
+
+  if (profile.tokenUnreadable) {
+    return "The saved token could not be unlocked. Enter it again to replace it.";
+  }
+
+  return null;
+}
+
 export function ProfileSetupView({
+  editingProfile,
   form,
   onCancel,
   onChange,
   onPickFolder,
   onSubmit,
 }: ProfileSetupViewProps) {
+  const hasSavedToken =
+    !!editingProfile && (editingProfile.tokenConfigured || editingProfile.tokenUnreadable);
+
+  const tokenPlaceholder = form.clearToken
+    ? "The saved token will be forgotten"
+    : hasSavedToken
+      ? "Leave blank to keep the saved token"
+      : SAVED_TOKEN_PLACEHOLDER;
+
+  const tokenHint = editingProfile ? savedTokenHint(editingProfile) : null;
+
   return (
     <section className="prism-section">
       <div className="mb-4">
-        <h2 className="text-lg font-semibold tracking-tight">Profile setup</h2>
+        <h2 className="text-lg font-semibold tracking-tight">
+          {editingProfile ? "Edit profile" : "Profile setup"}
+        </h2>
         <p className="text-sm text-zinc-500 dark:text-zinc-400">
-          Named profiles let you switch between local and production targets.
+          {editingProfile
+            ? "Changing the source folder or API URL clears this profile's plan and last run."
+            : "Named profiles let you switch between local and production targets."}
         </p>
       </div>
 
@@ -79,20 +108,35 @@ export function ProfileSetupView({
           </div>
         </div>
 
-        <label className="grid gap-1.5">
-          <span className="prism-label">Sync API token</span>
-          <input
-            className="prism-input"
-            type="password"
-            value={form.token}
-            onChange={(event) => onChange({ token: event.target.value })}
-            placeholder="Saved with OS encryption when available"
-          />
-        </label>
+        <div className="grid gap-1.5">
+          <label className="grid gap-1.5">
+            <span className="prism-label">Sync API token</span>
+            <input
+              className="prism-input disabled:opacity-50"
+              type="password"
+              value={form.token}
+              disabled={form.clearToken}
+              onChange={(event) => onChange({ token: event.target.value })}
+              placeholder={tokenPlaceholder}
+            />
+          </label>
+          {tokenHint ? <p className="text-xs text-zinc-500">{tokenHint}</p> : null}
+          {hasSavedToken ? (
+            <label className="inline-flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300">
+              <input
+                type="checkbox"
+                className="accent-violet-500"
+                checked={form.clearToken}
+                onChange={(event) => onChange({ clearToken: event.target.checked, token: "" })}
+              />
+              Forget the saved token
+            </label>
+          ) : null}
+        </div>
 
         <div className="flex flex-wrap gap-2 pt-1">
           <button className="prism-btn prism-btn-primary px-4 py-2 text-sm" type="submit">
-            Save profile
+            {editingProfile ? "Save changes" : "Save profile"}
           </button>
           <button className="prism-btn px-4 py-2 text-sm" type="button" onClick={onCancel}>
             Cancel

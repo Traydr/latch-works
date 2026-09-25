@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   DoctorResult,
   LockstepPlan,
+  LockstepProfileInput,
+  LockstepProfilePatch,
   LockstepProfilePublic,
   LockstepRunEvent,
   LockstepSettings,
@@ -12,6 +14,7 @@ import { requireLockstepApi } from "../../lib/bridge";
 import { shouldEndRunOnComplete } from "../../lib/run-lifecycle";
 import {
   emptyProfileForm,
+  initialPipelineProgress,
   initialProgress,
   type LockstepController,
   type PipelineProgressState,
@@ -41,6 +44,7 @@ export function useLockstepController(): LockstepController {
   const [screen, setScreenState] = useState<Screen>("dashboard");
   const [settings, setSettings] = useState<LockstepSettings | null>(null);
   const [profileForm, setProfileForm] = useState<ProfileFormState>(emptyProfileForm);
+  const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
   const [plan, setPlan] = useState<LockstepPlan | null>(null);
   const [doctorResult, setDoctorResult] = useState<DoctorResult | null>(null);
   const [filter, setFilter] = useState("");
@@ -51,11 +55,8 @@ export function useLockstepController(): LockstepController {
   const [sessionToken, setSessionToken] = useState("");
   const [runProgress, setRunProgress] = useState<RunProgressState>(initialProgress);
 
-  const [pipelineProgress, setPipelineProgress] = useState<PipelineProgressState>({
-    reviewed: false,
-    pushCompleted: false,
-    pruneCompleted: false,
-  });
+  const [pipelineProgress, setPipelineProgress] =
+    useState<PipelineProgressState>(initialPipelineProgress);
 
   const lastLoggedScanProgressRef = useRef<string | null>(null);
   const activeRunActionRef = useRef("");
@@ -67,6 +68,14 @@ export function useLockstepController(): LockstepController {
 
     return settings.profiles.find((profile) => profile.id === settings.activeProfileId) ?? null;
   }, [settings]);
+
+  const editingProfile = useMemo(() => {
+    if (!editingProfileId) {
+      return null;
+    }
+
+    return settings?.profiles.find((profile) => profile.id === editingProfileId) ?? null;
+  }, [editingProfileId, settings]);
 
   const refreshSettings = useCallback(async () => {
     const result = await requireLockstepApi().getSettings();
@@ -274,11 +283,179 @@ export function useLockstepController(): LockstepController {
     setScreenState(next);
   }, []);
 
-  const handleCreateProfile = useCallback(
+  /** Drops the plan and doctor result, which describe one profile's source folder and server. */
+  const clearPlanState = useCallback(() => {
+    setPlan(null);
+    setDoctorResult(null);
+    setFilter("");
+    setPipelineProgress(initialPipelineProgress);
+  }, []);
+
+  /** Another profile became active: nothing on screen may describe the previous one. */
+  const resetForActiveProfileChange = useCallback(() => {
+    clearPlanState();
+    setSessionToken("");
+
+    if (!running) {
+      setLogs([]);
+      setRunLabel("");
+      setRunProgress(initialProgress);
+    }
+  }, [clearPlanState, running]);
+
+  const closeProfileForm = useCallback(() => {
+    setEditingProfileId(null);
+    setProfileForm(emptyProfileForm);
+    setScreen("dashboard");
+  }, [setScreen]);
+
+  const startCreateProfile = useCallback(() => {
+    // Keep a half-typed new profile across visits, but never carry an edited profile's values over.
+    if (editingProfileId) {
+      setProfileForm(emptyProfileForm);
+    }
+
+    setEditingProfileId(null);
+    setScreen("profile");
+  }, [editingProfileId, setScreen]);
+
+  const startEditProfile = useCallback(
+    (profileId: string) => {
+      const target = settings?.profiles.find((profile) => profile.id === profileId);
+
+      if (!target || running) {
+        return;
+      }
+
+      setError(null);
+      setProfileForm({
+        apiUrl: target.apiUrl,
+        clearToken: false,
+        name: target.name,
+        sourceRoot: target.sourceRoot,
+        token: "",
+      });
+      setEditingProfileId(profileId);
+      setScreen("profile");
+    },
+    [running, settings, setScreen],
+  );
+
+  const cancelProfileForm = useCallback(() => {
+    if (editingProfileId) {
+      closeProfileForm();
+
+      return;
+    }
+
+    setScreen("dashboard");
+  }, [closeProfileForm, editingProfileId, setScreen]);
+
+  const submitEditedProfile = useCallback(
+    async (profileId: string) => {
+      const previous = settings?.profiles.find((profile) => profile.id === profileId);
+      const token = profileForm.token.trim();
+
+      const patch: LockstepProfilePatch = {
+        apiUrl: profileForm.apiUrl,
+        name: profileForm.name,
+        sourceRoot: profileForm.sourceRoot,
+      };
+
+      if (token) {
+        patch.token = token;
+      } else if (profileForm.clearToken) {
+        patch.clearToken = true;
+      }
+
+      const result = await requireLockstepApi().updateProfile(profileId, patch);
+
+      if (Result.isError(result)) {
+        setError(result.error.message);
+
+        return false;
+      }
+
+      if (profileId === settings?.activeProfileId) {
+        const targetMoved =
+          result.value.apiUrl !== previous?.apiUrl ||
+          result.value.sourceRoot !== previous?.sourceRoot;
+
+        if (targetMoved) {
+          clearPlanState();
+        }
+
+        if (patch.token || patch.clearToken) {
+          setSessionToken("");
+        }
+      }
+
+      return true;
+    },
+    [clearPlanState, profileForm, settings],
+  );
+
+  const submitNewProfile = useCallback(async () => {
+    const token = profileForm.token.trim();
+
+    const input: LockstepProfileInput = {
+      apiUrl: profileForm.apiUrl,
+      name: profileForm.name,
+      sourceRoot: profileForm.sourceRoot,
+    };
+
+    if (token) {
+      input.token = token;
+    }
+
+    const result = await requireLockstepApi().createProfile(input);
+
+    if (Result.isError(result)) {
+      setError(result.error.message);
+
+      return false;
+    }
+
+    return true;
+  }, [profileForm]);
+
+  const handleSubmitProfile = useCallback(
     async (event: React.FormEvent) => {
       event.preventDefault();
       setError(null);
-      const result = await requireLockstepApi().createProfile(profileForm);
+
+      const saved = editingProfileId
+        ? await submitEditedProfile(editingProfileId)
+        : await submitNewProfile();
+
+      if (!saved) {
+        return;
+      }
+
+      await refreshSettings();
+      closeProfileForm();
+    },
+    [closeProfileForm, editingProfileId, refreshSettings, submitEditedProfile, submitNewProfile],
+  );
+
+  const handleDeleteProfile = useCallback(
+    async (profileId: string) => {
+      const target = settings?.profiles.find((profile) => profile.id === profileId);
+
+      if (!target || running) {
+        return;
+      }
+
+      if (
+        !window.confirm(
+          `Delete the profile "${target.name}"? Its saved sync token is removed from this computer. Files in the source folder and on Pane View are not touched.`,
+        )
+      ) {
+        return;
+      }
+
+      setError(null);
+      const result = await requireLockstepApi().deleteProfile(profileId);
 
       if (Result.isError(result)) {
         setError(result.error.message);
@@ -286,11 +463,17 @@ export function useLockstepController(): LockstepController {
         return;
       }
 
-      setProfileForm(emptyProfileForm);
-      await refreshSettings();
-      setScreen("dashboard");
+      setSettings(result.value);
+
+      if (profileId === settings?.activeProfileId) {
+        resetForActiveProfileChange();
+      }
+
+      if (profileId === editingProfileId) {
+        closeProfileForm();
+      }
     },
-    [profileForm, refreshSettings, setScreen],
+    [closeProfileForm, editingProfileId, resetForActiveProfileChange, running, settings],
   );
 
   const handleDoctor = useCallback(async () => {
@@ -338,7 +521,7 @@ export function useLockstepController(): LockstepController {
     }
 
     setPlan(result.value);
-    setPipelineProgress({ reviewed: true, pushCompleted: false, pruneCompleted: false });
+    setPipelineProgress({ ...initialPipelineProgress, reviewed: true });
     setRunProgress((prev) => ({ ...prev, phase: "done", endedAt: Date.now() }));
     await refreshSettings();
 
@@ -441,17 +624,24 @@ export function useLockstepController(): LockstepController {
     }
   }, []);
 
-  const handleProfileChange = useCallback(async (profileId: string) => {
-    const result = await requireLockstepApi().setActiveProfile(profileId);
+  const handleProfileChange = useCallback(
+    async (profileId: string) => {
+      const result = await requireLockstepApi().setActiveProfile(profileId);
 
-    if (Result.isError(result)) {
-      setError(result.error.message);
+      if (Result.isError(result)) {
+        setError(result.error.message);
 
-      return;
-    }
+        return;
+      }
 
-    setSettings(result.value);
-  }, []);
+      if (profileId !== settings?.activeProfileId) {
+        resetForActiveProfileChange();
+      }
+
+      setSettings(result.value);
+    },
+    [resetForActiveProfileChange, settings],
+  );
 
   return {
     session: {
@@ -467,7 +657,12 @@ export function useLockstepController(): LockstepController {
     profile: {
       profileForm,
       setProfileForm,
-      handleCreateProfile,
+      editingProfile,
+      startCreateProfile,
+      startEditProfile,
+      cancelProfileForm,
+      handleSubmitProfile,
+      handleDeleteProfile,
       handlePickFolder,
     },
     plan: {

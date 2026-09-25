@@ -37,6 +37,7 @@ const PersistedFileSchema = z.object({
     z.object({
       encryptedToken: z.string().optional(),
       id: z.string(),
+      lastRun: z.object({ action: z.string() }).optional(),
       name: z.string(),
     }),
   ),
@@ -235,5 +236,165 @@ describe("ProfileService", () => {
 
     const parsed = await readPersistedFile();
     expect(parsed.profiles.some((profile) => profile.name === "Local")).toBe(true);
+  });
+
+  describe("editing and deleting profiles", () => {
+    async function createProfile(
+      service: ProfileService,
+      name: string,
+      token: string | undefined = "secret-token",
+    ) {
+      const created = await service.createProfile({
+        apiUrl: "http://127.0.0.1:3000",
+        name,
+        sourceRoot: `/tmp/${name}`,
+        token,
+      });
+
+      if (created.status !== "ok") {
+        throw new Error(`createProfile failed: ${created.error.message}`);
+      }
+
+      return created.value;
+    }
+
+    const lastRun = {
+      action: "plan",
+      completedAt: "2026-09-25T00:00:00.000Z",
+      failed: 0,
+      pushed: 0,
+      status: "completed",
+    } as const;
+
+    it("renames a profile, keeping its token and last run", async () => {
+      const service = await createService();
+      const profile = await createProfile(service, "Local");
+      await service.recordLastRun(profile.id, lastRun);
+
+      const updated = await service.updateProfile(profile.id, { name: "Renamed", token: "" });
+
+      expect(updated.status).toBe("ok");
+      expect(service.getApiToken(profile.id)).toBe("secret-token");
+      expect(service.getSettings().profiles[0]).toMatchObject({
+        name: "Renamed",
+        sourceRoot: "/tmp/Local",
+        tokenConfigured: true,
+      });
+      expect(service.getSettings().profiles[0]?.lastRun?.action).toBe("plan");
+    });
+
+    it("drops the last run once the source folder or API URL moves", async () => {
+      const service = await createService();
+      const first = await createProfile(service, "First");
+      const second = await createProfile(service, "Second");
+      await service.recordLastRun(first.id, lastRun);
+      await service.recordLastRun(second.id, lastRun);
+
+      await service.updateProfile(first.id, { sourceRoot: "/tmp/moved" });
+      await service.updateProfile(second.id, { apiUrl: "https://pane.example.com" });
+
+      const persisted = await readPersistedFile();
+      expect(persisted.profiles.map((profile) => profile.lastRun)).toEqual([undefined, undefined]);
+      expect(service.getSettings().profiles.map((profile) => profile.lastRun)).toEqual([
+        undefined,
+        undefined,
+      ]);
+    });
+
+    it("replaces the saved token with a new one", async () => {
+      const service = await createService();
+      const profile = await createProfile(service, "Local");
+
+      await service.updateProfile(profile.id, { token: "new-token" });
+
+      expect(service.getApiToken(profile.id)).toBe("new-token");
+      const persisted = await readPersistedFile();
+      expect(Buffer.from(persisted.profiles[0]?.encryptedToken ?? "", "base64").toString()).toBe(
+        "new-token",
+      );
+    });
+
+    it("saves a new token securely over one only held in memory", async () => {
+      secretStorage.setEncryptionAvailable(false);
+      const service = await createService();
+      const profile = await createProfile(service, "Local", "session-token");
+      secretStorage.setEncryptionAvailable(true);
+
+      const updated = await service.updateProfile(profile.id, { token: "saved-token" });
+
+      expect(service.getApiToken(profile.id)).toBe("saved-token");
+      expect(updated.status === "ok" && updated.value.tokenInSession).toBe(false);
+    });
+
+    it("forgets the saved token on clearToken", async () => {
+      const service = await createService();
+      const profile = await createProfile(service, "Local");
+
+      const updated = await service.updateProfile(profile.id, { clearToken: true });
+
+      expect(updated.status === "ok" && updated.value.tokenConfigured).toBe(false);
+      expect(service.getApiToken(profile.id)).toBeUndefined();
+      const persisted = await readPersistedFile();
+      expect(persisted.profiles[0]?.encryptedToken).toBeUndefined();
+    });
+
+    it("rejects edits to a profile that does not exist", async () => {
+      const service = await createService();
+
+      const updated = await service.updateProfile("missing", { name: "Ghost" });
+
+      expect(updated.status).toBe("error");
+    });
+
+    it("deletes a profile with its saved token and activates its neighbour", async () => {
+      const service = await createService();
+      const first = await createProfile(service, "First");
+      const second = await createProfile(service, "Second");
+      const third = await createProfile(service, "Third");
+      await service.setActiveProfile(second.id);
+
+      const deleted = await service.deleteProfile(second.id);
+
+      expect(deleted.status === "ok" && deleted.value.activeProfileId).toBe(third.id);
+      const persisted = await readPersistedFile();
+      expect(persisted.profiles.map((profile) => profile.id)).toEqual([first.id, third.id]);
+      expect(persisted.activeProfileId).toBe(third.id);
+
+      await service.deleteProfile(third.id);
+      expect(service.getSettings().activeProfileId).toBe(first.id);
+    });
+
+    it("keeps the active profile when deleting another one", async () => {
+      const service = await createService();
+      const first = await createProfile(service, "First");
+      const second = await createProfile(service, "Second");
+
+      await service.deleteProfile(second.id);
+
+      expect(service.getSettings().activeProfileId).toBe(first.id);
+    });
+
+    it("leaves no active profile once the last one is deleted", async () => {
+      const service = await createService();
+      const profile = await createProfile(service, "Only");
+
+      const deleted = await service.deleteProfile(profile.id);
+
+      expect(deleted.status === "ok" && deleted.value).toEqual({
+        activeProfileId: null,
+        profiles: [],
+      });
+      expect(await readPersistedFile()).toEqual({ activeProfileId: null, profiles: [] });
+    });
+
+    it("rejects deleting a profile that does not exist", async () => {
+      const service = await createService();
+      await createProfile(service, "Local");
+
+      const deleted = await service.deleteProfile("missing");
+
+      expect(deleted.status).toBe("error");
+      expect(service.getSettings().profiles).toHaveLength(1);
+    });
   });
 });
