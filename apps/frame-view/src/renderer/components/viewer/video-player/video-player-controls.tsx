@@ -105,7 +105,7 @@ export function IconButton({
   );
 }
 
-/** The ±10 s button: a circular arrow with the second count inside. */
+/** The ±5 s button: a circular arrow with the second count inside. */
 export function SkipButton({
   direction,
   model,
