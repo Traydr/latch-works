@@ -87,6 +87,15 @@ export class CatalogRuntime {
         this.options.emitResponse({ requestId: request.requestId, ok: true });
 
         return;
+      case 'wait-for-scan':
+        // Answers once no scan is running: done, cancelled, or failed all count.
+        while (this.activeRun) {
+          await this.activeRun.promise;
+        }
+
+        this.options.emitResponse({ requestId: request.requestId, ok: true });
+
+        return;
       case 'get-index-stats': {
         const statsResult = await this.mediaIndexService.getStats();
 
@@ -453,7 +462,10 @@ export class CatalogRuntime {
       this.emitScanEvent({ type: 'cancelled', runId: run.id });
     };
 
+    // Cancelled while its index row was being created: close that row like any other cancel.
     if (!this.isRunActive(run)) {
+      cancelCurrentRun();
+
       return;
     }
 

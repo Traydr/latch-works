@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   authorizeMediaRoot,
+  claimChosenMediaRoot,
+  grantChosenMediaRoot,
   isAuthorizedMediaPath,
   isPathWithinRoot,
   shrinkAuthorizedMediaRootsTo,
@@ -49,4 +51,26 @@ describe('mediaProtocol helpers', () => {
     expect(await isAuthorizedMediaPath(rootB)).toBe(false);
   });
 
+  it('keeps chosen folders claimable across shrinks, and only the most recent few', async () => {
+    const roots = [
+      '/tmp/chosen-1',
+      '/tmp/chosen-2',
+      '/tmp/chosen-3',
+      '/tmp/chosen-4',
+      '/tmp/chosen-5',
+    ];
+
+    for (const root of roots) {
+      await grantChosenMediaRoot(root);
+    }
+
+    await shrinkAuthorizedMediaRootsTo('/tmp/chosen-5');
+    expect(await isAuthorizedMediaPath('/tmp/chosen-2')).toBe(false);
+
+    // The oldest grant was never scanned and has been dropped; the rest can still be claimed once.
+    expect(await claimChosenMediaRoot('/tmp/chosen-1')).toBe(false);
+    expect(await claimChosenMediaRoot('/tmp/chosen-2')).toBe(true);
+    expect(await isAuthorizedMediaPath('/tmp/chosen-2')).toBe(true);
+    expect(await claimChosenMediaRoot('/tmp/chosen-2')).toBe(false);
+  });
 });

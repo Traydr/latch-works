@@ -2,7 +2,7 @@ import { create } from 'zustand';
 
 import { DEFAULT_SETTINGS } from '../../shared/types';
 import { createApplyVideoMetadata } from './metadataState';
-import { createApplyScanEvent } from './scanState';
+import { createApplyScanEvent, createSupersedeActiveScan } from './scanState';
 import { createInitializeSettings } from './settingsState';
 import type { AppState } from './types';
 import { createCloseViewer, createOpenViewerAt, createShiftViewer } from './viewerState';
@@ -30,5 +30,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   closeViewer: createCloseViewer(set),
   shiftViewer: createShiftViewer(set),
   applyScanEvent: createApplyScanEvent(set, get),
+  supersedeActiveScan: createSupersedeActiveScan(set),
   applyVideoMetadata: createApplyVideoMetadata(set),
 }));
