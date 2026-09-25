@@ -9,7 +9,7 @@ navTitle: Core concepts
 
 # Core concepts
 
-These terms appear throughout the handbook. They describe how Latch Works treats your files — not how the software is built.
+These terms appear throughout the handbook. They describe how Latch Works treats your files, not how the software is built.
 
 ## Archive
 
@@ -21,7 +21,7 @@ The archive is **local-first**: you decide what is on disk, when to reorganize f
 
 The local archive is the **source of truth**. Pane View reflects what Lockstep has uploaded and registered. If something is missing remotely, fix or collect it locally first, then plan and push again.
 
-Lockstep does not remove remote media during **Push**. If the plan lists delete entries, use **Apply deletes** separately after review.
+Lockstep does not remove remote media during **Push**. If the plan lists delete entries, run **Prune** separately after review.
 
 ## Sync
 
@@ -30,28 +30,28 @@ Lockstep does not remove remote media during **Push**. If the plan lists delete 
 1. Lockstep scans your source folder and builds a **plan** (read-only).
 2. You review upload, update, keep, and delete counts.
 3. You run **Push** for new and changed originals.
-4. You run **Apply deletes** (desktop) or `prune` (CLI) only when you intend to remove remote entries listed in the plan.
+4. You run **Prune** only when you intend to remove remote entries that no longer exist locally.
 
 There is no background auto-sync. That keeps uploads predictable and private.
 
-Desktop plan is size/path oriented by default; push re-plans with content hashing. Optional CLI **verify** compares against a snapshot file for drift checks.
+Desktop plan compares path and size; push re-plans with content hashing. Optional CLI **verify** compares against a snapshot file for drift checks.
 
 ## Originals
 
-An **original** is the full-resolution file in your archive — the image, video, or PDF on disk. Lockstep uploads originals when the plan says they are new or changed.
+An **original** is the full-resolution file in your archive: the image, video, or PDF on disk. Lockstep uploads originals when the plan says they are new or changed.
 
-Pane View may also show **thumbnails** and **previews**: smaller derived versions for fast grid browsing and viewer loading. They are generated from originals after sync, not substitutes for them.
+Pane View also shows **thumbnails** and **previews**: smaller derived images for fast grid browsing and viewer loading. They are made from originals the first time you view them and never replace them.
 
 ## Thumbnails and previews
 
 | Term | Role |
 | --- | --- |
 | Thumbnail | Small grid image for scanning folders quickly |
-| Preview | Larger intermediate image or clip for the viewer |
+| Preview | Larger still image for the viewer (videos and PDFs use a still frame or page; the viewer plays or opens the original) |
 
-In Pane View, thumbnails and previews are delivered through **signed links** that expire. They are not permanent public URLs.
+In Pane View, thumbnails, previews, and originals are delivered through **signed links** that expire. They are not permanent public URLs.
 
-Frame View generates its own local thumbnail cache while scanning folders on disk.
+Frame View builds its own local thumbnail cache as tiles scroll into view.
 
 ## Local vs remote
 
@@ -59,8 +59,8 @@ Frame View generates its own local thumbnail cache while scanning folders on dis
 | --- | --- | --- |
 | Requires sign-in | No | Yes |
 | Shows unsynced files | Yes | No |
-| Writes to archive | No (read-only browsing) | No (read-only browsing) |
-| Best for | Verification and organization | Access away from your desk |
+| Changes files on disk | No | No |
+| Best for | Checking new downloads | Access away from your desk |
 
 ## Related docs
 

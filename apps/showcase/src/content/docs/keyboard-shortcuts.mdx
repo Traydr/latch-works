@@ -11,15 +11,15 @@ navTitle: Shortcuts
 
 Shortcuts are plain key presses unless noted. They are disabled while typing in text fields.
 
-## Frame View — app menu
+## Frame View: app menu
 
 | Keys | Action |
 | --- | --- |
 | Cmd/Ctrl+O | Open folder |
-| F5 / Cmd+R | Refresh / rescan |
+| Cmd+R (macOS) / F5 (Windows, Linux) | Refresh / rescan |
 | Cmd/Ctrl+, | Open settings |
 
-## Frame View — gallery
+## Frame View: gallery
 
 | Keys | Action |
 | --- | --- |
@@ -29,7 +29,7 @@ Shortcuts are plain key presses unless noted. They are disabled while typing in 
 | Shift+S | Open selected / first folder |
 | Shift+A / Shift+D | Previous / next sibling folder |
 
-## Frame View — viewer
+## Frame View: viewer
 
 | Keys | Action |
 | --- | --- |
@@ -37,10 +37,11 @@ Shortcuts are plain key presses unless noted. They are disabled while typing in 
 | E / Arrow Right | Next item |
 | Escape | Close viewer |
 | Space / 2 | Play or pause video |
-| 1 / 3 | Seek backward / forward (~5s) |
+| 1 / 3 | Seek backward / forward 5s |
 | Hold 4 | Temporary playback speed boost (2×) |
+| M | Mute or unmute video |
 
-## Frame View — comic reader
+## Frame View: comic reader
 
 | Keys | Action |
 | --- | --- |
@@ -48,7 +49,7 @@ Shortcuts are plain key presses unless noted. They are disabled while typing in 
 | E / Arrow Right | Jump to next page |
 | Escape | Close reader |
 
-## Pane View — gallery and viewer
+## Pane View: gallery and viewer
 
 Pane View mirrors Frame View navigation for grid and viewer actions:
 
@@ -59,12 +60,13 @@ Pane View mirrors Frame View navigation for grid and viewer actions:
 | Shift+W | Go to parent folder |
 | Shift+S | Open focused folder |
 | Shift+A / Shift+D | Previous / next sibling folder |
-| Q / E | Previous / next media or comic page |
+| Q / E or Arrow Left / Right | Previous / next media (page in the comic reader) |
 | Space / 2 | Play or pause video |
-| 1 / 3 | Seek backward / forward |
-| Hold 4 | Temporary speed boost |
+| 1 / 3 | Seek backward / forward 5s |
+| Hold 4 | Temporary speed boost (2×) |
 | Escape | Close viewer or overlay |
-| ? | Show shortcuts overlay |
+| ? | Show shortcuts overlay (gallery only) |
+| Cmd/Ctrl+B | Show or hide the sidebar |
 
 ## Gather Box
 
@@ -72,12 +74,15 @@ Pane View mirrors Frame View navigation for grid and viewer actions:
 | --- | --- |
 | Cmd/Ctrl+Shift+. (Period) | Toggle side panel |
 | Cmd/Ctrl+Shift+, (Comma) | Download from active tab |
+| Right Shift+`]` | Toggle side panel (on supported pages) |
+| Right Shift+`[` | Download from the page (on supported pages) |
+| Enter (in the side panel) | Start download |
 
-Change shortcuts under `chrome://extensions/shortcuts`. Page shortcuts (Right Shift+`]` / `[`) can be enabled in Gather Box Settings.
+Change the Cmd/Ctrl shortcuts under `chrome://extensions/shortcuts`. The Right Shift page shortcuts are on by default and can be turned off in Gather Box Settings.
 
 ## Lockstep
 
-Lockstep desktop is primarily mouse-driven: **Plan**, **Push**, **Apply deletes**, and **Test connection** are dock actions. The optional CLI uses named subcommands — see [Lockstep CLI](/docs/lockstep/cli).
+Lockstep desktop has no keyboard shortcuts: **Plan**, **Push**, **Prune**, and **Doctor** are buttons in the command dock. The optional CLI uses named subcommands. See [Lockstep CLI](/docs/lockstep/cli).
 
 ## Related docs
 

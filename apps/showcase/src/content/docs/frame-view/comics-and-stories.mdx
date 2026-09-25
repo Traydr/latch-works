@@ -1,6 +1,6 @@
 ---
 title: Comics and stories
-description: Comic mode for image folders, and planned PDF reading.
+description: Comic mode for image folders, and PDF stories.
 section: Frame View
 sectionOrder: 3
 order: 4
@@ -9,17 +9,19 @@ navTitle: Comics & stories
 
 # Comics and stories
 
-Frame View treats image comics as a first-class reading mode when you enable **Comic** in the toolbar. PDF reading is planned, not shipped.
+Frame View treats image comics as a first-class reading mode when you enable **Comic** in the toolbar. It does not open PDF stories yet.
 
 ## Comics (image folders)
 
 1. Toggle **Comic** in the gallery toolbar.
 2. Frame View groups non-root folders that contain images into comic entries (no special “numbered sequence” detection required).
-3. Comic mode forces recursive scanning and hides loose media tiles.
-4. Open a comic to enter the reader — pages are stacked in a vertical scroll.
+3. Comic mode forces recursive scanning and hides loose media tiles. Turning Comic off also turns Recursive off, and turning Recursive off leaves Comic mode.
+4. Open a comic to enter the reader. Pages, including GIFs, are stacked in a vertical scroll with a page counter.
 5. Jump between pages with **Q** / **E** (or arrows). Escape returns to the gallery.
 
-Page order uses numeric-aware sorting, so `2` sorts before `10`. Zero-padded names (`001`, `002`, …) are still fine when you want predictable filenames.
+The reader also has **Scroll to top** and **Reveal in folder**. Comic mode is remembered per root folder.
+
+Page order uses numeric-aware sorting, so `2` sorts before `10`. Zero-padded names (`001`, `002`, and so on) are still fine when you want predictable filenames.
 
 ## PDF stories
 
@@ -27,7 +29,7 @@ Frame View does not currently index or open PDFs. Use Pane View for PDF reading 
 
 ## Pane View parity
 
-Pane View supports comics and PDFs for synced content. Frame View’s comic reader is a vertical page stack; Pane View’s comic reader is closer to page-turn navigation. Hotkeys (Q/E, Escape) stay similar.
+Pane View supports comics and PDFs for synced content. Both comic readers stack pages vertically, and Q/E and Escape behave the same.
 
 ## Related docs
 

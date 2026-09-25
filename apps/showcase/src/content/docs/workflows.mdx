@@ -14,17 +14,17 @@ These routines assume you already installed the apps. Adjust folder names and sc
 ## First archive setup
 
 1. Create an empty archive root on disk.
-2. Install Gather Box and pick that root (or a subfolder) as the destination per site — or enable one global folder in Settings.
+2. Install Gather Box and pick that root (or a subfolder) as the destination per site, or enable one global folder in Settings.
 3. Collect one small gallery and one story PDF as test content.
-4. Open Frame View on the archive root and confirm image/video content appears. Frame View PDF reading is planned, not shipped.
+4. Open Frame View on the archive root and confirm the images and videos appear. Frame View does not show PDFs.
 5. Create a Lockstep profile with source folder, Pane View API URL, and sync token.
-6. Click **Test connection**, then **Plan**, then **Push** for the test content.
-7. Sign in to Pane View and browse the same paths.
+6. Click **Doctor**, then **Plan**, then **Push** for the test content.
+7. Sign in to Pane View and browse the same paths, including the story PDF.
 
 ## Regular collection day
 
 1. Browse supported sites and collect new posts with Gather Box.
-2. Open Frame View and spot-check new folders — order, naming, missing pages.
+2. Open Frame View and spot-check new folders for order, naming, and missing pages.
 3. Optionally reorganize folders in your file manager before syncing.
 4. Run Lockstep **Plan** and note upload/update counts.
 5. **Push** when satisfied.
@@ -36,7 +36,7 @@ Use this when you want confidence without uploading:
 
 1. Open Lockstep and select your profile.
 2. Run **Plan** only.
-3. Scan upload vs update vs keep counts and the item list if shown.
+3. Scan upload vs update vs keep counts and the item list on the **Plan** tab.
 4. If counts look wrong, fix folders locally and plan again.
 
 Plan never writes to your remote library.
@@ -53,8 +53,8 @@ If media is missing, check locally in Frame View first, then plan and push.
 ## After reorganizing folders
 
 1. Browse locally to confirm the new layout.
-2. Run **Plan** — moves may appear as deletes plus uploads depending on paths.
-3. Read counts carefully — use **Push** for new/changed files and **Apply deletes** only if you intend to remove remote entries.
+2. Run **Plan**. Moved files appear as deletes at the old path plus uploads at the new one.
+3. Read counts carefully. Use **Push** for new and changed files, and **Prune** only if you intend to remove the old remote entries.
 4. Optionally run CLI **verify** afterward if you maintain a snapshot file for drift checks.
 
 ## Related docs

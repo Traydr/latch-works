@@ -1,6 +1,6 @@
 ---
 title: Search and filters
-description: Query the synced archive, sort modes, and jump to matches.
+description: Query the synced archive, sort modes, and grid filters.
 section: Pane View
 sectionOrder: 5
 order: 4
@@ -9,25 +9,30 @@ navTitle: Search & filters
 
 # Search and filters
 
-Pane View search runs against indexed media in your synced library — not against unsynced local files.
+Pane View search runs against indexed media in your synced library, not against unsynced local files.
 
 ## Search
 
-Open search from the toolbar (on mobile, use the search sheet). Type part of a filename or path. Results update as you query.
+Type part of a filename or path into the search box in the header (on phones, tap the search icon to open the search sheet) and press Enter. Matching is case-insensitive; folders match by name.
 
 Search is **library-wide**: it is not limited to the current folder or recursive mode. Recursive mode only affects normal browsing, not search scope.
 
-Select a result to jump directly to that item.
+Results appear as a normal grid of matching folders and media. Select or open them like any other grid item.
 
 ## Sort modes
 
-Change sort order from the gallery toolbar:
+Change sort order from the floating toolbar:
 
-- Name A–Z / Name Z–A
-- Date newest / Date oldest
-- Random shuffle for rediscovery
+- A-Z / Z-A by name
+- Newest / Oldest by file modification time
+- Random, with a **Shuffle** button to reshuffle
 
 Sort affects display order only.
+
+## Filters
+
+- **Show images** and **Show videos** in Settings control which media types the grid shows.
+- **Exclude** in the floating toolbar leaves chosen subfolders out of recursive and comic views.
 
 ## Empty results
 
@@ -35,7 +40,7 @@ If search returns nothing:
 
 - Confirm Lockstep pushed the files you expect
 - Check for typos in path segments (underscores vs spaces)
-- Plan again — the index updates after a successful push
+- Push again. Each file is searchable as soon as its upload completes.
 
 ## Related docs
 

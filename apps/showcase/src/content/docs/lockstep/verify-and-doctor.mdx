@@ -1,25 +1,25 @@
 ---
-title: Verify and connection checks
-description: Desktop Test connection, CLI doctor, and CLI verify for drift.
+title: Verify and Doctor
+description: Doctor connection checks on desktop and CLI, and CLI verify for drift.
 section: Lockstep
 sectionOrder: 4
 order: 5
-navTitle: Verify & doctor
+navTitle: Verify & Doctor
 ---
 
-# Verify and connection checks
+# Verify and Doctor
 
 Use these read-only checks to catch misconfiguration before a long push and to detect drift afterward.
 
-## Test connection (desktop) / doctor (CLI)
+## Doctor (desktop and CLI)
 
-On desktop, click **Test connection**. On the CLI, run `doctor`. Both validate the active profile environment:
+On desktop, click **Doctor** in the command dock. On the CLI, run `doctor`. Both check the active profile environment:
 
 - Source folder exists and is readable (when set)
 - Pane View API URL and sync token are present
 - Pane View responds when URL and token are both set (snapshot fetch)
 
-Run this after creating a profile, rotating tokens, or changing URLs. Fix every failed check before planning a large push.
+Run this after creating a profile or changing tokens. Fix every failed check before planning a large push.
 
 Typical failures:
 
@@ -33,22 +33,24 @@ Typical failures:
 
 **Verify** is available on the [Lockstep CLI](/docs/lockstep/cli), not in the desktop app.
 
-It compares your local archive to a **snapshot file** you provide with `--remote-snapshot` (a JSON array of remote entries, or the same shape as `GET /api/sync/snapshot`). Without `--hash`, drift is mostly path/size oriented; with `--hash`, content hashes are compared too.
+It compares your local archive to a **snapshot file** you provide with `--remote-snapshot`. The file is either a JSON array of `{ "path", "size", "sha256" }` entries (`sha256` is optional) or a saved response from Pane View's `GET /api/sync/snapshot` (authorized with the sync token), which wraps that array in `entries`. Without `--hash`, drift is path and size based; with `--hash`, content hashes are compared too.
+
+Verify exits with a non-zero status when any path differs, so scripts can react to drift.
 
 Use verify when:
 
 - You want automated assurance after manual file edits
-- A push was interrupted and you need a binary yes/no drift answer
+- A push was interrupted and you need a yes/no drift answer
 - You script checks alongside backup routines
 
-Verify does not fix drift — it only reports. Plan and push (or restore from backup) to reconcile. There is no “export snapshot” button in Lockstep; obtain snapshot JSON from Pane View’s sync API or a saved file from a previous run.
+Verify does not fix drift, it only reports. Plan and push (or restore from backup) to reconcile. There is no “export snapshot” button in Lockstep; obtain snapshot JSON from Pane View’s sync API or a saved file from a previous run.
 
 ## Suggested order
 
-1. **Test connection** / `doctor` — environment healthy?
-2. **Plan** — expected diff?
-3. **Push** — apply uploads/updates
-4. Optional CLI **verify** — still aligned with snapshot?
+1. **Doctor**: environment healthy?
+2. **Plan**: expected diff?
+3. **Push**: apply uploads and updates
+4. Optional CLI **verify**: still aligned with snapshot?
 
 ## Related docs
 

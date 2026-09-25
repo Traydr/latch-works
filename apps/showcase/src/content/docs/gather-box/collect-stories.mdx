@@ -9,7 +9,7 @@ navTitle: Collect stories
 
 # Collect stories as PDF
 
-Story collectors produce a **single PDF** per work — suitable for reading in Pane View after sync. Frame View PDF reading is planned, not shipped.
+Story collectors produce a **single PDF** per work, ready for reading in Pane View after sync. Frame View does not open PDFs yet.
 
 ## Supported story sources
 
@@ -25,28 +25,28 @@ See [Supported sources](/docs/supported-sources) for the full site list (media v
 1. Open the work or story URL while signed in if the site requires it.
 2. Open the Gather Box side panel and choose a destination folder (often your archive root or a stories subfolder).
 3. Start the download and wait for completion.
-4. Confirm the output file appears in the results log under **More**.
+4. Confirm the output file appears in the **Run log**.
 
 ## Output naming
 
-Story PDFs typically use `Author-Story.pdf` with spaces replaced by underscores. They save **directly into the chosen root** — Gather Box does not create a nested site folder for stories.
+Story PDFs typically use `Author-Story.pdf` with spaces replaced by underscores. They save **directly into the chosen root**. Gather Box does not create a nested site folder for stories.
 
 ## Credentials and login
 
-Story sites often need your browser session. Gather Box credential modes in Settings:
+Story sites often need your browser session. The **Cookie policy** in Settings has four modes:
 
-- **Auto** (default) — include cookies for sites that need them by default
-- **Always** — include cookies for every download
-- **Never** — never send cookies
-- **Per site** — override per collector
+- **Auto (site defaults)**: the default. Includes cookies only for sites that need them.
+- **Always include cookies**: every download sends cookies.
+- **Never include cookies**: no download sends cookies.
+- **Per-site overrides**: choose per site.
 
-Defaults with cookies on include pixiv and AO3. FanFiction.Net defaults off.
+Under Auto, pixiv and AO3 include cookies. FanFiction.Net, X, and Reddit do not.
 
 If a download returns login HTML instead of content, sign in on the site and retry.
 
 ## After download
 
-Open the PDF in Pane View after sync to verify formatting. Large FanFiction.Net works may take longer to merge — wait for the side panel to report completion before closing the tab.
+Open the PDF in Pane View after sync to verify formatting. Large FanFiction.Net works may take longer to merge. Wait for the side panel to report completion before closing the tab.
 
 ## Related docs
 

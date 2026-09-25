@@ -17,47 +17,51 @@ navTitle: Push
 
 1. Run **Plan** and read upload/update/delete counts.
 2. Confirm you are on the intended active profile.
-3. Ensure stable network — large originals take time.
+3. Ensure stable network, because large originals take time.
 
-Push requires a valid sync token. Enter a session token on desktop if the profile has none saved.
+Push does not require a prior plan; it always plans again itself. Reviewing a plan first is still the safe habit.
 
 ## During push
 
-Lockstep streams progress in the run view:
+The command dock shows live progress:
 
-- Files completed vs remaining
+- Files completed vs total, with elapsed time
 - Current path being uploaded
-- Errors per file without necessarily stopping the whole run
+- Pushed and failed counts, without necessarily stopping the whole run
 
-You can stop a run from the UI when you realize the plan was wrong. Already-uploaded files remain registered; plan again to see what is left.
+The **Log** tab keeps the run's log lines (the most recent 200 or so, cleared at the start of each run).
+
+Click **Cancel** to stop a run when you realize the plan was wrong. Already-uploaded files remain registered; plan again to see what is left.
 
 Push re-plans with remote-aware content hashing before uploads, so it may upload **updates** that a size-only plan counted as keep.
 
 ## Desktop vs CLI caps
 
-Desktop push runs **uncapped** — it processes the full upload/update set for the profile.
+Desktop push runs **uncapped**. It processes the full upload/update set for the profile.
 
 On the CLI, `--max-changes` limits how many changes apply in one run. When capped:
 
 - The run ends after reaching the limit even if more items were planned.
 - Plan again and push repeatedly until keep counts stabilize.
 
-If a run fails mid-batch, fix any errors and push again — hashing prevents duplicate uploads of unchanged files.
+If a run fails mid-batch, fix any errors and push again. Files that already arrived match on path and size and plan as keep, so they are not uploaded twice.
 
 ## After push
 
 1. Sign in to Pane View and browse affected folders.
-2. Wait for thumbnail generation if grids look empty at first refresh.
+2. Thumbnails render the first time you view them, so the first visit to a large folder can be slower.
 3. Optionally run CLI **verify** if you maintain snapshot files for drift auditing.
 
 ## Deletes are separate
 
-**Push never applies deletes.** The action dock states this explicitly: review the plan, push uploads and updates, then use **Apply deletes** (desktop) or `prune` (CLI) when you intend to remove remote entries listed under delete counts.
+**Push never applies deletes.** Review the plan, push uploads and updates, then use **Prune** (desktop or CLI) when you intend to remove remote entries that no longer exist locally.
 
-Lockstep does not silently wipe remote libraries. Skipping apply-deletes leaves remote files in place even when the plan listed them.
+Desktop Prune asks for confirmation ("Apply planned remote deletes? This cannot be undone from the desktop app."). It plans again before deleting, so it acts on the current state of your folder, not on an older plan you reviewed.
+
+Skipping prune leaves remote files in place even when the plan listed them as deletes.
 
 ## Related docs
 
 - [Plan](/docs/lockstep/plan)
-- [Verify and connection checks](/docs/lockstep/verify-and-doctor)
+- [Verify and Doctor](/docs/lockstep/verify-and-doctor)
 - [Pane View troubleshooting](/docs/pane-view/troubleshooting)

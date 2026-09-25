@@ -14,39 +14,48 @@ Lockstep stores one or more **profiles**. Each profile ties a local source folde
 ## Create a profile
 
 1. Open the Lockstep desktop app.
-2. Choose **Create your first profile** or **Add profile**.
+2. Choose **Create your first profile**, or the **+** (Add profile) button at the right of the header.
 3. Fill in:
-   - **Name** — label for this archive (e.g. "Main archive")
-   - **Source folder** — root of your local archive tree
-   - **Pane View API URL** — the base URL of your Pane View instance (API host, not only the browse UI)
-   - **Sync API token** — secret that authorizes uploads (from your Pane View operator)
+   - **Profile name:** label for this archive (e.g. "Main archive")
+   - **Pane View API URL:** the base URL of your Pane View instance
+   - **Source folder:** root of your local archive tree (type a path or use **Browse**)
+   - **Sync API token:** secret that authorizes uploads (from your Pane View operator). Optional here; you can enter it later on the dashboard.
+4. Click **Save profile**.
 
-4. Save the profile.
+## Edit or delete a profile
+
+The pencil and trash buttons next to the profile picker edit or delete the active profile (both are disabled during a run).
+
+- **Edit profile** changes the name, API URL, source folder, or token. Leave the token blank to keep the saved one, or tick **Forget the saved token**. Changing the source folder or API URL clears that profile's plan and last run.
+- **Delete profile** asks for confirmation, then removes the profile and its saved token from this computer. Files in the source folder and on Pane View are not touched.
 
 ## Sync token handling
 
-Tokens authorize Lockstep to register uploads. They are separate from your Pane View sign-in password.
+Tokens authorize Lockstep to register uploads. They are separate from your Pane View sign-in password. Every desktop action, including Plan and Doctor, needs a token.
 
-- On desktop, Lockstep encrypts saved tokens with OS key storage when available.
-- If encryption is unavailable, you may enter a token for the current session only.
+- Lockstep encrypts saved tokens with OS key storage when available.
+- If the profile has no saved token, enter one on the dashboard. It is saved the same way, or kept in memory until you quit if encryption is unavailable.
+- To replace or remove a saved token, use **Edit profile**.
 - Never paste tokens into public chats or screenshots.
 
 ## Active profile
 
-Select which profile is active before running plan, push, apply deletes, or test connection. Switch profiles when you maintain more than one archive or remote library.
+Select which profile is active before running plan, push, prune, or Doctor. Switch profiles when you maintain more than one archive or remote library.
 
 ## Before the first push
 
-1. Click **Test connection** on the profile to confirm source path, URL, token, and that Pane View responds.
-2. Run **Plan** and read counts — an empty remote library should show many uploads and zero updates.
-3. Push a small test folder first if you are unsure.
+1. Click **Doctor** in the command dock to confirm source path, URL, token, and that Pane View responds.
+2. Run **Plan** and read counts. An empty remote library should show many uploads and zero updates.
+3. If you are unsure, start with a profile that points at a small folder, or use the CLI with `--max-changes`.
 
 ## CLI configuration
 
 If you use the command-line companion, defaults live in `~/.latch-works/lockstep.json` while tokens stay in environment variables. See [Lockstep CLI](/docs/lockstep/cli).
 
+On first launch, the desktop app imports the source folder and API URL from that file into a starter profile if the file exists.
+
 ## Related docs
 
 - [Lockstep overview](/docs/lockstep)
-- [Verify and connection checks](/docs/lockstep/verify-and-doctor)
+- [Verify and Doctor](/docs/lockstep/verify-and-doctor)
 - [Privacy and safety](/docs/privacy-and-safety)

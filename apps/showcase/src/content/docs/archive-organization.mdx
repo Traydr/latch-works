@@ -24,23 +24,23 @@ Keeping one root avoids surprises when Lockstep compares paths to your remote li
 | Image galleries | Folder of images (site or CDN filenames) | Grid or Comic mode |
 | Videos | Single file or mixed grid with images | Viewer with playback controls |
 | Comics | Folder of images (Comic mode groups the folder) | Comic reader in Frame View and Pane View |
-| Stories | Single PDF per work in a dedicated folder | Pane View PDF reader after sync; Frame View PDF support is planned |
+| Stories | Single PDF per work in a dedicated folder | Pane View PDF reader after sync (Frame View does not open PDFs) |
 
 ## How Gather Box names things
 
-Gather Box infers folders from the page you are on. Patterns vary by source — see [Supported sources](/docs/supported-sources) for the full matrix.
+Gather Box infers folders from the page you are on. Patterns vary by source. See [Supported sources](/docs/supported-sources) for the full matrix.
 
-- **Media posts** often land in creator/post folders; filenames are usually original or CDN names.
+- **Media** lands in a creator folder (X, pixiv) or, for Reddit galleries, a post folder. Filenames are usually original or CDN names.
 - **Story downloads** become one `Author-Story.pdf` **directly in the chosen root** (no nested site folder).
 - Spaces in names become underscores for safe paths.
 
-You can still reorganize after download — just plan again before the next push.
+You can still reorganize after download. Just plan again before the next push.
 
 ## Comics and sequential folders
 
 A **comic** is a folder of images. Enable **Comic** mode in Frame View or Pane View to collapse those folders into comic entries.
 
-Page order uses numeric-aware sorting. Zero-padded names (`001`, `002`, …) remain a good habit for consistency.
+Page order uses numeric-aware sorting. Zero-padded names (`001`, `002`, and so on) remain a good habit for consistency.
 
 ## Stories as PDFs
 
@@ -50,7 +50,7 @@ Long-form story collectors produce one PDF per work. Store them in dedicated sto
 
 - Keep site or creator at higher folder levels; keep individual posts in leaf folders.
 - Avoid duplicate folder names at the same level when you care about remote path clarity.
-- After large reorganizations, run Lockstep **Plan** before **Push** so you see moves as deletes plus uploads or new paths.
+- After large reorganizations, run Lockstep **Plan** before **Push**. Moved files show up as deletes at the old path plus uploads at the new one.
 
 ## Related docs
 
