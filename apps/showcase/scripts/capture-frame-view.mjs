@@ -220,10 +220,13 @@ async function shutDownApp(app) {
 function restoreSettings(originalSettings) {
   writeFileSync(settingsPath, originalSettings);
   const restored = readFileSync(settingsPath);
+
   console.log(`Settings SHA-256 after: ${createHash("sha256").update(restored).digest("hex")}`);
+
   if (!restored.equals(originalSettings)) {
     throw new Error(`Settings restoration failed; backup is at ${settingsBackupPath}`);
   }
+
   console.log("Restored original settings byte-identical.");
 }
 
@@ -291,12 +294,16 @@ async function main() {
         "Previous item",
         "Next item",
       ];
+
       return labels.every((label) => {
         const button = document.querySelector(`button[aria-label="${label}"]`);
+
         if (!button || button.disabled) return false;
+
         for (let element = button; element; element = element.parentElement) {
           if (Number(getComputedStyle(element).opacity) < 1) return false;
         }
+
         return true;
       });
     });
