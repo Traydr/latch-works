@@ -119,7 +119,7 @@ pnpm --filter @latch-works/lockstep start plan --source "T:\cloud-desktop\media"
 pnpm --filter @latch-works/lockstep start verify --source "T:\cloud-desktop\media" --remote-snapshot remote-snapshot.json --hash
 ```
 
-The snapshot format is a JSON array:
+The snapshot file is either a JSON array of entries:
 
 ```json
 [
@@ -129,6 +129,12 @@ The snapshot format is a JSON array:
     "sha256": "optional"
   }
 ]
+```
+
+or a saved `GET /api/sync/snapshot` response, `{ "entries": [...], "status": "database" }`:
+
+```powershell
+curl.exe -H "Authorization: Bearer $env:LOCKSTEP_API_TOKEN" "$env:LOCKSTEP_API_URL/api/sync/snapshot" -o remote-snapshot.json
 ```
 
 ## Push

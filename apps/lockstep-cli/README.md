@@ -111,6 +111,14 @@ pnpm --filter @latch-works/lockstep start prune --source "T:\cloud-desktop\media
 pnpm --filter @latch-works/lockstep start verify --source "T:\cloud-desktop\media" --remote-snapshot remote-snapshot.json --hash
 ```
 
+A snapshot file is either a JSON array of `{ "path", "size", "sha256"? }` entries or a saved
+`GET /api/sync/snapshot` response (`{ "entries": [...], "status": "database" }`), so you can save
+one straight from Pane View:
+
+```powershell
+curl.exe -H "Authorization: Bearer $env:LOCKSTEP_API_TOKEN" "$env:LOCKSTEP_API_URL/api/sync/snapshot" -o remote-snapshot.json
+```
+
 ## Progress output
 
 Lockstep reports live progress to **stderr**: indexing paths, hash byte counts, and per-file push stages (`Hashing`, `Uploading`, `Registering`). In a TTY the current step updates in place; in CI each update is a new line.
