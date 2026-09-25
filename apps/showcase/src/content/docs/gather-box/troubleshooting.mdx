@@ -15,7 +15,7 @@ navTitle: Troubleshooting
 
 **Fix:**
 
-- Confirm the URL matches a [supported source](/docs/supported-sources) pattern (post/artwork/work page, not search or profile index).
+- Confirm the URL matches a [supported source](/docs/supported-sources) pattern (post, artwork, or work page, not search or a profile index).
 - Reload the tab after the page fully loads.
 - Reload the extension if you just updated it.
 
@@ -35,9 +35,15 @@ navTitle: Troubleshooting
 
 **Fix:**
 
-- Open **More** and read the results log for per-file errors.
-- Use **Retry failed** for transient network errors.
+- Read the **Run log** for per-file errors. Turn on **Verbose logging** in Settings to include fetch URLs.
+- Use **Retry** for transient network errors.
 - Ensure you are on the full post, not a preview or listing page.
+
+## Files have a different extension
+
+**Symptom:** Images saved as `.avif` or GIFs saved as `.mp4`.
+
+**Fix:** **Convert media for the AVIF archive** is on in Settings. Turn it off to keep the source formats.
 
 ## Login or session issues
 
@@ -46,7 +52,7 @@ navTitle: Troubleshooting
 **Fix:**
 
 - Sign in on the site in the same browser profile as the extension.
-- In Gather Box Settings, allow credentials for that site (or set mode to **Always** temporarily).
+- In Gather Box Settings, set the cookie policy to **Per-site overrides** and include cookies for that site (or use **Always include cookies** temporarily).
 - Re-open the work page and download again.
 
 ## Side panel errors or stale state
@@ -56,7 +62,7 @@ navTitle: Troubleshooting
 - Close and reopen the side panel.
 - Reload the extension from `chrome://extensions`.
 - Try the download shortcut (Command/Ctrl+Shift+Comma) on the active tab.
-- Use the context menu **Gather to archive** on the page URL as a fallback.
+- Use the context menu **Gather to archive** on the page as a fallback.
 
 ## Related docs
 

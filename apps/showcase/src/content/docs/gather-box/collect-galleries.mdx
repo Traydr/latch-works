@@ -16,8 +16,8 @@ Media collectors download original images (and video on some sites) from a post 
 1. Open a supported media page in Chrome.
 2. Open the Gather Box side panel and confirm the page is recognized.
 3. Click **Choose** (or reuse the remembered destination for that site).
-4. Click **Download Content**.
-5. Watch progress; open **More** for the results log, **Retry failed**, or **Copy errors** if needed.
+4. Click **Download Content** (or press Enter while the side panel has focus).
+5. Watch progress in the **Run log**. Use **Retry** or **Copy errors** if some files fail.
 
 You can also right-click a supported page and choose **Gather to archive**, or use the download keyboard shortcut.
 
@@ -25,35 +25,49 @@ You can also right-click a supported page and choose **Gather to archive**, or u
 
 If Gather Box is already processing an output, its main action changes to **Add to Queue**. Add the
 current page, wait for the queued confirmation, and then continue browsing. Gather Box only needs the
-page during the short metadata-capture step; downloads and AVIF conversion continue one output at a
-time in the background.
+page during the short metadata-capture step. Downloads (and AVIF conversion, if enabled) continue one
+output at a time in the background. The queue holds up to 100 pages, and queuing the same page twice
+reuses the existing entry.
 
-Fully captured queue entries persist across browser restarts. If folder permission expires, the
-queue pauses and the side panel names the page that can confirm it — any supported page when you use
-one global folder, otherwise a page from the paused entry's own site. Gathering from that page
-confirms access, resumes the paused entry, and queues the page you gathered from as well.
+Fully captured queue entries persist across browser restarts. An entry that was still capturing
+metadata when the browser closed comes back as interrupted; open that page and queue it again.
+
+If folder permission expires, the queue pauses and the side panel names the page that can confirm
+it: any supported page when you use one global folder, otherwise a page from the paused entry's own
+site. Gathering from that page confirms access, resumes the paused entry, and queues the page you
+gathered from as well.
 
 ## What to expect
 
-- Filenames usually come from the site or CDN. Gather Box does not renumber every gallery to `001`, `002`, ….
+- Filenames usually come from the site or CDN. Gather Box does not renumber every gallery to `001`, `002`, and so on.
 - Reddit multi-image posts use `01_<filename>` style prefixes inside a post folder.
-- Nested paths vary by site — see [Supported sources](/docs/supported-sources).
+- Nested paths vary by site. See [Supported sources](/docs/supported-sources).
 - Individual file failures are logged; the rest of the batch continues.
-- Identical files are skipped; collisions get a short suffix before the extension.
+- Identical files are skipped; name collisions get a short random suffix before the extension.
+
+## AVIF conversion
+
+**Convert media for the AVIF archive** in Settings is off by default. When on, Gather Box saves
+still images as `.avif` and GIFs as `.mp4`, so file extensions differ from the source. Existing AVIF
+and MP4 files pass through unchanged. If a file cannot be converted, Gather Box keeps the original
+and notes it in the run log.
+
+Settings also has **Download concurrency** (1 to 16 parallel fetches, default 4) and **Verbose
+logging**, which adds fetch URLs to the run log.
 
 ## Choosing the destination
 
 Pick a folder inside your archive root so Frame View and Lockstep see the same tree later.
 
-By default Gather Box remembers the last folder **per site**. In Settings you can instead use **one global archive folder** for every site.
+By default Gather Box remembers the last folder **per site**. In Settings you can instead use **one global archive folder** for every site. **Clear** in the side panel forgets the remembered folder.
 
-The side panel shows the folder **name** only — browsers do not expose the full disk path for privacy reasons.
+The side panel shows the folder **name** only. Browsers do not expose the full disk path for privacy reasons.
 
 ## Tips
 
 - Queue several posts while browsing; each keeps the folder name captured from its source page.
 - After download, open the folder in Frame View to confirm count and order.
-- Use **Cancel run** if you need to stop a long download.
+- Use **Cancel** in the run log if you need to stop a long download.
 
 ## Related docs
 

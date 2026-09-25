@@ -9,39 +9,40 @@ navTitle: Preferences
 
 # Frame View preferences
 
-Open the settings drawer from the gallery toolbar (or `Cmd/Ctrl+,`) to adjust usability and storage options.
+Open settings from **Settings** in the gallery toolbar (or `Cmd/Ctrl+,`). The drawer has four tabs: Usability, Local Storage, Hotkeys, and Debug.
 
 ![Frame View settings drawer](/screenshots/frame-view/settings.png)
 
 ## Usability
 
-- **Theme** — System, Light, or Dark (persists across sessions).
-- **Remember last folder** — reopen the previous archive root on launch.
-- **Recursive by default** — start new folders in recursive mode.
-- **Hover autoplay / viewer autoplay / loop videos / preview audio** — video playback behavior in the grid and viewer.
-- **Loop viewer navigation** — wrap previous/next at the ends of the list.
-- **Thumbnail size** and **show images / show videos** — what the grid displays.
+- **Theme:** System, Light, or Dark (persists across sessions).
+- **Remember last folder:** reopen the previous archive root on launch.
+- **Enable recursive mode by default:** start new folders in recursive mode.
+- **Autoplay video on hover**, **Autoplay videos in viewer**, **Enable audio in video preview**, and **Loop videos:** video playback in the grid and viewer. Loop videos applies to both hover previews and the viewer.
+- **Loop viewer navigation:** wrap previous/next at the ends of the list.
+- **Thumbnail size** and **Show images** / **Show videos:** what the grid displays.
 
-## Keyboard shortcuts
+## Hotkeys
 
-The Hotkeys tab lists active shortcuts for gallery, viewer, and comic modes. A full table lives in [Keyboard shortcuts](/docs/keyboard-shortcuts).
+The Hotkeys tab lists the built-in shortcuts for the app, gallery, and viewer. Shortcuts are fixed and cannot be remapped. A full table lives in [Keyboard shortcuts](/docs/keyboard-shortcuts).
 
-## Local storage
+## Local Storage
 
-Frame View maintains a local media index and thumbnail cache for fast rescans. From settings you can:
+Frame View maintains a local media index and thumbnail cache for fast rescans. From this tab you can:
 
 - Clear the thumbnail cache when previews look stale
-- View media-index stats (item counts, database path) and clear the index if needed
+- View media-index stats (item and root counts, database path) and clear the index if needed
+- Check whether ffmpeg and ffprobe are available for video thumbnails
 
-Clearing cache or index does not delete originals — only derived data, which rebuilds on the next scan.
+Clearing cache or index does not delete originals, only derived data, which rebuilds on the next scan.
 
 ## Debug
 
-The Debug tab exposes diagnostics for stubborn scan or index issues. Use it when normal clear-and-rescan does not help.
+The Debug tab has **Enable debug logging**, **Enable performance monitoring**, and buttons to refresh or copy diagnostics. Use it when normal clear-and-rescan does not help.
 
 ## Window state
 
-Window size and maximized state restore on launch so your layout stays consistent.
+Window size, position, and maximized state restore on launch so your layout stays consistent.
 
 ## Related docs
 

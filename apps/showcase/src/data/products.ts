@@ -57,7 +57,7 @@ export const products: Product[] = [
     kind: "app",
     tagline: "Collect first. Organize later.",
     description:
-      "Gather Box is a Chrome extension that downloads image galleries and story PDFs from supported sites into inferred local folder structures — ready for Frame View browsing and Lockstep sync.",
+      "Gather Box is a Chrome extension that downloads images, videos, and story PDFs from supported sites into inferred local folder structures, ready for Frame View browsing and Lockstep sync.",
     repoPath: "apps/gather-box",
     heroScreenshot: {
       src: "/screenshots/gather-box/sidepanel-active.png",
@@ -80,37 +80,37 @@ export const products: Product[] = [
       {
         title: "Site collectors",
         description:
-          "Dedicated content scripts for Fanbox, Kemono, X, Reddit, pixiv, Archive of Our Own, Fanfiction.net, Hentai Foundry, and more.",
+          "Dedicated collectors for X, Reddit, pixiv, Archive of Our Own, and FanFiction.Net.",
         icon: "globe",
       },
       {
         title: "Smart folder inference",
         description:
-          "Downloads land in structured paths that match how you will browse them later — artist, series, and post naming included.",
+          "Downloads land in structured paths that match how you will browse them later, with creator and post naming included.",
         icon: "folder-input",
       },
       {
         title: "Gallery & story support",
         description:
-          "Image galleries download as numbered sequences; long-form stories export to PDF for offline reading.",
+          "Media keeps its original filenames (Reddit galleries get order prefixes); long-form stories save as PDF for offline reading.",
         icon: "images",
       },
       {
         title: "Progress feedback",
         description:
-          "Live progress bar, page status checks, and a results log so you know exactly what was saved.",
+          "Live progress bar, page status checks, and a run log so you know exactly what was saved.",
         icon: "activity",
       },
       {
         title: "Writable folder picker",
         description:
-          "Choose a destination folder per run. Gather Box validates the active tab and folder before starting.",
+          "Pick a folder once per site, or use one global folder. Gather Box validates the active tab and folder before starting.",
         icon: "hard-drive",
       },
       {
         title: "Archive pipeline entry point",
         description:
-          "Collected media flows into the local archive — the first step in Gather → Organize → Sync → View.",
+          "Collected media flows into the local archive: the first step in Gather → Organize → Sync → View.",
         icon: "workflow",
       },
     ],
@@ -131,26 +131,26 @@ export const products: Product[] = [
     repoPath: "apps/frame-view",
     heroScreenshot: {
       src: "/screenshots/frame-view/gallery.png",
-      alt: "Frame View desktop gallery with mixed media grid",
-      caption: "Virtualized gallery with mixed images and looping video thumbnails",
+      alt: "Frame View desktop gallery grid with folder header and toolbar",
+      caption: "Virtualized gallery with folder navigation and a floating toolbar",
     },
     gallery: [
       {
         src: "/screenshots/frame-view/viewer.png",
-        alt: "Frame View fullscreen media viewer with video controls",
-        caption: "Fullscreen viewer with seek, speed, and volume controls",
+        alt: "Frame View media viewer showing an image",
+        caption: "Viewer with previous/next, fullscreen, and reveal-in-folder controls",
       },
       {
         src: "/screenshots/frame-view/settings.png",
         alt: "Frame View settings drawer",
-        caption: "Persistent settings for theme, hotkeys, and storage paths",
+        caption: "Preferences for theme, playback, and what the grid shows",
       },
     ],
     features: [
       {
         title: "Mixed media gallery",
         description:
-          "Images and videos share one grid. Video thumbnails autoplay and loop so you can scan motion at a glance.",
+          "Images and videos share one grid. Video tiles play on hover so you can scan motion at a glance.",
         icon: "film",
       },
       {
@@ -168,7 +168,7 @@ export const products: Product[] = [
       {
         title: "Folder navigation",
         description:
-          "Recursive scanning, folder overlay, breadcrumb navigation, and remembered last-opened paths.",
+          "Recursive scanning, a subfolder browser, sibling-folder jumps, and remembered last-opened paths.",
         icon: "folder-tree",
       },
       {
@@ -180,12 +180,12 @@ export const products: Product[] = [
       {
         title: "Keyboard-first",
         description:
-          "Arrow keys, double-click to viewer, configurable hotkeys, and sort modes including random shuffle.",
+          "WASD and arrow keys, folder jumps, video hotkeys, and sort modes including random shuffle.",
         icon: "keyboard",
       },
     ],
     highlights: [
-      "Desktop gallery for images, video, comics, and PDFs",
+      "Desktop gallery for images, video, and comics",
       "Fast browsing in large local folders",
       "Dark and light themes with remembered window state",
       "The local browsing experience Pane View mirrors on the web",
@@ -197,18 +197,18 @@ export const products: Product[] = [
     kind: "tool",
     tagline: "Plan, push, verify.",
     description:
-      "Lockstep is the desktop sync client for your local archive. Scan against Pane View, review a read-only plan, push uploads and updates explicitly, and apply deletes only when you choose.",
+      "Lockstep is the desktop sync client for your local archive. Scan against Pane View, review a read-only plan, push uploads and updates explicitly, and prune remote deletes only when you choose.",
     repoPath: "apps/lockstep",
     heroScreenshot: {
       src: "/screenshots/lockstep/plan.png",
       alt: "Lockstep desktop plan results with upload, update, and delete counts",
-      caption: "Read-only plan — review changes before any writes",
+      caption: "Read-only plan: review changes before any writes",
     },
     gallery: [
       {
         src: "/screenshots/lockstep/push.png",
         alt: "Lockstep desktop push progress with run log",
-        caption: "Push uploads and updates — deletes stay on a separate action",
+        caption: "Push uploads and updates; deletes stay on a separate Prune action",
       },
     ],
     features: [
@@ -221,38 +221,38 @@ export const products: Product[] = [
       {
         title: "Push Updates",
         description:
-          "Upload and register new or changed originals. Push never applies deletes — those stay on a separate explicit action.",
+          "Upload and register new or changed originals. Push never applies deletes; those stay on a separate Prune action.",
         icon: "upload",
       },
       {
-        title: "Apply deletes",
+        title: "Prune",
         description:
-          "Remove remote entries listed in the plan only when you run this action after review.",
+          "Remove remote entries that no longer exist locally, only when you run this action and confirm.",
         icon: "trash-2",
       },
       {
         title: "Verify",
         description:
-          "Compare local archive state against a snapshot file and exit non-zero on drift.",
+          "The CLI compares local archive state against a snapshot file and exits non-zero on drift.",
         icon: "git-compare",
       },
       {
-        title: "Test connection",
+        title: "Doctor",
         description:
-          "Validate profile settings, sync token, and Pane View reachability before a long run.",
+          "Check the source folder, sync token, and Pane View reachability before a long run.",
         icon: "stethoscope",
       },
       {
         title: "Profiles",
         description:
-          "Save source folder, Pane View URL, and encrypted sync tokens per archive. Switch profiles when you maintain multiple libraries.",
+          "Save, edit, and switch profiles with a source folder, Pane View URL, and sync token each. Tokens are encrypted by the OS when available.",
         icon: "user-cog",
       },
     ],
     highlights: [
-      "Review a read-only plan before any sync writes",
-      "Push never applies deletes — that stays a separate action",
-      "Content hashing for accurate change detection",
+      "Review a read-only plan before you push",
+      "Push never applies deletes; Prune is a separate action",
+      "Content hashing on push catches same-size changes",
       "Optional CLI companion for scripted runs",
     ],
   },
@@ -262,7 +262,7 @@ export const products: Product[] = [
     kind: "app",
     tagline: "Your archive through a private pane.",
     description:
-      "Pane View brings the Frame View-style browsing experience to the web with authenticated, read-only access to synced media. Browse folders, comics, and stories on desktop, iPad, and iPhone.",
+      "Pane View brings the Frame View-style browsing experience to the web with authenticated access to synced media. Browse folders, comics, and stories on desktop, iPad, and iPhone.",
     repoPath: "apps/pane-view",
     heroScreenshot: {
       src: "/screenshots/pane-view/gallery.png",
@@ -278,7 +278,7 @@ export const products: Product[] = [
       {
         src: "/screenshots/pane-view/login.png",
         alt: "Pane View login screen",
-        caption: "Private access — read-only by default",
+        caption: "Private access behind sign-in",
       },
     ],
     features: [
@@ -291,13 +291,13 @@ export const products: Product[] = [
       {
         title: "Authenticated delivery",
         description:
-          "Thumbnails and previews resolve through signed CDN tokens — media never sits on a public gallery URL.",
+          "Thumbnails, previews, and originals load through signed, expiring links, so media never sits on a public gallery URL.",
         icon: "shield",
       },
       {
         title: "Explicit sync",
         description:
-          "Lockstep pushes originals and snapshots on purpose; Pane View indexes what arrives — nothing mirrors automatically.",
+          "Lockstep uploads and registers originals on purpose; Pane View indexes what arrives. Nothing mirrors automatically.",
         icon: "refresh-cw",
       },
       {
@@ -309,13 +309,13 @@ export const products: Product[] = [
       {
         title: "Comic & story reading",
         description:
-          "Image folders become comic entries; PDF stories open in a dedicated reader with page navigation.",
+          "Image folders become comic entries; PDF stories open in a scrolling reader that remembers your place.",
         icon: "book-open",
       },
       {
         title: "Search & filters",
         description:
-          "Query across the synced archive, toggle recursive folder scanning, and jump directly to matching media.",
+          "Search the whole synced archive by filename or path, toggle recursive scanning, and filter images or videos.",
         icon: "search",
       },
     ],
@@ -323,7 +323,7 @@ export const products: Product[] = [
       "Private web gallery with signed media delivery",
       "Comic mode, detail panel, and keyboard shortcuts",
       "Works on desktop, iPad, and iPhone",
-      "Explicit sync — the local archive stays source of truth",
+      "Explicit sync: the local archive stays source of truth",
     ],
   },
 ];

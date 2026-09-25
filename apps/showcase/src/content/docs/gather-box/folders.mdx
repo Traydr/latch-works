@@ -15,7 +15,7 @@ Gather Box writes into folders you select with the browser’s folder picker. Go
 
 By default each supported site remembers its own last destination folder. Switching sites does not overwrite another site’s choice.
 
-In Settings you can enable **one global archive folder** so every collector reuses the same root.
+In Settings you can enable **one global archive folder** so every collector reuses the same root. **Clear** in the side panel forgets the remembered folder.
 
 When you collect from a new site for the first time (or with global mode off), pick a subfolder under your archive root that matches how you want Frame View to group that source.
 
@@ -25,12 +25,11 @@ Collectors build subpaths from page metadata. Exact templates live in [Supported
 
 | Pattern | Examples |
 | --- | --- |
-| Single folder | X username; pixiv `username-id`; gallery title |
-| Nested folders | Post collectors: service/user/post, or creator/post |
+| Creator folder | X `username`; pixiv `username-id` |
 | Conditional folder | Reddit: direct file for single media; post folder for galleries |
 | Direct file | Story PDFs land in the chosen root with no nested site folder |
 
-Spaces become underscores. Adjust locally after download if you prefer different names — then run Lockstep **Plan** before the next push.
+Spaces become underscores. Adjust locally after download if you prefer different names, then run Lockstep **Plan** before the next push.
 
 ## Writable folder validation
 

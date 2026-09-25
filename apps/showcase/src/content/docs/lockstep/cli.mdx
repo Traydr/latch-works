@@ -17,34 +17,38 @@ The desktop app covers everyday sync. The CLI companion runs the same engine hea
 - Push from a machine without opening the desktop UI
 - Capped pushes with `--max-changes`
 - Verify against a snapshot file
-- Explicit prune of planned deletes in scripts
+- Explicit prune of remote deletes in scripts
 
 For most personal use, prefer the desktop app for visibility into progress and errors.
 
 ## Invoke
 
-From the repo (with packages built and env sourced as needed):
+From the repo (with packages built):
+
+```bash
+pnpm --filter @latch-works/lockstep start plan --source /path/to/archive
+```
+
+Or run the source directly:
 
 ```bash
 cd apps/lockstep-cli
 pnpm exec tsx src/cli.ts plan --source /path/to/archive
 ```
 
-Or: `pnpm --filter @latch-works/lockstep start plan --source …`
-
-Do not put a bare `--` between `pnpm start:lockstep` and the subcommand.
-
 ## Commands
 
 | Command | Purpose |
 | --- | --- |
-| `plan` | Read-only diff summary |
+| `plan` | Read-only diff summary against Pane View (or a `--remote-snapshot` file) |
 | `push` | Upload and register new/changed originals (never deletes) |
-| `prune` | Apply planned remote deletes (requires confirm or `--yes`) |
-| `verify` | Compare tree to `--remote-snapshot` |
+| `prune` | Remove remote entries that no longer exist locally (requires confirm or `--yes`) |
+| `verify` | Compare tree to `--remote-snapshot`; exits non-zero on drift |
 | `doctor` | Environment and connectivity checks |
 
-Push and prune are separate — same split as **Push** and **Apply deletes** in the desktop app.
+Push and prune are separate, the same split as **Push** and **Prune** in the desktop app.
+
+`plan`, `push`, and `prune` compare against the live snapshot from Pane View, or against a file passed with `--remote-snapshot` (the file wins when both are available). If `plan` has neither an API URL and token nor a snapshot file, it warns and compares against an empty remote, so every local file shows as an upload.
 
 ## Useful flags
 
@@ -52,30 +56,29 @@ Push and prune are separate — same split as **Push** and **Apply deletes** in 
 | --- | --- | --- |
 | `--source` | all | Local archive root |
 | `--api-url` | plan/push/prune/doctor | Pane View API base URL |
-| `--hash` | plan/verify | Full content hashing (plan); hash compare (verify) |
+| `--api-token-env` | plan/push/prune/doctor | Env var name holding the sync token (default `LOCKSTEP_API_TOKEN`) |
+| `--hash` / `--no-hash` | plan/verify | Full content hashing (plan); hash compare (verify) |
 | `--max-changes` | push/prune | Cap how many changes apply in one run |
-| `--upload-concurrency` | push | Parallel uploads |
-| `--remote-snapshot` | plan/verify | Snapshot JSON path (required for verify) |
-| `--show-skipped` | plan | Include skipped items in output |
-| `--yes` | prune (required non-interactively) | Skip prune confirmation |
-| `--api-token-env` | auth | Env var name holding the sync token |
+| `--upload-concurrency` | push | Parallel uploads, 1 to 8 (default 3) |
+| `--remote-snapshot` | plan/verify/push/prune | Snapshot JSON path (required for verify; replaces the live snapshot otherwise) |
+| `--show-skipped` / `--no-show-skipped` | plan | Include skipped items in output |
+| `--yes` | prune, push | Skip confirmation prompts (required for prune when not interactive) |
 
-**Push always uses remote-aware hashing** when talking to Pane View. Desktop plan is size-oriented by default; CLI plan uses hashing only with `--hash`.
-
-`--yes` gates **prune**, not push. Push runs without an interactive confirm once arguments are complete.
+**Push always uses remote-aware hashing** when talking to Pane View. Desktop plan compares path and size only; CLI plan uses hashing only with `--hash`.
 
 ## Configuration
 
-Defaults live in `~/.latch-works/lockstep.json` (source path, API URL, etc.). **Keep tokens in environment variables**, not in the config file.
+Settings resolve in this order: command-line flag, environment variable, then `~/.latch-works/lockstep.json`. The CLI reads `LOCKSTEP_SOURCE`, `LOCKSTEP_API_URL`, and `LOCKSTEP_API_TOKEN` from the environment. **Keep tokens in environment variables**, not in the config file.
+
+The CLI remembers the source folder and API URL you pass as flags (or choose in the wizard) so the next run can omit them. Run flags such as `--hash`, `--show-skipped`, `--max-changes`, and `--upload-concurrency` apply to that run only. To make one a lasting default, add it to the `defaults` block of the config file by hand; `--no-hash` and `--no-show-skipped` override those defaults for a single run.
 
 ## Interactive mode
 
-Running with no arguments in a TTY starts a wizard for **plan / push / verify / doctor**. Prune is not in the wizard — run `prune` as an explicit subcommand.
+Running with no arguments in a terminal starts a wizard for **plan / push / verify / doctor**. Prune is not in the wizard; run `prune` as an explicit subcommand. When prune asks for confirmation interactively, type `prune` to proceed.
 
 ## Safety
 
-- Always plan before push in automation scripts.
-- Run prune only when you intend to apply delete entries from the plan.
+- Run prune only when you intend to remove remote entries that no longer exist locally.
 - Prefer `--max-changes` on first pushes to a new remote library.
 - Run `doctor` before the first automated push to a new remote library.
 
@@ -84,4 +87,4 @@ Running with no arguments in a TTY starts a wizard for **plan / push / verify / 
 - [Lockstep overview](/docs/lockstep)
 - [Setup](/docs/lockstep/setup)
 - [Plan](/docs/lockstep/plan)
-- [Verify and connection checks](/docs/lockstep/verify-and-doctor)
+- [Verify and Doctor](/docs/lockstep/verify-and-doctor)

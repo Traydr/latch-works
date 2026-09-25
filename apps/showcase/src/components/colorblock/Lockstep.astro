@@ -1,8 +1,8 @@
 ---
 /**
- * Lockstep product page — Colorblock design system.
+ * Lockstep product page (Colorblock design system).
  * Emerald enamel #34C98E, dark ink, steel seams, and a latched delete guard.
- * Apply deletes appears exactly once: behind the hatched guard rail.
+ * Prune appears exactly once: behind the hatched guard rail.
  */
 import "@fontsource/barlow-condensed/600.css";
 import "@fontsource/barlow-condensed/700.css";
@@ -18,12 +18,12 @@ interface Props {
 
 const { product } = Astro.props;
 
-// Plan, Push, Verify — the tagline verbs. Deletes live only in the guard.
+// Plan, Push, Verify: the tagline verbs. Deletes live only in the guard.
 const actions = [product.features[0], product.features[1], product.features[3]].filter(
   (feature) => feature !== undefined,
 );
 
-const applyDeletes = product.features[2];
+const prune = product.features[2];
 
 const supporting = product.features.slice(4);
 ---
@@ -57,13 +57,13 @@ const supporting = product.features.slice(4);
   </section>
 
   {
-    applyDeletes && (
+    prune && (
       <section class="guard">
         <div>
-          <b>APPLY DELETES</b>
+          <b>PRUNE</b>
           <span>LATCHED - separate explicit action</span>
         </div>
-        <p>{applyDeletes.description}</p>
+        <p>{prune.description}</p>
       </section>
     )
   }

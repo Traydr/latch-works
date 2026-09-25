@@ -11,30 +11,33 @@ navTitle: Mobile
 
 Pane View adapts the same gallery and viewer for phones and tablets.
 
-## Layout
+## Phones
 
-- The folder sidebar collapses behind a menu or sheet on narrow screens.
-- The grid uses fewer columns with larger touch targets.
-- A floating toolbar keeps search, sort, comic mode, and settings reachable by thumb.
-- The desktop **detail panel** is hidden on mobile.
+Below 768 px wide (iPhone and other phones):
+
+- The folder sidebar opens as a sheet from the menu button.
+- The path opens in its own sheet, and search opens from the search icon.
+- A single tap opens folders, media, comics, or PDFs.
+- The floating toolbar keeps recursive, comic, sort, and refresh reachable by thumb.
+
+## iPad and tablets
+
+At 768 px and wider, including iPad in both orientations:
+
+- The sidebar stays docked and can be collapsed.
+- A tap selects an item and a double tap opens it.
+- The detail panel appears once the window is at least 1024 px wide.
+- Keyboard shortcuts work with an attached keyboard, with the same keys as desktop.
 
 ## Touch navigation
 
-- A single tap opens folders, media, comics, or PDFs.
 - Use on-screen viewer controls (and Q/E with a keyboard) to move between items.
-- There is no pull-to-refresh gesture — use the toolbar refresh control if cells look stale.
+- Press and hold a playing video for a temporary 2× speed boost.
+- There is no pull-to-refresh gesture. Use **Refresh** in the floating toolbar if cells look stale.
 
-## iPad
+## Slow or blank thumbnails
 
-Tablets show more columns and may keep the sidebar visible in landscape. Keyboard shortcuts still work with an attached keyboard — same keys as desktop.
-
-## iPhone
-
-Prefer Wi‑Fi for first load of large folders so thumbnails can populate. Signed preview URLs refresh; a stale cell usually fixes itself after refreshing the folder or revisiting it.
-
-## Session length
-
-Mobile browsers may discard session cookies aggressively. If you are signed out unexpectedly, sign in again — your synced library is unchanged.
+Prefer Wi-Fi for the first load of large folders. Thumbnails are made the first time they are requested, and tiles that fail retry on their own, fetching a fresh signed link if needed.
 
 ## Related docs
 

@@ -17,9 +17,11 @@ navTitle: Troubleshooting
 
 - Confirm you opened the correct folder or enable recursive mode.
 - Wait for the scan progress indicator to finish.
-- Check that files use supported extensions (images: jpg/jpeg/png/webp/gif/bmp; video: mp4/webm/mov/mkv). PDFs are not indexed yet.
-- If Comic mode is on, loose media tiles are hidden — toggle Comic off to see them.
-- Rescan (Refresh / F5) after copying files in from outside Gather Box.
+- Check that files use supported extensions (images: jpg/jpeg/png/webp/gif/bmp/avif; video: mp4/m4v/webm/mov/mkv). PDFs are not indexed.
+- Check **Show images** / **Show videos** in preferences.
+- If Comic mode is on, loose media tiles are hidden. Toggle Comic off to see them.
+- If you excluded a child folder under **Folders**, its media is left out of recursive views.
+- Rescan with **Refresh** (F5 on Windows and Linux, Cmd+R on macOS) after copying files in from outside Gather Box.
 
 ## Slow scans on large folders
 
@@ -27,7 +29,7 @@ navTitle: Troubleshooting
 
 **Fix:**
 
-- Let the initial index complete — later visits reuse the local media index.
+- Let the initial index complete. Later visits reuse the local media index.
 - Narrow to a subfolder when spot-checking new downloads.
 - Clear and rebuild the index only if it looks corrupt, not for every slow folder.
 
@@ -37,7 +39,8 @@ navTitle: Troubleshooting
 
 **Fix:**
 
-- Clear thumbnail cache in settings and rescan.
+- Clear the thumbnail cache under **Local Storage** in settings and rescan.
+- For blank video thumbnails, check that **Local Storage** reports ffmpeg and ffprobe as available.
 - For videos, ensure the file is not locked by another program.
 
 ## Video will not play

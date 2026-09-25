@@ -16,9 +16,11 @@ navTitle: Plan
 ## Running plan
 
 1. Select your active profile in Lockstep desktop.
-2. Click **Plan** (or run `plan` in the CLI companion).
+2. Click **Plan** in the command dock.
 3. Wait for the scan and diff to finish.
-4. Review the summary counts and item list.
+4. Review the summary counts and item list on the **Plan** tab.
+
+The CLI `plan` command does the same comparison from a terminal. See [Lockstep CLI](/docs/lockstep/cli).
 
 ## Interpreting counts
 
@@ -26,29 +28,27 @@ navTitle: Plan
 | --- | --- |
 | Upload | New local files not yet on the remote library |
 | Update | Local file differs from remote (see hashing note below) |
-| Keep | Already in sync — no action needed |
-| Delete | Would remove a remote entry — requires **Apply deletes** / `prune`, not push |
+| Keep | Already in sync, no action needed |
+| Delete | Remote entry with no local file. Only **Prune** removes it, never Push |
 
 Treat **keep** as reassurance; focus on upload and update before pushing.
 
 ## Hashing note
 
-Desktop **Plan** compares without full content hashing by default (size/path oriented). That means some content changes that keep the same size may still show as **keep** until push.
+Desktop **Plan** compares by path and size only. A content change that keeps the same file size shows as **keep** until push.
 
 **Push** re-plans with remote-aware hashing before uploading, so update counts can grow compared with the last plan.
-
-On the CLI, pass `--hash` to plan with full hashing when you want a stricter pre-push review.
 
 ## When to plan without pushing
 
 - After a Gather Box collection day
 - After renaming or moving folders
 - Before any push when counts look unexpectedly large
-- On a schedule — weekly plan-only reviews build confidence
+- On a schedule, as a weekly review
 
 ## Filtering the item list
 
-Lockstep desktop lets you filter planned items by path substring when reviewing large diffs. Use this to sanity-check one creator folder at a time.
+The **Filter by path** box on the Plan tab narrows the list by a case-insensitive path substring. Keep items are hidden from the list. Use this to sanity-check one creator folder at a time.
 
 ## Related docs
 

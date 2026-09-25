@@ -13,35 +13,36 @@ Frame View turns a folder on disk into a virtualized grid of media entries.
 
 ## Open a folder
 
-Use **Open folder** from the menu (`Cmd/Ctrl+O`), drag a folder onto the window, or reopen the last folder when **Remember last folder** is enabled in preferences.
+Click **Open** in the toolbar, use **Open folder** from the menu (`Cmd/Ctrl+O`), or drag a folder onto the window (dropping a file opens its folder). With **Remember last folder** enabled in preferences, Frame View reopens the previous folder on launch.
 
-Point at your archive root or any subtree — the path label and folder overlay reflect your current location.
+Point at your archive root or any subtree. The path label in the header reflects your current location.
 
 ## Grid navigation
 
 - Click an item to select it; double-click or press Enter / F to open the viewer.
-- Use W/A/S/D or arrow keys to move selection.
+- Use W/A/S/D or arrow keys to move selection. Movement wraps around at the edges of the grid.
 - Shift+S opens the selected folder (or the first folder tile); Shift+W goes to the parent.
+- Shift+A and Shift+D move to the previous and next sibling folders. The header also has **Parent**, **Prev Folder**, and **Next Folder** buttons.
 
-Mixed grids show images and videos together. With autoplay-on-hover enabled, video cells play the real file (looping when that setting is on) so you can scan motion quickly.
+Mixed grids show images and videos together. With **Autoplay video on hover** enabled, a video tile plays while the pointer is over it (looping when **Loop videos** is on) so you can scan motion quickly.
 
 ## Recursive scanning
 
-Enable recursive mode to include media from subfolders in the current view. Folder tiles hide while recursive is on. Useful for scanning across a creator tree without drilling down manually.
+Toggle **Recursive** in the toolbar to include media from subfolders in the current view. Folder tiles hide while recursive is on. Useful for scanning across a creator tree without drilling down manually.
 
-Large folders use a background scan and local index so scrolling stays responsive. The first scan after opening a big tree may take time — see [Troubleshooting](/docs/frame-view/troubleshooting).
+Large folders use a background scan and local index so scrolling stays responsive. The first scan after opening a big tree may take time. See [Troubleshooting](/docs/frame-view/troubleshooting).
 
 ## Comic mode
 
-Toggle **Comic** in the toolbar to group image folders into comic entries. Comic mode forces recursive scanning and hides loose media tiles. Details: [Comics and stories](/docs/frame-view/comics-and-stories).
+Toggle **Comic** in the toolbar to group image folders into comic entries. Comic mode forces recursive scanning and hides loose media tiles; turning either Comic or Recursive off turns both off. Details: [Comics and stories](/docs/frame-view/comics-and-stories).
 
 ## Sorting
 
-Switch sort modes from the gallery toolbar: A–Z, Z–A, Newest, Oldest, and Random. When Random is selected, a **Shuffle** control re-seeds the order. Sort affects grid order only, not files on disk.
+Switch sort modes from the gallery toolbar: A-Z, Z-A, Newest, Oldest, and Random. Newest and Oldest use each file's modification time. When Random is selected, a **Shuffle** button re-seeds the order. Sort affects grid order only, not files on disk.
 
-## Folder overlay
+## Browse subfolders
 
-Open the folder overlay to jump between sibling folders and to include/exclude child folders for recursive scans. Shift+A and Shift+D move to previous and next sibling folders.
+**Folders** in the toolbar opens a subfolder browser with breadcrumbs, **Back**, and **Open**. At the opened root you can also exclude child folders from recursive scans. Exclusions and Comic mode are remembered per root folder.
 
 ## Related docs
 

@@ -9,40 +9,54 @@ navTitle: Browsing
 
 # Pane View browsing
 
-After sign-in, Pane View presents your synced library as a folder tree and media grid.
+After sign-in, Pane View presents your synced library as a folder tree and media grid. On your first visit in a browser it reopens the last folder you viewed.
 
 ![Pane View sign-in](/screenshots/pane-view/login.png)
 
 ## Sign in
 
-Open your Pane View URL and enter the credentials configured for your library. Sessions stay signed in until you log out or cookies expire.
+Open your Pane View URL and enter the username and password configured for your library. Sessions last 7 days and renew while you keep using Pane View. **Sign out** is in the sidebar footer.
 
-Failed sign-in usually means wrong password or account — not a sync token issue. Sync tokens are for Lockstep only.
+Failed sign-in usually means a wrong username or password, not a sync token issue. Sync tokens are for Lockstep only.
 
 ## Folder navigation
 
-- Use the sidebar or path controls to move between folders.
+- Use the sidebar folder tree, the breadcrumb path in the header, or the header's **Parent**, **Prev folder**, and **Next folder** buttons.
 - The grid shows thumbnails for images and videos in the current folder.
-- On desktop, select an item to open the **detail panel** with metadata and a larger preview. The detail panel is not shown on mobile.
+- `Cmd/Ctrl+B` shows or hides the sidebar.
+- In windows at least 1024 px wide, the **detail panel** follows your selection. It shows a larger preview and metadata, with **Open Viewer**, previous/next, **Copy path**, **Download**, and **Delete**. Use **Show/Hide preview panel** in the header to toggle it.
 
 ## Open folders and media
 
 - Click a folder entry to descend.
 - On desktop, double-click or press Enter / F on media to open the viewer.
-- On mobile, a single tap opens folders, media, or comics.
-- Shift+W goes to the parent folder; Shift+S opens the focused folder (with a keyboard).
+- On phones, a single tap opens folders, media, or comics. See [Mobile browsing](/docs/pane-view/mobile).
+- Shift+W goes to the parent folder; Shift+S opens the focused folder; Shift+A and Shift+D move to the previous and next sibling folders.
 
-## Recursive mode
+## Floating toolbar
 
-Toggle recursive scanning to flatten subfolders into one grid — useful for finding recent uploads across a creator tree. Turn it off when you want strict single-folder browsing.
+The toolbar at the bottom of the gallery holds:
 
-## Comic mode
+- **Recursive:** flatten subfolders into one grid, useful for finding recent uploads across a creator tree.
+- **Comic:** group image folders into comic entries (forces recursive), like Frame View's Comic control. Turning Comic off also turns Recursive off, and turning Recursive off leaves Comic mode.
+- **Exclude:** leave chosen subfolders out of recursive and comic views (shown while either is on).
+- **Sort** and **Shuffle**: see [Search and filters](/docs/pane-view/search-and-filters).
+- **Refresh:** reload the current folder.
 
-Toggle **Comic** in the floating toolbar to group image folders into comic entries (forces recursive scanning), similar to Frame View’s Comic control.
+Recursive and Comic are unavailable at the archive root; open a folder first.
 
-## Read-only by design
+## Settings
 
-Pane View does not edit files on disk or upload from the browser. Add media locally, then plan and push with Lockstep.
+**Settings** in the sidebar footer covers theme, thumbnail size, default recursive browsing, **Show images** / **Show videos**, **Remember PDF page and video position**, autoplay, looping videos, and looping viewer navigation. Settings are saved in this browser.
+
+## Changing the remote library
+
+Pane View never touches files on your disk and cannot upload. From the browser you can:
+
+- **Delete** an item from the detail panel. It is hidden from the remote library, and the next Lockstep push restores it if the file is still in your archive.
+- Use the **Manage** page (sidebar footer) to delete folders, purge deleted items, review sync history, or wipe the library.
+
+Add or change media locally, then plan and push with Lockstep.
 
 ## Related docs
 

@@ -13,7 +13,7 @@ Latch Works is designed for a personal archive, not a public gallery. These prac
 
 ## Local archive authority
 
-Files on your computer are yours. Frame View reads them locally. Nothing leaves your machine until Lockstep **push** runs successfully.
+Files on your computer are yours. Frame View reads them locally. Nothing leaves your machine until Lockstep **Push** runs.
 
 Treat your archive folder like any sensitive media directory: disk encryption and backups are your responsibility.
 
@@ -21,7 +21,7 @@ Treat your archive folder like any sensitive media directory: disk encryption an
 
 Lockstep never uploads in the background. **Plan** is always read-only. **Push** requires you to start it deliberately.
 
-Review plan counts before pushing, especially after renaming or deleting folders. **Push** never applies deletes — use **Apply deletes** in Lockstep desktop (or CLI `prune`) when you intend to remove remote entries from the plan.
+Review plan counts before pushing, especially after renaming or deleting folders. **Push** never applies deletes. Use **Prune** in Lockstep desktop or the CLI when you intend to remove remote entries that no longer exist locally.
 
 ## Authentication
 
@@ -30,11 +30,11 @@ Pane View requires sign-in. Credentials are separate from your sync token:
 - **Sign-in** controls who can browse the web gallery.
 - **Sync token** authorizes Lockstep to register uploads with your library.
 
-Store sync tokens only in Lockstep (encrypted by the OS when available) or in a secure secret store for CLI use. Do not share tokens in chat or email.
+Repeated failed sign-ins are throttled. Store sync tokens only in Lockstep (encrypted by the OS when available) or in an environment variable or secret store for CLI use. Do not share tokens in chat or email.
 
 ## Signed delivery links
 
-Pane View thumbnails and previews use **signed links** that expire. Browsers load media from those temporary URLs instead of a permanent public path.
+Pane View thumbnails, previews, and originals use **signed links** that expire after about a day. Browsers load media from those temporary URLs instead of a permanent public path.
 
 That means:
 
@@ -43,15 +43,15 @@ That means:
 
 ## Gather Box and site sessions
 
-Some downloads use your browser login. Gather Box credential modes in Settings: **Auto**, **Always**, **Never**, and **Per site**. Tighten the mode if you want less cookie use.
+Some downloads use your browser login. The Gather Box cookie policy in Settings is **Auto (site defaults)**, **Always include cookies**, **Never include cookies**, or **Per-site overrides**. Tighten it if you want less cookie use.
 
 Only collect from sites you are authorized to download from.
 
 ## Network exposure
 
-Pane View should be reachable only over HTTPS on infrastructure you trust. Lockstep stores your Pane View API URL in the profile — use the same host you intend to browse.
+Pane View should be reachable only over HTTPS on infrastructure you trust. Lockstep stores your Pane View API URL in the profile, so use the same host you intend to browse.
 
-Click **Test connection** (desktop) or run CLI `doctor` after changing URLs or tokens to catch misconfiguration early.
+Run **Doctor** (desktop or CLI) after changing URLs or tokens to catch misconfiguration early.
 
 ## Related docs
 

@@ -1,6 +1,6 @@
 # Showcase
 
-Server-rendered marketing site for the Latch Works ecosystem — product pages, documentation, and screenshots.
+Server-rendered marketing site for the Latch Works ecosystem: product pages, documentation, and screenshots.
 
 Built with [Astro](https://astro.build/) (`output: "server"`) so pages and MDX docs render on the server.
 
@@ -12,14 +12,14 @@ pnpm dev:showcase
 
 Opens at http://127.0.0.1:3100
 
-- `/` — ecosystem overview
-- `/{slug}` — Gather Box, Frame View, Lockstep, Pane View
-- `/docs` — MDX documentation
+- `/`: ecosystem overview
+- `/{slug}`: Gather Box, Frame View, Lockstep, Pane View
+- `/docs`: MDX documentation
 
 ## Screenshots
 
 Product screenshots live in `public/screenshots/`. They are captured from the **real
-applications** — no preview harnesses or mocked layouts. Regenerate them after UI changes to the
+applications**, with no preview harnesses or mocked layouts. Regenerate them after UI changes to the
 source apps:
 
 ```bash
@@ -37,15 +37,15 @@ pnpm --filter @latch-works/showcase screenshots
 
 `capture-screenshots.mjs` runs four per-app scripts (each also runnable on its own):
 
-- `capture-pane-view.mjs` — logs into the running web app and captures login, gallery, and
+- `capture-pane-view.mjs`: logs into the running web app and captures login, gallery, and
   viewer. Thumbnails come straight from rustfs via Pane View's Shutter-less pass-through mode
   (leave `SHUTTER_EDGE_URL` empty in `.env`).
-- `capture-frame-view.mjs` — launches the real Electron app over CDP against
+- `capture-frame-view.mjs`: launches the real Electron app over CDP against
   `apps/frame-view/showcase-media`. Backs up and restores your personal settings file.
-- `capture-lockstep.mjs` — launches the real Lockstep desktop app, runs a real plan and push
+- `capture-lockstep.mjs`: launches the real Lockstep desktop app, runs a real plan and push
   against the local sync API (seeding fresh sample scans each run), and captures the review and
   run-log screens. Backs up and restores your profiles.
-- `capture-gather-box.mjs` — loads the unpacked extension into the vendored Chrome and captures
+- `capture-gather-box.mjs`: loads the unpacked extension into the vendored Chrome and captures
   the actual side panel in idle and active states.
 
 All captures are dark mode at 1440x900 @2x. Set `CHROME_PATH` to override the vendored

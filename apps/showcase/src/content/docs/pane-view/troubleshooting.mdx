@@ -16,6 +16,7 @@ navTitle: Troubleshooting
 **Fix:**
 
 - Confirm username and password with your library operator.
+- After 5 failed attempts within 5 minutes, sign-in is blocked and still reports invalid credentials. Wait five minutes before retrying.
 - Clear site cookies for your Pane View hostname and retry.
 
 Sync tokens are **not** used on the login form. Enter those in Lockstep only.
@@ -26,10 +27,11 @@ Sync tokens are **not** used on the login form. Enter those in Lockstep only.
 
 **Fix:**
 
-1. Run Lockstep **Plan** — do uploads still appear pending?
+1. Run Lockstep **Plan**. Do uploads still appear pending?
 2. **Push** if needed and wait for completion.
-3. Browse the exact folder path — renames change remote paths.
-4. Hard refresh the browser.
+3. Browse the exact folder path, since renames change remote paths.
+4. If you deleted the item in Pane View, push again to restore it.
+5. Hard refresh the browser.
 
 Pane View never shows unsynced local-only files.
 
@@ -39,9 +41,9 @@ Pane View never shows unsynced local-only files.
 
 **Fix:**
 
-- Wait briefly after a large push — derivatives generate asynchronously and signed links refresh.
-- Refresh the folder from the toolbar.
-- Confirm push succeeded without file errors in Lockstep logs.
+- Wait briefly. Thumbnails and previews are made the first time they are requested, and tiles retry on their own while they render.
+- Click **Refresh** in the floating toolbar.
+- Confirm push succeeded without file errors in Lockstep's **Log** tab.
 - Try another browser (extensions can block cross-origin media).
 
 ## Video will not play
@@ -51,16 +53,17 @@ Pane View never shows unsynced local-only files.
 **Fix:**
 
 - Confirm the original plays locally in Frame View.
-- Retry on Wi‑Fi; large files struggle on poor mobile links.
+- Retry on Wi-Fi; large files struggle on poor mobile links.
 - Re-push if the upload was interrupted mid-file.
 
 ## Search misses known files
 
 **Fix:**
 
-- Search is library-wide — recursive mode does not change search scope.
+- Press Enter after typing; search does not run as you type.
+- Search is library-wide, so recursive mode does not change search scope.
 - Check spelling and underscores vs spaces in path segments.
-- Plan and push again — the index updates after a successful push.
+- Push again. Each file is searchable as soon as its upload completes.
 
 ## Related docs
 
