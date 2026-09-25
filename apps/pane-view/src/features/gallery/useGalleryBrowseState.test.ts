@@ -234,24 +234,24 @@ describe("applyBrowseIntent", () => {
     persisted({ sortMode: "date-newest" }),
   );
 
-  it("navigates to a path, clears the selection, and keeps the flags between folders", () => {
+  it("navigates to a path, clears the selection and the search, and keeps the flags", () => {
     expect(
       applyBrowseIntent(folder, { path: "photos", type: "navigateToPath" }, remembered),
     ).toEqual({
       navigate: {
-        search: { comic: true, media: undefined, path: "photos", q: "cover", recursive: true },
+        search: { comic: true, media: undefined, path: "photos", q: undefined, recursive: true },
       },
     });
   });
 
-  it("navigating to the root drops the flags from the URL", () => {
+  it("navigating to the root drops the flags and the search from the URL", () => {
     expect(applyBrowseIntent(folder, { path: "", type: "navigateToPath" }, remembered)).toEqual({
       navigate: {
         search: {
           comic: undefined,
           media: undefined,
           path: undefined,
-          q: "cover",
+          q: undefined,
           recursive: undefined,
         },
       },
