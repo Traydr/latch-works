@@ -11,6 +11,7 @@
  * Usage: node apps/showcase/scripts/capture-frame-view.mjs
  */
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -157,13 +158,7 @@ async function waitForGallery(page) {
  */
 async function reapplyNameSort(page) {
   const pickSortOption = async (label) => {
-    await page.evaluate(() => {
-      const toggle = [...document.querySelectorAll('button[aria-haspopup="menu"]')].find((button) =>
-        button.textContent?.match(/A-Z|Z-A|Newest|Oldest|Random/),
-      );
-
-      toggle?.click();
-    });
+    await page.click('button[aria-haspopup="menu"]');
     await sleep(300);
 
     const picked = await page.evaluate((optionLabel) => {
@@ -182,7 +177,7 @@ async function reapplyNameSort(page) {
   };
 
   if (!(await pickSortOption("Z-A")) || !(await pickSortOption("A-Z"))) {
-    console.warn("Could not drive the sort menu; gallery may show scan order.");
+    throw new Error("Could not select name order in the sort menu");
   }
 }
 
@@ -222,6 +217,16 @@ async function shutDownApp(app) {
   await sleep(2000);
 }
 
+function restoreSettings(originalSettings) {
+  writeFileSync(settingsPath, originalSettings);
+  const restored = readFileSync(settingsPath);
+  console.log(`Settings SHA-256 after: ${createHash("sha256").update(restored).digest("hex")}`);
+  if (!restored.equals(originalSettings)) {
+    throw new Error(`Settings restoration failed; backup is at ${settingsBackupPath}`);
+  }
+  console.log("Restored original settings byte-identical.");
+}
+
 async function main() {
   if (!existsSync(settingsPath)) {
     throw new Error(`Frame View settings not found at ${settingsPath}`);
@@ -236,6 +241,9 @@ async function main() {
   }
 
   mkdirSync(outputDir, { recursive: true });
+  const originalSettings = readFileSync(settingsPath);
+  const originalHash = createHash("sha256").update(originalSettings).digest("hex");
+  console.log(`Settings SHA-256 before: ${originalHash}`);
   copyFileSync(settingsPath, settingsBackupPath);
   console.log(`Backed up settings to ${settingsBackupPath}`);
 
@@ -269,8 +277,29 @@ async function main() {
       throw new Error("No gallery tile found for the viewer screenshot");
     }
 
-    await viewerTile.click({ clickCount: 2 });
+    await viewerTile.click({ count: 2 });
+    await page.waitForSelector('dialog[open][aria-label^="Viewer for"]', { visible: true });
     await sleep(1500);
+    // Real pointer movement reveals the auto-hiding title bar and step arrows.
+    await page.mouse.move(720, 120);
+    await page.waitForFunction(() => {
+      const labels = [
+        "Copy path",
+        "Reveal in folder",
+        "Fullscreen",
+        "Close",
+        "Previous item",
+        "Next item",
+      ];
+      return labels.every((label) => {
+        const button = document.querySelector(`button[aria-label="${label}"]`);
+        if (!button || button.disabled) return false;
+        for (let element = button; element; element = element.parentElement) {
+          if (Number(getComputedStyle(element).opacity) < 1) return false;
+        }
+        return true;
+      });
+    });
     await saveScreenshot(page, "viewer.png");
     await page.keyboard.press("Escape");
     await sleep(600);
@@ -289,19 +318,23 @@ async function main() {
       throw new Error("Settings button not found in the toolbar");
     }
 
+    await page.waitForSelector('aside[aria-label="Preferences"]', { visible: true });
     await sleep(1000);
     await saveScreenshot(page, "settings.png");
   } finally {
-    if (browser) {
-      await browser.disconnect().catch(() => {});
+    try {
+      if (browser) {
+        await browser.disconnect().catch(() => {});
+      }
+    } finally {
+      try {
+        if (app) {
+          await shutDownApp(app);
+        }
+      } finally {
+        restoreSettings(originalSettings);
+      }
     }
-
-    if (app) {
-      await shutDownApp(app);
-    }
-
-    copyFileSync(settingsBackupPath, settingsPath);
-    console.log("Restored original settings from backup.");
   }
 
   console.log("Frame View capture complete.");
