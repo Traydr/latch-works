@@ -17,6 +17,8 @@ export interface AppState {
   scannedDirectories: number;
   discoveredItems: number;
   scanMessage: string;
+  /** The path `scanMessage` is about, shown after it and clipped from the start. */
+  scanMessagePath: string | null;
   initializeSettings: (settings: AppSettings) => void;
   setRecursive: (value: boolean) => void;
   setSelectedId: (id: string | null) => void;

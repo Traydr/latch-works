@@ -39,6 +39,7 @@ function AppInner(): JSX.Element {
   const selectedId = useAppStore((state) => state.selectedId);
   const viewerIndex = useAppStore((state) => state.viewerIndex);
   const scanMessage = useAppStore((state) => state.scanMessage);
+  const scanMessagePath = useAppStore((state) => state.scanMessagePath);
   const scanState = useAppStore((state) => state.scanState);
 
   const initializeSettings = useAppStore((state) => state.initializeSettings);
@@ -204,6 +205,7 @@ function AppInner(): JSX.Element {
     rootPath,
     sidebarRootPath: navigationCeilingPath,
     scanMessage,
+    scanMessagePath,
     scanState,
     recursive: effectiveRecursive,
     comicMode,
