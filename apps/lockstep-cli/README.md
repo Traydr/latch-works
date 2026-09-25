@@ -10,7 +10,7 @@ Lockstep is the **local → remote bridge** in Latch Works. It walks a source di
 
 | Command | Description |
 | --- | --- |
-| `plan` | Scan the source tree and print a sync plan (no uploads) |
+| `plan` | Scan the source tree and print a sync plan against the live Pane View snapshot, or a `--remote-snapshot` file (no uploads) |
 | `push` | Hash, upload, and register changed files with Pane View |
 | `prune` | Apply planned remote deletes (requires `--yes` or interactive confirmation) |
 | `verify` | Compare local archive against a remote snapshot file; exits `1` on drift |
@@ -26,11 +26,17 @@ From the **repo root**:
 pnpm start:lockstep
 ```
 
-Read-only plan:
+Read-only plan against the live Pane View snapshot (same URL and token resolution as `push`):
 
 ```powershell
+$env:LOCKSTEP_API_URL = "http://localhost:3000"
+$env:LOCKSTEP_API_TOKEN = "your-sync-token"
 pnpm --filter @latch-works/lockstep start plan --source "T:\cloud-desktop\media"
 ```
+
+Pass `--remote-snapshot snapshot.json` to plan against a saved snapshot instead. With neither an
+API URL and token nor a snapshot file, `plan` prints a warning and compares against an empty
+remote: every local file shows as an upload and no deletes can appear.
 
 Push to a local Pane View dev server:
 

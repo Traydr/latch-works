@@ -85,15 +85,8 @@ export async function executeCommand(
     throw new Error("--remote-snapshot is required for verify.");
   }
 
-  const apiUrl =
-    options.command === "push" || options.command === "prune"
-      ? (options.apiUrl ?? process.env.LOCKSTEP_API_URL)
-      : undefined;
-
-  const apiToken =
-    options.command === "push" || options.command === "prune"
-      ? process.env[options.apiTokenEnv]
-      : undefined;
+  const apiUrl = options.apiUrl ?? process.env.LOCKSTEP_API_URL;
+  const apiToken = process.env[options.apiTokenEnv];
 
   if (options.command === "push" || options.command === "prune") {
     console.log(`Remote API URL: ${apiUrl ?? "not configured"}`);
@@ -109,19 +102,28 @@ export async function executeCommand(
     }
   }
 
+  const remote = selectRemote(options, apiUrl, apiToken);
+
+  if (remote.kind === "none") {
+    console.warn(
+      `Warning: plan is comparing against an empty remote (${remote.reason}). Every local file ` +
+        `will show as an upload and no deletes can appear. ${remote.fix}`,
+    );
+  }
+
   const plan = await core.planSync(
     {
-      apiToken,
-      apiUrl,
+      apiToken: remote.kind === "live" ? remote.apiToken : undefined,
+      apiUrl: remote.kind === "live" ? remote.apiUrl : undefined,
       hashMode: options.command === "push" ? "remote-aware" : options.hashFiles ? "all" : "none",
-      remoteSnapshotPath: options.remoteSnapshot,
+      remoteSnapshotPath: remote.kind === "file" ? remote.path : undefined,
       sourceRoot: options.source,
     },
     observer,
   );
 
   reporter.clear();
-  printPlanSummary(plan, options);
+  printPlanSummary(plan, options, remote);
 
   if (options.command === "verify") {
     const changedItems = plan.items.filter((item) => item.action !== "keep");
@@ -230,8 +232,72 @@ export async function executeCommand(
   }
 }
 
-function printPlanSummary(plan: LockstepPlan, options: CliOptions): void {
+/** What a plan compares the local archive against. */
+type RemoteSource =
+  | { kind: "file"; path: string }
+  | { apiToken: string; apiUrl: string; kind: "live" }
+  | { fix: string; kind: "none"; reason: string };
+
+/**
+ * A snapshot file wins when given; otherwise the live Pane View snapshot when both URL and token
+ * resolve. Push and prune have already returned without both, so only plan can reach `none`.
+ */
+function selectRemote(
+  options: CliOptions,
+  apiUrl: string | undefined,
+  apiToken: string | undefined,
+): RemoteSource {
+  if (options.remoteSnapshot) {
+    return { kind: "file", path: options.remoteSnapshot };
+  }
+
+  if (apiUrl && apiToken) {
+    return { apiToken, apiUrl, kind: "live" };
+  }
+
+  const snapshotFix = "or pass --remote-snapshot with a saved snapshot file.";
+
+  if (apiUrl) {
+    return {
+      fix: `Set ${options.apiTokenEnv} to compare against Pane View, ${snapshotFix}`,
+      kind: "none",
+      reason: `${options.apiTokenEnv} is not set, so ${apiUrl} was skipped`,
+    };
+  }
+
+  const urlFix = "Pass --api-url or set LOCKSTEP_API_URL";
+
+  return apiToken
+    ? {
+        fix: `${urlFix} to compare against Pane View, ${snapshotFix}`,
+        kind: "none",
+        reason: "no Pane View API URL is configured",
+      }
+    : {
+        fix: `${urlFix}, with the token in ${options.apiTokenEnv}, to compare against Pane View, ${snapshotFix}`,
+        kind: "none",
+        reason: "no Pane View API URL or token",
+      };
+}
+
+function describeRemote(remote: RemoteSource): string {
+  switch (remote.kind) {
+    case "file":
+      return `snapshot file ${remote.path}`;
+    case "live":
+      return `live snapshot from ${remote.apiUrl}`;
+    default:
+      return `none, compared against an empty remote (${remote.reason})`;
+  }
+}
+
+function printPlanSummary(plan: LockstepPlan, options: CliOptions, remote: RemoteSource): void {
   console.log(`Source: ${plan.sourceRoot}`);
+
+  if (options.command === "plan" || options.command === "verify") {
+    console.log(`Remote: ${describeRemote(remote)}`);
+  }
+
   console.log(`Media files: ${plan.totalFiles}`);
   console.log(`Skipped files: ${plan.skipped}`);
   console.log(`Total size: ${formatBytes(plan.totalBytes)}`);
