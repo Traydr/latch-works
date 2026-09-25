@@ -11,18 +11,52 @@ const RemoteEntrySchema = z.object({
   size: z.number(),
 });
 
-const RemoteSnapshotFileSchema = z.array(RemoteEntrySchema);
+const RemoteEntryListSchema = z.array(RemoteEntrySchema);
 
-const RemoteSnapshotResponseSchema = z.object({ entries: RemoteSnapshotFileSchema });
+const RemoteSnapshotResponseSchema = z.object({ entries: RemoteEntryListSchema });
+
+/** undici rejects with a bare "fetch failed" and keeps the useful reason (ECONNREFUSED…) in `cause`. */
+const NetworkErrorReasonSchema = z
+  .union([
+    z.object({ cause: z.object({ message: z.string() }) }).transform(({ cause }) => cause.message),
+    z.object({ message: z.string() }).transform(({ message }) => message),
+  ])
+  .catch("network error");
+
+/**
+ * A snapshot file holds either a bare entry list or a saved `GET /api/sync/snapshot` response
+ * (`{ entries, status }`). Both reduce to the list before the entries themselves are checked.
+ */
+const RemoteSnapshotFileSchema = z.union([
+  z.array(z.unknown()),
+  z.object({ entries: z.array(z.unknown()) }).transform(({ entries }) => entries),
+]);
 
 export async function readRemoteSnapshot(filePath: string): Promise<RemoteEntrySnapshot[]> {
   const raw = await readFile(filePath, "utf-8");
-  const snapshot = RemoteSnapshotFileSchema.safeParse(JSON.parse(raw));
+  let json: unknown;
+
+  try {
+    json = JSON.parse(raw);
+  } catch (cause) {
+    const detail = cause instanceof Error ? cause.message : String(cause);
+
+    throw new Error(`Remote snapshot ${filePath} is not valid JSON: ${detail}`, { cause });
+  }
+
+  const entries = RemoteSnapshotFileSchema.safeParse(json);
+
+  if (!entries.success) {
+    throw new Error(
+      `Remote snapshot ${filePath} must be a JSON array of entries or an object with an ` +
+        "entries array (a saved GET /api/sync/snapshot response).",
+    );
+  }
+
+  const snapshot = RemoteEntryListSchema.safeParse(entries.data);
 
   if (!snapshot.success) {
-    throw new Error(
-      failedAtRoot(snapshot.error, 0) ? "Remote snapshot must be a JSON array." : ENTRY_ERROR,
-    );
+    throw new Error(`${ENTRY_ERROR} (${filePath})`);
   }
 
   return snapshot.data;
@@ -33,12 +67,22 @@ export async function fetchRemoteSnapshot(
   apiToken: string,
   signal?: AbortSignal,
 ): Promise<RemoteEntrySnapshot[]> {
-  const response = await fetch(new URL("/api/sync/snapshot", apiUrl), {
+  const url = new URL("/api/sync/snapshot", apiUrl);
+
+  const response = await fetch(url, {
     headers: {
       Authorization: `Bearer ${apiToken}`,
     },
     method: "GET",
     signal,
+  }).catch((cause: unknown) => {
+    if (signal?.aborted) {
+      throw cause;
+    }
+
+    const reason = NetworkErrorReasonSchema.parse(cause);
+
+    throw new Error(`Could not reach Pane View at ${url.origin}: ${reason}`, { cause });
   });
 
   if (!response.ok) {
