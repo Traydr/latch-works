@@ -12,7 +12,7 @@ export const AppSettingsSchema = z.object({
   autoplayVideos: z.boolean().catch(false),
   loopNavigation: z.boolean().catch(true),
   loopVideos: z.boolean().catch(false),
-  rememberViewerPosition: z.boolean().catch(true),
+  rememberViewerPosition: z.boolean().catch(false),
   showImages: z.boolean().catch(true),
   showVideos: z.boolean().catch(true),
   theme: ThemeModeSchema.catch("system"),
