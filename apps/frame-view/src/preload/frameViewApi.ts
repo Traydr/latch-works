@@ -1,3 +1,4 @@
+import { Result } from 'better-result';
 import type { ZodType } from 'zod';
 
 import { AppCommandSchema, type JsonValue, ScanEventSchema } from '../shared/contracts';
@@ -21,8 +22,14 @@ export interface PreloadIpcTransport {
   subscribe: (channel: string, listener: (payload: JsonValue) => void) => () => void;
 }
 
-/** Builds the `window.frameView` bridge over a renderer IPC transport. */
-export function createFrameViewApi(transport: PreloadIpcTransport): FrameViewApi {
+/**
+ * Builds the `window.frameView` bridge over a renderer IPC transport. `getPathForFile` is
+ * Electron's `webUtils.getPathForFile`, which only the preload can reach.
+ */
+export function createFrameViewApi(
+  transport: PreloadIpcTransport,
+  getPathForFile: (file: File) => string,
+): FrameViewApi {
   function invokeResult<T>(
     channel: string,
     schema: ZodType<T>,
@@ -32,6 +39,29 @@ export function createFrameViewApi(transport: PreloadIpcTransport): FrameViewApi
       .invoke(channel, ...args)
       .then((value) => deserializeIpcResult(value, schema, channel));
   }
+
+  // Subscribed up front: the main process flushes queued commands (a launch path, say) when the
+  // page finishes loading, which can be before React mounts a listener. Held until one arrives.
+  const commandListeners = new Set<(command: AppCommand) => void>();
+  const heldCommands: AppCommand[] = [];
+
+  transport.subscribe('app:command', (payload) => {
+    const parsedPayload = AppCommandSchema.safeParse(payload);
+
+    if (!parsedPayload.success) {
+      return;
+    }
+
+    if (commandListeners.size === 0) {
+      heldCommands.push(parsedPayload.data);
+
+      return;
+    }
+
+    for (const listener of commandListeners) {
+      listener(parsedPayload.data);
+    }
+  });
 
   return {
     openFolderDialog: () =>
@@ -45,6 +75,19 @@ export function createFrameViewApi(transport: PreloadIpcTransport): FrameViewApi
         InvokeIpcContracts.resolveInputPath.responseSchema,
         candidatePath,
       ),
+    authorizeDroppedFile: (file: File) => {
+      const droppedPath = getPathForFile(file);
+
+      if (!droppedPath) {
+        return Promise.resolve(Result.ok(null));
+      }
+
+      return invokeResult(
+        InvokeIpcContracts.authorizeDroppedPath.channel,
+        InvokeIpcContracts.authorizeDroppedPath.responseSchema,
+        droppedPath,
+      );
+    },
     startScan: (options: ScanOptions) =>
       invokeResult(
         InvokeIpcContracts.startScan.channel,
@@ -112,14 +155,17 @@ export function createFrameViewApi(transport: PreloadIpcTransport): FrameViewApi
           InvokeIpcContracts.getDiagnosticsSnapshot.responseSchema,
         ),
     },
-    onAppCommand: (listener: (command: AppCommand) => void) =>
-      transport.subscribe('app:command', (payload) => {
-        const parsedPayload = AppCommandSchema.safeParse(payload);
+    onAppCommand: (listener: (command: AppCommand) => void) => {
+      commandListeners.add(listener);
 
-        if (parsedPayload.success) {
-          listener(parsedPayload.data);
-        }
-      }),
+      for (const command of heldCommands.splice(0)) {
+        listener(command);
+      }
+
+      return () => {
+        commandListeners.delete(listener);
+      };
+    },
     onScanEvent: (listener: (event: ScanEvent) => void) =>
       transport.subscribe('scan:event', (payload) => {
         const parsedPayload = ScanEventSchema.safeParse(payload);

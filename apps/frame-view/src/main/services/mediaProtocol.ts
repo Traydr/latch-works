@@ -2,7 +2,7 @@ import { createReadStream, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 
-import { ImageExtensions, VideoExtensions } from '@latch-works/media-domain';
+import type { ImageExtensions, VideoExtensions } from '@latch-works/media-domain';
 import { protocol } from 'electron';
 import type {
   ThumbnailDebugOptions,
@@ -17,6 +17,14 @@ export const MEDIA_PROTOCOL_SCHEME = 'frameview-media';
 let thumbnailService: ThumbnailService | null = null;
 
 const authorizedMediaRoots = new Set<string>();
+
+/**
+ * Folders the OS asked the app to open (launch argv, a second launch, macOS `open-file`) that the
+ * renderer has not scanned yet. A scan of another root shrinks `authorizedMediaRoots`, so these
+ * stay claimable until their own scan starts; the remembered-folder scan at startup can otherwise
+ * drop a launch folder before the renderer gets to it.
+ */
+const pendingLaunchMediaRoots = new Set<string>();
 
 async function toCanonicalPath(inputPath: string): Promise<string> {
   const resolved = path.resolve(inputPath);
@@ -297,6 +305,29 @@ export async function authorizeMediaRoot(rootPath: string): Promise<void> {
 
   const canonicalRoot = await toCanonicalPath(rootPath);
   authorizedMediaRoots.add(canonicalRoot);
+}
+
+/** Authorizes a folder the OS asked the app to open and keeps it claimable by its scan. */
+export async function grantLaunchMediaRoot(rootPath: string): Promise<void> {
+  const canonicalRoot = await toCanonicalPath(rootPath);
+  authorizedMediaRoots.add(canonicalRoot);
+  pendingLaunchMediaRoots.add(canonicalRoot);
+}
+
+/**
+ * Called as a scan of `rootPath` starts: when it is a pending launch folder, re-authorizes it and
+ * clears the grant. Returns whether a grant was claimed.
+ */
+export async function claimLaunchMediaRoot(rootPath: string): Promise<boolean> {
+  const canonicalRoot = await toCanonicalPath(rootPath);
+
+  if (!pendingLaunchMediaRoots.delete(canonicalRoot)) {
+    return false;
+  }
+
+  authorizedMediaRoots.add(canonicalRoot);
+
+  return true;
 }
 
 /**

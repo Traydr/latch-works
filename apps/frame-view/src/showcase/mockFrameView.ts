@@ -72,6 +72,7 @@ export function installShowcaseFrameViewMock(): void {
   const api: FrameViewApi = {
     openFolderDialog: async () => Result.ok(SHOWCASE_FOLDER_PATH),
     resolveInputPath: async (candidatePath) => Result.ok(candidatePath),
+    authorizeDroppedFile: async () => Result.ok(null),
     startScan: async (options) => {
       void emitShowcaseScan(options);
 

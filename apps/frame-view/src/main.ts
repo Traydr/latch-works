@@ -8,8 +8,10 @@ import started from 'electron-squirrel-startup';
 import { CatalogService } from './main/catalog/CatalogService';
 import { createElectronIpcRuntime, registerIpc } from './main/ipc/registerIpc';
 import { buildAppMenu } from './main/menu';
+import { resolveFolderPath } from './main/services/folderService';
 import {
   authorizeRememberedMediaRoot,
+  grantLaunchMediaRoot,
   MEDIA_PROTOCOL_SCHEME,
   registerMediaProtocol,
   setThumbnailDebugOptions,
@@ -120,6 +122,28 @@ function extractLaunchPathFromArgv(argv: string[]): string | null {
   return null;
 }
 
+/**
+ * Opens a path the OS handed the app (launch argv, a second launch, macOS `open-file`). Like the
+ * native dialog, this is the user's choice, so the main process authorizes the folder itself (a
+ * file's parent folder) before asking the renderer to scan it.
+ */
+async function openLaunchPath(candidatePath: string): Promise<void> {
+  const resolvedPath = await resolveFolderPath(candidatePath);
+
+  if (Result.isError(resolvedPath)) {
+    logResultError('launch-path:resolve', resolvedPath);
+
+    return;
+  }
+
+  if (!resolvedPath.value) {
+    return;
+  }
+
+  await grantLaunchMediaRoot(resolvedPath.value);
+  queueOrSendCommand({ type: 'scan-path', path: resolvedPath.value });
+}
+
 async function createWindow(): Promise<void> {
   if (!mediaToolsService) {
     mediaToolsService = new MediaToolsService();
@@ -177,6 +201,10 @@ async function createWindow(): Promise<void> {
     catalogService,
     mediaToolsService,
   );
+
+  // Registered before the first load: commands queued at a cold start (a launch path) are sent
+  // when it finishes, and awaiting the load first would miss that event.
+  mainWindow.webContents.on('did-finish-load', flushPendingCommands);
 
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
     await mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
@@ -269,7 +297,6 @@ async function createWindow(): Promise<void> {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
-  mainWindow.webContents.on('did-finish-load', flushPendingCommands);
 }
 
 app.on('ready', () => {
@@ -281,7 +308,7 @@ app.on('ready', () => {
     const launchPath = extractLaunchPathFromArgv(process.argv.slice(1));
 
     if (launchPath) {
-      queueOrSendCommand({ type: 'scan-path', path: launchPath });
+      void openLaunchPath(launchPath);
     }
   }
 
@@ -307,13 +334,13 @@ app.on('second-instance', (_event, argv) => {
   const launchPath = extractLaunchPathFromArgv(argv.slice(1));
 
   if (launchPath) {
-    queueOrSendCommand({ type: 'scan-path', path: launchPath });
+    void openLaunchPath(launchPath);
   }
 });
 
 app.on('open-file', (event, filePath) => {
   event.preventDefault();
-  queueOrSendCommand({ type: 'scan-path', path: filePath });
+  void openLaunchPath(filePath);
 });
 
 app.on('window-all-closed', () => {

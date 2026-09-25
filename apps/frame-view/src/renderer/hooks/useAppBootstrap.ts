@@ -1,12 +1,8 @@
 import { useEffect, useEffectEvent, useRef } from 'react';
-import { z } from 'zod';
 
 import type { AppSettings, ScanEvent, ThemeMode } from '../../shared/types';
 import { frameViewClient } from '../services/frameViewClient';
 import { getRootGalleryPreferences } from '../utils/rootPreferences';
-
-/** Electron adds the absolute on-disk path to files dropped onto the window. */
-const DroppedFileSchema = z.object({ path: z.string().min(1) });
 
 interface UseAppBootstrapOptions {
   settingsTheme: ThemeMode;
@@ -51,6 +47,8 @@ export function useAppBootstrap({
   toggleSettingsAction,
 }: UseAppBootstrapOptions): void {
   const pendingScanEventsRef = useRef<ScanEvent[]>([]);
+  // Set once the OS hands the app a path to open; that path wins over the remembered folder.
+  const launchPathRequestedRef = useRef(false);
   const flushFrameIdRef = useRef<number | null>(null);
 
   const applyScanEventEvent = useEffectEvent(applyScanEvent);
@@ -121,7 +119,11 @@ export function useAppBootstrap({
       initializeSettingsEvent(loadedSettings);
       applyTheme(loadedSettings.theme);
 
-      if (loadedSettings.rememberLastFolder && loadedSettings.lastFolderPath) {
+      if (
+        loadedSettings.rememberLastFolder &&
+        loadedSettings.lastFolderPath &&
+        !launchPathRequestedRef.current
+      ) {
         setNavigationCeilingPathEvent(loadedSettings.lastFolderPath);
         setPendingFolderSelectionPathEvent(null);
 
@@ -180,13 +182,20 @@ export function useAppBootstrap({
 
     const onDrop = (event: DragEvent): void => {
       event.preventDefault();
-      const droppedFile = DroppedFileSchema.safeParse(event.dataTransfer?.files?.[0]);
+      const droppedFile = event.dataTransfer?.files?.[0];
 
-      if (!droppedFile.success) {
+      if (!droppedFile) {
         return;
       }
 
-      scanInputPathEvent(droppedFile.data.path);
+      void (async () => {
+        // Resolves a dropped file to its parent folder and authorizes it for scanning.
+        const droppedFolder = await frameViewClient.authorizeDroppedFile(droppedFile);
+
+        if (droppedFolder) {
+          scanInputPathEvent(droppedFolder);
+        }
+      })();
     };
 
     window.addEventListener('dragover', onDragOver);
@@ -219,6 +228,7 @@ export function useAppBootstrap({
       }
 
       if (command.type === 'scan-path') {
+        launchPathRequestedRef.current = true;
         scanInputPathEvent(command.path);
       }
     });
