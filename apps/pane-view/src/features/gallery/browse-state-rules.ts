@@ -206,6 +206,8 @@ export interface BrowseIntentResult {
 /**
  * What an intent does: URL-owned fields produce a navigation, local fields a
  * persisted patch. Rules stated here and nowhere else on the client:
+ * - navigating to any folder (the root included) ends a search: the query is
+ *   dropped so the folder shows its own contents;
  * - navigating to the root drops both flags from the URL; entering a folder
  *   from the root applies the remembered flags — the settings drawer's
  *   "default recursive browsing" default, which is the last in-folder choice
@@ -227,7 +229,9 @@ export function applyBrowseIntent(
     case "navigateToPath": {
       if (intent.path === "") {
         return {
-          navigate: { search: buildBrowseSearch(state, { media: undefined, path: "" }) },
+          navigate: {
+            search: buildBrowseSearch(state, { media: undefined, path: "", q: undefined }),
+          },
         };
       }
 
@@ -239,6 +243,7 @@ export function applyBrowseIntent(
             comic: flags.comicMode,
             media: undefined,
             path: intent.path,
+            q: undefined,
             recursive: flags.recursive,
           }),
         },
