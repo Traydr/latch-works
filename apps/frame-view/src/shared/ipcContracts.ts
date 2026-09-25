@@ -46,6 +46,12 @@ export const InvokeIpcContracts = {
     PathInputSchema.nullable(),
     PathInputSchema,
   ),
+  authorizeDroppedPath: defineInvokeContract(
+    'path:authorize-dropped',
+    z.tuple([PathInputSchema]),
+    PathInputSchema.nullable(),
+    PathInputSchema,
+  ),
   startScan: defineInvokeContract(
     'scan:start',
     z.tuple([ScanOptionsSchema]),

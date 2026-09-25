@@ -1,5 +1,5 @@
 import type { IpcRendererEvent } from 'electron';
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 
 import { createFrameViewApi, type PreloadIpcTransport } from './preload/frameViewApi';
 import type { JsonValue } from './shared/contracts';
@@ -19,4 +19,7 @@ const transport: PreloadIpcTransport = {
   },
 };
 
-contextBridge.exposeInMainWorld('frameView', createFrameViewApi(transport));
+contextBridge.exposeInMainWorld(
+  'frameView',
+  createFrameViewApi(transport, (file) => webUtils.getPathForFile(file)),
+);

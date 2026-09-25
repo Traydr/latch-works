@@ -18,6 +18,7 @@ import { getFrameViewValue, isFrameViewOk } from '../utils/frameViewResult';
 interface FrameViewClient {
   openFolderDialog: () => Promise<string | null>;
   resolveInputPath: (candidatePath: string) => Promise<string | null>;
+  authorizeDroppedFile: (file: File) => Promise<string | null>;
   startScan: (options: ScanOptions) => Promise<boolean>;
   cancelScan: () => Promise<boolean>;
   listFolderChildren: (folderPath: string) => Promise<FolderNode[]>;
@@ -53,6 +54,9 @@ export const frameViewClient: FrameViewClient = {
   },
   async resolveInputPath(candidatePath) {
     return getFrameViewValue(await getApi().resolveInputPath(candidatePath), 'resolve-input-path');
+  },
+  async authorizeDroppedFile(file) {
+    return getFrameViewValue(await getApi().authorizeDroppedFile(file), 'authorize-dropped-file');
   },
   async startScan(options) {
     return isFrameViewOk(await getApi().startScan(options));

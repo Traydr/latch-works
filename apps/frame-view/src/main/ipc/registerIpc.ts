@@ -13,6 +13,7 @@ import { parseWithSchema, serializeAppResult, ValidationError } from '../errors'
 import { listFolderChildren, resolveFolderPath } from '../services/folderService';
 import {
   authorizeMediaRoot,
+  claimLaunchMediaRoot,
   clearThumbnailCache,
   getThumbnailDiagnostics,
   getThumbnailWorkerCapabilities,
@@ -41,6 +42,7 @@ export type IpcMediaToolsService = Pick<MediaToolsService, 'getStatus' | 'probeV
 /** Everything the IPC layer reaches outside itself: Electron, the folder tree, media access. */
 export interface IpcRuntime {
   authorizeMediaRoot: typeof authorizeMediaRoot;
+  claimLaunchMediaRoot: typeof claimLaunchMediaRoot;
   clearThumbnailCache: typeof clearThumbnailCache;
   getAppVersion: () => string;
   getThumbnailDiagnostics: typeof getThumbnailDiagnostics;
@@ -63,6 +65,7 @@ export interface IpcRuntime {
 export function createElectronIpcRuntime(mainWindow: BrowserWindow): IpcRuntime {
   return {
     authorizeMediaRoot,
+    claimLaunchMediaRoot,
     clearThumbnailCache,
     getAppVersion: () => app.getVersion(),
     getThumbnailDiagnostics,
@@ -192,6 +195,34 @@ export function registerIpc(
     return okResult(resolvedPath.value);
   });
 
+  // The preload is the only caller, with the path `webUtils.getPathForFile` read off a File the
+  // user dropped onto the window; the renderer cannot send a bare path here. A drop is a user
+  // choice like the native dialog, so it authorizes the folder the same way.
+  runtime.handle(
+    InvokeIpcContracts.authorizeDroppedPath.channel,
+    async (droppedPath: JsonValue) => {
+      const validated = validateIpcInput(PathInputSchema, droppedPath, 'path:authorize-dropped');
+
+      if (!validated.ok) {
+        return validated.serialized;
+      }
+
+      const resolvedPath = await runtime.resolveFolderPath(validated.value);
+
+      if (Result.isError(resolvedPath)) {
+        return serializeAppResult(Result.err(resolvedPath.error));
+      }
+
+      if (!resolvedPath.value) {
+        return okResult<string | null>(null);
+      }
+
+      await runtime.authorizeMediaRoot(resolvedPath.value);
+
+      return okResult(resolvedPath.value);
+    },
+  );
+
   runtime.handle(InvokeIpcContracts.startScan.channel, async (options: JsonValue) => {
     const validated = validateIpcInput(
       requireRequestSchema(InvokeIpcContracts.startScan.requestSchema),
@@ -231,7 +262,9 @@ export function registerIpc(
     }
 
     const settings = settingsService.getSettings();
-    let authorized = await runtime.isAuthorizedMediaPath(resolvedRoot);
+    // A folder the OS asked the app to open stays scannable even if another scan shrank the roots.
+    const claimedLaunchRoot = await runtime.claimLaunchMediaRoot(resolvedRoot);
+    let authorized = claimedLaunchRoot || (await runtime.isAuthorizedMediaPath(resolvedRoot));
 
     // Remembered folders are chosen via the native dialog, then persisted. After a restart the
     // in-memory allowlist is empty — re-authorize the exact remembered path so auto-scan works.

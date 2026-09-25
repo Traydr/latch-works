@@ -96,6 +96,11 @@ export type FrameViewResult<T> = Result<T, IpcErrorPayload>;
 export interface FrameViewApi {
   openFolderDialog: () => Promise<FrameViewResult<string | null>>;
   resolveInputPath: (candidatePath: string) => Promise<FrameViewResult<string | null>>;
+  /**
+   * Authorizes the folder of a `File` dropped onto the window (its parent when it is a file) and
+   * returns that folder, or `null` when the drop has no on-disk path.
+   */
+  authorizeDroppedFile: (file: File) => Promise<FrameViewResult<string | null>>;
   startScan: (options: ScanOptions) => Promise<FrameViewResult<void>>;
   cancelScan: () => Promise<FrameViewResult<void>>;
   listFolderChildren: (folderPath: string) => Promise<FrameViewResult<FolderNode[]>>;

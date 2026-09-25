@@ -42,6 +42,7 @@ function setup() {
 
   const runtime: IpcRuntime = {
     authorizeMediaRoot,
+    claimLaunchMediaRoot: vi.fn<IpcRuntime['claimLaunchMediaRoot']>(async () => false),
     clearThumbnailCache: vi.fn<IpcRuntime['clearThumbnailCache']>(async () => undefined),
     getAppVersion: () => '1.0.13',
     getThumbnailDiagnostics: () => null,
