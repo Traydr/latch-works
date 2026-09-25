@@ -194,12 +194,12 @@ test.describe("thumbnails and viewer", () => {
       .toBeGreaterThan(0);
     await expect(dialog.getByRole("slider", { name: "Video seek position" })).toBeVisible();
 
-    // The fixture clips are 4 s long, so a 10 s skip lands just short of the end.
+    // The fixture clips are 4 s long, so a 5 s skip lands just short of the end.
     await window.keyboard.press("3");
     await expect
       .poll(() => video.evaluate((element: HTMLVideoElement) => element.currentTime))
       .toBeGreaterThanOrEqual(3.5);
-    await dialog.getByRole("button", { name: "Back 10 seconds" }).click();
+    await dialog.getByRole("button", { name: "Back 5 seconds" }).click();
     await expect
       .poll(() => video.evaluate((element: HTMLVideoElement) => element.currentTime))
       .toBeLessThan(0.5);

@@ -1,3 +1,5 @@
+import { VIDEO_SKIP_SECONDS } from "@/features/viewer/video-playback";
+
 export const GALLERY_HOTKEYS = [
   { keys: "W/A/S/D or Arrow keys", action: "Move grid focus" },
   { keys: "Enter / F", action: "Open selected item" },
@@ -6,7 +8,7 @@ export const GALLERY_HOTKEYS = [
   { keys: "Shift+A / Shift+D", action: "Previous / next sibling folder" },
   { keys: "← / → or Q / E", action: "Previous / next media in viewer" },
   { keys: "Space / 2", action: "Play or pause video" },
-  { keys: "1 / 3", action: "Skip video back / forward 10 s" },
+  { keys: "1 / 3", action: `Skip video back / forward ${VIDEO_SKIP_SECONDS} s` },
   { keys: "Hold 4", action: "Play video at 2× while held" },
   { keys: "Escape", action: "Close viewer or overlay" },
   { keys: "?", action: "Show keyboard shortcuts" },

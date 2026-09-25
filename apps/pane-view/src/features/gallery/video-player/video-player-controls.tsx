@@ -83,7 +83,7 @@ export function ChromeRegion({
   );
 }
 
-/** The ±10 s button: a circular arrow with the second count inside. */
+/** The skip button: a circular arrow with the second count inside. */
 export function SkipButton({
   direction,
   playback,
