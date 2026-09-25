@@ -11,6 +11,7 @@ export interface LayoutShellProps {
   rootPath: string | null;
   sidebarRootPath: string | null;
   scanMessage: string;
+  scanMessagePath: string | null;
   scanState: 'idle' | 'loading' | 'done' | 'error';
   recursive: boolean;
   comicMode: boolean;

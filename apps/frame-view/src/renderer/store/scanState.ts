@@ -23,6 +23,7 @@ export function createApplyScanEvent(set: AppStoreSet, get: AppStoreGet) {
           scannedDirectories: 0,
           discoveredItems: 0,
           scanMessage: 'Scanning folder...',
+          scanMessagePath: null,
         });
         break;
       case 'progress':
@@ -34,7 +35,8 @@ export function createApplyScanEvent(set: AppStoreSet, get: AppStoreGet) {
           scannedDirectories: event.scannedDirectories,
           discoveredItems: event.discoveredItems,
           scanState: 'loading',
-          scanMessage: `Scanning ${event.currentPath}`,
+          scanMessage: 'Scanning',
+          scanMessagePath: event.currentPath,
         });
         break;
       case 'batch':
@@ -83,6 +85,7 @@ export function createApplyScanEvent(set: AppStoreSet, get: AppStoreGet) {
               scanState: 'done',
               discoveredItems: event.totalItems,
               scanMessage: `Loaded ${event.totalItems} item(s) in ${(event.elapsedMs / 1000).toFixed(1)}s`,
+              scanMessagePath: null,
             };
           }
 
@@ -103,6 +106,7 @@ export function createApplyScanEvent(set: AppStoreSet, get: AppStoreGet) {
             scanState: 'done',
             discoveredItems: event.totalItems,
             scanMessage: `Loaded ${event.totalItems} item(s) in ${(event.elapsedMs / 1000).toFixed(1)}s`,
+            scanMessagePath: null,
           };
         });
         break;
@@ -125,6 +129,7 @@ export function createApplyScanEvent(set: AppStoreSet, get: AppStoreGet) {
           loadingItemCount: 0,
           scanState: 'idle',
           scanMessage: 'Scan cancelled',
+          scanMessagePath: null,
         }));
         break;
       case 'error': {
@@ -136,7 +141,8 @@ export function createApplyScanEvent(set: AppStoreSet, get: AppStoreGet) {
 
         set({
           scanState: isActiveRunError ? 'loading' : 'error',
-          scanMessage: event.path ? `${event.message}: ${event.path}` : event.message,
+          scanMessage: event.message,
+          scanMessagePath: event.path ?? null,
         });
         break;
       }

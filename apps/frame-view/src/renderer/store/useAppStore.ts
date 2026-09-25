@@ -22,6 +22,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   scannedDirectories: 0,
   discoveredItems: 0,
   scanMessage: 'Open a folder to begin',
+  scanMessagePath: null,
   initializeSettings: createInitializeSettings(set),
   setRecursive: (value) => set({ recursive: value }),
   setSelectedId: (id) => set({ selectedId: id }),

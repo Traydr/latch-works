@@ -16,6 +16,7 @@ export function PrismLayout({
   settings,
   rootPath,
   scanMessage,
+  scanMessagePath,
   scanState,
   recursive,
   comicMode,
@@ -67,17 +68,8 @@ export function PrismLayout({
     return undefined;
   }, [scanMessage, scanState]);
 
-  const topStatus = useMemo(() => {
-    if (scanState === 'loading' || scanState === 'error') {
-      return scanMessage;
-    }
-
-    if (scanState === 'done' && showReadyState) {
-      return scanMessage;
-    }
-
-    return null;
-  }, [scanMessage, scanState, showReadyState]);
+  const showTopStatus =
+    scanState === 'loading' || scanState === 'error' || (scanState === 'done' && showReadyState);
 
   const folderLabel = useMemo(() => {
     if (!rootPath) {
@@ -108,7 +100,13 @@ export function PrismLayout({
         rootPath={rootPath}
         selectedBrowserEntryIndex={selectedBrowserEntryIndex}
         topStatus={
-          topStatus ? { message: topStatus, kind: isScanning ? 'scanning' : 'ready' } : null
+          showTopStatus
+            ? {
+                kind: isScanning ? 'scanning' : 'ready',
+                message: scanMessage,
+                path: scanMessagePath,
+              }
+            : null
         }
       />
 
