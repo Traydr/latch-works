@@ -25,12 +25,12 @@ export function TokenInput({
         type="password"
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        placeholder="Enter token for this session"
+        placeholder="Saved with OS encryption when available"
       />
       <p className="text-[10px] text-zinc-500">
         {profile.tokenUnreadable
-          ? "Stored token could not be unlocked. Re-enter to save securely."
-          : "OS encryption unavailable — token stays in memory until quit."}
+          ? "The saved token could not be unlocked. Enter it again to replace it."
+          : "Kept in memory until quit if OS encryption is unavailable."}
       </p>
     </label>
   );

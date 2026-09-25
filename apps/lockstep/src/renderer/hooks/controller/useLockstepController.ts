@@ -229,7 +229,7 @@ export function useLockstepController(): LockstepController {
       }
 
       if (!sessionToken.trim()) {
-        setError("Enter a sync API token for this session before running remote operations.");
+        setError("Enter a sync API token for this profile before running remote operations.");
 
         return false;
       }
