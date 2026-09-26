@@ -109,7 +109,7 @@ export function MediaViewerModal({
   const canStepBackward =
     index > 0 || (index >= 0 && loopNavigation && !hasMore && items.length > 1);
 
-  const neighbor = (delta: -1 | 1): MediaItem | undefined => {
+  const neighbor = (delta: number): MediaItem | undefined => {
     if (index < 0 || items.length < 2) {
       return undefined;
     }
@@ -123,8 +123,11 @@ export function MediaViewerModal({
     return loopNavigation && !hasMore ? items[(target + items.length) % items.length] : undefined;
   };
 
+  // Two previews each way, so quick stepping lands on an already loaded image.
+  usePrefetchNeighborPreview(neighbor(-2), cache);
   usePrefetchNeighborPreview(neighbor(-1), cache);
   usePrefetchNeighborPreview(neighbor(1), cache);
+  usePrefetchNeighborPreview(neighbor(2), cache);
 
   if (!item) {
     return null;
