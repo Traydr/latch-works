@@ -18,10 +18,10 @@
   "dependencies": {
     "@latch-works/media-domain": "workspace:*",
     "@latch-works/media-index": "workspace:*",
-    "zod": "^4.6.1"
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "typescript": "^7.0.2",
-    "vitest": "^5.0.0"
+    "vitest": "^5.0.1"
   }
 }
