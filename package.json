@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "packageManager": "pnpm@11.1.0",
+  "engines": {
+    "node": "24.x"
+  },
   "scripts": {
     "build:all": "pnpm -r run build && pnpm -r run package",
     "format": "biome format --write .",

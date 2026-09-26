@@ -32,7 +32,7 @@ Pane View is the **web counterpart** to [Frame View](../frame-view). It serves a
 
 ## Prerequisites
 
-- Node.js 22+
+- Node.js 24
 - pnpm 11
 - PostgreSQL database
 - S3-compatible bucket and credentials

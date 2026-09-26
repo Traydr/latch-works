@@ -130,7 +130,7 @@ The scan, sort, grouping, and plan logic all live in `packages/`. Lockstep deskt
 
 ## Install
 
-Requires Node.js 22+, pnpm 11 (`corepack enable`), and npm on `PATH` for Electron Forge packaging. Pane View additionally needs PostgreSQL, S3-compatible storage, and Shutter access for signed renditions.
+Requires Node.js 24, pnpm 11 (`corepack enable`), and npm on `PATH` for Electron Forge packaging. Pane View additionally needs PostgreSQL, S3-compatible storage, and Shutter access for signed renditions.
 
 ```bash
 pnpm install
