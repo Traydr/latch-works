@@ -5,7 +5,8 @@ import { app, BrowserWindow, safeStorage } from "electron";
 import started from "electron-squirrel-startup";
 
 import { registerIpc } from "./main/ipc/registerIpc";
-import { ProfileService } from "./main/services/profileService";
+import { FileSecretStorage, lockstepConfigDir } from "./main/services/fileSecretStorage";
+import { ProfileService, type SecretStorage } from "./main/services/profileService";
 import { RunService } from "./main/services/runService";
 
 if (started) {
@@ -31,8 +32,23 @@ function resolveWindowIconPath(fileName: string): string | undefined {
   return candidates.find((candidate) => existsSync(candidate));
 }
 
+/**
+ * Unpackaged runs (e2e, development) can set `LOCKSTEP_SECRET_STORAGE=file` to keep tokens under
+ * a key in `~/.config/lockstep` instead of the Keychain, which prompts whenever the Electron binary
+ * changes and blocks unattended runs. Packaged builds always use `safeStorage`.
+ */
+function resolveSecretStorage(): SecretStorage {
+  if (!app.isPackaged && process.env.LOCKSTEP_SECRET_STORAGE === "file") {
+    return new FileSecretStorage(path.join(lockstepConfigDir(), "secret-storage.key"));
+  }
+
+  return safeStorage;
+}
+
 async function createWindow(): Promise<void> {
-  profileService = new ProfileService(app.getPath("userData"), { secretStorage: safeStorage });
+  profileService = new ProfileService(app.getPath("userData"), {
+    secretStorage: resolveSecretStorage(),
+  });
   const initResult = await profileService.init();
 
   if (Result.isError(initResult)) {
