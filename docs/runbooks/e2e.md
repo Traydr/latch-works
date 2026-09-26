@@ -83,7 +83,9 @@ Push (two pushed, zero failed, both paths in `/api/sync/snapshot`), Plan again (
 every seeded path is a delete from this source), then Prune: one planned delete's file is copied
 back into the source first, so Prune deletes every other planned path, skips that one, and leaves
 the Prune stage disabled until the next Plan. It also checks `lockstep-settings.json` never holds
-the token in the clear. Prune empties the seeded archive in the e2e database, which is recreated
+the token in the clear. The app runs with `LOCKSTEP_SECRET_STORAGE=file`, so the token is
+encrypted with a key in `~/.config/lockstep/` instead of the Keychain and no prompt blocks the run.
+Prune empties the seeded archive in the e2e database, which is recreated
 the next time the e2e server starts. The project depends on
 `pane-view`, so `pnpm e2e:lockstep` runs the Pane View suite first; `--no-deps` skips that while
 iterating (the server is still started or reused).

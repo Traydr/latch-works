@@ -12,7 +12,9 @@ import { electronChildEnv, REPO_ROOT } from "./env.ts";
 /**
  * Drives the packaged Lockstep desktop build (`apps/lockstep/.vite/build`,
  * produced by `electron-forge package` in the setup project) through
- * Playwright's Electron driver on a fresh userData directory.
+ * Playwright's Electron driver on a fresh userData directory. Tokens are
+ * encrypted with the file key under `~/.config/lockstep` rather than the
+ * Keychain, whose prompt would block the run until someone clicks Allow.
  */
 export const LOCKSTEP_APP_DIR = path.join(REPO_ROOT, "apps", "lockstep");
 
@@ -39,7 +41,7 @@ export async function launchLockstep(): Promise<LockstepSession> {
       `--user-data-dir=${userDataDir}`,
     ],
     cwd: LOCKSTEP_APP_DIR,
-    env: electronChildEnv(),
+    env: electronChildEnv({ LOCKSTEP_SECRET_STORAGE: "file" }),
     executablePath: ELECTRON_BINARY,
   });
 

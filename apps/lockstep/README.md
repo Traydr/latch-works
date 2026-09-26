@@ -41,6 +41,12 @@ Lockstep stores desktop sync tokens with Electron `safeStorage`, which uses macO
 Packaged macOS builds must have a stable bundle id and a valid code signature, or Keychain can
 allow the app to store the token but refuse to unlock it on the next launch.
 
+Unpackaged runs (the e2e suite, development) can set `LOCKSTEP_SECRET_STORAGE=file` to skip the
+Keychain. Tokens are then encrypted with a random key in `~/.config/lockstep/secret-storage.key`
+(or `$XDG_CONFIG_HOME/lockstep/`), created on first use with mode 0600. This avoids the Keychain
+prompt that appears whenever the Electron binary changes, which blocks unattended runs. Packaged
+builds ignore the variable.
+
 Forge sets `CFBundleIdentifier` to `dev.traydr.latchworks.lockstep` and signs macOS packages by
 default. If `LOCKSTEP_MACOS_SIGN_IDENTITY` is set, that identity is used. If it is unset, local
 builds are signed ad-hoc with `identity: "-"`, plus local-only Electron helper entitlements that
