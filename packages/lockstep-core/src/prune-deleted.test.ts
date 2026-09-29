@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -24,6 +24,7 @@ interface RemoteApiFake {
 }
 
 interface RemoteApiFakeBehaviour {
+  onCreateRun?: () => Promise<void>;
   onDelete?: (request: DeleteRemoteItemRequest) => Promise<void>;
 }
 
@@ -45,6 +46,10 @@ function createRemoteApiFake(behaviour: RemoteApiFakeBehaviour = {}): RemoteApiF
       signal?: AbortSignal,
     ) => {
       postJsonCalls.push({ apiToken, apiUrl, body, route, signal });
+
+      if (route === "/api/sync/runs") {
+        await behaviour.onCreateRun?.();
+      }
 
       return schema.parse(
         route === "/api/sync/runs" ? { syncRunId: "run-1" } : { status: "database" },
@@ -378,5 +383,53 @@ describe("pruneDeleted orchestration", () => {
 
     expect(fake.deleteCalls.map((call) => call.logicalPath)).toEqual(["photos/photo.jpeg"]);
     expect(result).toMatchObject({ failed: 0, pruned: 1, skipped: 0 });
+  });
+
+  it("stops without deleting when the source folder disappears mid-run", async () => {
+    await writeSourceFile(sourceRoot, "photos/back.jpg");
+    fake = createRemoteApiFake({
+      onCreateRun: () => rename(sourceRoot, `${sourceRoot}-moved`),
+    });
+    const plan = createPlan([{ action: "delete", path: "photos/back.jpg" }], sourceRoot);
+
+    try {
+      await expect(
+        pruneDeleted(
+          { apiToken: "token", apiUrl: "http://127.0.0.1:3000", plan },
+          undefined,
+          fake.remote,
+        ),
+      ).rejects.toThrow(/Source folder is not available/);
+    } finally {
+      await rm(`${sourceRoot}-moved`, { force: true, recursive: true });
+    }
+
+    expect(fake.deleteCalls).toHaveLength(0);
+    expect(findFinalizeCall(fake.postJsonCalls)?.body).toMatchObject({ status: "failed" });
+  });
+
+  it("stops without deleting when the source folder is replaced by an empty one", async () => {
+    await writeSourceFile(sourceRoot, "photos/back.jpg");
+    fake = createRemoteApiFake({
+      onCreateRun: async () => {
+        await rename(sourceRoot, `${sourceRoot}-moved`);
+        await mkdir(sourceRoot);
+      },
+    });
+    const plan = createPlan([{ action: "delete", path: "photos/back.jpg" }], sourceRoot);
+
+    try {
+      await expect(
+        pruneDeleted(
+          { apiToken: "token", apiUrl: "http://127.0.0.1:3000", plan },
+          undefined,
+          fake.remote,
+        ),
+      ).rejects.toThrow(/Source folder is not available/);
+    } finally {
+      await rm(`${sourceRoot}-moved`, { force: true, recursive: true });
+    }
+
+    expect(fake.deleteCalls).toHaveLength(0);
   });
 });

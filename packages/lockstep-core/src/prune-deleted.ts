@@ -92,14 +92,45 @@ async function readDirectoryNames(sourceRoot: string, archiveDir: string): Promi
   }
 }
 
+/** Which directory the source folder is, so a moved or remounted folder is noticed. */
+interface SourceRootIdentity {
+  dev: number;
+  ino: number;
+}
+
+/** Stops the whole prune: without the reviewed source folder no absence can be trusted. */
+class SourceRootUnavailableError extends Error {
+  constructor(sourceRoot: string) {
+    super(
+      `Source folder is not available: ${sourceRoot}. Prune needs it to confirm each file is still gone.`,
+    );
+    this.name = "SourceRootUnavailableError";
+  }
+}
+
 /** An unmounted drive would make every file look absent; refuse to prune against it. */
-async function assertSourceRootAvailable(sourceRoot: string): Promise<void> {
+async function assertSourceRootAvailable(sourceRoot: string): Promise<SourceRootIdentity> {
   const rootStat = await stat(sourceRoot).catch(() => null);
 
   if (!rootStat?.isDirectory()) {
-    throw new Error(
-      `Source folder is not available: ${sourceRoot}. Prune needs it to confirm each file is still gone.`,
-    );
+    throw new SourceRootUnavailableError(sourceRoot);
+  }
+
+  return { dev: rootStat.dev, ino: rootStat.ino };
+}
+
+/**
+ * Checked after a file looks absent and before its delete: the folder must still be the one
+ * prune started with, not gone, moved, or an empty mountpoint left by an unplugged drive.
+ */
+async function assertSourceRootUnchanged(
+  sourceRoot: string,
+  expected: SourceRootIdentity,
+): Promise<void> {
+  const current = await assertSourceRootAvailable(sourceRoot);
+
+  if (current.dev !== expected.dev || current.ino !== expected.ino) {
+    throw new SourceRootUnavailableError(sourceRoot);
   }
 }
 
@@ -141,7 +172,7 @@ export async function pruneDeleted(
     return { failed: 0, plan, pruned: 0, skipped: 0 };
   }
 
-  await assertSourceRootAvailable(plan.sourceRoot);
+  const sourceRootIdentity = await assertSourceRootAvailable(plan.sourceRoot);
   throwIfAborted(signal);
 
   if (omittedCount > 0) {
@@ -174,6 +205,7 @@ export async function pruneDeleted(
   let skipped = 0;
   let failed = 0;
   let cancelled = false;
+  let runError: Error | undefined;
 
   try {
     for (const [index, item] of itemsToPrune.entries()) {
@@ -196,6 +228,7 @@ export async function pruneDeleted(
           continue;
         }
 
+        await assertSourceRootUnchanged(plan.sourceRoot, sourceRootIdentity);
         observer?.onEvent({
           type: "status",
           message: `[${current}/${itemsToPrune.length}] deleting ${item.path}`,
@@ -221,6 +254,10 @@ export async function pruneDeleted(
           throw error;
         }
 
+        if (error instanceof SourceRootUnavailableError) {
+          throw error;
+        }
+
         const failure = toError(error);
         failed += 1;
         observer?.onEvent({
@@ -237,6 +274,7 @@ export async function pruneDeleted(
     if (signal?.aborted) {
       cancelled = true;
     } else {
+      runError = toError(error);
       throw error;
     }
   } finally {
@@ -256,10 +294,12 @@ export async function pruneDeleted(
           },
           error: wasCancelled
             ? "Run cancelled by user"
-            : failed > 0
-              ? `${failed} delete(s) failed during prune`
-              : undefined,
-          status: wasCancelled ? "cancelled" : failed > 0 ? "failed" : "completed",
+            : runError
+              ? runError.message
+              : failed > 0
+                ? `${failed} delete(s) failed during prune`
+                : undefined,
+          status: wasCancelled ? "cancelled" : runError || failed > 0 ? "failed" : "completed",
         },
         AcknowledgementSchema,
       )
