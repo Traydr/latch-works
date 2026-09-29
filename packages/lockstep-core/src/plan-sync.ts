@@ -1,4 +1,4 @@
-import { createSyncPathIdentity } from "@latch-works/media-domain";
+import { pairSyncPaths } from "@latch-works/media-domain";
 import { createSyncPlan, hashArchiveItems, scanArchive } from "@latch-works/media-index";
 import { toError } from "./format.js";
 import { loadHashCache } from "./hash-cache.js";
@@ -153,12 +153,12 @@ function selectPlanningHashPaths(
     return new Set(localItems.filter((item) => !item.sha256).map((item) => item.path));
   }
 
-  const identity = createSyncPathIdentity(
+  const pairs = pairSyncPaths(
     localItems.map((item) => item.path),
     remoteEntries.map((entry) => entry.path),
   );
 
-  const remoteByPath = new Map(remoteEntries.map((entry) => [identity(entry.path), entry]));
+  const remoteByPath = new Map(remoteEntries.map((entry) => [entry.path, entry]));
 
   return new Set(
     localItems
@@ -167,7 +167,8 @@ function selectPlanningHashPaths(
           return false;
         }
 
-        const remote = remoteByPath.get(identity(item.path));
+        const pairedPath = pairs.get(item.path);
+        const remote = pairedPath === undefined ? undefined : remoteByPath.get(pairedPath);
 
         return remote?.sha256 !== undefined && remote.size === item.size;
       })

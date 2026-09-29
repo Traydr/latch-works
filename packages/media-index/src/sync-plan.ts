@@ -1,4 +1,4 @@
-import { createSyncPathIdentity, type MediaItem } from "@latch-works/media-domain";
+import { type MediaItem, pairSyncPaths } from "@latch-works/media-domain";
 
 export interface RemoteEntrySnapshot {
   path: string;
@@ -24,17 +24,18 @@ export function createSyncPlan(
   localItems: readonly MediaItem[],
   remoteEntries: readonly RemoteEntrySnapshot[] = [],
 ): SyncPlan {
-  const identity = createSyncPathIdentity(
+  const pairs = pairSyncPaths(
     localItems.map((item) => item.path),
     remoteEntries.map((entry) => entry.path),
   );
 
-  const remoteByPath = new Map(remoteEntries.map((entry) => [identity(entry.path), entry]));
+  const remoteByPath = new Map(remoteEntries.map((entry) => [entry.path, entry]));
   const items: SyncPlanItem[] = [];
   const matchedRemotePaths = new Set<string>();
 
   for (const local of localItems) {
-    const remote = remoteByPath.get(identity(local.path));
+    const pairedPath = pairs.get(local.path);
+    const remote = pairedPath === undefined ? undefined : remoteByPath.get(pairedPath);
 
     if (!remote) {
       items.push({ action: "upload", local, path: local.path });
@@ -55,8 +56,8 @@ export function createSyncPlan(
   }
 
   for (const remote of remoteEntries) {
-    // Prefer matchedRemotePaths so alias/case duplicate remotes collapsed in remoteByPath
-    // still plan as deletes after the surviving identity is kept/updated.
+    // A remote entry no local path paired with is gone locally, including an alias or case twin
+    // left over after its sibling paired.
     if (!matchedRemotePaths.has(remote.path)) {
       items.push({ action: "delete", path: remote.path, remote });
     }
