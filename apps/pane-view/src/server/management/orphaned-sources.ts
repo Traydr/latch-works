@@ -1,4 +1,5 @@
 import { and, eq, exists, isNull, notExists, type SQL, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { db } from "../db";
 import { libraryEntries, mediaObjects, shutterSourceCleanup } from "../db/schema";
 
@@ -15,13 +16,21 @@ import { libraryEntries, mediaObjects, shutterSourceCleanup } from "../db/schema
  * never shows up here without an entry.
  */
 
-/** Media objects no live library entry references. */
+/**
+ * Media objects whose original no live library entry references. The check is
+ * by storage key, not by row: rows written before sync canonicalised the hash
+ * can spell one content two ways, and both rows then name the same original.
+ * Deleting that key for one row would take a live entry's original with it.
+ */
 export function orphanedMediaObjectCondition(): SQL {
+  const liveObjects = alias(mediaObjects, "live_media_objects");
+
   const activeReference = db
     .select({ value: sql`1` })
     .from(libraryEntries)
+    .innerJoin(liveObjects, eq(liveObjects.id, libraryEntries.mediaObjectId))
     .where(
-      and(eq(libraryEntries.mediaObjectId, mediaObjects.id), isNull(libraryEntries.deletedAt)),
+      and(eq(liveObjects.objectKey, mediaObjects.objectKey), isNull(libraryEntries.deletedAt)),
     );
 
   return notExists(activeReference);

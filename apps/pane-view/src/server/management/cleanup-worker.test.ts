@@ -53,14 +53,17 @@ async function runJobToCompletion(jobId: string, deletes?: ExternalDeletes): Pro
   }
 }
 
-async function insertMediaObject(sha256: string): Promise<string> {
+async function insertMediaObject(
+  sha256: string,
+  objectKey = `originals/${sha256}.jpg`,
+): Promise<string> {
   const [object] = await testDatabase()
     .db.insert(mediaObjects)
     .values({
       contentType: "image/jpeg",
       extension: "jpg",
       mediaType: "image",
-      objectKey: `originals/${sha256}.jpg`,
+      objectKey,
       sha256,
       size: 1024,
     })
@@ -149,6 +152,24 @@ describe("soft-deleted purge", () => {
       .from(shutterSourceCleanup);
 
     expect(queued.map((row) => row.sha256).sort()).toEqual([unreferenced, deletedOnly]);
+  });
+
+  it("keeps an original another media row still serves to a live entry", async () => {
+    // Rows written before sync canonicalised the hash: two spellings, one storage key.
+    const lower = "ab".repeat(32);
+    const objectKey = `originals/${lower}.jpg`;
+    await insertEntry(await insertMediaObject(lower, objectKey), "kept/ab.jpg", null);
+    await insertEntry(
+      await insertMediaObject(lower.toUpperCase(), objectKey),
+      "gone/ab.jpg",
+      new Date(),
+    );
+
+    const deletes: ExternalDeletes = { objectKeys: [], shutterSources: [] };
+    await runJobToCompletion(await insertJob("soft_deleted_purge"), deletes);
+
+    expect(deletes.objectKeys).toEqual([]);
+    expect(await remainingMediaSha256s()).toEqual([lower.toUpperCase(), lower].sort());
   });
 
   it("keeps every media row when a cancel lands during the storage delete", async () => {

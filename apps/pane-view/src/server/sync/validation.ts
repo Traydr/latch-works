@@ -81,9 +81,14 @@ const SyncObjectPayloadBodySchema = z.object({
     error: (issue) =>
       issue.input === "unknown" ? "unsupported media type" : "mediaType is invalid",
   }),
-  sha256: z.string({ error: "sha256 is required" }).regex(SHA256_PATTERN, {
-    error: "sha256 must be a 64-character hex string",
-  }),
+  // One content hash, one spelling: the storage key is derived from the
+  // lowercase hash, so a second spelling must not become a second media object.
+  sha256: z
+    .string({ error: "sha256 is required" })
+    .regex(SHA256_PATTERN, {
+      error: "sha256 must be a 64-character hex string",
+    })
+    .transform((sha256) => sha256.toLowerCase()),
   logicalPath: z.string({ error: "logicalPath is required" }),
   filename: z.string({ error: "filename is required" }),
   extension: z.string({ error: "extension is required" }),

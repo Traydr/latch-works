@@ -101,6 +101,17 @@ describe("POST /api/sync/complete-object", () => {
     });
   });
 
+  it("stores an uppercase sha256 in its canonical lowercase spelling", async () => {
+    const sha256 = "Ab".repeat(32);
+    const result = await postUpload({ ...validPayload, sha256 });
+
+    expect(result.ok).toBe(true);
+
+    if (result.ok) {
+      expect(result.input.sha256).toBe(sha256.toLowerCase());
+    }
+  });
+
   it("rejects mismatched object keys", async () => {
     const result = await postUpload({
       ...validPayload,
