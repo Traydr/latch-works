@@ -1,5 +1,6 @@
 import type { z } from "zod";
 import type {
+  ActiveRunSchema,
   createSerializedResultSchema,
   DoctorResultSchema,
   LockstepPlanSchema,
@@ -13,6 +14,8 @@ import type {
   RunRequestSchema,
 } from "./contracts";
 import type { deserializeIpcResult } from "./ipc";
+
+export type ActiveRun = z.infer<typeof ActiveRunSchema>;
 
 export type IpcErrorPayload = z.infer<typeof import("./contracts").IpcErrorPayloadSchema>;
 
@@ -47,6 +50,7 @@ export interface LockstepApi {
   createProfile: (input: LockstepProfileInput) => Promise<LockstepResult<LockstepProfilePublic>>;
   deleteProfile: (profileId: string) => Promise<LockstepResult<LockstepSettings>>;
   doctor: (profileId: string) => Promise<LockstepResult<DoctorResult>>;
+  getRunStatus: () => Promise<LockstepResult<ActiveRun | null>>;
   getSettings: () => Promise<LockstepResult<LockstepSettings>>;
   onRunEvent: (listener: (event: LockstepRunEvent) => void) => () => void;
   pickSourceFolder: () => Promise<LockstepResult<string | null>>;

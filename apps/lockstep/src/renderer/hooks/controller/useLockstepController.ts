@@ -239,6 +239,27 @@ export function useLockstepController(): LockstepController {
     return unsubscribe;
   }, [applyRunEvent]);
 
+  // A window opened while the main process is still running something (macOS keeps the app alive
+  // after its window closes) shows that run and its Cancel button until the run completes.
+  useEffect(() => {
+    void (async () => {
+      const result = await requireLockstepApi().getRunStatus();
+
+      if (Result.isError(result) || !result.value) {
+        return;
+      }
+
+      const { action } = result.value;
+      const label = `Resumed the ${action} run in progress...`;
+      setRunning(true);
+      activeRunActionRef.current = action;
+      setRunLabel(label);
+      setLogs([label]);
+      setRunProgress({ ...initialProgress, phase: "items", action, startedAt: Date.now() });
+      setScreenState("run");
+    })();
+  }, []);
+
   const filteredItems = useMemo(() => {
     if (!plan) {
       return [];

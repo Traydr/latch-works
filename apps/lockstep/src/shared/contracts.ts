@@ -90,6 +90,12 @@ export const LockstepRunSummarySchema = z.object({
   status: z.enum(["cancelled", "completed", "failed"]),
 });
 
+/** The run the main process is working on; it outlives the window that started it. */
+export const ActiveRunSchema = z.object({
+  action: LockstepRunSummarySchema.shape.action,
+  profileId: z.string(),
+});
+
 export const LockstepRunEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("cancelled") }),
   z.object({ type: z.literal("complete"), summary: LockstepRunSummarySchema }),

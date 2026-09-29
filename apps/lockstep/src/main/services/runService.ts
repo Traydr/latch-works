@@ -11,8 +11,8 @@ import {
 } from "@latch-works/lockstep-core";
 import type { BrowserWindow } from "electron";
 
-import type { DoctorResult, PruneRequest, RunRequest } from "../../shared/types";
-import { RunCancelledError } from "../errors";
+import type { ActiveRun, DoctorResult, PruneRequest, RunRequest } from "../../shared/types";
+import { RunCancelledError, toError } from "../errors";
 import type { ProfileService } from "./profileService";
 
 /** The lockstep-core entry points a run needs, injectable so tests can drive them. */
@@ -42,7 +42,7 @@ type RunCredentials = { apiToken: string; apiUrl: string; sourceRoot: string };
 
 export class RunService {
   private abortController: AbortController | null = null;
-  private running = false;
+  private activeRun: ActiveRun | null = null;
   private readonly reviewedPlans = new Map<string, ReviewedPlan>();
 
   constructor(
@@ -52,7 +52,12 @@ export class RunService {
   ) {}
 
   isRunning(): boolean {
-    return this.running;
+    return this.activeRun !== null;
+  }
+
+  /** The run in progress, so a window opened mid-run can show it and offer Cancel. */
+  getActiveRun(): ActiveRun | null {
+    return this.activeRun;
   }
 
   cancel(): void {
@@ -259,11 +264,11 @@ export class RunService {
     profileId: string,
     runner: (observer: LockstepObserver, signal: AbortSignal) => Promise<T>,
   ): Promise<T> {
-    if (this.running) {
+    if (this.activeRun) {
       throw new Error("A sync run is already in progress.");
     }
 
-    this.running = true;
+    this.activeRun = { action: operation, profileId };
     const abortController = new AbortController();
     this.abortController = abortController;
     let completeObserved = false;
@@ -271,7 +276,8 @@ export class RunService {
 
     const observer: LockstepObserver = {
       onEvent: (event: LockstepRunEvent) => {
-        if (event.type === "complete") {
+        // Push and prune plan first; only this operation's own completion ends the run.
+        if (event.type === "complete" && event.summary.action === operation) {
           completeObserved = true;
         }
 
@@ -300,9 +306,25 @@ export class RunService {
         throw new RunCancelledError({ message: "Run cancelled.", operation });
       }
 
+      if (!completeObserved) {
+        // Windows that attached mid-run learn the outcome only from events.
+        observer.onEvent({
+          type: "complete",
+          summary: {
+            action: operation,
+            completedAt: new Date().toISOString(),
+            failed: 0,
+            message: toError(error).message,
+            profileId,
+            pushed: 0,
+            status: "failed",
+          },
+        });
+      }
+
       throw error;
     } finally {
-      this.running = false;
+      this.activeRun = null;
       this.abortController = null;
     }
   }

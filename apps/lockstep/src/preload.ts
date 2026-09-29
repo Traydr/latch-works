@@ -45,6 +45,11 @@ const api: LockstepApi = {
       InvokeIpcContracts.doctor.responseSchema,
       profileId,
     ),
+  getRunStatus: () =>
+    invokeResult(
+      InvokeIpcContracts.getRunStatus.channel,
+      InvokeIpcContracts.getRunStatus.responseSchema,
+    ),
   getSettings: () =>
     invokeResult(
       InvokeIpcContracts.getSettings.channel,

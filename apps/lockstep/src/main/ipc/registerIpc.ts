@@ -1,5 +1,5 @@
 import { Result } from "better-result";
-import type { BrowserWindow } from "electron";
+import type { BrowserWindow, OpenDialogOptions } from "electron";
 import { dialog, ipcMain } from "electron";
 import { type ZodType, z } from "zod";
 
@@ -100,7 +100,7 @@ function requireRequestSchema<T>(schema: ZodType<T> | null): ZodType<T> {
 }
 
 export function registerIpc(
-  mainWindow: BrowserWindow,
+  getMainWindow: () => BrowserWindow | null,
   profileService: ProfileService,
   runService: RunService,
 ): void {
@@ -112,11 +112,21 @@ export function registerIpc(
     return okResult(profileService.getSettings());
   });
 
+  ipcMain.handle(InvokeIpcContracts.getRunStatus.channel, async () => {
+    return okResult(runService.getActiveRun());
+  });
+
   ipcMain.handle(InvokeIpcContracts.pickSourceFolder.channel, async () => {
-    const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+    const options: OpenDialogOptions = {
       properties: ["openDirectory"],
       title: "Select archive folder",
-    });
+    };
+
+    const mainWindow = getMainWindow();
+
+    const { canceled, filePaths } = mainWindow
+      ? await dialog.showOpenDialog(mainWindow, options)
+      : await dialog.showOpenDialog(options);
 
     if (canceled || filePaths.length === 0) {
       return okResult<string | null>(null);
