@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { FolderNode } from '../../shared/types';
 import { frameViewClient } from '../services/frameViewClient';
+import { useAppStore } from '../store/useAppStore';
 import { getParentPath, toDisplayName } from '../utils/path';
 
 interface UseFolderNavigationModelOptions {
@@ -38,6 +39,9 @@ export function useFolderNavigationModel({
   const [pendingFolderSelectionPath, setPendingFolderSelectionPath] = useState<string | null>(null);
   const folderChildrenRequestIdRef = useRef(0);
   const siblingRequestIdRef = useRef(0);
+  // Every scan re-reads the folder lists too, so Refresh and reopening a folder pick up folders
+  // added, renamed, or removed on disk.
+  const scanStartCount = useAppStore((state) => state.scanStartCount);
 
   const parentFolderPath = useMemo(() => getParentPath(rootPath), [rootPath]);
 
@@ -132,7 +136,7 @@ export function useFolderNavigationModel({
         setFolderChildrenLoading(false);
       }
     })();
-  }, [rootPath]);
+  }, [rootPath, scanStartCount]);
 
   useEffect(() => {
     const requestId = ++siblingRequestIdRef.current;
@@ -152,7 +156,7 @@ export function useFolderNavigationModel({
 
       setSiblingFolders(siblings);
     })();
-  }, [parentFolderPath, rootPath]);
+  }, [parentFolderPath, rootPath, scanStartCount]);
 
   const currentSiblingIndex = useMemo(() => {
     if (!rootPath) {

@@ -13,6 +13,8 @@ export interface AppState {
   selectedId: string | null;
   viewerIndex: number | null;
   activeScanRunId: number | null;
+  /** Counts scans that have started, so views derived from the folder on disk can re-read it. */
+  scanStartCount: number;
   scanState: ScanState;
   scannedDirectories: number;
   discoveredItems: number;

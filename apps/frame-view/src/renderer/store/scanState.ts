@@ -32,6 +32,7 @@ export function createApplyScanEvent(set: AppStoreSet, get: AppStoreGet) {
       case 'reset':
         set({
           activeScanRunId: event.runId,
+          scanStartCount: state.scanStartCount + 1,
           rootPath: event.rootPath,
           recursive: event.recursive,
           items: [],
