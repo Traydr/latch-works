@@ -27,6 +27,7 @@ interface RemoteApiFake {
 }
 
 interface RemoteApiFakeBehaviour {
+  onFinalize?: () => Promise<void>;
   onPush?: (request: PushMediaItemRequest) => Promise<void>;
   sha256: string;
 }
@@ -51,6 +52,10 @@ function createRemoteApiFake(behaviour: RemoteApiFakeBehaviour): RemoteApiFake {
       signal?: AbortSignal,
     ) => {
       postJsonCalls.push({ apiToken, apiUrl, body, route, signal });
+
+      if (route.endsWith("/complete")) {
+        await behaviour.onFinalize?.();
+      }
 
       return schema.parse(
         route === "/api/sync/runs" ? { syncRunId: "run-1" } : { status: "database" },
@@ -470,6 +475,70 @@ describe("pushChanges orchestration", () => {
     expect(events.filter((event) => event.type === "complete")).toHaveLength(1);
     expect(events.find((event) => event.type === "complete")).toMatchObject({
       summary: { failed: 1, pushed: 2, status: "failed" },
+    });
+  });
+
+  it("retries finalization and reports completion once it lands", async () => {
+    let finalizeAttempts = 0;
+    fake = createRemoteApiFake({
+      onFinalize: async () => {
+        finalizeAttempts += 1;
+
+        if (finalizeAttempts === 1) {
+          throw new Error("simulated HTTP 503");
+        }
+      },
+      sha256: contentSha256,
+    });
+    const plan = createPlan([{ action: "upload", local: localItem, path: localItem.path }]);
+    const { events, observer } = collectEvents();
+
+    const result = await pushChanges(
+      {
+        apiToken: "token",
+        apiUrl: "http://127.0.0.1:3000",
+        hashCacheRoot: cacheRoot,
+        plan,
+        sourceRoot: plan.sourceRoot,
+      },
+      observer,
+      fake.remote,
+    );
+
+    expect(result).toEqual({ failed: 0, plan, pushed: 1 });
+    expect(finalizeAttempts).toBe(2);
+    expect(events.find((event) => event.type === "complete")).toMatchObject({
+      summary: { status: "completed" },
+    });
+  });
+
+  it("fails the push when the sync run cannot be finalized", async () => {
+    fake = createRemoteApiFake({
+      onFinalize: async () => {
+        throw new Error("simulated HTTP 503");
+      },
+      sha256: contentSha256,
+    });
+    const plan = createPlan([{ action: "upload", local: localItem, path: localItem.path }]);
+    const { events, observer } = collectEvents();
+
+    await expect(
+      pushChanges(
+        {
+          apiToken: "token",
+          apiUrl: "http://127.0.0.1:3000",
+          hashCacheRoot: cacheRoot,
+          plan,
+          sourceRoot: plan.sourceRoot,
+        },
+        observer,
+        fake.remote,
+      ),
+    ).rejects.toThrow(/sync run run-1 could not be finalized.*simulated HTTP 503/);
+
+    expect(fake.pushCalls).toHaveLength(1);
+    expect(events.find((event) => event.type === "complete")).toMatchObject({
+      summary: { action: "push", failed: 0, pushed: 1, status: "failed" },
     });
   });
 });

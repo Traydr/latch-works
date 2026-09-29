@@ -178,7 +178,9 @@ pnpm --filter @latch-works/lockstep start push --source "T:\cloud-desktop\media"
 Capped pushes take the first N upload/update changes in plan order (delete items are excluded) and
 only hash the selected obvious uploads or size changes. Equal-size remote entries are still hashed on
 a cache miss because size alone cannot prove that their contents match. Each push run is finalized
-through `/api/sync/runs/{id}/complete` with `completed` or `failed` status and final counts.
+through `/api/sync/runs/{id}/complete` with `completed` or `failed` status and final counts. That
+request is retried briefly; if it still fails, the push or prune fails with the run id, and Pane View
+shows the run as running until it is cancelled on the management page.
 
 Lockstep stores versioned, per-source hash caches under
 `~/.latch-works/hash-cache/v1/`. Cache entries are invalidated when file size, modified time, or the

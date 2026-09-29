@@ -24,6 +24,7 @@ interface RemoteApiFake {
 }
 
 interface RemoteApiFakeBehaviour {
+  onFinalize?: () => Promise<void>;
   onCreateRun?: () => Promise<void>;
   onDelete?: (request: DeleteRemoteItemRequest) => Promise<void>;
 }
@@ -46,6 +47,10 @@ function createRemoteApiFake(behaviour: RemoteApiFakeBehaviour = {}): RemoteApiF
       signal?: AbortSignal,
     ) => {
       postJsonCalls.push({ apiToken, apiUrl, body, route, signal });
+
+      if (route.endsWith("/complete")) {
+        await behaviour.onFinalize?.();
+      }
 
       if (route === "/api/sync/runs") {
         await behaviour.onCreateRun?.();
@@ -431,5 +436,28 @@ describe("pruneDeleted orchestration", () => {
     }
 
     expect(fake.deleteCalls).toHaveLength(0);
+  });
+
+  it("fails the prune when the sync run cannot be finalized", async () => {
+    fake = createRemoteApiFake({
+      onFinalize: async () => {
+        throw new Error("simulated HTTP 503");
+      },
+    });
+    const plan = createPlan([{ action: "delete", path: "photos/old.jpg" }], sourceRoot);
+    const { events, observer } = collectEvents();
+
+    await expect(
+      pruneDeleted(
+        { apiToken: "token", apiUrl: "http://127.0.0.1:3000", plan },
+        observer,
+        fake.remote,
+      ),
+    ).rejects.toThrow(/sync run run-1 could not be finalized/);
+
+    expect(fake.deleteCalls).toHaveLength(1);
+    expect(events.find((event) => event.type === "complete")).toMatchObject({
+      summary: { action: "prune", failed: 0, pushed: 1, status: "failed" },
+    });
   });
 });

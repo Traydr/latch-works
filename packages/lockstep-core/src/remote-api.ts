@@ -2,12 +2,13 @@ import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { pipeline, Readable, Transform } from "node:stream";
+import { setTimeout as delay } from "node:timers/promises";
 import { getBaseName, getExtension, type MediaItem } from "@latch-works/media-domain";
 import { hashFileContents } from "@latch-works/media-index";
 import { z } from "zod";
-import { formatBytes } from "./format.js";
+import { formatBytes, formatPushError, toError } from "./format.js";
 import { resolveLocalFilePath } from "./push-helpers.js";
-import type { LockstepPlanCounts } from "./types.js";
+import type { LockstepObserver, LockstepPlanCounts } from "./types.js";
 
 type PushStage = "deleting" | "hashing" | "registering" | "uploading";
 
@@ -234,6 +235,104 @@ async function pushMediaItem({
     AcknowledgementSchema,
     signal,
   );
+}
+
+/** Waits between finalization attempts; the server accepts an exact replay of the same outcome. */
+const FINALIZE_RETRY_DELAYS_MS = [250, 1000];
+
+/**
+ * Records a sync run's outcome, retrying a few times so a brief outage does not leave the run
+ * marked running. No abort signal: a cancelled run still has to be finalized. Returns the last
+ * error when every attempt failed.
+ */
+export async function finalizeSyncRun({
+  apiToken,
+  apiUrl,
+  body,
+  onRetry,
+  postJson: post,
+  syncRunId,
+}: {
+  apiToken: string;
+  apiUrl: string;
+  body: CompleteSyncRunRequest;
+  onRetry?: (error: Error) => void;
+  postJson: typeof postJson;
+  syncRunId: string;
+}): Promise<Error | undefined> {
+  let lastError: Error | undefined;
+
+  for (const retryDelay of [...FINALIZE_RETRY_DELAYS_MS, undefined]) {
+    try {
+      await post(
+        apiUrl,
+        `/api/sync/runs/${syncRunId}/complete`,
+        apiToken,
+        body,
+        AcknowledgementSchema,
+      );
+
+      return undefined;
+    } catch (error) {
+      lastError = toError(error);
+
+      if (retryDelay === undefined) {
+        break;
+      }
+
+      onRetry?.(lastError);
+      await delay(retryDelay);
+    }
+  }
+
+  return lastError;
+}
+
+/**
+ * The run's items went through but the server still has the run marked running, which blocks
+ * library maintenance. Reports the run as failed, naming the run so it can be cancelled in Pane
+ * View's management page, and returns the error to throw.
+ */
+export function failUnfinalizedRun({
+  action,
+  done,
+  failed,
+  finalizeError,
+  observer,
+  planCounts,
+  pushed,
+  skipped,
+  syncRunId,
+}: {
+  action: "prune" | "push";
+  done: string;
+  failed: number;
+  finalizeError: Error;
+  observer?: LockstepObserver;
+  planCounts: LockstepPlanCounts;
+  pushed: number;
+  skipped?: number;
+  syncRunId: string;
+}): Error {
+  const message =
+    `${done}, but sync run ${syncRunId} could not be finalized: ${formatPushError(finalizeError)}. ` +
+    "Pane View shows it as running until it is cancelled on the management page.";
+
+  observer?.onEvent({
+    type: "complete",
+    summary: {
+      action,
+      completedAt: new Date().toISOString(),
+      failed,
+      message,
+      planCounts,
+      pushed,
+      skipped,
+      status: "failed",
+    },
+  });
+
+  return new Error(message, { cause: finalizeError });
 }
 
 async function deleteRemoteItem({

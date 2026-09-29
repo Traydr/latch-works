@@ -10,7 +10,8 @@ import {
   selectUploadUpdateItems,
 } from "./push-helpers.js";
 import {
-  AcknowledgementSchema,
+  failUnfinalizedRun,
+  finalizeSyncRun,
   type PushRemoteApi,
   remoteApi,
   SyncRunSchema,
@@ -138,6 +139,7 @@ export async function pushChanges(
   let failed = 0;
   let cancelled = false;
   let abortError: unknown;
+  let finalizeError: Error | undefined;
 
   const workItems = itemsToPush.map((item, index) => ({
     current: index + 1,
@@ -219,35 +221,41 @@ export async function pushChanges(
     }
   } finally {
     const wasCancelled = cancelled || (signal?.aborted ?? false);
-    await remote
-      .postJson(
-        options.apiUrl,
-        `/api/sync/runs/${syncRun.syncRunId}/complete`,
-        options.apiToken,
-        {
-          counts: {
-            ...plan.counts,
-            capped: itemsToPush.length,
-            failed,
-            planned: changedItems.length,
-            pushed,
-          },
-          error: wasCancelled
-            ? "Run cancelled by user"
-            : failed > 0
-              ? `${failed} item(s) failed during push`
-              : undefined,
-          status: wasCancelled ? "cancelled" : failed > 0 ? "failed" : "completed",
+    finalizeError = await finalizeSyncRun({
+      apiToken: options.apiToken,
+      apiUrl: options.apiUrl,
+      body: {
+        counts: {
+          ...plan.counts,
+          capped: itemsToPush.length,
+          failed,
+          planned: changedItems.length,
+          pushed,
         },
-        AcknowledgementSchema,
-      )
-      .catch((error) => {
-        const failure = toError(error);
+        error: wasCancelled
+          ? "Run cancelled by user"
+          : failed > 0
+            ? `${failed} item(s) failed during push`
+            : undefined,
+        status: wasCancelled ? "cancelled" : failed > 0 ? "failed" : "completed",
+      },
+      onRetry: (error) => {
         observer?.onEvent({
           type: "status",
-          message: `Warning: failed to finalize sync run: ${formatPushError(failure)}`,
+          message: `Warning: failed to finalize sync run, retrying: ${formatPushError(error)}`,
         });
+      },
+      postJson: remote.postJson,
+      syncRunId: syncRun.syncRunId,
+    });
+
+    if (finalizeError) {
+      observer?.onEvent({
+        type: "status",
+        message: `Warning: failed to finalize sync run: ${formatPushError(finalizeError)}`,
       });
+    }
+
     await hashCache.save().catch((error) => {
       const failure = toError(error);
       observer?.onEvent({
@@ -270,6 +278,19 @@ export async function pushChanges(
       },
     });
     throw abortError ?? signal?.reason ?? new DOMException("Aborted", "AbortError");
+  }
+
+  if (finalizeError) {
+    throw failUnfinalizedRun({
+      action: "push",
+      done: `${pushed} item(s) pushed`,
+      failed,
+      finalizeError,
+      observer,
+      planCounts: plan.counts,
+      pushed,
+      syncRunId: syncRun.syncRunId,
+    });
   }
 
   const summary = {
