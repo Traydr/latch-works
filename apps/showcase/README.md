@@ -7,7 +7,7 @@ Built with [Astro](https://astro.build/) (`output: "server"`) so pages and MDX d
 ## Development
 
 ```bash
-pnpm dev:showcase
+pnpm --filter @latch-works/showcase dev
 ```
 
 Opens at http://127.0.0.1:3100
