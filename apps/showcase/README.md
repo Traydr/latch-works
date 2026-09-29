@@ -48,7 +48,8 @@ lands in a real archive.
   `apps/frame-view/showcase-media`. Backs up and restores your personal settings file.
 - `capture-lockstep.mjs`: launches the real Lockstep desktop app, runs a real plan and push
   against the local sync API (seeding fresh sample scans each run), and captures the review and
-  run-log screens. Backs up and restores your profiles.
+  run-log screens. Runs on a throwaway profile directory, so your own profiles and tokens are
+  never touched.
 - `capture-gather-box.mjs`: loads the unpacked extension into the vendored Chrome and captures
   the actual side panel in idle and active states.
 
