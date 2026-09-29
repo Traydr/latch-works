@@ -1,5 +1,5 @@
 import path from "node:path";
-import type { SyncPlanAction } from "@latch-works/media-index";
+import { escapesRoot, type SyncPlanAction } from "@latch-works/media-index";
 import type { HashMode } from "./types.js";
 
 export function resolveHashMode(options: {
@@ -67,7 +67,7 @@ export function resolveLocalFilePath(sourceRoot: string, archivePath: string): s
   const resolvedFile = path.resolve(resolvedRoot, ...archivePath.split("/"));
   const relative = path.relative(resolvedRoot, resolvedFile);
 
-  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+  if (escapesRoot(relative)) {
     throw new Error(`Local path escapes source root: ${archivePath}`);
   }
 
