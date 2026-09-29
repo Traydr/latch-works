@@ -20,11 +20,7 @@ import { buildBrowserEntryCollection } from './utils/browserEntries';
 import type { ComicEntry } from './utils/comics';
 import { buildComicEntries, sortComicEntries } from './utils/comics';
 import { toDisplayName } from './utils/path';
-import {
-  createRootGalleryPreferencesPatch,
-  getRootGalleryPreferences,
-  toggleExcludedRootChildPath,
-} from './utils/rootPreferences';
+import { getRootGalleryPreferences, toggleExcludedRootChildPath } from './utils/rootPreferences';
 import { createRandomSeed } from './utils/sort';
 
 function AppInner(): JSX.Element {
@@ -148,6 +144,7 @@ function AppInner(): JSX.Element {
     clearThumbnailCacheAction,
     copyDiagnosticsAction,
     refreshDiagnosticsAction,
+    updateRootGalleryPreferences,
     updateSettings,
   } = useSettingsActions({
     initializeSettings,
@@ -233,12 +230,10 @@ function AppInner(): JSX.Element {
       }
 
       if (!value && comicMode) {
-        void updateSettings(
-          createRootGalleryPreferencesPatch(settings, rootPath, {
-            ...rootGalleryPreferences,
-            comicMode: false,
-          }),
-        );
+        void updateRootGalleryPreferences(rootPath, (preferences) => ({
+          ...preferences,
+          comicMode: false,
+        }));
         setActiveComic(null);
       }
 
@@ -252,12 +247,10 @@ function AppInner(): JSX.Element {
         return;
       }
 
-      const nextPreferences = {
-        ...rootGalleryPreferences,
+      void updateRootGalleryPreferences(rootPath, (preferences) => ({
+        ...preferences,
         comicMode: value,
-      };
-
-      void updateSettings(createRootGalleryPreferencesPatch(settings, rootPath, nextPreferences));
+      }));
 
       // Comic on forces recursive on, comic off turns it back off (Pane View's rule).
       setRecursive(value);
@@ -268,7 +261,7 @@ function AppInner(): JSX.Element {
 
       void runScan(rootPath, {
         recursive: value,
-        excludedRootChildPaths: nextPreferences.excludedRootChildPaths,
+        excludedRootChildPaths: rootGalleryPreferences.excludedRootChildPaths,
       });
     },
     onToggleExcludedRootChild: (folderPath: string) => {
@@ -276,15 +269,23 @@ function AppInner(): JSX.Element {
         return;
       }
 
-      const nextPreferences = toggleExcludedRootChildPath(rootGalleryPreferences, folderPath);
-      void updateSettings(createRootGalleryPreferencesPatch(settings, rootPath, nextPreferences));
+      void (async () => {
+        const savedPreferences = await updateRootGalleryPreferences(rootPath, (preferences) =>
+          toggleExcludedRootChildPath(preferences, folderPath),
+        );
 
-      if (effectiveRecursive) {
-        void runScan(rootPath, {
-          recursive: effectiveRecursive,
-          excludedRootChildPaths: nextPreferences.excludedRootChildPaths,
-        });
-      }
+        // Rescan with every exclusion saved so far, unless the user has left the folder.
+        if (
+          savedPreferences &&
+          effectiveRecursive &&
+          useAppStore.getState().rootPath === rootPath
+        ) {
+          void runScan(rootPath, {
+            recursive: effectiveRecursive,
+            excludedRootChildPaths: savedPreferences.excludedRootChildPaths,
+          });
+        }
+      })();
     },
     onChangeSortMode: changeSortModeAction,
     onShuffleRandom: shuffleRandomAction,

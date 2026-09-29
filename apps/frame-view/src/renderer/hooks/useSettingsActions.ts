@@ -1,11 +1,16 @@
 import { Result } from 'better-result';
 import { useCallback, useRef, useState } from 'react';
 
-import type { AppSettings, AppSettingsPatch } from '../../shared/types';
+import type { AppSettings, AppSettingsPatch, RootGalleryPreferences } from '../../shared/types';
 import { frameViewClientResult } from '../services/frameViewClient';
+import { useAppStore } from '../store/useAppStore';
 import { buildDiagnosticsReport } from '../utils/diagnostics';
 import { getFrameViewErrorMessage } from '../utils/frameViewResult';
 import { toDisplayName } from '../utils/path';
+import {
+  createRootGalleryPreferencesPatch,
+  getRootGalleryPreferences,
+} from '../utils/rootPreferences';
 
 interface UseSettingsActionsOptions {
   initializeSettings: (settings: AppSettings) => void;
@@ -31,6 +36,15 @@ interface UseSettingsActionsResult {
   copyDiagnosticsAction: () => void;
   refreshDiagnosticsAction: () => void;
   updateSettings: (patch: AppSettingsPatch) => Promise<void>;
+  /**
+   * Changes one folder's gallery preferences, applied to the settings as they stand when the
+   * change's turn in the save queue comes, so quick changes build on each other instead of
+   * replacing each other. Resolves with the folder's saved preferences, or null if saving failed.
+   */
+  updateRootGalleryPreferences: (
+    folderPath: string,
+    change: (preferences: RootGalleryPreferences) => RootGalleryPreferences,
+  ) => Promise<RootGalleryPreferences | null>;
 }
 
 export function useSettingsActions({
@@ -52,16 +66,17 @@ export function useSettingsActions({
     }, 2200);
   }, []);
 
-  const updateSettings = useCallback(
-    async (patch: AppSettingsPatch): Promise<void> => {
-      const runUpdate = async (): Promise<void> => {
+  const enqueueSettingsUpdate = useCallback(
+    async (buildPatch: () => AppSettingsPatch): Promise<AppSettings | null> => {
+      const runUpdate = async (): Promise<AppSettings | null> => {
+        const patch = buildPatch();
         const result = await frameViewClientResult.updateSettings(patch);
 
         if (Result.isError(result)) {
           console.error('[frameView:update-settings]', result.error);
           scheduleStatusReset(`Settings update failed: ${result.error.message}`);
 
-          return;
+          return null;
         }
 
         const updated = result.value;
@@ -75,14 +90,45 @@ export function useSettingsActions({
             recursive,
           });
         }
+
+        return updated;
       };
 
       const currentQueue = settingsUpdateQueueRef.current ?? Promise.resolve();
       const scheduledUpdate = currentQueue.then(runUpdate, runUpdate);
-      settingsUpdateQueueRef.current = scheduledUpdate;
-      await scheduledUpdate;
+      settingsUpdateQueueRef.current = scheduledUpdate.then(() => undefined);
+
+      return scheduledUpdate;
     },
-    [initializeSettings, recursive, rootPath, runScan],
+    [initializeSettings, recursive, rootPath, runScan, scheduleStatusReset],
+  );
+
+  const updateSettings = useCallback(
+    async (patch: AppSettingsPatch): Promise<void> => {
+      await enqueueSettingsUpdate(() => patch);
+    },
+    [enqueueSettingsUpdate],
+  );
+
+  const updateRootGalleryPreferences = useCallback(
+    async (
+      folderPath: string,
+      change: (preferences: RootGalleryPreferences) => RootGalleryPreferences,
+    ): Promise<RootGalleryPreferences | null> => {
+      const updated = await enqueueSettingsUpdate(() => {
+        // The store holds every earlier queued update's saved result by now.
+        const latest = useAppStore.getState().settings;
+
+        return createRootGalleryPreferencesPatch(
+          latest,
+          folderPath,
+          change(getRootGalleryPreferences(latest, folderPath)),
+        );
+      });
+
+      return updated ? getRootGalleryPreferences(updated, folderPath) : null;
+    },
+    [enqueueSettingsUpdate],
   );
 
   const copyDiagnosticsAction = useCallback((): void => {
@@ -158,6 +204,7 @@ export function useSettingsActions({
     clearThumbnailCacheAction,
     copyDiagnosticsAction,
     refreshDiagnosticsAction,
+    updateRootGalleryPreferences,
     updateSettings,
   };
 }
