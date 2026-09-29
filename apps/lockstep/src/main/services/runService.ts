@@ -272,6 +272,7 @@ export class RunService {
     const abortController = new AbortController();
     this.abortController = abortController;
     let completeObserved = false;
+    let reportedFailure: LockstepRunSummary | undefined;
     const baseObserver = this.createObserver();
 
     const observer: LockstepObserver = {
@@ -279,6 +280,7 @@ export class RunService {
         // Push and prune plan first; only this operation's own completion ends the run.
         if (event.type === "complete" && event.summary.action === operation) {
           completeObserved = true;
+          reportedFailure = event.summary.status === "failed" ? event.summary : undefined;
         }
 
         baseObserver.onEvent(event);
@@ -306,7 +308,11 @@ export class RunService {
         throw new RunCancelledError({ message: "Run cancelled.", operation });
       }
 
-      if (!completeObserved) {
+      if (reportedFailure) {
+        // A push or prune whose items went through but whose sync run could not be finalized
+        // reports that failure, naming the run, before it throws.
+        await this.profileService.recordLastRun(profileId, reportedFailure);
+      } else if (!completeObserved) {
         // Windows that attached mid-run learn the outcome only from events.
         observer.onEvent({
           type: "complete",
