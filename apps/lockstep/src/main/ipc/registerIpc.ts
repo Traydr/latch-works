@@ -6,7 +6,14 @@ import { type ZodType, z } from "zod";
 import type { JsonValue } from "../../shared/contracts";
 import { serializeIpcResult } from "../../shared/ipc";
 import { InvokeIpcContractList, InvokeIpcContracts } from "../../shared/ipcContracts";
-import { parseWithSchema, RunError, serializeAppResult, toError, ValidationError } from "../errors";
+import {
+  parseWithSchema,
+  RunCancelledError,
+  RunError,
+  serializeAppResult,
+  toError,
+  ValidationError,
+} from "../errors";
 import type { ProfileService } from "../services/profileService";
 import type { RunService } from "../services/runService";
 
@@ -34,6 +41,15 @@ function operationalFailure(operation: string, error: Error) {
       }),
     ),
   );
+}
+
+/** A cancelled run is its own outcome, so the renderer can keep the cancelled state it shows. */
+function runFailure(operation: string, error: Error) {
+  if (RunCancelledError.is(error)) {
+    return serializeAppResult(Result.err(error));
+  }
+
+  return operationalFailure(operation, error);
 }
 
 /** A run reads its profile once at start; editing or deleting it mid-run would orphan the result. */
@@ -191,7 +207,7 @@ export function registerIpc(
 
       return okResult(result);
     } catch (error) {
-      return operationalFailure(InvokeIpcContracts.doctor.channel, toError(error));
+      return runFailure(InvokeIpcContracts.doctor.channel, toError(error));
     }
   });
 
@@ -211,7 +227,7 @@ export function registerIpc(
 
       return okResult(plan);
     } catch (error) {
-      return operationalFailure(InvokeIpcContracts.plan.channel, toError(error));
+      return runFailure(InvokeIpcContracts.plan.channel, toError(error));
     }
   });
 
@@ -231,7 +247,7 @@ export function registerIpc(
 
       return okResult(summary);
     } catch (error) {
-      return operationalFailure(InvokeIpcContracts.push.channel, toError(error));
+      return runFailure(InvokeIpcContracts.push.channel, toError(error));
     }
   });
 
@@ -251,7 +267,7 @@ export function registerIpc(
 
       return okResult(summary);
     } catch (error) {
-      return operationalFailure(InvokeIpcContracts.prune.channel, toError(error));
+      return runFailure(InvokeIpcContracts.prune.channel, toError(error));
     }
   });
 

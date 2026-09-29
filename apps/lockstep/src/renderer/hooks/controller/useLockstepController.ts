@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
   DoctorResult,
+  IpcErrorPayload,
   LockstepPlan,
   LockstepProfileInput,
   LockstepProfilePatch,
@@ -295,6 +296,23 @@ export function useLockstepController(): LockstepController {
     setScreenState("run");
   }, []);
 
+  /** Ends a run whose request failed. A cancelled run keeps the progress it reached. */
+  const endRunWithError = useCallback((failure: IpcErrorPayload) => {
+    if (failure._tag === "RunCancelled") {
+      setRunLabel("Run cancelled.");
+      setRunProgress((prev) => ({
+        ...prev,
+        phase: "cancelled",
+        endedAt: prev.endedAt ?? Date.now(),
+      }));
+
+      return;
+    }
+
+    setError(failure.message);
+    setRunProgress((prev) => ({ ...prev, phase: "error", endedAt: Date.now() }));
+  }, []);
+
   const markReviewVisited = useCallback(() => {
     setPipelineProgress((prev) => ({ ...prev, reviewed: true }));
   }, []);
@@ -511,8 +529,7 @@ export function useLockstepController(): LockstepController {
     setRunning(false);
 
     if (Result.isError(result)) {
-      setError(result.error.message);
-      setRunProgress((prev) => ({ ...prev, phase: "error", endedAt: Date.now() }));
+      endRunWithError(result.error);
 
       return;
     }
@@ -526,7 +543,7 @@ export function useLockstepController(): LockstepController {
       summaryMessage: result.value.ok ? "All checks passed." : "Some checks failed.",
     }));
     await refreshSettings();
-  }, [activeProfile, ensureSessionToken, beginRun, refreshSettings]);
+  }, [activeProfile, ensureSessionToken, beginRun, endRunWithError, refreshSettings]);
 
   const handlePlan = useCallback(async () => {
     if (!activeProfile || !(await ensureSessionToken(activeProfile))) {
@@ -538,8 +555,7 @@ export function useLockstepController(): LockstepController {
     setRunning(false);
 
     if (Result.isError(result)) {
-      setError(result.error.message);
-      setRunProgress((prev) => ({ ...prev, phase: "error", endedAt: Date.now() }));
+      endRunWithError(result.error);
 
       return false;
     }
@@ -550,7 +566,7 @@ export function useLockstepController(): LockstepController {
     await refreshSettings();
 
     return true;
-  }, [activeProfile, ensureSessionToken, beginRun, refreshSettings]);
+  }, [activeProfile, ensureSessionToken, beginRun, endRunWithError, refreshSettings]);
 
   const handlePush = useCallback(async () => {
     if (!activeProfile || !(await ensureSessionToken(activeProfile))) {
@@ -563,8 +579,7 @@ export function useLockstepController(): LockstepController {
     setRunning(false);
 
     if (Result.isError(result)) {
-      setError(result.error.message);
-      setRunProgress((prev) => ({ ...prev, phase: "error", endedAt: Date.now() }));
+      endRunWithError(result.error);
 
       return;
     }
@@ -586,7 +601,7 @@ export function useLockstepController(): LockstepController {
 
     activeRunActionRef.current = "";
     await refreshSettings();
-  }, [activeProfile, ensureSessionToken, beginRun, refreshSettings]);
+  }, [activeProfile, ensureSessionToken, beginRun, endRunWithError, refreshSettings]);
 
   const handlePrune = useCallback(async () => {
     if (!activeProfile || !plan || !pruneAvailability.enabled) {
@@ -614,8 +629,7 @@ export function useLockstepController(): LockstepController {
     setPrunedPlanId(planId);
 
     if (Result.isError(result)) {
-      setError(result.error.message);
-      setRunProgress((prev) => ({ ...prev, phase: "error", endedAt: Date.now() }));
+      endRunWithError(result.error);
 
       return;
     }
@@ -640,7 +654,15 @@ export function useLockstepController(): LockstepController {
 
     activeRunActionRef.current = "";
     await refreshSettings();
-  }, [activeProfile, plan, pruneAvailability, ensureSessionToken, beginRun, refreshSettings]);
+  }, [
+    activeProfile,
+    plan,
+    pruneAvailability,
+    ensureSessionToken,
+    beginRun,
+    endRunWithError,
+    refreshSettings,
+  ]);
 
   const handleCancel = useCallback(async () => {
     await requireLockstepApi().cancelRun();

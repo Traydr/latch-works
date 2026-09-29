@@ -28,6 +28,11 @@ export const IpcErrorPayloadSchema = z.discriminatedUnion("_tag", [
     message: z.string(),
     operation: z.string(),
   }),
+  z.object({
+    _tag: z.literal("RunCancelled"),
+    message: z.string(),
+    operation: z.string(),
+  }),
 ]);
 
 export function createSerializedResultSchema<T>(valueSchema: z.ZodType<T>) {

@@ -12,6 +12,7 @@ import {
 import type { BrowserWindow } from "electron";
 
 import type { DoctorResult, PruneRequest, RunRequest } from "../../shared/types";
+import { RunCancelledError } from "../errors";
 import type { ProfileService } from "./profileService";
 
 /** The lockstep-core entry points a run needs, injectable so tests can drive them. */
@@ -293,6 +294,10 @@ export class RunService {
 
         observer.onEvent({ type: "cancelled" });
         observer.onEvent({ type: "complete", summary });
+      }
+
+      if (abortController.signal.aborted) {
+        throw new RunCancelledError({ message: "Run cancelled.", operation });
       }
 
       throw error;
