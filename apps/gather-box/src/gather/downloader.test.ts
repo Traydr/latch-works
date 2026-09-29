@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  runPool,
   saveBlobWithoutClobbering,
   type WritableDirectory,
   type WritableFile,
@@ -162,5 +163,44 @@ describe("collision-safe saving", () => {
     expect(await directory.text(suffixed)).toBe("unrelated C");
     expect(await directory.text(moved.fileName)).toBe("B");
     expect(replay).toEqual({ fileName: moved.fileName, skipped: true });
+  });
+});
+
+describe("download worker pool", () => {
+  it("waits for every active worker to unwind before reporting a failure", async () => {
+    let releaseWrite: () => void = () => undefined;
+
+    const writing = new Promise<void>((resolve) => {
+      releaseWrite = resolve;
+    });
+
+    const started: number[] = [];
+    let writeFinished = false;
+
+    const pool = runPool([0, 1, 2, 3], 2, async (item) => {
+      started.push(item);
+
+      if (item === 0) {
+        await writing;
+        writeFinished = true;
+
+        return;
+      }
+
+      throw new DOMException("The operation was aborted.", "AbortError");
+    });
+
+    let settled = false;
+
+    void pool.catch(() => undefined).finally(() => {
+      settled = true;
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(settled).toBe(false);
+    releaseWrite();
+    await expect(pool).rejects.toThrow("aborted");
+    expect(writeFinished).toBe(true);
+    expect(started).toEqual([0, 1]);
   });
 });

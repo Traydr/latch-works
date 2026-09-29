@@ -308,9 +308,10 @@ export async function runPool<T>(
   }
 
   let nextIndex = 0;
+  const failures: Error[] = [];
 
   const runners = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
-    while (true) {
+    while (failures.length === 0) {
       const currentIndex = nextIndex;
       nextIndex += 1;
 
@@ -318,11 +319,21 @@ export async function runPool<T>(
         return;
       }
 
-      await worker(items[currentIndex], currentIndex);
+      try {
+        await worker(items[currentIndex], currentIndex);
+      } catch (error) {
+        failures.push(toError(error));
+      }
     }
   });
 
+  // A failure (usually cancellation) stops new items, but the pool settles only after every
+  // active worker has finished its own cleanup, so no write outlives the run that owns it.
   await Promise.all(runners);
+
+  if (failures.length > 0) {
+    throw failures[0];
+  }
 }
 
 export async function getOrCreateNestedDirectory(
