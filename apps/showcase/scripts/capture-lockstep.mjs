@@ -26,6 +26,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import puppeteer from "puppeteer-core";
+import { assertShowcaseArchive, showcaseArchiveDir } from "./showcase-archive.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -33,7 +34,7 @@ const repoRoot = join(root, "../..");
 
 const outputDir = join(root, "public", "screenshots", "lockstep");
 
-const archiveDir = process.env.LOCKSTEP_SOURCE ?? "/tmp/showcase-archive";
+const archiveDir = showcaseArchiveDir;
 
 const scansDir = join(archiveDir, "sfw/scans");
 
@@ -327,6 +328,8 @@ async function main() {
   if (!existsSync(archiveDir)) {
     throw new Error(`Showcase archive missing at ${archiveDir}; run prepare-showcase-media.mjs`);
   }
+
+  assertShowcaseArchive(archiveDir);
 
   if (await debugPortIsUp()) {
     throw new Error(`Port ${debugPort} already serving CDP. Quit the running Lockstep first.`);

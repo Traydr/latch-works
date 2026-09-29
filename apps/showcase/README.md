@@ -35,6 +35,10 @@ pnpm --filter @latch-works/gather-box build
 pnpm --filter @latch-works/showcase screenshots
 ```
 
+The sample archive always lives at `/tmp/showcase-archive`; the scripts ignore `LOCKSTEP_SOURCE`.
+They refuse to run if that directory holds any file they did not generate, so sample media never
+lands in a real archive.
+
 `capture-screenshots.mjs` runs four per-app scripts (each also runnable on its own):
 
 - `capture-pane-view.mjs`: logs into the running web app and captures login, gallery, and
