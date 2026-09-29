@@ -135,4 +135,32 @@ describe("collision-safe saving", () => {
     expect(await directory.text("page.jpg")).toBe("first");
     expect(directory.markerNames()).toHaveLength(0);
   });
+
+  it("skips a replayed collision instead of writing another suffixed copy", async () => {
+    const directory = new MemoryDirectory();
+    await saveBlobWithoutClobbering(blob("A"), directory, "same.jpg");
+
+    const first = await saveBlobWithoutClobbering(blob("B"), directory, "same.jpg");
+    const replay = await saveBlobWithoutClobbering(blob("B"), directory, "same.jpg");
+
+    expect(first).toMatchObject({ skipped: false });
+    expect(first.fileName).toMatch(/^same_[a-z0-9]{4}\.jpg$/);
+    expect(replay).toEqual({ fileName: first.fileName, skipped: true });
+    expect(directory.mediaNames()).toEqual(["same.jpg", first.fileName].sort());
+  });
+
+  it("moves past a suffixed name that holds other content, then reuses the new name", async () => {
+    const directory = new MemoryDirectory();
+    await saveBlobWithoutClobbering(blob("A"), directory, "same.jpg");
+    const { fileName: suffixed } = await saveBlobWithoutClobbering(blob("B"), directory, "same.jpg");
+    directory.files.set(suffixed, blob("unrelated C"));
+
+    const moved = await saveBlobWithoutClobbering(blob("B"), directory, "same.jpg");
+    const replay = await saveBlobWithoutClobbering(blob("B"), directory, "same.jpg");
+
+    expect(moved.fileName).not.toBe(suffixed);
+    expect(await directory.text(suffixed)).toBe("unrelated C");
+    expect(await directory.text(moved.fileName)).toBe("B");
+    expect(replay).toEqual({ fileName: moved.fileName, skipped: true });
+  });
 });

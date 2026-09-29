@@ -212,7 +212,12 @@ export async function saveBlobWithoutClobbering(
     throwIfAborted(signal);
 
     const candidateName =
-      attempt === 0 ? preferredFileName : addFileNameSuffix(preferredFileName, randomSuffix());
+      attempt === 0
+        ? preferredFileName
+        : addFileNameSuffix(
+            preferredFileName,
+            getContentSuffix(contentHash, attempt - 1) ?? randomSuffix()
+          );
 
     const candidate = await claimCandidate(
       destinationDirectory,
@@ -499,9 +504,25 @@ async function closeWritableSafely(writable: WritableFileStream): Promise<void> 
   }
 }
 
+const SUFFIX_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
+
+/**
+ * The suffix a collision takes is derived from the content, so replaying the same content lands on
+ * the same name and is skipped as identical. Each attempt reads the next four hash bytes; the
+ * random fallback only covers the unlikely case that every derived name is already taken.
+ */
+function getContentSuffix(contentHash: string, index: number): string | null {
+  const bytes = contentHash.slice(index * 8, index * 8 + 8).match(/../g);
+
+  if (bytes?.length !== 4) {
+    return null;
+  }
+
+  return bytes.map((byte) => SUFFIX_ALPHABET[Number.parseInt(byte, 16) % SUFFIX_ALPHABET.length]).join("");
+}
+
 function createRandomSuffix(): string {
-  const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
   const randomBytes = crypto.getRandomValues(new Uint8Array(4));
 
-  return Array.from(randomBytes, (byte) => alphabet[byte % alphabet.length]).join("");
+  return Array.from(randomBytes, (byte) => SUFFIX_ALPHABET[byte % SUFFIX_ALPHABET.length]).join("");
 }
