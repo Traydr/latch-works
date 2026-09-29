@@ -684,6 +684,11 @@ export function useLockstepController(): LockstepController {
 
   const handleProfileChange = useCallback(
     async (profileId: string) => {
+      // A run's reply describes the profile it started with, so the selection waits for it.
+      if (running) {
+        return;
+      }
+
       const result = await requireLockstepApi().setActiveProfile(profileId);
 
       if (Result.isError(result)) {
@@ -698,7 +703,7 @@ export function useLockstepController(): LockstepController {
 
       setSettings(result.value);
     },
-    [resetForActiveProfileChange, settings],
+    [resetForActiveProfileChange, running, settings],
   );
 
   return {

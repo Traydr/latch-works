@@ -2,12 +2,13 @@ import { ChevronDown } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 interface ProfileSelectProps {
+  disabled?: boolean;
   onChange: (profileId: string) => void;
   profiles: Array<{ id: string; name: string }>;
   value: string;
 }
 
-export function ProfileSelect({ onChange, profiles, value }: ProfileSelectProps) {
+export function ProfileSelect({ disabled = false, onChange, profiles, value }: ProfileSelectProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const activeProfile = profiles.find((profile) => profile.id === value);
@@ -37,6 +38,7 @@ export function ProfileSelect({ onChange, profiles, value }: ProfileSelectProps)
         aria-haspopup="listbox"
         aria-label="Active profile"
         className="prism-btn inline-flex h-8 min-w-[10rem] max-w-[12rem] items-center justify-between gap-2"
+        disabled={disabled}
         type="button"
         onClick={() => setOpen((current) => !current)}
       >

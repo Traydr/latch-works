@@ -190,6 +190,10 @@ export function registerIpc(
       return validatedId.serialized;
     }
 
+    if (runService.isRunning()) {
+      return runInProgressFailure(InvokeIpcContracts.setActiveProfile.channel);
+    }
+
     const result = await profileService.setActiveProfile(validatedId.value);
 
     return serializeAppResult(result);
