@@ -1,4 +1,5 @@
-import { lstat, stat } from "node:fs/promises";
+import { lstat, readdir, stat } from "node:fs/promises";
+import { normalizePathForCompare } from "@latch-works/media-domain";
 import { z } from "zod";
 import { formatPushError, toError } from "./format.js";
 import { resolveLocalFilePath, selectChangedItems, selectDeleteItems } from "./push-helpers.js";
@@ -24,17 +25,67 @@ const MissingPathErrorSchema = z.object({ code: z.enum(["ENOENT", "ENOTDIR"]) })
 
 /**
  * A planned delete is only safe while the file is still missing locally. Anything at the path
- * (file, folder, or link) means it came back after the plan; errors other than "missing" throw so
- * the entry counts as failed rather than deleted.
+ * (file, folder, or link) means it came back after the plan, and so does a new file under a
+ * spelling planning treats as the same entry (case, Unicode, jpeg↔jpg). An equivalent file the
+ * plan already accounts for, such as the `.jpg` twin of a deleted `.jpeg`, does not count. Errors
+ * other than "missing" throw so the entry counts as failed rather than deleted.
  */
-async function isAbsentLocally(sourceRoot: string, archivePath: string): Promise<boolean> {
+async function isAbsentLocally(
+  sourceRoot: string,
+  archivePath: string,
+  plannedLocalPaths: ReadonlySet<string>,
+): Promise<boolean> {
   try {
     await lstat(resolveLocalFilePath(sourceRoot, archivePath));
 
     return false;
   } catch (error) {
+    if (!MissingPathErrorSchema.safeParse(error).success) {
+      throw error;
+    }
+  }
+
+  const equivalents = await findEquivalentLocalPaths(sourceRoot, archivePath);
+
+  return equivalents.every((localPath) => plannedLocalPaths.has(localPath));
+}
+
+/**
+ * Archive paths under `sourceRoot` that planning would treat as `archivePath`: folders match
+ * across case and Unicode spelling, the file name also across the jpeg↔jpg alias.
+ */
+async function findEquivalentLocalPaths(
+  sourceRoot: string,
+  archivePath: string,
+): Promise<string[]> {
+  const segments = archivePath.split("/");
+  let candidates = [""];
+
+  for (const [index, segment] of segments.entries()) {
+    const isFileName = index === segments.length - 1;
+    const wanted = normalizePathForCompare(segment, { canonicalizeExtensions: isFileName });
+    const next: string[] = [];
+
+    for (const parent of candidates) {
+      for (const name of await readDirectoryNames(sourceRoot, parent)) {
+        if (normalizePathForCompare(name, { canonicalizeExtensions: isFileName }) === wanted) {
+          next.push(parent ? `${parent}/${name}` : name);
+        }
+      }
+    }
+
+    candidates = next;
+  }
+
+  return candidates;
+}
+
+async function readDirectoryNames(sourceRoot: string, archiveDir: string): Promise<string[]> {
+  try {
+    return await readdir(archiveDir ? resolveLocalFilePath(sourceRoot, archiveDir) : sourceRoot);
+  } catch (error) {
     if (MissingPathErrorSchema.safeParse(error).success) {
-      return true;
+      return [];
     }
 
     throw error;
@@ -66,6 +117,11 @@ export async function pruneDeleted(
   throwIfAborted(signal);
 
   const changedItems = selectChangedItems(plan.items);
+
+  const plannedLocalPaths = new Set(
+    plan.items.filter((item) => item.action !== "delete").map((item) => item.path),
+  );
+
   const { items: itemsToPrune, omittedCount } = selectDeleteItems(changedItems, options.maxChanges);
 
   if (itemsToPrune.length === 0) {
@@ -126,7 +182,7 @@ export async function pruneDeleted(
       const current = index + 1;
 
       try {
-        if (!(await isAbsentLocally(plan.sourceRoot, item.path))) {
+        if (!(await isAbsentLocally(plan.sourceRoot, item.path, plannedLocalPaths))) {
           skipped += 1;
           observer?.onEvent({
             type: "item-skipped",

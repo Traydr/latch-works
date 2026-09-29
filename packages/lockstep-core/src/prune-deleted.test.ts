@@ -335,4 +335,48 @@ describe("pruneDeleted orchestration", () => {
     expect(fake.postJsonCalls).toHaveLength(0);
     expect(fake.deleteCalls).toHaveLength(0);
   });
+
+  it("skips a delete whose file came back under an equivalent name", async () => {
+    await writeSourceFile(sourceRoot, "photos/restored.jpeg");
+    await writeSourceFile(sourceRoot, "Photos/Recased.JPG");
+
+    const plan = createPlan(
+      [
+        { action: "delete", path: "photos/restored.jpg" },
+        { action: "delete", path: "photos/recased.jpg" },
+        { action: "delete", path: "photos/gone.jpg" },
+      ],
+      sourceRoot,
+    );
+
+    const result = await pruneDeleted(
+      { apiToken: "token", apiUrl: "http://127.0.0.1:3000", plan },
+      undefined,
+      fake.remote,
+    );
+
+    expect(fake.deleteCalls.map((call) => call.logicalPath)).toEqual(["photos/gone.jpg"]);
+    expect(result).toMatchObject({ failed: 0, pruned: 1, skipped: 2 });
+  });
+
+  it("still deletes a jpeg twin when its jpg sibling was already in the plan", async () => {
+    await writeSourceFile(sourceRoot, "photos/photo.jpg");
+
+    const plan = createPlan(
+      [
+        { action: "keep", path: "photos/photo.jpg" },
+        { action: "delete", path: "photos/photo.jpeg" },
+      ],
+      sourceRoot,
+    );
+
+    const result = await pruneDeleted(
+      { apiToken: "token", apiUrl: "http://127.0.0.1:3000", plan },
+      undefined,
+      fake.remote,
+    );
+
+    expect(fake.deleteCalls.map((call) => call.logicalPath)).toEqual(["photos/photo.jpeg"]);
+    expect(result).toMatchObject({ failed: 0, pruned: 1, skipped: 0 });
+  });
 });
