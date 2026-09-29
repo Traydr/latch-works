@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  downloadImages,
   runPool,
   saveBlobWithoutClobbering,
   type WritableDirectory,
@@ -202,5 +203,80 @@ describe("download worker pool", () => {
     await expect(pool).rejects.toThrow("aborted");
     expect(writeFinished).toBe(true);
     expect(started).toEqual([0, 1]);
+  });
+});
+
+describe("downloading", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const callbacks = { onStart: () => undefined, onProgress: () => undefined, onSaved: () => undefined };
+
+  it("fails an item whose server answers with a web page instead of the file", async () => {
+    const directory = new MemoryDirectory();
+    vi.stubGlobal("fetch", async () =>
+      new Response("<!DOCTYPE html><html><body>Sign in</body></html>", {
+        status: 200,
+        headers: { "Content-Type": "text/html; charset=utf-8" }
+      })
+    );
+
+    const summary = await downloadImages(
+      [
+        {
+          pageNumber: 1,
+          thumbnailUrl: null,
+          originalUrl: "https://archiveofourown.org/downloads/1/Story.pdf",
+          fileName: "Author-Story.pdf"
+        }
+      ],
+      directory,
+      callbacks
+    );
+
+    expect(summary).toMatchObject({ saved: 0, failed: 1 });
+    expect(summary.failedItems[0]?.originalUrl).toBe("https://archiveofourown.org/downloads/1/Story.pdf");
+    expect(directory.mediaNames()).toEqual([]);
+  });
+
+  it("fails an empty body and a web page served with a generic type", async () => {
+    const directory = new MemoryDirectory();
+    vi.stubGlobal("fetch", async (url: string) =>
+      url.endsWith("empty.jpg")
+        ? new Response(new Blob([]), { status: 200 })
+        : new Response("\n  <html><head><title>Error</title></head></html>", {
+            status: 200,
+            headers: { "Content-Type": "application/octet-stream" }
+          })
+    );
+
+    const summary = await downloadImages(
+      [
+        { pageNumber: 1, thumbnailUrl: null, originalUrl: "https://cdn.test/empty.jpg", fileName: "empty.jpg" },
+        { pageNumber: 2, thumbnailUrl: null, originalUrl: "https://cdn.test/page.png", fileName: "page.png" }
+      ],
+      directory,
+      callbacks
+    );
+
+    expect(summary).toMatchObject({ saved: 0, failed: 2 });
+    expect(directory.mediaNames()).toEqual([]);
+  });
+
+  it("saves a real file", async () => {
+    const directory = new MemoryDirectory();
+    vi.stubGlobal("fetch", async () =>
+      new Response(new Blob(["%PDF-1.7"]), { status: 200, headers: { "Content-Type": "application/pdf" } })
+    );
+
+    const summary = await downloadImages(
+      [{ pageNumber: 1, thumbnailUrl: null, originalUrl: "https://cdn.test/a.pdf", fileName: "a.pdf" }],
+      directory,
+      callbacks
+    );
+
+    expect(summary).toMatchObject({ saved: 1, failed: 0 });
+    expect(await directory.text("a.pdf")).toBe("%PDF-1.7");
   });
 });

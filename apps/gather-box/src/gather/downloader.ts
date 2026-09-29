@@ -137,6 +137,7 @@ export async function downloadImages(
       }
 
       const downloadedBlob = await response.blob();
+      await assertDownloadedFile(downloadedBlob, response, preparedImage.fileName);
 
       const transformed = await mediaTransformer.transform(
         downloadedBlob,
@@ -196,6 +197,35 @@ export async function downloadImages(
   throwIfAborted(options.signal);
 
   return summary;
+}
+
+const WEB_PAGE_FILE = /\.(?:html?|xhtml)$/i;
+
+const WEB_PAGE_TYPE = /^\s*(?:text\/html|application\/xhtml\+xml)\s*(?:;|$)/i;
+
+const WEB_PAGE_START = /^(?:\uFEFF)?\s*<(?:!doctype\s+html|html[\s>])/i;
+
+/**
+ * A sign-in wall, interstitial, or error page can arrive with a successful status. Archiving it
+ * under a media filename would report success for a file that cannot open, so the item fails
+ * instead and stays available to retry.
+ */
+async function assertDownloadedFile(blob: Blob, response: Response, fileName: string): Promise<void> {
+  if (blob.size === 0) {
+    throw new Error("The server returned an empty file");
+  }
+
+  if (WEB_PAGE_FILE.test(fileName)) {
+    return;
+  }
+
+  const servedWebPage =
+    WEB_PAGE_TYPE.test(response.headers.get("content-type") ?? "") ||
+    WEB_PAGE_START.test(await blob.slice(0, 512).text());
+
+  if (servedWebPage) {
+    throw new Error("The server returned a web page instead of the file");
+  }
 }
 
 export async function saveBlobWithoutClobbering(
