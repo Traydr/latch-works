@@ -14,7 +14,7 @@
     "collectorModule": "src/content/collectors/my-hentai-gallery.ts",
     "outputKinds": ["downloadable-files"],
     "includeCredentialsByDefault": false,
-    "downloadUrlPatterns": ["^https://(?:www\\.)?myhentaigallery\\.com/.+/original/.+"],
+    "downloadUrlPatterns": ["^https://(?:www\\.)?myhentaigallery\\.com/.+/original/.+", "^https://cdn\\.myhentaicomics\\.com/.+/original/.+"],
     "save": { "pattern": "single-folder", "folderDepth": 1, "summary": "Creates 1 folder", "detail": "Images save into a single folder named after the comic.", "pathTemplate": "<root>/<comic title>/", "filePattern": "Original filenames (webp / jpg)", "tag": "FOLDER · 1", "railCode": "F1" }
   },
   {
