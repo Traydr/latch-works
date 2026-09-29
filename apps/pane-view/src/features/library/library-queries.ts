@@ -50,16 +50,6 @@ export function useLibrarySnapshotQuery(request: LibrarySnapshotRequest) {
   return useQuery(librarySnapshotQueryOptions(request));
 }
 
-export function useInvalidateLibrarySnapshot() {
-  const queryClient = useQueryClient();
-
-  return () =>
-    Promise.all([
-      queryClient.invalidateQueries({ queryKey: librarySnapshotKeys.all }),
-      queryClient.invalidateQueries({ queryKey: galleryListingKeys.all }),
-    ]);
-}
-
 export function useDeleteLibraryEntryMutation() {
   const queryClient = useQueryClient();
 

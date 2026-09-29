@@ -12,13 +12,11 @@ import { useGalleryBrowse } from "@/features/gallery/useGalleryBrowse";
 import { useGalleryKeyboard } from "@/features/gallery/useGalleryKeyboard";
 import { useGalleryViewerHandoff } from "@/features/gallery/useGalleryViewerHandoff";
 import { useDeletedMediaIds, useMediaDeletion } from "@/features/gallery/useMediaDeletion";
-import { useInvalidateLibrarySnapshot } from "@/features/library/library-queries";
 import { useHydrated } from "@/hooks/use-hydrated";
 import { useIsMobile } from "@/hooks/use-mobile";
 
 export function GalleryPage(): JSX.Element {
   const hydrated = useHydrated();
-  const invalidateLibrary = useInvalidateLibrarySnapshot();
   const { browse, settings, settingsOpen, setSettingsOpen, updateSettings } = useGalleryLayout();
 
   const {
@@ -58,6 +56,7 @@ export function GalleryPage(): JSX.Element {
     media: navigableMedia,
     openComic,
     page,
+    refresh,
     showFetching,
     showRefreshing,
     snapshotIsCurrent,
@@ -343,7 +342,7 @@ export function GalleryPage(): JSX.Element {
         exclude={folders.exclude}
         isRefreshing={showRefreshing}
         onChangeSortMode={browse.setSortMode}
-        onRefresh={() => void invalidateLibrary()}
+        onRefresh={() => void refresh()}
         onToggleComicMode={() => {
           if (!folderModesEnabled) return;
           setComicMode(!effectiveComicMode);

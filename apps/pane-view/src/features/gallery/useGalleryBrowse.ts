@@ -15,6 +15,7 @@ import {
   type GalleryListingQueryRequest,
   galleryListingKeys,
   type LibrarySnapshotRequest,
+  librarySnapshotKeys,
   useLibrarySnapshotQuery,
 } from "@/features/library/library-queries";
 import type { LibraryMediaItem } from "@/features/library/types";
@@ -32,6 +33,10 @@ import type { GalleryListingPage } from "../../server/library/gallery-listing";
  * key already present removed — page 1 under a fixed seed is a prefix of the
  * same permutation, so a refetch that overlaps page 2 dedupes without moving
  * anything.
+ *
+ * Refresh is the exception: it re-walks the whole loaded extent from a fresh
+ * page 1 and swaps page 1 and the accumulation together, so later pages,
+ * cursor, and exhaustion never outlive the data they were read from.
  */
 
 interface GalleryPageState {
@@ -62,6 +67,11 @@ export interface GalleryBrowseSession {
   media: LibraryMediaItem[];
   openComic(comicId: string): Promise<ComicEntry<LibraryMediaItem>>;
   page: GalleryPageState;
+  /**
+   * Reload the snapshot and every loaded listing page. Never rejects: a
+   * failed reload restarts pagination from page 1 instead.
+   */
+  refresh(): Promise<void>;
   showFetching: boolean;
   /** Either request in flight; spins the toolbar's refresh affordance. */
   showRefreshing: boolean;
@@ -264,10 +274,40 @@ export function useGalleryBrowse({
   );
 
   // Refs so awaited results never depend on a stale render.
-  const liveRef = useRef({ browseKey, cursor, entries, hasMore, listingRequest, media });
-  liveRef.current = { browseKey, cursor, entries, hasMore, listingRequest, media };
+  const liveRef = useRef({
+    browseKey,
+    cursor,
+    entries,
+    firstPageIsCurrent,
+    hasMore,
+    listingRequest,
+    media,
+  });
+
+  liveRef.current = {
+    browseKey,
+    cursor,
+    entries,
+    firstPageIsCurrent,
+    hasMore,
+    listingRequest,
+    media,
+  };
+
+  // The running refresh. Next-page loads wait for it: a page appended from a
+  // cursor the refresh is about to replace would be overwritten or misplaced.
+  const refreshRef = useRef<Promise<void> | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const loadNextPageRef = useRef<() => Promise<LoadNextPageResult>>(() =>
+    Promise.resolve({ appendedEntryKeys: [], appendedMediaIds: [], exhausted: true }),
+  );
 
   const loadNextPage = useCallback((): Promise<LoadNextPageResult> => {
+    if (refreshRef.current) {
+      return refreshRef.current.then(() => loadNextPageRef.current());
+    }
+
     const live = liveRef.current;
     const lastLoad = lastLoadRef.current;
 
@@ -347,6 +387,126 @@ export function useGalleryBrowse({
 
     return promise;
   }, [source, updateAccumulation]);
+
+  loadNextPageRef.current = loadNextPage;
+
+  // A load chained behind a refresh runs before React renders the committed
+  // pages, so the commit publishes the sequence facts it pages from itself.
+  const publishListing = useCallback(
+    (
+      first: GalleryListingPage | undefined,
+      later: readonly GalleryBrowseEntry[][],
+      last = first,
+    ) => {
+      liveRef.current = {
+        ...liveRef.current,
+        cursor: last?.page.cursor ?? null,
+        entries: dedupeEntries(first ? toGalleryBrowseEntries(first) : [], ...later),
+        firstPageIsCurrent: Boolean(first),
+        hasMore: last?.page.hasMore ?? false,
+      };
+    },
+    [],
+  );
+
+  // Page 1 plus as many further pages as were on screen, read fresh in one
+  // pass and committed together. A failure (or a cursor that stops advancing)
+  // drops the accumulation and refetches page 1 alone, so the next scroll
+  // paginates from fresh data rather than resuming a stale cursor.
+  const reloadListing = useCallback(async (): Promise<void> => {
+    // A next-page load already in flight finishes first; its page is part of
+    // the extent this pass then re-reads.
+    await lastLoadRef.current?.promise.catch(() => undefined);
+    const live = liveRef.current;
+    const key = live.browseKey;
+    const request = live.listingRequest;
+    const extent = live.firstPageIsCurrent ? live.entries.length : 0;
+
+    try {
+      const first = await source.loadPage(request);
+      const later: GalleryBrowseEntry[][] = [];
+      let loaded = toGalleryBrowseEntries(first).length;
+      let last = first;
+
+      while (last.page.hasMore && last.page.cursor && loaded < extent) {
+        const next = await source.loadPage({ ...request, cursor: last.page.cursor });
+
+        if (next.page.hasMore && next.page.cursor === last.page.cursor) {
+          throw new Error("Gallery listing cursor did not advance");
+        }
+
+        const nextEntries = toGalleryBrowseEntries(next);
+        later.push(nextEntries);
+        loaded += nextEntries.length;
+        last = next;
+      }
+
+      if (liveRef.current.browseKey !== key) {
+        return;
+      }
+
+      lastLoadRef.current = null;
+      queryClient.setQueryData(galleryListingKeys.listing(request), first);
+      setStored(
+        later.length > 0
+          ? {
+              browseKey: key,
+              cursor: last.page.cursor,
+              entries: dedupeEntries(...later),
+              error: null,
+              hasMore: last.page.hasMore,
+              loading: false,
+            }
+          : emptyAccumulation(key),
+      );
+      publishListing(first, later, last);
+    } catch {
+      if (liveRef.current.browseKey !== key) {
+        return;
+      }
+
+      lastLoadRef.current = null;
+      setStored(emptyAccumulation(key));
+      await queryClient.invalidateQueries({ queryKey: galleryListingKeys.listing(request) });
+
+      if (liveRef.current.browseKey === key) {
+        publishListing(
+          queryClient.getQueryData<GalleryListingPage>(galleryListingKeys.listing(request)),
+          [],
+        );
+      }
+    }
+  }, [publishListing, queryClient, source]);
+
+  const refresh = useCallback((): Promise<void> => {
+    if (refreshRef.current) {
+      return refreshRef.current;
+    }
+
+    setRefreshing(true);
+
+    const run = (async () => {
+      try {
+        // Other browse keys' cached page 1s are marked stale without a fetch;
+        // the live one is replaced by the reload below.
+        await queryClient.invalidateQueries({
+          queryKey: galleryListingKeys.all,
+          refetchType: "none",
+        });
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: librarySnapshotKeys.all }),
+          reloadListing(),
+        ]);
+      } finally {
+        refreshRef.current = null;
+        setRefreshing(false);
+      }
+    })();
+
+    refreshRef.current = run;
+
+    return run;
+  }, [queryClient, reloadListing]);
 
   // One boundary algorithm for media ids and entry keys (Plan 052, Step 3):
   // move within the loaded sequence; at the loaded end load before looping;
@@ -463,10 +623,10 @@ export function useGalleryBrowse({
   // The listing alone: the snapshot fills the sidebar, which reports its own
   // loading state, and folding it in here dimmed the grid for a request that
   // cannot change a single tile.
-  const showFetching = hydrated && isListingFetching;
+  const showFetching = hydrated && (isListingFetching || refreshing);
   // The toolbar's refresh affordance, though, covers both requests: a
   // snapshot-only refetch should spin it even though no tile can change.
-  const showRefreshing = hydrated && (isSnapshotFetching || isListingFetching);
+  const showRefreshing = hydrated && (isSnapshotFetching || isListingFetching || refreshing);
   // Same shape as contentBrowseKey, for the other query: until the snapshot
   // belongs to this browse it describes the folder being left, so consumers
   // that act on it — sidebar folders, sibling navigation — must wait.
@@ -490,6 +650,7 @@ export function useGalleryBrowse({
     media,
     openComic,
     page,
+    refresh,
     showFetching,
     showRefreshing,
     snapshotIsCurrent,
