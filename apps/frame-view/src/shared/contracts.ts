@@ -18,7 +18,8 @@ const MAX_EXTENSION_COUNT = 64;
 
 const MAX_EXTENSION_LENGTH = 16;
 
-export const PathInputSchema = z.string().trim().min(1).max(MAX_PATH_LENGTH);
+// Not trimmed: folder names may end in spaces, so paths must cross IPC exactly as given.
+export const PathInputSchema = z.string().min(1).max(MAX_PATH_LENGTH);
 
 const normalizedExtensionSchema = z
   .string()
