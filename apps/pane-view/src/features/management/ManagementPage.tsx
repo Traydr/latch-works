@@ -60,13 +60,19 @@ export function ManagementPage() {
 
   const softDeletedEntries = overview?.library.softDeletedEntries ?? 0;
   const softDeletedFolders = overview?.library.softDeletedFolders ?? 0;
-  const hasPurgeTarget = softDeletedEntries > 0 || softDeletedFolders > 0;
+  const reclaimableOriginals = overview?.storage.reclaimableMediaObjectCount ?? 0;
 
-  // Deleted folders are purged with the items; name them only when nothing else is left.
+  const hasPurgeTarget =
+    softDeletedEntries > 0 || softDeletedFolders > 0 || reclaimableOriginals > 0;
+
+  // Deleted folders and unused originals are purged with the items; name them only when nothing
+  // else is left.
   const purgeTargetLabel =
-    softDeletedEntries === 0 && softDeletedFolders > 0
-      ? `${softDeletedFolders.toLocaleString()} deleted folder${softDeletedFolders === 1 ? "" : "s"}`
-      : `${softDeletedEntries.toLocaleString()} item${softDeletedEntries === 1 ? "" : "s"}`;
+    softDeletedEntries > 0
+      ? `${softDeletedEntries.toLocaleString()} item${softDeletedEntries === 1 ? "" : "s"}`
+      : softDeletedFolders > 0
+        ? `${softDeletedFolders.toLocaleString()} deleted folder${softDeletedFolders === 1 ? "" : "s"}`
+        : `${reclaimableOriginals.toLocaleString()} unused original${reclaimableOriginals === 1 ? "" : "s"}`;
 
   const shutterPurge = overview?.shutterPurge;
   const maintenanceBlocked = Boolean(runningSyncCount > 0 || overview?.activeCleanupJob);
@@ -334,7 +340,8 @@ export function ManagementPage() {
           <p className="text-sm text-muted-foreground">
             Permanently remove all soft-deleted entries and their originals from Pane View storage
             when no active entry references the same media. Shutter source IDs are retained for the
-            separate cleanup action below.
+            separate cleanup action below. Also removes stored originals no entry uses any more,
+            such as the old version of a replaced file.
           </p>
           <Button
             disabled={maintenanceBlocked || purgeSoftDeletedMutation.isPending || !hasPurgeTarget}
