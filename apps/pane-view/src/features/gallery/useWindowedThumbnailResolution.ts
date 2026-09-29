@@ -8,6 +8,7 @@ import {
 import type { GalleryBrowseEntry } from "@/features/gallery/gallery-browse-entry";
 import {
   dedupeThumbnailRequests,
+  mediaRevision,
   supportsGalleryThumbnail,
 } from "@/features/gallery/gallery-page-helpers";
 
@@ -68,7 +69,9 @@ export function useWindowedThumbnailResolution(
 
           const media = entry.kind === "comic" ? entry.comic.cover : entry.media;
 
-          return supportsGalleryThumbnail(media) ? [{ mediaId: media.id }] : [];
+          return supportsGalleryThumbnail(media)
+            ? [{ mediaId: media.id, revision: mediaRevision(media) }]
+            : [];
         }),
       ),
     [windowedEntries],

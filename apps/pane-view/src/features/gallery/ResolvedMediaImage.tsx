@@ -6,6 +6,7 @@ export function ResolvedMediaImage({
   mediaId,
   mediaType,
   priority = false,
+  revision,
   size = 320,
   variant = "preview",
   width,
@@ -15,6 +16,7 @@ export function ResolvedMediaImage({
   mediaId: string;
   mediaType: "image" | "gif" | "video" | "pdf" | "unknown";
   priority?: boolean;
+  revision?: string;
   size?: number;
   variant?: "thumbnail" | "preview" | "original";
   width?: number;
@@ -29,6 +31,7 @@ export function ResolvedMediaImage({
       mediaId={mediaId}
       objectFit="contain"
       priority={priority}
+      revision={revision}
       variant={resolvedVariant}
       width={width ?? size}
     />

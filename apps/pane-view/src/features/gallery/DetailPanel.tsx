@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import type { CopyStatus } from "@/hooks/use-copy-to-clipboard";
 import { COPY_PATH_ICONS, COPY_PATH_LABELS } from "./copy-path-status";
 import { DeleteOverlay } from "./DeleteOverlay";
-import { supportsGalleryThumbnail } from "./gallery-page-helpers";
+import { mediaRevision, supportsGalleryThumbnail } from "./gallery-page-helpers";
 import { MediaPlaceholder } from "./MediaPlaceholder";
 import { PaneViewImage } from "./PaneViewImage";
 
@@ -58,6 +58,7 @@ export function DetailPanel({
                 className="h-full w-full object-cover"
                 mediaId={selected.id}
                 objectFit="cover"
+                revision={mediaRevision(selected)}
                 variant="preview"
                 width={detailPreviewWidth}
               />

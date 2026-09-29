@@ -14,6 +14,8 @@ type PaneViewImageProps = {
   priority?: boolean;
   readyUrl?: string;
   resolveMissing?: boolean;
+  /** The item's `mediaRevision`; a replaced file resolves a fresh URL. */
+  revision?: string;
   variant?: "thumbnail" | "preview" | "original";
   width?: number;
 };
@@ -45,18 +47,23 @@ export function PaneViewImage({
   priority = false,
   readyUrl,
   resolveMissing = true,
+  revision,
   variant = "thumbnail",
   width,
 }: PaneViewImageProps) {
   const size = variant === "thumbnail" ? resolveThumbnailPixelSize(width) : undefined;
   const canResolve = resolveMissing || Boolean(readyUrl);
-  const retry = useImageLoadRetry(`${mediaId}:${variant}:${size ?? "default"}:${readyUrl ?? ""}`);
+
+  const retry = useImageLoadRetry(
+    `${mediaId}:${revision ?? ""}:${variant}:${size ?? "default"}:${readyUrl ?? ""}`,
+  );
 
   const { failed, loading, resolvedUrl } = useResolvedMediaUrl({
     cache,
     mediaId: canResolve ? mediaId : undefined,
     readyUrl: retry.shouldRefreshUrl ? undefined : readyUrl,
     refreshKey: retry.shouldRefreshUrl ? 1 : 0,
+    revision,
     size,
     variant,
   });

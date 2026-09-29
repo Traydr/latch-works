@@ -4,6 +4,8 @@ import { GALLERY_THUMBNAIL_SIZE } from "./gallery-thumbnail-size";
 
 export interface GalleryThumbnailRequest {
   mediaId: string;
+  /** The item's content revision (see `mediaRevision`); part of the cache key, never sent. */
+  revision?: string;
   size?: number;
 }
 
@@ -58,6 +60,11 @@ interface ThumbnailResolverState {
 }
 
 function cacheKey(request: GalleryThumbnailRequest): string {
+  return `${requestKey(request)}:${request.revision ?? ""}`;
+}
+
+/** What the server answers by: a batch result names no revision. */
+function requestKey(request: Pick<GalleryThumbnailRequest, "mediaId" | "size">): string {
   return `${request.mediaId}:${request.size ?? GALLERY_THUMBNAIL_SIZE}`;
 }
 
@@ -101,12 +108,11 @@ function pendingRetryDelayMs(
   return Math.max(serverRetryAfterMs ?? 0, Math.round(baseDelay * jitter));
 }
 
-function applyResult(state: ThumbnailResolverState, result: MediaDeliveryBatchResult): void {
-  const key = cacheKey({
-    mediaId: result.mediaId,
-    size: result.size,
-  });
-
+function applyResult(
+  state: ThumbnailResolverState,
+  key: string,
+  result: MediaDeliveryBatchResult,
+): void {
   if (result.status === "ready") {
     state.attempts.delete(key);
     setCacheEntry(state, key, {
@@ -263,14 +269,17 @@ async function resolveGalleryThumbnailsBatchFor(
   const execution = (async () => {
     try {
       const response = await state.resolveUrls({ data: { items } });
+      const batchKeys = new Map(batch.map(([key, request]) => [requestKey(request), key]));
+      const resolvedKeys = new Set<string>();
 
       for (const result of response.results) {
-        applyResult(state, result);
-      }
+        const key = batchKeys.get(requestKey(result));
 
-      const resolvedKeys = new Set(
-        response.results.map((result) => cacheKey({ mediaId: result.mediaId, size: result.size })),
-      );
+        if (key) {
+          resolvedKeys.add(key);
+          applyResult(state, key, result);
+        }
+      }
 
       for (const [key] of batch) {
         if (!resolvedKeys.has(key) && state.cache.get(key)?.inFlight) {

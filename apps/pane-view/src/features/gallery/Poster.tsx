@@ -1,6 +1,6 @@
 import type { MediaItem } from "@latch-works/media-domain";
 import { cn } from "@/lib/utils";
-import { supportsGalleryThumbnail } from "./gallery-page-helpers";
+import { mediaRevision, supportsGalleryThumbnail } from "./gallery-page-helpers";
 import { MediaPlaceholder } from "./MediaPlaceholder";
 import { PaneViewImage } from "./PaneViewImage";
 
@@ -34,6 +34,7 @@ export function Poster({
           priority={priority}
           readyUrl={resolvedThumbnailUrl}
           resolveMissing={false}
+          revision={mediaRevision(media)}
           variant="thumbnail"
           width={cardWidth}
         />

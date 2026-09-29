@@ -103,6 +103,8 @@ export interface UseVideoPlaybackOptions {
   rememberPosition: boolean;
   /** Tells the viewer about duration and play-state changes; the viewer owns both. */
   reportStatus: (mediaId: string, patch: Partial<VideoStatus>) => void;
+  /** The item's `mediaRevision`; a replaced file resolves a fresh URL. */
+  revision?: string;
   /** The last status reported for this video. */
   status: VideoStatus;
   videoRef: RefObject<HTMLVideoElement | null>;
@@ -118,6 +120,7 @@ export function useVideoPlayback({
   mediaId,
   rememberPosition,
   reportStatus,
+  revision,
   status,
   videoRef,
   viewerStateStore,
@@ -137,7 +140,13 @@ export function useVideoPlayback({
   const [refreshKey, setRefreshKey] = useState(0);
   const [loadFailed, setLoadFailed] = useState(false);
 
-  const delivery = useResolvedMediaUrl({ cache, mediaId, refreshKey, variant: "original" });
+  const delivery = useResolvedMediaUrl({
+    cache,
+    mediaId,
+    refreshKey,
+    revision,
+    variant: "original",
+  });
 
   const {
     flushSave,
