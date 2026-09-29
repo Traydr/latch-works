@@ -85,7 +85,7 @@ export function parseArgv(argv: string[]): ParseArgvResult {
 
     switch (arg) {
       case "--source":
-        options.source = rest[index + 1];
+        options.source = requireValue(rest[index + 1], "--source");
         index += 1;
         break;
       case "--hash":
@@ -95,11 +95,11 @@ export function parseArgv(argv: string[]): ParseArgvResult {
         options.hashFiles = false;
         break;
       case "--api-url":
-        options.apiUrl = rest[index + 1];
+        options.apiUrl = requireValue(rest[index + 1], "--api-url");
         index += 1;
         break;
       case "--api-token-env":
-        options.apiTokenEnv = rest[index + 1] ?? options.apiTokenEnv;
+        options.apiTokenEnv = requireValue(rest[index + 1], "--api-token-env");
         index += 1;
         break;
       case "--max-changes":
@@ -122,7 +122,7 @@ export function parseArgv(argv: string[]): ParseArgvResult {
         options.showSkipped = false;
         break;
       case "--remote-snapshot":
-        options.remoteSnapshot = rest[index + 1];
+        options.remoteSnapshot = requireValue(rest[index + 1], "--remote-snapshot");
         index += 1;
         break;
       case "--yes":
@@ -137,6 +137,18 @@ export function parseArgv(argv: string[]): ParseArgvResult {
   }
 
   return { kind: "parsed", options };
+}
+
+/**
+ * A value-taking flag with nothing after it, or followed by another flag, is an error: falling
+ * back to the saved or env value would point the run somewhere the user did not name.
+ */
+function requireValue(value: string | undefined, name: string): string {
+  if (value === undefined || value.trim() === "" || value.startsWith("--")) {
+    throw new Error(`${name} requires a value.`);
+  }
+
+  return value;
 }
 
 function parsePositiveInteger(value: string | undefined, name: string): number {
