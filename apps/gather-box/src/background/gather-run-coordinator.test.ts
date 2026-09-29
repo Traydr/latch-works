@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   EMPTY_GATHER_QUEUE,
+  GatherQueueStateSchema,
   type GatherQueueState,
   type OutputGatherQueueJob
 } from "../shared/gather-queue";
@@ -317,7 +318,8 @@ function createHarness(initial: GatherQueueState) {
   );
 
   const dependencies: GatherRunCoordinatorDependencies = {
-    loadQueue: async () => structuredClone(queue),
+    // Read back through the storage schema, as chrome.storage.local does on every load.
+    loadQueue: async () => GatherQueueStateSchema.parse(structuredClone(queue)),
     saveQueue: async (next) => {
       queue = structuredClone(next);
     },

@@ -269,7 +269,7 @@ export class GatherRunCoordinator {
       }
 
       const recovered = recoverStoppedGatherQueue(queue, this.dependencies.now());
-      queue = recovered.interrupted.reduce(recordGatherQueueResult, recovered.queue);
+      queue = recovered.ended.reduce(recordGatherQueueResult, recovered.queue);
       await this.dependencies.saveQueue(queue);
     });
     await this.dispatchNext();

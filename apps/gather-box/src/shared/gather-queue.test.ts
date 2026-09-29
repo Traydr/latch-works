@@ -35,7 +35,9 @@ function payload(title: string): DownloadablePayload {
   };
 }
 
-function run<TPhase extends "collecting" | "queued" | "writing" | "permission-required">(
+function run<
+  TPhase extends "collecting" | "queued" | "writing" | "cancelling" | "permission-required"
+>(
   id: string,
   phase: TPhase
 ): ReturnType<typeof createGatherRunState> & { phase: TPhase } {
@@ -241,8 +243,39 @@ describe("Gather queue state", () => {
         }
       }
     ]);
-    expect(recovered.interrupted).toMatchObject([
+    expect(recovered.ended).toMatchObject([
       { id: "run-2", phase: "interrupted", updatedAt: 500 }
     ]);
+  });
+
+  it("keeps a cancelling job through storage and finishes the cancellation on restart", () => {
+    const stored = GatherQueueStateSchema.parse({
+      schemaVersion: GATHER_QUEUE_SCHEMA_VERSION,
+      results: [],
+      jobs: [
+        {
+          kind: "output",
+          run: run("run-1", "cancelling"),
+          payload: payload("One"),
+          settings: DEFAULT_SETTINGS
+        },
+        {
+          kind: "output",
+          run: run("run-2", "queued"),
+          payload: payload("Two"),
+          settings: DEFAULT_SETTINGS
+        }
+      ]
+    });
+
+    expect(stored.jobs).toMatchObject([
+      { run: { id: "run-1", phase: "cancelling" } },
+      { run: { id: "run-2", phase: "queued" } }
+    ]);
+    expect(getNextQueuedGatherJob(stored)).toBeNull();
+
+    const recovered = recoverStoppedGatherQueue(stored, 500);
+    expect(recovered.queue.jobs).toMatchObject([{ run: { id: "run-2", phase: "queued" } }]);
+    expect(recovered.ended).toMatchObject([{ id: "run-1", phase: "cancelled", updatedAt: 500 }]);
   });
 });
