@@ -15,14 +15,18 @@ export interface GatherRunEventEmitter {
  * therefore ask the offscreen document to start the next output while this one still occupies the
  * slot, and the dispatch would come back rejected. Flushing after the slot is released keeps the
  * handoff ordered by construction rather than by messaging latency.
+ *
+ * `deliver` resolves to whether the background accepted the event. Progress stays best effort;
+ * only the terminal report is retried.
  */
 export function createGatherRunEventEmitter(
-  deliver: (event: GatherRunEvent) => Promise<void>
+  deliver: (event: GatherRunEvent) => Promise<boolean>,
+  wait: (milliseconds: number) => Promise<void> = delay
 ): GatherRunEventEmitter {
-  let queue = Promise.resolve();
+  let queue: Promise<unknown> = Promise.resolve();
   let terminal: GatherRunEvent | null = null;
 
-  const send = (event: GatherRunEvent): Promise<void> => {
+  const send = (event: GatherRunEvent): Promise<boolean> => {
     const delivery = queue.then(() => deliver(event));
     queue = delivery.catch(() => undefined);
 
@@ -32,7 +36,7 @@ export function createGatherRunEventEmitter(
   return {
     emit(event) {
       if (!isTerminalGatherRunEvent(event)) {
-        return send(event);
+        return send(event).then(() => undefined);
       }
 
       // A run can report twice — an executor that finishes its own cancellation still unwinds
@@ -46,8 +50,34 @@ export function createGatherRunEventEmitter(
       terminal = null;
 
       if (event) {
-        void send(event).catch(() => undefined);
+        void deliverTerminal(event);
       }
     }
   };
+
+  /**
+   * The background persists the queue before it accepts a terminal report, and nothing else
+   * tells it this run has ended, so a rejected report is retried rather than dropped. Redelivery
+   * is safe: once the run is recorded, a repeated report finds no job and only re-dispatches.
+   */
+  async function deliverTerminal(event: GatherRunEvent): Promise<void> {
+    for (const retryDelay of [...TERMINAL_RETRY_DELAYS_MS, null]) {
+      const accepted = await send(event).catch(() => false);
+
+      if (accepted || retryDelay === null) {
+        return;
+      }
+
+      await wait(retryDelay);
+    }
+  }
+}
+
+/** Roughly two minutes of retries, backing off so a struggling background is not flooded. */
+const TERMINAL_RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 15_000, 30_000, 30_000, 30_000];
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
 }

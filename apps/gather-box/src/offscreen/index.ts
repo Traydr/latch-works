@@ -1,3 +1,4 @@
+import * as z from "zod/mini";
 import {
   CancelGatherRunMessageSchema,
   ExecuteGatherRunMessageSchema,
@@ -14,6 +15,9 @@ import {
 import { createGatherRunEventEmitter } from "./run-event-emitter";
 
 const executionSlot = new GatherExecutionSlot();
+
+/** The background answers `accepted: false` when it could not persist the event. */
+const RunEventAcknowledgementSchema = z.object({ accepted: z.literal(true) });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!isExtensionOriginSender(sender)) {
@@ -99,13 +103,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return false;
 });
 
-async function emitRunEvent(runId: string, event: GatherRunEvent): Promise<void> {
-  await chrome.runtime.sendMessage({
+async function emitRunEvent(runId: string, event: GatherRunEvent): Promise<boolean> {
+  const response = await chrome.runtime.sendMessage({
     type: GATHER_RUN_EVENT,
     target: "background",
     runId,
     event
   });
+
+  return RunEventAcknowledgementSchema.safeParse(response).success;
 }
 
 function isExtensionOriginSender(sender: chrome.runtime.MessageSender): boolean {

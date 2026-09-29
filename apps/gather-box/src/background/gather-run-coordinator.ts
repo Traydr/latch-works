@@ -11,9 +11,10 @@ import {
   type GatherQueueState,
   type OutputGatherQueueJob
 } from "../shared/gather-queue";
-import type {
-  GatherRunCancelOutcome,
-  GatherRunEventMessage
+import {
+  isTerminalGatherRunEvent,
+  type GatherRunCancelOutcome,
+  type GatherRunEventMessage
 } from "../shared/gather-run-messages";
 import {
   createGatherRunState,
@@ -231,7 +232,13 @@ export class GatherRunCoordinator {
       let queue = await this.dependencies.loadQueue();
       const job = queue.jobs.find((candidate) => candidate.run.id === message.runId);
 
-      if (!job || job.kind !== "output") {
+      if (!job) {
+        // A redelivered terminal report: the run is already recorded, but the dispatch that
+        // should have followed it may have failed, which is why the executor is retrying.
+        return isTerminalGatherRunEvent(message.event);
+      }
+
+      if (job.kind !== "output") {
         return false;
       }
 

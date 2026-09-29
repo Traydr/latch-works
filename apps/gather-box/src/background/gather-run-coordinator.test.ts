@@ -239,6 +239,31 @@ describe("Gather queue orchestration", () => {
     );
   });
 
+  it("dispatches the next output when a recorded run's terminal report is redelivered", async () => {
+    const harness = createHarness({
+      ...EMPTY_GATHER_QUEUE,
+      jobs: [outputJob("second", "queued")]
+    });
+
+    await harness.coordinator.handleEvent({
+      type: "GATHER_BOX_RUN_EVENT",
+      target: "background",
+      runId: "first",
+      event: {
+        kind: "complete",
+        saved: 1,
+        skipped: 0,
+        failed: 0,
+        failedItems: [],
+        retryImages: []
+      }
+    });
+
+    expect(harness.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ run: expect.objectContaining({ id: "second" }) })
+    );
+  });
+
   it("keeps the slot occupied while cancellation settles, then advances", async () => {
     const harness = createHarness({
       ...EMPTY_GATHER_QUEUE,
