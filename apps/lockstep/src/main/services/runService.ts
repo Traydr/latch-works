@@ -158,35 +158,46 @@ export class RunService {
     });
   }
 
+  /** Checks the profile's source folder and server; Cancel stops it like any other run. */
   async doctor(profileId: string): Promise<DoctorResult> {
-    const profile = this.profileService.getProfile(profileId);
+    return this.ownRun("doctor", profileId, async (observer, signal) => {
+      const profile = this.profileService.getProfile(profileId);
 
-    if (!profile) {
-      throw new Error("Profile not found.");
-    }
+      if (!profile) {
+        throw new Error("Profile not found.");
+      }
 
-    const observer = this.createObserver();
+      const result = await this.core.doctor(
+        {
+          apiToken: this.profileService.getApiToken(profileId),
+          apiUrl: profile.apiUrl,
+          signal,
+          sourceRoot: profile.sourceRoot,
+        },
+        {
+          // A cancelled snapshot check reports a failed check; the run reports the cancel instead.
+          onEvent: (event) => {
+            if (!signal.aborted) {
+              observer.onEvent(event);
+            }
+          },
+        },
+      );
 
-    const result = await this.core.doctor(
-      {
-        apiToken: this.profileService.getApiToken(profileId),
-        apiUrl: profile.apiUrl,
-        sourceRoot: profile.sourceRoot,
-      },
-      observer,
-    );
+      signal.throwIfAborted();
 
-    await this.profileService.recordLastRun(profileId, {
-      action: "doctor",
-      completedAt: new Date().toISOString(),
-      failed: result.ok ? 0 : 1,
-      message: result.ok ? "All checks passed." : "Some checks failed.",
-      profileId,
-      pushed: 0,
-      status: result.ok ? "completed" : "failed",
+      await this.profileService.recordLastRun(profileId, {
+        action: "doctor",
+        completedAt: new Date().toISOString(),
+        failed: result.ok ? 0 : 1,
+        message: result.ok ? "All checks passed." : "Some checks failed.",
+        profileId,
+        pushed: 0,
+        status: result.ok ? "completed" : "failed",
+      });
+
+      return result;
     });
-
-    return result;
   }
 
   /**
@@ -220,24 +231,40 @@ export class RunService {
       signal: AbortSignal,
     ) => Promise<T>,
   ): Promise<T> {
+    return this.ownRun(operation, request.profileId, (observer, signal) => {
+      const profile = this.profileService.getProfile(request.profileId);
+
+      if (!profile) {
+        throw new Error("Profile not found.");
+      }
+
+      const apiToken = this.profileService.getApiToken(request.profileId);
+
+      if (!apiToken) {
+        throw new Error("API token is not configured for this profile.");
+      }
+
+      return runner(
+        { apiToken, apiUrl: profile.apiUrl, sourceRoot: profile.sourceRoot },
+        observer,
+        signal,
+      );
+    });
+  }
+
+  /** Runs one operation at a time under the controller Cancel aborts. */
+  private async ownRun<T>(
+    operation: LockstepRunSummary["action"],
+    profileId: string,
+    runner: (observer: LockstepObserver, signal: AbortSignal) => Promise<T>,
+  ): Promise<T> {
     if (this.running) {
       throw new Error("A sync run is already in progress.");
     }
 
-    const profile = this.profileService.getProfile(request.profileId);
-
-    if (!profile) {
-      throw new Error("Profile not found.");
-    }
-
-    const apiToken = this.profileService.getApiToken(request.profileId);
-
-    if (!apiToken) {
-      throw new Error("API token is not configured for this profile.");
-    }
-
     this.running = true;
-    this.abortController = new AbortController();
+    const abortController = new AbortController();
+    this.abortController = abortController;
     let completeObserved = false;
     const baseObserver = this.createObserver();
 
@@ -252,22 +279,14 @@ export class RunService {
     };
 
     try {
-      return await runner(
-        {
-          apiToken,
-          apiUrl: profile.apiUrl,
-          sourceRoot: profile.sourceRoot,
-        },
-        observer,
-        this.abortController.signal,
-      );
+      return await runner(observer, abortController.signal);
     } catch (error) {
-      if (this.abortController.signal.aborted && !completeObserved) {
+      if (abortController.signal.aborted && !completeObserved) {
         const summary: LockstepRunSummary = {
           action: operation,
           completedAt: new Date().toISOString(),
           failed: 0,
-          profileId: request.profileId,
+          profileId,
           pushed: 0,
           status: "cancelled",
         };
