@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { executeCommand } from "./commands.js";
 import { createConfigStore } from "./config.js";
+import { watchInterrupts } from "./interrupt.js";
 import { resolveOptions } from "./options.js";
 
 async function run(): Promise<void> {
@@ -11,7 +12,25 @@ async function run(): Promise<void> {
     return;
   }
 
-  await executeCommand(resolved.options);
+  const interrupts = watchInterrupts();
+
+  try {
+    await executeCommand(resolved.options, { signal: interrupts.signal });
+  } catch (error) {
+    const exitCode = interrupts.exitCode();
+
+    if (exitCode === undefined) {
+      throw error;
+    }
+
+    console.error("Cancelled.");
+    process.exitCode = exitCode;
+
+    return;
+  } finally {
+    interrupts.stop();
+  }
+
   await configStore.remember(resolved.remember);
 }
 

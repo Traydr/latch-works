@@ -38,6 +38,8 @@ export type ExecuteCommandDeps = {
   confirmPrune?: (deleteCount: number) => Promise<boolean>;
   core?: CoreCommands;
   isInteractive?: () => boolean;
+  /** Aborts the run; push and prune then finalize their sync run as cancelled before rejecting. */
+  signal?: AbortSignal;
 };
 
 export async function executeCommand(
@@ -47,6 +49,7 @@ export async function executeCommand(
   const isInteractive = deps.isInteractive ?? isInteractiveTerminal;
   const confirmPrune = deps.confirmPrune ?? defaultConfirmPrune;
   const core = deps.core ?? coreCommands;
+  const { signal } = deps;
   const reporter = createLineReporter();
   const observer = createCliObserver(reporter);
 
@@ -55,6 +58,7 @@ export async function executeCommand(
       {
         apiToken: process.env[options.apiTokenEnv],
         apiUrl: options.apiUrl ?? process.env.LOCKSTEP_API_URL,
+        signal,
         sourceRoot: options.source,
       },
       observer,
@@ -118,6 +122,7 @@ export async function executeCommand(
       apiUrl: remote.kind === "live" ? remote.apiUrl : undefined,
       hashMode: options.command === "push" ? "remote-aware" : options.hashFiles ? "all" : "none",
       remoteSnapshotPath: remote.kind === "file" ? remote.path : undefined,
+      signal,
       sourceRoot: options.source,
     },
     observer,
@@ -156,6 +161,7 @@ export async function executeCommand(
         apiUrl: requiredApiUrl,
         maxChanges: options.maxChanges,
         plan,
+        signal,
         sourceRoot: options.source,
         uploadConcurrency: options.uploadConcurrency,
       },
@@ -220,6 +226,7 @@ export async function executeCommand(
         apiUrl: requiredApiUrl,
         maxChanges: itemsToPrune.length,
         plan,
+        signal,
       },
       observer,
     );
@@ -383,6 +390,14 @@ function createCliObserver(reporter: LineReporter): LockstepObserver {
   return {
     onEvent(event: LockstepRunEvent) {
       if (event.type === "status") {
+        // A status line is overwritten by the next one; warnings (such as a sync run that could
+        // not be finalized) have to stay on screen.
+        if (event.message.startsWith("Warning:")) {
+          reporter.log(event.message);
+
+          return;
+        }
+
         if (event.message.includes("] hashing ") || event.message.includes("] uploading ")) {
           const match = event.message.match(/^\[(\d+)\/(\d+)\] (\w+) ([^(]+)(?: \((.+)\))?$/);
           const stage = PushStageSchema.safeParse(match?.[3]);

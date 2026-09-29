@@ -1,5 +1,10 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createServer, type Server } from "node:http";
+import os from "node:os";
+import path from "node:path";
 import type { LockstepPlan } from "@latch-works/lockstep-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import { type CoreCommands, executeCommand } from "./commands.js";
 import type { CliOptions } from "./types.js";
 
@@ -126,7 +131,7 @@ describe("executeCommand prune", () => {
 
     const plan = createPlan({
       counts: { delete: paths.length, keep: 0, update: 0, upload: 0 },
-      items: paths.map((path) => ({ action: "delete" as const, path })),
+      items: paths.map((entry) => ({ action: "delete" as const, path: entry })),
     });
 
     const printed: string[] = [];
@@ -142,7 +147,7 @@ describe("executeCommand prune", () => {
     });
 
     const listed = printed.filter((line) => line.startsWith("  delete "));
-    expect(listed).toEqual(paths.slice(0, 25).map((path) => `  delete ${path}`));
+    expect(listed).toEqual(paths.slice(0, 25).map((entry) => `  delete ${entry}`));
     expect(confirmPrune).toHaveBeenCalledExactlyOnceWith(25);
     expect(pruneDeleted).toHaveBeenCalledWith(
       expect.objectContaining({ maxChanges: 25, plan }),
@@ -202,5 +207,72 @@ describe("executeCommand prune", () => {
 
     expect(pruneDeleted).not.toHaveBeenCalled();
     expect(process.exitCode).toBe(1);
+  });
+});
+
+/** `Server.address()` widens to a pipe name or null; only a bound TCP address is usable. */
+const TcpAddressSchema = z.object({ port: z.number() });
+
+describe("executeCommand cancellation", () => {
+  const originalEnv = process.env;
+  let archive: string;
+  let server: Server;
+  let apiUrl: string;
+  let finalized: unknown[];
+  const controller = { current: new AbortController() };
+
+  beforeEach(async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    process.env = { ...originalEnv, LOCKSTEP_API_TOKEN: "test-token" };
+    archive = await mkdtemp(path.join(os.tmpdir(), "lockstep-cancel-"));
+    await writeFile(path.join(archive, "new.jpg"), "new");
+    finalized = [];
+    controller.current = new AbortController();
+
+    // A Pane View stand-in whose first item request never answers until the run is aborted.
+    server = createServer(async (request, response) => {
+      let body = "";
+
+      for await (const chunk of request) {
+        body += chunk;
+      }
+
+      const respond = (json: string) => {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(json);
+      };
+
+      if (request.url === "/api/sync/snapshot") {
+        respond('{"entries":[{"path":"gone.jpg","size":3}]}');
+      } else if (request.url === "/api/sync/runs") {
+        respond('{"syncRunId":"run-1"}');
+      } else if (request.url === "/api/sync/runs/run-1/complete") {
+        finalized.push(JSON.parse(body));
+        respond('{"ok":true}');
+      } else {
+        controller.current.abort(new Error("Cancelled by SIGINT."));
+      }
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    apiUrl = `http://127.0.0.1:${TcpAddressSchema.parse(server.address()).port}`;
+  });
+
+  afterEach(async () => {
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+    await rm(archive, { force: true, recursive: true });
+    process.env = originalEnv;
+    vi.restoreAllMocks();
+  });
+
+  it.each(["push", "prune"] as const)("finalizes the %s run as cancelled", async (command) => {
+    const run = executeCommand(
+      createPruneOptions({ apiUrl, command, source: archive, yes: true }),
+      { signal: controller.current.signal },
+    );
+
+    await expect(run).rejects.toThrow("Cancelled by SIGINT.");
+    expect(finalized).toEqual([expect.objectContaining({ status: "cancelled" })]);
   });
 });

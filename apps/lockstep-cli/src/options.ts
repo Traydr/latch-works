@@ -37,6 +37,7 @@ Notes:
     comparison needs on its own, so --hash does not change it.
   prune plans once, prints the deletes, and after confirmation (or --yes) deletes exactly
     those remote entries. A delete whose file is back in the source folder is skipped.
+  Ctrl+C during push or prune finalizes the sync run as cancelled; press it again to quit at once.
   API tokens are read from LOCKSTEP_API_TOKEN, or the variable named by --api-token-env.
   --upload-concurrency bounds parallel uploads (1-8, default 3).
   Flags apply to the current run only. ~/.latch-works/lockstep.json remembers the source

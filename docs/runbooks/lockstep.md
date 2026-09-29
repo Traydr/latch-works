@@ -184,7 +184,10 @@ shows the run as running until it is cancelled on the management page. This take
 how the run ended: a cancelled run, or a prune stopped because the source folder went away, still
 reports the unfinalized run id. `@latch-works/lockstep-core` throws `UnfinalizedSyncRunError` for
 this case, carrying `syncRunId`, the `intendedStatus` it tried to record, and the cancellation or
-fatal error as `cause`.
+fatal error as `cause`. Ctrl+C (or SIGTERM) during
+a CLI push or prune stops new work and finalizes the run as `cancelled` before exiting with status
+130 (143 for SIGTERM); a second Ctrl+C, or cleanup that takes longer than 15 seconds, quits at once
+and leaves the run for the management page.
 
 Lockstep stores versioned, per-source hash caches under
 `~/.latch-works/hash-cache/v1/`. Cache entries are invalidated when file size, modified time, or the
