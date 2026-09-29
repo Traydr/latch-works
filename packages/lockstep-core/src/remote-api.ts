@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
-import { Readable, Transform } from "node:stream";
+import { pipeline, Readable, Transform } from "node:stream";
 import { getBaseName, getExtension, type MediaItem } from "@latch-works/media-domain";
 import { hashFileContents } from "@latch-works/media-index";
 import { z } from "zod";
@@ -294,22 +294,29 @@ export async function uploadFile({
   const digest = createHash("sha256");
   const source = createReadStream(filePath);
 
-  const body = source.pipe(
-    new Transform({
-      transform(chunk, _encoding, callback) {
-        bytesUploaded += chunk.length;
-        digest.update(chunk);
-        const now = Date.now();
+  const body = new Transform({
+    transform(chunk, _encoding, callback) {
+      bytesUploaded += chunk.length;
+      digest.update(chunk);
+      const now = Date.now();
 
-        if (onProgress && now - lastReport >= 100) {
-          lastReport = now;
-          onProgress(bytesUploaded, total);
-        }
+      if (onProgress && now - lastReport >= 100) {
+        lastReport = now;
+        onProgress(bytesUploaded, total);
+      }
 
-        callback(null, chunk);
-      },
-    }),
-  );
+      callback(null, chunk);
+    },
+  });
+
+  // pipeline owns both streams: a read error (drive unplugged, file gone, access revoked) errors
+  // the request body so fetch rejects, instead of escaping as an uncaught stream error. The read
+  // error itself is what the caller sees, not fetch's generic body failure.
+  let readError: Error | undefined;
+  source.once("error", (error) => {
+    readError = error;
+  });
+  pipeline(source, body, () => {});
 
   const destroyStreams = () => {
     if (!source.destroyed) {
@@ -365,7 +372,7 @@ export async function uploadFile({
     onProgress?.(total, total);
   } catch (error) {
     destroyStreams();
-    throw error;
+    throw readError ?? error;
   } finally {
     signal?.removeEventListener("abort", onAbort);
     destroyStreams();
