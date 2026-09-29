@@ -206,47 +206,81 @@ export async function saveBlobWithoutClobbering(
   signal?: AbortSignal
 ): Promise<CollisionSaveResult> {
   throwIfAborted(signal);
+  const contentHash = await hashBlob(blob);
 
-  const recovered = await recoverPendingBlobCommit(
-    destinationDirectory,
-    preferredFileName,
-    blob,
-    signal
-  );
-
-  if (recovered) {
-    return { fileName: recovered, skipped: false };
-  }
-
-  const preferredHandle = await getExistingFileHandle(destinationDirectory, preferredFileName);
-
-  if (!preferredHandle) {
-    await commitBlob(destinationDirectory, preferredFileName, preferredFileName, blob, signal);
-
-    return { fileName: preferredFileName, skipped: false };
-  }
-
-  if (await fileContentsMatch(preferredHandle, blob)) {
-    return { fileName: preferredFileName, skipped: true };
-  }
-
-  for (let attempt = 0; attempt < 128; attempt += 1) {
+  for (let attempt = 0; attempt <= 128; attempt += 1) {
     throwIfAborted(signal);
-    const candidateName = addFileNameSuffix(preferredFileName, randomSuffix());
-    const candidateHandle = await getExistingFileHandle(destinationDirectory, candidateName);
 
-    if (!candidateHandle) {
-      await commitBlob(destinationDirectory, preferredFileName, candidateName, blob, signal);
+    const candidateName =
+      attempt === 0 ? preferredFileName : addFileNameSuffix(preferredFileName, randomSuffix());
+
+    const candidate = await claimCandidate(
+      destinationDirectory,
+      candidateName,
+      blob,
+      contentHash,
+      signal
+    );
+
+    if (candidate === "free") {
+      await commitBlob(destinationDirectory, candidateName, blob, contentHash, signal);
 
       return { fileName: candidateName, skipped: false };
     }
 
-    if (await fileContentsMatch(candidateHandle, blob)) {
-      return { fileName: candidateName, skipped: true };
+    if (candidate !== "taken") {
+      return { fileName: candidateName, skipped: candidate === "identical" };
     }
   }
 
   throw new Error(`Could not find an unused filename for ${preferredFileName}`);
+}
+
+/**
+ * What a candidate filename holds for this content. A commit marker left by an interrupted save
+ * only authorizes rewriting its target when the marker records this exact content; anything else
+ * at that name is an archive file and is never replaced.
+ */
+async function claimCandidate(
+  destinationDirectory: WritableDirectory,
+  fileName: string,
+  blob: Blob,
+  contentHash: string,
+  signal?: AbortSignal
+): Promise<"free" | "identical" | "repaired" | "taken"> {
+  const markerName = await getCommitMarkerName(fileName);
+  const marker = await readCommitMarker(destinationDirectory, markerName);
+  const existing = await getExistingFileHandle(destinationDirectory, fileName);
+
+  if (marker?.contentHash === contentHash) {
+    // This content's own write was interrupted; finish it at the name it had claimed.
+    if (!existing || !(await fileHasContent(existing, blob.size, contentHash))) {
+      throwIfAborted(signal);
+      await writeBlobDirect(destinationDirectory, fileName, blob, signal);
+    }
+
+    await removeEntryIfPresent(destinationDirectory, markerName);
+
+    return "repaired";
+  }
+
+  if (marker && existing && !(await fileHasContent(existing, null, marker.contentHash))) {
+    // Another item's write never finished. Leave the file and its marker for that item's replay.
+    return "taken";
+  }
+
+  if (marker !== undefined) {
+    // The marked write finished and only its cleanup was lost, its target was never created, or
+    // the marker cannot be read (a marker is written before its target is opened, and older
+    // builds did not record content). None of these proves an unfinished write of known content.
+    await removeEntryIfPresent(destinationDirectory, markerName);
+  }
+
+  if (!existing) {
+    return "free";
+  }
+
+  return (await fileHasContent(existing, blob.size, contentHash)) ? "identical" : "taken";
 }
 
 export function addFileNameSuffix(fileName: string, suffix: string): string {
@@ -314,18 +348,20 @@ async function getExistingFileHandle(
   }
 }
 
-async function fileContentsMatch(fileHandle: WritableFile, blob: Blob): Promise<boolean> {
+/** A file that cannot be read matches no content, so it is never treated as replaceable. */
+async function fileHasContent(
+  fileHandle: WritableFile,
+  expectedSize: number | null,
+  expectedHash: string
+): Promise<boolean> {
   try {
-    const existingFile = await fileHandle.getFile();
+    const file = await fileHandle.getFile();
 
-    if (existingFile.size !== blob.size) {
+    if (expectedSize !== null && file.size !== expectedSize) {
       return false;
     }
 
-    const existingHash = await hashBlob(existingFile);
-    const incomingHash = await hashBlob(blob);
-
-    return existingHash === incomingHash;
+    return (await hashBlob(file)) === expectedHash;
   } catch {
     return false;
   }
@@ -337,24 +373,25 @@ async function hashBlob(blob: Blob): Promise<string> {
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-/** Written next to a partially saved file so an interrupted write can be finished or rolled back. */
-const CommitMarkerSchema = z.object({
-  preferredFileName: z.string(),
-  targetFileName: z.string()
-});
+/**
+ * Written before a file is opened and removed once it is complete. It is keyed by the target name
+ * and records the content being written, so a replay can tell its own unfinished write apart from
+ * a finished file that merely lost its marker.
+ */
+const CommitMarkerSchema = z.object({ contentHash: z.string() });
+
+type CommitMarker = z.infer<typeof CommitMarkerSchema>;
 
 async function commitBlob(
   destinationDirectory: WritableDirectory,
-  preferredFileName: string,
   targetFileName: string,
   blob: Blob,
+  contentHash: string,
   signal?: AbortSignal
 ): Promise<void> {
-  const markerName = await getCommitMarkerName(preferredFileName);
-
-  const marker = new Blob([JSON.stringify({ preferredFileName, targetFileName })], {
-    type: "application/json"
-  });
+  const markerName = await getCommitMarkerName(targetFileName);
+  const record: CommitMarker = { contentHash };
+  const marker = new Blob([JSON.stringify(record)], { type: "application/json" });
 
   await writeBlobDirect(destinationDirectory, markerName, marker, signal);
 
@@ -373,75 +410,42 @@ async function commitBlob(
 
 async function hasPendingBlobCommit(
   destinationDirectory: WritableDirectory,
-  preferredFileName: string
+  targetFileName: string
 ): Promise<boolean> {
   return Boolean(
-    await getExistingFileHandle(destinationDirectory, await getCommitMarkerName(preferredFileName))
+    await getExistingFileHandle(destinationDirectory, await getCommitMarkerName(targetFileName))
   );
 }
 
-async function recoverPendingBlobCommit(
+/**
+ * Undefined when there is no marker, null when one exists but cannot be read — including markers
+ * from builds that did not record content — and the record otherwise.
+ */
+async function readCommitMarker(
   destinationDirectory: WritableDirectory,
-  preferredFileName: string,
-  blob: Blob,
-  signal?: AbortSignal
-): Promise<string | null> {
-  const markerName = await getCommitMarkerName(preferredFileName);
+  markerName: string
+): Promise<CommitMarker | null | undefined> {
   const markerHandle = await getExistingFileHandle(destinationDirectory, markerName);
 
   if (!markerHandle) {
-    return null;
+    return undefined;
   }
-
-  let targetFileName: string | null = null;
 
   try {
-    const marker = CommitMarkerSchema.parse(JSON.parse(await (await markerHandle.getFile()).text()));
-
-    if (
-      marker.preferredFileName === preferredFileName &&
-      isSafeCommitTarget(marker.targetFileName)
-    ) {
-      targetFileName = marker.targetFileName;
-    }
+    return CommitMarkerSchema.parse(JSON.parse(await (await markerHandle.getFile()).text()));
   } catch {
-    // An incomplete marker means the canonical file was never opened.
-  }
-
-  if (!targetFileName) {
-    await removeEntryIfPresent(destinationDirectory, markerName);
-
     return null;
   }
-
-  throwIfAborted(signal);
-  const targetHandle = await getExistingFileHandle(destinationDirectory, targetFileName);
-
-  if (!targetHandle || !(await fileContentsMatch(targetHandle, blob))) {
-    await removeEntryIfPresent(destinationDirectory, targetFileName);
-    await writeBlobDirect(destinationDirectory, targetFileName, blob, signal);
-  }
-
-  await removeEntryIfPresent(destinationDirectory, markerName);
-
-  return targetFileName;
 }
 
-async function getCommitMarkerName(preferredFileName: string): Promise<string> {
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(preferredFileName)
-  );
+async function getCommitMarkerName(targetFileName: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(targetFileName));
 
   const key = Array.from(new Uint8Array(digest).slice(0, 12), (byte) =>
     byte.toString(16).padStart(2, "0")
   ).join("");
 
   return `.gather-box-commit-${key}.json`;
-}
-
-function isSafeCommitTarget(fileName: string): boolean {
-  return fileName.length > 0 && fileName !== "." && fileName !== ".." && !/[\\/]/.test(fileName);
 }
 
 async function removeEntryIfPresent(
