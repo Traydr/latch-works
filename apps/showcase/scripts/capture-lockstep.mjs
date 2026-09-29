@@ -360,11 +360,12 @@ async function main() {
     await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: "dark" }]);
     await page.bringToFront();
 
-    // The seeded profile has no stored token; enter it for the session.
-    const tokenSelector = 'input[placeholder="Enter token for this session"]';
+    // The seeded profile has no stored token; enter it for the session. Match the field by its
+    // visible label (TokenInput in apps/lockstep) rather than its placeholder copy.
+    const tokenSelector = '::-p-xpath(//label[span[normalize-space()="Sync API token"]]//input)';
     await page.waitForSelector(tokenSelector, { timeout: 60_000 }).catch(async () => {
       const bodyText = await page.evaluate(() => document.body.innerText.slice(0, 800));
-      throw new Error(`Token input never appeared; legacy migration failed?\n${bodyText}`);
+      throw new Error(`Sync API token field never appeared.\n${bodyText}`);
     });
     await page.type(tokenSelector, token);
 
