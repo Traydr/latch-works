@@ -20,6 +20,7 @@ import {
 } from "./cleanup-worker";
 import { initialProgressFor } from "./maintenance-progress";
 import { hasPurgeableShutterSources } from "./shutter-source-purge";
+import { hasSoftDeletedPurgeWork } from "./soft-deleted-purge";
 
 const testDatabase = testDatabaseForSuite();
 
@@ -170,6 +171,21 @@ describe("soft-deleted purge", () => {
 
     expect(deletes.objectKeys).toEqual([]);
     expect(await remainingMediaSha256s()).toEqual([lower.toUpperCase(), lower].sort());
+  });
+
+  it("has work when a content change left an original no entry references", async () => {
+    const hasWork = () => testDatabase().db.transaction((tx) => hasSoftDeletedPurgeWork(tx));
+    const replaced = "4".repeat(64);
+    const current = "5".repeat(64);
+    await insertMediaObject(replaced);
+    await insertEntry(await insertMediaObject(current), "kept/5.jpg", null);
+
+    expect(await hasWork()).toBe(true);
+
+    await runJobToCompletion(await insertJob("soft_deleted_purge"));
+
+    expect(await remainingMediaSha256s()).toEqual([current]);
+    expect(await hasWork()).toBe(false);
   });
 
   it("keeps every media row when a cancel lands during the storage delete", async () => {
