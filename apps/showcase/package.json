@@ -11,7 +11,7 @@
     "check": "pnpm typecheck && pnpm build",
     "screenshots": "node scripts/prepare-showcase-media.mjs && node scripts/capture-screenshots.mjs",
     "screenshots:install-browser": "pnpm exec browsers install chrome@stable",
-    "typecheck": "tsc --noEmit && astro check"
+    "typecheck": "astro sync && tsc --noEmit && astro check"
   },
   "dependencies": {
     "@astrojs/check": "^0.9.10",
