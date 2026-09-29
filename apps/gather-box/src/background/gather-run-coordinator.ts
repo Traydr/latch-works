@@ -21,6 +21,7 @@ import {
   type GatherRunStartOutcome,
   type GatherRunState
 } from "../shared/gather-run";
+import { groupXPostInFolder } from "../shared/path";
 import { getSiteKeyFromUrl, isSupportedUrl, type SiteKey } from "../shared/sites";
 import type { DownloadablePayload } from "../shared/types";
 import { applyGatherRunEvent } from "../shared/gather-run-reducer";
@@ -354,10 +355,15 @@ export class GatherRunCoordinator {
         throw new Error("The source tab navigated before collection started.");
       }
 
-      const [payload, settings] = await Promise.all([
+      const [collected, settings] = await Promise.all([
         this.dependencies.collect(currentTab, reservation.run),
         this.dependencies.loadSettings()
       ]);
+
+      const payload =
+        settings.xPostFolders && collected.outputKind === "downloadable-files"
+          ? groupXPostInFolder(collected)
+          : collected;
 
       const total =
         payload.outputKind === "generated-story-pdf"

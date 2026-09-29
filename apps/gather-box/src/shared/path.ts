@@ -58,6 +58,28 @@ export function getFolderSegments(payload: DownloadablePayload | GeneratedStoryP
   return titleSegment ? [titleSegment] : ["comic"];
 }
 
+/**
+ * Moves a multi-image X post into a folder named after the post ID and prefixes each file with
+ * its position in the post (`01_`, `02_`, ...), so the post's order survives on disk. Single-image
+ * posts and other sites pass through unchanged.
+ */
+export function groupXPostInFolder(payload: DownloadablePayload): DownloadablePayload {
+  if (payload.site !== "x" || !payload.galleryId || payload.images.length < 2) {
+    return payload;
+  }
+
+  const width = Math.max(2, String(payload.images.length).length);
+
+  return {
+    ...payload,
+    folderSegments: [...payload.folderSegments, payload.galleryId],
+    images: payload.images.map((image, index) => ({
+      ...image,
+      fileName: `${String(index + 1).padStart(width, "0")}_${image.fileName}`
+    }))
+  };
+}
+
 export function buildFolderPreview(rootName: string, segments: string[]): string {
   return segments.length > 0 ? `${rootName}/${segments.join("/")}` : rootName;
 }

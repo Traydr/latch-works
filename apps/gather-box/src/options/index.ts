@@ -15,6 +15,7 @@ interface SettingsFormElements {
   form: HTMLFormElement;
   downloadConcurrency: HTMLInputElement;
   mediaCompatibilityMode: HTMLInputElement;
+  xPostFolders: HTMLInputElement;
   verboseLogging: HTMLInputElement;
   pageShortcutsEnabled: HTMLInputElement;
   toggleCommandShortcut: HTMLElement;
@@ -51,6 +52,7 @@ function getFormElements(): SettingsFormElements {
     form: requireElement("settingsForm", HTMLFormElement),
     downloadConcurrency: requireElement("downloadConcurrency", HTMLInputElement),
     mediaCompatibilityMode: requireElement("mediaCompatibilityMode", HTMLInputElement),
+    xPostFolders: requireElement("xPostFolders", HTMLInputElement),
     verboseLogging: requireElement("verboseLogging", HTMLInputElement),
     pageShortcutsEnabled: requireElement("pageShortcutsEnabled", HTMLInputElement),
     toggleCommandShortcut: requireElement("toggleCommandShortcut", HTMLElement),
@@ -100,6 +102,7 @@ function renderPerSiteCredentials(container: HTMLElement, settings: GatherBoxSet
 function applySettingsToForm(elements: SettingsFormElements, settings: GatherBoxSettings): void {
   elements.downloadConcurrency.value = String(settings.downloadConcurrency);
   elements.mediaCompatibilityMode.checked = settings.mediaCompatibilityMode;
+  elements.xPostFolders.checked = settings.xPostFolders;
   elements.verboseLogging.checked = settings.verboseLogging;
   elements.pageShortcutsEnabled.checked = settings.pageShortcutsEnabled;
   elements.credentialsMode.value = settings.credentialsMode;
@@ -127,6 +130,7 @@ async function handleSave(elements: SettingsFormElements): Promise<void> {
     verboseLogging: elements.verboseLogging.checked,
     pageShortcutsEnabled: elements.pageShortcutsEnabled.checked,
     useGlobalFolder: folderMode === "global",
+    xPostFolders: elements.xPostFolders.checked,
     credentialsMode: z
       .catch(CredentialsModeSchema, DEFAULT_SETTINGS.credentialsMode)
       .parse(elements.credentialsMode.value),
