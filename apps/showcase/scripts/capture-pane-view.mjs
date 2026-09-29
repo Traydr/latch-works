@@ -197,7 +197,7 @@ async function captureViewer(page) {
     throw new Error("No gallery tile found to open the viewer.");
   }
 
-  await tile.click({ clickCount: 2 });
+  await tile.click({ count: 2 });
 
   await page.waitForSelector('dialog[open][aria-label^="Viewer for"]', { timeout: 15_000 });
   await page.waitForFunction(
