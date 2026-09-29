@@ -144,7 +144,8 @@ export const MediaItemSchema = z.object({
   extension: normalizedExtensionSchema,
   mediaType: MediaTypeSchema,
   size: finiteNumberSchema.nonnegative(),
-  mtimeMs: finiteNumberSchema.nonnegative(),
+  // Signed: files modified before 1970 report a negative mtime.
+  mtimeMs: finiteNumberSchema,
   width: finiteNumberSchema.nonnegative().optional(),
   height: finiteNumberSchema.nonnegative().optional(),
   durationMs: finiteNumberSchema.nonnegative().optional(),
@@ -154,7 +155,7 @@ export const MediaItemSchema = z.object({
 
 export const VideoProbeRequestSchema = z.object({
   path: PathInputSchema,
-  mtimeMs: finiteNumberSchema.positive(),
+  mtimeMs: finiteNumberSchema,
   size: finiteNumberSchema.nonnegative(),
 });
 
