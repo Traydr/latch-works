@@ -7,6 +7,7 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import puppeteer from "puppeteer-core";
+import { resolveChromePath } from "./resolve-chrome.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -64,22 +65,6 @@ const password = process.env.PANE_VIEW_PASSWORD;
 
 if (!username || !password) {
   console.error("PANE_VIEW_USERNAME / PANE_VIEW_PASSWORD not set (checked env and repo .env).");
-  process.exit(1);
-}
-
-const chromeCandidates = [
-  process.env.CHROME_PATH,
-  join(
-    root,
-    "chrome/mac_arm-149.0.7827.115/chrome-mac-arm64",
-    "Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
-  ),
-].filter(Boolean);
-
-const chromePath = chromeCandidates.find((candidate) => existsSync(candidate));
-
-if (!chromePath) {
-  console.error(`Chrome not found. Tried:\n  ${chromeCandidates.join("\n  ")}\nSet CHROME_PATH.`);
   process.exit(1);
 }
 
@@ -224,6 +209,7 @@ async function captureViewer(page) {
 
 async function main() {
   await checkHealth();
+  const chromePath = await resolveChromePath();
   mkdirSync(outputDir, { recursive: true });
 
   const browser = await puppeteer.launch({

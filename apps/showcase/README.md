@@ -30,6 +30,7 @@ node apps/showcase/scripts/prepare-showcase-media.mjs
 LOCKSTEP_API_URL=http://localhost:3000 LOCKSTEP_API_TOKEN=$PANE_VIEW_SYNC_TOKEN \
   pnpm --filter @latch-works/lockstep start push --source /tmp/showcase-archive
 pnpm --filter @latch-works/gather-box build
+pnpm --filter @latch-works/showcase screenshots:install-browser   # Chrome for Testing
 
 # With the Pane View dev server running on port 3000:
 pnpm --filter @latch-works/showcase screenshots
@@ -53,8 +54,9 @@ lands in a real archive.
 - `capture-gather-box.mjs`: loads the unpacked extension into the vendored Chrome and captures
   the actual side panel in idle and active states.
 
-All captures are dark mode at 1440x900 @2x. Set `CHROME_PATH` to override the vendored
-Chrome for Testing binary.
+All captures are dark mode at 1440x900 @2x. The Pane View and Gather Box captures use the newest
+Chrome for Testing that `screenshots:install-browser` put in `apps/showcase/chrome` for your
+platform; set `CHROME_PATH` to use another binary.
 
 ## Future considerations
 
