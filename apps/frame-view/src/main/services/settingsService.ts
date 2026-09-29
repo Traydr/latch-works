@@ -2,8 +2,8 @@ import path from 'node:path';
 
 import { Result, type Result as ResultType } from 'better-result';
 import type { Rectangle } from 'electron';
-import { AppSettingsPatchSchema } from '../../shared/contracts';
-import type { AppSettings, AppSettingsPatch } from '../../shared/types';
+import { StoredSettingsPatchSchema } from '../../shared/contracts';
+import type { AppSettings, StoredSettingsPatch } from '../../shared/types';
 import { type FileSystemError, toError, unexpectedFileSystemError } from '../errors';
 import {
   createDefaultPersistedState,
@@ -64,10 +64,10 @@ export class SettingsService {
   }
 
   async updateSettings(
-    patch: AppSettingsPatch,
+    patch: StoredSettingsPatch,
     options?: FlushOptions,
   ): Promise<ResultType<AppSettings, FileSystemError>> {
-    const parsedPatch = omitUndefinedKeys(AppSettingsPatchSchema.parse(patch));
+    const parsedPatch = omitUndefinedKeys(StoredSettingsPatchSchema.parse(patch));
 
     const merged = {
       ...this.state.settings,

@@ -15,12 +15,12 @@ import {
 } from '../../../src/main/ipc/registerIpc';
 import { resolveFolderPath as resolveRealFolderPath } from '../../../src/main/services/folderService';
 import {
-  authorizeMediaRoot as authorizeRealMediaRoot,
   claimChosenMediaRoot as claimRealChosenMediaRoot,
   grantChosenMediaRoot as grantRealChosenMediaRoot,
   isAuthorizedMediaPath as isRealAuthorizedMediaPath,
   shrinkAuthorizedMediaRootsTo as shrinkRealAuthorizedMediaRootsTo,
 } from '../../../src/main/services/mediaProtocol';
+import { SettingsService } from '../../../src/main/services/settingsService';
 import type { AppSettingsPatch } from '../../../src/shared/types';
 import { DEFAULT_SETTINGS } from '../../../src/shared/types';
 
@@ -36,16 +36,17 @@ const MEDIA_TOOLS_STATUS = {
 interface SetupOptions {
   /** Real implementations to use in place of the mocked runtime entries. */
   runtime?: Partial<IpcRuntime>;
+  settingsService?: IpcSettingsService;
   waitForScan?: () => Promise<void>;
 }
 
 function setup({
   runtime: runtimeOverrides,
+  settingsService: settingsServiceOverride,
   waitForScan = async () => undefined,
 }: SetupOptions = {}) {
   const handlers = new Map<string, RegisteredHandler>();
 
-  const authorizeMediaRoot = vi.fn<IpcRuntime['authorizeMediaRoot']>(async () => undefined);
   const isAuthorizedMediaPath = vi.fn<IpcRuntime['isAuthorizedMediaPath']>(async () => true);
   const listFolderChildren = vi.fn<IpcRuntime['listFolderChildren']>(async () => Result.ok([]));
   const resolveFolderPath = vi.fn<IpcRuntime['resolveFolderPath']>(async () => Result.ok(null));
@@ -65,7 +66,6 @@ function setup({
   const grantChosenMediaRoot = vi.fn<IpcRuntime['grantChosenMediaRoot']>(async () => undefined);
 
   const runtime: IpcRuntime = {
-    authorizeMediaRoot,
     claimChosenMediaRoot,
     clearThumbnailCache: vi.fn<IpcRuntime['clearThumbnailCache']>(async () => undefined),
     getAppVersion: () => '1.0.13',
@@ -121,7 +121,7 @@ function setup({
 
   registerIpc(
     runtime,
-    settingsService,
+    settingsServiceOverride ?? settingsService,
     catalogService,
     mediaToolsService,
     new ScanQueue({
@@ -133,7 +133,6 @@ function setup({
   );
 
   return {
-    authorizeMediaRoot,
     catalogService,
     claimChosenMediaRoot,
     grantChosenMediaRoot,
@@ -240,7 +239,6 @@ describe('registerIpc', () => {
 
   it('rejects scan starts for paths that were not authorized via the folder dialog', async () => {
     const {
-      authorizeMediaRoot,
       catalogService,
       handlers,
       isAuthorizedMediaPath,
@@ -260,7 +258,6 @@ describe('registerIpc', () => {
 
     expect(response?.status).toBe('error');
     expect(response?.status === 'error' ? response.error._tag : null).toBe('ValidationError');
-    expect(authorizeMediaRoot).not.toHaveBeenCalled();
     expect(shrinkAuthorizedMediaRootsTo).not.toHaveBeenCalled();
     expect(catalogService.startScan).not.toHaveBeenCalled();
     expect(sendScanEvent).toHaveBeenCalledWith({
@@ -270,43 +267,41 @@ describe('registerIpc', () => {
     });
   });
 
-  it('re-authorizes the remembered last folder so auto-scan works after restart', async () => {
-    const rememberedPath = 'C:\\gallery';
+  it('never lets a renderer settings patch authorize a folder to scan', async () => {
+    const tempRoot = await realpath(await mkdtemp(path.join(os.tmpdir(), 'frame-view-ipc-')));
+    const unchosen = await mkdtemp(path.join(tempRoot, 'unchosen-'));
 
-    const {
-      authorizeMediaRoot,
-      catalogService,
-      handlers,
-      isAuthorizedMediaPath,
-      resolveFolderPath,
-      settingsService,
-      shrinkAuthorizedMediaRootsTo,
-    } = setup();
-
-    settingsService.getSettings.mockReturnValue({
-      ...DEFAULT_SETTINGS,
-      rememberLastFolder: true,
-      lastFolderPath: rememberedPath,
+    const { catalogService, handlers } = setup({
+      runtime: {
+        claimChosenMediaRoot: claimRealChosenMediaRoot,
+        grantChosenMediaRoot: grantRealChosenMediaRoot,
+        isAuthorizedMediaPath: isRealAuthorizedMediaPath,
+        resolveFolderPath: resolveRealFolderPath,
+        shrinkAuthorizedMediaRootsTo: shrinkRealAuthorizedMediaRootsTo,
+      },
+      settingsService: new SettingsService(tempRoot),
     });
-    resolveFolderPath.mockResolvedValue(Result.ok(rememberedPath));
-    isAuthorizedMediaPath.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+
+    const update = await handlers.get('settings:update')?.({
+      rememberLastFolder: true,
+      lastFolderPath: unchosen,
+    });
+
+    expect(update?.status).toBe('error');
 
     const response = await handlers.get('scan:start')?.({
-      rootPath: rememberedPath,
+      rootPath: unchosen,
       recursive: false,
       filters: DEFAULT_SETTINGS.filters,
-      excludedRootChildPaths: [],
     });
 
-    expect(response?.status).toBe('ok');
-    expect(authorizeMediaRoot).toHaveBeenCalledWith(rememberedPath);
-    expect(shrinkAuthorizedMediaRootsTo).toHaveBeenCalledWith(rememberedPath);
-    expect(catalogService.startScan).toHaveBeenCalled();
+    expect(response?.status).toBe('error');
+    expect(catalogService.startScan).not.toHaveBeenCalled();
+    expect(await isRealAuthorizedMediaPath(unchosen)).toBe(false);
   });
 
   it('emits a scan error when the catalog service fails to start a scan', async () => {
     const {
-      authorizeMediaRoot,
       catalogService,
       handlers,
       isAuthorizedMediaPath,
@@ -334,7 +329,6 @@ describe('registerIpc', () => {
     });
 
     expect(response?.status).toBe('error');
-    expect(authorizeMediaRoot).not.toHaveBeenCalled();
     expect(shrinkAuthorizedMediaRootsTo).toHaveBeenCalledWith('C:\\resolved');
     expect(sendScanEvent).toHaveBeenCalledWith({
       type: 'error',
@@ -399,7 +393,6 @@ describe('registerIpc', () => {
 
     const { catalogService, handlers, sendScanEvent, showOpenFolderDialog } = setup({
       runtime: {
-        authorizeMediaRoot: authorizeRealMediaRoot,
         claimChosenMediaRoot: claimRealChosenMediaRoot,
         grantChosenMediaRoot: grantRealChosenMediaRoot,
         isAuthorizedMediaPath: isRealAuthorizedMediaPath,

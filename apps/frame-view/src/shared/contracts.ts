@@ -99,6 +99,10 @@ export const AppSettingsSchema = z.object({
   debug: DebugSettingsSchema,
 });
 
+/**
+ * What the renderer may change. `lastFolderPath` is left out on purpose: the main process writes it
+ * after a folder the user chose is scanned, and trusts it to re-authorize that folder on startup.
+ */
 export const AppSettingsPatchSchema = z.strictObject({
   theme: ThemeModeSchema.optional(),
   rememberLastFolder: z.boolean().optional(),
@@ -120,13 +124,17 @@ export const AppSettingsPatchSchema = z.strictObject({
       showVideos: z.boolean().optional(),
     })
     .optional(),
-  lastFolderPath: LastFolderPathSchema.optional(),
   debug: z
     .object({
       enableDebugLogging: z.boolean().optional(),
       enablePerformanceMonitoring: z.boolean().optional(),
     })
     .optional(),
+});
+
+/** A settings change made by the main process, which alone may set the remembered folder. */
+export const StoredSettingsPatchSchema = AppSettingsPatchSchema.extend({
+  lastFolderPath: LastFolderPathSchema.optional(),
 });
 
 export const MediaItemSchema = z.object({
