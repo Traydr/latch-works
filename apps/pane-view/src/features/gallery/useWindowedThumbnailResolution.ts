@@ -98,13 +98,17 @@ export function useWindowedThumbnailResolution(
     let debounceTimeoutId: number | undefined;
     let drainTimeoutId: number | undefined;
     let retryTimeoutId: number | undefined;
+    let resolving = false;
 
     const applyResolvedState = (resolved: GalleryThumbnailResolveState) => {
       setResolution({ requests: windowedThumbnailRequests, urls: resolved.urls });
     };
 
     const resolveAndSchedule = () => {
+      resolving = true;
       void resolver.resolveGalleryThumbnailsBatch(windowedThumbnailRequests).then((resolved) => {
+        resolving = false;
+
         if (cancelled) {
           return;
         }
@@ -144,6 +148,21 @@ export function useWindowedThumbnailResolution(
       scheduleRetry();
     };
 
+    // A user refresh made failed rows eligible; resolve now, not at the next
+    // retry time. A resolve already running drains them when it settles.
+    const unsubscribe = resolver.subscribeToThumbnailRetries(() => {
+      if (resolving) {
+        return;
+      }
+
+      if (retryTimeoutId !== undefined) {
+        window.clearTimeout(retryTimeoutId);
+        retryTimeoutId = undefined;
+      }
+
+      resolveAndSchedule();
+    });
+
     const isNewContent = seenContentKeyRef.current !== contentKey;
     seenContentKeyRef.current = contentKey;
 
@@ -159,6 +178,7 @@ export function useWindowedThumbnailResolution(
 
     return () => {
       cancelled = true;
+      unsubscribe();
 
       if (debounceTimeoutId !== undefined) {
         window.clearTimeout(debounceTimeoutId);

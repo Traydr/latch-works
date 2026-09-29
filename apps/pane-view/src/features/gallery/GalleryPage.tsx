@@ -1,5 +1,6 @@
 import { type FormEvent, type JSX, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { sharedThumbnailResolver } from "@/features/gallery/batched-thumbnail-resolver";
 import { FloatingToolbar } from "@/features/gallery/FloatingToolbar";
 import { GalleryBrowsePane } from "@/features/gallery/GalleryBrowsePane";
 import { GalleryGridSkeleton } from "@/features/gallery/GalleryGridSkeleton";
@@ -356,7 +357,10 @@ export function GalleryPage(): JSX.Element {
         exclude={folders.exclude}
         isRefreshing={showRefreshing}
         onChangeSortMode={browse.setSortMode}
-        onRefresh={() => void refresh()}
+        onRefresh={() => {
+          sharedThumbnailResolver.retryFailedThumbnails();
+          void refresh();
+        }}
         onToggleComicMode={() => {
           if (!folderModesEnabled) return;
           setComicMode(!effectiveComicMode);
