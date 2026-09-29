@@ -14,6 +14,7 @@ export interface GatherBoxSettings {
   downloadConcurrency: number;
   mediaCompatibilityMode: boolean;
   useGlobalFolder: boolean;
+  xPostFolders: boolean;
   verboseLogging: boolean;
   pageShortcutsEnabled: boolean;
   credentialsMode: CredentialsMode;
@@ -24,6 +25,7 @@ export const DEFAULT_SETTINGS: GatherBoxSettings = {
   downloadConcurrency: 4,
   mediaCompatibilityMode: false,
   useGlobalFolder: false,
+  xPostFolders: false,
   verboseLogging: false,
   pageShortcutsEnabled: true,
   credentialsMode: "auto",
@@ -44,6 +46,7 @@ export const GatherBoxSettingsSchema = z.catch(
       ),
       mediaCompatibilityMode: z.catch(z.coerce.boolean(), false),
       useGlobalFolder: z.catch(z.coerce.boolean(), false),
+      xPostFolders: z.catch(z.coerce.boolean(), false),
       verboseLogging: z.catch(z.coerce.boolean(), false),
       pageShortcutsEnabled: z.optional(z.coerce.boolean()),
       shortcutsEnabled: z.optional(z.coerce.boolean()),
@@ -58,6 +61,7 @@ export const GatherBoxSettingsSchema = z.catch(
         downloadConcurrency: stored.downloadConcurrency,
         mediaCompatibilityMode: stored.mediaCompatibilityMode,
         useGlobalFolder: stored.useGlobalFolder,
+        xPostFolders: stored.xPostFolders,
         verboseLogging: stored.verboseLogging,
         pageShortcutsEnabled:
           stored.pageShortcutsEnabled ??
