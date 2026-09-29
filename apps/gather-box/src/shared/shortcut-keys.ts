@@ -7,7 +7,13 @@ export function installShortcutKeyListener(
 ): () => void {
   let rightShiftDown = false;
 
+  // Page scripts share this DOM and can dispatch synthetic keys, so only keys the browser
+  // generated from real input may press the shortcut or start a gather.
   const handleKeydown = (event: KeyboardEvent) => {
+    if (!event.isTrusted) {
+      return;
+    }
+
     if (isRightShift(event)) {
       rightShiftDown = true;
 
@@ -34,7 +40,7 @@ export function installShortcutKeyListener(
   };
 
   const handleKeyup = (event: KeyboardEvent) => {
-    if (isRightShift(event)) {
+    if (event.isTrusted && isRightShift(event)) {
       rightShiftDown = false;
     }
   };
