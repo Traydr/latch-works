@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { detectMediaType } from '@latch-works/media-domain';
 import type {
   ThumbnailDebugOptions,
   ThumbnailDiagnosticsSnapshot,
@@ -65,10 +66,9 @@ function toArrayBuffer(data: Uint8Array): ArrayBuffer {
   return copy.buffer;
 }
 
+// The shared classification, so every video the catalog lists (m4v included) gets a video frame.
 function isVideoPath(mediaPath: string): boolean {
-  const extension = path.extname(mediaPath).toLowerCase();
-
-  return ['.mp4', '.webm', '.mov', '.mkv'].includes(extension);
+  return detectMediaType(path.basename(mediaPath)) === 'video';
 }
 
 function buildThumbCacheKey(
