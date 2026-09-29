@@ -1,23 +1,11 @@
 import { useCallback, useRef } from 'react';
 
-import type { AppSettings } from '../../shared/types';
-import { getRootGalleryPreferences } from '../utils/rootPreferences';
-
 interface UseFolderOpenActionsOptions {
   openFolderDialog: () => Promise<string | null>;
-  recursive: boolean;
   resolveScanInputPath: (candidatePath: string) => Promise<string | null>;
-  runScan: (
-    folderPath: string,
-    options?: {
-      excludedRootChildPaths?: string[];
-      filters?: AppSettings['filters'];
-      recursive?: boolean;
-    },
-  ) => Promise<boolean>;
+  runScan: (folderPath: string) => Promise<boolean>;
   setNavigationCeilingPath: (path: string | null) => void;
   setPendingFolderSelectionPath: (path: string | null) => void;
-  settings: AppSettings;
 }
 
 /** The two entry points that start a scan: the native dialog and a typed-in path. */
@@ -28,24 +16,18 @@ interface FolderOpenActions {
 
 export function useFolderOpenActions({
   openFolderDialog,
-  recursive,
   resolveScanInputPath,
   runScan,
   setNavigationCeilingPath,
   setPendingFolderSelectionPath,
-  settings,
 }: UseFolderOpenActionsOptions): FolderOpenActions {
   const startScanAtPath = useCallback(
     async (folderPath: string): Promise<void> => {
       setNavigationCeilingPath(folderPath);
       setPendingFolderSelectionPath(null);
-      const preferences = getRootGalleryPreferences(settings, folderPath);
-      await runScan(folderPath, {
-        excludedRootChildPaths: preferences.excludedRootChildPaths,
-        recursive: recursive || preferences.comicMode,
-      });
+      await runScan(folderPath);
     },
-    [recursive, runScan, setNavigationCeilingPath, setPendingFolderSelectionPath, settings],
+    [runScan, setNavigationCeilingPath, setPendingFolderSelectionPath],
   );
 
   const openFolderAction = useCallback((): void => {

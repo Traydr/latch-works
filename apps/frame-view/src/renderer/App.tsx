@@ -61,10 +61,9 @@ function AppInner(): JSX.Element {
     resolveScanInputPathAction,
     runScan,
   } = useScanActions({
-    excludedRootChildPaths: rootGalleryPreferences.excludedRootChildPaths,
-    filters: settings.filters,
-    recursive: effectiveRecursive,
+    recursive,
     rootPath,
+    settings,
   });
 
   const {
@@ -89,12 +88,10 @@ function AppInner(): JSX.Element {
 
   const { openFolderAction, scanInputPathAction } = useFolderOpenActions({
     openFolderDialog: openFolderDialogAction,
-    recursive,
     resolveScanInputPath: resolveScanInputPathAction,
     runScan,
     setNavigationCeilingPath,
     setPendingFolderSelectionPath,
-    settings,
   });
 
   const comicEntries = useMemo(() => {
