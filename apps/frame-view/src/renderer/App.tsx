@@ -182,8 +182,7 @@ function AppInner(): JSX.Element {
   }, [updateSettings]);
 
   useGalleryKeyboardNavigation({
-    viewerIndex,
-    settingsOpen,
+    overlayOpen: viewerIndex !== null || activeComic !== null || settingsOpen,
     browserEntries,
     selectedBrowserEntry,
     selectedBrowserEntryIndex,

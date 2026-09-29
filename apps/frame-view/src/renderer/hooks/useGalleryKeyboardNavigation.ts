@@ -10,8 +10,8 @@ import {
 } from '../utils/hotkeys';
 
 interface UseGalleryKeyboardNavigationOptions {
-  viewerIndex: number | null;
-  settingsOpen: boolean;
+  /** The viewer, the comic reader, or settings is open: the gallery behind it takes no keys. */
+  overlayOpen: boolean;
   browserEntries: BrowserEntryCollection;
   selectedBrowserEntry: BrowserEntry | null;
   selectedBrowserEntryIndex: number;
@@ -23,8 +23,7 @@ interface UseGalleryKeyboardNavigationOptions {
 }
 
 export function useGalleryKeyboardNavigation({
-  viewerIndex,
-  settingsOpen,
+  overlayOpen,
   browserEntries,
   selectedBrowserEntry,
   selectedBrowserEntryIndex,
@@ -35,7 +34,7 @@ export function useGalleryKeyboardNavigation({
   navigateToFolderAction,
 }: UseGalleryKeyboardNavigationOptions): void {
   useEffect(() => {
-    if (viewerIndex !== null || settingsOpen) {
+    if (overlayOpen) {
       return;
     }
 
@@ -246,7 +245,6 @@ export function useGalleryKeyboardNavigation({
     selectBrowserEntryAction,
     selectedBrowserEntry,
     selectedBrowserEntryIndex,
-    settingsOpen,
-    viewerIndex,
+    overlayOpen,
   ]);
 }
