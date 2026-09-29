@@ -1,6 +1,7 @@
 import {
   type LockstepObserver,
   type LockstepPlan,
+  type LockstepPlanItem,
   type LockstepRunEvent,
   planSync,
   pruneDeleted,
@@ -182,6 +183,8 @@ export async function executeCommand(
     const itemsToPrune =
       options.maxChanges === undefined ? deleteItems : deleteItems.slice(0, options.maxChanges);
 
+    printPruneDeletes(itemsToPrune, deleteItems.length);
+
     if (itemsToPrune.length === 0) {
       console.log("");
       console.log("Nothing to prune.");
@@ -209,12 +212,13 @@ export async function executeCommand(
       }
     }
 
-    // Apply the deletes printed above and just confirmed; pruneDeleted never plans again.
+    // Apply the deletes printed above and just confirmed; pruneDeleted never plans again. Both
+    // take deletes in plan order, so capping at the printed count applies exactly that list.
     const result = await core.pruneDeleted(
       {
         apiToken: requiredApiToken,
         apiUrl: requiredApiUrl,
-        maxChanges: options.maxChanges,
+        maxChanges: itemsToPrune.length,
         plan,
       },
       observer,
@@ -339,36 +343,26 @@ function printPlanSummary(plan: LockstepPlan, options: CliOptions, remote: Remot
       console.log(`  ... and ${changedItems.length - previewCount} more`);
     }
   }
+}
 
-  if (options.command === "prune" && plan.counts.delete > 0) {
-    const deletesToApply =
-      options.maxChanges === undefined
-        ? changedItems.filter((item) => item.action === "delete")
-        : changedItems.filter((item) => item.action === "delete").slice(0, options.maxChanges);
+/**
+ * Lists every delete prune will apply, with no preview limit: the confirmation that follows
+ * covers exactly these entries.
+ */
+function printPruneDeletes(itemsToPrune: LockstepPlanItem[], plannedDeletes: number): void {
+  if (itemsToPrune.length === 0) {
+    return;
+  }
 
-    const omittedCount = plan.counts.delete - deletesToApply.length;
-    const deletePreviewLimit = 20;
-    const deletePreview = deletesToApply.slice(0, deletePreviewLimit);
+  console.log("");
+  console.log(
+    itemsToPrune.length < plannedDeletes
+      ? `Deletes to apply: ${itemsToPrune.length} of ${plannedDeletes} (capped by --max-changes)`
+      : `Deletes to apply: ${plannedDeletes}`,
+  );
 
-    console.log("");
-
-    if (options.maxChanges !== undefined && omittedCount > 0) {
-      console.log(
-        `Deletes to apply: ${deletesToApply.length} of ${plan.counts.delete} (capped by --max-changes)`,
-      );
-    } else {
-      console.log(`Deletes to apply: ${plan.counts.delete}`);
-    }
-
-    console.log(deletesToApply.length > deletePreviewLimit ? "First deletes" : "Deletes");
-
-    for (const item of deletePreview) {
-      console.log(`  delete ${item.path}`);
-    }
-
-    if (deletesToApply.length > deletePreviewLimit) {
-      console.log(`  ... and ${deletesToApply.length - deletePreviewLimit} more`);
-    }
+  for (const item of itemsToPrune) {
+    console.log(`  delete ${item.path}`);
   }
 }
 

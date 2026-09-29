@@ -115,10 +115,39 @@ describe("executeCommand prune", () => {
 
     expect(planSync).toHaveBeenCalledOnce();
     expect(pruneDeleted).toHaveBeenCalledWith(
-      expect.objectContaining({ maxChanges: 5, plan: printedPlan }),
+      expect.objectContaining({ maxChanges: 1, plan: printedPlan }),
       expect.anything(),
     );
     expect(process.exitCode).toBeUndefined();
+  });
+
+  it("prints every delete it applies before confirming, however many there are", async () => {
+    const paths = Array.from({ length: 30 }, (_, index) => `old-${index}.jpg`);
+
+    const plan = createPlan({
+      counts: { delete: paths.length, keep: 0, update: 0, upload: 0 },
+      items: paths.map((path) => ({ action: "delete" as const, path })),
+    });
+
+    const printed: string[] = [];
+    vi.mocked(console.log).mockImplementation((line: string) => printed.push(line));
+    planSync.mockResolvedValue(plan);
+    pruneDeleted.mockResolvedValue({ failed: 0, plan, pruned: 25, skipped: 0 });
+    const confirmPrune = vi.fn().mockResolvedValue(true);
+
+    await executeCommand(createPruneOptions({ maxChanges: 25 }), {
+      confirmPrune,
+      core,
+      isInteractive: () => true,
+    });
+
+    const listed = printed.filter((line) => line.startsWith("  delete "));
+    expect(listed).toEqual(paths.slice(0, 25).map((path) => `  delete ${path}`));
+    expect(confirmPrune).toHaveBeenCalledExactlyOnceWith(25);
+    expect(pruneDeleted).toHaveBeenCalledWith(
+      expect.objectContaining({ maxChanges: 25, plan }),
+      expect.anything(),
+    );
   });
 
   it("does not prompt or call pruneDeleted when there are zero deletes", async () => {
