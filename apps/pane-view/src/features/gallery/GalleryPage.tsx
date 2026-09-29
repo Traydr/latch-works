@@ -1,4 +1,5 @@
 import { type FormEvent, type JSX, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
 import { FloatingToolbar } from "@/features/gallery/FloatingToolbar";
 import { GalleryBrowsePane } from "@/features/gallery/GalleryBrowsePane";
 import { GalleryGridSkeleton } from "@/features/gallery/GalleryGridSkeleton";
@@ -52,6 +53,7 @@ export function GalleryPage(): JSX.Element {
     entries,
     isReady,
     library,
+    listingError,
     loadNextPage,
     media: navigableMedia,
     openComic,
@@ -315,6 +317,7 @@ export function GalleryPage(): JSX.Element {
             isFetching={showFetching}
             isMobile={isMobile}
             loadingMoreMedia={page.loading}
+            loadMoreFailed={page.error !== null}
             onActivateEntry={handleActivateEntry}
             onDelete={deletion.deleteSelectedMedia}
             onLoadMoreMedia={handleLoadMoreMedia}
@@ -332,6 +335,17 @@ export function GalleryPage(): JSX.Element {
             paginationResetKey={browseKey}
             thumbnailSize={settings.thumbnailSize}
           />
+        ) : listingError && !showFetching ? (
+          <div
+            className="flex flex-1 flex-col items-center justify-center gap-3 p-5 pb-28 text-center"
+            role="alert"
+          >
+            <p className="text-sm font-medium">Couldn't load this folder.</p>
+            <p className="max-w-md text-sm text-muted-foreground">{listingError.message}</p>
+            <Button onClick={() => void refresh()} size="sm" type="button" variant="outline">
+              Try again
+            </Button>
+          </div>
         ) : (
           <GalleryGridSkeleton />
         )}

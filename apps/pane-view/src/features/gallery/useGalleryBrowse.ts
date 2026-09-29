@@ -62,6 +62,11 @@ export interface GalleryBrowseSession {
   entries: GalleryBrowseEntry[];
   isReady: boolean;
   library: ReturnType<typeof useLibrarySnapshotQuery>["data"];
+  /**
+   * Why the current listing has no page to show once its query gave up;
+   * null while it loads or once a page is on screen.
+   */
+  listingError: Error | null;
   loadNextPage(): Promise<LoadNextPageResult>;
   /** Media mode: media; comic mode: covers. Excludes `excludedMediaIds`. */
   media: LibraryMediaItem[];
@@ -163,6 +168,7 @@ export function useGalleryBrowse({
 
   const {
     data: firstPage,
+    error: firstPageError,
     isFetching: isListingFetching,
     isPlaceholderData,
   } = useQuery({
@@ -635,6 +641,7 @@ export function useGalleryBrowse({
   // snapshot only feeds the sidebar and sibling-folder navigation. Waiting on
   // it here would hold every tile for the slower of the two requests.
   const isReady = Boolean(firstPage);
+  const listingError = !firstPage && firstPageError ? firstPageError : null;
 
   // A fresh object per render: every consumer destructures fields, and no
   // effect or memo depends on the session's container identity, so the memo
@@ -646,6 +653,7 @@ export function useGalleryBrowse({
     entries,
     isReady,
     library,
+    listingError,
     loadNextPage,
     media,
     openComic,
