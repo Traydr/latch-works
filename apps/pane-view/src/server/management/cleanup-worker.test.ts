@@ -1,5 +1,5 @@
 import type { S3StorageClient } from "@latch-works/media-storage";
-import { eq } from "drizzle-orm";
+import { eq, isNull } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   folders,
@@ -384,6 +384,29 @@ describe("library wipe", () => {
     await db.delete(libraryEntries);
     await db.delete(mediaObjects);
     await db.delete(maintenanceJobs);
+    await db.delete(shutterSourceCleanup);
+  });
+
+  it("purges Shutter sources an earlier deleted-item purge queued", async () => {
+    const { db } = testDatabase();
+    const queued = "7".repeat(64);
+    const alreadyPurged = "6".repeat(64);
+    await db.insert(shutterSourceCleanup).values([
+      { objectKey: `originals/${queued}.jpg`, sha256: queued },
+      { objectKey: `originals/${alreadyPurged}.jpg`, purgedAt: new Date(), sha256: alreadyPurged },
+    ]);
+
+    const deletes: ExternalDeletes = { objectKeys: [], shutterSources: [] };
+    await runJobToCompletion(await insertJob("library_hard_wipe"), deletes);
+
+    expect(deletes.shutterSources).toEqual([queued]);
+
+    const pending = await db
+      .select({ sha256: shutterSourceCleanup.sha256 })
+      .from(shutterSourceCleanup)
+      .where(isNull(shutterSourceCleanup.purgedAt));
+
+    expect(pending).toEqual([]);
   });
 
   it("deletes nothing while Shutter is partly configured", async () => {

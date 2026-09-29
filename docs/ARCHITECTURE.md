@@ -69,9 +69,12 @@ flowchart LR
   pass through (`mkv`, `bmp`, unknown extensions) stays a one-day Pane View presigned URL.
 - Pane View issues encrypted, purpose-bound Source Capabilities only after its own session checks.
 - SHA-256 is the immutable Shutter Source ID; a presigned S3 URL is the replaceable Source Locator.
-- A hard library wipe or deleted-item purge deletes each now-unreferenced original, requests Shutter
-  Source Purge, and deletes the media row only after Shutter confirms the purge. Soft deletion alone
-  retains both source systems.
+- A deleted-item purge deletes each original no live entry references, deletes its media row, and
+  queues its Shutter Source ID. The separate Shutter cleanup action requests Shutter Source Purge
+  for queued sources and marks each one only after Shutter confirms it.
+- A hard library wipe deletes every original and requests Shutter Source Purge for it before
+  deleting its media row, then purges any source still waiting in the Shutter cleanup queue. Soft
+  deletion alone retains both source systems.
 - Soft-delete and Lockstep `prune` only mark library entries/folders deleted in PostgreSQL. S3
   originals and Shutter assets remain until an explicit deleted-item purge or hard wipe.
 

@@ -575,6 +575,20 @@ async function processLibraryWipeBatch(
         .limit(batchSize);
 
       if (rows.length === 0) {
+        const queuedSources = await purgeQueuedShutterSourceBatch(jobId, dependencies);
+
+        if (queuedSources === "inactive") return false;
+
+        if (queuedSources > 0) {
+          await updateJobProgress(
+            jobId,
+            { ...progress, processedCount: progress.processedCount + queuedSources },
+            dependencies,
+          );
+
+          return true;
+        }
+
         await updateJobProgress(jobId, { ...progress, phase: "s3_orphan_sweep" }, dependencies);
 
         return true;
@@ -683,6 +697,50 @@ async function processLibraryWipeBatch(
     case "completed":
       return false;
   }
+}
+
+/**
+ * Purge one batch of Shutter sources still waiting in the cleanup queue. An
+ * earlier deleted-item purge queues a source when it deletes the media row, so
+ * a wipe that only walked media rows would never find it. Resolves how many
+ * sources Shutter confirmed, or "inactive" once the job was cancelled.
+ */
+async function purgeQueuedShutterSourceBatch(
+  jobId: string,
+  dependencies: MaintenanceWorkerDependencies,
+): Promise<number | "inactive"> {
+  const shutterPurge = dependencies.shutterPurgeReadiness();
+
+  if (shutterPurge === "off") return 0;
+
+  if (shutterPurge === "incomplete") throw new Error(SHUTTER_PURGE_INCOMPLETE_MESSAGE);
+
+  const rows = await dependencies.database
+    .select({ objectKey: shutterSourceCleanup.objectKey, sha256: shutterSourceCleanup.sha256 })
+    .from(shutterSourceCleanup)
+    .where(isNull(shutterSourceCleanup.purgedAt))
+    .limit(batchSize);
+
+  for (const row of rows) {
+    // react-doctor-disable-next-line react-doctor/async-await-in-loop -- A cancel stops the batch before its next purge.
+    if (!(await isMaintenanceJobActive(jobId, dependencies))) return "inactive";
+
+    try {
+      // react-doctor-disable-next-line react-doctor/async-await-in-loop -- Mark each source only after Shutter confirms its purge.
+      await dependencies.purgeShutterSource(row);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new Error(`Shutter source purge failed: ${reason}`);
+    }
+
+    // react-doctor-disable-next-line react-doctor/async-await-in-loop -- The durable queue advances one confirmed source at a time.
+    await dependencies.database
+      .update(shutterSourceCleanup)
+      .set({ purgedAt: new Date() })
+      .where(eq(shutterSourceCleanup.sha256, row.sha256));
+  }
+
+  return rows.length;
 }
 
 /** Mark an active job completed with its final progress; a no-op once it is no longer active. */
