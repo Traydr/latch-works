@@ -1,5 +1,6 @@
 import type { PageLocation } from "../collector-entry";
 import type { GalleryCollectResponse, GalleryImage } from "../../shared/types";
+import { formatError, toError } from "../../gather/errors";
 import { lowercaseFirstAscii } from "../../shared/path";
 import {
   RESOLVE_X_MEDIA_MESSAGE,
@@ -33,43 +34,33 @@ export async function collectXData(
   }
 
   const username = lowercaseFirstAscii(post.username);
+  // Rendered photos are only what the viewer currently shows: a post can also hold videos or
+  // photos that are not on screen. The resolved media list is the complete post; the rendered
+  // photos only cover a resolution failure or a photo the resolver did not report.
   const pageImages = collectVisibleXPhotos(document, post);
-  let images = pageImages;
+  const resolution = await resolvePostMedia(document, post, resolveMedia);
 
-  if (images.length === 0) {
-    const csrfToken = getCookieValue(document.cookie, "ct0");
-
-    const resolveMessage: ResolveXMediaMessage = {
-      type: RESOLVE_X_MEDIA_MESSAGE,
-      tweetId: post.id,
-      mainScriptUrl: getXMainScriptUrl(document),
-      featureValues: getXFeatureValues(document)
+  if (resolution.failure && pageImages.length === 0) {
+    return {
+      ok: false,
+      code: "MEDIA_RESOLUTION_FAILED",
+      message: resolution.failure
     };
-
-    const response = await resolveMedia(resolveMessage);
-    let resolvedMedia: ResolvedXMedia[] = response.ok ? response.media : [];
-
-    if (!response.ok && response.operation && csrfToken) {
-      resolvedMedia = await resolveAuthenticatedXMedia(resolveMessage, response.operation, () =>
-        getCookieValue(document.cookie, "ct0")
-      );
-    }
-
-    if (!response.ok && resolvedMedia.length === 0) {
-      return {
-        ok: false,
-        code: "MEDIA_RESOLUTION_FAILED",
-        message: response.message
-      };
-    }
-
-    images = resolvedMedia.map((media, index) => ({
-      pageNumber: index + 1,
-      thumbnailUrl: media.thumbnailUrl,
-      originalUrl: media.originalUrl,
-      fileName: media.fileName
-    }));
   }
+
+  // Match by media id, not file name: the resolver reports a photo as `ID.jpg` while the page
+  // may render the same photo as `ID.webp`, and that rendition has no original to download.
+  const resolvedIds = new Set(resolution.media.map((media) => getXMediaId(media.fileName)));
+
+  const images: GalleryImage[] = [
+    ...resolution.media,
+    ...pageImages.filter((image) => !resolvedIds.has(getXMediaId(image.fileName)))
+  ].map((image, index) => ({
+    pageNumber: index + 1,
+    thumbnailUrl: image.thumbnailUrl,
+    originalUrl: image.originalUrl,
+    fileName: image.fileName
+  }));
 
   if (images.length === 0) {
     return {
@@ -90,6 +81,42 @@ export async function collectXData(
     skippedCount: 0,
     images
   };
+}
+
+async function resolvePostMedia(
+  document: Document,
+  post: { id: string },
+  resolveMedia: XMediaResolver
+): Promise<{ media: ResolvedXMedia[]; failure: string | null }> {
+  const resolveMessage: ResolveXMediaMessage = {
+    type: RESOLVE_X_MEDIA_MESSAGE,
+    tweetId: post.id,
+    mainScriptUrl: getXMainScriptUrl(document),
+    featureValues: getXFeatureValues(document)
+  };
+
+  let response: ResolveXMediaResponse;
+
+  try {
+    response = await resolveMedia(resolveMessage);
+  } catch (error) {
+    return { media: [], failure: formatError(toError(error)) };
+  }
+
+  if (response.ok) {
+    return { media: response.media, failure: null };
+  }
+
+  const csrfToken = getCookieValue(document.cookie, "ct0");
+
+  const media =
+    response.operation && csrfToken
+      ? await resolveAuthenticatedXMedia(resolveMessage, response.operation, () =>
+          getCookieValue(document.cookie, "ct0")
+        )
+      : [];
+
+  return { media, failure: media.length > 0 ? null : response.message };
 }
 
 function collectVisibleXPhotos(
@@ -129,6 +156,12 @@ function collectVisibleXPhotos(
   }
 
   return images;
+}
+
+function getXMediaId(fileName: string): string {
+  const extensionStart = fileName.lastIndexOf(".");
+
+  return extensionStart > 0 ? fileName.slice(0, extensionStart) : fileName;
 }
 
 function normalizeXPhotoUrl(urlValue: string): { originalUrl: string; fileName: string } | null {
