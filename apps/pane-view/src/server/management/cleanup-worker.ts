@@ -2,6 +2,7 @@ import { type ListStoredObjectsPage, listStoredObjectsByPrefix } from "@latch-wo
 import { and, eq, inArray, isNotNull, isNull, not, sql } from "drizzle-orm";
 import type { JsonValue } from "@/lib/json";
 import { type Database, db } from "../db";
+import { MAINTENANCE_JOB_CLAIM_LOCK_NAMESPACE } from "../db/library-coordination-lock";
 import {
   favorites,
   folders,
@@ -48,9 +49,6 @@ const nextBatchDelayMs = 25;
 const contendedRetryDelayMs = 30_000;
 
 const activeJobStatuses = ["pending", "running"] as const;
-
-/** Advisory lock namespace ("LWMJ") for per-job batch claims; the job id hash is the key. */
-const MAINTENANCE_JOB_CLAIM_LOCK_NAMESPACE = 0x4c57_4d4a;
 
 let resumeStarted = false;
 
