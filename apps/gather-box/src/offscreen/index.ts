@@ -71,6 +71,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         await executeGatherOutput({
           payload: execute.payload,
           settings: execute.settings,
+          destinationId: execute.destinationId,
           emit: emitter.emit,
           signal
         });

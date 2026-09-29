@@ -148,7 +148,10 @@ describe("Gather queue orchestration", () => {
     expect(result).toMatchObject({ outcome: "queued", queuedRunId: "new-run" });
     expect(harness.getQueue().jobs).toMatchObject([
       { run: { id: "waiting", phase: "preparing" } },
-      { run: { id: "new-run", phase: "queued", tabUrl: "https://www.pixiv.net/artworks/2" } }
+      {
+        run: { id: "new-run", phase: "queued", tabUrl: "https://www.pixiv.net/artworks/2" },
+        destinationId: "folder-a"
+      }
     ]);
   });
 
@@ -307,7 +310,8 @@ function outputJob(
       phase
     },
     payload: downloadablePayload(),
-    settings: DEFAULT_SETTINGS
+    settings: DEFAULT_SETTINGS,
+    destinationId: null
   };
 }
 
@@ -352,6 +356,7 @@ function createHarness(initial: GatherQueueState) {
     getTab,
     collect,
     loadSettings: async () => DEFAULT_SETTINGS,
+    getDestinationId: async () => "folder-a",
     execute,
     abort,
     now: () => 1_000,

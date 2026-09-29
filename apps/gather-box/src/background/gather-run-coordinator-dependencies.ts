@@ -1,4 +1,5 @@
 import { injectCollectorAndCollect } from "../gather/active-tab";
+import { getDirectoryDestinationId } from "../gather/directory-store";
 import {
   loadGatherQueue,
   saveGatherQueue,
@@ -10,6 +11,7 @@ import { CANCEL_GATHER_RUN, EXECUTE_GATHER_RUN } from "../shared/gather-run-mess
 import type { GatherRunState } from "../shared/gather-run";
 import { getGatherSource } from "../shared/source-catalog";
 import { loadSettings, type GatherBoxSettings } from "../shared/settings";
+import type { SiteKey } from "../shared/sites";
 import { OffscreenDocument } from "./offscreen-document";
 
 export interface GatherRunCoordinatorDependencies {
@@ -19,6 +21,8 @@ export interface GatherRunCoordinatorDependencies {
   getTab(tabId: number): Promise<chrome.tabs.Tab>;
   collect(tab: chrome.tabs.Tab, run: GatherRunState): Promise<GatherOutput>;
   loadSettings(): Promise<GatherBoxSettings>;
+  /** Which remembered folder an output queued now would be written to. */
+  getDestinationId(siteKey: SiteKey, useGlobalFolder: boolean): Promise<string | null>;
   execute(job: OutputGatherQueueJob): Promise<boolean>;
   abort(runId: string): Promise<boolean>;
   now(): number;
@@ -55,6 +59,7 @@ export function createChromeCoordinatorDependencies(): GatherRunCoordinatorDepen
       return response;
     },
     loadSettings,
+    getDestinationId: getDirectoryDestinationId,
     execute: async (job) => {
       await offscreenDocument.ensure();
 
@@ -63,7 +68,8 @@ export function createChromeCoordinatorDependencies(): GatherRunCoordinatorDepen
         target: "offscreen",
         runId: job.run.id,
         payload: job.payload,
-        settings: job.settings
+        settings: job.settings,
+        destinationId: job.destinationId
       });
 
       return response?.accepted === true;

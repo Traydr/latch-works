@@ -98,7 +98,13 @@ export class GatherRunCoordinator {
       return { outcome: "failed", message: "No retryable Gather Run was found." };
     }
 
+    // Retrying is the explicit way to send failed items to the folder remembered now.
     const settings = await this.dependencies.loadSettings();
+
+    const destinationId = await this.dependencies.getDestinationId(
+      previous.siteKey,
+      settings.useGlobalFolder
+    );
 
     const payload: DownloadablePayload = {
       ok: true,
@@ -144,7 +150,7 @@ export class GatherRunCoordinator {
       const position = queue.jobs.length;
       queue = {
         ...queue,
-        jobs: [...queue.jobs, { kind: "output", run, payload, settings }],
+        jobs: [...queue.jobs, { kind: "output", run, payload, settings, destinationId }],
         results: queue.results.filter((result) => result.id !== previous.id)
       };
       await this.dependencies.saveQueue(queue);
@@ -367,6 +373,13 @@ export class GatherRunCoordinator {
         this.dependencies.loadSettings()
       ]);
 
+      // Pin the folder remembered when the page was gathered, so choosing another one later
+      // cannot silently redirect this output.
+      const destinationId = await this.dependencies.getDestinationId(
+        siteKey,
+        settings.useGlobalFolder
+      );
+
       const payload =
         settings.xPostFolders && collected.outputKind === "downloadable-files"
           ? groupXPostInFolder(collected)
@@ -398,7 +411,7 @@ export class GatherRunCoordinator {
         });
 
         const jobs = [...queue.jobs];
-        jobs[index] = { kind: "output", run, payload, settings };
+        jobs[index] = { kind: "output", run, payload, settings, destinationId };
         queue = { ...queue, jobs };
         await this.dependencies.saveQueue(queue);
 

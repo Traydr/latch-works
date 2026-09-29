@@ -34,6 +34,11 @@ export interface OutputGatherQueueJob {
   };
   payload: GatherOutput;
   settings: GatherBoxSettings;
+  /**
+   * The remembered folder this output was gathered for. Null when none was remembered then, or
+   * for jobs queued by an older build; either way the executor writes to the current folder.
+   */
+  destinationId: string | null;
 }
 
 export type GatherQueueJob = CollectingGatherQueueJob | OutputGatherQueueJob;
@@ -65,14 +70,16 @@ const OutputGatherQueueJobSchema = z.pipe(
       phase: z.enum(["preparing", "permission-required", "queued", "writing", "cancelling"])
     }),
     payload: z.union([DownloadablePayloadSchema, GeneratedStoryPayloadSchema]),
-    settings: GatherBoxSettingsSchema
+    settings: GatherBoxSettingsSchema,
+    destinationId: z.catch(z.nullable(z.string()), null)
   }),
   z.transform(
     (job): OutputGatherQueueJob => ({
       kind: "output",
       run: job.run,
       payload: job.payload,
-      settings: job.settings
+      settings: job.settings,
+      destinationId: job.destinationId
     })
   )
 );

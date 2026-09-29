@@ -160,6 +160,9 @@ are converted to underscores.
   and still queues the page you confirmed from.
 - Retrying failed files confirms access to the folder of the run that failed, so it works from any
   tab rather than only from a tab on that run's site.
+- A queued page is written to the folder that was remembered when it was gathered. If you choose a
+  different folder before its turn, its files fail instead of moving to the new folder; Retry Failed
+  sends them to the current folder. Choosing the same folder again does not affect queued pages.
 - Gallery collectors target a specific grid selector per site and ignore ad blocks outside it.
 
 ## Manual checks

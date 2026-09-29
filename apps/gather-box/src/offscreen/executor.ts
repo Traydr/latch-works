@@ -1,4 +1,8 @@
-import { ensureDirectoryPermission, loadDirectoryHandle } from "../gather/directory-store";
+import {
+  ensureDirectoryPermission,
+  getDirectoryDestinationId,
+  loadDirectoryHandle
+} from "../gather/directory-store";
 import {
   downloadImages,
   getOrCreateNestedDirectory,
@@ -20,14 +24,25 @@ import type {
 export async function executeGatherOutput(input: {
   payload: DownloadablePayload | GeneratedStoryPayload;
   settings: GatherBoxSettings;
+  /** The remembered folder the output was queued for; null writes to the current one. */
+  destinationId: string | null;
   emit: (event: GatherRunEvent) => Promise<void>;
   signal?: AbortSignal;
 }): Promise<void> {
-  const { payload, settings, emit, signal } = input;
+  const { payload, settings, destinationId, emit, signal } = input;
   const directoryHandle = await loadDirectoryHandle(payload.site, settings.useGlobalFolder);
 
   if (!directoryHandle) {
     await emit({ kind: "failed", message: "Choose a destination folder before gathering." });
+
+    return;
+  }
+
+  if (
+    destinationId &&
+    (await getDirectoryDestinationId(payload.site, settings.useGlobalFolder)) !== destinationId
+  ) {
+    await emit(destinationChangedEvent(payload));
 
     return;
   }
@@ -195,6 +210,37 @@ async function executeStory(
     failedItems: [],
     retryImages: []
   });
+}
+
+const DESTINATION_CHANGED =
+  "The remembered folder changed after this page was queued, so nothing was written.";
+
+/**
+ * Writing into whichever folder is remembered now would silently move this output. Files fail as
+ * retryable items instead, so Retry Failed sends them to the new folder only when asked; a story
+ * has no per-item retry and needs gathering again.
+ */
+function destinationChangedEvent(
+  payload: DownloadablePayload | GeneratedStoryPayload
+): GatherRunEvent {
+  if (payload.outputKind === "generated-story-pdf") {
+    return { kind: "failed", message: `${DESTINATION_CHANGED} Gather the story again.` };
+  }
+
+  const failedItems = payload.images.map((image) => ({
+    fileName: image.fileName,
+    reason: DESTINATION_CHANGED,
+    originalUrl: image.originalUrl
+  }));
+
+  return {
+    kind: "complete",
+    saved: 0,
+    skipped: 0,
+    failed: failedItems.length,
+    failedItems,
+    retryImages: payload.images
+  };
 }
 
 function buildRetryImages(failedItems: DownloadFailure[], sourceImages: GalleryImage[]): GalleryImage[] {

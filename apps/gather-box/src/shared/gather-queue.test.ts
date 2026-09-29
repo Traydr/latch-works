@@ -71,13 +71,15 @@ describe("Gather queue state", () => {
           kind: "output",
           run: run("run-1", "writing"),
           payload: payload("One"),
-          settings: DEFAULT_SETTINGS
+          settings: DEFAULT_SETTINGS,
+          destinationId: null
         },
         {
           kind: "output",
           run: run("run-2", "queued"),
           payload: payload("Two"),
-          settings: DEFAULT_SETTINGS
+          settings: DEFAULT_SETTINGS,
+          destinationId: null
         },
         { kind: "collecting", run: run("run-3", "collecting") }
       ]
@@ -99,7 +101,8 @@ describe("Gather queue state", () => {
           kind: "output",
           run: run("run-1", "queued"),
           payload: payload("One"),
-          settings: DEFAULT_SETTINGS
+          settings: DEFAULT_SETTINGS,
+          destinationId: null
         },
         { run: { id: "broken" }, payload: null, settings: null }
       ]
@@ -131,13 +134,15 @@ describe("Gather queue state", () => {
           kind: "output",
           run: run("run-1", "queued"),
           payload: payload("One"),
-          settings: DEFAULT_SETTINGS
+          settings: DEFAULT_SETTINGS,
+          destinationId: null
         },
         {
           kind: "output",
           run: run("run-2", "queued"),
           payload: payload("Two"),
-          settings: DEFAULT_SETTINGS
+          settings: DEFAULT_SETTINGS,
+          destinationId: null
         }
       ]
     };
@@ -148,7 +153,8 @@ describe("Gather queue state", () => {
       kind: "output",
       run: run("run-1", "writing"),
       payload: payload("One"),
-      settings: DEFAULT_SETTINGS
+      settings: DEFAULT_SETTINGS,
+      destinationId: null
     };
     expect(getNextQueuedGatherJob(queued)).toBeNull();
   });
@@ -166,7 +172,8 @@ describe("Gather queue state", () => {
             tabUrl: "https://www.pixiv.net/artworks/old"
           },
           payload: payload("One"),
-          settings: { ...DEFAULT_SETTINGS, useGlobalFolder: false }
+          settings: { ...DEFAULT_SETTINGS, useGlobalFolder: false },
+          destinationId: null
         }
       ]
     };
@@ -206,7 +213,8 @@ describe("Gather queue state", () => {
           kind: "output",
           run: run("run-3", "writing"),
           payload: payload("Three"),
-          settings: DEFAULT_SETTINGS
+          settings: DEFAULT_SETTINGS,
+          destinationId: null
         }
       ],
       results: [failed, complete]
@@ -226,7 +234,8 @@ describe("Gather queue state", () => {
           kind: "output",
           run: run("run-1", "writing"),
           payload: payload("One"),
-          settings: DEFAULT_SETTINGS
+          settings: DEFAULT_SETTINGS,
+          destinationId: null
         },
         { kind: "collecting", run: run("run-2", "collecting") }
       ]
@@ -257,13 +266,15 @@ describe("Gather queue state", () => {
           kind: "output",
           run: run("run-1", "cancelling"),
           payload: payload("One"),
-          settings: DEFAULT_SETTINGS
+          settings: DEFAULT_SETTINGS,
+          destinationId: null
         },
         {
           kind: "output",
           run: run("run-2", "queued"),
           payload: payload("Two"),
-          settings: DEFAULT_SETTINGS
+          settings: DEFAULT_SETTINGS,
+          destinationId: null
         }
       ]
     });
