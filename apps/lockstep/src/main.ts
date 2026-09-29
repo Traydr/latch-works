@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { Result } from "better-result";
-import { app, BrowserWindow, safeStorage } from "electron";
+import { app, BrowserWindow, dialog, safeStorage } from "electron";
 import started from "electron-squirrel-startup";
 
 import { registerIpc } from "./main/ipc/registerIpc";
@@ -53,6 +53,7 @@ async function createWindow(): Promise<void> {
 
   if (Result.isError(initResult)) {
     console.error(`[profile-init] ${initResult.error.message}`);
+    dialog.showErrorBox("Lockstep could not load its profiles", initResult.error.message);
   }
 
   runService = new RunService(profileService, () => mainWindow);

@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -223,6 +223,67 @@ describe("ProfileService", () => {
 
     expect(result.status).toBe("error");
     expect(service.getSettings()).toEqual({ activeProfileId: null, profiles: [] });
+  });
+
+  it("keeps a settings file it cannot read instead of overwriting it", async () => {
+    const settingsPath = path.join(tempDir, "lockstep-settings.json");
+    const damaged = '{"activeProfileId":null,"profiles":[]}\n}],"activeProfileId":"x"}\n';
+    await writeFile(settingsPath, damaged, "utf-8");
+
+    const service = new ProfileService(tempDir, {
+      legacyConfigPath: path.join(tempDir, "missing-legacy.json"),
+      secretStorage,
+    });
+
+    const result = await service.init();
+
+    expect(result.status).toBe("error");
+
+    await service.createProfile({
+      apiUrl: "http://127.0.0.1:3000",
+      name: "Fresh",
+      sourceRoot: "/tmp/fresh",
+    });
+
+    const kept = (await readdir(tempDir)).filter((name) => name.includes(".corrupt-"));
+    expect(kept).toHaveLength(1);
+    expect(await readFile(path.join(tempDir, kept[0] ?? ""), "utf-8")).toBe(damaged);
+  });
+
+  it("applies overlapping edits and selections in order without damaging the file", async () => {
+    const service = await createService();
+    const created = [];
+
+    for (const name of ["A", "B"]) {
+      const result = await service.createProfile({
+        apiUrl: "http://127.0.0.1:3000",
+        name,
+        sourceRoot: `/tmp/${name}`,
+      });
+
+      if (result.status !== "ok") {
+        throw new Error("profile was not created");
+      }
+
+      created.push(result.value.id);
+    }
+
+    const [profileA = "", profileB = ""] = created;
+
+    for (let round = 0; round < 10; round += 1) {
+      await service.setActiveProfile(profileA);
+      const renamed = `A ${round} ${"x".repeat(round % 2 === 0 ? 100 : 1)}`;
+
+      await Promise.all([
+        service.updateProfile(profileA, { name: renamed }),
+        service.setActiveProfile(profileB),
+      ]);
+
+      const persisted = await readPersistedFile();
+      expect(service.getSettings().activeProfileId).toBe(profileB);
+      expect(persisted.activeProfileId).toBe(profileB);
+      expect(persisted.profiles.find((profile) => profile.id === profileA)?.name).toBe(renamed);
+    }
   });
 
   it("persists profiles to lockstep-settings.json", async () => {
