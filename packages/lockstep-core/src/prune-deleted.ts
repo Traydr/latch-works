@@ -145,13 +145,14 @@ export async function pruneDeleted(
 
   observer?.onEvent({ type: "status", message: "Creating sync run..." });
 
-  // Not cancellable: a cancel from here on skips all item work (the loop below checks the signal
-  // first) and finalizes this run as cancelled.
+  // A cancel does not abort creation (see createSyncRun); it skips all item work (the loop below
+  // checks the signal first) and finalizes this run as cancelled.
   const syncRun = await createSyncRun({
     apiToken: options.apiToken,
     apiUrl: options.apiUrl,
     body: { counts: plan.counts, sourceRoot: plan.sourceRoot },
     postJson: remote.postJson,
+    signal,
   });
 
   const aliasIndex = new DirectoryAliasIndex(plan.sourceRoot);

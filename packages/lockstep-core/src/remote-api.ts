@@ -237,33 +237,57 @@ async function pushMediaItem({
   );
 }
 
-/** How long run creation may take; it cannot be cancelled, so it must not hang a cancelled run. */
-const CREATE_SYNC_RUN_TIMEOUT_MS = 10_000;
+/** How long run creation may still take once the caller cancels; it cannot be aborted outright. */
+const CREATE_SYNC_RUN_CANCEL_GRACE_MS = 10_000;
 
 /**
- * Starts a sync run. Deliberately ignores the caller's abort signal: once the request is sent the
- * server may commit the run, and only its id lets the caller finalize it, so a cancelled caller
- * waits (bounded) for the id and then finalizes the run as cancelled instead of stranding it.
+ * Starts a sync run. The caller's abort signal does not abort the request: once it is sent the
+ * server may commit the run, and only its id lets the caller finalize it. Uncancelled, creation
+ * waits as long as the server takes (it can queue behind a library lock). After a cancel it gets
+ * a bounded grace period to return the id, so the caller can finalize the run as cancelled.
  */
-export function createSyncRun({
+export async function createSyncRun({
   apiToken,
   apiUrl,
   body,
   postJson: post,
+  signal,
 }: {
   apiToken: string;
   apiUrl: string;
   body: CreateSyncRunRequest;
   postJson: typeof postJson;
+  signal?: AbortSignal;
 }): Promise<z.output<typeof SyncRunSchema>> {
-  return post(
-    apiUrl,
-    "/api/sync/runs",
-    apiToken,
-    body,
-    SyncRunSchema,
-    AbortSignal.timeout(CREATE_SYNC_RUN_TIMEOUT_MS),
-  );
+  const deadline = new AbortController();
+  let graceTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const startGrace = () => {
+    graceTimer = setTimeout(() => deadline.abort(), CREATE_SYNC_RUN_CANCEL_GRACE_MS);
+  };
+
+  if (signal?.aborted) {
+    startGrace();
+  } else {
+    signal?.addEventListener("abort", startGrace, { once: true });
+  }
+
+  try {
+    return await post(apiUrl, "/api/sync/runs", apiToken, body, SyncRunSchema, deadline.signal);
+  } catch (error) {
+    if (deadline.signal.aborted) {
+      throw new Error(
+        "Cancelled while Pane View was still creating the sync run, so it may be left running. " +
+          "If Pane View's management page shows it running, cancel it there.",
+        { cause: error },
+      );
+    }
+
+    throw error;
+  } finally {
+    clearTimeout(graceTimer);
+    signal?.removeEventListener("abort", startGrace);
+  }
 }
 
 /** Waits between finalization attempts; the server accepts an exact replay of the same outcome. */

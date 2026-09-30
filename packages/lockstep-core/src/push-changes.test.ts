@@ -246,7 +246,7 @@ describe("pushChanges orchestration", () => {
         sourceRoot: plan.sourceRoot,
       },
       route: "/api/sync/runs",
-      // Its own timeout, never the run's abort signal.
+      // Its own deadline signal, never the run's abort signal.
       signal: expect.any(AbortSignal),
     });
     expect(fake.pushCalls).toHaveLength(1);
