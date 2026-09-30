@@ -1,6 +1,5 @@
-import { lstat, readdir, stat } from "node:fs/promises";
-import { normalizePathForCompare } from "@latch-works/media-domain";
-import { z } from "zod";
+import { lstat, stat } from "node:fs/promises";
+import { DirectoryAliasIndex, MissingPathErrorSchema } from "./directory-alias-index.js";
 import { formatPushError, toError } from "./format.js";
 import { resolveLocalFilePath, selectChangedItems, selectDeleteItems } from "./push-helpers.js";
 import {
@@ -21,9 +20,6 @@ function throwIfAborted(signal?: AbortSignal): void {
   }
 }
 
-/** The fs error codes that mean nothing exists at a path. */
-const MissingPathErrorSchema = z.object({ code: z.enum(["ENOENT", "ENOTDIR"]) });
-
 /**
  * A planned delete is only safe while the file is still missing locally. Anything at the path
  * (file, folder, or link) means it came back after the plan, and so does a new file under a
@@ -35,6 +31,7 @@ async function isAbsentLocally(
   sourceRoot: string,
   archivePath: string,
   plannedLocalPaths: ReadonlySet<string>,
+  aliasIndex: DirectoryAliasIndex,
 ): Promise<boolean> {
   try {
     await lstat(resolveLocalFilePath(sourceRoot, archivePath));
@@ -46,51 +43,9 @@ async function isAbsentLocally(
     }
   }
 
-  const equivalents = await findEquivalentLocalPaths(sourceRoot, archivePath);
+  const equivalents = await aliasIndex.findEquivalentPaths(archivePath);
 
   return equivalents.every((localPath) => plannedLocalPaths.has(localPath));
-}
-
-/**
- * Archive paths under `sourceRoot` that planning would treat as `archivePath`: folders match
- * across case and Unicode spelling, the file name also across the jpeg↔jpg alias.
- */
-async function findEquivalentLocalPaths(
-  sourceRoot: string,
-  archivePath: string,
-): Promise<string[]> {
-  const segments = archivePath.split("/");
-  let candidates = [""];
-
-  for (const [index, segment] of segments.entries()) {
-    const isFileName = index === segments.length - 1;
-    const wanted = normalizePathForCompare(segment, { canonicalizeExtensions: isFileName });
-    const next: string[] = [];
-
-    for (const parent of candidates) {
-      for (const name of await readDirectoryNames(sourceRoot, parent)) {
-        if (normalizePathForCompare(name, { canonicalizeExtensions: isFileName }) === wanted) {
-          next.push(parent ? `${parent}/${name}` : name);
-        }
-      }
-    }
-
-    candidates = next;
-  }
-
-  return candidates;
-}
-
-async function readDirectoryNames(sourceRoot: string, archiveDir: string): Promise<string[]> {
-  try {
-    return await readdir(archiveDir ? resolveLocalFilePath(sourceRoot, archiveDir) : sourceRoot);
-  } catch (error) {
-    if (MissingPathErrorSchema.safeParse(error).success) {
-      return [];
-    }
-
-    throw error;
-  }
 }
 
 /** Which directory the source folder is, so a moved or remounted folder is noticed. */
@@ -202,6 +157,7 @@ export async function pruneDeleted(
     signal,
   );
 
+  const aliasIndex = new DirectoryAliasIndex(plan.sourceRoot);
   let pruned = 0;
   let skipped = 0;
   let failed = 0;
@@ -215,7 +171,7 @@ export async function pruneDeleted(
       const current = index + 1;
 
       try {
-        if (!(await isAbsentLocally(plan.sourceRoot, item.path, plannedLocalPaths))) {
+        if (!(await isAbsentLocally(plan.sourceRoot, item.path, plannedLocalPaths, aliasIndex))) {
           skipped += 1;
           observer?.onEvent({
             type: "item-skipped",

@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { z } from "zod";
 import { pruneDeleted } from "./prune-deleted.js";
 import {
@@ -371,6 +371,41 @@ describe("pruneDeleted orchestration", () => {
 
     expect(fake.deleteCalls.map((call) => call.logicalPath)).toEqual(["photos/gone.jpg"]);
     expect(result).toMatchObject({ failed: 0, pruned: 1, skipped: 2 });
+  });
+
+  it("skips a delete whose alias was restored after its folder was already checked", async () => {
+    // Pretend the folder last changed long ago so its listing is reused between deletes.
+    vi.useFakeTimers({ now: Date.now() + 60_000, toFake: ["Date"] });
+    await writeSourceFile(sourceRoot, "photos/kept.jpg");
+    fake = createRemoteApiFake({
+      onDelete: async ({ logicalPath }) => {
+        if (logicalPath === "photos/first.jpg") {
+          await writeSourceFile(sourceRoot, "photos/second.jpeg");
+        }
+      },
+    });
+
+    const plan = createPlan(
+      [
+        { action: "keep", path: "photos/kept.jpg" },
+        { action: "delete", path: "photos/first.jpg" },
+        { action: "delete", path: "photos/second.jpg" },
+      ],
+      sourceRoot,
+    );
+
+    try {
+      const result = await pruneDeleted(
+        { apiToken: "token", apiUrl: "http://127.0.0.1:3000", plan },
+        undefined,
+        fake.remote,
+      );
+
+      expect(fake.deleteCalls.map((call) => call.logicalPath)).toEqual(["photos/first.jpg"]);
+      expect(result).toMatchObject({ failed: 0, pruned: 1, skipped: 1 });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("still deletes a jpeg twin when its jpg sibling was already in the plan", async () => {
