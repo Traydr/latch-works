@@ -20,6 +20,8 @@ export interface GalleryBrowsePaneProps {
   isFetching: boolean;
   isMobile: boolean;
   loadingMoreMedia: boolean;
+  /** The last next-page load failed; Load more retries it. */
+  loadMoreFailed: boolean;
   onActivateEntry: (entry: GalleryBrowseEntry) => void;
   onDelete: () => void;
   onLoadMoreMedia: () => void;
@@ -57,6 +59,7 @@ export const GalleryBrowsePane = memo(function GalleryBrowsePane({
   isFetching,
   isMobile,
   loadingMoreMedia,
+  loadMoreFailed,
   onActivateEntry,
   onDelete,
   onLoadMoreMedia,
@@ -127,7 +130,12 @@ export const GalleryBrowsePane = memo(function GalleryBrowsePane({
           entries={entries}
           footer={
             hasMore ? (
-              <div className="mt-4 flex justify-center border-t border-border pt-3">
+              <div className="mt-4 flex items-center justify-center gap-3 border-t border-border pt-3">
+                {loadMoreFailed && !loadingMoreMedia ? (
+                  <p className="text-sm text-destructive" role="alert">
+                    Couldn't load more items.
+                  </p>
+                ) : null}
                 <div ref={setLoadMoreTrigger} className="inline-flex">
                   <Button
                     disabled={loadingMoreMedia}
@@ -136,7 +144,11 @@ export const GalleryBrowsePane = memo(function GalleryBrowsePane({
                     type="button"
                     variant="outline"
                   >
-                    {loadingMoreMedia ? "Loading more…" : "Load more"}
+                    {loadingMoreMedia
+                      ? "Loading more…"
+                      : loadMoreFailed
+                        ? "Try again"
+                        : "Load more"}
                   </Button>
                 </div>
               </div>

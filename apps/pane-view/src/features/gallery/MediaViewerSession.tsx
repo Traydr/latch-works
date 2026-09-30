@@ -21,6 +21,7 @@ import { type CopyStatus, useCopyToClipboard } from "@/hooks/use-copy-to-clipboa
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useViewerChromeIdle, type ViewerChromeIdle } from "@/hooks/use-viewer-chrome-idle";
 import { COPY_PATH_ICONS, COPY_PATH_LABELS } from "./copy-path-status";
+import { mediaRevision } from "./gallery-page-helpers";
 import { GALLERY_PREVIEW_SIZE } from "./gallery-preview-size";
 import { PaneViewImage } from "./PaneViewImage";
 import type { ResolvedMediaUrlCache } from "./useResolvedMediaUrl";
@@ -172,6 +173,7 @@ export function MediaViewerSession({
           mediaId={item.id}
           rememberPosition={rememberViewerPosition}
           reportStatus={reportVideo}
+          revision={mediaRevision(item)}
           status={{ duration, playing }}
           videoRef={videoRef}
           viewerStateStore={viewerStateStore}
@@ -197,6 +199,7 @@ export function MediaViewerSession({
               className="max-h-full max-w-full object-contain"
               mediaId={item.id}
               objectFit="contain"
+              revision={mediaRevision(item)}
               variant={showOriginal || item.mediaType !== "image" ? "original" : "preview"}
               width={GALLERY_PREVIEW_SIZE}
             />

@@ -56,8 +56,20 @@ export const PERSISTED_BROWSE_STATE_DEFAULTS: PersistedBrowseState =
 
 const RootPreferencesRecordSchema = z.record(z.string(), RootGalleryPreferencesSchema).catch({});
 
-/** Browse path → excluded direct-child paths; a malformed record reads as empty. */
-const RecursiveExcludesRecordSchema = z.record(z.string(), z.array(z.string()).catch([])).catch({});
+/**
+ * Browse path → excluded direct-child paths; a malformed record reads as
+ * empty. Stored as a JSON object but held as a Map: browse paths are archive
+ * folder names, and names such as `constructor` or `__proto__` must not
+ * collide with Object.prototype members on lookup or parse.
+ */
+const RecursiveExcludesRecordSchema = z
+  // z.custom passes the parsed JSON object through as is; z.record would copy
+  // it by assignment and drop an own `__proto__` key on the way.
+  .custom<object>((value) => z.looseObject({}).safeParse(value).success)
+  .transform((record) => Object.entries(record))
+  .pipe(z.array(z.tuple([z.string(), z.array(z.string()).catch([])])))
+  .transform((entries) => new Map(entries))
+  .catch(() => new Map());
 
 export type RecursiveExcludesRecord = z.infer<typeof RecursiveExcludesRecordSchema>;
 
@@ -71,13 +83,16 @@ function withExcludedChildPaths(
   path: string,
   paths: readonly string[],
 ): RecursiveExcludesRecord {
-  const others = Object.fromEntries(
-    Object.entries(record).filter(([storedPath]) => storedPath !== path),
-  );
-
+  const next = new Map(record);
   const deduped = [...new Set(paths)];
 
-  return deduped.length > 0 ? { ...others, [path]: deduped } : others;
+  if (deduped.length > 0) {
+    next.set(path, deduped);
+  } else {
+    next.delete(path);
+  }
+
+  return next;
 }
 
 export interface GalleryBrowseStorage {
@@ -108,7 +123,7 @@ function readStoredText(key: string): string | null {
 
 function writeStoredJson(
   key: string,
-  value: PersistedBrowseState | Record<string, RootGalleryPreferences> | RecursiveExcludesRecord,
+  value: PersistedBrowseState | Record<string, RootGalleryPreferences> | Record<string, string[]>,
 ): void {
   try {
     globalThis.localStorage?.setItem(key, JSON.stringify(value));
@@ -142,12 +157,12 @@ export function createLocalStorageBrowseStorage(): GalleryBrowseStorage {
       writeStoredJson(ROOT_PREFS_KEY, { ...record, [rootKey]: preferences });
     },
     readExcludedChildPaths(path) {
-      return readExcludesRecord()[path] ?? [];
+      return readExcludesRecord().get(path) ?? [];
     },
     writeExcludedChildPaths(path, paths) {
       writeStoredJson(
         RECURSIVE_EXCLUDES_KEY,
-        withExcludedChildPaths(readExcludesRecord(), path, paths),
+        Object.fromEntries(withExcludedChildPaths(readExcludesRecord(), path, paths)),
       );
     },
   };
@@ -156,7 +171,9 @@ export function createLocalStorageBrowseStorage(): GalleryBrowseStorage {
 function readExcludesRecord(): RecursiveExcludesRecord {
   const text = readStoredText(RECURSIVE_EXCLUDES_KEY);
 
-  return text === null ? {} : (parseJsonWith(text, RecursiveExcludesRecordSchema) ?? {});
+  return text === null
+    ? new Map()
+    : (parseJsonWith(text, RecursiveExcludesRecordSchema) ?? new Map());
 }
 
 export interface MemoryBrowseStorage extends GalleryBrowseStorage {
@@ -169,16 +186,16 @@ export interface MemoryBrowseStorage extends GalleryBrowseStorage {
 /** In-memory adapter for tests. `null` simulates unavailable storage (server render). */
 export function createMemoryBrowseStorage(
   initial: Partial<PersistedBrowseState> | null = {},
-  recursiveExcludes: RecursiveExcludesRecord = {},
+  recursiveExcludes: RecursiveExcludesRecord = new Map(),
 ): MemoryBrowseStorage {
   const storage: MemoryBrowseStorage = {
     read() {
       return storage.state;
     },
     readExcludedChildPaths(path) {
-      return storage.recursiveExcludes[path] ?? [];
+      return storage.recursiveExcludes.get(path) ?? [];
     },
-    recursiveExcludes: { ...recursiveExcludes },
+    recursiveExcludes: new Map(recursiveExcludes),
     rootPreferences: {},
     state: initial === null ? null : { ...PERSISTED_BROWSE_STATE_DEFAULTS, ...initial },
     write(state) {

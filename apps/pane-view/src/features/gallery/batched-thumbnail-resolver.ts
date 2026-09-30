@@ -4,6 +4,8 @@ import { GALLERY_THUMBNAIL_SIZE } from "./gallery-thumbnail-size";
 
 export interface GalleryThumbnailRequest {
   mediaId: string;
+  /** The item's content revision (see `mediaRevision`); part of the cache key, never sent. */
+  revision?: string;
   size?: number;
 }
 
@@ -27,6 +29,10 @@ export interface GalleryThumbnailResolver {
   resolveGalleryThumbnailsBatch(
     requests: GalleryThumbnailRequest[],
   ): Promise<GalleryThumbnailResolveState>;
+  /** Make every failed row eligible now, for a user-requested refresh. */
+  retryFailedThumbnails(): void;
+  /** Called after `retryFailedThumbnails`, so an unchanged window resolves again. */
+  subscribeToThumbnailRetries(listener: () => void): () => void;
 }
 
 interface ThumbnailCacheEntry {
@@ -39,6 +45,13 @@ interface ThumbnailCacheEntry {
 }
 
 const PENDING_RETRY_DELAYS_MS = [5_000, 10_000, 20_000, 30_000, 60_000] as const;
+
+/**
+ * A failed row is retried on a slower schedule rather than never: the server
+ * reports a transient Control fault and a broken preview job alike as
+ * failed, and either may be repaired while the tile is still on screen.
+ */
+const FAILED_RETRY_DELAYS_MS = [30_000, 120_000, 600_000] as const;
 
 /**
  * Most settled rows the cache keeps, oldest use evicted first. A grid window
@@ -54,10 +67,16 @@ interface ThumbnailResolverState {
   cache: Map<string, ThumbnailCacheEntry>;
   /** How many cache rows are in flight, so eviction counts settled rows alone. */
   inFlightCount: number;
+  retryListeners: Set<() => void>;
   resolveUrls: ResolveMediaDeliveryUrls;
 }
 
 function cacheKey(request: GalleryThumbnailRequest): string {
+  return `${requestKey(request)}:${request.revision ?? ""}`;
+}
+
+/** What the server answers by: a batch result names no revision. */
+function requestKey(request: Pick<GalleryThumbnailRequest, "mediaId" | "size">): string {
   return `${request.mediaId}:${request.size ?? GALLERY_THUMBNAIL_SIZE}`;
 }
 
@@ -89,11 +108,10 @@ function pendingRetryDelayMs(
   state: ThumbnailResolverState,
   key: string,
   serverRetryAfterMs?: number,
+  delays: readonly number[] = PENDING_RETRY_DELAYS_MS,
 ): number {
   const attempt = state.attempts.get(key) ?? 0;
-
-  const baseDelay =
-    PENDING_RETRY_DELAYS_MS[Math.min(attempt, PENDING_RETRY_DELAYS_MS.length - 1)] ?? 60_000;
+  const baseDelay = delays[Math.min(attempt, delays.length - 1)] ?? 60_000;
 
   state.attempts.set(key, attempt + 1);
   const jitter = 0.75 + Math.random() * 0.5;
@@ -101,12 +119,11 @@ function pendingRetryDelayMs(
   return Math.max(serverRetryAfterMs ?? 0, Math.round(baseDelay * jitter));
 }
 
-function applyResult(state: ThumbnailResolverState, result: MediaDeliveryBatchResult): void {
-  const key = cacheKey({
-    mediaId: result.mediaId,
-    size: result.size,
-  });
-
+function applyResult(
+  state: ThumbnailResolverState,
+  key: string,
+  result: MediaDeliveryBatchResult,
+): void {
   if (result.status === "ready") {
     state.attempts.delete(key);
     setCacheEntry(state, key, {
@@ -128,8 +145,24 @@ function applyResult(state: ThumbnailResolverState, result: MediaDeliveryBatchRe
     return;
   }
 
-  state.attempts.delete(key);
-  setCacheEntry(state, key, { inFlight: false, status: "failed" });
+  setCacheEntry(state, key, {
+    inFlight: false,
+    nextRetryAt: Date.now() + pendingRetryDelayMs(state, key, undefined, FAILED_RETRY_DELAYS_MS),
+    status: "failed",
+  });
+}
+
+function retryFailedThumbnailsFor(state: ThumbnailResolverState): void {
+  for (const [key, entry] of state.cache) {
+    if (entry.status === "failed" && !entry.inFlight) {
+      entry.nextRetryAt = undefined;
+      state.attempts.delete(key);
+    }
+  }
+
+  for (const listener of state.retryListeners) {
+    listener();
+  }
 }
 
 function readCachedGalleryThumbnailStateFor(
@@ -159,7 +192,7 @@ function getNextPendingThumbnailRetryMsFor(
   for (const request of requests) {
     const cached = state.cache.get(cacheKey(request));
 
-    if (cached?.status !== "pending" || cached.inFlight) {
+    if (!cached || cached.status === "ready" || cached.inFlight) {
       continue;
     }
 
@@ -185,7 +218,6 @@ function hasEligibleGalleryThumbnailRequestsFor(
 
     return (
       cached?.status !== "ready" &&
-      cached?.status !== "failed" &&
       !cached?.inFlight &&
       (!cached?.nextRetryAt || cached.nextRetryAt <= now)
     );
@@ -237,7 +269,7 @@ async function resolveGalleryThumbnailsBatchFor(
       continue;
     }
 
-    if (cached?.status === "failed" || cached?.inFlight) {
+    if (cached?.inFlight) {
       continue;
     }
 
@@ -263,14 +295,17 @@ async function resolveGalleryThumbnailsBatchFor(
   const execution = (async () => {
     try {
       const response = await state.resolveUrls({ data: { items } });
+      const batchKeys = new Map(batch.map(([key, request]) => [requestKey(request), key]));
+      const resolvedKeys = new Set<string>();
 
       for (const result of response.results) {
-        applyResult(state, result);
-      }
+        const key = batchKeys.get(requestKey(result));
 
-      const resolvedKeys = new Set(
-        response.results.map((result) => cacheKey({ mediaId: result.mediaId, size: result.size })),
-      );
+        if (key) {
+          resolvedKeys.add(key);
+          applyResult(state, key, result);
+        }
+      }
 
       for (const [key] of batch) {
         if (!resolvedKeys.has(key) && state.cache.get(key)?.inFlight) {
@@ -313,6 +348,7 @@ function createThumbnailResolver({
     cache: new Map(),
     inFlightCount: 0,
     resolveUrls,
+    retryListeners: new Set(),
   };
 
   return {
@@ -324,6 +360,12 @@ function createThumbnailResolver({
       readCachedGalleryThumbnailStateFor(state, requests),
     resolveGalleryThumbnailsBatch: (requests: GalleryThumbnailRequest[]) =>
       resolveGalleryThumbnailsBatchFor(state, requests),
+    retryFailedThumbnails: () => retryFailedThumbnailsFor(state),
+    subscribeToThumbnailRetries: (listener: () => void) => {
+      state.retryListeners.add(listener);
+
+      return () => state.retryListeners.delete(listener);
+    },
   };
 }
 

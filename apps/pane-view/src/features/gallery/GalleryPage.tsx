@@ -1,4 +1,6 @@
 import { type FormEvent, type JSX, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { sharedThumbnailResolver } from "@/features/gallery/batched-thumbnail-resolver";
 import { FloatingToolbar } from "@/features/gallery/FloatingToolbar";
 import { GalleryBrowsePane } from "@/features/gallery/GalleryBrowsePane";
 import { GalleryGridSkeleton } from "@/features/gallery/GalleryGridSkeleton";
@@ -12,13 +14,11 @@ import { useGalleryBrowse } from "@/features/gallery/useGalleryBrowse";
 import { useGalleryKeyboard } from "@/features/gallery/useGalleryKeyboard";
 import { useGalleryViewerHandoff } from "@/features/gallery/useGalleryViewerHandoff";
 import { useDeletedMediaIds, useMediaDeletion } from "@/features/gallery/useMediaDeletion";
-import { useInvalidateLibrarySnapshot } from "@/features/library/library-queries";
 import { useHydrated } from "@/hooks/use-hydrated";
 import { useIsMobile } from "@/hooks/use-mobile";
 
 export function GalleryPage(): JSX.Element {
   const hydrated = useHydrated();
-  const invalidateLibrary = useInvalidateLibrarySnapshot();
   const { browse, settings, settingsOpen, setSettingsOpen, updateSettings } = useGalleryLayout();
 
   const {
@@ -54,10 +54,12 @@ export function GalleryPage(): JSX.Element {
     entries,
     isReady,
     library,
+    listingError,
     loadNextPage,
     media: navigableMedia,
     openComic,
     page,
+    refresh,
     showFetching,
     showRefreshing,
     snapshotIsCurrent,
@@ -316,6 +318,7 @@ export function GalleryPage(): JSX.Element {
             isFetching={showFetching}
             isMobile={isMobile}
             loadingMoreMedia={page.loading}
+            loadMoreFailed={page.error !== null}
             onActivateEntry={handleActivateEntry}
             onDelete={deletion.deleteSelectedMedia}
             onLoadMoreMedia={handleLoadMoreMedia}
@@ -333,6 +336,17 @@ export function GalleryPage(): JSX.Element {
             paginationResetKey={browseKey}
             thumbnailSize={settings.thumbnailSize}
           />
+        ) : listingError && !showFetching ? (
+          <div
+            className="flex flex-1 flex-col items-center justify-center gap-3 p-5 pb-28 text-center"
+            role="alert"
+          >
+            <p className="text-sm font-medium">Couldn't load this folder.</p>
+            <p className="max-w-md text-sm text-muted-foreground">{listingError.message}</p>
+            <Button onClick={() => void refresh()} size="sm" type="button" variant="outline">
+              Try again
+            </Button>
+          </div>
         ) : (
           <GalleryGridSkeleton />
         )}
@@ -343,7 +357,10 @@ export function GalleryPage(): JSX.Element {
         exclude={folders.exclude}
         isRefreshing={showRefreshing}
         onChangeSortMode={browse.setSortMode}
-        onRefresh={() => void invalidateLibrary()}
+        onRefresh={() => {
+          sharedThumbnailResolver.retryFailedThumbnails();
+          void refresh();
+        }}
         onToggleComicMode={() => {
           if (!folderModesEnabled) return;
           setComicMode(!effectiveComicMode);

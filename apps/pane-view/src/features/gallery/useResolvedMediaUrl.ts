@@ -16,6 +16,12 @@ const FAILED_RETRY_DELAYS_MS = [2_000, 8_000] as const;
 
 type ResolveInput = {
   mediaId: string;
+  /**
+   * The content the caller expects (see `mediaRevision`). A synced
+   * replacement keeps the media id but not the bytes, so a URL cached for one
+   * revision must never answer for another. Cache key only; never sent.
+   */
+  revision?: string;
   size?: number;
   variant: "thumbnail" | "preview" | "original";
 };
@@ -54,8 +60,8 @@ export interface ResolvedMediaUrlCache {
   resolve(input: ResolveInput, options?: { refresh?: boolean }): Promise<ResolveOutcome>;
 }
 
-function resolveCacheKey({ mediaId, size, variant }: ResolveInput): string {
-  return `${variant}:${mediaId}:${size ?? "default"}`;
+function resolveCacheKey({ mediaId, revision, size, variant }: ResolveInput): string {
+  return `${variant}:${mediaId}:${size ?? "default"}:${revision ?? ""}`;
 }
 
 function pendingRetryDelayMs(attempt: number, serverRetryAfterMs?: number): number {
@@ -71,7 +77,7 @@ function pendingRetryDelayMs(attempt: number, serverRetryAfterMs?: number): numb
 
 /** The server function's call shape, so tests can supply a plain async function. */
 type ResolveMediaDeliveryUrl = (options: {
-  data: ResolveInput;
+  data: Omit<ResolveInput, "revision">;
 }) => Promise<{ pending: true; retryAfterMs: number } | { pending: false; url: string }>;
 
 function createResolvedMediaUrlCache({
@@ -120,7 +126,9 @@ function createResolvedMediaUrlCache({
         const release = await throttle.acquireResolveSlot();
 
         try {
-          const result = await resolve({ data: input });
+          const result = await resolve({
+            data: { mediaId: input.mediaId, size: input.size, variant: input.variant },
+          });
 
           if (result.pending) {
             const retryAfterMs = pendingRetryDelayMs(entry.pendingAttempt, result.retryAfterMs);
@@ -209,6 +217,7 @@ export function useResolvedMediaUrl({
   mediaId,
   readyUrl,
   refreshKey = 0,
+  revision,
   size,
   variant,
 }: {
@@ -218,10 +227,12 @@ export function useResolvedMediaUrl({
   readyUrl?: string;
   /** Any value above 0 bypasses the shared URL cache; bump it to re-resolve. */
   refreshKey?: number;
+  /** The item's content revision; a new one resolves afresh instead of reusing a cached URL. */
+  revision?: string;
   size?: number;
   variant: "thumbnail" | "preview" | "original";
 }) {
-  const inputKey = `${mediaId ?? "none"}:${variant}:${size ?? "default"}:${refreshKey}:${readyUrl ?? ""}:${fallbackReadyUrl ?? ""}`;
+  const inputKey = `${mediaId ?? "none"}:${revision ?? ""}:${variant}:${size ?? "default"}:${refreshKey}:${readyUrl ?? ""}:${fallbackReadyUrl ?? ""}`;
 
   const initialState = useMemo(
     () => createResolvedMediaState(inputKey, mediaId, readyUrl, fallbackReadyUrl),
@@ -250,7 +261,7 @@ export function useResolvedMediaUrl({
 
     void (async () => {
       while (!cancelled) {
-        const result = await cache.resolve({ mediaId, size, variant }, { refresh });
+        const result = await cache.resolve({ mediaId, revision, size, variant }, { refresh });
         refresh = false;
 
         if (cancelled) return;
@@ -293,6 +304,7 @@ export function useResolvedMediaUrl({
     mediaId,
     readyUrl,
     refreshKey,
+    revision,
     size,
     variant,
   ]);

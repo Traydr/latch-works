@@ -1,6 +1,7 @@
 import type { ComicEntry, MediaItem } from "@latch-works/media-domain";
 import { ArrowUp, X } from "lucide-react";
 import { type JSX, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
+import { mediaRevision } from "@/features/gallery/gallery-page-helpers";
 import { ResolvedMediaImage } from "@/features/gallery/ResolvedMediaImage";
 import { IconButton, ViewerTopBar } from "@/features/gallery/viewer-chrome";
 import { useViewerChromeIdle } from "@/hooks/use-viewer-chrome-idle";
@@ -308,6 +309,7 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
                   className="h-full w-full object-contain"
                   mediaId={page.id}
                   mediaType={page.mediaType}
+                  revision={mediaRevision(page)}
                   variant="preview"
                   width={960}
                 />

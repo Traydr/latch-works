@@ -1,6 +1,7 @@
 import type { MediaItem } from "@latch-works/media-domain";
 import { type JSX, useCallback, useEffect, useRef } from "react";
 import type { ViewerStateStore } from "@/features/viewer/use-library-viewer-state";
+import { mediaRevision } from "./gallery-page-helpers";
 import { MediaViewerSession } from "./MediaViewerSession";
 import { type ResolvedMediaUrlCache, useResolvedMediaUrl } from "./useResolvedMediaUrl";
 
@@ -11,6 +12,7 @@ function usePrefetchNeighborPreview(
   const { resolvedUrl } = useResolvedMediaUrl({
     cache,
     mediaId: item?.mediaType === "image" ? item.id : undefined,
+    revision: item ? mediaRevision(item) : undefined,
     variant: "preview",
   });
 

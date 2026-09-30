@@ -11,6 +11,15 @@ export function supportsGalleryThumbnail(media: MediaItem): boolean {
   );
 }
 
+/**
+ * What an item's delivery URLs are cached against besides its id. A synced
+ * replacement keeps the entry id while the bytes change, so URL caches key on
+ * the content hash (size and mtime when a hash is missing) as well.
+ */
+export function mediaRevision(media: MediaItem): string {
+  return media.sha256 ?? `${media.size}:${media.mtimeMs}`;
+}
+
 export function dedupeThumbnailRequests(
   requests: readonly GalleryThumbnailRequest[],
 ): GalleryThumbnailRequest[] {

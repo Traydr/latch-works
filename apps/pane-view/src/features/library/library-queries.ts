@@ -16,8 +16,9 @@ export interface LibrarySnapshotRequest {
 export interface GalleryListingQueryRequest extends GalleryListingRequest {}
 
 /**
- * Listing pages are fetched by the browse session through its page source;
- * these keys exist so delete/refresh invalidation reaches page 1.
+ * Listing pages are fetched by the browse session through its page source.
+ * One key holds every loaded page of a listing, so delete and refresh
+ * invalidation re-read them together.
  */
 
 export const librarySnapshotKeys = {
@@ -28,6 +29,20 @@ export const librarySnapshotKeys = {
 export const galleryListingKeys = {
   all: ["gallery-listing"] as const,
   listing: (request: GalleryListingQueryRequest) => [...galleryListingKeys.all, request] as const,
+};
+
+/** Complete comics the reader opened; Refresh invalidates them with the listing. */
+export const galleryComicKeys = {
+  all: ["gallery-comic"] as const,
+  comic: (comicId: string, request: GalleryListingQueryRequest) =>
+    [
+      ...galleryComicKeys.all,
+      comicId,
+      request.path ?? "",
+      request.query ?? "",
+      request.showImages,
+      request.showVideos,
+    ] as const,
 };
 
 export function librarySnapshotQueryOptions(request: LibrarySnapshotRequest) {
@@ -48,16 +63,6 @@ export function librarySnapshotQueryOptions(request: LibrarySnapshotRequest) {
 
 export function useLibrarySnapshotQuery(request: LibrarySnapshotRequest) {
   return useQuery(librarySnapshotQueryOptions(request));
-}
-
-export function useInvalidateLibrarySnapshot() {
-  const queryClient = useQueryClient();
-
-  return () =>
-    Promise.all([
-      queryClient.invalidateQueries({ queryKey: librarySnapshotKeys.all }),
-      queryClient.invalidateQueries({ queryKey: galleryListingKeys.all }),
-    ]);
 }
 
 export function useDeleteLibraryEntryMutation() {
