@@ -73,7 +73,7 @@ const UploadTargetSchema = z.object({
 });
 
 /** Routes whose acknowledgement body is never read; only the HTTP status matters. */
-export const AcknowledgementSchema = z.unknown();
+const AcknowledgementSchema = z.unknown();
 
 /** Streaming request bodies need undici's `duplex` flag, which `RequestInit` omits. */
 interface StreamingRequestInit extends RequestInit {
