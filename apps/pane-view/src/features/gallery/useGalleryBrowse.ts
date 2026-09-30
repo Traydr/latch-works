@@ -20,6 +20,7 @@ import {
 } from "@/features/gallery/gallery-page-source";
 import {
   type GalleryListingQueryRequest,
+  galleryComicKeys,
   galleryListingKeys,
   type LibrarySnapshotRequest,
   librarySnapshotKeys,
@@ -76,8 +77,8 @@ export interface GalleryBrowseSession {
   openComic(comicId: string): Promise<ComicEntry<LibraryMediaItem>>;
   page: GalleryPageState;
   /**
-   * Reload the snapshot and every loaded listing page. Never rejects: a
-   * failed reload keeps the pages already on screen.
+   * Reload the snapshot, every loaded listing page, and opened comics. Never
+   * rejects: a failed reload keeps the pages already on screen.
    */
   refresh(): Promise<void>;
   showFetching: boolean;
@@ -157,17 +158,6 @@ class StaleBrowseError extends Error {
     super("Gallery browse changed while a page was loading");
     this.name = "StaleBrowseError";
   }
-}
-
-function galleryComicQueryKey(comicId: string, request: GalleryListingQueryRequest) {
-  return [
-    "gallery-comic",
-    comicId,
-    request.path ?? "",
-    request.query ?? "",
-    request.showImages,
-    request.showVideos,
-  ] as const;
 }
 
 export function useGalleryBrowse({
@@ -382,6 +372,9 @@ export function useGalleryBrowse({
       try {
         await Promise.all([
           queryClient.invalidateQueries({ queryKey: librarySnapshotKeys.all }),
+          // A reopened reader reads its pages again: a replaced comic page
+          // keeps its path, so only its revision tells the caches apart.
+          queryClient.invalidateQueries({ queryKey: galleryComicKeys.all }),
           reloadListing(),
         ]);
       } finally {
@@ -500,7 +493,7 @@ export function useGalleryBrowse({
             showImages: request.showImages,
             showVideos: request.showVideos,
           }),
-        queryKey: galleryComicQueryKey(comicId, request),
+        queryKey: galleryComicKeys.comic(comicId, request),
         staleTime: 5 * 60 * 1000,
       });
     },

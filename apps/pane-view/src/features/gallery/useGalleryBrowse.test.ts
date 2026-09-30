@@ -238,4 +238,18 @@ describe("useGalleryBrowse refresh", () => {
     expect(result.appendedMediaIds).toEqual(["b", "c"]);
     await vi.waitFor(() => expect(ids(session())).toEqual(["a", "aa", "b", "c"]));
   });
+
+  it("reopens a comic with the page metadata Refresh found", async () => {
+    const { archive, source } = createArchive(["a", "b"]);
+    const session = await mountBrowse(source);
+
+    const before = await session().openComic("photos/comic");
+    expect(before.pages[0]?.sha256).toBe("sha-page-old");
+
+    archive.comicPageHash = "sha-page-new";
+    await session().refresh();
+    const after = await session().openComic("photos/comic");
+
+    expect(after.pages[0]?.sha256).toBe("sha-page-new");
+  });
 });

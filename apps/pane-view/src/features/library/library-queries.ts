@@ -31,6 +31,20 @@ export const galleryListingKeys = {
   listing: (request: GalleryListingQueryRequest) => [...galleryListingKeys.all, request] as const,
 };
 
+/** Complete comics the reader opened; Refresh invalidates them with the listing. */
+export const galleryComicKeys = {
+  all: ["gallery-comic"] as const,
+  comic: (comicId: string, request: GalleryListingQueryRequest) =>
+    [
+      ...galleryComicKeys.all,
+      comicId,
+      request.path ?? "",
+      request.query ?? "",
+      request.showImages,
+      request.showVideos,
+    ] as const,
+};
+
 export function librarySnapshotQueryOptions(request: LibrarySnapshotRequest) {
   return {
     queryKey: librarySnapshotKeys.snapshot(request),
