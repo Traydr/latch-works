@@ -273,14 +273,14 @@ function AppInner(): JSX.Element {
           toggleExcludedRootChildPath(preferences, folderPath),
         );
 
-        // Rescan with every exclusion saved so far, unless the user has left the folder.
-        if (
-          savedPreferences &&
-          effectiveRecursive &&
-          useAppStore.getState().rootPath === rootPath
-        ) {
+        // The save can finish after newer choices, so repeat the latest scan request with every
+        // exclusion saved so far, unless it is for another folder or does not reach child folders.
+        const { requestedScan } = useAppStore.getState();
+
+        if (savedPreferences && requestedScan?.rootPath === rootPath && requestedScan.recursive) {
           void runScan(rootPath, {
-            recursive: effectiveRecursive,
+            recursive: true,
+            filters: requestedScan.filters,
             excludedRootChildPaths: savedPreferences.excludedRootChildPaths,
           });
         }

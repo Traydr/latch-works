@@ -34,16 +34,19 @@ export function useScanActions({
   // Options left out come from the scanned folder's own preferences, not the current folder's.
   const runScan = useCallback(
     async (folderPath: string, options?: RunScanOptions): Promise<boolean> => {
-      supersedeActiveScan();
       const preferences = getRootGalleryPreferences(settings, folderPath);
 
-      return frameViewClient.startScan({
+      const request = {
         rootPath: folderPath,
         recursive: options?.recursive ?? (recursive || preferences.comicMode),
         filters: options?.filters ?? settings.filters,
         excludedRootChildPaths:
           options?.excludedRootChildPaths ?? preferences.excludedRootChildPaths,
-      });
+      };
+
+      supersedeActiveScan(request);
+
+      return frameViewClient.startScan(request);
     },
     [recursive, settings, supersedeActiveScan],
   );

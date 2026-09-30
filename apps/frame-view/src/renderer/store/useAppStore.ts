@@ -19,6 +19,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   viewerIndex: null,
   activeScanRunId: null,
   scanStartCount: 0,
+  requestedScan: null,
   scanState: 'idle',
   scannedDirectories: 0,
   discoveredItems: 0,
