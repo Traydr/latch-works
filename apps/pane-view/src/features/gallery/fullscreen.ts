@@ -45,8 +45,8 @@ export async function toggleFullscreen(
   }
 
   // Element fullscreen where the browser allows it (Safari keeps the prefixed
-  // form; iPhone Safari has none, and iPad Safari can refuse it for a modal
-  // dialog). When it is unavailable or refused, the video itself can still go
+  // form; iPhone Safari has none, and iPad Safari can refuse it inside a
+  // modal dialog). When it is unavailable or refused, the video itself can still go
   // full screen with its native player.
   const target: FullscreenHost = host;
 
