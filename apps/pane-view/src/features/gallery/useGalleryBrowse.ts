@@ -139,6 +139,32 @@ function nextCursor(page: GalleryListingPage | undefined): string | undefined {
   return page?.page.hasMore && page.page.cursor ? page.page.cursor : undefined;
 }
 
+/**
+ * The entries a caller has not seen yet: those after `lastSeenKey` when the
+ * listing still holds it, otherwise those absent from `known`.
+ */
+function unseenEntries(
+  data: GalleryListingData,
+  lastSeenKey: string | undefined,
+  known: ReadonlySet<string>,
+): LoadNextPageResult {
+  const listed = listingEntries(data);
+  const lastSeen = lastSeenKey ? listed.findIndex((entry) => entry.key === lastSeenKey) : -1;
+
+  const unseen =
+    lastSeen >= 0 ? listed.slice(lastSeen + 1) : listed.filter((entry) => !known.has(entry.key));
+
+  return {
+    appendedEntryKeys: unseen.map((entry) => entry.key),
+    appendedMediaIds: unseen.flatMap((entry) => {
+      const item = entryMedia(entry);
+
+      return item ? [item.id] : [];
+    }),
+    exhausted: !nextCursor(data.pages.at(-1)),
+  };
+}
+
 /** Resolves once no fetch of the listing is running, whoever started it. */
 async function settleListing(queryClient: QueryClient, queryKey: QueryKey): Promise<void> {
   for (;;) {
@@ -280,6 +306,10 @@ export function useGalleryBrowse({
     }
 
     const queryKey = galleryListingKeys.listing(request);
+    // The end of the sequence the caller has rendered. The cache can already
+    // hold the page after it (another load finished before the render that
+    // shows it); that page is the answer, not the one after it.
+    const lastRenderedKey = liveRef.current.entries.at(-1)?.key;
 
     const load = async (): Promise<LoadNextPageResult> => {
       // Repeats only when another fetch replaced the pages under this one (a
@@ -299,11 +329,20 @@ export function useGalleryBrowse({
 
         const before = query?.state.data;
 
-        if (!query || !before || !nextCursor(before.pages.at(-1))) {
+        if (!query || !before) {
           return EXHAUSTED;
         }
 
         const known = new Set(listingEntries(before).map((entry) => entry.key));
+        // Once a refresh has dropped the rendered end, whatever the fetch
+        // adds is new.
+        const anchor = lastRenderedKey && known.has(lastRenderedKey) ? lastRenderedKey : undefined;
+        const loaded = unseenEntries(before, anchor, known);
+
+        if (loaded.appendedEntryKeys.length > 0 || loaded.exhausted) {
+          return loaded;
+        }
+
         await query.fetch(undefined, {
           cancelRefetch: false,
           meta: { fetchMore: { direction: "forward" } },
@@ -316,17 +355,7 @@ export function useGalleryBrowse({
         const after = query.state.data;
 
         if (after && after.pages.length > before.pages.length) {
-          const appended = listingEntries(after).filter((entry) => !known.has(entry.key));
-
-          return {
-            appendedEntryKeys: appended.map((entry) => entry.key),
-            appendedMediaIds: appended.flatMap((entry) => {
-              const item = entryMedia(entry);
-
-              return item ? [item.id] : [];
-            }),
-            exhausted: !nextCursor(after.pages.at(-1)),
-          };
+          return unseenEntries(after, anchor, known);
         }
       }
     };

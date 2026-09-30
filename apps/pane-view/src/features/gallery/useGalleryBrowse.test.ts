@@ -253,3 +253,17 @@ describe("useGalleryBrowse refresh", () => {
     expect(after.pages[0]?.sha256).toBe("sha-page-new");
   });
 });
+
+describe("useGalleryBrowse paging", () => {
+  it("steps onto a page another load added before the grid rendered it", async () => {
+    const { source } = createArchive(["a", "b", "c", "d", "e"]);
+    const session = await mountBrowse(source);
+    const rendered = session();
+
+    // Infinite scroll loads page 2; the viewer steps past "b" before the
+    // render that shows it.
+    await rendered.loadNextPage();
+
+    expect(await rendered.stepMedia("b", 1, false)).toBe("c");
+  });
+});
