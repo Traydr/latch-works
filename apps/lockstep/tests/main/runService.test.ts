@@ -2,11 +2,13 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import os from "node:os";
 import path from "node:path";
+import type { BrowserWindow } from "electron";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import { ProfileService } from "../../src/main/services/profileService";
 import { RunService } from "../../src/main/services/runService";
+import type { LockstepRunEvent } from "../../src/shared/types";
 
 const TOKEN = "sync-token";
 
@@ -113,7 +115,7 @@ describe("RunService prune", () => {
     await rm(tempDir, { force: true, recursive: true });
   });
 
-  async function createRunService() {
+  async function createRunService(getMainWindow: () => BrowserWindow | null = () => null) {
     const profiles = new ProfileService(path.join(tempDir, "user-data"), {
       legacyConfigPath: path.join(tempDir, "missing-legacy.json"),
       secretStorage: {
@@ -139,7 +141,7 @@ describe("RunService prune", () => {
     return {
       profileId: created.value.id,
       profiles,
-      runService: new RunService(profiles, () => null),
+      runService: new RunService(profiles, getMainWindow),
     };
   }
 
@@ -201,5 +203,38 @@ describe("RunService prune", () => {
       pushed: 2,
       status: "failed",
     });
+  });
+
+  it("announces a run's end only once it is saved and a new window would see it idle", async () => {
+    const ends: { action: string; lastRun?: string; running: boolean }[] = [];
+    let service: RunService | undefined;
+    let profileService: ProfileService | undefined;
+    let id = "";
+
+    const window = {
+      isDestroyed: () => false,
+      webContents: {
+        send: (_channel: string, event: LockstepRunEvent) => {
+          if (event.type === "complete") {
+            ends.push({
+              action: event.summary.action,
+              lastRun: profileService?.getProfile(id)?.lastRun?.action,
+              running: service?.getActiveRun() !== null,
+            });
+          }
+        },
+      },
+    };
+
+    const created = await createRunService(() => window as unknown as BrowserWindow);
+    ({ profileId: id, profiles: profileService, runService: service } = created);
+
+    const plan = await created.runService.plan({ profileId: id });
+    await created.runService.prune({ planId: plan.planId, profileId: id });
+
+    expect(ends).toEqual([
+      { action: "plan", lastRun: "plan", running: false },
+      { action: "prune", lastRun: "prune", running: false },
+    ]);
   });
 });

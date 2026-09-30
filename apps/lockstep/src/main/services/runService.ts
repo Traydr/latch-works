@@ -274,6 +274,8 @@ export class RunService {
     this.abortController = abortController;
     let completeObserved = false;
     let reportedFailure: LockstepRunSummary | undefined;
+    /** Held until the run is saved and released, so a window never sees it end while it is busy. */
+    let completion: LockstepRunEvent | undefined;
     const baseObserver = this.createObserver();
 
     const observer: LockstepObserver = {
@@ -282,6 +284,9 @@ export class RunService {
         if (event.type === "complete" && event.summary.action === operation) {
           completeObserved = true;
           reportedFailure = event.summary.status === "failed" ? event.summary : undefined;
+          completion = event;
+
+          return;
         }
 
         baseObserver.onEvent(event);
@@ -337,6 +342,10 @@ export class RunService {
     } finally {
       this.activeRun = null;
       this.abortController = null;
+
+      if (completion) {
+        baseObserver.onEvent(completion);
+      }
     }
   }
 
