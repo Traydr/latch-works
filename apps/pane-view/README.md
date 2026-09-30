@@ -106,6 +106,15 @@ pnpm db:generate   # generate migration from schema changes
 pnpm db:migrate    # apply migrations
 ```
 
+`0021_lowercase_sha256` rewrites rows as well as the schema, so back up the database before
+applying it to an existing archive. It lowercases the stored SHA-256 hashes in `media_objects`,
+`library_entries`, and `shutter_source_cleanup`, then adds CHECK constraints that reject any
+other spelling. Media rows whose hashes differ only in case are merged into one: the row already
+in lowercase is kept (otherwise the oldest), library entries and sync history move to it, and
+the other row is deleted. Queued Shutter sources are merged the same way and stay unpurged if
+any of the merged rows was. When every stored hash is already lowercase it changes no rows. To
+check beforehand, run `select count(*) from media_objects where sha256 <> lower(sha256)`.
+
 ### Scripts
 
 | Script | Description |

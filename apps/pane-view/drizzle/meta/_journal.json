@@ -148,6 +148,13 @@
       "when": 1790276702303,
       "tag": "0020_sync_run_items_media_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1790734631591,
+      "tag": "0021_lowercase_sha256",
+      "breakpoints": true
     }
   ]
 }
