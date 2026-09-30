@@ -18,7 +18,6 @@ import type { ScanQueue } from '../catalog/ScanQueue';
 import { parseWithSchema, serializeAppResult, ValidationError } from '../errors';
 import { listFolderChildren, resolveFolderPath } from '../services/folderService';
 import {
-  authorizeMediaRoot,
   claimChosenMediaRoot,
   clearThumbnailCache,
   getThumbnailDiagnostics,
@@ -50,7 +49,6 @@ export type IpcScanQueue = Pick<ScanQueue, 'request'>;
 
 /** Everything the IPC layer reaches outside itself: Electron, the folder tree, media access. */
 export interface IpcRuntime {
-  authorizeMediaRoot: typeof authorizeMediaRoot;
   claimChosenMediaRoot: typeof claimChosenMediaRoot;
   clearThumbnailCache: typeof clearThumbnailCache;
   getAppVersion: () => string;
@@ -74,7 +72,6 @@ export interface IpcRuntime {
 /** The production runtime: Electron's main-process APIs bound to the app window. */
 export function createElectronIpcRuntime(mainWindow: BrowserWindow): IpcRuntime {
   return {
-    authorizeMediaRoot,
     claimChosenMediaRoot,
     clearThumbnailCache,
     getAppVersion: () => app.getVersion(),
@@ -277,21 +274,10 @@ export function registerIpc(
     const settings = settingsService.getSettings();
     // A folder the user chose (Open dialog, drop, or the OS) stays scannable even if another scan
     // shrank the roots. It is claimed here, when its request runs, so a chosen folder queued
-    // behind a running scan keeps its grant until its turn.
+    // behind a running scan keeps its grant until its turn. The remembered folder is authorized
+    // once at startup; a scan request never widens access on its own.
     const claimedChosenRoot = await runtime.claimChosenMediaRoot(resolvedRoot);
-    let authorized = claimedChosenRoot || (await runtime.isAuthorizedMediaPath(resolvedRoot));
-
-    // Remembered folders are chosen via the native dialog, then persisted. After a restart the
-    // in-memory allowlist is empty — re-authorize the exact remembered path so auto-scan works.
-    if (
-      !authorized &&
-      settings.rememberLastFolder &&
-      settings.lastFolderPath &&
-      path.resolve(resolvedRoot) === path.resolve(settings.lastFolderPath)
-    ) {
-      await runtime.authorizeMediaRoot(resolvedRoot);
-      authorized = await runtime.isAuthorizedMediaPath(resolvedRoot);
-    }
+    const authorized = claimedChosenRoot || (await runtime.isAuthorizedMediaPath(resolvedRoot));
 
     if (!authorized) {
       sendScanEvent({
@@ -445,14 +431,7 @@ export function registerIpc(
       return validated.serialized;
     }
 
-    const { lastFolderPath } = validated.value;
-
-    const normalizedPatch =
-      lastFolderPath === undefined || lastFolderPath === null
-        ? validated.value
-        : { ...validated.value, lastFolderPath: path.resolve(lastFolderPath) };
-
-    const updatedSettings = await settingsService.updateSettings(normalizedPatch);
+    const updatedSettings = await settingsService.updateSettings(validated.value);
 
     if (Result.isError(updatedSettings)) {
       return serializeAppResult(Result.err(updatedSettings.error));

@@ -1,19 +1,21 @@
-import type { ScanEvent } from '../../shared/types';
+import type { ScanEvent, ScanOptions } from '../../shared/types';
 import { sortMediaItems } from '../utils/sort';
 import { flattenLoadingChunks, sortAndSyncSelection } from './selectionState';
 import type { AppStoreGet, AppStoreSet } from './types';
 
 /**
- * Called as the renderer asks for a new scan. A scan still running is now stale: the main
- * process cancels it before the new one starts, so its partial results are dropped here and any
- * of its events still in flight are ignored. The new scan's `reset` takes over from there.
+ * Called as the renderer asks for a new scan, which becomes the requested scan. A scan still
+ * running is now stale: the main process cancels it before the new one starts, so its partial
+ * results are dropped here and any of its events still in flight are ignored. The new scan's
+ * `reset` takes over from there.
  */
 export function createSupersedeActiveScan(set: AppStoreSet) {
-  return (): void => {
+  return (request: ScanOptions): void => {
     set((current) =>
       current.activeScanRunId === null
-        ? {}
+        ? { requestedScan: request }
         : {
+            requestedScan: request,
             activeScanRunId: null,
             loadingChunks: [],
             loadingItemCount: 0,
@@ -32,6 +34,7 @@ export function createApplyScanEvent(set: AppStoreSet, get: AppStoreGet) {
       case 'reset':
         set({
           activeScanRunId: event.runId,
+          scanStartCount: state.scanStartCount + 1,
           rootPath: event.rootPath,
           recursive: event.recursive,
           items: [],

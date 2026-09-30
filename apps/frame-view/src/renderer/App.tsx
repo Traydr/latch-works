@@ -20,11 +20,7 @@ import { buildBrowserEntryCollection } from './utils/browserEntries';
 import type { ComicEntry } from './utils/comics';
 import { buildComicEntries, sortComicEntries } from './utils/comics';
 import { toDisplayName } from './utils/path';
-import {
-  createRootGalleryPreferencesPatch,
-  getRootGalleryPreferences,
-  toggleExcludedRootChildPath,
-} from './utils/rootPreferences';
+import { getRootGalleryPreferences, toggleExcludedRootChildPath } from './utils/rootPreferences';
 import { createRandomSeed } from './utils/sort';
 
 function AppInner(): JSX.Element {
@@ -61,10 +57,9 @@ function AppInner(): JSX.Element {
     resolveScanInputPathAction,
     runScan,
   } = useScanActions({
-    excludedRootChildPaths: rootGalleryPreferences.excludedRootChildPaths,
-    filters: settings.filters,
-    recursive: effectiveRecursive,
+    recursive,
     rootPath,
+    settings,
   });
 
   const {
@@ -89,12 +84,10 @@ function AppInner(): JSX.Element {
 
   const { openFolderAction, scanInputPathAction } = useFolderOpenActions({
     openFolderDialog: openFolderDialogAction,
-    recursive,
     resolveScanInputPath: resolveScanInputPathAction,
     runScan,
     setNavigationCeilingPath,
     setPendingFolderSelectionPath,
-    settings,
   });
 
   const comicEntries = useMemo(() => {
@@ -151,6 +144,7 @@ function AppInner(): JSX.Element {
     clearThumbnailCacheAction,
     copyDiagnosticsAction,
     refreshDiagnosticsAction,
+    updateRootGalleryPreferences,
     updateSettings,
   } = useSettingsActions({
     initializeSettings,
@@ -188,8 +182,7 @@ function AppInner(): JSX.Element {
   }, [updateSettings]);
 
   useGalleryKeyboardNavigation({
-    viewerIndex,
-    settingsOpen,
+    overlayOpen: viewerIndex !== null || activeComic !== null || settingsOpen,
     browserEntries,
     selectedBrowserEntry,
     selectedBrowserEntryIndex,
@@ -236,12 +229,10 @@ function AppInner(): JSX.Element {
       }
 
       if (!value && comicMode) {
-        void updateSettings(
-          createRootGalleryPreferencesPatch(settings, rootPath, {
-            ...rootGalleryPreferences,
-            comicMode: false,
-          }),
-        );
+        void updateRootGalleryPreferences(rootPath, (preferences) => ({
+          ...preferences,
+          comicMode: false,
+        }));
         setActiveComic(null);
       }
 
@@ -255,12 +246,10 @@ function AppInner(): JSX.Element {
         return;
       }
 
-      const nextPreferences = {
-        ...rootGalleryPreferences,
+      void updateRootGalleryPreferences(rootPath, (preferences) => ({
+        ...preferences,
         comicMode: value,
-      };
-
-      void updateSettings(createRootGalleryPreferencesPatch(settings, rootPath, nextPreferences));
+      }));
 
       // Comic on forces recursive on, comic off turns it back off (Pane View's rule).
       setRecursive(value);
@@ -271,7 +260,7 @@ function AppInner(): JSX.Element {
 
       void runScan(rootPath, {
         recursive: value,
-        excludedRootChildPaths: nextPreferences.excludedRootChildPaths,
+        excludedRootChildPaths: rootGalleryPreferences.excludedRootChildPaths,
       });
     },
     onToggleExcludedRootChild: (folderPath: string) => {
@@ -279,15 +268,23 @@ function AppInner(): JSX.Element {
         return;
       }
 
-      const nextPreferences = toggleExcludedRootChildPath(rootGalleryPreferences, folderPath);
-      void updateSettings(createRootGalleryPreferencesPatch(settings, rootPath, nextPreferences));
+      void (async () => {
+        const savedPreferences = await updateRootGalleryPreferences(rootPath, (preferences) =>
+          toggleExcludedRootChildPath(preferences, folderPath),
+        );
 
-      if (effectiveRecursive) {
-        void runScan(rootPath, {
-          recursive: effectiveRecursive,
-          excludedRootChildPaths: nextPreferences.excludedRootChildPaths,
-        });
-      }
+        // The save can finish after newer choices, so repeat the latest scan request with every
+        // exclusion saved so far, unless it is for another folder or does not reach child folders.
+        const { requestedScan } = useAppStore.getState();
+
+        if (savedPreferences && requestedScan?.rootPath === rootPath && requestedScan.recursive) {
+          void runScan(rootPath, {
+            recursive: true,
+            filters: requestedScan.filters,
+            excludedRootChildPaths: savedPreferences.excludedRootChildPaths,
+          });
+        }
+      })();
     },
     onChangeSortMode: changeSortModeAction,
     onShuffleRandom: shuffleRandomAction,

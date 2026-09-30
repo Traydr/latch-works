@@ -189,6 +189,10 @@ export class CatalogService {
     const workerResponse = CatalogWorkerResponseSchema.safeParse(message);
 
     if (!workerResponse.success) {
+      console.warn(
+        `[catalogService] dropped an invalid catalog worker message: ${workerEvent.error.message}`,
+      );
+
       return;
     }
 

@@ -65,11 +65,12 @@ function ViewerDialog({
 }: ViewerDialogProps): JSX.Element {
   const isVideoItem = item.mediaType === 'video';
   const modalRef = useRef<HTMLDialogElement | null>(null);
+  const fullscreenRef = useRef<HTMLDivElement | null>(null);
   const queuedStepRef = useRef(0);
   const stepFrameRef = useRef<number | null>(null);
   const isCoarsePointer = useCoarsePointer();
 
-  const model = useViewerVideoModel({ autoplayVideos, item, loopVideos, modalRef });
+  const model = useViewerVideoModel({ autoplayVideos, item, loopVideos, fullscreenRef });
   // Video chrome pins while paused and idles away during playback.
   const chromePinned = isVideoItem && !model.playing;
 
@@ -139,48 +140,51 @@ function ViewerDialog({
         if (event.pointerType === 'mouse') revealChrome();
       }}
     >
-      <ViewerChrome
-        canStepBackward={canStepBackward}
-        canStepForward={canStepForward}
-        chromeVisibilityClass={chromeVisibilityClass}
-        details={details}
-        isFullscreen={model.isFullscreen}
-        item={item}
-        onClose={onClose}
-        onStep={onStep}
-        onToggleFullscreen={() => void model.toggleFullscreen()}
-      />
+      {/* Chromium will not put a dialog itself in fullscreen, so this wrapper goes instead. */}
+      <div ref={fullscreenRef} className="h-full w-full">
+        <ViewerChrome
+          canStepBackward={canStepBackward}
+          canStepForward={canStepForward}
+          chromeVisibilityClass={chromeVisibilityClass}
+          details={details}
+          isFullscreen={model.isFullscreen}
+          item={item}
+          onClose={onClose}
+          onStep={onStep}
+          onToggleFullscreen={() => void model.toggleFullscreen()}
+        />
 
-      {/* biome-ignore lint/a11y/noStaticElementInteractions: the picture takes play/pause and hold-to-boost; the hotkeys cover the keyboard */}
-      {/* biome-ignore lint/a11y/useKeyWithClickEvents: see above */}
-      <div
-        className="flex h-full select-none items-center justify-center p-3 [-webkit-touch-callout:none]"
-        {...hold.handlers}
-        onClick={() => {
-          if (!isVideoItem) return;
+        {/* biome-ignore lint/a11y/noStaticElementInteractions: the picture takes play/pause and hold-to-boost; the hotkeys cover the keyboard */}
+        {/* biome-ignore lint/a11y/useKeyWithClickEvents: see above */}
+        <div
+          className="flex h-full select-none items-center justify-center p-3 [-webkit-touch-callout:none]"
+          {...hold.handlers}
+          onClick={() => {
+            if (!isVideoItem) return;
 
-          // The tap that ended a hold-to-boost is not a tap on the picture.
-          if (hold.consumeSuppressedClick()) return;
+            // The tap that ended a hold-to-boost is not a tap on the picture.
+            if (hold.consumeSuppressedClick()) return;
 
-          // A tap on the picture shows or hides the controls; a click plays or pauses.
-          if (isCoarsePointer) toggleChrome();
-          else model.toggleVideoPlayback();
-        }}
-      >
-        {item.mediaType === 'image' ? (
-          <img
-            src={toFileUrl(item.path)}
-            alt={item.name}
-            className="max-h-full max-w-full object-contain [outline:1px_solid_rgba(255,255,255,0.1)]"
-          />
-        ) : (
-          <ViewerVideo model={model} />
-        )}
+            // A tap on the picture shows or hides the controls; a click plays or pauses.
+            if (isCoarsePointer) toggleChrome();
+            else model.toggleVideoPlayback();
+          }}
+        >
+          {item.mediaType === 'image' ? (
+            <img
+              src={toFileUrl(item.path)}
+              alt={item.name}
+              className="max-h-full max-w-full object-contain [outline:1px_solid_rgba(255,255,255,0.1)]"
+            />
+          ) : (
+            <ViewerVideo model={model} />
+          )}
+        </div>
+
+        {isVideoItem ? (
+          <VideoPlayerChrome chromeVisibilityClass={chromeVisibilityClass} model={model} />
+        ) : null}
       </div>
-
-      {isVideoItem ? (
-        <VideoPlayerChrome chromeVisibilityClass={chromeVisibilityClass} model={model} />
-      ) : null}
     </dialog>
   );
 }

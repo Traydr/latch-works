@@ -20,6 +20,7 @@ import type {
   RootGalleryPreferencesSchema,
   ScanEventSchema,
   ScanOptionsSchema,
+  StoredSettingsPatchSchema,
   ThemeModeSchema,
   VideoProbeMetadataSchema,
   VideoProbeRequestSchema,
@@ -42,6 +43,8 @@ export type RootGalleryPreferencesMap = z.infer<typeof RootGalleryPreferencesMap
 export type AppSettings = z.infer<typeof AppSettingsSchema>;
 
 export type AppSettingsPatch = z.infer<typeof AppSettingsPatchSchema>;
+
+export type StoredSettingsPatch = z.infer<typeof StoredSettingsPatchSchema>;
 
 export const DEFAULT_SETTINGS: AppSettings = {
   theme: 'system',

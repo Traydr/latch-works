@@ -79,7 +79,8 @@ interface UseViewerVideoModelOptions {
   autoplayVideos: boolean;
   item: MediaItem;
   loopVideos: boolean;
-  modalRef: RefObject<HTMLDialogElement | null>;
+  /** What goes full screen: a wrapper inside the viewer dialog, as Chromium refuses a dialog. */
+  fullscreenRef: RefObject<HTMLElement | null>;
 }
 
 /** Everything the video capsule, the picture and the hotkeys read or drive. */
@@ -122,7 +123,7 @@ export function useViewerVideoModel({
   autoplayVideos,
   item,
   loopVideos,
-  modalRef,
+  fullscreenRef,
 }: UseViewerVideoModelOptions): ViewerVideoModel {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const isScrubbingRef = useRef(false);
@@ -220,9 +221,9 @@ export function useViewerVideoModel({
   }, []);
 
   const toggleFullscreen = useCallback(async (): Promise<void> => {
-    const dialog = modalRef.current;
+    const target = fullscreenRef.current;
 
-    if (!dialog) {
+    if (!target) {
       return;
     }
 
@@ -237,11 +238,11 @@ export function useViewerVideoModel({
 
     // Element fullscreen where the platform allows it; otherwise the video
     // itself can still go full screen with its native player.
-    const host: FullscreenHost = dialog;
+    const host: FullscreenHost = target;
 
     try {
       if (doc.fullscreenEnabled !== false && host.requestFullscreen) {
-        await dialog.requestFullscreen();
+        await target.requestFullscreen();
 
         return;
       }
@@ -257,7 +258,7 @@ export function useViewerVideoModel({
 
     const video: WebkitFullscreenVideo | null = videoRef.current;
     video?.webkitEnterFullscreen?.();
-  }, [modalRef]);
+  }, [fullscreenRef]);
 
   const changeVolume = useCallback((rawVolume: number): void => {
     const clamped = Math.max(0, Math.min(1, rawVolume));

@@ -3,6 +3,7 @@ import { useCallback } from 'react';
 import type { AppSettings, FileFilterSettings } from '../../shared/types';
 import { frameViewClient } from '../services/frameViewClient';
 import { useAppStore } from '../store/useAppStore';
+import { getRootGalleryPreferences } from '../utils/rootPreferences';
 
 interface RunScanOptions {
   excludedRootChildPaths?: string[];
@@ -18,31 +19,36 @@ interface UseScanActionsResult {
 }
 
 export function useScanActions({
-  excludedRootChildPaths,
-  filters,
   recursive,
   rootPath,
+  settings,
 }: {
-  excludedRootChildPaths: string[];
-  filters: AppSettings['filters'];
+  /** The session's recursive flag, before the scanned folder's comic mode is applied. */
   recursive: boolean;
   rootPath: string | null;
+  settings: AppSettings;
 }): UseScanActionsResult {
   const supersedeActiveScan = useAppStore((state) => state.supersedeActiveScan);
 
   // Resolves once the request has started its scan, after a running scan has been cancelled.
+  // Options left out come from the scanned folder's own preferences, not the current folder's.
   const runScan = useCallback(
     async (folderPath: string, options?: RunScanOptions): Promise<boolean> => {
-      supersedeActiveScan();
+      const preferences = getRootGalleryPreferences(settings, folderPath);
 
-      return frameViewClient.startScan({
+      const request = {
         rootPath: folderPath,
-        recursive: options?.recursive ?? recursive,
-        filters: options?.filters ?? filters,
-        excludedRootChildPaths: options?.excludedRootChildPaths ?? excludedRootChildPaths,
-      });
+        recursive: options?.recursive ?? (recursive || preferences.comicMode),
+        filters: options?.filters ?? settings.filters,
+        excludedRootChildPaths:
+          options?.excludedRootChildPaths ?? preferences.excludedRootChildPaths,
+      };
+
+      supersedeActiveScan(request);
+
+      return frameViewClient.startScan(request);
     },
-    [excludedRootChildPaths, filters, recursive, supersedeActiveScan],
+    [recursive, settings, supersedeActiveScan],
   );
 
   const openFolderDialogAction = useCallback(async (): Promise<string | null> => {

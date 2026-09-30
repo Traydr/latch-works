@@ -1,4 +1,10 @@
-import type { AppSettings, MediaItem, ScanEvent, VideoProbeMetadata } from '../../shared/types';
+import type {
+  AppSettings,
+  MediaItem,
+  ScanEvent,
+  ScanOptions,
+  VideoProbeMetadata,
+} from '../../shared/types';
 
 export type ScanState = 'idle' | 'loading' | 'done' | 'error';
 
@@ -13,6 +19,13 @@ export interface AppState {
   selectedId: string | null;
   viewerIndex: number | null;
   activeScanRunId: number | null;
+  /** Counts scans that have started, so views derived from the folder on disk can re-read it. */
+  scanStartCount: number;
+  /**
+   * The scan the renderer asked for most recently, which may not have started yet. Work that
+   * finishes later checks it, so it refreshes what the user last chose instead of replacing it.
+   */
+  requestedScan: ScanOptions | null;
   scanState: ScanState;
   scannedDirectories: number;
   discoveredItems: number;
@@ -26,7 +39,7 @@ export interface AppState {
   closeViewer: () => void;
   shiftViewer: (delta: number, shouldWrap: boolean) => void;
   applyScanEvent: (event: ScanEvent) => void;
-  supersedeActiveScan: () => void;
+  supersedeActiveScan: (request: ScanOptions) => void;
   applyVideoMetadata: (
     path: string,
     mtimeMs: number,

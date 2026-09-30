@@ -18,7 +18,8 @@ const MAX_EXTENSION_COUNT = 64;
 
 const MAX_EXTENSION_LENGTH = 16;
 
-export const PathInputSchema = z.string().trim().min(1).max(MAX_PATH_LENGTH);
+// Not trimmed: folder names may end in spaces, so paths must cross IPC exactly as given.
+export const PathInputSchema = z.string().min(1).max(MAX_PATH_LENGTH);
 
 const normalizedExtensionSchema = z
   .string()
@@ -99,6 +100,10 @@ export const AppSettingsSchema = z.object({
   debug: DebugSettingsSchema,
 });
 
+/**
+ * What the renderer may change. `lastFolderPath` is left out on purpose: the main process writes it
+ * after a folder the user chose is scanned, and trusts it to re-authorize that folder on startup.
+ */
 export const AppSettingsPatchSchema = z.strictObject({
   theme: ThemeModeSchema.optional(),
   rememberLastFolder: z.boolean().optional(),
@@ -120,13 +125,17 @@ export const AppSettingsPatchSchema = z.strictObject({
       showVideos: z.boolean().optional(),
     })
     .optional(),
-  lastFolderPath: LastFolderPathSchema.optional(),
   debug: z
     .object({
       enableDebugLogging: z.boolean().optional(),
       enablePerformanceMonitoring: z.boolean().optional(),
     })
     .optional(),
+});
+
+/** A settings change made by the main process, which alone may set the remembered folder. */
+export const StoredSettingsPatchSchema = AppSettingsPatchSchema.extend({
+  lastFolderPath: LastFolderPathSchema.optional(),
 });
 
 export const MediaItemSchema = z.object({
@@ -136,7 +145,8 @@ export const MediaItemSchema = z.object({
   extension: normalizedExtensionSchema,
   mediaType: MediaTypeSchema,
   size: finiteNumberSchema.nonnegative(),
-  mtimeMs: finiteNumberSchema.nonnegative(),
+  // Signed: files modified before 1970 report a negative mtime.
+  mtimeMs: finiteNumberSchema,
   width: finiteNumberSchema.nonnegative().optional(),
   height: finiteNumberSchema.nonnegative().optional(),
   durationMs: finiteNumberSchema.nonnegative().optional(),
@@ -146,7 +156,7 @@ export const MediaItemSchema = z.object({
 
 export const VideoProbeRequestSchema = z.object({
   path: PathInputSchema,
-  mtimeMs: finiteNumberSchema.positive(),
+  mtimeMs: finiteNumberSchema,
   size: finiteNumberSchema.nonnegative(),
 });
 
