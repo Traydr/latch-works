@@ -35,7 +35,8 @@ export const coreCommands = {
 } satisfies CoreCommands;
 
 export type ExecuteCommandDeps = {
-  confirmPrune?: (deleteCount: number) => Promise<boolean>;
+  /** Asks before deleting; an abort through `signal` rejects the pending prompt. */
+  confirmPrune?: (deleteCount: number, signal?: AbortSignal) => Promise<boolean>;
   core?: CoreCommands;
   isInteractive?: () => boolean;
   /** Aborts the run; push and prune then finalize their sync run as cancelled before rejecting. */
@@ -207,7 +208,7 @@ export async function executeCommand(
         return;
       }
 
-      const confirmed = await confirmPrune(itemsToPrune.length);
+      const confirmed = await confirmPrune(itemsToPrune.length, signal);
 
       if (!confirmed) {
         console.log("");
@@ -373,13 +374,16 @@ function printPruneDeletes(itemsToPrune: LockstepPlanItem[], plannedDeletes: num
   }
 }
 
-async function defaultConfirmPrune(deleteCount: number): Promise<boolean> {
+async function defaultConfirmPrune(deleteCount: number, signal?: AbortSignal): Promise<boolean> {
   const { input } = await import("@inquirer/prompts");
 
-  const answer = await input({
-    message: `Type "prune" to delete the ${deleteCount} remote ${deleteCount === 1 ? "entry" : "entries"} listed above`,
-    validate: (value) => value === "prune" || 'Type "prune" to confirm.',
-  });
+  const answer = await input(
+    {
+      message: `Type "prune" to delete the ${deleteCount} remote ${deleteCount === 1 ? "entry" : "entries"} listed above`,
+      validate: (value) => value === "prune" || 'Type "prune" to confirm.',
+    },
+    { signal },
+  );
 
   return answer === "prune";
 }

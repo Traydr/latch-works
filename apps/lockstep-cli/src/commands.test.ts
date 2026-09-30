@@ -148,7 +148,7 @@ describe("executeCommand prune", () => {
 
     const listed = printed.filter((line) => line.startsWith("  delete "));
     expect(listed).toEqual(paths.slice(0, 25).map((entry) => `  delete ${entry}`));
-    expect(confirmPrune).toHaveBeenCalledExactlyOnceWith(25);
+    expect(confirmPrune).toHaveBeenCalledExactlyOnceWith(25, undefined);
     expect(pruneDeleted).toHaveBeenCalledWith(
       expect.objectContaining({ maxChanges: 25, plan }),
       expect.anything(),
@@ -186,7 +186,7 @@ describe("executeCommand prune", () => {
       isInteractive: () => true,
     });
 
-    expect(confirmPrune).toHaveBeenCalledExactlyOnceWith(1);
+    expect(confirmPrune).toHaveBeenCalledExactlyOnceWith(1, undefined);
     expect(pruneDeleted).toHaveBeenCalledOnce();
   });
 
