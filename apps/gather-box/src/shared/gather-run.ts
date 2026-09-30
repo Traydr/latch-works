@@ -108,22 +108,6 @@ export function createGatherRunState(input: {
   };
 }
 
-/**
- * Phases a run may carry when it is read back from storage. `cancelling` is absent, so a run
- * persisted mid-cancel is dropped on load rather than recovered.
- */
-const StoredGatherRunPhaseSchema = z.enum([
-  "preparing",
-  "permission-required",
-  "collecting",
-  "queued",
-  "writing",
-  "complete",
-  "failed",
-  "cancelled",
-  "interrupted"
-]);
-
 /** Counters written by an older build may be missing or non-numeric; each falls back to zero. */
 const StoredGatherRunProgressSchema = z.catch(
   z.object({
@@ -150,7 +134,7 @@ export const GatherRunStateSchema = z.object({
   siteKey: SiteKeySchema,
   createdAt: z.number(),
   updatedAt: z.number(),
-  phase: StoredGatherRunPhaseSchema,
+  phase: GatherRunPhaseSchema,
   progress: StoredGatherRunProgressSchema,
   log: lenientArrayOf(LastRunLogEntrySchema),
   destinationPreview: z.catch(z.nullable(z.string()), null),

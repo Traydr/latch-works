@@ -1,6 +1,7 @@
 import * as z from "zod/mini";
 import type { GatherRunState } from "./gather-run";
 import { GatherRunStateSchema, isTerminalGatherRunPhase } from "./gather-run";
+import { applyGatherRunEvent } from "./gather-run-reducer";
 import { GatherBoxSettingsSchema, type GatherBoxSettings } from "./settings";
 import { lenientArrayOf } from "./lenient-array";
 import {
@@ -33,6 +34,11 @@ export interface OutputGatherQueueJob {
   };
   payload: GatherOutput;
   settings: GatherBoxSettings;
+  /**
+   * The remembered folder this output was gathered for. Null when none was remembered then, or
+   * for jobs queued by an older build; either way the executor writes to the current folder.
+   */
+  destinationId: string | null;
 }
 
 export type GatherQueueJob = CollectingGatherQueueJob | OutputGatherQueueJob;
@@ -55,23 +61,25 @@ const CollectingGatherQueueJobSchema = z.pipe(
 );
 
 /**
- * `GatherRunStateSchema` never yields `cancelling`, so a job stored mid-cancel does not survive
- * a reload; the phases below are the ones a queued output job can actually be read back with.
+ * A job stays `cancelling` until the executor acknowledges the abort, so that phase must survive
+ * every load: dropping it would lose the job the cancellation report is addressed to.
  */
 const OutputGatherQueueJobSchema = z.pipe(
   z.object({
     run: z.extend(GatherRunStateSchema, {
-      phase: z.enum(["preparing", "permission-required", "queued", "writing"])
+      phase: z.enum(["preparing", "permission-required", "queued", "writing", "cancelling"])
     }),
     payload: z.union([DownloadablePayloadSchema, GeneratedStoryPayloadSchema]),
-    settings: GatherBoxSettingsSchema
+    settings: GatherBoxSettingsSchema,
+    destinationId: z.catch(z.nullable(z.string()), null)
   }),
   z.transform(
     (job): OutputGatherQueueJob => ({
       kind: "output",
       run: job.run,
       payload: job.payload,
-      settings: job.settings
+      settings: job.settings,
+      destinationId: job.destinationId
     })
   )
 );
@@ -179,10 +187,13 @@ export function getPermissionRequiredGatherJob(
   );
 }
 
-/** Runs that could not be resumed after a browser restart are reported alongside the new queue. */
+/**
+ * Runs a browser restart ends — interrupted page captures and cancellations the executor never
+ * acknowledged — are reported alongside the new queue.
+ */
 export interface GatherQueueRecovery {
   queue: GatherQueueState;
-  interrupted: GatherRunState[];
+  ended: GatherRunState[];
 }
 
 export function recoverStoppedGatherQueue(
@@ -190,11 +201,11 @@ export function recoverStoppedGatherQueue(
   now = Date.now()
 ): GatherQueueRecovery {
   const jobs: GatherQueueJob[] = [];
-  const interrupted: GatherRunState[] = [];
+  const ended: GatherRunState[] = [];
 
   for (const job of queue.jobs) {
     if (job.kind === "collecting") {
-      interrupted.push({
+      ended.push({
         ...job.run,
         phase: "interrupted",
         updatedAt: now,
@@ -207,12 +218,19 @@ export function recoverStoppedGatherQueue(
       continue;
     }
 
+    // The person already asked to stop this output, so a restart finishes the cancellation
+    // rather than replaying it.
+    if (job.run.phase === "cancelling") {
+      ended.push(
+        applyGatherRunEvent(job.run, { kind: "cancelled", message: "Gather Run cancelled." }, now)
+      );
+      continue;
+    }
+
     jobs.push({
       ...job,
       run:
-        job.run.phase === "preparing" ||
-        job.run.phase === "writing" ||
-        job.run.phase === "cancelling"
+        job.run.phase === "preparing" || job.run.phase === "writing"
           ? {
               ...job.run,
               phase: "queued",
@@ -227,7 +245,7 @@ export function recoverStoppedGatherQueue(
     });
   }
 
-  return { queue: { ...queue, jobs }, interrupted };
+  return { queue: { ...queue, jobs }, ended };
 }
 
 export function getGatherQueueDisplayRun(queue: GatherQueueState): GatherRunState | null {

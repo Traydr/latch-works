@@ -35,7 +35,9 @@ function payload(title: string): DownloadablePayload {
   };
 }
 
-function run<TPhase extends "collecting" | "queued" | "writing" | "permission-required">(
+function run<
+  TPhase extends "collecting" | "queued" | "writing" | "cancelling" | "permission-required"
+>(
   id: string,
   phase: TPhase
 ): ReturnType<typeof createGatherRunState> & { phase: TPhase } {
@@ -69,13 +71,15 @@ describe("Gather queue state", () => {
           kind: "output",
           run: run("run-1", "writing"),
           payload: payload("One"),
-          settings: DEFAULT_SETTINGS
+          settings: DEFAULT_SETTINGS,
+          destinationId: null
         },
         {
           kind: "output",
           run: run("run-2", "queued"),
           payload: payload("Two"),
-          settings: DEFAULT_SETTINGS
+          settings: DEFAULT_SETTINGS,
+          destinationId: null
         },
         { kind: "collecting", run: run("run-3", "collecting") }
       ]
@@ -97,7 +101,8 @@ describe("Gather queue state", () => {
           kind: "output",
           run: run("run-1", "queued"),
           payload: payload("One"),
-          settings: DEFAULT_SETTINGS
+          settings: DEFAULT_SETTINGS,
+          destinationId: null
         },
         { run: { id: "broken" }, payload: null, settings: null }
       ]
@@ -129,13 +134,15 @@ describe("Gather queue state", () => {
           kind: "output",
           run: run("run-1", "queued"),
           payload: payload("One"),
-          settings: DEFAULT_SETTINGS
+          settings: DEFAULT_SETTINGS,
+          destinationId: null
         },
         {
           kind: "output",
           run: run("run-2", "queued"),
           payload: payload("Two"),
-          settings: DEFAULT_SETTINGS
+          settings: DEFAULT_SETTINGS,
+          destinationId: null
         }
       ]
     };
@@ -146,7 +153,8 @@ describe("Gather queue state", () => {
       kind: "output",
       run: run("run-1", "writing"),
       payload: payload("One"),
-      settings: DEFAULT_SETTINGS
+      settings: DEFAULT_SETTINGS,
+      destinationId: null
     };
     expect(getNextQueuedGatherJob(queued)).toBeNull();
   });
@@ -164,7 +172,8 @@ describe("Gather queue state", () => {
             tabUrl: "https://www.pixiv.net/artworks/old"
           },
           payload: payload("One"),
-          settings: { ...DEFAULT_SETTINGS, useGlobalFolder: false }
+          settings: { ...DEFAULT_SETTINGS, useGlobalFolder: false },
+          destinationId: null
         }
       ]
     };
@@ -204,7 +213,8 @@ describe("Gather queue state", () => {
           kind: "output",
           run: run("run-3", "writing"),
           payload: payload("Three"),
-          settings: DEFAULT_SETTINGS
+          settings: DEFAULT_SETTINGS,
+          destinationId: null
         }
       ],
       results: [failed, complete]
@@ -224,7 +234,8 @@ describe("Gather queue state", () => {
           kind: "output",
           run: run("run-1", "writing"),
           payload: payload("One"),
-          settings: DEFAULT_SETTINGS
+          settings: DEFAULT_SETTINGS,
+          destinationId: null
         },
         { kind: "collecting", run: run("run-2", "collecting") }
       ]
@@ -241,8 +252,41 @@ describe("Gather queue state", () => {
         }
       }
     ]);
-    expect(recovered.interrupted).toMatchObject([
+    expect(recovered.ended).toMatchObject([
       { id: "run-2", phase: "interrupted", updatedAt: 500 }
     ]);
+  });
+
+  it("keeps a cancelling job through storage and finishes the cancellation on restart", () => {
+    const stored = GatherQueueStateSchema.parse({
+      schemaVersion: GATHER_QUEUE_SCHEMA_VERSION,
+      results: [],
+      jobs: [
+        {
+          kind: "output",
+          run: run("run-1", "cancelling"),
+          payload: payload("One"),
+          settings: DEFAULT_SETTINGS,
+          destinationId: null
+        },
+        {
+          kind: "output",
+          run: run("run-2", "queued"),
+          payload: payload("Two"),
+          settings: DEFAULT_SETTINGS,
+          destinationId: null
+        }
+      ]
+    });
+
+    expect(stored.jobs).toMatchObject([
+      { run: { id: "run-1", phase: "cancelling" } },
+      { run: { id: "run-2", phase: "queued" } }
+    ]);
+    expect(getNextQueuedGatherJob(stored)).toBeNull();
+
+    const recovered = recoverStoppedGatherQueue(stored, 500);
+    expect(recovered.queue.jobs).toMatchObject([{ run: { id: "run-2", phase: "queued" } }]);
+    expect(recovered.ended).toMatchObject([{ id: "run-1", phase: "cancelled", updatedAt: 500 }]);
   });
 });

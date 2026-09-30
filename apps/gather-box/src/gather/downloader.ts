@@ -137,6 +137,7 @@ export async function downloadImages(
       }
 
       const downloadedBlob = await response.blob();
+      await assertDownloadedFile(downloadedBlob, response, preparedImage.fileName);
 
       const transformed = await mediaTransformer.transform(
         downloadedBlob,
@@ -198,6 +199,35 @@ export async function downloadImages(
   return summary;
 }
 
+const WEB_PAGE_FILE = /\.(?:html?|xhtml)$/i;
+
+const WEB_PAGE_TYPE = /^\s*(?:text\/html|application\/xhtml\+xml)\s*(?:;|$)/i;
+
+const WEB_PAGE_START = /^(?:\uFEFF)?\s*<(?:!doctype\s+html|html[\s>])/i;
+
+/**
+ * A sign-in wall, interstitial, or error page can arrive with a successful status. Archiving it
+ * under a media filename would report success for a file that cannot open, so the item fails
+ * instead and stays available to retry.
+ */
+async function assertDownloadedFile(blob: Blob, response: Response, fileName: string): Promise<void> {
+  if (blob.size === 0) {
+    throw new Error("The server returned an empty file");
+  }
+
+  if (WEB_PAGE_FILE.test(fileName)) {
+    return;
+  }
+
+  const servedWebPage =
+    WEB_PAGE_TYPE.test(response.headers.get("content-type") ?? "") ||
+    WEB_PAGE_START.test(await blob.slice(0, 512).text());
+
+  if (servedWebPage) {
+    throw new Error("The server returned a web page instead of the file");
+  }
+}
+
 export async function saveBlobWithoutClobbering(
   blob: Blob,
   destinationDirectory: WritableDirectory,
@@ -206,47 +236,86 @@ export async function saveBlobWithoutClobbering(
   signal?: AbortSignal
 ): Promise<CollisionSaveResult> {
   throwIfAborted(signal);
+  const contentHash = await hashBlob(blob);
 
-  const recovered = await recoverPendingBlobCommit(
-    destinationDirectory,
-    preferredFileName,
-    blob,
-    signal
-  );
-
-  if (recovered) {
-    return { fileName: recovered, skipped: false };
-  }
-
-  const preferredHandle = await getExistingFileHandle(destinationDirectory, preferredFileName);
-
-  if (!preferredHandle) {
-    await commitBlob(destinationDirectory, preferredFileName, preferredFileName, blob, signal);
-
-    return { fileName: preferredFileName, skipped: false };
-  }
-
-  if (await fileContentsMatch(preferredHandle, blob)) {
-    return { fileName: preferredFileName, skipped: true };
-  }
-
-  for (let attempt = 0; attempt < 128; attempt += 1) {
+  for (let attempt = 0; attempt <= 128; attempt += 1) {
     throwIfAborted(signal);
-    const candidateName = addFileNameSuffix(preferredFileName, randomSuffix());
-    const candidateHandle = await getExistingFileHandle(destinationDirectory, candidateName);
 
-    if (!candidateHandle) {
-      await commitBlob(destinationDirectory, preferredFileName, candidateName, blob, signal);
+    const candidateName =
+      attempt === 0
+        ? preferredFileName
+        : addFileNameSuffix(
+            preferredFileName,
+            getContentSuffix(contentHash, attempt - 1) ?? randomSuffix()
+          );
+
+    const candidate = await claimCandidate(
+      destinationDirectory,
+      candidateName,
+      blob,
+      contentHash,
+      signal
+    );
+
+    if (candidate === "free") {
+      await commitBlob(destinationDirectory, candidateName, blob, contentHash, signal);
 
       return { fileName: candidateName, skipped: false };
     }
 
-    if (await fileContentsMatch(candidateHandle, blob)) {
-      return { fileName: candidateName, skipped: true };
+    if (candidate !== "taken") {
+      return { fileName: candidateName, skipped: candidate === "identical" };
     }
   }
 
   throw new Error(`Could not find an unused filename for ${preferredFileName}`);
+}
+
+/**
+ * What a candidate filename holds for this content. A File System Access write lands only when its
+ * stream closes, so an interrupted write leaves its target missing or empty, never partial. A
+ * commit marker therefore authorizes writing its target only while the target is missing or empty
+ * and the marker records this exact content. Any file with bytes in it is an archive file and is
+ * never replaced, whatever a marker says.
+ */
+async function claimCandidate(
+  destinationDirectory: WritableDirectory,
+  fileName: string,
+  blob: Blob,
+  contentHash: string,
+  signal?: AbortSignal
+): Promise<"free" | "identical" | "repaired" | "taken"> {
+  const markerName = await getCommitMarkerName(fileName);
+  const marker = await readCommitMarker(destinationDirectory, markerName);
+  const existing = await getExistingFileHandle(destinationDirectory, fileName);
+  const unwritten = !existing || (await isEmptyFile(existing));
+
+  if (marker?.contentHash === contentHash && unwritten) {
+    // This content's own write was interrupted; finish it at the name it had claimed.
+    throwIfAborted(signal);
+    await writeBlobDirect(destinationDirectory, fileName, blob, signal);
+    await removeEntryIfPresent(destinationDirectory, markerName);
+
+    return "repaired";
+  }
+
+  if (marker && existing && unwritten) {
+    // Another item's write never finished. Leave the file and its marker for that item's replay.
+    return "taken";
+  }
+
+  if (marker !== undefined) {
+    // The marked write finished and only its cleanup was lost, its target was never created, the
+    // target now holds other bytes, or the marker cannot be read (older builds did not record
+    // content). None of these proves an unfinished write that may be completed here.
+    await removeEntryIfPresent(destinationDirectory, markerName);
+  }
+
+  if (!existing) {
+    return "free";
+  }
+
+  return (await fileHasContent(existing, blob.size, contentHash)) ? "identical" : "taken";
 }
 
 export function addFileNameSuffix(fileName: string, suffix: string): string {
@@ -269,9 +338,10 @@ export async function runPool<T>(
   }
 
   let nextIndex = 0;
+  const failures: Error[] = [];
 
   const runners = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
-    while (true) {
+    while (failures.length === 0) {
       const currentIndex = nextIndex;
       nextIndex += 1;
 
@@ -279,11 +349,21 @@ export async function runPool<T>(
         return;
       }
 
-      await worker(items[currentIndex], currentIndex);
+      try {
+        await worker(items[currentIndex], currentIndex);
+      } catch (error) {
+        failures.push(toError(error));
+      }
     }
   });
 
+  // A failure (usually cancellation) stops new items, but the pool settles only after every
+  // active worker has finished its own cleanup, so no write outlives the run that owns it.
   await Promise.all(runners);
+
+  if (failures.length > 0) {
+    throw failures[0];
+  }
 }
 
 export async function getOrCreateNestedDirectory(
@@ -314,18 +394,29 @@ async function getExistingFileHandle(
   }
 }
 
-async function fileContentsMatch(fileHandle: WritableFile, blob: Blob): Promise<boolean> {
+/** A file that cannot be read is not known to be empty, so it is never treated as replaceable. */
+async function isEmptyFile(fileHandle: WritableFile): Promise<boolean> {
   try {
-    const existingFile = await fileHandle.getFile();
+    return (await fileHandle.getFile()).size === 0;
+  } catch {
+    return false;
+  }
+}
 
-    if (existingFile.size !== blob.size) {
+/** A file that cannot be read matches no content, so it is never treated as replaceable. */
+async function fileHasContent(
+  fileHandle: WritableFile,
+  expectedSize: number | null,
+  expectedHash: string
+): Promise<boolean> {
+  try {
+    const file = await fileHandle.getFile();
+
+    if (expectedSize !== null && file.size !== expectedSize) {
       return false;
     }
 
-    const existingHash = await hashBlob(existingFile);
-    const incomingHash = await hashBlob(blob);
-
-    return existingHash === incomingHash;
+    return (await hashBlob(file)) === expectedHash;
   } catch {
     return false;
   }
@@ -337,24 +428,25 @@ async function hashBlob(blob: Blob): Promise<string> {
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-/** Written next to a partially saved file so an interrupted write can be finished or rolled back. */
-const CommitMarkerSchema = z.object({
-  preferredFileName: z.string(),
-  targetFileName: z.string()
-});
+/**
+ * Written before a file is opened and removed once it is complete. It is keyed by the target name
+ * and records the content being written, so a replay can tell its own unfinished write apart from
+ * a finished file that merely lost its marker.
+ */
+const CommitMarkerSchema = z.object({ contentHash: z.string() });
+
+type CommitMarker = z.infer<typeof CommitMarkerSchema>;
 
 async function commitBlob(
   destinationDirectory: WritableDirectory,
-  preferredFileName: string,
   targetFileName: string,
   blob: Blob,
+  contentHash: string,
   signal?: AbortSignal
 ): Promise<void> {
-  const markerName = await getCommitMarkerName(preferredFileName);
-
-  const marker = new Blob([JSON.stringify({ preferredFileName, targetFileName })], {
-    type: "application/json"
-  });
+  const markerName = await getCommitMarkerName(targetFileName);
+  const record: CommitMarker = { contentHash };
+  const marker = new Blob([JSON.stringify(record)], { type: "application/json" });
 
   await writeBlobDirect(destinationDirectory, markerName, marker, signal);
 
@@ -363,7 +455,7 @@ async function commitBlob(
     await removeEntryIfPresent(destinationDirectory, markerName);
   } catch (error) {
     if (isAbortError(toError(error)) || signal?.aborted) {
-      await removeEntryIfPresent(destinationDirectory, targetFileName);
+      await removeEmptyEntry(destinationDirectory, targetFileName);
       await removeEntryIfPresent(destinationDirectory, markerName);
     }
 
@@ -373,75 +465,42 @@ async function commitBlob(
 
 async function hasPendingBlobCommit(
   destinationDirectory: WritableDirectory,
-  preferredFileName: string
+  targetFileName: string
 ): Promise<boolean> {
   return Boolean(
-    await getExistingFileHandle(destinationDirectory, await getCommitMarkerName(preferredFileName))
+    await getExistingFileHandle(destinationDirectory, await getCommitMarkerName(targetFileName))
   );
 }
 
-async function recoverPendingBlobCommit(
+/**
+ * Undefined when there is no marker, null when one exists but cannot be read — including markers
+ * from builds that did not record content — and the record otherwise.
+ */
+async function readCommitMarker(
   destinationDirectory: WritableDirectory,
-  preferredFileName: string,
-  blob: Blob,
-  signal?: AbortSignal
-): Promise<string | null> {
-  const markerName = await getCommitMarkerName(preferredFileName);
+  markerName: string
+): Promise<CommitMarker | null | undefined> {
   const markerHandle = await getExistingFileHandle(destinationDirectory, markerName);
 
   if (!markerHandle) {
-    return null;
+    return undefined;
   }
-
-  let targetFileName: string | null = null;
 
   try {
-    const marker = CommitMarkerSchema.parse(JSON.parse(await (await markerHandle.getFile()).text()));
-
-    if (
-      marker.preferredFileName === preferredFileName &&
-      isSafeCommitTarget(marker.targetFileName)
-    ) {
-      targetFileName = marker.targetFileName;
-    }
+    return CommitMarkerSchema.parse(JSON.parse(await (await markerHandle.getFile()).text()));
   } catch {
-    // An incomplete marker means the canonical file was never opened.
-  }
-
-  if (!targetFileName) {
-    await removeEntryIfPresent(destinationDirectory, markerName);
-
     return null;
   }
-
-  throwIfAborted(signal);
-  const targetHandle = await getExistingFileHandle(destinationDirectory, targetFileName);
-
-  if (!targetHandle || !(await fileContentsMatch(targetHandle, blob))) {
-    await removeEntryIfPresent(destinationDirectory, targetFileName);
-    await writeBlobDirect(destinationDirectory, targetFileName, blob, signal);
-  }
-
-  await removeEntryIfPresent(destinationDirectory, markerName);
-
-  return targetFileName;
 }
 
-async function getCommitMarkerName(preferredFileName: string): Promise<string> {
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(preferredFileName)
-  );
+async function getCommitMarkerName(targetFileName: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(targetFileName));
 
   const key = Array.from(new Uint8Array(digest).slice(0, 12), (byte) =>
     byte.toString(16).padStart(2, "0")
   ).join("");
 
   return `.gather-box-commit-${key}.json`;
-}
-
-function isSafeCommitTarget(fileName: string): boolean {
-  return fileName.length > 0 && fileName !== "." && fileName !== ".." && !/[\\/]/.test(fileName);
 }
 
 async function removeEntryIfPresent(
@@ -454,6 +513,18 @@ async function removeEntryIfPresent(
     if (!(error instanceof DOMException) || error.name !== "NotFoundError") {
       throw error;
     }
+  }
+}
+
+/** A cancelled write only takes back the empty file it created; a file with bytes stays. */
+async function removeEmptyEntry(
+  destinationDirectory: WritableDirectory,
+  fileName: string
+): Promise<void> {
+  const existing = await getExistingFileHandle(destinationDirectory, fileName);
+
+  if (existing && (await isEmptyFile(existing))) {
+    await removeEntryIfPresent(destinationDirectory, fileName);
   }
 }
 
@@ -495,9 +566,25 @@ async function closeWritableSafely(writable: WritableFileStream): Promise<void> 
   }
 }
 
+const SUFFIX_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
+
+/**
+ * The suffix a collision takes is derived from the content, so replaying the same content lands on
+ * the same name and is skipped as identical. Each attempt reads the next four hash bytes; the
+ * random fallback only covers the unlikely case that every derived name is already taken.
+ */
+function getContentSuffix(contentHash: string, index: number): string | null {
+  const bytes = contentHash.slice(index * 8, index * 8 + 8).match(/../g);
+
+  if (bytes?.length !== 4) {
+    return null;
+  }
+
+  return bytes.map((byte) => SUFFIX_ALPHABET[Number.parseInt(byte, 16) % SUFFIX_ALPHABET.length]).join("");
+}
+
 function createRandomSuffix(): string {
-  const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
   const randomBytes = crypto.getRandomValues(new Uint8Array(4));
 
-  return Array.from(randomBytes, (byte) => alphabet[byte % alphabet.length]).join("");
+  return Array.from(randomBytes, (byte) => SUFFIX_ALPHABET[byte % SUFFIX_ALPHABET.length]).join("");
 }

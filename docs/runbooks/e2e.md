@@ -97,7 +97,7 @@ handle that only a native picker plus a user-gesture `requestPermission` can pro
 `chrome.downloads` fallback, and every source is bound to a real hostname, so nothing automatable
 would start a run. Before a Gather Box PR is ready, check by hand with the unpacked `dist/` build:
 
-1. Options page: pick an output folder; reopening the options page shows it as granted.
+1. Side panel: choose an output folder; reopening the side panel still shows it, with write access granted.
 2. On one listed source page (a Reddit post with images is the cheapest), open the side panel and
    gather: the files land in the chosen folder under the source's folder convention.
 3. Gather the same page again: identical files are skipped, differing ones get the four-character

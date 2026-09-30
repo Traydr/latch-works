@@ -11,9 +11,10 @@ import {
   type GatherQueueState,
   type OutputGatherQueueJob
 } from "../shared/gather-queue";
-import type {
-  GatherRunCancelOutcome,
-  GatherRunEventMessage
+import {
+  isTerminalGatherRunEvent,
+  type GatherRunCancelOutcome,
+  type GatherRunEventMessage
 } from "../shared/gather-run-messages";
 import {
   createGatherRunState,
@@ -97,7 +98,13 @@ export class GatherRunCoordinator {
       return { outcome: "failed", message: "No retryable Gather Run was found." };
     }
 
+    // Retrying is the explicit way to send failed items to the folder remembered now.
     const settings = await this.dependencies.loadSettings();
+
+    const destinationId = await this.dependencies.getDestinationId(
+      previous.siteKey,
+      settings.useGlobalFolder
+    );
 
     const payload: DownloadablePayload = {
       ok: true,
@@ -143,7 +150,7 @@ export class GatherRunCoordinator {
       const position = queue.jobs.length;
       queue = {
         ...queue,
-        jobs: [...queue.jobs, { kind: "output", run, payload, settings }],
+        jobs: [...queue.jobs, { kind: "output", run, payload, settings, destinationId }],
         results: queue.results.filter((result) => result.id !== previous.id)
       };
       await this.dependencies.saveQueue(queue);
@@ -231,11 +238,23 @@ export class GatherRunCoordinator {
       let queue = await this.dependencies.loadQueue();
       const job = queue.jobs.find((candidate) => candidate.run.id === message.runId);
 
-      if (!job || job.kind !== "output") {
+      if (!job) {
+        // A redelivered terminal report: the run is already recorded, but the dispatch that
+        // should have followed it may have failed, which is why the executor is retrying.
+        return isTerminalGatherRunEvent(message.event);
+      }
+
+      if (job.kind !== "output") {
         return false;
       }
 
       if (job.run.phase === "cancelling" && message.event.kind !== "cancelled") {
+        return false;
+      }
+
+      // A paused report is redelivered until acknowledged. One that lands after the job was
+      // resumed or restarted is stale, and pausing the job again would stall real work.
+      if (message.event.kind === "permission-required" && job.run.phase !== "preparing") {
         return false;
       }
 
@@ -269,7 +288,7 @@ export class GatherRunCoordinator {
       }
 
       const recovered = recoverStoppedGatherQueue(queue, this.dependencies.now());
-      queue = recovered.interrupted.reduce(recordGatherQueueResult, recovered.queue);
+      queue = recovered.ended.reduce(recordGatherQueueResult, recovered.queue);
       await this.dependencies.saveQueue(queue);
     });
     await this.dispatchNext();
@@ -360,6 +379,13 @@ export class GatherRunCoordinator {
         this.dependencies.loadSettings()
       ]);
 
+      // Pin the folder remembered when the page was gathered, so choosing another one later
+      // cannot silently redirect this output.
+      const destinationId = await this.dependencies.getDestinationId(
+        siteKey,
+        settings.useGlobalFolder
+      );
+
       const payload =
         settings.xPostFolders && collected.outputKind === "downloadable-files"
           ? groupXPostInFolder(collected)
@@ -391,7 +417,7 @@ export class GatherRunCoordinator {
         });
 
         const jobs = [...queue.jobs];
-        jobs[index] = { kind: "output", run, payload, settings };
+        jobs[index] = { kind: "output", run, payload, settings, destinationId };
         queue = { ...queue, jobs };
         await this.dependencies.saveQueue(queue);
 

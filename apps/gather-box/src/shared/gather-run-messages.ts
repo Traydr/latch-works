@@ -51,7 +51,8 @@ export const ExecuteGatherRunMessageSchema = z.object({
   target: z.literal("offscreen"),
   runId: z.string(),
   payload: z.union([DownloadablePayloadSchema, GeneratedStoryPayloadSchema]),
-  settings: GatherBoxSettingsSchema
+  settings: GatherBoxSettingsSchema,
+  destinationId: z.catch(z.nullable(z.string()), null)
 });
 
 export type ExecuteGatherRunMessage = z.infer<typeof ExecuteGatherRunMessageSchema>;

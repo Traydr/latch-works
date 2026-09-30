@@ -9,6 +9,12 @@ describe("download policy", () => {
         "https://myhentaigallery.com/gallery/original/page-01.jpg",
       ),
     ).toBe(true);
+    expect(
+      isAllowedDownloadUrl(
+        "myhentaigallery",
+        "https://cdn.myhentaicomics.com/gallery/original/001.jpg",
+      ),
+    ).toBe(true);
     expect(isAllowedDownloadUrl("fanbox", "https://downloads.fanbox.cc/files/image.jpg")).toBe(
       true,
     );
@@ -63,6 +69,12 @@ describe("download policy", () => {
   it("rejects cross-site or unsupported hosts", () => {
     expect(
       isAllowedDownloadUrl("myhentaigallery", "https://evil.example.com/original/page.jpg"),
+    ).toBe(false);
+    expect(
+      isAllowedDownloadUrl(
+        "myhentaigallery",
+        "https://cdn.myhentaicomics.com.evil.example/gallery/original/001.jpg",
+      ),
     ).toBe(false);
     expect(isAllowedDownloadUrl("fanbox", "https://downloads.fanbox.cc/files/image.jpg")).toBe(
       true,

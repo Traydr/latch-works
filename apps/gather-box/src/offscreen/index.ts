@@ -1,3 +1,4 @@
+import * as z from "zod/mini";
 import {
   CancelGatherRunMessageSchema,
   ExecuteGatherRunMessageSchema,
@@ -11,9 +12,15 @@ import {
   OffscreenFilesystemProofMessageSchema,
   proveOffscreenFilesystemAccess
 } from "./filesystem-proof";
-import { createGatherRunEventEmitter } from "./run-event-emitter";
+import { createGatherRunEventEmitter, type GatherRunEventEmitter } from "./run-event-emitter";
 
 const executionSlot = new GatherExecutionSlot();
+
+/** Each run's reporter, kept until its held report is accepted so a re-run can take it over. */
+const runEmitters = new Map<string, GatherRunEventEmitter>();
+
+/** The background answers `accepted: false` when it could not persist the event. */
+const RunEventAcknowledgementSchema = z.object({ accepted: z.literal(true) });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!isExtensionOriginSender(sender)) {
@@ -67,6 +74,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         await executeGatherOutput({
           payload: execute.payload,
           settings: execute.settings,
+          destinationId: execute.destinationId,
           emit: emitter.emit,
           signal
         });
@@ -87,8 +95,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         await emitter.emit({ kind: "cancelled", message: "Gather Run cancelled." });
       }
     },
-    emitter.flush
+    () =>
+      emitter.flush().finally(() => {
+        if (runEmitters.get(execute.runId) === emitter) {
+          runEmitters.delete(execute.runId);
+        }
+      })
   );
+
+  if (start === "started") {
+    // The background re-dispatched this run, so an earlier execution's report is out of date.
+    runEmitters.get(execute.runId)?.stop();
+    runEmitters.set(execute.runId, emitter);
+  }
 
   sendResponse({
     accepted: start !== "busy",
@@ -99,13 +118,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return false;
 });
 
-async function emitRunEvent(runId: string, event: GatherRunEvent): Promise<void> {
-  await chrome.runtime.sendMessage({
+async function emitRunEvent(runId: string, event: GatherRunEvent): Promise<boolean> {
+  const response = await chrome.runtime.sendMessage({
     type: GATHER_RUN_EVENT,
     target: "background",
     runId,
     event
   });
+
+  return RunEventAcknowledgementSchema.safeParse(response).success;
 }
 
 function isExtensionOriginSender(sender: chrome.runtime.MessageSender): boolean {

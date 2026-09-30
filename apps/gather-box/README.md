@@ -148,7 +148,7 @@ are converted to underscores.
 ## Notes
 
 - The side panel shows the picked folder **name** only — browsers do not expose the full absolute path through the File System Access API.
-- Existing media is never overwritten. Gather Box compares SHA-256 hashes when a site filename already exists, skips identical content, and appends a four-character suffix before the extension for different content. In AVIF archive mode, an existing converted target filename is treated as already gathered and skipped without a network request.
+- Existing media is never overwritten. Gather Box compares SHA-256 hashes when a site filename already exists, skips identical content, and appends a four-character suffix before the extension for different content. The suffix is derived from the content, so gathering the same file again finds and skips the suffixed copy. In AVIF archive mode, an existing converted target filename is treated as already gathered and skipped without a network request.
 - pixiv original-image requests use a narrowly scoped extension rule to supply pixiv's required `Referer` header.
 - X video resolution uses X's public syndication data first, then its web-client media response. The fallback flow was informed by [Cobalt's X extractor](https://github.com/imputnet/cobalt/blob/main/api/src/processing/services/twitter.js); Gather Box does not call a hosted Cobalt instance.
 - Embedded third-party video posts are resolved locally through the host's temporary-token API; the extension downloads the returned HD MP4 when available. A narrowly scoped request rule supplies the required origin headers. See `src/background/` for the per-host resolvers and their attribution.
@@ -160,6 +160,9 @@ are converted to underscores.
   and still queues the page you confirmed from.
 - Retrying failed files confirms access to the folder of the run that failed, so it works from any
   tab rather than only from a tab on that run's site.
+- A queued page is written to the folder that was remembered when it was gathered. If you choose a
+  different folder before its turn, its files fail instead of moving to the new folder; Retry Failed
+  sends them to the current folder. Choosing the same folder again does not affect queued pages.
 - Gallery collectors target a specific grid selector per site and ignore ad blocks outside it.
 
 ## Manual checks

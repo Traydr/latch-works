@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   EMPTY_GATHER_QUEUE,
+  GatherQueueStateSchema,
   type GatherQueueState,
   type OutputGatherQueueJob
 } from "../shared/gather-queue";
@@ -147,7 +148,10 @@ describe("Gather queue orchestration", () => {
     expect(result).toMatchObject({ outcome: "queued", queuedRunId: "new-run" });
     expect(harness.getQueue().jobs).toMatchObject([
       { run: { id: "waiting", phase: "preparing" } },
-      { run: { id: "new-run", phase: "queued", tabUrl: "https://www.pixiv.net/artworks/2" } }
+      {
+        run: { id: "new-run", phase: "queued", tabUrl: "https://www.pixiv.net/artworks/2" },
+        destinationId: "folder-a"
+      }
     ]);
   });
 
@@ -238,6 +242,47 @@ describe("Gather queue orchestration", () => {
     );
   });
 
+  it("dispatches the next output when a recorded run's terminal report is redelivered", async () => {
+    const harness = createHarness({
+      ...EMPTY_GATHER_QUEUE,
+      jobs: [outputJob("second", "queued")]
+    });
+
+    await harness.coordinator.handleEvent({
+      type: "GATHER_BOX_RUN_EVENT",
+      target: "background",
+      runId: "first",
+      event: {
+        kind: "complete",
+        saved: 1,
+        skipped: 0,
+        failed: 0,
+        failedItems: [],
+        retryImages: []
+      }
+    });
+
+    expect(harness.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ run: expect.objectContaining({ id: "second" }) })
+    );
+  });
+
+  it("ignores a redelivered permission pause once the job was resumed", async () => {
+    const harness = createHarness({
+      ...EMPTY_GATHER_QUEUE,
+      jobs: [outputJob("waiting", "writing")]
+    });
+
+    await harness.coordinator.handleEvent({
+      type: "GATHER_BOX_RUN_EVENT",
+      target: "background",
+      runId: "waiting",
+      event: { kind: "permission-required", scope: "site" }
+    });
+
+    expect(harness.getQueue().jobs).toMatchObject([{ run: { id: "waiting", phase: "writing" } }]);
+  });
+
   it("keeps the slot occupied while cancellation settles, then advances", async () => {
     const harness = createHarness({
       ...EMPTY_GATHER_QUEUE,
@@ -281,7 +326,8 @@ function outputJob(
       phase
     },
     payload: downloadablePayload(),
-    settings: DEFAULT_SETTINGS
+    settings: DEFAULT_SETTINGS,
+    destinationId: null
   };
 }
 
@@ -317,7 +363,8 @@ function createHarness(initial: GatherQueueState) {
   );
 
   const dependencies: GatherRunCoordinatorDependencies = {
-    loadQueue: async () => structuredClone(queue),
+    // Read back through the storage schema, as chrome.storage.local does on every load.
+    loadQueue: async () => GatherQueueStateSchema.parse(structuredClone(queue)),
     saveQueue: async (next) => {
       queue = structuredClone(next);
     },
@@ -325,6 +372,7 @@ function createHarness(initial: GatherQueueState) {
     getTab,
     collect,
     loadSettings: async () => DEFAULT_SETTINGS,
+    getDestinationId: async () => "folder-a",
     execute,
     abort,
     now: () => 1_000,
