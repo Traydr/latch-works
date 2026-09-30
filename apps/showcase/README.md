@@ -37,8 +37,10 @@ pnpm --filter @latch-works/showcase screenshots
 ```
 
 The sample archive always lives at `/tmp/showcase-archive`; the scripts ignore `LOCKSTEP_SOURCE`.
-They refuse to run if that directory holds any file they did not generate, so sample media never
-lands in a real archive.
+`prepare-showcase-media.mjs` creates it and leaves a `.showcase-archive-owner` marker inside.
+The scripts refuse to write into a directory without that marker, a symbolic link, or a directory
+holding any file they did not generate, so sample media never lands in a real archive. To start
+over, delete `/tmp/showcase-archive` and run the prepare script again.
 
 `capture-screenshots.mjs` runs four per-app scripts (each also runnable on its own):
 

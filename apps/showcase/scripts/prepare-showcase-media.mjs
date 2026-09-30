@@ -3,7 +3,7 @@ import { copyFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { assertShowcaseArchive, showcaseArchiveDir } from "./showcase-archive.mjs";
+import { claimShowcaseArchive, showcaseArchiveDir } from "./showcase-archive.mjs";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 
@@ -30,7 +30,7 @@ const palette = [
 ];
 
 async function main() {
-  assertShowcaseArchive();
+  claimShowcaseArchive();
   mkdirSync(photosDir, { recursive: true });
   mkdirSync(frameMediaDir, { recursive: true });
 

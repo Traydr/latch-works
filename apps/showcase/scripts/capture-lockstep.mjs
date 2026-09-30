@@ -330,10 +330,6 @@ async function main() {
   const token = readSyncToken();
   await assertServerIsUp();
 
-  if (!existsSync(archiveDir)) {
-    throw new Error(`Showcase archive missing at ${archiveDir}; run prepare-showcase-media.mjs`);
-  }
-
   assertShowcaseArchive(archiveDir);
 
   if (await debugPortIsUp()) {
