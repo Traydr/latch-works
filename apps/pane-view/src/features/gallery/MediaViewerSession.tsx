@@ -140,72 +140,75 @@ export function MediaViewerSession({
         if (event.pointerType === "mouse") revealChrome();
       }}
     >
-      <ViewerTitleBar
-        chrome={chrome}
-        closeButtonRef={dialog.closeButtonRef}
-        copyStatus={pathCopy.status}
-        duration={duration}
-        isFullscreen={dialog.isFullscreen}
-        item={item}
-        onClose={onClose}
-        onCopyPath={() => void pathCopy.copy(item.path)}
-        onToggleFullscreen={dialog.toggleFullscreen}
-        onToggleOriginal={() =>
-          setOriginalShownFor((current) => (current === item.id ? null : item.id))
-        }
-        showOriginal={showOriginal}
-      />
-      <ViewerNavigation
-        canStepBackward={canStepBackward}
-        canStepForward={canStepForward}
-        chrome={chrome}
-        mediaType={item.mediaType}
-        onStep={onStep}
-      />
-      {item.mediaType === "video" ? (
-        <VideoViewer
-          key={item.id}
-          autoplay={autoplayVideos}
-          cache={cache}
+      {/* Chromium will not put a dialog itself in fullscreen, so this wrapper goes instead. */}
+      <div ref={dialog.fullscreenRef} className="relative h-full w-full">
+        <ViewerTitleBar
           chrome={chrome}
-          isCoarsePointer={isCoarsePointer}
-          loop={loopVideos}
-          mediaId={item.id}
-          rememberPosition={rememberViewerPosition}
-          reportStatus={reportVideo}
-          revision={mediaRevision(item)}
-          status={{ duration, playing }}
-          videoRef={videoRef}
-          viewerStateStore={viewerStateStore}
+          closeButtonRef={dialog.closeButtonRef}
+          copyStatus={pathCopy.status}
+          duration={duration}
+          isFullscreen={dialog.isFullscreen}
+          item={item}
+          onClose={onClose}
+          onCopyPath={() => void pathCopy.copy(item.path)}
+          onToggleFullscreen={dialog.toggleFullscreen}
+          onToggleOriginal={() =>
+            setOriginalShownFor((current) => (current === item.id ? null : item.id))
+          }
+          showOriginal={showOriginal}
         />
-      ) : (
-        <ViewerStage
-          key={item.id}
-          // Touch has no cursor to wake the chrome; a tap on the image or page shows or hides it.
-          onTap={() => {
-            if (isCoarsePointer) toggleChrome();
-          }}
-        >
-          {item.mediaType === "pdf" ? (
-            <ViewerPdf
-              item={item}
-              rememberPosition={rememberViewerPosition}
-              viewerStateStore={viewerStateStore}
-            />
-          ) : (
-            <PaneViewImage
-              alt={item.name}
-              cache={cache}
-              className="max-h-full max-w-full object-contain"
-              mediaId={item.id}
-              objectFit="contain"
-              revision={mediaRevision(item)}
-              variant={showOriginal || item.mediaType !== "image" ? "original" : "preview"}
-              width={GALLERY_PREVIEW_SIZE}
-            />
-          )}
-        </ViewerStage>
-      )}
+        <ViewerNavigation
+          canStepBackward={canStepBackward}
+          canStepForward={canStepForward}
+          chrome={chrome}
+          mediaType={item.mediaType}
+          onStep={onStep}
+        />
+        {item.mediaType === "video" ? (
+          <VideoViewer
+            key={item.id}
+            autoplay={autoplayVideos}
+            cache={cache}
+            chrome={chrome}
+            isCoarsePointer={isCoarsePointer}
+            loop={loopVideos}
+            mediaId={item.id}
+            rememberPosition={rememberViewerPosition}
+            reportStatus={reportVideo}
+            revision={mediaRevision(item)}
+            status={{ duration, playing }}
+            videoRef={videoRef}
+            viewerStateStore={viewerStateStore}
+          />
+        ) : (
+          <ViewerStage
+            key={item.id}
+            // Touch has no cursor to wake the chrome; a tap on the image or page shows or hides it.
+            onTap={() => {
+              if (isCoarsePointer) toggleChrome();
+            }}
+          >
+            {item.mediaType === "pdf" ? (
+              <ViewerPdf
+                item={item}
+                rememberPosition={rememberViewerPosition}
+                viewerStateStore={viewerStateStore}
+              />
+            ) : (
+              <PaneViewImage
+                alt={item.name}
+                cache={cache}
+                className="max-h-full max-w-full object-contain"
+                mediaId={item.id}
+                objectFit="contain"
+                revision={mediaRevision(item)}
+                variant={showOriginal || item.mediaType !== "image" ? "original" : "preview"}
+                width={GALLERY_PREVIEW_SIZE}
+              />
+            )}
+          </ViewerStage>
+        )}
+      </div>
     </dialog>
   );
 }

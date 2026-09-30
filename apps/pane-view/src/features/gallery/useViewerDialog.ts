@@ -10,21 +10,25 @@ function renderedMediaTile(mediaId: string): HTMLElement | null {
 export interface ViewerDialog {
   closeButtonRef: RefObject<HTMLButtonElement | null>;
   dialogRef: RefObject<HTMLDialogElement | null>;
+  /** What goes fullscreen: a wrapper inside the dialog, as Chromium refuses a dialog. */
+  fullscreenRef: RefObject<HTMLDivElement | null>;
   isFullscreen: boolean;
   toggleFullscreen: () => void;
 }
 
 /**
  * The viewer's modal dialog: open for the viewer's whole life, so the
- * fullscreen it may hold survives a step. Focus starts on the close button and
- * returns to the tile of the item on screen at close, else to where the viewer
- * opened from. Where the dialog cannot go fullscreen, `videoRef`'s video can.
+ * fullscreen its content wrapper may hold survives a step. Focus starts on the
+ * close button and returns to the tile of the item on screen at close, else to
+ * where the viewer opened from. Where the wrapper cannot go fullscreen,
+ * `videoRef`'s video can.
  */
 export function useViewerDialog(
   itemId: string,
   videoRef: RefObject<HTMLVideoElement | null>,
 ): ViewerDialog {
   const dialogRef = useRef<HTMLDialogElement | null>(null);
+  const fullscreenRef = useRef<HTMLDivElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const itemIdRef = useRef(itemId);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -60,12 +64,12 @@ export function useViewerDialog(
   }, []);
 
   const toggle = useCallback(() => {
-    const dialog = dialogRef.current;
+    const target = fullscreenRef.current;
 
-    if (dialog) {
-      void toggleFullscreen(dialog, videoRef.current);
+    if (target) {
+      void toggleFullscreen(target, videoRef.current);
     }
   }, [videoRef]);
 
-  return { closeButtonRef, dialogRef, isFullscreen, toggleFullscreen: toggle };
+  return { closeButtonRef, dialogRef, fullscreenRef, isFullscreen, toggleFullscreen: toggle };
 }

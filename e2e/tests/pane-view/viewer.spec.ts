@@ -111,6 +111,30 @@ test.describe("viewer", () => {
     await page.keyboard.press("Escape");
   });
 
+  test("the fullscreen button enters and leaves fullscreen with the controls still usable", async ({
+    page,
+  }) => {
+    await gotoBrowse(page, { path: "comics/alpha" });
+    await expectEntryCount(page, ALPHA.length);
+    const dialog = await openViewer(page, "comics/alpha/1.jpg");
+
+    // The viewer whose content is fullscreen, or null when nothing is.
+    const fullscreenName = () =>
+      page.evaluate(() => document.fullscreenElement?.closest("dialog")?.ariaLabel ?? null);
+
+    await dialog.getByRole("button", { name: "Toggle fullscreen" }).click();
+    await expect.poll(fullscreenName).toBe("Viewer for 1.jpg");
+
+    await dialog.getByRole("button", { name: "Next item" }).last().click();
+    await expect(viewerFor(page, "2.jpg")).toBeVisible();
+    await expect.poll(fullscreenName).toBe("Viewer for 2.jpg");
+
+    await dialog.getByRole("button", { name: "Toggle fullscreen" }).click();
+    await expect.poll(fullscreenName).toBeNull();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+  });
+
   test("a PDF opens and reports its page count", async ({ page }) => {
     await gotoBrowse(page, { path: "docs" });
     const dialog = await openViewer(page, "docs/guide.pdf");
