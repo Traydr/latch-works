@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  type ChosenDirectory,
   getDirectoryDestinationId,
   loadDirectoryHandle,
   saveDirectoryHandle
@@ -10,47 +11,50 @@ import {
  * the order they are issued and report success on a later task, as the browser's do. Every
  * extension context shares it, so interleaved calls stand in for separate windows.
  */
-function installMemoryIndexedDb(): void {
-  const entries = new Map<IDBValidKey, unknown>();
+interface MemoryRequest<T> {
+  result: T;
+  onsuccess: (() => void) | null;
+}
 
-  const request = <T>(apply: () => T): IDBRequest<T> => {
-    const pending = { result: undefined as T, onsuccess: null as (() => void) | null };
-    pending.result = apply();
+/** A stored folder handle or destination ID. */
+type StoredValue = ChosenDirectory | string;
+
+function installMemoryIndexedDb(): void {
+  const entries = new Map<string, StoredValue>();
+
+  const request = <T>(apply: () => T): MemoryRequest<T> => {
+    const pending: MemoryRequest<T> = { result: apply(), onsuccess: null };
+
     setTimeout(() => pending.onsuccess?.(), 0);
 
-    return pending as unknown as IDBRequest<T>;
+    return pending;
   };
 
   const store = {
-    get: (key: IDBValidKey) => request(() => entries.get(key)),
-    count: (key: IDBValidKey) => request(() => (entries.has(key) ? 1 : 0)),
-    put: (value: unknown, key: IDBValidKey) => request(() => entries.set(key, value) && key),
-    delete: (key: IDBValidKey) => request(() => entries.delete(key) && undefined)
+    get: (key: string) => request(() => entries.get(key)),
+    count: (key: string) => request(() => (entries.has(key) ? 1 : 0)),
+    put: (value: StoredValue, key: string) => request(() => entries.set(key, value) && key),
+    delete: (key: string) => request(() => entries.delete(key) && undefined)
   };
 
   const database = { transaction: () => ({ objectStore: () => store }) };
 
-  vi.stubGlobal("indexedDB", {
-    open: () => request(() => database)
-  });
+  vi.stubGlobal("indexedDB", { open: () => request(() => database) });
 }
 
 /**
- * A folder handle. Comparing any folder against one created with `hold` waits for it, as a slow
- * native sameness check would.
+ * A chosen folder, compared by name. A folder created with `hold` answers the sameness check only
+ * once the hold is released, as a slow native comparison would.
  */
-function folder(name: string, hold?: Promise<void>): FileSystemDirectoryHandle {
-  const handle = {
+function folder(name: string, hold?: Promise<void>): ChosenDirectory & { name: string } {
+  return {
     name,
-    hold,
-    isSameEntry: async (other: { name: string; hold?: Promise<void> }) => {
-      await other.hold;
+    async isSameEntry(other) {
+      await hold;
 
       return other.name === name;
     }
   };
-
-  return handle as unknown as FileSystemDirectoryHandle;
 }
 
 describe("remembered destination folders", () => {

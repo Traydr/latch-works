@@ -25,6 +25,11 @@ export type PermissionedDirectoryHandle = Pick<
   "queryPermission" | "requestPermission"
 >;
 
+/** The part of a chosen folder handle a pick reads: whether it is the folder already remembered. */
+export interface ChosenDirectory {
+  isSameEntry(other: FileSystemHandle): Promise<boolean>;
+}
+
 /** A remembered folder and the destination ID it was given, always read and written together. */
 export interface RememberedDestination {
   handle: FileSystemDirectoryHandle;
@@ -36,7 +41,7 @@ const SAVE_ATTEMPTS = 8;
 
 export async function saveDirectoryHandle(
   siteKey: SiteKey | null,
-  directoryHandle: FileSystemDirectoryHandle,
+  directoryHandle: ChosenDirectory,
   useGlobalFolder: boolean
 ): Promise<void> {
   const directoryKey = getDirectoryKey(siteKey, useGlobalFolder);
@@ -54,7 +59,7 @@ export async function saveDirectoryHandle(
     // The comparison runs outside any transaction, so the ID is kept only if the remembered
     // folder is still the one compared when the write commits.
     const sameFolder = previous.handle
-      ? await previous.handle.isSameEntry(directoryHandle).catch(() => false)
+      ? await directoryHandle.isSameEntry(previous.handle).catch(() => false)
       : false;
 
     const store = await openStore("readwrite");
