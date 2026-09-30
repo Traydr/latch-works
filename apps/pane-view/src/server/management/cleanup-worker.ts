@@ -528,18 +528,7 @@ async function processShutterSourcePurgeBatch(
         return false;
       }
 
-      for (const row of rows) {
-        // react-doctor-disable-next-line react-doctor/async-await-in-loop -- A cancel stops the batch before its next purge.
-        if (!(await isMaintenanceJobActive(jobId, dependencies))) return false;
-
-        // react-doctor-disable-next-line react-doctor/async-await-in-loop -- Mark each source only after Shutter confirms its purge.
-        await dependencies.purgeShutterSource(row);
-        // react-doctor-disable-next-line react-doctor/async-await-in-loop -- The durable queue advances one confirmed source at a time.
-        await dependencies.database
-          .update(shutterSourceCleanup)
-          .set({ purgedAt: new Date() })
-          .where(eq(shutterSourceCleanup.sha256, row.sha256));
-      }
+      if (!(await purgeQueuedShutterSources(jobId, rows, dependencies))) return false;
 
       await updateJobProgress(
         jobId,
@@ -721,9 +710,24 @@ async function purgeQueuedShutterSourceBatch(
     .where(isNull(shutterSourceCleanup.purgedAt))
     .limit(batchSize);
 
+  if (!(await purgeQueuedShutterSources(jobId, rows, dependencies))) return "inactive";
+
+  return rows.length;
+}
+
+/**
+ * Purge each queued Shutter source in `rows` and mark its queue row purged
+ * once Shutter confirms, so the durable queue advances one confirmed source at
+ * a time. Resolves false, before the next purge, once the job was cancelled.
+ */
+async function purgeQueuedShutterSources(
+  jobId: string,
+  rows: ShutterPurgeSource[],
+  dependencies: MaintenanceWorkerDependencies,
+): Promise<boolean> {
   for (const row of rows) {
     // react-doctor-disable-next-line react-doctor/async-await-in-loop -- A cancel stops the batch before its next purge.
-    if (!(await isMaintenanceJobActive(jobId, dependencies))) return "inactive";
+    if (!(await isMaintenanceJobActive(jobId, dependencies))) return false;
 
     try {
       // react-doctor-disable-next-line react-doctor/async-await-in-loop -- Mark each source only after Shutter confirms its purge.
@@ -740,7 +744,7 @@ async function purgeQueuedShutterSourceBatch(
       .where(eq(shutterSourceCleanup.sha256, row.sha256));
   }
 
-  return rows.length;
+  return true;
 }
 
 /** Mark an active job completed with its final progress; a no-op once it is no longer active. */
