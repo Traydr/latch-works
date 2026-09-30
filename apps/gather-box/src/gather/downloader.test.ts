@@ -11,7 +11,9 @@ import {
 /**
  * An in-memory folder with File System Access semantics: a write lands only when its stream
  * closes, and a missing entry rejects with NotFoundError. Two switches stand in for a browser
- * that stops mid-save.
+ * that stops mid-save, and a gate holds writes open to line up concurrent saves. A case-insensitive
+ * folder resolves names the way macOS APFS does by default, storing each file under its lowercase
+ * name.
  */
 class MemoryDirectory implements WritableDirectory {
   readonly files = new Map<string, Blob>();
@@ -19,8 +21,19 @@ class MemoryDirectory implements WritableDirectory {
   interruptWritesTo: string | null = null;
   /** Commit markers cannot be removed, as when Chrome quits right after a write lands. */
   failMarkerRemoval = false;
+  /** Writes opened while this is set do not land until it settles. */
+  holdWrites: Promise<void> | null = null;
+  openedWrites = 0;
 
-  async getFileHandle(name: string, options?: { create?: boolean }): Promise<WritableFile> {
+  constructor(private readonly caseInsensitive = false) {}
+
+  private key(name: string): string {
+    return this.caseInsensitive ? name.toLowerCase() : name;
+  }
+
+  async getFileHandle(requestedName: string, options?: { create?: boolean }): Promise<WritableFile> {
+    const name = this.key(requestedName);
+
     if (!this.files.has(name)) {
       if (!options?.create) {
         throw new DOMException(`${name} not found`, "NotFoundError");
@@ -33,12 +46,16 @@ class MemoryDirectory implements WritableDirectory {
       getFile: async () => new File([this.files.get(name) ?? new Blob([])], name),
       createWritable: async (): Promise<WritableFileStream> => {
         let pending = new Blob([]);
+        const held = this.holdWrites;
+        this.openedWrites += 1;
 
         return {
           write: async (data) => {
             pending = data;
           },
           close: async () => {
+            await held;
+
             if (this.interruptWritesTo === name) {
               throw new Error("browser stopped");
             }
@@ -50,7 +67,9 @@ class MemoryDirectory implements WritableDirectory {
     };
   }
 
-  async removeEntry(name: string): Promise<void> {
+  async removeEntry(requestedName: string): Promise<void> {
+    const name = this.key(requestedName);
+
     if (this.failMarkerRemoval && isMarker(name)) {
       throw new Error("browser stopped");
     }
@@ -61,7 +80,7 @@ class MemoryDirectory implements WritableDirectory {
   }
 
   async text(name: string): Promise<string | undefined> {
-    return this.files.get(name)?.text();
+    return this.files.get(this.key(name))?.text();
   }
 
   mediaNames(): string[] {
@@ -78,6 +97,31 @@ function isMarker(name: string): boolean {
 }
 
 const blob = (text: string) => new Blob([text]);
+
+/**
+ * Starts the first save and holds its writes open, then starts the second while the first still
+ * owns its filename. The first write lands once the second has settled or had time to.
+ */
+async function raceSaves(
+  directory: MemoryDirectory,
+  first: [content: string, fileName: string],
+  second: [content: string, fileName: string]
+) {
+  let releaseFirst: () => void = () => undefined;
+
+  directory.holdWrites = new Promise<void>((resolve) => {
+    releaseFirst = resolve;
+  });
+
+  const firstSave = saveBlobWithoutClobbering(blob(first[0]), directory, first[1]);
+  await vi.waitFor(() => expect(directory.openedWrites).toBeGreaterThan(0));
+  directory.holdWrites = null;
+  const secondSave = saveBlobWithoutClobbering(blob(second[0]), directory, second[1]);
+  await Promise.race([secondSave, new Promise((resolve) => setTimeout(resolve, 50))]);
+  releaseFirst();
+
+  return Promise.all([firstSave, secondSave]);
+}
 
 describe("collision-safe saving", () => {
   it("never replaces a finished original whose commit marker was left behind", async () => {
@@ -181,6 +225,41 @@ describe("collision-safe saving", () => {
     expect(await directory.text(suffixed)).toBe("unrelated C");
     expect(await directory.text(moved.fileName)).toBe("B");
     expect(replay).toEqual({ fileName: moved.fileName, skipped: true });
+  });
+
+  it("gives a concurrent save of different content its own name", async () => {
+    const directory = new MemoryDirectory();
+
+    const [first, second] = await raceSaves(directory, ["A", "same.jpg"], ["B", "same.jpg"]);
+
+    expect(first).toEqual({ fileName: "same.jpg", skipped: false });
+    expect(second).toMatchObject({ skipped: false });
+    expect(second.fileName).toMatch(/^same_[a-z0-9]{4}\.jpg$/);
+    expect(await directory.text("same.jpg")).toBe("A");
+    expect(await directory.text(second.fileName)).toBe("B");
+    expect(directory.markerNames()).toHaveLength(0);
+  });
+
+  it("treats names that differ only in case as one file on a case-insensitive folder", async () => {
+    const directory = new MemoryDirectory(true);
+
+    const [first, second] = await raceSaves(directory, ["A", "Photo.jpg"], ["B", "photo.jpg"]);
+
+    expect(first).toEqual({ fileName: "Photo.jpg", skipped: false });
+    expect(second.fileName).toMatch(/^photo_[a-z0-9]{4}\.jpg$/);
+    expect(await directory.text("photo.jpg")).toBe("A");
+    expect(await directory.text(second.fileName)).toBe("B");
+  });
+
+  it("skips a concurrent save of identical content", async () => {
+    const directory = new MemoryDirectory();
+
+    const [first, second] = await raceSaves(directory, ["A", "same.jpg"], ["A", "same.jpg"]);
+
+    expect(first).toEqual({ fileName: "same.jpg", skipped: false });
+    expect(second).toEqual({ fileName: "same.jpg", skipped: true });
+    expect(directory.mediaNames()).toEqual(["same.jpg"]);
+    expect(directory.markerNames()).toHaveLength(0);
   });
 });
 

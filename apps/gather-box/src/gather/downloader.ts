@@ -249,17 +249,23 @@ export async function saveBlobWithoutClobbering(
             getContentSuffix(contentHash, attempt - 1) ?? randomSuffix()
           );
 
-    const candidate = await claimCandidate(
-      destinationDirectory,
-      candidateName,
-      blob,
-      contentHash,
-      signal
-    );
+    const candidate = await withFileNameLock(destinationDirectory, candidateName, async () => {
+      const claim = await claimCandidate(
+        destinationDirectory,
+        candidateName,
+        blob,
+        contentHash,
+        signal
+      );
+
+      if (claim === "free") {
+        await commitBlob(destinationDirectory, candidateName, blob, contentHash, signal);
+      }
+
+      return claim;
+    });
 
     if (candidate === "free") {
-      await commitBlob(destinationDirectory, candidateName, blob, contentHash, signal);
-
       return { fileName: candidateName, skipped: false };
     }
 
@@ -269,6 +275,46 @@ export async function saveBlobWithoutClobbering(
   }
 
   throw new Error(`Could not find an unused filename for ${preferredFileName}`);
+}
+
+/**
+ * Saves in flight per folder handle, keyed by folded filename. A name is only known to be free
+ * until something writes it, so a claim and its commit run as one step per name: a second save
+ * that wants the same name waits, then finds it taken (or identical) and moves on. Names are
+ * folded because the default macOS file system treats `Photo.jpg` and `photo.jpg` as one file.
+ */
+const fileNameLocks = new WeakMap<WritableDirectory, Map<string, Promise<unknown>>>();
+
+async function withFileNameLock<T>(
+  destinationDirectory: WritableDirectory,
+  fileName: string,
+  task: () => Promise<T>
+): Promise<T> {
+  const key = fileName.normalize("NFC").toLowerCase();
+  let locks = fileNameLocks.get(destinationDirectory);
+
+  if (!locks) {
+    locks = new Map();
+    fileNameLocks.set(destinationDirectory, locks);
+  }
+
+  const previous = locks.get(key) ?? Promise.resolve();
+  const result = previous.then(task, task);
+
+  const settled = result.then(
+    () => undefined,
+    () => undefined
+  );
+
+  locks.set(key, settled);
+
+  try {
+    return await result;
+  } finally {
+    if (locks.get(key) === settled) {
+      locks.delete(key);
+    }
+  }
 }
 
 /**
