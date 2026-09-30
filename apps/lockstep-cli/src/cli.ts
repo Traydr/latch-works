@@ -31,6 +31,18 @@ async function run(): Promise<void> {
     interrupts.stop();
   }
 
+  // A signal can land after the last request (while push or prune awaits its finalization, or
+  // while doctor runs its checks): the result printed above stands, but the exit code still
+  // reports the interrupt and the settings are not remembered, as for any cancelled command.
+  const exitCode = interrupts.exitCode();
+
+  if (exitCode !== undefined) {
+    console.error("Interrupted after the command finished; the result above stands.");
+    process.exitCode = exitCode;
+
+    return;
+  }
+
   await configStore.remember(resolved.remember);
 }
 
