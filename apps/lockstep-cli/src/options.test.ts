@@ -82,6 +82,12 @@ describe("config persistence", () => {
 
     await expect(readFile(store.path, "utf-8")).rejects.toMatchObject({ code: "ENOENT" });
   });
+
+  it("rejects a value-less --source instead of pruning the saved source", async () => {
+    await run(["plan", "--source", archive, "--api-url", "http://localhost:3000"]);
+
+    await expect(run(["prune", "--yes", "--source"])).rejects.toThrow("--source requires a value.");
+  });
 });
 
 describe("parseArgv", () => {
@@ -106,6 +112,24 @@ describe("parseArgv", () => {
     expect(() => parseArgv(["push", "--upload-concurrency", "1.5"])).toThrow(
       "--upload-concurrency must be an integer between 1 and 8.",
     );
+  });
+});
+
+describe("parseArgv value flags", () => {
+  const valueFlags = ["--source", "--api-url", "--api-token-env", "--remote-snapshot"];
+
+  it.each(valueFlags)("rejects %s with no value, an empty value, or another flag", (flag) => {
+    for (const command of ["plan", "push", "prune", "verify"]) {
+      const message = `${flag} requires a value.`;
+      expect(() => parseArgv([command, flag])).toThrow(message);
+      expect(() => parseArgv([command, flag, ""])).toThrow(message);
+      expect(() => parseArgv([command, flag, "--yes"])).toThrow(message);
+    }
+  });
+
+  it("rejects numeric flags with no value", () => {
+    expect(() => parseArgv(["prune", "--max-changes"])).toThrow("--max-changes");
+    expect(() => parseArgv(["push", "--upload-concurrency"])).toThrow("--upload-concurrency");
   });
 });
 

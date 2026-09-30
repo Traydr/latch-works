@@ -176,15 +176,24 @@ pnpm --filter @latch-works/lockstep start push --source "T:\cloud-desktop\media"
 ```
 
 Capped pushes take the first N upload/update changes in plan order (delete items are excluded) and
-only hash the selected obvious uploads or size changes. Equal-size remote entries are still hashed on
-a cache miss because size alone cannot prove that their contents match. Each push run is finalized
-through `/api/sync/runs/{id}/complete` with `completed` or `failed` status and final counts. That
-request is retried briefly; if it still fails, the push or prune fails with the run id, and Pane View
-shows the run as running until it is cancelled on the management page. This takes precedence over
-how the run ended: a cancelled run, or a prune stopped because the source folder went away, still
-reports the unfinalized run id. `@latch-works/lockstep-core` throws `UnfinalizedSyncRunError` for
-this case, carrying `syncRunId`, the `intendedStatus` it tried to record, and the cancellation or
-fatal error as `cause`.
+only hash the selected obvious uploads or size changes. Equal-size remote entries are still hashed
+on a cache miss because size alone cannot prove that their contents match. Each push run is
+finalized through `/api/sync/runs/{id}/complete` with `completed`, `failed`, or `cancelled` status
+and final counts. That request is retried briefly; if it still fails, the push or prune fails with
+the run id, and Pane View shows the run as running until it is cancelled on the management page.
+This takes precedence over how the run ended: a cancelled run, or a prune stopped because the source
+folder went away, still reports the unfinalized run id. `@latch-works/lockstep-core` throws
+`UnfinalizedSyncRunError` for this case, carrying `syncRunId`, the `intendedStatus` it tried to
+record, and the cancellation or fatal error as `cause`. Ctrl+C (or SIGTERM) during a CLI push or
+prune stops new work and finalizes the run as `cancelled` before exiting with status 130 (143 for
+SIGTERM); a second Ctrl+C, or cleanup that takes longer than 15 seconds, quits at once and leaves
+the run for the management page. If finalization fails after the signal, the CLI prints the run id
+and the management-page step instead of `Cancelled.`, and exits with 130 or 143 only when the run
+was meant to end as `cancelled` (1 otherwise). A signal that arrives while the sync run is being
+created waits for the server's reply (up to 10 seconds), then finalizes that new run as `cancelled`.
+A signal that arrives after the last request, while the run is being finalized, leaves the
+printed result standing but still exits with 130 or 143. An interrupted command does not update the
+remembered settings.
 
 Lockstep stores versioned, per-source hash caches under
 `~/.latch-works/hash-cache/v1/`. Cache entries are invalidated when file size, modified time, or the
@@ -195,7 +204,7 @@ not prevent synchronization.
 
 `prune` applies planned remote deletes for paths that exist in the remote snapshot but not locally. It is separate from `push` so destructive sync actions require an explicit operator decision.
 
-When delete items are present, Lockstep prints the paths (respecting `--max-changes` if set) and requires `--yes` or interactive confirmation before applying deletes. It then deletes exactly the printed entries from that same plan; it does not plan again, so a remote entry that appeared in the meantime is not touched. Use `prune --yes` only in scripted automation after reviewing a read-only `plan`, and note that `--yes` prunes whatever that run's own plan lists.
+When delete items are present, Lockstep prints every path it will delete (the first `--max-changes` of them if set) and requires `--yes` or interactive confirmation before applying deletes. It then deletes exactly the printed entries from that same plan; it does not plan again, so a remote entry that appeared in the meantime is not touched. Use `prune --yes` only in scripted automation after reviewing a read-only `plan`, and note that `--yes` prunes whatever that run's own plan lists.
 
 Before each delete, prune checks the local path again. If the file is back in the source folder, including under a spelling that planning treats as the same entry (different case, Unicode form, or `.jpeg` for `.jpg`), the delete is skipped and reported as `Skipped delete <path>`; the final line counts deleted, skipped, and failed entries. If the source folder itself is missing (an unmounted drive, for example), prune stops before creating a sync run and deletes nothing. If it goes missing or is replaced by a different folder during the run, prune stops before the next delete and finalizes the run as failed.
 

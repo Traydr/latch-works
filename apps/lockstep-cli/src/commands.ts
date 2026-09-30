@@ -1,6 +1,7 @@
 import {
   type LockstepObserver,
   type LockstepPlan,
+  type LockstepPlanItem,
   type LockstepRunEvent,
   planSync,
   pruneDeleted,
@@ -34,9 +35,12 @@ export const coreCommands = {
 } satisfies CoreCommands;
 
 export type ExecuteCommandDeps = {
-  confirmPrune?: (deleteCount: number) => Promise<boolean>;
+  /** Asks before deleting; an abort through `signal` rejects the pending prompt. */
+  confirmPrune?: (deleteCount: number, signal?: AbortSignal) => Promise<boolean>;
   core?: CoreCommands;
   isInteractive?: () => boolean;
+  /** Aborts the run; push and prune then finalize their sync run as cancelled before rejecting. */
+  signal?: AbortSignal;
 };
 
 export async function executeCommand(
@@ -46,6 +50,7 @@ export async function executeCommand(
   const isInteractive = deps.isInteractive ?? isInteractiveTerminal;
   const confirmPrune = deps.confirmPrune ?? defaultConfirmPrune;
   const core = deps.core ?? coreCommands;
+  const { signal } = deps;
   const reporter = createLineReporter();
   const observer = createCliObserver(reporter);
 
@@ -54,6 +59,7 @@ export async function executeCommand(
       {
         apiToken: process.env[options.apiTokenEnv],
         apiUrl: options.apiUrl ?? process.env.LOCKSTEP_API_URL,
+        signal,
         sourceRoot: options.source,
       },
       observer,
@@ -117,6 +123,7 @@ export async function executeCommand(
       apiUrl: remote.kind === "live" ? remote.apiUrl : undefined,
       hashMode: options.command === "push" ? "remote-aware" : options.hashFiles ? "all" : "none",
       remoteSnapshotPath: remote.kind === "file" ? remote.path : undefined,
+      signal,
       sourceRoot: options.source,
     },
     observer,
@@ -155,6 +162,7 @@ export async function executeCommand(
         apiUrl: requiredApiUrl,
         maxChanges: options.maxChanges,
         plan,
+        signal,
         sourceRoot: options.source,
         uploadConcurrency: options.uploadConcurrency,
       },
@@ -182,6 +190,8 @@ export async function executeCommand(
     const itemsToPrune =
       options.maxChanges === undefined ? deleteItems : deleteItems.slice(0, options.maxChanges);
 
+    printPruneDeletes(itemsToPrune, deleteItems.length);
+
     if (itemsToPrune.length === 0) {
       console.log("");
       console.log("Nothing to prune.");
@@ -198,7 +208,7 @@ export async function executeCommand(
         return;
       }
 
-      const confirmed = await confirmPrune(itemsToPrune.length);
+      const confirmed = await confirmPrune(itemsToPrune.length, signal);
 
       if (!confirmed) {
         console.log("");
@@ -209,13 +219,15 @@ export async function executeCommand(
       }
     }
 
-    // Apply the deletes printed above and just confirmed; pruneDeleted never plans again.
+    // Apply the deletes printed above and just confirmed; pruneDeleted never plans again. Both
+    // take deletes in plan order, so capping at the printed count applies exactly that list.
     const result = await core.pruneDeleted(
       {
         apiToken: requiredApiToken,
         apiUrl: requiredApiUrl,
-        maxChanges: options.maxChanges,
+        maxChanges: itemsToPrune.length,
         plan,
+        signal,
       },
       observer,
     );
@@ -339,46 +351,39 @@ function printPlanSummary(plan: LockstepPlan, options: CliOptions, remote: Remot
       console.log(`  ... and ${changedItems.length - previewCount} more`);
     }
   }
+}
 
-  if (options.command === "prune" && plan.counts.delete > 0) {
-    const deletesToApply =
-      options.maxChanges === undefined
-        ? changedItems.filter((item) => item.action === "delete")
-        : changedItems.filter((item) => item.action === "delete").slice(0, options.maxChanges);
+/**
+ * Lists every delete prune will apply, with no preview limit: the confirmation that follows
+ * covers exactly these entries.
+ */
+function printPruneDeletes(itemsToPrune: LockstepPlanItem[], plannedDeletes: number): void {
+  if (itemsToPrune.length === 0) {
+    return;
+  }
 
-    const omittedCount = plan.counts.delete - deletesToApply.length;
-    const deletePreviewLimit = 20;
-    const deletePreview = deletesToApply.slice(0, deletePreviewLimit);
+  console.log("");
+  console.log(
+    itemsToPrune.length < plannedDeletes
+      ? `Deletes to apply: ${itemsToPrune.length} of ${plannedDeletes} (capped by --max-changes)`
+      : `Deletes to apply: ${plannedDeletes}`,
+  );
 
-    console.log("");
-
-    if (options.maxChanges !== undefined && omittedCount > 0) {
-      console.log(
-        `Deletes to apply: ${deletesToApply.length} of ${plan.counts.delete} (capped by --max-changes)`,
-      );
-    } else {
-      console.log(`Deletes to apply: ${plan.counts.delete}`);
-    }
-
-    console.log(deletesToApply.length > deletePreviewLimit ? "First deletes" : "Deletes");
-
-    for (const item of deletePreview) {
-      console.log(`  delete ${item.path}`);
-    }
-
-    if (deletesToApply.length > deletePreviewLimit) {
-      console.log(`  ... and ${deletesToApply.length - deletePreviewLimit} more`);
-    }
+  for (const item of itemsToPrune) {
+    console.log(`  delete ${item.path}`);
   }
 }
 
-async function defaultConfirmPrune(deleteCount: number): Promise<boolean> {
+async function defaultConfirmPrune(deleteCount: number, signal?: AbortSignal): Promise<boolean> {
   const { input } = await import("@inquirer/prompts");
 
-  const answer = await input({
-    message: `Type "prune" to delete the ${deleteCount} remote ${deleteCount === 1 ? "entry" : "entries"} listed above`,
-    validate: (value) => value === "prune" || 'Type "prune" to confirm.',
-  });
+  const answer = await input(
+    {
+      message: `Type "prune" to delete the ${deleteCount} remote ${deleteCount === 1 ? "entry" : "entries"} listed above`,
+      validate: (value) => value === "prune" || 'Type "prune" to confirm.',
+    },
+    { signal },
+  );
 
   return answer === "prune";
 }
@@ -389,6 +394,14 @@ function createCliObserver(reporter: LineReporter): LockstepObserver {
   return {
     onEvent(event: LockstepRunEvent) {
       if (event.type === "status") {
+        // A status line is overwritten by the next one; warnings (such as a sync run that could
+        // not be finalized) have to stay on screen.
+        if (event.message.startsWith("Warning:")) {
+          reporter.log(event.message);
+
+          return;
+        }
+
         if (event.message.includes("] hashing ") || event.message.includes("] uploading ")) {
           const match = event.message.match(/^\[(\d+)\/(\d+)\] (\w+) ([^(]+)(?: \((.+)\))?$/);
           const stage = PushStageSchema.safeParse(match?.[3]);
