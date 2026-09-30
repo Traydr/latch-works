@@ -163,9 +163,14 @@
   line-height: 1.55;
 }
 
+.prose-docs .table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 1.35rem 0;
+}
+
 .prose-docs table {
   width: 100%;
-  margin: 1.35rem 0;
   border-collapse: collapse;
   font-size: 0.95rem;
 }

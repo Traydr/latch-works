@@ -3,6 +3,7 @@ import { copyFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { claimShowcaseArchive, showcaseArchiveDir } from "./showcase-archive.mjs";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 
@@ -10,9 +11,7 @@ const showcaseRoot = join(scriptDir, "..");
 
 const frameMediaDir = join(showcaseRoot, "../frame-view/showcase-media");
 
-const archiveDir = process.env.LOCKSTEP_SOURCE ?? "/tmp/showcase-archive";
-
-const photosDir = join(archiveDir, "sfw/photos");
+const photosDir = join(showcaseArchiveDir, "sfw/photos");
 
 const require = createRequire(join(showcaseRoot, "../frame-view/package.json"));
 
@@ -31,6 +30,7 @@ const palette = [
 ];
 
 async function main() {
+  claimShowcaseArchive();
   mkdirSync(photosDir, { recursive: true });
   mkdirSync(frameMediaDir, { recursive: true });
 

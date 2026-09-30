@@ -11,21 +11,21 @@
  * - PANE_VIEW_SYNC_TOKEN set in the repo root .env.
  * - Showcase archive at /tmp/showcase-archive (see prepare-showcase-media.mjs).
  *
- * The user's Lockstep settings file is moved aside before launch and restored
- * byte-identical after the app quits (the app rewrites the file on exit). The
- * legacy ~/.latch-works/lockstep.json is pointed at the showcase archive so the
- * app migrates it into a ready profile; its original content is restored too.
+ * The app runs on a throwaway user-data directory seeded with one profile for
+ * the showcase archive, and keeps its token under a file key inside that
+ * directory, so your own profiles, saved tokens, and Keychain are never touched.
  *
  * Usage: node apps/showcase/scripts/capture-lockstep.mjs
  */
 import { spawn } from "node:child_process";
-import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { homedir } from "node:os";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import puppeteer from "puppeteer-core";
+import { assertShowcaseArchive, showcaseArchiveDir } from "./showcase-archive.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -33,17 +33,11 @@ const repoRoot = join(root, "../..");
 
 const outputDir = join(root, "public", "screenshots", "lockstep");
 
-const archiveDir = process.env.LOCKSTEP_SOURCE ?? "/tmp/showcase-archive";
+const archiveDir = showcaseArchiveDir;
 
 const scansDir = join(archiveDir, "sfw/scans");
 
 const apiUrl = "http://localhost:3000";
-
-const settingsPath = join(homedir(), "Library/Application Support/Lockstep/lockstep-settings.json");
-
-const settingsBackupPath = `${settingsPath}.showcase-backup`;
-
-const legacyConfigPath = join(homedir(), ".latch-works/lockstep.json");
 
 const debugPort = Number(process.env.LOCKSTEP_DEBUG_PORT ?? 9224);
 
@@ -55,10 +49,6 @@ const sharp = require("sharp");
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function sha256OfFile(path) {
-  return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
 
 function readSyncToken() {
@@ -140,23 +130,28 @@ async function seedScanImages() {
   console.log(`Seeded 6 scan images in ${scansDir}`);
 }
 
-/** Points the legacy config at the showcase archive; returns the original bytes (or null). */
-function writeLegacyConfig() {
-  const original = existsSync(legacyConfigPath) ? readFileSync(legacyConfigPath) : null;
+/**
+ * Creates a throwaway user-data directory holding one token-less profile for the showcase
+ * archive. With a settings file present the app never reads the legacy ~/.latch-works config.
+ */
+function createUserDataDir() {
+  const userDataDir = mkdtempSync(join(tmpdir(), "lockstep-showcase-"));
+  const profileId = randomUUID();
 
-  const desired = {
-    apiUrl,
-    defaults: { hashFiles: false, showSkipped: false },
-    source: archiveDir,
+  const settings = {
+    activeProfileId: profileId,
+    profiles: [{ apiUrl, id: profileId, name: "Default", sourceRoot: archiveDir }],
   };
 
-  mkdirSync(dirname(legacyConfigPath), { recursive: true });
-  writeFileSync(legacyConfigPath, `${JSON.stringify(desired, null, 2)}\n`);
+  writeFileSync(
+    join(userDataDir, "lockstep-settings.json"),
+    `${JSON.stringify(settings, null, 2)}\n`,
+  );
 
-  return original;
+  return userDataDir;
 }
 
-function startLockstep() {
+function startLockstep(userDataDir) {
   const child = spawn(
     "pnpm",
     [
@@ -165,8 +160,19 @@ function startLockstep() {
       "start",
       "--",
       `--remote-debugging-port=${debugPort}`,
+      `--user-data-dir=${userDataDir}`,
     ],
-    { cwd: repoRoot, detached: true, stdio: ["ignore", "pipe", "pipe"] },
+    {
+      cwd: repoRoot,
+      detached: true,
+      // The file key replaces the Keychain, and lives inside the throwaway directory.
+      env: {
+        ...process.env,
+        LOCKSTEP_SECRET_STORAGE: "file",
+        XDG_CONFIG_HOME: join(userDataDir, "config"),
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    },
   );
 
   child.unref();
@@ -324,9 +330,7 @@ async function main() {
   const token = readSyncToken();
   await assertServerIsUp();
 
-  if (!existsSync(archiveDir)) {
-    throw new Error(`Showcase archive missing at ${archiveDir}; run prepare-showcase-media.mjs`);
-  }
+  assertShowcaseArchive(archiveDir);
 
   if (await debugPortIsUp()) {
     throw new Error(`Port ${debugPort} already serving CDP. Quit the running Lockstep first.`);
@@ -335,21 +339,12 @@ async function main() {
   mkdirSync(outputDir, { recursive: true });
   await seedScanImages();
 
-  const settingsExisted = existsSync(settingsPath);
-  const settingsHashBefore = settingsExisted ? sha256OfFile(settingsPath) : null;
-
-  if (settingsExisted) {
-    renameSync(settingsPath, settingsBackupPath);
-    console.log(`Moved user settings aside to ${settingsBackupPath}`);
-  }
-
-  const legacyOriginal = writeLegacyConfig();
-
+  const userDataDir = createUserDataDir();
   let app = null;
   let browser = null;
 
   try {
-    app = startLockstep();
+    app = startLockstep(userDataDir);
     console.log("Waiting for Lockstep to boot (prestart can take a while)...");
     await waitForDebugPort(app);
 
@@ -361,11 +356,12 @@ async function main() {
     await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: "dark" }]);
     await page.bringToFront();
 
-    // The migrated legacy profile has no stored token; enter it for the session.
-    const tokenSelector = 'input[placeholder="Enter token for this session"]';
+    // The seeded profile has no stored token; enter it for the session. Match the field by its
+    // visible label (TokenInput in apps/lockstep) rather than its placeholder copy.
+    const tokenSelector = '::-p-xpath(//label[span[normalize-space()="Sync API token"]]//input)';
     await page.waitForSelector(tokenSelector, { timeout: 60_000 }).catch(async () => {
       const bodyText = await page.evaluate(() => document.body.innerText.slice(0, 800));
-      throw new Error(`Token input never appeared; legacy migration failed?\n${bodyText}`);
+      throw new Error(`Sync API token field never appeared.\n${bodyText}`);
     });
     await page.type(tokenSelector, token);
 
@@ -451,28 +447,7 @@ async function main() {
       await shutDownApp(app);
     }
 
-    if (legacyOriginal === null) {
-      rmSync(legacyConfigPath, { force: true });
-    } else {
-      writeFileSync(legacyConfigPath, legacyOriginal);
-    }
-
-    console.log("Restored legacy config.");
-
-    if (settingsExisted) {
-      rmSync(settingsPath, { force: true });
-      renameSync(settingsBackupPath, settingsPath);
-      const settingsHashAfter = sha256OfFile(settingsPath);
-
-      if (settingsHashAfter === settingsHashBefore) {
-        console.log("Restored user settings byte-identical.");
-      } else {
-        console.warn("Warning: restored settings hash differs from the original!");
-      }
-    } else if (existsSync(settingsPath)) {
-      rmSync(settingsPath, { force: true });
-      console.log("Removed settings file created during capture (none existed before).");
-    }
+    rmSync(userDataDir, { force: true, recursive: true });
   }
 
   console.log("Lockstep capture complete.");

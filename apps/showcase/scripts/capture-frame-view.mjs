@@ -12,7 +12,7 @@
  */
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -228,6 +228,7 @@ function restoreSettings(originalSettings) {
   }
 
   console.log("Restored original settings byte-identical.");
+  rmSync(settingsBackupPath, { force: true });
 }
 
 async function main() {
@@ -245,6 +246,19 @@ async function main() {
 
   mkdirSync(outputDir, { recursive: true });
   const originalSettings = readFileSync(settingsPath);
+
+  // A backup that differs from the live file means an earlier run never restored it; copying
+  // over it would destroy the only copy of the original settings.
+  if (
+    existsSync(settingsBackupPath) &&
+    !readFileSync(settingsBackupPath).equals(originalSettings)
+  ) {
+    throw new Error(
+      `${settingsBackupPath} differs from the current settings, so an earlier capture did not ` +
+        "restore it. Restore or delete it by hand, then rerun.",
+    );
+  }
+
   const originalHash = createHash("sha256").update(originalSettings).digest("hex");
   console.log(`Settings SHA-256 before: ${originalHash}`);
   copyFileSync(settingsPath, settingsBackupPath);

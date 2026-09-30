@@ -156,7 +156,7 @@ pnpm check
 
 ```bash
 pnpm dev:pane                                  # Pane View  → http://127.0.0.1:3000
-pnpm dev:showcase                              # Showcase   → http://127.0.0.1:3100
+pnpm --filter @latch-works/showcase dev        # Showcase   → http://127.0.0.1:3100
 pnpm dev:lockstep                              # Lockstep desktop (Electron dev)
 pnpm --filter @latch-works/frame-view start    # Frame View (Electron dev)
 pnpm --filter @latch-works/gather-box build    # Gather Box → dist/, load unpacked in Chrome

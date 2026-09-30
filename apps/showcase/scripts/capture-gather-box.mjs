@@ -14,11 +14,12 @@
  *
  * Build the extension first: pnpm --filter @latch-works/gather-box build
  */
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import puppeteer from "puppeteer-core";
+import { resolveChromePath } from "./resolve-chrome.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -92,43 +93,6 @@ async function seedDirectoryHandle(browser, panelUrl) {
   });
   await helper.close();
   console.log("Seeded a real OPFS directory handle for the folder restore path.");
-}
-
-function resolveBundledChrome() {
-  const cacheRoot = join(root, "chrome");
-
-  if (!existsSync(cacheRoot)) {
-    return null;
-  }
-
-  for (const platformDir of readdirSync(cacheRoot, { withFileTypes: true })) {
-    if (!platformDir.isDirectory()) {
-      continue;
-    }
-
-    const bundleRoot = join(cacheRoot, platformDir.name);
-
-    const candidates = [
-      join(
-        bundleRoot,
-        "chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
-      ),
-      join(
-        bundleRoot,
-        "chrome-mac-x64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
-      ),
-      join(bundleRoot, "chrome-linux64/chrome"),
-      join(bundleRoot, "chrome-win64/chrome.exe"),
-    ];
-
-    const match = candidates.find((candidate) => existsSync(candidate));
-
-    if (match) {
-      return match;
-    }
-  }
-
-  return null;
 }
 
 function sleep(ms) {
@@ -481,13 +445,7 @@ async function main() {
     );
   }
 
-  const chromePath = process.env.CHROME_PATH ?? resolveBundledChrome();
-
-  if (!chromePath || !existsSync(chromePath)) {
-    throw new Error(
-      "Chrome for Testing not found. Set CHROME_PATH or run: pnpm exec browsers install chrome@stable",
-    );
-  }
+  const chromePath = await resolveChromePath();
 
   mkdirSync(outputDir, { recursive: true });
   const profileDir = mkdtempSync(join(tmpdir(), "gather-box-shots-"));
