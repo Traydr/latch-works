@@ -272,9 +272,11 @@ export async function saveBlobWithoutClobbering(
 }
 
 /**
- * What a candidate filename holds for this content. A commit marker left by an interrupted save
- * only authorizes rewriting its target when the marker records this exact content; anything else
- * at that name is an archive file and is never replaced.
+ * What a candidate filename holds for this content. A File System Access write lands only when its
+ * stream closes, so an interrupted write leaves its target missing or empty, never partial. A
+ * commit marker therefore authorizes writing its target only while the target is missing or empty
+ * and the marker records this exact content. Any file with bytes in it is an archive file and is
+ * never replaced, whatever a marker says.
  */
 async function claimCandidate(
   destinationDirectory: WritableDirectory,
@@ -286,28 +288,26 @@ async function claimCandidate(
   const markerName = await getCommitMarkerName(fileName);
   const marker = await readCommitMarker(destinationDirectory, markerName);
   const existing = await getExistingFileHandle(destinationDirectory, fileName);
+  const unwritten = !existing || (await isEmptyFile(existing));
 
-  if (marker?.contentHash === contentHash) {
+  if (marker?.contentHash === contentHash && unwritten) {
     // This content's own write was interrupted; finish it at the name it had claimed.
-    if (!existing || !(await fileHasContent(existing, blob.size, contentHash))) {
-      throwIfAborted(signal);
-      await writeBlobDirect(destinationDirectory, fileName, blob, signal);
-    }
-
+    throwIfAborted(signal);
+    await writeBlobDirect(destinationDirectory, fileName, blob, signal);
     await removeEntryIfPresent(destinationDirectory, markerName);
 
     return "repaired";
   }
 
-  if (marker && existing && !(await fileHasContent(existing, null, marker.contentHash))) {
+  if (marker && existing && unwritten) {
     // Another item's write never finished. Leave the file and its marker for that item's replay.
     return "taken";
   }
 
   if (marker !== undefined) {
-    // The marked write finished and only its cleanup was lost, its target was never created, or
-    // the marker cannot be read (a marker is written before its target is opened, and older
-    // builds did not record content). None of these proves an unfinished write of known content.
+    // The marked write finished and only its cleanup was lost, its target was never created, the
+    // target now holds other bytes, or the marker cannot be read (older builds did not record
+    // content). None of these proves an unfinished write that may be completed here.
     await removeEntryIfPresent(destinationDirectory, markerName);
   }
 
@@ -394,6 +394,15 @@ async function getExistingFileHandle(
   }
 }
 
+/** A file that cannot be read is not known to be empty, so it is never treated as replaceable. */
+async function isEmptyFile(fileHandle: WritableFile): Promise<boolean> {
+  try {
+    return (await fileHandle.getFile()).size === 0;
+  } catch {
+    return false;
+  }
+}
+
 /** A file that cannot be read matches no content, so it is never treated as replaceable. */
 async function fileHasContent(
   fileHandle: WritableFile,
@@ -446,7 +455,7 @@ async function commitBlob(
     await removeEntryIfPresent(destinationDirectory, markerName);
   } catch (error) {
     if (isAbortError(toError(error)) || signal?.aborted) {
-      await removeEntryIfPresent(destinationDirectory, targetFileName);
+      await removeEmptyEntry(destinationDirectory, targetFileName);
       await removeEntryIfPresent(destinationDirectory, markerName);
     }
 
@@ -504,6 +513,18 @@ async function removeEntryIfPresent(
     if (!(error instanceof DOMException) || error.name !== "NotFoundError") {
       throw error;
     }
+  }
+}
+
+/** A cancelled write only takes back the empty file it created; a file with bytes stays. */
+async function removeEmptyEntry(
+  destinationDirectory: WritableDirectory,
+  fileName: string
+): Promise<void> {
+  const existing = await getExistingFileHandle(destinationDirectory, fileName);
+
+  if (existing && (await isEmptyFile(existing))) {
+    await removeEntryIfPresent(destinationDirectory, fileName);
   }
 }
 

@@ -99,6 +99,23 @@ describe("collision-safe saving", () => {
     expect(directory.markerNames()).toHaveLength(0);
   });
 
+  it("never replaces an archive edit made after a commit marker was left behind", async () => {
+    const directory = new MemoryDirectory();
+    directory.failMarkerRemoval = true;
+    await expect(saveBlobWithoutClobbering(blob("download A"), directory, "same.jpg")).rejects.toThrow(
+      "browser stopped"
+    );
+    directory.failMarkerRemoval = false;
+    directory.files.set("same.jpg", blob("archive edit B"));
+
+    const replay = await saveBlobWithoutClobbering(blob("download A"), directory, "same.jpg");
+
+    expect(replay.fileName).not.toBe("same.jpg");
+    expect(await directory.text("same.jpg")).toBe("archive edit B");
+    expect(await directory.text(replay.fileName)).toBe("download A");
+    expect(directory.markerNames()).toHaveLength(0);
+  });
+
   it("repairs an interrupted write when the same content is replayed", async () => {
     const directory = new MemoryDirectory();
     directory.interruptWritesTo = "page.jpg";
