@@ -156,21 +156,19 @@ describe("soft-deleted purge", () => {
   });
 
   it("keeps an original another media row still serves to a live entry", async () => {
-    // Rows written before sync canonicalised the hash: two spellings, one storage key.
-    const lower = "ab".repeat(32);
-    const objectKey = `originals/${lower}.jpg`;
-    await insertEntry(await insertMediaObject(lower, objectKey), "kept/ab.jpg", null);
-    await insertEntry(
-      await insertMediaObject(lower.toUpperCase(), objectKey),
-      "gone/ab.jpg",
-      new Date(),
-    );
+    // Two media rows that name one storage key. Mixed-case hashes made these
+    // before migration 0021; the purge must not depend on that being the only way.
+    const live = "ab".repeat(32);
+    const gone = "cd".repeat(32);
+    const objectKey = `originals/${live}.jpg`;
+    await insertEntry(await insertMediaObject(live, objectKey), "kept/ab.jpg", null);
+    await insertEntry(await insertMediaObject(gone, objectKey), "gone/ab.jpg", new Date());
 
     const deletes: ExternalDeletes = { objectKeys: [], shutterSources: [] };
     await runJobToCompletion(await insertJob("soft_deleted_purge"), deletes);
 
     expect(deletes.objectKeys).toEqual([]);
-    expect(await remainingMediaSha256s()).toEqual([lower.toUpperCase(), lower].sort());
+    expect(await remainingMediaSha256s()).toEqual([live, gone]);
   });
 
   it("has work when a content change left an original no entry references", async () => {

@@ -3,6 +3,7 @@ import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import {
   bigint,
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -220,6 +221,11 @@ export const mediaObjects = pgTable(
   },
   (table) => ({
     sha256SizeUnique: uniqueIndex("media_objects_sha256_size_unique").on(table.sha256, table.size),
+    // One spelling per hash, so equality on sha256 matches the same bytes (migration 0021).
+    sha256Lowercase: check(
+      "media_objects_sha256_lowercase",
+      sql`${table.sha256} = lower(${table.sha256})`,
+    ),
   }),
 );
 
@@ -236,6 +242,10 @@ export const shutterSourceCleanup = pgTable(
     pendingIndex: index("shutter_source_cleanup_pending_idx")
       .on(table.queuedAt)
       .where(sql`${table.purgedAt} is null`),
+    sha256Lowercase: check(
+      "shutter_source_cleanup_sha256_lowercase",
+      sql`${table.sha256} = lower(${table.sha256})`,
+    ),
   }),
 );
 
@@ -292,6 +302,10 @@ export const libraryEntries = pgTable(
     parentIndex: index("library_entries_parent_path_idx").on(table.parentPath),
     mediaObjectIndex: index("library_entries_media_object_id_idx").on(table.mediaObjectId),
     deletedAtIndex: index("library_entries_deleted_at_idx").on(table.deletedAt),
+    sha256Lowercase: check(
+      "library_entries_sha256_lowercase",
+      sql`${table.sha256} = lower(${table.sha256})`,
+    ),
   }),
 );
 

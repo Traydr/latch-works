@@ -18,9 +18,9 @@ import { libraryEntries, mediaObjects, shutterSourceCleanup } from "../db/schema
 
 /**
  * Media objects whose original no live library entry references. The check is
- * by storage key, not by row: rows written before sync canonicalised the hash
- * can spell one content two ways, and both rows then name the same original.
- * Deleting that key for one row would take a live entry's original with it.
+ * by storage key, not by row: two rows can name the same original (mixed-case
+ * hashes made such pairs until migration 0021 merged them), and deleting that
+ * key for one row would take a live entry's original with it.
  */
 export function orphanedMediaObjectCondition(): SQL {
   const liveObjects = alias(mediaObjects, "live_media_objects");
