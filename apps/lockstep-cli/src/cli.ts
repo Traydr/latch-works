@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { UnfinalizedSyncRunError } from "@latch-works/lockstep-core";
 import { executeCommand } from "./commands.js";
 import { createConfigStore } from "./config.js";
 import { watchInterrupts } from "./interrupt.js";
@@ -21,6 +22,16 @@ async function run(): Promise<void> {
 
     if (exitCode === undefined) {
       throw error;
+    }
+
+    // Finalization failed, so Pane View still shows the run as running: the message names the run
+    // and how to cancel it, which a bare "Cancelled." would hide. Only a run that was meant to
+    // end as cancelled keeps the signal's exit code.
+    if (error instanceof UnfinalizedSyncRunError) {
+      console.error(error.message);
+      process.exitCode = error.intendedStatus === "cancelled" ? exitCode : 1;
+
+      return;
     }
 
     console.error("Cancelled.");
