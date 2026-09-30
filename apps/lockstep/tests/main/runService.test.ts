@@ -4,9 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
-
+import { RunCancelledError } from "../../src/main/errors";
 import { ProfileService } from "../../src/main/services/profileService";
-import { RunService } from "../../src/main/services/runService";
+import { type RunEventWindow, RunService } from "../../src/main/services/runService";
 
 const TOKEN = "sync-token";
 
@@ -19,6 +19,8 @@ interface SyncServer {
   apiUrl: string;
   deleted: string[];
   entries: Map<string, number>;
+  /** Answers a sync run's completion request; by default the server accepts it. */
+  onComplete: () => number;
   server: Server;
 }
 
@@ -35,6 +37,7 @@ async function readBody(request: IncomingMessage): Promise<string> {
 async function startSyncServer(initialEntries: Record<string, number>): Promise<SyncServer> {
   const deleted: string[] = [];
   const entries = new Map(Object.entries(initialEntries));
+  const sync = { onComplete: () => 200 };
 
   const server = createServer((request, response) => {
     void (async () => {
@@ -68,6 +71,13 @@ async function startSyncServer(initialEntries: Record<string, number>): Promise<
         return;
       }
 
+      if (request.url === "/api/sync/runs/run-1/complete") {
+        const status = sync.onComplete();
+        send(status, JSON.stringify(status === 200 ? { status: "ok" } : { error: "unavailable" }));
+
+        return;
+      }
+
       const deletion = DeleteBodySchema.safeParse(JSON.parse(body));
 
       if (request.url === "/api/sync/complete-object" && deletion.success) {
@@ -82,7 +92,7 @@ async function startSyncServer(initialEntries: Record<string, number>): Promise<
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const { port } = ListeningAddressSchema.parse(server.address());
 
-  return { apiUrl: `http://127.0.0.1:${port}`, deleted, entries, server };
+  return Object.assign(sync, { apiUrl: `http://127.0.0.1:${port}`, deleted, entries, server });
 }
 
 describe("RunService prune", () => {
@@ -103,7 +113,7 @@ describe("RunService prune", () => {
     await rm(tempDir, { force: true, recursive: true });
   });
 
-  async function createRunService() {
+  async function createRunService(getMainWindow: () => RunEventWindow | null = () => null) {
     const profiles = new ProfileService(path.join(tempDir, "user-data"), {
       legacyConfigPath: path.join(tempDir, "missing-legacy.json"),
       secretStorage: {
@@ -126,7 +136,11 @@ describe("RunService prune", () => {
       throw new Error("profile was not created");
     }
 
-    return { profileId: created.value.id, runService: new RunService(profiles, () => null) };
+    return {
+      profileId: created.value.id,
+      profiles,
+      runService: new RunService(profiles, getMainWindow),
+    };
   }
 
   it("deletes the reviewed plan's deletes once, never a fresh plan's", async () => {
@@ -159,5 +173,84 @@ describe("RunService prune", () => {
       /no longer current/,
     );
     expect(sync.deleted).toEqual(["gone-1.jpg"]);
+  });
+
+  it("reports a cancelled prune it could not finalize as a failure and saves it", async () => {
+    const { profileId, profiles, runService } = await createRunService();
+    const plan = await runService.plan({ profileId });
+
+    // Cancel arrives while the server is refusing to finalize the run.
+    sync.onComplete = () => {
+      runService.cancel();
+
+      return 503;
+    };
+
+    const pruning = runService.prune({ planId: plan.planId, profileId });
+
+    await expect(pruning).rejects.toThrow(/sync run run-1 could not be finalized/);
+    await expect(pruning).rejects.not.toBeInstanceOf(RunCancelledError);
+    expect(sync.deleted).toEqual(["gone-1.jpg", "gone-2.jpg"]);
+    expect(profiles.getProfile(profileId)?.lastRun).toMatchObject({
+      action: "prune",
+      message: expect.stringMatching(/sync run run-1 could not be finalized/),
+      pushed: 2,
+      status: "failed",
+    });
+  });
+
+  it("announces a run's end only once it is saved and a new window would see it idle", async () => {
+    const ends: { action: string; lastRun?: string; running: boolean }[] = [];
+    let service: RunService | undefined;
+    let profileService: ProfileService | undefined;
+    let id = "";
+
+    const window: RunEventWindow = {
+      isDestroyed: () => false,
+      webContents: {
+        send: (_channel, event) => {
+          if (event.type === "complete") {
+            ends.push({
+              action: event.summary.action,
+              lastRun: profileService?.getProfile(id)?.lastRun?.action,
+              running: service?.getActiveRun() !== null,
+            });
+          }
+        },
+      },
+    };
+
+    const created = await createRunService(() => window);
+    ({ profileId: id, profiles: profileService, runService: service } = created);
+
+    const plan = await created.runService.plan({ profileId: id });
+    await created.runService.prune({ planId: plan.planId, profileId: id });
+
+    expect(ends).toEqual([
+      { action: "plan", lastRun: "plan", running: false },
+      { action: "prune", lastRun: "prune", running: false },
+    ]);
+  });
+
+  it("keeps profile changes and runs apart, whichever starts first", async () => {
+    const { profileId, profiles, runService } = await createRunService();
+
+    // An edit accepted first holds off a run that would read the old target.
+    const edit = runService.changeProfileWhileIdle(() =>
+      profiles.updateProfile(profileId, { apiUrl: "http://127.0.0.1:1" }),
+    );
+
+    await expect(runService.plan({ profileId })).rejects.toThrow(/profile change/);
+    await expect(edit).resolves.toMatchObject({ status: "ok" });
+    expect(profiles.getProfile(profileId)?.lastRun).toBeUndefined();
+
+    // A run started first refuses the edit, which would take its result.
+    await profiles.updateProfile(profileId, { apiUrl: sync.apiUrl });
+    const plan = runService.plan({ profileId });
+
+    await expect(
+      runService.changeProfileWhileIdle(() => profiles.setActiveProfile(profileId)),
+    ).resolves.toBeUndefined();
+    await expect(plan).resolves.toMatchObject({ counts: { delete: 2 } });
   });
 });

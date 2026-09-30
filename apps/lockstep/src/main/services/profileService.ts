@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { Result, type Result as ResultType } from "better-result";
@@ -59,6 +59,8 @@ export class ProfileService {
   private readonly secretStorage: SecretStorage;
   private readonly sessionTokens = new Map<string, string>();
   private state: PersistedState = { activeProfileId: null, profiles: [] };
+  /** Settles when the last queued change has been written; see `exclusive`. */
+  private pendingChange: Promise<void> = Promise.resolve();
 
   constructor(userDataPath: string, options: ProfileServiceOptions) {
     this.filePath = path.join(userDataPath, "lockstep-settings.json");
@@ -79,9 +81,45 @@ export class ProfileService {
       return Result.ok();
     } catch (error) {
       this.state = { activeProfileId: null, profiles: [] };
+      const failure = toError(error);
 
-      return Result.err(unexpectedFileSystemError("init-profiles", toError(error), this.filePath));
+      if (!existsSync(this.filePath)) {
+        return Result.err(unexpectedFileSystemError("init-profiles", failure, this.filePath));
+      }
+
+      return Result.err(await this.setAsideUnreadableSettings(failure));
     }
+  }
+
+  /**
+   * Moves a settings file that failed to load out of the way, so the next save starts a new file
+   * instead of overwriting profiles and saved tokens that might still be recovered by hand.
+   */
+  private async setAsideUnreadableSettings(failure: Error): Promise<FileSystemError> {
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+
+    const keptPath = path.join(
+      path.dirname(this.filePath),
+      `lockstep-settings.corrupt-${stamp}.json`,
+    );
+
+    try {
+      await rename(this.filePath, keptPath);
+    } catch (renameError) {
+      return unexpectedFileSystemError(
+        "init-profiles",
+        new Error(
+          `${failure.message}. The file could not be set aside either: ${toError(renameError).message}`,
+        ),
+        this.filePath,
+      );
+    }
+
+    return unexpectedFileSystemError(
+      "init-profiles",
+      new Error(`${failure.message}. The unreadable settings file was kept as ${keptPath}.`),
+      keptPath,
+    );
   }
 
   getSettings(): LockstepSettings {
@@ -152,38 +190,40 @@ export class ProfileService {
   async createProfile(
     input: LockstepProfileInput,
   ): Promise<ResultType<LockstepProfilePublic, FileSystemError>> {
-    const profile: PersistedProfile = {
-      apiUrl: input.apiUrl,
-      id: randomUUID(),
-      name: input.name,
-      sourceRoot: input.sourceRoot,
-    };
+    return this.exclusive(async () => {
+      const profile: PersistedProfile = {
+        apiUrl: input.apiUrl,
+        id: randomUUID(),
+        name: input.name,
+        sourceRoot: input.sourceRoot,
+      };
 
-    if (input.token) {
-      const encrypted = this.encryptToken(input.token);
+      if (input.token) {
+        const encrypted = this.encryptToken(input.token);
 
-      if (encrypted) {
-        profile.encryptedToken = encrypted;
-      } else {
-        // Do not persist a plaintext or stale encrypted blob when OS encryption is unavailable.
-        delete profile.encryptedToken;
-        this.sessionTokens.set(profile.id, input.token);
+        if (encrypted) {
+          profile.encryptedToken = encrypted;
+        } else {
+          // Do not persist a plaintext or stale encrypted blob when OS encryption is unavailable.
+          delete profile.encryptedToken;
+          this.sessionTokens.set(profile.id, input.token);
+        }
       }
-    }
 
-    this.state.profiles.push(profile);
+      this.state.profiles.push(profile);
 
-    if (!this.state.activeProfileId) {
-      this.state.activeProfileId = profile.id;
-    }
+      if (!this.state.activeProfileId) {
+        this.state.activeProfileId = profile.id;
+      }
 
-    const saveResult = await this.save();
+      const saveResult = await this.save();
 
-    if (Result.isError(saveResult)) {
-      return saveResult;
-    }
+      if (Result.isError(saveResult)) {
+        return saveResult;
+      }
 
-    return Result.ok(this.toPublicProfile(profile));
+      return Result.ok(this.toPublicProfile(profile));
+    });
   }
 
   /**
@@ -194,63 +234,65 @@ export class ProfileService {
     profileId: string,
     patch: LockstepProfilePatch,
   ): Promise<ResultType<LockstepProfilePublic, FileSystemError>> {
-    const current = this.getProfile(profileId);
+    return this.exclusive(async () => {
+      const current = this.getProfile(profileId);
 
-    if (!current) {
-      return Result.err(
-        unexpectedFileSystemError("update-profile", new Error("Profile not found"), profileId),
-      );
-    }
-
-    const next: PersistedProfile = {
-      ...current,
-      apiUrl: patch.apiUrl || current.apiUrl,
-      name: patch.name || current.name,
-      sourceRoot: patch.sourceRoot || current.sourceRoot,
-    };
-
-    if (next.apiUrl !== current.apiUrl || next.sourceRoot !== current.sourceRoot) {
-      delete next.lastRun;
-    }
-
-    let sessionToken = this.sessionTokens.get(profileId);
-
-    if (patch.token) {
-      const encrypted = this.encryptToken(patch.token);
-
-      if (encrypted) {
-        next.encryptedToken = encrypted;
-        sessionToken = undefined;
-      } else {
-        // Clear any previously persisted ciphertext so a later restart cannot revive a stale token.
-        delete next.encryptedToken;
-        sessionToken = patch.token;
+      if (!current) {
+        return Result.err(
+          unexpectedFileSystemError("update-profile", new Error("Profile not found"), profileId),
+        );
       }
-    } else if (patch.clearToken) {
-      delete next.encryptedToken;
-      sessionToken = undefined;
-    }
 
-    const nextState: PersistedState = {
-      ...this.state,
-      profiles: this.state.profiles.map((profile) => (profile.id === profileId ? next : profile)),
-    };
+      const next: PersistedProfile = {
+        ...current,
+        apiUrl: patch.apiUrl || current.apiUrl,
+        name: patch.name || current.name,
+        sourceRoot: patch.sourceRoot || current.sourceRoot,
+      };
 
-    const saveResult = await this.save(nextState);
+      if (next.apiUrl !== current.apiUrl || next.sourceRoot !== current.sourceRoot) {
+        delete next.lastRun;
+      }
 
-    if (Result.isError(saveResult)) {
-      return saveResult;
-    }
+      let sessionToken = this.sessionTokens.get(profileId);
 
-    this.state = nextState;
+      if (patch.token) {
+        const encrypted = this.encryptToken(patch.token);
 
-    if (sessionToken) {
-      this.sessionTokens.set(profileId, sessionToken);
-    } else {
-      this.sessionTokens.delete(profileId);
-    }
+        if (encrypted) {
+          next.encryptedToken = encrypted;
+          sessionToken = undefined;
+        } else {
+          // Clear any previously persisted ciphertext so a later restart cannot revive a stale token.
+          delete next.encryptedToken;
+          sessionToken = patch.token;
+        }
+      } else if (patch.clearToken) {
+        delete next.encryptedToken;
+        sessionToken = undefined;
+      }
 
-    return Result.ok(this.toPublicProfile(next));
+      const nextState: PersistedState = {
+        ...this.state,
+        profiles: this.state.profiles.map((profile) => (profile.id === profileId ? next : profile)),
+      };
+
+      const saveResult = await this.save(nextState);
+
+      if (Result.isError(saveResult)) {
+        return saveResult;
+      }
+
+      this.state = nextState;
+
+      if (sessionToken) {
+        this.sessionTokens.set(profileId, sessionToken);
+      } else {
+        this.sessionTokens.delete(profileId);
+      }
+
+      return Result.ok(this.toPublicProfile(next));
+    });
   }
 
   /**
@@ -258,66 +300,76 @@ export class ProfileService {
    * list order, or none when it was the last one.
    */
   async deleteProfile(profileId: string): Promise<ResultType<LockstepSettings, FileSystemError>> {
-    const index = this.state.profiles.findIndex((profile) => profile.id === profileId);
+    return this.exclusive(async () => {
+      const index = this.state.profiles.findIndex((profile) => profile.id === profileId);
 
-    if (index === -1) {
-      return Result.err(
-        unexpectedFileSystemError("delete-profile", new Error("Profile not found"), profileId),
-      );
-    }
+      if (index === -1) {
+        return Result.err(
+          unexpectedFileSystemError("delete-profile", new Error("Profile not found"), profileId),
+        );
+      }
 
-    const profiles = this.state.profiles.filter((profile) => profile.id !== profileId);
+      const profiles = this.state.profiles.filter((profile) => profile.id !== profileId);
 
-    const activeProfileId =
-      this.state.activeProfileId === profileId
-        ? (profiles[Math.min(index, profiles.length - 1)]?.id ?? null)
-        : this.state.activeProfileId;
+      const activeProfileId =
+        this.state.activeProfileId === profileId
+          ? (profiles[Math.min(index, profiles.length - 1)]?.id ?? null)
+          : this.state.activeProfileId;
 
-    const nextState: PersistedState = { activeProfileId, profiles };
-    const saveResult = await this.save(nextState);
+      const nextState: PersistedState = { activeProfileId, profiles };
+      const saveResult = await this.save(nextState);
 
-    if (Result.isError(saveResult)) {
-      return saveResult;
-    }
+      if (Result.isError(saveResult)) {
+        return saveResult;
+      }
 
-    this.state = nextState;
-    this.sessionTokens.delete(profileId);
+      this.state = nextState;
+      this.sessionTokens.delete(profileId);
 
-    return Result.ok(this.getSettings());
+      return Result.ok(this.getSettings());
+    });
   }
 
   async setActiveProfile(
     profileId: string,
   ): Promise<ResultType<LockstepSettings, FileSystemError>> {
-    if (!this.getProfile(profileId)) {
-      return Result.err(
-        unexpectedFileSystemError("set-active-profile", new Error("Profile not found"), profileId),
-      );
-    }
+    return this.exclusive(async () => {
+      if (!this.getProfile(profileId)) {
+        return Result.err(
+          unexpectedFileSystemError(
+            "set-active-profile",
+            new Error("Profile not found"),
+            profileId,
+          ),
+        );
+      }
 
-    this.state.activeProfileId = profileId;
-    const saveResult = await this.save();
+      this.state.activeProfileId = profileId;
+      const saveResult = await this.save();
 
-    if (Result.isError(saveResult)) {
-      return saveResult;
-    }
+      if (Result.isError(saveResult)) {
+        return saveResult;
+      }
 
-    return Result.ok(this.getSettings());
+      return Result.ok(this.getSettings());
+    });
   }
 
   async recordLastRun(
     profileId: string,
     summary: LockstepRunSummary,
   ): Promise<ResultType<void, FileSystemError>> {
-    const profile = this.getProfile(profileId);
+    return this.exclusive(async () => {
+      const profile = this.getProfile(profileId);
 
-    if (!profile) {
-      return Result.ok();
-    }
+      if (!profile) {
+        return Result.ok();
+      }
 
-    profile.lastRun = { ...summary, profileId };
+      profile.lastRun = { ...summary, profileId };
 
-    return this.save();
+      return this.save();
+    });
   }
 
   private toPublicProfile(profile: PersistedProfile): LockstepProfilePublic {
@@ -373,16 +425,38 @@ export class ProfileService {
     await this.save();
   }
 
-  /** Writes `state` (the current state by default) so callers can commit only after it lands. */
+  /**
+   * Runs one read-modify-write of the settings after every change queued before it, so an edit
+   * cannot write back a state that misses a selection saved while it waited.
+   */
+  private exclusive<T>(change: () => Promise<T>): Promise<T> {
+    const result = this.pendingChange.then(change);
+    this.pendingChange = result.then(
+      () => undefined,
+      () => undefined,
+    );
+
+    return result;
+  }
+
+  /**
+   * Writes `state` (the current state by default) so callers can commit only after it lands. The
+   * file is replaced by rename, so a failed or interrupted write never leaves a partial document.
+   */
   private async save(
     state: PersistedState = this.state,
   ): Promise<ResultType<void, FileSystemError>> {
+    const tempPath = `${this.filePath}.${randomUUID()}.tmp`;
+
     try {
       await mkdir(path.dirname(this.filePath), { recursive: true });
-      await writeFile(this.filePath, `${JSON.stringify(state, null, 2)}\n`, "utf-8");
+      await writeFile(tempPath, `${JSON.stringify(state, null, 2)}\n`, "utf-8");
+      await rename(tempPath, this.filePath);
 
       return Result.ok();
     } catch (error) {
+      await rm(tempPath, { force: true });
+
       return Result.err(unexpectedFileSystemError("save-profiles", toError(error), this.filePath));
     }
   }

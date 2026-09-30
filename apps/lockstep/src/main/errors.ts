@@ -22,7 +22,13 @@ export class RunError extends TaggedError("RunError")<{
   message: string;
 }> {}
 
-type AppError = ValidationError | FileSystemError | RunError;
+/** The user cancelled the run; the renderer keeps its partial progress instead of an error. */
+export class RunCancelledError extends TaggedError("RunCancelled")<{
+  operation: string;
+  message: string;
+}> {}
+
+type AppError = ValidationError | FileSystemError | RunError | RunCancelledError;
 
 /** Thrown values are `unknown` by design; wrap anything that is not already an `Error`. */
 export function toError(cause: unknown): Error {
@@ -77,6 +83,14 @@ function toIpcError(error: AppError): IpcErrorPayload {
       message: error.message,
       operation: error.operation,
       path: error.path,
+    };
+  }
+
+  if (error._tag === "RunCancelled") {
+    return {
+      _tag: "RunCancelled",
+      message: error.message,
+      operation: error.operation,
     };
   }
 

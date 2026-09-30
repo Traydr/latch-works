@@ -60,6 +60,7 @@ export function AppLayout({ ctrl }: { ctrl: LockstepController }) {
         <span className="text-xs font-semibold tracking-tight">Lockstep</span>
         {settings && settings.profiles.length > 0 ? (
           <ProfileSelect
+            disabled={run.running}
             profiles={settings.profiles}
             value={settings.activeProfileId ?? ""}
             onChange={(id) => void session.handleProfileChange(id)}

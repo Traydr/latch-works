@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import {
+  ActiveRunSchema,
   DoctorResultSchema,
   LockstepPlanSchema,
   LockstepProfileInputSchema,
@@ -47,6 +48,11 @@ export const InvokeIpcContracts = {
     LockstepSettingsSchema,
   ),
   doctor: defineInvokeContract("lockstep:doctor", z.tuple([z.string()]), DoctorResultSchema),
+  getRunStatus: defineInvokeContract(
+    "lockstep:get-run-status",
+    z.tuple([]),
+    ActiveRunSchema.nullable(),
+  ),
   getSettings: defineInvokeContract("lockstep:get-settings", z.tuple([]), LockstepSettingsSchema),
   pickSourceFolder: defineInvokeContract(
     "lockstep:pick-source-folder",

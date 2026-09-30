@@ -8,10 +8,10 @@ import {
   pruneDeleted,
   pushChanges,
   doctor as runDoctor,
+  UnfinalizedSyncRunError,
 } from "@latch-works/lockstep-core";
-import type { BrowserWindow } from "electron";
-
-import type { DoctorResult, PruneRequest, RunRequest } from "../../shared/types";
+import type { ActiveRun, DoctorResult, PruneRequest, RunRequest } from "../../shared/types";
+import { RunCancelledError, toError } from "../errors";
 import type { ProfileService } from "./profileService";
 
 /** The lockstep-core entry points a run needs, injectable so tests can drive them. */
@@ -37,21 +37,49 @@ interface ReviewedPlan {
   sourceRoot: string;
 }
 
+/** The part of the main window run events go to; `BrowserWindow` provides it. */
+export interface RunEventWindow {
+  isDestroyed(): boolean;
+  webContents: { send(channel: "lockstep:run-event", event: LockstepRunEvent): void };
+}
+
 type RunCredentials = { apiToken: string; apiUrl: string; sourceRoot: string };
 
 export class RunService {
   private abortController: AbortController | null = null;
-  private running = false;
+  private activeRun: ActiveRun | null = null;
+  /** Profile changes accepted but not yet saved; a run waits for none. */
+  private pendingProfileChanges = 0;
   private readonly reviewedPlans = new Map<string, ReviewedPlan>();
 
   constructor(
     private readonly profileService: ProfileService,
-    private readonly getMainWindow: () => BrowserWindow | null,
+    private readonly getMainWindow: () => RunEventWindow | null,
     private readonly core: LockstepCore = lockstepCore,
   ) {}
 
-  isRunning(): boolean {
-    return this.running;
+  /** The run in progress, so a window opened mid-run can show it and offer Cancel. */
+  getActiveRun(): ActiveRun | null {
+    return this.activeRun;
+  }
+
+  /**
+   * Edits, deletes, or selects a profile only while no run is going, and holds runs off until the
+   * change is saved: a run reads its profile once and records its result on it. Resolves to
+   * `undefined`, without calling `change`, while a run is in progress.
+   */
+  async changeProfileWhileIdle<T>(change: () => Promise<T>): Promise<T | undefined> {
+    if (this.activeRun) {
+      return undefined;
+    }
+
+    this.pendingProfileChanges += 1;
+
+    try {
+      return await change();
+    } finally {
+      this.pendingProfileChanges -= 1;
+    }
   }
 
   cancel(): void {
@@ -158,35 +186,46 @@ export class RunService {
     });
   }
 
+  /** Checks the profile's source folder and server; Cancel stops it like any other run. */
   async doctor(profileId: string): Promise<DoctorResult> {
-    const profile = this.profileService.getProfile(profileId);
+    return this.ownRun("doctor", profileId, async (observer, signal) => {
+      const profile = this.profileService.getProfile(profileId);
 
-    if (!profile) {
-      throw new Error("Profile not found.");
-    }
+      if (!profile) {
+        throw new Error("Profile not found.");
+      }
 
-    const observer = this.createObserver();
+      const result = await this.core.doctor(
+        {
+          apiToken: this.profileService.getApiToken(profileId),
+          apiUrl: profile.apiUrl,
+          signal,
+          sourceRoot: profile.sourceRoot,
+        },
+        {
+          // A cancelled snapshot check reports a failed check; the run reports the cancel instead.
+          onEvent: (event) => {
+            if (!signal.aborted) {
+              observer.onEvent(event);
+            }
+          },
+        },
+      );
 
-    const result = await this.core.doctor(
-      {
-        apiToken: this.profileService.getApiToken(profileId),
-        apiUrl: profile.apiUrl,
-        sourceRoot: profile.sourceRoot,
-      },
-      observer,
-    );
+      signal.throwIfAborted();
 
-    await this.profileService.recordLastRun(profileId, {
-      action: "doctor",
-      completedAt: new Date().toISOString(),
-      failed: result.ok ? 0 : 1,
-      message: result.ok ? "All checks passed." : "Some checks failed.",
-      profileId,
-      pushed: 0,
-      status: result.ok ? "completed" : "failed",
+      await this.profileService.recordLastRun(profileId, {
+        action: "doctor",
+        completedAt: new Date().toISOString(),
+        failed: result.ok ? 0 : 1,
+        message: result.ok ? "All checks passed." : "Some checks failed.",
+        profileId,
+        pushed: 0,
+        status: result.ok ? "completed" : "failed",
+      });
+
+      return result;
     });
-
-    return result;
   }
 
   /**
@@ -220,31 +259,59 @@ export class RunService {
       signal: AbortSignal,
     ) => Promise<T>,
   ): Promise<T> {
-    if (this.running) {
+    return this.ownRun(operation, request.profileId, (observer, signal) => {
+      const profile = this.profileService.getProfile(request.profileId);
+
+      if (!profile) {
+        throw new Error("Profile not found.");
+      }
+
+      const apiToken = this.profileService.getApiToken(request.profileId);
+
+      if (!apiToken) {
+        throw new Error("API token is not configured for this profile.");
+      }
+
+      return runner(
+        { apiToken, apiUrl: profile.apiUrl, sourceRoot: profile.sourceRoot },
+        observer,
+        signal,
+      );
+    });
+  }
+
+  /** Runs one operation at a time under the controller Cancel aborts. */
+  private async ownRun<T>(
+    operation: LockstepRunSummary["action"],
+    profileId: string,
+    runner: (observer: LockstepObserver, signal: AbortSignal) => Promise<T>,
+  ): Promise<T> {
+    if (this.activeRun) {
       throw new Error("A sync run is already in progress.");
     }
 
-    const profile = this.profileService.getProfile(request.profileId);
-
-    if (!profile) {
-      throw new Error("Profile not found.");
+    if (this.pendingProfileChanges > 0) {
+      throw new Error("A profile change is still being saved. Try again when it finishes.");
     }
 
-    const apiToken = this.profileService.getApiToken(request.profileId);
-
-    if (!apiToken) {
-      throw new Error("API token is not configured for this profile.");
-    }
-
-    this.running = true;
-    this.abortController = new AbortController();
+    this.activeRun = { action: operation, profileId };
+    const abortController = new AbortController();
+    this.abortController = abortController;
     let completeObserved = false;
+    let reportedFailure: LockstepRunSummary | undefined;
+    /** Held until the run is saved and released, so a window never sees it end while it is busy. */
+    let completion: LockstepRunEvent | undefined;
     const baseObserver = this.createObserver();
 
     const observer: LockstepObserver = {
       onEvent: (event: LockstepRunEvent) => {
-        if (event.type === "complete") {
+        // Push and prune plan first; only this operation's own completion ends the run.
+        if (event.type === "complete" && event.summary.action === operation) {
           completeObserved = true;
+          reportedFailure = event.summary.status === "failed" ? event.summary : undefined;
+          completion = event;
+
+          return;
         }
 
         baseObserver.onEvent(event);
@@ -252,22 +319,18 @@ export class RunService {
     };
 
     try {
-      return await runner(
-        {
-          apiToken,
-          apiUrl: profile.apiUrl,
-          sourceRoot: profile.sourceRoot,
-        },
-        observer,
-        this.abortController.signal,
-      );
+      return await runner(observer, abortController.signal);
     } catch (error) {
-      if (this.abortController.signal.aborted && !completeObserved) {
+      // A run the server still shows as running is a failure to act on, even after Cancel.
+      const cancelled =
+        abortController.signal.aborted && !(error instanceof UnfinalizedSyncRunError);
+
+      if (cancelled && !completeObserved) {
         const summary: LockstepRunSummary = {
           action: operation,
           completedAt: new Date().toISOString(),
           failed: 0,
-          profileId: request.profileId,
+          profileId,
           pushed: 0,
           status: "cancelled",
         };
@@ -276,10 +339,38 @@ export class RunService {
         observer.onEvent({ type: "complete", summary });
       }
 
+      if (cancelled) {
+        throw new RunCancelledError({ message: "Run cancelled.", operation });
+      }
+
+      if (reportedFailure) {
+        // A push or prune whose items went through but whose sync run could not be finalized
+        // reports that failure, naming the run, before it throws.
+        await this.profileService.recordLastRun(profileId, reportedFailure);
+      } else if (!completeObserved) {
+        // Windows that attached mid-run learn the outcome only from events.
+        observer.onEvent({
+          type: "complete",
+          summary: {
+            action: operation,
+            completedAt: new Date().toISOString(),
+            failed: 0,
+            message: toError(error).message,
+            profileId,
+            pushed: 0,
+            status: "failed",
+          },
+        });
+      }
+
       throw error;
     } finally {
-      this.running = false;
+      this.activeRun = null;
       this.abortController = null;
+
+      if (completion) {
+        baseObserver.onEvent(completion);
+      }
     }
   }
 

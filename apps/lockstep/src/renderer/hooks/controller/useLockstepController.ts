@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
   DoctorResult,
+  IpcErrorPayload,
   LockstepPlan,
   LockstepProfileInput,
   LockstepProfilePatch,
@@ -238,6 +239,27 @@ export function useLockstepController(): LockstepController {
     return unsubscribe;
   }, [applyRunEvent]);
 
+  // A window opened while the main process is still running something (macOS keeps the app alive
+  // after its window closes) shows that run and its Cancel button until the run completes.
+  useEffect(() => {
+    void (async () => {
+      const result = await requireLockstepApi().getRunStatus();
+
+      if (Result.isError(result) || !result.value) {
+        return;
+      }
+
+      const { action } = result.value;
+      const label = `Resumed the ${action} run in progress...`;
+      setRunning(true);
+      activeRunActionRef.current = action;
+      setRunLabel(label);
+      setLogs([label]);
+      setRunProgress({ ...initialProgress, phase: "items", action, startedAt: Date.now() });
+      setScreenState("run");
+    })();
+  }, []);
+
   const filteredItems = useMemo(() => {
     if (!plan) {
       return [];
@@ -293,6 +315,23 @@ export function useLockstepController(): LockstepController {
     lastLoggedScanProgressRef.current = null;
     setRunProgress({ ...initialProgress, phase: "planning", action, startedAt: Date.now() });
     setScreenState("run");
+  }, []);
+
+  /** Ends a run whose request failed. A cancelled run keeps the progress it reached. */
+  const endRunWithError = useCallback((failure: IpcErrorPayload) => {
+    if (failure._tag === "RunCancelled") {
+      setRunLabel("Run cancelled.");
+      setRunProgress((prev) => ({
+        ...prev,
+        phase: "cancelled",
+        endedAt: prev.endedAt ?? Date.now(),
+      }));
+
+      return;
+    }
+
+    setError(failure.message);
+    setRunProgress((prev) => ({ ...prev, phase: "error", endedAt: Date.now() }));
   }, []);
 
   const markReviewVisited = useCallback(() => {
@@ -511,8 +550,7 @@ export function useLockstepController(): LockstepController {
     setRunning(false);
 
     if (Result.isError(result)) {
-      setError(result.error.message);
-      setRunProgress((prev) => ({ ...prev, phase: "error", endedAt: Date.now() }));
+      endRunWithError(result.error);
 
       return;
     }
@@ -526,7 +564,7 @@ export function useLockstepController(): LockstepController {
       summaryMessage: result.value.ok ? "All checks passed." : "Some checks failed.",
     }));
     await refreshSettings();
-  }, [activeProfile, ensureSessionToken, beginRun, refreshSettings]);
+  }, [activeProfile, ensureSessionToken, beginRun, endRunWithError, refreshSettings]);
 
   const handlePlan = useCallback(async () => {
     if (!activeProfile || !(await ensureSessionToken(activeProfile))) {
@@ -538,8 +576,7 @@ export function useLockstepController(): LockstepController {
     setRunning(false);
 
     if (Result.isError(result)) {
-      setError(result.error.message);
-      setRunProgress((prev) => ({ ...prev, phase: "error", endedAt: Date.now() }));
+      endRunWithError(result.error);
 
       return false;
     }
@@ -550,7 +587,7 @@ export function useLockstepController(): LockstepController {
     await refreshSettings();
 
     return true;
-  }, [activeProfile, ensureSessionToken, beginRun, refreshSettings]);
+  }, [activeProfile, ensureSessionToken, beginRun, endRunWithError, refreshSettings]);
 
   const handlePush = useCallback(async () => {
     if (!activeProfile || !(await ensureSessionToken(activeProfile))) {
@@ -563,8 +600,7 @@ export function useLockstepController(): LockstepController {
     setRunning(false);
 
     if (Result.isError(result)) {
-      setError(result.error.message);
-      setRunProgress((prev) => ({ ...prev, phase: "error", endedAt: Date.now() }));
+      endRunWithError(result.error);
 
       return;
     }
@@ -586,7 +622,7 @@ export function useLockstepController(): LockstepController {
 
     activeRunActionRef.current = "";
     await refreshSettings();
-  }, [activeProfile, ensureSessionToken, beginRun, refreshSettings]);
+  }, [activeProfile, ensureSessionToken, beginRun, endRunWithError, refreshSettings]);
 
   const handlePrune = useCallback(async () => {
     if (!activeProfile || !plan || !pruneAvailability.enabled) {
@@ -614,8 +650,7 @@ export function useLockstepController(): LockstepController {
     setPrunedPlanId(planId);
 
     if (Result.isError(result)) {
-      setError(result.error.message);
-      setRunProgress((prev) => ({ ...prev, phase: "error", endedAt: Date.now() }));
+      endRunWithError(result.error);
 
       return;
     }
@@ -640,7 +675,15 @@ export function useLockstepController(): LockstepController {
 
     activeRunActionRef.current = "";
     await refreshSettings();
-  }, [activeProfile, plan, pruneAvailability, ensureSessionToken, beginRun, refreshSettings]);
+  }, [
+    activeProfile,
+    plan,
+    pruneAvailability,
+    ensureSessionToken,
+    beginRun,
+    endRunWithError,
+    refreshSettings,
+  ]);
 
   const handleCancel = useCallback(async () => {
     await requireLockstepApi().cancelRun();
@@ -662,6 +705,11 @@ export function useLockstepController(): LockstepController {
 
   const handleProfileChange = useCallback(
     async (profileId: string) => {
+      // A run's reply describes the profile it started with, so the selection waits for it.
+      if (running) {
+        return;
+      }
+
       const result = await requireLockstepApi().setActiveProfile(profileId);
 
       if (Result.isError(result)) {
@@ -676,7 +724,7 @@ export function useLockstepController(): LockstepController {
 
       setSettings(result.value);
     },
-    [resetForActiveProfileChange, settings],
+    [resetForActiveProfileChange, running, settings],
   );
 
   return {

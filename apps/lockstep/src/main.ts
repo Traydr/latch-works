@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { Result } from "better-result";
-import { app, BrowserWindow, safeStorage } from "electron";
+import { app, BrowserWindow, dialog, safeStorage } from "electron";
 import started from "electron-squirrel-startup";
 
 import { registerIpc } from "./main/ipc/registerIpc";
@@ -18,10 +18,6 @@ app.disableHardwareAcceleration();
 app.commandLine.appendSwitch("disable-gpu");
 
 let mainWindow: BrowserWindow | null = null;
-
-let profileService: ProfileService;
-
-let runService: RunService;
 
 function resolveWindowIconPath(fileName: string): string | undefined {
   const candidates = [
@@ -45,20 +41,30 @@ function resolveSecretStorage(): SecretStorage {
   return safeStorage;
 }
 
-async function createWindow(): Promise<void> {
-  profileService = new ProfileService(app.getPath("userData"), {
+/**
+ * Profiles, runs, and IPC live as long as the process. On macOS the app outlives its window, so a
+ * run started in a closed window keeps its controller and a reopened window attaches to it.
+ */
+async function startServices(): Promise<void> {
+  const profileService = new ProfileService(app.getPath("userData"), {
     secretStorage: resolveSecretStorage(),
   });
+
   const initResult = await profileService.init();
 
   if (Result.isError(initResult)) {
     console.error(`[profile-init] ${initResult.error.message}`);
+    dialog.showErrorBox("Lockstep could not load its profiles", initResult.error.message);
   }
 
-  runService = new RunService(profileService, () => mainWindow);
+  const runService = new RunService(profileService, () => mainWindow);
+  registerIpc(() => mainWindow, profileService, runService);
+}
+
+async function createWindow(): Promise<void> {
   const windowIconPath = resolveWindowIconPath("lockstep-icon.png");
 
-  mainWindow = new BrowserWindow({
+  const window = new BrowserWindow({
     height: 800,
     icon: windowIconPath,
     show: false,
@@ -72,22 +78,27 @@ async function createWindow(): Promise<void> {
     width: 1100,
   });
 
-  registerIpc(mainWindow, profileService, runService);
+  mainWindow = window;
 
-  mainWindow.once("ready-to-show", () => {
-    mainWindow?.show();
+  window.on("closed", () => {
+    if (mainWindow === window) {
+      mainWindow = null;
+    }
+  });
+
+  window.once("ready-to-show", () => {
+    window.show();
   });
 
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
-    await mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
+    await window.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
   } else {
-    await mainWindow.loadFile(
-      path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`),
-    );
+    await window.loadFile(path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`));
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  await startServices();
   void createWindow();
 
   app.on("activate", () => {

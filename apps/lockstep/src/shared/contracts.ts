@@ -28,6 +28,11 @@ export const IpcErrorPayloadSchema = z.discriminatedUnion("_tag", [
     message: z.string(),
     operation: z.string(),
   }),
+  z.object({
+    _tag: z.literal("RunCancelled"),
+    message: z.string(),
+    operation: z.string(),
+  }),
 ]);
 
 export function createSerializedResultSchema<T>(valueSchema: z.ZodType<T>) {
@@ -83,6 +88,12 @@ export const LockstepRunSummarySchema = z.object({
   pushed: z.number(),
   skipped: z.number().optional(),
   status: z.enum(["cancelled", "completed", "failed"]),
+});
+
+/** The run the main process is working on; it outlives the window that started it. */
+export const ActiveRunSchema = z.object({
+  action: LockstepRunSummarySchema.shape.action,
+  profileId: z.string(),
 });
 
 export const LockstepRunEventSchema = z.discriminatedUnion("type", [

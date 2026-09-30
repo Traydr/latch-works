@@ -1,12 +1,19 @@
 import { Result } from "better-result";
-import type { BrowserWindow } from "electron";
+import type { BrowserWindow, OpenDialogOptions } from "electron";
 import { dialog, ipcMain } from "electron";
 import { type ZodType, z } from "zod";
 
 import type { JsonValue } from "../../shared/contracts";
 import { serializeIpcResult } from "../../shared/ipc";
 import { InvokeIpcContractList, InvokeIpcContracts } from "../../shared/ipcContracts";
-import { parseWithSchema, RunError, serializeAppResult, toError, ValidationError } from "../errors";
+import {
+  parseWithSchema,
+  RunCancelledError,
+  RunError,
+  serializeAppResult,
+  toError,
+  ValidationError,
+} from "../errors";
 import type { ProfileService } from "../services/profileService";
 import type { RunService } from "../services/runService";
 
@@ -34,6 +41,15 @@ function operationalFailure(operation: string, error: Error) {
       }),
     ),
   );
+}
+
+/** A cancelled run is its own outcome, so the renderer can keep the cancelled state it shows. */
+function runFailure(operation: string, error: Error) {
+  if (RunCancelledError.is(error)) {
+    return serializeAppResult(Result.err(error));
+  }
+
+  return operationalFailure(operation, error);
 }
 
 /** A run reads its profile once at start; editing or deleting it mid-run would orphan the result. */
@@ -84,7 +100,7 @@ function requireRequestSchema<T>(schema: ZodType<T> | null): ZodType<T> {
 }
 
 export function registerIpc(
-  mainWindow: BrowserWindow,
+  getMainWindow: () => BrowserWindow | null,
   profileService: ProfileService,
   runService: RunService,
 ): void {
@@ -96,11 +112,21 @@ export function registerIpc(
     return okResult(profileService.getSettings());
   });
 
+  ipcMain.handle(InvokeIpcContracts.getRunStatus.channel, async () => {
+    return okResult(runService.getActiveRun());
+  });
+
   ipcMain.handle(InvokeIpcContracts.pickSourceFolder.channel, async () => {
-    const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+    const options: OpenDialogOptions = {
       properties: ["openDirectory"],
       title: "Select archive folder",
-    });
+    };
+
+    const mainWindow = getMainWindow();
+
+    const { canceled, filePaths } = mainWindow
+      ? await dialog.showOpenDialog(mainWindow, options)
+      : await dialog.showOpenDialog(options);
 
     if (canceled || filePaths.length === 0) {
       return okResult<string | null>(null);
@@ -132,10 +158,6 @@ export function registerIpc(
       return validatedId.serialized;
     }
 
-    if (runService.isRunning()) {
-      return runInProgressFailure(InvokeIpcContracts.updateProfile.channel);
-    }
-
     const validated = validateIpcInput(
       requireRequestSchema(InvokeIpcContracts.updateProfile.requestSchema),
       patch,
@@ -146,9 +168,13 @@ export function registerIpc(
       return validated.serialized;
     }
 
-    const result = await profileService.updateProfile(validatedId.value, validated.value);
+    const result = await runService.changeProfileWhileIdle(() =>
+      profileService.updateProfile(validatedId.value, validated.value),
+    );
 
-    return serializeAppResult(result);
+    return result
+      ? serializeAppResult(result)
+      : runInProgressFailure(InvokeIpcContracts.updateProfile.channel);
   });
 
   ipcMain.handle(InvokeIpcContracts.deleteProfile.channel, async (_event, profileId) => {
@@ -158,13 +184,13 @@ export function registerIpc(
       return validatedId.serialized;
     }
 
-    if (runService.isRunning()) {
-      return runInProgressFailure(InvokeIpcContracts.deleteProfile.channel);
-    }
+    const result = await runService.changeProfileWhileIdle(() =>
+      profileService.deleteProfile(validatedId.value),
+    );
 
-    const result = await profileService.deleteProfile(validatedId.value);
-
-    return serializeAppResult(result);
+    return result
+      ? serializeAppResult(result)
+      : runInProgressFailure(InvokeIpcContracts.deleteProfile.channel);
   });
 
   ipcMain.handle(InvokeIpcContracts.setActiveProfile.channel, async (_event, profileId) => {
@@ -174,9 +200,13 @@ export function registerIpc(
       return validatedId.serialized;
     }
 
-    const result = await profileService.setActiveProfile(validatedId.value);
+    const result = await runService.changeProfileWhileIdle(() =>
+      profileService.setActiveProfile(validatedId.value),
+    );
 
-    return serializeAppResult(result);
+    return result
+      ? serializeAppResult(result)
+      : runInProgressFailure(InvokeIpcContracts.setActiveProfile.channel);
   });
 
   ipcMain.handle(InvokeIpcContracts.doctor.channel, async (_event, profileId) => {
@@ -191,7 +221,7 @@ export function registerIpc(
 
       return okResult(result);
     } catch (error) {
-      return operationalFailure(InvokeIpcContracts.doctor.channel, toError(error));
+      return runFailure(InvokeIpcContracts.doctor.channel, toError(error));
     }
   });
 
@@ -211,7 +241,7 @@ export function registerIpc(
 
       return okResult(plan);
     } catch (error) {
-      return operationalFailure(InvokeIpcContracts.plan.channel, toError(error));
+      return runFailure(InvokeIpcContracts.plan.channel, toError(error));
     }
   });
 
@@ -231,7 +261,7 @@ export function registerIpc(
 
       return okResult(summary);
     } catch (error) {
-      return operationalFailure(InvokeIpcContracts.push.channel, toError(error));
+      return runFailure(InvokeIpcContracts.push.channel, toError(error));
     }
   });
 
@@ -251,7 +281,7 @@ export function registerIpc(
 
       return okResult(summary);
     } catch (error) {
-      return operationalFailure(InvokeIpcContracts.prune.channel, toError(error));
+      return runFailure(InvokeIpcContracts.prune.channel, toError(error));
     }
   });
 
