@@ -82,12 +82,16 @@ export function useSettingsActions({
         const updated = result.value;
         initializeSettings(updated);
 
-        // Not awaited: a scan request waits for a running scan to wind down, and later settings
-        // updates must not queue behind it.
-        if (rootPath && patch.filters) {
-          void runScan(rootPath, {
+        // Repeats the latest scan request with the new filters, since the user may have changed
+        // folder or mode while this update waited. Not awaited: a scan request waits for a running
+        // scan to wind down, and later settings updates must not queue behind it.
+        const { requestedScan } = useAppStore.getState();
+
+        if (requestedScan && patch.filters) {
+          void runScan(requestedScan.rootPath, {
+            recursive: requestedScan.recursive,
             filters: updated.filters,
-            recursive,
+            excludedRootChildPaths: requestedScan.excludedRootChildPaths,
           });
         }
 
@@ -100,7 +104,7 @@ export function useSettingsActions({
 
       return scheduledUpdate;
     },
-    [initializeSettings, recursive, rootPath, runScan, scheduleStatusReset],
+    [initializeSettings, runScan, scheduleStatusReset],
   );
 
   const updateSettings = useCallback(
