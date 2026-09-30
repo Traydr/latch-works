@@ -19,6 +19,8 @@ interface SyncServer {
   apiUrl: string;
   deleted: string[];
   entries: Map<string, number>;
+  /** Answers a sync run's completion request; by default the server accepts it. */
+  onComplete: () => number;
   server: Server;
 }
 
@@ -35,6 +37,7 @@ async function readBody(request: IncomingMessage): Promise<string> {
 async function startSyncServer(initialEntries: Record<string, number>): Promise<SyncServer> {
   const deleted: string[] = [];
   const entries = new Map(Object.entries(initialEntries));
+  const sync = { onComplete: () => 200 };
 
   const server = createServer((request, response) => {
     void (async () => {
@@ -68,6 +71,13 @@ async function startSyncServer(initialEntries: Record<string, number>): Promise<
         return;
       }
 
+      if (request.url === "/api/sync/runs/run-1/complete") {
+        const status = sync.onComplete();
+        send(status, JSON.stringify(status === 200 ? { status: "ok" } : { error: "unavailable" }));
+
+        return;
+      }
+
       const deletion = DeleteBodySchema.safeParse(JSON.parse(body));
 
       if (request.url === "/api/sync/complete-object" && deletion.success) {
@@ -82,7 +92,7 @@ async function startSyncServer(initialEntries: Record<string, number>): Promise<
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const { port } = ListeningAddressSchema.parse(server.address());
 
-  return { apiUrl: `http://127.0.0.1:${port}`, deleted, entries, server };
+  return Object.assign(sync, { apiUrl: `http://127.0.0.1:${port}`, deleted, entries, server });
 }
 
 describe("RunService prune", () => {
@@ -126,7 +136,11 @@ describe("RunService prune", () => {
       throw new Error("profile was not created");
     }
 
-    return { profileId: created.value.id, runService: new RunService(profiles, () => null) };
+    return {
+      profileId: created.value.id,
+      profiles,
+      runService: new RunService(profiles, () => null),
+    };
   }
 
   it("deletes the reviewed plan's deletes once, never a fresh plan's", async () => {
@@ -159,5 +173,33 @@ describe("RunService prune", () => {
       /no longer current/,
     );
     expect(sync.deleted).toEqual(["gone-1.jpg"]);
+  });
+
+  it("reports a cancelled prune it could not finalize as a failure and saves it", async () => {
+    const { profileId, profiles, runService } = await createRunService();
+    const plan = await runService.plan({ profileId });
+
+    // Cancel arrives while the server is refusing to finalize the run.
+    sync.onComplete = () => {
+      runService.cancel();
+
+      return 503;
+    };
+
+    const failure = await runService.prune({ planId: plan.planId, profileId }).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure).not.toMatchObject({ _tag: "RunCancelled" });
+    expect(String(failure)).toMatch(/run-1/);
+    expect(sync.deleted).toEqual(["gone-1.jpg", "gone-2.jpg"]);
+    expect(profiles.getProfile(profileId)?.lastRun).toMatchObject({
+      action: "prune",
+      message: expect.stringMatching(/sync run run-1 could not be finalized/),
+      pushed: 2,
+      status: "failed",
+    });
   });
 });

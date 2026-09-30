@@ -8,6 +8,7 @@ import {
   pruneDeleted,
   pushChanges,
   doctor as runDoctor,
+  UnfinalizedSyncRunError,
 } from "@latch-works/lockstep-core";
 import type { BrowserWindow } from "electron";
 
@@ -290,7 +291,11 @@ export class RunService {
     try {
       return await runner(observer, abortController.signal);
     } catch (error) {
-      if (abortController.signal.aborted && !completeObserved) {
+      // A run the server still shows as running is a failure to act on, even after Cancel.
+      const cancelled =
+        abortController.signal.aborted && !(error instanceof UnfinalizedSyncRunError);
+
+      if (cancelled && !completeObserved) {
         const summary: LockstepRunSummary = {
           action: operation,
           completedAt: new Date().toISOString(),
@@ -304,7 +309,7 @@ export class RunService {
         observer.onEvent({ type: "complete", summary });
       }
 
-      if (abortController.signal.aborted) {
+      if (cancelled) {
         throw new RunCancelledError({ message: "Run cancelled.", operation });
       }
 
