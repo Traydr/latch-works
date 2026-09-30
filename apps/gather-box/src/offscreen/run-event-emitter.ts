@@ -1,14 +1,17 @@
 import { isTerminalGatherRunEvent, type GatherRunEvent } from "../shared/gather-run-messages";
 
 export interface GatherRunEventEmitter {
-  /** Reports progress immediately; holds a terminal report until {@link flush}. */
+  /** Reports progress immediately; holds a report that hands the queue back until {@link flush}. */
   emit(event: GatherRunEvent): Promise<void>;
-  /** Delivers the held terminal report. Safe to call when no run reported one. */
-  flush(): void;
+  /** Delivers the held report until the background accepts it. Safe when none was held. */
+  flush(): Promise<void>;
+  /** Ends redelivery, once a newer execution of the same run reports for it. */
+  stop(): void;
 }
 
 /**
- * Serializes a run's events and withholds its terminal report.
+ * Serializes a run's events and withholds the report that ends its hold on the queue: a terminal
+ * event, or the permission pause that leaves the job waiting for folder access.
  *
  * The background dispatches the next queued output while handling a terminal event, and answers the
  * event only once that dispatch settles. Reporting completion from inside the execution slot would
@@ -17,14 +20,15 @@ export interface GatherRunEventEmitter {
  * handoff ordered by construction rather than by messaging latency.
  *
  * `deliver` resolves to whether the background accepted the event. Progress stays best effort;
- * only the terminal report is retried.
+ * the held report is retried until it is accepted.
  */
 export function createGatherRunEventEmitter(
   deliver: (event: GatherRunEvent) => Promise<boolean>,
   wait: (milliseconds: number) => Promise<void> = delay
 ): GatherRunEventEmitter {
   let queue: Promise<unknown> = Promise.resolve();
-  let terminal: GatherRunEvent | null = null;
+  let held: GatherRunEvent | null = null;
+  let stopped = false;
 
   const send = (event: GatherRunEvent): Promise<boolean> => {
     const delivery = queue.then(() => deliver(event));
@@ -35,46 +39,54 @@ export function createGatherRunEventEmitter(
 
   return {
     emit(event) {
-      if (!isTerminalGatherRunEvent(event)) {
+      if (!releasesQueue(event)) {
         return send(event).then(() => undefined);
       }
 
       // A run can report twice — an executor that finishes its own cancellation still unwinds
-      // through the caller's abort check. The first report is the authoritative one.
-      terminal ??= event;
+      // through the caller's abort check. The first terminal report is the authoritative one, and
+      // it replaces a permission pause that a cancellation overtook.
+      if (!held || !isTerminalGatherRunEvent(held)) {
+        held = event;
+      }
 
       return Promise.resolve();
     },
     flush() {
-      const event = terminal;
-      terminal = null;
+      const event = held;
+      held = null;
 
-      if (event) {
-        void deliverTerminal(event);
-      }
+      return event ? deliverHeld(event) : Promise.resolve();
+    },
+    stop() {
+      stopped = true;
     }
   };
 
   /**
-   * The background persists the queue before it accepts a terminal report, and nothing else
-   * tells it this run has ended, so a rejected report is retried rather than dropped. Redelivery
-   * is safe: once the run is recorded, a repeated report finds no job and only re-dispatches.
+   * Nothing but this report tells the background the run gave up the queue: until it lands, the
+   * stored job stays active and the next one waits. It is therefore retried for as long as this
+   * document lives, never dropped; if the document goes away, startup recovery requeues the job.
+   * Redelivery is safe: once the run is recorded, a repeated report finds no job and only
+   * re-dispatches.
    */
-  async function deliverTerminal(event: GatherRunEvent): Promise<void> {
-    for (const retryDelay of [...TERMINAL_RETRY_DELAYS_MS, null]) {
-      const accepted = await send(event).catch(() => false);
-
-      if (accepted || retryDelay === null) {
+  async function deliverHeld(event: GatherRunEvent): Promise<void> {
+    for (let attempt = 0; !stopped; attempt += 1) {
+      if (await send(event).catch(() => false)) {
         return;
       }
 
-      await wait(retryDelay);
+      await wait(RETRY_DELAYS_MS[Math.min(attempt, RETRY_DELAYS_MS.length - 1)]);
     }
   }
 }
 
-/** Roughly two minutes of retries, backing off so a struggling background is not flooded. */
-const TERMINAL_RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 15_000, 30_000, 30_000, 30_000];
+/** Backs off to one attempt every 30 seconds, so a struggling background is not flooded. */
+const RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 15_000, 30_000];
+
+function releasesQueue(event: GatherRunEvent): boolean {
+  return isTerminalGatherRunEvent(event) || event.kind === "permission-required";
+}
 
 function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => {

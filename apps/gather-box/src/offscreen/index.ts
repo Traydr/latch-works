@@ -12,9 +12,12 @@ import {
   OffscreenFilesystemProofMessageSchema,
   proveOffscreenFilesystemAccess
 } from "./filesystem-proof";
-import { createGatherRunEventEmitter } from "./run-event-emitter";
+import { createGatherRunEventEmitter, type GatherRunEventEmitter } from "./run-event-emitter";
 
 const executionSlot = new GatherExecutionSlot();
+
+/** Each run's reporter, kept until its held report is accepted so a re-run can take it over. */
+const runEmitters = new Map<string, GatherRunEventEmitter>();
 
 /** The background answers `accepted: false` when it could not persist the event. */
 const RunEventAcknowledgementSchema = z.object({ accepted: z.literal(true) });
@@ -92,8 +95,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         await emitter.emit({ kind: "cancelled", message: "Gather Run cancelled." });
       }
     },
-    emitter.flush
+    () =>
+      emitter.flush().finally(() => {
+        if (runEmitters.get(execute.runId) === emitter) {
+          runEmitters.delete(execute.runId);
+        }
+      })
   );
+
+  if (start === "started") {
+    // The background re-dispatched this run, so an earlier execution's report is out of date.
+    runEmitters.get(execute.runId)?.stop();
+    runEmitters.set(execute.runId, emitter);
+  }
 
   sendResponse({
     accepted: start !== "busy",

@@ -14,7 +14,7 @@ export class GatherExecutionSlot {
   start(
     runId: string,
     execute: (signal: AbortSignal) => Promise<void>,
-    onReleased?: () => void
+    onReleased?: () => unknown
   ): GatherExecutionStart {
     if (this.active?.runId === runId) {
       return "duplicate";

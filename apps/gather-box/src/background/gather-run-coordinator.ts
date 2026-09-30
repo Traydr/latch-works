@@ -252,6 +252,12 @@ export class GatherRunCoordinator {
         return false;
       }
 
+      // A paused report is redelivered until acknowledged. One that lands after the job was
+      // resumed or restarted is stale, and pausing the job again would stall real work.
+      if (message.event.kind === "permission-required" && job.run.phase !== "preparing") {
+        return false;
+      }
+
       const updated = applyGatherRunEvent(job.run, message.event, this.dependencies.now());
 
       if (isTerminalGatherRunPhase(updated.phase)) {

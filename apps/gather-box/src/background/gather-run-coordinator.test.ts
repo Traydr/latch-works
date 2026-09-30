@@ -267,6 +267,22 @@ describe("Gather queue orchestration", () => {
     );
   });
 
+  it("ignores a redelivered permission pause once the job was resumed", async () => {
+    const harness = createHarness({
+      ...EMPTY_GATHER_QUEUE,
+      jobs: [outputJob("waiting", "writing")]
+    });
+
+    await harness.coordinator.handleEvent({
+      type: "GATHER_BOX_RUN_EVENT",
+      target: "background",
+      runId: "waiting",
+      event: { kind: "permission-required", scope: "site" }
+    });
+
+    expect(harness.getQueue().jobs).toMatchObject([{ run: { id: "waiting", phase: "writing" } }]);
+  });
+
   it("keeps the slot occupied while cancellation settles, then advances", async () => {
     const harness = createHarness({
       ...EMPTY_GATHER_QUEUE,
