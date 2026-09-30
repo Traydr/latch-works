@@ -1,5 +1,5 @@
 import type { S3StorageClient } from "@latch-works/media-storage";
-import { eq } from "drizzle-orm";
+import { eq, isNull } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   folders,
@@ -20,6 +20,7 @@ import {
 } from "./cleanup-worker";
 import { initialProgressFor } from "./maintenance-progress";
 import { hasPurgeableShutterSources } from "./shutter-source-purge";
+import { hasSoftDeletedPurgeWork } from "./soft-deleted-purge";
 
 const testDatabase = testDatabaseForSuite();
 
@@ -53,14 +54,17 @@ async function runJobToCompletion(jobId: string, deletes?: ExternalDeletes): Pro
   }
 }
 
-async function insertMediaObject(sha256: string): Promise<string> {
+async function insertMediaObject(
+  sha256: string,
+  objectKey = `originals/${sha256}.jpg`,
+): Promise<string> {
   const [object] = await testDatabase()
     .db.insert(mediaObjects)
     .values({
       contentType: "image/jpeg",
       extension: "jpg",
       mediaType: "image",
-      objectKey: `originals/${sha256}.jpg`,
+      objectKey,
       sha256,
       size: 1024,
     })
@@ -149,6 +153,39 @@ describe("soft-deleted purge", () => {
       .from(shutterSourceCleanup);
 
     expect(queued.map((row) => row.sha256).sort()).toEqual([unreferenced, deletedOnly]);
+  });
+
+  it("keeps an original another media row still serves to a live entry", async () => {
+    // Rows written before sync canonicalised the hash: two spellings, one storage key.
+    const lower = "ab".repeat(32);
+    const objectKey = `originals/${lower}.jpg`;
+    await insertEntry(await insertMediaObject(lower, objectKey), "kept/ab.jpg", null);
+    await insertEntry(
+      await insertMediaObject(lower.toUpperCase(), objectKey),
+      "gone/ab.jpg",
+      new Date(),
+    );
+
+    const deletes: ExternalDeletes = { objectKeys: [], shutterSources: [] };
+    await runJobToCompletion(await insertJob("soft_deleted_purge"), deletes);
+
+    expect(deletes.objectKeys).toEqual([]);
+    expect(await remainingMediaSha256s()).toEqual([lower.toUpperCase(), lower].sort());
+  });
+
+  it("has work when a content change left an original no entry references", async () => {
+    const hasWork = () => testDatabase().db.transaction((tx) => hasSoftDeletedPurgeWork(tx));
+    const replaced = "4".repeat(64);
+    const current = "5".repeat(64);
+    await insertMediaObject(replaced);
+    await insertEntry(await insertMediaObject(current), "kept/5.jpg", null);
+
+    expect(await hasWork()).toBe(true);
+
+    await runJobToCompletion(await insertJob("soft_deleted_purge"));
+
+    expect(await remainingMediaSha256s()).toEqual([current]);
+    expect(await hasWork()).toBe(false);
   });
 
   it("keeps every media row when a cancel lands during the storage delete", async () => {
@@ -363,6 +400,29 @@ describe("library wipe", () => {
     await db.delete(libraryEntries);
     await db.delete(mediaObjects);
     await db.delete(maintenanceJobs);
+    await db.delete(shutterSourceCleanup);
+  });
+
+  it("purges Shutter sources an earlier deleted-item purge queued", async () => {
+    const { db } = testDatabase();
+    const queued = "7".repeat(64);
+    const alreadyPurged = "6".repeat(64);
+    await db.insert(shutterSourceCleanup).values([
+      { objectKey: `originals/${queued}.jpg`, sha256: queued },
+      { objectKey: `originals/${alreadyPurged}.jpg`, purgedAt: new Date(), sha256: alreadyPurged },
+    ]);
+
+    const deletes: ExternalDeletes = { objectKeys: [], shutterSources: [] };
+    await runJobToCompletion(await insertJob("library_hard_wipe"), deletes);
+
+    expect(deletes.shutterSources).toEqual([queued]);
+
+    const pending = await db
+      .select({ sha256: shutterSourceCleanup.sha256 })
+      .from(shutterSourceCleanup)
+      .where(isNull(shutterSourceCleanup.purgedAt));
+
+    expect(pending).toEqual([]);
   });
 
   it("deletes nothing while Shutter is partly configured", async () => {

@@ -3,6 +3,7 @@ import { db } from "../db";
 import { collections, folders, libraryEntries, mediaObjects } from "../db/schema";
 import { type ShutterPurgeReadiness, shutterPurgeReadiness } from "../media/shutter-client";
 import { readActiveCleanupJob } from "./guards";
+import { orphanedMediaObjectCondition } from "./orphaned-sources";
 import { listRunningSyncRuns, type RunningSyncRun } from "./sync-run-control";
 
 export interface ManagementOverview {
@@ -25,6 +26,8 @@ export interface ManagementOverview {
   storage: {
     mediaObjectBytes: number;
     mediaObjectCount: number;
+    /** Stored originals no live entry references; the deleted-item purge reclaims them. */
+    reclaimableMediaObjectCount: number;
   };
 }
 
@@ -36,6 +39,7 @@ export async function readManagementOverview(): Promise<ManagementOverview> {
     softDeletedFoldersRow,
     collectionsRow,
     mediaObjectStats,
+    reclaimableMediaObjectsRow,
     runningSyncRuns,
     activeCleanupJob,
   ] = await Promise.all([
@@ -50,6 +54,7 @@ export async function readManagementOverview(): Promise<ManagementOverview> {
         count: count(),
       })
       .from(mediaObjects),
+    db.select({ value: count() }).from(mediaObjects).where(orphanedMediaObjectCondition()),
     listRunningSyncRuns(),
     readActiveCleanupJob(),
   ]);
@@ -68,6 +73,7 @@ export async function readManagementOverview(): Promise<ManagementOverview> {
     storage: {
       mediaObjectBytes: Number(mediaObjectStats[0]?.bytes ?? 0),
       mediaObjectCount: mediaObjectStats[0]?.count ?? 0,
+      reclaimableMediaObjectCount: reclaimableMediaObjectsRow[0]?.value ?? 0,
     },
   };
 }

@@ -1,13 +1,18 @@
 import { isNotNull } from "drizzle-orm";
-import { folders, libraryEntries } from "../db/schema";
+import { folders, libraryEntries, mediaObjects } from "../db/schema";
 import {
   type MaintenanceJobDescriptor,
   type MaintenanceTransaction,
   scheduleMaintenanceJob,
 } from "./maintenance-scheduler";
+import { orphanedMediaObjectCondition } from "./orphaned-sources";
 
-/** There is work when any library entry or folder is soft-deleted. */
-async function hasSoftDeletedEntries(tx: MaintenanceTransaction): Promise<boolean> {
+/**
+ * There is work when any library entry or folder is soft-deleted, or when an
+ * original no live entry references is still stored (a content change leaves
+ * the old one behind without deleting anything).
+ */
+export async function hasSoftDeletedPurgeWork(tx: MaintenanceTransaction): Promise<boolean> {
   const [softDeletedEntry] = await tx
     .select({ id: libraryEntries.id })
     .from(libraryEntries)
@@ -24,11 +29,21 @@ async function hasSoftDeletedEntries(tx: MaintenanceTransaction): Promise<boolea
     .where(isNotNull(folders.deletedAt))
     .limit(1);
 
-  return Boolean(softDeletedFolder);
+  if (softDeletedFolder) {
+    return true;
+  }
+
+  const [orphanedMediaObject] = await tx
+    .select({ id: mediaObjects.id })
+    .from(mediaObjects)
+    .where(orphanedMediaObjectCondition())
+    .limit(1);
+
+  return Boolean(orphanedMediaObject);
 }
 
 const softDeletedPurgeDescriptor: MaintenanceJobDescriptor = {
-  probe: hasSoftDeletedEntries,
+  probe: hasSoftDeletedPurgeWork,
   type: "soft_deleted_purge",
 };
 
