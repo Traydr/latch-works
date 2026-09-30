@@ -2,13 +2,11 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import os from "node:os";
 import path from "node:path";
-import type { BrowserWindow } from "electron";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
-
+import { RunCancelledError } from "../../src/main/errors";
 import { ProfileService } from "../../src/main/services/profileService";
-import { RunService } from "../../src/main/services/runService";
-import type { LockstepRunEvent } from "../../src/shared/types";
+import { type RunEventWindow, RunService } from "../../src/main/services/runService";
 
 const TOKEN = "sync-token";
 
@@ -115,7 +113,7 @@ describe("RunService prune", () => {
     await rm(tempDir, { force: true, recursive: true });
   });
 
-  async function createRunService(getMainWindow: () => BrowserWindow | null = () => null) {
+  async function createRunService(getMainWindow: () => RunEventWindow | null = () => null) {
     const profiles = new ProfileService(path.join(tempDir, "user-data"), {
       legacyConfigPath: path.join(tempDir, "missing-legacy.json"),
       secretStorage: {
@@ -188,14 +186,10 @@ describe("RunService prune", () => {
       return 503;
     };
 
-    const failure = await runService.prune({ planId: plan.planId, profileId }).then(
-      () => undefined,
-      (error: unknown) => error,
-    );
+    const pruning = runService.prune({ planId: plan.planId, profileId });
 
-    expect(failure).toBeInstanceOf(Error);
-    expect(failure).not.toMatchObject({ _tag: "RunCancelled" });
-    expect(String(failure)).toMatch(/run-1/);
+    await expect(pruning).rejects.toThrow(/sync run run-1 could not be finalized/);
+    await expect(pruning).rejects.not.toBeInstanceOf(RunCancelledError);
     expect(sync.deleted).toEqual(["gone-1.jpg", "gone-2.jpg"]);
     expect(profiles.getProfile(profileId)?.lastRun).toMatchObject({
       action: "prune",
@@ -211,10 +205,10 @@ describe("RunService prune", () => {
     let profileService: ProfileService | undefined;
     let id = "";
 
-    const window = {
+    const window: RunEventWindow = {
       isDestroyed: () => false,
       webContents: {
-        send: (_channel: string, event: LockstepRunEvent) => {
+        send: (_channel, event) => {
           if (event.type === "complete") {
             ends.push({
               action: event.summary.action,
@@ -226,7 +220,7 @@ describe("RunService prune", () => {
       },
     };
 
-    const created = await createRunService(() => window as unknown as BrowserWindow);
+    const created = await createRunService(() => window);
     ({ profileId: id, profiles: profileService, runService: service } = created);
 
     const plan = await created.runService.plan({ profileId: id });

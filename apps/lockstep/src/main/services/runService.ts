@@ -10,8 +10,6 @@ import {
   doctor as runDoctor,
   UnfinalizedSyncRunError,
 } from "@latch-works/lockstep-core";
-import type { BrowserWindow } from "electron";
-
 import type { ActiveRun, DoctorResult, PruneRequest, RunRequest } from "../../shared/types";
 import { RunCancelledError, toError } from "../errors";
 import type { ProfileService } from "./profileService";
@@ -39,6 +37,12 @@ interface ReviewedPlan {
   sourceRoot: string;
 }
 
+/** The part of the main window run events go to; `BrowserWindow` provides it. */
+export interface RunEventWindow {
+  isDestroyed(): boolean;
+  webContents: { send(channel: "lockstep:run-event", event: LockstepRunEvent): void };
+}
+
 type RunCredentials = { apiToken: string; apiUrl: string; sourceRoot: string };
 
 export class RunService {
@@ -50,7 +54,7 @@ export class RunService {
 
   constructor(
     private readonly profileService: ProfileService,
-    private readonly getMainWindow: () => BrowserWindow | null,
+    private readonly getMainWindow: () => RunEventWindow | null,
     private readonly core: LockstepCore = lockstepCore,
   ) {}
 
