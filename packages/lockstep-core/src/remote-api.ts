@@ -1,13 +1,14 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
-import { Readable, Transform } from "node:stream";
+import { pipeline, Readable, Transform } from "node:stream";
+import { setTimeout as delay } from "node:timers/promises";
 import { getBaseName, getExtension, type MediaItem } from "@latch-works/media-domain";
 import { hashFileContents } from "@latch-works/media-index";
 import { z } from "zod";
-import { formatBytes } from "./format.js";
+import { formatBytes, formatPushError, toError } from "./format.js";
 import { resolveLocalFilePath } from "./push-helpers.js";
-import type { LockstepPlanCounts } from "./types.js";
+import type { LockstepObserver, LockstepPlanCounts } from "./types.js";
 
 type PushStage = "deleting" | "hashing" | "registering" | "uploading";
 
@@ -72,7 +73,7 @@ const UploadTargetSchema = z.object({
 });
 
 /** Routes whose acknowledgement body is never read; only the HTTP status matters. */
-export const AcknowledgementSchema = z.unknown();
+const AcknowledgementSchema = z.unknown();
 
 /** Streaming request bodies need undici's `duplex` flag, which `RequestInit` omits. */
 interface StreamingRequestInit extends RequestInit {
@@ -236,6 +237,217 @@ async function pushMediaItem({
   );
 }
 
+/** How long run creation may still take once the caller cancels; it cannot be aborted outright. */
+const CREATE_SYNC_RUN_CANCEL_GRACE_MS = 10_000;
+
+/**
+ * Starts a sync run. The caller's abort signal does not abort the request: once it is sent the
+ * server may commit the run, and only its id lets the caller finalize it. Uncancelled, creation
+ * waits as long as the server takes (it can queue behind a library lock). After a cancel it gets
+ * a bounded grace period to return the id, so the caller can finalize the run as cancelled.
+ */
+export async function createSyncRun({
+  apiToken,
+  apiUrl,
+  body,
+  postJson: post,
+  signal,
+}: {
+  apiToken: string;
+  apiUrl: string;
+  body: CreateSyncRunRequest;
+  postJson: typeof postJson;
+  signal?: AbortSignal;
+}): Promise<z.output<typeof SyncRunSchema>> {
+  const deadline = new AbortController();
+  let graceTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const startGrace = () => {
+    graceTimer = setTimeout(() => deadline.abort(), CREATE_SYNC_RUN_CANCEL_GRACE_MS);
+  };
+
+  if (signal?.aborted) {
+    startGrace();
+  } else {
+    signal?.addEventListener("abort", startGrace, { once: true });
+  }
+
+  try {
+    return await post(apiUrl, "/api/sync/runs", apiToken, body, SyncRunSchema, deadline.signal);
+  } catch (error) {
+    if (deadline.signal.aborted) {
+      throw new Error(
+        "Cancelled while Pane View was still creating the sync run, so it may be left running. " +
+          "If Pane View's management page shows it running, cancel it there.",
+        { cause: error },
+      );
+    }
+
+    throw error;
+  } finally {
+    clearTimeout(graceTimer);
+    signal?.removeEventListener("abort", startGrace);
+  }
+}
+
+/** Waits between finalization attempts; the server accepts an exact replay of the same outcome. */
+const FINALIZE_RETRY_DELAYS_MS = [250, 1000];
+
+/**
+ * Records a sync run's outcome, retrying a few times so a brief outage does not leave the run
+ * marked running. No abort signal: a cancelled run still has to be finalized. Returns the last
+ * error when every attempt failed.
+ */
+export async function finalizeSyncRun({
+  apiToken,
+  apiUrl,
+  body,
+  onRetry,
+  postJson: post,
+  syncRunId,
+}: {
+  apiToken: string;
+  apiUrl: string;
+  body: CompleteSyncRunRequest;
+  onRetry?: (error: Error) => void;
+  postJson: typeof postJson;
+  syncRunId: string;
+}): Promise<Error | undefined> {
+  let lastError: Error | undefined;
+
+  for (const retryDelay of [...FINALIZE_RETRY_DELAYS_MS, undefined]) {
+    try {
+      await post(
+        apiUrl,
+        `/api/sync/runs/${syncRunId}/complete`,
+        apiToken,
+        body,
+        AcknowledgementSchema,
+      );
+
+      return undefined;
+    } catch (error) {
+      lastError = toError(error);
+
+      if (retryDelay === undefined) {
+        break;
+      }
+
+      onRetry?.(lastError);
+      await delay(retryDelay);
+    }
+  }
+
+  return lastError;
+}
+
+/** The status a sync run was meant to be recorded with when finalization failed. */
+export type SyncRunOutcomeStatus = CompleteSyncRunRequest["status"];
+
+/**
+ * Every finalization attempt failed, so Pane View still shows the run as running and blocks
+ * library maintenance until it is cancelled on the management page. Thrown by push and prune in
+ * place of whatever else ended the run: `cause` is the cancellation reason or fatal error when
+ * there was one, and the finalization error otherwise. `intendedStatus` says which.
+ */
+export class UnfinalizedSyncRunError extends Error {
+  readonly action: "prune" | "push";
+  readonly finalizeError: Error;
+  readonly intendedStatus: SyncRunOutcomeStatus;
+  readonly syncRunId: string;
+
+  constructor({
+    action,
+    cause,
+    finalizeError,
+    intendedStatus,
+    message,
+    syncRunId,
+  }: {
+    action: "prune" | "push";
+    cause: unknown;
+    finalizeError: Error;
+    intendedStatus: SyncRunOutcomeStatus;
+    message: string;
+    syncRunId: string;
+  }) {
+    super(message, { cause });
+    this.name = "UnfinalizedSyncRunError";
+    this.action = action;
+    this.finalizeError = finalizeError;
+    this.intendedStatus = intendedStatus;
+    this.syncRunId = syncRunId;
+  }
+}
+
+/**
+ * The server still has the run marked running. Reports the run as failed, naming it so it can be
+ * cancelled in Pane View's management page, and returns the error to throw. `interruption` is
+ * what ended the run early, if anything: a cancellation or a fatal error.
+ */
+export function failUnfinalizedRun({
+  action,
+  done,
+  failed,
+  finalizeError,
+  interruption,
+  observer,
+  planCounts,
+  pushed,
+  skipped,
+  syncRunId,
+}: {
+  action: "prune" | "push";
+  done: string;
+  failed: number;
+  finalizeError: Error;
+  interruption?: { error: Error; status: "failed" } | { reason: unknown; status: "cancelled" };
+  observer?: LockstepObserver;
+  planCounts: LockstepPlanCounts;
+  pushed: number;
+  skipped?: number;
+  syncRunId: string;
+}): UnfinalizedSyncRunError {
+  const outcome =
+    interruption?.status === "cancelled"
+      ? `Run cancelled after ${done}`
+      : interruption?.status === "failed"
+        ? `${interruption.error.message} Stopped after ${done}`
+        : done;
+
+  const message =
+    `${outcome}, but sync run ${syncRunId} could not be finalized: ${formatPushError(finalizeError)}. ` +
+    "Pane View shows it as running until it is cancelled on the management page.";
+
+  observer?.onEvent({
+    type: "complete",
+    summary: {
+      action,
+      completedAt: new Date().toISOString(),
+      failed,
+      message,
+      planCounts,
+      pushed,
+      skipped,
+      status: "failed",
+    },
+  });
+
+  return new UnfinalizedSyncRunError({
+    action,
+    cause:
+      interruption?.status === "cancelled"
+        ? interruption.reason
+        : interruption?.status === "failed"
+          ? interruption.error
+          : finalizeError,
+    finalizeError,
+    intendedStatus: interruption?.status ?? (failed > 0 ? "failed" : "completed"),
+    message,
+    syncRunId,
+  });
+}
+
 async function deleteRemoteItem({
   apiToken,
   apiUrl,
@@ -294,22 +506,29 @@ export async function uploadFile({
   const digest = createHash("sha256");
   const source = createReadStream(filePath);
 
-  const body = source.pipe(
-    new Transform({
-      transform(chunk, _encoding, callback) {
-        bytesUploaded += chunk.length;
-        digest.update(chunk);
-        const now = Date.now();
+  const body = new Transform({
+    transform(chunk, _encoding, callback) {
+      bytesUploaded += chunk.length;
+      digest.update(chunk);
+      const now = Date.now();
 
-        if (onProgress && now - lastReport >= 100) {
-          lastReport = now;
-          onProgress(bytesUploaded, total);
-        }
+      if (onProgress && now - lastReport >= 100) {
+        lastReport = now;
+        onProgress(bytesUploaded, total);
+      }
 
-        callback(null, chunk);
-      },
-    }),
-  );
+      callback(null, chunk);
+    },
+  });
+
+  // pipeline owns both streams: a read error (drive unplugged, file gone, access revoked) errors
+  // the request body so fetch rejects, instead of escaping as an uncaught stream error. The read
+  // error itself is what the caller sees, not fetch's generic body failure.
+  let readError: Error | undefined;
+  source.once("error", (error) => {
+    readError = error;
+  });
+  pipeline(source, body, () => {});
 
   const destroyStreams = () => {
     if (!source.destroyed) {
@@ -365,7 +584,7 @@ export async function uploadFile({
     onProgress?.(total, total);
   } catch (error) {
     destroyStreams();
-    throw error;
+    throw readError ?? error;
   } finally {
     signal?.removeEventListener("abort", onAbort);
     destroyStreams();

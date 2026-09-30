@@ -189,4 +189,18 @@ describe("scanArchive", () => {
 
     await expect(scanArchive({ sourceRoot: path.join(tempDir, "missing") })).rejects.toThrow();
   });
+
+  it("hashes files whose names start with two dots", async () => {
+    tempDir = await mkdtemp(path.join(os.tmpdir(), "media-index-scan-"));
+    await mkdir(path.join(tempDir, "..drafts"));
+    await writeFile(path.join(tempDir, "..cover.jpg"), "image");
+    await writeFile(path.join(tempDir, "..drafts", "page.jpg"), "image");
+
+    const scan = await scanArchive({ hashFiles: true, sourceRoot: tempDir });
+
+    expect(scan.items.map((item) => [item.path, item.sha256 !== undefined])).toEqual([
+      ["..cover.jpg", true],
+      ["..drafts/page.jpg", true],
+    ]);
+  });
 });

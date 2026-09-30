@@ -1,12 +1,13 @@
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import type { MediaItem } from "@latch-works/media-domain";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { z } from "zod";
+import { z } from "zod";
 import { pushChanges } from "./push-changes.js";
-import type { PushRemoteApi, SyncRequestBody } from "./remote-api.js";
+import { type PushRemoteApi, type SyncRequestBody, UnfinalizedSyncRunError } from "./remote-api.js";
 import type { LockstepPlan, LockstepRunEvent } from "./types.js";
 
 type PushMediaItemRequest = Parameters<PushRemoteApi["pushMediaItem"]>[0];
@@ -27,6 +28,7 @@ interface RemoteApiFake {
 }
 
 interface RemoteApiFakeBehaviour {
+  onFinalize?: () => Promise<void>;
   onPush?: (request: PushMediaItemRequest) => Promise<void>;
   sha256: string;
 }
@@ -51,6 +53,10 @@ function createRemoteApiFake(behaviour: RemoteApiFakeBehaviour): RemoteApiFake {
       signal?: AbortSignal,
     ) => {
       postJsonCalls.push({ apiToken, apiUrl, body, route, signal });
+
+      if (route.endsWith("/complete")) {
+        await behaviour.onFinalize?.();
+      }
 
       return schema.parse(
         route === "/api/sync/runs" ? { syncRunId: "run-1" } : { status: "database" },
@@ -108,6 +114,48 @@ function collectEvents() {
         events.push(event);
       },
     },
+  };
+}
+
+/** `Server.address()` widens to a pipe name or null; only a bound TCP address is usable. */
+const TcpAddressSchema = z.object({ port: z.number() });
+
+/**
+ * A Pane View stand-in that commits the sync run, then answers the create request late; `onCreate`
+ * runs while that response is still pending. Records every finalize body.
+ */
+async function startSlowCreateServer(onCreate: () => void) {
+  const completeBodies: unknown[] = [];
+
+  const server = createServer((request, response) => {
+    const chunks: Buffer[] = [];
+
+    request.on("data", (chunk: Buffer) => chunks.push(chunk));
+    request.on("end", () => {
+      const reply = (json: string) => {
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(json);
+      };
+
+      if (request.url === "/api/sync/runs") {
+        onCreate();
+        setTimeout(() => reply(JSON.stringify({ syncRunId: "run-slow" })), 100);
+
+        return;
+      }
+
+      completeBodies.push(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+      reply("{}");
+    });
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = TcpAddressSchema.parse(server.address());
+
+  return {
+    apiUrl: `http://127.0.0.1:${address.port}`,
+    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+    completeBodies,
   };
 }
 
@@ -198,7 +246,8 @@ describe("pushChanges orchestration", () => {
         sourceRoot: plan.sourceRoot,
       },
       route: "/api/sync/runs",
-      signal: undefined,
+      // Its own deadline signal, never the run's abort signal.
+      signal: expect.any(AbortSignal),
     });
     expect(fake.pushCalls).toHaveLength(1);
     expect(fake.pushCalls[0]).toMatchObject({
@@ -471,5 +520,142 @@ describe("pushChanges orchestration", () => {
     expect(events.find((event) => event.type === "complete")).toMatchObject({
       summary: { failed: 1, pushed: 2, status: "failed" },
     });
+  });
+
+  it("retries finalization and reports completion once it lands", async () => {
+    let finalizeAttempts = 0;
+    fake = createRemoteApiFake({
+      onFinalize: async () => {
+        finalizeAttempts += 1;
+
+        if (finalizeAttempts === 1) {
+          throw new Error("simulated HTTP 503");
+        }
+      },
+      sha256: contentSha256,
+    });
+    const plan = createPlan([{ action: "upload", local: localItem, path: localItem.path }]);
+    const { events, observer } = collectEvents();
+
+    const result = await pushChanges(
+      {
+        apiToken: "token",
+        apiUrl: "http://127.0.0.1:3000",
+        hashCacheRoot: cacheRoot,
+        plan,
+        sourceRoot: plan.sourceRoot,
+      },
+      observer,
+      fake.remote,
+    );
+
+    expect(result).toEqual({ failed: 0, plan, pushed: 1 });
+    expect(finalizeAttempts).toBe(2);
+    expect(events.find((event) => event.type === "complete")).toMatchObject({
+      summary: { status: "completed" },
+    });
+  });
+
+  it("fails the push when the sync run cannot be finalized", async () => {
+    fake = createRemoteApiFake({
+      onFinalize: async () => {
+        throw new Error("simulated HTTP 503");
+      },
+      sha256: contentSha256,
+    });
+    const plan = createPlan([{ action: "upload", local: localItem, path: localItem.path }]);
+    const { events, observer } = collectEvents();
+
+    await expect(
+      pushChanges(
+        {
+          apiToken: "token",
+          apiUrl: "http://127.0.0.1:3000",
+          hashCacheRoot: cacheRoot,
+          plan,
+          sourceRoot: plan.sourceRoot,
+        },
+        observer,
+        fake.remote,
+      ),
+    ).rejects.toThrow(/sync run run-1 could not be finalized.*simulated HTTP 503/);
+
+    expect(fake.pushCalls).toHaveLength(1);
+    expect(events.find((event) => event.type === "complete")).toMatchObject({
+      summary: { action: "push", failed: 0, pushed: 1, status: "failed" },
+    });
+  });
+
+  it("names the unfinalized run when a cancelled push cannot be finalized", async () => {
+    const controller = new AbortController();
+    const reason = new DOMException("user cancelled", "AbortError");
+    fake = createRemoteApiFake({
+      onFinalize: async () => {
+        throw new TypeError("fetch failed");
+      },
+      onPush: async () => {
+        controller.abort(reason);
+        throw reason;
+      },
+      sha256: contentSha256,
+    });
+    const plan = createPlan([{ action: "upload", local: localItem, path: localItem.path }]);
+    const { events, observer } = collectEvents();
+
+    const error = await pushChanges(
+      {
+        apiToken: "token",
+        apiUrl: "http://127.0.0.1:3000",
+        hashCacheRoot: cacheRoot,
+        plan,
+        signal: controller.signal,
+        sourceRoot: plan.sourceRoot,
+      },
+      observer,
+      fake.remote,
+    ).catch((cause: unknown) => cause);
+
+    expect(error).toBeInstanceOf(UnfinalizedSyncRunError);
+    expect(error).toMatchObject({
+      action: "push",
+      cause: reason,
+      intendedStatus: "cancelled",
+      syncRunId: "run-1",
+    });
+    expect(events.filter((event) => event.type === "complete")).toEqual([
+      expect.objectContaining({
+        summary: expect.objectContaining({
+          message: expect.stringContaining("run-1"),
+          status: "failed",
+        }),
+      }),
+    ]);
+  });
+  it("finalizes a run created while the push was being cancelled", async () => {
+    const controller = new AbortController();
+    const server = await startSlowCreateServer(() => controller.abort());
+    const plan = createPlan([{ action: "upload", local: localItem, path: localItem.path }]);
+
+    try {
+      await expect(
+        pushChanges({
+          apiToken: "token",
+          apiUrl: server.apiUrl,
+          hashCacheRoot: cacheRoot,
+          plan,
+          signal: controller.signal,
+          sourceRoot: plan.sourceRoot,
+        }),
+      ).rejects.toMatchObject({ name: "AbortError" });
+    } finally {
+      await server.close();
+    }
+
+    expect(server.completeBodies).toEqual([
+      expect.objectContaining({
+        counts: expect.objectContaining({ pushed: 0 }),
+        status: "cancelled",
+      }),
+    ]);
   });
 });

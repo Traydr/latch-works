@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canonicalizeExtension, createSyncPathIdentity, normalizePathForCompare } from "./index.js";
+import { canonicalizeExtension, normalizePathForCompare, pairSyncPaths } from "./index.js";
 
 describe("normalizePathForCompare", () => {
   it("folds case and path separators", () => {
@@ -30,21 +30,45 @@ describe("normalizePathForCompare", () => {
   });
 });
 
-describe("createSyncPathIdentity", () => {
+describe("pairSyncPaths", () => {
   it("aliases jpeg across machines when there is no collision", () => {
-    const identity = createSyncPathIdentity(["photos/sunset.jpeg"], ["photos/sunset.jpg"]);
-    expect(identity("photos/sunset.jpeg")).toBe(identity("photos/sunset.jpg"));
+    expect(pairSyncPaths(["photos/sunset.jpeg"], ["photos/sunset.jpg"])).toEqual(
+      new Map([["photos/sunset.jpeg", "photos/sunset.jpg"]]),
+    );
   });
 
   it("keeps jpg and jpeg distinct when both exist on one side", () => {
-    const identity = createSyncPathIdentity(
-      ["photos/photo.jpg", "photos/photo.jpeg"],
-      ["photos/photo.jpg", "photos/photo.jpeg"],
+    expect(
+      pairSyncPaths(
+        ["photos/photo.jpg", "photos/photo.jpeg"],
+        ["photos/photo.jpg", "photos/photo.jpeg"],
+      ),
+    ).toEqual(
+      new Map([
+        ["photos/photo.jpg", "photos/photo.jpg"],
+        ["photos/photo.jpeg", "photos/photo.jpeg"],
+      ]),
     );
+  });
 
-    expect(identity("photos/photo.jpg")).not.toBe(identity("photos/photo.jpeg"));
-    expect(identity("photos/photo.jpg")).toBe("photos/photo.jpg");
-    expect(identity("photos/photo.jpeg")).toBe("photos/photo.jpeg");
+  it("pairs case-only twins with their exact remote spelling", () => {
+    expect(
+      pairSyncPaths(
+        ["photos/Photo.jpg", "photos/photo.jpg"],
+        ["photos/photo.jpg", "photos/Photo.jpg"],
+      ),
+    ).toEqual(
+      new Map([
+        ["photos/Photo.jpg", "photos/Photo.jpg"],
+        ["photos/photo.jpg", "photos/photo.jpg"],
+      ]),
+    );
+  });
+
+  it("leaves a spelling several paths could claim unpaired", () => {
+    expect(pairSyncPaths(["photos/Photo.jpg", "photos/photo.jpg"], ["photos/PHOTO.JPG"])).toEqual(
+      new Map(),
+    );
   });
 });
 

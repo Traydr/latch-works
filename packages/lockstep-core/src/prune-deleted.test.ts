@@ -1,10 +1,15 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { z } from "zod";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import { pruneDeleted } from "./prune-deleted.js";
-import type { PruneRemoteApi, SyncRequestBody } from "./remote-api.js";
+import {
+  type PruneRemoteApi,
+  type SyncRequestBody,
+  UnfinalizedSyncRunError,
+} from "./remote-api.js";
 import type { LockstepPlan, LockstepRunEvent } from "./types.js";
 
 type DeleteRemoteItemRequest = Parameters<PruneRemoteApi["deleteRemoteItem"]>[0];
@@ -24,6 +29,8 @@ interface RemoteApiFake {
 }
 
 interface RemoteApiFakeBehaviour {
+  onFinalize?: () => Promise<void>;
+  onCreateRun?: () => Promise<void>;
   onDelete?: (request: DeleteRemoteItemRequest) => Promise<void>;
 }
 
@@ -45,6 +52,14 @@ function createRemoteApiFake(behaviour: RemoteApiFakeBehaviour = {}): RemoteApiF
       signal?: AbortSignal,
     ) => {
       postJsonCalls.push({ apiToken, apiUrl, body, route, signal });
+
+      if (route.endsWith("/complete")) {
+        await behaviour.onFinalize?.();
+      }
+
+      if (route === "/api/sync/runs") {
+        await behaviour.onCreateRun?.();
+      }
 
       return schema.parse(
         route === "/api/sync/runs" ? { syncRunId: "run-1" } : { status: "database" },
@@ -93,6 +108,48 @@ async function writeSourceFile(sourceRoot: string, archivePath: string): Promise
   const filePath = path.join(sourceRoot, ...archivePath.split("/"));
   await mkdir(path.dirname(filePath), { recursive: true });
   await writeFile(filePath, "local bytes");
+}
+
+/** `Server.address()` widens to a pipe name or null; only a bound TCP address is usable. */
+const TcpAddressSchema = z.object({ port: z.number() });
+
+/**
+ * A Pane View stand-in that commits the sync run, then answers the create request late; `onCreate`
+ * runs while that response is still pending. Records every finalize body.
+ */
+async function startSlowCreateServer(onCreate: () => void) {
+  const completeBodies: unknown[] = [];
+
+  const server = createServer((request, response) => {
+    const chunks: Buffer[] = [];
+
+    request.on("data", (chunk: Buffer) => chunks.push(chunk));
+    request.on("end", () => {
+      const reply = (json: string) => {
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(json);
+      };
+
+      if (request.url === "/api/sync/runs") {
+        onCreate();
+        setTimeout(() => reply(JSON.stringify({ syncRunId: "run-slow" })), 100);
+
+        return;
+      }
+
+      completeBodies.push(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+      reply("{}");
+    });
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = TcpAddressSchema.parse(server.address());
+
+  return {
+    apiUrl: `http://127.0.0.1:${address.port}`,
+    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+    completeBodies,
+  };
 }
 
 describe("pruneDeleted orchestration", () => {
@@ -334,5 +391,250 @@ describe("pruneDeleted orchestration", () => {
     ).rejects.toThrow(/Source folder is not available/);
     expect(fake.postJsonCalls).toHaveLength(0);
     expect(fake.deleteCalls).toHaveLength(0);
+  });
+
+  it("skips a delete whose file came back under an equivalent name", async () => {
+    await writeSourceFile(sourceRoot, "photos/restored.jpeg");
+    await writeSourceFile(sourceRoot, "Photos/Recased.JPG");
+
+    const plan = createPlan(
+      [
+        { action: "delete", path: "photos/restored.jpg" },
+        { action: "delete", path: "photos/recased.jpg" },
+        { action: "delete", path: "photos/gone.jpg" },
+      ],
+      sourceRoot,
+    );
+
+    const result = await pruneDeleted(
+      { apiToken: "token", apiUrl: "http://127.0.0.1:3000", plan },
+      undefined,
+      fake.remote,
+    );
+
+    expect(fake.deleteCalls.map((call) => call.logicalPath)).toEqual(["photos/gone.jpg"]);
+    expect(result).toMatchObject({ failed: 0, pruned: 1, skipped: 2 });
+  });
+
+  it("skips a delete whose alias was restored after its folder was already checked", async () => {
+    // Pretend the folder last changed long ago so its listing is reused between deletes.
+    vi.useFakeTimers({ now: Date.now() + 60_000, toFake: ["Date"] });
+    await writeSourceFile(sourceRoot, "photos/kept.jpg");
+    fake = createRemoteApiFake({
+      onDelete: async ({ logicalPath }) => {
+        if (logicalPath === "photos/first.jpg") {
+          await writeSourceFile(sourceRoot, "photos/second.jpeg");
+        }
+      },
+    });
+
+    const plan = createPlan(
+      [
+        { action: "keep", path: "photos/kept.jpg" },
+        { action: "delete", path: "photos/first.jpg" },
+        { action: "delete", path: "photos/second.jpg" },
+      ],
+      sourceRoot,
+    );
+
+    try {
+      const result = await pruneDeleted(
+        { apiToken: "token", apiUrl: "http://127.0.0.1:3000", plan },
+        undefined,
+        fake.remote,
+      );
+
+      expect(fake.deleteCalls.map((call) => call.logicalPath)).toEqual(["photos/first.jpg"]);
+      expect(result).toMatchObject({ failed: 0, pruned: 1, skipped: 1 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("still deletes a jpeg twin when its jpg sibling was already in the plan", async () => {
+    await writeSourceFile(sourceRoot, "photos/photo.jpg");
+
+    const plan = createPlan(
+      [
+        { action: "keep", path: "photos/photo.jpg" },
+        { action: "delete", path: "photos/photo.jpeg" },
+      ],
+      sourceRoot,
+    );
+
+    const result = await pruneDeleted(
+      { apiToken: "token", apiUrl: "http://127.0.0.1:3000", plan },
+      undefined,
+      fake.remote,
+    );
+
+    expect(fake.deleteCalls.map((call) => call.logicalPath)).toEqual(["photos/photo.jpeg"]);
+    expect(result).toMatchObject({ failed: 0, pruned: 1, skipped: 0 });
+  });
+
+  it("stops without deleting when the source folder disappears mid-run", async () => {
+    await writeSourceFile(sourceRoot, "photos/back.jpg");
+    fake = createRemoteApiFake({
+      onCreateRun: () => rename(sourceRoot, `${sourceRoot}-moved`),
+    });
+    const plan = createPlan([{ action: "delete", path: "photos/back.jpg" }], sourceRoot);
+
+    try {
+      await expect(
+        pruneDeleted(
+          { apiToken: "token", apiUrl: "http://127.0.0.1:3000", plan },
+          undefined,
+          fake.remote,
+        ),
+      ).rejects.toThrow(/Source folder is not available/);
+    } finally {
+      await rm(`${sourceRoot}-moved`, { force: true, recursive: true });
+    }
+
+    expect(fake.deleteCalls).toHaveLength(0);
+    expect(findFinalizeCall(fake.postJsonCalls)?.body).toMatchObject({ status: "failed" });
+  });
+
+  it("stops without deleting when the source folder is replaced by an empty one", async () => {
+    await writeSourceFile(sourceRoot, "photos/back.jpg");
+    fake = createRemoteApiFake({
+      onCreateRun: async () => {
+        await rename(sourceRoot, `${sourceRoot}-moved`);
+        await mkdir(sourceRoot);
+      },
+    });
+    const plan = createPlan([{ action: "delete", path: "photos/back.jpg" }], sourceRoot);
+
+    try {
+      await expect(
+        pruneDeleted(
+          { apiToken: "token", apiUrl: "http://127.0.0.1:3000", plan },
+          undefined,
+          fake.remote,
+        ),
+      ).rejects.toThrow(/Source folder is not available/);
+    } finally {
+      await rm(`${sourceRoot}-moved`, { force: true, recursive: true });
+    }
+
+    expect(fake.deleteCalls).toHaveLength(0);
+  });
+
+  it("fails the prune when the sync run cannot be finalized", async () => {
+    fake = createRemoteApiFake({
+      onFinalize: async () => {
+        throw new Error("simulated HTTP 503");
+      },
+    });
+    const plan = createPlan([{ action: "delete", path: "photos/old.jpg" }], sourceRoot);
+    const { events, observer } = collectEvents();
+
+    await expect(
+      pruneDeleted(
+        { apiToken: "token", apiUrl: "http://127.0.0.1:3000", plan },
+        observer,
+        fake.remote,
+      ),
+    ).rejects.toThrow(/sync run run-1 could not be finalized/);
+
+    expect(fake.deleteCalls).toHaveLength(1);
+    expect(events.find((event) => event.type === "complete")).toMatchObject({
+      summary: { action: "prune", failed: 0, pushed: 1, status: "failed" },
+    });
+  });
+
+  it("names the unfinalized run when a cancelled prune cannot be finalized", async () => {
+    const controller = new AbortController();
+    const reason = new DOMException("user cancelled", "AbortError");
+    fake = createRemoteApiFake({
+      onDelete: async () => {
+        controller.abort(reason);
+        throw reason;
+      },
+      onFinalize: async () => {
+        throw new TypeError("fetch failed");
+      },
+    });
+    const plan = createPlan([{ action: "delete", path: "photos/old.jpg" }], sourceRoot);
+    const { events, observer } = collectEvents();
+
+    const error = await pruneDeleted(
+      { apiToken: "token", apiUrl: "http://127.0.0.1:3000", plan, signal: controller.signal },
+      observer,
+      fake.remote,
+    ).catch((cause: unknown) => cause);
+
+    expect(error).toBeInstanceOf(UnfinalizedSyncRunError);
+    expect(error).toMatchObject({
+      action: "prune",
+      cause: reason,
+      intendedStatus: "cancelled",
+      message: expect.stringMatching(/cancelled.*sync run run-1 could not be finalized/),
+      syncRunId: "run-1",
+    });
+    expect(events.filter((event) => event.type === "complete")).toEqual([
+      expect.objectContaining({
+        summary: expect.objectContaining({
+          message: expect.stringContaining("run-1"),
+          status: "failed",
+        }),
+      }),
+    ]);
+  });
+
+  it("names the unfinalized run when the source folder goes away and finalizing fails", async () => {
+    await writeSourceFile(sourceRoot, "photos/back.jpg");
+    fake = createRemoteApiFake({
+      onCreateRun: () => rename(sourceRoot, `${sourceRoot}-moved`),
+      onFinalize: async () => {
+        throw new TypeError("fetch failed");
+      },
+    });
+    const plan = createPlan([{ action: "delete", path: "photos/back.jpg" }], sourceRoot);
+    const { events, observer } = collectEvents();
+
+    let error: unknown;
+
+    try {
+      error = await pruneDeleted(
+        { apiToken: "token", apiUrl: "http://127.0.0.1:3000", plan },
+        observer,
+        fake.remote,
+      ).catch((cause: unknown) => cause);
+    } finally {
+      await rm(`${sourceRoot}-moved`, { force: true, recursive: true });
+    }
+
+    expect(fake.deleteCalls).toHaveLength(0);
+    expect(error).toBeInstanceOf(UnfinalizedSyncRunError);
+    expect(error).toMatchObject({
+      cause: { name: "SourceRootUnavailableError" },
+      intendedStatus: "failed",
+      message: expect.stringMatching(/Source folder is not available.*sync run run-1/),
+      syncRunId: "run-1",
+    });
+    expect(events.find((event) => event.type === "complete")).toMatchObject({
+      summary: { action: "prune", status: "failed" },
+    });
+  });
+  it("finalizes a run created while the prune was being cancelled", async () => {
+    const controller = new AbortController();
+    const server = await startSlowCreateServer(() => controller.abort());
+    const plan = createPlan([{ action: "delete", path: "photos/old.jpg" }], sourceRoot);
+
+    try {
+      await expect(
+        pruneDeleted({ apiToken: "token", apiUrl: server.apiUrl, plan, signal: controller.signal }),
+      ).rejects.toMatchObject({ name: "AbortError" });
+    } finally {
+      await server.close();
+    }
+
+    expect(server.completeBodies).toEqual([
+      expect.objectContaining({
+        counts: expect.objectContaining({ pushed: 0 }),
+        status: "cancelled",
+      }),
+    ]);
   });
 });

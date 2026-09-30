@@ -178,7 +178,13 @@ pnpm --filter @latch-works/lockstep start push --source "T:\cloud-desktop\media"
 Capped pushes take the first N upload/update changes in plan order (delete items are excluded) and
 only hash the selected obvious uploads or size changes. Equal-size remote entries are still hashed on
 a cache miss because size alone cannot prove that their contents match. Each push run is finalized
-through `/api/sync/runs/{id}/complete` with `completed` or `failed` status and final counts.
+through `/api/sync/runs/{id}/complete` with `completed` or `failed` status and final counts. That
+request is retried briefly; if it still fails, the push or prune fails with the run id, and Pane View
+shows the run as running until it is cancelled on the management page. This takes precedence over
+how the run ended: a cancelled run, or a prune stopped because the source folder went away, still
+reports the unfinalized run id. `@latch-works/lockstep-core` throws `UnfinalizedSyncRunError` for
+this case, carrying `syncRunId`, the `intendedStatus` it tried to record, and the cancellation or
+fatal error as `cause`.
 
 Lockstep stores versioned, per-source hash caches under
 `~/.latch-works/hash-cache/v1/`. Cache entries are invalidated when file size, modified time, or the
@@ -191,7 +197,7 @@ not prevent synchronization.
 
 When delete items are present, Lockstep prints the paths (respecting `--max-changes` if set) and requires `--yes` or interactive confirmation before applying deletes. It then deletes exactly the printed entries from that same plan; it does not plan again, so a remote entry that appeared in the meantime is not touched. Use `prune --yes` only in scripted automation after reviewing a read-only `plan`, and note that `--yes` prunes whatever that run's own plan lists.
 
-Before each delete, prune checks the local path again. If the file is back in the source folder, the delete is skipped and reported as `Skipped delete <path>`; the final line counts deleted, skipped, and failed entries. If the source folder itself is missing (an unmounted drive, for example), prune stops before creating a sync run and deletes nothing.
+Before each delete, prune checks the local path again. If the file is back in the source folder, including under a spelling that planning treats as the same entry (different case, Unicode form, or `.jpeg` for `.jpg`), the delete is skipped and reported as `Skipped delete <path>`; the final line counts deleted, skipped, and failed entries. If the source folder itself is missing (an unmounted drive, for example), prune stops before creating a sync run and deletes nothing. If it goes missing or is replaced by a different folder during the run, prune stops before the next delete and finalizes the run as failed.
 
 The desktop app follows the same rule. The main process keeps the last plan for each profile and gives it an id; the **Prune** stage is enabled only when that plan lists at least one delete, its confirmation states how many remote entries will be deleted, and it sends only the plan id back, never paths. A plan can be pruned once: the main process discards it when a prune starts, and a prune is refused if the profile's API URL or source folder changed since the plan.
 

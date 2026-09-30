@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, stat, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { uploadFile } from "./remote-api.js";
+import { createSyncRun, uploadFile } from "./remote-api.js";
 
 /** `Server.address()` widens to a pipe name or null; only a bound TCP address is usable. */
 const TcpAddressSchema = z.object({ port: z.number() });
@@ -121,5 +121,89 @@ describe("uploadFile", () => {
         server.close((error) => (error ? reject(error) : resolve())),
       );
     }
+  });
+
+  it("rejects when the file cannot be read after the size check", async () => {
+    // A directory passes stat but fails on read (EISDIR), like a drive that drops mid-upload.
+    const unreadable = await mkdtemp(join(tmpdir(), "lockstep-upload-"));
+    tempDirs.push(unreadable);
+    const { size } = await stat(unreadable);
+
+    const server = createServer(async (request, response) => {
+      try {
+        for await (const _chunk of request) {
+          // Drain whatever arrives.
+        }
+      } catch {
+        // The client tears the request down; there is nothing to answer.
+      }
+
+      response.writeHead(200);
+      response.end();
+    });
+
+    const port = await listenOnLoopback(server);
+
+    try {
+      await expect(
+        uploadFile({
+          contentType: "image/jpeg",
+          expectedSha256: "0".repeat(64),
+          expectedSize: size,
+          filePath: unreadable,
+          headers: { "Content-Length": String(size) },
+          uploadUrl: `http://127.0.0.1:${port}/upload`,
+        }),
+      ).rejects.toMatchObject({ code: "EISDIR" });
+    } finally {
+      server.closeAllConnections?.();
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  });
+});
+
+type CreatePost = Parameters<typeof createSyncRun>[0]["postJson"];
+
+describe("createSyncRun", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("gives up ten seconds after a cancel and says the run may be left running", async () => {
+    vi.useFakeTimers();
+    let requestAborted = false;
+
+    // A server queued behind a library lock: the create request settles only when aborted.
+    const post: CreatePost = (_apiUrl, _route, _apiToken, _body, _schema, signal) =>
+      new Promise<never>((_resolve, reject) => {
+        signal?.addEventListener("abort", () => {
+          requestAborted = true;
+          reject(new DOMException("Aborted", "AbortError"));
+        });
+      });
+
+    const controller = new AbortController();
+
+    const result = createSyncRun({
+      apiToken: "token",
+      apiUrl: "http://127.0.0.1:3000",
+      body: { counts: { delete: 0, keep: 0, update: 0, upload: 0 }, sourceRoot: "/archive" },
+      postJson: post,
+      signal: controller.signal,
+    });
+
+    const rejection = expect(result).rejects.toThrow("may be left running");
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(requestAborted).toBe(false);
+
+    controller.abort();
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect(requestAborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+
+    await rejection;
   });
 });

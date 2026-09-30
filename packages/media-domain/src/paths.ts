@@ -55,43 +55,72 @@ export function normalizePathForCompare(
 }
 
 /**
- * Build a path identity function for sync planning.
+ * Pair local archive paths with the remote library paths they sync to.
  *
- * Alias jpeg↔jpg across machines by default. When either the local archive or the
- * remote snapshot has multiple paths that collapse to the same aliased key (e.g. both
- * `photo.jpg` and `photo.jpeg`), skip extension aliasing for that key so distinct
- * files are not merged, overwritten, or deleted.
+ * The server keys library entries by exact path, so exact matches pair first. Paths left over
+ * then pair across spellings, case and Unicode (NFC) first and the jpeg↔jpg alias last, but only
+ * when exactly one leftover local and one leftover remote share the key. A key several paths
+ * could claim (e.g. `Photo.jpg` and `photo.jpg` on a case-sensitive archive) pairs nothing, so a
+ * local file never updates a remote entry that belongs to a different file.
+ *
+ * Returns local path → remote path for every paired local path.
  */
-export function createSyncPathIdentity(
+export function pairSyncPaths(
   localPaths: readonly string[],
-  remotePaths: readonly string[] = [],
-): (path: string) => string {
-  const collidingAliasedKeys = new Set<string>();
+  remotePaths: readonly string[],
+): Map<string, string> {
+  const pairs = new Map<string, string>();
+  const pairedRemotes = new Set<string>();
 
-  for (const paths of [localPaths, remotePaths]) {
-    const counts = new Map<string, number>();
+  const identities: Array<(path: string) => string> = [
+    (path) => trimTrailingSlash(toArchivePath(path)),
+    (path) => normalizePathForCompare(path, { canonicalizeExtensions: false }),
+    (path) => normalizePathForCompare(path),
+  ];
 
-    for (const path of paths) {
-      const key = normalizePathForCompare(path);
-      counts.set(key, (counts.get(key) ?? 0) + 1);
+  for (const identity of identities) {
+    const groups = new Map<string, { locals: string[]; remotes: string[] }>();
+
+    const groupFor = (key: string) => {
+      let group = groups.get(key);
+
+      if (!group) {
+        group = { locals: [], remotes: [] };
+        groups.set(key, group);
+      }
+
+      return group;
+    };
+
+    for (const path of localPaths) {
+      if (!pairs.has(path)) {
+        groupFor(identity(path)).locals.push(path);
+      }
     }
 
-    for (const [key, count] of counts) {
-      if (count > 1) {
-        collidingAliasedKeys.add(key);
+    for (const path of remotePaths) {
+      if (!pairedRemotes.has(path)) {
+        groupFor(identity(path)).remotes.push(path);
+      }
+    }
+
+    for (const { locals, remotes } of groups.values()) {
+      const [local] = locals;
+      const [remote] = remotes;
+
+      if (
+        locals.length === 1 &&
+        remotes.length === 1 &&
+        local !== undefined &&
+        remote !== undefined
+      ) {
+        pairs.set(local, remote);
+        pairedRemotes.add(remote);
       }
     }
   }
 
-  return (path: string) => {
-    const aliased = normalizePathForCompare(path);
-
-    if (collidingAliasedKeys.has(aliased)) {
-      return normalizePathForCompare(path, { canonicalizeExtensions: false });
-    }
-
-    return aliased;
-  };
+  return pairs;
 }
 
 function canonicalizePathExtension(path: string): string {

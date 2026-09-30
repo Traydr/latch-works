@@ -297,7 +297,7 @@ export async function hashArchiveItems({
       const filePath = path.resolve(root, ...item.path.split("/"));
       const relative = path.relative(root, filePath);
 
-      if (relative.startsWith("..") || path.isAbsolute(relative)) {
+      if (escapesRoot(relative)) {
         throw new Error(`Archive path escapes source root: ${item.path}`);
       }
 
@@ -494,4 +494,12 @@ export async function scanArchive({
     skippedEntries,
     sourceRoot: root,
   };
+}
+
+/**
+ * Whether a `path.relative(root, target)` result leaves `root`. Only a leading `..` segment does;
+ * a name that merely starts with two dots (`..cover.jpg`) stays inside.
+ */
+export function escapesRoot(relative: string): boolean {
+  return relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative);
 }

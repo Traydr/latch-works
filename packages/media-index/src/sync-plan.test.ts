@@ -1,5 +1,22 @@
+import type { MediaItem } from "@latch-works/media-domain";
 import { describe, expect, it } from "vitest";
 import { createSyncPlan } from "./sync-plan.js";
+
+function localImage(path: string, size: number, sha256: string): MediaItem {
+  const name = path.slice(path.lastIndexOf("/") + 1);
+
+  return {
+    extension: "jpg",
+    id: sha256,
+    mediaType: "image",
+    mtimeMs: 1,
+    name,
+    parentPath: path.slice(0, Math.max(0, path.lastIndexOf("/"))),
+    path,
+    sha256,
+    size,
+  };
+}
 
 describe("createSyncPlan", () => {
   it("plans uploads, keeps, updates, and deletes by path", () => {
@@ -232,5 +249,54 @@ describe("createSyncPlan", () => {
     );
 
     expect(plan.counts).toEqual({ upload: 0, update: 0, keep: 1, delete: 0 });
+  });
+
+  it("keeps case-only twins on their own remote entries", () => {
+    const plan = createSyncPlan(
+      [localImage("sfw/Photo.jpg", 10, "aaa"), localImage("sfw/photo.jpg", 10, "bbb")],
+      [
+        { path: "sfw/Photo.jpg", size: 10, sha256: "aaa" },
+        { path: "sfw/photo.jpg", size: 10, sha256: "bbb" },
+      ],
+    );
+
+    expect(plan.counts).toEqual({ upload: 0, update: 0, keep: 2, delete: 0 });
+    expect(plan.items.map((item) => [item.path, item.remote?.path])).toEqual([
+      ["sfw/Photo.jpg", "sfw/Photo.jpg"],
+      ["sfw/photo.jpg", "sfw/photo.jpg"],
+    ]);
+  });
+
+  it("uploads the case-only twin a remote entry does not have", () => {
+    const plan = createSyncPlan(
+      [localImage("sfw/Photo.jpg", 10, "aaa"), localImage("sfw/photo.jpg", 10, "aaa")],
+      [{ path: "sfw/Photo.jpg", size: 10, sha256: "aaa" }],
+    );
+
+    expect(plan.counts).toEqual({ upload: 1, update: 0, keep: 1, delete: 0 });
+    expect(plan.items.find((item) => item.action === "upload")?.path).toBe("sfw/photo.jpg");
+  });
+
+  it("never updates a remote entry that several local paths could claim", () => {
+    const plan = createSyncPlan(
+      [localImage("sfw/Photo.jpg", 10, "aaa"), localImage("sfw/photo.jpg", 10, "bbb")],
+      [{ path: "sfw/PHOTO.JPG", size: 10, sha256: "ccc" }],
+    );
+
+    expect(plan.counts).toEqual({ upload: 2, update: 0, keep: 0, delete: 1 });
+    expect(plan.items.find((item) => item.action === "delete")?.path).toBe("sfw/PHOTO.JPG");
+  });
+
+  it("prefers a case-only match over a jpeg alias", () => {
+    const plan = createSyncPlan(
+      [localImage("sfw/photo.jpg", 10, "aaa"), localImage("sfw/photo.jpeg", 20, "bbb")],
+      [{ path: "sfw/photo.JPG", size: 10, sha256: "aaa" }],
+    );
+
+    expect(plan.counts).toEqual({ upload: 1, update: 0, keep: 1, delete: 0 });
+    expect(plan.items.find((item) => item.action === "keep")).toMatchObject({
+      path: "sfw/photo.jpg",
+      remote: { path: "sfw/photo.JPG" },
+    });
   });
 });
