@@ -3,11 +3,11 @@ import { DirectoryAliasIndex, MissingPathErrorSchema } from "./directory-alias-i
 import { formatPushError, toError } from "./format.js";
 import { resolveLocalFilePath, selectChangedItems, selectDeleteItems } from "./push-helpers.js";
 import {
+  createSyncRun,
   failUnfinalizedRun,
   finalizeSyncRun,
   type PruneRemoteApi,
   remoteApi,
-  SyncRunSchema,
 } from "./remote-api.js";
 import type { LockstepObserver, LockstepPlan, PruneDeletedOptions } from "./types.js";
 
@@ -145,17 +145,14 @@ export async function pruneDeleted(
 
   observer?.onEvent({ type: "status", message: "Creating sync run..." });
 
-  const syncRun = await remote.postJson(
-    options.apiUrl,
-    "/api/sync/runs",
-    options.apiToken,
-    {
-      counts: plan.counts,
-      sourceRoot: plan.sourceRoot,
-    },
-    SyncRunSchema,
-    signal,
-  );
+  // Not cancellable: a cancel from here on skips all item work (the loop below checks the signal
+  // first) and finalizes this run as cancelled.
+  const syncRun = await createSyncRun({
+    apiToken: options.apiToken,
+    apiUrl: options.apiUrl,
+    body: { counts: plan.counts, sourceRoot: plan.sourceRoot },
+    postJson: remote.postJson,
+  });
 
   const aliasIndex = new DirectoryAliasIndex(plan.sourceRoot);
   let pruned = 0;

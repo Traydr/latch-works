@@ -1,8 +1,9 @@
 import { mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { z } from "zod";
+import { z } from "zod";
 import { pruneDeleted } from "./prune-deleted.js";
 import {
   type PruneRemoteApi,
@@ -107,6 +108,48 @@ async function writeSourceFile(sourceRoot: string, archivePath: string): Promise
   const filePath = path.join(sourceRoot, ...archivePath.split("/"));
   await mkdir(path.dirname(filePath), { recursive: true });
   await writeFile(filePath, "local bytes");
+}
+
+/** `Server.address()` widens to a pipe name or null; only a bound TCP address is usable. */
+const TcpAddressSchema = z.object({ port: z.number() });
+
+/**
+ * A Pane View stand-in that commits the sync run, then answers the create request late; `onCreate`
+ * runs while that response is still pending. Records every finalize body.
+ */
+async function startSlowCreateServer(onCreate: () => void) {
+  const completeBodies: unknown[] = [];
+
+  const server = createServer((request, response) => {
+    const chunks: Buffer[] = [];
+
+    request.on("data", (chunk: Buffer) => chunks.push(chunk));
+    request.on("end", () => {
+      const reply = (json: string) => {
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(json);
+      };
+
+      if (request.url === "/api/sync/runs") {
+        onCreate();
+        setTimeout(() => reply(JSON.stringify({ syncRunId: "run-slow" })), 100);
+
+        return;
+      }
+
+      completeBodies.push(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+      reply("{}");
+    });
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = TcpAddressSchema.parse(server.address());
+
+  return {
+    apiUrl: `http://127.0.0.1:${address.port}`,
+    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+    completeBodies,
+  };
 }
 
 describe("pruneDeleted orchestration", () => {
@@ -573,5 +616,25 @@ describe("pruneDeleted orchestration", () => {
     expect(events.find((event) => event.type === "complete")).toMatchObject({
       summary: { action: "prune", status: "failed" },
     });
+  });
+  it("finalizes a run created while the prune was being cancelled", async () => {
+    const controller = new AbortController();
+    const server = await startSlowCreateServer(() => controller.abort());
+    const plan = createPlan([{ action: "delete", path: "photos/old.jpg" }], sourceRoot);
+
+    try {
+      await expect(
+        pruneDeleted({ apiToken: "token", apiUrl: server.apiUrl, plan, signal: controller.signal }),
+      ).rejects.toMatchObject({ name: "AbortError" });
+    } finally {
+      await server.close();
+    }
+
+    expect(server.completeBodies).toEqual([
+      expect.objectContaining({
+        counts: expect.objectContaining({ pushed: 0 }),
+        status: "cancelled",
+      }),
+    ]);
   });
 });

@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import type { MediaItem } from "@latch-works/media-domain";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { z } from "zod";
+import { z } from "zod";
 import { pushChanges } from "./push-changes.js";
 import { type PushRemoteApi, type SyncRequestBody, UnfinalizedSyncRunError } from "./remote-api.js";
 import type { LockstepPlan, LockstepRunEvent } from "./types.js";
@@ -116,6 +117,48 @@ function collectEvents() {
   };
 }
 
+/** `Server.address()` widens to a pipe name or null; only a bound TCP address is usable. */
+const TcpAddressSchema = z.object({ port: z.number() });
+
+/**
+ * A Pane View stand-in that commits the sync run, then answers the create request late; `onCreate`
+ * runs while that response is still pending. Records every finalize body.
+ */
+async function startSlowCreateServer(onCreate: () => void) {
+  const completeBodies: unknown[] = [];
+
+  const server = createServer((request, response) => {
+    const chunks: Buffer[] = [];
+
+    request.on("data", (chunk: Buffer) => chunks.push(chunk));
+    request.on("end", () => {
+      const reply = (json: string) => {
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(json);
+      };
+
+      if (request.url === "/api/sync/runs") {
+        onCreate();
+        setTimeout(() => reply(JSON.stringify({ syncRunId: "run-slow" })), 100);
+
+        return;
+      }
+
+      completeBodies.push(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+      reply("{}");
+    });
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = TcpAddressSchema.parse(server.address());
+
+  return {
+    apiUrl: `http://127.0.0.1:${address.port}`,
+    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+    completeBodies,
+  };
+}
+
 describe("pushChanges orchestration", () => {
   beforeEach(async () => {
     tempDir = await mkdtemp(path.join(os.tmpdir(), "lockstep-push-changes-"));
@@ -203,7 +246,8 @@ describe("pushChanges orchestration", () => {
         sourceRoot: plan.sourceRoot,
       },
       route: "/api/sync/runs",
-      signal: undefined,
+      // Its own timeout, never the run's abort signal.
+      signal: expect.any(AbortSignal),
     });
     expect(fake.pushCalls).toHaveLength(1);
     expect(fake.pushCalls[0]).toMatchObject({
@@ -584,6 +628,33 @@ describe("pushChanges orchestration", () => {
           message: expect.stringContaining("run-1"),
           status: "failed",
         }),
+      }),
+    ]);
+  });
+  it("finalizes a run created while the push was being cancelled", async () => {
+    const controller = new AbortController();
+    const server = await startSlowCreateServer(() => controller.abort());
+    const plan = createPlan([{ action: "upload", local: localItem, path: localItem.path }]);
+
+    try {
+      await expect(
+        pushChanges({
+          apiToken: "token",
+          apiUrl: server.apiUrl,
+          hashCacheRoot: cacheRoot,
+          plan,
+          signal: controller.signal,
+          sourceRoot: plan.sourceRoot,
+        }),
+      ).rejects.toMatchObject({ name: "AbortError" });
+    } finally {
+      await server.close();
+    }
+
+    expect(server.completeBodies).toEqual([
+      expect.objectContaining({
+        counts: expect.objectContaining({ pushed: 0 }),
+        status: "cancelled",
       }),
     ]);
   });

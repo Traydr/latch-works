@@ -237,6 +237,35 @@ async function pushMediaItem({
   );
 }
 
+/** How long run creation may take; it cannot be cancelled, so it must not hang a cancelled run. */
+const CREATE_SYNC_RUN_TIMEOUT_MS = 10_000;
+
+/**
+ * Starts a sync run. Deliberately ignores the caller's abort signal: once the request is sent the
+ * server may commit the run, and only its id lets the caller finalize it, so a cancelled caller
+ * waits (bounded) for the id and then finalizes the run as cancelled instead of stranding it.
+ */
+export function createSyncRun({
+  apiToken,
+  apiUrl,
+  body,
+  postJson: post,
+}: {
+  apiToken: string;
+  apiUrl: string;
+  body: CreateSyncRunRequest;
+  postJson: typeof postJson;
+}): Promise<z.output<typeof SyncRunSchema>> {
+  return post(
+    apiUrl,
+    "/api/sync/runs",
+    apiToken,
+    body,
+    SyncRunSchema,
+    AbortSignal.timeout(CREATE_SYNC_RUN_TIMEOUT_MS),
+  );
+}
+
 /** Waits between finalization attempts; the server accepts an exact replay of the same outcome. */
 const FINALIZE_RETRY_DELAYS_MS = [250, 1000];
 

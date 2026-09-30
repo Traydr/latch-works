@@ -10,11 +10,11 @@ import {
   selectUploadUpdateItems,
 } from "./push-helpers.js";
 import {
+  createSyncRun,
   failUnfinalizedRun,
   finalizeSyncRun,
   type PushRemoteApi,
   remoteApi,
-  SyncRunSchema,
 } from "./remote-api.js";
 import type { LockstepObserver, LockstepPlan, PushChangesOptions } from "./types.js";
 
@@ -123,17 +123,14 @@ export async function pushChanges(
 
   observer?.onEvent({ type: "status", message: "Creating sync run..." });
 
-  const syncRun = await remote.postJson(
-    options.apiUrl,
-    "/api/sync/runs",
-    options.apiToken,
-    {
-      counts: plan.counts,
-      sourceRoot: plan.sourceRoot,
-    },
-    SyncRunSchema,
-    signal,
-  );
+  // Not cancellable: a cancel from here on skips all item work (the loop below checks the signal
+  // first) and finalizes this run as cancelled.
+  const syncRun = await createSyncRun({
+    apiToken: options.apiToken,
+    apiUrl: options.apiUrl,
+    body: { counts: plan.counts, sourceRoot: plan.sourceRoot },
+    postJson: remote.postJson,
+  });
 
   let pushed = 0;
   let failed = 0;
