@@ -1,8 +1,4 @@
-import {
-  ensureDirectoryPermission,
-  getDirectoryDestinationId,
-  loadDirectoryHandle
-} from "../gather/directory-store";
+import { ensureDirectoryPermission, loadDirectoryDestination } from "../gather/directory-store";
 import {
   downloadImages,
   getOrCreateNestedDirectory,
@@ -30,18 +26,17 @@ export async function executeGatherOutput(input: {
   signal?: AbortSignal;
 }): Promise<void> {
   const { payload, settings, destinationId, emit, signal } = input;
-  const directoryHandle = await loadDirectoryHandle(payload.site, settings.useGlobalFolder);
+  const destination = await loadDirectoryDestination(payload.site, settings.useGlobalFolder);
 
-  if (!directoryHandle) {
+  if (!destination) {
     await emit({ kind: "failed", message: "Choose a destination folder before gathering." });
 
     return;
   }
 
-  if (
-    destinationId &&
-    (await getDirectoryDestinationId(payload.site, settings.useGlobalFolder)) !== destinationId
-  ) {
+  const directoryHandle = destination.handle;
+
+  if (destinationId && destination.id !== destinationId) {
     await emit(destinationChangedEvent(payload));
 
     return;
