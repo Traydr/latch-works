@@ -16,8 +16,9 @@ export interface LibrarySnapshotRequest {
 export interface GalleryListingQueryRequest extends GalleryListingRequest {}
 
 /**
- * Listing pages are fetched by the browse session through its page source;
- * these keys exist so delete/refresh invalidation reaches page 1.
+ * Listing pages are fetched by the browse session through its page source.
+ * One key holds every loaded page of a listing, so delete and refresh
+ * invalidation re-read them together.
  */
 
 export const librarySnapshotKeys = {
