@@ -44,6 +44,8 @@ type RunCredentials = { apiToken: string; apiUrl: string; sourceRoot: string };
 export class RunService {
   private abortController: AbortController | null = null;
   private activeRun: ActiveRun | null = null;
+  /** Profile changes accepted but not yet saved; a run waits for none. */
+  private pendingProfileChanges = 0;
   private readonly reviewedPlans = new Map<string, ReviewedPlan>();
 
   constructor(
@@ -52,13 +54,28 @@ export class RunService {
     private readonly core: LockstepCore = lockstepCore,
   ) {}
 
-  isRunning(): boolean {
-    return this.activeRun !== null;
-  }
-
   /** The run in progress, so a window opened mid-run can show it and offer Cancel. */
   getActiveRun(): ActiveRun | null {
     return this.activeRun;
+  }
+
+  /**
+   * Edits, deletes, or selects a profile only while no run is going, and holds runs off until the
+   * change is saved: a run reads its profile once and records its result on it. Resolves to
+   * `undefined`, without calling `change`, while a run is in progress.
+   */
+  async changeProfileWhileIdle<T>(change: () => Promise<T>): Promise<T | undefined> {
+    if (this.activeRun) {
+      return undefined;
+    }
+
+    this.pendingProfileChanges += 1;
+
+    try {
+      return await change();
+    } finally {
+      this.pendingProfileChanges -= 1;
+    }
   }
 
   cancel(): void {
@@ -267,6 +284,10 @@ export class RunService {
   ): Promise<T> {
     if (this.activeRun) {
       throw new Error("A sync run is already in progress.");
+    }
+
+    if (this.pendingProfileChanges > 0) {
+      throw new Error("A profile change is still being saved. Try again when it finishes.");
     }
 
     this.activeRun = { action: operation, profileId };

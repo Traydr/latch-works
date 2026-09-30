@@ -158,10 +158,6 @@ export function registerIpc(
       return validatedId.serialized;
     }
 
-    if (runService.isRunning()) {
-      return runInProgressFailure(InvokeIpcContracts.updateProfile.channel);
-    }
-
     const validated = validateIpcInput(
       requireRequestSchema(InvokeIpcContracts.updateProfile.requestSchema),
       patch,
@@ -172,9 +168,13 @@ export function registerIpc(
       return validated.serialized;
     }
 
-    const result = await profileService.updateProfile(validatedId.value, validated.value);
+    const result = await runService.changeProfileWhileIdle(() =>
+      profileService.updateProfile(validatedId.value, validated.value),
+    );
 
-    return serializeAppResult(result);
+    return result
+      ? serializeAppResult(result)
+      : runInProgressFailure(InvokeIpcContracts.updateProfile.channel);
   });
 
   ipcMain.handle(InvokeIpcContracts.deleteProfile.channel, async (_event, profileId) => {
@@ -184,13 +184,13 @@ export function registerIpc(
       return validatedId.serialized;
     }
 
-    if (runService.isRunning()) {
-      return runInProgressFailure(InvokeIpcContracts.deleteProfile.channel);
-    }
+    const result = await runService.changeProfileWhileIdle(() =>
+      profileService.deleteProfile(validatedId.value),
+    );
 
-    const result = await profileService.deleteProfile(validatedId.value);
-
-    return serializeAppResult(result);
+    return result
+      ? serializeAppResult(result)
+      : runInProgressFailure(InvokeIpcContracts.deleteProfile.channel);
   });
 
   ipcMain.handle(InvokeIpcContracts.setActiveProfile.channel, async (_event, profileId) => {
@@ -200,13 +200,13 @@ export function registerIpc(
       return validatedId.serialized;
     }
 
-    if (runService.isRunning()) {
-      return runInProgressFailure(InvokeIpcContracts.setActiveProfile.channel);
-    }
+    const result = await runService.changeProfileWhileIdle(() =>
+      profileService.setActiveProfile(validatedId.value),
+    );
 
-    const result = await profileService.setActiveProfile(validatedId.value);
-
-    return serializeAppResult(result);
+    return result
+      ? serializeAppResult(result)
+      : runInProgressFailure(InvokeIpcContracts.setActiveProfile.channel);
   });
 
   ipcMain.handle(InvokeIpcContracts.doctor.channel, async (_event, profileId) => {

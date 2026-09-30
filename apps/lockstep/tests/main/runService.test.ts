@@ -237,4 +237,26 @@ describe("RunService prune", () => {
       { action: "prune", lastRun: "prune", running: false },
     ]);
   });
+
+  it("keeps profile changes and runs apart, whichever starts first", async () => {
+    const { profileId, profiles, runService } = await createRunService();
+
+    // An edit accepted first holds off a run that would read the old target.
+    const edit = runService.changeProfileWhileIdle(() =>
+      profiles.updateProfile(profileId, { apiUrl: "http://127.0.0.1:1" }),
+    );
+
+    await expect(runService.plan({ profileId })).rejects.toThrow(/profile change/);
+    await expect(edit).resolves.toMatchObject({ status: "ok" });
+    expect(profiles.getProfile(profileId)?.lastRun).toBeUndefined();
+
+    // A run started first refuses the edit, which would take its result.
+    await profiles.updateProfile(profileId, { apiUrl: sync.apiUrl });
+    const plan = runService.plan({ profileId });
+
+    await expect(
+      runService.changeProfileWhileIdle(() => profiles.setActiveProfile(profileId)),
+    ).resolves.toBeUndefined();
+    await expect(plan).resolves.toMatchObject({ counts: { delete: 2 } });
+  });
 });
