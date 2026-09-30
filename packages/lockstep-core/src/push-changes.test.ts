@@ -6,7 +6,7 @@ import type { MediaItem } from "@latch-works/media-domain";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { z } from "zod";
 import { pushChanges } from "./push-changes.js";
-import type { PushRemoteApi, SyncRequestBody } from "./remote-api.js";
+import { type PushRemoteApi, type SyncRequestBody, UnfinalizedSyncRunError } from "./remote-api.js";
 import type { LockstepPlan, LockstepRunEvent } from "./types.js";
 
 type PushMediaItemRequest = Parameters<PushRemoteApi["pushMediaItem"]>[0];
@@ -540,5 +540,51 @@ describe("pushChanges orchestration", () => {
     expect(events.find((event) => event.type === "complete")).toMatchObject({
       summary: { action: "push", failed: 0, pushed: 1, status: "failed" },
     });
+  });
+
+  it("names the unfinalized run when a cancelled push cannot be finalized", async () => {
+    const controller = new AbortController();
+    const reason = new DOMException("user cancelled", "AbortError");
+    fake = createRemoteApiFake({
+      onFinalize: async () => {
+        throw new TypeError("fetch failed");
+      },
+      onPush: async () => {
+        controller.abort(reason);
+        throw reason;
+      },
+      sha256: contentSha256,
+    });
+    const plan = createPlan([{ action: "upload", local: localItem, path: localItem.path }]);
+    const { events, observer } = collectEvents();
+
+    const error = await pushChanges(
+      {
+        apiToken: "token",
+        apiUrl: "http://127.0.0.1:3000",
+        hashCacheRoot: cacheRoot,
+        plan,
+        signal: controller.signal,
+        sourceRoot: plan.sourceRoot,
+      },
+      observer,
+      fake.remote,
+    ).catch((cause: unknown) => cause);
+
+    expect(error).toBeInstanceOf(UnfinalizedSyncRunError);
+    expect(error).toMatchObject({
+      action: "push",
+      cause: reason,
+      intendedStatus: "cancelled",
+      syncRunId: "run-1",
+    });
+    expect(events.filter((event) => event.type === "complete")).toEqual([
+      expect.objectContaining({
+        summary: expect.objectContaining({
+          message: expect.stringContaining("run-1"),
+          status: "failed",
+        }),
+      }),
+    ]);
   });
 });

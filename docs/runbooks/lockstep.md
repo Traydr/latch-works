@@ -180,7 +180,11 @@ only hash the selected obvious uploads or size changes. Equal-size remote entrie
 a cache miss because size alone cannot prove that their contents match. Each push run is finalized
 through `/api/sync/runs/{id}/complete` with `completed` or `failed` status and final counts. That
 request is retried briefly; if it still fails, the push or prune fails with the run id, and Pane View
-shows the run as running until it is cancelled on the management page.
+shows the run as running until it is cancelled on the management page. This takes precedence over
+how the run ended: a cancelled run, or a prune stopped because the source folder went away, still
+reports the unfinalized run id. `@latch-works/lockstep-core` throws `UnfinalizedSyncRunError` for
+this case, carrying `syncRunId`, the `intendedStatus` it tried to record, and the cancellation or
+fatal error as `cause`.
 
 Lockstep stores versioned, per-source hash caches under
 `~/.latch-works/hash-cache/v1/`. Cache entries are invalidated when file size, modified time, or the

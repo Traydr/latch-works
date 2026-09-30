@@ -4,7 +4,11 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { z } from "zod";
 import { pruneDeleted } from "./prune-deleted.js";
-import type { PruneRemoteApi, SyncRequestBody } from "./remote-api.js";
+import {
+  type PruneRemoteApi,
+  type SyncRequestBody,
+  UnfinalizedSyncRunError,
+} from "./remote-api.js";
 import type { LockstepPlan, LockstepRunEvent } from "./types.js";
 
 type DeleteRemoteItemRequest = Parameters<PruneRemoteApi["deleteRemoteItem"]>[0];
@@ -458,6 +462,81 @@ describe("pruneDeleted orchestration", () => {
     expect(fake.deleteCalls).toHaveLength(1);
     expect(events.find((event) => event.type === "complete")).toMatchObject({
       summary: { action: "prune", failed: 0, pushed: 1, status: "failed" },
+    });
+  });
+
+  it("names the unfinalized run when a cancelled prune cannot be finalized", async () => {
+    const controller = new AbortController();
+    const reason = new DOMException("user cancelled", "AbortError");
+    fake = createRemoteApiFake({
+      onDelete: async () => {
+        controller.abort(reason);
+        throw reason;
+      },
+      onFinalize: async () => {
+        throw new TypeError("fetch failed");
+      },
+    });
+    const plan = createPlan([{ action: "delete", path: "photos/old.jpg" }], sourceRoot);
+    const { events, observer } = collectEvents();
+
+    const error = await pruneDeleted(
+      { apiToken: "token", apiUrl: "http://127.0.0.1:3000", plan, signal: controller.signal },
+      observer,
+      fake.remote,
+    ).catch((cause: unknown) => cause);
+
+    expect(error).toBeInstanceOf(UnfinalizedSyncRunError);
+    expect(error).toMatchObject({
+      action: "prune",
+      cause: reason,
+      intendedStatus: "cancelled",
+      message: expect.stringMatching(/cancelled.*sync run run-1 could not be finalized/),
+      syncRunId: "run-1",
+    });
+    expect(events.filter((event) => event.type === "complete")).toEqual([
+      expect.objectContaining({
+        summary: expect.objectContaining({
+          message: expect.stringContaining("run-1"),
+          status: "failed",
+        }),
+      }),
+    ]);
+  });
+
+  it("names the unfinalized run when the source folder goes away and finalizing fails", async () => {
+    await writeSourceFile(sourceRoot, "photos/back.jpg");
+    fake = createRemoteApiFake({
+      onCreateRun: () => rename(sourceRoot, `${sourceRoot}-moved`),
+      onFinalize: async () => {
+        throw new TypeError("fetch failed");
+      },
+    });
+    const plan = createPlan([{ action: "delete", path: "photos/back.jpg" }], sourceRoot);
+    const { events, observer } = collectEvents();
+
+    let error: unknown;
+
+    try {
+      error = await pruneDeleted(
+        { apiToken: "token", apiUrl: "http://127.0.0.1:3000", plan },
+        observer,
+        fake.remote,
+      ).catch((cause: unknown) => cause);
+    } finally {
+      await rm(`${sourceRoot}-moved`, { force: true, recursive: true });
+    }
+
+    expect(fake.deleteCalls).toHaveLength(0);
+    expect(error).toBeInstanceOf(UnfinalizedSyncRunError);
+    expect(error).toMatchObject({
+      cause: { name: "SourceRootUnavailableError" },
+      intendedStatus: "failed",
+      message: expect.stringMatching(/Source folder is not available.*sync run run-1/),
+      syncRunId: "run-1",
+    });
+    expect(events.find((event) => event.type === "complete")).toMatchObject({
+      summary: { action: "prune", status: "failed" },
     });
   });
 });

@@ -288,16 +288,56 @@ export async function finalizeSyncRun({
   return lastError;
 }
 
+/** The status a sync run was meant to be recorded with when finalization failed. */
+export type SyncRunOutcomeStatus = CompleteSyncRunRequest["status"];
+
 /**
- * The run's items went through but the server still has the run marked running, which blocks
- * library maintenance. Reports the run as failed, naming the run so it can be cancelled in Pane
- * View's management page, and returns the error to throw.
+ * Every finalization attempt failed, so Pane View still shows the run as running and blocks
+ * library maintenance until it is cancelled on the management page. Thrown by push and prune in
+ * place of whatever else ended the run: `cause` is the cancellation reason or fatal error when
+ * there was one, and the finalization error otherwise. `intendedStatus` says which.
+ */
+export class UnfinalizedSyncRunError extends Error {
+  readonly action: "prune" | "push";
+  readonly finalizeError: Error;
+  readonly intendedStatus: SyncRunOutcomeStatus;
+  readonly syncRunId: string;
+
+  constructor({
+    action,
+    cause,
+    finalizeError,
+    intendedStatus,
+    message,
+    syncRunId,
+  }: {
+    action: "prune" | "push";
+    cause: unknown;
+    finalizeError: Error;
+    intendedStatus: SyncRunOutcomeStatus;
+    message: string;
+    syncRunId: string;
+  }) {
+    super(message, { cause });
+    this.name = "UnfinalizedSyncRunError";
+    this.action = action;
+    this.finalizeError = finalizeError;
+    this.intendedStatus = intendedStatus;
+    this.syncRunId = syncRunId;
+  }
+}
+
+/**
+ * The server still has the run marked running. Reports the run as failed, naming it so it can be
+ * cancelled in Pane View's management page, and returns the error to throw. `interruption` is
+ * what ended the run early, if anything: a cancellation or a fatal error.
  */
 export function failUnfinalizedRun({
   action,
   done,
   failed,
   finalizeError,
+  interruption,
   observer,
   planCounts,
   pushed,
@@ -308,14 +348,22 @@ export function failUnfinalizedRun({
   done: string;
   failed: number;
   finalizeError: Error;
+  interruption?: { error: Error; status: "failed" } | { reason: unknown; status: "cancelled" };
   observer?: LockstepObserver;
   planCounts: LockstepPlanCounts;
   pushed: number;
   skipped?: number;
   syncRunId: string;
-}): Error {
+}): UnfinalizedSyncRunError {
+  const outcome =
+    interruption?.status === "cancelled"
+      ? `Run cancelled after ${done}`
+      : interruption?.status === "failed"
+        ? `${interruption.error.message} Stopped after ${done}`
+        : done;
+
   const message =
-    `${done}, but sync run ${syncRunId} could not be finalized: ${formatPushError(finalizeError)}. ` +
+    `${outcome}, but sync run ${syncRunId} could not be finalized: ${formatPushError(finalizeError)}. ` +
     "Pane View shows it as running until it is cancelled on the management page.";
 
   observer?.onEvent({
@@ -332,7 +380,19 @@ export function failUnfinalizedRun({
     },
   });
 
-  return new Error(message, { cause: finalizeError });
+  return new UnfinalizedSyncRunError({
+    action,
+    cause:
+      interruption?.status === "cancelled"
+        ? interruption.reason
+        : interruption?.status === "failed"
+          ? interruption.error
+          : finalizeError,
+    finalizeError,
+    intendedStatus: interruption?.status ?? (failed > 0 ? "failed" : "completed"),
+    message,
+    syncRunId,
+  });
 }
 
 async function deleteRemoteItem({

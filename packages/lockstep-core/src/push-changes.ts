@@ -137,9 +137,8 @@ export async function pushChanges(
 
   let pushed = 0;
   let failed = 0;
-  let cancelled = false;
   let abortError: unknown;
-  let finalizeError: Error | undefined;
+  let runError: Error | undefined;
 
   const workItems = itemsToPush.map((item, index) => ({
     current: index + 1,
@@ -194,7 +193,6 @@ export async function pushChanges(
           });
         } catch (error) {
           if (signal?.aborted) {
-            cancelled = true;
             abortError = error;
             throw error;
           }
@@ -214,54 +212,76 @@ export async function pushChanges(
     });
   } catch (error) {
     if (signal?.aborted) {
-      cancelled = true;
       abortError = abortError ?? error;
     } else {
-      throw error;
+      runError = toError(error);
     }
-  } finally {
-    const wasCancelled = cancelled || (signal?.aborted ?? false);
-    finalizeError = await finalizeSyncRun({
-      apiToken: options.apiToken,
-      apiUrl: options.apiUrl,
-      body: {
-        counts: {
-          ...plan.counts,
-          capped: itemsToPush.length,
-          failed,
-          planned: changedItems.length,
-          pushed,
-        },
-        error: wasCancelled
-          ? "Run cancelled by user"
+  }
+
+  // Decided once, after the queue: the server and the caller must agree on how the run ended.
+  const cancelled = signal?.aborted ?? false;
+
+  const finalizeError = await finalizeSyncRun({
+    apiToken: options.apiToken,
+    apiUrl: options.apiUrl,
+    body: {
+      counts: {
+        ...plan.counts,
+        capped: itemsToPush.length,
+        failed,
+        planned: changedItems.length,
+        pushed,
+      },
+      error: cancelled
+        ? "Run cancelled by user"
+        : runError
+          ? runError.message
           : failed > 0
             ? `${failed} item(s) failed during push`
             : undefined,
-        status: wasCancelled ? "cancelled" : failed > 0 ? "failed" : "completed",
-      },
-      onRetry: (error) => {
-        observer?.onEvent({
-          type: "status",
-          message: `Warning: failed to finalize sync run, retrying: ${formatPushError(error)}`,
-        });
-      },
-      postJson: remote.postJson,
-      syncRunId: syncRun.syncRunId,
+      status: cancelled ? "cancelled" : runError || failed > 0 ? "failed" : "completed",
+    },
+    onRetry: (error) => {
+      observer?.onEvent({
+        type: "status",
+        message: `Warning: failed to finalize sync run, retrying: ${formatPushError(error)}`,
+      });
+    },
+    postJson: remote.postJson,
+    syncRunId: syncRun.syncRunId,
+  });
+
+  await hashCache.save().catch((error) => {
+    const failure = toError(error);
+    observer?.onEvent({
+      type: "status",
+      message: `Warning: hash cache could not be saved: ${formatPushError(failure)}`,
+    });
+  });
+
+  const abortReason = abortError ?? signal?.reason ?? new DOMException("Aborted", "AbortError");
+
+  // An unfinalized run outranks cancellation and fatal errors: it is the one the user must act on.
+  if (finalizeError) {
+    observer?.onEvent({
+      type: "status",
+      message: `Warning: failed to finalize sync run: ${formatPushError(finalizeError)}`,
     });
 
-    if (finalizeError) {
-      observer?.onEvent({
-        type: "status",
-        message: `Warning: failed to finalize sync run: ${formatPushError(finalizeError)}`,
-      });
-    }
-
-    await hashCache.save().catch((error) => {
-      const failure = toError(error);
-      observer?.onEvent({
-        type: "status",
-        message: `Warning: hash cache could not be saved: ${formatPushError(failure)}`,
-      });
+    throw failUnfinalizedRun({
+      action: "push",
+      done: `${pushed} item(s) pushed`,
+      failed,
+      finalizeError,
+      interruption: cancelled
+        ? { reason: abortReason, status: "cancelled" }
+        : runError
+          ? { error: runError, status: "failed" }
+          : undefined,
+      observer,
+      planCounts: plan.counts,
+      pushed,
+      syncRunId: syncRun.syncRunId,
     });
   }
 
@@ -277,20 +297,11 @@ export async function pushChanges(
         status: "cancelled",
       },
     });
-    throw abortError ?? signal?.reason ?? new DOMException("Aborted", "AbortError");
+    throw abortReason;
   }
 
-  if (finalizeError) {
-    throw failUnfinalizedRun({
-      action: "push",
-      done: `${pushed} item(s) pushed`,
-      failed,
-      finalizeError,
-      observer,
-      planCounts: plan.counts,
-      pushed,
-      syncRunId: syncRun.syncRunId,
-    });
+  if (runError) {
+    throw runError;
   }
 
   const summary = {

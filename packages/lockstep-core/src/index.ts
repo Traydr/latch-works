@@ -6,6 +6,8 @@ export { pruneDeleted } from "./prune-deleted.js";
 
 export { pushChanges } from "./push-changes.js";
 
+export { type SyncRunOutcomeStatus, UnfinalizedSyncRunError } from "./remote-api.js";
+
 export type {
   DoctorCheck,
   DoctorOptions,

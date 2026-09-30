@@ -205,9 +205,8 @@ export async function pruneDeleted(
   let pruned = 0;
   let skipped = 0;
   let failed = 0;
-  let cancelled = false;
+  let abortError: unknown;
   let runError: Error | undefined;
-  let finalizeError: Error | undefined;
 
   try {
     for (const [index, item] of itemsToPrune.entries()) {
@@ -251,12 +250,7 @@ export async function pruneDeleted(
           total: itemsToPrune.length,
         });
       } catch (error) {
-        if (signal?.aborted) {
-          cancelled = true;
-          throw error;
-        }
-
-        if (error instanceof SourceRootUnavailableError) {
+        if (signal?.aborted || error instanceof SourceRootUnavailableError) {
           throw error;
         }
 
@@ -274,49 +268,70 @@ export async function pruneDeleted(
     }
   } catch (error) {
     if (signal?.aborted) {
-      cancelled = true;
+      abortError = error;
     } else {
       runError = toError(error);
-      throw error;
     }
-  } finally {
-    const wasCancelled = cancelled || (signal?.aborted ?? false);
-    finalizeError = await finalizeSyncRun({
-      apiToken: options.apiToken,
-      apiUrl: options.apiUrl,
-      body: {
-        counts: {
-          ...plan.counts,
-          capped: itemsToPrune.length,
-          failed,
-          planned: changedItems.length,
-          pushed: pruned,
-        },
-        error: wasCancelled
-          ? "Run cancelled by user"
-          : runError
-            ? runError.message
-            : failed > 0
-              ? `${failed} delete(s) failed during prune`
-              : undefined,
-        status: wasCancelled ? "cancelled" : runError || failed > 0 ? "failed" : "completed",
-      },
-      onRetry: (error) => {
-        observer?.onEvent({
-          type: "status",
-          message: `Warning: failed to finalize sync run, retrying: ${formatPushError(error)}`,
-        });
-      },
-      postJson: remote.postJson,
-      syncRunId: syncRun.syncRunId,
-    });
+  }
 
-    if (finalizeError) {
+  // Decided once, after the loop: the server and the caller must agree on how the run ended.
+  const cancelled = signal?.aborted ?? false;
+
+  const finalizeError = await finalizeSyncRun({
+    apiToken: options.apiToken,
+    apiUrl: options.apiUrl,
+    body: {
+      counts: {
+        ...plan.counts,
+        capped: itemsToPrune.length,
+        failed,
+        planned: changedItems.length,
+        pushed: pruned,
+      },
+      error: cancelled
+        ? "Run cancelled by user"
+        : runError
+          ? runError.message
+          : failed > 0
+            ? `${failed} delete(s) failed during prune`
+            : undefined,
+      status: cancelled ? "cancelled" : runError || failed > 0 ? "failed" : "completed",
+    },
+    onRetry: (error) => {
       observer?.onEvent({
         type: "status",
-        message: `Warning: failed to finalize sync run: ${formatPushError(finalizeError)}`,
+        message: `Warning: failed to finalize sync run, retrying: ${formatPushError(error)}`,
       });
-    }
+    },
+    postJson: remote.postJson,
+    syncRunId: syncRun.syncRunId,
+  });
+
+  const abortReason = abortError ?? signal?.reason ?? new DOMException("Aborted", "AbortError");
+
+  // An unfinalized run outranks cancellation and fatal errors: it is the one the user must act on.
+  if (finalizeError) {
+    observer?.onEvent({
+      type: "status",
+      message: `Warning: failed to finalize sync run: ${formatPushError(finalizeError)}`,
+    });
+
+    throw failUnfinalizedRun({
+      action: "prune",
+      done: `${pruned} delete(s) applied`,
+      failed,
+      finalizeError,
+      interruption: cancelled
+        ? { reason: abortReason, status: "cancelled" }
+        : runError
+          ? { error: runError, status: "failed" }
+          : undefined,
+      observer,
+      planCounts: plan.counts,
+      pushed: pruned,
+      skipped,
+      syncRunId: syncRun.syncRunId,
+    });
   }
 
   if (cancelled) {
@@ -332,21 +347,11 @@ export async function pruneDeleted(
         status: "cancelled",
       },
     });
-    throw signal?.reason ?? new DOMException("Aborted", "AbortError");
+    throw abortReason;
   }
 
-  if (finalizeError) {
-    throw failUnfinalizedRun({
-      action: "prune",
-      done: `${pruned} delete(s) applied`,
-      failed,
-      finalizeError,
-      observer,
-      planCounts: plan.counts,
-      pushed: pruned,
-      skipped,
-      syncRunId: syncRun.syncRunId,
-    });
+  if (runError) {
+    throw runError;
   }
 
   const summary = {
