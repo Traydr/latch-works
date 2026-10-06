@@ -1,10 +1,12 @@
 export {
+  type ItemRunState,
   type LockstepController,
   type PipelineProgressState,
   type PlanController,
   type ProfileController,
   type ProfileFormState,
   type RunController,
+  type RunKind,
   type RunPhase,
   type RunProgressState,
   type Screen,

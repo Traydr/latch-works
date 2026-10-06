@@ -9,7 +9,14 @@ import {
   PANE_VIEW_URL,
 } from "../../src/env.ts";
 import { LOCKSTEP_SOURCE_ITEMS } from "../../src/fixture.ts";
-import { type LockstepSession, launchLockstep, readStat, stageButton } from "../../src/lockstep.ts";
+import {
+  actionButton,
+  dismissRunPanel,
+  type LockstepSession,
+  launchLockstep,
+  readPlanCount,
+  readStat,
+} from "../../src/lockstep.ts";
 
 const SnapshotResponseSchema = z.object({
   entries: z.array(z.object({ path: z.string() })),
@@ -26,14 +33,6 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
   await session.app.close();
 });
-
-/** The header's plan legend renders "<label> <count>" pairs; read one count. */
-async function readPlanCount(label: "delete" | "keep" | "upload"): Promise<string> {
-  // The plan list below also labels rows "upload" or "delete"; the legend comes first in the DOM.
-  const pair = session.window.locator("span", { hasText: new RegExp(`^${label}$`) }).locator("..");
-
-  return (await pair.first().innerText()).replace(label, "").trim();
-}
 
 async function readRemotePaths(request: APIRequestContext): Promise<string[]> {
   const snapshot = await request.get(`${PANE_VIEW_URL}/api/sync/snapshot`, {
@@ -56,30 +55,32 @@ test("a profile is created against the running Pane View", async () => {
   await window.getByLabel("Sync API token").fill(PANE_VIEW_CREDENTIALS.syncToken);
   await window.getByRole("button", { name: "Save profile" }).click();
 
-  const active = window.getByRole("button", { name: "Active profile" });
+  const profile = window
+    .getByRole("navigation", { name: "Profiles" })
+    .getByRole("button", { name: new RegExp(`^${PROFILE_NAME}`) });
 
-  if ((await active.innerText()).trim() !== PROFILE_NAME) {
-    await active.click();
-    await window.getByRole("option", { name: PROFILE_NAME }).click();
+  if ((await profile.getAttribute("aria-current")) !== "true") {
+    await profile.click();
   }
 
-  await expect(active).toHaveText(PROFILE_NAME);
+  await expect(profile).toHaveAttribute("aria-current", "true");
   await expect(window.getByText(LOCKSTEP_SOURCE_DIR, { exact: true })).toBeVisible();
 });
 
 test("plan reports the source as uploads, push lands them in Pane View", async ({ request }) => {
   const { window } = session;
-  await stageButton(window, "Plan").click();
+  await actionButton(window, "plan").click();
   await expect
-    .poll(() => readPlanCount("upload"), { timeout: 60_000 })
+    .poll(() => readPlanCount(window, "upload"), { timeout: 60_000 })
     .toBe(String(LOCKSTEP_SOURCE_ITEMS.length));
 
-  await stageButton(window, "Push").click();
+  await actionButton(window, "push").click();
   await expect
     .poll(() => readStat(window, "pushed"), { timeout: 120_000 })
     .toBe(String(LOCKSTEP_SOURCE_ITEMS.length));
-  await expect(stageButton(window, "Push")).toBeEnabled({ timeout: 60_000 });
+  await expect(window.getByText("Push complete")).toBeVisible({ timeout: 60_000 });
   expect(await readStat(window, "failed")).toBe("0");
+  await dismissRunPanel(window);
 
   const remotePaths = await readRemotePaths(request);
 
@@ -88,11 +89,11 @@ test("plan reports the source as uploads, push lands them in Pane View", async (
 
 test("a second plan has nothing to upload", async () => {
   const { window } = session;
-  await stageButton(window, "Plan").click();
+  await actionButton(window, "plan").click();
   await expect
-    .poll(() => readPlanCount("keep"), { timeout: 60_000 })
+    .poll(() => readPlanCount(window, "keep"), { timeout: 60_000 })
     .toBe(String(LOCKSTEP_SOURCE_ITEMS.length));
-  expect(await readPlanCount("upload")).toBe("0");
+  expect(await readPlanCount(window, "upload")).toBe("0");
 });
 
 test("prune deletes the reviewed plan's deletes once, skipping a file back in the source", async ({
@@ -102,7 +103,7 @@ test("prune deletes the reviewed plan's deletes once, skipping a file back in th
   // The previous test's plan is the reviewed one: every seeded path is a delete from this source.
   const localPaths = LOCKSTEP_SOURCE_ITEMS.map((item) => item.path);
   const plannedDeletes = (await readRemotePaths(request)).filter((p) => !localPaths.includes(p));
-  expect(await readPlanCount("delete")).toBe(String(plannedDeletes.length));
+  expect(await readPlanCount(window, "delete")).toBe(String(plannedDeletes.length));
 
   // After review, one planned delete's file comes back locally; prune must leave it alone.
   const returning = "root-image.png";
@@ -119,17 +120,17 @@ test("prune deletes the reviewed plan's deletes once, skipping a file back in th
       void dialog.accept();
     });
 
-    await stageButton(window, "Prune").click();
+    await actionButton(window, "prune").click();
     await expect
-      .poll(() => readStat(window, "pushed"), { timeout: 120_000 })
+      .poll(() => readStat(window, "deleted"), { timeout: 120_000 })
       .toBe(String(plannedDeletes.length - 1));
-    await expect(stageButton(window, "Push")).toBeEnabled({ timeout: 60_000 });
+    await expect(window.getByText("Prune complete")).toBeVisible({ timeout: 60_000 });
     expect(confirmMessage).toContain(`Delete ${plannedDeletes.length} remote entries`);
     expect(await readStat(window, "failed")).toBe("0");
 
     // The plan is spent: a second Prune cannot re-run the same list.
-    await expect(stageButton(window, "Prune")).toBeDisabled();
-    await expect(stageButton(window, "Prune")).toHaveAttribute("title", /Run Plan again/);
+    await expect(actionButton(window, "prune")).toBeDisabled();
+    await expect(actionButton(window, "prune")).toHaveAttribute("title", /Run Plan again/);
 
     expect((await readRemotePaths(request)).sort()).toEqual([...localPaths, returning].sort());
   } finally {

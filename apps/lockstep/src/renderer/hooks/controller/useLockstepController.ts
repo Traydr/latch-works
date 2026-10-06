@@ -17,24 +17,29 @@ import {
   pruneAvailability as getPruneAvailability,
   shouldEndRunOnComplete,
 } from "../../lib/run-lifecycle";
+import { appendSpan } from "../../lib/run-metrics";
 import {
   emptyProfileForm,
+  type ItemRunState,
   initialPipelineProgress,
   initialProgress,
   type LockstepController,
   type PipelineProgressState,
   type ProfileFormState,
+  type RunKind,
   type RunProgressState,
   type Screen,
 } from "./types";
 
 export type {
+  ItemRunState,
   LockstepController,
   PipelineProgressState,
   PlanController,
   ProfileController,
   ProfileFormState,
   RunController,
+  RunKind,
   RunPhase,
   RunProgressState,
   Screen,
@@ -46,11 +51,12 @@ export type {
  * Prefer depending on a single slice at call sites instead of the full bag.
  */
 export function useLockstepController(): LockstepController {
-  const [screen, setScreenState] = useState<Screen>("dashboard");
+  const [screen, setScreen] = useState<Screen>("workspace");
   const [settings, setSettings] = useState<LockstepSettings | null>(null);
   const [profileForm, setProfileForm] = useState<ProfileFormState>(emptyProfileForm);
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
   const [plan, setPlan] = useState<LockstepPlan | null>(null);
+  const [plannedAt, setPlannedAt] = useState<number | null>(null);
   /** The plan whose deletes went to Prune; the main process has already discarded it. */
   const [prunedPlanId, setPrunedPlanId] = useState<string | null>(null);
   const [doctorResult, setDoctorResult] = useState<DoctorResult | null>(null);
@@ -66,6 +72,22 @@ export function useLockstepController(): LockstepController {
     useState<PipelineProgressState>(initialPipelineProgress);
 
   const lastLoggedScanProgressRef = useRef<string | null>(null);
+  const itemStatesRef = useRef(new Map<string, ItemRunState>());
+  /** When each in-flight item started, so its bytes can be spread over its transfer time. */
+  const itemStartedAtRef = useRef(new Map<string, number>());
+  const [itemStatesVersion, setItemStatesVersion] = useState(0);
+
+  const setItemState = useCallback((path: string, state: ItemRunState) => {
+    itemStatesRef.current.set(path, state);
+    setItemStatesVersion((version) => version + 1);
+  }, []);
+
+  const clearItemStates = useCallback(() => {
+    itemStatesRef.current = new Map();
+    itemStartedAtRef.current = new Map();
+    setItemStatesVersion((version) => version + 1);
+  }, []);
+
   const activeRunActionRef = useRef("");
 
   const activeProfile = useMemo(() => {
@@ -146,9 +168,42 @@ export function useLockstepController(): LockstepController {
         }
       }
 
+      if (event.type === "items-queued") {
+        const at = Date.now();
+        clearItemStates();
+        setRunProgress((prev) => ({
+          ...prev,
+          phase: "items",
+          itemTotal: event.total,
+          bytesTotal: event.totalBytes,
+          bytesDone: 0,
+          bytesFailed: 0,
+          queuedAt: at,
+          spans: [],
+          failureTimes: [],
+        }));
+      }
+
+      if (event.type === "item-start") {
+        itemStartedAtRef.current.set(event.path, Date.now());
+        setItemState(event.path, { type: "active" });
+        setRunProgress((prev) => ({
+          ...prev,
+          phase: "items",
+          itemTotal: event.total,
+          currentPath: event.path,
+          currentAction: event.action,
+        }));
+      }
+
       if (event.type === "item-success") {
         const message = `[${event.current}/${event.total}] ${event.action} ${event.path}`;
+        const to = Date.now();
+        const from = itemStartedAtRef.current.get(event.path) ?? to;
+        const bytes = event.bytes ?? 0;
+        itemStartedAtRef.current.delete(event.path);
         setLogs((current) => [...current.slice(-200), message]);
+        setItemState(event.path, { type: "done" });
         setRunProgress((prev) => ({
           ...prev,
           phase: "items",
@@ -157,12 +212,15 @@ export function useLockstepController(): LockstepController {
           currentPath: event.path,
           currentAction: event.action,
           pushed: prev.pushed + 1,
+          bytesDone: prev.bytesDone + bytes,
+          spans: bytes > 0 ? appendSpan(prev.spans, { from, to, bytes }) : prev.spans,
         }));
       }
 
       if (event.type === "item-skipped") {
         const message = `[${event.current}/${event.total}] skipped ${event.path}: ${event.reason}`;
         setLogs((current) => [...current.slice(-200), message]);
+        setItemState(event.path, { type: "skipped", reason: event.reason });
         setRunProgress((prev) => ({
           ...prev,
           phase: "items",
@@ -170,12 +228,14 @@ export function useLockstepController(): LockstepController {
           itemTotal: event.total,
           currentPath: event.path,
           currentAction: "skip",
+          skipped: prev.skipped + 1,
         }));
       }
 
       if (event.type === "item-failure") {
         const message = `[${event.current}/${event.total}] failed ${event.path}: ${event.error}`;
         setLogs((current) => [...current.slice(-200), message]);
+        setItemState(event.path, { type: "failed", error: event.error });
         setRunProgress((prev) => ({
           ...prev,
           phase: "items",
@@ -184,6 +244,8 @@ export function useLockstepController(): LockstepController {
           currentPath: event.path,
           currentAction: event.action,
           failed: prev.failed + 1,
+          bytesFailed: prev.bytesFailed + (event.bytes ?? 0),
+          failureTimes: [...prev.failureTimes.slice(-500), Date.now()],
         }));
       }
 
@@ -230,7 +292,7 @@ export function useLockstepController(): LockstepController {
         void refreshSettings();
       }
     },
-    [refreshSettings],
+    [clearItemStates, refreshSettings, setItemState],
   );
 
   useEffect(() => {
@@ -255,8 +317,13 @@ export function useLockstepController(): LockstepController {
       activeRunActionRef.current = action;
       setRunLabel(label);
       setLogs([label]);
-      setRunProgress({ ...initialProgress, phase: "items", action, startedAt: Date.now() });
-      setScreenState("run");
+      setRunProgress({
+        ...initialProgress,
+        phase: "items",
+        kind: action,
+        action,
+        startedAt: Date.now(),
+      });
     })();
   }, []);
 
@@ -273,8 +340,13 @@ export function useLockstepController(): LockstepController {
   }, [filter, plan]);
 
   const pruneAvailability = useMemo(
-    () => getPruneAvailability(plan, prunedPlanId),
-    [plan, prunedPlanId],
+    () =>
+      getPruneAvailability({
+        plan,
+        prunedPlanId,
+        pushCompleted: pipelineProgress.pushCompleted,
+      }),
+    [plan, prunedPlanId, pipelineProgress.pushCompleted],
   );
 
   const ensureSessionToken = useCallback(
@@ -306,16 +378,25 @@ export function useLockstepController(): LockstepController {
     [refreshSettings, sessionToken],
   );
 
-  const beginRun = useCallback((label: string, action: string) => {
-    setError(null);
-    setRunning(true);
-    activeRunActionRef.current = action;
-    setRunLabel(label);
-    setLogs([label]);
-    lastLoggedScanProgressRef.current = null;
-    setRunProgress({ ...initialProgress, phase: "planning", action, startedAt: Date.now() });
-    setScreenState("run");
-  }, []);
+  const beginRun = useCallback(
+    (label: string, kind: Exclude<RunKind, "">) => {
+      setError(null);
+      setRunning(true);
+      activeRunActionRef.current = kind;
+      setRunLabel(label);
+      setLogs([label]);
+      lastLoggedScanProgressRef.current = null;
+      clearItemStates();
+      setRunProgress({
+        ...initialProgress,
+        phase: "planning",
+        kind,
+        action: kind,
+        startedAt: Date.now(),
+      });
+    },
+    [clearItemStates],
+  );
 
   /** Ends a run whose request failed. A cancelled run keeps the progress it reached. */
   const endRunWithError = useCallback((failure: IpcErrorPayload) => {
@@ -334,21 +415,12 @@ export function useLockstepController(): LockstepController {
     setRunProgress((prev) => ({ ...prev, phase: "error", endedAt: Date.now() }));
   }, []);
 
-  const markReviewVisited = useCallback(() => {
-    setPipelineProgress((prev) => ({ ...prev, reviewed: true }));
-  }, []);
-
-  const setScreen = useCallback((next: Screen) => {
-    if (next === "plan") {
-      setPipelineProgress((prev) => ({ ...prev, reviewed: true }));
-    }
-
-    setScreenState(next);
-  }, []);
+  const dismissDoctorResult = useCallback(() => setDoctorResult(null), []);
 
   /** Drops the plan and doctor result, which describe one profile's source folder and server. */
   const clearPlanState = useCallback(() => {
     setPlan(null);
+    setPlannedAt(null);
     setDoctorResult(null);
     setFilter("");
     setPipelineProgress(initialPipelineProgress);
@@ -363,14 +435,15 @@ export function useLockstepController(): LockstepController {
       setLogs([]);
       setRunLabel("");
       setRunProgress(initialProgress);
+      clearItemStates();
     }
-  }, [clearPlanState, running]);
+  }, [clearItemStates, clearPlanState, running]);
 
   const closeProfileForm = useCallback(() => {
     setEditingProfileId(null);
     setProfileForm(emptyProfileForm);
-    setScreen("dashboard");
-  }, [setScreen]);
+    setScreen("workspace");
+  }, []);
 
   const startCreateProfile = useCallback(() => {
     // Keep a half-typed new profile across visits, but never carry an edited profile's values over.
@@ -380,7 +453,7 @@ export function useLockstepController(): LockstepController {
 
     setEditingProfileId(null);
     setScreen("profile");
-  }, [editingProfileId, setScreen]);
+  }, [editingProfileId]);
 
   const startEditProfile = useCallback(
     (profileId: string) => {
@@ -401,7 +474,7 @@ export function useLockstepController(): LockstepController {
       setEditingProfileId(profileId);
       setScreen("profile");
     },
-    [running, settings, setScreen],
+    [running, settings],
   );
 
   const cancelProfileForm = useCallback(() => {
@@ -411,8 +484,8 @@ export function useLockstepController(): LockstepController {
       return;
     }
 
-    setScreen("dashboard");
-  }, [closeProfileForm, editingProfileId, setScreen]);
+    setScreen("workspace");
+  }, [closeProfileForm, editingProfileId]);
 
   const submitEditedProfile = useCallback(
     async (profileId: string) => {
@@ -582,7 +655,8 @@ export function useLockstepController(): LockstepController {
     }
 
     setPlan(result.value);
-    setPipelineProgress({ ...initialPipelineProgress, reviewed: true });
+    setPlannedAt(Date.now());
+    setPipelineProgress(initialPipelineProgress);
     setRunProgress((prev) => ({ ...prev, phase: "done", endedAt: Date.now() }));
     await refreshSettings();
 
@@ -595,7 +669,6 @@ export function useLockstepController(): LockstepController {
     }
 
     beginRun("Pushing uploads and updates...", "push");
-    setRunProgress((prev) => ({ ...prev, phase: "items", action: "push" }));
     const result = await requireLockstepApi().push({ profileId: activeProfile.id });
     setRunning(false);
 
@@ -643,7 +716,6 @@ export function useLockstepController(): LockstepController {
 
     const planId = plan.planId;
     beginRun("Applying remote deletes...", "prune");
-    setRunProgress((prev) => ({ ...prev, phase: "items", action: "prune" }));
     const result = await requireLockstepApi().prune({ planId, profileId: activeProfile.id });
     setRunning(false);
     // The main process uses a plan for one Prune only, whatever the outcome.
@@ -751,12 +823,13 @@ export function useLockstepController(): LockstepController {
     },
     plan: {
       plan,
+      plannedAt,
       doctorResult,
+      dismissDoctorResult,
       filter,
       setFilter,
       filteredItems,
       pipelineProgress,
-      markReviewVisited,
       pruneAvailability,
     },
     run: {
@@ -764,6 +837,8 @@ export function useLockstepController(): LockstepController {
       runLabel,
       logs,
       runProgress,
+      itemStates: itemStatesRef.current,
+      itemStatesVersion,
       handleDoctor,
       handlePlan,
       handlePush,

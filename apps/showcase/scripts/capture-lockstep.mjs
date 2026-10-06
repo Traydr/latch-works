@@ -224,17 +224,12 @@ async function connectToAppPage() {
   throw new Error("No Lockstep app page found among debugger targets");
 }
 
-/**
- * Clicks a CommandDock pipeline stage. Stage buttons render as "<n>Label" or
- * "✓Label", which distinguishes them from the plain "Plan" workspace tab.
- */
+/** Clicks an enabled sync action button (Plan, Push, Prune), found by its `data-action`. */
 async function clickStage(page, label) {
   const clicked = await page.evaluate((stageLabel) => {
-    const pattern = new RegExp(`^(?:\\d|✓)${stageLabel}$`);
-
-    const button = [...document.querySelectorAll("button")].find(
-      (element) => pattern.test(element.textContent?.trim() ?? "") && !element.disabled,
-    );
+    const button = [
+      ...document.querySelectorAll(`button[data-action="${stageLabel.toLowerCase()}"]`),
+    ].find((element) => !element.disabled);
 
     button?.click();
 
@@ -249,7 +244,9 @@ async function clickStage(page, label) {
 
 async function isRunning(page) {
   return page.evaluate(() =>
-    [...document.querySelectorAll("button")].some((el) => el.textContent?.trim() === "Cancel"),
+    [...document.querySelectorAll("button")].some((el) =>
+      el.textContent?.trim().startsWith("Cancel"),
+    ),
   );
 }
 
@@ -267,20 +264,19 @@ async function waitForRunToFinish(page, action, timeoutMs = 180_000) {
   throw new Error(`${action} run did not finish within ${timeoutMs / 1000}s`);
 }
 
-function readPlanCounts(bodyText) {
-  // The plan legend renders as "upload 6 · update 0 · delete 0 · keep 18".
-  const count = (word) => {
-    const match = bodyText.match(new RegExp(`${word}\\s+(\\d+)`));
+/** The plan header's change counts, which its chips carry as `data-count`. */
+async function readPlanCounts(page) {
+  return page.evaluate(() => {
+    const count = (action) =>
+      Number(document.querySelector(`[data-plan-count="${action}"]`)?.dataset.count ?? 0);
 
-    return match ? Number(match[1]) : 0;
-  };
-
-  return {
-    upload: count("upload"),
-    update: count("update"),
-    delete: count("delete"),
-    keep: count("keep"),
-  };
+    return {
+      upload: count("upload"),
+      update: count("update"),
+      delete: count("delete"),
+      keep: count("keep"),
+    };
+  });
 }
 
 async function saveScreenshot(page, name) {
@@ -365,26 +361,21 @@ async function main() {
     });
     await page.type(tokenSelector, token);
 
-    // Plan: runs a real scan + remote snapshot diff, then auto-opens the review tab.
+    // Plan: runs a real scan + remote snapshot diff, then shows the plan tree.
     await clickStage(page, "Plan");
     await sleep(500);
     await waitForRunToFinish(page, "Plan");
     await page
-      .waitForFunction(
-        () =>
-          [...document.querySelectorAll("h2")].some(
-            (el) => el.textContent?.trim() === "Review changes",
-          ),
-        { timeout: 30_000 },
-      )
+      .waitForFunction(() => document.querySelector('[data-plan-count="keep"]') !== null, {
+        timeout: 30_000,
+      })
       .catch(async () => {
         const bodyText = await page.evaluate(() => document.body.innerText.slice(0, 1200));
         throw new Error(`Plan review view never appeared. Visible text:\n${bodyText}`);
       });
     await sleep(800);
 
-    const bodyText = await page.evaluate(() => document.body.innerText);
-    const counts = readPlanCounts(bodyText);
+    const counts = await readPlanCounts(page);
     console.log(`Plan counts: ${JSON.stringify(counts)}`);
 
     if (counts.upload + counts.update === 0) {
@@ -395,15 +386,15 @@ async function main() {
 
     // Push: really uploads to the local server. Local pushes of the six small
     // scans finish faster than a 2880x1800 screenshot cycle, so a mid-run frame
-    // is a lottery; capture the completed run on the Log tab instead — the run
-    // log plus the PUSHED stat is the informative, reproducible frame.
+    // is a lottery; capture the finished run instead: the run panel keeps the
+    // totals and throughput chart, and the tree keeps each row's result.
     await clickStage(page, "Push");
 
     const sawRunning = await page
       .waitForFunction(
         () =>
-          [...document.querySelectorAll("button")].some(
-            (el) => el.textContent?.trim() === "Cancel",
+          [...document.querySelectorAll("button")].some((el) =>
+            el.textContent?.trim().startsWith("Cancel"),
           ),
         { timeout: 120_000 },
       )
@@ -416,25 +407,11 @@ async function main() {
 
     await waitForRunToFinish(page, "Push");
 
-    const openedLog = await page.evaluate(() => {
-      const tab = [...document.querySelectorAll("button")].find(
-        (element) => element.textContent?.trim() === "Log",
-      );
-
-      tab?.click();
-
-      return Boolean(tab);
-    });
-
-    if (!openedLog) {
-      console.warn("Log tab not found; capturing the review view instead.");
-    }
-
     await sleep(800);
     await saveScreenshot(page, "push.png");
 
     const pushedStat = await page.evaluate(
-      () => document.body.innerText.match(/pushed\s*\n?\s*\d+/i)?.[0],
+      () => document.querySelector('[data-stat="pushed"]')?.textContent,
     );
 
     console.log(`Push stat: ${pushedStat ?? "not found"}`);

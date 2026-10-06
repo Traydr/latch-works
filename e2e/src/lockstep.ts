@@ -52,23 +52,33 @@ export async function launchLockstep(): Promise<LockstepSession> {
 }
 
 /**
- * The pipeline stage buttons live in the docked command surface and render a
- * badge (their number, or ✓ once done) before the label. The "Plan" tab above
- * shares the name, so match on the badge + label text inside the dock.
+ * A sync action button. Plan, Push, and Prune sit in the plan header (Plan is the empty state's
+ * button before the first plan); each carries a `data-action` naming its action. The run panel's
+ * Prune shares the attribute, so take the header's, which comes first.
  */
-export function stageButton(window: Page, label: "Plan" | "Review" | "Push" | "Prune") {
-  return window
-    .locator("div.h-44")
-    .locator("button", { hasText: new RegExp(`^\\s*(\\d|✓)\\s*${label}\\s*$`) });
+export function actionButton(window: Page, action: "plan" | "push" | "prune") {
+  return window.locator(`button[data-action="${action}"]`).first();
 }
 
-/** A dashboard stat: the number rendered next to its lowercase label. */
+/** A run panel stat, such as "pushed 8 / 17" or "failed 0": the count before any "/ total". */
 export async function readStat(
   window: Page,
-  label: "files" | "pushed" | "failed",
+  label: "pushed" | "deleted" | "failed",
 ): Promise<string> {
-  // The label is upper-cased by CSS; innerText follows the transform, so take the last token.
-  const stat = window.getByText(label, { exact: true }).locator("..");
+  const value = await window.locator(`[data-stat="${label}"]`).innerText();
 
-  return (await stat.innerText()).trim().split(/\s+/).pop() ?? "";
+  return value.split("/")[0]?.trim() ?? "";
+}
+
+/** One of the plan's change counts, from the header chips or the "unchanged" footer. */
+export async function readPlanCount(
+  window: Page,
+  action: "upload" | "update" | "delete" | "keep",
+): Promise<string> {
+  return (await window.locator(`[data-plan-count="${action}"]`).getAttribute("data-count")) ?? "";
+}
+
+/** Closes the finished run's panel, as the user does after reading the result. */
+export async function dismissRunPanel(window: Page): Promise<void> {
+  await window.getByRole("button", { name: "Done", exact: true }).click();
 }
