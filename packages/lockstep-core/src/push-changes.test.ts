@@ -220,6 +220,50 @@ describe("pushChanges orchestration", () => {
     });
   });
 
+  it("reports the queued bytes, then each item's start and success with its size", async () => {
+    const plan = createPlan([{ action: "upload", local: localItem, path: localItem.path }]);
+    const { events, observer } = collectEvents();
+
+    await pushChanges(
+      {
+        apiToken: "token",
+        apiUrl: "http://127.0.0.1:3000",
+        hashCacheRoot: cacheRoot,
+        plan,
+        sourceRoot: plan.sourceRoot,
+      },
+      observer,
+      fake.remote,
+    );
+
+    const progress = events.filter(
+      (event) =>
+        event.type === "items-queued" ||
+        event.type === "item-start" ||
+        event.type === "item-success",
+    );
+
+    expect(progress).toEqual([
+      { type: "items-queued", action: "push", total: 1, totalBytes: localItem.size },
+      {
+        type: "item-start",
+        action: "upload",
+        bytes: localItem.size,
+        current: 1,
+        path: "photos/photo.jpg",
+        total: 1,
+      },
+      {
+        type: "item-success",
+        action: "upload",
+        bytes: localItem.size,
+        current: 1,
+        path: "photos/photo.jpg",
+        total: 1,
+      },
+    ]);
+  });
+
   it("creates a sync run, pushes items, and finalizes as completed", async () => {
     const plan = createPlan([{ action: "upload", local: localItem, path: localItem.path }]);
     const { events, observer } = collectEvents();

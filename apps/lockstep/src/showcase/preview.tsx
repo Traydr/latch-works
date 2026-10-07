@@ -2,8 +2,12 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 
 import "../index.css";
-import { ShowcasePipelineStepsDemo, ShowcasePushTimerDemo } from "./demo-screens";
-import { ShowcasePlanScreen, ShowcasePushScreen } from "./screens";
+import {
+  ShowcaseLivePushScreen,
+  ShowcasePlanScreen,
+  ShowcasePushDoneScreen,
+  ShowcasePushScreen,
+} from "./screens";
 
 document.documentElement.classList.add("dark");
 
@@ -21,10 +25,10 @@ function renderScreen() {
   switch (screen) {
     case "push":
       return <ShowcasePushScreen />;
-    case "timer":
-      return <ShowcasePushTimerDemo />;
-    case "steps":
-      return <ShowcasePipelineStepsDemo />;
+    case "done":
+      return <ShowcasePushDoneScreen />;
+    case "live":
+      return <ShowcaseLivePushScreen />;
     default:
       return <ShowcasePlanScreen />;
   }

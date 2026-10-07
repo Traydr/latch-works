@@ -5,20 +5,30 @@ import type {
   LockstepSettings,
 } from "../../../shared/types";
 import type { PruneAvailability } from "../../lib/run-lifecycle";
+import type { TransferSpan } from "../../lib/run-metrics";
 
+/** What the current plan has been through since it was made. */
 export interface PipelineProgressState {
-  reviewed: boolean;
   pushCompleted: boolean;
   pruneCompleted: boolean;
 }
 
 export const initialPipelineProgress: PipelineProgressState = {
-  reviewed: false,
   pushCompleted: false,
   pruneCompleted: false,
 };
 
-export type Screen = "dashboard" | "plan" | "profile" | "run";
+export type Screen = "workspace" | "profile";
+
+/** The operation a run was started for; status messages never change it. */
+export type RunKind = "" | "doctor" | "plan" | "prune" | "push";
+
+/** Where one plan item stands in the push or prune that is running or just ended. */
+export type ItemRunState =
+  | { type: "active" }
+  | { type: "done" }
+  | { type: "failed"; error: string }
+  | { type: "skipped"; reason: string };
 
 export type RunPhase =
   | "idle"
@@ -32,6 +42,7 @@ export type RunPhase =
 
 export interface RunProgressState {
   phase: RunPhase;
+  kind: RunKind;
   action: string;
   itemCurrent: number;
   itemTotal: number;
@@ -45,6 +56,17 @@ export interface RunProgressState {
   currentAction: string | null;
   failed: number;
   pushed: number;
+  skipped: number;
+  /** Bytes the queued items carry, and how many of them have been pushed or have failed. */
+  bytesTotal: number;
+  bytesDone: number;
+  bytesFailed: number;
+  /** When the work list was queued, after any planning the run did first. */
+  queuedAt: number | null;
+  /** Each pushed item's bytes over the time it took, for throughput and the chart. */
+  spans: TransferSpan[];
+  /** When each item failure arrived, for the marks on the throughput chart. */
+  failureTimes: number[];
   startedAt: number | null;
   endedAt: number | null;
   summaryMessage: string | null;
@@ -52,6 +74,7 @@ export interface RunProgressState {
 
 export const initialProgress: RunProgressState = {
   phase: "idle",
+  kind: "",
   action: "",
   itemCurrent: 0,
   itemTotal: 0,
@@ -65,6 +88,13 @@ export const initialProgress: RunProgressState = {
   currentAction: null,
   failed: 0,
   pushed: 0,
+  skipped: 0,
+  bytesTotal: 0,
+  bytesDone: 0,
+  bytesFailed: 0,
+  queuedAt: null,
+  spans: [],
+  failureTimes: [],
   startedAt: null,
   endedAt: null,
   summaryMessage: null,
@@ -107,25 +137,31 @@ export interface ProfileController {
   handlePickFolder: () => Promise<void>;
 }
 
-/** Plan review screen + doctor result surface. */
+/** The plan under review + doctor result surface. */
 export interface PlanController {
   plan: LockstepPlan | null;
+  /** When the plan on screen was made. */
+  plannedAt: number | null;
   doctorResult: DoctorResult | null;
+  dismissDoctorResult: () => void;
   filter: string;
   setFilter: (value: string) => void;
-  filteredItems: Array<{ action: string; path: string }>;
+  /** Changed items (no keeps) whose path matches `filter`. */
+  filteredItems: LockstepPlan["items"];
   pipelineProgress: PipelineProgressState;
-  markReviewVisited: () => void;
   /** Whether the Prune stage can apply this plan's deletes. */
   pruneAvailability: PruneAvailability;
 }
 
-/** Run / command dock: progress, logs, and sync actions. */
+/** Run panel and status bar: progress, logs, and sync actions. */
 export interface RunController {
   running: boolean;
   runLabel: string;
   logs: string[];
   runProgress: RunProgressState;
+  /** Per-path state for the last push or prune; mutated in place, so read it with `itemStatesVersion`. */
+  itemStates: ReadonlyMap<string, ItemRunState>;
+  itemStatesVersion: number;
   handleDoctor: () => Promise<void>;
   handlePlan: () => Promise<boolean>;
   handlePush: () => Promise<void>;

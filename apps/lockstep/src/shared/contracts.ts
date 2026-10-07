@@ -55,6 +55,8 @@ export const SyncPlanActionSchema = z.enum(["delete", "keep", "update", "upload"
 export const LockstepPlanItemSchema = z.object({
   action: SyncPlanActionSchema,
   path: z.string(),
+  /** Bytes the item moves: the local file's size, or the remote entry's for a delete. */
+  size: z.number().optional(),
 });
 
 /**
@@ -102,6 +104,7 @@ export const LockstepRunEventSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("item-failure"),
     action: z.string(),
+    bytes: z.number().optional(),
     current: z.number(),
     error: z.string(),
     path: z.string(),
@@ -116,11 +119,26 @@ export const LockstepRunEventSchema = z.discriminatedUnion("type", [
     total: z.number(),
   }),
   z.object({
-    type: z.literal("item-success"),
+    type: z.literal("item-start"),
     action: z.string(),
+    bytes: z.number().optional(),
     current: z.number(),
     path: z.string(),
     total: z.number(),
+  }),
+  z.object({
+    type: z.literal("item-success"),
+    action: z.string(),
+    bytes: z.number().optional(),
+    current: z.number(),
+    path: z.string(),
+    total: z.number(),
+  }),
+  z.object({
+    type: z.literal("items-queued"),
+    action: z.string(),
+    total: z.number(),
+    totalBytes: z.number(),
   }),
   z.object({
     type: z.literal("scan-progress"),

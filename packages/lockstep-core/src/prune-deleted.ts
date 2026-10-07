@@ -143,6 +143,12 @@ export async function pruneDeleted(
     });
   }
 
+  observer?.onEvent({
+    type: "items-queued",
+    action: "delete",
+    total: itemsToPrune.length,
+    totalBytes: 0,
+  });
   observer?.onEvent({ type: "status", message: "Creating sync run..." });
 
   // A cancel does not abort creation (see createSyncRun); it skips all item work (the loop below
@@ -167,6 +173,13 @@ export async function pruneDeleted(
       throwIfAborted(signal);
 
       const current = index + 1;
+      observer?.onEvent({
+        type: "item-start",
+        action: "delete",
+        current,
+        path: item.path,
+        total: itemsToPrune.length,
+      });
 
       try {
         if (!(await isAbsentLocally(plan.sourceRoot, item.path, plannedLocalPaths, aliasIndex))) {

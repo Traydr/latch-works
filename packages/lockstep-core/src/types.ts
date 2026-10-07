@@ -48,6 +48,8 @@ export type LockstepRunEvent =
   | {
       type: "item-failure";
       action: string;
+      /** Size of the local file, when the item uploads one. */
+      bytes?: number;
       current: number;
       error: string;
       path: string;
@@ -62,12 +64,25 @@ export type LockstepRunEvent =
       total: number;
     }
   | {
-      type: "item-success";
+      type: "item-start";
       action: string;
+      /** Size of the local file, when the item uploads one. */
+      bytes?: number;
       current: number;
       path: string;
       total: number;
     }
+  | {
+      type: "item-success";
+      action: string;
+      /** Size of the local file, when the item uploads one. */
+      bytes?: number;
+      current: number;
+      path: string;
+      total: number;
+    }
+  /** Sent once a run knows its work list, before the first item starts. */
+  | { type: "items-queued"; action: string; total: number; totalBytes: number }
   | { type: "scan-progress"; progress: ScanArchiveProgress }
   | { type: "status"; message: string };
 

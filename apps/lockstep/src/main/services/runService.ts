@@ -10,7 +10,13 @@ import {
   doctor as runDoctor,
   UnfinalizedSyncRunError,
 } from "@latch-works/lockstep-core";
-import type { ActiveRun, DoctorResult, PruneRequest, RunRequest } from "../../shared/types";
+import type {
+  ActiveRun,
+  DoctorResult,
+  PruneRequest,
+  LockstepPlan as PublicLockstepPlan,
+  RunRequest,
+} from "../../shared/types";
 import { RunCancelledError, toError } from "../errors";
 import type { ProfileService } from "./profileService";
 
@@ -86,7 +92,7 @@ export class RunService {
     this.abortController?.abort();
   }
 
-  async plan(request: RunRequest): Promise<LockstepPlan & { planId: string }> {
+  async plan(request: RunRequest): Promise<PublicLockstepPlan> {
     return this.runWithCore("plan", request, async (credentials, observer, signal) => {
       const plan = await this.core.planSync(
         {
@@ -117,7 +123,14 @@ export class RunService {
         sourceRoot: credentials.sourceRoot,
       });
 
-      return { ...plan, planId };
+      // The renderer needs each item's action, path, and size, not the scanned file records.
+      const items = plan.items.map((item) => ({
+        action: item.action,
+        path: item.path,
+        size: item.local?.size ?? item.remote?.size,
+      }));
+
+      return { ...plan, items, planId };
     });
   }
 

@@ -67,6 +67,9 @@ async function createWindow(): Promise<void> {
   const window = new BrowserWindow({
     height: 800,
     icon: windowIconPath,
+    // The profile rail, plan tree, and run panel need this much room side by side.
+    minHeight: 520,
+    minWidth: 900,
     show: false,
     title: "Lockstep",
     webPreferences: {

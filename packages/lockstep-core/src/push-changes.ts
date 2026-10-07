@@ -112,6 +112,13 @@ export async function pushChanges(
     });
   }
 
+  observer?.onEvent({
+    type: "items-queued",
+    action: "push",
+    total: itemsToPush.length,
+    totalBytes: itemsToPush.reduce((sum, item) => sum + (item.local?.size ?? 0), 0),
+  });
+
   const { cache: hashCache, warning: cacheWarning } = await loadHashCache({
     cacheRoot: options.hashCacheRoot,
     sourceRoot: plan.sourceRoot,
@@ -153,6 +160,16 @@ export async function pushChanges(
           return;
         }
 
+        const bytes = item.local.size;
+        observer?.onEvent({
+          type: "item-start",
+          action: item.action,
+          bytes,
+          current,
+          path: item.path,
+          total: itemsToPush.length,
+        });
+
         try {
           const local = await resolvePushItemHash({
             cache: hashCache,
@@ -185,6 +202,7 @@ export async function pushChanges(
           observer?.onEvent({
             type: "item-success",
             action: item.action,
+            bytes,
             current,
             path: item.path,
             total: itemsToPush.length,
@@ -200,6 +218,7 @@ export async function pushChanges(
           observer?.onEvent({
             type: "item-failure",
             action: item.action,
+            bytes,
             current,
             error: formatPushError(failure),
             path: item.path,
