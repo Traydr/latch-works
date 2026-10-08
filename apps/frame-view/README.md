@@ -64,7 +64,7 @@ Build on a Mac with icon assets in `media/` (`frame-view-icon.icns`, `.png`, `.i
 
 ```bash
 pnpm --filter @latch-works/frame-view package   # .app in out/
-pnpm --filter @latch-works/frame-view make      # ZIP + DMG in out/make/
+pnpm --filter @latch-works/frame-view make      # ZIP + DMG in out/make/<platform>/<arch>/
 ```
 
 Unsigned builds require Gatekeeper override the first time (right-click the app → Open). To distribute outside your machine, sign and notarize the app with an Apple Developer ID certificate.
@@ -82,7 +82,7 @@ Unsigned builds require Gatekeeper override the first time (right-click the app 
 | `pnpm db:generate` | Generate Drizzle migrations from schema |
 | `pnpm package` | Package app output |
 | `pnpm make` | Build distributables (installers) |
-| `pnpm publish` | Publish via Forge publishers |
+| `pnpm run release` | Publish via Forge publishers |
 
 ## Keyboard shortcuts
 
