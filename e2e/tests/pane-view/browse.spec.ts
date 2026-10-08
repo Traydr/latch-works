@@ -51,6 +51,61 @@ test.describe("browse", () => {
     await expect(archiveBrowser(page)).toBeVisible();
   });
 
+  const parentFolderCases = [
+    {
+      name: "a nested image in recursive browsing",
+      browse: { path: "comics", recursive: true },
+      mediaPath: "comics/nested/inner/inner-1.png",
+      parentPath: "comics/nested/inner",
+    },
+    {
+      name: "a video in search results",
+      browse: { q: "clip-a" },
+      mediaPath: "videos/clip-a.mp4",
+      parentPath: "videos",
+    },
+    {
+      name: "a PDF in search results",
+      browse: { q: "guide.pdf" },
+      mediaPath: "docs/guide.pdf",
+      parentPath: "docs",
+    },
+    {
+      name: "root media in search results",
+      browse: { q: "root-image" },
+      mediaPath: "root-image.png",
+      parentPath: "",
+    },
+  ];
+
+  for (const scenario of parentFolderCases) {
+    test(`the details panel opens the parent folder of ${scenario.name}`, async ({ page }) => {
+      await gotoBrowse(page, scenario.browse);
+      await card(page, scenario.mediaPath).click();
+      const details = page.getByRole("complementary", { name: "Selected media" });
+      await expect(details).toContainText(scenario.mediaPath);
+      await details.getByRole("button", { name: "Open parent folder" }).click();
+
+      await expect
+        .poll(() => new URL(page.url()).searchParams.get("path") ?? "")
+        .toBe(scenario.parentPath);
+      await expect(page).not.toHaveURL(/[?&]q=/);
+      const folders = page.getByRole("list", { name: "Archive folders" });
+
+      await expect(
+        folders.getByTitle(scenario.parentPath || "Archive root", { exact: true }),
+      ).toHaveAttribute("data-active", "true");
+
+      const children = fixtureFolderPaths().filter(
+        (path) => path.slice(0, Math.max(0, path.lastIndexOf("/"))) === scenario.parentPath,
+      );
+
+      const media = sortFixtureItems(fixtureItemsInScope(scenario.parentPath, false), "name-asc");
+
+      await expectCardPaths(page, [...children, ...media.map((item) => item.path)]);
+    });
+  }
+
   test("prev and next step through the sibling folders, wrapping at the ends", async ({ page }) => {
     // comics has three children: alpha, beta, nested (natural name order).
     const nextFolder = page.getByRole("button", { name: "Next folder", exact: true });

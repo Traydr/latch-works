@@ -323,6 +323,7 @@ export function GalleryPage(): JSX.Element {
             onDelete={deletion.deleteSelectedMedia}
             onLoadMoreMedia={handleLoadMoreMedia}
             onNext={selectNextMedia}
+            onNavigateToPath={navigateToPath}
             onOpenViewer={openSelectedInViewer}
             onPrev={selectPreviousMedia}
             onSelectEntry={handleSelectEntry}

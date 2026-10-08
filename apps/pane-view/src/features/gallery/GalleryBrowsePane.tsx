@@ -26,6 +26,7 @@ export interface GalleryBrowsePaneProps {
   onDelete: () => void;
   onLoadMoreMedia: () => void;
   onNext: () => void;
+  onNavigateToPath: (path: string) => void;
   onOpenViewer: () => void;
   onPrev: () => void;
   onSelectEntry: (entry: GalleryBrowseEntry) => void;
@@ -64,6 +65,7 @@ export const GalleryBrowsePane = memo(function GalleryBrowsePane({
   onDelete,
   onLoadMoreMedia,
   onNext,
+  onNavigateToPath,
   onOpenViewer,
   onPrev,
   onSelectEntry,
@@ -184,6 +186,7 @@ export const GalleryBrowsePane = memo(function GalleryBrowsePane({
               }
             }}
             onNext={onNext}
+            onNavigateToPath={onNavigateToPath}
             onOpenViewer={onOpenViewer}
             onPrev={onPrev}
             selected={selected}

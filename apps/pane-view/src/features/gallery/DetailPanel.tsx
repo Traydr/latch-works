@@ -1,6 +1,6 @@
 import type { MediaItem } from "@latch-works/media-domain";
 import { formatBytes } from "@latch-works/media-domain";
-import { ChevronLeft, ChevronRight, Download, ImageIcon, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, FolderOpen, ImageIcon, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { CopyStatus } from "@/hooks/use-copy-to-clipboard";
 import { COPY_PATH_ICONS, COPY_PATH_LABELS } from "./copy-path-status";
@@ -20,6 +20,7 @@ interface DetailPanelProps {
   onDelete?: () => void;
   onDownload: () => void;
   onNext: () => void;
+  onNavigateToPath: (path: string) => void;
   onOpenViewer: () => void;
   onPrev: () => void;
   selected: MediaItem | null;
@@ -35,6 +36,7 @@ export function DetailPanel({
   onDelete,
   onDownload,
   onNext,
+  onNavigateToPath,
   onOpenViewer,
   onPrev,
   selected,
@@ -145,7 +147,24 @@ export function DetailPanel({
 
           <dl className="grid min-w-0 max-w-full gap-3 text-sm">
             <MetadataItem label="Name" value={selected.name} />
-            <MetadataItem label="Path" value={selected.path} />
+            <div className="grid min-w-0 gap-2 border-b border-border pb-3">
+              <dt className="text-xs text-muted-foreground">Path</dt>
+              <dd className="m-0 grid min-w-0 gap-2">
+                <span className="break-all font-medium text-foreground">{selected.path}</span>
+                <Button
+                  className="w-full gap-2"
+                  disabled={isDeleting || isDeleted}
+                  onClick={() => onNavigateToPath(selected.parentPath)}
+                  size="sm"
+                  title={selected.parentPath || "Archive root"}
+                  type="button"
+                  variant="outline"
+                >
+                  <FolderOpen className="size-4 shrink-0" />
+                  Open parent folder
+                </Button>
+              </dd>
+            </div>
             <MetadataItem label="Type" value={selected.mediaType} />
             <MetadataItem label="Size" value={formatBytes(selected.size)} />
             {selected.width && selected.height ? (
