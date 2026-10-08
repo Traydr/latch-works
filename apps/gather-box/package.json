@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "@jsquash/avif": "2.1.1",
-    "@libpdf/core": "^0.4.2",
+    "@libpdf/core": "^0.5.1",
     "mediabunny": "1.61.0",
     "zod": "^4.6.5"
   }
