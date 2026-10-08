@@ -20,7 +20,7 @@
 - `pnpm run test`: run Vitest.
 - `pnpm run package`: create a local packaged app build. (ONLY USER MAY RUN THIS)
 - `pnpm run make`: generate platform distributables. (ONLY USER MAY RUN THIS)
-- `pnpm run publish`: publish artifacts using Forge publishers.
+- `pnpm run release`: publish artifacts using Forge publishers.
 
 ## Coding Style & Naming Conventions
 - Language: TypeScript + React (`react-jsx`), 2-space indentation, semicolons enabled.

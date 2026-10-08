@@ -13,7 +13,7 @@ Keep source in each workspace's `src/`. Tests sit beside modules as `*.test.ts` 
 
 ## Build, test, and development commands
 
-- `pnpm install`: install workspace dependencies with pnpm 11.
+- `pnpm install`: install workspace dependencies with pnpm 12.
 - `pnpm test`: run all Vitest suites.
 - `pnpm typecheck`: check TypeScript across the workspace.
 - `pnpm lint:all`: run Biome and the repository's Oxlint anti-slop rules.

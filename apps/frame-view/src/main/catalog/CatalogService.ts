@@ -147,7 +147,7 @@ export class CatalogService {
       return this.child;
     }
 
-    const workerModulePath = path.join(__dirname, 'catalog.worker.js');
+    const workerModulePath = path.join(__dirname, 'catalog.worker.cjs');
     const child = this.childFactory(workerModulePath, [this.userDataPath]);
 
     child.on('message', (message) => {

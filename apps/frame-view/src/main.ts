@@ -209,7 +209,7 @@ async function createWindow(): Promise<void> {
     icon: windowIconPath,
     title: 'Frame View',
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
