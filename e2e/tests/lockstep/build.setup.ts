@@ -8,7 +8,7 @@ import { LOCKSTEP_APP_DIR } from "../../src/lockstep.ts";
 /** `electron-forge package` produces Lockstep's production `.vite/build`; E2E_SKIP_BUILD=1 reuses it. */
 setup("package Lockstep", async () => {
   setup.setTimeout(300_000);
-  const mainEntry = path.join(LOCKSTEP_APP_DIR, ".vite", "build", "main.js");
+  const mainEntry = path.join(LOCKSTEP_APP_DIR, ".vite", "build", "main.cjs");
 
   if (process.env.E2E_SKIP_BUILD === "1") {
     await access(mainEntry);

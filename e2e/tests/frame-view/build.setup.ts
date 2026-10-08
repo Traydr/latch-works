@@ -12,7 +12,7 @@ import { FRAME_VIEW_DIR } from "../../src/frame-view.ts";
  */
 setup("package Frame View", async () => {
   setup.setTimeout(300_000);
-  const mainEntry = path.join(FRAME_VIEW_DIR, ".vite", "build", "main.js");
+  const mainEntry = path.join(FRAME_VIEW_DIR, ".vite", "build", "main.cjs");
 
   if (process.env.E2E_SKIP_BUILD === "1") {
     await access(mainEntry);

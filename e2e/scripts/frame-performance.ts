@@ -78,7 +78,7 @@ try {
   for (let round = 0; round < 3; round++) {
     const app = await electron.launch({
       args: [
-        path.join(appDir, ".vite/build/main.js"),
+        path.join(appDir, ".vite/build/main.cjs"),
         `--user-data-dir=${path.join(root, `user-${round}`)}`,
       ],
       cwd: appDir,

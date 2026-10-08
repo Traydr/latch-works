@@ -41,7 +41,7 @@ export async function launchFrameView(userDataDir?: string): Promise<FrameViewSe
   const dataDir = userDataDir ?? (await newUserDataDir());
 
   const app = await electron.launch({
-    args: [path.join(FRAME_VIEW_DIR, ".vite", "build", "main.js"), `--user-data-dir=${dataDir}`],
+    args: [path.join(FRAME_VIEW_DIR, ".vite", "build", "main.cjs"), `--user-data-dir=${dataDir}`],
     cwd: FRAME_VIEW_DIR,
     env: electronChildEnv({ FRAME_VIEW_DISABLE_GPU: "1" }),
     executablePath: ELECTRON_BINARY,

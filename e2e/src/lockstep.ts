@@ -37,7 +37,7 @@ export async function launchLockstep(): Promise<LockstepSession> {
 
   const app = await electron.launch({
     args: [
-      path.join(LOCKSTEP_APP_DIR, ".vite", "build", "main.js"),
+      path.join(LOCKSTEP_APP_DIR, ".vite", "build", "main.cjs"),
       `--user-data-dir=${userDataDir}`,
     ],
     cwd: LOCKSTEP_APP_DIR,

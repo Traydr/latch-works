@@ -44,9 +44,9 @@ export interface ThumbnailWorkerPathResolution {
 export function resolveThumbnailWorkerPath(overridePath?: string): ThumbnailWorkerPathResolution {
   const candidates = [
     overridePath,
-    path.join(__dirname, 'thumbnail.worker.js'),
+    path.join(__dirname, 'thumbnail.worker.cjs'),
     process.resourcesPath
-      ? path.join(process.resourcesPath, 'app.asar', '.vite', 'build', 'thumbnail.worker.js')
+      ? path.join(process.resourcesPath, 'app.asar', '.vite', 'build', 'thumbnail.worker.cjs')
       : null,
     process.resourcesPath
       ? path.join(
@@ -54,7 +54,7 @@ export function resolveThumbnailWorkerPath(overridePath?: string): ThumbnailWork
           'app.asar.unpacked',
           '.vite',
           'build',
-          'thumbnail.worker.js',
+          'thumbnail.worker.cjs',
         )
       : null,
   ].filter((candidate): candidate is string => !!candidate);
