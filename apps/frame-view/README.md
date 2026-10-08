@@ -33,7 +33,7 @@ Frame View is part of the [Latch Works](../../README.md) monorepo. It browses lo
 
 ### Prerequisites
 
-- pnpm 11 (install from repo root: `pnpm install`)
+- pnpm 12 (install from repo root: `pnpm install`)
 - Node.js + npm on `PATH` (required by Electron Forge packaging)
 
 ### Run in development
