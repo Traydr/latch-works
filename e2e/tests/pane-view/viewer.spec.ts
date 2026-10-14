@@ -142,6 +142,24 @@ test.describe("viewer", () => {
     await expect(dialog.locator("[data-page-number='3']")).toBeAttached();
     await page.keyboard.press("Escape");
   });
+
+  test("a PDF's links open their site in a new tab and jump to the page they name", async ({
+    page,
+  }) => {
+    await gotoBrowse(page, { path: "docs" });
+    const dialog = await openViewer(page, "docs/guide.pdf");
+    const webLink = dialog.locator("[data-page-number='1'] a[href='https://example.com/']");
+    await expect(webLink).toHaveAttribute("target", "_blank");
+
+    // The project's tall viewport shows every fixture page; a screen-sized one leaves page 3 below.
+    await page.setViewportSize({ height: 900, width: 1400 });
+    const lastPage = dialog.locator("[data-page-number='3']");
+    await expect(lastPage).not.toBeInViewport();
+
+    await dialog.locator("[data-page-number='1'] [data-internal-link] a").click();
+    await expect(lastPage).toBeInViewport({ ratio: 0.5 });
+    await page.keyboard.press("Escape");
+  });
 });
 
 test.describe("keyboard", () => {

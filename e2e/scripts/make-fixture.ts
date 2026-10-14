@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { mkdir, rm, utimes, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import { PDFDocument, StandardFonts } from "pdf-lib";
+import { PDFDocument, PDFName, PDFString, StandardFonts } from "pdf-lib";
 import sharp from "sharp";
 import { FIXTURE_ARCHIVE_DIR, LOCKSTEP_SOURCE_DIR } from "../src/env.ts";
 import {
@@ -69,10 +69,40 @@ async function writePdf(target: string): Promise<void> {
   const document = await PDFDocument.create();
   const font = await document.embedFont(StandardFonts.Helvetica);
 
-  for (let page = 1; page <= 3; page += 1) {
+  const addPage = (page: number) => {
     const sheet = document.addPage([300, 400]);
     sheet.drawText(`Fixture page ${page}`, { font, size: 24, x: 40, y: 340 });
-  }
+
+    return sheet;
+  };
+
+  const first = addPage(1);
+  addPage(2);
+  const last = addPage(3);
+  // Page one carries a web link and a link to the last page, drawn where their text sits.
+  first.drawText("example.com", { font, size: 14, x: 40, y: 280 });
+  first.drawText("Go to page 3", { font, size: 14, x: 40, y: 240 });
+
+  const webLink = document.context.obj({
+    A: { S: "URI", Type: "Action", URI: PDFString.of("https://example.com/") },
+    Border: [0, 0, 0],
+    Rect: [36, 274, 160, 296],
+    Subtype: "Link",
+    Type: "Annot",
+  });
+
+  const pageLink = document.context.obj({
+    Border: [0, 0, 0],
+    Dest: [last.ref, PDFName.of("Fit")],
+    Rect: [36, 234, 160, 256],
+    Subtype: "Link",
+    Type: "Annot",
+  });
+
+  first.node.set(
+    PDFName.of("Annots"),
+    document.context.obj([document.context.register(webLink), document.context.register(pageLink)]),
+  );
 
   await writeFile(target, await document.save());
 }
