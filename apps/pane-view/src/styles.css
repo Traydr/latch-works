@@ -164,3 +164,42 @@
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* pdf.js link annotations over a painted PDF page: the part of pdf.js's viewer CSS they rely on. */
+.pdf-link-layer {
+  --scale-round-x: 1px;
+  --scale-round-y: 1px;
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  transform-origin: 0 0;
+}
+
+.pdf-link-layer[data-main-rotation="90"] {
+  transform: rotate(90deg) translateY(-100%);
+}
+
+.pdf-link-layer[data-main-rotation="180"] {
+  transform: rotate(180deg) translate(-100%, -100%);
+}
+
+.pdf-link-layer[data-main-rotation="270"] {
+  transform: rotate(270deg) translateX(-100%);
+}
+
+.pdf-link-layer section {
+  position: absolute;
+  box-sizing: border-box;
+  pointer-events: auto;
+  transform-origin: 0 0;
+}
+
+.pdf-link-layer section > a {
+  position: absolute;
+  inset: 0;
+}
+
+.pdf-link-layer section:hover {
+  background-color: rgb(255 255 0 / 0.2);
+}

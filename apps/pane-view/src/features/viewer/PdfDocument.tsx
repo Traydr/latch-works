@@ -105,8 +105,10 @@ function usePdfDocument({
       if (canvas) {
         canvas.width = 0;
         canvas.height = 0;
-        canvas.remove();
       }
+
+      // The page's link overlays leave with its paint.
+      slot?.replaceChildren();
     };
 
     const render = async () => {
@@ -166,7 +168,7 @@ function usePdfDocument({
 
         for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
           const slot = document.createElement("div");
-          slot.className = "mx-auto max-w-full overflow-hidden rounded bg-white";
+          slot.className = "relative mx-auto max-w-full overflow-hidden rounded bg-white";
           slot.dataset.pageNumber = String(pageNumber);
           container.append(slot);
         }
@@ -246,13 +248,25 @@ function usePdfDocument({
                 renderTask = page.render({
                   canvas,
                   canvasContext: context,
+                  scale,
                   transform: outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : undefined,
-                  viewport,
                 });
                 await renderTask.promise;
 
-                if (!cancelled && !taskCancelled && version === renderVersion) {
-                  slot.replaceChildren(canvas);
+                if (cancelled || taskCancelled || version !== renderVersion) {
+                  return;
+                }
+
+                slot.replaceChildren(canvas);
+
+                const links = await page.renderLinks(scale, (target) =>
+                  scrollToPdfPage(container, target),
+                );
+
+                if (links && !cancelled && !taskCancelled && version === renderVersion) {
+                  // A followed link is not a tap on the page, so it leaves the viewer chrome alone.
+                  links.addEventListener("click", (event) => event.stopPropagation());
+                  slot.append(links);
                 }
               } catch {
                 // Cancelled and failed page paints leave their geometry placeholder in place.
