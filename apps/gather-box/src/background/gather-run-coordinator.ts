@@ -1,10 +1,12 @@
 import { formatError, toError } from "../gather/errors";
 import {
+  endDeletedProfileJobs,
   getGatherQueueDisplayRun,
   getNextQueuedGatherJob,
   getPermissionRequiredGatherJob,
   getRetryableGatherQueueResult,
   MAX_GATHER_QUEUE_LENGTH,
+  PROFILE_DELETED_MESSAGE,
   recordGatherQueueResult,
   recoverStoppedGatherQueue,
   type CollectingGatherQueueJob,
@@ -14,6 +16,7 @@ import {
 import {
   isTerminalGatherRunEvent,
   type GatherRunCancelOutcome,
+  type GatherRunEvent,
   type GatherRunEventMessage
 } from "../shared/gather-run-messages";
 import {
@@ -23,6 +26,7 @@ import {
   type GatherRunState
 } from "../shared/gather-run";
 import { groupXPostInFolder } from "../shared/path";
+import { getDistinguishingProfileName } from "../shared/profiles";
 import { getSiteKeyFromUrl, isSupportedUrl, type SiteKey } from "../shared/sites";
 import type { DownloadablePayload } from "../shared/types";
 import { applyGatherRunEvent } from "../shared/gather-run-reducer";
@@ -34,6 +38,9 @@ import {
 export { applyGatherRunEvent } from "../shared/gather-run-reducer";
 
 export type { GatherRunCoordinatorDependencies } from "./gather-run-coordinator-dependencies";
+
+const REQUESTED_PROFILE_DELETED_MESSAGE =
+  "That profile was deleted. Check the folder for the profile shown and try again.";
 
 type Reservation =
   | { kind: "collect"; run: CollectingGatherQueueJob["run"]; position: number }
@@ -54,7 +61,11 @@ export class GatherRunCoordinator {
       createChromeCoordinatorDependencies()
   ) {}
 
-  async startForTab(tab: chrome.tabs.Tab): Promise<GatherRunStartOutcome> {
+  /** `requestedProfileId` is the profile whose folder the side panel confirmed, if it sent one. */
+  async startForTab(
+    tab: chrome.tabs.Tab,
+    requestedProfileId?: string
+  ): Promise<GatherRunStartOutcome> {
     if (tab.id === undefined || tab.windowId === undefined || !tab.url) {
       return { outcome: "target-unavailable" };
     }
@@ -69,7 +80,15 @@ export class GatherRunCoordinator {
       return { outcome: "unsupported-source" };
     }
 
-    const { reservation, resumed } = await this.reserve(tab, siteKey);
+    // The page keeps the profile it was gathered under, even if another one is chosen while it is
+    // collected.
+    const profileId = await this.resolveProfileId(requestedProfileId);
+
+    if (!profileId) {
+      return { outcome: "failed", message: REQUESTED_PROFILE_DELETED_MESSAGE };
+    }
+
+    const { reservation, resumed } = await this.reserve(tab, siteKey, profileId);
 
     if (resumed || reservation.kind === "existing") {
       await this.dispatchNext();
@@ -83,10 +102,10 @@ export class GatherRunCoordinator {
       return this.outcomeForJob(reservation.runId, reservation.position);
     }
 
-    return this.finishCollection(tab, siteKey, reservation);
+    return this.finishCollection(tab, siteKey, profileId, reservation);
   }
 
-  async retry(runId: string): Promise<GatherRunStartOutcome> {
+  async retry(runId: string, requestedProfileId?: string): Promise<GatherRunStartOutcome> {
     const previous = await this.exclusive(async () => {
       const queue = await this.dependencies.loadQueue();
       const result = getRetryableGatherQueueResult(queue);
@@ -98,12 +117,21 @@ export class GatherRunCoordinator {
       return { outcome: "failed", message: "No retryable Gather Run was found." };
     }
 
-    // Retrying is the explicit way to send failed items to the folder remembered now.
-    const settings = await this.dependencies.loadSettings();
+    // Retrying is the explicit way to send failed items to the folder remembered now, in the
+    // profile chosen now.
+    const [settings, profileId] = await Promise.all([
+      this.dependencies.loadSettings(),
+      this.resolveProfileId(requestedProfileId)
+    ]);
+
+    if (!profileId) {
+      return { outcome: "failed", message: REQUESTED_PROFILE_DELETED_MESSAGE };
+    }
 
     const destinationId = await this.dependencies.getDestinationId(
       previous.siteKey,
-      settings.useGlobalFolder
+      settings.useGlobalFolder,
+      profileId
     );
 
     const payload: DownloadablePayload = {
@@ -150,7 +178,10 @@ export class GatherRunCoordinator {
       const position = queue.jobs.length;
       queue = {
         ...queue,
-        jobs: [...queue.jobs, { kind: "output", run, payload, settings, destinationId }],
+        jobs: [
+          ...queue.jobs,
+          { kind: "output", run, payload, settings, destinationId, profileId }
+        ],
         results: queue.results.filter((result) => result.id !== previous.id)
       };
       await this.dependencies.saveQueue(queue);
@@ -234,6 +265,9 @@ export class GatherRunCoordinator {
   }
 
   async handleEvent(message: GatherRunEventMessage): Promise<void> {
+    const profiles =
+      message.event.kind === "permission-required" ? await this.dependencies.loadProfiles() : null;
+
     const shouldDispatch = await this.exclusive(async () => {
       let queue = await this.dependencies.loadQueue();
       const job = queue.jobs.find((candidate) => candidate.run.id === message.runId);
@@ -258,7 +292,22 @@ export class GatherRunCoordinator {
         return false;
       }
 
-      const updated = applyGatherRunEvent(job.run, message.event, this.dependencies.now());
+      // Only a gather under the paused job's own profile can confirm its folder, so name that
+      // profile whenever there is more than one to choose from.
+      const profileName = profiles ? getDistinguishingProfileName(profiles, job.profileId) : null;
+
+      // A job that was starting when its profile was deleted cannot pause: no gather can confirm
+      // a folder for a profile that no longer exists, so the pause would hold up the queue.
+      const profileDeleted =
+        profiles !== null && !profiles.profiles.some((profile) => profile.id === job.profileId);
+
+      const event: GatherRunEvent = profileDeleted
+        ? { kind: "failed", message: PROFILE_DELETED_MESSAGE }
+        : message.event.kind === "permission-required" && profileName
+          ? { ...message.event, profileName }
+          : message.event;
+
+      const updated = applyGatherRunEvent(job.run, event, this.dependencies.now());
 
       if (isTerminalGatherRunPhase(updated.phase)) {
         queue = recordAndRemove(queue, updated);
@@ -278,6 +327,30 @@ export class GatherRunCoordinator {
     }
   }
 
+  /** Ends outputs still waiting on a profile that no longer exists, then moves the queue on. */
+  async failDeletedProfileJobs(): Promise<void> {
+    const ended = await this.exclusive(async () => {
+      const [loaded, profiles] = await Promise.all([
+        this.dependencies.loadQueue(),
+        this.dependencies.loadProfiles()
+      ]);
+
+      const profileIds = new Set(profiles.profiles.map((profile) => profile.id));
+      const result = endDeletedProfileJobs(loaded, profileIds, this.dependencies.now());
+
+      if (result.ended.length > 0) {
+        const queue = result.ended.reduce(recordGatherQueueResult, result.queue);
+        await this.dependencies.saveQueue(queue);
+      }
+
+      return result.ended.length;
+    });
+
+    if (ended > 0) {
+      await this.dispatchNext();
+    }
+  }
+
   async recover(): Promise<void> {
     const activeRunId = await this.dependencies.getActiveRunId();
     await this.exclusive(async () => {
@@ -291,15 +364,20 @@ export class GatherRunCoordinator {
       queue = recovered.ended.reduce(recordGatherQueueResult, recovered.queue);
       await this.dependencies.saveQueue(queue);
     });
+    await this.failDeletedProfileJobs();
     await this.dispatchNext();
   }
 
-  private async reserve(tab: chrome.tabs.Tab, siteKey: SiteKey): Promise<ReservationResult> {
+  private async reserve(
+    tab: chrome.tabs.Tab,
+    siteKey: SiteKey,
+    profileId: string
+  ): Promise<ReservationResult> {
     return this.exclusive(async () => {
       const loaded = await this.dependencies.loadQueue();
       // Confirming folder access unblocks a paused job, but it is not a request to gather that
       // job's page again. The tab in hand still gets collected on its own.
-      const permissionJob = getPermissionRequiredGatherJob(loaded, siteKey);
+      const permissionJob = getPermissionRequiredGatherJob(loaded, siteKey, profileId);
 
       let queue = permissionJob
         ? replaceJob(loaded, resumePermissionJob(permissionJob, this.dependencies.now()))
@@ -361,6 +439,7 @@ export class GatherRunCoordinator {
   private async finishCollection(
     tab: chrome.tabs.Tab,
     siteKey: SiteKey,
+    profileId: string,
     reservation: Extract<Reservation, { kind: "collect" }>
   ): Promise<GatherRunStartOutcome> {
     try {
@@ -383,7 +462,8 @@ export class GatherRunCoordinator {
       // cannot silently redirect this output.
       const destinationId = await this.dependencies.getDestinationId(
         siteKey,
-        settings.useGlobalFolder
+        settings.useGlobalFolder,
+        profileId
       );
 
       const payload =
@@ -404,6 +484,14 @@ export class GatherRunCoordinator {
           return false;
         }
 
+        // Checked under the same lock as failDeletedProfileJobs, so a profile deleted during
+        // collection either ends this output there or is seen deleted here.
+        const profiles = await this.dependencies.loadProfiles();
+
+        if (!profiles.profiles.some((profile) => profile.id === profileId)) {
+          throw new Error(PROFILE_DELETED_MESSAGE);
+        }
+
         const run = asOutputRun({
           ...reservation.run,
           phase: "queued",
@@ -417,7 +505,7 @@ export class GatherRunCoordinator {
         });
 
         const jobs = [...queue.jobs];
-        jobs[index] = { kind: "output", run, payload, settings, destinationId };
+        jobs[index] = { kind: "output", run, payload, settings, destinationId, profileId };
         queue = { ...queue, jobs };
         await this.dependencies.saveQueue(queue);
 
@@ -535,6 +623,22 @@ export class GatherRunCoordinator {
       queuedRunId: runId,
       position: Math.max(1, requestedPosition)
     };
+  }
+
+  /**
+   * The requested profile when it still exists, the active one when none was requested, and null
+   * when the requested one was deleted: writing to another profile's folder would surprise.
+   */
+  private async resolveProfileId(requestedProfileId?: string): Promise<string | null> {
+    const profiles = await this.dependencies.loadProfiles();
+
+    if (requestedProfileId === undefined) {
+      return profiles.activeProfileId;
+    }
+
+    return profiles.profiles.some((profile) => profile.id === requestedProfileId)
+      ? requestedProfileId
+      : null;
   }
 
   private exclusive<T>(operation: () => Promise<T>): Promise<T> {

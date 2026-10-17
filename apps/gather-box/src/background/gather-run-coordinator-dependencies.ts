@@ -9,6 +9,7 @@ import {
 } from "../shared/gather-queue";
 import { CANCEL_GATHER_RUN, EXECUTE_GATHER_RUN } from "../shared/gather-run-messages";
 import type { GatherRunState } from "../shared/gather-run";
+import { loadProfiles, type GatherProfilesState } from "../shared/profiles";
 import { getGatherSource } from "../shared/source-catalog";
 import { loadSettings, type GatherBoxSettings } from "../shared/settings";
 import type { SiteKey } from "../shared/sites";
@@ -21,8 +22,13 @@ export interface GatherRunCoordinatorDependencies {
   getTab(tabId: number): Promise<chrome.tabs.Tab>;
   collect(tab: chrome.tabs.Tab, run: GatherRunState): Promise<GatherOutput>;
   loadSettings(): Promise<GatherBoxSettings>;
+  loadProfiles(): Promise<GatherProfilesState>;
   /** Which remembered folder an output queued now would be written to. */
-  getDestinationId(siteKey: SiteKey, useGlobalFolder: boolean): Promise<string | null>;
+  getDestinationId(
+    siteKey: SiteKey,
+    useGlobalFolder: boolean,
+    profileId: string
+  ): Promise<string | null>;
   execute(job: OutputGatherQueueJob): Promise<boolean>;
   abort(runId: string): Promise<boolean>;
   now(): number;
@@ -59,6 +65,7 @@ export function createChromeCoordinatorDependencies(): GatherRunCoordinatorDepen
       return response;
     },
     loadSettings,
+    loadProfiles,
     getDestinationId: getDirectoryDestinationId,
     execute: async (job) => {
       await offscreenDocument.ensure();
@@ -69,7 +76,8 @@ export function createChromeCoordinatorDependencies(): GatherRunCoordinatorDepen
         runId: job.run.id,
         payload: job.payload,
         settings: job.settings,
-        destinationId: job.destinationId
+        destinationId: job.destinationId,
+        profileId: job.profileId
       });
 
       return response?.accepted === true;

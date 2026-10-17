@@ -1,6 +1,8 @@
 import * as z from "zod/mini";
 import { toError } from "./errors";
+import { DEFAULT_PROFILE_ID } from "../shared/profiles";
 import type { SiteKey } from "../shared/sites";
+import { GATHER_SOURCES } from "../shared/source-catalog";
 
 const DB_NAME = "comic-downloader";
 
@@ -10,7 +12,8 @@ const STORE_NAME = "handles";
 
 const DIRECTORY_KEY_PREFIX = "last-directory:";
 
-export const GLOBAL_DIRECTORY_KEY = `${DIRECTORY_KEY_PREFIX}global`;
+/** Folders of profiles other than the default one live under their own namespace. */
+const PROFILE_KEY_PREFIX = `${DIRECTORY_KEY_PREFIX}profile:`;
 
 /** Names which folder a scope's remembered handle currently points at; replaced on every pick. */
 const DESTINATION_ID_KEY_PREFIX = "destination-id:";
@@ -42,9 +45,10 @@ const SAVE_ATTEMPTS = 8;
 export async function saveDirectoryHandle(
   siteKey: SiteKey | null,
   directoryHandle: ChosenDirectory,
-  useGlobalFolder: boolean
+  useGlobalFolder: boolean,
+  profileId: string
 ): Promise<void> {
-  const directoryKey = getDirectoryKey(siteKey, useGlobalFolder);
+  const directoryKey = getDirectoryKey(siteKey, useGlobalFolder, profileId);
 
   if (!directoryKey) {
     return;
@@ -88,9 +92,10 @@ export async function saveDirectoryHandle(
  */
 export async function getDirectoryDestinationId(
   siteKey: SiteKey | null,
-  useGlobalFolder: boolean
+  useGlobalFolder: boolean,
+  profileId: string
 ): Promise<string | null> {
-  const directoryKey = getDirectoryKey(siteKey, useGlobalFolder);
+  const directoryKey = getDirectoryKey(siteKey, useGlobalFolder, profileId);
 
   if (!directoryKey) {
     return null;
@@ -112,9 +117,10 @@ export async function getDirectoryDestinationId(
  */
 export async function loadDirectoryDestination(
   siteKey: SiteKey | null,
-  useGlobalFolder: boolean
+  useGlobalFolder: boolean,
+  profileId: string
 ): Promise<RememberedDestination | null> {
-  const directoryKey = getDirectoryKey(siteKey, useGlobalFolder);
+  const directoryKey = getDirectoryKey(siteKey, useGlobalFolder, profileId);
 
   if (!directoryKey) {
     return null;
@@ -132,9 +138,10 @@ export async function loadDirectoryDestination(
 
 export async function loadDirectoryHandle(
   siteKey: SiteKey | null,
-  useGlobalFolder: boolean
+  useGlobalFolder: boolean,
+  profileId: string
 ): Promise<FileSystemDirectoryHandle | null> {
-  const directoryKey = getDirectoryKey(siteKey, useGlobalFolder);
+  const directoryKey = getDirectoryKey(siteKey, useGlobalFolder, profileId);
 
   if (!directoryKey) {
     return null;
@@ -149,9 +156,10 @@ export async function loadDirectoryHandle(
 
 export async function clearDirectoryHandle(
   siteKey: SiteKey | null,
-  useGlobalFolder: boolean
+  useGlobalFolder: boolean,
+  profileId: string
 ): Promise<void> {
-  const directoryKey = getDirectoryKey(siteKey, useGlobalFolder);
+  const directoryKey = getDirectoryKey(siteKey, useGlobalFolder, profileId);
 
   if (!directoryKey) {
     return;
@@ -161,6 +169,23 @@ export async function clearDirectoryHandle(
   const store = database.transaction(STORE_NAME, "readwrite").objectStore(STORE_NAME);
   store.delete(DESTINATION_ID_KEY_PREFIX + directoryKey);
   await requestResult(store.delete(directoryKey));
+}
+
+/** Forgets every folder a profile remembers, for when the profile itself is removed. */
+export async function clearProfileDirectories(profileId: string): Promise<void> {
+  const directoryKeys = [
+    getDirectoryKey(null, true, profileId),
+    ...GATHER_SOURCES.map((source) => getDirectoryKey(source.key, false, profileId))
+  ].filter((key) => key !== null);
+
+  const store = await openStore("readwrite");
+
+  const deletions = directoryKeys.flatMap((key) => [
+    store.delete(DESTINATION_ID_KEY_PREFIX + key),
+    store.delete(key)
+  ]);
+
+  await Promise.all(deletions.map((request) => requestResult(request)));
 }
 
 export async function ensureDirectoryPermission(
@@ -204,12 +229,20 @@ export function getDirectoryScopeLabel(useGlobalFolder: boolean): string {
   return useGlobalFolder ? "all sites" : "this site";
 }
 
-function getDirectoryKey(siteKey: SiteKey | null, useGlobalFolder: boolean): string | null {
-  if (useGlobalFolder) {
-    return GLOBAL_DIRECTORY_KEY;
+function getDirectoryKey(
+  siteKey: SiteKey | null,
+  useGlobalFolder: boolean,
+  profileId: string
+): string | null {
+  const scope = useGlobalFolder ? "global" : siteKey;
+
+  if (!scope) {
+    return null;
   }
 
-  return siteKey ? DIRECTORY_KEY_PREFIX + siteKey : null;
+  return profileId === DEFAULT_PROFILE_ID
+    ? DIRECTORY_KEY_PREFIX + scope
+    : `${PROFILE_KEY_PREFIX}${profileId}:${scope}`;
 }
 
 async function openStore(mode: IDBTransactionMode): Promise<IDBObjectStore> {

@@ -4,7 +4,13 @@ import {
   RetryGatherRunRequestSchema,
   StartGatherRunRequestSchema
 } from "../shared/gather-run-messages";
+import { clearProfileDirectories } from "../gather/directory-store";
 import { loadGatherQueue } from "../shared/gather-queue";
+import {
+  getRemovedProfileIds,
+  GatherProfilesStateSchema,
+  PROFILES_KEY
+} from "../shared/profiles";
 import { OPEN_EXTENSION_MESSAGE } from "../shared/runtime-messages";
 import { GatherRuntimeMessageSchema } from "./page-messages";
 import { ResolveRedgifsMediaMessageSchema } from "../shared/reddit-media";
@@ -33,6 +39,31 @@ chrome.runtime.onInstalled.addListener(() => {
 chrome.runtime.onStartup.addListener(() => {
   void configureExtensionUi();
   void gatherRuns.recover();
+});
+
+// Profiles are deleted from the settings page or on another synced device. Either way this
+// browser forgets the deleted profiles' folders and ends the outputs still waiting on them.
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  const change = areaName === "sync" ? changes[PROFILES_KEY] : undefined;
+
+  if (!change) {
+    return;
+  }
+
+  const removed = getRemovedProfileIds(
+    GatherProfilesStateSchema.parse(change.oldValue),
+    GatherProfilesStateSchema.parse(change.newValue)
+  );
+
+  if (removed.length === 0) {
+    return;
+  }
+
+  void gatherRuns.failDeletedProfileJobs();
+
+  for (const profileId of removed) {
+    void clearProfileDirectories(profileId);
+  }
 });
 
 chrome.sidePanel.onOpened.addListener((info) => {
@@ -75,7 +106,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     void chrome.tabs
       .get(startRequest.data.tabId)
-      .then((tab) => gatherCommands.gather(tab))
+      .then((tab) => gatherCommands.gather(tab, startRequest.data.profileId))
       .then(sendResponse, (error) =>
         sendResponse({
           outcome: "failed",
@@ -95,7 +126,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return false;
     }
 
-    void gatherRuns.retry(retryRequest.data.runId).then(sendResponse);
+    void gatherRuns
+      .retry(retryRequest.data.runId, retryRequest.data.profileId)
+      .then(sendResponse);
 
     return true;
   }

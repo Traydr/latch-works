@@ -1,3 +1,4 @@
+import type { GatherProfilesState } from "../shared/profiles";
 import type { SiteKey } from "../shared/sites";
 import { getSaveBehavior, type SaveBehavior } from "../shared/save-behavior";
 import type { PopupStatus } from "./status";
@@ -8,6 +9,8 @@ export type LogTone = "error" | "success";
 export interface PopupElements {
   badge: HTMLElement;
   unsupportedBanner: HTMLElement;
+  profileSelect: HTMLSelectElement;
+  manageProfiles: HTMLButtonElement;
   folderName: HTMLElement;
   folderDetail: HTMLElement;
   chooseFolder: HTMLButtonElement;
@@ -45,6 +48,8 @@ export function getPopupElements(
   return {
     badge: requireElement(document, "badge-mini", HTMLElement),
     unsupportedBanner: requireElement(document, "unsupportedBanner-mini", HTMLElement),
+    profileSelect: requireElement(document, "profileSelect-mini", HTMLSelectElement),
+    manageProfiles: requireElement(document, "manageProfiles-mini", HTMLButtonElement),
     folderName: requireElement(document, "folderName-mini", HTMLElement),
     folderDetail: requireElement(document, "folderDetail-mini", HTMLElement),
     chooseFolder: requireElement(document, "chooseFolder-mini", HTMLButtonElement),
@@ -80,6 +85,34 @@ export function setPageState(
   if (!supported && message) {
     elements.unsupportedBanner.textContent = message;
   }
+}
+
+/**
+ * One option per profile, with the active one selected. Options are updated in place while the
+ * same profiles are listed, so an open or focused dropdown is left alone.
+ */
+export function renderProfiles(
+  elements: PopupElements,
+  state: GatherProfilesState,
+  disabled: boolean
+): void {
+  const select = elements.profileSelect;
+
+  const sameProfiles =
+    select.options.length === state.profiles.length &&
+    state.profiles.every((profile, index) => select.options[index].value === profile.id);
+
+  if (!sameProfiles) {
+    select.replaceChildren(...state.profiles.map((profile) => new Option("", profile.id)));
+  }
+
+  state.profiles.forEach((profile, index) => {
+    select.options[index].textContent = profile.name;
+  });
+
+  select.value = state.activeProfileId;
+  select.title = select.selectedOptions[0]?.textContent ?? "";
+  select.disabled = disabled;
 }
 
 export function setFolder(elements: PopupElements, name: string, detail: string): void {
@@ -237,7 +270,7 @@ function renderPathInline(el: HTMLElement, behavior: SaveBehavior): void {
   el.textContent = text;
 }
 
-function requireElement<T extends HTMLElement>(
+export function requireElement<T extends HTMLElement>(
   document: Document,
   id: string,
   constructor: new () => T
@@ -245,7 +278,7 @@ function requireElement<T extends HTMLElement>(
   const element = document.getElementById(id);
 
   if (!(element instanceof constructor)) {
-    throw new Error(`Missing required popup element: ${id}`);
+    throw new Error(`Missing required element: ${id}`);
   }
 
   return element;

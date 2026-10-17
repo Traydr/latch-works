@@ -22,11 +22,18 @@ export async function executeGatherOutput(input: {
   settings: GatherBoxSettings;
   /** The remembered folder the output was queued for; null writes to the current one. */
   destinationId: string | null;
+  /** The profile whose remembered folders the output writes to. */
+  profileId: string;
   emit: (event: GatherRunEvent) => Promise<void>;
   signal?: AbortSignal;
 }): Promise<void> {
-  const { payload, settings, destinationId, emit, signal } = input;
-  const destination = await loadDirectoryDestination(payload.site, settings.useGlobalFolder);
+  const { payload, settings, destinationId, profileId, emit, signal } = input;
+
+  const destination = await loadDirectoryDestination(
+    payload.site,
+    settings.useGlobalFolder,
+    profileId
+  );
 
   if (!destination) {
     await emit({ kind: "failed", message: "Choose a destination folder before gathering." });
