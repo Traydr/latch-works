@@ -6,8 +6,8 @@ Gather Box is the **collection** step in [Latch Works](../../README.md): media e
 
 ## Profiles
 
-A profile is a named set of remembered destination folders. Switch profiles with the chips at the
-top of the side panel; **Manage** opens the settings page, where profiles can be added, renamed,
+A profile is a named set of remembered destination folders. Switch profiles from the dropdown at
+the top of the side panel; **Manage** opens the settings page, where profiles can be added, renamed,
 and deleted. Each profile keeps its own global and per-site folders, so switching profiles switches
 where downloads are saved. Folders remembered before profiles existed belong to the **Default**
 profile, which keeps them if it is renamed.
@@ -188,7 +188,7 @@ are converted to underscores.
 - [ ] fanfiction.net: chapter count matches selector; generated PDF has all chapters in order with basic bold/italic preserved
 - [ ] Nested post collectors: files land in `<creator>/<post_title>-<post_id>/`
 - [ ] Reddit: single media lands at the root; galleries use `<post_title>_<post_id>/01_<filename>`
-- [ ] Profiles: switching chips shows each profile's own folder; renames in settings appear in the
+- [ ] Profiles: switching in the dropdown shows each profile's own folder; renames in settings appear in the
       side panel without reopening it
 
 ## Related

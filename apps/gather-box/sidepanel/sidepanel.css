@@ -92,57 +92,40 @@ body {
 
 .profile-line {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 8px;
   min-width: 0;
   padding: 0 2px;
 }
 
-.profile-line > .line-label {
-  padding-top: 7px;
-}
-
-.profile-chips {
+.profile-select {
   flex: 1;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
   min-width: 0;
-}
-
-.profile-chip {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  appearance: none;
   border: 1px solid var(--input-border);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--muted-foreground);
-  font: 500 11px var(--sans);
-  padding: 4px 10px;
-  cursor: pointer;
-  transition: background 0.12s, color 0.12s, border-color 0.12s;
-}
-
-.profile-chip:hover:not(:disabled) {
-  background: #1c1c21;
+  border-radius: 6px;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23a1a1aa' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+      no-repeat right 9px center,
+    #1c1c21;
   color: var(--foreground);
+  font: 500 13px var(--sans);
+  padding: 5px 26px 5px 9px;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  transition: background-color 0.12s, opacity 0.12s;
 }
 
-.profile-chip[aria-pressed="true"] {
-  border-color: var(--accent-border);
-  background: var(--accent-muted);
-  color: var(--accent-hover);
-  font-weight: 600;
+.profile-select:hover:not(:disabled) {
+  background-color: #2a2a31;
 }
 
-.profile-chip:disabled {
-  opacity: 0.5;
+.profile-select:disabled {
+  opacity: 0.4;
   cursor: not-allowed;
 }
 
-.profile-chip:focus-visible {
+.profile-select:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 1px;
 }

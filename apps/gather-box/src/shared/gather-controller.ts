@@ -154,15 +154,8 @@ export class GatherController {
     this.elements.copyErrorsButton.addEventListener("click", () => {
       void this.handleCopyErrors();
     });
-    this.elements.profileList.addEventListener("click", (event) => {
-      const chip =
-        event.target instanceof Element
-          ? event.target.closest<HTMLButtonElement>("button[data-profile-id]")
-          : null;
-
-      if (chip?.dataset.profileId) {
-        void this.handleSelectProfile(chip.dataset.profileId);
-      }
+    this.elements.profileSelect.addEventListener("change", () => {
+      void this.handleSelectProfile(this.elements.profileSelect.value);
     });
     this.elements.manageProfiles.addEventListener("click", () => {
       void chrome.tabs.create({ url: chrome.runtime.getURL("options/options.html#profiles") });
