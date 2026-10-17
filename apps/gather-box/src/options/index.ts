@@ -10,6 +10,8 @@ import {
 } from "../shared/settings";
 import { LISTED_SITES, type SiteKey } from "../shared/sites";
 import { getGatherSource } from "../shared/source-catalog";
+import { requireElement } from "../gather/dom";
+import { initProfileEditor } from "./profile-editor";
 
 interface SettingsFormElements {
   form: HTMLFormElement;
@@ -27,6 +29,7 @@ interface SettingsFormElements {
 
 document.addEventListener("DOMContentLoaded", () => {
   void init();
+  void initProfileEditor(document);
 });
 
 async function init(): Promise<void> {
@@ -49,17 +52,17 @@ async function init(): Promise<void> {
 
 function getFormElements(): SettingsFormElements {
   return {
-    form: requireElement("settingsForm", HTMLFormElement),
-    downloadConcurrency: requireElement("downloadConcurrency", HTMLInputElement),
-    mediaCompatibilityMode: requireElement("mediaCompatibilityMode", HTMLInputElement),
-    xPostFolders: requireElement("xPostFolders", HTMLInputElement),
-    verboseLogging: requireElement("verboseLogging", HTMLInputElement),
-    pageShortcutsEnabled: requireElement("pageShortcutsEnabled", HTMLInputElement),
-    toggleCommandShortcut: requireElement("toggleCommandShortcut", HTMLElement),
-    downloadCommandShortcut: requireElement("downloadCommandShortcut", HTMLElement),
-    credentialsMode: requireElement("credentialsMode", HTMLSelectElement),
-    perSiteCredentials: requireElement("perSiteCredentials", HTMLElement),
-    saveStatus: requireElement("saveStatus", HTMLElement)
+    form: requireElement(document, "settingsForm", HTMLFormElement),
+    downloadConcurrency: requireElement(document, "downloadConcurrency", HTMLInputElement),
+    mediaCompatibilityMode: requireElement(document, "mediaCompatibilityMode", HTMLInputElement),
+    xPostFolders: requireElement(document, "xPostFolders", HTMLInputElement),
+    verboseLogging: requireElement(document, "verboseLogging", HTMLInputElement),
+    pageShortcutsEnabled: requireElement(document, "pageShortcutsEnabled", HTMLInputElement),
+    toggleCommandShortcut: requireElement(document, "toggleCommandShortcut", HTMLElement),
+    downloadCommandShortcut: requireElement(document, "downloadCommandShortcut", HTMLElement),
+    credentialsMode: requireElement(document, "credentialsMode", HTMLSelectElement),
+    perSiteCredentials: requireElement(document, "perSiteCredentials", HTMLElement),
+    saveStatus: requireElement(document, "saveStatus", HTMLElement)
   };
 }
 
@@ -158,14 +161,4 @@ function readPerSiteCredentials(container: HTMLElement) {
   }
 
   return result;
-}
-
-function requireElement<T extends HTMLElement>(id: string, constructor: new () => T): T {
-  const element = document.getElementById(id);
-
-  if (!(element instanceof constructor)) {
-    throw new Error(`Missing required options element: ${id}`);
-  }
-
-  return element;
 }

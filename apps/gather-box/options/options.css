@@ -125,6 +125,51 @@ body {
   color: var(--foreground);
 }
 
+.profiles-hint {
+  margin: 0 0 12px;
+}
+
+.profile-rows {
+  display: grid;
+  gap: 8px;
+}
+
+.profile-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 72px auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.profile-row input[type="text"] {
+  min-width: 0;
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-md);
+  background: var(--input-bg);
+  color: var(--foreground);
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 10px;
+}
+
+.profile-row input[type="text"]:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
+.profile-row .btn {
+  min-height: 34px;
+}
+
+.profile-active {
+  justify-self: center;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-hover);
+}
+
 .actions {
   display: flex;
   align-items: center;

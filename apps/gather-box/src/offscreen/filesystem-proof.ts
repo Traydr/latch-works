@@ -1,5 +1,6 @@
 import * as z from "zod/mini";
 import { ensureDirectoryPermission, loadDirectoryHandle } from "../gather/directory-store";
+import { DEFAULT_PROFILE_ID } from "../shared/profiles";
 import type { SiteKey } from "../shared/sites";
 import { SiteKeySchema } from "../shared/source-catalog";
 
@@ -9,7 +10,8 @@ export const OffscreenFilesystemProofMessageSchema = z.object({
   type: z.literal(OFFSCREEN_FILESYSTEM_PROOF_MESSAGE),
   target: z.literal("offscreen"),
   siteKey: z.catch(z.nullable(SiteKeySchema), null),
-  useGlobalFolder: z.catch(z.boolean(), false)
+  useGlobalFolder: z.catch(z.boolean(), false),
+  profileId: z.catch(z.string(), DEFAULT_PROFILE_ID)
 });
 
 export interface OffscreenFilesystemProofResult {
@@ -26,8 +28,13 @@ export interface OffscreenFilesystemProofResult {
 export async function proveOffscreenFilesystemAccess(input: {
   siteKey: SiteKey | null;
   useGlobalFolder: boolean;
+  profileId: string;
 }): Promise<OffscreenFilesystemProofResult> {
-  const directory = await loadDirectoryHandle(input.siteKey, input.useGlobalFolder);
+  const directory = await loadDirectoryHandle(
+    input.siteKey,
+    input.useGlobalFolder,
+    input.profileId
+  );
 
   if (!directory) {
     return {

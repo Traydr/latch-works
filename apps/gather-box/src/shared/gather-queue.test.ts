@@ -11,6 +11,7 @@ import {
   recoverStoppedGatherQueue,
   type GatherQueueState
 } from "./gather-queue";
+import { DEFAULT_PROFILE_ID } from "./profiles";
 import { DEFAULT_SETTINGS } from "./settings";
 import type { DownloadablePayload } from "./types";
 
@@ -72,14 +73,16 @@ describe("Gather queue state", () => {
           run: run("run-1", "writing"),
           payload: payload("One"),
           settings: DEFAULT_SETTINGS,
-          destinationId: null
+          destinationId: null,
+          profileId: DEFAULT_PROFILE_ID
         },
         {
           kind: "output",
           run: run("run-2", "queued"),
           payload: payload("Two"),
           settings: DEFAULT_SETTINGS,
-          destinationId: null
+          destinationId: null,
+          profileId: DEFAULT_PROFILE_ID
         },
         { kind: "collecting", run: run("run-3", "collecting") }
       ]
@@ -102,7 +105,8 @@ describe("Gather queue state", () => {
           run: run("run-1", "queued"),
           payload: payload("One"),
           settings: DEFAULT_SETTINGS,
-          destinationId: null
+          destinationId: null,
+          profileId: DEFAULT_PROFILE_ID
         },
         { run: { id: "broken" }, payload: null, settings: null }
       ]
@@ -135,14 +139,16 @@ describe("Gather queue state", () => {
           run: run("run-1", "queued"),
           payload: payload("One"),
           settings: DEFAULT_SETTINGS,
-          destinationId: null
+          destinationId: null,
+          profileId: DEFAULT_PROFILE_ID
         },
         {
           kind: "output",
           run: run("run-2", "queued"),
           payload: payload("Two"),
           settings: DEFAULT_SETTINGS,
-          destinationId: null
+          destinationId: null,
+          profileId: DEFAULT_PROFILE_ID
         }
       ]
     };
@@ -154,7 +160,8 @@ describe("Gather queue state", () => {
       run: run("run-1", "writing"),
       payload: payload("One"),
       settings: DEFAULT_SETTINGS,
-      destinationId: null
+      destinationId: null,
+      profileId: DEFAULT_PROFILE_ID
     };
     expect(getNextQueuedGatherJob(queued)).toBeNull();
   });
@@ -173,13 +180,16 @@ describe("Gather queue state", () => {
           },
           payload: payload("One"),
           settings: { ...DEFAULT_SETTINGS, useGlobalFolder: false },
-          destinationId: null
+          destinationId: null,
+          profileId: DEFAULT_PROFILE_ID
         }
       ]
     };
 
-    expect(getPermissionRequiredGatherJob(siteScoped, "pixiv")?.run.id).toBe("run-1");
-    expect(getPermissionRequiredGatherJob(siteScoped, "reddit")).toBeNull();
+    expect(getPermissionRequiredGatherJob(siteScoped, "pixiv", DEFAULT_PROFILE_ID)?.run.id).toBe(
+      "run-1"
+    );
+    expect(getPermissionRequiredGatherJob(siteScoped, "reddit", DEFAULT_PROFILE_ID)).toBeNull();
 
     const firstJob = siteScoped.jobs[0];
 
@@ -188,7 +198,12 @@ describe("Gather queue state", () => {
     }
 
     firstJob.settings = { ...DEFAULT_SETTINGS, useGlobalFolder: true };
-    expect(getPermissionRequiredGatherJob(siteScoped, "reddit")?.run.id).toBe("run-1");
+    expect(getPermissionRequiredGatherJob(siteScoped, "reddit", DEFAULT_PROFILE_ID)?.run.id).toBe(
+      "run-1"
+    );
+
+    // Another profile prompts for a different folder, so it cannot confirm this one.
+    expect(getPermissionRequiredGatherJob(siteScoped, "reddit", "work")).toBeNull();
   });
 
   it("keeps each terminal result available while later jobs run", () => {
@@ -214,7 +229,8 @@ describe("Gather queue state", () => {
           run: run("run-3", "writing"),
           payload: payload("Three"),
           settings: DEFAULT_SETTINGS,
-          destinationId: null
+          destinationId: null,
+          profileId: DEFAULT_PROFILE_ID
         }
       ],
       results: [failed, complete]
@@ -235,7 +251,8 @@ describe("Gather queue state", () => {
           run: run("run-1", "writing"),
           payload: payload("One"),
           settings: DEFAULT_SETTINGS,
-          destinationId: null
+          destinationId: null,
+          profileId: DEFAULT_PROFILE_ID
         },
         { kind: "collecting", run: run("run-2", "collecting") }
       ]
@@ -267,14 +284,16 @@ describe("Gather queue state", () => {
           run: run("run-1", "cancelling"),
           payload: payload("One"),
           settings: DEFAULT_SETTINGS,
-          destinationId: null
+          destinationId: null,
+          profileId: DEFAULT_PROFILE_ID
         },
         {
           kind: "output",
           run: run("run-2", "queued"),
           payload: payload("Two"),
           settings: DEFAULT_SETTINGS,
-          destinationId: null
+          destinationId: null,
+          profileId: DEFAULT_PROFILE_ID
         }
       ]
     });

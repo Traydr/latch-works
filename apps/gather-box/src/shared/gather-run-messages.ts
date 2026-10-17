@@ -1,6 +1,7 @@
 import * as z from "zod/mini";
 import type { GatherRunStartOutcome, GatherRunState } from "./gather-run";
 import { DownloadFailureSchema, LastRunLogEntrySchema } from "./last-run";
+import { DEFAULT_PROFILE_ID } from "./profiles";
 import { GatherBoxSettingsSchema } from "./settings";
 import {
   DownloadablePayloadSchema,
@@ -25,7 +26,9 @@ export const GET_GATHER_EXECUTOR_STATUS = "GATHER_BOX_EXECUTOR_STATUS" as const;
 export const StartGatherRunRequestSchema = z.object({
   type: z.literal(START_GATHER_RUN_REQUEST),
   target: z.literal("background"),
-  tabId: z.number()
+  tabId: z.number(),
+  /** The profile whose folder the side panel just confirmed. Without it, the active one is used. */
+  profileId: z.optional(z.string())
 });
 
 export type StartGatherRunRequest = z.infer<typeof StartGatherRunRequestSchema>;
@@ -33,7 +36,9 @@ export type StartGatherRunRequest = z.infer<typeof StartGatherRunRequestSchema>;
 export const RetryGatherRunRequestSchema = z.object({
   type: z.literal(RETRY_GATHER_RUN_REQUEST),
   target: z.literal("background"),
-  runId: z.string()
+  runId: z.string(),
+  /** The profile whose folder the side panel just confirmed. Without it, the active one is used. */
+  profileId: z.optional(z.string())
 });
 
 export type RetryGatherRunRequest = z.infer<typeof RetryGatherRunRequestSchema>;
@@ -52,7 +57,8 @@ export const ExecuteGatherRunMessageSchema = z.object({
   runId: z.string(),
   payload: z.union([DownloadablePayloadSchema, GeneratedStoryPayloadSchema]),
   settings: GatherBoxSettingsSchema,
-  destinationId: z.catch(z.nullable(z.string()), null)
+  destinationId: z.catch(z.nullable(z.string()), null),
+  profileId: z.catch(z.string(), DEFAULT_PROFILE_ID)
 });
 
 export type ExecuteGatherRunMessage = z.infer<typeof ExecuteGatherRunMessageSchema>;
@@ -78,7 +84,12 @@ export const GatherFolderScopeSchema = z.enum(["global", "site"]);
 export type GatherFolderScope = z.infer<typeof GatherFolderScopeSchema>;
 
 export const GatherRunEventSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("permission-required"), scope: GatherFolderScopeSchema }),
+  z.object({
+    kind: z.literal("permission-required"),
+    scope: GatherFolderScopeSchema,
+    /** Set by the background when several profiles exist, so the panel can name the one to use. */
+    profileName: z.optional(z.string())
+  }),
   z.object({
     kind: z.literal("writing"),
     destinationPreview: z.string(),

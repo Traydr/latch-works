@@ -53,14 +53,14 @@ export class GatherCommands {
     }
   }
 
-  gather(tab: chrome.tabs.Tab): Promise<GatherRunStartOutcome> {
+  gather(tab: chrome.tabs.Tab, profileId?: string): Promise<GatherRunStartOutcome> {
     if (tab.windowId === undefined) {
       return Promise.resolve({ outcome: "target-unavailable" });
     }
 
     // Opening begins synchronously in the command event turn so Chrome retains user activation.
     const opening = this.sidePanel.open({ windowId: tab.windowId });
-    const starting = this.runs.startForTab(tab);
+    const starting = this.runs.startForTab(tab, profileId);
 
     return Promise.allSettled([opening, starting]).then(([, result]) =>
       result.status === "fulfilled"
