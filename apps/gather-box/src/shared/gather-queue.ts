@@ -2,6 +2,7 @@ import * as z from "zod/mini";
 import type { GatherRunState } from "./gather-run";
 import { GatherRunStateSchema, isTerminalGatherRunPhase } from "./gather-run";
 import { applyGatherRunEvent } from "./gather-run-reducer";
+import { DEFAULT_PROFILE_ID } from "./profiles";
 import { GatherBoxSettingsSchema, type GatherBoxSettings } from "./settings";
 import { lenientArrayOf } from "./lenient-array";
 import {
@@ -39,6 +40,8 @@ export interface OutputGatherQueueJob {
    * for jobs queued by an older build; either way the executor writes to the current folder.
    */
   destinationId: string | null;
+  /** The profile whose folders this output writes to, fixed when the page was gathered. */
+  profileId: string;
 }
 
 export type GatherQueueJob = CollectingGatherQueueJob | OutputGatherQueueJob;
@@ -71,7 +74,8 @@ const OutputGatherQueueJobSchema = z.pipe(
     }),
     payload: z.union([DownloadablePayloadSchema, GeneratedStoryPayloadSchema]),
     settings: GatherBoxSettingsSchema,
-    destinationId: z.catch(z.nullable(z.string()), null)
+    destinationId: z.catch(z.nullable(z.string()), null),
+    profileId: z.catch(z.string(), DEFAULT_PROFILE_ID)
   }),
   z.transform(
     (job): OutputGatherQueueJob => ({
@@ -79,7 +83,8 @@ const OutputGatherQueueJobSchema = z.pipe(
       run: job.run,
       payload: job.payload,
       settings: job.settings,
-      destinationId: job.destinationId
+      destinationId: job.destinationId,
+      profileId: job.profileId
     })
   )
 );
@@ -173,15 +178,21 @@ export function getNextQueuedGatherJob(queue: GatherQueueState): OutputGatherQue
   return first?.kind === "output" && first.run.phase === "queued" ? first : null;
 }
 
+/**
+ * The paused job a gather from this site under this profile confirms folder access for: only that
+ * combination prompts for the same folder handle the job is waiting on.
+ */
 export function getPermissionRequiredGatherJob(
   queue: GatherQueueState,
-  siteKey: SiteKey
+  siteKey: SiteKey,
+  profileId: string
 ): OutputGatherQueueJob | null {
   return (
     queue.jobs.find(
       (job): job is OutputGatherQueueJob =>
         job.kind === "output" &&
         job.run.phase === "permission-required" &&
+        job.profileId === profileId &&
         (job.settings.useGlobalFolder || job.run.siteKey === siteKey)
     ) ?? null
   );

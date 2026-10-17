@@ -52,7 +52,8 @@ export const ExecuteGatherRunMessageSchema = z.object({
   runId: z.string(),
   payload: z.union([DownloadablePayloadSchema, GeneratedStoryPayloadSchema]),
   settings: GatherBoxSettingsSchema,
-  destinationId: z.catch(z.nullable(z.string()), null)
+  destinationId: z.catch(z.nullable(z.string()), null),
+  profileId: z.string()
 });
 
 export type ExecuteGatherRunMessage = z.infer<typeof ExecuteGatherRunMessageSchema>;
@@ -78,7 +79,12 @@ export const GatherFolderScopeSchema = z.enum(["global", "site"]);
 export type GatherFolderScope = z.infer<typeof GatherFolderScopeSchema>;
 
 export const GatherRunEventSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("permission-required"), scope: GatherFolderScopeSchema }),
+  z.object({
+    kind: z.literal("permission-required"),
+    scope: GatherFolderScopeSchema,
+    /** Set by the background when several profiles exist, so the panel can name the one to use. */
+    profileName: z.optional(z.string())
+  }),
   z.object({
     kind: z.literal("writing"),
     destinationPreview: z.string(),

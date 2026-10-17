@@ -1,3 +1,4 @@
+import type { GatherProfilesState } from "../shared/profiles";
 import type { SiteKey } from "../shared/sites";
 import { getSaveBehavior, type SaveBehavior } from "../shared/save-behavior";
 import type { PopupStatus } from "./status";
@@ -8,6 +9,8 @@ export type LogTone = "error" | "success";
 export interface PopupElements {
   badge: HTMLElement;
   unsupportedBanner: HTMLElement;
+  profileList: HTMLElement;
+  manageProfiles: HTMLButtonElement;
   folderName: HTMLElement;
   folderDetail: HTMLElement;
   chooseFolder: HTMLButtonElement;
@@ -45,6 +48,8 @@ export function getPopupElements(
   return {
     badge: requireElement(document, "badge-mini", HTMLElement),
     unsupportedBanner: requireElement(document, "unsupportedBanner-mini", HTMLElement),
+    profileList: requireElement(document, "profileList-mini", HTMLElement),
+    manageProfiles: requireElement(document, "manageProfiles-mini", HTMLButtonElement),
     folderName: requireElement(document, "folderName-mini", HTMLElement),
     folderDetail: requireElement(document, "folderDetail-mini", HTMLElement),
     chooseFolder: requireElement(document, "chooseFolder-mini", HTMLButtonElement),
@@ -80,6 +85,43 @@ export function setPageState(
   if (!supported && message) {
     elements.unsupportedBanner.textContent = message;
   }
+}
+
+/**
+ * One button per profile; the pressed one is active. Each carries its ID for the click handler.
+ * Buttons are updated in place while the same profiles are listed, so a switch keeps focus.
+ */
+export function renderProfiles(
+  elements: PopupElements,
+  state: GatherProfilesState,
+  disabled: boolean
+): void {
+  let buttons = [...elements.profileList.querySelectorAll<HTMLButtonElement>(".profile-chip")];
+
+  const sameProfiles =
+    buttons.length === state.profiles.length &&
+    buttons.every((button, index) => button.dataset.profileId === state.profiles[index].id);
+
+  if (!sameProfiles) {
+    buttons = state.profiles.map((profile) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "profile-chip";
+      button.dataset.profileId = profile.id;
+
+      return button;
+    });
+
+    elements.profileList.replaceChildren(...buttons);
+  }
+
+  state.profiles.forEach((profile, index) => {
+    const button = buttons[index];
+    button.textContent = profile.name;
+    button.title = profile.name;
+    button.disabled = disabled;
+    button.setAttribute("aria-pressed", String(profile.id === state.activeProfileId));
+  });
 }
 
 export function setFolder(elements: PopupElements, name: string, detail: string): void {

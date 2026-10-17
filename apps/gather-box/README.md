@@ -4,6 +4,19 @@
 
 Gather Box is the **collection** step in [Latch Works](../../README.md): media enters the ecosystem here, gets organized on disk (often alongside [Frame View](../frame-view)), and can later be synced to [Pane View](../pane-view) via [Lockstep](../../apps/lockstep-cli).
 
+## Profiles
+
+A profile is a named set of remembered destination folders. Switch profiles with the chips at the
+top of the side panel; **Manage** opens the settings page, where profiles can be added, renamed,
+and deleted. Each profile keeps its own global and per-site folders, so switching profiles switches
+where downloads are saved. Folders remembered before profiles existed belong to the **Default**
+profile, which keeps them if it is renamed.
+
+A queued page keeps the profile that was active when it was gathered, so switching profiles while
+the queue runs does not move it. A paused job waiting for folder access can only be confirmed with
+its own profile active; the side panel names that profile when more than one exists. Deleting a
+profile forgets its remembered folders; files already saved stay on disk.
+
 ## Supported sites
 
 | Site | Content |
@@ -14,7 +27,8 @@ Gather Box is the **collection** step in [Latch Works](../../README.md): media e
 | **Archive of Our Own** | Work PDF download |
 | **fanfiction.net** | All chapters fetched and merged into one local PDF |
 
-Each site remembers its own destination folder. Folder and filename inference rules (underscores,
+Each site remembers its own destination folder (or one global folder, if chosen in settings).
+Folder and filename inference rules (underscores,
 nested post paths, `{author}-{story}.pdf` for stories) are implemented per collector in
 `src/content/collectors/`.
 
@@ -174,6 +188,8 @@ are converted to underscores.
 - [ ] fanfiction.net: chapter count matches selector; generated PDF has all chapters in order with basic bold/italic preserved
 - [ ] Nested post collectors: files land in `<creator>/<post_title>-<post_id>/`
 - [ ] Reddit: single media lands at the root; galleries use `<post_title>_<post_id>/01_<filename>`
+- [ ] Profiles: switching chips shows each profile's own folder; renames in settings appear in the
+      side panel without reopening it
 
 ## Related
 

@@ -32,7 +32,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (proofRequest.success) {
     void proveOffscreenFilesystemAccess({
       siteKey: proofRequest.data.siteKey,
-      useGlobalFolder: proofRequest.data.useGlobalFolder
+      useGlobalFolder: proofRequest.data.useGlobalFolder,
+      profileId: proofRequest.data.profileId
     }).then(sendResponse, (error) =>
       sendResponse({
         ok: false,
@@ -75,6 +76,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           payload: execute.payload,
           settings: execute.settings,
           destinationId: execute.destinationId,
+          profileId: execute.profileId,
           emit: emitter.emit,
           signal
         });

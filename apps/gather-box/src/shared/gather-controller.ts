@@ -4,6 +4,7 @@ import {
   addLog,
   flashDownloadComplete,
   getPopupElements,
+  renderProfiles,
   restoreLog,
   setBadge,
   setDestinationPreview,
@@ -51,6 +52,15 @@ import {
   GatherQueueStateSchema,
   type GatherQueueState
 } from "./gather-queue";
+import {
+  DEFAULT_PROFILES,
+  getActiveProfile,
+  loadProfiles,
+  PROFILES_KEY,
+  setActiveProfile,
+  updateProfiles,
+  type GatherProfilesState
+} from "./profiles";
 import { DEFAULT_SETTINGS, loadSettings, type GatherBoxSettings } from "./settings";
 import { installShortcutKeyListener } from "./shortcut-keys";
 
@@ -62,6 +72,7 @@ interface PopupState {
   running: boolean;
   activeRunId: string | null;
   settings: GatherBoxSettings;
+  profiles: GatherProfilesState;
   lastRun: LastRunState;
 }
 
@@ -86,6 +97,7 @@ export class GatherController {
     running: false,
     activeRunId: null,
     settings: { ...DEFAULT_SETTINGS },
+    profiles: DEFAULT_PROFILES,
     lastRun: { ...EMPTY_LAST_RUN }
   };
 
@@ -95,6 +107,8 @@ export class GatherController {
   private readonly options: GatherControllerOptions;
   /** Retry writes under the failed run's site, not whichever tab is active now. */
   private retryTarget: { runId: string; siteKey: SiteKey } | null = null;
+  /** Bumped on every folder restore, so a slower earlier restore cannot overwrite a newer one. */
+  private folderRestoreToken = 0;
   private keydownHandler: ((event: KeyboardEvent) => void) | null = null;
   private shortcutCleanup: (() => void) | null = null;
   private storageHandler:
@@ -140,6 +154,19 @@ export class GatherController {
     this.elements.copyErrorsButton.addEventListener("click", () => {
       void this.handleCopyErrors();
     });
+    this.elements.profileList.addEventListener("click", (event) => {
+      const chip =
+        event.target instanceof Element
+          ? event.target.closest<HTMLButtonElement>("button[data-profile-id]")
+          : null;
+
+      if (chip?.dataset.profileId) {
+        void this.handleSelectProfile(chip.dataset.profileId);
+      }
+    });
+    this.elements.manageProfiles.addEventListener("click", () => {
+      void chrome.tabs.create({ url: chrome.runtime.getURL("options/options.html#profiles") });
+    });
     this.elements.openSidePanelButton?.addEventListener("click", () => {
       this.options.onOpenSidePanel?.();
     });
@@ -182,6 +209,10 @@ export class GatherController {
         void this.refreshSettings();
       }
 
+      if (areaName === "sync" && changes[PROFILES_KEY]) {
+        void this.refreshProfiles();
+      }
+
       if (areaName === "local" && changes[GATHER_QUEUE_STATE_KEY]?.newValue) {
         this.applyGatherQueue(
           GatherQueueStateSchema.parse(changes[GATHER_QUEUE_STATE_KEY].newValue)
@@ -205,6 +236,7 @@ export class GatherController {
     chrome.tabs.onUpdated.addListener(this.tabUpdatedHandler);
 
     this.state.settings = await loadSettings();
+    this.state.profiles = await loadProfiles();
     this.state.lastRun = await loadLastRun();
     this.logEntries = [...this.state.lastRun.log];
 
@@ -227,6 +259,21 @@ export class GatherController {
     await this.restoreSavedDirectoryHandle();
     this.syncPopupActions();
     updateSaveBehavior(this.state.siteKey);
+  }
+
+  async refreshProfiles(): Promise<void> {
+    const previousProfileId = this.state.profiles.activeProfileId;
+    this.state.profiles = await loadProfiles();
+    this.syncPopupActions();
+
+    // A rename alone leaves the remembered folder as it is; only its label changes.
+    if (this.state.profiles.activeProfileId !== previousProfileId) {
+      await this.restoreSavedDirectoryHandle();
+    } else if (this.state.directoryHandle) {
+      this.elements.folderDetail.textContent = `Remembered for ${this.getScopeLabel()}.`;
+    }
+
+    this.syncPopupActions();
   }
 
   destroy(): void {
@@ -323,7 +370,7 @@ export class GatherController {
 
       await this.setDirectoryHandle(directoryHandle);
       this.elements.folderDetail.textContent = this.state.siteKey
-        ? `Remembered for ${this.directories.getDirectoryScopeLabel(this.state.settings.useGlobalFolder)}.`
+        ? `Remembered for ${this.getScopeLabel()}.`
         : "Available for this session.";
       this.appendLog(`Folder selected: ${directoryHandle.name}`, "success");
       this.setStatus("idle");
@@ -340,18 +387,38 @@ export class GatherController {
     }
   }
 
+  private async handleSelectProfile(profileId: string): Promise<void> {
+    if (this.state.running || profileId === this.state.profiles.activeProfileId) {
+      return;
+    }
+
+    try {
+      this.state.profiles = await updateProfiles((state) => setActiveProfile(state, profileId));
+      this.syncPopupActions();
+      await this.restoreSavedDirectoryHandle();
+    } catch (error) {
+      this.appendLog(`Could not switch profile: ${formatError(toError(error))}`, "error");
+    } finally {
+      this.syncPopupActions();
+    }
+  }
+
   private async handleClearFolder(): Promise<void> {
     if (this.state.running) {
       return;
     }
 
     try {
-      await this.directories.clearDirectoryHandle(this.state.siteKey, this.state.settings.useGlobalFolder);
+      await this.directories.clearDirectoryHandle(
+        this.state.siteKey,
+        this.state.settings.useGlobalFolder,
+        this.state.profiles.activeProfileId
+      );
       this.state.directoryHandle = null;
       setFolder(
         this.elements,
         "No folder selected",
-        `Choose a writable folder for ${this.directories.getDirectoryScopeLabel(this.state.settings.useGlobalFolder)}.`
+        `Choose a writable folder for ${this.getScopeLabel()}.`
       );
       this.appendLog("Cleared remembered folder.", "success");
       this.setStatus("idle");
@@ -484,7 +551,8 @@ export class GatherController {
 
     const directoryHandle = await this.directories.loadDirectoryHandle(
       target.siteKey,
-      this.state.settings.useGlobalFolder
+      this.state.settings.useGlobalFolder,
+      this.state.profiles.activeProfileId
     );
 
     if (!directoryHandle) {
@@ -538,7 +606,8 @@ export class GatherController {
   }
 
   private async restoreSavedDirectoryHandle(): Promise<void> {
-    const scopeLabel = this.directories.getDirectoryScopeLabel(this.state.settings.useGlobalFolder);
+    const scopeLabel = this.getScopeLabel();
+    const token = ++this.folderRestoreToken;
     this.state.directoryHandle = null;
 
     if (!this.state.siteKey && !this.state.settings.useGlobalFolder) {
@@ -550,8 +619,13 @@ export class GatherController {
     try {
       const directoryHandle = await this.directories.loadDirectoryHandle(
         this.state.siteKey,
-        this.state.settings.useGlobalFolder
+        this.state.settings.useGlobalFolder,
+        this.state.profiles.activeProfileId
       );
+
+      if (token !== this.folderRestoreToken) {
+        return;
+      }
 
       if (!directoryHandle) {
         setFolder(this.elements, "No folder selected", `Choose a writable folder for ${scopeLabel}.`);
@@ -562,8 +636,21 @@ export class GatherController {
       this.state.directoryHandle = directoryHandle;
       setFolder(this.elements, directoryHandle.name, `Remembered for ${scopeLabel}.`);
     } catch (error) {
-      this.elements.folderDetail.textContent = `Could not restore folder: ${formatError(toError(error))}`;
+      if (token === this.folderRestoreToken) {
+        this.elements.folderDetail.textContent = `Could not restore folder: ${formatError(toError(error))}`;
+      }
     }
+  }
+
+  /** Where a remembered folder applies, naming the profile once there is more than one. */
+  private getScopeLabel(): string {
+    const scope = this.directories.getDirectoryScopeLabel(this.state.settings.useGlobalFolder);
+
+    if (this.state.profiles.profiles.length < 2) {
+      return scope;
+    }
+
+    return `${scope} in "${getActiveProfile(this.state.profiles).name}"`;
   }
 
   private async setDirectoryHandle(directoryHandle: FileSystemDirectoryHandle): Promise<void> {
@@ -574,7 +661,8 @@ export class GatherController {
       await this.directories.saveDirectoryHandle(
         this.state.siteKey,
         directoryHandle,
-        this.state.settings.useGlobalFolder
+        this.state.settings.useGlobalFolder,
+        this.state.profiles.activeProfileId
       );
     } catch (error) {
       this.appendLog(`Folder could not be persisted: ${formatError(toError(error))}`, "error");
@@ -605,6 +693,7 @@ export class GatherController {
       hasActiveJob
     );
     this.elements.downloadButton.textContent = runInFlight ? "Add to Queue" : "Download Content";
+    renderProfiles(this.elements, this.state.profiles, this.state.running);
   }
 
   private setStatus(status: PopupStatus): void {

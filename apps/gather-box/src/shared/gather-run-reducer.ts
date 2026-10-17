@@ -15,7 +15,8 @@ export function applyGatherRunEvent(
       // A paused job blocks the whole queue, and only a gather started from a tab that resolves to
       // the same folder handle can confirm it. Name that tab instead of asking for "confirmation".
       const label = getGatherSource(run.siteKey)?.label ?? "this source";
-      const target = event.scope === "global" ? "any supported page" : `a ${label} page`;
+      const page = event.scope === "global" ? "any supported page" : `a ${label} page`;
+      const target = event.profileName ? `${page} with the "${event.profileName}" profile` : page;
 
       return {
         ...run,

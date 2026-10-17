@@ -23,6 +23,7 @@ import {
   type GatherRunState
 } from "../shared/gather-run";
 import { groupXPostInFolder } from "../shared/path";
+import { getProfileName } from "../shared/profiles";
 import { getSiteKeyFromUrl, isSupportedUrl, type SiteKey } from "../shared/sites";
 import type { DownloadablePayload } from "../shared/types";
 import { applyGatherRunEvent } from "../shared/gather-run-reducer";
@@ -69,7 +70,10 @@ export class GatherRunCoordinator {
       return { outcome: "unsupported-source" };
     }
 
-    const { reservation, resumed } = await this.reserve(tab, siteKey);
+    // The profile active when the gather was asked for is the one whose folder the panel just
+    // confirmed, so the page keeps it even if another profile is chosen while it is collected.
+    const { activeProfileId: profileId } = await this.dependencies.loadProfiles();
+    const { reservation, resumed } = await this.reserve(tab, siteKey, profileId);
 
     if (resumed || reservation.kind === "existing") {
       await this.dispatchNext();
@@ -83,7 +87,7 @@ export class GatherRunCoordinator {
       return this.outcomeForJob(reservation.runId, reservation.position);
     }
 
-    return this.finishCollection(tab, siteKey, reservation);
+    return this.finishCollection(tab, siteKey, profileId, reservation);
   }
 
   async retry(runId: string): Promise<GatherRunStartOutcome> {
@@ -98,12 +102,17 @@ export class GatherRunCoordinator {
       return { outcome: "failed", message: "No retryable Gather Run was found." };
     }
 
-    // Retrying is the explicit way to send failed items to the folder remembered now.
-    const settings = await this.dependencies.loadSettings();
+    // Retrying is the explicit way to send failed items to the folder remembered now, in the
+    // profile active now.
+    const [settings, { activeProfileId: profileId }] = await Promise.all([
+      this.dependencies.loadSettings(),
+      this.dependencies.loadProfiles()
+    ]);
 
     const destinationId = await this.dependencies.getDestinationId(
       previous.siteKey,
-      settings.useGlobalFolder
+      settings.useGlobalFolder,
+      profileId
     );
 
     const payload: DownloadablePayload = {
@@ -150,7 +159,10 @@ export class GatherRunCoordinator {
       const position = queue.jobs.length;
       queue = {
         ...queue,
-        jobs: [...queue.jobs, { kind: "output", run, payload, settings, destinationId }],
+        jobs: [
+          ...queue.jobs,
+          { kind: "output", run, payload, settings, destinationId, profileId }
+        ],
         results: queue.results.filter((result) => result.id !== previous.id)
       };
       await this.dependencies.saveQueue(queue);
@@ -234,6 +246,9 @@ export class GatherRunCoordinator {
   }
 
   async handleEvent(message: GatherRunEventMessage): Promise<void> {
+    const profiles =
+      message.event.kind === "permission-required" ? await this.dependencies.loadProfiles() : null;
+
     const shouldDispatch = await this.exclusive(async () => {
       let queue = await this.dependencies.loadQueue();
       const job = queue.jobs.find((candidate) => candidate.run.id === message.runId);
@@ -258,7 +273,19 @@ export class GatherRunCoordinator {
         return false;
       }
 
-      const updated = applyGatherRunEvent(job.run, message.event, this.dependencies.now());
+      // Only a gather under the paused job's own profile can confirm its folder, so name that
+      // profile whenever there is more than one to choose from.
+      const profileName =
+        profiles && profiles.profiles.length > 1
+          ? getProfileName(profiles, job.profileId)
+          : null;
+
+      const event =
+        message.event.kind === "permission-required" && profileName
+          ? { ...message.event, profileName }
+          : message.event;
+
+      const updated = applyGatherRunEvent(job.run, event, this.dependencies.now());
 
       if (isTerminalGatherRunPhase(updated.phase)) {
         queue = recordAndRemove(queue, updated);
@@ -294,12 +321,16 @@ export class GatherRunCoordinator {
     await this.dispatchNext();
   }
 
-  private async reserve(tab: chrome.tabs.Tab, siteKey: SiteKey): Promise<ReservationResult> {
+  private async reserve(
+    tab: chrome.tabs.Tab,
+    siteKey: SiteKey,
+    profileId: string
+  ): Promise<ReservationResult> {
     return this.exclusive(async () => {
       const loaded = await this.dependencies.loadQueue();
       // Confirming folder access unblocks a paused job, but it is not a request to gather that
       // job's page again. The tab in hand still gets collected on its own.
-      const permissionJob = getPermissionRequiredGatherJob(loaded, siteKey);
+      const permissionJob = getPermissionRequiredGatherJob(loaded, siteKey, profileId);
 
       let queue = permissionJob
         ? replaceJob(loaded, resumePermissionJob(permissionJob, this.dependencies.now()))
@@ -361,6 +392,7 @@ export class GatherRunCoordinator {
   private async finishCollection(
     tab: chrome.tabs.Tab,
     siteKey: SiteKey,
+    profileId: string,
     reservation: Extract<Reservation, { kind: "collect" }>
   ): Promise<GatherRunStartOutcome> {
     try {
@@ -383,7 +415,8 @@ export class GatherRunCoordinator {
       // cannot silently redirect this output.
       const destinationId = await this.dependencies.getDestinationId(
         siteKey,
-        settings.useGlobalFolder
+        settings.useGlobalFolder,
+        profileId
       );
 
       const payload =
@@ -417,7 +450,7 @@ export class GatherRunCoordinator {
         });
 
         const jobs = [...queue.jobs];
-        jobs[index] = { kind: "output", run, payload, settings, destinationId };
+        jobs[index] = { kind: "output", run, payload, settings, destinationId, profileId };
         queue = { ...queue, jobs };
         await this.dependencies.saveQueue(queue);
 
