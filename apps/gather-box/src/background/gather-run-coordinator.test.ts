@@ -6,6 +6,11 @@ import {
   type OutputGatherQueueJob
 } from "../shared/gather-queue";
 import { createGatherRunState } from "../shared/gather-run";
+import {
+  DEFAULT_PROFILE_ID,
+  DEFAULT_PROFILES,
+  type GatherProfilesState
+} from "../shared/profiles";
 import { DEFAULT_SETTINGS } from "../shared/settings";
 import type { DownloadablePayload } from "../shared/types";
 import {
@@ -172,6 +177,45 @@ describe("Gather queue orchestration", () => {
     );
   });
 
+  it("leaves another profile's paused job waiting and pins the new page to the active profile", async () => {
+    const harness = createHarness({
+      ...EMPTY_GATHER_QUEUE,
+      jobs: [outputJob("waiting", "permission-required")]
+    });
+
+    harness.setProfiles(TWO_PROFILES);
+    harness.collect.mockResolvedValue(downloadablePayload());
+    harness.getTab.mockResolvedValue(tabAt({ id: 99, windowId: 2, url: "https://www.pixiv.net/artworks/2" }));
+
+    await harness.coordinator.startForTab(tabAt({ id: 99, windowId: 2, url: "https://www.pixiv.net/artworks/2" }));
+
+    expect(harness.execute).not.toHaveBeenCalled();
+    expect(harness.getQueue().jobs).toMatchObject([
+      { run: { id: "waiting", phase: "permission-required" }, profileId: DEFAULT_PROFILE_ID },
+      { run: { id: "new-run", phase: "queued" }, profileId: "work" }
+    ]);
+  });
+
+  it("names the paused job's profile once there is more than one", async () => {
+    const harness = createHarness({
+      ...EMPTY_GATHER_QUEUE,
+      jobs: [outputJob("waiting", "preparing")]
+    });
+
+    harness.setProfiles(TWO_PROFILES);
+
+    await harness.coordinator.handleEvent({
+      type: "GATHER_BOX_RUN_EVENT",
+      target: "background",
+      runId: "waiting",
+      event: { kind: "permission-required", scope: "site" }
+    });
+
+    expect(harness.getQueue().jobs[0].run.progress.message).toBe(
+      'Folder access for pixiv needs confirmation from a pixiv page with the "Default" profile.'
+    );
+  });
+
   it("persists executor events while another tab is still collecting", async () => {
     let finishCollection!: (value: DownloadablePayload) => void;
 
@@ -309,6 +353,11 @@ describe("Gather queue orchestration", () => {
   });
 });
 
+const TWO_PROFILES: GatherProfilesState = {
+  profiles: [...DEFAULT_PROFILES.profiles, { id: "work", name: "Work" }],
+  activeProfileId: "work"
+};
+
 function outputJob(
   id: string,
   phase: OutputGatherQueueJob["run"]["phase"]
@@ -327,7 +376,8 @@ function outputJob(
     },
     payload: downloadablePayload(),
     settings: DEFAULT_SETTINGS,
-    destinationId: null
+    destinationId: null,
+    profileId: DEFAULT_PROFILE_ID
   };
 }
 
@@ -354,6 +404,7 @@ function downloadablePayload(): DownloadablePayload {
 
 function createHarness(initial: GatherQueueState) {
   let queue = structuredClone(initial);
+  let profiles = DEFAULT_PROFILES;
   const collect = vi.fn<GatherRunCoordinatorDependencies["collect"]>();
   const execute = vi.fn<GatherRunCoordinatorDependencies["execute"]>().mockResolvedValue(true);
   const abort = vi.fn<GatherRunCoordinatorDependencies["abort"]>().mockResolvedValue(true);
@@ -372,6 +423,7 @@ function createHarness(initial: GatherQueueState) {
     getTab,
     collect,
     loadSettings: async () => DEFAULT_SETTINGS,
+    loadProfiles: async () => profiles,
     getDestinationId: async () => "folder-a",
     execute,
     abort,
@@ -385,7 +437,10 @@ function createHarness(initial: GatherQueueState) {
     execute,
     abort,
     getTab,
-    getQueue: () => queue
+    getQueue: () => queue,
+    setProfiles: (next: GatherProfilesState) => {
+      profiles = next;
+    }
   };
 }
 

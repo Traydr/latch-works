@@ -10,6 +10,7 @@ import {
 } from "../shared/settings";
 import { LISTED_SITES, type SiteKey } from "../shared/sites";
 import { getGatherSource } from "../shared/source-catalog";
+import { initProfileEditor } from "./profile-editor";
 
 interface SettingsFormElements {
   form: HTMLFormElement;
@@ -27,6 +28,7 @@ interface SettingsFormElements {
 
 document.addEventListener("DOMContentLoaded", () => {
   void init();
+  void initProfileEditor(document);
 });
 
 async function init(): Promise<void> {
