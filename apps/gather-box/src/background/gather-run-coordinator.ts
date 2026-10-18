@@ -9,6 +9,7 @@ import {
   PROFILE_DELETED_MESSAGE,
   recordGatherQueueResult,
   recoverStoppedGatherQueue,
+  withdrawGatherQueueResult,
   type CollectingGatherQueueJob,
   type GatherQueueState,
   type OutputGatherQueueJob
@@ -163,6 +164,7 @@ export class GatherRunCoordinator {
           now: this.dependencies.now()
         }),
         phase: "queued",
+        title: previous.title,
         folderSegments: payload.folderSegments,
         progress: {
           completed: 0,
@@ -176,14 +178,13 @@ export class GatherRunCoordinator {
       });
 
       const position = queue.jobs.length;
-      queue = {
-        ...queue,
-        jobs: [
-          ...queue.jobs,
-          { kind: "output", run, payload, settings, destinationId, profileId }
-        ],
-        results: queue.results.filter((result) => result.id !== previous.id)
-      };
+      queue = withdrawGatherQueueResult(
+        {
+          ...queue,
+          jobs: [...queue.jobs, { kind: "output", run, payload, settings, destinationId, profileId }]
+        },
+        previous
+      );
       await this.dependencies.saveQueue(queue);
 
       return { runId: run.id, position };
@@ -496,6 +497,7 @@ export class GatherRunCoordinator {
           ...reservation.run,
           phase: "queued",
           updatedAt: this.dependencies.now(),
+          title: payload.title,
           folderSegments: payload.folderSegments,
           progress: { ...reservation.run.progress, total, message: `Queued "${payload.title}".` },
           log: [

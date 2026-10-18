@@ -19,7 +19,11 @@ export const GATHER_QUEUE_SCHEMA_VERSION = 1;
 
 export const MAX_GATHER_QUEUE_LENGTH = 100;
 
-export const MAX_GATHER_QUEUE_RESULTS = 100;
+/** Finished runs kept in full. The batch tally counts every run, however many fall off. */
+export const MAX_GATHER_QUEUE_RESULTS = 10;
+
+/** Finished runs listed under the batch summary. */
+export const RECENT_BATCH_RUNS = 5;
 
 export type GatherOutput = DownloadablePayload | GeneratedStoryPayload;
 
@@ -46,17 +50,43 @@ export interface OutputGatherQueueJob {
 
 export type GatherQueueJob = CollectingGatherQueueJob | OutputGatherQueueJob;
 
+/** Running counts for the runs that went through the queue together. */
+export interface GatherQueueTally {
+  /** When the batch's first run finished; results finished since then belong to the batch. */
+  startedAt: number;
+  /** When the batch's latest run finished. */
+  endedAt: number;
+  /** Set once the queue empties, so a page gathered after that starts a new batch. */
+  closed: boolean;
+  pages: number;
+  saved: number;
+  skipped: number;
+  failed: number;
+}
+
 export interface GatherQueueState {
   schemaVersion: typeof GATHER_QUEUE_SCHEMA_VERSION;
   jobs: GatherQueueJob[];
   results: GatherRunState[];
+  batch: GatherQueueTally | null;
 }
 
 export const EMPTY_GATHER_QUEUE: GatherQueueState = {
   schemaVersion: GATHER_QUEUE_SCHEMA_VERSION,
   jobs: [],
-  results: []
+  results: [],
+  batch: null
 };
+
+const GatherQueueTallySchema = z.object({
+  startedAt: z.number(),
+  endedAt: z.number(),
+  closed: z.boolean(),
+  pages: z.number(),
+  saved: z.number(),
+  skipped: z.number(),
+  failed: z.number()
+});
 
 const CollectingGatherQueueJobSchema = z.pipe(
   z.object({ run: z.extend(GatherRunStateSchema, { phase: z.literal("collecting") }) }),
@@ -100,7 +130,8 @@ export const GatherQueueStateSchema = z.catch(
     z.object({
       schemaVersion: z.literal(GATHER_QUEUE_SCHEMA_VERSION),
       jobs: z.array(z.catch(z.nullable(GatherQueueJobSchema), null)),
-      results: lenientArrayOf(GatherRunStateSchema)
+      results: lenientArrayOf(GatherRunStateSchema),
+      batch: z.catch(z.nullable(GatherQueueTallySchema), null)
     }),
     z.transform(
       (queue): GatherQueueState => ({
@@ -108,7 +139,8 @@ export const GatherQueueStateSchema = z.catch(
         jobs: queue.jobs.filter((job) => job !== null).slice(0, MAX_GATHER_QUEUE_LENGTH),
         results: queue.results
           .filter((run) => isTerminalGatherRunPhase(run.phase))
-          .slice(-MAX_GATHER_QUEUE_RESULTS)
+          .slice(-MAX_GATHER_QUEUE_RESULTS),
+        batch: queue.batch
       })
     )
   ),
@@ -147,11 +179,63 @@ export function recordGatherQueueResult(
     throw new Error(`Cannot record non-terminal Gather Run ${run.id}.`);
   }
 
+  const previous = queue.results.find((result) => result.id === run.id);
+  const current = queue.batch;
+  // Runs ended together are recorded one by one, so a closed batch still takes a run that was
+  // waiting in the queue when the batch's latest run finished.
+  const open = current && (!current.closed || run.createdAt <= current.endedAt) ? current : null;
+
+  let batch: GatherQueueTally = {
+    startedAt: open?.startedAt ?? run.updatedAt,
+    endedAt: run.updatedAt,
+    closed: queue.jobs.length === 0,
+    pages: open?.pages ?? 0,
+    saved: open?.saved ?? 0,
+    skipped: open?.skipped ?? 0,
+    failed: open?.failed ?? 0
+  };
+
+  // A run recorded again replaces its earlier result, so it is only counted once.
+  if (open && previous && previous.updatedAt >= open.startedAt) {
+    batch = tallyRun(batch, previous, -1);
+  }
+
   return {
     ...queue,
     results: [...queue.results.filter((result) => result.id !== run.id), run].slice(
       -MAX_GATHER_QUEUE_RESULTS
-    )
+    ),
+    batch: tallyRun(batch, run, 1)
+  };
+}
+
+/**
+ * Drops a result whose failed items are being retried. Its saved and skipped items stay counted,
+ * while its failures and its page now belong to the retry run.
+ */
+export function withdrawGatherQueueResult(
+  queue: GatherQueueState,
+  run: GatherRunState
+): GatherQueueState {
+  const batch = queue.batch;
+  const counted = batch !== null && !batch.closed && run.updatedAt >= batch.startedAt;
+
+  return {
+    ...queue,
+    results: queue.results.filter((result) => result.id !== run.id),
+    batch: counted
+      ? { ...batch, pages: batch.pages - 1, failed: batch.failed - run.progress.failed }
+      : batch
+  };
+}
+
+function tallyRun(batch: GatherQueueTally, run: GatherRunState, sign: 1 | -1): GatherQueueTally {
+  return {
+    ...batch,
+    pages: batch.pages + sign,
+    saved: batch.saved + sign * run.progress.saved,
+    skipped: batch.skipped + sign * run.progress.skipped,
+    failed: batch.failed + sign * run.progress.failed
   };
 }
 
@@ -311,18 +395,39 @@ export function getGatherQueueDisplayRun(queue: GatherQueueState): GatherRunStat
       (job.run.phase === "collecting" || job.run.phase === "queued")
   ).length;
 
-  const queueSuffix = queuedCount === 1 ? " · 1 queued" : ` · ${queuedCount} queued`;
-
-  return {
-    ...displayed.run,
-    queuedCount,
-    progress: {
-      ...displayed.run.progress,
-      message:
-        queuedCount > 0
-          ? `${displayed.run.progress.message}${queueSuffix}`
-          : displayed.run.progress.message
-    }
-  };
+  return { ...displayed.run, queuedCount };
 }
 
+export interface GatherQueueBatch {
+  /** The batch's most recent finished runs, newest first. */
+  recent: GatherRunState[];
+  pages: number;
+  saved: number;
+  skipped: number;
+  failed: number;
+}
+
+/**
+ * The runs that went through the queue together with the newest one. Runs queued while others
+ * were working stay together; once the queue empties, the next page gathered starts afresh.
+ */
+export function getGatherQueueBatch(queue: GatherQueueState): GatherQueueBatch {
+  const tally = queue.batch;
+
+  if (!tally || (tally.closed && queue.jobs.length > 0)) {
+    return { recent: [], pages: 0, saved: 0, skipped: 0, failed: 0 };
+  }
+
+  const recent = queue.results
+    .filter((result) => result.updatedAt >= tally.startedAt)
+    .slice(-RECENT_BATCH_RUNS)
+    .reverse();
+
+  return {
+    recent,
+    pages: tally.pages,
+    saved: tally.saved,
+    skipped: tally.skipped,
+    failed: tally.failed
+  };
+}

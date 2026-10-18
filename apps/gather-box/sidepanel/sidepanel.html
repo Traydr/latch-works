@@ -27,14 +27,12 @@
       </div>
       <p id="folderDetail-mini" class="line-hint">Choose a writable folder for this run.</p>
 
-      <div id="saveBlock-mini" class="save-block" hidden>
-        <div class="save-row">
-          <span class="line-label">Saves to</span>
-          <span id="savePattern-mini" class="save-tag" hidden></span>
+      <div id="saveBlock-mini" class="save-row" hidden>
+        <span class="line-label">Saves to</span>
+        <div class="save-facts">
+          <code id="savePath-mini" class="save-path"></code>
+          <p id="saveNote-mini" class="line-hint" hidden></p>
         </div>
-        <code id="savePath-mini" class="save-path"></code>
-        <p id="saveSummary-mini" class="line-hint"></p>
-        <p id="saveFile-mini" class="line-hint mono" hidden></p>
       </div>
 
       <section class="history">
@@ -47,12 +45,19 @@
           </div>
         </header>
         <div class="history-progress">
-          <progress id="progressBar-mini" class="run-progress" max="1" value="0"></progress>
+          <div class="progress-row">
+            <progress id="progressBar-mini" class="run-progress" max="1" value="0"></progress>
+            <span id="queueCount-mini" class="queue-count" hidden></span>
+          </div>
           <p class="status-line">
             <span id="badge-mini" class="badge badge-idle">IDLE</span>
             <span id="progressText-mini" class="status-text">Waiting for a supported page and folder.</span>
           </p>
-          <p id="destinationPreview-mini" class="line-hint mono destination" hidden></p>
+          <p id="destinationPreview-mini" class="line-hint mono destination"><span></span></p>
+        </div>
+        <div id="batch-mini" class="batch" hidden>
+          <p id="batchSummary-mini" class="batch-summary"></p>
+          <ol id="batchRuns-mini" class="batch-runs" aria-label="Pages in this queue"></ol>
         </div>
         <details id="logDetails-mini" class="log-holder" open>
           <summary>entries</summary>

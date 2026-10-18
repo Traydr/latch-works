@@ -1,6 +1,6 @@
+import { isTerminalGatherRunPhase, type GatherRunState } from "../shared/gather-run";
 import type { GatherProfilesState } from "../shared/profiles";
-import type { SiteKey } from "../shared/sites";
-import { getSaveBehavior, type SaveBehavior } from "../shared/save-behavior";
+import type { SaveBehavior } from "../shared/save-behavior";
 import type { PopupStatus } from "./status";
 import { getStatusLabel } from "./status";
 
@@ -13,6 +13,9 @@ export interface PopupElements {
   manageProfiles: HTMLButtonElement;
   folderName: HTMLElement;
   folderDetail: HTMLElement;
+  saveBlock: HTMLElement;
+  savePath: HTMLElement;
+  saveNote: HTMLElement;
   chooseFolder: HTMLButtonElement;
   clearFolder: HTMLButtonElement;
   downloadButton: HTMLButtonElement;
@@ -23,6 +26,10 @@ export interface PopupElements {
   destinationPreview: HTMLElement;
   progressBar: HTMLProgressElement;
   progressText: HTMLElement;
+  queueCount: HTMLElement;
+  batch: HTMLElement;
+  batchSummary: HTMLElement;
+  batchRuns: HTMLElement;
   resultLog: HTMLElement;
   logDetails: HTMLDetailsElement;
 }
@@ -52,6 +59,9 @@ export function getPopupElements(
     manageProfiles: requireElement(document, "manageProfiles-mini", HTMLButtonElement),
     folderName: requireElement(document, "folderName-mini", HTMLElement),
     folderDetail: requireElement(document, "folderDetail-mini", HTMLElement),
+    saveBlock: requireElement(document, "saveBlock-mini", HTMLElement),
+    savePath: requireElement(document, "savePath-mini", HTMLElement),
+    saveNote: requireElement(document, "saveNote-mini", HTMLElement),
     chooseFolder: requireElement(document, "chooseFolder-mini", HTMLButtonElement),
     clearFolder: requireElement(document, "clearFolder-mini", HTMLButtonElement),
     downloadButton: requireElement(document, "downloadBtn-mini", HTMLButtonElement),
@@ -64,6 +74,10 @@ export function getPopupElements(
     destinationPreview: requireElement(document, "destinationPreview-mini", HTMLElement),
     progressBar: requireElement(document, "progressBar-mini", HTMLProgressElement),
     progressText: requireElement(document, "progressText-mini", HTMLElement),
+    queueCount: requireElement(document, "queueCount-mini", HTMLElement),
+    batch: requireElement(document, "batch-mini", HTMLElement),
+    batchSummary: requireElement(document, "batchSummary-mini", HTMLElement),
+    batchRuns: requireElement(document, "batchRuns-mini", HTMLElement),
     resultLog: requireElement(document, "resultLog-mini", HTMLElement),
     logDetails: requireElement(document, "logDetails-mini", HTMLDetailsElement)
   };
@@ -120,63 +134,228 @@ export function setFolder(elements: PopupElements, name: string, detail: string)
   elements.folderDetail.textContent = detail;
 }
 
+/**
+ * The line keeps its height while empty, and long paths are cut from the front, so the status
+ * area stays still as runs move through the queue.
+ */
 export function setDestinationPreview(elements: PopupElements, preview: string): void {
-  elements.destinationPreview.textContent = preview;
-  elements.destinationPreview.hidden = preview.length === 0;
-}
-
-export function resetProgress(elements: PopupElements): void {
-  elements.progressBar.max = 1;
-  elements.progressBar.value = 0;
-  elements.progressText.textContent = "Waiting for a supported page and folder.";
-  setDestinationPreview(elements, "");
+  const text = elements.destinationPreview.firstElementChild ?? elements.destinationPreview;
+  text.textContent = preview;
+  elements.destinationPreview.title = preview;
 }
 
 export function setProgress(elements: PopupElements, value: number, max: number, text: string): void {
   elements.progressBar.max = max || 1;
   elements.progressBar.value = value;
   elements.progressText.textContent = text;
+  elements.progressText.title = text;
 }
 
-export function clearLog(elements: PopupElements): void {
-  elements.resultLog.innerHTML = "";
+export function setQueuedCount(elements: PopupElements, count: number): void {
+  elements.queueCount.textContent = `${count} queued`;
+  elements.queueCount.hidden = count === 0;
 }
 
-export function restoreLog(
-  elements: PopupElements,
-  entries: Array<{ message: string; tone?: LogTone }>
-): void {
-  clearLog(elements);
+export interface BatchView {
+  /** The run in progress, if any, then the most recent finished runs, newest first. */
+  runs: GatherRunState[];
+  /** The run whose log is shown. */
+  selectedRunId: string | null;
+  /** Counts across every finished run in the batch, including ones no longer listed. */
+  pages: number;
+  saved: number;
+  skipped: number;
+  failed: number;
+}
 
-  if (entries.length === 0) {
-    elements.resultLog.innerHTML = '<p class="log-empty">No activity yet.</p>';
+/**
+ * Lists the latest runs that went through the queue together, with the whole batch's counts.
+ * Rows are updated in place while the same runs are listed, so a focused row keeps its focus.
+ */
+export function renderBatch(elements: PopupElements, view: BatchView | null): void {
+  elements.batch.hidden = view === null;
+
+  if (!view) {
+    elements.batchRuns.replaceChildren();
 
     return;
   }
 
-  for (const entry of entries) {
-    addLog(elements, entry.message, entry.tone, false);
+  const summary = [
+    `${view.pages} ${view.pages === 1 ? "page" : "pages"} done`,
+    `${view.saved} saved`,
+    `${view.skipped} skipped`,
+    ...(view.failed > 0 ? [`${view.failed} failed`] : [])
+  ].join(" · ");
+
+  elements.batchSummary.textContent = summary;
+  elements.batchSummary.title = summary;
+
+  const existing = new Map<string, HTMLElement>();
+
+  for (const row of elements.batchRuns.children) {
+    if (row instanceof HTMLElement && row.dataset.runId) {
+      existing.set(row.dataset.runId, row);
+    }
+  }
+
+  const rows = view.runs.map((run) => {
+    const row = existing.get(run.id) ?? createBatchRow(run.id);
+    updateBatchRow(row, run, run.id === view.selectedRunId);
+
+    return row;
+  });
+
+  const sameOrder =
+    rows.length === elements.batchRuns.children.length &&
+    rows.every((row, index) => elements.batchRuns.children[index] === row);
+
+  if (!sameOrder) {
+    elements.batchRuns.replaceChildren(...rows);
   }
 }
 
-export function addLog(
-  elements: PopupElements,
-  message: string,
-  tone?: LogTone,
-  scroll = true
-): void {
-  if (elements.resultLog.querySelector(".log-empty")) {
-    elements.resultLog.innerHTML = "";
+function createBatchRow(runId: string): HTMLElement {
+  const item = document.createElement("li");
+  item.dataset.runId = runId;
+
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "batch-run";
+
+  const title = document.createElement("span");
+  title.className = "batch-run-title truncate";
+
+  const result = document.createElement("span");
+  result.className = "batch-run-result";
+
+  button.append(title, result);
+  item.append(button);
+
+  return item;
+}
+
+function updateBatchRow(row: HTMLElement, run: GatherRunState, selected: boolean): void {
+  const button = row.firstElementChild;
+
+  if (!(button instanceof HTMLButtonElement)) {
+    return;
   }
 
+  const [title, result] = button.children;
+  const label = run.title ?? getPageLabel(run.tabUrl);
+  title.textContent = label;
+  button.title = label;
+  result.textContent = getRunResult(run);
+  button.dataset.tone = getRunTone(run);
+  button.setAttribute("aria-pressed", String(selected));
+}
+
+function getRunResult(run: GatherRunState): string {
+  const { completed, total, saved, skipped, failed } = run.progress;
+
+  if (!isTerminalGatherRunPhase(run.phase)) {
+    return run.phase === "writing" || run.phase === "cancelling"
+      ? `${completed} of ${total}`
+      : "Starting";
+  }
+
+  if (run.phase === "cancelled") {
+    return "Cancelled";
+  }
+
+  if (run.phase === "interrupted") {
+    return "Interrupted";
+  }
+
+  if (run.phase === "failed" && failed === 0) {
+    return "Failed";
+  }
+
+  return [
+    `${saved} saved`,
+    ...(skipped > 0 ? [`${skipped} skipped`] : []),
+    ...(failed > 0 ? [`${failed} failed`] : [])
+  ].join(" · ");
+}
+
+function getRunTone(run: GatherRunState): string {
+  if (!isTerminalGatherRunPhase(run.phase)) {
+    return "active";
+  }
+
+  return run.phase === "complete" ? "success" : "error";
+}
+
+function getPageLabel(url: string): string {
+  try {
+    const { hostname, pathname } = new URL(url);
+
+    return `${hostname.replace(/^www\./, "")}${pathname}`;
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * Shows a run's log. New entries of the run already shown are appended, and the log stays pinned
+ * to the bottom only while it was scrolled there, so reading older entries is not interrupted.
+ */
+export function showRunLog(
+  elements: PopupElements,
+  runId: string | null,
+  entries: Array<{ message: string; tone?: LogTone }>
+): void {
+  const log = elements.resultLog;
+  const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 8;
+  const shown = log.querySelectorAll(".log-entry").length;
+  // The log remembers whose entries it holds, so a growing run appends instead of re-rendering.
+  const sameRun = runId !== null && runId === log.dataset.runId && entries.length >= shown;
+
+  if (!sameRun) {
+    clearLog(elements);
+  }
+
+  log.dataset.runId = runId ?? "";
+
+  if (entries.length === 0) {
+    log.innerHTML = '<p class="log-empty">No activity yet.</p>';
+
+    return;
+  }
+
+  for (const entry of entries.slice(sameRun ? shown : 0)) {
+    appendLogEntry(log, entry.message, entry.tone);
+  }
+
+  if (!sameRun || atBottom) {
+    log.scrollTop = log.scrollHeight;
+  }
+}
+
+function clearLog(elements: PopupElements): void {
+  elements.resultLog.innerHTML = "";
+}
+
+/** Adds a message of the panel's own, which no run's log holds. */
+export function addLog(elements: PopupElements, message: string, tone?: LogTone): void {
+  const log = elements.resultLog;
+
+  if (log.querySelector(".log-empty")) {
+    log.innerHTML = "";
+  }
+
+  // The next run update re-renders, so its entries are not mistaken for ones already shown.
+  delete log.dataset.runId;
+  appendLogEntry(log, message, tone);
+  log.scrollTop = log.scrollHeight;
+}
+
+function appendLogEntry(log: HTMLElement, message: string, tone?: LogTone): void {
   const entry = document.createElement("p");
   entry.className = tone ? `log-entry ${tone}` : "log-entry";
   entry.textContent = message;
-  elements.resultLog.appendChild(entry);
-
-  if (scroll) {
-    elements.resultLog.scrollTop = elements.resultLog.scrollHeight;
-  }
+  log.appendChild(entry);
 }
 
 export function setLogExpanded(elements: PopupElements, expanded: boolean): void {
@@ -214,60 +393,27 @@ export function flashDownloadComplete(elements: PopupElements): void {
   }, 2000);
 }
 
-export function updateSaveBehavior(siteKey: SiteKey | null): void {
-  const behavior = getSaveBehavior(siteKey);
-  const block = document.getElementById("saveBlock-mini");
-  const pattern = document.getElementById("savePattern-mini");
-  const summary = document.getElementById("saveSummary-mini");
-  const path = document.getElementById("savePath-mini");
-  const file = document.getElementById("saveFile-mini");
+/**
+ * Where a gather from this site saves, written from the chosen folder down, plus a note when the
+ * files are renamed on the way.
+ */
+export function setSaveBehavior(
+  elements: PopupElements,
+  behavior: SaveBehavior | null,
+  folderName: string | null
+): void {
+  elements.saveBlock.hidden = behavior === null;
 
   if (!behavior) {
-    if (block) block.hidden = true;
-
-    if (pattern) {
-      pattern.textContent = "";
-      pattern.removeAttribute("data-pattern");
-      pattern.hidden = true;
-    }
-
-    if (summary) summary.textContent = "";
-
-    if (path) path.textContent = "";
-
-    if (file) file.hidden = true;
-
     return;
   }
 
-  if (block) block.hidden = false;
-
-  if (pattern) {
-    pattern.textContent = behavior.tag;
-    pattern.dataset.pattern = behavior.pattern;
-    pattern.hidden = false;
-  }
-
-  if (summary) summary.textContent = behavior.summary;
-
-  if (path) renderPathInline(path, behavior);
-
-  if (file) {
-    file.textContent = behavior.filePattern;
-    file.hidden = false;
-  }
-}
-
-function renderPathInline(el: HTMLElement, behavior: SaveBehavior): void {
-  const segments = behavior.pathTemplate.split("/").filter(Boolean);
-  let text = segments.join(" / ");
-
-  if (behavior.pattern === "direct-file") {
-    const fileName = behavior.filePattern.split("(")[0].trim();
-    text += ` / ${fileName}`;
-  }
-
-  el.textContent = text;
+  const root = document.createElement("span");
+  root.className = "save-root";
+  root.textContent = folderName ?? "<folder>";
+  elements.savePath.replaceChildren(root, behavior.pathTemplate.replace(/^<root>/, ""));
+  elements.saveNote.textContent = behavior.fileNote ?? "";
+  elements.saveNote.hidden = !behavior.fileNote;
 }
 
 export function requireElement<T extends HTMLElement>(
