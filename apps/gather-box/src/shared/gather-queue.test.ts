@@ -12,6 +12,7 @@ import {
   GatherQueueStateSchema,
   recordGatherQueueResult,
   recoverStoppedGatherQueue,
+  withdrawGatherQueueResult,
   type GatherQueueJob,
   type GatherQueueState
 } from "./gather-queue";
@@ -64,6 +65,35 @@ function run<
       message: phase === "writing" ? "Writing Gather Output..." : "Queued."
     }
   };
+}
+
+function finished(id: string, createdAt: number, updatedAt: number, saved: number, failed = 0) {
+  return {
+    ...run(id, "writing"),
+    phase: "complete" as const,
+    createdAt,
+    updatedAt,
+    progress: { completed: saved, total: saved, saved, skipped: 1, failed, message: "" },
+    retryImages: failed > 0 ? payload(id).images : []
+  };
+}
+
+function waiting(id: string, createdAt: number): GatherQueueJob {
+  return {
+    kind: "output",
+    run: { ...run(id, "queued"), createdAt },
+    payload: payload(id),
+    settings: DEFAULT_SETTINGS,
+    destinationId: null,
+    profileId: DEFAULT_PROFILE_ID
+  };
+}
+
+function finish(queue: GatherQueueState, result: GatherRunState): GatherQueueState {
+  return recordGatherQueueResult(
+    { ...queue, jobs: queue.jobs.filter((job) => job.run.id !== result.id) },
+    result
+  );
 }
 
 describe("Gather queue state", () => {
@@ -319,29 +349,6 @@ describe("Gather queue state", () => {
   });
 
   it("tallies every run that went through the queue together, listing only the latest", () => {
-    const finished = (id: string, createdAt: number, updatedAt: number, saved: number) => ({
-      ...run(id, "writing"),
-      phase: "complete" as const,
-      createdAt,
-      updatedAt,
-      progress: { completed: saved, total: saved, saved, skipped: 1, failed: 0, message: "" }
-    });
-
-    const waiting = (id: string, createdAt: number): GatherQueueJob => ({
-      kind: "output",
-      run: { ...run(id, "queued"), createdAt },
-      payload: payload(id),
-      settings: DEFAULT_SETTINGS,
-      destinationId: null,
-      profileId: DEFAULT_PROFILE_ID
-    });
-
-    const finish = (queue: GatherQueueState, result: GatherRunState) =>
-      recordGatherQueueResult(
-        { ...queue, jobs: queue.jobs.filter((job) => job.run.id !== result.id) },
-        result
-      );
-
     // run-1 finishes with nothing else queued, so the queue empties and its batch closes.
     let queue = finish({ ...EMPTY_GATHER_QUEUE, jobs: [waiting("run-1", 0)] }, finished("run-1", 0, 10, 5));
     queue = { ...queue, jobs: Array.from({ length: 8 }, (_, index) => waiting(`run-${index + 2}`, 20)) };
@@ -367,5 +374,33 @@ describe("Gather queue state", () => {
     // Once the queue is idle, a page gathered later starts a batch of its own.
     queue = finish({ ...queue, jobs: [waiting("run-10", 50)] }, finished("run-10", 50, 60, 1));
     expect(getGatherQueueBatch(queue)).toMatchObject({ recent: [{ id: "run-10" }], pages: 1 });
+  });
+
+  it("keeps a retry in its batch and keeps retryable results past the cap", () => {
+    let queue = finish(
+      { ...EMPTY_GATHER_QUEUE, jobs: [waiting("run-1", 0), waiting("run-2", 0)] },
+      finished("run-1", 0, 10, 4, 2)
+    );
+
+    for (let index = 2; index <= 12; index += 1) {
+      queue = finish(queue, finished(`run-${index}`, 0, 10 + index, 1));
+    }
+
+    // run-1 fell out of the latest ten but still has failed items, so it stays without its log.
+    expect(queue.results).toHaveLength(11);
+    expect(getRetryableGatherQueueResult(queue)).toMatchObject({ id: "run-1", log: [] });
+
+    // The queue is empty, so the batch is closed. Retrying run-1 opens it again.
+    const retried = getRetryableGatherQueueResult(queue)!;
+    queue = withdrawGatherQueueResult({ ...queue, jobs: [waiting("retry", 30)] }, retried);
+    expect(getGatherQueueBatch(queue)).toMatchObject({ pages: 11, saved: 15, failed: 0 });
+
+    queue = finish(queue, finished("retry", 30, 40, 2));
+    expect(getGatherQueueBatch(queue)).toMatchObject({
+      recent: [{ id: "retry" }, { id: "run-12" }, { id: "run-11" }, { id: "run-10" }, { id: "run-9" }],
+      pages: 12,
+      saved: 17,
+      failed: 0
+    });
   });
 });

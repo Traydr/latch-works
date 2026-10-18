@@ -501,6 +501,7 @@ export class GatherController {
       });
 
       if (response.outcome === "started" || response.outcome === "queued") {
+        this.viewedRunId = null;
         this.applyGatherRun(response.run);
 
         if (response.outcome === "queued") {
@@ -597,6 +598,7 @@ export class GatherController {
     });
 
     if (response.outcome === "started" || response.outcome === "queued") {
+      this.viewedRunId = null;
       this.applyGatherRun(response.run);
     } else if (response.outcome === "failed") {
       this.appendLog(response.message, "error");

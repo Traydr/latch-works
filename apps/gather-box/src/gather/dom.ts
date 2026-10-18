@@ -309,8 +309,13 @@ export function showRunLog(
   const log = elements.resultLog;
   const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 8;
   const shown = log.querySelectorAll(".log-entry").length;
+
   // The log remembers whose entries it holds, so a growing run appends instead of re-rendering.
-  const sameRun = runId !== null && runId === log.dataset.runId && entries.length >= shown;
+  const sameRun =
+    runId !== null &&
+    runId === log.dataset.runId &&
+    entries.length >= shown &&
+    !log.querySelector(".log-empty");
 
   if (!sameRun) {
     clearLog(elements);

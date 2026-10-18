@@ -19,7 +19,10 @@ export const GATHER_QUEUE_SCHEMA_VERSION = 1;
 
 export const MAX_GATHER_QUEUE_LENGTH = 100;
 
-/** Finished runs kept in full. The batch tally counts every run, however many fall off. */
+/**
+ * Finished runs kept in full. Older ones stay only while they have failed items to retry, and
+ * the batch tally counts every run, however many fall off.
+ */
 export const MAX_GATHER_QUEUE_RESULTS = 10;
 
 /** Finished runs listed under the batch summary. */
@@ -137,9 +140,9 @@ export const GatherQueueStateSchema = z.catch(
       (queue): GatherQueueState => ({
         schemaVersion: queue.schemaVersion,
         jobs: queue.jobs.filter((job) => job !== null).slice(0, MAX_GATHER_QUEUE_LENGTH),
-        results: queue.results
-          .filter((run) => isTerminalGatherRunPhase(run.phase))
-          .slice(-MAX_GATHER_QUEUE_RESULTS),
+        results: trimGatherQueueResults(
+          queue.results.filter((run) => isTerminalGatherRunPhase(run.phase))
+        ),
         batch: queue.batch
       })
     )
@@ -202,29 +205,56 @@ export function recordGatherQueueResult(
 
   return {
     ...queue,
-    results: [...queue.results.filter((result) => result.id !== run.id), run].slice(
-      -MAX_GATHER_QUEUE_RESULTS
-    ),
+    results: trimGatherQueueResults([
+      ...queue.results.filter((result) => result.id !== run.id),
+      run
+    ]),
     batch: tallyRun(batch, run, 1)
   };
 }
 
 /**
+ * Keeps the latest results in full. An older result that can still be retried stays without its
+ * log, so a failure early in a long queue can still be retried and copied.
+ */
+function trimGatherQueueResults(results: GatherRunState[]): GatherRunState[] {
+  const firstKept = results.length - MAX_GATHER_QUEUE_RESULTS;
+
+  return results
+    .flatMap((result, index) => {
+      if (index >= firstKept) {
+        return [result];
+      }
+
+      return result.retryImages.length > 0 ? [{ ...result, log: [] }] : [];
+    })
+    .slice(-MAX_GATHER_QUEUE_LENGTH);
+}
+
+/**
  * Drops a result whose failed items are being retried. Its saved and skipped items stay counted,
- * while its failures and its page now belong to the retry run.
+ * while its failures and its page now belong to the retry run. A batch that already finished
+ * opens again, so the retry joins it rather than starting a batch of its own.
  */
 export function withdrawGatherQueueResult(
   queue: GatherQueueState,
   run: GatherRunState
 ): GatherQueueState {
   const batch = queue.batch;
-  const counted = batch !== null && !batch.closed && run.updatedAt >= batch.startedAt;
+
+  const counted =
+    batch !== null && run.updatedAt >= batch.startedAt && run.updatedAt <= batch.endedAt;
 
   return {
     ...queue,
     results: queue.results.filter((result) => result.id !== run.id),
     batch: counted
-      ? { ...batch, pages: batch.pages - 1, failed: batch.failed - run.progress.failed }
+      ? {
+          ...batch,
+          closed: false,
+          pages: batch.pages - 1,
+          failed: batch.failed - run.progress.failed
+        }
       : batch
   };
 }
