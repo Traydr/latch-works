@@ -1,18 +1,25 @@
-import {
-  GATHER_SOURCES,
-  getGatherSource,
-  type SiteKey,
-  type SourceSaveBehavior
-} from "./source-catalog";
+import type { GatherBoxSettings } from "./settings";
+import { getGatherSource, type SiteKey, type SourceSaveBehavior } from "./source-catalog";
 
 export type SaveBehavior = SourceSaveBehavior;
 
-export type { SavePattern } from "./source-catalog";
+export function getSaveBehavior(
+  siteKey: SiteKey | null,
+  settings: Pick<GatherBoxSettings, "xPostFolders">
+): SaveBehavior | null {
+  const behavior = siteKey ? getGatherSource(siteKey)?.save : undefined;
 
-export function getSaveBehavior(siteKey: SiteKey | null): SaveBehavior | null {
-  return siteKey ? (getGatherSource(siteKey)?.save ?? null) : null;
-}
+  if (!behavior) {
+    return null;
+  }
 
-export function getAllSaveBehaviors(): Array<SaveBehavior & { siteKey: SiteKey }> {
-  return GATHER_SOURCES.map((source) => ({ siteKey: source.key, ...source.save }));
+  // Mirrors groupXPostInFolder, which only applies with this setting on.
+  if (siteKey === "x" && settings.xPostFolders) {
+    return {
+      pathTemplate: `${behavior.pathTemplate}[<post id>/]`,
+      fileNote: "Multi-image posts get a folder and number their files 01_, 02_, …"
+    };
+  }
+
+  return behavior;
 }

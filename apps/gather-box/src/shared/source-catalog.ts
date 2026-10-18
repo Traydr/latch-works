@@ -21,19 +21,11 @@ export const GatherOutputKindSchema = z.enum(["downloadable-files", "generated-s
 
 export type GatherOutputKind = z.infer<typeof GatherOutputKindSchema>;
 
-const SavePatternSchema = z.enum(["nested", "single-folder", "direct-file", "conditional"]);
-
-export type SavePattern = z.infer<typeof SavePatternSchema>;
-
 export interface SourceSaveBehavior {
-  pattern: SavePattern;
-  folderDepth: number;
-  summary: string;
-  detail: string;
+  /** Where a gather saves, starting from the chosen folder as `<root>`. */
   pathTemplate: string;
-  filePattern: string;
-  tag: string;
-  railCode: string;
+  /** Set only when files are renamed rather than keeping the site's filenames. */
+  fileNote?: string;
 }
 
 export interface GatherSource {
@@ -71,16 +63,7 @@ const SerializedGatherSourceSchema = z.object({
   outputKinds: z.array(GatherOutputKindSchema),
   includeCredentialsByDefault: z.boolean(),
   downloadUrlPatterns: z.array(z.string()),
-  save: z.object({
-    pattern: SavePatternSchema,
-    folderDepth: z.number(),
-    summary: z.string(),
-    detail: z.string(),
-    pathTemplate: z.string(),
-    filePattern: z.string(),
-    tag: z.string(),
-    railCode: z.string()
-  })
+  save: z.object({ pathTemplate: z.string(), fileNote: z.optional(z.string()) })
 });
 
 export const GATHER_SOURCES: readonly GatherSource[] = z

@@ -42,6 +42,8 @@ export interface GatherRunState {
   windowId: number;
   tabUrl: string;
   siteKey: SiteKey;
+  /** The gathered page's title, known once collection captures it. */
+  title: string | null;
   createdAt: number;
   updatedAt: number;
   phase: GatherRunPhase;
@@ -87,6 +89,7 @@ export function createGatherRunState(input: {
     windowId: input.windowId,
     tabUrl: input.tabUrl,
     siteKey: input.siteKey,
+    title: null,
     createdAt: now,
     updatedAt: now,
     phase: "preparing",
@@ -132,6 +135,7 @@ export const GatherRunStateSchema = z.object({
   windowId: z.number(),
   tabUrl: z.string(),
   siteKey: SiteKeySchema,
+  title: z.catch(z.nullable(z.string()), null),
   createdAt: z.number(),
   updatedAt: z.number(),
   phase: GatherRunPhaseSchema,

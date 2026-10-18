@@ -142,8 +142,21 @@ body {
 
 .save-row {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 8px;
+  min-width: 0;
+  padding: 0 2px;
+}
+
+.save-row[hidden] {
+  display: none;
+}
+
+.save-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
 
 .line-label {
@@ -167,6 +180,10 @@ body {
   color: var(--muted-foreground);
 }
 
+.line-hint:empty {
+  display: none;
+}
+
 .mono {
   font-family: var(--mono);
 }
@@ -178,55 +195,20 @@ body {
   white-space: nowrap;
 }
 
-.save-block {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 0 2px;
-}
-
-.save-tag {
-  font: 700 9px var(--mono);
-  letter-spacing: 0.06em;
-  padding: 2px 6px;
-  border-radius: 4px;
-  border: 1px solid var(--p-border, var(--surface-border));
-  background: var(--p-bg, transparent);
-  color: var(--p-color, var(--muted-foreground));
-}
-
-[data-pattern="nested"] {
-  --p-color: var(--accent-hover);
-  --p-border: var(--accent-border);
-  --p-bg: var(--accent-muted);
-}
-
-[data-pattern="single-folder"] {
-  --p-color: var(--amber);
-  --p-border: rgba(251, 191, 36, 0.4);
-  --p-bg: rgba(251, 191, 36, 0.12);
-}
-
-[data-pattern="direct-file"] {
-  --p-color: var(--success);
-  --p-border: rgba(16, 185, 129, 0.35);
-  --p-bg: var(--success-muted);
-}
-
-[data-pattern="conditional"] {
-  --p-color: #67e8f9;
-  --p-border: rgba(34, 211, 238, 0.4);
-  --p-bg: rgba(34, 211, 238, 0.12);
-}
-
 .save-path {
   font-family: var(--mono);
   font-size: 12px;
   line-height: 1.5;
+  color: var(--muted-foreground);
+  overflow-wrap: anywhere;
+}
+
+.save-root {
   color: var(--foreground);
-  white-space: normal;
-  word-break: break-all;
-  padding: 0 2px;
+}
+
+.save-facts .line-hint {
+  padding: 0;
 }
 
 /* ===== Small tool buttons ===== */
@@ -238,7 +220,7 @@ body {
   background: #1c1c21;
   color: #d4d4d8;
   font: 500 11px var(--sans);
-  padding: 5px 11px;
+  padding: 5px 9px;
   cursor: pointer;
   transition: background 0.12s, opacity 0.12s;
 }
@@ -274,13 +256,29 @@ body {
 .history-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
 }
 
 .history-tools {
   display: flex;
   gap: 6px;
+  margin-left: auto;
+}
+
+.progress-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 12px;
+}
+
+.queue-count {
+  flex-shrink: 0;
+  white-space: nowrap;
+  font: 600 10px var(--sans);
+  letter-spacing: 0.04em;
+  color: var(--accent-hover);
+  font-variant-numeric: tabular-nums;
 }
 
 .history-progress {
@@ -290,7 +288,8 @@ body {
 }
 
 .run-progress {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   height: 5px;
   border: 0;
   border-radius: 3px;
@@ -312,29 +311,131 @@ body {
   background: var(--accent);
 }
 
+/* Each status line holds one line of text, so changing messages never move what is below. */
 .status-line {
   margin: 0;
   display: flex;
   align-items: baseline;
   gap: 8px;
   min-width: 0;
+  line-height: 16px;
 }
 
 .status-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 11px;
   color: var(--muted-foreground);
   font-variant-numeric: tabular-nums;
 }
 
+/* Cut long paths from the front: the deepest folders say the most. */
 .destination {
+  height: 16px;
   padding: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+  line-height: 16px;
   color: var(--accent-hover);
-  word-break: break-all;
+}
+
+.destination > span {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+/* ===== Queue batch ===== */
+
+.batch {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 -10px;
+  padding: 8px 10px 0;
+  border-top: 1px solid var(--surface-border);
+}
+
+.batch[hidden] {
+  display: none;
+}
+
+.batch-summary {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+.batch-runs {
+  max-height: 122px;
+  margin: 0 -6px;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.batch-run {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted-foreground);
+  font: 11px/1.5 var(--sans);
+  text-align: left;
+  padding: 2px 6px;
+  cursor: pointer;
+}
+
+.batch-run:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.batch-run[aria-pressed="true"] {
+  background: var(--accent-muted);
+  color: var(--foreground);
+}
+
+.batch-run:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+.batch-run-title {
+  flex: 1;
+}
+
+.batch-run-result {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.batch-run[data-tone="success"] .batch-run-result {
+  color: var(--success);
+}
+
+.batch-run[data-tone="error"] .batch-run-result {
+  color: var(--destructive);
+}
+
+.batch-run[data-tone="active"] .batch-run-result {
+  color: var(--accent-hover);
 }
 
 /* Status badge: quiet colored text, no pill chrome. */
 .badge {
   flex-shrink: 0;
+  min-width: 11.5ch;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.08em;

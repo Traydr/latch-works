@@ -4,16 +4,18 @@ import {
   addLog,
   flashDownloadComplete,
   getPopupElements,
+  renderBatch,
   renderProfiles,
-  restoreLog,
   setBadge,
   setDestinationPreview,
   setFolder,
   setLogExpanded,
   setPageState,
   setProgress,
+  setQueuedCount,
+  setSaveBehavior,
+  showRunLog,
   syncActions,
-  updateSaveBehavior,
   type LogTone,
   type PopupElements
 } from "../gather/dom";
@@ -25,6 +27,7 @@ import {
   type SiteKey
 } from "./sites";
 import { getGatherSource } from "./source-catalog";
+import { getSaveBehavior } from "./save-behavior";
 import {
   EMPTY_LAST_RUN,
   LastRunWriter,
@@ -46,7 +49,9 @@ import {
   type StartGatherRunRequest
 } from "./gather-run-messages";
 import {
+  EMPTY_GATHER_QUEUE,
   GATHER_QUEUE_STATE_KEY,
+  getGatherQueueBatch,
   getGatherQueueDisplayRun,
   getLatestGatherQueueResult,
   getRetryableGatherQueueResult,
@@ -109,6 +114,9 @@ export class GatherController {
   private readonly options: GatherControllerOptions;
   /** Retry writes under the failed run's site, not whichever tab is active now. */
   private retryTarget: { runId: string; siteKey: SiteKey } | null = null;
+  private queue: GatherQueueState = EMPTY_GATHER_QUEUE;
+  /** The finished run whose log is shown; null follows the run in progress. */
+  private viewedRunId: string | null = null;
   /** Bumped on every folder restore, so a slower earlier restore cannot overwrite a newer one. */
   private folderRestoreToken = 0;
   private keydownHandler: ((event: KeyboardEvent) => void) | null = null;
@@ -161,6 +169,13 @@ export class GatherController {
     });
     this.elements.manageProfiles.addEventListener("click", () => {
       void chrome.tabs.create({ url: chrome.runtime.getURL("options/options.html#profiles") });
+    });
+    this.elements.batchRuns.addEventListener("click", (event) => {
+      const row = event.target instanceof Element ? event.target.closest("li") : null;
+
+      if (row instanceof HTMLElement && row.dataset.runId) {
+        this.handleViewRun(row.dataset.runId);
+      }
     });
     this.elements.openSidePanelButton?.addEventListener("click", () => {
       this.options.onOpenSidePanel?.();
@@ -237,7 +252,7 @@ export class GatherController {
 
     this.setStatus("idle");
     resetProgress(this.elements);
-    restoreLog(this.elements, this.logEntries);
+    showRunLog(this.elements, null, this.logEntries);
 
     if (this.state.lastRun.destinationPreview) {
       setDestinationPreview(this.elements, this.state.lastRun.destinationPreview);
@@ -253,7 +268,6 @@ export class GatherController {
     this.state.settings = await loadSettings();
     await this.restoreSavedDirectoryHandle();
     this.syncPopupActions();
-    updateSaveBehavior(this.state.siteKey);
   }
 
   async refreshProfiles(): Promise<void> {
@@ -293,7 +307,6 @@ export class GatherController {
       if (!tab || tab.id === undefined || !tab.url) {
         this.state.siteKey = null;
         setPageState(this.elements, false, "No active page detected. Open a supported post page, then reopen Gather Box.");
-        updateSaveBehavior(this.state.siteKey);
         await this.restoreSavedDirectoryHandle();
         this.syncPopupActions();
 
@@ -307,7 +320,6 @@ export class GatherController {
           false,
           "This isn't a supported page. Open an X, Reddit post, pixiv artwork, AO3, or fanfiction.net page."
         );
-        updateSaveBehavior(this.state.siteKey);
         await this.restoreSavedDirectoryHandle();
         this.syncPopupActions();
 
@@ -316,14 +328,12 @@ export class GatherController {
 
       this.state.siteKey = getSiteKeyFromUrl(tab.url);
       setPageState(this.elements, true);
-      updateSaveBehavior(this.state.siteKey);
       await this.restoreSavedDirectoryHandle();
       this.syncPopupActions();
     } catch (error) {
       this.state.siteKey = null;
       this.state.directoryHandle = null;
       setPageState(this.elements, false, formatError(toError(error)));
-      updateSaveBehavior(this.state.siteKey);
       this.syncPopupActions();
     }
   }
@@ -354,7 +364,7 @@ export class GatherController {
 
       await this.setDirectoryHandle(directoryHandle);
       this.elements.folderDetail.textContent = this.state.siteKey
-        ? `Remembered for ${this.getScopeLabel()}.`
+        ? ""
         : "Available for this session.";
       this.appendLog(`Folder selected: ${directoryHandle.name}`, "success");
       this.setStatus("idle");
@@ -491,6 +501,7 @@ export class GatherController {
       });
 
       if (response.outcome === "started" || response.outcome === "queued") {
+        this.viewedRunId = null;
         this.applyGatherRun(response.run);
 
         if (response.outcome === "queued") {
@@ -587,6 +598,7 @@ export class GatherController {
     });
 
     if (response.outcome === "started" || response.outcome === "queued") {
+      this.viewedRunId = null;
       this.applyGatherRun(response.run);
     } else if (response.outcome === "failed") {
       this.appendLog(response.message, "error");
@@ -640,7 +652,7 @@ export class GatherController {
       }
 
       this.state.directoryHandle = directoryHandle;
-      setFolder(this.elements, directoryHandle.name, `Remembered for ${scopeLabel}.`);
+      setFolder(this.elements, directoryHandle.name, "");
     } catch (error) {
       if (token === this.folderRestoreToken) {
         this.elements.folderDetail.textContent =
@@ -699,6 +711,11 @@ export class GatherController {
     );
     this.elements.downloadButton.textContent = runInFlight ? "Add to Queue" : "Download Content";
     renderProfiles(this.elements, this.state.profiles, this.state.running);
+    setSaveBehavior(
+      this.elements,
+      getSaveBehavior(this.state.siteKey, this.state.settings),
+      this.state.directoryHandle?.name ?? null
+    );
   }
 
   private setStatus(status: PopupStatus): void {
@@ -740,7 +757,10 @@ export class GatherController {
     }
 
     this.logEntries = [...run.log];
-    restoreLog(this.elements, this.logEntries);
+
+    if (this.viewedRunId === null) {
+      showRunLog(this.elements, run.id, this.logEntries);
+    }
 
     if (run.phase === "complete") {
       flashDownloadComplete(this.elements);
@@ -750,15 +770,41 @@ export class GatherController {
   }
 
   private applyGatherQueue(queue: GatherQueueState): void {
+    this.queue = queue;
     const displayed = getGatherQueueDisplayRun(queue);
     const latest = getLatestGatherQueueResult(queue);
     const retryable = getRetryableGatherQueueResult(queue);
+    const batch = getGatherQueueBatch(queue);
+    const batchRuns = displayed ? [displayed, ...batch.recent] : batch.recent;
+    const viewed = batchRuns.find((run) => run.id === this.viewedRunId) ?? null;
+
+    // A run that left the batch can no longer be picked, so the log goes back to the current one.
+    this.viewedRunId = viewed?.id ?? null;
 
     if (displayed) {
       this.applyGatherRun(displayed);
     } else if (latest) {
       this.applyGatherRun(latest);
     }
+
+    if (viewed) {
+      showRunLog(this.elements, viewed.id, viewed.log);
+    }
+
+    setQueuedCount(this.elements, displayed?.queuedCount ?? 0);
+    renderBatch(
+      this.elements,
+      batchRuns.length > 1
+        ? {
+            runs: batchRuns,
+            selectedRunId: viewed?.id ?? batchRuns[0].id,
+            pages: batch.pages,
+            saved: batch.saved,
+            skipped: batch.skipped,
+            failed: batch.failed
+          }
+        : null
+    );
 
     const actionResult = retryable ?? latest;
 
@@ -770,6 +816,13 @@ export class GatherController {
     }
 
     this.syncPopupActions();
+  }
+
+  /** Picking the newest run, or the one already shown, returns the log to following the queue. */
+  private handleViewRun(runId: string): void {
+    const current = getGatherQueueDisplayRun(this.queue) ?? getLatestGatherQueueResult(this.queue);
+    this.viewedRunId = runId === current?.id || runId === this.viewedRunId ? null : runId;
+    this.applyGatherQueue(this.queue);
   }
 
   private appendLog(message: string, tone?: LogTone): void {
