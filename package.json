@@ -25,14 +25,14 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",
-    "@oxlint/plugins": "1.86.0",
-    "@types/node": "^26.6.3",
-    "knip": "^6.39.0",
+    "@oxlint/plugins": "1.88.0",
+    "@types/node": "^26.6.5",
+    "knip": "^6.41.0",
     "lodash": "4.18.1",
-    "oxlint": "1.86.0",
-    "railway": "^3.12.0",
+    "oxlint": "1.88.0",
+    "railway": "^3.16.0",
     "sharp": "^0.35.5",
     "typescript": "^7.0.2",
-    "vitest": "^5.0.3"
+    "vitest": "^5.0.4"
   }
 }
