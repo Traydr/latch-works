@@ -76,6 +76,9 @@
     "packages/media-index": {
       "entry": ["src/**/*.test.ts"]
     },
+    "packages/glazier-core": {
+      "entry": ["src/**/*.test.ts"]
+    },
     "packages/media-format": {
       "entry": ["src/**/*.test.ts"]
     },
