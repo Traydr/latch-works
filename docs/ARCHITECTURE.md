@@ -12,11 +12,29 @@ source-object storage, and source retention.
 | Lockstep | Desktop sync planning and push UX |
 | Lockstep CLI | Scriptable sync client over `lockstep-core` |
 | Frame View | Local desktop viewer |
+| Glazier | Desktop workbench that audits and tidies the local archive |
 | Gather Box | Browser collector whose side panel controls independently owned Gather Runs |
 | Showcase | Marketing and ecosystem documentation |
 
 Shared media identity and path behavior live in `media-domain`; archive scanning and sync planning
-live in `media-index`; S3-compatible source storage lives in `media-storage`.
+live in `media-index`; S3-compatible source storage lives in `media-storage`; the archive format
+policy (AVIF stills, MP4 video, the AVIF encoder settings) lives in `media-format`, shared by
+Gather Box and Glazier.
+
+## Glazier
+
+Glazier is the one app that changes the local archive in bulk, so every change is a plan the owner
+reviews, applied step by step by an executor that re-reads each file first and skips one that
+changed since the scan. Removed files and replaced originals move to `.glazier-holding` inside
+their own root, a folder every scanner skips, so a removal is a same-volume rename the journal can
+undo; emptying it uses the system Trash.
+
+The engine (`glazier-core`) runs in a utility process with its SQLite catalog in the app's
+user-data folder; scanning never writes inside a root. AVIF encodes run in a pool of utility
+processes with Gather Box's libavif wasm. Video and animation work runs in a hidden window with
+Mediabunny over WebCodecs, so it gets the machine's hardware encoders; that window reads and writes
+only the paths of the job it was sent. See [the Glazier runbook](./runbooks/glazier.md) and
+[Plan 058](./plans/058-glazier.md).
 
 ## Gather Box
 

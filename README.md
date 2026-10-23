@@ -115,6 +115,7 @@ The scan, sort, grouping, and plan logic all live in `packages/`. Lockstep deskt
 | Gather Box | [`apps/gather-box`](apps/gather-box) | Chrome extension that downloads galleries and story PDFs into local folder structures. |
 | Lockstep | [`apps/lockstep`](apps/lockstep) | Electron sync client with profiles, encrypted tokens, and run history. |
 | Lockstep CLI | [`apps/lockstep-cli`](apps/lockstep-cli) | Scriptable `plan` / `push` / `verify` / `doctor`. npm package `@latch-works/lockstep`. |
+| Glazier | [`apps/glazier`](apps/glazier) | Electron workbench that audits and tidies the local archive: exact and similar duplicates, sound, conversion to AVIF and MP4, with holding and undo. |
 | Showcase | [`apps/showcase`](apps/showcase) | Astro product site and MDX docs: pages, screenshots, getting-started guides. |
 
 ### Shared packages
@@ -125,6 +126,8 @@ The scan, sort, grouping, and plan logic all live in `packages/`. Lockstep deskt
 | `@latch-works/media-index` | [`packages/media-index`](packages/media-index) | Archive scanning and sync-plan generation |
 | `@latch-works/media-storage` | [`packages/media-storage`](packages/media-storage) | Content-addressed S3 object key conventions |
 | `@latch-works/lockstep-core` | [`packages/lockstep-core`](packages/lockstep-core) | Headless sync engine shared by Lockstep desktop and CLI |
+| `@latch-works/media-format` | [`packages/media-format`](packages/media-format) | Archive format policy (AVIF stills, MP4 video) and encoder settings shared by Gather Box and Glazier |
+| `@latch-works/glazier-core` | [`packages/glazier-core`](packages/glazier-core) | Glazier's engine: catalog, scans, duplicates, plans, holding and the journal |
 
 ---
 
@@ -159,6 +162,7 @@ pnpm dev:pane                                  # Pane View  → http://127.0.0.1
 pnpm --filter @latch-works/showcase dev        # Showcase   → http://127.0.0.1:3100
 pnpm dev:lockstep                              # Lockstep desktop (Electron dev)
 pnpm --filter @latch-works/frame-view start    # Frame View (Electron dev)
+pnpm --filter @latch-works/glazier-app start   # Glazier (Electron dev)
 pnpm --filter @latch-works/gather-box build    # Gather Box → dist/, load unpacked in Chrome
 ```
 
@@ -197,6 +201,7 @@ pnpm knip        # Unused files, exports, dependencies
 | --- | --- |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | System architecture and the Shutter delivery model |
 | [`docs/runbooks/lockstep.md`](docs/runbooks/lockstep.md) | Lockstep operations runbook |
+| [`docs/runbooks/glazier.md`](docs/runbooks/glazier.md) | Glazier: what each action does to the archive, holding, undo |
 | [`docs/adr/`](docs/adr) | Architecture decision records |
 | [`docs/latch-works-brand-kit.md`](docs/latch-works-brand-kit.md) | Naming, tone, and product vocabulary |
 | [`docs/electron-macos-signing.md`](docs/electron-macos-signing.md) | Signing and notarizing the Electron apps |
