@@ -357,12 +357,12 @@ importers:
       '@jsquash/avif':
         specifier: 2.1.1
         version: 2.1.1
+      '@latch-works/media-format':
+        specifier: workspace:*
+        version: link:../../packages/media-format
       '@libpdf/core':
         specifier: ^0.5.2
         version: 0.5.2
-      mediabunny:
-        specifier: 1.61.4
-        version: 1.61.4
       zod:
         specifier: ^4.6.7
         version: 4.6.7
@@ -782,6 +782,19 @@ importers:
       vitest:
         specifier: ^5.0.4
         version: 5.0.4(@types/node@26.6.5)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+
+  packages/media-format:
+    dependencies:
+      mediabunny:
+        specifier: 1.61.4
+        version: 1.61.4
+    devDependencies:
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+      vitest:
+        specifier: ^5.0.4
+        version: 5.0.4(@types/node@26.6.5)(jsdom@30.1.2(@noble/hashes@2.4.0))(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
 
   packages/media-index:
     dependencies:

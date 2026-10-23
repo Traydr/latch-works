@@ -32,11 +32,10 @@ export function toError(cause: unknown): Error {
 
 /**
  * The source media decoded, but the encoder could not produce the converted file. The downloaded
- * original is still good, so a caller can keep it instead of failing the item.
+ * original is still good, so a caller can keep it instead of failing the item. The class lives in
+ * the shared archive format package so the AVIF encoder there and the transformer here agree.
  */
-export class MediaEncodeError extends Error {
-  override readonly name = "MediaEncodeError";
-}
+export { MediaEncodeError } from "@latch-works/media-format";
 
 export function formatError(error: Error): string {
   return error.message;

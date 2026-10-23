@@ -1,5 +1,4 @@
 import { BufferTarget, CanvasSource, Mp4OutputFormat, Output, Quality } from "mediabunny";
-import { throwIfAborted } from "./errors";
 
 const DEFAULT_FRAME_DURATION_MICROSECONDS = 100_000;
 
@@ -15,7 +14,7 @@ export interface Mp4VideoSink {
   addFrame(
     timestampSeconds: number,
     durationSeconds: number,
-    options: { keyFrame: boolean }
+    options: { keyFrame: boolean },
   ): Promise<void>;
   /** Resolves with the finished MP4, or rejects if the muxer produced nothing. */
   finalize(): Promise<ArrayBuffer>;
@@ -33,14 +32,14 @@ export const mediabunnyMp4Encoder: Mp4Encoder = {
 
     const output = new Output({
       format: new Mp4OutputFormat({ fastStart: "in-memory" }),
-      target
+      target,
     });
 
     const source = new CanvasSource(canvas, {
       codec: "avc",
       quality: MP4_VIDEO_QUALITY,
       alpha: "discard",
-      keyFrameInterval: 2
+      keyFrameInterval: 2,
     });
 
     output.addVideoTrack(source);
@@ -62,26 +61,40 @@ export const mediabunnyMp4Encoder: Mp4Encoder = {
         if (output.state !== "canceled" && output.state !== "finalized") {
           await output.cancel().catch(() => undefined);
         }
-      }
+      },
     };
-  }
+  },
 };
 
-export async function encodeGifAsMp4(
+export function encodeGifAsMp4(
   blob: Blob,
   signal?: AbortSignal,
-  encoder: Mp4Encoder = mediabunnyMp4Encoder
+  encoder: Mp4Encoder = mediabunnyMp4Encoder,
+): Promise<ArrayBuffer> {
+  return encodeAnimationAsMp4(blob, "image/gif", signal, encoder);
+}
+
+/**
+ * Re-encodes an animated image (GIF, animated WebP, APNG) as an MP4 with one video frame per
+ * image frame, keeping each frame's own duration. `mimeType` names the image format for the
+ * decoder; Chromium decodes all three.
+ */
+export async function encodeAnimationAsMp4(
+  blob: Blob,
+  mimeType: AnimatedImageMimeType,
+  signal?: AbortSignal,
+  encoder: Mp4Encoder = mediabunnyMp4Encoder,
 ): Promise<ArrayBuffer> {
   throwIfAborted(signal);
 
-  if (!(await ImageDecoder.isTypeSupported("image/gif"))) {
-    throw new Error("This Chrome version cannot decode GIF files.");
+  if (!(await ImageDecoder.isTypeSupported(mimeType))) {
+    throw new Error(`This Chromium version cannot decode ${mimeType} files.`);
   }
 
   const decoder = new ImageDecoder({
     data: await blob.arrayBuffer(),
-    type: "image/gif",
-    preferAnimation: true
+    type: mimeType,
+    preferAnimation: true,
   });
 
   let sink: Mp4VideoSink | null = null;
@@ -93,7 +106,7 @@ export async function encodeGifAsMp4(
     const track = decoder.tracks.selectedTrack;
 
     if (!track || track.frameCount < 1) {
-      throw new Error("The GIF does not contain any decodable frames.");
+      throw new Error("The animation does not contain any decodable frames.");
     }
 
     pendingFirstFrame = await decoder.decode({ frameIndex: 0, completeFramesOnly: true });
@@ -103,7 +116,7 @@ export async function encodeGifAsMp4(
     const context = canvas.getContext("2d", { alpha: false });
 
     if (!context) {
-      throw new Error("Could not create a GIF conversion canvas.");
+      throw new Error("Could not create an animation conversion canvas.");
     }
 
     sink = await encoder.open(canvas);
@@ -119,23 +132,21 @@ export async function encodeGifAsMp4(
           : await decoder.decode({ frameIndex, completeFramesOnly: true });
 
       if (!decoded) {
-        throw new Error("The first GIF frame is unavailable.");
+        throw new Error("The first animation frame is unavailable.");
       }
 
       try {
         const durationMicroseconds = Math.max(
           MINIMUM_FRAME_DURATION_MICROSECONDS,
-          decoded.image.duration ?? DEFAULT_FRAME_DURATION_MICROSECONDS
+          decoded.image.duration ?? DEFAULT_FRAME_DURATION_MICROSECONDS,
         );
 
         context.fillStyle = "#000";
         context.fillRect(0, 0, width, height);
         context.drawImage(decoded.image, 0, 0);
-        await sink.addFrame(
-          timestampMicroseconds / 1_000_000,
-          durationMicroseconds / 1_000_000,
-          { keyFrame: frameIndex === 0 }
-        );
+        await sink.addFrame(timestampMicroseconds / 1_000_000, durationMicroseconds / 1_000_000, {
+          keyFrame: frameIndex === 0,
+        });
         timestampMicroseconds += durationMicroseconds;
       } finally {
         decoded.image.close();
@@ -161,4 +172,15 @@ export async function encodeGifAsMp4(
 
 function makeEven(value: number): number {
   return Math.ceil(value / 2) * 2;
+}
+
+/** The animated image formats Chromium's `ImageDecoder` reads frame by frame. */
+export type AnimatedImageMimeType = "image/gif" | "image/webp" | "image/png";
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw signal.reason instanceof Error
+      ? signal.reason
+      : new DOMException("The operation was aborted.", "AbortError");
+  }
 }
