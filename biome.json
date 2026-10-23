@@ -10,6 +10,7 @@
       "!**/out",
       "!**/.vite",
       "!**/.output",
+      "!**/.packaged-runtime",
       "!e2e/.auth",
       "!e2e/.fixtures",
       "!e2e/playwright-report",

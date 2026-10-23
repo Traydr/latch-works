@@ -20,6 +20,7 @@
     "**/out/**",
     "**/.vite/**",
     "**/.output/**",
+    "**/.packaged-runtime/**",
     "**/.astro/**",
     "**/.tanstack/**",
     "**/routeTree.gen.ts",
