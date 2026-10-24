@@ -1,3 +1,5 @@
+import { getFileExtension, replaceFileExtension } from "./file-names.js";
+
 const STILL_IMAGE_EXTENSIONS = new Set(["bmp", "jpeg", "jpg", "png", "webp"]);
 
 export type ArchiveMediaAction = "convert-avif" | "convert-mp4" | "rename-avif" | "rename-mp4";
@@ -13,7 +15,7 @@ export function getExpectedArchiveTarget(fileName: string): string | null {
 
 export function planArchiveMedia(fileName: string, mimeType: string): ArchiveMediaPlan | null {
   const extension = getFileExtension(fileName);
-  const normalizedMimeType = mimeType.toLowerCase().split(";", 1)[0].trim();
+  const normalizedMimeType = (mimeType.toLowerCase().split(";", 1)[0] ?? "").trim();
 
   if (normalizedMimeType === "image/avif") {
     return extension === "avif"
@@ -56,17 +58,32 @@ function planFromExtension(fileName: string): ArchiveMediaPlan | null {
   return null;
 }
 
-function getFileExtension(fileName: string): string {
-  const lastSegment = fileName.split(/[\\/]/).at(-1) ?? fileName;
-  const dotIndex = lastSegment.lastIndexOf(".");
-
-  return dotIndex > 0 ? lastSegment.slice(dotIndex + 1).toLowerCase() : "";
+/** A still or animated image on disk, decoded at its boundary. */
+export interface ArchiveImageSource {
+  fileName: string;
+  /** The image format its bytes are, which can differ from its extension. */
+  format: ArchiveImageFormat;
+  /** 1 for a still; more for an animated GIF, WebP or PNG. */
+  frameCount: number;
 }
 
-function replaceFileExtension(fileName: string, extension: string): string {
-  const lastSlashIndex = Math.max(fileName.lastIndexOf("/"), fileName.lastIndexOf("\\"));
-  const dotIndex = fileName.lastIndexOf(".");
-  const baseName = dotIndex > lastSlashIndex + 1 ? fileName.slice(0, dotIndex) : fileName;
+export type ArchiveImageFormat = "avif" | "bmp" | "gif" | "jpeg" | "png" | "webp";
 
-  return `${baseName}.${extension}`;
+/**
+ * Plans an image already on disk. Unlike {@link planArchiveMedia}, which sees only a download's
+ * name and MIME type, this knows the frame count: an animated GIF, WebP or PNG becomes an MP4 and
+ * a single-frame one an AVIF, so animation is never flattened into a still.
+ */
+export function planArchiveImage(source: ArchiveImageSource): ArchiveMediaPlan | null {
+  if (source.format === "avif") {
+    return getFileExtension(source.fileName) === "avif"
+      ? null
+      : { action: "rename-avif", fileName: replaceFileExtension(source.fileName, "avif") };
+  }
+
+  if (source.frameCount > 1 && source.format !== "bmp" && source.format !== "jpeg") {
+    return { action: "convert-mp4", fileName: replaceFileExtension(source.fileName, "mp4") };
+  }
+
+  return { action: "convert-avif", fileName: replaceFileExtension(source.fileName, "avif") };
 }

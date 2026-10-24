@@ -56,3 +56,23 @@ _Avoid_: Popup session, pending download flag
 The files materialized by a Gather Run. An output is either a batch of source files or one generated
 story PDF.
 _Avoid_: Download response, popup payload
+
+**Glazier**:
+The desktop workbench that audits and tidies the authoritative local archive: inventory, exact and
+similar duplicates, sound, and conversion to the archive formats. Its changes are Glazier Plans.
+_Avoid_: File manager, cleaner, optimizer
+
+**Glazier Plan**:
+A reviewed set of steps (hold, move, rename, convert, remove folder) that Glazier applies only on
+request, re-reading each file first and recording every finished step in its journal for undo.
+_Avoid_: Batch job, auto-fix
+
+**Holding**:
+A root's `.glazier-holding` folder, where removed files and replaced originals wait. Every scanner
+skips it; restoring is a rename back, and emptying sends it to the system Trash.
+_Avoid_: Trash, recycle bin, quarantine
+
+**Archive Format**:
+What the archive stores: AVIF for stills (libavif quality 70, speed 6) and MP4 for everything that
+moves, with tracks in H.264, HEVC or AV1 and AAC or MP3 copied as they are.
+_Avoid_: Optimized format, web format

@@ -1,0 +1,520 @@
+import path from "node:path";
+
+import { isSupportedMediaFile } from "@latch-works/media-domain";
+import {
+  type ArchiveVideoPlan,
+  planStripAudio,
+  planVideoReencode,
+  replaceFileExtension,
+} from "@latch-works/media-format";
+import { z } from "zod";
+
+import type { CatalogDatabase } from "../catalog/database.js";
+import { type FileRecord, toAbsolutePath } from "../catalog/file-rows.js";
+import { getFileRecords } from "../catalog/files.js";
+import {
+  type FileId,
+  FileIdSchema,
+  type PlanId,
+  PlanIdSchema,
+  type PlanKind,
+  type PlanPreview,
+  type PlanRequest,
+  type PlanStepAction,
+  type Root,
+  type Settings,
+  type VideoQuality,
+  VideoQualitySchema,
+} from "../contract.js";
+import { isProtectedPath } from "../duplicates/queries.js";
+import { findOptimizeCandidates, videoSourceOf } from "../optimize/candidates.js";
+import {
+  AnimatedImageMimeTypeSchema,
+  AudioTrackPlanSchema,
+  VideoTrackPlanSchema,
+} from "../optimize/encoders.js";
+import { preferredExtension } from "../scan/sniff.js";
+
+/** What a step does, stored as JSON beside it. The `kind` matches the step's `action` column. */
+export const StepSpecSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("hold"), reason: z.string() }),
+  z.object({ kind: z.literal("move") }),
+  z.object({ kind: z.literal("rename") }),
+  z.object({ kind: z.literal("convert-avif") }),
+  z.object({ kind: z.literal("convert-animation"), mimeType: AnimatedImageMimeTypeSchema }),
+  z.object({
+    kind: z.literal("convert-video"),
+    video: VideoTrackPlanSchema,
+    audio: AudioTrackPlanSchema,
+    quality: VideoQualitySchema,
+    /** Re-encodes must save space to be kept; container moves only need to succeed. */
+    requireSmaller: z.boolean(),
+  }),
+  z.object({ kind: z.literal("remove-folder") }),
+]);
+
+export type StepSpec = z.infer<typeof StepSpecSchema>;
+
+/** A step before it is stored. File steps carry the fingerprint the executor re-checks. */
+interface DraftStep {
+  spec: StepSpec;
+  rootId: Root["id"];
+  fromRel: string;
+  /** The absolute path a move, rename or conversion writes to. */
+  toAbs: string | null;
+  expected: { size: number; mtimeMs: number; ctimeMs: number };
+}
+
+class PlanRequestError extends Error {
+  override readonly name = "PlanRequestError";
+}
+
+interface PlannerContext {
+  db: CatalogDatabase;
+  roots: readonly Root[];
+  settings: Settings;
+}
+
+function fileStep(record: FileRecord, spec: StepSpec, toAbs: string | null): DraftStep {
+  return {
+    spec,
+    rootId: record.root_id,
+    fromRel: record.rel_path,
+    toAbs,
+    expected: { size: record.size, mtimeMs: record.mtime_ms, ctimeMs: record.ctime_ms },
+  };
+}
+
+function besideOriginal(record: FileRecord, name: string): string {
+  return path.join(path.dirname(toAbsolutePath(record.root_path, record.rel_path)), name);
+}
+
+function loadRecords(context: PlannerContext, ids: readonly FileId[]): FileRecord[] {
+  const unique = [...new Set(ids)];
+  const records = getFileRecords(context.db, unique);
+
+  if (records.length !== unique.length) {
+    throw new PlanRequestError("Some files are no longer in the catalog. Rescan and try again.");
+  }
+
+  return records;
+}
+
+type VideoStepResult = { kind: "step"; step: DraftStep } | { kind: "skip"; reason: string };
+
+function videoStep(
+  record: FileRecord,
+  plan: ArchiveVideoPlan,
+  options: { quality: VideoQuality; requireSmaller: boolean },
+): VideoStepResult {
+  if (plan.action !== "convert-mp4") {
+    return {
+      kind: "skip",
+      reason: plan.action === "unsupported" ? plan.reason : "Nothing to change.",
+    };
+  }
+
+  const step = fileStep(
+    record,
+    {
+      kind: "convert-video",
+      video: plan.video,
+      audio: plan.audio,
+      quality: options.quality,
+      requireSmaller: options.requireSmaller,
+    },
+    besideOriginal(record, plan.fileName),
+  );
+
+  return { kind: "step", step };
+}
+
+/** Expands a request into concrete steps against the current catalog. Nothing touches disk. */
+/** A request expanded into steps, with what the owner should know before applying it. */
+export interface PlanDraft {
+  steps: DraftStep[];
+  warnings: string[];
+}
+
+export function draftSteps(context: PlannerContext, request: PlanRequest): PlanDraft {
+  const warnings: string[] = [];
+  const steps: DraftStep[] = [];
+
+  switch (request.kind) {
+    case "hold": {
+      for (const record of loadRecords(context, request.fileIds)) {
+        steps.push(fileStep(record, { kind: "hold", reason: "Removed" }, null));
+      }
+
+      break;
+    }
+
+    case "move": {
+      const target = path.resolve(request.targetDir);
+      const inRoot = context.roots.some((root) => isWithin(target, root.path));
+
+      if (!inRoot) {
+        warnings.push(
+          "The target folder is outside every root, so moved files leave Glazier's catalog.",
+        );
+      }
+
+      for (const record of loadRecords(context, request.fileIds)) {
+        steps.push(fileStep(record, { kind: "move" }, path.join(target, record.name)));
+      }
+
+      break;
+    }
+
+    case "rename": {
+      const records = loadRecords(
+        context,
+        request.renames.map((rename) => rename.fileId),
+      );
+
+      const byId = new Map(records.map((record) => [record.id, record]));
+
+      for (const rename of request.renames) {
+        const record = byId.get(rename.fileId);
+        const name = rename.name.trim();
+
+        if (!record || name === record.name) {
+          continue;
+        }
+
+        if (!isPlainFileName(name)) {
+          throw new PlanRequestError(`"${name}" is not a usable file name.`);
+        }
+
+        steps.push(fileStep(record, { kind: "rename" }, besideOriginal(record, name)));
+      }
+
+      break;
+    }
+
+    case "fix-extension": {
+      for (const record of loadRecords(context, request.fileIds)) {
+        const extension = record.format === null ? null : preferredExtension(record.format);
+
+        if (record.ext_mismatch === 1 && extension !== null) {
+          steps.push(
+            fileStep(
+              record,
+              { kind: "rename" },
+              besideOriginal(record, replaceFileExtension(record.name, extension)),
+            ),
+          );
+        }
+      }
+
+      break;
+    }
+
+    case "optimize": {
+      const wanted = new Set<FileId>(request.fileIds ?? []);
+
+      for (const candidate of findOptimizeCandidates(context.db, request.rootId).candidates) {
+        if (!request.categories.includes(candidate.category)) {
+          continue;
+        }
+
+        if (request.fileIds !== null && !wanted.has(candidate.record.id)) {
+          continue;
+        }
+
+        const target = besideOriginal(candidate.record, candidate.targetName);
+
+        switch (candidate.category) {
+          case "still-to-avif":
+            steps.push(fileStep(candidate.record, { kind: "convert-avif" }, target));
+            break;
+          case "animation-to-mp4":
+            steps.push(
+              fileStep(
+                candidate.record,
+                { kind: "convert-animation", mimeType: candidate.mimeType },
+                target,
+              ),
+            );
+            break;
+          case "video-remux":
+          case "video-convert":
+            steps.push(
+              fileStep(
+                candidate.record,
+                {
+                  kind: "convert-video",
+                  video: candidate.plan.video,
+                  audio: candidate.plan.audio,
+                  quality: context.settings.reencodeQuality,
+                  requireSmaller: false,
+                },
+                target,
+              ),
+            );
+            break;
+          case "rename-avif":
+          case "rename-mp4":
+            steps.push(fileStep(candidate.record, { kind: "rename" }, target));
+            break;
+          default: {
+            const _exhaustive: never = candidate;
+
+            return _exhaustive;
+          }
+        }
+      }
+
+      break;
+    }
+
+    case "reencode":
+    case "strip-audio": {
+      let skipped = 0;
+
+      for (const record of loadRecords(context, request.fileIds)) {
+        const source = record.kind === "video" ? videoSourceOf(record) : null;
+
+        if (source === null) {
+          skipped += 1;
+
+          continue;
+        }
+
+        const step =
+          request.kind === "reencode"
+            ? videoStep(record, planVideoReencode(source, request.codec), {
+                quality: request.quality,
+                requireSmaller: true,
+              })
+            : videoStep(record, planStripAudio(source), {
+                quality: context.settings.reencodeQuality,
+                requireSmaller: false,
+              });
+
+        if (step.kind === "skip") {
+          skipped += 1;
+        } else {
+          steps.push(step.step);
+        }
+      }
+
+      if (skipped > 0) {
+        warnings.push(
+          `${skipped} selected files are not videos Glazier can rewrite and are left out.`,
+        );
+      }
+
+      break;
+    }
+
+    case "resolve-duplicates": {
+      const removed = new Set<number>();
+      const ids = request.groups.flatMap((group) => [group.keep, ...group.remove]);
+      const byId = new Map(loadRecords(context, ids).map((record) => [record.id, record]));
+      let protectedRemovals = 0;
+
+      for (const group of request.groups) {
+        const keeper = byId.get(group.keep);
+
+        if (!keeper || group.remove.includes(group.keep)) {
+          throw new PlanRequestError("Every duplicate group must keep one file.");
+        }
+
+        for (const id of group.remove) {
+          const record = byId.get(id);
+
+          if (!record || removed.has(id)) {
+            continue;
+          }
+
+          removed.add(id);
+
+          if (isProtectedPath(context.settings, record)) {
+            protectedRemovals += 1;
+          }
+
+          steps.push(
+            fileStep(record, { kind: "hold", reason: `Duplicate of ${keeper.rel_path}` }, null),
+          );
+        }
+      }
+
+      if (protectedRemovals > 0) {
+        warnings.push(`${protectedRemovals} of the files to remove are in protected folders.`);
+      }
+
+      break;
+    }
+
+    case "clean-junk": {
+      const records = context.db.all(
+        `SELECT f.id FROM files f WHERE f.root_id = $root AND f.is_junk = 1`,
+        z.object({ id: FileIdSchema }),
+        { $root: request.rootId },
+      );
+
+      for (const record of loadRecords(
+        context,
+        records.map((row) => row.id),
+      )) {
+        steps.push(fileStep(record, { kind: "hold", reason: "System junk" }, null));
+      }
+
+      break;
+    }
+
+    case "remove-empty-folders": {
+      const folders = context.db.all(
+        "SELECT rel_path FROM empty_folders WHERE root_id = $root ORDER BY length(rel_path) DESC",
+        z.object({ rel_path: z.string() }),
+        { $root: request.rootId },
+      );
+
+      for (const folder of folders) {
+        // A folder holding only `.DS_Store` and the like counts as empty; its junk goes first.
+        const junk = context.db.all(
+          "SELECT id FROM files WHERE root_id = $root AND dir = $dir AND is_junk = 1",
+          z.object({ id: FileIdSchema }),
+          { $root: request.rootId, $dir: folder.rel_path },
+        );
+
+        for (const record of loadRecords(
+          context,
+          junk.map((row) => row.id),
+        )) {
+          steps.push(fileStep(record, { kind: "hold", reason: "System junk" }, null));
+        }
+
+        steps.push({
+          spec: { kind: "remove-folder" },
+          rootId: request.rootId,
+          fromRel: folder.rel_path,
+          toAbs: null,
+          expected: { size: 0, mtimeMs: 0, ctimeMs: 0 },
+        });
+      }
+
+      break;
+    }
+
+    default: {
+      const _exhaustive: never = request;
+
+      return _exhaustive;
+    }
+  }
+
+  return { steps, warnings };
+}
+
+function isPlainFileName(name: string): boolean {
+  return (
+    name !== "." &&
+    name !== ".." &&
+    !/[\\/]/.test(name) &&
+    !name.includes("\0") &&
+    name.length <= 255
+  );
+}
+
+export function isWithin(target: string, rootPath: string): boolean {
+  const relative = path.relative(rootPath, target);
+
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+/** Saves a draft plan and its steps, and returns the preview the owner reviews before applying. */
+export function savePlan(
+  context: PlannerContext,
+  request: PlanRequest,
+  draft: PlanDraft,
+): PlanPreview {
+  if (draft.steps.length === 0) {
+    throw new PlanRequestError("There is nothing to do for this selection.");
+  }
+
+  const planId = context.db.transaction(() => {
+    const created = context.db.run(
+      "INSERT INTO plans (kind, created_at, status) VALUES ($kind, $now, 'draft')",
+      { $kind: request.kind, $now: Date.now() },
+    );
+
+    const id = PlanIdSchema.parse(created.lastInsertRowid);
+
+    for (const step of draft.steps) {
+      context.db.run(
+        `INSERT INTO plan_steps (plan_id, action, root_id, from_rel, to_abs, spec, expected_size,
+          expected_mtime_ms, expected_ctime_ms, bytes_before)
+          VALUES ($plan, $action, $root, $from, $to, $spec, $size, $mtime, $ctime, $size)`,
+        {
+          $plan: id,
+          $action: step.spec.kind,
+          $root: step.rootId,
+          $from: step.fromRel,
+          $to: step.toAbs,
+          $spec: JSON.stringify(step.spec),
+          $size: step.expected.size,
+          $mtime: step.expected.mtimeMs,
+          $ctime: step.expected.ctimeMs,
+        },
+      );
+    }
+
+    return id;
+  });
+
+  return previewOf(context, { planId, kind: request.kind, draft });
+}
+
+function previewOf(
+  context: PlannerContext,
+  plan: {
+    planId: PlanId;
+    kind: PlanKind;
+    draft: PlanDraft;
+  },
+): PlanPreview {
+  const counts = new Map<PlanStepAction, number>();
+  let bytesToHolding = 0;
+  let bytesTouched = 0;
+  let removedPaths = 0;
+  let addedPaths = 0;
+
+  for (const step of plan.draft.steps) {
+    counts.set(step.spec.kind, (counts.get(step.spec.kind) ?? 0) + 1);
+    bytesTouched += step.expected.size;
+
+    if (step.spec.kind === "hold") {
+      bytesToHolding += step.expected.size;
+    }
+
+    if (step.spec.kind === "remove-folder") {
+      continue;
+    }
+
+    // Lockstep only syncs media; junk and other files never reach Pane View.
+    if (isSupportedMediaFile(step.fromRel)) {
+      removedPaths += 1;
+    }
+
+    if (
+      step.toAbs !== null &&
+      isSupportedMediaFile(step.toAbs) &&
+      context.roots.some((root) => step.toAbs !== null && isWithin(step.toAbs, root.path))
+    ) {
+      addedPaths += 1;
+    }
+  }
+
+  return {
+    planId: plan.planId,
+    kind: plan.kind,
+    steps: plan.draft.steps.length,
+    byAction: [...counts].map(([action, steps]) => ({ action, steps })),
+    bytesToHolding,
+    bytesTouched,
+    lockstep: { removedPaths, addedPaths },
+    warnings: [...plan.draft.warnings],
+  };
+}

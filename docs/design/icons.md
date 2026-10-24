@@ -1,6 +1,6 @@
 # Update application icons
 
-The five SVG masters use flat fills and smooth curves. Edit these files directly. Avoid raster
+The six SVG masters use flat fills and smooth curves. Edit these files directly. Avoid raster
 tracing, texture, bevels, and cast shadows.
 
 | Application | SVG master |
@@ -10,6 +10,7 @@ tracing, texture, bevels, and cast shadows.
 | Frame View | `apps/frame-view/media/frame-view-icon.svg` |
 | Gather Box | `apps/gather-box/assets/icons/gather-box-icon.svg` |
 | Lockstep | `apps/lockstep/media/lockstep-icon.svg` |
+| Glazier | `apps/glazier/media/glazier-icon.svg` |
 
 The [approved artwork comparison](https://vellum.traydr.dev/01a080ab-f279-724d-90a1-e214fdb18574)
 is available until October 8, 2026.
@@ -23,7 +24,7 @@ pnpm icons
 ```
 
 `scripts/generate-icons.ts` renders each SVG at 2048 pixels with sharp and downsamples with
-Lanczos. It overwrites ten PNGs, four ICO files, and two ICNS files, and copies Lockstep's PNG
+Lanczos. It overwrites eleven PNGs, five ICO files, and three ICNS files, and copies Lockstep's PNG
 into the macOS Icon Composer bundle. Screenshot PNGs are not touched.
 
 Web pages use the SVG directly for logos and favicons. The only rasters they keep are

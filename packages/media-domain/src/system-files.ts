@@ -6,7 +6,15 @@ const SYSTEM_JUNK_FILE_NAMES = new Set([
   "thumbs.db",
 ]);
 
+/**
+ * Glazier moves removed files and replaced originals here, inside their own root, so a removal
+ * is a same-volume rename that can be undone. Every scanner skips it, so nothing in it is indexed
+ * by Frame View or synced by Lockstep.
+ */
+export const GLAZIER_HOLDING_DIRECTORY_NAME = ".glazier-holding";
+
 const SYSTEM_JUNK_DIRECTORY_NAMES = new Set([
+  GLAZIER_HOLDING_DIRECTORY_NAME,
   "$recycle.bin",
   ".documentrevisions-v100",
   ".fseventsd",

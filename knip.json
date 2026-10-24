@@ -64,6 +64,22 @@
       ],
       "ignoreDependencies": ["@testing-library/react"]
     },
+    "apps/glazier": {
+      "entry": [
+        "forge.config.ts",
+        "vite.main.config.mts",
+        "vite.preload.config.mts",
+        "vite.renderer.config.mts",
+        "vite.transcoder.config.mts",
+        "src/main.ts",
+        "src/preload.ts",
+        "src/transcoder-preload.ts",
+        "src/engine/engine-process.ts",
+        "src/engine/avif-worker.ts",
+        "src/transcoder/transcoder.ts"
+      ],
+      "ignoreDependencies": ["ffmpeg-static", "@ffprobe-installer/ffprobe", "sharp"]
+    },
     "apps/lockstep-cli": {
       "entry": ["src/**/*.test.ts"]
     },
@@ -74,6 +90,12 @@
       "entry": ["src/**/*.test.ts"]
     },
     "packages/media-index": {
+      "entry": ["src/**/*.test.ts"]
+    },
+    "packages/glazier-core": {
+      "entry": ["src/**/*.test.ts"]
+    },
+    "packages/media-format": {
       "entry": ["src/**/*.test.ts"]
     },
     "packages/lockstep-core": {

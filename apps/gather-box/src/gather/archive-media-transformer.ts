@@ -1,4 +1,4 @@
-import { getExpectedArchiveTarget, planArchiveMedia } from "./archive-media-policy";
+import { getExpectedArchiveTarget, planArchiveMedia } from "@latch-works/media-format";
 import { MediaEncodeError, throwIfAborted } from "./errors";
 import type { MediaTransformer, TransformedMedia } from "./media-transformer";
 
@@ -11,7 +11,9 @@ const DEFAULT_ARCHIVE_MEDIA_ENCODERS: ArchiveMediaEncoders = {
   encodeStillAsAvif: (blob, signal) =>
     import("./avif-encoder").then(({ encodeStillAsAvif }) => encodeStillAsAvif(blob, signal)),
   encodeGifAsMp4: (blob, signal) =>
-    import("./gif-mp4-encoder").then(({ encodeGifAsMp4 }) => encodeGifAsMp4(blob, signal))
+    import("@latch-works/media-format/animation-mp4").then(({ encodeGifAsMp4 }) =>
+      encodeGifAsMp4(blob, signal)
+    )
 };
 
 export function createArchiveMediaTransformer(
