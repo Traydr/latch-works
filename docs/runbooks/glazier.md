@@ -62,23 +62,31 @@ windows separately. Press `?` anywhere for the keyboard shortcuts.
 
 In **Duplicates**, a set shows every version at once, each under its whole folder path, wrapped
 rather than cut, with the file name only where two versions share a folder. Identical copies list
-their folders the same way. The suggested keeper carries a violet ring and **Keep**; hovering the
-badge says what decided it ("Keeping 1: most pixels (1600×1067 against 800×533)"). Each decision
-shows a toast with **Undo** for a few seconds. When only a tie-breaker decided (a file a few bytes larger, the
-oldest, the shortest path), the set is a **close call**: the keeper is only **Suggested**, an amber
-dot marks it in the queue, and **Keep all suggestions** leaves it for you. The keys:
+their folders the same way, each with a checkbox: check more than one to keep the copy in each
+folder (the copies kept are still identical, so they come back as a set to review later). Every
+version and copy has a folder button that shows it in Finder. A video plays in its tile, with its
+sound, from the controls over it, one at a time, so versions can be checked for length and
+soundtrack by ear. The facts under it say "sound", "silent" or "no sound track", or "sound not
+checked" when the loudness pass has not measured it. The suggested keeper carries a violet ring and **Keep**;
+hovering the badge says what decided it ("Keeping 1: most pixels (1600×1067 against 800×533)"). Each
+decision shows a toast with **Undo** for a few seconds. When only a tie-breaker decided (a file a
+few bytes larger, the oldest, the shortest path), the set is a **close call**: the keeper is only
+**Suggested**, an amber dot marks it in the queue, and **Keep N suggestions** leaves it for you.
+Identical copies have no keep-everything button: which copy to keep depends on where each one is, so
+each set is decided on its own. The keys:
 
 | Key | Action |
 | --- | --- |
 | Return | Keep the suggestion and go on to the next set |
 | 1–9, or a click on a version | Keep only that version and go on |
-| ⇧1–9, or ⇧-click (or its +) | Keep that version as well |
+| ⇧1–9, or ⇧-click (or its +, or a copy's checkbox) | Keep that version as well |
 | N | Keep every version (not duplicates, or **Keep both** for identical copies); the set stays hidden |
 | S | Skip the set |
 | Space (or C, or the ⤢ on a version) | Look closer: one version over the whole window; ← and → flip between them, ↩ keeps the one shown, Z (or a click) shows actual size |
 | ⌘Y | Quick Look |
+| ⇧⌘R (or the folder button) | Show the version in Finder |
 | P | Prefer the focused version's folder, so every set keeps its copy there first |
-| ⌘Return | Keep every suggestion, close calls excepted |
+| ⌘Return | Keep every similar-version suggestion, close calls excepted |
 | ⌘Z | Undo the last decision and go back to that set |
 
 Byte-identical copies are one version, so a file appears in one set only. Convert leaves the

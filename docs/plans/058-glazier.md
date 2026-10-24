@@ -135,6 +135,13 @@ It supersedes items 1, 2, 3 and 6 above.
    and the transcoder's Vite dev servers shared one dependency cache with different configs, so
    each start one re-optimized and the other got `504 Outdated Optimize Dep`; each now has its own
    `cacheDir`.
+9. **Reviewing by hand (same branch).** An owner sorting a collector's folders needs to see where
+   each copy lives and decide it there, so Duplicates gained a Show in Finder button per version
+   and copy (⇧⌘R), a checkbox per identical copy to keep it in several folders (the kept copies
+   come back as a set later; what to do about them is open), and playback with sound in each
+   video tile, since a silent or shorter version can slip past the checks. The bulk "Remove all
+   identical copies" button is gone, because it cannot weigh where the copies are. A video whose
+   sound was never measured says "sound not checked", not "sound".
 
 ## Shape
 
