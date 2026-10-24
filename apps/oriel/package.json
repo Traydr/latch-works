@@ -6,7 +6,7 @@
   "main": ".vite/build/main.cjs",
   "private": true,
   "scripts": {
-    "prestart": "node ./scripts/ensure-electron.mjs",
+    "prestart": "node ./scripts/ensure-workspace-deps.mjs && node ./scripts/ensure-electron.mjs",
     "start": "electron-forge start",
     "package": "electron-forge package",
     "make": "electron-forge make",
@@ -44,6 +44,9 @@
   },
   "dependencies": {
     "@latch-works/app-data": "workspace:*",
+    "@latch-works/lockstep-core": "workspace:*",
+    "@latch-works/media-domain": "workspace:*",
+    "better-result": "^3.0.1",
     "lucide-react": "^1.57.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",

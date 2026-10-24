@@ -1,10 +1,12 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 
-import { setLatchWorksDataFolder } from "@latch-works/app-data";
+import { latchWorksModeFolder, setLatchWorksDataFolder } from "@latch-works/app-data";
 import { app, BrowserWindow, ipcMain, Menu } from "electron";
 
 import { appMenu, modeMenuItemId } from "./main/menu";
+import type { ModeHost } from "./main/mode";
+import { startSync } from "./modes/sync/main/start";
 import { type Json, ModeIdSchema, ShellChannels, type ShellCommand } from "./shared/shell";
 
 // The shell's own window state and Chromium storage live in ~/.latch-works/oriel. Each mode keeps
@@ -19,6 +21,56 @@ if (["1", "true", "yes"].includes((process.env.ORIEL_DISABLE_GPU ?? "").toLowerC
 }
 
 let mainWindow: BrowserWindow | null = null;
+
+const modes: ModeHost[] = [];
+
+/** Set while the window is hidden until running work ends; the app then quits. */
+let pendingQuit: NodeJS.Timeout | null = null;
+
+function busy(): boolean {
+  return modes.some((mode) => mode.busy());
+}
+
+/**
+ * Closing the window or quitting while a push or a Glazier change runs hides the window instead,
+ * and quits once the work has finished; quitting again in the meantime quits at once. Returns
+ * whether it deferred.
+ */
+function deferQuitWhileBusy(): boolean {
+  if (pendingQuit !== null || !busy()) {
+    return false;
+  }
+
+  mainWindow?.hide();
+  pendingQuit = setInterval(() => {
+    if (!busy()) {
+      app.quit();
+    }
+  }, 1000);
+
+  return true;
+}
+
+/** Brings the window back, which also calls off a quit waiting for work to end. */
+function showWindow(): void {
+  if (pendingQuit !== null) {
+    clearInterval(pendingQuit);
+    pendingQuit = null;
+  }
+
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore();
+    }
+
+    mainWindow.show();
+    mainWindow.focus();
+  }
+}
+
+function showProgress(progress: number | null): void {
+  mainWindow?.setProgressBar(progress ?? -1);
+}
 
 function resolveWindowIconPath(fileName: string): string | undefined {
   return [
@@ -54,6 +106,12 @@ async function createWindow(): Promise<void> {
 
   mainWindow = window;
 
+  window.on("close", (event) => {
+    if (deferQuitWhileBusy()) {
+      event.preventDefault();
+    }
+  });
+
   window.on("closed", () => {
     if (mainWindow === window) {
       mainWindow = null;
@@ -73,16 +131,16 @@ if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on("second-instance", () => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) {
-        mainWindow.restore();
-      }
+    showWindow();
+  });
 
-      mainWindow.focus();
+  app.on("before-quit", (event) => {
+    if (deferQuitWhileBusy()) {
+      event.preventDefault();
     }
   });
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
     Menu.setApplicationMenu(
       Menu.buildFromTemplate(appMenu({ appName: app.name, packaged: app.isPackaged, send })),
     );
@@ -105,10 +163,21 @@ if (!app.requestSingleInstanceLock()) {
       }
     });
 
+    // Sync is cheap and starts at once: a run must outlive the window.
+    modes.push(
+      await startSync({
+        dataDir: latchWorksModeFolder(app, { folder: "lockstep", legacyName: "Lockstep" }),
+        window: () => mainWindow,
+        onProgress: showProgress,
+      }),
+    );
+
     void createWindow();
 
     app.on("activate", () => {
-      if (BrowserWindow.getAllWindows().length === 0) {
+      if (mainWindow) {
+        showWindow();
+      } else {
         void createWindow();
       }
     });

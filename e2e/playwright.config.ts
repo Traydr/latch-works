@@ -82,13 +82,8 @@ export default defineConfig({
       testMatch: /.*\.spec\.ts/,
     },
     {
-      name: "lockstep-setup",
-      testDir: "./tests/lockstep",
-      testMatch: /.*\.setup\.ts/,
-    },
-    {
-      // Pushes into the Pane View server the pane-view project started and seeded.
-      dependencies: ["pane-view", "lockstep-setup"],
+      // Sync, in Oriel, pushes into the Pane View server the pane-view project started and seeded.
+      dependencies: ["pane-view", "oriel-setup"],
       name: "lockstep",
       testDir: "./tests/lockstep",
       testMatch: /.*\.spec\.ts/,

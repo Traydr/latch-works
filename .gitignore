@@ -5,6 +5,9 @@ dist/
 .output/
 .tanstack/
 .vite/
+# Electron Forge output, here too so a retired app's leftover builds stay ignored.
+apps/*/out/
+apps/*/.packaged-runtime/
 *.tsbuildinfo
 .env
 .env.*

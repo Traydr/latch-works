@@ -1,4 +1,6 @@
 @import "tailwindcss";
+/* Each mode's styles from its standalone app, scoped to that mode until it is restyled. */
+@import "./modes/sync/sync.css";
 @config "../tailwind.config.cjs";
 
 /*

@@ -27,7 +27,7 @@ test("starts in View and switches modes from the switcher and the menu", async (
 
   await chooseModeFromMenu(app, "sync");
   await expect(window).toHaveTitle("Sync – Oriel");
-  await expect(window.getByText("Lockstep moves in here.")).toBeVisible();
+  await expect(window.getByRole("navigation", { name: "Profiles" })).toBeVisible();
   await expect(window.getByText("Glazier moves in here.")).toBeHidden();
 
   // The menu's check mark follows the mode the window shows.

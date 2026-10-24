@@ -21,8 +21,9 @@ the compose defaults apply.
 pnpm --filter @latch-works/e2e fixture   # render e2e/.fixtures/archive from the manifest (once)
 pnpm e2e:pane                            # Pane View, seeded through the Lockstep CLI
 pnpm e2e:frame                           # Frame View, through Playwright's Electron driver
-pnpm e2e:lockstep                        # Lockstep desktop, pushing into the Pane View server
+pnpm e2e:lockstep                        # Oriel's Sync mode, pushing into the Pane View server
 pnpm e2e:glazier                         # Glazier desktop, over an archive it builds (no server)
+pnpm e2e:oriel                           # Oriel's shell: the modes and the menu (no server)
 pnpm e2e                                 # every project
 ```
 
@@ -77,20 +78,27 @@ fixture PDF is excluded from its expectations.
 
 ## What the Lockstep project covers
 
-`tests/lockstep/sync.spec.ts` packages the Lockstep desktop app (setup project), launches it on
-a fresh userData directory, creates a profile against the e2e Pane View server with the
-`lockstep-source` fixture (two images that are not in the seeded archive), runs Plan (two uploads),
-Push (two pushed, zero failed, both paths in `/api/sync/snapshot`), Plan again (nothing to upload;
-every seeded path is a delete from this source), then Prune: one planned delete's file is copied
-back into the source first, so Prune deletes every other planned path, skips that one, and leaves
-the Prune stage disabled until the next Plan. It also checks `lockstep-settings.json` never holds
-the token in the clear. The app runs with `LOCKSTEP_SECRET_STORAGE=file`, so the token is
-encrypted with a key in the run's own userData directory instead of the Keychain and no prompt
-blocks the run.
+`tests/lockstep/sync.spec.ts` drives Sync, the Lockstep desktop app as one of Oriel's modes. The
+`oriel-setup` project packages Oriel; the spec launches it on a fresh userData directory, opens
+Sync, creates a profile against the e2e Pane View server with the `lockstep-source` fixture (two
+images that are not in the seeded archive), runs Plan (two uploads), Push (two pushed, zero
+failed, both paths in `/api/sync/snapshot`), Plan again (nothing to upload; every seeded path is a
+delete from this source), then Prune: one planned delete's file is copied back into the source
+first, so Prune deletes every other planned path, skips that one, and leaves the Prune stage
+disabled until the next Plan. It also checks `lockstep-settings.json` (in `lockstep/` inside the
+run's userData) never holds the token in the clear. Sync encrypts tokens with a key file in that
+folder on every platform, so no Keychain prompt blocks the run.
 Prune empties the seeded archive in the e2e database, which is recreated
 the next time the e2e server starts. The project depends on
 `pane-view`, so `pnpm e2e:lockstep` runs the Pane View suite first; `--no-deps` skips that while
 iterating (the server is still started or reused).
+
+## What the Oriel project covers
+
+`tests/oriel/build.setup.ts` packages Oriel (skip with `E2E_SKIP_BUILD=1`). `shell.spec.ts`
+switches modes from the switcher and from the View menu (whose check mark follows the mode), and
+relaunches on the same userData to check Oriel reopens in the mode it showed last. The project
+needs no compose stack.
 
 ## What the Glazier project covers
 

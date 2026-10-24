@@ -1,54 +1,26 @@
-import { mkdtemp } from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
-import {
-  type ElectronApplication,
-  _electron as electron,
-  expect,
-  type Page,
-} from "@playwright/test";
-import { electronChildEnv, REPO_ROOT } from "./env.ts";
+import { type ElectronApplication, expect, type Page } from "@playwright/test";
+import { launchOriel, openMode } from "./oriel.ts";
 
 /**
- * Drives the packaged Lockstep desktop build (`apps/lockstep/.vite/build`,
- * produced by `electron-forge package` in the setup project) through
- * Playwright's Electron driver on a fresh userData directory. Tokens are
- * encrypted with a file key in that directory rather than the Keychain,
- * whose prompt would block the run until someone clicks Allow.
+ * Drives Sync, Lockstep's desktop app as one of Oriel's modes, in the packaged Oriel build on a
+ * fresh userData directory. Sync encrypts tokens with a key file in its own data folder, so no
+ * Keychain prompt blocks the run.
  */
-export const LOCKSTEP_APP_DIR = path.join(REPO_ROOT, "apps", "lockstep");
-
-const ELECTRON_BINARY = path.join(
-  LOCKSTEP_APP_DIR,
-  "node_modules",
-  "electron",
-  "dist",
-  process.platform === "darwin" ? "Electron.app/Contents/MacOS/Electron" : "electron",
-);
-
 export interface LockstepSession {
   app: ElectronApplication;
+  /** Sync's data folder for this run: `lockstep/` inside Oriel's. */
   userDataDir: string;
   window: Page;
 }
 
 export async function launchLockstep(): Promise<LockstepSession> {
-  const userDataDir = await mkdtemp(path.join(os.tmpdir(), "lockstep-e2e-"));
+  const { app, window, userDataDir } = await launchOriel();
 
-  const app = await electron.launch({
-    args: [
-      path.join(LOCKSTEP_APP_DIR, ".vite", "build", "main.cjs"),
-      `--user-data-dir=${userDataDir}`,
-    ],
-    cwd: LOCKSTEP_APP_DIR,
-    env: electronChildEnv({ LOCKSTEP_SECRET_STORAGE: "file" }),
-    executablePath: ELECTRON_BINARY,
-  });
+  await openMode(window, "sync");
+  await expect(window.getByRole("navigation", { name: "Profiles" })).toBeVisible();
 
-  const window = await app.firstWindow();
-  await expect(window.getByText("Lockstep", { exact: true }).first()).toBeVisible();
-
-  return { app, userDataDir, window };
+  return { app, userDataDir: path.join(userDataDir, "lockstep"), window };
 }
 
 /**

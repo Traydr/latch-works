@@ -15,7 +15,8 @@
 
 ## Status
 
-- **Status**: IN PROGRESS (Phase 1 on `agent/059-1-shell`, 2026-10-24)
+- **Status**: IN PROGRESS (Phase 1 on `agent/059-1-shell`, Phase 2 on `agent/059-2-sync`, stacked,
+  2026-10-24)
 - **Priority**: P2 (the owner asked for it)
 - **Effort**: XL overall, as ten stacked PRs of S–L each
 - **Risk**: MEDIUM to HIGH. It touches every desktop app's process model. The data migration
@@ -73,8 +74,7 @@ Glazier just tidied, or sync it from where you are.
     uses Lockstep's existing `FileSecretStorage` everywhere: AES-256-GCM under a random key in
     `~/.latch-works/lockstep/secret-storage.key` (mode 0600). An unsigned build's signature
     changes with every rebuild, which made the Keychain ask again each time. The trade-off is
-    that the key is protected by the home folder's permissions alone, like the Lockstep CLI's
-    config beside it.
+    that the key is protected by the home folder's permissions alone.
 
 Smaller choices settled by default (change by saying so):
 
@@ -102,7 +102,8 @@ apps/oriel/                          productName "Oriel"
   forge.config.ts                    the union of the three configs, native runtime staged once
   src/main.ts                        composition root: Velopack hook, single-instance lock, data
                                      folders, both media schemes, menu, window, mode lifecycle
-  src/preload.ts                     one bridge: window.oriel.{shell, view, tidy, sync}
+  src/preload.ts                     window.oriel for the shell; each mode keeps its standalone
+                                     app's global (window.lockstep, window.glazier, …)
   src/shell/                         window chrome, mode switcher, sidebar and rail, settings page,
                                      theme, toasts, folder picker, first-run welcome, migration
   src/ui/                            the house kit: Glazier's gz-* tokens and ui.tsx, renamed lw-*
@@ -177,6 +178,11 @@ payoff features follow, and the installer comes last because it needs the final 
 
 ### Phase 2: move Lockstep in as Sync (S)
 
+Done on `agent/059-2-sync`. Each move phase also deletes the rest of its standalone app, since a
+workspace left with a manifest and no source breaks `pnpm -r build`. Lockstep's showcase preview
+went with it; Showcase screenshots come from Oriel in Phase 10. Sync's legacy CSS is scoped under
+`.mode-sync`, so its `prism-*` classes never meet Frame View's of the same names.
+
 The smallest mode, with namespaced IPC. `git mv` its `main/`, `renderer/`, `shared/` and preload
 API into `src/modes/sync/`. Wrap `ProfileService` and `RunService` in `startSync(ctx)`. Retarget
 `e2e/tests/lockstep` at the Oriel launcher. Sync uses `FileSecretStorage` packaged or not (settled
@@ -249,9 +255,10 @@ never overwrites a value the new app has since changed.
 
 ### Phase 6: retire the standalone apps (S)
 
-1. Tag the last standalone builds (`frame-view-v1.1.0`, `glazier-v0.2.0`, `lockstep-v0.3.0`), so
-   a hotfix can branch from them.
-2. Delete the three apps' Forge configs, package manifests and the leftovers in their folders.
+1. Tag the last standalone builds (`frame-view-v1.1.0`, `glazier-v0.2.0`, `lockstep-v0.3.0`, all at
+   `0d3af1d`), so a hotfix can branch from them.
+2. Check nothing of the three apps is left: Phases 2–4 delete each one's Forge config, manifest
+   and leftovers as they move it.
 3. Merge the e2e projects into `oriel-view`, `oriel-tidy` and `oriel-sync`, and keep
    `e2e:frame`, `e2e:glazier` and `e2e:lockstep` as aliases.
 4. Update `ARCHITECTURE.md`, the brand kit's name system, the runbooks, `docs/design/icons.md`,
@@ -372,8 +379,8 @@ short, skippable welcome:
 - **Glazier's data folder must never move.** Holding lives in it, and the catalog records each
   held file's full path (migration 3), so a moved folder breaks every undo. STOP if any step would
   change `~/.latch-works/glazier`.
-- **Tokens in a file.** Anyone who can read the home folder can read the tokens, as with the
-  Lockstep CLI's config. The key file stays 0600 and is never logged, copied into the archive or
+- **Tokens in a file.** Anyone who can read the home folder can read the tokens. The key file
+  stays 0600 and is never logged, copied into the archive or
   synced.
 - **Token migration.** STOP if the old blobs are not the `v10` format described in Phase 5 on
   either platform (Electron may have moved OSCrypt on). In that case ship the migration without

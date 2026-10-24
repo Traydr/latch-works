@@ -7,7 +7,6 @@
     "apps/pane-view/src/components/ui/select.tsx": ["files"],
     "apps/gather-box/**": ["exports", "types", "files"],
     "apps/lockstep-cli/src/**": ["exports"],
-    "apps/lockstep/src/**": ["exports", "types", "files"],
     "apps/frame-view/scripts/ensure-electron.mjs": ["files"],
     "apps/frame-view/src/**": ["types"],
     "apps/showcase/src/**": ["exports", "types"],
@@ -51,18 +50,6 @@
         "src/gather/avif-encoder.worker.ts",
         "src/**/*.test.ts"
       ]
-    },
-    "apps/lockstep": {
-      "entry": [
-        "forge.config.ts",
-        "vite.main.config.mts",
-        "vite.preload.config.mts",
-        "vite.renderer.config.mts",
-        "src/main.ts",
-        "src/preload.ts",
-        "src/showcase/preview.tsx"
-      ],
-      "ignoreDependencies": ["@testing-library/react"]
     },
     "apps/oriel": {
       "entry": [

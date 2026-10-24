@@ -7,7 +7,7 @@
  *
  * Usage, from the repository root: pnpm icons
  */
-import { copyFile, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
@@ -154,16 +154,8 @@ for (const app of ["pane-view", "showcase"]) {
   await generateWebIcons(app);
 }
 
-for (const app of ["frame-view", "lockstep", "glazier"]) {
+for (const app of ["frame-view", "glazier"]) {
   await generateDesktopIcons(app);
 }
 
 await generateExtensionIcons();
-
-// macOS 26 packaging also reads the Icon Composer bundle, which wants the same 1024 px PNG.
-await copyFile(
-  path.join(root, "apps/lockstep/media/lockstep-icon.png"),
-  path.join(root, "apps/lockstep/media/lockstep-icon.icon/Assets/lockstep-icon.png"),
-);
-
-console.log("copied apps/lockstep/media/lockstep-icon.icon/Assets/lockstep-icon.png");
