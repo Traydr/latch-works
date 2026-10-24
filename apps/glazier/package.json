@@ -1,7 +1,7 @@
 {
   "name": "@latch-works/glazier-app",
   "productName": "Glazier",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Desktop workbench for auditing and tidying a local Latch Works archive",
   "main": ".vite/build/main.cjs",
   "private": true,
