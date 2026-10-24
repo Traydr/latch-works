@@ -342,7 +342,56 @@ body {
   animation: lw-fade 160ms ease-out;
 }
 
+/* The welcome's mark: the three mode glyphs, side by side, gather and give way to Oriel's. */
+.lw-welcome-glyph {
+  animation: lw-welcome-gather 1100ms cubic-bezier(0.65, 0, 0.35, 1) 400ms both;
+}
+
+.lw-welcome-glyph[data-from="left"] {
+  --from-x: -112px;
+}
+
+.lw-welcome-glyph[data-from="right"] {
+  --from-x: 112px;
+}
+
+.lw-welcome-mark {
+  animation: lw-welcome-mark 520ms cubic-bezier(0.23, 1, 0.32, 1) 1250ms both;
+}
+
+@keyframes lw-welcome-gather {
+  from {
+    transform: translateX(var(--from-x, 0)) scale(0.8);
+    opacity: 1;
+  }
+
+  75% {
+    opacity: 1;
+  }
+
+  to {
+    transform: translateX(0) scale(0.55);
+    opacity: 0;
+  }
+}
+
+@keyframes lw-welcome-mark {
+  from {
+    transform: scale(0.55);
+    opacity: 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .lw-welcome-glyph {
+    animation: none;
+    opacity: 0;
+  }
+
+  .lw-welcome-mark {
+    animation: none;
+  }
+
   .lw-menu,
   .lw-enter-pop,
   .lw-enter-rise {

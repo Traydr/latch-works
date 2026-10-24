@@ -11,6 +11,11 @@ interface TidyOptions extends ModeContext {
   packaged: boolean;
 }
 
+interface TidyHost extends ModeHost {
+  /** Adds a folder to tidy, as the welcome does; resolves the problem, or null. */
+  addFolder(folder: string): Promise<string | null>;
+}
+
 /** Whether a job is a change to the archive (applying a plan or undoing one) still under way. */
 function isRunningChange(job: Job): boolean {
   return (
@@ -67,7 +72,7 @@ function tidyMenu(send: (command: AppCommand) => void): ModeMenu {
  * since its window can call them as soon as it mounts; the engine process starts with the first
  * call, and the hidden transcoder window when the owner first opens Tidy.
  */
-export function startTidy({ dataDir, window, onProgress, packaged }: TidyOptions): ModeHost {
+export function startTidy({ dataDir, window, onProgress, packaged }: TidyOptions): TidyHost {
   const changes = new Map<Job["id"], Job>();
 
   const host = new EngineHost({
@@ -115,5 +120,14 @@ export function startTidy({ dataDir, window, onProgress, packaged }: TidyOptions
       });
     },
     dispose: () => host.dispose(),
+    addFolder: async (folder) => {
+      try {
+        await host.call("addRoot", { path: folder });
+
+        return null;
+      } catch (cause) {
+        return cause instanceof Error ? cause.message : String(cause);
+      }
+    },
   };
 }

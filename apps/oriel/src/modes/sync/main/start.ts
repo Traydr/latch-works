@@ -2,7 +2,7 @@ import { Result } from "better-result";
 import { dialog } from "electron";
 
 import type { ModeContext, ModeHost } from "../../../main/mode";
-import type { LockstepRunEvent } from "../shared/types";
+import type { LockstepProfileInput, LockstepRunEvent } from "../shared/types";
 import { registerIpc } from "./ipc/registerIpc";
 import { FileSecretStorage, fileSecretKeyPath } from "./services/fileSecretStorage";
 import { decryptLegacyToken, readLegacyKey } from "./services/legacyTokens";
@@ -39,6 +39,8 @@ interface SyncHost extends ModeHost {
   migrateLegacyTokens(): Promise<{ migrated: number; failed: number }>;
   /** Every profile's archive folder. */
   sourceRoots(): string[];
+  /** Saves a profile, as the welcome's Pane View step does; resolves the problem, or null. */
+  addProfile(input: LockstepProfileInput): Promise<string | null>;
 }
 
 export async function startSync({ dataDir, window, onProgress }: ModeContext): Promise<SyncHost> {
@@ -96,6 +98,11 @@ export async function startSync({ dataDir, window, onProgress }: ModeContext): P
       }
 
       return profileService.migrateLegacyTokens((encrypted) => decryptLegacyToken(encrypted, key));
+    },
+    addProfile: async (input) => {
+      const created = await profileService.createProfile(input);
+
+      return Result.isError(created) ? created.error.message : null;
     },
     sourceRoots: () =>
       profileService

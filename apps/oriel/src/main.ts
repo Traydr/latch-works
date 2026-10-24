@@ -3,9 +3,15 @@ import { realpath } from "node:fs/promises";
 import path from "node:path";
 
 import { latchWorksModeFolder, setLatchWorksDataFolder } from "@latch-works/app-data";
-import { app, BrowserWindow, ipcMain, Menu, protocol, screen, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, screen, shell } from "electron";
 import { z } from "zod";
 
+import {
+  describeMigration,
+  markWelcomed,
+  offerMoveToApplications,
+  welcomed,
+} from "./main/first-run";
 import { type FolderSources, glazierRoots, isInside, knownFolders } from "./main/folders";
 import { appMenu } from "./main/menu";
 import { runVelopackHooks } from "./main/velopack";
@@ -16,12 +22,15 @@ import {
   waitForOldAppsToQuit,
 } from "./main/migration";
 import type { ModeContext, ModeHost } from "./main/mode";
+import { runVelopackHooks } from "./main/velopack";
 import { readWindowState, rememberWindowState } from "./main/window-state";
 import { startSync } from "./modes/sync/main/start";
 import { TIDY_MEDIA_SCHEME } from "./modes/tidy/main/media-protocol";
 import { startTidy } from "./modes/tidy/main/start";
 import { extractLaunchPathFromArgv, startView, VIEW_MEDIA_SCHEME } from "./modes/view/main/start";
 import {
+  ArchiveSetupSchema,
+  type FirstRun,
   type Json,
   type ModeId,
   ModeIdSchema,
@@ -56,6 +65,11 @@ const modes = new Map<ModeId, ModeHost>();
 let view: Awaited<ReturnType<typeof startView>> | null = null;
 
 let sync: Awaited<ReturnType<typeof startSync>> | null = null;
+
+let tidy: ReturnType<typeof startTidy> | null = null;
+
+/** The folder the welcome's native dialog chose; only this one can be set up from the window. */
+let chosenArchive: string | null = null;
 
 /** Set once the modes' folders are known. */
 let folders: MigrationFolders | null = null;
@@ -220,6 +234,57 @@ async function handOffToView(value: Json): Promise<boolean> {
   return true;
 }
 
+/** What the welcome needs to know. It shows once, and never under `--user-data-dir` (the e2e suite) unless `ORIEL_WELCOME=1` asks for it. */
+function firstRun(): FirstRun {
+  const known = knownFolders(folderSources());
+
+  return {
+    show:
+      folders !== null &&
+      !welcomed(folders.oriel) &&
+      (ownersData || process.env.ORIEL_WELCOME === "1"),
+    migrated: folders ? describeMigration(readMigrationReport(folders.oriel)) : null,
+    needsFolder: !known.some((folder) => existsSync(folder.path)),
+    needsServer: (sync?.sourceRoots().length ?? 0) === 0,
+  };
+}
+
+/** Sets up the folder the welcome chose: View opens it, and Tidy and Sync take it if asked. */
+async function setUpArchive(value: Json): Promise<string[]> {
+  const setup = ArchiveSetupSchema.safeParse(value);
+
+  if (!setup.success || chosenArchive === null || !view) {
+    return ["Choose a folder first."];
+  }
+
+  const problems: string[] = [];
+
+  view.openPath(chosenArchive);
+
+  if (setup.data.tidy && tidy) {
+    const problem = await tidy.addFolder(chosenArchive);
+
+    if (problem) {
+      problems.push(`Tidy: ${problem}`);
+    }
+  }
+
+  if (setup.data.server && sync) {
+    const problem = await sync.addProfile({
+      name: path.basename(chosenArchive),
+      apiUrl: setup.data.server.apiUrl,
+      sourceRoot: chosenArchive,
+      token: setup.data.server.token || undefined,
+    });
+
+    if (problem) {
+      problems.push(`Sync: ${problem}`);
+    }
+  }
+
+  return problems;
+}
+
 /** The saved bounds, unless no display holds them any more (a monitor since unplugged). */
 function restoredBounds(): Partial<Electron.Rectangle> {
   const state = readWindowState(app.getPath("userData"));
@@ -367,6 +432,26 @@ if (!app.requestSingleInstanceLock()) {
       knownFolders(folderSources()).filter((folder) => existsSync(folder.path)),
     );
     ipcMain.handle(ShellChannels.openInView, (_event, value: Json) => handOffToView(value));
+    ipcMain.handle(ShellChannels.firstRun, () => firstRun());
+    ipcMain.handle(ShellChannels.chooseArchive, async () => {
+      const chosen = mainWindow
+        ? await dialog.showOpenDialog(mainWindow, {
+            title: "Choose your archive folder",
+            buttonLabel: "Choose",
+            properties: ["openDirectory", "createDirectory"],
+          })
+        : null;
+
+      chosenArchive = chosen && !chosen.canceled ? (chosen.filePaths[0] ?? null) : null;
+
+      return chosenArchive;
+    });
+    ipcMain.handle(ShellChannels.setUpArchive, (_event, value: Json) => setUpArchive(value));
+    ipcMain.on(ShellChannels.finishWelcome, () => {
+      if (folders) {
+        markWelcomed(folders.oriel);
+      }
+    });
 
     ipcMain.on(ShellChannels.setMode, (_event, value: Json) => {
       const mode = ModeIdSchema.safeParse(value);
@@ -391,6 +476,12 @@ if (!app.requestSingleInstanceLock()) {
         }
       }
     });
+
+    // Started from the disk image or Downloads, Oriel offers to move to Applications first, and
+    // starts again from there if it does.
+    if (ownersData && (await offerMoveToApplications(app.getPath("userData")))) {
+      return;
+    }
 
     // The old apps open the same catalogs and settings, so none may run beside Oriel.
     if (ownersData && !(await waitForOldAppsToQuit())) {
@@ -427,15 +518,13 @@ if (!app.requestSingleInstanceLock()) {
     });
     modes.set("sync", sync);
 
-    modes.set(
-      "tidy",
-      startTidy({
-        dataDir: modeFolders.glazier,
-        window: () => mainWindow,
-        onProgress: reportProgress("tidy"),
-        packaged: app.isPackaged,
-      }),
-    );
+    tidy = startTidy({
+      dataDir: modeFolders.glazier,
+      window: () => mainWindow,
+      onProgress: reportProgress("tidy"),
+      packaged: app.isPackaged,
+    });
+    modes.set("tidy", tidy);
 
     // The first start brings the old apps' data in before the window reads it.
     if (readMigrationReport(modeFolders.oriel) === null) {

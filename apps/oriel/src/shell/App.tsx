@@ -4,12 +4,14 @@ import { MODE_IDS, type ModeId, type OrielBridge } from "../shared/shell";
 import { MODE_ROOTS } from "./modes";
 import { ModeProvider, ShellProvider, useShell } from "./shell";
 import { ThemeProvider } from "./theme";
+import { WelcomeGate } from "./Welcome";
 
 export function App({ bridge }: { bridge: OrielBridge }) {
   return (
     <ThemeProvider>
       <ShellProvider bridge={bridge}>
         <Modes />
+        <WelcomeGate />
       </ShellProvider>
     </ThemeProvider>
   );

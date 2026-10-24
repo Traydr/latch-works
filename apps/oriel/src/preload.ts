@@ -6,6 +6,7 @@ import { glazierBridge } from "./modes/tidy/preload-api";
 import { createFrameViewApi } from "./modes/view/preload/frameViewApi";
 import {
   AboutSchema,
+  FirstRunSchema,
   type Json,
   KnownFolderSchema,
   type OrielBridge,
@@ -23,6 +24,15 @@ const oriel: OrielBridge = {
     z.array(KnownFolderSchema).parse(await ipcRenderer.invoke(ShellChannels.folders)),
   openInView: async (target) =>
     z.boolean().parse(await ipcRenderer.invoke(ShellChannels.openInView, target)),
+  firstRun: async () => FirstRunSchema.parse(await ipcRenderer.invoke(ShellChannels.firstRun)),
+  chooseArchive: async () =>
+    z
+      .string()
+      .nullable()
+      .parse(await ipcRenderer.invoke(ShellChannels.chooseArchive)),
+  setUpArchive: async (setup) =>
+    z.array(z.string()).parse(await ipcRenderer.invoke(ShellChannels.setUpArchive, setup)),
+  finishWelcome: () => ipcRenderer.send(ShellChannels.finishWelcome),
   onCommand: (listener) => {
     const handler = (_event: IpcRendererEvent, payload: Json) => {
       const command = ShellCommandSchema.safeParse(payload);

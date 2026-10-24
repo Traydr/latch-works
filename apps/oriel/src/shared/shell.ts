@@ -49,6 +49,14 @@ export const ShellChannels = {
    * only inside a {@link KnownFolder}, since View scans only folders the owner chose.
    */
   openInView: "oriel:open-in-view",
+  /** window → main, answered: the {@link FirstRun} facts the welcome shows. */
+  firstRun: "oriel:first-run",
+  /** window → main, answered: the native folder dialog; main keeps the folder chosen. */
+  chooseArchive: "oriel:choose-archive",
+  /** window → main, answered: an {@link ArchiveSetup} for the chosen folder; the problems met. */
+  setUpArchive: "oriel:set-up-archive",
+  /** window → main: the welcome is done, and does not show again. */
+  finishWelcome: "oriel:finish-welcome",
 } as const;
 
 export const AboutSchema = z.object({ version: z.string(), dataFolder: z.string() });
@@ -68,6 +76,28 @@ export const KnownFolderSchema = z.object({
 
 export type KnownFolder = z.infer<typeof KnownFolderSchema>;
 
+export const FirstRunSchema = z.object({
+  /** Whether the welcome shows: once, on the owner's first start. */
+  show: z.boolean(),
+  /** What the first start brought over from the old apps, in one line, or null. */
+  migrated: z.string().nullable(),
+  /** No folder came over, so the welcome asks for one. */
+  needsFolder: z.boolean(),
+  /** No Sync profile came over, so the welcome offers to connect Pane View. */
+  needsServer: z.boolean(),
+});
+
+export type FirstRun = z.infer<typeof FirstRunSchema>;
+
+/** What to do with the folder the welcome chose: View always opens it. */
+export const ArchiveSetupSchema = z.object({
+  tidy: z.boolean(),
+  /** A Sync profile for the folder on this Pane View server, or none. */
+  server: z.object({ apiUrl: z.string().min(1), token: z.string() }).nullable(),
+});
+
+type ArchiveSetup = z.infer<typeof ArchiveSetupSchema>;
+
 /** The shell's bridge, `window.oriel`. */
 export interface OrielBridge {
   platform: NodeJS.Platform;
@@ -79,4 +109,9 @@ export interface OrielBridge {
   folders(): Promise<KnownFolder[]>;
   /** Whether View opened `path`, a file (opened in the viewer) or a folder. */
   openInView(path: string): Promise<boolean>;
+  firstRun(): Promise<FirstRun>;
+  /** The folder the owner chose in the native dialog, or null if they cancelled. */
+  chooseArchive(): Promise<string | null>;
+  setUpArchive(setup: ArchiveSetup): Promise<string[]>;
+  finishWelcome(): void;
 }
