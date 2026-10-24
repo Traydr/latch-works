@@ -22,12 +22,18 @@ pnpm --filter @latch-works/glazier-app start
 
 | What | Where | Notes |
 | --- | --- | --- |
-| Catalog (SQLite) | `~/Library/Application Support/Glazier/catalog.sqlite` | Rebuildable from the archive by rescanning. Never authoritative. |
-| Thumbnails | `~/Library/Application Support/Glazier/thumbnails/` | Safe to delete. |
-| Holding | `~/Library/Application Support/Glazier/holding/<root id>-<root name>/<batch>/<original path>` | Removed files and replaced originals, outside the root. A root on another volume holds in `<volume>/.glazier-holding/<root id>-<root name>/` instead, so a removal stays a rename; a root that is a whole volume holds in the data folder by copying. |
+| Catalog (SQLite) | `~/.latch-works/glazier/catalog.sqlite` | Rebuildable from the archive by rescanning. Never authoritative. |
+| Thumbnails | `~/.latch-works/glazier/thumbnails/` | Safe to delete. |
+| Holding | `~/.latch-works/glazier/holding/<root id>-<root name>/<batch>/<original path>` | Removed files and replaced originals, outside the root. A root on another volume holds in `<volume>/.latch-works/glazier/holding/<root id>-<root name>/` instead, so a removal stays a rename; a root that is a whole volume holds in the data folder by copying. |
 
 Scanning never writes inside a root. The catalog and thumbnails are the only things a scan
-creates.
+creates. The other apps' folders sit beside Glazier's under `~/.latch-works` (see
+[Local data](../ARCHITECTURE.md#local-data)).
+
+Builds before kept this folder in `~/Library/Application Support/Glazier`. The first start of a
+newer build renames it to `~/.latch-works/glazier`, and the catalog rewrites where each held file
+is, so Restore and Undo still find them. If the rename fails (a second copy of Glazier holding the
+catalog open, say), Glazier keeps using the old folder and tries again next start.
 
 ## Using it
 
@@ -112,11 +118,12 @@ lockstep prune  # soft-deletes the missing paths in Pane View
 ```
 
 Pane View keeps the old originals in its bucket and in Shutter until a deleted-item purge, as
-always. Holding is never synced, because it is outside the root. The `.glazier-holding` name is
-still in `media-domain`'s system folder list, so Lockstep's scan and Frame View skip a volume's
-holding folder when they scan the whole volume.
+always. Holding is never synced, because it is outside the root. `.latch-works` is in
+`media-domain`'s system folder list, so Lockstep's scan and Frame View skip a volume's holding
+folder, and the whole of `~/.latch-works`, when they scan a whole volume or a home folder.
 
-Catalogs from before held inside the root, in `<root>/.glazier-holding`. When Glazier starts it
+Catalogs from before held inside the root, in `<root>/.glazier-holding` (a name the scanners still
+skip). When Glazier starts it
 moves those files to the new holding folder and removes the emptied old folder; a held file that
 was deleted by hand is recorded as gone. A root that is not mounted is moved on a later start. If
 Lockstep pushed the old folder, `lockstep plan` shows its paths as missing once it is gone and

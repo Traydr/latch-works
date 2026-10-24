@@ -60,6 +60,7 @@
   },
   "dependencies": {
     "@ffprobe-installer/ffprobe": "^2.1.2",
+    "@latch-works/app-data": "workspace:*",
     "@latch-works/media-domain": "workspace:*",
     "better-result": "^3.0.1",
     "dotenv": "^18.0.7",

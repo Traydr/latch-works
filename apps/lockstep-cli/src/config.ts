@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { LATCH_WORKS_DIRECTORY_NAME } from "@latch-works/media-domain";
 import { z } from "zod";
 import type { LockstepConfig, LockstepConfigDefaults, RememberedSettings } from "./types.js";
 
@@ -44,7 +45,7 @@ const RawConfigSchema = z.record(z.string(), z.unknown()).catch(() => ({}));
 const FileSystemErrorSchema = z.object({ code: z.string() });
 
 function defaultConfigDir(): string {
-  return path.join(os.homedir(), ".latch-works");
+  return path.join(os.homedir(), LATCH_WORKS_DIRECTORY_NAME);
 }
 
 export function createConfigStore(options: CreateConfigStoreOptions = {}): ConfigStore {

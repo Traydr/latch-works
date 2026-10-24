@@ -89,6 +89,9 @@
     "packages/media-domain": {
       "entry": ["src/**/*.test.ts"]
     },
+    "packages/app-data": {
+      "entry": ["src/**/*.test.ts"]
+    },
     "packages/media-index": {
       "entry": ["src/**/*.test.ts"]
     },

@@ -42,8 +42,10 @@ Packaged macOS builds must have a stable bundle id and a valid code signature, o
 allow the app to store the token but refuse to unlock it on the next launch.
 
 Unpackaged runs (the e2e suite, development) can set `LOCKSTEP_SECRET_STORAGE=file` to skip the
-Keychain. Tokens are then encrypted with a random key in `~/.config/lockstep/secret-storage.key`
-(or `$XDG_CONFIG_HOME/lockstep/`), created on first use with mode 0600. This avoids the Keychain
+Keychain. Tokens are then encrypted with a random key in Lockstep's data folder,
+`~/.latch-works/lockstep/secret-storage.key`, created on first use with mode 0600. A data folder
+that already has settings copies in the key older builds kept in `~/.config/lockstep/` (or
+`$XDG_CONFIG_HOME/lockstep/`), so their tokens still decrypt. This avoids the Keychain
 prompt that appears whenever the Electron binary changes, which blocks unattended runs. Packaged
 builds ignore the variable.
 

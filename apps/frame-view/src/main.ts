@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { Result, type Result as ResultType } from 'better-result';
 import { config as loadEnv } from 'dotenv';
+import { setLatchWorksDataFolder } from '@latch-works/app-data';
 import { app, BrowserWindow, protocol } from 'electron';
 import started from 'electron-squirrel-startup';
 
@@ -33,6 +34,10 @@ if (['1', 'true', 'yes'].includes((process.env.FRAME_VIEW_DISABLE_GPU ?? '').toL
 if (started) {
   app.quit();
 }
+
+// Settings, the media index and thumbnails live in ~/.latch-works/frame-view, with the other
+// apps' data; before the single-instance lock, which keys on this folder.
+setLatchWorksDataFolder(app, { folder: 'frame-view' });
 
 protocol.registerSchemesAsPrivileged([
   {

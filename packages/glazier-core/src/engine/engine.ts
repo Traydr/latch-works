@@ -89,6 +89,7 @@ import {
   undoPlan,
 } from "../plans/executor.js";
 import {
+  followDataFolder,
   HoldingPlaces,
   heldBatchPaths,
   listHolding,
@@ -207,6 +208,7 @@ export class GlazierEngine {
   static async open(options: EngineOptions): Promise<GlazierEngine> {
     await mkdir(options.dataDir, { recursive: true });
     const db = new CatalogDatabase(path.join(options.dataDir, "catalog.sqlite"));
+    followDataFolder(db, options.dataDir);
     await recoverInterruptedPlans(db);
 
     const engine = new GlazierEngine(db, options);

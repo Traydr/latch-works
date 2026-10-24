@@ -11,7 +11,10 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 
-import { GLAZIER_HOLDING_DIRECTORY_NAME } from "@latch-works/media-domain";
+import {
+  GLAZIER_HOLDING_DIRECTORY_NAME,
+  LATCH_WORKS_DIRECTORY_NAME,
+} from "@latch-works/media-domain";
 import { z } from "zod";
 
 import type { CatalogDatabase } from "../catalog/database.js";
@@ -68,10 +71,11 @@ export interface HoldingRoot {
 
 /**
  * Where each root's held files go, always outside the root, so nothing that syncs or indexes the
- * root (Lockstep, Frame View, a cloud drive) ever sees them. That is Glazier's data folder when it
- * shares the root's volume, so holding a file is a rename. A root on another volume holds in a
- * `.glazier-holding` folder at the top of that volume instead, still a rename; only a root that is
- * a whole volume holds in the data folder, by copying across.
+ * root (Lockstep, Frame View, a cloud drive) ever sees them. That is Glazier's data folder
+ * (`~/.latch-works/glazier/holding`) when it shares the root's volume, so holding a file is a
+ * rename. A root on another volume holds in `.latch-works/glazier/holding` at the top of that
+ * volume instead, still a rename; only a root that is a whole volume holds in the data folder, by
+ * copying across.
  */
 export class HoldingPlaces {
   private readonly folders = new Map<RootId, Promise<string>>();
@@ -108,7 +112,13 @@ export class HoldingPlaces {
       return inDataDir;
     }
 
-    const onVolume = path.join(mountPoint, GLAZIER_HOLDING_DIRECTORY_NAME, rootFolderName(root));
+    const onVolume = path.join(
+      mountPoint,
+      LATCH_WORKS_DIRECTORY_NAME,
+      "glazier",
+      "holding",
+      rootFolderName(root),
+    );
 
     try {
       await mkdir(onVolume, { recursive: true });
@@ -389,6 +399,53 @@ async function pruneEmptyFolders(folder: string): Promise<void> {
   }
 
   await rmdir(folder).catch(() => undefined);
+}
+
+const DataFolderRowSchema = z.object({ value: z.string() });
+
+const PlacedRowSchema = z.object({
+  id: z.number(),
+  hold_path: z.string(),
+  batch_path: z.string().nullable(),
+});
+
+/**
+ * Keeps held files findable when Glazier's data folder moves (to `~/.latch-works/glazier`, or by
+ * hand), since the catalog records each one's absolute place. The catalog notes the folder it was
+ * opened from, and on opening from another one rewrites every place under the old folder to the
+ * same place under the new.
+ */
+export function followDataFolder(db: CatalogDatabase, dataDir: string): void {
+  const current = path.resolve(dataDir);
+
+  const recorded =
+    db.get("SELECT value FROM settings WHERE key = 'data_dir'", DataFolderRowSchema)?.value ?? null;
+
+  if (recorded !== null && recorded !== current) {
+    const moved = (place: string) =>
+      place.startsWith(recorded + path.sep)
+        ? path.join(current, path.relative(recorded, place))
+        : place;
+
+    const placed = db.all(
+      "SELECT id, hold_path, batch_path FROM holding WHERE hold_path IS NOT NULL",
+      PlacedRowSchema,
+    );
+
+    for (const row of placed) {
+      db.run("UPDATE holding SET hold_path = $hold, batch_path = $batch WHERE id = $id", {
+        $hold: moved(row.hold_path),
+        $batch: row.batch_path === null ? null : moved(row.batch_path),
+        $id: row.id,
+      });
+    }
+  }
+
+  db.run(
+    `INSERT INTO settings (key, value) VALUES ('data_dir', $value)
+      ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
+    { $value: current },
+  );
 }
 
 export interface RelocationResult {

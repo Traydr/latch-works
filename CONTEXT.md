@@ -69,8 +69,8 @@ _Avoid_: Batch job, auto-fix
 
 **Holding**:
 Where removed files and replaced originals wait, always outside their root: Glazier's data folder
-when it shares the root's volume, otherwise a `.glazier-holding` folder at the top of the root's
-volume. Restoring moves a file back, and emptying sends it to the system Trash.
+(`~/.latch-works/glazier`) when it shares the root's volume, otherwise `.latch-works/glazier/holding`
+at the top of the root's volume. Restoring moves a file back, and emptying sends it to the system Trash.
 _Avoid_: Trash, recycle bin, quarantine
 
 **Archive Format**:

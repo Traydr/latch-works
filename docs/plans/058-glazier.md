@@ -34,7 +34,7 @@ removal or replaced original goes to a holding folder the journal can undo. The 
    `glazier` free for a later CLI.
 2. **Holding**: outside the root, so a sync client or indexer that knows nothing of Glazier
    (Tresorit, an older Lockstep) never sees it. Glazier's data folder holds when it shares the
-   root's volume; otherwise a `.glazier-holding` folder at the top of that volume does, so a
+   root's volume; otherwise `.latch-works/glazier/holding` at the top of that volume does, so a
    removal is still a rename with exact undo. Only a root that is a whole volume copies across to
    the data folder. Emptying sends holding to the system Trash (the Recycle Bin on Windows).
    (Revised: holding first lived in `<root>/.glazier-holding`, and the Lockstep then installed
@@ -114,11 +114,16 @@ It supersedes items 1, 2, 3 and 6 above.
 4. **Less confirmation.** Changes apply at once and toast once. Empty to Trash does not confirm,
    since the Trash is the safety net; only Forget folder does, and it now sends that folder's held
    files to the Trash too.
-5. **Holding left the root.** Held files live in Glazier's data folder (or a `.glazier-holding`
-   folder at the top of another volume), because a sync client that does not know Glazier, such
-   as the installed Lockstep or Tresorit, synced `<root>/.glazier-holding`. Older catalogs move
-   their held files out on start (migration 3 records each held file's full path).
-6. **Convert waits for review.** Members of open similar sets, and files not yet checked for
+5. **Holding left the root.** Held files live in Glazier's data folder (or
+   `.latch-works/glazier/holding` at the top of another volume), because a sync client that does
+   not know Glazier, such as the installed Lockstep or Tresorit, synced `<root>/.glazier-holding`.
+   Older catalogs move their held files out on start (migration 3 records each held file's full
+   path).
+6. **One folder for every app's data.** Glazier, Frame View and Lockstep desktop keep their data
+   in `~/.latch-works/<app>`, beside the Lockstep CLI's config and hash caches, instead of each
+   app's own `Application Support` folder; the first start moves the old folder there. Every
+   scanner skips `.latch-works`.
+7. **Convert waits for review.** Members of open similar sets, and files not yet checked for
    similar versions while analysis is on, are not converted, so review never compares a
    re-encoded copy.
 

@@ -47,6 +47,7 @@
   "dependencies": {
     "@ffprobe-installer/ffprobe": "^2.1.2",
     "@jsquash/avif": "2.1.1",
+    "@latch-works/app-data": "workspace:*",
     "@latch-works/glazier-core": "workspace:*",
     "@latch-works/media-format": "workspace:*",
     "electron-squirrel-startup": "^1.0.1",

@@ -1,17 +1,21 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
+import { setLatchWorksDataFolder } from "@latch-works/app-data";
 import { Result } from "better-result";
 import { app, BrowserWindow, dialog, safeStorage } from "electron";
 import started from "electron-squirrel-startup";
 
 import { registerIpc } from "./main/ipc/registerIpc";
-import { FileSecretStorage, lockstepConfigDir } from "./main/services/fileSecretStorage";
+import { FileSecretStorage, fileSecretKeyPath } from "./main/services/fileSecretStorage";
 import { ProfileService, type SecretStorage } from "./main/services/profileService";
 import { RunService } from "./main/services/runService";
 
 if (started) {
   app.quit();
 }
+
+// Profiles and settings live in ~/.latch-works/lockstep, with the other apps' data.
+setLatchWorksDataFolder(app, { folder: "lockstep" });
 
 app.disableHardwareAcceleration();
 
@@ -30,12 +34,12 @@ function resolveWindowIconPath(fileName: string): string | undefined {
 
 /**
  * Unpackaged runs (e2e, development) can set `LOCKSTEP_SECRET_STORAGE=file` to keep tokens under
- * a key in `~/.config/lockstep` instead of the Keychain, which prompts whenever the Electron binary
- * changes and blocks unattended runs. Packaged builds always use `safeStorage`.
+ * a key in Lockstep's data folder instead of the Keychain, which prompts whenever the Electron
+ * binary changes and blocks unattended runs. Packaged builds always use `safeStorage`.
  */
 function resolveSecretStorage(): SecretStorage {
   if (!app.isPackaged && process.env.LOCKSTEP_SECRET_STORAGE === "file") {
-    return new FileSecretStorage(path.join(lockstepConfigDir(), "secret-storage.key"));
+    return new FileSecretStorage(fileSecretKeyPath(app.getPath("userData")));
   }
 
   return safeStorage;

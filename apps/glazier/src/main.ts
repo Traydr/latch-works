@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 
+import { setLatchWorksDataFolder } from "@latch-works/app-data";
 import { app, BrowserWindow, Menu, type MenuItemConstructorOptions } from "electron";
 import started from "electron-squirrel-startup";
 
@@ -12,6 +13,9 @@ import { type AppCommand, RendererChannels } from "./shared/messages";
 if (started) {
   app.quit();
 }
+
+// The catalog, thumbnails and holding live in ~/.latch-works/glazier, with the other apps' data.
+setLatchWorksDataFolder(app, { folder: "glazier" });
 
 // Unlike the other Latch Works apps, hardware acceleration stays on: the transcoder window's
 // WebCodecs encoders run on the GPU and media engines it provides.
