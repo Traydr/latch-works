@@ -64,7 +64,7 @@ jobs:
           "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Append
 
       - name: Check vpk
-        run: vpk --version
+        run: vpk --help
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --prod=false

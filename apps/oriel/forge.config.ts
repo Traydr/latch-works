@@ -223,7 +223,7 @@ function packWithVelopack(): string {
   const art = (file: string) => path.join(installerPath, file);
 
   try {
-    execFileSync("vpk", ["--version"], { stdio: "ignore" });
+    execFileSync("vpk", ["--help"], { stdio: "ignore" });
   } catch (cause) {
     throw new Error(
       `Velopack's vpk did not run (${cause instanceof Error ? cause.message : String(cause)}). Install it with: dotnet tool install -g vpk --version ${VPK_VERSION}`,
