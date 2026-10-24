@@ -68,8 +68,9 @@ test("the resized JPEG is grouped with the picture it came from", async () => {
   await expect(tile("sunset.png")).toHaveAttribute("data-keep", "true");
   await expect(window.locator("[data-decide]")).toHaveText(/^Keep 1/);
 
-  // ⇧2 keeps the resized one as well, which makes them not duplicates; nothing changes on disk.
-  await window.keyboard.press("Shift+Digit2");
+  // Its checkbox keeps the resized one as well, which makes them not duplicates, without deciding
+  // the set; ⇧2 takes it back. Nothing changes on disk.
+  await tile("sunset-small.jpg").getByRole("checkbox").click();
   await expect(tile("sunset-small.jpg")).toHaveAttribute("data-keep", "true");
   await expect(window.locator("[data-decide]")).toContainText("Not duplicates");
   await window.keyboard.press("Shift+Digit2");

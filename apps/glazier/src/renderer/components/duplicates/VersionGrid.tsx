@@ -1,5 +1,5 @@
 import type { DuplicateSet, FileId, FileRow } from "@latch-works/glazier-core/contract";
-import { Check, FolderOpen, Maximize2, Minus, Plus } from "lucide-react";
+import { Check, FolderOpen, Maximize2 } from "lucide-react";
 import { type MouseEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { desktop, mediaUrl, thumbnailUrl } from "../../lib/api";
@@ -103,9 +103,9 @@ function canShow(file: FileRow): boolean {
 
 /**
  * Every version of a similar set at once, as Lightroom's Survey shows candidates. A click on a
- * version keeps only it and moves on, as its number key does; ⇧-click (or its +) keeps it as
- * well. The keeper carries the violet ring and Keep badge; a close call's keeper is only
- * "Suggested", with a dashed ring, since the app is not sure.
+ * version keeps only it and moves on, as its number key does; its checkbox (or ⇧-click) keeps it
+ * as well, so several versions can stay. The keeper carries the violet ring and Keep badge; a
+ * close call's keeper is only "Suggested", with a fainter ring, since the app is not sure.
  */
 export function VersionGrid({
   set,
@@ -304,12 +304,6 @@ function VersionTile({
       }`
     : "";
 
-  const extra = canUnkeep
-    ? { icon: <Minus />, label: "Don't keep", title: `Don't keep this one  ⇧${number}` }
-    : isKept
-      ? null
-      : { icon: <Plus />, label: "Keep as well", title: `Keep this one as well  ⇧${number}` };
-
   const revealed = focused ? "" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100";
 
   return (
@@ -359,20 +353,50 @@ function VersionTile({
           />
         )}
 
-        {/* The number teaches the click on hover: "4 · Click to keep". */}
-        <span
-          className={`gz-badge absolute top-2 left-2 min-w-6 justify-center ${
-            focused
-              ? "bg-white text-zinc-900 shadow-[0_1px_2px_rgb(0_0_0/0.3)]"
-              : "gz-badge-overlay"
-          }`}
-        >
-          {number}
-          {readOnly || isKept ? null : (
-            <span className={focused ? "inline" : "hidden group-hover:inline"}>
-              {" · Click to keep"}
-            </span>
+        {/*
+          The checkbox keeps this version alongside the others (several can be kept, as for
+          alternates that only look alike); the number teaches the click: "4 · Click to keep".
+        */}
+        <span className="absolute top-2 left-2 flex items-center gap-1.5">
+          {readOnly ? null : (
+            // biome-ignore lint/a11y: the checkbox inside takes the keyboard; the label only keeps its click from keeping this version alone.
+            <label
+              className="flex size-6 cursor-pointer items-center justify-center rounded-md bg-white/90 shadow-[0_1px_2px_rgb(0_0_0/0.3)] dark:bg-zinc-900/80"
+              title={
+                !isKept
+                  ? `Keep this one as well  ⇧${number}`
+                  : canUnkeep
+                    ? `Don't keep this one  ⇧${number}`
+                    : "Kept. Check another to keep more than one"
+              }
+              onClick={(event) => event.stopPropagation()}
+              onMouseDown={(event) => event.preventDefault()}
+            >
+              <input
+                type="checkbox"
+                className="gz-check"
+                tabIndex={-1}
+                checked={isKept}
+                aria-label={`Keep version ${number}`}
+                onClick={(event) => event.stopPropagation()}
+                onChange={onToggleKeep}
+              />
+            </label>
           )}
+          <span
+            className={`gz-badge min-w-6 justify-center ${
+              focused
+                ? "bg-white text-zinc-900 shadow-[0_1px_2px_rgb(0_0_0/0.3)]"
+                : "gz-badge-overlay"
+            }`}
+          >
+            {number}
+            {readOnly || isKept ? null : (
+              <span className={focused ? "inline" : "hidden group-hover:inline"}>
+                {" · Click to keep"}
+              </span>
+            )}
+          </span>
         </span>
 
         <span className="absolute top-2 right-2 flex items-center gap-1.5">
@@ -415,24 +439,6 @@ function VersionTile({
             )
           ) : null}
         </span>
-
-        {/* Keeping another as well sits a tile's width from the click that keeps only this. */}
-        {readOnly || !extra ? null : (
-          <button
-            type="button"
-            title={extra.title}
-            onClick={(event) => {
-              event.stopPropagation();
-              onToggleKeep();
-            }}
-            className={`gz-btn gz-btn-sm absolute right-2 bg-white text-zinc-900 shadow-[0_2px_8px_rgb(0_0_0/0.3)] hover:bg-zinc-100 ${
-              playable ? "bottom-12" : "bottom-2"
-            } ${revealed}`}
-          >
-            {extra.icon}
-            {extra.label}
-          </button>
-        )}
 
         {/* Each video plays with its sound, to check its length and soundtrack against the rest. */}
         {playable ? (
