@@ -1,6 +1,6 @@
 import { ArrowUp, FolderOpen, X } from "lucide-react";
 import { type JSX, useEffect, useRef, useState } from "react";
-import { useModeActive } from "../../../../shell/shell";
+import { useModeActive, useShell } from "../../../../shell/shell";
 import { useViewerChromeIdle } from "../hooks/useViewerChromeIdle";
 import type { ComicEntry } from "../utils/comics";
 import { HOTKEYS, isPlainHotkeyEvent, matchesAnyKey } from "../utils/hotkeys";
@@ -19,6 +19,7 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
   const { chromeVisible, revealChrome, chromeVisibilityClass } = useViewerChromeIdle();
   const modeActive = useModeActive();
+  const { insetTitleBar } = useShell();
 
   // Modal only while View shows: a modal dialog in a hidden mode would make the rest inert.
   useEffect(() => {
@@ -164,7 +165,8 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
         style={{ paddingTop: "max(1rem, env(safe-area-inset-top))" }}
       >
         <div className="pointer-events-auto flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
+          {/* The reader covers the whole window; macOS draws its window buttons at the top left. */}
+          <div className={`min-w-0 flex-1 ${insetTitleBar ? "pl-[72px]" : ""}`}>
             <p className="truncate text-sm font-medium text-white">{comic.name}</p>
             <p className="text-xs text-white/70 tabular-nums">
               {currentPageIndex + 1}/{comic.pages.length} pages

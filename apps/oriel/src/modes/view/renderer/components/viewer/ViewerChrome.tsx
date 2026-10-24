@@ -38,7 +38,10 @@ export function ViewerChrome({
   onStep,
   onToggleFullscreen,
 }: ViewerChromeProps): JSX.Element {
-  const { handOff } = useShell();
+  const { handOff, insetTitleBar } = useShell();
+  // The viewer covers the whole window, and macOS draws its window buttons over the top left
+  // unless the viewer is fullscreen, so the title starts to their right.
+  const clearWindowButtons = insetTitleBar && !isFullscreen;
 
   return (
     <>
@@ -47,7 +50,7 @@ export function ViewerChrome({
         style={{ paddingTop: "max(1rem, env(safe-area-inset-top))" }}
       >
         <div className="pointer-events-auto flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
+          <div className={`min-w-0 flex-1 ${clearWindowButtons ? "pl-[72px]" : ""}`}>
             <p className="truncate text-sm font-medium text-white">{item.name}</p>
             <p className="truncate text-xs text-white/70">{details.join(" · ")}</p>
           </div>
