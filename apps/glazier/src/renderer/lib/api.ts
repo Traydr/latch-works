@@ -16,6 +16,10 @@ import {
   type ConfirmRequest,
   type EmptyHoldingResult,
   EmptyHoldingResultSchema,
+  type FolderListing,
+  FolderListingSchema,
+  type FolderPlaces,
+  FolderPlacesSchema,
   JsonSchema,
   type MenuEntry,
 } from "../../shared/messages";
@@ -70,8 +74,10 @@ export function onAppCommand(listener: (command: AppCommand) => void): () => voi
 export const desktop = {
   /** Whether the window buttons sit over the page (macOS), so the top bar leaves room for them. */
   insetTitleBar: () => window.glazier?.platform === "darwin",
-  pickRoot: () => requireBridge().pickRoot(),
-  pickFolder: () => requireBridge().pickFolder(),
+  listFolder: async (folder: string): Promise<FolderListing> =>
+    FolderListingSchema.parse(await requireBridge().listFolder(folder)),
+  folderPlaces: async (): Promise<FolderPlaces> =>
+    FolderPlacesSchema.parse(await requireBridge().folderPlaces()),
   reveal: (filePath: string) => requireBridge().reveal(filePath),
   open: (filePath: string) => requireBridge().open(filePath),
   quickLook: (filePath: string) => requireBridge().quickLook(filePath),

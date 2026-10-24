@@ -15,8 +15,8 @@ const bridge: GlazierBridge = {
       ipcRenderer.removeListener(RendererChannels.event, handler);
     };
   },
-  pickRoot: () => ipcRenderer.invoke(RendererChannels.pickRoot),
-  pickFolder: () => ipcRenderer.invoke(RendererChannels.pickFolder),
+  listFolder: (folder) => ipcRenderer.invoke(RendererChannels.listFolder, folder),
+  folderPlaces: () => ipcRenderer.invoke(RendererChannels.folderPlaces),
   reveal: (filePath) => ipcRenderer.invoke(RendererChannels.reveal, filePath),
   open: (filePath) => ipcRenderer.invoke(RendererChannels.open, filePath),
   quickLook: (filePath) => ipcRenderer.invoke(RendererChannels.quickLook, filePath),

@@ -400,6 +400,9 @@ importers:
       '@latch-works/glazier-core':
         specifier: workspace:*
         version: link:../../packages/glazier-core
+      '@latch-works/media-domain':
+        specifier: workspace:*
+        version: link:../../packages/media-domain
       '@latch-works/media-format':
         specifier: workspace:*
         version: link:../../packages/media-format

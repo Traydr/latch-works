@@ -2,6 +2,7 @@ import type { RootId } from "@latch-works/glazier-core/contract";
 import { type DragEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import glazierIcon from "../../media/glazier-icon.svg";
+import { FolderPickerProvider, useFolderPicker } from "./components/FolderPicker";
 import { ShortcutSheet } from "./components/ShortcutSheet";
 import { Sidebar } from "./components/Sidebar";
 import { ToastProvider, ToastViewport, useToasts } from "./components/Toasts";
@@ -30,7 +31,9 @@ export function App() {
         <EngineProvider>
           <NavigationProvider>
             <ActionsProvider>
-              <Shell />
+              <FolderPickerProvider>
+                <Shell />
+              </FolderPickerProvider>
             </ActionsProvider>
           </NavigationProvider>
         </EngineProvider>
@@ -99,9 +102,19 @@ function Shell() {
     [go, report, selectRoot],
   );
 
+  const pickFolder = useFolderPicker();
+  const rootPath = root?.path ?? null;
+
+  // Opens beside the current root, highlighted, since a second root is usually its neighbour.
   const chooseFolder = useCallback(
-    () => void desktop.pickRoot().then(addFolder, report),
-    [addFolder, report],
+    () =>
+      void pickFolder({
+        title: "Choose a folder to tidy",
+        action: "Choose",
+        start: rootPath === null ? null : `${rootPath}/..`,
+        select: rootPath,
+      }).then(addFolder, report),
+    [addFolder, pickFolder, report, rootPath],
   );
 
   useEffect(

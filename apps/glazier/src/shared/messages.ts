@@ -103,8 +103,8 @@ export const TranscoderChannels = {
 /** renderer → main, and the two main → renderer channels (`event`, `command`) */
 export const RendererChannels = {
   call: "glazier:call",
-  pickRoot: "glazier:pick-root",
-  pickFolder: "glazier:pick-folder",
+  listFolder: "glazier:list-folder",
+  folderPlaces: "glazier:folder-places",
   reveal: "glazier:reveal",
   open: "glazier:open",
   quickLook: "glazier:quick-look",
@@ -191,3 +191,43 @@ export type EmptyHoldingResult = z.infer<typeof EmptyHoldingResultSchema>;
 export const PathArgSchema = z.string().min(1);
 
 export const RootArgSchema = RootIdSchema;
+
+/** One folder under the folder being browsed. */
+const FolderEntrySchema = z.object({ name: z.string(), path: z.string() });
+
+/** The folders inside one folder, for the in-app folder picker; hidden and system folders left out. */
+export const FolderListingSchema = z.discriminatedUnion("ok", [
+  z.object({
+    ok: z.literal(true),
+    path: z.string(),
+    parent: z.string().nullable(),
+    folders: z.array(FolderEntrySchema),
+  }),
+  z.object({
+    ok: z.literal(false),
+    path: z.string(),
+    parent: z.string().nullable(),
+    message: z.string(),
+  }),
+]);
+
+export type FolderListing = z.infer<typeof FolderListingSchema>;
+
+const FolderPlaceSchema = z.object({
+  kind: z.enum(["home", "desktop", "documents", "downloads", "pictures", "videos", "volume"]),
+  label: z.string(),
+  path: z.string(),
+});
+
+export type FolderPlace = z.infer<typeof FolderPlaceSchema>;
+
+/** Where the folder picker can start: the home folder, its usual folders, and mounted drives. */
+export const FolderPlacesSchema = z.object({
+  home: z.string(),
+  /** `path.sep`, so the picker splits a typed path the way this platform writes it. */
+  separator: z.string(),
+  places: z.array(FolderPlaceSchema),
+  volumes: z.array(FolderPlaceSchema),
+});
+
+export type FolderPlaces = z.infer<typeof FolderPlacesSchema>;

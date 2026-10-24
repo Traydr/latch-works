@@ -2,9 +2,9 @@ import type { EncoderCapabilities, RootId } from "@latch-works/glazier-core/cont
 import { ChevronRight, Folder, X } from "lucide-react";
 import { type ReactNode, useState } from "react";
 
+import { useFolderPicker } from "../components/FolderPicker";
 import { useToasts } from "../components/Toasts";
 import { Segmented, StartTruncate, Switch, TopBar } from "../components/ui";
-import { desktop } from "../lib/api";
 import { useEngine } from "../lib/engine-state";
 import { SIMILARITY_LEVELS, VIDEO_QUALITIES } from "../lib/preferences";
 import { type ThemeChoice, useTheme } from "../lib/theme";
@@ -130,6 +130,7 @@ export function SettingsView({ rootId }: { rootId: RootId }) {
   const { settings, setSettings, capabilities, roots, report } = useEngine();
   const { choice, choose } = useTheme();
   const toasts = useToasts();
+  const pickFolder = useFolderPicker();
   const root = roots.find((candidate) => candidate.id === rootId);
 
   if (!settings) {
@@ -152,7 +153,11 @@ export function SettingsView({ rootId }: { rootId: RootId }) {
     let folder: string | null = null;
 
     try {
-      folder = await desktop.pickFolder();
+      folder = await pickFolder({
+        title: "Prefer a folder",
+        action: "Prefer",
+        within: { path: root.path, name: root.name },
+      });
     } catch (error) {
       report(error);
     }

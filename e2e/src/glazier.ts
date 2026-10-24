@@ -64,11 +64,16 @@ export async function launchGlazier(): Promise<GlazierSession> {
   return { app, window, userDataDir };
 }
 
-/** Points the native folder picker at `folder` for the next pick, from the main process. */
-export async function stubFolderDialog(app: ElectronApplication, folder: string): Promise<void> {
-  await app.evaluate(({ dialog }, chosen) => {
-    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [chosen] });
-  }, folder);
+/**
+ * Picks `folder` in Glazier's own folder picker, which the click before this opened: types its
+ * path into the path field, waits for the listing to catch up, and chooses it.
+ */
+export async function chooseFolder(window: Page, folder: string): Promise<void> {
+  const choose = window.locator("[data-folder-choose]");
+
+  await window.locator("[data-folder-path]").fill(`${folder}${path.sep}`);
+  await expect(choose).toContainText(`“${path.basename(folder)}”`);
+  await choose.click();
 }
 
 /**

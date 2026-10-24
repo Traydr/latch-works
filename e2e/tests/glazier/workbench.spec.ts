@@ -2,11 +2,11 @@ import { rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
 import {
+  chooseFolder,
   type GlazierSession,
   latestToast,
   launchGlazier,
   openView,
-  stubFolderDialog,
   waitForJobs,
 } from "../../src/glazier.ts";
 import {
@@ -36,10 +36,10 @@ test.afterAll(async () => {
 test.describe.configure({ mode: "serial" });
 
 test("a new folder is scanned and Overview lists what to do with it", async () => {
-  const { app, window } = session;
+  const { window } = session;
 
-  await stubFolderDialog(app, archive);
   await window.getByRole("button", { name: /Choose folder/i }).click();
+  await chooseFolder(window, archive);
   // The scan, then the similar and sound analysis it queues in the background.
   await waitForJobs(window);
 

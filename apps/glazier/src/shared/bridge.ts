@@ -12,8 +12,10 @@ export interface GlazierBridge {
   platform: string;
   call(method: string, input: Json): Promise<Json>;
   onEvent(listener: (event: Json) => void): () => void;
-  pickRoot(): Promise<string | null>;
-  pickFolder(): Promise<string | null>;
+  /** The folders inside a folder, unparsed `FolderListing`; `~` is the home folder. */
+  listFolder(folder: string): Promise<Json>;
+  /** Home, its usual folders and mounted drives, unparsed `FolderPlaces`. */
+  folderPlaces(): Promise<Json>;
   reveal(filePath: string): Promise<void>;
   open(filePath: string): Promise<void>;
   quickLook(filePath: string): Promise<void>;

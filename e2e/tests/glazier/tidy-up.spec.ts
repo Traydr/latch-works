@@ -2,10 +2,10 @@ import { rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
 import {
+  chooseFolder,
   type GlazierSession,
   latestToast,
   launchGlazier,
-  stubFolderDialog,
   waitForJobs,
 } from "../../src/glazier.ts";
 import { buildGlazierArchive, heldFiles, streamCodecs } from "../../src/glazier-archive.ts";
@@ -30,10 +30,10 @@ test.afterAll(async () => {
 test("Tidy up runs every step as one change, and one Undo takes it all back", async () => {
   test.setTimeout(300_000);
 
-  const { app, window } = session;
+  const { window } = session;
 
-  await stubFolderDialog(app, archive);
   await window.getByRole("button", { name: /Choose folder/i }).click();
+  await chooseFolder(window, archive);
   await waitForJobs(window);
 
   await window

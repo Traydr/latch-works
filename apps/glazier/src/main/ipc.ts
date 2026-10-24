@@ -21,6 +21,7 @@ import {
   RootArgSchema,
 } from "../shared/messages";
 import type { EngineHost } from "./engine-host";
+import { folderPlaces, listFolder } from "./folders";
 
 /** Renderer IPC: engine calls pass through after their input is parsed; the rest is Electron's. */
 export function registerIpc(host: EngineHost, getWindow: () => BrowserWindow | null): void {
@@ -47,20 +48,13 @@ export function registerIpc(host: EngineHost, getWindow: () => BrowserWindow | n
     },
   );
 
-  const pickFolder = async (title: string) => {
-    const window = getWindow();
-    const options = { title, properties: ["openDirectory" as const, "createDirectory" as const] };
+  // The in-app folder picker reads folder names only; what it picks goes through the engine,
+  // which checks it like any other path.
+  ipcMain.handle(RendererChannels.listFolder, (_event, raw) =>
+    listFolder(PathArgSchema.parse(raw)),
+  );
 
-    const result = window
-      ? await dialog.showOpenDialog(window, options)
-      : await dialog.showOpenDialog(options);
-
-    return result.canceled ? null : (result.filePaths[0] ?? null);
-  };
-
-  ipcMain.handle(RendererChannels.pickRoot, () => pickFolder("Choose a folder"));
-
-  ipcMain.handle(RendererChannels.pickFolder, () => pickFolder("Move to folder"));
+  ipcMain.handle(RendererChannels.folderPlaces, () => folderPlaces());
 
   ipcMain.handle(RendererChannels.reveal, (_event, raw) => {
     const target = PathArgSchema.safeParse(raw);

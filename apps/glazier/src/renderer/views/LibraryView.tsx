@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { MenuEntry } from "../../shared/messages";
 import { FileTable } from "../components/FileTable";
+import { useFolderPicker } from "../components/FolderPicker";
 import { FileGrid } from "../components/library/FileGrid";
 import {
   activeFilterCount,
@@ -94,6 +95,7 @@ export function LibraryView({ rootId }: { rootId: RootId }) {
   const preferFolder = usePreferFolder(rootId);
   const searchInput = useRef<HTMLInputElement>(null);
   const root = roots.find((candidate) => candidate.id === rootId) ?? null;
+  const pickFolder = useFolderPicker();
   const rootName = root?.name ?? "Top folder";
 
   const [query, setQuery] = useState<FileListQuery>(() => ({
@@ -247,7 +249,13 @@ export function LibraryView({ rootId }: { rootId: RootId }) {
       return;
     }
 
-    const targetDir = await desktop.pickFolder().catch(report);
+    const targetDir = root
+      ? await pickFolder({
+          title: `Move ${plural(fileIds.length, "file")} to`,
+          action: "Move here",
+          within: { path: root.path, name: root.name },
+        }).catch(report)
+      : null;
 
     if (targetDir) {
       await runAndClear({ kind: "move", fileIds, targetDir });
