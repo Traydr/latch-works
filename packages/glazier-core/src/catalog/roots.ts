@@ -95,13 +95,27 @@ export function markScanned(db: CatalogDatabase, rootId: RootId): void {
 }
 
 const DEFAULT_SETTINGS: Settings = {
-  protectedFolders: [],
+  preferredFolders: [],
   similarity: "balanced",
-  reencodeCodec: "hevc",
   reencodeQuality: "high",
+  autoAnalyze: true,
 };
 
 const SettingsRowSchema = z.object({ value: z.string() });
+
+const FolderListSchema = SettingsSchema.shape.preferredFolders;
+
+/**
+ * A stored settings row from any version: each field falls back to its default on its own, and
+ * the folders older versions called protected become the preferred folders.
+ */
+const StoredSettingsSchema = z.object({
+  preferredFolders: FolderListSchema.optional().catch(undefined),
+  protectedFolders: FolderListSchema.optional().catch(undefined),
+  similarity: SettingsSchema.shape.similarity.catch(DEFAULT_SETTINGS.similarity),
+  reencodeQuality: SettingsSchema.shape.reencodeQuality.catch(DEFAULT_SETTINGS.reencodeQuality),
+  autoAnalyze: SettingsSchema.shape.autoAnalyze.catch(DEFAULT_SETTINGS.autoAnalyze),
+});
 
 export function readSettings(db: CatalogDatabase): Settings {
   const row = db.get("SELECT value FROM settings WHERE key = 'settings'", SettingsRowSchema);
@@ -110,9 +124,20 @@ export function readSettings(db: CatalogDatabase): Settings {
     return DEFAULT_SETTINGS;
   }
 
-  const parsed = SettingsSchema.safeParse(JSON.parse(row.value));
+  let stored: z.infer<typeof StoredSettingsSchema>;
 
-  return parsed.success ? parsed.data : DEFAULT_SETTINGS;
+  try {
+    stored = StoredSettingsSchema.parse(JSON.parse(row.value));
+  } catch {
+    return DEFAULT_SETTINGS;
+  }
+
+  return {
+    preferredFolders: stored.preferredFolders ?? stored.protectedFolders ?? [],
+    similarity: stored.similarity,
+    reencodeQuality: stored.reencodeQuality,
+    autoAnalyze: stored.autoAnalyze,
+  };
 }
 
 export function writeSettings(db: CatalogDatabase, settings: Settings): Settings {

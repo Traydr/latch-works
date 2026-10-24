@@ -1,10 +1,12 @@
 import {
   type EncoderCapabilities,
   GlazierEngine,
+  killRunningTools,
   type StillEncodeRequest,
   type StillEncodeResult,
   type StillEncoder,
   type TranscodeJob,
+  type TranscodeOutcome,
   type Transcoder,
 } from "@latch-works/glazier-core";
 
@@ -40,7 +42,7 @@ let nextRequestId = 1;
 
 const pendingEncodes = new Map<number, Pending<StillEncodeResult>>();
 
-const pendingTranscodes = new Map<number, Pending<void>>();
+const pendingTranscodes = new Map<number, Pending<TranscodeOutcome>>();
 
 function abortError(): DOMException {
   return new DOMException("The operation was aborted.", "AbortError");
@@ -138,7 +140,7 @@ async function start(): Promise<void> {
 
         return;
       case "transcoded":
-        pendingTranscodes.get(message.id)?.resolve();
+        pendingTranscodes.get(message.id)?.resolve({ via: "mediabunny", note: null });
         pendingTranscodes.delete(message.id);
 
         return;
@@ -168,6 +170,13 @@ async function start(): Promise<void> {
 
   post({ type: "ready" });
 }
+
+// The main process stops this one with SIGTERM when the app quits. ffmpeg and ffprobe children
+// would outlive it and keep converting, so they go first.
+process.on("SIGTERM", () => {
+  killRunningTools();
+  process.exit(0);
+});
 
 start().catch((error: Error) => {
   console.error(`[glazier:engine] failed to start: ${error.message}`);

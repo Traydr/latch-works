@@ -14,13 +14,24 @@ import type { CatalogDatabase, SqlParams } from "../catalog/database.js";
 import {
   FILE_COLUMNS,
   FILES_FROM,
+  FINGERPRINT_VERSION,
   type FileRecord,
   FileRecordSchema,
 } from "../catalog/file-rows.js";
-import type { FileFormat, OptimizeCategory, OptimizeSummary, RootId } from "../contract.js";
+import {
+  type FileFormat,
+  type FileId,
+  FileIdSchema,
+  type OptimizeCategory,
+  type OptimizeSummary,
+  type RootId,
+} from "../contract.js";
+import { Dismissals } from "../duplicates/dismissals.js";
+import { exactGroupSql } from "../duplicates/queries.js";
+import { FINGERPRINTABLE_SQL } from "../passes/fingerprint-pass.js";
 
 /** A file the archive policy would change, and how. */
-type OptimizeCandidate =
+export type OptimizeCandidate =
   | {
       category: "still-to-avif" | "rename-avif" | "rename-mp4";
       record: FileRecord;
@@ -127,12 +138,88 @@ function relPathBeside(record: FileRecord, name: string): string {
   return record.dir ? `${record.dir}/${name}` : name;
 }
 
+/** Why a file the policy would change is left out of the Convert step. */
+const SKIP_DUPLICATE = "Identical copies (resolve duplicates first)";
+
+const SKIP_NOT_SMALLER = "Already as small as they get";
+
+const SKIP_REVIEW = "Similar versions (review them first)";
+
+const SKIP_UNCHECKED = "Not checked for similar versions yet";
+
+/**
+ * Files Convert leaves alone for now because duplicate review still needs them as they are: the
+ * members of open similar sets, whose formats and sizes review compares, and (while background
+ * analysis is on, so the check will come) files not yet checked for similar versions, which may
+ * turn out to belong to such a set.
+ */
+export interface CandidateHolds {
+  reviewing: ReadonlySet<FileId>;
+  waitForFingerprints: boolean;
+}
+
+export const NO_HOLDS: CandidateHolds = { reviewing: new Set(), waitForFingerprints: false };
+
+function uncheckedFiles(db: CatalogDatabase, rootId: RootId): Set<FileId> {
+  return new Set(
+    db
+      .all(
+        `SELECT f.id FROM files f
+          WHERE f.root_id = $root AND f.fingerprint_version < $version AND ${FINGERPRINTABLE_SQL}`,
+        z.object({ id: FileIdSchema }),
+        { $root: rootId, $version: FINGERPRINT_VERSION },
+      )
+      .map(({ id }) => id),
+  );
+}
+
+/**
+ * Every file in an open set of identical copies. Converting one of them, even the keeper, turns
+ * the set from identical copies into similar versions that need a closer look, so the whole set
+ * waits until its duplicates are resolved or dismissed.
+ */
+function openDuplicateCopies(db: CatalogDatabase, rootId: RootId): Set<FileId> {
+  const params: SqlParams = {};
+
+  const members = db.all(
+    `SELECT f.id, f.sha256 FROM files f
+      WHERE f.sha256 IN (${exactGroupSql(rootId, params)})
+        AND f.root_id = $root AND f.is_junk = 0 AND f.size > 0`,
+    z.object({ id: FileIdSchema, sha256: z.string() }),
+    params,
+  );
+
+  const groups = new Map<string, FileId[]>();
+
+  for (const member of members) {
+    groups.set(member.sha256, [...(groups.get(member.sha256) ?? []), member.id]);
+  }
+
+  const dismissals = Dismissals.load(db);
+  const open = new Set<FileId>();
+
+  for (const ids of groups.values()) {
+    if (dismissals.covering(ids) === null) {
+      for (const id of ids) {
+        open.add(id);
+      }
+    }
+  }
+
+  return open;
+}
+
 /**
  * Every file under a root the archive policy would convert or rename. A conversion whose target
  * name is already taken is skipped, never overwritten; the two files are usually the same picture
- * and the duplicates view resolves them.
+ * and the duplicates view resolves them. Identical copies wait for that too, as do the files
+ * `holds` names, and a file an earlier conversion could not shrink is left as it is.
  */
-export function findOptimizeCandidates(db: CatalogDatabase, rootId: RootId): CandidateScan {
+export function findOptimizeCandidates(
+  db: CatalogDatabase,
+  rootId: RootId,
+  holds: CandidateHolds = NO_HOLDS,
+): CandidateScan {
   const params: SqlParams = { $root: rootId };
 
   const records = db.all(
@@ -153,6 +240,8 @@ export function findOptimizeCandidates(db: CatalogDatabase, rootId: RootId): Can
       .map((row) => row.rel_path.toLowerCase()),
   );
 
+  const duplicates = openDuplicateCopies(db, rootId);
+  const unchecked = holds.waitForFingerprints ? uncheckedFiles(db, rootId) : new Set<FileId>();
   const candidates: OptimizeCandidate[] = [];
   const skipped = new Map<string, number>();
   const skip = (reason: string) => skipped.set(reason, (skipped.get(reason) ?? 0) + 1);
@@ -171,6 +260,30 @@ export function findOptimizeCandidates(db: CatalogDatabase, rootId: RootId): Can
       continue;
     }
 
+    if (duplicates.has(record.id)) {
+      skip(SKIP_DUPLICATE);
+
+      continue;
+    }
+
+    if (holds.reviewing.has(record.id)) {
+      skip(SKIP_REVIEW);
+
+      continue;
+    }
+
+    if (unchecked.has(record.id)) {
+      skip(SKIP_UNCHECKED);
+
+      continue;
+    }
+
+    if (record.optimize_not_smaller === 1) {
+      skip(SKIP_NOT_SMALLER);
+
+      continue;
+    }
+
     const targetRel = relPathBeside(record, candidate.targetName).toLowerCase();
 
     if (targetRel !== record.rel_path.toLowerCase() && taken.has(targetRel)) {
@@ -183,6 +296,29 @@ export function findOptimizeCandidates(db: CatalogDatabase, rootId: RootId): Can
   }
 
   return { candidates, skipped };
+}
+
+/** Records a root's convertible files for file queries on this connection to filter by. */
+export function recordConvertible(
+  db: CatalogDatabase,
+  rootId: RootId,
+  candidates: readonly OptimizeCandidate[],
+): void {
+  db.transaction(() => {
+    db.run("DELETE FROM temp.convertible_files WHERE root_id = $root", { $root: rootId });
+
+    for (const candidate of candidates) {
+      db.run("INSERT OR IGNORE INTO temp.convertible_files (id, root_id) VALUES ($id, $root)", {
+        $id: candidate.record.id,
+        $root: rootId,
+      });
+    }
+  });
+}
+
+/** Forgets every recorded convertible file, when the catalog changed under them. */
+export function forgetConvertible(db: CatalogDatabase): void {
+  db.run("DELETE FROM temp.convertible_files");
 }
 
 function imageCandidate(

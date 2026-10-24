@@ -10,10 +10,18 @@ import {
 
 import type { GlazierBridge } from "../../shared/bridge";
 import {
+  type AppCommand,
+  AppCommandSchema,
   CallResultSchema,
+  type ConfirmRequest,
   type EmptyHoldingResult,
   EmptyHoldingResultSchema,
+  type FolderListing,
+  FolderListingSchema,
+  type FolderPlaces,
+  FolderPlacesSchema,
   JsonSchema,
+  type MenuEntry,
 } from "../../shared/messages";
 
 function requireBridge(): GlazierBridge {
@@ -53,14 +61,31 @@ export function onEngineEvent(listener: (event: EngineEvent) => void): () => voi
   });
 }
 
+export function onAppCommand(listener: (command: AppCommand) => void): () => void {
+  return requireBridge().onCommand((raw) => {
+    const parsed = AppCommandSchema.safeParse(raw);
+
+    if (parsed.success) {
+      listener(parsed.data);
+    }
+  });
+}
+
 export const desktop = {
-  pickRoot: () => requireBridge().pickRoot(),
-  pickFolder: () => requireBridge().pickFolder(),
+  /** Whether the window buttons sit over the page (macOS), so the top bar leaves room for them. */
+  insetTitleBar: () => window.glazier?.platform === "darwin",
+  listFolder: async (folder: string): Promise<FolderListing> =>
+    FolderListingSchema.parse(await requireBridge().listFolder(folder)),
+  folderPlaces: async (): Promise<FolderPlaces> =>
+    FolderPlacesSchema.parse(await requireBridge().folderPlaces()),
   reveal: (filePath: string) => requireBridge().reveal(filePath),
   open: (filePath: string) => requireBridge().open(filePath),
   quickLook: (filePath: string) => requireBridge().quickLook(filePath),
   emptyHolding: async (rootId: RootId): Promise<EmptyHoldingResult> =>
     EmptyHoldingResultSchema.parse(await requireBridge().emptyHolding(rootId)),
+  showMenu: (entries: MenuEntry[]) => requireBridge().showMenu(entries),
+  confirm: (request: ConfirmRequest) => requireBridge().confirm(request),
+  pathForFile: (file: File) => requireBridge().pathForFile(file),
 };
 
 export function mediaUrl(filePath: string): string {

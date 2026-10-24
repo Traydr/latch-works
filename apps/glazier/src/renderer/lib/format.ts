@@ -24,6 +24,11 @@ export function formatCount(count: number): string {
   return countFormat.format(count);
 }
 
+/** "1 file", "2 files"; pass the plural when adding "s" is wrong. */
+export function plural(count: number, singular: string, pluralForm = `${singular}s`): string {
+  return `${formatCount(count)} ${count === 1 ? singular : pluralForm}`;
+}
+
 export function formatDuration(ms: number | null): string {
   if (ms === null) {
     return "";
@@ -41,6 +46,8 @@ export function formatDuration(ms: number | null): string {
 
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
 
+const timeFormat = new Intl.DateTimeFormat(undefined, { timeStyle: "short" });
+
 const dateTimeFormat = new Intl.DateTimeFormat(undefined, {
   dateStyle: "medium",
   timeStyle: "short",
@@ -54,12 +61,48 @@ export function formatDateTime(ms: number): string {
   return dateTimeFormat.format(new Date(ms));
 }
 
-export function formatRelative(ms: number | null): string {
+const dateTimeSecondsFormat = new Intl.DateTimeFormat(undefined, {
+  dateStyle: "medium",
+  timeStyle: "medium",
+});
+
+/** The date and time to the second, for telling apart times that share a minute. */
+export function formatDateTimeSeconds(ms: number): string {
+  return dateTimeSecondsFormat.format(new Date(ms));
+}
+
+export function formatTime(ms: number): string {
+  return timeFormat.format(new Date(ms));
+}
+
+/** "Today", "Yesterday", or the date, for grouping a log by day. */
+export function formatDay(ms: number, now: number): string {
+  const day = new Date(ms).toDateString();
+
+  if (day === new Date(now).toDateString()) {
+    return "Today";
+  }
+
+  if (day === new Date(now - 86_400_000).toDateString()) {
+    return "Yesterday";
+  }
+
+  return formatDate(ms);
+}
+
+/** A path inside a root, without the root's own folders. */
+export function relativeTo(rootPath: string | undefined, filePath: string): string {
+  return rootPath && filePath.startsWith(rootPath)
+    ? filePath.slice(rootPath.length).replace(/^[\\/]+/, "")
+    : filePath;
+}
+
+export function formatRelative(ms: number | null, now = Date.now()): string {
   if (ms === null) {
     return "never";
   }
 
-  const minutes = Math.round((Date.now() - ms) / 60_000);
+  const minutes = Math.round((now - ms) / 60_000);
 
   if (minutes < 1) {
     return "just now";

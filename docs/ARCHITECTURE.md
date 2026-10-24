@@ -25,12 +25,13 @@ Gather Box and Glazier.
 
 Glazier is the one app that changes the local archive in bulk, so every change is a plan the owner
 reviews, applied step by step by an executor that re-reads each file first and skips one that
-changed since the scan. Removed files and replaced originals move to `.glazier-holding` inside
-their own root, a folder every scanner skips, so a removal is a same-volume rename the journal can
-undo; emptying it uses the system Trash.
+changed since the scan. Removed files and replaced originals move to holding outside their root,
+so nothing that syncs or indexes the root sees them: Glazier's data folder when it shares the
+root's volume, otherwise `.latch-works/glazier/holding` at the top of that volume, so a removal is
+still a rename the journal can undo. Emptying holding uses the system Trash.
 
-The engine (`glazier-core`) runs in a utility process with its SQLite catalog in the app's
-user-data folder; scanning never writes inside a root. AVIF encodes run in a pool of utility
+The engine (`glazier-core`) runs in a utility process with its SQLite catalog in Glazier's data
+folder (see [Local data](#local-data)); scanning never writes inside a root. AVIF encodes run in a pool of utility
 processes with Gather Box's libavif wasm. Video and animation work runs in a hidden window with
 Mediabunny over WebCodecs, so it gets the machine's hardware encoders; that window reads and writes
 only the paths of the job it was sent. See [the Glazier runbook](./runbooks/glazier.md) and
@@ -99,6 +100,31 @@ flowchart LR
 The authenticated media resolver accepts `mediaId`, `thumbnail | preview | original`, and an
 optional width. Batch requests contain at most 48 items and independently return `ready`, `pending`
 with `retryAfterMs`, or `failed`.
+
+## Local data
+
+Every app keeps what it owns in one folder, `~/.latch-works` (`%USERPROFILE%\.latch-works` on
+Windows), and never inside the archive:
+
+| Path | What |
+| --- | --- |
+| `glazier/` | Glazier's catalog, thumbnails and holding |
+| `frame-view/` | Frame View's settings, media index and thumbnail cache |
+| `lockstep/` | Lockstep desktop's profiles and settings; with `LOCKSTEP_SECRET_STORAGE=file`, its token key |
+| `lockstep.json` | The Lockstep CLI's remembered settings |
+| `hash-cache/v1/` | Lockstep's per-source hash caches |
+
+A Glazier root on another volume than the home folder holds in `.latch-works/glazier/holding` at
+the top of that volume, so a removal there is still a rename. Every scanner skips a folder named
+`.latch-works` (the system folder list in `media-domain`), so a scan of a home folder or a whole
+volume never indexes or syncs it.
+
+The desktop apps point Electron's `userData` at their folder before they start
+(`@latch-works/app-data`). The first start after that change renames the folder each one used
+before (`~/Library/Application Support/<App>` on macOS, `%APPDATA%\<App>` on Windows,
+`~/.config/<App>` on Linux) into place, so settings, catalogs and caches come along; if the rename
+fails the app keeps its old folder. An explicit `--user-data-dir`, as the e2e suite passes, is left
+alone.
 
 ## Sync and storage
 

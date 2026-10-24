@@ -1,15 +1,32 @@
-import type { Json, TranscoderJobMessage, TranscoderOutbound } from "./messages";
+import type {
+  ConfirmRequest,
+  Json,
+  MenuEntry,
+  TranscoderJobMessage,
+  TranscoderOutbound,
+} from "./messages";
 
 /** What the main window's preload exposes as `window.glazier`. Results are parsed by the caller. */
 export interface GlazierBridge {
+  /** `process.platform`: macOS draws its window buttons over the app's own top bar. */
+  platform: string;
   call(method: string, input: Json): Promise<Json>;
   onEvent(listener: (event: Json) => void): () => void;
-  pickRoot(): Promise<string | null>;
-  pickFolder(): Promise<string | null>;
+  /** The folders inside a folder, unparsed `FolderListing`; `~` is the home folder. */
+  listFolder(folder: string): Promise<Json>;
+  /** Home, its usual folders and mounted drives, unparsed `FolderPlaces`. */
+  folderPlaces(): Promise<Json>;
   reveal(filePath: string): Promise<void>;
   open(filePath: string): Promise<void>;
   quickLook(filePath: string): Promise<void>;
   emptyHolding(rootId: number): Promise<Json>;
+  /** Pops a native menu at the pointer; resolves with the chosen item's id, or null. */
+  showMenu(entries: MenuEntry[]): Promise<string | null>;
+  confirm(request: ConfirmRequest): Promise<boolean>;
+  /** The path of a file or folder dropped on the window. */
+  pathForFile(file: File): string;
+  /** App menu commands, unparsed. */
+  onCommand(listener: (command: Json) => void): () => void;
 }
 
 /**

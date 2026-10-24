@@ -1,15 +1,33 @@
 import { z } from "zod";
 
-import type { SqlParams } from "../catalog/database.js";
+import type { CatalogDatabase, SqlParams } from "../catalog/database.js";
 import { LOUDNESS_VERSION, toAbsolutePath } from "../catalog/file-rows.js";
-import { FileIdSchema } from "../contract.js";
+import { type FileId, FileIdSchema, type RootId, RootIdSchema } from "../contract.js";
 import { runTool } from "../media/run-tool.js";
-import { forEachConcurrent, type PassContext, rootClause } from "./context.js";
+import {
+  forEachConcurrent,
+  type PassContext,
+  rootClause,
+  SAME_ROW_SQL,
+  sameRowParams,
+  stillSelected,
+} from "./context.js";
 
 /** Decoding the audio of a long video is fast, but a feature-length file still takes a while. */
 const LOUDNESS_TIMEOUT_MS = 10 * 60 * 1000;
 
-const PendingSchema = z.object({ id: FileIdSchema, root_path: z.string(), rel_path: z.string() });
+/** Videos with an audio track the pass has not measured, as a condition on `files f`. */
+const UNMEASURED_SQL = `f.kind = 'video' AND f.probe_version > 0 AND COALESCE(f.audio_streams, 0) > 0
+  AND f.loudness_version < $version`;
+
+const PendingSchema = z.object({
+  id: FileIdSchema,
+  root_id: RootIdSchema,
+  root_path: z.string(),
+  rel_path: z.string(),
+  size: z.number(),
+  mtime_ms: z.number(),
+});
 
 /** The loudest sample of a video's first audio track, in dBFS, from ffmpeg's `volumedetect`. */
 async function measurePeakVolume(
@@ -48,7 +66,33 @@ async function measurePeakVolume(
   return match[1] === "-inf" ? -120 : Number(match[1]);
 }
 
-/** Measures every video with an audio track whose loudness is unknown. */
+/** How many videos of a root the pass would measure now. */
+export function pendingLoudness(db: CatalogDatabase, rootId: RootId): number {
+  return (
+    db.get(
+      `SELECT COUNT(*) AS pending FROM files f WHERE ${UNMEASURED_SQL} AND f.root_id = $root`,
+      z.object({ pending: z.number() }),
+      { $version: LOUDNESS_VERSION, $root: rootId },
+    )?.pending ?? 0
+  );
+}
+
+/** True once another pass, run meanwhile, measured the file. */
+function measuredAlready(context: PassContext, id: FileId): boolean {
+  const row = context.db.get(
+    "SELECT loudness_version AS version FROM files WHERE id = $id",
+    z.object({ version: z.number() }),
+    { $id: id },
+  );
+
+  return (row?.version ?? 0) >= LOUDNESS_VERSION;
+}
+
+/**
+ * Measures every video with an audio track whose loudness is unknown. A track ffmpeg cannot
+ * measure is recorded as tried, without a level, so it stays unmeasured instead of being decoded
+ * again after every scan. Each file is checked against the catalog again just before and after.
+ */
 export async function runLoudnessPass(context: PassContext): Promise<void> {
   const ffmpegPath = context.toolkit.ffmpegPath;
 
@@ -59,9 +103,9 @@ export async function runLoudnessPass(context: PassContext): Promise<void> {
   const params: SqlParams = { $version: LOUDNESS_VERSION };
 
   const pending = context.db.all(
-    `SELECT f.id, r.path AS root_path, f.rel_path FROM files f JOIN roots r ON r.id = f.root_id
-      WHERE f.kind = 'video' AND f.probe_version > 0 AND COALESCE(f.audio_streams, 0) > 0
-        AND f.loudness_version < $version ${rootClause(context, params)}`,
+    `SELECT f.id, f.root_id, r.path AS root_path, f.rel_path, f.size, f.mtime_ms
+      FROM files f JOIN roots r ON r.id = f.root_id
+      WHERE ${UNMEASURED_SQL} ${rootClause(context, params)}`,
     PendingSchema,
     params,
   );
@@ -69,21 +113,26 @@ export async function runLoudnessPass(context: PassContext): Promise<void> {
   let done = 0;
 
   await forEachConcurrent(pending, 3, context.checkpoint, async (file) => {
-    try {
-      const peak = await measurePeakVolume(
-        ffmpegPath,
-        toAbsolutePath(file.root_path, file.rel_path),
-        context.signal,
-      );
+    if (stillSelected(context, file) && !measuredAlready(context, file.id)) {
+      let peak: number | null = null;
+
+      try {
+        peak = await measurePeakVolume(
+          ffmpegPath,
+          toAbsolutePath(file.root_path, file.rel_path),
+          context.signal,
+        );
+      } catch (error) {
+        if (context.signal.aborted) {
+          throw error;
+        }
+      }
 
       context.db.run(
-        "UPDATE files SET loudness_version = $version, loudness_max_db = $peak WHERE id = $id",
-        { $version: LOUDNESS_VERSION, $peak: peak, $id: file.id },
+        `UPDATE files SET loudness_version = $version, loudness_max_db = $peak
+          WHERE ${SAME_ROW_SQL}`,
+        { ...sameRowParams(file), $version: LOUDNESS_VERSION, $peak: peak },
       );
-    } catch (error) {
-      if (context.signal.aborted) {
-        throw error;
-      }
     }
 
     done += 1;

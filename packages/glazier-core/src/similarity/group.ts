@@ -212,7 +212,7 @@ async function clusterWithinAspectBins<T extends { id: FileId; logAspect: number
 }
 
 /** Union–find over file ids, tracking the largest link distance in each set. */
-class DisjointSets<K> {
+export class DisjointSets<K> {
   private readonly parent = new Map<K, K>();
 
   private readonly distance = new Map<K, number>();

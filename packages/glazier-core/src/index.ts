@@ -2,9 +2,9 @@ export { GLAZIER_HOLDING_DIRECTORY_NAME } from "@latch-works/media-domain";
 
 export * from "./contract.js";
 
-export { type KeeperCandidate, rankKeepers } from "./duplicates/keeper.js";
-
 export { type EngineOptions, GlazierEngine, type JsonValue } from "./engine/engine.js";
+
+export { killRunningTools } from "./media/run-tool.js";
 
 export type { MediaToolkit, SharpLibrary } from "./media/toolkit.js";
 
@@ -19,5 +19,6 @@ export {
   type StillEncoder,
   type TranscodeJob,
   TranscodeJobSchema,
+  type TranscodeOutcome,
   type Transcoder,
 } from "./optimize/encoders.js";

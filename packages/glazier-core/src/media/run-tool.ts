@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
 
 export interface ToolRun {
   executable: string;
@@ -12,6 +12,21 @@ export interface ToolResult {
   stdout: Buffer;
   stderr: string;
   timedOut: boolean;
+}
+
+/** Every ffmpeg and ffprobe still running, so shutdown can stop them instead of orphaning them. */
+const runningTools = new Set<ChildProcess>();
+
+/**
+ * Kills every tool this process started that is still running. The engine calls it as it shuts
+ * down: a child process outlives its killed parent, and a long ffmpeg would keep running.
+ */
+export function killRunningTools(): void {
+  for (const child of runningTools) {
+    child.kill("SIGKILL");
+  }
+
+  runningTools.clear();
 }
 
 /** Most ffmpeg output Glazier reads is a 1 KiB frame or a JSON probe; 64 MiB bounds a runaway. */
@@ -30,6 +45,7 @@ export function runTool(run: ToolRun): Promise<ToolResult> {
     }
 
     const child = spawn(run.executable, [...run.args], { windowsHide: true });
+    runningTools.add(child);
     const chunks: Buffer[] = [];
     let stdoutBytes = 0;
     let stderr = "";
@@ -47,6 +63,7 @@ export function runTool(run: ToolRun): Promise<ToolResult> {
 
     const finish = () => {
       settled = true;
+      runningTools.delete(child);
       clearTimeout(timeout);
       run.signal?.removeEventListener("abort", abort);
     };

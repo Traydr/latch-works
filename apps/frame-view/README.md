@@ -137,6 +137,14 @@ docs/                    # Product notes and planning docs
 - `src/preload.ts` deserializes those payloads back into `Result` values.
 - Renderer call sites explicitly unwrap success/error results instead of relying on `null` sentinels or thrown preload errors.
 
+## Where its data lives
+
+Settings (`frame-view-settings.json`), the media index (`media-index.sqlite`) and the thumbnail
+cache live in `~/.latch-works/frame-view`, beside the other Latch Works apps' folders (see
+[Local data](../../docs/ARCHITECTURE.md#local-data)). Builds before kept them in
+`~/Library/Application Support/Frame View` (or the platform's equivalent); the first start of a
+newer build moves that folder there.
+
 ## Manual verification
 
 Automated checks: `pnpm lint`, `pnpm test`, `pnpm knip`.

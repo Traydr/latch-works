@@ -23,7 +23,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     if (this.state.error) {
       return (
         <div className="flex min-h-screen items-center justify-center bg-zinc-50 p-6 dark:bg-zinc-950">
-          <section className="ls-surface max-w-lg p-4">
+          <section className="gz-card max-w-lg p-5">
             <h1 className="text-lg font-semibold tracking-tight">Glazier hit a renderer error</h1>
             <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-300">
               {this.state.error.message}

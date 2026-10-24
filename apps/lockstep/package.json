@@ -1,7 +1,7 @@
 {
   "name": "@latch-works/lockstep-app",
   "productName": "Lockstep",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "description": "Desktop sync client for Latch Works media archives",
   "main": ".vite/build/main.cjs",
   "private": true,
@@ -52,6 +52,7 @@
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.3.0",
+    "@latch-works/app-data": "workspace:*",
     "@latch-works/lockstep-core": "workspace:*",
     "@latch-works/media-domain": "workspace:*",
     "better-result": "^3.0.1",

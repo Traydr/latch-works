@@ -1,9 +1,10 @@
-import { contextBridge, type IpcRendererEvent, ipcRenderer } from "electron";
+import { contextBridge, type IpcRendererEvent, ipcRenderer, webUtils } from "electron";
 
 import type { GlazierBridge } from "./shared/bridge";
 import { type Json, RendererChannels } from "./shared/messages";
 
 const bridge: GlazierBridge = {
+  platform: process.platform,
   call: (method, input) => ipcRenderer.invoke(RendererChannels.call, method, input),
   onEvent: (listener) => {
     const handler = (_event: IpcRendererEvent, payload: Json) => listener(payload);
@@ -14,12 +15,24 @@ const bridge: GlazierBridge = {
       ipcRenderer.removeListener(RendererChannels.event, handler);
     };
   },
-  pickRoot: () => ipcRenderer.invoke(RendererChannels.pickRoot),
-  pickFolder: () => ipcRenderer.invoke(RendererChannels.pickFolder),
+  listFolder: (folder) => ipcRenderer.invoke(RendererChannels.listFolder, folder),
+  folderPlaces: () => ipcRenderer.invoke(RendererChannels.folderPlaces),
   reveal: (filePath) => ipcRenderer.invoke(RendererChannels.reveal, filePath),
   open: (filePath) => ipcRenderer.invoke(RendererChannels.open, filePath),
   quickLook: (filePath) => ipcRenderer.invoke(RendererChannels.quickLook, filePath),
   emptyHolding: (rootId) => ipcRenderer.invoke(RendererChannels.emptyHolding, rootId),
+  showMenu: (entries) => ipcRenderer.invoke(RendererChannels.showMenu, entries),
+  confirm: (request) => ipcRenderer.invoke(RendererChannels.confirm, request),
+  pathForFile: (file) => webUtils.getPathForFile(file),
+  onCommand: (listener) => {
+    const handler = (_event: IpcRendererEvent, command: Json) => listener(command);
+
+    ipcRenderer.on(RendererChannels.command, handler);
+
+    return () => {
+      ipcRenderer.removeListener(RendererChannels.command, handler);
+    };
+  },
 };
 
 contextBridge.exposeInMainWorld("glazier", bridge);
