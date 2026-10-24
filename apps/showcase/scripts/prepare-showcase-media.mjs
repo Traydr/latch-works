@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { copyFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,11 +9,9 @@ const scriptDir = dirname(fileURLToPath(import.meta.url));
 
 const showcaseRoot = join(scriptDir, "..");
 
-const frameMediaDir = join(showcaseRoot, "../frame-view/showcase-media");
-
 const photosDir = join(showcaseArchiveDir, "sfw/photos");
 
-const require = createRequire(join(showcaseRoot, "../frame-view/package.json"));
+const require = createRequire(join(showcaseRoot, "../oriel/package.json"));
 
 const sharp = require("sharp");
 
@@ -32,12 +30,10 @@ const palette = [
 async function main() {
   claimShowcaseArchive();
   mkdirSync(photosDir, { recursive: true });
-  mkdirSync(frameMediaDir, { recursive: true });
 
   for (let index = 0; index < 18; index += 1) {
     const fileName = `sample-${String(index + 1).padStart(2, "0")}.jpg`;
     const archivePath = join(photosDir, fileName);
-    const framePath = join(frameMediaDir, fileName);
     const color = palette[index % palette.length];
 
     if (!existsSync(archivePath)) {
@@ -52,11 +48,9 @@ async function main() {
       const jpeg = await sharp(Buffer.from(svg)).jpeg({ quality: 88 }).toBuffer();
       writeFileSync(archivePath, jpeg);
     }
-
-    copyFileSync(archivePath, framePath);
   }
 
-  console.log(`Prepared showcase media in ${photosDir} and ${frameMediaDir}`);
+  console.log(`Prepared showcase media in ${photosDir}`);
 }
 
 main().catch((error) => {

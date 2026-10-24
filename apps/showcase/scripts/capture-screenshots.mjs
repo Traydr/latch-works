@@ -3,9 +3,8 @@
  * Captures every showcase screenshot from the real applications, in sequence:
  *
  * - Pane View: the running web app at localhost:3000 (capture-pane-view.mjs).
- * - Frame View: the real Electron app over CDP (capture-frame-view.mjs).
- * - Lockstep: the real Electron app doing a real plan + push against the local
- *   Pane View sync API (capture-lockstep.mjs).
+ * - Oriel: the real Electron app over CDP, its View, Tidy and Sync modes, Sync doing a real
+ *   plan + push against the local Pane View sync API (capture-oriel.mjs).
  * - Gather Box: the real unpacked extension's side panel in Chrome
  *   (capture-gather-box.mjs).
  *
@@ -23,12 +22,7 @@ import { fileURLToPath } from "node:url";
 
 const scriptsDir = dirname(fileURLToPath(import.meta.url));
 
-const captures = [
-  "capture-pane-view.mjs",
-  "capture-frame-view.mjs",
-  "capture-lockstep.mjs",
-  "capture-gather-box.mjs",
-];
+const captures = ["capture-pane-view.mjs", "capture-oriel.mjs", "capture-gather-box.mjs"];
 
 const failures = [];
 
