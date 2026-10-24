@@ -276,8 +276,12 @@ export function Sidebar({ onAddRoot, rail }: { onAddRoot: () => void; rail: bool
             label="Duplicates"
             icon={Copy}
             shortcut="⌘2"
-            // Only the sets that need eyes: Tidy up takes care of identical copies.
-            count={counted(tidy.data?.duplicates.similar.sets)}
+            // Every set waits for the owner, identical copies included: Tidy up leaves them all.
+            count={counted(
+              tidy.data
+                ? tidy.data.duplicates.similar.sets + tidy.data.duplicates.exact.sets
+                : undefined,
+            )}
           />
           <NavItem
             view="convert"

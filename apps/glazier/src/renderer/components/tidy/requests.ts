@@ -1,10 +1,4 @@
-import type {
-  FileId,
-  OptimizeCategory,
-  RootId,
-  SimilarityLevel,
-  Tidy,
-} from "@latch-works/glazier-core/contract";
+import type { FileId, OptimizeCategory, RootId, Tidy } from "@latch-works/glazier-core/contract";
 
 import { type PlanStep, planned } from "../../lib/actions";
 import { call } from "../../lib/api";
@@ -25,15 +19,15 @@ export async function silentVideoIds(rootId: RootId): Promise<FileId[]> {
 }
 
 /**
- * Tidy up's plans, in the order they run: Clean up, then identical copies, then silent
- * soundtracks, then Convert. `performAll` builds and drafts each once the one before has
- * finished, so Convert sees the copies already gone and the silent videos are listed from what
- * is left.
+ * Tidy up's plans, in the order they run: Clean up, then silent soundtracks, then Convert.
+ * `performAll` builds and drafts each once the one before has finished, so the silent videos are
+ * listed from what Clean up left. Duplicates are not a step, identical copies included: which
+ * copy to keep depends on where each one is, so the owner decides every set in Duplicates, and
+ * Convert leaves their files alone until then.
  */
 export function tidyUpSteps(
   rootId: RootId,
   tidy: Tidy,
-  level: SimilarityLevel,
   categories: readonly OptimizeCategory[],
 ): PlanStep[] {
   const steps: PlanStep[] = [];
@@ -41,19 +35,6 @@ export function tidyUpSteps(
 
   if (junk + emptyFolders + extensions > 0) {
     steps.push(planned({ kind: "cleanup", rootId }));
-  }
-
-  if (tidy.duplicates.exact.extraCopies > 0) {
-    steps.push(
-      planned({
-        kind: "resolve-duplicate-sets",
-        rootId,
-        level,
-        scope: "exact",
-        overrides: [],
-        skip: [],
-      }),
-    );
   }
 
   if (tidy.silentTracks.files > 0) {

@@ -43,14 +43,13 @@ const TIDY_SOURCE = "overview:tidy";
 /** Up to this many keepers stand for the similar sets on the Needs your eye card. */
 const STACK = 5;
 
-type StepId = "duplicates" | "convert" | "silent" | "cleanup";
+type StepId = "convert" | "silent" | "cleanup";
 
 type StepState = "todo" | "running" | "done";
 
 /** Which hero row a plan Tidy up runs belongs to. */
 const STEP_OF_KIND: Partial<Record<PlanKind, StepId>> = {
   cleanup: "cleanup",
-  "resolve-duplicate-sets": "duplicates",
   "strip-audio": "silent",
   optimize: "convert",
 };
@@ -195,12 +194,11 @@ function OverviewBody({
   rootName: string;
   data: Tidy;
 }) {
-  const { settings, report, jobs } = useEngine();
+  const { report, jobs } = useEngine();
   const actions = useActions();
-  const { go, openDuplicates } = useNavigation();
+  const { go } = useNavigation();
   const { enabled } = useConvertGroups();
   const { estimate } = useConvertEstimates(rootId, data);
-  const level = settings?.similarity ?? "balanced";
   const listRef = useRef<HTMLUListElement>(null);
 
   // Rows started this visit stay listed, as done once their work is, until the hero card goes.
@@ -261,24 +259,6 @@ function OverviewBody({
       run: () => runOne("cleanup", { kind: "cleanup", rootId }),
     },
     {
-      id: "duplicates",
-      icon: Copy,
-      title: "Identical copies",
-      caption: `${plural(exact.extraCopies, "file")} · ${formatBytes(exact.reclaimableBytes)}`,
-      todo: exact.extraCopies > 0,
-      open: () => openDuplicates("exact"),
-      action: "Remove",
-      run: () =>
-        runOne("duplicates", {
-          kind: "resolve-duplicate-sets",
-          rootId,
-          level,
-          scope: "exact",
-          overrides: [],
-          skip: [],
-        }),
-    },
-    {
       id: "silent",
       icon: VolumeX,
       title: "Silent soundtracks",
@@ -317,12 +297,11 @@ function OverviewBody({
     (step) => step.todo || kept.has(step.id) || stateOf(step) === "running",
   );
 
-  // What tidying frees or saves: extra copies, plus what conversion is estimated to save.
+  // What tidying saves: what conversion is estimated to save. Duplicates are decided by hand.
   const saving =
-    exact.reclaimableBytes +
-    (convertFiles > 0 && convertEstimate.state === "known"
+    convertFiles > 0 && convertEstimate.state === "known"
       ? Math.max(0, convertEstimate.before - convertEstimate.after)
-      : 0);
+      : 0;
 
   // Until Convert's estimate lands, the headline is a floor, so it never jumps up.
   const estimating = convertFiles > 0 && convertEstimate.state === "pending";
@@ -332,7 +311,7 @@ function OverviewBody({
     keep(steps.flatMap((step) => (step.todo ? [step.id] : [])));
 
     try {
-      const steps = tidyUpSteps(rootId, data, level, categories);
+      const steps = tidyUpSteps(rootId, data, categories);
 
       if (steps.length > 0) {
         const plans = await actions.performAll(steps, {
@@ -480,6 +459,8 @@ function OverviewBody({
           />
         ) : null}
 
+        {exact.sets > 0 ? <IdenticalCard data={data} /> : null}
+
         <HoldingRow rootId={rootId} />
         <AttentionLine data={data} />
       </div>
@@ -544,7 +525,7 @@ function StepRow({ step, state, busy }: { step: Step; state: StepState; busy: bo
   );
 }
 
-/** Similar versions are the one thing that needs a person; this card points at them. */
+/** Similar versions need a person; this card points at them, and starts checking if it waits. */
 function LookCard({
   rootId,
   data,
@@ -652,6 +633,36 @@ function LookCard({
           Review
         </button>
       ) : null}
+    </section>
+  );
+}
+
+/**
+ * Identical copies wait for the owner like similar versions do: which copy to keep depends on
+ * where each one is, so Tidy up leaves them and this card opens them in Duplicates.
+ */
+function IdenticalCard({ data }: { data: Tidy }) {
+  const { openDuplicates } = useNavigation();
+  const { exact } = data.duplicates;
+
+  return (
+    <section className="gz-card flex items-center gap-4 p-4" data-step="identical">
+      <span className={ROW_ICON}>
+        <Copy className="size-4" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[13px] font-medium">
+          {plural(exact.sets, "set")} of identical copies · {formatBytes(exact.reclaimableBytes)}
+        </p>
+        <p className="gz-caption mt-0.5">Choose which folders keep each one</p>
+      </div>
+      <button
+        type="button"
+        className="gz-btn gz-btn-secondary"
+        onClick={() => openDuplicates("exact")}
+      >
+        Review
+      </button>
     </section>
   );
 }

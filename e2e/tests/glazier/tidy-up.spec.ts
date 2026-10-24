@@ -27,7 +27,7 @@ test.afterAll(async () => {
   await rm(archive, { force: true, recursive: true });
 });
 
-test("Tidy up runs every step as one change, and one Undo takes it all back", async () => {
+test("Tidy up runs every step but duplicates as one change, and one Undo takes it all back", async () => {
   test.setTimeout(300_000);
 
   const { window } = session;
@@ -46,8 +46,8 @@ test("Tidy up runs every step as one change, and one Undo takes it all back", as
   // Clean up fixed the extension, held the junk and removed the empty folder.
   await expect(exists("photos/cover.avif")).resolves.toBeTruthy();
   await expect(exists("empty")).rejects.toThrow();
-  // The identical copy went; the original stays.
-  await expect(exists("dup/with-sound-copy.mp4")).rejects.toThrow();
+  // Duplicates are not a step: the identical copy waits for review, beside its original.
+  await expect(exists("dup/with-sound-copy.mp4")).resolves.toBeTruthy();
   await expect(exists("clips/with-sound.mp4")).resolves.toBeTruthy();
   // The silent soundtrack is gone, the picture kept.
   expect(await streamCodecs(path.join(archive, "clips", "silent-track.mp4"))).toEqual(["h264"]);
@@ -56,15 +56,17 @@ test("Tidy up runs every step as one change, and one Undo takes it all back", as
   await expect(exists("photos/forest.avif")).resolves.toBeTruthy();
   await expect(exists("photos/sunset.png")).resolves.toBeTruthy();
 
-  expect(await heldFiles(session.userDataDir, archive)).toEqual(
+  const heldAfterTidy = await heldFiles(session.userDataDir, archive);
+
+  expect(heldAfterTidy).toEqual(
     expect.arrayContaining([
       ".DS_Store",
-      "dup/with-sound-copy.mp4",
       "clips/silent-track.mp4",
       "clips/talk.mov",
       "photos/forest.png",
     ]),
   );
+  expect(heldAfterTidy).not.toContain("dup/with-sound-copy.mp4");
 
   await latestToast(window).getByRole("button", { name: "Undo" }).click();
   await expect(latestToast(window)).toContainText("Undid", { timeout: 120_000 });
@@ -72,7 +74,6 @@ test("Tidy up runs every step as one change, and one Undo takes it all back", as
 
   for (const original of [
     ".DS_Store",
-    "dup/with-sound-copy.mp4",
     "clips/talk.mov",
     "photos/forest.png",
     "photos/cover.jpg",
@@ -88,7 +89,5 @@ test("Tidy up runs every step as one change, and one Undo takes it all back", as
   const held = await heldFiles(session.userDataDir, archive);
 
   expect(held).toEqual(expect.arrayContaining(["clips/talk.mp4", "photos/forest.avif"]));
-  expect(held).not.toEqual(
-    expect.arrayContaining(["clips/talk.mov", "photos/forest.png", "dup/with-sound-copy.mp4"]),
-  );
+  expect(held).not.toEqual(expect.arrayContaining(["clips/talk.mov", "photos/forest.png"]));
 });

@@ -46,8 +46,9 @@ test("a new folder is scanned and Overview lists what to do with it", async () =
   const step = (id: string) => window.locator(`[data-step="${id}"]`);
 
   await expect(window.getByText("15 files", { exact: false }).first()).toBeVisible();
-  // The copy of with-sound.mp4, and sunset.png with its resized JPEG.
-  await expect(step("duplicates")).toContainText("1 file");
+  // The copy of with-sound.mp4, left for review rather than Tidy up, and sunset.png with its
+  // resized JPEG.
+  await expect(step("identical")).toContainText("1 set of identical copies");
   await expect(window.getByText("1 set of similar versions")).toBeVisible();
   await expect(step("silent")).toContainText("1 video");
   await expect(step("cleanup")).toContainText("1 junk file");
