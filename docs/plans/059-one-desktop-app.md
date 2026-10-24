@@ -15,8 +15,8 @@
 
 ## Status
 
-- **Status**: IN PROGRESS (Phases 1–5 on `agent/059-1-shell`, `agent/059-2-sync`,
-  `agent/059-3-tidy`, `agent/059-4-view` and `agent/059-5-migrate`, stacked, 2026-10-24)
+- **Status**: IN PROGRESS (Phases 1–6 on `agent/059-1-shell` … `agent/059-6-retire`, six stacked
+  branches, 2026-10-24)
 - **Priority**: P2 (the owner asked for it)
 - **Effort**: XL overall, as ten stacked PRs of S–L each
 - **Risk**: MEDIUM to HIGH. It touches every desktop app's process model. The data migration
@@ -282,6 +282,14 @@ never overwrites a value the new app has since changed.
 
 ### Phase 6: retire the standalone apps (S)
 
+Done on `agent/059-6-retire`.
+- **Tags.** The three tags are local until pushed.
+- **e2e names.** The e2e projects keep their names (`frame-view`, `glazier`, `lockstep`), which
+  already run against Oriel's modes, rather than becoming `oriel-*`.
+- **Left for Phase 10.** Showcase's `capture-frame-view.mjs` and `capture-lockstep.mjs` still
+  drive the retired apps. They already pointed at Frame View's pre-`~/.latch-works` folders, and
+  Phase 10 retakes the screenshots from Oriel.
+
 1. Tag the last standalone builds (`frame-view-v1.1.0`, `glazier-v0.2.0`, `lockstep-v0.3.0`, all at
    `0d3af1d`), so a hotfix can branch from them.
 2. Check nothing of the three apps is left: Phases 2–4 delete each one's Forge config, manifest
@@ -388,6 +396,10 @@ short, skippable welcome:
 3. "Choose your archive folder", if no folder came over: one folder, offered to all three modes.
 4. Optionally, connect Pane View, if no Sync profile came over (a server address and token).
 5. Land in View, already scanning.
+
+**Showcase screenshots.** Rewrite `apps/showcase/scripts/capture-frame-view.mjs` and
+`capture-lockstep.mjs` (and add Tidy) to drive Oriel, switching modes from the switcher, and
+retake the screenshots after Phases 7–8.
 
 **Building from source.**
 - Write `docs/runbooks/oriel.md`:

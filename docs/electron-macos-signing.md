@@ -1,11 +1,10 @@
 # Electron macOS signing
 
-Latch Works ships two Electron desktop apps:
+Latch Works ships one Electron desktop app, Oriel (`apps/oriel`), which replaced Frame View,
+Glazier and the Lockstep desktop app (plan 059). It is not signed with a Developer ID yet: people
+build it from source, and every build is signed ad hoc (below).
 
-- Frame View (`apps/frame-view`)
-- Lockstep (`apps/lockstep`)
-
-Both apps use Electron Forge. Forge is the official Electron toolbox and delegates macOS
+Oriel uses Electron Forge. Forge is the official Electron toolbox and delegates macOS
 packaging/signing to `@electron/packager`, `@electron/osx-sign`, and `@electron/notarize`.
 This is different from `electron-builder`, which is a more opinionated all-in-one release system
 with more signing and update behavior built in.
@@ -27,7 +26,9 @@ mapped file (non-platform) have different Team IDs
 ```
 
 Lockstep hit both paths: first the sync token was stored but unreadable, then the locally signed app
-failed at launch until the helper-process entitlements were applied.
+failed at launch until the helper-process entitlements were applied. Oriel's Sync mode avoids the
+first one by keeping tokens under a key file in `~/.latch-works/lockstep` instead of the Keychain,
+since an ad-hoc signature changes with every rebuild.
 
 ## Release builds
 
@@ -38,10 +39,7 @@ The proper macOS release path is:
 3. Notarize the app with Apple.
 4. Verify the generated `.app`, DMG, and ZIP before publishing.
 
-The current Forge configs accept these environment variables:
-
-- `LOCKSTEP_MACOS_SIGN_IDENTITY`
-- `FRAME_VIEW_MACOS_SIGN_IDENTITY`
+Oriel's Forge config accepts `ORIEL_MACOS_SIGN_IDENTITY`.
 
 Use the exact Developer ID Application identity name reported by:
 
@@ -52,8 +50,7 @@ security find-identity -v -p codesigning
 Example:
 
 ```bash
-LOCKSTEP_MACOS_SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" pnpm --filter @latch-works/lockstep-app make
-FRAME_VIEW_MACOS_SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" pnpm --filter @latch-works/frame-view make
+ORIEL_MACOS_SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" pnpm --filter @latch-works/oriel make
 ```
 
 Release notarization is not wired yet. Until it is, these builds are signed but not fully prepared
@@ -61,7 +58,7 @@ for frictionless distribution to other Macs.
 
 ## Local ad-hoc builds
 
-If the app-specific signing identity env var is unset, the Forge configs use ad-hoc signing with
+If `ORIEL_MACOS_SIGN_IDENTITY` is unset, the Forge configs use ad-hoc signing with
 identity `-`. This is only for local same-machine testing.
 
 For local ad-hoc builds, every nested `.app` bundle gets these entitlements:
@@ -83,28 +80,20 @@ for `pnpm make` artifacts that are installed and tested on the same development 
 After `pnpm make`, verify the app bundle before installing the DMG:
 
 ```bash
-codesign --verify --deep --strict --verbose=2 apps/lockstep/out/Lockstep-darwin-arm64/Lockstep.app
-codesign -dv apps/lockstep/out/Lockstep-darwin-arm64/Lockstep.app
-codesign --display --entitlements :- apps/lockstep/out/Lockstep-darwin-arm64/Lockstep.app
-codesign --display --entitlements :- "apps/lockstep/out/Lockstep-darwin-arm64/Lockstep.app/Contents/Frameworks/Lockstep Helper.app"
-```
-
-```bash
-codesign --verify --deep --strict --verbose=2 "apps/frame-view/out/Frame View-darwin-arm64/Frame View.app"
-codesign -dv "apps/frame-view/out/Frame View-darwin-arm64/Frame View.app"
-codesign --display --entitlements :- "apps/frame-view/out/Frame View-darwin-arm64/Frame View.app"
-codesign --display --entitlements :- "apps/frame-view/out/Frame View-darwin-arm64/Frame View.app/Contents/Frameworks/Frame View Helper.app"
+codesign --verify --deep --strict --verbose=2 apps/oriel/out/Oriel-darwin-arm64/Oriel.app
+codesign -dv apps/oriel/out/Oriel-darwin-arm64/Oriel.app
+codesign --display --entitlements :- apps/oriel/out/Oriel-darwin-arm64/Oriel.app
+codesign --display --entitlements :- "apps/oriel/out/Oriel-darwin-arm64/Oriel.app/Contents/Frameworks/Oriel Helper.app"
 ```
 
 Expected local-build signals:
 
 - `codesign --verify` reports `valid on disk`.
-- Lockstep displays `Identifier=dev.traydr.latchworks.lockstep`.
-- Frame View displays `Identifier=dev.traydr.latchworks.frameview`.
+- Oriel displays `Identifier=dev.traydr.latchworks.oriel`.
 - Top-level and helper `.app` entitlements include `disable-library-validation`.
 
-Frame View also stages runtime packages (`ffmpeg-static`, `ffprobe-static`, and `sharp`) into
-`Contents/Resources`. Those package roots must be copied as real files, not pnpm symlinks. Absolute
+Oriel also stages runtime packages (`ffmpeg-static`, `@ffprobe-installer/ffprobe`, and `sharp`)
+into `Contents/Resources`. Those package roots must be copied as real files, not pnpm symlinks. Absolute
 symlinks back into the workspace make `codesign --verify --deep --strict` fail with messages such as
 `invalid destination for symbolic link in bundle`.
 
