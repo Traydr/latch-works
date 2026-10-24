@@ -15,8 +15,7 @@
 
 ## Status
 
-- **Status**: IN REVIEW (Phases 1–9 on `agent/059-oriel`, 2026-10-24); Phase 10 follows on the
-  same branch
+- **Status**: IN REVIEW (Phases 1–10 on `agent/059-oriel`, 2026-10-24)
 - **Priority**: P2 (the owner asked for it)
 - **Effort**: XL overall, as ten stacked PRs of S–L each
 - **Risk**: MEDIUM to HIGH. It touches every desktop app's process model. The data migration
@@ -381,6 +380,24 @@ Done.
   from Phase 5's migrated folders. Each mode keeps its own storage; the shell only proposes.
 
 ### Phase 10: installer, first run and building from source (L)
+
+Built; the Windows half is proven only by the [Oriel build](../../.github/workflows/oriel-build.yml)
+workflow, since no Windows machine was at hand.
+- **Icon.** A bay window onto the view, in the family's plate and palette. The Icon Composer
+  bundle is `media/oriel.icon` (not `oriel-icon.icon`, which packager would compile on every
+  Mac): Forge passes it only where `actool` 26 runs, on macOS 26 and later.
+- **Installer art** comes from SVG masters in `apps/oriel/installer` through `pnpm icons`: the DMG
+  background at 1x and 2x, the MSI's BMPs (written by the script, which sharp cannot), and
+  Setup's splash, drawn frame by frame in the script.
+- **Velopack** is staged on Windows only, beside sharp, and loaded from the resources first thing
+  in `main.ts`. Forge keeps a Windows ZIP maker, since `postMake` runs only after a maker.
+- **First run.** The welcome is skipped under `--user-data-dir`; `ORIEL_WELCOME=1` brings it
+  back for the e2e suite, which answers the native folder dialog from the main process. The folder
+  the dialog returns stays in the main process, so the window cannot set up any other.
+- **Showcase.** `capture-oriel.mjs` replaces the two old capture scripts. It runs Oriel on a
+  throwaway data folder rather than backing up the owner's settings, and takes Sync's server from
+  `SHOWCASE_PANE_VIEW_URL` and `SHOWCASE_SYNC_TOKEN` when set. The site's pages still describe
+  Frame View and Lockstep; telling Oriel's story there is a follow-up.
 
 **macOS**
 1. **Icon.** A new app icon master `apps/oriel/media/oriel-icon.svg`, plus an Icon Composer
