@@ -76,6 +76,14 @@ async function forgetRoot(root: Root, report: (cause: unknown) => void): Promise
 /** Whether the sidebar is the narrow rail of icons, under 1180 px or when ⌘\\ chose it. */
 const RailContext = createContext(false);
 
+/**
+ * The rail's buttons. On macOS the rail is 88 px to hold the window buttons, which leaves room
+ * for 48 px targets with 22 px icons; elsewhere it is 56 px, with 40 px targets.
+ */
+const RAIL_BUTTON = desktop.insetTitleBar() ? "size-12 rounded-xl" : "size-10 rounded-lg";
+
+const RAIL_ICON = desktop.insetTitleBar() ? "[&_svg]:size-[22px]" : "[&_svg]:size-5";
+
 function NavItem({
   view,
   label,
@@ -97,7 +105,7 @@ function NavItem({
       <li>
         <button
           type="button"
-          className="gz-sidebar-item relative size-10 justify-center px-0 [&_svg]:size-5"
+          className={`gz-sidebar-item relative justify-center px-0 ${RAIL_BUTTON} ${RAIL_ICON}`}
           aria-current={navigation.view === view ? "page" : undefined}
           aria-label={label}
           data-view={view}
@@ -107,7 +115,7 @@ function NavItem({
           <Icon />
           {count ? (
             <span
-              className="absolute top-1.5 right-1.5 size-1.5 rounded-full bg-zinc-400"
+              className="absolute top-2 right-2 size-1.5 rounded-full bg-zinc-400"
               data-badge={view}
             />
           ) : null}
@@ -142,7 +150,7 @@ function GroupLabel({ children }: { children: string }) {
   const rail = useContext(RailContext);
 
   return rail ? (
-    <li className="mx-auto my-2.5 h-px w-6 bg-zinc-200 dark:bg-white/[0.08]" aria-hidden />
+    <li className="mx-auto my-3 h-px w-8 bg-zinc-200 dark:bg-white/[0.08]" aria-hidden />
   ) : (
     <li className="px-2.5 pt-5 pb-1.5 text-xs font-medium text-zinc-500">{children}</li>
   );
@@ -229,10 +237,10 @@ export function Sidebar({ onAddRoot, rail }: { onAddRoot: () => void; rail: bool
             title={`${root.name}\n${root.path}`}
             aria-label={root.name}
             data-root-switcher
-            className="flex size-10 items-center justify-center rounded-lg hover:bg-zinc-900/[0.05] dark:hover:bg-white/[0.05]"
+            className={`flex items-center justify-center hover:bg-zinc-900/[0.05] dark:hover:bg-white/[0.05] ${RAIL_BUTTON}`}
           >
-            <span className="flex size-8 items-center justify-center rounded-lg bg-white text-zinc-600 shadow-[var(--shadow-border)] dark:bg-white/[0.08] dark:text-zinc-300">
-              <FolderOpen className="size-4" />
+            <span className="flex size-9 items-center justify-center rounded-lg bg-white text-zinc-600 shadow-[var(--shadow-border)] dark:bg-white/[0.08] dark:text-zinc-300">
+              <FolderOpen className="size-[18px]" />
             </span>
           </button>
         ) : root ? (
@@ -259,7 +267,7 @@ export function Sidebar({ onAddRoot, rail }: { onAddRoot: () => void; rail: bool
         ) : null}
 
         <ul
-          className={`space-y-0.5 overflow-y-auto pt-3 ${rail ? "flex flex-col items-center" : "px-2"}`}
+          className={`overflow-y-auto pt-3 ${rail ? "flex flex-col items-center space-y-1" : "space-y-0.5 px-2"}`}
         >
           <NavItem view="overview" label="Overview" icon={LayoutGrid} shortcut="⌘1" />
           <GroupLabel>Tidy</GroupLabel>
@@ -290,9 +298,11 @@ export function Sidebar({ onAddRoot, rail }: { onAddRoot: () => void; rail: bool
           <NavItem view="history" label="History" icon={History} shortcut="⌘6" />
         </ul>
 
-        <div className={`mt-auto space-y-0.5 pb-3 ${rail ? "flex flex-col items-center" : "px-2"}`}>
+        <div
+          className={`mt-auto pb-3 ${rail ? "flex flex-col items-center space-y-1" : "space-y-0.5 px-2"}`}
+        >
           <Activity />
-          <ul className={`space-y-0.5 pt-1 ${rail ? "flex flex-col items-center" : ""}`}>
+          <ul className={`pt-1 ${rail ? "flex flex-col items-center space-y-1" : "space-y-0.5"}`}>
             <NavItem
               view="holding"
               label="Holding"
@@ -358,7 +368,7 @@ function Activity() {
   if (current && rail) {
     return (
       <div
-        className="flex size-10 items-center justify-center"
+        className={`flex items-center justify-center ${RAIL_BUTTON}`}
         title={`${current.label}${current.total > 0 ? ` · ${formatCount(current.done)} of ${formatCount(current.total)}` : ""}`}
         data-testid="activity"
         data-job-type={current.type}
@@ -432,7 +442,7 @@ function Activity() {
     return (
       <button
         type="button"
-        className="gz-btn gz-btn-ghost gz-btn-icon size-10 text-red-600 dark:text-red-400"
+        className={`gz-btn gz-btn-ghost gz-btn-icon text-red-600 dark:text-red-400 ${RAIL_BUTTON} ${RAIL_ICON}`}
         title={`${failed.label} failed: ${failed.message ?? ""}  (click to dismiss)`}
         aria-label={`${failed.label} failed`}
         data-testid="activity"
