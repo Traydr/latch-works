@@ -100,10 +100,11 @@ shared fixture): stills including a resized twin and an AVIF misnamed `.jpg`, an
 H.264/AAC in MOV, VP9/Opus in WebM, MP4s with sound, with a silent track and with no audio, an
 exact copy, `.DS_Store` and an empty folder. Glazier opens a hidden transcoder window as well as
 its main one, so `e2e/src/glazier.ts` finds the main window by its page instead of taking the
-first. `workbench.spec.ts` covers, in order: adding and scanning the root and its findings;
+first. Folders are added through Glazier's own picker: `chooseFolder` types the path into its field
+and presses Choose, so no native dialog is stubbed. `workbench.spec.ts` covers, in order: adding and scanning the root and its findings;
 **Find similar** grouping the resized JPEG with its original; sound measurement (one with no
 track, one silent, four with sound); resolving the exact duplicate into holding and undoing it from
-the journal; and converting every category (stills to AVIF, the GIF and both videos to MP4, the
+the decision's toast; and converting every category (stills to AVIF, the GIF and both videos to MP4, the
 misnamed AVIF renamed), checking codecs with ffprobe and that each original's modification time
 survived.
 

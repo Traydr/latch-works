@@ -107,10 +107,10 @@ It supersedes items 1, 2, 3 and 6 above.
    pages of their own; Library and History follow; Holding and Settings (a page) sit at the foot
    of the sidebar, which becomes an icon rail under 1180 px (⌘\).
 3. **Duplicates.** A set shows every version as a tile, the keeper ringed. A click or a number
-   key keeps that version and goes on; ⇧ keeps it as well. The line above the tiles names what
-   decided the suggestion; a close call (only a tie-breaker decided) shows the keeper as
+   key keeps that version and goes on; ⇧ keeps it as well. The keeper's badge names what decided
+   the suggestion on hover; a close call (only a tie-breaker decided) shows the keeper as
    "Suggested" and is left out of Keep all suggestions. C opens a full-window loupe that flips
-   between versions. Decisions report on the top bar, and ⌘Z brings the set back.
+   between versions. Each decision toasts with Undo, and ⌘Z brings the set back.
 4. **Less confirmation.** Changes apply at once and toast once. Empty to Trash does not confirm,
    since the Trash is the safety net; only Forget folder does, and it now sends that folder's held
    files to the Trash too.
@@ -126,6 +126,15 @@ It supersedes items 1, 2, 3 and 6 above.
 7. **Convert waits for review.** Members of open similar sets, and files not yet checked for
    similar versions while analysis is on, are not converted, so review never compares a
    re-encoded copy.
+8. **After using it (same branch).** Every version and copy shows its whole folder path, wrapped,
+   since a cut path could not tell two copies apart; the reason line, the "goes to holding" line
+   and the top bar's counts are gone. A decision toasts with Undo, because a stray click had to
+   be undone from History. The Similar and Identical tabs span the queue. On macOS the rail is
+   88 px, since macOS 27's window buttons end near 76 px and spilled over the top bar. Folders are
+   chosen in Glazier's own picker. `pnpm start` came up blank every other run: the main window's
+   and the transcoder's Vite dev servers shared one dependency cache with different configs, so
+   each start one re-optimized and the other got `504 Outdated Optimize Dep`; each now has its own
+   `cacheDir`.
 
 ## Shape
 

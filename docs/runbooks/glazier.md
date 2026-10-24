@@ -37,6 +37,14 @@ catalog open, say), Glazier keeps using the old folder and tries again next star
 
 ## Using it
 
+**Choose folder…** (⌘O, or **Add Folder…** in the folder menu) opens Glazier's own folder picker
+rather than the system's. Type or paste a path into its field, or start from Home, its usual
+folders or a drive on the left. The list shows the folders inside what is typed and narrows as a
+name is typed: ↑ and ↓ highlight one, Return or Tab opens it, and Return with nothing highlighted
+(or ⌘Return) chooses. Hidden and system folders, `.latch-works` among them, are not listed. Move
+in Library and **Prefer a folder** in Settings use the same picker, kept inside the root.
+Dropping a folder on the window adds it too.
+
 The sidebar lists the work in the order it is best done, then the archive:
 - **Overview**: what tidying would do, with one **Tidy up** button (⌘↩). It runs Clean up,
   removes identical copies, removes silent soundtracks and converts, in that order, as one change
@@ -48,13 +56,15 @@ The sidebar lists the work in the order it is best done, then the archive:
 - **History**: every change, with Undo.
 - **Holding** and **Settings** sit at the foot of the sidebar.
 
-Under 1180 px the sidebar is a rail of icons; ⌘\ switches between the rail and the full
-sidebar, and the choice is remembered for narrow and wide windows separately. Press `?` anywhere
-for the keyboard shortcuts.
+Under 1180 px the sidebar is a rail of icons, wide enough on macOS to hold the window buttons; ⌘\
+switches between the rail and the full sidebar, and the choice is remembered for narrow and wide
+windows separately. Press `?` anywhere for the keyboard shortcuts.
 
-In **Duplicates**, a set shows every version at once. The suggested keeper carries a violet ring
-and **Keep**, and the line above the pictures says what decided it ("Keeping 1: most pixels
-(1600×1067 against 800×533)"). When only a tie-breaker decided (a file a few bytes larger, the
+In **Duplicates**, a set shows every version at once, each under its whole folder path, wrapped
+rather than cut, with the file name only where two versions share a folder. Identical copies list
+their folders the same way. The suggested keeper carries a violet ring and **Keep**; hovering the
+badge says what decided it ("Keeping 1: most pixels (1600×1067 against 800×533)"). Each decision
+shows a toast with **Undo** for a few seconds. When only a tie-breaker decided (a file a few bytes larger, the
 oldest, the shortest path), the set is a **close call**: the keeper is only **Suggested**, an amber
 dot marks it in the queue, and **Keep all suggestions** leaves it for you. The keys:
 
@@ -77,8 +87,8 @@ on, files not yet checked for similar versions too, so review never compares a c
 
 ## Actions that change the archive
 
-Every change applies at once and ends with a toast that has **Undo**; duplicate decisions report
-on the top bar instead. ⌘Z undoes the last change, and History lists them all. Nothing asks
+Every change applies at once and ends with a toast that has **Undo**, duplicate decisions
+included. ⌘Z undoes the last change, and History lists them all. Nothing asks
 first, except forgetting a folder, which also moves its held files to the Trash.
 
 Before each step, Glazier re-reads the file and skips it if its size, mtime or ctime moved since
