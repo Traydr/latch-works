@@ -108,6 +108,8 @@ describe("convert candidates", () => {
     await tinyPng("#993366").toFile(path.join(archive, "tiny.png"));
     await utimes(path.join(archive, "tiny.png"), new Date(2024, 0, 1), new Date(2024, 0, 1));
     await harness.settle(await harness.call("scanRoot", { rootId: root.id }));
+    // New bytes need a new similarity check first, which the scan queues.
+    await harness.idle();
 
     expect(await convertibleNames()).toEqual(["tiny.png"]);
   });

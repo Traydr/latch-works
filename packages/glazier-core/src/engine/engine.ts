@@ -11,6 +11,7 @@ import {
   fileFacets,
   filterNeedsConvertible,
   getFileRecords,
+  listEmptyFolders,
   listFileIds,
   listFiles,
   listFolders,
@@ -34,6 +35,7 @@ import {
   type EngineMethodName,
   EngineMethods,
   type EngineOutput,
+  isCloseCall,
   type Job,
   type OptimizeCategory,
   type OptimizeEstimate,
@@ -58,9 +60,11 @@ import {
 import { withFfmpegFallback } from "../media/ffmpeg-transcode.js";
 import type { MediaToolkit } from "../media/toolkit.js";
 import {
+  type CandidateHolds,
   type CandidateScan,
   findOptimizeCandidates,
   forgetConvertible,
+  NO_HOLDS,
   type OptimizeCandidate,
   recordConvertible,
   summarizeCandidates,
@@ -84,7 +88,14 @@ import {
   recoverInterruptedPlans,
   undoPlan,
 } from "../plans/executor.js";
-import { heldBatchPaths, listHolding, markBatchesEmptied, restoreHeld } from "../plans/holding.js";
+import {
+  HoldingPlaces,
+  heldBatchPaths,
+  listHolding,
+  markBatchesEmptied,
+  relocateLegacyHolding,
+  restoreHeld,
+} from "../plans/holding.js";
 import {
   draftSteps,
   extensionFixes,
@@ -145,6 +156,8 @@ export class GlazierEngine {
 
   private readonly thumbnails: ThumbnailCache;
 
+  private readonly places: HoldingPlaces;
+
   /** The Mediabunny transcoder, falling back to ffmpeg for files it cannot convert. */
   private readonly transcoder: Transcoder;
 
@@ -182,6 +195,7 @@ export class GlazierEngine {
     this.jobs = new JobQueue((job) => options.emit({ kind: "job", job }));
     this.transcoder = withFfmpegFallback(options.transcoder, options.toolkit.ffmpegPath);
     this.thumbnails = new ThumbnailCache(path.join(options.dataDir, "thumbnails"), options.toolkit);
+    this.places = new HoldingPlaces(options.dataDir);
     this.capabilities = {
       ...NO_CAPABILITIES,
       ffmpeg: options.toolkit.ffmpegPath !== null,
@@ -195,7 +209,10 @@ export class GlazierEngine {
     const db = new CatalogDatabase(path.join(options.dataDir, "catalog.sqlite"));
     await recoverInterruptedPlans(db);
 
-    return new GlazierEngine(db, options);
+    const engine = new GlazierEngine(db, options);
+    await relocateLegacyHolding({ db, places: engine.places });
+
+    return engine;
   }
 
   /** Cancels every job and closes the catalog. */
@@ -273,7 +290,7 @@ export class GlazierEngine {
         const query = m.listFiles.input.parse(raw);
 
         if (filterNeedsConvertible(query)) {
-          this.prepareConvertible(query.rootId);
+          await this.prepareConvertible(query.rootId);
         }
 
         return listFiles(this.db, query);
@@ -282,14 +299,14 @@ export class GlazierEngine {
         const filter = m.listFileIds.input.parse(raw);
 
         if (filterNeedsConvertible(filter)) {
-          this.prepareConvertible(filter.rootId);
+          await this.prepareConvertible(filter.rootId);
         }
 
         return listFileIds(this.db, filter);
       },
       fileFacets: async (raw) => {
         const filter = m.fileFacets.input.parse(raw);
-        this.prepareConvertible(filter.rootId);
+        await this.prepareConvertible(filter.rootId);
 
         return fileFacets(this.db, filter);
       },
@@ -299,12 +316,14 @@ export class GlazierEngine {
         const { fileIds } = m.selectionSummary.input.parse(raw);
 
         for (const rootId of rootsOfFiles(this.db, fileIds)) {
-          this.candidates(rootId);
+          await this.candidates(rootId);
         }
 
         return selectionSummary(this.db, fileIds);
       },
       listFolders: async (raw) => listFolders(this.db, m.listFolders.input.parse(raw).rootId),
+      listEmptyFolders: async (raw) =>
+        listEmptyFolders(this.db, m.listEmptyFolders.input.parse(raw).rootId),
       duplicateSets: async (raw) => {
         const request = m.duplicateSets.input.parse(raw);
         const computed = await this.duplicateSetList(request.rootId, request.level);
@@ -334,7 +353,7 @@ export class GlazierEngine {
       analyzeSound: async (raw) =>
         this.requestAnalysis(this.soundJob(m.analyzeSound.input.parse(raw).rootId, false)),
       optimizeSummary: async (raw) =>
-        summarizeCandidates(this.candidates(m.optimizeSummary.input.parse(raw).rootId)),
+        summarizeCandidates(await this.candidates(m.optimizeSummary.input.parse(raw).rootId)),
       estimateOptimize: async (raw) => {
         const { rootId, category } = m.estimateOptimize.input.parse(raw);
 
@@ -346,7 +365,7 @@ export class GlazierEngine {
 
         return {
           preview,
-          job: preview.warnings.length === 0 ? this.enqueueApply(preview.planId) : null,
+          job: this.enqueueApply(preview.planId),
         };
       },
       applyPlan: async (raw) => this.enqueueApply(m.applyPlan.input.parse(raw).planId),
@@ -417,15 +436,18 @@ export class GlazierEngine {
       holdingBatches: async (raw) => {
         const root = this.requireRoot(m.holdingBatches.input.parse(raw).rootId);
 
-        return heldBatchPaths(this.db, root.id, root.path);
+        return heldBatchPaths(this.db, root.id);
       },
       markHoldingEmptied: async (raw) => {
         const { rootId, batchPaths } = m.markHoldingEmptied.input.parse(raw);
-        const root = this.requireRoot(rootId);
+        this.requireRoot(rootId);
 
-        return {
-          emptied: await markBatchesEmptied(this.db, { rootId, rootPath: root.path, batchPaths }),
-        };
+        const emptied = await markBatchesEmptied(this.db, { rootId, batchPaths });
+
+        // Holding's size shows in the sidebar and on Overview, so they refetch.
+        this.options.emit({ kind: "catalog-changed", rootId });
+
+        return { emptied };
       },
       updateSettings: async (raw) => {
         const before = readSettings(this.db);
@@ -441,7 +463,7 @@ export class GlazierEngine {
       thumbnail: async (raw) => {
         const request = m.thumbnail.input.parse(raw);
 
-        if (!this.isAuthorizedPath(request.path)) {
+        if (!(await this.isAuthorizedPath(request.path))) {
           return { path: null };
         }
 
@@ -450,7 +472,7 @@ export class GlazierEngine {
       authorizedRoots: async (raw) => {
         m.authorizedRoots.input.parse(raw);
 
-        return listRoots(this.db).map((root) => root.path);
+        return this.authorizedFolders();
       },
     };
   }
@@ -465,10 +487,21 @@ export class GlazierEngine {
     return root;
   }
 
-  private isAuthorizedPath(filePath: string): boolean {
+  /** The roots, and the holding folder of each root that has one by now. */
+  private async authorizedFolders(): Promise<string[]> {
+    const roots = listRoots(this.db);
+
+    const holding = await Promise.all(
+      roots.map((root) => this.places.folderFor(root).catch(() => null)),
+    );
+
+    return [...roots.map((root) => root.path), ...holding.flatMap((folder) => folder ?? [])];
+  }
+
+  private async isAuthorizedPath(filePath: string): Promise<boolean> {
     const resolved = path.resolve(filePath);
 
-    return listRoots(this.db).some((root) => isWithin(resolved, root.path));
+    return (await this.authorizedFolders()).some((folder) => isWithin(resolved, folder));
   }
 
   private emitRoots(): void {
@@ -513,6 +546,7 @@ export class GlazierEngine {
   private executorDeps(context: JobContext): ExecutorDeps {
     return {
       db: this.db,
+      places: this.places,
       toolkit: this.options.toolkit,
       stillEncoder: this.options.stillEncoder,
       transcoder: this.transcoder,
@@ -643,17 +677,25 @@ export class GlazierEngine {
 
   /** Saves a request as a draft plan and returns its preview. */
   private async preview(request: PlanRequest): Promise<PlanPreview> {
+    const holdsRoot =
+      request.kind === "optimize" || request.kind === "cleanup" ? request.rootId : null;
+
     const context: PlannerContext = {
       db: this.db,
       roots: listRoots(this.db),
       settings: readSettings(this.db),
+      candidateHolds: holdsRoot === null ? NO_HOLDS : await this.candidateHolds(holdsRoot),
       duplicateSets:
         request.kind === "resolve-duplicate-sets"
           ? openSets(
               await this.duplicateSetList(request.rootId, request.level),
               Dismissals.load(this.db),
               request.scope,
-            ).map((entry) => ({ key: entry.set.key, fileIds: entry.fileIds, keep: entry.set.keep }))
+            ).flatMap((entry) =>
+              request.skipCloseCalls === true && isCloseCall(entry.set)
+                ? []
+                : [{ key: entry.set.key, fileIds: entry.fileIds, keep: entry.set.keep }],
+            )
           : [],
     };
 
@@ -713,7 +755,7 @@ export class GlazierEngine {
     const settings = readSettings(this.db);
     const sets = await this.duplicateSetList(rootId, settings.similarity);
     const open = openSets(sets, Dismissals.load(this.db), "all");
-    const scan = this.candidates(rootId);
+    const scan = await this.candidates(rootId);
     const catalog = catalogTidy(this.db, rootId);
 
     const tidy: Tidy = {
@@ -742,26 +784,47 @@ export class GlazierEngine {
     return tidy;
   }
 
-  private candidates(rootId: RootId): CandidateScan {
+  /**
+   * What Convert leaves alone for now: members of open similar sets at the current level, and,
+   * while background analysis will check them, files not yet fingerprinted.
+   */
+  private async candidateHolds(rootId: RootId): Promise<CandidateHolds> {
+    const settings = readSettings(this.db);
+    const sets = await this.duplicateSetList(rootId, settings.similarity);
+    const similar = openSets(sets, Dismissals.load(this.db), "similar");
+
+    return {
+      reviewing: new Set(similar.flatMap((entry) => entry.fileIds)),
+      waitForFingerprints: settings.autoAnalyze,
+    };
+  }
+
+  private async candidates(rootId: RootId): Promise<CandidateScan> {
     const cached = this.candidateCache.get(rootId);
 
     if (cached) {
       return cached;
     }
 
-    const scan = findOptimizeCandidates(this.db, rootId);
-    recordConvertible(this.db, rootId, scan.candidates);
-    this.candidateCache.set(rootId, scan);
+    const generation = this.generation;
+    const holds = await this.candidateHolds(rootId);
+    const scan = findOptimizeCandidates(this.db, rootId, holds);
+
+    // A scan computed across a catalog change is used once and not kept.
+    if (generation === this.generation) {
+      recordConvertible(this.db, rootId, scan.candidates);
+      this.candidateCache.set(rootId, scan);
+    }
 
     return scan;
   }
 
   /** Makes sure the convertible files of a root (or every root) are recorded for file queries. */
-  private prepareConvertible(rootId: RootId | null): void {
+  private async prepareConvertible(rootId: RootId | null): Promise<void> {
     const rootIds = rootId === null ? listRoots(this.db).map((root) => root.id) : [rootId];
 
     for (const id of rootIds) {
-      this.candidates(id);
+      await this.candidates(id);
     }
   }
 
@@ -823,8 +886,8 @@ export class GlazierEngine {
    * the archive). Kept while the category holds the same number of files and bytes, so asking
    * for every category each time Tidy opens does not encode the samples again.
    */
-  private estimate(rootId: RootId, category: OptimizeCategory): Promise<OptimizeEstimate> {
-    const pool = this.candidates(rootId).candidates.filter(
+  private async estimate(rootId: RootId, category: OptimizeCategory): Promise<OptimizeEstimate> {
+    const pool = (await this.candidates(rootId)).candidates.filter(
       (candidate) => candidate.category === category,
     );
 

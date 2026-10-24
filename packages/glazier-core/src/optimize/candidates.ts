@@ -14,6 +14,7 @@ import type { CatalogDatabase, SqlParams } from "../catalog/database.js";
 import {
   FILE_COLUMNS,
   FILES_FROM,
+  FINGERPRINT_VERSION,
   type FileRecord,
   FileRecordSchema,
 } from "../catalog/file-rows.js";
@@ -27,6 +28,7 @@ import {
 } from "../contract.js";
 import { Dismissals } from "../duplicates/dismissals.js";
 import { exactGroupSql } from "../duplicates/queries.js";
+import { FINGERPRINTABLE_SQL } from "../passes/fingerprint-pass.js";
 
 /** A file the archive policy would change, and how. */
 export type OptimizeCandidate =
@@ -141,6 +143,36 @@ const SKIP_DUPLICATE = "Identical copies (resolve duplicates first)";
 
 const SKIP_NOT_SMALLER = "Already as small as they get";
 
+const SKIP_REVIEW = "Similar versions (review them first)";
+
+const SKIP_UNCHECKED = "Not checked for similar versions yet";
+
+/**
+ * Files Convert leaves alone for now because duplicate review still needs them as they are: the
+ * members of open similar sets, whose formats and sizes review compares, and (while background
+ * analysis is on, so the check will come) files not yet checked for similar versions, which may
+ * turn out to belong to such a set.
+ */
+export interface CandidateHolds {
+  reviewing: ReadonlySet<FileId>;
+  waitForFingerprints: boolean;
+}
+
+export const NO_HOLDS: CandidateHolds = { reviewing: new Set(), waitForFingerprints: false };
+
+function uncheckedFiles(db: CatalogDatabase, rootId: RootId): Set<FileId> {
+  return new Set(
+    db
+      .all(
+        `SELECT f.id FROM files f
+          WHERE f.root_id = $root AND f.fingerprint_version < $version AND ${FINGERPRINTABLE_SQL}`,
+        z.object({ id: FileIdSchema }),
+        { $root: rootId, $version: FINGERPRINT_VERSION },
+      )
+      .map(({ id }) => id),
+  );
+}
+
 /**
  * Every file in an open set of identical copies. Converting one of them, even the keeper, turns
  * the set from identical copies into similar versions that need a closer look, so the whole set
@@ -180,10 +212,14 @@ function openDuplicateCopies(db: CatalogDatabase, rootId: RootId): Set<FileId> {
 /**
  * Every file under a root the archive policy would convert or rename. A conversion whose target
  * name is already taken is skipped, never overwritten; the two files are usually the same picture
- * and the duplicates view resolves them. Identical copies wait for that too, and a file an earlier
- * conversion could not shrink is left as it is.
+ * and the duplicates view resolves them. Identical copies wait for that too, as do the files
+ * `holds` names, and a file an earlier conversion could not shrink is left as it is.
  */
-export function findOptimizeCandidates(db: CatalogDatabase, rootId: RootId): CandidateScan {
+export function findOptimizeCandidates(
+  db: CatalogDatabase,
+  rootId: RootId,
+  holds: CandidateHolds = NO_HOLDS,
+): CandidateScan {
   const params: SqlParams = { $root: rootId };
 
   const records = db.all(
@@ -205,6 +241,7 @@ export function findOptimizeCandidates(db: CatalogDatabase, rootId: RootId): Can
   );
 
   const duplicates = openDuplicateCopies(db, rootId);
+  const unchecked = holds.waitForFingerprints ? uncheckedFiles(db, rootId) : new Set<FileId>();
   const candidates: OptimizeCandidate[] = [];
   const skipped = new Map<string, number>();
   const skip = (reason: string) => skipped.set(reason, (skipped.get(reason) ?? 0) + 1);
@@ -225,6 +262,18 @@ export function findOptimizeCandidates(db: CatalogDatabase, rootId: RootId): Can
 
     if (duplicates.has(record.id)) {
       skip(SKIP_DUPLICATE);
+
+      continue;
+    }
+
+    if (holds.reviewing.has(record.id)) {
+      skip(SKIP_REVIEW);
+
+      continue;
+    }
+
+    if (unchecked.has(record.id)) {
+      skip(SKIP_UNCHECKED);
 
       continue;
     }

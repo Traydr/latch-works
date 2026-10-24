@@ -9,6 +9,7 @@ import {
   type DuplicateSetPage,
   type FileId,
   FileIdSchema,
+  isCloseCall,
   type RootId,
   type Settings,
   type Tidy,
@@ -233,9 +234,13 @@ export function pageDuplicateSets(
   computed: readonly ComputedSet[],
   dismissals: Dismissals,
   request: { scope: DuplicateScope; dismissed: boolean; offset: number; limit: number },
-): Pick<DuplicateSetPage, "total" | "reclaimableBytes" | "counts" | "sets"> {
-  const counts = { exact: 0, similar: 0, dismissed: 0 };
+): Pick<
+  DuplicateSetPage,
+  "total" | "reclaimableBytes" | "counts" | "openReclaimableBytes" | "sets"
+> {
+  const counts = { exact: 0, similar: 0, dismissed: 0, closeCalls: 0 };
   const selected: DuplicateSet[] = [];
+  let openReclaimableBytes = 0;
 
   for (const entry of computed) {
     const dismissalId = dismissals.covering(entry.fileIds);
@@ -244,6 +249,8 @@ export function pageDuplicateSets(
       counts.dismissed += 1;
     } else {
       counts[entry.set.kind] += 1;
+      counts.closeCalls += isCloseCall(entry.set) ? 1 : 0;
+      openReclaimableBytes += entry.set.reclaimableBytes;
     }
 
     if ((dismissalId !== null) === request.dismissed && inScope(entry.set.kind, request.scope)) {
@@ -255,6 +262,7 @@ export function pageDuplicateSets(
     total: selected.length,
     reclaimableBytes: selected.reduce((sum, set) => sum + set.reclaimableBytes, 0),
     counts,
+    openReclaimableBytes,
     sets: selected.slice(request.offset, request.offset + request.limit),
   };
 }

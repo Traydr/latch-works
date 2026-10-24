@@ -266,6 +266,35 @@ export const DuplicateSetSchema = z.object({
 
 export type DuplicateSet = z.infer<typeof DuplicateSetSchema>;
 
+/** Keep reasons that only break a tie between versions that are otherwise alike. */
+const TIE_BREAKERS: ReadonlySet<KeepReason> = new Set([
+  "larger-file",
+  "oldest",
+  "shorter-path",
+  "name-order",
+]);
+
+/**
+ * Whether a similar set's suggestion is a close call: its versions match on pixels, length,
+ * sound and format, and a tie-breaker chose (a file under a tenth larger, the oldest, the
+ * shortest path, the first name). The owner should look at those; bulk resolving can skip them.
+ */
+export function isCloseCall(set: Pick<DuplicateSet, "kind" | "keepReason" | "versions">): boolean {
+  if (set.kind !== "similar" || !TIE_BREAKERS.has(set.keepReason)) {
+    return false;
+  }
+
+  if (set.keepReason !== "larger-file") {
+    return true;
+  }
+
+  const [best, next] = set.versions;
+  const bestSize = best?.files[0]?.size ?? 0;
+  const nextSize = next?.files[0]?.size ?? 0;
+
+  return nextSize > 0 && bestSize / nextSize < 1.1;
+}
+
 const DuplicateTotalsSchema = z.object({
   sets: z.number().int(),
   /** Files the suggested resolutions move to holding. */
@@ -281,7 +310,11 @@ export const DuplicateSetPageSchema = z.object({
     exact: z.number().int(),
     similar: z.number().int(),
     dismissed: z.number().int(),
+    /** Open similar sets whose suggestion is a close call (see `isCloseCall`). */
+    closeCalls: z.number().int(),
   }),
+  /** Bytes resolving every open set would free, identical and similar alike. */
+  openReclaimableBytes: z.number(),
   /** Similar sets need fingerprints; how far the analysis has come. */
   fingerprinted: z.number().int(),
   fingerprintable: z.number().int(),
@@ -426,6 +459,8 @@ export const PlanRequestSchema = z.discriminatedUnion("kind", [
     scope: DuplicateScopeSchema,
     overrides: z.array(z.object({ key: z.string(), keep: z.array(FileIdSchema).min(1) })),
     skip: z.array(z.string()),
+    /** Leaves close calls (see `isCloseCall`) for the owner to look at. */
+    skipCloseCalls: z.boolean().optional(),
   }),
   z.object({ kind: z.literal("clean-junk"), rootId: RootIdSchema }),
   z.object({ kind: z.literal("remove-empty-folders"), rootId: RootIdSchema }),
@@ -709,6 +744,7 @@ export const EngineMethods = {
     SelectionSummarySchema,
   ),
   listFolders: method(RootRefSchema, z.array(z.string())),
+  listEmptyFolders: method(RootRefSchema, z.array(z.string())),
   /** Duplicate sets, most bytes to reclaim first. */
   duplicateSets: method(
     OptionalRootRefSchema.extend(PagingSchema.shape).extend({
@@ -734,13 +770,10 @@ export const EngineMethods = {
   ),
   previewPlan: method(PlanRequestSchema, PlanPreviewSchema),
   /**
-   * Previews a request and, unless the preview warns, applies it at once. A draft with warnings
-   * waits for `applyPlan` or `discardPlan`.
+   * Previews a request and applies it at once. Its warnings say what the change left out or
+   * where it went, for the result to report; they never hold it back, since it can be undone.
    */
-  perform: method(
-    PlanRequestSchema,
-    z.object({ preview: PlanPreviewSchema, job: JobSchema.nullable() }),
-  ),
+  perform: method(PlanRequestSchema, z.object({ preview: PlanPreviewSchema, job: JobSchema })),
   applyPlan: method(z.object({ planId: PlanIdSchema }), JobSchema),
   discardPlan: method(z.object({ planId: PlanIdSchema }), NothingSchema),
   listPlans: method(OptionalRootRefSchema.extend(PagingSchema.shape), z.array(PlanSummarySchema)),

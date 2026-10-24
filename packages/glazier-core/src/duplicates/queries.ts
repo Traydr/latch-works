@@ -15,10 +15,7 @@ import {
 import type { KeeperCandidate } from "./keeper.js";
 
 /** Whether a file sits in one of the owner's preferred folders. */
-export function isPreferredPath(
-  settings: Settings,
-  file: { root_id: RootId; dir: string },
-): boolean {
+function isPreferredPath(settings: Settings, file: { root_id: RootId; dir: string }): boolean {
   return settings.preferredFolders.some(
     (folder) =>
       folder.rootId === file.root_id &&

@@ -91,7 +91,7 @@ describe("duplicate sets", () => {
     const exact = page.sets.find((set) => set.kind === "exact");
     const similar = page.sets.find((set) => set.kind === "similar");
 
-    expect(page.counts).toEqual({ exact: 1, similar: 1, dismissed: 0 });
+    expect(page.counts).toEqual({ exact: 1, similar: 1, dismissed: 0, closeCalls: 0 });
     expect(namesOf(page)).toEqual([
       ["a.png", "x/a.png", "y/a (1).png"],
       ["b.png", "b-small.jpg"],
@@ -177,7 +177,7 @@ describe("duplicate sets", () => {
       fileIds: exact.versions.flatMap((version) => version.files.map((file) => file.id)),
     });
 
-    expect((await sets()).counts).toEqual({ exact: 0, similar: 1, dismissed: 1 });
+    expect((await sets()).counts).toEqual({ exact: 0, similar: 1, dismissed: 1, closeCalls: 0 });
     expect((await sets({ dismissed: true })).sets.map((set) => set.dismissalId)).toEqual([
       dismissalId,
     ]);
@@ -201,7 +201,7 @@ describe("duplicate sets", () => {
     }
 
     await harness.settle(held.job);
-    expect((await sets()).counts).toEqual({ exact: 0, similar: 1, dismissed: 1 });
+    expect((await sets()).counts).toEqual({ exact: 0, similar: 1, dismissed: 1, closeCalls: 0 });
 
     // …gaining one brings it back.
     await copyOfA("z/a.png");
@@ -225,16 +225,16 @@ describe("duplicate sets", () => {
     });
 
     // A draft's dismissal hides nothing yet.
-    expect((await sets()).counts).toEqual({ exact: 1, similar: 1, dismissed: 0 });
+    expect((await sets()).counts).toEqual({ exact: 1, similar: 1, dismissed: 0, closeCalls: 0 });
 
     await harness.settle(await harness.call("applyPlan", { planId: preview.planId }));
 
-    expect((await sets()).counts).toEqual({ exact: 0, similar: 1, dismissed: 1 });
+    expect((await sets()).counts).toEqual({ exact: 0, similar: 1, dismissed: 1, closeCalls: 0 });
 
     await harness.call("undoPlan", { planId: preview.planId });
     await harness.idle();
 
-    expect((await sets()).counts).toEqual({ exact: 1, similar: 1, dismissed: 0 });
+    expect((await sets()).counts).toEqual({ exact: 1, similar: 1, dismissed: 0, closeCalls: 0 });
     expect(namesOf(await sets({ scope: "exact" }))).toEqual([["a.png", "x/a.png", "z/a.png"]]);
   });
 });

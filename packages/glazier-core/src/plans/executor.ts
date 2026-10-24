@@ -34,7 +34,14 @@ import type { StillEncoder, Transcoder } from "../optimize/encoders.js";
 import { forEachConcurrent } from "../passes/context.js";
 import { isExtensionMismatch } from "../scan/sniff.js";
 import { extensionOf, wholeMs } from "../scan/walk.js";
-import { holdFile, holdingBatchName, moveFile, pathExists, restoreHeld } from "./holding.js";
+import {
+  type HoldingPlaces,
+  holdFile,
+  holdingBatchName,
+  moveFile,
+  pathExists,
+  restoreHeld,
+} from "./holding.js";
 import { isWithin, type StepSpec, StepSpecSchema } from "./planner.js";
 import { type PlanSubject, planTitle } from "./wording.js";
 
@@ -43,6 +50,8 @@ const MINIMUM_SAVING = 0.05;
 
 export interface ExecutorDeps {
   db: CatalogDatabase;
+  /** Where each root's held files go. */
+  places: HoldingPlaces;
   toolkit: MediaToolkit;
   stillEncoder: StillEncoder;
   transcoder: Transcoder;
@@ -371,7 +380,7 @@ async function convert(
     await utimes(tempPath, context.source.atime, context.source.mtime);
 
     const hold = () =>
-      holdFile(deps.db, {
+      holdFile(deps, {
         rootId: step.root_id,
         rootPath: step.root_path,
         relPath: step.from_rel,
@@ -438,7 +447,7 @@ async function executeStep(
 
   switch (spec.kind) {
     case "hold": {
-      const holdingId = await holdFile(deps.db, {
+      const holdingId = await holdFile(deps, {
         rootId: step.root_id,
         rootPath: step.root_path,
         relPath: step.from_rel,
@@ -868,7 +877,7 @@ async function undoStep(deps: ExecutorDeps, step: StepRecord, batch: string): Pr
           throw new Error("The converted file is outside every root.");
         }
 
-        await holdFile(deps.db, {
+        await holdFile(deps, {
           rootId: located.rootId,
           rootPath: step.root_path,
           relPath: located.relPath,

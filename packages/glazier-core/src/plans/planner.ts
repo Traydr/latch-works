@@ -34,9 +34,9 @@ import {
   VideoQualitySchema,
 } from "../contract.js";
 import { addDismissal } from "../duplicates/dismissals.js";
-import { isPreferredPath } from "../duplicates/queries.js";
 import { removalsFor } from "../duplicates/sets.js";
 import {
+  type CandidateHolds,
   findOptimizeCandidates,
   type OptimizeCandidate,
   videoSourceOf,
@@ -98,6 +98,8 @@ export interface PlannerContext {
    * planning (clustering is asynchronous; planning is not). Empty for every other request.
    */
   duplicateSets: readonly ResolvableSet[];
+  /** Files Convert and Clean up leave alone for now, worked out by the engine before planning. */
+  candidateHolds: CandidateHolds;
 }
 
 function fileStep(record: FileRecord, spec: StepSpec, toAbs: string | null): DraftStep {
@@ -188,7 +190,6 @@ function draftResolution(
   const removed = new Set<FileId>();
   const steps: DraftStep[] = [];
   const dismissals: FileId[][] = [];
-  let preferredRemovals = 0;
   let resolved = 0;
 
   for (const group of groups) {
@@ -210,10 +211,6 @@ function draftResolution(
       removed.add(record.id);
       changed = true;
 
-      if (isPreferredPath(context.settings, record)) {
-        preferredRemovals += 1;
-      }
-
       steps.push(
         fileStep(record, { kind: "hold", reason: `Duplicate of ${keeper.rel_path}` }, null),
       );
@@ -231,16 +228,9 @@ function draftResolution(
     }
   }
 
-  const warnings =
-    preferredRemovals === 0
-      ? []
-      : [
-          preferredRemovals === 1
-            ? "1 of the files to remove is in a preferred folder."
-            : `${preferredRemovals} of the files to remove are in preferred folders.`,
-        ];
-
-  return { steps, warnings, dismissals, resolved };
+  // Keepers already favour preferred folders, so removing a copy from one is a deliberate pick
+  // (or every copy is in one) and is not warned about.
+  return { steps, warnings: [], dismissals, resolved };
 }
 
 /** Each set with its suggested keeper or the override for its key, minus skipped sets. */
@@ -417,7 +407,7 @@ export function draftSteps(context: PlannerContext, request: PlanRequest): PlanD
     case "optimize": {
       const wanted = new Set<FileId>(request.fileIds ?? []);
 
-      const scan = findOptimizeCandidates(context.db, request.rootId);
+      const scan = findOptimizeCandidates(context.db, request.rootId, context.candidateHolds);
 
       for (const candidate of scan.candidates) {
         if (!request.categories.includes(candidate.category)) {
@@ -556,7 +546,7 @@ export function draftSteps(context: PlannerContext, request: PlanRequest): PlanD
     }
 
     case "cleanup": {
-      const scan = findOptimizeCandidates(context.db, request.rootId);
+      const scan = findOptimizeCandidates(context.db, request.rootId, context.candidateHolds);
 
       // Renames and junk first, so folders that held only junk are empty when their turn comes.
       for (const fix of extensionFixes(context.db, request.rootId, scan.candidates)) {

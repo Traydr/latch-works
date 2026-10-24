@@ -63,8 +63,9 @@ async function onlyFile(name: string): Promise<FileRow> {
   return row;
 }
 
+/** What holding has, as paths inside the root: holding lives in the data folder, not the root. */
 async function holdingContents(): Promise<string[]> {
-  const holding = path.join(archive, ".glazier-holding");
+  const holding = path.join(dataDir, "holding");
   const found: string[] = [];
 
   const walk = async (folder: string) => {
@@ -74,7 +75,8 @@ async function holdingContents(): Promise<string[]> {
       if (entry.isDirectory()) {
         await walk(full);
       } else {
-        found.push(path.relative(holding, full).split(path.sep).slice(1).join("/"));
+        // Below the root's folder and the batch's.
+        found.push(path.relative(holding, full).split(path.sep).slice(2).join("/"));
       }
     }
   };
@@ -153,7 +155,7 @@ describe("glazier engine", () => {
     const copy = await onlyFile("photo-copy.png");
     const small = await onlyFile("small.jpg");
 
-    expect(page.counts).toEqual({ exact: 0, similar: 1, dismissed: 0 });
+    expect(page.counts).toEqual({ exact: 0, similar: 1, dismissed: 0, closeCalls: 0 });
     expect(set?.kind).toBe("similar");
     expect(set?.versions.map((version) => version.files.map((file) => file.name))).toEqual([
       ["photo.png", "photo-link.png", "photo-copy.png"],
@@ -186,28 +188,34 @@ describe("glazier engine", () => {
     expect(page.total).toBe(2);
   });
 
-  it("leaves identical copies out of the Convert step until they are resolved", async () => {
+  it("leaves duplicates out of the Convert step until they are reviewed", async () => {
     const summary = await harness.call("optimizeSummary", { rootId: root.id });
 
+    // The copy and the hard link are identical copies; the resized JPEG is a similar version,
+    // which review compares by format and size, so it is not converted under it.
     expect(summary.skipped).toContainEqual({
       reason: "Identical copies (resolve duplicates first)",
       files: 3,
+    });
+    expect(summary.skipped).toContainEqual({
+      reason: "Similar versions (review them first)",
+      files: 1,
     });
 
     const convertible = await harness.call("listFileIds", filterBy(["convertible"]));
 
     const names = await harness.call("getFiles", { ids: convertible.ids });
-    expect(names.map((row) => row.relPath)).toEqual(["misnamed.jpg", "photos/small.jpg"]);
+    expect(names.map((row) => row.relPath)).toEqual(["misnamed.jpg"]);
 
     const facets = await harness.call("fileFacets", filterBy([]));
-    expect(facets.flags.find((facet) => facet.value === "convertible")?.files).toBe(2);
+    expect(facets.flags.find((facet) => facet.value === "convertible")?.files).toBe(1);
 
     const selection = await harness.call("selectionSummary", { fileIds: convertible.ids });
-    expect(selection.convertible.files).toBe(2);
+    expect(selection.convertible.files).toBe(1);
     expect(selection.extensionMismatches).toBe(1);
   });
 
-  it("moves a removed duplicate into holding, out of Lockstep's scan, and undo brings it back", async () => {
+  it("moves a removed duplicate to holding outside the root, and undo brings it back", async () => {
     const keep = await onlyFile("photo.png");
     const copy = await onlyFile("photo-copy.png");
     const link = await onlyFile("photo-link.png");
@@ -226,6 +234,7 @@ describe("glazier engine", () => {
 
     await expect(stat(path.join(archive, "dup", "photo-copy.png"))).rejects.toThrow();
     expect(await holdingContents()).toEqual(["dup/photo-copy.png"]);
+    await expect(stat(path.join(archive, ".glazier-holding"))).rejects.toThrow();
 
     const lockstepView = await scanArchive({ sourceRoot: archive });
     expect(
@@ -253,11 +262,14 @@ describe("glazier engine", () => {
   it("converts a still to AVIF in place of the original, keeping its date", async () => {
     const original = await onlyFile("photo.png");
     const copy = await onlyFile("photo-copy.png");
+    const link = await onlyFile("photo-link.png");
+    const small = await onlyFile("small.jpg");
 
-    // Identical copies wait for duplicate review, so the copy is resolved first.
+    // Duplicates wait for review, so the set is decided first: the copy goes, and the resized
+    // version (and the hard link) stay, which marks them as not duplicates.
     const resolved = await harness.call("perform", {
       kind: "resolve-duplicates",
-      groups: [{ keep: [original.id], remove: [copy.id] }],
+      groups: [{ keep: [original.id, link.id, small.id], remove: [copy.id] }],
     });
 
     if (resolved.job === null) {

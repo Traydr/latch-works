@@ -152,6 +152,13 @@ const MIGRATIONS: readonly string[] = [
 
   CREATE INDEX duplicate_dismissal_files_file ON duplicate_dismissal_files (file_id);
   `,
+  // Holding moved out of the root, so a held file's place is recorded whole. Rows from before
+  // keep these null until the engine fills them in and moves their files out (see holding.ts).
+  `
+  ALTER TABLE holding ADD COLUMN hold_path TEXT;
+
+  ALTER TABLE holding ADD COLUMN batch_path TEXT;
+  `,
 ];
 
 /**

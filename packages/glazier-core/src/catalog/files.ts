@@ -462,6 +462,19 @@ export function selectionSummary(
 
 const DirSchema = z.object({ dir: z.string() });
 
+const RelPathSchema = z.object({ rel_path: z.string() });
+
+/** The folders the last scan found empty, relative to the root, in path order. */
+export function listEmptyFolders(db: CatalogDatabase, rootId: RootId): string[] {
+  return db
+    .all(
+      "SELECT rel_path FROM empty_folders WHERE root_id = $root ORDER BY rel_path COLLATE NOCASE",
+      RelPathSchema,
+      { $root: rootId },
+    )
+    .map(({ rel_path }) => rel_path);
+}
+
 /** Every folder that holds a file, relative to the root, in path order. */
 export function listFolders(db: CatalogDatabase, rootId: RootId): string[] {
   const dirs = db.all(

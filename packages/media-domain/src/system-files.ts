@@ -7,9 +7,9 @@ const SYSTEM_JUNK_FILE_NAMES = new Set([
 ]);
 
 /**
- * Glazier moves removed files and replaced originals here, inside their own root, so a removal
- * is a same-volume rename that can be undone. Every scanner skips it, so nothing in it is indexed
- * by Frame View or synced by Lockstep.
+ * Glazier's holding folder on a volume other than its data folder's, at the top of that volume,
+ * where removed files and replaced originals wait. (Older Glazier builds kept it inside each
+ * root.) Every scanner skips it, so a scan of the whole volume neither indexes nor syncs it.
  */
 export const GLAZIER_HOLDING_DIRECTORY_NAME = ".glazier-holding";
 
