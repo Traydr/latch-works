@@ -303,7 +303,11 @@ Done.
 
 Done, without trials: the defaults below were built and the owner can ask for a trial of any.
 - **Switcher in rail form.** Stacked icons, as Layout A drew it.
-- **View's sidebar.** The rail, so the gallery keeps the width; a folder tree is not built.
+- **View's sidebar.** At first the rail, so the gallery kept the width. The owner found the switch
+  between View's rail and Tidy's and Sync's full sidebars jarring, so View now has a full sidebar
+  too (the folder on screen, its parent and its subfolders), and the rail is the owner's choice
+  alone: a toggle at every sidebar's foot or ⌘\, the same in every mode and at any window size.
+  Glazier's switch to the rail under 1180 px is gone.
 - **Activity.** Each mode's renderer reports its own work to the switcher (`useReportActivity`):
   a ring for a Sync push or prune and a Tidy apply or undo, a dot for a View scan or a Tidy scan
   or analysis.

@@ -54,7 +54,7 @@ interface Shell {
   opened: ReadonlySet<ModeId>;
   /** Shows a mode, closing Settings. */
   go: (mode: ModeId) => void;
-  /** Whether the owner (⌘\) or a narrow window has the sidebar as the rail of icons. */
+  /** Whether the owner compacted the sidebar to the rail of icons, in every mode at once. */
   rail: boolean;
   toggleRail: () => void;
   /** macOS draws the window buttons over the sidebar's top strip. */

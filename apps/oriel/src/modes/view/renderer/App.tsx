@@ -17,6 +17,7 @@ import { useSettingsActions } from "./hooks/useSettingsActions";
 import { useSettingsPanelData } from "./hooks/useSettingsPanelData";
 import type { LayoutShellProps } from "./layouts";
 import { PrismLayout } from "./layouts";
+import { ViewSidebar } from "./layouts/components/ViewSidebar";
 import { useAppStore } from "./store/useAppStore";
 import { buildBrowserEntryCollection } from "./utils/browserEntries";
 import type { ComicEntry } from "./utils/comics";
@@ -348,6 +349,18 @@ function AppInner(): JSX.Element {
 
   return (
     <ModeLayout
+      sidebar={
+        <ViewSidebar
+          folderPath={rootPath}
+          subfolders={currentFolderChildren}
+          subfoldersLoading={folderChildrenLoading}
+          parentFolderPath={parentFolderPath}
+          canOpenParentFolder={canOpenParentFolder}
+          onOpenFolder={openFolderAction}
+          onOpenParentFolder={openParentFolderAction}
+          onSelectFolder={navigateToFolderAction}
+        />
+      }
       settings={
         <ViewSettings
           currentFolderSummary={{

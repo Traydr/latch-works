@@ -73,6 +73,22 @@ export function modeButton(window: Page, mode: OrielMode) {
   return window.locator(`[data-mode="${mode}"]:visible`);
 }
 
+/**
+ * Waits until `mode`'s switcher button shows as the mode on screen: pressed in the full sidebar's
+ * segmented control, the current page in the rail.
+ */
+export async function expectModeShown(window: Page, mode: OrielMode): Promise<void> {
+  const button = modeButton(window, mode);
+
+  await expect
+    .poll(
+      async () =>
+        (await button.getAttribute("aria-pressed")) === "true" ||
+        (await button.getAttribute("aria-current")) === "page",
+    )
+    .toBe(true);
+}
+
 /** Opens `mode` from the switcher and waits until it shows. */
 export async function openMode(window: Page, mode: OrielMode): Promise<void> {
   await modeButton(window, mode).click();

@@ -4,8 +4,8 @@ import { openFolder, tiles } from "../../src/frame-view.ts";
 import {
   chooseModeFromMenu,
   clickMenuItem,
+  expectModeShown,
   launchOriel,
-  modeButton,
   type OrielSession,
   openMode,
 } from "../../src/oriel.ts";
@@ -22,10 +22,10 @@ test("starts in View and switches modes from the switcher and the menu", async (
   const { app, window } = session;
 
   await expect(window).toHaveTitle("View – Oriel");
-  await expect(modeButton(window, "view")).toHaveAttribute("aria-current", "page");
+  await expectModeShown(window, "view");
 
   await openMode(window, "tidy");
-  await expect(modeButton(window, "tidy")).toHaveAttribute("aria-current", "page");
+  await expectModeShown(window, "tidy");
   const tidyWelcome = window.getByRole("heading", { name: "Choose your media archive" });
 
   await expect(tidyWelcome).toBeVisible();

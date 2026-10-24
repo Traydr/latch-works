@@ -1,17 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 
-/** Below this window width the sidebar starts as the rail of icons, so the work has the room. */
-const NARROW_BELOW = 1180;
+const STORAGE_KEY = "oriel.sidebar";
 
-type SizeClass = "narrow" | "wide";
+/** Where builds before kept the choice made for wide windows, read once as the starting choice. */
+const EARLIER_WIDE_KEY = "oriel.sidebar.wide";
 
-const storageKey = (size: SizeClass) => `oriel.sidebar.${size}`;
+function storedRail(): boolean {
+  const stored =
+    window.localStorage.getItem(STORAGE_KEY) ?? window.localStorage.getItem(EARLIER_WIDE_KEY);
 
-/** The owner's ⌘\ choice for a size class, or null to follow the width. */
-function storedChoice(size: SizeClass): boolean | null {
-  const stored = window.localStorage.getItem(storageKey(size));
-
-  return stored === "rail" ? true : stored === "full" ? false : null;
+  return stored === "rail";
 }
 
 interface SidebarRail {
@@ -20,37 +18,18 @@ interface SidebarRail {
 }
 
 /**
- * Whether the sidebar shows as the rail of icons: by default under 1180 px, and as ⌘\ last chose
- * for windows of that size class, remembered separately for narrow and wide windows.
+ * Whether the sidebar is compact, the rail of icons. It is the owner's choice alone (the toggle at
+ * the sidebar's foot, or ⌘\), the same in every mode and at any window size, so switching mode
+ * or resizing never changes it.
  */
 export function useSidebarRail(): SidebarRail {
-  const [width, setWidth] = useState(() => window.innerWidth);
-  const [narrowChoice, setNarrowChoice] = useState(() => storedChoice("narrow"));
-  const [wideChoice, setWideChoice] = useState(() => storedChoice("wide"));
+  const [rail, setRail] = useState(storedRail);
 
   useEffect(() => {
-    const onResize = () => setWidth(window.innerWidth);
+    window.localStorage.setItem(STORAGE_KEY, rail ? "rail" : "full");
+  }, [rail]);
 
-    window.addEventListener("resize", onResize);
-
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
-
-  const size: SizeClass = width < NARROW_BELOW ? "narrow" : "wide";
-  const choice = size === "narrow" ? narrowChoice : wideChoice;
-  const rail = choice ?? size === "narrow";
-
-  const toggle = useCallback(() => {
-    const next = !rail;
-
-    window.localStorage.setItem(storageKey(size), next ? "rail" : "full");
-
-    if (size === "narrow") {
-      setNarrowChoice(next);
-    } else {
-      setWideChoice(next);
-    }
-  }, [rail, size]);
+  const toggle = useCallback(() => setRail((current) => !current), []);
 
   return { rail, toggle };
 }

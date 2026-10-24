@@ -73,7 +73,7 @@ async function forgetRoot(root: Root, report: (cause: unknown) => void): Promise
   }
 }
 
-/** Whether the sidebar is the narrow rail of icons, under 1180 px or when ⌘\\ chose it. */
+/** Whether the sidebar is the rail of icons, as the owner chose for every mode. */
 const RailContext = createContext(false);
 
 /**
