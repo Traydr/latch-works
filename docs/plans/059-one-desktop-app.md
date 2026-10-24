@@ -15,8 +15,8 @@
 
 ## Status
 
-- **Status**: IN PROGRESS (Phases 1–4 on `agent/059-1-shell`, `agent/059-2-sync`,
-  `agent/059-3-tidy` and `agent/059-4-view`, stacked, 2026-10-24)
+- **Status**: IN PROGRESS (Phases 1–5 on `agent/059-1-shell`, `agent/059-2-sync`,
+  `agent/059-3-tidy`, `agent/059-4-view` and `agent/059-5-migrate`, stacked, 2026-10-24)
 - **Priority**: P2 (the owner asked for it)
 - **Effort**: XL overall, as ten stacked PRs of S–L each
 - **Risk**: MEDIUM to HIGH. It touches every desktop app's process model. The data migration
@@ -231,8 +231,8 @@ Done on `agent/059-4-view`, as a rename-only commit, a formatting commit, and th
 
 ### Phase 5: migrate the old apps' data and replace them (M)
 
-This runs once, on first start, before the welcome. It can be run again from Settings ("Import
-from the old apps"). It records what it did in `~/.latch-works/oriel/migration.json`. A re-run
+Done on `agent/059-5-migrate`. It runs once, on first start, before the window opens. File ›
+Import from the Old Apps… runs it again. It records what it did in `~/.latch-works/oriel/migration.json`. A re-run
 never overwrites a value the new app has since changed.
 
 1. **The old apps must not be running.** If Frame View, Glazier or Lockstep is open, the app says
@@ -254,9 +254,11 @@ never overwrites a value the new app has since changed.
      (the old userData moved there whole). It is DPAPI-protected, so unprotect it as the current
      user through PowerShell's `ProtectedData.Unprotect`. The `v10` blob is AES-256-GCM: a 12-byte
      nonce, then ciphertext and tag.
-   - **Check before saving.** A migrated token is kept only after Lockstep's doctor accepts it
-     against that profile's server. Any failure leaves that profile in a clear "enter your token"
-     state.
+   - **Check before saving.** A migrated token is kept only when it decrypts and is printable
+     ASCII. GCM authenticates on Windows; on macOS a wrong key fails CBC's padding, or leaves bytes
+     that are not a token. This replaced the planned doctor check against the profile's server, so
+     the first start never depends on the network. Any failure leaves the blob as it was, and that
+     profile shows its "enter your token" state.
    - **Handle the secrets carefully.** Never log a token or key. Pass them through stdout, never
      argv, and keep them in memory only for the migration.
 4. **Renderer preferences.** These are Glazier's theme, sidebar rail, convert options and Library
@@ -407,10 +409,10 @@ short, skippable welcome:
 - **Tokens in a file.** Anyone who can read the home folder can read the tokens. The key file
   stays 0600 and is never logged, copied into the archive or
   synced.
-- **Token migration.** STOP if the old blobs are not the `v10` format described in Phase 5 on
-  either platform (Electron may have moved OSCrypt on). In that case ship the migration without
-  tokens: every profile gets the clear "enter your token" state. A token the doctor has not
-  accepted is never saved, and a garbled token is never sent.
+- **Token migration.** The owner's three saved tokens are `v10` blobs, and the Keychain item is
+  `Lockstep Safe Storage` (account `Lockstep Key`), both checked on their Mac on 2026-10-24.
+  Windows is untested. A blob that is not `v10`, or does not decrypt to a printable token, is
+  left as it was, so its profile asks for the token again; a garbled token is never saved.
 - **Hidden modes stay live** (Phase 4). A hidden mode keeps its subscriptions, so its state stays
   right. The cost is that every listener it puts on the whole window (keys, drops) must attach
   only while `useModeActive()` is true. A new one that does not will act in another mode; check

@@ -16,6 +16,8 @@ interface AppMenuOptions {
   /** What that mode adds to the menu. */
   modeMenu: ModeMenu | undefined;
   send: (command: ShellCommand) => void;
+  /** Brings the old apps' data in again (File › Import from the Old Apps…). */
+  importOldApps: () => void;
 }
 
 /**
@@ -28,6 +30,7 @@ export function appMenu({
   mode,
   modeMenu,
   send,
+  importOldApps,
 }: AppMenuOptions): MenuItemConstructorOptions[] {
   const mac = process.platform === "darwin";
   const settings = modeMenu?.settings;
@@ -71,6 +74,8 @@ export function appMenu({
       submenu: [
         ...(modeMenu?.file ?? []),
         ...(modeMenu?.file.length ? [{ type: "separator" } as const] : []),
+        { label: "Import from the Old Apps…", click: importOldApps },
+        { type: "separator" },
         ...(mac
           ? [{ role: "close" } as const]
           : [

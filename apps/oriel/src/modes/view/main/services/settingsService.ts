@@ -99,42 +99,8 @@ export class SettingsService {
     return this.state.windowBounds;
   }
 
-  async updateWindowBounds(
-    bounds: Rectangle,
-    options?: FlushOptions,
-  ): Promise<ResultType<void, FileSystemError>> {
-    this.state.windowBounds = bounds;
-
-    try {
-      await this.persist(options);
-
-      return Result.ok();
-    } catch (cause) {
-      return Result.err(
-        unexpectedFileSystemError("update-window-bounds", toError(cause), this.filePath),
-      );
-    }
-  }
-
   getWindowMaximized(): boolean {
     return this.state.windowMaximized;
-  }
-
-  async updateWindowMaximized(
-    isMaximized: boolean,
-    options?: FlushOptions,
-  ): Promise<ResultType<void, FileSystemError>> {
-    this.state.windowMaximized = isMaximized;
-
-    try {
-      await this.persist(options);
-
-      return Result.ok();
-    } catch (cause) {
-      return Result.err(
-        unexpectedFileSystemError("update-window-maximized", toError(cause), this.filePath),
-      );
-    }
   }
 
   async flushNowSync(): Promise<ResultType<void, FileSystemError>> {

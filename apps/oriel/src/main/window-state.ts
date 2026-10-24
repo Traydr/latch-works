@@ -31,6 +31,17 @@ export function readWindowState(dataDir: string): WindowState | null {
   }
 }
 
+/** Saves the window's size and position, for {@link readWindowState} to find next start. */
+export function writeWindowState(dataDir: string, state: WindowState): void {
+  try {
+    writeFileSync(path.join(dataDir, FILE_NAME), JSON.stringify(state));
+  } catch (error) {
+    console.warn(
+      `[oriel:main] window state: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
 /**
  * Remembers the window's size and position as it changes, a moment after the last change, and
  * once more as it closes. A maximized window keeps its normal bounds for when it is restored.
@@ -43,18 +54,10 @@ export function rememberWindowState(window: BrowserWindow, dataDir: string): voi
       return;
     }
 
-    const state: WindowState = {
+    writeWindowState(dataDir, {
       bounds: window.isMaximized() ? window.getNormalBounds() : window.getBounds(),
       maximized: window.isMaximized(),
-    };
-
-    try {
-      writeFileSync(path.join(dataDir, FILE_NAME), JSON.stringify(state));
-    } catch (error) {
-      console.warn(
-        `[oriel:main] window state: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
+    });
   };
 
   const saveSoon = () => {

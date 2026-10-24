@@ -5,6 +5,12 @@ import { latchWorksModeFolder, setLatchWorksDataFolder } from "@latch-works/app-
 import { app, BrowserWindow, ipcMain, Menu, protocol, screen } from "electron";
 
 import { appMenu } from "./main/menu";
+import {
+  type MigrationFolders,
+  migrateOldApps,
+  readMigrationReport,
+  waitForOldAppsToQuit,
+} from "./main/migration";
 import type { ModeContext, ModeHost } from "./main/mode";
 import { readWindowState, rememberWindowState } from "./main/window-state";
 import { startSync } from "./modes/sync/main/start";
@@ -39,6 +45,24 @@ const modes = new Map<ModeId, ModeHost>();
 
 /** View, which also opens the paths the OS hands the app. */
 let view: Awaited<ReturnType<typeof startView>> | null = null;
+
+let sync: Awaited<ReturnType<typeof startSync>> | null = null;
+
+/** Set once the modes' folders are known. */
+let folders: MigrationFolders | null = null;
+
+/** False under `--user-data-dir` (the e2e suite), whose folders are not the owner's real data. */
+const ownersData = !app.commandLine.hasSwitch("user-data-dir");
+
+/** File › Import from the Old Apps…: the first start's migration again, then a fresh window. */
+async function importOldApps(): Promise<void> {
+  if (!folders || !view || !sync || (ownersData && !(await waitForOldAppsToQuit()))) {
+    return;
+  }
+
+  await migrateOldApps(folders, { view, sync }, { offerRemoval: ownersData });
+  mainWindow?.reload();
+}
 
 /** Shell commands wait until the window has mounted and is listening; it says so with its mode. */
 let windowListening = false;
@@ -174,6 +198,7 @@ function showMenu(): void {
         mode: currentMode,
         modeMenu: modes.get(currentMode)?.menu,
         send,
+        importOldApps: () => void importOldApps(),
       }),
     ),
   );
@@ -264,6 +289,11 @@ if (!app.requestSingleInstanceLock()) {
     }
   });
 
+  // Oriel quits when its own window closes (see `createWindow`). Without a listener here,
+  // Electron would also quit whenever its other windows (the migration's helpers, Tidy's
+  // transcoder) happen to be the last ones open.
+  app.on("window-all-closed", () => undefined);
+
   app.on("will-quit", () => {
     for (const mode of modes.values()) {
       mode.dispose?.();
@@ -297,8 +327,24 @@ if (!app.requestSingleInstanceLock()) {
       }
     });
 
+    // The old apps open the same catalogs and settings, so none may run beside Oriel.
+    if (ownersData && !(await waitForOldAppsToQuit())) {
+      app.quit();
+
+      return;
+    }
+
+    const modeFolders: MigrationFolders = {
+      oriel: app.getPath("userData"),
+      frameView: latchWorksModeFolder(app, { folder: "frame-view", legacyName: "Frame View" }),
+      glazier: latchWorksModeFolder(app, { folder: "glazier", legacyName: "Glazier" }),
+      lockstep: latchWorksModeFolder(app, { folder: "lockstep", legacyName: "Lockstep" }),
+    };
+
+    folders = modeFolders;
+
     view = await startView({
-      dataDir: latchWorksModeFolder(app, { folder: "frame-view", legacyName: "Frame View" }),
+      dataDir: modeFolders.frameView,
       window: () => mainWindow,
       onProgress: reportProgress("view"),
     });
@@ -309,24 +355,27 @@ if (!app.requestSingleInstanceLock()) {
     }
 
     // Sync is cheap and starts at once: a run must outlive the window.
-    modes.set(
-      "sync",
-      await startSync({
-        dataDir: latchWorksModeFolder(app, { folder: "lockstep", legacyName: "Lockstep" }),
-        window: () => mainWindow,
-        onProgress: reportProgress("sync"),
-      }),
-    );
+    sync = await startSync({
+      dataDir: modeFolders.lockstep,
+      window: () => mainWindow,
+      onProgress: reportProgress("sync"),
+    });
+    modes.set("sync", sync);
 
     modes.set(
       "tidy",
       startTidy({
-        dataDir: latchWorksModeFolder(app, { folder: "glazier", legacyName: "Glazier" }),
+        dataDir: modeFolders.glazier,
         window: () => mainWindow,
         onProgress: reportProgress("tidy"),
         packaged: app.isPackaged,
       }),
     );
+
+    // The first start brings the old apps' data in before the window reads it.
+    if (readMigrationReport(modeFolders.oriel) === null) {
+      await migrateOldApps(modeFolders, { view, sync }, { offerRemoval: ownersData });
+    }
 
     showMenu();
 

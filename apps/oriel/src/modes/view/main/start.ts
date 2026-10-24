@@ -5,6 +5,7 @@ import { Result } from "better-result";
 import type { BrowserWindow, CustomScheme } from "electron";
 
 import type { ModeContext, ModeHost } from "../../../main/mode";
+import type { WindowState } from "../../../main/window-state";
 import { ViewChannels } from "../shared/ipcContracts";
 import type { AppCommand } from "../shared/types";
 import { CatalogService } from "./catalog/CatalogService";
@@ -63,6 +64,10 @@ interface ViewHost extends ModeHost {
   openPath(candidatePath: string): void;
   /** Sends the commands held for the window once it has loaded. */
   attachWindow(window: BrowserWindow): void;
+  /** Frame View's saved window, theme and remembered folder, for the first start's migration. */
+  savedWindow(): WindowState | null;
+  theme(): "system" | "light" | "dark";
+  lastFolder(): string | null;
 }
 
 /**
@@ -165,5 +170,12 @@ export async function startView({ dataDir, window }: ModeContext): Promise<ViewH
       catalogService.shutdown();
       shutdownThumbnailService();
     },
+    savedWindow: () => {
+      const bounds = settingsService.getWindowBounds();
+
+      return bounds ? { bounds, maximized: settingsService.getWindowMaximized() } : null;
+    },
+    theme: () => settingsService.getSettings().theme,
+    lastFolder: () => settingsService.getSettings().lastFolderPath,
   };
 }

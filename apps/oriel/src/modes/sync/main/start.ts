@@ -5,6 +5,7 @@ import type { ModeContext, ModeHost } from "../../../main/mode";
 import type { LockstepRunEvent } from "../shared/types";
 import { registerIpc } from "./ipc/registerIpc";
 import { FileSecretStorage, fileSecretKeyPath } from "./services/fileSecretStorage";
+import { decryptLegacyToken, readLegacyKey } from "./services/legacyTokens";
 import { ProfileService } from "./services/profileService";
 import { type RunEventWindow, RunService } from "./services/runService";
 
@@ -31,7 +32,16 @@ function runProgress(event: LockstepRunEvent): number | null | undefined {
  * Keychain or DPAPI: an unsigned build's signature changes with each rebuild, and the Keychain
  * asked for access again every time.
  */
-export async function startSync({ dataDir, window, onProgress }: ModeContext): Promise<ModeHost> {
+interface SyncHost extends ModeHost {
+  /** How many profiles hold a token Sync cannot read, such as one the old app saved. */
+  unreadableTokens(): number;
+  /** Re-saves the tokens the standalone Lockstep app saved, with the key it used. */
+  migrateLegacyTokens(): Promise<{ migrated: number; failed: number }>;
+  /** Every profile's archive folder. */
+  sourceRoots(): string[];
+}
+
+export async function startSync({ dataDir, window, onProgress }: ModeContext): Promise<SyncHost> {
   const profileService = new ProfileService(dataDir, {
     secretStorage: new FileSecretStorage(fileSecretKeyPath(dataDir)),
   });
@@ -67,6 +77,9 @@ export async function startSync({ dataDir, window, onProgress }: ModeContext): P
 
   registerIpc(window, profileService, runService);
 
+  const unreadableTokens = () =>
+    profileService.getSettings().profiles.filter((profile) => profile.tokenUnreadable).length;
+
   return {
     busy: () => {
       const run = runService.getActiveRun();
@@ -74,5 +87,19 @@ export async function startSync({ dataDir, window, onProgress }: ModeContext): P
       // Plan and Doctor only read; a push or prune changes the server.
       return run?.action === "push" || run?.action === "prune";
     },
+    unreadableTokens,
+    migrateLegacyTokens: async () => {
+      const key = await readLegacyKey(dataDir);
+
+      if (!key) {
+        return { migrated: 0, failed: unreadableTokens() };
+      }
+
+      return profileService.migrateLegacyTokens((encrypted) => decryptLegacyToken(encrypted, key));
+    },
+    sourceRoots: () =>
+      profileService
+        .getSettings()
+        .profiles.flatMap((profile) => (profile.sourceRoot ? [profile.sourceRoot] : [])),
   };
 }

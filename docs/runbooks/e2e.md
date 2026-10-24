@@ -99,7 +99,11 @@ iterating (the server is still started or reused).
 `tests/oriel/build.setup.ts` packages Oriel (skip with `E2E_SKIP_BUILD=1`). `shell.spec.ts`
 switches modes from the switcher and from the View menu (whose check mark follows the mode), and
 relaunches on the same userData to check Oriel reopens in the mode it showed last, and opens a
-folder in View, switches to Tidy and back, and checks the gallery is still there. The project
+folder in View, switches to Tidy and back, and checks the gallery is still there.
+`migration.spec.ts` builds the folders the old apps leave (a Glazier and a Frame View `Local
+Storage` from a real run, and Frame View's settings with a saved window) and checks the first
+start brings the preferences, the theme and the window size over. Under `--user-data-dir` Oriel
+never asks to quit or remove the old apps, so the spec runs beside installed copies. The project
 needs no compose stack.
 
 ## What the Glazier project covers
