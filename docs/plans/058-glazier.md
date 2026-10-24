@@ -47,6 +47,46 @@ removal or replaced original goes to a holding folder the journal can undo. The 
 8. **Platform**: macOS first; code kept cross-platform.
 9. **UI** is functional for now; a later pass (with Fable 5.1) aligns styles across the apps.
 
+## Revision: the workflow redesign (2026-10-24, branch `agent/058-glazier-ux`)
+
+After the first build, the owner asked for two independent reviews of the app's workflows,
+for casual and power users. Opus 5.5 and Fable 5.1 each drove the packaged app over a test
+archive. Their two biggest findings were the same:
+- Duplicate review took four clicks and a modal per group.
+- Converting asked the owner to re-derive a fixed policy.
+
+What changed, settled with the owner's brief ("no unnecessary confirmations, buttons, text or
+clutter; one seamless process; the same feel as the other apps"):
+
+1. **Act, then undo.** The plan review modal is gone. Every change applies at once and ends in a
+   toast with Undo, and ⌘Z undoes the last change. Two native confirmations remain: Empty to
+   Trash, which leaves Glazier's undo, and Forget, which drops a root's undo history. A
+   change that would remove a copy from a preferred folder asks first.
+2. **Four views instead of eight.**
+   - **Tidy** (the ordered to-do list) replaces Overview, Optimize and Sound.
+   - **Duplicates** is one queue for exact and similar sets.
+   - **Library** keeps the file table, with filter menus instead of chips.
+   - **History** merges Journal and Holding.
+
+   Settings became a ⌘, sheet.
+3. **Duplicates as a keyboard queue.** A file belongs to one set: byte-identical copies are one
+   version.
+   - Each set arrives with its keeper chosen and the deciding rule shown.
+   - Return resolves the set and advances to the next. 1–9 picks a different keeper, and ⇧ also
+     keeps that version.
+   - ⌘Return resolves the rest. N dismisses the set, and P prefers a folder.
+   - The keeper rules gained "right extension" and "original name" (copy-style names lose).
+   - "Protected folders" are now "preferred folders".
+4. **Convert is one button**, with an Options popover to leave out pictures, animations or
+   videos.
+   - The estimate is automatic and shown as one number.
+   - Extra copies of duplicates and files that would not shrink are left out.
+   - Extension renames moved to Clean up.
+5. **Analysis runs in the background** after scans and changes. It yields to anything the owner
+   starts.
+6. **Shell, in Lockstep's form**: a status bar, an app menu with shortcuts, drag a folder to
+   add it, and right-click menus.
+
 ## Shape
 
 | Piece | Responsibility |
@@ -73,12 +113,21 @@ pnpm test && pnpm typecheck && pnpm lint:all && pnpm knip
 pnpm e2e:glazier
 ```
 
-The e2e spec builds its own archive (ffmpeg and sharp) and covers: scan and findings, similar
-grouping of a resized JPEG, silent versus sound, duplicate → holding → undo, and conversion of
-stills, a GIF, an H.264 MOV and a VP9/Opus WebM with dates preserved.
+The e2e spec builds its own archive (ffmpeg and sharp). It covers:
+- the scan and Tidy's list;
+- similar grouping of a resized JPEG, with number keys changing the keeper;
+- silent versus sound;
+- Return resolving a duplicate into holding, and the toast's Undo bringing it back;
+- Convert of stills, a GIF, an H.264 MOV, a VP9/Opus WebM, VP9 with alpha, an odd-sized VP9 and
+  MPEG-4 Part 2, with dates preserved;
+- Clean up.
 
 ## Follow-ups
 
+- Hide the native title bar (`titleBarStyle: "hiddenInset"`) in Glazier and Lockstep together,
+  so neither shows two title rows.
+- Merge for duplicates: keep the best bytes at the preferred copy's path (`placeAt`), as Apple
+  Photos' Merge does.
 - Route animated WebP to MP4 in Gather Box once its downloads know their frame count.
 - Copy Finder tags (extended attributes) onto converted files.
 - The UI style pass across Glazier, Lockstep and Frame View.
