@@ -82,7 +82,17 @@ async function importOldApps(): Promise<void> {
     return;
   }
 
-  await migrateOldApps(folders, { view, sync }, { offerRemoval: ownersData });
+  try {
+    await migrateOldApps(folders, { view, sync }, { offerRemoval: ownersData });
+  } catch (cause) {
+    dialog.showErrorBox(
+      "Oriel could not bring the old apps' data over",
+      cause instanceof Error ? cause.message : String(cause),
+    );
+
+    return;
+  }
+
   mainWindow?.reload();
 }
 

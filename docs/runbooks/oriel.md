@@ -80,6 +80,10 @@ user instead. Uninstall from Settings › Apps.
 Under `--user-data-dir` (the e2e suite) neither the removal offer, the move to Applications nor
 the welcome shows; `ORIEL_WELCOME=1` brings the welcome back for a test.
 
+Keep the old apps closed while Oriel runs. Oriel checks for them when it starts and when Tidy's
+engine starts, and Tidy refuses to start beside the old Glazier, since two engines must never
+change one catalog; it does not watch for an old app opened later.
+
 ## Where its data lives
 
 Oriel's own state is in `~/.latch-works/oriel`: Chromium's storage (the theme, the mode last

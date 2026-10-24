@@ -152,11 +152,29 @@ function Shell() {
       }
 
       if (!holder) {
+        // Tidy's folders never nest, so a folder that holds one of them cannot be added.
+        const holdsAFolder = (candidate: string) =>
+          roots.find((root) => relativeInside(candidate, root.path) !== null);
+
         const outer = (await bridge.folders())
-          .filter((folder) => relativeInside(folder.path, folderPath) !== null)
+          .filter(
+            (folder) =>
+              relativeInside(folder.path, folderPath) !== null && !holdsAFolder(folder.path),
+          )
           .sort((left, right) => left.path.length - right.path.length)[0];
 
         const candidate = outer?.path ?? folderPath;
+        const overlapping = holdsAFolder(candidate);
+
+        if (overlapping) {
+          toasts.show({
+            message: "Tidy can't add this file's folder",
+            detail: `${candidate} holds ${overlapping.name}, which Tidy already tidies, and Tidy's folders don't nest.`,
+            tone: "info",
+          });
+
+          return;
+        }
 
         const confirmed = await desktop.confirm({
           message: `Tidy “${baseName(candidate)}”?`,
@@ -179,7 +197,7 @@ function Shell() {
         search: target.kind === "file" ? baseName(target.path) : "",
       });
     },
-    [addFolder, bridge, openLibrary, roots, selectRoot],
+    [addFolder, bridge, openLibrary, roots, selectRoot, toasts],
   );
 
   useHandOff(ready, (target) => void showHandOff(target));

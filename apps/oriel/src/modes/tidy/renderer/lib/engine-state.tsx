@@ -101,9 +101,25 @@ export function EngineProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const active = useModeActive();
+  const [attempt, setAttempt] = useState(0);
 
-  // The engine's state, read when Tidy shows, and again each time it shows until it has been: a
-  // start refused while the old Glazier ran is tried again once the owner comes back.
+  // Until the engine answers, Tidy on screen tries again whenever the window comes back to the
+  // front, such as after the owner quit the old Glazier that refused its start.
+  useEffect(() => {
+    if (ready || !active) {
+      return;
+    }
+
+    const retry = () => setAttempt((current) => current + 1);
+
+    window.addEventListener("focus", retry);
+
+    return () => window.removeEventListener("focus", retry);
+  }, [active, ready]);
+
+  // The engine's state, read when Tidy shows, and again each time it shows or regains focus
+  // until it has been.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `attempt` asks for another read.
   useEffect(() => {
     if (ready || !active) {
       return;
@@ -134,7 +150,7 @@ export function EngineProvider({ children }: { children: ReactNode }) {
     return () => {
       live = false;
     };
-  }, [active, ready]);
+  }, [active, attempt, ready]);
 
   useEffect(() => {
     if (rootId !== null && !roots.some((root) => root.id === rootId)) {

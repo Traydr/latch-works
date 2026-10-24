@@ -1,4 +1,4 @@
-import type { Job } from "@latch-works/glazier-core/contract";
+import type { EngineEvent, Job } from "@latch-works/glazier-core/contract";
 import type { MenuItemConstructorOptions } from "electron";
 
 import type { ModeContext, ModeHost, ModeMenu } from "../../../main/mode";
@@ -100,9 +100,18 @@ export function startTidy({
     dataDir,
     packaged,
     beforeStart: ownersData ? refuseBesideOldGlazier : undefined,
-    // The jobs went with the engine, so nothing is changing any more.
+    // The jobs went with the engine, so nothing is changing any more. The window hears they
+    // failed, so a Tidy up waiting on one ends and lets go of the quit.
     onExit: () => {
+      for (const job of changes.values()) {
+        window()?.webContents.send(RendererChannels.event, {
+          kind: "job",
+          job: { ...job, state: "failed", message: "Tidy's engine stopped." },
+        } satisfies EngineEvent);
+      }
+
       changes.clear();
+      windowBusy = false;
       onProgress(null);
     },
     onEvent: (event) => {
@@ -136,8 +145,14 @@ export function startTidy({
   let started = false;
 
   return {
-    // A paused change waits for the owner, so it does not hold the app open after its window.
-    busy: () => windowBusy || [...changes.values()].some((job) => job.state !== "paused"),
+    // While a change is paused nothing can finish (the engine runs one at a time), so a paused
+    // change, the ones queued behind it and a Tidy up waiting on it do not hold the app open
+    // after its window.
+    busy: () => {
+      const jobs = [...changes.values()];
+
+      return !jobs.some((job) => job.state === "paused") && (windowBusy || jobs.length > 0);
+    },
     menu: tidyMenu((command) => window()?.webContents.send(RendererChannels.command, command)),
     activate: () => {
       if (started) {
