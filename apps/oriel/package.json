@@ -1,7 +1,7 @@
 {
   "name": "@latch-works/oriel",
   "productName": "Oriel",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Desktop app for a local Latch Works archive: view it, tidy it and sync it",
   "main": ".vite/build/main.cjs",
   "private": true,
