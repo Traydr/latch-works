@@ -14,7 +14,6 @@ import {
 } from "./main/first-run";
 import { type FolderSources, glazierRoots, isInside, knownFolders } from "./main/folders";
 import { appMenu } from "./main/menu";
-import { runVelopackHooks } from "./main/velopack";
 import {
   type MigrationFolders,
   migrateOldApps,
@@ -22,6 +21,7 @@ import {
   waitForOldAppsToQuit,
 } from "./main/migration";
 import type { ModeContext, ModeHost } from "./main/mode";
+import { runVelopackHooks } from "./main/velopack";
 import { readWindowState, rememberWindowState } from "./main/window-state";
 import { startSync } from "./modes/sync/main/start";
 import { TIDY_MEDIA_SCHEME } from "./modes/tidy/main/media-protocol";
