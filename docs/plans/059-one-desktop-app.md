@@ -4,8 +4,8 @@
 > Frame View, Glazier and Lockstep into one app with three modes, in Glazier's house style (Frame
 > View's where the viewer is concerned), replacing the three apps and carrying their data over,
 > with a customised installer for macOS and Windows. The settled decisions below must not be
-> re-asked. Land each phase as its own PR, stacked, commit per step, and update the plan index in the PR
-> that lands a phase. A rendered copy with the shell mockup is published at
+> re-asked. The owner asked for one PR, on `agent/059-oriel`, for every phase; commit per step, and
+> update the plan index as phases land. A rendered copy with the shell mockup is published at
 > <https://vellum.traydr.dev/3L9QtFB8SkCLTBdrcFG7PawwlJO> (30-day link, until 2026-11-23); this
 > file is the record.
 >
@@ -15,8 +15,8 @@
 
 ## Status
 
-- **Status**: IN PROGRESS (Phases 1–6 on `agent/059-1-shell` … `agent/059-6-retire`, six stacked
-  branches, 2026-10-24)
+- **Status**: IN REVIEW (Phases 1–6 on `agent/059-oriel`, 2026-10-24); Phases 7–10 follow on the
+  same branch
 - **Priority**: P2 (the owner asked for it)
 - **Effort**: XL overall, as ten stacked PRs of S–L each
 - **Risk**: MEDIUM to HIGH. It touches every desktop app's process model. The data migration
@@ -179,7 +179,7 @@ payoff features follow, and the installer comes last because it needs the final 
 
 ### Phase 2: move Lockstep in as Sync (S)
 
-Done on `agent/059-2-sync`. Each move phase also deletes the rest of its standalone app, since a
+Done. Each move phase also deletes the rest of its standalone app, since a
 workspace left with a manifest and no source breaks `pnpm -r build`. Lockstep's showcase preview
 went with it; Showcase screenshots come from Oriel in Phase 10. Sync's legacy CSS is scoped under
 `.mode-sync`, so its `prism-*` classes never meet Frame View's of the same names.
@@ -192,7 +192,7 @@ packaged Lockstep saved don't decrypt in Sync, and their profiles ask for the to
 
 ### Phase 3: move Glazier in as Tidy (M)
 
-Done on `agent/059-3-tidy`. Tidy's IPC and media protocol register at launch, because its window
+Done. Tidy's IPC and media protocol register at launch, because its window
 can call them as soon as it mounts. The engine process starts with its first call, and the hidden
 transcoder window when the window first shows Tidy (`ModeHost.activate`). The shell now quits when
 its window closes, not when every window has, since the transcoder window outlives it. Tidy's
@@ -204,7 +204,7 @@ renderer its own Vite `cacheDir`, as 058 item 8 found necessary. Retarget `e2e/t
 
 ### Phase 4: move Frame View in as View (L)
 
-Done on `agent/059-4-view`, as a rename-only commit, a formatting commit, and the wiring.
+Done, as a rename-only commit, a formatting commit, and the wiring.
 
 - **Hidden modes stay live.** `<Activity>` turned out wrong for these apps (decision 3 is kept;
   only the mechanism changed). Activity tears down a hidden mode's effects. That would have
@@ -231,7 +231,7 @@ Done on `agent/059-4-view`, as a rename-only commit, a formatting commit, and th
 
 ### Phase 5: migrate the old apps' data and replace them (M)
 
-Done on `agent/059-5-migrate`. It runs once, on first start, before the window opens. File ›
+Done. It runs once, on first start, before the window opens. File ›
 Import from the Old Apps… runs it again. It records what it did in `~/.latch-works/oriel/migration.json`. A re-run
 never overwrites a value the new app has since changed.
 
@@ -282,7 +282,7 @@ never overwrites a value the new app has since changed.
 
 ### Phase 6: retire the standalone apps (S)
 
-Done on `agent/059-6-retire`.
+Done.
 - **Tags.** The three tags are local until pushed.
 - **e2e names.** The e2e projects keep their names (`frame-view`, `glazier`, `lockstep`), which
   already run against Oriel's modes, rather than becoming `oriel-*`.
