@@ -127,13 +127,14 @@ export function tileFor(window: Page, name: string): Locator {
   return tiles(window).filter({ has: window.getByRole("img", { name, exact: true }) });
 }
 
-export async function openSettingsTab(window: Page, tab: "Usability" | "Debug"): Promise<void> {
+/** Opens View's section of Oriel's Settings from the toolbar. */
+export async function openViewSettings(window: Page): Promise<void> {
   await window.getByRole("button", { name: "Settings", exact: true }).click();
-  await window.getByRole("button", { name: tab, exact: true }).click();
+  await expect(window.getByRole("heading", { level: 1, name: "View" })).toBeVisible();
 }
 
 export async function closeSettings(window: Page): Promise<void> {
-  await window.getByRole("button", { name: "Close settings" }).click({ position: { x: 4, y: 4 } });
+  await window.getByRole("button", { name: "Close settings" }).click();
 }
 
 export async function setToggle(window: Page, label: string, on: boolean): Promise<void> {

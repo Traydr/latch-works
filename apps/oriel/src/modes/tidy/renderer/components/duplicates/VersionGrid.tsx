@@ -1,10 +1,9 @@
 import type { DuplicateSet, FileId, FileRow } from "@latch-works/glazier-core/contract";
 import { Check, FolderOpen, Maximize2 } from "lucide-react";
 import { type MouseEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
-
+import { FolderPath } from "../../../../../ui/ui";
 import { desktop, mediaUrl, thumbnailUrl } from "../../lib/api";
 import { Thumbnail } from "../media";
-import { FolderPath } from "../ui";
 import { VideoControls } from "../VideoControls";
 import { factsOf, type SetRow } from "./model";
 

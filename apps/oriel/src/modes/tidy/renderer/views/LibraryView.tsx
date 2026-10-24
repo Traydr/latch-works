@@ -11,7 +11,7 @@ import {
 } from "@latch-works/glazier-core/contract";
 import { FolderOpen, LayoutGrid, List, PanelRight, Search, SearchX, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-
+import { EmptyState, TopBar } from "../../../../ui/ui";
 import type { MenuEntry } from "../../shared/messages";
 import { FileTable } from "../components/FileTable";
 import { useFolderPicker } from "../components/FolderPicker";
@@ -27,7 +27,6 @@ import { SelectionBar } from "../components/library/SelectionBar";
 import type { FileViewProps } from "../components/library/use-file-cursor";
 import { type FileListQuery, useFilePages } from "../components/library/use-file-pages";
 import { useToasts } from "../components/Toasts";
-import { EmptyState, TopBar } from "../components/ui";
 import { useActions } from "../lib/actions";
 import { call, desktop } from "../lib/api";
 import { useCommandHandler } from "../lib/commands";

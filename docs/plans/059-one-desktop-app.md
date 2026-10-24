@@ -15,7 +15,7 @@
 
 ## Status
 
-- **Status**: IN REVIEW (Phases 1–6 on `agent/059-oriel`, 2026-10-24); Phases 7–10 follow on the
+- **Status**: IN REVIEW (Phases 1–7 on `agent/059-oriel`, 2026-10-24); Phases 8–10 follow on the
   same branch
 - **Priority**: P2 (the owner asked for it)
 - **Effort**: XL overall, as ten stacked PRs of S–L each
@@ -301,6 +301,18 @@ Done.
    `make` for Oriel.
 
 ### Phase 7: the shell in house style, Layout A (M, `design-trials` on the details)
+
+Done, without trials: the defaults below were built and the owner can ask for a trial of any.
+- **Switcher in rail form.** Stacked icons, as Layout A drew it.
+- **View's sidebar.** The rail, so the gallery keeps the width; a folder tree is not built.
+- **Activity.** Each mode's renderer reports its own work to the switcher (`useReportActivity`):
+  a ring for a Sync push or prune and a Tidy apply or undo, a dot for a View scan or a Tidy scan
+  or analysis.
+- **Settings.** General holds the theme, the data folder and the import. View's four tabs became
+  house groups in one column, and Frame View's numbers sit behind Diagnostics › Show. Sync lists
+  the profiles, each opening Sync's own profile form.
+- **The house kit** (Glazier's `ui.tsx`) moved to `src/ui/` now, since View and the shell use it.
+- **Left open.** Windows chrome (`titleBarOverlay`, Mica) waits for a Windows machine to try it on.
 
 Build Layout A: a View · Tidy · Sync segmented control under the traffic lights, and the active
 mode's navigation below it.

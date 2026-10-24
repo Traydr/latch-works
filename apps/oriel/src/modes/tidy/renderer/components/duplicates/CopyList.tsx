@@ -1,7 +1,7 @@
 import type { FileId, FileRow } from "@latch-works/glazier-core/contract";
 import { FolderOpen } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
-
+import { FolderPath } from "../../../../../ui/ui";
 import { desktop, mediaUrl, thumbnailUrl } from "../../lib/api";
 import {
   formatBytes,
@@ -11,7 +11,6 @@ import {
   plural,
 } from "../../lib/format";
 import { describeDetails, Thumbnail } from "../media";
-import { FolderPath } from "../ui";
 import { VideoControls } from "../VideoControls";
 import type { SetRow } from "./model";
 

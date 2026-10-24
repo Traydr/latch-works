@@ -18,7 +18,6 @@ const VIEWS = [
   "library",
   "history",
   "holding",
-  "settings",
 ] as const;
 
 export type View = (typeof VIEWS)[number];

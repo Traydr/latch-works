@@ -1,14 +1,13 @@
 import type { FileQuery, FileRow } from "@latch-works/glazier-core/contract";
 import { ArrowDown, ArrowUp, VolumeX } from "lucide-react";
 import { useEffect, useMemo } from "react";
-
+import { StartTruncate } from "../../../../ui/ui";
 import { formatBytes, formatDate, formatDuration, formatLabel } from "../lib/format";
 import { AUDIO_LABELS, isMuteVideo } from "./library/labels";
 import { RenameField } from "./library/RenameField";
 import { type FileViewProps, useFileCursor, visibleRange } from "./library/use-file-cursor";
 import { useScrollBox } from "./library/use-scroll-box";
 import { Thumbnail } from "./media";
-import { StartTruncate } from "./ui";
 
 const ROW_HEIGHT = 44;
 

@@ -22,10 +22,9 @@ import {
   useRef,
   useState,
 } from "react";
-
+import { Kbd, Sheet, StartTruncate } from "../../../../ui/ui";
 import type { FolderListing, FolderPlace, FolderPlaces } from "../../shared/messages";
 import { desktop } from "../lib/api";
-import { Kbd, Sheet, StartTruncate } from "./ui";
 
 export interface FolderPickOptions {
   title: string;

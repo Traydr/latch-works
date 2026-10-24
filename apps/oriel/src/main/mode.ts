@@ -17,8 +17,6 @@ export interface ModeMenu {
   edit?: MenuItemConstructorOptions[];
   /** Items after the modes in View. */
   view: MenuItemConstructorOptions[];
-  /** Settings…: in the app menu on macOS, in File elsewhere. */
-  settings?: MenuItemConstructorOptions;
   help: MenuItemConstructorOptions[];
 }
 

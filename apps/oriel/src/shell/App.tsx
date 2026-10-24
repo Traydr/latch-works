@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 
 import { MODE_IDS, type ModeId, type OrielBridge } from "../shared/shell";
 import { MODE_ROOTS } from "./modes";
-import { ModeActiveProvider, ShellProvider, useShell } from "./shell";
+import { ModeProvider, ShellProvider, useShell } from "./shell";
 import { ThemeProvider } from "./theme";
 
 export function App({ bridge }: { bridge: OrielBridge }) {
@@ -48,9 +48,9 @@ function ModeFrame({ id, active }: { id: ModeId; active: boolean }) {
 
   return (
     <div ref={frame} className="h-full" hidden={!active} inert={!active} data-mode-frame={id}>
-      <ModeActiveProvider value={active}>
+      <ModeProvider value={{ id, active }}>
         <Root />
-      </ModeActiveProvider>
+      </ModeProvider>
     </div>
   );
 }

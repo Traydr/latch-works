@@ -21,7 +21,6 @@ interface UseAppBootstrapOptions {
     },
   ) => Promise<boolean>;
   scanInputPathAction: (candidatePath: string) => void;
-  toggleSettingsAction: () => void;
 }
 
 export function useAppBootstrap({
@@ -34,7 +33,6 @@ export function useAppBootstrap({
   refreshCurrentFolderAction,
   runScan,
   scanInputPathAction,
-  toggleSettingsAction,
 }: UseAppBootstrapOptions): void {
   const pendingScanEventsRef = useRef<ScanEvent[]>([]);
   // Set once the OS hands the app a path to open; that path wins over the remembered folder.
@@ -50,7 +48,6 @@ export function useAppBootstrap({
   const refreshCurrentFolderEvent = useEffectEvent(refreshCurrentFolderAction);
   const runScanEvent = useEffectEvent(runScan);
   const scanInputPathEvent = useEffectEvent(scanInputPathAction);
-  const toggleSettingsEvent = useEffectEvent(toggleSettingsAction);
 
   useEffect(() => {
     let mounted = true;
@@ -192,12 +189,6 @@ export function useAppBootstrap({
 
       if (command.type === "refresh-current-folder") {
         refreshCurrentFolderEvent();
-
-        return;
-      }
-
-      if (command.type === "toggle-settings") {
-        toggleSettingsEvent();
 
         return;
       }

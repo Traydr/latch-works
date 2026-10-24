@@ -33,7 +33,14 @@ export function appMenu({
   importOldApps,
 }: AppMenuOptions): MenuItemConstructorOptions[] {
   const mac = process.platform === "darwin";
-  const settings = modeMenu?.settings;
+
+  // One Settings page for every mode, opened at the section of the mode on screen.
+  const settings: MenuItemConstructorOptions = {
+    id: "settings",
+    label: "Settings…",
+    accelerator: "CmdOrCtrl+,",
+    click: () => send({ type: "settings" }),
+  };
 
   const modes = MODE_IDS.map(
     (id, index): MenuItemConstructorOptions => ({
@@ -56,7 +63,8 @@ export function appMenu({
             label: appName,
             submenu: [
               { role: "about" },
-              ...separated(settings ? [settings] : undefined),
+              { type: "separator" },
+              settings,
               { type: "separator" },
               { role: "services" },
               { type: "separator" },
@@ -78,10 +86,7 @@ export function appMenu({
         { type: "separator" },
         ...(mac
           ? [{ role: "close" } as const]
-          : [
-              ...(settings ? [settings, { type: "separator" } as const] : []),
-              { role: "quit" } as const,
-            ]),
+          : [settings, { type: "separator" } as const, { role: "quit" } as const]),
       ],
     },
     modeMenu?.edit ? { label: "Edit", submenu: modeMenu.edit } : { role: "editMenu" },

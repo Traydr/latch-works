@@ -270,7 +270,6 @@ export const DiagnosticsSnapshotSchema = z.object({
 export const AppCommandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("open-folder-dialog") }),
   z.object({ type: z.literal("refresh-current-folder") }),
-  z.object({ type: z.literal("toggle-settings") }),
   z.object({ type: z.literal("scan-path"), path: PathInputSchema }),
 ]);
 

@@ -1,18 +1,12 @@
 import type { EncoderCapabilities, RootId } from "@latch-works/glazier-core/contract";
 import { ChevronRight, Folder, X } from "lucide-react";
-import { type ReactNode, useState } from "react";
-import { type ThemeChoice, useTheme } from "../../../../shell/theme";
+import { useState } from "react";
+import { SettingsGroup, SettingsRow } from "../../../../shell/Settings";
+import { Segmented, StartTruncate, Switch } from "../../../../ui/ui";
 import { useFolderPicker } from "../components/FolderPicker";
 import { useToasts } from "../components/Toasts";
-import { Segmented, StartTruncate, Switch, TopBar } from "../components/ui";
 import { useEngine } from "../lib/engine-state";
 import { SIMILARITY_LEVELS, VIDEO_QUALITIES } from "../lib/preferences";
-
-const THEMES = [
-  { value: "system", label: "System" },
-  { value: "light", label: "Light" },
-  { value: "dark", label: "Dark" },
-] as const satisfies ReadonlyArray<{ value: ThemeChoice; label: string }>;
 
 const ENCODERS = [
   { label: "H.264 video", has: (capabilities) => capabilities.video.avc },
@@ -41,36 +35,6 @@ function insideRoot(rootPath: string, folder: string): string | null {
   return target.startsWith(`${base}/`) || target.startsWith(`${base}\\`)
     ? target.slice(base.length + 1).replaceAll("\\", "/")
     : null;
-}
-
-function Section({ title, children }: { title: ReactNode; children: ReactNode }) {
-  return (
-    <section className="mt-8 first:mt-0">
-      <h2 className="gz-heading mb-2 px-1">{title}</h2>
-      <div className="gz-card overflow-hidden">{children}</div>
-    </section>
-  );
-}
-
-/** A System Settings row: the label and its one-line description on the left, the control right. */
-function Row({
-  label,
-  description,
-  children,
-}: {
-  label: ReactNode;
-  description?: ReactNode;
-  children?: ReactNode;
-}) {
-  return (
-    <div className="flex min-h-[52px] items-center gap-4 border-t gz-divider px-4 py-2.5 first:border-t-0">
-      <div className="min-w-0 flex-1">
-        <div className="text-[13px]">{label}</div>
-        {description ? <p className="gz-caption mt-0.5">{description}</p> : null}
-      </div>
-      {children ? <div className="flex shrink-0 items-center gap-2">{children}</div> : null}
-    </div>
-  );
 }
 
 /**
@@ -125,27 +89,25 @@ function Encoders({ capabilities }: { capabilities: EncoderCapabilities }) {
   );
 }
 
-export function SettingsView({ rootId }: { rootId: RootId }) {
+/**
+ * Tidy's section of Settings: how duplicates are chosen and converted, and background analysis.
+ * Preferred folders belong to the folder being tidied, so they show only once there is one.
+ */
+export function TidySettings({ rootId }: { rootId: RootId | null }) {
   const { settings, setSettings, capabilities, roots, report } = useEngine();
-  const { choice, choose } = useTheme();
   const toasts = useToasts();
   const pickFolder = useFolderPicker();
   const root = roots.find((candidate) => candidate.id === rootId);
 
   if (!settings) {
-    return (
-      <>
-        <TopBar title="Settings" />
-        <div className="flex-1" />
-      </>
-    );
+    return null;
   }
 
   const preferredHere = settings.preferredFolders.filter((entry) => entry.rootId === rootId);
   const rootName = root?.name ?? "this folder";
 
   const addFolder = async () => {
-    if (!root) {
+    if (!root || rootId === null) {
       return;
     }
 
@@ -199,91 +161,83 @@ export function SettingsView({ rootId }: { rootId: RootId }) {
 
   return (
     <>
-      <TopBar title="Settings" />
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-[640px] px-6 pt-6 pb-28">
-          <Section
-            title={
-              <>
-                Duplicates <span className="font-normal text-zinc-500">· for {rootName}</span>
-              </>
-            }
+      <SettingsGroup
+        title={
+          root ? (
+            <>
+              Duplicates <span className="font-normal text-zinc-500">· for {rootName}</span>
+            </>
+          ) : (
+            "Duplicates"
+          )
+        }
+      >
+        {root ? (
+          <SettingsRow
+            label="Preferred folders"
+            description="Review keeps the copy in these folders first. P on a version adds its folder."
           >
-            <Row
-              label="Preferred folders"
-              description="Review keeps the copy in these folders first. P on a version adds its folder."
+            <button
+              type="button"
+              className="gz-btn gz-btn-secondary"
+              onClick={() => void addFolder()}
             >
-              <button
-                type="button"
-                className="gz-btn gz-btn-secondary"
-                onClick={() => void addFolder()}
-              >
-                Add folder…
-              </button>
-            </Row>
-            {preferredHere.map((entry) => (
-              <div
-                key={entry.dir}
-                className="flex h-11 items-center gap-3 border-t gz-divider pr-2.5 pl-4"
-              >
-                <Folder className="size-4 shrink-0 text-zinc-400" />
-                <StartTruncate
-                  text={entry.dir || rootName}
-                  className="min-w-0 flex-1 text-[13px]"
-                />
-                <button
-                  type="button"
-                  className="gz-btn gz-btn-ghost gz-btn-icon-sm"
-                  aria-label={`Stop preferring ${entry.dir || rootName}`}
-                  title="Stop preferring"
-                  onClick={() => removeFolder(entry.dir)}
-                >
-                  <X />
-                </button>
-              </div>
-            ))}
-            <Row
-              label="Similar versions"
-              description="How alike two pictures or videos must look to count as one"
+              Add folder…
+            </button>
+          </SettingsRow>
+        ) : null}
+        {preferredHere.map((entry) => (
+          <div
+            key={entry.dir}
+            className="flex h-11 items-center gap-3 border-t gz-divider pr-2.5 pl-4"
+          >
+            <Folder className="size-4 shrink-0 text-zinc-400" />
+            <StartTruncate text={entry.dir || rootName} className="min-w-0 flex-1 text-[13px]" />
+            <button
+              type="button"
+              className="gz-btn gz-btn-ghost gz-btn-icon-sm"
+              aria-label={`Stop preferring ${entry.dir || rootName}`}
+              title="Stop preferring"
+              onClick={() => removeFolder(entry.dir)}
             >
-              <Segmented
-                label="Similar versions"
-                options={SIMILARITY_LEVELS}
-                value={settings.similarity}
-                onChange={(similarity) => void setSettings({ ...settings, similarity })}
-              />
-            </Row>
-          </Section>
+              <X />
+            </button>
+          </div>
+        ))}
+        <SettingsRow
+          label="Similar versions"
+          description="How alike two pictures or videos must look to count as one"
+        >
+          <Segmented
+            label="Similar versions"
+            options={SIMILARITY_LEVELS}
+            value={settings.similarity}
+            onChange={(similarity) => void setSettings({ ...settings, similarity })}
+          />
+        </SettingsRow>
+      </SettingsGroup>
 
-          <Section title="Convert">
-            <Row label="Video quality" description="Used when a video has to be re-encoded">
-              <Segmented
-                label="Video quality"
-                options={VIDEO_QUALITIES}
-                value={settings.reencodeQuality}
-                onChange={(reencodeQuality) => void setSettings({ ...settings, reencodeQuality })}
-              />
-            </Row>
-            {capabilities ? <Encoders capabilities={capabilities} /> : null}
-          </Section>
+      <SettingsGroup title="Convert">
+        <SettingsRow label="Video quality" description="Used when a video has to be re-encoded">
+          <Segmented
+            label="Video quality"
+            options={VIDEO_QUALITIES}
+            value={settings.reencodeQuality}
+            onChange={(reencodeQuality) => void setSettings({ ...settings, reencodeQuality })}
+          />
+        </SettingsRow>
+        {capabilities ? <Encoders capabilities={capabilities} /> : null}
+      </SettingsGroup>
 
-          <Section title="Background analysis">
-            <Row label="Find similar versions and measure soundtracks after each scan">
-              <Switch
-                label="Background analysis"
-                checked={settings.autoAnalyze}
-                onChange={(autoAnalyze) => void setSettings({ ...settings, autoAnalyze })}
-              />
-            </Row>
-          </Section>
-
-          <Section title="Appearance">
-            <Row label="Theme">
-              <Segmented label="Theme" options={THEMES} value={choice} onChange={choose} />
-            </Row>
-          </Section>
-        </div>
-      </div>
+      <SettingsGroup title="Background analysis">
+        <SettingsRow label="Find similar versions and measure soundtracks after each scan">
+          <Switch
+            label="Background analysis"
+            checked={settings.autoAnalyze}
+            onChange={(autoAnalyze) => void setSettings({ ...settings, autoAnalyze })}
+          />
+        </SettingsRow>
+      </SettingsGroup>
     </>
   );
 }

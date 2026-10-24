@@ -7,7 +7,17 @@ import {
 } from "@latch-works/glazier-core/contract";
 import { CheckCircle2, ChevronLeft, ChevronRight, MoreHorizontal } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-
+import {
+  EmptyState,
+  Kbd,
+  Menu,
+  MenuCheck,
+  MenuLabel,
+  MenuSeparator,
+  Segmented,
+  Spinner,
+  TopBar,
+} from "../../../../ui/ui";
 import { CopyList } from "../components/duplicates/CopyList";
 import { Loupe } from "../components/duplicates/Loupe";
 import {
@@ -26,17 +36,6 @@ import { SetQueue } from "../components/duplicates/SetQueue";
 import { useSetQueue } from "../components/duplicates/use-set-queue";
 import { VersionGrid } from "../components/duplicates/VersionGrid";
 import { useToastLift, useToasts } from "../components/Toasts";
-import {
-  EmptyState,
-  Kbd,
-  Menu,
-  MenuCheck,
-  MenuLabel,
-  MenuSeparator,
-  Segmented,
-  Spinner,
-  TopBar,
-} from "../components/ui";
 import { useActions } from "../lib/actions";
 import { call, desktop } from "../lib/api";
 import { useActiveJob, useEngine } from "../lib/engine-state";

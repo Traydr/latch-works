@@ -26,6 +26,7 @@ export const MODE_LABELS = {
 export const ShellCommandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("mode"), mode: ModeIdSchema }),
   z.object({ type: z.literal("toggle-sidebar") }),
+  z.object({ type: z.literal("settings") }),
 ]);
 
 export type ShellCommand = z.infer<typeof ShellCommandSchema>;
@@ -35,11 +36,24 @@ export const ShellChannels = {
   command: "oriel:command",
   /** window → main: the {@link ModeId} now showing, so the menu and title follow it. */
   setMode: "oriel:set-mode",
+  /** window → main, answered: the app's version and data folder, for Settings. */
+  about: "oriel:about",
+  /** window → main: File › Import from the Old Apps…, from Settings. */
+  importOldApps: "oriel:import-old-apps",
+  /** window → main: show `~/.latch-works` in Finder or Explorer. */
+  revealDataFolder: "oriel:reveal-data-folder",
 } as const;
+
+export const AboutSchema = z.object({ version: z.string(), dataFolder: z.string() });
+
+export type About = z.infer<typeof AboutSchema>;
 
 /** The shell's bridge, `window.oriel`. */
 export interface OrielBridge {
   platform: NodeJS.Platform;
   setMode(mode: ModeId): void;
   onCommand(listener: (command: ShellCommand) => void): () => void;
+  about(): Promise<About>;
+  importOldApps(): void;
+  revealDataFolder(): void;
 }

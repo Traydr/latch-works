@@ -8,7 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { useModeActive } from "../../../../shell/shell";
+import { useModeActive } from "../shell/shell";
 
 /**
  * A view's 52 px top bar: its title and a caption of counts on the left, at most two secondary

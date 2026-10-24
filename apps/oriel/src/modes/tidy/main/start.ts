@@ -58,7 +58,6 @@ function tidyMenu(send: (command: AppCommand) => void): ModeMenu {
         click: () => send(command),
       }),
     ),
-    settings: { label: "Settings…", accelerator: "CmdOrCtrl+,", click: () => send("settings") },
     help: [{ label: "Keyboard Shortcuts", click: () => send("shortcuts") }],
   };
 }

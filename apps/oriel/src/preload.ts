@@ -3,11 +3,20 @@ import { contextBridge, type IpcRendererEvent, ipcRenderer, webUtils } from "ele
 import { lockstepApi } from "./modes/sync/preload-api";
 import { glazierBridge } from "./modes/tidy/preload-api";
 import { createFrameViewApi } from "./modes/view/preload/frameViewApi";
-import { type Json, type OrielBridge, ShellChannels, ShellCommandSchema } from "./shared/shell";
+import {
+  AboutSchema,
+  type Json,
+  type OrielBridge,
+  ShellChannels,
+  ShellCommandSchema,
+} from "./shared/shell";
 
 const oriel: OrielBridge = {
   platform: process.platform,
   setMode: (mode) => ipcRenderer.send(ShellChannels.setMode, mode),
+  about: async () => AboutSchema.parse(await ipcRenderer.invoke(ShellChannels.about)),
+  importOldApps: () => ipcRenderer.send(ShellChannels.importOldApps),
+  revealDataFolder: () => ipcRenderer.send(ShellChannels.revealDataFolder),
   onCommand: (listener) => {
     const handler = (_event: IpcRendererEvent, payload: Json) => {
       const command = ShellCommandSchema.safeParse(payload);

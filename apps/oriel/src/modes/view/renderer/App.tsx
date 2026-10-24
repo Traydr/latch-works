@@ -1,10 +1,11 @@
 import { type JSX, useCallback, useMemo, useState } from "react";
 
 import { ModeLayout } from "../../../shell/ModeLayout";
+import { useModeActive, useReportActivity, useShell } from "../../../shell/shell";
 import type { AppSettingsPatch, GallerySortMode } from "../shared/types";
 import { ComicReader } from "./components/ComicReader";
-import { SettingsDrawer } from "./components/SettingsDrawer";
 import { ViewerOverlay } from "./components/ViewerOverlay";
+import { ViewSettings } from "./components/ViewSettings";
 import { VideoMetadataQueueProvider } from "./contexts/VideoMetadataQueueProvider";
 import { useAppBootstrap } from "./hooks/useAppBootstrap";
 import { useBrowserSelection } from "./hooks/useBrowserSelection";
@@ -25,7 +26,9 @@ import { getRootGalleryPreferences, toggleExcludedRootChildPath } from "./utils/
 import { createRandomSeed } from "./utils/sort";
 
 function AppInner(): JSX.Element {
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const { settings: settingsSection, openSettings } = useShell();
+  const active = useModeActive();
+  const settingsOpen = active && settingsSection === "view";
   const [activeComic, setActiveComic] = useState<ComicEntry | null>(null);
 
   const settings = useAppStore((state) => state.settings);
@@ -167,8 +170,9 @@ function AppInner(): JSX.Element {
     refreshCurrentFolderAction,
     runScan,
     scanInputPathAction,
-    toggleSettingsAction: () => setSettingsOpen((open) => !open),
   });
+
+  useReportActivity(scanState === "loading" ? { kind: "working" } : null);
 
   const changeSortModeAction = useCallback(
     (mode: GallerySortMode): void => {
@@ -182,7 +186,7 @@ function AppInner(): JSX.Element {
   }, [updateSettings]);
 
   useGalleryKeyboardNavigation({
-    overlayOpen: viewerIndex !== null || activeComic !== null || settingsOpen,
+    overlayOpen: viewerIndex !== null || activeComic !== null || settingsSection !== null,
     browserEntries,
     selectedBrowserEntry,
     selectedBrowserEntryIndex,
@@ -288,7 +292,7 @@ function AppInner(): JSX.Element {
     },
     onChangeSortMode: changeSortModeAction,
     onShuffleRandom: shuffleRandomAction,
-    onOpenSettings: () => setSettingsOpen(true),
+    onOpenSettings: () => openSettings("view"),
     onSelectFolder: navigateToFolderAction,
     onSelectBrowserEntry: selectBrowserEntryAction,
     onActivateBrowserEntry: activateBrowserEntryAction,
@@ -305,21 +309,9 @@ function AppInner(): JSX.Element {
   );
 
   return (
-    <>
-      <PrismLayout {...layoutProps} />
-
-      <ViewerOverlay />
-
-      {activeComic ? (
-        <ComicReader
-          key={activeComic.id}
-          comic={activeComic}
-          onClose={() => setActiveComic(null)}
-        />
-      ) : null}
-
-      {settingsOpen ? (
-        <SettingsDrawer
+    <ModeLayout
+      settings={
+        <ViewSettings
           currentFolderSummary={{
             folderName: rootPath ? toDisplayName(rootPath) : null,
             itemCount: browserEntries.mediaEntryCount,
@@ -328,7 +320,6 @@ function AppInner(): JSX.Element {
           }}
           diagnosticsSnapshot={diagnosticsSnapshot}
           settings={settings}
-          onClose={() => setSettingsOpen(false)}
           onUpdate={handleSettingsUpdate}
           mediaIndexStats={mediaIndexStats}
           mediaToolsStatus={mediaToolsStatus}
@@ -337,20 +328,30 @@ function AppInner(): JSX.Element {
           onClearThumbnailCache={clearThumbnailCacheAction}
           onClearMediaIndex={clearMediaIndexAction}
         />
-      ) : null}
-    </>
+      }
+    >
+      <div className="mode-view flex min-h-0 flex-1 flex-col">
+        <PrismLayout {...layoutProps} />
+
+        <ViewerOverlay />
+
+        {activeComic ? (
+          <ComicReader
+            key={activeComic.id}
+            comic={activeComic}
+            onClose={() => setActiveComic(null)}
+          />
+        ) : null}
+      </div>
+    </ModeLayout>
   );
 }
 
 /** View: Frame View, the local viewer, as one of Oriel's modes, beside the mode rail. */
 export function ViewMode(): JSX.Element {
   return (
-    <ModeLayout>
-      <div className="mode-view flex min-h-0 flex-1 flex-col">
-        <VideoMetadataQueueProvider>
-          <AppInner />
-        </VideoMetadataQueueProvider>
-      </div>
-    </ModeLayout>
+    <VideoMetadataQueueProvider>
+      <AppInner />
+    </VideoMetadataQueueProvider>
   );
 }

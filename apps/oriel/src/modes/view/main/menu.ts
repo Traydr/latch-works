@@ -19,11 +19,6 @@ export function viewMenu(send: (command: AppCommand) => void): ModeMenu {
       },
     ],
     view: [],
-    settings: {
-      label: "Settings…",
-      accelerator: "CmdOrCtrl+,",
-      click: () => send({ type: "toggle-settings" }),
-    },
     help: [],
   };
 }

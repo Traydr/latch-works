@@ -79,17 +79,22 @@ export async function openMode(window: Page, mode: OrielMode): Promise<void> {
   await expect(window).toHaveTitle(new RegExp(`^${modeLabel(mode)} – Oriel$`));
 }
 
-/** Clicks the View menu's entry for `mode`, as ⌘1–3 does. */
-export async function chooseModeFromMenu(app: ElectronApplication, mode: OrielMode): Promise<void> {
-  await app.evaluate(({ Menu }, id) => {
-    const item = Menu.getApplicationMenu()?.getMenuItemById(id);
+/** Clicks the app menu's item with `id`, as its shortcut does. */
+export async function clickMenuItem(app: ElectronApplication, id: string): Promise<void> {
+  await app.evaluate(({ Menu }, itemId) => {
+    const item = Menu.getApplicationMenu()?.getMenuItemById(itemId);
 
     if (!item) {
-      throw new Error(`No menu item ${id}`);
+      throw new Error(`No menu item ${itemId}`);
     }
 
     item.click();
-  }, `mode-${mode}`);
+  }, id);
+}
+
+/** Clicks the View menu's entry for `mode`, as ⌘1–3 does. */
+export async function chooseModeFromMenu(app: ElectronApplication, mode: OrielMode): Promise<void> {
+  await clickMenuItem(app, `mode-${mode}`);
 }
 
 function modeLabel(mode: OrielMode): string {

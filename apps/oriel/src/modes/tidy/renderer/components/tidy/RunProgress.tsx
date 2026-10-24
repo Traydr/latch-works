@@ -1,10 +1,9 @@
 import type { Job } from "@latch-works/glazier-core/contract";
 import { Pause, Play } from "lucide-react";
-
+import { ProgressBar } from "../../../../../ui/ui";
 import { call } from "../../lib/api";
 import { useEngine } from "../../lib/engine-state";
 import { formatCount } from "../../lib/format";
-import { ProgressBar } from "../ui";
 
 /** "15 of 35", or what the job is doing before it has a count. */
 export function jobCount(job: Job | null): string {

@@ -19,11 +19,10 @@ import {
   VolumeX,
 } from "lucide-react";
 import { type ComponentType, type ReactNode, useRef, useState } from "react";
-
+import { EmptyState, Kbd, ProgressBar, Spinner, TopBar } from "../../../../ui/ui";
 import { Poster } from "../components/tidy/MediaTile";
 import { jobCount, RunProgress } from "../components/tidy/RunProgress";
 import { silentVideoIds, tidyUpSteps } from "../components/tidy/requests";
-import { EmptyState, Kbd, ProgressBar, Spinner, TopBar } from "../components/ui";
 import { useActions } from "../lib/actions";
 import { call } from "../lib/api";
 import {

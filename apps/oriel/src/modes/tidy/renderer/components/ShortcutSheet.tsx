@@ -1,4 +1,4 @@
-import { Kbd, Sheet } from "./ui";
+import { Kbd, Sheet } from "../../../../ui/ui";
 
 /** An action, its one key (keycaps split on spaces), and an optional mouse alternative. */
 type Shortcut = readonly [action: string, keys: string, note?: string];

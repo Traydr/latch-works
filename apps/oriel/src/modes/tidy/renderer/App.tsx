@@ -1,15 +1,15 @@
-import type { RootId } from "@latch-works/glazier-core/contract";
+import type { Job, RootId } from "@latch-works/glazier-core/contract";
 import { type DragEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import glazierIcon from "../../../../media/modes/glazier-icon.svg";
 import { ModeLayout } from "../../../shell/ModeLayout";
-import { useShell } from "../../../shell/shell";
+import { type ModeActivity, useReportActivity, useShell } from "../../../shell/shell";
+import { EmptyState, Kbd } from "../../../ui/ui";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { FolderPickerProvider, useFolderPicker } from "./components/FolderPicker";
 import { ShortcutSheet } from "./components/ShortcutSheet";
 import { Sidebar } from "./components/Sidebar";
 import { ToastProvider, ToastViewport, useToasts } from "./components/Toasts";
-import { EmptyState, Kbd } from "./components/ui";
 import { ActionsProvider, useActions } from "./lib/actions";
 import { call, desktop, onAppCommand } from "./lib/api";
 import { dispatchCommand } from "./lib/commands";
@@ -23,7 +23,7 @@ import { HistoryView } from "./views/HistoryView";
 import { HoldingView } from "./views/HoldingView";
 import { LibraryView } from "./views/LibraryView";
 import { OverviewView } from "./views/OverviewView";
-import { SettingsView } from "./views/SettingsView";
+import { TidySettings } from "./views/SettingsView";
 
 /** Tidy: Glazier, the archive workbench, as one of Oriel's modes. */
 export function TidyMode() {
@@ -62,16 +62,33 @@ const VIEW_COMMANDS = {
   "view:holding": "holding",
 } as const satisfies Record<string, View>;
 
+/**
+ * What Tidy's switcher button shows while another mode is on: a ring for a change to the archive
+ * (applying a plan or undoing one), a dot for a scan or analysis.
+ */
+function jobActivity(jobs: readonly Job[]): ModeActivity | null {
+  const going = jobs.filter((job) => job.state === "running" || job.state === "queued");
+  const change = going.find((job) => job.type === "apply" || job.type === "undo");
+
+  if (change) {
+    return { kind: "progress", ratio: change.total > 0 ? change.done / change.total : 0 };
+  }
+
+  return going.some((job) => job.state === "running") ? { kind: "working" } : null;
+}
+
 function Shell() {
-  const { ready, roots, rootId, error, dismissError, selectRoot, report } = useEngine();
+  const { ready, roots, rootId, error, dismissError, selectRoot, report, jobs } = useEngine();
   const { go, requestSearch, view } = useNavigation();
   const { undoLast } = useActions();
   const toasts = useToasts();
   const [shortcuts, setShortcuts] = useState(false);
-  const { rail } = useShell();
+  const { rail, openSettings } = useShell();
   const [dragging, setDragging] = useState(false);
   const root = roots.find((candidate) => candidate.id === rootId) ?? null;
   const main = useRef<HTMLElement>(null);
+
+  useReportActivity(jobActivity(jobs));
 
   // A view opened from the sidebar takes the focus, so the sidebar item keeps no focus ring while
   // the view's keys are used.
@@ -158,7 +175,7 @@ function Shell() {
             break;
           case "settings":
             setShortcuts(false);
-            go("settings");
+            openSettings("tidy");
             break;
           case "shortcuts":
             setShortcuts(true);
@@ -180,7 +197,7 @@ function Shell() {
           }
         }
       }),
-    [chooseFolder, go, report, requestSearch, rootId, undoLast],
+    [chooseFolder, go, openSettings, report, requestSearch, rootId, undoLast],
   );
 
   useViewKeys((event) => {
@@ -219,7 +236,10 @@ function Shell() {
       }}
       onDrop={onDrop}
     >
-      <ModeLayout sidebar={root ? <Sidebar onAddRoot={chooseFolder} rail={rail} /> : undefined}>
+      <ModeLayout
+        sidebar={root ? <Sidebar onAddRoot={chooseFolder} rail={rail} /> : undefined}
+        settings={<TidySettings rootId={root?.id ?? null} />}
+      >
         <main
           ref={main}
           tabIndex={-1}
@@ -267,8 +287,6 @@ function CurrentView({ rootId }: { rootId: RootId }) {
       return <HistoryView rootId={rootId} />;
     case "holding":
       return <HoldingView rootId={rootId} />;
-    case "settings":
-      return <SettingsView rootId={rootId} />;
     default: {
       const _exhaustive: never = view;
 

@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 
 import { latchWorksModeFolder, setLatchWorksDataFolder } from "@latch-works/app-data";
-import { app, BrowserWindow, ipcMain, Menu, protocol, screen } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, protocol, screen, shell } from "electron";
 
 import { appMenu } from "./main/menu";
 import {
@@ -303,6 +303,15 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(async () => {
     // A mode starts what it needs the first time the window shows it, and the menu follows the
     // mode on screen.
+    ipcMain.handle(ShellChannels.about, () => ({
+      version: app.getVersion(),
+      dataFolder: path.dirname(app.getPath("userData")),
+    }));
+    ipcMain.on(ShellChannels.importOldApps, () => void importOldApps());
+    ipcMain.on(ShellChannels.revealDataFolder, () => {
+      void shell.openPath(path.dirname(app.getPath("userData")));
+    });
+
     ipcMain.on(ShellChannels.setMode, (_event, value: Json) => {
       const mode = ModeIdSchema.safeParse(value);
 

@@ -3,6 +3,7 @@ import { FIXTURE_ARCHIVE_DIR } from "../../src/env.ts";
 import { openFolder, tiles } from "../../src/frame-view.ts";
 import {
   chooseModeFromMenu,
+  clickMenuItem,
   launchOriel,
   modeButton,
   type OrielSession,
@@ -68,4 +69,40 @@ test("View keeps its folder while another mode shows", async () => {
 
   await openMode(window, "view");
   await expect(tiles(window)).toHaveCount(shown);
+});
+
+test("one Settings page, at the section of the mode on screen", async () => {
+  session = await launchOriel();
+  const { app, window } = session;
+  const title = window.getByRole("heading", { level: 1 });
+  const done = window.getByRole("button", { name: "Close settings" });
+
+  // View's toolbar button opens View's section, which holds Frame View's preferences.
+  await window.getByRole("button", { name: "Settings", exact: true }).click();
+  await expect(title).toHaveText("View");
+  await expect(window.getByRole("switch", { name: "Show videos" })).toBeVisible();
+
+  // General holds the one theme.
+  await window.locator('[data-settings-section="general"]').click();
+  await expect(title).toHaveText("General");
+  await window.getByRole("group", { name: "Theme" }).getByRole("button", { name: "Dark" }).click();
+  await expect(window.locator("html")).toHaveClass(/\bdark\b/);
+
+  await done.click();
+  await expect(done).toBeHidden();
+  await expect(window.getByRole("button", { name: "Settings", exact: true })).toBeVisible();
+
+  // ⌘, opens the section of whichever mode shows.
+  await openMode(window, "sync");
+  await clickMenuItem(app, "settings");
+  await expect(title).toHaveText("Sync");
+  await expect(window.getByRole("button", { name: "Add Profile" })).toBeVisible();
+
+  // Choosing another mode's section shows that mode underneath; Escape closes Settings.
+  await window.locator('[data-settings-section="tidy"]').click();
+  await expect(title).toHaveText("Tidy");
+  await expect(window).toHaveTitle("Tidy – Oriel");
+  await window.keyboard.press("Escape");
+  await expect(done).toBeHidden();
+  await expect(window.getByRole("heading", { name: "Choose your media archive" })).toBeVisible();
 });

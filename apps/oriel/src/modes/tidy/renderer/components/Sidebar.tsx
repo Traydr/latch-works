@@ -17,13 +17,13 @@ import {
   X,
 } from "lucide-react";
 import { type ComponentType, createContext, useContext, useState } from "react";
-
+import { useShell } from "../../../../shell/shell";
+import { ProgressBar, Spinner } from "../../../../ui/ui";
 import { useActions } from "../lib/actions";
 import { call, desktop } from "../lib/api";
 import { useEngine, useEngineQuery } from "../lib/engine-state";
 import { formatBytes, formatCount, plural } from "../lib/format";
 import { useNavigation, type View } from "../lib/navigation";
-import { ProgressBar, Spinner } from "./ui";
 
 /** The files Convert would change, without the extension fixes Clean up makes. */
 function convertCount(tidy: Tidy): number {
@@ -141,6 +141,28 @@ function NavItem({
             {count}
           </span>
         ) : null}
+      </button>
+    </li>
+  );
+}
+
+/** Opens Oriel's Settings at Tidy's section, which holds what Glazier's Settings page did. */
+function SettingsItem() {
+  const { openSettings } = useShell();
+  const rail = useContext(RailContext);
+
+  return (
+    <li>
+      <button
+        type="button"
+        className={`gz-sidebar-item ${rail ? `relative justify-center px-0 ${RAIL_BUTTON} ${RAIL_ICON}` : ""}`}
+        aria-label={rail ? "Settings" : undefined}
+        data-view="settings"
+        title="Settings  ⌘,"
+        onClick={() => openSettings("tidy")}
+      >
+        <SettingsIcon />
+        {rail ? null : <span className="min-w-0 flex-1 truncate">Settings</span>}
       </button>
     </li>
   );
@@ -264,7 +286,7 @@ export function Sidebar({ onAddRoot, rail }: { onAddRoot: () => void; rail: bool
           className={`overflow-y-auto pt-3 ${rail ? "flex flex-col items-center space-y-1" : "space-y-0.5 px-2"}`}
         >
           <NavItem view="overview" label="Overview" icon={LayoutGrid} shortcut="⌥⌘1" />
-          <GroupLabel>Tidy</GroupLabel>
+          <GroupLabel>To do</GroupLabel>
           <NavItem
             view="duplicates"
             label="Duplicates"
@@ -310,7 +332,7 @@ export function Sidebar({ onAddRoot, rail }: { onAddRoot: () => void; rail: bool
                 holding.data && holding.data.total > 0 ? formatBytes(holding.data.totalBytes) : null
               }
             />
-            <NavItem view="settings" label="Settings" icon={SettingsIcon} shortcut="⌘," />
+            <SettingsItem />
           </ul>
         </div>
       </nav>
