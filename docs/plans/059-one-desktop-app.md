@@ -15,7 +15,7 @@
 
 ## Status
 
-- **Status**: IN REVIEW (Phases 1–7 on `agent/059-oriel`, 2026-10-24); Phases 8–10 follow on the
+- **Status**: IN REVIEW (Phases 1–8 on `agent/059-oriel`, 2026-10-24); Phases 9–10 follow on the
   same branch
 - **Priority**: P2 (the owner asked for it)
 - **Effort**: XL overall, as ten stacked PRs of S–L each
@@ -334,7 +334,13 @@ Frame View's settings drawer and Lockstep's settings, and holds the single theme
 
 ### Phase 8: Sync and View restyled (L, `design-trials` for Sync)
 
-Rename `gz-*` to `lw-*` in one mechanical commit before either (done).
+Done, without a Sync trial: the layout below was built as written, and the owner can ask for a
+trial of any part. Rename `gz-*` to `lw-*` in one mechanical commit before either (done).
+- **Sync.** The profiles' menu (Edit, Check connection, Run log, Delete) moved to the page's top
+  bar, so the rail form keeps it. Lockstep's status bar went; the last run shows under the
+  profile's name and in the top bar. The run log floats along the bottom.
+- **View.** Its 16 px base font went with the Prism classes, so it reads at the house 13 px. The
+  "1 items" badge keeps Pane View's wording, which the e2e pins.
 
 - **Sync** is rebuilt in house style, which was already a 058 follow-up:
   - profiles in the sidebar, as Glazier lists folders;

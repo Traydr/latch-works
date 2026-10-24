@@ -2,6 +2,7 @@ import { ArrowUpDown, Check, ChevronUp } from "lucide-react";
 import type { JSX } from "react";
 
 import type { GallerySortMode } from "../../../shared/types";
+import { toolButtonClass } from "./GalleryToolbar";
 
 const SORT_OPTIONS: { value: GallerySortMode; label: string }[] = [
   { value: "name-asc", label: "A-Z" },
@@ -32,20 +33,22 @@ export function SortMenu({
     <>
       <button
         type="button"
-        className={`prism-btn inline-flex items-center gap-2 whitespace-nowrap ${sortMenuOpen ? "bg-zinc-200 dark:bg-zinc-700" : ""}`}
+        className={toolButtonClass(sortMenuOpen)}
         onClick={onToggleOpen}
         aria-haspopup="menu"
         aria-expanded={sortMenuOpen}
         title="Sort"
       >
-        <ArrowUpDown className="size-4" />
+        <ArrowUpDown />
         {activeSortLabel}
-        <ChevronUp className={`size-3 transition-transform ${sortMenuOpen ? "rotate-180" : ""}`} />
+        <ChevronUp
+          className={`opacity-50 transition-transform ${sortMenuOpen ? "rotate-180" : ""}`}
+        />
       </button>
 
       {sortMenuOpen ? (
         <div
-          className="prism-surface absolute bottom-[calc(100%+0.5rem)] left-0 z-30 w-40 p-1"
+          className="lw-menu absolute bottom-[calc(100%+0.75rem)] left-0 min-w-44 origin-bottom-left"
           role="menu"
         >
           {SORT_OPTIONS.map((option) => {
@@ -57,18 +60,16 @@ export function SortMenu({
                 type="button"
                 role="menuitemradio"
                 aria-checked={selected}
-                className={`flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-xs transition ${
-                  selected
-                    ? "bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300"
-                    : "text-zinc-700 hover:bg-zinc-200 dark:text-zinc-200 dark:hover:bg-zinc-700"
-                }`}
+                className="lw-menu-item justify-between"
                 onClick={() => {
                   onChangeSortMode(option.value);
                   setSortMenuOpen(false);
                 }}
               >
                 <span>{option.label}</span>
-                {selected ? <Check className="size-3.5" /> : null}
+                <Check
+                  className={`size-3.5 text-violet-600 dark:text-violet-400 ${selected ? "" : "invisible"}`}
+                />
               </button>
             );
           })}

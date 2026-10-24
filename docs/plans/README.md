@@ -26,7 +26,7 @@ once their outcome is recorded below; recover full text with `git log --diff-fil
 | [056](056-test-triage-and-e2e.md) | Tag every unit test keep/trim/e2e/delete, add a Playwright e2e workspace covering the baseline features of every app, delete the mock-shape and moment-in-time tests | P2 | L | none | IN PROGRESS (PR 1 on `revise-testing`, 2026-08-25) |
 | [058](058-glazier.md) | Glazier, the archive workbench: inventory, exact and similar duplicates, sound, conversion to the archive formats, holding and undo; `media-format` shared with Gather Box | P2 | L | none | IN REVIEW (branch `agent/058-glazier`, 2026-10-24) |
 | [057](057-frame-view-pane-parity.md) | Bring Pane View's UX to Frame View: reordered icon toolbar, settings dialog locked to the top, capsule video player ported, chrome icons and Escape parity | P2 | M | none | IN REVIEW (four stacked PRs from `agent/057-1-toolbar` to `agent/057-4-chrome-parity`, 2026-09-14) |
-| [059](059-one-desktop-app.md) | Replace Frame View, Glazier and Lockstep with Oriel, one app with View · Tidy · Sync modes in Glazier's house style, migrating their data and tokens; designed DMG, Velopack setup, built from source | P2 | XL | 057, 058 | IN REVIEW (Phases 1–7 on `agent/059-oriel`, 2026-10-24; Phases 8–10 next) |
+| [059](059-one-desktop-app.md) | Replace Frame View, Glazier and Lockstep with Oriel, one app with View · Tidy · Sync modes in Glazier's house style, migrating their data and tokens; designed DMG, Velopack setup, built from source | P2 | XL | 057, 058 | IN REVIEW (Phases 1–8 on `agent/059-oriel`, 2026-10-24; Phases 9–10 next) |
 
 Recommended order (2026-08-17 review):
 

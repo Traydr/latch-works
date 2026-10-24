@@ -152,11 +152,11 @@ export function FolderGridOverlay({
         aria-label="Close folder browser"
       />
 
-      <div className="prism-surface z-10 mx-6 flex max-h-[72vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl">
+      <div className="lw-float lw-enter-pop z-10 mx-6 flex max-h-[72vh] w-full max-w-3xl flex-col overflow-hidden">
         {/* Header with breadcrumbs */}
-        <div className="flex items-center gap-2 border-b border-inherit px-5 py-3">
+        <div className="flex items-center gap-2 border-b lw-divider py-2.5 pr-2.5 pl-5">
           <Folder className="size-5 flex-shrink-0 text-amber-500" />
-          <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto text-sm">
+          <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto text-[13px]">
             {breadcrumbs.map((crumb, i) => {
               const isLast = i === breadcrumbs.length - 1;
 
@@ -180,49 +180,49 @@ export function FolderGridOverlay({
           </nav>
           <button
             type="button"
-            className="prism-btn inline-flex flex-shrink-0 items-center gap-2"
+            className="lw-btn lw-btn-ghost"
             disabled={breadcrumbs.length <= 1}
             onClick={goBack}
             title="Back to the parent folder"
           >
-            <ChevronLeft className="size-4" />
+            <ChevronLeft />
             Back
           </button>
           {currentPath ? (
             <button
               type="button"
-              className="prism-btn inline-flex flex-shrink-0 items-center gap-2"
+              className="lw-btn lw-btn-secondary"
               onClick={() => selectAndClose(currentPath)}
               title="Open and scan this folder"
             >
-              <FolderOpen className="size-4" />
+              <FolderOpen />
               Open
             </button>
           ) : null}
           <button
             type="button"
-            className="prism-btn inline-flex flex-shrink-0 items-center"
+            className="lw-btn lw-btn-ghost lw-btn-icon"
             onClick={onClose}
             title="Close"
             aria-label="Close"
           >
-            <X className="size-4" />
+            <X />
           </button>
         </div>
 
         {/* Folder grid */}
         <div className="flex-1 overflow-auto p-4">
           {loading ? (
-            <div className="flex items-center justify-center py-12 text-sm text-zinc-500 dark:text-zinc-400">
-              Loading...
+            <div className="lw-caption flex items-center justify-center py-12 text-[13px]">
+              Loading…
             </div>
           ) : folders.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-2 py-12 text-zinc-500 dark:text-zinc-400">
-              <p className="text-sm">No subfolders</p>
+            <div className="flex flex-col items-center justify-center gap-3 py-12 text-zinc-500 dark:text-zinc-400">
+              <p className="text-[13px]">No subfolders</p>
               {currentPath ? (
                 <button
                   type="button"
-                  className="prism-btn"
+                  className="lw-btn lw-btn-secondary"
                   onClick={() => selectAndClose(currentPath)}
                 >
                   Open this folder
@@ -230,7 +230,7 @@ export function FolderGridOverlay({
               ) : null}
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
               {folders.map((folder) => {
                 const isActive = folder.path === activePath;
                 const isExcluded = isShowingOpenedRoot && excludedRootChildPathSet.has(folder.path);
@@ -238,12 +238,12 @@ export function FolderGridOverlay({
                 return (
                   <div
                     key={folder.path}
-                    className={`flex flex-col gap-2 rounded-xl border p-3 transition ${
+                    className={`lw-card flex flex-col gap-2 p-3 transition-[box-shadow,opacity] duration-150 ${
                       isActive
-                        ? "border-violet-300 bg-violet-50/95 text-violet-700 shadow-sm dark:border-violet-500/50 dark:bg-violet-500/20 dark:text-violet-200"
+                        ? "ring-2 ring-violet-500"
                         : isExcluded
-                          ? "border-zinc-300/80 bg-zinc-100/80 text-zinc-400 dark:border-zinc-800 dark:bg-zinc-900/50 dark:text-zinc-500"
-                          : "border-zinc-300/80 bg-white/70 text-zinc-700 shadow-sm hover:border-zinc-400 hover:bg-white dark:border-zinc-700/80 dark:bg-zinc-900/70 dark:text-zinc-200 dark:hover:border-zinc-600 dark:hover:bg-zinc-900/95"
+                          ? "text-zinc-400 opacity-70 dark:text-zinc-500"
+                          : "hover:shadow-[var(--shadow-border-hover)]"
                     }`}
                     title={folder.path}
                   >
@@ -257,17 +257,15 @@ export function FolderGridOverlay({
                       <Folder
                         className={`size-8 ${isExcluded ? "text-zinc-400 dark:text-zinc-600" : "text-amber-500"}`}
                       />
-                      <span className="w-full truncate text-center text-xs font-medium">
+                      <span className="w-full truncate text-center text-[13px] font-medium">
                         {folder.name}
                       </span>
                     </button>
                     {isShowingOpenedRoot ? (
                       <button
                         type="button"
-                        className={`prism-btn justify-center text-[11px] ${
-                          isExcluded
-                            ? "prism-btn-excluded bg-red-50/80 text-red-700 dark:bg-red-950/25 dark:text-red-200"
-                            : ""
+                        className={`lw-btn lw-btn-sm w-full ${
+                          isExcluded ? "lw-btn-danger" : "lw-btn-secondary"
                         }`}
                         onClick={() => onToggleExcludedRootChild(folder.path)}
                       >
@@ -282,7 +280,7 @@ export function FolderGridOverlay({
         </div>
 
         {/* Footer hint */}
-        <div className="border-t border-inherit px-4 py-2 text-[10px] text-zinc-500 dark:text-zinc-400">
+        <div className="lw-caption border-t lw-divider px-5 py-2.5">
           Click to browse into folder · Double-click to open and scan
         </div>
       </div>

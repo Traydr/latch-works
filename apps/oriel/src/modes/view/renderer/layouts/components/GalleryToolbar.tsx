@@ -31,9 +31,12 @@ interface GalleryToolbarProps {
   settings: AppSettings;
 }
 
-function toolButtonClass(active = false): string {
-  return `prism-btn inline-flex items-center gap-2 whitespace-nowrap ${active ? "prism-btn-active" : ""}`;
+/** A toolbar button; a toggle that is on keeps the neutral selection, as the sidebar's does. */
+export function toolButtonClass(active = false): string {
+  return `lw-btn lw-btn-ghost px-3 ${active ? "lw-selected text-zinc-900 dark:text-white" : ""}`;
 }
+
+const SEPARATOR = "mx-0.5 h-5 w-px shrink-0 bg-zinc-900/10 dark:bg-white/10";
 
 export function GalleryToolbar({
   excludesActive,
@@ -95,14 +98,14 @@ export function GalleryToolbar({
   }, [settings.sortMode]);
 
   return (
-    <div className="prism-surface absolute bottom-6 left-1/2 z-20 inline-flex max-w-[96vw] -translate-x-1/2 items-center gap-2 overflow-visible px-3 py-2">
+    <div className="lw-float absolute bottom-5 left-1/2 z-20 inline-flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-1 overflow-visible p-1.5">
       <button
         type="button"
         className={toolButtonClass()}
         onClick={onOpenFolder}
         title="Open a folder"
       >
-        <FolderOpen className="size-4" />
+        <FolderOpen />
         Open
       </button>
       <button
@@ -111,16 +114,16 @@ export function GalleryToolbar({
         onClick={onToggleFolderOverlay}
         title={excludesActive ? "Browse subfolders (some are excluded)" : "Browse subfolders"}
       >
-        <Folders className="size-4" />
+        <Folders />
         Folders
         {excludesActive ? (
           <span
             aria-hidden="true"
-            className="absolute -top-1 -right-1 size-2 rounded-full bg-violet-500"
+            className="absolute top-1 right-1 size-1.5 rounded-full bg-violet-500"
           />
         ) : null}
       </button>
-      <div className="h-5 w-px bg-zinc-200 dark:bg-zinc-700" />
+      <div className={SEPARATOR} />
       <button
         type="button"
         aria-pressed={recursive}
@@ -129,7 +132,7 @@ export function GalleryToolbar({
         onClick={() => onToggleRecursive(!recursive)}
         title={hasRootFolder ? "Recursive browsing" : "Open a folder to enable recursive browsing"}
       >
-        <ListTree className="size-4" />
+        <ListTree />
         Recursive
       </button>
       <button
@@ -140,7 +143,7 @@ export function GalleryToolbar({
         onClick={() => onToggleComicMode(!comicMode)}
         title={hasRootFolder ? "Comic grouping" : "Open a folder for comic grouping"}
       >
-        <ImageIcon className="size-4" />
+        <ImageIcon />
         Comic
       </button>
       <div ref={sortMenuRef} className="relative">
@@ -160,11 +163,11 @@ export function GalleryToolbar({
           onClick={onShuffleRandom}
           title="Shuffle again"
         >
-          <Shuffle className="size-4" />
+          <Shuffle />
           Shuffle
         </button>
       ) : null}
-      <div className="h-5 w-px bg-zinc-200 dark:bg-zinc-700" />
+      <div className={SEPARATOR} />
       <button
         type="button"
         className={toolButtonClass()}
@@ -172,17 +175,17 @@ export function GalleryToolbar({
         onClick={onRefresh}
         title="Refresh"
       >
-        <RefreshCcw className={`size-4 ${isRefreshing ? "animate-spin" : ""}`} />
+        <RefreshCcw className={isRefreshing ? "animate-spin" : ""} />
         {isRefreshing ? "Refreshing" : "Refresh"}
       </button>
-      <div className="h-5 w-px bg-zinc-200 dark:bg-zinc-700" />
+      <div className={SEPARATOR} />
       <button
         type="button"
         className={toolButtonClass()}
         onClick={onOpenSettings}
         title="Preferences"
       >
-        <Settings className="size-4" />
+        <Settings />
         Settings
       </button>
     </div>

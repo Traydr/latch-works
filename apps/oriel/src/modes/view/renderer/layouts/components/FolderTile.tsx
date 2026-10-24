@@ -29,10 +29,8 @@ export function FolderTile({
       type="button"
       data-gallery-item="true"
       data-gallery-item-id={entry.key}
-      className={`group absolute flex flex-col justify-between overflow-hidden rounded-2xl border p-4 text-left transition active:scale-[0.96] ${
-        selected
-          ? "border-violet-400 bg-violet-50/90 ring-2 ring-violet-400/70 dark:border-violet-500 dark:bg-violet-500/15"
-          : "border-zinc-300/80 bg-white/75 hover:-translate-y-0.5 hover:border-zinc-400 hover:bg-white hover:shadow-lg dark:border-zinc-700/80 dark:bg-zinc-900/75 dark:hover:border-zinc-600 dark:hover:bg-zinc-900"
+      className={`lw-focus group absolute flex flex-col justify-between overflow-hidden rounded-xl bg-white p-4 text-left shadow-[var(--shadow-border)] transition-[box-shadow,transform] duration-150 active:scale-[0.97] dark:bg-zinc-900 ${
+        selected ? "ring-2 ring-violet-500" : "hover:shadow-[var(--shadow-border-hover)]"
       }`}
       onClick={() => onSelect(entry)}
       onDoubleClick={() => onActivate(entry)}
@@ -45,13 +43,11 @@ export function FolderTile({
       title={entry.path}
     >
       <div className="flex items-start justify-between gap-3">
-        <Folder className="size-10 text-amber-500 transition group-hover:scale-105" />
-        <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-500 dark:bg-zinc-800 dark:text-zinc-300">
-          FOLDER
-        </span>
+        <Folder className="size-9 text-amber-500" />
+        <span className="lw-badge lw-badge-neutral">Folder</span>
       </div>
       <div className="space-y-1">
-        <p className="line-clamp-2 text-sm font-semibold text-zinc-800 dark:text-zinc-100">
+        <p className="line-clamp-2 text-[13px] font-semibold text-zinc-900 dark:text-zinc-100">
           {entry.name}
         </p>
       </div>
