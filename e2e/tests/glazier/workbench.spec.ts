@@ -6,8 +6,8 @@ import { promisify } from "node:util";
 import { expect, test } from "@playwright/test";
 import sharp from "sharp";
 import {
-  applyPlan,
   type GlazierSession,
+  latestToast,
   launchGlazier,
   openView,
   stubFolderDialog,
@@ -100,13 +100,15 @@ test.beforeAll(async () => {
     .toFile(path.join(archive, "photos", "cover.jpg"));
 
   const clip = (name: string) => path.join(archive, "clips", name);
-  const testCard = ["-f", "lavfi", "-i", "testsrc2=s=320x240:d=3:r=12"];
+  // Each clip shows its own test pattern, so only the exact copy below counts as a duplicate.
+  const pattern = (source: string) => ["-f", "lavfi", "-i", `${source}=s=320x240:d=3:r=12`];
+  const testCard = pattern("testsrc2");
   const tone = ["-f", "lavfi", "-i", "sine=frequency=440:duration=3"];
   const h264 = ["-c:v", "libx264", "-pix_fmt", "yuv420p"];
 
   await ffmpeg(...testCard, ...tone, ...h264, "-c:a", "aac", "-shortest", clip("with-sound.mp4"));
   await ffmpeg(
-    ...testCard,
+    ...pattern("smptebars"),
     "-f",
     "lavfi",
     "-i",
@@ -128,9 +130,17 @@ test.beforeAll(async () => {
     ...h264,
     clip("no-audio.mp4"),
   );
-  await ffmpeg(...testCard, ...tone, ...h264, "-c:a", "aac", "-shortest", clip("talk.mov"));
   await ffmpeg(
-    ...testCard,
+    ...pattern("zoneplate"),
+    ...tone,
+    ...h264,
+    "-c:a",
+    "aac",
+    "-shortest",
+    clip("talk.mov"),
+  );
+  await ffmpeg(
+    ...pattern("yuvtestsrc"),
     ...tone,
     "-c:v",
     "libvpx-vp9",
@@ -145,7 +155,7 @@ test.beforeAll(async () => {
     "-f",
     "lavfi",
     "-i",
-    "testsrc2=s=200x150:d=2:r=10",
+    "colorspectrum=s=200x150:d=2:r=10",
     "-vf",
     "split[a][b];[a]palettegen[p];[b][p]paletteuse",
     clip("loop.gif"),
@@ -217,78 +227,103 @@ test.afterAll(async () => {
 
 test.describe.configure({ mode: "serial" });
 
-test("a new root is scanned and its formats and findings reported", async () => {
+test("a new folder is scanned and Tidy lists what to do with it", async () => {
   const { app, window } = session;
+
   await stubFolderDialog(app, archive);
-  await window.getByRole("button", { name: "Add a root" }).first().click();
+  await window.getByRole("button", { name: /Choose Folder/ }).click();
+  // The scan, then the similar and sound analysis it queues in the background.
   await waitForJobs(window);
 
-  // Four stills, nine clips, the copy and .DS_Store.
-  await expect(window.locator('[data-stat="Files"]')).toContainText("15");
-  await expect(window.locator('[data-finding="extension-mismatch"]')).toContainText("1");
-  await expect(window.locator('[data-finding="junk"]')).toContainText("1");
-  await expect(window.locator('[data-finding="empty-folder"]')).toContainText("1");
+  const step = (id: string) => window.locator(`[data-step="${id}"]`);
+
+  await expect(window.getByText("15 files", { exact: false }).first()).toBeVisible();
+  // The copy of with-sound.mp4, and sunset.png with its resized JPEG.
+  await expect(step("duplicates")).toContainText("1 set of identical copies");
+  await expect(step("duplicates")).toContainText("1 set of similar versions");
+  await expect(step("silent")).toContainText("1 video with a silent soundtrack");
+  await expect(step("cleanup")).toContainText("1 junk file");
+  await expect(step("cleanup")).toContainText("1 empty folder");
+  await expect(step("cleanup")).toContainText("1 wrong extension");
+  await expect(step("convert")).toHaveAttribute("data-state", "todo");
 });
 
 test("the resized JPEG is grouped with the picture it came from", async () => {
   const { window } = session;
-  await openView(window, "Duplicates");
-  await window.getByRole("button", { name: "Similar", exact: true }).click();
-  await window.getByRole("button", { name: "Find similar" }).click();
-  await waitForJobs(window);
 
-  await window
-    .getByRole("list", { name: "Groups" })
-    .getByRole("button", { name: /sunset/ })
-    .click();
-  await expect(window.locator('[data-member="sunset-small.jpg"]')).toBeVisible();
-  await expect(window.locator('[data-member="sunset.png"]')).toHaveAttribute("data-keep", "true");
+  await openView(window, "duplicates");
+  await window.getByRole("button", { name: /^Similar/ }).click();
+  await window.locator("[data-set-key]", { hasText: "sunset" }).first().click();
+
+  await expect(window.locator('tr[data-file-name="sunset-small.jpg"]')).toHaveAttribute(
+    "data-keep",
+    "false",
+  );
+  await expect(window.locator('tr[data-file-name="sunset.png"]')).toHaveAttribute(
+    "data-keep",
+    "true",
+  );
+
+  // The number key picks the other version; nothing changes on disk until Return.
+  await window.keyboard.press("2");
+  await expect(window.locator('tr[data-file-name="sunset-small.jpg"]')).toHaveAttribute(
+    "data-keep",
+    "true",
+  );
+  await window.keyboard.press("1");
+  await expect(window.locator('tr[data-file-name="sunset.png"]')).toHaveAttribute(
+    "data-keep",
+    "true",
+  );
 });
 
 test("silent tracks are told apart from sound", async () => {
   const { window } = session;
-  await openView(window, "Sound");
-  await window.getByRole("button", { name: "Measure sound" }).click();
-  await waitForJobs(window);
+
+  await openView(window, "library");
+  await window.getByRole("button", { name: "Sound", exact: true }).click();
 
   // The GIF is still an image here; no-audio.mp4 and the three silent test patterns lack a track.
-  await expect(window.getByRole("button", { name: /No audio track/ })).toContainText("4");
-  await expect(window.getByRole("button", { name: /Silent track/ })).toContainText("1");
-  await expect(window.getByRole("button", { name: /Has sound/ })).toContainText("4");
+  await expect(window.locator("label", { hasText: "No audio track" })).toContainText("4");
+  await expect(window.locator("label", { hasText: "Silent track" })).toContainText("1");
+  await expect(window.locator("label", { hasText: "Has sound" })).toContainText("4");
+  await window.keyboard.press("Escape");
 });
 
-test("an exact duplicate goes to holding and the journal brings it back", async () => {
+test("Return resolves a duplicate set into holding, and Undo brings it back", async () => {
   const { window } = session;
   const copy = path.join(archive, "dup", "with-sound-copy.mp4");
-  await openView(window, "Duplicates");
-  await window.getByRole("button", { name: "Exact", exact: true }).click();
-  await window.getByRole("button", { name: "Resolve this group" }).click();
-  await applyPlan(window);
 
+  await openView(window, "duplicates");
+  await window.getByRole("button", { name: /^Identical/ }).click();
+  await window.locator("[data-set-key^='exact:']").first().click();
+  // The copy-style name loses to the original.
+  await expect(window.locator('tr[data-file-name="with-sound.mp4"]')).toHaveAttribute(
+    "data-keep",
+    "true",
+  );
+
+  await window.keyboard.press("Enter");
+  await expect(latestToast(window)).toContainText("Resolved 1 duplicate set");
   await expect(stat(copy)).rejects.toThrow();
   expect(await heldFiles()).toEqual(["dup/with-sound-copy.mp4"]);
 
-  await openView(window, "Journal");
-  window.once("dialog", (dialog) => void dialog.accept());
-  await window.getByRole("button", { name: "Undo" }).first().click();
+  await latestToast(window).getByRole("button", { name: "Undo" }).click();
   await waitForJobs(window);
-
   await expect.poll(async () => (await stat(copy).catch(() => null))?.isFile() ?? false).toBe(true);
   expect(await heldFiles()).toEqual([]);
 });
 
-test("stills become AVIF and everything that moves MP4, keeping each original's date", async () => {
+test("Convert turns stills into AVIF and everything that moves into MP4, keeping dates", async () => {
   const { window } = session;
-  await openView(window, "Optimize");
-  // Stills, the animation, the MOV remux, the WebM re-encode and the misnamed AVIF.
-  await expect(window.locator("[data-category]")).toHaveCount(5);
 
-  for (const checkbox of await window.locator("[data-category] input[type=checkbox]").all()) {
-    await checkbox.check();
-  }
-
-  await window.getByRole("button", { name: "Review conversions" }).click();
-  await applyPlan(window);
+  await openView(window, "tidy");
+  await window
+    .locator('[data-step="convert"]')
+    .getByRole("button", { name: /^Convert/ })
+    .click();
+  await expect(latestToast(window)).toContainText("Converted", { timeout: 180_000 });
+  await waitForJobs(window);
 
   for (const [converted, codec] of [
     ["clips/talk.mp4", "h264"],
@@ -311,11 +346,11 @@ test("stills become AVIF and everything that moves MP4, keeping each original's 
     "clips/odd.mp4",
     "clips/old.mp4",
   ]) {
-    const converted_ = await stat(path.join(archive, converted));
-    expect(Math.trunc(converted_.mtimeMs / 1000), converted).toBe(ORIGINAL_MTIME.getTime() / 1000);
+    const written = await stat(path.join(archive, converted));
+
+    expect(Math.trunc(written.mtimeMs / 1000), converted).toBe(ORIGINAL_MTIME.getTime() / 1000);
   }
 
-  await expect(stat(path.join(archive, "photos", "cover.avif"))).resolves.toBeTruthy();
   expect(await heldFiles()).toEqual(
     expect.arrayContaining([
       "clips/loop.gif",
@@ -327,4 +362,18 @@ test("stills become AVIF and everything that moves MP4, keeping each original's 
       "photos/sunset.png",
     ]),
   );
+  await expect(window.locator('[data-step="convert"]')).toHaveAttribute("data-state", "done");
+});
+
+test("Clean up fixes the extension, holds the junk and removes the empty folder", async () => {
+  const { window } = session;
+
+  await openView(window, "tidy");
+  await window.locator('[data-step="cleanup"]').getByRole("button", { name: "Clean up" }).click();
+  await expect(latestToast(window)).toContainText("Cleaned up");
+
+  await expect(stat(path.join(archive, "photos", "cover.avif"))).resolves.toBeTruthy();
+  await expect(stat(path.join(archive, "empty"))).rejects.toThrow();
+  expect(await heldFiles()).toEqual(expect.arrayContaining([".DS_Store"]));
+  await expect(window.locator('[data-step="cleanup"]')).toHaveAttribute("data-state", "done");
 });

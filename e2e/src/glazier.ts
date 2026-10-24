@@ -70,30 +70,39 @@ export async function stubFolderDialog(app: ElectronApplication, folder: string)
 }
 
 /**
- * Waits for the work an action just started. The job bar lists queued and running jobs; a job
- * can take a moment to appear after its button is pressed, so this first gives it up to two
- * seconds to show, then waits for the bar to empty.
+ * Waits for the work an action just started, and for the background analysis that follows it.
+ * The status bar names the running job; a job can take a moment to start after its button is
+ * pressed, and the next one (analysis after a scan) a moment after the last ends, so this gives a
+ * job up to two seconds to show and then needs the bar idle twice in a row.
  */
-export async function waitForJobs(window: Page, timeout = 120_000): Promise<void> {
-  const jobs = window.locator('[data-testid="job-bar"] [data-job-state]');
-  await jobs
-    .first()
-    .waitFor({ state: "attached", timeout: 2000 })
-    .catch(() => undefined);
-  await expect(jobs).toHaveCount(0, { timeout });
+export async function waitForJobs(window: Page, timeout = 180_000): Promise<void> {
+  const busy = window.locator('[data-testid="status-bar"][data-job-state]');
+
+  await busy.waitFor({ state: "attached", timeout: 2000 }).catch(() => undefined);
+
+  await expect
+    .poll(
+      async () => {
+        if ((await busy.count()) > 0) {
+          return false;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 400));
+
+        return (await busy.count()) === 0;
+      },
+      { timeout, intervals: [200] },
+    )
+    .toBe(true);
 }
 
-export async function openView(window: Page, label: string): Promise<void> {
-  await window
-    .getByRole("navigation", { name: "Glazier" })
-    .getByRole("button", { name: label, exact: true })
-    .click();
+export type GlazierView = "tidy" | "duplicates" | "library" | "history";
+
+export async function openView(window: Page, view: GlazierView): Promise<void> {
+  await window.locator(`nav [data-view="${view}"]`).click();
 }
 
-/** Applies the plan in the review dialog, then waits for the engine to finish it. */
-export async function applyPlan(window: Page): Promise<void> {
-  const dialog = window.getByRole("dialog");
-  await dialog.getByRole("button", { name: "Apply" }).click();
-  await expect(dialog).toHaveCount(0);
-  await waitForJobs(window);
+/** The newest result toast, which every applied change shows with its Undo. */
+export function latestToast(window: Page) {
+  return window.locator("[data-toast]").last();
 }
