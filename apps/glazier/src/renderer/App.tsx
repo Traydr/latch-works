@@ -1,73 +1,184 @@
 import type { RootId } from "@latch-works/glazier-core/contract";
-import {
-  BookOpen,
-  Copy,
-  FolderPlus,
-  Gauge,
-  Inbox,
-  Library,
-  RefreshCw,
-  Settings as SettingsIcon,
-  Sparkles,
-  Trash2,
-  Volume2,
-} from "lucide-react";
-import type { ComponentType } from "react";
+import { FolderPlus } from "lucide-react";
+import { type DragEvent, useCallback, useEffect, useState } from "react";
 
 import glazierIcon from "../../media/glazier-icon.svg";
-import { JobBar } from "./components/JobBar";
-import { PlanProvider } from "./components/PlanDialog";
-import { EmptyState } from "./components/ui";
-import { call, desktop } from "./lib/api";
-import { EngineProvider, useActiveJob, useEngine } from "./lib/engine-state";
-import { formatBytes, formatCount, formatRelative } from "./lib/format";
-import { NavigationProvider, useNavigation, type View } from "./lib/navigation";
+import { SettingsSheet } from "./components/SettingsSheet";
+import { ShortcutSheet } from "./components/ShortcutSheet";
+import { Sidebar } from "./components/Sidebar";
+import { StatusBar } from "./components/StatusBar";
+import { ToastProvider, useToasts } from "./components/Toasts";
+import { EmptyState, Kbd } from "./components/ui";
+import { ActionsProvider, useActions } from "./lib/actions";
+import { call, desktop, onAppCommand } from "./lib/api";
+import { dispatchCommand } from "./lib/commands";
+import { EngineProvider, useEngine } from "./lib/engine-state";
+import { isTextInputTarget, useViewKeys } from "./lib/hotkeys";
+import { NavigationProvider, useNavigation } from "./lib/navigation";
 import { useSystemTheme } from "./lib/use-system-theme";
 import { DuplicatesView } from "./views/DuplicatesView";
-import { HoldingView } from "./views/HoldingView";
-import { JournalView } from "./views/JournalView";
+import { HistoryView } from "./views/HistoryView";
 import { LibraryView } from "./views/LibraryView";
-import { OptimizeView } from "./views/OptimizeView";
-import { OverviewView } from "./views/OverviewView";
-import { SettingsView } from "./views/SettingsView";
-import { SoundView } from "./views/SoundView";
-
-const NAV: ReadonlyArray<{
-  view: View;
-  label: string;
-  icon: ComponentType<{ className?: string }>;
-}> = [
-  { view: "overview", label: "Overview", icon: Gauge },
-  { view: "library", label: "Library", icon: Library },
-  { view: "duplicates", label: "Duplicates", icon: Copy },
-  { view: "optimize", label: "Optimize", icon: Sparkles },
-  { view: "sound", label: "Sound", icon: Volume2 },
-  { view: "holding", label: "Holding", icon: Inbox },
-  { view: "journal", label: "Journal", icon: BookOpen },
-  { view: "settings", label: "Settings", icon: SettingsIcon },
-];
+import { TidyView } from "./views/TidyView";
 
 export function App() {
   useSystemTheme();
 
   return (
-    <EngineProvider>
-      <NavigationProvider>
-        <PlanProvider>
-          <Shell />
-        </PlanProvider>
-      </NavigationProvider>
-    </EngineProvider>
+    <ToastProvider>
+      <EngineProvider>
+        <NavigationProvider>
+          <ActionsProvider>
+            <Shell />
+          </ActionsProvider>
+        </NavigationProvider>
+      </EngineProvider>
+    </ToastProvider>
   );
 }
 
+type Sheet = "settings" | "shortcuts" | null;
+
+const VIEW_COMMANDS = {
+  "view:tidy": "tidy",
+  "view:duplicates": "duplicates",
+  "view:library": "library",
+  "view:history": "history",
+} as const;
+
 function Shell() {
-  const { ready, roots, rootId, error, dismissError } = useEngine();
+  const { ready, roots, rootId, error, dismissError, selectRoot, report } = useEngine();
+  const { go, requestSearch } = useNavigation();
+  const { undoLast } = useActions();
+  const toasts = useToasts();
+  const [sheet, setSheet] = useState<Sheet>(null);
+  const [dragging, setDragging] = useState(false);
   const root = roots.find((candidate) => candidate.id === rootId) ?? null;
-  const scan = useActiveJob("scan", rootId);
+
+  // Engine errors surface as toasts, like every other result.
+  useEffect(() => {
+    if (error) {
+      toasts.show({ message: "Something went wrong", detail: error, tone: "error" });
+      dismissError();
+    }
+  }, [error, dismissError, toasts]);
+
+  const addFolder = useCallback(
+    async (folder: string | null) => {
+      if (!folder) {
+        return;
+      }
+
+      try {
+        const added = await call("addRoot", { path: folder });
+
+        selectRoot(added.id);
+        go("tidy");
+      } catch (cause) {
+        report(cause);
+      }
+    },
+    [go, report, selectRoot],
+  );
+
+  const chooseFolder = useCallback(
+    () => void desktop.pickRoot().then(addFolder, report),
+    [addFolder, report],
+  );
+
+  useEffect(
+    () =>
+      onAppCommand((command) => {
+        const typing = isTextInputTarget(document.activeElement);
+
+        switch (command) {
+          case "add-root":
+            chooseFolder();
+            break;
+          case "rescan":
+            if (rootId !== null) {
+              void call("scanRoot", { rootId }).catch(report);
+            }
+
+            break;
+          case "undo":
+            if (typing) {
+              document.execCommand("undo");
+            } else {
+              void undoLast();
+            }
+
+            break;
+          case "select-all":
+            if (typing) {
+              document.execCommand("selectAll");
+            } else {
+              dispatchCommand("select-all");
+            }
+
+            break;
+          case "find":
+            requestSearch();
+            break;
+          case "settings":
+            setSheet("settings");
+            break;
+          case "shortcuts":
+            setSheet("shortcuts");
+            break;
+          case "view:tidy":
+          case "view:duplicates":
+          case "view:library":
+          case "view:history":
+            setSheet(null);
+            go(VIEW_COMMANDS[command]);
+            break;
+          default: {
+            const _exhaustive: never = command;
+
+            return _exhaustive;
+          }
+        }
+      }),
+    [chooseFolder, go, report, requestSearch, rootId, undoLast],
+  );
+
+  useViewKeys((event) => {
+    if (event.key === "?") {
+      setSheet("shortcuts");
+
+      return true;
+    }
+
+    return false;
+  });
+
+  const onDrop = (event: DragEvent) => {
+    event.preventDefault();
+    setDragging(false);
+
+    for (const file of Array.from(event.dataTransfer.files)) {
+      void addFolder(desktop.pathForFile(file));
+    }
+  };
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-white text-zinc-800 dark:bg-zinc-950 dark:text-zinc-100">
+    // biome-ignore lint/a11y/noStaticElementInteractions: the whole window takes a dropped folder; ⌘O is the keyboard path.
+    <div
+      className="flex h-screen flex-col overflow-hidden bg-white text-zinc-800 dark:bg-zinc-950 dark:text-zinc-100"
+      onDragOver={(event) => {
+        if (event.dataTransfer.types.includes("Files")) {
+          event.preventDefault();
+          setDragging(true);
+        }
+      }}
+      onDragLeave={(event) => {
+        if (event.currentTarget === event.target) {
+          setDragging(false);
+        }
+      }}
+      onDrop={onDrop}
+    >
       <header className="flex h-[30px] shrink-0 items-center gap-2 border-b ls-divider bg-zinc-50 px-3 dark:bg-zinc-900/60">
         <img src={glazierIcon} className="size-3.5 shrink-0" alt="" />
         <span className="text-xs font-semibold tracking-tight">Glazier</span>
@@ -75,36 +186,36 @@ function Shell() {
           <>
             <span className="text-xs text-zinc-400 dark:text-zinc-600">/</span>
             <span className="truncate text-xs text-zinc-600 dark:text-zinc-300">{root.path}</span>
-            <span className="ml-auto text-[11px] text-zinc-500">
-              {scan ? "Scanning…" : `Scanned ${formatRelative(root.lastScanAt)}`}
-            </span>
           </>
         ) : null}
       </header>
 
-      {error ? (
-        <div className="flex shrink-0 items-center gap-3 border-b border-red-300/50 bg-red-500/10 px-4 py-1.5 text-xs text-red-800 dark:text-red-200">
-          <span className="min-w-0 flex-1">{error}</span>
-          <button type="button" className="ls-btn ls-btn-ghost" onClick={dismissError}>
-            Dismiss
-          </button>
-        </div>
-      ) : null}
-
-      <div className="flex min-h-0 flex-1">
-        <Sidebar />
+      <div className="relative flex min-h-0 flex-1">
+        {roots.length > 0 ? (
+          <Sidebar onAddRoot={chooseFolder} onSettings={() => setSheet("settings")} />
+        ) : null}
         <main className="flex min-h-0 min-w-0 flex-1 flex-col">
           {!ready ? (
-            <EmptyState title="Starting the engine…" />
+            <EmptyState title="Starting…" />
           ) : root ? (
             <CurrentView rootId={root.id} />
           ) : (
-            <Welcome />
+            <Welcome onChoose={chooseFolder} />
           )}
         </main>
+        {dragging ? (
+          <div className="pointer-events-none absolute inset-2 z-30 flex items-center justify-center rounded-xl border-2 border-dashed border-violet-400 bg-violet-500/10 text-sm font-medium text-violet-700 dark:text-violet-200">
+            Drop a folder to add it
+          </div>
+        ) : null}
       </div>
 
-      <JobBar />
+      <StatusBar onShortcuts={() => setSheet("shortcuts")} />
+
+      {sheet === "settings" ? (
+        <SettingsSheet rootId={rootId} onClose={() => setSheet(null)} />
+      ) : null}
+      {sheet === "shortcuts" ? <ShortcutSheet onClose={() => setSheet(null)} /> : null}
     </div>
   );
 }
@@ -113,22 +224,14 @@ function CurrentView({ rootId }: { rootId: RootId }) {
   const { view } = useNavigation();
 
   switch (view) {
-    case "overview":
-      return <OverviewView rootId={rootId} />;
-    case "library":
-      return <LibraryView rootId={rootId} />;
+    case "tidy":
+      return <TidyView rootId={rootId} />;
     case "duplicates":
       return <DuplicatesView rootId={rootId} />;
-    case "optimize":
-      return <OptimizeView rootId={rootId} />;
-    case "sound":
-      return <SoundView rootId={rootId} />;
-    case "holding":
-      return <HoldingView rootId={rootId} />;
-    case "journal":
-      return <JournalView rootId={rootId} />;
-    case "settings":
-      return <SettingsView rootId={rootId} />;
+    case "library":
+      return <LibraryView rootId={rootId} />;
+    case "history":
+      return <HistoryView rootId={rootId} />;
     default: {
       const _exhaustive: never = view;
 
@@ -137,139 +240,18 @@ function CurrentView({ rootId }: { rootId: RootId }) {
   }
 }
 
-async function addRoot(report: (cause: unknown) => void, select: (rootId: RootId) => void) {
-  try {
-    const folder = await desktop.pickRoot();
-
-    if (folder) {
-      select((await call("addRoot", { path: folder })).id);
-    }
-  } catch (error) {
-    report(error);
-  }
-}
-
-function Welcome() {
-  const { report, selectRoot } = useEngine();
-
+function Welcome({ onChoose }: { onChoose: () => void }) {
   return (
-    <EmptyState title="Add an archive root to begin">
-      <p>
-        Glazier scans a folder, reports what is in it, and plans changes you review before anything
-        moves. Scanning never writes inside the folder.
+    <div className="flex flex-1 flex-col items-center justify-center gap-3 p-10 text-center">
+      <img src={glazierIcon} className="size-12" alt="" />
+      <h1 className="text-sm font-semibold">Choose the folder that holds your archive</h1>
+      <p className="max-w-sm text-xs text-zinc-500">
+        Glazier finds duplicates and converts files to AVIF and MP4. Every change can be undone.
       </p>
-      <button
-        type="button"
-        className="ls-btn ls-btn-cta mt-4"
-        onClick={() => void addRoot(report, selectRoot)}
-      >
-        <FolderPlus className="size-3.5" /> Add a root
+      <button type="button" className="ls-btn ls-btn-cta mt-1" onClick={onChoose}>
+        <FolderPlus className="size-3.5" /> Choose Folder… <Kbd>⌘O</Kbd>
       </button>
-    </EmptyState>
-  );
-}
-
-function Sidebar() {
-  const { roots, rootId, selectRoot, report } = useEngine();
-  const { view, go } = useNavigation();
-
-  return (
-    <nav
-      aria-label="Glazier"
-      className="flex w-52 shrink-0 flex-col border-r ls-divider bg-zinc-50/70 dark:bg-zinc-900/30"
-    >
-      <div className="flex items-center justify-between px-3 pt-3 pb-1">
-        <span className="ls-label">Roots</span>
-        <button
-          type="button"
-          className="ls-btn ls-btn-ghost px-1.5"
-          title="Add a root"
-          aria-label="Add a root"
-          onClick={() => void addRoot(report, selectRoot)}
-        >
-          <FolderPlus className="size-3.5" />
-        </button>
-      </div>
-      <ul className="space-y-0.5 px-2">
-        {roots.map((root) => (
-          <li key={root.id} className="group">
-            <button
-              type="button"
-              aria-current={root.id === rootId}
-              onClick={() => selectRoot(root.id)}
-              title={root.path}
-              className={`flex w-full items-center justify-between gap-2 rounded-md px-2 py-1 text-left text-xs ${
-                root.id === rootId
-                  ? "bg-zinc-200/70 dark:bg-zinc-800"
-                  : "hover:bg-zinc-100 dark:hover:bg-zinc-900"
-              }`}
-            >
-              <span className="truncate">{root.name}</span>
-              <span className="tabular shrink-0 text-[10px] text-zinc-500">
-                {formatBytes(root.totalBytes)}
-              </span>
-            </button>
-            {root.id === rootId ? (
-              <div className="flex gap-1 px-2 pt-0.5 pb-1">
-                <button
-                  type="button"
-                  className="ls-btn ls-btn-ghost px-1.5 py-0.5 text-[11px]"
-                  onClick={() => void call("scanRoot", { rootId: root.id }).catch(report)}
-                >
-                  <RefreshCw className="size-3" /> Rescan
-                </button>
-                <button
-                  type="button"
-                  className="ls-btn ls-btn-ghost px-1.5 py-0.5 text-[11px]"
-                  title="Forget this root (its files are untouched)"
-                  onClick={() => {
-                    if (
-                      window.confirm(
-                        `Forget ${root.path}? Its files and holding folder stay on disk.`,
-                      )
-                    ) {
-                      void call("removeRoot", { rootId: root.id }).catch(report);
-                    }
-                  }}
-                >
-                  <Trash2 className="size-3" /> Forget
-                </button>
-              </div>
-            ) : null}
-          </li>
-        ))}
-      </ul>
-      {roots.length > 0 ? (
-        <>
-          <div className="px-3 pt-4 pb-1">
-            <span className="ls-label">Views</span>
-          </div>
-          <ul className="space-y-0.5 px-2">
-            {NAV.map((entry) => (
-              <li key={entry.view}>
-                <button
-                  type="button"
-                  aria-current={entry.view === view}
-                  onClick={() => go(entry.view)}
-                  className={`flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-xs ${
-                    entry.view === view
-                      ? "bg-zinc-200/70 font-medium dark:bg-zinc-800"
-                      : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-900"
-                  }`}
-                >
-                  <entry.icon className="size-3.5" />
-                  {entry.label}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </>
-      ) : null}
-      <div className="mt-auto px-3 py-3 text-[10px] text-zinc-500">
-        {roots.length > 0
-          ? `${formatCount(roots.reduce((sum, root) => sum + root.fileCount, 0))} files cataloged`
-          : ""}
-      </div>
-    </nav>
+      <p className="text-[11px] text-zinc-500">or drop a folder here</p>
+    </div>
   );
 }

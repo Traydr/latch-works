@@ -18,7 +18,7 @@ import { scanArchive } from "@latch-works/media-index";
 import sharp from "sharp";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import type { FileRow, Root } from "../contract.js";
+import type { FileFilter, FileFlag, FileRow, Root } from "../contract.js";
 import { type EngineHarness, openEngine, testPicture } from "../test-support/engine-harness.js";
 
 let archive: string;
@@ -31,6 +31,9 @@ let root: Root;
 
 /** 2021-03-04T05:06:07Z: an mtime old enough that a conversion that drops it would show. */
 const ORIGINAL_MTIME = new Date("2021-03-04T05:06:07Z");
+
+/** The copy is newer than the original, as a copy made later would be. */
+const COPIED_MTIME = new Date("2022-01-01T00:00:00Z");
 
 async function filesNamed(name: string): Promise<FileRow[]> {
   const page = await harness.call("listFiles", {
@@ -93,6 +96,7 @@ beforeAll(async () => {
   await testPicture(1).png().toFile(photo);
   await utimes(photo, ORIGINAL_MTIME, ORIGINAL_MTIME);
   await copyFile(photo, path.join(archive, "dup", "photo-copy.png"));
+  await utimes(path.join(archive, "dup", "photo-copy.png"), COPIED_MTIME, COPIED_MTIME);
   await link(photo, path.join(archive, "photos", "photo-link.png"));
   await sharp(photo)
     .resize(320, 240)
@@ -109,47 +113,113 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  await harness.idle();
   harness.engine.close();
   await rm(archive, { force: true, recursive: true });
   await rm(dataDir, { force: true, recursive: true });
 });
 
+/** Every file of the root with any of these flags, or every file for none. */
+function filterBy(flags: FileFlag[]): FileFilter {
+  return { rootId: root.id, search: "", kinds: [], formats: [], audioStates: [], flags, dir: null };
+}
+
 describe("glazier engine", () => {
-  it("inventories the root without following symlinks and reports its findings", async () => {
-    const overview = await harness.call("overview", { rootId: root.id });
-    const findings = new Map(overview.findings.map((finding) => [finding.kind, finding.count]));
+  it("inventories the root without following symlinks and lists what Tidy has to do", async () => {
+    const tidy = await harness.call("tidy", { rootId: root.id });
 
     // photo, its copy, its hard link, the JPEG, the misnamed PNG, the text file and .DS_Store.
-    expect(overview.files).toBe(7);
-    expect(findings.get("extension-mismatch")).toBe(1);
-    expect(findings.get("junk")).toBe(1);
-    expect(findings.get("empty-folder")).toBe(1);
-    expect(findings.get("unsupported")).toBe(1);
+    expect(tidy.files).toBe(7);
+    expect(tidy.cleanup).toEqual({ junk: 1, emptyFolders: 1, extensions: 1 });
+    expect(tidy.attention).toEqual([{ kind: "unsupported", count: 1, bytes: 9 }]);
+    expect(tidy.analysis).toMatchObject({ fingerprinted: 5, fingerprintable: 5 });
     expect((await onlyFile("misnamed.jpg")).format).toBe("png");
     expect((await onlyFile("photo.png")).width).toBe(640);
   });
 
-  it("finds exact duplicates and counts hard links as one file", async () => {
-    const page = await harness.call("exactDuplicates", { rootId: root.id, offset: 0, limit: 10 });
-    const [group] = page.groups;
+  it("puts byte-identical copies and a resized version in one set, hard links freeing nothing", async () => {
+    const page = await harness.call("duplicateSets", {
+      rootId: root.id,
+      level: "balanced",
+      scope: "all",
+      dismissed: false,
+      offset: 0,
+      limit: 10,
+    });
 
-    expect(page.total).toBe(1);
-    expect(group?.members).toHaveLength(3);
-    expect(group?.physicalCopies).toBe(2);
-    expect(group?.reclaimableBytes).toBe(group?.size);
-    expect(group?.hardLinkedIds).toHaveLength(2);
+    const [set] = page.sets;
+    const keep = await onlyFile("photo.png");
+    const link = await onlyFile("photo-link.png");
+    const copy = await onlyFile("photo-copy.png");
+    const small = await onlyFile("small.jpg");
+
+    expect(page.counts).toEqual({ exact: 0, similar: 1, dismissed: 0 });
+    expect(set?.kind).toBe("similar");
+    expect(set?.versions.map((version) => version.files.map((file) => file.name))).toEqual([
+      ["photo.png", "photo-link.png", "photo-copy.png"],
+      ["small.jpg"],
+    ]);
+    expect(set?.keep).toEqual([keep.id]);
+    expect(set?.keepReason).toBe("more-pixels");
+    expect(set?.hardLinkedIds).toHaveLength(2);
+    expect(set?.reclaimableBytes).toBe(copy.size + small.size);
+    expect(set?.key).toBe(`similar:${Math.min(keep.id, link.id, copy.id, small.id)}`);
+
+    const tidy = await harness.call("tidy", { rootId: root.id });
+    expect(tidy.duplicates.similar).toEqual({
+      sets: 1,
+      extraCopies: 2,
+      reclaimableBytes: copy.size + small.size,
+    });
+  });
+
+  it("matches a file with any of the chosen flags", async () => {
+    const page = await harness.call("listFiles", {
+      ...filterBy(["junk", "extension-mismatch"]),
+      sort: "name",
+      descending: false,
+      offset: 0,
+      limit: 50,
+    });
+
+    expect(page.rows.map((row) => row.name)).toEqual([".DS_Store", "misnamed.jpg"]);
+    expect(page.total).toBe(2);
+  });
+
+  it("leaves identical copies out of the Convert step until they are resolved", async () => {
+    const summary = await harness.call("optimizeSummary", { rootId: root.id });
+
+    expect(summary.skipped).toContainEqual({
+      reason: "Identical copies (resolve duplicates first)",
+      files: 3,
+    });
+
+    const convertible = await harness.call("listFileIds", filterBy(["convertible"]));
+
+    const names = await harness.call("getFiles", { ids: convertible.ids });
+    expect(names.map((row) => row.relPath)).toEqual(["misnamed.jpg", "photos/small.jpg"]);
+
+    const facets = await harness.call("fileFacets", filterBy([]));
+    expect(facets.flags.find((facet) => facet.value === "convertible")?.files).toBe(2);
+
+    const selection = await harness.call("selectionSummary", { fileIds: convertible.ids });
+    expect(selection.convertible.files).toBe(2);
+    expect(selection.extensionMismatches).toBe(1);
   });
 
   it("moves a removed duplicate into holding, out of Lockstep's scan, and undo brings it back", async () => {
     const keep = await onlyFile("photo.png");
     const copy = await onlyFile("photo-copy.png");
+    const link = await onlyFile("photo-link.png");
 
     const preview = await harness.call("previewPlan", {
       kind: "resolve-duplicates",
-      groups: [{ keep: keep.id, remove: [copy.id] }],
+      groups: [{ keep: [keep.id], remove: [copy.id, link.id] }],
     });
 
+    // The hard link shares the kept file's bytes, so holding it would free nothing.
     expect(preview.steps).toBe(1);
+    expect(preview.bytesToHolding).toBe(copy.size);
     expect(preview.lockstep).toEqual({ removedPaths: 1, addedPaths: 0 });
 
     await harness.settle(await harness.call("applyPlan", { planId: preview.planId }));
@@ -165,50 +235,68 @@ describe("glazier engine", () => {
     const holding = await harness.call("listHolding", { rootId: root.id, offset: 0, limit: 10 });
     expect(holding.items.map((item) => item.reason)).toEqual(["Duplicate of photos/photo.png"]);
 
-    await harness.call("undoPlan", { planId: preview.planId });
+    const plan = await harness.call("getPlan", { planId: preview.planId });
+    expect(plan).toMatchObject({ title: "Resolved 1 duplicate set", count: 1, status: "applied" });
+    expect(plan.held).toEqual({ files: 1, bytes: copy.size });
+
+    const undo = await harness.call("undoPlan", { planId: preview.planId });
+    expect(undo).toMatchObject({
+      planId: preview.planId,
+      label: "Undoing “Resolved 1 duplicate set”",
+    });
     await harness.idle();
 
     expect((await stat(path.join(archive, "dup", "photo-copy.png"))).size).toBe(copy.size);
     expect(await holdingContents()).toEqual([]);
   });
 
-  it("groups the resized JPEG with the picture it was made from", async () => {
-    await harness.settle(await harness.call("analyzeSimilar", { rootId: root.id }));
-
-    const page = await harness.call("similarDuplicates", {
-      rootId: root.id,
-      level: "balanced",
-      offset: 0,
-      limit: 10,
-    });
-
-    const names = page.groups.map((group) => group.members.map((member) => member.name).sort());
-
-    expect(names).toEqual([["photo-copy.png", "photo-link.png", "photo.png", "small.jpg"]]);
-    expect(page.groups[0]?.members[0]?.name).not.toBe("small.jpg");
-  });
-
   it("converts a still to AVIF in place of the original, keeping its date", async () => {
     const original = await onlyFile("photo.png");
+    const copy = await onlyFile("photo-copy.png");
 
-    const preview = await harness.call("previewPlan", {
+    // Identical copies wait for duplicate review, so the copy is resolved first.
+    const resolved = await harness.call("perform", {
+      kind: "resolve-duplicates",
+      groups: [{ keep: [original.id], remove: [copy.id] }],
+    });
+
+    if (resolved.job === null) {
+      throw new Error("The resolve did not start");
+    }
+
+    await harness.settle(resolved.job);
+
+    const { preview, job } = await harness.call("perform", {
       kind: "optimize",
       rootId: root.id,
       categories: ["still-to-avif"],
       fileIds: [original.id],
     });
 
-    await harness.settle(await harness.call("applyPlan", { planId: preview.planId }));
+    expect(preview.bytesToHolding).toBe(original.size);
+    expect(job?.label).toBe("Converting 1 file");
+
+    if (job === null) {
+      throw new Error("The conversion did not start");
+    }
+
+    await harness.settle(job);
 
     const converted = await stat(path.join(archive, "photos", "photo.avif"));
     expect(Math.trunc(converted.mtimeMs / 1000)).toBe(ORIGINAL_MTIME.getTime() / 1000);
     expect(converted.size).toBeLessThan(original.size);
-    expect(await holdingContents()).toEqual(["photos/photo.png"]);
+    expect(await holdingContents()).toEqual(["dup/photo-copy.png", "photos/photo.png"]);
 
     const row = await onlyFile("photo.avif");
     expect(row.format).toBe("avif");
     expect([row.width, row.height]).toEqual([640, 480]);
     expect(await filesNamed("photo.png")).toEqual([]);
+    expect(await harness.call("getPlan", { planId: preview.planId })).toMatchObject({
+      title: "Converted 1 file",
+      held: { files: 1, bytes: original.size },
+    });
+
+    await harness.idle();
   });
 
   it("skips a file that changed after the scan instead of acting on stale facts", async () => {

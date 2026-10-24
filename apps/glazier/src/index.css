@@ -89,3 +89,11 @@ p {
 .tabular {
   font-variant-numeric: tabular-nums;
 }
+/* Shortcut hints take their button's colour, so they read on violet and red as on white. */
+.ls-btn-cta kbd,
+.ls-btn-primary kbd,
+.ls-btn-danger kbd {
+  border-color: currentColor;
+  color: inherit;
+  opacity: 0.7;
+}

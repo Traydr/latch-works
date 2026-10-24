@@ -1,4 +1,10 @@
-import type { Json, TranscoderJobMessage, TranscoderOutbound } from "./messages";
+import type {
+  ConfirmRequest,
+  Json,
+  MenuEntry,
+  TranscoderJobMessage,
+  TranscoderOutbound,
+} from "./messages";
 
 /** What the main window's preload exposes as `window.glazier`. Results are parsed by the caller. */
 export interface GlazierBridge {
@@ -10,6 +16,13 @@ export interface GlazierBridge {
   open(filePath: string): Promise<void>;
   quickLook(filePath: string): Promise<void>;
   emptyHolding(rootId: number): Promise<Json>;
+  /** Pops a native menu at the pointer; resolves with the chosen item's id, or null. */
+  showMenu(entries: MenuEntry[]): Promise<string | null>;
+  confirm(request: ConfirmRequest): Promise<boolean>;
+  /** The path of a file or folder dropped on the window. */
+  pathForFile(file: File): string;
+  /** App menu commands, unparsed. */
+  onCommand(listener: (command: Json) => void): () => void;
 }
 
 /**

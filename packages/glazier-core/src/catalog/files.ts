@@ -6,7 +6,24 @@ import {
 } from "@latch-works/media-domain";
 import { z } from "zod";
 
-import type { FileId, FileKind, FilePage, FileQuery, RootId } from "../contract.js";
+import {
+  AudioStateSchema,
+  type FileFacets,
+  type FileFilter,
+  type FileFlag,
+  FileFlagSchema,
+  FileFormatSchema,
+  type FileId,
+  FileIdSchema,
+  type FileKind,
+  FileKindSchema,
+  type FilePage,
+  type FileQuery,
+  MAX_BULK_FILES,
+  type RootId,
+  RootIdSchema,
+  type SelectionSummary,
+} from "../contract.js";
 import type { WalkedFile } from "../scan/walk.js";
 import type { CatalogDatabase, SqlParams } from "./database.js";
 import {
@@ -44,6 +61,7 @@ const DERIVED_COLUMN_RESETS = {
   fingerprint_error: "NULL",
   loudness_version: "0",
   loudness_max_db: "NULL",
+  optimize_not_smaller: "0",
 } as const;
 
 const CHANGED = `(files.size != excluded.size
@@ -198,9 +216,11 @@ const FLAG_SQL = {
   duplicate: `f.sha256 IN (SELECT sha256 FROM files WHERE sha256 IS NOT NULL
     GROUP BY sha256 HAVING COUNT(*) > 1)`,
   unsupported: `f.is_junk = 0 AND f.ext NOT IN (${SUPPORTED_EXTENSIONS_SQL})`,
-} as const satisfies Record<FileQuery["flags"][number], string>;
+  // Filled per root from the engine's candidate cache; see `recordConvertible`.
+  convertible: "f.id IN (SELECT id FROM temp.convertible_files)",
+} as const satisfies Record<FileFlag, string>;
 
-/** Escapes a search term for `LIKE … ESCAPE '\'`. */
+/** Escapes a search term for `LIKE … ESCAPE '\\'`. */
 function likePattern(term: string): string {
   return `%${term.replace(/[\\%_]/g, (character) => `\\${character}`)}%`;
 }
@@ -221,9 +241,11 @@ interface SqlFilter {
   params: SqlParams;
 }
 
-function buildFileFilter(
-  query: Omit<FileQuery, "offset" | "limit" | "sort" | "descending">,
-): SqlFilter {
+/**
+ * Values within one list match any of them (a file is a PNG or a JPEG); the lists, the search and
+ * the folder all have to match together.
+ */
+function buildFileFilter(query: FileFilter): SqlFilter {
   const clauses: string[] = [];
   const params: SqlParams = {};
 
@@ -249,8 +271,8 @@ function buildFileFilter(
     clauses.push(`(${AUDIO_STATE_SQL}) IN (${inList(params, "audio", query.audioStates)})`);
   }
 
-  for (const flag of query.flags) {
-    clauses.push(FLAG_SQL[flag]);
+  if (query.flags.length > 0) {
+    clauses.push(`(${query.flags.map((flag) => `(${FLAG_SQL[flag]})`).join(" OR ")})`);
   }
 
   if (query.dir !== null && query.dir !== "") {
@@ -260,6 +282,11 @@ function buildFileFilter(
   }
 
   return { where: clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "", params };
+}
+
+/** True when answering the filter needs the convertible files recorded first. */
+export function filterNeedsConvertible(filter: FileFilter): boolean {
+  return filter.flags.includes("convertible");
 }
 
 const CountSchema = z.object({ total: z.number(), bytes: z.number().nullable() });
@@ -287,6 +314,149 @@ export function listFiles(db: CatalogDatabase, query: FileQuery): FilePage {
     total: counts?.total ?? 0,
     totalBytes: counts?.bytes ?? 0,
     rows: rows.map(toFileRow),
+  };
+}
+
+const IdRowSchema = z.object({ id: FileIdSchema });
+
+/** File ids for a bulk action, and whether there were more than it can take. */
+export interface FileIdList {
+  ids: FileId[];
+  truncated: boolean;
+}
+
+/** Every matching file's id in path order, up to {@link MAX_BULK_FILES}. */
+export function listFileIds(db: CatalogDatabase, filter: FileFilter): FileIdList {
+  const { where, params } = buildFileFilter(filter);
+
+  const rows = db.all(
+    `SELECT f.id FROM ${FILES_FROM} ${where} ORDER BY ${SORT_SQL.path}, f.id LIMIT $limit`,
+    IdRowSchema,
+    { ...params, $limit: MAX_BULK_FILES + 1 },
+  );
+
+  return {
+    ids: rows.slice(0, MAX_BULK_FILES).map((row) => row.id),
+    truncated: rows.length > MAX_BULK_FILES,
+  };
+}
+
+const FacetRowSchema = z.object({
+  value: z.string().nullable(),
+  files: z.number(),
+  bytes: z.number(),
+});
+
+/**
+ * Counts and bytes per kind, format, audio state and flag. Each list is counted under every
+ * filter but its own, so choosing a value shows what it would add.
+ */
+export function fileFacets(db: CatalogDatabase, filter: FileFilter): FileFacets {
+  const grouped = (others: FileFilter, valueSql: string) => {
+    const { where, params } = buildFileFilter(others);
+
+    return db.all(
+      `SELECT * FROM (SELECT ${valueSql} AS value, COUNT(*) AS files, COALESCE(SUM(f.size), 0) AS bytes
+        FROM ${FILES_FROM} ${where} GROUP BY value) ORDER BY files DESC, value`,
+      FacetRowSchema,
+      params,
+    );
+  };
+
+  const kinds = grouped({ ...filter, kinds: [] }, "f.kind").flatMap((row) => {
+    const value = FileKindSchema.safeParse(row.value);
+
+    return value.success ? [{ value: value.data, files: row.files, bytes: row.bytes }] : [];
+  });
+
+  const formats = grouped({ ...filter, formats: [] }, "f.format").flatMap((row) => {
+    const value = FileFormatSchema.nullable().safeParse(row.value);
+
+    return value.success ? [{ value: value.data, files: row.files, bytes: row.bytes }] : [];
+  });
+
+  const audioStates = grouped({ ...filter, audioStates: [] }, `(${AUDIO_STATE_SQL})`).flatMap(
+    (row) => {
+      const value = AudioStateSchema.safeParse(row.value);
+
+      return value.success ? [{ value: value.data, files: row.files, bytes: row.bytes }] : [];
+    },
+  );
+
+  const { where, params } = buildFileFilter({ ...filter, flags: [] });
+
+  const sums = FileFlagSchema.options.map(
+    (flag, index) =>
+      `SUM(CASE WHEN ${FLAG_SQL[flag]} THEN 1 ELSE 0 END) AS files${index},
+      SUM(CASE WHEN ${FLAG_SQL[flag]} THEN f.size ELSE 0 END) AS bytes${index}`,
+  );
+
+  const totals = db.get(
+    `SELECT ${sums.join(", ")} FROM ${FILES_FROM} ${where}`,
+    z.record(z.string(), z.number().nullable()),
+    params,
+  );
+
+  const flags = FileFlagSchema.options.flatMap((flag, index) => {
+    const files = totals?.[`files${index}`] ?? 0;
+
+    return files > 0 ? [{ value: flag, files, bytes: totals?.[`bytes${index}`] ?? 0 }] : [];
+  });
+
+  return { kinds, formats, audioStates, flags };
+}
+
+const SelectionRowSchema = z.object({
+  files: z.number(),
+  bytes: z.number().nullable(),
+  convertible: z.number().nullable(),
+  convertible_bytes: z.number().nullable(),
+  videos: z.number().nullable(),
+  with_audio: z.number().nullable(),
+  mismatches: z.number().nullable(),
+});
+
+/** Binds a list of ids as one JSON parameter, for `IN (SELECT value FROM json_each($ids))`. */
+function idsParam(fileIds: readonly FileId[]): string {
+  return JSON.stringify(fileIds);
+}
+
+/** The roots the given files belong to. */
+export function rootsOfFiles(db: CatalogDatabase, fileIds: readonly FileId[]): RootId[] {
+  return db
+    .all(
+      "SELECT DISTINCT root_id FROM files WHERE id IN (SELECT value FROM json_each($ids))",
+      z.object({ root_id: RootIdSchema }),
+      { $ids: idsParam(fileIds) },
+    )
+    .map((row) => row.root_id);
+}
+
+/** What a selection holds. Convertible counts need the selection's roots recorded first. */
+export function selectionSummary(
+  db: CatalogDatabase,
+  fileIds: readonly FileId[],
+): SelectionSummary {
+  const row = db.get(
+    `SELECT COUNT(*) AS files, SUM(f.size) AS bytes,
+      SUM(c.id IS NOT NULL) AS convertible,
+      SUM(CASE WHEN c.id IS NOT NULL THEN f.size ELSE 0 END) AS convertible_bytes,
+      SUM(f.kind = 'video') AS videos,
+      SUM(f.kind = 'video' AND COALESCE(f.audio_streams, 0) > 0) AS with_audio,
+      SUM(f.ext_mismatch = 1) AS mismatches
+      FROM files f LEFT JOIN temp.convertible_files c ON c.id = f.id
+      WHERE f.id IN (SELECT value FROM json_each($ids))`,
+    SelectionRowSchema,
+    { $ids: idsParam(fileIds) },
+  );
+
+  return {
+    files: row?.files ?? 0,
+    bytes: row?.bytes ?? 0,
+    convertible: { files: row?.convertible ?? 0, bytes: row?.convertible_bytes ?? 0 },
+    videos: row?.videos ?? 0,
+    withAudio: row?.with_audio ?? 0,
+    extensionMismatches: row?.mismatches ?? 0,
   };
 }
 

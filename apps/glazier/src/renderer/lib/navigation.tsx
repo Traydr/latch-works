@@ -6,16 +6,7 @@ import type {
 } from "@latch-works/glazier-core/contract";
 import { createContext, type ReactNode, useContext, useMemo, useState } from "react";
 
-const VIEWS = [
-  "overview",
-  "library",
-  "duplicates",
-  "optimize",
-  "sound",
-  "holding",
-  "journal",
-  "settings",
-] as const;
+const VIEWS = ["tidy", "duplicates", "library", "history"] as const;
 
 export type View = (typeof VIEWS)[number];
 
@@ -26,6 +17,7 @@ export interface LibraryPreset {
   audioStates: AudioState[];
   flags: FileFlag[];
   search: string;
+  dir: string | null;
 }
 
 export const EMPTY_PRESET: LibraryPreset = {
@@ -34,6 +26,7 @@ export const EMPTY_PRESET: LibraryPreset = {
   audioStates: [],
   flags: [],
   search: "",
+  dir: null,
 };
 
 interface Navigation {
@@ -41,13 +34,18 @@ interface Navigation {
   preset: LibraryPreset;
   go: (view: View) => void;
   openLibrary: (preset: Partial<LibraryPreset>) => void;
+  /** Set by ⌘F from another view; the Library focuses its search and clears it. */
+  searchRequested: boolean;
+  requestSearch: () => void;
+  clearSearchRequest: () => void;
 }
 
 const NavigationContext = createContext<Navigation | null>(null);
 
 export function NavigationProvider({ children }: { children: ReactNode }) {
-  const [view, setView] = useState<View>("overview");
+  const [view, setView] = useState<View>("tidy");
   const [preset, setPreset] = useState<LibraryPreset>(EMPTY_PRESET);
+  const [searchRequested, setSearchRequested] = useState(false);
 
   const value = useMemo<Navigation>(
     () => ({
@@ -59,8 +57,14 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
         setPreset({ ...EMPTY_PRESET, ...next });
         setView("library");
       },
+      searchRequested,
+      requestSearch: () => {
+        setSearchRequested(true);
+        setView("library");
+      },
+      clearSearchRequest: () => setSearchRequested(false),
     }),
-    [view, preset],
+    [view, preset, searchRequested],
   );
 
   return <NavigationContext.Provider value={value}>{children}</NavigationContext.Provider>;

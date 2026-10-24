@@ -123,7 +123,50 @@ const MIGRATIONS: readonly string[] = [
     value TEXT NOT NULL
   );
   `,
+  `
+  ALTER TABLE files ADD COLUMN optimize_not_smaller INTEGER NOT NULL DEFAULT 0;
+
+  ALTER TABLE plans ADD COLUMN count INTEGER NOT NULL DEFAULT 0;
+
+  UPDATE plans SET count = CASE
+    WHEN kind = 'resolve-duplicates'
+      THEN (SELECT COUNT(DISTINCT s.spec) FROM plan_steps s WHERE s.plan_id = plans.id)
+    WHEN kind = 'remove-empty-folders'
+      THEN (SELECT COUNT(*) FROM plan_steps s WHERE s.plan_id = plans.id AND s.action = 'remove-folder')
+    ELSE (SELECT COUNT(*) FROM plan_steps s WHERE s.plan_id = plans.id) END;
+
+  CREATE TABLE duplicate_dismissals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    root_id INTEGER REFERENCES roots(id) ON DELETE CASCADE,
+    plan_id INTEGER REFERENCES plans(id) ON DELETE CASCADE,
+    created_at INTEGER NOT NULL
+  );
+
+  CREATE INDEX duplicate_dismissals_plan ON duplicate_dismissals (plan_id);
+
+  CREATE TABLE duplicate_dismissal_files (
+    dismissal_id INTEGER NOT NULL REFERENCES duplicate_dismissals(id) ON DELETE CASCADE,
+    file_id INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+    PRIMARY KEY (dismissal_id, file_id)
+  );
+
+  CREATE INDEX duplicate_dismissal_files_file ON duplicate_dismissal_files (file_id);
+  `,
 ];
+
+/**
+ * Per-connection tables rebuilt from the catalog on demand. `convertible_files` holds the files
+ * the Convert step would change, refreshed with the engine's candidate cache, so file queries can
+ * filter and count by it.
+ */
+const TEMP_TABLES = `
+  CREATE TEMP TABLE IF NOT EXISTS convertible_files (
+    id INTEGER PRIMARY KEY,
+    root_id INTEGER NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS temp.convertible_files_root ON convertible_files (root_id);
+`;
 
 /**
  * The catalog's SQLite file. Nothing here is authoritative: the archive on disk is, so a lost or
@@ -141,6 +184,7 @@ export class CatalogDatabase {
     this.db.exec("PRAGMA synchronous = NORMAL;");
     this.db.exec("PRAGMA foreign_keys = ON;");
     this.migrate();
+    this.db.exec(TEMP_TABLES);
   }
 
   close(): void {

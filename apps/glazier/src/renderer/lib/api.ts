@@ -10,10 +10,14 @@ import {
 
 import type { GlazierBridge } from "../../shared/bridge";
 import {
+  type AppCommand,
+  AppCommandSchema,
   CallResultSchema,
+  type ConfirmRequest,
   type EmptyHoldingResult,
   EmptyHoldingResultSchema,
   JsonSchema,
+  type MenuEntry,
 } from "../../shared/messages";
 
 function requireBridge(): GlazierBridge {
@@ -53,6 +57,16 @@ export function onEngineEvent(listener: (event: EngineEvent) => void): () => voi
   });
 }
 
+export function onAppCommand(listener: (command: AppCommand) => void): () => void {
+  return requireBridge().onCommand((raw) => {
+    const parsed = AppCommandSchema.safeParse(raw);
+
+    if (parsed.success) {
+      listener(parsed.data);
+    }
+  });
+}
+
 export const desktop = {
   pickRoot: () => requireBridge().pickRoot(),
   pickFolder: () => requireBridge().pickFolder(),
@@ -61,6 +75,9 @@ export const desktop = {
   quickLook: (filePath: string) => requireBridge().quickLook(filePath),
   emptyHolding: async (rootId: RootId): Promise<EmptyHoldingResult> =>
     EmptyHoldingResultSchema.parse(await requireBridge().emptyHolding(rootId)),
+  showMenu: (entries: MenuEntry[]) => requireBridge().showMenu(entries),
+  confirm: (request: ConfirmRequest) => requireBridge().confirm(request),
+  pathForFile: (file: File) => requireBridge().pathForFile(file),
 };
 
 export function mediaUrl(filePath: string): string {

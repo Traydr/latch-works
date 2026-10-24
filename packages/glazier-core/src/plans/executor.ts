@@ -12,16 +12,19 @@ import {
   HoldingIdSchema,
   type PlanId,
   PlanIdSchema,
+  type PlanKind,
   PlanKindSchema,
+  PlanStatusSchema,
   PlanStepActionSchema,
   type PlanStepPage,
   type PlanSummary,
-  PlanSummarySchema,
   type Root,
   type RootId,
   RootIdSchema,
   type TranscodeJob,
 } from "../contract.js";
+import { removePlanDismissals } from "../duplicates/dismissals.js";
+import { formatBytes } from "../format.js";
 import { transcodeWithFfmpeg } from "../media/ffmpeg-transcode.js";
 import { probeImage } from "../media/image-probe.js";
 import { toError } from "../media/run-tool.js";
@@ -33,6 +36,7 @@ import { isExtensionMismatch } from "../scan/sniff.js";
 import { extensionOf, wholeMs } from "../scan/walk.js";
 import { holdFile, holdingBatchName, moveFile, pathExists, restoreHeld } from "./holding.js";
 import { isWithin, type StepSpec, StepSpecSchema } from "./planner.js";
+import { type PlanSubject, planTitle } from "./wording.js";
 
 /** A conversion is kept only when it saves at least this share of the original's bytes. */
 const MINIMUM_SAVING = 0.05;
@@ -215,13 +219,17 @@ interface OutputFacts {
   bitrate: number | null;
 }
 
-/** Rewrites a catalog row for a converted file: new path, new bytes, the facts just verified. */
+/**
+ * Rewrites a catalog row for a converted file: new path, new bytes, the facts just verified. A
+ * conversion that copied the audio track keeps the track's loudness measurement.
+ */
 async function replaceRow(
   deps: ExecutorDeps,
   step: StepRecord,
   target: string,
-  facts: OutputFacts,
+  output: { facts: OutputFacts; keepLoudness: boolean },
 ) {
+  const { facts } = output;
   const located = locate(deps.roots, target);
 
   if (located === null) {
@@ -238,7 +246,9 @@ async function replaceRow(
       height = $height, frames = $frames, duration_ms = $duration, video_codec = $video,
       audio_codec = $audio, audio_streams = $streams, bitrate = $bitrate, head_hash = NULL,
       sha256 = NULL, fingerprint_version = 0, fingerprint = NULL, fingerprint_error = NULL,
-      loudness_version = 0, loudness_max_db = NULL
+      loudness_version = CASE WHEN $keepLoudness = 1 THEN loudness_version ELSE 0 END,
+      loudness_max_db = CASE WHEN $keepLoudness = 1 THEN loudness_max_db ELSE NULL END,
+      optimize_not_smaller = 0
       WHERE root_id = $root AND rel_path = $from`,
     {
       $rel: located.relPath,
@@ -261,6 +271,7 @@ async function replaceRow(
       $audio: facts.audioCodec,
       $streams: facts.audioStreams,
       $bitrate: facts.bitrate,
+      $keepLoudness: output.keepLoudness ? 1 : 0,
       $root: step.root_id,
       $from: step.from_rel,
     },
@@ -294,6 +305,18 @@ function closeTo(actual: number | null, expected: number | null, tolerance: numb
   return actual !== null && expected !== null && Math.abs(actual - expected) <= tolerance;
 }
 
+/** How one conversion runs and what it records. */
+interface ConvertContext {
+  batch: string;
+  source: Stats;
+  /** Keep the result only when it saves at least {@link MINIMUM_SAVING}. */
+  requireSmaller: boolean;
+  /** Remember a result that was not kept for that, so the Convert step stops offering the file. */
+  markNotSmaller: boolean;
+  /** The result carries the original's audio track unchanged. */
+  keepLoudness: boolean;
+}
+
 /**
  * Writes a conversion to a temp file, checks it with `verify`, gives it the original's
  * modification time, puts it in place and moves the original to holding. When the target is the
@@ -302,7 +325,7 @@ function closeTo(actual: number | null, expected: number | null, tolerance: numb
 async function convert(
   deps: ExecutorDeps,
   step: StepRecord,
-  context: { batch: string; source: Stats; requireSmaller: boolean },
+  context: ConvertContext,
   produce: (tempPath: string) => Promise<string | null>,
   verify: (tempPath: string) => Promise<OutputFacts>,
 ): Promise<StepOutcome> {
@@ -329,9 +352,19 @@ async function convert(
     if (context.requireSmaller && written.size > context.source.size * (1 - MINIMUM_SAVING)) {
       await unlink(tempPath);
 
+      if (context.markNotSmaller) {
+        deps.db.run(
+          "UPDATE files SET optimize_not_smaller = 1 WHERE root_id = $root AND rel_path = $rel",
+          { $root: step.root_id, $rel: step.from_rel },
+        );
+      }
+
+      const why =
+        written.size > context.source.size ? "the result was larger" : "it saved less than 5%";
+
       return {
         kind: "skipped",
-        message: `Kept the original: the result was not smaller (${context.source.size} → ${written.size} bytes).`,
+        message: `Kept the original: ${why} (${formatBytes(context.source.size)} → ${formatBytes(written.size)})`,
       };
     }
 
@@ -364,7 +397,7 @@ async function convert(
       holdingId = await hold();
     }
 
-    await replaceRow(deps, step, target, facts);
+    await replaceRow(deps, step, target, { facts, keepLoudness: context.keepLoudness });
 
     return { kind: "done", bytesAfter: written.size, holdingId, message: note };
   } finally {
@@ -375,9 +408,10 @@ async function convert(
 async function executeStep(
   deps: ExecutorDeps,
   step: StepRecord,
-  batch: string,
+  run: { batch: string; optimize: boolean },
 ): Promise<StepOutcome> {
   const spec: StepSpec = step.spec;
+  const { batch } = run;
 
   if (spec.kind === "remove-folder") {
     const folder = fromAbs(step);
@@ -445,7 +479,13 @@ async function executeStep(
       return convert(
         deps,
         step,
-        { batch, source, requireSmaller: true },
+        {
+          batch,
+          source,
+          requireSmaller: true,
+          markNotSmaller: run.optimize,
+          keepLoudness: false,
+        },
         async (tempPath) => {
           const result = await deps.stillEncoder.encode(
             { srcPath: fromAbs(step), outPath: tempPath },
@@ -520,7 +560,13 @@ async function executeStep(
         convert(
           deps,
           step,
-          { batch, source, requireSmaller: animation || spec.requireSmaller },
+          {
+            batch,
+            source,
+            requireSmaller: animation || spec.requireSmaller,
+            markNotSmaller: run.optimize,
+            keepLoudness: spec.kind === "convert-video" && spec.audio.action === "copy",
+          },
           produce,
           verifyVideo,
         );
@@ -678,13 +724,14 @@ export async function applyPlan(deps: ExecutorDeps, planId: PlanId): Promise<voi
 
   const steps = loadSteps(deps.db, planId, "pending", "ASC");
   const batch = holdingBatchName(planId, new Date());
+  const optimize = planSubject(deps.db, planId)?.kind === "optimize";
   let done = 0;
 
   const run = async (step: StepRecord) => {
     let outcome: StepOutcome;
 
     try {
-      outcome = await executeStep(deps, step, batch);
+      outcome = await executeStep(deps, step, { batch, optimize });
     } catch (error) {
       if (deps.signal.aborted) {
         throw error;
@@ -768,6 +815,7 @@ export async function undoPlan(deps: ExecutorDeps, planId: PlanId): Promise<void
     deps.progress({ done, total: steps.length, label: "Undoing" });
   }
 
+  removePlanDismissals(deps.db, planId);
   deps.db.run("UPDATE plans SET status = 'undone' WHERE id = $plan", { $plan: planId });
 }
 
@@ -876,7 +924,8 @@ const PlanRowSchema = z.object({
   id: PlanIdSchema,
   kind: PlanKindSchema,
   created_at: z.number(),
-  status: z.string(),
+  status: PlanStatusSchema,
+  count: z.number(),
   steps: z.number(),
   done: z.number().nullable(),
   skipped: z.number().nullable(),
@@ -884,7 +933,71 @@ const PlanRowSchema = z.object({
   undone: z.number().nullable(),
   bytes_before: z.number().nullable(),
   bytes_after: z.number().nullable(),
+  held_files: z.number().nullable(),
+  held_bytes: z.number().nullable(),
+  first_from: z.string().nullable(),
 });
+
+type PlanRow = z.infer<typeof PlanRowSchema>;
+
+const PLAN_SUMMARY_SQL = `SELECT p.id, p.kind, p.created_at, p.status, p.count, COUNT(s.id) AS steps,
+    SUM(s.status = 'done') AS done, SUM(s.status = 'skipped') AS skipped,
+    SUM(s.status = 'failed') AS failed, SUM(s.status = 'undone') AS undone,
+    SUM(CASE WHEN s.status = 'done' THEN s.bytes_before ELSE 0 END) AS bytes_before,
+    SUM(CASE WHEN s.status = 'done' THEN COALESCE(s.bytes_after, 0) ELSE 0 END) AS bytes_after,
+    SUM(s.status = 'done' AND s.holding_id IS NOT NULL) AS held_files,
+    SUM(CASE WHEN s.status = 'done' AND s.holding_id IS NOT NULL THEN s.bytes_before ELSE 0 END)
+      AS held_bytes,
+    MIN(s.from_rel) AS first_from
+  FROM plans p LEFT JOIN plan_steps s ON s.plan_id = p.id`;
+
+/** Plan kinds whose `count` is their steps, so a partial run can say how many finished. */
+const COUNTS_STEPS = new Set<PlanKind>([
+  "hold",
+  "move",
+  "rename",
+  "fix-extension",
+  "optimize",
+  "reencode",
+  "strip-audio",
+  "clean-junk",
+  "cleanup",
+]);
+
+function subjectOf(
+  row: Pick<PlanRow, "kind" | "count" | "first_from" | "status" | "done">,
+): PlanSubject {
+  const cutShort =
+    (row.status === "partial" || row.status === "failed" || row.status === "cancelled") &&
+    COUNTS_STEPS.has(row.kind) &&
+    (row.done ?? 0) < row.count;
+
+  return {
+    kind: row.kind,
+    count: row.count,
+    singleName: row.first_from === null ? null : baseOf(row.first_from),
+    finished: cutShort ? (row.done ?? 0) : null,
+  };
+}
+
+function toPlanSummary(row: PlanRow): PlanSummary {
+  return {
+    id: row.id,
+    kind: row.kind,
+    createdAt: row.created_at,
+    status: row.status,
+    title: planTitle(subjectOf(row)),
+    count: row.count,
+    steps: row.steps,
+    done: row.done ?? 0,
+    skipped: row.skipped ?? 0,
+    failed: row.failed ?? 0,
+    undone: row.undone ?? 0,
+    bytesBefore: row.bytes_before ?? 0,
+    bytesAfter: row.bytes_after ?? 0,
+    held: { files: row.held_files ?? 0, bytes: row.held_bytes ?? 0 },
+  };
+}
 
 export function listPlans(
   db: CatalogDatabase,
@@ -903,32 +1016,43 @@ export function listPlans(
 
   return db
     .all(
-      `SELECT p.id, p.kind, p.created_at, p.status, COUNT(s.id) AS steps,
-        SUM(s.status = 'done') AS done, SUM(s.status = 'skipped') AS skipped,
-        SUM(s.status = 'failed') AS failed, SUM(s.status = 'undone') AS undone,
-        SUM(CASE WHEN s.status = 'done' THEN s.bytes_before ELSE 0 END) AS bytes_before,
-        SUM(CASE WHEN s.status = 'done' THEN COALESCE(s.bytes_after, 0) ELSE 0 END) AS bytes_after
-        FROM plans p LEFT JOIN plan_steps s ON s.plan_id = p.id
+      `${PLAN_SUMMARY_SQL}
         WHERE p.status != 'draft' ${rootFilter}
         GROUP BY p.id ORDER BY p.created_at DESC, p.id DESC LIMIT $limit OFFSET $offset`,
       PlanRowSchema,
       params,
     )
-    .map((row) =>
-      PlanSummarySchema.parse({
-        id: row.id,
-        kind: row.kind,
-        createdAt: row.created_at,
-        status: row.status,
-        steps: row.steps,
-        done: row.done ?? 0,
-        skipped: row.skipped ?? 0,
-        failed: row.failed ?? 0,
-        undone: row.undone ?? 0,
-        bytesBefore: row.bytes_before ?? 0,
-        bytesAfter: row.bytes_after ?? 0,
-      }),
-    );
+    .map(toPlanSummary);
+}
+
+/** One plan, whatever its status, or null when there is no such plan. */
+export function getPlan(db: CatalogDatabase, planId: PlanId): PlanSummary | null {
+  const row = db.get(`${PLAN_SUMMARY_SQL} WHERE p.id = $plan GROUP BY p.id`, PlanRowSchema, {
+    $plan: planId,
+  });
+
+  return row === null ? null : toPlanSummary(row);
+}
+
+const SubjectRowSchema = PlanRowSchema.pick({
+  kind: true,
+  count: true,
+  first_from: true,
+  status: true,
+  done: true,
+});
+
+/** What a plan is about, for its title and job labels. */
+export function planSubject(db: CatalogDatabase, planId: PlanId): PlanSubject | null {
+  const row = db.get(
+    `SELECT p.kind, p.count, p.status, MIN(s.from_rel) AS first_from,
+        SUM(s.status = 'done') AS done
+      FROM plans p LEFT JOIN plan_steps s ON s.plan_id = p.id WHERE p.id = $plan GROUP BY p.id`,
+    SubjectRowSchema,
+    { $plan: planId },
+  );
+
+  return row === null ? null : subjectOf(row);
 }
 
 export function listPlanSteps(

@@ -100,7 +100,7 @@ export const TranscoderChannels = {
   allow: "glazier-transcoder:allow",
 } as const;
 
-/** renderer → main */
+/** renderer → main, and the two main → renderer channels (`event`, `command`) */
 export const RendererChannels = {
   call: "glazier:call",
   pickRoot: "glazier:pick-root",
@@ -109,8 +109,66 @@ export const RendererChannels = {
   open: "glazier:open",
   quickLook: "glazier:quick-look",
   emptyHolding: "glazier:empty-holding",
+  showMenu: "glazier:show-menu",
+  confirm: "glazier:confirm",
   event: "glazier:event",
+  command: "glazier:command",
 } as const;
+
+/** What the app menu asks the renderer to do; the renderer owns every command's behaviour. */
+export const AppCommandSchema = z.enum([
+  "add-root",
+  "rescan",
+  "undo",
+  "select-all",
+  "find",
+  "settings",
+  "shortcuts",
+  "view:tidy",
+  "view:duplicates",
+  "view:library",
+  "view:history",
+]);
+
+export type AppCommand = z.infer<typeof AppCommandSchema>;
+
+const MenuSeparatorSchema = z.object({ type: z.literal("separator") });
+
+const MenuItemSchema = z.object({
+  type: z.literal("item"),
+  /** What the menu resolves with when this item is chosen. */
+  id: z.string(),
+  label: z.string(),
+  enabled: z.boolean().optional(),
+  checked: z.boolean().optional(),
+  /** Shown beside the label only; the renderer handles the key itself. */
+  accelerator: z.string().optional(),
+  sublabel: z.string().optional(),
+});
+
+/** A native context menu entry. Submenus go one level deep. */
+export const MenuEntrySchema = z.discriminatedUnion("type", [
+  MenuSeparatorSchema,
+  MenuItemSchema,
+  z.object({
+    type: z.literal("submenu"),
+    label: z.string(),
+    enabled: z.boolean().optional(),
+    items: z.array(z.discriminatedUnion("type", [MenuSeparatorSchema, MenuItemSchema])),
+  }),
+]);
+
+export type MenuEntry = z.infer<typeof MenuEntrySchema>;
+
+/** A native confirmation sheet, for the few actions Glazier cannot undo. */
+export const ConfirmRequestSchema = z.object({
+  message: z.string(),
+  detail: z.string().optional(),
+  confirmLabel: z.string(),
+  destructive: z.boolean().optional(),
+});
+
+export type ConfirmRequest = z.infer<typeof ConfirmRequestSchema>;
 
 export const CallResultSchema = z.discriminatedUnion("ok", [
   z.object({ ok: z.literal(true), value: JsonSchema }),
