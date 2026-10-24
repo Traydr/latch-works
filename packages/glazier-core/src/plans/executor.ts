@@ -20,7 +20,9 @@ import {
   type Root,
   type RootId,
   RootIdSchema,
+  type TranscodeJob,
 } from "../contract.js";
+import { transcodeWithFfmpeg } from "../media/ffmpeg-transcode.js";
 import { probeImage } from "../media/image-probe.js";
 import { toError } from "../media/run-tool.js";
 import type { MediaToolkit } from "../media/toolkit.js";
@@ -301,7 +303,7 @@ async function convert(
   deps: ExecutorDeps,
   step: StepRecord,
   context: { batch: string; source: Stats; requireSmaller: boolean },
-  produce: (tempPath: string) => Promise<void>,
+  produce: (tempPath: string) => Promise<string | null>,
   verify: (tempPath: string) => Promise<OutputFacts>,
 ): Promise<StepOutcome> {
   const target = step.to_abs;
@@ -320,7 +322,7 @@ async function convert(
   const tempPath = `${target}.glazier-tmp`;
 
   try {
-    await produce(tempPath);
+    const note = await produce(tempPath);
     const facts = await verify(tempPath);
     const written = await stat(tempPath);
 
@@ -364,7 +366,7 @@ async function convert(
 
     await replaceRow(deps, step, target, facts);
 
-    return { kind: "done", bytesAfter: written.size, holdingId, message: null };
+    return { kind: "done", bytesAfter: written.size, holdingId, message: note };
   } finally {
     await unlink(tempPath).catch(() => undefined);
   }
@@ -445,10 +447,12 @@ async function executeStep(
         step,
         { batch, source, requireSmaller: true },
         async (tempPath) => {
-          await deps.stillEncoder.encode(
+          const result = await deps.stillEncoder.encode(
             { srcPath: fromAbs(step), outPath: tempPath },
             deps.signal,
           );
+
+          return result.encoder === "sharp" ? "Encoded with sharp: over 64 megapixels" : null;
         },
         async (tempPath) => {
           const probe = await probeImage(deps.toolkit.sharp, tempPath);
@@ -491,87 +495,120 @@ async function executeStep(
 
       const expected = sourceFacts(deps, step);
       const animation = spec.kind === "convert-animation";
+      const probePath: string = ffprobePath;
 
-      return convert(
-        deps,
-        step,
-        { batch, source, requireSmaller: animation || spec.requireSmaller },
-        async (tempPath) => {
-          const job =
-            spec.kind === "convert-animation"
-              ? {
-                  kind: "animation" as const,
-                  srcPath: fromAbs(step),
-                  outPath: tempPath,
-                  mimeType: spec.mimeType,
-                }
-              : {
-                  kind: "video" as const,
-                  srcPath: fromAbs(step),
-                  outPath: tempPath,
-                  video: spec.video,
-                  audio: spec.audio,
-                  quality: spec.quality,
-                };
+      const jobFor = (tempPath: string): TranscodeJob =>
+        spec.kind === "convert-animation"
+          ? {
+              kind: "animation",
+              srcPath: fromAbs(step),
+              outPath: tempPath,
+              mimeType: spec.mimeType,
+            }
+          : {
+              kind: "video",
+              srcPath: fromAbs(step),
+              outPath: tempPath,
+              video: spec.video,
+              audio: spec.audio,
+              quality: spec.quality,
+            };
 
-          await deps.transcoder.transcode(job, deps.signal, () => undefined);
-        },
-        async (tempPath) => {
-          const probe = await probeVideo(ffprobePath, tempPath);
+      let mediabunnyResult = false;
 
-          const durationTolerance = Math.max(
-            animation ? 250 : 500,
-            (expected.durationMs ?? 0) * 0.02,
+      const attempt = (produce: (tempPath: string) => Promise<string | null>) =>
+        convert(
+          deps,
+          step,
+          { batch, source, requireSmaller: animation || spec.requireSmaller },
+          produce,
+          verifyVideo,
+        );
+
+      try {
+        return await attempt(async (tempPath) => {
+          const outcome = await deps.transcoder.transcode(
+            jobFor(tempPath),
+            deps.signal,
+            () => undefined,
           );
 
-          if (probe.videoCodec === null) {
-            throw new Error("The result has no video track.");
-          }
+          mediabunnyResult = outcome.via === "mediabunny";
 
-          if (!closeTo(probe.durationMs, expected.durationMs, durationTolerance)) {
-            throw new Error(
-              `The result lasts ${probe.durationMs} ms instead of ${expected.durationMs} ms.`,
-            );
-          }
+          return outcome.note;
+        });
+      } catch (error) {
+        // Mediabunny wrote a file that failed the check: give ffmpeg one go at the same job.
+        const ffmpegPath = deps.toolkit.ffmpegPath;
 
-          if (
-            !closeTo(probe.width, expected.width, 2) ||
-            !closeTo(probe.height, expected.height, 2)
-          ) {
-            throw new Error(
-              `The result is ${probe.width}×${probe.height}, not ${expected.width}×${expected.height}.`,
-            );
-          }
+        if (!mediabunnyResult || ffmpegPath === null || deps.signal.aborted) {
+          throw error;
+        }
 
-          const droppedAudio = spec.kind === "convert-video" && spec.audio.action === "drop";
+        const reason = toError(error).message;
 
-          if (droppedAudio && probe.audioStreams > 0) {
-            throw new Error("The result still has audio.");
-          }
+        return attempt(async (tempPath) => {
+          await transcodeWithFfmpeg(ffmpegPath, jobFor(tempPath), deps.signal);
 
-          if (
-            !animation &&
-            !droppedAudio &&
-            (expected.audioStreams ?? 0) > 0 &&
-            probe.audioStreams === 0
-          ) {
-            throw new Error("The result lost its audio.");
-          }
+          return `Converted with ffmpeg (Mediabunny's result: ${reason})`;
+        });
+      }
 
-          return {
-            format: "mp4",
-            kind: "video",
-            width: probe.width,
-            height: probe.height,
-            frames: null,
-            durationMs: probe.durationMs,
-            videoCodec: probe.videoCodec,
-            audioCodec: probe.audioCodec,
-            audioStreams: probe.audioStreams,
-            bitrate: probe.bitrate,
-          };
-        },
-      );
+      async function verifyVideo(tempPath: string): Promise<OutputFacts> {
+        const probe = await probeVideo(probePath, tempPath);
+
+        const durationTolerance = Math.max(
+          animation ? 250 : 500,
+          (expected.durationMs ?? 0) * 0.02,
+        );
+
+        if (probe.videoCodec === null) {
+          throw new Error("The result has no video track.");
+        }
+
+        if (!closeTo(probe.durationMs, expected.durationMs, durationTolerance)) {
+          throw new Error(
+            `The result lasts ${probe.durationMs} ms instead of ${expected.durationMs} ms.`,
+          );
+        }
+
+        if (
+          !closeTo(probe.width, expected.width, 2) ||
+          !closeTo(probe.height, expected.height, 2)
+        ) {
+          throw new Error(
+            `The result is ${probe.width}×${probe.height}, not ${expected.width}×${expected.height}.`,
+          );
+        }
+
+        const droppedAudio = spec.kind === "convert-video" && spec.audio.action === "drop";
+
+        if (droppedAudio && probe.audioStreams > 0) {
+          throw new Error("The result still has audio.");
+        }
+
+        if (
+          !animation &&
+          !droppedAudio &&
+          (expected.audioStreams ?? 0) > 0 &&
+          probe.audioStreams === 0
+        ) {
+          throw new Error("The result lost its audio.");
+        }
+
+        return {
+          format: "mp4",
+          kind: "video",
+          width: probe.width,
+          height: probe.height,
+          frames: null,
+          durationMs: probe.durationMs,
+          videoCodec: probe.videoCodec,
+          audioCodec: probe.audioCodec,
+          audioStreams: probe.audioStreams,
+          bitrate: probe.bitrate,
+        };
+      }
     }
 
     default: {

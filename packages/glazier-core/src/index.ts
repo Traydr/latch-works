@@ -19,5 +19,6 @@ export {
   type StillEncoder,
   type TranscodeJob,
   TranscodeJobSchema,
+  type TranscodeOutcome,
   type Transcoder,
 } from "./optimize/encoders.js";

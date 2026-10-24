@@ -150,6 +150,45 @@ test.beforeAll(async () => {
     "split[a][b];[a]palettegen[p];[b][p]paletteuse",
     clip("loop.gif"),
   );
+  // Videos the WebCodecs path stumbles on: VP9 with an alpha channel, an odd frame width, and
+  // MPEG-4 Part 2, which WebCodecs cannot decode at all.
+  await ffmpeg(
+    "-f",
+    "lavfi",
+    "-i",
+    "cellauto=s=450x600:rate=25",
+    "-t",
+    "2",
+    "-vf",
+    "format=yuva420p",
+    "-c:v",
+    "libvpx-vp9",
+    "-auto-alt-ref",
+    "0",
+    clip("sticker.webm"),
+  );
+  await ffmpeg(
+    "-f",
+    "lavfi",
+    "-i",
+    "life=s=720x540:rate=25:ratio=0.2",
+    "-t",
+    "2",
+    "-vf",
+    "scale=717:534",
+    "-c:v",
+    "libvpx-vp9",
+    clip("odd.webm"),
+  );
+  await ffmpeg(
+    "-f",
+    "lavfi",
+    "-i",
+    "rgbtestsrc=s=640x360:d=2:r=25",
+    "-c:v",
+    "mpeg4",
+    clip("old.mp4"),
+  );
   await copyFile(clip("with-sound.mp4"), path.join(archive, "dup", "with-sound-copy.mp4"));
   await writeFile(path.join(archive, ".DS_Store"), "junk");
 
@@ -157,7 +196,14 @@ test.beforeAll(async () => {
     await utimes(path.join(archive, "photos", name), ORIGINAL_MTIME, ORIGINAL_MTIME);
   }
 
-  for (const name of ["talk.mov", "scene.webm", "loop.gif"]) {
+  for (const name of [
+    "talk.mov",
+    "scene.webm",
+    "loop.gif",
+    "sticker.webm",
+    "odd.webm",
+    "old.mp4",
+  ]) {
     await utimes(clip(name), ORIGINAL_MTIME, ORIGINAL_MTIME);
   }
 
@@ -177,8 +223,8 @@ test("a new root is scanned and its formats and findings reported", async () => 
   await window.getByRole("button", { name: "Add a root" }).first().click();
   await waitForJobs(window);
 
-  // Four stills, six clips, the copy and .DS_Store; the symlink-free walk counts every one.
-  await expect(window.locator('[data-stat="Files"]')).toContainText("12");
+  // Four stills, nine clips, the copy and .DS_Store.
+  await expect(window.locator('[data-stat="Files"]')).toContainText("15");
   await expect(window.locator('[data-finding="extension-mismatch"]')).toContainText("1");
   await expect(window.locator('[data-finding="junk"]')).toContainText("1");
   await expect(window.locator('[data-finding="empty-folder"]')).toContainText("1");
@@ -205,8 +251,8 @@ test("silent tracks are told apart from sound", async () => {
   await window.getByRole("button", { name: "Measure sound" }).click();
   await waitForJobs(window);
 
-  // The GIF is still an image here; only no-audio.mp4 lacks a track.
-  await expect(window.getByRole("button", { name: /No audio track/ })).toContainText("1");
+  // The GIF is still an image here; no-audio.mp4 and the three silent test patterns lack a track.
+  await expect(window.getByRole("button", { name: /No audio track/ })).toContainText("4");
   await expect(window.getByRole("button", { name: /Silent track/ })).toContainText("1");
   await expect(window.getByRole("button", { name: /Has sound/ })).toContainText("4");
 });
@@ -248,6 +294,9 @@ test("stills become AVIF and everything that moves MP4, keeping each original's 
     ["clips/talk.mp4", "h264"],
     ["clips/scene.mp4", "h264"],
     ["clips/loop.mp4", "h264"],
+    ["clips/sticker.mp4", "h264"],
+    ["clips/odd.mp4", "h264"],
+    ["clips/old.mp4", "h264"],
   ] as const) {
     expect(await streamCodecs(path.join(archive, converted))).toContain(codec);
   }
@@ -258,6 +307,9 @@ test("stills become AVIF and everything that moves MP4, keeping each original's 
     "clips/talk.mp4",
     "clips/scene.mp4",
     "clips/loop.mp4",
+    "clips/sticker.mp4",
+    "clips/odd.mp4",
+    "clips/old.mp4",
   ]) {
     const converted_ = await stat(path.join(archive, converted));
     expect(Math.trunc(converted_.mtimeMs / 1000), converted).toBe(ORIGINAL_MTIME.getTime() / 1000);
@@ -267,7 +319,10 @@ test("stills become AVIF and everything that moves MP4, keeping each original's 
   expect(await heldFiles()).toEqual(
     expect.arrayContaining([
       "clips/loop.gif",
+      "clips/old.mp4",
+      "clips/odd.webm",
       "clips/scene.webm",
+      "clips/sticker.webm",
       "clips/talk.mov",
       "photos/sunset.png",
     ]),

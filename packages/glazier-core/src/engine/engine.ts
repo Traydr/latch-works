@@ -47,6 +47,7 @@ import {
   loadSimilarGroups,
   type SimilarClusterSummary,
 } from "../duplicates/queries.js";
+import { withFfmpegFallback } from "../media/ffmpeg-transcode.js";
 import type { MediaToolkit } from "../media/toolkit.js";
 import {
   type CandidateScan,
@@ -111,6 +112,9 @@ export class GlazierEngine {
 
   private readonly thumbnails: ThumbnailCache;
 
+  /** The Mediabunny transcoder, falling back to ffmpeg for files it cannot convert. */
+  private readonly transcoder: Transcoder;
+
   private readonly routes: Routes;
 
   private capabilities: EncoderCapabilities;
@@ -128,6 +132,7 @@ export class GlazierEngine {
     private readonly options: EngineOptions,
   ) {
     this.jobs = new JobQueue((job) => options.emit({ kind: "job", job }));
+    this.transcoder = withFfmpegFallback(options.transcoder, options.toolkit.ffmpegPath);
     this.thumbnails = new ThumbnailCache(path.join(options.dataDir, "thumbnails"), options.toolkit);
     this.capabilities = {
       ...NO_CAPABILITIES,
@@ -417,7 +422,7 @@ export class GlazierEngine {
       db: this.db,
       toolkit: this.options.toolkit,
       stillEncoder: this.options.stillEncoder,
-      transcoder: this.options.transcoder,
+      transcoder: this.transcoder,
       roots: listRoots(this.db),
       stillConcurrency: this.options.stillConcurrency,
       signal: context.signal,
@@ -587,7 +592,7 @@ export class GlazierEngine {
           if (candidate.category === "still-to-avif") {
             await this.options.stillEncoder.encode({ srcPath, outPath }, controller.signal);
           } else if (candidate.category === "animation-to-mp4") {
-            await this.options.transcoder.transcode(
+            await this.transcoder.transcode(
               { kind: "animation", srcPath, outPath, mimeType: candidate.mimeType },
               controller.signal,
               () => undefined,
@@ -596,7 +601,7 @@ export class GlazierEngine {
             candidate.category === "video-remux" ||
             candidate.category === "video-convert"
           ) {
-            await this.options.transcoder.transcode(
+            await this.transcoder.transcode(
               {
                 kind: "video",
                 srcPath,

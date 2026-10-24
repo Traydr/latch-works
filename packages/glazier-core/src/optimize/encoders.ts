@@ -25,7 +25,13 @@ export interface Transcoder {
     job: TranscodeJob,
     signal: AbortSignal,
     onProgress: (ratio: number) => void,
-  ): Promise<void>;
+  ): Promise<TranscodeOutcome>;
+}
+
+/** Which converter produced the file, and anything the journal should say about it. */
+export interface TranscodeOutcome {
+  via: "mediabunny" | "ffmpeg";
+  note: string | null;
 }
 
 /** Encodes one still to the archive AVIF; the desktop app runs these in a pool of processes. */

@@ -9,6 +9,7 @@ import {
   canEncodeAudio,
   getEncodableVideoCodecs,
   Input,
+  type InputVideoTrack,
   Mp4OutputFormat,
   Output,
   QUALITY_HIGH,
@@ -49,12 +50,34 @@ const queue: TranscoderJobMessage[] = [];
 
 let busy = false;
 
-function videoOptions(job: Extract<TranscodeJob, { kind: "video" }>): ConversionVideoOptions {
+/**
+ * H.264 and HEVC encoders take only even frame sizes. An odd-sized source loses its last pixel
+ * row or column to a crop; Mediabunny's resize path sizes odd frames wrongly, and a crop keeps
+ * every other pixel untouched.
+ */
+function evenCrop(track: InputVideoTrack): ConversionVideoOptions["crop"] {
+  const width = Math.floor(track.displayWidth / 2) * 2;
+  const height = Math.floor(track.displayHeight / 2) * 2;
+
+  return width === track.displayWidth && height === track.displayHeight
+    ? undefined
+    : { left: 0, top: 0, width, height };
+}
+
+function videoOptions(
+  job: Extract<TranscodeJob, { kind: "video" }>,
+  track: InputVideoTrack,
+): ConversionVideoOptions {
   switch (job.video.action) {
     case "copy":
       return {};
     case "encode":
-      return { codec: job.video.codec, quality: QUALITIES[job.quality], forceTranscode: true };
+      return {
+        codec: job.video.codec,
+        quality: QUALITIES[job.quality],
+        forceTranscode: true,
+        crop: evenCrop(track),
+      };
     default: {
       const _exhaustive: never = job.video;
 
@@ -113,7 +136,7 @@ async function convertVideo(
     const conversion = await Conversion.init({
       input,
       output,
-      video: videoOptions(job),
+      video: (track) => videoOptions(job, track),
       audio: audioOptions(job),
     });
 

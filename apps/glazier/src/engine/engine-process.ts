@@ -5,6 +5,7 @@ import {
   type StillEncodeResult,
   type StillEncoder,
   type TranscodeJob,
+  type TranscodeOutcome,
   type Transcoder,
 } from "@latch-works/glazier-core";
 
@@ -40,7 +41,7 @@ let nextRequestId = 1;
 
 const pendingEncodes = new Map<number, Pending<StillEncodeResult>>();
 
-const pendingTranscodes = new Map<number, Pending<void>>();
+const pendingTranscodes = new Map<number, Pending<TranscodeOutcome>>();
 
 function abortError(): DOMException {
   return new DOMException("The operation was aborted.", "AbortError");
@@ -138,7 +139,7 @@ async function start(): Promise<void> {
 
         return;
       case "transcoded":
-        pendingTranscodes.get(message.id)?.resolve();
+        pendingTranscodes.get(message.id)?.resolve({ via: "mediabunny", note: null });
         pendingTranscodes.delete(message.id);
 
         return;
