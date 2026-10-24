@@ -1,8 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
-// Imported here rather than from the CSS so Vite emits the font files beside the bundle.
-import "@fontsource-variable/geist";
 import "./index.css";
 import { App } from "./renderer/App";
 import { ErrorBoundary } from "./renderer/components/ErrorBoundary";

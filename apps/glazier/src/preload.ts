@@ -4,6 +4,7 @@ import type { GlazierBridge } from "./shared/bridge";
 import { type Json, RendererChannels } from "./shared/messages";
 
 const bridge: GlazierBridge = {
+  platform: process.platform,
   call: (method, input) => ipcRenderer.invoke(RendererChannels.call, method, input),
   onEvent: (listener) => {
     const handler = (_event: IpcRendererEvent, payload: Json) => listener(payload);

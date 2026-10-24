@@ -1,59 +1,77 @@
 import type { RootId } from "@latch-works/glazier-core/contract";
-import { FolderPlus } from "lucide-react";
-import { type DragEvent, useCallback, useEffect, useState } from "react";
+import { type DragEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import glazierIcon from "../../media/glazier-icon.svg";
-import { SettingsSheet } from "./components/SettingsSheet";
 import { ShortcutSheet } from "./components/ShortcutSheet";
 import { Sidebar } from "./components/Sidebar";
-import { StatusBar } from "./components/StatusBar";
-import { ToastProvider, useToasts } from "./components/Toasts";
+import { ToastProvider, ToastViewport, useToasts } from "./components/Toasts";
 import { EmptyState, Kbd } from "./components/ui";
 import { ActionsProvider, useActions } from "./lib/actions";
 import { call, desktop, onAppCommand } from "./lib/api";
 import { dispatchCommand } from "./lib/commands";
 import { EngineProvider, useEngine } from "./lib/engine-state";
 import { isTextInputTarget, useViewKeys } from "./lib/hotkeys";
-import { NavigationProvider, useNavigation } from "./lib/navigation";
-import { useSystemTheme } from "./lib/use-system-theme";
+import { NavigationProvider, useNavigation, type View } from "./lib/navigation";
+import { useSidebarRail } from "./lib/sidebar";
+import { ThemeProvider } from "./lib/theme";
+import { CleanupView } from "./views/CleanupView";
+import { ConvertView } from "./views/ConvertView";
 import { DuplicatesView } from "./views/DuplicatesView";
 import { HistoryView } from "./views/HistoryView";
+import { HoldingView } from "./views/HoldingView";
 import { LibraryView } from "./views/LibraryView";
-import { TidyView } from "./views/TidyView";
+import { OverviewView } from "./views/OverviewView";
+import { SettingsView } from "./views/SettingsView";
 
 export function App() {
-  useSystemTheme();
-
   return (
-    <ToastProvider>
-      <EngineProvider>
-        <NavigationProvider>
-          <ActionsProvider>
-            <Shell />
-          </ActionsProvider>
-        </NavigationProvider>
-      </EngineProvider>
-    </ToastProvider>
+    <ThemeProvider>
+      <ToastProvider>
+        <EngineProvider>
+          <NavigationProvider>
+            <ActionsProvider>
+              <Shell />
+            </ActionsProvider>
+          </NavigationProvider>
+        </EngineProvider>
+      </ToastProvider>
+    </ThemeProvider>
   );
 }
 
-type Sheet = "settings" | "shortcuts" | null;
-
 const VIEW_COMMANDS = {
-  "view:tidy": "tidy",
+  "view:overview": "overview",
   "view:duplicates": "duplicates",
+  "view:convert": "convert",
+  "view:cleanup": "cleanup",
   "view:library": "library",
   "view:history": "history",
-} as const;
+  "view:holding": "holding",
+} as const satisfies Record<string, View>;
 
 function Shell() {
   const { ready, roots, rootId, error, dismissError, selectRoot, report } = useEngine();
-  const { go, requestSearch } = useNavigation();
+  const { go, requestSearch, view } = useNavigation();
   const { undoLast } = useActions();
   const toasts = useToasts();
-  const [sheet, setSheet] = useState<Sheet>(null);
+  const [shortcuts, setShortcuts] = useState(false);
+  const sidebar = useSidebarRail();
   const [dragging, setDragging] = useState(false);
   const root = roots.find((candidate) => candidate.id === rootId) ?? null;
+  const main = useRef<HTMLElement>(null);
+
+  // A view opened from the sidebar takes the focus, so the sidebar item keeps no focus ring while
+  // the view's keys are used.
+  useEffect(() => {
+    if (view && main.current && !main.current.contains(document.activeElement)) {
+      main.current.focus({ preventScroll: true });
+    }
+  }, [view]);
+
+  // The folder's name names the window in Mission Control, the Window menu and ⌘`.
+  useEffect(() => {
+    document.title = root?.name ?? "Glazier";
+  }, [root?.name]);
 
   // Engine errors surface as toasts, like every other result.
   useEffect(() => {
@@ -73,7 +91,7 @@ function Shell() {
         const added = await call("addRoot", { path: folder });
 
         selectRoot(added.id);
-        go("tidy");
+        go("overview");
       } catch (cause) {
         report(cause);
       }
@@ -121,16 +139,23 @@ function Shell() {
             requestSearch();
             break;
           case "settings":
-            setSheet("settings");
+            setShortcuts(false);
+            go("settings");
             break;
           case "shortcuts":
-            setSheet("shortcuts");
+            setShortcuts(true);
             break;
-          case "view:tidy":
+          case "toggle-sidebar":
+            sidebar.toggle();
+            break;
+          case "view:overview":
           case "view:duplicates":
+          case "view:convert":
+          case "view:cleanup":
           case "view:library":
           case "view:history":
-            setSheet(null);
+          case "view:holding":
+            setShortcuts(false);
             go(VIEW_COMMANDS[command]);
             break;
           default: {
@@ -140,12 +165,12 @@ function Shell() {
           }
         }
       }),
-    [chooseFolder, go, report, requestSearch, rootId, undoLast],
+    [chooseFolder, go, report, requestSearch, rootId, sidebar.toggle, undoLast],
   );
 
   useViewKeys((event) => {
     if (event.key === "?") {
-      setSheet("shortcuts");
+      setShortcuts(true);
 
       return true;
     }
@@ -165,7 +190,7 @@ function Shell() {
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: the whole window takes a dropped folder; ⌘O is the keyboard path.
     <div
-      className="flex h-screen flex-col overflow-hidden bg-white text-zinc-800 dark:bg-zinc-950 dark:text-zinc-100"
+      className="flex h-screen overflow-hidden bg-white text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100"
       onDragOver={(event) => {
         if (event.dataTransfer.types.includes("Files")) {
           event.preventDefault();
@@ -179,43 +204,31 @@ function Shell() {
       }}
       onDrop={onDrop}
     >
-      <header className="flex h-[30px] shrink-0 items-center gap-2 border-b ls-divider bg-zinc-50 px-3 dark:bg-zinc-900/60">
-        <img src={glazierIcon} className="size-3.5 shrink-0" alt="" />
-        <span className="text-xs font-semibold tracking-tight">Glazier</span>
-        {root ? (
+      {root ? <Sidebar onAddRoot={chooseFolder} rail={sidebar.rail} /> : null}
+      <main
+        ref={main}
+        tabIndex={-1}
+        className="relative flex min-h-0 min-w-0 flex-1 flex-col outline-none"
+      >
+        {!ready ? (
           <>
-            <span className="text-xs text-zinc-400 dark:text-zinc-600">/</span>
-            <span className="truncate text-xs text-zinc-600 dark:text-zinc-300">{root.path}</span>
-          </>
-        ) : null}
-      </header>
-
-      <div className="relative flex min-h-0 flex-1">
-        {roots.length > 0 ? (
-          <Sidebar onAddRoot={chooseFolder} onSettings={() => setSheet("settings")} />
-        ) : null}
-        <main className="flex min-h-0 min-w-0 flex-1 flex-col">
-          {!ready ? (
+            <div className="gz-drag h-[52px] shrink-0" />
             <EmptyState title="Starting…" />
-          ) : root ? (
-            <CurrentView rootId={root.id} />
-          ) : (
-            <Welcome onChoose={chooseFolder} />
-          )}
-        </main>
-        {dragging ? (
-          <div className="pointer-events-none absolute inset-2 z-30 flex items-center justify-center rounded-xl border-2 border-dashed border-violet-400 bg-violet-500/10 text-sm font-medium text-violet-700 dark:text-violet-200">
-            Drop a folder to add it
-          </div>
-        ) : null}
-      </div>
-
-      <StatusBar onShortcuts={() => setSheet("shortcuts")} />
-
-      {sheet === "settings" ? (
-        <SettingsSheet rootId={rootId} onClose={() => setSheet(null)} />
+          </>
+        ) : root ? (
+          <CurrentView rootId={root.id} />
+        ) : (
+          <Welcome onChoose={chooseFolder} dragging={dragging} />
+        )}
+        <ToastViewport />
+      </main>
+      {dragging && root ? (
+        <div className="pointer-events-none fixed inset-3 z-50 flex items-center justify-center rounded-2xl border-2 border-dashed border-violet-400 bg-violet-500/10 text-[15px] font-medium text-violet-700 dark:text-violet-200">
+          Drop a folder to add it
+        </div>
       ) : null}
-      {sheet === "shortcuts" ? <ShortcutSheet onClose={() => setSheet(null)} /> : null}
+
+      {shortcuts ? <ShortcutSheet onClose={() => setShortcuts(false)} /> : null}
     </div>
   );
 }
@@ -224,14 +237,22 @@ function CurrentView({ rootId }: { rootId: RootId }) {
   const { view } = useNavigation();
 
   switch (view) {
-    case "tidy":
-      return <TidyView rootId={rootId} />;
+    case "overview":
+      return <OverviewView rootId={rootId} />;
     case "duplicates":
       return <DuplicatesView rootId={rootId} />;
+    case "convert":
+      return <ConvertView rootId={rootId} />;
+    case "cleanup":
+      return <CleanupView rootId={rootId} />;
     case "library":
       return <LibraryView rootId={rootId} />;
     case "history":
       return <HistoryView rootId={rootId} />;
+    case "holding":
+      return <HoldingView rootId={rootId} />;
+    case "settings":
+      return <SettingsView rootId={rootId} />;
     default: {
       const _exhaustive: never = view;
 
@@ -240,18 +261,28 @@ function CurrentView({ rootId }: { rootId: RootId }) {
   }
 }
 
-function Welcome({ onChoose }: { onChoose: () => void }) {
+function Welcome({ onChoose, dragging }: { onChoose: () => void; dragging: boolean }) {
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-3 p-10 text-center">
-      <img src={glazierIcon} className="size-12" alt="" />
-      <h1 className="text-sm font-semibold">Choose the folder that holds your archive</h1>
-      <p className="max-w-sm text-xs text-zinc-500">
-        Glazier finds duplicates and converts files to AVIF and MP4. Every change can be undone.
-      </p>
-      <button type="button" className="ls-btn ls-btn-cta mt-1" onClick={onChoose}>
-        <FolderPlus className="size-3.5" /> Choose Folder… <Kbd>⌘O</Kbd>
-      </button>
-      <p className="text-[11px] text-zinc-500">or drop a folder here</p>
-    </div>
+    <>
+      <div className="gz-drag h-[52px] shrink-0" />
+      <div className="flex flex-1 items-center justify-center p-10 pb-[100px]">
+        <div
+          className={`flex w-[480px] max-w-full flex-col items-center rounded-2xl border-2 border-dashed px-10 py-12 text-center transition-colors duration-150 ${
+            dragging ? "border-violet-400 bg-violet-500/5" : "border-zinc-200 dark:border-white/10"
+          }`}
+        >
+          <img src={glazierIcon} className="size-14" alt="" />
+          <h1 className="mt-4 text-xl font-semibold">Choose your media archive</h1>
+          <p className="mt-2 max-w-[360px] text-sm text-zinc-500 dark:text-zinc-400">
+            Glazier finds duplicates, converts files to AVIF and MP4, and cleans up junk. Every
+            change can be undone.
+          </p>
+          <button type="button" className="gz-btn gz-btn-primary gz-btn-xl mt-6" onClick={onChoose}>
+            Choose folder… <Kbd>⌘O</Kbd>
+          </button>
+          <p className="gz-caption mt-3">or drop a folder here</p>
+        </div>
+      </div>
+    </>
   );
 }

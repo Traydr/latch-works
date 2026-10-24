@@ -1,12 +1,4 @@
-import type {
-  Job,
-  JobId,
-  PlanId,
-  PlanPreview,
-  PlanRequest,
-  PlanSummary,
-} from "@latch-works/glazier-core/contract";
-import { AlertTriangle } from "lucide-react";
+import type { Job, JobId, PlanRequest, PlanSummary } from "@latch-works/glazier-core/contract";
 import {
   createContext,
   type ReactNode,
@@ -19,41 +11,73 @@ import {
 } from "react";
 
 import { useToasts } from "../components/Toasts";
-import { Modal } from "../components/ui";
 import { call } from "./api";
 import { useEngine } from "./engine-state";
 import { formatBytes, formatCount, plural } from "./format";
 
 /** Something the owner did that ⌘Z can take back. */
 interface UndoEntry {
-  /** The plan it reverses, so undoing that plan any other way drops the entry. */
-  planId: PlanId | null;
+  /** The plans it reverses, so undoing one of them any other way drops the entry. */
+  planIds: number[];
   run: () => Promise<void>;
 }
 
 interface PerformOptions {
-  /** Ties the result to a place in the UI, such as a Tidy step, so it can show it. */
+  /** Ties the result to a place in the UI, such as an Overview row, so it can show it. */
   source?: string;
-  /** The confirm button's label when the plan has warnings, such as "Remove anyway". */
-  confirmLabel?: string;
+  /**
+   * No toast: the view shows the result itself, as the duplicate queue does on its top bar.
+   * Errors still toast, and so does an undo of it.
+   */
+  quiet?: boolean;
+  /** Runs after the change is undone, however that happens (its Undo, ⌘Z), to show it again. */
+  onUndone?: () => void;
 }
 
 interface ActionsApi {
   /**
-   * Runs a plan now and reports it with a toast that offers Undo. A plan with warnings asks
-   * first. Resolves with the finished plan, or null when nothing ran.
+   * Runs a plan now and reports it with a toast that offers Undo; what the plan left out is in
+   * the toast's detail. Resolves with the finished plan, or null when nothing ran.
    */
   perform: (request: PlanRequest, options?: PerformOptions) => Promise<PlanSummary | null>;
-  undoPlan: (plan: PlanSummary) => Promise<void>;
-  /** Adds a non-plan change (a dismissal, a preference) to ⌘Z's history. */
-  pushUndo: (run: () => Promise<void>) => void;
+  /**
+   * Runs plans one after another, each drafted once the one before has finished, and reports
+   * them as one change with one Undo. Each step builds its request when its turn comes, from what
+   * the steps before left, or returns null to be skipped; requests that turn out to have nothing
+   * to do are skipped too.
+   */
+  performAll: (
+    steps: readonly PlanStep[],
+    options: { title: string; source?: string },
+  ) => Promise<PlanSummary[]>;
+  undoPlan: (plan: PlanSummary, options?: UndoOptions) => Promise<boolean>;
+  /**
+   * Adds a non-plan change (a dismissal, a preference) to ⌘Z's history. Returns a function that
+   * takes it back off, for when the change is undone some other way.
+   */
+  pushUndo: (run: () => Promise<void>) => () => void;
   undoLast: () => Promise<void>;
   /** The newest finished plan started from `source` this session. */
   resultFor: (source: string) => PlanSummary | null;
   /** The running job of a plan started from `source`, if any. */
   jobFor: (source: string) => Job | null;
+  /** The source a running job was started from, such as "convert" or "overview:tidy". */
+  sourceOf: (jobId: JobId) => string | null;
   /** Waits for a job the engine started, such as an analysis, to finish. */
   waitForJob: (job: Job) => Promise<Job>;
+}
+
+/** One step of `performAll`: builds its request when its turn comes, or null to skip. */
+export type PlanStep = () => Promise<PlanRequest | null>;
+
+/** A step whose request is known before the run starts. */
+export function planned(request: PlanRequest): PlanStep {
+  return async () => request;
+}
+
+interface UndoOptions {
+  quiet?: boolean;
+  onUndone?: () => void;
 }
 
 const ActionsContext = createContext<ActionsApi | null>(null);
@@ -108,16 +132,9 @@ export function describePlan(plan: PlanSummary): string {
   return parts.join(" · ");
 }
 
-interface PendingWarning {
-  preview: PlanPreview;
-  confirmLabel: string;
-  decide: (apply: boolean) => void;
-}
-
 export function ActionsProvider({ children }: { children: ReactNode }) {
   const { jobs, rootId } = useEngine();
   const toasts = useToasts();
-  const [warning, setWarning] = useState<PendingWarning | null>(null);
   const [results, setResults] = useState<Map<string, PlanSummary>>(new Map());
   const [sourceJobs, setSourceJobs] = useState<Map<string, JobId>>(new Map());
   const waiters = useRef(new Map<JobId, Array<(job: Job) => void>>());
@@ -157,57 +174,97 @@ export function ActionsProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  const runUndo = useCallback(
-    async (plan: PlanSummary) => {
-      try {
-        const job = await call("undoPlan", { planId: plan.id });
-        const finished = await waitForJob(job);
+  const forgetPlans = useCallback((planIds: readonly number[]) => {
+    undoStack.current = undoStack.current.filter(
+      (entry) => !entry.planIds.some((id) => planIds.includes(id)),
+    );
 
-        undoStack.current = undoStack.current.filter((entry) => entry.planId !== plan.id);
+    setResults((current) => {
+      const next = new Map(current);
 
-        setResults((current) => {
-          const next = new Map(current);
-
-          for (const [source, result] of current) {
-            if (result.id === plan.id) {
-              next.delete(source);
-            }
-          }
-
-          return next;
-        });
-
-        toasts.show(
-          finished.state === "done"
-            ? { message: `Undid “${plan.title}”`, tone: "info" }
-            : { message: "Undo did not finish", detail: finished.message, tone: "error" },
-        );
-      } catch (error) {
-        toasts.show({ message: "Undo failed", detail: String(error), tone: "error" });
+      for (const [source, result] of current) {
+        if (planIds.includes(result.id)) {
+          next.delete(source);
+        }
       }
+
+      return next;
+    });
+  }, []);
+
+  /** Undoes plans newest first; resolves with whether every one finished. */
+  const undoPlans = useCallback(
+    async (plans: readonly PlanSummary[]): Promise<boolean> => {
+      for (const plan of [...plans].reverse()) {
+        const finished = await waitForJob(await call("undoPlan", { planId: plan.id }));
+
+        if (finished.state !== "done") {
+          toasts.show({ message: "Undo did not finish", detail: finished.message, tone: "error" });
+
+          return false;
+        }
+      }
+
+      return true;
     },
     [toasts, waitForJob],
   );
 
+  const runUndo = useCallback(
+    async (plan: PlanSummary, options: UndoOptions = {}): Promise<boolean> => {
+      try {
+        const done = await undoPlans([plan]);
+
+        forgetPlans([plan.id]);
+
+        if (done) {
+          options.onUndone?.();
+
+          if (!options.quiet) {
+            toasts.show({ message: `Undid “${plan.title}”`, tone: "info" });
+          }
+        }
+
+        return done;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+
+        toasts.show({ message: "Undo failed", detail: message, tone: "error" });
+
+        return false;
+      }
+    },
+    [forgetPlans, toasts, undoPlans],
+  );
+
   const announce = useCallback(
-    (plan: PlanSummary, job: Job) => {
+    (plan: PlanSummary, job: Job, warnings: readonly string[], options: PerformOptions) => {
       const undo = canUndo(plan);
+      const quiet = options.quiet ?? false;
+      const undoThis = () => runUndo(plan, { quiet, onUndone: options.onUndone });
 
       if (undo) {
         undoStack.current = [
           ...undoStack.current.slice(-49),
-          { planId: plan.id, run: () => runUndo(plan) },
+          { planIds: [plan.id], run: async () => void (await undoThis()) },
         ];
       }
+
+      const action = undo ? { label: "Undo", run: () => void undoThis() } : null;
+      const detail = [describePlan(plan), ...warnings].filter(Boolean).join(" · ") || null;
 
       if (job.state === "failed") {
         toasts.show({
           message: `${plan.title}, with errors`,
-          detail: job.message ?? describePlan(plan),
+          detail: job.message ?? detail,
           tone: "error",
-          action: undo ? { label: "Undo", run: () => void runUndo(plan) } : null,
+          action,
         });
 
+        return;
+      }
+
+      if (quiet && plan.failed === 0) {
         return;
       }
 
@@ -216,52 +273,30 @@ export function ActionsProvider({ children }: { children: ReactNode }) {
           job.state === "cancelled"
             ? `Stopped after ${formatCount(plan.done)} of ${formatCount(plan.steps)}`
             : plan.title,
-        detail: describePlan(plan) || null,
+        detail,
         tone: plan.failed > 0 ? "error" : "done",
-        action: undo ? { label: "Undo", run: () => void runUndo(plan) } : null,
+        action,
       });
     },
     [toasts, runUndo],
   );
 
-  const perform = useCallback(
-    async (request: PlanRequest, options: PerformOptions = {}): Promise<PlanSummary | null> => {
+  /** Drafts, applies and waits for one plan, tracking it under `source` while it runs. */
+  const run = useCallback(
+    async (request: PlanRequest, source: string | undefined) => {
+      const performed = await call("perform", request);
+      const started = performed.job;
+
+      if (source !== undefined) {
+        setSourceJobs((current) => new Map(current).set(source, started.id));
+      }
+
       try {
-        const performed = await call("perform", request);
-        let job = performed.job;
-
-        if (job === null) {
-          const planId: PlanId = performed.preview.planId;
-
-          const apply = await new Promise<boolean>((decide) =>
-            setWarning({
-              preview: performed.preview,
-              confirmLabel: options.confirmLabel ?? "Apply anyway",
-              decide,
-            }),
-          );
-
-          setWarning(null);
-
-          if (!apply) {
-            await call("discardPlan", { planId });
-
-            return null;
-          }
-
-          job = await call("applyPlan", { planId });
-        }
-
-        const source = options.source;
-        const started = job;
-
-        if (source !== undefined) {
-          setSourceJobs((current) => new Map(current).set(source, started.id));
-        }
-
-        const finished = await waitForJob(job);
+        const finished = await waitForJob(started);
         const plan = await call("getPlan", { planId: performed.preview.planId });
 
+        return { plan, finished, warnings: performed.preview.warnings };
+      } finally {
         if (source !== undefined) {
           setSourceJobs((current) => {
             const next = new Map(current);
@@ -270,24 +305,117 @@ export function ActionsProvider({ children }: { children: ReactNode }) {
 
             return next;
           });
+        }
+      }
+    },
+    [waitForJob],
+  );
 
+  const perform = useCallback(
+    async (request: PlanRequest, options: PerformOptions = {}): Promise<PlanSummary | null> => {
+      try {
+        const { plan, finished, warnings } = await run(request, options.source);
+        const source = options.source;
+
+        if (source !== undefined) {
           setResults((current) => new Map(current).set(source, plan));
         }
 
-        announce(plan, finished);
+        announce(plan, finished, warnings, options);
 
         return plan;
       } catch (error) {
-        toasts.show({
-          message: "That didn't work",
-          detail: error instanceof Error ? error.message : String(error),
-          tone: "error",
-        });
+        const message = error instanceof Error ? error.message : String(error);
+
+        toasts.show({ message: "That didn't work", detail: message, tone: "error" });
 
         return null;
       }
     },
-    [announce, toasts, waitForJob],
+    [announce, run, toasts],
+  );
+
+  const performAll = useCallback(
+    async (
+      steps: readonly PlanStep[],
+      options: { title: string; source?: string },
+    ): Promise<PlanSummary[]> => {
+      const plans: PlanSummary[] = [];
+      const notes: string[] = [];
+
+      for (const step of steps) {
+        try {
+          const request = await step();
+
+          if (request === null) {
+            continue;
+          }
+
+          const { plan, finished } = await run(request, options.source);
+
+          if (plan.steps > 0) {
+            plans.push(plan);
+          }
+
+          if (finished.state === "cancelled") {
+            notes.push(`Stopped during “${plan.title}”`);
+
+            break;
+          }
+
+          if (finished.state === "failed" || plan.failed > 0) {
+            notes.push(`${plan.title}: ${plan.failed} failed`);
+          }
+        } catch (error) {
+          // A step with nothing left to do (its files went in an earlier step) is not an error.
+          const message = error instanceof Error ? error.message : String(error);
+
+          if (!message.includes("nothing to do")) {
+            notes.push(message);
+          }
+        }
+      }
+
+      const undoable = plans.filter(canUndo);
+
+      const undoAll = async () => {
+        const done = await undoPlans(undoable).catch(() => false);
+
+        forgetPlans(undoable.map((plan) => plan.id));
+
+        if (done) {
+          toasts.show({ message: `Undid “${options.title}”`, tone: "info" });
+        }
+      };
+
+      if (undoable.length > 0) {
+        undoStack.current = [
+          ...undoStack.current.slice(-49),
+          { planIds: undoable.map((plan) => plan.id), run: undoAll },
+        ];
+      }
+
+      const held = plans.reduce((sum, plan) => sum + plan.held.bytes, 0);
+      const before = plans.reduce((sum, plan) => sum + plan.bytesBefore, 0);
+      const after = plans.reduce((sum, plan) => sum + plan.bytesAfter, 0);
+
+      // Nothing leaves the disk until holding is emptied, so the detail says where bytes went.
+      const summary = [
+        before > after ? `${formatBytes(before - after)} out` : null,
+        held > 0 ? `${formatBytes(held)} in holding` : null,
+        ...notes,
+      ].filter(Boolean);
+
+      toasts.show({
+        message: plans.length === 0 ? "Nothing to tidy" : options.title,
+        detail: summary.join(" · "),
+        tone: notes.length > 0 ? "error" : plans.length === 0 ? "info" : "done",
+        action: undoable.length > 0 ? { label: "Undo", run: () => void undoAll() } : null,
+      });
+
+      return plans;
+    },
+    [forgetPlans, run, toasts, undoPlans],
   );
 
   const undoLast = useCallback(async () => {
@@ -314,12 +442,20 @@ export function ActionsProvider({ children }: { children: ReactNode }) {
   const api = useMemo<ActionsApi>(
     () => ({
       perform,
+      performAll,
       undoPlan: runUndo,
-      pushUndo: (run) => {
-        undoStack.current = [...undoStack.current.slice(-49), { planId: null, run }];
+      pushUndo: (undo) => {
+        const entry: UndoEntry = { planIds: [], run: undo };
+
+        undoStack.current = [...undoStack.current.slice(-49), entry];
+
+        return () => {
+          undoStack.current = undoStack.current.filter((candidate) => candidate !== entry);
+        };
       },
       undoLast,
       resultFor: (source) => results.get(source) ?? null,
+      sourceOf: (jobId) => [...sourceJobs].find(([, id]) => id === jobId)?.[0] ?? null,
       jobFor: (source) => {
         const id = sourceJobs.get(source);
 
@@ -327,45 +463,8 @@ export function ActionsProvider({ children }: { children: ReactNode }) {
       },
       waitForJob,
     }),
-    [perform, runUndo, undoLast, results, sourceJobs, jobs, waitForJob],
+    [perform, performAll, runUndo, undoLast, results, sourceJobs, jobs, waitForJob],
   );
 
-  return (
-    <ActionsContext.Provider value={api}>
-      {children}
-      {warning ? (
-        <Modal
-          title="Before this goes ahead"
-          onClose={() => warning.decide(false)}
-          footer={
-            <>
-              <button type="button" className="ls-btn" onClick={() => warning.decide(false)}>
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="ls-btn ls-btn-cta"
-                data-autofocus
-                onClick={() => warning.decide(true)}
-              >
-                {warning.confirmLabel}
-              </button>
-            </>
-          }
-        >
-          <ul className="space-y-2">
-            {warning.preview.warnings.map((text) => (
-              <li
-                key={text}
-                className="flex gap-2 rounded-md bg-amber-500/10 px-3 py-2 text-amber-800 dark:text-amber-200"
-              >
-                <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-                <span>{text}</span>
-              </li>
-            ))}
-          </ul>
-        </Modal>
-      ) : null}
-    </ActionsContext.Provider>
-  );
+  return <ActionsContext.Provider value={api}>{children}</ActionsContext.Provider>;
 }

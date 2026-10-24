@@ -1,4 +1,4 @@
-import { CircleAlert, CircleCheck, X } from "lucide-react";
+import { CircleAlert, CircleCheck, Info, X } from "lucide-react";
 import {
   createContext,
   type ReactNode,
@@ -33,11 +33,18 @@ interface Toast {
 interface ToastApi {
   show: (toast: ToastInput) => number;
   dismiss: (id: number) => void;
+  /** Lifts toasts by this many pixels while a view has its own bar at the bottom of the pane. */
+  setLift: (pixels: number) => void;
+}
+
+interface ToastState {
+  toast: Toast | null;
+  lift: number;
 }
 
 const ToastContext = createContext<ToastApi | null>(null);
 
-const VISIBLE_TOASTS = 3;
+const ToastStateContext = createContext<ToastState>({ toast: null, lift: 0 });
 
 export function useToasts(): ToastApi {
   const toasts = useContext(ToastContext);
@@ -49,13 +56,28 @@ export function useToasts(): ToastApi {
   return toasts;
 }
 
-/** Results of what the owner just did, bottom right above the status bar, each with its Undo. */
+/** Keeps toasts above a view's own floating bar while the view is on screen. */
+export function useToastLift(pixels: number): void {
+  const { setLift } = useToasts();
+
+  useEffect(() => {
+    setLift(pixels);
+
+    return () => setLift(0);
+  }, [pixels, setLift]);
+}
+
+/**
+ * The result of what the owner just did, one at a time: a new result replaces the last, which
+ * History keeps. Each carries its Undo.
+ */
 export function ToastProvider({ children }: { children: ReactNode }) {
-  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [toast, setToast] = useState<Toast | null>(null);
+  const [lift, setLift] = useState(0);
   const nextId = useRef(1);
 
   const dismiss = useCallback((id: number) => {
-    setToasts((current) => current.filter((toast) => toast.id !== id));
+    setToast((current) => (current?.id === id ? null : current));
   }, []);
 
   const show = useCallback((input: ToastInput) => {
@@ -63,35 +85,50 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
     nextId.current += 1;
 
-    const toast: Toast = {
+    setToast({
       id,
       message: input.message,
       detail: input.detail ?? null,
       tone: input.tone ?? "done",
       action: input.action ?? null,
-    };
-
-    setToasts((current) => [...current.slice(-(VISIBLE_TOASTS - 1)), toast]);
+    });
 
     return id;
   }, []);
 
-  const api = useMemo(() => ({ show, dismiss }), [show, dismiss]);
+  const api = useMemo(() => ({ show, dismiss, setLift }), [show, dismiss]);
+  const state = useMemo(() => ({ toast, lift }), [toast, lift]);
 
   return (
     <ToastContext.Provider value={api}>
-      {children}
-      <div
-        className="pointer-events-none fixed right-4 bottom-[84px] z-40 flex w-[360px] flex-col gap-2"
-        aria-live="polite"
-      >
-        {toasts.map((toast) => (
-          <ToastCard key={toast.id} toast={toast} onDismiss={() => dismiss(toast.id)} />
-        ))}
-      </div>
+      <ToastStateContext.Provider value={state}>{children}</ToastStateContext.Provider>
     </ToastContext.Provider>
   );
 }
+
+/** Where toasts appear: bottom centre of the pane it is placed in. */
+export function ToastViewport() {
+  const { toast, lift } = useContext(ToastStateContext);
+  const { dismiss } = useToasts();
+
+  return (
+    <div
+      className="pointer-events-none absolute left-1/2 z-40 w-max min-w-[320px] max-w-[min(520px,calc(100%-40px))] -translate-x-1/2 transition-[bottom] duration-200 ease-out"
+      style={{ bottom: 24 + lift }}
+      aria-live="polite"
+    >
+      {toast ? (
+        <ToastCard key={toast.id} toast={toast} onDismiss={() => dismiss(toast.id)} />
+      ) : null}
+    </div>
+  );
+}
+
+const ICONS = {
+  done: <CircleCheck className="size-4 shrink-0 text-emerald-500" />,
+  error: <CircleAlert className="size-4 shrink-0 text-red-500" />,
+  info: <Info className="size-4 shrink-0 text-zinc-400" />,
+};
 
 function ToastCard({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }) {
   const [hovered, setHovered] = useState(false);
@@ -118,23 +155,21 @@ function ToastCard({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
       data-toast={toast.tone}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      className="ls-surface pointer-events-auto flex items-start gap-2.5 px-3 py-2.5 text-xs shadow-lg"
+      className="gz-float gz-enter-rise group pointer-events-auto relative flex items-center gap-3 rounded-xl py-2.5 pr-2.5 pl-4"
     >
-      {toast.tone === "error" ? (
-        <CircleAlert className="mt-px size-3.5 shrink-0 text-red-500" />
-      ) : (
-        <CircleCheck className="mt-px size-3.5 shrink-0 text-emerald-500" />
-      )}
+      {ICONS[toast.tone]}
       <div className="min-w-0 flex-1">
-        <p className="font-medium">{toast.message}</p>
+        <p className="truncate text-[13px] font-medium">{toast.message}</p>
         {toast.detail ? (
-          <p className="ls-mono mt-0.5 text-[10.5px] break-words text-zinc-500">{toast.detail}</p>
+          <p className="gz-caption mt-0.5 truncate" title={toast.detail}>
+            {toast.detail}
+          </p>
         ) : null}
       </div>
       {toast.action ? (
         <button
           type="button"
-          className="ls-btn py-0.5"
+          className="gz-btn gz-btn-secondary gz-btn-sm"
           onClick={() => {
             toast.action?.run();
             onDismiss();
@@ -143,9 +178,10 @@ function ToastCard({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
           {toast.action.label}
         </button>
       ) : null}
+      {/* In the corner, as Sonner puts it, so it takes no width from the message. */}
       <button
         type="button"
-        className="ls-btn ls-btn-ghost -mr-1 px-1 py-0.5"
+        className="gz-float absolute -top-2 -left-2 flex size-5 items-center justify-center rounded-full text-zinc-500 opacity-0 transition-opacity duration-150 group-hover:opacity-100 hover:text-zinc-900 focus-visible:opacity-100 dark:hover:text-zinc-100"
         aria-label="Dismiss"
         onClick={onDismiss}
       >

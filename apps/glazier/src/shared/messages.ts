@@ -124,10 +124,14 @@ export const AppCommandSchema = z.enum([
   "find",
   "settings",
   "shortcuts",
-  "view:tidy",
+  "toggle-sidebar",
+  "view:overview",
   "view:duplicates",
+  "view:convert",
+  "view:cleanup",
   "view:library",
   "view:history",
+  "view:holding",
 ]);
 
 export type AppCommand = z.infer<typeof AppCommandSchema>;

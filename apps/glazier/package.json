@@ -46,7 +46,6 @@
   },
   "dependencies": {
     "@ffprobe-installer/ffprobe": "^2.1.2",
-    "@fontsource-variable/geist": "^5.3.0",
     "@jsquash/avif": "2.1.1",
     "@latch-works/glazier-core": "workspace:*",
     "@latch-works/media-format": "workspace:*",

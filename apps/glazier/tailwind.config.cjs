@@ -5,8 +5,9 @@ module.exports = {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['"Geist Variable"', "Segoe UI", "system-ui", "sans-serif"],
-        mono: ['"Geist Mono Variable"', "ui-monospace", "monospace"],
+        // The system font, as Frame View and T3 Code use: SF Pro on macOS.
+        sans: ["-apple-system", "BlinkMacSystemFont", '"Segoe UI"', "system-ui", "sans-serif"],
+        mono: ["ui-monospace", '"SF Mono"', "Menlo", "monospace"],
       },
     },
   },

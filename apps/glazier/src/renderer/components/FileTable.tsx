@@ -1,504 +1,245 @@
-import type { AudioState, FileId, FileQuery, FileRow } from "@latch-works/glazier-core/contract";
-import { ArrowDown, ArrowUp } from "lucide-react";
-import {
-  type MouseEvent as ReactMouseEvent,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import type { FileQuery, FileRow } from "@latch-works/glazier-core/contract";
+import { ArrowDown, ArrowUp, VolumeX } from "lucide-react";
+import { useEffect, useMemo } from "react";
 
-import { call } from "../lib/api";
-import { useEngine } from "../lib/engine-state";
-import { formatBytes, formatDate, formatLabel } from "../lib/format";
-import { isCommandKey, useViewKeys } from "../lib/hotkeys";
-import { describeDetails, Thumbnail } from "./media";
+import { formatBytes, formatDate, formatDuration, formatLabel } from "../lib/format";
+import { AUDIO_LABELS, isMuteVideo } from "./library/labels";
+import { RenameField } from "./library/RenameField";
+import { type FileViewProps, useFileCursor, visibleRange } from "./library/use-file-cursor";
+import { useScrollBox } from "./library/use-scroll-box";
+import { Thumbnail } from "./media";
+import { StartTruncate } from "./ui";
 
-const ROW_HEIGHT = 36;
+const ROW_HEIGHT = 44;
 
-const PAGE_SIZE = 200;
-
-const OVERSCAN = 10;
-
-export type FileListQuery = Omit<FileQuery, "offset" | "limit">;
+const HEADER_HEIGHT = 32;
 
 type SortColumn = FileQuery["sort"];
 
-const AUDIO_LABELS = {
-  none: "No track",
-  silent: "Silent",
-  sound: "Sound",
-  unmeasured: "Not measured",
-} as const satisfies Record<AudioState, string>;
-
-/** Columns whose first click sorts largest or newest first, as Finder does. */
+/** Columns whose first click sorts largest, newest or longest first, as Finder does. */
 const DESCENDING_FIRST = new Set<SortColumn>(["size", "mtime", "duration"]);
 
-const COLUMNS = "grid-cols-[28px_minmax(0,3fr)_88px_minmax(0,1.6fr)_80px_92px_96px]";
+/** Narrow panes drop Modified first, then Dimensions, so the name keeps room to read. */
+function columnsFor(width: number) {
+  const modified = width >= 760;
+  const dimensions = width >= 620;
 
-interface FileTableProps {
-  query: FileListQuery;
-  selected: ReadonlySet<FileId>;
-  onSelect: (next: Set<FileId>) => void;
+  return {
+    template: [
+      "16px",
+      "minmax(0,1fr)",
+      "88px",
+      dimensions ? "112px" : null,
+      "88px",
+      modified ? "128px" : null,
+    ]
+      .flatMap((column) => (column ? [column] : []))
+      .join(" "),
+    dimensions,
+    modified,
+  };
+}
+
+interface FileTableProps extends FileViewProps {
+  sort: SortColumn;
+  descending: boolean;
+  onSort: (sort: SortColumn, descending: boolean) => void;
   onSelectAll: () => void;
-  onSort: (sort: SortColumn, descending: boolean) => void;
-  onTotals?: (totals: { total: number; bytes: number }) => void;
-  onOpen: (row: FileRow) => void;
-  onQuickLook: (row: FileRow) => void;
-  onContextMenu: (row: FileRow) => void;
-  /** The file being renamed in place, if any. */
-  renaming: FileId | null;
-  onRenameStart: (row: FileRow) => void;
-  onRenameEnd: (row: FileRow, name: string | null) => void;
+  /** The root's name, shown as the folder of files at its top. */
+  rootName: string;
 }
 
-/**
- * Every file matching a query, paged in from the engine as the list scrolls. A new query starts
- * over at the top; a changed catalog refreshes the loaded rows in place.
- */
+/** The Library's list: 44 px rows, paged in from the engine as the list scrolls. */
 export function FileTable(props: FileTableProps) {
-  return <FileList key={JSON.stringify(props.query)} {...props} />;
-}
+  const { pages, selected, cursor, renaming, sort, descending, onSort, bottomInset } = props;
+  const box = useScrollBox();
+  const { total, rowAt, request } = pages;
+  const { first, last } = visibleRange(box.scrollTop, box.height, ROW_HEIGHT, 1, total);
+  const columns = columnsFor(box.width);
 
-function HeaderCell({
-  label,
-  column,
-  query,
-  onSort,
-  align = "left",
-}: {
-  label: string;
-  column: SortColumn | null;
-  query: FileListQuery;
-  onSort: (sort: SortColumn, descending: boolean) => void;
-  align?: "left" | "right";
-}) {
-  if (column === null) {
-    return <span className={align === "right" ? "text-right" : ""}>{label}</span>;
-  }
+  useEffect(() => request(first, last), [first, last, request]);
 
-  const active = query.sort === column;
-
-  return (
-    <button
-      type="button"
-      onClick={() => onSort(column, active ? !query.descending : DESCENDING_FIRST.has(column))}
-      className={`flex items-center gap-1 uppercase hover:text-zinc-800 dark:hover:text-zinc-200 ${
-        align === "right" ? "justify-end" : ""
-      } ${active ? "text-zinc-800 dark:text-zinc-200" : ""}`}
-    >
-      {label}
-      {active ? (
-        query.descending ? (
-          <ArrowDown className="size-3" />
-        ) : (
-          <ArrowUp className="size-3" />
-        )
-      ) : null}
-    </button>
-  );
-}
-
-function FileList({
-  query,
-  selected,
-  onSelect,
-  onSelectAll,
-  onSort,
-  onTotals,
-  onOpen,
-  onQuickLook,
-  onContextMenu,
-  renaming,
-  onRenameStart,
-  onRenameEnd,
-}: FileTableProps) {
-  const { report, catalogVersion } = useEngine();
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [scrollTop, setScrollTop] = useState(0);
-  const [height, setHeight] = useState(600);
-  const [pages, setPages] = useState<Map<number, FileRow[]>>(new Map());
-  const [total, setTotal] = useState<number | null>(null);
-  const [focus, setFocus] = useState(0);
-  /** Pages asked for in this generation; a catalog change starts a new one. */
-  const requested = useRef(new Set<string>());
-  const anchor = useRef<number | null>(null);
-  const [generation, setGeneration] = useState(0);
-  const firstVersion = useRef(catalogVersion);
-
-  useLayoutEffect(() => {
-    const element = containerRef.current;
-
-    if (!element) {
-      return;
-    }
-
-    const observer = new ResizeObserver(() => setHeight(element.clientHeight));
-
-    observer.observe(element);
-    setHeight(element.clientHeight);
-
-    return () => observer.disconnect();
-  }, []);
-
-  // A catalog change refetches the pages as they come into view, keeping the scroll position.
-  useEffect(() => {
-    if (catalogVersion !== firstVersion.current) {
-      setGeneration((value) => value + 1);
-    }
-  }, [catalogVersion]);
-
-  const loadPage = useCallback(
-    (page: number) => {
-      const key = `${generation}:${page}`;
-
-      if (requested.current.has(key)) {
-        return;
-      }
-
-      requested.current.add(key);
-
-      call("listFiles", { ...query, offset: page * PAGE_SIZE, limit: PAGE_SIZE }).then(
-        (result) => {
-          setPages((current) => new Map(current).set(page, result.rows));
-          setTotal(result.total);
-          onTotals?.({ total: result.total, bytes: result.totalBytes });
-        },
-        (error: Error) => {
-          requested.current.delete(key);
-          report(error);
-        },
-      );
-    },
-    [query, onTotals, report, generation],
-  );
-
-  const first = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
-
-  const last = Math.min(
-    total ?? PAGE_SIZE,
-    Math.ceil((scrollTop + height) / ROW_HEIGHT) + OVERSCAN,
-  );
-
-  useEffect(() => {
-    for (
-      let page = Math.floor(first / PAGE_SIZE);
-      page <= Math.floor(Math.max(first, last - 1) / PAGE_SIZE);
-      page += 1
-    ) {
-      loadPage(page);
-    }
-  }, [first, last, loadPage]);
-
-  const rowAt = useCallback(
-    (index: number) => pages.get(Math.floor(index / PAGE_SIZE))?.[index % PAGE_SIZE] ?? null,
-    [pages],
-  );
+  const cursorKeys = useFileCursor({
+    ...props,
+    columns: 1,
+    reveal: (index) =>
+      box.show(
+        HEADER_HEIGHT + index * ROW_HEIGHT,
+        HEADER_HEIGHT + (index + 1) * ROW_HEIGHT,
+        HEADER_HEIGHT,
+        bottomInset,
+      ),
+  });
 
   const visible = useMemo(() => {
     const rows: Array<{ index: number; row: FileRow | null }> = [];
 
-    for (let index = first; index < last; index += 1) {
-      rows.push({ index, row: index < (total ?? 0) ? rowAt(index) : null });
+    for (let index = first; index < Math.min(last, total ?? 0); index += 1) {
+      rows.push({ index, row: rowAt(index) });
     }
 
     return rows;
   }, [first, last, rowAt, total]);
 
-  const selectRange = (from: number, to: number, base: Iterable<FileId>) => {
-    const next = new Set(base);
-    const [low, high] = from < to ? [from, to] : [to, from];
-
-    for (let position = low; position <= high; position += 1) {
-      const ranged = rowAt(position);
-
-      if (ranged) {
-        next.add(ranged.id);
-      }
-    }
-
-    return next;
-  };
-
-  const handleClick = (index: number, row: FileRow, event: ReactMouseEvent) => {
-    setFocus(index);
-
-    if (event.shiftKey && anchor.current !== null) {
-      onSelect(selectRange(anchor.current, index, isCommandKey(event.nativeEvent) ? selected : []));
-
-      return;
-    }
-
-    anchor.current = index;
-
-    if (isCommandKey(event.nativeEvent)) {
-      const next = new Set(selected);
-
-      if (next.has(row.id)) {
-        next.delete(row.id);
-      } else {
-        next.add(row.id);
-      }
-
-      onSelect(next);
-
-      return;
-    }
-
-    onSelect(new Set([row.id]));
-  };
-
-  const scrollIntoView = (index: number) => {
-    const element = containerRef.current;
-
-    if (!element) {
-      return;
-    }
-
-    const top = index * ROW_HEIGHT;
-
-    if (top < element.scrollTop) {
-      element.scrollTop = top;
-    } else if (top + ROW_HEIGHT > element.scrollTop + element.clientHeight) {
-      element.scrollTop = top + ROW_HEIGHT - element.clientHeight;
-    }
-  };
-
-  useViewKeys((event) => {
-    if (total === null || total === 0 || event.metaKey || event.ctrlKey || event.altKey) {
-      return false;
-    }
-
-    switch (event.key) {
-      case "ArrowDown":
-      case "ArrowUp": {
-        const next = Math.max(0, Math.min(total - 1, focus + (event.key === "ArrowDown" ? 1 : -1)));
-        const row = rowAt(next);
-
-        setFocus(next);
-        scrollIntoView(next);
-
-        if (event.shiftKey) {
-          anchor.current ??= focus;
-          onSelect(selectRange(anchor.current, next, []));
-        } else if (row) {
-          anchor.current = next;
-          onSelect(new Set([row.id]));
-        }
-
-        return true;
-      }
-
-      case " ": {
-        const row = rowAt(focus);
-
-        if (row) {
-          onQuickLook(row);
-        }
-
-        return true;
-      }
-
-      case "Enter": {
-        const row = rowAt(focus);
-
-        if (row && selected.size <= 1) {
-          onRenameStart(row);
-        }
-
-        return true;
-      }
-
-      case "Escape":
-        if (selected.size > 0) {
-          onSelect(new Set());
-
-          return true;
-        }
-
-        return false;
-      default:
-        return false;
-    }
-  }, renaming === null);
-
+  const choosing = selected.size > 0;
   const allSelected = total !== null && total > 0 && selected.size >= total;
 
+  const header = (label: string, column: SortColumn, align: "left" | "right" = "left") => {
+    const active = sort === column;
+    const Arrow = descending ? ArrowDown : ArrowUp;
+
+    return (
+      <button
+        type="button"
+        onClick={() => onSort(column, active ? !descending : DESCENDING_FIRST.has(column))}
+        className={`gz-focus flex h-full min-w-0 items-center gap-1 rounded-md hover:text-zinc-800 dark:hover:text-zinc-200 ${
+          align === "right" ? "flex-row-reverse" : ""
+        } ${active ? "text-zinc-800 dark:text-zinc-200" : ""}`}
+      >
+        <span className="truncate">{label}</span>
+        {active ? <Arrow className="size-3 shrink-0" /> : null}
+      </button>
+    );
+  };
+
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div
+      ref={box.ref}
+      className="relative min-h-0 flex-1 overflow-auto"
+      onScroll={box.onScroll}
+      data-testid="file-table"
+    >
       <div
-        className={`grid ${COLUMNS} items-center gap-2 border-b ls-divider px-3 py-1.5 text-[10px] font-medium tracking-wide text-zinc-500 uppercase`}
+        style={{ gridTemplateColumns: columns.template, height: HEADER_HEIGHT }}
+        className="group/head sticky top-0 z-10 grid items-center gap-x-3 border-b gz-divider bg-white/95 px-4 text-xs font-medium text-zinc-500 backdrop-blur dark:bg-zinc-950/95"
       >
         <input
           type="checkbox"
           aria-label="Select every matching file"
-          title="Select every matching file (⌘A)"
-          className="accent-violet-600"
+          title="Select every matching file  ⌘A"
+          className={`gz-check ${choosing ? "" : "opacity-0 group-hover/head:opacity-100 focus-visible:opacity-100"}`}
           checked={allSelected}
-          onChange={(event) => (event.target.checked ? onSelectAll() : onSelect(new Set()))}
+          onChange={(event) =>
+            event.target.checked ? props.onSelectAll() : props.onSelect(new Set())
+          }
         />
-        <HeaderCell label="Name" column="name" query={query} onSort={onSort} />
-        <HeaderCell label="Format" column="kind" query={query} onSort={onSort} />
-        <HeaderCell label="Details" column="duration" query={query} onSort={onSort} />
-        <HeaderCell label="Size" column="size" query={query} onSort={onSort} align="right" />
-        <HeaderCell label="Sound" column={null} query={query} onSort={onSort} />
-        <HeaderCell label="Modified" column="mtime" query={query} onSort={onSort} />
+        {header("Name", "name")}
+        {header("Format", "kind")}
+        {columns.dimensions ? header("Dimensions", "duration") : null}
+        <div className="flex h-full justify-end">{header("Size", "size", "right")}</div>
+        {columns.modified ? (
+          <div className="flex h-full justify-end">{header("Modified", "mtime", "right")}</div>
+        ) : null}
       </div>
 
-      <div
-        ref={containerRef}
-        className="relative min-h-0 flex-1 overflow-auto"
-        onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
-        data-testid="file-table"
-      >
-        {total === 0 ? (
-          <p className="px-3 py-6 text-center text-xs text-zinc-500">No files match.</p>
-        ) : null}
-
-        <div style={{ height: (total ?? 0) * ROW_HEIGHT }} className="relative">
-          {visible.map(({ index, row }) =>
-            row ? (
-              // biome-ignore lint/a11y: virtualized rows sit absolutely positioned, which table rows cannot; the list handles keys for every row (useViewKeys).
-              <div
-                key={row.id}
-                role="row"
-                tabIndex={-1}
-                aria-selected={selected.has(row.id)}
-                data-file-name={row.name}
-                data-selected={selected.has(row.id)}
-                style={{ top: index * ROW_HEIGHT, height: ROW_HEIGHT }}
-                onClick={(event) => handleClick(index, row, event)}
-                onDoubleClick={() => onOpen(row)}
-                onContextMenu={(event) => {
-                  event.preventDefault();
-                  setFocus(index);
-
-                  if (!selected.has(row.id)) {
-                    anchor.current = index;
-                    onSelect(new Set([row.id]));
-                  }
-
-                  onContextMenu(row);
-                }}
-                className={`absolute inset-x-0 grid ${COLUMNS} cursor-default items-center gap-2 border-b border-zinc-100 px-3 text-xs select-none dark:border-zinc-900 ${
-                  selected.has(row.id)
-                    ? "bg-violet-500/10"
-                    : "hover:bg-zinc-50 dark:hover:bg-zinc-900/60"
-                } ${index === focus ? "shadow-[inset_2px_0_0] shadow-violet-500" : ""}`}
-              >
-                <input
-                  type="checkbox"
-                  aria-label={`Select ${row.name}`}
-                  className="accent-violet-600"
-                  checked={selected.has(row.id)}
-                  onClick={(event) => event.stopPropagation()}
-                  onChange={(event) => {
-                    const next = new Set(selected);
-
-                    if (event.target.checked) {
-                      next.add(row.id);
-                    } else {
-                      next.delete(row.id);
-                    }
-
-                    anchor.current = index;
-                    onSelect(next);
-                  }}
-                />
-                <span className="flex min-w-0 items-center gap-2">
-                  <Thumbnail row={row} />
-                  <span className="min-w-0 flex-1">
-                    {renaming === row.id ? (
-                      <RenameField row={row} onDone={(name) => onRenameEnd(row, name)} />
-                    ) : (
-                      <span className="block truncate text-zinc-800 dark:text-zinc-100">
-                        {row.name}
-                      </span>
-                    )}
-                    <span className="block truncate text-[10px] text-zinc-500">
-                      {row.dir || "/"}
+      <div style={{ height: (total ?? 0) * ROW_HEIGHT + bottomInset }} className="relative">
+        {visible.map(({ index, row }) =>
+          row ? (
+            // biome-ignore lint/a11y: virtualized rows sit absolutely positioned, which table rows cannot; the list handles keys for every row (useViewKeys).
+            <div
+              key={row.id}
+              role="row"
+              tabIndex={-1}
+              aria-selected={selected.has(row.id)}
+              data-file-name={row.name}
+              data-selected={selected.has(row.id)}
+              style={{
+                top: index * ROW_HEIGHT,
+                height: ROW_HEIGHT,
+                gridTemplateColumns: columns.template,
+              }}
+              onClick={(event) => cursorKeys.click(index, row, event)}
+              onDoubleClick={() => props.onOpen(row)}
+              onContextMenu={(event) => cursorKeys.contextMenu(index, row, event)}
+              className={`group absolute inset-x-0 grid cursor-default items-center gap-x-3 border-b border-zinc-100 px-4 text-[13px] gz-focus select-none dark:border-white/[0.04] ${
+                selected.has(row.id) ? "gz-selected" : "gz-hover"
+              } ${index === cursor ? "shadow-[inset_2px_0_0_var(--color-zinc-400)] dark:shadow-[inset_2px_0_0_var(--color-zinc-500)]" : ""}`}
+            >
+              <input
+                type="checkbox"
+                aria-label={`Select ${row.name}`}
+                className={`gz-check ${choosing ? "" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"}`}
+                checked={selected.has(row.id)}
+                onClick={(event) => event.stopPropagation()}
+                onChange={(event) => cursorKeys.toggle(index, row, event.target.checked)}
+              />
+              <span className="flex min-w-0 items-center gap-3">
+                <Thumbnail row={row} size={32} />
+                <span className="min-w-0 flex-1">
+                  {renaming === row.id ? (
+                    <RenameField
+                      row={row}
+                      className="-my-0.5"
+                      onDone={(name) => props.onRenameEnd(row, name)}
+                    />
+                  ) : (
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <span className="truncate text-zinc-900 dark:text-zinc-100">{row.name}</span>
+                      {isMuteVideo(row) && row.audioState ? (
+                        <span
+                          role="img"
+                          title={AUDIO_LABELS[row.audioState]}
+                          aria-label={AUDIO_LABELS[row.audioState]}
+                          className="shrink-0 text-zinc-400 dark:text-zinc-500"
+                        >
+                          <VolumeX className="size-3.5" />
+                        </span>
+                      ) : null}
                     </span>
+                  )}
+                  <StartTruncate text={row.dir || props.rootName} className="gz-caption" />
+                </span>
+              </span>
+              <span className="flex min-w-0 items-center gap-1.5 text-zinc-600 dark:text-zinc-300">
+                <span className="truncate">{formatLabel(row.format)}</span>
+                {row.extensionMismatch ? (
+                  <span
+                    title={`The file is ${formatLabel(row.format)} but its extension is .${row.ext}`}
+                    className="truncate text-amber-700 dark:text-amber-300"
+                  >
+                    .{row.ext}
                   </span>
+                ) : null}
+              </span>
+              {columns.dimensions ? (
+                <span className="truncate text-zinc-500 dark:text-zinc-400">
+                  {dimensionsOf(row)}
                 </span>
-                <span className="flex items-center gap-1 truncate">
-                  {formatLabel(row.format)}
-                  {row.extensionMismatch ? (
-                    <span title="The extension does not match the file" className="text-amber-600">
-                      ≠ .{row.ext}
-                    </span>
-                  ) : null}
+              ) : null}
+              <span className="text-right text-zinc-600 dark:text-zinc-300">
+                {formatBytes(row.size)}
+              </span>
+              {columns.modified ? (
+                <span className="truncate text-right text-zinc-500 dark:text-zinc-400">
+                  {formatDate(row.mtimeMs)}
                 </span>
-                <span className="truncate text-zinc-500">
-                  {row.probeError ? "Won't open" : describeDetails(row)}
-                </span>
-                <span className="tabular text-right">{formatBytes(row.size)}</span>
-                <span className="text-zinc-500">
-                  {row.audioState ? AUDIO_LABELS[row.audioState] : ""}
-                </span>
-                <span className="tabular text-zinc-500">{formatDate(row.mtimeMs)}</span>
-              </div>
-            ) : (
-              <div
-                key={`pending-${index}`}
-                style={{ top: index * ROW_HEIGHT, height: ROW_HEIGHT }}
-                className="absolute inset-x-0 px-3"
-              >
-                <div className="mt-3 h-2.5 w-1/3 rounded bg-zinc-100 dark:bg-zinc-900" />
-              </div>
-            ),
-          )}
-        </div>
+              ) : null}
+            </div>
+          ) : (
+            <div
+              key={`pending-${index}`}
+              style={{ top: index * ROW_HEIGHT, height: ROW_HEIGHT }}
+              className="absolute inset-x-0 flex items-center gap-3 px-4 pl-11"
+            >
+              <span className="size-8 rounded-md bg-zinc-100 dark:bg-white/[0.04]" />
+              <span className="h-2.5 w-1/4 rounded-full bg-zinc-100 dark:bg-white/[0.04]" />
+            </div>
+          ),
+        )}
       </div>
     </div>
   );
 }
 
-/** The name, editable in place: Return renames, Esc or clicking away keeps it. */
-function RenameField({ row, onDone }: { row: FileRow; onDone: (name: string | null) => void }) {
-  const [name, setName] = useState(row.name);
-  const input = useRef<HTMLInputElement>(null);
-  const finished = useRef(false);
+/** Pixels for pictures, the length for videos, and why a file shows nothing. */
+function dimensionsOf(row: FileRow): string {
+  if (row.probeError) {
+    return "Won't open";
+  }
 
-  useEffect(() => {
-    const element = input.current;
+  if (row.kind === "video" && row.durationMs !== null) {
+    return formatDuration(row.durationMs);
+  }
 
-    if (element) {
-      element.focus();
-
-      const dot = row.name.lastIndexOf(".");
-
-      element.setSelectionRange(0, dot > 0 ? dot : row.name.length);
-    }
-  }, [row.name]);
-
-  const finish = (value: string | null) => {
-    if (!finished.current) {
-      finished.current = true;
-      onDone(value);
-    }
-  };
-
-  return (
-    <input
-      ref={input}
-      aria-label={`New name for ${row.name}`}
-      className="ls-input -my-0.5 h-[20px] px-1 py-0 text-xs"
-      value={name}
-      onClick={(event) => event.stopPropagation()}
-      onDoubleClick={(event) => event.stopPropagation()}
-      onChange={(event) => setName(event.target.value)}
-      onBlur={() => finish(null)}
-      onKeyDown={(event) => {
-        event.stopPropagation();
-
-        if (event.key === "Enter") {
-          finish(name.trim() && name.trim() !== row.name ? name.trim() : null);
-        } else if (event.key === "Escape") {
-          finish(null);
-        }
-      }}
-    />
-  );
+  return row.width !== null && row.height !== null ? `${row.width}×${row.height}` : "";
 }

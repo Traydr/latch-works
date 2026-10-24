@@ -1,4 +1,5 @@
-import type { FileRow } from "@latch-works/glazier-core/contract";
+import type { FileKind, FileRow } from "@latch-works/glazier-core/contract";
+import { FileAudio, FileIcon, FileText, FileVideo, ImageIcon, type LucideIcon } from "lucide-react";
 import { useState } from "react";
 
 import { thumbnailUrl } from "../lib/api";
@@ -29,28 +30,57 @@ export function describeDetails(row: FileRow): string {
   return parts.join(" · ");
 }
 
-/** A square thumbnail, or the extension when the file has no picture to show. */
-export function Thumbnail({ row, size = 24 }: { row: FileRow; size?: number }) {
+const KIND_ICONS = {
+  image: ImageIcon,
+  video: FileVideo,
+  audio: FileAudio,
+  pdf: FileText,
+  other: FileIcon,
+  junk: FileIcon,
+} as const satisfies Record<FileKind, LucideIcon>;
+
+/**
+ * A square thumbnail, or the kind's icon when the file has no picture to show. `fill` makes it
+ * as wide as its box (a grid tile) and asks for a larger picture.
+ */
+export function Thumbnail({
+  row,
+  size = 24,
+  fill = false,
+  className = "rounded-md",
+}: {
+  row: FileRow;
+  size?: number;
+  fill?: boolean;
+  /** The corner radius, and anything else the box needs. */
+  className?: string;
+}) {
   const [failed, setFailed] = useState(false);
 
   const showable =
     (row.kind === "image" || row.kind === "video") && row.probeError === null && !failed;
 
+  const box = fill ? { width: "100%", aspectRatio: "1" } : { width: size, height: size };
+  const Icon = KIND_ICONS[row.kind];
+
   return showable ? (
     <img
-      src={thumbnailUrl(row.absPath, Math.max(64, size * 2))}
+      src={thumbnailUrl(row.absPath, fill ? 384 : Math.max(64, size * 2))}
       alt=""
       loading="lazy"
+      draggable={false}
       onError={() => setFailed(true)}
-      style={{ width: size, height: size }}
-      className="shrink-0 rounded-[4px] bg-zinc-200 object-cover dark:bg-zinc-800"
+      style={box}
+      className={`gz-media-edge block shrink-0 bg-zinc-100 object-cover dark:bg-zinc-800 ${className}`}
     />
   ) : (
     <span
-      style={{ width: size, height: size }}
-      className="flex shrink-0 items-center justify-center rounded-[4px] bg-zinc-200 font-mono text-[8px] text-zinc-500 uppercase dark:bg-zinc-800"
+      style={box}
+      title={row.ext ? `.${row.ext}` : undefined}
+      className={`flex shrink-0 flex-col items-center justify-center gap-1.5 bg-zinc-100 text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500 ${className}`}
     >
-      {row.ext.slice(0, 4)}
+      <Icon className={fill ? "size-8" : "size-[55%]"} strokeWidth={1.5} />
+      {fill && row.ext ? <span className="text-xs font-medium uppercase">{row.ext}</span> : null}
     </span>
   );
 }

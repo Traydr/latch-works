@@ -1,190 +1,285 @@
-import type { RootId, SimilarityLevel, VideoQuality } from "@latch-works/glazier-core/contract";
-import { X } from "lucide-react";
+import type { EncoderCapabilities, RootId } from "@latch-works/glazier-core/contract";
+import { ChevronRight, Folder, X } from "lucide-react";
 import { type ReactNode, useState } from "react";
 
-import { useEngine, useEngineQuery } from "../lib/engine-state";
-import { Modal, Toggle } from "./ui";
+import { useToasts } from "../components/Toasts";
+import { Segmented, StartTruncate, Switch, TopBar } from "../components/ui";
+import { desktop } from "../lib/api";
+import { useEngine } from "../lib/engine-state";
+import { SIMILARITY_LEVELS, VIDEO_QUALITIES } from "../lib/preferences";
+import { type ThemeChoice, useTheme } from "../lib/theme";
 
-export const SIMILARITY_LEVELS = [
-  { value: "strict", label: "Strict" },
-  { value: "balanced", label: "Balanced" },
-  { value: "loose", label: "Loose" },
-] as const satisfies ReadonlyArray<{ value: SimilarityLevel; label: string }>;
+const THEMES = [
+  { value: "system", label: "System" },
+  { value: "light", label: "Light" },
+  { value: "dark", label: "Dark" },
+] as const satisfies ReadonlyArray<{ value: ThemeChoice; label: string }>;
 
-const QUALITIES = [
-  { value: "medium", label: "Medium" },
-  { value: "high", label: "High" },
-  { value: "very-high", label: "Very high" },
-] as const satisfies ReadonlyArray<{ value: VideoQuality; label: string }>;
+const ENCODERS = [
+  { label: "H.264 video", has: (capabilities) => capabilities.video.avc },
+  { label: "HEVC video", has: (capabilities) => capabilities.video.hevc },
+  { label: "AV1 video", has: (capabilities) => capabilities.video.av1 },
+  { label: "AAC audio", has: (capabilities) => capabilities.aac },
+  { label: "ffmpeg", has: (capabilities) => capabilities.ffmpeg },
+  { label: "ffprobe", has: (capabilities) => capabilities.ffprobe },
+] as const satisfies ReadonlyArray<{
+  label: string;
+  has: (capabilities: EncoderCapabilities) => boolean;
+}>;
 
-function Section({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
+/**
+ * A picked folder as a path inside the root, with forward slashes ("" for the root itself), or
+ * null when it lies outside.
+ */
+function insideRoot(rootPath: string, folder: string): string | null {
+  const base = rootPath.replace(/[\\/]+$/, "");
+  const target = folder.replace(/[\\/]+$/, "");
+
+  if (target === base) {
+    return "";
+  }
+
+  return target.startsWith(`${base}/`) || target.startsWith(`${base}\\`)
+    ? target.slice(base.length + 1).replaceAll("\\", "/")
+    : null;
+}
+
+function Section({ title, children }: { title: ReactNode; children: ReactNode }) {
   return (
-    <section className="space-y-2 border-t ls-divider pt-3 first:border-t-0 first:pt-0">
-      <div>
-        <h3 className="text-xs font-medium">{title}</h3>
-        {hint ? <p className="mt-0.5 text-[11px] text-zinc-500">{hint}</p> : null}
-      </div>
-      {children}
+    <section className="mt-8 first:mt-0">
+      <h2 className="gz-heading mb-2 px-1">{title}</h2>
+      <div className="gz-card overflow-hidden">{children}</div>
     </section>
   );
 }
 
-function trimSlashes(folder: string): string {
-  return folder.trim().replace(/^\/+|\/+$/g, "");
+/** A System Settings row: the label and its one-line description on the left, the control right. */
+function Row({
+  label,
+  description,
+  children,
+}: {
+  label: ReactNode;
+  description?: ReactNode;
+  children?: ReactNode;
+}) {
+  return (
+    <div className="flex min-h-[52px] items-center gap-4 border-t gz-divider px-4 py-2.5 first:border-t-0">
+      <div className="min-w-0 flex-1">
+        <div className="text-[13px]">{label}</div>
+        {description ? <p className="gz-caption mt-0.5">{description}</p> : null}
+      </div>
+      {children ? <div className="flex shrink-0 items-center gap-2">{children}</div> : null}
+    </div>
+  );
 }
 
-export function SettingsSheet({ rootId, onClose }: { rootId: RootId | null; onClose: () => void }) {
-  const { settings, setSettings, capabilities, roots } = useEngine();
-  const folders = useEngineQuery("listFolders", rootId === null ? null : { rootId });
-  const [folder, setFolder] = useState("");
+/**
+ * What this machine can encode, as one summary row. It opens by itself only when something is
+ * missing, since a full set is nothing to act on.
+ */
+function Encoders({ capabilities }: { capabilities: EncoderCapabilities }) {
+  const [open, setOpen] = useState<boolean | null>(null);
+  const missing = ENCODERS.filter((encoder) => !encoder.has(capabilities)).length;
+  const expanded = open ?? missing > 0;
+
+  return (
+    <>
+      <button
+        type="button"
+        aria-expanded={expanded}
+        onClick={() => setOpen(!expanded)}
+        className="gz-focus gz-hover flex min-h-[52px] w-full items-center gap-3 border-t gz-divider px-4 py-2.5 text-left first:border-t-0"
+      >
+        <span className="min-w-0 flex-1 text-[13px]">Encoders</span>
+        {missing > 0 ? (
+          <span className="text-xs text-amber-700 dark:text-amber-300">
+            {missing} of {ENCODERS.length} missing
+          </span>
+        ) : (
+          <span className="gz-caption">All {ENCODERS.length} available</span>
+        )}
+        <ChevronRight
+          className={`size-4 shrink-0 text-zinc-400 transition-transform duration-150 ${
+            expanded ? "rotate-90" : ""
+          }`}
+        />
+      </button>
+      {expanded
+        ? ENCODERS.map((encoder) => {
+            const found = encoder.has(capabilities);
+
+            return (
+              <div
+                key={encoder.label}
+                className={`flex h-10 items-center gap-4 border-t gz-divider px-4 text-[13px] ${
+                  found ? "text-zinc-600 dark:text-zinc-300" : "text-amber-700 dark:text-amber-300"
+                }`}
+              >
+                <span className="min-w-0 flex-1 truncate">{encoder.label}</span>
+                {found ? <span className="gz-caption">Available</span> : <span>Not found</span>}
+              </div>
+            );
+          })
+        : null}
+    </>
+  );
+}
+
+export function SettingsView({ rootId }: { rootId: RootId }) {
+  const { settings, setSettings, capabilities, roots, report } = useEngine();
+  const { choice, choose } = useTheme();
+  const toasts = useToasts();
   const root = roots.find((candidate) => candidate.id === rootId);
 
   if (!settings) {
-    return null;
+    return (
+      <>
+        <TopBar title="Settings" />
+        <div className="flex-1" />
+      </>
+    );
   }
 
   const preferredHere = settings.preferredFolders.filter((entry) => entry.rootId === rootId);
-  const candidate = trimSlashes(folder);
+  const rootName = root?.name ?? "this folder";
 
-  const canAdd =
-    rootId !== null &&
-    (folders.data ?? []).includes(candidate) &&
-    !preferredHere.some((entry) => entry.dir === candidate);
+  const addFolder = async () => {
+    if (!root) {
+      return;
+    }
+
+    let folder: string | null = null;
+
+    try {
+      folder = await desktop.pickFolder();
+    } catch (error) {
+      report(error);
+    }
+
+    if (!folder) {
+      return;
+    }
+
+    const dir = insideRoot(root.path, folder);
+
+    if (dir === null) {
+      toasts.show({
+        message: `That folder is outside ${root.name}`,
+        detail: "Preferred folders have to be inside the folder being tidied.",
+        tone: "error",
+      });
+
+      return;
+    }
+
+    if (preferredHere.some((entry) => entry.dir === dir)) {
+      toasts.show({ message: `${dir || root.name} is already preferred`, tone: "info" });
+
+      return;
+    }
+
+    await setSettings({
+      ...settings,
+      preferredFolders: [...settings.preferredFolders, { rootId, dir }],
+    });
+  };
+
+  const removeFolder = (dir: string) =>
+    void setSettings({
+      ...settings,
+      preferredFolders: settings.preferredFolders.filter(
+        (entry) => !(entry.rootId === rootId && entry.dir === dir),
+      ),
+    });
 
   return (
-    <Modal title="Settings" onClose={onClose} width={520}>
-      <div className="space-y-4">
-        {rootId !== null ? (
+    <>
+      <TopBar title="Settings" />
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto w-full max-w-[640px] px-6 pt-6 pb-28">
           <Section
-            title={`Preferred folders in ${root?.name ?? "this folder"}`}
-            hint="Duplicate review keeps the copy in a preferred folder first. Press P on a version to prefer its folder."
+            title={
+              <>
+                Duplicates <span className="font-normal text-zinc-500">· for {rootName}</span>
+              </>
+            }
           >
-            {preferredHere.length > 0 ? (
-              <ul className="space-y-1">
-                {preferredHere.map((entry) => (
-                  <li
-                    key={entry.dir}
-                    className="flex items-center justify-between gap-2 rounded-md bg-zinc-100 px-2 py-1 dark:bg-zinc-800/60"
-                  >
-                    <span className="ls-mono truncate text-[11px]">{entry.dir || "/"}</span>
-                    <button
-                      type="button"
-                      className="ls-btn ls-btn-ghost px-1 py-0"
-                      aria-label={`Stop preferring ${entry.dir}`}
-                      onClick={() =>
-                        void setSettings({
-                          ...settings,
-                          preferredFolders: settings.preferredFolders.filter(
-                            (other) => !(other.rootId === rootId && other.dir === entry.dir),
-                          ),
-                        })
-                      }
-                    >
-                      <X className="size-3" />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-            <form
-              className="flex gap-2"
-              onSubmit={(event) => {
-                event.preventDefault();
-
-                if (canAdd && rootId !== null) {
-                  void setSettings({
-                    ...settings,
-                    preferredFolders: [...settings.preferredFolders, { rootId, dir: candidate }],
-                  });
-                  setFolder("");
-                }
-              }}
+            <Row
+              label="Preferred folders"
+              description="Review keeps the copy in these folders first. P on a version adds its folder."
             >
-              <input
-                className="ls-input py-1 text-xs"
-                list="glazier-folders"
-                placeholder="Folder inside this root, such as Photos/2021"
-                aria-label="Folder to prefer"
-                value={folder}
-                onChange={(event) => setFolder(event.target.value)}
-              />
-              <datalist id="glazier-folders">
-                {(folders.data ?? []).map((entry) => (
-                  <option key={entry} value={entry} />
-                ))}
-              </datalist>
-              <button type="submit" className="ls-btn" disabled={!canAdd}>
-                Prefer
+              <button
+                type="button"
+                className="gz-btn gz-btn-secondary"
+                onClick={() => void addFolder()}
+              >
+                Add folder…
               </button>
-            </form>
+            </Row>
+            {preferredHere.map((entry) => (
+              <div
+                key={entry.dir}
+                className="flex h-11 items-center gap-3 border-t gz-divider pr-2.5 pl-4"
+              >
+                <Folder className="size-4 shrink-0 text-zinc-400" />
+                <StartTruncate
+                  text={entry.dir || rootName}
+                  className="min-w-0 flex-1 text-[13px]"
+                />
+                <button
+                  type="button"
+                  className="gz-btn gz-btn-ghost gz-btn-icon-sm"
+                  aria-label={`Stop preferring ${entry.dir || rootName}`}
+                  title="Stop preferring"
+                  onClick={() => removeFolder(entry.dir)}
+                >
+                  <X />
+                </button>
+              </div>
+            ))}
+            <Row
+              label="Similar versions"
+              description="How alike two pictures or videos must look to count as one"
+            >
+              <Segmented
+                label="Similar versions"
+                options={SIMILARITY_LEVELS}
+                value={settings.similarity}
+                onChange={(similarity) => void setSettings({ ...settings, similarity })}
+              />
+            </Row>
           </Section>
-        ) : null}
 
-        <Section
-          title="Similar versions"
-          hint="How alike two pictures or videos must look to count as one."
-        >
-          <Toggle
-            label="Similarity"
-            value={settings.similarity}
-            onChange={(similarity) => void setSettings({ ...settings, similarity })}
-            options={SIMILARITY_LEVELS}
-          />
-        </Section>
+          <Section title="Convert">
+            <Row label="Video quality" description="Used when a video has to be re-encoded">
+              <Segmented
+                label="Video quality"
+                options={VIDEO_QUALITIES}
+                value={settings.reencodeQuality}
+                onChange={(reencodeQuality) => void setSettings({ ...settings, reencodeQuality })}
+              />
+            </Row>
+            {capabilities ? <Encoders capabilities={capabilities} /> : null}
+          </Section>
 
-        <Section
-          title="Video quality"
-          hint="Used when a video has to be re-encoded, and by Re-encode as."
-        >
-          <Toggle
-            label="Video quality"
-            value={settings.reencodeQuality}
-            onChange={(reencodeQuality) => void setSettings({ ...settings, reencodeQuality })}
-            options={QUALITIES}
-          />
-        </Section>
+          <Section title="Background analysis">
+            <Row label="Find similar versions and measure soundtracks after each scan">
+              <Switch
+                label="Background analysis"
+                checked={settings.autoAnalyze}
+                onChange={(autoAnalyze) => void setSettings({ ...settings, autoAnalyze })}
+              />
+            </Row>
+          </Section>
 
-        <Section title="Background analysis">
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              className="accent-violet-600"
-              checked={settings.autoAnalyze}
-              onChange={(event) =>
-                void setSettings({ ...settings, autoAnalyze: event.target.checked })
-              }
-            />
-            Find similar versions and measure soundtracks after each scan
-          </label>
-        </Section>
-
-        {capabilities ? (
-          <details className="border-t ls-divider pt-3 text-[11px] text-zinc-500">
-            <summary className="cursor-default text-xs font-medium text-zinc-700 dark:text-zinc-200">
-              Encoders on this machine
-            </summary>
-            <ul className="ls-mono mt-2 grid grid-cols-2 gap-x-6 gap-y-0.5">
-              {(
-                [
-                  ["H.264", capabilities.video.avc],
-                  ["HEVC", capabilities.video.hevc],
-                  ["AV1", capabilities.video.av1],
-                  ["AAC", capabilities.aac],
-                  ["ffmpeg", capabilities.ffmpeg],
-                  ["ffprobe", capabilities.ffprobe],
-                ] as const
-              ).map(([label, available]) => (
-                <li key={label} className="flex justify-between">
-                  <span>{label}</span>
-                  <span className={available ? "text-emerald-600 dark:text-emerald-400" : ""}>
-                    {available ? "yes" : "no"}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </details>
-        ) : null}
+          <Section title="Appearance">
+            <Row label="Theme">
+              <Segmented label="Theme" options={THEMES} value={choice} onChange={choose} />
+            </Row>
+          </Section>
+        </div>
       </div>
-    </Modal>
+    </>
   );
 }

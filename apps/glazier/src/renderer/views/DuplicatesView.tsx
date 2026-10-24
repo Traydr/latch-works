@@ -1,301 +1,193 @@
-import type {
-  DuplicateScope,
-  DuplicateSet,
-  DuplicateSetPage,
-  FileId,
-  FileRow,
-  KeepReason,
-  RootId,
-  SimilarityLevel,
+import {
+  type DuplicateScope,
+  type DuplicateSet,
+  type FileId,
+  isCloseCall,
+  type RootId,
 } from "@latch-works/glazier-core/contract";
-import { Star } from "lucide-react";
-import {
-  type ReactNode,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { Check, CheckCircle2, ChevronLeft, ChevronRight, MoreHorizontal } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { CompareStage } from "../components/CompareStage";
-import { describeDetails, Thumbnail } from "../components/media";
-import { SIMILARITY_LEVELS } from "../components/SettingsSheet";
-import { useToasts } from "../components/Toasts";
-import { EmptyState, Kbd, Spinner, Toggle, ViewHeader } from "../components/ui";
+import { CopyList } from "../components/duplicates/CopyList";
+import { Loupe } from "../components/duplicates/Loupe";
+import {
+  decisionLabel,
+  filesOf,
+  fitsSet,
+  freedBytes,
+  holdingSummary,
+  keepEveryLabel,
+  keptIds,
+  reasonOf,
+  removalOf,
+  rowsOf,
+} from "../components/duplicates/model";
+import { SetQueue } from "../components/duplicates/SetQueue";
+import { useSetQueue } from "../components/duplicates/use-set-queue";
+import { VersionGrid } from "../components/duplicates/VersionGrid";
+import { useToastLift } from "../components/Toasts";
+import {
+  EmptyState,
+  Kbd,
+  Menu,
+  MenuCheck,
+  MenuLabel,
+  MenuSeparator,
+  Segmented,
+  Spinner,
+  TopBar,
+} from "../components/ui";
 import { useActions } from "../lib/actions";
-import { call, desktop, thumbnailUrl } from "../lib/api";
+import { call, desktop } from "../lib/api";
 import { useActiveJob, useEngine } from "../lib/engine-state";
-import {
-  formatBytes,
-  formatCount,
-  formatDate,
-  formatDuration,
-  formatLabel,
-  plural,
-} from "../lib/format";
+import { formatBytes, formatCount, plural } from "../lib/format";
 import { digitOf, isCommandKey, isPlainKey, useViewKeys } from "../lib/hotkeys";
-import { usePreferFolder } from "../lib/preferences";
+import { useNavigation } from "../lib/navigation";
+import { SIMILARITY_LEVELS, usePreferFolder } from "../lib/preferences";
 
-const PAGE_SIZE = 100;
+/** How long the result of the last decision stands in for the top bar's counts. */
+const STATUS_MS = 6000;
 
-const QUEUE_ROW_HEIGHT = 52;
+/** How long a click on a new set waits, so a double-click never decides two sets. */
+const ARM_DELAY_MS = 400;
 
-const KEEP_REASONS = {
-  "preferred-folder": "preferred folder",
-  "has-sound": "has sound",
-  "more-pixels": "most pixels",
-  longer: "longest",
-  "archive-format": "archive format",
-  "right-extension": "right extension",
-  "larger-file": "largest file",
-  "original-name": "original name",
-  oldest: "oldest",
-  "shorter-path": "shortest path",
-  "name-order": "first by name",
-} as const satisfies Record<KeepReason, string>;
+/** Decisions this close together report as one on the top bar, with one Undo. */
+const GROUP_MS = 2000;
 
-const AUDIO_LABELS = {
-  none: "no track",
-  silent: "silent",
-  sound: "sound",
-  unmeasured: "not measured",
-} as const;
+/** A request to open on a tab counts only right after it was made, not on a later visit. */
+const TAB_REQUEST_MS = 2000;
 
-/** One line of a set's version table: a version, or for identical copies, one copy. */
-interface SetRow {
-  file: FileRow;
-  /** Byte-identical copies that go with this version. */
-  copies: FileRow[];
-}
-
-function rowsOf(set: DuplicateSet): SetRow[] {
-  if (set.kind === "exact") {
-    return (set.versions[0]?.files ?? []).map((file) => ({ file, copies: [] }));
-  }
-
-  return set.versions.flatMap((version) => {
-    const [file, ...copies] = version.files;
-
-    return file ? [{ file, copies }] : [];
-  });
-}
-
-function filesOf(set: DuplicateSet): FileRow[] {
-  return set.versions.flatMap((version) => version.files);
-}
-
-/** Whether the owner's choice of keepers still names files of this set. */
-function fitsSet(set: DuplicateSet, keep: readonly FileId[]): boolean {
-  const members = new Set(filesOf(set).map((file) => file.id));
-
-  return keep.length > 0 && keep.every((id) => members.has(id));
-}
-
-/** What resolving keeps: the owner's choice when it still fits the set, else the suggestion. */
-function keptIds(set: DuplicateSet, override: readonly FileId[] | undefined): FileId[] {
-  return override && fitsSet(set, override) ? [...override] : set.keep;
-}
-
-function removalOf(set: DuplicateSet, kept: readonly FileId[]): FileRow[] {
-  const keep = new Set(kept);
-
-  return filesOf(set).filter((file) => !keep.has(file.id));
-}
-
-function freedBytes(set: DuplicateSet, removed: readonly FileRow[]): number {
-  const linked = new Set(set.hardLinkedIds);
-
-  return removed.reduce((sum, file) => sum + (linked.has(file.id) ? 0 : file.size), 0);
-}
-
-function pixelsOf(file: FileRow): number | null {
-  return file.width !== null && file.height !== null ? file.width * file.height : null;
-}
-
-function ratioLabel(ratio: number, noun: string): string | null {
-  if (ratio > 0.97 && ratio < 1.03) {
-    return null;
-  }
-
-  if (ratio < 1) {
-    return ratio <= 0.55
-      ? `1/${Math.round(1 / ratio)} the ${noun}`
-      : `${Math.round(ratio * 100)}% of the ${noun}`;
-  }
-
-  return `${ratio.toFixed(ratio >= 10 ? 0 : 1)}× the ${noun}`;
-}
-
-/** How a version compares with the kept one, in a few words. */
-function compareNotes(row: SetRow, keeper: FileRow, linked: ReadonlySet<FileId>): string[] {
-  const notes: string[] = [];
-
-  if (row.file.id !== keeper.id) {
-    const pixels = pixelsOf(row.file);
-    const keeperPixels = pixelsOf(keeper);
-
-    if (pixels !== null && keeperPixels) {
-      const label = ratioLabel(pixels / keeperPixels, "pixels");
-
-      if (label) {
-        notes.push(label);
-      }
-    }
-
-    const size = ratioLabel(row.file.size / Math.max(1, keeper.size), "size");
-
-    if (size) {
-      notes.push(size);
-    }
-
-    if (row.file.durationMs !== null && keeper.durationMs !== null) {
-      const seconds = Math.round((row.file.durationMs - keeper.durationMs) / 1000);
-
-      if (seconds !== 0) {
-        notes.push(`${Math.abs(seconds)} s ${seconds < 0 ? "shorter" : "longer"}`);
-      }
-    }
-  }
-
-  if (row.copies.length > 0) {
-    notes.push(`+${plural(row.copies.length, "identical copy", "identical copies")}`);
-  }
-
-  if (linked.has(row.file.id)) {
-    notes.push("hard link");
-  }
-
-  return notes;
-}
-
-interface QueueRequest {
-  rootId: RootId;
-  level: SimilarityLevel;
-  scope: DuplicateScope;
-  dismissed: boolean;
-}
-
-/**
- * The sets, loaded a page at a time as the queue scrolls. A refresh (any catalog change) reloads
- * as many as were loaded and swaps them in at once, so the list never blanks.
- */
-function useSetQueue(request: QueueRequest) {
-  const { catalogVersion, report } = useEngine();
-  const key = JSON.stringify(request);
-
-  const [loaded, setLoaded] = useState<{
-    key: string;
-    version: number;
-    data: DuplicateSetPage;
-  } | null>(null);
-
-  const [wanted, setWanted] = useState({ key, count: PAGE_SIZE });
-  const count = wanted.key === key ? wanted.count : PAGE_SIZE;
-  const requestRef = useRef(request);
-  const latest = useRef("");
-
-  requestRef.current = request;
-
-  useEffect(() => {
-    const stamp = `${key}|${catalogVersion}|${count}`;
-    const current = requestRef.current;
-    const version = catalogVersion;
-
-    latest.current = stamp;
-
-    const load = async () => {
-      let result: DuplicateSetPage | null = null;
-
-      // Fetches in chunks of the method's 500 limit until `count` sets are in hand.
-      while (result === null || (result.sets.length < count && result.sets.length < result.total)) {
-        const offset: number = result?.sets.length ?? 0;
-
-        const chunk = await call("duplicateSets", {
-          rootId: current.rootId,
-          level: current.level,
-          scope: current.scope,
-          dismissed: current.dismissed,
-          offset,
-          limit: Math.min(500, count - offset),
-        });
-
-        result = result === null ? chunk : { ...chunk, sets: [...result.sets, ...chunk.sets] };
-
-        if (chunk.sets.length === 0) {
-          break;
-        }
-      }
-
-      if (latest.current === stamp) {
-        setLoaded({ key, version, data: result });
-      }
-    };
-
-    load().catch(report);
-  }, [key, catalogVersion, count, report]);
-
-  const current = loaded?.key === key ? loaded : null;
-
-  const loadMore = useCallback(() => {
-    const next = current ? current.data.sets.length + PAGE_SIZE : 0;
-
-    if (current && current.data.sets.length < current.data.total && next > count) {
-      setWanted({ key, count: next });
-    }
-  }, [current, key, count]);
-
-  return { data: current?.data ?? null, version: current?.version ?? -1, loadMore };
+/** The result of the last decision, beside the title until the next one or a few seconds pass. */
+interface Status {
+  id: number;
+  text: string;
+  undo: (() => void) | null;
 }
 
 export function DuplicatesView({ rootId }: { rootId: RootId }) {
   const { settings, setSettings, catalogVersion, report } = useEngine();
   const actions = useActions();
-  const toasts = useToasts();
+  const navigation = useNavigation();
   const preferFolder = usePreferFolder(rootId);
   const similarJob = useActiveJob("similar", rootId);
   const level = settings?.similarity ?? "balanced";
-  const [scope, setScope] = useState<DuplicateScope>("all");
+
+  // Similar sets need eyes, so they come first, unless Overview asked for identical copies. With
+  // no similar sets at all, the first load falls to identical copies; it never switches later.
+  const [chosenScope, setChosenScope] = useState<DuplicateScope | null>(() => {
+    const request = navigation.duplicatesTab;
+
+    return request && Date.now() - request.at < TAB_REQUEST_MS ? request.tab : null;
+  });
+
+  const scope: DuplicateScope = chosenScope ?? "similar";
   const [dismissedMode, setDismissedMode] = useState(false);
   const queue = useSetQueue({ rootId, level, scope, dismissed: dismissedMode });
   const [activeIndex, setActiveIndex] = useState(0);
   const [focusedRow, setFocusedRow] = useState(1);
+  // The focus is drawn only once the arrow keys move it, so a new set never looks half-picked.
+  const [keyboardFocus, setKeyboardFocus] = useState(false);
+  const [looking, setLooking] = useState(false);
+  // The version under the pointer, so P and Space act on what the owner is pointing at.
+  const [hoverRow, setHoverRow] = useState<number | null>(null);
+  // A click right after a new set appears was aimed at the old one, so it waits this long.
+  const armedAt = useRef(0);
+  // Decisions made close together report as one, with one Undo for all of them.
+  const recent = useRef<{ at: number; undos: Array<() => Promise<boolean>> } | null>(null);
   const [zoomed, setZoomed] = useState(false);
   const [playing, setPlaying] = useState(false);
-  const [muted, setMuted] = useState(true);
+  const [soundOn, setSoundOn] = useState(false);
   const [overrides, setOverrides] = useState<ReadonlyMap<string, FileId[]>>(new Map());
   const [skipped, setSkipped] = useState<ReadonlySet<string>>(new Set());
   // Sets resolved or dismissed here stay hidden until a refresh newer than that change arrives.
   const [hidden, setHidden] = useState<ReadonlyMap<string, number>>(new Map());
+  // A set undone from here comes back into focus once the refresh brings it.
+  const [returnTo, setReturnTo] = useState<string | null>(null);
+  const [status, setStatus] = useState<Status | null>(null);
+  const [freedHere, setFreedHere] = useState(0);
   const versionRef = useRef(catalogVersion);
+  const statusId = useRef(0);
+  const pointer = useRef<{ x: number; y: number } | null>(null);
+  const [zoomAt, setZoomAt] = useState<{ x: number; y: number } | null>(null);
 
   versionRef.current = catalogVersion;
 
+  const data = queue.data;
+
+  useEffect(() => {
+    if (chosenScope === null && data) {
+      setChosenScope(data.counts.similar === 0 && data.counts.exact > 0 ? "exact" : "similar");
+    }
+  }, [chosenScope, data]);
+
+  useEffect(() => {
+    if (status === null) {
+      return;
+    }
+
+    const timer = window.setTimeout(
+      () => setStatus((current) => (current?.id === status.id ? null : current)),
+      STATUS_MS,
+    );
+
+    return () => window.clearTimeout(timer);
+  }, [status]);
+
+  // The pointer hides the keyboard focus again, and is remembered for zooming in at it.
+  useEffect(() => {
+    const onMove = (event: PointerEvent) => {
+      pointer.current = {
+        x: event.clientX / window.innerWidth,
+        y: event.clientY / window.innerHeight,
+      };
+      setKeyboardFocus(false);
+    };
+
+    window.addEventListener("pointermove", onMove);
+
+    return () => window.removeEventListener("pointermove", onMove);
+  }, []);
+
   const sets = useMemo(
     () =>
-      (queue.data?.sets ?? []).filter((set) => {
+      (data?.sets ?? []).filter((set) => {
         const until = hidden.get(set.key);
 
         return until === undefined || queue.version > until;
       }),
-    [queue.data, queue.version, hidden],
+    [data, queue.version, hidden],
   );
+
+  useEffect(() => {
+    if (returnTo === null) {
+      return;
+    }
+
+    const position = sets.findIndex((set) => set.key === returnTo);
+
+    if (position >= 0) {
+      setActiveIndex(position);
+      setReturnTo(null);
+    }
+  }, [returnTo, sets]);
 
   const index = Math.min(activeIndex, Math.max(0, sets.length - 1));
   const active = sets[index] ?? null;
   const rows = useMemo(() => (active ? rowsOf(active) : []), [active]);
-  const kept = active ? keptIds(active, overrides.get(active.key)) : [];
+  const override = active ? overrides.get(active.key) : undefined;
+  const kept = active ? keptIds(active, override) : [];
   const keptSet = new Set(kept);
   const removed = active ? removalOf(active, kept) : [];
   const activeKey = active?.key ?? null;
 
-  // A new set starts with focus on its first version that would go, at fit size, paused.
+  // A new set starts with focus on its first version that would go, fitted, paused.
   useEffect(() => {
     if (activeKey !== null) {
       setFocusedRow(1);
+      setKeyboardFocus(false);
       setZoomed(false);
       setPlaying(false);
+      armedAt.current = Date.now() + ARM_DELAY_MS;
     }
   }, [activeKey]);
 
@@ -315,31 +207,73 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
     });
   }, []);
 
-  const resolve = useCallback(async () => {
-    if (!active) {
-      return;
-    }
+  const showStatus = useCallback((text: string, undo: (() => void) | null) => {
+    statusId.current += 1;
+    setStatus({ id: statusId.current, text, undo });
+  }, []);
 
-    const keep = keptIds(active, overrides.get(active.key));
-    const remove = removalOf(active, keep).map((file) => file.id);
+  const bringBack = useCallback(
+    (key: string) => {
+      unhide(key);
+      setReturnTo(key);
+      setStatus(null);
+    },
+    [unhide],
+  );
 
-    if (remove.length === 0) {
-      return;
-    }
+  /** Resolves a set keeping `keep`, quietly: the top bar says what happened and offers Undo. */
+  const resolveWith = useCallback(
+    async (set: DuplicateSet, keep: readonly FileId[]) => {
+      const going = removalOf(set, keep);
 
-    hide(active.key, Number.POSITIVE_INFINITY);
+      if (going.length === 0) {
+        return;
+      }
 
-    const plan = await actions.perform(
-      { kind: "resolve-duplicates", groups: [{ keep, remove }] },
-      { confirmLabel: "Remove anyway" },
-    );
+      const keeper = filesOf(set).find((file) => file.id === keep[0]);
+      const bytes = freedBytes(set, going);
 
-    if (plan) {
-      hide(active.key, versionRef.current);
-    } else {
-      unhide(active.key);
-    }
-  }, [active, overrides, hide, unhide, actions]);
+      hide(set.key, Number.POSITIVE_INFINITY);
+
+      const plan = await actions.perform(
+        {
+          kind: "resolve-duplicates",
+          groups: [{ keep: [...keep], remove: going.map((file) => file.id) }],
+        },
+        { quiet: true, onUndone: () => bringBack(set.key) },
+      );
+
+      if (plan) {
+        hide(set.key, versionRef.current);
+        setFreedHere((current) => current + bytes);
+
+        const undo = () =>
+          actions.undoPlan(plan, { quiet: true, onUndone: () => bringBack(set.key) });
+
+        const now = Date.now();
+
+        recent.current =
+          recent.current && now - recent.current.at < GROUP_MS
+            ? { at: now, undos: [...recent.current.undos, undo] }
+            : { at: now, undos: [undo] };
+
+        const undos = recent.current.undos;
+
+        showStatus(
+          undos.length > 1 ? `Kept ${undos.length} sets` : `Kept ${keeper?.name ?? "1 file"}`,
+          () =>
+            void (async () => {
+              for (const step of [...undos].reverse()) {
+                await step();
+              }
+            })(),
+        );
+      } else {
+        unhide(set.key);
+      }
+    },
+    [actions, bringBack, hide, showStatus, unhide],
+  );
 
   const dismiss = useCallback(async () => {
     if (!active) {
@@ -359,20 +293,21 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
 
       const restore = async () => {
         await call("restoreDuplicateSet", { dismissalId });
-        unhide(set.key);
+        bringBack(set.key);
       };
 
-      actions.pushUndo(restore);
-      toasts.show({
-        message: "Marked as not duplicates",
-        detail: rowsOf(set)[0]?.file.name ?? null,
-        action: { label: "Undo", run: () => void restore().catch(report) },
+      const forget = actions.pushUndo(restore);
+
+      recent.current = null;
+      showStatus(set.kind === "exact" ? "Kept every copy" : "Marked as not duplicates", () => {
+        forget();
+        void restore().catch(report);
       });
     } catch (error) {
       unhide(set.key);
       report(error);
     }
-  }, [active, hide, unhide, actions, toasts, report]);
+  }, [active, actions, bringBack, hide, report, showStatus, unhide]);
 
   const restoreDismissed = useCallback(async () => {
     if (!active || active.dismissalId === null) {
@@ -390,38 +325,41 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
     }
   }, [active, hide, unhide, report]);
 
-  const resolveAll = useCallback(() => {
-    const valid = [...overrides].flatMap(([key, keep]) => {
-      const set = sets.find((candidate) => candidate.key === key);
+  /** Return: the current keepers, or "keep every version" when all are kept. */
+  const decide = useCallback(() => {
+    if (!active) {
+      return;
+    }
 
-      return set && fitsSet(set, keep) ? [{ key, keep }] : [];
-    });
+    if (dismissedMode) {
+      void restoreDismissed();
+    } else if (removed.length > 0) {
+      void resolveWith(active, kept);
+    } else {
+      void dismiss();
+    }
+  }, [active, dismiss, dismissedMode, kept, removed.length, resolveWith, restoreDismissed]);
 
-    void actions.perform(
-      {
-        kind: "resolve-duplicate-sets",
-        rootId,
-        level,
-        scope,
-        overrides: valid,
-        skip: [...skipped],
-      },
-      { confirmLabel: "Remove anyway" },
-    );
-  }, [overrides, sets, actions, rootId, level, scope, skipped]);
-
+  /** A number key or a click on a version: keeps only that one, resolves and moves on. */
   const keepOnly = (rowIndex: number) => {
     const row = rows[rowIndex];
 
-    if (active && row) {
-      setOverrides((current) => new Map(current).set(active.key, [row.file.id]));
+    if (active && row && !dismissedMode) {
+      void resolveWith(active, [row.file.id]);
+    }
+  };
+
+  /** A click keeps like its number key does, unless the set only just appeared under it. */
+  const clickKeep = (rowIndex: number) => {
+    if (Date.now() >= armedAt.current) {
+      keepOnly(rowIndex);
     }
   };
 
   const toggleKeep = (rowIndex: number) => {
     const row = rows[rowIndex];
 
-    if (!active || !row) {
+    if (!active || !row || dismissedMode) {
       return;
     }
 
@@ -434,6 +372,45 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
     }
   };
 
+  // Close calls are left for the owner; the engine counts them across every set, loaded or not.
+  const closeCalls = scope === "similar" ? (data?.counts.closeCalls ?? 0) : 0;
+  const inTab = data ? (scope === "similar" ? data.counts.similar : data.counts.exact) : 0;
+
+  // A skipped close call is already left out, so only skipped confident sets come off the count.
+  const skippedConfident = sets.filter(
+    (set) => skipped.has(set.key) && !(scope === "similar" && isCloseCall(set)),
+  ).length;
+
+  const suggestions = Math.max(0, inTab - closeCalls - skippedConfident);
+
+  const keepAll = useCallback(() => {
+    const valid = [...overrides].flatMap(([key, keep]) => {
+      const set = sets.find((candidate) => candidate.key === key);
+
+      return set && fitsSet(set, keep) ? [{ key, keep }] : [];
+    });
+
+    void actions.perform({
+      kind: "resolve-duplicate-sets",
+      rootId,
+      level,
+      scope,
+      overrides: valid,
+      skip: [...skipped],
+      skipCloseCalls: true,
+    });
+  }, [overrides, sets, actions, rootId, level, scope, skipped]);
+
+  const removeIdentical = () =>
+    void actions.perform({
+      kind: "resolve-duplicate-sets",
+      rootId,
+      level,
+      scope: "exact",
+      overrides: [],
+      skip: [],
+    });
+
   const move = (delta: number) => {
     setActiveIndex(Math.max(0, Math.min(sets.length - 1, index + delta)));
   };
@@ -445,12 +422,52 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
     }
   };
 
+  const focusBy = (delta: number) => {
+    setFocusedRow(Math.max(0, Math.min(rows.length - 1, focus + delta)));
+    setKeyboardFocus(true);
+  };
+
   const hasVideo = rows.some((row) => row.file.kind === "video");
+  const similarSet = active?.kind === "similar";
+
+  const keeperRow = Math.max(
+    0,
+    rows.findIndex((row) => keptSet.has(row.file.id)),
+  );
+
+  /**
+   * The version a key acts on: the keyboard focus once the arrows moved it, else the one under
+   * the pointer, else the suggestion (never a focus the owner cannot see).
+   */
+  const target = keyboardFocus ? focus : (hoverRow ?? keeperRow);
+
+  const openLoupe = (rowIndex: number) => {
+    setFocusedRow(rowIndex);
+    setZoomed(false);
+    setLooking(true);
+  };
 
   useViewKeys((event) => {
+    // A held key repeats; a decision never should.
+    const deciding = digitOf(event) !== null || ["Enter", "n", "N", "s", "S"].includes(event.key);
+
+    if (event.repeat && deciding) {
+      return true;
+    }
+
     if (isCommandKey(event) && event.key === "Enter") {
-      if (!dismissedMode && sets.length > 0) {
-        resolveAll();
+      if (!dismissedMode && suggestions > 0) {
+        keepAll();
+      }
+
+      return true;
+    }
+
+    if (isCommandKey(event) && (event.key === "y" || event.key === "Y")) {
+      const row = rows[looking ? focus : target];
+
+      if (row) {
+        void desktop.quickLook(row.file.absPath);
       }
 
       return true;
@@ -466,11 +483,10 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
       if (!dismissedMode && digit <= rows.length) {
         if (event.shiftKey) {
           toggleKeep(digit - 1);
+          setFocusedRow(digit - 1);
         } else {
           keepOnly(digit - 1);
         }
-
-        setFocusedRow(digit - 1);
       }
 
       return true;
@@ -483,33 +499,32 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
     switch (event.key) {
       case "ArrowDown":
       case "j":
+      case "J":
         move(1);
 
         return true;
       case "ArrowUp":
       case "k":
+      case "K":
         move(-1);
 
         return true;
       case "ArrowRight":
       case "l":
-      case "e":
-        setFocusedRow(Math.min(rows.length - 1, focus + 1));
+        focusBy(1);
 
         return true;
       case "ArrowLeft":
       case "h":
-      case "q":
-        setFocusedRow(Math.max(0, focus - 1));
+        focusBy(-1);
 
         return true;
       case "Enter":
-        if (dismissedMode) {
-          void restoreDismissed();
-        } else if (removed.length > 0) {
-          void resolve();
+        // In the loupe, Return keeps the version on screen.
+        if (looking) {
+          keepOnly(focus);
         } else {
-          void dismiss();
+          decide();
         }
 
         return true;
@@ -527,7 +542,7 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
         return true;
       case "p":
       case "P": {
-        const row = rows[focus];
+        const row = rows[looking ? focus : target];
 
         if (row && !dismissedMode) {
           void preferFolder(row.file.dir);
@@ -536,522 +551,430 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
         return true;
       }
 
+      case "c":
+      case "C":
+        if (similarSet) {
+          if (looking) {
+            setLooking(false);
+          } else {
+            openLoupe(target);
+          }
+        }
+
+        return true;
       case "z":
       case "Z":
-        setZoomed((current) => !current);
+        if (similarSet) {
+          if (!looking) {
+            setFocusedRow(target);
+          }
+
+          setZoomAt(pointer.current);
+          setLooking(true);
+          setZoomed((current) => !looking || !current);
+        }
 
         return true;
       case "m":
       case "M":
-        setMuted((current) => !current);
+        setSoundOn((current) => !current);
 
         return true;
       case " ": {
-        const row = rows[focus];
-
-        if (hasVideo && active?.kind === "similar") {
+        // Space looks closer, as in Finder, without deciding anything; in the loupe it plays.
+        if (looking && hasVideo) {
           setPlaying((current) => !current);
-        } else if (row) {
-          void desktop.quickLook(row.file.absPath);
+        } else if (similarSet && !looking) {
+          openLoupe(target);
+        } else if (!similarSet) {
+          const row = rows[target];
+
+          if (row) {
+            void desktop.quickLook(row.file.absPath);
+          }
         }
 
         return true;
       }
 
       case "Escape":
-        setZoomed(false);
+        if (looking) {
+          setLooking(false);
+          setZoomed(false);
 
-        return zoomed;
+          return true;
+        }
+
+        return false;
       default:
         return false;
     }
   });
 
-  const data = queue.data;
   const fingerprinting = data !== null && data.fingerprinted < data.fingerprintable;
-  const keeperRow = rows.find((row) => keptSet.has(row.file.id)) ?? rows[0] ?? null;
-  const keeperNumber = keeperRow ? rows.indexOf(keeperRow) + 1 : 1;
-  const focusRow = rows[focus];
+  const totalSets = data ? data.counts.exact + data.counts.similar : 0;
+  const otherScope: DuplicateScope = scope === "similar" ? "exact" : "similar";
+  const otherCount = data ? (scope === "similar" ? data.counts.exact : data.counts.similar) : 0;
 
-  const compareRow =
-    focusRow && focusRow !== keeperRow ? focusRow : rows.find((row) => row !== keeperRow);
+  useToastLift(active ? 72 : 0);
 
-  // Sets hidden here still count in `total` until the refresh arrives.
-  const remaining = data ? Math.max(sets.length, data.total - (data.sets.length - sets.length)) : 0;
+  const reason = active ? reasonOf(active, rows, kept, override !== undefined) : null;
+  const closeCall = reason?.closeCall ?? false;
+
+  const scopeSwitch =
+    data && !dismissedMode ? (
+      <Segmented
+        label="Show"
+        value={scope}
+        onChange={(next) => {
+          setChosenScope(next);
+          setActiveIndex(0);
+          setLooking(false);
+        }}
+        options={[
+          { value: "similar", label: "Similar", count: data.counts.similar },
+          { value: "exact", label: "Identical", count: data.counts.exact },
+        ]}
+      />
+    ) : null;
+
+  const meta = status ? (
+    <span className="gz-enter-fade inline-flex items-center gap-1.5" data-review-status>
+      <Check className="size-3.5 text-emerald-500" />
+      <span className="max-w-72 truncate">{status.text}</span>
+      {status.undo ? (
+        <button
+          type="button"
+          className="gz-btn gz-btn-secondary gz-btn-sm -my-1 ml-1"
+          title="Undo  ⌘Z"
+          onClick={() => {
+            status.undo?.();
+            setStatus(null);
+          }}
+        >
+          Undo
+        </button>
+      ) : null}
+    </span>
+  ) : data ? (
+    dismissedMode ? (
+      plural(sets.length, "set")
+    ) : (
+      `${plural(totalSets, "set")} · ${formatBytes(data.openReclaimableBytes)} to free`
+    )
+  ) : null;
+
+  const decisionBar = active ? (
+    <div className="gz-float absolute bottom-5 left-1/2 z-10 flex w-max max-w-[calc(100%-40px)] -translate-x-1/2 items-center gap-2 p-1.5">
+      {dismissedMode ? (
+        <>
+          <span className="gz-caption px-3">You marked these as not duplicates</span>
+          <button
+            type="button"
+            className="gz-btn gz-btn-primary gz-btn-lg"
+            onClick={() => void restoreDismissed()}
+          >
+            Restore <Kbd>↩</Kbd>
+          </button>
+        </>
+      ) : (
+        <>
+          {looking ? (
+            <>
+              <button
+                type="button"
+                className="gz-btn gz-btn-ghost gz-btn-icon size-9"
+                title="Previous version  ←"
+                aria-label="Previous version"
+                disabled={focus === 0}
+                onClick={() => focusBy(-1)}
+              >
+                <ChevronLeft />
+              </button>
+              <button
+                type="button"
+                className="gz-btn gz-btn-ghost gz-btn-icon size-9"
+                title="Next version  →"
+                aria-label="Next version"
+                disabled={focus >= rows.length - 1}
+                onClick={() => focusBy(1)}
+              >
+                <ChevronRight />
+              </button>
+              <span className="mx-1 h-5 w-px bg-zinc-200 dark:bg-white/10" aria-hidden />
+            </>
+          ) : null}
+          <button
+            type="button"
+            className="gz-btn gz-btn-secondary gz-btn-lg"
+            title="Skip for now  S"
+            onClick={skip}
+          >
+            Skip
+          </button>
+          {removed.length > 0 ? (
+            <button
+              type="button"
+              className="gz-btn gz-btn-secondary gz-btn-lg"
+              title={`Keep every ${active.kind === "exact" ? "copy" : "version"} and stop showing this set  N`}
+              onClick={() => void dismiss()}
+            >
+              {keepEveryLabel(active, rows)}
+            </button>
+          ) : null}
+          {/* In the loupe the primary keeps the version on screen; elsewhere, the keepers. */}
+          <button
+            type="button"
+            className="gz-btn gz-btn-primary gz-btn-lg"
+            title={
+              looking ? `Keep only ${focus + 1} and go on` : holdingSummary(active, rows, keptSet)
+            }
+            data-decide
+            onClick={() => (looking ? keepOnly(focus) : decide())}
+          >
+            {looking ? `Keep ${focus + 1}` : decisionLabel(active, rows, keptSet)} <Kbd>↩</Kbd>
+          </button>
+        </>
+      )}
+    </div>
+  ) : null;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <ViewHeader
-        title="Duplicates"
-        meta={
-          data
-            ? dismissedMode
-              ? plural(remaining, "dismissed set")
-              : `${plural(remaining, "set")} · ${formatBytes(data.reclaimableBytes)} to reclaim`
-            : null
-        }
-      >
+      <TopBar title={dismissedMode ? "Not duplicates" : "Duplicates"} meta={meta}>
         {fingerprinting ? (
           <span
-            className="ls-mono inline-flex items-center gap-1.5 text-[10.5px] text-zinc-500"
+            className="gz-caption inline-flex items-center gap-2"
             title="Similar versions appear as each picture and video is checked"
           >
             {similarJob ? <Spinner /> : null}
-            similar {formatCount(data?.fingerprinted ?? 0)}/
+            Checking {formatCount(data?.fingerprinted ?? 0)} of{" "}
             {formatCount(data?.fingerprintable ?? 0)}
           </span>
         ) : null}
-        {data && !dismissedMode ? (
-          <Toggle
-            label="Show"
-            value={scope}
-            onChange={(next) => {
-              setScope(next);
-              setActiveIndex(0);
-            }}
-            options={[
-              { value: "all", label: "All", count: data.counts.exact + data.counts.similar },
-              { value: "exact", label: "Identical", count: data.counts.exact },
-              { value: "similar", label: "Similar", count: data.counts.similar },
-            ]}
-          />
-        ) : null}
-        <Toggle
-          label="Match"
-          value={level}
-          onChange={(similarity) => settings && void setSettings({ ...settings, similarity })}
-          options={SIMILARITY_LEVELS}
-        />
-        {data && (data.counts.dismissed > 0 || dismissedMode) ? (
+        {dismissedMode ? (
           <button
             type="button"
-            aria-pressed={dismissedMode}
-            className={`ls-btn ${dismissedMode ? "ls-btn-primary" : "ls-btn-ghost"}`}
+            className="gz-btn gz-btn-secondary"
             onClick={() => {
-              setDismissedMode((current) => !current);
+              setDismissedMode(false);
               setActiveIndex(0);
             }}
           >
-            {dismissedMode ? "Done" : `Dismissed ${formatCount(data.counts.dismissed)}`}
+            Done
+          </button>
+        ) : sets.length > 0 ? (
+          <button
+            type="button"
+            className="gz-btn gz-btn-secondary"
+            disabled={suggestions === 0}
+            onClick={keepAll}
+            title={
+              scope === "exact"
+                ? "Keeps the suggested copy of each and moves the rest to holding  ⌘↩"
+                : closeCalls > 0
+                  ? `Leaves ${plural(closeCalls, "close call")} for you  ⌘↩`
+                  : "Keeps the suggestion in every set  ⌘↩"
+            }
+          >
+            {scope === "exact"
+              ? "Remove all identical copies"
+              : `Keep ${plural(suggestions, "suggestion")}`}
           </button>
         ) : null}
-      </ViewHeader>
+        <Menu label={<MoreHorizontal />} icon variant="ghost" title="More">
+          {(close) => (
+            <>
+              <MenuLabel>Similar versions</MenuLabel>
+              {SIMILARITY_LEVELS.map((option) => (
+                <MenuCheck
+                  key={option.value}
+                  checked={level === option.value}
+                  label={option.label}
+                  onChange={() => {
+                    if (settings) {
+                      void setSettings({ ...settings, similarity: option.value });
+                    }
+
+                    close();
+                  }}
+                />
+              ))}
+              <MenuSeparator />
+              <MenuCheck
+                checked={dismissedMode}
+                label="Show sets marked not duplicates"
+                count={data ? formatCount(data.counts.dismissed) : undefined}
+                onChange={(next) => {
+                  setDismissedMode(next);
+                  setActiveIndex(0);
+                  setLooking(false);
+                  close();
+                }}
+              />
+            </>
+          )}
+        </Menu>
+      </TopBar>
 
       {data === null ? (
         <EmptyState title="Finding duplicates…" />
       ) : sets.length === 0 ? (
-        <EmptyState
-          title={
-            dismissedMode
-              ? "Nothing dismissed"
-              : fingerprinting
-                ? "No duplicates found yet"
-                : "No duplicates"
-          }
-        >
-          {fingerprinting && !dismissedMode
-            ? `Still checking for similar versions: ${formatCount(data.fingerprinted)} of ${formatCount(data.fingerprintable)}.`
-            : null}
-        </EmptyState>
+        <div className="flex min-h-0 flex-1">
+          {scopeSwitch ? (
+            <aside className="w-[232px] shrink-0 border-r gz-divider px-3 pt-3 xl:w-[264px]">
+              {scopeSwitch}
+            </aside>
+          ) : null}
+          <EmptyState
+            icon={CheckCircle2}
+            title={
+              dismissedMode
+                ? "Nothing marked as not duplicates"
+                : scope === "similar"
+                  ? freedHere > 0
+                    ? "All similar sets done"
+                    : fingerprinting
+                      ? "No similar versions found yet"
+                      : "No similar versions"
+                  : "No identical copies"
+            }
+            actions={
+              dismissedMode ? null : (
+                <>
+                  <button
+                    type="button"
+                    className="gz-btn gz-btn-secondary"
+                    onClick={() => navigation.go("overview")}
+                  >
+                    Back to Overview
+                  </button>
+                  {scope === "similar" && otherCount > 0 ? (
+                    <button
+                      type="button"
+                      className="gz-btn gz-btn-secondary"
+                      onClick={removeIdentical}
+                    >
+                      Remove {plural(otherCount, "set")} of identical copies
+                    </button>
+                  ) : otherCount > 0 ? (
+                    <button
+                      type="button"
+                      className="gz-btn gz-btn-secondary"
+                      onClick={() => {
+                        setChosenScope(otherScope);
+                        setActiveIndex(0);
+                      }}
+                    >
+                      Show similar versions
+                    </button>
+                  ) : null}
+                </>
+              )
+            }
+          >
+            {freedHere > 0
+              ? `${formatBytes(freedHere)} moved to holding.`
+              : fingerprinting && scope === "similar" && !dismissedMode
+                ? `Still checking for similar versions: ${formatCount(data.fingerprinted)} of ${formatCount(data.fingerprintable)}.`
+                : null}
+          </EmptyState>
+        </div>
       ) : (
         <div className="flex min-h-0 flex-1">
           <SetQueue
             sets={sets}
-            total={remaining}
+            total={Math.max(sets.length, data.total - (data.sets.length - sets.length))}
             activeIndex={index}
             skipped={skipped}
             overrides={overrides}
-            onSelect={setActiveIndex}
+            header={scopeSwitch}
+            onSelect={(position) => {
+              setActiveIndex(position);
+              setLooking(false);
+            }}
             onNearEnd={queue.loadMore}
-            footer={
-              dismissedMode ? null : (
-                <button
-                  type="button"
-                  className="ls-btn ls-btn-primary w-full justify-between"
-                  onClick={resolveAll}
-                  title="Resolve every remaining set in this list with its keeper"
-                >
-                  <span>
-                    Resolve all {formatCount(Math.max(0, remaining - skipped.size))} ·{" "}
-                    {formatBytes(data.reclaimableBytes)}
-                  </span>
-                  <Kbd>⌘↩</Kbd>
-                </button>
-              )
-            }
           />
 
           {active ? (
             <section
-              className="flex min-h-0 min-w-0 flex-1 flex-col"
+              className="relative flex min-h-0 min-w-0 flex-1 flex-col"
               data-set-key={active.key}
               data-set-kind={active.kind}
             >
-              <div className="flex min-h-0 flex-1 flex-col gap-3 p-4">
-                {active.kind === "similar" && keeperRow ? (
-                  <CompareStage
-                    left={{ row: keeperRow.file, number: keeperNumber, kept: true }}
-                    right={
-                      compareRow
-                        ? {
-                            row: compareRow.file,
-                            number: rows.indexOf(compareRow) + 1,
-                            kept: keptSet.has(compareRow.file.id),
-                          }
-                        : null
-                    }
-                    zoomed={zoomed}
-                    playing={playing}
-                    muted={muted}
-                  />
-                ) : keeperRow ? (
-                  <ExactPreview row={keeperRow.file} copies={rows.length} />
+              <div className="flex h-11 shrink-0 items-center gap-2 px-5 pt-1">
+                {closeCall ? (
+                  <span className="size-2 shrink-0 rounded-full bg-amber-500" aria-hidden />
                 ) : null}
+                <p className="min-w-0 truncate text-[13px]">
+                  {dismissedMode ? "Kept as not duplicates" : reason?.text}
+                  {dismissedMode ? null : (
+                    <span className="text-zinc-500 dark:text-zinc-400">
+                      {" · "}
+                      {holdingSummary(active, rows, keptSet)}
+                    </span>
+                  )}
+                </p>
+              </div>
 
-                <VersionTable
-                  set={active}
+              {active.kind === "exact" ? (
+                <CopyList
                   rows={rows}
                   kept={keptSet}
                   focus={focus}
-                  keeper={keeperRow?.file ?? null}
+                  showFocus={keyboardFocus}
                   readOnly={dismissedMode}
-                  onFocus={setFocusedRow}
-                  onKeepOnly={keepOnly}
+                  onHover={setHoverRow}
+                  onKeepOnly={clickKeep}
                   onToggleKeep={toggleKeep}
                 />
-              </div>
+              ) : (
+                <VersionGrid
+                  set={active}
+                  rows={rows}
+                  kept={keptSet}
+                  closeCall={closeCall}
+                  focus={focus}
+                  showFocus={keyboardFocus}
+                  playing={playing && !looking}
+                  soundOn={soundOn}
+                  readOnly={dismissedMode}
+                  onHover={setHoverRow}
+                  onLook={openLoupe}
+                  onKeepOnly={clickKeep}
+                  onToggleKeep={toggleKeep}
+                />
+              )}
 
-              <div className="flex shrink-0 items-center gap-2 border-t ls-divider bg-zinc-50 px-4 py-2 dark:bg-zinc-900/60">
-                <p className="ls-mono min-w-0 flex-1 truncate text-[10.5px] text-zinc-500">
-                  {dismissedMode ? (
-                    "You marked these as not duplicates."
-                  ) : removed.length === 0 ? (
-                    "Keeps every version, so resolving marks them as not duplicates."
-                  ) : (
-                    <>
-                      keeps {keeperRow?.file.relPath}
-                      {kept.length > 1 ? ` and ${kept.length - 1} more` : ""} ·{" "}
-                      {plural(removed.length, "file")} to holding ·{" "}
-                      {formatBytes(freedBytes(active, removed))}
-                    </>
-                  )}
-                </p>
-                {dismissedMode ? (
-                  <button
-                    type="button"
-                    className="ls-btn ls-btn-cta"
-                    onClick={() => void restoreDismissed()}
-                  >
-                    Restore <Kbd>↩</Kbd>
-                  </button>
-                ) : (
-                  <>
-                    <button type="button" className="ls-btn ls-btn-ghost" onClick={skip}>
-                      Skip <Kbd>S</Kbd>
-                    </button>
-                    <button type="button" className="ls-btn" onClick={() => void dismiss()}>
-                      Not duplicates <Kbd>N</Kbd>
-                    </button>
-                    <button
-                      type="button"
-                      className="ls-btn ls-btn-cta"
-                      onClick={() => void (removed.length > 0 ? resolve() : dismiss())}
-                    >
-                      Resolve <Kbd>↩</Kbd>
-                    </button>
-                  </>
-                )}
-              </div>
+              {looking && similarSet ? (
+                <Loupe
+                  rows={rows}
+                  index={focus}
+                  kept={keptSet}
+                  closeCall={closeCall}
+                  suggested={keeperRow + 1}
+                  zoomed={zoomed}
+                  playing={playing}
+                  soundOn={soundOn}
+                  pointer={zoomAt}
+                  onClose={() => {
+                    setLooking(false);
+                    setZoomed(false);
+                  }}
+                  onToggleZoom={(at) => {
+                    setZoomAt(at);
+                    setZoomed((current) => !current);
+                  }}
+                >
+                  {decisionBar}
+                </Loupe>
+              ) : (
+                decisionBar
+              )}
             </section>
           ) : null}
         </div>
       )}
-    </div>
-  );
-}
-
-function SetQueue({
-  sets,
-  total,
-  activeIndex,
-  skipped,
-  overrides,
-  onSelect,
-  onNearEnd,
-  footer,
-}: {
-  sets: readonly DuplicateSet[];
-  total: number;
-  activeIndex: number;
-  skipped: ReadonlySet<string>;
-  overrides: ReadonlyMap<string, FileId[]>;
-  onSelect: (index: number) => void;
-  onNearEnd: () => void;
-  footer: ReactNode;
-}) {
-  const container = useRef<HTMLDivElement>(null);
-  const [scrollTop, setScrollTop] = useState(0);
-  const [height, setHeight] = useState(600);
-
-  useLayoutEffect(() => {
-    const element = container.current;
-
-    if (!element) {
-      return;
-    }
-
-    const observer = new ResizeObserver(() => setHeight(element.clientHeight));
-
-    observer.observe(element);
-    setHeight(element.clientHeight);
-
-    return () => observer.disconnect();
-  }, []);
-
-  // Keyboard moves keep the active set in view.
-  useEffect(() => {
-    const element = container.current;
-
-    if (!element) {
-      return;
-    }
-
-    const top = activeIndex * QUEUE_ROW_HEIGHT;
-
-    if (top < element.scrollTop) {
-      element.scrollTop = top;
-    } else if (top + QUEUE_ROW_HEIGHT > element.scrollTop + element.clientHeight) {
-      element.scrollTop = top + QUEUE_ROW_HEIGHT - element.clientHeight;
-    }
-  }, [activeIndex]);
-
-  const first = Math.max(0, Math.floor(scrollTop / QUEUE_ROW_HEIGHT) - 6);
-  const last = Math.min(sets.length, Math.ceil((scrollTop + height) / QUEUE_ROW_HEIGHT) + 6);
-
-  useEffect(() => {
-    if (Math.max(last, activeIndex) >= sets.length - 10 && sets.length < total) {
-      onNearEnd();
-    }
-  }, [last, activeIndex, sets.length, total, onNearEnd]);
-
-  return (
-    <aside className="flex w-72 shrink-0 flex-col border-r ls-divider">
-      <div
-        ref={container}
-        className="relative min-h-0 flex-1 overflow-y-auto"
-        onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
-      >
-        <div style={{ height: sets.length * QUEUE_ROW_HEIGHT }} className="relative">
-          {sets.slice(first, last).map((set, offset) => {
-            const position = first + offset;
-            const files = filesOf(set);
-            const kept = keptIds(set, overrides.get(set.key));
-            const keeper = files.find((file) => kept.includes(file.id)) ?? files[0];
-
-            return (
-              <button
-                key={set.key}
-                type="button"
-                aria-current={position === activeIndex}
-                data-set-key={set.key}
-                onClick={() => onSelect(position)}
-                style={{ top: position * QUEUE_ROW_HEIGHT, height: QUEUE_ROW_HEIGHT }}
-                className={`absolute inset-x-0 flex items-center gap-2.5 border-b border-zinc-100 px-3 text-left dark:border-zinc-900 ${
-                  position === activeIndex
-                    ? "bg-violet-500/10"
-                    : "hover:bg-zinc-50 dark:hover:bg-zinc-900/60"
-                } ${skipped.has(set.key) ? "opacity-50" : ""}`}
-              >
-                {keeper ? <Thumbnail row={keeper} size={32} /> : null}
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-baseline justify-between gap-2 text-xs">
-                    <span className="truncate font-medium">{keeper?.name}</span>
-                    <span className="ls-mono shrink-0 text-[10px] text-zinc-500">
-                      {set.kind === "exact"
-                        ? `${files.length} identical`
-                        : `${set.versions.length} versions`}
-                    </span>
-                  </span>
-                  <span className="ls-mono block truncate text-[10px] text-zinc-500">
-                    {skipped.has(set.key)
-                      ? "skipped"
-                      : `keeps ${keeper?.dir || "/"} · ${
-                          overrides.has(set.key) ? "your pick" : KEEP_REASONS[set.keepReason]
-                        }`}
-                  </span>
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-      {footer ? <div className="shrink-0 border-t ls-divider p-2">{footer}</div> : null}
-    </aside>
-  );
-}
-
-function ExactPreview({ row, copies }: { row: FileRow; copies: number }) {
-  return (
-    <div className="flex min-h-0 flex-1 items-center gap-5 rounded-md bg-zinc-100 p-4 dark:bg-zinc-900">
-      <div className="flex h-full max-h-96 min-h-0 w-1/2 items-center justify-center">
-        {(row.kind === "image" || row.kind === "video") && row.probeError === null ? (
-          <img
-            src={thumbnailUrl(row.absPath, 512)}
-            alt=""
-            className="max-h-full max-w-full rounded object-contain"
-          />
-        ) : (
-          <Thumbnail row={row} size={72} />
-        )}
-      </div>
-      <div className="min-w-0 text-xs">
-        <p className="font-medium">{plural(copies, "identical copy", "identical copies")}</p>
-        <p className="ls-mono mt-1 text-[10.5px] text-zinc-500">
-          {formatLabel(row.format)} · {describeDetails(row) || "—"} · {formatBytes(row.size)} each
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function VersionTable({
-  set,
-  rows,
-  kept,
-  focus,
-  keeper,
-  readOnly,
-  onFocus,
-  onKeepOnly,
-  onToggleKeep,
-}: {
-  set: DuplicateSet;
-  rows: readonly SetRow[];
-  kept: ReadonlySet<FileId>;
-  focus: number;
-  keeper: FileRow | null;
-  readOnly: boolean;
-  onFocus: (index: number) => void;
-  onKeepOnly: (index: number) => void;
-  onToggleKeep: (index: number) => void;
-}) {
-  const linked = new Set(set.hardLinkedIds);
-  const showVideo = rows.some((row) => row.file.kind === "video");
-
-  const dimensions = (file: FileRow | null) =>
-    file?.width != null && file.height != null ? `${file.width}×${file.height}` : "—";
-
-  return (
-    <div className="max-h-[40%] shrink-0 overflow-y-auto rounded-md border ls-divider">
-      <table className="w-full table-fixed text-xs">
-        <colgroup>
-          <col className="w-7" />
-          <col className="w-7" />
-          <col />
-          <col className="w-12" />
-          <col className="w-20" />
-          {showVideo ? <col className="w-11" /> : null}
-          {showVideo ? <col className="w-20" /> : null}
-          <col className="w-16" />
-          <col className="w-24" />
-          <col className="w-40" />
-        </colgroup>
-        <tbody className="divide-y divide-zinc-100 dark:divide-zinc-900">
-          {rows.map((row, index) => {
-            const isKept = kept.has(row.file.id);
-            const pixels = dimensions(row.file);
-
-            const differs = (value: string, keeperValue: string) =>
-              keeper && row.file.id !== keeper.id && value !== keeperValue
-                ? "text-amber-700 dark:text-amber-300"
-                : "";
-
-            return (
-              <tr
-                key={row.file.id}
-                data-row={index + 1}
-                data-file-name={row.file.name}
-                data-keep={isKept}
-                onClick={() => onFocus(index)}
-                onDoubleClick={() => void desktop.quickLook(row.file.absPath)}
-                className={`cursor-default ${index === focus ? "bg-zinc-100 dark:bg-zinc-800/60" : ""} ${
-                  isKept ? "" : "text-zinc-500"
-                }`}
-              >
-                <td className="ls-mono py-1.5 pl-3 text-[10.5px] text-zinc-500">{index + 1}</td>
-                <td className="py-1.5">
-                  <button
-                    type="button"
-                    disabled={readOnly}
-                    aria-pressed={isKept}
-                    aria-label={isKept ? `Keeping ${row.file.name}` : `Keep ${row.file.name}`}
-                    title="Keep only this · ⇧-click to keep it as well"
-                    onClick={(event) => {
-                      event.stopPropagation();
-
-                      if (event.shiftKey || event.metaKey) {
-                        onToggleKeep(index);
-                      } else {
-                        onKeepOnly(index);
-                      }
-                    }}
-                    className="rounded p-0.5 hover:bg-zinc-200 disabled:pointer-events-none dark:hover:bg-zinc-700"
-                  >
-                    <Star
-                      className={`size-3.5 ${isKept ? "fill-violet-500 text-violet-500" : "text-zinc-400"}`}
-                    />
-                  </button>
-                </td>
-                <td className="py-1 pr-2" title={row.file.relPath}>
-                  <span
-                    className={`block truncate ${
-                      isKept
-                        ? "text-zinc-800 dark:text-zinc-100"
-                        : "line-through decoration-zinc-400/60"
-                    }`}
-                  >
-                    {row.file.name}
-                  </span>
-                  <span className="ls-mono block truncate text-[10px] text-zinc-500">
-                    {row.file.dir || "/"}
-                  </span>
-                </td>
-                <td
-                  className={`py-1.5 ${differs(formatLabel(row.file.format), formatLabel(keeper?.format ?? null))}`}
-                >
-                  {formatLabel(row.file.format)}
-                </td>
-                <td
-                  className={`ls-mono py-1.5 text-[10.5px] tabular ${differs(pixels, dimensions(keeper))}`}
-                >
-                  {pixels}
-                </td>
-                {showVideo ? (
-                  <td className="ls-mono py-1.5 text-[10.5px] tabular">
-                    {formatDuration(row.file.durationMs)}
-                  </td>
-                ) : null}
-                {showVideo ? (
-                  <td
-                    className={`py-1.5 text-[11px] ${differs(row.file.audioState ?? "", keeper?.audioState ?? "")}`}
-                  >
-                    {row.file.audioState ? AUDIO_LABELS[row.file.audioState] : ""}
-                  </td>
-                ) : null}
-                <td className="ls-mono py-1.5 text-right text-[10.5px] tabular">
-                  {formatBytes(row.file.size)}
-                </td>
-                <td className="ls-mono py-1.5 pl-3 text-[10.5px] text-zinc-500 tabular">
-                  {formatDate(row.file.mtimeMs)}
-                </td>
-                <td className="truncate py-1.5 pr-3 text-[10.5px] text-zinc-500">
-                  {keeper ? compareNotes(row, keeper, linked).join(" · ") : ""}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
     </div>
   );
 }

@@ -61,6 +61,16 @@ export function formatDateTime(ms: number): string {
   return dateTimeFormat.format(new Date(ms));
 }
 
+const dateTimeSecondsFormat = new Intl.DateTimeFormat(undefined, {
+  dateStyle: "medium",
+  timeStyle: "medium",
+});
+
+/** The date and time to the second, for telling apart times that share a minute. */
+export function formatDateTimeSeconds(ms: number): string {
+  return dateTimeSecondsFormat.format(new Date(ms));
+}
+
 export function formatTime(ms: number): string {
   return timeFormat.format(new Date(ms));
 }

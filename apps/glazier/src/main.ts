@@ -38,10 +38,15 @@ async function createWindow(): Promise<void> {
   const window = new BrowserWindow({
     height: 860,
     width: 1320,
-    minHeight: 600,
-    minWidth: 980,
+    minHeight: 640,
+    minWidth: 960,
     show: false,
     title: "Glazier",
+    // On macOS the window buttons sit over the sidebar's top bar, as in Frame View and T3 Code;
+    // the page title (the root's name) still names the window in Mission Control and the Window
+    // menu. Windows and Linux keep their native frame.
+    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
+    trafficLightPosition: { x: 16, y: 18 },
     icon: resolveWindowIconPath("glazier-icon.png"),
     webPreferences: {
       contextIsolation: true,
@@ -90,10 +95,13 @@ function appMenu(): MenuItemConstructorOptions[] {
   };
 
   const views = [
-    ["Tidy", "view:tidy"],
+    ["Overview", "view:overview"],
     ["Duplicates", "view:duplicates"],
+    ["Convert", "view:convert"],
+    ["Clean Up", "view:cleanup"],
     ["Library", "view:library"],
     ["History", "view:history"],
+    ["Holding", "view:holding"],
   ] as const satisfies ReadonlyArray<readonly [string, AppCommand]>;
 
   return [
@@ -150,6 +158,7 @@ function appMenu(): MenuItemConstructorOptions[] {
           click: send(command),
         })),
         { type: "separator" },
+        { label: "Toggle Sidebar", accelerator: "CmdOrCtrl+\\", click: send("toggle-sidebar") },
         { role: "togglefullscreen" },
         ...(app.isPackaged
           ? []

@@ -1,58 +1,85 @@
-import { ChevronDown, X } from "lucide-react";
-import { type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { Check, ChevronDown, X } from "lucide-react";
+import {
+  type ComponentType,
+  type ReactNode,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 
-/** A view's title row: the title, a monospace line of counts, and the view's controls. */
-export function ViewHeader({
+/**
+ * A view's 52 px top bar: its title and a caption of counts on the left, at most two secondary
+ * controls and one primary on the right. The strip moves the window, as the sidebar's top does.
+ */
+export function TopBar({
   title,
   meta,
   children,
 }: {
-  title: string;
+  title: ReactNode;
   meta?: ReactNode;
   children?: ReactNode;
 }) {
   return (
-    <div className="flex min-h-[46px] shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b ls-divider px-5 py-2">
-      <div className="flex min-w-0 items-baseline gap-3">
-        <h1 className="text-sm font-semibold tracking-tight">{title}</h1>
+    <header className="gz-drag flex h-[52px] shrink-0 items-center gap-4 border-b gz-divider px-5">
+      <div className="flex min-w-0 items-baseline gap-2.5">
+        <h1 className="gz-title truncate">{title}</h1>
         {meta ? (
-          <span className="ls-mono truncate text-[10.5px] text-zinc-500 tabular">{meta}</span>
+          <span className="truncate text-[13px] text-zinc-500 dark:text-zinc-400">{meta}</span>
         ) : null}
       </div>
-      <div className="ml-auto flex shrink-0 flex-wrap items-center gap-2">{children}</div>
-    </div>
+      <div className="ml-auto flex shrink-0 items-center gap-2">{children}</div>
+    </header>
   );
 }
 
-export function EmptyState({ title, children }: { title: string; children?: ReactNode }) {
+/** What a pane shows when it has nothing to list: an icon, one title line and one more line. */
+export function EmptyState({
+  icon: Icon,
+  title,
+  children,
+  actions,
+}: {
+  icon?: ComponentType<{ className?: string }>;
+  title: string;
+  children?: ReactNode;
+  actions?: ReactNode;
+}) {
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-2 p-10 text-center">
-      <p className="text-sm font-medium">{title}</p>
+    <div className="flex flex-1 flex-col items-center justify-center gap-3 p-10 text-center">
+      {Icon ? <Icon className="size-10 text-zinc-300 dark:text-zinc-600" /> : null}
+      <p className="text-[15px] font-semibold">{title}</p>
       {children ? (
-        <div className="flex max-w-md flex-col items-center gap-3 text-xs text-zinc-500">
-          {children}
-        </div>
+        <div className="max-w-sm text-[13px] text-zinc-500 dark:text-zinc-400">{children}</div>
       ) : null}
+      {actions ? <div className="mt-2 flex items-center gap-2">{actions}</div> : null}
     </div>
   );
 }
 
 export function ProgressBar({
   ratio,
+  muted = false,
   className = "",
 }: {
   ratio: number | null;
+  /** Background analysis draws grey; work the owner started draws violet. */
+  muted?: boolean;
   className?: string;
 }) {
+  const fill = muted ? "bg-zinc-400 dark:bg-zinc-500" : "bg-violet-500";
+
   return (
     <div
-      className={`relative h-1 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800 ${className}`}
+      className={`relative h-1 w-full overflow-hidden rounded-full bg-zinc-900/[0.07] dark:bg-white/[0.08] ${className}`}
     >
       {ratio === null ? (
-        <div className="absolute inset-y-0 w-1/3 animate-pulse rounded-full bg-violet-500/60" />
+        <div className={`absolute inset-y-0 w-1/3 animate-pulse rounded-full ${fill}`} />
       ) : (
         <div
-          className="h-full rounded-full bg-violet-500 transition-[width] duration-300 ease-out"
+          className={`h-full rounded-full transition-[width] duration-300 ease-linear ${fill}`}
           style={{ width: `${Math.round(Math.min(1, ratio) * 100)}%` }}
         />
       )}
@@ -63,23 +90,22 @@ export function ProgressBar({
 export function Spinner({ className = "" }: { className?: string }) {
   return (
     <span
-      className={`inline-block size-2.5 shrink-0 animate-spin rounded-full border-[1.5px] border-violet-400/30 border-t-violet-500 dark:border-t-violet-300 ${className}`}
+      className={`inline-block size-3.5 shrink-0 animate-spin rounded-full border-2 border-zinc-400/30 border-t-zinc-500 dark:border-t-zinc-300 ${className}`}
       aria-hidden
     />
   );
 }
 
-/** A key or chord, drawn the way Lockstep shows its shortcuts. */
+/**
+ * A key or chord as a macOS keycap. Shortcuts live in tooltips and menus; a keycap shows only on
+ * the one primary button that teaches its key.
+ */
 export function Kbd({ children }: { children: ReactNode }) {
-  return (
-    <kbd className="ls-mono rounded border border-zinc-300 px-1 text-[9.5px] leading-[14px] font-normal text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
-      {children}
-    </kbd>
-  );
+  return <kbd className="gz-kbd">{children}</kbd>;
 }
 
 /** A segmented control: one choice of a few, each with an optional count. */
-export function Toggle<T extends string>({
+export function Segmented<T extends string>({
   options,
   value,
   onChange,
@@ -91,10 +117,7 @@ export function Toggle<T extends string>({
   label: string;
 }) {
   return (
-    <fieldset
-      aria-label={label}
-      className="inline-flex rounded-md border border-zinc-300 p-0.5 dark:border-zinc-700"
-    >
+    <fieldset aria-label={label} className="gz-seg">
       {options.map((option) => (
         <button
           key={option.value}
@@ -102,15 +125,11 @@ export function Toggle<T extends string>({
           aria-pressed={option.value === value}
           disabled={option.disabled}
           onClick={() => onChange(option.value)}
-          className={`inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-[11px] font-medium transition disabled:opacity-40 ${
-            option.value === value
-              ? "bg-violet-500/15 text-violet-700 dark:bg-violet-500/25 dark:text-violet-100"
-              : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
-          }`}
+          className="gz-seg-item"
         >
           {option.label}
           {option.count === undefined ? null : (
-            <span className="ls-mono text-[10px] opacity-70 tabular">
+            <span className="text-xs text-zinc-400 dark:text-zinc-500">
               {option.count.toLocaleString()}
             </span>
           )}
@@ -120,18 +139,50 @@ export function Toggle<T extends string>({
   );
 }
 
+/** An on/off switch, for settings that apply as soon as they change. */
+export function Switch({
+  checked,
+  onChange,
+  label,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      onClick={() => onChange(!checked)}
+      className={`relative inline-flex h-[22px] w-[38px] shrink-0 items-center rounded-full transition-colors duration-150 ${
+        checked ? "bg-violet-600 dark:bg-violet-500" : "bg-zinc-300 dark:bg-zinc-700"
+      }`}
+    >
+      <span
+        className={`inline-block size-[18px] rounded-full bg-white shadow-[0_1px_2px_rgb(0_0_0/0.3)] transition-transform duration-150 ease-out ${
+          checked ? "translate-x-[18px]" : "translate-x-[2px]"
+        }`}
+      />
+    </button>
+  );
+}
+
 /**
  * A sheet over the window. Esc and a click outside close it; focus moves to the element marked
- * `data-autofocus` (or the first field or primary button, or the sheet) and returns on close.
+ * `data-autofocus` (or the first field, or the sheet) and returns on close.
  */
-export function Modal({
+export function Sheet({
   title,
+  description,
   onClose,
   children,
   footer,
-  width = 440,
+  width = 560,
 }: {
   title: string;
+  description?: ReactNode;
   onClose: () => void;
   children: ReactNode;
   footer?: ReactNode;
@@ -147,7 +198,7 @@ export function Modal({
 
     const target =
       panel.current?.querySelector<HTMLElement>("[data-autofocus]") ??
-      panel.current?.querySelector<HTMLElement>("input, button.ls-btn-cta") ??
+      panel.current?.querySelector<HTMLElement>("input") ??
       panel.current;
 
     target?.focus();
@@ -171,7 +222,7 @@ export function Modal({
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: a click on the backdrop closes the sheet; Esc is the keyboard path.
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-zinc-950/40 pt-20 backdrop-blur-[2px]"
+      className="gz-enter-fade fixed inset-0 z-50 flex items-start justify-center bg-black/30 pt-[8vh] backdrop-blur-[3px] dark:bg-black/50"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) {
           onClose();
@@ -185,48 +236,62 @@ export function Modal({
         aria-label={title}
         tabIndex={-1}
         style={{ width }}
-        className="ls-surface max-h-[80vh] max-w-[92vw] overflow-y-auto p-4 shadow-xl outline-none"
+        className="gz-float gz-enter-pop flex max-h-[84vh] max-w-[92vw] flex-col overflow-hidden outline-none"
       >
-        <div className="flex items-start justify-between gap-3">
-          <h2 className="text-sm font-semibold">{title}</h2>
+        <div className="flex items-start justify-between gap-4 px-6 pt-5 pb-4">
+          <div className="min-w-0">
+            <h2 className="gz-title">{title}</h2>
+            {description ? <p className="gz-caption mt-1">{description}</p> : null}
+          </div>
           <button
             type="button"
-            className="ls-btn ls-btn-ghost px-1.5"
+            className="gz-btn gz-btn-ghost gz-btn-icon-sm -mr-1.5"
             aria-label="Close"
             tabIndex={-1}
             onClick={onClose}
           >
-            <X className="size-3.5" />
+            <X />
           </button>
         </div>
-        <div className="mt-3 text-xs">{children}</div>
-        {footer ? <div className="mt-4 flex justify-end gap-2">{footer}</div> : null}
+        <div className="flex-1 overflow-y-auto px-6 pb-6">{children}</div>
+        {footer ? (
+          <div className="flex h-14 shrink-0 items-center justify-end gap-2 border-t gz-divider px-6">
+            {footer}
+          </div>
+        ) : null}
       </div>
     </div>
   );
 }
 
-/** How much room a dropdown panel wants to the right of its button before it opens leftward. */
+/** How much room a menu wants to the right of its button before it opens leftward. */
 const PANEL_ROOM = 320;
 
 /**
- * A button that opens a panel under it, for filter menus and options. The panel opens leftward
+ * A button that opens a menu panel under it, for filters and options. The panel opens leftward
  * when the window has no room to its right. A click outside or Esc closes it.
  */
-export function Dropdown({
+export function Menu({
   label,
-  active = false,
   children,
+  variant = "secondary",
   className = "",
+  title,
+  icon = false,
 }: {
   label: ReactNode;
-  active?: boolean;
   children: (close: () => void) => ReactNode;
+  variant?: "secondary" | "ghost";
   className?: string;
+  title?: string;
+  /** An icon-only trigger, with no chevron. */
+  icon?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [alignEnd, setAlignEnd] = useState(false);
   const root = useRef<HTMLDivElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
   const id = useId();
 
   useEffect(() => {
@@ -234,16 +299,53 @@ export function Dropdown({
       return;
     }
 
+    const items = () => [
+      ...(panel.current?.querySelectorAll<HTMLElement>(
+        ".gz-menu-item:not(:disabled), input:not(:disabled)",
+      ) ?? []),
+    ];
+
+    // The first row takes focus, so the menu works from the keyboard as soon as it opens.
+    const frame = window.requestAnimationFrame(() => items()[0]?.focus());
+
     const onDown = (event: MouseEvent) => {
       if (event.target instanceof Node && !root.current?.contains(event.target)) {
         setOpen(false);
       }
     };
 
+    // In the capture phase, so the view behind the menu never sees the keys the menu uses.
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.stopPropagation();
         setOpen(false);
+        trigger.current?.focus();
+
+        return;
+      }
+
+      const list = items();
+      const focused = document.activeElement;
+      const at = focused instanceof HTMLElement ? list.indexOf(focused) : -1;
+
+      const next =
+        event.key === "ArrowDown"
+          ? (at + 1) % list.length
+          : event.key === "ArrowUp"
+            ? (at - 1 + list.length) % list.length
+            : event.key === "Home"
+              ? 0
+              : event.key === "End"
+                ? list.length - 1
+                : null;
+
+      if (next !== null && list.length > 0) {
+        event.preventDefault();
+        event.stopPropagation();
+        list[next]?.focus();
+      } else if (at >= 0 && (event.key === "Enter" || event.key === " ")) {
+        // The focused row's own button handles these; nothing behind the menu should.
+        event.stopPropagation();
       }
     };
 
@@ -251,6 +353,7 @@ export function Dropdown({
     window.addEventListener("keydown", onKey, true);
 
     return () => {
+      window.cancelAnimationFrame(frame);
       window.removeEventListener("mousedown", onDown);
       window.removeEventListener("keydown", onKey, true);
     };
@@ -259,25 +362,32 @@ export function Dropdown({
   return (
     <div ref={root} className={`relative ${className}`}>
       <button
+        ref={trigger}
         type="button"
         aria-expanded={open}
         aria-controls={id}
+        aria-label={icon ? title : undefined}
+        title={title}
         onClick={(event) => {
           setAlignEnd(
             window.innerWidth - event.currentTarget.getBoundingClientRect().left < PANEL_ROOM,
           );
           setOpen((current) => !current);
         }}
-        className={`ls-btn h-[26px] py-0 ${active ? "ls-btn-primary" : ""}`}
+        className={`gz-btn ${variant === "ghost" ? "gz-btn-ghost" : "gz-btn-secondary"} ${
+          icon ? "gz-btn-icon" : "pr-3"
+        }`}
       >
         {label}
-        <ChevronDown className="size-3 opacity-60" />
+        {icon ? null : <ChevronDown className="opacity-50" />}
       </button>
       {open ? (
         <div
+          ref={panel}
+          role="menu"
           id={id}
-          className={`ls-surface absolute top-full z-40 mt-1 min-w-52 p-1 shadow-lg ${
-            alignEnd ? "right-0" : "left-0"
+          className={`gz-menu absolute top-full mt-1.5 ${
+            alignEnd ? "right-0 origin-top-right" : "left-0 origin-top-left"
           }`}
         >
           {children(() => setOpen(false))}
@@ -287,7 +397,10 @@ export function Dropdown({
   );
 }
 
-/** A checkable row in a `Dropdown`, with an optional count on the right. */
+/**
+ * A checkable row in a `Menu`, with an optional count; the check sits on the right, as in macOS
+ * menus.
+ */
 export function MenuCheck({
   checked,
   label,
@@ -302,22 +415,66 @@ export function MenuCheck({
   disabled?: boolean;
 }) {
   return (
-    <label
-      className={`flex cursor-default items-center gap-2 rounded px-2 py-1 text-xs ${
-        disabled ? "opacity-40" : "hover:bg-zinc-100 dark:hover:bg-zinc-800"
-      }`}
+    <button
+      type="button"
+      role="menuitemcheckbox"
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className="gz-menu-item"
     >
-      <input
-        type="checkbox"
-        checked={checked}
-        disabled={disabled}
-        onChange={(event) => onChange(event.target.checked)}
-        className="accent-violet-600"
-      />
       <span className="min-w-0 flex-1 truncate">{label}</span>
-      {count === undefined ? null : (
-        <span className="ls-mono text-[10px] text-zinc-500 tabular">{count}</span>
-      )}
-    </label>
+      {count === undefined ? null : <span className="text-xs text-zinc-400">{count}</span>}
+      <Check
+        className={`size-3.5 shrink-0 text-violet-600 dark:text-violet-400 ${
+          checked ? "" : "invisible"
+        }`}
+      />
+    </button>
+  );
+}
+
+export function MenuLabel({ children }: { children: ReactNode }) {
+  return <div className="gz-menu-label">{children}</div>;
+}
+
+export function MenuSeparator() {
+  return <div className="gz-menu-sep" />;
+}
+
+/**
+ * Text cut from the start rather than the end, so a path keeps its last folder in view:
+ * `…/Camera Roll/2021`.
+ */
+export function StartTruncate({ text, className = "" }: { text: string; className?: string }) {
+  const box = useRef<HTMLSpanElement>(null);
+  const [overflowing, setOverflowing] = useState(false);
+
+  useLayoutEffect(() => {
+    const element = box.current;
+
+    if (!element) {
+      return;
+    }
+
+    const measure = () => setOverflowing(element.scrollWidth > element.clientWidth + 1);
+    measure();
+
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <span
+      ref={box}
+      title={text}
+      dir={overflowing ? "rtl" : undefined}
+      className={`block truncate text-left ${className}`}
+    >
+      {/* The marks keep the path's own direction inside the right-to-left box. */}
+      {overflowing ? `‎${text}‎` : text}
+    </span>
   );
 }

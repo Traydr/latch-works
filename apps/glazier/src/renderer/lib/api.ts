@@ -68,6 +68,8 @@ export function onAppCommand(listener: (command: AppCommand) => void): () => voi
 }
 
 export const desktop = {
+  /** Whether the window buttons sit over the page (macOS), so the top bar leaves room for them. */
+  insetTitleBar: () => window.glazier?.platform === "darwin",
   pickRoot: () => requireBridge().pickRoot(),
   pickFolder: () => requireBridge().pickFolder(),
   reveal: (filePath: string) => requireBridge().reveal(filePath),

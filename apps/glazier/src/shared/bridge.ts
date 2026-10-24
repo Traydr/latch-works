@@ -8,6 +8,8 @@ import type {
 
 /** What the main window's preload exposes as `window.glazier`. Results are parsed by the caller. */
 export interface GlazierBridge {
+  /** `process.platform`: macOS draws its window buttons over the app's own top bar. */
+  platform: string;
   call(method: string, input: Json): Promise<Json>;
   onEvent(listener: (event: Json) => void): () => void;
   pickRoot(): Promise<string | null>;
