@@ -74,7 +74,7 @@ export async function listFolder(typed: string): Promise<FolderListing> {
           : code === "ENOTDIR"
             ? "This is a file, not a folder."
             : code === "EACCES" || code === "EPERM"
-              ? "Glazier is not allowed to read this folder."
+              ? "Tidy is not allowed to read this folder."
               : error instanceof Error
                 ? error.message
                 : String(error),

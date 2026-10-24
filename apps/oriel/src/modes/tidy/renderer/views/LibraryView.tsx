@@ -32,6 +32,7 @@ import { call, desktop } from "../lib/api";
 import { useCommandHandler } from "../lib/commands";
 import { useEngine, useEngineQuery } from "../lib/engine-state";
 import { formatBytes, formatCount, plural } from "../lib/format";
+import { useOpenInView } from "../lib/hand-off";
 import { isCommandKey, isPlainKey, useViewKeys } from "../lib/hotkeys";
 import { EMPTY_PRESET, useNavigation } from "../lib/navigation";
 import { usePreferFolder } from "../lib/preferences";
@@ -91,6 +92,7 @@ export function LibraryView({ rootId }: { rootId: RootId }) {
   const { report, capabilities, settings, roots, catalogVersion } = useEngine();
   const actions = useActions();
   const toasts = useToasts();
+  const openInView = useOpenInView();
   const preferFolder = usePreferFolder(rootId);
   const searchInput = useRef<HTMLInputElement>(null);
   const root = roots.find((candidate) => candidate.id === rootId) ?? null;
@@ -291,6 +293,7 @@ export function LibraryView({ rootId }: { rootId: RootId }) {
       entries.push(
         { type: "item", id: "quick-look", label: "Quick Look", accelerator: "Space" },
         { type: "item", id: "open", label: "Open" },
+        { type: "item", id: "open-in-view", label: "Open in View" },
         { type: "item", id: "reveal", label: "Show in Finder", accelerator: "Shift+CmdOrCtrl+R" },
         { type: "separator" },
       );
@@ -410,6 +413,12 @@ export function LibraryView({ rootId }: { rootId: RootId }) {
       case "reveal":
         if (target) {
           void desktop.reveal(target.absPath);
+        }
+
+        break;
+      case "open-in-view":
+        if (target) {
+          openInView(target.absPath);
         }
 
         break;
@@ -666,6 +675,13 @@ export function LibraryView({ rootId }: { rootId: RootId }) {
             primary={!barVisible}
             onConvert={() => convert(targets)}
             onReveal={reveal}
+            onOpenInView={() => {
+              const row = single ?? sample[0];
+
+              if (row) {
+                openInView(row.absPath);
+              }
+            }}
             onMoveTo={() => void moveTo(targets)}
             onHold={() => hold(targets)}
           />

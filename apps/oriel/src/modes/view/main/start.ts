@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { stat } from "node:fs/promises";
 import path from "node:path";
 
 import { Result } from "better-result";
@@ -59,7 +60,8 @@ interface ViewHost extends ModeHost {
   /**
    * Opens a path the OS handed the app (launch argv, a second launch, macOS `open-file`). Like
    * the native dialog, this is the owner's choice, so View authorizes the folder itself (a file's
-   * parent folder) before asking the window to scan it. Paths open in the order given.
+   * parent folder) before asking the window to scan it, and a file then opens in the viewer.
+   * Paths open in the order given.
    */
   openPath(candidatePath: string): void;
   /** Sends the commands held for the window once it has loaded. */
@@ -163,7 +165,19 @@ export async function startView({ dataDir, window }: ModeContext): Promise<ViewH
         }
 
         await grantChosenMediaRoot(resolvedPath.value);
-        sendCommand({ type: "scan-path", path: resolvedPath.value });
+
+        // A file opens in the viewer once its folder has been scanned.
+        const stats = await stat(candidatePath).catch(() => null);
+
+        sendCommand(
+          stats?.isFile()
+            ? {
+                type: "scan-path",
+                path: resolvedPath.value,
+                focusPath: path.join(resolvedPath.value, path.basename(candidatePath)),
+              }
+            : { type: "scan-path", path: resolvedPath.value },
+        );
       });
     },
     dispose: () => {

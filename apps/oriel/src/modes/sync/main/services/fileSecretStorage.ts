@@ -102,7 +102,7 @@ export class FileSecretStorage implements SecretStorage {
     }
 
     if (this.key.length !== KEY_BYTES) {
-      throw new Error(`Lockstep secret key at ${this.keyPath} is not ${KEY_BYTES} bytes`);
+      throw new Error(`Sync's secret key at ${this.keyPath} is not ${KEY_BYTES} bytes`);
     }
 
     return this.key;

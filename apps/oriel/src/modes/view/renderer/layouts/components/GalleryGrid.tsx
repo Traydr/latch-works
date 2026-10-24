@@ -1,5 +1,8 @@
 import { type JSX, useContext, useEffect, useMemo } from "react";
 
+import { OfferedFolders } from "../../../../../shell/OfferedFolders";
+import { useOfferedFolders, useShell } from "../../../../../shell/shell";
+
 import type { AppSettings } from "../../../shared/types";
 import { FolderGridOverlay } from "../../components/FolderGridOverlay";
 import { VideoMetadataQueueContext } from "../../contexts/videoMetadataQueueContext";
@@ -99,7 +102,7 @@ export function GalleryGrid({
         className="flex-1 overflow-auto px-3 pb-28 pt-28"
       >
         {browserEntries.length === 0 ? (
-          <div className="flex h-full items-center justify-center">
+          <div className="flex h-full flex-col items-center justify-center">
             <p className="lw-card px-6 py-4 text-[13px] text-pretty text-zinc-500 dark:text-zinc-400">
               {rootPath
                 ? folderChildrenLoading
@@ -109,6 +112,7 @@ export function GalleryGrid({
                     : `No media or subfolders found in ${toDisplayName(rootPath)}.`
                 : "Drop a folder or click Open below"}
             </p>
+            {rootPath ? null : <OfferedViewFolders />}
           </div>
         ) : (
           <div
@@ -188,5 +192,19 @@ export function GalleryGrid({
         )}
       </main>
     </>
+  );
+}
+
+/** The folders Tidy and Sync work on, offered before View has opened one. */
+function OfferedViewFolders(): JSX.Element {
+  const { handOff } = useShell();
+  const folders = useOfferedFolders();
+
+  return (
+    <OfferedFolders
+      folders={folders}
+      title="Or open one you already use"
+      onChoose={(folder) => void handOff("view", { kind: "folder", path: folder.path })}
+    />
   );
 }

@@ -1,4 +1,4 @@
-import { type JSX, useCallback, useMemo, useState } from "react";
+import { type JSX, useCallback, useEffect, useMemo, useState } from "react";
 
 import { ModeLayout } from "../../../shell/ModeLayout";
 import { useModeActive, useReportActivity, useShell } from "../../../shell/shell";
@@ -25,11 +25,22 @@ import { toDisplayName } from "./utils/path";
 import { getRootGalleryPreferences, toggleExcludedRootChildPath } from "./utils/rootPreferences";
 import { createRandomSeed } from "./utils/sort";
 
+/**
+ * A file another mode or the OS handed View, for the viewer once a scan of its folder that
+ * started after the hand-off (`since` is the scan running then) has finished.
+ */
+interface PendingFocus {
+  folder: string;
+  file: string;
+  since: number | null;
+}
+
 function AppInner(): JSX.Element {
   const { settings: settingsSection, openSettings } = useShell();
   const active = useModeActive();
   const settingsOpen = active && settingsSection === "view";
   const [activeComic, setActiveComic] = useState<ComicEntry | null>(null);
+  const [pendingFocus, setPendingFocus] = useState<PendingFocus | null>(null);
 
   const settings = useAppStore((state) => state.settings);
   const rootPath = useAppStore((state) => state.rootPath);
@@ -41,6 +52,7 @@ function AppInner(): JSX.Element {
   const scanMessage = useAppStore((state) => state.scanMessage);
   const scanMessagePath = useAppStore((state) => state.scanMessagePath);
   const scanState = useAppStore((state) => state.scanState);
+  const activeScanRunId = useAppStore((state) => state.activeScanRunId);
 
   const initializeSettings = useAppStore((state) => state.initializeSettings);
   const setRecursive = useAppStore((state) => state.setRecursive);
@@ -170,7 +182,33 @@ function AppInner(): JSX.Element {
     refreshCurrentFolderAction,
     runScan,
     scanInputPathAction,
+    focusPathAction: (focus) =>
+      setPendingFocus({ ...focus, since: useAppStore.getState().activeScanRunId }),
   });
+
+  useEffect(() => {
+    if (pendingFocus === null || activeScanRunId === pendingFocus.since) {
+      return;
+    }
+
+    if (rootPath !== pendingFocus.folder) {
+      setPendingFocus(null);
+
+      return;
+    }
+
+    if (scanState === "done" || scanState === "error") {
+      const index = items.findIndex((item) => item.path === pendingFocus.file);
+      const focused = items[index];
+
+      setPendingFocus(null);
+
+      if (focused) {
+        setSelectedId(focused.id);
+        openViewerAt(index);
+      }
+    }
+  }, [activeScanRunId, items, openViewerAt, pendingFocus, rootPath, scanState, setSelectedId]);
 
   useReportActivity(scanState === "loading" ? { kind: "working" } : null);
 

@@ -109,7 +109,7 @@ export class EngineHost {
           `--data-dir=${this.options.dataDir}`,
           `--concurrency=${Math.max(1, Math.min(4, os.availableParallelism() - 2))}`,
         ],
-        { serviceName: "Glazier engine" },
+        { serviceName: "Oriel Tidy engine" },
       );
 
       this.engine = child;
@@ -198,11 +198,11 @@ export class EngineHost {
         this.ready = null;
 
         for (const pending of this.pending.values()) {
-          pending.reject(new Error(`The Glazier engine stopped (exit ${code}).`));
+          pending.reject(new Error(`Tidy's engine stopped (exit ${code}).`));
         }
 
         this.pending.clear();
-        reject(new Error(`The Glazier engine stopped (exit ${code}).`));
+        reject(new Error(`Tidy's engine stopped (exit ${code}).`));
       });
     });
 

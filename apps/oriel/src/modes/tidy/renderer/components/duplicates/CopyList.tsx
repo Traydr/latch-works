@@ -1,5 +1,5 @@
 import type { FileId, FileRow } from "@latch-works/glazier-core/contract";
-import { FolderOpen } from "lucide-react";
+import { FolderOpen, Images } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
 import { FolderPath } from "../../../../../ui/ui";
 import { desktop, mediaUrl, thumbnailUrl } from "../../lib/api";
@@ -10,6 +10,7 @@ import {
   formatLabel,
   plural,
 } from "../../lib/format";
+import { useOpenInView } from "../../lib/hand-off";
 import { describeDetails, Thumbnail } from "../media";
 import { VideoControls } from "../VideoControls";
 import type { SetRow } from "./model";
@@ -52,6 +53,7 @@ export function CopyList({
   onKeepOnly: (index: number) => void;
   onToggleKeep: (index: number) => void;
 }) {
+  const openInView = useOpenInView();
   const box = useRef<HTMLDivElement>(null);
   const [stacked, setStacked] = useState(false);
   const [video, setVideo] = useState<HTMLVideoElement | null>(null);
@@ -224,6 +226,15 @@ export function CopyList({
                   onClick={() => void desktop.reveal(row.file.absPath)}
                 >
                   <FolderOpen />
+                </button>
+                <button
+                  type="button"
+                  className="lw-btn lw-btn-ghost lw-btn-icon-sm shrink-0"
+                  title="Open in View"
+                  aria-label={`Open the copy in ${where} in View`}
+                  onClick={() => openInView(row.file.absPath)}
+                >
+                  <Images />
                 </button>
               </li>
             );

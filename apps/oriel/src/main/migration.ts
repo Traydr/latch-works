@@ -1,11 +1,11 @@
 import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 
 import { app, BrowserWindow, dialog, session } from "electron";
 import { z } from "zod";
 
+import { glazierRoots } from "./folders";
 import { oldInstalls, removeOldInstall, runningOldApps } from "./old-apps";
 import { readWindowState, type WindowState, writeWindowState } from "./window-state";
 
@@ -209,32 +209,6 @@ async function preferences(
   }
 
   return entries;
-}
-
-const RootPathRowSchema = z.object({ path: z.string() });
-
-/** The folders Glazier tidies, read from its catalog without starting the engine. */
-function glazierRoots(glazierDir: string): string[] {
-  const file = path.join(glazierDir, "catalog.sqlite");
-
-  if (!existsSync(file)) {
-    return [];
-  }
-
-  try {
-    const db = new DatabaseSync(file, { readOnly: true });
-
-    try {
-      return db
-        .prepare("SELECT path FROM roots ORDER BY id")
-        .all()
-        .map((row) => RootPathRowSchema.parse(row).path);
-    } finally {
-      db.close();
-    }
-  } catch {
-    return [];
-  }
 }
 
 /**

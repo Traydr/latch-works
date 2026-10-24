@@ -3,7 +3,16 @@ import { type DragEvent, useCallback, useEffect, useRef, useState } from "react"
 
 import glazierIcon from "../../../../media/modes/glazier-icon.svg";
 import { ModeLayout } from "../../../shell/ModeLayout";
-import { type ModeActivity, useReportActivity, useShell } from "../../../shell/shell";
+import { OfferedFolders } from "../../../shell/OfferedFolders";
+import { baseName, closestFolder, parentOf, relativeInside } from "../../../shell/paths";
+import {
+  type HandOffTarget,
+  type ModeActivity,
+  useHandOff,
+  useOfferedFolders,
+  useReportActivity,
+  useShell,
+} from "../../../shell/shell";
 import { EmptyState, Kbd } from "../../../ui/ui";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { FolderPickerProvider, useFolderPicker } from "./components/FolderPicker";
@@ -79,7 +88,7 @@ function jobActivity(jobs: readonly Job[]): ModeActivity | null {
 
 function Shell() {
   const { ready, roots, rootId, error, dismissError, selectRoot, report, jobs } = useEngine();
-  const { go, requestSearch, view } = useNavigation();
+  const { go, openLibrary, requestSearch, view } = useNavigation();
   const { undoLast } = useActions();
   const toasts = useToasts();
   const [shortcuts, setShortcuts] = useState(false);
@@ -123,6 +132,34 @@ function Shell() {
     },
     [go, report, selectRoot],
   );
+
+  /**
+   * Shows what another mode handed Tidy: the folder that holds it, at the Library filtered to it
+   * (and to the file's name, for a file). A path no folder holds is added as a folder first.
+   */
+  const showHandOff = useCallback(
+    (target: HandOffTarget) => {
+      const folderPath = target.kind === "file" ? parentOf(target.path) : target.path;
+      const holder = closestFolder(roots, folderPath);
+
+      if (!holder) {
+        void addFolder(folderPath);
+
+        return;
+      }
+
+      const dir = relativeInside(holder.path, folderPath) ?? "";
+
+      selectRoot(holder.id);
+      openLibrary({
+        dir: dir === "" ? null : dir,
+        search: target.kind === "file" ? baseName(target.path) : "",
+      });
+    },
+    [addFolder, openLibrary, roots, selectRoot],
+  );
+
+  useHandOff(ready, showHandOff);
 
   const pickFolder = useFolderPicker();
   const rootPath = root?.path ?? null;
@@ -253,7 +290,11 @@ function Shell() {
           ) : root ? (
             <CurrentView rootId={root.id} />
           ) : (
-            <Welcome onChoose={chooseFolder} dragging={dragging} />
+            <Welcome
+              onChoose={chooseFolder}
+              onChooseOffered={(folder) => void addFolder(folder)}
+              dragging={dragging}
+            />
           )}
           <ToastViewport />
         </main>
@@ -295,7 +336,18 @@ function CurrentView({ rootId }: { rootId: RootId }) {
   }
 }
 
-function Welcome({ onChoose, dragging }: { onChoose: () => void; dragging: boolean }) {
+function Welcome({
+  onChoose,
+  onChooseOffered,
+  dragging,
+}: {
+  onChoose: () => void;
+  /** Tidies a folder another mode already uses. */
+  onChooseOffered: (folder: string) => void;
+  dragging: boolean;
+}) {
+  const offered = useOfferedFolders();
+
   return (
     <>
       <div className="lw-drag h-[52px] shrink-0" />
@@ -308,13 +360,14 @@ function Welcome({ onChoose, dragging }: { onChoose: () => void; dragging: boole
           <img src={glazierIcon} className="size-14" alt="" />
           <h1 className="mt-4 text-xl font-semibold">Choose your media archive</h1>
           <p className="mt-2 max-w-[360px] text-sm text-zinc-500 dark:text-zinc-400">
-            Glazier finds duplicates, converts files to AVIF and MP4, and cleans up junk. Every
-            change can be undone.
+            Tidy finds duplicates, converts files to AVIF and MP4, and cleans up junk. Every change
+            can be undone.
           </p>
           <button type="button" className="lw-btn lw-btn-primary lw-btn-xl mt-6" onClick={onChoose}>
             Choose folder… <Kbd>⌘O</Kbd>
           </button>
           <p className="lw-caption mt-3">or drop a folder here</p>
+          <OfferedFolders folders={offered} onChoose={(folder) => onChooseOffered(folder.path)} />
         </div>
       </div>
     </>

@@ -81,7 +81,7 @@ export class AvifPool {
 
   private spawn(): void {
     const child = utilityProcess.fork(path.join(__dirname, "avif-worker.cjs"), this.args, {
-      serviceName: "Glazier AVIF encoder",
+      serviceName: "Oriel Tidy AVIF encoder",
     });
 
     const slot: Slot = { process: child, ready: false, job: null };

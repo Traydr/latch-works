@@ -1,9 +1,12 @@
 import { existsSync } from "node:fs";
+import { realpath } from "node:fs/promises";
 import path from "node:path";
 
 import { latchWorksModeFolder, setLatchWorksDataFolder } from "@latch-works/app-data";
 import { app, BrowserWindow, ipcMain, Menu, protocol, screen, shell } from "electron";
+import { z } from "zod";
 
+import { type FolderSources, glazierRoots, isInside, knownFolders } from "./main/folders";
 import { appMenu } from "./main/menu";
 import {
   type MigrationFolders,
@@ -169,6 +172,48 @@ function openInView(candidatePath: string): void {
   showWindow();
 }
 
+/** Where each mode keeps its folders; empty until the modes have started. */
+function folderSources(): FolderSources {
+  return {
+    view: () => view?.lastFolder() ?? null,
+    tidy: () => (folders ? glazierRoots(folders.glazier) : []),
+    sync: () => sync?.sourceRoots() ?? [],
+    migrated: () => (folders ? (readMigrationReport(folders.oriel)?.folders ?? []) : []),
+  };
+}
+
+/**
+ * Opens a file or folder another mode showed, in View. View scans only folders the owner chose,
+ * so the path, symlinks resolved, has to sit inside a folder one of the modes works on.
+ */
+async function handOffToView(value: Json): Promise<boolean> {
+  const target = z.string().min(1).safeParse(value);
+
+  if (!target.success || !path.isAbsolute(target.data) || !view) {
+    return false;
+  }
+
+  const real = await realpath(target.data).catch(() => null);
+
+  if (real === null) {
+    return false;
+  }
+
+  const roots = await Promise.all(
+    knownFolders(folderSources()).map((folder) => realpath(folder.path).catch(() => null)),
+  );
+
+  if (!roots.some((root) => root !== null && isInside(root, real))) {
+    console.warn("[oriel:main] View was asked to open a path outside every known folder");
+
+    return false;
+  }
+
+  view.openPath(target.data);
+
+  return true;
+}
+
 /** The saved bounds, unless no display holds them any more (a monitor since unplugged). */
 function restoredBounds(): Partial<Electron.Rectangle> {
   const state = readWindowState(app.getPath("userData"));
@@ -311,6 +356,11 @@ if (!app.requestSingleInstanceLock()) {
     ipcMain.on(ShellChannels.revealDataFolder, () => {
       void shell.openPath(path.dirname(app.getPath("userData")));
     });
+    // A folder since moved or deleted is not offered.
+    ipcMain.handle(ShellChannels.folders, () =>
+      knownFolders(folderSources()).filter((folder) => existsSync(folder.path)),
+    );
+    ipcMain.handle(ShellChannels.openInView, (_event, value: Json) => handOffToView(value));
 
     ipcMain.on(ShellChannels.setMode, (_event, value: Json) => {
       const mode = ModeIdSchema.safeParse(value);

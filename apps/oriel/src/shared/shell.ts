@@ -42,11 +42,31 @@ export const ShellChannels = {
   importOldApps: "oriel:import-old-apps",
   /** window → main: show `~/.latch-works` in Finder or Explorer. */
   revealDataFolder: "oriel:reveal-data-folder",
+  /** window → main, answered: every {@link KnownFolder}. */
+  folders: "oriel:folders",
+  /**
+   * window → main, answered: open a file or folder another mode showed in View. Main opens it
+   * only inside a {@link KnownFolder}, since View scans only folders the owner chose.
+   */
+  openInView: "oriel:open-in-view",
 } as const;
 
 export const AboutSchema = z.object({ version: z.string(), dataFolder: z.string() });
 
 export type About = z.infer<typeof AboutSchema>;
+
+/**
+ * A folder one of the modes works on: View's last folder, a folder Tidy tidies, a Sync profile's
+ * archive, or one the old apps used. Each mode keeps its own list; the shell only proposes these
+ * to the modes that do not have them.
+ */
+export const KnownFolderSchema = z.object({
+  path: z.string(),
+  /** The modes that use it; none for a folder only the old apps had. */
+  modes: z.array(ModeIdSchema),
+});
+
+export type KnownFolder = z.infer<typeof KnownFolderSchema>;
 
 /** The shell's bridge, `window.oriel`. */
 export interface OrielBridge {
@@ -56,4 +76,7 @@ export interface OrielBridge {
   about(): Promise<About>;
   importOldApps(): void;
   revealDataFolder(): void;
+  folders(): Promise<KnownFolder[]>;
+  /** Whether View opened `path`, a file (opened in the viewer) or a folder. */
+  openInView(path: string): Promise<boolean>;
 }

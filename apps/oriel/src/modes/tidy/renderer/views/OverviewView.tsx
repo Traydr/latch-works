@@ -13,12 +13,15 @@ import {
   ChevronRight,
   Copy,
   FolderOpen,
+  FolderUp,
+  Images,
   RefreshCw,
   Repeat2,
   Sparkles,
   VolumeX,
 } from "lucide-react";
 import { type ComponentType, type ReactNode, useRef, useState } from "react";
+import { useShell } from "../../../../shell/shell";
 import { EmptyState, Kbd, ProgressBar, Spinner, TopBar } from "../../../../ui/ui";
 import { Poster } from "../components/tidy/MediaTile";
 import { jobCount, RunProgress } from "../components/tidy/RunProgress";
@@ -34,6 +37,7 @@ import {
 } from "../lib/convert-options";
 import { useActiveJob, useEngine, useEngineQuery } from "../lib/engine-state";
 import { formatBytes, formatCount, formatRelative, plural } from "../lib/format";
+import { useOpenInView } from "../lib/hand-off";
 import { isCommandKey, isPlainKey, useNow, useViewKeys } from "../lib/hotkeys";
 import { type LibraryPreset, useNavigation } from "../lib/navigation";
 
@@ -107,6 +111,8 @@ export function OverviewView({ rootId }: { rootId: RootId }) {
   const { openDuplicates } = useNavigation();
   const now = useNow();
   const root = roots.find((candidate) => candidate.id === rootId);
+  const { handOff } = useShell();
+  const openInView = useOpenInView();
 
   useViewKeys((event) => {
     if (isPlainKey(event) && event.key.toLowerCase() === "d") {
@@ -121,16 +127,40 @@ export function OverviewView({ rootId }: { rootId: RootId }) {
   const data = tidy.data;
 
   const rescan = (
-    <button
-      type="button"
-      className="lw-btn lw-btn-ghost lw-btn-icon"
-      aria-label="Rescan"
-      title="Rescan  ⌘R"
-      disabled={scan !== null}
-      onClick={() => void call("scanRoot", { rootId }).catch(report)}
-    >
-      {scan ? <Spinner /> : <RefreshCw />}
-    </button>
+    <>
+      {root ? (
+        <>
+          <button
+            type="button"
+            className="lw-btn lw-btn-ghost"
+            title="Open this folder in View"
+            onClick={() => openInView(root.path, "folder")}
+          >
+            <Images />
+            Open in View
+          </button>
+          <button
+            type="button"
+            className="lw-btn lw-btn-ghost"
+            title="Push this folder to Pane View with Sync"
+            onClick={() => void handOff("sync", { kind: "folder", path: root.path })}
+          >
+            <FolderUp />
+            Sync this folder
+          </button>
+        </>
+      ) : null}
+      <button
+        type="button"
+        className="lw-btn lw-btn-ghost lw-btn-icon"
+        aria-label="Rescan"
+        title="Rescan  ⌘R"
+        disabled={scan !== null}
+        onClick={() => void call("scanRoot", { rootId }).catch(report)}
+      >
+        {scan ? <Spinner /> : <RefreshCw />}
+      </button>
+    </>
   );
 
   // The first scan: nothing catalogued yet to show.

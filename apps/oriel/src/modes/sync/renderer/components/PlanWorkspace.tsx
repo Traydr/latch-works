@@ -2,6 +2,7 @@ import { formatBytes } from "@latch-works/media-domain";
 import { ArrowUp, Lock, MoreHorizontal, RotateCw, Search, X } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
 
+import { useShell } from "../../../../shell/shell";
 import { EmptyState, Kbd, Menu, MenuSeparator, Spinner, TopBar } from "../../../../ui/ui";
 import type { LockstepPlan, LockstepProfilePublic } from "../../shared/types";
 import type {
@@ -144,6 +145,9 @@ function ProfileMenu({
   run: RunController;
   onToggleLog: () => void;
 }) {
+  const { handOff } = useShell();
+  const folder = { kind: "folder", path: profile.sourceRoot } as const;
+
   const item = (label: ReactNode, action: () => void, close: () => void, disabled = false) => (
     <button
       type="button"
@@ -172,6 +176,9 @@ function ProfileMenu({
             onToggleLog,
             close,
           )}
+          <MenuSeparator />
+          {item("Open in View", () => void handOff("view", folder), close)}
+          {item("Tidy this folder", () => void handOff("tidy", folder), close)}
           <MenuSeparator />
           {item(
             <span className="text-red-600 dark:text-red-400">Delete profile…</span>,

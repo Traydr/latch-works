@@ -51,7 +51,7 @@ async function forgetRoot(root: Root, report: (cause: unknown) => void): Promise
   const confirmed = await desktop.confirm({
     message: `Forget “${root.name}”?`,
     detail:
-      "Glazier forgets this folder's catalog and undo history, and moves what it holds for this folder to the Trash. The folder itself is not touched.",
+      "Tidy forgets this folder's catalog and undo history, and moves what it holds for this folder to the Trash. The folder itself is not touched.",
     confirmLabel: "Forget",
     destructive: true,
   });

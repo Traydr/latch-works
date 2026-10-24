@@ -1,5 +1,5 @@
 import type { FileFormat, FileId, FileRow } from "@latch-works/glazier-core/contract";
-import { Check, FolderOpen, X } from "lucide-react";
+import { Check, FolderOpen, Images, X } from "lucide-react";
 import {
   type MouseEvent,
   type ReactNode,
@@ -10,6 +10,7 @@ import {
 } from "react";
 
 import { desktop, mediaUrl, thumbnailUrl } from "../../lib/api";
+import { useOpenInView } from "../../lib/hand-off";
 import { Thumbnail } from "../media";
 import { VideoControls } from "../VideoControls";
 import { factsOf, type SetRow } from "./model";
@@ -66,6 +67,7 @@ export function Loupe({
   /** The decision bar, drawn over the loupe. */
   children: ReactNode;
 }) {
+  const openInView = useOpenInView();
   const row = rows[index];
   const stage = useRef<HTMLDivElement>(null);
   const video = useRef<HTMLVideoElement>(null);
@@ -213,6 +215,15 @@ export function Loupe({
           onClick={() => void desktop.reveal(file.absPath)}
         >
           <FolderOpen />
+        </button>
+        <button
+          type="button"
+          className="lw-btn lw-btn-ghost lw-btn-icon shrink-0"
+          title="Open in View"
+          aria-label="Open in View"
+          onClick={() => openInView(file.absPath)}
+        >
+          <Images />
         </button>
         <button
           type="button"

@@ -1,8 +1,9 @@
 import type { DuplicateSet, FileId, FileRow } from "@latch-works/glazier-core/contract";
-import { Check, FolderOpen, Maximize2 } from "lucide-react";
+import { Check, FolderOpen, Images, Maximize2 } from "lucide-react";
 import { type MouseEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { FolderPath } from "../../../../../ui/ui";
 import { desktop, mediaUrl, thumbnailUrl } from "../../lib/api";
+import { useOpenInView } from "../../lib/hand-off";
 import { Thumbnail } from "../media";
 import { VideoControls } from "../VideoControls";
 import { factsOf, type SetRow } from "./model";
@@ -271,6 +272,7 @@ function VersionTile({
   onKeepOnly: () => void;
   onToggleKeep: () => void;
 }) {
+  const openInView = useOpenInView();
   const { file } = row;
   const [video, setVideo] = useState<HTMLVideoElement | null>(null);
   const facts = factsOf(file, keeper);
@@ -410,6 +412,18 @@ function VersionTile({
             className={`lw-btn lw-btn-icon-sm bg-white text-zinc-900 shadow-[0_2px_8px_rgb(0_0_0/0.3)] hover:bg-zinc-100 ${revealed}`}
           >
             <FolderOpen />
+          </button>
+          <button
+            type="button"
+            title="Open in View"
+            aria-label="Open in View"
+            onClick={(event) => {
+              event.stopPropagation();
+              openInView(file.absPath);
+            }}
+            className={`lw-btn lw-btn-icon-sm bg-white text-zinc-900 shadow-[0_2px_8px_rgb(0_0_0/0.3)] hover:bg-zinc-100 ${revealed}`}
+          >
+            <Images />
           </button>
           <button
             type="button"

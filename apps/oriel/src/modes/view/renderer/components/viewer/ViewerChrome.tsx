@@ -6,10 +6,12 @@ import {
   type LucideIcon,
   Maximize,
   Minimize,
+  WandSparkles,
   X,
 } from "lucide-react";
 import type { JSX } from "react";
 
+import { useShell } from "../../../../../shell/shell";
 import type { MediaItem } from "../../../shared/types";
 
 interface ViewerChromeProps {
@@ -36,6 +38,8 @@ export function ViewerChrome({
   onStep,
   onToggleFullscreen,
 }: ViewerChromeProps): JSX.Element {
+  const { handOff } = useShell();
+
   return (
     <>
       <div
@@ -57,6 +61,11 @@ export function ViewerChrome({
               icon={FolderOpen}
               label="Reveal in folder"
               onClick={() => void window.frameView.revealInFolder(item.path)}
+            />
+            <ViewerToolbarButton
+              icon={WandSparkles}
+              label="Show in Tidy"
+              onClick={() => void handOff("tidy", { kind: "file", path: item.path })}
             />
             <ViewerToolbarButton
               icon={isFullscreen ? Minimize : Maximize}

@@ -21,6 +21,8 @@ interface UseAppBootstrapOptions {
     },
   ) => Promise<boolean>;
   scanInputPathAction: (candidatePath: string) => void;
+  /** Asks for `file` in the viewer once the scan of `folder` has listed it. */
+  focusPathAction: (focus: { folder: string; file: string }) => void;
 }
 
 export function useAppBootstrap({
@@ -33,6 +35,7 @@ export function useAppBootstrap({
   refreshCurrentFolderAction,
   runScan,
   scanInputPathAction,
+  focusPathAction,
 }: UseAppBootstrapOptions): void {
   const pendingScanEventsRef = useRef<ScanEvent[]>([]);
   // Set once the OS hands the app a path to open; that path wins over the remembered folder.
@@ -48,6 +51,7 @@ export function useAppBootstrap({
   const refreshCurrentFolderEvent = useEffectEvent(refreshCurrentFolderAction);
   const runScanEvent = useEffectEvent(runScan);
   const scanInputPathEvent = useEffectEvent(scanInputPathAction);
+  const focusPathEvent = useEffectEvent(focusPathAction);
 
   useEffect(() => {
     let mounted = true;
@@ -195,6 +199,11 @@ export function useAppBootstrap({
 
       if (command.type === "scan-path") {
         launchPathRequestedRef.current = true;
+
+        if (command.focusPath) {
+          focusPathEvent({ folder: command.path, file: command.focusPath });
+        }
+
         scanInputPathEvent(command.path);
       }
     });

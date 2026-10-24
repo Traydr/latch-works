@@ -4,11 +4,19 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useEffectEvent,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
-import { MODE_LABELS, type ModeId, ModeIdSchema, type OrielBridge } from "../shared/shell";
+import {
+  type KnownFolder,
+  MODE_LABELS,
+  type ModeId,
+  ModeIdSchema,
+  type OrielBridge,
+} from "../shared/shell";
 import { useSidebarRail } from "./rail";
 
 const MODE_KEY = "oriel.mode";
@@ -25,6 +33,18 @@ export type SettingsSection = "general" | ModeId;
 
 /** Work a mode is doing, for its switcher button while another mode shows. */
 export type ModeActivity = { kind: "working" } | { kind: "progress"; ratio: number };
+
+/** A file or folder the owner chose in one mode and asked to see in another. */
+export interface HandOffTarget {
+  kind: "file" | "folder";
+  path: string;
+}
+
+/** A hand-off waiting for its mode to take it; `id` tells two of the same path apart. */
+interface PendingHandOff {
+  target: HandOffTarget;
+  id: number;
+}
 
 interface Shell {
   bridge: OrielBridge;
@@ -47,6 +67,13 @@ interface Shell {
   /** Each mode's running work, as it last reported. */
   activity: Partial<Record<ModeId, ModeActivity>>;
   reportActivity: (mode: ModeId, activity: ModeActivity | null) => void;
+  /**
+   * Shows `target` in mode `to`, and resolves whether it could. View opens it through the main
+   * process, which grants the folder; Tidy and Sync take it from {@link useHandOff}.
+   */
+  handOff: (to: ModeId, target: HandOffTarget) => Promise<boolean>;
+  handOffs: Partial<Record<ModeId, PendingHandOff>>;
+  takeHandOff: (mode: ModeId, id: number) => void;
 }
 
 const ShellContext = createContext<Shell | null>(null);
@@ -60,6 +87,8 @@ export function ShellProvider({ bridge, children }: { bridge: OrielBridge; child
   const [opened, setOpened] = useState<ReadonlySet<ModeId>>(() => new Set([mode]));
   const [settings, setSettings] = useState<SettingsSection | null>(null);
   const [activity, setActivity] = useState<Partial<Record<ModeId, ModeActivity>>>({});
+  const [handOffs, setHandOffs] = useState<Partial<Record<ModeId, PendingHandOff>>>({});
+  const nextHandOff = useRef(1);
   const { rail, toggle: toggleRail } = useSidebarRail();
 
   const show = useCallback((next: ModeId) => {
@@ -97,6 +126,42 @@ export function ShellProvider({ bridge, children }: { bridge: OrielBridge; child
       } else {
         copy[of] = next;
       }
+
+      return copy;
+    });
+  }, []);
+
+  const handOff = useCallback(
+    async (to: ModeId, target: HandOffTarget) => {
+      if (to === "view") {
+        const opened = await bridge.openInView(target.path);
+
+        if (opened) {
+          go("view");
+        }
+
+        return opened;
+      }
+
+      const id = nextHandOff.current++;
+
+      setHandOffs((current) => ({ ...current, [to]: { target, id } }));
+      go(to);
+
+      return true;
+    },
+    [bridge, go],
+  );
+
+  const takeHandOff = useCallback((of: ModeId, id: number) => {
+    setHandOffs((current) => {
+      if (current[of]?.id !== id) {
+        return current;
+      }
+
+      const copy = { ...current };
+
+      delete copy[of];
 
       return copy;
     });
@@ -146,6 +211,9 @@ export function ShellProvider({ bridge, children }: { bridge: OrielBridge; child
       closeSettings,
       activity,
       reportActivity,
+      handOff,
+      handOffs,
+      takeHandOff,
     }),
     [
       bridge,
@@ -159,6 +227,9 @@ export function ShellProvider({ bridge, children }: { bridge: OrielBridge; child
       closeSettings,
       activity,
       reportActivity,
+      handOff,
+      handOffs,
+      takeHandOff,
     ],
   );
 
@@ -219,4 +290,55 @@ export function useReportActivity(activity: ModeActivity | null): void {
 
     return () => reportActivity(id, null);
   }, [id, key, reportActivity]);
+}
+
+/**
+ * Takes what another mode handed this one, once the mode is `ready` to act on it (its folders
+ * loaded). Each hand-off is taken once.
+ */
+export function useHandOff(ready: boolean, take: (target: HandOffTarget) => void): void {
+  const { id } = useMode();
+  const { handOffs, takeHandOff } = useShell();
+  const pending = handOffs[id];
+  const takeEvent = useEffectEvent(take);
+
+  useEffect(() => {
+    if (!ready || !pending) {
+      return;
+    }
+
+    takeHandOff(id, pending.id);
+    takeEvent(pending.target);
+  }, [id, pending, ready, takeHandOff]);
+}
+
+/**
+ * The folders the other modes work on and this one does not, for its empty state to offer. Each
+ * mode keeps its own folders; the shell only proposes them.
+ */
+export function useOfferedFolders(): KnownFolder[] {
+  const { id, active } = useMode();
+  const { bridge } = useShell();
+  const [folders, setFolders] = useState<KnownFolder[]>([]);
+
+  // Read again each time the mode comes back on screen: another mode may have added one.
+  useEffect(() => {
+    if (!active) {
+      return;
+    }
+
+    let live = true;
+
+    void bridge.folders().then((known) => {
+      if (live) {
+        setFolders(known.filter((folder) => !folder.modes.includes(id)));
+      }
+    });
+
+    return () => {
+      live = false;
+    };
+  }, [active, bridge, id]);
+
+  return folders;
 }

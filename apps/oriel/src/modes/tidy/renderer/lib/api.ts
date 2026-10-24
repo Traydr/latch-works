@@ -28,7 +28,7 @@ function requireBridge(): GlazierBridge {
   const bridge = window.glazier;
 
   if (!bridge) {
-    throw new Error("The Glazier desktop bridge is unavailable.");
+    throw new Error("Tidy's desktop bridge is unavailable.");
   }
 
   return bridge;

@@ -1,5 +1,8 @@
-import { ArrowUp, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowUp, ChevronLeft, ChevronRight, MoreHorizontal } from "lucide-react";
 import type { JSX } from "react";
+
+import { useShell } from "../../../../../shell/shell";
+import { Menu } from "../../../../../ui/ui";
 
 interface GalleryHeaderProps {
   browserEntryCount: number;
@@ -125,10 +128,48 @@ export function GalleryHeader({
                 Next Folder
                 <ChevronRight />
               </button>
+              <FolderMenu folder={rootPath} />
             </>
           ) : null}
         </div>
       </header>
     </div>
+  );
+}
+
+/** The folder on screen, handed to Tidy (added there if no folder of its holds it) or Sync. */
+function FolderMenu({ folder }: { folder: string }): JSX.Element {
+  const { handOff } = useShell();
+  const target = { kind: "folder", path: folder } as const;
+
+  return (
+    <Menu icon variant="ghost" title="Folder actions" label={<MoreHorizontal />}>
+      {(close) => (
+        <>
+          <button
+            type="button"
+            role="menuitem"
+            className="lw-menu-item"
+            onClick={() => {
+              close();
+              void handOff("tidy", target);
+            }}
+          >
+            Tidy this folder
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="lw-menu-item"
+            onClick={() => {
+              close();
+              void handOff("sync", target);
+            }}
+          >
+            Sync this folder
+          </button>
+        </>
+      )}
+    </Menu>
   );
 }

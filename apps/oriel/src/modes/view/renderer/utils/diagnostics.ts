@@ -47,7 +47,7 @@ export function buildDiagnosticsReport(
   context: RendererDiagnosticsContext,
 ): string {
   return [
-    "Frame View Diagnostics",
+    "Oriel View Diagnostics",
     "",
     "App",
     `version: ${snapshot.appVersion}`,

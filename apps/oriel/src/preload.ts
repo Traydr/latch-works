@@ -1,4 +1,5 @@
 import { contextBridge, type IpcRendererEvent, ipcRenderer, webUtils } from "electron";
+import { z } from "zod";
 
 import { lockstepApi } from "./modes/sync/preload-api";
 import { glazierBridge } from "./modes/tidy/preload-api";
@@ -6,6 +7,7 @@ import { createFrameViewApi } from "./modes/view/preload/frameViewApi";
 import {
   AboutSchema,
   type Json,
+  KnownFolderSchema,
   type OrielBridge,
   ShellChannels,
   ShellCommandSchema,
@@ -17,6 +19,10 @@ const oriel: OrielBridge = {
   about: async () => AboutSchema.parse(await ipcRenderer.invoke(ShellChannels.about)),
   importOldApps: () => ipcRenderer.send(ShellChannels.importOldApps),
   revealDataFolder: () => ipcRenderer.send(ShellChannels.revealDataFolder),
+  folders: async () =>
+    z.array(KnownFolderSchema).parse(await ipcRenderer.invoke(ShellChannels.folders)),
+  openInView: async (target) =>
+    z.boolean().parse(await ipcRenderer.invoke(ShellChannels.openInView, target)),
   onCommand: (listener) => {
     const handler = (_event: IpcRendererEvent, payload: Json) => {
       const command = ShellCommandSchema.safeParse(payload);

@@ -1,5 +1,5 @@
 import type { FileRow, SelectionSummary } from "@latch-works/glazier-core/contract";
-import { FolderSearch, MousePointerClick } from "lucide-react";
+import { FolderSearch, Images, MousePointerClick } from "lucide-react";
 import { type ReactNode, useState } from "react";
 
 import { thumbnailUrl } from "../../lib/api";
@@ -21,6 +21,8 @@ interface InspectorProps {
   primary: boolean;
   onConvert: () => void;
   onReveal: () => void;
+  /** Opens the file, or the first of several, in View's viewer. */
+  onOpenInView: () => void;
   onMoveTo: () => void;
   onHold: () => void;
 }
@@ -129,6 +131,7 @@ function Actions({
   convert,
   onConvert,
   onReveal,
+  onOpenInView,
   onMoveTo,
   onHold,
 }: InspectorProps & { convert: string }) {
@@ -145,7 +148,7 @@ function Actions({
           {convert}
         </button>
       ) : null}
-      <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
+      <div className="grid grid-cols-[1fr_1fr_auto_auto] gap-2">
         <button
           type="button"
           className="lw-btn lw-btn-secondary min-w-0 px-2.5"
@@ -170,6 +173,15 @@ function Actions({
           onClick={onReveal}
         >
           <FolderSearch />
+        </button>
+        <button
+          type="button"
+          className="lw-btn lw-btn-secondary lw-btn-icon"
+          aria-label="Open in View"
+          title={count > 1 ? "Open the first file in View" : "Open in View"}
+          onClick={onOpenInView}
+        >
+          <Images />
         </button>
       </div>
     </div>

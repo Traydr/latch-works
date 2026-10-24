@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 
 import lockstepIcon from "../../../../../media/modes/lockstep-icon.svg";
-import { useModeActive } from "../../../../shell/shell";
+import { OfferedFolders } from "../../../../shell/OfferedFolders";
+import { baseName } from "../../../../shell/paths";
+import { useModeActive, useOfferedFolders } from "../../../../shell/shell";
 import { TopBar } from "../../../../ui/ui";
 import type { LockstepController, RunController } from "../hooks/useLockstepController";
 import { ProfileSetupView } from "../views/ProfileSetupView";
@@ -107,7 +109,17 @@ export function SyncPage({ ctrl }: { ctrl: LockstepController }) {
         <>
           <div className="lw-drag h-[52px] shrink-0" />
           {errorBanner}
-          <Welcome onCreate={profile.startCreateProfile} />
+          <Welcome
+            onCreate={profile.startCreateProfile}
+            onCreateFor={(folder) => {
+              profile.startCreateProfile();
+              profile.setProfileForm((current) => ({
+                ...current,
+                name: baseName(folder),
+                sourceRoot: folder,
+              }));
+            }}
+          />
         </>
       )}
 
@@ -176,7 +188,16 @@ function LogPanel({
   );
 }
 
-function Welcome({ onCreate }: { onCreate: () => void }) {
+function Welcome({
+  onCreate,
+  onCreateFor,
+}: {
+  onCreate: () => void;
+  /** Starts a profile for a folder another mode already uses. */
+  onCreateFor: (folder: string) => void;
+}) {
+  const offered = useOfferedFolders();
+
   return (
     <div className="flex flex-1 items-center justify-center p-10 pb-[100px]">
       <div className="flex w-[480px] max-w-full flex-col items-center text-center">
@@ -189,6 +210,11 @@ function Welcome({ onCreate }: { onCreate: () => void }) {
         <button type="button" className="lw-btn lw-btn-primary lw-btn-xl mt-6" onClick={onCreate}>
           Add a profile
         </button>
+        <OfferedFolders
+          folders={offered}
+          title="Or sync one you already use"
+          onChoose={(folder) => onCreateFor(folder.path)}
+        />
       </div>
     </div>
   );

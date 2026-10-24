@@ -9,7 +9,7 @@ export function requireLockstepApi(): LockstepApi {
   const api = window.lockstep;
 
   if (!api) {
-    throw new Error("The Lockstep desktop bridge is unavailable.");
+    throw new Error("Sync's desktop bridge is unavailable.");
   }
 
   return api;

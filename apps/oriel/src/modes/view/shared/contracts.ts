@@ -270,7 +270,12 @@ export const DiagnosticsSnapshotSchema = z.object({
 export const AppCommandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("open-folder-dialog") }),
   z.object({ type: z.literal("refresh-current-folder") }),
-  z.object({ type: z.literal("scan-path"), path: PathInputSchema }),
+  z.object({
+    type: z.literal("scan-path"),
+    path: PathInputSchema,
+    /** A file in `path` to open in the viewer once the scan has listed it. */
+    focusPath: PathInputSchema.optional(),
+  }),
 ]);
 
 export const ScanEventSchema = z.discriminatedUnion("type", [

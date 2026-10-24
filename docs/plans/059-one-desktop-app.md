@@ -15,7 +15,7 @@
 
 ## Status
 
-- **Status**: IN REVIEW (Phases 1–8 on `agent/059-oriel`, 2026-10-24); Phases 9–10 follow on the
+- **Status**: IN REVIEW (Phases 1–9 on `agent/059-oriel`, 2026-10-24); Phase 10 follows on the
   same branch
 - **Priority**: P2 (the owner asked for it)
 - **Effort**: XL overall, as ten stacked PRs of S–L each
@@ -357,6 +357,20 @@ trial of any part. Rename `gz-*` to `lw-*` in one mechanical commit before eithe
   The viewer's dark scrims and overlay buttons stay, because the media comes first there.
 
 ### Phase 9: links between the modes (M)
+
+Done.
+- **Hand-offs.** One mode hands another a file or folder through the shell, in the window. View's
+  goes through the main process, which opens the path only inside a folder some mode already
+  works on (symlinks resolved), so View still scans only folders the owner chose.
+- **Where the links are.** Open in View sits in the Library's menu and Inspector, on duplicate
+  tiles, copies and the loupe, and on the Overview; Show in Tidy in the viewer's top bar; Tidy
+  this folder and Sync this folder in a menu on View's header; Open in View and Tidy this folder
+  in Sync's profile menu.
+- **A file opens in the viewer.** View opens a handed file, or one the OS opens with Oriel, in the
+  viewer once a scan of its folder that started after the hand-off has finished.
+- **The folder list** is read fresh from each mode's own storage, never copied: View's last
+  folder, Tidy's catalog, Sync's profiles and `migration.json`. A mode's empty state offers the
+  folders it does not have, skipping any no longer on disk.
 
 - **Open in View** from any Tidy tile, duplicate or Library row (opens the viewer at that file),
   and **Show in Tidy** from View.
