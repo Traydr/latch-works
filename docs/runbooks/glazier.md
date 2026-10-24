@@ -47,8 +47,9 @@ Dropping a folder on the window adds it too.
 
 The sidebar lists the work in the order it is best done, then the archive:
 - **Overview**: what tidying would do, with one **Tidy up** button (⌘↩). It runs Clean up,
-  removes identical copies, removes silent soundtracks and converts, in that order, as one change
-  with one Undo. Each row opens its own page.
+  removes silent soundtracks and converts, in that order, as one change with one Undo. Each row
+  opens its own page. Duplicates are never a step, identical copies included: a card under it
+  opens the similar sets and another the identical ones, for you to decide.
 - **Duplicates**: the review queue, with a Similar and an Identical tab.
 - **Convert**: the files that would become AVIF or MP4, and why the rest are left as they are.
 - **Clean up**: silent soundtracks, junk files, empty folders and wrong extensions.
@@ -64,22 +65,24 @@ In **Duplicates**, a set shows every version at once, each under its whole folde
 rather than cut, with the file name only where two versions share a folder. Identical copies list
 their folders the same way, each with a checkbox: check more than one to keep the copy in each
 folder (the copies kept are still identical, so they come back as a set to review later). Every
-version and copy has a folder button that shows it in Finder. A video plays in its tile, with its
-sound, from the controls over it, one at a time, so versions can be checked for length and
-soundtrack by ear. The facts under it say "sound", "silent" or "no sound track", or "sound not
-checked" when the loudness pass has not measured it. The suggested keeper carries a violet ring and **Keep**;
-hovering the badge says what decided it ("Keeping 1: most pixels (1600×1067 against 800×533)"). Each
-decision shows a toast with **Undo** for a few seconds. When only a tie-breaker decided (a file a
-few bytes larger, the oldest, the shortest path), the set is a **close call**: the keeper is only
-**Suggested**, an amber dot marks it in the queue, and **Keep N suggestions** leaves it for you.
-Identical copies have no keep-everything button: which copy to keep depends on where each one is, so
-each set is decided on its own. The keys:
+version and copy has a folder button that shows it in Finder. Similar versions take a checkbox too,
+for alternates that only look alike (translated pages, a textless edit, a re-cut video): check each
+one to keep, and Return holds the rest. A video plays in its tile, with its sound, from the controls
+over it, one at a time, so versions can be checked for length and soundtrack by ear. The facts under
+it say "sound", "silent" or "no sound track", or "sound not checked" when the loudness pass has not
+measured it. The suggested keeper carries a violet ring and **Keep**; hovering the badge says what
+decided it ("Keeping 1: most pixels (1600×1067 against 800×533)"). Each decision shows a toast with
+**Undo** for a few seconds. When only a tie-breaker decided (a file a few bytes larger, the oldest,
+the shortest path), the set is a **close call**: the keeper is only **Suggested**, an amber dot
+marks it in the queue, and **Keep N suggestions** leaves it for you. Identical copies have no
+keep-everything button: which copy to keep depends on where each one is, so each set is decided on
+its own. The keys:
 
 | Key | Action |
 | --- | --- |
 | Return | Keep the suggestion and go on to the next set |
 | 1–9, or a click on a version | Keep only that version and go on |
-| ⇧1–9, or ⇧-click (or its +, or a copy's checkbox) | Keep that version as well |
+| ⇧1–9, ⇧-click or its checkbox | Keep that version as well, or not |
 | N | Keep every version (not duplicates, or **Keep both** for identical copies); the set stays hidden |
 | S | Skip the set |
 | Space (or C, or the ⤢ on a version) | Look closer: one version over the whole window; ← and → flip between them, ↩ keeps the one shown, Z (or a click) shows actual size |

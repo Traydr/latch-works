@@ -102,10 +102,10 @@ It supersedes items 1, 2, 3 and 6 above.
    ring, neutral selection, and one violet primary per screen (`gz-*` tokens in
    `apps/glazier/src/index.css`). No monospace, nothing under 12 px, shortcuts in tooltips. The
    native title bar is hidden on macOS; there is no status bar and no path header.
-2. **Structure.** Overview is home, with one **Tidy up** that runs Clean up, identical copies,
-   silent soundtracks and Convert in order as one change. Duplicates, Convert and Clean up are
-   pages of their own; Library and History follow; Holding and Settings (a page) sit at the foot
-   of the sidebar, which becomes an icon rail under 1180 px (⌘\).
+2. **Structure.** Overview is home, with one **Tidy up** that runs Clean up, silent soundtracks and
+   Convert in order as one change (identical copies were a step until item 9). Duplicates, Convert
+   and Clean up are pages of their own; Library and History follow; Holding and Settings (a page)
+   sit at the foot of the sidebar, which becomes an icon rail under 1180 px (⌘\).
 3. **Duplicates.** A set shows every version as a tile, the keeper ringed. A click or a number
    key keeps that version and goes on; ⇧ keeps it as well. The keeper's badge names what decided
    the suggestion on hover; a close call (only a tie-breaker decided) shows the keeper as
@@ -140,8 +140,13 @@ It supersedes items 1, 2, 3 and 6 above.
    and copy (⇧⌘R), a checkbox per identical copy to keep it in several folders (the kept copies
    come back as a set later; what to do about them is open), and playback with sound in each
    video tile, since a silent or shorter version can slip past the checks. The bulk "Remove all
-   identical copies" button is gone, because it cannot weigh where the copies are. A video whose
-   sound was never measured says "sound not checked", not "sound".
+   identical copies" button is gone, because it cannot weigh where the copies are, and so is
+   Tidy up's identical-copies step; Overview offers them for review on a card of their own. Every
+   similar version takes a checkbox too: collections of numbered comic pages come in English,
+   Japanese and textless editions that match as similar, and a set of video alternates can hold
+   two different cuts plus a copy of one of them. A video whose sound was never measured says
+   "sound not checked", not "sound". Folder-level matching (two folders whose pages pair up one
+   to one, such as the same comic downloaded twice under different names) is a follow-up.
 
 ## Shape
 
