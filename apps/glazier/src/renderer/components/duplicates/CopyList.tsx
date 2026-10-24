@@ -11,7 +11,7 @@ import {
   plural,
 } from "../../lib/format";
 import { describeDetails, Thumbnail } from "../media";
-import { StartTruncate } from "../ui";
+import { FolderPath } from "../ui";
 import type { SetRow } from "./model";
 
 /** Below this stage width the list goes under the picture, so folder names stay readable. */
@@ -21,34 +21,16 @@ function canShow(file: FileRow): boolean {
   return (file.kind === "image" || file.kind === "video") && file.probeError === null;
 }
 
-/** Where a copy sits: its last folder, said in full, and the path above it. */
-interface Place {
-  folder: string;
-  parent: string | null;
-}
-
-function placeOf(file: FileRow): Place {
-  if (!file.dir) {
-    return { folder: "Top folder", parent: null };
-  }
-
-  const segments = file.dir.split("/");
-
-  return {
-    folder: segments.at(-1) ?? file.dir,
-    parent: segments.length > 1 ? segments.slice(0, -1).join("/") : null,
-  };
-}
-
 /**
  * Byte-identical copies: there is nothing to compare, so the picture shows once and the choice is
  * where the file stays. Clicking a place (or pressing its number) keeps the copy there and moves
- * on; ⇧-click keeps it as well. Each place leads with what tells them apart: its folder, then
- * the date (the oldest copy is the usual pick).
+ * on; ⇧-click keeps it as well. Each place leads with what tells them apart: its whole folder
+ * path, then the date (the oldest copy is the usual pick).
  */
 export function CopyList({
   rows,
   kept,
+  keepReason,
   focus,
   showFocus,
   readOnly,
@@ -58,6 +40,8 @@ export function CopyList({
 }: {
   rows: readonly SetRow[];
   kept: ReadonlySet<FileId>;
+  /** What decided the keeper, shown on its badge's tooltip. */
+  keepReason: string | null;
   focus: number;
   showFocus: boolean;
   readOnly: boolean;
@@ -100,13 +84,13 @@ export function CopyList({
   return (
     <div
       ref={box}
-      className={`flex min-h-0 flex-1 gap-6 overflow-y-auto px-5 pt-1 pb-[76px] ${
+      className={`flex min-h-0 flex-1 gap-6 overflow-y-auto px-5 pt-4 pb-[76px] ${
         stacked ? "flex-col" : "items-start"
       }`}
     >
       <div
         className={`gz-well flex shrink-0 items-center justify-center overflow-hidden ${
-          stacked ? "max-h-[40%] w-full" : "max-h-full flex-[3]"
+          stacked ? "max-h-[40%] w-full" : "max-h-full flex-1"
         }`}
         style={{ aspectRatio: aspect }}
       >
@@ -122,7 +106,7 @@ export function CopyList({
         )}
       </div>
 
-      <div className={`flex min-w-0 flex-col ${stacked ? "w-full" : "flex-[2]"}`}>
+      <div className={`flex min-w-0 flex-col ${stacked ? "w-full" : "flex-1"}`}>
         <h2 className="gz-heading">{plural(rows.length, "identical copy", "identical copies")}</h2>
         <p className="gz-caption mt-1">
           {[
@@ -142,7 +126,6 @@ export function CopyList({
         >
           {rows.map((row, index) => {
             const isKept = kept.has(row.file.id);
-            const place = placeOf(row.file);
 
             return (
               <li key={row.file.id}>
@@ -165,31 +148,27 @@ export function CopyList({
                       onKeepOnly(index);
                     }
                   }}
-                  className={`gz-hover group flex h-[52px] w-full items-center gap-3 px-3 text-left outline-none disabled:pointer-events-none ${
+                  className={`gz-hover group flex min-h-[52px] w-full items-center gap-3 px-3 py-2 text-left outline-none disabled:pointer-events-none ${
                     showFocus && index === focus ? "shadow-[inset_0_0_0_1px_rgb(161_161_170)]" : ""
                   }`}
                 >
                   <span className="gz-kbd shrink-0">{index + 1}</span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13px] font-medium">{place.folder}</span>
-                    <span className="gz-caption flex min-w-0 gap-1">
-                      <span className="shrink-0">{dateOf(row.file.mtimeMs)}</span>
-                      {place.parent ? (
-                        <>
-                          <span className="shrink-0">·</span>
-                          <StartTruncate text={place.parent} className="min-w-0" />
-                        </>
-                      ) : null}
-                      {sameName ? null : (
-                        <>
-                          <span className="shrink-0">·</span>
-                          <span className="truncate">{row.file.name}</span>
-                        </>
-                      )}
+                    <FolderPath
+                      dir={row.file.dir}
+                      lines={3}
+                      className="text-[13px] leading-[18px]"
+                    />
+                    <span className="gz-caption block truncate">
+                      {dateOf(row.file.mtimeMs)}
+                      {sameName ? null : ` · ${row.file.name}`}
                     </span>
                   </span>
                   {isKept ? (
-                    <span className="gz-badge gz-badge-keep shrink-0">
+                    <span
+                      className="gz-badge gz-badge-keep shrink-0"
+                      title={keepReason ?? undefined}
+                    >
                       <Check className="size-3.5" /> Keep
                     </span>
                   ) : readOnly ? null : (

@@ -4,16 +4,32 @@ import { type MouseEvent, useEffect, useLayoutEffect, useRef, useState } from "r
 
 import { mediaUrl, thumbnailUrl } from "../../lib/api";
 import { Thumbnail } from "../media";
-import { StartTruncate } from "../ui";
-import { copiesLine, factsOf, type SetRow } from "./model";
+import { FolderPath } from "../ui";
+import { factsOf, type SetRow } from "./model";
 
 /** Up to six versions fit the stage without scrolling; more scroll at this tile height. */
 const SCROLLING_TILE_HEIGHT = 300;
 
 const GAP = 16;
 
-/** Room under each picture for its name, folder and facts, plus the tile's padding. */
-const CAPTION_HEIGHT = 76;
+/** Room under each picture for its folder (two lines) and facts, plus the tile's padding. */
+const CAPTION_HEIGHT = 68;
+
+/** Folders that hold more than one version, where only the file name tells them apart. */
+function sharedFolders(rows: readonly SetRow[]): Set<string> {
+  const seen = new Set<string>();
+  const shared = new Set<string>();
+
+  for (const { file } of rows) {
+    if (seen.has(file.dir)) {
+      shared.add(file.dir);
+    }
+
+    seen.add(file.dir);
+  }
+
+  return shared;
+}
 
 interface Box {
   width: number;
@@ -30,8 +46,12 @@ function aspectOf(rows: readonly SetRow[]): number {
 function wellHeight(rows: readonly SetRow[], box: Box, columns: number): number {
   const lines = Math.ceil(rows.length / columns);
   const columnWidth = (box.width - GAP * (columns - 1)) / columns - 8;
-  const extra = rows.some((row) => row.copies.length > 0) ? 16 : 0;
-  const rowHeight = (box.height - GAP * (lines - 1)) / lines - CAPTION_HEIGHT - extra;
+  // Two lines for a copy's folder, and one for the file name where two versions share a folder.
+  const copiesRoom = rows.some((row) => row.copies.length > 0) ? 32 : 0;
+  const nameRoom = sharedFolders(rows).size > 0 ? 16 : 0;
+
+  const rowHeight =
+    (box.height - GAP * (lines - 1)) / lines - CAPTION_HEIGHT - copiesRoom - nameRoom;
 
   return Math.floor(Math.min(columnWidth / aspectOf(rows), rowHeight));
 }
@@ -90,6 +110,7 @@ export function VersionGrid({
   set,
   rows,
   kept,
+  keepReason,
   closeCall,
   focus,
   showFocus,
@@ -104,6 +125,8 @@ export function VersionGrid({
   set: DuplicateSet;
   rows: readonly SetRow[];
   kept: ReadonlySet<FileId>;
+  /** What decided the keeper, shown on its badge's tooltip. */
+  keepReason: string | null;
   closeCall: boolean;
   focus: number;
   /** Whether the focus is drawn: only once the arrow keys are used, so nothing looks picked. */
@@ -158,13 +181,14 @@ export function VersionGrid({
   const keeper = rows.find((row) => kept.has(row.file.id))?.file ?? rows[0]?.file;
   const linked = new Set(set.hardLinkedIds);
   const several = kept.size > 1;
+  const shared = sharedFolders(rows);
 
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: leaving the grid only clears which version the pointer is on.
     <div
       ref={box}
       onMouseLeave={() => onHover(null)}
-      className={`min-h-0 flex-1 px-5 pt-1 pb-[76px] ${scrolls ? "overflow-y-auto" : "overflow-hidden"}`}
+      className={`min-h-0 flex-1 px-5 pt-4 pb-[76px] ${scrolls ? "overflow-y-auto" : "overflow-hidden"}`}
     >
       <div
         className={`grid content-start gap-4 ${scrolls ? "" : "h-full"}`}
@@ -185,6 +209,8 @@ export function VersionGrid({
               number={index + 1}
               keeper={keeper}
               isKept={kept.has(row.file.id)}
+              keepReason={keepReason}
+              showName={shared.has(row.file.dir)}
               suggested={closeCall && kept.has(row.file.id)}
               canUnkeep={several && kept.has(row.file.id)}
               focused={showFocus && index === focus}
@@ -210,6 +236,8 @@ function VersionTile({
   number,
   keeper,
   isKept,
+  keepReason,
+  showName,
   suggested,
   canUnkeep,
   focused,
@@ -227,6 +255,9 @@ function VersionTile({
   number: number;
   keeper: FileRow;
   isKept: boolean;
+  keepReason: string | null;
+  /** The file name, for a version that shares its folder with another. */
+  showName: boolean;
   /** The keeper of a close call: shown as a suggestion, not a verdict. */
   suggested: boolean;
   canUnkeep: boolean;
@@ -245,7 +276,7 @@ function VersionTile({
   const { file } = row;
   const video = useRef<HTMLVideoElement>(null);
   const facts = factsOf(file, keeper);
-  const copies = copiesLine(row);
+  const [copy] = row.copies;
 
   useEffect(() => {
     const element = video.current;
@@ -296,7 +327,11 @@ function VersionTile({
       data-file-name={file.name}
       data-keep={isKept}
       data-version={number}
-      title={readOnly ? undefined : `Click to keep only this one and go on  ${number}`}
+      title={
+        readOnly
+          ? file.relPath
+          : `${file.relPath}\nClick to keep only this one and go on  ${number}`
+      }
       onMouseEnter={onHover}
       onClick={onClick}
       className={`gz-card group relative flex min-h-0 min-w-0 flex-col p-1 ${
@@ -364,11 +399,14 @@ function VersionTile({
           </button>
           {isKept ? (
             suggested ? (
-              <span className="gz-badge bg-white/90 text-zinc-900 dark:bg-black/60 dark:text-white">
+              <span
+                className="gz-badge bg-white/90 text-zinc-900 dark:bg-black/60 dark:text-white"
+                title={keepReason ?? undefined}
+              >
                 Suggested
               </span>
             ) : (
-              <span className="gz-badge gz-badge-keep">
+              <span className="gz-badge gz-badge-keep" title={keepReason ?? undefined}>
                 <Check className="size-3.5" /> Keep
               </span>
             )
@@ -393,10 +431,8 @@ function VersionTile({
       </div>
 
       <div className="px-2 pt-2 pb-1.5">
-        <p className="truncate text-[13px] font-medium" title={file.relPath}>
-          {file.name}
-        </p>
-        <StartTruncate text={file.dir || "Top folder"} className="gz-caption" />
+        <FolderPath dir={file.dir} lines={2} className="text-[13px] leading-[18px]" />
+        {showName ? <p className="gz-caption truncate">{file.name}</p> : null}
         <p className="gz-caption truncate">
           {facts.map((fact, index) => (
             <span key={fact.text}>
@@ -407,12 +443,19 @@ function VersionTile({
             </span>
           ))}
         </p>
-        {copies || hardLinked ? (
-          <p className="gz-caption truncate">
-            {[copies, hardLinked ? "A hard link, so it frees nothing" : null]
-              .filter(Boolean)
-              .join(" · ")}
+        {/* A byte-identical copy elsewhere goes with this version, so its folder shows too. */}
+        {row.copies.length > 1 ? (
+          <p
+            className="gz-caption truncate"
+            title={row.copies.map((other) => other.relPath).join("\n")}
+          >
+            Also in {row.copies.length} other folders
           </p>
+        ) : copy ? (
+          <FolderPath dir={copy.dir} lines={2} lead="Also in" className="gz-caption" />
+        ) : null}
+        {hardLinked ? (
+          <p className="gz-caption truncate">A hard link, so it frees nothing</p>
         ) : null}
       </div>
     </div>

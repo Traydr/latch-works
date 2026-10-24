@@ -95,7 +95,6 @@ test("silent tracks are told apart from sound", async () => {
 test("Return keeps the suggested copy and moves on, and Undo brings the set back", async () => {
   const { window } = session;
   const copy = path.join(archive, "dup", "with-sound-copy.mp4");
-  const status = window.locator("[data-review-status]");
 
   await openView(window, "duplicates");
   await window.getByRole("button", { name: /^Identical/ }).click();
@@ -107,11 +106,11 @@ test("Return keeps the suggested copy and moves on, and Undo brings the set back
   );
 
   await window.keyboard.press("Enter");
-  await expect(status).toContainText("Kept with-sound.mp4");
+  await expect(latestToast(window)).toContainText("Kept with-sound.mp4");
   await expect(stat(copy)).rejects.toThrow();
   expect(await heldFiles()).toEqual(["dup/with-sound-copy.mp4"]);
 
-  await status.getByRole("button", { name: "Undo" }).click();
+  await latestToast(window).getByRole("button", { name: "Undo" }).click();
   await waitForJobs(window);
   await expect.poll(async () => (await stat(copy).catch(() => null))?.isFile() ?? false).toBe(true);
   expect(await heldFiles()).toEqual([]);

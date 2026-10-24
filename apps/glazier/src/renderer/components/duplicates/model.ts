@@ -194,21 +194,6 @@ export function holdingSummary(
   return `${parts.join(" and ")} ${removed.length === 1 ? "goes" : "go"} to holding · ${bytes}`;
 }
 
-/** The line under a tile that names its hidden identical copies, in the present tense. */
-export function copiesLine(row: SetRow): string | null {
-  const [first] = row.copies;
-
-  if (!first) {
-    return null;
-  }
-
-  const where = first.dir || "the top folder";
-
-  return row.copies.length === 1
-    ? `Its copy in ${where} goes too`
-    : `Its ${row.copies.length} copies go too`;
-}
-
 /** Why the suggested version is the one to keep, naming the value that decided it. */
 export interface Reason {
   text: string;

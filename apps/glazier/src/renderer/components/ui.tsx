@@ -110,14 +110,17 @@ export function Segmented<T extends string>({
   value,
   onChange,
   label,
+  fill = false,
 }: {
   options: ReadonlyArray<{ value: T; label: string; count?: number; disabled?: boolean }>;
   value: T;
   onChange: (value: T) => void;
   label: string;
+  /** Spans its container, the choices sharing the width equally, as at the top of a list. */
+  fill?: boolean;
 }) {
   return (
-    <fieldset aria-label={label} className="gz-seg">
+    <fieldset aria-label={label} className={fill ? "gz-seg flex w-full" : "gz-seg"}>
       {options.map((option) => (
         <button
           key={option.value}
@@ -125,7 +128,7 @@ export function Segmented<T extends string>({
           aria-pressed={option.value === value}
           disabled={option.disabled}
           onClick={() => onChange(option.value)}
-          className="gz-seg-item"
+          className={fill ? "gz-seg-item flex-1 justify-center" : "gz-seg-item"}
         >
           {option.label}
           {option.count === undefined ? null : (
@@ -475,6 +478,112 @@ export function StartTruncate({ text, className = "" }: { text: string; classNam
     >
       {/* The marks keep the path's own direction inside the right-to-left box. */}
       {overflowing ? `‎${text}‎` : text}
+    </span>
+  );
+}
+
+/** After each slash, so a path wraps between its folders rather than inside a name. */
+const SLASH = "/​";
+
+/**
+ * A folder inside the root, written out in full so copies in different places can be told apart
+ * without hovering: it wraps at its slashes over up to `lines` lines, the last folder stronger
+ * than the ones above it. A path that still does not fit drops its first folders ("…/"), so the
+ * folders nearest the file always show. The top of the root reads "Top folder".
+ */
+export function FolderPath({
+  dir,
+  lines,
+  lead = "",
+  className = "",
+}: {
+  dir: string;
+  lines: number;
+  /** Words before the path on its first line, such as "Also in". */
+  lead?: string;
+  className?: string;
+}) {
+  const box = useRef<HTMLSpanElement>(null);
+  const measure = useRef<HTMLSpanElement>(null);
+  const [dropped, setDropped] = useState(0);
+  const segments = dir === "" ? [] : dir.split("/");
+
+  useLayoutEffect(() => {
+    const element = box.current;
+    const probe = measure.current;
+    const parts = dir === "" ? [] : dir.split("/");
+
+    if (!element || !probe) {
+      return;
+    }
+
+    // The probe takes each shortened path in turn, in the stronger weight so a fit is never
+    // optimistic, until one fits the lines.
+    const shorten = () => {
+      const limit = (Number.parseFloat(getComputedStyle(probe).lineHeight) || 16) * lines + 1;
+      let first = 0;
+
+      for (; first < parts.length - 1; first += 1) {
+        probe.textContent =
+          (lead ? `${lead} ` : "") +
+          (first > 0 ? `…${SLASH}` : "") +
+          parts.slice(first).join(SLASH);
+
+        if (probe.offsetHeight <= limit) {
+          break;
+        }
+      }
+
+      setDropped(first);
+    };
+
+    shorten();
+
+    const observer = new ResizeObserver(shorten);
+
+    observer.observe(element);
+
+    return () => observer.disconnect();
+  }, [dir, lines, lead]);
+
+  const parents = [...(dropped > 0 ? ["…"] : []), ...segments.slice(dropped, -1)];
+  const last = segments.at(-1);
+
+  return (
+    <span
+      ref={box}
+      title={dir || "The top of the folder"}
+      className={`relative block ${className}`}
+    >
+      <span
+        className="[overflow-wrap:anywhere]"
+        style={{
+          display: "-webkit-box",
+          WebkitBoxOrient: "vertical",
+          WebkitLineClamp: lines,
+          overflow: "hidden",
+        }}
+      >
+        {lead ? `${lead} ` : null}
+        {last === undefined ? (
+          <span className="text-zinc-500 dark:text-zinc-400">Top folder</span>
+        ) : (
+          <>
+            {parents.length > 0 ? (
+              <span className="text-zinc-500 dark:text-zinc-400">
+                {parents.join(SLASH)}
+                {SLASH}
+              </span>
+            ) : null}
+            <span className="font-medium">{last}</span>
+          </>
+        )}
+      </span>
+      <span
+        ref={measure}
+        aria-hidden
+        className="pointer-events-none invisible absolute inset-x-0 top-0 font-medium [overflow-wrap:anywhere]"
+      />
     </span>
   );
 }

@@ -5,7 +5,7 @@ import {
   isCloseCall,
   type RootId,
 } from "@latch-works/glazier-core/contract";
-import { Check, CheckCircle2, ChevronLeft, ChevronRight, MoreHorizontal } from "lucide-react";
+import { CheckCircle2, ChevronLeft, ChevronRight, MoreHorizontal } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { CopyList } from "../components/duplicates/CopyList";
@@ -25,7 +25,7 @@ import {
 import { SetQueue } from "../components/duplicates/SetQueue";
 import { useSetQueue } from "../components/duplicates/use-set-queue";
 import { VersionGrid } from "../components/duplicates/VersionGrid";
-import { useToastLift } from "../components/Toasts";
+import { useToastLift, useToasts } from "../components/Toasts";
 import {
   EmptyState,
   Kbd,
@@ -45,28 +45,19 @@ import { digitOf, isCommandKey, isPlainKey, useViewKeys } from "../lib/hotkeys";
 import { useNavigation } from "../lib/navigation";
 import { SIMILARITY_LEVELS, usePreferFolder } from "../lib/preferences";
 
-/** How long the result of the last decision stands in for the top bar's counts. */
-const STATUS_MS = 6000;
-
 /** How long a click on a new set waits, so a double-click never decides two sets. */
 const ARM_DELAY_MS = 400;
 
-/** Decisions this close together report as one on the top bar, with one Undo. */
+/** Decisions this close together report as one toast, with one Undo for all of them. */
 const GROUP_MS = 2000;
 
 /** A request to open on a tab counts only right after it was made, not on a later visit. */
 const TAB_REQUEST_MS = 2000;
 
-/** The result of the last decision, beside the title until the next one or a few seconds pass. */
-interface Status {
-  id: number;
-  text: string;
-  undo: (() => void) | null;
-}
-
 export function DuplicatesView({ rootId }: { rootId: RootId }) {
   const { settings, setSettings, catalogVersion, report } = useEngine();
   const actions = useActions();
+  const toasts = useToasts();
   const navigation = useNavigation();
   const preferFolder = usePreferFolder(rootId);
   const similarJob = useActiveJob("similar", rootId);
@@ -103,10 +94,10 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
   const [hidden, setHidden] = useState<ReadonlyMap<string, number>>(new Map());
   // A set undone from here comes back into focus once the refresh brings it.
   const [returnTo, setReturnTo] = useState<string | null>(null);
-  const [status, setStatus] = useState<Status | null>(null);
   const [freedHere, setFreedHere] = useState(0);
   const versionRef = useRef(catalogVersion);
-  const statusId = useRef(0);
+  // The toast of the last decision, taken down when that decision is undone some other way (⌘Z).
+  const decisionToast = useRef<number | null>(null);
   const pointer = useRef<{ x: number; y: number } | null>(null);
   const [zoomAt, setZoomAt] = useState<{ x: number; y: number } | null>(null);
 
@@ -119,19 +110,6 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
       setChosenScope(data.counts.similar === 0 && data.counts.exact > 0 ? "exact" : "similar");
     }
   }, [chosenScope, data]);
-
-  useEffect(() => {
-    if (status === null) {
-      return;
-    }
-
-    const timer = window.setTimeout(
-      () => setStatus((current) => (current?.id === status.id ? null : current)),
-      STATUS_MS,
-    );
-
-    return () => window.clearTimeout(timer);
-  }, [status]);
 
   // The pointer hides the keyboard focus again, and is remembered for zooming in at it.
   useEffect(() => {
@@ -207,21 +185,32 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
     });
   }, []);
 
-  const showStatus = useCallback((text: string, undo: (() => void) | null) => {
-    statusId.current += 1;
-    setStatus({ id: statusId.current, text, undo });
-  }, []);
+  /** Says what a decision did in a toast with its Undo, in place of the last decision's. */
+  const announce = useCallback(
+    (message: string, detail: string | null, undo: () => void) => {
+      decisionToast.current = toasts.show({
+        message,
+        detail,
+        action: { label: "Undo", run: undo },
+      });
+    },
+    [toasts],
+  );
 
   const bringBack = useCallback(
     (key: string) => {
       unhide(key);
       setReturnTo(key);
-      setStatus(null);
+
+      if (decisionToast.current !== null) {
+        toasts.dismiss(decisionToast.current);
+        decisionToast.current = null;
+      }
     },
-    [unhide],
+    [toasts, unhide],
   );
 
-  /** Resolves a set keeping `keep`, quietly: the top bar says what happened and offers Undo. */
+  /** Resolves a set keeping `keep`, and says so in a toast with Undo. */
   const resolveWith = useCallback(
     async (set: DuplicateSet, keep: readonly FileId[]) => {
       const going = removalOf(set, keep);
@@ -259,8 +248,9 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
 
         const undos = recent.current.undos;
 
-        showStatus(
+        announce(
           undos.length > 1 ? `Kept ${undos.length} sets` : `Kept ${keeper?.name ?? "1 file"}`,
+          undos.length > 1 || !keeper ? null : `In ${keeper.dir || "the top folder"}`,
           () =>
             void (async () => {
               for (const step of [...undos].reverse()) {
@@ -272,7 +262,7 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
         unhide(set.key);
       }
     },
-    [actions, bringBack, hide, showStatus, unhide],
+    [actions, announce, bringBack, hide, unhide],
   );
 
   const dismiss = useCallback(async () => {
@@ -299,7 +289,7 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
       const forget = actions.pushUndo(restore);
 
       recent.current = null;
-      showStatus(set.kind === "exact" ? "Kept every copy" : "Marked as not duplicates", () => {
+      announce(set.kind === "exact" ? "Kept every copy" : "Marked as not duplicates", null, () => {
         forget();
         void restore().catch(report);
       });
@@ -307,7 +297,7 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
       unhide(set.key);
       report(error);
     }
-  }, [active, actions, bringBack, hide, report, showStatus, unhide]);
+  }, [active, actions, announce, bringBack, hide, report, unhide]);
 
   const restoreDismissed = useCallback(async () => {
     if (!active || active.dismissalId === null) {
@@ -612,7 +602,6 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
   });
 
   const fingerprinting = data !== null && data.fingerprinted < data.fingerprintable;
-  const totalSets = data ? data.counts.exact + data.counts.similar : 0;
   const otherScope: DuplicateScope = scope === "similar" ? "exact" : "similar";
   const otherCount = data ? (scope === "similar" ? data.counts.exact : data.counts.similar) : 0;
 
@@ -625,6 +614,7 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
     data && !dismissedMode ? (
       <Segmented
         label="Show"
+        fill
         value={scope}
         onChange={(next) => {
           setChosenScope(next);
@@ -637,32 +627,6 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
         ]}
       />
     ) : null;
-
-  const meta = status ? (
-    <span className="gz-enter-fade inline-flex items-center gap-1.5" data-review-status>
-      <Check className="size-3.5 text-emerald-500" />
-      <span className="max-w-72 truncate">{status.text}</span>
-      {status.undo ? (
-        <button
-          type="button"
-          className="gz-btn gz-btn-secondary gz-btn-sm -my-1 ml-1"
-          title="Undo  ⌘Z"
-          onClick={() => {
-            status.undo?.();
-            setStatus(null);
-          }}
-        >
-          Undo
-        </button>
-      ) : null}
-    </span>
-  ) : data ? (
-    dismissedMode ? (
-      plural(sets.length, "set")
-    ) : (
-      `${plural(totalSets, "set")} · ${formatBytes(data.openReclaimableBytes)} to free`
-    )
-  ) : null;
 
   const decisionBar = active ? (
     <div className="gz-float absolute bottom-5 left-1/2 z-10 flex w-max max-w-[calc(100%-40px)] -translate-x-1/2 items-center gap-2 p-1.5">
@@ -741,7 +705,7 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <TopBar title={dismissedMode ? "Not duplicates" : "Duplicates"} meta={meta}>
+      <TopBar title={dismissedMode ? "Not duplicates" : "Duplicates"}>
         {fingerprinting ? (
           <span
             className="gz-caption inline-flex items-center gap-2"
@@ -902,25 +866,11 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
               data-set-key={active.key}
               data-set-kind={active.kind}
             >
-              <div className="flex h-11 shrink-0 items-center gap-2 px-5 pt-1">
-                {closeCall ? (
-                  <span className="size-2 shrink-0 rounded-full bg-amber-500" aria-hidden />
-                ) : null}
-                <p className="min-w-0 truncate text-[13px]">
-                  {dismissedMode ? "Kept as not duplicates" : reason?.text}
-                  {dismissedMode ? null : (
-                    <span className="text-zinc-500 dark:text-zinc-400">
-                      {" · "}
-                      {holdingSummary(active, rows, keptSet)}
-                    </span>
-                  )}
-                </p>
-              </div>
-
               {active.kind === "exact" ? (
                 <CopyList
                   rows={rows}
                   kept={keptSet}
+                  keepReason={reason?.text ?? null}
                   focus={focus}
                   showFocus={keyboardFocus}
                   readOnly={dismissedMode}
@@ -933,6 +883,7 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
                   set={active}
                   rows={rows}
                   kept={keptSet}
+                  keepReason={reason?.text ?? null}
                   closeCall={closeCall}
                   focus={focus}
                   showFocus={keyboardFocus}
