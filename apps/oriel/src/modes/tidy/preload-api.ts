@@ -25,6 +25,7 @@ export const glazierBridge: GlazierBridge = {
   showMenu: (entries) => ipcRenderer.invoke(RendererChannels.showMenu, entries),
   confirm: (request) => ipcRenderer.invoke(RendererChannels.confirm, request),
   pathForFile: (file) => webUtils.getPathForFile(file),
+  setBusy: (busy) => ipcRenderer.send(RendererChannels.busy, busy),
   onCommand: (listener) => {
     const handler = (_event: IpcRendererEvent, command: Json) => listener(command);
 

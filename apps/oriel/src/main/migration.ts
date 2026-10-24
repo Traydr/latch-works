@@ -61,9 +61,10 @@ export function readMigrationReport(orielDir: string): MigrationReport | null {
 
 /**
  * Waits until none of the old apps runs, asking the owner to quit them: Oriel opens the same
- * catalogs and settings. Resolves false when the owner would rather quit Oriel.
+ * catalogs and settings. Resolves false when the owner gives up, which the second button names:
+ * quitting Oriel at its start, or cancelling an import.
  */
-export async function waitForOldAppsToQuit(): Promise<boolean> {
+export async function waitForOldAppsToQuit(giveUpLabel = "Quit Oriel"): Promise<boolean> {
   for (;;) {
     const running = await runningOldApps();
 
@@ -76,7 +77,7 @@ export async function waitForOldAppsToQuit(): Promise<boolean> {
       message: `Quit ${running.join(" and ")} to continue`,
       detail:
         "Oriel opens the same catalogs, settings and profiles, which two apps must not change at once.",
-      buttons: ["Try Again", "Quit Oriel"],
+      buttons: ["Try Again", giveUpLabel],
       defaultId: 0,
       cancelId: 1,
     });
@@ -102,7 +103,14 @@ function blankPage(folder: string): string {
 function temporaryFolder(): string {
   const folder = mkdtempSync(path.join(os.tmpdir(), "oriel-storage-"));
 
-  app.once("will-quit", () => rmSync(folder, { recursive: true, force: true }));
+  app.once("will-quit", () => {
+    try {
+      rmSync(folder, { recursive: true, force: true });
+    } catch (cause) {
+      // Windows can still hold the session's files open; the temp folder is the OS's to clear.
+      console.warn(`[oriel:migration] left ${folder} behind: ${String(cause)}`);
+    }
+  });
 
   return folder;
 }

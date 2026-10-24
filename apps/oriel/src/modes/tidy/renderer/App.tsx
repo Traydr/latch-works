@@ -92,7 +92,7 @@ function Shell() {
   const { undoLast } = useActions();
   const toasts = useToasts();
   const [shortcuts, setShortcuts] = useState(false);
-  const { rail, openSettings } = useShell();
+  const { rail, openSettings, bridge } = useShell();
   const [dragging, setDragging] = useState(false);
   const root = roots.find((candidate) => candidate.id === rootId) ?? null;
   const main = useRef<HTMLElement>(null);
@@ -135,15 +135,38 @@ function Shell() {
 
   /**
    * Shows what another mode handed Tidy: the folder that holds it, at the Library filtered to it
-   * (and to the file's name, for a file). A path no folder holds is added as a folder first.
+   * (and to the file's name, for a file). A folder handed over (Tidy this folder) that no folder
+   * of Tidy's holds is added. A file no folder holds asks first, offering the outermost folder
+   * another mode uses that holds it (the folder View was opened at, say), so Tidy does not add a
+   * small folder a later, larger one would overlap.
    */
   const showHandOff = useCallback(
-    (target: HandOffTarget) => {
+    async (target: HandOffTarget) => {
       const folderPath = target.kind === "file" ? parentOf(target.path) : target.path;
       const holder = closestFolder(roots, folderPath);
 
+      if (!holder && target.kind === "folder") {
+        await addFolder(folderPath);
+
+        return;
+      }
+
       if (!holder) {
-        void addFolder(folderPath);
+        const outer = (await bridge.folders())
+          .filter((folder) => relativeInside(folder.path, folderPath) !== null)
+          .sort((left, right) => left.path.length - right.path.length)[0];
+
+        const candidate = outer?.path ?? folderPath;
+
+        const confirmed = await desktop.confirm({
+          message: `Tidy “${baseName(candidate)}”?`,
+          detail: `No folder Tidy tidies holds this file. Tidy adds ${candidate} and scans it; nothing in it changes until you ask.`,
+          confirmLabel: "Tidy It",
+        });
+
+        if (confirmed) {
+          await addFolder(candidate);
+        }
 
         return;
       }
@@ -156,10 +179,10 @@ function Shell() {
         search: target.kind === "file" ? baseName(target.path) : "",
       });
     },
-    [addFolder, openLibrary, roots, selectRoot],
+    [addFolder, bridge, openLibrary, roots, selectRoot],
   );
 
-  useHandOff(ready, showHandOff);
+  useHandOff(ready, (target) => void showHandOff(target));
 
   const pickFolder = useFolderPicker();
   const rootPath = root?.path ?? null;

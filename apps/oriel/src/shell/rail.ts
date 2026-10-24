@@ -19,8 +19,8 @@ interface SidebarRail {
 
 /**
  * Whether the sidebar is compact, the rail of icons. It is the owner's choice alone (the toggle at
- * the sidebar's foot, or ⌘\), the same in every mode and at any window size, so switching mode
- * or resizing never changes it.
+ * the start of every top bar, or ⌘\), the same in every mode and at any window size, so switching
+ * mode or resizing never changes it.
  */
 export function useSidebarRail(): SidebarRail {
   const [rail, setRail] = useState(storedRail);

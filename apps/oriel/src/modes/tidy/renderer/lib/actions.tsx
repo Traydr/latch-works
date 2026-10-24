@@ -11,7 +11,7 @@ import {
 } from "react";
 
 import { useToasts } from "../components/Toasts";
-import { call } from "./api";
+import { call, desktop } from "./api";
 import { useEngine } from "./engine-state";
 import { formatBytes, formatCount, plural } from "./format";
 
@@ -343,37 +343,44 @@ export function ActionsProvider({ children }: { children: ReactNode }) {
       const plans: PlanSummary[] = [];
       const notes: string[] = [];
 
-      for (const step of steps) {
-        try {
-          const request = await step();
+      // Between steps no change runs, so the window holds the quit until the last one ends.
+      desktop.setBusy(true);
 
-          if (request === null) {
-            continue;
-          }
+      try {
+        for (const step of steps) {
+          try {
+            const request = await step();
 
-          const { plan, finished } = await run(request, options.source);
+            if (request === null) {
+              continue;
+            }
 
-          if (plan.steps > 0) {
-            plans.push(plan);
-          }
+            const { plan, finished } = await run(request, options.source);
 
-          if (finished.state === "cancelled") {
-            notes.push(`Stopped during “${plan.title}”`);
+            if (plan.steps > 0) {
+              plans.push(plan);
+            }
 
-            break;
-          }
+            if (finished.state === "cancelled") {
+              notes.push(`Stopped during “${plan.title}”`);
 
-          if (finished.state === "failed" || plan.failed > 0) {
-            notes.push(`${plan.title}: ${plan.failed} failed`);
-          }
-        } catch (error) {
-          // A step with nothing left to do (its files went in an earlier step) is not an error.
-          const message = error instanceof Error ? error.message : String(error);
+              break;
+            }
 
-          if (!message.includes("nothing to do")) {
-            notes.push(message);
+            if (finished.state === "failed" || plan.failed > 0) {
+              notes.push(`${plan.title}: ${plan.failed} failed`);
+            }
+          } catch (error) {
+            // A step with nothing left to do (its files went in an earlier step) is not an error.
+            const message = error instanceof Error ? error.message : String(error);
+
+            if (!message.includes("nothing to do")) {
+              notes.push(message);
+            }
           }
         }
+      } finally {
+        desktop.setBusy(false);
       }
 
       const undoable = plans.filter(canUndo);

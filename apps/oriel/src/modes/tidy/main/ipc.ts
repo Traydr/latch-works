@@ -23,8 +23,30 @@ import {
 import type { EngineHost } from "./engine-host";
 import { folderPlaces, listFolder } from "./folders";
 
-/** Renderer IPC: engine calls pass through after their input is parsed; the rest is Electron's. */
-export function registerIpc(host: EngineHost, getWindow: () => BrowserWindow | null): void {
+/**
+ * Renderer IPC: engine calls pass through after their input is parsed; the rest is Electron's.
+ * `onBusy` hears the window say a run of several changes started or ended.
+ */
+export function registerIpc(
+  host: EngineHost,
+  getWindow: () => BrowserWindow | null,
+  onBusy: (busy: boolean) => void,
+): void {
+  ipcMain.on(RendererChannels.busy, (event, raw) => {
+    const busy = z.boolean().safeParse(raw);
+
+    if (!busy.success) {
+      return;
+    }
+
+    onBusy(busy.data);
+
+    // A window that crashes mid-run can no longer end it, so it stops holding the quit.
+    if (busy.data) {
+      event.sender.once("render-process-gone", () => onBusy(false));
+    }
+  });
+
   ipcMain.handle(
     RendererChannels.call,
     async (_event, rawMethod, rawInput): Promise<CallResult> => {

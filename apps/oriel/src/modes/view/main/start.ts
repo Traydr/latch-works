@@ -17,6 +17,7 @@ import { resolveFolderPath } from "./services/folderService";
 import {
   authorizeRememberedMediaRoot,
   grantChosenMediaRoot,
+  isPathWithinRoot,
   MEDIA_PROTOCOL_SCHEME,
   registerMediaProtocol,
   setThumbnailDebugOptions,
@@ -70,6 +71,8 @@ interface ViewHost extends ModeHost {
   savedWindow(): WindowState | null;
   theme(): "system" | "light" | "dark";
   lastFolder(): string | null;
+  /** The folder the owner opened that the last folder is inside, or the last folder itself. */
+  openedFolder(): string | null;
 }
 
 /**
@@ -191,5 +194,14 @@ export async function startView({ dataDir, window }: ModeContext): Promise<ViewH
     },
     theme: () => settingsService.getSettings().theme,
     lastFolder: () => settingsService.getSettings().lastFolderPath,
+    openedFolder: () => {
+      const { lastFolderPath, lastOpenedFolderPath } = settingsService.getSettings();
+
+      return lastFolderPath !== null &&
+        lastOpenedFolderPath !== null &&
+        isPathWithinRoot(lastFolderPath, lastOpenedFolderPath)
+        ? lastOpenedFolderPath
+        : lastFolderPath;
+    },
   };
 }

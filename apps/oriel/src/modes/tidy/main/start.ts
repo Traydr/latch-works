@@ -2,6 +2,7 @@ import type { Job } from "@latch-works/glazier-core/contract";
 import type { MenuItemConstructorOptions } from "electron";
 
 import type { ModeContext, ModeHost, ModeMenu } from "../../../main/mode";
+import { runningOldApps } from "../../../main/old-apps";
 import { type AppCommand, RendererChannels } from "../shared/messages";
 import { EngineHost } from "./engine-host";
 import { registerIpc } from "./ipc";
@@ -9,11 +10,23 @@ import { handleMediaProtocol } from "./media-protocol";
 
 interface TidyOptions extends ModeContext {
   packaged: boolean;
+  /** The owner's own data folder (not `--user-data-dir`), where the old Glazier may be running. */
+  ownersData: boolean;
 }
 
 interface TidyHost extends ModeHost {
   /** Adds a folder to tidy, as the welcome does; resolves the problem, or null. */
   addFolder(folder: string): Promise<string | null>;
+}
+
+/**
+ * Refuses to start the engine while the standalone Glazier runs: two engines must never work on
+ * one catalog. The next call to Tidy's engine checks again.
+ */
+async function refuseBesideOldGlazier(): Promise<void> {
+  if ((await runningOldApps()).includes("Glazier")) {
+    throw new Error("Quit Glazier to use Tidy: the two must not change the same catalog at once.");
+  }
 }
 
 /** Whether a job is a change to the archive (applying a plan or undoing one) still under way. */
@@ -72,12 +85,26 @@ function tidyMenu(send: (command: AppCommand) => void): ModeMenu {
  * since its window can call them as soon as it mounts; the engine process starts with the first
  * call, and the hidden transcoder window when the owner first opens Tidy.
  */
-export function startTidy({ dataDir, window, onProgress, packaged }: TidyOptions): TidyHost {
+export function startTidy({
+  dataDir,
+  window,
+  onProgress,
+  packaged,
+  ownersData,
+}: TidyOptions): TidyHost {
   const changes = new Map<Job["id"], Job>();
+  /** The window is between the steps of a Tidy up, which no single job covers. */
+  let windowBusy = false;
 
   const host = new EngineHost({
     dataDir,
     packaged,
+    beforeStart: ownersData ? refuseBesideOldGlazier : undefined,
+    // The jobs went with the engine, so nothing is changing any more.
+    onExit: () => {
+      changes.clear();
+      onProgress(null);
+    },
     onEvent: (event) => {
       if (event.kind === "job") {
         if (isRunningChange(event.job)) {
@@ -102,12 +129,15 @@ export function startTidy({ dataDir, window, onProgress, packaged }: TidyOptions
   });
 
   handleMediaProtocol(host);
-  registerIpc(host, window);
+  registerIpc(host, window, (busy) => {
+    windowBusy = busy;
+  });
 
   let started = false;
 
   return {
-    busy: () => changes.size > 0,
+    // A paused change waits for the owner, so it does not hold the app open after its window.
+    busy: () => windowBusy || [...changes.values()].some((job) => job.state !== "paused"),
     menu: tidyMenu((command) => window()?.webContents.send(RendererChannels.command, command)),
     activate: () => {
       if (started) {
@@ -116,6 +146,7 @@ export function startTidy({ dataDir, window, onProgress, packaged }: TidyOptions
 
       started = true;
       void host.start().catch((error: Error) => {
+        started = false;
         console.error(`[oriel:tidy] the engine did not start: ${error.message}`);
       });
     },

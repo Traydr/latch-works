@@ -27,6 +27,8 @@ export interface GlazierBridge {
   pathForFile(file: File): string;
   /** App menu commands, unparsed. */
   onCommand(listener: (command: Json) => void): () => void;
+  /** Tells the main process a run of several changes is going, so quitting waits for it. */
+  setBusy(busy: boolean): void;
 }
 
 /**

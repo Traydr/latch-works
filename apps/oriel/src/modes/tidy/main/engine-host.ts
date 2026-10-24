@@ -21,6 +21,10 @@ export interface EngineHostOptions {
   dataDir: string;
   packaged: boolean;
   onEvent: (event: EngineEvent) => void;
+  /** Runs before the engine starts, and rejects to keep it from starting this time. */
+  beforeStart?: () => Promise<void>;
+  /** The engine process exited, with whatever it was doing. */
+  onExit?: () => void;
 }
 
 /**
@@ -96,12 +100,32 @@ export class EngineHost {
     this.engine?.postMessage(message);
   }
 
+  /**
+   * The engine, started on first use. A start that fails (or that `beforeStart` refuses) is not
+   * kept, so the next call tries again.
+   */
   private ensureEngine(): Promise<void> {
     if (this.ready) {
       return this.ready;
     }
 
-    this.ready = new Promise((resolve, reject) => {
+    const ready = (async () => {
+      await this.options.beforeStart?.();
+      await this.forkEngine();
+    })();
+
+    this.ready = ready;
+    ready.catch(() => {
+      if (this.ready === ready) {
+        this.ready = null;
+      }
+    });
+
+    return ready;
+  }
+
+  private forkEngine(): Promise<void> {
+    return new Promise((resolve, reject) => {
       const child = utilityProcess.fork(
         path.join(__dirname, "engine-process.cjs"),
         [
@@ -202,11 +226,10 @@ export class EngineHost {
         }
 
         this.pending.clear();
+        this.options.onExit?.();
         reject(new Error(`Tidy's engine stopped (exit ${code}).`));
       });
     });
-
-    return this.ready;
   }
 
   private async refreshAuthorizedRoots(): Promise<void> {

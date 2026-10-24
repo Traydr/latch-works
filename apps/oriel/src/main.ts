@@ -78,7 +78,7 @@ const ownersData = !app.commandLine.hasSwitch("user-data-dir");
 
 /** File › Import from the Old Apps…: the first start's migration again, then a fresh window. */
 async function importOldApps(): Promise<void> {
-  if (!folders || !view || !sync || (ownersData && !(await waitForOldAppsToQuit()))) {
+  if (!folders || !view || !sync || (ownersData && !(await waitForOldAppsToQuit("Cancel")))) {
     return;
   }
 
@@ -194,7 +194,7 @@ function openInView(candidatePath: string): void {
 /** Where each mode keeps its folders; empty until the modes have started. */
 function folderSources(): FolderSources {
   return {
-    view: () => view?.lastFolder() ?? null,
+    view: () => view?.openedFolder() ?? null,
     tidy: () => (folders ? glazierRoots(folders.glazier) : []),
     sync: () => sync?.sourceRoots() ?? [],
     migrated: () => (folders ? (readMigrationReport(folders.oriel)?.folders ?? []) : []),
@@ -228,7 +228,8 @@ async function handOffToView(value: Json): Promise<boolean> {
     return false;
   }
 
-  view.openPath(target.data);
+  // The path checked is the one granted: a symlink outside the folders would widen it otherwise.
+  view.openPath(real);
 
   return true;
 }
@@ -362,6 +363,21 @@ async function createWindow(): Promise<void> {
     // Oriel is one window: closing it quits, on macOS too. Tidy's hidden transcoder window would
     // otherwise keep the app running with nothing on screen.
     app.quit();
+  });
+
+  // Oriel is its own pages only: a link opens in the browser, and nothing navigates the window
+  // anywhere else.
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//.test(url)) {
+      void shell.openExternal(url);
+    }
+
+    return { action: "deny" };
+  });
+  window.webContents.on("will-navigate", (event, url) => {
+    if (url !== window.webContents.getURL()) {
+      event.preventDefault();
+    }
   });
 
   window.once("ready-to-show", () => {
@@ -522,12 +538,23 @@ if (!app.requestSingleInstanceLock()) {
       window: () => mainWindow,
       onProgress: reportProgress("tidy"),
       packaged: app.isPackaged,
+      ownersData,
     });
     modes.set("tidy", tidy);
 
     // The first start brings the old apps' data in before the window reads it.
+    // A failure leaves the old apps' data where it was, and the window still opens: File › Import
+    // from the Old Apps… tries again.
     if (readMigrationReport(modeFolders.oriel) === null) {
-      await migrateOldApps(modeFolders, { view, sync }, { offerRemoval: ownersData });
+      try {
+        await migrateOldApps(modeFolders, { view, sync }, { offerRemoval: ownersData });
+      } catch (cause) {
+        console.error(`[oriel:main] the first start's migration failed: ${String(cause)}`);
+        dialog.showErrorBox(
+          "Oriel could not bring the old apps' data over",
+          `${cause instanceof Error ? cause.message : String(cause)}\n\nFile › Import from the Old Apps… tries again.`,
+        );
+      }
     }
 
     showMenu();

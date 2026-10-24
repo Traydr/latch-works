@@ -86,6 +86,7 @@ export const desktop = {
   showMenu: (entries: MenuEntry[]) => requireBridge().showMenu(entries),
   confirm: (request: ConfirmRequest) => requireBridge().confirm(request),
   pathForFile: (file: File) => requireBridge().pathForFile(file),
+  setBusy: (busy: boolean) => window.glazier?.setBusy(busy),
 };
 
 export function mediaUrl(filePath: string): string {

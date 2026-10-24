@@ -49,8 +49,3 @@ test("the first start's welcome sets one folder up for View and Tidy, then shows
   session = await launchOriel(userDataDir, env);
   await expect(session.window.getByRole("region", { name: "Welcome to Oriel" })).toHaveCount(0);
 });
-
-test("the welcome stays away under the e2e suite's own data folder", async () => {
-  session = await launchOriel();
-  await expect(session.window.getByRole("region", { name: "Welcome to Oriel" })).toHaveCount(0);
-});

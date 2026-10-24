@@ -305,11 +305,11 @@ async function captureView(page) {
   await page.keyboard.press("Escape");
   await sleep(600);
 
-  await clickVisible(page, 'button[title="Preferences"]');
-  await page.waitForSelector('button[aria-label="Close settings"]', { visible: true });
+  await clickVisible(page, "[data-settings-item]");
+  await page.waitForSelector("[data-settings-back]", { visible: true });
   await sleep(800);
   await saveScreenshot(page, "frame-view", "settings.png");
-  await page.click('button[aria-label="Close settings"]');
+  await page.click("[data-settings-back]");
   await sleep(400);
 }
 

@@ -21,6 +21,7 @@ import {
   useState,
 } from "react";
 
+import { useModeActive } from "../../../../shell/shell";
 import { call, onEngineEvent } from "./api";
 
 interface EngineState {
@@ -96,8 +97,26 @@ export function EngineProvider({ children }: { children: ReactNode }) {
       }
     });
 
+    return unsubscribe;
+  }, []);
+
+  const active = useModeActive();
+
+  // The engine's state, read when Tidy shows, and again each time it shows until it has been: a
+  // start refused while the old Glazier ran is tried again once the owner comes back.
+  useEffect(() => {
+    if (ready || !active) {
+      return;
+    }
+
+    let live = true;
+
     call("getState", {}).then(
       (state) => {
+        if (!live) {
+          return;
+        }
+
         setRoots(state.roots);
         setSettingsState(state.settings);
         setCapabilities(state.capabilities);
@@ -105,11 +124,17 @@ export function EngineProvider({ children }: { children: ReactNode }) {
         setRootId((current) => current ?? startingRoot(state.roots));
         setReady(true);
       },
-      (cause: Error) => setError(cause.message),
+      (cause: Error) => {
+        if (live) {
+          setError(cause.message);
+        }
+      },
     );
 
-    return unsubscribe;
-  }, []);
+    return () => {
+      live = false;
+    };
+  }, [active, ready]);
 
   useEffect(() => {
     if (rootId !== null && !roots.some((root) => root.id === rootId)) {

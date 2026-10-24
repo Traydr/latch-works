@@ -113,6 +113,8 @@ export const RendererChannels = {
   confirm: "glazier:confirm",
   event: "glazier:event",
   command: "glazier:command",
+  /** window → main: a run of several changes (Tidy up) started or ended, a boolean. */
+  busy: "glazier:busy",
 } as const;
 
 /** What the app menu asks the renderer to do; the renderer owns every command's behaviour. */

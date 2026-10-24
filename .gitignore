@@ -8,10 +8,6 @@ dist/
 # Electron Forge output, here too so a retired app's leftover builds stay ignored.
 apps/*/out/
 apps/*/.packaged-runtime/
-# The standalone desktop apps Oriel replaced (plan 059): only their build leftovers remain on disk.
-apps/frame-view/
-apps/glazier/
-apps/lockstep/
 *.tsbuildinfo
 .env
 .env.*
