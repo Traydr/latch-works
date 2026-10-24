@@ -154,6 +154,54 @@ export class ProfileService {
     }
   }
 
+  /**
+   * Re-saves the tokens this storage cannot read but `decryptLegacy` can: those the standalone
+   * Lockstep app encrypted with Electron `safeStorage`. A token neither opens stays as it was, so
+   * its profile asks for it again. Nothing is written when nothing changed.
+   */
+  async migrateLegacyTokens(
+    decryptLegacy: (encrypted: Buffer) => string | null,
+  ): Promise<{ migrated: number; failed: number }> {
+    return this.exclusive(async () => {
+      let migrated = 0;
+      let failed = 0;
+
+      const profiles = this.state.profiles.map((profile) => {
+        if (!profile.encryptedToken || this.getTokenState(profile.id) !== "unreadable") {
+          return profile;
+        }
+
+        const token = decryptLegacy(Buffer.from(profile.encryptedToken, "base64"));
+        const encryptedToken = token === null ? undefined : this.encryptToken(token);
+
+        if (encryptedToken === undefined) {
+          failed += 1;
+
+          return profile;
+        }
+
+        migrated += 1;
+
+        return { ...profile, encryptedToken };
+      });
+
+      if (migrated === 0) {
+        return { migrated, failed };
+      }
+
+      const next = { ...this.state, profiles };
+      const saved = await this.save(next);
+
+      if (Result.isError(saved)) {
+        return { migrated: 0, failed: failed + migrated };
+      }
+
+      this.state = next;
+
+      return { migrated, failed };
+    });
+  }
+
   setSessionToken(profileId: string, token: string): void {
     this.sessionTokens.set(profileId, token);
   }
