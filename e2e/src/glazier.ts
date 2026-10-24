@@ -27,6 +27,8 @@ const ELECTRON_BINARY = path.join(
 export interface GlazierSession {
   app: ElectronApplication;
   window: Page;
+  /** Glazier's data folder for this run, where the catalog and holding live. */
+  userDataDir: string;
 }
 
 async function findMainWindow(app: ElectronApplication): Promise<Page> {
@@ -59,7 +61,7 @@ export async function launchGlazier(): Promise<GlazierSession> {
   const window = await findMainWindow(app);
   await window.setViewportSize({ width: 1320, height: 860 });
 
-  return { app, window };
+  return { app, window, userDataDir };
 }
 
 /** Points the native folder picker at `folder` for the next pick, from the main process. */
@@ -71,12 +73,12 @@ export async function stubFolderDialog(app: ElectronApplication, folder: string)
 
 /**
  * Waits for the work an action just started, and for the background analysis that follows it.
- * The status bar names the running job; a job can take a moment to start after its button is
- * pressed, and the next one (analysis after a scan) a moment after the last ends, so this gives a
- * job up to two seconds to show and then needs the bar idle twice in a row.
+ * The sidebar's job card names the running job; a job can take a moment to start after its button
+ * is pressed, and the next one (analysis after a scan) a moment after the last ends, so this gives
+ * a job up to two seconds to show and then needs the card gone twice in a row.
  */
 export async function waitForJobs(window: Page, timeout = 180_000): Promise<void> {
-  const busy = window.locator('[data-testid="status-bar"][data-job-state]');
+  const busy = window.locator('[data-testid="activity"][data-job-state]');
 
   await busy.waitFor({ state: "attached", timeout: 2000 }).catch(() => undefined);
 
@@ -96,7 +98,15 @@ export async function waitForJobs(window: Page, timeout = 180_000): Promise<void
     .toBe(true);
 }
 
-export type GlazierView = "tidy" | "duplicates" | "library" | "history";
+export type GlazierView =
+  | "overview"
+  | "duplicates"
+  | "convert"
+  | "cleanup"
+  | "library"
+  | "history"
+  | "holding"
+  | "settings";
 
 export async function openView(window: Page, view: GlazierView): Promise<void> {
   await window.locator(`nav [data-view="${view}"]`).click();
