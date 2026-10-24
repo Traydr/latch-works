@@ -44,9 +44,10 @@ The installer artwork (the DMG background, Setup's splash, the MSI's bitmaps) an
 generated from SVG masters in `apps/oriel/installer` and `apps/oriel/media` by `pnpm icons`; see
 [icons.md](../design/icons.md).
 
-The [Oriel build](../../.github/workflows/oriel-build.yml) workflow makes both on demand and on
-pull requests that touch `apps/oriel`, as workflow artifacts. On Windows it also installs
-Setup.exe silently and checks that Oriel starts. It publishes no release.
+The [Oriel build](../../.github/workflows/oriel-build.yml) workflow makes both as workflow
+artifacts, but only when started by hand (Actions › Oriel build › Run workflow); pull requests run
+just the Check workflow. On Windows it also installs Setup.exe silently and checks that Oriel
+starts. It publishes no release.
 
 ## Open an unsigned build
 

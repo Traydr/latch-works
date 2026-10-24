@@ -384,7 +384,8 @@ Done.
 Done. The Windows half is proven only by the [Oriel build](../../.github/workflows/oriel-build.yml)
 workflow, since no Windows machine was at hand: it builds Setup.exe and the MSI on
 `windows-latest`, installs silently, and Oriel starts and stays up, so Velopack kept the fuses and
-the asar intact.
+the asar intact. Afterwards the owner turned its pull-request trigger off: it now runs only when
+started by hand, and pull requests run just the Check workflow.
 - **Icon.** A bay window onto the view, in the family's plate and palette. The Icon Composer
   bundle is `media/oriel.icon` (not `oriel-icon.icon`, which packager would compile on every
   Mac): Forge passes it only where `actool` 26 runs, on macOS 26 and later.

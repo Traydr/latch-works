@@ -1,14 +1,9 @@
 name: Oriel build
 
 # Builds Oriel's installers from source, unsigned, as workflow artifacts. It publishes no release.
+# Off by default: it runs only when started by hand (Actions › Oriel build › Run workflow).
 on:
   workflow_dispatch:
-  pull_request:
-    paths:
-      - "apps/oriel/**"
-      - "packages/**"
-      - "pnpm-lock.yaml"
-      - ".github/workflows/oriel-build.yml"
 
 jobs:
   macos:
