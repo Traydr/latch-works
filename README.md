@@ -160,7 +160,11 @@ pnpm dev:pane                                  # Pane View  → http://127.0.0.1
 pnpm --filter @latch-works/showcase dev        # Showcase   → http://127.0.0.1:3100
 pnpm --filter @latch-works/oriel start         # Oriel: View, Tidy and Sync (Electron dev)
 pnpm --filter @latch-works/gather-box build    # Gather Box → dist/, load unpacked in Chrome
+pnpm make:oriel                                # Oriel's DMG, or Setup.exe and an MSI on Windows
 ```
+
+Oriel is built from source and unsigned; the [runbook](docs/runbooks/oriel.md) has each OS's
+prerequisites and how to open an unsigned build.
 
 ### Sync
 

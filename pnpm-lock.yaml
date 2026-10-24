@@ -331,6 +331,9 @@ importers:
       sharp:
         specifier: ^0.35.5
         version: 0.35.5(@types/node@26.6.5)
+      velopack:
+        specifier: 1.3.39-g8d2844f
+        version: 1.3.39-g8d2844f
       zod:
         specifier: ^4.6.7
         version: 4.6.7
@@ -2447,6 +2450,9 @@ packages:
     peerDependencies:
       '@emnapi/core': ^1.7.1 || ^2.0.0-alpha.4
       '@emnapi/runtime': ^1.7.1 || ^2.0.0-alpha.4
+
+  '@neon-rs/load@0.2.6':
+    resolution: {integrity: sha512-7p8j+guEhGTJNJISgmHO0homqGYAc0SDfmgGZfluMcQnimcceMY87b4hdqufp+7YmsOVC4W/JvT3/Tpi3/gy+Q==}
 
   '@noble/ciphers@2.4.0':
     resolution: {integrity: sha512-AnjFn0Jv92laAkvMrghlFZq4qQCIN/4DxFV/eooqtC2YTjB7kBeLMS2T9KJX4Dn+ZVXLOwK0lSgqDtx9gvxtiw==}
@@ -6803,6 +6809,10 @@ packages:
   util-deprecate@1.0.2:
     resolution: {integrity: sha512-EPD5q1uXyFxJpCrLnCc1nHnq3gOa6DZBocAIiI2TaSCA7VCJ1UJDMagCzIkXNsUYfD1daK//LTEQ8xiIbrHtcw==}
 
+  velopack@1.3.39-g8d2844f:
+    resolution: {integrity: sha512-crA73sEuG8R3QTjbhaOIN7it+E5rQc0figyehStnXxAdKRblxeOKnbaFI/6uXXYpbjPE3TBD2vxB8vNMr+7L7Q==}
+    engines: {node: '>=20.0.0 <26.0.0'}
+
   verkit@0.5.0:
     resolution: {integrity: sha512-u4J1hr6Y+C/hit34GwL3eIcUf3wngT8TlYUjK7tk0jxydKLAq3sYvifjdTDA6U3KCKRcQCQDGf/srjxfZF3l7g==}
     engines: {node: '>=18.12.0'}
@@ -8792,6 +8802,8 @@ snapshots:
       '@emnapi/core': 1.11.3
       '@emnapi/runtime': 1.11.3
       '@tybys/wasm-util': 0.10.4
+
+  '@neon-rs/load@0.2.6': {}
 
   '@noble/ciphers@2.4.0': {}
 
@@ -12995,6 +13007,10 @@ snapshots:
       react: 19.3.0
 
   util-deprecate@1.0.2: {}
+
+  velopack@1.3.39-g8d2844f:
+    dependencies:
+      '@neon-rs/load': 0.2.6
 
   verkit@0.5.0: {}
 

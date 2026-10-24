@@ -51,7 +51,8 @@
         "src/modes/tidy/transcoder/transcoder.ts",
         "tests/**/*.test.ts"
       ],
-      "ignoreDependencies": ["ffmpeg-static", "@ffprobe-installer/ffprobe"]
+      "ignoreDependencies": ["ffmpeg-static", "@ffprobe-installer/ffprobe"],
+      "ignoreBinaries": ["vpk"]
     },
     "apps/lockstep-cli": {
       "entry": ["src/**/*.test.ts"]

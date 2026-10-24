@@ -8,6 +8,7 @@ import { z } from "zod";
 
 import { type FolderSources, glazierRoots, isInside, knownFolders } from "./main/folders";
 import { appMenu } from "./main/menu";
+import { runVelopackHooks } from "./main/velopack";
 import {
   type MigrationFolders,
   migrateOldApps,
@@ -27,6 +28,11 @@ import {
   ShellChannels,
   type ShellCommand,
 } from "./shared/shell";
+
+// Velopack's installer and updater start the Windows app with hooks to answer first of all.
+if (process.platform === "win32" && app.isPackaged) {
+  runVelopackHooks();
+}
 
 // The shell's own window state and Chromium storage live in ~/.latch-works/oriel. Each mode keeps
 // the folder its standalone app used beside it. Before the single-instance lock, which keys on

@@ -1,6 +1,7 @@
-import { execSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
+import os from "node:os";
 import path from "node:path";
 import { FuseV1Options, FuseVersion } from "@electron/fuses";
 import { MakerDeb } from "@electron-forge/maker-deb";
@@ -19,6 +20,8 @@ const PackageManifestSchema = z.object({
   optionalDependencies: z.record(z.string(), z.string()).optional(),
 });
 
+const AppManifestSchema = z.object({ version: z.string() });
+
 const appIconBasePath = path.resolve(__dirname, "media", "oriel-icon");
 
 const appBundleId = "dev.traydr.latchworks.oriel";
@@ -28,6 +31,12 @@ const windowsIconPath = `${appIconBasePath}.ico`;
 const macIconPath = `${appIconBasePath}.icns`;
 
 const linuxIconPath = `${appIconBasePath}.png`;
+
+/** The Icon Composer bundle: light, dark and tinted looks, for macOS 26 and later. */
+const macGlassIconPath = path.resolve(__dirname, "media", "oriel.icon");
+
+/** The DMG's artwork and Windows' installer art and text, from `pnpm icons`. */
+const installerPath = path.resolve(__dirname, "installer");
 
 const appMediaPath = path.resolve(__dirname, "media");
 
@@ -45,8 +54,16 @@ const stagedNodeModulesPath = path.join(stagedRuntimePath, "node_modules");
 
 const stagedCodecsPath = path.join(stagedRuntimePath, "codecs");
 
-/** Native packages View's and Tidy's workers load from the app's resources, outside the asar. */
-const runtimeDependencyRoots = ["ffmpeg-static", "@ffprobe-installer/ffprobe", "sharp"];
+/**
+ * Native packages the app loads from its resources, outside the asar: View's and Tidy's media
+ * tools, and on Windows Velopack, which installs and updates it.
+ */
+const runtimeDependencyRoots = [
+  "ffmpeg-static",
+  "@ffprobe-installer/ffprobe",
+  "sharp",
+  ...(process.platform === "win32" ? ["velopack"] : []),
+];
 
 type PackagerConfig = NonNullable<ForgeConfig["packagerConfig"]>;
 
@@ -151,16 +168,106 @@ function stageRuntime(): void {
   );
 }
 
-function getPackagerIconPath(): string | undefined {
+/**
+ * Whether this Mac can compile the Icon Composer bundle: packager runs Xcode's `actool`, which
+ * reads `.icon` from version 26, on macOS 26 (Darwin 25) and later. Elsewhere the `.icns` serves.
+ */
+function canCompileGlassIcon(): boolean {
+  if (process.platform !== "darwin" || Number(os.release().split(".")[0]) < 25) {
+    return false;
+  }
+
+  try {
+    const output = execFileSync("xcrun", ["actool", "--version"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+
+    const major = /<key>short-bundle-version<\/key>\s*<string>(\d+)/.exec(output)?.[1];
+
+    return Number(major) >= 26;
+  } catch {
+    return false;
+  }
+}
+
+function getPackagerIconPath(): PackagerConfig["icon"] {
   if (process.platform === "win32") {
     return existsSync(windowsIconPath) ? appIconBasePath : undefined;
   }
 
   if (process.platform === "darwin") {
-    return existsSync(macIconPath) ? appIconBasePath : undefined;
+    if (!existsSync(macIconPath)) {
+      return undefined;
+    }
+
+    return canCompileGlassIcon() ? [macIconPath, macGlassIconPath] : macIconPath;
   }
 
   return existsSync(linuxIconPath) ? linuxIconPath : undefined;
+}
+
+/** Velopack's `vpk`, pinned to the `velopack` package the app runs; see docs/runbooks/oriel.md. */
+const VPK_VERSION = "1.3.39-g8d2844f";
+
+/**
+ * Packs Forge's Windows build with Velopack: Setup.exe with the brand splash, a portable ZIP and
+ * an MSI that installs per user or for the machine. Needs the .NET SDK and `vpk`.
+ */
+function packWithVelopack(): string {
+  const { version } = AppManifestSchema.parse(
+    JSON.parse(readFileSync(path.join(__dirname, "package.json"), "utf8")),
+  );
+
+  const outputDir = path.resolve(__dirname, "out", "make", "velopack");
+  const art = (file: string) => path.join(installerPath, file);
+
+  try {
+    execFileSync("vpk", ["--version"], { stdio: "ignore" });
+  } catch {
+    throw new Error(
+      `Velopack's vpk is not installed: dotnet tool install -g vpk --version ${VPK_VERSION}`,
+    );
+  }
+
+  execFileSync(
+    "vpk",
+    [
+      "pack",
+      "--packId",
+      "Oriel",
+      "--packVersion",
+      version,
+      "--packTitle",
+      "Oriel",
+      "--packAuthors",
+      "Traydr",
+      "--packDir",
+      path.resolve(__dirname, "out", `Oriel-win32-${process.arch}`),
+      "--mainExe",
+      `${appName}.exe`,
+      "--icon",
+      windowsIconPath,
+      "--splashImage",
+      art("splash.gif"),
+      "--outputDir",
+      outputDir,
+      "--msi",
+      "--instLocation",
+      "Either",
+      "--instWelcome",
+      art("welcome.txt"),
+      "--instConclusion",
+      art("conclusion.txt"),
+      "--msiTopBanner",
+      art("msi-banner.bmp"),
+      "--msiDialogBackground",
+      art("msi-dialog.bmp"),
+    ],
+    { stdio: "inherit" },
+  );
+
+  return outputDir;
 }
 
 /**
@@ -221,13 +328,32 @@ const config: ForgeConfig = {
       buildWorkspaceDependencies();
       stageRuntime();
     },
+    // Windows' installers come from Velopack, over the build Forge just packaged.
+    postMake: async (_config, results) => {
+      if (process.platform === "win32") {
+        console.log(`Velopack installers in ${packWithVelopack()}`);
+      }
+
+      return results;
+    },
   },
-  // Windows gets a Velopack installer in a later step; until then it gets a ZIP like macOS.
   makers: [
+    // Forge needs a maker for Windows to reach postMake, where Velopack packs the build.
     new MakerZIP({}, ["darwin", "win32"]),
+    // A 660 × 400 window: the app and Applications at 128 px, an arrow between them in the
+    // artwork, and a mid-tone plate under each label, which Finder draws white or black.
     new MakerDMG(
       {
+        title: "Oriel",
         icon: existsSync(macIconPath) ? macIconPath : undefined,
+        background: path.join(installerPath, "dmg-background.png"),
+        iconSize: 128,
+        format: "ULFO",
+        contents: (options) => [
+          { x: 180, y: 180, type: "file", path: options.appPath },
+          { x: 480, y: 180, type: "link", path: "/Applications" },
+        ],
+        additionalDMGOptions: { window: { size: { width: 660, height: 400 } } },
       },
       ["darwin"],
     ),
