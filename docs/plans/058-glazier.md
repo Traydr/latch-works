@@ -32,9 +32,13 @@ removal or replaced original goes to a holding folder the journal can undo. The 
 1. **Name**: Glazier. Folder `apps/glazier`, package `@latch-works/glazier-app`, productName
    `Glazier`; the engine is `packages/glazier-core`, leaving `@latch-works/glazier` and the binary
    `glazier` free for a later CLI.
-2. **Holding**: a hidden folder per root, `.glazier-holding`, so a removal is a same-volume rename
-   with exact undo. It is in `media-domain`'s system folder list, so it is never synced or
-   indexed. Emptying sends it to the system Trash (the Recycle Bin on Windows).
+2. **Holding**: outside the root, so a sync client or indexer that knows nothing of Glazier
+   (Tresorit, an older Lockstep) never sees it. Glazier's data folder holds when it shares the
+   root's volume; otherwise a `.glazier-holding` folder at the top of that volume does, so a
+   removal is still a rename with exact undo. Only a root that is a whole volume copies across to
+   the data folder. Emptying sends holding to the system Trash (the Recycle Bin on Windows).
+   (Revised: holding first lived in `<root>/.glazier-holding`, and the Lockstep then installed
+   pushed it, since only this branch taught scanners to skip it.)
 3. **AVIF encoder**: Gather Box's libavif wasm (`@jsquash/avif`), quality 70, speed 6, speed 8 on
    heap exhaustion; sharp's native AVIF above 64 MP.
 4. **Originals after a verified conversion** move to holding.
@@ -87,6 +91,37 @@ clutter; one seamless process; the same feel as the other apps"):
 6. **Shell, in Lockstep's form**: a status bar, an app menu with shortcuts, drag a folder to
    add it, and right-click menus.
 
+## Revision: the house-style redesign (2026-10-24, same branch)
+
+The owner found the workflow redesign still Lockstep-like: small buttons, too much talking back,
+and picking a duplicate still too slow. Three independent reviews (visual UI, workflows, layout)
+ran three rounds against Frame View, Pane View and T3 Code, with the reports driving each rebuild.
+It supersedes items 1, 2, 3 and 6 above.
+
+1. **House style.** The system font at 13 px, 32–36 px controls, rounded surfaces lifted by a soft
+   ring, neutral selection, and one violet primary per screen (`gz-*` tokens in
+   `apps/glazier/src/index.css`). No monospace, nothing under 12 px, shortcuts in tooltips. The
+   native title bar is hidden on macOS; there is no status bar and no path header.
+2. **Structure.** Overview is home, with one **Tidy up** that runs Clean up, identical copies,
+   silent soundtracks and Convert in order as one change. Duplicates, Convert and Clean up are
+   pages of their own; Library and History follow; Holding and Settings (a page) sit at the foot
+   of the sidebar, which becomes an icon rail under 1180 px (⌘\).
+3. **Duplicates.** A set shows every version as a tile, the keeper ringed. A click or a number
+   key keeps that version and goes on; ⇧ keeps it as well. The line above the tiles names what
+   decided the suggestion; a close call (only a tie-breaker decided) shows the keeper as
+   "Suggested" and is left out of Keep all suggestions. C opens a full-window loupe that flips
+   between versions. Decisions report on the top bar, and ⌘Z brings the set back.
+4. **Less confirmation.** Changes apply at once and toast once. Empty to Trash does not confirm,
+   since the Trash is the safety net; only Forget folder does, and it now sends that folder's held
+   files to the Trash too.
+5. **Holding left the root.** Held files live in Glazier's data folder (or a `.glazier-holding`
+   folder at the top of another volume), because a sync client that does not know Glazier, such
+   as the installed Lockstep or Tresorit, synced `<root>/.glazier-holding`. Older catalogs move
+   their held files out on start (migration 3 records each held file's full path).
+6. **Convert waits for review.** Members of open similar sets, and files not yet checked for
+   similar versions while analysis is on, are not converted, so review never compares a
+   re-encoded copy.
+
 ## Shape
 
 | Piece | Responsibility |
@@ -124,13 +159,15 @@ The e2e spec builds its own archive (ffmpeg and sharp). It covers:
 
 ## Follow-ups
 
-- Hide the native title bar (`titleBarStyle: "hiddenInset"`) in Glazier and Lockstep together,
-  so neither shows two title rows.
+- Hide the native title bar in Lockstep too (Glazier now does), and bring Lockstep to the same
+  house style.
 - Merge for duplicates: keep the best bytes at the preferred copy's path (`placeAt`), as Apple
   Photos' Merge does.
 - Route animated WebP to MP4 in Gather Box once its downloads know their frame count.
 - Copy Finder tags (extended attributes) onto converted files.
-- The UI style pass across Glazier, Lockstep and Frame View.
+- Video hover-scrubbing across a set's tiles, a stack overview of every set, unchecking single
+  files on Convert, emptying holding automatically after 30 days, and one History entry per Tidy
+  up run.
 - A `glazier` CLI over `glazier-core` (`report`, `plan`, `apply`).
 - Lockstep's renderer has the same broken Geist `@import` Glazier avoided (fonts are referenced but
   not emitted); importing the font from JS fixes it.

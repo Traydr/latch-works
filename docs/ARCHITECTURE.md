@@ -25,9 +25,10 @@ Gather Box and Glazier.
 
 Glazier is the one app that changes the local archive in bulk, so every change is a plan the owner
 reviews, applied step by step by an executor that re-reads each file first and skips one that
-changed since the scan. Removed files and replaced originals move to `.glazier-holding` inside
-their own root, a folder every scanner skips, so a removal is a same-volume rename the journal can
-undo; emptying it uses the system Trash.
+changed since the scan. Removed files and replaced originals move to holding outside their root,
+so nothing that syncs or indexes the root sees them: Glazier's data folder when it shares the
+root's volume, otherwise a `.glazier-holding` folder at the top of that volume, so a removal is
+still a rename the journal can undo. Emptying holding uses the system Trash.
 
 The engine (`glazier-core`) runs in a utility process with its SQLite catalog in the app's
 user-data folder; scanning never writes inside a root. AVIF encodes run in a pool of utility

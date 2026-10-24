@@ -24,59 +24,72 @@ pnpm --filter @latch-works/glazier-app start
 | --- | --- | --- |
 | Catalog (SQLite) | `~/Library/Application Support/Glazier/catalog.sqlite` | Rebuildable from the archive by rescanning. Never authoritative. |
 | Thumbnails | `~/Library/Application Support/Glazier/thumbnails/` | Safe to delete. |
-| Holding | `<root>/.glazier-holding/<batch>/<original path>` | Removed files and replaced originals. Skipped by every scanner. |
+| Holding | `~/Library/Application Support/Glazier/holding/<root id>-<root name>/<batch>/<original path>` | Removed files and replaced originals, outside the root. A root on another volume holds in `<volume>/.glazier-holding/<root id>-<root name>/` instead, so a removal stays a rename; a root that is a whole volume holds in the data folder by copying. |
 
 Scanning never writes inside a root. The catalog and thumbnails are the only things a scan
 creates.
 
 ## Using it
 
-The sidebar has four views:
-- **Tidy**: the to-do list, in the order the work should happen. Duplicates come first, then
-  Convert, Silent tracks and Clean up, and finally what needs a look.
-- **Duplicates**: the review queue.
-- **Library**: every file, with filters.
-- **History**: every change, plus the holding folder.
+The sidebar lists the work in the order it is best done, then the archive:
+- **Overview**: what tidying would do, with one **Tidy up** button (⌘↩). It runs Clean up,
+  removes identical copies, removes silent soundtracks and converts, in that order, as one change
+  with one Undo. Each row opens its own page.
+- **Duplicates**: the review queue, with a Similar and an Identical tab.
+- **Convert**: the files that would become AVIF or MP4, and why the rest are left as they are.
+- **Clean up**: silent soundtracks, junk files, empty folders and wrong extensions.
+- **Library**: every file, with search, one Filter menu, a list or a grid, and an inspector (I).
+- **History**: every change, with Undo.
+- **Holding** and **Settings** sit at the foot of the sidebar.
 
-Settings is a sheet, opened with ⌘,. Press `?` anywhere for the keyboard shortcuts.
+Under 1180 px the sidebar is a rail of icons; ⌘\ switches between the rail and the full
+sidebar, and the choice is remembered for narrow and wide windows separately. Press `?` anywhere
+for the keyboard shortcuts.
 
-In **Duplicates**, each set (one picture or video and every version of it) arrives with a keeper
-already chosen and the reason shown ("most pixels", "preferred folder"). The keys:
+In **Duplicates**, a set shows every version at once. The suggested keeper carries a violet ring
+and **Keep**, and the line above the pictures says what decided it ("Keeping 1: most pixels
+(1600×1067 against 800×533)"). When only a tie-breaker decided (a file a few bytes larger, the
+oldest, the shortest path), the set is a **close call**: the keeper is only **Suggested**, an amber
+dot marks it in the queue, and **Keep all suggestions** leaves it for you. The keys:
 
 | Key | Action |
 | --- | --- |
-| Return | Resolve the set and move to the next |
-| 1–9 | Keep a different version instead |
-| ⇧1–9 | Keep that version as well |
-| ⌘Return | Resolve every remaining set |
+| Return | Keep the suggestion and go on to the next set |
+| 1–9, or a click on a version | Keep only that version and go on |
+| ⇧1–9, or ⇧-click (or its +) | Keep that version as well |
+| N | Keep every version (not duplicates, or **Keep both** for identical copies); the set stays hidden |
 | S | Skip the set |
-| N | Mark the set as not duplicates (it stays hidden; Dismissed lists them) |
+| Space (or C, or the ⤢ on a version) | Look closer: one version over the whole window; ← and → flip between them, ↩ keeps the one shown, Z (or a click) shows actual size |
+| ⌘Y | Quick Look |
 | P | Prefer the focused version's folder, so every set keeps its copy there first |
-| Z | Compare at 100% |
+| ⌘Return | Keep every suggestion, close calls excepted |
+| ⌘Z | Undo the last decision and go back to that set |
 
-Byte-identical copies are one version, so a file appears in one set only.
+Byte-identical copies are one version, so a file appears in one set only. Convert leaves the
+members of open duplicate sets alone until they are reviewed, and while background analysis is
+on, files not yet checked for similar versions too, so review never compares a converted copy.
 
 ## Actions that change the archive
 
-Every change applies at once and ends with a toast that has **Undo**. ⌘Z undoes the last
-change, and History lists them all. The one exception is a change that would remove a copy from
-a preferred folder: that asks first.
+Every change applies at once and ends with a toast that has **Undo**; duplicate decisions report
+on the top bar instead. ⌘Z undoes the last change, and History lists them all. Nothing asks
+first, except forgetting a folder, which also moves its held files to the Trash.
 
 Before each step, Glazier re-reads the file and skips it if its size, mtime or ctime moved since
 the scan. Undo reverses a change's finished steps, newest first.
 
 | Action | What happens on disk | Undo |
 | --- | --- | --- |
-| Move to holding (and resolving duplicates) | The file is renamed into `<root>/.glazier-holding/<batch>/<its path>`. | Renamed back, unless something now sits at the original path. |
-| Clean up (Tidy) | System junk goes to holding, empty folders are removed, and extensions that do not match the bytes are renamed (an AVIF saved as `.jpg` becomes `.avif`). | Each step is reversed. |
+| Move to holding (and resolving duplicates) | The file is moved into its root's holding folder (see the table above), under `<batch>/<its path>`. | Moved back, unless something now sits at the original path. |
+| Clean up | System junk goes to holding, empty folders are removed, and extensions that do not match the bytes are renamed (an AVIF saved as `.jpg` becomes `.avif`). | Each step is reversed. |
 | Move to… / Rename / Fix extension | Renamed in place, or moved to the chosen folder (copied then deleted across volumes, keeping mtime). | Moved back. |
 | Convert to AVIF | The AVIF is written to `<target>.glazier-tmp`, checked (decodes, same dimensions, at least 5% smaller), given the original's mtime and renamed into place; the original goes to holding. | The AVIF goes to holding and the original comes back. |
 | Animation, video → MP4; re-encode; remove audio | As above, through the Mediabunny transcoder window, or through ffmpeg when Mediabunny cannot handle the file. The result is checked with ffprobe (video track, duration, dimensions, audio kept or dropped as planned). Re-encodes must save 5%; container moves only need to succeed. | As above. |
-| Restore (History › Held files) | The held file is renamed back to its original path. | — |
-| Empty to Trash (History) | After a confirmation, each holding batch folder goes to the system Trash (`shell.trashItem`; the Recycle Bin on Windows). | Only from the Trash. |
+| Restore (Holding, ⌘⌫) | The held file is moved back to its original path. | — |
+| Empty to Trash (Holding, ⇧⌘⌫) | Each holding batch folder goes to the system Trash (`shell.trashItem`; the Recycle Bin on Windows), without asking: the Trash is the safety net. | Only from the Trash. |
 
 A file whose conversion came out no smaller is kept as it is, and Convert stops offering it
-until its bytes change. Extra copies of exact duplicates are not converted either: resolve them
+until its bytes change. Members of open duplicate sets are not converted either: review them
 first.
 
 The original's creation date and extended attributes (Finder tags) are not carried over to a
@@ -99,8 +112,15 @@ lockstep prune  # soft-deletes the missing paths in Pane View
 ```
 
 Pane View keeps the old originals in its bucket and in Shutter until a deleted-item purge, as
-always. The holding folder is never synced: `.glazier-holding` is in `media-domain`'s system
-folder list, which Lockstep's scan and Frame View both skip.
+always. Holding is never synced, because it is outside the root. The `.glazier-holding` name is
+still in `media-domain`'s system folder list, so Lockstep's scan and Frame View skip a volume's
+holding folder when they scan the whole volume.
+
+Catalogs from before held inside the root, in `<root>/.glazier-holding`. When Glazier starts it
+moves those files to the new holding folder and removes the emptied old folder; a held file that
+was deleted by hand is recorded as gone. A root that is not mounted is moved on a later start. If
+Lockstep pushed the old folder, `lockstep plan` shows its paths as missing once it is gone and
+`lockstep prune` removes them from Pane View.
 
 ## Formats and encoders
 
@@ -128,9 +148,9 @@ After every scan and every change, Glazier runs two analyses in the background:
 - It measures each soundtrack's loudness. A track whose loudest moment stays below −60 dBFS
   counts as silent.
 
-Background work waits behind anything you ask for and pauses while it runs. The status bar
-shows its progress and can pause or stop it. Settings › Background analysis turns it off, after
-which Tidy offers the two analyses as buttons. Results are cached against each file's
+Background work waits behind anything you ask for and pauses while it runs. The job card at the
+foot of the sidebar shows its progress and can pause or stop it. Settings › Background analysis
+turns it off, after which Overview offers **Check now**. Results are cached against each file's
 fingerprint, so a rescan only reads new or changed files.
 
 Similar matches need the same aspect ratio (within 3%) and, for video, the same duration (within
