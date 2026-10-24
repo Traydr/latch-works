@@ -76,7 +76,7 @@ export function SetQueue({
   }, [last, activeIndex, sets.length, total, onNearEnd]);
 
   return (
-    <aside className="flex w-[232px] shrink-0 flex-col border-r gz-divider xl:w-[264px]">
+    <aside className="flex w-[232px] shrink-0 flex-col border-r lw-divider xl:w-[264px]">
       <div className="shrink-0 px-3 pt-3 pb-2">{header}</div>
       <div
         ref={container}
@@ -101,13 +101,13 @@ export function SetQueue({
                 onClick={() => onSelect(position)}
                 style={{ top: position * ROW_HEIGHT + 2, height: ROW_HEIGHT - 4 }}
                 className={`absolute inset-x-0 flex items-center gap-3 rounded-lg px-2 text-left ${
-                  position === activeIndex ? "gz-selected" : "gz-hover"
+                  position === activeIndex ? "lw-selected" : "lw-hover"
                 } ${isSkipped ? "opacity-55" : ""}`}
               >
                 {keeper ? <Thumbnail row={keeper} size={40} /> : null}
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[13px] font-medium">{keeper?.name}</span>
-                  <span className="gz-caption flex items-center gap-1.5">
+                  <span className="lw-caption flex items-center gap-1.5">
                     {closeCall ? (
                       <span
                         className="size-1.5 shrink-0 rounded-full bg-amber-500"

@@ -38,13 +38,13 @@ export function SyncSettings({ ctrl }: { ctrl: LockstepController }) {
             description={`${profile.sourceRoot} → ${profile.apiUrl}`}
           >
             <span
-              className={`gz-caption ${profile.tokenUnreadable ? "text-red-600 dark:text-red-300" : ""}`}
+              className={`lw-caption ${profile.tokenUnreadable ? "text-red-600 dark:text-red-300" : ""}`}
             >
               {tokenState(profile)}
             </span>
             <button
               type="button"
-              className="gz-btn gz-btn-secondary"
+              className="lw-btn lw-btn-secondary"
               aria-label={`Edit ${profile.name}`}
               disabled={running}
               onClick={openForm(() => ctrl.profile.startEditProfile(profile.id))}
@@ -59,7 +59,7 @@ export function SyncSettings({ ctrl }: { ctrl: LockstepController }) {
         >
           <button
             type="button"
-            className="gz-btn gz-btn-secondary"
+            className="lw-btn lw-btn-secondary"
             disabled={running}
             onClick={openForm(ctrl.profile.startCreateProfile)}
           >

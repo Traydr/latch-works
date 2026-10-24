@@ -170,20 +170,20 @@ export function Loupe({
   return (
     // Always dark, as Frame View's viewer, Quick Look and Lightroom are, so a photo is judged on
     // a neutral surround in either theme.
-    <div className="dark gz-enter-fade fixed inset-0 z-40 flex flex-col bg-zinc-950 text-zinc-100">
+    <div className="dark lw-enter-fade fixed inset-0 z-40 flex flex-col bg-zinc-950 text-zinc-100">
       <div
-        className={`gz-drag flex h-[52px] shrink-0 items-center gap-3 pr-3 ${
+        className={`lw-drag flex h-[52px] shrink-0 items-center gap-3 pr-3 ${
           desktop.insetTitleBar() ? "pl-[84px]" : "pl-5"
         }`}
       >
-        <span className="gz-badge gz-badge-neutral min-w-12 shrink-0 justify-center">
+        <span className="lw-badge lw-badge-neutral min-w-12 shrink-0 justify-center">
           {index + 1} of {rows.length}
         </span>
         {isKept ? (
           closeCall ? (
-            <span className="gz-badge shrink-0 bg-white/10 text-white">Suggested</span>
+            <span className="lw-badge shrink-0 bg-white/10 text-white">Suggested</span>
           ) : (
-            <span className="gz-badge gz-badge-keep shrink-0">
+            <span className="lw-badge lw-badge-keep shrink-0">
               <Check className="size-3.5" /> Keep
             </span>
           )
@@ -192,7 +192,7 @@ export function Loupe({
           <span className="block truncate text-[13px] font-medium" title={file.relPath}>
             {file.relPath}
           </span>
-          <span className="gz-caption block truncate">
+          <span className="lw-caption block truncate">
             {facts.map((fact, position) => (
               <span key={fact.text}>
                 {position > 0 ? " · " : ""}
@@ -202,12 +202,12 @@ export function Loupe({
             {isKept ? null : ` · Suggested: ${suggested}`}
           </span>
         </span>
-        <span className="gz-caption hidden shrink-0 lg:inline">
+        <span className="lw-caption hidden shrink-0 lg:inline">
           ← → flip · 1–{rows.length} or ↩ keep · Z or click: actual size
         </span>
         <button
           type="button"
-          className="gz-btn gz-btn-ghost gz-btn-icon shrink-0"
+          className="lw-btn lw-btn-ghost lw-btn-icon shrink-0"
           title="Show in Finder  ⇧⌘R"
           aria-label="Show in Finder"
           onClick={() => void desktop.reveal(file.absPath)}
@@ -216,7 +216,7 @@ export function Loupe({
         </button>
         <button
           type="button"
-          className="gz-btn gz-btn-ghost gz-btn-icon shrink-0"
+          className="lw-btn lw-btn-ghost lw-btn-icon shrink-0"
           title="Back to the grid  Esc"
           aria-label="Back to the grid"
           onClick={onClose}

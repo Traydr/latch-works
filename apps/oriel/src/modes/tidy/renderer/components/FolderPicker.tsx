@@ -329,7 +329,7 @@ function FolderPicker({
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={() => void open(place.path, true)}
                   className={`flex h-8 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px] ${
-                    here ? "gz-selected" : "gz-hover"
+                    here ? "lw-selected" : "lw-hover"
                   }`}
                 >
                   <Icon className="size-4 shrink-0 text-zinc-500 dark:text-zinc-400" />
@@ -362,15 +362,15 @@ function FolderPicker({
       width={within ? 560 : 760}
       footer={
         <>
-          <span className="gz-caption mr-auto min-w-0 flex-1">
+          <span className="lw-caption mr-auto min-w-0 flex-1">
             {chosen !== null ? <StartTruncate text={chosen} /> : null}
           </span>
-          <button type="button" className="gz-btn gz-btn-secondary" onClick={() => onDone(null)}>
+          <button type="button" className="lw-btn lw-btn-secondary" onClick={() => onDone(null)}>
             Cancel
           </button>
           <button
             type="button"
-            className="gz-btn gz-btn-primary"
+            className="lw-btn lw-btn-primary"
             disabled={chosen === null}
             title={`${options.action}  ⌘↩`}
             data-folder-choose
@@ -391,7 +391,7 @@ function FolderPicker({
           <div className="flex shrink-0 items-center gap-2">
             <button
               type="button"
-              className="gz-btn gz-btn-secondary gz-btn-icon shrink-0"
+              className="lw-btn lw-btn-secondary lw-btn-icon shrink-0"
               title="Enclosing folder  ⌘↑"
               aria-label="Enclosing folder"
               disabled={atTop}
@@ -404,7 +404,7 @@ function FolderPicker({
               data-autofocus
               aria-label="Folder path"
               data-folder-path
-              className="gz-input h-8"
+              className="lw-input h-8"
               spellCheck={false}
               autoComplete="off"
               value={typed}
@@ -416,13 +416,13 @@ function FolderPicker({
             />
           </div>
           {outside && within ? (
-            <p className="gz-caption px-1 text-amber-700 dark:text-amber-300">
+            <p className="lw-caption px-1 text-amber-700 dark:text-amber-300">
               Choose a folder inside {within.name}.
             </p>
           ) : null}
-          <div className="gz-card min-h-0 flex-1 overflow-y-auto p-1">
+          <div className="lw-card min-h-0 flex-1 overflow-y-auto p-1">
             {empty ? (
-              <div className="gz-caption flex h-full items-center justify-center p-6 text-center">
+              <div className="lw-caption flex h-full items-center justify-center p-6 text-center">
                 {empty}
               </div>
             ) : (
@@ -438,7 +438,7 @@ function FolderPicker({
                       onClick={() => setHighlight(index)}
                       onDoubleClick={() => void open(entry.path, true)}
                       className={`group flex h-8 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-[13px] ${
-                        index === active ? "gz-selected" : "gz-hover"
+                        index === active ? "lw-selected" : "lw-hover"
                       }`}
                     >
                       <Folder className="size-4 shrink-0 text-zinc-400 dark:text-zinc-500" />

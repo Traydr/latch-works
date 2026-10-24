@@ -33,13 +33,13 @@ export function ModeLayout({
         className="flex h-full min-h-0 overflow-hidden bg-white text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100"
       >
         <aside
-          className={`flex shrink-0 flex-col border-r gz-divider bg-zinc-50 dark:bg-zinc-900/60 ${
+          className={`flex shrink-0 flex-col border-r lw-divider bg-zinc-50 dark:bg-zinc-900/60 ${
             // On macOS the window buttons sit in the top strip; at 16 px in they end near 76 px,
             // so the rail is wide enough to hold them.
             rail ? (insetTitleBar ? "w-[88px] items-center" : "w-14 items-center") : "w-60"
           }`}
         >
-          <div className="gz-drag h-[52px] w-full shrink-0" />
+          <div className="lw-drag h-[52px] w-full shrink-0" />
           <ModeSwitcher rail={rail} />
           {sidebar}
         </aside>

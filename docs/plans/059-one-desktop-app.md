@@ -334,7 +334,7 @@ Frame View's settings drawer and Lockstep's settings, and holds the single theme
 
 ### Phase 8: Sync and View restyled (L, `design-trials` for Sync)
 
-Rename `gz-*` to `lw-*` in one mechanical commit before either.
+Rename `gz-*` to `lw-*` in one mechanical commit before either (done).
 
 - **Sync** is rebuilt in house style, which was already a 058 follow-up:
   - profiles in the sidebar, as Glazier lists folders;

@@ -52,7 +52,7 @@ function Encoders({ capabilities }: { capabilities: EncoderCapabilities }) {
         type="button"
         aria-expanded={expanded}
         onClick={() => setOpen(!expanded)}
-        className="gz-focus gz-hover flex min-h-[52px] w-full items-center gap-3 border-t gz-divider px-4 py-2.5 text-left first:border-t-0"
+        className="lw-focus lw-hover flex min-h-[52px] w-full items-center gap-3 border-t lw-divider px-4 py-2.5 text-left first:border-t-0"
       >
         <span className="min-w-0 flex-1 text-[13px]">Encoders</span>
         {missing > 0 ? (
@@ -60,7 +60,7 @@ function Encoders({ capabilities }: { capabilities: EncoderCapabilities }) {
             {missing} of {ENCODERS.length} missing
           </span>
         ) : (
-          <span className="gz-caption">All {ENCODERS.length} available</span>
+          <span className="lw-caption">All {ENCODERS.length} available</span>
         )}
         <ChevronRight
           className={`size-4 shrink-0 text-zinc-400 transition-transform duration-150 ${
@@ -75,12 +75,12 @@ function Encoders({ capabilities }: { capabilities: EncoderCapabilities }) {
             return (
               <div
                 key={encoder.label}
-                className={`flex h-10 items-center gap-4 border-t gz-divider px-4 text-[13px] ${
+                className={`flex h-10 items-center gap-4 border-t lw-divider px-4 text-[13px] ${
                   found ? "text-zinc-600 dark:text-zinc-300" : "text-amber-700 dark:text-amber-300"
                 }`}
               >
                 <span className="min-w-0 flex-1 truncate">{encoder.label}</span>
-                {found ? <span className="gz-caption">Available</span> : <span>Not found</span>}
+                {found ? <span className="lw-caption">Available</span> : <span>Not found</span>}
               </div>
             );
           })
@@ -179,7 +179,7 @@ export function TidySettings({ rootId }: { rootId: RootId | null }) {
           >
             <button
               type="button"
-              className="gz-btn gz-btn-secondary"
+              className="lw-btn lw-btn-secondary"
               onClick={() => void addFolder()}
             >
               Add folder…
@@ -189,13 +189,13 @@ export function TidySettings({ rootId }: { rootId: RootId | null }) {
         {preferredHere.map((entry) => (
           <div
             key={entry.dir}
-            className="flex h-11 items-center gap-3 border-t gz-divider pr-2.5 pl-4"
+            className="flex h-11 items-center gap-3 border-t lw-divider pr-2.5 pl-4"
           >
             <Folder className="size-4 shrink-0 text-zinc-400" />
             <StartTruncate text={entry.dir || rootName} className="min-w-0 flex-1 text-[13px]" />
             <button
               type="button"
-              className="gz-btn gz-btn-ghost gz-btn-icon-sm"
+              className="lw-btn lw-btn-ghost lw-btn-icon-sm"
               aria-label={`Stop preferring ${entry.dir || rootName}`}
               title="Stop preferring"
               onClick={() => removeFolder(entry.dir)}

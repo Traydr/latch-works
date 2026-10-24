@@ -311,7 +311,7 @@ export function HoldingView({ rootId }: { rootId: RootId }) {
         {total > 0 ? (
           <button
             type="button"
-            className="gz-btn gz-btn-danger"
+            className="lw-btn lw-btn-danger"
             title="Empty to Trash  ⇧⌘⌫"
             disabled={emptying}
             onClick={() => void empty()}
@@ -359,7 +359,7 @@ export function HoldingView({ rootId }: { rootId: RootId }) {
             ))}
             {hasMore ? <LoadMore key={pages.length} onVisible={holding.loadMore} /> : null}
             {hasMore ? null : (
-              <p className="gz-caption mx-auto max-w-[560px] pt-4 text-center">
+              <p className="lw-caption mx-auto max-w-[560px] pt-4 text-center">
                 Files here stay recoverable until you empty them. To bring Pane View in line
                 afterwards, run <Command>lockstep plan</Command>, then <Command>push</Command> and{" "}
                 <Command>prune</Command>.
@@ -440,29 +440,29 @@ function HeldTile({
         title={`${relativeTo(rootPath, item.originalPath)}\n${item.reason}`}
         onClick={onSelect}
         onDoubleClick={() => void desktop.quickLook(item.holdPath)}
-        className={`gz-card gz-focus block w-full scroll-mt-11 scroll-mb-24 p-1 text-left ${
+        className={`lw-card lw-focus block w-full scroll-mt-11 scroll-mb-24 p-1 text-left ${
           current
             ? "ring-2 ring-violet-500"
             : selected
               ? "ring-2 ring-zinc-900/25 dark:ring-white/30"
               : ""
-        } ${selected ? "gz-selected" : ""}`}
+        } ${selected ? "lw-selected" : ""}`}
       >
-        <span className="gz-well flex aspect-[4/3] w-full items-center justify-center overflow-hidden">
+        <span className="lw-well flex aspect-[4/3] w-full items-center justify-center overflow-hidden">
           <Thumb path={item.holdPath} size={384} fit="contain" className="size-full" />
         </span>
         <span className="block px-1.5 pt-1.5 pb-1">
           <span className="block truncate text-[13px] text-zinc-900 dark:text-zinc-100">
             {name}
           </span>
-          <span className="gz-caption block truncate">
+          <span className="lw-caption block truncate">
             {formatBytes(item.size)} · {formatTime(item.heldAt)}
           </span>
         </span>
       </button>
       <button
         type="button"
-        className="gz-btn gz-btn-secondary gz-btn-sm absolute top-2.5 right-2.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-visible:opacity-100"
+        className="lw-btn lw-btn-secondary lw-btn-sm absolute top-2.5 right-2.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-visible:opacity-100"
         onClick={onRestore}
       >
         Restore
@@ -488,10 +488,10 @@ function SelectionBar({
   useToastLift(64);
 
   return (
-    <div className="gz-float gz-enter-rise absolute bottom-5 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1.5 p-1.5">
+    <div className="lw-float lw-enter-rise absolute bottom-5 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1.5 p-1.5">
       <button
         type="button"
-        className="gz-btn gz-btn-primary gz-btn-sm"
+        className="lw-btn lw-btn-primary lw-btn-sm"
         title="Restore  ⌘⌫"
         disabled={busy}
         onClick={onRestore}
@@ -499,13 +499,13 @@ function SelectionBar({
         {busy ? <Spinner /> : null}
         Restore {formatCount(count)}
       </button>
-      <button type="button" className="gz-btn gz-btn-secondary gz-btn-sm" onClick={onReveal}>
+      <button type="button" className="lw-btn lw-btn-secondary lw-btn-sm" onClick={onReveal}>
         <FolderOpen />
         Show in Finder
       </button>
       <button
         type="button"
-        className="gz-btn gz-btn-ghost gz-btn-icon-sm"
+        className="lw-btn lw-btn-ghost lw-btn-icon-sm"
         aria-label="Clear selection"
         title="Clear selection  Esc"
         onClick={onClear}

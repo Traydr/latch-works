@@ -29,7 +29,7 @@ export function Poster({
     return (
       <span
         className={`flex items-center justify-center text-xs font-medium text-zinc-500 uppercase ${
-          fit === "cover" ? "gz-media-edge bg-zinc-100 dark:bg-zinc-800" : "size-full"
+          fit === "cover" ? "lw-media-edge bg-zinc-100 dark:bg-zinc-800" : "size-full"
         } ${className}`}
       >
         {row.ext.slice(0, 4)}
@@ -44,7 +44,7 @@ export function Poster({
       loading="lazy"
       draggable={false}
       onError={() => setFailed(true)}
-      className={`gz-media-edge ${
+      className={`lw-media-edge ${
         fit === "cover"
           ? "bg-zinc-100 object-cover dark:bg-zinc-800"
           : "max-h-full max-w-full object-contain"
@@ -60,12 +60,12 @@ export function Poster({
 export function MediaTile({ row, ratio = null }: { row: FileRow; ratio?: number | null }) {
   return (
     <div className="min-w-0" title={row.relPath} data-file-name={row.name}>
-      <div className="gz-well flex aspect-[4/3] items-center justify-center overflow-hidden">
+      <div className="lw-well flex aspect-[4/3] items-center justify-center overflow-hidden">
         <Poster row={row} size={320} fit="contain" className="rounded-md" />
       </div>
       <div className="px-0.5 pt-1.5">
         <p className="truncate text-[13px]">{row.name}</p>
-        <p className="gz-caption truncate">
+        <p className="lw-caption truncate">
           {formatBytes(row.size)}
           {ratio === null ? null : ` → ~${formatBytes(row.size * ratio)}`}
         </p>

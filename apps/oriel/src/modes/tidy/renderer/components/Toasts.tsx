@@ -155,13 +155,13 @@ function ToastCard({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
       data-toast={toast.tone}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      className="gz-float gz-enter-rise group pointer-events-auto relative flex items-center gap-3 rounded-xl py-2.5 pr-2.5 pl-4"
+      className="lw-float lw-enter-rise group pointer-events-auto relative flex items-center gap-3 rounded-xl py-2.5 pr-2.5 pl-4"
     >
       {ICONS[toast.tone]}
       <div className="min-w-0 flex-1">
         <p className="truncate text-[13px] font-medium">{toast.message}</p>
         {toast.detail ? (
-          <p className="gz-caption mt-0.5 truncate" title={toast.detail}>
+          <p className="lw-caption mt-0.5 truncate" title={toast.detail}>
             {toast.detail}
           </p>
         ) : null}
@@ -169,7 +169,7 @@ function ToastCard({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
       {toast.action ? (
         <button
           type="button"
-          className="gz-btn gz-btn-secondary gz-btn-sm"
+          className="lw-btn lw-btn-secondary lw-btn-sm"
           onClick={() => {
             toast.action?.run();
             onDismiss();
@@ -181,7 +181,7 @@ function ToastCard({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
       {/* In the corner, as Sonner puts it, so it takes no width from the message. */}
       <button
         type="button"
-        className="gz-float absolute -top-2 -left-2 flex size-5 items-center justify-center rounded-full text-zinc-500 opacity-0 transition-opacity duration-150 group-hover:opacity-100 hover:text-zinc-900 focus-visible:opacity-100 dark:hover:text-zinc-100"
+        className="lw-float absolute -top-2 -left-2 flex size-5 items-center justify-center rounded-full text-zinc-500 opacity-0 transition-opacity duration-150 group-hover:opacity-100 hover:text-zinc-900 focus-visible:opacity-100 dark:hover:text-zinc-100"
         aria-label="Dismiss"
         onClick={onDismiss}
       >

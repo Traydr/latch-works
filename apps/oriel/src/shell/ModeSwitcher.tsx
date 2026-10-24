@@ -78,7 +78,7 @@ export function ModeSwitcher({ rail }: { rail: boolean }) {
               <li key={id}>
                 <button
                   type="button"
-                  className={`gz-sidebar-item relative justify-center px-0 ${button}`}
+                  className={`lw-sidebar-item relative justify-center px-0 ${button}`}
                   aria-current={mode === id ? "page" : undefined}
                   aria-label={label}
                   data-mode={id}
@@ -102,7 +102,7 @@ export function ModeSwitcher({ rail }: { rail: boolean }) {
 
   return (
     <nav aria-label="Mode" className="w-full px-2 pb-1">
-      <div className="gz-seg w-full">
+      <div className="lw-seg w-full">
         {MODE_META.map(({ id, label, icon: Icon, shortcut }) => {
           const work = workOf(id);
 
@@ -110,7 +110,7 @@ export function ModeSwitcher({ rail }: { rail: boolean }) {
             <button
               key={id}
               type="button"
-              className="gz-seg-item flex-1 justify-center [&_svg]:size-3.5"
+              className="lw-seg-item flex-1 justify-center [&_svg]:size-3.5"
               aria-pressed={mode === id}
               data-mode={id}
               data-mode-activity={work?.kind}

@@ -123,7 +123,7 @@ export function OverviewView({ rootId }: { rootId: RootId }) {
   const rescan = (
     <button
       type="button"
-      className="gz-btn gz-btn-ghost gz-btn-icon"
+      className="lw-btn lw-btn-ghost lw-btn-icon"
       aria-label="Rescan"
       title="Rescan  ⌘R"
       disabled={scan !== null}
@@ -148,7 +148,7 @@ export function OverviewView({ rootId }: { rootId: RootId }) {
           <div className="w-[320px]">
             <ProgressBar ratio={scan && scan.total > 0 ? scan.done / scan.total : null} />
           </div>
-          <p className="gz-caption">{plural(scan?.done ?? 0, "file")} found</p>
+          <p className="lw-caption">{plural(scan?.done ?? 0, "file")} found</p>
         </div>
       </>
     );
@@ -387,13 +387,13 @@ function OverviewBody({
     <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto flex w-full max-w-[760px] flex-col gap-4 px-6 pt-6 pb-28">
         {work ? (
-          <section className="gz-card p-5">
+          <section className="lw-card p-5">
             <div className="flex items-end gap-4">
               <div className="min-w-0 flex-1">
                 <p className="text-xs font-medium text-zinc-500">
                   {tidying ? "Tidying up" : saving > 0 ? "Tidying up saves" : "Ready to tidy"}
                 </p>
-                <p className="gz-display mt-1 flex items-center gap-2.5">
+                <p className="lw-display mt-1 flex items-center gap-2.5">
                   {tidying
                     ? `${plural(
                         steps.filter((step) => stateOf(step) === "done").length,
@@ -404,7 +404,7 @@ function OverviewBody({
                       : `${plural(steps.filter((step) => step.todo).length, "thing")} to do`}
                   {!tidying && saving > 0 && estimating ? <Spinner /> : null}
                 </p>
-                <p className="gz-caption mt-1.5">
+                <p className="lw-caption mt-1.5">
                   Everything goes to holding first and can be undone.
                 </p>
               </div>
@@ -421,7 +421,7 @@ function OverviewBody({
               ) : (
                 <button
                   type="button"
-                  className="gz-btn gz-btn-primary gz-btn-lg"
+                  className="lw-btn lw-btn-primary lw-btn-lg"
                   onClick={() => void tidyUp()}
                 >
                   Tidy up <Kbd>⌘↩</Kbd>
@@ -435,11 +435,11 @@ function OverviewBody({
             </ul>
           </section>
         ) : (
-          <section className="gz-card flex h-16 items-center gap-3 px-5" data-step="tidy">
+          <section className="lw-card flex h-16 items-center gap-3 px-5" data-step="tidy">
             <Check className="size-5 shrink-0 text-emerald-600 dark:text-emerald-400" />
             <div className="min-w-0">
-              <p className="gz-heading">Tidy</p>
-              <p className="gz-caption truncate">
+              <p className="lw-heading">Tidy</p>
+              <p className="lw-caption truncate">
                 {savedBytes > 0
                   ? `${formatBytes(savedBytes)} out of ${rootName} · in holding until you empty it`
                   : "Nothing left to tidy"}
@@ -471,7 +471,7 @@ function OverviewBody({
 const ROW_ICON =
   "flex size-8 shrink-0 items-center justify-center rounded-lg bg-zinc-900/[0.05] dark:bg-white/[0.07]";
 
-const ROW_BUTTON = "gz-hover gz-focus flex h-[52px] items-center gap-3 rounded-lg px-2 text-left";
+const ROW_BUTTON = "lw-hover lw-focus flex h-[52px] items-center gap-3 rounded-lg px-2 text-left";
 
 function StepRow({ step, state, busy }: { step: Step; state: StepState; busy: boolean }) {
   const { report } = useEngine();
@@ -481,7 +481,7 @@ function StepRow({ step, state, busy }: { step: Step; state: StepState; busy: bo
     <li
       data-step={step.id}
       data-state={state}
-      className="group relative border-t gz-divider first:border-t-0"
+      className="group relative border-t lw-divider first:border-t-0"
     >
       <button
         type="button"
@@ -500,7 +500,7 @@ function StepRow({ step, state, busy }: { step: Step; state: StepState; busy: bo
           >
             {step.title}
           </span>
-          <span className="gz-caption block truncate">
+          <span className="lw-caption block truncate">
             {state === "done" ? "Done" : step.caption}
           </span>
         </span>
@@ -514,7 +514,7 @@ function StepRow({ step, state, busy }: { step: Step; state: StepState; busy: bo
       {state === "todo" && !busy ? (
         <button
           type="button"
-          className="gz-btn gz-btn-ghost gz-btn-sm absolute top-1/2 right-7 -translate-y-1/2 opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100"
+          className="lw-btn lw-btn-ghost lw-btn-sm absolute top-1/2 right-7 -translate-y-1/2 opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100"
           onClick={() => void step.run().catch(report)}
         >
           {step.action}
@@ -600,7 +600,7 @@ function LookCard({
   }
 
   return (
-    <section className="gz-card flex items-center gap-4 p-4" data-step="similar">
+    <section className="lw-card flex items-center gap-4 p-4" data-step="similar">
       {keepers.length > 0 ? (
         <div className="flex shrink-0 pl-3">
           {keepers.map((file) => (
@@ -615,17 +615,17 @@ function LookCard({
       ) : null}
       <div className="min-w-0 flex-1">
         <p className="text-[13px] font-medium">{title}</p>
-        {caption ? <p className="gz-caption mt-0.5">{caption}</p> : null}
+        {caption ? <p className="lw-caption mt-0.5">{caption}</p> : null}
       </div>
       {unchecked ? (
-        <button type="button" className="gz-btn gz-btn-secondary" onClick={checkNow}>
+        <button type="button" className="lw-btn lw-btn-secondary" onClick={checkNow}>
           Check now
         </button>
       ) : null}
       {similar.sets > 0 ? (
         <button
           type="button"
-          className="gz-btn gz-btn-secondary"
+          className="lw-btn lw-btn-secondary"
           title="Review  D"
           onClick={() => openDuplicates("similar")}
         >
@@ -645,7 +645,7 @@ function IdenticalCard({ data }: { data: Tidy }) {
   const { exact } = data.duplicates;
 
   return (
-    <section className="gz-card flex items-center gap-4 p-4" data-step="identical">
+    <section className="lw-card flex items-center gap-4 p-4" data-step="identical">
       <span className={ROW_ICON}>
         <Copy className="size-4" />
       </span>
@@ -653,11 +653,11 @@ function IdenticalCard({ data }: { data: Tidy }) {
         <p className="text-[13px] font-medium">
           {plural(exact.sets, "set")} of identical copies · {formatBytes(exact.reclaimableBytes)}
         </p>
-        <p className="gz-caption mt-0.5">Choose which folders keep each one</p>
+        <p className="lw-caption mt-0.5">Choose which folders keep each one</p>
       </div>
       <button
         type="button"
-        className="gz-btn gz-btn-secondary"
+        className="lw-btn lw-btn-secondary"
         onClick={() => openDuplicates("exact")}
       >
         Review
@@ -677,7 +677,7 @@ function HoldingRow({ rootId }: { rootId: RootId }) {
   }
 
   return (
-    <section className="gz-card px-3 py-1.5" data-step="holding">
+    <section className="lw-card px-3 py-1.5" data-step="holding">
       <button type="button" onClick={() => go("holding")} className={`${ROW_BUTTON} w-full`}>
         <span className={ROW_ICON}>
           <Archive className="size-4" />
@@ -686,7 +686,7 @@ function HoldingRow({ rootId }: { rootId: RootId }) {
           <span className="block truncate text-[13px] font-medium">
             Holding · {plural(held.total, "file")} · {formatBytes(held.totalBytes)}
           </span>
-          <span className="gz-caption block truncate">The space comes back when you empty it</span>
+          <span className="lw-caption block truncate">The space comes back when you empty it</span>
         </span>
         <ChevronRight className="size-4 shrink-0 text-zinc-400" />
       </button>
@@ -703,7 +703,7 @@ function AttentionLine({ data }: { data: Tidy }) {
   }
 
   return (
-    <p className="gz-caption px-1 leading-5" data-step="attention">
+    <p className="lw-caption px-1 leading-5" data-step="attention">
       Also found:{" "}
       {findings.map((finding, index) => (
         <span key={finding.kind}>

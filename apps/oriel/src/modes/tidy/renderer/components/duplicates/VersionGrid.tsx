@@ -318,7 +318,7 @@ function VersionTile({
       }
       onMouseEnter={onHover}
       onClick={onClick}
-      className={`gz-card group relative flex min-h-0 min-w-0 flex-col p-1 ${
+      className={`lw-card group relative flex min-h-0 min-w-0 flex-col p-1 ${
         readOnly ? "cursor-default" : "cursor-pointer"
       } ${focused || isKept ? "" : "hover:shadow-[var(--shadow-border-hover)]"} ${
         focused
@@ -327,7 +327,7 @@ function VersionTile({
       } ${ring}`}
     >
       <div
-        className="gz-well relative flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-lg"
+        className="lw-well relative flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-lg"
         style={well === null ? undefined : { height: well, flex: "none" }}
       >
         {!canShow(file) ? (
@@ -341,14 +341,14 @@ function VersionTile({
             playsInline
             preload="metadata"
             onPlay={onPlayed}
-            className="gz-media-edge max-h-full max-w-full object-contain"
+            className="lw-media-edge max-h-full max-w-full object-contain"
           />
         ) : (
           <img
             src={thumbnailUrl(file.absPath, 768)}
             alt=""
             draggable={false}
-            className="gz-media-edge max-h-full max-w-full object-contain"
+            className="lw-media-edge max-h-full max-w-full object-contain"
           />
         )}
 
@@ -373,7 +373,7 @@ function VersionTile({
             >
               <input
                 type="checkbox"
-                className="gz-check"
+                className="lw-check"
                 tabIndex={-1}
                 checked={isKept}
                 aria-label={`Keep version ${number}`}
@@ -383,10 +383,10 @@ function VersionTile({
             </label>
           )}
           <span
-            className={`gz-badge min-w-6 justify-center ${
+            className={`lw-badge min-w-6 justify-center ${
               focused
                 ? "bg-white text-zinc-900 shadow-[0_1px_2px_rgb(0_0_0/0.3)]"
-                : "gz-badge-overlay"
+                : "lw-badge-overlay"
             }`}
           >
             {number}
@@ -407,7 +407,7 @@ function VersionTile({
               event.stopPropagation();
               void desktop.reveal(file.absPath);
             }}
-            className={`gz-btn gz-btn-icon-sm bg-white text-zinc-900 shadow-[0_2px_8px_rgb(0_0_0/0.3)] hover:bg-zinc-100 ${revealed}`}
+            className={`lw-btn lw-btn-icon-sm bg-white text-zinc-900 shadow-[0_2px_8px_rgb(0_0_0/0.3)] hover:bg-zinc-100 ${revealed}`}
           >
             <FolderOpen />
           </button>
@@ -419,20 +419,20 @@ function VersionTile({
               event.stopPropagation();
               onLook();
             }}
-            className={`gz-btn gz-btn-icon-sm bg-white text-zinc-900 shadow-[0_2px_8px_rgb(0_0_0/0.3)] hover:bg-zinc-100 ${revealed}`}
+            className={`lw-btn lw-btn-icon-sm bg-white text-zinc-900 shadow-[0_2px_8px_rgb(0_0_0/0.3)] hover:bg-zinc-100 ${revealed}`}
           >
             <Maximize2 />
           </button>
           {isKept ? (
             suggested ? (
               <span
-                className="gz-badge bg-white/90 text-zinc-900 dark:bg-black/60 dark:text-white"
+                className="lw-badge bg-white/90 text-zinc-900 dark:bg-black/60 dark:text-white"
                 title={keepReason ?? undefined}
               >
                 Suggested
               </span>
             ) : (
-              <span className="gz-badge gz-badge-keep" title={keepReason ?? undefined}>
+              <span className="lw-badge lw-badge-keep" title={keepReason ?? undefined}>
                 <Check className="size-3.5" /> Keep
               </span>
             )
@@ -451,8 +451,8 @@ function VersionTile({
 
       <div className="px-2 pt-2 pb-1.5">
         <FolderPath dir={file.dir} lines={2} className="text-[13px] leading-[18px]" />
-        {showName ? <p className="gz-caption truncate">{file.name}</p> : null}
-        <p className="gz-caption truncate">
+        {showName ? <p className="lw-caption truncate">{file.name}</p> : null}
+        <p className="lw-caption truncate">
           {facts.map((fact, index) => (
             <span key={fact.text}>
               {index > 0 ? " · " : ""}
@@ -465,16 +465,16 @@ function VersionTile({
         {/* A byte-identical copy elsewhere goes with this version, so its folder shows too. */}
         {row.copies.length > 1 ? (
           <p
-            className="gz-caption truncate"
+            className="lw-caption truncate"
             title={row.copies.map((other) => other.relPath).join("\n")}
           >
             Also in {row.copies.length} other folders
           </p>
         ) : copy ? (
-          <FolderPath dir={copy.dir} lines={2} lead="Also in" className="gz-caption" />
+          <FolderPath dir={copy.dir} lines={2} lead="Also in" className="lw-caption" />
         ) : null}
         {hardLinked ? (
-          <p className="gz-caption truncate">A hard link, so it frees nothing</p>
+          <p className="lw-caption truncate">A hard link, so it frees nothing</p>
         ) : null}
       </div>
     </div>

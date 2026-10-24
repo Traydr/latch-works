@@ -638,13 +638,13 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
     ) : null;
 
   const decisionBar = active ? (
-    <div className="gz-float absolute bottom-5 left-1/2 z-10 flex w-max max-w-[calc(100%-40px)] -translate-x-1/2 items-center gap-2 p-1.5">
+    <div className="lw-float absolute bottom-5 left-1/2 z-10 flex w-max max-w-[calc(100%-40px)] -translate-x-1/2 items-center gap-2 p-1.5">
       {dismissedMode ? (
         <>
-          <span className="gz-caption px-3">You marked these as not duplicates</span>
+          <span className="lw-caption px-3">You marked these as not duplicates</span>
           <button
             type="button"
-            className="gz-btn gz-btn-primary gz-btn-lg"
+            className="lw-btn lw-btn-primary lw-btn-lg"
             onClick={() => void restoreDismissed()}
           >
             Restore <Kbd>↩</Kbd>
@@ -656,7 +656,7 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
             <>
               <button
                 type="button"
-                className="gz-btn gz-btn-ghost gz-btn-icon size-9"
+                className="lw-btn lw-btn-ghost lw-btn-icon size-9"
                 title="Previous version  ←"
                 aria-label="Previous version"
                 disabled={focus === 0}
@@ -666,7 +666,7 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
               </button>
               <button
                 type="button"
-                className="gz-btn gz-btn-ghost gz-btn-icon size-9"
+                className="lw-btn lw-btn-ghost lw-btn-icon size-9"
                 title="Next version  →"
                 aria-label="Next version"
                 disabled={focus >= rows.length - 1}
@@ -679,7 +679,7 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
           ) : null}
           <button
             type="button"
-            className="gz-btn gz-btn-secondary gz-btn-lg"
+            className="lw-btn lw-btn-secondary lw-btn-lg"
             title="Skip for now  S"
             onClick={skip}
           >
@@ -688,7 +688,7 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
           {removed.length > 0 ? (
             <button
               type="button"
-              className="gz-btn gz-btn-secondary gz-btn-lg"
+              className="lw-btn lw-btn-secondary lw-btn-lg"
               title={`Keep every ${active.kind === "exact" ? "copy" : "version"} and stop showing this set  N`}
               onClick={() => void dismiss()}
             >
@@ -698,7 +698,7 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
           {/* In the loupe the primary keeps the version on screen; elsewhere, the keepers. */}
           <button
             type="button"
-            className="gz-btn gz-btn-primary gz-btn-lg"
+            className="lw-btn lw-btn-primary lw-btn-lg"
             title={
               looking ? `Keep only ${focus + 1} and go on` : holdingSummary(active, rows, keptSet)
             }
@@ -717,7 +717,7 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
       <TopBar title={dismissedMode ? "Not duplicates" : "Duplicates"}>
         {fingerprinting ? (
           <span
-            className="gz-caption inline-flex items-center gap-2"
+            className="lw-caption inline-flex items-center gap-2"
             title="Similar versions appear as each picture and video is checked"
           >
             {similarJob ? <Spinner /> : null}
@@ -728,7 +728,7 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
         {dismissedMode ? (
           <button
             type="button"
-            className="gz-btn gz-btn-secondary"
+            className="lw-btn lw-btn-secondary"
             onClick={() => {
               setDismissedMode(false);
               setActiveIndex(0);
@@ -739,7 +739,7 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
         ) : sets.length > 0 && scope === "similar" ? (
           <button
             type="button"
-            className="gz-btn gz-btn-secondary"
+            className="lw-btn lw-btn-secondary"
             disabled={suggestions === 0}
             onClick={keepAll}
             title={
@@ -791,7 +791,7 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
       ) : sets.length === 0 ? (
         <div className="flex min-h-0 flex-1">
           {scopeSwitch ? (
-            <aside className="w-[232px] shrink-0 border-r gz-divider px-3 pt-3 xl:w-[264px]">
+            <aside className="w-[232px] shrink-0 border-r lw-divider px-3 pt-3 xl:w-[264px]">
               {scopeSwitch}
             </aside>
           ) : null}
@@ -813,7 +813,7 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
                 <>
                   <button
                     type="button"
-                    className="gz-btn gz-btn-secondary"
+                    className="lw-btn lw-btn-secondary"
                     onClick={() => navigation.go("overview")}
                   >
                     Back to Overview
@@ -821,7 +821,7 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
                   {otherCount > 0 ? (
                     <button
                       type="button"
-                      className="gz-btn gz-btn-secondary"
+                      className="lw-btn lw-btn-secondary"
                       onClick={() => {
                         setChosenScope(otherScope);
                         setActiveIndex(0);

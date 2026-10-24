@@ -106,20 +106,20 @@ export function FileGrid(props: FileViewProps) {
               onClick={(event) => cursorKeys.click(index, row, event)}
               onDoubleClick={() => props.onOpen(row)}
               onContextMenu={(event) => cursorKeys.contextMenu(index, row, event)}
-              className={`group gz-card absolute cursor-default p-1 gz-focus select-none ${
+              className={`group lw-card absolute cursor-default p-1 lw-focus select-none ${
                 index === cursor
                   ? "ring-2 ring-violet-500"
                   : isSelected
                     ? "ring-2 ring-zinc-900/25 dark:ring-white/30"
                     : ""
-              } ${isSelected ? "gz-selected" : ""}`}
+              } ${isSelected ? "lw-selected" : ""}`}
             >
               <div className="relative">
                 <Thumbnail row={row} fill className="rounded-lg" />
                 <input
                   type="checkbox"
                   aria-label={`Select ${row.name}`}
-                  className={`gz-check absolute top-2 left-2 drop-shadow-[0_1px_2px_rgb(0_0_0/0.4)] ${
+                  className={`lw-check absolute top-2 left-2 drop-shadow-[0_1px_2px_rgb(0_0_0/0.4)] ${
                     choosing ? "" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
                   }`}
                   checked={isSelected}

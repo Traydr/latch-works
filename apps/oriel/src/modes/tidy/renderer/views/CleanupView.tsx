@@ -257,7 +257,7 @@ export function CleanupView({ rootId }: { rootId: RootId }) {
         ) : total > 0 ? (
           <button
             type="button"
-            className="gz-btn gz-btn-primary gz-btn-lg"
+            className="lw-btn lw-btn-primary lw-btn-lg"
             onClick={() => void cleanUp()}
           >
             Clean up {formatCount(total)} <Kbd>⌘↩</Kbd>
@@ -312,7 +312,7 @@ export function CleanupView({ rootId }: { rootId: RootId }) {
                   data-file-name={row.name}
                 >
                   <NameAndFolder name={row.name} dir={row.dir} />
-                  <span className="gz-caption shrink-0">{formatBytes(row.size)}</span>
+                  <span className="lw-caption shrink-0">{formatBytes(row.size)}</span>
                 </li>
               ))}
             </Section>
@@ -361,7 +361,7 @@ export function CleanupView({ rootId }: { rootId: RootId }) {
                       {row.name} <span className="text-zinc-400">→</span>{" "}
                       <span className="text-amber-700 dark:text-amber-300">{name}</span>
                     </span>
-                    {row.dir ? <StartTruncate text={row.dir} className="gz-caption" /> : null}
+                    {row.dir ? <StartTruncate text={row.dir} className="lw-caption" /> : null}
                   </span>
                 </li>
               ))}
@@ -379,7 +379,7 @@ function NameAndFolder({ name, dir }: { name: string; dir: string }) {
       <span className="block truncate text-[13px]" title={dir ? `${dir}/${name}` : name}>
         {name}
       </span>
-      {dir ? <StartTruncate text={dir} className="gz-caption" /> : null}
+      {dir ? <StartTruncate text={dir} className="lw-caption" /> : null}
     </span>
   );
 }
@@ -398,7 +398,7 @@ function SilentRow({ row }: { row: FileRow }) {
       ) : (
         <button
           type="button"
-          className="gz-btn gz-btn-ghost gz-btn-sm opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100"
+          className="lw-btn lw-btn-ghost lw-btn-sm opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100"
           onClick={() =>
             void actions.perform({ kind: "strip-audio", fileIds: [row.id] }, { source })
           }
@@ -406,7 +406,7 @@ function SilentRow({ row }: { row: FileRow }) {
           Remove sound
         </button>
       )}
-      <span className="gz-caption w-12 shrink-0 text-right">{formatDuration(row.durationMs)}</span>
+      <span className="lw-caption w-12 shrink-0 text-right">{formatDuration(row.durationMs)}</span>
     </li>
   );
 }
@@ -443,25 +443,25 @@ function Section({
   }
 
   return (
-    <section className="gz-card" data-section={id}>
+    <section className="lw-card" data-section={id}>
       <header className="flex h-12 items-center gap-2 px-4">
-        <h2 className="gz-heading">{title}</h2>
-        <span className="gz-caption">{formatCount(count)}</span>
+        <h2 className="lw-heading">{title}</h2>
+        <span className="lw-caption">{formatCount(count)}</span>
         <span className="ml-auto">
           {running ? (
             <Spinner />
           ) : (
-            <button type="button" className="gz-btn gz-btn-secondary gz-btn-sm" onClick={onAction}>
+            <button type="button" className="lw-btn lw-btn-secondary lw-btn-sm" onClick={onAction}>
               {action}
             </button>
           )}
         </span>
       </header>
-      <ul className="divide-y divide-zinc-200/80 border-t gz-divider dark:divide-white/[0.06]">
+      <ul className="divide-y divide-zinc-200/80 border-t lw-divider dark:divide-white/[0.06]">
         {children}
       </ul>
       {count > shown && shown > 0 ? (
-        <div className="flex h-11 items-center border-t gz-divider px-4 text-[13px] text-zinc-500 dark:text-zinc-400">
+        <div className="flex h-11 items-center border-t lw-divider px-4 text-[13px] text-zinc-500 dark:text-zinc-400">
           {more ? (
             <button
               type="button"

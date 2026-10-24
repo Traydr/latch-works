@@ -157,7 +157,7 @@ export function FilterMenu({
           {folders.length > 8 ? (
             <div className="px-1 pb-1">
               <input
-                className="gz-input"
+                className="lw-input"
                 placeholder="Find a folder"
                 aria-label="Find a folder"
                 value={folderSearch}
@@ -255,9 +255,9 @@ export function FilterChips({
   ];
 
   return (
-    <div className="flex h-10 shrink-0 items-center gap-1.5 overflow-x-auto border-b gz-divider px-5">
+    <div className="flex h-10 shrink-0 items-center gap-1.5 overflow-x-auto border-b lw-divider px-5">
       {chips.map((chip) => (
-        <span key={chip.key} className="gz-chip max-w-72 shrink-0">
+        <span key={chip.key} className="lw-chip max-w-72 shrink-0">
           <span className="truncate" title={chip.label}>
             {chip.label}
           </span>
@@ -271,7 +271,7 @@ export function FilterChips({
           </button>
         </span>
       ))}
-      <button type="button" className="gz-btn gz-btn-ghost gz-btn-sm shrink-0" onClick={onClear}>
+      <button type="button" className="lw-btn lw-btn-ghost lw-btn-sm shrink-0" onClick={onClear}>
         Clear
       </button>
     </div>

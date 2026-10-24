@@ -39,7 +39,7 @@ function timing(span: { averageMs: number; maxMs: number } | null | undefined): 
 /** One titled list of facts, the label left and the value right. */
 function Facts({ title, facts }: { title: string; facts: readonly Fact[] }) {
   return (
-    <div className="border-t gz-divider px-4 py-3">
+    <div className="border-t lw-divider px-4 py-3">
       <h3 className="mb-1.5 text-[13px] font-medium">{title}</h3>
       <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-4 gap-y-0.5 text-xs tabular-nums">
         {facts.map(([label, value]) => (
@@ -56,7 +56,7 @@ function Facts({ title, facts }: { title: string; facts: readonly Fact[] }) {
 /** A list of recorded lines, such as recent worker events; "None" when it is empty. */
 function Lines({ title, lines }: { title: string; lines: readonly string[] }) {
   return (
-    <div className="border-t gz-divider px-4 py-3">
+    <div className="border-t lw-divider px-4 py-3">
       <h3 className="mb-1.5 text-[13px] font-medium">{title}</h3>
       {lines.length > 0 ? (
         <ul className="space-y-0.5 text-xs break-all text-zinc-600 dark:text-zinc-300">
@@ -65,7 +65,7 @@ function Lines({ title, lines }: { title: string; lines: readonly string[] }) {
           ))}
         </ul>
       ) : (
-        <p className="gz-caption">None</p>
+        <p className="lw-caption">None</p>
       )}
     </div>
   );
@@ -77,7 +77,7 @@ function Details({
   mediaIndexStats,
 }: Pick<ViewDiagnosticsProps, "currentFolderSummary" | "diagnosticsSnapshot" | "mediaIndexStats">) {
   if (!snapshot) {
-    return <p className="gz-caption border-t gz-divider px-4 py-3">Reading diagnostics…</p>;
+    return <p className="lw-caption border-t lw-divider px-4 py-3">Reading diagnostics…</p>;
   }
 
   const { thumbnails, thumbnailWorker: worker, thumbnailWorkerPerformance: performance } = snapshot;
@@ -217,7 +217,7 @@ export function ViewDiagnostics({
       >
         <button
           type="button"
-          className="gz-btn gz-btn-secondary"
+          className="lw-btn lw-btn-secondary"
           aria-expanded={shown}
           onClick={() => setShown((current) => !current)}
         >
@@ -225,14 +225,14 @@ export function ViewDiagnostics({
         </button>
         <button
           type="button"
-          className="gz-btn gz-btn-secondary"
+          className="lw-btn lw-btn-secondary"
           onClick={run(onRefreshDiagnostics, "Diagnostics refreshed", "Could not refresh")}
         >
           Refresh
         </button>
         <button
           type="button"
-          className="gz-btn gz-btn-secondary"
+          className="lw-btn lw-btn-secondary"
           onClick={run(onCopyDiagnostics, "Copied to the clipboard", "Could not copy")}
         >
           Copy Diagnostics

@@ -24,9 +24,9 @@ export function TopBar({
   children?: ReactNode;
 }) {
   return (
-    <header className="gz-drag flex h-[52px] shrink-0 items-center gap-4 border-b gz-divider px-5">
+    <header className="lw-drag flex h-[52px] shrink-0 items-center gap-4 border-b lw-divider px-5">
       <div className="flex min-w-0 items-baseline gap-2.5">
-        <h1 className="gz-title truncate">{title}</h1>
+        <h1 className="lw-title truncate">{title}</h1>
         {meta ? (
           <span className="truncate text-[13px] text-zinc-500 dark:text-zinc-400">{meta}</span>
         ) : null}
@@ -102,7 +102,7 @@ export function Spinner({ className = "" }: { className?: string }) {
  * the one primary button that teaches its key.
  */
 export function Kbd({ children }: { children: ReactNode }) {
-  return <kbd className="gz-kbd">{children}</kbd>;
+  return <kbd className="lw-kbd">{children}</kbd>;
 }
 
 /** A segmented control: one choice of a few, each with an optional count. */
@@ -121,7 +121,7 @@ export function Segmented<T extends string>({
   fill?: boolean;
 }) {
   return (
-    <fieldset aria-label={label} className={fill ? "gz-seg flex w-full" : "gz-seg"}>
+    <fieldset aria-label={label} className={fill ? "lw-seg flex w-full" : "lw-seg"}>
       {options.map((option) => (
         <button
           key={option.value}
@@ -129,7 +129,7 @@ export function Segmented<T extends string>({
           aria-pressed={option.value === value}
           disabled={option.disabled}
           onClick={() => onChange(option.value)}
-          className={fill ? "gz-seg-item flex-1 justify-center" : "gz-seg-item"}
+          className={fill ? "lw-seg-item flex-1 justify-center" : "lw-seg-item"}
         >
           {option.label}
           {option.count === undefined ? null : (
@@ -231,7 +231,7 @@ export function Sheet({
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: a click on the backdrop closes the sheet; Esc is the keyboard path.
     <div
-      className="gz-enter-fade fixed inset-0 z-50 flex items-start justify-center bg-black/30 pt-[8vh] backdrop-blur-[3px] dark:bg-black/50"
+      className="lw-enter-fade fixed inset-0 z-50 flex items-start justify-center bg-black/30 pt-[8vh] backdrop-blur-[3px] dark:bg-black/50"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) {
           onClose();
@@ -245,16 +245,16 @@ export function Sheet({
         aria-label={title}
         tabIndex={-1}
         style={{ width }}
-        className="gz-float gz-enter-pop flex max-h-[84vh] max-w-[92vw] flex-col overflow-hidden outline-none"
+        className="lw-float lw-enter-pop flex max-h-[84vh] max-w-[92vw] flex-col overflow-hidden outline-none"
       >
         <div className="flex items-start justify-between gap-4 px-6 pt-5 pb-4">
           <div className="min-w-0">
-            <h2 className="gz-title">{title}</h2>
-            {description ? <p className="gz-caption mt-1">{description}</p> : null}
+            <h2 className="lw-title">{title}</h2>
+            {description ? <p className="lw-caption mt-1">{description}</p> : null}
           </div>
           <button
             type="button"
-            className="gz-btn gz-btn-ghost gz-btn-icon-sm -mr-1.5"
+            className="lw-btn lw-btn-ghost lw-btn-icon-sm -mr-1.5"
             aria-label="Close"
             tabIndex={-1}
             onClick={onClose}
@@ -264,7 +264,7 @@ export function Sheet({
         </div>
         <div className="flex-1 overflow-y-auto px-6 pb-6">{children}</div>
         {footer ? (
-          <div className="flex h-14 shrink-0 items-center justify-end gap-2 border-t gz-divider px-6">
+          <div className="flex h-14 shrink-0 items-center justify-end gap-2 border-t lw-divider px-6">
             {footer}
           </div>
         ) : null}
@@ -311,7 +311,7 @@ export function Menu({
 
     const items = () => [
       ...(panel.current?.querySelectorAll<HTMLElement>(
-        ".gz-menu-item:not(:disabled), input:not(:disabled)",
+        ".lw-menu-item:not(:disabled), input:not(:disabled)",
       ) ?? []),
     ];
 
@@ -384,8 +384,8 @@ export function Menu({
           );
           setOpen((current) => !current);
         }}
-        className={`gz-btn ${variant === "ghost" ? "gz-btn-ghost" : "gz-btn-secondary"} ${
-          icon ? "gz-btn-icon" : "pr-3"
+        className={`lw-btn ${variant === "ghost" ? "lw-btn-ghost" : "lw-btn-secondary"} ${
+          icon ? "lw-btn-icon" : "pr-3"
         }`}
       >
         {label}
@@ -396,7 +396,7 @@ export function Menu({
           ref={panel}
           role="menu"
           id={id}
-          className={`gz-menu absolute top-full mt-1.5 ${
+          className={`lw-menu absolute top-full mt-1.5 ${
             alignEnd ? "right-0 origin-top-right" : "left-0 origin-top-left"
           }`}
         >
@@ -431,7 +431,7 @@ export function MenuCheck({
       aria-checked={checked}
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className="gz-menu-item"
+      className="lw-menu-item"
     >
       <span className="min-w-0 flex-1 truncate">{label}</span>
       {count === undefined ? null : <span className="text-xs text-zinc-400">{count}</span>}
@@ -445,11 +445,11 @@ export function MenuCheck({
 }
 
 export function MenuLabel({ children }: { children: ReactNode }) {
-  return <div className="gz-menu-label">{children}</div>;
+  return <div className="lw-menu-label">{children}</div>;
 }
 
 export function MenuSeparator() {
-  return <div className="gz-menu-sep" />;
+  return <div className="lw-menu-sep" />;
 }
 
 /**

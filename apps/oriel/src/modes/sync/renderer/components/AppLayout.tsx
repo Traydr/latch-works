@@ -67,7 +67,7 @@ export function AppLayout({ ctrl }: { ctrl: LockstepController }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-white text-zinc-800 dark:bg-zinc-950 dark:text-zinc-100">
-      <header className="gz-drag flex h-[30px] shrink-0 items-center gap-2 border-b border-zinc-200 bg-zinc-50 px-3 dark:border-zinc-800 dark:bg-zinc-900/60">
+      <header className="lw-drag flex h-[30px] shrink-0 items-center gap-2 border-b border-zinc-200 bg-zinc-50 px-3 dark:border-zinc-800 dark:bg-zinc-900/60">
         <span className="text-xs font-semibold tracking-tight">Sync</span>
         {activeProfile ? (
           <>

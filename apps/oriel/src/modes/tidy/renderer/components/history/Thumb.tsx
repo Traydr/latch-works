@@ -23,7 +23,7 @@ export function Thumb({
   if (path === null || failed === path) {
     return (
       <span
-        className={`gz-well flex items-center justify-center text-zinc-400 dark:text-zinc-500 ${className}`}
+        className={`lw-well flex items-center justify-center text-zinc-400 dark:text-zinc-500 ${className}`}
       >
         <File className="size-[30%] max-h-8 max-w-8" />
       </span>
@@ -40,7 +40,7 @@ export function Thumb({
       className={`${
         fit === "contain"
           ? "object-contain"
-          : "gz-media-edge bg-zinc-100 object-cover dark:bg-zinc-800"
+          : "lw-media-edge bg-zinc-100 object-cover dark:bg-zinc-800"
       } ${className}`}
     />
   );

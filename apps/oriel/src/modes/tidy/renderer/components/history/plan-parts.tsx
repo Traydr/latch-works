@@ -86,12 +86,12 @@ function StepRow({ step, rootPath }: { step: PlanStep; rootPath: string | undefi
   return (
     <li
       data-step-status={step.status}
-      className="flex h-9 items-center gap-3 border-t gz-divider pr-4 pl-[60px] text-[13px] first:border-t-0"
+      className="flex h-9 items-center gap-3 border-t lw-divider pr-4 pl-[60px] text-[13px] first:border-t-0"
     >
-      <span className="gz-caption w-24 shrink-0">{ACTION_LABELS[step.action]}</span>
+      <span className="lw-caption w-24 shrink-0">{ACTION_LABELS[step.action]}</span>
       <StartTruncate text={relativeTo(rootPath, step.fromPath)} className="min-w-0 flex-1" />
       {target ? (
-        <span className="gz-caption max-w-[35%] shrink-0 truncate" title={step.toPath ?? undefined}>
+        <span className="lw-caption max-w-[35%] shrink-0 truncate" title={step.toPath ?? undefined}>
           → {target}
         </span>
       ) : null}
@@ -137,10 +137,10 @@ export function PlanSteps({ plan, rootPath }: { plan: PlanSummary; rootPath: str
         <StepRow key={step.id} step={step} rootPath={rootPath} />
       ))}
       {!all && total > steps.length ? (
-        <li className="flex h-9 items-center border-t gz-divider pl-[52px]">
+        <li className="flex h-9 items-center border-t lw-divider pl-[52px]">
           <button
             type="button"
-            className="gz-btn gz-btn-ghost gz-btn-sm"
+            className="lw-btn lw-btn-ghost lw-btn-sm"
             onClick={() => setAll(true)}
           >
             Show all {formatCount(total)}
@@ -148,7 +148,7 @@ export function PlanSteps({ plan, rootPath }: { plan: PlanSummary; rootPath: str
         </li>
       ) : null}
       {all && !pages ? (
-        <li className="flex h-9 items-center border-t gz-divider pl-[60px]">
+        <li className="flex h-9 items-center border-t lw-divider pl-[60px]">
           <Spinner />
         </li>
       ) : null}
@@ -206,7 +206,7 @@ function SetRow({
   ].filter(Boolean);
 
   return (
-    <li className="group flex h-12 items-center gap-3 border-t gz-divider pr-4 pl-[60px] first:border-t-0">
+    <li className="group flex h-12 items-center gap-3 border-t lw-divider pr-4 pl-[60px] first:border-t-0">
       <Thumb path={picture} size={96} className="size-8 shrink-0 rounded-md" />
       <div className="min-w-0 flex-1">
         <p
@@ -215,12 +215,12 @@ function SetRow({
         >
           {name}
         </p>
-        <p className="gz-caption truncate">{detail.join(" · ")}</p>
+        <p className="lw-caption truncate">{detail.join(" · ")}</p>
       </div>
       {canUndo(plan) ? (
         <button
           type="button"
-          className="gz-btn gz-btn-secondary gz-btn-sm opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-visible:opacity-100"
+          className="lw-btn lw-btn-secondary lw-btn-sm opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-visible:opacity-100"
           disabled={busy}
           onClick={async () => {
             setBusy(true);

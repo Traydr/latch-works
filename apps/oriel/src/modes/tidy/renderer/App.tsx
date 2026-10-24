@@ -247,7 +247,7 @@ function Shell() {
         >
           {!ready ? (
             <>
-              <div className="gz-drag h-[52px] shrink-0" />
+              <div className="lw-drag h-[52px] shrink-0" />
               <EmptyState title="Starting…" />
             </>
           ) : root ? (
@@ -298,7 +298,7 @@ function CurrentView({ rootId }: { rootId: RootId }) {
 function Welcome({ onChoose, dragging }: { onChoose: () => void; dragging: boolean }) {
   return (
     <>
-      <div className="gz-drag h-[52px] shrink-0" />
+      <div className="lw-drag h-[52px] shrink-0" />
       <div className="flex flex-1 items-center justify-center p-10 pb-[100px]">
         <div
           className={`flex w-[480px] max-w-full flex-col items-center rounded-2xl border-2 border-dashed px-10 py-12 text-center transition-colors duration-150 ${
@@ -311,10 +311,10 @@ function Welcome({ onChoose, dragging }: { onChoose: () => void; dragging: boole
             Glazier finds duplicates, converts files to AVIF and MP4, and cleans up junk. Every
             change can be undone.
           </p>
-          <button type="button" className="gz-btn gz-btn-primary gz-btn-xl mt-6" onClick={onChoose}>
+          <button type="button" className="lw-btn lw-btn-primary lw-btn-xl mt-6" onClick={onChoose}>
             Choose folder… <Kbd>⌘O</Kbd>
           </button>
-          <p className="gz-caption mt-3">or drop a folder here</p>
+          <p className="lw-caption mt-3">or drop a folder here</p>
         </div>
       </div>
     </>

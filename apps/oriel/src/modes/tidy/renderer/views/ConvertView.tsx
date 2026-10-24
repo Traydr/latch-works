@@ -209,7 +209,7 @@ export function ConvertView({ rootId }: { rootId: RootId }) {
                   onChange={(checked) => setEnabled(group.id, checked)}
                 />
               ))}
-              <p className="gz-caption max-w-[264px] px-2.5 pt-1.5 pb-1">
+              <p className="lw-caption max-w-[264px] px-2.5 pt-1.5 pb-1">
                 Pictures use AVIF at quality 70. Video tracks MP4 can hold are copied as they are.
               </p>
             </>
@@ -220,7 +220,7 @@ export function ConvertView({ rootId }: { rootId: RootId }) {
         ) : (
           <button
             type="button"
-            className="gz-btn gz-btn-primary gz-btn-lg"
+            className="lw-btn lw-btn-primary lw-btn-lg"
             disabled={files === 0}
             onClick={convert}
           >
@@ -274,7 +274,7 @@ export function ConvertView({ rootId }: { rootId: RootId }) {
                 type="button"
                 aria-expanded={leftOpen}
                 onClick={() => setLeftOpen((open) => !open)}
-                className="gz-focus sticky top-0 z-10 flex h-9 w-full items-center gap-1.5 bg-white text-left text-[13px] font-medium dark:bg-zinc-950"
+                className="lw-focus sticky top-0 z-10 flex h-9 w-full items-center gap-1.5 bg-white text-left text-[13px] font-medium dark:bg-zinc-950"
               >
                 <ChevronRight
                   className={`size-3.5 text-zinc-400 transition-transform duration-150 ${
@@ -294,11 +294,11 @@ export function ConvertView({ rootId }: { rootId: RootId }) {
 
 function LeftList({ reasons }: { reasons: readonly string[] }) {
   return (
-    <ul className="gz-card">
+    <ul className="lw-card">
       {reasons.map((reason, index) => (
         <li
           key={reason}
-          className={`flex h-11 items-center px-4 text-[13px] ${index > 0 ? "border-t gz-divider" : ""}`}
+          className={`flex h-11 items-center px-4 text-[13px] ${index > 0 ? "border-t lw-divider" : ""}`}
         >
           {reason}
         </li>
@@ -351,7 +351,7 @@ function Section({
         {warning ? (
           <span className="text-xs text-amber-700 dark:text-amber-300">{warning}</span>
         ) : null}
-        <span className="gz-caption ml-auto">{describeEstimate(bytes, estimate)}</span>
+        <span className="lw-caption ml-auto">{describeEstimate(bytes, estimate)}</span>
       </header>
       <div className="grid grid-cols-[repeat(auto-fill,minmax(176px,1fr))] gap-x-3 gap-y-4 pt-1 pb-6">
         {tiles.map((row) => (

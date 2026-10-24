@@ -535,7 +535,7 @@ export function LibraryView({ rootId }: { rootId: RootId }) {
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-zinc-400" />
           <input
             ref={searchInput}
-            className="gz-input pr-8 pl-8"
+            className="lw-input pr-8 pl-8"
             placeholder="Search names and folders"
             aria-label="Search names and folders"
             title="Search  /"
@@ -552,7 +552,7 @@ export function LibraryView({ rootId }: { rootId: RootId }) {
             <button
               type="button"
               aria-label="Clear the search"
-              className="gz-btn gz-btn-ghost absolute top-1/2 right-1 size-6 -translate-y-1/2 rounded-md px-0 [&_svg]:size-3.5"
+              className="lw-btn lw-btn-ghost absolute top-1/2 right-1 size-6 -translate-y-1/2 rounded-md px-0 [&_svg]:size-3.5"
               onClick={() => {
                 setSearch("");
                 searchInput.current?.focus();
@@ -571,13 +571,13 @@ export function LibraryView({ rootId }: { rootId: RootId }) {
           onChange={changeFilters}
         />
 
-        <fieldset aria-label="Show as" className="gz-seg">
+        <fieldset aria-label="Show as" className="lw-seg">
           <button
             type="button"
             aria-pressed={mode === "list"}
             aria-label="List"
             title="List"
-            className="gz-seg-item px-2 [&_svg]:size-4"
+            className="lw-seg-item px-2 [&_svg]:size-4"
             onClick={() => setMode("list")}
           >
             <List />
@@ -587,7 +587,7 @@ export function LibraryView({ rootId }: { rootId: RootId }) {
             aria-pressed={mode === "grid"}
             aria-label="Grid"
             title="Grid"
-            className="gz-seg-item px-2 [&_svg]:size-4"
+            className="lw-seg-item px-2 [&_svg]:size-4"
             onClick={() => setMode("grid")}
           >
             <LayoutGrid />
@@ -599,7 +599,7 @@ export function LibraryView({ rootId }: { rootId: RootId }) {
           aria-pressed={inspectorOpen}
           aria-label="Inspector"
           title="Inspector  I"
-          className="gz-btn gz-btn-ghost gz-btn-icon aria-pressed:bg-zinc-900/[0.06] aria-pressed:text-zinc-900 dark:aria-pressed:bg-white/[0.07] dark:aria-pressed:text-zinc-100"
+          className="lw-btn lw-btn-ghost lw-btn-icon aria-pressed:bg-zinc-900/[0.06] aria-pressed:text-zinc-900 dark:aria-pressed:bg-white/[0.07] dark:aria-pressed:text-zinc-100"
           onClick={toggleInspector}
         >
           <PanelRight />
@@ -621,7 +621,7 @@ export function LibraryView({ rootId }: { rootId: RootId }) {
                 icon={SearchX}
                 title="No files match"
                 actions={
-                  <button type="button" className="gz-btn gz-btn-secondary" onClick={clearFilters}>
+                  <button type="button" className="lw-btn lw-btn-secondary" onClick={clearFilters}>
                     Clear filters
                   </button>
                 }

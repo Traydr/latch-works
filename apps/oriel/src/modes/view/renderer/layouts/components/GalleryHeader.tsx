@@ -49,7 +49,7 @@ export function GalleryHeader({
 }: GalleryHeaderProps): JSX.Element {
   return (
     <div className="pointer-events-none absolute left-1/2 top-4 z-20 w-[min(96vw,1120px)] -translate-x-1/2">
-      <header className="gz-drag prism-surface pointer-events-auto flex items-center justify-between gap-3 px-4 py-2">
+      <header className="lw-drag prism-surface pointer-events-auto flex items-center justify-between gap-3 px-4 py-2">
         <div className="flex min-w-24 flex-1 flex-col">
           <p
             className="truncate text-sm font-semibold tracking-tight"

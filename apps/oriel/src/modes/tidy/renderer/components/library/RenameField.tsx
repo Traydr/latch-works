@@ -38,7 +38,7 @@ export function RenameField({
     <input
       ref={input}
       aria-label={`New name for ${row.name}`}
-      className={`gz-input h-6 rounded-md px-1.5 ${className}`}
+      className={`lw-input h-6 rounded-md px-1.5 ${className}`}
       value={name}
       onClick={(event) => event.stopPropagation()}
       onDoubleClick={(event) => event.stopPropagation()}

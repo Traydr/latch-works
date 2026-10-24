@@ -24,8 +24,8 @@ const SECTIONS = [
 export function SettingsGroup({ title, children }: { title: ReactNode; children: ReactNode }) {
   return (
     <section className="mt-8 first:mt-0">
-      <h2 className="gz-heading mb-2 px-1">{title}</h2>
-      <div className="gz-card overflow-hidden">{children}</div>
+      <h2 className="lw-heading mb-2 px-1">{title}</h2>
+      <div className="lw-card overflow-hidden">{children}</div>
     </section>
   );
 }
@@ -41,10 +41,10 @@ export function SettingsRow({
   children?: ReactNode;
 }) {
   return (
-    <div className="flex min-h-[52px] items-center gap-4 border-t gz-divider px-4 py-2.5 first:border-t-0">
+    <div className="flex min-h-[52px] items-center gap-4 border-t lw-divider px-4 py-2.5 first:border-t-0">
       <div className="min-w-0 flex-1">
         <div className="text-[13px]">{label}</div>
-        {description ? <p className="gz-caption mt-0.5">{description}</p> : null}
+        {description ? <p className="lw-caption mt-0.5">{description}</p> : null}
       </div>
       {children ? <div className="flex shrink-0 items-center gap-2">{children}</div> : null}
     </div>
@@ -84,7 +84,7 @@ function GeneralSettings() {
         >
           <button
             type="button"
-            className="gz-btn gz-btn-secondary"
+            className="lw-btn lw-btn-secondary"
             onClick={() => bridge.revealDataFolder()}
           >
             <FolderOpen />
@@ -97,7 +97,7 @@ function GeneralSettings() {
         >
           <button
             type="button"
-            className="gz-btn gz-btn-secondary"
+            className="lw-btn lw-btn-secondary"
             onClick={() => bridge.importOldApps()}
           >
             Import…
@@ -105,7 +105,7 @@ function GeneralSettings() {
         </SettingsRow>
       </SettingsGroup>
 
-      {about ? <p className="gz-caption mt-6 px-1">Oriel {about.version}</p> : null}
+      {about ? <p className="lw-caption mt-6 px-1">Oriel {about.version}</p> : null}
     </>
   );
 }
@@ -139,15 +139,15 @@ export function SettingsFrame({ section }: { section: ReactNode }) {
 
   return (
     <div className="flex h-full min-h-0 overflow-hidden bg-white text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
-      <aside className="flex w-60 shrink-0 flex-col border-r gz-divider bg-zinc-50 dark:bg-zinc-900/60">
-        <div className="gz-drag h-[52px] w-full shrink-0" />
+      <aside className="flex w-60 shrink-0 flex-col border-r lw-divider bg-zinc-50 dark:bg-zinc-900/60">
+        <div className="lw-drag h-[52px] w-full shrink-0" />
         <nav aria-label="Settings sections" className="px-2">
           <ul className="space-y-0.5">
             {SECTIONS.map(({ id, label, icon: Icon }) => (
               <li key={id}>
                 <button
                   type="button"
-                  className="gz-sidebar-item"
+                  className="lw-sidebar-item"
                   aria-current={id === current.id ? "page" : undefined}
                   data-settings-section={id}
                   onClick={() => openSettings(id)}
@@ -161,11 +161,11 @@ export function SettingsFrame({ section }: { section: ReactNode }) {
         </nav>
       </aside>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="gz-drag flex h-[52px] shrink-0 items-center gap-4 border-b gz-divider px-5">
-          <h1 className="gz-title truncate">{current.label}</h1>
+        <header className="lw-drag flex h-[52px] shrink-0 items-center gap-4 border-b lw-divider px-5">
+          <h1 className="lw-title truncate">{current.label}</h1>
           <button
             type="button"
-            className="gz-btn gz-btn-secondary ml-auto"
+            className="lw-btn lw-btn-secondary ml-auto"
             aria-label="Close settings"
             title="Esc"
             onClick={closeSettings}

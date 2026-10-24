@@ -47,7 +47,7 @@ export function RunProgress({
         {pausable ? (
           <button
             type="button"
-            className="gz-btn gz-btn-ghost gz-btn-icon-sm"
+            className="lw-btn lw-btn-ghost lw-btn-icon-sm"
             aria-label={paused ? "Resume" : "Pause"}
             title={paused ? "Resume" : "Pause"}
             disabled={!job}
@@ -60,7 +60,7 @@ export function RunProgress({
         ) : null}
         <button
           type="button"
-          className="gz-btn gz-btn-secondary gz-btn-sm"
+          className="lw-btn lw-btn-secondary lw-btn-sm"
           title="Finished steps stay done"
           disabled={!job}
           onClick={() => job && void call("cancelJob", { jobId: job.id }).catch(report)}

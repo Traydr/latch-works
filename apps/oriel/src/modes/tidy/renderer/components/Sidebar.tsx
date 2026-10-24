@@ -105,7 +105,7 @@ function NavItem({
       <li>
         <button
           type="button"
-          className={`gz-sidebar-item relative justify-center px-0 ${RAIL_BUTTON} ${RAIL_ICON}`}
+          className={`lw-sidebar-item relative justify-center px-0 ${RAIL_BUTTON} ${RAIL_ICON}`}
           aria-current={navigation.view === view ? "page" : undefined}
           aria-label={label}
           data-view={view}
@@ -128,7 +128,7 @@ function NavItem({
     <li>
       <button
         type="button"
-        className="gz-sidebar-item"
+        className="lw-sidebar-item"
         aria-current={navigation.view === view ? "page" : undefined}
         data-view={view}
         title={`${label}  ${shortcut}`}
@@ -137,7 +137,7 @@ function NavItem({
         <Icon />
         <span className="min-w-0 flex-1 truncate">{label}</span>
         {count ? (
-          <span className="gz-sidebar-count" data-badge={view}>
+          <span className="lw-sidebar-count" data-badge={view}>
             {count}
           </span>
         ) : null}
@@ -155,7 +155,7 @@ function SettingsItem() {
     <li>
       <button
         type="button"
-        className={`gz-sidebar-item ${rail ? `relative justify-center px-0 ${RAIL_BUTTON} ${RAIL_ICON}` : ""}`}
+        className={`lw-sidebar-item ${rail ? `relative justify-center px-0 ${RAIL_BUTTON} ${RAIL_ICON}` : ""}`}
         aria-label={rail ? "Settings" : undefined}
         data-view="settings"
         title="Settings  ⌘,"
@@ -273,7 +273,7 @@ export function Sidebar({ onAddRoot, rail }: { onAddRoot: () => void; rail: bool
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[13px] font-semibold">{root.name}</span>
-                <span className="gz-caption block truncate">
+                <span className="lw-caption block truncate">
                   {plural(root.fileCount, "file")} · {formatBytes(root.totalBytes)}
                 </span>
               </span>
@@ -405,7 +405,7 @@ function Activity() {
 
     return (
       <div
-        className="gz-card gz-enter-rise mb-2 p-3"
+        className="lw-card lw-enter-rise mb-2 p-3"
         data-testid="activity"
         data-job-type={current.type}
         data-job-state={current.state}
@@ -413,14 +413,14 @@ function Activity() {
         <div className="flex items-baseline gap-2">
           <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{current.label}</span>
           {current.total > 0 ? (
-            <span className="gz-caption shrink-0">
+            <span className="lw-caption shrink-0">
               {formatCount(current.done)} of {formatCount(current.total)}
             </span>
           ) : null}
         </div>
         <ProgressBar ratio={ratio} muted={current.background} className="mt-2" />
         <div className="mt-1.5 flex items-center gap-1">
-          <span className="gz-caption min-w-0 flex-1 truncate">
+          <span className="lw-caption min-w-0 flex-1 truncate">
             {paused
               ? "Paused"
               : current.message && current.message !== current.label
@@ -434,7 +434,7 @@ function Activity() {
           {current.state === "running" || paused ? (
             <button
               type="button"
-              className="gz-btn gz-btn-ghost gz-btn-icon-sm"
+              className="lw-btn lw-btn-ghost lw-btn-icon-sm"
               aria-label={paused ? "Resume" : "Pause"}
               title={paused ? "Resume" : "Pause"}
               onClick={() =>
@@ -446,7 +446,7 @@ function Activity() {
           ) : null}
           <button
             type="button"
-            className="gz-btn gz-btn-ghost gz-btn-icon-sm"
+            className="lw-btn lw-btn-ghost lw-btn-icon-sm"
             aria-label="Stop"
             title="Stop (finished steps stay done and can be undone)"
             onClick={() => void call("cancelJob", { jobId: current.id }).catch(report)}
@@ -462,7 +462,7 @@ function Activity() {
     return (
       <button
         type="button"
-        className={`gz-btn gz-btn-ghost gz-btn-icon text-red-600 dark:text-red-400 ${RAIL_BUTTON} ${RAIL_ICON}`}
+        className={`lw-btn lw-btn-ghost lw-btn-icon text-red-600 dark:text-red-400 ${RAIL_BUTTON} ${RAIL_ICON}`}
         title={`${failed.label} failed: ${failed.message ?? ""}  (click to dismiss)`}
         aria-label={`${failed.label} failed`}
         data-testid="activity"
@@ -486,7 +486,7 @@ function Activity() {
           </p>
           <button
             type="button"
-            className="gz-btn gz-btn-ghost gz-btn-icon-sm -mt-1 -mr-1"
+            className="lw-btn lw-btn-ghost lw-btn-icon-sm -mt-1 -mr-1"
             aria-label="Dismiss"
             onClick={() => setDismissed(failed.id)}
           >

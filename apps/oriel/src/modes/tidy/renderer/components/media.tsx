@@ -71,7 +71,7 @@ export function Thumbnail({
       draggable={false}
       onError={() => setFailed(true)}
       style={box}
-      className={`gz-media-edge block shrink-0 bg-zinc-100 object-cover dark:bg-zinc-800 ${className}`}
+      className={`lw-media-edge block shrink-0 bg-zinc-100 object-cover dark:bg-zinc-800 ${className}`}
     />
   ) : (
     <span

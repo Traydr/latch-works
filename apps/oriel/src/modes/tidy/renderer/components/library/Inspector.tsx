@@ -32,12 +32,12 @@ export function Inspector(props: InspectorProps) {
   return (
     <aside
       aria-label="Inspector"
-      className="flex w-80 shrink-0 flex-col overflow-y-auto border-l gz-divider p-4"
+      className="flex w-80 shrink-0 flex-col overflow-y-auto border-l lw-divider p-4"
     >
       {count === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-2 pb-16 text-center">
           <MousePointerClick className="size-8 text-zinc-300 dark:text-zinc-600" />
-          <p className="gz-caption">Select a file to see it here</p>
+          <p className="lw-caption">Select a file to see it here</p>
         </div>
       ) : count === 1 ? (
         single ? (
@@ -74,7 +74,7 @@ function Preview({ row }: { row: FileRow }) {
 
   if (!showable) {
     return (
-      <div className="gz-well flex h-40 shrink-0 items-center justify-center">
+      <div className="lw-well flex h-40 shrink-0 items-center justify-center">
         <Thumbnail row={row} size={72} className="rounded-lg" />
       </div>
     );
@@ -93,7 +93,7 @@ function Preview({ row }: { row: FileRow }) {
         draggable={false}
         onError={() => setFailed(true)}
         style={{ width: Math.round(width * scale), height: Math.round(height * scale) }}
-        className="gz-media-edge rounded-xl bg-zinc-100 object-cover dark:bg-zinc-800"
+        className="lw-media-edge rounded-xl bg-zinc-100 object-cover dark:bg-zinc-800"
       />
     </div>
   );
@@ -139,7 +139,7 @@ function Actions({
       {convertible ? (
         <button
           type="button"
-          className={`gz-btn gz-btn-lg w-full ${primary ? "gz-btn-primary" : "gz-btn-secondary"}`}
+          className={`lw-btn lw-btn-lg w-full ${primary ? "lw-btn-primary" : "lw-btn-secondary"}`}
           onClick={onConvert}
         >
           {convert}
@@ -148,7 +148,7 @@ function Actions({
       <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
         <button
           type="button"
-          className="gz-btn gz-btn-secondary min-w-0 px-2.5"
+          className="lw-btn lw-btn-secondary min-w-0 px-2.5"
           title={count > 1 ? `Move ${plural(count, "file")} to holding  ⌘⌫` : "Move to holding  ⌘⌫"}
           onClick={onHold}
         >
@@ -156,7 +156,7 @@ function Actions({
         </button>
         <button
           type="button"
-          className="gz-btn gz-btn-secondary min-w-0 px-2.5"
+          className="lw-btn lw-btn-secondary min-w-0 px-2.5"
           title="Move to…  ⇧⌘M"
           onClick={onMoveTo}
         >
@@ -164,7 +164,7 @@ function Actions({
         </button>
         <button
           type="button"
-          className="gz-btn gz-btn-secondary gz-btn-icon"
+          className="lw-btn lw-btn-secondary lw-btn-icon"
           aria-label="Show in Finder"
           title={count > 1 ? "Show the first file in Finder  ⇧⌘R" : "Show in Finder  ⇧⌘R"}
           onClick={onReveal}
@@ -181,7 +181,7 @@ function Details({ row }: { row: FileRow }) {
   const issues = issuesOf(row);
 
   return (
-    <dl className="mt-5 flex flex-col gap-3 border-t gz-divider pt-4">
+    <dl className="mt-5 flex flex-col gap-3 border-t lw-divider pt-4">
       <Fact label="Path">
         <span className="break-all">{row.relPath}</span>
       </Fact>
@@ -215,7 +215,7 @@ function Details({ row }: { row: FileRow }) {
 function Fact({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div>
-      <dt className="gz-caption">{label}</dt>
+      <dt className="lw-caption">{label}</dt>
       <dd className="mt-0.5 text-[13px] text-zinc-900 dark:text-zinc-100">{children}</dd>
     </div>
   );

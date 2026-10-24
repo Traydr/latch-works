@@ -27,7 +27,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       return (
         <ModeLayout>
           <div className="flex flex-1 items-center justify-center bg-zinc-50 p-6 dark:bg-zinc-950">
-            <section className="gz-card max-w-lg p-5">
+            <section className="lw-card max-w-lg p-5">
               <h1 className="text-lg font-semibold tracking-tight">Tidy hit a renderer error</h1>
               <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-300">
                 {this.state.error.message}

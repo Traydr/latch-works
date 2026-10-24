@@ -29,27 +29,27 @@ export function SelectionBar({
     <div
       role="toolbar"
       aria-label="Selection"
-      className="gz-float gz-enter-rise absolute bottom-5 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1.5 p-1.5"
+      className="lw-float lw-enter-rise absolute bottom-5 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1.5 p-1.5"
     >
-      <span className="gz-caption px-2 whitespace-nowrap">
+      <span className="lw-caption px-2 whitespace-nowrap">
         {formatCount(count)} selected
         {summary ? ` · ${formatBytes(summary.bytes)}` : ""}
       </span>
       <span className="h-5 w-px bg-zinc-200 dark:bg-white/10" />
       {summary && summary.convertible.files > 0 ? (
-        <button type="button" className="gz-btn gz-btn-primary" onClick={onConvert}>
+        <button type="button" className="lw-btn lw-btn-primary" onClick={onConvert}>
           {convertLabel(summary.convertible.files, summary.files)}
         </button>
       ) : null}
-      <button type="button" className="gz-btn gz-btn-secondary" title="⌘⌫" onClick={onHold}>
+      <button type="button" className="lw-btn lw-btn-secondary" title="⌘⌫" onClick={onHold}>
         Move to holding
       </button>
-      <button type="button" className="gz-btn gz-btn-secondary" title="⇧⌘M" onClick={onMoveTo}>
+      <button type="button" className="lw-btn lw-btn-secondary" title="⇧⌘M" onClick={onMoveTo}>
         Move to…
       </button>
       <button
         type="button"
-        className="gz-btn gz-btn-ghost gz-btn-icon"
+        className="lw-btn lw-btn-ghost lw-btn-icon"
         aria-label="More actions"
         title="More actions"
         onClick={onMore}
@@ -58,7 +58,7 @@ export function SelectionBar({
       </button>
       <button
         type="button"
-        className="gz-btn gz-btn-ghost gz-btn-icon"
+        className="lw-btn lw-btn-ghost lw-btn-icon"
         aria-label="Clear selection"
         title="Esc"
         onClick={onClear}

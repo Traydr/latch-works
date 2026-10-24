@@ -91,7 +91,7 @@ export function FileTable(props: FileTableProps) {
       <button
         type="button"
         onClick={() => onSort(column, active ? !descending : DESCENDING_FIRST.has(column))}
-        className={`gz-focus flex h-full min-w-0 items-center gap-1 rounded-md hover:text-zinc-800 dark:hover:text-zinc-200 ${
+        className={`lw-focus flex h-full min-w-0 items-center gap-1 rounded-md hover:text-zinc-800 dark:hover:text-zinc-200 ${
           align === "right" ? "flex-row-reverse" : ""
         } ${active ? "text-zinc-800 dark:text-zinc-200" : ""}`}
       >
@@ -110,13 +110,13 @@ export function FileTable(props: FileTableProps) {
     >
       <div
         style={{ gridTemplateColumns: columns.template, height: HEADER_HEIGHT }}
-        className="group/head sticky top-0 z-10 grid items-center gap-x-3 border-b gz-divider bg-white/95 px-4 text-xs font-medium text-zinc-500 backdrop-blur dark:bg-zinc-950/95"
+        className="group/head sticky top-0 z-10 grid items-center gap-x-3 border-b lw-divider bg-white/95 px-4 text-xs font-medium text-zinc-500 backdrop-blur dark:bg-zinc-950/95"
       >
         <input
           type="checkbox"
           aria-label="Select every matching file"
           title="Select every matching file  ⌘A"
-          className={`gz-check ${choosing ? "" : "opacity-0 group-hover/head:opacity-100 focus-visible:opacity-100"}`}
+          className={`lw-check ${choosing ? "" : "opacity-0 group-hover/head:opacity-100 focus-visible:opacity-100"}`}
           checked={allSelected}
           onChange={(event) =>
             event.target.checked ? props.onSelectAll() : props.onSelect(new Set())
@@ -150,14 +150,14 @@ export function FileTable(props: FileTableProps) {
               onClick={(event) => cursorKeys.click(index, row, event)}
               onDoubleClick={() => props.onOpen(row)}
               onContextMenu={(event) => cursorKeys.contextMenu(index, row, event)}
-              className={`group absolute inset-x-0 grid cursor-default items-center gap-x-3 border-b border-zinc-100 px-4 text-[13px] gz-focus select-none dark:border-white/[0.04] ${
-                selected.has(row.id) ? "gz-selected" : "gz-hover"
+              className={`group absolute inset-x-0 grid cursor-default items-center gap-x-3 border-b border-zinc-100 px-4 text-[13px] lw-focus select-none dark:border-white/[0.04] ${
+                selected.has(row.id) ? "lw-selected" : "lw-hover"
               } ${index === cursor ? "shadow-[inset_2px_0_0_var(--color-zinc-400)] dark:shadow-[inset_2px_0_0_var(--color-zinc-500)]" : ""}`}
             >
               <input
                 type="checkbox"
                 aria-label={`Select ${row.name}`}
-                className={`gz-check ${choosing ? "" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"}`}
+                className={`lw-check ${choosing ? "" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"}`}
                 checked={selected.has(row.id)}
                 onClick={(event) => event.stopPropagation()}
                 onChange={(event) => cursorKeys.toggle(index, row, event.target.checked)}
@@ -186,7 +186,7 @@ export function FileTable(props: FileTableProps) {
                       ) : null}
                     </span>
                   )}
-                  <StartTruncate text={row.dir || props.rootName} className="gz-caption" />
+                  <StartTruncate text={row.dir || props.rootName} className="lw-caption" />
                 </span>
               </span>
               <span className="flex min-w-0 items-center gap-1.5 text-zinc-600 dark:text-zinc-300">

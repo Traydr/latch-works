@@ -206,12 +206,12 @@ export function ViewSettings({
           label="Thumbnail cache"
           description="Kept so folders open quickly; made again as they are needed."
         >
-          <button type="button" className="gz-btn gz-btn-secondary" onClick={onClearThumbnailCache}>
+          <button type="button" className="lw-btn lw-btn-secondary" onClick={onClearThumbnailCache}>
             Clear thumbnail cache
           </button>
         </SettingsRow>
         <SettingsRow label="Media index" description={describeIndex(mediaIndexStats)}>
-          <button type="button" className="gz-btn gz-btn-secondary" onClick={onClearMediaIndex}>
+          <button type="button" className="lw-btn lw-btn-secondary" onClick={onClearMediaIndex}>
             Clear media index
           </button>
         </SettingsRow>
@@ -224,7 +224,7 @@ export function ViewSettings({
           }
         >
           {mediaToolsStatus ? (
-            <span className="gz-caption">
+            <span className="lw-caption">
               {mediaToolsStatus.ffmpegAvailable && mediaToolsStatus.ffprobeAvailable
                 ? "Available"
                 : "Not available"}

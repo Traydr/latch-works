@@ -269,7 +269,7 @@ export function HistoryView({ rootId }: { rootId: RootId }) {
                 <h2 className={`pb-2 text-xs font-medium text-zinc-500 ${index > 0 ? "pt-6" : ""}`}>
                   {day.label}
                 </h2>
-                <ul className="gz-card overflow-hidden">
+                <ul className="lw-card overflow-hidden">
                   {day.entries.map((entry) => (
                     <ChangeRow
                       key={entry.key}
@@ -357,7 +357,7 @@ function ChangeRow({
     <li
       data-plan={latest.id}
       data-status={latest.status}
-      className="border-t gz-divider first:border-t-0"
+      className="border-t lw-divider first:border-t-0"
     >
       <div className="group relative flex h-14 items-center gap-3 px-4">
         <button
@@ -367,18 +367,18 @@ function ChangeRow({
           aria-label={title}
           onFocus={onFocus}
           onClick={onToggle}
-          className="gz-focus absolute inset-0 transition-[background-color] duration-150 hover:bg-zinc-900/[0.03] dark:hover:bg-white/[0.03]"
+          className="lw-focus absolute inset-0 transition-[background-color] duration-150 hover:bg-zinc-900/[0.03] dark:hover:bg-white/[0.03]"
         />
         <PlanIcon kind={latest.kind} />
         <div className="pointer-events-none relative min-w-0 flex-1">
           <p className={`truncate text-sm font-medium ${undone ? "text-zinc-500" : ""}`}>{title}</p>
-          <p className="gz-caption truncate">{entryDetail(entry)}</p>
+          <p className="lw-caption truncate">{entryDetail(entry)}</p>
         </div>
         {status ? (
-          <span className="gz-badge gz-badge-warn pointer-events-none relative">{status}</span>
+          <span className="lw-badge lw-badge-warn pointer-events-none relative">{status}</span>
         ) : null}
         <time
-          className="gz-caption relative shrink-0"
+          className="lw-caption relative shrink-0"
           dateTime={new Date(latest.createdAt).toISOString()}
           title={formatDateTime(latest.createdAt)}
         >
@@ -390,7 +390,7 @@ function ChangeRow({
             title="Undo  U"
             disabled={undoing}
             onClick={onUndo}
-            className={`gz-btn gz-btn-secondary gz-btn-sm relative ${
+            className={`lw-btn lw-btn-secondary lw-btn-sm relative ${
               newest
                 ? ""
                 : "opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100"
@@ -407,7 +407,7 @@ function ChangeRow({
         />
       </div>
       {expanded ? (
-        <div className="border-t gz-divider bg-zinc-900/[0.02] dark:bg-white/[0.02]">
+        <div className="border-t lw-divider bg-zinc-900/[0.02] dark:bg-white/[0.02]">
           {children}
         </div>
       ) : null}
