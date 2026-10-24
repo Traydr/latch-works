@@ -24,7 +24,10 @@ interface RunPanelProps {
   onDone: () => void;
 }
 
-/** The right-hand panel: shown while a run goes, and after a push or prune until dismissed. */
+/**
+ * The run, floating over the plan's lower right: shown while a run goes, and after a push or
+ * prune until dismissed.
+ */
 export function RunPanel({ run, plan, onDone }: RunPanelProps) {
   const { running, runProgress: progress } = run;
   const now = useNow(running, 500);
@@ -35,25 +38,25 @@ export function RunPanel({ run, plan, onDone }: RunPanelProps) {
   return (
     <aside
       aria-label="Run"
-      className="flex w-[268px] shrink-0 flex-col border-l border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/60"
+      className="lw-float lw-enter-rise absolute right-4 bottom-4 z-30 flex w-[300px] flex-col overflow-hidden"
     >
       {itemRun && progress.queuedAt != null ? (
         <ItemRunBody run={run} now={endedAt} elapsed={elapsed} />
       ) : (
         <PreparingBody run={run} elapsed={elapsed} />
       )}
-      <div className="mt-auto flex flex-col gap-2 p-3">
+      <div className="flex flex-col gap-2 p-4">
         {running ? (
           <>
             <button
               type="button"
-              className="ls-btn ls-btn-danger h-7"
+              className="lw-btn lw-btn-secondary"
               onClick={() => void run.handleCancel()}
             >
               Cancel {progress.kind || "run"}
             </button>
             {progress.kind === "push" ? (
-              <p className="text-[10.5px] leading-snug text-zinc-500">
+              <p className="lw-caption">
                 Items already uploading finish first. Pushing again picks up what is left.
               </p>
             ) : null}
@@ -72,14 +75,14 @@ function FinishedActions({ run, plan, onDone }: RunPanelProps) {
 
   return (
     <>
-      <button type="button" className="ls-btn ls-btn-cta h-7" onClick={onDone}>
+      <button type="button" className="lw-btn lw-btn-primary" onClick={onDone}>
         Done
       </button>
       {progress.kind === "push" && prune.enabled ? (
         <button
           type="button"
           data-action="prune"
-          className="ls-btn ls-btn-danger h-7"
+          className="lw-btn lw-btn-danger"
           onClick={() => void run.handlePrune()}
           title={`Delete the ${describeRemoteEntries(prune.deleteCount)} the reviewed plan lists`}
         >
@@ -87,7 +90,11 @@ function FinishedActions({ run, plan, onDone }: RunPanelProps) {
         </button>
       ) : null}
       {progress.kind === "push" && progress.failed > 0 ? (
-        <button type="button" className="ls-btn h-7" onClick={() => void run.handlePush()}>
+        <button
+          type="button"
+          className="lw-btn lw-btn-secondary"
+          onClick={() => void run.handlePush()}
+        >
           Retry {progress.failed.toLocaleString()} failed
         </button>
       ) : null}
@@ -107,21 +114,17 @@ function PreparingBody({ run, elapsed }: { run: RunController; elapsed: number }
         : `Preparing ${progress.kind || "run"}`;
 
   return (
-    <div className="flex flex-col gap-3 border-b border-zinc-200 p-3 dark:border-zinc-800">
-      <div className="flex items-baseline">
-        <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-          {running ? title : runLabel}
-        </span>
-        <span className="ml-auto ls-mono text-[10.5px] text-zinc-500 tabular-nums">
-          {formatClock(elapsed)}
-        </span>
+    <div className="flex flex-col gap-3 border-b lw-divider p-4">
+      <div className="flex items-baseline gap-2">
+        <span className="lw-heading min-w-0 truncate">{running ? title : runLabel}</span>
+        <span className="lw-caption ml-auto tabular-nums">{formatClock(elapsed)}</span>
       </div>
-      <ProgressBar percent={running ? null : 1} indeterminate={running} />
-      <p className="truncate ls-mono text-[10.5px] text-zinc-500" title={runLabel}>
+      <ProgressBar percent={running ? null : 1} />
+      <p className="lw-caption truncate" title={runLabel}>
         {runLabel}
       </p>
       {progress.scanFilesFound > 0 ? (
-        <div className="grid grid-cols-2 gap-2.5">
+        <div className="grid grid-cols-2 gap-3">
           <Stat label="files" value={progress.scanFilesFound.toLocaleString()} />
           <Stat label="hashed" value={formatBytes(progress.bytesHashed)} />
         </div>
@@ -172,48 +175,44 @@ function ItemRunBody({ run, now, elapsed }: { run: RunController; now: number; e
 
   return (
     <>
-      <div className="border-b border-zinc-200 p-3 dark:border-zinc-800">
+      <div className="border-b lw-divider p-4">
         {running ? (
           <div className="flex items-baseline">
-            <span className="text-[26px] leading-none font-semibold tracking-tight text-zinc-900 tabular-nums dark:text-zinc-100">
-              {Math.floor(percent * 100)}%
-            </span>
-            <span className="ml-auto ls-mono text-[11px] text-zinc-500 tabular-nums">
-              {remainingMs == null ? "ETA —" : `ETA ${formatClock(remainingMs)}`}
+            <span className="lw-display tabular-nums">{Math.floor(percent * 100)}%</span>
+            <span className="lw-caption ml-auto tabular-nums">
+              {remainingMs == null ? "Estimating…" : `${formatClock(remainingMs)} left`}
             </span>
           </div>
         ) : (
-          <div className="flex items-baseline">
-            <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+          <div className="flex items-baseline gap-2">
+            <span className="lw-heading min-w-0 truncate">
               {finishedTitle(progress.kind, progress.phase, progress.failed)}
             </span>
-            <span className="ml-auto ls-mono text-[10.5px] text-zinc-500 tabular-nums">
-              {formatClock(elapsed)}
-            </span>
+            <span className="lw-caption ml-auto tabular-nums">{formatClock(elapsed)}</span>
           </div>
         )}
-        <ProgressBar percent={percent} tone={tone} className="mt-2.5 h-2" />
-        <div className="mt-1.5 flex ls-mono text-[10.5px] text-zinc-500 tabular-nums">
+        <ProgressBar percent={percent} tone={tone} className="mt-3 h-1.5" />
+        <div className="lw-caption mt-2 flex tabular-nums">
           <span>
             {byBytes
               ? `${formatBytes(bytesProcessed)} / ${formatBytes(progress.bytesTotal)}`
               : `${processed.toLocaleString()} / ${progress.itemTotal.toLocaleString()} items`}
           </span>
-          {running ? <span className="ml-auto">elapsed {formatClock(elapsed)}</span> : null}
+          {running ? <span className="ml-auto">{formatClock(elapsed)} so far</span> : null}
         </div>
       </div>
       {byBytes ? (
-        <div className="border-b border-zinc-200 p-3 dark:border-zinc-800">
+        <div className="border-b lw-divider p-4">
           <div className="flex items-baseline">
-            <span className="ls-label">Throughput</span>
-            <span className="ml-auto ls-mono text-xs text-zinc-800 tabular-nums dark:text-zinc-100">
-              {formatBytes(rate)}/s{running ? "" : " avg"}
+            <span className="lw-caption">Throughput</span>
+            <span className="ml-auto text-[13px] font-medium tabular-nums">
+              {formatBytes(rate)}/s{running ? "" : " on average"}
             </span>
           </div>
           <ThroughputChart run={run} now={now} />
         </div>
       ) : null}
-      <div className="grid grid-cols-2 gap-2.5 border-b border-zinc-200 p-3 dark:border-zinc-800">
+      <div className="grid grid-cols-2 gap-3 border-b lw-divider p-4">
         <Stat
           label={verb}
           value={`${progress.pushed.toLocaleString()} / ${progress.itemTotal.toLocaleString()}`}
@@ -279,12 +278,12 @@ function ThroughputChart({ run, now }: { run: RunController; now: number }) {
       aria-label="Upload throughput over the run"
     >
       <defs>
-        <linearGradient id="ls-throughput-fill" x1="0" y1="0" x2="0" y2="1">
+        <linearGradient id="sync-throughput-fill" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stopColor="#8b5cf6" stopOpacity="0.35" />
           <stop offset="1" stopColor="#8b5cf6" stopOpacity="0" />
         </linearGradient>
       </defs>
-      <path d={area} fill="url(#ls-throughput-fill)" />
+      <path d={area} fill="url(#sync-throughput-fill)" />
       <path
         d={line}
         fill="none"
@@ -316,10 +315,10 @@ function ThroughputChart({ run, now }: { run: RunController; now: number }) {
 function Stat({ label, value, tone }: { label: string; value: string; tone?: string }) {
   return (
     <div className="min-w-0">
-      <p className="ls-label">{label}</p>
+      <p className="lw-caption first-letter:uppercase">{label}</p>
       <p
         data-stat={label}
-        className={`mt-0.5 truncate ls-mono text-base tabular-nums ${tone ?? "text-zinc-800 dark:text-zinc-200"}`}
+        className={`mt-0.5 truncate text-[15px] font-semibold tabular-nums ${tone ?? "text-zinc-900 dark:text-zinc-100"}`}
       >
         {value}
       </p>

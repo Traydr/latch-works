@@ -124,7 +124,7 @@ export interface SessionController {
 }
 
 /** Profile setup screen (create or edit) and profile deletion. */
-interface ProfileController {
+export interface ProfileController {
   profileForm: ProfileFormState;
   setProfileForm: React.Dispatch<React.SetStateAction<ProfileFormState>>;
   /** The saved profile the form edits, or null when it creates a new one. */

@@ -1,49 +1,91 @@
 import { formatBytes } from "@latch-works/media-domain";
-import { ArrowUp, Lock, RotateCw, Search, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { ArrowUp, Lock, MoreHorizontal, RotateCw, Search, X } from "lucide-react";
+import { type ReactNode, useMemo, useState } from "react";
 
+import { EmptyState, Kbd, Menu, MenuSeparator, Spinner, TopBar } from "../../../../ui/ui";
 import type { LockstepPlan, LockstepProfilePublic } from "../../shared/types";
 import type {
   PlanController,
+  ProfileController,
   RunController,
   SessionController,
 } from "../hooks/useLockstepController";
+import { describeLastRun } from "../lib/profile-status";
 import { formatAgo } from "../lib/run-formatters";
+import { AlertBanner } from "./AlertBanner";
 import { DoctorCheckList } from "./DoctorCheckList";
 import { PlanTree } from "./PlanTree";
-import { ACTION_DOT, Spinner, useNow } from "./syncPrimitives";
+import { ACTION_DOT, useNow } from "./syncPrimitives";
 import { TokenInput } from "./TokenInput";
 
 type ChangeAction = "upload" | "update" | "delete";
 
 const CHANGE_ACTIONS = ["upload", "update", "delete"] as const satisfies readonly ChangeAction[];
 
-const CHIP_TONE = {
-  upload: "border-sky-500/50 bg-sky-500/10 text-sky-700 dark:text-sky-300",
-  update: "border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-300",
-  delete: "border-red-500/50 bg-red-500/10 text-red-700 dark:text-red-300",
+const CHANGE_LABEL = {
+  upload: "upload",
+  update: "update",
+  delete: "delete",
 } satisfies Record<ChangeAction, string>;
 
 type RunFilter = "all" | "remaining" | "done" | "failed";
 
-const RUN_FILTERS = ["all", "remaining", "done", "failed"] as const satisfies readonly RunFilter[];
+const RUN_FILTERS = [
+  { value: "all", label: "All" },
+  { value: "remaining", label: "Remaining" },
+  { value: "done", label: "Done" },
+  { value: "failed", label: "Failed" },
+] as const satisfies ReadonlyArray<{ value: RunFilter; label: string }>;
 
 export const PLAN_FILTER_INPUT_ID = "plan-path-filter";
 
 interface PlanWorkspaceProps {
   profile: LockstepProfilePublic;
   session: SessionController;
+  profiles: ProfileController;
   plan: PlanController;
   run: RunController;
   /** The run panel is open on a push or prune, so rows show their run state. */
   showRunState: boolean;
+  onToggleLog: () => void;
 }
 
-export function PlanWorkspace({ profile, session, plan, run, showRunState }: PlanWorkspaceProps) {
+/** The active profile's page: its plan, or the empty state before one, under its top bar. */
+export function PlanWorkspace({
+  profile,
+  session,
+  profiles,
+  plan,
+  run,
+  showRunState,
+  onToggleLog,
+}: PlanWorkspaceProps) {
   const current = plan.plan;
+  const now = useNow(true, 30_000);
+
+  const meta = current
+    ? [
+        plan.plannedAt ? `Planned ${formatAgo(plan.plannedAt, now)}` : null,
+        `${current.totalFiles.toLocaleString()} files`,
+        formatBytes(current.totalBytes),
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : describeLastRun(profile, now);
 
   return (
     <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <TopBar title={profile.name} meta={meta}>
+        <ProfileMenu profile={profile} profiles={profiles} run={run} onToggleLog={onToggleLog} />
+        {current ? (
+          <PlanActions current={current} plan={plan} run={run} showRunState={showRunState} />
+        ) : null}
+      </TopBar>
+      {session.error ? (
+        <div className="shrink-0 px-5 pt-3">
+          <AlertBanner message={session.error} />
+        </div>
+      ) : null}
       {current ? (
         <PlanView
           key={current.planId}
@@ -57,28 +99,29 @@ export function PlanWorkspace({ profile, session, plan, run, showRunState }: Pla
         <NoPlan profile={profile} run={run} />
       )}
       {!profile.tokenConfigured || plan.doctorResult ? (
-        <div className="flex shrink-0 flex-col gap-3 border-t border-zinc-200 p-3 dark:border-zinc-800">
+        <div className="flex shrink-0 flex-col gap-4 border-t lw-divider px-5 py-4">
           <TokenInput
             value={session.sessionToken}
             onChange={session.setSessionToken}
             profile={profile}
           />
           {plan.doctorResult ? (
-            <section aria-label="Doctor">
-              <div className="mb-2 flex items-center">
-                <span className="ls-label">
-                  Doctor · {plan.doctorResult.ok ? "all checks passed" : "some checks failed"}
-                </span>
+            <section aria-label="Connection check">
+              <div className="mb-2 flex items-center gap-2">
+                <h2 className="lw-heading">
+                  {plan.doctorResult.ok ? "Every check passed" : "Some checks failed"}
+                </h2>
                 <button
                   type="button"
-                  className="ls-btn ls-btn-ghost ml-auto h-5 px-1"
+                  className="lw-btn lw-btn-ghost lw-btn-icon-sm ml-auto"
                   onClick={plan.dismissDoctorResult}
-                  title="Dismiss doctor result"
+                  title="Dismiss"
+                  aria-label="Dismiss the connection check"
                 >
-                  <X className="size-3" aria-hidden />
+                  <X />
                 </button>
               </div>
-              <div className="max-h-40 overflow-auto">
+              <div className="max-h-48 overflow-auto">
                 <DoctorCheckList result={plan.doctorResult} />
               </div>
             </section>
@@ -89,30 +132,151 @@ export function PlanWorkspace({ profile, session, plan, run, showRunState }: Pla
   );
 }
 
+/** The profile's own actions, which Lockstep kept in the profile rail's menu. */
+function ProfileMenu({
+  profile,
+  profiles,
+  run,
+  onToggleLog,
+}: {
+  profile: LockstepProfilePublic;
+  profiles: ProfileController;
+  run: RunController;
+  onToggleLog: () => void;
+}) {
+  const item = (label: ReactNode, action: () => void, close: () => void, disabled = false) => (
+    <button
+      type="button"
+      role="menuitem"
+      className="lw-menu-item"
+      disabled={disabled}
+      onClick={() => {
+        close();
+        action();
+      }}
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <Menu icon variant="ghost" title="Profile actions" label={<MoreHorizontal />}>
+      {(close) => (
+        <>
+          {item("Edit profile…", () => profiles.startEditProfile(profile.id), close, run.running)}
+          {item("Check connection", () => void run.handleDoctor(), close, run.running)}
+          {item(
+            <>
+              Run log <span className="lw-menu-meta">⌘L</span>
+            </>,
+            onToggleLog,
+            close,
+          )}
+          <MenuSeparator />
+          {item(
+            <span className="text-red-600 dark:text-red-400">Delete profile…</span>,
+            () => void profiles.handleDeleteProfile(profile.id),
+            close,
+            run.running,
+          )}
+        </>
+      )}
+    </Menu>
+  );
+}
+
+function PlanActions({
+  current,
+  plan,
+  run,
+  showRunState,
+}: {
+  current: LockstepPlan;
+  plan: PlanController;
+  run: RunController;
+  showRunState: boolean;
+}) {
+  const pushCount = current.counts.upload + current.counts.update;
+
+  const pushBytes = current.items.reduce(
+    (sum, item) =>
+      item.action === "upload" || item.action === "update" ? sum + (item.size ?? 0) : sum,
+    0,
+  );
+
+  const prune = plan.pruneAvailability;
+  const pushed = plan.pipelineProgress.pushCompleted;
+
+  return (
+    <>
+      <button
+        type="button"
+        data-action="plan"
+        className={`lw-btn ${pushed && !showRunState ? "lw-btn-primary" : "lw-btn-secondary"}`}
+        disabled={run.running}
+        onClick={() => void run.handlePlan()}
+      >
+        <RotateCw /> Re-plan
+      </button>
+      {current.counts.delete > 0 ? (
+        <button
+          type="button"
+          data-action="prune"
+          className={`lw-btn ${prune.enabled ? "lw-btn-danger" : "lw-btn-secondary"}`}
+          disabled={run.running || !prune.enabled}
+          title={
+            prune.enabled
+              ? `Delete the ${prune.deleteCount.toLocaleString()} remote entries this plan lists`
+              : prune.reason
+          }
+          onClick={() => void run.handlePrune()}
+        >
+          {prune.enabled ? null : <Lock />}
+          Prune {current.counts.delete.toLocaleString()}
+          {prune.enabled ? "…" : ""}
+        </button>
+      ) : null}
+      {pushed ? null : (
+        <button
+          type="button"
+          data-action="push"
+          className="lw-btn lw-btn-primary"
+          disabled={run.running || pushCount === 0}
+          onClick={() => void run.handlePush()}
+        >
+          <ArrowUp />
+          {pushCount === 0
+            ? "Nothing to push"
+            : `Push ${pushCount.toLocaleString()} · ${formatBytes(pushBytes)}`}
+        </button>
+      )}
+    </>
+  );
+}
+
 function NoPlan({ profile, run }: { profile: LockstepProfilePublic; run: RunController }) {
   const planning = run.running && run.runProgress.kind === "plan";
 
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
-      <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">No plan yet</h2>
-      <p className="max-w-sm text-xs leading-relaxed text-zinc-500">
-        Plan scans{" "}
-        <span className="ls-mono text-zinc-700 dark:text-zinc-300">{profile.sourceRoot}</span> and
-        compares it with{" "}
-        <span className="ls-mono text-zinc-700 dark:text-zinc-300">{profile.apiUrl}</span>. Nothing
-        changes on the server until you push.
-      </p>
-      <button
-        type="button"
-        data-action="plan"
-        className="ls-btn ls-btn-cta h-8 px-4"
-        disabled={run.running}
-        onClick={() => void run.handlePlan()}
-      >
-        {planning ? <Spinner className="border-white/30 border-t-white" /> : null}
-        {planning ? "Planning…" : "Plan"}
-      </button>
-    </div>
+    <EmptyState
+      title="No plan yet"
+      actions={
+        <button
+          type="button"
+          data-action="plan"
+          className="lw-btn lw-btn-primary lw-btn-lg"
+          disabled={run.running}
+          onClick={() => void run.handlePlan()}
+        >
+          {planning ? <Spinner className="border-white/30 border-t-white" /> : null}
+          {planning ? "Planning…" : "Plan"}
+        </button>
+      }
+    >
+      Plan compares <span className="text-zinc-800 dark:text-zinc-200">{profile.sourceRoot}</span>{" "}
+      with <span className="text-zinc-800 dark:text-zinc-200">{profile.apiUrl}</span>. Nothing
+      changes on the server until you push.
+    </EmptyState>
   );
 }
 
@@ -132,7 +296,6 @@ function PlanView({
   const [actionFilter, setActionFilter] = useState<ReadonlySet<ChangeAction>>(() => new Set());
   const [runFilter, setRunFilter] = useState<RunFilter>("all");
   const [showSkipped, setShowSkipped] = useState(false);
-  const now = useNow(true, 30_000);
 
   const bytesByAction = useMemo(() => {
     const bytes = { upload: 0, update: 0, delete: 0, keep: 0 };
@@ -210,84 +373,32 @@ function PlanView({
     });
   };
 
-  const pushCount = current.counts.upload + current.counts.update;
-  const pushBytes = bytesByAction.upload + bytesByAction.update;
-  const prune = plan.pruneAvailability;
-  const pushed = plan.pipelineProgress.pushCompleted;
-  const changeCount = pushCount + current.counts.delete;
+  const changeCount = current.counts.upload + current.counts.update + current.counts.delete;
 
   return (
     <>
-      <header className="shrink-0 border-b border-zinc-200 px-3 pt-2.5 pb-2 dark:border-zinc-800">
-        <div className="flex items-center gap-2">
-          <h2 className="text-[13px] font-semibold text-zinc-900 dark:text-zinc-100">Plan</h2>
-          <span className="truncate ls-mono text-[10.5px] text-zinc-500">
-            {plan.plannedAt ? `${formatAgo(plan.plannedAt, now)} · ` : ""}
-            {current.totalFiles.toLocaleString()} files · {formatBytes(current.totalBytes)}
-          </span>
-          <div className="ml-auto flex shrink-0 items-center gap-1.5">
-            <button
-              type="button"
-              data-action="plan"
-              className={`ls-btn h-7 ${pushed && !showRunState ? "ls-btn-cta px-3" : "ls-btn-ghost"}`}
-              disabled={run.running}
-              onClick={() => void run.handlePlan()}
-            >
-              <RotateCw className="size-3" aria-hidden /> Re-plan
-            </button>
-            {current.counts.delete > 0 ? (
-              <button
-                type="button"
-                data-action="prune"
-                className={`ls-btn h-7 ${prune.enabled ? "ls-btn-danger" : ""}`}
-                disabled={run.running || !prune.enabled}
-                title={
-                  prune.enabled
-                    ? `Delete the ${prune.deleteCount.toLocaleString()} remote entries this plan lists`
-                    : prune.reason
-                }
-                onClick={() => void run.handlePrune()}
-              >
-                {prune.enabled ? null : <Lock className="size-3" aria-hidden />}
-                Prune {current.counts.delete.toLocaleString()}
-                {prune.enabled ? "…" : ""}
-              </button>
-            ) : null}
-            {pushed ? null : (
-              <button
-                type="button"
-                data-action="push"
-                className="ls-btn ls-btn-cta h-7 px-3"
-                disabled={run.running || pushCount === 0}
-                onClick={() => void run.handlePush()}
-              >
-                <ArrowUp className="size-3" aria-hidden />
-                {pushCount === 0
-                  ? "Nothing to push"
-                  : `Push ${pushCount.toLocaleString()} · ${formatBytes(pushBytes)}`}
-              </button>
-            )}
-          </div>
-        </div>
-        <p className="mt-0.5 truncate ls-mono text-[10.5px] text-zinc-500" title={profile.apiUrl}>
+      <div className="shrink-0 border-b lw-divider px-5 py-2.5">
+        <p className="lw-caption truncate" title={`${current.sourceRoot} → ${profile.apiUrl}`}>
           {current.sourceRoot} → {profile.apiUrl}
         </p>
-        <div className="mt-2 flex items-center gap-1.5">
+        <div className="mt-2 flex items-center gap-2">
           {showRunState ? (
-            <div className="flex items-center gap-1" role="tablist" aria-label="Run filter">
-              {RUN_FILTERS.map((filter) => (
+            <fieldset aria-label="Run filter" className="lw-seg">
+              {RUN_FILTERS.map(({ value, label }) => (
                 <button
-                  key={filter}
+                  key={value}
                   type="button"
-                  role="tab"
-                  aria-selected={runFilter === filter}
-                  onClick={() => setRunFilter(filter)}
-                  className={`rounded px-2 py-1 text-xs capitalize transition ${runFilter === filter ? "bg-zinc-200 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100" : "text-zinc-500 hover:bg-zinc-200/60 dark:hover:bg-zinc-800/60"} ${filter === "failed" && runCounts.failed > 0 ? "text-red-600 dark:text-red-300" : ""}`}
+                  aria-pressed={runFilter === value}
+                  onClick={() => setRunFilter(value)}
+                  className={`lw-seg-item ${value === "failed" && runCounts.failed > 0 ? "text-red-600 dark:text-red-400" : ""}`}
                 >
-                  {filter} {runCounts[filter].toLocaleString()}
+                  {label}
+                  <span className="text-xs text-zinc-400 dark:text-zinc-500">
+                    {runCounts[value].toLocaleString()}
+                  </span>
                 </button>
               ))}
-            </div>
+            </fieldset>
           ) : (
             CHANGE_ACTIONS.map((action) =>
               current.counts[action] > 0 ? (
@@ -298,38 +409,43 @@ function PlanView({
                   data-plan-count={action}
                   data-count={current.counts[action]}
                   onClick={() => toggleAction(action)}
-                  title={`Show only ${action}s`}
-                  className={`inline-flex h-[22px] items-center gap-1.5 rounded-md border px-2 ls-mono text-[10.5px] tabular-nums transition ${actionFilter.has(action) || actionFilter.size === 0 ? CHIP_TONE[action] : "border-zinc-300 text-zinc-500 dark:border-zinc-700"} ${actionFilter.has(action) ? "ring-1 ring-current" : ""}`}
+                  title={`Show only what to ${CHANGE_LABEL[action]}`}
+                  className={`lw-chip pr-3 transition-[background-color,box-shadow,opacity] duration-150 ${
+                    actionFilter.size > 0 && !actionFilter.has(action) ? "opacity-50" : ""
+                  } ${actionFilter.has(action) ? "ring-1 ring-zinc-900/20 dark:ring-white/25" : ""}`}
                 >
-                  <span className={`size-1.5 rounded-full ${ACTION_DOT[action]}`} aria-hidden />
-                  {current.counts[action].toLocaleString()} {action}
-                  {action === "delete" ? "" : ` · ${formatBytes(bytesByAction[action])}`}
+                  <span className={`size-2 rounded-full ${ACTION_DOT[action]}`} aria-hidden />
+                  {current.counts[action].toLocaleString()} to {CHANGE_LABEL[action]}
+                  {action === "delete" ? null : (
+                    <span className="text-zinc-500 dark:text-zinc-400">
+                      {formatBytes(bytesByAction[action])}
+                    </span>
+                  )}
                 </button>
               ) : (
                 <span key={action} data-plan-count={action} data-count={0} hidden />
               ),
             )
           )}
-          <label className="relative ml-auto w-56 max-w-[40%]">
+          <label className="relative ml-auto w-60 max-w-[40%]">
             <span className="sr-only">Filter plan paths</span>
             <Search
-              className="pointer-events-none absolute top-1/2 left-2 size-3 -translate-y-1/2 text-zinc-500"
+              className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-zinc-400"
               aria-hidden
             />
             <input
               id={PLAN_FILTER_INPUT_ID}
-              className="ls-input h-[24px] py-0 text-xs"
-              style={{ paddingLeft: 24, paddingRight: 24 }}
+              className="lw-input px-8"
               value={plan.filter}
               onChange={(event) => plan.setFilter(event.target.value)}
-              placeholder="Filter paths…"
+              placeholder="Filter paths"
             />
-            <kbd className="pointer-events-none absolute top-1/2 right-1.5 -translate-y-1/2 rounded border border-zinc-300 px-1 ls-mono text-[9.5px] text-zinc-500 dark:border-zinc-700">
-              /
-            </kbd>
+            <span className="pointer-events-none absolute top-1/2 right-1.5 -translate-y-1/2">
+              <Kbd>/</Kbd>
+            </span>
           </label>
         </div>
-      </header>
+      </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <PlanTree
           items={visibleItems}
@@ -341,14 +457,14 @@ function PlanView({
               : "No changed items match this filter."
           }
         />
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2.5 ls-mono text-[10.5px] text-zinc-500">
+        <div className="lw-caption flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-3">
           <span data-plan-count="keep" data-count={current.counts.keep}>
             {current.counts.keep.toLocaleString()} unchanged
           </span>
           {current.skipped > 0 ? (
             <button
               type="button"
-              className="underline decoration-zinc-400 underline-offset-2 hover:text-zinc-800 dark:decoration-zinc-600 dark:hover:text-zinc-200"
+              className="underline decoration-zinc-300 underline-offset-2 hover:text-zinc-900 dark:decoration-zinc-600 dark:hover:text-zinc-100"
               aria-expanded={showSkipped}
               onClick={() => setShowSkipped((open) => !open)}
             >
@@ -357,15 +473,17 @@ function PlanView({
           ) : null}
         </div>
         {showSkipped ? (
-          <ul className="px-3 pb-3 ls-mono text-[10.5px] text-zinc-500">
+          <ul className="px-5 pb-28 text-xs text-zinc-500 dark:text-zinc-400">
             {current.skippedEntries.map((entry) => (
-              <li key={entry.path} className="flex gap-2 py-0.5">
-                <span className="truncate text-zinc-700 dark:text-zinc-300">{entry.path}</span>
+              <li key={entry.path} className="flex gap-3 py-0.5">
+                <span className="truncate text-zinc-800 dark:text-zinc-200">{entry.path}</span>
                 <span className="shrink-0">{entry.reason}</span>
               </li>
             ))}
           </ul>
-        ) : null}
+        ) : (
+          <div className="h-24" aria-hidden />
+        )}
       </div>
     </>
   );

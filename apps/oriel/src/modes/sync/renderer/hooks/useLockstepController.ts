@@ -2,6 +2,7 @@ export {
   type ItemRunState,
   type LockstepController,
   type PlanController,
+  type ProfileController,
   type ProfileFormState,
   type RunController,
   type RunKind,

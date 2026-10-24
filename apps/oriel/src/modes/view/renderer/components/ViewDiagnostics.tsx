@@ -235,7 +235,7 @@ export function ViewDiagnostics({
           className="lw-btn lw-btn-secondary"
           onClick={run(onCopyDiagnostics, "Copied to the clipboard", "Could not copy")}
         >
-          Copy Diagnostics
+          Copy diagnostics
         </button>
       </SettingsRow>
       {shown ? <Details {...details} /> : null}

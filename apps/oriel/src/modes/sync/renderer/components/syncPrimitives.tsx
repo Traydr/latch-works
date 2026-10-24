@@ -9,29 +9,31 @@ export const ACTION_DOT = {
   upload: "bg-sky-500",
   update: "bg-amber-500",
   delete: "bg-red-500",
-  keep: "bg-zinc-500",
+  keep: "bg-zinc-400 dark:bg-zinc-500",
 } satisfies Record<SyncPlanAction, string>;
 
-const ACTION_CHIP = {
-  upload: "border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-300",
-  update: "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300",
-  delete: "border-red-500/40 bg-red-500/10 text-red-700 dark:text-red-300",
-  keep: "border-zinc-400/50 bg-zinc-500/10 text-zinc-500 dark:border-zinc-600/50 dark:text-zinc-400",
+const ACTION_BADGE = {
+  upload: "bg-sky-500/12 text-sky-700 dark:bg-sky-400/15 dark:text-sky-300",
+  update: "lw-badge-warn",
+  delete: "bg-red-500/10 text-red-700 dark:bg-red-500/15 dark:text-red-300",
+  keep: "lw-badge-neutral",
 } satisfies Record<SyncPlanAction, string>;
 
-/** Run events carry free-form action labels; unknown ones fall back to the neutral chip. */
-function actionChipClass(action: string): string {
+const ACTION_LABEL = {
+  upload: "Upload",
+  update: "Update",
+  delete: "Delete",
+  keep: "Keep",
+} satisfies Record<SyncPlanAction, string>;
+
+/** A plan item's action as a badge. Run events carry free-form labels; unknown ones read as Keep. */
+export function ActionBadge({ action }: { action: string }) {
   const parsed = SyncPlanActionSchema.safeParse(action);
+  const known = parsed.success ? parsed.data : "keep";
 
-  return parsed.success ? ACTION_CHIP[parsed.data] : ACTION_CHIP.keep;
-}
-
-export function ActionChip({ action, className = "" }: { action: string; className?: string }) {
   return (
-    <span
-      className={`inline-flex w-14 shrink-0 items-center justify-center rounded border px-1.5 py-px font-mono text-[9.5px] font-medium tracking-wide uppercase ${actionChipClass(action)} ${className}`}
-    >
-      {action}
+    <span className={`lw-badge w-[60px] shrink-0 justify-center ${ACTION_BADGE[known]}`}>
+      {parsed.success ? ACTION_LABEL[known] : action}
     </span>
   );
 }
@@ -44,43 +46,29 @@ const TONE_FILL = {
   red: "bg-red-500",
 } satisfies Record<ProgressTone, string>;
 
+/** The house progress bar, with a tone for how a finished run ended; null `percent` is unknown. */
 export function ProgressBar({
   percent,
-  indeterminate = false,
   tone = "violet",
   className = "",
 }: {
   percent: number | null;
-  indeterminate?: boolean;
   tone?: ProgressTone;
   className?: string;
 }) {
-  const width = percent == null ? 0 : Math.max(0, Math.min(100, percent * 100));
-
   return (
     <div
-      className={`relative h-1.5 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800 ${className}`}
+      className={`relative h-1 w-full overflow-hidden rounded-full bg-zinc-900/[0.07] dark:bg-white/[0.08] ${className}`}
     >
-      {indeterminate ? (
-        <div
-          className={`absolute inset-y-0 w-1/3 animate-[ls-indeterminate_1.1s_ease-in-out_infinite] rounded-full ${TONE_FILL[tone]}`}
-        />
+      {percent === null ? (
+        <div className={`absolute inset-y-0 w-1/3 animate-pulse rounded-full ${TONE_FILL[tone]}`} />
       ) : (
         <div
-          className={`absolute inset-y-0 left-0 rounded-full transition-[width] duration-300 ease-out ${TONE_FILL[tone]}`}
-          style={{ width: `${width}%` }}
+          className={`h-full rounded-full transition-[width] duration-300 ease-out ${TONE_FILL[tone]}`}
+          style={{ width: `${Math.max(0, Math.min(100, percent * 100))}%` }}
         />
       )}
     </div>
-  );
-}
-
-export function Spinner({ className = "" }: { className?: string }) {
-  return (
-    <span
-      className={`inline-block size-2.5 shrink-0 animate-spin rounded-full border-[1.5px] border-violet-400/30 border-t-violet-500 dark:border-t-violet-300 ${className}`}
-      aria-hidden
-    />
   );
 }
 

@@ -64,7 +64,7 @@ export function SyncSettings({ ctrl }: { ctrl: LockstepController }) {
             onClick={openForm(ctrl.profile.startCreateProfile)}
           >
             <Plus />
-            Add Profile
+            Add profile
           </button>
         </SettingsRow>
       </SettingsGroup>

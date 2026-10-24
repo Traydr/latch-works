@@ -1,5 +1,6 @@
 import type { LockstepProfilePublic } from "../../shared/types";
 
+/** The token field a profile without a saved token shows under its plan, for this session. */
 export function TokenInput({
   value,
   onChange,
@@ -14,16 +15,16 @@ export function TokenInput({
   }
 
   return (
-    <label className="grid gap-1">
-      <span className="ls-label">Sync API token</span>
+    <label className="grid max-w-md gap-1.5">
+      <span className="text-[13px] font-medium">Sync API token</span>
       <input
-        className="ls-input"
+        className="lw-input"
         type="password"
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder="Saved encrypted in ~/.latch-works"
       />
-      <p className="text-[10px] text-zinc-500">
+      <p className="lw-caption">
         {profile.tokenUnreadable
           ? "The saved token could not be unlocked. Enter it again to replace it."
           : "Encrypted with a key kept in ~/.latch-works/lockstep."}

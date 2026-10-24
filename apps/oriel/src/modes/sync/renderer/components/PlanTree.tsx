@@ -1,7 +1,7 @@
 import { formatBytes } from "@latch-works/media-domain";
 import { Check, ChevronDown, ChevronRight, X } from "lucide-react";
 import { useMemo, useState } from "react";
-
+import { Spinner } from "../../../../ui/ui";
 import type { LockstepPlanItem } from "../../shared/types";
 import type { ItemRunState } from "../hooks/useLockstepController";
 import {
@@ -11,7 +11,7 @@ import {
   type PlanFile,
   type PlanFolder,
 } from "../lib/plan-tree";
-import { ActionChip, Spinner } from "./syncPrimitives";
+import { ActionBadge } from "./syncPrimitives";
 
 /** Plans up to this size open every folder; larger ones open only small folders. */
 const OPEN_ALL_LIMIT = 300;
@@ -76,7 +76,7 @@ export function PlanTree({ items, itemStates, itemStatesVersion, emptyHint }: Pl
   }, [itemStates, itemStatesVersion, rows]);
 
   if (rows.length === 0) {
-    return <p className="px-3 py-8 text-center text-xs text-zinc-500">{emptyHint}</p>;
+    return <p className="lw-caption px-5 py-12 text-center text-[13px]">{emptyHint}</p>;
   }
 
   const toggle = (folder: PlanFolder, open: boolean) => {
@@ -86,7 +86,7 @@ export function PlanTree({ items, itemStates, itemStatesVersion, emptyHint }: Pl
   return (
     <section aria-label="Plan changes">
       {rows.map((row) => {
-        const indent = { paddingLeft: `${12 + row.depth * 14}px` };
+        const indent = { paddingLeft: `${20 + row.depth * 16}px` };
 
         if (row.type === "folder") {
           const progress = folderProgress.get(row.folder.path);
@@ -98,20 +98,18 @@ export function PlanTree({ items, itemStates, itemStatesVersion, emptyHint }: Pl
               aria-expanded={row.open}
               onClick={() => toggle(row.folder, row.open)}
               style={indent}
-              className="grid h-[26px] w-full grid-cols-[14px_minmax(0,1fr)_76px_64px] items-center gap-2 border-b border-zinc-200/70 bg-zinc-50/80 pr-3 text-left hover:bg-zinc-100 dark:border-zinc-800/60 dark:bg-zinc-900/50 dark:hover:bg-zinc-800/50"
+              className="lw-hover lw-focus grid h-8 w-full grid-cols-[16px_minmax(0,1fr)_84px_72px] items-center gap-2.5 border-b lw-divider pr-5 text-left"
             >
               {row.open ? (
-                <ChevronDown className="size-3 text-zinc-500" aria-hidden />
+                <ChevronDown className="size-3.5 text-zinc-400" aria-hidden />
               ) : (
-                <ChevronRight className="size-3 text-zinc-500" aria-hidden />
+                <ChevronRight className="size-3.5 text-zinc-400" aria-hidden />
               )}
-              <span className="truncate ls-mono text-[11.5px] text-zinc-800 dark:text-zinc-100">
-                {row.folder.label}/
-              </span>
-              <span className="text-right ls-mono text-[11px] text-zinc-500 tabular-nums">
+              <span className="truncate text-[13px] font-medium">{row.folder.label}/</span>
+              <span className="text-right text-xs text-zinc-500 tabular-nums dark:text-zinc-400">
                 {formatSize(row.folder.size)}
               </span>
-              <span className="text-right ls-mono text-[11px] text-zinc-500 tabular-nums">
+              <span className="text-right text-xs text-zinc-500 tabular-nums dark:text-zinc-400">
                 {progress ? (
                   <>
                     {progress.done + progress.failed}/{row.folder.itemCount}
@@ -134,7 +132,7 @@ export function PlanTree({ items, itemStates, itemStatesVersion, emptyHint }: Pl
               type="button"
               style={indent}
               onClick={() => setShowAllFiles((current) => new Set(current).add(row.folder.path))}
-              className="block h-[26px] w-full border-b border-zinc-200/70 pr-3 text-left text-[11px] text-zinc-500 hover:text-zinc-800 dark:border-zinc-800/60 dark:hover:text-zinc-200"
+              className="lw-hover lw-focus block h-8 w-full border-b lw-divider pr-5 text-left text-xs text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
             >
               Show {row.hidden.toLocaleString()} more in {row.folder.label || "this folder"}
             </button>
@@ -173,32 +171,32 @@ function FileRow({
   const faded = state?.type === "done" || state?.type === "skipped";
 
   return (
-    <div className={`border-b border-zinc-200/70 dark:border-zinc-800/60 ${tone}`}>
+    <div className={`border-b lw-divider ${tone}`}>
       <div
         style={indent}
-        className={`grid h-[26px] grid-cols-[14px_minmax(0,1fr)_76px_64px] items-center gap-2 pr-3 ${faded ? "opacity-45" : ""}`}
+        className={`grid h-8 grid-cols-[16px_minmax(0,1fr)_84px_72px] items-center gap-2.5 pr-5 ${faded ? "opacity-45" : ""}`}
       >
         <StateMark state={state} />
-        <span className="flex min-w-0 items-center gap-2">
-          <ActionChip action={file.action} />
+        <span className="flex min-w-0 items-center gap-2.5">
+          <ActionBadge action={file.action} />
           <span
-            className={`truncate ls-mono text-[11.5px] ${state?.type === "failed" ? "text-red-700 dark:text-red-300" : "text-zinc-700 dark:text-zinc-300"}`}
+            className={`truncate text-[13px] ${state?.type === "failed" ? "text-red-700 dark:text-red-300" : "text-zinc-800 dark:text-zinc-200"}`}
             title={file.path}
           >
             {file.name}
           </span>
         </span>
-        <span className="text-right ls-mono text-[11px] text-zinc-500 tabular-nums">
+        <span className="text-right text-xs text-zinc-500 tabular-nums dark:text-zinc-400">
           {formatSize(file.size)}
         </span>
-        <span className="truncate text-right ls-mono text-[10.5px] text-zinc-500">
-          {state?.type === "skipped" ? "skipped" : null}
+        <span className="lw-caption truncate text-right">
+          {state?.type === "skipped" ? "Skipped" : null}
         </span>
       </div>
       {state?.type === "failed" || state?.type === "skipped" ? (
         <p
-          style={{ paddingLeft: `calc(${indent.paddingLeft} + 22px)` }}
-          className={`truncate pr-3 pb-1.5 ls-mono text-[10.5px] ${state.type === "failed" ? "text-red-700 dark:text-red-300" : "text-zinc-500"}`}
+          style={{ paddingLeft: `calc(${indent.paddingLeft} + 26px)` }}
+          className={`truncate pr-5 pb-2 text-xs ${state.type === "failed" ? "text-red-700 dark:text-red-300" : "text-zinc-500 dark:text-zinc-400"}`}
           title={state.type === "failed" ? state.error : state.reason}
         >
           {state.type === "failed" ? state.error : state.reason}
@@ -214,9 +212,11 @@ function StateMark({ state }: { state: ItemRunState | null }) {
       return <Spinner />;
     case "done":
     case "skipped":
-      return <Check className="size-3 text-emerald-600 dark:text-emerald-400" aria-label="done" />;
+      return (
+        <Check className="size-3.5 text-emerald-600 dark:text-emerald-400" aria-label="done" />
+      );
     case "failed":
-      return <X className="size-3 text-red-600 dark:text-red-400" aria-label="failed" />;
+      return <X className="size-3.5 text-red-600 dark:text-red-400" aria-label="failed" />;
     case undefined:
       return <span />;
     default: {

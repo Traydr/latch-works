@@ -96,7 +96,7 @@ test("one Settings page, at the section of the mode on screen", async () => {
   await openMode(window, "sync");
   await clickMenuItem(app, "settings");
   await expect(title).toHaveText("Sync");
-  await expect(window.getByRole("button", { name: "Add Profile" })).toBeVisible();
+  await expect(window.getByRole("button", { name: "Add profile", exact: true })).toBeVisible();
 
   // Choosing another mode's section shows that mode underneath; Escape closes Settings.
   await window.locator('[data-settings-section="tidy"]').click();
