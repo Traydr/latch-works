@@ -1,5 +1,12 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 
@@ -11,9 +18,34 @@ const IV_BYTES = 12;
 
 const TAG_BYTES = 16;
 
-/** `$XDG_CONFIG_HOME/lockstep`, falling back to `~/.config/lockstep`. */
-export function lockstepConfigDir(env: NodeJS.ProcessEnv = process.env): string {
-  return path.join(env.XDG_CONFIG_HOME || path.join(homedir(), ".config"), "lockstep");
+/** Where builds before `~/.latch-works` kept the key: `$XDG_CONFIG_HOME/lockstep`. */
+function legacyKeyPath(env: NodeJS.ProcessEnv): string {
+  return path.join(
+    env.XDG_CONFIG_HOME || path.join(homedir(), ".config"),
+    "lockstep",
+    "secret-storage.key",
+  );
+}
+
+/**
+ * The key file in Lockstep's data folder. When the folder already has settings, whose tokens a key
+ * from before encrypted, that key is copied in the first time so they still decrypt; the old file
+ * is left where it was. A fresh folder (an e2e run) gets a key of its own.
+ */
+export function fileSecretKeyPath(dataDir: string, env: NodeJS.ProcessEnv = process.env): string {
+  const keyPath = path.join(dataDir, "secret-storage.key");
+  const legacy = legacyKeyPath(env);
+
+  if (
+    !existsSync(keyPath) &&
+    existsSync(path.join(dataDir, "lockstep-settings.json")) &&
+    existsSync(legacy)
+  ) {
+    copyFileSync(legacy, keyPath);
+    chmodSync(keyPath, 0o600);
+  }
+
+  return keyPath;
 }
 
 /**

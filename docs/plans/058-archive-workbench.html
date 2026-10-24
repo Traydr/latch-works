@@ -1,0 +1,874 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plan 058 · Archive workbench (working name: Glazier)</title>
+<style>
+:root {
+  --pg-bg: var(--background, #16181c);
+  --pg-fg: var(--foreground, #e8eaed);
+  --pg-dim: var(--muted-foreground, #8a8f98);
+  --pg-line: var(--border, #2a2e35);
+  --pg-card: var(--card, #1d2025);
+  --pg-soft: var(--muted, #20242a);
+  --pg-link: var(--primary, #38a8e8);
+  --pg-code-bg: var(--code-background, #20242a);
+  --pg-code-fg: var(--code-foreground, #d6dae0);
+  --pg-radius: var(--radius, 10px);
+  --pg-sans: var(--font-sans, "Geist Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif);
+  --pg-mono: var(--font-mono, ui-monospace, "SF Mono", Menlo, monospace);
+  --st-ok: var(--success, #0ca30c);
+  --st-warn: var(--warning, #fab219);
+  --st-bad: var(--destructive, #d03b3b);
+  --st-info: var(--info, #38a8e8);
+}
+* { box-sizing: border-box; }
+html { background: var(--pg-bg); color: var(--pg-fg); font-family: var(--pg-sans); -webkit-text-size-adjust: 100%; }
+body { margin: 0; font-size: 15px; line-height: 1.6; -webkit-font-smoothing: antialiased; }
+.doc { max-width: 860px; margin: 0 auto; padding: 8px 0 48px; }
+@media (min-width: 900px) { .doc { padding-top: 40px; } }
+
+h1, h2, h3 { color: var(--pg-fg); text-wrap: balance; margin: 0; }
+.display { font-family: "Barlow Condensed", "Avenir Next Condensed", "Arial Narrow", var(--pg-sans); text-transform: uppercase; font-weight: 700; letter-spacing: -0.01em; line-height: 0.98; }
+h1 { font-size: 46px; margin: 10px 0 14px; }
+h2 { font-size: 30px; margin: 4px 0 12px; }
+h3 { font-size: 15px; font-weight: 650; margin: 26px 0 8px; }
+p { margin: 0 0 12px; text-wrap: pretty; }
+ul, ol { margin: 0 0 12px; padding-left: 20px; }
+li { margin: 4px 0; }
+a { color: var(--pg-link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+strong { color: var(--pg-fg); font-weight: 650; }
+code { font-family: var(--pg-mono); font-size: 0.86em; color: var(--pg-code-fg); background: var(--pg-code-bg); border: 1px solid var(--pg-line); border-radius: 5px; padding: 0 4px; overflow-wrap: anywhere; }
+pre { font-family: var(--pg-mono); font-size: 13px; line-height: 1.55; color: var(--pg-code-fg); background: var(--pg-code-bg); border: 1px solid var(--pg-line); border-radius: var(--pg-radius); padding: 14px 16px; overflow-x: auto; margin: 0 0 12px; }
+.dim { color: var(--pg-dim); }
+.small { font-size: 13px; }
+.kicker { font-family: var(--pg-mono); font-size: 11px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--pg-dim); }
+.kicker b { color: var(--pg-link); font-weight: 600; }
+section { margin-top: 44px; padding-top: 36px; border-top: 1px solid var(--pg-line); }
+.lede { font-size: 17px; line-height: 1.55; max-width: 66ch; }
+
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 22px 0 0; padding: 0; list-style: none; }
+.toc li { margin: 0; }
+.toc a { display: inline-block; font-size: 12.5px; color: var(--pg-fg); border: 1px solid var(--pg-line); border-radius: 999px; padding: 3px 10px; }
+.toc a:hover { border-color: var(--pg-link); text-decoration: none; }
+.toc a span { color: var(--pg-dim); font-family: var(--pg-mono); font-size: 11px; margin-right: 5px; }
+
+.meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 1px; background: var(--pg-line); border: 1px solid var(--pg-line); border-radius: var(--pg-radius); overflow: hidden; margin-top: 22px; }
+.meta div { background: var(--pg-bg); padding: 10px 14px; }
+.meta dt { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--pg-dim); margin: 0 0 2px; }
+.meta dd { margin: 0; font-size: 13.5px; }
+
+.flow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 22px 0 6px; }
+.stage { border: 1px solid var(--pg-line); border-radius: var(--pg-radius); padding: 12px 12px 10px; position: relative; }
+.stage .kicker { display: block; margin-bottom: 4px; }
+.stage .who { font-size: 14px; font-weight: 600; }
+.stage .what { font-size: 12.5px; color: var(--pg-dim); margin-top: 2px; line-height: 1.4; }
+.stage.new { border-style: dashed; border-color: var(--pg-link); background: color-mix(in srgb, var(--pg-link) 8%, transparent); }
+.stage.new .who { color: var(--pg-link); }
+@media (max-width: 560px) { .flow { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+.tbl { overflow-x: auto; margin: 0 0 12px; border: 1px solid var(--pg-line); border-radius: var(--pg-radius); }
+table { width: 100%; border-collapse: collapse; font-size: 13.5px; line-height: 1.45; }
+th { text-align: left; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--pg-dim); font-weight: 600; padding: 9px 12px; border-bottom: 1px solid var(--pg-line); background: var(--pg-soft); white-space: nowrap; }
+td { padding: 9px 12px; border-bottom: 1px solid var(--pg-line); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+td.n { font-variant-numeric: tabular-nums; white-space: nowrap; }
+td.k { font-weight: 600; white-space: nowrap; }
+
+.chip { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; line-height: 1.5; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--pg-line); color: var(--pg-fg); white-space: nowrap; }
+.chip.rec { border-color: var(--pg-link); color: var(--pg-link); }
+.eff { font-family: var(--pg-mono); font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 6px; background: var(--pg-soft); border: 1px solid var(--pg-line); }
+
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; margin: 0 0 12px; }
+.grid3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 0 0 12px; }
+.card { border: 1px solid var(--pg-line); border-radius: var(--pg-radius); padding: 16px; background: var(--pg-card); }
+.card h3 { margin-top: 0; }
+.card p:last-child, .card ul:last-child { margin-bottom: 0; }
+.card .kicker { display: block; margin-bottom: 6px; }
+
+.pick { border: 1px solid var(--pg-link); border-radius: var(--pg-radius); padding: 18px; display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 18px; background: color-mix(in srgb, var(--pg-link) 6%, transparent); margin: 0 0 14px; }
+.pick h3 { margin: 2px 0 6px; font-size: 26px; }
+.pick dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 14px; margin: 10px 0 0; font-size: 13.5px; }
+.pick dt { color: var(--pg-dim); }
+.pick dd { margin: 0; }
+@media (max-width: 560px) { .pick { grid-template-columns: 1fr; } }
+.icons { display: flex; gap: 18px; flex-wrap: wrap; margin: 4px 0 12px; }
+.icons figure { margin: 0; text-align: center; font-size: 12px; color: var(--pg-dim); }
+.icons svg { display: block; margin: 0 auto 6px; }
+
+.rules { counter-reset: rule; list-style: none; padding: 0; display: grid; gap: 8px; }
+.rules li { counter-increment: rule; margin: 0; border: 1px solid var(--pg-line); border-radius: var(--pg-radius); padding: 12px 14px 12px 46px; position: relative; }
+.rules li::before { content: counter(rule); position: absolute; left: 14px; top: 12px; width: 20px; height: 20px; border-radius: 6px; background: var(--pg-soft); border: 1px solid var(--pg-line); font: 600 11px/18px var(--pg-mono); text-align: center; color: var(--pg-link); }
+
+.phase { display: grid; grid-template-columns: 74px minmax(0, 1fr); gap: 14px; padding: 14px 0; border-bottom: 1px solid var(--pg-line); }
+.phase:last-child { border-bottom: 0; }
+.phase .pn { font-family: var(--pg-mono); font-size: 12px; color: var(--pg-dim); }
+.phase .pn b { display: block; font-size: 22px; color: var(--pg-fg); line-height: 1.1; }
+.phase h3 { margin: 0 0 4px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.phase p { margin-bottom: 6px; }
+.done { font-size: 13px; color: var(--pg-dim); }
+.done b { color: var(--pg-fg); font-weight: 600; }
+
+.dec { display: grid; gap: 10px; }
+.dec .card { padding: 14px 16px; }
+.dec h3 { margin: 0 0 6px; font-size: 14.5px; }
+.opts { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+
+.ev { columns: 2 300px; column-gap: 24px; font-size: 13px; padding-left: 18px; }
+.ev li { break-inside: avoid; }
+
+/* ---------- Mockups: a dark Latch Works window, independent of the reader's theme ---------- */
+.mock { background: #16181c; color: #c9cdd3; border: 1px solid #2a2e35; border-radius: var(--pg-radius); padding: 16px; margin: 0 0 8px; font-family: -apple-system, BlinkMacSystemFont, "Geist Variable", "Segoe UI", system-ui, sans-serif; font-size: 12px; line-height: 1.4; }
+.mock-scroll { overflow-x: auto; }
+.mock-app { min-width: 664px; }
+.mbar { display: flex; align-items: center; gap: 10px; padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid #2a2e35; }
+.dots { display: flex; gap: 6px; }
+.dots i { width: 10px; height: 10px; border-radius: 50%; background: #3a3f47; display: block; }
+.mtitle { color: #e8eaed; font-weight: 600; }
+.mright { margin-left: auto; color: #8a8f98; }
+.mright b { color: #38a8e8; font-weight: 600; }
+.mbody { display: grid; grid-template-columns: 118px minmax(0, 1fr); gap: 14px; }
+.side { display: flex; flex-direction: column; gap: 2px; }
+.side .h { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: #6c727c; margin: 8px 0 4px 8px; }
+.side .h:first-child { margin-top: 0; }
+.side .i { display: flex; justify-content: space-between; padding: 4px 8px; border-radius: 6px; color: #aeb3ba; }
+.side .i span { color: #6c727c; font-variant-numeric: tabular-nums; }
+.side .i.on { background: #24282f; color: #e8eaed; }
+.mpane { min-width: 0; }
+.mcard { background: #1d2025; border: 1px solid #2a2e35; border-radius: 8px; padding: 10px 12px; }
+.mh { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: #8a8f98; margin-bottom: 8px; }
+.tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 8px; }
+.tile .v { font-size: 20px; color: #e8eaed; font-weight: 600; letter-spacing: -0.01em; }
+.tile .l { color: #8a8f98; margin-top: 2px; }
+.tile .s { color: #aeb3ba; margin-top: 4px; font-size: 11px; }
+.two { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 8px; }
+.bars { display: flex; flex-direction: column; gap: 2px; }
+.brow { display: grid; grid-template-columns: 58px minmax(0, 1fr) 46px; align-items: center; gap: 8px; padding: 2px 4px; border-radius: 4px; cursor: default; outline: none; }
+.brow:hover, .brow:focus-visible { background: #24282f; }
+.blab { color: #aeb3ba; white-space: nowrap; }
+.btrack { height: 10px; display: flex; align-items: center; }
+.bfill { height: 10px; min-width: 2px; background: #2f95d4; border-radius: 0 4px 4px 0; }
+.bval { text-align: right; color: #e8eaed; font-variant-numeric: tabular-nums; }
+.find { display: flex; flex-direction: column; }
+.frow { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; gap: 8px; align-items: start; padding: 6px 0; border-bottom: 1px solid #262a31; }
+.frow:last-child { border-bottom: 0; }
+.frow .t { color: #d6dae0; }
+.frow .t em { font-style: normal; color: #8a8f98; }
+.frow .a { color: #38a8e8; white-space: nowrap; }
+.ic { width: 14px; height: 14px; display: block; margin-top: 1px; }
+.c-warn { color: #fab219; } .c-bad { color: #ec835a; } .c-info { color: #8a8f98; } .c-ok { color: #0ca30c; }
+.mt td.c-ok { color: #0ca30c; } .mt td.c-info { color: #8a8f98; }
+.filters { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; align-items: center; }
+.fchip { border: 1px solid #343943; background: #1d2025; color: #d6dae0; border-radius: 999px; padding: 2px 9px; }
+.fchip b { color: #8a8f98; font-weight: 500; }
+.fchip.add { color: #38a8e8; border-style: dashed; }
+.search { margin-left: auto; border: 1px solid #343943; border-radius: 6px; padding: 2px 10px; color: #6c727c; min-width: 150px; }
+.mt { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+.mt th { text-align: left; font-weight: 500; color: #8a8f98; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; background: transparent; border-bottom: 1px solid #2a2e35; padding: 5px 6px; }
+.mt td { border-bottom: 1px solid #23272d; padding: 6px; color: #c9cdd3; white-space: nowrap; }
+.mt tr.sel td { background: #1f2a36; }
+.mt td.nm { color: #e8eaed; max-width: 170px; overflow: hidden; text-overflow: ellipsis; }
+.cb { display: inline-block; width: 12px; height: 12px; border: 1px solid #4a515c; border-radius: 3px; vertical-align: -2px; }
+.sel .cb { background: #38a8e8; border-color: #38a8e8; }
+.tag { display: inline-block; border-radius: 4px; padding: 0 5px; font-size: 10.5px; border: 1px solid #343943; color: #c9cdd3; }
+.tag.w { border-color: #5c4a1c; color: #fab219; }
+.tag.s { border-color: #5a3a2c; color: #ec835a; }
+.tag.p { border-color: #20476a; color: #6cc0ef; }
+.actbar { display: flex; gap: 6px; align-items: center; margin-top: 10px; padding: 8px 10px; background: #1d2025; border: 1px solid #2a2e35; border-radius: 8px; flex-wrap: wrap; }
+.actbar .cnt { color: #e8eaed; font-weight: 600; margin-right: 6px; }
+.btn { border: 1px solid #3a3f47; background: #23272d; color: #e8eaed; border-radius: 6px; padding: 3px 9px; white-space: nowrap; }
+.btn.pri { background: #1f3b52; border-color: #2f6c99; color: #e8f4fc; }
+.btn.ghost { background: transparent; }
+.dup { display: grid; grid-template-columns: 164px minmax(0, 1fr); gap: 10px; }
+.glist .g { padding: 6px 8px; border-radius: 6px; border: 1px solid transparent; margin-bottom: 2px; }
+.glist .g.on { background: #24282f; border-color: #2f3540; }
+.glist .g .top { display: flex; justify-content: space-between; color: #e8eaed; }
+.glist .g .sub { color: #8a8f98; font-size: 11px; }
+.copies { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 8px 0; }
+.copy { border: 1px solid #2a2e35; border-radius: 8px; padding: 6px; background: #1a1d22; }
+.copy.keep { border-color: #2f6c99; box-shadow: inset 0 0 0 1px #2f6c99; }
+.thumb { height: 64px; border-radius: 4px; background: linear-gradient(135deg, #2c4f5c, #3e6b5a 55%, #6b6a3e); margin-bottom: 6px; position: relative; }
+.thumb::after { content: "▶"; position: absolute; inset: 0; display: grid; place-items: center; color: rgba(255,255,255,0.7); font-size: 14px; }
+.copy .p { color: #e8eaed; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.copy .m { color: #8a8f98; font-size: 11px; }
+.copy .why { margin-top: 5px; font-size: 11px; }
+.copy.keep .why { color: #6cc0ef; }
+.copy .why.out { color: #aeb3ba; }
+.rulebar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; color: #8a8f98; }
+.plan { margin-top: 8px; padding: 8px 10px; border: 1px solid #2f6c99; border-radius: 8px; background: #172330; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.plan .txt { color: #d6dae0; flex: 1 1 260px; }
+.plan .txt em { font-style: normal; color: #8a8f98; }
+.pol { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; align-items: center; }
+.ocands { display: flex; flex-direction: column; }
+.orow { display: grid; grid-template-columns: 16px 96px 54px 58px minmax(0, 1fr) 92px; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid #262a31; }
+.orow:last-child { border-bottom: 0; }
+.orow .r { text-align: right; font-variant-numeric: tabular-nums; }
+.orow .e { color: #e8eaed; }
+.orow.skip { color: #8a8f98; }
+.saving { height: 8px; display: flex; gap: 2px; }
+.saving i { display: block; height: 8px; border-radius: 0 3px 3px 0; }
+.saving .after { background: #2f95d4; border-radius: 0; }
+.saving .gone { background: repeating-linear-gradient(45deg, #2a3a47 0 3px, #1d2025 3px 6px); }
+.prog { height: 6px; background: #262a31; border-radius: 3px; overflow: hidden; margin: 6px 0 8px; }
+.prog i { display: block; height: 100%; width: 12%; background: #2f95d4; }
+.res { font-size: 11.5px; }
+.res td { padding: 4px 6px; }
+.mcap { font-size: 12.5px; color: var(--pg-dim); margin: 0 0 22px; }
+#tip { position: fixed; z-index: 10; pointer-events: none; background: #0f1114; color: #e8eaed; border: 1px solid #343943; border-radius: 6px; padding: 5px 8px; font: 12px/1.35 -apple-system, BlinkMacSystemFont, system-ui, sans-serif; box-shadow: 0 6px 18px rgba(0,0,0,0.35); white-space: nowrap; }
+</style>
+</head>
+<body>
+<div class="doc">
+
+<!-- ============================== Summary ============================== -->
+<header id="summary">
+  <div class="kicker">Latch Works · Plan <b>058</b> · Draft for review · 2026-10-23</div>
+  <h1 class="display">An archive workbench for the local collection</h1>
+  <p class="lede">Frame View shows the archive. This app works on it. It scans a root and reports what's there. It finds duplicates, silent videos and files in the wrong format. It plans conversions to the archive formats Gather Box already writes: AVIF at quality 70 and speed 6, and MP4 for GIFs. Every change is a plan you review first, and nothing is hard-deleted.</p>
+  <p class="dim small">Working name throughout: <strong>Glazier</strong>. Alternatives are in <a href="#names">§2</a>; everything renames cleanly before Phase 1.</p>
+
+  <div class="flow" aria-label="Latch Works pipeline">
+    <div class="stage"><span class="kicker">Gather</span><div class="who">Gather Box</div><div class="what">Collects into the local archive</div></div>
+    <div class="stage new"><span class="kicker">Organize</span><div class="who">Glazier · new</div><div class="what">Audits and tidies the local archive</div></div>
+    <div class="stage"><span class="kicker">Sync</span><div class="who">Lockstep</div><div class="what">Publishes archive changes</div></div>
+    <div class="stage"><span class="kicker">View</span><div class="who">Frame View · Pane View</div><div class="what">Desktop and web viewing</div></div>
+  </div>
+  <p class="dim small">The brand kit's flow is Gather → Organize → Sync → View. Every stage but Organize already has a product; today that stage is Finder.</p>
+
+  <dl class="meta">
+    <div><dt>Status</dt><dd>Proposal. No code yet</dd></div>
+    <div><dt>Planned at</dt><dd><code>90041107</code> on <code>main</code></dd></div>
+    <div><dt>New workspaces</dt><dd><code>apps/glazier</code>, <code>packages/glazier-core</code>, <code>packages/media-format</code></dd></div>
+    <div><dt>Touched</dt><dd><code>apps/gather-box</code>, <code>packages/media-domain</code>, <code>e2e</code></dd></div>
+    <div><dt>Effort</dt><dd>L overall, in six phases</dd></div>
+    <div><dt>Risk</dt><dd>Medium. First app that edits the archive in bulk</dd></div>
+  </dl>
+
+  <ul class="toc">
+    <li><a href="#asks"><span>01</span>Your asks</a></li>
+    <li><a href="#names"><span>02</span>Names</a></li>
+    <li><a href="#principles"><span>03</span>Safety rules</a></li>
+    <li><a href="#screens"><span>04</span>Screens</a></li>
+    <li><a href="#features"><span>05</span>Features</a></li>
+    <li><a href="#optimize"><span>06</span>Optimize</a></li>
+    <li><a href="#passes"><span>07</span>Scan passes</a></li>
+    <li><a href="#architecture"><span>08</span>Architecture</a></li>
+    <li><a href="#data"><span>09</span>Data model</a></li>
+    <li><a href="#apps"><span>10</span>Other apps</a></li>
+    <li><a href="#roadmap"><span>11</span>Roadmap</a></li>
+    <li><a href="#decisions"><span>12</span>Decisions</a></li>
+    <li><a href="#risks"><span>13</span>Risks</a></li>
+    <li><a href="#verify"><span>14</span>Verification</a></li>
+    <li><a href="#evidence"><span>15</span>Evidence</a></li>
+  </ul>
+</header>
+
+<!-- ============================== 01 Asks ============================== -->
+<section id="asks">
+  <div class="kicker"><b>01</b> · Scope</div>
+  <h2 class="display">What you asked for</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>You asked</th><th>What the app does</th><th>Phase</th></tr></thead>
+    <tbody>
+      <tr><td>Spot duplicates, including duplicate videos</td><td>Exact duplicates by content hash: the same SHA-256 Lockstep uses as the source ID. Then near-duplicates: resized copies, a PNG beside its AVIF, a GIF beside its MP4.</td><td class="n">2 exact<br>5 near</td></tr>
+      <tr><td>Show which videos have sound and which don't</td><td>Three states, not two: <em>no audio track</em>, <em>silent track</em>, <em>has sound</em>. Track presence comes free with the probe; telling silence from sound needs a loudness pass.</td><td class="n">1 tracks<br>4 loudness</td></tr>
+      <tr><td>Scan the folder and report the file types</td><td>An inventory by kind, extension, real format (read from the file's first bytes), codec and folder, with health findings: wrong extensions, zero-byte files, undecodable files, system junk, unsupported types, empty folders.</td><td class="n">1</td></tr>
+      <tr><td>Show what I can optimize, PNG to AVIF at speed 6, quality 70</td><td>An Optimize report listing every candidate under the policy Gather Box already applies, with estimated savings. Conversions then run as a queue and each output is verified before it replaces the source.</td><td class="n">3</td></tr>
+      <tr><td>Still manage files easily, including deleting</td><td>Table and grid with filters, multi-select, move, rename, Reveal in Finder and Quick Look. Removal goes to a holding folder, so every delete can be undone.</td><td class="n">1</td></tr>
+    </tbody>
+  </table></div>
+  <p class="dim small">Out of scope for now: re-encoding videos (H.264 to AV1/HEVC is lossy and slow, and the archive policy leaves videos as they are), editing Pane View's remote library, tagging and favorites.</p>
+</section>
+
+<!-- ============================== 02 Names ============================== -->
+<section id="names">
+  <div class="kicker"><b>02</b> · Naming</div>
+  <h2 class="display">Possible names</h2>
+  <p>The rules come from <code>docs/latch-works-brand-kit.md</code>. Names use window parts and access metaphors: a frame holds the view, a pane is the surface, a latch controls access, a box collects, Lockstep moves in step. The tone is practical and calm, and the kit warns against overstating automation. Product names are title case, folders and packages kebab-case. A tool that may grow a CLI gets one searchable word, as <code>lockstep</code> did.</p>
+
+  <div class="pick">
+    <svg viewBox="0 0 1024 1024" width="84" height="84" role="img" aria-label="Glazier icon concept: a four-pane window with one pane lifted out">
+      <path fill="#2d323a" d="M280 24H744C908 24 1000 116 1000 280V744C1000 908 908 1000 744 1000H280C116 1000 24 908 24 744V280C24 116 116 24 280 24Z"/>
+      <rect x="216" y="216" width="276" height="276" rx="44" fill="#fbf3df"/>
+      <rect x="216" y="532" width="276" height="276" rx="44" fill="#fbf3df"/>
+      <rect x="532" y="532" width="276" height="276" rx="44" fill="#fbf3df"/>
+      <rect x="532" y="216" width="276" height="276" rx="44" fill="none" stroke="#5a616c" stroke-width="18" stroke-dasharray="46 30"/>
+      <g transform="rotate(9 738 278)"><rect x="600" y="140" width="276" height="276" rx="44" fill="#8cc2cb"/><path d="M646 366 828 190" stroke="#5f9aa3" stroke-width="18" stroke-linecap="round" stroke-dasharray="40 28"/></g>
+    </svg>
+    <div>
+      <span class="chip rec">Recommended</span>
+      <h3 class="display">Glazier</h3>
+      <p>A glazier cuts, fits and replaces the panes in a window, and that's this app's job: cut the duplicates, refit stills as AVIF, replace what's broken. It's a tradesperson in the Works rather than a mechanism, which suits the one app that changes the archive by hand.</p>
+      <dl>
+        <dt>Folder</dt><dd><code>apps/glazier</code></dd>
+        <dt>App package</dt><dd><code>@latch-works/glazier-app</code>, productName <code>Glazier</code>. Same as <code>lockstep-app</code>, so the bare name stays free for a CLI</dd>
+        <dt>Engine</dt><dd><code>packages/glazier-core</code> → <code>@latch-works/glazier-core</code></dd>
+        <dt>Later CLI</dt><dd><code>@latch-works/glazier</code>, binary <code>glazier</code> (<code>glazier report</code>, <code>plan</code>, <code>apply</code>, <code>doctor</code>)</dd>
+        <dt>One-liner</dt><dd>A private desktop workbench for auditing and tidying a local archive.</dd>
+        <dt>Tagline</dt><dd>Plan, review, apply. <span class="dim">(Lockstep's is "Plan, push, verify.")</span></dd>
+        <dt>Against</dt><dd>Easy to misspell as "Glazer"; it names a person where its siblings name objects.</dd>
+      </dl>
+    </div>
+  </div>
+
+  <div class="tbl"><table>
+    <thead><tr><th>Name</th><th>Folder · binary</th><th>Metaphor</th><th>For</th><th>Against</th></tr></thead>
+    <tbody>
+      <tr><td class="k">Glazier</td><td><code>glazier</code></td><td>Fits and replaces panes</td><td>Distinctive; one searchable word; implies hands-on work</td><td>Spelling; a person, not an object</td></tr>
+      <tr><td class="k">Frame Bench</td><td><code>frame-bench</code></td><td>The workbench beside the frame</td><td>Pairs on sight with Frame View: one app looks, the other works</td><td>Reads as a Frame View add-on; "bench" suggests benchmarks</td></tr>
+      <tr><td class="k">Mullion</td><td><code>mullion</code></td><td>The bars that divide a window into ordered panes</td><td>Literally the Organize stage</td><td>Obscure; says nothing about cleanup or conversion</td></tr>
+      <tr><td class="k">Sift Box</td><td><code>sift-box</code></td><td>Sifting what Gather Box brought in</td><td>Sibling of Gather Box; "sift" is the dedupe verb</td><td>A box is a container and this app isn't one; easy to confuse with Gather Box</td></tr>
+      <tr><td class="k">Sash</td><td><code>sash</code></td><td>The movable frame that holds the panes</td><td>Short; on theme</td><td>Common word; hard to search for</td></tr>
+      <tr><td class="k">Plumb Line</td><td><code>plumb-line</code></td><td>The carpenter's check that work is true</td><td>Audit tone</td><td>A plumb line only checks, and this app also acts; "plumb" reads as plumbing</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="icons" aria-label="Icon concepts in the style of docs/design/icons.md">
+    <figure>
+      <svg viewBox="0 0 1024 1024" width="56" height="56" aria-hidden="true"><path fill="#2d323a" d="M280 24H744C908 24 1000 116 1000 280V744C1000 908 908 1000 744 1000H280C116 1000 24 908 24 744V280C24 116 116 24 280 24Z"/><rect x="230" y="730" width="76" height="170" rx="34" fill="#c47e6f"/><rect x="718" y="730" width="76" height="170" rx="34" fill="#c47e6f"/><rect x="150" y="664" width="724" height="84" rx="40" fill="#e99b89"/><rect x="232" y="176" width="560" height="440" rx="56" fill="#fbf3df"/><rect x="292" y="236" width="440" height="320" rx="28" fill="#80b4b5"/><circle cx="420" cy="330" r="46" fill="#f4cb70"/><path d="M292 500C392 430 470 410 560 450S690 520 732 500V528C732 544 720 556 704 556H320C304 556 292 544 292 528Z" fill="#aac69d"/></svg>
+      Frame Bench
+    </figure>
+    <figure>
+      <svg viewBox="0 0 1024 1024" width="56" height="56" aria-hidden="true"><path fill="#2d323a" d="M280 24H744C908 24 1000 116 1000 280V744C1000 908 908 1000 744 1000H280C116 1000 24 908 24 744V280C24 116 116 24 280 24Z"/><rect x="176" y="176" width="672" height="672" rx="80" fill="#fbf3df"/><rect x="232" y="232" width="262" height="262" rx="36" fill="#85a6dd"/><rect x="530" y="232" width="262" height="262" rx="36" fill="#8cc2cb"/><rect x="232" y="530" width="262" height="262" rx="36" fill="#aac69d"/><rect x="530" y="530" width="262" height="262" rx="36" fill="#f4cb70"/></svg>
+      Mullion
+    </figure>
+  </div>
+  <p class="dim small">Considered and dropped: <strong>Casement</strong> (a case/management pun, too cute for the kit), <strong>Frame Works</strong> (collides with Latch Works), <strong>Archive Manager</strong> or <strong>Media Manager</strong> (generic, and "manager" is the corporate tone the kit avoids), and anything with Smart, Auto or AI. Not yet checked: trademark and app-name collisions. Check those before the name goes into the brand kit and <code>docs/design/icons.md</code>.</p>
+</section>
+
+<!-- ============================== 03 Principles ============================== -->
+<section id="principles">
+  <div class="kicker"><b>03</b> · Safety model</div>
+  <h2 class="display">Rules every feature follows</h2>
+  <p>The local archive is the source of truth (<code>CLAUDE.md</code>, <code>docs/ARCHITECTURE.md</code>). Every other app only reads it or adds to it; this one moves, renames and replaces files in bulk. So these rules come before any feature.</p>
+  <ol class="rules">
+    <li><strong>Scanning is read-only.</strong> The catalog lives in the app's user-data folder. Nothing is written inside a root until you apply a plan.</li>
+    <li><strong>Every change is a plan first.</strong> Each action builds a plan that says what moves where, how many bytes change and what Lockstep will see. It runs only when you press Apply, the same split as <code>lockstep plan</code> and <code>push</code>.</li>
+    <li><strong>Nothing is hard-deleted.</strong> Removed files and replaced originals go to <code>.latch-works-holding/</code> in their own root, which every scanner skips. Undo is a rename back. <em>Empty holding</em> sends the contents to the macOS Trash.</li>
+    <li><strong>Re-check before touching.</strong> Just before each step the executor stats the file again. If size, mtime or ctime changed since the scan, it skips the file and says why. <code>hashFileContents</code> in <code>media-index</code> applies the same rule.</li>
+    <li><strong>Conversions are atomic and keep their dates.</strong> Write to a temp file beside the source, verify it, copy the mtime, rename it into place, then move the original to holding. Frame View and Pane View sort by <code>mtimeMs</code>, so a converted file keeps its place in date order.</li>
+    <li><strong>Stay inside the root.</strong> Don't follow symlinks and don't touch non-regular files. The repo already rejected both for its scanners, on the same safety grounds.</li>
+    <li><strong>Everything applied is journaled.</strong> Every applied step is recorded with before/after paths and sizes, and undo works from that record. <code>docs/runbooks/glazier.md</code> documents each mutating action, as <code>CLAUDE.md</code> requires.</li>
+  </ol>
+</section>
+
+<!-- ============================== 04 Screens ============================== -->
+<section id="screens">
+  <div class="kicker"><b>04</b> · Screens</div>
+  <h2 class="display">What it looks like</h2>
+  <p class="dim small">Mockups in the Latch Works dark style. Every figure and file name below is illustrative.</p>
+
+  <!-- Overview -->
+  <div class="mock"><div class="mock-scroll"><div class="mock-app">
+    <div class="mbar"><span class="dots"><i></i><i></i><i></i></span><span class="mtitle">Glazier</span><span class="mright">Archive · scanned 4 min ago · <b>Rescan</b></span></div>
+    <div class="mbody">
+      <nav class="side">
+        <div class="h">Roots</div>
+        <div class="i on">Archive <span>612 GB</span></div>
+        <div class="i">Inbox <span>18 GB</span></div>
+        <div class="h">Views</div>
+        <div class="i on">Overview</div>
+        <div class="i">Library</div>
+        <div class="i">Duplicates <span>1,284</span></div>
+        <div class="i">Optimize <span>9,912</span></div>
+        <div class="i">Sound</div>
+        <div class="i">Holding <span>0</span></div>
+        <div class="i">Journal</div>
+      </nav>
+      <div class="mpane">
+        <div class="tiles">
+          <div class="mcard tile"><div class="v">48,210</div><div class="l">files</div><div class="s">612 GB in 3,906 folders</div></div>
+          <div class="mcard tile"><div class="v">1,284</div><div class="l">duplicate groups</div><div class="s">21.7 GB reclaimable</div></div>
+          <div class="mcard tile"><div class="v">9,912</div><div class="l">stills to AVIF</div><div class="s">est. 58–61 GB saved</div></div>
+          <div class="mcard tile"><div class="v">2,031</div><div class="l">videos without sound</div><div class="s">1,619 no track · 412 silent</div></div>
+        </div>
+        <div class="two">
+          <div class="mcard">
+            <div class="mh">Size by format</div>
+            <div class="bars">
+              <div class="brow" tabindex="0" data-tip="MP4 · 371 GB · 5,904 files"><span class="blab">MP4</span><span class="btrack"><span class="bfill" style="width:100%"></span></span><span class="bval">371 GB</span></div>
+              <div class="brow" tabindex="0" data-tip="PNG · 61 GB · 6,120 files"><span class="blab">PNG</span><span class="btrack"><span class="bfill" style="width:16.4%"></span></span><span class="bval">61 GB</span></div>
+              <div class="brow" tabindex="0" data-tip="AVIF · 58 GB · 25,100 files"><span class="blab">AVIF</span><span class="btrack"><span class="bfill" style="width:15.6%"></span></span><span class="bval">58 GB</span></div>
+              <div class="brow" tabindex="0" data-tip="WebM · 46 GB · 702 files"><span class="blab">WebM</span><span class="btrack"><span class="bfill" style="width:12.4%"></span></span><span class="bval">46 GB</span></div>
+              <div class="brow" tabindex="0" data-tip="MOV + MKV · 41 GB · 234 files"><span class="blab">MOV/MKV</span><span class="btrack"><span class="bfill" style="width:11.1%"></span></span><span class="bval">41 GB</span></div>
+              <div class="brow" tabindex="0" data-tip="JPEG · 14 GB · 3,410 files"><span class="blab">JPEG</span><span class="btrack"><span class="bfill" style="width:3.8%"></span></span><span class="bval">14 GB</span></div>
+              <div class="brow" tabindex="0" data-tip="GIF · 9.6 GB · 1,205 files"><span class="blab">GIF</span><span class="btrack"><span class="bfill" style="width:2.6%"></span></span><span class="bval">9.6 GB</span></div>
+              <div class="brow" tabindex="0" data-tip="Other (BMP, HEIC, PSD, junk…) · 6.1 GB · 4,806 files"><span class="blab">Other</span><span class="btrack"><span class="bfill" style="width:1.6%"></span></span><span class="bval">6.1 GB</span></div>
+              <div class="brow" tabindex="0" data-tip="PDF · 4.1 GB · 388 files"><span class="blab">PDF</span><span class="btrack"><span class="bfill" style="width:1.1%"></span></span><span class="bval">4.1 GB</span></div>
+              <div class="brow" tabindex="0" data-tip="WebP · 1.2 GB · 341 files"><span class="blab">WebP</span><span class="btrack"><span class="bfill" style="width:0.3%"></span></span><span class="bval">1.2 GB</span></div>
+            </div>
+          </div>
+          <div class="mcard">
+            <div class="mh">Findings</div>
+            <div class="find">
+              <div class="frow"><svg class="ic c-warn" viewBox="0 0 16 16" aria-label="Warning"><path d="M8 1.8 15 14.2H1z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M8 6.2v3.6M8 11.9v.1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><span class="t">214 extensions that don't match the bytes <em>· AVIF saved as .jpg</em></span><span class="a">Fix</span></div>
+              <div class="frow"><svg class="ic c-bad" viewBox="0 0 16 16" aria-label="Serious"><circle cx="8" cy="8" r="6.4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 4.6v4.2M8 11.2v.1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><span class="t">37 files that won't decode</span><span class="a">Review</span></div>
+              <div class="frow"><svg class="ic c-bad" viewBox="0 0 16 16" aria-label="Serious"><circle cx="8" cy="8" r="6.4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 4.6v4.2M8 11.2v.1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><span class="t">18 zero-byte files</span><span class="a">Review</span></div>
+              <div class="frow"><svg class="ic c-info" viewBox="0 0 16 16" aria-label="Info"><circle cx="8" cy="8" r="6.4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 7.2v4.2M8 4.8v.1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><span class="t">41 MKV originals <em>· Pane serves them by presigned URL, not Shutter</em></span><span class="a">Remux</span></div>
+              <div class="frow"><svg class="ic c-info" viewBox="0 0 16 16" aria-label="Info"><circle cx="8" cy="8" r="6.4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 7.2v4.2M8 4.8v.1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><span class="t">96 unsupported <em>· HEIC, PSD, ZIP</em></span><span class="a">Show</span></div>
+              <div class="frow"><svg class="ic c-info" viewBox="0 0 16 16" aria-label="Info"><circle cx="8" cy="8" r="6.4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 7.2v4.2M8 4.8v.1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><span class="t">1,906 system junk files · 62 empty folders</span><span class="a">Clean</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div></div></div>
+  <p class="mcap"><strong>Overview.</strong> One scan gives totals, a size breakdown and a list of findings, and each finding opens a filtered Library view. Hover a bar for its file count.</p>
+
+  <!-- Library -->
+  <div class="mock"><div class="mock-scroll"><div class="mock-app">
+    <div class="mbar"><span class="dots"><i></i><i></i><i></i></span><span class="mtitle">Glazier</span><span class="mright">Library · 2,031 of 48,210</span></div>
+    <div class="mbody">
+      <nav class="side">
+        <div class="h">Views</div>
+        <div class="i">Overview</div>
+        <div class="i on">Library</div>
+        <div class="i">Duplicates</div>
+        <div class="i">Optimize</div>
+        <div class="i">Sound</div>
+        <div class="h">Saved</div>
+        <div class="i">PNG &gt; 5 MB</div>
+        <div class="i on">No sound</div>
+        <div class="i">Wrong ext</div>
+      </nav>
+      <div class="mpane">
+        <div class="filters">
+          <span class="fchip"><b>Kind</b> Video ×</span>
+          <span class="fchip"><b>Audio</b> No track, Silent ×</span>
+          <span class="fchip add">+ Filter</span>
+          <span class="search">Search names and paths</span>
+        </div>
+        <table class="mt">
+          <thead><tr><th></th><th>Name</th><th>Folder</th><th>Format</th><th>Size</th><th>Audio</th><th>Flags</th></tr></thead>
+          <tbody>
+            <tr><td><span class="cb"></span></td><td class="nm">clip_0412.mp4</td><td>video/2025</td><td>H.264 · 0:42</td><td>38.1 MB</td><td>No track</td><td><span class="tag p">3 copies</span></td></tr>
+            <tr class="sel"><td><span class="cb"></span></td><td class="nm">clip_0412 (1).mp4</td><td>downloads</td><td>H.264 · 0:42</td><td>38.1 MB</td><td>No track</td><td><span class="tag p">Duplicate</span></td></tr>
+            <tr class="sel"><td><span class="cb"></span></td><td class="nm">interview_raw.mkv</td><td>video/2024</td><td>HEVC · 12:08</td><td>1.9 GB</td><td>Silent</td><td><span class="tag w">Silent track</span> <span class="tag">Remux</span></td></tr>
+            <tr><td><span class="cb"></span></td><td class="nm">loop_07.mp4</td><td>reactions</td><td>H.264 · 0:06</td><td>2.2 MB</td><td>No track</td><td></td></tr>
+            <tr class="sel"><td><span class="cb"></span></td><td class="nm">sample_scene_3.webm</td><td>inbox/x</td><td>VP9 · 1:15</td><td>11.4 MB</td><td>Silent</td><td><span class="tag w">Silent track</span></td></tr>
+            <tr><td><span class="cb"></span></td><td class="nm">broken_upload.mp4</td><td>inbox</td><td>— </td><td>0 B</td><td>—</td><td><span class="tag s">Zero bytes</span></td></tr>
+          </tbody>
+        </table>
+        <div class="actbar"><span class="cnt">3 selected · 1.95 GB</span><span class="btn">Move to holding</span><span class="btn">Move to…</span><span class="btn">Rename…</span><span class="btn">Strip silent track</span><span class="btn ghost">Reveal in Finder</span><span class="btn ghost">Quick Look</span></div>
+      </div>
+    </div>
+  </div></div></div>
+  <p class="mcap"><strong>Library.</strong> A virtualized table (a grid view sits behind a toggle) with facet chips and saved views. Selections feed the same plan-and-apply path as every other screen.</p>
+
+  <!-- Duplicates -->
+  <div class="mock"><div class="mock-scroll"><div class="mock-app">
+    <div class="mbar"><span class="dots"><i></i><i></i><i></i></span><span class="mtitle">Glazier</span><span class="mright">Duplicates · 1,284 groups · 21.7 GB</span></div>
+    <div class="mbody">
+      <nav class="side">
+        <div class="h">Views</div>
+        <div class="i">Overview</div>
+        <div class="i">Library</div>
+        <div class="i on">Duplicates</div>
+        <div class="i">Optimize</div>
+        <div class="i">Sound</div>
+        <div class="h">Match</div>
+        <div class="i on">Exact <span>1,284</span></div>
+        <div class="i">Near <span>P5</span></div>
+      </nav>
+      <div class="mpane">
+        <div class="dup">
+          <div class="glist">
+            <div class="g on"><div class="top"><span>clip_0412.mp4</span><span>×3</span></div><div class="sub">76.2 MB reclaimable</div></div>
+            <div class="g"><div class="top"><span>004.avif</span><span>×2</span></div><div class="sub">1.8 MB · 1 hard link</div></div>
+            <div class="g"><div class="top"><span>cover.avif</span><span>×2</span></div><div class="sub">412 KB</div></div>
+            <div class="g"><div class="top"><span>session_02.webm</span><span>×2</span></div><div class="sub">604 MB</div></div>
+            <div class="g"><div class="top"><span>page_011.avif</span><span>×4</span></div><div class="sub">5.1 MB</div></div>
+          </div>
+          <div>
+            <div class="rulebar">Keep by <span class="fchip">Protected folders</span><span class="fchip">Archive format</span><span class="fchip">More pixels</span><span class="fchip">Oldest</span><span class="fchip">Shortest path</span></div>
+            <div class="copies">
+              <div class="copy keep"><div class="thumb"></div><div class="p">video/2025/clip_0412.mp4</div><div class="m">38.1 MB · 2025-03-02</div><div class="why">Keep · oldest, shortest path</div></div>
+              <div class="copy"><div class="thumb"></div><div class="p">downloads/clip_0412 (1).mp4</div><div class="m">38.1 MB · 2025-06-19</div><div class="why out">→ holding</div></div>
+              <div class="copy"><div class="thumb"></div><div class="p">inbox/clip_0412.mp4</div><div class="m">38.1 MB · 2025-09-30</div><div class="why out">→ holding</div></div>
+            </div>
+            <div class="plan"><span class="txt">Plan: 2 files → holding · 76.2 MB freed when holding is emptied <em>· Lockstep will see 2 removed paths</em></span><span class="btn ghost">Review</span><span class="btn pri">Apply</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div></div></div>
+  <p class="mcap"><strong>Duplicates.</strong> Keeper rules pre-select one copy per group, you override any group, and Apply builds a single plan across every group you've confirmed. A hard link is labelled, because deleting one name of a hard-linked file frees no space.</p>
+
+  <!-- Optimize -->
+  <div class="mock"><div class="mock-scroll"><div class="mock-app">
+    <div class="mbar"><span class="dots"><i></i><i></i><i></i></span><span class="mtitle">Glazier</span><span class="mright">Optimize · estimate from a 200-file sample</span></div>
+    <div class="mbody">
+      <nav class="side">
+        <div class="h">Views</div>
+        <div class="i">Overview</div>
+        <div class="i">Library</div>
+        <div class="i">Duplicates</div>
+        <div class="i on">Optimize</div>
+        <div class="i">Sound</div>
+        <div class="h">Queue</div>
+        <div class="i on">Running <span>12%</span></div>
+        <div class="i">Results</div>
+      </nav>
+      <div class="mpane">
+        <div class="pol"><span class="fchip"><b>Stills</b> AVIF · quality 70 · speed 6</span><span class="fchip"><b>Fallback</b> speed 8 when memory runs out</span><span class="fchip"><b>GIF</b> MP4 · H.264</span><span class="fchip"><b>Originals</b> → holding</span></div>
+        <div class="mcard">
+          <div class="ocands">
+            <div class="orow"><span class="cb" style="background:#38a8e8;border-color:#38a8e8"></span><span class="e">PNG → AVIF</span><span class="r">6,120</span><span class="r">61.0 GB</span><span class="saving" title="61.0 GB now; 8.9–10.7 GB after"><i class="after" style="width:16%"></i><i class="gone" style="width:84%"></i></span><span class="r">→ 8.9–10.7 GB</span></div>
+            <div class="orow"><span class="cb" style="background:#38a8e8;border-color:#38a8e8"></span><span class="e">JPEG → AVIF</span><span class="r">3,410</span><span class="r">14.0 GB</span><span class="saving" title="14.0 GB now; 5.6–7.0 GB after"><i class="after" style="width:45%"></i><i class="gone" style="width:55%"></i></span><span class="r">→ 5.6–7.0 GB</span></div>
+            <div class="orow"><span class="cb" style="background:#38a8e8;border-color:#38a8e8"></span><span class="e">WebP → AVIF</span><span class="r">341</span><span class="r">1.2 GB</span><span class="saving"><i class="after" style="width:67%"></i><i class="gone" style="width:33%"></i></span><span class="r">→ 0.7–0.9 GB</span></div>
+            <div class="orow"><span class="cb" style="background:#38a8e8;border-color:#38a8e8"></span><span class="e">BMP → AVIF</span><span class="r">41</span><span class="r">0.4 GB</span><span class="saving"><i class="after" style="width:8%"></i><i class="gone" style="width:92%"></i></span><span class="r">→ &lt; 0.1 GB</span></div>
+            <div class="orow"><span class="cb"></span><span class="e">GIF → MP4</span><span class="r">1,205</span><span class="r">9.6 GB</span><span class="saving"><i class="after" style="width:19%"></i><i class="gone" style="width:81%"></i></span><span class="r">→ 1.5–2.2 GB</span></div>
+            <div class="orow skip"><svg class="ic c-warn" viewBox="0 0 16 16" aria-label="Skipped"><path d="M8 1.8 15 14.2H1z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M8 6.2v3.6M8 11.9v.1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><span>Skipped</span><span class="r">42</span><span></span><span>38 animated WebP/APNG · 4 over 64 MP</span><span class="r">Show</span></div>
+          </div>
+        </div>
+        <div class="prog" aria-label="12 percent"><i></i></div>
+        <table class="mt res">
+          <thead><tr><th>Recent</th><th>Before</th><th>After</th><th>Change</th><th>Check</th></tr></thead>
+          <tbody>
+            <tr><td class="nm">sample_post_title/001.png</td><td>14.2 MB</td><td>1.9 MB</td><td>−87%</td><td class="c-ok">✓ verified</td></tr>
+            <tr><td class="nm">sample_post_title/002.png</td><td>9.8 MB</td><td>1.4 MB</td><td>−86%</td><td class="c-ok">✓ verified</td></tr>
+            <tr><td class="nm">scans/vol-2/page_017.jpg</td><td>3.1 MB</td><td>1.6 MB</td><td>−48%</td><td class="c-ok">✓ verified</td></tr>
+            <tr><td class="nm">icons/tiny_mark.png</td><td>4 KB</td><td>5 KB</td><td>+25%</td><td class="c-info">kept source · not smaller</td></tr>
+          </tbody>
+        </table>
+        <div class="actbar"><span class="cnt">1,204 / 9,912 · 3 workers</span><span class="btn">Pause</span><span class="btn ghost">Low priority</span><span class="btn ghost">Re-estimate</span></div>
+      </div>
+    </div>
+  </div></div></div>
+  <p class="mcap"><strong>Optimize.</strong> Candidates come from the shared archive policy. Each row shows today's size (striped is what goes away) and an estimated range, not a single number. Every output is verified before it replaces its source.</p>
+</section>
+
+<!-- ============================== 05 Features ============================== -->
+<section id="features">
+  <div class="kicker"><b>05</b> · Features</div>
+  <h2 class="display">What each part does</h2>
+  <div class="grid2">
+    <div class="card">
+      <span class="kicker">Inventory · Phase 1</span>
+      <h3>Know what's there</h3>
+      <ul>
+        <li><strong>Reads</strong> kind, extension, real format (magic bytes), dimensions, animation, alpha, bit depth, colour profile, video and audio codecs, duration, bitrate.</li>
+        <li><strong>Reports</strong> totals by kind, extension, codec and folder, plus the largest folders.</li>
+        <li><strong>Findings:</strong> extension mismatch, zero-byte, undecodable, system junk (<code>media-domain</code>'s list), empty folders, unsupported types (HEIC and PSD aren't in any app's extension list today), MKV and BMP originals that Pane serves by presigned URL.</li>
+        <li><strong>Fixes:</strong> rename to the real extension (Gather Box's <code>rename-avif</code>/<code>rename-mp4</code> rule), clean junk, remove empty folders.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <span class="kicker">Duplicates · Phases 2 and 5</span>
+      <h3>Find copies, keep one</h3>
+      <ul>
+        <li><strong>Exact:</strong> group by size, hash the first and last 64 KB of same-size files, then full SHA-256 only for what still collides. Most files are never fully read.</li>
+        <li>That SHA-256 is Lockstep's source ID, so exact duplicates already share one object in Pane's bucket. They cost local disk and extra library entries, not S3.</li>
+        <li><strong>Hard links</strong> (same device and inode) show as one file with two names; removing one frees nothing.</li>
+        <li><strong>Near (P5):</strong> a 64-bit dHash per still catches resized copies and PNG/AVIF twins. For videos, dHashes of five frames plus duration catch a GIF beside its MP4, and re-encodes.</li>
+        <li><strong>Keeper rules</strong>, in order: protected folders, archive format, more pixels, oldest mtime, shortest path, then natural name order.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <span class="kicker">Sound · Phases 1 and 4</span>
+      <h3>Which videos have sound</h3>
+      <ul>
+        <li><strong>States:</strong> No audio track · Silent track · Has sound · Not analyzed yet.</li>
+        <li><strong>Track presence</strong> comes from ffprobe's stream list. Frame View already runs ffprobe but only reads the video stream.</li>
+        <li><strong>Silence</strong> needs a pass: ffmpeg <code>volumedetect</code> over the track. A max volume below about −60 dBFS counts as silent (calibrate in Phase 0). It decodes the whole track, so it runs on demand or in the background and is cached.</li>
+        <li><strong>Actions:</strong> filter and sort; strip a silent track by stream copy, with no re-encode, keeping the mtime.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <span class="kicker">Manage · Phase 1</span>
+      <h3>Day-to-day file work</h3>
+      <ul>
+        <li>Table and grid, facet filters, saved views ("PNG over 5 MB", "no sound").</li>
+        <li>Multi-select: move to holding, move to folder, batch rename with a preview, fix extension.</li>
+        <li>Reveal in Finder, open with the default app, and Quick Look via <code>BrowserWindow.previewFile</code>.</li>
+        <li>Holding view with restore, and a journal with undo for every applied step.</li>
+        <li>Later: Open in Frame View, once Frame View accepts a path to open.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== 06 Optimize ============================== -->
+<section id="optimize">
+  <div class="kicker"><b>06</b> · Optimize in detail</div>
+  <h2 class="display">One format policy for the whole archive</h2>
+  <p>Gather Box already decides what the archive stores, in <code>archive-media-policy.ts</code> and <code>avif-codec.ts</code>. Glazier must apply exactly the same policy to files that are already on disk. If it's copied, the two copies drift. So Phase 3 starts by moving the policy into a new shared package, <code>packages/media-format</code>, which both apps import.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Source</th><th>Target</th><th>Settings (from Gather Box today)</th></tr></thead>
+    <tbody>
+      <tr><td class="k">PNG, JPEG, WebP, BMP stills</td><td>AVIF</td><td>quality 70, speed 6, 8-bit, alpha at the same quality. Retries at speed 8 when the wasm encoder runs out of memory (hard-edged art from about 30 MP). Above about 64 MP no speed fits.</td></tr>
+      <tr><td class="k">GIF</td><td>MP4</td><td>Gather Box uses mediabunny: H.264, quality "high", a keyframe every 2 s, alpha discarded. Node has no WebCodecs, so Glazier uses ffmpeg with settings matched to that output in Phase 0.</td></tr>
+      <tr><td class="k">AVIF or MP4 bytes with another extension</td><td>rename</td><td>No re-encode (<code>rename-avif</code>, <code>rename-mp4</code>).</td></tr>
+      <tr><td class="k">Videos, PDFs, AVIF</td><td>unchanged</td><td>The policy leaves them alone. MKV/MOV → MP4 remux is a separate, lossless action (Phase 4).</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Which AVIF encoder (decision D3)</h3>
+  <div class="grid2">
+    <div class="card">
+      <span class="chip rec">Recommended</span>
+      <h3>A · Gather Box's encoder, in Node</h3>
+      <p>Run the same libavif wasm build (<code>@jsquash/avif</code>) in worker threads with the same options. Its codec call already takes the wasm binary as an argument, so only the loader changes. The output then matches whichever tool wrote the file.</p>
+      <p class="dim small">Cost: one encode per worker, the 2 GiB wasm heap ceiling, and the speed 8 fallback come along with it.</p>
+    </div>
+    <div class="card">
+      <span class="chip">Alternative</span>
+      <h3>B · sharp's native AVIF</h3>
+      <p>libheif with aom: multithreaded, faster, no heap ceiling, and already a Frame View dependency.</p>
+      <p class="dim small">Cost: sharp takes <code>effort</code> 0–9 instead of speed, and its quality scale differs, so q70/s6 has no exact equivalent. Matching needs calibration and can drift. Possibly useful as a fallback for images over 64 MP.</p>
+    </div>
+  </div>
+  <p>Phase 0 settles it: encode about 20 representative files both ways (photo, line art, transparent PNG, a phone photo, a P3 PNG, one over 30 MP) and compare size, SSIM and wall time.</p>
+
+  <h3>Decode correctly first</h3>
+  <p>Gather Box decodes with <code>createImageBitmap(blob, { imageOrientation: "from-image" })</code>, which applies EXIF rotation and converts to 8-bit sRGB. Glazier does the same with sharp: rotate, convert to sRGB, 8-bit RGBA. Without that, phone photos come out sideways and wide-gamut PNGs shift colour.</p>
+
+  <h3>Edge cases</h3>
+  <ul>
+    <li><strong>Animated WebP and APNG</strong> are detected (sharp reports more than one page). They go to MP4 or are skipped with a reason, never flattened. <em>Side finding:</em> Gather Box sends every WebP to the still encoder, and <code>createImageBitmap</code> keeps only the first frame, so an animated WebP collected today loses its animation. Fixing that in <code>media-format</code> fixes both apps.</li>
+    <li><strong>The AVIF isn't smaller.</strong> If the output isn't at least 5% smaller (tunable), keep the source and record why. Tiny pixel art can lose.</li>
+    <li><strong>Very large images</strong> (over about 64 MP) are skipped with a reason, unless option B is enabled as a fallback.</li>
+    <li><strong>Metadata.</strong> EXIF is dropped after orientation is applied, matching Gather Box's output. Finder tags (extended attributes) are copied across.</li>
+    <li><strong>Gather Box sidecars</strong> aren't written yet. Once a folder has <code>.latch-works.source.json</code>, a conversion rewrites the matching <code>files[].path</code> entry.</li>
+  </ul>
+
+  <h3>Per-file sequence</h3>
+  <pre>1  re-stat the source; skip it if it changed
+2  decode (rotate, sRGB, 8-bit) and encode
+3  write &lt;name&gt;.glazier-tmp beside the source
+4  verify: it decodes, same width and height
+   (frame count and duration for MP4), smaller
+5  copy the mtime and Finder tags
+6  rename into place
+7  move the original to .latch-works-holding/
+8  journal the step</pre>
+  <p class="dim small">Leftover <code>*.glazier-tmp</code> files are removed on startup, so quitting mid-run is safe. The queue uses N−1 worker threads, can pause, and has a low-priority mode so the Mac stays usable. The estimate encodes a sample stratified by format and size and reports a range.</p>
+</section>
+
+<!-- ============================== 07 Passes ============================== -->
+<section id="passes">
+  <div class="kicker"><b>07</b> · Scan passes</div>
+  <h2 class="display">Cheap first, expensive on demand</h2>
+  <p>Each pass caches its result against the file's fingerprint (size, mtime, ctime) and a pass version. A changed file re-runs only the passes it needs; changing an algorithm bumps its version.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Pass</th><th>Reads</th><th>Produces</th><th>When</th></tr></thead>
+    <tbody>
+      <tr><td class="k">Walk</td><td>Directory entries, lstat</td><td>Path, size, mtime, ctime, device and inode, extension</td><td>Every scan</td></tr>
+      <tr><td class="k">Sniff</td><td>First 4 KB</td><td>Real format, extension mismatch, zero-byte</td><td>New or changed files</td></tr>
+      <tr><td class="k">Probe</td><td>Headers via sharp or ffprobe</td><td>Dimensions, pages, alpha, bit depth, colour space, codecs, duration, bitrate, audio streams, decode errors</td><td>New or changed files</td></tr>
+      <tr><td class="k">Hash</td><td>Same-size files only: 64 KB head and tail, then full</td><td>SHA-256 (Lockstep's source ID)</td><td>Opening Duplicates, or when idle</td></tr>
+      <tr><td class="k">Fingerprint</td><td>Decoded 9×8 grey image; five video frames</td><td>dHash, video signature</td><td>Opt-in (Phase 5)</td></tr>
+      <tr><td class="k">Loudness</td><td>Decoded audio</td><td>Max and mean dB → silent or sound</td><td>Opt-in (Phase 4)</td></tr>
+    </tbody>
+  </table></div>
+  <p class="dim small">Finding near-duplicates without comparing every pair: split each 64-bit dHash into eight bytes and look up candidates by byte. Two hashes within Hamming distance 7 must share at least one identical byte, so this misses nothing up to that threshold.</p>
+</section>
+
+<!-- ============================== 08 Architecture ============================== -->
+<section id="architecture">
+  <div class="kicker"><b>08</b> · Architecture</div>
+  <h2 class="display">Same shape as Lockstep and Frame View</h2>
+  <div class="grid3">
+    <div class="card"><span class="kicker">Renderer</span><p>React 19, Tailwind 4, lucide-react, a virtualized table. Talks only through the preload bridge, with zod-validated contracts in Lockstep's <code>ipcContracts</code> style.</p></div>
+    <div class="card"><span class="kicker">Main</span><p>Windows, menus, dialogs, Reveal in Finder, Quick Look, Trash. Starts the engine and passes a MessagePort to the renderer for paged queries.</p></div>
+    <div class="card"><span class="kicker">Engine · utilityProcess</span><p><code>glazier-core</code>: the SQLite catalog (<code>node:sqlite</code> + drizzle, WAL, as in Frame View), the pass scheduler and the plan executor. It's the only code that writes into a root.</p></div>
+    <div class="card"><span class="kicker">Workers · worker threads</span><p>Walk and sniff; probe (sharp, ffprobe); hash; encode (AVIF wasm, ffmpeg). Sized to N−1 cores and pausable.</p></div>
+    <div class="card"><span class="kicker">Catalog</span><p><code>~/Library/Application Support/Glazier/catalog.sqlite</code>. Rebuildable from the archive at any time, so it's never the source of truth.</p></div>
+    <div class="card"><span class="kicker">Archive roots</span><p>Read by every pass. Written only by the executor, and only to apply a plan.</p></div>
+  </div>
+  <p class="dim small">The engine runs out of process because <code>node:sqlite</code> is synchronous: catalog queries and pass scheduling over tens of thousands of rows mustn't block Electron's main thread. Keeping the engine free of Electron imports also makes a CLI a thin wrapper later, as <code>lockstep-core</code> did for Lockstep.</p>
+
+  <h3>Reuse</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Need</th><th>How</th><th>From</th></tr></thead>
+    <tbody>
+      <tr><td>Media kinds, extensions, junk rules</td><td>Depend</td><td><code>packages/media-domain</code></td></tr>
+      <tr><td>Archive walk; SHA-256 with a change check</td><td>Depend</td><td><code>packages/media-index</code> (<code>scanArchive</code>, <code>hashFileContents</code>)</td></tr>
+      <tr><td>Format policy, AVIF options, codec wrapper</td><td>Extract into <code>media-format</code></td><td><code>apps/gather-box/src/gather/archive-media-policy.ts</code>, <code>avif-codec.ts</code></td></tr>
+      <tr><td>ffmpeg/ffprobe paths in packaged builds</td><td>Copy</td><td>Frame View <code>mediaToolsService.ts</code>, <code>mediaBinaryResolver.ts</code></td></tr>
+      <tr><td>Forge, fuses, native unpacking, signing</td><td>Copy</td><td>Lockstep and Frame View <code>forge.config.ts</code>; <code>docs/electron-macos-signing.md</code></td></tr>
+      <tr><td>SQLite catalog pattern</td><td>Copy</td><td>Frame View <code>src/main/db/mediaIndexService.ts</code></td></tr>
+      <tr><td>Icon</td><td>New SVG master, then <code>pnpm icons</code></td><td><code>docs/design/icons.md</code></td></tr>
+    </tbody>
+  </table></div>
+  <p class="dim small">Plan 057's "copy, don't extract" rule covers the UI and Electron plumbing here. The format policy is the exception, because two apps writing the same archive have to agree on it.</p>
+</section>
+
+<!-- ============================== 09 Data ============================== -->
+<section id="data">
+  <div class="kicker"><b>09</b> · Data model</div>
+  <h2 class="display">The catalog</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>Table</th><th>Columns</th></tr></thead>
+    <tbody>
+      <tr><td class="k">roots</td><td>id, path, holding_path, added_at</td></tr>
+      <tr><td class="k">scans</td><td>id, root_id, started_at, finished_at, status, counters</td></tr>
+      <tr><td class="k">files</td><td>id, root_id, rel_path, name, ext, size, mtime_ms, ctime_ms, dev, ino, sniffed_format, kind, last_seen_scan, present</td></tr>
+      <tr><td class="k">probes</td><td>file_id, version, width, height, pages, has_alpha, bit_depth, colour_space, video_codec, audio_streams, audio_codec, duration_ms, bitrate, error</td></tr>
+      <tr><td class="k">hashes</td><td>file_id, head_tail, sha256</td></tr>
+      <tr><td class="k">fingerprints</td><td>file_id, version, dhash, video_signature</td></tr>
+      <tr><td class="k">loudness</td><td>file_id, version, max_db, mean_db, state</td></tr>
+      <tr><td class="k">plans · plan_steps</td><td>id, kind, created_at, status · action, from_path, to_path, expected_fingerprint, bytes_before, bytes_after, status, error</td></tr>
+      <tr><td class="k">journal</td><td>step_id, applied_at, undone_at</td></tr>
+    </tbody>
+  </table></div>
+  <p class="dim small">A derived row is valid only while its file's size, mtime and ctime match and its pass version is current. Duplicate groups are a query (<code>GROUP BY sha256</code>, excluding rows that share a device and inode), not a table.</p>
+</section>
+
+<!-- ============================== 10 Other apps ============================== -->
+<section id="apps">
+  <div class="kicker"><b>10</b> · Effects on the other apps</div>
+  <h2 class="display">What changes elsewhere</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>App</th><th>What happens</th><th>What to do</th></tr></thead>
+    <tbody>
+      <tr><td class="k">Lockstep</td><td>A conversion shows up as a new file with a new SHA-256 plus a missing old path. A removal is a missing path.</td><td>The plan review shows the count. Afterwards run <code>lockstep plan</code>, <code>push</code>, then <code>prune</code>.</td></tr>
+      <tr><td class="k">Pane View</td><td><code>prune</code> only soft-deletes. Old originals stay in the bucket and in Shutter.</td><td>Run a deleted-item purge in Pane when you want the remote space back.</td></tr>
+      <tr><td class="k">Frame View</td><td>Its <code>media_index</code> rows for moved or converted paths go stale.</td><td>Rescan. Date order holds because the mtime is copied.</td></tr>
+      <tr><td class="k">Gather Box</td><td>Shares the format policy.</td><td>Imports its policy and AVIF codec from <code>media-format</code> (a behaviour-neutral PR; its policy tests move with the code).</td></tr>
+      <tr><td class="k">media-domain</td><td>The holding folder must be invisible to every scanner.</td><td>Add <code>.latch-works-holding</code> to <code>SYSTEM_JUNK_DIRECTORY_NAMES</code>. Frame View and <code>media-index</code> both skip directories through <code>isSystemJunkDirectory</code>.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- ============================== 11 Roadmap ============================== -->
+<section id="roadmap">
+  <div class="kicker"><b>11</b> · Roadmap</div>
+  <h2 class="display">Six phases, each one shippable</h2>
+  <div>
+    <div class="phase"><div class="pn">Phase<b>0</b></div><div>
+      <h3>Spike and decisions <span class="eff">S</span></h3>
+      <p>On the real archive, measure walk, probe and hash throughput; compare AVIF options A and B; calibrate the silence threshold; match ffmpeg's GIF output to Gather Box's. Record the answers to §12 in ADR 0003, then write the Markdown summary of plan 058 and its index row.</p>
+      <p class="done"><b>Done when</b> every decision in §12 has an answer and the ADR is merged.</p>
+    </div></div>
+    <div class="phase"><div class="pn">Phase<b>1</b></div><div>
+      <h3>Foundation, inventory and manage <span class="eff">L</span></h3>
+      <p>Scaffold <code>apps/glazier</code> from Lockstep. Build <code>glazier-core</code> with the walk, sniff and probe passes and the catalog. Ship Overview, Library and findings; holding, journal and undo; move, rename, Reveal and Quick Look; audio-track presence; the <code>media-domain</code> holding rule; the runbook; the icon master; and an e2e project with <code>pnpm e2e:glazier</code>.</p>
+      <p class="done"><b>Done when</b> a scan of the fixture root shows correct counts by kind, extension and audio track, and move-to-holding then undo round-trips in e2e.</p>
+    </div></div>
+    <div class="phase"><div class="pn">Phase<b>2</b></div><div>
+      <h3>Exact duplicates <span class="eff">M</span></h3>
+      <p>Staged hashing, hard-link awareness, the group view, keeper rules and protected folders, and plan review with the Lockstep impact.</p>
+      <p class="done"><b>Done when</b> the fixture's duplicate pair resolves to the rule's keeper, and its hard-link pair is labelled and left out of reclaimable bytes.</p>
+    </div></div>
+    <div class="phase"><div class="pn">Phase<b>3</b></div><div>
+      <h3>Optimize <span class="eff">L</span></h3>
+      <p>PR 1 extracts <code>media-format</code> with Gather Box's behaviour unchanged. Then: the candidate report with sample estimates, the encoder pool, the verify/atomic/mtime sequence, animated-image detection, skip-if-not-smaller, and GIF → MP4.</p>
+      <p class="done"><b>Done when</b> the fixture PNG becomes an AVIF with the policy options, keeps its mtime and lands its original in holding, and the fixture's animated WebP is skipped with a reason.</p>
+    </div></div>
+    <div class="phase"><div class="pn">Phase<b>4</b></div><div>
+      <h3>Sound and video <span class="eff">M</span></h3>
+      <p>The loudness pass, Silent and Has-sound filters, strip a silent track, a codec and bitrate report, and lossless MKV/MOV → MP4 remux when every stream fits in MP4.</p>
+      <p class="done"><b>Done when</b> the fixture's silent-track video and no-track video land in the right states, and a remuxed MKV plays in Frame View.</p>
+    </div></div>
+    <div class="phase"><div class="pn">Phase<b>5</b></div><div>
+      <h3>Near-duplicates <span class="eff">L</span></h3>
+      <p>dHash with the byte index, cross-format twins, video signatures, and a side-by-side compare with a slider and flicker toggle.</p>
+      <p class="done"><b>Done when</b> the fixture's resized copy and PNG/AVIF twin each form a group, and no unrelated fixture image joins one.</p>
+    </div></div>
+    <div class="phase"><div class="pn">Later</div><div>
+      <h3>After v1</h3>
+      <p>The <code>glazier</code> CLI over <code>glazier-core</code>; Open in Frame View; watch mode; a Showcase docs page; Windows and Linux builds.</p>
+    </div></div>
+  </div>
+</section>
+
+<!-- ============================== 12 Decisions ============================== -->
+<section id="decisions">
+  <div class="kicker"><b>12</b> · Your call</div>
+  <h2 class="display">Decisions needed</h2>
+  <p>Each one has a recommended default. Only these change what gets built.</p>
+  <div class="dec">
+    <div class="card"><h3>D1 · Name</h3><div class="opts"><span class="chip rec">Glazier</span><span class="chip">Frame Bench</span><span class="chip">Mullion</span><span class="chip">Something else</span></div><p class="dim small">The rest of the plan uses Glazier; a rename before Phase 1 costs nothing.</p></div>
+    <div class="card"><h3>D2 · Where removed files go</h3><div class="opts"><span class="chip rec">Holding folder per root</span><span class="chip">macOS Trash directly</span></div><p class="dim small">The holding folder is a same-volume rename: instant, with exact undo. Electron's <code>shell.trashItem</code> doesn't report where the file went, so the app couldn't offer undo for the Trash. Whether Finder's Put Back works for items trashed that way is unverified. Space from the holding folder comes back when you empty it.</p></div>
+    <div class="card"><h3>D3 · AVIF encoder</h3><div class="opts"><span class="chip rec">Gather Box's wasm encoder</span><span class="chip">sharp native</span><span class="chip">wasm, with sharp above 64 MP</span></div><p class="dim small">Phase 0 measures both. Parity with Gather Box is the reason for the default.</p></div>
+    <div class="card"><h3>D4 · The original after a verified conversion</h3><div class="opts"><span class="chip rec">Move to holding</span><span class="chip">Trash immediately</span><span class="chip">Keep beside the AVIF</span></div><p class="dim small">Keeping it beside the AVIF would make Phase 5 report every converted file as a duplicate.</p></div>
+    <div class="card"><h3>D5 · GIF → MP4</h3><div class="opts"><span class="chip rec">In scope, Phase 3</span><span class="chip">Report only</span></div><p class="dim small">Gather Box already converts GIFs on the way in, so files collected later already match.</p></div>
+    <div class="card"><h3>D6 · Re-encode videos</h3><div class="opts"><span class="chip rec">Report only</span><span class="chip">Offer an AV1/HEVC action</span></div><p class="dim small">Lossy, slow, and outside the current archive policy. Lossless remux and track stripping are in scope either way.</p></div>
+    <div class="card"><h3>D7 · Platform</h3><div class="opts"><span class="chip rec">macOS first, code kept cross-platform</span><span class="chip">All three from day one</span></div><p class="dim small">Finder, Quick Look and signing are macOS; Frame View shows the rest ports without trouble.</p></div>
+  </div>
+</section>
+
+<!-- ============================== 13 Risks ============================== -->
+<section id="risks">
+  <div class="kicker"><b>13</b> · Risks</div>
+  <h2 class="display">What could go wrong</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>Risk</th><th>Odds · cost</th><th>Mitigation</th></tr></thead>
+    <tbody>
+      <tr><td>A bug in apply loses originals</td><td class="n">Low · High</td><td>Holding instead of delete, a re-check before every step, temp file then rename, the journal, and e2e round-trips</td></tr>
+      <tr><td>Converted stills rotate or shift colour</td><td class="n">Med · High</td><td>Apply orientation and convert to 8-bit sRGB before encoding; the Phase 0 set includes a phone photo and a P3 PNG</td></tr>
+      <tr><td>Animated images get flattened</td><td class="n">Med · High</td><td>More than one page goes to MP4 or is skipped; the same fix lands in Gather Box</td></tr>
+      <tr><td>Glazier's AVIFs drift from Gather Box's</td><td class="n">Med · Med</td><td>One <code>media-format</code> package and a parity fixture</td></tr>
+      <tr><td>Lockstep churn after a large conversion</td><td class="n">High · Med</td><td>Plan review states it; run <code>lockstep plan</code> before <code>push</code>; purge remotely when ready</td></tr>
+      <tr><td>Heavy passes make the Mac sluggish</td><td class="n">Med · Low</td><td>N−1 workers, low-priority mode, pause; loudness and fingerprints are opt-in</td></tr>
+      <tr><td>Reclaimable space overstated</td><td class="n">Med · Low</td><td>Hard links excluded; APFS clones can't be detected cheaply, so the figure is labelled an estimate</td></tr>
+      <tr><td>Slow external or network drives</td><td class="n">Med · Low</td><td>Walk-only mode and per-root concurrency</td></tr>
+      <tr><td>Native dependencies in packaging</td><td class="n">Low · Med</td><td>Frame View already ships sharp, ffmpeg-static and ffprobe through Forge's auto-unpack-natives</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- ============================== 14 Verification ============================== -->
+<section id="verify">
+  <div class="kicker"><b>14</b> · Verification</div>
+  <h2 class="display">How each phase proves itself</h2>
+  <p><strong>Committed unit tests</strong>: only behaviour worth pinning, per <code>CLAUDE.md</code>. The format policy table (moved from Gather Box with the code), keeper-rule ordering, duplicate grouping including hard links, the byte-index candidate search, and executor invariants: a changed file is skipped, temp files are cleaned, the mtime is copied, undo restores.</p>
+  <p><strong>End to end</strong>: <code>pnpm e2e:glazier</code> drives the packaged app over a fixture from <code>e2e/scripts/make-fixture.ts</code>, extended with a PNG candidate, an exact duplicate pair, a hard-link pair, a video with no audio track, one with a silent track, a <code>.jpg</code> holding PNG bytes, and an animated WebP.</p>
+  <pre>pnpm --filter @latch-works/glazier-core test
+pnpm --filter @latch-works/media-format test
+pnpm --filter @latch-works/gather-box test
+pnpm test &amp;&amp; pnpm typecheck &amp;&amp; pnpm lint:all &amp;&amp; pnpm knip
+pnpm e2e:glazier</pre>
+</section>
+
+<!-- ============================== 15 Evidence ============================== -->
+<section id="evidence">
+  <div class="kicker"><b>15</b> · Evidence</div>
+  <h2 class="display">Where this comes from</h2>
+  <ul class="ev">
+    <li><code>apps/gather-box/src/gather/avif-codec.ts</code>: quality 70, speed 6, speed 8 fallback, heap notes</li>
+    <li><code>apps/gather-box/src/gather/archive-media-policy.ts</code>: which formats become AVIF or MP4</li>
+    <li><code>apps/gather-box/src/gather/avif-encoder.worker.ts:28</code>: <code>createImageBitmap</code> decode, first frame only</li>
+    <li><code>apps/gather-box/src/gather/gif-mp4-encoder.ts</code>: H.264 "high", 2 s keyframes</li>
+    <li><code>packages/media-index/src/scan.ts</code>: walk, SHA-256, fingerprint re-check</li>
+    <li><code>packages/media-domain/src/system-files.ts</code>: the directories every scanner skips</li>
+    <li><code>packages/media-domain/src/media.ts</code>: supported extensions (no HEIC)</li>
+    <li><code>packages/media-domain/src/sort.ts</code>: date sorts read <code>mtimeMs</code></li>
+    <li><code>apps/frame-view/src/main/services/mediaToolsService.ts</code>: ffprobe reads only the video stream</li>
+    <li><code>apps/frame-view/src/main/db/mediaIndexService.ts</code>: <code>node:sqlite</code> + drizzle, WAL</li>
+    <li><code>apps/lockstep/package.json</code>: <code>lockstep-app</code> naming precedent</li>
+    <li><code>docs/ARCHITECTURE.md</code>: SHA-256 source IDs, soft delete, MKV/BMP presigned URLs</li>
+    <li><code>docs/plans/README.md</code>: rejected symlink following; next plan number</li>
+    <li><code>docs/latch-works-brand-kit.md</code>: naming theme, tone, pipeline</li>
+    <li><code>docs/gather-box-sidecar-manifests.md</code>: sidecar <code>files[].path</code> (design only)</li>
+    <li><code>docs/design/icons.md</code>: icon masters and <code>pnpm icons</code></li>
+  </ul>
+</section>
+
+</div>
+<div id="tip" role="tooltip" hidden></div>
+<script>
+(() => {
+  const tip = document.getElementById('tip');
+  const place = (x, y) => {
+    const r = tip.getBoundingClientRect();
+    const left = Math.min(Math.max(8, x + 12), window.innerWidth - r.width - 8);
+    const top = y - r.height - 10 < 8 ? y + 16 : y - r.height - 10;
+    tip.style.left = left + 'px';
+    tip.style.top = top + 'px';
+  };
+  document.querySelectorAll('[data-tip]').forEach((el) => {
+    const show = () => { tip.textContent = el.dataset.tip; tip.hidden = false; };
+    el.addEventListener('pointerenter', show);
+    el.addEventListener('pointermove', (e) => place(e.clientX, e.clientY));
+    el.addEventListener('pointerleave', () => { tip.hidden = true; });
+    el.addEventListener('focus', () => { show(); const r = el.getBoundingClientRect(); place(r.left + r.width / 2, r.top); });
+    el.addEventListener('blur', () => { tip.hidden = true; });
+  });
+})();
+</script>
+</body>
+</html>

@@ -22,6 +22,7 @@ pnpm --filter @latch-works/e2e fixture   # render e2e/.fixtures/archive from the
 pnpm e2e:pane                            # Pane View, seeded through the Lockstep CLI
 pnpm e2e:frame                           # Frame View, through Playwright's Electron driver
 pnpm e2e:lockstep                        # Lockstep desktop, pushing into the Pane View server
+pnpm e2e:glazier                         # Glazier desktop, over an archive it builds (no server)
 pnpm e2e                                 # every project
 ```
 
@@ -84,11 +85,32 @@ every seeded path is a delete from this source), then Prune: one planned delete'
 back into the source first, so Prune deletes every other planned path, skips that one, and leaves
 the Prune stage disabled until the next Plan. It also checks `lockstep-settings.json` never holds
 the token in the clear. The app runs with `LOCKSTEP_SECRET_STORAGE=file`, so the token is
-encrypted with a key in `~/.config/lockstep/` instead of the Keychain and no prompt blocks the run.
+encrypted with a key in the run's own userData directory instead of the Keychain and no prompt
+blocks the run.
 Prune empties the seeded archive in the e2e database, which is recreated
 the next time the e2e server starts. The project depends on
 `pane-view`, so `pnpm e2e:lockstep` runs the Pane View suite first; `--no-deps` skips that while
 iterating (the server is still started or reused).
+
+## What the Glazier project covers
+
+`tests/glazier/build.setup.ts` packages Glazier (skip with `E2E_SKIP_BUILD=1`). The spec builds a
+throwaway archive in a temp folder with sharp and `ffmpeg` (it changes files, so it never uses the
+shared fixture): stills including a resized twin and an AVIF misnamed `.jpg`, an animated GIF,
+H.264/AAC in MOV, VP9/Opus in WebM, MP4s with sound, with a silent track and with no audio, an
+exact copy, `.DS_Store` and an empty folder. Glazier opens a hidden transcoder window as well as
+its main one, so `e2e/src/glazier.ts` finds the main window by its page instead of taking the
+first. Folders are added through Glazier's own picker: `chooseFolder` types the path into its field
+and presses Choose, so no native dialog is stubbed. `workbench.spec.ts` covers, in order: adding and scanning the root and its findings;
+**Find similar** grouping the resized JPEG with its original; sound measurement (one with no
+track, one silent, four with sound); resolving the exact duplicate into holding and undoing it from
+the decision's toast; and converting every category (stills to AVIF, the GIF and both videos to MP4, the
+misnamed AVIF renamed), checking codecs with ffprobe and that each original's modification time
+survived.
+
+The project needs no compose stack: when only `glazier` (and its setup) is selected, the config
+does not start the Pane View server. It needs `ffmpeg` and `ffprobe` on `PATH`, and a machine
+whose WebCodecs can encode H.264 (any Mac).
 
 ## Gather Box: manual smoke checklist
 

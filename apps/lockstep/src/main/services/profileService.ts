@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
+import { LATCH_WORKS_DIRECTORY_NAME } from "@latch-works/media-domain";
 import { Result, type Result as ResultType } from "better-result";
 import { z } from "zod";
 
@@ -65,7 +66,7 @@ export class ProfileService {
   constructor(userDataPath: string, options: ProfileServiceOptions) {
     this.filePath = path.join(userDataPath, "lockstep-settings.json");
     this.legacyConfigPath =
-      options.legacyConfigPath ?? path.join(homedir(), ".latch-works", "lockstep.json");
+      options.legacyConfigPath ?? path.join(homedir(), LATCH_WORKS_DIRECTORY_NAME, "lockstep.json");
     this.secretStorage = options.secretStorage;
   }
 

@@ -17,6 +17,7 @@ The naming theme is based on window-adjacent parts and access metaphors:
 - A **latch** controls access.
 - A **box** collects and stores.
 - **Lockstep** implies reliable synchronized movement.
+- A **glazier** cuts, fits and replaces the panes: the one tool that changes the archive by hand.
 
 The overall feel should be private, practical, calm, and tool-like rather than flashy or public-facing.
 
@@ -31,6 +32,7 @@ The overall feel should be private, practical, calm, and tool-like rather than f
 | Web app | **Pane View** | Private web/mobile media viewer |
 | Browser extension | **Gather Box** | Content collection/downloader extension |
 | Sync CLI | **Lockstep** | Local archive to remote web archive sync tool |
+| Desktop workbench | **Glazier** | Audits and tidies the local archive: duplicates, formats, sound |
 
 ---
 
@@ -151,6 +153,7 @@ Use simple pipeline wording:
 
 ```text
 Gather Box collects.
+Glazier tidies.
 Frame View verifies locally.
 Lockstep syncs.
 Pane View displays privately.
