@@ -22,7 +22,6 @@ import {
   waitForOldAppsToQuit,
 } from "./main/migration";
 import type { ModeContext, ModeHost } from "./main/mode";
-import { runVelopackHooks } from "./main/velopack";
 import { readWindowState, rememberWindowState } from "./main/window-state";
 import { startSync } from "./modes/sync/main/start";
 import { TIDY_MEDIA_SCHEME } from "./modes/tidy/main/media-protocol";
