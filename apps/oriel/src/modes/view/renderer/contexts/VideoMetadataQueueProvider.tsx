@@ -1,8 +1,8 @@
-import type { JSX, PropsWithChildren } from 'react';
+import type { JSX, PropsWithChildren } from "react";
 
-import { useVideoMetadataQueue } from '../hooks/useVideoMetadataQueue';
-import { useAppStore } from '../store/useAppStore';
-import { VideoMetadataQueueContext } from './videoMetadataQueueContext';
+import { useVideoMetadataQueue } from "../hooks/useVideoMetadataQueue";
+import { useAppStore } from "../store/useAppStore";
+import { VideoMetadataQueueContext } from "./videoMetadataQueueContext";
 
 export function VideoMetadataQueueProvider({ children }: PropsWithChildren): JSX.Element {
   const activeScanRunId = useAppStore((state) => state.activeScanRunId);

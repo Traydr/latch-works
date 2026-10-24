@@ -1,8 +1,8 @@
-import { promises as fs } from 'node:fs';
-import path from 'node:path';
+import { promises as fs } from "node:fs";
+import path from "node:path";
 
-import type { Rectangle } from 'electron';
-import { z } from 'zod';
+import type { Rectangle } from "electron";
+import { z } from "zod";
 
 import {
   AppSettingsSchema,
@@ -15,8 +15,8 @@ import {
   RootGalleryPreferencesMapSchema,
   ThemeModeSchema,
   ThumbnailSizeSchema,
-} from '../../shared/contracts';
-import { type AppSettings, DEFAULT_SETTINGS } from '../../shared/types';
+} from "../../shared/contracts";
+import { type AppSettings, DEFAULT_SETTINGS } from "../../shared/types";
 
 const WindowBoundsSchema = z.object({
   x: z.number(),
@@ -227,9 +227,9 @@ export function createDefaultPersistedState(): PersistedState {
  * Extensions added to the defaults after users could already persist custom lists; migrating
  * a pre-version-3 payload backfills them once, then deliberate removals are respected.
  */
-const BACKFILLED_IMAGE_EXTENSIONS = ['gif', 'avif'];
+const BACKFILLED_IMAGE_EXTENSIONS = ["gif", "avif"];
 
-const BACKFILLED_VIDEO_EXTENSIONS = ['m4v'];
+const BACKFILLED_VIDEO_EXTENSIONS = ["m4v"];
 
 function withBackfilledExtensions(existing: string[], additions: string[]): string[] {
   const missing = additions.filter((extension) => !existing.includes(extension));
@@ -279,19 +279,16 @@ function migratePersistedState(candidate: JsonValue): PersistedState {
 }
 
 export async function readPersistedState(filePath: string): Promise<PersistedState> {
-  const raw = await fs.readFile(filePath, 'utf8');
+  const raw = await fs.readFile(filePath, "utf8");
 
   return migratePersistedState(JSON.parse(raw));
 }
 
-export async function writePersistedState(
-  filePath: string,
-  state: PersistedState,
-): Promise<void> {
+export async function writePersistedState(filePath: string, state: PersistedState): Promise<void> {
   const payload = JSON.stringify(state, null, 2);
   const tempFilePath = `${filePath}.tmp`;
 
   await fs.mkdir(path.dirname(filePath), { recursive: true });
-  await fs.writeFile(tempFilePath, payload, 'utf8');
+  await fs.writeFile(tempFilePath, payload, "utf8");
   await fs.rename(tempFilePath, filePath);
 }

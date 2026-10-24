@@ -1,13 +1,13 @@
-import path from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
-import { Result, type Result as ResultType } from 'better-result';
-import { and, eq, ne, sql } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/sqlite-proxy';
-import { z } from 'zod';
+import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import { Result, type Result as ResultType } from "better-result";
+import { and, eq, ne, sql } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/sqlite-proxy";
+import { z } from "zod";
 
-import type { MediaIndexStats, MediaItem } from '../../shared/types';
-import { type DatabaseError, toError, unexpectedDatabaseError } from '../errors';
-import { mediaIndexTable, scanRunsTable } from './schema';
+import type { MediaIndexStats, MediaItem } from "../../shared/types";
+import { type DatabaseError, toError, unexpectedDatabaseError } from "../errors";
+import { mediaIndexTable, scanRunsTable } from "./schema";
 
 /** `PRAGMA table_info` returns one row per column; only the column name is read here. */
 const TableColumnsSchema = z.array(z.object({ name: z.string() }));
@@ -26,14 +26,14 @@ export class MediaIndexService {
   private sqlite: DatabaseSync | null = null;
 
   constructor(userDataPath: string) {
-    this.dbPath = path.join(userDataPath, 'media-index.sqlite');
+    this.dbPath = path.join(userDataPath, "media-index.sqlite");
   }
 
   init(): ResultType<void, DatabaseError> {
     try {
       this.sqlite = new DatabaseSync(this.dbPath);
-      this.sqlite.exec('PRAGMA journal_mode = WAL;');
-      this.sqlite.exec('PRAGMA synchronous = NORMAL;');
+      this.sqlite.exec("PRAGMA journal_mode = WAL;");
+      this.sqlite.exec("PRAGMA synchronous = NORMAL;");
 
       this.sqlite.exec(`
         CREATE TABLE IF NOT EXISTS scan_runs (
@@ -68,7 +68,7 @@ export class MediaIndexService {
         ON media_index(last_seen_scan_id);
       `);
 
-      this.ensureColumn('media_index', 'codec', 'TEXT');
+      this.ensureColumn("media_index", "codec", "TEXT");
       this.db = drizzle(
         async (statementSql, params, method) => {
           const database = this.requireSqlite();
@@ -78,11 +78,11 @@ export class MediaIndexService {
           // read hands it the row as a value array rather than node:sqlite's row object. The
           // schema has no joins, so column names never collide within a row.
           switch (method) {
-            case 'run':
+            case "run":
               statement.run(...params);
 
               return { rows: [] };
-            case 'get': {
+            case "get": {
               const row = statement.get(...params);
 
               return { rows: row ? Object.values(row) : [] };
@@ -102,7 +102,7 @@ export class MediaIndexService {
 
       return Result.ok();
     } catch (cause) {
-      return Result.err(unexpectedDatabaseError('media-index-init', toError(cause)));
+      return Result.err(unexpectedDatabaseError("media-index-init", toError(cause)));
     }
   }
 
@@ -123,14 +123,14 @@ export class MediaIndexService {
           rootPath,
           recursive,
           startedAtMs: Date.now(),
-          status: 'running',
+          status: "running",
         })
         .returning({ id: scanRunsTable.id })
         .get();
 
       return Result.ok(result.id);
     } catch (cause) {
-      return Result.err(unexpectedDatabaseError('media-index-start-scan', toError(cause)));
+      return Result.err(unexpectedDatabaseError("media-index-start-scan", toError(cause)));
     }
   }
 
@@ -191,7 +191,7 @@ export class MediaIndexService {
 
       return Result.ok();
     } catch (cause) {
-      return Result.err(unexpectedDatabaseError('media-index-upsert-batch', toError(cause)));
+      return Result.err(unexpectedDatabaseError("media-index-upsert-batch", toError(cause)));
     }
   }
 
@@ -210,7 +210,7 @@ export class MediaIndexService {
           .update(scanRunsTable)
           .set({
             completedAtMs: Date.now(),
-            status: 'done',
+            status: "done",
           })
           .where(eq(scanRunsTable.id, scanId))
           .run();
@@ -218,7 +218,7 @@ export class MediaIndexService {
 
       return Result.ok();
     } catch (cause) {
-      return Result.err(unexpectedDatabaseError('media-index-finish-scan', toError(cause)));
+      return Result.err(unexpectedDatabaseError("media-index-finish-scan", toError(cause)));
     }
   }
 
@@ -228,14 +228,14 @@ export class MediaIndexService {
         .update(scanRunsTable)
         .set({
           completedAtMs: Date.now(),
-          status: 'cancelled',
+          status: "cancelled",
         })
         .where(eq(scanRunsTable.id, scanId))
         .run();
 
       return Result.ok();
     } catch (cause) {
-      return Result.err(unexpectedDatabaseError('media-index-cancel-scan', toError(cause)));
+      return Result.err(unexpectedDatabaseError("media-index-cancel-scan", toError(cause)));
     }
   }
 
@@ -255,7 +255,7 @@ export class MediaIndexService {
         dbPath: this.dbPath,
       });
     } catch (cause) {
-      return Result.err(unexpectedDatabaseError('media-index-get-stats', toError(cause)));
+      return Result.err(unexpectedDatabaseError("media-index-get-stats", toError(cause)));
     }
   }
 
@@ -268,13 +268,13 @@ export class MediaIndexService {
 
       return Result.ok();
     } catch (cause) {
-      return Result.err(unexpectedDatabaseError('media-index-clear', toError(cause)));
+      return Result.err(unexpectedDatabaseError("media-index-clear", toError(cause)));
     }
   }
 
   private requireDb(): MediaIndexDatabase {
     if (!this.db) {
-      throw new Error('Media index database is not initialized');
+      throw new Error("Media index database is not initialized");
     }
 
     return this.db;
@@ -282,7 +282,7 @@ export class MediaIndexService {
 
   private requireSqlite(): DatabaseSync {
     if (!this.sqlite) {
-      throw new Error('Media index database is not initialized');
+      throw new Error("Media index database is not initialized");
     }
 
     return this.sqlite;

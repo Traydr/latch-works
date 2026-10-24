@@ -1,10 +1,10 @@
-import { promises as fs } from 'node:fs';
-import path from 'node:path';
+import { promises as fs } from "node:fs";
+import path from "node:path";
 
-import { Result, type Result as ResultType } from 'better-result';
-import { z } from 'zod';
-import type { FolderNode } from '../../shared/types';
-import { type FileSystemError, toError, unexpectedFileSystemError } from '../errors';
+import { Result, type Result as ResultType } from "better-result";
+import { z } from "zod";
+import type { FolderNode } from "../../shared/types";
+import { type FileSystemError, toError, unexpectedFileSystemError } from "../errors";
 
 /** Node's filesystem rejections carry a numeric-ish `code` such as `ENOENT`. */
 const ErrnoErrorSchema = z.object({ code: z.string() });
@@ -44,12 +44,12 @@ export async function resolveFolderPath(
     const error = toError(cause);
     const errno = ErrnoErrorSchema.safeParse(error);
 
-    if (errno.success && errno.data.code === 'ENOENT') {
+    if (errno.success && errno.data.code === "ENOENT") {
       return Result.ok(null);
     }
 
     return Result.err(
-      unexpectedFileSystemError('resolve-folder-path', error, resolvedCandidatePath),
+      unexpectedFileSystemError("resolve-folder-path", error, resolvedCandidatePath),
     );
   }
 }
@@ -72,11 +72,11 @@ export async function listFolderChildren(
     });
 
     return Result.ok(
-      nodes.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })),
+      nodes.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" })),
     );
   } catch (cause) {
     return Result.err(
-      unexpectedFileSystemError('list-folder-children', toError(cause), folderPath),
+      unexpectedFileSystemError("list-folder-children", toError(cause), folderPath),
     );
   }
 }

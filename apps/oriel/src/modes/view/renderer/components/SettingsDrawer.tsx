@@ -1,4 +1,4 @@
-import { type JSX, useEffect, useEffectEvent, useRef, useState } from 'react';
+import { type JSX, useEffect, useEffectEvent, useRef, useState } from "react";
 
 import type {
   AppSettings,
@@ -6,19 +6,19 @@ import type {
   DiagnosticsSnapshot,
   MediaIndexStats,
   MediaToolsStatus,
-} from '../../shared/types';
-import { DebugTab } from './settings/DebugTab';
-import { HotkeysTab } from './settings/HotkeysTab';
-import { LocalStorageTab } from './settings/LocalStorageTab';
-import { SettingsTabNav } from './settings/SettingsTabNav';
-import { SETTINGS_TABS, type SettingsTab } from './settings/settingsTabs';
-import { UsabilityTab } from './settings/UsabilityTab';
+} from "../../shared/types";
+import { DebugTab } from "./settings/DebugTab";
+import { HotkeysTab } from "./settings/HotkeysTab";
+import { LocalStorageTab } from "./settings/LocalStorageTab";
+import { SettingsTabNav } from "./settings/SettingsTabNav";
+import { SETTINGS_TABS, type SettingsTab } from "./settings/settingsTabs";
+import { UsabilityTab } from "./settings/UsabilityTab";
 
 interface CurrentFolderSummary {
   folderName: string | null;
   itemCount: number;
   recursive: boolean;
-  scanState: 'idle' | 'loading' | 'done' | 'error';
+  scanState: "idle" | "loading" | "done" | "error";
 }
 
 interface SettingsDrawerProps {
@@ -68,16 +68,16 @@ export function SettingsDrawer({
     closeButtonRef.current?.focus();
 
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') {
+      if (event.key === "Escape") {
         event.preventDefault();
         closeEvent();
       }
     };
 
-    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener("keydown", onKeyDown);
 
     return () => {
-      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener("keydown", onKeyDown);
       previous?.focus();
     };
   }, []);
@@ -117,10 +117,10 @@ export function SettingsDrawer({
           ref={bodyRef}
           className="min-h-0 flex-1 overflow-y-auto p-4 text-sm text-zinc-700 dark:text-zinc-200"
         >
-          {activeTab === 'Usability' ? (
+          {activeTab === "Usability" ? (
             <UsabilityTab settings={settings} onUpdate={onUpdate} />
           ) : null}
-          {activeTab === 'Local Storage' ? (
+          {activeTab === "Local Storage" ? (
             <LocalStorageTab
               mediaIndexStats={mediaIndexStats}
               mediaToolsStatus={mediaToolsStatus}
@@ -128,8 +128,8 @@ export function SettingsDrawer({
               onClearThumbnailCache={onClearThumbnailCache}
             />
           ) : null}
-          {activeTab === 'Hotkeys' ? <HotkeysTab /> : null}
-          {activeTab === 'Debug' ? (
+          {activeTab === "Hotkeys" ? <HotkeysTab /> : null}
+          {activeTab === "Debug" ? (
             <DebugTab
               copyStatus={copyStatus}
               currentFolderSummary={currentFolderSummary}
@@ -139,9 +139,9 @@ export function SettingsDrawer({
                 void (async () => {
                   try {
                     await onCopyDiagnostics();
-                    setCopyStatus('Diagnostics copied to clipboard');
+                    setCopyStatus("Diagnostics copied to clipboard");
                   } catch {
-                    setCopyStatus('Failed to copy diagnostics');
+                    setCopyStatus("Failed to copy diagnostics");
                   }
                 })();
               }}
@@ -149,9 +149,9 @@ export function SettingsDrawer({
                 void (async () => {
                   try {
                     await onRefreshDiagnostics();
-                    setCopyStatus('Diagnostics refreshed');
+                    setCopyStatus("Diagnostics refreshed");
                   } catch {
-                    setCopyStatus('Failed to refresh diagnostics');
+                    setCopyStatus("Failed to refresh diagnostics");
                   }
                 })();
               }}

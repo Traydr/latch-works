@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from "vitest";
 
-import { ScanQueue } from '../../../src/main/catalog/ScanQueue';
+import { ScanQueue } from "../../../src/main/catalog/ScanQueue";
 
 /**
  * Stands in for the catalog worker: a started scan runs until it is cancelled or the test ends it,
@@ -36,8 +36,8 @@ async function settle(): Promise<void> {
   });
 }
 
-describe('ScanQueue', () => {
-  it('cancels the running scan for a newer request and starts it once that scan ended', async () => {
+describe("ScanQueue", () => {
+  it("cancels the running scan for a newer request and starts it once that scan ended", async () => {
     const worker = createWorker();
     const queue = new ScanQueue(worker);
     const started: string[] = [];
@@ -48,27 +48,27 @@ describe('ScanQueue', () => {
         worker.startScan();
 
         return folder;
-      }, 'superseded');
+      }, "superseded");
 
-    const first = request('/remembered');
+    const first = request("/remembered");
     await settle();
 
     expect(worker.cancels).toBe(0);
 
-    const second = request('/opened');
+    const second = request("/opened");
 
     expect(queue.isRunningLatest()).toBe(false);
 
     await settle();
 
     expect(worker.cancels).toBe(1);
-    expect(started).toEqual(['/remembered', '/opened']);
+    expect(started).toEqual(["/remembered", "/opened"]);
     expect(queue.isRunningLatest()).toBe(true);
-    await expect(first).resolves.toBe('/remembered');
-    await expect(second).resolves.toBe('/opened');
+    await expect(first).resolves.toBe("/remembered");
+    await expect(second).resolves.toBe("/opened");
   });
 
-  it('runs only the newest of the requests that piled up behind a running scan', async () => {
+  it("runs only the newest of the requests that piled up behind a running scan", async () => {
     const worker = createWorker();
     const queue = new ScanQueue(worker);
     const started: string[] = [];
@@ -81,30 +81,30 @@ describe('ScanQueue', () => {
       });
 
       if (isLatest()) {
-        started.push('/a');
+        started.push("/a");
       }
 
-      return '/a';
-    }, 'superseded');
+      return "/a";
+    }, "superseded");
 
     const request = (folder: string) =>
       queue.request(async () => {
         started.push(folder);
 
         return folder;
-      }, 'superseded');
+      }, "superseded");
 
     await settle();
 
-    const dropped = [request('/b'), request('/c')];
-    const newest = request('/d');
+    const dropped = [request("/b"), request("/c")];
+    const newest = request("/d");
 
-    await expect(Promise.all(dropped)).resolves.toEqual(['superseded', 'superseded']);
+    await expect(Promise.all(dropped)).resolves.toEqual(["superseded", "superseded"]);
 
     holdFirst();
 
-    await expect(running).resolves.toBe('/a');
-    await expect(newest).resolves.toBe('/d');
-    expect(started).toEqual(['/d']);
+    await expect(running).resolves.toBe("/a");
+    await expect(newest).resolves.toBe("/d");
+    expect(started).toEqual(["/d"]);
   });
 });

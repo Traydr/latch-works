@@ -3,49 +3,49 @@ import {
   type Result as ResultType,
   type SerializedResult,
   TaggedError,
-} from 'better-result';
-import type { ZodType } from 'zod';
-import type { JsonValue } from '../shared/contracts';
-import { serializeIpcResult } from '../shared/ipc';
-import type { IpcErrorPayload } from '../shared/types';
+} from "better-result";
+import type { ZodType } from "zod";
+import type { JsonValue } from "../shared/contracts";
+import { serializeIpcResult } from "../shared/ipc";
+import type { IpcErrorPayload } from "../shared/types";
 
-export class ValidationError extends TaggedError('ValidationError')<{
+export class ValidationError extends TaggedError("ValidationError")<{
   operation: string;
   message: string;
   issues?: string[];
   cause?: unknown;
 }> {}
 
-export class FileSystemError extends TaggedError('FileSystemError')<{
+export class FileSystemError extends TaggedError("FileSystemError")<{
   operation: string;
   message: string;
   path?: string;
   cause?: unknown;
 }> {}
 
-export class DatabaseError extends TaggedError('DatabaseError')<{
+export class DatabaseError extends TaggedError("DatabaseError")<{
   operation: string;
   message: string;
   cause?: unknown;
 }> {}
 
-class MediaToolsError extends TaggedError('MediaToolsError')<{
+class MediaToolsError extends TaggedError("MediaToolsError")<{
   operation: string;
   message: string;
   cause?: unknown;
 }> {}
 
-export class WorkerError extends TaggedError('WorkerError')<{
-  worker: 'catalog' | 'thumbnail';
+export class WorkerError extends TaggedError("WorkerError")<{
+  worker: "catalog" | "thumbnail";
   operation: string;
   message: string;
   cause?: unknown;
 }> {}
 
 export class RequestAbortError extends Error {
-  constructor(message = 'Request aborted') {
+  constructor(message = "Request aborted") {
     super(message);
-    this.name = 'AbortError';
+    this.name = "AbortError";
   }
 }
 
@@ -101,7 +101,7 @@ export function unexpectedDatabaseError(operation: string, error: Error): Databa
 function toIpcErrorPayload(error: AppError): IpcErrorPayload {
   if (ValidationError.is(error)) {
     return {
-      _tag: 'ValidationError',
+      _tag: "ValidationError",
       message: error.message,
       operation: error.operation,
       issues: error.issues,
@@ -111,7 +111,7 @@ function toIpcErrorPayload(error: AppError): IpcErrorPayload {
 
   if (FileSystemError.is(error)) {
     return {
-      _tag: 'FileSystemError',
+      _tag: "FileSystemError",
       message: error.message,
       operation: error.operation,
       path: error.path,
@@ -121,7 +121,7 @@ function toIpcErrorPayload(error: AppError): IpcErrorPayload {
 
   if (DatabaseError.is(error)) {
     return {
-      _tag: 'DatabaseError',
+      _tag: "DatabaseError",
       message: error.message,
       operation: error.operation,
       cause: error.cause,
@@ -130,7 +130,7 @@ function toIpcErrorPayload(error: AppError): IpcErrorPayload {
 
   if (MediaToolsError.is(error)) {
     return {
-      _tag: 'MediaToolsError',
+      _tag: "MediaToolsError",
       message: error.message,
       operation: error.operation,
       cause: error.cause,
@@ -138,7 +138,7 @@ function toIpcErrorPayload(error: AppError): IpcErrorPayload {
   }
 
   return {
-    _tag: 'WorkerError',
+    _tag: "WorkerError",
     message: error.message,
     worker: error.worker,
     operation: error.operation,

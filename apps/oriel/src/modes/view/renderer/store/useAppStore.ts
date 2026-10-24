@@ -1,11 +1,11 @@
-import { create } from 'zustand';
+import { create } from "zustand";
 
-import { DEFAULT_SETTINGS } from '../../shared/types';
-import { createApplyVideoMetadata } from './metadataState';
-import { createApplyScanEvent, createSupersedeActiveScan } from './scanState';
-import { createInitializeSettings } from './settingsState';
-import type { AppState } from './types';
-import { createCloseViewer, createOpenViewerAt, createShiftViewer } from './viewerState';
+import { DEFAULT_SETTINGS } from "../../shared/types";
+import { createApplyVideoMetadata } from "./metadataState";
+import { createApplyScanEvent, createSupersedeActiveScan } from "./scanState";
+import { createInitializeSettings } from "./settingsState";
+import type { AppState } from "./types";
+import { createCloseViewer, createOpenViewerAt, createShiftViewer } from "./viewerState";
 
 export const useAppStore = create<AppState>((set, get) => ({
   settings: DEFAULT_SETTINGS,
@@ -20,10 +20,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   activeScanRunId: null,
   scanStartCount: 0,
   requestedScan: null,
-  scanState: 'idle',
+  scanState: "idle",
   scannedDirectories: 0,
   discoveredItems: 0,
-  scanMessage: 'Open a folder to begin',
+  scanMessage: "Open a folder to begin",
   scanMessagePath: null,
   initializeSettings: createInitializeSettings(set),
   setRecursive: (value) => set({ recursive: value }),

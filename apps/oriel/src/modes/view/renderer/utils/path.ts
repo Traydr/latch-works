@@ -1,12 +1,12 @@
-import { isShowcasePreviewEnabled } from '../../showcase/runtime';
+import { isShowcasePreviewEnabled } from "../../showcase/runtime";
 
 export function toDisplayName(inputPath: string | null): string {
   if (!inputPath) {
-    return 'No folder selected';
+    return "No folder selected";
   }
 
-  const normalized = inputPath.replace(/\\/g, '/');
-  const parts = normalized.split('/').filter(Boolean);
+  const normalized = inputPath.replace(/\\/g, "/");
+  const parts = normalized.split("/").filter(Boolean);
 
   return parts.length ? parts[parts.length - 1] : inputPath;
 }
@@ -16,14 +16,14 @@ export function getParentPath(inputPath: string | null): string | null {
     return null;
   }
 
-  const useBackslashes = /^[A-Za-z]:/.test(inputPath) || inputPath.includes('\\');
-  const normalized = inputPath.replace(/\\/g, '/').replace(/\/+$/, '');
+  const useBackslashes = /^[A-Za-z]:/.test(inputPath) || inputPath.includes("\\");
+  const normalized = inputPath.replace(/\\/g, "/").replace(/\/+$/, "");
 
-  if (!normalized || normalized === '/' || /^[A-Za-z]:$/.test(normalized)) {
+  if (!normalized || normalized === "/" || /^[A-Za-z]:$/.test(normalized)) {
     return null;
   }
 
-  const lastSlashIndex = normalized.lastIndexOf('/');
+  const lastSlashIndex = normalized.lastIndexOf("/");
 
   if (lastSlashIndex < 0) {
     return null;
@@ -32,19 +32,19 @@ export function getParentPath(inputPath: string | null): string | null {
   const parent = normalized.slice(0, lastSlashIndex);
 
   if (!parent) {
-    return '/';
+    return "/";
   }
 
   if (/^[A-Za-z]:$/.test(parent)) {
     return `${parent}\\`;
   }
 
-  return useBackslashes ? parent.replace(/\//g, '\\') : parent;
+  return useBackslashes ? parent.replace(/\//g, "\\") : parent;
 }
 
 function toShowcaseMediaUrl(filePath: string): string {
-  const normalized = filePath.replace(/\\/g, '/');
-  const fileName = normalized.split('/').pop() ?? normalized;
+  const normalized = filePath.replace(/\\/g, "/");
+  const fileName = normalized.split("/").pop() ?? normalized;
 
   return `/showcase-media/${encodeURIComponent(fileName)}`;
 }
@@ -65,21 +65,21 @@ export function toThumbnailUrl(filePath: string, size: number, priority?: 0 | 1 
   const clampedSize = Math.max(64, Math.min(1024, Math.floor(size)));
 
   const prioritySuffix =
-    priority === undefined ? '' : `&priority=${Math.max(0, Math.min(2, Math.floor(priority)))}`;
+    priority === undefined ? "" : `&priority=${Math.max(0, Math.min(2, Math.floor(priority)))}`;
 
   return `frameview-media://thumb?path=${encodeURIComponent(filePath)}&size=${clampedSize}${prioritySuffix}`;
 }
 
-export { formatBytes } from '@latch-works/media-domain';
+export { formatBytes } from "@latch-works/media-domain";
 
 export function formatDuration(ms?: number): string {
   if (!ms || ms <= 0) {
-    return '--:--';
+    return "--:--";
   }
 
   const totalSeconds = Math.floor(ms / 1000);
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
 
-  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }

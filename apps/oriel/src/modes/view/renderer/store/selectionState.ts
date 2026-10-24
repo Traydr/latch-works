@@ -1,5 +1,5 @@
-import type { AppSettings, MediaItem } from '../../shared/types';
-import { sortMediaItems } from '../utils/sort';
+import type { AppSettings, MediaItem } from "../../shared/types";
+import { sortMediaItems } from "../utils/sort";
 
 /** The sorted gallery together with the selection and viewer position it still supports. */
 interface SortedGallerySelection {

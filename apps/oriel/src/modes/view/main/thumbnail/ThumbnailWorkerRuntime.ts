@@ -1,6 +1,6 @@
-import { promises as fs } from 'node:fs';
-import { createRequire } from 'node:module';
-import path from 'node:path';
+import { promises as fs } from "node:fs";
+import { createRequire } from "node:module";
+import path from "node:path";
 
 import type {
   ThumbnailDebugOptions,
@@ -9,12 +9,12 @@ import type {
   ThumbnailWorkerJobResult,
   ThumbnailWorkerRequest,
   ThumbnailWorkerResponse,
-} from '../../shared/thumbnail';
-import { RequestAbortError, toError } from '../errors';
-import { resolveBinaryPath } from '../services/mediaBinaryResolver';
-import { MediaToolsAbortError, MediaToolsService } from '../services/mediaToolsService';
+} from "../../shared/thumbnail";
+import { RequestAbortError, toError } from "../errors";
+import { resolveBinaryPath } from "../services/mediaBinaryResolver";
+import { MediaToolsAbortError, MediaToolsService } from "../services/mediaToolsService";
 
-type SharpLib = typeof import('sharp');
+type SharpLib = typeof import("sharp");
 
 const VIDEO_WEBP_QUALITY = 82;
 
@@ -33,7 +33,7 @@ const SHARP_CACHE_ITEMS = 64;
 
 const nativeRequire = createRequire(__filename);
 
-const LOSSLESS_IMAGE_EXTENSIONS = new Set(['.png', '.bmp', '.gif']);
+const LOSSLESS_IMAGE_EXTENSIONS = new Set([".png", ".bmp", ".gif"]);
 
 /**
  * `sharp` is a CommonJS module: `require` yields the callable library itself, or an ES-interop
@@ -50,10 +50,10 @@ function loadPackagedSharp(): SharpLib | null {
 
   try {
     const packagedRequire = createRequire(
-      path.join(process.resourcesPath, 'node_modules', 'sharp', 'package.json'),
+      path.join(process.resourcesPath, "node_modules", "sharp", "package.json"),
     );
 
-    return resolveSharpModule(packagedRequire('sharp'));
+    return resolveSharpModule(packagedRequire("sharp"));
   } catch {
     return null;
   }
@@ -61,11 +61,11 @@ function loadPackagedSharp(): SharpLib | null {
 
 interface ActiveJob {
   abortController: AbortController;
-  kind: 'image' | 'video';
+  kind: "image" | "video";
 }
 
 /** The media-tools entry points the thumbnail runtime drives. */
-export type ThumbnailMediaTools = Pick<MediaToolsService, 'extractVideoFrame' | 'getStatus'>;
+export type ThumbnailMediaTools = Pick<MediaToolsService, "extractVideoFrame" | "getStatus">;
 
 interface ThumbnailWorkerRuntimeOptions {
   cacheRootPath?: string;
@@ -90,8 +90,8 @@ export class ThumbnailWorkerRuntime {
   constructor(private readonly options: ThumbnailWorkerRuntimeOptions) {
     this.diskCacheDir = path.join(
       options.cacheRootPath ?? options.userDataPath,
-      'frame-view',
-      'thumbnails',
+      "frame-view",
+      "thumbnails",
     );
     this.mediaToolsService = options.mediaToolsService ?? new MediaToolsService();
   }
@@ -153,39 +153,39 @@ export class ThumbnailWorkerRuntime {
   }
 
   private toErrorResponse(requestId: number, error: Error): ThumbnailWorkerResponse {
-    if (error instanceof RequestAbortError || error.name === 'AbortError') {
+    if (error instanceof RequestAbortError || error.name === "AbortError") {
       return {
         requestId,
         ok: false,
-        error: 'Thumbnail request aborted',
-        errorCode: 'abort',
+        error: "Thumbnail request aborted",
+        errorCode: "abort",
       };
     }
 
-    if (error.message.startsWith('Sharp decode failed:')) {
+    if (error.message.startsWith("Sharp decode failed:")) {
       return {
         requestId,
         ok: false,
         error: error.message,
-        errorCode: 'sharp-decode',
+        errorCode: "sharp-decode",
       };
     }
 
-    if (error.message.startsWith('Video frame extraction failed:')) {
+    if (error.message.startsWith("Video frame extraction failed:")) {
       return {
         requestId,
         ok: false,
         error: error.message,
-        errorCode: 'video-extraction',
+        errorCode: "video-extraction",
       };
     }
 
-    if (error.message === 'Sharp is unavailable') {
+    if (error.message === "Sharp is unavailable") {
       return {
         requestId,
         ok: false,
         error: error.message,
-        errorCode: 'worker-init',
+        errorCode: "worker-init",
       };
     }
 
@@ -193,24 +193,24 @@ export class ThumbnailWorkerRuntime {
       requestId,
       ok: false,
       error: error.message,
-      errorCode: 'unknown',
+      errorCode: "unknown",
     };
   }
 
   async handleRequest(request: ThumbnailWorkerRequest): Promise<ThumbnailWorkerResponse | null> {
-    if (request.type === 'cancel-thumbnail') {
+    if (request.type === "cancel-thumbnail") {
       this.activeJobs.get(request.requestId)?.abortController.abort();
 
       return null;
     }
 
-    if (request.type === 'set-debug-options') {
+    if (request.type === "set-debug-options") {
       this.setDebugOptions(request.options);
 
       return null;
     }
 
-    if (request.type === 'get-capabilities') {
+    if (request.type === "get-capabilities") {
       return {
         requestId: request.requestId,
         ok: true,
@@ -246,12 +246,12 @@ export class ThumbnailWorkerRuntime {
     const sharp = this.sharp ?? this.loadSharp();
 
     if (!sharp) {
-      throw new Error('Sharp is unavailable');
+      throw new Error("Sharp is unavailable");
     }
 
     let bytes: Uint8Array;
 
-    if (job.kind === 'video') {
+    if (job.kind === "video") {
       let frameBuffer: Buffer | null = null;
 
       try {
@@ -263,7 +263,7 @@ export class ThumbnailWorkerRuntime {
       } catch (error) {
         if (
           error instanceof MediaToolsAbortError ||
-          (error instanceof Error && error.name === 'AbortError')
+          (error instanceof Error && error.name === "AbortError")
         ) {
           throw new RequestAbortError();
         }
@@ -281,7 +281,7 @@ export class ThumbnailWorkerRuntime {
           .resize({
             width: job.thumbSize,
             height: job.thumbSize,
-            fit: 'inside',
+            fit: "inside",
             withoutEnlargement: false,
           })
           .webp({
@@ -313,7 +313,7 @@ export class ThumbnailWorkerRuntime {
             .resize({
               width: job.thumbSize,
               height: job.thumbSize,
-              fit: 'inside',
+              fit: "inside",
               withoutEnlargement: false,
             })
             .webp(imageWebpOptions)
@@ -339,13 +339,13 @@ export class ThumbnailWorkerRuntime {
       bytes: new Uint8Array(bytes),
       cacheCreated: cacheWrite.cacheCreated,
       cacheKey: job.cacheKey,
-      contentType: 'image/webp',
+      contentType: "image/webp",
     };
   }
 
   private loadSharp(): SharpLib | null {
     try {
-      const sharpLib = resolveSharpModule(nativeRequire('sharp'));
+      const sharpLib = resolveSharpModule(nativeRequire("sharp"));
       this.lastSharpLoadError = null;
 
       return sharpLib;

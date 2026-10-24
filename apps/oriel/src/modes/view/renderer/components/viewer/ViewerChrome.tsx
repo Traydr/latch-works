@@ -7,10 +7,10 @@ import {
   Maximize,
   Minimize,
   X,
-} from 'lucide-react';
-import type { JSX } from 'react';
+} from "lucide-react";
+import type { JSX } from "react";
 
-import type { MediaItem } from '../../../shared/types';
+import type { MediaItem } from "../../../shared/types";
 
 interface ViewerChromeProps {
   canStepBackward: boolean;
@@ -40,12 +40,12 @@ export function ViewerChrome({
     <>
       <div
         className={`viewer-scrim-top viewer-chrome-transition ${chromeVisibilityClass}`}
-        style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))' }}
+        style={{ paddingTop: "max(1rem, env(safe-area-inset-top))" }}
       >
         <div className="pointer-events-auto flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium text-white">{item.name}</p>
-            <p className="truncate text-xs text-white/70">{details.join(' · ')}</p>
+            <p className="truncate text-xs text-white/70">{details.join(" · ")}</p>
           </div>
           <div className="flex shrink-0 items-center gap-1">
             <ViewerToolbarButton
@@ -60,7 +60,7 @@ export function ViewerChrome({
             />
             <ViewerToolbarButton
               icon={isFullscreen ? Minimize : Maximize}
-              label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+              label={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
               onClick={onToggleFullscreen}
             />
             <ViewerToolbarButton icon={X} label="Close" onClick={onClose} />
@@ -123,8 +123,8 @@ function StepArrow({
   return (
     <button
       type="button"
-      aria-label={direction < 0 ? 'Previous item' : 'Next item'}
-      className={`viewer-chrome-transition absolute top-1/2 z-20 flex h-[25dvh] min-h-11 w-12 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full text-white/90 hover:bg-violet-500/25 hover:text-violet-100 ${direction < 0 ? 'left-3' : 'right-3'} ${chromeVisibilityClass} ${enabled ? '' : 'pointer-events-none opacity-40'}`}
+      aria-label={direction < 0 ? "Previous item" : "Next item"}
+      className={`viewer-chrome-transition absolute top-1/2 z-20 flex h-[25dvh] min-h-11 w-12 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full text-white/90 hover:bg-violet-500/25 hover:text-violet-100 ${direction < 0 ? "left-3" : "right-3"} ${chromeVisibilityClass} ${enabled ? "" : "pointer-events-none opacity-40"}`}
       onClick={() => onStep(direction)}
       disabled={!enabled}
     >

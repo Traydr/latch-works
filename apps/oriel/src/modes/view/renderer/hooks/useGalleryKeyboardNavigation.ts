@@ -1,13 +1,13 @@
-import { useEffect } from 'react';
+import { useEffect } from "react";
 
-import type { BrowserEntry, BrowserEntryCollection } from '../utils/browserEntries';
+import type { BrowserEntry, BrowserEntryCollection } from "../utils/browserEntries";
 import {
   eventKey,
   HOTKEYS,
   isPlainHotkeyEvent,
   isTextInputTarget,
   matchesAnyKey,
-} from '../utils/hotkeys';
+} from "../utils/hotkeys";
 
 interface UseGalleryKeyboardNavigationOptions {
   /** The viewer, the comic reader, or settings is open: the gallery behind it takes no keys. */
@@ -96,7 +96,7 @@ export function useGalleryKeyboardNavigation({
         );
 
         if (nextCell) {
-          nextCell.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+          nextCell.scrollIntoView({ block: "nearest", inline: "nearest" });
 
           return;
         }
@@ -125,12 +125,12 @@ export function useGalleryKeyboardNavigation({
 
         const targetRow = Math.floor(nextIndex / columns);
         const targetTop = Math.max(0, targetRow * rowHeight - scrollContainer.clientHeight * 0.35);
-        scrollContainer.scrollTo({ top: targetTop, behavior: 'smooth' });
+        scrollContainer.scrollTo({ top: targetTop, behavior: "smooth" });
       });
     };
 
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (document.body.dataset.frameViewFolderOverlay === 'open') {
+      if (document.body.dataset.frameViewFolderOverlay === "open") {
         return;
       }
 
@@ -143,8 +143,8 @@ export function useGalleryKeyboardNavigation({
       }
 
       if (
-        matchesAnyKey(event, ['ArrowRight', 'ArrowLeft']) ||
-        (!event.shiftKey && matchesAnyKey(event, ['a', 'd']))
+        matchesAnyKey(event, ["ArrowRight", "ArrowLeft"]) ||
+        (!event.shiftKey && matchesAnyKey(event, ["a", "d"]))
       ) {
         if (browserEntries.length === 0) {
           return;
@@ -160,8 +160,8 @@ export function useGalleryKeyboardNavigation({
       }
 
       if (
-        matchesAnyKey(event, ['ArrowUp', 'ArrowDown']) ||
-        (!event.shiftKey && matchesAnyKey(event, ['w', 's']))
+        matchesAnyKey(event, ["ArrowUp", "ArrowDown"]) ||
+        (!event.shiftKey && matchesAnyKey(event, ["w", "s"]))
       ) {
         if (browserEntries.length === 0) {
           return;
@@ -179,37 +179,37 @@ export function useGalleryKeyboardNavigation({
 
       const key = eventKey(event);
 
-      if (event.shiftKey && key === 'w') {
+      if (event.shiftKey && key === "w") {
         event.preventDefault();
         openParentFolderAction();
 
         return;
       }
 
-      if (event.shiftKey && key === 'a') {
+      if (event.shiftKey && key === "a") {
         event.preventDefault();
         openSiblingFolderAction(-1);
 
         return;
       }
 
-      if (event.shiftKey && key === 'd') {
+      if (event.shiftKey && key === "d") {
         event.preventDefault();
         openSiblingFolderAction(1);
 
         return;
       }
 
-      if (event.shiftKey && key === 's') {
+      if (event.shiftKey && key === "s") {
         const selectedFolderEntry =
-          selectedBrowserEntry?.kind === 'folder' ? selectedBrowserEntry : null;
+          selectedBrowserEntry?.kind === "folder" ? selectedBrowserEntry : null;
 
         let firstFolderEntry: BrowserEntry | null = null;
 
         for (let index = 0; index < browserEntries.length; index += 1) {
           const entry = browserEntries.at(index);
 
-          if (entry?.kind === 'folder') {
+          if (entry?.kind === "folder") {
             firstFolderEntry = entry;
             break;
           }
@@ -217,7 +217,7 @@ export function useGalleryKeyboardNavigation({
 
         const folderToOpen = selectedFolderEntry ?? firstFolderEntry;
 
-        if (folderToOpen?.kind !== 'folder') {
+        if (folderToOpen?.kind !== "folder") {
           return;
         }
 
@@ -233,9 +233,9 @@ export function useGalleryKeyboardNavigation({
       }
     };
 
-    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener("keydown", onKeyDown);
 
-    return () => window.removeEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
   }, [
     activateBrowserEntryAction,
     browserEntries,

@@ -1,11 +1,11 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import os from 'node:os';
-import path from 'node:path';
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 
-import sharp from 'sharp';
-import { afterEach, describe, expect, it } from 'vitest';
-import type { ThumbnailMediaTools } from '../../../src/main/thumbnail/ThumbnailWorkerRuntime';
-import { ThumbnailWorkerRuntime } from '../../../src/main/thumbnail/ThumbnailWorkerRuntime';
+import sharp from "sharp";
+import { afterEach, describe, expect, it } from "vitest";
+import type { ThumbnailMediaTools } from "../../../src/main/thumbnail/ThumbnailWorkerRuntime";
+import { ThumbnailWorkerRuntime } from "../../../src/main/thumbnail/ThumbnailWorkerRuntime";
 
 async function createTempDir(prefix: string): Promise<string> {
   return mkdtemp(path.join(os.tmpdir(), prefix));
@@ -47,7 +47,7 @@ async function createSampleFrame(): Promise<Buffer> {
     .toBuffer();
 }
 
-describe('ThumbnailWorkerRuntime', () => {
+describe("ThumbnailWorkerRuntime", () => {
   const tempDirs: string[] = [];
 
   afterEach(async () => {
@@ -59,12 +59,12 @@ describe('ThumbnailWorkerRuntime', () => {
     tempDirs.length = 0;
   });
 
-  it('generates image thumbnails as webp and writes them to disk', async () => {
-    const userDataPath = await createTempDir('frame-view-thumb-worker-');
-    const cacheRootPath = await createTempDir('frame-view-thumb-worker-cache-');
+  it("generates image thumbnails as webp and writes them to disk", async () => {
+    const userDataPath = await createTempDir("frame-view-thumb-worker-");
+    const cacheRootPath = await createTempDir("frame-view-thumb-worker-cache-");
     tempDirs.push(userDataPath, cacheRootPath);
 
-    const imagePath = path.join(userDataPath, 'sample.png');
+    const imagePath = path.join(userDataPath, "sample.png");
     await createSampleImage(imagePath);
 
     const runtime = new ThumbnailWorkerRuntime({ cacheRootPath, userDataPath });
@@ -72,10 +72,10 @@ describe('ThumbnailWorkerRuntime', () => {
 
     const response = await runtime.handleRequest({
       requestId: 1,
-      type: 'generate-thumbnail',
+      type: "generate-thumbnail",
       job: {
-        cacheKey: 'image-key',
-        kind: 'image',
+        cacheKey: "image-key",
+        kind: "image",
         mediaPath: imagePath,
         priority: 2,
         thumbSize: 220,
@@ -86,24 +86,24 @@ describe('ThumbnailWorkerRuntime', () => {
       ok: true,
       result: expect.objectContaining({
         cacheCreated: true,
-        contentType: 'image/webp',
+        contentType: "image/webp",
       }),
     });
 
-    if (!response?.ok || !('bytes' in response.result)) {
-      throw new Error('Expected image thumbnail worker response');
+    if (!response?.ok || !("bytes" in response.result)) {
+      throw new Error("Expected image thumbnail worker response");
     }
 
-    expect((await sharp(response.result.bytes).metadata()).format).toBe('webp');
+    expect((await sharp(response.result.bytes).metadata()).format).toBe("webp");
     expect(
-      await readFile(path.join(cacheRootPath, 'frame-view', 'thumbnails', 'image-key.webp')),
+      await readFile(path.join(cacheRootPath, "frame-view", "thumbnails", "image-key.webp")),
     ).toBeDefined();
   });
 
-  it.each(['png', 'gif', 'avif'] as const)(
-    'preserves %s thumbnail pixels and dimensions',
+  it.each(["png", "gif", "avif"] as const)(
+    "preserves %s thumbnail pixels and dimensions",
     async (format) => {
-      const userDataPath = await createTempDir('frame-view-thumb-fidelity-');
+      const userDataPath = await createTempDir("frame-view-thumb-fidelity-");
       tempDirs.push(userDataPath);
       const imagePath = path.join(userDataPath, `sample.${format}`);
       const width = 96;
@@ -125,28 +125,28 @@ describe('ThumbnailWorkerRuntime', () => {
 
       const response = await runtime.handleRequest({
         requestId: 1,
-        type: 'generate-thumbnail',
+        type: "generate-thumbnail",
         job: {
-          cacheKey: 'fidelity',
-          kind: 'image',
+          cacheKey: "fidelity",
+          kind: "image",
           mediaPath: imagePath,
           priority: 2,
           thumbSize: 440,
         },
       });
 
-      if (!response?.ok || !('bytes' in response.result)) {
-        throw new Error('Expected image thumbnail worker response');
+      if (!response?.ok || !("bytes" in response.result)) {
+        throw new Error("Expected image thumbnail worker response");
       }
 
       // Compare against the previous encoder, including transparency and upscaling.
       const previous = await sharp(imagePath, { animated: false, sequentialRead: true })
         .rotate()
-        .resize({ width: 440, height: 440, fit: 'inside', withoutEnlargement: false })
-        .webp(format === 'avif' ? { quality: 92, effort: 5 } : { lossless: true, effort: 5 })
+        .resize({ width: 440, height: 440, fit: "inside", withoutEnlargement: false })
+        .webp(format === "avif" ? { quality: 92, effort: 5 } : { lossless: true, effort: 5 })
         .toBuffer();
 
-      if (format === 'avif') {
+      if (format === "avif") {
         expect(Buffer.from(response.result.bytes).equals(previous)).toBe(true);
       }
 
@@ -166,21 +166,21 @@ describe('ThumbnailWorkerRuntime', () => {
     },
   );
 
-  it('generates video thumbnails from extracted frames and writes them to disk', async () => {
-    const userDataPath = await createTempDir('frame-view-thumb-worker-');
-    const cacheRootPath = await createTempDir('frame-view-thumb-worker-cache-');
+  it("generates video thumbnails from extracted frames and writes them to disk", async () => {
+    const userDataPath = await createTempDir("frame-view-thumb-worker-");
+    const cacheRootPath = await createTempDir("frame-view-thumb-worker-cache-");
     tempDirs.push(userDataPath, cacheRootPath);
 
-    const videoPath = path.join(userDataPath, 'sample.mp4');
-    await writeFile(videoPath, 'video');
+    const videoPath = path.join(userDataPath, "sample.mp4");
+    await writeFile(videoPath, "video");
 
     const mediaToolsService = {
       extractVideoFrame: async () => createSampleFrame(),
       getStatus: () => ({
         ffmpegAvailable: true,
         ffprobeAvailable: true,
-        ffmpegPath: 'mock-ffmpeg',
-        ffprobePath: 'mock-ffprobe',
+        ffmpegPath: "mock-ffmpeg",
+        ffprobePath: "mock-ffprobe",
       }),
     } satisfies ThumbnailMediaTools;
 
@@ -194,10 +194,10 @@ describe('ThumbnailWorkerRuntime', () => {
 
     const response = await runtime.handleRequest({
       requestId: 2,
-      type: 'generate-thumbnail',
+      type: "generate-thumbnail",
       job: {
-        cacheKey: 'video-key',
-        kind: 'video',
+        cacheKey: "video-key",
+        kind: "video",
         mediaPath: videoPath,
         priority: 2,
         thumbSize: 220,
@@ -208,17 +208,17 @@ describe('ThumbnailWorkerRuntime', () => {
       ok: true,
       result: expect.objectContaining({
         cacheCreated: true,
-        contentType: 'image/webp',
+        contentType: "image/webp",
       }),
     });
 
-    if (!response?.ok || !('bytes' in response.result)) {
-      throw new Error('Expected video thumbnail worker response');
+    if (!response?.ok || !("bytes" in response.result)) {
+      throw new Error("Expected video thumbnail worker response");
     }
 
-    expect((await sharp(response.result.bytes).metadata()).format).toBe('webp');
+    expect((await sharp(response.result.bytes).metadata()).format).toBe("webp");
     expect(
-      await readFile(path.join(cacheRootPath, 'frame-view', 'thumbnails', 'video-key.webp')),
+      await readFile(path.join(cacheRootPath, "frame-view", "thumbnails", "video-key.webp")),
     ).toBeDefined();
   });
 });

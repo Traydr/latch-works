@@ -1,7 +1,7 @@
-import { existsSync } from 'node:fs';
-import path from 'node:path';
+import { existsSync } from "node:fs";
+import path from "node:path";
 
-import type { ThumbnailTimingAggregate } from '../../shared/thumbnail';
+import type { ThumbnailTimingAggregate } from "../../shared/thumbnail";
 
 export interface ThumbnailPerformanceAggregateState {
   count: number;
@@ -44,17 +44,17 @@ export interface ThumbnailWorkerPathResolution {
 export function resolveThumbnailWorkerPath(overridePath?: string): ThumbnailWorkerPathResolution {
   const candidates = [
     overridePath,
-    path.join(__dirname, 'thumbnail.worker.cjs'),
+    path.join(__dirname, "thumbnail.worker.cjs"),
     process.resourcesPath
-      ? path.join(process.resourcesPath, 'app.asar', '.vite', 'build', 'thumbnail.worker.cjs')
+      ? path.join(process.resourcesPath, "app.asar", ".vite", "build", "thumbnail.worker.cjs")
       : null,
     process.resourcesPath
       ? path.join(
           process.resourcesPath,
-          'app.asar.unpacked',
-          '.vite',
-          'build',
-          'thumbnail.worker.cjs',
+          "app.asar.unpacked",
+          ".vite",
+          "build",
+          "thumbnail.worker.cjs",
         )
       : null,
   ].filter((candidate): candidate is string => !!candidate);
@@ -68,5 +68,5 @@ export function resolveThumbnailWorkerPath(overridePath?: string): ThumbnailWork
     }
   }
 
-  throw new Error(`Thumbnail worker entry was not found. Checked: ${candidates.join(', ')}`);
+  throw new Error(`Thumbnail worker entry was not found. Checked: ${candidates.join(", ")}`);
 }

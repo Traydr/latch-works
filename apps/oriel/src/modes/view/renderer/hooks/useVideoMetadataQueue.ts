@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { MediaItem, VideoProbeMetadata } from '../../shared/types';
-import { frameViewClient } from '../services/frameViewClient';
+import type { MediaItem, VideoProbeMetadata } from "../../shared/types";
+import { frameViewClient } from "../services/frameViewClient";
 
 interface UseVideoMetadataQueueOptions {
   activeScanRunId: number | null;
@@ -74,7 +74,7 @@ export function useVideoMetadataQueue({
   return useCallback(
     (item: MediaItem): void => {
       if (
-        item.mediaType !== 'video' ||
+        item.mediaType !== "video" ||
         item.durationMs !== undefined ||
         item.width !== undefined ||
         item.height !== undefined ||

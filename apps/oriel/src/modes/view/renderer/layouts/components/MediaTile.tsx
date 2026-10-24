@@ -1,13 +1,13 @@
-import type { JSX } from 'react';
+import type { JSX } from "react";
 
-import type { AppSettings } from '../../../shared/types';
-import type { BrowserEntry } from '../../utils/browserEntries';
-import { formatBytes, toFileUrl, toThumbnailUrl } from '../../utils/path';
+import type { AppSettings } from "../../../shared/types";
+import type { BrowserEntry } from "../../utils/browserEntries";
+import { formatBytes, toFileUrl, toThumbnailUrl } from "../../utils/path";
 
 interface MediaTileProps {
   cardHeight: number;
   cardWidth: number;
-  entry: Extract<BrowserEntry, { kind: 'media' }>;
+  entry: Extract<BrowserEntry, { kind: "media" }>;
   left: number;
   onActivate: (entry: BrowserEntry) => void;
   onSelect: (entry: BrowserEntry) => void;
@@ -39,20 +39,20 @@ export function MediaTile({
       type="button"
       data-gallery-item="true"
       data-gallery-item-id={entry.key}
-      data-gallery-item-video={item.mediaType === 'video' ? 'true' : undefined}
+      data-gallery-item-video={item.mediaType === "video" ? "true" : undefined}
       className={`group absolute overflow-hidden rounded-2xl text-left transition active:scale-[0.96] [outline:1px_solid_rgba(0,0,0,0.1)] dark:[outline:1px_solid_rgba(255,255,255,0.1)] ${
         selected
-          ? 'ring-2 ring-violet-500 ring-offset-2 ring-offset-zinc-50 dark:ring-offset-zinc-950'
-          : 'hover:shadow-lg'
+          ? "ring-2 ring-violet-500 ring-offset-2 ring-offset-zinc-50 dark:ring-offset-zinc-950"
+          : "hover:shadow-lg"
       }`}
       onClick={() => onSelect(entry)}
       onDoubleClick={() => onActivate(entry)}
       onMouseEnter={(event) => {
-        if (!settings.autoplayOnHover || item.mediaType !== 'video') {
+        if (!settings.autoplayOnHover || item.mediaType !== "video") {
           return;
         }
 
-        const video = event.currentTarget.querySelector('video');
+        const video = event.currentTarget.querySelector("video");
 
         if (!video) {
           return;
@@ -63,11 +63,11 @@ export function MediaTile({
         });
       }}
       onMouseLeave={(event) => {
-        if (item.mediaType !== 'video') {
+        if (item.mediaType !== "video") {
           return;
         }
 
-        const video = event.currentTarget.querySelector('video');
+        const video = event.currentTarget.querySelector("video");
 
         if (!video) {
           return;
@@ -84,7 +84,7 @@ export function MediaTile({
       }}
     >
       <div className="relative h-full w-full bg-zinc-200 dark:bg-zinc-800">
-        {item.mediaType === 'image' ? (
+        {item.mediaType === "image" ? (
           <img
             src={thumbUrl}
             alt={item.name}
@@ -108,11 +108,11 @@ export function MediaTile({
             <p className="truncate text-sm font-semibold text-white">{item.name}</p>
             <p className="text-[11px] text-white/70">
               {formatBytes(item.size)}
-              {item.width && item.height ? ` · ${item.width}×${item.height}` : ''}
+              {item.width && item.height ? ` · ${item.width}×${item.height}` : ""}
             </p>
           </div>
         </div>
-        {item.mediaType === 'video' ? (
+        {item.mediaType === "video" ? (
           <span className="absolute right-2 top-2 rounded-full bg-black/50 px-2 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm">
             VIDEO
           </span>

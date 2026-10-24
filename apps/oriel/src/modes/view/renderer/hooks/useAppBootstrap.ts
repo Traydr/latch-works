@@ -1,8 +1,8 @@
-import { useEffect, useEffectEvent, useRef } from 'react';
+import { useEffect, useEffectEvent, useRef } from "react";
 
-import type { AppSettings, ScanEvent, ThemeMode } from '../../shared/types';
-import { frameViewClient } from '../services/frameViewClient';
-import { getRootGalleryPreferences } from '../utils/rootPreferences';
+import type { AppSettings, ScanEvent, ThemeMode } from "../../shared/types";
+import { frameViewClient } from "../services/frameViewClient";
+import { getRootGalleryPreferences } from "../utils/rootPreferences";
 
 interface UseAppBootstrapOptions {
   settingsTheme: ThemeMode;
@@ -17,7 +17,7 @@ interface UseAppBootstrapOptions {
     folderPath: string,
     options?: {
       excludedRootChildPaths?: string[];
-      filters?: AppSettings['filters'];
+      filters?: AppSettings["filters"];
       recursive?: boolean;
     },
   ) => Promise<boolean>;
@@ -26,11 +26,11 @@ interface UseAppBootstrapOptions {
 }
 
 function applyTheme(theme: ThemeMode): void {
-  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-  const useDark = theme === 'dark' || (theme === 'system' && prefersDark);
+  const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const useDark = theme === "dark" || (theme === "system" && prefersDark);
 
-  document.documentElement.classList.toggle('dark', useDark);
-  document.body.classList.toggle('dark', useDark);
+  document.documentElement.classList.toggle("dark", useDark);
+  document.body.classList.toggle("dark", useDark);
 }
 
 export function useAppBootstrap({
@@ -93,8 +93,8 @@ export function useAppBootstrap({
       const lastEvent = pendingEvents[pendingEvents.length - 1];
 
       if (
-        event.type === 'progress' &&
-        lastEvent?.type === 'progress' &&
+        event.type === "progress" &&
+        lastEvent?.type === "progress" &&
         lastEvent.runId === event.runId
       ) {
         pendingEvents[pendingEvents.length - 1] = event;
@@ -160,19 +160,19 @@ export function useAppBootstrap({
   }, [settingsTheme]);
 
   useEffect(() => {
-    if (settingsTheme !== 'system') {
+    if (settingsTheme !== "system") {
       return;
     }
 
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
 
     const onSchemeChange = (): void => {
-      applyTheme('system');
+      applyTheme("system");
     };
 
-    mediaQuery.addEventListener('change', onSchemeChange);
+    mediaQuery.addEventListener("change", onSchemeChange);
 
-    return () => mediaQuery.removeEventListener('change', onSchemeChange);
+    return () => mediaQuery.removeEventListener("change", onSchemeChange);
   }, [settingsTheme]);
 
   useEffect(() => {
@@ -198,36 +198,36 @@ export function useAppBootstrap({
       })();
     };
 
-    window.addEventListener('dragover', onDragOver);
-    window.addEventListener('drop', onDrop);
+    window.addEventListener("dragover", onDragOver);
+    window.addEventListener("drop", onDrop);
 
     return () => {
-      window.removeEventListener('dragover', onDragOver);
-      window.removeEventListener('drop', onDrop);
+      window.removeEventListener("dragover", onDragOver);
+      window.removeEventListener("drop", onDrop);
     };
   }, []);
 
   useEffect(() => {
     const unsubscribe = frameViewClient.onAppCommand((command) => {
-      if (command.type === 'open-folder-dialog') {
+      if (command.type === "open-folder-dialog") {
         openFolderEvent();
 
         return;
       }
 
-      if (command.type === 'refresh-current-folder') {
+      if (command.type === "refresh-current-folder") {
         refreshCurrentFolderEvent();
 
         return;
       }
 
-      if (command.type === 'toggle-settings') {
+      if (command.type === "toggle-settings") {
         toggleSettingsEvent();
 
         return;
       }
 
-      if (command.type === 'scan-path') {
+      if (command.type === "scan-path") {
         launchPathRequestedRef.current = true;
         scanInputPathEvent(command.path);
       }

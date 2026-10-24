@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type { FolderNode } from '../../shared/types';
-import { frameViewClient } from '../services/frameViewClient';
-import { useAppStore } from '../store/useAppStore';
-import { getParentPath, toDisplayName } from '../utils/path';
+import type { FolderNode } from "../../shared/types";
+import { frameViewClient } from "../services/frameViewClient";
+import { useAppStore } from "../store/useAppStore";
+import { getParentPath, toDisplayName } from "../utils/path";
 
 interface UseFolderNavigationModelOptions {
   rootPath: string | null;
@@ -51,7 +51,7 @@ export function useFolderNavigationModel({
     }
 
     const normalize = (value: string): string =>
-      value.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+      value.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
 
     const parentNormalized = normalize(parentFolderPath);
     const ceilingNormalized = normalize(navigationCeilingPath);
@@ -67,7 +67,7 @@ export function useFolderNavigationModel({
     }
 
     const normalize = (value: string): string =>
-      value.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+      value.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
 
     return normalize(rootPath) === normalize(navigationCeilingPath);
   }, [navigationCeilingPath, rootPath]);
@@ -168,7 +168,7 @@ export function useFolderNavigationModel({
 
   const currentFolderPathLabel = useMemo(() => {
     if (!rootPath) {
-      return 'No folder selected';
+      return "No folder selected";
     }
 
     const folderName = toDisplayName(rootPath);

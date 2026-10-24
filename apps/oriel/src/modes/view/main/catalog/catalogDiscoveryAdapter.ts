@@ -1,6 +1,6 @@
-import { getExtension, isSystemJunkDirectory, isSystemJunkFile } from '@latch-works/media-domain';
+import { getExtension, isSystemJunkDirectory, isSystemJunkFile } from "@latch-works/media-domain";
 
-import type { MediaItem } from '../../shared/types';
+import type { MediaItem } from "../../shared/types";
 
 /**
  * Frame catalog discovery adapter.
@@ -26,7 +26,7 @@ export interface FrameScanFilters {
 export interface FrameScanCandidate {
   extension: string;
   fullPath: string;
-  mediaType: 'image' | 'video';
+  mediaType: "image" | "video";
   name: string;
 }
 
@@ -37,7 +37,7 @@ export function shouldSkipDirectoryName(directoryName: string): boolean {
 export function classifyFrameCandidate(
   name: string,
   filters: FrameScanFilters,
-): Omit<FrameScanCandidate, 'fullPath'> | null {
+): Omit<FrameScanCandidate, "fullPath"> | null {
   if (isSystemJunkFile(name)) {
     return null;
   }
@@ -52,7 +52,7 @@ export function classifyFrameCandidate(
 
   return {
     extension,
-    mediaType: isVideo ? 'video' : 'image',
+    mediaType: isVideo ? "video" : "image",
     name,
   };
 }

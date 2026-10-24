@@ -1,10 +1,10 @@
-import type { FolderNode, GallerySortMode, MediaItem } from '../../shared/types';
-import type { ComicEntry } from './comics';
+import type { FolderNode, GallerySortMode, MediaItem } from "../../shared/types";
+import type { ComicEntry } from "./comics";
 
 export type BrowserEntry =
   | {
       key: string;
-      kind: 'folder';
+      kind: "folder";
       path: string;
       name: string;
       hasChildren: boolean;
@@ -12,21 +12,21 @@ export type BrowserEntry =
   | {
       comic: ComicEntry;
       key: string;
-      kind: 'comic';
+      kind: "comic";
     }
   | {
       key: string;
-      kind: 'media';
+      kind: "media";
       media: MediaItem;
       mediaIndex: number;
     };
 
 function sortFolders(folders: FolderNode[], sortMode: GallerySortMode): FolderNode[] {
   const sorted = folders.toSorted((left, right) =>
-    left.name.localeCompare(right.name, undefined, { sensitivity: 'base', numeric: true }),
+    left.name.localeCompare(right.name, undefined, { sensitivity: "base", numeric: true }),
   );
 
-  if (sortMode === 'name-desc') {
+  if (sortMode === "name-desc") {
     sorted.reverse();
   }
 
@@ -131,7 +131,7 @@ export class BrowserEntryCollection {
 
       return {
         key: `media:${media.id}`,
-        kind: 'media',
+        kind: "media",
         media,
         mediaIndex: chunkOffset + itemIndex,
       };
@@ -141,21 +141,21 @@ export class BrowserEntryCollection {
   }
 
   findIndexByKey(key: string): number {
-    if (key.startsWith('folder:')) {
+    if (key.startsWith("folder:")) {
       return this.folderEntries.findIndex((entry) => entry.key === key);
     }
 
-    if (key.startsWith('comic:')) {
+    if (key.startsWith("comic:")) {
       const comicIndex = this.comicEntries.findIndex((entry) => entry.key === key);
 
       return comicIndex < 0 ? -1 : this.folderEntries.length + comicIndex;
     }
 
-    if (!key.startsWith('media:')) {
+    if (!key.startsWith("media:")) {
       return -1;
     }
 
-    const itemId = key.slice('media:'.length);
+    const itemId = key.slice("media:".length);
 
     return this.mediaIndexById.get(itemId) ?? -1;
   }
@@ -179,7 +179,7 @@ export function buildBrowserEntryCollection(
     ? []
     : sortFolders(folders, sortMode).map((folder) => ({
         key: `folder:${folder.path}`,
-        kind: 'folder',
+        kind: "folder",
         path: folder.path,
         name: folder.name,
         hasChildren: folder.hasChildren,
@@ -189,7 +189,7 @@ export function buildBrowserEntryCollection(
     comicMode && !isLoading
       ? comics.map((comic) => ({
           key: `comic:${comic.id}`,
-          kind: 'comic',
+          kind: "comic",
           comic,
         }))
       : [];

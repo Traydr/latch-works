@@ -6,13 +6,13 @@ import {
   useEffect,
   useRef,
   useState,
-} from 'react';
+} from "react";
 
-import type { MediaItem } from '../../shared/types';
+import type { MediaItem } from "../../shared/types";
 
-const VIEWER_VOLUME_STORAGE_KEY = 'frameview.viewer.volume';
+const VIEWER_VOLUME_STORAGE_KEY = "frameview.viewer.volume";
 
-const VIEWER_MUTED_STORAGE_KEY = 'frameview.viewer.muted';
+const VIEWER_MUTED_STORAGE_KEY = "frameview.viewer.muted";
 
 function readPersistedVolume(): number {
   try {
@@ -36,7 +36,7 @@ function readPersistedVolume(): number {
 
 function readPersistedMuted(): boolean {
   try {
-    return window.localStorage.getItem(VIEWER_MUTED_STORAGE_KEY) === '1';
+    return window.localStorage.getItem(VIEWER_MUTED_STORAGE_KEY) === "1";
   } catch {
     return false;
   }
@@ -54,13 +54,13 @@ function persist(key: string, value: string): void {
  * The DOM lib declares these on every element; Chrome (fastSeek) and Safari
  * (prefixed fullscreen) differ, so the viewer reads them as optional.
  */
-type OptionalFastSeek = Partial<Pick<HTMLMediaElement, 'fastSeek'>>;
+type OptionalFastSeek = Partial<Pick<HTMLMediaElement, "fastSeek">>;
 
-type FullscreenHost = Partial<Pick<HTMLElement, 'requestFullscreen'>> &
+type FullscreenHost = Partial<Pick<HTMLElement, "requestFullscreen">> &
   Partial<{ webkitRequestFullscreen: () => Promise<void> | void }>;
 
 type WebkitFullscreenDocument = Partial<
-  Pick<Document, 'exitFullscreen' | 'fullscreenElement' | 'fullscreenEnabled'>
+  Pick<Document, "exitFullscreen" | "fullscreenElement" | "fullscreenEnabled">
 > &
   Partial<{
     webkitExitFullscreen: () => Promise<void> | void;
@@ -140,12 +140,12 @@ export function useViewerVideoModel({
 
   useEffect(() => {
     const onFullscreenChange = (): void => setIsFullscreen(fullscreenElementOf(document) !== null);
-    document.addEventListener('fullscreenchange', onFullscreenChange);
-    document.addEventListener('webkitfullscreenchange', onFullscreenChange);
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    document.addEventListener("webkitfullscreenchange", onFullscreenChange);
 
     return () => {
-      document.removeEventListener('fullscreenchange', onFullscreenChange);
-      document.removeEventListener('webkitfullscreenchange', onFullscreenChange);
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
+      document.removeEventListener("webkitfullscreenchange", onFullscreenChange);
     };
   }, []);
 
@@ -272,7 +272,7 @@ export function useViewerVideoModel({
       if (clamped > 0 && video.muted) {
         video.muted = false;
         setMuted(false);
-        persist(VIEWER_MUTED_STORAGE_KEY, '0');
+        persist(VIEWER_MUTED_STORAGE_KEY, "0");
       }
     }
   }, []);
@@ -285,7 +285,7 @@ export function useViewerVideoModel({
       videoRef.current.muted = next;
     }
 
-    persist(VIEWER_MUTED_STORAGE_KEY, next ? '1' : '0');
+    persist(VIEWER_MUTED_STORAGE_KEY, next ? "1" : "0");
   }, [muted]);
 
   const beginHoldBoost = useCallback((): void => {

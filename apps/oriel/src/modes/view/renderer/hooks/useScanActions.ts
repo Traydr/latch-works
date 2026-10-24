@@ -1,9 +1,9 @@
-import { useCallback } from 'react';
+import { useCallback } from "react";
 
-import type { AppSettings, FileFilterSettings } from '../../shared/types';
-import { frameViewClient } from '../services/frameViewClient';
-import { useAppStore } from '../store/useAppStore';
-import { getRootGalleryPreferences } from '../utils/rootPreferences';
+import type { AppSettings, FileFilterSettings } from "../../shared/types";
+import { frameViewClient } from "../services/frameViewClient";
+import { useAppStore } from "../store/useAppStore";
+import { getRootGalleryPreferences } from "../utils/rootPreferences";
 
 interface RunScanOptions {
   excludedRootChildPaths?: string[];

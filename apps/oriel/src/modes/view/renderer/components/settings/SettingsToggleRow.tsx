@@ -1,4 +1,4 @@
-import type { JSX } from 'react';
+import type { JSX } from "react";
 
 interface SettingsToggleRowProps {
   checked: boolean;

@@ -1,1 +1,1 @@
-export { createRandomSeed, sortMediaItems } from '@latch-works/media-domain';
+export { createRandomSeed, sortMediaItems } from "@latch-works/media-domain";

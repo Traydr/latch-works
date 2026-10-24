@@ -1,16 +1,16 @@
-import { Result } from 'better-result';
-import { useCallback, useRef, useState } from 'react';
+import { Result } from "better-result";
+import { useCallback, useRef, useState } from "react";
 
-import type { AppSettings, AppSettingsPatch, RootGalleryPreferences } from '../../shared/types';
-import { frameViewClientResult } from '../services/frameViewClient';
-import { useAppStore } from '../store/useAppStore';
-import { buildDiagnosticsReport } from '../utils/diagnostics';
-import { getFrameViewErrorMessage } from '../utils/frameViewResult';
-import { toDisplayName } from '../utils/path';
+import type { AppSettings, AppSettingsPatch, RootGalleryPreferences } from "../../shared/types";
+import { frameViewClientResult } from "../services/frameViewClient";
+import { useAppStore } from "../store/useAppStore";
+import { buildDiagnosticsReport } from "../utils/diagnostics";
+import { getFrameViewErrorMessage } from "../utils/frameViewResult";
+import { toDisplayName } from "../utils/path";
 import {
   createRootGalleryPreferencesPatch,
   getRootGalleryPreferences,
-} from '../utils/rootPreferences';
+} from "../utils/rootPreferences";
 
 interface UseSettingsActionsOptions {
   initializeSettings: (settings: AppSettings) => void;
@@ -22,11 +22,11 @@ interface UseSettingsActionsOptions {
     folderPath: string,
     options?: {
       excludedRootChildPaths?: string[];
-      filters?: AppSettings['filters'];
+      filters?: AppSettings["filters"];
       recursive?: boolean;
     },
   ) => Promise<boolean>;
-  scanState: 'idle' | 'loading' | 'done' | 'error';
+  scanState: "idle" | "loading" | "done" | "error";
 }
 
 interface UseSettingsActionsResult {
@@ -73,7 +73,7 @@ export function useSettingsActions({
         const result = await frameViewClientResult.updateSettings(patch);
 
         if (Result.isError(result)) {
-          console.error('[frameView:update-settings]', result.error);
+          console.error("[frameView:update-settings]", result.error);
           scheduleStatusReset(`Settings update failed: ${result.error.message}`);
 
           return null;
@@ -140,8 +140,8 @@ export function useSettingsActions({
       const result = await frameViewClientResult.getDiagnosticsSnapshot();
 
       if (Result.isError(result)) {
-        console.error('[frameView:get-diagnostics-snapshot]', result.error);
-        scheduleStatusReset('Diagnostics unavailable');
+        console.error("[frameView:get-diagnostics-snapshot]", result.error);
+        scheduleStatusReset("Diagnostics unavailable");
 
         return;
       }
@@ -165,11 +165,11 @@ export function useSettingsActions({
   const clearThumbnailCacheAction = useCallback((): void => {
     void (async () => {
       const result = await frameViewClientResult.clearThumbnailCache();
-      const errorMessage = getFrameViewErrorMessage(result, 'Thumbnail cache clear failed');
+      const errorMessage = getFrameViewErrorMessage(result, "Thumbnail cache clear failed");
 
       if (errorMessage) {
         console.error(
-          '[frameView:clear-thumbnail-cache]',
+          "[frameView:clear-thumbnail-cache]",
           Result.isError(result) ? result.error : null,
         );
         scheduleStatusReset(errorMessage);
@@ -178,18 +178,18 @@ export function useSettingsActions({
       }
 
       await refreshSettingsPanelData();
-      scheduleStatusReset('Thumbnail cache cleared');
+      scheduleStatusReset("Thumbnail cache cleared");
     })();
   }, [refreshSettingsPanelData, scheduleStatusReset]);
 
   const clearMediaIndexAction = useCallback((): void => {
     void (async () => {
       const result = await frameViewClientResult.clearMediaIndex();
-      const errorMessage = getFrameViewErrorMessage(result, 'Media index clear failed');
+      const errorMessage = getFrameViewErrorMessage(result, "Media index clear failed");
 
       if (errorMessage) {
         console.error(
-          '[frameView:clear-media-index]',
+          "[frameView:clear-media-index]",
           Result.isError(result) ? result.error : null,
         );
         scheduleStatusReset(errorMessage);
@@ -198,7 +198,7 @@ export function useSettingsActions({
       }
 
       await refreshSettingsPanelData();
-      scheduleStatusReset('Media index cleared');
+      scheduleStatusReset("Media index cleared");
     })();
   }, [refreshSettingsPanelData, scheduleStatusReset]);
 

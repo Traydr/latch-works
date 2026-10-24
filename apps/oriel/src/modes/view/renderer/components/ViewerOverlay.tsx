@@ -1,7 +1,7 @@
-import type { JSX } from 'react';
+import type { JSX } from "react";
 
-import { useAppStore } from '../store/useAppStore';
-import { ViewerModal } from './ViewerModal';
+import { useAppStore } from "../store/useAppStore";
+import { ViewerModal } from "./ViewerModal";
 
 export function ViewerOverlay(): JSX.Element | null {
   const items = useAppStore((state) => state.items);

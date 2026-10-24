@@ -1,27 +1,27 @@
-import path from 'node:path';
-import { Result, type Result as ResultType } from 'better-result';
-import { utilityProcess } from 'electron';
+import path from "node:path";
+import { Result, type Result as ResultType } from "better-result";
+import { utilityProcess } from "electron";
 
-import type { CatalogWorkerRequest } from '../../shared/catalog';
+import type { CatalogWorkerRequest } from "../../shared/catalog";
 import {
   CatalogWorkerEventSchema,
   CatalogWorkerResponseSchema,
   type JsonValue,
-} from '../../shared/contracts';
-import type { MediaIndexStats, ScanEvent, ScanOptions } from '../../shared/types';
-import { toError, WorkerError } from '../errors';
+} from "../../shared/contracts";
+import type { MediaIndexStats, ScanEvent, ScanOptions } from "../../shared/types";
+import { toError, WorkerError } from "../errors";
 
 type MessageListener = (message: JsonValue) => void;
 
 type ExitListener = (code: number | null) => void;
 
-type ErrorListener = (type: 'FatalError', location: string, report: string) => void;
+type ErrorListener = (type: "FatalError", location: string, report: string) => void;
 
 export interface CatalogChildProcessLike {
   kill(): boolean;
-  on(event: 'message', listener: MessageListener): this;
-  on(event: 'exit', listener: ExitListener): this;
-  on(event: 'error', listener: ErrorListener): this;
+  on(event: "message", listener: MessageListener): this;
+  on(event: "exit", listener: ExitListener): this;
+  on(event: "error", listener: ErrorListener): this;
   postMessage(message: CatalogWorkerRequest): void;
 }
 
@@ -29,20 +29,20 @@ type CatalogChildFactory = (modulePath: string, args: string[]) => CatalogChildP
 
 type CatalogWorkerRequestPayload =
   | {
-      type: 'start-scan';
+      type: "start-scan";
       options: ScanOptions;
     }
   | {
-      type: 'cancel-scan';
+      type: "cancel-scan";
     }
   | {
-      type: 'wait-for-scan';
+      type: "wait-for-scan";
     }
   | {
-      type: 'get-index-stats';
+      type: "get-index-stats";
     }
   | {
-      type: 'clear-index';
+      type: "clear-index";
     };
 
 /** A worker response either carries index stats or nothing at all. */
@@ -67,7 +67,7 @@ export class CatalogService {
 
   async startScan(options: ScanOptions): Promise<ResultType<void, WorkerError>> {
     return this.sendAcknowledgedRequest({
-      type: 'start-scan',
+      type: "start-scan",
       options,
     });
   }
@@ -79,7 +79,7 @@ export class CatalogService {
     }
 
     return this.sendAcknowledgedRequest({
-      type: 'cancel-scan',
+      type: "cancel-scan",
     });
   }
 
@@ -93,13 +93,13 @@ export class CatalogService {
     }
 
     return this.sendAcknowledgedRequest({
-      type: 'wait-for-scan',
+      type: "wait-for-scan",
     });
   }
 
   async getMediaIndexStats(): Promise<ResultType<MediaIndexStats, WorkerError>> {
     const response = await this.sendRequest({
-      type: 'get-index-stats',
+      type: "get-index-stats",
     });
 
     if (Result.isError(response)) {
@@ -109,9 +109,9 @@ export class CatalogService {
     if (!response.value) {
       return Result.err(
         new WorkerError({
-          worker: 'catalog',
-          operation: 'get-index-stats',
-          message: 'Catalog worker returned no index stats',
+          worker: "catalog",
+          operation: "get-index-stats",
+          message: "Catalog worker returned no index stats",
         }),
       );
     }
@@ -121,16 +121,16 @@ export class CatalogService {
 
   async clearIndex(): Promise<ResultType<void, WorkerError>> {
     return this.sendAcknowledgedRequest({
-      type: 'clear-index',
+      type: "clear-index",
     });
   }
 
   shutdown(): void {
     this.rejectPendingRequests(
       new WorkerError({
-        worker: 'catalog',
-        operation: 'shutdown',
-        message: 'Catalog worker shut down',
+        worker: "catalog",
+        operation: "shutdown",
+        message: "Catalog worker shut down",
       }),
     );
 
@@ -147,18 +147,18 @@ export class CatalogService {
       return this.child;
     }
 
-    const workerModulePath = path.join(__dirname, 'catalog.worker.cjs');
+    const workerModulePath = path.join(__dirname, "catalog.worker.cjs");
     const child = this.childFactory(workerModulePath, [this.userDataPath]);
 
-    child.on('message', (message) => {
+    child.on("message", (message) => {
       this.handleChildMessage(message);
     });
 
-    child.on('exit', () => {
+    child.on("exit", () => {
       this.handleChildExit();
     });
 
-    child.on('error', (_type, location) => {
+    child.on("error", (_type, location) => {
       this.handleChildExit(`Catalog worker crashed at ${location}`);
     });
 
@@ -173,9 +173,9 @@ export class CatalogService {
     if (workerEvent.success) {
       const scanEvent = workerEvent.data.event;
 
-      if (scanEvent.type === 'reset') {
+      if (scanEvent.type === "reset") {
         this.activeScanRunId = scanEvent.runId;
-      } else if (scanEvent.type === 'done' || scanEvent.type === 'cancelled') {
+      } else if (scanEvent.type === "done" || scanEvent.type === "cancelled") {
         if (this.activeScanRunId === scanEvent.runId) {
           this.activeScanRunId = null;
         }
@@ -209,8 +209,8 @@ export class CatalogService {
       pending.resolve(
         Result.err(
           new WorkerError({
-            worker: 'catalog',
-            operation: 'worker-response',
+            worker: "catalog",
+            operation: "worker-response",
             message: response.error,
           }),
         ),
@@ -222,14 +222,14 @@ export class CatalogService {
     pending.resolve(Result.ok(response.result));
   }
 
-  private handleChildExit(message = 'Catalog worker exited unexpectedly'): void {
+  private handleChildExit(message = "Catalog worker exited unexpectedly"): void {
     const hadActiveScan = this.activeScanRunId !== null;
 
     this.child = null;
     this.rejectPendingRequests(
       new WorkerError({
-        worker: 'catalog',
-        operation: 'worker-exit',
+        worker: "catalog",
+        operation: "worker-exit",
         message,
       }),
     );
@@ -240,8 +240,8 @@ export class CatalogService {
 
     const runId = this.activeScanRunId;
     this.activeScanRunId = null;
-    this.emitScanEvent({ type: 'cancelled', runId });
-    this.emitScanEvent({ type: 'error', message });
+    this.emitScanEvent({ type: "cancelled", runId });
+    this.emitScanEvent({ type: "error", message });
   }
 
   private rejectPendingRequests(error: WorkerError): void {
@@ -278,8 +278,8 @@ export class CatalogService {
         resolve(
           Result.err(
             new WorkerError({
-              worker: 'catalog',
-              operation: 'send-request',
+              worker: "catalog",
+              operation: "send-request",
               message: error.message,
               cause: error,
             }),

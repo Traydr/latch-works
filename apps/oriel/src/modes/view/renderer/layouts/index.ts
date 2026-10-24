@@ -1,3 +1,3 @@
-export type { LayoutShellProps } from './LayoutShellProps';
+export type { LayoutShellProps } from "./LayoutShellProps";
 
-export { PrismLayout } from './PrismLayout';
+export { PrismLayout } from "./PrismLayout";

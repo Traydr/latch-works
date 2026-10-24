@@ -1,9 +1,9 @@
-import { ChevronLeft, Folder, FolderOpen, X } from 'lucide-react';
-import { type JSX, useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
+import { ChevronLeft, Folder, FolderOpen, X } from "lucide-react";
+import { type JSX, useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 
-import type { FolderNode } from '../../shared/types';
-import { getFrameViewValue } from '../utils/frameViewResult';
-import { toDisplayName } from '../utils/path';
+import type { FolderNode } from "../../shared/types";
+import { getFrameViewValue } from "../utils/frameViewResult";
+import { toDisplayName } from "../utils/path";
 
 interface FolderGridOverlayProps {
   /** Root path to show children for */
@@ -41,7 +41,7 @@ export function FolderGridOverlay({
     try {
       const nodes = getFrameViewValue(
         await window.frameView.listFolderChildren(folderPath),
-        'list-folder-children',
+        "list-folder-children",
       );
 
       if (requestId !== loadRequestIdRef.current) {
@@ -74,19 +74,19 @@ export function FolderGridOverlay({
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') {
+      if (event.key === "Escape") {
         event.preventDefault();
         closeEvent();
       }
     };
 
-    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener("keydown", onKeyDown);
 
-    return () => window.removeEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
   useEffect(() => {
-    document.body.dataset.frameViewFolderOverlay = 'open';
+    document.body.dataset.frameViewFolderOverlay = "open";
 
     return () => {
       delete document.body.dataset.frameViewFolderOverlay;
@@ -161,8 +161,8 @@ export function FolderGridOverlay({
                     type="button"
                     className={`truncate whitespace-nowrap transition ${
                       isLast
-                        ? 'font-medium text-zinc-800 dark:text-zinc-100'
-                        : 'text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-100'
+                        ? "font-medium text-zinc-800 dark:text-zinc-100"
+                        : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-100"
                     }`}
                     onClick={() => navigateToFolder(crumb.path, crumb.name)}
                   >
@@ -234,10 +234,10 @@ export function FolderGridOverlay({
                     key={folder.path}
                     className={`flex flex-col gap-2 rounded-xl border p-3 transition ${
                       isActive
-                        ? 'border-violet-300 bg-violet-50/95 text-violet-700 shadow-sm dark:border-violet-500/50 dark:bg-violet-500/20 dark:text-violet-200'
+                        ? "border-violet-300 bg-violet-50/95 text-violet-700 shadow-sm dark:border-violet-500/50 dark:bg-violet-500/20 dark:text-violet-200"
                         : isExcluded
-                          ? 'border-zinc-300/80 bg-zinc-100/80 text-zinc-400 dark:border-zinc-800 dark:bg-zinc-900/50 dark:text-zinc-500'
-                          : 'border-zinc-300/80 bg-white/70 text-zinc-700 shadow-sm hover:border-zinc-400 hover:bg-white dark:border-zinc-700/80 dark:bg-zinc-900/70 dark:text-zinc-200 dark:hover:border-zinc-600 dark:hover:bg-zinc-900/95'
+                          ? "border-zinc-300/80 bg-zinc-100/80 text-zinc-400 dark:border-zinc-800 dark:bg-zinc-900/50 dark:text-zinc-500"
+                          : "border-zinc-300/80 bg-white/70 text-zinc-700 shadow-sm hover:border-zinc-400 hover:bg-white dark:border-zinc-700/80 dark:bg-zinc-900/70 dark:text-zinc-200 dark:hover:border-zinc-600 dark:hover:bg-zinc-900/95"
                     }`}
                     title={folder.path}
                   >
@@ -249,7 +249,7 @@ export function FolderGridOverlay({
                       title={`Click to browse into, double-click to open\n${folder.path}`}
                     >
                       <Folder
-                        className={`size-8 ${isExcluded ? 'text-zinc-400 dark:text-zinc-600' : 'text-amber-500'}`}
+                        className={`size-8 ${isExcluded ? "text-zinc-400 dark:text-zinc-600" : "text-amber-500"}`}
                       />
                       <span className="w-full truncate text-center text-xs font-medium">
                         {folder.name}
@@ -260,12 +260,12 @@ export function FolderGridOverlay({
                         type="button"
                         className={`prism-btn justify-center text-[11px] ${
                           isExcluded
-                            ? 'prism-btn-excluded bg-red-50/80 text-red-700 dark:bg-red-950/25 dark:text-red-200'
-                            : ''
+                            ? "prism-btn-excluded bg-red-50/80 text-red-700 dark:bg-red-950/25 dark:text-red-200"
+                            : ""
                         }`}
                         onClick={() => onToggleExcludedRootChild(folder.path)}
                       >
-                        {isExcluded ? 'Excluded' : 'Included'}
+                        {isExcluded ? "Excluded" : "Included"}
                       </button>
                     ) : null}
                   </div>

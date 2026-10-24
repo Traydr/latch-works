@@ -1,21 +1,21 @@
 export const HOTKEYS = {
-  close: ['Escape'],
-  galleryActivate: ['Enter', 'f'],
-  galleryMoveDown: ['ArrowDown', 's'],
-  galleryMoveLeft: ['ArrowLeft', 'a'],
-  galleryMoveRight: ['ArrowRight', 'd'],
-  galleryMoveUp: ['ArrowUp', 'w'],
-  openParentFolder: ['Shift+W'],
-  openSelectedFolder: ['Shift+S'],
-  previousFolder: ['Shift+A'],
-  nextFolder: ['Shift+D'],
-  viewerNext: ['ArrowRight', 'e'],
-  viewerPrevious: ['ArrowLeft', 'q'],
-  videoPlayPause: [' ', '2'],
-  videoSeekBackward: ['1'],
-  videoSeekForward: ['3'],
-  videoTemporarySpeed: ['4'],
-  videoMute: ['m'],
+  close: ["Escape"],
+  galleryActivate: ["Enter", "f"],
+  galleryMoveDown: ["ArrowDown", "s"],
+  galleryMoveLeft: ["ArrowLeft", "a"],
+  galleryMoveRight: ["ArrowRight", "d"],
+  galleryMoveUp: ["ArrowUp", "w"],
+  openParentFolder: ["Shift+W"],
+  openSelectedFolder: ["Shift+S"],
+  previousFolder: ["Shift+A"],
+  nextFolder: ["Shift+D"],
+  viewerNext: ["ArrowRight", "e"],
+  viewerPrevious: ["ArrowLeft", "q"],
+  videoPlayPause: [" ", "2"],
+  videoSeekBackward: ["1"],
+  videoSeekForward: ["3"],
+  videoTemporarySpeed: ["4"],
+  videoMute: ["m"],
 } as const;
 
 export function eventKey(event: KeyboardEvent): string {
@@ -33,9 +33,9 @@ export function isTextInputTarget(target: EventTarget | null): boolean {
 
   return (
     target.isContentEditable ||
-    target.tagName === 'INPUT' ||
-    target.tagName === 'TEXTAREA' ||
-    target.tagName === 'SELECT'
+    target.tagName === "INPUT" ||
+    target.tagName === "TEXTAREA" ||
+    target.tagName === "SELECT"
   );
 }
 
@@ -46,5 +46,5 @@ export function matchesAnyKey(event: KeyboardEvent, keys: readonly string[]): bo
 }
 
 export function formatHotkeys(keys: readonly string[]): string {
-  return keys.map((key) => (key === ' ' ? 'Space' : key)).join(' / ');
+  return keys.map((key) => (key === " " ? "Space" : key)).join(" / ");
 }

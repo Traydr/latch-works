@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from "react";
 
 const CHROME_IDLE_MS = 2500;
 
@@ -73,7 +73,7 @@ export function useViewerChromeIdle(
     };
   }, [clearIdleTimer, pinned, revealChrome]);
 
-  const chromeVisibilityClass = chromeVisible ? 'opacity-100' : 'opacity-0 pointer-events-none';
+  const chromeVisibilityClass = chromeVisible ? "opacity-100" : "opacity-0 pointer-events-none";
 
   return { chromeVisible, revealChrome, toggleChrome, chromeVisibilityClass };
 }

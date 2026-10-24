@@ -1,14 +1,14 @@
-import { type JSX, useCallback, useEffect, useRef } from 'react';
+import { type JSX, useCallback, useEffect, useRef } from "react";
 
-import type { MediaItem } from '../../shared/types';
-import { useCoarsePointer } from '../hooks/useCoarsePointer';
-import { useViewerChromeIdle } from '../hooks/useViewerChromeIdle';
-import { useViewerKeyboardControls } from '../hooks/useViewerKeyboardControls';
-import { useViewerVideoModel, type ViewerVideoModel } from '../hooks/useViewerVideoModel';
-import { formatBytes, formatDuration, toFileUrl } from '../utils/path';
-import { ViewerChrome } from './viewer/ViewerChrome';
-import { VideoPlayerChrome } from './viewer/video-player/VideoPlayerChrome';
-import { useHoldToBoost } from './viewer/video-player/video-player-controls';
+import type { MediaItem } from "../../shared/types";
+import { useCoarsePointer } from "../hooks/useCoarsePointer";
+import { useViewerChromeIdle } from "../hooks/useViewerChromeIdle";
+import { useViewerKeyboardControls } from "../hooks/useViewerKeyboardControls";
+import { useViewerVideoModel, type ViewerVideoModel } from "../hooks/useViewerVideoModel";
+import { formatBytes, formatDuration, toFileUrl } from "../utils/path";
+import { ViewerChrome } from "./viewer/ViewerChrome";
+import { VideoPlayerChrome } from "./viewer/video-player/VideoPlayerChrome";
+import { useHoldToBoost } from "./viewer/video-player/video-player-controls";
 
 interface ViewerModalProps {
   items: MediaItem[];
@@ -23,7 +23,7 @@ interface ViewerModalProps {
 
 function buildViewerDetails(item: MediaItem, loadedDuration: number): string[] {
   const resolvedDurationMs =
-    item.mediaType === 'video'
+    item.mediaType === "video"
       ? item.durationMs && item.durationMs > 0
         ? item.durationMs
         : loadedDuration > 0
@@ -50,7 +50,7 @@ export function ViewerModal({ items, index, ...rest }: ViewerModalProps): JSX.El
   return <ViewerDialog item={item} {...rest} />;
 }
 
-interface ViewerDialogProps extends Omit<ViewerModalProps, 'items' | 'index'> {
+interface ViewerDialogProps extends Omit<ViewerModalProps, "items" | "index"> {
   item: MediaItem;
 }
 
@@ -63,7 +63,7 @@ function ViewerDialog({
   onClose,
   onStep,
 }: ViewerDialogProps): JSX.Element {
-  const isVideoItem = item.mediaType === 'video';
+  const isVideoItem = item.mediaType === "video";
   const modalRef = useRef<HTMLDialogElement | null>(null);
   const fullscreenRef = useRef<HTMLDivElement | null>(null);
   const queuedStepRef = useRef(0);
@@ -127,7 +127,7 @@ function ViewerDialog({
     <dialog
       ref={modalRef}
       aria-label={`Viewer for ${item.name}`}
-      className={`dark fixed inset-0 z-50 m-0 h-screen max-h-none w-screen max-w-none border-0 bg-zinc-950/95 p-0 text-zinc-100 backdrop:bg-zinc-950 ${chromeVisible ? '' : 'cursor-none'}`}
+      className={`dark fixed inset-0 z-50 m-0 h-screen max-h-none w-screen max-w-none border-0 bg-zinc-950/95 p-0 text-zinc-100 backdrop:bg-zinc-950 ${chromeVisible ? "" : "cursor-none"}`}
       onCancel={(event) => {
         event.preventDefault();
         onClose();
@@ -137,7 +137,7 @@ function ViewerDialog({
         if (!isCoarsePointer) revealChrome();
       }}
       onPointerDown={(event) => {
-        if (event.pointerType === 'mouse') revealChrome();
+        if (event.pointerType === "mouse") revealChrome();
       }}
     >
       {/* Chromium will not put a dialog itself in fullscreen, so this wrapper goes instead. */}
@@ -170,7 +170,7 @@ function ViewerDialog({
             else model.toggleVideoPlayback();
           }}
         >
-          {item.mediaType === 'image' ? (
+          {item.mediaType === "image" ? (
             <img
               src={toFileUrl(item.path)}
               alt={item.name}

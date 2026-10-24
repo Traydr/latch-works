@@ -1,11 +1,11 @@
-import { flattenLoadingChunks } from './selectionState';
-import type { AppStoreSet } from './types';
+import { flattenLoadingChunks } from "./selectionState";
+import type { AppStoreSet } from "./types";
 
 export function createOpenViewerAt(set: AppStoreSet) {
   return (index: number): void => {
     set((state) => {
       const sourceItems =
-        state.scanState === 'loading'
+        state.scanState === "loading"
           ? (state.viewerItemsSnapshot ?? flattenLoadingChunks(state.loadingChunks))
           : state.items;
 
@@ -23,7 +23,7 @@ export function createOpenViewerAt(set: AppStoreSet) {
         viewerIndex: index,
         selectedId: item.id,
         viewerItemsSnapshot:
-          state.scanState === 'loading' ? (state.viewerItemsSnapshot ?? sourceItems) : null,
+          state.scanState === "loading" ? (state.viewerItemsSnapshot ?? sourceItems) : null,
       };
     });
   };

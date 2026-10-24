@@ -1,4 +1,4 @@
-import { type LucideIcon, RotateCcw, RotateCw, Volume1, Volume2, VolumeX } from 'lucide-react';
+import { type LucideIcon, RotateCcw, RotateCw, Volume1, Volume2, VolumeX } from "lucide-react";
 import {
   type CSSProperties,
   type JSX,
@@ -11,10 +11,10 @@ import {
   useEffect,
   useRef,
   useState,
-} from 'react';
+} from "react";
 
-import type { ViewerVideoModel } from '../../../hooks/useViewerVideoModel';
-import { VIDEO_SKIP_SECONDS } from '../../../utils/videoPlayback';
+import type { ViewerVideoModel } from "../../../hooks/useViewerVideoModel";
+import { VIDEO_SKIP_SECONDS } from "../../../utils/videoPlayback";
 
 export const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
 
@@ -22,10 +22,10 @@ export function formatClock(seconds: number): string {
   const total = Math.max(0, Math.floor(Number.isFinite(seconds) ? seconds : 0));
   const hours = Math.floor(total / 3600);
   const minutes = Math.floor((total % 3600) / 60);
-  const secs = String(total % 60).padStart(2, '0');
+  const secs = String(total % 60).padStart(2, "0");
 
   if (hours > 0) {
-    return `${hours}:${String(minutes).padStart(2, '0')}:${secs}`;
+    return `${hours}:${String(minutes).padStart(2, "0")}:${secs}`;
   }
 
   return `${minutes}:${secs}`;
@@ -42,7 +42,7 @@ export function volumeIconFor(level: number): LucideIcon {
 /** A chrome surface: clicks inside never reach the picture's click handler. */
 export function ChromeRegion({
   children,
-  className = '',
+  className = "",
   style,
 }: {
   children: ReactNode;
@@ -63,8 +63,8 @@ export function ChromeRegion({
 }
 
 const ICON_BUTTON_SIZE = {
-  sm: 'size-8 [&>svg]:size-4',
-  md: 'size-10 [&>svg]:size-5',
+  sm: "size-8 [&>svg]:size-4",
+  md: "size-10 [&>svg]:size-5",
 } as const;
 
 export interface IconButtonProps {
@@ -81,14 +81,14 @@ export interface IconButtonProps {
 
 export function IconButton({
   active = false,
-  className = '',
+  className = "",
   disabled = false,
   fill = false,
   icon: Icon,
   label,
   onClick,
   ref,
-  size = 'md',
+  size = "md",
 }: IconButtonProps): JSX.Element {
   return (
     <button
@@ -97,10 +97,10 @@ export function IconButton({
       aria-label={label}
       title={label}
       disabled={disabled}
-      className={`inline-flex shrink-0 cursor-pointer items-center justify-center rounded-full transition hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-violet-400 disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent ${ICON_BUTTON_SIZE[size]} ${active ? 'text-violet-300' : 'text-white/90'} ${className}`}
+      className={`inline-flex shrink-0 cursor-pointer items-center justify-center rounded-full transition hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-violet-400 disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent ${ICON_BUTTON_SIZE[size]} ${active ? "text-violet-300" : "text-white/90"} ${className}`}
       onClick={onClick}
     >
-      <Icon className={fill ? 'fill-current' : ''} />
+      <Icon className={fill ? "fill-current" : ""} />
     </button>
   );
 }
@@ -139,7 +139,7 @@ export function SkipButton({
 
 interface FractionDragOptions {
   /** `y` reads bottom-to-top, for vertical sliders. */
-  axis?: 'x' | 'y';
+  axis?: "x" | "y";
   disabled?: boolean;
   onCommit: (fraction: number) => void;
   onScrub: (fraction: number) => void;
@@ -165,7 +165,7 @@ export interface FractionDrag {
  * screen from scrolling instead of scrubbing.
  */
 export function useFractionDrag({
-  axis = 'x',
+  axis = "x",
   disabled = false,
   onCommit,
   onScrub,
@@ -181,7 +181,7 @@ export function useFractionDrag({
     const rect = track.getBoundingClientRect();
 
     const raw =
-      axis === 'y'
+      axis === "y"
         ? rect.height <= 0
           ? 0
           : 1 - (clientY - rect.top) / rect.height
@@ -208,7 +208,7 @@ export function useFractionDrag({
       return;
     }
 
-    if (event.pointerType === 'mouse' && !disabled) {
+    if (event.pointerType === "mouse" && !disabled) {
       setHoverFraction(fractionAt(event.clientX, event.clientY));
     }
   };
@@ -228,7 +228,7 @@ export function useFractionDrag({
       onPointerLeave: () => setHoverFraction(null),
       onPointerMove,
       onPointerUp: finish,
-      style: { touchAction: 'none' },
+      style: { touchAction: "none" },
     },
     trackRef,
   };
@@ -236,12 +236,12 @@ export function useFractionDrag({
 
 export interface SeekControl {
   ariaProps: {
-    'aria-label': string;
-    'aria-valuemax': number;
-    'aria-valuemin': number;
-    'aria-valuenow': number;
-    'aria-valuetext': string;
-    role: 'slider';
+    "aria-label": string;
+    "aria-valuemax": number;
+    "aria-valuemin": number;
+    "aria-valuenow": number;
+    "aria-valuetext": string;
+    role: "slider";
     tabIndex: number;
   };
   drag: FractionDrag;
@@ -285,29 +285,29 @@ export function useSeek(model: ViewerVideoModel): SeekControl {
   const fraction = canSeek ? Math.max(0, Math.min(1, position / duration)) : 0;
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
-    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
       event.preventDefault();
       event.stopPropagation();
-      model.skip(event.key === 'ArrowLeft' ? -VIDEO_SKIP_SECONDS : VIDEO_SKIP_SECONDS);
+      model.skip(event.key === "ArrowLeft" ? -VIDEO_SKIP_SECONDS : VIDEO_SKIP_SECONDS);
 
       return;
     }
 
-    if (event.key === 'Home' || event.key === 'End') {
+    if (event.key === "Home" || event.key === "End") {
       event.preventDefault();
       event.stopPropagation();
-      commit(event.key === 'Home' ? 0 : 1);
+      commit(event.key === "Home" ? 0 : 1);
     }
   };
 
   return {
     ariaProps: {
-      'aria-label': 'Video seek position',
-      'aria-valuemax': Math.round(duration),
-      'aria-valuemin': 0,
-      'aria-valuenow': Math.round(position),
-      'aria-valuetext': `${formatClock(position)} of ${formatClock(duration)}`,
-      role: 'slider',
+      "aria-label": "Video seek position",
+      "aria-valuemax": Math.round(duration),
+      "aria-valuemin": 0,
+      "aria-valuenow": Math.round(position),
+      "aria-valuetext": `${formatClock(position)} of ${formatClock(duration)}`,
+      role: "slider",
       tabIndex: 0,
     },
     drag,
@@ -371,9 +371,9 @@ export function useOutsideClose(
       onClose();
     };
 
-    document.addEventListener('pointerdown', onPointerDown, true);
+    document.addEventListener("pointerdown", onPointerDown, true);
 
-    return () => document.removeEventListener('pointerdown', onPointerDown, true);
+    return () => document.removeEventListener("pointerdown", onPointerDown, true);
   }, [onClose, open, rootRef]);
 }
 
@@ -433,7 +433,7 @@ export function useHoldToBoost(model: ViewerVideoModel): HoldToBoost {
       },
       onPointerCancel: stop,
       onPointerDown: (event) => {
-        if (event.pointerType === 'mouse' || !playing) return;
+        if (event.pointerType === "mouse" || !playing) return;
         clearTimer();
         timerRef.current = window.setTimeout(() => {
           timerRef.current = null;

@@ -1,11 +1,11 @@
-import { availableParallelism, totalmem } from 'node:os';
-import { utilityProcess } from 'electron';
+import { availableParallelism, totalmem } from "node:os";
+import { utilityProcess } from "electron";
 
 import {
   ThumbnailWorkerEventSchema,
   ThumbnailWorkerResponseSchema,
   type WorkerMessage,
-} from '../../shared/contracts';
+} from "../../shared/contracts";
 import type {
   ThumbnailDebugOptions,
   ThumbnailDiagnosticsSnapshot,
@@ -15,15 +15,15 @@ import type {
   ThumbnailWorkerCapabilities,
   ThumbnailWorkerJobResult,
   ThumbnailWorkerRequest,
-} from '../../shared/thumbnail';
-import { RequestAbortError } from '../errors';
+} from "../../shared/thumbnail";
+import { RequestAbortError } from "../errors";
 import {
   appendRecentEntry,
   createTimingAggregateSnapshot,
   nowMs,
   resolveThumbnailWorkerPath,
   type ThumbnailPerformanceAggregateState,
-} from './thumbnailBrokerHelpers';
+} from "./thumbnailBrokerHelpers";
 
 export interface ThumbnailPipelineStatus {
   ffmpegAvailable: boolean;
@@ -39,13 +39,13 @@ type MessageListener = (message: WorkerMessage) => void;
 
 type ExitListener = (code: number | null) => void;
 
-type ErrorListener = (type: 'FatalError', location: string, report: string) => void;
+type ErrorListener = (type: "FatalError", location: string, report: string) => void;
 
 export interface ThumbnailChildProcessLike {
   kill(): boolean;
-  on(event: 'message', listener: MessageListener): this;
-  on(event: 'exit', listener: ExitListener): this;
-  on(event: 'error', listener: ErrorListener): this;
+  on(event: "message", listener: MessageListener): this;
+  on(event: "exit", listener: ExitListener): this;
+  on(event: "error", listener: ErrorListener): this;
   postMessage(message: ThumbnailWorkerRequest): void;
 }
 
@@ -171,7 +171,7 @@ export class ThumbnailBrokerService {
         capabilities: null,
         child: null,
         id: this.workers.length + 1,
-        kind: 'image',
+        kind: "image",
       });
     }
 
@@ -181,7 +181,7 @@ export class ThumbnailBrokerService {
         capabilities: null,
         child: null,
         id: this.workers.length + 1,
-        kind: 'video',
+        kind: "video",
       });
     }
   }
@@ -240,7 +240,7 @@ export class ThumbnailBrokerService {
     }
 
     const preferred =
-      this.workers.find((worker) => worker.kind === 'video' && worker.capabilities)?.capabilities ??
+      this.workers.find((worker) => worker.kind === "video" && worker.capabilities)?.capabilities ??
       capabilities[0];
 
     return {
@@ -262,7 +262,7 @@ export class ThumbnailBrokerService {
       diskCacheHits: 0,
       generatedCount: this.generatedCount,
       imageQueueDepth: this.imageQueue.length,
-      imageWorkerCount: this.workers.filter((worker) => worker.kind === 'image').length,
+      imageWorkerCount: this.workers.filter((worker) => worker.kind === "image").length,
       inflightRequests: this.inflightRequests,
       memoryCacheHits: 0,
       recentFailures: [...this.recentFailures],
@@ -271,7 +271,7 @@ export class ThumbnailBrokerService {
       timings: this.getPerformanceSnapshot(),
       videoExtractionFailureCount: this.videoExtractionFailureCount,
       videoQueueDepth: this.videoQueue.length,
-      videoWorkerCount: this.workers.filter((worker) => worker.kind === 'video').length,
+      videoWorkerCount: this.workers.filter((worker) => worker.kind === "video").length,
       workerCrashCount: this.workerCrashCount,
       workerRestartCount: this.workerRestartCount,
     };
@@ -296,20 +296,20 @@ export class ThumbnailBrokerService {
     return {
       ffmpegAvailable: capabilities?.ffmpegAvailable ?? false,
       imageQueueDepth: this.imageQueue.length,
-      imageWorkerCount: this.workers.filter((worker) => worker.kind === 'image').length,
+      imageWorkerCount: this.workers.filter((worker) => worker.kind === "image").length,
       inflightRequests: this.inflightRequests,
       sharpAvailable: capabilities?.sharpAvailable ?? false,
       videoQueueDepth: this.videoQueue.length,
-      videoWorkerCount: this.workers.filter((worker) => worker.kind === 'video').length,
+      videoWorkerCount: this.workers.filter((worker) => worker.kind === "video").length,
     };
   }
 
   recordDiskHit(durationMs: number): void {
-    this.recordTiming('diskHit', durationMs);
+    this.recordTiming("diskHit", durationMs);
   }
 
   recordMemoryHit(durationMs: number): void {
-    this.recordTiming('memoryHit', durationMs);
+    this.recordTiming("memoryHit", durationMs);
   }
 
   setDebugOptions(options: ThumbnailDebugOptions): void {
@@ -324,7 +324,7 @@ export class ThumbnailBrokerService {
         worker.child.postMessage({
           options,
           requestId: 0,
-          type: 'set-debug-options',
+          type: "set-debug-options",
         });
       } catch {
         // Ignore worker update failures; the worker will be recreated on demand if needed.
@@ -401,15 +401,15 @@ export class ThumbnailBrokerService {
       this.cacheRootPath,
     ]);
 
-    child.on('message', (message) => {
+    child.on("message", (message) => {
       this.handleWorkerMessage(worker, message);
     });
 
-    child.on('exit', () => {
-      this.handleWorkerExit(worker, 'Thumbnail worker exited unexpectedly');
+    child.on("exit", () => {
+      this.handleWorkerExit(worker, "Thumbnail worker exited unexpectedly");
     });
 
-    child.on('error', (_type, location) => {
+    child.on("error", (_type, location) => {
       this.handleWorkerExit(worker, `Thumbnail worker crashed at ${location}`);
     });
 
@@ -422,7 +422,7 @@ export class ThumbnailBrokerService {
       child.postMessage({
         options: this.currentDebugOptions,
         requestId: 0,
-        type: 'set-debug-options',
+        type: "set-debug-options",
       });
     } catch {
       // Ignore debug-option sync errors here.
@@ -468,13 +468,13 @@ export class ThumbnailBrokerService {
     worker: WorkerSlot,
     error: string,
     errorCode:
-      | 'abort'
-      | 'sharp-decode'
-      | 'video-extraction'
-      | 'worker-init'
-      | 'unknown' = 'unknown',
+      | "abort"
+      | "sharp-decode"
+      | "video-extraction"
+      | "worker-init"
+      | "unknown" = "unknown",
   ): void {
-    if (errorCode === 'abort') {
+    if (errorCode === "abort") {
       this.abortedCount += 1;
       task.reject(new RequestAbortError());
       this.pumpQueue(worker.kind);
@@ -482,11 +482,11 @@ export class ThumbnailBrokerService {
       return;
     }
 
-    if (errorCode === 'sharp-decode') {
+    if (errorCode === "sharp-decode") {
       this.sharpDecodeFailureCount += 1;
     }
 
-    if (errorCode === 'video-extraction') {
+    if (errorCode === "video-extraction") {
       this.videoExtractionFailureCount += 1;
     }
 
@@ -505,9 +505,9 @@ export class ThumbnailBrokerService {
         `${worker.kind} worker ${worker.id} ready. ffmpeg=${capabilities.ffmpegAvailable} sharp=${capabilities.sharpAvailable}`,
       );
 
-      if (worker.kind === 'video' && !capabilities.ffmpegAvailable) {
+      if (worker.kind === "video" && !capabilities.ffmpegAvailable) {
         console.warn(
-          `[thumbnailBroker] video worker ${worker.id} started without ffmpeg. Checked worker path candidates: ${this.memoryOfWorkerPathChecks.join(', ')}`,
+          `[thumbnailBroker] video worker ${worker.id} started without ffmpeg. Checked worker path candidates: ${this.memoryOfWorkerPathChecks.join(", ")}`,
         );
       }
 
@@ -552,14 +552,14 @@ export class ThumbnailBrokerService {
       return;
     }
 
-    if ('bytes' in response.result) {
+    if ("bytes" in response.result) {
       this.generatedCount += 1;
 
       if (task.startedAtMs !== null) {
-        this.recordTiming('workerGeneration', nowMs() - task.startedAtMs);
+        this.recordTiming("workerGeneration", nowMs() - task.startedAtMs);
       }
 
-      this.recordTiming('endToEnd', nowMs() - task.requestedAtMs);
+      this.recordTiming("endToEnd", nowMs() - task.requestedAtMs);
       task.resolve(response.result);
       this.pumpQueue(worker.kind);
 
@@ -586,7 +586,7 @@ export class ThumbnailBrokerService {
   }
 
   private pumpQueue(kind: ThumbnailJobKind): void {
-    const queue = kind === 'video' ? this.videoQueue : this.imageQueue;
+    const queue = kind === "video" ? this.videoQueue : this.imageQueue;
 
     while (queue.length > 0) {
       const worker = this.workers.find(
@@ -639,7 +639,7 @@ export class ThumbnailBrokerService {
   }
 
   private removeQueuedTask(task: ThumbnailBrokerTask): void {
-    const queue = task.job.kind === 'video' ? this.videoQueue : this.imageQueue;
+    const queue = task.job.kind === "video" ? this.videoQueue : this.imageQueue;
     const taskIndex = queue.indexOf(task);
 
     if (taskIndex >= 0) {
@@ -648,7 +648,7 @@ export class ThumbnailBrokerService {
   }
 
   private insertQueuedTask(task: ThumbnailBrokerTask): ThumbnailBrokerTask[] {
-    const queue = task.job.kind === 'video' ? this.videoQueue : this.imageQueue;
+    const queue = task.job.kind === "video" ? this.videoQueue : this.imageQueue;
 
     const insertIndex = queue.findIndex((queuedTask) => {
       if (task.job.priority !== queuedTask.job.priority) {
@@ -681,7 +681,7 @@ export class ThumbnailBrokerService {
       .then((child) => {
         child.postMessage({
           requestId,
-          type: 'generate-thumbnail',
+          type: "generate-thumbnail",
           job: task.job,
         });
       })
@@ -690,9 +690,9 @@ export class ThumbnailBrokerService {
         this.tasksByCacheKey.delete(task.cacheKey);
         worker.activeRequestId = null;
         this.inflightRequests = Math.max(0, this.inflightRequests - 1);
-        task.reject(error instanceof Error ? error : new Error('Failed to start thumbnail worker'));
+        task.reject(error instanceof Error ? error : new Error("Failed to start thumbnail worker"));
         this.addRecentFailure(
-          error instanceof Error ? error.message : 'Failed to start thumbnail worker',
+          error instanceof Error ? error.message : "Failed to start thumbnail worker",
         );
         this.pumpQueue(task.job.kind);
       });
@@ -715,7 +715,7 @@ export class ThumbnailBrokerService {
       : null;
 
     if (signal && abortHandler) {
-      signal.addEventListener('abort', abortHandler, { once: true });
+      signal.addEventListener("abort", abortHandler, { once: true });
     }
 
     task.consumers.set(consumerId, {
@@ -740,9 +740,9 @@ export class ThumbnailBrokerService {
           return;
         }
 
-        signal.addEventListener('abort', onAbort, { once: true });
+        signal.addEventListener("abort", onAbort, { once: true });
         task.promise.then(resolve, reject).finally(() => {
-          signal.removeEventListener('abort', onAbort);
+          signal.removeEventListener("abort", onAbort);
         });
       });
     } finally {
@@ -758,7 +758,7 @@ export class ThumbnailBrokerService {
     }
 
     if (consumer.signal && consumer.abortHandler) {
-      consumer.signal.removeEventListener('abort', consumer.abortHandler);
+      consumer.signal.removeEventListener("abort", consumer.abortHandler);
     }
 
     task.consumers.delete(consumerId);
@@ -798,7 +798,7 @@ export class ThumbnailBrokerService {
       try {
         worker.child.postMessage({
           requestId,
-          type: 'cancel-thumbnail',
+          type: "cancel-thumbnail",
         });
       } catch {
         // Ignore worker cancellation send errors.

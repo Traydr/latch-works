@@ -1,12 +1,12 @@
-import { Result, type Result as ResultType, type SerializedResult } from 'better-result';
-import type { z } from 'zod';
+import { Result, type Result as ResultType, type SerializedResult } from "better-result";
+import type { z } from "zod";
 
-import { createSerializedResultSchema, type JsonValue } from './contracts';
-import type { IpcErrorPayload } from './types';
+import { createSerializedResultSchema, type JsonValue } from "./contracts";
+import type { IpcErrorPayload } from "./types";
 
 function protocolError(channel: string, payload: JsonValue): IpcErrorPayload {
   return {
-    _tag: 'ProtocolError',
+    _tag: "ProtocolError",
     message: `Invalid IPC result payload for ${channel}`,
     channel,
     payload,
@@ -17,10 +17,10 @@ export function serializeIpcResult<T>(
   result: ResultType<T, IpcErrorPayload>,
 ): SerializedResult<T, IpcErrorPayload> {
   if (Result.isError(result)) {
-    return { status: 'error', error: result.error };
+    return { status: "error", error: result.error };
   }
 
-  return { status: 'ok', value: result.value };
+  return { status: "ok", value: result.value };
 }
 
 export function deserializeIpcResult<T>(
@@ -34,7 +34,7 @@ export function deserializeIpcResult<T>(
     return Result.err(protocolError(channel, value));
   }
 
-  if (parsed.data.status === 'error') {
+  if (parsed.data.status === "error") {
     return Result.err(parsed.data.error);
   }
 

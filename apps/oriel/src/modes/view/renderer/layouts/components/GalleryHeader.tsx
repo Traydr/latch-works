@@ -1,5 +1,5 @@
-import { ArrowUp, ChevronLeft, ChevronRight } from 'lucide-react';
-import type { JSX } from 'react';
+import { ArrowUp, ChevronLeft, ChevronRight } from "lucide-react";
+import type { JSX } from "react";
 
 interface GalleryHeaderProps {
   browserEntryCount: number;
@@ -19,7 +19,7 @@ interface GalleryHeaderProps {
   mediaEntryCount: number;
   rootPath: string | null;
   selectedBrowserEntryIndex: number;
-  topStatus: { kind: 'ready' | 'scanning'; message: string; path: string | null } | null;
+  topStatus: { kind: "ready" | "scanning"; message: string; path: string | null } | null;
 }
 
 /**
@@ -71,11 +71,11 @@ export function GalleryHeader({
               className="prism-pill min-w-0 max-w-[28vw]"
               title={topStatus.path ? `${topStatus.message}: ${topStatus.path}` : topStatus.message}
             >
-              {topStatus.kind === 'scanning' ? (
+              {topStatus.kind === "scanning" ? (
                 <span className="inline-block h-2 w-2 shrink-0 animate-pulse rounded-full bg-amber-400" />
               ) : null}
               {/* With a path, the message keeps its width up to 60% and the path gets the rest. */}
-              <span className={`truncate ${topStatus.path ? 'max-w-[60%] shrink-0' : 'min-w-0'}`}>
+              <span className={`truncate ${topStatus.path ? "max-w-[60%] shrink-0" : "min-w-0"}`}>
                 {topStatus.message}
               </span>
               {topStatus.path ? (

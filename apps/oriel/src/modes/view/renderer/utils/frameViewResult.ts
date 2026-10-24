@@ -1,6 +1,6 @@
-import { Result } from 'better-result';
+import { Result } from "better-result";
 
-import type { FrameViewResult } from '../../shared/types';
+import type { FrameViewResult } from "../../shared/types";
 
 export function getFrameViewValue<T>(result: FrameViewResult<T>, operation: string): T | null {
   if (Result.isError(result)) {

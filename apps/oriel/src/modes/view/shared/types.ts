@@ -1,6 +1,6 @@
-import { ImageExtensions, VideoExtensions } from '@latch-works/media-domain';
-import type { Result } from 'better-result';
-import type { z } from 'zod';
+import { ImageExtensions, VideoExtensions } from "@latch-works/media-domain";
+import type { Result } from "better-result";
+import type { z } from "zod";
 
 import type {
   AppCommandSchema,
@@ -24,7 +24,7 @@ import type {
   ThemeModeSchema,
   VideoProbeMetadataSchema,
   VideoProbeRequestSchema,
-} from './contracts';
+} from "./contracts";
 
 export type MediaType = z.infer<typeof MediaTypeSchema>;
 
@@ -47,7 +47,7 @@ export type AppSettingsPatch = z.infer<typeof AppSettingsPatchSchema>;
 export type StoredSettingsPatch = z.infer<typeof StoredSettingsPatchSchema>;
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  theme: 'system',
+  theme: "system",
   rememberLastFolder: true,
   recursiveDefault: false,
   autoplayOnHover: true,
@@ -56,7 +56,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   previewAudioEnabled: false,
   loopVideos: true,
   thumbnailSize: 220,
-  sortMode: 'name-asc',
+  sortMode: "name-asc",
   randomSeed: 1,
   filters: {
     imageExtensions: [...ImageExtensions],

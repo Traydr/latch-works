@@ -12,8 +12,8 @@ import type {
   ScanOptions,
   VideoProbeMetadata,
   VideoProbeRequest,
-} from '../../shared/types';
-import { getFrameViewValue, isFrameViewOk } from '../utils/frameViewResult';
+} from "../../shared/types";
+import { getFrameViewValue, isFrameViewOk } from "../utils/frameViewResult";
 
 interface FrameViewClient {
   openFolderDialog: () => Promise<string | null>;
@@ -50,13 +50,13 @@ function getApi(): FrameViewApi {
 
 export const frameViewClient: FrameViewClient = {
   async openFolderDialog() {
-    return getFrameViewValue(await getApi().openFolderDialog(), 'open-folder-dialog');
+    return getFrameViewValue(await getApi().openFolderDialog(), "open-folder-dialog");
   },
   async resolveInputPath(candidatePath) {
-    return getFrameViewValue(await getApi().resolveInputPath(candidatePath), 'resolve-input-path');
+    return getFrameViewValue(await getApi().resolveInputPath(candidatePath), "resolve-input-path");
   },
   async authorizeDroppedFile(file) {
-    return getFrameViewValue(await getApi().authorizeDroppedFile(file), 'authorize-dropped-file');
+    return getFrameViewValue(await getApi().authorizeDroppedFile(file), "authorize-dropped-file");
   },
   async startScan(options) {
     return isFrameViewOk(await getApi().startScan(options));
@@ -66,34 +66,34 @@ export const frameViewClient: FrameViewClient = {
   },
   async listFolderChildren(folderPath) {
     return (
-      getFrameViewValue(await getApi().listFolderChildren(folderPath), 'list-folder-children') ?? []
+      getFrameViewValue(await getApi().listFolderChildren(folderPath), "list-folder-children") ?? []
     );
   },
   async getSettings() {
-    return getFrameViewValue(await getApi().getSettings(), 'get-settings');
+    return getFrameViewValue(await getApi().getSettings(), "get-settings");
   },
   async updateSettings(patch) {
-    return getFrameViewValue(await getApi().updateSettings(patch), 'update-settings');
+    return getFrameViewValue(await getApi().updateSettings(patch), "update-settings");
   },
   async probeVideoMetadata(request) {
-    return getFrameViewValue(await getApi().probeVideoMetadata(request), 'probe-video-metadata');
+    return getFrameViewValue(await getApi().probeVideoMetadata(request), "probe-video-metadata");
   },
   async clearThumbnailCache() {
     return isFrameViewOk(await getApi().clearThumbnailCache());
   },
   async getMediaIndexStats() {
-    return getFrameViewValue(await getApi().getMediaIndexStats(), 'get-media-index-stats');
+    return getFrameViewValue(await getApi().getMediaIndexStats(), "get-media-index-stats");
   },
   async clearMediaIndex() {
     return isFrameViewOk(await getApi().clearMediaIndex());
   },
   async getMediaToolsStatus() {
-    return getFrameViewValue(await getApi().getMediaToolsStatus(), 'get-media-tools-status');
+    return getFrameViewValue(await getApi().getMediaToolsStatus(), "get-media-tools-status");
   },
   async getDiagnosticsSnapshot() {
     return getFrameViewValue(
       await getApi().debug.getDiagnosticsSnapshot(),
-      'get-diagnostics-snapshot',
+      "get-diagnostics-snapshot",
     );
   },
   onAppCommand(listener) {

@@ -1,9 +1,9 @@
-import { Result } from 'better-result';
-import type { ZodType } from 'zod';
+import { Result } from "better-result";
+import type { ZodType } from "zod";
 
-import { AppCommandSchema, type JsonValue, ScanEventSchema } from '../shared/contracts';
-import { deserializeIpcResult } from '../shared/ipc';
-import { InvokeIpcContracts } from '../shared/ipcContracts';
+import { AppCommandSchema, type JsonValue, ScanEventSchema } from "../shared/contracts";
+import { deserializeIpcResult } from "../shared/ipc";
+import { InvokeIpcContracts } from "../shared/ipcContracts";
 import type {
   AppCommand,
   AppSettingsPatch,
@@ -11,7 +11,7 @@ import type {
   ScanEvent,
   ScanOptions,
   VideoProbeRequest,
-} from '../shared/types';
+} from "../shared/types";
 
 /**
  * The renderer-side IPC transport the bridge needs: request/response invokes and channel
@@ -45,7 +45,7 @@ export function createFrameViewApi(
   const commandListeners = new Set<(command: AppCommand) => void>();
   const heldCommands: AppCommand[] = [];
 
-  transport.subscribe('app:command', (payload) => {
+  transport.subscribe("app:command", (payload) => {
     const parsedPayload = AppCommandSchema.safeParse(payload);
 
     if (!parsedPayload.success) {
@@ -167,7 +167,7 @@ export function createFrameViewApi(
       };
     },
     onScanEvent: (listener: (event: ScanEvent) => void) =>
-      transport.subscribe('scan:event', (payload) => {
+      transport.subscribe("scan:event", (payload) => {
         const parsedPayload = ScanEventSchema.safeParse(payload);
 
         if (parsedPayload.success) {

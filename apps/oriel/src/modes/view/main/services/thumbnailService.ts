@@ -1,20 +1,20 @@
-import { createHash } from 'node:crypto';
-import { promises as fs } from 'node:fs';
-import path from 'node:path';
-import { detectMediaType } from '@latch-works/media-domain';
+import { createHash } from "node:crypto";
+import { promises as fs } from "node:fs";
+import path from "node:path";
+import { detectMediaType } from "@latch-works/media-domain";
 import type {
   ThumbnailDebugOptions,
   ThumbnailDiagnosticsSnapshot,
   ThumbnailJobPriority,
   ThumbnailWorkerCapabilities,
   ThumbnailWorkerJobResult,
-} from '../../shared/thumbnail';
-import { RequestAbortError } from '../errors';
+} from "../../shared/thumbnail";
+import { RequestAbortError } from "../errors";
 import {
   ThumbnailBrokerService,
   type ThumbnailBrokerServiceOptions,
   type ThumbnailPipelineStatus,
-} from '../thumbnail/ThumbnailBrokerService';
+} from "../thumbnail/ThumbnailBrokerService";
 
 const MAX_THUMB_MEMORY_ENTRIES = 600;
 
@@ -22,13 +22,13 @@ const MAX_THUMB_DISK_FILES = 5000;
 
 const MAX_THUMB_DISK_FILES_BEFORE_PRUNE = MAX_THUMB_DISK_FILES + 100;
 
-const THUMB_CACHE_VERSION = 'thumb-v2';
+const THUMB_CACHE_VERSION = "thumb-v2";
 
-type ThumbnailTaskKind = 'image' | 'video';
+type ThumbnailTaskKind = "image" | "video";
 
 interface ThumbnailResult {
   bytes: Uint8Array;
-  contentType: 'image/webp';
+  contentType: "image/webp";
   cacheKey: string;
 }
 
@@ -47,7 +47,7 @@ export interface ThumbnailBrokerLike {
     },
     signal?: AbortSignal,
   ): Promise<ThumbnailWorkerJobResult>;
-  getPerformanceSnapshot?(): ThumbnailDiagnosticsSnapshot['timings'];
+  getPerformanceSnapshot?(): ThumbnailDiagnosticsSnapshot["timings"];
   recordDiskHit?(durationMs: number): void;
   recordMemoryHit?(durationMs: number): void;
   setDebugOptions?(options: ThumbnailDebugOptions): void;
@@ -68,7 +68,7 @@ function toArrayBuffer(data: Uint8Array): ArrayBuffer {
 
 // The shared classification, so every video the catalog lists (m4v included) gets a video frame.
 function isVideoPath(mediaPath: string): boolean {
-  return detectMediaType(path.basename(mediaPath)) === 'video';
+  return detectMediaType(path.basename(mediaPath)) === "video";
 }
 
 function buildThumbCacheKey(
@@ -77,16 +77,16 @@ function buildThumbCacheKey(
   mtimeMs: number,
   fileSize: number,
 ): string {
-  return createHash('sha1')
+  return createHash("sha1")
     .update(`${THUMB_CACHE_VERSION}|${mediaPath}|${thumbSize}|${mtimeMs}|${fileSize}`)
-    .digest('hex');
+    .digest("hex");
 }
 
 export function toThumbnailResponse(result: ThumbnailResult): Response {
   return new Response(toArrayBuffer(result.bytes), {
     headers: {
-      'cache-control': 'public, max-age=86400',
-      'content-type': result.contentType,
+      "cache-control": "public, max-age=86400",
+      "content-type": result.contentType,
     },
   });
 }
@@ -106,8 +106,8 @@ export class ThumbnailService {
 
   constructor(userDataPath: string, options: ThumbnailServiceOptions = {}) {
     const cacheRootPath = options.cacheRootPath ?? userDataPath;
-    this.diskCacheDir = path.join(cacheRootPath, 'frame-view', 'thumbnails');
-    this.legacyDiskCacheDir = path.join(userDataPath, 'thumb-cache');
+    this.diskCacheDir = path.join(cacheRootPath, "frame-view", "thumbnails");
+    this.legacyDiskCacheDir = path.join(userDataPath, "thumb-cache");
     this.broker =
       options.broker ??
       new ThumbnailBrokerService(userDataPath, {
@@ -142,7 +142,7 @@ export class ThumbnailService {
     const fileStats = await fs.stat(mediaPath);
 
     if (!fileStats.isFile()) {
-      throw new Error('Media path is not a file');
+      throw new Error("Media path is not a file");
     }
 
     const cacheKey = buildThumbCacheKey(mediaPath, thumbSize, fileStats.mtimeMs, fileStats.size);
@@ -156,7 +156,7 @@ export class ThumbnailService {
       return {
         bytes: memoryCached,
         cacheKey,
-        contentType: 'image/webp',
+        contentType: "image/webp",
       };
     }
 
@@ -170,14 +170,14 @@ export class ThumbnailService {
       return {
         bytes: diskCached,
         cacheKey,
-        contentType: 'image/webp',
+        contentType: "image/webp",
       };
     }
 
     const generated = await this.broker.getThumbnail(
       {
         cacheKey,
-        kind: isVideoPath(mediaPath) ? 'video' : 'image',
+        kind: isVideoPath(mediaPath) ? "video" : "image",
         mediaPath,
         priority,
         thumbSize,
@@ -196,7 +196,7 @@ export class ThumbnailService {
     return {
       bytes: generated.bytes,
       cacheKey,
-      contentType: 'image/webp',
+      contentType: "image/webp",
     };
   }
 
@@ -210,7 +210,7 @@ export class ThumbnailService {
       const deletionTasks: Promise<void>[] = [];
 
       for (const entry of entries) {
-        if (!entry.isFile() || (!entry.name.endsWith('.png') && !entry.name.endsWith('.webp'))) {
+        if (!entry.isFile() || (!entry.name.endsWith(".png") && !entry.name.endsWith(".webp"))) {
           continue;
         }
 
@@ -333,7 +333,7 @@ export class ThumbnailService {
       const entries = await fs.readdir(this.diskCacheDir, { withFileTypes: true });
 
       const cachedFiles = entries.filter(
-        (entry) => entry.isFile() && (entry.name.endsWith('.png') || entry.name.endsWith('.webp')),
+        (entry) => entry.isFile() && (entry.name.endsWith(".png") || entry.name.endsWith(".webp")),
       );
 
       this.diskCacheFileCount = cachedFiles.length;

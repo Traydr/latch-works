@@ -1,12 +1,12 @@
-import type { JSX } from 'react';
+import type { JSX } from "react";
 
-import type { BrowserEntry } from '../../utils/browserEntries';
-import { toThumbnailUrl } from '../../utils/path';
+import type { BrowserEntry } from "../../utils/browserEntries";
+import { toThumbnailUrl } from "../../utils/path";
 
 interface ComicTileProps {
   cardHeight: number;
   cardWidth: number;
-  entry: Extract<BrowserEntry, { kind: 'comic' }>;
+  entry: Extract<BrowserEntry, { kind: "comic" }>;
   left: number;
   onActivate: (entry: BrowserEntry) => void;
   onSelect: (entry: BrowserEntry) => void;
@@ -37,8 +37,8 @@ export function ComicTile({
       data-gallery-item-id={entry.key}
       className={`group absolute overflow-hidden rounded-2xl bg-zinc-200 text-left transition active:scale-[0.96] [outline:1px_solid_rgba(0,0,0,0.1)] dark:[outline:1px_solid_rgba(255,255,255,0.1)] dark:bg-zinc-800 ${
         selected
-          ? 'ring-2 ring-violet-500 ring-offset-2 ring-offset-zinc-50 dark:ring-offset-zinc-950'
-          : 'hover:shadow-lg'
+          ? "ring-2 ring-violet-500 ring-offset-2 ring-offset-zinc-50 dark:ring-offset-zinc-950"
+          : "hover:shadow-lg"
       }`}
       onClick={() => onSelect(entry)}
       onDoubleClick={() => onActivate(entry)}

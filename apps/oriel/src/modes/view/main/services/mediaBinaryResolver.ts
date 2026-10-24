@@ -1,5 +1,5 @@
-import { existsSync } from 'node:fs';
-import path from 'node:path';
+import { existsSync } from "node:fs";
+import path from "node:path";
 
 interface BinaryResolutionResult {
   checkedPaths: string[];
@@ -10,8 +10,8 @@ interface BinaryResolutionResult {
 }
 
 function rewriteAsarPath(candidatePath: string): string {
-  return candidatePath.includes('app.asar')
-    ? candidatePath.replace(/app\.asar(?=[\\/])/, 'app.asar.unpacked')
+  return candidatePath.includes("app.asar")
+    ? candidatePath.replace(/app\.asar(?=[\\/])/, "app.asar.unpacked")
     : candidatePath;
 }
 
@@ -27,7 +27,7 @@ function toCandidatePaths(requestedPath: string): string[] {
     const nodeModulesSuffix = normalizedRequestedPath.slice(nodeModulesIndex);
 
     if (process.resourcesPath) {
-      candidates.add(path.join(process.resourcesPath, 'app.asar.unpacked', nodeModulesSuffix));
+      candidates.add(path.join(process.resourcesPath, "app.asar.unpacked", nodeModulesSuffix));
       candidates.add(path.join(process.resourcesPath, nodeModulesSuffix));
     }
   }
@@ -41,7 +41,7 @@ export function resolveBinaryPath(
   if (!requestedPath) {
     return {
       checkedPaths: [],
-      error: 'Binary path was not provided by the runtime module.',
+      error: "Binary path was not provided by the runtime module.",
       exists: false,
       requestedPath: null,
       resolvedPath: null,
@@ -64,7 +64,7 @@ export function resolveBinaryPath(
 
   return {
     checkedPaths,
-    error: `Binary was not found. Checked: ${checkedPaths.join(', ')}`,
+    error: `Binary was not found. Checked: ${checkedPaths.join(", ")}`,
     exists: false,
     requestedPath,
     resolvedPath: rewriteAsarPath(path.normalize(requestedPath)),

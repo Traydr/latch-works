@@ -4,9 +4,9 @@ import type {
   ScanEvent,
   ScanOptions,
   VideoProbeMetadata,
-} from '../../shared/types';
+} from "../../shared/types";
 
-export type ScanState = 'idle' | 'loading' | 'done' | 'error';
+export type ScanState = "idle" | "loading" | "done" | "error";
 
 export interface AppState {
   settings: AppSettings;

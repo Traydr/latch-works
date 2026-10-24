@@ -1,4 +1,4 @@
-import { type RefObject, useEffect, useMemo, useRef, useState } from 'react';
+import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
 
 const GRID_GAP_PX = 10;
 
@@ -56,7 +56,7 @@ interface UseVirtualGridMetricsResult {
 export function useVirtualGridMetrics(
   itemCount: number,
   thumbnailSize: number,
-  aspectRatio: 'wide' | 'tall' = 'wide',
+  aspectRatio: "wide" | "tall" = "wide",
 ): UseVirtualGridMetricsResult {
   const [mainClientWidth, setMainClientWidth] = useState(0);
 
@@ -85,7 +85,7 @@ export function useVirtualGridMetrics(
   }, [columnCount, gridWidth]);
 
   const cardHeight = useMemo(() => {
-    if (aspectRatio === 'tall') {
+    if (aspectRatio === "tall") {
       return Math.max(180, Math.floor((cardWidth * 16) / 9));
     }
 
@@ -197,7 +197,7 @@ export function useVirtualGridMetrics(
     });
 
     resizeObserver.observe(element);
-    element.addEventListener('scroll', onScroll, { passive: true });
+    element.addEventListener("scroll", onScroll, { passive: true });
 
     return () => {
       if (frameId !== null) {
@@ -205,7 +205,7 @@ export function useVirtualGridMetrics(
       }
 
       resizeObserver.disconnect();
-      element.removeEventListener('scroll', onScroll);
+      element.removeEventListener("scroll", onScroll);
     };
   }, [rowCount, rowStride]);
 

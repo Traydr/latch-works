@@ -1,7 +1,7 @@
-import type { JSX } from 'react';
+import type { JSX } from "react";
 
-import type { MediaIndexStats, MediaToolsStatus } from '../../../shared/types';
-import { SettingsSection } from './SettingsSection';
+import type { MediaIndexStats, MediaToolsStatus } from "../../../shared/types";
+import { SettingsSection } from "./SettingsSection";
 
 interface LocalStorageTabProps {
   mediaIndexStats: MediaIndexStats | null;
@@ -49,15 +49,15 @@ export function LocalStorageTab({
         {mediaToolsStatus ? (
           <div className="grid gap-3 md:grid-cols-2">
             <div className="rounded-xl border border-zinc-200/70 bg-white/60 p-3 text-xs dark:border-zinc-700/70 dark:bg-zinc-900/40">
-              <p>ffmpeg: {mediaToolsStatus.ffmpegAvailable ? 'available' : 'not available'}</p>
+              <p>ffmpeg: {mediaToolsStatus.ffmpegAvailable ? "available" : "not available"}</p>
               <p className="break-all text-zinc-500 dark:text-zinc-400">
-                {mediaToolsStatus.ffmpegPath ?? 'No runtime path'}
+                {mediaToolsStatus.ffmpegPath ?? "No runtime path"}
               </p>
             </div>
             <div className="rounded-xl border border-zinc-200/70 bg-white/60 p-3 text-xs dark:border-zinc-700/70 dark:bg-zinc-900/40">
-              <p>ffprobe: {mediaToolsStatus.ffprobeAvailable ? 'available' : 'not available'}</p>
+              <p>ffprobe: {mediaToolsStatus.ffprobeAvailable ? "available" : "not available"}</p>
               <p className="break-all text-zinc-500 dark:text-zinc-400">
-                {mediaToolsStatus.ffprobePath ?? 'No runtime path'}
+                {mediaToolsStatus.ffprobePath ?? "No runtime path"}
               </p>
             </div>
           </div>

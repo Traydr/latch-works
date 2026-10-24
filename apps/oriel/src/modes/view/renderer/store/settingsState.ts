@@ -1,6 +1,6 @@
-import type { AppSettings } from '../../shared/types';
-import { sortAndSyncSelection } from './selectionState';
-import type { AppStoreSet } from './types';
+import type { AppSettings } from "../../shared/types";
+import { sortAndSyncSelection } from "./selectionState";
+import type { AppStoreSet } from "./types";
 
 export function createInitializeSettings(set: AppStoreSet) {
   return (settings: AppSettings): void => {
@@ -9,7 +9,7 @@ export function createInitializeSettings(set: AppStoreSet) {
         state.items,
         settings,
         state.selectedId,
-        state.scanState === 'loading' ? null : state.viewerIndex,
+        state.scanState === "loading" ? null : state.viewerIndex,
       );
 
       return {

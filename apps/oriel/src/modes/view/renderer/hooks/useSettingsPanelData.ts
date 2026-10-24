@@ -1,8 +1,8 @@
-import { Result } from 'better-result';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Result } from "better-result";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { DiagnosticsSnapshot, MediaIndexStats, MediaToolsStatus } from '../../shared/types';
-import { frameViewClient, frameViewClientResult } from '../services/frameViewClient';
+import type { DiagnosticsSnapshot, MediaIndexStats, MediaToolsStatus } from "../../shared/types";
+import { frameViewClient, frameViewClientResult } from "../services/frameViewClient";
 
 interface UseSettingsPanelDataResult {
   diagnosticsSnapshot: DiagnosticsSnapshot | null;
@@ -30,7 +30,7 @@ export function useSettingsPanelData(enabled: boolean): UseSettingsPanelDataResu
 
     const [nextMediaIndexStats, mediaToolsResult, diagnosticsResult] = await Promise.all([
       frameViewClient.getMediaIndexStats().catch((error) => {
-        console.error('[frameView:get-media-index-stats]', error);
+        console.error("[frameView:get-media-index-stats]", error);
 
         return null;
       }),
@@ -39,11 +39,11 @@ export function useSettingsPanelData(enabled: boolean): UseSettingsPanelDataResu
     ]);
 
     if (Result.isError(mediaToolsResult)) {
-      console.error('[frameView:get-media-tools-status]', mediaToolsResult.error);
+      console.error("[frameView:get-media-tools-status]", mediaToolsResult.error);
     }
 
     if (Result.isError(diagnosticsResult)) {
-      console.error('[frameView:get-diagnostics-snapshot]', diagnosticsResult.error);
+      console.error("[frameView:get-diagnostics-snapshot]", diagnosticsResult.error);
     }
 
     applyIfCurrent(setMediaIndexStats, nextMediaIndexStats);

@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState } from "react";
 
-const COARSE_POINTER_QUERY = '(pointer: coarse)';
+const COARSE_POINTER_QUERY = "(pointer: coarse)";
 
 /** True on touch-first devices, where taps replace hover and the mouse cursor. */
 export function useCoarsePointer(): boolean {
@@ -9,10 +9,10 @@ export function useCoarsePointer(): boolean {
   useEffect(() => {
     const query = window.matchMedia(COARSE_POINTER_QUERY);
     const onChange = (): void => setCoarse(query.matches);
-    query.addEventListener('change', onChange);
+    query.addEventListener("change", onChange);
     onChange();
 
-    return () => query.removeEventListener('change', onChange);
+    return () => query.removeEventListener("change", onChange);
   }, []);
 
   return coarse;

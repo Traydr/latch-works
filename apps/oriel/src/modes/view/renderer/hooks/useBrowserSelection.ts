@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from "react";
 
-import type { BrowserEntry, BrowserEntryCollection } from '../utils/browserEntries';
-import { getMediaEntryKey } from '../utils/browserEntries';
+import type { BrowserEntry, BrowserEntryCollection } from "../utils/browserEntries";
+import { getMediaEntryKey } from "../utils/browserEntries";
 
 interface UseBrowserSelectionResult {
   activateBrowserEntryAction: (entry: BrowserEntry) => void;
@@ -23,7 +23,7 @@ export function useBrowserSelection({
 }: {
   browserEntries: BrowserEntryCollection;
   navigateToFolderAction: (folderPath: string) => void;
-  openComicReader: (comic: Extract<BrowserEntry, { kind: 'comic' }>['comic']) => void;
+  openComicReader: (comic: Extract<BrowserEntry, { kind: "comic" }>["comic"]) => void;
   openViewerAt: (index: number) => void;
   pendingFolderSelectionPath: string | null;
   selectedId: string | null;
@@ -90,7 +90,7 @@ export function useBrowserSelection({
     (entry: BrowserEntry): void => {
       setSelectedBrowserEntryKey(entry.key);
 
-      if (entry.kind === 'media') {
+      if (entry.kind === "media") {
         setSelectedId(entry.media.id);
 
         return;
@@ -103,13 +103,13 @@ export function useBrowserSelection({
 
   const activateBrowserEntryAction = useCallback(
     (entry: BrowserEntry): void => {
-      if (entry.kind === 'folder') {
+      if (entry.kind === "folder") {
         navigateToFolderAction(entry.path);
 
         return;
       }
 
-      if (entry.kind === 'comic') {
+      if (entry.kind === "comic") {
         openComicReader(entry.comic);
 
         return;

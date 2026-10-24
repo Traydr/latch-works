@@ -1,5 +1,5 @@
-import type { MediaItem, VideoProbeMetadata } from '../../shared/types';
-import type { AppStoreSet } from './types';
+import type { MediaItem, VideoProbeMetadata } from "../../shared/types";
+import type { AppStoreSet } from "./types";
 
 /** The item list after a metadata patch, plus whether anything actually changed. */
 interface MediaMetadataPatchResult {
@@ -17,7 +17,7 @@ function patchMediaMetadata(
   const itemIndex = items.findIndex(
     (item) =>
       item.path === path &&
-      item.mediaType === 'video' &&
+      item.mediaType === "video" &&
       item.mtimeMs === mtimeMs &&
       item.size === size,
   );

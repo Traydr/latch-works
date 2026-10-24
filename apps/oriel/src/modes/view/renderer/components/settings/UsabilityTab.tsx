@@ -1,13 +1,13 @@
-import { type JSX, useEffect, useState } from 'react';
+import { type JSX, useEffect, useState } from "react";
 
-import type { AppSettings, AppSettingsPatch, ThemeMode } from '../../../shared/types';
-import { SettingsSection } from './SettingsSection';
-import { SettingsToggleRow } from './SettingsToggleRow';
+import type { AppSettings, AppSettingsPatch, ThemeMode } from "../../../shared/types";
+import { SettingsSection } from "./SettingsSection";
+import { SettingsToggleRow } from "./SettingsToggleRow";
 
 const THEME_OPTIONS: { value: ThemeMode; label: string }[] = [
-  { value: 'system', label: 'System' },
-  { value: 'light', label: 'Light' },
-  { value: 'dark', label: 'Dark' },
+  { value: "system", label: "System" },
+  { value: "light", label: "Light" },
+  { value: "dark", label: "Dark" },
 ];
 
 interface UsabilityTabProps {

@@ -1,22 +1,22 @@
-import path from 'node:path';
-import { Result, type SerializedResult } from 'better-result';
-import type { BrowserWindow, OpenDialogReturnValue } from 'electron';
-import { app, dialog, ipcMain, shell } from 'electron';
-import type { ZodType } from 'zod';
+import path from "node:path";
+import { Result, type SerializedResult } from "better-result";
+import type { BrowserWindow, OpenDialogReturnValue } from "electron";
+import { app, dialog, ipcMain, shell } from "electron";
+import type { ZodType } from "zod";
 
-import { DiagnosticsSnapshotSchema, type JsonValue, PathInputSchema } from '../../shared/contracts';
-import { serializeIpcResult } from '../../shared/ipc';
-import { InvokeIpcContractList, InvokeIpcContracts } from '../../shared/ipcContracts';
+import { DiagnosticsSnapshotSchema, type JsonValue, PathInputSchema } from "../../shared/contracts";
+import { serializeIpcResult } from "../../shared/ipc";
+import { InvokeIpcContractList, InvokeIpcContracts } from "../../shared/ipcContracts";
 import type {
   DiagnosticsSnapshot,
   IpcErrorPayload,
   ScanEvent,
   ScanOptions,
-} from '../../shared/types';
-import type { CatalogService } from '../catalog/CatalogService';
-import type { ScanQueue } from '../catalog/ScanQueue';
-import { parseWithSchema, serializeAppResult, ValidationError } from '../errors';
-import { listFolderChildren, resolveFolderPath } from '../services/folderService';
+} from "../../shared/types";
+import type { CatalogService } from "../catalog/CatalogService";
+import type { ScanQueue } from "../catalog/ScanQueue";
+import { parseWithSchema, serializeAppResult, ValidationError } from "../errors";
+import { listFolderChildren, resolveFolderPath } from "../services/folderService";
 import {
   claimChosenMediaRoot,
   clearThumbnailCache,
@@ -26,9 +26,9 @@ import {
   isAuthorizedMediaPath,
   setThumbnailDebugOptions,
   shrinkAuthorizedMediaRootsTo,
-} from '../services/mediaProtocol';
-import type { MediaToolsService } from '../services/mediaToolsService';
-import type { SettingsService } from '../services/settingsService';
+} from "../services/mediaProtocol";
+import type { MediaToolsService } from "../services/mediaToolsService";
+import type { SettingsService } from "../services/settingsService";
 
 /** Every invoke handler answers with a serialized better-result envelope. */
 type IpcResponseHandler<T> = (
@@ -36,16 +36,16 @@ type IpcResponseHandler<T> = (
 ) => Promise<SerializedResult<T, IpcErrorPayload>>;
 
 /** The parts of the settings, catalog, and media-tools services the IPC layer drives. */
-export type IpcSettingsService = Pick<SettingsService, 'getSettings' | 'updateSettings'>;
+export type IpcSettingsService = Pick<SettingsService, "getSettings" | "updateSettings">;
 
 export type IpcCatalogService = Pick<
   CatalogService,
-  'cancelScan' | 'clearIndex' | 'getMediaIndexStats' | 'startScan'
+  "cancelScan" | "clearIndex" | "getMediaIndexStats" | "startScan"
 >;
 
-export type IpcMediaToolsService = Pick<MediaToolsService, 'getStatus' | 'probeVideo'>;
+export type IpcMediaToolsService = Pick<MediaToolsService, "getStatus" | "probeVideo">;
 
-export type IpcScanQueue = Pick<ScanQueue, 'request'>;
+export type IpcScanQueue = Pick<ScanQueue, "request">;
 
 /** Everything the IPC layer reaches outside itself: Electron, the folder tree, media access. */
 export interface IpcRuntime {
@@ -90,7 +90,7 @@ export function createElectronIpcRuntime(mainWindow: BrowserWindow): IpcRuntime 
     },
     resolveFolderPath,
     sendScanEvent: (event) => {
-      mainWindow.webContents.send('scan:event', event);
+      mainWindow.webContents.send("scan:event", event);
     },
     setThumbnailDebugOptions,
     showItemInFolder: (fullPath) => {
@@ -98,8 +98,8 @@ export function createElectronIpcRuntime(mainWindow: BrowserWindow): IpcRuntime 
     },
     showOpenFolderDialog: () =>
       dialog.showOpenDialog(mainWindow, {
-        properties: ['openDirectory'],
-        title: 'Open Folder',
+        properties: ["openDirectory"],
+        title: "Open Folder",
       }),
     shrinkAuthorizedMediaRootsTo,
   };
@@ -136,7 +136,7 @@ function validateIpcInput<T>(
 
 function requireRequestSchema<T>(schema: ZodType<T> | null): ZodType<T> {
   if (!schema) {
-    throw new Error('IPC request schema is not defined for this channel');
+    throw new Error("IPC request schema is not defined for this channel");
   }
 
   return schema;
@@ -190,7 +190,7 @@ export function registerIpc(
   });
 
   runtime.handle(InvokeIpcContracts.resolveInputPath.channel, async (candidatePath: JsonValue) => {
-    const validated = validateIpcInput(PathInputSchema, candidatePath, 'path:resolve-input');
+    const validated = validateIpcInput(PathInputSchema, candidatePath, "path:resolve-input");
 
     if (!validated.ok) {
       return validated.serialized;
@@ -211,7 +211,7 @@ export function registerIpc(
   runtime.handle(
     InvokeIpcContracts.authorizeDroppedPath.channel,
     async (droppedPath: JsonValue) => {
-      const validated = validateIpcInput(PathInputSchema, droppedPath, 'path:authorize-dropped');
+      const validated = validateIpcInput(PathInputSchema, droppedPath, "path:authorize-dropped");
 
       if (!validated.ok) {
         return validated.serialized;
@@ -251,7 +251,7 @@ export function registerIpc(
     // Every failure reports a scan event, so the renderer's "Scanning" state never waits forever.
     if (Result.isError(resolvedRootResult)) {
       sendScanEvent({
-        type: 'error',
+        type: "error",
         message: `Unable to open folder: ${resolvedRootResult.error.message}`,
         path: options.rootPath,
       });
@@ -263,12 +263,12 @@ export function registerIpc(
 
     if (!resolvedRoot) {
       sendScanEvent({
-        type: 'error',
-        message: 'Invalid folder path',
+        type: "error",
+        message: "Invalid folder path",
         path: options.rootPath,
       });
 
-      return validationFailure('scan:start', 'Invalid folder path');
+      return validationFailure("scan:start", "Invalid folder path");
     }
 
     const settings = settingsService.getSettings();
@@ -281,14 +281,14 @@ export function registerIpc(
 
     if (!authorized) {
       sendScanEvent({
-        type: 'error',
-        message: 'Folder path is not authorized. Open a folder with the native dialog first.',
+        type: "error",
+        message: "Folder path is not authorized. Open a folder with the native dialog first.",
         path: resolvedRoot,
       });
 
       return validationFailure(
-        'scan:start',
-        'Folder path is not authorized. Open a folder with the native dialog first.',
+        "scan:start",
+        "Folder path is not authorized. Open a folder with the native dialog first.",
       );
     }
 
@@ -304,7 +304,7 @@ export function registerIpc(
 
       if (Result.isError(updateResult)) {
         sendScanEvent({
-          type: 'error',
+          type: "error",
           message: `Scan failed: ${updateResult.error.message}`,
           path: resolvedRoot,
         });
@@ -335,7 +335,7 @@ export function registerIpc(
 
     if (Result.isError(startResult)) {
       sendScanEvent({
-        type: 'error',
+        type: "error",
         message: `Scan failed: ${startResult.error.message}`,
       });
 
@@ -357,8 +357,8 @@ export function registerIpc(
 
       if (!runtime.isWindowDestroyed()) {
         runtime.sendScanEvent({
-          type: 'error',
-          message: 'Invalid scan options',
+          type: "error",
+          message: "Invalid scan options",
         });
       }
 
@@ -383,7 +383,7 @@ export function registerIpc(
   });
 
   runtime.handle(InvokeIpcContracts.listFolderChildren.channel, async (folderPath: JsonValue) => {
-    const validated = validateIpcInput(PathInputSchema, folderPath, 'tree:list-children');
+    const validated = validateIpcInput(PathInputSchema, folderPath, "tree:list-children");
 
     if (!validated.ok) {
       return validated.serialized;
@@ -398,13 +398,13 @@ export function registerIpc(
     const resolvedPath = resolvedPathResult.value;
 
     if (!resolvedPath) {
-      return validationFailure('tree:list-children', 'Invalid folder path');
+      return validationFailure("tree:list-children", "Invalid folder path");
     }
 
     const authorized = await runtime.isAuthorizedMediaPath(resolvedPath);
 
     if (!authorized) {
-      return validationFailure('tree:list-children', 'Folder path is not authorized');
+      return validationFailure("tree:list-children", "Folder path is not authorized");
     }
 
     const childrenResult = await runtime.listFolderChildren(resolvedPath);
@@ -443,7 +443,7 @@ export function registerIpc(
   });
 
   runtime.handle(InvokeIpcContracts.revealInFolder.channel, async (filePath: JsonValue) => {
-    const validated = validateIpcInput(PathInputSchema, filePath, 'shell:reveal-in-folder');
+    const validated = validateIpcInput(PathInputSchema, filePath, "shell:reveal-in-folder");
 
     if (!validated.ok) {
       return validated.serialized;
@@ -453,7 +453,7 @@ export function registerIpc(
     const authorized = await runtime.isAuthorizedMediaPath(resolvedPath);
 
     if (!authorized) {
-      return validationFailure('shell:reveal-in-folder', 'Media path is not authorized');
+      return validationFailure("shell:reveal-in-folder", "Media path is not authorized");
     }
 
     runtime.showItemInFolder(resolvedPath);
@@ -480,7 +480,7 @@ export function registerIpc(
     const authorized = await runtime.isAuthorizedMediaPath(sanitizedRequest.path);
 
     if (!authorized) {
-      return validationFailure('media:probe-video', 'Media path is not authorized');
+      return validationFailure("media:probe-video", "Media path is not authorized");
     }
 
     return okResult(
@@ -561,7 +561,7 @@ export function registerIpc(
     const parsedDiagnostics = DiagnosticsSnapshotSchema.safeParse(diagnostics);
 
     if (!parsedDiagnostics.success) {
-      return validationFailure('debug:get-diagnostics', 'Invalid diagnostics snapshot');
+      return validationFailure("debug:get-diagnostics", "Invalid diagnostics snapshot");
     }
 
     return okResult(parsedDiagnostics.data);

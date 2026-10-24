@@ -1,4 +1,4 @@
-import type { z } from 'zod';
+import type { z } from "zod";
 
 import type {
   ThumbnailDebugOptionsSchema,
@@ -13,7 +13,7 @@ import type {
   ThumbnailWorkerJobResultSchema,
   ThumbnailWorkerRequestSchema,
   ThumbnailWorkerResponseSchema,
-} from './contracts';
+} from "./contracts";
 
 export type ThumbnailJobKind = z.infer<typeof ThumbnailJobKindSchema>;
 

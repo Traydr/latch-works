@@ -1,10 +1,10 @@
-import { Result } from 'better-result';
+import { Result } from "better-result";
 
 import {
   type PersistableWindow,
   persistWindowState,
   type WindowStateSettings,
-} from './services/windowStatePersistence';
+} from "./services/windowStatePersistence";
 
 /** The window surface the close handler drives while it saves state. */
 export interface ClosableWindow extends PersistableWindow {
@@ -43,15 +43,15 @@ export function createMainWindowCloseHandler(
       );
 
       if (maximizedResult && Result.isError(maximizedResult)) {
-        logErrorMessage('settings:update-window-maximized', maximizedResult.error.message);
+        logErrorMessage("settings:update-window-maximized", maximizedResult.error.message);
       }
 
       if (boundsResult && Result.isError(boundsResult)) {
-        logErrorMessage('settings:update-window-bounds', boundsResult.error.message);
+        logErrorMessage("settings:update-window-bounds", boundsResult.error.message);
       }
 
       if (flushResult && Result.isError(flushResult)) {
-        logErrorMessage('settings:flush', flushResult.error.message);
+        logErrorMessage("settings:flush", flushResult.error.message);
       }
 
       if (!mainWindow.isDestroyed()) {

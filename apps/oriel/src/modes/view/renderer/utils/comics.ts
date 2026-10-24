@@ -3,29 +3,29 @@ import {
   type ComicPathAdapter,
   type ComicEntry as SharedComicEntry,
   sortComicEntries as sortSharedComicEntries,
-} from '@latch-works/media-domain';
-import type { GallerySortMode, MediaItem } from '../../shared/types';
+} from "@latch-works/media-domain";
+import type { GallerySortMode, MediaItem } from "../../shared/types";
 
 export type ComicEntry = SharedComicEntry<MediaItem>;
 
 const absolutePathComicAdapter: ComicPathAdapter = {
   displayNameFromPath(folderPath) {
-    const normalized = folderPath.replace(/\\/g, '/').replace(/\/+$/, '');
-    const separatorIndex = normalized.lastIndexOf('/');
+    const normalized = folderPath.replace(/\\/g, "/").replace(/\/+$/, "");
+    const separatorIndex = normalized.lastIndexOf("/");
 
     return (separatorIndex >= 0 ? normalized.slice(separatorIndex + 1) : normalized).replace(
       /[_-]/g,
-      ' ',
+      " ",
     );
   },
   getParentPath(filePath) {
-    const normalized = filePath.replace(/\\/g, '/');
-    const separatorIndex = normalized.lastIndexOf('/');
+    const normalized = filePath.replace(/\\/g, "/");
+    const separatorIndex = normalized.lastIndexOf("/");
 
-    return separatorIndex <= 0 ? '' : filePath.slice(0, separatorIndex);
+    return separatorIndex <= 0 ? "" : filePath.slice(0, separatorIndex);
   },
   normalizePathForCompare(folderPath) {
-    return folderPath.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+    return folderPath.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
   },
 };
 

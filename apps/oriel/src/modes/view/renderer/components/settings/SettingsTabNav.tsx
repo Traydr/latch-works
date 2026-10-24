@@ -1,6 +1,6 @@
-import type { JSX } from 'react';
+import type { JSX } from "react";
 
-import { SETTINGS_TABS, type SettingsTab } from './settingsTabs';
+import { SETTINGS_TABS, type SettingsTab } from "./settingsTabs";
 
 interface SettingsTabNavProps {
   activeTab: SettingsTab;
@@ -19,8 +19,8 @@ export function SettingsTabNav({ activeTab, onSelectTab }: SettingsTabNavProps):
             type="button"
             className={`rounded-xl px-3 py-1.5 text-sm transition ${
               selected
-                ? 'bg-white text-violet-700 shadow-sm dark:bg-zinc-800 dark:text-violet-300'
-                : 'text-zinc-600 hover:bg-white/60 dark:text-zinc-300 dark:hover:bg-zinc-800/60'
+                ? "bg-white text-violet-700 shadow-sm dark:bg-zinc-800 dark:text-violet-300"
+                : "text-zinc-600 hover:bg-white/60 dark:text-zinc-300 dark:hover:bg-zinc-800/60"
             }`}
             onClick={() => onSelectTab(tab)}
           >

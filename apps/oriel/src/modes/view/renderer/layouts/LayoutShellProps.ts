@@ -1,5 +1,5 @@
-import type { AppSettings, GallerySortMode } from '../../shared/types';
-import type { BrowserEntry, BrowserEntryCollection } from '../utils/browserEntries';
+import type { AppSettings, GallerySortMode } from "../../shared/types";
+import type { BrowserEntry, BrowserEntryCollection } from "../utils/browserEntries";
 
 /**
  * Props passed from App.tsx to each layout shell.
@@ -12,7 +12,7 @@ export interface LayoutShellProps {
   sidebarRootPath: string | null;
   scanMessage: string;
   scanMessagePath: string | null;
-  scanState: 'idle' | 'loading' | 'done' | 'error';
+  scanState: "idle" | "loading" | "done" | "error";
   recursive: boolean;
   comicMode: boolean;
   folderChildrenLoading: boolean;

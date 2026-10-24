@@ -1,7 +1,7 @@
-import type { ScanEvent, ScanOptions } from '../../shared/types';
-import { sortMediaItems } from '../utils/sort';
-import { flattenLoadingChunks, sortAndSyncSelection } from './selectionState';
-import type { AppStoreGet, AppStoreSet } from './types';
+import type { ScanEvent, ScanOptions } from "../../shared/types";
+import { sortMediaItems } from "../utils/sort";
+import { flattenLoadingChunks, sortAndSyncSelection } from "./selectionState";
+import type { AppStoreGet, AppStoreSet } from "./types";
 
 /**
  * Called as the renderer asks for a new scan, which becomes the requested scan. A scan still
@@ -19,7 +19,7 @@ export function createSupersedeActiveScan(set: AppStoreSet) {
             activeScanRunId: null,
             loadingChunks: [],
             loadingItemCount: 0,
-            scanMessage: 'Scanning folder...',
+            scanMessage: "Scanning folder...",
             scanMessagePath: null,
           },
     );
@@ -31,7 +31,7 @@ export function createApplyScanEvent(set: AppStoreSet, get: AppStoreGet) {
     const state = get();
 
     switch (event.type) {
-      case 'reset':
+      case "reset":
         set({
           activeScanRunId: event.runId,
           scanStartCount: state.scanStartCount + 1,
@@ -43,14 +43,14 @@ export function createApplyScanEvent(set: AppStoreSet, get: AppStoreGet) {
           viewerItemsSnapshot: null,
           selectedId: null,
           viewerIndex: null,
-          scanState: 'loading',
+          scanState: "loading",
           scannedDirectories: 0,
           discoveredItems: 0,
-          scanMessage: 'Scanning folder...',
+          scanMessage: "Scanning folder...",
           scanMessagePath: null,
         });
         break;
-      case 'progress':
+      case "progress":
         if (state.activeScanRunId !== event.runId) {
           break;
         }
@@ -58,12 +58,12 @@ export function createApplyScanEvent(set: AppStoreSet, get: AppStoreGet) {
         set({
           scannedDirectories: event.scannedDirectories,
           discoveredItems: event.discoveredItems,
-          scanState: 'loading',
-          scanMessage: 'Scanning',
+          scanState: "loading",
+          scanMessage: "Scanning",
           scanMessagePath: event.currentPath,
         });
         break;
-      case 'batch':
+      case "batch":
         if (state.activeScanRunId !== event.runId) {
           break;
         }
@@ -80,7 +80,7 @@ export function createApplyScanEvent(set: AppStoreSet, get: AppStoreGet) {
           };
         });
         break;
-      case 'done':
+      case "done":
         if (state.activeScanRunId !== event.runId) {
           break;
         }
@@ -106,7 +106,7 @@ export function createApplyScanEvent(set: AppStoreSet, get: AppStoreGet) {
               loadingItemCount: 0,
               selectedId: currentViewerItem?.id ?? current.selectedId,
               viewerIndex: currentViewerItem ? current.viewerIndex : null,
-              scanState: 'done',
+              scanState: "done",
               discoveredItems: event.totalItems,
               scanMessage: `Loaded ${event.totalItems} item(s) in ${(event.elapsedMs / 1000).toFixed(1)}s`,
               scanMessagePath: null,
@@ -127,14 +127,14 @@ export function createApplyScanEvent(set: AppStoreSet, get: AppStoreGet) {
             loadingItemCount: 0,
             selectedId: synced.selectedId,
             viewerIndex: synced.viewerIndex,
-            scanState: 'done',
+            scanState: "done",
             discoveredItems: event.totalItems,
             scanMessage: `Loaded ${event.totalItems} item(s) in ${(event.elapsedMs / 1000).toFixed(1)}s`,
             scanMessagePath: null,
           };
         });
         break;
-      case 'cancelled':
+      case "cancelled":
         if (state.activeScanRunId !== event.runId) {
           break;
         }
@@ -151,12 +151,12 @@ export function createApplyScanEvent(set: AppStoreSet, get: AppStoreGet) {
                 ),
           loadingChunks: [],
           loadingItemCount: 0,
-          scanState: 'idle',
-          scanMessage: 'Scan cancelled',
+          scanState: "idle",
+          scanMessage: "Scan cancelled",
           scanMessagePath: null,
         }));
         break;
-      case 'error': {
+      case "error": {
         if (event.runId !== undefined && state.activeScanRunId !== event.runId) {
           break;
         }
@@ -164,7 +164,7 @@ export function createApplyScanEvent(set: AppStoreSet, get: AppStoreGet) {
         const isActiveRunError = event.runId !== undefined && state.activeScanRunId === event.runId;
 
         set({
-          scanState: isActiveRunError ? 'loading' : 'error',
+          scanState: isActiveRunError ? "loading" : "error",
           scanMessage: event.message,
           scanMessagePath: event.path ?? null,
         });

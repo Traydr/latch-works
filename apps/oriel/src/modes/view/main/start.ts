@@ -1,16 +1,16 @@
-import { existsSync } from 'node:fs';
-import path from 'node:path';
-import { Result, type Result as ResultType } from 'better-result';
-import { config as loadEnv } from 'dotenv';
-import { setLatchWorksDataFolder } from '@latch-works/app-data';
-import { app, BrowserWindow, protocol } from 'electron';
-import started from 'electron-squirrel-startup';
+import { existsSync } from "node:fs";
+import path from "node:path";
+import { Result, type Result as ResultType } from "better-result";
+import { config as loadEnv } from "dotenv";
+import { setLatchWorksDataFolder } from "@latch-works/app-data";
+import { app, BrowserWindow, protocol } from "electron";
+import started from "electron-squirrel-startup";
 
-import { CatalogService } from './main/catalog/CatalogService';
-import { ScanQueue } from './main/catalog/ScanQueue';
-import { createElectronIpcRuntime, registerIpc } from './main/ipc/registerIpc';
-import { buildAppMenu } from './main/menu';
-import { resolveFolderPath } from './main/services/folderService';
+import { CatalogService } from "./main/catalog/CatalogService";
+import { ScanQueue } from "./main/catalog/ScanQueue";
+import { createElectronIpcRuntime, registerIpc } from "./main/ipc/registerIpc";
+import { buildAppMenu } from "./main/menu";
+import { resolveFolderPath } from "./main/services/folderService";
 import {
   authorizeRememberedMediaRoot,
   grantChosenMediaRoot,
@@ -18,16 +18,16 @@ import {
   registerMediaProtocol,
   setThumbnailDebugOptions,
   shutdownThumbnailService,
-} from './main/services/mediaProtocol';
-import { MediaToolsService } from './main/services/mediaToolsService';
-import { SettingsService } from './main/services/settingsService';
-import { persistWindowState } from './main/services/windowStatePersistence';
-import { createMainWindowCloseHandler } from './main/windowLifecycle';
-import type { AppCommand } from './shared/types';
+} from "./main/services/mediaProtocol";
+import { MediaToolsService } from "./main/services/mediaToolsService";
+import { SettingsService } from "./main/services/settingsService";
+import { persistWindowState } from "./main/services/windowStatePersistence";
+import { createMainWindowCloseHandler } from "./main/windowLifecycle";
+import type { AppCommand } from "./shared/types";
 
 loadEnv();
 
-if (['1', 'true', 'yes'].includes((process.env.FRAME_VIEW_DISABLE_GPU ?? '').toLowerCase())) {
+if (["1", "true", "yes"].includes((process.env.FRAME_VIEW_DISABLE_GPU ?? "").toLowerCase())) {
   app.disableHardwareAcceleration();
 }
 
@@ -37,7 +37,7 @@ if (started) {
 
 // Settings, the media index and thumbnails live in ~/.latch-works/frame-view, with the other
 // apps' data; before the single-instance lock, which keys on this folder.
-setLatchWorksDataFolder(app, { folder: 'frame-view' });
+setLatchWorksDataFolder(app, { folder: "frame-view" });
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -68,8 +68,8 @@ const pendingCommands: AppCommand[] = [];
 
 function resolveWindowIconPath(fileName: string): string | undefined {
   const candidates = [
-    path.join(app.getAppPath(), 'media', fileName),
-    path.join(process.resourcesPath, 'media', fileName),
+    path.join(app.getAppPath(), "media", fileName),
+    path.join(process.resourcesPath, "media", fileName),
   ];
 
   return candidates.find((candidate) => existsSync(candidate));
@@ -91,7 +91,7 @@ function queueOrSendCommand(command: AppCommand): void {
     return;
   }
 
-  mainWindow.webContents.send('app:command', command);
+  mainWindow.webContents.send("app:command", command);
 }
 
 function flushPendingCommands(): void {
@@ -103,7 +103,7 @@ function flushPendingCommands(): void {
     const command = pendingCommands.shift();
 
     if (command) {
-      mainWindow.webContents.send('app:command', command);
+      mainWindow.webContents.send("app:command", command);
     }
   }
 }
@@ -112,7 +112,7 @@ function extractLaunchPathFromArgv(argv: string[]): string | null {
   const executablePath = path.resolve(process.execPath);
 
   for (const arg of argv) {
-    if (!arg || arg.startsWith('-')) {
+    if (!arg || arg.startsWith("-")) {
       continue;
     }
 
@@ -139,7 +139,7 @@ async function openLaunchPathNow(candidatePath: string): Promise<void> {
   const resolvedPath = await resolveFolderPath(candidatePath);
 
   if (Result.isError(resolvedPath)) {
-    logResultError('launch-path:resolve', resolvedPath);
+    logResultError("launch-path:resolve", resolvedPath);
 
     return;
   }
@@ -149,7 +149,7 @@ async function openLaunchPathNow(candidatePath: string): Promise<void> {
   }
 
   await grantChosenMediaRoot(resolvedPath.value);
-  queueOrSendCommand({ type: 'scan-path', path: resolvedPath.value });
+  queueOrSendCommand({ type: "scan-path", path: resolvedPath.value });
 }
 
 let launchPathsOpened = Promise.resolve();
@@ -164,14 +164,14 @@ async function createWindow(): Promise<void> {
     mediaToolsService = new MediaToolsService();
   }
 
-  const windowIconPath = resolveWindowIconPath('frame-view-icon.png');
+  const windowIconPath = resolveWindowIconPath("frame-view-icon.png");
 
   if (!settingsService) {
-    settingsService = new SettingsService(app.getPath('userData'));
+    settingsService = new SettingsService(app.getPath("userData"));
     const initResult = await settingsService.init();
 
     if (Result.isError(initResult)) {
-      logResultError('settings:init', initResult);
+      logResultError("settings:init", initResult);
     }
   }
 
@@ -180,14 +180,14 @@ async function createWindow(): Promise<void> {
   setThumbnailDebugOptions(settings.debug);
 
   if (!catalogService) {
-    catalogService = new CatalogService(app.getPath('userData'), (event) => {
+    catalogService = new CatalogService(app.getPath("userData"), (event) => {
       // Once a newer request is queued, the running scan is being cancelled and what it still
       // reports is stale: only the newest request's scan reaches the renderer.
       if (!mainWindow || mainWindow.isDestroyed() || !scanQueue.isRunningLatest()) {
         return;
       }
 
-      mainWindow.webContents.send('scan:event', event);
+      mainWindow.webContents.send("scan:event", event);
     });
     // A failed cancel or wait means the catalog worker exited, so no scan is running either way.
     scanQueue = new ScanQueue({
@@ -212,9 +212,9 @@ async function createWindow(): Promise<void> {
     minHeight: 640,
     autoHideMenuBar: true,
     icon: windowIconPath,
-    title: 'Frame View',
+    title: "Frame View",
     webPreferences: {
-      preload: path.join(__dirname, 'preload.cjs'),
+      preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
@@ -231,11 +231,11 @@ async function createWindow(): Promise<void> {
 
   // Registered before the first load: commands queued at a cold start (a launch path) are sent
   // when it finishes, and awaiting the load first would miss that event.
-  mainWindow.webContents.on('did-finish-load', flushPendingCommands);
+  mainWindow.webContents.on("did-finish-load", flushPendingCommands);
 
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
     await mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
-    mainWindow.webContents.openDevTools({ mode: 'detach' });
+    mainWindow.webContents.openDevTools({ mode: "detach" });
   } else {
     await mainWindow.loadFile(
       path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`),
@@ -259,7 +259,7 @@ async function createWindow(): Promise<void> {
       });
 
       if (boundsResult && Result.isError(boundsResult)) {
-        logResultError('settings:update-window-bounds', boundsResult);
+        logResultError("settings:update-window-bounds", boundsResult);
       }
     };
 
@@ -291,7 +291,7 @@ async function createWindow(): Promise<void> {
 
     void persistWindowState(mainWindow, settingsService).then(({ maximizedResult }) => {
       if (maximizedResult && Result.isError(maximizedResult)) {
-        logResultError('settings:update-window-maximized', maximizedResult);
+        logResultError("settings:update-window-maximized", maximizedResult);
       }
     });
   };
@@ -300,12 +300,12 @@ async function createWindow(): Promise<void> {
     mainWindow.maximize();
   }
 
-  mainWindow.on('resize', () => persistWindowBounds(false));
-  mainWindow.on('move', () => persistWindowBounds(false));
-  mainWindow.on('maximize', persistWindowMaximized);
-  mainWindow.on('unmaximize', persistWindowMaximized);
+  mainWindow.on("resize", () => persistWindowBounds(false));
+  mainWindow.on("move", () => persistWindowBounds(false));
+  mainWindow.on("maximize", persistWindowMaximized);
+  mainWindow.on("unmaximize", persistWindowMaximized);
   mainWindow.on(
-    'close',
+    "close",
     createMainWindowCloseHandler(
       mainWindow,
       settingsService,
@@ -321,14 +321,14 @@ async function createWindow(): Promise<void> {
       },
     ),
   );
-  mainWindow.on('closed', () => {
+  mainWindow.on("closed", () => {
     mainWindow = null;
   });
 }
 
-app.on('ready', () => {
+app.on("ready", () => {
   mediaToolsService = new MediaToolsService();
-  registerMediaProtocol(app.getPath('userData'), app.getPath('sessionData'));
+  registerMediaProtocol(app.getPath("userData"), app.getPath("sessionData"));
   buildAppMenu(queueOrSendCommand);
 
   if (app.isPackaged) {
@@ -348,7 +348,7 @@ if (!hasSingleInstanceLock) {
   app.quit();
 }
 
-app.on('second-instance', (_event, argv) => {
+app.on("second-instance", (_event, argv) => {
   if (!mainWindow || mainWindow.isDestroyed()) {
     return;
   }
@@ -365,24 +365,24 @@ app.on('second-instance', (_event, argv) => {
   }
 });
 
-app.on('open-file', (event, filePath) => {
+app.on("open-file", (event, filePath) => {
   event.preventDefault();
   openLaunchPath(filePath);
 });
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
+app.on("window-all-closed", () => {
+  if (process.platform !== "darwin") {
     app.quit();
   }
 });
 
-app.on('before-quit', () => {
+app.on("before-quit", () => {
   quitRequested = true;
   catalogService?.shutdown();
   shutdownThumbnailService();
 });
 
-app.on('activate', () => {
+app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) {
     void createWindow();
   }

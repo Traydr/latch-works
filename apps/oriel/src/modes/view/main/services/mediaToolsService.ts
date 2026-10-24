@@ -1,12 +1,12 @@
-import { spawn } from 'node:child_process';
-import { createRequire } from 'node:module';
-import path from 'node:path';
+import { spawn } from "node:child_process";
+import { createRequire } from "node:module";
+import path from "node:path";
 
-import type { ZodType } from 'zod';
-import { z } from 'zod';
+import type { ZodType } from "zod";
+import { z } from "zod";
 
-import type { VideoProbeMetadata } from '../../shared/types';
-import { resolveBinaryPath } from './mediaBinaryResolver';
+import type { VideoProbeMetadata } from "../../shared/types";
+import { resolveBinaryPath } from "./mediaBinaryResolver";
 
 interface MediaToolsStatus {
   ffmpegAvailable: boolean;
@@ -55,7 +55,7 @@ function requireFromPackagedNodeModules<T>(packageName: string, schema: ZodType<
 
   try {
     const packagedRequire = createRequire(
-      path.join(process.resourcesPath, 'node_modules', packageName, 'package.json'),
+      path.join(process.resourcesPath, "node_modules", packageName, "package.json"),
     );
 
     const parsed = schema.safeParse(packagedRequire(packageName));
@@ -68,8 +68,8 @@ function requireFromPackagedNodeModules<T>(packageName: string, schema: ZodType<
 
 export class MediaToolsAbortError extends Error {
   constructor() {
-    super('Media tools command aborted');
-    this.name = 'AbortError';
+    super("Media tools command aborted");
+    this.name = "AbortError";
   }
 }
 
@@ -123,7 +123,7 @@ export class MediaToolsService {
 
     const result = await this.runCommand(
       this.ffprobePath,
-      ['-v', 'error', '-print_format', 'json', '-show_streams', '-show_format', mediaPath],
+      ["-v", "error", "-print_format", "json", "-show_streams", "-show_format", mediaPath],
       DEFAULT_TIMEOUT_MS,
     );
 
@@ -150,7 +150,7 @@ export class MediaToolsService {
       return null;
     }
 
-    const videoStream = parsed.streams?.find((stream) => stream.codec_type === 'video');
+    const videoStream = parsed.streams?.find((stream) => stream.codec_type === "video");
 
     const streamDuration = Number(videoStream?.duration ?? Number.NaN);
     const formatDuration = Number(parsed.format?.duration ?? Number.NaN);
@@ -197,40 +197,40 @@ export class MediaToolsService {
     }
 
     void sizeHint;
-    let lastFailureReason = '';
+    let lastFailureReason = "";
 
     const attemptArgs = [
       [
-        '-hide_banner',
-        '-loglevel',
-        'error',
-        '-ss',
-        '00:00:01',
-        '-i',
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-ss",
+        "00:00:01",
+        "-i",
         mediaPath,
-        '-frames:v',
-        '1',
-        '-f',
-        'image2pipe',
-        '-vcodec',
-        'png',
-        'pipe:1',
+        "-frames:v",
+        "1",
+        "-f",
+        "image2pipe",
+        "-vcodec",
+        "png",
+        "pipe:1",
       ],
       [
-        '-hide_banner',
-        '-loglevel',
-        'error',
-        '-ss',
-        '00:00:00',
-        '-i',
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-ss",
+        "00:00:00",
+        "-i",
         mediaPath,
-        '-frames:v',
-        '1',
-        '-f',
-        'image2pipe',
-        '-vcodec',
-        'png',
-        'pipe:1',
+        "-frames:v",
+        "1",
+        "-f",
+        "image2pipe",
+        "-vcodec",
+        "png",
+        "pipe:1",
       ],
     ];
 
@@ -256,7 +256,7 @@ export class MediaToolsService {
         }
       }
     } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
+      if (error instanceof Error && error.name === "AbortError") {
         throw error;
       }
 
@@ -284,16 +284,16 @@ export class MediaToolsService {
   }
 
   private loadFfmpegPath(): string | null {
-    return this.loadStringModule('ffmpeg-static');
+    return this.loadStringModule("ffmpeg-static");
   }
 
   private loadFfprobePath(): string | null {
     try {
-      const parsed = FfprobeModuleSchema.safeParse(nativeRequire('@ffprobe-installer/ffprobe'));
+      const parsed = FfprobeModuleSchema.safeParse(nativeRequire("@ffprobe-installer/ffprobe"));
 
       return parsed.success ? parsed.data : null;
     } catch {
-      return requireFromPackagedNodeModules('@ffprobe-installer/ffprobe', FfprobeModuleSchema);
+      return requireFromPackagedNodeModules("@ffprobe-installer/ffprobe", FfprobeModuleSchema);
     }
   }
 
@@ -307,25 +307,25 @@ export class MediaToolsService {
         windowsHide: true,
       });
 
-      let stdout = '';
-      let stderr = '';
+      let stdout = "";
+      let stderr = "";
       let settled = false;
 
       const timeout = setTimeout(() => {
         if (!settled) {
-          child.kill('SIGKILL');
+          child.kill("SIGKILL");
         }
       }, timeoutMs);
 
-      child.stdout.on('data', (data: Buffer) => {
-        stdout += data.toString('utf8');
+      child.stdout.on("data", (data: Buffer) => {
+        stdout += data.toString("utf8");
       });
 
-      child.stderr.on('data', (data: Buffer) => {
-        stderr += data.toString('utf8');
+      child.stderr.on("data", (data: Buffer) => {
+        stderr += data.toString("utf8");
       });
 
-      child.on('error', (error) => {
+      child.on("error", (error) => {
         if (settled) {
           return;
         }
@@ -339,7 +339,7 @@ export class MediaToolsService {
         });
       });
 
-      child.on('close', (code) => {
+      child.on("close", (code) => {
         if (settled) {
           return;
         }
@@ -364,17 +364,17 @@ export class MediaToolsService {
     return new Promise((resolve) => {
       const child = spawn(executable, args, {
         windowsHide: true,
-        stdio: ['ignore', 'pipe', 'pipe'],
+        stdio: ["ignore", "pipe", "pipe"],
       });
 
       const stdoutChunks: Buffer[] = [];
-      let stderr = '';
+      let stderr = "";
       let settled = false;
       let wasAborted = false;
 
       const cleanupAbortListener = (abortHandler: (() => void) | null): void => {
         if (abortSignal && abortHandler) {
-          abortSignal.removeEventListener('abort', abortHandler);
+          abortSignal.removeEventListener("abort", abortHandler);
         }
       };
 
@@ -391,7 +391,7 @@ export class MediaToolsService {
 
       const timeout = setTimeout(() => {
         if (!settled) {
-          child.kill('SIGKILL');
+          child.kill("SIGKILL");
         }
       }, timeoutMs);
 
@@ -399,7 +399,7 @@ export class MediaToolsService {
         ? (): void => {
             if (!settled) {
               wasAborted = true;
-              child.kill('SIGKILL');
+              child.kill("SIGKILL");
             }
           }
         : null;
@@ -410,25 +410,25 @@ export class MediaToolsService {
           resolve({
             aborted: true,
             code: -1,
-            stderr: 'aborted',
+            stderr: "aborted",
             stdout: Buffer.alloc(0),
           });
 
           return;
         }
 
-        abortSignal.addEventListener('abort', abortHandler, { once: true });
+        abortSignal.addEventListener("abort", abortHandler, { once: true });
       }
 
-      child.stdout.on('data', (data: Buffer) => {
+      child.stdout.on("data", (data: Buffer) => {
         stdoutChunks.push(data);
       });
 
-      child.stderr.on('data', (data: Buffer) => {
-        stderr += data.toString('utf8');
+      child.stderr.on("data", (data: Buffer) => {
+        stderr += data.toString("utf8");
       });
 
-      child.on('error', (error) => {
+      child.on("error", (error) => {
         finish(
           {
             aborted: wasAborted,
@@ -440,7 +440,7 @@ export class MediaToolsService {
         );
       });
 
-      child.on('close', (code) => {
+      child.on("close", (code) => {
         finish(
           {
             aborted: wasAborted,

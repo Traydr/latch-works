@@ -1,49 +1,49 @@
-import type { JSX } from 'react';
+import type { JSX } from "react";
 
-import { formatHotkeys, HOTKEYS } from '../../utils/hotkeys';
-import { VIDEO_SKIP_SECONDS } from '../../utils/videoPlayback';
-import { SettingsSection } from './SettingsSection';
+import { formatHotkeys, HOTKEYS } from "../../utils/hotkeys";
+import { VIDEO_SKIP_SECONDS } from "../../utils/videoPlayback";
+import { SettingsSection } from "./SettingsSection";
 
 const HOTKEY_GROUPS: { title: string; entries: { action: string; keys: string }[] }[] = [
   {
-    title: 'App',
+    title: "App",
     entries: [
-      { action: 'Open folder', keys: 'Ctrl/Cmd+O' },
-      { action: 'Refresh folder', keys: 'F5 (Win/Linux) or Cmd/Ctrl+R (macOS)' },
-      { action: 'Open preferences', keys: 'Ctrl/Cmd+,' },
+      { action: "Open folder", keys: "Ctrl/Cmd+O" },
+      { action: "Refresh folder", keys: "F5 (Win/Linux) or Cmd/Ctrl+R (macOS)" },
+      { action: "Open preferences", keys: "Ctrl/Cmd+," },
     ],
   },
   {
-    title: 'Gallery',
+    title: "Gallery",
     entries: [
-      { action: 'Previous/next item', keys: 'Left/Right or A/D' },
-      { action: 'Row jump', keys: 'Up/Down or W/S' },
-      { action: 'Open selected item', keys: formatHotkeys(HOTKEYS.galleryActivate) },
+      { action: "Previous/next item", keys: "Left/Right or A/D" },
+      { action: "Row jump", keys: "Up/Down or W/S" },
+      { action: "Open selected item", keys: formatHotkeys(HOTKEYS.galleryActivate) },
       {
-        action: 'Parent/prev/next folder',
+        action: "Parent/prev/next folder",
         keys: `${formatHotkeys(HOTKEYS.openParentFolder)} / ${formatHotkeys(
           HOTKEYS.previousFolder,
         )} / ${formatHotkeys(HOTKEYS.nextFolder)}`,
       },
-      { action: 'Open selected folder', keys: formatHotkeys(HOTKEYS.openSelectedFolder) },
-      { action: 'Close sort menu', keys: 'Escape (when sort menu is open)' },
+      { action: "Open selected folder", keys: formatHotkeys(HOTKEYS.openSelectedFolder) },
+      { action: "Close sort menu", keys: "Escape (when sort menu is open)" },
     ],
   },
   {
-    title: 'Viewer',
+    title: "Viewer",
     entries: [
-      { action: 'Close viewer', keys: formatHotkeys(HOTKEYS.close) },
-      { action: 'Previous page/item', keys: formatHotkeys(HOTKEYS.viewerPrevious) },
-      { action: 'Next page/item', keys: formatHotkeys(HOTKEYS.viewerNext) },
-      { action: 'Play/pause video', keys: formatHotkeys(HOTKEYS.videoPlayPause) },
+      { action: "Close viewer", keys: formatHotkeys(HOTKEYS.close) },
+      { action: "Previous page/item", keys: formatHotkeys(HOTKEYS.viewerPrevious) },
+      { action: "Next page/item", keys: formatHotkeys(HOTKEYS.viewerNext) },
+      { action: "Play/pause video", keys: formatHotkeys(HOTKEYS.videoPlayPause) },
       {
         action: `Seek video -/+ ${VIDEO_SKIP_SECONDS}s`,
         keys: `${formatHotkeys(HOTKEYS.videoSeekBackward)} / ${formatHotkeys(
           HOTKEYS.videoSeekForward,
         )}`,
       },
-      { action: 'Mute video', keys: formatHotkeys(HOTKEYS.videoMute) },
-      { action: 'Hold 2x speed', keys: `Hold ${formatHotkeys(HOTKEYS.videoTemporarySpeed)}` },
+      { action: "Mute video", keys: formatHotkeys(HOTKEYS.videoMute) },
+      { action: "Hold 2x speed", keys: `Hold ${formatHotkeys(HOTKEYS.videoTemporarySpeed)}` },
     ],
   },
 ];

@@ -1,10 +1,10 @@
-import type { z } from 'zod';
+import type { z } from "zod";
 
 import type {
   CatalogWorkerEventSchema,
   CatalogWorkerRequestSchema,
   CatalogWorkerResponseSchema,
-} from './contracts';
+} from "./contracts";
 
 export type CatalogWorkerRequest = z.infer<typeof CatalogWorkerRequestSchema>;
 

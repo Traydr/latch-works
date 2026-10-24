@@ -1,19 +1,19 @@
-import type { JSX } from 'react';
+import type { JSX } from "react";
 
 import type {
   AppSettings,
   AppSettingsPatch,
   DiagnosticsSnapshot,
   MediaIndexStats,
-} from '../../../shared/types';
-import { SettingsSection } from './SettingsSection';
-import { SettingsToggleRow } from './SettingsToggleRow';
+} from "../../../shared/types";
+import { SettingsSection } from "./SettingsSection";
+import { SettingsToggleRow } from "./SettingsToggleRow";
 
 interface CurrentFolderSummary {
   folderName: string | null;
   itemCount: number;
   recursive: boolean;
-  scanState: 'idle' | 'loading' | 'done' | 'error';
+  scanState: "idle" | "loading" | "done" | "error";
 }
 
 function DiagnosticsList({ title, values }: { title: string; values: string[] }): JSX.Element {
@@ -103,7 +103,7 @@ export function DebugTab({
           </div>
           <p className="text-xs text-zinc-500 dark:text-zinc-400">
             {copyStatus ??
-              'Use this when reporting packaged-build issues or thumbnail worker problems.'}
+              "Use this when reporting packaged-build issues or thumbnail worker problems."}
           </p>
         </SettingsSection>
       </div>
@@ -112,9 +112,9 @@ export function DebugTab({
         <SettingsSection className="space-y-2">
           <p className="text-zinc-500 dark:text-zinc-400">Current view</p>
           <div className="space-y-1 text-xs tabular-nums text-zinc-500 dark:text-zinc-400">
-            <p>Folder: {currentFolderSummary.folderName ?? 'none'}</p>
+            <p>Folder: {currentFolderSummary.folderName ?? "none"}</p>
             <p>Visible items: {currentFolderSummary.itemCount}</p>
-            <p>Recursive: {currentFolderSummary.recursive ? 'enabled' : 'disabled'}</p>
+            <p>Recursive: {currentFolderSummary.recursive ? "enabled" : "disabled"}</p>
             <p>Scan state: {currentFolderSummary.scanState}</p>
           </div>
         </SettingsSection>
@@ -128,7 +128,7 @@ export function DebugTab({
               <p>
                 Platform: {diagnosticsSnapshot.platform} / {diagnosticsSnapshot.arch}
               </p>
-              <p>Packaged: {diagnosticsSnapshot.isPackaged ? 'yes' : 'no'}</p>
+              <p>Packaged: {diagnosticsSnapshot.isPackaged ? "yes" : "no"}</p>
             </div>
           ) : (
             <p className="text-xs text-zinc-500 dark:text-zinc-400">Loading diagnostics...</p>
@@ -141,34 +141,34 @@ export function DebugTab({
           <p className="text-zinc-500 dark:text-zinc-400">Thumbnail worker</p>
           {diagnosticsSnapshot?.thumbnailWorker ? (
             <div className="space-y-1 text-xs tabular-nums text-zinc-500 dark:text-zinc-400">
-              <p>Worker path: {diagnosticsSnapshot.thumbnailWorker.workerPath ?? 'unknown'}</p>
+              <p>Worker path: {diagnosticsSnapshot.thumbnailWorker.workerPath ?? "unknown"}</p>
               <p>
-                sharp:{' '}
-                {diagnosticsSnapshot.thumbnailWorker.sharpAvailable ? 'available' : 'not available'}
+                sharp:{" "}
+                {diagnosticsSnapshot.thumbnailWorker.sharpAvailable ? "available" : "not available"}
               </p>
               <p>
-                ffmpeg:{' '}
+                ffmpeg:{" "}
                 {diagnosticsSnapshot.thumbnailWorker.ffmpegAvailable
-                  ? 'available'
-                  : 'not available'}
+                  ? "available"
+                  : "not available"}
               </p>
               <p>
-                ffmpeg exists: {diagnosticsSnapshot.thumbnailWorker.ffmpegExists ? 'yes' : 'no'}
+                ffmpeg exists: {diagnosticsSnapshot.thumbnailWorker.ffmpegExists ? "yes" : "no"}
               </p>
               <p className="break-all">
-                ffmpeg path: {diagnosticsSnapshot.thumbnailWorker.ffmpegPath ?? 'unknown'}
+                ffmpeg path: {diagnosticsSnapshot.thumbnailWorker.ffmpegPath ?? "unknown"}
               </p>
               <p>
-                ffprobe:{' '}
+                ffprobe:{" "}
                 {diagnosticsSnapshot.thumbnailWorker.ffprobeAvailable
-                  ? 'available'
-                  : 'not available'}
+                  ? "available"
+                  : "not available"}
               </p>
               <p>
-                ffprobe exists: {diagnosticsSnapshot.thumbnailWorker.ffprobeExists ? 'yes' : 'no'}
+                ffprobe exists: {diagnosticsSnapshot.thumbnailWorker.ffprobeExists ? "yes" : "no"}
               </p>
               <p className="break-all">
-                ffprobe path: {diagnosticsSnapshot.thumbnailWorker.ffprobePath ?? 'unknown'}
+                ffprobe path: {diagnosticsSnapshot.thumbnailWorker.ffprobePath ?? "unknown"}
               </p>
             </div>
           ) : (
@@ -192,7 +192,7 @@ export function DebugTab({
               <p>Generated thumbnails: {diagnosticsSnapshot.thumbnails.generatedCount}</p>
               <p>Aborted requests: {diagnosticsSnapshot.thumbnails.abortedCount}</p>
               <p>
-                Video extraction failures:{' '}
+                Video extraction failures:{" "}
                 {diagnosticsSnapshot.thumbnails.videoExtractionFailureCount}
               </p>
               <p>Sharp decode failures: {diagnosticsSnapshot.thumbnails.sharpDecodeFailureCount}</p>
@@ -211,23 +211,23 @@ export function DebugTab({
           {diagnosticsSnapshot?.thumbnailWorkerPerformance ? (
             <div className="space-y-1 text-xs tabular-nums text-zinc-500 dark:text-zinc-400">
               <p>
-                Memory hit avg/max:{' '}
-                {diagnosticsSnapshot.thumbnailWorkerPerformance.memoryHit?.averageMs ?? 0}ms /{' '}
+                Memory hit avg/max:{" "}
+                {diagnosticsSnapshot.thumbnailWorkerPerformance.memoryHit?.averageMs ?? 0}ms /{" "}
                 {diagnosticsSnapshot.thumbnailWorkerPerformance.memoryHit?.maxMs ?? 0}ms
               </p>
               <p>
-                Disk hit avg/max:{' '}
-                {diagnosticsSnapshot.thumbnailWorkerPerformance.diskHit?.averageMs ?? 0}ms /{' '}
+                Disk hit avg/max:{" "}
+                {diagnosticsSnapshot.thumbnailWorkerPerformance.diskHit?.averageMs ?? 0}ms /{" "}
                 {diagnosticsSnapshot.thumbnailWorkerPerformance.diskHit?.maxMs ?? 0}ms
               </p>
               <p>
-                Worker generation avg/max:{' '}
+                Worker generation avg/max:{" "}
                 {diagnosticsSnapshot.thumbnailWorkerPerformance.workerGeneration?.averageMs ?? 0}ms
                 / {diagnosticsSnapshot.thumbnailWorkerPerformance.workerGeneration?.maxMs ?? 0}ms
               </p>
               <p>
-                End-to-end avg/max:{' '}
-                {diagnosticsSnapshot.thumbnailWorkerPerformance.endToEnd?.averageMs ?? 0}ms /{' '}
+                End-to-end avg/max:{" "}
+                {diagnosticsSnapshot.thumbnailWorkerPerformance.endToEnd?.averageMs ?? 0}ms /{" "}
                 {diagnosticsSnapshot.thumbnailWorkerPerformance.endToEnd?.maxMs ?? 0}ms
               </p>
             </div>
@@ -246,7 +246,7 @@ export function DebugTab({
               <p>Indexed roots: {mediaIndexStats.uniqueRoots}</p>
               <p>DB path: {mediaIndexStats.dbPath}</p>
               <p>
-                Memory cache hits this session:{' '}
+                Memory cache hits this session:{" "}
                 {diagnosticsSnapshot?.thumbnails.memoryCacheHits ?? 0}
               </p>
             </div>

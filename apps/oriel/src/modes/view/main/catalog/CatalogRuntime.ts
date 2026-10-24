@@ -1,27 +1,27 @@
-import { promises as fs } from 'node:fs';
-import path from 'node:path';
+import { promises as fs } from "node:fs";
+import path from "node:path";
 
-import { Result } from 'better-result';
+import { Result } from "better-result";
 import type {
   CatalogWorkerEvent,
   CatalogWorkerRequest,
   CatalogWorkerResponse,
-} from '../../shared/catalog';
-import type { MediaItem, ScanEvent, ScanOptions } from '../../shared/types';
-import type { MediaIndexService } from '../db/mediaIndexService';
-import { MediaIndexService as MediaIndexServiceImpl } from '../db/mediaIndexService';
+} from "../../shared/catalog";
+import type { MediaItem, ScanEvent, ScanOptions } from "../../shared/types";
+import type { MediaIndexService } from "../db/mediaIndexService";
+import { MediaIndexService as MediaIndexServiceImpl } from "../db/mediaIndexService";
 import {
   classifyFrameCandidate,
   type FrameScanCandidate,
   type FrameScanFilters,
   shouldSkipDirectoryName,
   toFrameMediaItem,
-} from './catalogDiscoveryAdapter';
+} from "./catalogDiscoveryAdapter";
 import {
   CATALOG_BATCH_SIZE,
   CATALOG_FILE_STAT_CONCURRENCY,
   CATALOG_PROGRESS_EVENT_INTERVAL_MS,
-} from './catalogScanConstants';
+} from "./catalogScanConstants";
 
 interface ActiveRun {
   cancelled: boolean;
@@ -47,7 +47,7 @@ interface ScanContext {
 /** The media-index entry points a scan run drives. */
 export type CatalogMediaIndex = Pick<
   MediaIndexService,
-  'cancelScan' | 'clear' | 'finishScan' | 'getStats' | 'init' | 'startScan' | 'upsertBatch'
+  "cancelScan" | "clear" | "finishScan" | "getStats" | "init" | "startScan" | "upsertBatch"
 >;
 
 interface CatalogRuntimeOptions {
@@ -65,7 +65,7 @@ export class CatalogRuntime {
 
   constructor(private readonly options: CatalogRuntimeOptions) {
     this.mediaIndexService =
-      options.mediaIndexService ?? new MediaIndexServiceImpl(options.userDataPath ?? '');
+      options.mediaIndexService ?? new MediaIndexServiceImpl(options.userDataPath ?? "");
 
     if (!options.mediaIndexService) {
       const initResult = this.mediaIndexService.init();
@@ -78,16 +78,16 @@ export class CatalogRuntime {
 
   async handleRequest(request: CatalogWorkerRequest): Promise<void> {
     switch (request.type) {
-      case 'start-scan':
+      case "start-scan":
         await this.startScan(request.requestId, request.options);
 
         return;
-      case 'cancel-scan':
+      case "cancel-scan":
         this.cancelScan();
         this.options.emitResponse({ requestId: request.requestId, ok: true });
 
         return;
-      case 'wait-for-scan':
+      case "wait-for-scan":
         // Answers once no scan is running: done, cancelled, or failed all count.
         while (this.activeRun) {
           await this.activeRun.promise;
@@ -96,7 +96,7 @@ export class CatalogRuntime {
         this.options.emitResponse({ requestId: request.requestId, ok: true });
 
         return;
-      case 'get-index-stats': {
+      case "get-index-stats": {
         const statsResult = await this.mediaIndexService.getStats();
 
         if (Result.isError(statsResult)) {
@@ -118,7 +118,7 @@ export class CatalogRuntime {
         return;
       }
 
-      case 'clear-index':
+      case "clear-index":
         await this.clearIndex(request.requestId);
 
         return;
@@ -147,10 +147,10 @@ export class CatalogRuntime {
     run.promise = this.executeScan(run, options)
       .catch((error) => {
         const message =
-          error instanceof Error ? `Scan failed: ${error.message}` : 'Scan failed unexpectedly';
+          error instanceof Error ? `Scan failed: ${error.message}` : "Scan failed unexpectedly";
 
         this.emitScanEvent({
-          type: 'error',
+          type: "error",
           message,
           runId: run.id,
         });
@@ -190,7 +190,7 @@ export class CatalogRuntime {
 
   private emitScanEvent(event: ScanEvent): void {
     this.options.emitEvent({
-      type: 'scan-event',
+      type: "scan-event",
       event,
     });
   }
@@ -246,15 +246,15 @@ export class CatalogRuntime {
     let directory: Awaited<ReturnType<typeof fs.opendir>>;
 
     try {
-      directory = await fs.opendir(currentPath, { encoding: 'utf8' });
+      directory = await fs.opendir(currentPath, { encoding: "utf8" });
     } catch {
       if (!this.isRunActive(run)) {
         return null;
       }
 
       this.emitScanEvent({
-        type: 'error',
-        message: 'Unable to access directory',
+        type: "error",
+        message: "Unable to access directory",
         path: currentPath,
         runId: run.id,
       });
@@ -320,8 +320,8 @@ export class CatalogRuntime {
       }
 
       this.emitScanEvent({
-        type: 'error',
-        message: 'Unable to access directory',
+        type: "error",
+        message: "Unable to access directory",
         path: currentPath,
         runId: run.id,
       });
@@ -365,7 +365,7 @@ export class CatalogRuntime {
     }
 
     this.emitScanEvent({
-      type: 'progress',
+      type: "progress",
       runId: run.id,
       scannedDirectories: context.scannedDirectories,
       discoveredItems: context.discoveredItems,
@@ -390,7 +390,7 @@ export class CatalogRuntime {
 
     const batchToEmit = context.pendingBatch;
     context.pendingBatch = [];
-    this.emitScanEvent({ type: 'batch', runId: run.id, items: batchToEmit });
+    this.emitScanEvent({ type: "batch", runId: run.id, items: batchToEmit });
 
     if (context.mediaIndexScanId !== null && !context.mediaIndexPersistenceFailed) {
       const upsertResult = await this.mediaIndexService.upsertBatch(
@@ -402,7 +402,7 @@ export class CatalogRuntime {
       if (Result.isError(upsertResult)) {
         context.mediaIndexPersistenceFailed = true;
         this.emitScanEvent({
-          type: 'error',
+          type: "error",
           message: `Media index update failed: ${upsertResult.error.message}`,
           runId: run.id,
         });
@@ -421,7 +421,7 @@ export class CatalogRuntime {
 
     if (Result.isError(cancelResult)) {
       this.emitScanEvent({
-        type: 'error',
+        type: "error",
         message: `Media index cancellation failed: ${cancelResult.error.message}`,
         runId: run.id,
       });
@@ -444,11 +444,11 @@ export class CatalogRuntime {
       context.mediaIndexScanId = startScanResult.value;
     } catch (error) {
       this.emitScanEvent({
-        type: 'error',
+        type: "error",
         message:
           error instanceof Error
             ? `Media index unavailable: ${error.message}`
-            : 'Media index unavailable',
+            : "Media index unavailable",
         runId: run.id,
       });
     }
@@ -459,7 +459,7 @@ export class CatalogRuntime {
         context.mediaIndexScanId = null;
       }
 
-      this.emitScanEvent({ type: 'cancelled', runId: run.id });
+      this.emitScanEvent({ type: "cancelled", runId: run.id });
     };
 
     // Cancelled while its index row was being created: close that row like any other cancel.
@@ -470,7 +470,7 @@ export class CatalogRuntime {
     }
 
     this.emitScanEvent({
-      type: 'reset',
+      type: "reset",
       runId: run.id,
       rootPath: options.rootPath,
       recursive: options.recursive,
@@ -524,10 +524,10 @@ export class CatalogRuntime {
         }
 
         for (const result of chunkResults) {
-          if ('statErrorPath' in result) {
+          if ("statErrorPath" in result) {
             this.emitScanEvent({
-              type: 'error',
-              message: 'Unable to stat file',
+              type: "error",
+              message: "Unable to stat file",
               path: result.statErrorPath,
               runId: run.id,
             });
@@ -586,7 +586,7 @@ export class CatalogRuntime {
 
         if (Result.isError(finishResult)) {
           this.emitScanEvent({
-            type: 'error',
+            type: "error",
             message: `Media index finalize failed: ${finishResult.error.message}`,
             runId: run.id,
           });
@@ -596,7 +596,7 @@ export class CatalogRuntime {
     }
 
     this.emitScanEvent({
-      type: 'done',
+      type: "done",
       runId: run.id,
       totalItems: context.discoveredItems,
       elapsedMs: Date.now() - context.startedAt,

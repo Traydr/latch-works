@@ -1,15 +1,15 @@
-import { type JSX, useContext, useEffect, useMemo } from 'react';
+import { type JSX, useContext, useEffect, useMemo } from "react";
 
-import type { AppSettings } from '../../../shared/types';
-import { FolderGridOverlay } from '../../components/FolderGridOverlay';
-import { VideoMetadataQueueContext } from '../../contexts/videoMetadataQueueContext';
-import type { BrowserEntry } from '../../utils/browserEntries';
-import { toDisplayName } from '../../utils/path';
-import { getThumbnailPriorityForRow, getThumbnailRequestSize } from '../../utils/thumbnail';
-import { useVirtualGridMetrics } from '../useVirtualGridMetrics';
-import { ComicTile } from './ComicTile';
-import { FolderTile } from './FolderTile';
-import { MediaTile } from './MediaTile';
+import type { AppSettings } from "../../../shared/types";
+import { FolderGridOverlay } from "../../components/FolderGridOverlay";
+import { VideoMetadataQueueContext } from "../../contexts/videoMetadataQueueContext";
+import type { BrowserEntry } from "../../utils/browserEntries";
+import { toDisplayName } from "../../utils/path";
+import { getThumbnailPriorityForRow, getThumbnailRequestSize } from "../../utils/thumbnail";
+import { useVirtualGridMetrics } from "../useVirtualGridMetrics";
+import { ComicTile } from "./ComicTile";
+import { FolderTile } from "./FolderTile";
+import { MediaTile } from "./MediaTile";
 
 interface GalleryGridProps {
   browserEntries: {
@@ -61,7 +61,7 @@ export function GalleryGrid({
   } = useVirtualGridMetrics(
     browserEntries.length,
     settings.thumbnailSize,
-    comicMode ? 'tall' : 'wide',
+    comicMode ? "tall" : "wide",
   );
 
   const thumbnailRequestSize = useMemo(() => {
@@ -72,7 +72,7 @@ export function GalleryGrid({
     for (const slot of windowedItems) {
       const entry = browserEntries.at(slot.index);
 
-      if (entry?.kind !== 'media' || entry.media.mediaType !== 'video') {
+      if (entry?.kind !== "media" || entry.media.mediaType !== "video") {
         continue;
       }
 
@@ -103,11 +103,11 @@ export function GalleryGrid({
             <p className="prism-surface rounded-2xl px-6 py-4 text-sm text-pretty text-zinc-500 dark:text-zinc-300">
               {rootPath
                 ? folderChildrenLoading
-                  ? 'Checking folder contents...'
+                  ? "Checking folder contents..."
                   : comicMode
                     ? `No comics found in ${toDisplayName(rootPath)}.`
                     : `No media or subfolders found in ${toDisplayName(rootPath)}.`
-                : 'Drop a folder or click Open below'}
+                : "Drop a folder or click Open below"}
             </p>
           </div>
         ) : (
@@ -130,7 +130,7 @@ export function GalleryGrid({
 
               const selected = entry.key === selectedBrowserEntryKey;
 
-              if (entry.kind === 'folder') {
+              if (entry.kind === "folder") {
                 return (
                   <FolderTile
                     key={entry.key}
@@ -149,7 +149,7 @@ export function GalleryGrid({
               const row = Math.floor(slot.index / columnCount);
               const thumbPriority = getThumbnailPriorityForRow(row, viewportWindow, overscanWindow);
 
-              if (entry.kind === 'comic') {
+              if (entry.kind === "comic") {
                 return (
                   <ComicTile
                     key={entry.key}

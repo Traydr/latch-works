@@ -1,10 +1,10 @@
-import { type JSX, useEffect, useMemo, useState } from 'react';
+import { type JSX, useEffect, useMemo, useState } from "react";
 
-import { toDisplayName } from '../utils/path';
-import { GalleryGrid } from './components/GalleryGrid';
-import { GalleryHeader } from './components/GalleryHeader';
-import { GalleryToolbar } from './components/GalleryToolbar';
-import type { LayoutShellProps } from './LayoutShellProps';
+import { toDisplayName } from "../utils/path";
+import { GalleryGrid } from "./components/GalleryGrid";
+import { GalleryHeader } from "./components/GalleryHeader";
+import { GalleryToolbar } from "./components/GalleryToolbar";
+import type { LayoutShellProps } from "./LayoutShellProps";
 
 /**
  * PRISM — Adaptive light/dark layout with folder grid overlay.
@@ -50,10 +50,10 @@ export function PrismLayout({
 }: LayoutShellProps): JSX.Element {
   const [folderOverlayOpen, setFolderOverlayOpen] = useState(false);
   const [showReadyState, setShowReadyState] = useState(false);
-  const isScanning = scanState === 'loading';
+  const isScanning = scanState === "loading";
 
   useEffect(() => {
-    if (scanState === 'done') {
+    if (scanState === "done") {
       setShowReadyState(true);
 
       const timer = window.setTimeout(() => {
@@ -69,11 +69,11 @@ export function PrismLayout({
   }, [scanMessage, scanState]);
 
   const showTopStatus =
-    scanState === 'loading' || scanState === 'error' || (scanState === 'done' && showReadyState);
+    scanState === "loading" || scanState === "error" || (scanState === "done" && showReadyState);
 
   const folderLabel = useMemo(() => {
     if (!rootPath) {
-      return 'Folder: none';
+      return "Folder: none";
     }
 
     return `Folder: ${toDisplayName(rootPath)}`;
@@ -102,7 +102,7 @@ export function PrismLayout({
         topStatus={
           showTopStatus
             ? {
-                kind: isScanning ? 'scanning' : 'ready',
+                kind: isScanning ? "scanning" : "ready",
                 message: scanMessage,
                 path: scanMessagePath,
               }

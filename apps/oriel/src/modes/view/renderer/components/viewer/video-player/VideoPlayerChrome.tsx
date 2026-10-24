@@ -1,7 +1,7 @@
-import { FastForward, Pause, Play, Settings } from 'lucide-react';
-import { type JSX, type ReactNode, useRef, useState } from 'react';
+import { FastForward, Pause, Play, Settings } from "lucide-react";
+import { type JSX, type ReactNode, useRef, useState } from "react";
 
-import type { ViewerVideoModel } from '../../../hooks/useViewerVideoModel';
+import type { ViewerVideoModel } from "../../../hooks/useViewerVideoModel";
 import {
   ChromeRegion,
   formatClock,
@@ -14,9 +14,9 @@ import {
   useOutsideClose,
   useSeek,
   volumeIconFor,
-} from './video-player-controls';
+} from "./video-player-controls";
 
-type CapsulePanel = 'settings' | 'speed' | 'volume';
+type CapsulePanel = "settings" | "speed" | "volume";
 
 interface ModelProps {
   model: ViewerVideoModel;
@@ -62,7 +62,7 @@ export function VideoPlayerChrome({
 
       <div
         className={`pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center px-3 ${fade}`}
-        style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
+        style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}
       >
         <ChromeRegion className="w-full max-w-4xl">
           <div
@@ -73,7 +73,7 @@ export function VideoPlayerChrome({
               <SkipButton direction={-1} model={model} />
               <IconButton
                 icon={model.playing ? Pause : Play}
-                label={model.playing ? 'Pause' : 'Play'}
+                label={model.playing ? "Pause" : "Play"}
                 onClick={model.toggleVideoPlayback}
                 size="md"
                 fill
@@ -87,39 +87,39 @@ export function VideoPlayerChrome({
             </div>
             <div className="ml-auto flex items-center gap-0.5 sm:ml-0">
               <div className="hidden items-center gap-0.5 sm:flex">
-                <Popup open={open === 'volume'} panel={<VolumePanel model={model} />}>
+                <Popup open={open === "volume"} panel={<VolumePanel model={model} />}>
                   <IconButton
-                    active={open === 'volume'}
+                    active={open === "volume"}
                     icon={volumeIconFor(level)}
                     label="Volume"
-                    onClick={() => toggle('volume')}
+                    onClick={() => toggle("volume")}
                     size="sm"
                   />
                 </Popup>
                 <Popup
-                  open={open === 'speed'}
+                  open={open === "speed"}
                   panel={<SpeedPanel model={model} onPick={() => setOpen(null)} />}
                 >
                   <button
                     type="button"
                     aria-label="Playback speed"
                     aria-haspopup="menu"
-                    aria-expanded={open === 'speed'}
+                    aria-expanded={open === "speed"}
                     title="Playback speed"
-                    className={`inline-flex h-8 min-w-9 cursor-pointer items-center justify-center rounded-full px-1.5 text-[11px] font-semibold tabular-nums transition hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-violet-400 ${model.speed === 1 && open !== 'speed' ? 'text-white/90' : 'text-violet-300'}`}
-                    onClick={() => toggle('speed')}
+                    className={`inline-flex h-8 min-w-9 cursor-pointer items-center justify-center rounded-full px-1.5 text-[11px] font-semibold tabular-nums transition hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-violet-400 ${model.speed === 1 && open !== "speed" ? "text-white/90" : "text-violet-300"}`}
+                    onClick={() => toggle("speed")}
                   >
                     {formatSpeed(model.speed)}
                   </button>
                 </Popup>
               </div>
               <div className="sm:hidden">
-                <Popup open={open === 'settings'} panel={<SettingsPanel model={model} />} wide>
+                <Popup open={open === "settings"} panel={<SettingsPanel model={model} />} wide>
                   <IconButton
-                    active={open === 'settings' || model.speed !== 1 || model.muted}
+                    active={open === "settings" || model.speed !== 1 || model.muted}
                     icon={Settings}
                     label="Playback settings"
-                    onClick={() => toggle('settings')}
+                    onClick={() => toggle("settings")}
                     size="sm"
                   />
                 </Popup>
@@ -146,11 +146,11 @@ function Popup({
 }): JSX.Element {
   return (
     // Narrow windows anchor panels to the capsule's top edge; wider ones centre them on the trigger.
-    <div className={wide ? 'static' : 'static sm:relative'}>
+    <div className={wide ? "static" : "static sm:relative"}>
       {children}
       {open ? (
         <div
-          className={`absolute bottom-full z-30 mb-3 rounded-2xl bg-zinc-900/90 shadow-2xl ring-1 ring-white/10 backdrop-blur-2xl ${wide ? 'right-2 sm:right-3' : 'right-2 sm:left-1/2 sm:right-auto sm:-translate-x-1/2'}`}
+          className={`absolute bottom-full z-30 mb-3 rounded-2xl bg-zinc-900/90 shadow-2xl ring-1 ring-white/10 backdrop-blur-2xl ${wide ? "right-2 sm:right-3" : "right-2 sm:left-1/2 sm:right-auto sm:-translate-x-1/2"}`}
         >
           {panel}
         </div>
@@ -160,9 +160,9 @@ function Popup({
 }
 
 function volumeKeyDelta(key: string): number {
-  if (key === 'ArrowUp' || key === 'ArrowRight') return 0.05;
+  if (key === "ArrowUp" || key === "ArrowRight") return 0.05;
 
-  if (key === 'ArrowDown' || key === 'ArrowLeft') return -0.05;
+  if (key === "ArrowDown" || key === "ArrowLeft") return -0.05;
 
   return 0;
 }
@@ -171,7 +171,7 @@ function VolumePanel({ model }: ModelProps): JSX.Element {
   const level = model.muted ? 0 : model.volume;
 
   const drag = useFractionDrag({
-    axis: 'y',
+    axis: "y",
     onCommit: model.changeVolume,
     onScrub: model.changeVolume,
   });
@@ -215,7 +215,7 @@ function VolumePanel({ model }: ModelProps): JSX.Element {
       <IconButton
         active={model.muted}
         icon={volumeIconFor(model.muted ? 0 : 1)}
-        label={model.muted ? 'Unmute' : 'Mute'}
+        label={model.muted ? "Unmute" : "Mute"}
         onClick={model.toggleMute}
         size="sm"
       />
@@ -234,7 +234,7 @@ function VolumeRow({ model }: ModelProps): JSX.Element {
       <IconButton
         active={model.muted}
         icon={volumeIconFor(level)}
-        label={model.muted ? 'Unmute' : 'Mute'}
+        label={model.muted ? "Unmute" : "Mute"}
         onClick={model.toggleMute}
         size="sm"
       />
@@ -285,7 +285,7 @@ function SpeedPanel({ model, onPick }: ModelProps & { onPick: () => void }): JSX
           type="button"
           role="menuitemradio"
           aria-checked={speed === model.speed}
-          className={`cursor-pointer px-4 py-1.5 text-center text-sm tabular-nums transition hover:bg-white/10 ${speed === model.speed ? 'font-semibold text-violet-300' : 'text-white/90'}`}
+          className={`cursor-pointer px-4 py-1.5 text-center text-sm tabular-nums transition hover:bg-white/10 ${speed === model.speed ? "font-semibold text-violet-300" : "text-white/90"}`}
           onClick={() => {
             model.applySpeed(speed);
             onPick();
@@ -307,7 +307,7 @@ function SpeedRow({ model }: ModelProps): JSX.Element {
           key={speed}
           type="button"
           aria-pressed={speed === model.speed}
-          className={`h-8 flex-1 cursor-pointer rounded-full text-xs tabular-nums transition ${speed === model.speed ? 'bg-violet-500/90 font-semibold text-white' : 'bg-white/10 text-white/80 hover:bg-white/20'}`}
+          className={`h-8 flex-1 cursor-pointer rounded-full text-xs tabular-nums transition ${speed === model.speed ? "bg-violet-500/90 font-semibold text-white" : "bg-white/10 text-white/80 hover:bg-white/20"}`}
           onClick={() => model.applySpeed(speed)}
         >
           {formatSpeed(speed)}

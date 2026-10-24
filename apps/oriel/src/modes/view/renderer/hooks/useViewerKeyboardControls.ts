@@ -1,8 +1,8 @@
-import { useEffect, useEffectEvent } from 'react';
+import { useEffect, useEffectEvent } from "react";
 
-import { HOTKEYS, isPlainHotkeyEvent, isTextInputTarget, matchesAnyKey } from '../utils/hotkeys';
-import { VIDEO_SKIP_SECONDS } from '../utils/videoPlayback';
-import type { ViewerVideoModel } from './useViewerVideoModel';
+import { HOTKEYS, isPlainHotkeyEvent, isTextInputTarget, matchesAnyKey } from "../utils/hotkeys";
+import { VIDEO_SKIP_SECONDS } from "../utils/videoPlayback";
+import type { ViewerVideoModel } from "./useViewerVideoModel";
 
 interface UseViewerKeyboardControlsOptions {
   isVideoItem: boolean;
@@ -104,14 +104,14 @@ export function useViewerKeyboardControls({
     const keyUpListener = (event: KeyboardEvent): void => handleKeyUp(event);
     const blurListener = (): void => releaseHeldSpeed();
 
-    window.addEventListener('keydown', keyDownListener);
-    window.addEventListener('keyup', keyUpListener);
-    window.addEventListener('blur', blurListener);
+    window.addEventListener("keydown", keyDownListener);
+    window.addEventListener("keyup", keyUpListener);
+    window.addEventListener("blur", blurListener);
 
     return () => {
-      window.removeEventListener('keydown', keyDownListener);
-      window.removeEventListener('keyup', keyUpListener);
-      window.removeEventListener('blur', blurListener);
+      window.removeEventListener("keydown", keyDownListener);
+      window.removeEventListener("keyup", keyUpListener);
+      window.removeEventListener("blur", blurListener);
     };
   }, []);
 }

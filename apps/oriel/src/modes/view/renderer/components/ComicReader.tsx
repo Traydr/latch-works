@@ -1,10 +1,10 @@
-import { ArrowUp, FolderOpen, X } from 'lucide-react';
-import { type JSX, useEffect, useRef, useState } from 'react';
+import { ArrowUp, FolderOpen, X } from "lucide-react";
+import { type JSX, useEffect, useRef, useState } from "react";
 
-import { useViewerChromeIdle } from '../hooks/useViewerChromeIdle';
-import type { ComicEntry } from '../utils/comics';
-import { HOTKEYS, isPlainHotkeyEvent, matchesAnyKey } from '../utils/hotkeys';
-import { toFileUrl } from '../utils/path';
+import { useViewerChromeIdle } from "../hooks/useViewerChromeIdle";
+import type { ComicEntry } from "../utils/comics";
+import { HOTKEYS, isPlainHotkeyEvent, matchesAnyKey } from "../utils/hotkeys";
+import { toFileUrl } from "../utils/path";
 
 interface ComicReaderProps {
   comic: ComicEntry;
@@ -43,7 +43,7 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
           return;
         }
 
-        page.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        page.scrollIntoView({ block: "start", behavior: "smooth" });
       });
     };
 
@@ -73,9 +73,9 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
       }
     };
 
-    window.addEventListener('keydown', keyListener);
+    window.addEventListener("keydown", keyListener);
 
-    return () => window.removeEventListener('keydown', keyListener);
+    return () => window.removeEventListener("keydown", keyListener);
   }, [comic.pages.length, onClose, revealChrome]);
 
   useEffect(() => {
@@ -120,26 +120,26 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
       frameId = window.requestAnimationFrame(syncCurrentPage);
     };
 
-    reader.addEventListener('scroll', onScroll, { passive: true });
+    reader.addEventListener("scroll", onScroll, { passive: true });
 
     return () => {
       if (frameId !== null) {
         window.cancelAnimationFrame(frameId);
       }
 
-      reader.removeEventListener('scroll', onScroll);
+      reader.removeEventListener("scroll", onScroll);
     };
   }, [currentPageIndex, revealChrome]);
 
   const scrollToTop = (): void => {
-    readerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+    readerRef.current?.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   return (
     <dialog
       ref={dialogRef}
       aria-label={`Comic reader for ${comic.name}`}
-      className={`dark fixed inset-0 z-50 m-0 h-screen max-h-none w-screen max-w-none border-0 bg-zinc-950 p-0 text-zinc-100 backdrop:bg-zinc-950 ${chromeVisible ? '' : 'cursor-none'}`}
+      className={`dark fixed inset-0 z-50 m-0 h-screen max-h-none w-screen max-w-none border-0 bg-zinc-950 p-0 text-zinc-100 backdrop:bg-zinc-950 ${chromeVisible ? "" : "cursor-none"}`}
       onCancel={(event) => {
         event.preventDefault();
         onClose();
@@ -150,7 +150,7 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
       {/* Top bar: title + actions */}
       <div
         className={`viewer-scrim-top viewer-chrome-transition ${chromeVisibilityClass}`}
-        style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))' }}
+        style={{ paddingTop: "max(1rem, env(safe-area-inset-top))" }}
       >
         <div className="pointer-events-auto flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">

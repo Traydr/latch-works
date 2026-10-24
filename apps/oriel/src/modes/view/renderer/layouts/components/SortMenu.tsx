@@ -1,14 +1,14 @@
-import { ArrowUpDown, Check, ChevronUp } from 'lucide-react';
-import type { JSX } from 'react';
+import { ArrowUpDown, Check, ChevronUp } from "lucide-react";
+import type { JSX } from "react";
 
-import type { GallerySortMode } from '../../../shared/types';
+import type { GallerySortMode } from "../../../shared/types";
 
 const SORT_OPTIONS: { value: GallerySortMode; label: string }[] = [
-  { value: 'name-asc', label: 'A-Z' },
-  { value: 'name-desc', label: 'Z-A' },
-  { value: 'date-newest', label: 'Newest' },
-  { value: 'date-oldest', label: 'Oldest' },
-  { value: 'random', label: 'Random' },
+  { value: "name-asc", label: "A-Z" },
+  { value: "name-desc", label: "Z-A" },
+  { value: "date-newest", label: "Newest" },
+  { value: "date-oldest", label: "Oldest" },
+  { value: "random", label: "Random" },
 ];
 
 interface SortMenuProps {
@@ -32,7 +32,7 @@ export function SortMenu({
     <>
       <button
         type="button"
-        className={`prism-btn inline-flex items-center gap-2 whitespace-nowrap ${sortMenuOpen ? 'bg-zinc-200 dark:bg-zinc-700' : ''}`}
+        className={`prism-btn inline-flex items-center gap-2 whitespace-nowrap ${sortMenuOpen ? "bg-zinc-200 dark:bg-zinc-700" : ""}`}
         onClick={onToggleOpen}
         aria-haspopup="menu"
         aria-expanded={sortMenuOpen}
@@ -40,7 +40,7 @@ export function SortMenu({
       >
         <ArrowUpDown className="size-4" />
         {activeSortLabel}
-        <ChevronUp className={`size-3 transition-transform ${sortMenuOpen ? 'rotate-180' : ''}`} />
+        <ChevronUp className={`size-3 transition-transform ${sortMenuOpen ? "rotate-180" : ""}`} />
       </button>
 
       {sortMenuOpen ? (
@@ -59,8 +59,8 @@ export function SortMenu({
                 aria-checked={selected}
                 className={`flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-xs transition ${
                   selected
-                    ? 'bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300'
-                    : 'text-zinc-700 hover:bg-zinc-200 dark:text-zinc-200 dark:hover:bg-zinc-700'
+                    ? "bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300"
+                    : "text-zinc-700 hover:bg-zinc-200 dark:text-zinc-200 dark:hover:bg-zinc-700"
                 }`}
                 onClick={() => {
                   onChangeSortMode(option.value);

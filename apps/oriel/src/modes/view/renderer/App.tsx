@@ -1,27 +1,27 @@
-import { type JSX, useCallback, useMemo, useState } from 'react';
+import { type JSX, useCallback, useMemo, useState } from "react";
 
-import type { AppSettingsPatch, GallerySortMode } from '../shared/types';
-import { ComicReader } from './components/ComicReader';
-import { SettingsDrawer } from './components/SettingsDrawer';
-import { ViewerOverlay } from './components/ViewerOverlay';
-import { VideoMetadataQueueProvider } from './contexts/VideoMetadataQueueProvider';
-import { useAppBootstrap } from './hooks/useAppBootstrap';
-import { useBrowserSelection } from './hooks/useBrowserSelection';
-import { useFolderNavigationModel } from './hooks/useFolderNavigationModel';
-import { useFolderOpenActions } from './hooks/useFolderOpenActions';
-import { useGalleryKeyboardNavigation } from './hooks/useGalleryKeyboardNavigation';
-import { useScanActions } from './hooks/useScanActions';
-import { useSettingsActions } from './hooks/useSettingsActions';
-import { useSettingsPanelData } from './hooks/useSettingsPanelData';
-import type { LayoutShellProps } from './layouts';
-import { PrismLayout } from './layouts';
-import { useAppStore } from './store/useAppStore';
-import { buildBrowserEntryCollection } from './utils/browserEntries';
-import type { ComicEntry } from './utils/comics';
-import { buildComicEntries, sortComicEntries } from './utils/comics';
-import { toDisplayName } from './utils/path';
-import { getRootGalleryPreferences, toggleExcludedRootChildPath } from './utils/rootPreferences';
-import { createRandomSeed } from './utils/sort';
+import type { AppSettingsPatch, GallerySortMode } from "../shared/types";
+import { ComicReader } from "./components/ComicReader";
+import { SettingsDrawer } from "./components/SettingsDrawer";
+import { ViewerOverlay } from "./components/ViewerOverlay";
+import { VideoMetadataQueueProvider } from "./contexts/VideoMetadataQueueProvider";
+import { useAppBootstrap } from "./hooks/useAppBootstrap";
+import { useBrowserSelection } from "./hooks/useBrowserSelection";
+import { useFolderNavigationModel } from "./hooks/useFolderNavigationModel";
+import { useFolderOpenActions } from "./hooks/useFolderOpenActions";
+import { useGalleryKeyboardNavigation } from "./hooks/useGalleryKeyboardNavigation";
+import { useScanActions } from "./hooks/useScanActions";
+import { useSettingsActions } from "./hooks/useSettingsActions";
+import { useSettingsPanelData } from "./hooks/useSettingsPanelData";
+import type { LayoutShellProps } from "./layouts";
+import { PrismLayout } from "./layouts";
+import { useAppStore } from "./store/useAppStore";
+import { buildBrowserEntryCollection } from "./utils/browserEntries";
+import type { ComicEntry } from "./utils/comics";
+import { buildComicEntries, sortComicEntries } from "./utils/comics";
+import { toDisplayName } from "./utils/path";
+import { getRootGalleryPreferences, toggleExcludedRootChildPath } from "./utils/rootPreferences";
+import { createRandomSeed } from "./utils/sort";
 
 function AppInner(): JSX.Element {
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -91,7 +91,7 @@ function AppInner(): JSX.Element {
   });
 
   const comicEntries = useMemo(() => {
-    return comicMode && scanState !== 'loading'
+    return comicMode && scanState !== "loading"
       ? sortComicEntries(buildComicEntries(items, rootPath), settings.sortMode, settings.randomSeed)
       : [];
   }, [comicMode, items, rootPath, scanState, settings.randomSeed, settings.sortMode]);
@@ -105,7 +105,7 @@ function AppInner(): JSX.Element {
       effectiveRecursive,
       comicMode,
       settings.sortMode,
-      scanState === 'loading',
+      scanState === "loading",
     );
   }, [
     comicEntries,

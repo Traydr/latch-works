@@ -1,11 +1,11 @@
-import type { Rectangle } from 'electron';
+import type { Rectangle } from "electron";
 
-import type { SettingsService } from './settingsService';
+import type { SettingsService } from "./settingsService";
 
 /** The settings entry points that store window geometry. */
 export type WindowStateSettings = Pick<
   SettingsService,
-  'flushNowSync' | 'updateWindowBounds' | 'updateWindowMaximized'
+  "flushNowSync" | "updateWindowBounds" | "updateWindowMaximized"
 >;
 
 /** The window measurements the persisted window state is built from. */
@@ -17,9 +17,9 @@ export interface PersistableWindow {
 }
 
 interface PersistWindowStateResult {
-  boundsResult: Awaited<ReturnType<SettingsService['updateWindowBounds']>> | null;
-  flushResult: Awaited<ReturnType<SettingsService['flushNowSync']>> | null;
-  maximizedResult: Awaited<ReturnType<SettingsService['updateWindowMaximized']>> | null;
+  boundsResult: Awaited<ReturnType<SettingsService["updateWindowBounds"]>> | null;
+  flushResult: Awaited<ReturnType<SettingsService["flushNowSync"]>> | null;
+  maximizedResult: Awaited<ReturnType<SettingsService["updateWindowMaximized"]>> | null;
 }
 
 export async function persistWindowState(

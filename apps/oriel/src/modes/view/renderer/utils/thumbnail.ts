@@ -1,4 +1,4 @@
-import type { ThumbnailJobPriority } from '../../shared/thumbnail';
+import type { ThumbnailJobPriority } from "../../shared/thumbnail";
 
 export function getThumbnailRequestSize(thumbnailSize: number): number {
   return Math.round(thumbnailSize * 2);

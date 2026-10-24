@@ -1,4 +1,4 @@
-import type { AppSettings, AppSettingsPatch, RootGalleryPreferences } from '../../shared/types';
+import type { AppSettings, AppSettingsPatch, RootGalleryPreferences } from "../../shared/types";
 
 const DEFAULT_ROOT_GALLERY_PREFERENCES: RootGalleryPreferences = {
   comicMode: false,
