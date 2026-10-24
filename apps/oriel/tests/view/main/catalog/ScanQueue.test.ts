@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { ScanQueue } from "../../../src/main/catalog/ScanQueue";
+import { ScanQueue } from "../../../../src/modes/view/main/catalog/ScanQueue";
 
 /**
  * Stands in for the catalog worker: a started scan runs until it is cancelled or the test ends it,

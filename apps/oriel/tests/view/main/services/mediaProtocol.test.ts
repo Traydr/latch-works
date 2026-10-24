@@ -7,7 +7,7 @@ import {
   isAuthorizedMediaPath,
   isPathWithinRoot,
   shrinkAuthorizedMediaRootsTo,
-} from "../../../src/main/services/mediaProtocol";
+} from "../../../../src/modes/view/main/services/mediaProtocol";
 
 describe("mediaProtocol helpers", () => {
   it("checks whether a path is inside an authorized root", () => {

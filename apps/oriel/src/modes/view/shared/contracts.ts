@@ -50,7 +50,7 @@ export const GallerySortModeSchema = z.enum([
   "random",
 ]);
 
-export const MediaTypeSchema = z.enum(["image", "video"]);
+const MediaTypeSchema = z.enum(["image", "video"]);
 
 export const FileFilterSettingsSchema = z.object({
   imageExtensions: MediaExtensionsSchema,

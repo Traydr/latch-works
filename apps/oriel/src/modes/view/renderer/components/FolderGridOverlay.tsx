@@ -1,6 +1,6 @@
 import { ChevronLeft, Folder, FolderOpen, X } from "lucide-react";
 import { type JSX, useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
-
+import { useModeActive } from "../../../../shell/shell";
 import type { FolderNode } from "../../shared/types";
 import { getFrameViewValue } from "../utils/frameViewResult";
 import { toDisplayName } from "../utils/path";
@@ -72,7 +72,13 @@ export function FolderGridOverlay({
 
   const closeEvent = useEffectEvent(onClose);
 
+  const modeActive = useModeActive();
+
   useEffect(() => {
+    if (!modeActive) {
+      return;
+    }
+
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key === "Escape") {
         event.preventDefault();
@@ -83,7 +89,7 @@ export function FolderGridOverlay({
     window.addEventListener("keydown", onKeyDown);
 
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [modeActive]);
 
   useEffect(() => {
     document.body.dataset.frameViewFolderOverlay = "open";

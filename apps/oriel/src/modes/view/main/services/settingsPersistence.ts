@@ -54,19 +54,20 @@ const PersistedRecordSchema = z.record(z.string(), z.json());
 
 type PersistedRecord = z.infer<typeof PersistedRecordSchema>;
 
-function toPersistedRecord(value: JsonValue): PersistedRecord {
+function toPersistedRecord(value: JsonValue | undefined): PersistedRecord {
   const parsed = PersistedRecordSchema.safeParse(value);
 
   return parsed.success ? parsed.data : {};
 }
 
-function parseOrFallback<T>(schema: z.ZodType<T>, value: JsonValue, fallback: T): T {
+/** A missing key (`undefined`) falls back like an invalid one. */
+function parseOrFallback<T>(schema: z.ZodType<T>, value: JsonValue | undefined, fallback: T): T {
   const parsed = schema.safeParse(value);
 
   return parsed.success ? parsed.data : fallback;
 }
 
-function normalizeExtensions(input: JsonValue, fallback: string[]): string[] {
+function normalizeExtensions(input: JsonValue | undefined, fallback: string[]): string[] {
   const parsed = MediaExtensionsSchema.safeParse(input);
 
   if (!parsed.success || parsed.data.length === 0) {
@@ -76,7 +77,7 @@ function normalizeExtensions(input: JsonValue, fallback: string[]): string[] {
   return parsed.data;
 }
 
-export function normalizeAppSettings(candidate: JsonValue): AppSettings {
+export function normalizeAppSettings(candidate: JsonValue | undefined): AppSettings {
   const parsed = AppSettingsSchema.safeParse(candidate);
 
   if (parsed.success) {
@@ -199,7 +200,7 @@ export function normalizeAppSettings(candidate: JsonValue): AppSettings {
   };
 }
 
-function normalizeWindowBounds(bounds: JsonValue): Rectangle | null {
+function normalizeWindowBounds(bounds: JsonValue | undefined): Rectangle | null {
   const parsed = WindowBoundsSchema.safeParse(bounds);
 
   if (!parsed.success) {

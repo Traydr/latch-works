@@ -1,5 +1,8 @@
 # Frame View
 
+> Frame View now ships as View, one of Oriel's modes (`apps/oriel`, plan 059). This is the
+> standalone app's README, kept for its product notes; its run and build steps no longer apply.
+
 > Cross-platform desktop image and video viewer — the local gallery north star for [Pane View](../pane-view).
 
 Frame View is part of the [Latch Works](../../README.md) monorepo. It browses local image and video folders with a keyboard-first gallery, fullscreen viewer, comic mode, and a SQLite media index. PDF reading is [planned](../../docs/plans/040-frame-view-pdf-spike.md), not shipped. Use it to organize and preview a local archive before syncing to Pane View via [Lockstep](../../apps/lockstep-cli).

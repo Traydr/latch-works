@@ -1,49 +1,35 @@
-# Repository Guidelines
+# View mode guidelines
 
-## Project Structure & Module Organization
-- `src/main.ts` boots the Electron main process.
-- `src/main/` contains desktop runtime logic: `services/`, `ipc/`, `db/`, and `menu.ts`.
-- `src/preload.ts` defines the renderer bridge API.
-- `src/renderer.tsx` and `src/renderer/` hold the React UI (`components/`, `store/`, `utils/`).
-- `src/shared/contracts.ts` is the Zod-backed source of truth for shared runtime contracts; `src/shared/types.ts` remains the canonical type import surface.
-- `src/main/db/schema.ts` defines the Drizzle media-index schema.
-- `docs/` stores product notes and implementation plans; root config files (`forge.config.ts`, `vite.*.config.ts`, `tailwind.config.cjs`, `biome.jsonc`, `knip.jsonc`, `drizzle.config.ts`) define build and maintenance tooling.
+View is Frame View, the local viewer, as one of Oriel's modes (plan 059). The repository's root
+`AGENTS.md` and `CLAUDE.md` apply; these notes are what View's code adds on top.
 
-## Build, Test, and Development Commands
-- `pnpm install`: install dependencies.
-- `pnpm run start`: run Electron Forge in dev mode with Vite.
-- **Cloud VM / headless Linux:** copy `.env.example` to `.env` and set `FRAME_VIEW_DISABLE_GPU=1` before `pnpm run start`, or Electron crashes when GPU acceleration is unavailable. Leave unset on normal desktops to keep hardware acceleration enabled.
-- `pnpm run lint`: run Biome checks for the repo.
-- `pnpm run format`: format the repo with Biome.
-- `pnpm run knip`: detect unused files, exports, and dependencies.
-- `pnpm run db:generate`: generate Drizzle migration files from `src/main/db/schema.ts`.
-- `pnpm run test`: run Vitest.
-- `pnpm run package`: create a local packaged app build. (ONLY USER MAY RUN THIS)
-- `pnpm run make`: generate platform distributables. (ONLY USER MAY RUN THIS)
-- `pnpm run release`: publish artifacts using Forge publishers.
+## Layout
 
-## Coding Style & Naming Conventions
-- Language: TypeScript + React (`react-jsx`), 2-space indentation, semicolons enabled.
-- Follow `biome.jsonc`; run `pnpm run lint` before opening a PR.
-- Use `PascalCase` for React components/classes (`GalleryGrid.tsx`, `ScanService`), `camelCase` for functions, variables, and store methods.
-- Keep shared IPC/domain schemas in `src/shared/contracts.ts` and import shared types from `src/shared/types.ts` instead of duplicating interfaces.
-- Main/preload IPC boundaries must use serialized `better-result` payloads and shared Zod schemas rather than ad hoc guards or plain thrown/`null` contracts.
-- Never use dynamic imports (unless asked to) like `await import(..)`
-- Never cast to `any`
-- Do not add extra defensive checks or try/catch blocks
+- `main/start.ts` starts the mode: settings, the catalog worker, the scan queue, IPC and the
+  `frameview-media` protocol. Oriel's `src/main.ts` calls it and owns the window.
+- `main/` holds the rest of the desktop runtime: `services/`, `ipc/`, `db/`, `catalog/`,
+  `thumbnail/`.
+- `preload/frameViewApi.ts` builds the `window.frameView` bridge, which Oriel's preload exposes.
+- `renderer/` is the React UI (`components/`, `store/`, `utils/`); `renderer/App.tsx` exports
+  `ViewMode`, which the shell mounts.
+- `shared/contracts.ts` is the zod source of truth for runtime contracts, and `shared/types.ts`
+  the type import surface. `shared/ipcContracts.ts` names every channel; they all start `frame:`.
+- `main/db/schema.ts` defines the Drizzle schema of the media index.
+- Product notes and old plans live in `docs/frame-view/`.
 
-## Testing Guidelines
-- For every change, include manual verification steps in PRs (example: open folder, run scan, open viewer modal, verify settings persistence).
-- When adding tests, prefer locating them in the tests folder.
+## Code rules
 
-## Commit & Pull Request Guidelines
-- Match current history style: short, imperative, lowercase subjects (example: `add ffmpeg`, `polish pass`).
-- Keep commits focused to one logical change.
-- PRs should include: concise summary, linked issue/docs, manual test notes, and screenshots/GIFs for UI updates.
+- Main and preload IPC use serialized `better-result` payloads and the shared zod schemas, not
+  ad hoc guards or thrown errors and `null`.
+- No dynamic imports (`await import(…)`) unless asked, and no casts to `any`.
+- Do not add extra defensive checks or try/catch blocks.
+- Keep Node and Electron access in main and preload; the renderer never sees raw Node APIs.
+- Oriel keeps hidden modes mounted. A listener View puts on the whole window (keys, drops)
+  attaches only while `useModeActive()` is true, and the viewer and comic reader are modal only
+  then.
 
-## Security & Configuration Tips
-- Keep Node/Electron access in main/preload layers; do not expose raw Node APIs directly in renderer components.
-- Avoid committing machine-specific paths or sensitive local configuration.
+## Testing
 
-## AI Collaboration Notes
-- Record important project context and user implementation preferences in `docs/ai-notes.md` as they are discovered. Make sure to cleanup old notes with outdated information when you can.
+Tests live in `apps/oriel/tests/view`. Run `pnpm --filter @latch-works/oriel test`, and the e2e
+suite with `pnpm e2e:frame`. Agents may package and make Oriel (`pnpm --filter
+@latch-works/oriel package` or `make`), which the owner allowed in plan 059.

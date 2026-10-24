@@ -4,8 +4,8 @@ import path from "node:path";
 
 import sharp from "sharp";
 import { afterEach, describe, expect, it } from "vitest";
-import type { ThumbnailMediaTools } from "../../../src/main/thumbnail/ThumbnailWorkerRuntime";
-import { ThumbnailWorkerRuntime } from "../../../src/main/thumbnail/ThumbnailWorkerRuntime";
+import type { ThumbnailMediaTools } from "../../../../src/modes/view/main/thumbnail/ThumbnailWorkerRuntime";
+import { ThumbnailWorkerRuntime } from "../../../../src/modes/view/main/thumbnail/ThumbnailWorkerRuntime";
 
 async function createTempDir(prefix: string): Promise<string> {
   return mkdtemp(path.join(os.tmpdir(), prefix));

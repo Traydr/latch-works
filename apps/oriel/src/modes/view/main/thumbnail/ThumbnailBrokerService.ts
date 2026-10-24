@@ -235,13 +235,13 @@ export class ThumbnailBrokerService {
       .map((worker) => worker.capabilities)
       .filter((value): value is ThumbnailWorkerCapabilities => value !== null);
 
-    if (capabilities.length === 0) {
-      return null;
-    }
-
     const preferred =
       this.workers.find((worker) => worker.kind === "video" && worker.capabilities)?.capabilities ??
       capabilities[0];
+
+    if (preferred === undefined) {
+      return null;
+    }
 
     return {
       ffmpegAvailable: capabilities.every((value) => value.ffmpegAvailable),

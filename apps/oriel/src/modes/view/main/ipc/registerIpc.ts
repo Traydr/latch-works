@@ -1,12 +1,12 @@
 import path from "node:path";
 import { Result, type SerializedResult } from "better-result";
-import type { BrowserWindow, OpenDialogReturnValue } from "electron";
+import type { BrowserWindow, OpenDialogOptions, OpenDialogReturnValue } from "electron";
 import { app, dialog, ipcMain, shell } from "electron";
 import type { ZodType } from "zod";
 
 import { DiagnosticsSnapshotSchema, type JsonValue, PathInputSchema } from "../../shared/contracts";
 import { serializeIpcResult } from "../../shared/ipc";
-import { InvokeIpcContractList, InvokeIpcContracts } from "../../shared/ipcContracts";
+import { InvokeIpcContractList, InvokeIpcContracts, ViewChannels } from "../../shared/ipcContracts";
 import type {
   DiagnosticsSnapshot,
   IpcErrorPayload,
@@ -69,8 +69,8 @@ export interface IpcRuntime {
   shrinkAuthorizedMediaRootsTo: typeof shrinkAuthorizedMediaRootsTo;
 }
 
-/** The production runtime: Electron's main-process APIs bound to the app window. */
-export function createElectronIpcRuntime(mainWindow: BrowserWindow): IpcRuntime {
+/** The production runtime: Electron's main-process APIs, bound to Oriel's window. */
+export function createElectronIpcRuntime(getWindow: () => BrowserWindow | null): IpcRuntime {
   return {
     claimChosenMediaRoot,
     clearThumbnailCache,
@@ -83,24 +83,25 @@ export function createElectronIpcRuntime(mainWindow: BrowserWindow): IpcRuntime 
     },
     isAuthorizedMediaPath,
     isPackaged: () => app.isPackaged,
-    isWindowDestroyed: () => mainWindow.isDestroyed(),
+    isWindowDestroyed: () => getWindow()?.isDestroyed() ?? true,
     listFolderChildren,
     removeHandler: (channel) => {
       ipcMain.removeHandler(channel);
     },
     resolveFolderPath,
     sendScanEvent: (event) => {
-      mainWindow.webContents.send("scan:event", event);
+      getWindow()?.webContents.send(ViewChannels.scanEvent, event);
     },
     setThumbnailDebugOptions,
     showItemInFolder: (fullPath) => {
       shell.showItemInFolder(fullPath);
     },
-    showOpenFolderDialog: () =>
-      dialog.showOpenDialog(mainWindow, {
-        properties: ["openDirectory"],
-        title: "Open Folder",
-      }),
+    showOpenFolderDialog: () => {
+      const options: OpenDialogOptions = { properties: ["openDirectory"], title: "Open Folder" };
+      const target = getWindow();
+
+      return target ? dialog.showOpenDialog(target, options) : dialog.showOpenDialog(options);
+    },
     shrinkAuthorizedMediaRootsTo,
   };
 }
@@ -157,12 +158,13 @@ export function registerIpc(
 
   runtime.handle(InvokeIpcContracts.openFolderDialog.channel, async () => {
     const { canceled, filePaths } = await runtime.showOpenFolderDialog();
+    const chosen = filePaths[0];
 
-    if (canceled || filePaths.length === 0) {
+    if (canceled || chosen === undefined) {
       return okResult<string | null>(null);
     }
 
-    const selectedPathResult = await runtime.resolveFolderPath(filePaths[0]);
+    const selectedPathResult = await runtime.resolveFolderPath(chosen);
 
     if (Result.isError(selectedPathResult)) {
       return serializeAppResult(Result.err(selectedPathResult.error));

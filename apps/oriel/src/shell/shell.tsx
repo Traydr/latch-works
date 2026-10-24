@@ -102,3 +102,16 @@ export function useShell(): Shell {
 
   return shell;
 }
+
+const ModeActiveContext = createContext(true);
+
+/** Provides {@link useModeActive} to one mode's tree. */
+export const ModeActiveProvider = ModeActiveContext.Provider;
+
+/**
+ * Whether this mode is the one on screen. Hidden modes stay mounted, so a listener a mode puts on
+ * the whole window (keys, drops) attaches only while this is true.
+ */
+export function useModeActive(): boolean {
+  return useContext(ModeActiveContext);
+}

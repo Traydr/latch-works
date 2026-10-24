@@ -32,18 +32,20 @@ export function sortAndSyncSelection(
     if (nextSelectedId) {
       const selectedIndex = sortedItems.findIndex((item) => item.id === nextSelectedId);
 
+      const first = sortedItems[0];
+
       if (selectedIndex >= 0) {
         nextViewerIndex = selectedIndex;
-      } else if (sortedItems.length > 0) {
+      } else if (first) {
         nextViewerIndex = 0;
-        nextSelectedId = sortedItems[0].id;
+        nextSelectedId = first.id;
       } else {
         nextViewerIndex = null;
       }
     } else if (sortedItems.length > 0) {
       const clampedIndex = Math.max(0, Math.min(viewerIndex, sortedItems.length - 1));
       nextViewerIndex = clampedIndex;
-      nextSelectedId = sortedItems[clampedIndex].id;
+      nextSelectedId = sortedItems[clampedIndex]?.id ?? null;
     } else {
       nextViewerIndex = null;
     }

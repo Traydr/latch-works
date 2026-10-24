@@ -1,5 +1,3 @@
-import { isShowcasePreviewEnabled } from "../../showcase/runtime";
-
 export function toDisplayName(inputPath: string | null): string {
   if (!inputPath) {
     return "No folder selected";
@@ -8,7 +6,7 @@ export function toDisplayName(inputPath: string | null): string {
   const normalized = inputPath.replace(/\\/g, "/");
   const parts = normalized.split("/").filter(Boolean);
 
-  return parts.length ? parts[parts.length - 1] : inputPath;
+  return parts.at(-1) ?? inputPath;
 }
 
 export function getParentPath(inputPath: string | null): string | null {
@@ -42,26 +40,11 @@ export function getParentPath(inputPath: string | null): string | null {
   return useBackslashes ? parent.replace(/\//g, "\\") : parent;
 }
 
-function toShowcaseMediaUrl(filePath: string): string {
-  const normalized = filePath.replace(/\\/g, "/");
-  const fileName = normalized.split("/").pop() ?? normalized;
-
-  return `/showcase-media/${encodeURIComponent(fileName)}`;
-}
-
 export function toFileUrl(filePath: string): string {
-  if (isShowcasePreviewEnabled()) {
-    return toShowcaseMediaUrl(filePath);
-  }
-
   return `frameview-media://media?path=${encodeURIComponent(filePath)}`;
 }
 
 export function toThumbnailUrl(filePath: string, size: number, priority?: 0 | 1 | 2): string {
-  if (isShowcasePreviewEnabled()) {
-    return toShowcaseMediaUrl(filePath);
-  }
-
   const clampedSize = Math.max(64, Math.min(1024, Math.floor(size)));
 
   const prioritySuffix =

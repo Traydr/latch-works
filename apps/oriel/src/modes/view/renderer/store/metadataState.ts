@@ -64,8 +64,7 @@ export function createApplyVideoMetadata(set: AppStoreSet) {
 
       let nextLoadingChunks = state.loadingChunks;
 
-      for (let chunkIndex = 0; chunkIndex < state.loadingChunks.length; chunkIndex += 1) {
-        const chunk = state.loadingChunks[chunkIndex];
+      for (const [chunkIndex, chunk] of state.loadingChunks.entries()) {
         const patchedChunk = patchMediaMetadata(chunk, path, mtimeMs, size, metadata);
 
         if (!patchedChunk.changed) {

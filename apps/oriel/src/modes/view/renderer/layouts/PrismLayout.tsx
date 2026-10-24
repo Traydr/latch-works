@@ -80,7 +80,7 @@ export function PrismLayout({
   }, [rootPath]);
 
   return (
-    <div className="relative flex h-screen flex-col overflow-hidden bg-zinc-50 text-zinc-800 dark:bg-zinc-950 dark:text-zinc-100">
+    <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-zinc-50 text-zinc-800 dark:bg-zinc-950 dark:text-zinc-100">
       <GalleryHeader
         browserEntryCount={browserEntries.length}
         cacheStatusMessage={cacheStatusMessage}

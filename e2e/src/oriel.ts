@@ -47,14 +47,17 @@ async function findMainWindow(app: ElectronApplication): Promise<Page> {
   throw new Error("Oriel's main window never opened.");
 }
 
-/** Launches Oriel on `userDataDir`, or on a fresh one. */
-export async function launchOriel(userDataDir?: string): Promise<OrielSession> {
+/** Launches Oriel on `userDataDir`, or on a fresh one, with `env` added to the environment. */
+export async function launchOriel(
+  userDataDir?: string,
+  env: Record<string, string> = {},
+): Promise<OrielSession> {
   const dataDir = userDataDir ?? (await mkdtemp(path.join(os.tmpdir(), "oriel-e2e-")));
 
   const app = await electron.launch({
     args: [path.join(ORIEL_APP_DIR, ".vite", "build", "main.cjs"), `--user-data-dir=${dataDir}`],
     cwd: ORIEL_APP_DIR,
-    env: electronChildEnv(),
+    env: electronChildEnv(env),
     executablePath: ELECTRON_BINARY,
   });
 

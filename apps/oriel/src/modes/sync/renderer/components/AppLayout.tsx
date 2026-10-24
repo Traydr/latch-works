@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-
+import { useModeActive } from "../../../../shell/shell";
 import type { LockstepController, RunController } from "../hooks/useLockstepController";
 import { describeLastRun } from "../lib/profile-status";
 import { ProfileSetupView } from "../views/ProfileSetupView";
@@ -28,7 +28,13 @@ export function AppLayout({ ctrl }: { ctrl: LockstepController }) {
 
   const showRunState = showRunPanel && itemRun && progress.queuedAt != null;
 
+  const modeActive = useModeActive();
+
   useEffect(() => {
+    if (!modeActive) {
+      return;
+    }
+
     function handleKeyDown(event: KeyboardEvent) {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "l") {
         event.preventDefault();
@@ -57,7 +63,7 @@ export function AppLayout({ ctrl }: { ctrl: LockstepController }) {
     window.addEventListener("keydown", handleKeyDown);
 
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [modeActive]);
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-white text-zinc-800 dark:bg-zinc-950 dark:text-zinc-100">

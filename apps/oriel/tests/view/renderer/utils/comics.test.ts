@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { buildComicEntries, sortComicEntries } from "../../../src/renderer/utils/comics";
-import type { MediaItem } from "../../../src/shared/types";
+import {
+  buildComicEntries,
+  sortComicEntries,
+} from "../../../../src/modes/view/renderer/utils/comics";
+import type { MediaItem } from "../../../../src/modes/view/shared/types";
 
 function image(path: string, name: string): MediaItem {
   return {

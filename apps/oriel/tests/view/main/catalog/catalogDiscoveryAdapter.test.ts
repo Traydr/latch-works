@@ -5,7 +5,7 @@ import {
   type FrameScanFilters,
   shouldSkipDirectoryName,
   toFrameMediaItem,
-} from "../../../src/main/catalog/catalogDiscoveryAdapter";
+} from "../../../../src/modes/view/main/catalog/catalogDiscoveryAdapter";
 
 const filters: FrameScanFilters = {
   imageExtensions: new Set(["jpg", "jpeg", "png", "gif", "webp"]),

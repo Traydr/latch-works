@@ -45,7 +45,7 @@ const stagedNodeModulesPath = path.join(stagedRuntimePath, "node_modules");
 
 const stagedCodecsPath = path.join(stagedRuntimePath, "codecs");
 
-/** Native packages Tidy's engine and workers load from the app's resources, outside the asar. */
+/** Native packages View's and Tidy's workers load from the app's resources, outside the asar. */
 const runtimeDependencyRoots = ["ffmpeg-static", "@ffprobe-installer/ffprobe", "sharp"];
 
 type PackagerConfig = NonNullable<ForgeConfig["packagerConfig"]>;
@@ -239,6 +239,16 @@ const config: ForgeConfig = {
     new VitePlugin({
       build: [
         { entry: "src/main.ts", config: "vite.main.config.mts", target: "main" },
+        {
+          entry: "src/modes/view/main/catalog/catalog.worker.ts",
+          config: "vite.main.config.mts",
+          target: "main",
+        },
+        {
+          entry: "src/modes/view/main/thumbnail/thumbnail.worker.ts",
+          config: "vite.main.config.mts",
+          target: "main",
+        },
         {
           entry: "src/modes/tidy/engine/engine-process.ts",
           config: "vite.main.config.mts",

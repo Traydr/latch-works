@@ -1,10 +1,11 @@
 import { type JSX, useEffect, useState } from "react";
 
-import type { AppSettings, AppSettingsPatch, ThemeMode } from "../../../shared/types";
+import { type ThemeChoice, useTheme } from "../../../../../shell/theme";
+import type { AppSettings, AppSettingsPatch } from "../../../shared/types";
 import { SettingsSection } from "./SettingsSection";
 import { SettingsToggleRow } from "./SettingsToggleRow";
 
-const THEME_OPTIONS: { value: ThemeMode; label: string }[] = [
+const THEME_OPTIONS: { value: ThemeChoice; label: string }[] = [
   { value: "system", label: "System" },
   { value: "light", label: "Light" },
   { value: "dark", label: "Dark" },
@@ -16,6 +17,8 @@ interface UsabilityTabProps {
 }
 
 export function UsabilityTab({ onUpdate, settings }: UsabilityTabProps): JSX.Element {
+  // One theme for all of Oriel, which every mode's Settings sets.
+  const theme = useTheme();
   const [thumbnailSizeDraft, setThumbnailSizeDraft] = useState(settings.thumbnailSize);
 
   useEffect(() => {
@@ -37,9 +40,9 @@ export function UsabilityTab({ onUpdate, settings }: UsabilityTabProps): JSX.Ele
                 type="radio"
                 name="theme"
                 value={option.value}
-                checked={option.value === settings.theme}
+                checked={option.value === theme.choice}
                 className="sr-only"
-                onChange={() => onUpdate({ theme: option.value })}
+                onChange={() => theme.choose(option.value)}
               />
               {option.label}
             </label>

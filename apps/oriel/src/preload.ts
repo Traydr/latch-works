@@ -1,7 +1,8 @@
-import { contextBridge, type IpcRendererEvent, ipcRenderer } from "electron";
+import { contextBridge, type IpcRendererEvent, ipcRenderer, webUtils } from "electron";
 
 import { lockstepApi } from "./modes/sync/preload-api";
 import { glazierBridge } from "./modes/tidy/preload-api";
+import { createFrameViewApi } from "./modes/view/preload/frameViewApi";
 import { type Json, type OrielBridge, ShellChannels, ShellCommandSchema } from "./shared/shell";
 
 const oriel: OrielBridge = {
@@ -30,3 +31,22 @@ contextBridge.exposeInMainWorld("oriel", oriel);
 contextBridge.exposeInMainWorld("lockstep", lockstepApi);
 
 contextBridge.exposeInMainWorld("glazier", glazierBridge);
+
+contextBridge.exposeInMainWorld(
+  "frameView",
+  createFrameViewApi(
+    {
+      invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),
+      subscribe: (channel, listener) => {
+        const handler = (_event: IpcRendererEvent, payload: Json) => listener(payload);
+
+        ipcRenderer.on(channel, handler);
+
+        return () => {
+          ipcRenderer.removeListener(channel, handler);
+        };
+      },
+    },
+    (file) => webUtils.getPathForFile(file),
+  ),
+);

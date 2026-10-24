@@ -1,11 +1,10 @@
 import { useEffect, useEffectEvent, useRef } from "react";
-
-import type { AppSettings, ScanEvent, ThemeMode } from "../../shared/types";
+import { useModeActive } from "../../../../shell/shell";
+import type { AppSettings, ScanEvent } from "../../shared/types";
 import { frameViewClient } from "../services/frameViewClient";
 import { getRootGalleryPreferences } from "../utils/rootPreferences";
 
 interface UseAppBootstrapOptions {
-  settingsTheme: ThemeMode;
   initializeSettings: (settings: AppSettings) => void;
   setRecursive: (value: boolean) => void;
   applyScanEvent: (event: ScanEvent) => void;
@@ -25,16 +24,7 @@ interface UseAppBootstrapOptions {
   toggleSettingsAction: () => void;
 }
 
-function applyTheme(theme: ThemeMode): void {
-  const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-  const useDark = theme === "dark" || (theme === "system" && prefersDark);
-
-  document.documentElement.classList.toggle("dark", useDark);
-  document.body.classList.toggle("dark", useDark);
-}
-
 export function useAppBootstrap({
-  settingsTheme,
   initializeSettings,
   setRecursive,
   applyScanEvent,
@@ -117,7 +107,6 @@ export function useAppBootstrap({
       }
 
       initializeSettingsEvent(loadedSettings);
-      applyTheme(loadedSettings.theme);
 
       if (
         loadedSettings.rememberLastFolder &&
@@ -155,27 +144,13 @@ export function useAppBootstrap({
     };
   }, []);
 
-  useEffect(() => {
-    applyTheme(settingsTheme);
-  }, [settingsTheme]);
+  const modeActive = useModeActive();
 
   useEffect(() => {
-    if (settingsTheme !== "system") {
+    if (!modeActive) {
       return;
     }
 
-    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-
-    const onSchemeChange = (): void => {
-      applyTheme("system");
-    };
-
-    mediaQuery.addEventListener("change", onSchemeChange);
-
-    return () => mediaQuery.removeEventListener("change", onSchemeChange);
-  }, [settingsTheme]);
-
-  useEffect(() => {
     const onDragOver = (event: DragEvent): void => {
       event.preventDefault();
     };
@@ -205,7 +180,7 @@ export function useAppBootstrap({
       window.removeEventListener("dragover", onDragOver);
       window.removeEventListener("drop", onDrop);
     };
-  }, []);
+  }, [modeActive]);
 
   useEffect(() => {
     const unsubscribe = frameViewClient.onAppCommand((command) => {

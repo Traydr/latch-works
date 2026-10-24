@@ -3,7 +3,7 @@ import type { ZodType } from "zod";
 
 import { AppCommandSchema, type JsonValue, ScanEventSchema } from "../shared/contracts";
 import { deserializeIpcResult } from "../shared/ipc";
-import { InvokeIpcContracts } from "../shared/ipcContracts";
+import { InvokeIpcContracts, ViewChannels } from "../shared/ipcContracts";
 import type {
   AppCommand,
   AppSettingsPatch,
@@ -45,7 +45,7 @@ export function createFrameViewApi(
   const commandListeners = new Set<(command: AppCommand) => void>();
   const heldCommands: AppCommand[] = [];
 
-  transport.subscribe("app:command", (payload) => {
+  transport.subscribe(ViewChannels.command, (payload) => {
     const parsedPayload = AppCommandSchema.safeParse(payload);
 
     if (!parsedPayload.success) {
@@ -167,7 +167,7 @@ export function createFrameViewApi(
       };
     },
     onScanEvent: (listener: (event: ScanEvent) => void) =>
-      transport.subscribe("scan:event", (payload) => {
+      transport.subscribe(ViewChannels.scanEvent, (payload) => {
         const parsedPayload = ScanEventSchema.safeParse(payload);
 
         if (parsedPayload.success) {

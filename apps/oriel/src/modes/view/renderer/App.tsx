@@ -1,5 +1,6 @@
 import { type JSX, useCallback, useMemo, useState } from "react";
 
+import { ModeLayout } from "../../../shell/ModeLayout";
 import type { AppSettingsPatch, GallerySortMode } from "../shared/types";
 import { ComicReader } from "./components/ComicReader";
 import { SettingsDrawer } from "./components/SettingsDrawer";
@@ -157,7 +158,6 @@ function AppInner(): JSX.Element {
   });
 
   useAppBootstrap({
-    settingsTheme: settings.theme,
     initializeSettings,
     setRecursive,
     applyScanEvent,
@@ -342,10 +342,15 @@ function AppInner(): JSX.Element {
   );
 }
 
-export function App(): JSX.Element {
+/** View: Frame View, the local viewer, as one of Oriel's modes, beside the mode rail. */
+export function ViewMode(): JSX.Element {
   return (
-    <VideoMetadataQueueProvider>
-      <AppInner />
-    </VideoMetadataQueueProvider>
+    <ModeLayout>
+      <div className="mode-view flex min-h-0 flex-1 flex-col">
+        <VideoMetadataQueueProvider>
+          <AppInner />
+        </VideoMetadataQueueProvider>
+      </div>
+    </ModeLayout>
   );
 }

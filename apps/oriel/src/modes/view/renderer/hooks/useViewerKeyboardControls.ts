@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent } from "react";
-
+import { useModeActive } from "../../../../shell/shell";
 import { HOTKEYS, isPlainHotkeyEvent, isTextInputTarget, matchesAnyKey } from "../utils/hotkeys";
 import { VIDEO_SKIP_SECONDS } from "../utils/videoPlayback";
 import type { ViewerVideoModel } from "./useViewerVideoModel";
@@ -99,7 +99,13 @@ export function useViewerKeyboardControls({
     model.endHoldBoost();
   });
 
+  const modeActive = useModeActive();
+
   useEffect(() => {
+    if (!modeActive) {
+      return;
+    }
+
     const keyDownListener = (event: KeyboardEvent): void => handleKeyDown(event);
     const keyUpListener = (event: KeyboardEvent): void => handleKeyUp(event);
     const blurListener = (): void => releaseHeldSpeed();
@@ -113,5 +119,5 @@ export function useViewerKeyboardControls({
       window.removeEventListener("keyup", keyUpListener);
       window.removeEventListener("blur", blurListener);
     };
-  }, []);
+  }, [modeActive]);
 }

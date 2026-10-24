@@ -36,67 +36,81 @@ function defineInvokeContract<
 
 export const InvokeIpcContracts = {
   openFolderDialog: defineInvokeContract(
-    "dialog:open-folder",
+    "frame:dialog:open-folder",
     z.tuple([]),
     PathInputSchema.nullable(),
   ),
   resolveInputPath: defineInvokeContract(
-    "path:resolve-input",
+    "frame:path:resolve-input",
     z.tuple([PathInputSchema]),
     PathInputSchema.nullable(),
     PathInputSchema,
   ),
   authorizeDroppedPath: defineInvokeContract(
-    "path:authorize-dropped",
+    "frame:path:authorize-dropped",
     z.tuple([PathInputSchema]),
     PathInputSchema.nullable(),
     PathInputSchema,
   ),
   startScan: defineInvokeContract(
-    "scan:start",
+    "frame:scan:start",
     z.tuple([ScanOptionsSchema]),
     VoidSchema,
     ScanOptionsSchema,
   ),
-  cancelScan: defineInvokeContract("scan:cancel", z.tuple([]), VoidSchema),
+  cancelScan: defineInvokeContract("frame:scan:cancel", z.tuple([]), VoidSchema),
   listFolderChildren: defineInvokeContract(
-    "tree:list-children",
+    "frame:tree:list-children",
     z.tuple([PathInputSchema]),
     z.array(FolderNodeSchema),
     PathInputSchema,
   ),
-  getSettings: defineInvokeContract("settings:get", z.tuple([]), AppSettingsSchema),
+  getSettings: defineInvokeContract("frame:settings:get", z.tuple([]), AppSettingsSchema),
   updateSettings: defineInvokeContract(
-    "settings:update",
+    "frame:settings:update",
     z.tuple([AppSettingsPatchSchema]),
     AppSettingsSchema,
     AppSettingsPatchSchema,
   ),
   revealInFolder: defineInvokeContract(
-    "shell:reveal-in-folder",
+    "frame:shell:reveal-in-folder",
     z.tuple([PathInputSchema]),
     VoidSchema,
     PathInputSchema,
   ),
   probeVideoMetadata: defineInvokeContract(
-    "media:probe-video",
+    "frame:media:probe-video",
     z.tuple([VideoProbeRequestSchema]),
     VideoProbeMetadataSchema.nullable(),
     VideoProbeRequestSchema,
   ),
-  clearThumbnailCache: defineInvokeContract("cache:clear-thumbnails", z.tuple([]), VoidSchema),
-  getMediaIndexStats: defineInvokeContract("index:get-stats", z.tuple([]), MediaIndexStatsSchema),
-  clearMediaIndex: defineInvokeContract("index:clear", z.tuple([]), VoidSchema),
+  clearThumbnailCache: defineInvokeContract(
+    "frame:cache:clear-thumbnails",
+    z.tuple([]),
+    VoidSchema,
+  ),
+  getMediaIndexStats: defineInvokeContract(
+    "frame:index:get-stats",
+    z.tuple([]),
+    MediaIndexStatsSchema,
+  ),
+  clearMediaIndex: defineInvokeContract("frame:index:clear", z.tuple([]), VoidSchema),
   getMediaToolsStatus: defineInvokeContract(
-    "media-tools:get-status",
+    "frame:media-tools:get-status",
     z.tuple([]),
     MediaToolsStatusSchema,
   ),
   getDiagnosticsSnapshot: defineInvokeContract(
-    "debug:get-diagnostics",
+    "frame:debug:get-diagnostics",
     z.tuple([]),
     DiagnosticsSnapshotSchema,
   ),
 } as const;
 
 export const InvokeIpcContractList = Object.values(InvokeIpcContracts);
+
+/** View's main → window channels, beside its invoke contracts. */
+export const ViewChannels = {
+  command: "frame:command",
+  scanEvent: "frame:scan-event",
+} as const;

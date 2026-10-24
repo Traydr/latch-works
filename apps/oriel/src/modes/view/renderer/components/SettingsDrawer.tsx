@@ -1,5 +1,5 @@
 import { type JSX, useEffect, useEffectEvent, useRef, useState } from "react";
-
+import { useModeActive } from "../../../../shell/shell";
 import type {
   AppSettings,
   AppSettingsPatch,
@@ -63,7 +63,13 @@ export function SettingsDrawer({
     bodyRef.current?.scrollTo({ top: 0 });
   }, [activeTab]);
 
+  const modeActive = useModeActive();
+
   useEffect(() => {
+    if (!modeActive) {
+      return;
+    }
+
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     closeButtonRef.current?.focus();
 
@@ -80,7 +86,7 @@ export function SettingsDrawer({
       window.removeEventListener("keydown", onKeyDown);
       previous?.focus();
     };
-  }, []);
+  }, [modeActive]);
 
   return (
     <div className="fixed inset-0 z-40 flex items-start justify-center bg-black/35 pt-[7vh] backdrop-blur-sm">

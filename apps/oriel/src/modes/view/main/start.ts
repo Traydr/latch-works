@@ -1,16 +1,17 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { Result, type Result as ResultType } from "better-result";
-import { config as loadEnv } from "dotenv";
-import { setLatchWorksDataFolder } from "@latch-works/app-data";
-import { app, BrowserWindow, protocol } from "electron";
-import started from "electron-squirrel-startup";
 
-import { CatalogService } from "./main/catalog/CatalogService";
-import { ScanQueue } from "./main/catalog/ScanQueue";
-import { createElectronIpcRuntime, registerIpc } from "./main/ipc/registerIpc";
-import { buildAppMenu } from "./main/menu";
-import { resolveFolderPath } from "./main/services/folderService";
+import { Result } from "better-result";
+import type { BrowserWindow, CustomScheme } from "electron";
+
+import type { ModeContext, ModeHost } from "../../../main/mode";
+import { ViewChannels } from "../shared/ipcContracts";
+import type { AppCommand } from "../shared/types";
+import { CatalogService } from "./catalog/CatalogService";
+import { ScanQueue } from "./catalog/ScanQueue";
+import { createElectronIpcRuntime, registerIpc } from "./ipc/registerIpc";
+import { viewMenu } from "./menu";
+import { resolveFolderPath } from "./services/folderService";
 import {
   authorizeRememberedMediaRoot,
   grantChosenMediaRoot,
@@ -18,97 +19,24 @@ import {
   registerMediaProtocol,
   setThumbnailDebugOptions,
   shutdownThumbnailService,
-} from "./main/services/mediaProtocol";
-import { MediaToolsService } from "./main/services/mediaToolsService";
-import { SettingsService } from "./main/services/settingsService";
-import { persistWindowState } from "./main/services/windowStatePersistence";
-import { createMainWindowCloseHandler } from "./main/windowLifecycle";
-import type { AppCommand } from "./shared/types";
+} from "./services/mediaProtocol";
+import { MediaToolsService } from "./services/mediaToolsService";
+import { SettingsService } from "./services/settingsService";
 
-loadEnv();
-
-if (["1", "true", "yes"].includes((process.env.FRAME_VIEW_DISABLE_GPU ?? "").toLowerCase())) {
-  app.disableHardwareAcceleration();
-}
-
-if (started) {
-  app.quit();
-}
-
-// Settings, the media index and thumbnails live in ~/.latch-works/frame-view, with the other
-// apps' data; before the single-instance lock, which keys on this folder.
-setLatchWorksDataFolder(app, { folder: "frame-view" });
-
-protocol.registerSchemesAsPrivileged([
-  {
-    scheme: MEDIA_PROTOCOL_SCHEME,
-    privileges: {
-      standard: true,
-      secure: true,
-      supportFetchAPI: true,
-      corsEnabled: true,
-      stream: true,
-    },
+/** View's scheme, for the shell's one `registerSchemesAsPrivileged` call before the app is ready. */
+export const VIEW_MEDIA_SCHEME = {
+  scheme: MEDIA_PROTOCOL_SCHEME,
+  privileges: {
+    standard: true,
+    secure: true,
+    supportFetchAPI: true,
+    corsEnabled: true,
+    stream: true,
   },
-]);
+} as const satisfies CustomScheme;
 
-let mainWindow: BrowserWindow | null = null;
-
-let quitRequested = false;
-
-let settingsService: SettingsService;
-
-let catalogService: CatalogService;
-
-let scanQueue: ScanQueue;
-
-let mediaToolsService: MediaToolsService;
-
-const pendingCommands: AppCommand[] = [];
-
-function resolveWindowIconPath(fileName: string): string | undefined {
-  const candidates = [
-    path.join(app.getAppPath(), "media", fileName),
-    path.join(process.resourcesPath, "media", fileName),
-  ];
-
-  return candidates.find((candidate) => existsSync(candidate));
-}
-
-function logResultError<T, E extends { message: string }>(
-  operation: string,
-  result: ResultType<T, E>,
-): void {
-  if (Result.isError(result)) {
-    console.error(`[${operation}] ${result.error.message}`);
-  }
-}
-
-function queueOrSendCommand(command: AppCommand): void {
-  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isLoadingMainFrame()) {
-    pendingCommands.push(command);
-
-    return;
-  }
-
-  mainWindow.webContents.send("app:command", command);
-}
-
-function flushPendingCommands(): void {
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    return;
-  }
-
-  while (pendingCommands.length) {
-    const command = pendingCommands.shift();
-
-    if (command) {
-      mainWindow.webContents.send("app:command", command);
-    }
-  }
-}
-
-function extractLaunchPathFromArgv(argv: string[]): string | null {
+/** The first argument that names an existing file or folder, skipping flags and the executable. */
+export function extractLaunchPathFromArgv(argv: readonly string[]): string | null {
   const executablePath = path.resolve(process.execPath);
 
   for (const arg of argv) {
@@ -118,11 +46,7 @@ function extractLaunchPathFromArgv(argv: string[]): string | null {
 
     const resolvedArg = path.resolve(arg);
 
-    if (resolvedArg === executablePath) {
-      continue;
-    }
-
-    if (existsSync(resolvedArg)) {
+    if (resolvedArg !== executablePath && existsSync(resolvedArg)) {
       return resolvedArg;
     }
   }
@@ -130,260 +54,116 @@ function extractLaunchPathFromArgv(argv: string[]): string | null {
   return null;
 }
 
+interface ViewHost extends ModeHost {
+  /**
+   * Opens a path the OS handed the app (launch argv, a second launch, macOS `open-file`). Like
+   * the native dialog, this is the owner's choice, so View authorizes the folder itself (a file's
+   * parent folder) before asking the window to scan it. Paths open in the order given.
+   */
+  openPath(candidatePath: string): void;
+  /** Sends the commands held for the window once it has loaded. */
+  attachWindow(window: BrowserWindow): void;
+}
+
 /**
- * Opens a path the OS handed the app (launch argv, a second launch, macOS `open-file`). Like the
- * native dialog, this is the user's choice, so the main process authorizes the folder itself (a
- * file's parent folder) before asking the renderer to scan it.
+ * Starts View, Frame View as one of Oriel's modes: its settings, catalog and scan queue, IPC and
+ * media protocol. The catalog and thumbnail workers start with the first scan and thumbnail.
  */
-async function openLaunchPathNow(candidatePath: string): Promise<void> {
-  const resolvedPath = await resolveFolderPath(candidatePath);
+export async function startView({ dataDir, window }: ModeContext): Promise<ViewHost> {
+  const mediaToolsService = new MediaToolsService();
 
-  if (Result.isError(resolvedPath)) {
-    logResultError("launch-path:resolve", resolvedPath);
+  // The media index and the thumbnail cache both stay in Frame View's folder.
+  registerMediaProtocol(dataDir, dataDir);
 
-    return;
-  }
+  const settingsService = new SettingsService(dataDir);
+  const initResult = await settingsService.init();
 
-  if (!resolvedPath.value) {
-    return;
-  }
-
-  await grantChosenMediaRoot(resolvedPath.value);
-  queueOrSendCommand({ type: "scan-path", path: resolvedPath.value });
-}
-
-let launchPathsOpened = Promise.resolve();
-
-/** Opens OS-handed paths one after another, so their scans are asked for in the order given. */
-function openLaunchPath(candidatePath: string): void {
-  launchPathsOpened = launchPathsOpened.then(() => openLaunchPathNow(candidatePath));
-}
-
-async function createWindow(): Promise<void> {
-  if (!mediaToolsService) {
-    mediaToolsService = new MediaToolsService();
-  }
-
-  const windowIconPath = resolveWindowIconPath("frame-view-icon.png");
-
-  if (!settingsService) {
-    settingsService = new SettingsService(app.getPath("userData"));
-    const initResult = await settingsService.init();
-
-    if (Result.isError(initResult)) {
-      logResultError("settings:init", initResult);
-    }
+  if (Result.isError(initResult)) {
+    console.error(`[oriel:view] settings: ${initResult.error.message}`);
   }
 
   const settings = settingsService.getSettings();
   await authorizeRememberedMediaRoot(settings);
   setThumbnailDebugOptions(settings.debug);
 
-  if (!catalogService) {
-    catalogService = new CatalogService(app.getPath("userData"), (event) => {
-      // Once a newer request is queued, the running scan is being cancelled and what it still
-      // reports is stale: only the newest request's scan reaches the renderer.
-      if (!mainWindow || mainWindow.isDestroyed() || !scanQueue.isRunningLatest()) {
-        return;
-      }
+  const catalogService: CatalogService = new CatalogService(dataDir, (event) => {
+    const target = window();
 
-      mainWindow.webContents.send("scan:event", event);
-    });
-    // A failed cancel or wait means the catalog worker exited, so no scan is running either way.
-    scanQueue = new ScanQueue({
-      cancelScan: async () => {
-        await catalogService.cancelScan();
-      },
-      waitForScan: async () => {
-        await catalogService.waitForScan();
-      },
-    });
-  }
+    // Once a newer request is queued, the running scan is being cancelled and what it still
+    // reports is stale: only the newest request's scan reaches the window.
+    if (!target || target.isDestroyed() || !scanQueue.isRunningLatest()) {
+      return;
+    }
 
-  const savedBounds = settingsService.getWindowBounds();
-  const savedMaximized = settingsService.getWindowMaximized();
+    target.webContents.send(ViewChannels.scanEvent, event);
+  });
 
-  mainWindow = new BrowserWindow({
-    width: savedBounds?.width ?? 1320,
-    height: savedBounds?.height ?? 820,
-    x: savedBounds?.x,
-    y: savedBounds?.y,
-    minWidth: 980,
-    minHeight: 640,
-    autoHideMenuBar: true,
-    icon: windowIconPath,
-    title: "Frame View",
-    webPreferences: {
-      preload: path.join(__dirname, "preload.cjs"),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
+  // A failed cancel or wait means the catalog worker exited, so no scan is running either way.
+  const scanQueue = new ScanQueue({
+    cancelScan: async () => {
+      await catalogService.cancelScan();
+    },
+    waitForScan: async () => {
+      await catalogService.waitForScan();
     },
   });
 
   registerIpc(
-    createElectronIpcRuntime(mainWindow),
+    createElectronIpcRuntime(window),
     settingsService,
     catalogService,
     mediaToolsService,
     scanQueue,
   );
 
-  // Registered before the first load: commands queued at a cold start (a launch path) are sent
-  // when it finishes, and awaiting the load first would miss that event.
-  mainWindow.webContents.on("did-finish-load", flushPendingCommands);
+  const pendingCommands: AppCommand[] = [];
 
-  if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
-    await mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
-    mainWindow.webContents.openDevTools({ mode: "detach" });
-  } else {
-    await mainWindow.loadFile(
-      path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`),
-    );
-  }
+  /** Sends a command, or holds it until the window's page has loaded (a cold start's launch path). */
+  const sendCommand = (command: AppCommand): void => {
+    const target = window();
 
-  let boundsPersistTimer: NodeJS.Timeout | null = null;
-
-  const persistWindowBounds = (immediate = false): void => {
-    if (!mainWindow || mainWindow.isDestroyed()) {
-      return;
-    }
-
-    const saveBounds = async (): Promise<void> => {
-      if (!mainWindow || mainWindow.isDestroyed()) {
-        return Promise.resolve();
-      }
-
-      const { boundsResult } = await persistWindowState(mainWindow, settingsService, {
-        immediate,
-      });
-
-      if (boundsResult && Result.isError(boundsResult)) {
-        logResultError("settings:update-window-bounds", boundsResult);
-      }
-    };
-
-    if (immediate) {
-      if (boundsPersistTimer) {
-        clearTimeout(boundsPersistTimer);
-        boundsPersistTimer = null;
-      }
-
-      void saveBounds();
+    if (!target || target.isDestroyed() || target.webContents.isLoadingMainFrame()) {
+      pendingCommands.push(command);
 
       return;
     }
 
-    if (boundsPersistTimer) {
-      clearTimeout(boundsPersistTimer);
-    }
-
-    boundsPersistTimer = setTimeout(() => {
-      boundsPersistTimer = null;
-      saveBounds();
-    }, 250);
+    target.webContents.send(ViewChannels.command, command);
   };
 
-  const persistWindowMaximized = (): void => {
-    if (!mainWindow || mainWindow.isDestroyed()) {
-      return;
-    }
+  let pathsOpened = Promise.resolve();
 
-    void persistWindowState(mainWindow, settingsService).then(({ maximizedResult }) => {
-      if (maximizedResult && Result.isError(maximizedResult)) {
-        logResultError("settings:update-window-maximized", maximizedResult);
-      }
-    });
-  };
-
-  if (savedMaximized) {
-    mainWindow.maximize();
-  }
-
-  mainWindow.on("resize", () => persistWindowBounds(false));
-  mainWindow.on("move", () => persistWindowBounds(false));
-  mainWindow.on("maximize", persistWindowMaximized);
-  mainWindow.on("unmaximize", persistWindowMaximized);
-  mainWindow.on(
-    "close",
-    createMainWindowCloseHandler(
-      mainWindow,
-      settingsService,
-      (operation, message) => {
-        console.error(`[${operation}] ${message}`);
-      },
-      // The close handler's preventDefault aborts an in-flight quit, so once state is
-      // persisted and the window destroyed, the quit has to be re-issued.
-      () => {
-        if (quitRequested) {
-          app.quit();
+  return {
+    busy: () => false,
+    menu: viewMenu(sendCommand),
+    attachWindow: (target) => {
+      target.webContents.on("did-finish-load", () => {
+        for (const command of pendingCommands.splice(0)) {
+          target.webContents.send(ViewChannels.command, command);
         }
-      },
-    ),
-  );
-  mainWindow.on("closed", () => {
-    mainWindow = null;
-  });
+      });
+    },
+    openPath: (candidatePath) => {
+      pathsOpened = pathsOpened.then(async () => {
+        const resolvedPath = await resolveFolderPath(candidatePath);
+
+        if (Result.isError(resolvedPath)) {
+          console.error(`[oriel:view] launch path: ${resolvedPath.error.message}`);
+
+          return;
+        }
+
+        if (!resolvedPath.value) {
+          return;
+        }
+
+        await grantChosenMediaRoot(resolvedPath.value);
+        sendCommand({ type: "scan-path", path: resolvedPath.value });
+      });
+    },
+    dispose: () => {
+      catalogService.shutdown();
+      shutdownThumbnailService();
+    },
+  };
 }
-
-app.on("ready", () => {
-  mediaToolsService = new MediaToolsService();
-  registerMediaProtocol(app.getPath("userData"), app.getPath("sessionData"));
-  buildAppMenu(queueOrSendCommand);
-
-  if (app.isPackaged) {
-    const launchPath = extractLaunchPathFromArgv(process.argv.slice(1));
-
-    if (launchPath) {
-      openLaunchPath(launchPath);
-    }
-  }
-
-  void createWindow();
-});
-
-const hasSingleInstanceLock = app.requestSingleInstanceLock();
-
-if (!hasSingleInstanceLock) {
-  app.quit();
-}
-
-app.on("second-instance", (_event, argv) => {
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    return;
-  }
-
-  if (mainWindow.isMinimized()) {
-    mainWindow.restore();
-  }
-
-  mainWindow.focus();
-  const launchPath = extractLaunchPathFromArgv(argv.slice(1));
-
-  if (launchPath) {
-    openLaunchPath(launchPath);
-  }
-});
-
-app.on("open-file", (event, filePath) => {
-  event.preventDefault();
-  openLaunchPath(filePath);
-});
-
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
-    app.quit();
-  }
-});
-
-app.on("before-quit", () => {
-  quitRequested = true;
-  catalogService?.shutdown();
-  shutdownThumbnailService();
-});
-
-app.on("activate", () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    void createWindow();
-  }
-});

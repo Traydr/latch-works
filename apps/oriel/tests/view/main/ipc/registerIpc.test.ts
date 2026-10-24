@@ -4,25 +4,25 @@ import path from "node:path";
 import { Result } from "better-result";
 import { describe, expect, it, vi } from "vitest";
 
-import { ScanQueue } from "../../../src/main/catalog/ScanQueue";
-import { WorkerError } from "../../../src/main/errors";
+import { ScanQueue } from "../../../../src/modes/view/main/catalog/ScanQueue";
+import { WorkerError } from "../../../../src/modes/view/main/errors";
 import {
   type IpcCatalogService,
   type IpcMediaToolsService,
   type IpcRuntime,
   type IpcSettingsService,
   registerIpc,
-} from "../../../src/main/ipc/registerIpc";
-import { resolveFolderPath as resolveRealFolderPath } from "../../../src/main/services/folderService";
+} from "../../../../src/modes/view/main/ipc/registerIpc";
+import { resolveFolderPath as resolveRealFolderPath } from "../../../../src/modes/view/main/services/folderService";
 import {
   claimChosenMediaRoot as claimRealChosenMediaRoot,
   grantChosenMediaRoot as grantRealChosenMediaRoot,
   isAuthorizedMediaPath as isRealAuthorizedMediaPath,
   shrinkAuthorizedMediaRootsTo as shrinkRealAuthorizedMediaRootsTo,
-} from "../../../src/main/services/mediaProtocol";
-import { SettingsService } from "../../../src/main/services/settingsService";
-import type { AppSettingsPatch } from "../../../src/shared/types";
-import { DEFAULT_SETTINGS } from "../../../src/shared/types";
+} from "../../../../src/modes/view/main/services/mediaProtocol";
+import { SettingsService } from "../../../../src/modes/view/main/services/settingsService";
+import type { AppSettingsPatch } from "../../../../src/modes/view/shared/types";
+import { DEFAULT_SETTINGS } from "../../../../src/modes/view/shared/types";
 
 type RegisteredHandler = Parameters<IpcRuntime["handle"]>[1];
 
@@ -152,7 +152,7 @@ describe("registerIpc", () => {
   it("returns a validation error and emits a scan error for invalid scan options", async () => {
     const { handlers, sendScanEvent } = setup();
 
-    const response = await handlers.get("scan:start")?.({ rootPath: "" });
+    const response = await handlers.get("frame:scan:start")?.({ rootPath: "" });
 
     expect(response?.status).toBe("error");
     expect(response?.status === "error" ? response.error._tag : null).toBe("ValidationError");
@@ -165,7 +165,7 @@ describe("registerIpc", () => {
   it("forwards settings patches without injecting keys the renderer did not send", async () => {
     const { handlers, settingsService } = setup();
 
-    const response = await handlers.get("settings:update")?.({ sortMode: "random" });
+    const response = await handlers.get("frame:settings:update")?.({ sortMode: "random" });
 
     expect(response?.status).toBe("ok");
     expect(settingsService.updateSettings).toHaveBeenCalledTimes(1);
@@ -189,7 +189,7 @@ describe("registerIpc", () => {
     });
     resolveFolderPath.mockResolvedValue(Result.ok("C:\\resolved"));
 
-    await handlers.get("dialog:open-folder")?.();
+    await handlers.get("frame:dialog:open-folder")?.();
 
     expect(grantChosenMediaRoot).toHaveBeenCalledWith("C:\\resolved");
     expect(settingsService.updateSettings).toHaveBeenCalledWith({
@@ -203,7 +203,7 @@ describe("registerIpc", () => {
     resolveFolderPath.mockResolvedValue(Result.ok("C:\\blocked"));
     isAuthorizedMediaPath.mockResolvedValue(false);
 
-    const response = await handlers.get("tree:list-children")?.("C:\\blocked");
+    const response = await handlers.get("frame:tree:list-children")?.("C:\\blocked");
 
     expect(response?.status).toBe("error");
     expect(response?.status === "error" ? response.error._tag : null).toBe("ValidationError");
@@ -219,7 +219,7 @@ describe("registerIpc", () => {
       Result.ok([{ path: "C:\\authorized\\child", name: "child", hasChildren: false }]),
     );
 
-    const response = await handlers.get("tree:list-children")?.("C:\\authorized");
+    const response = await handlers.get("frame:tree:list-children")?.("C:\\authorized");
 
     expect(response?.status).toBe("ok");
     expect(listFolderChildren).toHaveBeenCalledWith("C:\\authorized");
@@ -230,7 +230,7 @@ describe("registerIpc", () => {
 
     isAuthorizedMediaPath.mockResolvedValue(false);
 
-    const response = await handlers.get("shell:reveal-in-folder")?.("C:\\blocked\\file.jpg");
+    const response = await handlers.get("frame:shell:reveal-in-folder")?.("C:\\blocked\\file.jpg");
 
     expect(response?.status).toBe("error");
     expect(response?.status === "error" ? response.error._tag : null).toBe("ValidationError");
@@ -250,7 +250,7 @@ describe("registerIpc", () => {
     resolveFolderPath.mockResolvedValue(Result.ok("C:\\untrusted"));
     isAuthorizedMediaPath.mockResolvedValue(false);
 
-    const response = await handlers.get("scan:start")?.({
+    const response = await handlers.get("frame:scan:start")?.({
       rootPath: "C:\\untrusted",
       recursive: false,
       filters: DEFAULT_SETTINGS.filters,
@@ -282,14 +282,14 @@ describe("registerIpc", () => {
       settingsService: new SettingsService(tempRoot),
     });
 
-    const update = await handlers.get("settings:update")?.({
+    const update = await handlers.get("frame:settings:update")?.({
       rememberLastFolder: true,
       lastFolderPath: unchosen,
     });
 
     expect(update?.status).toBe("error");
 
-    const response = await handlers.get("scan:start")?.({
+    const response = await handlers.get("frame:scan:start")?.({
       rootPath: unchosen,
       recursive: false,
       filters: DEFAULT_SETTINGS.filters,
@@ -322,7 +322,7 @@ describe("registerIpc", () => {
       ),
     );
 
-    const response = await handlers.get("scan:start")?.({
+    const response = await handlers.get("frame:scan:start")?.({
       rootPath: "C:\\resolved",
       recursive: false,
       filters: DEFAULT_SETTINGS.filters,
@@ -358,7 +358,7 @@ describe("registerIpc", () => {
     isAuthorizedMediaPath.mockImplementation(async (folderPath) => folderPath !== "/opened");
 
     const scanFolder = (rootPath: string) =>
-      handlers.get("scan:start")?.({
+      handlers.get("frame:scan:start")?.({
         rootPath,
         recursive: false,
         filters: DEFAULT_SETTINGS.filters,
@@ -417,14 +417,14 @@ describe("registerIpc", () => {
     });
 
     const scanFolder = (rootPath: string) =>
-      handlers.get("scan:start")?.({
+      handlers.get("frame:scan:start")?.({
         rootPath,
         recursive: false,
         filters: DEFAULT_SETTINGS.filters,
       });
 
     showOpenFolderDialog.mockResolvedValue({ canceled: false, filePaths: [picked] });
-    await handlers.get("dialog:open-folder")?.();
+    await handlers.get("frame:dialog:open-folder")?.();
     // Milliseconds later the OS opens another folder (what `openLaunchPath` does), and its scan
     // request reaches the main process first, shrinking the roots to that folder.
     await grantRealChosenMediaRoot(opened);

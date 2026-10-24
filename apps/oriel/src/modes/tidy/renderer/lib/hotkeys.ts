@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useModeActive } from "../../../../shell/shell";
 
 /** Keys typed into a field belong to the field, not to the view. */
 export function isTextInputTarget(target: EventTarget | null): boolean {
@@ -33,11 +34,14 @@ function isModalOpen(): boolean {
  */
 export function useViewKeys(handler: (event: KeyboardEvent) => boolean, active = true): void {
   const latest = useRef(handler);
+  // Tidy stays mounted while another mode shows; its keys are off then.
+  const modeActive = useModeActive();
+  const on = active && modeActive;
 
   latest.current = handler;
 
   useEffect(() => {
-    if (!active) {
+    if (!on) {
       return;
     }
 
@@ -54,7 +58,7 @@ export function useViewKeys(handler: (event: KeyboardEvent) => boolean, active =
     window.addEventListener("keydown", listener);
 
     return () => window.removeEventListener("keydown", listener);
-  }, [active]);
+  }, [on]);
 }
 
 /** The current time, refreshed every `intervalMs` while `active`, for "3 min ago" labels. */

@@ -6,7 +6,6 @@ import type {
   AppCommandSchema,
   AppSettingsPatchSchema,
   AppSettingsSchema,
-  DebugSettingsSchema,
   DiagnosticsSnapshotSchema,
   FileFilterSettingsSchema,
   FolderNodeSchema,
@@ -15,30 +14,19 @@ import type {
   MediaIndexStatsSchema,
   MediaItemSchema,
   MediaToolsStatusSchema,
-  MediaTypeSchema,
-  RootGalleryPreferencesMapSchema,
   RootGalleryPreferencesSchema,
   ScanEventSchema,
   ScanOptionsSchema,
   StoredSettingsPatchSchema,
-  ThemeModeSchema,
   VideoProbeMetadataSchema,
   VideoProbeRequestSchema,
 } from "./contracts";
-
-export type MediaType = z.infer<typeof MediaTypeSchema>;
-
-export type ThemeMode = z.infer<typeof ThemeModeSchema>;
 
 export type GallerySortMode = z.infer<typeof GallerySortModeSchema>;
 
 export type FileFilterSettings = z.infer<typeof FileFilterSettingsSchema>;
 
-export type DebugSettings = z.infer<typeof DebugSettingsSchema>;
-
 export type RootGalleryPreferences = z.infer<typeof RootGalleryPreferencesSchema>;
-
-export type RootGalleryPreferencesMap = z.infer<typeof RootGalleryPreferencesMapSchema>;
 
 export type AppSettings = z.infer<typeof AppSettingsSchema>;
 

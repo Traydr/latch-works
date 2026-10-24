@@ -15,8 +15,8 @@
 
 ## Status
 
-- **Status**: IN PROGRESS (Phases 1–3 on `agent/059-1-shell`, `agent/059-2-sync` and
-  `agent/059-3-tidy`, stacked, 2026-10-24)
+- **Status**: IN PROGRESS (Phases 1–4 on `agent/059-1-shell`, `agent/059-2-sync`,
+  `agent/059-3-tidy` and `agent/059-4-view`, stacked, 2026-10-24)
 - **Priority**: P2 (the owner asked for it)
 - **Effort**: XL overall, as ten stacked PRs of S–L each
 - **Risk**: MEDIUM to HIGH. It touches every desktop app's process model. The data migration
@@ -52,8 +52,8 @@ Glazier just tidied, or sync it from where you are.
    stay in history and in the CLI (`lockstep`).
 2. **Closing the window quits** (D3), unless a sync push or a Glazier change is running. Then the
    window hides, the Dock icon shows progress, and the app quits when the work ends.
-3. **Modes keep their state** when you switch away (D4). Hidden modes stay mounted under React
-   19's `<Activity mode="hidden">`.
+3. **Modes keep their state** when you switch away (D4). Hidden modes stay mounted and keep
+   running, hidden and inert (Phase 4 explains why not `<Activity>`).
 4. **The app replaces the old apps and migrates as much of their data as it can** (D5). That
    covers catalogs and settings (already in place), saved sync tokens, renderer preferences,
    window size and the folder lists. Then it offers, with one confirmation, to remove the old
@@ -122,8 +122,9 @@ apps/oriel/                          productName "Oriel"
   active.
 - `busy()` feeds settled decision 2.
 
-Each mode's renderer exports one root component. It is mounted under `<ModeFrame mode="…">`,
-which provides `useModeActive()` and the `Activity` boundary.
+Each mode's renderer exports one root component. It is mounted under a `ModeFrame`, which hides
+it, makes it inert and pauses its media while another mode shows, and provides
+`useModeActive()`.
 
 **Process start.** A mode's heavy processes start the first time that mode opens, not at launch.
 That means Frame View's catalog and thumbnail utility processes, and Glazier's engine, AVIF pool
@@ -202,6 +203,24 @@ and the renderer. Its menu becomes `menu()`, with view shortcuts on ⌥⌘1–7.
 renderer its own Vite `cacheDir`, as 058 item 8 found necessary. Retarget `e2e/tests/glazier`.
 
 ### Phase 4: move Frame View in as View (L)
+
+Done on `agent/059-4-view`, as a rename-only commit, a formatting commit, and the wiring.
+
+- **Hidden modes stay live.** `<Activity>` turned out wrong for these apps (decision 3 is kept;
+  only the mechanism changed). Activity tears down a hidden mode's effects. That would have
+  cancelled View's scan and dropped its scan events on every switch away, and rescanned on every
+  return; Sync and Tidy would have missed run and job events in the same way. Every opened mode
+  now stays mounted, hidden and inert, with its effects running.
+  - Window-level keys and drops attach only while `useModeActive()` is true.
+  - The viewer and the comic reader are modal only then.
+  - The shell pauses a hidden mode's media.
+- **The shell remembers the window** in `~/.latch-works/oriel/window-state.json`. Frame View's own
+  window persistence went; Phase 5 seeds the shell's file from it.
+- **Icon.** Oriel uses Frame View's artwork as its icon until Phase 10.
+- **Dropped.** Frame View's showcase preview, and `drizzle-kit`, which had no migrations in the
+  repository: the media index creates its tables itself.
+- **Lint.** Frame View's two lint exceptions (`useExhaustiveDependencies` and `useMediaCaption`)
+  carry over as a Biome override for `src/modes/view`.
 
 1. Prefix its channels with `frame:` and route launch, `open-file` and second-instance paths to
    View.
@@ -392,12 +411,11 @@ short, skippable welcome:
   either platform (Electron may have moved OSCrypt on). In that case ship the migration without
   tokens: every profile gets the clear "enter your token" state. A token the doctor has not
   accepted is never saved, and a garbled token is never sent.
-- **Hidden modes under `Activity`.** Effects are torn down while a mode is hidden, so its IPC
-  listeners stop too. Each mode must re-read its state when shown: Frame View's scan state,
-  Lockstep's run status (`lockstep:get-run-status` exists), Glazier's engine snapshot. Frame
-  View's virtual grid must measure again when shown, having been hidden at zero size. STOP if
-  either cannot be made right. The fallback is unmounting hidden modes and keeping their state in
-  main.
+- **Hidden modes stay live** (Phase 4). A hidden mode keeps its subscriptions, so its state stays
+  right. The cost is that every listener it puts on the whole window (keys, drops) must attach
+  only while `useModeActive()` is true. A new one that does not will act in another mode; check
+  for `window.addEventListener` in review. A modal dialog must likewise be modal only while its
+  mode shows, or it makes every other mode inert.
 - **Hardware encoders.** STOP if Tidy's transcoder reports no hardware encoders in the merged app
   while standalone Glazier did. The GPU must stay on.
 - **Removing the old apps.** Only bundles in `/Applications` and `~/Applications`, or the old

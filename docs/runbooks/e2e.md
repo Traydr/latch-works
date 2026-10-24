@@ -20,7 +20,7 @@ the compose defaults apply.
 ```bash
 pnpm --filter @latch-works/e2e fixture   # render e2e/.fixtures/archive from the manifest (once)
 pnpm e2e:pane                            # Pane View, seeded through the Lockstep CLI
-pnpm e2e:frame                           # Frame View, through Playwright's Electron driver
+pnpm e2e:frame                           # Oriel's View mode, through Playwright's Electron driver
 pnpm e2e:lockstep                        # Oriel's Sync mode, pushing into the Pane View server
 pnpm e2e:glazier                         # Oriel's Tidy mode, over an archive it builds (no server)
 pnpm e2e:oriel                           # Oriel's shell: the modes and the menu (no server)
@@ -63,9 +63,10 @@ one, but the PDF viewer `fetch`es the signed original, which rustfs refuses with
 
 ## What the Frame View project covers
 
-`tests/frame-view/build.setup.ts` runs `electron-forge package` (about ten seconds; the only
-supported way to get a production `.vite/build`, skip with `E2E_SKIP_BUILD=1`). Each test launches
-the build with Playwright's `_electron` driver on a fresh userData directory and replaces
+The specs drive View, Frame View as one of Oriel's modes. The `oriel-setup` project runs
+`electron-forge package` for Oriel (the only supported way to get a production `.vite/build`;
+skip with `E2E_SKIP_BUILD=1`). Each test launches the build with Playwright's `_electron` driver
+on a fresh userData directory and replaces
 `dialog.showOpenDialog` from the main process, so "Open" lands on a fixture folder without a
 native picker. `ELECTRON_RUN_AS_NODE` is stripped from the child environment; with it set, the
 Electron binary starts as plain Node and Playwright reports "Process failed to launch".
@@ -97,7 +98,8 @@ iterating (the server is still started or reused).
 
 `tests/oriel/build.setup.ts` packages Oriel (skip with `E2E_SKIP_BUILD=1`). `shell.spec.ts`
 switches modes from the switcher and from the View menu (whose check mark follows the mode), and
-relaunches on the same userData to check Oriel reopens in the mode it showed last. The project
+relaunches on the same userData to check Oriel reopens in the mode it showed last, and opens a
+folder in View, switches to Tidy and back, and checks the gallery is still there. The project
 needs no compose stack.
 
 ## What the Glazier project covers

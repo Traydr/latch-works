@@ -1,5 +1,5 @@
 import { type JSX, useCallback, useEffect, useRef } from "react";
-
+import { useModeActive } from "../../../../shell/shell";
 import type { MediaItem } from "../../shared/types";
 import { useCoarsePointer } from "../hooks/useCoarsePointer";
 import { useViewerChromeIdle } from "../hooks/useViewerChromeIdle";
@@ -79,13 +79,20 @@ function ViewerDialog({
   });
 
   const hold = useHoldToBoost(model);
+  const modeActive = useModeActive();
 
+  // Modal only while View shows: a modal dialog in a hidden mode would make the rest inert.
   useEffect(() => {
     const dialog = modalRef.current;
+
+    if (!modeActive) {
+      return;
+    }
+
     dialog?.showModal();
 
     return () => dialog?.close();
-  }, []);
+  }, [modeActive]);
 
   const queueStep = useCallback(
     (delta: number): void => {

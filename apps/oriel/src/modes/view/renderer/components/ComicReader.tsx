@@ -1,6 +1,6 @@
 import { ArrowUp, FolderOpen, X } from "lucide-react";
 import { type JSX, useEffect, useRef, useState } from "react";
-
+import { useModeActive } from "../../../../shell/shell";
 import { useViewerChromeIdle } from "../hooks/useViewerChromeIdle";
 import type { ComicEntry } from "../utils/comics";
 import { HOTKEYS, isPlainHotkeyEvent, matchesAnyKey } from "../utils/hotkeys";
@@ -18,13 +18,20 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
   const currentPageIndexRef = useRef(0);
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
   const { chromeVisible, revealChrome, chromeVisibilityClass } = useViewerChromeIdle();
+  const modeActive = useModeActive();
 
+  // Modal only while View shows: a modal dialog in a hidden mode would make the rest inert.
   useEffect(() => {
     const dialog = dialogRef.current;
+
+    if (!modeActive) {
+      return;
+    }
+
     dialog?.showModal();
 
     return () => dialog?.close();
-  }, []);
+  }, [modeActive]);
 
   const setCurrentPage = (index: number): void => {
     currentPageIndexRef.current = index;
@@ -32,6 +39,10 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
   };
 
   useEffect(() => {
+    if (!modeActive) {
+      return;
+    }
+
     const scrollToPage = (index: number): void => {
       const nextIndex = Math.max(0, Math.min(comic.pages.length - 1, index));
       setCurrentPage(nextIndex);
@@ -76,7 +87,7 @@ export function ComicReader({ comic, onClose }: ComicReaderProps): JSX.Element {
     window.addEventListener("keydown", keyListener);
 
     return () => window.removeEventListener("keydown", keyListener);
-  }, [comic.pages.length, onClose, revealChrome]);
+  }, [comic.pages.length, onClose, revealChrome, modeActive]);
 
   useEffect(() => {
     const reader = readerRef.current;

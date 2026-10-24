@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { getParentPath, toDisplayName } from "../../../src/renderer/utils/path";
+import { getParentPath, toDisplayName } from "../../../../src/modes/view/renderer/utils/path";
 
 describe("getParentPath", () => {
   it("preserves POSIX separators on macOS-style paths", () => {

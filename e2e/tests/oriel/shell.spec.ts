@@ -1,4 +1,6 @@
 import { expect, test } from "@playwright/test";
+import { FIXTURE_ARCHIVE_DIR } from "../../src/env.ts";
+import { openFolder, tiles } from "../../src/frame-view.ts";
 import {
   chooseModeFromMenu,
   launchOriel,
@@ -50,4 +52,20 @@ test("reopens in the mode it showed last", async () => {
 
   session = await launchOriel(userDataDir);
   await expect(session.window).toHaveTitle("Sync – Oriel");
+});
+
+test("View keeps its folder while another mode shows", async () => {
+  session = await launchOriel(undefined, { ORIEL_DISABLE_GPU: "1" });
+  const { window } = session;
+
+  await openFolder(session, FIXTURE_ARCHIVE_DIR);
+  const shown = await tiles(window).count();
+
+  expect(shown).toBeGreaterThan(0);
+
+  await openMode(window, "tidy");
+  await expect(tiles(window).first()).toBeHidden();
+
+  await openMode(window, "view");
+  await expect(tiles(window)).toHaveCount(shown);
 });

@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useModeActive } from "../../../../shell/shell";
 
 /**
  * A view's 52 px top bar: its title and a caption of counts on the left, at most two secondary
@@ -193,10 +194,15 @@ export function Sheet({
 }) {
   const panel = useRef<HTMLDivElement>(null);
   const latestClose = useRef(onClose);
+  const modeActive = useModeActive();
 
   latestClose.current = onClose;
 
   useEffect(() => {
+    if (!modeActive) {
+      return;
+    }
+
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
 
     const target =
@@ -220,7 +226,7 @@ export function Sheet({
       window.removeEventListener("keydown", listener, true);
       previous?.focus();
     };
-  }, []);
+  }, [modeActive]);
 
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: a click on the backdrop closes the sheet; Esc is the keyboard path.
@@ -296,9 +302,10 @@ export function Menu({
   const panel = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const id = useId();
+  const modeActive = useModeActive();
 
   useEffect(() => {
-    if (!open) {
+    if (!open || !modeActive) {
       return;
     }
 
@@ -360,7 +367,7 @@ export function Menu({
       window.removeEventListener("mousedown", onDown);
       window.removeEventListener("keydown", onKey, true);
     };
-  }, [open]);
+  }, [open, modeActive]);
 
   return (
     <div ref={root} className={`relative ${className}`}>

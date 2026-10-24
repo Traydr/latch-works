@@ -1,56 +1,24 @@
-import { mkdtemp } from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
-import {
-  type ElectronApplication,
-  _electron as electron,
-  expect,
-  type Locator,
-  type Page,
-} from "@playwright/test";
-import { electronChildEnv, REPO_ROOT } from "./env.ts";
+import { type ElectronApplication, expect, type Locator, type Page } from "@playwright/test";
+import { launchOriel } from "./oriel.ts";
 
 /**
- * Drives the packaged Frame View build (`.vite/build`, produced by
- * `electron-forge package` in the setup project) through Playwright's
- * Electron driver. Every launch gets its own userData directory so settings,
- * the remembered folder and the thumbnail cache start empty unless a test
- * hands the same directory to a second launch.
+ * Drives View, Frame View as one of Oriel's modes, in the packaged Oriel build. Every launch gets
+ * its own userData directory, so settings, the remembered folder and the thumbnail cache start
+ * empty unless a test hands the same directory to a second launch. Oriel opens in View.
  */
-export const FRAME_VIEW_DIR = path.join(REPO_ROOT, "apps", "frame-view");
-
-const ELECTRON_BINARY = path.join(
-  FRAME_VIEW_DIR,
-  "node_modules",
-  "electron",
-  "dist",
-  process.platform === "darwin" ? "Electron.app/Contents/MacOS/Electron" : "electron",
-);
-
 export interface FrameViewSession {
   app: ElectronApplication;
+  /** Oriel's userData directory, to relaunch on; View's own folder is `frame-view/` inside it. */
   userDataDir: string;
   window: Page;
 }
 
-async function newUserDataDir(): Promise<string> {
-  return mkdtemp(path.join(os.tmpdir(), "frame-view-e2e-"));
-}
-
 export async function launchFrameView(userDataDir?: string): Promise<FrameViewSession> {
-  const dataDir = userDataDir ?? (await newUserDataDir());
+  const session = await launchOriel(userDataDir, { ORIEL_DISABLE_GPU: "1" });
 
-  const app = await electron.launch({
-    args: [path.join(FRAME_VIEW_DIR, ".vite", "build", "main.cjs"), `--user-data-dir=${dataDir}`],
-    cwd: FRAME_VIEW_DIR,
-    env: electronChildEnv({ FRAME_VIEW_DISABLE_GPU: "1" }),
-    executablePath: ELECTRON_BINARY,
-  });
+  await expect(session.window.getByRole("button", { name: "Open", exact: true })).toBeVisible();
 
-  const window = await app.firstWindow();
-  await expect(window.getByRole("button", { name: "Open", exact: true })).toBeVisible();
-
-  return { app, userDataDir: dataDir, window };
+  return session;
 }
 
 /**

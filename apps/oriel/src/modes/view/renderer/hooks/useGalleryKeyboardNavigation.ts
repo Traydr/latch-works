@@ -1,5 +1,7 @@
 import { useEffect } from "react";
 
+import { useModeActive } from "../../../../shell/shell";
+
 import type { BrowserEntry, BrowserEntryCollection } from "../utils/browserEntries";
 import {
   eventKey,
@@ -33,8 +35,10 @@ export function useGalleryKeyboardNavigation({
   openSiblingFolderAction,
   navigateToFolderAction,
 }: UseGalleryKeyboardNavigationOptions): void {
+  const modeActive = useModeActive();
+
   useEffect(() => {
-    if (overlayOpen) {
+    if (overlayOpen || !modeActive) {
       return;
     }
 
@@ -246,5 +250,6 @@ export function useGalleryKeyboardNavigation({
     selectedBrowserEntry,
     selectedBrowserEntryIndex,
     overlayOpen,
+    modeActive,
   ]);
 }

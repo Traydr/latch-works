@@ -4,8 +4,8 @@ import path from "node:path";
 import { Result } from "better-result";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { MediaIndexService } from "../../../src/main/db/mediaIndexService";
-import type { MediaItem } from "../../../src/shared/types";
+import { MediaIndexService } from "../../../../src/modes/view/main/db/mediaIndexService";
+import type { MediaItem } from "../../../../src/modes/view/shared/types";
 
 function mediaItem(rootPath: string, name: string): MediaItem {
   const itemPath = path.join(rootPath, name);

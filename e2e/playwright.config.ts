@@ -47,12 +47,8 @@ export default defineConfig({
       },
     },
     {
-      name: "frame-view-setup",
-      testDir: "./tests/frame-view",
-      testMatch: /.*\.setup\.ts/,
-    },
-    {
-      dependencies: ["frame-view-setup"],
+      // View (Frame View in Oriel).
+      dependencies: ["oriel-setup"],
       name: "frame-view",
       testDir: "./tests/frame-view",
       testMatch: /.*\.spec\.ts/,

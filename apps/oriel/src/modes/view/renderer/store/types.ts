@@ -6,7 +6,7 @@ import type {
   VideoProbeMetadata,
 } from "../../shared/types";
 
-export type ScanState = "idle" | "loading" | "done" | "error";
+type ScanState = "idle" | "loading" | "done" | "error";
 
 export interface AppState {
   settings: AppSettings;
