@@ -224,9 +224,9 @@ function packWithVelopack(): string {
 
   try {
     execFileSync("vpk", ["--version"], { stdio: "ignore" });
-  } catch {
+  } catch (cause) {
     throw new Error(
-      `Velopack's vpk is not installed: dotnet tool install -g vpk --version ${VPK_VERSION}`,
+      `Velopack's vpk did not run (${cause instanceof Error ? cause.message : String(cause)}). Install it with: dotnet tool install -g vpk --version ${VPK_VERSION}`,
     );
   }
 

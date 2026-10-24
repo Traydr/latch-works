@@ -57,7 +57,14 @@ jobs:
 
       # Pinned to the velopack package the app runs (forge.config.ts, VPK_VERSION).
       - name: Install vpk
-        run: dotnet tool install -g vpk --version 1.3.39-g8d2844f
+        shell: pwsh
+        run: |
+          dotnet tool install -g vpk --version 1.3.39-g8d2844f
+          # Global tools land here, which later steps' PATH does not hold by default.
+          "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+      - name: Check vpk
+        run: vpk --version
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --prod=false
