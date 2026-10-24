@@ -391,16 +391,6 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
     });
   }, [overrides, sets, actions, rootId, level, scope, skipped]);
 
-  const removeIdentical = () =>
-    void actions.perform({
-      kind: "resolve-duplicate-sets",
-      rootId,
-      level,
-      scope: "exact",
-      overrides: [],
-      skip: [],
-    });
-
   const move = (delta: number) => {
     setActiveIndex(Math.max(0, Math.min(sets.length - 1, index + delta)));
   };
@@ -445,8 +435,10 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
       return true;
     }
 
+    // Keeping every suggestion at once is for similar versions only: which copy of an identical
+    // file to keep depends on where each one is, which the owner reads set by set.
     if (isCommandKey(event) && event.key === "Enter") {
-      if (!dismissedMode && suggestions > 0) {
+      if (!dismissedMode && scope === "similar" && suggestions > 0) {
         keepAll();
       }
 
@@ -727,23 +719,19 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
           >
             Done
           </button>
-        ) : sets.length > 0 ? (
+        ) : sets.length > 0 && scope === "similar" ? (
           <button
             type="button"
             className="gz-btn gz-btn-secondary"
             disabled={suggestions === 0}
             onClick={keepAll}
             title={
-              scope === "exact"
-                ? "Keeps the suggested copy of each and moves the rest to holding  ⌘↩"
-                : closeCalls > 0
-                  ? `Leaves ${plural(closeCalls, "close call")} for you  ⌘↩`
-                  : "Keeps the suggestion in every set  ⌘↩"
+              closeCalls > 0
+                ? `Leaves ${plural(closeCalls, "close call")} for you  ⌘↩`
+                : "Keeps the suggestion in every set  ⌘↩"
             }
           >
-            {scope === "exact"
-              ? "Remove all identical copies"
-              : `Keep ${plural(suggestions, "suggestion")}`}
+            Keep {plural(suggestions, "suggestion")}
           </button>
         ) : null}
         <Menu label={<MoreHorizontal />} icon variant="ghost" title="More">
@@ -813,15 +801,7 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
                   >
                     Back to Overview
                   </button>
-                  {scope === "similar" && otherCount > 0 ? (
-                    <button
-                      type="button"
-                      className="gz-btn gz-btn-secondary"
-                      onClick={removeIdentical}
-                    >
-                      Remove {plural(otherCount, "set")} of identical copies
-                    </button>
-                  ) : otherCount > 0 ? (
+                  {otherCount > 0 ? (
                     <button
                       type="button"
                       className="gz-btn gz-btn-secondary"
@@ -830,7 +810,7 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
                         setActiveIndex(0);
                       }}
                     >
-                      Show similar versions
+                      {otherScope === "exact" ? "Show identical copies" : "Show similar versions"}
                     </button>
                   ) : null}
                 </>

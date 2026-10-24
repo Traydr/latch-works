@@ -51,7 +51,7 @@ const DUPLICATES: Group = {
     ["Quick Look", "⌘Y"],
     ["Sound on or off", "M"],
     ["Prefer this folder", "P"],
-    ["Keep every suggestion", "⌘↩"],
+    ["Keep every similar suggestion", "⌘↩"],
   ],
 };
 
