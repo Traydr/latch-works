@@ -81,7 +81,7 @@ export class EngineHost {
     });
   }
 
-  /** Whether a path lies inside a configured root (its holding folder included). */
+  /** Whether a path lies inside a configured root or that root's holding folder. */
   isAuthorized(target: string): boolean {
     const resolved = path.resolve(target);
 
@@ -150,6 +150,8 @@ export class EngineHost {
           case "event":
             if (message.event.kind === "roots-changed") {
               this.authorizedRoots = message.event.roots.map((root) => root.path);
+              // Each root's holding folder, which lives outside it, follows from the engine.
+              void this.refreshAuthorizedRoots();
             }
 
             this.options.onEvent(message.event);

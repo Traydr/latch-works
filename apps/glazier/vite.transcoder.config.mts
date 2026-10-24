@@ -7,6 +7,9 @@ export default defineConfig({
       input: "transcoder.html",
     },
   },
+  // A cache of its own, apart from the main window's dev server (see vite.renderer.config.mts).
+  cacheDir: "node_modules/.vite/transcoder",
+  optimizeDeps: { entries: ["transcoder.html"] },
   resolve: {
     preserveSymlinks: false,
   },

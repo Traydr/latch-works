@@ -123,6 +123,8 @@ export const FileFlagSchema = z.enum([
   "duplicate",
   /** Files no Latch Works app shows (not an image, video or PDF extension). */
   "unsupported",
+  /** Files the archive policy would convert or rename, as the Convert step counts them. */
+  "convertible",
 ]);
 
 export type FileFlag = z.infer<typeof FileFlagSchema>;
@@ -135,6 +137,7 @@ export const FileQuerySchema = z.object({
   kinds: z.array(FileKindSchema),
   formats: z.array(FileFormatSchema),
   audioStates: z.array(AudioStateSchema),
+  /** A file matches when it has any of these flags; the other lists combine the same way. */
   flags: z.array(FileFlagSchema),
   /** Only files under this folder (relative to the root), when set. */
   dir: z.string().nullable(),
@@ -146,6 +149,19 @@ export const FileQuerySchema = z.object({
 
 export type FileQuery = z.infer<typeof FileQuerySchema>;
 
+/** A file query without paging or order: which files, not which page of them. */
+export const FileFilterSchema = FileQuerySchema.omit({
+  offset: true,
+  limit: true,
+  sort: true,
+  descending: true,
+});
+
+export type FileFilter = z.infer<typeof FileFilterSchema>;
+
+/** How many files a bulk action can take at once, such as Select All. */
+export const MAX_BULK_FILES = 50_000;
+
 export const FilePageSchema = z.object({
   total: z.number().int(),
   totalBytes: z.number(),
@@ -154,12 +170,10 @@ export const FilePageSchema = z.object({
 
 export type FilePage = z.infer<typeof FilePageSchema>;
 
+/** Things a scan finds that need a look but that Glazier has no single fix for. */
 export const FindingKindSchema = z.enum([
-  "extension-mismatch",
   "undecodable",
   "zero-byte",
-  "junk",
-  "empty-folder",
   "unsupported",
   "presigned-delivery",
   "unconvertible-video",
@@ -175,76 +189,143 @@ export const FindingSchema = z.object({
 
 export type Finding = z.infer<typeof FindingSchema>;
 
-export const FormatTotalSchema = z.object({
-  format: FileFormatSchema.nullable(),
-  kind: FileKindSchema,
-  files: z.number().int(),
-  bytes: z.number(),
+const FacetCountSchema = z.object({ files: z.number().int(), bytes: z.number() });
+
+/**
+ * File counts per filter value. Each facet is counted under every filter except its own, so a
+ * menu can show what choosing a value would match.
+ */
+export const FileFacetsSchema = z.object({
+  kinds: z.array(FacetCountSchema.extend({ value: FileKindSchema })),
+  formats: z.array(FacetCountSchema.extend({ value: FileFormatSchema.nullable() })),
+  audioStates: z.array(FacetCountSchema.extend({ value: AudioStateSchema })),
+  flags: z.array(FacetCountSchema.extend({ value: FileFlagSchema })),
 });
 
-export const OverviewSchema = z.object({
+export type FileFacets = z.infer<typeof FileFacetsSchema>;
+
+/** What a selection holds, so the selection bar offers only the actions that apply to it. */
+export const SelectionSummarySchema = z.object({
   files: z.number().int(),
   bytes: z.number(),
-  folders: z.number().int(),
-  lastScanAt: z.number().nullable(),
-  byFormat: z.array(FormatTotalSchema),
-  duplicates: z.object({
-    groups: z.number().int(),
-    files: z.number().int(),
-    reclaimableBytes: z.number(),
-  }),
-  optimizable: z.object({ files: z.number().int(), bytes: z.number() }),
-  sound: z.object({
-    videos: z.number().int(),
-    none: z.number().int(),
-    silent: z.number().int(),
-    sound: z.number().int(),
-    unmeasured: z.number().int(),
-  }),
-  findings: z.array(FindingSchema),
+  /** Files the Convert step would convert or rename. */
+  convertible: FacetCountSchema,
+  videos: z.number().int(),
+  /** Videos with an audio track, which Strip audio applies to. */
+  withAudio: z.number().int(),
+  extensionMismatches: z.number().int(),
 });
 
-export type Overview = z.infer<typeof OverviewSchema>;
+export type SelectionSummary = z.infer<typeof SelectionSummarySchema>;
 
-export const ExactGroupSchema = z.object({
-  sha256: z.string(),
-  size: z.number(),
-  /** Distinct files on disk; hard links to one file count once. */
-  physicalCopies: z.number().int(),
+/** Which copy of a duplicate set the suggestion keeps, by the first keeper rule that decided. */
+export const KeepReasonSchema = z.enum([
+  "preferred-folder",
+  "has-sound",
+  "more-pixels",
+  "longer",
+  "archive-format",
+  "right-extension",
+  "larger-file",
+  "original-name",
+  "oldest",
+  "shorter-path",
+  "name-order",
+]);
+
+export type KeepReason = z.infer<typeof KeepReasonSchema>;
+
+export const DuplicateScopeSchema = z.enum(["all", "exact", "similar"]);
+
+export type DuplicateScope = z.infer<typeof DuplicateScopeSchema>;
+
+/**
+ * One picture or video and every version of it in the catalog. Byte-identical copies are one
+ * version, so a file belongs to one set only, whether its twins are exact or similar.
+ */
+export const DuplicateSetSchema = z.object({
+  /** Stable while the set's files stay the same: `exact:<sha256>` or `similar:<lowest file id>`. */
+  key: z.string(),
+  /** `exact` when every file holds the same bytes; `similar` when the versions differ. */
+  kind: z.enum(["exact", "similar"]),
+  /** Distinct contents, best first; each lists its byte-identical copies, best first. */
+  versions: z.array(z.object({ files: z.array(FileRowSchema).min(1) })).min(1),
+  /** What resolving keeps unless told otherwise: the best version's best copy. */
+  keep: z.array(FileIdSchema).min(1),
+  /** Why the kept copy beat the runner-up. */
+  keepReason: KeepReasonSchema,
+  /** Bytes the suggested resolution frees; files hard-linked to a kept file free nothing. */
   reclaimableBytes: z.number(),
-  members: z.array(FileRowSchema),
-  /** Members linked to the same file on disk as another member. */
+  /** Members that share their bytes on disk with another member (hard links). */
   hardLinkedIds: z.array(FileIdSchema),
+  /** For similar sets, the largest fingerprint distance (of 64 bits) that joined them. */
+  distance: z.number().nullable(),
+  /** Set when the owner said these files are not duplicates; such sets are hidden by default. */
+  dismissalId: z.number().int().nullable(),
 });
 
-export type ExactGroup = z.infer<typeof ExactGroupSchema>;
+export type DuplicateSet = z.infer<typeof DuplicateSetSchema>;
 
-export const ExactGroupPageSchema = z.object({
+/** Keep reasons that only break a tie between versions that are otherwise alike. */
+const TIE_BREAKERS: ReadonlySet<KeepReason> = new Set([
+  "larger-file",
+  "oldest",
+  "shorter-path",
+  "name-order",
+]);
+
+/**
+ * Whether a similar set's suggestion is a close call: its versions match on pixels, length,
+ * sound and format, and a tie-breaker chose (a file under a tenth larger, the oldest, the
+ * shortest path, the first name). The owner should look at those; bulk resolving can skip them.
+ */
+export function isCloseCall(set: Pick<DuplicateSet, "kind" | "keepReason" | "versions">): boolean {
+  if (set.kind !== "similar" || !TIE_BREAKERS.has(set.keepReason)) {
+    return false;
+  }
+
+  if (set.keepReason !== "larger-file") {
+    return true;
+  }
+
+  const [best, next] = set.versions;
+  const bestSize = best?.files[0]?.size ?? 0;
+  const nextSize = next?.files[0]?.size ?? 0;
+
+  return nextSize > 0 && bestSize / nextSize < 1.1;
+}
+
+const DuplicateTotalsSchema = z.object({
+  sets: z.number().int(),
+  /** Files the suggested resolutions move to holding. */
+  extraCopies: z.number().int(),
+  reclaimableBytes: z.number(),
+});
+
+export const DuplicateSetPageSchema = z.object({
+  /** Sets matching the request's scope. */
   total: z.number().int(),
   reclaimableBytes: z.number(),
-  groups: z.array(ExactGroupSchema),
+  counts: z.object({
+    exact: z.number().int(),
+    similar: z.number().int(),
+    dismissed: z.number().int(),
+    /** Open similar sets whose suggestion is a close call (see `isCloseCall`). */
+    closeCalls: z.number().int(),
+  }),
+  /** Bytes resolving every open set would free, identical and similar alike. */
+  openReclaimableBytes: z.number(),
+  /** Similar sets need fingerprints; how far the analysis has come. */
+  fingerprinted: z.number().int(),
+  fingerprintable: z.number().int(),
+  sets: z.array(DuplicateSetSchema),
 });
+
+export type DuplicateSetPage = z.infer<typeof DuplicateSetPageSchema>;
 
 export const SimilarityLevelSchema = z.enum(["strict", "balanced", "loose"]);
 
 export type SimilarityLevel = z.infer<typeof SimilarityLevelSchema>;
-
-export const SimilarGroupSchema = z.object({
-  id: z.number().int(),
-  kind: z.enum(["image", "video"]),
-  /** The largest fingerprint distance between linked members, out of 64 bits. */
-  distance: z.number(),
-  members: z.array(FileRowSchema),
-});
-
-export type SimilarGroup = z.infer<typeof SimilarGroupSchema>;
-
-export const SimilarGroupPageSchema = z.object({
-  total: z.number().int(),
-  fingerprinted: z.number().int(),
-  fingerprintable: z.number().int(),
-  groups: z.array(SimilarGroupSchema),
-});
 
 export const OptimizeCategorySchema = z.enum([
   "still-to-avif",
@@ -278,12 +359,42 @@ export type OptimizeSummary = z.infer<typeof OptimizeSummarySchema>;
 export const OptimizeEstimateSchema = z.object({
   category: OptimizeCategorySchema,
   sampled: z.number().int(),
-  /** Output size as a share of input size, across the sample: low and high quartile. */
+  /** Output size as a share of input size across the sample: the median, then the quartiles. */
+  ratio: z.number(),
   ratioLow: z.number(),
   ratioHigh: z.number(),
 });
 
 export type OptimizeEstimate = z.infer<typeof OptimizeEstimateSchema>;
+
+/**
+ * The Tidy view's to-do list for a root, in the order the work should happen: duplicates, then
+ * conversions, then silent soundtracks, then clean-up, then what needs a human look.
+ */
+export const TidySchema = z.object({
+  files: z.number().int(),
+  bytes: z.number(),
+  lastScanAt: z.number().nullable(),
+  duplicates: z.object({ exact: DuplicateTotalsSchema, similar: DuplicateTotalsSchema }),
+  convert: OptimizeSummarySchema,
+  /** Videos whose audio track was measured as silent. */
+  silentTracks: FacetCountSchema,
+  cleanup: z.object({
+    junk: z.number().int(),
+    emptyFolders: z.number().int(),
+    /** Extensions that do not match the bytes, plus AVIF and MP4 under other extensions. */
+    extensions: z.number().int(),
+  }),
+  attention: z.array(FindingSchema),
+  analysis: z.object({
+    fingerprinted: z.number().int(),
+    fingerprintable: z.number().int(),
+    soundMeasured: z.number().int(),
+    soundMeasurable: z.number().int(),
+  }),
+});
+
+export type Tidy = z.infer<typeof TidySchema>;
 
 export const VideoCodecChoiceSchema = z.enum(["avc", "hevc", "av1"]);
 
@@ -321,12 +432,43 @@ export const PlanRequestSchema = z.discriminatedUnion("kind", [
     quality: VideoQualitySchema,
   }),
   z.object({ kind: z.literal("strip-audio"), fileIds: z.array(FileIdSchema).min(1) }),
+  /**
+   * Explicit decisions: each group keeps some files and moves others to holding. A group that
+   * keeps several files remembers them as not duplicates of each other until the plan is undone,
+   * so the set does not come back. A file hard-linked to a kept file is never removed.
+   */
   z.object({
     kind: z.literal("resolve-duplicates"),
-    groups: z.array(z.object({ keep: FileIdSchema, remove: z.array(FileIdSchema).min(1) })).min(1),
+    groups: z
+      .array(
+        z.object({
+          keep: z.array(FileIdSchema).min(1),
+          remove: z.array(FileIdSchema).min(1),
+        }),
+      )
+      .min(1),
+  }),
+  /**
+   * Every set in a scope at once, each with its suggested keeper unless overridden. A set whose
+   * files no longer include an override's keepers is left alone, as are skipped and dismissed sets.
+   */
+  z.object({
+    kind: z.literal("resolve-duplicate-sets"),
+    rootId: RootIdSchema.nullable(),
+    level: SimilarityLevelSchema,
+    scope: DuplicateScopeSchema,
+    overrides: z.array(z.object({ key: z.string(), keep: z.array(FileIdSchema).min(1) })),
+    skip: z.array(z.string()),
+    /** Leaves close calls (see `isCloseCall`) for the owner to look at. */
+    skipCloseCalls: z.boolean().optional(),
   }),
   z.object({ kind: z.literal("clean-junk"), rootId: RootIdSchema }),
   z.object({ kind: z.literal("remove-empty-folders"), rootId: RootIdSchema }),
+  /**
+   * Junk to holding, empty folders removed, and every extension that does not match its bytes
+   * fixed (AVIF and MP4 under other extensions included), as one plan with one undo.
+   */
+  z.object({ kind: z.literal("cleanup"), rootId: RootIdSchema }),
 ]);
 
 export type PlanRequest = z.infer<typeof PlanRequestSchema>;
@@ -341,8 +483,10 @@ export const PlanKindSchema = z.enum([
   "reencode",
   "strip-audio",
   "resolve-duplicates",
+  "resolve-duplicate-sets",
   "clean-junk",
   "remove-empty-folders",
+  "cleanup",
 ] as const satisfies readonly PlanRequest["kind"][]);
 
 export type PlanKind = z.infer<typeof PlanKindSchema>;
@@ -364,7 +508,7 @@ export const PlanPreviewSchema = z.object({
   kind: PlanKindSchema,
   steps: z.number().int(),
   byAction: z.array(z.object({ action: PlanStepActionSchema, steps: z.number().int() })),
-  /** Bytes the plan moves into holding outright (removals); conversions add their originals. */
+  /** Bytes the plan moves into holding: removals and the originals conversions replace. */
   bytesToHolding: z.number(),
   bytesTouched: z.number(),
   lockstep: z.object({
@@ -391,6 +535,10 @@ export const PlanSummarySchema = z.object({
   kind: PlanKindSchema,
   createdAt: z.number(),
   status: PlanStatusSchema,
+  /** What the plan did, in the past tense: "Converted 206 files", "Resolved 3 duplicate sets". */
+  title: z.string(),
+  /** What the plan is about, counted: duplicate sets for resolve plans, otherwise its steps. */
+  count: z.number().int(),
   steps: z.number().int(),
   done: z.number().int(),
   skipped: z.number().int(),
@@ -398,6 +546,8 @@ export const PlanSummarySchema = z.object({
   undone: z.number().int(),
   bytesBefore: z.number(),
   bytesAfter: z.number(),
+  /** Finished steps that put a file in holding: removals and replaced originals. */
+  held: z.object({ files: z.number().int(), bytes: z.number() }),
 });
 
 export type PlanSummary = z.infer<typeof PlanSummarySchema>;
@@ -451,6 +601,13 @@ export const JobSchema = z.object({
   id: JobIdSchema,
   type: JobTypeSchema,
   rootId: RootIdSchema.nullable(),
+  /** The plan an apply or undo job works on. */
+  planId: PlanIdSchema.nullable(),
+  /**
+   * Analysis queued after a scan. It waits behind, and pauses for, anything the owner asked
+   * for, so it never holds up an action.
+   */
+  background: z.boolean(),
   label: z.string(),
   state: z.enum(["queued", "running", "paused", "done", "failed", "cancelled"]),
   done: z.number(),
@@ -462,11 +619,13 @@ export const JobSchema = z.object({
 export type Job = z.infer<typeof JobSchema>;
 
 export const SettingsSchema = z.object({
-  /** Folders whose files duplicate resolution never removes, relative to their root. */
-  protectedFolders: z.array(z.object({ rootId: RootIdSchema, dir: z.string() })),
+  /** Folders whose copies duplicate review keeps first, relative to their root. */
+  preferredFolders: z.array(z.object({ rootId: RootIdSchema, dir: z.string() })),
   similarity: SimilarityLevelSchema,
-  reencodeCodec: VideoCodecChoiceSchema,
+  /** The quality every re-encode uses, chosen or required by a conversion. */
   reencodeQuality: VideoQualitySchema,
+  /** Find similar versions and measure soundtracks in the background after each scan. */
+  autoAnalyze: z.boolean(),
 });
 
 export type Settings = z.infer<typeof SettingsSchema>;
@@ -571,16 +730,38 @@ export const EngineMethods = {
   scanRoot: method(RootRefSchema, JobSchema),
   cancelJob: method(z.object({ jobId: JobIdSchema }), NothingSchema),
   pauseJob: method(z.object({ jobId: JobIdSchema, paused: z.boolean() }), NothingSchema),
-  overview: method(OptionalRootRefSchema, OverviewSchema),
+  tidy: method(RootRefSchema, TidySchema),
   listFiles: method(FileQuerySchema, FilePageSchema),
-  getFiles: method(z.object({ ids: z.array(FileIdSchema).max(500) }), z.array(FileRowSchema)),
-  listFolders: method(RootRefSchema, z.array(z.string())),
-  exactDuplicates: method(OptionalRootRefSchema.extend(PagingSchema.shape), ExactGroupPageSchema),
-  analyzeSimilar: method(OptionalRootRefSchema, JobSchema),
-  similarDuplicates: method(
-    OptionalRootRefSchema.extend(PagingSchema.shape).extend({ level: SimilarityLevelSchema }),
-    SimilarGroupPageSchema,
+  /** Every matching file's id, in path order, up to `MAX_BULK_FILES`. */
+  listFileIds: method(
+    FileFilterSchema,
+    z.object({ ids: z.array(FileIdSchema), truncated: z.boolean() }),
   ),
+  fileFacets: method(FileFilterSchema, FileFacetsSchema),
+  getFiles: method(z.object({ ids: z.array(FileIdSchema).max(500) }), z.array(FileRowSchema)),
+  selectionSummary: method(
+    z.object({ fileIds: z.array(FileIdSchema).max(MAX_BULK_FILES) }),
+    SelectionSummarySchema,
+  ),
+  listFolders: method(RootRefSchema, z.array(z.string())),
+  listEmptyFolders: method(RootRefSchema, z.array(z.string())),
+  /** Duplicate sets, most bytes to reclaim first. */
+  duplicateSets: method(
+    OptionalRootRefSchema.extend(PagingSchema.shape).extend({
+      level: SimilarityLevelSchema,
+      scope: DuplicateScopeSchema,
+      /** The sets the owner dismissed, instead of the open ones. */
+      dismissed: z.boolean(),
+    }),
+    DuplicateSetPageSchema,
+  ),
+  /** Marks files as not duplicates of each other, so a set made only of them stays hidden. */
+  dismissDuplicateSet: method(
+    z.object({ fileIds: z.array(FileIdSchema).min(2) }),
+    z.object({ dismissalId: z.number().int() }),
+  ),
+  restoreDuplicateSet: method(z.object({ dismissalId: z.number().int() }), NothingSchema),
+  analyzeSimilar: method(OptionalRootRefSchema, JobSchema),
   analyzeSound: method(OptionalRootRefSchema, JobSchema),
   optimizeSummary: method(RootRefSchema, OptimizeSummarySchema),
   estimateOptimize: method(
@@ -588,9 +769,15 @@ export const EngineMethods = {
     OptimizeEstimateSchema,
   ),
   previewPlan: method(PlanRequestSchema, PlanPreviewSchema),
+  /**
+   * Previews a request and applies it at once. Its warnings say what the change left out or
+   * where it went, for the result to report; they never hold it back, since it can be undone.
+   */
+  perform: method(PlanRequestSchema, z.object({ preview: PlanPreviewSchema, job: JobSchema })),
   applyPlan: method(z.object({ planId: PlanIdSchema }), JobSchema),
   discardPlan: method(z.object({ planId: PlanIdSchema }), NothingSchema),
   listPlans: method(OptionalRootRefSchema.extend(PagingSchema.shape), z.array(PlanSummarySchema)),
+  getPlan: method(z.object({ planId: PlanIdSchema }), PlanSummarySchema),
   planSteps: method(
     z.object({ planId: PlanIdSchema }).extend(PagingSchema.shape),
     PlanStepPageSchema,

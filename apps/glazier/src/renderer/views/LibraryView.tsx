@@ -1,504 +1,677 @@
-import type {
-  AudioState,
-  FileFlag,
-  FileId,
-  FileKind,
-  FileRow,
-  RootId,
-  VideoCodecChoice,
-  VideoQuality,
+import {
+  type FileFilter,
+  type FileId,
+  type FileRow,
+  MAX_BULK_FILES,
+  type OptimizeCategory,
+  type PlanRequest,
+  type RootId,
+  type SelectionSummary,
+  type VideoCodecChoice,
 } from "@latch-works/glazier-core/contract";
-import { Eye, FolderInput, FolderOpen, Search } from "lucide-react";
+import { FolderOpen, LayoutGrid, List, PanelRight, Search, SearchX, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { type FileFilter, FileTable } from "../components/FileTable";
-import { usePlanner } from "../components/PlanDialog";
-import { Modal, Toggle, ViewHeader } from "../components/ui";
+import type { MenuEntry } from "../../shared/messages";
+import { FileTable } from "../components/FileTable";
+import { useFolderPicker } from "../components/FolderPicker";
+import { FileGrid } from "../components/library/FileGrid";
+import {
+  activeFilterCount,
+  FilterChips,
+  FilterMenu,
+  type Filters,
+} from "../components/library/FilterMenu";
+import { Inspector } from "../components/library/Inspector";
+import { SelectionBar } from "../components/library/SelectionBar";
+import type { FileViewProps } from "../components/library/use-file-cursor";
+import { type FileListQuery, useFilePages } from "../components/library/use-file-pages";
+import { useToasts } from "../components/Toasts";
+import { EmptyState, TopBar } from "../components/ui";
+import { useActions } from "../lib/actions";
 import { call, desktop } from "../lib/api";
-import { useEngine } from "../lib/engine-state";
-import { formatBytes, formatCount } from "../lib/format";
+import { useCommandHandler } from "../lib/commands";
+import { useEngine, useEngineQuery } from "../lib/engine-state";
+import { formatBytes, formatCount, plural } from "../lib/format";
+import { isCommandKey, isPlainKey, useViewKeys } from "../lib/hotkeys";
 import { EMPTY_PRESET, useNavigation } from "../lib/navigation";
+import { usePreferFolder } from "../lib/preferences";
 
-const KIND_CHIPS = [
-  { value: "image", label: "Images" },
-  { value: "video", label: "Videos" },
-  { value: "audio", label: "Audio" },
-  { value: "pdf", label: "PDFs" },
-  { value: "other", label: "Other" },
-  { value: "junk", label: "Junk" },
-] as const satisfies ReadonlyArray<{ value: FileKind; label: string }>;
+const ALL_CATEGORIES = [
+  "still-to-avif",
+  "animation-to-mp4",
+  "video-remux",
+  "video-convert",
+  "rename-avif",
+  "rename-mp4",
+] as const satisfies readonly OptimizeCategory[];
 
-const AUDIO_CHIPS = [
-  { value: "none", label: "No audio track" },
-  { value: "silent", label: "Silent track" },
-  { value: "sound", label: "Has sound" },
-  { value: "unmeasured", label: "Not measured" },
-] as const satisfies ReadonlyArray<{ value: AudioState; label: string }>;
+const CODECS = [
+  { value: "hevc", label: "HEVC" },
+  { value: "av1", label: "AV1", note: "Older devices can't play AV1" },
+  { value: "avc", label: "H.264" },
+] as const satisfies ReadonlyArray<{ value: VideoCodecChoice; label: string; note?: string }>;
 
-const FLAG_CHIPS = [
-  { value: "duplicate", label: "Duplicates" },
-  { value: "extension-mismatch", label: "Wrong extension" },
-  { value: "undecodable", label: "Won't decode" },
-  { value: "zero-byte", label: "Zero bytes" },
-  { value: "animated", label: "Animated" },
-  { value: "unsupported", label: "Unsupported" },
-] as const satisfies ReadonlyArray<{ value: FileFlag; label: string }>;
+type Mode = "list" | "grid";
 
-const SORTS = [
-  { value: "path", label: "Path" },
-  { value: "name", label: "Name" },
-  { value: "size", label: "Size" },
-  { value: "mtime", label: "Modified" },
-  { value: "kind", label: "Format" },
-  { value: "duration", label: "Duration" },
-] as const satisfies ReadonlyArray<{ value: FileFilter["sort"]; label: string }>;
+const NO_FILTERS: Filters = { kinds: [], formats: [], audioStates: [], flags: [], dir: null };
 
-function toggle<T>(values: readonly T[], value: T): T[] {
-  return values.includes(value) ? values.filter((entry) => entry !== value) : [...values, value];
+const MODE_KEY = "glazier.library.mode";
+
+const INSPECTOR_KEY = "glazier.library.inspector";
+
+/** Room the selection bar covers at the bottom of the list, so the last rows scroll clear of it. */
+const BAR_INSET = 80;
+
+function filterOf(query: FileListQuery): FileFilter {
+  return {
+    rootId: query.rootId,
+    search: query.search,
+    kinds: query.kinds,
+    formats: query.formats,
+    audioStates: query.audioStates,
+    flags: query.flags,
+    dir: query.dir,
+  };
 }
 
-function Chip({ on, label, onClick }: { on: boolean; label: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      aria-pressed={on}
-      onClick={onClick}
-      className={`ls-chip ${on ? "ls-chip-on" : ""}`}
-    >
-      {label}
-    </button>
-  );
+/** The last choice of list or grid, kept across launches. */
+function storedMode(): Mode {
+  return window.localStorage.getItem(MODE_KEY) === "grid" ? "grid" : "list";
+}
+
+/** Open by default on a wide window, unless the owner has chosen otherwise. */
+function storedInspector(): boolean {
+  const stored = window.localStorage.getItem(INSPECTOR_KEY);
+
+  return stored === null ? window.innerWidth >= 1440 : stored === "open";
 }
 
 export function LibraryView({ rootId }: { rootId: RootId }) {
-  const { preset } = useNavigation();
-  const { propose } = usePlanner();
-  const { report, capabilities, settings } = useEngine();
+  const { preset, searchRequested, clearSearchRequest } = useNavigation();
+  const { report, capabilities, settings, roots, catalogVersion } = useEngine();
+  const actions = useActions();
+  const toasts = useToasts();
+  const preferFolder = usePreferFolder(rootId);
+  const searchInput = useRef<HTMLInputElement>(null);
+  const root = roots.find((candidate) => candidate.id === rootId) ?? null;
+  const pickFolder = useFolderPicker();
+  const rootName = root?.name ?? "Top folder";
 
-  const [filter, setFilter] = useState<FileFilter>(() => ({
+  const [query, setQuery] = useState<FileListQuery>(() => ({
     rootId,
     ...EMPTY_PRESET,
     ...preset,
-    dir: null,
     sort: "path",
     descending: false,
   }));
 
   const [search, setSearch] = useState(preset.search);
   const [selected, setSelected] = useState<Set<FileId>>(new Set());
-  const [totals, setTotals] = useState<{ total: number; bytes: number } | null>(null);
-  const [selectedRows, setSelectedRows] = useState<FileRow[]>([]);
-  const [dialog, setDialog] = useState<"rename" | "reencode" | null>(null);
+  const [cursor, setCursor] = useState<number | null>(null);
+  const [renaming, setRenaming] = useState<FileId | null>(null);
+  const [summary, setSummary] = useState<SelectionSummary | null>(null);
+  const [sample, setSample] = useState<FileRow[]>([]);
+  const [mode, setModeState] = useState<Mode>(storedMode);
+  const [inspectorOpen, setInspectorOpen] = useState(storedInspector);
+  const pages = useFilePages(query);
+  const facets = useEngineQuery("fileFacets", filterOf(query));
+  const folders = useEngineQuery("listFolders", { rootId });
+  const queryKey = JSON.stringify(query);
+
+  // The first page is asked for here as well as by the list, so an empty result (which shows no
+  // list) still refreshes when the query or the catalog changes.
+  useEffect(() => pages.request(0, 1), [pages.request]);
+
+  const setMode = (next: Mode) => {
+    window.localStorage.setItem(MODE_KEY, next);
+    setModeState(next);
+  };
+
+  const toggleInspector = () => {
+    window.localStorage.setItem(INSPECTOR_KEY, inspectorOpen ? "closed" : "open");
+    setInspectorOpen(!inspectorOpen);
+  };
 
   // Another view linked here with a filter: apply it.
   useEffect(() => {
-    setFilter((current) => ({ ...current, ...EMPTY_PRESET, ...preset, rootId }));
+    setQuery((current) => ({ ...current, ...EMPTY_PRESET, ...preset, rootId }));
     setSearch(preset.search);
     setSelected(new Set());
   }, [preset, rootId]);
 
+  useEffect(() => {
+    if (searchRequested) {
+      searchInput.current?.focus();
+      searchInput.current?.select();
+      clearSearchRequest();
+    }
+  }, [searchRequested, clearSearchRequest]);
+
   // Search applies after typing pauses.
   useEffect(() => {
-    const timer = window.setTimeout(() => setFilter((current) => ({ ...current, search })), 250);
+    const timer = window.setTimeout(() => setQuery((current) => ({ ...current, search })), 200);
 
     return () => window.clearTimeout(timer);
   }, [search]);
 
-  // The selected rows' details, for the actions that need names and kinds.
+  // The cursor points into one query's results; a new query starts without one.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the query's JSON is the trigger.
+  useEffect(() => setCursor(null), [queryKey]);
+
+  const cursorRow = cursor === null ? null : pages.rowAt(cursor);
+
+  /** What the inspector and the shortcuts act on: the selection, or else the cursor's file. */
+  const cursorId = cursorRow?.id ?? null;
+
+  const targets = useMemo<FileId[]>(
+    () => (selected.size > 0 ? [...selected] : cursorId === null ? [] : [cursorId]),
+    [selected, cursorId],
+  );
+
+  // What the targets hold, so the bar and the inspector offer only what applies. A changed
+  // catalog asks again, since a rename or a conversion changes the answer.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the catalog version is a trigger.
   useEffect(() => {
-    if (selected.size === 0 || selected.size > 500) {
-      setSelectedRows([]);
+    if (targets.length === 0) {
+      setSummary(null);
+      setSample([]);
 
       return;
     }
 
     let cancelled = false;
 
-    call("getFiles", { ids: [...selected] }).then(
-      (rows) => {
-        if (!cancelled) {
-          setSelectedRows(rows);
-        }
-      },
-      () => undefined,
-    );
+    const timer = window.setTimeout(() => {
+      call("selectionSummary", { fileIds: targets.slice(0, MAX_BULK_FILES) }).then(
+        (result) => !cancelled && setSummary(result),
+        () => undefined,
+      );
+      call("getFiles", { ids: targets.slice(0, 3) }).then(
+        (rows) => !cancelled && setSample(rows),
+        () => undefined,
+      );
+    }, 80);
 
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
-  }, [selected]);
+  }, [targets, catalogVersion]);
 
-  const onTotals = useCallback((next: { total: number; bytes: number }) => setTotals(next), []);
+  const onlySelected = selected.size === 1 ? [...selected][0] : undefined;
 
-  const ids = useMemo(() => [...selected], [selected]);
-  const single = selectedRows.length === 1 ? selectedRows[0] : undefined;
-  const onlyVideos = selectedRows.length > 0 && selectedRows.every((row) => row.kind === "video");
+  const single =
+    selected.size === 0
+      ? cursorRow
+      : onlySelected === undefined
+        ? null
+        : cursorRow?.id === onlySelected
+          ? cursorRow
+          : (sample.find((row) => row.id === onlySelected) ?? null);
+
+  const selectAll = useCallback(async () => {
+    try {
+      const result = await call("listFileIds", filterOf(query));
+
+      setSelected(new Set(result.ids));
+
+      if (result.truncated) {
+        toasts.show({
+          message: `Selected the first ${formatCount(MAX_BULK_FILES)} files`,
+          detail: "Narrow the filter to act on the rest.",
+          tone: "info",
+        });
+      }
+    } catch (error) {
+      report(error);
+    }
+  }, [query, toasts, report]);
+
+  useCommandHandler("select-all", () => void selectAll());
+
+  const runAndClear = async (request: PlanRequest) => {
+    const plan = await actions.perform(request);
+
+    if (plan) {
+      setSelected(new Set());
+    }
+  };
+
+  const hold = (fileIds: FileId[]) => {
+    if (fileIds.length > 0) {
+      void runAndClear({ kind: "hold", fileIds });
+    }
+  };
+
+  const moveTo = async (fileIds: FileId[]) => {
+    if (fileIds.length === 0) {
+      return;
+    }
+
+    const targetDir = root
+      ? await pickFolder({
+          title: `Move ${plural(fileIds.length, "file")} to`,
+          action: "Move here",
+          within: { path: root.path, name: root.name },
+        }).catch(report)
+      : null;
+
+    if (targetDir) {
+      await runAndClear({ kind: "move", fileIds, targetDir });
+    }
+  };
+
+  const convert = (fileIds: FileId[]) =>
+    void runAndClear({ kind: "optimize", rootId, categories: [...ALL_CATEGORIES], fileIds });
+
+  const reveal = () => {
+    const row = single ?? sample[0];
+
+    if (row) {
+      void desktop.reveal(row.absPath);
+    }
+  };
+
+  const clearFilters = () => {
+    setSearch("");
+    setQuery((current) => ({ ...current, ...EMPTY_PRESET, rootId }));
+  };
+
+  const changeFilters = (next: Partial<Filters>) =>
+    setQuery((current) => ({ ...current, ...next }));
+
+  const moreEntries = (
+    fileIds: FileId[],
+    target: FileRow | null,
+    held: SelectionSummary | null,
+  ): MenuEntry[] => {
+    const entries: MenuEntry[] = [];
+
+    if (target) {
+      entries.push(
+        { type: "item", id: "quick-look", label: "Quick Look", accelerator: "Space" },
+        { type: "item", id: "open", label: "Open" },
+        { type: "item", id: "reveal", label: "Show in Finder", accelerator: "Shift+CmdOrCtrl+R" },
+        { type: "separator" },
+      );
+    }
+
+    if (held && held.convertible.files > 0) {
+      entries.push({
+        type: "item",
+        id: "convert",
+        label: `Convert ${formatCount(held.convertible.files)} to AVIF or MP4`,
+      });
+    }
+
+    if (held && held.videos > 0) {
+      entries.push({
+        type: "submenu",
+        label: `Re-encode ${plural(held.videos, "video")} as`,
+        items: CODECS.map((codec) => ({
+          type: "item" as const,
+          id: `reencode:${codec.value}`,
+          label: codec.label,
+          enabled: capabilities?.video[codec.value] ?? false,
+          sublabel: "note" in codec ? codec.note : undefined,
+        })),
+      });
+    }
+
+    if (held && held.withAudio > 0) {
+      entries.push({
+        type: "item",
+        id: "strip-audio",
+        label: `Remove the audio track from ${plural(held.withAudio, "video")}`,
+      });
+    }
+
+    if (held && held.extensionMismatches > 0) {
+      entries.push({
+        type: "item",
+        id: "fix-extension",
+        label: `Fix ${plural(held.extensionMismatches, "extension")}`,
+      });
+    }
+
+    if (target && fileIds.length <= 1) {
+      entries.push(
+        { type: "item", id: "rename", label: "Rename", accelerator: "Return" },
+        { type: "separator" },
+        {
+          type: "item",
+          id: "prefer",
+          label: `Prefer ${target.dir || "the top folder"} for duplicates`,
+        },
+        { type: "item", id: "folder", label: `Show only ${target.dir || "the top folder"}` },
+      );
+    }
+
+    entries.push(
+      { type: "separator" },
+      { type: "item", id: "move", label: "Move to…", accelerator: "Shift+CmdOrCtrl+M" },
+      { type: "item", id: "hold", label: "Move to holding", accelerator: "CmdOrCtrl+Backspace" },
+    );
+
+    return entries;
+  };
+
+  /**
+   * The native menu for a right-clicked file or the bar's "⋯". A right-click on a file outside
+   * the selection acts on that file alone, so its summary is asked for here rather than read
+   * from state that has not caught up yet.
+   */
+  const runMenu = async (row: FileRow | null) => {
+    const fileIds = row && !selected.has(row.id) ? [row.id] : targets;
+    const target = row ?? (fileIds.length === 1 ? single : null);
+
+    if (fileIds.length === 0) {
+      return;
+    }
+
+    const held = await call("selectionSummary", {
+      fileIds: fileIds.slice(0, MAX_BULK_FILES),
+    }).catch(() => null);
+
+    const choice = await desktop.showMenu(moreEntries(fileIds, target, held));
+
+    if (choice === null) {
+      return;
+    }
+
+    if (choice.startsWith("reencode:")) {
+      const codec = CODECS.find((entry) => `reencode:${entry.value}` === choice);
+
+      if (codec) {
+        void runAndClear({
+          kind: "reencode",
+          fileIds,
+          codec: codec.value,
+          quality: settings?.reencodeQuality ?? "high",
+        });
+      }
+
+      return;
+    }
+
+    switch (choice) {
+      case "quick-look":
+        if (target) {
+          void desktop.quickLook(target.absPath);
+        }
+
+        break;
+      case "open":
+        if (target) {
+          void desktop.open(target.absPath);
+        }
+
+        break;
+      case "reveal":
+        if (target) {
+          void desktop.reveal(target.absPath);
+        }
+
+        break;
+      case "convert":
+        convert(fileIds);
+        break;
+      case "strip-audio":
+        void runAndClear({ kind: "strip-audio", fileIds });
+        break;
+      case "fix-extension":
+        void runAndClear({ kind: "fix-extension", fileIds });
+        break;
+      case "rename":
+        if (target) {
+          setRenaming(target.id);
+        }
+
+        break;
+      case "prefer":
+        if (target) {
+          void preferFolder(target.dir);
+        }
+
+        break;
+      case "folder":
+        if (target) {
+          changeFilters({ dir: target.dir });
+        }
+
+        break;
+      case "move":
+        void moveTo(fileIds);
+        break;
+      case "hold":
+        hold(fileIds);
+        break;
+      default:
+        break;
+    }
+  };
+
+  useViewKeys((event) => {
+    if (event.key === "/" && !isCommandKey(event)) {
+      searchInput.current?.focus();
+
+      return true;
+    }
+
+    if (isPlainKey(event) && !event.shiftKey && event.key.toLowerCase() === "i") {
+      toggleInspector();
+
+      return true;
+    }
+
+    if (!isCommandKey(event)) {
+      return false;
+    }
+
+    if (event.key === "Backspace" && selected.size > 0) {
+      hold([...selected]);
+
+      return true;
+    }
+
+    if (event.shiftKey && event.key.toLowerCase() === "m" && selected.size > 0) {
+      void moveTo([...selected]);
+
+      return true;
+    }
+
+    if (event.shiftKey && event.key.toLowerCase() === "r" && single) {
+      void desktop.reveal(single.absPath);
+
+      return true;
+    }
+
+    return false;
+  }, renaming === null);
+
+  const filters: Filters = {
+    kinds: query.kinds,
+    formats: query.formats,
+    audioStates: query.audioStates,
+    flags: query.flags,
+    dir: query.dir,
+  };
+
+  const filtered = activeFilterCount(filters) > 0 || query.search !== "";
+  const barVisible = selected.size > 0 && (!inspectorOpen || selected.size >= 2);
+
+  const caption =
+    pages.total === null
+      ? null
+      : filtered && root
+        ? `${formatCount(pages.total)} of ${plural(root.fileCount, "file")} · ${formatBytes(pages.totalBytes)}`
+        : `${plural(pages.total, "file")} · ${formatBytes(pages.totalBytes)}`;
+
+  const viewProps: FileViewProps = {
+    pages,
+    selected,
+    onSelect: setSelected,
+    cursor,
+    onCursor: setCursor,
+    onOpen: (row) => void desktop.open(row.absPath),
+    onQuickLook: (row) => void desktop.quickLook(row.absPath),
+    onContextMenu: (row) => void runMenu(row),
+    renaming,
+    onRenameStart: (row) => setRenaming(row.id),
+    onRenameEnd: (row, name) => {
+      setRenaming(null);
+
+      if (name) {
+        void actions.perform({ kind: "rename", renames: [{ fileId: row.id, name }] });
+      }
+    },
+    bottomInset: barVisible ? BAR_INSET : 0,
+  };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <ViewHeader
-        title="Library"
-        description={
-          totals
-            ? `${formatCount(totals.total)} files · ${formatBytes(totals.bytes)}`
-            : "Every file in this root."
-        }
-      >
-        <label className="relative block w-64">
-          <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-zinc-400" />
+      <TopBar title="Library" meta={caption}>
+        <label className="relative block w-[260px]">
+          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-zinc-400" />
           <input
-            className="ls-input text-xs"
-            style={{ paddingLeft: 28, paddingTop: 4, paddingBottom: 4 }}
-            placeholder="Search names and paths"
-            aria-label="Search names and paths"
+            ref={searchInput}
+            className="gz-input pr-8 pl-8"
+            placeholder="Search names and folders"
+            aria-label="Search names and folders"
+            title="Search  /"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-          />
-        </label>
-        <select
-          className="ls-input text-xs"
-          style={{ width: 112, paddingTop: 4, paddingBottom: 4 }}
-          aria-label="Sort by"
-          value={filter.sort}
-          onChange={(event) => {
-            const sort = SORTS.find((entry) => entry.value === event.target.value)?.value;
-
-            if (sort) {
-              setFilter((current) => ({ ...current, sort }));
-            }
-          }}
-        >
-          {SORTS.map((sort) => (
-            <option key={sort.value} value={sort.value}>
-              {sort.label}
-            </option>
-          ))}
-        </select>
-        <button
-          type="button"
-          className="ls-btn"
-          onClick={() => setFilter((current) => ({ ...current, descending: !current.descending }))}
-        >
-          {filter.descending ? "Descending" : "Ascending"}
-        </button>
-      </ViewHeader>
-
-      <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b ls-divider px-5 py-2">
-        {KIND_CHIPS.map((chip) => (
-          <Chip
-            key={chip.value}
-            label={chip.label}
-            on={filter.kinds.includes(chip.value)}
-            onClick={() =>
-              setFilter((current) => ({ ...current, kinds: toggle(current.kinds, chip.value) }))
-            }
-          />
-        ))}
-        <span className="mx-1 h-4 border-l ls-divider" />
-        {AUDIO_CHIPS.map((chip) => (
-          <Chip
-            key={chip.value}
-            label={chip.label}
-            on={filter.audioStates.includes(chip.value)}
-            onClick={() =>
-              setFilter((current) => ({
-                ...current,
-                audioStates: toggle(current.audioStates, chip.value),
-              }))
-            }
-          />
-        ))}
-        <span className="mx-1 h-4 border-l ls-divider" />
-        {FLAG_CHIPS.map((chip) => (
-          <Chip
-            key={chip.value}
-            label={chip.label}
-            on={filter.flags.includes(chip.value)}
-            onClick={() =>
-              setFilter((current) => ({ ...current, flags: toggle(current.flags, chip.value) }))
-            }
-          />
-        ))}
-        {filter.formats.length > 0 ? (
-          <Chip
-            on
-            label={`Formats: ${filter.formats.join(", ")} ×`}
-            onClick={() => setFilter((current) => ({ ...current, formats: [] }))}
-          />
-        ) : null}
-      </div>
-
-      <FileTable filter={filter} selected={selected} onSelect={setSelected} onTotals={onTotals} />
-
-      {selected.size > 0 ? (
-        <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-t ls-divider bg-zinc-50 px-5 py-2 dark:bg-zinc-900/60">
-          <span className="mr-2 text-xs font-medium">{formatCount(selected.size)} selected</span>
-          <button
-            type="button"
-            className="ls-btn ls-btn-danger"
-            onClick={() =>
-              propose(`Move ${formatCount(ids.length)} files to holding`, {
-                kind: "hold",
-                fileIds: ids,
-              })
-            }
-          >
-            Move to holding
-          </button>
-          <button
-            type="button"
-            className="ls-btn"
-            onClick={async () => {
-              const targetDir = await desktop.pickFolder().catch(report);
-
-              if (targetDir) {
-                propose(`Move ${formatCount(ids.length)} files`, {
-                  kind: "move",
-                  fileIds: ids,
-                  targetDir,
-                });
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                setSearch("");
+                event.currentTarget.blur();
               }
             }}
-          >
-            <FolderInput className="size-3.5" /> Move to…
-          </button>
-          <button
-            type="button"
-            className="ls-btn"
-            disabled={!single}
-            onClick={() => setDialog("rename")}
-          >
-            Rename…
-          </button>
-          <button
-            type="button"
-            className="ls-btn"
-            onClick={() => propose("Fix extensions", { kind: "fix-extension", fileIds: ids })}
-          >
-            Fix extension
-          </button>
-          <button
-            type="button"
-            className="ls-btn ls-btn-primary"
-            onClick={() =>
-              propose("Convert to the archive formats", {
-                kind: "optimize",
-                rootId,
-                categories: [
-                  "still-to-avif",
-                  "animation-to-mp4",
-                  "video-remux",
-                  "video-convert",
-                  "rename-avif",
-                  "rename-mp4",
-                ],
-                fileIds: ids,
-              })
-            }
-          >
-            Convert to archive format
-          </button>
-          <button
-            type="button"
-            className="ls-btn"
-            disabled={!onlyVideos}
-            onClick={() => setDialog("reencode")}
-          >
-            Re-encode…
-          </button>
-          <button
-            type="button"
-            className="ls-btn"
-            disabled={!onlyVideos}
-            onClick={() => propose("Remove the audio track", { kind: "strip-audio", fileIds: ids })}
-          >
-            Strip audio
-          </button>
-          <span className="ml-auto flex gap-1.5">
-            <button
-              type="button"
-              className="ls-btn ls-btn-ghost"
-              disabled={!single}
-              onClick={() => single && void desktop.reveal(single.absPath)}
-            >
-              <FolderOpen className="size-3.5" /> Reveal
-            </button>
-            <button
-              type="button"
-              className="ls-btn ls-btn-ghost"
-              disabled={!single}
-              onClick={() => single && void desktop.quickLook(single.absPath)}
-            >
-              <Eye className="size-3.5" /> Quick Look
-            </button>
-          </span>
-        </div>
-      ) : null}
-
-      {dialog === "rename" && single ? (
-        <RenameDialog
-          row={single}
-          onClose={() => setDialog(null)}
-          onRename={(name) => {
-            setDialog(null);
-            propose(`Rename ${single.name}`, {
-              kind: "rename",
-              renames: [{ fileId: single.id, name }],
-            });
-          }}
-        />
-      ) : null}
-
-      {dialog === "reencode" ? (
-        <ReencodeDialog
-          count={ids.length}
-          defaults={{
-            codec: settings?.reencodeCodec ?? "hevc",
-            quality: settings?.reencodeQuality ?? "high",
-          }}
-          available={capabilities?.video ?? { avc: false, hevc: false, av1: false }}
-          onClose={() => setDialog(null)}
-          onConfirm={(codec, quality) => {
-            setDialog(null);
-            propose(`Re-encode ${formatCount(ids.length)} videos`, {
-              kind: "reencode",
-              fileIds: ids,
-              codec,
-              quality,
-            });
-          }}
-        />
-      ) : null}
-    </div>
-  );
-}
-
-function RenameDialog({
-  row,
-  onClose,
-  onRename,
-}: {
-  row: FileRow;
-  onClose: () => void;
-  onRename: (name: string) => void;
-}) {
-  const [name, setName] = useState(row.name);
-  const input = useRef<HTMLInputElement>(null);
-
-  useEffect(() => input.current?.focus(), []);
-
-  return (
-    <Modal
-      title={`Rename ${row.name}`}
-      onClose={onClose}
-      footer={
-        <>
-          <button type="button" className="ls-btn" onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="ls-btn ls-btn-cta"
-            disabled={!name.trim() || name === row.name}
-            onClick={() => onRename(name.trim())}
-          >
-            Review rename
-          </button>
-        </>
-      }
-    >
-      <input
-        className="ls-input"
-        aria-label="New name"
-        value={name}
-        onChange={(event) => setName(event.target.value)}
-        ref={input}
-      />
-    </Modal>
-  );
-}
-
-const CODEC_OPTIONS = [
-  { value: "avc", label: "H.264" },
-  { value: "hevc", label: "HEVC" },
-  { value: "av1", label: "AV1" },
-] as const satisfies ReadonlyArray<{ value: VideoCodecChoice; label: string }>;
-
-const QUALITY_OPTIONS = [
-  { value: "medium", label: "Medium" },
-  { value: "high", label: "High" },
-  { value: "very-high", label: "Very high" },
-] as const satisfies ReadonlyArray<{ value: VideoQuality; label: string }>;
-
-function ReencodeDialog({
-  count,
-  defaults,
-  available,
-  onClose,
-  onConfirm,
-}: {
-  count: number;
-  defaults: { codec: VideoCodecChoice; quality: VideoQuality };
-  available: Record<VideoCodecChoice, boolean>;
-  onClose: () => void;
-  onConfirm: (codec: VideoCodecChoice, quality: VideoQuality) => void;
-}) {
-  const [codec, setCodec] = useState<VideoCodecChoice>(
-    available[defaults.codec] ? defaults.codec : "avc",
-  );
-
-  const [quality, setQuality] = useState<VideoQuality>(defaults.quality);
-
-  return (
-    <Modal
-      title={`Re-encode ${formatCount(count)} videos`}
-      onClose={onClose}
-      footer={
-        <>
-          <button type="button" className="ls-btn" onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="ls-btn ls-btn-cta"
-            disabled={!available[codec]}
-            onClick={() => onConfirm(codec, quality)}
-          >
-            Review re-encode
-          </button>
-        </>
-      }
-    >
-      <div className="space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-zinc-500">Codec</span>
-          <Toggle
-            label="Codec"
-            value={codec}
-            onChange={setCodec}
-            options={CODEC_OPTIONS.map((option) => ({
-              ...option,
-              disabled: !available[option.value],
-            }))}
           />
+          {search ? (
+            <button
+              type="button"
+              aria-label="Clear the search"
+              className="gz-btn gz-btn-ghost absolute top-1/2 right-1 size-6 -translate-y-1/2 rounded-md px-0 [&_svg]:size-3.5"
+              onClick={() => {
+                setSearch("");
+                searchInput.current?.focus();
+              }}
+            >
+              <X />
+            </button>
+          ) : null}
+        </label>
+
+        <FilterMenu
+          filters={filters}
+          facets={facets.data}
+          folders={folders.data ?? []}
+          rootName={rootName}
+          onChange={changeFilters}
+        />
+
+        <fieldset aria-label="Show as" className="gz-seg">
+          <button
+            type="button"
+            aria-pressed={mode === "list"}
+            aria-label="List"
+            title="List"
+            className="gz-seg-item px-2 [&_svg]:size-4"
+            onClick={() => setMode("list")}
+          >
+            <List />
+          </button>
+          <button
+            type="button"
+            aria-pressed={mode === "grid"}
+            aria-label="Grid"
+            title="Grid"
+            className="gz-seg-item px-2 [&_svg]:size-4"
+            onClick={() => setMode("grid")}
+          >
+            <LayoutGrid />
+          </button>
+        </fieldset>
+
+        <button
+          type="button"
+          aria-pressed={inspectorOpen}
+          aria-label="Inspector"
+          title="Inspector  I"
+          className="gz-btn gz-btn-ghost gz-btn-icon aria-pressed:bg-zinc-900/[0.06] aria-pressed:text-zinc-900 dark:aria-pressed:bg-white/[0.07] dark:aria-pressed:text-zinc-100"
+          onClick={toggleInspector}
+        >
+          <PanelRight />
+        </button>
+      </TopBar>
+
+      <FilterChips
+        filters={filters}
+        rootName={rootName}
+        onChange={changeFilters}
+        onClear={() => changeFilters(NO_FILTERS)}
+      />
+
+      <div className="flex min-h-0 flex-1">
+        <div className="relative flex min-w-0 flex-1 flex-col">
+          {pages.total === 0 ? (
+            filtered ? (
+              <EmptyState
+                icon={SearchX}
+                title="No files match"
+                actions={
+                  <button type="button" className="gz-btn gz-btn-secondary" onClick={clearFilters}>
+                    Clear filters
+                  </button>
+                }
+              />
+            ) : (
+              <EmptyState icon={FolderOpen} title="This folder has no files yet" />
+            )
+          ) : mode === "list" ? (
+            <FileTable
+              {...viewProps}
+              sort={query.sort}
+              descending={query.descending}
+              onSort={(sort, descending) =>
+                setQuery((current) => ({ ...current, sort, descending }))
+              }
+              onSelectAll={() => void selectAll()}
+              rootName={rootName}
+            />
+          ) : (
+            <FileGrid {...viewProps} />
+          )}
+
+          {barVisible ? (
+            <SelectionBar
+              count={selected.size}
+              summary={summary}
+              onConvert={() => convert([...selected])}
+              onHold={() => hold([...selected])}
+              onMoveTo={() => void moveTo([...selected])}
+              onMore={() => void runMenu(null)}
+              onClear={() => setSelected(new Set())}
+            />
+          ) : null}
         </div>
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-zinc-500">Quality</span>
-          <Toggle label="Quality" value={quality} onChange={setQuality} options={QUALITY_OPTIONS} />
-        </div>
-        <p className="text-zinc-500">
-          Re-encoding is lossy and runs on this Mac's WebCodecs encoders. A result that is not at
-          least 5% smaller keeps the original. Output is always MP4.
-        </p>
-        {codec === "av1" ? (
-          <p className="rounded-md bg-amber-500/10 px-3 py-2 text-amber-800 dark:text-amber-200">
-            Older devices cannot play AV1. Keep H.264 or HEVC for anything you watch on them.
-          </p>
-        ) : null}
-        {!available.hevc || !available.av1 ? (
-          <p className="text-zinc-500">Codecs this machine cannot encode are greyed out.</p>
+
+        {inspectorOpen ? (
+          <Inspector
+            single={single}
+            sample={sample}
+            count={targets.length}
+            summary={summary}
+            primary={!barVisible}
+            onConvert={() => convert(targets)}
+            onReveal={reveal}
+            onMoveTo={() => void moveTo(targets)}
+            onHold={() => hold(targets)}
+          />
         ) : null}
       </div>
-    </Modal>
+    </div>
   );
 }

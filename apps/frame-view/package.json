@@ -1,7 +1,7 @@
 {
   "name": "@latch-works/frame-view",
   "productName": "Frame View",
-  "version": "1.0.29",
+  "version": "1.1.0",
   "description": "Cross-platform image and video viewer",
   "main": ".vite/build/main.cjs",
   "private": true,
@@ -60,6 +60,7 @@
   },
   "dependencies": {
     "@ffprobe-installer/ffprobe": "^2.1.2",
+    "@latch-works/app-data": "workspace:*",
     "@latch-works/media-domain": "workspace:*",
     "better-result": "^3.0.1",
     "dotenv": "^18.0.7",

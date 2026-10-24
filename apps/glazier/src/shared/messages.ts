@@ -100,17 +100,79 @@ export const TranscoderChannels = {
   allow: "glazier-transcoder:allow",
 } as const;
 
-/** renderer → main */
+/** renderer → main, and the two main → renderer channels (`event`, `command`) */
 export const RendererChannels = {
   call: "glazier:call",
-  pickRoot: "glazier:pick-root",
-  pickFolder: "glazier:pick-folder",
+  listFolder: "glazier:list-folder",
+  folderPlaces: "glazier:folder-places",
   reveal: "glazier:reveal",
   open: "glazier:open",
   quickLook: "glazier:quick-look",
   emptyHolding: "glazier:empty-holding",
+  showMenu: "glazier:show-menu",
+  confirm: "glazier:confirm",
   event: "glazier:event",
+  command: "glazier:command",
 } as const;
+
+/** What the app menu asks the renderer to do; the renderer owns every command's behaviour. */
+export const AppCommandSchema = z.enum([
+  "add-root",
+  "rescan",
+  "undo",
+  "select-all",
+  "find",
+  "settings",
+  "shortcuts",
+  "toggle-sidebar",
+  "view:overview",
+  "view:duplicates",
+  "view:convert",
+  "view:cleanup",
+  "view:library",
+  "view:history",
+  "view:holding",
+]);
+
+export type AppCommand = z.infer<typeof AppCommandSchema>;
+
+const MenuSeparatorSchema = z.object({ type: z.literal("separator") });
+
+const MenuItemSchema = z.object({
+  type: z.literal("item"),
+  /** What the menu resolves with when this item is chosen. */
+  id: z.string(),
+  label: z.string(),
+  enabled: z.boolean().optional(),
+  checked: z.boolean().optional(),
+  /** Shown beside the label only; the renderer handles the key itself. */
+  accelerator: z.string().optional(),
+  sublabel: z.string().optional(),
+});
+
+/** A native context menu entry. Submenus go one level deep. */
+export const MenuEntrySchema = z.discriminatedUnion("type", [
+  MenuSeparatorSchema,
+  MenuItemSchema,
+  z.object({
+    type: z.literal("submenu"),
+    label: z.string(),
+    enabled: z.boolean().optional(),
+    items: z.array(z.discriminatedUnion("type", [MenuSeparatorSchema, MenuItemSchema])),
+  }),
+]);
+
+export type MenuEntry = z.infer<typeof MenuEntrySchema>;
+
+/** A native confirmation sheet, for the few actions Glazier cannot undo. */
+export const ConfirmRequestSchema = z.object({
+  message: z.string(),
+  detail: z.string().optional(),
+  confirmLabel: z.string(),
+  destructive: z.boolean().optional(),
+});
+
+export type ConfirmRequest = z.infer<typeof ConfirmRequestSchema>;
 
 export const CallResultSchema = z.discriminatedUnion("ok", [
   z.object({ ok: z.literal(true), value: JsonSchema }),
@@ -129,3 +191,43 @@ export type EmptyHoldingResult = z.infer<typeof EmptyHoldingResultSchema>;
 export const PathArgSchema = z.string().min(1);
 
 export const RootArgSchema = RootIdSchema;
+
+/** One folder under the folder being browsed. */
+const FolderEntrySchema = z.object({ name: z.string(), path: z.string() });
+
+/** The folders inside one folder, for the in-app folder picker; hidden and system folders left out. */
+export const FolderListingSchema = z.discriminatedUnion("ok", [
+  z.object({
+    ok: z.literal(true),
+    path: z.string(),
+    parent: z.string().nullable(),
+    folders: z.array(FolderEntrySchema),
+  }),
+  z.object({
+    ok: z.literal(false),
+    path: z.string(),
+    parent: z.string().nullable(),
+    message: z.string(),
+  }),
+]);
+
+export type FolderListing = z.infer<typeof FolderListingSchema>;
+
+const FolderPlaceSchema = z.object({
+  kind: z.enum(["home", "desktop", "documents", "downloads", "pictures", "videos", "volume"]),
+  label: z.string(),
+  path: z.string(),
+});
+
+export type FolderPlace = z.infer<typeof FolderPlaceSchema>;
+
+/** Where the folder picker can start: the home folder, its usual folders, and mounted drives. */
+export const FolderPlacesSchema = z.object({
+  home: z.string(),
+  /** `path.sep`, so the picker splits a typed path the way this platform writes it. */
+  separator: z.string(),
+  places: z.array(FolderPlaceSchema),
+  volumes: z.array(FolderPlaceSchema),
+});
+
+export type FolderPlaces = z.infer<typeof FolderPlacesSchema>;

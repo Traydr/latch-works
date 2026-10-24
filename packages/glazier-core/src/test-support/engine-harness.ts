@@ -6,7 +6,14 @@ import createAvifEncoder from "@jsquash/avif/codec/enc/avif_enc.js";
 import { createArchiveAvifEncoder } from "@latch-works/media-format";
 import sharp from "sharp";
 
-import type { EngineEvent, EngineMethodName, EngineOutput, Job } from "../contract.js";
+import type {
+  EngineEvent,
+  EngineMethodName,
+  EngineOutput,
+  FileRow,
+  Job,
+  RootId,
+} from "../contract.js";
 import { EngineMethods } from "../contract.js";
 import { GlazierEngine, type JsonValue } from "../engine/engine.js";
 import type { MediaToolkit } from "../media/toolkit.js";
@@ -50,6 +57,8 @@ const unavailableTranscoder: Transcoder = {
 export interface EngineHarness {
   engine: GlazierEngine;
   call<M extends EngineMethodName>(method: M, input: JsonValue): Promise<EngineOutput<M>>;
+  /** The catalog row at a path inside a root, failing when there is none. */
+  file(rootId: RootId, relPath: string): Promise<FileRow>;
   /** Resolves once the job finishes, rejecting if it fails. */
   settle(job: Job): Promise<Job>;
   /** Resolves once every job queued so far has finished. */
@@ -121,7 +130,31 @@ export async function openEngine(dataDir: string): Promise<EngineHarness> {
     }
   };
 
-  return { engine, call, settle, idle };
+  const file = async (rootId: RootId, relPath: string) => {
+    const page = await call("listFiles", {
+      rootId,
+      search: relPath,
+      kinds: [],
+      formats: [],
+      audioStates: [],
+      flags: [],
+      dir: null,
+      sort: "path",
+      descending: false,
+      offset: 0,
+      limit: 1000,
+    });
+
+    const row = page.rows.find((candidate) => candidate.relPath === relPath);
+
+    if (!row) {
+      throw new Error(`${relPath} is not in the catalog`);
+    }
+
+    return row;
+  };
+
+  return { engine, call, file, settle, idle };
 }
 
 /** A picture with enough structure for perceptual hashing: gradients, bands and a disc. */

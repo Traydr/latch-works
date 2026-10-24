@@ -21,11 +21,14 @@ export const FINGERPRINT_VERSION = 1;
 
 export const LOUDNESS_VERSION = 1;
 
-/** The SQL twin of {@link audioStateOf}, for filtering in queries. */
+/**
+ * The SQL twin of {@link audioStateOf}, for filtering in queries. A track the loudness pass could
+ * not measure keeps its version and no level, and stays unmeasured.
+ */
 export const AUDIO_STATE_SQL = `CASE
   WHEN f.kind != 'video' OR f.probe_version = 0 THEN NULL
   WHEN COALESCE(f.audio_streams, 0) = 0 THEN 'none'
-  WHEN f.loudness_version = 0 THEN 'unmeasured'
+  WHEN f.loudness_version = 0 OR f.loudness_max_db IS NULL THEN 'unmeasured'
   WHEN f.loudness_max_db <= ${SILENCE_THRESHOLD_DB} THEN 'silent'
   ELSE 'sound' END`;
 
@@ -34,7 +37,7 @@ export const FILE_COLUMNS = `f.id, f.root_id, r.path AS root_path, f.rel_path, f
   f.size, f.mtime_ms, f.ctime_ms, f.dev, f.ino, f.is_junk, f.kind, f.format, f.ext_mismatch,
   f.probe_version, f.probe_error, f.width, f.height, f.frames, f.has_alpha, f.duration_ms,
   f.video_codec, f.audio_codec, f.audio_streams, f.bitrate, f.sha256, f.fingerprint,
-  f.loudness_version, f.loudness_max_db`;
+  f.loudness_version, f.loudness_max_db, f.optimize_not_smaller`;
 
 export const FILES_FROM = "files f JOIN roots r ON r.id = f.root_id";
 
@@ -74,6 +77,8 @@ export const FileRecordSchema = z.object({
   fingerprint: NullableString,
   loudness_version: z.number(),
   loudness_max_db: NullableNumber,
+  /** 1 once an optimize conversion of these bytes came out no smaller and was not kept. */
+  optimize_not_smaller: z.number(),
 });
 
 /** A file as the catalog stores it, including the fields the contract keeps private. */

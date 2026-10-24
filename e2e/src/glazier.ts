@@ -27,6 +27,8 @@ const ELECTRON_BINARY = path.join(
 export interface GlazierSession {
   app: ElectronApplication;
   window: Page;
+  /** Glazier's data folder for this run, where the catalog and holding live. */
+  userDataDir: string;
 }
 
 async function findMainWindow(app: ElectronApplication): Promise<Page> {
@@ -59,41 +61,63 @@ export async function launchGlazier(): Promise<GlazierSession> {
   const window = await findMainWindow(app);
   await window.setViewportSize({ width: 1320, height: 860 });
 
-  return { app, window };
-}
-
-/** Points the native folder picker at `folder` for the next pick, from the main process. */
-export async function stubFolderDialog(app: ElectronApplication, folder: string): Promise<void> {
-  await app.evaluate(({ dialog }, chosen) => {
-    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [chosen] });
-  }, folder);
+  return { app, window, userDataDir };
 }
 
 /**
- * Waits for the work an action just started. The job bar lists queued and running jobs; a job
- * can take a moment to appear after its button is pressed, so this first gives it up to two
- * seconds to show, then waits for the bar to empty.
+ * Picks `folder` in Glazier's own folder picker, which the click before this opened: types its
+ * path into the path field, waits for the listing to catch up, and chooses it.
  */
-export async function waitForJobs(window: Page, timeout = 120_000): Promise<void> {
-  const jobs = window.locator('[data-testid="job-bar"] [data-job-state]');
-  await jobs
-    .first()
-    .waitFor({ state: "attached", timeout: 2000 })
-    .catch(() => undefined);
-  await expect(jobs).toHaveCount(0, { timeout });
+export async function chooseFolder(window: Page, folder: string): Promise<void> {
+  const choose = window.locator("[data-folder-choose]");
+
+  await window.locator("[data-folder-path]").fill(`${folder}${path.sep}`);
+  await expect(choose).toContainText(`“${path.basename(folder)}”`);
+  await choose.click();
 }
 
-export async function openView(window: Page, label: string): Promise<void> {
-  await window
-    .getByRole("navigation", { name: "Glazier" })
-    .getByRole("button", { name: label, exact: true })
-    .click();
+/**
+ * Waits for the work an action just started, and for the background analysis that follows it.
+ * The sidebar's job card names the running job; a job can take a moment to start after its button
+ * is pressed, and the next one (analysis after a scan) a moment after the last ends, so this gives
+ * a job up to two seconds to show and then needs the card gone twice in a row.
+ */
+export async function waitForJobs(window: Page, timeout = 180_000): Promise<void> {
+  const busy = window.locator('[data-testid="activity"][data-job-state]');
+
+  await busy.waitFor({ state: "attached", timeout: 2000 }).catch(() => undefined);
+
+  await expect
+    .poll(
+      async () => {
+        if ((await busy.count()) > 0) {
+          return false;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 400));
+
+        return (await busy.count()) === 0;
+      },
+      { timeout, intervals: [200] },
+    )
+    .toBe(true);
 }
 
-/** Applies the plan in the review dialog, then waits for the engine to finish it. */
-export async function applyPlan(window: Page): Promise<void> {
-  const dialog = window.getByRole("dialog");
-  await dialog.getByRole("button", { name: "Apply" }).click();
-  await expect(dialog).toHaveCount(0);
-  await waitForJobs(window);
+export type GlazierView =
+  | "overview"
+  | "duplicates"
+  | "convert"
+  | "cleanup"
+  | "library"
+  | "history"
+  | "holding"
+  | "settings";
+
+export async function openView(window: Page, view: GlazierView): Promise<void> {
+  await window.locator(`nav [data-view="${view}"]`).click();
+}
+
+/** The newest result toast, which every applied change shows with its Undo. */
+export function latestToast(window: Page) {
+  return window.locator("[data-toast]").last();
 }

@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
-import type { MediaItem } from "@latch-works/media-domain";
+import { LATCH_WORKS_DIRECTORY_NAME, type MediaItem } from "@latch-works/media-domain";
 import { type ArchiveFileFingerprint, fingerprintsMatch } from "@latch-works/media-index";
 import { z } from "zod";
 import { toError } from "./format.js";
@@ -155,7 +155,7 @@ export class HashCache {
 }
 
 function defaultHashCacheRoot(): string {
-  return path.join(homedir(), ".latch-works", "hash-cache", `v${CACHE_VERSION}`);
+  return path.join(homedir(), LATCH_WORKS_DIRECTORY_NAME, "hash-cache", `v${CACHE_VERSION}`);
 }
 
 export function hashCachePath(sourceRoot: string, cacheRoot = defaultHashCacheRoot()): string {
