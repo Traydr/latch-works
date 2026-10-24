@@ -381,8 +381,10 @@ Done.
 
 ### Phase 10: installer, first run and building from source (L)
 
-Built; the Windows half is proven only by the [Oriel build](../../.github/workflows/oriel-build.yml)
-workflow, since no Windows machine was at hand.
+Done. The Windows half is proven only by the [Oriel build](../../.github/workflows/oriel-build.yml)
+workflow, since no Windows machine was at hand: it builds Setup.exe and the MSI on
+`windows-latest`, installs silently, and Oriel starts and stays up, so Velopack kept the fuses and
+the asar intact.
 - **Icon.** A bay window onto the view, in the family's plate and palette. The Icon Composer
   bundle is `media/oriel.icon` (not `oriel-icon.icon`, which packager would compile on every
   Mac): Forge passes it only where `actool` 26 runs, on macOS 26 and later.

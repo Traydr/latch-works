@@ -34,7 +34,7 @@ pnpm make:oriel
 | OS | What it makes | Where |
 | --- | --- | --- |
 | macOS | `Oriel-<version>-arm64.dmg`, and a ZIP of the app | `apps/oriel/out/make/dmg/arm64/`, `apps/oriel/out/make/zip/darwin/arm64/` |
-| Windows | Velopack's `Setup.exe` (the installer, with the brand splash), a portable ZIP, and an MSI that installs per user or for the machine | `apps/oriel/out/make/velopack/` |
+| Windows | `Oriel-win-Setup.exe` (the installer, with the brand splash), `Oriel-win.msi` (per user or for the machine) and a portable package | `apps/oriel/out/make/velopack/` |
 
 `pnpm --filter @latch-works/oriel package` builds only the app, into
 `apps/oriel/out/Oriel-<platform>-<arch>`. `ORIEL_MACOS_SIGN_IDENTITY` names a signing identity;
@@ -61,7 +61,7 @@ xattr -dr com.apple.quarantine /Applications/Oriel.app
 or try to open it, then choose **Open Anyway** in System Settings › Privacy & Security. Started
 from the disk image or Downloads, Oriel offers to move itself to Applications.
 
-**Windows.** Run the `Setup.exe`. SmartScreen warns about an unknown publisher: choose
+**Windows.** Run `Oriel-win-Setup.exe`. SmartScreen warns about an unknown publisher: choose
 **More info**, then **Run anyway**. Setup installs for the current user into
 `%LocalAppData%\Oriel` and adds Start-menu and desktop shortcuts; the MSI can install for every
 user instead. Uninstall from Settings › Apps.
