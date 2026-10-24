@@ -1,6 +1,7 @@
 import {
   type EncoderCapabilities,
   GlazierEngine,
+  killRunningTools,
   type StillEncodeRequest,
   type StillEncodeResult,
   type StillEncoder,
@@ -169,6 +170,13 @@ async function start(): Promise<void> {
 
   post({ type: "ready" });
 }
+
+// The main process stops this one with SIGTERM when the app quits. ffmpeg and ffprobe children
+// would outlive it and keep converting, so they go first.
+process.on("SIGTERM", () => {
+  killRunningTools();
+  process.exit(0);
+});
 
 start().catch((error: Error) => {
   console.error(`[glazier:engine] failed to start: ${error.message}`);

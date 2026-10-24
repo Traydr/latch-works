@@ -6,6 +6,8 @@ export { type KeeperCandidate, rankKeepers } from "./duplicates/keeper.js";
 
 export { type EngineOptions, GlazierEngine, type JsonValue } from "./engine/engine.js";
 
+export { killRunningTools } from "./media/run-tool.js";
+
 export type { MediaToolkit, SharpLibrary } from "./media/toolkit.js";
 
 export { probeVideo, type VideoProbe } from "./media/video-probe.js";

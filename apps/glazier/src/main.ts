@@ -58,10 +58,9 @@ async function createWindow(): Promise<void> {
       mainWindow = null;
     }
 
-    // The hidden transcoder window would otherwise keep the app alive off macOS.
-    if (process.platform !== "darwin") {
-      app.quit();
-    }
+    // Glazier is one window. Closing it quits, on macOS too: the engine, its workers and the
+    // hidden transcoder window would otherwise keep running with nothing on screen.
+    app.quit();
   });
 
   window.once("ready-to-show", () => window.show());
@@ -98,12 +97,6 @@ app.whenReady().then(async () => {
       void createWindow();
     }
   });
-});
-
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
-    app.quit();
-  }
 });
 
 app.on("will-quit", () => {
