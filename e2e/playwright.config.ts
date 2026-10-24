@@ -1,8 +1,9 @@
 import { defineConfig, devices } from "@playwright/test";
 import { AUTH_STATE_PATH, PANE_VIEW_URL } from "./src/env.ts";
 
-/** Projects that run without the Pane View server: Glazier builds its own archive. */
-const STANDALONE_PROJECTS = new Set(["glazier", "glazier-setup"]);
+/** Projects that run without the Pane View server: Glazier builds its own archive, and Oriel's
+ * shell needs none. */
+const STANDALONE_PROJECTS = new Set(["glazier", "glazier-setup", "oriel", "oriel-setup"]);
 
 const selectedProjects = process.argv.flatMap((arg, index, all) => {
   if (arg === "--project") {
@@ -68,6 +69,17 @@ export default defineConfig({
       testDir: "./tests/glazier",
       testMatch: /.*\.spec\.ts/,
       timeout: 180_000,
+    },
+    {
+      name: "oriel-setup",
+      testDir: "./tests/oriel",
+      testMatch: /.*\.setup\.ts/,
+    },
+    {
+      dependencies: ["oriel-setup"],
+      name: "oriel",
+      testDir: "./tests/oriel",
+      testMatch: /.*\.spec\.ts/,
     },
     {
       name: "lockstep-setup",
