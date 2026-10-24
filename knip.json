@@ -64,6 +64,16 @@
       ],
       "ignoreDependencies": ["@testing-library/react"]
     },
+    "apps/oriel": {
+      "entry": [
+        "forge.config.ts",
+        "vite.main.config.mts",
+        "vite.preload.config.mts",
+        "vite.renderer.config.mts",
+        "src/main.ts",
+        "src/preload.ts"
+      ]
+    },
     "apps/glazier": {
       "entry": [
         "forge.config.ts",
