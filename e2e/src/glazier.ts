@@ -1,67 +1,25 @@
-import { mkdtemp } from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
-import {
-  type ElectronApplication,
-  _electron as electron,
-  expect,
-  type Page,
-} from "@playwright/test";
-import { electronChildEnv, REPO_ROOT } from "./env.ts";
+import { type ElectronApplication, expect, type Page } from "@playwright/test";
+import { launchOriel, openMode } from "./oriel.ts";
 
 /**
- * Drives the packaged Glazier build (`apps/glazier/.vite/build`, produced by `electron-forge
- * package` in the setup project) on a fresh userData directory. Glazier opens a hidden transcoder
- * window beside its main one, so the main window is found by its page rather than taken first.
+ * Drives Tidy, Glazier as one of Oriel's modes, in the packaged Oriel build on a fresh userData
+ * directory.
  */
-export const GLAZIER_APP_DIR = path.join(REPO_ROOT, "apps", "glazier");
-
-const ELECTRON_BINARY = path.join(
-  GLAZIER_APP_DIR,
-  "node_modules",
-  "electron",
-  "dist",
-  process.platform === "darwin" ? "Electron.app/Contents/MacOS/Electron" : "electron",
-);
-
 export interface GlazierSession {
   app: ElectronApplication;
   window: Page;
-  /** Glazier's data folder for this run, where the catalog and holding live. */
+  /** Tidy's data folder for this run, where the catalog and holding live: `glazier/` in Oriel's. */
   userDataDir: string;
 }
 
-async function findMainWindow(app: ElectronApplication): Promise<Page> {
-  for (let attempt = 0; attempt < 150; attempt += 1) {
-    const page = app.windows().find((candidate) => candidate.url().endsWith("index.html"));
-
-    if (page) {
-      return page;
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 200));
-  }
-
-  throw new Error("Glazier's main window never opened.");
-}
-
 export async function launchGlazier(): Promise<GlazierSession> {
-  const userDataDir = await mkdtemp(path.join(os.tmpdir(), "glazier-e2e-"));
+  const { app, window, userDataDir } = await launchOriel();
 
-  const app = await electron.launch({
-    args: [
-      path.join(GLAZIER_APP_DIR, ".vite", "build", "main.cjs"),
-      `--user-data-dir=${userDataDir}`,
-    ],
-    cwd: GLAZIER_APP_DIR,
-    env: electronChildEnv(),
-    executablePath: ELECTRON_BINARY,
-  });
+  await openMode(window, "tidy");
+  await expect(window.getByRole("heading", { name: "Choose your media archive" })).toBeVisible();
 
-  const window = await findMainWindow(app);
-  await window.setViewportSize({ width: 1320, height: 860 });
-
-  return { app, window, userDataDir };
+  return { app, window, userDataDir: path.join(userDataDir, "glazier") };
 }
 
 /**

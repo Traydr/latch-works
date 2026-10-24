@@ -1,6 +1,14 @@
-import { type ReactNode, useEffect, useState } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
-type ThemeChoice = "system" | "light" | "dark";
+export type ThemeChoice = "system" | "light" | "dark";
 
 const STORAGE_KEY = "oriel.theme";
 
@@ -12,12 +20,19 @@ function storedChoice(): ThemeChoice {
   return CHOICES.find((choice) => choice === stored) ?? "system";
 }
 
+interface Theme {
+  choice: ThemeChoice;
+  choose: (choice: ThemeChoice) => void;
+}
+
+const ThemeContext = createContext<Theme | null>(null);
+
 /**
- * Follows the system's appearance unless the owner picked one. Colours switch without animating,
- * so a flip does not smear every element's transition across the window.
+ * One theme for every mode: the system's appearance unless the owner picks one. Colours switch
+ * without animating, so a flip does not smear every element's transition across the window.
  */
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [choice] = useState<ThemeChoice>(storedChoice);
+  const [choice, setChoice] = useState<ThemeChoice>(storedChoice);
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
@@ -37,5 +52,22 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return () => media.removeEventListener("change", apply);
   }, [choice]);
 
-  return children;
+  const choose = useCallback((next: ThemeChoice) => {
+    window.localStorage.setItem(STORAGE_KEY, next);
+    setChoice(next);
+  }, []);
+
+  const value = useMemo(() => ({ choice, choose }), [choice, choose]);
+
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
+}
+
+export function useTheme(): Theme {
+  const theme = useContext(ThemeContext);
+
+  if (!theme) {
+    throw new Error("useTheme needs a ThemeProvider.");
+  }
+
+  return theme;
 }

@@ -3,7 +3,7 @@ import { AUTH_STATE_PATH, PANE_VIEW_URL } from "./src/env.ts";
 
 /** Projects that run without the Pane View server: Glazier builds its own archive, and Oriel's
  * shell needs none. */
-const STANDALONE_PROJECTS = new Set(["glazier", "glazier-setup", "oriel", "oriel-setup"]);
+const STANDALONE_PROJECTS = new Set(["glazier", "oriel", "oriel-setup"]);
 
 const selectedProjects = process.argv.flatMap((arg, index, all) => {
   if (arg === "--project") {
@@ -58,13 +58,8 @@ export default defineConfig({
       testMatch: /.*\.spec\.ts/,
     },
     {
-      name: "glazier-setup",
-      testDir: "./tests/glazier",
-      testMatch: /.*\.setup\.ts/,
-    },
-    {
-      // Glazier builds its own throwaway archive and needs no Pane View server.
-      dependencies: ["glazier-setup"],
+      // Tidy (Glazier in Oriel) builds its own throwaway archive and needs no Pane View server.
+      dependencies: ["oriel-setup"],
       name: "glazier",
       testDir: "./tests/glazier",
       testMatch: /.*\.spec\.ts/,

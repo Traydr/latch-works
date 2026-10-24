@@ -1,13 +1,12 @@
 import type { EncoderCapabilities, RootId } from "@latch-works/glazier-core/contract";
 import { ChevronRight, Folder, X } from "lucide-react";
 import { type ReactNode, useState } from "react";
-
+import { type ThemeChoice, useTheme } from "../../../../shell/theme";
 import { useFolderPicker } from "../components/FolderPicker";
 import { useToasts } from "../components/Toasts";
 import { Segmented, StartTruncate, Switch, TopBar } from "../components/ui";
 import { useEngine } from "../lib/engine-state";
 import { SIMILARITY_LEVELS, VIDEO_QUALITIES } from "../lib/preferences";
-import { type ThemeChoice, useTheme } from "../lib/theme";
 
 const THEMES = [
   { value: "system", label: "System" },

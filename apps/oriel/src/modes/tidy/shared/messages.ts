@@ -124,7 +124,6 @@ export const AppCommandSchema = z.enum([
   "find",
   "settings",
   "shortcuts",
-  "toggle-sidebar",
   "view:overview",
   "view:duplicates",
   "view:convert",

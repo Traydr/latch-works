@@ -32,6 +32,21 @@ export interface OrielSession {
   userDataDir: string;
 }
 
+/** Oriel's window, found by its page: Tidy opens a hidden transcoder window beside it. */
+async function findMainWindow(app: ElectronApplication): Promise<Page> {
+  for (let attempt = 0; attempt < 150; attempt += 1) {
+    const page = app.windows().find((candidate) => candidate.url().endsWith("index.html"));
+
+    if (page) {
+      return page;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+
+  throw new Error("Oriel's main window never opened.");
+}
+
 /** Launches Oriel on `userDataDir`, or on a fresh one. */
 export async function launchOriel(userDataDir?: string): Promise<OrielSession> {
   const dataDir = userDataDir ?? (await mkdtemp(path.join(os.tmpdir(), "oriel-e2e-")));
@@ -43,7 +58,7 @@ export async function launchOriel(userDataDir?: string): Promise<OrielSession> {
     executablePath: ELECTRON_BINARY,
   });
 
-  const window = await app.firstWindow();
+  const window = await findMainWindow(app);
   await window.setViewportSize({ width: 1320, height: 860 });
   await expect(modeButton(window, "view")).toBeVisible();
 

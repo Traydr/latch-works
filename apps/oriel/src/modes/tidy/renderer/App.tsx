@@ -1,7 +1,10 @@
 import type { RootId } from "@latch-works/glazier-core/contract";
 import { type DragEvent, useCallback, useEffect, useRef, useState } from "react";
 
-import glazierIcon from "../../media/glazier-icon.svg";
+import glazierIcon from "../../../../media/modes/glazier-icon.svg";
+import { ModeLayout } from "../../../shell/ModeLayout";
+import { useShell } from "../../../shell/shell";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { FolderPickerProvider, useFolderPicker } from "./components/FolderPicker";
 import { ShortcutSheet } from "./components/ShortcutSheet";
 import { Sidebar } from "./components/Sidebar";
@@ -13,8 +16,6 @@ import { dispatchCommand } from "./lib/commands";
 import { EngineProvider, useEngine } from "./lib/engine-state";
 import { isTextInputTarget, useViewKeys } from "./lib/hotkeys";
 import { NavigationProvider, useNavigation, type View } from "./lib/navigation";
-import { useSidebarRail } from "./lib/sidebar";
-import { ThemeProvider } from "./lib/theme";
 import { CleanupView } from "./views/CleanupView";
 import { ConvertView } from "./views/ConvertView";
 import { DuplicatesView } from "./views/DuplicatesView";
@@ -24,21 +25,30 @@ import { LibraryView } from "./views/LibraryView";
 import { OverviewView } from "./views/OverviewView";
 import { SettingsView } from "./views/SettingsView";
 
-export function App() {
+/** Tidy: Glazier, the archive workbench, as one of Oriel's modes. */
+export function TidyMode() {
   return (
-    <ThemeProvider>
-      <ToastProvider>
-        <EngineProvider>
-          <NavigationProvider>
-            <ActionsProvider>
-              <FolderPickerProvider>
-                <Shell />
-              </FolderPickerProvider>
-            </ActionsProvider>
-          </NavigationProvider>
-        </EngineProvider>
-      </ToastProvider>
-    </ThemeProvider>
+    <ErrorBoundary>
+      {window.glazier ? (
+        <ToastProvider>
+          <EngineProvider>
+            <NavigationProvider>
+              <ActionsProvider>
+                <FolderPickerProvider>
+                  <Shell />
+                </FolderPickerProvider>
+              </ActionsProvider>
+            </NavigationProvider>
+          </EngineProvider>
+        </ToastProvider>
+      ) : (
+        <ModeLayout>
+          <p className="p-6 text-sm">
+            Tidy's desktop bridge is unavailable; the preload did not load.
+          </p>
+        </ModeLayout>
+      )}
+    </ErrorBoundary>
   );
 }
 
@@ -58,7 +68,7 @@ function Shell() {
   const { undoLast } = useActions();
   const toasts = useToasts();
   const [shortcuts, setShortcuts] = useState(false);
-  const sidebar = useSidebarRail();
+  const { rail } = useShell();
   const [dragging, setDragging] = useState(false);
   const root = roots.find((candidate) => candidate.id === rootId) ?? null;
   const main = useRef<HTMLElement>(null);
@@ -70,11 +80,6 @@ function Shell() {
       main.current.focus({ preventScroll: true });
     }
   }, [view]);
-
-  // The folder's name names the window in Mission Control, the Window menu and ⌘`.
-  useEffect(() => {
-    document.title = root?.name ?? "Glazier";
-  }, [root?.name]);
 
   // Engine errors surface as toasts, like every other result.
   useEffect(() => {
@@ -158,9 +163,6 @@ function Shell() {
           case "shortcuts":
             setShortcuts(true);
             break;
-          case "toggle-sidebar":
-            sidebar.toggle();
-            break;
           case "view:overview":
           case "view:duplicates":
           case "view:convert":
@@ -178,7 +180,7 @@ function Shell() {
           }
         }
       }),
-    [chooseFolder, go, report, requestSearch, rootId, sidebar.toggle, undoLast],
+    [chooseFolder, go, report, requestSearch, rootId, undoLast],
   );
 
   useViewKeys((event) => {
@@ -203,7 +205,7 @@ function Shell() {
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: the whole window takes a dropped folder; ⌘O is the keyboard path.
     <div
-      className="flex h-screen overflow-hidden bg-white text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100"
+      className="h-full"
       onDragOver={(event) => {
         if (event.dataTransfer.types.includes("Files")) {
           event.preventDefault();
@@ -217,24 +219,25 @@ function Shell() {
       }}
       onDrop={onDrop}
     >
-      {root ? <Sidebar onAddRoot={chooseFolder} rail={sidebar.rail} /> : null}
-      <main
-        ref={main}
-        tabIndex={-1}
-        className="relative flex min-h-0 min-w-0 flex-1 flex-col outline-none"
-      >
-        {!ready ? (
-          <>
-            <div className="gz-drag h-[52px] shrink-0" />
-            <EmptyState title="Starting…" />
-          </>
-        ) : root ? (
-          <CurrentView rootId={root.id} />
-        ) : (
-          <Welcome onChoose={chooseFolder} dragging={dragging} />
-        )}
-        <ToastViewport />
-      </main>
+      <ModeLayout sidebar={root ? <Sidebar onAddRoot={chooseFolder} rail={rail} /> : undefined}>
+        <main
+          ref={main}
+          tabIndex={-1}
+          className="relative flex min-h-0 min-w-0 flex-1 flex-col outline-none"
+        >
+          {!ready ? (
+            <>
+              <div className="gz-drag h-[52px] shrink-0" />
+              <EmptyState title="Starting…" />
+            </>
+          ) : root ? (
+            <CurrentView rootId={root.id} />
+          ) : (
+            <Welcome onChoose={chooseFolder} dragging={dragging} />
+          )}
+          <ToastViewport />
+        </main>
+      </ModeLayout>
       {dragging && root ? (
         <div className="pointer-events-none fixed inset-3 z-50 flex items-center justify-center rounded-2xl border-2 border-dashed border-violet-400 bg-violet-500/10 text-[15px] font-medium text-violet-700 dark:text-violet-200">
           Drop a folder to add it

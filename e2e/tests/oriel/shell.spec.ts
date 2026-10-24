@@ -23,12 +23,14 @@ test("starts in View and switches modes from the switcher and the menu", async (
 
   await openMode(window, "tidy");
   await expect(modeButton(window, "tidy")).toHaveAttribute("aria-current", "page");
-  await expect(window.getByText("Glazier moves in here.")).toBeVisible();
+  const tidyWelcome = window.getByRole("heading", { name: "Choose your media archive" });
+
+  await expect(tidyWelcome).toBeVisible();
 
   await chooseModeFromMenu(app, "sync");
   await expect(window).toHaveTitle("Sync – Oriel");
   await expect(window.getByRole("navigation", { name: "Profiles" })).toBeVisible();
-  await expect(window.getByText("Glazier moves in here.")).toBeHidden();
+  await expect(tidyWelcome).toBeHidden();
 
   // The menu's check mark follows the mode the window shows.
   const checked = await app.evaluate(({ Menu }) =>

@@ -15,8 +15,8 @@
 
 ## Status
 
-- **Status**: IN PROGRESS (Phase 1 on `agent/059-1-shell`, Phase 2 on `agent/059-2-sync`, stacked,
-  2026-10-24)
+- **Status**: IN PROGRESS (Phases 1–3 on `agent/059-1-shell`, `agent/059-2-sync` and
+  `agent/059-3-tidy`, stacked, 2026-10-24)
 - **Priority**: P2 (the owner asked for it)
 - **Effort**: XL overall, as ten stacked PRs of S–L each
 - **Risk**: MEDIUM to HIGH. It touches every desktop app's process model. The data migration
@@ -190,6 +190,12 @@ decision 10), so `LOCKSTEP_SECRET_STORAGE` goes. Until Phase 5 migrates them, to
 packaged Lockstep saved don't decrypt in Sync, and their profiles ask for the token.
 
 ### Phase 3: move Glazier in as Tidy (M)
+
+Done on `agent/059-3-tidy`. Tidy's IPC and media protocol register at launch, because its window
+can call them as soon as it mounts. The engine process starts with its first call, and the hidden
+transcoder window when the window first shows Tidy (`ModeHost.activate`). The shell now quits when
+its window closes, not when every window has, since the transcoder window outlives it. Tidy's
+renderer errors stay inside the mode, so the switcher keeps working.
 
 `git mv` the engine host, AVIF pool, transcoder window and its preload, the media protocol, IPC,
 and the renderer. Its menu becomes `menu()`, with view shortcuts on ⌥⌘1–7. Give the transcoder

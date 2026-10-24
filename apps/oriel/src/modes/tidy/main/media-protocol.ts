@@ -4,21 +4,20 @@ import path from "node:path";
 import { Readable } from "node:stream";
 
 import { EngineMethods } from "@latch-works/glazier-core/contract";
-import { protocol } from "electron";
+import { type CustomScheme, protocol } from "electron";
 
 import type { EngineHost } from "./engine-host";
 
 const MEDIA_SCHEME = "glazier-media";
 
-/** Must run before the app is ready, so Chromium treats the scheme as a secure, streamable origin. */
-export function registerMediaScheme(): void {
-  protocol.registerSchemesAsPrivileged([
-    {
-      scheme: MEDIA_SCHEME,
-      privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
-    },
-  ]);
-}
+/**
+ * Tidy's scheme, for the shell's one `registerSchemesAsPrivileged` call before the app is ready,
+ * so Chromium treats it as a secure, streamable origin.
+ */
+export const TIDY_MEDIA_SCHEME = {
+  scheme: MEDIA_SCHEME,
+  privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
+} as const satisfies CustomScheme;
 
 const CONTENT_TYPES = {
   ".jpg": "image/jpeg",

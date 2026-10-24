@@ -1,9 +1,10 @@
-import { contextBridge, type IpcRendererEvent, ipcRenderer, webUtils } from "electron";
+import { type IpcRendererEvent, ipcRenderer, webUtils } from "electron";
 
 import type { GlazierBridge } from "./shared/bridge";
 import { type Json, RendererChannels } from "./shared/messages";
 
-const bridge: GlazierBridge = {
+/** Tidy's half of the preload bridge, which Oriel exposes as `window.glazier`. */
+export const glazierBridge: GlazierBridge = {
   platform: process.platform,
   call: (method, input) => ipcRenderer.invoke(RendererChannels.call, method, input),
   onEvent: (listener) => {
@@ -34,5 +35,3 @@ const bridge: GlazierBridge = {
     };
   },
 };
-
-contextBridge.exposeInMainWorld("glazier", bridge);

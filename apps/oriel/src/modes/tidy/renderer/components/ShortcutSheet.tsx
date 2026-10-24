@@ -8,13 +8,13 @@ type Group = { title: string; rows: readonly Shortcut[] };
 const EVERYWHERE: Group = {
   title: "Everywhere",
   rows: [
-    ["Overview", "⌘1"],
-    ["Duplicates", "⌘2"],
-    ["Convert", "⌘3"],
-    ["Clean up", "⌘4"],
-    ["Library", "⌘5"],
-    ["History", "⌘6"],
-    ["Holding", "⌘7"],
+    ["Overview", "⌥⌘1"],
+    ["Duplicates", "⌥⌘2"],
+    ["Convert", "⌥⌘3"],
+    ["Clean up", "⌥⌘4"],
+    ["Library", "⌥⌘5"],
+    ["History", "⌥⌘6"],
+    ["Holding", "⌥⌘7"],
     ["Settings", "⌘,"],
     ["Add folder", "⌘O"],
     ["Rescan", "⌘R"],
@@ -23,6 +23,7 @@ const EVERYWHERE: Group = {
     ["Run the page's main action", "⌘↩"],
     ["Collapse the sidebar", "⌘\\"],
     ["Shortcuts", "?"],
+    ["View, Tidy, Sync", "⌘1 ⌘2 ⌘3"],
   ],
 };
 

@@ -1,5 +1,6 @@
 import { execSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { FuseV1Options, FuseVersion } from "@electron/fuses";
 import { MakerDeb } from "@electron-forge/maker-deb";
@@ -10,6 +11,13 @@ import { AutoUnpackNativesPlugin } from "@electron-forge/plugin-auto-unpack-nati
 import { FusesPlugin } from "@electron-forge/plugin-fuses";
 import { VitePlugin } from "@electron-forge/plugin-vite";
 import type { ForgeConfig } from "@electron-forge/shared-types";
+import { z } from "zod";
+
+/** The dependency lists forge walks when staging runtime packages. */
+const PackageManifestSchema = z.object({
+  dependencies: z.record(z.string(), z.string()).optional(),
+  optionalDependencies: z.record(z.string(), z.string()).optional(),
+});
 
 const appIconBasePath = path.resolve(__dirname, "media", "oriel-icon");
 
@@ -31,7 +39,79 @@ const localMacEntitlements = [
 
 const appName = "oriel";
 
+const stagedRuntimePath = path.resolve(__dirname, ".packaged-runtime");
+
+const stagedNodeModulesPath = path.join(stagedRuntimePath, "node_modules");
+
+const stagedCodecsPath = path.join(stagedRuntimePath, "codecs");
+
+/** Native packages Tidy's engine and workers load from the app's resources, outside the asar. */
+const runtimeDependencyRoots = ["ffmpeg-static", "@ffprobe-installer/ffprobe", "sharp"];
+
 type PackagerConfig = NonNullable<ForgeConfig["packagerConfig"]>;
+
+// Walk up from `fromDirectory` looking in each `node_modules`, following pnpm's symlinks into the
+// virtual store so transitive and optional dependencies resolve under the isolated layout as well
+// as a hoisted one. Missing packages (other platforms' optional binaries) return null.
+function findPackageDirectory(packageName: string, fromDirectory: string): string | null {
+  const packagePathSegments = packageName.split("/");
+  let currentDirectory = fromDirectory;
+
+  for (;;) {
+    const candidatePath = path.join(currentDirectory, "node_modules", ...packagePathSegments);
+
+    if (existsSync(candidatePath)) {
+      return realpathSync(candidatePath);
+    }
+
+    const parentDirectory = path.dirname(currentDirectory);
+
+    if (parentDirectory === currentDirectory) {
+      return null;
+    }
+
+    currentDirectory = parentDirectory;
+  }
+}
+
+function copyRuntimePackage(
+  packageName: string,
+  fromDirectory: string,
+  visited: Set<string>,
+): void {
+  if (visited.has(packageName)) {
+    return;
+  }
+
+  const sourcePath = findPackageDirectory(packageName, fromDirectory);
+
+  if (!sourcePath) {
+    return;
+  }
+
+  visited.add(packageName);
+  // Self-contained copies, so codesign can seal the .app bundle.
+  cpSync(sourcePath, path.join(stagedNodeModulesPath, ...packageName.split("/")), {
+    dereference: true,
+    recursive: true,
+  });
+
+  const packageJsonPath = path.join(sourcePath, "package.json");
+
+  if (!existsSync(packageJsonPath)) {
+    return;
+  }
+
+  const manifest = PackageManifestSchema.parse(JSON.parse(readFileSync(packageJsonPath, "utf8")));
+
+  for (const dependencyName of Object.keys(manifest.dependencies ?? {})) {
+    copyRuntimePackage(dependencyName, sourcePath, visited);
+  }
+
+  for (const dependencyName of Object.keys(manifest.optionalDependencies ?? {})) {
+    copyRuntimePackage(dependencyName, sourcePath, visited);
+  }
+}
 
 // Vite bundles workspace packages from their `dist`, which nothing else rebuilds before a direct
 // `electron-forge package` or `make`.
@@ -40,6 +120,35 @@ function buildWorkspaceDependencies(): void {
     cwd: path.resolve(__dirname, "../.."),
     stdio: "inherit",
   });
+}
+
+function stageRuntime(): void {
+  rmSync(stagedRuntimePath, { force: true, recursive: true });
+  mkdirSync(stagedNodeModulesPath, { recursive: true });
+  mkdirSync(stagedCodecsPath, { recursive: true });
+  const visited = new Set<string>();
+
+  for (const dependencyName of runtimeDependencyRoots) {
+    copyRuntimePackage(dependencyName, __dirname, visited);
+  }
+
+  for (const dependencyName of runtimeDependencyRoots) {
+    if (!visited.has(dependencyName)) {
+      throw new Error(`Runtime dependency ${dependencyName} was not found for staging`);
+    }
+  }
+
+  // The libavif encoder the AVIF workers load from disk: its wasm, and its emscripten module as
+  // `.mjs` so Node reads it as the ES module it is.
+  const resolveFromApp = createRequire(path.join(__dirname, "package.json"));
+  cpSync(
+    resolveFromApp.resolve("@jsquash/avif/codec/enc/avif_enc.wasm"),
+    path.join(stagedCodecsPath, "avif_enc.wasm"),
+  );
+  cpSync(
+    resolveFromApp.resolve("@jsquash/avif/codec/enc/avif_enc.js"),
+    path.join(stagedCodecsPath, "avif_enc.mjs"),
+  );
 }
 
 function getPackagerIconPath(): string | undefined {
@@ -85,8 +194,8 @@ const config: ForgeConfig = {
     asar: {
       unpack: "**/*.{exe,node,dll}",
     },
-    // Vite output lives in `.vite`. Prune stays off so packager does not walk the dev
-    // node_modules.
+    // Vite output lives in `.vite`; the native runtime is staged through extraResource. Prune stays
+    // off so packager does not walk the dev node_modules.
     ignore: (file) => {
       if (!file) {
         return false;
@@ -99,7 +208,7 @@ const config: ForgeConfig = {
       return true;
     },
     prune: false,
-    extraResource: [appMediaPath],
+    extraResource: [stagedNodeModulesPath, stagedCodecsPath, appMediaPath],
     icon: getPackagerIconPath(),
     executableName: appName,
     osxSign: getMacCodeSignConfig(),
@@ -110,6 +219,7 @@ const config: ForgeConfig = {
   hooks: {
     prePackage: async () => {
       buildWorkspaceDependencies();
+      stageRuntime();
     },
   },
   // Windows gets a Velopack installer in a later step; until then it gets a ZIP like macOS.
@@ -129,9 +239,27 @@ const config: ForgeConfig = {
     new VitePlugin({
       build: [
         { entry: "src/main.ts", config: "vite.main.config.mts", target: "main" },
+        {
+          entry: "src/modes/tidy/engine/engine-process.ts",
+          config: "vite.main.config.mts",
+          target: "main",
+        },
+        {
+          entry: "src/modes/tidy/engine/avif-worker.ts",
+          config: "vite.main.config.mts",
+          target: "main",
+        },
         { entry: "src/preload.ts", config: "vite.preload.config.mts", target: "preload" },
+        {
+          entry: "src/modes/tidy/transcoder-preload.ts",
+          config: "vite.preload.config.mts",
+          target: "preload",
+        },
       ],
-      renderer: [{ name: "main_window", config: "vite.renderer.config.mts" }],
+      renderer: [
+        { name: "main_window", config: "vite.renderer.config.mts" },
+        { name: "transcoder", config: "vite.transcoder.config.mts" },
+      ],
     }),
     new FusesPlugin({
       version: FuseVersion.V1,

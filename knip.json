@@ -57,23 +57,13 @@
         "vite.main.config.mts",
         "vite.preload.config.mts",
         "vite.renderer.config.mts",
-        "src/main.ts",
-        "src/preload.ts"
-      ]
-    },
-    "apps/glazier": {
-      "entry": [
-        "forge.config.ts",
-        "vite.main.config.mts",
-        "vite.preload.config.mts",
-        "vite.renderer.config.mts",
         "vite.transcoder.config.mts",
         "src/main.ts",
         "src/preload.ts",
-        "src/transcoder-preload.ts",
-        "src/engine/engine-process.ts",
-        "src/engine/avif-worker.ts",
-        "src/transcoder/transcoder.ts"
+        "src/modes/tidy/transcoder-preload.ts",
+        "src/modes/tidy/engine/engine-process.ts",
+        "src/modes/tidy/engine/avif-worker.ts",
+        "src/modes/tidy/transcoder/transcoder.ts"
       ],
       "ignoreDependencies": ["ffmpeg-static", "@ffprobe-installer/ffprobe", "sharp"]
     },

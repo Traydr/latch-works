@@ -7,7 +7,7 @@ const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const repoRoot = path.resolve(appRoot, "../..");
 
 /** The workspace packages Oriel's modes load from their `dist`, which `pnpm start` never builds. */
-const packages = ["app-data", "lockstep-core"];
+const packages = ["app-data", "glazier-core", "lockstep-core", "media-format"];
 
 const missing = packages.filter(
   (name) => !existsSync(path.join(repoRoot, "packages", name, "dist", "index.js")),

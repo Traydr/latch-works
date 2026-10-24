@@ -1,34 +1,50 @@
 import type { MenuItemConstructorOptions } from "electron";
 
 import { MODE_IDS, MODE_LABELS, type ModeId, type ShellCommand } from "../shared/shell";
+import type { ModeMenu } from "./mode";
 
-/** The menu item id of a mode's entry in the View menu, so its check mark can follow the mode. */
-export function modeMenuItemId(mode: ModeId): string {
+/** The menu item id of a mode's entry in the View menu. */
+function modeMenuItemId(mode: ModeId): string {
   return `mode-${mode}`;
 }
 
 interface AppMenuOptions {
   appName: string;
   packaged: boolean;
+  /** The mode on screen, whose entry is checked. */
+  mode: ModeId;
+  /** What that mode adds to the menu. */
+  modeMenu: ModeMenu | undefined;
   send: (command: ShellCommand) => void;
 }
 
 /**
- * The app menu. Its commands go to the window, which owns the mode and the sidebar; ⌘1–3 switch
- * the modes.
+ * The app menu: the shell's own items, with the mode on screen's woven in. Its commands go to the
+ * window, which owns the mode and the sidebar; ⌘1–3 switch the modes.
  */
-export function appMenu({ appName, packaged, send }: AppMenuOptions): MenuItemConstructorOptions[] {
+export function appMenu({
+  appName,
+  packaged,
+  mode,
+  modeMenu,
+  send,
+}: AppMenuOptions): MenuItemConstructorOptions[] {
   const mac = process.platform === "darwin";
+  const settings = modeMenu?.settings;
 
   const modes = MODE_IDS.map(
-    (mode, index): MenuItemConstructorOptions => ({
-      id: modeMenuItemId(mode),
-      label: MODE_LABELS[mode],
+    (id, index): MenuItemConstructorOptions => ({
+      id: modeMenuItemId(id),
+      label: MODE_LABELS[id],
       type: "radio",
+      checked: id === mode,
       accelerator: `CmdOrCtrl+${index + 1}`,
-      click: () => send({ type: "mode", mode }),
+      click: () => send({ type: "mode", mode: id }),
     }),
   );
+
+  const separated = (items: MenuItemConstructorOptions[] | undefined) =>
+    items && items.length > 0 ? [{ type: "separator" } as const, ...items] : [];
 
   return [
     ...(mac
@@ -37,6 +53,7 @@ export function appMenu({ appName, packaged, send }: AppMenuOptions): MenuItemCo
             label: appName,
             submenu: [
               { role: "about" },
+              ...separated(settings ? [settings] : undefined),
               { type: "separator" },
               { role: "services" },
               { type: "separator" },
@@ -51,13 +68,23 @@ export function appMenu({ appName, packaged, send }: AppMenuOptions): MenuItemCo
       : []),
     {
       label: "File",
-      submenu: [mac ? { role: "close" } : { role: "quit" }],
+      submenu: [
+        ...(modeMenu?.file ?? []),
+        ...(modeMenu?.file.length ? [{ type: "separator" } as const] : []),
+        ...(mac
+          ? [{ role: "close" } as const]
+          : [
+              ...(settings ? [settings, { type: "separator" } as const] : []),
+              { role: "quit" } as const,
+            ]),
+      ],
     },
-    { role: "editMenu" },
+    modeMenu?.edit ? { label: "Edit", submenu: modeMenu.edit } : { role: "editMenu" },
     {
       label: "View",
       submenu: [
         ...modes,
+        ...separated(modeMenu?.view),
         { type: "separator" },
         {
           label: "Toggle Sidebar",
@@ -75,5 +102,6 @@ export function appMenu({ appName, packaged, send }: AppMenuOptions): MenuItemCo
       ],
     },
     { role: "windowMenu" },
+    ...(modeMenu?.help.length ? [{ role: "help" as const, submenu: modeMenu.help }] : []),
   ];
 }

@@ -154,7 +154,7 @@ for (const app of ["pane-view", "showcase"]) {
   await generateWebIcons(app);
 }
 
-for (const app of ["frame-view", "glazier"]) {
+for (const app of ["frame-view"]) {
   await generateDesktopIcons(app);
 }
 

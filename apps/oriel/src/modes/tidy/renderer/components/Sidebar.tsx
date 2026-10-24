@@ -221,15 +221,9 @@ export function Sidebar({ onAddRoot, rail }: { onAddRoot: () => void; rail: bool
   return (
     <RailContext.Provider value={rail}>
       <nav
-        aria-label="Glazier"
-        className={`flex shrink-0 flex-col border-r gz-divider bg-zinc-50 dark:bg-zinc-900/60 ${
-          // On macOS the window buttons sit in the rail's top strip; at 16 px in they end near
-          // 76 px, so the rail is wide enough to hold them rather than spill over the top bar.
-          rail ? (desktop.insetTitleBar() ? "w-[88px] items-center" : "w-14 items-center") : "w-60"
-        }`}
+        aria-label="Tidy"
+        className={`flex min-h-0 w-full flex-1 flex-col ${rail ? "items-center" : ""}`}
       >
-        <div className="gz-drag h-[52px] w-full shrink-0" />
-
         {root && rail ? (
           <button
             type="button"
@@ -269,13 +263,13 @@ export function Sidebar({ onAddRoot, rail }: { onAddRoot: () => void; rail: bool
         <ul
           className={`overflow-y-auto pt-3 ${rail ? "flex flex-col items-center space-y-1" : "space-y-0.5 px-2"}`}
         >
-          <NavItem view="overview" label="Overview" icon={LayoutGrid} shortcut="⌘1" />
+          <NavItem view="overview" label="Overview" icon={LayoutGrid} shortcut="⌥⌘1" />
           <GroupLabel>Tidy</GroupLabel>
           <NavItem
             view="duplicates"
             label="Duplicates"
             icon={Copy}
-            shortcut="⌘2"
+            shortcut="⌥⌘2"
             // Every set waits for the owner, identical copies included: Tidy up leaves them all.
             count={counted(
               tidy.data
@@ -287,19 +281,19 @@ export function Sidebar({ onAddRoot, rail }: { onAddRoot: () => void; rail: bool
             view="convert"
             label="Convert"
             icon={Repeat2}
-            shortcut="⌘3"
+            shortcut="⌥⌘3"
             count={counted(tidy.data ? convertCount(tidy.data) : undefined)}
           />
           <NavItem
             view="cleanup"
             label="Clean up"
             icon={Sparkles}
-            shortcut="⌘4"
+            shortcut="⌥⌘4"
             count={counted(tidy.data ? cleanupCount(tidy.data) : undefined)}
           />
           <GroupLabel>Archive</GroupLabel>
-          <NavItem view="library" label="Library" icon={Library} shortcut="⌘5" />
-          <NavItem view="history" label="History" icon={History} shortcut="⌘6" />
+          <NavItem view="library" label="Library" icon={Library} shortcut="⌥⌘5" />
+          <NavItem view="history" label="History" icon={History} shortcut="⌥⌘6" />
         </ul>
 
         <div
@@ -311,7 +305,7 @@ export function Sidebar({ onAddRoot, rail }: { onAddRoot: () => void; rail: bool
               view="holding"
               label="Holding"
               icon={Archive}
-              shortcut="⌘7"
+              shortcut="⌥⌘7"
               count={
                 holding.data && holding.data.total > 0 ? formatBytes(holding.data.totalBytes) : null
               }

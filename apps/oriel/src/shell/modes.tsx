@@ -1,6 +1,7 @@
 import type { ComponentType } from "react";
 
 import { SyncMode } from "../modes/sync/renderer/App";
+import { TidyMode } from "../modes/tidy/renderer/App";
 import { MODE_LABELS, type ModeId } from "../shared/shell";
 import { ModeLayout } from "./ModeLayout";
 
@@ -26,6 +27,6 @@ function placeholder(id: ModeId, from: string): ComponentType {
 /** Each mode's whole window, inside a {@link ModeLayout}. */
 export const MODE_ROOTS = {
   view: placeholder("view", "Frame View"),
-  tidy: placeholder("tidy", "Glazier"),
+  tidy: TidyMode,
   sync: SyncMode,
 } satisfies Record<ModeId, ComponentType>;

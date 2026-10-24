@@ -3,20 +3,22 @@
 Glazier is the desktop workbench for auditing and tidying a local archive: it reports what a root
 holds, finds exact and similar duplicates, tells silent videos from ones with sound, and converts
 files to the archive formats (AVIF for stills, MP4 for everything that moves). The plan that
-introduced it is [058](../plans/058-glazier.md).
+introduced it is [058](../plans/058-glazier.md). It now ships as Tidy, one of Oriel's three
+modes ([059](../plans/059-one-desktop-app.md)); its code lives in `apps/oriel/src/modes/tidy`.
 
 ## Run it
 
 ```sh
 pnpm install
-pnpm -r --filter './packages/*' build   # Glazier bundles workspace packages from their dist
-pnpm --filter @latch-works/glazier-app start
+pnpm -r --filter './packages/*' build   # Oriel bundles workspace packages from their dist
+pnpm --filter @latch-works/oriel start  # then ⌘2, or Tidy in the switcher
 ```
 
-`pnpm --filter @latch-works/glazier-app package` builds the production app into
-`apps/glazier/out`; `make` produces the DMG and ZIP. The macOS signing identity comes from
-`GLAZIER_MACOS_SIGN_IDENTITY`, as for the other apps (see
-[electron-macos-signing.md](../electron-macos-signing.md)).
+`pnpm --filter @latch-works/oriel package` builds the production app into `apps/oriel/out`;
+`make` produces the DMG and ZIP. The macOS signing identity comes from
+`ORIEL_MACOS_SIGN_IDENTITY`; without it the build is signed ad hoc (see
+[electron-macos-signing.md](../electron-macos-signing.md)). Tidy's pages are on ⌥⌘1–7, since
+⌘1–3 switch Oriel's modes.
 
 ## Where its data lives
 
@@ -124,8 +126,10 @@ converted file; its modification date is, so date sorting in Frame View and Pane
 
 ### Quitting, crashes and forced quits
 
-Closing the window quits Glazier on every platform, and stops any ffmpeg it started. A change
-cut short is marked **stopped** on the next launch, and any `*.glazier-tmp` file beside its
+Closing Oriel's window while a change is applying or being undone hides the window, and Oriel
+quits once the change has finished; quitting again in the meantime quits at once. Otherwise
+closing the window quits on every platform, and stops any ffmpeg Tidy started. A change cut short
+is marked **stopped** on the next launch, and any `*.glazier-tmp` file beside its
 pending targets is deleted. Its finished steps stay finished and can be undone.
 
 ## Lockstep and Pane View afterwards
@@ -189,6 +193,6 @@ Similar matches need the same aspect ratio (within 3%) and, for video, the same 
 - **A root shows "is not available"**: its drive is not mounted. The catalog is kept; rescan once
   it is back.
 - **Video conversions fail with no encoder**: Settings › Encoders shows what WebCodecs offers
-  and whether ffmpeg is there. Glazier keeps hardware acceleration on for this; nothing else is
-  needed.
+  and whether ffmpeg is there. Oriel keeps hardware acceleration on for this unless
+  `ORIEL_DISABLE_GPU` is set; nothing else is needed.
 - **A step was skipped as "changed since the scan"**: rescan the root and apply again.

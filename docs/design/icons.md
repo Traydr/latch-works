@@ -10,7 +10,7 @@ tracing, texture, bevels, and cast shadows.
 | Frame View | `apps/frame-view/media/frame-view-icon.svg` |
 | Gather Box | `apps/gather-box/assets/icons/gather-box-icon.svg` |
 | Lockstep (now Oriel's Sync mode; no rasters) | `apps/oriel/media/modes/lockstep-icon.svg` |
-| Glazier | `apps/glazier/media/glazier-icon.svg` |
+| Glazier (now Oriel's Tidy mode; no rasters) | `apps/oriel/media/modes/glazier-icon.svg` |
 
 The [approved artwork comparison](https://vellum.traydr.dev/01a080ab-f279-724d-90a1-e214fdb18574)
 is available until October 8, 2026.
@@ -40,6 +40,6 @@ and ICNS filenames. Every raster is generated from the SVG masters; do not edit 
    View's login and sidebar logos.
 3. Build Gather Box and load its `dist/` folder as an unpacked extension. Check the extension
    icon in Chrome.
-4. Package Frame View and Glazier on the target platform. Check the installer, application,
+4. Package Frame View on the target platform. Check the installer, application,
    Dock or taskbar, and window icons. Frame View packaging must be run by the user under
    `apps/frame-view/AGENTS.md`.
