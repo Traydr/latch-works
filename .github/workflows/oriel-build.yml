@@ -1,0 +1,91 @@
+name: Oriel build
+
+# Builds Oriel's installers from source, unsigned, as workflow artifacts. It publishes no release.
+# Off by default: it runs only when started by hand (Actions › Oriel build › Run workflow).
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+        with:
+          run_install: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --prod=false
+
+      - name: Make the DMG
+        run: pnpm make:oriel
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: oriel-macos
+          path: apps/oriel/out/make/dmg/**/*.dmg
+          if-no-files-found: error
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+        with:
+          run_install: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: "9.0.x"
+
+      # Pinned to the velopack package the app runs (forge.config.ts, VPK_VERSION).
+      - name: Install vpk
+        shell: pwsh
+        run: |
+          dotnet tool install -g vpk --version 1.3.39-g8d2844f
+          # Global tools land here, which later steps' PATH does not hold by default.
+          "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+      - name: Check vpk
+        run: vpk --help
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --prod=false
+
+      - name: Make Setup.exe and the MSI
+        run: pnpm make:oriel
+
+      - name: Install silently and check that Oriel starts
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem apps/oriel/out/make/velopack -Filter "*Setup.exe" | Select-Object -First 1
+          if (-not $setup) { throw "No Setup.exe in apps/oriel/out/make/velopack" }
+          Start-Process $setup.FullName -ArgumentList "--silent" -Wait
+          $exe = Join-Path $env:LOCALAPPDATA "Oriel\current\oriel.exe"
+          if (-not (Test-Path $exe)) { throw "Oriel is not installed at $exe" }
+          # A data folder of its own, so the copy Setup may have started does not hold the lock.
+          $oriel = Start-Process $exe -PassThru -ArgumentList "--user-data-dir=$env:RUNNER_TEMP\oriel-smoke"
+          Start-Sleep -Seconds 20
+          if ($oriel.HasExited) { throw "Oriel exited with code $($oriel.ExitCode)" }
+          Get-Process oriel -ErrorAction SilentlyContinue | Stop-Process -Force
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: oriel-windows
+          path: apps/oriel/out/make/velopack/*
+          if-no-files-found: error

@@ -20,9 +20,10 @@ the compose defaults apply.
 ```bash
 pnpm --filter @latch-works/e2e fixture   # render e2e/.fixtures/archive from the manifest (once)
 pnpm e2e:pane                            # Pane View, seeded through the Lockstep CLI
-pnpm e2e:frame                           # Frame View, through Playwright's Electron driver
-pnpm e2e:lockstep                        # Lockstep desktop, pushing into the Pane View server
-pnpm e2e:glazier                         # Glazier desktop, over an archive it builds (no server)
+pnpm e2e:frame                           # Oriel's View mode, through Playwright's Electron driver
+pnpm e2e:lockstep                        # Oriel's Sync mode, pushing into the Pane View server
+pnpm e2e:glazier                         # Oriel's Tidy mode, over an archive it builds (no server)
+pnpm e2e:oriel                           # Oriel's shell: the modes and the menu (no server)
 pnpm e2e                                 # every project
 ```
 
@@ -62,9 +63,10 @@ one, but the PDF viewer `fetch`es the signed original, which rustfs refuses with
 
 ## What the Frame View project covers
 
-`tests/frame-view/build.setup.ts` runs `electron-forge package` (about ten seconds; the only
-supported way to get a production `.vite/build`, skip with `E2E_SKIP_BUILD=1`). Each test launches
-the build with Playwright's `_electron` driver on a fresh userData directory and replaces
+The specs drive View, Frame View as one of Oriel's modes. The `oriel-setup` project runs
+`electron-forge package` for Oriel (the only supported way to get a production `.vite/build`;
+skip with `E2E_SKIP_BUILD=1`). Each test launches the build with Playwright's `_electron` driver
+on a fresh userData directory and replaces
 `dialog.showOpenDialog` from the main process, so "Open" lands on a fixture folder without a
 native picker. `ELECTRON_RUN_AS_NODE` is stripped from the child environment; with it set, the
 Electron binary starts as plain Node and Playwright reports "Process failed to launch".
@@ -77,29 +79,41 @@ fixture PDF is excluded from its expectations.
 
 ## What the Lockstep project covers
 
-`tests/lockstep/sync.spec.ts` packages the Lockstep desktop app (setup project), launches it on
-a fresh userData directory, creates a profile against the e2e Pane View server with the
-`lockstep-source` fixture (two images that are not in the seeded archive), runs Plan (two uploads),
-Push (two pushed, zero failed, both paths in `/api/sync/snapshot`), Plan again (nothing to upload;
-every seeded path is a delete from this source), then Prune: one planned delete's file is copied
-back into the source first, so Prune deletes every other planned path, skips that one, and leaves
-the Prune stage disabled until the next Plan. It also checks `lockstep-settings.json` never holds
-the token in the clear. The app runs with `LOCKSTEP_SECRET_STORAGE=file`, so the token is
-encrypted with a key in the run's own userData directory instead of the Keychain and no prompt
-blocks the run.
+`tests/lockstep/sync.spec.ts` drives Sync, the Lockstep desktop app as one of Oriel's modes. The
+`oriel-setup` project packages Oriel; the spec launches it on a fresh userData directory, opens
+Sync, creates a profile against the e2e Pane View server with the `lockstep-source` fixture (two
+images that are not in the seeded archive), runs Plan (two uploads), Push (two pushed, zero
+failed, both paths in `/api/sync/snapshot`), Plan again (nothing to upload; every seeded path is a
+delete from this source), then Prune: one planned delete's file is copied back into the source
+first, so Prune deletes every other planned path, skips that one, and leaves the Prune stage
+disabled until the next Plan. It also checks `lockstep-settings.json` (in `lockstep/` inside the
+run's userData) never holds the token in the clear. Sync encrypts tokens with a key file in that
+folder on every platform, so no Keychain prompt blocks the run.
 Prune empties the seeded archive in the e2e database, which is recreated
 the next time the e2e server starts. The project depends on
 `pane-view`, so `pnpm e2e:lockstep` runs the Pane View suite first; `--no-deps` skips that while
 iterating (the server is still started or reused).
 
+## What the Oriel project covers
+
+`tests/oriel/build.setup.ts` packages Oriel (skip with `E2E_SKIP_BUILD=1`). `shell.spec.ts`
+switches modes from the switcher and from the View menu (whose check mark follows the mode), and
+relaunches on the same userData to check Oriel reopens in the mode it showed last, and opens a
+folder in View, switches to Tidy and back, and checks the gallery is still there.
+`migration.spec.ts` builds the folders the old apps leave (a Glazier and a Frame View `Local
+Storage` from a real run, and Frame View's settings with a saved window) and checks the first
+start brings the preferences, the theme and the window size over. Under `--user-data-dir` Oriel
+never asks to quit or remove the old apps, so the spec runs beside installed copies. The project
+needs no compose stack.
+
 ## What the Glazier project covers
 
-`tests/glazier/build.setup.ts` packages Glazier (skip with `E2E_SKIP_BUILD=1`). The spec builds a
-throwaway archive in a temp folder with sharp and `ffmpeg` (it changes files, so it never uses the
+The specs drive Tidy, Glazier as one of Oriel's modes; the `oriel-setup` project packages Oriel
+(skip with `E2E_SKIP_BUILD=1`). The spec builds a throwaway archive in a temp folder with sharp and `ffmpeg` (it changes files, so it never uses the
 shared fixture): stills including a resized twin and an AVIF misnamed `.jpg`, an animated GIF,
 H.264/AAC in MOV, VP9/Opus in WebM, MP4s with sound, with a silent track and with no audio, an
-exact copy, `.DS_Store` and an empty folder. Glazier opens a hidden transcoder window as well as
-its main one, so `e2e/src/glazier.ts` finds the main window by its page instead of taking the
+exact copy, `.DS_Store` and an empty folder. Tidy opens a hidden transcoder window as well as
+Oriel's main one, so `e2e/src/oriel.ts` finds the main window by its page instead of taking the
 first. Folders are added through Glazier's own picker: `chooseFolder` types the path into its field
 and presses Choose, so no native dialog is stubbed. `workbench.spec.ts` covers, in order: adding and scanning the root and its findings;
 **Find similar** grouping the resized JPEG with its original; sound measurement (one with no

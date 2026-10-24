@@ -1,8 +1,9 @@
 import { defineConfig, devices } from "@playwright/test";
 import { AUTH_STATE_PATH, PANE_VIEW_URL } from "./src/env.ts";
 
-/** Projects that run without the Pane View server: Glazier builds its own archive. */
-const STANDALONE_PROJECTS = new Set(["glazier", "glazier-setup"]);
+/** Projects that run without the Pane View server: Glazier builds its own archive, and Oriel's
+ * shell needs none. */
+const STANDALONE_PROJECTS = new Set(["glazier", "oriel", "oriel-setup"]);
 
 const selectedProjects = process.argv.flatMap((arg, index, all) => {
   if (arg === "--project") {
@@ -46,37 +47,34 @@ export default defineConfig({
       },
     },
     {
-      name: "frame-view-setup",
-      testDir: "./tests/frame-view",
-      testMatch: /.*\.setup\.ts/,
-    },
-    {
-      dependencies: ["frame-view-setup"],
+      // View (Frame View in Oriel).
+      dependencies: ["oriel-setup"],
       name: "frame-view",
       testDir: "./tests/frame-view",
       testMatch: /.*\.spec\.ts/,
     },
     {
-      name: "glazier-setup",
-      testDir: "./tests/glazier",
-      testMatch: /.*\.setup\.ts/,
-    },
-    {
-      // Glazier builds its own throwaway archive and needs no Pane View server.
-      dependencies: ["glazier-setup"],
+      // Tidy (Glazier in Oriel) builds its own throwaway archive and needs no Pane View server.
+      dependencies: ["oriel-setup"],
       name: "glazier",
       testDir: "./tests/glazier",
       testMatch: /.*\.spec\.ts/,
       timeout: 180_000,
     },
     {
-      name: "lockstep-setup",
-      testDir: "./tests/lockstep",
+      name: "oriel-setup",
+      testDir: "./tests/oriel",
       testMatch: /.*\.setup\.ts/,
     },
     {
-      // Pushes into the Pane View server the pane-view project started and seeded.
-      dependencies: ["pane-view", "lockstep-setup"],
+      dependencies: ["oriel-setup"],
+      name: "oriel",
+      testDir: "./tests/oriel",
+      testMatch: /.*\.spec\.ts/,
+    },
+    {
+      // Sync, in Oriel, pushes into the Pane View server the pane-view project started and seeded.
+      dependencies: ["pane-view", "oriel-setup"],
       name: "lockstep",
       testDir: "./tests/lockstep",
       testMatch: /.*\.spec\.ts/,

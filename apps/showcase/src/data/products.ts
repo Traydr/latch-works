@@ -142,8 +142,8 @@ export const products: Product[] = [
       },
       {
         src: "/screenshots/frame-view/settings.png",
-        alt: "Frame View settings drawer",
-        caption: "Preferences for theme, playback, and what the grid shows",
+        alt: "View's section of Oriel's Settings",
+        caption: "Preferences for the gallery, playback, storage and keys",
       },
     ],
     features: [

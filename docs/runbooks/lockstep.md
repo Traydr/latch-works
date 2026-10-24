@@ -32,40 +32,23 @@ Optional environment overrides:
 - `LOCKSTEP_API_URL` — default Pane View API URL
 - `LOCKSTEP_API_TOKEN` — sync API bearer token
 
-## Desktop GUI Token Storage
+## Desktop token storage (Oriel's Sync mode)
 
-The Lockstep desktop app stores per-profile sync tokens with Electron `safeStorage`. On macOS,
-Electron stores the encryption key in Keychain, and Keychain ties access to the app identity and code
-signature. An installable app produced without a fresh signature can write the token during one
-process, then fail to unlock it after restart.
+The desktop app is now Sync, one of Oriel's modes (`apps/oriel`, plan 059). It stores each
+profile's sync token encrypted with AES-256-GCM under a random key in its data folder,
+`~/.latch-works/lockstep/secret-storage.key` (`%USERPROFILE%\.latch-works\lockstep` on
+Windows), created on first use with mode 0600. It does this on every platform and in packaged
+builds too, instead of Electron `safeStorage`: Oriel is signed ad hoc, so its signature changes
+with each rebuild, and the Keychain asked for access again after every one. The key is
+protected by the home folder's permissions alone, so keep it out of backups and syncs you would
+not trust with the tokens. Profiles and settings stay in `lockstep-settings.json` beside it, and
+the token is never written there in the clear.
 
-The macOS Forge package now uses a stable bundle id:
-
-```text
-dev.traydr.latchworks.lockstep
-```
-
-`pnpm make` signs macOS packages by default. If `LOCKSTEP_MACOS_SIGN_IDENTITY` is unset, Forge uses
-an ad-hoc signature for local same-machine testing and gives the Electron app/helper bundles the
-local-only `com.apple.security.cs.disable-library-validation` entitlement. For builds that will be
-shared or installed on another Mac, set `LOCKSTEP_MACOS_SIGN_IDENTITY` to an Apple Developer ID
-Application certificate and notarize before distribution.
-
-Useful checks on the build machine:
-
-```bash
-security find-identity -v -p codesigning
-codesign --verify --deep --strict --verbose=2 apps/lockstep/out/Lockstep-darwin-arm64/Lockstep.app
-codesign -dv apps/lockstep/out/Lockstep-darwin-arm64/Lockstep.app
-```
-
-`codesign -dv` should show `Identifier=dev.traydr.latchworks.lockstep`, not `com.github.Electron`.
-If launch fails with `Library not loaded: @rpath/Electron Framework.framework/Electron Framework`
-and `mapped file (non-platform) have different Team IDs`, the app/helper bundles were signed without
-the local ad-hoc helper entitlement or were signed with mixed identities.
-If a user previously saved a token with the invalid unsigned package, they should re-enter the token
-once after installing the fixed build. The old encrypted blob may remain unreadable because Keychain
-was asked to protect it for a different or invalid code requirement.
+A data folder that already has settings copies in the key older builds kept in
+`~/.config/lockstep/` (or `$XDG_CONFIG_HOME/lockstep/`), so their tokens still decrypt. Tokens
+the standalone Lockstep app saved with `safeStorage` do not decrypt with this key: until Oriel's
+first-start migration re-saves them (plan 059, Phase 5), such a profile asks for its token
+again.
 
 For scripted `push` or `prune` without interactive confirmation, pass `--yes`:
 

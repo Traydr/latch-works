@@ -1,0 +1,605 @@
+import { promises as fs } from "node:fs";
+import path from "node:path";
+
+import { Result } from "better-result";
+import type {
+  CatalogWorkerEvent,
+  CatalogWorkerRequest,
+  CatalogWorkerResponse,
+} from "../../shared/catalog";
+import type { MediaItem, ScanEvent, ScanOptions } from "../../shared/types";
+import type { MediaIndexService } from "../db/mediaIndexService";
+import { MediaIndexService as MediaIndexServiceImpl } from "../db/mediaIndexService";
+import {
+  classifyFrameCandidate,
+  type FrameScanCandidate,
+  type FrameScanFilters,
+  shouldSkipDirectoryName,
+  toFrameMediaItem,
+} from "./catalogDiscoveryAdapter";
+import {
+  CATALOG_BATCH_SIZE,
+  CATALOG_FILE_STAT_CONCURRENCY,
+  CATALOG_PROGRESS_EVENT_INTERVAL_MS,
+} from "./catalogScanConstants";
+
+interface ActiveRun {
+  cancelled: boolean;
+  id: number;
+  promise: Promise<void>;
+}
+
+interface ScanContext {
+  discoveredItems: number;
+  excludedRootChildPaths: Set<string>;
+  filters: FrameScanFilters;
+  lastProgressEmittedAt: number;
+  mediaIndexScanId: number | null;
+  mediaIndexPersistenceFailed: boolean;
+  pendingBatch: MediaItem[];
+  pendingProgressPath: string | null;
+  queue: string[];
+  queueCursor: number;
+  scannedDirectories: number;
+  startedAt: number;
+}
+
+/** The media-index entry points a scan run drives. */
+export type CatalogMediaIndex = Pick<
+  MediaIndexService,
+  "cancelScan" | "clear" | "finishScan" | "getStats" | "init" | "startScan" | "upsertBatch"
+>;
+
+interface CatalogRuntimeOptions {
+  emitEvent: (event: CatalogWorkerEvent) => void;
+  emitResponse: (response: CatalogWorkerResponse) => void;
+  mediaIndexService?: CatalogMediaIndex;
+  userDataPath?: string;
+}
+
+export class CatalogRuntime {
+  private readonly mediaIndexService: CatalogMediaIndex;
+
+  private activeRun: ActiveRun | null = null;
+  private runCounter = 0;
+
+  constructor(private readonly options: CatalogRuntimeOptions) {
+    this.mediaIndexService =
+      options.mediaIndexService ?? new MediaIndexServiceImpl(options.userDataPath ?? "");
+
+    if (!options.mediaIndexService) {
+      const initResult = this.mediaIndexService.init();
+
+      if (Result.isError(initResult)) {
+        throw initResult.error;
+      }
+    }
+  }
+
+  async handleRequest(request: CatalogWorkerRequest): Promise<void> {
+    switch (request.type) {
+      case "start-scan":
+        await this.startScan(request.requestId, request.options);
+
+        return;
+      case "cancel-scan":
+        this.cancelScan();
+        this.options.emitResponse({ requestId: request.requestId, ok: true });
+
+        return;
+      case "wait-for-scan":
+        // Answers once no scan is running: done, cancelled, or failed all count.
+        while (this.activeRun) {
+          await this.activeRun.promise;
+        }
+
+        this.options.emitResponse({ requestId: request.requestId, ok: true });
+
+        return;
+      case "get-index-stats": {
+        const statsResult = await this.mediaIndexService.getStats();
+
+        if (Result.isError(statsResult)) {
+          this.options.emitResponse({
+            requestId: request.requestId,
+            ok: false,
+            error: statsResult.error.message,
+          });
+
+          return;
+        }
+
+        this.options.emitResponse({
+          requestId: request.requestId,
+          ok: true,
+          result: statsResult.value,
+        });
+
+        return;
+      }
+
+      case "clear-index":
+        await this.clearIndex(request.requestId);
+
+        return;
+      default: {
+        const exhaustiveCheck: never = request;
+        throw new Error(`Unhandled catalog request: ${JSON.stringify(exhaustiveCheck)}`);
+      }
+    }
+  }
+
+  async shutdown(): Promise<void> {
+    this.cancelScan();
+    await this.activeRun?.promise;
+  }
+
+  private async startScan(requestId: number, options: ScanOptions): Promise<void> {
+    this.cancelScan();
+
+    const run: ActiveRun = {
+      cancelled: false,
+      id: ++this.runCounter,
+      promise: Promise.resolve(),
+    };
+
+    this.activeRun = run;
+    run.promise = this.executeScan(run, options)
+      .catch((error) => {
+        const message =
+          error instanceof Error ? `Scan failed: ${error.message}` : "Scan failed unexpectedly";
+
+        this.emitScanEvent({
+          type: "error",
+          message,
+          runId: run.id,
+        });
+      })
+      .finally(() => {
+        if (this.activeRun?.id === run.id) {
+          this.activeRun = null;
+        }
+      });
+    this.options.emitResponse({ requestId, ok: true });
+  }
+
+  private cancelScan(): void {
+    if (!this.activeRun) {
+      return;
+    }
+
+    this.activeRun.cancelled = true;
+  }
+
+  private async clearIndex(requestId: number): Promise<void> {
+    if (this.activeRun) {
+      this.cancelScan();
+      await this.activeRun.promise;
+    }
+
+    const clearResult = await this.mediaIndexService.clear();
+
+    if (Result.isError(clearResult)) {
+      this.options.emitResponse({ requestId, ok: false, error: clearResult.error.message });
+
+      return;
+    }
+
+    this.options.emitResponse({ requestId, ok: true });
+  }
+
+  private emitScanEvent(event: ScanEvent): void {
+    this.options.emitEvent({
+      type: "scan-event",
+      event,
+    });
+  }
+
+  private isRunActive(run: ActiveRun): boolean {
+    return this.activeRun?.id === run.id && !run.cancelled;
+  }
+
+  private buildScanFilters(options: ScanOptions): FrameScanFilters {
+    return {
+      imageExtensions: new Set(options.filters.imageExtensions.map((ext) => ext.toLowerCase())),
+      showImages: options.filters.showImages,
+      showVideos: options.filters.showVideos,
+      videoExtensions: new Set(options.filters.videoExtensions.map((ext) => ext.toLowerCase())),
+    };
+  }
+
+  private buildScanContext(options: ScanOptions): ScanContext {
+    const excludedRootChildPaths = options.excludedRootChildPaths ?? [];
+    const resolvedRootPath = path.resolve(options.rootPath);
+    const validatedExcludedRootChildPaths: string[] = [];
+
+    for (const excludedPath of excludedRootChildPaths) {
+      const resolvedExcludedPath = path.resolve(excludedPath);
+
+      if (path.dirname(resolvedExcludedPath) === resolvedRootPath) {
+        validatedExcludedRootChildPaths.push(resolvedExcludedPath);
+      }
+    }
+
+    return {
+      discoveredItems: 0,
+      excludedRootChildPaths: new Set(validatedExcludedRootChildPaths),
+      filters: this.buildScanFilters(options),
+      lastProgressEmittedAt: 0,
+      mediaIndexScanId: null,
+      mediaIndexPersistenceFailed: false,
+      pendingBatch: [],
+      pendingProgressPath: null,
+      queue: [options.rootPath],
+      queueCursor: 0,
+      scannedDirectories: 0,
+      startedAt: Date.now(),
+    };
+  }
+
+  private async collectDirectoryCandidates(
+    run: ActiveRun,
+    options: ScanOptions,
+    context: ScanContext,
+    currentPath: string,
+  ): Promise<FrameScanCandidate[] | null> {
+    let directory: Awaited<ReturnType<typeof fs.opendir>>;
+
+    try {
+      directory = await fs.opendir(currentPath, { encoding: "utf8" });
+    } catch {
+      if (!this.isRunActive(run)) {
+        return null;
+      }
+
+      this.emitScanEvent({
+        type: "error",
+        message: "Unable to access directory",
+        path: currentPath,
+        runId: run.id,
+      });
+
+      return [];
+    }
+
+    if (!this.isRunActive(run)) {
+      return null;
+    }
+
+    context.scannedDirectories += 1;
+    context.pendingProgressPath = currentPath;
+    this.emitProgress(run, context);
+
+    const candidateFiles: FrameScanCandidate[] = [];
+
+    try {
+      for await (const entry of directory) {
+        if (!this.isRunActive(run)) {
+          return null;
+        }
+
+        const fullPath = path.join(currentPath, entry.name);
+
+        if (entry.isDirectory()) {
+          if (shouldSkipDirectoryName(entry.name)) {
+            continue;
+          }
+
+          if (options.recursive) {
+            if (
+              currentPath === options.rootPath &&
+              context.excludedRootChildPaths.has(path.resolve(fullPath))
+            ) {
+              continue;
+            }
+
+            context.queue.push(fullPath);
+          }
+
+          continue;
+        }
+
+        if (!entry.isFile()) {
+          continue;
+        }
+
+        const classified = classifyFrameCandidate(entry.name, context.filters);
+
+        if (!classified) {
+          continue;
+        }
+
+        candidateFiles.push({
+          ...classified,
+          fullPath,
+        });
+      }
+    } catch {
+      if (!this.isRunActive(run)) {
+        return null;
+      }
+
+      this.emitScanEvent({
+        type: "error",
+        message: "Unable to access directory",
+        path: currentPath,
+        runId: run.id,
+      });
+
+      return [];
+    }
+
+    return candidateFiles;
+  }
+
+  private async statCandidateChunk(
+    chunk: FrameScanCandidate[],
+  ): Promise<Array<{ item: MediaItem } | { statErrorPath: string }>> {
+    return Promise.all(
+      chunk.map(async (candidate) => {
+        try {
+          const stats = await fs.stat(candidate.fullPath);
+
+          return {
+            item: toFrameMediaItem(candidate, {
+              mtimeMs: stats.mtimeMs,
+              size: stats.size,
+            }),
+          };
+        } catch {
+          return { statErrorPath: candidate.fullPath };
+        }
+      }),
+    );
+  }
+
+  private emitProgress(run: ActiveRun, context: ScanContext, force = false): void {
+    if (!context.pendingProgressPath) {
+      return;
+    }
+
+    const now = Date.now();
+
+    if (!force && now - context.lastProgressEmittedAt < CATALOG_PROGRESS_EVENT_INTERVAL_MS) {
+      return;
+    }
+
+    this.emitScanEvent({
+      type: "progress",
+      runId: run.id,
+      scannedDirectories: context.scannedDirectories,
+      discoveredItems: context.discoveredItems,
+      currentPath: context.pendingProgressPath,
+    });
+    context.pendingProgressPath = null;
+    context.lastProgressEmittedAt = now;
+  }
+
+  private async flushIndexedBatch(
+    run: ActiveRun,
+    options: ScanOptions,
+    context: ScanContext,
+  ): Promise<boolean> {
+    if (context.pendingBatch.length === 0) {
+      return true;
+    }
+
+    if (!this.isRunActive(run)) {
+      return false;
+    }
+
+    const batchToEmit = context.pendingBatch;
+    context.pendingBatch = [];
+    this.emitScanEvent({ type: "batch", runId: run.id, items: batchToEmit });
+
+    if (context.mediaIndexScanId !== null && !context.mediaIndexPersistenceFailed) {
+      const upsertResult = await this.mediaIndexService.upsertBatch(
+        options.rootPath,
+        context.mediaIndexScanId,
+        batchToEmit,
+      );
+
+      if (Result.isError(upsertResult)) {
+        context.mediaIndexPersistenceFailed = true;
+        this.emitScanEvent({
+          type: "error",
+          message: `Media index update failed: ${upsertResult.error.message}`,
+          runId: run.id,
+        });
+      }
+    }
+
+    if (!this.isRunActive(run)) {
+      return false;
+    }
+
+    return true;
+  }
+
+  private async cancelMediaIndexScan(run: ActiveRun, scanId: number): Promise<void> {
+    const cancelResult = await this.mediaIndexService.cancelScan(scanId);
+
+    if (Result.isError(cancelResult)) {
+      this.emitScanEvent({
+        type: "error",
+        message: `Media index cancellation failed: ${cancelResult.error.message}`,
+        runId: run.id,
+      });
+    }
+  }
+
+  private async executeScan(run: ActiveRun, options: ScanOptions): Promise<void> {
+    const context = this.buildScanContext(options);
+
+    try {
+      const startScanResult = await this.mediaIndexService.startScan(
+        options.rootPath,
+        options.recursive,
+      );
+
+      if (Result.isError(startScanResult)) {
+        throw startScanResult.error;
+      }
+
+      context.mediaIndexScanId = startScanResult.value;
+    } catch (error) {
+      this.emitScanEvent({
+        type: "error",
+        message:
+          error instanceof Error
+            ? `Media index unavailable: ${error.message}`
+            : "Media index unavailable",
+        runId: run.id,
+      });
+    }
+
+    const cancelCurrentRun = (): void => {
+      if (context.mediaIndexScanId !== null) {
+        void this.mediaIndexService.cancelScan(context.mediaIndexScanId);
+        context.mediaIndexScanId = null;
+      }
+
+      this.emitScanEvent({ type: "cancelled", runId: run.id });
+    };
+
+    // Cancelled while its index row was being created: close that row like any other cancel.
+    if (!this.isRunActive(run)) {
+      cancelCurrentRun();
+
+      return;
+    }
+
+    this.emitScanEvent({
+      type: "reset",
+      runId: run.id,
+      rootPath: options.rootPath,
+      recursive: options.recursive,
+    });
+
+    while (context.queueCursor < context.queue.length) {
+      if (!this.isRunActive(run)) {
+        cancelCurrentRun();
+
+        return;
+      }
+
+      const currentPath = context.queue[context.queueCursor];
+      context.queueCursor += 1;
+
+      if (!currentPath) {
+        continue;
+      }
+
+      const candidateFiles = await this.collectDirectoryCandidates(
+        run,
+        options,
+        context,
+        currentPath,
+      );
+
+      if (candidateFiles === null) {
+        cancelCurrentRun();
+
+        return;
+      }
+
+      for (
+        let startIndex = 0;
+        startIndex < candidateFiles.length;
+        startIndex += CATALOG_FILE_STAT_CONCURRENCY
+      ) {
+        if (!this.isRunActive(run)) {
+          cancelCurrentRun();
+
+          return;
+        }
+
+        const chunk = candidateFiles.slice(startIndex, startIndex + CATALOG_FILE_STAT_CONCURRENCY);
+        const chunkResults = await this.statCandidateChunk(chunk);
+
+        if (!this.isRunActive(run)) {
+          cancelCurrentRun();
+
+          return;
+        }
+
+        for (const result of chunkResults) {
+          if ("statErrorPath" in result) {
+            this.emitScanEvent({
+              type: "error",
+              message: "Unable to stat file",
+              path: result.statErrorPath,
+              runId: run.id,
+            });
+            continue;
+          }
+
+          context.pendingBatch.push(result.item);
+          context.discoveredItems += 1;
+
+          if (
+            context.pendingBatch.length >= CATALOG_BATCH_SIZE &&
+            !(await this.flushIndexedBatch(run, options, context))
+          ) {
+            cancelCurrentRun();
+
+            return;
+          }
+        }
+      }
+
+      await new Promise<void>((resolve) => {
+        setImmediate(resolve);
+      });
+    }
+
+    if (!this.isRunActive(run)) {
+      cancelCurrentRun();
+
+      return;
+    }
+
+    if (context.pendingBatch.length > 0 && !(await this.flushIndexedBatch(run, options, context))) {
+      cancelCurrentRun();
+
+      return;
+    }
+
+    this.emitProgress(run, context, true);
+
+    if (!this.isRunActive(run)) {
+      cancelCurrentRun();
+
+      return;
+    }
+
+    // Discovery is complete at this point. The media index is a cache, so an index failure is
+    // reported as an error but still lets the run finish as `done`.
+    if (context.mediaIndexScanId !== null) {
+      if (context.mediaIndexPersistenceFailed) {
+        await this.cancelMediaIndexScan(run, context.mediaIndexScanId);
+      } else {
+        const finishResult = await this.mediaIndexService.finishScan(
+          options.rootPath,
+          context.mediaIndexScanId,
+        );
+
+        if (Result.isError(finishResult)) {
+          this.emitScanEvent({
+            type: "error",
+            message: `Media index finalize failed: ${finishResult.error.message}`,
+            runId: run.id,
+          });
+          await this.cancelMediaIndexScan(run, context.mediaIndexScanId);
+        }
+      }
+    }
+
+    this.emitScanEvent({
+      type: "done",
+      runId: run.id,
+      totalItems: context.discoveredItems,
+      elapsedMs: Date.now() - context.startedAt,
+    });
+  }
+}

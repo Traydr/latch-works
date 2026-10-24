@@ -28,11 +28,17 @@ The overall feel should be private, practical, calm, and tool-like rather than f
 | Area | Name | Role |
 |---|---|---|
 | Monorepo / ecosystem | **Latch Works** | The full private tool system and shared workspace |
-| Desktop app | **Frame View** | Local desktop media viewer |
+| Desktop app | **Oriel** | The one desktop app, in three modes: View, Tidy and Sync |
+| Oriel's View mode | **Frame View** | Local desktop media viewer |
+| Oriel's Tidy mode | **Glazier** | Audits and tidies the local archive: duplicates, formats, sound |
+| Oriel's Sync mode, and the sync CLI | **Lockstep** | Local archive to remote web archive sync tool |
 | Web app | **Pane View** | Private web/mobile media viewer |
 | Browser extension | **Gather Box** | Content collection/downloader extension |
-| Sync CLI | **Lockstep** | Local archive to remote web archive sync tool |
-| Desktop workbench | **Glazier** | Audits and tidies the local archive: duplicates, formats, sound |
+
+An oriel is a bay window that juts out from a wall, so you see more of the street. The desktop
+app took the name in plan 059, when Frame View, Glazier and the Lockstep desktop app became its
+three modes. In the app the modes are just View, Tidy and Sync; the older names live on in the
+code, the runbooks and the Lockstep CLI.
 
 ---
 
@@ -153,9 +159,7 @@ Use simple pipeline wording:
 
 ```text
 Gather Box collects.
-Glazier tidies.
-Frame View verifies locally.
-Lockstep syncs.
+Oriel tidies, verifies locally and syncs (its Tidy, View and Sync modes).
 Pane View displays privately.
 Latch Works holds everything together.
 ```
@@ -164,8 +168,8 @@ Expanded version:
 
 ```text
 Gather Box brings media into the local archive.
-Frame View provides the local reference viewing experience.
-Lockstep publishes selected archive state to the hosted backend.
+Oriel's View mode provides the local reference viewing experience.
+Oriel's Sync mode, and the Lockstep CLI, publish selected archive state to the hosted backend.
 Pane View provides authenticated web and mobile viewing.
 Latch Works keeps the apps, tools, and shared packages in one system.
 ```

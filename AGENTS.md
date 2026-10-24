@@ -3,8 +3,9 @@
 ## Project structure and module organization
 
 Latch Works is a TypeScript pnpm workspace. Product code lives under `apps/`: `pane-view` is the
-web viewer; `frame-view`, `lockstep` and `glazier` are Electron apps; `gather-box` is a Chrome
-extension; `lockstep-cli` is the sync CLI; and `showcase` is the Astro site. Shared code belongs in
+web viewer; `oriel` is the Electron desktop app, whose View, Tidy and Sync modes (once Frame View,
+Glazier and the Lockstep desktop app) live in `src/modes/`; `gather-box` is a Chrome extension;
+`lockstep-cli` is the sync CLI; and `showcase` is the Astro site. Shared code belongs in
 `packages/`.
 
 Keep source in each workspace's `src/`. Tests sit beside modules as `*.test.ts` or in
@@ -44,9 +45,9 @@ repository does not define a numeric coverage threshold.
 
 The end-to-end suite lives in `e2e/` (Playwright) and is the final check before a PR is ready:
 `pnpm e2e:pane` runs Pane View against the local compose stack, seeded through the Lockstep CLI;
-`pnpm e2e:frame` drives the packaged Frame View build; `pnpm e2e:lockstep` pushes from the
-packaged Lockstep desktop app into that server; `pnpm e2e:glazier` drives the packaged Glazier build
-over an archive it creates itself, with no server.
+`pnpm e2e:frame`, `pnpm e2e:glazier` and `pnpm e2e:lockstep` drive Oriel's View, Tidy and Sync
+modes in the packaged Oriel build (Sync pushes into that server; Tidy builds its own archive, with
+no server); `pnpm e2e:oriel` covers the shell and the first start's migration.
 It is not part of `pnpm test`; see `docs/runbooks/e2e.md` for prerequisites and how to run one
 spec.
 

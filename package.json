@@ -22,7 +22,9 @@
     "e2e:frame": "pnpm --filter @latch-works/e2e e2e:frame",
     "e2e:lockstep": "pnpm --filter @latch-works/e2e e2e:lockstep",
     "e2e:glazier": "pnpm --filter @latch-works/e2e e2e:glazier",
-    "icons": "node scripts/generate-icons.ts"
+    "e2e:oriel": "pnpm --filter @latch-works/e2e e2e:oriel",
+    "icons": "node scripts/generate-icons.ts",
+    "make:oriel": "pnpm --filter @latch-works/oriel make"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",

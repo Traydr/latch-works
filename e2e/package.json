@@ -8,6 +8,7 @@
     "e2e:frame": "playwright test --project frame-view",
     "e2e:glazier": "playwright test --project glazier",
     "e2e:lockstep": "playwright test --project lockstep",
+    "e2e:oriel": "playwright test --project oriel",
     "e2e:pane": "playwright test --project pane-view",
     "fixture": "tsx scripts/make-fixture.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"

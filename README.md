@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="apps/frame-view/media/frame-view-icon.png" alt="Latch Works" width="120" />
+  <img src="apps/oriel/media/oriel-icon.png" alt="Latch Works" width="120" />
 </p>
 
 <p align="center">
@@ -53,7 +53,7 @@ Pane View is a private web viewer for the synced archive. Galleries, videos, and
 
 ### Read it locally, first
 
-Frame View is a cross-platform Electron gallery for local images, videos, and comics. It's also where the UX gets decided. Whatever feels right here gets ported to Pane View, not the other way around.
+Oriel is the desktop app, with three modes. View, the gallery for local images, videos, and comics that began as Frame View, is where the UX gets decided: whatever feels right here gets ported to Pane View, not the other way around. Tidy (once Glazier) finds duplicates and converts files to the archive formats, with every change undoable.
 
 </td>
 </tr>
@@ -62,7 +62,7 @@ Frame View is a cross-platform Electron gallery for local images, videos, and co
 
 ### Sync on your terms
 
-Lockstep plans and pushes archive changes to Pane View. It's a desktop app with profiles, encrypted token storage, and run history, or a scriptable CLI over the same engine. Your pick.
+Lockstep plans and pushes archive changes to Pane View. Use Oriel's Sync mode, with profiles, encrypted token storage, and run history, or the scriptable CLI over the same engine. Your pick.
 
 </td>
 <td width="50%">
@@ -94,7 +94,7 @@ Gather Box downloads image galleries and story PDFs from supported sites straigh
 ```
 Gather Box downloads a gallery
   -> lands in the local archive as an inferred folder structure
-  -> Frame View reads it directly off disk
+  -> Oriel's View mode reads it directly off disk
   -> Lockstep scans the tree and builds a sync plan
   -> plan: read-only diff of local vs remote
   -> push: originals to S3, metadata to PostgreSQL
@@ -102,7 +102,7 @@ Gather Box downloads a gallery
   -> Shutter signs thumbnail and preview renditions on demand
 ```
 
-The scan, sort, grouping, and plan logic all live in `packages/`. Lockstep desktop and the CLI are two front ends over one engine, and Pane View reads the same domain types, so a sorting rule changed once changes everywhere.
+The scan, sort, grouping, and plan logic all live in `packages/`. Oriel's Sync mode and the Lockstep CLI are two front ends over one engine, and Pane View reads the same domain types, so a sorting rule changed once changes everywhere.
 
 ---
 
@@ -111,11 +111,9 @@ The scan, sort, grouping, and plan logic all live in `packages/`. Lockstep deskt
 | Name | Path | What it does |
 | --- | --- | --- |
 | Pane View | [`apps/pane-view`](apps/pane-view) | Private web viewer for a synced archive. TanStack Start + PostgreSQL + S3. |
-| Frame View | [`apps/frame-view`](apps/frame-view) | Electron desktop gallery for local images, videos, and comics. PDF reading is [planned](docs/plans/040-frame-view-pdf-spike.md), not shipped. |
+| Oriel | [`apps/oriel`](apps/oriel) | The desktop app, in three modes. **View** (once Frame View) is the gallery for local images, videos, and comics; PDF reading is [planned](docs/plans/040-frame-view-pdf-spike.md), not shipped. **Tidy** (once Glazier) audits and tidies the local archive: exact and similar duplicates, sound, conversion to AVIF and MP4, with holding and undo. **Sync** (once the Lockstep desktop app) plans and pushes to Pane View with profiles, encrypted tokens, and run history. |
 | Gather Box | [`apps/gather-box`](apps/gather-box) | Chrome extension that downloads galleries and story PDFs into local folder structures. |
-| Lockstep | [`apps/lockstep`](apps/lockstep) | Electron sync client with profiles, encrypted tokens, and run history. |
 | Lockstep CLI | [`apps/lockstep-cli`](apps/lockstep-cli) | Scriptable `plan` / `push` / `verify` / `doctor`. npm package `@latch-works/lockstep`. |
-| Glazier | [`apps/glazier`](apps/glazier) | Electron workbench that audits and tidies the local archive: exact and similar duplicates, sound, conversion to AVIF and MP4, with holding and undo. |
 | Showcase | [`apps/showcase`](apps/showcase) | Astro product site and MDX docs: pages, screenshots, getting-started guides. |
 
 ### Shared packages
@@ -125,8 +123,8 @@ The scan, sort, grouping, and plan logic all live in `packages/`. Lockstep deskt
 | `@latch-works/media-domain` | [`packages/media-domain`](packages/media-domain) | Media types, path helpers, gallery sort / comic grouping, Zod schemas |
 | `@latch-works/media-index` | [`packages/media-index`](packages/media-index) | Archive scanning and sync-plan generation |
 | `@latch-works/media-storage` | [`packages/media-storage`](packages/media-storage) | Content-addressed S3 object key conventions |
-| `@latch-works/lockstep-core` | [`packages/lockstep-core`](packages/lockstep-core) | Headless sync engine shared by Lockstep desktop and CLI |
-| `@latch-works/media-format` | [`packages/media-format`](packages/media-format) | Archive format policy (AVIF stills, MP4 video) and encoder settings shared by Gather Box and Glazier |
+| `@latch-works/lockstep-core` | [`packages/lockstep-core`](packages/lockstep-core) | Headless sync engine shared by Oriel's Sync mode and the Lockstep CLI |
+| `@latch-works/media-format` | [`packages/media-format`](packages/media-format) | Archive format policy (AVIF stills, MP4 video) and encoder settings shared by Gather Box and Oriel's Tidy mode |
 | `@latch-works/glazier-core` | [`packages/glazier-core`](packages/glazier-core) | Glazier's engine: catalog, scans, duplicates, plans, holding and the journal |
 
 ---
@@ -160,11 +158,13 @@ pnpm check
 ```bash
 pnpm dev:pane                                  # Pane View  → http://127.0.0.1:3000
 pnpm --filter @latch-works/showcase dev        # Showcase   → http://127.0.0.1:3100
-pnpm dev:lockstep                              # Lockstep desktop (Electron dev)
-pnpm --filter @latch-works/frame-view start    # Frame View (Electron dev)
-pnpm --filter @latch-works/glazier-app start   # Glazier (Electron dev)
+pnpm --filter @latch-works/oriel start         # Oriel: View, Tidy and Sync (Electron dev)
 pnpm --filter @latch-works/gather-box build    # Gather Box → dist/, load unpacked in Chrome
+pnpm make:oriel                                # Oriel's DMG, or Setup.exe and an MSI on Windows
 ```
+
+Oriel is built from source and unsigned; the [runbook](docs/runbooks/oriel.md) has each OS's
+prerequisites and how to open an unsigned build.
 
 ### Sync
 
@@ -201,7 +201,7 @@ pnpm knip        # Unused files, exports, dependencies
 | --- | --- |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | System architecture and the Shutter delivery model |
 | [`docs/runbooks/lockstep.md`](docs/runbooks/lockstep.md) | Lockstep operations runbook |
-| [`docs/runbooks/glazier.md`](docs/runbooks/glazier.md) | Glazier: what each action does to the archive, holding, undo |
+| [`docs/runbooks/glazier.md`](docs/runbooks/glazier.md) | Tidy (Glazier): what each action does to the archive, holding, undo |
 | [`docs/adr/`](docs/adr) | Architecture decision records |
 | [`docs/latch-works-brand-kit.md`](docs/latch-works-brand-kit.md) | Naming, tone, and product vocabulary |
 | [`docs/electron-macos-signing.md`](docs/electron-macos-signing.md) | Signing and notarizing the Electron apps |

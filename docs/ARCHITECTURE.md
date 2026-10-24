@@ -9,19 +9,34 @@ source-object storage, and source retention.
 | Application | Responsibility |
 | --- | --- |
 | Pane View | Authenticated web library, media metadata, original delivery, and Shutter authorization |
-| Lockstep | Desktop sync planning and push UX |
+| Oriel | The desktop app, in three modes: View (the local viewer, once Frame View), Tidy (the workbench that audits and tidies the archive, once Glazier) and Sync (sync planning and push, once the Lockstep desktop app) |
 | Lockstep CLI | Scriptable sync client over `lockstep-core` |
-| Frame View | Local desktop viewer |
-| Glazier | Desktop workbench that audits and tidies the local archive |
 | Gather Box | Browser collector whose side panel controls independently owned Gather Runs |
 | Showcase | Marketing and ecosystem documentation |
 
 Shared media identity and path behavior live in `media-domain`; archive scanning and sync planning
 live in `media-index`; S3-compatible source storage lives in `media-storage`; the archive format
 policy (AVIF stills, MP4 video, the AVIF encoder settings) lives in `media-format`, shared by
-Gather Box and Glazier.
+Gather Box and Oriel's Tidy mode.
 
-## Glazier
+## Oriel
+
+Oriel is one Electron app whose window shows one mode at a time, switched with ⌘1–3 or the
+switcher at the top of the sidebar. Each mode is its standalone app's code, moved into
+`apps/oriel/src/modes/<view|tidy|sync>` (plan 059):
+- **Main process.** Each mode has a `start` function, and the shell (`src/main.ts`) composes
+  them. It owns the window, the app menu (each mode adds its own items while it shows), the
+  single-instance lock, and registering every mode's media scheme in one call.
+- **Preload.** One script exposes the shell's bridge (`window.oriel`) beside each mode's own
+  (`window.frameView`, `window.glazier`, `window.lockstep`).
+- **Hidden modes.** They stay mounted and keep running, hidden and inert. A mode's window-level
+  key and drop listeners attach only while it shows, and its media pauses when it hides.
+- **Closing the window** quits, unless a sync push or a Tidy change is running. Then the window
+  hides, the Dock icon shows the run's progress, and Oriel quits once the run ends.
+- **First start.** Oriel brings the old apps' data over: Sync's tokens, renderer preferences, the
+  window size and the list of folders. Then it offers to remove the old apps.
+
+## Tidy (Glazier)
 
 Glazier is the one app that changes the local archive in bulk, so every change is a plan the owner
 reviews, applied step by step by an executor that re-reads each file first and skips one that
@@ -108,9 +123,10 @@ Windows), and never inside the archive:
 
 | Path | What |
 | --- | --- |
-| `glazier/` | Glazier's catalog, thumbnails and holding |
-| `frame-view/` | Frame View's settings, media index and thumbnail cache |
-| `lockstep/` | Lockstep desktop's profiles and settings; with `LOCKSTEP_SECRET_STORAGE=file`, its token key |
+| `oriel/` | Oriel's own: window state, Chromium storage (the renderer's preferences) and `migration.json` |
+| `frame-view/` | View's settings, media index and thumbnail cache (the folder Frame View used) |
+| `glazier/` | Tidy's catalog, thumbnails and holding (the folder Glazier used) |
+| `lockstep/` | Sync's profiles and settings, and the key its saved tokens are encrypted with (the folder Lockstep desktop used) |
 | `lockstep.json` | The Lockstep CLI's remembered settings |
 | `hash-cache/v1/` | Lockstep's per-source hash caches |
 
@@ -119,12 +135,13 @@ the top of that volume, so a removal there is still a rename. Every scanner skip
 `.latch-works` (the system folder list in `media-domain`), so a scan of a home folder or a whole
 volume never indexes or syncs it.
 
-The desktop apps point Electron's `userData` at their folder before they start
-(`@latch-works/app-data`). The first start after that change renames the folder each one used
-before (`~/Library/Application Support/<App>` on macOS, `%APPDATA%\<App>` on Windows,
-`~/.config/<App>` on Linux) into place, so settings, catalogs and caches come along; if the rename
-fails the app keeps its old folder. An explicit `--user-data-dir`, as the e2e suite passes, is left
-alone.
+Oriel points Electron's `userData` at `oriel/` before it starts, and gives each mode the folder
+its standalone app used (`@latch-works/app-data`). A standalone app that never ran after the move
+to `~/.latch-works` still has its folder where Electron put it (`~/Library/Application
+Support/<App>` on macOS, `%APPDATA%\<App>` on Windows, `~/.config/<App>` on Linux). Oriel renames
+that folder into place, so settings, catalogs and caches come along. If the rename fails, the mode
+keeps the old folder. Under an explicit `--user-data-dir`, as the e2e suite passes, the modes'
+folders sit inside it.
 
 ## Sync and storage
 

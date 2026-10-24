@@ -3,7 +3,12 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { type DataFolderApp, latchWorksHome, setLatchWorksDataFolder } from "./index.js";
+import {
+  type DataFolderApp,
+  latchWorksHome,
+  latchWorksModeFolder,
+  setLatchWorksDataFolder,
+} from "./index.js";
 
 let home: string;
 
@@ -16,10 +21,14 @@ afterEach(async () => {
 });
 
 /** Electron's `app` as far as the data folder goes, starting at `userData`. */
-function fakeApp(userData: string, switches: readonly string[] = []) {
+function fakeApp(
+  userData: string,
+  switches: readonly string[] = [],
+  appData = path.dirname(userData),
+) {
   const app: DataFolderApp & { userData: string } = {
     userData,
-    getPath: () => app.userData,
+    getPath: (name) => (name === "appData" ? appData : app.userData),
     setPath: (_name, value) => {
       app.userData = value;
     },
@@ -64,5 +73,44 @@ describe("the shared data folder", () => {
 
     expect(setLatchWorksDataFolder(app, { folder: "lockstep", home })).toBe(chosen);
     expect(app.userData).toBe(chosen);
+  });
+});
+
+describe("a mode's data folder", () => {
+  it("is the folder its standalone app used, left where it is", async () => {
+    const glazier = path.join(latchWorksHome(home), "glazier");
+    await mkdir(glazier, { recursive: true });
+    await writeFile(path.join(glazier, "catalog.sqlite"), "catalog");
+
+    const app = fakeApp(path.join(latchWorksHome(home), "oriel"));
+
+    expect(latchWorksModeFolder(app, { folder: "glazier", legacyName: "Glazier", home })).toBe(
+      glazier,
+    );
+    expect(await readFile(path.join(glazier, "catalog.sqlite"), "utf8")).toBe("catalog");
+  });
+
+  it("moves in a standalone app's folder from before ~/.latch-works", async () => {
+    const appData = path.join(home, "Library", "Application Support");
+    const legacy = path.join(appData, "Lockstep");
+    await mkdir(legacy, { recursive: true });
+    await writeFile(path.join(legacy, "lockstep-settings.json"), "{}");
+
+    const app = fakeApp(path.join(latchWorksHome(home), "oriel"), [], appData);
+    const target = path.join(latchWorksHome(home), "lockstep");
+
+    expect(latchWorksModeFolder(app, { folder: "lockstep", legacyName: "Lockstep", home })).toBe(
+      target,
+    );
+    expect(await readFile(path.join(target, "lockstep-settings.json"), "utf8")).toBe("{}");
+  });
+
+  it("sits inside a folder chosen with --user-data-dir", () => {
+    const chosen = path.join(home, "e2e-run");
+    const app = fakeApp(chosen, ["user-data-dir"]);
+
+    expect(latchWorksModeFolder(app, { folder: "lockstep", legacyName: "Lockstep", home })).toBe(
+      path.join(chosen, "lockstep"),
+    );
   });
 });

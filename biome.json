@@ -22,7 +22,6 @@
       "!docs/plans/*.html",
       "!apps/pane-view/src/components/dither-kit",
       "!apps/pane-view/dither-kit.json",
-      "!apps/frame-view",
       "!apps/gather-box",
       "!tools/oxlint/anti-slop"
     ]
@@ -69,6 +68,20 @@
           "correctness": {
             "noUnusedImports": "off",
             "noUnusedVariables": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["apps/oriel/src/modes/view/**"],
+      "linter": {
+        "rules": {
+          "a11y": {
+            "noSvgWithoutTitle": "off",
+            "useMediaCaption": "off"
+          },
+          "correctness": {
+            "useExhaustiveDependencies": "off"
           }
         }
       }

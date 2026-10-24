@@ -18,7 +18,7 @@ import {
   type FrameViewSession,
   launchFrameView,
   openFolder,
-  openSettingsTab,
+  openViewSettings,
   readTileKeys,
   setToggle,
   tileFor,
@@ -82,7 +82,7 @@ test.describe("scan", () => {
     const mixed = fixtureItemsInScope("mixed", false);
     await expectTileCount(window, mixed.length);
 
-    await openSettingsTab(window, "Usability");
+    await openViewSettings(window);
     await setToggle(window, "Show videos", false);
     await closeSettings(window);
     await waitForScan(window);
@@ -178,7 +178,7 @@ test.describe("thumbnails and viewer", () => {
 
   test("a video opens in the capsule player: seek, skip, mute and play/pause", async () => {
     const { window } = session;
-    await openSettingsTab(window, "Usability");
+    await openViewSettings(window);
     await setToggle(window, "Autoplay videos in viewer", false);
     await closeSettings(window);
     await openFolder(session, absolute("videos"));

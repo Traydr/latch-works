@@ -6,7 +6,7 @@ import { _electron as electron } from "@playwright/test";
 import sharp from "sharp";
 import { electronChildEnv, REPO_ROOT } from "../src/env.ts";
 
-const appDir = path.join(REPO_ROOT, "apps/frame-view");
+const appDir = path.join(REPO_ROOT, "apps/oriel");
 
 const label = process.argv[2] ?? "current";
 
@@ -66,7 +66,7 @@ try {
 
   const env = electronChildEnv();
 
-  delete env.FRAME_VIEW_DISABLE_GPU;
+  delete env.ORIEL_DISABLE_GPU;
 
   const binary =
     process.platform === "darwin"

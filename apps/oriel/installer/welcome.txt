@@ -1,0 +1,3 @@
+Oriel views, tidies and syncs your local media archive, in one window with three modes: View, Tidy and Sync.
+
+It replaces Frame View, Glazier and Lockstep, and brings their folders, settings and saved sync tokens over the first time it starts.

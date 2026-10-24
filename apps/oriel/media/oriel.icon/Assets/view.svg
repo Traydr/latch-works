@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+<defs>
+<clipPath id="panes">
+<path d="M362 304H662V748H362Z"/>
+<path d="M170 346L338 304V748L170 706Z"/>
+<path d="M854 346L686 304V748L854 706Z"/>
+</clipPath>
+</defs>
+<g clip-path="url(#panes)">
+<path fill="#fbf3df" d="M150 280H880V780H150Z"/>
+<circle fill="#f4cb70" cx="590" cy="446" r="64"/>
+<path fill="#80b4b5" d="M150 616C300 526 420 476 540 526C640 566 760 526 880 476V780H150Z"/>
+<path fill="#aac69d" d="M150 656C290 616 420 656 540 696S770 726 880 666V780H150Z"/>
+<path fill="#2d323a" fill-opacity="0.24" d="M150 280H338V780H150Z"/>
+<path fill="#2d323a" fill-opacity="0.24" d="M686 280H880V780H686Z"/>
+</g>
+</svg>

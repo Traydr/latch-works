@@ -7,9 +7,6 @@
     "apps/pane-view/src/components/ui/select.tsx": ["files"],
     "apps/gather-box/**": ["exports", "types", "files"],
     "apps/lockstep-cli/src/**": ["exports"],
-    "apps/lockstep/src/**": ["exports", "types", "files"],
-    "apps/frame-view/scripts/ensure-electron.mjs": ["files"],
-    "apps/frame-view/src/**": ["types"],
     "apps/showcase/src/**": ["exports", "types"],
     "packages/media-domain/src/gather-box-sidecar.ts": ["exports", "types"],
     "packages/shutter-protocol/src/**": ["exports", "types"],
@@ -25,21 +22,6 @@
       "entry": ["drizzle.config.ts", "src/routes/**/*.{ts,tsx}", "src/server/db/schema.ts"],
       "drizzle": false
     },
-    "apps/frame-view": {
-      "entry": [
-        "forge.config.ts",
-        "vite.main.config.mts",
-        "vite.preload.config.mts",
-        "vite.renderer.config.mts",
-        "src/main.ts",
-        "src/preload.ts",
-        "src/main/catalog/catalog.worker.ts",
-        "src/main/thumbnail/thumbnail.worker.ts",
-        "src/showcase/preview.tsx",
-        "tests/**/*.test.ts"
-      ],
-      "ignoreDependencies": ["ffmpeg-static", "@ffprobe-installer/ffprobe"]
-    },
     "apps/gather-box": {
       "entry": [
         "src/background/index.ts",
@@ -52,19 +34,7 @@
         "src/**/*.test.ts"
       ]
     },
-    "apps/lockstep": {
-      "entry": [
-        "forge.config.ts",
-        "vite.main.config.mts",
-        "vite.preload.config.mts",
-        "vite.renderer.config.mts",
-        "src/main.ts",
-        "src/preload.ts",
-        "src/showcase/preview.tsx"
-      ],
-      "ignoreDependencies": ["@testing-library/react"]
-    },
-    "apps/glazier": {
+    "apps/oriel": {
       "entry": [
         "forge.config.ts",
         "vite.main.config.mts",
@@ -73,12 +43,16 @@
         "vite.transcoder.config.mts",
         "src/main.ts",
         "src/preload.ts",
-        "src/transcoder-preload.ts",
-        "src/engine/engine-process.ts",
-        "src/engine/avif-worker.ts",
-        "src/transcoder/transcoder.ts"
+        "src/modes/view/main/catalog/catalog.worker.ts",
+        "src/modes/view/main/thumbnail/thumbnail.worker.ts",
+        "src/modes/tidy/transcoder-preload.ts",
+        "src/modes/tidy/engine/engine-process.ts",
+        "src/modes/tidy/engine/avif-worker.ts",
+        "src/modes/tidy/transcoder/transcoder.ts",
+        "tests/**/*.test.ts"
       ],
-      "ignoreDependencies": ["ffmpeg-static", "@ffprobe-installer/ffprobe", "sharp"]
+      "ignoreDependencies": ["ffmpeg-static", "@ffprobe-installer/ffprobe"],
+      "ignoreBinaries": ["vpk"]
     },
     "apps/lockstep-cli": {
       "entry": ["src/**/*.test.ts"]
