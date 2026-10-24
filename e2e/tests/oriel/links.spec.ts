@@ -16,7 +16,8 @@ test("a folder Tidy tidies is offered to View, and the modes hand files and fold
   test.setTimeout(120_000);
   session = await launchOriel(undefined, { ORIEL_DISABLE_GPU: "1" });
   const { window } = session;
-  const folderTitle = window.getByText("Folder: archive", { exact: true });
+  const heading = (name: string) => window.getByRole("heading", { level: 1, name, exact: true });
+  const folderTitle = heading("archive");
 
   await openMode(window, "tidy");
   await window.getByRole("button", { name: /Choose folder/i }).click();
@@ -28,19 +29,11 @@ test("a folder Tidy tidies is offered to View, and the modes hand files and fold
   await window.locator("[data-offered-folder]:visible").first().click();
   await expect(folderTitle).toBeVisible();
 
-  // View's folder menu starts a Sync profile for the folder on screen.
-  await window.getByRole("button", { name: "Folder actions" }).click();
-  await window.getByRole("menuitem", { name: "Sync this folder" }).click();
-  await expect(window).toHaveTitle("Sync – Oriel");
-  await expect(window.locator("#profile-source-root")).toHaveValue(FIXTURE_ARCHIVE_DIR);
-  await expect(window.getByLabel("Profile name")).toHaveValue("archive");
-
   // The viewer shows its file in Tidy, at the Library filtered to it.
-  await openMode(window, "view");
   await window
     .locator(`[data-gallery-item][title='${path.join(FIXTURE_ARCHIVE_DIR, "bulk")}']`)
     .dblclick();
-  await expect(window.getByText("Folder: bulk", { exact: true })).toBeVisible();
+  await expect(heading("bulk")).toBeVisible();
   await waitForScan(window);
   await tiles(window).first().dblclick();
   await expect(window.getByRole("dialog", { name: "Viewer for bulk-001.png" })).toBeVisible();
@@ -69,4 +62,11 @@ test("a folder Tidy tidies is offered to View, and the modes hand files and fold
   await window.getByRole("button", { name: "Open in View", exact: true }).click();
   await expect(window).toHaveTitle("View – Oriel");
   await expect(folderTitle).toBeVisible();
+
+  // Tidy's Overview starts a Sync profile for the folder it tidies.
+  await openMode(window, "tidy");
+  await window.getByRole("button", { name: "Sync this folder" }).click();
+  await expect(window).toHaveTitle("Sync – Oriel");
+  await expect(window.locator("#profile-source-root")).toHaveValue(FIXTURE_ARCHIVE_DIR);
+  await expect(window.getByLabel("Profile name")).toHaveValue("archive");
 });

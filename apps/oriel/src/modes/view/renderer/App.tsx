@@ -351,6 +351,7 @@ function AppInner(): JSX.Element {
     <ModeLayout
       sidebar={
         <ViewSidebar
+          openedFolderPath={navigationCeilingPath}
           folderPath={rootPath}
           subfolders={currentFolderChildren}
           subfoldersLoading={folderChildrenLoading}

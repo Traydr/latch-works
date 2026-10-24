@@ -306,8 +306,12 @@ Done, without trials: the defaults below were built and the owner can ask for a 
 - **View's sidebar.** At first the rail, so the gallery kept the width. The owner found the switch
   between View's rail and Tidy's and Sync's full sidebars jarring, so View now has a full sidebar
   too (the folder on screen, its parent and its subfolders), and the rail is the owner's choice
-  alone: a toggle at every sidebar's foot or ⌘\, the same in every mode and at any window size.
-  Glazier's switch to the rail under 1180 px is gone.
+  alone: a toggle at the start of every top bar, or ⌘\, the same in every mode and at any window
+  size. Glazier's switch to the rail under 1180 px is gone.
+- **One top bar.** View's floating header became the 52 px top bar Tidy and Sync have, with the
+  folder's name, its path, its counts and the folder steps; its bottom toolbar stays, and a toggle
+  that is on (Recursive, Comic) keeps Frame View's violet tint. In View's sidebar the parent is a
+  muted step up, and the folder on screen and its subfolders sit indented beneath it.
 - **Activity.** Each mode's renderer reports its own work to the switcher (`useReportActivity`):
   a ring for a Sync push or prune and a Tidy apply or undo, a dot for a View scan or a Tidy scan
   or analysis.
@@ -366,9 +370,10 @@ Done.
   goes through the main process, which opens the path only inside a folder some mode already
   works on (symlinks resolved), so View still scans only folders the owner chose.
 - **Where the links are.** Open in View sits in the Library's menu and Inspector, on duplicate
-  tiles, copies and the loupe, and on the Overview; Show in Tidy in the viewer's top bar; Tidy
-  this folder and Sync this folder in a menu on View's header; Open in View and Tidy this folder
-  in Sync's profile menu.
+  tiles, copies and the loupe, and on the Overview; Show in Tidy in the viewer's top bar; Sync
+  this folder on Tidy's Overview; Open in View and Tidy this folder in Sync's profile menu. View's
+  header menu with Tidy this folder and Sync this folder was dropped at the owner's request:
+  adding a folder belongs to Tidy and Sync.
 - **A file opens in the viewer.** View opens a handed file, or one the OS opens with Oriel, in the
   viewer once a scan of its folder that started after the hand-off has finished.
 - **The folder list** is read fresh from each mode's own storage, never copied: View's last

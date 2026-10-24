@@ -99,7 +99,7 @@ export function GalleryGrid({
       <main
         ref={mainRef}
         data-gallery-scroll-container="true"
-        className="flex-1 overflow-auto px-3 pb-28 pt-28"
+        className="flex-1 overflow-auto px-3 pt-4 pb-28"
       >
         {browserEntries.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center">

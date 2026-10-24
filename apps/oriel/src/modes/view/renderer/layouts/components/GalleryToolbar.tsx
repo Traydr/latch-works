@@ -31,9 +31,13 @@ interface GalleryToolbarProps {
   settings: AppSettings;
 }
 
-/** A toolbar button; a toggle that is on keeps the neutral selection, as the sidebar's does. */
+/** A toolbar button; a toggle that is on (Recursive, Comic) takes the violet tint. */
 export function toolButtonClass(active = false): string {
-  return `lw-btn lw-btn-ghost px-3 ${active ? "lw-selected text-zinc-900 dark:text-white" : ""}`;
+  return `lw-btn lw-btn-ghost px-3 ${
+    active
+      ? "bg-violet-500/12 text-violet-700 hover:bg-violet-500/18 hover:text-violet-800 dark:bg-violet-400/15 dark:text-violet-300 dark:hover:bg-violet-400/20 dark:hover:text-violet-200"
+      : ""
+  }`;
 }
 
 const SEPARATOR = "mx-0.5 h-5 w-px shrink-0 bg-zinc-900/10 dark:bg-white/10";

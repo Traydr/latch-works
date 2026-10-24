@@ -107,7 +107,7 @@ export function SyncPage({ ctrl }: { ctrl: LockstepController }) {
         />
       ) : (
         <>
-          <div className="lw-drag h-[52px] shrink-0" />
+          <TopBar />
           {errorBanner}
           <Welcome
             onCreate={profile.startCreateProfile}

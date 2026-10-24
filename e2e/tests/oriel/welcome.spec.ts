@@ -38,7 +38,9 @@ test("the first start's welcome sets one folder up for View and Tidy, then shows
   // It lands in View, scanning the folder, and Tidy has it too.
   await expect(welcome).toBeHidden();
   await expect(window).toHaveTitle("View – Oriel");
-  await expect(window.getByText("Folder: archive", { exact: true })).toBeVisible();
+  await expect(
+    window.getByRole("heading", { level: 1, name: "archive", exact: true }),
+  ).toBeVisible();
   await expect(tiles(window).first()).toBeVisible();
   await openMode(window, "tidy");
   await expect(window.getByRole("button", { name: /^archive/ }).first()).toBeVisible();

@@ -1,4 +1,4 @@
-import { Check, ChevronDown, X } from "lucide-react";
+import { Check, ChevronDown, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
 import {
   type ComponentType,
   type ReactNode,
@@ -8,29 +8,53 @@ import {
   useRef,
   useState,
 } from "react";
-import { useModeActive } from "../shell/shell";
+import { useModeActive, useShell } from "../shell/shell";
+
+/** Compacts the sidebar to the rail of icons, or expands it, in every mode at once (⌘\ too). */
+function SidebarToggle() {
+  const { rail, toggleRail } = useShell();
+  const label = rail ? "Expand sidebar" : "Compact sidebar";
+
+  return (
+    <button
+      type="button"
+      className="lw-btn lw-btn-ghost lw-btn-icon -ml-1.5 shrink-0"
+      aria-label={label}
+      title={`${label}  ⌘\\`}
+      data-sidebar-toggle
+      onClick={toggleRail}
+    >
+      {rail ? <PanelLeftOpen /> : <PanelLeftClose />}
+    </button>
+  );
+}
 
 /**
- * A view's 52 px top bar: its title and a caption of counts on the left, at most two secondary
- * controls and one primary on the right. The strip moves the window, as the sidebar's top does.
+ * A view's 52 px top bar, the same in every mode: the sidebar's compact toggle, the view's title
+ * and a caption of counts on the left, at most two secondary controls and one primary on the
+ * right. A screen with no title of its own (a welcome) still shows the bar, for the toggle. The
+ * strip moves the window, as the sidebar's top does.
  */
 export function TopBar({
   title,
   meta,
   children,
 }: {
-  title: ReactNode;
+  title?: ReactNode;
   meta?: ReactNode;
   children?: ReactNode;
 }) {
   return (
-    <header className="lw-drag flex h-[52px] shrink-0 items-center gap-4 border-b lw-divider px-5">
-      <div className="flex min-w-0 items-baseline gap-2.5">
-        <h1 className="lw-title truncate">{title}</h1>
-        {meta ? (
-          <span className="truncate text-[13px] text-zinc-500 dark:text-zinc-400">{meta}</span>
-        ) : null}
-      </div>
+    <header className="lw-drag flex h-[52px] shrink-0 items-center gap-3 border-b lw-divider pr-5 pl-3">
+      <SidebarToggle />
+      {title === undefined ? null : (
+        <div className="flex min-w-0 items-baseline gap-2.5">
+          <h1 className="lw-title truncate">{title}</h1>
+          {meta ? (
+            <span className="truncate text-[13px] text-zinc-500 dark:text-zinc-400">{meta}</span>
+          ) : null}
+        </div>
+      )}
       <div className="ml-auto flex shrink-0 items-center gap-2">{children}</div>
     </header>
   );

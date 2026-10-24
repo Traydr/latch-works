@@ -33,7 +33,7 @@ export function SortMenu({
     <>
       <button
         type="button"
-        className={toolButtonClass(sortMenuOpen)}
+        className={toolButtonClass()}
         onClick={onToggleOpen}
         aria-haspopup="menu"
         aria-expanded={sortMenuOpen}

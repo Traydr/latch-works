@@ -69,7 +69,7 @@ export async function launchOriel(
 }
 
 /** The showing mode's switcher button for `mode`; hidden modes keep switchers of their own. */
-export function modeButton(window: Page, mode: OrielMode) {
+function modeButton(window: Page, mode: OrielMode) {
   return window.locator(`[data-mode="${mode}"]:visible`);
 }
 

@@ -13,7 +13,7 @@ import {
   useReportActivity,
   useShell,
 } from "../../../shell/shell";
-import { EmptyState, Kbd } from "../../../ui/ui";
+import { EmptyState, Kbd, TopBar } from "../../../ui/ui";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { FolderPickerProvider, useFolderPicker } from "./components/FolderPicker";
 import { ShortcutSheet } from "./components/ShortcutSheet";
@@ -284,7 +284,7 @@ function Shell() {
         >
           {!ready ? (
             <>
-              <div className="lw-drag h-[52px] shrink-0" />
+              <TopBar />
               <EmptyState title="Starting…" />
             </>
           ) : root ? (
@@ -350,7 +350,7 @@ function Welcome({
 
   return (
     <>
-      <div className="lw-drag h-[52px] shrink-0" />
+      <TopBar />
       <div className="flex flex-1 items-center justify-center p-10 pb-[100px]">
         <div
           className={`flex w-[480px] max-w-full flex-col items-center rounded-2xl border-2 border-dashed px-10 py-12 text-center transition-colors duration-150 ${

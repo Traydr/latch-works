@@ -7,10 +7,8 @@ import { GalleryToolbar } from "./components/GalleryToolbar";
 import type { LayoutShellProps } from "./LayoutShellProps";
 
 /**
- * PRISM — Adaptive light/dark layout with folder grid overlay.
- * Center-screen modal shows subfolders as visual cards in a grid.
- * Masonry grid with rounded cards (Mosaic-style).
- * Floating bottom action bar.
+ * View's page: the top bar every mode has, the gallery grid, the folder browser over it, and the
+ * floating bottom action bar.
  */
 export function PrismLayout({
   settings,
@@ -71,13 +69,7 @@ export function PrismLayout({
   const showTopStatus =
     scanState === "loading" || scanState === "error" || (scanState === "done" && showReadyState);
 
-  const folderLabel = useMemo(() => {
-    if (!rootPath) {
-      return "Folder: none";
-    }
-
-    return `Folder: ${toDisplayName(rootPath)}`;
-  }, [rootPath]);
+  const folderName = useMemo(() => (rootPath ? toDisplayName(rootPath) : null), [rootPath]);
 
   return (
     <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-zinc-50 text-zinc-800 dark:bg-zinc-950 dark:text-zinc-100">
@@ -95,9 +87,8 @@ export function PrismLayout({
         currentFolderPathLabel={currentFolderPathLabel}
         comicEntryCount={comicEntryCount}
         folderEntryCount={folderEntryCount}
-        folderLabel={folderLabel}
+        folderName={folderName}
         mediaEntryCount={mediaEntryCount}
-        rootPath={rootPath}
         selectedBrowserEntryIndex={selectedBrowserEntryIndex}
         topStatus={
           showTopStatus

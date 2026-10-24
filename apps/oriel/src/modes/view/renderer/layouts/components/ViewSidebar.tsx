@@ -1,4 +1,4 @@
-import { ArrowUp, Folder, FolderOpen } from "lucide-react";
+import { ArrowUp, CornerLeftUp, Folder, FolderOpen } from "lucide-react";
 import type { JSX } from "react";
 
 import { baseName, parentOf } from "../../../../../shell/paths";
@@ -7,7 +7,9 @@ import { StartTruncate } from "../../../../../ui/ui";
 import type { FolderNode } from "../../../shared/types";
 
 interface ViewSidebarProps {
-  /** The folder on screen, or null before one is open. */
+  /** The folder the owner opened, above which View does not step. */
+  openedFolderPath: string | null;
+  /** The folder on screen, the opened one or one inside it, or null before one is open. */
   folderPath: string | null;
   subfolders: readonly FolderNode[];
   subfoldersLoading: boolean;
@@ -18,11 +20,19 @@ interface ViewSidebarProps {
   onSelectFolder: (folderPath: string) => void;
 }
 
+/** A row's left padding at a depth of the folder tree, 14 px a level. */
+function indent(depth: number) {
+  return { paddingLeft: `${10 + depth * 14}px` };
+}
+
 /**
- * View's sidebar, as Tidy and Sync have theirs: the folder on screen, which opens another, then
- * its parent and its subfolders to step through. In rail form, Open and Parent as icons.
+ * View's sidebar, as Tidy and Sync have theirs: the folder the owner opened, which opens another,
+ * then where View is inside it as a short tree. The parent is a muted step up, the folder on
+ * screen is the current row, and its subfolders sit indented beneath it. In rail form, Open and
+ * Parent as icons.
  */
 export function ViewSidebar({
+  openedFolderPath,
   folderPath,
   subfolders,
   subfoldersLoading,
@@ -33,6 +43,8 @@ export function ViewSidebar({
   onSelectFolder,
 }: ViewSidebarProps): JSX.Element {
   const { rail, insetTitleBar } = useShell();
+  // The folder a step up, while View is inside the one the owner opened.
+  const upward = canOpenParentFolder ? parentFolderPath : null;
 
   // The rail's buttons, as Tidy's: 48 px in the 88 px macOS rail, 40 px elsewhere.
   const railButton = `lw-sidebar-item justify-center px-0 ${
@@ -85,10 +97,10 @@ export function ViewSidebar({
           </span>
           <span className="min-w-0 flex-1">
             <span className="block truncate text-[13px] font-semibold">
-              {folderPath ? baseName(folderPath) : "No folder open"}
+              {openedFolderPath ? baseName(openedFolderPath) : "No folder open"}
             </span>
-            {folderPath ? (
-              <StartTruncate text={parentOf(folderPath)} className="lw-caption block" />
+            {openedFolderPath ? (
+              <StartTruncate text={parentOf(openedFolderPath)} className="lw-caption block" />
             ) : (
               <span className="lw-caption block truncate">Open one to see it</span>
             )}
@@ -100,24 +112,38 @@ export function ViewSidebar({
         <>
           <p className="px-[18px] pt-4 pb-1.5 text-xs font-medium text-zinc-500">Folders</p>
           <ul className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-2">
-            {canOpenParentFolder && parentFolderPath ? (
+            {upward ? (
               <li>
                 <button
                   type="button"
-                  className="lw-sidebar-item"
-                  aria-label={`Up to ${baseName(parentFolderPath)}`}
+                  className="lw-sidebar-item text-zinc-500 dark:text-zinc-400"
+                  aria-label={`Up to ${baseName(upward)}`}
+                  title={`Up to ${baseName(upward)}`}
+                  data-sidebar-parent
                   onClick={onOpenParentFolder}
                 >
-                  <ArrowUp />
-                  <span className="min-w-0 flex-1 truncate">{baseName(parentFolderPath)}</span>
+                  <CornerLeftUp />
+                  <span className="min-w-0 flex-1 truncate">{baseName(upward)}</span>
                 </button>
               </li>
             ) : null}
+            <li>
+              <div
+                className="lw-sidebar-item cursor-default"
+                aria-current="true"
+                style={indent(upward ? 1 : 0)}
+                data-sidebar-current
+              >
+                <FolderOpen />
+                <span className="min-w-0 flex-1 truncate">{baseName(folderPath)}</span>
+              </div>
+            </li>
             {subfolders.map((subfolder) => (
               <li key={subfolder.path}>
                 <button
                   type="button"
                   className="lw-sidebar-item"
+                  style={indent(upward ? 2 : 1)}
                   data-sidebar-folder={subfolder.name}
                   onClick={() => onSelectFolder(subfolder.path)}
                 >
@@ -127,7 +153,7 @@ export function ViewSidebar({
               </li>
             ))}
             {subfolders.length === 0 ? (
-              <li className="lw-caption px-2.5 py-1.5">
+              <li className="lw-caption py-1.5" style={indent(upward ? 2 : 1)}>
                 {subfoldersLoading ? "Looking for subfolders…" : "No subfolders"}
               </li>
             ) : null}
