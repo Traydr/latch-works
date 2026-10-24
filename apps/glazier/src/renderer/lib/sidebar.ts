@@ -20,7 +20,7 @@ interface SidebarRail {
 }
 
 /**
- * Whether the sidebar shows as the 56 px rail: by default under 1180 px, and as ⌘\ last chose
+ * Whether the sidebar shows as the rail of icons: by default under 1180 px, and as ⌘\ last chose
  * for windows of that size class, remembered separately for narrow and wide windows.
  */
 export function useSidebarRail(): SidebarRail {

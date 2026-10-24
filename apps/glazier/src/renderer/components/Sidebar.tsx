@@ -215,7 +215,9 @@ export function Sidebar({ onAddRoot, rail }: { onAddRoot: () => void; rail: bool
       <nav
         aria-label="Glazier"
         className={`flex shrink-0 flex-col border-r gz-divider bg-zinc-50 dark:bg-zinc-900/60 ${
-          rail ? "w-14 items-center" : "w-60"
+          // On macOS the window buttons sit in the rail's top strip; at 16 px in they end near
+          // 76 px, so the rail is wide enough to hold them rather than spill over the top bar.
+          rail ? (desktop.insetTitleBar() ? "w-[88px] items-center" : "w-14 items-center") : "w-60"
         }`}
       >
         <div className="gz-drag h-[52px] w-full shrink-0" />
