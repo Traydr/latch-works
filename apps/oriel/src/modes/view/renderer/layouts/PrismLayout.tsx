@@ -38,7 +38,6 @@ export function PrismLayout({
   onToggleExcludedRootChild,
   onChangeSortMode,
   onShuffleRandom,
-  onOpenSettings,
   onSelectFolder,
   onSelectBrowserEntry,
   onActivateBrowserEntry,
@@ -123,7 +122,6 @@ export function PrismLayout({
         isRefreshing={isScanning}
         onChangeSortMode={onChangeSortMode}
         onOpenFolder={onOpenFolder}
-        onOpenSettings={onOpenSettings}
         onRefresh={onRefresh}
         onShuffleRandom={onShuffleRandom}
         onToggleFolderOverlay={() => setFolderOverlayOpen(true)}

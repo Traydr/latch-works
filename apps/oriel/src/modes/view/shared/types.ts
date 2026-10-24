@@ -54,6 +54,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   },
   rootGalleryPreferences: {},
   lastFolderPath: null,
+  lastOpenedFolderPath: null,
   debug: {
     enableDebugLogging: false,
     enablePerformanceMonitoring: false,

@@ -261,6 +261,11 @@ function useMode(): { id: ModeId; active: boolean } {
   return mode;
 }
 
+/** The mode whose tree this is. */
+export function useModeId(): ModeId {
+  return useMode().id;
+}
+
 /**
  * Whether this mode is the one on screen. Hidden modes stay mounted, so a listener a mode puts on
  * the whole window (keys, drops) attaches only while this is true.

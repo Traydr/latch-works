@@ -38,7 +38,6 @@ export interface LayoutShellProps {
   onToggleExcludedRootChild: (folderPath: string) => void;
   onChangeSortMode: (mode: GallerySortMode) => void;
   onShuffleRandom: () => void;
-  onOpenSettings: () => void;
   onSelectFolder: (folderPath: string) => void;
   onSelectBrowserEntry: (entry: BrowserEntry) => void;
   onActivateBrowserEntry: (entry: BrowserEntry) => void;

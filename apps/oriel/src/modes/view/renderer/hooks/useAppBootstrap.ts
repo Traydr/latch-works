@@ -1,4 +1,5 @@
 import { useEffect, useEffectEvent, useRef } from "react";
+import { relativeInside } from "../../../../shell/paths";
 import { useModeActive } from "../../../../shell/shell";
 import type { AppSettings, ScanEvent } from "../../shared/types";
 import { frameViewClient } from "../services/frameViewClient";
@@ -114,7 +115,15 @@ export function useAppBootstrap({
         loadedSettings.lastFolderPath &&
         !launchPathRequestedRef.current
       ) {
-        setNavigationCeilingPathEvent(loadedSettings.lastFolderPath);
+        // Back where the owner left off: the folder they opened stays the top, so they can step
+        // back up to it from the one they were in.
+        const opened = loadedSettings.lastOpenedFolderPath;
+
+        setNavigationCeilingPathEvent(
+          opened !== null && relativeInside(opened, loadedSettings.lastFolderPath) !== null
+            ? opened
+            : loadedSettings.lastFolderPath,
+        );
         setPendingFolderSelectionPathEvent(null);
 
         const rootPreferences = getRootGalleryPreferences(

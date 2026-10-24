@@ -68,8 +68,7 @@ export type GlazierView =
   | "cleanup"
   | "library"
   | "history"
-  | "holding"
-  | "settings";
+  | "holding";
 
 export async function openView(window: Page, view: GlazierView): Promise<void> {
   await window.locator(`nav [data-view="${view}"]`).click();

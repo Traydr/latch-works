@@ -97,12 +97,18 @@ export const AppSettingsSchema = z.object({
   filters: FileFilterSettingsSchema,
   rootGalleryPreferences: RootGalleryPreferencesMapSchema,
   lastFolderPath: LastFolderPathSchema,
+  /**
+   * The folder the owner opened (the dialog, a drop, the OS or another mode), which the last
+   * folder is inside: View starts there again, able to step back up to it.
+   */
+  lastOpenedFolderPath: LastFolderPathSchema,
   debug: DebugSettingsSchema,
 });
 
 /**
- * What the renderer may change. `lastFolderPath` is left out on purpose: the main process writes it
- * after a folder the user chose is scanned, and trusts it to re-authorize that folder on startup.
+ * What the renderer may change. `lastFolderPath` and `lastOpenedFolderPath` are left out on
+ * purpose: the main process writes them after a folder the user chose is scanned, and trusts them
+ * to re-authorize that folder on startup.
  */
 export const AppSettingsPatchSchema = z.strictObject({
   theme: ThemeModeSchema.optional(),
@@ -136,6 +142,7 @@ export const AppSettingsPatchSchema = z.strictObject({
 /** A settings change made by the main process, which alone may set the remembered folder. */
 export const StoredSettingsPatchSchema = AppSettingsPatchSchema.extend({
   lastFolderPath: LastFolderPathSchema.optional(),
+  lastOpenedFolderPath: LastFolderPathSchema.optional(),
 });
 
 export const MediaItemSchema = z.object({

@@ -1,4 +1,5 @@
 import {
+  ArrowLeft,
   FolderOpen,
   Images,
   type LucideIcon,
@@ -8,9 +9,9 @@ import {
 } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 
-import type { About } from "../shared/shell";
+import { type About, MODE_LABELS } from "../shared/shell";
 import { Segmented } from "../ui/ui";
-import { type SettingsSection, useModeActive, useShell } from "./shell";
+import { type SettingsSection, useModeActive, useModeId, useShell } from "./shell";
 import { type ThemeChoice, useTheme } from "./theme";
 
 const SECTIONS = [
@@ -112,12 +113,14 @@ function GeneralSettings() {
 
 /**
  * Settings, over the whole window: the sections on the left (Oriel's own, then one per mode) and
- * the one showing on the right. A mode draws its own section, `section`, inside its own tree; the
- * mode underneath stays mounted, so closing Settings returns to it as it was.
+ * the one showing on the right. The way back sits at the sidebar's bottom left, where Settings
+ * was. A mode draws its own section, `section`, inside its own tree; the mode underneath stays
+ * mounted, so closing Settings returns to it as it was.
  */
 export function SettingsFrame({ section }: { section: ReactNode }) {
   const { settings, openSettings, closeSettings } = useShell();
   const active = useModeActive();
+  const mode = useModeId();
 
   useEffect(() => {
     if (!active) {
@@ -159,19 +162,22 @@ export function SettingsFrame({ section }: { section: ReactNode }) {
             ))}
           </ul>
         </nav>
+        <div className="mt-auto px-2 pb-3">
+          <button
+            type="button"
+            className="lw-sidebar-item"
+            title="Esc"
+            data-settings-back
+            onClick={closeSettings}
+          >
+            <ArrowLeft />
+            <span className="min-w-0 flex-1 truncate">Back to {MODE_LABELS[mode]}</span>
+          </button>
+        </div>
       </aside>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <header className="lw-drag flex h-[52px] shrink-0 items-center gap-4 border-b lw-divider px-5">
           <h1 className="lw-title truncate">{current.label}</h1>
-          <button
-            type="button"
-            className="lw-btn lw-btn-secondary ml-auto"
-            aria-label="Close settings"
-            title="Esc"
-            onClick={closeSettings}
-          >
-            Done
-          </button>
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="mx-auto w-full max-w-[640px] px-6 pt-6 pb-28">

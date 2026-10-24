@@ -196,6 +196,11 @@ export function normalizeAppSettings(candidate: JsonValue | undefined): AppSetti
       raw.lastFolderPath,
       DEFAULT_SETTINGS.lastFolderPath,
     ),
+    lastOpenedFolderPath: parseOrFallback(
+      LastFolderPathSchema,
+      raw.lastOpenedFolderPath,
+      DEFAULT_SETTINGS.lastOpenedFolderPath,
+    ),
     debug: parseOrFallback(DebugSettingsSchema, rawDebug, DEFAULT_SETTINGS.debug),
   };
 }

@@ -194,6 +194,7 @@ describe("registerIpc", () => {
     expect(grantChosenMediaRoot).toHaveBeenCalledWith("C:\\resolved");
     expect(settingsService.updateSettings).toHaveBeenCalledWith({
       lastFolderPath: "C:\\resolved",
+      lastOpenedFolderPath: "C:\\resolved",
     });
   });
 

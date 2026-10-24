@@ -354,13 +354,21 @@ export async function claimChosenMediaRoot(rootPath: string): Promise<boolean> {
  */
 export async function authorizeRememberedMediaRoot(settings: {
   lastFolderPath: string | null;
+  lastOpenedFolderPath: string | null;
   rememberLastFolder: boolean;
 }): Promise<void> {
   if (!settings.rememberLastFolder || !settings.lastFolderPath) {
     return;
   }
 
-  await authorizeMediaRoot(settings.lastFolderPath);
+  // The folder the owner opened, so View can step back up to it, when the last one is inside it.
+  const opened = settings.lastOpenedFolderPath;
+
+  await authorizeMediaRoot(
+    opened !== null && isPathWithinRoot(settings.lastFolderPath, opened)
+      ? opened
+      : settings.lastFolderPath,
+  );
 }
 
 /** Keep only the most specific authorized root that contains `mediaPath`. */

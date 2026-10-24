@@ -312,6 +312,11 @@ Done, without trials: the defaults below were built and the owner can ask for a 
   folder's name, its path, its counts and the folder steps; its bottom toolbar stays, and a toggle
   that is on (Recursive, Comic) keeps Frame View's violet tint. In View's sidebar the parent is a
   muted step up, and the folder on screen and its subfolders sit indented beneath it.
+- **Settings at the bottom left.** Every mode's Settings item sits at its sidebar's bottom left,
+  View's too (it left the bottom toolbar), and Settings puts Back to the mode in the same place.
+- **Back where it was.** Oriel reopens on the mode, Tidy's folder and page, and View's folder,
+  with the folder View was opened at still the top it can step back up to
+  (`lastOpenedFolderPath`, beside `lastFolderPath`).
 - **Activity.** Each mode's renderer reports its own work to the switcher (`useReportActivity`):
   a ring for a Sync push or prune and a Tidy apply or undo, a dot for a View scan or a Tidy scan
   or analysis.

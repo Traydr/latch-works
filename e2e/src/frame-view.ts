@@ -134,7 +134,7 @@ export async function openViewSettings(window: Page): Promise<void> {
 }
 
 export async function closeSettings(window: Page): Promise<void> {
-  await window.getByRole("button", { name: "Close settings" }).click();
+  await window.getByRole("button", { name: "Back to View" }).click();
 }
 
 export async function setToggle(window: Page, label: string, on: boolean): Promise<void> {

@@ -4,7 +4,7 @@ import type {
   FileFormat,
   FileKind,
 } from "@latch-works/glazier-core/contract";
-import { createContext, type ReactNode, useContext, useMemo, useState } from "react";
+import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from "react";
 
 /**
  * Overview is home. Duplicates, Convert and Clean up are the work, in the order it is best done;
@@ -21,6 +21,15 @@ const VIEWS = [
 ] as const;
 
 export type View = (typeof VIEWS)[number];
+
+const VIEW_KEY = "oriel.tidy.view";
+
+/** The page Tidy showed last, so it opens there again, or else Overview. */
+function storedView(): View {
+  const stored = window.localStorage.getItem(VIEW_KEY);
+
+  return VIEWS.find((view) => view === stored) ?? "overview";
+}
 
 /** A starting filter for the Library, set when another view links to a set of files. */
 export interface LibraryPreset {
@@ -61,10 +70,14 @@ interface Navigation {
 const NavigationContext = createContext<Navigation | null>(null);
 
 export function NavigationProvider({ children }: { children: ReactNode }) {
-  const [view, setView] = useState<View>("overview");
+  const [view, setView] = useState<View>(storedView);
   const [preset, setPreset] = useState<LibraryPreset>(EMPTY_PRESET);
   const [searchRequested, setSearchRequested] = useState(false);
   const [duplicatesTab, setDuplicatesTab] = useState<Navigation["duplicatesTab"]>(null);
+
+  useEffect(() => {
+    window.localStorage.setItem(VIEW_KEY, view);
+  }, [view]);
 
   const value = useMemo<Navigation>(
     () => ({

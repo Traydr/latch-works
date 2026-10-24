@@ -37,7 +37,7 @@ interface PendingFocus {
 }
 
 function AppInner(): JSX.Element {
-  const { settings: settingsSection, openSettings } = useShell();
+  const { settings: settingsSection } = useShell();
   const active = useModeActive();
   const settingsOpen = active && settingsSection === "view";
   const [activeComic, setActiveComic] = useState<ComicEntry | null>(null);
@@ -331,7 +331,6 @@ function AppInner(): JSX.Element {
     },
     onChangeSortMode: changeSortModeAction,
     onShuffleRandom: shuffleRandomAction,
-    onOpenSettings: () => openSettings("view"),
     onSelectFolder: navigateToFolderAction,
     onSelectBrowserEntry: selectBrowserEntryAction,
     onActivateBrowserEntry: activateBrowserEntryAction,

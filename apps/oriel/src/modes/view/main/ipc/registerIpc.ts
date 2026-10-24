@@ -12,6 +12,7 @@ import type {
   IpcErrorPayload,
   ScanEvent,
   ScanOptions,
+  StoredSettingsPatch,
 } from "../../shared/types";
 import type { CatalogService } from "../catalog/CatalogService";
 import type { ScanQueue } from "../catalog/ScanQueue";
@@ -181,7 +182,10 @@ export function registerIpc(
     const settings = settingsService.getSettings();
 
     if (settings.rememberLastFolder) {
-      const updateResult = await settingsService.updateSettings({ lastFolderPath: selectedPath });
+      const updateResult = await settingsService.updateSettings({
+        lastFolderPath: selectedPath,
+        lastOpenedFolderPath: selectedPath,
+      });
 
       if (Result.isError(updateResult)) {
         return serializeAppResult(Result.err(updateResult.error));
@@ -302,7 +306,14 @@ export function registerIpc(
     await runtime.shrinkAuthorizedMediaRootsTo(resolvedRoot);
 
     if (settings.rememberLastFolder) {
-      const updateResult = await settingsService.updateSettings({ lastFolderPath: resolvedRoot });
+      // A folder the owner chose is the one View starts at again; one inside it is where.
+      const remembered: StoredSettingsPatch = { lastFolderPath: resolvedRoot };
+
+      if (claimedChosenRoot) {
+        remembered.lastOpenedFolderPath = resolvedRoot;
+      }
+
+      const updateResult = await settingsService.updateSettings(remembered);
 
       if (Result.isError(updateResult)) {
         sendScanEvent({

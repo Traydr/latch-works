@@ -1,12 +1,4 @@
-import {
-  FolderOpen,
-  Folders,
-  ImageIcon,
-  ListTree,
-  RefreshCcw,
-  Settings,
-  Shuffle,
-} from "lucide-react";
+import { FolderOpen, Folders, ImageIcon, ListTree, RefreshCcw, Shuffle } from "lucide-react";
 import { type JSX, useEffect, useMemo, useRef, useState } from "react";
 
 import type { AppSettings, GallerySortMode } from "../../../shared/types";
@@ -20,7 +12,6 @@ interface GalleryToolbarProps {
   isRefreshing: boolean;
   onChangeSortMode: (mode: GallerySortMode) => void;
   onOpenFolder: () => void;
-  onOpenSettings: () => void;
   onRefresh: () => void;
   onShuffleRandom: () => void;
   onToggleComicMode: (value: boolean) => void;
@@ -48,7 +39,6 @@ export function GalleryToolbar({
   isRefreshing,
   onChangeSortMode,
   onOpenFolder,
-  onOpenSettings,
   onRefresh,
   onShuffleRandom,
   onToggleComicMode,
@@ -181,16 +171,6 @@ export function GalleryToolbar({
       >
         <RefreshCcw className={isRefreshing ? "animate-spin" : ""} />
         {isRefreshing ? "Refreshing" : "Refresh"}
-      </button>
-      <div className={SEPARATOR} />
-      <button
-        type="button"
-        className={toolButtonClass()}
-        onClick={onOpenSettings}
-        title="Preferences"
-      >
-        <Settings />
-        Settings
       </button>
     </div>
   );

@@ -2,6 +2,7 @@ import { ArrowUp, CornerLeftUp, Folder, FolderOpen } from "lucide-react";
 import type { JSX } from "react";
 
 import { baseName, parentOf } from "../../../../../shell/paths";
+import { SettingsItem } from "../../../../../shell/SettingsItem";
 import { useShell } from "../../../../../shell/shell";
 import { StartTruncate } from "../../../../../ui/ui";
 import type { FolderNode } from "../../../shared/types";
@@ -79,6 +80,9 @@ export function ViewSidebar({
             </button>
           </li>
         </ul>
+        <div className="mt-auto pb-3">
+          <SettingsItem />
+        </div>
       </nav>
     );
   }
@@ -160,6 +164,11 @@ export function ViewSidebar({
           </ul>
         </>
       ) : null}
+      <ul className="mt-auto space-y-0.5 px-2 pt-1 pb-3">
+        <li>
+          <SettingsItem />
+        </li>
+      </ul>
     </nav>
   );
 }

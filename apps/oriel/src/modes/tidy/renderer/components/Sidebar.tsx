@@ -11,13 +11,12 @@ import {
   Pause,
   Play,
   Repeat2,
-  Settings as SettingsIcon,
   Sparkles,
   Square,
   X,
 } from "lucide-react";
 import { type ComponentType, createContext, useContext, useState } from "react";
-import { useShell } from "../../../../shell/shell";
+import { SettingsItem } from "../../../../shell/SettingsItem";
 import { ProgressBar, Spinner } from "../../../../ui/ui";
 import { useActions } from "../lib/actions";
 import { call, desktop } from "../lib/api";
@@ -141,28 +140,6 @@ function NavItem({
             {count}
           </span>
         ) : null}
-      </button>
-    </li>
-  );
-}
-
-/** Opens Oriel's Settings at Tidy's section, which holds what Glazier's Settings page did. */
-function SettingsItem() {
-  const { openSettings } = useShell();
-  const rail = useContext(RailContext);
-
-  return (
-    <li>
-      <button
-        type="button"
-        className={`lw-sidebar-item ${rail ? `relative justify-center px-0 ${RAIL_BUTTON} ${RAIL_ICON}` : ""}`}
-        aria-label={rail ? "Settings" : undefined}
-        data-view="settings"
-        title="Settings  ⌘,"
-        onClick={() => openSettings("tidy")}
-      >
-        <SettingsIcon />
-        {rail ? null : <span className="min-w-0 flex-1 truncate">Settings</span>}
       </button>
     </li>
   );
@@ -332,7 +309,9 @@ export function Sidebar({ onAddRoot, rail }: { onAddRoot: () => void; rail: bool
                 holding.data && holding.data.total > 0 ? formatBytes(holding.data.totalBytes) : null
               }
             />
-            <SettingsItem />
+            <li>
+              <SettingsItem />
+            </li>
           </ul>
         </div>
       </nav>

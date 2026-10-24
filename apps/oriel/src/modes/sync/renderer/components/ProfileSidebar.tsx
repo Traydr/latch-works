@@ -1,5 +1,6 @@
-import { Plus, Settings as SettingsIcon } from "lucide-react";
+import { Plus } from "lucide-react";
 
+import { SettingsItem } from "../../../../shell/SettingsItem";
 import { useShell } from "../../../../shell/shell";
 import { Spinner } from "../../../../ui/ui";
 import type { LockstepPlanCounts, LockstepProfilePublic } from "../../shared/types";
@@ -35,7 +36,7 @@ export function ProfileSidebar({
   onSelect,
   onCreate,
 }: ProfileSidebarProps) {
-  const { rail, insetTitleBar, openSettings } = useShell();
+  const { rail, insetTitleBar } = useShell();
 
   // The rail's buttons, as Tidy's: 48 px targets in the 88 px macOS rail, 40 px elsewhere.
   const railButton = `relative justify-center px-0 ${
@@ -113,16 +114,7 @@ export function ProfileSidebar({
           </button>
         </li>
         <li>
-          <button
-            type="button"
-            className={`lw-sidebar-item ${rail ? railButton : ""}`}
-            title="Settings  ⌘,"
-            aria-label={rail ? "Settings" : undefined}
-            onClick={() => openSettings("sync")}
-          >
-            <SettingsIcon />
-            {rail ? null : <span className="min-w-0 flex-1 truncate">Settings</span>}
-          </button>
+          <SettingsItem />
         </li>
       </ul>
     </nav>

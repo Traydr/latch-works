@@ -9,6 +9,7 @@ import type {
   RootId,
   Settings,
 } from "@latch-works/glazier-core/contract";
+import { RootIdSchema } from "@latch-works/glazier-core/contract";
 import {
   createContext,
   type ReactNode,
@@ -39,6 +40,16 @@ interface EngineState {
 }
 
 const EngineContext = createContext<EngineState | null>(null);
+
+const ROOT_KEY = "oriel.tidy.root";
+
+/** The folder Tidy showed last, while it still tidies it, or else its first. */
+function startingRoot(roots: readonly Root[]): RootId | null {
+  const stored = RootIdSchema.safeParse(Number(window.localStorage.getItem(ROOT_KEY)));
+  const kept = stored.success ? roots.find((root) => root.id === stored.data) : undefined;
+
+  return kept?.id ?? roots[0]?.id ?? null;
+}
 
 export function EngineProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
@@ -91,7 +102,7 @@ export function EngineProvider({ children }: { children: ReactNode }) {
         setSettingsState(state.settings);
         setCapabilities(state.capabilities);
         setJobs(new Map(state.jobs.map((job) => [job.id, job])));
-        setRootId((current) => current ?? state.roots[0]?.id ?? null);
+        setRootId((current) => current ?? startingRoot(state.roots));
         setReady(true);
       },
       (cause: Error) => setError(cause.message),
@@ -104,9 +115,16 @@ export function EngineProvider({ children }: { children: ReactNode }) {
     if (rootId !== null && !roots.some((root) => root.id === rootId)) {
       setRootId(roots[0]?.id ?? null);
     } else if (rootId === null && roots[0]) {
-      setRootId(roots[0].id);
+      setRootId(startingRoot(roots));
     }
   }, [roots, rootId]);
+
+  // Remembered, so Tidy opens on the same folder next time.
+  useEffect(() => {
+    if (rootId !== null) {
+      window.localStorage.setItem(ROOT_KEY, String(rootId));
+    }
+  }, [rootId]);
 
   const setSettings = useCallback(
     async (next: Settings) => {
