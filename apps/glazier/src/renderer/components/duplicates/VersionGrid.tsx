@@ -1,10 +1,11 @@
 import type { DuplicateSet, FileId, FileRow } from "@latch-works/glazier-core/contract";
-import { Check, Maximize2, Minus, Plus } from "lucide-react";
+import { Check, FolderOpen, Maximize2, Minus, Plus } from "lucide-react";
 import { type MouseEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
 
-import { mediaUrl, thumbnailUrl } from "../../lib/api";
+import { desktop, mediaUrl, thumbnailUrl } from "../../lib/api";
 import { Thumbnail } from "../media";
 import { FolderPath } from "../ui";
+import { VideoControls } from "../VideoControls";
 import { factsOf, type SetRow } from "./model";
 
 /** Up to six versions fit the stage without scrolling; more scroll at this tile height. */
@@ -114,8 +115,6 @@ export function VersionGrid({
   closeCall,
   focus,
   showFocus,
-  playing,
-  soundOn,
   readOnly,
   onHover,
   onLook,
@@ -131,9 +130,6 @@ export function VersionGrid({
   focus: number;
   /** Whether the focus is drawn: only once the arrow keys are used, so nothing looks picked. */
   showFocus: boolean;
-  playing: boolean;
-  /** Only the focused tile is ever heard. */
-  soundOn: boolean;
   readOnly: boolean;
   /** The version under the pointer, or null once it leaves the grid. */
   onHover: (index: number | null) => void;
@@ -182,6 +178,8 @@ export function VersionGrid({
   const linked = new Set(set.hardLinkedIds);
   const several = kept.size > 1;
   const shared = sharedFolders(rows);
+  // One video plays at a time, so the one heard is the one that was started last.
+  const [playingId, setPlayingId] = useState<FileId | null>(null);
 
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: leaving the grid only clears which version the pointer is on.
@@ -216,8 +214,8 @@ export function VersionGrid({
               focused={showFocus && index === focus}
               hardLinked={linked.has(row.file.id)}
               well={well}
-              playing={playing}
-              heard={soundOn && index === focus}
+              playing={playingId === row.file.id}
+              onPlayed={() => setPlayingId(row.file.id)}
               readOnly={readOnly}
               onHover={() => onHover(index)}
               onLook={() => onLook(index)}
@@ -244,7 +242,7 @@ function VersionTile({
   hardLinked,
   well,
   playing,
-  heard,
+  onPlayed,
   readOnly,
   onHover,
   onLook,
@@ -265,8 +263,9 @@ function VersionTile({
   hardLinked: boolean;
   /** The picture well's height in pixels, or null to fill a fixed-height tile. */
   well: number | null;
+  /** Whether this tile's video is the one playing; another starting pauses it. */
   playing: boolean;
-  heard: boolean;
+  onPlayed: () => void;
   readOnly: boolean;
   onHover: () => void;
   onLook: () => void;
@@ -274,24 +273,16 @@ function VersionTile({
   onToggleKeep: () => void;
 }) {
   const { file } = row;
-  const video = useRef<HTMLVideoElement>(null);
+  const [video, setVideo] = useState<HTMLVideoElement | null>(null);
   const facts = factsOf(file, keeper);
   const [copy] = row.copies;
+  const playable = file.kind === "video" && canShow(file);
 
   useEffect(() => {
-    const element = video.current;
-
-    if (!element) {
-      return;
+    if (!playing && video && !video.paused) {
+      video.pause();
     }
-
-    if (playing) {
-      element.currentTime = 0;
-      void element.play().catch(() => undefined);
-    } else {
-      element.pause();
-    }
-  }, [playing]);
+  }, [playing, video]);
 
   const onClick = (event: MouseEvent) => {
     // A double-click's second click must not decide the next set, which is now under the pointer.
@@ -349,14 +340,14 @@ function VersionTile({
         {!canShow(file) ? (
           <Thumbnail row={file} size={64} />
         ) : file.kind === "video" ? (
+          // biome-ignore lint/a11y/useMediaCaption: archive videos carry no caption tracks; their sound is what is being checked.
           <video
-            ref={video}
+            ref={setVideo}
             src={mediaUrl(file.absPath)}
             poster={thumbnailUrl(file.absPath, 768)}
-            muted={!heard}
-            loop
             playsInline
             preload="metadata"
+            onPlay={onPlayed}
             className="gz-media-edge max-h-full max-w-full object-contain"
           />
         ) : (
@@ -385,6 +376,18 @@ function VersionTile({
         </span>
 
         <span className="absolute top-2 right-2 flex items-center gap-1.5">
+          <button
+            type="button"
+            title="Show in Finder  ⇧⌘R"
+            aria-label="Show in Finder"
+            onClick={(event) => {
+              event.stopPropagation();
+              void desktop.reveal(file.absPath);
+            }}
+            className={`gz-btn gz-btn-icon-sm bg-white text-zinc-900 shadow-[0_2px_8px_rgb(0_0_0/0.3)] hover:bg-zinc-100 ${revealed}`}
+          >
+            <FolderOpen />
+          </button>
           <button
             type="button"
             title="Look closer  Space"
@@ -422,12 +425,23 @@ function VersionTile({
               event.stopPropagation();
               onToggleKeep();
             }}
-            className={`gz-btn gz-btn-sm absolute right-2 bottom-2 bg-white text-zinc-900 shadow-[0_2px_8px_rgb(0_0_0/0.3)] hover:bg-zinc-100 ${revealed}`}
+            className={`gz-btn gz-btn-sm absolute right-2 bg-white text-zinc-900 shadow-[0_2px_8px_rgb(0_0_0/0.3)] hover:bg-zinc-100 ${
+              playable ? "bottom-12" : "bottom-2"
+            } ${revealed}`}
           >
             {extra.icon}
             {extra.label}
           </button>
         )}
+
+        {/* Each video plays with its sound, to check its length and soundtrack against the rest. */}
+        {playable ? (
+          <VideoControls
+            video={video}
+            shown={focused}
+            className="absolute right-2 bottom-2 left-2"
+          />
+        ) : null}
       </div>
 
       <div className="px-2 pt-2 pb-1.5">

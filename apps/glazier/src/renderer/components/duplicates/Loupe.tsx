@@ -1,9 +1,17 @@
 import type { FileFormat, FileId, FileRow } from "@latch-works/glazier-core/contract";
-import { Check, X } from "lucide-react";
-import { type MouseEvent, type ReactNode, useEffect, useLayoutEffect, useRef } from "react";
+import { Check, FolderOpen, X } from "lucide-react";
+import {
+  type MouseEvent,
+  type ReactNode,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 
 import { desktop, mediaUrl, thumbnailUrl } from "../../lib/api";
 import { Thumbnail } from "../media";
+import { VideoControls } from "../VideoControls";
 import { factsOf, type SetRow } from "./model";
 
 /** Formats Chromium draws itself, so the loupe shows the file's own pixels. */
@@ -61,6 +69,7 @@ export function Loupe({
   const row = rows[index];
   const stage = useRef<HTMLDivElement>(null);
   const video = useRef<HTMLVideoElement>(null);
+  const [videoElement, setVideoElement] = useState<HTMLVideoElement | null>(null);
   const keeper = rows.find((candidate) => kept.has(candidate.file.id))?.file ?? rows[0]?.file;
   const width = Math.max(...rows.map((candidate) => candidate.file.width ?? 0)) || undefined;
 
@@ -131,7 +140,10 @@ export function Loupe({
     </div>
   ) : file.kind === "video" ? (
     <video
-      ref={video}
+      ref={(element) => {
+        video.current = element;
+        setVideoElement(element);
+      }}
       key={file.id}
       src={mediaUrl(file.absPath)}
       poster={thumbnailUrl(file.absPath, 1024)}
@@ -196,6 +208,15 @@ export function Loupe({
         <button
           type="button"
           className="gz-btn gz-btn-ghost gz-btn-icon shrink-0"
+          title="Show in Finder  ⇧⌘R"
+          aria-label="Show in Finder"
+          onClick={() => void desktop.reveal(file.absPath)}
+        >
+          <FolderOpen />
+        </button>
+        <button
+          type="button"
+          className="gz-btn gz-btn-ghost gz-btn-icon shrink-0"
           title="Back to the grid  Esc"
           aria-label="Back to the grid"
           onClick={onClose}
@@ -210,6 +231,14 @@ export function Loupe({
         {zoomed ? null : fitted}
         {current}
       </div>
+
+      {file.kind === "video" && canShow(file) ? (
+        <VideoControls
+          video={videoElement}
+          shown
+          className="absolute bottom-[84px] left-1/2 w-[min(560px,calc(100%-40px))] -translate-x-1/2"
+        />
+      ) : null}
 
       {children}
     </div>

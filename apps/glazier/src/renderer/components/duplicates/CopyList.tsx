@@ -1,8 +1,8 @@
 import type { FileId, FileRow } from "@latch-works/glazier-core/contract";
-import { Check } from "lucide-react";
+import { FolderOpen } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
 
-import { thumbnailUrl } from "../../lib/api";
+import { desktop, mediaUrl, thumbnailUrl } from "../../lib/api";
 import {
   formatBytes,
   formatDateTime,
@@ -12,6 +12,7 @@ import {
 } from "../../lib/format";
 import { describeDetails, Thumbnail } from "../media";
 import { FolderPath } from "../ui";
+import { VideoControls } from "../VideoControls";
 import type { SetRow } from "./model";
 
 /** Below this stage width the list goes under the picture, so folder names stay readable. */
@@ -22,10 +23,12 @@ function canShow(file: FileRow): boolean {
 }
 
 /**
- * Byte-identical copies: there is nothing to compare, so the picture shows once and the choice is
- * where the file stays. Clicking a place (or pressing its number) keeps the copy there and moves
- * on; ⇧-click keeps it as well. Each place leads with what tells them apart: its whole folder
- * path, then the date (the oldest copy is the usual pick).
+ * Byte-identical copies: there is nothing to compare, so the picture shows once (a video plays,
+ * with its sound) and the choice is where the file stays. Clicking a place (or pressing its
+ * number) keeps the copy there and moves on; checking several (or ⇧-clicking) keeps the copy in
+ * each, for when one file belongs in more than one folder. Each place leads with what tells them
+ * apart, its whole folder path, then the date (the oldest copy is the usual pick), and opens in
+ * Finder from its folder button.
  */
 export function CopyList({
   rows,
@@ -52,6 +55,7 @@ export function CopyList({
 }) {
   const box = useRef<HTMLDivElement>(null);
   const [stacked, setStacked] = useState(false);
+  const [video, setVideo] = useState<HTMLVideoElement | null>(null);
 
   useLayoutEffect(() => {
     const element = box.current;
@@ -94,15 +98,29 @@ export function CopyList({
         }`}
         style={{ aspectRatio: aspect }}
       >
-        {canShow(first) ? (
+        {!canShow(first) ? (
+          <Thumbnail row={first} size={72} />
+        ) : first.kind === "video" ? (
+          <div className="group relative flex max-h-full max-w-full items-center justify-center">
+            {/* biome-ignore lint/a11y/useMediaCaption: archive videos carry no caption tracks; their sound is what is being checked. */}
+            <video
+              key={first.id}
+              ref={setVideo}
+              src={mediaUrl(first.absPath)}
+              poster={thumbnailUrl(first.absPath, 1024)}
+              playsInline
+              preload="metadata"
+              className="gz-media-edge max-h-full max-w-full object-contain"
+            />
+            <VideoControls video={video} className="absolute right-2 bottom-2 left-2" />
+          </div>
+        ) : (
           <img
             src={thumbnailUrl(first.absPath, 1024)}
             alt=""
             draggable={false}
             className="gz-media-edge max-h-full max-w-full object-contain"
           />
-        ) : (
-          <Thumbnail row={first} size={72} />
         )}
       </div>
 
@@ -119,23 +137,54 @@ export function CopyList({
             .join(" · ")}
         </p>
 
-        <p className="mt-5 mb-2 text-xs font-medium text-zinc-500">Keep the copy in</p>
+        <div className="mt-5 mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+          <p className="text-xs font-medium whitespace-nowrap text-zinc-500">Keep the copy in</p>
+          {readOnly ? null : (
+            <p className="gz-caption whitespace-nowrap">Check more than one to keep several</p>
+          )}
+        </div>
         <ul
           className="gz-card divide-y gz-divider overflow-hidden"
           onMouseLeave={() => onHover(null)}
         >
           {rows.map((row, index) => {
             const isKept = kept.has(row.file.id);
+            const where = row.file.dir || "the top folder";
 
             return (
-              <li key={row.file.id}>
+              <li
+                key={row.file.id}
+                onMouseEnter={() => onHover(index)}
+                className={`gz-hover group flex items-center pr-2 ${
+                  showFocus && index === focus ? "shadow-[inset_0_0_0_1px_rgb(161_161_170)]" : ""
+                }`}
+              >
+                {/* Checking several keeps the copy in each; Return (or Keep) applies them. */}
+                <label
+                  className="flex shrink-0 cursor-pointer items-center self-stretch pr-1 pl-3"
+                  title={
+                    isKept
+                      ? (keepReason ?? `Keeping the copy in ${where}`)
+                      : `Keep the copy in ${where} as well  ⇧${index + 1}`
+                  }
+                >
+                  <input
+                    type="checkbox"
+                    className="gz-check"
+                    tabIndex={-1}
+                    checked={isKept}
+                    disabled={readOnly}
+                    aria-label={`Keep the copy in ${where}`}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onChange={() => onToggleKeep(index)}
+                  />
+                </label>
                 <button
                   type="button"
                   disabled={readOnly}
                   data-file-name={row.file.name}
                   data-keep={isKept}
-                  title={`${row.file.relPath}\nClick to keep this copy and go on  ${index + 1}  ·  ⇧-click keeps it as well`}
-                  onMouseEnter={() => onHover(index)}
+                  title={`${row.file.relPath}\nClick to keep only this copy and go on  ${index + 1}`}
                   onClick={(event) => {
                     // A double-click's second click must not decide the next set.
                     if (event.detail > 1) {
@@ -148,9 +197,7 @@ export function CopyList({
                       onKeepOnly(index);
                     }
                   }}
-                  className={`gz-hover group flex min-h-[52px] w-full items-center gap-3 px-3 py-2 text-left outline-none disabled:pointer-events-none ${
-                    showFocus && index === focus ? "shadow-[inset_0_0_0_1px_rgb(161_161_170)]" : ""
-                  }`}
+                  className="flex min-h-[52px] min-w-0 flex-1 items-center gap-3 px-2 py-2 text-left outline-none disabled:pointer-events-none"
                 >
                   <span className="gz-kbd shrink-0">{index + 1}</span>
                   <span className="min-w-0 flex-1">
@@ -164,18 +211,20 @@ export function CopyList({
                       {sameName ? null : ` · ${row.file.name}`}
                     </span>
                   </span>
-                  {isKept ? (
-                    <span
-                      className="gz-badge gz-badge-keep shrink-0"
-                      title={keepReason ?? undefined}
-                    >
-                      <Check className="size-3.5" /> Keep
-                    </span>
-                  ) : readOnly ? null : (
+                  {isKept || readOnly ? null : (
                     <span className="gz-caption shrink-0 opacity-0 group-hover:opacity-100">
-                      Click to keep
+                      Keep only this
                     </span>
                   )}
+                </button>
+                <button
+                  type="button"
+                  className="gz-btn gz-btn-ghost gz-btn-icon-sm shrink-0"
+                  title="Show in Finder  ⇧⌘R"
+                  aria-label={`Show the copy in ${where} in Finder`}
+                  onClick={() => void desktop.reveal(row.file.absPath)}
+                >
+                  <FolderOpen />
                 </button>
               </li>
             );

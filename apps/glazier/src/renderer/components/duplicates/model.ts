@@ -115,10 +115,15 @@ export function factsOf(file: FileRow, keeper: FileRow): Fact[] {
   if (file.kind === "video" && file.audioState !== null) {
     const silent = file.audioState === "none" || file.audioState === "silent";
 
-    facts.push({
-      text: file.audioState === "none" ? "no sound track" : silent ? "silent" : "sound",
-      worse: !self && silent && keeper.audioState === "sound",
-    });
+    // A track the loudness pass has not measured is not known to have sound; play it to hear.
+    const text = {
+      none: "no sound track",
+      silent: "silent",
+      sound: "sound",
+      unmeasured: "sound not checked",
+    }[file.audioState];
+
+    facts.push({ text, worse: !self && silent && keeper.audioState === "sound" });
   }
 
   facts.push({ text: formatBytes(file.size), worse: false });

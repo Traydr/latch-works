@@ -39,7 +39,7 @@ const DUPLICATES: Group = {
   rows: [
     ["Keep the suggestion and go on", "↩"],
     ["Keep only this one", "1–9", "(or click)"],
-    ["Keep this one as well", "⇧1–9", "(or ⇧-click)"],
+    ["Keep this one as well", "⇧1–9", "(or ⇧-click, or its checkbox)"],
     ["Keep both (not duplicates)", "N"],
     ["Skip", "S"],
     ["Previous", "K"],
@@ -49,6 +49,7 @@ const DUPLICATES: Group = {
     ["Keep the one shown", "↩"],
     ["Actual size", "Z"],
     ["Quick Look", "⌘Y"],
+    ["Show in Finder", "⇧⌘R"],
     ["Sound on or off", "M"],
     ["Prefer this folder", "P"],
     ["Keep every similar suggestion", "⌘↩"],

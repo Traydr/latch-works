@@ -87,7 +87,8 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
   const recent = useRef<{ at: number; undos: Array<() => Promise<boolean>> } | null>(null);
   const [zoomed, setZoomed] = useState(false);
   const [playing, setPlaying] = useState(false);
-  const [soundOn, setSoundOn] = useState(false);
+  // Played videos are heard: playing one is how the owner checks its soundtrack. M mutes.
+  const [soundOn, setSoundOn] = useState(true);
   const [overrides, setOverrides] = useState<ReadonlyMap<string, FileId[]>>(new Map());
   const [skipped, setSkipped] = useState<ReadonlySet<string>>(new Set());
   // Sets resolved or dismissed here stay hidden until a refresh newer than that change arrives.
@@ -248,9 +249,16 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
 
         const undos = recent.current.undos;
 
+        // One kept file is named with its folder; several kept in one set are counted.
+        const several = keep.length > 1;
+
         announce(
-          undos.length > 1 ? `Kept ${undos.length} sets` : `Kept ${keeper?.name ?? "1 file"}`,
-          undos.length > 1 || !keeper ? null : `In ${keeper.dir || "the top folder"}`,
+          undos.length > 1
+            ? `Kept ${undos.length} sets`
+            : several
+              ? `Kept ${set.kind === "exact" ? plural(keep.length, "copy", "copies") : plural(keep.length, "version")}`
+              : `Kept ${keeper?.name ?? "1 file"}`,
+          undos.length > 1 || several || !keeper ? null : `In ${keeper.dir || "the top folder"}`,
           () =>
             void (async () => {
               for (const step of [...undos].reverse()) {
@@ -440,6 +448,16 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
     if (isCommandKey(event) && event.key === "Enter") {
       if (!dismissedMode && scope === "similar" && suggestions > 0) {
         keepAll();
+      }
+
+      return true;
+    }
+
+    if (isCommandKey(event) && event.shiftKey && (event.key === "r" || event.key === "R")) {
+      const row = rows[looking ? focus : target];
+
+      if (row) {
+        void desktop.reveal(row.file.absPath);
       }
 
       return true;
@@ -867,8 +885,6 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
                   closeCall={closeCall}
                   focus={focus}
                   showFocus={keyboardFocus}
-                  playing={playing && !looking}
-                  soundOn={soundOn}
                   readOnly={dismissedMode}
                   onHover={setHoverRow}
                   onLook={openLoupe}
