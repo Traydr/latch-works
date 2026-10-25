@@ -60,7 +60,7 @@ test("Tidy up runs every step but duplicates as one change, and one Undo takes i
 
   expect(heldAfterTidy).toEqual(
     expect.arrayContaining([
-      ".DS_Store",
+      "Thumbs.db",
       "clips/silent-track.mp4",
       "clips/talk.mov",
       "photos/forest.png",
@@ -73,7 +73,7 @@ test("Tidy up runs every step but duplicates as one change, and one Undo takes i
   await waitForJobs(window);
 
   for (const original of [
-    ".DS_Store",
+    "Thumbs.db",
     "clips/talk.mov",
     "photos/forest.png",
     "photos/cover.jpg",

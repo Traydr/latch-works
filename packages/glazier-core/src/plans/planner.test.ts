@@ -21,9 +21,13 @@ beforeAll(async () => {
 
   await mkdir(path.join(archive, "empty"));
   await mkdir(path.join(archive, "only-junk"));
+  await mkdir(path.join(archive, "viewed"));
   await mkdir(path.join(archive, "photos"));
-  await writeFile(path.join(archive, ".DS_Store"), "junk");
-  await writeFile(path.join(archive, "only-junk", ".DS_Store"), "junk");
+  await writeFile(path.join(archive, "Thumbs.db"), "junk");
+  await writeFile(path.join(archive, "only-junk", "Thumbs.db"), "junk");
+  // Finder's view settings are not junk: they stay put, except in a folder that is otherwise empty.
+  await writeFile(path.join(archive, ".DS_Store"), "finder");
+  await writeFile(path.join(archive, "viewed", ".DS_Store"), "finder");
   // PNG bytes named .jpg, and AVIF bytes named .jpg: both get the extension their bytes have.
   await testPicture(7)
     .png()
@@ -65,14 +69,15 @@ describe("plans", () => {
     expect(
       steps.steps.map((step) => [step.action, path.relative(root.path, step.fromPath)]),
     ).toEqual([
-      ["hold", path.join("only-junk", ".DS_Store")],
+      ["hold", path.join("only-junk", "Thumbs.db")],
       ["remove-folder", "only-junk"],
+      ["remove-folder", "viewed"],
       ["remove-folder", "empty"],
     ]);
     expect(await harness.call("getPlan", { planId: preview.planId })).toMatchObject({
       status: "draft",
-      count: 2,
-      title: "Removed 2 empty folders",
+      count: 3,
+      title: "Removed 3 empty folders",
     });
 
     await harness.call("discardPlan", { planId: preview.planId });
@@ -81,7 +86,7 @@ describe("plans", () => {
   it("cleans up junk, empty folders and extensions as one plan, each file once", async () => {
     expect((await harness.call("tidy", { rootId: root.id })).cleanup).toEqual({
       junk: 2,
-      emptyFolders: 2,
+      emptyFolders: 3,
       extensions: 2,
     });
 
@@ -97,12 +102,13 @@ describe("plans", () => {
     ).toEqual([
       ["rename", path.join("photos", "cover.jpg"), "cover.avif"],
       ["rename", path.join("photos", "pic.jpg"), "pic.png"],
-      ["hold", ".DS_Store", null],
-      ["hold", path.join("only-junk", ".DS_Store"), null],
+      ["hold", "Thumbs.db", null],
+      ["hold", path.join("only-junk", "Thumbs.db"), null],
       ["remove-folder", "only-junk", null],
+      ["remove-folder", "viewed", null],
       ["remove-folder", "empty", null],
     ]);
-    expect(job?.label).toBe("Cleaning up 6 items");
+    expect(job?.label).toBe("Cleaning up 7 items");
 
     if (job === null) {
       throw new Error("The clean-up did not start");
@@ -111,18 +117,31 @@ describe("plans", () => {
     await harness.settle(job);
 
     expect(await harness.call("getPlan", { planId: preview.planId })).toMatchObject({
-      title: "Cleaned up 6 items",
-      done: 6,
+      title: "Cleaned up 7 items",
+      done: 7,
       held: { files: 2, bytes: 8 },
     });
     expect((await stat(path.join(archive, "photos", "cover.avif"))).isFile()).toBe(true);
     expect((await stat(path.join(archive, "photos", "pic.png"))).isFile()).toBe(true);
     await expect(stat(path.join(archive, "only-junk"))).rejects.toThrow();
+    await expect(stat(path.join(archive, "viewed"))).rejects.toThrow();
     await expect(stat(path.join(archive, "empty"))).rejects.toThrow();
+    expect((await stat(path.join(archive, ".DS_Store"))).isFile()).toBe(true);
     expect((await harness.call("tidy", { rootId: root.id })).cleanup).toEqual({
       junk: 0,
       emptyFolders: 0,
       extensions: 0,
     });
+
+    const holding = await harness.call("listHolding", { rootId: root.id, offset: 0, limit: 10 });
+
+    expect(holding.items.map((item) => path.relative(root.path, item.originalPath)).sort()).toEqual(
+      ["Thumbs.db", path.join("only-junk", "Thumbs.db"), path.join("viewed", ".DS_Store")].sort(),
+    );
+
+    await harness.settle(await harness.call("undoPlan", { planId: preview.planId }));
+
+    expect((await stat(path.join(archive, "viewed", ".DS_Store"))).isFile()).toBe(true);
+    expect((await stat(path.join(archive, "only-junk", "Thumbs.db"))).isFile()).toBe(true);
   });
 });

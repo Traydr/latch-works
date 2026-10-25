@@ -34,7 +34,7 @@ import type { StillEncoder, Transcoder } from "../optimize/encoders.js";
 import { forEachConcurrent } from "../passes/context.js";
 import { hashWholeFile } from "../passes/hash-pass.js";
 import { isExtensionMismatch } from "../scan/sniff.js";
-import { extensionOf, wholeMs } from "../scan/walk.js";
+import { extensionOf, isFinderViewSettings, wholeMs } from "../scan/walk.js";
 import {
   type HoldingPlaces,
   holdFile,
@@ -48,6 +48,9 @@ import { type PlanSubject, planTitle } from "./wording.js";
 
 /** A conversion is kept only when it saves at least this share of the original's bytes. */
 const MINIMUM_SAVING = 0.05;
+
+/** Holding's reason for a `.DS_Store` that left with the empty folder it was in. */
+const FINDER_SETTINGS_REASON = "Finder's settings for an empty folder";
 
 export interface ExecutorDeps {
   db: CatalogDatabase;
@@ -479,8 +482,22 @@ async function executeStep(
       return { kind: "skipped", message: "The folder is no longer there." };
     }
 
-    if (entries.length > 0) {
+    // Finder's view settings are not catalogued, so they go to holding with their folder.
+    const viewSettings = entries.filter(isFinderViewSettings);
+
+    if (entries.length > viewSettings.length) {
       return { kind: "skipped", message: "The folder is no longer empty." };
+    }
+
+    for (const name of viewSettings) {
+      await holdFile(deps, {
+        rootId: step.root_id,
+        rootPath: step.root_path,
+        relPath: `${step.from_rel}/${name}`,
+        batch,
+        planId: step.plan_id,
+        reason: FINDER_SETTINGS_REASON,
+      });
     }
 
     await rmdir(folder);
@@ -948,10 +965,26 @@ async function undoStep(deps: ExecutorDeps, step: StepRecord, batch: string): Pr
       return;
     }
 
-    case "remove-folder":
+    case "remove-folder": {
       await mkdir(fromAbs(step), { recursive: true });
 
+      const held = deps.db.all(
+        `SELECT id, original_rel FROM holding
+          WHERE plan_id = $plan AND root_id = $root AND state = 'held' AND reason = $reason`,
+        z.object({ id: HoldingIdSchema, original_rel: z.string() }),
+        { $plan: step.plan_id, $root: step.root_id, $reason: FINDER_SETTINGS_REASON },
+      );
+
+      for (const record of held) {
+        if (dirOf(record.original_rel) === step.from_rel) {
+          // Finder may have written fresh settings into the folder already; those win.
+          await restoreHeld(deps.db, record.id).catch(() => undefined);
+        }
+      }
+
       return;
+    }
+
     default: {
       const _exhaustive: never = step.action;
 

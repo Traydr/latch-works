@@ -196,7 +196,7 @@ export async function buildGlazierArchive(): Promise<string> {
     clip("old.mp4"),
   );
   await copyFile(clip("with-sound.mp4"), path.join(archive, "dup", "with-sound-copy.mp4"));
-  await writeFile(path.join(archive, ".DS_Store"), "junk");
+  await writeFile(path.join(archive, "Thumbs.db"), "junk");
 
   for (const name of ["sunset.png", "forest.png"]) {
     await utimes(path.join(archive, "photos", name), ORIGINAL_MTIME, ORIGINAL_MTIME);

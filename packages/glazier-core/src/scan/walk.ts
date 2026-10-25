@@ -20,7 +20,7 @@ export interface WalkedFile {
   /** Device and inode as decimal strings: hard links to one file share both. */
   dev: string;
   ino: string;
-  /** `.DS_Store`, `Thumbs.db`, `._*` and the like: recorded so they can be cleaned up. */
+  /** `Thumbs.db`, `._*` and the like: recorded so they can be cleaned up. */
   junk: boolean;
 }
 
@@ -53,6 +53,14 @@ export function wholeMs(nanoseconds: bigint): number {
   return Number(nanoseconds / 1_000_000n);
 }
 
+/**
+ * Finder's view settings for a folder. Finder writes one into every folder it shows, so cleaning
+ * them up never sticks: the walk leaves them out, and one leaves only with its empty folder.
+ */
+export function isFinderViewSettings(name: string): boolean {
+  return name.toLowerCase() === ".ds_store";
+}
+
 export function extensionOf(name: string): string {
   const dotIndex = name.lastIndexOf(".");
 
@@ -62,7 +70,7 @@ export function extensionOf(name: string): string {
 /**
  * Walks a root breadth-first. It stays inside the root: symlinks are never followed and
  * non-regular files are skipped, as everywhere else in Latch Works. System junk folders (which
- * include Glazier's holding folder) are not entered.
+ * include Glazier's holding folder) are not entered, and Finder's `.DS_Store` files are left out.
  */
 export async function walkRoot(options: WalkOptions): Promise<WalkSummary> {
   const queue: string[] = [""];
@@ -104,6 +112,10 @@ export async function walkRoot(options: WalkOptions): Promise<WalkSummary> {
           contentCount += 1;
         }
       } else if (entry.isFile()) {
+        if (isFinderViewSettings(entry.name)) {
+          continue;
+        }
+
         fileEntries.push(entry);
 
         if (!isSystemJunkFile(entry.name)) {

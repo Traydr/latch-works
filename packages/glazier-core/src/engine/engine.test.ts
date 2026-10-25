@@ -108,7 +108,7 @@ beforeAll(async () => {
     .toFile(path.join(archive, "photos", "small.jpg"));
   await testPicture(4).png().toFile(path.join(archive, "misnamed.jpg"));
   await writeFile(path.join(archive, "notes.txt"), "not media");
-  await writeFile(path.join(archive, ".DS_Store"), "junk");
+  await writeFile(path.join(archive, "Thumbs.db"), "junk");
   await symlink(path.join(archive, "photos"), path.join(archive, "photos-link"));
 
   harness = await openEngine(dataDir);
@@ -132,7 +132,7 @@ describe("glazier engine", () => {
   it("inventories the root without following symlinks and lists what Tidy has to do", async () => {
     const tidy = await harness.call("tidy", { rootId: root.id });
 
-    // photo, its copy, its hard link, the JPEG, the misnamed PNG, the text file and .DS_Store.
+    // photo, its copy, its hard link, the JPEG, the misnamed PNG, the text file and Thumbs.db.
     expect(tidy.files).toBe(7);
     expect(tidy.cleanup).toEqual({ junk: 1, emptyFolders: 1, extensions: 1 });
     expect(tidy.attention).toEqual([{ kind: "unsupported", count: 1, bytes: 9 }]);
@@ -186,7 +186,7 @@ describe("glazier engine", () => {
       limit: 50,
     });
 
-    expect(page.rows.map((row) => row.name)).toEqual([".DS_Store", "misnamed.jpg"]);
+    expect(page.rows.map((row) => row.name)).toEqual(["misnamed.jpg", "Thumbs.db"]);
     expect(page.total).toBe(2);
   });
 

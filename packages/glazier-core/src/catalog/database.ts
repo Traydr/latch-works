@@ -159,6 +159,10 @@ const MIGRATIONS: readonly string[] = [
 
   ALTER TABLE holding ADD COLUMN batch_path TEXT;
   `,
+  // Finder's .DS_Store files are no longer catalogued.
+  `
+  DELETE FROM files WHERE lower(name) = '.ds_store';
+  `,
 ];
 
 /**
