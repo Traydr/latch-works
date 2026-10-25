@@ -14,6 +14,8 @@ import { VitePlugin } from "@electron-forge/plugin-vite";
 import type { ForgeConfig } from "@electron-forge/shared-types";
 import { z } from "zod";
 
+import { ensureMediaTools } from "./media-tools";
+
 /** The dependency lists forge walks when staging runtime packages. */
 const PackageManifestSchema = z.object({
   dependencies: z.record(z.string(), z.string()).optional(),
@@ -53,6 +55,9 @@ const stagedRuntimePath = path.resolve(__dirname, ".packaged-runtime");
 const stagedNodeModulesPath = path.join(stagedRuntimePath, "node_modules");
 
 const stagedCodecsPath = path.join(stagedRuntimePath, "codecs");
+
+/** Tidy's pinned ffmpeg and ffprobe, as `Resources/media-tools`; empty where none is pinned. */
+const stagedMediaToolsPath = path.join(stagedRuntimePath, "media-tools");
 
 /**
  * Native packages the app loads from its resources, outside the asar: View's and Tidy's media
@@ -143,6 +148,7 @@ function stageRuntime(): void {
   rmSync(stagedRuntimePath, { force: true, recursive: true });
   mkdirSync(stagedNodeModulesPath, { recursive: true });
   mkdirSync(stagedCodecsPath, { recursive: true });
+  mkdirSync(stagedMediaToolsPath, { recursive: true });
   const visited = new Set<string>();
 
   for (const dependencyName of runtimeDependencyRoots) {
@@ -166,6 +172,19 @@ function stageRuntime(): void {
     resolveFromApp.resolve("@jsquash/avif/codec/enc/avif_enc.js"),
     path.join(stagedCodecsPath, "avif_enc.mjs"),
   );
+}
+
+/** Copies the pinned ffmpeg and ffprobe for the platform being packaged, where there are some. */
+async function stageMediaTools(platform: string, arch: string): Promise<void> {
+  const folder = await ensureMediaTools(platform, arch);
+
+  if (folder === null) {
+    return;
+  }
+
+  for (const tool of ["ffmpeg", "ffprobe"]) {
+    cpSync(path.join(folder, tool), path.join(stagedMediaToolsPath, tool));
+  }
 }
 
 /**
@@ -315,7 +334,7 @@ const config: ForgeConfig = {
       return true;
     },
     prune: false,
-    extraResource: [stagedNodeModulesPath, stagedCodecsPath, appMediaPath],
+    extraResource: [stagedNodeModulesPath, stagedCodecsPath, stagedMediaToolsPath, appMediaPath],
     icon: getPackagerIconPath(),
     executableName: appName,
     osxSign: getMacCodeSignConfig(),
@@ -324,9 +343,10 @@ const config: ForgeConfig = {
     onlyModules: [],
   },
   hooks: {
-    prePackage: async () => {
+    prePackage: async (_config, platform, arch) => {
       buildWorkspaceDependencies();
       stageRuntime();
+      await stageMediaTools(platform, arch);
     },
     // Windows' installers come from Velopack, over the build Forge just packaged.
     postMake: async (_config, results) => {

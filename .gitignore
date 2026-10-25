@@ -8,6 +8,8 @@ dist/
 # Electron Forge output, here too so a retired app's leftover builds stay ignored.
 apps/*/out/
 apps/*/.packaged-runtime/
+# Oriel's pinned ffmpeg and ffprobe, downloaded when it is packaged.
+apps/*/.media-tools/
 *.tsbuildinfo
 .env
 .env.*

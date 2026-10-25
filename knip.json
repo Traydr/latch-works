@@ -52,7 +52,7 @@
         "tests/**/*.test.ts"
       ],
       "ignoreDependencies": ["ffmpeg-static", "@ffprobe-installer/ffprobe"],
-      "ignoreBinaries": ["vpk"]
+      "ignoreBinaries": ["vpk", "ditto"]
     },
     "apps/lockstep-cli": {
       "entry": ["src/**/*.test.ts"]

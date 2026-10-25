@@ -50,6 +50,19 @@ export function loadSharp(location: RuntimeLocation): SharpLibrary {
   return loaded.default ?? loaded;
 }
 
+/**
+ * The pinned ffmpeg and ffprobe the build fetched (see `media-tools.ts`): `Resources/media-tools`
+ * when packaged, the app's `.media-tools` cache in development. Absent on platforms without a pin.
+ */
+function pinnedToolPath(location: RuntimeLocation, tool: "ffmpeg" | "ffprobe"): string | null {
+  const folder = location.packaged
+    ? path.join(location.resourcesPath, "media-tools")
+    : // The engine runs from `.vite/build`, two folders under the app.
+      path.resolve(__dirname, "..", "..", ".media-tools", `${process.platform}-${process.arch}`);
+
+  return existingPath(path.join(folder, process.platform === "win32" ? `${tool}.exe` : tool));
+}
+
 export function loadToolkit(location: RuntimeLocation): MediaToolkit {
   const ffmpeg = BinaryPathModuleSchema.safeParse(requireRuntimePackage(location, "ffmpeg-static"));
 
@@ -59,8 +72,10 @@ export function loadToolkit(location: RuntimeLocation): MediaToolkit {
 
   return {
     sharp: loadSharp(location),
-    ffmpegPath: existingPath(ffmpeg.success ? ffmpeg.data : null),
-    ffprobePath: existingPath(ffprobe.success ? ffprobe.data : null),
+    ffmpegPath:
+      pinnedToolPath(location, "ffmpeg") ?? existingPath(ffmpeg.success ? ffmpeg.data : null),
+    ffprobePath:
+      pinnedToolPath(location, "ffprobe") ?? existingPath(ffprobe.success ? ffprobe.data : null),
   };
 }
 

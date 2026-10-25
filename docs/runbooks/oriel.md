@@ -21,6 +21,12 @@ Build on the OS you build for. Forge stages the host's native binaries (sharp, f
 so a Windows build made on a Mac would carry Mac binaries. `vpk` is pinned to the `velopack`
 package the app runs; change both together (`VPK_VERSION` in `apps/oriel/forge.config.ts`).
 
+On Apple silicon the first build also downloads Tidy's ffmpeg and ffprobe 9.0.2 (about 45 MB, from
+the static builds ffmpeg.org links to) and refuses them unless they match the SHA-256 pinned in
+`apps/oriel/media-tools.ts`. They are cached in `apps/oriel/.media-tools` for later builds, so only
+the first build needs the network. Other platforms keep `ffmpeg-static`'s ffmpeg 6.0. To move to a
+newer build, update the URLs and hashes there; see plan 060 for why Tidy needs one.
+
 With Xcode 26 or later on macOS 26 or later, the build also compiles the Icon Composer icon
 (`media/oriel.icon`, with light, dark and tinted looks); otherwise the app keeps the `.icns`.
 
