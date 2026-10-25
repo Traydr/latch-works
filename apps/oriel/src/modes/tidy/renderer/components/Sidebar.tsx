@@ -11,6 +11,7 @@ import {
   Pause,
   Play,
   Repeat2,
+  Shrink,
   Sparkles,
   Square,
   X,
@@ -94,7 +95,8 @@ function NavItem({
   label: string;
   icon: ComponentType<{ className?: string }>;
   count?: string | null;
-  shortcut: string;
+  /** The menu's shortcut for the view, where it has one. */
+  shortcut?: string;
 }) {
   const navigation = useNavigation();
   const rail = useContext(RailContext);
@@ -108,7 +110,7 @@ function NavItem({
           aria-current={navigation.view === view ? "page" : undefined}
           aria-label={label}
           data-view={view}
-          title={`${label}${count ? ` · ${count}` : ""}  ${shortcut}`}
+          title={`${label}${count ? ` · ${count}` : ""}${shortcut ? `  ${shortcut}` : ""}`}
           onClick={() => navigation.go(view)}
         >
           <Icon />
@@ -130,7 +132,7 @@ function NavItem({
         className="lw-sidebar-item"
         aria-current={navigation.view === view ? "page" : undefined}
         data-view={view}
-        title={`${label}  ${shortcut}`}
+        title={shortcut ? `${label}  ${shortcut}` : label}
         onClick={() => navigation.go(view)}
       >
         <Icon />
@@ -289,6 +291,17 @@ export function Sidebar({ onAddRoot, rail }: { onAddRoot: () => void; rail: bool
             icon={Sparkles}
             shortcut="⌥⌘4"
             count={counted(tidy.data ? cleanupCount(tidy.data) : undefined)}
+          />
+          <NavItem
+            view="shrink"
+            label="Shrink"
+            icon={Shrink}
+            // What AV1 would save, not a count: shrinking is optional, and Tidy up leaves it out.
+            count={
+              tidy.data && tidy.data.shrink.files > 0
+                ? `~${formatBytes(tidy.data.shrink.bytes - tidy.data.shrink.estimatedBytes)}`
+                : null
+            }
           />
           <GroupLabel>Archive</GroupLabel>
           <NavItem view="library" label="Library" icon={Library} shortcut="⌥⌘5" />

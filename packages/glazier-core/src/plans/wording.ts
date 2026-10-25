@@ -61,6 +61,7 @@ const PLAN_WORDING = {
     tail: "",
   },
   cleanup: { done: "Cleaned up", doing: "Cleaning up", one: "item", many: "items", tail: "" },
+  "shrink-videos": { done: "Shrank", doing: "Shrinking", one: "video", many: "videos", tail: "" },
 } as const satisfies Record<PlanKind, PlanWording>;
 
 /** What a plan is about, as its title and job labels count it. */

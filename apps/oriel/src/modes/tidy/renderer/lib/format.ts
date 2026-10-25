@@ -44,6 +44,21 @@ export function formatDuration(ms: number | null): string {
     : `${minutes}:${seconds}`;
 }
 
+/** A rough length of time, to the minute under an hour and to ten minutes past it: "2 h 40 min". */
+export function formatSpan(ms: number): string {
+  const minutes = Math.max(1, Math.round(ms / 60_000));
+
+  if (minutes < 60) {
+    return `${minutes} min`;
+  }
+
+  const rounded = Math.round(minutes / 10) * 10;
+  const hours = Math.floor(rounded / 60);
+  const rest = rounded % 60;
+
+  return rest === 0 ? `${hours} h` : `${hours} h ${rest} min`;
+}
+
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
 
 const timeFormat = new Intl.DateTimeFormat(undefined, { timeStyle: "short" });

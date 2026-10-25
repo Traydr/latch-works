@@ -17,6 +17,7 @@ import {
   Images,
   RefreshCw,
   Repeat2,
+  Shrink,
   Sparkles,
   VolumeX,
 } from "lucide-react";
@@ -490,6 +491,7 @@ function OverviewBody({
 
         {exact.sets > 0 ? <IdenticalCard data={data} /> : null}
 
+        <ShrinkRow data={data} />
         <HoldingRow rootId={rootId} />
         <AttentionLine data={data} />
       </div>
@@ -697,6 +699,35 @@ function IdenticalCard({ data }: { data: Tidy }) {
 }
 
 /** Held files take space until holding is emptied; this row says so and opens Holding. */
+/** Shrink is optional and slow, so it is a way in from Overview rather than a step of Tidy up. */
+function ShrinkRow({ data }: { data: Tidy }) {
+  const { go } = useNavigation();
+  const { files, bytes, estimatedBytes } = data.shrink;
+
+  if (files === 0) {
+    return null;
+  }
+
+  return (
+    <section className="lw-card px-3 py-1.5" data-step="shrink">
+      <button type="button" onClick={() => go("shrink")} className={`${ROW_BUTTON} w-full`}>
+        <span className={ROW_ICON}>
+          <Shrink className="size-4" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[13px] font-medium">
+            Shrink videos with AV1 · about {formatBytes(bytes - estimatedBytes)} smaller
+          </span>
+          <span className="lw-caption block truncate">
+            {plural(files, "video")} · {formatBytes(bytes)}, in runs you can stop at any time
+          </span>
+        </span>
+        <ChevronRight className="size-4 shrink-0 text-zinc-400" />
+      </button>
+    </section>
+  );
+}
+
 function HoldingRow({ rootId }: { rootId: RootId }) {
   const { go } = useNavigation();
   const holding = useEngineQuery("listHolding", { rootId, offset: 0, limit: 1 });

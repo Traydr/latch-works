@@ -169,6 +169,10 @@ const MIGRATIONS: readonly string[] = [
   UPDATE files SET format = NULL, ext_mismatch = 0
     WHERE ext_mismatch = 1 AND format IN ('zip', 'rar', '7z');
   `,
+  // Shrink remembers a video its AV1 re-encode did not make smaller, apart from Convert's mark.
+  `
+  ALTER TABLE files ADD COLUMN shrink_not_smaller INTEGER NOT NULL DEFAULT 0;
+  `,
 ];
 
 /**

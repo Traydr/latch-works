@@ -139,13 +139,13 @@ function relPathBeside(record: FileRecord, name: string): string {
 }
 
 /** Why a file the policy would change is left out of the Convert step. */
-const SKIP_DUPLICATE = "Identical copies (resolve duplicates first)";
+export const SKIP_DUPLICATE = "Identical copies (resolve duplicates first)";
 
 const SKIP_NOT_SMALLER = "Already as small as they get";
 
-const SKIP_REVIEW = "Similar versions (review them first)";
+export const SKIP_REVIEW = "Similar versions (review them first)";
 
-const SKIP_UNCHECKED = "Not checked for similar versions yet";
+export const SKIP_UNCHECKED = "Not checked for similar versions yet";
 
 /**
  * Files Convert leaves alone for now because duplicate review still needs them as they are: the
@@ -160,7 +160,7 @@ export interface CandidateHolds {
 
 export const NO_HOLDS: CandidateHolds = { reviewing: new Set(), waitForFingerprints: false };
 
-function uncheckedFiles(db: CatalogDatabase, rootId: RootId): Set<FileId> {
+export function uncheckedFiles(db: CatalogDatabase, rootId: RootId): Set<FileId> {
   return new Set(
     db
       .all(
@@ -178,7 +178,7 @@ function uncheckedFiles(db: CatalogDatabase, rootId: RootId): Set<FileId> {
  * the set from identical copies into similar versions that need a closer look, so the whole set
  * waits until its duplicates are resolved or dismissed.
  */
-function openDuplicateCopies(db: CatalogDatabase, rootId: RootId): Set<FileId> {
+export function openDuplicateCopies(db: CatalogDatabase, rootId: RootId): Set<FileId> {
   const params: SqlParams = {};
 
   const members = db.all(

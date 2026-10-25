@@ -57,7 +57,7 @@ import {
   openSets,
   pageDuplicateSets,
 } from "../duplicates/sets.js";
-import { withFfmpegFallback } from "../media/ffmpeg-transcode.js";
+import { hasSvtAv1, withFfmpegFallback } from "../media/ffmpeg-transcode.js";
 import type { MediaToolkit } from "../media/toolkit.js";
 import {
   type CandidateHolds,
@@ -70,6 +70,7 @@ import {
   summarizeCandidates,
 } from "../optimize/candidates.js";
 import type { StillEncoder, Transcoder } from "../optimize/encoders.js";
+import { findShrinkCandidates, type ShrinkScan } from "../optimize/shrink.js";
 import type { PassContext } from "../passes/context.js";
 import { pendingFingerprints, runFingerprintPass } from "../passes/fingerprint-pass.js";
 import { runHashPass } from "../passes/hash-pass.js";
@@ -132,8 +133,24 @@ const NO_CAPABILITIES: EncoderCapabilities = {
   video: { avc: false, hevc: false, av1: false },
   aac: false,
   ffmpeg: false,
+  svtAv1: false,
   ffprobe: false,
 };
+
+/** Tiles Shrink shows for the batch that runs next. */
+const SHRINK_PREVIEW_ROWS = 60;
+
+function shrinkTotals(scan: ShrinkScan): Tidy["shrink"] {
+  let bytes = 0;
+  let estimatedBytes = 0;
+
+  for (const { item } of scan.candidates) {
+    bytes += item.bytes;
+    estimatedBytes += item.estimatedBytes;
+  }
+
+  return { files: scan.candidates.length, bytes, estimatedBytes };
+}
 
 /** Samples per category an estimate converts; videos take longest, so fewer of them. */
 const VIDEO_SAMPLES = 3;
@@ -176,6 +193,9 @@ export class GlazierEngine {
   /** Convert candidates per root, mirrored into the `convertible_files` temp table. */
   private readonly candidateCache = new Map<RootId, CandidateScan>();
 
+  /** Shrink candidates per root, dropped with Convert's whenever the catalog changes. */
+  private readonly shrinkCache = new Map<RootId, ShrinkScan>();
+
   /** Duplicate sets per root and level, before dismissals (applied per request) hide some. */
   private readonly setCache = new Map<string, Promise<ComputedSet[]>>();
 
@@ -213,6 +233,10 @@ export class GlazierEngine {
 
     const engine = new GlazierEngine(db, options);
     await relocateLegacyHolding({ db, places: engine.places });
+    engine.capabilities = {
+      ...engine.capabilities,
+      svtAv1: await hasSvtAv1(options.toolkit.ffmpegPath),
+    };
 
     return engine;
   }
@@ -356,6 +380,17 @@ export class GlazierEngine {
         this.requestAnalysis(this.soundJob(m.analyzeSound.input.parse(raw).rootId, false)),
       optimizeSummary: async (raw) =>
         summarizeCandidates(await this.candidates(m.optimizeSummary.input.parse(raw).rootId)),
+      shrinkSummary: async (raw) => {
+        const scan = await this.shrinkScan(m.shrinkSummary.input.parse(raw).rootId);
+
+        return {
+          items: scan.candidates.map((candidate) => candidate.item),
+          preview: scan.candidates
+            .slice(0, SHRINK_PREVIEW_ROWS)
+            .map((candidate) => toFileRow(candidate.record)),
+          skipped: [...scan.skipped].map(([reason, files]) => ({ reason, files })),
+        };
+      },
       estimateOptimize: async (raw) => {
         const { rootId, category } = m.estimateOptimize.input.parse(raw);
 
@@ -530,6 +565,7 @@ export class GlazierEngine {
     this.generation += 1;
     this.tidyCache.clear();
     this.candidateCache.clear();
+    this.shrinkCache.clear();
     forgetConvertible(this.db);
     this.options.emit({ kind: "catalog-changed", rootId: null });
   }
@@ -554,6 +590,7 @@ export class GlazierEngine {
       transcoder: this.transcoder,
       roots: listRoots(this.db),
       stillConcurrency: this.options.stillConcurrency,
+      svtAv1: this.capabilities.svtAv1,
       signal: context.signal,
       checkpoint: context.checkpoint,
       progress: context.progress,
@@ -686,7 +723,9 @@ export class GlazierEngine {
   /** Saves a request as a draft plan and returns its preview. */
   private async preview(request: PlanRequest): Promise<PlanPreview> {
     const holdsRoot =
-      request.kind === "optimize" || request.kind === "cleanup" ? request.rootId : null;
+      request.kind === "optimize" || request.kind === "cleanup" || request.kind === "shrink-videos"
+        ? request.rootId
+        : null;
 
     const context: PlannerContext = {
       db: this.db,
@@ -775,6 +814,7 @@ export class GlazierEngine {
         similar: duplicateTotals(open.filter((entry) => entry.set.kind === "similar")),
       },
       convert: summarizeCandidates(scan),
+      shrink: shrinkTotals(await this.shrinkScan(rootId)),
       silentTracks: catalog.silentTracks,
       cleanup: {
         junk: catalog.junk,
@@ -822,6 +862,23 @@ export class GlazierEngine {
     if (generation === this.generation) {
       recordConvertible(this.db, rootId, scan.candidates);
       this.candidateCache.set(rootId, scan);
+    }
+
+    return scan;
+  }
+
+  private async shrinkScan(rootId: RootId): Promise<ShrinkScan> {
+    const cached = this.shrinkCache.get(rootId);
+
+    if (cached) {
+      return cached;
+    }
+
+    const generation = this.generation;
+    const scan = findShrinkCandidates(this.db, rootId, await this.candidateHolds(rootId));
+
+    if (generation === this.generation) {
+      this.shrinkCache.set(rootId, scan);
     }
 
     return scan;

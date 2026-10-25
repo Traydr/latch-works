@@ -315,7 +315,10 @@ export function LibraryView({ rootId }: { rootId: RootId }) {
           type: "item" as const,
           id: `reencode:${codec.value}`,
           label: codec.label,
-          enabled: capabilities?.video[codec.value] ?? false,
+          // AV1 runs on ffmpeg's SVT-AV1 when it has one, and on WebCodecs otherwise.
+          enabled:
+            (capabilities?.video[codec.value] ?? false) ||
+            (codec.value === "av1" && capabilities?.svtAv1 === true),
           sublabel: "note" in codec ? codec.note : undefined,
         })),
       });

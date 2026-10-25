@@ -33,6 +33,7 @@ import { HoldingView } from "./views/HoldingView";
 import { LibraryView } from "./views/LibraryView";
 import { OverviewView } from "./views/OverviewView";
 import { TidySettings } from "./views/SettingsView";
+import { ShrinkView } from "./views/ShrinkView";
 
 /** Tidy: Glazier, the archive workbench, as one of Oriel's modes. */
 export function TidyMode() {
@@ -363,6 +364,8 @@ function CurrentView({ rootId }: { rootId: RootId }) {
       return <ConvertView rootId={rootId} />;
     case "cleanup":
       return <CleanupView rootId={rootId} />;
+    case "shrink":
+      return <ShrinkView rootId={rootId} />;
     case "library":
       return <LibraryView rootId={rootId} />;
     case "history":

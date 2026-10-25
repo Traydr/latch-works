@@ -7,14 +7,16 @@ import type {
 import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from "react";
 
 /**
- * Overview is home. Duplicates, Convert and Clean up are the work, in the order it is best done;
- * Library and History are the archive; Holding and Settings sit at the foot of the sidebar.
+ * Overview is home. Duplicates, Convert and Clean up are the work, in the order it is best done,
+ * and Shrink is the optional AV1 re-encode after them; Library and History are the archive;
+ * Holding and Settings sit at the foot of the sidebar.
  */
 const VIEWS = [
   "overview",
   "duplicates",
   "convert",
   "cleanup",
+  "shrink",
   "library",
   "history",
   "holding",

@@ -367,6 +367,58 @@ export const OptimizeEstimateSchema = z.object({
 
 export type OptimizeEstimate = z.infer<typeof OptimizeEstimateSchema>;
 
+/** One video Shrink would re-encode to AV1, with the size it is expected to come out at. */
+export const ShrinkItemSchema = z.object({
+  fileId: FileIdSchema,
+  bytes: z.number(),
+  estimatedBytes: z.number(),
+  durationMs: z.number(),
+  /** Roughly how long the encode takes on an M5 Pro, from its length and picture size. */
+  encodeMs: z.number(),
+});
+
+export type ShrinkItem = z.infer<typeof ShrinkItemSchema>;
+
+/**
+ * The videos under a root that re-encoding to AV1 should shrink, the most bytes saved first, and
+ * why the others are left as they are. `preview` holds the first rows, for tiles.
+ */
+export const ShrinkSummarySchema = z.object({
+  items: z.array(ShrinkItemSchema),
+  preview: z.array(FileRowSchema),
+  skipped: z.array(z.object({ reason: z.string(), files: z.number().int() })),
+});
+
+export type ShrinkSummary = z.infer<typeof ShrinkSummarySchema>;
+
+/**
+ * The leading items whose originals add up to `limitBytes` without going over, and always at
+ * least one; every item when `limitBytes` is null. Shrink's button and its plan both count a
+ * batch this way, so they agree.
+ */
+export function shrinkBatch<T extends { bytes: number }>(
+  items: readonly T[],
+  limitBytes: number | null,
+): T[] {
+  if (limitBytes === null) {
+    return [...items];
+  }
+
+  const batch: T[] = [];
+  let total = 0;
+
+  for (const item of items) {
+    if (batch.length > 0 && total + item.bytes > limitBytes) {
+      break;
+    }
+
+    batch.push(item);
+    total += item.bytes;
+  }
+
+  return batch;
+}
+
 /**
  * The Tidy view's to-do list for a root, in the order the work should happen: duplicates, then
  * conversions, then silent soundtracks, then clean-up, then what needs a human look.
@@ -377,6 +429,8 @@ export const TidySchema = z.object({
   lastScanAt: z.number().nullable(),
   duplicates: z.object({ exact: DuplicateTotalsSchema, similar: DuplicateTotalsSchema }),
   convert: OptimizeSummarySchema,
+  /** Videos Shrink would re-encode to AV1: how many, their bytes, and the bytes expected after. */
+  shrink: z.object({ files: z.number().int(), bytes: z.number(), estimatedBytes: z.number() }),
   /** Videos whose audio track was measured as silent. */
   silentTracks: FacetCountSchema,
   cleanup: z.object({
@@ -469,6 +523,16 @@ export const PlanRequestSchema = z.discriminatedUnion("kind", [
    * fixed (AVIF and MP4 under other extensions included), as one plan with one undo.
    */
   z.object({ kind: z.literal("cleanup"), rootId: RootIdSchema }),
+  /**
+   * Re-encodes a root's videos to AV1, the most bytes saved first, until the originals add up to
+   * `limitBytes` (every candidate when null). A result that is not at least 5% smaller is thrown
+   * away and the video is not offered again until its bytes change.
+   */
+  z.object({
+    kind: z.literal("shrink-videos"),
+    rootId: RootIdSchema,
+    limitBytes: z.number().positive().nullable(),
+  }),
 ]);
 
 export type PlanRequest = z.infer<typeof PlanRequestSchema>;
@@ -487,6 +551,7 @@ export const PlanKindSchema = z.enum([
   "clean-junk",
   "remove-empty-folders",
   "cleanup",
+  "shrink-videos",
 ] as const satisfies readonly PlanRequest["kind"][]);
 
 export type PlanKind = z.infer<typeof PlanKindSchema>;
@@ -635,6 +700,8 @@ export const EncoderCapabilitiesSchema = z.object({
   video: z.object({ avc: z.boolean(), hevc: z.boolean(), av1: z.boolean() }),
   aac: z.boolean(),
   ffmpeg: z.boolean(),
+  /** ffmpeg has SVT-AV1, which every AV1 encode uses in place of WebCodecs. */
+  svtAv1: z.boolean(),
   ffprobe: z.boolean(),
 });
 
@@ -764,6 +831,7 @@ export const EngineMethods = {
   analyzeSimilar: method(OptionalRootRefSchema, JobSchema),
   analyzeSound: method(OptionalRootRefSchema, JobSchema),
   optimizeSummary: method(RootRefSchema, OptimizeSummarySchema),
+  shrinkSummary: method(RootRefSchema, ShrinkSummarySchema),
   estimateOptimize: method(
     RootRefSchema.extend({ category: OptimizeCategorySchema }),
     OptimizeEstimateSchema,

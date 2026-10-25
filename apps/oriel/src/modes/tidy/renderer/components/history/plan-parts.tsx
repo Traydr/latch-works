@@ -14,6 +14,7 @@ import {
   FolderInput,
   type LucideIcon,
   PencilLine,
+  Shrink,
   Sparkles,
   VolumeX,
 } from "lucide-react";
@@ -39,6 +40,7 @@ const KIND_ICONS = {
   "clean-junk": Sparkles,
   "remove-empty-folders": Sparkles,
   cleanup: Sparkles,
+  "shrink-videos": Shrink,
 } as const satisfies Record<PlanKind, LucideIcon>;
 
 /** The 32 px tile that says what kind of change a row is. */

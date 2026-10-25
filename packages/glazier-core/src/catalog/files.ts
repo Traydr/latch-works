@@ -62,6 +62,7 @@ const DERIVED_COLUMN_RESETS = {
   loudness_version: "0",
   loudness_max_db: "NULL",
   optimize_not_smaller: "0",
+  shrink_not_smaller: "0",
 } as const;
 
 const CHANGED = `(files.size != excluded.size

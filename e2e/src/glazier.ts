@@ -66,6 +66,7 @@ export type GlazierView =
   | "duplicates"
   | "convert"
   | "cleanup"
+  | "shrink"
   | "library"
   | "history"
   | "holding";

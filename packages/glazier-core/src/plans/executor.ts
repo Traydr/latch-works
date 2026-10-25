@@ -49,6 +49,23 @@ import { type PlanSubject, planTitle } from "./wording.js";
 /** A conversion is kept only when it saves at least this share of the original's bytes. */
 const MINIMUM_SAVING = 0.05;
 
+/**
+ * How the plan kinds that keep only a smaller result remember a file that did not shrink, so they
+ * stop offering it: Convert and Shrink each keep their own mark.
+ */
+const NOT_SMALLER_SQL = {
+  optimize: "UPDATE files SET optimize_not_smaller = 1 WHERE root_id = $root AND rel_path = $rel",
+  "shrink-videos":
+    "UPDATE files SET shrink_not_smaller = 1 WHERE root_id = $root AND rel_path = $rel",
+} as const satisfies Partial<Record<PlanKind, string>>;
+
+/** How one plan's steps run. */
+interface RunContext {
+  batch: string;
+  /** The statement marking a file the plan could not shrink, or null when it marks none. */
+  notSmaller: string | null;
+}
+
 /** Holding's reason for a `.DS_Store` that left with the empty folder it was in. */
 const FINDER_SETTINGS_REASON = "Finder's settings for an empty folder";
 
@@ -62,6 +79,8 @@ export interface ExecutorDeps {
   roots: readonly Root[];
   /** AVIF encodes run this many at once. */
   stillConcurrency: number;
+  /** ffmpeg has SVT-AV1, so AV1 encodes run there rather than on WebCodecs. */
+  svtAv1: boolean;
   signal: AbortSignal;
   checkpoint: () => Promise<void>;
   progress: (update: { done: number; total: number; label: string }) => void;
@@ -309,7 +328,7 @@ async function replaceRow(
       sha256 = NULL, fingerprint_version = 0, fingerprint = NULL, fingerprint_error = NULL,
       loudness_version = CASE WHEN $keepLoudness = 1 THEN loudness_version ELSE 0 END,
       loudness_max_db = CASE WHEN $keepLoudness = 1 THEN loudness_max_db ELSE NULL END,
-      optimize_not_smaller = 0
+      optimize_not_smaller = 0, shrink_not_smaller = 0
       WHERE root_id = $root AND rel_path = $from`,
     {
       $rel: located.relPath,
@@ -372,8 +391,8 @@ interface ConvertContext {
   source: Stats;
   /** Keep the result only when it saves at least {@link MINIMUM_SAVING}. */
   requireSmaller: boolean;
-  /** Remember a result that was not kept for that, so the Convert step stops offering the file. */
-  markNotSmaller: boolean;
+  /** Marks a file whose result was not kept for that, so it is not offered again; or null. */
+  notSmaller: string | null;
   /** The result carries the original's audio track unchanged. */
   keepLoudness: boolean;
 }
@@ -413,11 +432,8 @@ async function convert(
     if (context.requireSmaller && written.size > context.source.size * (1 - MINIMUM_SAVING)) {
       await unlink(tempPath);
 
-      if (context.markNotSmaller) {
-        deps.db.run(
-          "UPDATE files SET optimize_not_smaller = 1 WHERE root_id = $root AND rel_path = $rel",
-          { $root: step.root_id, $rel: step.from_rel },
-        );
+      if (context.notSmaller !== null) {
+        deps.db.run(context.notSmaller, { $root: step.root_id, $rel: step.from_rel });
       }
 
       const why =
@@ -469,7 +485,7 @@ async function convert(
 async function executeStep(
   deps: ExecutorDeps,
   step: StepRecord,
-  run: { batch: string; optimize: boolean },
+  run: RunContext,
 ): Promise<StepOutcome> {
   const spec: StepSpec = step.spec;
   const { batch } = run;
@@ -558,7 +574,7 @@ async function executeStep(
           batch,
           source,
           requireSmaller: true,
-          markNotSmaller: run.optimize,
+          notSmaller: run.notSmaller,
           keepLoudness: false,
         },
         async (tempPath) => {
@@ -629,6 +645,36 @@ async function executeStep(
               quality: spec.quality,
             };
 
+      // AV1 goes to SVT-AV1 when ffmpeg has it: at the same size it keeps more of the picture
+      // than the realtime libaom encoder WebCodecs runs.
+      const ffmpegPath = deps.toolkit.ffmpegPath;
+
+      if (
+        deps.svtAv1 &&
+        ffmpegPath !== null &&
+        spec.kind === "convert-video" &&
+        spec.video.action === "encode" &&
+        spec.video.codec === "av1"
+      ) {
+        return convert(
+          deps,
+          step,
+          {
+            batch,
+            source,
+            requireSmaller: spec.requireSmaller,
+            notSmaller: run.notSmaller,
+            keepLoudness: spec.audio.action === "copy",
+          },
+          async (tempPath) => {
+            await transcodeWithFfmpeg(ffmpegPath, jobFor(tempPath), deps.signal);
+
+            return "Encoded with SVT-AV1";
+          },
+          verifyVideo,
+        );
+      }
+
       let mediabunnyResult = false;
 
       const attempt = (produce: (tempPath: string) => Promise<string | null>) =>
@@ -639,7 +685,7 @@ async function executeStep(
             batch,
             source,
             requireSmaller: animation || spec.requireSmaller,
-            markNotSmaller: run.optimize,
+            notSmaller: run.notSmaller,
             keepLoudness: spec.kind === "convert-video" && spec.audio.action === "copy",
           },
           produce,
@@ -660,8 +706,6 @@ async function executeStep(
         });
       } catch (error) {
         // Mediabunny wrote a file that failed the check: give ffmpeg one go at the same job.
-        const ffmpegPath = deps.toolkit.ffmpegPath;
-
         if (!mediabunnyResult || ffmpegPath === null || deps.signal.aborted) {
           throw error;
         }
@@ -799,7 +843,10 @@ export async function applyPlan(deps: ExecutorDeps, planId: PlanId): Promise<App
 
   const steps = loadSteps(deps.db, planId, "pending", "ASC");
   const batch = holdingBatchName(planId, new Date());
-  const optimize = planSubject(deps.db, planId)?.kind === "optimize";
+  const kind = planSubject(deps.db, planId)?.kind;
+
+  const notSmaller = kind === "optimize" || kind === "shrink-videos" ? NOT_SMALLER_SQL[kind] : null;
+
   let done = 0;
   let staleSteps = 0;
 
@@ -807,7 +854,7 @@ export async function applyPlan(deps: ExecutorDeps, planId: PlanId): Promise<App
     let outcome: StepOutcome;
 
     try {
-      outcome = await executeStep(deps, step, { batch, optimize });
+      outcome = await executeStep(deps, step, { batch, notSmaller });
     } catch (error) {
       if (deps.signal.aborted) {
         throw error;
@@ -1060,6 +1107,7 @@ const COUNTS_STEPS = new Set<PlanKind>([
   "strip-audio",
   "clean-junk",
   "cleanup",
+  "shrink-videos",
 ]);
 
 function subjectOf(

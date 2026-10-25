@@ -11,7 +11,7 @@ import { SIMILARITY_LEVELS, VIDEO_QUALITIES } from "../lib/preferences";
 const ENCODERS = [
   { label: "H.264 video", has: (capabilities) => capabilities.video.avc },
   { label: "HEVC video", has: (capabilities) => capabilities.video.hevc },
-  { label: "AV1 video", has: (capabilities) => capabilities.video.av1 },
+  { label: "AV1 video", has: (capabilities) => capabilities.video.av1 || capabilities.svtAv1 },
   { label: "AAC audio", has: (capabilities) => capabilities.aac },
   { label: "ffmpeg", has: (capabilities) => capabilities.ffmpeg },
   { label: "ffprobe", has: (capabilities) => capabilities.ffprobe },
@@ -218,7 +218,10 @@ export function TidySettings({ rootId }: { rootId: RootId | null }) {
       </SettingsGroup>
 
       <SettingsGroup title="Convert">
-        <SettingsRow label="Video quality" description="Used when a video has to be re-encoded">
+        <SettingsRow
+          label="Video quality"
+          description="Used when a video has to be re-encoded. Shrink's AV1 runs at CRF 40, 35 or 30"
+        >
           <Segmented
             label="Video quality"
             options={VIDEO_QUALITIES}

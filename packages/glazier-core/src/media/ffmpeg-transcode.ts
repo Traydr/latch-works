@@ -5,11 +5,14 @@ import { isAbortError, runTool, toError } from "./run-tool.js";
 /** A long video re-encoded in software takes a while; this bounds a hung ffmpeg, not a slow one. */
 const TRANSCODE_TIMEOUT_MS = 6 * 60 * 60 * 1000;
 
-/** Constant-rate-factor per encoder and quality: lower is better and larger. */
+/**
+ * Constant-rate-factor per encoder and quality: lower is better and larger. AV1's "high" is CRF
+ * 35, the balance of size and picture the owner chose from side-by-side encodes of the library.
+ */
 const CRF = {
   avc: { medium: 23, high: 20, "very-high": 17 },
   hevc: { medium: 28, high: 24, "very-high": 21 },
-  av1: { medium: 35, high: 30, "very-high": 26 },
+  av1: { medium: 40, high: 35, "very-high": 30 },
 } as const satisfies Record<"avc" | "hevc" | "av1", Record<VideoQuality, number>>;
 
 /**
@@ -24,15 +27,18 @@ function videoArgs(job: Extract<TranscodeJob, { kind: "video" }>): string[] {
       return ["-c:v", "copy"];
     case "encode": {
       const crf = String(CRF[job.video.codec][job.quality]);
-      const common = ["-vf", EVEN_SIZE_FILTER, "-pix_fmt", "yuv420p", "-crf", crf];
+      const common = ["-vf", EVEN_SIZE_FILTER, "-crf", crf];
+      const eightBit = ["-pix_fmt", "yuv420p"];
 
       switch (job.video.codec) {
         case "avc":
-          return ["-c:v", "libx264", "-preset", "medium", ...common];
+          return ["-c:v", "libx264", "-preset", "medium", ...eightBit, ...common];
         case "hevc":
           // `hvc1` is the tag Apple players need to play HEVC in MP4.
-          return ["-c:v", "libx265", "-preset", "medium", "-tag:v", "hvc1", ...common];
+          return ["-c:v", "libx265", "-preset", "medium", "-tag:v", "hvc1", ...eightBit, ...common];
         case "av1":
+          // SVT-AV1 takes 8- and 10-bit 4:2:0, so a 10-bit (HDR) source stays 10-bit, and its
+          // colour tags carry over.
           return ["-c:v", "libsvtav1", "-preset", "6", ...common];
         default: {
           const _exhaustive: never = job.video.codec;
@@ -97,6 +103,21 @@ function ffmpegArgs(job: TranscodeJob): string[] {
       return _exhaustive;
     }
   }
+}
+
+/** Whether this ffmpeg was built with SVT-AV1; false when it cannot be asked. */
+export async function hasSvtAv1(ffmpegPath: string | null): Promise<boolean> {
+  if (ffmpegPath === null) {
+    return false;
+  }
+
+  const result = await runTool({
+    executable: ffmpegPath,
+    args: ["-hide_banner", "-encoders"],
+    timeoutMs: 15_000,
+  }).catch(() => null);
+
+  return result?.code === 0 && /\blibsvtav1\b/.test(result.stdout.toString("utf8"));
 }
 
 /** Runs one transcode job with ffmpeg, writing the same MP4 the Mediabunny path would. */

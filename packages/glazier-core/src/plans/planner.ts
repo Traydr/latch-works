@@ -30,6 +30,7 @@ import {
   type Root,
   type RootId,
   type Settings,
+  shrinkBatch,
   type VideoQuality,
   VideoQualitySchema,
 } from "../contract.js";
@@ -46,6 +47,7 @@ import {
   AudioTrackPlanSchema,
   VideoTrackPlanSchema,
 } from "../optimize/encoders.js";
+import { findShrinkCandidates } from "../optimize/shrink.js";
 import { preferredExtension } from "../scan/sniff.js";
 
 /** What a step does, stored as JSON beside it. The `kind` matches the step's `action` column. */
@@ -540,6 +542,34 @@ export function draftSteps(context: PlannerContext, request: PlanRequest): PlanD
         }
 
         steps.push(folder);
+      }
+
+      break;
+    }
+
+    case "shrink-videos": {
+      const scan = findShrinkCandidates(context.db, request.rootId, context.candidateHolds);
+
+      const batch = shrinkBatch(
+        scan.candidates.map((candidate) => ({ bytes: candidate.item.bytes, candidate })),
+        request.limitBytes,
+      );
+
+      // Most bytes saved first, so a run stopped partway has done the best of its batch.
+      for (const { candidate } of batch) {
+        const source = videoSourceOf(candidate.record);
+
+        const step =
+          source === null
+            ? null
+            : videoStep(candidate.record, planVideoReencode(source, "av1"), {
+                quality: context.settings.reencodeQuality,
+                requireSmaller: true,
+              });
+
+        if (step?.kind === "step") {
+          steps.push(step.step);
+        }
       }
 
       break;
