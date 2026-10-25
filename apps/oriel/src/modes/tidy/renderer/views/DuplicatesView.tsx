@@ -47,9 +47,6 @@ import { SIMILARITY_LEVELS, usePreferFolder } from "../lib/preferences";
 /** How long a click on a new set waits, so a double-click never decides two sets. */
 const ARM_DELAY_MS = 400;
 
-/** Decisions this close together report as one toast, with one Undo for all of them. */
-const GROUP_MS = 2000;
-
 /** A request to open on a tab counts only right after it was made, not on a later visit. */
 const TAB_REQUEST_MS = 2000;
 
@@ -82,8 +79,6 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
   const [hoverRow, setHoverRow] = useState<number | null>(null);
   // A click right after a new set appears was aimed at the old one, so it waits this long.
   const armedAt = useRef(0);
-  // Decisions made close together report as one, with one Undo for all of them.
-  const recent = useRef<{ at: number; undos: Array<() => Promise<boolean>> } | null>(null);
   const [zoomed, setZoomed] = useState(false);
   const [playing, setPlaying] = useState(false);
   // Played videos are heard: playing one is how the owner checks its soundtrack. M mutes.
@@ -187,11 +182,12 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
 
   /** Says what a decision did in a toast with its Undo, in place of the last decision's. */
   const announce = useCallback(
-    (message: string, detail: string | null, undo: () => void) => {
+    (message: string, detail: string | null, undo: (() => void) | null) => {
       decisionToast.current = toasts.show({
         message,
         detail,
-        action: { label: "Undo", run: undo },
+        tone: undo ? "done" : "info",
+        action: undo ? { label: "Undo", run: undo } : null,
       });
     },
     [toasts],
@@ -232,42 +228,42 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
         { quiet: true, onUndone: () => bringBack(set.key) },
       );
 
-      if (plan) {
-        hide(set.key, versionRef.current);
-        setFreedHere((current) => current + bytes);
-
-        const undo = () =>
-          actions.undoPlan(plan, { quiet: true, onUndone: () => bringBack(set.key) });
-
-        const now = Date.now();
-
-        recent.current =
-          recent.current && now - recent.current.at < GROUP_MS
-            ? { at: now, undos: [...recent.current.undos, undo] }
-            : { at: now, undos: [undo] };
-
-        const undos = recent.current.undos;
-
-        // One kept file is named with its folder; several kept in one set are counted.
-        const several = keep.length > 1;
-
-        announce(
-          undos.length > 1
-            ? `Kept ${undos.length} sets`
-            : several
-              ? `Kept ${set.kind === "exact" ? plural(keep.length, "copy", "copies") : plural(keep.length, "version")}`
-              : `Kept ${keeper?.name ?? "1 file"}`,
-          undos.length > 1 || several || !keeper ? null : `In ${keeper.dir || "the top folder"}`,
-          () =>
-            void (async () => {
-              for (const step of [...undos].reverse()) {
-                await step();
-              }
-            })(),
-        );
-      } else {
+      if (!plan) {
         unhide(set.key);
+
+        return;
       }
+
+      // Until a newer refresh, which brings the set back if anything in it stayed.
+      hide(set.key, versionRef.current);
+
+      // A file that changed since the scan stays where it is; the engine scans again for it.
+      const stayed =
+        plan.skipped > 0
+          ? `${plural(plan.skipped, "file")} changed since the scan and stayed; Tidy is scanning again`
+          : null;
+
+      if (plan.done === 0) {
+        // A failure already has its own toast.
+        if (plan.failed === 0) {
+          announce("Nothing moved", stayed, null);
+        }
+
+        return;
+      }
+
+      setFreedHere((current) => current + bytes);
+
+      // One kept file is named with its folder; several kept in one set are counted.
+      const several = keep.length > 1;
+
+      announce(
+        several
+          ? `Kept ${set.kind === "exact" ? plural(keep.length, "copy", "copies") : plural(keep.length, "version")}`
+          : `Kept ${keeper?.name ?? "1 file"}`,
+        stayed ?? (several || !keeper ? null : `In ${keeper.dir || "the top folder"}`),
+        () => void actions.undoPlan(plan, { quiet: true, onUndone: () => bringBack(set.key) }),
+      );
     },
     [actions, announce, bringBack, hide, unhide],
   );
@@ -295,7 +291,6 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
 
       const forget = actions.pushUndo(restore);
 
-      recent.current = null;
       announce(set.kind === "exact" ? "Kept every copy" : "Marked as not duplicates", null, () => {
         forget();
         void restore().catch(report);
