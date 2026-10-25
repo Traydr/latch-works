@@ -42,4 +42,12 @@ describe("format sniffing", () => {
     expect(isExtensionMismatch("mp4", "m4v")).toBe(false);
     expect(isExtensionMismatch("unknown", "dat")).toBe(false);
   });
+
+  it("calls an archive's extension wrong only when it names another format", () => {
+    expect(isExtensionMismatch("zip", "zipmod")).toBe(false);
+    expect(isExtensionMismatch("rar", "r00")).toBe(false);
+    expect(isExtensionMismatch("7z", "001")).toBe(false);
+    expect(isExtensionMismatch("zip", "jpg")).toBe(true);
+    expect(isExtensionMismatch("rar", "cbz")).toBe(true);
+  });
 });

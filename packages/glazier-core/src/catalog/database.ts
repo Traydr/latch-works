@@ -163,6 +163,12 @@ const MIGRATIONS: readonly string[] = [
   `
   DELETE FROM files WHERE lower(name) = '.ds_store';
   `,
+  // An archive under an extension that names no other format (a game's .zipmod) is no longer
+  // misnamed; the next scan identifies those archives again.
+  `
+  UPDATE files SET format = NULL, ext_mismatch = 0
+    WHERE ext_mismatch = 1 AND format IN ('zip', 'rar', '7z');
+  `,
 ];
 
 /**

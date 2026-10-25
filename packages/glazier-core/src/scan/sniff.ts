@@ -213,11 +213,25 @@ const FORMAT_EXTENSIONS = {
   unknown: [],
 } as const satisfies Record<FileFormat, readonly string[]>;
 
+/**
+ * Archive formats other file types are built on: zip bytes say little about what a file is for
+ * (a game's `.zipmod`, an add-on, a document), and a `.r00` or `.7z.001` is one part of a split
+ * archive. Such a file's extension is wrong only when it names another format here.
+ */
+const CONTAINER_FORMATS = new Set<FileFormat>(["zip", "rar", "7z"]);
+
+const KNOWN_EXTENSIONS = new Set<string>(Object.values(FORMAT_EXTENSIONS).flat());
+
 /** True when the bytes are a known format the file's extension does not name. */
 export function isExtensionMismatch(format: FileFormat, ext: string): boolean {
   const accepted: readonly string[] = FORMAT_EXTENSIONS[format];
+  const extension = ext.toLowerCase();
 
-  return accepted.length > 0 && !accepted.includes(ext.toLowerCase());
+  if (accepted.length === 0 || accepted.includes(extension)) {
+    return false;
+  }
+
+  return !CONTAINER_FORMATS.has(format) || KNOWN_EXTENSIONS.has(extension);
 }
 
 /** The extension a file of this format is renamed to when its own is wrong. */
