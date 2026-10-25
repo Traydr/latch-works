@@ -1,10 +1,12 @@
 import {
   appendFile,
+  chmod,
   copyFile,
   link,
   mkdir,
   mkdtemp,
   readdir,
+  readFile,
   rm,
   stat,
   symlink,
@@ -321,5 +323,38 @@ describe("glazier engine", () => {
     const steps = await harness.call("planSteps", { planId: preview.planId, offset: 0, limit: 10 });
     expect(steps.steps.map((step) => step.status)).toEqual(["skipped"]);
     expect((await stat(path.join(archive, "misnamed.jpg"))).isFile()).toBe(true);
+  });
+
+  it("acts on a file whose only change is its status, and rescans after new bytes", async () => {
+    await mkdir(path.join(archive, "twins"));
+    const one = path.join(archive, "twins", "one.png");
+    const two = path.join(archive, "twins", "two.png");
+    await testPicture(5).png().toFile(one);
+    await copyFile(one, two);
+    await harness.settle(await harness.call("scanRoot", { rootId: root.id }));
+
+    const hold = async (relPath: string) => {
+      const { id } = await harness.file(root.id, relPath);
+      const preview = await harness.call("previewPlan", { kind: "hold", fileIds: [id] });
+      await harness.settle(await harness.call("applyPlan", { planId: preview.planId }));
+
+      return harness.call("getPlan", { planId: preview.planId });
+    };
+
+    // A sync client tagging a file it sees arrive moves only its ctime, as a mode change does.
+    await chmod(two, 0o600);
+    expect(await hold("twins/two.png")).toMatchObject({ done: 1, skipped: 0 });
+
+    // New bytes under the old size and mtime are a real change, and a scan catches up with it.
+    const before = await stat(one);
+    const bytes = await readFile(one);
+    const middle = bytes.length >> 1;
+    bytes[middle] = (bytes[middle] ?? 0) ^ 0xff;
+    await writeFile(one, bytes);
+    await utimes(one, before.atime, before.mtime);
+    expect(await hold("twins/one.png")).toMatchObject({ done: 0, skipped: 1 });
+
+    await harness.idle();
+    expect(await hold("twins/one.png")).toMatchObject({ done: 1, skipped: 0 });
   });
 });

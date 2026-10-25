@@ -93,24 +93,11 @@ export async function runHashPass(context: PassContext): Promise<void> {
 
   await forEachConcurrent(fullCandidates, 4, context.checkpoint, async (file) => {
     try {
-      const sha256 = await hashFileContents({
-        expected: { size: file.size, mtimeMs: file.mtime_ms, ctimeMs: file.ctime_ms },
-        filePath: toAbsolutePath(file.root_path, file.rel_path),
-        operations: {
-          createReadStream,
-          // The catalog's fingerprint is whole milliseconds; compare like with like.
-          stat: async (filePath) => {
-            const current = await stat(filePath, { bigint: true });
-
-            return {
-              size: Number(current.size),
-              mtimeMs: wholeMs(current.mtimeNs),
-              ctimeMs: wholeMs(current.ctimeNs),
-            };
-          },
-        },
-        signal: context.signal,
-      });
+      const sha256 = await hashWholeFile(
+        toAbsolutePath(file.root_path, file.rel_path),
+        { size: file.size, mtimeMs: file.mtime_ms, ctimeMs: file.ctime_ms },
+        context.signal,
+      );
 
       context.db.run("UPDATE files SET sha256 = $sha WHERE id = $id", {
         $sha: sha256,
@@ -129,6 +116,35 @@ export async function runHashPass(context: PassContext): Promise<void> {
         label: "Hashing possible duplicates",
       });
     }
+  });
+}
+
+/**
+ * A file's SHA-256, the duplicate content ID. Rejects when the file's size, mtime or ctime are not
+ * `expected` once it has been read, so a hash never describes bytes that changed underneath it.
+ */
+export function hashWholeFile(
+  filePath: string,
+  expected: { size: number; mtimeMs: number; ctimeMs: number },
+  signal: AbortSignal,
+): Promise<string> {
+  return hashFileContents({
+    expected,
+    filePath,
+    operations: {
+      createReadStream,
+      // The catalog's fingerprint is whole milliseconds; compare like with like.
+      stat: async (target) => {
+        const current = await stat(target, { bigint: true });
+
+        return {
+          size: Number(current.size),
+          mtimeMs: wholeMs(current.mtimeNs),
+          ctimeMs: wholeMs(current.ctimeNs),
+        };
+      },
+    },
+    signal,
   });
 }
 

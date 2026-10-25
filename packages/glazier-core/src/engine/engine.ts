@@ -666,7 +666,13 @@ export class GlazierEngine {
       label: applyLabel(subject),
       run: async (context) => {
         try {
-          await applyPlan(this.executorDeps(context), planId);
+          const { staleSteps } = await applyPlan(this.executorDeps(context), planId);
+
+          // Files that changed or left since the scan were skipped; a scan catches the catalog
+          // up, so the next try acts on what is there now.
+          if (staleSteps > 0) {
+            this.rescanRootsOf(planId);
+          }
         } finally {
           this.invalidate();
           this.emitRoots();

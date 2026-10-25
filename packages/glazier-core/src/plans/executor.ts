@@ -32,6 +32,7 @@ import type { MediaToolkit } from "../media/toolkit.js";
 import { probeVideo } from "../media/video-probe.js";
 import type { StillEncoder, Transcoder } from "../optimize/encoders.js";
 import { forEachConcurrent } from "../passes/context.js";
+import { hashWholeFile } from "../passes/hash-pass.js";
 import { isExtensionMismatch } from "../scan/sniff.js";
 import { extensionOf, wholeMs } from "../scan/walk.js";
 import {
@@ -98,6 +99,15 @@ class StepSkip extends Error {
   override readonly name = "StepSkip";
 }
 
+/** A skip because the catalog is out of date for the file: a scan has to catch it up first. */
+class StaleSourceSkip extends StepSkip {}
+
+/** What applying a plan left for the engine to follow up. */
+export interface ApplyResult {
+  /** Steps skipped because their file changed or vanished since the scan. */
+  staleSteps: number;
+}
+
 function loadSteps(
   db: CatalogDatabase,
   planId: PlanId,
@@ -132,29 +142,68 @@ function locate(
   return { rootId: root.id, relPath: path.relative(root.path, absPath).split(path.sep).join("/") };
 }
 
+const CHANGED_SINCE_SCAN = "The file changed since the scan; rescan before changing it.";
+
 /**
  * Re-reads the source just before touching it. A file that changed since the scan (size, mtime
- * or ctime) or vanished is skipped, never acted on from stale facts.
+ * or ctime) or vanished is skipped, never acted on from stale facts. When only the ctime moved,
+ * as when a sync client such as Tresorit tags a file it sees arrive, the bytes decide: a file
+ * that still hashes to the catalog's SHA-256 is the file the plan was drafted for.
  */
-async function checkSource(step: StepRecord): Promise<Stats> {
+async function checkSource(deps: ExecutorDeps, step: StepRecord): Promise<Stats> {
   let current: BigIntStats;
 
   try {
     current = await lstat(fromAbs(step), { bigint: true });
   } catch {
-    throw new StepSkip("The file is no longer there.");
+    throw new StaleSourceSkip("The file is no longer there.");
   }
 
   if (
     !current.isFile() ||
     Number(current.size) !== step.expected_size ||
-    wholeMs(current.mtimeNs) !== Math.trunc(step.expected_mtime_ms) ||
-    wholeMs(current.ctimeNs) !== Math.trunc(step.expected_ctime_ms)
+    wholeMs(current.mtimeNs) !== Math.trunc(step.expected_mtime_ms)
   ) {
-    throw new StepSkip("The file changed since the scan; rescan before changing it.");
+    throw new StaleSourceSkip(CHANGED_SINCE_SCAN);
+  }
+
+  if (
+    wholeMs(current.ctimeNs) !== Math.trunc(step.expected_ctime_ms) &&
+    !(await holdsCataloguedBytes(deps, step, current))
+  ) {
+    throw new StaleSourceSkip(CHANGED_SINCE_SCAN);
   }
 
   return lstat(fromAbs(step));
+}
+
+/** Whether the file still hashes to the SHA-256 the catalog has for it; false without one. */
+async function holdsCataloguedBytes(
+  deps: ExecutorDeps,
+  step: StepRecord,
+  current: BigIntStats,
+): Promise<boolean> {
+  const row = deps.db.get(
+    "SELECT sha256 FROM files WHERE root_id = $root AND rel_path = $rel",
+    z.object({ sha256: z.string().nullable() }),
+    { $root: step.root_id, $rel: step.from_rel },
+  );
+
+  if (row?.sha256 == null) {
+    return false;
+  }
+
+  const sha256 = await hashWholeFile(
+    fromAbs(step),
+    {
+      size: Number(current.size),
+      mtimeMs: wholeMs(current.mtimeNs),
+      ctimeMs: wholeMs(current.ctimeNs),
+    },
+    deps.signal,
+  ).catch(() => null);
+
+  return sha256 === row.sha256;
 }
 
 function dirOf(relPath: string): string {
@@ -443,7 +492,7 @@ async function executeStep(
     return { kind: "done", bytesAfter: 0, holdingId: null, message: null };
   }
 
-  const source = await checkSource(step);
+  const source = await checkSource(deps, step);
 
   switch (spec.kind) {
     case "hold": {
@@ -728,13 +777,14 @@ function settlePlan(db: CatalogDatabase, planId: PlanId, cancelled: boolean): vo
  * folder's junk leaves before the folder does. Each step settles on its own: one failure never
  * stops the rest, and a cancelled run leaves the remaining steps pending.
  */
-export async function applyPlan(deps: ExecutorDeps, planId: PlanId): Promise<void> {
+export async function applyPlan(deps: ExecutorDeps, planId: PlanId): Promise<ApplyResult> {
   deps.db.run("UPDATE plans SET status = 'applying' WHERE id = $plan", { $plan: planId });
 
   const steps = loadSteps(deps.db, planId, "pending", "ASC");
   const batch = holdingBatchName(planId, new Date());
   const optimize = planSubject(deps.db, planId)?.kind === "optimize";
   let done = 0;
+  let staleSteps = 0;
 
   const run = async (step: StepRecord) => {
     let outcome: StepOutcome;
@@ -744,6 +794,10 @@ export async function applyPlan(deps: ExecutorDeps, planId: PlanId): Promise<voi
     } catch (error) {
       if (deps.signal.aborted) {
         throw error;
+      }
+
+      if (error instanceof StaleSourceSkip) {
+        staleSteps += 1;
       }
 
       outcome =
@@ -778,6 +832,8 @@ export async function applyPlan(deps: ExecutorDeps, planId: PlanId): Promise<voi
 
     throw error;
   }
+
+  return { staleSteps };
 }
 
 function describeAction(action: StepRecord["action"]): string {
