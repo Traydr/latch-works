@@ -30,6 +30,7 @@ import { probeImage } from "../media/image-probe.js";
 import { toError } from "../media/run-tool.js";
 import type { MediaToolkit } from "../media/toolkit.js";
 import { probeVideo } from "../media/video-probe.js";
+import { recordEncodeTiming } from "../optimize/encode-speed.js";
 import type { StillEncoder, Transcoder } from "../optimize/encoders.js";
 import { forEachConcurrent } from "../passes/context.js";
 import { hashWholeFile } from "../passes/hash-pass.js";
@@ -670,7 +671,22 @@ async function executeStep(
             keepLoudness: spec.audio.action === "copy",
           },
           async (tempPath) => {
+            const started = performance.now();
+
             await transcodeWithFfmpeg(ffmpegPath, jobFor(tempPath), deps.signal);
+
+            // Timed whether or not the result is kept: the time was spent either way.
+            if (
+              expected.width !== null &&
+              expected.height !== null &&
+              expected.durationMs !== null
+            ) {
+              recordEncodeTiming(deps.db, {
+                pixels: expected.width * expected.height,
+                mediaMs: expected.durationMs,
+                wallMs: performance.now() - started,
+              });
+            }
 
             return "Encoded with SVT-AV1";
           },

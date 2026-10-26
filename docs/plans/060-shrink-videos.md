@@ -63,6 +63,10 @@ At equal size SVT-AV1 scored 1.8 to 3.1 VMAF above x265 on every sample. Low-bit
   (`shrinkBatch` in the contract, shared by the button and the planner). Pause holds a run after
   the video in progress; Stop leaves finished videos done; the next run starts with what is left,
   because converted videos are AV1 and failed ones are marked.
+- **Time estimates.** Each machine times its SVT-AV1 encodes into its own catalog
+  (`encode_timings`); a size class with three encodes of 10 s or more estimates from their median,
+  and the rest scale the M5 Pro's figures by how the machine compares. With none timed yet, the
+  M5 Pro's figures stand, and Shrink says the time is a first guess.
 - **Not part of Tidy up.** Shrink has its own view and an Overview row, never a Tidy up step.
 
 ## Devices

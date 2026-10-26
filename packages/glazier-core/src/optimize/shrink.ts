@@ -19,6 +19,7 @@ import {
   uncheckedFiles,
   videoSourceOf,
 } from "./candidates.js";
+import { encodeSpeed } from "./encode-speed.js";
 
 /**
  * Below this many bits per pixel each second a video is already compact: an AV1 re-encode at
@@ -36,15 +37,6 @@ function expectedShare(bitsPerPixelSecond: number): number {
   return Math.min(1, Math.max(0.2, 0.55 / bitsPerPixelSecond));
 }
 
-/** Encode speed as a multiple of real time, by picture size, measured on an M5 Pro. */
-function encodeSpeed(pixels: number): number {
-  if (pixels <= 1_000_000) {
-    return 3.5;
-  }
-
-  return pixels <= 2_200_000 ? 2.4 : 1.7;
-}
-
 interface ShrinkCandidate {
   record: FileRecord;
   item: ShrinkItem;
@@ -53,6 +45,8 @@ interface ShrinkCandidate {
 export interface ShrinkScan {
   candidates: ShrinkCandidate[];
   skipped: Map<string, number>;
+  /** Whether the encode times come from this machine's own encodes (see `encodeSpeed`). */
+  speedMeasured: boolean;
 }
 
 const SKIP_NOT_SMALLER = "Came out no smaller as AV1";
@@ -92,6 +86,7 @@ export function findShrinkCandidates(
   const candidates: ShrinkCandidate[] = [];
   const skipped = new Map<string, number>();
   const skip = (reason: string) => skipped.set(reason, (skipped.get(reason) ?? 0) + 1);
+  const speed = encodeSpeed(db);
 
   for (const record of records) {
     const reason = skipReason(record, { duplicates, unchecked, holds });
@@ -143,7 +138,7 @@ export function findShrinkCandidates(
         bytes: record.size,
         estimatedBytes: Math.round(record.size * expectedShare(bitsPerPixelSecond)),
         durationMs,
-        encodeMs: Math.round(durationMs / encodeSpeed(pixels)),
+        encodeMs: Math.round(durationMs / speed.at(pixels)),
       },
     });
   }
@@ -156,7 +151,7 @@ export function findShrinkCandidates(
       saved(right) - saved(left) || left.record.rel_path.localeCompare(right.record.rel_path),
   );
 
-  return { candidates, skipped };
+  return { candidates, skipped, speedMeasured: speed.measured };
 }
 
 function skipReason(

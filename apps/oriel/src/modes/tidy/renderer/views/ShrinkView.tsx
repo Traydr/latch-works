@@ -185,8 +185,12 @@ export function ShrinkView({ rootId }: { rootId: RootId }) {
             </p>
             <p className="lw-caption mt-1.5 leading-5">
               {plural(batch.length, "video")}, the most space saved first · roughly{" "}
-              {formatSpan(next.encodeMs)} of encoding. Stop whenever you like: finished videos stay
-              done, and the next run starts with what is left.
+              {formatSpan(next.encodeMs)} of encoding
+              {summary.speedMeasured
+                ? " at this computer's speed"
+                : ", a first guess until this computer has shrunk a few videos"}
+              . Stop whenever you like: finished videos stay done, and the next run starts with what
+              is left.
             </p>
             <p className="lw-caption mt-3 leading-5">
               {capabilities?.svtAv1 === false

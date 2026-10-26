@@ -389,6 +389,7 @@ export class GlazierEngine {
             .slice(0, SHRINK_PREVIEW_ROWS)
             .map((candidate) => toFileRow(candidate.record)),
           skipped: [...scan.skipped].map(([reason, files]) => ({ reason, files })),
+          speedMeasured: scan.speedMeasured,
         };
       },
       estimateOptimize: async (raw) => {

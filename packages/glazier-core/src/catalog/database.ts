@@ -190,6 +190,17 @@ const MIGRATIONS: readonly string[] = [
   DELETE FROM files
     WHERE lower(name) IN ('desktop.ini', 'thumbs.db', 'ehthumbs.db', 'ehthumbs_vista.db');
   `,
+  // How long each SVT-AV1 encode took on this machine, so Shrink's time estimate follows it.
+  `
+  CREATE TABLE encode_timings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    encoder TEXT NOT NULL,
+    pixels INTEGER NOT NULL,
+    media_ms REAL NOT NULL,
+    wall_ms REAL NOT NULL,
+    at INTEGER NOT NULL
+  );
+  `,
 ];
 
 /**

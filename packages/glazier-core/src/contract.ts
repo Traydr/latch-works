@@ -430,6 +430,8 @@ export const ShrinkSummarySchema = z.object({
   items: z.array(ShrinkItemSchema),
   preview: z.array(FileRowSchema),
   skipped: z.array(z.object({ reason: z.string(), files: z.number().int() })),
+  /** Encode times follow this machine's own SVT-AV1 encodes, not the M5 Pro's figures. */
+  speedMeasured: z.boolean(),
 });
 
 export type ShrinkSummary = z.infer<typeof ShrinkSummarySchema>;
