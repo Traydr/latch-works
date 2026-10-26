@@ -20,7 +20,7 @@ export interface WalkedFile {
   /** Device and inode as decimal strings: hard links to one file share both. */
   dev: string;
   ino: string;
-  /** `Thumbs.db`, `._*` and the like: recorded so they can be cleaned up. */
+  /** `._*` files a Mac leaves on other disks: recorded so they can be cleaned up. */
   junk: boolean;
 }
 
@@ -54,11 +54,20 @@ export function wholeMs(nanoseconds: bigint): number {
 }
 
 /**
- * Finder's view settings for a folder. Finder writes one into every folder it shows, so cleaning
+ * Files Finder and Explorer write into the folders they show: view settings (`.DS_Store`,
+ * `desktop.ini`) and thumbnail caches (`Thumbs.db`). The system writes them again, so cleaning
  * them up never sticks: the walk leaves them out, and one leaves only with its empty folder.
  */
-export function isFinderViewSettings(name: string): boolean {
-  return name.toLowerCase() === ".ds_store";
+const FOLDER_SYSTEM_FILES = new Set([
+  ".ds_store",
+  "desktop.ini",
+  "thumbs.db",
+  "ehthumbs.db",
+  "ehthumbs_vista.db",
+]);
+
+export function isFolderSystemFile(name: string): boolean {
+  return FOLDER_SYSTEM_FILES.has(name.toLowerCase());
 }
 
 export function extensionOf(name: string): string {
@@ -112,7 +121,7 @@ export async function walkRoot(options: WalkOptions): Promise<WalkSummary> {
           contentCount += 1;
         }
       } else if (entry.isFile()) {
-        if (isFinderViewSettings(entry.name)) {
+        if (isFolderSystemFile(entry.name)) {
           continue;
         }
 

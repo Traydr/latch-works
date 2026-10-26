@@ -112,7 +112,7 @@ The specs drive Tidy, Glazier as one of Oriel's modes; the `oriel-setup` project
 (skip with `E2E_SKIP_BUILD=1`). The spec builds a throwaway archive in a temp folder with sharp and `ffmpeg` (it changes files, so it never uses the
 shared fixture): stills including a resized twin and an AVIF misnamed `.jpg`, an animated GIF,
 H.264/AAC in MOV, VP9/Opus in WebM, MP4s with sound, with a silent track and with no audio, an
-exact copy, `Thumbs.db` and an empty folder. Tidy opens a hidden transcoder window as well as
+exact copy, a `._` file a Mac leaves on other disks, and an empty folder. Tidy opens a hidden transcoder window as well as
 Oriel's main one, so `e2e/src/oriel.ts` finds the main window by its page instead of taking the
 first. Folders are added through Glazier's own picker: `chooseFolder` types the path into its field
 and presses Choose, so no native dialog is stubbed. `workbench.spec.ts` covers, in order: adding and scanning the root and its findings;

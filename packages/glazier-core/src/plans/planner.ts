@@ -494,7 +494,7 @@ export function draftSteps(context: PlannerContext, request: PlanRequest): PlanD
       count = draftFolderRemovals(context, request.rootId, folders);
 
       for (const folder of folders) {
-        // A folder holding only junk such as `Thumbs.db` counts as empty; its junk goes first.
+        // A folder holding only junk such as `._` files counts as empty; its junk goes first.
         for (const record of junkRecords(context, request.rootId, folder.fromRel)) {
           steps.push(fileStep(record, { kind: "hold", reason: "System junk" }, null));
         }

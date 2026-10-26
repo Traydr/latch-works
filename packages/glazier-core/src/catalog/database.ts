@@ -185,6 +185,11 @@ const MIGRATIONS: readonly string[] = [
     error TEXT
   );
   `,
+  // Explorer's desktop.ini and thumbnail caches are no longer catalogued, as .DS_Store is not.
+  `
+  DELETE FROM files
+    WHERE lower(name) IN ('desktop.ini', 'thumbs.db', 'ehthumbs.db', 'ehthumbs_vista.db');
+  `,
 ];
 
 /**

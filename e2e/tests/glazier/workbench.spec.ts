@@ -188,6 +188,6 @@ test("Clean up fixes the extension, holds the junk and removes the empty folder"
 
   await expect(stat(path.join(archive, "photos", "cover.avif"))).resolves.toBeTruthy();
   await expect(stat(path.join(archive, "empty"))).rejects.toThrow();
-  expect(await heldFiles()).toEqual(expect.arrayContaining(["Thumbs.db"]));
+  expect(await heldFiles()).toEqual(expect.arrayContaining(["._sunset.png"]));
   await expect(window.getByText("Nothing to clean up")).toBeVisible();
 });

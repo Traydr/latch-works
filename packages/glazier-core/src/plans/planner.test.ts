@@ -23,11 +23,15 @@ beforeAll(async () => {
   await mkdir(path.join(archive, "only-junk"));
   await mkdir(path.join(archive, "viewed"));
   await mkdir(path.join(archive, "photos"));
-  await writeFile(path.join(archive, "Thumbs.db"), "junk");
-  await writeFile(path.join(archive, "only-junk", "Thumbs.db"), "junk");
-  // Finder's view settings are not junk: they stay put, except in a folder that is otherwise empty.
+  await writeFile(path.join(archive, "._pic.jpg"), "junk");
+  await writeFile(path.join(archive, "only-junk", "._cover.jpg"), "junk");
+  // Finder's and Explorer's files are not junk: they stay put, except in an otherwise empty folder.
   await writeFile(path.join(archive, ".DS_Store"), "finder");
+  await writeFile(path.join(archive, "desktop.ini"), "explorer");
+  await writeFile(path.join(archive, "Thumbs.db"), "explorer");
   await writeFile(path.join(archive, "viewed", ".DS_Store"), "finder");
+  await writeFile(path.join(archive, "viewed", "desktop.ini"), "explorer");
+  await writeFile(path.join(archive, "viewed", "Thumbs.db"), "explorer");
   // PNG bytes named .jpg, and AVIF bytes named .jpg: both get the extension their bytes have.
   await testPicture(7)
     .png()
@@ -70,7 +74,7 @@ describe("plans", () => {
     expect(
       steps.steps.map((step) => [step.action, path.relative(root.path, step.fromPath)]),
     ).toEqual([
-      ["hold", path.join("only-junk", "Thumbs.db")],
+      ["hold", path.join("only-junk", "._cover.jpg")],
       ["remove-folder", "only-junk"],
       ["remove-folder", "viewed"],
       ["remove-folder", "empty"],
@@ -103,8 +107,8 @@ describe("plans", () => {
     ).toEqual([
       ["rename", path.join("photos", "cover.jpg"), "cover.avif"],
       ["rename", path.join("photos", "pic.jpg"), "pic.png"],
-      ["hold", "Thumbs.db", null],
-      ["hold", path.join("only-junk", "Thumbs.db"), null],
+      ["hold", "._pic.jpg", null],
+      ["hold", path.join("only-junk", "._cover.jpg"), null],
       ["remove-folder", "only-junk", null],
       ["remove-folder", "viewed", null],
       ["remove-folder", "empty", null],
@@ -128,6 +132,8 @@ describe("plans", () => {
     await expect(stat(path.join(archive, "viewed"))).rejects.toThrow();
     await expect(stat(path.join(archive, "empty"))).rejects.toThrow();
     expect((await stat(path.join(archive, ".DS_Store"))).isFile()).toBe(true);
+    expect((await stat(path.join(archive, "desktop.ini"))).isFile()).toBe(true);
+    expect((await stat(path.join(archive, "Thumbs.db"))).isFile()).toBe(true);
     expect((await harness.call("tidy", { rootId: root.id })).cleanup).toEqual({
       junk: 0,
       emptyFolders: 0,
@@ -137,12 +143,19 @@ describe("plans", () => {
     const holding = await harness.call("listHolding", { rootId: root.id, offset: 0, limit: 10 });
 
     expect(holding.items.map((item) => path.relative(root.path, item.originalPath)).sort()).toEqual(
-      ["Thumbs.db", path.join("only-junk", "Thumbs.db"), path.join("viewed", ".DS_Store")].sort(),
+      [
+        "._pic.jpg",
+        path.join("only-junk", "._cover.jpg"),
+        path.join("viewed", ".DS_Store"),
+        path.join("viewed", "Thumbs.db"),
+        path.join("viewed", "desktop.ini"),
+      ].sort(),
     );
 
     await harness.settle(await harness.call("undoPlan", { planId: preview.planId }));
 
     expect((await stat(path.join(archive, "viewed", ".DS_Store"))).isFile()).toBe(true);
-    expect((await stat(path.join(archive, "only-junk", "Thumbs.db"))).isFile()).toBe(true);
+    expect((await stat(path.join(archive, "viewed", "desktop.ini"))).isFile()).toBe(true);
+    expect((await stat(path.join(archive, "only-junk", "._cover.jpg"))).isFile()).toBe(true);
   });
 });

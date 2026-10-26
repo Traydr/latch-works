@@ -34,7 +34,7 @@ import type { StillEncoder, Transcoder } from "../optimize/encoders.js";
 import { forEachConcurrent } from "../passes/context.js";
 import { hashWholeFile } from "../passes/hash-pass.js";
 import { isExtensionMismatch } from "../scan/sniff.js";
-import { extensionOf, isFinderViewSettings, wholeMs } from "../scan/walk.js";
+import { extensionOf, isFolderSystemFile, wholeMs } from "../scan/walk.js";
 import {
   type HoldingPlaces,
   holdFile,
@@ -66,7 +66,10 @@ interface RunContext {
   notSmaller: string | null;
 }
 
-/** Holding's reason for a `.DS_Store` that left with the empty folder it was in. */
+/** Holding's reason for a `.DS_Store` or `Thumbs.db` that left with the empty folder it was in. */
+const FOLDER_FILES_REASON = "Left by Finder or Explorer in an empty folder";
+
+/** The same reason as 0.1.2 to 0.1.4 wrote it, when only `.DS_Store` left with its folder. */
 const FINDER_SETTINGS_REASON = "Finder's settings for an empty folder";
 
 export interface ExecutorDeps {
@@ -498,21 +501,21 @@ async function executeStep(
       return { kind: "skipped", message: "The folder is no longer there." };
     }
 
-    // Finder's view settings are not catalogued, so they go to holding with their folder.
-    const viewSettings = entries.filter(isFinderViewSettings);
+    // Finder's and Explorer's files are not catalogued, so they go to holding with their folder.
+    const systemFiles = entries.filter(isFolderSystemFile);
 
-    if (entries.length > viewSettings.length) {
+    if (entries.length > systemFiles.length) {
       return { kind: "skipped", message: "The folder is no longer empty." };
     }
 
-    for (const name of viewSettings) {
+    for (const name of systemFiles) {
       await holdFile(deps, {
         rootId: step.root_id,
         rootPath: step.root_path,
         relPath: `${step.from_rel}/${name}`,
         batch,
         planId: step.plan_id,
-        reason: FINDER_SETTINGS_REASON,
+        reason: FOLDER_FILES_REASON,
       });
     }
 
@@ -1017,14 +1020,20 @@ async function undoStep(deps: ExecutorDeps, step: StepRecord, batch: string): Pr
 
       const held = deps.db.all(
         `SELECT id, original_rel FROM holding
-          WHERE plan_id = $plan AND root_id = $root AND state = 'held' AND reason = $reason`,
+          WHERE plan_id = $plan AND root_id = $root AND state = 'held'
+            AND reason IN ($reason, $finderReason)`,
         z.object({ id: HoldingIdSchema, original_rel: z.string() }),
-        { $plan: step.plan_id, $root: step.root_id, $reason: FINDER_SETTINGS_REASON },
+        {
+          $plan: step.plan_id,
+          $root: step.root_id,
+          $reason: FOLDER_FILES_REASON,
+          $finderReason: FINDER_SETTINGS_REASON,
+        },
       );
 
       for (const record of held) {
         if (dirOf(record.original_rel) === step.from_rel) {
-          // Finder may have written fresh settings into the folder already; those win.
+          // Finder or Explorer may have written fresh files into the folder already; those win.
           await restoreHeld(deps.db, record.id).catch(() => undefined);
         }
       }
