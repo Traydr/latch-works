@@ -6,7 +6,7 @@ import { desktop, mediaUrl, thumbnailUrl } from "../../lib/api";
 import { useOpenInView } from "../../lib/hand-off";
 import { Thumbnail } from "../media";
 import { VideoControls } from "../VideoControls";
-import { factsOf, type SetRow } from "./model";
+import { copyOfNumber, factsOf, keeperOf, type SetRow } from "./model";
 
 /** Up to six versions fit the stage without scrolling; more scroll at this tile height. */
 const SCROLLING_TILE_HEIGHT = 300;
@@ -44,15 +44,17 @@ function aspectOf(rows: readonly SetRow[]): number {
 }
 
 /** The picture well's height at a column count: as tall as the shape allows, within the stage. */
-function wellHeight(rows: readonly SetRow[], box: Box, columns: number): number {
+function wellHeight(rows: readonly SetRow[], box: Box, columns: number, labelled: boolean): number {
   const lines = Math.ceil(rows.length / columns);
   const columnWidth = (box.width - GAP * (columns - 1)) / columns - 8;
-  // Two lines for a copy's folder, and one for the file name where two versions share a folder.
+  // Two lines for a copy's folder, one for the file name where two versions share a folder, and
+  // one for "A copy of 1" where Spot variants found copies.
   const copiesRoom = rows.some((row) => row.copies.length > 0) ? 32 : 0;
   const nameRoom = sharedFolders(rows).size > 0 ? 16 : 0;
+  const copyOfRoom = labelled ? 16 : 0;
 
   const rowHeight =
-    (box.height - GAP * (lines - 1)) / lines - CAPTION_HEIGHT - copiesRoom - nameRoom;
+    (box.height - GAP * (lines - 1)) / lines - CAPTION_HEIGHT - copiesRoom - nameRoom - copyOfRoom;
 
   return Math.floor(Math.min(columnWidth / aspectOf(rows), rowHeight));
 }
@@ -65,7 +67,7 @@ const PAIR_COLUMN_MIN = 280;
  * candidates by area, leaning to more columns when they lose under 15%. Wide 3:2 pictures on a
  * 16:10 screen go 2×2 rather than four across, and a pair sits side by side.
  */
-function bestColumns(rows: readonly SetRow[], box: Box): number {
+function bestColumns(rows: readonly SetRow[], box: Box, labelled: boolean): number {
   if (rows.length === 2 && (box.width - GAP) / 2 >= PAIR_COLUMN_MIN) {
     return 2;
   }
@@ -82,11 +84,11 @@ function bestColumns(rows: readonly SetRow[], box: Box): number {
     .filter(even);
 
   let best = candidates[0] ?? 1;
-  let bestHeight = wellHeight(rows, box, best);
+  let bestHeight = wellHeight(rows, box, best, labelled);
 
   // From the most columns down, a layout with fewer has to be clearly (15%) larger to win.
   for (const columns of candidates.slice(1)) {
-    const height = wellHeight(rows, box, columns);
+    const height = wellHeight(rows, box, columns, labelled);
 
     if (height > bestHeight * 1.15) {
       best = columns;
@@ -168,9 +170,10 @@ export function VersionGrid({
   }, []);
 
   const scrolls = rows.length > 6;
-  const columns = scrolls ? (size.width >= 1400 ? 4 : 3) : bestColumns(rows, size);
+  const labelled = rows.some((_, index) => copyOfNumber(set, index) !== null);
+  const columns = scrolls ? (size.width >= 1400 ? 4 : 3) : bestColumns(rows, size, labelled);
   const lines = Math.ceil(rows.length / columns);
-  const well = scrolls ? null : Math.max(120, wellHeight(rows, size, columns));
+  const well = scrolls ? null : Math.max(120, wellHeight(rows, size, columns, labelled));
 
   // Each card hugs its picture, so no well carries side bars and the badges sit on its corners.
   const cardWidth = well === null ? null : Math.round(well * aspectOf(rows)) + 8;
@@ -205,7 +208,8 @@ export function VersionGrid({
               key={row.file.id}
               row={row}
               number={index + 1}
-              keeper={keeper}
+              keeper={keeperOf(set, rows, index, kept) ?? keeper}
+              copyOf={copyOfNumber(set, index)}
               isKept={kept.has(row.file.id)}
               keepReason={keepReason}
               showName={shared.has(row.file.dir)}
@@ -233,6 +237,7 @@ function VersionTile({
   row,
   number,
   keeper,
+  copyOf,
   isKept,
   keepReason,
   showName,
@@ -251,7 +256,10 @@ function VersionTile({
 }: {
   row: SetRow;
   number: number;
+  /** The kept file this version's facts compare against: its own picture's, with pictures. */
   keeper: FileRow;
+  /** With Spot variants, the version this one is a copy of. */
+  copyOf: number | null;
   isKept: boolean;
   keepReason: string | null;
   /** The file name, for a version that shares its folder with another. */
@@ -476,6 +484,7 @@ function VersionTile({
             </span>
           ))}
         </p>
+        {copyOf === null ? null : <p className="lw-caption truncate">A copy of {copyOf}</p>}
         {/* A byte-identical copy elsewhere goes with this version, so its folder shows too. */}
         {row.copies.length > 1 ? (
           <p

@@ -39,6 +39,7 @@ export function toKeeperCandidate(record: FileRecord, settings: Settings): Keepe
     size: record.size,
     mtimeMs: record.mtime_ms,
     isPreferred: isPreferredPath(settings, record),
+    inHomeFolder: false,
   };
 }
 

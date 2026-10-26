@@ -43,6 +43,7 @@ beforeAll(async () => {
   await harness.call("updateSettings", {
     preferredFolders: [],
     similarity: "balanced",
+    spotVariants: false,
     reencodeQuality: "high",
     autoAnalyze: false,
   });

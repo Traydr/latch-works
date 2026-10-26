@@ -20,6 +20,11 @@ export interface KeeperCandidate {
   mtimeMs: number;
   /** Inside a folder the owner prefers to keep copies in. */
   isPreferred: boolean;
+  /**
+   * With Spot variants, inside the folder that holds the most of the set's pictures, so a
+   * picture's copies stay together with the rest of the set (see `homeFolder` in sets.ts).
+   */
+  inHomeFolder: boolean;
 }
 
 /** Hearing something beats not knowing, which beats a silent track, which beats no track. */
@@ -84,9 +89,10 @@ type KeeperComparison = (left: KeeperCandidate, right: KeeperCandidate) => numbe
 /**
  * Which copy of a picture or video to keep, in order: anything in a preferred folder; for video,
  * the copy you can hear; more pixels; a longer video (to half a second, so a trimmed re-upload
- * loses); the archive format; the extension the format is named with; more bytes, which at equal
- * pixels is more detail; the name without a copy suffix; the oldest file; the shortest path; and
- * finally natural name order, so the choice never depends on scan order.
+ * loses); with Spot variants, the copy in the set's home folder; the archive format; the
+ * extension the format is named with; more bytes, which at equal pixels is more detail; the name
+ * without a copy suffix; the oldest file; the shortest path; and finally natural name order, so
+ * the choice never depends on scan order.
  */
 const KEEPER_RULES = [
   {
@@ -104,6 +110,10 @@ const KEEPER_RULES = [
     reason: "longer",
     compare: (left, right) =>
       Math.round((left.durationMs ?? 0) / 500) - Math.round((right.durationMs ?? 0) / 500),
+  },
+  {
+    reason: "home-folder",
+    compare: (left, right) => Number(left.inHomeFolder) - Number(right.inHomeFolder),
   },
   {
     reason: "archive-format",
@@ -130,7 +140,10 @@ const KEEPER_RULES = [
     reason: "name-order",
     compare: (left, right) => naturalOrder.compare(right.relPath, left.relPath),
   },
-] as const satisfies readonly { reason: KeepReason; compare: KeeperComparison }[];
+] as const satisfies readonly {
+  reason: Exclude<KeepReason, "different-pictures">;
+  compare: KeeperComparison;
+}[];
 
 function compareKeepers(left: KeeperCandidate, right: KeeperCandidate): number {
   for (const rule of KEEPER_RULES) {

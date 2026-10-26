@@ -91,7 +91,7 @@ describe("duplicate sets", () => {
     const exact = page.sets.find((set) => set.kind === "exact");
     const similar = page.sets.find((set) => set.kind === "similar");
 
-    expect(page.counts).toEqual({ exact: 1, similar: 1, dismissed: 0, closeCalls: 0 });
+    expect(page.counts).toEqual({ exact: 1, similar: 1, variants: 0, dismissed: 0 });
     expect(namesOf(page)).toEqual([
       ["a.png", "x/a.png", "y/a (1).png"],
       ["b.png", "b-small.jpg"],
@@ -108,63 +108,6 @@ describe("duplicate sets", () => {
     expect((await sets({ scope: "exact" })).total).toBe(1);
   });
 
-  it("resolves every set with its suggestion, an override or not at all", async () => {
-    const page = await sets();
-    const [exact, similar] = page.sets;
-    const xa = await harness.file(root.id, "x/a.png");
-    const a = await harness.file(root.id, "a.png");
-
-    if (!exact || !similar) {
-      throw new Error("Expected an exact and a similar set");
-    }
-
-    const resolve = (request: { overrides: { key: string; keep: number[] }[]; skip: string[] }) =>
-      harness.call("previewPlan", {
-        kind: "resolve-duplicate-sets",
-        rootId: root.id,
-        level: "balanced",
-        scope: "all",
-        ...request,
-      });
-
-    // The similar set's override names a file it does not hold, so that set is left alone.
-    const overridden = await resolve({
-      overrides: [
-        { key: exact.key, keep: [xa.id] },
-        { key: similar.key, keep: [a.id] },
-      ],
-      skip: [],
-    });
-
-    const overriddenSteps = await harness.call("planSteps", {
-      planId: overridden.planId,
-      offset: 0,
-      limit: 10,
-    });
-
-    expect(overriddenSteps.steps.map((step) => path.relative(root.path, step.fromPath))).toEqual([
-      "a.png",
-      path.join("y", "a (1).png"),
-    ]);
-    expect(await harness.call("getPlan", { planId: overridden.planId })).toMatchObject({
-      title: "Resolved 1 duplicate set",
-      count: 1,
-    });
-
-    const skipped = await resolve({ overrides: [], skip: [exact.key] });
-
-    const skippedSteps = await harness.call("planSteps", {
-      planId: skipped.planId,
-      offset: 0,
-      limit: 10,
-    });
-
-    expect(skippedSteps.steps.map((step) => path.basename(step.fromPath))).toEqual(["b-small.jpg"]);
-
-    await harness.call("discardPlan", { planId: overridden.planId });
-    await harness.call("discardPlan", { planId: skipped.planId });
-  });
-
   it("hides a dismissed set while its files stay inside the dismissal", async () => {
     const page = await sets();
     const [exact, similar] = page.sets;
@@ -177,21 +120,10 @@ describe("duplicate sets", () => {
       fileIds: exact.versions.flatMap((version) => version.files.map((file) => file.id)),
     });
 
-    expect((await sets()).counts).toEqual({ exact: 0, similar: 1, dismissed: 1, closeCalls: 0 });
+    expect((await sets()).counts).toEqual({ exact: 0, similar: 1, variants: 0, dismissed: 1 });
     expect((await sets({ dismissed: true })).sets.map((set) => set.dismissalId)).toEqual([
       dismissalId,
     ]);
-    await expect(
-      harness.call("previewPlan", {
-        kind: "resolve-duplicate-sets",
-        rootId: root.id,
-        level: "balanced",
-        scope: "exact",
-        overrides: [],
-        skip: [],
-      }),
-    ).rejects.toThrow("nothing to do");
-
     // Losing a file keeps the set hidden…
     const copy = await harness.file(root.id, "y/a (1).png");
     const held = await harness.call("perform", { kind: "hold", fileIds: [copy.id] });
@@ -201,7 +133,7 @@ describe("duplicate sets", () => {
     }
 
     await harness.settle(held.job);
-    expect((await sets()).counts).toEqual({ exact: 0, similar: 1, dismissed: 1, closeCalls: 0 });
+    expect((await sets()).counts).toEqual({ exact: 0, similar: 1, variants: 0, dismissed: 1 });
 
     // …gaining one brings it back.
     await copyOfA("z/a.png");
@@ -225,16 +157,16 @@ describe("duplicate sets", () => {
     });
 
     // A draft's dismissal hides nothing yet.
-    expect((await sets()).counts).toEqual({ exact: 1, similar: 1, dismissed: 0, closeCalls: 0 });
+    expect((await sets()).counts).toEqual({ exact: 1, similar: 1, variants: 0, dismissed: 0 });
 
     await harness.settle(await harness.call("applyPlan", { planId: preview.planId }));
 
-    expect((await sets()).counts).toEqual({ exact: 0, similar: 1, dismissed: 1, closeCalls: 0 });
+    expect((await sets()).counts).toEqual({ exact: 0, similar: 1, variants: 0, dismissed: 1 });
 
     await harness.call("undoPlan", { planId: preview.planId });
     await harness.idle();
 
-    expect((await sets()).counts).toEqual({ exact: 1, similar: 1, dismissed: 0, closeCalls: 0 });
+    expect((await sets()).counts).toEqual({ exact: 1, similar: 1, variants: 0, dismissed: 0 });
     expect(namesOf(await sets({ scope: "exact" }))).toEqual([["a.png", "x/a.png", "z/a.png"]]);
   });
 });

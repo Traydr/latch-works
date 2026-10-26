@@ -1,29 +1,17 @@
-import {
-  type DuplicateScope,
-  type DuplicateSet,
-  type FileId,
-  isCloseCall,
-  type RootId,
+import type {
+  DuplicateScope,
+  DuplicateSet,
+  FileId,
+  RootId,
 } from "@latch-works/glazier-core/contract";
-import { CheckCircle2, ChevronLeft, ChevronRight, MoreHorizontal } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  EmptyState,
-  Kbd,
-  Menu,
-  MenuCheck,
-  MenuLabel,
-  MenuSeparator,
-  Segmented,
-  Spinner,
-  TopBar,
-} from "../../../../ui/ui";
+import { CheckCircle2, ChevronLeft, ChevronRight } from "lucide-react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { EmptyState, Kbd, Segmented, Spinner, Switch, TopBar } from "../../../../ui/ui";
 import { CopyList } from "../components/duplicates/CopyList";
 import { Loupe } from "../components/duplicates/Loupe";
 import {
   decisionLabel,
   filesOf,
-  fitsSet,
   freedBytes,
   holdingSummary,
   keepEveryLabel,
@@ -67,7 +55,12 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
     return request && Date.now() - request.at < TAB_REQUEST_MS ? request.tab : null;
   });
 
-  const scope: DuplicateScope = chosenScope ?? "similar";
+  const spotVariants = settings?.spotVariants ?? false;
+
+  // The Variants tab exists only while Spot variants sorts them out.
+  const scope: DuplicateScope =
+    chosenScope === "variants" && !spotVariants ? "similar" : (chosenScope ?? "similar");
+
   const [dismissedMode, setDismissedMode] = useState(false);
   const queue = useSetQueue({ rootId, level, scope, dismissed: dismissedMode });
   const [activeIndex, setActiveIndex] = useState(0);
@@ -364,35 +357,6 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
     }
   };
 
-  // Close calls are left for the owner; the engine counts them across every set, loaded or not.
-  const closeCalls = scope === "similar" ? (data?.counts.closeCalls ?? 0) : 0;
-  const inTab = data ? (scope === "similar" ? data.counts.similar : data.counts.exact) : 0;
-
-  // A skipped close call is already left out, so only skipped confident sets come off the count.
-  const skippedConfident = sets.filter(
-    (set) => skipped.has(set.key) && !(scope === "similar" && isCloseCall(set)),
-  ).length;
-
-  const suggestions = Math.max(0, inTab - closeCalls - skippedConfident);
-
-  const keepAll = useCallback(() => {
-    const valid = [...overrides].flatMap(([key, keep]) => {
-      const set = sets.find((candidate) => candidate.key === key);
-
-      return set && fitsSet(set, keep) ? [{ key, keep }] : [];
-    });
-
-    void actions.perform({
-      kind: "resolve-duplicate-sets",
-      rootId,
-      level,
-      scope,
-      overrides: valid,
-      skip: [...skipped],
-      skipCloseCalls: true,
-    });
-  }, [overrides, sets, actions, rootId, level, scope, skipped]);
-
   const move = (delta: number) => {
     setActiveIndex(Math.max(0, Math.min(sets.length - 1, index + delta)));
   };
@@ -434,16 +398,6 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
     const deciding = digitOf(event) !== null || ["Enter", "n", "N", "s", "S"].includes(event.key);
 
     if (event.repeat && deciding) {
-      return true;
-    }
-
-    // Keeping every suggestion at once is for similar versions only: which copy of an identical
-    // file to keep depends on where each one is, which the owner reads set by set.
-    if (isCommandKey(event) && event.key === "Enter") {
-      if (!dismissedMode && scope === "similar" && suggestions > 0) {
-        keepAll();
-      }
-
       return true;
     }
 
@@ -606,8 +560,21 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
   });
 
   const fingerprinting = data !== null && data.fingerprinted < data.fingerprintable;
+  const comparing = data !== null && data.compared < data.comparable;
   const otherScope: DuplicateScope = scope === "similar" ? "exact" : "similar";
   const otherCount = data ? (scope === "similar" ? data.counts.exact : data.counts.similar) : 0;
+
+  const changeScope = (next: DuplicateScope) => {
+    setChosenScope(next);
+    setActiveIndex(0);
+    setLooking(false);
+  };
+
+  const showDismissed = (next: boolean) => {
+    setDismissedMode(next);
+    setActiveIndex(0);
+    setLooking(false);
+  };
 
   useToastLift(active ? 72 : 0);
 
@@ -620,13 +587,12 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
         label="Show"
         fill
         value={scope}
-        onChange={(next) => {
-          setChosenScope(next);
-          setActiveIndex(0);
-          setLooking(false);
-        }}
+        onChange={changeScope}
         options={[
           { value: "similar", label: "Similar", count: data.counts.similar },
+          ...(spotVariants
+            ? [{ value: "variants" as const, label: "Variants", count: data.counts.variants }]
+            : []),
           { value: "exact", label: "Identical", count: data.counts.exact },
         ]}
       />
@@ -709,76 +675,70 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <TopBar title={dismissedMode ? "Not duplicates" : "Duplicates"}>
-        {fingerprinting ? (
-          <span
-            className="lw-caption inline-flex items-center gap-2"
-            title="Similar versions appear as each picture and video is checked"
-          >
-            {similarJob ? <Spinner /> : null}
-            Checking {formatCount(data?.fingerprinted ?? 0)} of{" "}
-            {formatCount(data?.fingerprintable ?? 0)}
-          </span>
-        ) : null}
-        {dismissedMode ? (
-          <button
-            type="button"
-            className="lw-btn lw-btn-secondary"
-            onClick={() => {
-              setDismissedMode(false);
-              setActiveIndex(0);
-            }}
-          >
-            Done
-          </button>
-        ) : sets.length > 0 && scope === "similar" ? (
-          <button
-            type="button"
-            className="lw-btn lw-btn-secondary"
-            disabled={suggestions === 0}
-            onClick={keepAll}
-            title={
-              closeCalls > 0
-                ? `Leaves ${plural(closeCalls, "close call")} for you  ⌘↩`
-                : "Keeps the suggestion in every set  ⌘↩"
+      <TopBar
+        title={dismissedMode ? "Not duplicates" : "Duplicates"}
+        meta={
+          fingerprinting ? (
+            <AnalysisNote
+              running={similarJob !== null}
+              title="Similar versions appear as each picture and video is checked"
+            >
+              Checking {formatCount(data?.fingerprinted ?? 0)} of{" "}
+              {formatCount(data?.fingerprintable ?? 0)}
+            </AnalysisNote>
+          ) : comparing ? (
+            <AnalysisNote
+              running={similarJob !== null}
+              title="Spot variants compares each similar picture with the rest of its set"
+            >
+              {/* Sets are rebuilt when the job ends, so the running job counts what is left. */}
+              Comparing{" "}
+              {similarJob?.state === "running" && similarJob.total > 0
+                ? `${formatCount(similarJob.done)} of ${formatCount(similarJob.total)}`
+                : `${formatCount(data?.compared ?? 0)} of ${formatCount(data?.comparable ?? 0)}`}
+            </AnalysisNote>
+          ) : null
+        }
+      >
+        <Segmented
+          label="Similar versions"
+          options={SIMILARITY_LEVELS}
+          value={level}
+          onChange={(similarity) => {
+            if (settings) {
+              void setSettings({ ...settings, similarity });
             }
-          >
-            Keep {plural(suggestions, "suggestion")}
-          </button>
-        ) : null}
-        <Menu label={<MoreHorizontal />} icon variant="ghost" title="More">
-          {(close) => (
-            <>
-              <MenuLabel>Similar versions</MenuLabel>
-              {SIMILARITY_LEVELS.map((option) => (
-                <MenuCheck
-                  key={option.value}
-                  checked={level === option.value}
-                  label={option.label}
-                  onChange={() => {
-                    if (settings) {
-                      void setSettings({ ...settings, similarity: option.value });
-                    }
-
-                    close();
-                  }}
-                />
-              ))}
-              <MenuSeparator />
-              <MenuCheck
-                checked={dismissedMode}
-                label="Show sets marked not duplicates"
-                count={data ? formatCount(data.counts.dismissed) : undefined}
-                onChange={(next) => {
-                  setDismissedMode(next);
-                  setActiveIndex(0);
-                  setLooking(false);
-                  close();
-                }}
-              />
-            </>
-          )}
-        </Menu>
+          }}
+        />
+        <span
+          className="flex items-center gap-2 text-[13px] text-zinc-700 dark:text-zinc-300"
+          title="Keeps every picture that differs in one area (a face, an outfit, a caption's language), and keeps each picture's copy with sound, the most pixels, or in the folder holding the rest of its set"
+        >
+          Spot variants
+          <Switch
+            label="Spot variants"
+            checked={spotVariants}
+            onChange={(next) => {
+              if (settings) {
+                void setSettings({ ...settings, spotVariants: next });
+              }
+            }}
+          />
+        </span>
+        <button
+          type="button"
+          className="lw-btn lw-btn-secondary aria-pressed:bg-zinc-900/[0.06] dark:aria-pressed:bg-white/[0.12]"
+          aria-pressed={dismissedMode}
+          title={dismissedMode ? "Back to the sets to review" : "Sets you marked as not duplicates"}
+          onClick={() => showDismissed(!dismissedMode)}
+        >
+          Not duplicates
+          {data ? (
+            <span className="text-xs text-zinc-400 dark:text-zinc-500">
+              {formatCount(data.counts.dismissed)}
+            </span>
+          ) : null}
+        </button>
       </TopBar>
 
       {data === null ? (
@@ -795,13 +755,17 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
             title={
               dismissedMode
                 ? "Nothing marked as not duplicates"
-                : scope === "similar"
-                  ? freedHere > 0
-                    ? "All similar sets done"
-                    : fingerprinting
-                      ? "No similar versions found yet"
-                      : "No similar versions"
-                  : "No identical copies"
+                : scope === "variants"
+                  ? comparing
+                    ? "No variants found yet"
+                    : "No sets of variants"
+                  : scope === "similar"
+                    ? freedHere > 0
+                      ? "All similar sets done"
+                      : fingerprinting
+                        ? "No similar versions found yet"
+                        : "No similar versions"
+                    : "No identical copies"
             }
             actions={
               dismissedMode ? null : (
@@ -817,10 +781,7 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
                     <button
                       type="button"
                       className="lw-btn lw-btn-secondary"
-                      onClick={() => {
-                        setChosenScope(otherScope);
-                        setActiveIndex(0);
-                      }}
+                      onClick={() => changeScope(otherScope)}
                     >
                       {otherScope === "exact" ? "Show identical copies" : "Show similar versions"}
                     </button>
@@ -833,7 +794,9 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
               ? `${formatBytes(freedHere)} moved to holding.`
               : fingerprinting && scope === "similar" && !dismissedMode
                 ? `Still checking for similar versions: ${formatCount(data.fingerprinted)} of ${formatCount(data.fingerprintable)}.`
-                : null}
+                : scope === "variants" && !dismissedMode
+                  ? "Similar sets whose pictures each differ in one area come here, since none of them is a copy."
+                  : null}
           </EmptyState>
         </div>
       ) : (
@@ -917,5 +880,23 @@ export function DuplicatesView({ rootId }: { rootId: RootId }) {
         </div>
       )}
     </div>
+  );
+}
+
+/** Analysis still running, beside the title: a spinner while its job runs, and how far it got. */
+function AnalysisNote({
+  running,
+  title,
+  children,
+}: {
+  running: boolean;
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <span className="inline-flex items-center gap-2" title={title}>
+      {running ? <Spinner /> : null}
+      {children}
+    </span>
   );
 }

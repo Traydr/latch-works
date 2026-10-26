@@ -44,24 +44,24 @@ export function parseFingerprint(stored: string): Fingerprint {
 }
 
 /**
- * The pixels both paths hash: EXIF orientation applied and transparency laid on white, so a
- * PNG with alpha and the JPEG made from it agree, then squeezed to 32×32 grey.
+ * A picture as `size`×`size` grey, the way every print reads it: EXIF orientation applied and
+ * transparency laid on white, so a PNG with alpha and the JPEG made from it agree.
  */
-function hashablePixels(
+export function greyPixels(
   sharp: SharpLibrary,
   filePath: string,
-  page: number | undefined,
+  request: { size: number; page?: number },
 ): Promise<Buffer> {
   const options: SharpOptions = { failOn: "none", limitInputPixels: false };
 
-  if (page !== undefined) {
-    options.page = page;
+  if (request.page !== undefined) {
+    options.page = request.page;
   }
 
   return sharp(filePath, options)
     .rotate()
     .flatten({ background: "#ffffff" })
-    .resize(PHASH_INPUT_SIZE, PHASH_INPUT_SIZE, { fit: "fill", kernel: "lanczos3" })
+    .resize(request.size, request.size, { fit: "fill", kernel: "lanczos3" })
     .greyscale()
     .raw()
     .toBuffer();
@@ -71,7 +71,10 @@ export async function fingerprintStill(
   sharp: SharpLibrary,
   filePath: string,
 ): Promise<Fingerprint> {
-  return { kind: "still", hash: perceptualHash(await hashablePixels(sharp, filePath, undefined)) };
+  return {
+    kind: "still",
+    hash: perceptualHash(await greyPixels(sharp, filePath, { size: PHASH_INPUT_SIZE })),
+  };
 }
 
 /**
@@ -108,7 +111,9 @@ export async function fingerprintAnimation(
       page += 1;
     }
 
-    frames.push(perceptualHash(await hashablePixels(sharp, filePath, page)));
+    frames.push(
+      perceptualHash(await greyPixels(sharp, filePath, { size: PHASH_INPUT_SIZE, page })),
+    );
   }
 
   return { kind: "motion", durationMs, frames };

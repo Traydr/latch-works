@@ -97,6 +97,7 @@ export function markScanned(db: CatalogDatabase, rootId: RootId): void {
 const DEFAULT_SETTINGS: Settings = {
   preferredFolders: [],
   similarity: "balanced",
+  spotVariants: false,
   reencodeQuality: "high",
   autoAnalyze: true,
 };
@@ -113,6 +114,7 @@ const StoredSettingsSchema = z.object({
   preferredFolders: FolderListSchema.optional().catch(undefined),
   protectedFolders: FolderListSchema.optional().catch(undefined),
   similarity: SettingsSchema.shape.similarity.catch(DEFAULT_SETTINGS.similarity),
+  spotVariants: SettingsSchema.shape.spotVariants.catch(DEFAULT_SETTINGS.spotVariants),
   reencodeQuality: SettingsSchema.shape.reencodeQuality.catch(DEFAULT_SETTINGS.reencodeQuality),
   autoAnalyze: SettingsSchema.shape.autoAnalyze.catch(DEFAULT_SETTINGS.autoAnalyze),
 });
@@ -135,6 +137,7 @@ export function readSettings(db: CatalogDatabase): Settings {
   return {
     preferredFolders: stored.preferredFolders ?? stored.protectedFolders ?? [],
     similarity: stored.similarity,
+    spotVariants: stored.spotVariants,
     reencodeQuality: stored.reencodeQuality,
     autoAnalyze: stored.autoAnalyze,
   };

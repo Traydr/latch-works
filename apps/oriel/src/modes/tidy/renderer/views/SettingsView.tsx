@@ -215,6 +215,16 @@ export function TidySettings({ rootId }: { rootId: RootId | null }) {
             onChange={(similarity) => void setSettings({ ...settings, similarity })}
           />
         </SettingsRow>
+        <SettingsRow
+          label="Spot variants"
+          description="Keep pictures that differ in one area, like a face, an outfit or a caption's language, and keep each picture's copy in the folder with the rest of its set"
+        >
+          <Switch
+            label="Spot variants"
+            checked={settings.spotVariants}
+            onChange={(spotVariants) => void setSettings({ ...settings, spotVariants })}
+          />
+        </SettingsRow>
       </SettingsGroup>
 
       <SettingsGroup title="Convert">

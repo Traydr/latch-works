@@ -173,6 +173,18 @@ const MIGRATIONS: readonly string[] = [
   `
   ALTER TABLE files ADD COLUMN shrink_not_smaller INTEGER NOT NULL DEFAULT 0;
   `,
+  // Detail prints for Spot variants, kept apart from files so 4 KB rows never slow its scans. A
+  // print counts while its file still has the size and mtime it was made from.
+  `
+  CREATE TABLE file_details (
+    file_id INTEGER PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE,
+    version INTEGER NOT NULL,
+    size INTEGER NOT NULL,
+    mtime_ms REAL NOT NULL,
+    print BLOB,
+    error TEXT
+  );
+  `,
 ];
 
 /**

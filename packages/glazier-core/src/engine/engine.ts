@@ -35,7 +35,6 @@ import {
   type EngineMethodName,
   EngineMethods,
   type EngineOutput,
-  isCloseCall,
   type Job,
   type OptimizeCategory,
   type OptimizeEstimate,
@@ -72,6 +71,7 @@ import {
 import type { StillEncoder, Transcoder } from "../optimize/encoders.js";
 import { findShrinkCandidates, type ShrinkScan } from "../optimize/shrink.js";
 import type { PassContext } from "../passes/context.js";
+import { runDetailPass } from "../passes/detail-pass.js";
 import { pendingFingerprints, runFingerprintPass } from "../passes/fingerprint-pass.js";
 import { runHashPass } from "../passes/hash-pass.js";
 import { pendingLoudness, runLoudnessPass } from "../passes/loudness-pass.js";
@@ -495,6 +495,18 @@ export class GlazierEngine {
           this.queueAnalysis(listRoots(this.db).map((root) => root.id));
         }
 
+        // Turning Spot variants on, or changing which sets there are, needs prints for them. It
+        // runs in the background, so duplicate review carries on meanwhile.
+        const newSets = !before.spotVariants || before.similarity !== settings.similarity;
+
+        if (settings.spotVariants && newSets) {
+          for (const root of listRoots(this.db)) {
+            if (!this.jobs.waiting("similar", root.id)) {
+              this.jobs.enqueue(this.similarJob(root.id, true));
+            }
+          }
+        }
+
         return settings;
       },
       thumbnail: async (raw) => {
@@ -630,6 +642,21 @@ export class GlazierEngine {
       run: async (context) => {
         try {
           await runFingerprintPass(this.passContext(context, rootId));
+          this.fingerprintsChanged();
+          this.setCache.clear();
+
+          const settings = readSettings(this.db);
+
+          // Spot variants compares the stills of the sets those fingerprints made.
+          if (settings.spotVariants) {
+            const sets = await this.duplicateSetList(rootId, settings.similarity);
+            const open = openSets(sets, Dismissals.load(this.db), "all");
+
+            await runDetailPass(
+              this.passContext(context, rootId),
+              open.flatMap((entry) => (entry.set.kind === "similar" ? entry.fileIds : [])),
+            );
+          }
         } finally {
           this.fingerprintsChanged();
           this.invalidate();
@@ -732,18 +759,6 @@ export class GlazierEngine {
       roots: listRoots(this.db),
       settings: readSettings(this.db),
       candidateHolds: holdsRoot === null ? NO_HOLDS : await this.candidateHolds(holdsRoot),
-      duplicateSets:
-        request.kind === "resolve-duplicate-sets"
-          ? openSets(
-              await this.duplicateSetList(request.rootId, request.level),
-              Dismissals.load(this.db),
-              request.scope,
-            ).flatMap((entry) =>
-              request.skipCloseCalls === true && isCloseCall(entry.set)
-                ? []
-                : [{ key: entry.set.key, fileIds: entry.fileIds, keep: entry.set.keep }],
-            )
-          : [],
     };
 
     return savePlan(context, request, draftSteps(context, request));

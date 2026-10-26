@@ -39,13 +39,6 @@ const PLAN_WORDING = {
     many: "duplicate sets",
     tail: "",
   },
-  "resolve-duplicate-sets": {
-    done: "Resolved",
-    doing: "Resolving",
-    one: "duplicate set",
-    many: "duplicate sets",
-    tail: "",
-  },
   "clean-junk": {
     done: "Moved",
     doing: "Moving",

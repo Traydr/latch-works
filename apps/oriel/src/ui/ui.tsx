@@ -141,11 +141,14 @@ export function Segmented<T extends string>({
   value: T;
   onChange: (value: T) => void;
   label: string;
-  /** Spans its container, the choices sharing the width equally, as at the top of a list. */
+  /**
+   * Spans its container, the choices sharing the width equally, as at the top of a list. Counts
+   * sit under their labels there, so three choices with thousands each fit a narrow column.
+   */
   fill?: boolean;
 }) {
   return (
-    <fieldset aria-label={label} className={fill ? "lw-seg flex w-full" : "lw-seg"}>
+    <fieldset aria-label={label} className={fill ? "lw-seg flex h-auto w-full" : "lw-seg"}>
       {options.map((option) => (
         <button
           key={option.value}
@@ -153,11 +156,17 @@ export function Segmented<T extends string>({
           aria-pressed={option.value === value}
           disabled={option.disabled}
           onClick={() => onChange(option.value)}
-          className={fill ? "lw-seg-item flex-1 justify-center" : "lw-seg-item"}
+          className={
+            fill
+              ? "lw-seg-item h-auto min-w-0 flex-1 flex-col justify-center gap-0 px-1.5 py-1 leading-4"
+              : "lw-seg-item"
+          }
         >
           {option.label}
           {option.count === undefined ? null : (
-            <span className="text-xs text-zinc-400 dark:text-zinc-500">
+            <span
+              className={`text-zinc-400 dark:text-zinc-500 ${fill ? "text-[11px] leading-4" : "text-xs"}`}
+            >
               {option.count.toLocaleString()}
             </span>
           )}

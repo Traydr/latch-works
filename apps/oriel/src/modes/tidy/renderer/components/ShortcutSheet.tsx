@@ -53,7 +53,6 @@ const DUPLICATES: Group = {
     ["Show in Finder", "⇧⌘R"],
     ["Sound on or off", "M"],
     ["Prefer this folder", "P"],
-    ["Keep every similar suggestion", "⌘↩"],
   ],
 };
 

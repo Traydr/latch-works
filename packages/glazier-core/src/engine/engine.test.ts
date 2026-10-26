@@ -157,7 +157,7 @@ describe("glazier engine", () => {
     const copy = await onlyFile("photo-copy.png");
     const small = await onlyFile("small.jpg");
 
-    expect(page.counts).toEqual({ exact: 0, similar: 1, dismissed: 0, closeCalls: 0 });
+    expect(page.counts).toEqual({ exact: 0, similar: 1, variants: 0, dismissed: 0 });
     expect(set?.kind).toBe("similar");
     expect(set?.versions.map((version) => version.files.map((file) => file.name))).toEqual([
       ["photo.png", "photo-link.png", "photo-copy.png"],

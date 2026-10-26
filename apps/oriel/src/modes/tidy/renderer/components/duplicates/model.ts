@@ -1,5 +1,6 @@
 import {
   type DuplicateSet,
+  decidingVersions,
   type FileId,
   type FileRow,
   isCloseCall,
@@ -31,7 +32,7 @@ export function filesOf(set: DuplicateSet): FileRow[] {
 }
 
 /** Whether the owner's choice of keepers still names files of this set. */
-export function fitsSet(set: DuplicateSet, keep: readonly FileId[]): boolean {
+function fitsSet(set: DuplicateSet, keep: readonly FileId[]): boolean {
   const members = new Set(filesOf(set).map((file) => file.id));
 
   return keep.length > 0 && keep.every((id) => members.has(id));
@@ -46,6 +47,43 @@ export function removalOf(set: DuplicateSet, kept: readonly FileId[]): FileRow[]
   const keep = new Set(kept);
 
   return filesOf(set).filter((file) => !keep.has(file.id));
+}
+
+/**
+ * With Spot variants, the version a row's facts compare against: the kept copy of the same
+ * picture. Otherwise, and for a picture none of whose versions is kept, the first kept file.
+ */
+export function keeperOf(
+  set: DuplicateSet,
+  rows: readonly SetRow[],
+  index: number,
+  kept: ReadonlySet<FileId>,
+): FileRow | undefined {
+  const first = rows.find((row) => kept.has(row.file.id))?.file ?? rows[0]?.file;
+  const picture = set.pictures?.[index];
+
+  if (picture === undefined) {
+    return first;
+  }
+
+  const same = rows.find(
+    (row, other) => set.pictures?.[other] === picture && kept.has(row.file.id),
+  );
+
+  return same?.file ?? first;
+}
+
+/** The number of the version a row is a copy of, when Spot variants found it one; else null. */
+export function copyOfNumber(set: DuplicateSet, index: number): number | null {
+  const picture = set.pictures?.[index];
+
+  if (picture === undefined) {
+    return null;
+  }
+
+  const first = set.pictures?.indexOf(picture) ?? index;
+
+  return first < index ? first + 1 : null;
 }
 
 export function freedBytes(set: DuplicateSet, removed: readonly FileRow[]): number {
@@ -223,9 +261,15 @@ export function reasonOf(
     };
   }
 
-  const keeperIndex = rows.findIndex((row) => row.file.id === set.keep[0]);
+  if (set.keepReason === "different-pictures") {
+    return { text: "Every version differs in one area, so each one stays", closeCall: false };
+  }
+
+  // With pictures, the reason is about the first picture that loses a version.
+  const pair = set.kind === "similar" ? decidingVersions(set) : null;
+  const keeperIndex = pair ? pair.kept : rows.findIndex((row) => row.file.id === set.keep[0]);
+  const runnerIndex = pair ? pair.runnerUp : keeperIndex === 0 ? 1 : 0;
   const keeper = rows[keeperIndex]?.file;
-  const runnerIndex = keeperIndex === 0 ? 1 : 0;
   const runner = rows[runnerIndex]?.file;
   const n = keeperIndex + 1;
   const m = runnerIndex + 1;
@@ -236,7 +280,9 @@ export function reasonOf(
 
   const folder = keeper.dir || "The top folder";
   const closeCall = isCloseCall(set);
-  const reason = (text: string) => ({ text, closeCall });
+  const pictures = new Set(set.pictures ?? []).size;
+  const lead = pictures > 1 ? `${pictures} different pictures, each kept once. ` : "";
+  const reason = (text: string) => ({ text: `${lead}${text}`, closeCall });
 
   switch (set.keepReason) {
     case "preferred-folder":
@@ -255,6 +301,8 @@ export function reasonOf(
           runner?.durationMs ?? null,
         )})`,
       );
+    case "home-folder":
+      return reason(`Keeping ${n}: ${folder} holds the rest of this set`);
     case "archive-format":
       return reason(`Keeping ${n}: already ${formatLabel(keeper.format)}`);
     case "right-extension":

@@ -19,6 +19,7 @@ function candidate(id: number, overrides: Partial<KeeperCandidate>): KeeperCandi
     size: 1_000_000,
     mtimeMs: 1_700_000_000_000,
     isPreferred: false,
+    inHomeFolder: false,
     ...overrides,
   };
 }

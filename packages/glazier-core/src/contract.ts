@@ -218,12 +218,16 @@ export const SelectionSummarySchema = z.object({
 
 export type SelectionSummary = z.infer<typeof SelectionSummarySchema>;
 
-/** Which copy of a duplicate set the suggestion keeps, by the first keeper rule that decided. */
+/**
+ * Which copy of a duplicate set the suggestion keeps, by the first keeper rule that decided, or
+ * `different-pictures` when Spot variants keeps every version as a picture of its own.
+ */
 export const KeepReasonSchema = z.enum([
   "preferred-folder",
   "has-sound",
   "more-pixels",
   "longer",
+  "home-folder",
   "archive-format",
   "right-extension",
   "larger-file",
@@ -231,11 +235,16 @@ export const KeepReasonSchema = z.enum([
   "oldest",
   "shorter-path",
   "name-order",
+  "different-pictures",
 ]);
 
 export type KeepReason = z.infer<typeof KeepReasonSchema>;
 
-export const DuplicateScopeSchema = z.enum(["all", "exact", "similar"]);
+/**
+ * Which open sets to list. `variants` are similar sets Spot variants found to hold only variants
+ * (see `DuplicateSet.pictures`); they are not duplicates, so `all` and `similar` leave them out.
+ */
+export const DuplicateScopeSchema = z.enum(["all", "exact", "similar", "variants"]);
 
 export type DuplicateScope = z.infer<typeof DuplicateScopeSchema>;
 
@@ -250,9 +259,18 @@ export const DuplicateSetSchema = z.object({
   kind: z.enum(["exact", "similar"]),
   /** Distinct contents, best first; each lists its byte-identical copies, best first. */
   versions: z.array(z.object({ files: z.array(FileRowSchema).min(1) })).min(1),
-  /** What resolving keeps unless told otherwise: the best version's best copy. */
+  /**
+   * With Spot variants on, the picture each version shows, by position: versions that are copies
+   * of one picture share a number, and versions are ordered picture by picture, best first. Null
+   * when Spot variants is off, for videos and animations, and until every version has a print.
+   */
+  pictures: z.array(z.number().int()).nullable(),
+  /**
+   * What resolving keeps unless told otherwise: the best version's best copy, or with pictures,
+   * each picture's best copy.
+   */
   keep: z.array(FileIdSchema).min(1),
-  /** Why the kept copy beat the runner-up. */
+  /** Why the kept copy beat the runner-up (see `decidingVersions`). */
   keepReason: KeepReasonSchema,
   /** Bytes the suggested resolution frees; files hard-linked to a kept file free nothing. */
   reclaimableBytes: z.number(),
@@ -274,12 +292,32 @@ const TIE_BREAKERS: ReadonlySet<KeepReason> = new Set([
   "name-order",
 ]);
 
+type SetDecision = Pick<DuplicateSet, "kind" | "keepReason" | "versions" | "pictures">;
+
+/**
+ * The versions the keep reason compares, by position: the kept one and the runner-up it beat.
+ * With pictures that is the first picture holding two versions; null when none does.
+ */
+export function decidingVersions(set: SetDecision): { kept: number; runnerUp: number } | null {
+  if (set.pictures === null) {
+    return set.versions.length > 1 ? { kept: 0, runnerUp: 1 } : null;
+  }
+
+  for (let index = 1; index < set.pictures.length; index += 1) {
+    if (set.pictures[index] === set.pictures[index - 1]) {
+      return { kept: index - 1, runnerUp: index };
+    }
+  }
+
+  return null;
+}
+
 /**
  * Whether a similar set's suggestion is a close call: its versions match on pixels, length,
  * sound and format, and a tie-breaker chose (a file under a tenth larger, the oldest, the
- * shortest path, the first name). The owner should look at those; bulk resolving can skip them.
+ * shortest path, the first name). The owner should look at those.
  */
-export function isCloseCall(set: Pick<DuplicateSet, "kind" | "keepReason" | "versions">): boolean {
+export function isCloseCall(set: SetDecision): boolean {
   if (set.kind !== "similar" || !TIE_BREAKERS.has(set.keepReason)) {
     return false;
   }
@@ -288,9 +326,9 @@ export function isCloseCall(set: Pick<DuplicateSet, "kind" | "keepReason" | "ver
     return true;
   }
 
-  const [best, next] = set.versions;
-  const bestSize = best?.files[0]?.size ?? 0;
-  const nextSize = next?.files[0]?.size ?? 0;
+  const pair = decidingVersions(set);
+  const bestSize = pair ? (set.versions[pair.kept]?.files[0]?.size ?? 0) : 0;
+  const nextSize = pair ? (set.versions[pair.runnerUp]?.files[0]?.size ?? 0) : 0;
 
   return nextSize > 0 && bestSize / nextSize < 1.1;
 }
@@ -309,15 +347,20 @@ export const DuplicateSetPageSchema = z.object({
   counts: z.object({
     exact: z.number().int(),
     similar: z.number().int(),
+    variants: z.number().int(),
     dismissed: z.number().int(),
-    /** Open similar sets whose suggestion is a close call (see `isCloseCall`). */
-    closeCalls: z.number().int(),
   }),
   /** Bytes resolving every open set would free, identical and similar alike. */
   openReclaimableBytes: z.number(),
   /** Similar sets need fingerprints; how far the analysis has come. */
   fingerprinted: z.number().int(),
   fingerprintable: z.number().int(),
+  /**
+   * With Spot variants on, how many stills in open similar sets have a detail print to compare
+   * by; both zero when it is off.
+   */
+  compared: z.number().int(),
+  comparable: z.number().int(),
   sets: z.array(DuplicateSetSchema),
 });
 
@@ -502,20 +545,6 @@ export const PlanRequestSchema = z.discriminatedUnion("kind", [
       )
       .min(1),
   }),
-  /**
-   * Every set in a scope at once, each with its suggested keeper unless overridden. A set whose
-   * files no longer include an override's keepers is left alone, as are skipped and dismissed sets.
-   */
-  z.object({
-    kind: z.literal("resolve-duplicate-sets"),
-    rootId: RootIdSchema.nullable(),
-    level: SimilarityLevelSchema,
-    scope: DuplicateScopeSchema,
-    overrides: z.array(z.object({ key: z.string(), keep: z.array(FileIdSchema).min(1) })),
-    skip: z.array(z.string()),
-    /** Leaves close calls (see `isCloseCall`) for the owner to look at. */
-    skipCloseCalls: z.boolean().optional(),
-  }),
   z.object({ kind: z.literal("clean-junk"), rootId: RootIdSchema }),
   z.object({ kind: z.literal("remove-empty-folders"), rootId: RootIdSchema }),
   /**
@@ -547,7 +576,6 @@ export const PlanKindSchema = z.enum([
   "reencode",
   "strip-audio",
   "resolve-duplicates",
-  "resolve-duplicate-sets",
   "clean-junk",
   "remove-empty-folders",
   "cleanup",
@@ -687,6 +715,12 @@ export const SettingsSchema = z.object({
   /** Folders whose copies duplicate review keeps first, relative to their root. */
   preferredFolders: z.array(z.object({ rootId: RootIdSchema, dir: z.string() })),
   similarity: SimilarityLevelSchema,
+  /**
+   * Treat similar stills that differ in one area (a face, an outfit, a caption's language) as
+   * pictures of their own: keep each, and pick among the copies of each picture by sound, pixels
+   * and the folder holding most of the set.
+   */
+  spotVariants: z.boolean(),
   /** The quality every re-encode uses, chosen or required by a conversion. */
   reencodeQuality: VideoQualitySchema,
   /** Find similar versions and measure soundtracks in the background after each scan. */

@@ -36,7 +36,6 @@ const KIND_ICONS = {
   reencode: ArrowRightLeft,
   "strip-audio": VolumeX,
   "resolve-duplicates": Copy,
-  "resolve-duplicate-sets": Copy,
   "clean-junk": Sparkles,
   "remove-empty-folders": Sparkles,
   cleanup: Sparkles,

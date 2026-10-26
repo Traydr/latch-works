@@ -23,11 +23,6 @@ const PAGE_SIZE = 200;
 /** Duplicate resolutions made one after another within this long read as one session. */
 const SESSION_GAP_MS = 10 * 60_000;
 
-const RESOLVE_KINDS = new Set<PlanSummary["kind"]>([
-  "resolve-duplicates",
-  "resolve-duplicate-sets",
-]);
-
 const STATUS_LABELS = {
   draft: "Draft",
   applying: "Running",
@@ -55,8 +50,8 @@ function groupPlans(plans: readonly PlanSummary[]): Entry[] {
     if (
       previous &&
       last &&
-      RESOLVE_KINDS.has(plan.kind) &&
-      RESOLVE_KINDS.has(last.kind) &&
+      plan.kind === "resolve-duplicates" &&
+      last.kind === "resolve-duplicates" &&
       last.createdAt - plan.createdAt < SESSION_GAP_MS &&
       canUndo(last) === canUndo(plan)
     ) {

@@ -120,7 +120,10 @@ and presses Choose, so no native dialog is stubbed. `workbench.spec.ts` covers, 
 track, one silent, four with sound); resolving the exact duplicate into holding and undoing it from
 the decision's toast; and converting every category (stills to AVIF, the GIF and both videos to MP4, the
 misnamed AVIF renamed), checking codecs with ffprobe and that each original's modification time
-survived.
+survived. `variants.spec.ts` builds its own pictures (a page in three versions in one folder,
+another folder's copies of two of them, and two outfits of another picture), turns Spot variants
+on, and checks that each version stays once from the folder holding all three, the copies go to
+holding, and the outfits wait under Variants until marked as not duplicates.
 
 The project needs no compose stack: when only `glazier` (and its setup) is selected, the config
 does not start the Pane View server. It needs `ffmpeg` and `ffprobe` on `PATH`, and a machine

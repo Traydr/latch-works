@@ -84,22 +84,10 @@ class PlanRequestError extends Error {
   override readonly name = "PlanRequestError";
 }
 
-/** A duplicate set as a `resolve-duplicate-sets` request sees it: its files and suggestion. */
-interface ResolvableSet {
-  key: string;
-  fileIds: readonly FileId[];
-  keep: readonly FileId[];
-}
-
 export interface PlannerContext {
   db: CatalogDatabase;
   roots: readonly Root[];
   settings: Settings;
-  /**
-   * The open sets in a `resolve-duplicate-sets` request's scope, computed by the engine before
-   * planning (clustering is asynchronous; planning is not). Empty for every other request.
-   */
-  duplicateSets: readonly ResolvableSet[];
   /** Files Convert and Clean up leave alone for now, worked out by the engine before planning. */
   candidateHolds: CandidateHolds;
 }
@@ -233,30 +221,6 @@ function draftResolution(
   // Keepers already favour preferred folders, so removing a copy from one is a deliberate pick
   // (or every copy is in one) and is not warned about.
   return { steps, warnings: [], dismissals, resolved };
-}
-
-/** Each set with its suggested keeper or the override for its key, minus skipped sets. */
-function setGroups(
-  request: Extract<PlanRequest, { kind: "resolve-duplicate-sets" }>,
-  sets: readonly ResolvableSet[],
-): ResolveGroup[] {
-  const skipped = new Set(request.skip);
-  const overrides = new Map(request.overrides.map((override) => [override.key, override.keep]));
-
-  return sets.flatMap((set) => {
-    if (skipped.has(set.key)) {
-      return [];
-    }
-
-    const keep = overrides.get(set.key) ?? set.keep;
-
-    // An override chosen for files the set no longer holds says nothing about the set as it is.
-    if (!keep.every((id) => set.fileIds.includes(id))) {
-      return [];
-    }
-
-    return [{ keep, remove: set.fileIds.filter((id) => !keep.includes(id)) }];
-  });
 }
 
 /**
@@ -506,14 +470,8 @@ export function draftSteps(context: PlannerContext, request: PlanRequest): PlanD
       break;
     }
 
-    case "resolve-duplicates":
-    case "resolve-duplicate-sets": {
-      const resolution = draftResolution(
-        context,
-        request.kind === "resolve-duplicates"
-          ? request.groups
-          : setGroups(request, context.duplicateSets),
-      );
+    case "resolve-duplicates": {
+      const resolution = draftResolution(context, request.groups);
 
       steps.push(...resolution.steps);
       warnings.push(...resolution.warnings);
