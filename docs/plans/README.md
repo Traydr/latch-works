@@ -29,6 +29,7 @@ once their outcome is recorded below; recover full text with `git log --diff-fil
 | [059](059-one-desktop-app.md) | Replace Frame View, Glazier and Lockstep with Oriel, one app with View · Tidy · Sync modes in Glazier's house style, migrating their data and tokens; designed DMG, Velopack setup, built from source | P2 | XL | 057, 058 | IN REVIEW (all ten phases on `agent/059-oriel`, 2026-10-24) |
 | [060](060-shrink-videos.md) | Shrink: re-encode the video archive to AV1 with SVT-AV1 at CRF 35, in batches that stop and resume, on a pinned ffmpeg 9 | P2 | M | 059 | IN REVIEW (2026-10-26) |
 | [061](061-spot-variants.md) | Spot variants: a 64×64 detail print tells alternate versions (a face, an outfit, a caption's language) from copies, keeps each picture once in the folder with the rest of its set; Keep suggestions removed, Duplicates' options in the top bar | P2 | M | 058 | IN REVIEW (2026-10-26) |
+| [062](062-tidy-on-windows.md) | Tidy on Windows: pin a current ffmpeg with SVT-AV1 for win32-x64, measure Shrink there, and check open files, drives, long paths, hard links and sync on a throwaway archive | P2 | M | 060, 061 | TODO |
 
 Recommended order (2026-08-17 review):
 
