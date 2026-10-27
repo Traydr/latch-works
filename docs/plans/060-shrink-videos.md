@@ -79,6 +79,7 @@ software.
 
 ## Not done
 
-- Pinned builds for Windows and Linux, and moving View to the new ffmpeg.
+- A pinned build for Linux, and moving View to the new ffmpeg. Windows x64 pins gyan.dev's
+  ffmpeg 9.0.2 full build, with SVT-AV1 4.2 (plan 062).
 - HDR10 mastering metadata was not checked (HLG was).
 - No per-video progress inside a long encode; the run counts videos.
