@@ -13,6 +13,7 @@ import { type About, MODE_LABELS } from "../shared/shell";
 import { Segmented } from "../ui/ui";
 import { type SettingsSection, useModeActive, useModeId, useShell } from "./shell";
 import { type ThemeChoice, useTheme } from "./theme";
+import { WindowStrip } from "./WindowStrip";
 
 const SECTIONS = [
   { id: "general", label: "General", icon: SlidersHorizontal },
@@ -143,7 +144,7 @@ export function SettingsFrame({ section }: { section: ReactNode }) {
   return (
     <div className="flex h-full min-h-0 overflow-hidden bg-white text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
       <aside className="flex w-60 shrink-0 flex-col border-r lw-divider bg-zinc-50 dark:bg-zinc-900/60">
-        <div className="lw-drag h-[52px] w-full shrink-0" />
+        <WindowStrip rail={false} />
         <nav aria-label="Settings sections" className="px-2">
           <ul className="space-y-0.5">
             {SECTIONS.map(({ id, label, icon: Icon }) => (
@@ -176,7 +177,7 @@ export function SettingsFrame({ section }: { section: ReactNode }) {
         </div>
       </aside>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="lw-drag flex h-[52px] shrink-0 items-center gap-4 border-b lw-divider px-5">
+        <header className="lw-drag flex h-[52px] shrink-0 items-center gap-4 border-b lw-divider pr-[calc(1.25rem+var(--lw-window-controls))] pl-5">
           <h1 className="lw-title truncate">{current.label}</h1>
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto">

@@ -3,7 +3,18 @@ import { realpath } from "node:fs/promises";
 import path from "node:path";
 
 import { latchWorksModeFolder, setLatchWorksDataFolder } from "@latch-works/app-data";
-import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, screen, shell } from "electron";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  Menu,
+  nativeTheme,
+  protocol,
+  screen,
+  shell,
+  type TitleBarOverlayOptions,
+} from "electron";
 import { z } from "zod";
 
 import {
@@ -35,6 +46,8 @@ import {
   ModeIdSchema,
   ShellChannels,
   type ShellCommand,
+  type WindowSurface,
+  WindowSurfaceSchema,
 } from "./shared/shell";
 
 // Velopack's installer and updater start the Windows app with hooks to answer first of all.
@@ -330,6 +343,19 @@ function showMenu(): void {
   );
 }
 
+/**
+ * Windows' window buttons, drawn over the top right of the window's own top bar, as T3 Code and
+ * VS Code do: see-through, with symbols that read on the surface under them. One pixel short of
+ * the bar, so its bottom border runs under the buttons too.
+ */
+function windowControls(surface: WindowSurface): TitleBarOverlayOptions {
+  return {
+    color: "#00000000",
+    symbolColor: surface === "dark" ? "#e4e4e7" : "#27272a",
+    height: 51,
+  };
+}
+
 async function createWindow(): Promise<void> {
   const window = new BrowserWindow({
     ...restoredBounds(),
@@ -337,10 +363,18 @@ async function createWindow(): Promise<void> {
     minWidth: 960,
     show: false,
     title: "Oriel",
-    // On macOS the window buttons sit over the sidebar's top strip; Windows and Linux keep their
-    // native frame.
-    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
+    // On macOS the window buttons sit over the sidebar's top strip, on Windows over the top bar's
+    // right end, with no menu bar: its items keep their shortcuts. Linux keeps its native frame.
+    titleBarStyle:
+      process.platform === "darwin"
+        ? "hiddenInset"
+        : process.platform === "win32"
+          ? "hidden"
+          : "default",
     trafficLightPosition: { x: 16, y: 18 },
+    titleBarOverlay:
+      process.platform === "win32" &&
+      windowControls(nativeTheme.shouldUseDarkColors ? "dark" : "light"),
     icon: resolveWindowIconPath("oriel-icon.png"),
     webPreferences: {
       contextIsolation: true,
@@ -472,6 +506,13 @@ if (!app.requestSingleInstanceLock()) {
       return chosenArchive;
     });
     ipcMain.handle(ShellChannels.setUpArchive, (_event, value: Json) => setUpArchive(value));
+    ipcMain.on(ShellChannels.windowControls, (_event, value: Json) => {
+      const surface = WindowSurfaceSchema.safeParse(value);
+
+      if (process.platform === "win32" && surface.success) {
+        mainWindow?.setTitleBarOverlay(windowControls(surface.data));
+      }
+    });
     ipcMain.on(ShellChannels.finishWelcome, () => {
       if (folders) {
         markWelcomed(folders.oriel);

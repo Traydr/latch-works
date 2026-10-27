@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 
+import { useDarkScreen } from "../../../../../shell/window-surface";
 import { desktop, mediaUrl, thumbnailUrl } from "../../lib/api";
 import { useOpenInView } from "../../lib/hand-off";
 import { Thumbnail } from "../media";
@@ -68,6 +69,7 @@ export function Loupe({
   children: ReactNode;
 }) {
   const openInView = useOpenInView();
+  useDarkScreen();
   const row = rows[index];
   const stage = useRef<HTMLDivElement>(null);
   const video = useRef<HTMLVideoElement>(null);
@@ -174,7 +176,7 @@ export function Loupe({
     // a neutral surround in either theme.
     <div className="dark lw-enter-fade fixed inset-0 z-40 flex flex-col bg-zinc-950 text-zinc-100">
       <div
-        className={`lw-drag flex h-[52px] shrink-0 items-center gap-3 pr-3 ${
+        className={`lw-drag flex h-[52px] shrink-0 items-center gap-3 pr-[calc(0.75rem+var(--lw-window-controls))] ${
           desktop.insetTitleBar() ? "pl-[84px]" : "pl-5"
         }`}
       >

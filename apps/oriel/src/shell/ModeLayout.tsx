@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { ModeSwitcher } from "./ModeSwitcher";
 import { SettingsFrame } from "./Settings";
 import { useModeActive, useShell } from "./shell";
+import { WindowStrip } from "./WindowStrip";
 
 /**
  * One mode's window: the sidebar, with the mode switcher at its top and the mode's own navigation
@@ -38,7 +39,7 @@ export function ModeLayout({
             rail ? (insetTitleBar ? "w-[88px] items-center" : "w-14 items-center") : "w-60"
           }`}
         >
-          <div className="lw-drag h-[52px] w-full shrink-0" />
+          <WindowStrip rail={rail} />
           <ModeSwitcher rail={rail} />
           {sidebar}
         </aside>

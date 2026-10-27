@@ -33,6 +33,7 @@ const oriel: OrielBridge = {
   setUpArchive: async (setup) =>
     z.array(z.string()).parse(await ipcRenderer.invoke(ShellChannels.setUpArchive, setup)),
   finishWelcome: () => ipcRenderer.send(ShellChannels.finishWelcome),
+  setWindowSurface: (surface) => ipcRenderer.send(ShellChannels.windowControls, surface),
   onCommand: (listener) => {
     const handler = (_event: IpcRendererEvent, payload: Json) => {
       const command = ShellCommandSchema.safeParse(payload);
