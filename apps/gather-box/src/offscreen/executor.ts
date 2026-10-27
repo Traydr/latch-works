@@ -232,7 +232,8 @@ function destinationChangedEvent(
   const failedItems = payload.images.map((image) => ({
     fileName: image.fileName,
     reason: DESTINATION_CHANGED,
-    originalUrl: image.originalUrl
+    originalUrl: image.originalUrl,
+    kind: "error" as const
   }));
 
   return {

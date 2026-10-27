@@ -1,8 +1,9 @@
 import * as z from "zod/mini";
 import { prepareDownloadImage } from "../shared/download-policy";
+import type { DownloadFailure } from "../shared/last-run";
 import type { SiteKey } from "../shared/sites";
 import type { GalleryImage } from "../shared/types";
-import { formatError, isAbortError, throwIfAborted, toError } from "./errors";
+import { formatError, isAbortError, SiteCheckError, throwIfAborted, toError } from "./errors";
 import {
   IDENTITY_MEDIA_TRANSFORMER,
   type MediaTransformer
@@ -42,11 +43,7 @@ export interface DownloadSummary {
   failedItems: DownloadFailure[];
 }
 
-export interface DownloadFailure {
-  fileName: string;
-  reason: string;
-  originalUrl?: string;
-}
+export type { DownloadFailure } from "../shared/last-run";
 
 export interface DownloadCallbacks {
   onStart(total: number): void;
@@ -133,11 +130,20 @@ export async function downloadImages(
       });
 
       if (!response.ok) {
+        if (response.headers.get("cf-mitigated") === "challenge") {
+          throw new SiteCheckError(response.status);
+        }
+
         throw new Error(`HTTP ${response.status}`);
       }
 
       const downloadedBlob = await response.blob();
-      await assertDownloadedFile(downloadedBlob, response, preparedImage.fileName);
+
+      await assertSavableFile({
+        blob: downloadedBlob,
+        contentType: response.headers.get("content-type") ?? "",
+        fileName: preparedImage.fileName
+      });
 
       const transformed = await mediaTransformer.transform(
         downloadedBlob,
@@ -187,6 +193,7 @@ export async function downloadImages(
         fileName: image.fileName,
         reason: formatError(toError(error)),
         originalUrl: image.originalUrl,
+        kind: error instanceof SiteCheckError ? "site-check" : "error"
       });
     } finally {
       completed += 1;
@@ -205,26 +212,34 @@ const WEB_PAGE_TYPE = /^\s*(?:text\/html|application\/xhtml\+xml)\s*(?:;|$)/i;
 
 const WEB_PAGE_START = /^(?:\uFEFF)?\s*<(?:!doctype\s+html|html[\s>])/i;
 
+export interface SavableFileCandidate {
+  blob: Blob;
+  contentType: string;
+  /** The name the file is saved under; a web page is only acceptable for an .html name. */
+  fileName: string;
+}
+
 /**
- * A sign-in wall, interstitial, or error page can arrive with a successful status. Archiving it
- * under a media filename would report success for a file that cannot open, so the item fails
- * instead and stays available to retry.
+ * A sign-in wall, interstitial, or error page can arrive with a successful status, and a file you
+ * hand back can be the challenge page saved by mistake. Archiving either under a media filename
+ * would report success for a file that cannot open, so the item fails instead.
  */
-async function assertDownloadedFile(blob: Blob, response: Response, fileName: string): Promise<void> {
+export async function assertSavableFile(candidate: SavableFileCandidate): Promise<void> {
+  const { blob, contentType, fileName } = candidate;
+
   if (blob.size === 0) {
-    throw new Error("The server returned an empty file");
+    throw new Error("The file is empty");
   }
 
   if (WEB_PAGE_FILE.test(fileName)) {
     return;
   }
 
-  const servedWebPage =
-    WEB_PAGE_TYPE.test(response.headers.get("content-type") ?? "") ||
-    WEB_PAGE_START.test(await blob.slice(0, 512).text());
+  const isWebPage =
+    WEB_PAGE_TYPE.test(contentType) || WEB_PAGE_START.test(await blob.slice(0, 512).text());
 
-  if (servedWebPage) {
-    throw new Error("The server returned a web page instead of the file");
+  if (isWebPage) {
+    throw new Error("The file is a web page, not the expected file");
   }
 }
 

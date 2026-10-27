@@ -59,6 +59,14 @@
           <p id="batchSummary-mini" class="batch-summary"></p>
           <ol id="batchRuns-mini" class="batch-runs" aria-label="Pages in this queue"></ol>
         </div>
+        <div id="handBack-mini" class="hand-back" hidden>
+          <p class="hand-back-title">Blocked by the site's bot check</p>
+          <p class="line-hint">
+            Open each file and download it yourself, then add it here to save it to your folder.
+          </p>
+          <ul id="handBackItems-mini" class="hand-back-items" aria-label="Blocked files"></ul>
+          <input id="handBackFile-mini" type="file" hidden>
+        </div>
         <details id="logDetails-mini" class="log-holder" open>
           <summary>entries</summary>
           <div id="resultLog-mini" class="run-log" role="log" aria-live="polite">

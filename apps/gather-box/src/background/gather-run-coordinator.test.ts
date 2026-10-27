@@ -102,7 +102,7 @@ describe("Gather Run transitions", () => {
         saved: 0,
         skipped: 0,
         failed: 1,
-        failedItems: [{ fileName: "1.jpg", reason: "network" }],
+        failedItems: [{ fileName: "1.jpg", reason: "network", kind: "error" }],
         retryImages: [image]
       },
       105
@@ -298,7 +298,7 @@ describe("Gather queue orchestration", () => {
         saved: 0,
         skipped: 0,
         failed: 1,
-        failedItems: [{ fileName: "missing.jpg", reason: "network" }],
+        failedItems: [{ fileName: "missing.jpg", reason: "network", kind: "error" }],
         retryImages: [downloadablePayload().images[0]]
       }
     });

@@ -1,8 +1,10 @@
 import {
   CancelGatherRunRequestSchema,
   GatherRunEventMessageSchema,
+  HandBackGatherFileRequestSchema,
   RetryGatherRunRequestSchema,
-  StartGatherRunRequestSchema
+  StartGatherRunRequestSchema,
+  type HandBackGatherFileOutcome
 } from "../shared/gather-run-messages";
 import { clearProfileDirectories } from "../gather/directory-store";
 import { loadGatherQueue } from "../shared/gather-queue";
@@ -129,6 +131,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     void gatherRuns
       .retry(retryRequest.data.runId, retryRequest.data.profileId)
       .then(sendResponse);
+
+    return true;
+  }
+
+  const handBackRequest = HandBackGatherFileRequestSchema.safeParse(message);
+
+  if (handBackRequest.success) {
+    if (!isExtensionOriginSender(sender)) {
+      sendResponse({ recorded: false } satisfies HandBackGatherFileOutcome);
+
+      return false;
+    }
+
+    const { runId, fileName, savedFileName } = handBackRequest.data;
+
+    void gatherRuns.recordHandedBackFile({ runId, fileName, savedFileName }).then(
+      (recorded) => sendResponse({ recorded } satisfies HandBackGatherFileOutcome),
+      () => sendResponse({ recorded: false } satisfies HandBackGatherFileOutcome)
+    );
 
     return true;
   }

@@ -432,6 +432,50 @@ body {
   color: var(--accent-hover);
 }
 
+/* ===== Blocked files handed back ===== */
+
+.hand-back {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 -10px;
+  padding: 8px 10px 0;
+  border-top: 1px solid var(--surface-border);
+}
+
+.hand-back[hidden] {
+  display: none;
+}
+
+.hand-back-title {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--destructive);
+}
+
+.hand-back-items {
+  max-height: 122px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.hand-back-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  font-size: 11px;
+  color: var(--foreground);
+}
+
+.hand-back-name {
+  flex: 1;
+  min-width: 0;
+}
+
 /* Status badge: quiet colored text, no pill chrome. */
 .badge {
   flex-shrink: 0;

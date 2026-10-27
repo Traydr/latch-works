@@ -1,3 +1,4 @@
+import type { HandBackItem } from "../shared/gather-queue";
 import { isTerminalGatherRunPhase, type GatherRunState } from "../shared/gather-run";
 import type { GatherProfilesState } from "../shared/profiles";
 import type { SaveBehavior } from "../shared/save-behavior";
@@ -30,6 +31,9 @@ export interface PopupElements {
   batch: HTMLElement;
   batchSummary: HTMLElement;
   batchRuns: HTMLElement;
+  handBack: HTMLElement;
+  handBackItems: HTMLElement;
+  handBackFile: HTMLInputElement;
   resultLog: HTMLElement;
   logDetails: HTMLDetailsElement;
 }
@@ -78,6 +82,9 @@ export function getPopupElements(
     batch: requireElement(document, "batch-mini", HTMLElement),
     batchSummary: requireElement(document, "batchSummary-mini", HTMLElement),
     batchRuns: requireElement(document, "batchRuns-mini", HTMLElement),
+    handBack: requireElement(document, "handBack-mini", HTMLElement),
+    handBackItems: requireElement(document, "handBackItems-mini", HTMLElement),
+    handBackFile: requireElement(document, "handBackFile-mini", HTMLInputElement),
     resultLog: requireElement(document, "resultLog-mini", HTMLElement),
     logDetails: requireElement(document, "logDetails-mini", HTMLDetailsElement)
   };
@@ -213,6 +220,56 @@ export function renderBatch(elements: PopupElements, view: BatchView | null): vo
   if (!sameOrder) {
     elements.batchRuns.replaceChildren(...rows);
   }
+}
+
+/** The action a hand-back row's button asks for. */
+export type HandBackAction = "open" | "add";
+
+/**
+ * Lists the files a site check blocked, each with a button to open its link and one to add the file
+ * you downloaded. The list is only rebuilt when the files change, so a focused button keeps focus.
+ */
+export function renderHandBack(elements: PopupElements, items: HandBackItem[]): void {
+  elements.handBack.hidden = items.length === 0;
+
+  const key = JSON.stringify(items.map((item) => [item.runId, item.fileName]));
+
+  if (elements.handBackItems.dataset.key === key) {
+    return;
+  }
+
+  elements.handBackItems.dataset.key = key;
+  elements.handBackItems.replaceChildren(...items.map(createHandBackRow));
+}
+
+function createHandBackRow(item: HandBackItem, index: number): HTMLElement {
+  const row = document.createElement("li");
+  row.className = "hand-back-item";
+  row.dataset.index = String(index);
+
+  const name = document.createElement("span");
+  name.className = "hand-back-name truncate";
+  name.textContent = item.fileName;
+  name.title = item.fileName;
+
+  row.append(
+    name,
+    createHandBackButton("open", "Open", `Open ${item.fileName} in a new tab`),
+    createHandBackButton("add", "Add file", `Add the ${item.fileName} you downloaded`)
+  );
+
+  return row;
+}
+
+function createHandBackButton(action: HandBackAction, label: string, title: string): HTMLElement {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "tool-btn";
+  button.dataset.action = action;
+  button.textContent = label;
+  button.title = title;
+
+  return button;
 }
 
 function createBatchRow(runId: string): HTMLElement {

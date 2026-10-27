@@ -1,7 +1,11 @@
 import * as z from "zod/mini";
 import type { GatherRunState } from "./gather-run";
 import { GatherRunStateSchema, isTerminalGatherRunPhase } from "./gather-run";
-import { applyGatherRunEvent } from "./gather-run-reducer";
+import {
+  applyGatherRunEvent,
+  applyHandedBackFile,
+  type HandedBackFile
+} from "./gather-run-reducer";
 import { DEFAULT_PROFILE_ID } from "./profiles";
 import { GatherBoxSettingsSchema, type GatherBoxSettings } from "./settings";
 import { lenientArrayOf } from "./lenient-array";
@@ -172,6 +176,71 @@ export function getRetryableGatherQueueResult(queue: GatherQueueState): GatherRu
   }
 
   return null;
+}
+
+/** A file a site check blocked, which you can download yourself and hand back to be saved. */
+export interface HandBackItem {
+  runId: string;
+  siteKey: SiteKey;
+  folderSegments: string[];
+  fileName: string;
+  originalUrl: string;
+}
+
+/** Every blocked file across the finished runs still kept, newest run first. */
+export function getGatherQueueHandBackItems(queue: GatherQueueState): HandBackItem[] {
+  return [...queue.results].reverse().flatMap((run) =>
+    run.failedItems.flatMap((item) =>
+      item.kind === "site-check" && item.originalUrl !== undefined
+        ? [
+            {
+              runId: run.id,
+              siteKey: run.siteKey,
+              folderSegments: run.folderSegments,
+              fileName: item.fileName,
+              originalUrl: item.originalUrl
+            }
+          ]
+        : []
+    )
+  );
+}
+
+/**
+ * Records a handed-back file on its run, and on the batch tally when the run is counted there.
+ * Null when the run or its blocked item is gone, such as after a retry took it over.
+ */
+export function recordHandedBackFile(
+  queue: GatherQueueState,
+  file: HandedBackFile
+): GatherQueueState | null {
+  const run = queue.results.find((result) => result.id === file.runId);
+
+  const blocked = run?.failedItems.some(
+    (item) => item.kind === "site-check" && item.fileName === file.fileName
+  );
+
+  if (!run || !blocked) {
+    return null;
+  }
+
+  const updated = applyHandedBackFile(run, file);
+  const batch = queue.batch;
+
+  const counted =
+    batch !== null && run.updatedAt >= batch.startedAt && run.updatedAt <= batch.endedAt;
+
+  return {
+    ...queue,
+    results: queue.results.map((result) => (result.id === run.id ? updated : result)),
+    batch: counted
+      ? {
+          ...batch,
+          saved: batch.saved + updated.progress.saved - run.progress.saved,
+          failed: batch.failed + updated.progress.failed - run.progress.failed
+        }
+      : batch
+  };
 }
 
 export function recordGatherQueueResult(

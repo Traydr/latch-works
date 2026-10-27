@@ -5,6 +5,7 @@ import {
   flashDownloadComplete,
   getPopupElements,
   renderBatch,
+  renderHandBack,
   renderProfiles,
   setBadge,
   setDestinationPreview,
@@ -16,10 +17,12 @@ import {
   setSaveBehavior,
   showRunLog,
   syncActions,
+  type HandBackAction,
   type LogTone,
   type PopupElements
 } from "../gather/dom";
 import { formatError, isAbortError, toError } from "../gather/errors";
+import { getExtension, saveHandedBackFile } from "../gather/hand-back";
 import type { PopupStatus } from "../gather/status";
 import {
   getSiteKeyFromUrl,
@@ -27,6 +30,7 @@ import {
   type SiteKey
 } from "./sites";
 import { getGatherSource } from "./source-catalog";
+import { isAllowedDownloadUrl } from "./download-policy";
 import { getSaveBehavior } from "./save-behavior";
 import {
   EMPTY_LAST_RUN,
@@ -41,10 +45,13 @@ import {
 } from "./gather-run";
 import {
   CANCEL_GATHER_RUN_REQUEST,
+  HAND_BACK_GATHER_FILE_REQUEST,
   RETRY_GATHER_RUN_REQUEST,
   START_GATHER_RUN_REQUEST,
   type GatherRunCancelOutcome,
   type GatherRunResponse,
+  type HandBackGatherFileOutcome,
+  type HandBackGatherFileRequest,
   type RetryGatherRunRequest,
   type StartGatherRunRequest
 } from "./gather-run-messages";
@@ -53,11 +60,13 @@ import {
   GATHER_QUEUE_STATE_KEY,
   getGatherQueueBatch,
   getGatherQueueDisplayRun,
+  getGatherQueueHandBackItems,
   getLatestGatherQueueResult,
   getRetryableGatherQueueResult,
   loadGatherQueue,
   GatherQueueStateSchema,
-  type GatherQueueState
+  type GatherQueueState,
+  type HandBackItem
 } from "./gather-queue";
 import {
   DEFAULT_PROFILES,
@@ -85,6 +94,13 @@ interface PopupState {
 
 interface DirectoryPickerWindow extends Window {
   showDirectoryPicker?: (options?: { mode?: "read" | "readwrite" }) => Promise<FileSystemDirectoryHandle>;
+}
+
+/** A file you picked to hand back, held while its folder waits for you to confirm access. */
+interface PendingHandBack {
+  item: HandBackItem;
+  file: File;
+  directory: FileSystemDirectoryHandle;
 }
 
 export interface GatherControllerOptions {
@@ -117,6 +133,11 @@ export class GatherController {
   private queue: GatherQueueState = EMPTY_GATHER_QUEUE;
   /** The finished run whose log is shown; null follows the run in progress. */
   private viewedRunId: string | null = null;
+  /** Files a site check blocked, newest run first, as the hand-back list shows them. */
+  private handBackItems: HandBackItem[] = [];
+  /** The blocked file whose file picker is open. */
+  private handBackTarget: HandBackItem | null = null;
+  private pendingHandBack: PendingHandBack | null = null;
   /** Bumped on every folder restore, so a slower earlier restore cannot overwrite a newer one. */
   private folderRestoreToken = 0;
   private keydownHandler: ((event: KeyboardEvent) => void) | null = null;
@@ -176,6 +197,20 @@ export class GatherController {
       if (row instanceof HTMLElement && row.dataset.runId) {
         this.handleViewRun(row.dataset.runId);
       }
+    });
+    this.elements.handBackItems.addEventListener("click", (event) => {
+      const button = event.target instanceof Element ? event.target.closest("button") : null;
+      const row = button?.closest("li");
+      const item =
+        row instanceof HTMLElement ? this.handBackItems[Number(row.dataset.index)] : undefined;
+      const action = button?.dataset.action;
+
+      if (item && (action === "open" || action === "add")) {
+        void this.handleHandBackAction(action, item);
+      }
+    });
+    this.elements.handBackFile.addEventListener("change", () => {
+      void this.handleHandBackFile();
     });
     this.elements.openSidePanelButton?.addEventListener("click", () => {
       this.options.onOpenSidePanel?.();
@@ -623,6 +658,126 @@ export class GatherController {
     }
   }
 
+  private async handleHandBackAction(action: HandBackAction, item: HandBackItem): Promise<void> {
+    if (action === "open") {
+      // The link is opened as an ordinary page visit, so any check the site shows is yours to pass.
+      if (!isAllowedDownloadUrl(item.siteKey, item.originalUrl)) {
+        this.appendLog(`Could not open ${item.fileName}: its link is not allowed.`, "error");
+
+        return;
+      }
+
+      await chrome.tabs.create({ url: item.originalUrl, active: true });
+
+      return;
+    }
+
+    const pending = this.pendingHandBack;
+
+    if (pending && isSameHandBackItem(pending.item, item)) {
+      // The file was already picked; this click is the user activation the folder prompt needs,
+      // so the request comes before anything else is awaited.
+      const permission = await this.directories.ensureDirectoryPermission(pending.directory, true);
+
+      if (permission !== "granted") {
+        this.appendLog("Folder is no longer writable. Choose it again.", "error");
+
+        return;
+      }
+
+      this.pendingHandBack = null;
+      await this.saveHandBack(pending);
+
+      return;
+    }
+
+    // The picker needs this click's activation, so it opens before anything is awaited.
+    this.handBackTarget = item;
+    const input = this.elements.handBackFile;
+    input.accept = getExtension(item.fileName);
+    input.value = "";
+    input.click();
+  }
+
+  private async handleHandBackFile(): Promise<void> {
+    const item = this.handBackTarget;
+    const file = this.elements.handBackFile.files?.[0];
+    this.handBackTarget = null;
+
+    if (!item || !file) {
+      return;
+    }
+
+    // Like Retry, the file goes to the folder remembered now for the run's source, in the
+    // profile chosen now.
+    const scopeLabel = getGatherSource(item.siteKey)?.label ?? item.siteKey;
+
+    try {
+      const directory = await this.directories.loadDirectoryHandle(
+        item.siteKey,
+        this.state.settings.useGlobalFolder,
+        this.state.profiles.activeProfileId
+      );
+
+      if (!directory) {
+        this.appendLog(`Choose a folder for ${scopeLabel} before adding files.`, "error");
+
+        return;
+      }
+
+      const permission = await this.directories.ensureDirectoryPermission(directory, false);
+
+      if (permission === "requires-user-activation") {
+        this.pendingHandBack = { item, file, directory };
+        this.appendLog(
+          `Folder access needs confirmation. Click Add file for ${item.fileName} again.`,
+          "error"
+        );
+
+        return;
+      }
+
+      if (permission !== "granted") {
+        this.appendLog(`Folder for ${scopeLabel} is no longer writable. Choose it again.`, "error");
+
+        return;
+      }
+
+      await this.saveHandBack({ item, file, directory });
+    } catch (error) {
+      this.appendLog(`Could not add ${file.name}: ${formatError(toError(error))}`, "error");
+    }
+  }
+
+  private async saveHandBack(handBack: PendingHandBack): Promise<void> {
+    const { item, file, directory } = handBack;
+
+    try {
+      const saved = await saveHandedBackFile({ item, file, rootDirectory: directory });
+
+      const response = await chrome.runtime.sendMessage<
+        HandBackGatherFileRequest,
+        HandBackGatherFileOutcome
+      >({
+        type: HAND_BACK_GATHER_FILE_REQUEST,
+        target: "background",
+        runId: item.runId,
+        fileName: item.fileName,
+        savedFileName: saved.fileName
+      });
+
+      // A recorded file shows up in the run's own log once the queue updates.
+      if (!response.recorded) {
+        this.appendLog(
+          `Saved ${saved.fileName}. Its run no longer lists it as blocked.`,
+          "success"
+        );
+      }
+    } catch (error) {
+      this.appendLog(`Could not add ${file.name}: ${formatError(toError(error))}`, "error");
+    }
+  }
+
   private async restoreSavedDirectoryHandle(): Promise<void> {
     const scopeLabel = this.getScopeLabel();
     const token = ++this.folderRestoreToken;
@@ -806,6 +961,15 @@ export class GatherController {
         : null
     );
 
+    this.handBackItems = getGatherQueueHandBackItems(queue);
+    renderHandBack(this.elements, this.handBackItems);
+
+    const pending = this.pendingHandBack;
+
+    if (pending && !this.handBackItems.some((item) => isSameHandBackItem(item, pending.item))) {
+      this.pendingHandBack = null;
+    }
+
     const actionResult = retryable ?? latest;
 
     if (actionResult) {
@@ -861,6 +1025,10 @@ function lastRunFromGatherResult(run: GatherRunState): LastRunState {
     retryImages: run.retryImages,
     canRetry: run.retryImages.length > 0
   };
+}
+
+function isSameHandBackItem(left: HandBackItem, right: HandBackItem): boolean {
+  return left.runId === right.runId && left.fileName === right.fileName;
 }
 
 function copyLastRun(state: LastRunState): LastRunState {

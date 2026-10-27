@@ -15,6 +15,8 @@ export const RETRY_GATHER_RUN_REQUEST = "GATHER_BOX_RUN_RETRY" as const;
 
 export const CANCEL_GATHER_RUN_REQUEST = "GATHER_BOX_RUN_CANCEL" as const;
 
+export const HAND_BACK_GATHER_FILE_REQUEST = "GATHER_BOX_RUN_HAND_BACK" as const;
+
 export const EXECUTE_GATHER_RUN = "GATHER_BOX_RUN_EXECUTE" as const;
 
 export const CANCEL_GATHER_RUN = "GATHER_BOX_RUN_ABORT" as const;
@@ -50,6 +52,22 @@ export const CancelGatherRunRequestSchema = z.object({
 });
 
 export type CancelGatherRunRequest = z.infer<typeof CancelGatherRunRequestSchema>;
+
+/** Sent by the side panel after it saved a blocked file you downloaded yourself. */
+export const HandBackGatherFileRequestSchema = z.object({
+  type: z.literal(HAND_BACK_GATHER_FILE_REQUEST),
+  target: z.literal("background"),
+  runId: z.string(),
+  fileName: z.string(),
+  savedFileName: z.string()
+});
+
+export type HandBackGatherFileRequest = z.infer<typeof HandBackGatherFileRequestSchema>;
+
+/** False when the run no longer lists the file as blocked, such as after a retry took it over. */
+export interface HandBackGatherFileOutcome {
+  recorded: boolean;
+}
 
 export const ExecuteGatherRunMessageSchema = z.object({
   type: z.literal(EXECUTE_GATHER_RUN),

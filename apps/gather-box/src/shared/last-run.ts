@@ -3,10 +3,20 @@ import { SiteKeySchema } from "./source-catalog";
 import { lenientArrayOf } from "./lenient-array";
 import { DownloadableFileSchema } from "./types";
 
+/**
+ * Why an item failed. A site check is a bot challenge in front of the file: the browser can still
+ * download it when you open the link yourself, and you then hand the file back to be saved.
+ */
+export const DownloadFailureKindSchema = z.enum(["error", "site-check"]);
+
+export type DownloadFailureKind = z.infer<typeof DownloadFailureKindSchema>;
+
 export const DownloadFailureSchema = z.object({
   fileName: z.string(),
   reason: z.string(),
-  originalUrl: z.optional(z.string())
+  originalUrl: z.optional(z.string()),
+  // Failures recorded by older builds carry no kind and were ordinary errors.
+  kind: z.catch(DownloadFailureKindSchema, "error")
 });
 
 export type DownloadFailure = z.infer<typeof DownloadFailureSchema>;

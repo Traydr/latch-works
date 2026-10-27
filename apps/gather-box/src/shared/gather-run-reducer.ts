@@ -91,12 +91,52 @@ export function applyGatherRunEvent(
           saved: event.saved,
           skipped: event.skipped,
           failed: event.failed,
-          message:
-            `Complete. Saved ${event.saved}, skipped ${event.skipped}, ` +
-            `failed ${event.failed}.`
+          message: describeCompletedRun(event)
         }
       };
     default:
       throw new Error(`Rejected unknown Gather Run event kind: ${kind}`);
   }
+}
+
+/** A file a site check blocked, which you downloaded yourself and Gather Box then saved. */
+export interface HandedBackFile {
+  runId: string;
+  /** The failed item's file name, which identifies it in the run. */
+  fileName: string;
+  /** The name it was saved under, which differs when the planned name was already taken. */
+  savedFileName: string;
+}
+
+/**
+ * Moves a handed-back item from failed to saved. `updatedAt` is left alone: it places the run in
+ * its batch and among the results, and handing a file back later does not move the run there.
+ */
+export function applyHandedBackFile(run: GatherRunState, file: HandedBackFile): GatherRunState {
+  const failedItems = run.failedItems.filter(
+    (item) => item.kind !== "site-check" || item.fileName !== file.fileName
+  );
+
+  const counts = {
+    saved: run.progress.saved + 1,
+    skipped: run.progress.skipped,
+    failed: Math.max(0, run.progress.failed - 1)
+  };
+
+  return {
+    ...run,
+    phase: counts.failed > 0 ? "failed" : "complete",
+    error: counts.failed > 0 ? `${counts.failed} item(s) failed.` : null,
+    failedItems,
+    retryImages: run.retryImages.filter((image) => image.fileName !== file.fileName),
+    progress: { ...run.progress, ...counts, message: describeCompletedRun(counts) },
+    log: [
+      ...run.log,
+      { message: `Saved ${file.savedFileName} from the file you added.`, tone: "success" }
+    ]
+  };
+}
+
+function describeCompletedRun(counts: { saved: number; skipped: number; failed: number }): string {
+  return `Complete. Saved ${counts.saved}, skipped ${counts.skipped}, failed ${counts.failed}.`;
 }

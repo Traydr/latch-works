@@ -37,6 +37,18 @@ export function toError(cause: unknown): Error {
  */
 export { MediaEncodeError } from "@latch-works/media-format";
 
+/**
+ * The site answered with a bot challenge (Cloudflare marks these with `cf-mitigated: challenge`)
+ * instead of the file. Opening the link yourself still works, so the item is handed back to you
+ * rather than retried here.
+ */
+export class SiteCheckError extends Error {
+  constructor(status: number) {
+    super(`Blocked by the site's bot check (HTTP ${status}). Open it and add the file yourself.`);
+    this.name = "SiteCheckError";
+  }
+}
+
 export function formatError(error: Error): string {
   return error.message;
 }

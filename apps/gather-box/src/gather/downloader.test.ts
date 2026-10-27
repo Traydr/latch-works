@@ -336,6 +336,52 @@ describe("downloading", () => {
     expect(directory.mediaNames()).toEqual([]);
   });
 
+  it("marks an item a bot challenge blocked apart from other refusals", async () => {
+    const directory = new MemoryDirectory();
+    vi.stubGlobal("fetch", async (url: string) =>
+      new Response("<!DOCTYPE html><html><title>Just a moment...</title></html>", {
+        status: 403,
+        headers: url.includes("/1/")
+          ? { "Content-Type": "text/html; charset=UTF-8", "cf-mitigated": "challenge" }
+          : { "Content-Type": "text/html; charset=UTF-8" }
+      })
+    );
+
+    const summary = await downloadImages(
+      [
+        {
+          pageNumber: 1,
+          thumbnailUrl: null,
+          originalUrl: "https://archiveofourown.org/downloads/1/Story.pdf",
+          fileName: "Author-Story.pdf"
+        },
+        {
+          pageNumber: 1,
+          thumbnailUrl: null,
+          originalUrl: "https://archiveofourown.org/downloads/2/Other.pdf",
+          fileName: "Author-Other.pdf"
+        }
+      ],
+      directory,
+      callbacks
+    );
+
+    expect(summary.failedItems).toEqual([
+      {
+        fileName: "Author-Story.pdf",
+        reason: "Blocked by the site's bot check (HTTP 403). Open it and add the file yourself.",
+        originalUrl: "https://archiveofourown.org/downloads/1/Story.pdf",
+        kind: "site-check"
+      },
+      {
+        fileName: "Author-Other.pdf",
+        reason: "HTTP 403",
+        originalUrl: "https://archiveofourown.org/downloads/2/Other.pdf",
+        kind: "error"
+      }
+    ]);
+  });
+
   it("fails an empty body and a web page served with a generic type", async () => {
     const directory = new MemoryDirectory();
     vi.stubGlobal("fetch", async (url: string) =>

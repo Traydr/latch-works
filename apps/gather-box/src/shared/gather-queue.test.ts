@@ -5,12 +5,14 @@ import {
   GATHER_QUEUE_SCHEMA_VERSION,
   getGatherQueueBatch,
   getGatherQueueDisplayRun,
+  getGatherQueueHandBackItems,
   getLatestGatherQueueResult,
   getRetryableGatherQueueResult,
   getNextQueuedGatherJob,
   getPermissionRequiredGatherJob,
   GatherQueueStateSchema,
   recordGatherQueueResult,
+  recordHandedBackFile,
   recoverStoppedGatherQueue,
   withdrawGatherQueueResult,
   type GatherQueueJob,
@@ -248,7 +250,7 @@ describe("Gather queue state", () => {
       ...run("run-1", "writing"),
       phase: "failed" as const,
       updatedAt: 200,
-      failedItems: [{ fileName: "missing.jpg", reason: "network" }],
+      failedItems: [{ fileName: "missing.jpg", reason: "network", kind: "error" as const }],
       retryImages: [payload("One").images[0]]
     };
 
@@ -402,5 +404,52 @@ describe("Gather queue state", () => {
       saved: 17,
       failed: 0
     });
+  });
+
+  it("moves a handed-back file from failed to saved on its run and in the batch", () => {
+    const blocked = {
+      ...finished("run-1", 100, 200, 1, 2),
+      phase: "failed" as const,
+      failedItems: [
+        {
+          fileName: "1.jpg",
+          reason: "Blocked by the site's bot check (HTTP 403).",
+          originalUrl: "https://i.pximg.net/img-original/1.jpg",
+          kind: "site-check" as const
+        },
+        {
+          fileName: "2.jpg",
+          reason: "network",
+          originalUrl: "https://i.pximg.net/img-original/2.jpg",
+          kind: "error" as const
+        }
+      ]
+    };
+
+    const queue = finish(EMPTY_GATHER_QUEUE, blocked);
+
+    expect(getGatherQueueHandBackItems(queue)).toEqual([
+      {
+        runId: "run-1",
+        siteKey: "pixiv",
+        folderSegments: [],
+        fileName: "1.jpg",
+        originalUrl: "https://i.pximg.net/img-original/1.jpg"
+      }
+    ]);
+
+    const file = { runId: "run-1", fileName: "1.jpg", savedFileName: "1.jpg" };
+    const handedBack = recordHandedBackFile(queue, file);
+
+    expect(handedBack?.results[0]).toMatchObject({
+      phase: "failed",
+      updatedAt: 200,
+      progress: { saved: 2, failed: 1, message: "Complete. Saved 2, skipped 1, failed 1." },
+      failedItems: [{ fileName: "2.jpg", kind: "error" }],
+      retryImages: []
+    });
+    expect(handedBack?.batch).toMatchObject({ pages: 1, saved: 2, failed: 1 });
+    expect(handedBack && getGatherQueueHandBackItems(handedBack)).toEqual([]);
+    expect(handedBack && recordHandedBackFile(handedBack, file)).toBeNull();
   });
 });

@@ -8,6 +8,7 @@ import {
   MAX_GATHER_QUEUE_LENGTH,
   PROFILE_DELETED_MESSAGE,
   recordGatherQueueResult,
+  recordHandedBackFile,
   recoverStoppedGatherQueue,
   withdrawGatherQueueResult,
   type CollectingGatherQueueJob,
@@ -30,7 +31,7 @@ import { groupXPostInFolder } from "../shared/path";
 import { getDistinguishingProfileName } from "../shared/profiles";
 import { getSiteKeyFromUrl, isSupportedUrl, type SiteKey } from "../shared/sites";
 import type { DownloadablePayload } from "../shared/types";
-import { applyGatherRunEvent } from "../shared/gather-run-reducer";
+import { applyGatherRunEvent, type HandedBackFile } from "../shared/gather-run-reducer";
 import {
   createChromeCoordinatorDependencies,
   type GatherRunCoordinatorDependencies
@@ -263,6 +264,21 @@ export class GatherRunCoordinator {
     }
 
     return { outcome: "cancelled", run: decision.run };
+  }
+
+  /** Records a blocked file the side panel saved for you; false when its run no longer lists it. */
+  async recordHandedBackFile(file: HandedBackFile): Promise<boolean> {
+    return this.exclusive(async () => {
+      const queue = recordHandedBackFile(await this.dependencies.loadQueue(), file);
+
+      if (!queue) {
+        return false;
+      }
+
+      await this.dependencies.saveQueue(queue);
+
+      return true;
+    });
   }
 
   async handleEvent(message: GatherRunEventMessage): Promise<void> {
