@@ -1,5 +1,5 @@
 import { Result } from "better-result";
-import { dialog } from "electron";
+import { app, dialog } from "electron";
 
 import type { ModeContext, ModeHost } from "../../../main/mode";
 import type { LockstepProfileInput, LockstepRunEvent } from "../shared/types";
@@ -45,6 +45,8 @@ interface SyncHost extends ModeHost {
 
 export async function startSync({ dataDir, window, onProgress }: ModeContext): Promise<SyncHost> {
   const profileService = new ProfileService(dataDir, {
+    // A data folder of its own (the e2e suite) takes nothing from the real ~/.latch-works.
+    legacyConfigPath: app.commandLine.hasSwitch("user-data-dir") ? null : undefined,
     secretStorage: new FileSecretStorage(fileSecretKeyPath(dataDir)),
   });
 

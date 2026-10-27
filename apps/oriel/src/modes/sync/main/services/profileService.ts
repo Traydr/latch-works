@@ -50,13 +50,14 @@ type PersistedProfile = z.infer<typeof PersistedProfileSchema>;
 type PersistedState = z.infer<typeof PersistedStateSchema>;
 
 interface ProfileServiceOptions {
-  legacyConfigPath?: string;
+  /** The old config to migrate; null for none. */
+  legacyConfigPath?: string | null;
   secretStorage: SecretStorage;
 }
 
 export class ProfileService {
   private readonly filePath: string;
-  private readonly legacyConfigPath: string;
+  private readonly legacyConfigPath: string | null;
   private readonly secretStorage: SecretStorage;
   private readonly sessionTokens = new Map<string, string>();
   private state: PersistedState = { activeProfileId: null, profiles: [] };
@@ -66,7 +67,9 @@ export class ProfileService {
   constructor(userDataPath: string, options: ProfileServiceOptions) {
     this.filePath = path.join(userDataPath, "lockstep-settings.json");
     this.legacyConfigPath =
-      options.legacyConfigPath ?? path.join(homedir(), LATCH_WORKS_DIRECTORY_NAME, "lockstep.json");
+      options.legacyConfigPath === undefined
+        ? path.join(homedir(), LATCH_WORKS_DIRECTORY_NAME, "lockstep.json")
+        : options.legacyConfigPath;
     this.secretStorage = options.secretStorage;
   }
 
@@ -445,7 +448,7 @@ export class ProfileService {
   }
 
   private async migrateLegacyConfig(): Promise<void> {
-    if (!existsSync(this.legacyConfigPath)) {
+    if (this.legacyConfigPath === null || !existsSync(this.legacyConfigPath)) {
       return;
     }
 
