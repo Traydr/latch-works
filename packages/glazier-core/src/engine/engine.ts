@@ -441,10 +441,10 @@ export class GlazierEngine {
             try {
               await undoPlan(this.executorDeps(context), planId);
             } finally {
+              // Rescanned even when a file in use stopped part of it, for the steps that came back.
               this.invalidate();
+              this.rescanRootsOf(planId);
             }
-
-            this.rescanRootsOf(planId);
           },
         });
       },

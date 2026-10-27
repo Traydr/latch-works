@@ -475,7 +475,19 @@ async function convert(
       }
     } else {
       await moveFile(tempPath, target);
-      holdingId = await hold();
+
+      try {
+        holdingId = await hold();
+      } catch (error) {
+        // The original could not be held (on Windows, open in another program): take the new file
+        // back out, which nothing was at before, so the step leaves things as it found them. An
+        // original already in holding (its record failed) keeps the new file in its place.
+        if (await pathExists(source)) {
+          await unlink(target).catch(() => undefined);
+        }
+
+        throw error;
+      }
     }
 
     await replaceRow(deps, step, target, { facts, keepLoudness: context.keepLoudness });
@@ -883,10 +895,17 @@ export async function applyPlan(deps: ExecutorDeps, planId: PlanId): Promise<App
         staleSteps += 1;
       }
 
+      const failure = toError(error);
+
       outcome =
         error instanceof StepSkip
           ? { kind: "skipped", message: error.message }
-          : { kind: "failed", message: toError(error).message };
+          : {
+              kind: "failed",
+              message: isFileInUse(failure)
+                ? `Another program has ${path.basename(step.from_rel)} open, so it was left as it was.`
+                : failure.message,
+            };
     }
 
     recordOutcome(deps.db, step.id, outcome);
@@ -934,13 +953,26 @@ function describeAction(action: StepRecord["action"]): string {
 }
 
 /**
+ * Windows will not move or delete a file another program holds open; that passes. Elsewhere
+ * `EPERM` is a locked file or a denied permission, which closing nothing fixes.
+ */
+function isFileInUse(error: Error): boolean {
+  return (
+    "code" in error &&
+    (error.code === "EBUSY" || (process.platform === "win32" && error.code === "EPERM"))
+  );
+}
+
+/**
  * Reverses a plan's finished steps, newest first: held files come back, moved files move back, a
  * converted file goes to holding and its original returns. A step whose result was changed since
- * is left alone and reported.
+ * is left alone and reported. A step whose file another program has open is left to undo again:
+ * the plan stays undoable, and this throws once the rest are back.
  */
 export async function undoPlan(deps: ExecutorDeps, planId: PlanId): Promise<void> {
   const steps = loadSteps(deps.db, planId, "done", "DESC");
   const batch = holdingBatchName(planId, new Date());
+  const inUse: string[] = [];
   let done = 0;
 
   for (const step of steps) {
@@ -953,14 +985,26 @@ export async function undoPlan(deps: ExecutorDeps, planId: PlanId): Promise<void
         $id: step.id,
       });
     } catch (error) {
-      deps.db.run("UPDATE plan_steps SET message = $message WHERE id = $id", {
-        $message: `Undo failed: ${toError(error).message}`,
-        $id: step.id,
-      });
+      const failure = toError(error);
+
+      if (isFileInUse(failure)) {
+        inUse.push(path.basename(step.to_abs ?? step.from_rel));
+      } else {
+        deps.db.run("UPDATE plan_steps SET message = $message WHERE id = $id", {
+          $message: `Undo failed: ${failure.message}`,
+          $id: step.id,
+        });
+      }
     }
 
     done += 1;
     deps.progress({ done, total: steps.length, label: "Undoing" });
+  }
+
+  if (inUse.length > 0) {
+    const others = inUse.length > 1 ? ` and ${inUse.length - 1} more` : "";
+
+    throw new Error(`Another program has ${inUse[0]}${others} open. Close it, then Undo again.`);
   }
 
   removePlanDismissals(deps.db, planId);

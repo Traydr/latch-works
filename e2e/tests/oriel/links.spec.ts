@@ -29,9 +29,10 @@ test("a folder Tidy tidies is offered to View, and the modes hand files and fold
   await window.locator("[data-offered-folder]:visible").first().click();
   await expect(folderTitle).toBeVisible();
 
-  // The viewer shows its file in Tidy, at the Library filtered to it.
+  // The viewer shows its file in Tidy, at the Library filtered to it. The folder's path is quoted
+  // as CSS reads a string, so Windows' backslashes survive.
   await window
-    .locator(`[data-gallery-item][title='${path.join(FIXTURE_ARCHIVE_DIR, "bulk")}']`)
+    .locator(`[data-gallery-item][title=${JSON.stringify(path.join(FIXTURE_ARCHIVE_DIR, "bulk"))}]`)
     .dblclick();
   await expect(heading("bulk")).toBeVisible();
   await waitForScan(window);

@@ -65,7 +65,8 @@ test.describe("scan", () => {
     await expectPill(window, `${FRAME_ITEMS.length} items`);
 
     await window.getByRole("button", { name: "Folders", exact: true }).click();
-    const bulkCard = window.locator(`[title='${absolute("bulk")}']`);
+    // Quoted as CSS reads a string, so Windows' backslashes survive.
+    const bulkCard = window.locator(`[title=${JSON.stringify(absolute("bulk"))}]`);
     await bulkCard.getByRole("button", { name: "Included" }).click();
     await expect(bulkCard.getByRole("button", { name: "Excluded" })).toBeVisible();
     await window.getByRole("button", { name: "Close folder browser" }).click({

@@ -40,6 +40,7 @@ describe("MediaIndexService", () => {
   });
 
   afterEach(async () => {
+    service.close();
     await rm(userDataPath, { force: true, recursive: true });
   });
 

@@ -1,4 +1,4 @@
-import type { SharpLibrary } from "./toolkit.js";
+import { type SharpLibrary, sharpPath } from "./toolkit.js";
 
 export interface ImageProbe {
   /** Display dimensions, after EXIF orientation. */
@@ -18,7 +18,10 @@ function isQuarterTurn(orientation: number | undefined): boolean {
 
 /** Reads an image's header through sharp (libvips) without decoding its pixels. */
 export async function probeImage(sharp: SharpLibrary, filePath: string): Promise<ImageProbe> {
-  const metadata = await sharp(filePath, { failOn: "none", limitInputPixels: false }).metadata();
+  const metadata = await sharp(sharpPath(filePath), {
+    failOn: "none",
+    limitInputPixels: false,
+  }).metadata();
 
   if (!metadata.width || !metadata.height) {
     throw new Error("The image has no dimensions.");

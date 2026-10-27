@@ -272,6 +272,13 @@ export class MediaIndexService {
     }
   }
 
+  /** Closes the database; Windows will not delete its files while they are open. */
+  close(): void {
+    this.sqlite?.close();
+    this.sqlite = null;
+    this.db = null;
+  }
+
   private requireDb(): MediaIndexDatabase {
     if (!this.db) {
       throw new Error("Media index database is not initialized");

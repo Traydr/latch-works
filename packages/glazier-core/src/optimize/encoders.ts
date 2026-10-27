@@ -6,7 +6,7 @@ import {
   type RgbaImage,
 } from "@latch-works/media-format";
 import type { StillEncodeRequest, StillEncodeResult, TranscodeJob } from "../contract.js";
-import type { SharpLibrary } from "../media/toolkit.js";
+import { type SharpLibrary, sharpPath } from "../media/toolkit.js";
 
 export type { StillEncodeRequest, StillEncodeResult, TranscodeJob } from "../contract.js";
 
@@ -49,7 +49,8 @@ export async function encodeStillToAvif(
   encodeRgba: (image: RgbaImage) => Promise<ArrayBuffer>,
   request: StillEncodeRequest,
 ): Promise<StillEncodeResult> {
-  const input = () => sharp(request.srcPath, { failOn: "none", limitInputPixels: false });
+  const source = sharpPath(request.srcPath);
+  const input = () => sharp(source, { failOn: "none", limitInputPixels: false });
   const metadata = await input().metadata();
   const pixels = (metadata.width ?? 0) * (metadata.pageHeight ?? metadata.height ?? 0);
 
@@ -58,7 +59,7 @@ export async function encodeStillToAvif(
       .rotate()
       .toColourspace("srgb")
       .avif(ARCHIVE_AVIF_SHARP_OPTIONS)
-      .toFile(request.outPath);
+      .toFile(sharpPath(request.outPath));
 
     return { width: info.width, height: info.height, bytes: info.size, encoder: "sharp" };
   }

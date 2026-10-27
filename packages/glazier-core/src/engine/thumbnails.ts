@@ -5,7 +5,7 @@ import path from "node:path";
 import { detectMediaType } from "@latch-works/media-domain";
 
 import { runTool } from "../media/run-tool.js";
-import type { MediaToolkit } from "../media/toolkit.js";
+import { type MediaToolkit, sharpPath } from "../media/toolkit.js";
 
 const THUMBNAIL_CONCURRENCY = 4;
 
@@ -87,10 +87,10 @@ export class ThumbnailCache {
         .rotate()
         .resize(size, size, { fit: "inside", withoutEnlargement: true })
         .webp({ quality: 72 })
-        .toFile(temp);
+        .toFile(sharpPath(temp));
 
     if (mediaType !== "video") {
-      await toWebp(filePath);
+      await toWebp(sharpPath(filePath));
 
       return true;
     }

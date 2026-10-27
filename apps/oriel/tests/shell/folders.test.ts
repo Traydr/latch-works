@@ -1,3 +1,4 @@
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { isInside, knownFolders } from "../../src/main/folders";
@@ -13,9 +14,10 @@ describe("knownFolders", () => {
         migrated: () => ["/old", "/archive"],
       }),
     ).toEqual([
-      { path: "/archive/photos", modes: ["view", "tidy"] },
-      { path: "/archive", modes: ["tidy", "sync"] },
-      { path: "/old", modes: [] },
+      // Resolved, so `C:\archive` and so on on Windows.
+      { path: path.resolve("/archive/photos"), modes: ["view", "tidy"] },
+      { path: path.resolve("/archive"), modes: ["tidy", "sync"] },
+      { path: path.resolve("/old"), modes: [] },
     ]);
   });
 });

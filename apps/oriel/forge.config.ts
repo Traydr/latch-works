@@ -1,5 +1,14 @@
 import { execFileSync, execSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
@@ -14,7 +23,7 @@ import { VitePlugin } from "@electron-forge/plugin-vite";
 import type { ForgeConfig } from "@electron-forge/shared-types";
 import { z } from "zod";
 
-import { ensureMediaTools } from "./media-tools";
+import { ensureMediaTools, mediaToolFiles } from "./media-tools";
 
 /** The dependency lists forge walks when staging runtime packages. */
 const PackageManifestSchema = z.object({
@@ -182,8 +191,8 @@ async function stageMediaTools(platform: string, arch: string): Promise<void> {
     return;
   }
 
-  for (const tool of ["ffmpeg", "ffprobe"]) {
-    cpSync(path.join(folder, tool), path.join(stagedMediaToolsPath, tool));
+  for (const file of mediaToolFiles(platform)) {
+    cpSync(path.join(folder, file), path.join(stagedMediaToolsPath, file));
   }
 }
 
@@ -241,6 +250,13 @@ function packWithVelopack(): string {
   const outputDir = path.resolve(__dirname, "out", "make", "velopack");
   const art = (file: string) => path.join(installerPath, file);
 
+  // The MSI's welcome page names the version it installs.
+  const welcomePath = path.resolve(__dirname, "out", "make", "welcome.txt");
+  writeFileSync(
+    welcomePath,
+    `This installs Oriel ${version}.\n\n${readFileSync(art("welcome.txt"), "utf8")}`,
+  );
+
   try {
     execFileSync("vpk", ["--help"], { stdio: "ignore" });
   } catch (cause) {
@@ -261,6 +277,9 @@ function packWithVelopack(): string {
       "Oriel",
       "--packAuthors",
       "Traydr",
+      // Without it vpk marks the package x86, whatever the build's architecture.
+      "--runtime",
+      `win-${process.arch}`,
       "--packDir",
       path.resolve(__dirname, "out", `Oriel-win32-${process.arch}`),
       "--mainExe",
@@ -275,7 +294,7 @@ function packWithVelopack(): string {
       "--instLocation",
       "Either",
       "--instWelcome",
-      art("welcome.txt"),
+      welcomePath,
       "--instConclusion",
       art("conclusion.txt"),
       "--msiTopBanner",
@@ -285,6 +304,17 @@ function packWithVelopack(): string {
     ],
     { stdio: "inherit" },
   );
+
+  // Velopack names them by channel alone; carry the version and architecture, as the DMG does.
+  const name = `Oriel-${version}-win-${process.arch}`;
+
+  for (const [from, to] of [
+    ["Oriel-win-Setup.exe", `${name}-Setup.exe`],
+    ["Oriel-win.msi", `${name}.msi`],
+    ["Oriel-win-Portable.zip", `${name}-Portable.zip`],
+  ] as const) {
+    renameSync(path.join(outputDir, from), path.join(outputDir, to));
+  }
 
   return outputDir;
 }

@@ -1,0 +1,2 @@
+# LF everywhere, so a Windows checkout matches the Mac and Biome, whatever core.autocrlf says.
+* text=auto eol=lf

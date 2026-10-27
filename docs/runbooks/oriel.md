@@ -17,15 +17,22 @@ each OS asks once before the first start (see [Open an unsigned build](#open-an-
 | pnpm | 12 (`corepack enable`) | 12 |
 | Platform tools | Xcode, or its command-line tools (`xcode-select --install`) | The .NET SDK 9, then `dotnet tool install -g vpk --version 1.3.39-g8d2844f` |
 
+Node 26 will not do on Windows: Forge's ZIP maker (`cross-zip` 4.0.1) calls `fs.rmdir` with
+`recursive`, which Node 26 removed, so `make` fails after packaging. fnm and nvm read
+`package.json`'s `engines` on `cd`; a terminal opened straight in the folder may still be on another
+version (`node -v`).
+
 Build on the OS you build for. Forge stages the host's native binaries (sharp, ffmpeg and ffprobe),
 so a Windows build made on a Mac would carry Mac binaries. `vpk` is pinned to the `velopack`
 package the app runs; change both together (`VPK_VERSION` in `apps/oriel/forge.config.ts`).
 
-On Apple silicon the first build also downloads Tidy's ffmpeg and ffprobe 9.0.2 (about 45 MB, from
-the static builds ffmpeg.org links to) and refuses them unless they match the SHA-256 pinned in
-`apps/oriel/media-tools.ts`. They are cached in `apps/oriel/.media-tools` for later builds, so only
-the first build needs the network. Other platforms keep `ffmpeg-static`'s ffmpeg 6.0. To move to a
-newer build, update the URLs and hashes there; see plan 060 for why Tidy needs one.
+On Apple silicon and Windows x64 the first build also downloads Tidy's ffmpeg and ffprobe 9.0.2,
+from static builds ffmpeg.org links to (Martin Riedl's on the Mac, about 45 MB; gyan.dev's full
+build on Windows, about 260 MB, whose two `.exe` files add about 450 MB to the app), and refuses
+them unless they match the SHA-256 pinned in `apps/oriel/media-tools.ts`. They are cached in
+`apps/oriel/.media-tools` for later builds, so only the first build needs the network. Other
+platforms keep `ffmpeg-static`'s ffmpeg, whose Windows build has no SVT-AV1. To move to a newer
+build, update the URLs and hashes there; see plan 060 for why Tidy needs one.
 
 With Xcode 26 or later on macOS 26 or later, the build also compiles the Icon Composer icon
 (`media/oriel.icon`, with light, dark and tinted looks); otherwise the app keeps the `.icns`.
@@ -40,7 +47,10 @@ pnpm make:oriel
 | OS | What it makes | Where |
 | --- | --- | --- |
 | macOS | `Oriel-<version>-arm64.dmg`, and a ZIP of the app | `apps/oriel/out/make/dmg/arm64/`, `apps/oriel/out/make/zip/darwin/arm64/` |
-| Windows | `Oriel-win-Setup.exe` (the installer, with the brand splash), `Oriel-win.msi` (per user or for the machine) and a portable package | `apps/oriel/out/make/velopack/` |
+| Windows | `Oriel-<version>-win-x64-Setup.exe` (the installer, with the brand splash), `Oriel-<version>-win-x64.msi` (per user or for the machine; its welcome page names the version) and a portable ZIP | `apps/oriel/out/make/velopack/` |
+
+Velopack will not pack a version its releases folder already holds, so to make the same version
+again on Windows, delete `apps/oriel/out/make/velopack` first.
 
 `pnpm --filter @latch-works/oriel package` builds only the app, into
 `apps/oriel/out/Oriel-<platform>-<arch>`. `ORIEL_MACOS_SIGN_IDENTITY` names a signing identity;
@@ -68,7 +78,7 @@ xattr -dr com.apple.quarantine /Applications/Oriel.app
 or try to open it, then choose **Open Anyway** in System Settings › Privacy & Security. Started
 from the disk image or Downloads, Oriel offers to move itself to Applications.
 
-**Windows.** Run `Oriel-win-Setup.exe`. SmartScreen warns about an unknown publisher: choose
+**Windows.** Run `Oriel-<version>-win-x64-Setup.exe`. SmartScreen warns about an unknown publisher: choose
 **More info**, then **Run anyway**. Setup installs for the current user into
 `%LocalAppData%\Oriel` and adds Start-menu and desktop shortcuts; the MSI can install for every
 user instead. Uninstall from Settings › Apps.

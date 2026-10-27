@@ -20,6 +20,8 @@ setup("package Oriel", async () => {
     const child = spawn("pnpm", ["exec", "electron-forge", "package"], {
       cwd: ORIEL_APP_DIR,
       env: electronChildEnv(),
+      // Windows' pnpm is `pnpm.cmd`, which Node runs only through a shell.
+      shell: process.platform === "win32",
       stdio: "inherit",
     });
 
