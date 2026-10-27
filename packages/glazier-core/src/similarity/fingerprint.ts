@@ -1,7 +1,7 @@
 import type { SharpOptions } from "sharp";
 
 import { runTool } from "../media/run-tool.js";
-import type { SharpLibrary } from "../media/toolkit.js";
+import { type SharpLibrary, sharpPath } from "../media/toolkit.js";
 import { formatHash, type Hash64, PHASH_INPUT_SIZE, parseHash, perceptualHash } from "./phash.js";
 
 /** A video is sampled at these points of its duration; an animation at the same share of its frames' time. */
@@ -58,7 +58,7 @@ export function greyPixels(
     options.page = request.page;
   }
 
-  return sharp(filePath, options)
+  return sharp(sharpPath(filePath), options)
     .rotate()
     .flatten({ background: "#ffffff" })
     .resize(request.size, request.size, { fit: "fill", kernel: "lanczos3" })

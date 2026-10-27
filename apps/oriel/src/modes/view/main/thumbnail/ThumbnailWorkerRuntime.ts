@@ -305,7 +305,8 @@ export class ThumbnailWorkerRuntime {
 
       try {
         bytes = new Uint8Array(
-          await sharp(job.mediaPath, {
+          // libvips opens a Windows path past 260 characters only with the `\\?\` prefix.
+          await sharp(path.toNamespacedPath(job.mediaPath), {
             animated: false,
             sequentialRead: true,
           })
