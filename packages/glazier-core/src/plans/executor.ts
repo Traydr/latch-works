@@ -480,8 +480,11 @@ async function convert(
         holdingId = await hold();
       } catch (error) {
         // The original could not be held (on Windows, open in another program): take the new file
-        // back out, which nothing was at before, so the step leaves things as it found them.
-        await unlink(target).catch(() => undefined);
+        // back out, which nothing was at before, so the step leaves things as it found them. An
+        // original already in holding (its record failed) keeps the new file in its place.
+        if (await pathExists(source)) {
+          await unlink(target).catch(() => undefined);
+        }
 
         throw error;
       }
@@ -949,9 +952,15 @@ function describeAction(action: StepRecord["action"]): string {
   return labels[action];
 }
 
-/** Windows will not move or delete a file another program holds open; that passes. */
+/**
+ * Windows will not move or delete a file another program holds open; that passes. Elsewhere
+ * `EPERM` is a locked file or a denied permission, which closing nothing fixes.
+ */
 function isFileInUse(error: Error): boolean {
-  return "code" in error && (error.code === "EBUSY" || error.code === "EPERM");
+  return (
+    "code" in error &&
+    (error.code === "EBUSY" || (process.platform === "win32" && error.code === "EPERM"))
+  );
 }
 
 /**
