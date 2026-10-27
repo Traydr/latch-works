@@ -20,7 +20,11 @@ const ELECTRON_BINARY = path.join(
   "node_modules",
   "electron",
   "dist",
-  process.platform === "darwin" ? "Electron.app/Contents/MacOS/Electron" : "electron",
+  process.platform === "darwin"
+    ? "Electron.app/Contents/MacOS/Electron"
+    : process.platform === "win32"
+      ? "electron.exe"
+      : "electron",
 );
 
 export type OrielMode = "view" | "tidy" | "sync";
