@@ -47,7 +47,13 @@ export function loadSharp(location: RuntimeLocation): SharpLibrary {
   const loaded = requireRuntimePackage(location, "sharp");
 
   // `require("sharp")` yields the library, or an ES-interop wrapper holding it as `default`.
-  return loaded.default ?? loaded;
+  const sharp: SharpLibrary = loaded.default ?? loaded;
+
+  // libvips keeps the files it read open for its cache, and Windows will not hold, move or replace
+  // an open file; the memory cache stays.
+  sharp.cache({ files: 0 });
+
+  return sharp;
 }
 
 /**
