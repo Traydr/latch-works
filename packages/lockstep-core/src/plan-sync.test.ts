@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { hashCachePath } from "./hash-cache.js";
 import { planSync } from "./plan-sync.js";
 import type { LockstepRunEvent } from "./types.js";
 
@@ -102,13 +103,14 @@ describe("planSync hash modes", () => {
 
   it("continues with warnings when the cache cannot be read or written", async () => {
     const fixture = await createFixture();
-    const blockedPath = path.join(fixture.root, "blocked");
-    await writeFile(blockedPath, "file, not a directory", "utf-8");
+    // A folder where the cache file goes: reading it and renaming over it fail on every OS.
+    const hashCacheRoot = path.join(fixture.root, "blocked-cache");
+    await mkdir(hashCachePath(fixture.sourceRoot, hashCacheRoot), { recursive: true });
     const events: LockstepRunEvent[] = [];
 
     const plan = await planSync(
       {
-        hashCacheRoot: path.join(blockedPath, "cache"),
+        hashCacheRoot,
         hashMode: "remote-aware",
         remoteSnapshotPath: fixture.snapshotPath,
         sourceRoot: fixture.sourceRoot,

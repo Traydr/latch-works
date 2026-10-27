@@ -109,7 +109,8 @@ beforeAll(async () => {
   await testPicture(4).png().toFile(path.join(archive, "misnamed.jpg"));
   await writeFile(path.join(archive, "notes.txt"), "not media");
   await writeFile(path.join(archive, "._notes.txt"), "junk");
-  await symlink(path.join(archive, "photos"), path.join(archive, "photos-link"));
+  // A junction on Windows, which needs no admin rights; the type is ignored elsewhere.
+  await symlink(path.join(archive, "photos"), path.join(archive, "photos-link"), "junction");
 
   harness = await openEngine(dataDir);
   root = await harness.call("addRoot", { path: archive });

@@ -28,8 +28,11 @@ describe("HashCache", () => {
     const reloaded = await loadHashCache({ cacheRoot: tempDir, sourceRoot });
     expect(reloaded.cache.get("photos/a.jpg", fingerprint)).toBe(sha256);
     expect(reloaded.cache.get("photos/a.jpg", { ...fingerprint, mtimeMs: 9 })).toBeUndefined();
+    // Windows' paths are case-insensitive, so the cache keeps its root lowercased there.
+    const resolvedRoot = path.resolve(sourceRoot);
+
     expect(JSON.parse(await readFile(reloaded.cache.filePath, "utf-8"))).toMatchObject({
-      sourceRoot: path.resolve(sourceRoot),
+      sourceRoot: process.platform === "win32" ? resolvedRoot.toLowerCase() : resolvedRoot,
       version: 1,
     });
   });

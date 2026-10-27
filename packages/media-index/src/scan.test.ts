@@ -104,10 +104,13 @@ describe("scanArchive", () => {
   });
 
   it("returns items and skipped entries in logical path order despite delayed discovery", async () => {
+    // Keyed as scanArchive builds them: on Windows `/archive` resolves to `C:\archive`.
+    const root = path.resolve("/archive");
+
     const directories = new Map<string, DirectoryEntry[]>([
-      ["/archive", [entry("z", "directory"), entry("a", "directory")]],
-      ["/archive/a", [entry("later.txt"), entry("first.jpg")]],
-      ["/archive/z", [entry("last.png"), entry("socket", "other")]],
+      [root, [entry("z", "directory"), entry("a", "directory")]],
+      [path.join(root, "a"), [entry("later.txt"), entry("first.jpg")]],
+      [path.join(root, "z"), [entry("last.png"), entry("socket", "other")]],
     ]);
 
     const operations: ScanArchiveOperations = {
