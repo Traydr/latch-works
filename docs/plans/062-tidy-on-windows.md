@@ -14,7 +14,7 @@
 
 ## Status
 
-- **Status**: TODO
+- **Status**: IN REVIEW (2026-10-27)
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: MEDIUM. A new ffmpeg ships inside the Windows app, and Windows treats open files,
@@ -123,6 +123,56 @@ Each runs on a throwaway archive, through the app or the e2e harness.
 - **Spot variants.** `duplicates/variants.test.ts` and `e2e/tests/glazier/variants.spec.ts` pin
   the behaviour. Time the first comparison on a few thousand test stills; the Mac printed 11,377
   in 322 s.
+
+## Results (2026-10-27)
+
+Run on a Ryzen 5 5600H (6 cores, 12 threads, 32 GB), Windows 11, Node 24.14.1.
+
+- **Baseline.** All suites, the sequential typecheck, Biome, Oxlint and knip pass. Getting there
+  took `.gitattributes` (Git for Windows checks out CRLF, which Biome refuses), building the
+  packages before `shutter-client`'s tests, and six tests made portable (POSIX paths, a symlink
+  that needs admin rights, a lowercased hash-cache root, an open SQLite file). Node 26 breaks
+  `make` (see the runbook).
+- **ffmpeg.** `ffmpeg-static` gave Windows ffmpeg 6.1.1 (gyan.dev essentials) with neither
+  `libsvtav1` nor `libdav1d`. The pin is gyan.dev's 9.0.2 full build, SVT-AV1 v4.2.0-123,
+  `https://github.com/GyanD/codexffmpeg/releases/download/9.0.2/ffmpeg-9.0.2-full_build.zip`,
+  SHA-256 `759d0a9831c436a0eb331ad36f236c06cb04aaa0005da46571f0e9d3d9206f6b`. Its two `.exe` files
+  are 228 MB each, so Setup is 436 MB.
+- **Speed.** Twenty-second testsrc2-with-noise clips, three per class, median of each:
+
+  | Class | This machine | M5 Pro |
+  | --- | --- | --- |
+  | up to 1 MP (720p) | 2.97× | 3.5× |
+  | up to 2.2 MP (1080p) | 1.63× | 2.4× |
+  | above (1440p) | 1.30× | 1.7× |
+
+  The card then said "at this computer's speed"; it put the next three clips at 34 s and they
+  took 43 s, 19% more, the 1440p clip running at 0.85×.
+- **Spot variants** printed 2,094 test stills in 14.8 s; the comparison's decisions are pinned by
+  `variants.spec.ts`, which passes.
+- **Fixed on Windows:** sharp's file cache kept every picture it read open, so holding or
+  converting one failed (`EBUSY`); a convert to a new name that then could not hold its original
+  left both files; an Undo stopped by an open file said it had undone and could not be run again;
+  libvips opened no path past 260 characters; and a fresh `--user-data-dir` took Sync's profile
+  from the real `~/.latch-works/lockstep.json`.
+- **Works:** a held-open file fails its step with "Another program has … open" and stays put;
+  Undo with the output open says so and runs again once it is closed; holding by rename on `D:`
+  and by copy for a whole-drive root, and Undo of both; a 306-character path with Japanese names
+  through scanning, prints, thumbnails over `glazier-media://`, ffprobe and Shrink; `desktop.ini`
+  (hidden, system, read-only) held with its read-only folder removed and put back; a hard link
+  keeps the kept file's `dev` and `ino`.
+- **End to end.** `glazier` and `oriel` pass (18 tests) once `pnpm --filter @latch-works/e2e
+  fixture` has run. The installed Setup.exe starts with nothing in its log and shrinks a clip
+  with the note "Encoded with SVT-AV1".
+
+## Not done
+
+- **Sync and ctime**: needs a folder Tresorit watches, which is the owner's to give.
+- Undo puts `desktop.ini` back, but not its folder's read-only attribute, so Explorer shows a
+  customized folder plainly until it is set again.
+- History shows a finished step's note only once it is undone (the status column is empty for
+  done steps), on every platform.
+- Sync's hash cache stays in the real `~/.latch-works` under `--user-data-dir`.
 
 ## Not in scope
 
