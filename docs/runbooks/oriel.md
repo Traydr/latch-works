@@ -49,8 +49,8 @@ pnpm make:oriel
 | macOS | `Oriel-<version>-arm64.dmg`, and a ZIP of the app | `apps/oriel/out/make/dmg/arm64/`, `apps/oriel/out/make/zip/darwin/arm64/` |
 | Windows | `Oriel-<version>-win-x64-Setup.exe` (the installer, with the brand splash), `Oriel-<version>-win-x64.msi` (per user or for the machine; its welcome page names the version) and a portable ZIP | `apps/oriel/out/make/velopack/` |
 
-Velopack will not pack a version its releases folder already holds, so to make the same version
-again on Windows, delete `apps/oriel/out/make/velopack` first.
+Velopack will not pack a version its releases folder already holds, so each Windows make empties
+`apps/oriel/out/make/velopack` first: copy out an installer you want to keep before making again.
 
 `pnpm --filter @latch-works/oriel package` builds only the app, into
 `apps/oriel/out/Oriel-<platform>-<arch>`. `ORIEL_MACOS_SIGN_IDENTITY` names a signing identity;

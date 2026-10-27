@@ -250,6 +250,10 @@ function packWithVelopack(): string {
   const outputDir = path.resolve(__dirname, "out", "make", "velopack");
   const art = (file: string) => path.join(installerPath, file);
 
+  // vpk will not pack a version its output already holds, and nothing reads this folder as a
+  // release feed: start it empty, so the same version can be made again.
+  rmSync(outputDir, { force: true, recursive: true });
+
   // The MSI's welcome page names the version it installs.
   const welcomePath = path.resolve(__dirname, "out", "make", "welcome.txt");
   writeFileSync(
