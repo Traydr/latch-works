@@ -8,6 +8,8 @@ import {
   useState,
 } from "react";
 
+import { reportThemeDark } from "./window-surface";
+
 export type ThemeChoice = "system" | "light" | "dark";
 
 const STORAGE_KEY = "oriel.theme";
@@ -40,7 +42,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
     const apply = () => {
       root.classList.add("theme-switching");
-      root.classList.toggle("dark", choice === "dark" || (choice === "system" && media.matches));
+      const dark = choice === "dark" || (choice === "system" && media.matches);
+
+      root.classList.toggle("dark", dark);
+      reportThemeDark(dark);
       // Reading layout commits the new colours before transitions come back.
       void root.offsetWidth;
       root.classList.remove("theme-switching");

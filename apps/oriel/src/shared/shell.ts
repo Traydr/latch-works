@@ -57,7 +57,14 @@ export const ShellChannels = {
   setUpArchive: "oriel:set-up-archive",
   /** window → main: the welcome is done, and does not show again. */
   finishWelcome: "oriel:finish-welcome",
+  /** window → main: the {@link WindowSurface} under Windows' window buttons, which they match. */
+  windowControls: "oriel:window-controls",
 } as const;
+
+/** Whether what shows under the window buttons is light or dark. */
+export const WindowSurfaceSchema = z.enum(["light", "dark"]);
+
+export type WindowSurface = z.infer<typeof WindowSurfaceSchema>;
 
 export const AboutSchema = z.object({ version: z.string(), dataFolder: z.string() });
 
@@ -114,4 +121,6 @@ export interface OrielBridge {
   chooseArchive(): Promise<string | null>;
   setUpArchive(setup: ArchiveSetup): Promise<string[]>;
   finishWelcome(): void;
+  /** Windows draws its window buttons over the window's top right, in the surface's colours. */
+  setWindowSurface(surface: WindowSurface): void;
 }

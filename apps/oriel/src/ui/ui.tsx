@@ -45,7 +45,7 @@ export function TopBar({
   children?: ReactNode;
 }) {
   return (
-    <header className="lw-drag flex h-[52px] shrink-0 items-center gap-3 border-b lw-divider pr-5 pl-3">
+    <header className="lw-drag flex h-[52px] shrink-0 items-center gap-3 border-b lw-divider pr-[calc(1.25rem+var(--lw-window-controls))] pl-3">
       <SidebarToggle />
       {title === undefined ? null : (
         <div className="flex min-w-0 items-baseline gap-2.5">

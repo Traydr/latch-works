@@ -12,6 +12,7 @@ import {
 import type { JSX } from "react";
 
 import { useShell } from "../../../../../shell/shell";
+import { useDarkScreen } from "../../../../../shell/window-surface";
 import type { MediaItem } from "../../../shared/types";
 
 interface ViewerChromeProps {
@@ -42,6 +43,7 @@ export function ViewerChrome({
   // The viewer covers the whole window, and macOS draws its window buttons over the top left
   // unless the viewer is fullscreen, so the title starts to their right.
   const clearWindowButtons = insetTitleBar && !isFullscreen;
+  useDarkScreen();
 
   return (
     <>
@@ -49,7 +51,8 @@ export function ViewerChrome({
         className={`viewer-scrim-top viewer-chrome-transition ${chromeVisibilityClass}`}
         style={{ paddingTop: "max(1rem, env(safe-area-inset-top))" }}
       >
-        <div className="pointer-events-auto flex items-start justify-between gap-3">
+        {/* Windows draws its window buttons at the top right instead. */}
+        <div className="pointer-events-auto flex items-start justify-between gap-3 pr-[var(--lw-window-controls)]">
           <div className={`min-w-0 flex-1 ${clearWindowButtons ? "pl-[72px]" : ""}`}>
             <p className="truncate text-sm font-medium text-white">{item.name}</p>
             <p className="truncate text-xs text-white/70">{details.join(" · ")}</p>

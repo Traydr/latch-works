@@ -16,6 +16,11 @@
   --shadow-border-hover:
     0 0 0 1px rgb(0 0 0 / 0.09), 0 1px 2px -1px rgb(0 0 0 / 0.08), 0 2px 4px 0 rgb(0 0 0 / 0.06);
   --shadow-float: 0 0 0 1px rgb(0 0 0 / 0.06), 0 16px 40px -18px rgb(0 0 0 / 0.35);
+  /*
+   * The width of the window buttons Windows draws over the window's top right; none on macOS,
+   * whose buttons sit at the top left, and in a native frame.
+   */
+  --lw-window-controls: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw));
 }
 
 .dark {
