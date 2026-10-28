@@ -3,8 +3,8 @@
 
 use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::{
-    Context, Entity, IntoElement, ParentElement as _, Render, Styled as _, Subscription, Window,
-    div,
+    AnyElement, Context, Entity, IntoElement, ParentElement as _, Render, Styled as _,
+    Subscription, Window, div,
 };
 use oriel_ui::{ModeLayout, ShellState, TopBar};
 
@@ -19,6 +19,12 @@ impl SyncMode {
             shell: shell.clone(),
             _subscriptions: vec![cx.observe(shell, |_, _, cx| cx.notify())],
         }
+    }
+
+    /// This mode's section of the one Settings page (⌘,). The shell draws the page and calls this
+    /// for the mode's section; the mode owns what is in it.
+    pub fn settings_section(&mut self, _: &mut Window, _: &mut Context<Self>) -> AnyElement {
+        div().child("No settings yet.").into_any_element()
     }
 }
 

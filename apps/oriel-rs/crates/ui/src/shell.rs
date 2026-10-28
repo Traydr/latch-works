@@ -47,16 +47,49 @@ impl ModeId {
     }
 }
 
+/// Work a mode is doing, shown on its switcher button while another mode is on screen (plan 059):
+/// a ring for work with a known end, a dot for work without one.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ModeActivity {
+    /// A scan or an analysis: a dot.
+    Working,
+    /// A push or a Tidy change, `0.0..=1.0` done: a ring, and the Dock's progress.
+    Progress(f32),
+}
+
 /// The shell's state, one per window. Modes observe it; a hidden mode's own state simply lives
 /// on in its entity.
 pub struct ShellState {
     mode: ModeId,
     rail: bool,
+    activity: [Option<ModeActivity>; 3],
 }
 
 impl ShellState {
     pub fn new(mode: ModeId, rail: bool) -> Self {
-        Self { mode, rail }
+        Self {
+            mode,
+            rail,
+            activity: [None; 3],
+        }
+    }
+
+    /// What `mode` is doing, if anything.
+    pub fn activity(&self, mode: ModeId) -> Option<ModeActivity> {
+        self.activity[mode.index()]
+    }
+
+    /// Modes report their work here; the shell draws it and keeps the window open for it.
+    pub fn set_activity(
+        &mut self,
+        mode: ModeId,
+        activity: Option<ModeActivity>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.activity[mode.index()] != activity {
+            self.activity[mode.index()] = activity;
+            cx.notify();
+        }
     }
 
     pub fn mode(&self) -> ModeId {

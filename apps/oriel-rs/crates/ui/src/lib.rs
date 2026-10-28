@@ -10,5 +10,5 @@ pub mod top_bar;
 
 pub use assets::OrielAssets;
 pub use layout::ModeLayout;
-pub use shell::{ModeId, ShellState};
+pub use shell::{ModeActivity, ModeId, ShellState};
 pub use top_bar::TopBar;

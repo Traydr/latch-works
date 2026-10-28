@@ -12,8 +12,8 @@ use std::time::Instant;
 use gpui_kit::assets::IconName;
 use gpui_kit::component::{ActiveTheme as _, Icon};
 use gpui_kit::{
-    AppContext as _, Context, Entity, IntoElement, ParentElement as _, Render, SharedString,
-    Styled as _, Subscription, Window, div, prelude::FluentBuilder as _,
+    AnyElement, AppContext as _, Context, Entity, IntoElement, ParentElement as _, Render,
+    SharedString, Styled as _, Subscription, Window, div, prelude::FluentBuilder as _,
 };
 use oriel_ui::layout::NavItem;
 use oriel_ui::{ModeId, ModeLayout, ShellState, TopBar};
@@ -94,6 +94,12 @@ impl TidyMode {
             library,
             _subscriptions: vec![cx.observe(shell, |_, _, cx| cx.notify())],
         }
+    }
+
+    /// This mode's section of the one Settings page (⌘,). The shell draws the page and calls this
+    /// for the mode's section; the mode owns what is in it.
+    pub fn settings_section(&mut self, _: &mut Window, _: &mut Context<Self>) -> AnyElement {
+        div().child("No settings yet.").into_any_element()
     }
 
     /// Shows `rows` in the Library, as the spike does, for tests.

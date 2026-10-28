@@ -23,7 +23,7 @@ use gpui_kit::component::{
     button::{Button, ButtonVariants as _},
 };
 use gpui_kit::{
-    App, AppContext as _, Context, Entity, FocusHandle, Focusable as _, Global,
+    AnyElement, App, AppContext as _, Context, Entity, FocusHandle, Focusable as _, Global,
     InteractiveElement as _, IntoElement, ParentElement as _, PathPromptOptions, Render, Role,
     SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, TestSupportExt as _,
     Window, div,
@@ -71,6 +71,12 @@ impl ViewMode {
             view.open_folder(PathBuf::from(folder), cx);
         }
         view
+    }
+
+    /// This mode's section of the one Settings page (⌘,). The shell draws the page and calls this
+    /// for the mode's section; the mode owns what is in it.
+    pub fn settings_section(&mut self, _: &mut Window, _: &mut Context<Self>) -> AnyElement {
+        div().child("No settings yet.").into_any_element()
     }
 
     /// View keeping its thumbnails under `data`, with nothing open.
