@@ -1,0 +1,18 @@
+[package]
+name = "oriel-mode-tidy"
+description = "Tidy: Overview, Library, Duplicates, Clean up, Convert, Shrink, Holding, History."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+gpui-kit.workspace = true
+oriel-ui.workspace = true
+oriel-core-domain.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "0.2"
+
+[lints]
+workspace = true

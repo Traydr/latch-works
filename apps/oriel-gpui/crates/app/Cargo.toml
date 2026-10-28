@@ -1,0 +1,32 @@
+[package]
+name = "oriel-gpui"
+description = "Oriel GPUI: Oriel's View, Tidy and Sync modes on GPUI, as an experiment (plan 063)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "oriel-gpui"
+path = "src/main.rs"
+
+[dependencies]
+gpui-kit.workspace = true
+gpui-fps = { workspace = true, optional = true }
+anyhow.workspace = true
+oriel-core-paths.workspace = true
+oriel-ui.workspace = true
+oriel-mode-view.workspace = true
+oriel-mode-tidy.workspace = true
+oriel-mode-sync.workspace = true
+
+[features]
+# Frame time, CPU, GPU and memory overlay for Phase 0's measurements.
+fps = ["dep:gpui-fps"]
+gpui-fast = ["gpui-kit/gpui-fast"]
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+gpui-kit = { workspace = true, features = ["test-support"] }

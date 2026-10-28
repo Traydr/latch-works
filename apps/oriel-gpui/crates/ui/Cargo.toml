@@ -1,0 +1,16 @@
+[package]
+name = "oriel-ui"
+description = "Oriel GPUI's house kit on GPUI Kit: the theme, the top bar, the sidebar parts."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+gpui-kit.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

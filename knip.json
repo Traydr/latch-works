@@ -57,6 +57,11 @@
     "apps/lockstep-cli": {
       "entry": ["src/**/*.test.ts"]
     },
+    "apps/oriel-gpui": {
+      "entry": ["scripts/**/*.{ts,mts}"],
+      "ignoreBinaries": ["ffmpeg"],
+      "ignoreDependencies": ["@jsquash/avif"]
+    },
     "apps/showcase": {
       "entry": ["src/pages/**/*.{astro,ts,tsx}", "scripts/*.mjs"]
     },

@@ -1,0 +1,20 @@
+[package]
+name = "oriel-core-tidy"
+description = "Tidy's engine, ported from glazier-core. So far: the similarity prints Spot variants reads."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+# libvips is LGPL, so it is loaded at run time from the dylib the app ships, never linked in.
+libloading = "0.8"
+
+[dev-dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+# The pure-Rust pipeline the parity example measures against libvips, and the large test PNG.
+image = { version = "0.25", default-features = false, features = ["gif", "jpeg", "png", "webp"] }
+
+[lints]
+workspace = true

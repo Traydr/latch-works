@@ -1,0 +1,39 @@
+[package]
+name = "oriel-media"
+description = "Stills through ImageIO, video through AVPlayer into GPUI's surface(), and the decoded-image cache."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+gpui-kit.workspace = true
+anyhow.workspace = true
+log.workspace = true
+# still/ adds its dependencies below this line.
+# GPUI's `RenderImage` is made of `image::Frame`s, from the same `image` 0.25 GPUI uses.
+image = { version = "0.25", default-features = false }
+smallvec = "1"
+# libwebp, built from source and linked statically: the encoder sharp's thumbnails use.
+libwebp-sys = "0.14"
+# video/ adds its dependencies below this line.
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# still/ adds its macOS dependencies below this line.
+objc2-core-foundation = { version = "0.3.2", default-features = false, features = ["std", "CFBase", "CFDictionary", "CFNumber", "CFString", "CFURL"] }
+objc2-core-graphics = { version = "0.3.2", default-features = false, features = ["std", "CGBitmapContext", "CGColorSpace", "CGContext", "CGImage"] }
+# CGImageDestination and CGImageProperties let the tests write AVIF, HEIC and oriented JPEGs.
+objc2-image-io = { version = "0.3.2", default-features = false, features = ["std", "CGImageDestination", "CGImageProperties", "CGImageSource", "objc2-core-graphics"] }
+# video/ adds its macOS dependencies below this line.
+# The objc2 0.6 line and its 0.3 framework crates, the versions GPUI's own macOS crates use.
+# `objc2-core-foundation` is declared above, for both.
+objc2 = "0.6"
+block2 = "0.6"
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSString", "NSDictionary", "NSValue", "NSURL", "NSError", "NSObject"] }
+objc2-av-foundation = { version = "0.3.2", default-features = false, features = ["std", "AVPlayer", "AVPlayerItem", "AVPlayerItemOutput", "AVAsset", "AVVideoSettings", "block2", "objc2-core-foundation", "objc2-core-media", "objc2-core-video"] }
+objc2-core-media = { version = "0.3.2", default-features = false, features = ["std", "CMTime", "objc2"] }
+objc2-core-video = { version = "0.3.2", default-features = false, features = ["std", "CVBuffer", "CVImageBuffer", "CVPixelBuffer", "CVReturn", "objc2"] }
+objc2-quartz-core = { version = "0.3.2", default-features = false, features = ["std", "CABase", "objc2-core-foundation"] }
+
+[lints]
+workspace = true

@@ -23,7 +23,9 @@
       "!apps/pane-view/src/components/dither-kit",
       "!apps/pane-view/dither-kit.json",
       "!apps/gather-box",
-      "!tools/oxlint/anti-slop"
+      "!tools/oxlint/anti-slop",
+      "!apps/oriel-gpui/target",
+      "!apps/oriel-gpui/crates"
     ]
   },
   "formatter": {

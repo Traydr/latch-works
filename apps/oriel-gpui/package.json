@@ -1,0 +1,11 @@
+{
+  "name": "@latch-works/oriel-gpui",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Oriel ported to Rust on GPUI, as an experiment (plan 063). A thin wrapper over cargo; it has no build or test script, so the TypeScript side builds and tests without Rust.",
+  "scripts": {
+    "dev": "cargo run -p oriel-gpui",
+    "check": "cargo fmt --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace"
+  }
+}

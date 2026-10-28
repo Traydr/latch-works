@@ -1,0 +1,28 @@
+[package]
+name = "oriel-mode-view"
+description = "View: the gallery, the folder overlay, the viewer, the capsule player, the comic reader."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+gpui-kit.workspace = true
+anyhow.workspace = true
+log.workspace = true
+oriel-core-domain.workspace = true
+oriel-core-paths.workspace = true
+oriel-ui.workspace = true
+oriel-media.workspace = true
+# Electron Oriel keys its thumbnails by SHA-1; this is the crate already in the lockfile.
+sha1_smol = "1"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# The spike's memory and launch-time readings (`proc_pid_rusage`).
+libc = "0.2"
+
+[dev-dependencies]
+gpui-kit = { workspace = true, features = ["test-support"] }
+
+[lints]
+workspace = true
