@@ -6,6 +6,8 @@
   "description": "Oriel ported to Rust on GPUI, as an experiment (plan 063). A thin wrapper over cargo; it has no build or test script, so the TypeScript side builds and tests without Rust.",
   "scripts": {
     "dev": "cargo run -p oriel-rs",
+    "libmpv": "node scripts/libmpv/build-libmpv.ts",
+    "bundle": "node scripts/bundle/make-app.ts",
     "check": "cargo fmt --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace"
   }
 }

@@ -4,6 +4,29 @@ Oriel RS is Oriel ported to Rust on GPUI with GPUI Kit, as an experiment beside 
 app: [plan 063](../plans/063-oriel-rs.md). Its code is the Cargo workspace in `apps/oriel-rs`.
 It keeps its own data in `~/.latch-works/oriel-rs/` and never touches Electron Oriel's folders.
 
+## Try it
+
+With the prerequisites below in place, from the repository root:
+
+```sh
+pnpm install                                   # once
+pnpm --filter @latch-works/oriel-rs bundle     # about 3 minutes the first time, seconds after
+open "apps/oriel-rs/target/release/bundle/Oriel RS.app"
+```
+
+The bundle step builds the LGPL libmpv the first time, fetches the pinned ffmpeg and ffprobe,
+makes a release build, and leaves `Oriel RS.app` there; double-clicking it in Finder works too.
+What you will see:
+
+- **View** opens empty, with an Open button at the top right. Pick a folder and it shows the
+  folder's photos and videos as a gallery. Double-click one to open the viewer, where the arrows
+  step and Escape closes; videos play there through the bundled libmpv.
+  `open --env ORIEL_RS_OPEN=<folder> "apps/oriel-rs/target/release/bundle/Oriel RS.app"` opens
+  a folder at start instead. View never writes into the folder it shows: its thumbnails go to
+  `~/.latch-works/oriel-rs/view/`.
+- **Tidy** lists its pages in the sidebar, each a placeholder for now.
+- **Sync** is a placeholder.
+
 ## Prerequisites
 
 | | macOS (Apple silicon) |
@@ -12,6 +35,7 @@ It keeps its own data in `~/.latch-works/oriel-rs/` and never touches Electron O
 | Platform tools | Xcode, or its command-line tools (`xcode-select --install`) |
 | Node and pnpm | Node 24 and pnpm 12 (`pnpm install` at the root), for the conformance vectors and for sharp's libvips, which the fingerprint tests load |
 | ffmpeg | The app's own pinned ffmpeg and ffprobe, fetched once (below); Homebrew's `ffmpeg` only for the fixture script, which needs its encoders |
+| meson, ninja, pkgconf | `brew install meson ninja pkgconf`, to build the LGPL libmpv (below); nothing else from Homebrew is used or linked |
 
 Windows and Linux are not supported yet (Windows is Phase 8).
 
@@ -75,11 +99,63 @@ it from `node_modules`; `ORIEL_RS_LIBVIPS=<dylib>` points them at another.
 
 Video plays through libmpv (plan 063, decisions 4 and 7), which plays MKV, WebM, AVI, FLV and
 ASF as well as MP4, and seeks AV1 exactly. `ORIEL_RS_VIDEO=avplayer` plays through AVPlayer
-instead, and the app falls back to AVPlayer by itself when no libmpv loads. Until Oriel RS builds
-its own LGPL libmpv, it loads the libmpv inside IINA (`/Applications/IINA.app`), read-only;
-`ORIEL_RS_LIBMPV=<dylib>` points it at another. IINA's build is GPL: use it to develop, never
-ship it. `ORIEL_RS_MPV_RENDER=gl` (the default) draws
-through OpenGL into an IOSurface; `sw` draws in software.
+instead, and the app falls back to AVPlayer by itself when no libmpv loads.
+`ORIEL_RS_MPV_RENDER=gl` (the default) draws through OpenGL into an IOSurface; `sw` draws in
+software.
+
+Oriel RS builds its own LGPL libmpv (decision 8) from pinned sources, in one command:
+
+```sh
+pnpm --filter @latch-works/oriel-rs libmpv     # scripts/libmpv/build-libmpv.ts
+```
+
+- **What it builds.** mpv 0.41.0 (`-Dgpl=false`, libmpv only), FFmpeg 9.0.2 (no
+  `--enable-gpl`, `--enable-nonfree` or `--enable-version3`; every demuxer, decoder and
+  VideoToolbox, no encoders, muxers or network), libplacebo, dav1d (AV1 in software where
+  VideoToolbox cannot), and libass with FreeType, FriBidi and HarfBuzz, which mpv requires. The
+  pins, hashes, licences and flags are in `scripts/libmpv/sources.ts`.
+- **Where it goes.** `apps/oriel-rs/.libmpv/<id>/`, git-ignored, with `.libmpv/current` pointing
+  at it: 13 dylibs, 26 MB, each named `@rpath/…` and finding the others through
+  `@loader_path`, ad hoc signed, for macOS 13 and later. Beside them are `manifest.json`
+  (versions, hashes, flags, toolchain, and what the libraries report: each FFmpeg library says
+  "LGPL version 2.1 or later"), `SHA256SUMS` and `licenses/`.
+- **How long.** 82 s from nothing on an M5 Pro, about 50 MB of downloads included. It is
+  resumable: rerun it after an interruption and it carries on from the step that did not
+  finish. The work tree is `apps/oriel-rs/target/libmpv/` (sources, builds, logs; deleted on
+  success unless `--keep-work`). It refuses a download whose SHA-256 differs from its pin,
+  builds with only meson, ninja, pkgconf and the system on `PATH`, and checks with `otool` that
+  nothing outside the set and the system is linked.
+
+The app looks for libmpv in this order, first found wins. It logs the one it loaded at the
+`log` crate's info level (the app installs no logger yet), and the spike's `single` mode prints
+it:
+
+1. `Contents/Frameworks/libmpv*.dylib` in the app bundle it runs from;
+2. the file `ORIEL_RS_LIBMPV=<dylib>` names;
+3. the development build, `apps/oriel-rs/.libmpv/current`;
+4. IINA's libmpv (`/Applications/IINA.app`), read in place, and only when not running from a
+   bundle.
+
+The bundle's libmpv is the LGPL set. IINA's build is GPL: it is for development only, and a
+bundled app never loads it, even with nothing else to load.
+
+## Making the app
+
+`pnpm --filter @latch-works/oriel-rs bundle` (`scripts/bundle/make-app.ts`) makes
+`apps/oriel-rs/target/release/bundle/Oriel RS.app` with:
+
+| Part | Where | Size |
+| --- | --- | --- |
+| The release binary (`cargo build --release -p oriel-rs`, in `CARGO_TARGET_DIR` if set) | `Contents/MacOS/oriel-rs` | 23 MB |
+| The LGPL libmpv set, built first if it is not | `Contents/Frameworks/` | 25 MB |
+| The pinned ffmpeg and ffprobe, fetched first if they are not | `Contents/Resources/media-tools/` | 128 MB |
+| The set's licences and manifest | `Contents/Resources/licenses/libmpv/` | |
+| Electron Oriel's icon, `Info.plist` (`dev.traydr.latchworks.oriel-rs`, macOS 13 and later) | `Contents/` | |
+
+176 MB in all, against Electron Oriel's 503 MB. The whole is signed ad hoc
+(`codesign --force --deep -s -`), so it runs on the Mac that built it; signing and notarizing
+for other Macs is a follow-up. The app carries no data: it uses `~/.latch-works/oriel-rs/` as a
+development build does.
 
 ## Measuring
 
