@@ -17,6 +17,9 @@ smallvec = "1"
 # libwebp, built from source and linked statically: the encoder sharp's thumbnails use.
 libwebp-sys = "0.14"
 # video/ adds its dependencies below this line.
+# mpv/ adds its dependencies below this line.
+# libmpv (GPL, or LGPL built with -Dgpl=false) is loaded at run time from a dylib, never linked.
+libloading = "0.8"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # still/ adds its macOS dependencies below this line.

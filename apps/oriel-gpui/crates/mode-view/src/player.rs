@@ -3,8 +3,9 @@
 //! forward 5 s, play or pause, the elapsed time, the scrubber, the length, and mute.
 //!
 //! Keys, while the player has focus: Space plays or pauses, ← and → skip 5 s, M mutes. A click
-//! on the picture plays or pauses. AVPlayer does the playing (`oriel_media::video`); this view
-//! only draws its picture and sends it commands.
+//! on the picture plays or pauses. AVPlayer does the playing (`oriel_media::video`), or libmpv
+//! with `ORIEL_GPUI_VIDEO=mpv` (`oriel_media::mpv`); this view only draws its picture and sends
+//! it commands.
 //!
 //! The file names only `gpui_kit` and `oriel_media`, so the media crate's spike examples can
 //! build it as it is.
@@ -23,7 +24,8 @@ use gpui_kit::{
     SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, Window, actions, div,
     prelude::FluentBuilder as _, px, relative, rgba,
 };
-use oriel_media::video::{SeekMode, VideoError, VideoPlayer, pump_frames};
+use oriel_media::mpv::{AnyPlayer, MpvPlayer, pump_frames};
+use oriel_media::video::{SeekMode, VideoError, VideoPlayer};
 
 actions!(
     capsule_player,
@@ -74,7 +76,7 @@ fn bind_keys(cx: &mut App) {
 /// The interface the viewer relies on: built for a path, rendered as a view.
 pub struct CapsulePlayer {
     path: PathBuf,
-    video: Result<VideoPlayer, VideoError>,
+    video: Result<AnyPlayer, VideoError>,
     focus: FocusHandle,
     scrubber: Entity<SliderState>,
     /// Whether a scrub paused the video, to resume it when the scrub ends.
@@ -86,7 +88,7 @@ impl CapsulePlayer {
     /// Opens `path` and starts playing it, with the player focused for its keys.
     pub fn new(path: PathBuf, window: &mut Window, cx: &mut Context<Self>) -> Self {
         bind_keys(cx);
-        let mut video = VideoPlayer::open(&path);
+        let mut video = AnyPlayer::open(&path);
         if let Ok(video) = &mut video {
             video.play();
         }
@@ -118,7 +120,12 @@ impl CapsulePlayer {
 
     /// The player itself, for a caller that measures or drives it.
     pub fn video_mut(&mut self) -> Option<&mut VideoPlayer> {
-        self.video.as_mut().ok()
+        self.video.as_mut().ok().and_then(AnyPlayer::av_player_mut)
+    }
+
+    /// The libmpv player, when `ORIEL_GPUI_VIDEO=mpv` chose it.
+    pub fn mpv_mut(&mut self) -> Option<&mut MpvPlayer> {
+        self.video.as_mut().ok().and_then(AnyPlayer::mpv_mut)
     }
 
     /// Runs `command` on the video, if it opened, then keeps its pictures coming.
@@ -126,7 +133,7 @@ impl CapsulePlayer {
         &mut self,
         window: &mut Window,
         cx: &mut Context<Self>,
-        command: impl FnOnce(&mut VideoPlayer),
+        command: impl FnOnce(&mut AnyPlayer),
     ) {
         let Ok(video) = &mut self.video else {
             return;
@@ -136,14 +143,14 @@ impl CapsulePlayer {
         cx.notify();
     }
 
-    fn video_of(&mut self) -> &mut VideoPlayer {
+    fn video_of(&mut self) -> &mut AnyPlayer {
         self.video
             .as_mut()
             .expect("frames are pumped only for a video that opened")
     }
 
     fn toggle_playback(&mut self, _: &TogglePlayback, window: &mut Window, cx: &mut Context<Self>) {
-        self.command(window, cx, VideoPlayer::toggle_playback);
+        self.command(window, cx, AnyPlayer::toggle_playback);
     }
 
     fn skip_back(&mut self, _: &SkipBack, window: &mut Window, cx: &mut Context<Self>) {
@@ -214,8 +221,8 @@ impl Render for CapsulePlayer {
             .items_center()
             .justify_center()
             .when_some(
-                self.video.as_ref().ok().and_then(VideoPlayer::surface),
-                |this, surface| this.child(surface.size_full()),
+                self.video.as_ref().ok().and_then(AnyPlayer::picture),
+                |this, picture| this.child(picture),
             )
             .when_some(error.clone(), |this, error| {
                 this.child(
@@ -250,10 +257,10 @@ impl Render for CapsulePlayer {
 impl CapsulePlayer {
     fn render_capsule(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let video = self.video.as_ref().ok();
-        let playing = video.is_some_and(VideoPlayer::is_playing);
-        let muted = video.is_some_and(VideoPlayer::is_muted);
-        let position = video.map(VideoPlayer::position).unwrap_or_default();
-        let duration = video.and_then(VideoPlayer::duration);
+        let playing = video.is_some_and(AnyPlayer::is_playing);
+        let muted = video.is_some_and(AnyPlayer::is_muted);
+        let position = video.map(AnyPlayer::position).unwrap_or_default();
+        let duration = video.and_then(AnyPlayer::duration);
         let played = match duration {
             Some(duration) if !duration.is_zero() => {
                 (position.as_secs_f64() / duration.as_secs_f64()).clamp(0., 1.) as f32
