@@ -1,0 +1,24 @@
+[package]
+name = "oriel-runtime"
+description = "Background work: GPUI jobs, a tokio thread, and a SQLite thread per catalog."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+gpui-kit.workspace = true
+anyhow.workspace = true
+futures.workspace = true
+log.workspace = true
+rusqlite.workspace = true
+# The drivers are named here rather than left to reqwest's features: a future that sleeps or opens
+# a socket on the runtime must find them whoever else is in the build.
+tokio = { workspace = true, features = ["rt", "net", "time"] }
+
+[dev-dependencies]
+gpui-kit = { workspace = true, features = ["test-support"] }
+reqwest.workspace = true
+
+[lints]
+workspace = true

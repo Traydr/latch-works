@@ -24,6 +24,14 @@ icu_collator = "=2.4.0"
 # NFC for path identities. Pinned with icu_collator, which already depends on it, so both carry
 # the same Unicode data.
 icu_normalizer = "=2.4.0"
+futures = "0.3"
+# SQLite is built from source and linked in, so every catalog gets the same SQLite whatever the
+# system has.
+rusqlite = { version = "0.41", features = ["bundled"] }
+tokio = { version = "1", default-features = false }
+# Members name the TLS and body features they need; the runtime's tests need none.
+reqwest = { version = "0.13", default-features = false }
+sha2 = "0.11"
 
 oriel-core-paths = { path = "crates/core-paths" }
 oriel-core-domain = { path = "crates/core-domain" }
@@ -33,6 +41,8 @@ oriel-media = { path = "crates/media" }
 oriel-mode-view = { path = "crates/mode-view" }
 oriel-mode-tidy = { path = "crates/mode-tidy" }
 oriel-mode-sync = { path = "crates/mode-sync" }
+oriel-runtime = { path = "crates/runtime" }
+oriel-tools = { path = "crates/tools" }
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
