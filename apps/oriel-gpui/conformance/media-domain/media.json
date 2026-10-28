@@ -1,0 +1,210 @@
+{
+  "about": "Made by packages/media-domain/src/conformance.test.ts from media.ts; do not edit. Regenerate with ORIEL_GPUI_UPDATE_VECTORS=1 pnpm --filter @latch-works/media-domain test. Non-ASCII characters are escaped.",
+  "generatedWith": { "node": "24.18.0", "icu": "78.3", "unicode": "17.0" },
+  "imageExtensions": ["jpg", "jpeg", "png", "webp", "gif", "bmp", "avif"],
+  "videoExtensions": ["mp4", "webm", "mov", "mkv", "m4v"],
+  "pdfExtensions": ["pdf"],
+  "mediaTypes": ["image", "gif", "video", "pdf", "unknown"],
+  "gallerySortModes": ["name-asc", "name-desc", "date-newest", "date-oldest", "random"],
+  "files": [
+    { "fileName": "a.jpg", "extension": "jpg", "mediaType": "image", "supported": true },
+    { "fileName": "A.JPG", "extension": "jpg", "mediaType": "image", "supported": true },
+    { "fileName": "a.Jpg", "extension": "jpg", "mediaType": "image", "supported": true },
+    { "fileName": "a.jpeg", "extension": "jpg", "mediaType": "image", "supported": true },
+    { "fileName": "A.JPEG", "extension": "jpg", "mediaType": "image", "supported": true },
+    { "fileName": "a.Jpeg", "extension": "jpg", "mediaType": "image", "supported": true },
+    { "fileName": "a.png", "extension": "png", "mediaType": "image", "supported": true },
+    { "fileName": "A.PNG", "extension": "png", "mediaType": "image", "supported": true },
+    { "fileName": "a.Png", "extension": "png", "mediaType": "image", "supported": true },
+    { "fileName": "a.webp", "extension": "webp", "mediaType": "image", "supported": true },
+    { "fileName": "A.WEBP", "extension": "webp", "mediaType": "image", "supported": true },
+    { "fileName": "a.Webp", "extension": "webp", "mediaType": "image", "supported": true },
+    { "fileName": "a.gif", "extension": "gif", "mediaType": "gif", "supported": true },
+    { "fileName": "A.GIF", "extension": "gif", "mediaType": "gif", "supported": true },
+    { "fileName": "a.Gif", "extension": "gif", "mediaType": "gif", "supported": true },
+    { "fileName": "a.bmp", "extension": "bmp", "mediaType": "image", "supported": true },
+    { "fileName": "A.BMP", "extension": "bmp", "mediaType": "image", "supported": true },
+    { "fileName": "a.Bmp", "extension": "bmp", "mediaType": "image", "supported": true },
+    { "fileName": "a.avif", "extension": "avif", "mediaType": "image", "supported": true },
+    { "fileName": "A.AVIF", "extension": "avif", "mediaType": "image", "supported": true },
+    { "fileName": "a.Avif", "extension": "avif", "mediaType": "image", "supported": true },
+    { "fileName": "a.mp4", "extension": "mp4", "mediaType": "video", "supported": true },
+    { "fileName": "A.MP4", "extension": "mp4", "mediaType": "video", "supported": true },
+    { "fileName": "a.Mp4", "extension": "mp4", "mediaType": "video", "supported": true },
+    { "fileName": "a.webm", "extension": "webm", "mediaType": "video", "supported": true },
+    { "fileName": "A.WEBM", "extension": "webm", "mediaType": "video", "supported": true },
+    { "fileName": "a.Webm", "extension": "webm", "mediaType": "video", "supported": true },
+    { "fileName": "a.mov", "extension": "mov", "mediaType": "video", "supported": true },
+    { "fileName": "A.MOV", "extension": "mov", "mediaType": "video", "supported": true },
+    { "fileName": "a.Mov", "extension": "mov", "mediaType": "video", "supported": true },
+    { "fileName": "a.mkv", "extension": "mkv", "mediaType": "video", "supported": true },
+    { "fileName": "A.MKV", "extension": "mkv", "mediaType": "video", "supported": true },
+    { "fileName": "a.Mkv", "extension": "mkv", "mediaType": "video", "supported": true },
+    { "fileName": "a.m4v", "extension": "m4v", "mediaType": "video", "supported": true },
+    { "fileName": "A.M4V", "extension": "m4v", "mediaType": "video", "supported": true },
+    { "fileName": "a.M4v", "extension": "m4v", "mediaType": "video", "supported": true },
+    { "fileName": "a.pdf", "extension": "pdf", "mediaType": "pdf", "supported": true },
+    { "fileName": "A.PDF", "extension": "pdf", "mediaType": "pdf", "supported": true },
+    { "fileName": "a.Pdf", "extension": "pdf", "mediaType": "pdf", "supported": true },
+    { "fileName": "a.heic", "extension": "heic", "mediaType": "unknown", "supported": false },
+    { "fileName": "a.HEIC", "extension": "heic", "mediaType": "unknown", "supported": false },
+    { "fileName": "a.heif", "extension": "heif", "mediaType": "unknown", "supported": false },
+    { "fileName": "a.jxl", "extension": "jxl", "mediaType": "unknown", "supported": false },
+    { "fileName": "a.tif", "extension": "tif", "mediaType": "unknown", "supported": false },
+    { "fileName": "a.tiff", "extension": "tiff", "mediaType": "unknown", "supported": false },
+    { "fileName": "a.svg", "extension": "svg", "mediaType": "unknown", "supported": false },
+    { "fileName": "a.ico", "extension": "ico", "mediaType": "unknown", "supported": false },
+    { "fileName": "a.jfif", "extension": "jfif", "mediaType": "unknown", "supported": false },
+    { "fileName": "a.jpe", "extension": "jpe", "mediaType": "unknown", "supported": false },
+    { "fileName": "a.apng", "extension": "apng", "mediaType": "unknown", "supported": false },
+    { "fileName": "a.avi", "extension": "avi", "mediaType": "unknown", "supported": false },
+    { "fileName": "a.wmv", "extension": "wmv", "mediaType": "unknown", "supported": false },
+    { "fileName": "a.flv", "extension": "flv", "mediaType": "unknown", "supported": false },
+    { "fileName": "a.ts", "extension": "ts", "mediaType": "unknown", "supported": false },
+    { "fileName": "a.mts", "extension": "mts", "mediaType": "unknown", "supported": false },
+    { "fileName": "a.m2ts", "extension": "m2ts", "mediaType": "unknown", "supported": false },
+    { "fileName": "a.3gp", "extension": "3gp", "mediaType": "unknown", "supported": false },
+    { "fileName": "a.ogv", "extension": "ogv", "mediaType": "unknown", "supported": false },
+    { "fileName": "a.mpg", "extension": "mpg", "mediaType": "unknown", "supported": false },
+    { "fileName": "a.mpeg", "extension": "mpeg", "mediaType": "unknown", "supported": false },
+    { "fileName": "a.epub", "extension": "epub", "mediaType": "unknown", "supported": false },
+    { "fileName": "a.cbz", "extension": "cbz", "mediaType": "unknown", "supported": false },
+    { "fileName": "a.zip", "extension": "zip", "mediaType": "unknown", "supported": false },
+    { "fileName": "a.txt", "extension": "txt", "mediaType": "unknown", "supported": false },
+    { "fileName": "a", "extension": "", "mediaType": "unknown", "supported": false },
+    { "fileName": "a.", "extension": "", "mediaType": "unknown", "supported": false },
+    { "fileName": ".", "extension": "", "mediaType": "unknown", "supported": false },
+    { "fileName": "..", "extension": "", "mediaType": "unknown", "supported": false },
+    { "fileName": "...", "extension": "", "mediaType": "unknown", "supported": false },
+    { "fileName": ".jpg", "extension": "jpg", "mediaType": "image", "supported": true },
+    { "fileName": ".GIF", "extension": "gif", "mediaType": "gif", "supported": true },
+    { "fileName": ".jpeg", "extension": "jpg", "mediaType": "image", "supported": true },
+    { "fileName": "..jpg", "extension": "jpg", "mediaType": "image", "supported": true },
+    { "fileName": "a..jpg", "extension": "jpg", "mediaType": "image", "supported": true },
+    { "fileName": "a.jpg.", "extension": "", "mediaType": "unknown", "supported": false },
+    { "fileName": "a.jpg.txt", "extension": "txt", "mediaType": "unknown", "supported": false },
+    { "fileName": "a.txt.jpg", "extension": "jpg", "mediaType": "image", "supported": true },
+    { "fileName": "a.tar.gz", "extension": "gz", "mediaType": "unknown", "supported": false },
+    {
+      "fileName": ".DS_Store",
+      "extension": "ds_store",
+      "mediaType": "unknown",
+      "supported": false
+    },
+    { "fileName": "dir/file.jpg", "extension": "jpg", "mediaType": "image", "supported": true },
+    {
+      "fileName": "dir.mp4/file",
+      "extension": "mp4/file",
+      "mediaType": "unknown",
+      "supported": false
+    },
+    { "fileName": "dir.d/file", "extension": "d/file", "mediaType": "unknown", "supported": false },
+    {
+      "fileName": "C:\\Photos\\IMG_0001.JPG",
+      "extension": "jpg",
+      "mediaType": "image",
+      "supported": true
+    },
+    {
+      "fileName": "C:\\Videos.mp4\\file",
+      "extension": "mp4\\file",
+      "mediaType": "unknown",
+      "supported": false
+    },
+    {
+      "fileName": "/archive/2024/clip.MOV",
+      "extension": "mov",
+      "mediaType": "video",
+      "supported": true
+    },
+    { "fileName": "a.jpeg ", "extension": "jpeg ", "mediaType": "unknown", "supported": false },
+    { "fileName": " a.jpg", "extension": "jpg", "mediaType": "image", "supported": true },
+    { "fileName": "a. jpg", "extension": " jpg", "mediaType": "unknown", "supported": false },
+    { "fileName": "a.jp g", "extension": "jp g", "mediaType": "unknown", "supported": false },
+    {
+      "fileName": "a.jpg\u200b",
+      "extension": "jpg\u200b",
+      "mediaType": "unknown",
+      "supported": false
+    },
+    {
+      "fileName": "a.webp\u0000",
+      "extension": "webp\u0000",
+      "mediaType": "unknown",
+      "supported": false
+    },
+    { "fileName": "a\u0000.webp", "extension": "webp", "mediaType": "image", "supported": true },
+    { "fileName": "a.jpg\t", "extension": "jpg\t", "mediaType": "unknown", "supported": false },
+    { "fileName": "video.m\u212av", "extension": "mkv", "mediaType": "video", "supported": true },
+    { "fileName": "video.M\u212aV", "extension": "mkv", "mediaType": "video", "supported": true },
+    {
+      "fileName": "a.\uff4a\uff50\uff47",
+      "extension": "\uff4a\uff50\uff47",
+      "mediaType": "unknown",
+      "supported": false
+    },
+    {
+      "fileName": "a.\uff2a\uff30\uff27",
+      "extension": "\uff4a\uff50\uff47",
+      "mediaType": "unknown",
+      "supported": false
+    },
+    {
+      "fileName": "a.G\u0130F",
+      "extension": "gi\u0307f",
+      "mediaType": "unknown",
+      "supported": false
+    },
+    {
+      "fileName": "a.\u03a3\u0391\u03a3",
+      "extension": "\u03c3\u03b1\u03c2",
+      "mediaType": "unknown",
+      "supported": false
+    },
+    { "fileName": "caf\u00e9.jpg", "extension": "jpg", "mediaType": "image", "supported": true },
+    { "fileName": "cafe\u0301.JPG", "extension": "jpg", "mediaType": "image", "supported": true },
+    {
+      "fileName": "\u5199\u771f.JPEG",
+      "extension": "jpg",
+      "mediaType": "image",
+      "supported": true
+    },
+    {
+      "fileName": "\ud83d\udcf7.webp",
+      "extension": "webp",
+      "mediaType": "image",
+      "supported": true
+    },
+    { "fileName": "\ud83d\udcf7", "extension": "", "mediaType": "unknown", "supported": false },
+    {
+      "fileName": "a.\ud83d\udcf7",
+      "extension": "\ud83d\udcf7",
+      "mediaType": "unknown",
+      "supported": false
+    },
+    {
+      "fileName": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jpg",
+      "extension": "jpg",
+      "mediaType": "image",
+      "supported": true
+    },
+    {
+      "fileName": "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9.MKV",
+      "extension": "mkv",
+      "mediaType": "video",
+      "supported": true
+    },
+    {
+      "fileName": "a.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "extension": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "mediaType": "unknown",
+      "supported": false
+    },
+    {
+      "fileName": "a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.gif",
+      "extension": "gif",
+      "mediaType": "gif",
+      "supported": true
+    }
+  ]
+}
