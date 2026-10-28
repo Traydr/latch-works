@@ -51,7 +51,12 @@ jobs:
       - name: Check the vectors from TypeScript
         run: |
           pnpm --filter @latch-works/media-domain test
+          pnpm --filter @latch-works/media-format test
           pnpm --filter @latch-works/glazier-core exec vitest run src/similarity/fingerprint-vectors.test.ts
+
+      - name: Fetch the pinned ffmpeg and ffprobe
+        working-directory: apps/oriel-gpui
+        run: cargo run -p oriel-tools --bin fetch-media-tools
 
       - name: Format, lint and test the Rust workspace
         run: pnpm oriel-gpui:check

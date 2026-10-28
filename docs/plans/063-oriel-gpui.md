@@ -24,7 +24,8 @@
 - **Status**: IN PROGRESS. Phase 0 is done (2026-10-28, branch `agent/063-0-spike`); its report
   is [docs/research/oriel-gpui-phase0.md](../research/oriel-gpui-phase0.md). Every STOP condition
   passed, and the owner accepted the two differences and chose go (decisions 3 to 6 above).
-  Phase 1 is next.
+  Phase 1 is done too (2026-10-28, branch `agent/063-1-foundations`; see "Phase 1 results").
+  Phase 2 is next, after the two questions under Phase 1 results.
 - **Priority**: P3 (an experiment the owner asked for)
 - **Effort**: XL several times over. About 24.8k lines of UI, 15k lines of core packages and the
   main-side services are rewritten in Rust. Phase 0, the gate, is L.
@@ -453,6 +454,43 @@ baseline lives in `e2e/scripts/frame-performance.ts`'s fixture mode (`FRAME_PERF
    vectors, and the `cargo test` side.
 6. **`pnpm oriel-gpui:check`**: `cargo fmt --check`, `clippy -D warnings`, `cargo test` and
    vector freshness.
+
+**Phase 1 results (2026-10-28).** All six steps are done, plus `docs/runbooks/oriel-gpui.md`, the
+`oriel-gpui.yml` workflow and the libmpv video path the owner chose. 111 Rust tests pass.
+- **Rules.** `core-domain` now holds all of `media-domain` and `core-format` the policies of
+  `media-format`, each pinned by vectors from its package's Vitest suite. Beyond the 19 accepted
+  Han pairs there is no difference. Matching needed V8's `Math.log`, JavaScript's `toFixed`
+  rounding and its `trim` set in Rust. Paths are `&str`, so a Windows name holding a lone
+  surrogate is Phase 8's problem.
+- **Animation conversion is not "ffmpeg with the fallback's arguments".** Mediabunny and the
+  ffmpeg fallback differ on short GIF delays (ffmpeg makes under 20 ms into 100 ms; Mediabunny
+  raises under 10 ms to 10 ms), odd sizes (crop against pad), the key-frame interval (none against
+  every 2 s) and quality. `core-format` exposes Mediabunny's decisions for Phase 6 to hand
+  ffmpeg.
+- **Runtime.** `oriel-runtime` has jobs as GPUI entities (merged progress, one finish, panics as
+  failures, cancel by token or by dropping), a tokio thread whose tasks GPUI can await, and one
+  SQLite thread per catalog with Electron Oriel's pragmas and `user_version` migrations. It waits
+  5 s on a locked catalog where `node:sqlite` waits 0, since nothing else shares its files.
+- **Tools.** `oriel-tools` fetches the same ffmpeg and ffprobe as Electron Oriel
+  (`cargo run -p oriel-tools --bin fetch-media-tools`), refusing a hash mismatch; a test fails
+  if its pins and `media-tools.ts` differ. `ORIEL_GPUI_MEDIA_TOOLS` wins over the bundle and the
+  dev cache, and `PATH` is never searched. The runner ports `run-tool.ts`.
+- **libmpv.** Behind `ORIEL_GPUI_VIDEO=mpv`, mpv's OpenGL renderer draws into an IOSurface,
+  which VideoToolbox converts to BT.601 `420f` for `surface()`: hardware decode, no CPU copy,
+  colour within 1 level. On the 300 fixture videos every exact seek, AV1 included, lands on its
+  target (181–210 ms median), and MKV, WebM, FLV, AVI and ASF play. The cost against AVPlayer:
+  opens take 85–97 ms against 61–65, exact seeks on H.264 and HEVC are slower, and CPU is about
+  1.7–1.8 times AVPlayer's (four 1440p60 tiles: 69–75 % against 41 %). The spike loads IINA's
+  libmpv, a GPL build, which must never ship; an LGPL build (mpv `-Dgpl=false`, FFmpeg without
+  `--enable-gpl`) loses nothing playback needs.
+
+**Questions for the owner from Phase 1:**
+1. **libmpv as the default.** Make it the default video engine now, at the CPU and latency cost
+   above, or keep AVPlayer as the default for MP4 and use libmpv for what AVPlayer cannot play or
+   seek (AV1 and the other containers)?
+2. **Building an LGPL libmpv** needs meson, ninja and pkg-config (via Homebrew), then a pinned
+   script that builds mpv, FFmpeg, libplacebo and libass from source. May the agents install those
+   tools? Until then the switch keeps loading IINA's libmpv for development only.
 
 ### Phase 2: the shell (M)
 
