@@ -7,7 +7,7 @@ const MINIMUM_FRAME_DURATION_MICROSECONDS = 10_000;
 /**
  * What an animation becomes: H.264 at Mediabunny's "high" quality, its transparency flattened
  * onto black, a key frame at least every 2 seconds, and the MP4's index written first. Exported
- * for Oriel GPUI's conformance vectors (plan 063), so its port keeps the same settings.
+ * for Oriel RS's conformance vectors (plan 063), so its port keeps the same settings.
  */
 export const ANIMATION_MP4_SETTINGS = {
   codec: "avc",

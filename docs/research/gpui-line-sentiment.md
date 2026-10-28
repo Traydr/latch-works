@@ -1,8 +1,8 @@
-# Which GPUI line to build Oriel GPUI on: what developers say and do
+# Which GPUI line to build Oriel RS on: what developers say and do
 
 Research date: 2026-10-27
 
-This research supports D1 in `docs/plans/063-oriel-gpui.md`. It covers three lines: A, GPUI Kit on
+This research supports D1 in `docs/plans/063-oriel-rs.md`. It covers three lines: A, GPUI Kit on
 Zed's GPUI through `gpui-pre`, optionally with GPUI Fast; B, GPUI-CE with its port of GPUI Kit;
 and C, upstream Zed GPUI used directly.
 
@@ -421,7 +421,7 @@ independence from Zed are arriving at CE.
 | AI policy | Friendly: agent instructions and skills in the repository. | Core forbids LLM-written commits and prose. The kit port does not enforce this yet. | Zed staff write PRs with agents ("agnatically created", [zed#63068](https://github.com/zed-industries/zed/pull/63068#issuecomment-5420946957)). |
 | Outside features accepted | Longbridge says renderer work must go upstream. GPUI Fast takes it as an experiment. | Yes, this is CE's reason to exist. Review bandwidth is the limit: #313 has been open 3.5 weeks. | Rarely: five PRs closed at once in December, and no maintainer reply on the GPU texture discussions. |
 
-## Fit for Oriel GPUI
+## Fit for Oriel RS
 
 The plan's needs are: written mostly by agents, macOS first, Windows later, custom video
 rendering, and a long-lived app.

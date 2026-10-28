@@ -25,7 +25,7 @@
     "e2e:oriel": "pnpm --filter @latch-works/e2e e2e:oriel",
     "icons": "node scripts/generate-icons.ts",
     "make:oriel": "pnpm --filter @latch-works/oriel make",
-    "oriel-gpui:check": "pnpm --filter @latch-works/oriel-gpui check"
+    "oriel-rs:check": "pnpm --filter @latch-works/oriel-rs check"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",

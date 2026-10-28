@@ -5,9 +5,9 @@
 Latch Works is a TypeScript pnpm workspace. Product code lives under `apps/`: `pane-view` is the
 web viewer; `oriel` is the Electron desktop app, whose View, Tidy and Sync modes (once Frame View,
 Glazier and the Lockstep desktop app) live in `src/modes/`; `gather-box` is a Chrome extension;
-`lockstep-cli` is the sync CLI; and `showcase` is the Astro site. `oriel-gpui` is a Rust
-experiment, Oriel ported to GPUI (plan 063, `docs/runbooks/oriel-gpui.md`); it is a Cargo
-workspace outside `pnpm test`, checked with `pnpm oriel-gpui:check`. Shared code belongs in
+`lockstep-cli` is the sync CLI; and `showcase` is the Astro site. `oriel-rs` is a Rust
+experiment, Oriel ported to GPUI (plan 063, `docs/runbooks/oriel-rs.md`); it is a Cargo
+workspace outside `pnpm test`, checked with `pnpm oriel-rs:check`. Shared code belongs in
 `packages/`.
 
 Keep source in each workspace's `src/`. Tests sit beside modules as `*.test.ts` or in

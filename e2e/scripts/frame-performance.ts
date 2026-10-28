@@ -241,7 +241,7 @@ async function runSynthetic(): Promise<void> {
 
 /*
  * Fixture mode (plan 063, Phase 0's baseline): View on the spike fixture, measured as Oriel
- * GPUI's spike measures its own View (`apps/oriel-gpui/crates/mode-view/src/spike.rs`).
+ * GPUI's spike measures its own View (`apps/oriel-rs/crates/mode-view/src/spike.rs`).
  *
  *   FRAME_PERF_FIXTURE_ROOT  the fixture: `stills/` (opened recursively) and `videos/<codec>/`
  *   FRAME_PERF_PHASES        any of `open,coldstart,warmstart,warm` (default all, in that order)
@@ -505,7 +505,7 @@ const PAGE_PROBE = `(() => {
 
 /**
  * Scrolls the gallery from the top to its end at `speed` px/s of wall time, setting `scrollTop`
- * from the elapsed time in each animation frame, as Oriel GPUI's autoscroll does; returns every
+ * from the elapsed time in each animation frame, as Oriel RS's autoscroll does; returns every
  * frame's `performance.now()` and the frame timestamps Chromium hands `requestAnimationFrame`.
  */
 const PAGE_SCROLL = `(async (speed) => {
@@ -748,7 +748,7 @@ function round2(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
-/** The same statistics as Oriel GPUI's `frame_stats`: intervals, percentiles, long frames. */
+/** The same statistics as Oriel RS's `frame_stats`: intervals, percentiles, long frames. */
 function frameStats(times: number[]) {
   const intervals = times
     .slice(1)
@@ -1198,7 +1198,7 @@ async function viewerSteps(app: ElectronApplication, page: Page, gap: number) {
 /**
  * Opens `folder` (one codec's videos), and for its first ten tiles times the double click to the
  * viewer's first frame, then an exact seek to half its length and a fast seek to a quarter, as
- * Oriel GPUI's `video_spike sweep` does.
+ * Oriel RS's `video_spike sweep` does.
  */
 async function videos(app: ElectronApplication, page: Page, folder: string) {
   await prepareWindow(app, folder);

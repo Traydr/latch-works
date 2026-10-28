@@ -1,0 +1,62 @@
+name: Oriel RS
+
+# Plan 063's experiment: formats, lints and tests the Rust workspace, and checks that the
+# TypeScript packages still produce the conformance vectors the Rust tests read. On demand, and
+# on pull requests that touch the workspace or a package it ports.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - apps/oriel-rs/**
+      - packages/media-domain/**
+      - packages/media-format/**
+      - packages/glazier-core/**
+      - .github/workflows/oriel-rs.yml
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    # Apple silicon, as the fingerprint vectors were made with sharp's darwin-arm64 libvips.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+        with:
+          run_install: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --prod=false
+
+      - name: Install the pinned Rust toolchain
+        working-directory: apps/oriel-rs
+        run: rustup toolchain install
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/oriel-rs/target
+          key: oriel-rs-${{ runner.os }}-${{ hashFiles('apps/oriel-rs/Cargo.lock', 'apps/oriel-rs/rust-toolchain.toml') }}
+          restore-keys: oriel-rs-${{ runner.os }}-
+
+      - name: Check the vectors from TypeScript
+        run: |
+          pnpm --filter @latch-works/media-domain test
+          pnpm --filter @latch-works/media-format test
+          pnpm --filter @latch-works/glazier-core exec vitest run src/similarity/fingerprint-vectors.test.ts
+
+      - name: Fetch the pinned ffmpeg and ffprobe
+        working-directory: apps/oriel-rs
+        run: cargo run -p oriel-tools --bin fetch-media-tools
+
+      - name: Format, lint and test the Rust workspace
+        run: pnpm oriel-rs:check

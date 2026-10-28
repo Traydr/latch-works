@@ -1,8 +1,8 @@
-# Rust GUI toolkits for Oriel GPUI: iced, Slint, Qt, Dioxus Native and raylib
+# Rust GUI toolkits for Oriel RS: iced, Slint, Qt, Dioxus Native and raylib
 
 Research date: 2026-10-27
 
-This note supports D1 in `docs/plans/063-oriel-gpui.md`. The owner found these toolkits
+This note supports D1 in `docs/plans/063-oriel-rs.md`. The owner found these toolkits
 recommended on Reddit and asked for each to be checked against Oriel's needs, as fairly as GPUI
 was in [the GPUI sentiment note](gpui-line-sentiment.md). Each toolkit is scored on the same
 needs:

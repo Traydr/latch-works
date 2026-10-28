@@ -1,0 +1,3476 @@
+{
+  "about": "Made by packages/media-format/src/conformance.test.ts from still-policy.ts; do not edit. Regenerate with ORIEL_RS_UPDATE_VECTORS=1 pnpm --filter @latch-works/media-format test. Non-ASCII characters are escaped.",
+  "expectedTargets": [
+    { "fileName": "photo.jpg", "target": "photo.avif" },
+    { "fileName": "photo.JPG", "target": "photo.avif" },
+    { "fileName": "photo.jpeg", "target": "photo.avif" },
+    { "fileName": "photo.JPEG", "target": "photo.avif" },
+    { "fileName": "photo.Jpeg", "target": "photo.avif" },
+    { "fileName": "photo.png", "target": "photo.avif" },
+    { "fileName": "photo.PNG", "target": "photo.avif" },
+    { "fileName": "photo.webp", "target": "photo.avif" },
+    { "fileName": "photo.bmp", "target": "photo.avif" },
+    { "fileName": "photo.BMP", "target": "photo.avif" },
+    { "fileName": "photo.gif", "target": "photo.mp4" },
+    { "fileName": "photo.GIF", "target": "photo.mp4" },
+    { "fileName": "photo.avif", "target": null },
+    { "fileName": "photo.AVIF", "target": null },
+    { "fileName": "clip.mp4", "target": null },
+    { "fileName": "clip.MP4", "target": null },
+    { "fileName": "clip.Mp4", "target": null },
+    { "fileName": "photo.heic", "target": null },
+    { "fileName": "photo.tiff", "target": null },
+    { "fileName": "photo.svg", "target": null },
+    { "fileName": "photo.jfif", "target": null },
+    { "fileName": "photo.jpe", "target": null },
+    { "fileName": "clip.m4v", "target": null },
+    { "fileName": "clip.mov", "target": null },
+    { "fileName": "clip.mkv", "target": null },
+    { "fileName": "clip.webm", "target": null },
+    { "fileName": "story.pdf", "target": null },
+    { "fileName": "archive.zip", "target": null },
+    { "fileName": "photo", "target": null },
+    { "fileName": "photo.", "target": null },
+    { "fileName": "photo..", "target": null },
+    { "fileName": ".jpg", "target": null },
+    { "fileName": ".avif", "target": null },
+    { "fileName": ".hidden.jpg", "target": ".hidden.avif" },
+    { "fileName": "..jpg", "target": "..avif" },
+    { "fileName": "a.b.c.png", "target": "a.b.c.avif" },
+    { "fileName": "photo.jpg.mp4", "target": null },
+    { "fileName": "archive.tar.gz", "target": null },
+    { "fileName": "photo.jpg.", "target": null },
+    { "fileName": "dir.d/photo", "target": null },
+    { "fileName": "dir.d\\photo", "target": null },
+    { "fileName": "dir.avif/photo", "target": null },
+    { "fileName": "dir/.jpg", "target": null },
+    { "fileName": "dir\\.jpg", "target": null },
+    { "fileName": "photos/2024/", "target": null },
+    { "fileName": "photo.jpg/", "target": null },
+    { "fileName": "photo.jpg\\", "target": null },
+    { "fileName": "/archive/2024/photo.png", "target": "/archive/2024/photo.avif" },
+    { "fileName": "C:\\Photos\\IMG_0001.JPG", "target": "C:\\Photos\\IMG_0001.avif" },
+    { "fileName": "C:\\Photos.d\\IMG_0001", "target": null },
+    { "fileName": "\\\\server\\share\\clip.MOV", "target": null },
+    { "fileName": "a/b\\c.gif", "target": "a/b\\c.mp4" },
+    { "fileName": "photo .jpg", "target": "photo .avif" },
+    { "fileName": "photo.jpg ", "target": null },
+    { "fileName": "photo. jpg", "target": null },
+    { "fileName": " photo.png", "target": " photo.avif" },
+    { "fileName": "photo.jpg\u0000", "target": null },
+    { "fileName": "photo.jpg\u200b", "target": null },
+    { "fileName": "caf\u00e9.png", "target": "caf\u00e9.avif" },
+    { "fileName": "cafe\u0301.PNG", "target": "cafe\u0301.avif" },
+    { "fileName": "\u5199\u771f.JPG", "target": "\u5199\u771f.avif" },
+    { "fileName": "\ud83d\udcf7.webp", "target": "\ud83d\udcf7.avif" },
+    { "fileName": "photo.\uff2a\uff30\uff27", "target": null },
+    { "fileName": "photo.G\u0130F", "target": null },
+    { "fileName": "photo.\u03a3\u0391\u03a3", "target": null },
+    { "fileName": "clip.M\u212aV", "target": null },
+    {
+      "fileName": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png",
+      "target": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.avif"
+    },
+    {
+      "fileName": "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9.GIF",
+      "target": "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9.mp4"
+    },
+    {
+      "fileName": "photo.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "target": null
+    },
+    {
+      "fileName": "a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.jpeg",
+      "target": "a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.avif"
+    }
+  ],
+  "media": [
+    {
+      "fileName": "photo.jpg",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    { "fileName": "photo.avif", "mimeType": "image/avif", "plan": null },
+    {
+      "fileName": "clip.mp4",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "clip.avif" }
+    },
+    {
+      "fileName": "photo",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.jpg",
+      "mimeType": "IMAGE/AVIF",
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    { "fileName": "photo.avif", "mimeType": "IMAGE/AVIF", "plan": null },
+    {
+      "fileName": "clip.mp4",
+      "mimeType": "IMAGE/AVIF",
+      "plan": { "action": "rename-avif", "fileName": "clip.avif" }
+    },
+    {
+      "fileName": "photo",
+      "mimeType": "IMAGE/AVIF",
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.jpg",
+      "mimeType": "image/avif; charset=binary",
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    { "fileName": "photo.avif", "mimeType": "image/avif; charset=binary", "plan": null },
+    {
+      "fileName": "clip.mp4",
+      "mimeType": "image/avif; charset=binary",
+      "plan": { "action": "rename-avif", "fileName": "clip.avif" }
+    },
+    {
+      "fileName": "photo",
+      "mimeType": "image/avif; charset=binary",
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.jpg",
+      "mimeType": " image/avif ",
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    { "fileName": "photo.avif", "mimeType": " image/avif ", "plan": null },
+    {
+      "fileName": "clip.mp4",
+      "mimeType": " image/avif ",
+      "plan": { "action": "rename-avif", "fileName": "clip.avif" }
+    },
+    {
+      "fileName": "photo",
+      "mimeType": " image/avif ",
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.jpg",
+      "mimeType": "\timage/avif\n",
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    { "fileName": "photo.avif", "mimeType": "\timage/avif\n", "plan": null },
+    {
+      "fileName": "clip.mp4",
+      "mimeType": "\timage/avif\n",
+      "plan": { "action": "rename-avif", "fileName": "clip.avif" }
+    },
+    {
+      "fileName": "photo",
+      "mimeType": "\timage/avif\n",
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.jpg",
+      "mimeType": "\ufeffimage/avif",
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    { "fileName": "photo.avif", "mimeType": "\ufeffimage/avif", "plan": null },
+    {
+      "fileName": "clip.mp4",
+      "mimeType": "\ufeffimage/avif",
+      "plan": { "action": "rename-avif", "fileName": "clip.avif" }
+    },
+    {
+      "fileName": "photo",
+      "mimeType": "\ufeffimage/avif",
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.jpg",
+      "mimeType": "image/avif\u0085",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.avif",
+      "mimeType": "image/avif\u0085",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "clip.mp4",
+      "mimeType": "image/avif\u0085",
+      "plan": { "action": "convert-avif", "fileName": "clip.avif" }
+    },
+    {
+      "fileName": "photo",
+      "mimeType": "image/avif\u0085",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.jpg",
+      "mimeType": "image/avif\u00a0",
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    { "fileName": "photo.avif", "mimeType": "image/avif\u00a0", "plan": null },
+    {
+      "fileName": "clip.mp4",
+      "mimeType": "image/avif\u00a0",
+      "plan": { "action": "rename-avif", "fileName": "clip.avif" }
+    },
+    {
+      "fileName": "photo",
+      "mimeType": "image/avif\u00a0",
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.jpg",
+      "mimeType": "image/avif\u3000",
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    { "fileName": "photo.avif", "mimeType": "image/avif\u3000", "plan": null },
+    {
+      "fileName": "clip.mp4",
+      "mimeType": "image/avif\u3000",
+      "plan": { "action": "rename-avif", "fileName": "clip.avif" }
+    },
+    {
+      "fileName": "photo",
+      "mimeType": "image/avif\u3000",
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.jpg",
+      "mimeType": "image/avif\u200b",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.avif",
+      "mimeType": "image/avif\u200b",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "clip.mp4",
+      "mimeType": "image/avif\u200b",
+      "plan": { "action": "convert-avif", "fileName": "clip.avif" }
+    },
+    {
+      "fileName": "photo",
+      "mimeType": "image/avif\u200b",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.jpg",
+      "mimeType": "image/avif\u180e",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.avif",
+      "mimeType": "image/avif\u180e",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "clip.mp4",
+      "mimeType": "image/avif\u180e",
+      "plan": { "action": "convert-avif", "fileName": "clip.avif" }
+    },
+    {
+      "fileName": "photo",
+      "mimeType": "image/avif\u180e",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.jpg",
+      "mimeType": "image/avif\u2028",
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    { "fileName": "photo.avif", "mimeType": "image/avif\u2028", "plan": null },
+    {
+      "fileName": "clip.mp4",
+      "mimeType": "image/avif\u2028",
+      "plan": { "action": "rename-avif", "fileName": "clip.avif" }
+    },
+    {
+      "fileName": "photo",
+      "mimeType": "image/avif\u2028",
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.jpg",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.avif",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    { "fileName": "clip.mp4", "mimeType": "video/mp4", "plan": null },
+    {
+      "fileName": "photo",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.jpg",
+      "mimeType": "VIDEO/MP4",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.avif",
+      "mimeType": "VIDEO/MP4",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    { "fileName": "clip.mp4", "mimeType": "VIDEO/MP4", "plan": null },
+    {
+      "fileName": "photo",
+      "mimeType": "VIDEO/MP4",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.jpg",
+      "mimeType": "video/mp4;codecs=avc1",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.avif",
+      "mimeType": "video/mp4;codecs=avc1",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    { "fileName": "clip.mp4", "mimeType": "video/mp4;codecs=avc1", "plan": null },
+    {
+      "fileName": "photo",
+      "mimeType": "video/mp4;codecs=avc1",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.jpg",
+      "mimeType": "video/mp4 ;",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.avif",
+      "mimeType": "video/mp4 ;",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    { "fileName": "clip.mp4", "mimeType": "video/mp4 ;", "plan": null },
+    {
+      "fileName": "photo",
+      "mimeType": "video/mp4 ;",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.jpg",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.avif",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "clip.mp4",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "clip.mp4" }
+    },
+    {
+      "fileName": "photo",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.jpg",
+      "mimeType": "image/GIF",
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.avif",
+      "mimeType": "image/GIF",
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "clip.mp4",
+      "mimeType": "image/GIF",
+      "plan": { "action": "convert-mp4", "fileName": "clip.mp4" }
+    },
+    {
+      "fileName": "photo",
+      "mimeType": "image/GIF",
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.jpg",
+      "mimeType": "image/gif;",
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.avif",
+      "mimeType": "image/gif;",
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "clip.mp4",
+      "mimeType": "image/gif;",
+      "plan": { "action": "convert-mp4", "fileName": "clip.mp4" }
+    },
+    {
+      "fileName": "photo",
+      "mimeType": "image/gif;",
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    { "fileName": "photo.jpg", "mimeType": "video/webm", "plan": null },
+    { "fileName": "photo.avif", "mimeType": "video/webm", "plan": null },
+    { "fileName": "clip.mp4", "mimeType": "video/webm", "plan": null },
+    { "fileName": "photo", "mimeType": "video/webm", "plan": null },
+    { "fileName": "photo.jpg", "mimeType": "video/quicktime", "plan": null },
+    { "fileName": "photo.avif", "mimeType": "video/quicktime", "plan": null },
+    { "fileName": "clip.mp4", "mimeType": "video/quicktime", "plan": null },
+    { "fileName": "photo", "mimeType": "video/quicktime", "plan": null },
+    { "fileName": "photo.jpg", "mimeType": "video/", "plan": null },
+    { "fileName": "photo.avif", "mimeType": "video/", "plan": null },
+    { "fileName": "clip.mp4", "mimeType": "video/", "plan": null },
+    { "fileName": "photo", "mimeType": "video/", "plan": null },
+    {
+      "fileName": "photo.jpg",
+      "mimeType": "video",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    { "fileName": "photo.avif", "mimeType": "video", "plan": null },
+    { "fileName": "clip.mp4", "mimeType": "video", "plan": null },
+    { "fileName": "photo", "mimeType": "video", "plan": null },
+    {
+      "fileName": "photo.jpg",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.avif",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "clip.mp4",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "clip.avif" }
+    },
+    {
+      "fileName": "photo",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.jpg",
+      "mimeType": "image/jpeg",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.avif",
+      "mimeType": "image/jpeg",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "clip.mp4",
+      "mimeType": "image/jpeg",
+      "plan": { "action": "convert-avif", "fileName": "clip.avif" }
+    },
+    {
+      "fileName": "photo",
+      "mimeType": "image/jpeg",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.jpg",
+      "mimeType": "image/webp",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.avif",
+      "mimeType": "image/webp",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "clip.mp4",
+      "mimeType": "image/webp",
+      "plan": { "action": "convert-avif", "fileName": "clip.avif" }
+    },
+    {
+      "fileName": "photo",
+      "mimeType": "image/webp",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.jpg",
+      "mimeType": "image/bmp",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.avif",
+      "mimeType": "image/bmp",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "clip.mp4",
+      "mimeType": "image/bmp",
+      "plan": { "action": "convert-avif", "fileName": "clip.avif" }
+    },
+    {
+      "fileName": "photo",
+      "mimeType": "image/bmp",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.jpg",
+      "mimeType": "image/heic",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.avif",
+      "mimeType": "image/heic",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "clip.mp4",
+      "mimeType": "image/heic",
+      "plan": { "action": "convert-avif", "fileName": "clip.avif" }
+    },
+    {
+      "fileName": "photo",
+      "mimeType": "image/heic",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.jpg",
+      "mimeType": "image/jxl",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.avif",
+      "mimeType": "image/jxl",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "clip.mp4",
+      "mimeType": "image/jxl",
+      "plan": { "action": "convert-avif", "fileName": "clip.avif" }
+    },
+    {
+      "fileName": "photo",
+      "mimeType": "image/jxl",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.jpg",
+      "mimeType": "image/svg+xml",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    { "fileName": "photo.avif", "mimeType": "image/svg+xml", "plan": null },
+    { "fileName": "clip.mp4", "mimeType": "image/svg+xml", "plan": null },
+    { "fileName": "photo", "mimeType": "image/svg+xml", "plan": null },
+    {
+      "fileName": "photo.jpg",
+      "mimeType": "IMAGE/SVG+XML",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    { "fileName": "photo.avif", "mimeType": "IMAGE/SVG+XML", "plan": null },
+    { "fileName": "clip.mp4", "mimeType": "IMAGE/SVG+XML", "plan": null },
+    { "fileName": "photo", "mimeType": "IMAGE/SVG+XML", "plan": null },
+    {
+      "fileName": "photo.jpg",
+      "mimeType": "image/svg+xml; charset=utf-8",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    { "fileName": "photo.avif", "mimeType": "image/svg+xml; charset=utf-8", "plan": null },
+    { "fileName": "clip.mp4", "mimeType": "image/svg+xml; charset=utf-8", "plan": null },
+    { "fileName": "photo", "mimeType": "image/svg+xml; charset=utf-8", "plan": null },
+    {
+      "fileName": "photo.jpg",
+      "mimeType": "image/svg",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.avif",
+      "mimeType": "image/svg",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "clip.mp4",
+      "mimeType": "image/svg",
+      "plan": { "action": "convert-avif", "fileName": "clip.avif" }
+    },
+    {
+      "fileName": "photo",
+      "mimeType": "image/svg",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.jpg",
+      "mimeType": "image/",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.avif",
+      "mimeType": "image/",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "clip.mp4",
+      "mimeType": "image/",
+      "plan": { "action": "convert-avif", "fileName": "clip.avif" }
+    },
+    {
+      "fileName": "photo",
+      "mimeType": "image/",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.jpg",
+      "mimeType": "image",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    { "fileName": "photo.avif", "mimeType": "image", "plan": null },
+    { "fileName": "clip.mp4", "mimeType": "image", "plan": null },
+    { "fileName": "photo", "mimeType": "image", "plan": null },
+    {
+      "fileName": "photo.jpg",
+      "mimeType": "images/png",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    { "fileName": "photo.avif", "mimeType": "images/png", "plan": null },
+    { "fileName": "clip.mp4", "mimeType": "images/png", "plan": null },
+    { "fileName": "photo", "mimeType": "images/png", "plan": null },
+    {
+      "fileName": "photo.jpg",
+      "mimeType": "image /png",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    { "fileName": "photo.avif", "mimeType": "image /png", "plan": null },
+    { "fileName": "clip.mp4", "mimeType": "image /png", "plan": null },
+    { "fileName": "photo", "mimeType": "image /png", "plan": null },
+    {
+      "fileName": "photo.jpg",
+      "mimeType": "image/avif, image/webp",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.avif",
+      "mimeType": "image/avif, image/webp",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "clip.mp4",
+      "mimeType": "image/avif, image/webp",
+      "plan": { "action": "convert-avif", "fileName": "clip.avif" }
+    },
+    {
+      "fileName": "photo",
+      "mimeType": "image/avif, image/webp",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.jpg",
+      "mimeType": "\u0130MAGE/PNG",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    { "fileName": "photo.avif", "mimeType": "\u0130MAGE/PNG", "plan": null },
+    { "fileName": "clip.mp4", "mimeType": "\u0130MAGE/PNG", "plan": null },
+    { "fileName": "photo", "mimeType": "\u0130MAGE/PNG", "plan": null },
+    {
+      "fileName": "photo.jpg",
+      "mimeType": "application/octet-stream",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    { "fileName": "photo.avif", "mimeType": "application/octet-stream", "plan": null },
+    { "fileName": "clip.mp4", "mimeType": "application/octet-stream", "plan": null },
+    { "fileName": "photo", "mimeType": "application/octet-stream", "plan": null },
+    {
+      "fileName": "photo.jpg",
+      "mimeType": "application/pdf",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    { "fileName": "photo.avif", "mimeType": "application/pdf", "plan": null },
+    { "fileName": "clip.mp4", "mimeType": "application/pdf", "plan": null },
+    { "fileName": "photo", "mimeType": "application/pdf", "plan": null },
+    {
+      "fileName": "photo.jpg",
+      "mimeType": "audio/mpeg",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    { "fileName": "photo.avif", "mimeType": "audio/mpeg", "plan": null },
+    { "fileName": "clip.mp4", "mimeType": "audio/mpeg", "plan": null },
+    { "fileName": "photo", "mimeType": "audio/mpeg", "plan": null },
+    {
+      "fileName": "photo.jpg",
+      "mimeType": "text/html",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    { "fileName": "photo.avif", "mimeType": "text/html", "plan": null },
+    { "fileName": "clip.mp4", "mimeType": "text/html", "plan": null },
+    { "fileName": "photo", "mimeType": "text/html", "plan": null },
+    {
+      "fileName": "photo.jpg",
+      "mimeType": "",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    { "fileName": "photo.avif", "mimeType": "", "plan": null },
+    { "fileName": "clip.mp4", "mimeType": "", "plan": null },
+    { "fileName": "photo", "mimeType": "", "plan": null },
+    {
+      "fileName": "photo.jpg",
+      "mimeType": " ",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    { "fileName": "photo.avif", "mimeType": " ", "plan": null },
+    { "fileName": "clip.mp4", "mimeType": " ", "plan": null },
+    { "fileName": "photo", "mimeType": " ", "plan": null },
+    {
+      "fileName": "photo.jpg",
+      "mimeType": ";",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    { "fileName": "photo.avif", "mimeType": ";", "plan": null },
+    { "fileName": "clip.mp4", "mimeType": ";", "plan": null },
+    { "fileName": "photo", "mimeType": ";", "plan": null },
+    {
+      "fileName": "photo.JPG",
+      "mimeType": "application/octet-stream",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.JPG",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.JPG",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.JPG",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.JPG",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.jpeg",
+      "mimeType": "application/octet-stream",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.jpeg",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.jpeg",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.jpeg",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.jpeg",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.JPEG",
+      "mimeType": "application/octet-stream",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.JPEG",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.JPEG",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.JPEG",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.JPEG",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.Jpeg",
+      "mimeType": "application/octet-stream",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.Jpeg",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.Jpeg",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.Jpeg",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.Jpeg",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.png",
+      "mimeType": "application/octet-stream",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.png",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.png",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.png",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.png",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.PNG",
+      "mimeType": "application/octet-stream",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.PNG",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.PNG",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.PNG",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.PNG",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.webp",
+      "mimeType": "application/octet-stream",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.webp",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.webp",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.webp",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.webp",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.bmp",
+      "mimeType": "application/octet-stream",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.bmp",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.bmp",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.bmp",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.bmp",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.BMP",
+      "mimeType": "application/octet-stream",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.BMP",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.BMP",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.BMP",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.BMP",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.gif",
+      "mimeType": "application/octet-stream",
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.gif",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.gif",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.gif",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.gif",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.GIF",
+      "mimeType": "application/octet-stream",
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.GIF",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.GIF",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.GIF",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.GIF",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    { "fileName": "photo.AVIF", "mimeType": "application/octet-stream", "plan": null },
+    {
+      "fileName": "photo.AVIF",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    { "fileName": "photo.AVIF", "mimeType": "image/avif", "plan": null },
+    {
+      "fileName": "photo.AVIF",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.AVIF",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    { "fileName": "clip.MP4", "mimeType": "application/octet-stream", "plan": null },
+    {
+      "fileName": "clip.MP4",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "clip.avif" }
+    },
+    {
+      "fileName": "clip.MP4",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "clip.avif" }
+    },
+    { "fileName": "clip.MP4", "mimeType": "video/mp4", "plan": null },
+    {
+      "fileName": "clip.MP4",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "clip.mp4" }
+    },
+    { "fileName": "clip.Mp4", "mimeType": "application/octet-stream", "plan": null },
+    {
+      "fileName": "clip.Mp4",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "clip.avif" }
+    },
+    {
+      "fileName": "clip.Mp4",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "clip.avif" }
+    },
+    { "fileName": "clip.Mp4", "mimeType": "video/mp4", "plan": null },
+    {
+      "fileName": "clip.Mp4",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "clip.mp4" }
+    },
+    { "fileName": "photo.heic", "mimeType": "application/octet-stream", "plan": null },
+    {
+      "fileName": "photo.heic",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.heic",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.heic",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.heic",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    { "fileName": "photo.tiff", "mimeType": "application/octet-stream", "plan": null },
+    {
+      "fileName": "photo.tiff",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.tiff",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.tiff",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.tiff",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    { "fileName": "photo.svg", "mimeType": "application/octet-stream", "plan": null },
+    {
+      "fileName": "photo.svg",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.svg",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.svg",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.svg",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    { "fileName": "photo.jfif", "mimeType": "application/octet-stream", "plan": null },
+    {
+      "fileName": "photo.jfif",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.jfif",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.jfif",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.jfif",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    { "fileName": "photo.jpe", "mimeType": "application/octet-stream", "plan": null },
+    {
+      "fileName": "photo.jpe",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.jpe",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.jpe",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.jpe",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    { "fileName": "clip.m4v", "mimeType": "application/octet-stream", "plan": null },
+    {
+      "fileName": "clip.m4v",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "clip.avif" }
+    },
+    {
+      "fileName": "clip.m4v",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "clip.avif" }
+    },
+    {
+      "fileName": "clip.m4v",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "clip.mp4" }
+    },
+    {
+      "fileName": "clip.m4v",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "clip.mp4" }
+    },
+    { "fileName": "clip.mov", "mimeType": "application/octet-stream", "plan": null },
+    {
+      "fileName": "clip.mov",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "clip.avif" }
+    },
+    {
+      "fileName": "clip.mov",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "clip.avif" }
+    },
+    {
+      "fileName": "clip.mov",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "clip.mp4" }
+    },
+    {
+      "fileName": "clip.mov",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "clip.mp4" }
+    },
+    { "fileName": "clip.mkv", "mimeType": "application/octet-stream", "plan": null },
+    {
+      "fileName": "clip.mkv",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "clip.avif" }
+    },
+    {
+      "fileName": "clip.mkv",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "clip.avif" }
+    },
+    {
+      "fileName": "clip.mkv",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "clip.mp4" }
+    },
+    {
+      "fileName": "clip.mkv",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "clip.mp4" }
+    },
+    { "fileName": "clip.webm", "mimeType": "application/octet-stream", "plan": null },
+    {
+      "fileName": "clip.webm",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "clip.avif" }
+    },
+    {
+      "fileName": "clip.webm",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "clip.avif" }
+    },
+    {
+      "fileName": "clip.webm",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "clip.mp4" }
+    },
+    {
+      "fileName": "clip.webm",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "clip.mp4" }
+    },
+    { "fileName": "story.pdf", "mimeType": "application/octet-stream", "plan": null },
+    {
+      "fileName": "story.pdf",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "story.avif" }
+    },
+    {
+      "fileName": "story.pdf",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "story.avif" }
+    },
+    {
+      "fileName": "story.pdf",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "story.mp4" }
+    },
+    {
+      "fileName": "story.pdf",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "story.mp4" }
+    },
+    { "fileName": "archive.zip", "mimeType": "application/octet-stream", "plan": null },
+    {
+      "fileName": "archive.zip",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "archive.avif" }
+    },
+    {
+      "fileName": "archive.zip",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "archive.avif" }
+    },
+    {
+      "fileName": "archive.zip",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "archive.mp4" }
+    },
+    {
+      "fileName": "archive.zip",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "archive.mp4" }
+    },
+    { "fileName": "photo.", "mimeType": "application/octet-stream", "plan": null },
+    {
+      "fileName": "photo.",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    { "fileName": "photo..", "mimeType": "application/octet-stream", "plan": null },
+    {
+      "fileName": "photo..",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "photo..avif" }
+    },
+    {
+      "fileName": "photo..",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "photo..avif" }
+    },
+    {
+      "fileName": "photo..",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "photo..mp4" }
+    },
+    {
+      "fileName": "photo..",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "photo..mp4" }
+    },
+    { "fileName": ".jpg", "mimeType": "application/octet-stream", "plan": null },
+    {
+      "fileName": ".jpg",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": ".jpg.avif" }
+    },
+    {
+      "fileName": ".jpg",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": ".jpg.avif" }
+    },
+    {
+      "fileName": ".jpg",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": ".jpg.mp4" }
+    },
+    {
+      "fileName": ".jpg",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": ".jpg.mp4" }
+    },
+    { "fileName": ".avif", "mimeType": "application/octet-stream", "plan": null },
+    {
+      "fileName": ".avif",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": ".avif.avif" }
+    },
+    {
+      "fileName": ".avif",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": ".avif.avif" }
+    },
+    {
+      "fileName": ".avif",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": ".avif.mp4" }
+    },
+    {
+      "fileName": ".avif",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": ".avif.mp4" }
+    },
+    {
+      "fileName": ".hidden.jpg",
+      "mimeType": "application/octet-stream",
+      "plan": { "action": "convert-avif", "fileName": ".hidden.avif" }
+    },
+    {
+      "fileName": ".hidden.jpg",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": ".hidden.avif" }
+    },
+    {
+      "fileName": ".hidden.jpg",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": ".hidden.avif" }
+    },
+    {
+      "fileName": ".hidden.jpg",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": ".hidden.mp4" }
+    },
+    {
+      "fileName": ".hidden.jpg",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": ".hidden.mp4" }
+    },
+    {
+      "fileName": "..jpg",
+      "mimeType": "application/octet-stream",
+      "plan": { "action": "convert-avif", "fileName": "..avif" }
+    },
+    {
+      "fileName": "..jpg",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "..avif" }
+    },
+    {
+      "fileName": "..jpg",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "..avif" }
+    },
+    {
+      "fileName": "..jpg",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "..mp4" }
+    },
+    {
+      "fileName": "..jpg",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "..mp4" }
+    },
+    {
+      "fileName": "a.b.c.png",
+      "mimeType": "application/octet-stream",
+      "plan": { "action": "convert-avif", "fileName": "a.b.c.avif" }
+    },
+    {
+      "fileName": "a.b.c.png",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "a.b.c.avif" }
+    },
+    {
+      "fileName": "a.b.c.png",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "a.b.c.avif" }
+    },
+    {
+      "fileName": "a.b.c.png",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "a.b.c.mp4" }
+    },
+    {
+      "fileName": "a.b.c.png",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "a.b.c.mp4" }
+    },
+    { "fileName": "photo.jpg.mp4", "mimeType": "application/octet-stream", "plan": null },
+    {
+      "fileName": "photo.jpg.mp4",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "photo.jpg.avif" }
+    },
+    {
+      "fileName": "photo.jpg.mp4",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "photo.jpg.avif" }
+    },
+    { "fileName": "photo.jpg.mp4", "mimeType": "video/mp4", "plan": null },
+    {
+      "fileName": "photo.jpg.mp4",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "photo.jpg.mp4" }
+    },
+    { "fileName": "archive.tar.gz", "mimeType": "application/octet-stream", "plan": null },
+    {
+      "fileName": "archive.tar.gz",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "archive.tar.avif" }
+    },
+    {
+      "fileName": "archive.tar.gz",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "archive.tar.avif" }
+    },
+    {
+      "fileName": "archive.tar.gz",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "archive.tar.mp4" }
+    },
+    {
+      "fileName": "archive.tar.gz",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "archive.tar.mp4" }
+    },
+    { "fileName": "photo.jpg.", "mimeType": "application/octet-stream", "plan": null },
+    {
+      "fileName": "photo.jpg.",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "photo.jpg.avif" }
+    },
+    {
+      "fileName": "photo.jpg.",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "photo.jpg.avif" }
+    },
+    {
+      "fileName": "photo.jpg.",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "photo.jpg.mp4" }
+    },
+    {
+      "fileName": "photo.jpg.",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "photo.jpg.mp4" }
+    },
+    { "fileName": "dir.d/photo", "mimeType": "application/octet-stream", "plan": null },
+    {
+      "fileName": "dir.d/photo",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "dir.d/photo.avif" }
+    },
+    {
+      "fileName": "dir.d/photo",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "dir.d/photo.avif" }
+    },
+    {
+      "fileName": "dir.d/photo",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "dir.d/photo.mp4" }
+    },
+    {
+      "fileName": "dir.d/photo",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "dir.d/photo.mp4" }
+    },
+    { "fileName": "dir.d\\photo", "mimeType": "application/octet-stream", "plan": null },
+    {
+      "fileName": "dir.d\\photo",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "dir.d\\photo.avif" }
+    },
+    {
+      "fileName": "dir.d\\photo",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "dir.d\\photo.avif" }
+    },
+    {
+      "fileName": "dir.d\\photo",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "dir.d\\photo.mp4" }
+    },
+    {
+      "fileName": "dir.d\\photo",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "dir.d\\photo.mp4" }
+    },
+    { "fileName": "dir.avif/photo", "mimeType": "application/octet-stream", "plan": null },
+    {
+      "fileName": "dir.avif/photo",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "dir.avif/photo.avif" }
+    },
+    {
+      "fileName": "dir.avif/photo",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "dir.avif/photo.avif" }
+    },
+    {
+      "fileName": "dir.avif/photo",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "dir.avif/photo.mp4" }
+    },
+    {
+      "fileName": "dir.avif/photo",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "dir.avif/photo.mp4" }
+    },
+    { "fileName": "dir/.jpg", "mimeType": "application/octet-stream", "plan": null },
+    {
+      "fileName": "dir/.jpg",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "dir/.jpg.avif" }
+    },
+    {
+      "fileName": "dir/.jpg",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "dir/.jpg.avif" }
+    },
+    {
+      "fileName": "dir/.jpg",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "dir/.jpg.mp4" }
+    },
+    {
+      "fileName": "dir/.jpg",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "dir/.jpg.mp4" }
+    },
+    { "fileName": "dir\\.jpg", "mimeType": "application/octet-stream", "plan": null },
+    {
+      "fileName": "dir\\.jpg",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "dir\\.jpg.avif" }
+    },
+    {
+      "fileName": "dir\\.jpg",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "dir\\.jpg.avif" }
+    },
+    {
+      "fileName": "dir\\.jpg",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "dir\\.jpg.mp4" }
+    },
+    {
+      "fileName": "dir\\.jpg",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "dir\\.jpg.mp4" }
+    },
+    { "fileName": "photos/2024/", "mimeType": "application/octet-stream", "plan": null },
+    {
+      "fileName": "photos/2024/",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "photos/2024/.avif" }
+    },
+    {
+      "fileName": "photos/2024/",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "photos/2024/.avif" }
+    },
+    {
+      "fileName": "photos/2024/",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "photos/2024/.mp4" }
+    },
+    {
+      "fileName": "photos/2024/",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "photos/2024/.mp4" }
+    },
+    { "fileName": "photo.jpg/", "mimeType": "application/octet-stream", "plan": null },
+    {
+      "fileName": "photo.jpg/",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "photo.jpg/.avif" }
+    },
+    {
+      "fileName": "photo.jpg/",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "photo.jpg/.avif" }
+    },
+    {
+      "fileName": "photo.jpg/",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "photo.jpg/.mp4" }
+    },
+    {
+      "fileName": "photo.jpg/",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "photo.jpg/.mp4" }
+    },
+    { "fileName": "photo.jpg\\", "mimeType": "application/octet-stream", "plan": null },
+    {
+      "fileName": "photo.jpg\\",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "photo.jpg\\.avif" }
+    },
+    {
+      "fileName": "photo.jpg\\",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "photo.jpg\\.avif" }
+    },
+    {
+      "fileName": "photo.jpg\\",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "photo.jpg\\.mp4" }
+    },
+    {
+      "fileName": "photo.jpg\\",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "photo.jpg\\.mp4" }
+    },
+    {
+      "fileName": "/archive/2024/photo.png",
+      "mimeType": "application/octet-stream",
+      "plan": { "action": "convert-avif", "fileName": "/archive/2024/photo.avif" }
+    },
+    {
+      "fileName": "/archive/2024/photo.png",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "/archive/2024/photo.avif" }
+    },
+    {
+      "fileName": "/archive/2024/photo.png",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "/archive/2024/photo.avif" }
+    },
+    {
+      "fileName": "/archive/2024/photo.png",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "/archive/2024/photo.mp4" }
+    },
+    {
+      "fileName": "/archive/2024/photo.png",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "/archive/2024/photo.mp4" }
+    },
+    {
+      "fileName": "C:\\Photos\\IMG_0001.JPG",
+      "mimeType": "application/octet-stream",
+      "plan": { "action": "convert-avif", "fileName": "C:\\Photos\\IMG_0001.avif" }
+    },
+    {
+      "fileName": "C:\\Photos\\IMG_0001.JPG",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "C:\\Photos\\IMG_0001.avif" }
+    },
+    {
+      "fileName": "C:\\Photos\\IMG_0001.JPG",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "C:\\Photos\\IMG_0001.avif" }
+    },
+    {
+      "fileName": "C:\\Photos\\IMG_0001.JPG",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "C:\\Photos\\IMG_0001.mp4" }
+    },
+    {
+      "fileName": "C:\\Photos\\IMG_0001.JPG",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "C:\\Photos\\IMG_0001.mp4" }
+    },
+    { "fileName": "C:\\Photos.d\\IMG_0001", "mimeType": "application/octet-stream", "plan": null },
+    {
+      "fileName": "C:\\Photos.d\\IMG_0001",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "C:\\Photos.d\\IMG_0001.avif" }
+    },
+    {
+      "fileName": "C:\\Photos.d\\IMG_0001",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "C:\\Photos.d\\IMG_0001.avif" }
+    },
+    {
+      "fileName": "C:\\Photos.d\\IMG_0001",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "C:\\Photos.d\\IMG_0001.mp4" }
+    },
+    {
+      "fileName": "C:\\Photos.d\\IMG_0001",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "C:\\Photos.d\\IMG_0001.mp4" }
+    },
+    {
+      "fileName": "\\\\server\\share\\clip.MOV",
+      "mimeType": "application/octet-stream",
+      "plan": null
+    },
+    {
+      "fileName": "\\\\server\\share\\clip.MOV",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "\\\\server\\share\\clip.avif" }
+    },
+    {
+      "fileName": "\\\\server\\share\\clip.MOV",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "\\\\server\\share\\clip.avif" }
+    },
+    {
+      "fileName": "\\\\server\\share\\clip.MOV",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "\\\\server\\share\\clip.mp4" }
+    },
+    {
+      "fileName": "\\\\server\\share\\clip.MOV",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "\\\\server\\share\\clip.mp4" }
+    },
+    {
+      "fileName": "a/b\\c.gif",
+      "mimeType": "application/octet-stream",
+      "plan": { "action": "convert-mp4", "fileName": "a/b\\c.mp4" }
+    },
+    {
+      "fileName": "a/b\\c.gif",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "a/b\\c.avif" }
+    },
+    {
+      "fileName": "a/b\\c.gif",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "a/b\\c.avif" }
+    },
+    {
+      "fileName": "a/b\\c.gif",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "a/b\\c.mp4" }
+    },
+    {
+      "fileName": "a/b\\c.gif",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "a/b\\c.mp4" }
+    },
+    {
+      "fileName": "photo .jpg",
+      "mimeType": "application/octet-stream",
+      "plan": { "action": "convert-avif", "fileName": "photo .avif" }
+    },
+    {
+      "fileName": "photo .jpg",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "photo .avif" }
+    },
+    {
+      "fileName": "photo .jpg",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "photo .avif" }
+    },
+    {
+      "fileName": "photo .jpg",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "photo .mp4" }
+    },
+    {
+      "fileName": "photo .jpg",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "photo .mp4" }
+    },
+    { "fileName": "photo.jpg ", "mimeType": "application/octet-stream", "plan": null },
+    {
+      "fileName": "photo.jpg ",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.jpg ",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.jpg ",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.jpg ",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    { "fileName": "photo. jpg", "mimeType": "application/octet-stream", "plan": null },
+    {
+      "fileName": "photo. jpg",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo. jpg",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo. jpg",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo. jpg",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": " photo.png",
+      "mimeType": "application/octet-stream",
+      "plan": { "action": "convert-avif", "fileName": " photo.avif" }
+    },
+    {
+      "fileName": " photo.png",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": " photo.avif" }
+    },
+    {
+      "fileName": " photo.png",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": " photo.avif" }
+    },
+    {
+      "fileName": " photo.png",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": " photo.mp4" }
+    },
+    {
+      "fileName": " photo.png",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": " photo.mp4" }
+    },
+    { "fileName": "photo.jpg\u0000", "mimeType": "application/octet-stream", "plan": null },
+    {
+      "fileName": "photo.jpg\u0000",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.jpg\u0000",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.jpg\u0000",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.jpg\u0000",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    { "fileName": "photo.jpg\u200b", "mimeType": "application/octet-stream", "plan": null },
+    {
+      "fileName": "photo.jpg\u200b",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.jpg\u200b",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.jpg\u200b",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.jpg\u200b",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "caf\u00e9.png",
+      "mimeType": "application/octet-stream",
+      "plan": { "action": "convert-avif", "fileName": "caf\u00e9.avif" }
+    },
+    {
+      "fileName": "caf\u00e9.png",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "caf\u00e9.avif" }
+    },
+    {
+      "fileName": "caf\u00e9.png",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "caf\u00e9.avif" }
+    },
+    {
+      "fileName": "caf\u00e9.png",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "caf\u00e9.mp4" }
+    },
+    {
+      "fileName": "caf\u00e9.png",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "caf\u00e9.mp4" }
+    },
+    {
+      "fileName": "cafe\u0301.PNG",
+      "mimeType": "application/octet-stream",
+      "plan": { "action": "convert-avif", "fileName": "cafe\u0301.avif" }
+    },
+    {
+      "fileName": "cafe\u0301.PNG",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "cafe\u0301.avif" }
+    },
+    {
+      "fileName": "cafe\u0301.PNG",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "cafe\u0301.avif" }
+    },
+    {
+      "fileName": "cafe\u0301.PNG",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "cafe\u0301.mp4" }
+    },
+    {
+      "fileName": "cafe\u0301.PNG",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "cafe\u0301.mp4" }
+    },
+    {
+      "fileName": "\u5199\u771f.JPG",
+      "mimeType": "application/octet-stream",
+      "plan": { "action": "convert-avif", "fileName": "\u5199\u771f.avif" }
+    },
+    {
+      "fileName": "\u5199\u771f.JPG",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "\u5199\u771f.avif" }
+    },
+    {
+      "fileName": "\u5199\u771f.JPG",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "\u5199\u771f.avif" }
+    },
+    {
+      "fileName": "\u5199\u771f.JPG",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "\u5199\u771f.mp4" }
+    },
+    {
+      "fileName": "\u5199\u771f.JPG",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "\u5199\u771f.mp4" }
+    },
+    {
+      "fileName": "\ud83d\udcf7.webp",
+      "mimeType": "application/octet-stream",
+      "plan": { "action": "convert-avif", "fileName": "\ud83d\udcf7.avif" }
+    },
+    {
+      "fileName": "\ud83d\udcf7.webp",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "\ud83d\udcf7.avif" }
+    },
+    {
+      "fileName": "\ud83d\udcf7.webp",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "\ud83d\udcf7.avif" }
+    },
+    {
+      "fileName": "\ud83d\udcf7.webp",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "\ud83d\udcf7.mp4" }
+    },
+    {
+      "fileName": "\ud83d\udcf7.webp",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "\ud83d\udcf7.mp4" }
+    },
+    {
+      "fileName": "photo.\uff2a\uff30\uff27",
+      "mimeType": "application/octet-stream",
+      "plan": null
+    },
+    {
+      "fileName": "photo.\uff2a\uff30\uff27",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.\uff2a\uff30\uff27",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.\uff2a\uff30\uff27",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.\uff2a\uff30\uff27",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    { "fileName": "photo.G\u0130F", "mimeType": "application/octet-stream", "plan": null },
+    {
+      "fileName": "photo.G\u0130F",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.G\u0130F",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.G\u0130F",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.G\u0130F",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.\u03a3\u0391\u03a3",
+      "mimeType": "application/octet-stream",
+      "plan": null
+    },
+    {
+      "fileName": "photo.\u03a3\u0391\u03a3",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.\u03a3\u0391\u03a3",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.\u03a3\u0391\u03a3",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.\u03a3\u0391\u03a3",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    { "fileName": "clip.M\u212aV", "mimeType": "application/octet-stream", "plan": null },
+    {
+      "fileName": "clip.M\u212aV",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "clip.avif" }
+    },
+    {
+      "fileName": "clip.M\u212aV",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "clip.avif" }
+    },
+    {
+      "fileName": "clip.M\u212aV",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "clip.mp4" }
+    },
+    {
+      "fileName": "clip.M\u212aV",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "clip.mp4" }
+    },
+    {
+      "fileName": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png",
+      "mimeType": "application/octet-stream",
+      "plan": {
+        "action": "convert-avif",
+        "fileName": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.avif"
+      }
+    },
+    {
+      "fileName": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png",
+      "mimeType": "image/png",
+      "plan": {
+        "action": "convert-avif",
+        "fileName": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.avif"
+      }
+    },
+    {
+      "fileName": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png",
+      "mimeType": "image/avif",
+      "plan": {
+        "action": "rename-avif",
+        "fileName": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.avif"
+      }
+    },
+    {
+      "fileName": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png",
+      "mimeType": "video/mp4",
+      "plan": {
+        "action": "rename-mp4",
+        "fileName": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.mp4"
+      }
+    },
+    {
+      "fileName": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png",
+      "mimeType": "image/gif",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.mp4"
+      }
+    },
+    {
+      "fileName": "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9.GIF",
+      "mimeType": "application/octet-stream",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9.mp4"
+      }
+    },
+    {
+      "fileName": "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9.GIF",
+      "mimeType": "image/png",
+      "plan": {
+        "action": "convert-avif",
+        "fileName": "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9.avif"
+      }
+    },
+    {
+      "fileName": "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9.GIF",
+      "mimeType": "image/avif",
+      "plan": {
+        "action": "rename-avif",
+        "fileName": "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9.avif"
+      }
+    },
+    {
+      "fileName": "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9.GIF",
+      "mimeType": "video/mp4",
+      "plan": {
+        "action": "rename-mp4",
+        "fileName": "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9.mp4"
+      }
+    },
+    {
+      "fileName": "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9.GIF",
+      "mimeType": "image/gif",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9.mp4"
+      }
+    },
+    {
+      "fileName": "photo.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "mimeType": "application/octet-stream",
+      "plan": null
+    },
+    {
+      "fileName": "photo.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "mimeType": "image/png",
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "mimeType": "image/avif",
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "mimeType": "video/mp4",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "mimeType": "image/gif",
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.jpeg",
+      "mimeType": "application/octet-stream",
+      "plan": {
+        "action": "convert-avif",
+        "fileName": "a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.avif"
+      }
+    },
+    {
+      "fileName": "a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.jpeg",
+      "mimeType": "image/png",
+      "plan": {
+        "action": "convert-avif",
+        "fileName": "a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.avif"
+      }
+    },
+    {
+      "fileName": "a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.jpeg",
+      "mimeType": "image/avif",
+      "plan": {
+        "action": "rename-avif",
+        "fileName": "a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.avif"
+      }
+    },
+    {
+      "fileName": "a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.jpeg",
+      "mimeType": "video/mp4",
+      "plan": {
+        "action": "rename-mp4",
+        "fileName": "a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.mp4"
+      }
+    },
+    {
+      "fileName": "a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.jpeg",
+      "mimeType": "image/gif",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.mp4"
+      }
+    }
+  ],
+  "images": [
+    {
+      "fileName": "photo.png",
+      "format": "avif",
+      "frameCount": 0,
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    { "fileName": "photo.avif", "format": "avif", "frameCount": 0, "plan": null },
+    { "fileName": "photo.AVIF", "format": "avif", "frameCount": 0, "plan": null },
+    {
+      "fileName": "photo",
+      "format": "avif",
+      "frameCount": 0,
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": ".avif",
+      "format": "avif",
+      "frameCount": 0,
+      "plan": { "action": "rename-avif", "fileName": ".avif.avif" }
+    },
+    {
+      "fileName": "dir.avif/photo",
+      "format": "avif",
+      "frameCount": 0,
+      "plan": { "action": "rename-avif", "fileName": "dir.avif/photo.avif" }
+    },
+    {
+      "fileName": "C:\\Photos\\IMG_0001.JPG",
+      "format": "avif",
+      "frameCount": 0,
+      "plan": { "action": "rename-avif", "fileName": "C:\\Photos\\IMG_0001.avif" }
+    },
+    {
+      "fileName": "photo.png",
+      "format": "avif",
+      "frameCount": 1,
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    { "fileName": "photo.avif", "format": "avif", "frameCount": 1, "plan": null },
+    { "fileName": "photo.AVIF", "format": "avif", "frameCount": 1, "plan": null },
+    {
+      "fileName": "photo",
+      "format": "avif",
+      "frameCount": 1,
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": ".avif",
+      "format": "avif",
+      "frameCount": 1,
+      "plan": { "action": "rename-avif", "fileName": ".avif.avif" }
+    },
+    {
+      "fileName": "dir.avif/photo",
+      "format": "avif",
+      "frameCount": 1,
+      "plan": { "action": "rename-avif", "fileName": "dir.avif/photo.avif" }
+    },
+    {
+      "fileName": "C:\\Photos\\IMG_0001.JPG",
+      "format": "avif",
+      "frameCount": 1,
+      "plan": { "action": "rename-avif", "fileName": "C:\\Photos\\IMG_0001.avif" }
+    },
+    {
+      "fileName": "photo.png",
+      "format": "avif",
+      "frameCount": 2,
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    { "fileName": "photo.avif", "format": "avif", "frameCount": 2, "plan": null },
+    { "fileName": "photo.AVIF", "format": "avif", "frameCount": 2, "plan": null },
+    {
+      "fileName": "photo",
+      "format": "avif",
+      "frameCount": 2,
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": ".avif",
+      "format": "avif",
+      "frameCount": 2,
+      "plan": { "action": "rename-avif", "fileName": ".avif.avif" }
+    },
+    {
+      "fileName": "dir.avif/photo",
+      "format": "avif",
+      "frameCount": 2,
+      "plan": { "action": "rename-avif", "fileName": "dir.avif/photo.avif" }
+    },
+    {
+      "fileName": "C:\\Photos\\IMG_0001.JPG",
+      "format": "avif",
+      "frameCount": 2,
+      "plan": { "action": "rename-avif", "fileName": "C:\\Photos\\IMG_0001.avif" }
+    },
+    {
+      "fileName": "photo.png",
+      "format": "avif",
+      "frameCount": 3,
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    { "fileName": "photo.avif", "format": "avif", "frameCount": 3, "plan": null },
+    { "fileName": "photo.AVIF", "format": "avif", "frameCount": 3, "plan": null },
+    {
+      "fileName": "photo",
+      "format": "avif",
+      "frameCount": 3,
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": ".avif",
+      "format": "avif",
+      "frameCount": 3,
+      "plan": { "action": "rename-avif", "fileName": ".avif.avif" }
+    },
+    {
+      "fileName": "dir.avif/photo",
+      "format": "avif",
+      "frameCount": 3,
+      "plan": { "action": "rename-avif", "fileName": "dir.avif/photo.avif" }
+    },
+    {
+      "fileName": "C:\\Photos\\IMG_0001.JPG",
+      "format": "avif",
+      "frameCount": 3,
+      "plan": { "action": "rename-avif", "fileName": "C:\\Photos\\IMG_0001.avif" }
+    },
+    {
+      "fileName": "photo.png",
+      "format": "avif",
+      "frameCount": 4294967295,
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    { "fileName": "photo.avif", "format": "avif", "frameCount": 4294967295, "plan": null },
+    { "fileName": "photo.AVIF", "format": "avif", "frameCount": 4294967295, "plan": null },
+    {
+      "fileName": "photo",
+      "format": "avif",
+      "frameCount": 4294967295,
+      "plan": { "action": "rename-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": ".avif",
+      "format": "avif",
+      "frameCount": 4294967295,
+      "plan": { "action": "rename-avif", "fileName": ".avif.avif" }
+    },
+    {
+      "fileName": "dir.avif/photo",
+      "format": "avif",
+      "frameCount": 4294967295,
+      "plan": { "action": "rename-avif", "fileName": "dir.avif/photo.avif" }
+    },
+    {
+      "fileName": "C:\\Photos\\IMG_0001.JPG",
+      "format": "avif",
+      "frameCount": 4294967295,
+      "plan": { "action": "rename-avif", "fileName": "C:\\Photos\\IMG_0001.avif" }
+    },
+    {
+      "fileName": "photo.png",
+      "format": "bmp",
+      "frameCount": 0,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.avif",
+      "format": "bmp",
+      "frameCount": 0,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.AVIF",
+      "format": "bmp",
+      "frameCount": 0,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo",
+      "format": "bmp",
+      "frameCount": 0,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": ".avif",
+      "format": "bmp",
+      "frameCount": 0,
+      "plan": { "action": "convert-avif", "fileName": ".avif.avif" }
+    },
+    {
+      "fileName": "dir.avif/photo",
+      "format": "bmp",
+      "frameCount": 0,
+      "plan": { "action": "convert-avif", "fileName": "dir.avif/photo.avif" }
+    },
+    {
+      "fileName": "C:\\Photos\\IMG_0001.JPG",
+      "format": "bmp",
+      "frameCount": 0,
+      "plan": { "action": "convert-avif", "fileName": "C:\\Photos\\IMG_0001.avif" }
+    },
+    {
+      "fileName": "photo.png",
+      "format": "bmp",
+      "frameCount": 1,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.avif",
+      "format": "bmp",
+      "frameCount": 1,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.AVIF",
+      "format": "bmp",
+      "frameCount": 1,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo",
+      "format": "bmp",
+      "frameCount": 1,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": ".avif",
+      "format": "bmp",
+      "frameCount": 1,
+      "plan": { "action": "convert-avif", "fileName": ".avif.avif" }
+    },
+    {
+      "fileName": "dir.avif/photo",
+      "format": "bmp",
+      "frameCount": 1,
+      "plan": { "action": "convert-avif", "fileName": "dir.avif/photo.avif" }
+    },
+    {
+      "fileName": "C:\\Photos\\IMG_0001.JPG",
+      "format": "bmp",
+      "frameCount": 1,
+      "plan": { "action": "convert-avif", "fileName": "C:\\Photos\\IMG_0001.avif" }
+    },
+    {
+      "fileName": "photo.png",
+      "format": "bmp",
+      "frameCount": 2,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.avif",
+      "format": "bmp",
+      "frameCount": 2,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.AVIF",
+      "format": "bmp",
+      "frameCount": 2,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo",
+      "format": "bmp",
+      "frameCount": 2,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": ".avif",
+      "format": "bmp",
+      "frameCount": 2,
+      "plan": { "action": "convert-avif", "fileName": ".avif.avif" }
+    },
+    {
+      "fileName": "dir.avif/photo",
+      "format": "bmp",
+      "frameCount": 2,
+      "plan": { "action": "convert-avif", "fileName": "dir.avif/photo.avif" }
+    },
+    {
+      "fileName": "C:\\Photos\\IMG_0001.JPG",
+      "format": "bmp",
+      "frameCount": 2,
+      "plan": { "action": "convert-avif", "fileName": "C:\\Photos\\IMG_0001.avif" }
+    },
+    {
+      "fileName": "photo.png",
+      "format": "bmp",
+      "frameCount": 3,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.avif",
+      "format": "bmp",
+      "frameCount": 3,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.AVIF",
+      "format": "bmp",
+      "frameCount": 3,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo",
+      "format": "bmp",
+      "frameCount": 3,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": ".avif",
+      "format": "bmp",
+      "frameCount": 3,
+      "plan": { "action": "convert-avif", "fileName": ".avif.avif" }
+    },
+    {
+      "fileName": "dir.avif/photo",
+      "format": "bmp",
+      "frameCount": 3,
+      "plan": { "action": "convert-avif", "fileName": "dir.avif/photo.avif" }
+    },
+    {
+      "fileName": "C:\\Photos\\IMG_0001.JPG",
+      "format": "bmp",
+      "frameCount": 3,
+      "plan": { "action": "convert-avif", "fileName": "C:\\Photos\\IMG_0001.avif" }
+    },
+    {
+      "fileName": "photo.png",
+      "format": "bmp",
+      "frameCount": 4294967295,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.avif",
+      "format": "bmp",
+      "frameCount": 4294967295,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.AVIF",
+      "format": "bmp",
+      "frameCount": 4294967295,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo",
+      "format": "bmp",
+      "frameCount": 4294967295,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": ".avif",
+      "format": "bmp",
+      "frameCount": 4294967295,
+      "plan": { "action": "convert-avif", "fileName": ".avif.avif" }
+    },
+    {
+      "fileName": "dir.avif/photo",
+      "format": "bmp",
+      "frameCount": 4294967295,
+      "plan": { "action": "convert-avif", "fileName": "dir.avif/photo.avif" }
+    },
+    {
+      "fileName": "C:\\Photos\\IMG_0001.JPG",
+      "format": "bmp",
+      "frameCount": 4294967295,
+      "plan": { "action": "convert-avif", "fileName": "C:\\Photos\\IMG_0001.avif" }
+    },
+    {
+      "fileName": "photo.png",
+      "format": "gif",
+      "frameCount": 0,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.avif",
+      "format": "gif",
+      "frameCount": 0,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.AVIF",
+      "format": "gif",
+      "frameCount": 0,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo",
+      "format": "gif",
+      "frameCount": 0,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": ".avif",
+      "format": "gif",
+      "frameCount": 0,
+      "plan": { "action": "convert-avif", "fileName": ".avif.avif" }
+    },
+    {
+      "fileName": "dir.avif/photo",
+      "format": "gif",
+      "frameCount": 0,
+      "plan": { "action": "convert-avif", "fileName": "dir.avif/photo.avif" }
+    },
+    {
+      "fileName": "C:\\Photos\\IMG_0001.JPG",
+      "format": "gif",
+      "frameCount": 0,
+      "plan": { "action": "convert-avif", "fileName": "C:\\Photos\\IMG_0001.avif" }
+    },
+    {
+      "fileName": "photo.png",
+      "format": "gif",
+      "frameCount": 1,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.avif",
+      "format": "gif",
+      "frameCount": 1,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.AVIF",
+      "format": "gif",
+      "frameCount": 1,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo",
+      "format": "gif",
+      "frameCount": 1,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": ".avif",
+      "format": "gif",
+      "frameCount": 1,
+      "plan": { "action": "convert-avif", "fileName": ".avif.avif" }
+    },
+    {
+      "fileName": "dir.avif/photo",
+      "format": "gif",
+      "frameCount": 1,
+      "plan": { "action": "convert-avif", "fileName": "dir.avif/photo.avif" }
+    },
+    {
+      "fileName": "C:\\Photos\\IMG_0001.JPG",
+      "format": "gif",
+      "frameCount": 1,
+      "plan": { "action": "convert-avif", "fileName": "C:\\Photos\\IMG_0001.avif" }
+    },
+    {
+      "fileName": "photo.png",
+      "format": "gif",
+      "frameCount": 2,
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.avif",
+      "format": "gif",
+      "frameCount": 2,
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.AVIF",
+      "format": "gif",
+      "frameCount": 2,
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo",
+      "format": "gif",
+      "frameCount": 2,
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": ".avif",
+      "format": "gif",
+      "frameCount": 2,
+      "plan": { "action": "convert-mp4", "fileName": ".avif.mp4" }
+    },
+    {
+      "fileName": "dir.avif/photo",
+      "format": "gif",
+      "frameCount": 2,
+      "plan": { "action": "convert-mp4", "fileName": "dir.avif/photo.mp4" }
+    },
+    {
+      "fileName": "C:\\Photos\\IMG_0001.JPG",
+      "format": "gif",
+      "frameCount": 2,
+      "plan": { "action": "convert-mp4", "fileName": "C:\\Photos\\IMG_0001.mp4" }
+    },
+    {
+      "fileName": "photo.png",
+      "format": "gif",
+      "frameCount": 3,
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.avif",
+      "format": "gif",
+      "frameCount": 3,
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.AVIF",
+      "format": "gif",
+      "frameCount": 3,
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo",
+      "format": "gif",
+      "frameCount": 3,
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": ".avif",
+      "format": "gif",
+      "frameCount": 3,
+      "plan": { "action": "convert-mp4", "fileName": ".avif.mp4" }
+    },
+    {
+      "fileName": "dir.avif/photo",
+      "format": "gif",
+      "frameCount": 3,
+      "plan": { "action": "convert-mp4", "fileName": "dir.avif/photo.mp4" }
+    },
+    {
+      "fileName": "C:\\Photos\\IMG_0001.JPG",
+      "format": "gif",
+      "frameCount": 3,
+      "plan": { "action": "convert-mp4", "fileName": "C:\\Photos\\IMG_0001.mp4" }
+    },
+    {
+      "fileName": "photo.png",
+      "format": "gif",
+      "frameCount": 4294967295,
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.avif",
+      "format": "gif",
+      "frameCount": 4294967295,
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.AVIF",
+      "format": "gif",
+      "frameCount": 4294967295,
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo",
+      "format": "gif",
+      "frameCount": 4294967295,
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": ".avif",
+      "format": "gif",
+      "frameCount": 4294967295,
+      "plan": { "action": "convert-mp4", "fileName": ".avif.mp4" }
+    },
+    {
+      "fileName": "dir.avif/photo",
+      "format": "gif",
+      "frameCount": 4294967295,
+      "plan": { "action": "convert-mp4", "fileName": "dir.avif/photo.mp4" }
+    },
+    {
+      "fileName": "C:\\Photos\\IMG_0001.JPG",
+      "format": "gif",
+      "frameCount": 4294967295,
+      "plan": { "action": "convert-mp4", "fileName": "C:\\Photos\\IMG_0001.mp4" }
+    },
+    {
+      "fileName": "photo.png",
+      "format": "jpeg",
+      "frameCount": 0,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.avif",
+      "format": "jpeg",
+      "frameCount": 0,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.AVIF",
+      "format": "jpeg",
+      "frameCount": 0,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo",
+      "format": "jpeg",
+      "frameCount": 0,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": ".avif",
+      "format": "jpeg",
+      "frameCount": 0,
+      "plan": { "action": "convert-avif", "fileName": ".avif.avif" }
+    },
+    {
+      "fileName": "dir.avif/photo",
+      "format": "jpeg",
+      "frameCount": 0,
+      "plan": { "action": "convert-avif", "fileName": "dir.avif/photo.avif" }
+    },
+    {
+      "fileName": "C:\\Photos\\IMG_0001.JPG",
+      "format": "jpeg",
+      "frameCount": 0,
+      "plan": { "action": "convert-avif", "fileName": "C:\\Photos\\IMG_0001.avif" }
+    },
+    {
+      "fileName": "photo.png",
+      "format": "jpeg",
+      "frameCount": 1,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.avif",
+      "format": "jpeg",
+      "frameCount": 1,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.AVIF",
+      "format": "jpeg",
+      "frameCount": 1,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo",
+      "format": "jpeg",
+      "frameCount": 1,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": ".avif",
+      "format": "jpeg",
+      "frameCount": 1,
+      "plan": { "action": "convert-avif", "fileName": ".avif.avif" }
+    },
+    {
+      "fileName": "dir.avif/photo",
+      "format": "jpeg",
+      "frameCount": 1,
+      "plan": { "action": "convert-avif", "fileName": "dir.avif/photo.avif" }
+    },
+    {
+      "fileName": "C:\\Photos\\IMG_0001.JPG",
+      "format": "jpeg",
+      "frameCount": 1,
+      "plan": { "action": "convert-avif", "fileName": "C:\\Photos\\IMG_0001.avif" }
+    },
+    {
+      "fileName": "photo.png",
+      "format": "jpeg",
+      "frameCount": 2,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.avif",
+      "format": "jpeg",
+      "frameCount": 2,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.AVIF",
+      "format": "jpeg",
+      "frameCount": 2,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo",
+      "format": "jpeg",
+      "frameCount": 2,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": ".avif",
+      "format": "jpeg",
+      "frameCount": 2,
+      "plan": { "action": "convert-avif", "fileName": ".avif.avif" }
+    },
+    {
+      "fileName": "dir.avif/photo",
+      "format": "jpeg",
+      "frameCount": 2,
+      "plan": { "action": "convert-avif", "fileName": "dir.avif/photo.avif" }
+    },
+    {
+      "fileName": "C:\\Photos\\IMG_0001.JPG",
+      "format": "jpeg",
+      "frameCount": 2,
+      "plan": { "action": "convert-avif", "fileName": "C:\\Photos\\IMG_0001.avif" }
+    },
+    {
+      "fileName": "photo.png",
+      "format": "jpeg",
+      "frameCount": 3,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.avif",
+      "format": "jpeg",
+      "frameCount": 3,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.AVIF",
+      "format": "jpeg",
+      "frameCount": 3,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo",
+      "format": "jpeg",
+      "frameCount": 3,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": ".avif",
+      "format": "jpeg",
+      "frameCount": 3,
+      "plan": { "action": "convert-avif", "fileName": ".avif.avif" }
+    },
+    {
+      "fileName": "dir.avif/photo",
+      "format": "jpeg",
+      "frameCount": 3,
+      "plan": { "action": "convert-avif", "fileName": "dir.avif/photo.avif" }
+    },
+    {
+      "fileName": "C:\\Photos\\IMG_0001.JPG",
+      "format": "jpeg",
+      "frameCount": 3,
+      "plan": { "action": "convert-avif", "fileName": "C:\\Photos\\IMG_0001.avif" }
+    },
+    {
+      "fileName": "photo.png",
+      "format": "jpeg",
+      "frameCount": 4294967295,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.avif",
+      "format": "jpeg",
+      "frameCount": 4294967295,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.AVIF",
+      "format": "jpeg",
+      "frameCount": 4294967295,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo",
+      "format": "jpeg",
+      "frameCount": 4294967295,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": ".avif",
+      "format": "jpeg",
+      "frameCount": 4294967295,
+      "plan": { "action": "convert-avif", "fileName": ".avif.avif" }
+    },
+    {
+      "fileName": "dir.avif/photo",
+      "format": "jpeg",
+      "frameCount": 4294967295,
+      "plan": { "action": "convert-avif", "fileName": "dir.avif/photo.avif" }
+    },
+    {
+      "fileName": "C:\\Photos\\IMG_0001.JPG",
+      "format": "jpeg",
+      "frameCount": 4294967295,
+      "plan": { "action": "convert-avif", "fileName": "C:\\Photos\\IMG_0001.avif" }
+    },
+    {
+      "fileName": "photo.png",
+      "format": "png",
+      "frameCount": 0,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.avif",
+      "format": "png",
+      "frameCount": 0,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.AVIF",
+      "format": "png",
+      "frameCount": 0,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo",
+      "format": "png",
+      "frameCount": 0,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": ".avif",
+      "format": "png",
+      "frameCount": 0,
+      "plan": { "action": "convert-avif", "fileName": ".avif.avif" }
+    },
+    {
+      "fileName": "dir.avif/photo",
+      "format": "png",
+      "frameCount": 0,
+      "plan": { "action": "convert-avif", "fileName": "dir.avif/photo.avif" }
+    },
+    {
+      "fileName": "C:\\Photos\\IMG_0001.JPG",
+      "format": "png",
+      "frameCount": 0,
+      "plan": { "action": "convert-avif", "fileName": "C:\\Photos\\IMG_0001.avif" }
+    },
+    {
+      "fileName": "photo.png",
+      "format": "png",
+      "frameCount": 1,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.avif",
+      "format": "png",
+      "frameCount": 1,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.AVIF",
+      "format": "png",
+      "frameCount": 1,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo",
+      "format": "png",
+      "frameCount": 1,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": ".avif",
+      "format": "png",
+      "frameCount": 1,
+      "plan": { "action": "convert-avif", "fileName": ".avif.avif" }
+    },
+    {
+      "fileName": "dir.avif/photo",
+      "format": "png",
+      "frameCount": 1,
+      "plan": { "action": "convert-avif", "fileName": "dir.avif/photo.avif" }
+    },
+    {
+      "fileName": "C:\\Photos\\IMG_0001.JPG",
+      "format": "png",
+      "frameCount": 1,
+      "plan": { "action": "convert-avif", "fileName": "C:\\Photos\\IMG_0001.avif" }
+    },
+    {
+      "fileName": "photo.png",
+      "format": "png",
+      "frameCount": 2,
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.avif",
+      "format": "png",
+      "frameCount": 2,
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.AVIF",
+      "format": "png",
+      "frameCount": 2,
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo",
+      "format": "png",
+      "frameCount": 2,
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": ".avif",
+      "format": "png",
+      "frameCount": 2,
+      "plan": { "action": "convert-mp4", "fileName": ".avif.mp4" }
+    },
+    {
+      "fileName": "dir.avif/photo",
+      "format": "png",
+      "frameCount": 2,
+      "plan": { "action": "convert-mp4", "fileName": "dir.avif/photo.mp4" }
+    },
+    {
+      "fileName": "C:\\Photos\\IMG_0001.JPG",
+      "format": "png",
+      "frameCount": 2,
+      "plan": { "action": "convert-mp4", "fileName": "C:\\Photos\\IMG_0001.mp4" }
+    },
+    {
+      "fileName": "photo.png",
+      "format": "png",
+      "frameCount": 3,
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.avif",
+      "format": "png",
+      "frameCount": 3,
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.AVIF",
+      "format": "png",
+      "frameCount": 3,
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo",
+      "format": "png",
+      "frameCount": 3,
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": ".avif",
+      "format": "png",
+      "frameCount": 3,
+      "plan": { "action": "convert-mp4", "fileName": ".avif.mp4" }
+    },
+    {
+      "fileName": "dir.avif/photo",
+      "format": "png",
+      "frameCount": 3,
+      "plan": { "action": "convert-mp4", "fileName": "dir.avif/photo.mp4" }
+    },
+    {
+      "fileName": "C:\\Photos\\IMG_0001.JPG",
+      "format": "png",
+      "frameCount": 3,
+      "plan": { "action": "convert-mp4", "fileName": "C:\\Photos\\IMG_0001.mp4" }
+    },
+    {
+      "fileName": "photo.png",
+      "format": "png",
+      "frameCount": 4294967295,
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.avif",
+      "format": "png",
+      "frameCount": 4294967295,
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.AVIF",
+      "format": "png",
+      "frameCount": 4294967295,
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo",
+      "format": "png",
+      "frameCount": 4294967295,
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": ".avif",
+      "format": "png",
+      "frameCount": 4294967295,
+      "plan": { "action": "convert-mp4", "fileName": ".avif.mp4" }
+    },
+    {
+      "fileName": "dir.avif/photo",
+      "format": "png",
+      "frameCount": 4294967295,
+      "plan": { "action": "convert-mp4", "fileName": "dir.avif/photo.mp4" }
+    },
+    {
+      "fileName": "C:\\Photos\\IMG_0001.JPG",
+      "format": "png",
+      "frameCount": 4294967295,
+      "plan": { "action": "convert-mp4", "fileName": "C:\\Photos\\IMG_0001.mp4" }
+    },
+    {
+      "fileName": "photo.png",
+      "format": "webp",
+      "frameCount": 0,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.avif",
+      "format": "webp",
+      "frameCount": 0,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.AVIF",
+      "format": "webp",
+      "frameCount": 0,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo",
+      "format": "webp",
+      "frameCount": 0,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": ".avif",
+      "format": "webp",
+      "frameCount": 0,
+      "plan": { "action": "convert-avif", "fileName": ".avif.avif" }
+    },
+    {
+      "fileName": "dir.avif/photo",
+      "format": "webp",
+      "frameCount": 0,
+      "plan": { "action": "convert-avif", "fileName": "dir.avif/photo.avif" }
+    },
+    {
+      "fileName": "C:\\Photos\\IMG_0001.JPG",
+      "format": "webp",
+      "frameCount": 0,
+      "plan": { "action": "convert-avif", "fileName": "C:\\Photos\\IMG_0001.avif" }
+    },
+    {
+      "fileName": "photo.png",
+      "format": "webp",
+      "frameCount": 1,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.avif",
+      "format": "webp",
+      "frameCount": 1,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo.AVIF",
+      "format": "webp",
+      "frameCount": 1,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": "photo",
+      "format": "webp",
+      "frameCount": 1,
+      "plan": { "action": "convert-avif", "fileName": "photo.avif" }
+    },
+    {
+      "fileName": ".avif",
+      "format": "webp",
+      "frameCount": 1,
+      "plan": { "action": "convert-avif", "fileName": ".avif.avif" }
+    },
+    {
+      "fileName": "dir.avif/photo",
+      "format": "webp",
+      "frameCount": 1,
+      "plan": { "action": "convert-avif", "fileName": "dir.avif/photo.avif" }
+    },
+    {
+      "fileName": "C:\\Photos\\IMG_0001.JPG",
+      "format": "webp",
+      "frameCount": 1,
+      "plan": { "action": "convert-avif", "fileName": "C:\\Photos\\IMG_0001.avif" }
+    },
+    {
+      "fileName": "photo.png",
+      "format": "webp",
+      "frameCount": 2,
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.avif",
+      "format": "webp",
+      "frameCount": 2,
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.AVIF",
+      "format": "webp",
+      "frameCount": 2,
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo",
+      "format": "webp",
+      "frameCount": 2,
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": ".avif",
+      "format": "webp",
+      "frameCount": 2,
+      "plan": { "action": "convert-mp4", "fileName": ".avif.mp4" }
+    },
+    {
+      "fileName": "dir.avif/photo",
+      "format": "webp",
+      "frameCount": 2,
+      "plan": { "action": "convert-mp4", "fileName": "dir.avif/photo.mp4" }
+    },
+    {
+      "fileName": "C:\\Photos\\IMG_0001.JPG",
+      "format": "webp",
+      "frameCount": 2,
+      "plan": { "action": "convert-mp4", "fileName": "C:\\Photos\\IMG_0001.mp4" }
+    },
+    {
+      "fileName": "photo.png",
+      "format": "webp",
+      "frameCount": 3,
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.avif",
+      "format": "webp",
+      "frameCount": 3,
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.AVIF",
+      "format": "webp",
+      "frameCount": 3,
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo",
+      "format": "webp",
+      "frameCount": 3,
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": ".avif",
+      "format": "webp",
+      "frameCount": 3,
+      "plan": { "action": "convert-mp4", "fileName": ".avif.mp4" }
+    },
+    {
+      "fileName": "dir.avif/photo",
+      "format": "webp",
+      "frameCount": 3,
+      "plan": { "action": "convert-mp4", "fileName": "dir.avif/photo.mp4" }
+    },
+    {
+      "fileName": "C:\\Photos\\IMG_0001.JPG",
+      "format": "webp",
+      "frameCount": 3,
+      "plan": { "action": "convert-mp4", "fileName": "C:\\Photos\\IMG_0001.mp4" }
+    },
+    {
+      "fileName": "photo.png",
+      "format": "webp",
+      "frameCount": 4294967295,
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.avif",
+      "format": "webp",
+      "frameCount": 4294967295,
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.AVIF",
+      "format": "webp",
+      "frameCount": 4294967295,
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo",
+      "format": "webp",
+      "frameCount": 4294967295,
+      "plan": { "action": "convert-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": ".avif",
+      "format": "webp",
+      "frameCount": 4294967295,
+      "plan": { "action": "convert-mp4", "fileName": ".avif.mp4" }
+    },
+    {
+      "fileName": "dir.avif/photo",
+      "format": "webp",
+      "frameCount": 4294967295,
+      "plan": { "action": "convert-mp4", "fileName": "dir.avif/photo.mp4" }
+    },
+    {
+      "fileName": "C:\\Photos\\IMG_0001.JPG",
+      "format": "webp",
+      "frameCount": 4294967295,
+      "plan": { "action": "convert-mp4", "fileName": "C:\\Photos\\IMG_0001.mp4" }
+    }
+  ]
+}

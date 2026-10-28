@@ -10,8 +10,8 @@ apps/*/out/
 apps/*/.packaged-runtime/
 # Oriel's pinned ffmpeg and ffprobe, downloaded when it is packaged.
 apps/*/.media-tools/
-# Oriel GPUI's Cargo build output (plan 063).
-apps/oriel-gpui/target/
+# Oriel RS's Cargo build output (plan 063).
+apps/oriel-rs/target/
 *.tsbuildinfo
 .env
 .env.*

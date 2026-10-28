@@ -1,0 +1,524 @@
+{
+  "about": "Made by packages/media-format/src/conformance.test.ts from file-names.ts; do not edit. Regenerate with ORIEL_RS_UPDATE_VECTORS=1 pnpm --filter @latch-works/media-format test. Non-ASCII characters are escaped.",
+  "names": [
+    {
+      "fileName": "photo.jpg",
+      "extension": "jpg",
+      "replaced": ["photo.avif", "photo.mp4", "photo.", "photo..x", "photo.a.b", "photo.AVIF"]
+    },
+    {
+      "fileName": "photo.JPG",
+      "extension": "jpg",
+      "replaced": ["photo.avif", "photo.mp4", "photo.", "photo..x", "photo.a.b", "photo.AVIF"]
+    },
+    {
+      "fileName": "photo.jpeg",
+      "extension": "jpeg",
+      "replaced": ["photo.avif", "photo.mp4", "photo.", "photo..x", "photo.a.b", "photo.AVIF"]
+    },
+    {
+      "fileName": "photo.JPEG",
+      "extension": "jpeg",
+      "replaced": ["photo.avif", "photo.mp4", "photo.", "photo..x", "photo.a.b", "photo.AVIF"]
+    },
+    {
+      "fileName": "photo.Jpeg",
+      "extension": "jpeg",
+      "replaced": ["photo.avif", "photo.mp4", "photo.", "photo..x", "photo.a.b", "photo.AVIF"]
+    },
+    {
+      "fileName": "photo.png",
+      "extension": "png",
+      "replaced": ["photo.avif", "photo.mp4", "photo.", "photo..x", "photo.a.b", "photo.AVIF"]
+    },
+    {
+      "fileName": "photo.PNG",
+      "extension": "png",
+      "replaced": ["photo.avif", "photo.mp4", "photo.", "photo..x", "photo.a.b", "photo.AVIF"]
+    },
+    {
+      "fileName": "photo.webp",
+      "extension": "webp",
+      "replaced": ["photo.avif", "photo.mp4", "photo.", "photo..x", "photo.a.b", "photo.AVIF"]
+    },
+    {
+      "fileName": "photo.bmp",
+      "extension": "bmp",
+      "replaced": ["photo.avif", "photo.mp4", "photo.", "photo..x", "photo.a.b", "photo.AVIF"]
+    },
+    {
+      "fileName": "photo.BMP",
+      "extension": "bmp",
+      "replaced": ["photo.avif", "photo.mp4", "photo.", "photo..x", "photo.a.b", "photo.AVIF"]
+    },
+    {
+      "fileName": "photo.gif",
+      "extension": "gif",
+      "replaced": ["photo.avif", "photo.mp4", "photo.", "photo..x", "photo.a.b", "photo.AVIF"]
+    },
+    {
+      "fileName": "photo.GIF",
+      "extension": "gif",
+      "replaced": ["photo.avif", "photo.mp4", "photo.", "photo..x", "photo.a.b", "photo.AVIF"]
+    },
+    {
+      "fileName": "photo.avif",
+      "extension": "avif",
+      "replaced": ["photo.avif", "photo.mp4", "photo.", "photo..x", "photo.a.b", "photo.AVIF"]
+    },
+    {
+      "fileName": "photo.AVIF",
+      "extension": "avif",
+      "replaced": ["photo.avif", "photo.mp4", "photo.", "photo..x", "photo.a.b", "photo.AVIF"]
+    },
+    {
+      "fileName": "clip.mp4",
+      "extension": "mp4",
+      "replaced": ["clip.avif", "clip.mp4", "clip.", "clip..x", "clip.a.b", "clip.AVIF"]
+    },
+    {
+      "fileName": "clip.MP4",
+      "extension": "mp4",
+      "replaced": ["clip.avif", "clip.mp4", "clip.", "clip..x", "clip.a.b", "clip.AVIF"]
+    },
+    {
+      "fileName": "clip.Mp4",
+      "extension": "mp4",
+      "replaced": ["clip.avif", "clip.mp4", "clip.", "clip..x", "clip.a.b", "clip.AVIF"]
+    },
+    {
+      "fileName": "photo.heic",
+      "extension": "heic",
+      "replaced": ["photo.avif", "photo.mp4", "photo.", "photo..x", "photo.a.b", "photo.AVIF"]
+    },
+    {
+      "fileName": "photo.tiff",
+      "extension": "tiff",
+      "replaced": ["photo.avif", "photo.mp4", "photo.", "photo..x", "photo.a.b", "photo.AVIF"]
+    },
+    {
+      "fileName": "photo.svg",
+      "extension": "svg",
+      "replaced": ["photo.avif", "photo.mp4", "photo.", "photo..x", "photo.a.b", "photo.AVIF"]
+    },
+    {
+      "fileName": "photo.jfif",
+      "extension": "jfif",
+      "replaced": ["photo.avif", "photo.mp4", "photo.", "photo..x", "photo.a.b", "photo.AVIF"]
+    },
+    {
+      "fileName": "photo.jpe",
+      "extension": "jpe",
+      "replaced": ["photo.avif", "photo.mp4", "photo.", "photo..x", "photo.a.b", "photo.AVIF"]
+    },
+    {
+      "fileName": "clip.m4v",
+      "extension": "m4v",
+      "replaced": ["clip.avif", "clip.mp4", "clip.", "clip..x", "clip.a.b", "clip.AVIF"]
+    },
+    {
+      "fileName": "clip.mov",
+      "extension": "mov",
+      "replaced": ["clip.avif", "clip.mp4", "clip.", "clip..x", "clip.a.b", "clip.AVIF"]
+    },
+    {
+      "fileName": "clip.mkv",
+      "extension": "mkv",
+      "replaced": ["clip.avif", "clip.mp4", "clip.", "clip..x", "clip.a.b", "clip.AVIF"]
+    },
+    {
+      "fileName": "clip.webm",
+      "extension": "webm",
+      "replaced": ["clip.avif", "clip.mp4", "clip.", "clip..x", "clip.a.b", "clip.AVIF"]
+    },
+    {
+      "fileName": "story.pdf",
+      "extension": "pdf",
+      "replaced": ["story.avif", "story.mp4", "story.", "story..x", "story.a.b", "story.AVIF"]
+    },
+    {
+      "fileName": "archive.zip",
+      "extension": "zip",
+      "replaced": [
+        "archive.avif",
+        "archive.mp4",
+        "archive.",
+        "archive..x",
+        "archive.a.b",
+        "archive.AVIF"
+      ]
+    },
+    {
+      "fileName": "photo",
+      "extension": "",
+      "replaced": ["photo.avif", "photo.mp4", "photo.", "photo..x", "photo.a.b", "photo.AVIF"]
+    },
+    {
+      "fileName": "photo.",
+      "extension": "",
+      "replaced": ["photo.avif", "photo.mp4", "photo.", "photo..x", "photo.a.b", "photo.AVIF"]
+    },
+    {
+      "fileName": "photo..",
+      "extension": "",
+      "replaced": ["photo..avif", "photo..mp4", "photo..", "photo...x", "photo..a.b", "photo..AVIF"]
+    },
+    {
+      "fileName": ".jpg",
+      "extension": "",
+      "replaced": [".jpg.avif", ".jpg.mp4", ".jpg.", ".jpg..x", ".jpg.a.b", ".jpg.AVIF"]
+    },
+    {
+      "fileName": ".avif",
+      "extension": "",
+      "replaced": [".avif.avif", ".avif.mp4", ".avif.", ".avif..x", ".avif.a.b", ".avif.AVIF"]
+    },
+    {
+      "fileName": ".hidden.jpg",
+      "extension": "jpg",
+      "replaced": [
+        ".hidden.avif",
+        ".hidden.mp4",
+        ".hidden.",
+        ".hidden..x",
+        ".hidden.a.b",
+        ".hidden.AVIF"
+      ]
+    },
+    {
+      "fileName": "..jpg",
+      "extension": "jpg",
+      "replaced": ["..avif", "..mp4", "..", "...x", "..a.b", "..AVIF"]
+    },
+    {
+      "fileName": "a.b.c.png",
+      "extension": "png",
+      "replaced": ["a.b.c.avif", "a.b.c.mp4", "a.b.c.", "a.b.c..x", "a.b.c.a.b", "a.b.c.AVIF"]
+    },
+    {
+      "fileName": "photo.jpg.mp4",
+      "extension": "mp4",
+      "replaced": [
+        "photo.jpg.avif",
+        "photo.jpg.mp4",
+        "photo.jpg.",
+        "photo.jpg..x",
+        "photo.jpg.a.b",
+        "photo.jpg.AVIF"
+      ]
+    },
+    {
+      "fileName": "archive.tar.gz",
+      "extension": "gz",
+      "replaced": [
+        "archive.tar.avif",
+        "archive.tar.mp4",
+        "archive.tar.",
+        "archive.tar..x",
+        "archive.tar.a.b",
+        "archive.tar.AVIF"
+      ]
+    },
+    {
+      "fileName": "photo.jpg.",
+      "extension": "",
+      "replaced": [
+        "photo.jpg.avif",
+        "photo.jpg.mp4",
+        "photo.jpg.",
+        "photo.jpg..x",
+        "photo.jpg.a.b",
+        "photo.jpg.AVIF"
+      ]
+    },
+    {
+      "fileName": "dir.d/photo",
+      "extension": "",
+      "replaced": [
+        "dir.d/photo.avif",
+        "dir.d/photo.mp4",
+        "dir.d/photo.",
+        "dir.d/photo..x",
+        "dir.d/photo.a.b",
+        "dir.d/photo.AVIF"
+      ]
+    },
+    {
+      "fileName": "dir.d\\photo",
+      "extension": "",
+      "replaced": [
+        "dir.d\\photo.avif",
+        "dir.d\\photo.mp4",
+        "dir.d\\photo.",
+        "dir.d\\photo..x",
+        "dir.d\\photo.a.b",
+        "dir.d\\photo.AVIF"
+      ]
+    },
+    {
+      "fileName": "dir.avif/photo",
+      "extension": "",
+      "replaced": [
+        "dir.avif/photo.avif",
+        "dir.avif/photo.mp4",
+        "dir.avif/photo.",
+        "dir.avif/photo..x",
+        "dir.avif/photo.a.b",
+        "dir.avif/photo.AVIF"
+      ]
+    },
+    {
+      "fileName": "dir/.jpg",
+      "extension": "",
+      "replaced": [
+        "dir/.jpg.avif",
+        "dir/.jpg.mp4",
+        "dir/.jpg.",
+        "dir/.jpg..x",
+        "dir/.jpg.a.b",
+        "dir/.jpg.AVIF"
+      ]
+    },
+    {
+      "fileName": "dir\\.jpg",
+      "extension": "",
+      "replaced": [
+        "dir\\.jpg.avif",
+        "dir\\.jpg.mp4",
+        "dir\\.jpg.",
+        "dir\\.jpg..x",
+        "dir\\.jpg.a.b",
+        "dir\\.jpg.AVIF"
+      ]
+    },
+    {
+      "fileName": "photos/2024/",
+      "extension": "",
+      "replaced": [
+        "photos/2024/.avif",
+        "photos/2024/.mp4",
+        "photos/2024/.",
+        "photos/2024/..x",
+        "photos/2024/.a.b",
+        "photos/2024/.AVIF"
+      ]
+    },
+    {
+      "fileName": "photo.jpg/",
+      "extension": "",
+      "replaced": [
+        "photo.jpg/.avif",
+        "photo.jpg/.mp4",
+        "photo.jpg/.",
+        "photo.jpg/..x",
+        "photo.jpg/.a.b",
+        "photo.jpg/.AVIF"
+      ]
+    },
+    {
+      "fileName": "photo.jpg\\",
+      "extension": "",
+      "replaced": [
+        "photo.jpg\\.avif",
+        "photo.jpg\\.mp4",
+        "photo.jpg\\.",
+        "photo.jpg\\..x",
+        "photo.jpg\\.a.b",
+        "photo.jpg\\.AVIF"
+      ]
+    },
+    {
+      "fileName": "/archive/2024/photo.png",
+      "extension": "png",
+      "replaced": [
+        "/archive/2024/photo.avif",
+        "/archive/2024/photo.mp4",
+        "/archive/2024/photo.",
+        "/archive/2024/photo..x",
+        "/archive/2024/photo.a.b",
+        "/archive/2024/photo.AVIF"
+      ]
+    },
+    {
+      "fileName": "C:\\Photos\\IMG_0001.JPG",
+      "extension": "jpg",
+      "replaced": [
+        "C:\\Photos\\IMG_0001.avif",
+        "C:\\Photos\\IMG_0001.mp4",
+        "C:\\Photos\\IMG_0001.",
+        "C:\\Photos\\IMG_0001..x",
+        "C:\\Photos\\IMG_0001.a.b",
+        "C:\\Photos\\IMG_0001.AVIF"
+      ]
+    },
+    {
+      "fileName": "C:\\Photos.d\\IMG_0001",
+      "extension": "",
+      "replaced": [
+        "C:\\Photos.d\\IMG_0001.avif",
+        "C:\\Photos.d\\IMG_0001.mp4",
+        "C:\\Photos.d\\IMG_0001.",
+        "C:\\Photos.d\\IMG_0001..x",
+        "C:\\Photos.d\\IMG_0001.a.b",
+        "C:\\Photos.d\\IMG_0001.AVIF"
+      ]
+    },
+    {
+      "fileName": "\\\\server\\share\\clip.MOV",
+      "extension": "mov",
+      "replaced": [
+        "\\\\server\\share\\clip.avif",
+        "\\\\server\\share\\clip.mp4",
+        "\\\\server\\share\\clip.",
+        "\\\\server\\share\\clip..x",
+        "\\\\server\\share\\clip.a.b",
+        "\\\\server\\share\\clip.AVIF"
+      ]
+    },
+    {
+      "fileName": "a/b\\c.gif",
+      "extension": "gif",
+      "replaced": ["a/b\\c.avif", "a/b\\c.mp4", "a/b\\c.", "a/b\\c..x", "a/b\\c.a.b", "a/b\\c.AVIF"]
+    },
+    {
+      "fileName": "photo .jpg",
+      "extension": "jpg",
+      "replaced": ["photo .avif", "photo .mp4", "photo .", "photo ..x", "photo .a.b", "photo .AVIF"]
+    },
+    {
+      "fileName": "photo.jpg ",
+      "extension": "jpg ",
+      "replaced": ["photo.avif", "photo.mp4", "photo.", "photo..x", "photo.a.b", "photo.AVIF"]
+    },
+    {
+      "fileName": "photo. jpg",
+      "extension": " jpg",
+      "replaced": ["photo.avif", "photo.mp4", "photo.", "photo..x", "photo.a.b", "photo.AVIF"]
+    },
+    {
+      "fileName": " photo.png",
+      "extension": "png",
+      "replaced": [" photo.avif", " photo.mp4", " photo.", " photo..x", " photo.a.b", " photo.AVIF"]
+    },
+    {
+      "fileName": "photo.jpg\u0000",
+      "extension": "jpg\u0000",
+      "replaced": ["photo.avif", "photo.mp4", "photo.", "photo..x", "photo.a.b", "photo.AVIF"]
+    },
+    {
+      "fileName": "photo.jpg\u200b",
+      "extension": "jpg\u200b",
+      "replaced": ["photo.avif", "photo.mp4", "photo.", "photo..x", "photo.a.b", "photo.AVIF"]
+    },
+    {
+      "fileName": "caf\u00e9.png",
+      "extension": "png",
+      "replaced": [
+        "caf\u00e9.avif",
+        "caf\u00e9.mp4",
+        "caf\u00e9.",
+        "caf\u00e9..x",
+        "caf\u00e9.a.b",
+        "caf\u00e9.AVIF"
+      ]
+    },
+    {
+      "fileName": "cafe\u0301.PNG",
+      "extension": "png",
+      "replaced": [
+        "cafe\u0301.avif",
+        "cafe\u0301.mp4",
+        "cafe\u0301.",
+        "cafe\u0301..x",
+        "cafe\u0301.a.b",
+        "cafe\u0301.AVIF"
+      ]
+    },
+    {
+      "fileName": "\u5199\u771f.JPG",
+      "extension": "jpg",
+      "replaced": [
+        "\u5199\u771f.avif",
+        "\u5199\u771f.mp4",
+        "\u5199\u771f.",
+        "\u5199\u771f..x",
+        "\u5199\u771f.a.b",
+        "\u5199\u771f.AVIF"
+      ]
+    },
+    {
+      "fileName": "\ud83d\udcf7.webp",
+      "extension": "webp",
+      "replaced": [
+        "\ud83d\udcf7.avif",
+        "\ud83d\udcf7.mp4",
+        "\ud83d\udcf7.",
+        "\ud83d\udcf7..x",
+        "\ud83d\udcf7.a.b",
+        "\ud83d\udcf7.AVIF"
+      ]
+    },
+    {
+      "fileName": "photo.\uff2a\uff30\uff27",
+      "extension": "\uff4a\uff50\uff47",
+      "replaced": ["photo.avif", "photo.mp4", "photo.", "photo..x", "photo.a.b", "photo.AVIF"]
+    },
+    {
+      "fileName": "photo.G\u0130F",
+      "extension": "gi\u0307f",
+      "replaced": ["photo.avif", "photo.mp4", "photo.", "photo..x", "photo.a.b", "photo.AVIF"]
+    },
+    {
+      "fileName": "photo.\u03a3\u0391\u03a3",
+      "extension": "\u03c3\u03b1\u03c2",
+      "replaced": ["photo.avif", "photo.mp4", "photo.", "photo..x", "photo.a.b", "photo.AVIF"]
+    },
+    {
+      "fileName": "clip.M\u212aV",
+      "extension": "mkv",
+      "replaced": ["clip.avif", "clip.mp4", "clip.", "clip..x", "clip.a.b", "clip.AVIF"]
+    },
+    {
+      "fileName": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png",
+      "extension": "png",
+      "replaced": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.avif",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.mp4",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa..x",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.a.b",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.AVIF"
+      ]
+    },
+    {
+      "fileName": "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9.GIF",
+      "extension": "gif",
+      "replaced": [
+        "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9.avif",
+        "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9.mp4",
+        "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9.",
+        "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9..x",
+        "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9.a.b",
+        "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9.AVIF"
+      ]
+    },
+    {
+      "fileName": "photo.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "extension": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "replaced": ["photo.avif", "photo.mp4", "photo.", "photo..x", "photo.a.b", "photo.AVIF"]
+    },
+    {
+      "fileName": "a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.jpeg",
+      "extension": "jpeg",
+      "replaced": [
+        "a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.avif",
+        "a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.mp4",
+        "a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.",
+        "a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a..x",
+        "a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b",
+        "a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.AVIF"
+      ]
+    }
+  ],
+  "replacementExtensions": ["avif", "mp4", "", ".x", "a.b", "AVIF"]
+}

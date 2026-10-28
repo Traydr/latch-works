@@ -21,14 +21,14 @@ import {
 import { formatHash, hammingDistance, PHASH_INPUT_SIZE, perceptualHash } from "./phash.js";
 
 /**
- * Oriel GPUI's fingerprints must equal these bit for bit, since Spot variants' thresholds were
+ * Oriel RS's fingerprints must equal these bit for bit, since Spot variants' thresholds were
  * measured on prints made this way (plan 063). This checks that glazier-core still makes the
  * committed vectors; `cargo test -p oriel-core-tidy` checks that Rust does. After a deliberate
  * change here, or a sharp upgrade, make them again with UPDATE_FINGERPRINT_VECTORS=1.
  */
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 
-const CONFORMANCE = path.join(REPO, "apps/oriel-gpui/conformance/fingerprints");
+const CONFORMANCE = path.join(REPO, "apps/oriel-rs/conformance/fingerprints");
 
 const CORPUS = path.join(CONFORMANCE, "corpus");
 
@@ -310,7 +310,7 @@ async function makeVectors(ffmpegPath: string | null): Promise<Vectors> {
 
   return {
     about:
-      "Fingerprints glazier-core makes of the corpus beside this file, for Oriel GPUI to match bit " +
+      "Fingerprints glazier-core makes of the corpus beside this file, for Oriel RS to match bit " +
       "for bit (plan 063). Hex strings are raw bytes; `drawn` stills are drawn at test time; videos " +
       "go through the ffmpeg on PATH. Made by packages/glazier-core/src/similarity/" +
       "fingerprint-vectors.test.ts with UPDATE_FINGERPRINT_VECTORS=1.",
