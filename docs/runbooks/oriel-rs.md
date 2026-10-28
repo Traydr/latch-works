@@ -73,11 +73,12 @@ it from `node_modules`; `ORIEL_RS_LIBVIPS=<dylib>` points them at another.
 
 ## Video through libmpv
 
-Video plays through AVPlayer by default. `ORIEL_RS_VIDEO=mpv` plays it through libmpv instead
-(plan 063, decision 4), which also plays MKV, WebM, AVI, FLV and ASF and seeks AV1 exactly.
-Until Oriel RS builds its own LGPL libmpv, the switch loads the libmpv inside IINA
-(`/Applications/IINA.app`), read-only; `ORIEL_RS_LIBMPV=<dylib>` points it at another. IINA's
-build is GPL: use it to develop, never ship it. `ORIEL_RS_MPV_RENDER=gl` (the default) draws
+Video plays through libmpv (plan 063, decisions 4 and 7), which plays MKV, WebM, AVI, FLV and
+ASF as well as MP4, and seeks AV1 exactly. `ORIEL_RS_VIDEO=avplayer` plays through AVPlayer
+instead, and the app falls back to AVPlayer by itself when no libmpv loads. Until Oriel RS builds
+its own LGPL libmpv, it loads the libmpv inside IINA (`/Applications/IINA.app`), read-only;
+`ORIEL_RS_LIBMPV=<dylib>` points it at another. IINA's build is GPL: use it to develop, never
+ship it. `ORIEL_RS_MPV_RENDER=gl` (the default) draws
 through OpenGL into an IOSurface; `sw` draws in software.
 
 ## Measuring

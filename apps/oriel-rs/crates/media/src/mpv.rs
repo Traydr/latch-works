@@ -3,8 +3,8 @@
 //! refuses) and exact seeks in any of them, AV1 from SVT-AV1 included.
 //!
 //! An [`MpvPlayer`] has the controls of [`crate::video::VideoPlayer`], so View's capsule player
-//! can switch between the two ([`AnyPlayer`], chosen by `ORIEL_RS_VIDEO=mpv`). The AVPlayer
-//! player stays the default until this one passes Phase 0's measurements.
+//! can switch between the two ([`AnyPlayer`]). This one is the default (plan 063, decision 7);
+//! `ORIEL_RS_VIDEO=avplayer` chooses AVPlayer.
 //!
 //! mpv owns decoding, sound, A/V sync and seeking. Its frames reach GPUI on one of two paths,
 //! chosen by `ORIEL_RS_MPV_RENDER`:
@@ -49,6 +49,12 @@ use self::render::{Picture, Rendered, Shared};
 use crate::video::{SeekMode, VideoError, VideoStatus};
 
 pub use any::{AnyPlayer, VideoEngine};
+
+/// Whether libmpv can be loaded on this Mac: from the app bundle, `ORIEL_RS_LIBMPV`, or IINA's
+/// copy while developing.
+pub fn libmpv_available() -> bool {
+    ffi::Libmpv::get().is_ok()
+}
 pub use samples::{MpvFrameSample, MpvSamples, MpvSeekSample};
 
 /// How long a ready player may go without its first picture before it is called unplayable.

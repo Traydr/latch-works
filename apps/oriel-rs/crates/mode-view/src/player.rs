@@ -3,9 +3,9 @@
 //! forward 5 s, play or pause, the elapsed time, the scrubber, the length, and mute.
 //!
 //! Keys, while the player has focus: Space plays or pauses, ← and → skip 5 s, M mutes. A click
-//! on the picture plays or pauses. AVPlayer does the playing (`oriel_media::video`), or libmpv
-//! with `ORIEL_RS_VIDEO=mpv` (`oriel_media::mpv`); this view only draws its picture and sends
-//! it commands.
+//! on the picture plays or pauses. libmpv does the playing (`oriel_media::mpv`), or AVPlayer
+//! (`oriel_media::video`) with `ORIEL_RS_VIDEO=avplayer` or where libmpv cannot be loaded; this
+//! view only draws its picture and sends it commands.
 //!
 //! The file names only `gpui_kit` and `oriel_media`, so the media crate's spike examples can
 //! build it as it is.
@@ -123,7 +123,7 @@ impl CapsulePlayer {
         self.video.as_mut().ok().and_then(AnyPlayer::av_player_mut)
     }
 
-    /// The libmpv player, when `ORIEL_RS_VIDEO=mpv` chose it.
+    /// The libmpv player, when it is the one playing.
     pub fn mpv_mut(&mut self) -> Option<&mut MpvPlayer> {
         self.video.as_mut().ok().and_then(AnyPlayer::mpv_mut)
     }

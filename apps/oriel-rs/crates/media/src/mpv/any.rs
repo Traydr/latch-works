@@ -1,6 +1,6 @@
-//! The switch between the two video engines, for View's capsule player while libmpv is
-//! measured against AVPlayer: `ORIEL_RS_VIDEO=mpv` plays through libmpv, anything else (or
-//! nothing) through AVPlayer, the default.
+//! The switch between the two video engines for View's capsule player. libmpv is the default
+//! (plan 063, decision 7): it plays every container and seeks AV1 exactly. `ORIEL_RS_VIDEO=avplayer`
+//! plays through AVPlayer instead, and so does a Mac where libmpv cannot be loaded.
 
 use std::path::Path;
 use std::time::Duration;
@@ -10,7 +10,7 @@ use gpui_kit::{AnyElement, IntoElement as _, Styled as _, Window};
 use super::{MpvPlayer, Pumped};
 use crate::video::{SeekMode, VideoError, VideoPlayer};
 
-/// Names the engine: `mpv` for libmpv.
+/// Names the engine: `avplayer` for AVPlayer; anything else, or nothing, for libmpv.
 const ENGINE_VARIABLE: &str = "ORIEL_RS_VIDEO";
 
 /// Which engine plays video.
@@ -21,11 +21,11 @@ pub enum VideoEngine {
 }
 
 impl VideoEngine {
-    /// The engine `ORIEL_RS_VIDEO` names.
+    /// The engine `ORIEL_RS_VIDEO` names, libmpv unless it says `avplayer`.
     pub fn from_env() -> Self {
         match std::env::var(ENGINE_VARIABLE).as_deref() {
-            Ok("mpv") => Self::Mpv,
-            _ => Self::AvPlayer,
+            Ok("avplayer") => Self::AvPlayer,
+            _ => Self::Mpv,
         }
     }
 }
@@ -49,6 +49,11 @@ impl AnyPlayer {
 
     pub fn open_with(path: &Path, engine: VideoEngine) -> Result<Self, VideoError> {
         let engine = match engine {
+            VideoEngine::Mpv if !super::libmpv_available() => {
+                // Without libmpv the app still plays what AVPlayer can, rather than nothing.
+                log::warn!("libmpv could not be loaded; playing through AVPlayer");
+                Engine::AvPlayer(VideoPlayer::open(path)?)
+            }
             VideoEngine::AvPlayer => Engine::AvPlayer(VideoPlayer::open(path)?),
             VideoEngine::Mpv => Engine::Mpv(MpvPlayer::open(path)?),
         };

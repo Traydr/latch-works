@@ -24,8 +24,8 @@
 - **Status**: IN PROGRESS. Phase 0 is done (2026-10-28, branch `agent/063-0-spike`); its report
   is [docs/research/oriel-rs-phase0.md](../research/oriel-rs-phase0.md). Every STOP condition
   passed, and the owner accepted the two differences and chose go (decisions 3 to 6 above).
-  Phase 1 is done too (2026-10-28, branch `agent/063-1-foundations`; see "Phase 1 results").
-  Phase 2 is next, after the two questions under Phase 1 results.
+  Phase 1 is done too (2026-10-28; see "Phase 1 results"), and the owner settled what it raised
+  (decisions 7 to 10). Next: the LGPL libmpv build and an app bundle, then Phase 2.
 - **Priority**: P3 (an experiment the owner asked for)
 - **Effort**: XL several times over. About 24.8k lines of UI, 15k lines of core packages and the
   main-side services are rewritten in Rust. Phase 0, the gate, is L.
@@ -73,6 +73,16 @@ On Phase 0's report (2026-10-28):
    differences. Rust orders them as Electron Oriel does.
 6. **libvips in the app.** Carrying sharp's libvips build (about 18 MB) for exact fingerprints is
    accepted.
+
+On Phase 1's results (2026-10-28):
+
+7. **libmpv is the default video engine**, at its cost against AVPlayer (slower opens and exact
+   seeks in H.264 and HEVC, about 1.7 times the CPU), for exact seeks everywhere and every
+   container. AVPlayer stays only as the fallback where libmpv cannot load.
+8. **Build the LGPL libmpv**; agents may install meson, ninja and pkg-config through Homebrew.
+9. **One branch**, `agent/063-0-spike`, for the whole plan, not one per phase.
+10. **The name is Oriel RS**: `apps/oriel-rs`, the `oriel-rs` binary and package,
+    `~/.latch-works/oriel-rs/`, and `ORIEL_RS_*` variables.
 
 ## Which GPUI (D1, settled: A)
 
@@ -193,7 +203,7 @@ changes: wide, but mostly mechanical, since CE's kit port keeps GPUI Kit's compo
 - **Electron Oriel and the TypeScript packages keep working.** Pane View, the Lockstep CLI and
   Gather Box still use them. This plan adds conformance vectors and a few test exports to them,
   each in its own commit, and their suites must pass after each.
-- **Commits.** One branch per phase, from `agent/063-0-spike`; subjects read
+- **Commits.** One branch for the whole plan, `agent/063-0-spike` (decision 9); subjects read
   `type(oriel-rs): …`. Push when the owner asks.
 
 ## Settled by default (change by saying so)
@@ -475,7 +485,7 @@ baseline lives in `e2e/scripts/frame-performance.ts`'s fixture mode (`FRAME_PERF
   (`cargo run -p oriel-tools --bin fetch-media-tools`), refusing a hash mismatch; a test fails
   if its pins and `media-tools.ts` differ. `ORIEL_RS_MEDIA_TOOLS` wins over the bundle and the
   dev cache, and `PATH` is never searched. The runner ports `run-tool.ts`.
-- **libmpv.** Behind `ORIEL_RS_VIDEO=mpv`, mpv's OpenGL renderer draws into an IOSurface,
+- **libmpv.** Now the default (decision 7), mpv's OpenGL renderer draws into an IOSurface,
   which VideoToolbox converts to BT.601 `420f` for `surface()`: hardware decode, no CPU copy,
   colour within 1 level. On the 300 fixture videos every exact seek, AV1 included, lands on its
   target (181–210 ms median), and MKV, WebM, FLV, AVI and ASF play. The cost against AVPlayer:
@@ -484,13 +494,7 @@ baseline lives in `e2e/scripts/frame-performance.ts`'s fixture mode (`FRAME_PERF
   libmpv, a GPL build, which must never ship; an LGPL build (mpv `-Dgpl=false`, FFmpeg without
   `--enable-gpl`) loses nothing playback needs.
 
-**Questions for the owner from Phase 1:**
-1. **libmpv as the default.** Make it the default video engine now, at the CPU and latency cost
-   above, or keep AVPlayer as the default for MP4 and use libmpv for what AVPlayer cannot play or
-   seek (AV1 and the other containers)?
-2. **Building an LGPL libmpv** needs meson, ninja and pkg-config (via Homebrew), then a pinned
-   script that builds mpv, FFmpeg, libplacebo and libass from source. May the agents install those
-   tools? Until then the switch keeps loading IINA's libmpv for development only.
+The owner answered Phase 1's two questions with decisions 7 and 8.
 
 ### Phase 2: the shell (M)
 
