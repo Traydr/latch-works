@@ -1,0 +1,4967 @@
+{
+  "about": "Made by packages/media-format/src/conformance.test.ts from video-policy.ts; do not edit. Regenerate with ORIEL_GPUI_UPDATE_VECTORS=1 pnpm --filter @latch-works/media-format test. Non-ASCII characters are escaped.",
+  "mediabunnyVideoCodecs": ["avc", "hevc", "vp9", "av1", "vp8", "prores"],
+  "mediabunnyAudioCodecs": [
+    "aac",
+    "opus",
+    "mp3",
+    "vorbis",
+    "flac",
+    "ac3",
+    "eac3",
+    "dts",
+    "pcm-s16",
+    "pcm-s16be",
+    "pcm-s24",
+    "pcm-s24be",
+    "pcm-s32",
+    "pcm-s32be",
+    "pcm-f32",
+    "pcm-f32be",
+    "pcm-f64",
+    "pcm-f64be",
+    "pcm-u8",
+    "pcm-s8",
+    "ulaw",
+    "alaw"
+  ],
+  "archiveVideoCodecs": ["avc", "hevc", "av1"],
+  "archiveAudioCodecs": ["aac", "mp3"],
+  "defaultVideoCodec": "avc",
+  "videoContainers": ["mp4", "mov", "matroska", "webm", "mpegts", "avi", "flv", "asf"],
+  "isArchiveVideoCodec": [
+    { "codec": "avc", "archive": true },
+    { "codec": "hevc", "archive": true },
+    { "codec": "vp9", "archive": false },
+    { "codec": "av1", "archive": true },
+    { "codec": "vp8", "archive": false },
+    { "codec": "prores", "archive": false },
+    { "codec": "other", "archive": false }
+  ],
+  "archiveVideo": [
+    {
+      "fileName": "clip.mov",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "clip.mp4" }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "mp4",
+      "videoCodec": "hevc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "clip.mp4" }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "mp4",
+      "videoCodec": "vp9",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "mp4",
+      "videoCodec": "av1",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "clip.mp4" }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "mp4",
+      "videoCodec": "vp8",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "mp4",
+      "videoCodec": "prores",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "mp4",
+      "videoCodec": "other",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "mp4",
+      "videoCodec": null,
+      "audioCodec": "aac",
+      "plan": { "action": "unsupported", "reason": "The file has no video track." }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "mov",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "mov",
+      "videoCodec": "hevc",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "mov",
+      "videoCodec": "av1",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "mov",
+      "videoCodec": "vp8",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "mov",
+      "videoCodec": "prores",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "mov",
+      "videoCodec": "other",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "mov",
+      "videoCodec": null,
+      "audioCodec": "aac",
+      "plan": { "action": "unsupported", "reason": "The file has no video track." }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "matroska",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "matroska",
+      "videoCodec": "hevc",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "matroska",
+      "videoCodec": "vp9",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "matroska",
+      "videoCodec": "av1",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "matroska",
+      "videoCodec": "vp8",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "matroska",
+      "videoCodec": "prores",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "matroska",
+      "videoCodec": "other",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "matroska",
+      "videoCodec": null,
+      "audioCodec": "aac",
+      "plan": { "action": "unsupported", "reason": "The file has no video track." }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "webm",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "webm",
+      "videoCodec": "hevc",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "webm",
+      "videoCodec": "vp9",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "webm",
+      "videoCodec": "av1",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "webm",
+      "videoCodec": "vp8",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "webm",
+      "videoCodec": "prores",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "webm",
+      "videoCodec": "other",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "webm",
+      "videoCodec": null,
+      "audioCodec": "aac",
+      "plan": { "action": "unsupported", "reason": "The file has no video track." }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "mpegts",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "mpegts",
+      "videoCodec": "hevc",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "mpegts",
+      "videoCodec": "vp9",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "mpegts",
+      "videoCodec": "av1",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "mpegts",
+      "videoCodec": "vp8",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "mpegts",
+      "videoCodec": "prores",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "mpegts",
+      "videoCodec": "other",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "mpegts",
+      "videoCodec": null,
+      "audioCodec": "aac",
+      "plan": { "action": "unsupported", "reason": "The file has no video track." }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "avi",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "unsupported",
+        "reason": "The AVI container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "avi",
+      "videoCodec": "hevc",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "unsupported",
+        "reason": "The AVI container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "avi",
+      "videoCodec": "vp9",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "unsupported",
+        "reason": "The AVI container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "avi",
+      "videoCodec": "av1",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "unsupported",
+        "reason": "The AVI container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "avi",
+      "videoCodec": "vp8",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "unsupported",
+        "reason": "The AVI container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "avi",
+      "videoCodec": "prores",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "unsupported",
+        "reason": "The AVI container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "avi",
+      "videoCodec": "other",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "unsupported",
+        "reason": "The AVI container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "avi",
+      "videoCodec": null,
+      "audioCodec": "aac",
+      "plan": {
+        "action": "unsupported",
+        "reason": "The AVI container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "flv",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "unsupported",
+        "reason": "The FLV container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "flv",
+      "videoCodec": "hevc",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "unsupported",
+        "reason": "The FLV container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "flv",
+      "videoCodec": "vp9",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "unsupported",
+        "reason": "The FLV container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "flv",
+      "videoCodec": "av1",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "unsupported",
+        "reason": "The FLV container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "flv",
+      "videoCodec": "vp8",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "unsupported",
+        "reason": "The FLV container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "flv",
+      "videoCodec": "prores",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "unsupported",
+        "reason": "The FLV container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "flv",
+      "videoCodec": "other",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "unsupported",
+        "reason": "The FLV container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "flv",
+      "videoCodec": null,
+      "audioCodec": "aac",
+      "plan": {
+        "action": "unsupported",
+        "reason": "The FLV container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "asf",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "unsupported",
+        "reason": "The ASF container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "asf",
+      "videoCodec": "hevc",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "unsupported",
+        "reason": "The ASF container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "asf",
+      "videoCodec": "vp9",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "unsupported",
+        "reason": "The ASF container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "asf",
+      "videoCodec": "av1",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "unsupported",
+        "reason": "The ASF container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "asf",
+      "videoCodec": "vp8",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "unsupported",
+        "reason": "The ASF container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "asf",
+      "videoCodec": "prores",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "unsupported",
+        "reason": "The ASF container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "asf",
+      "videoCodec": "other",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "unsupported",
+        "reason": "The ASF container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "asf",
+      "videoCodec": null,
+      "audioCodec": "aac",
+      "plan": {
+        "action": "unsupported",
+        "reason": "The ASF container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": null
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "mp3",
+      "plan": null
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "vorbis",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "flac",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "ac3",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "eac3",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "dts",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "pcm-s16",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "pcm-s16be",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "pcm-s24",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "pcm-s24be",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "pcm-s32",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "pcm-s32be",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "pcm-f32",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "pcm-f32be",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "pcm-f64",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "pcm-f64be",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "pcm-u8",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "pcm-s8",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "ulaw",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "alaw",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "other",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": null,
+      "plan": null
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "matroska",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "matroska",
+      "videoCodec": "avc",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "matroska",
+      "videoCodec": "avc",
+      "audioCodec": "mp3",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "matroska",
+      "videoCodec": "avc",
+      "audioCodec": "vorbis",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "matroska",
+      "videoCodec": "avc",
+      "audioCodec": "flac",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "matroska",
+      "videoCodec": "avc",
+      "audioCodec": "ac3",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "matroska",
+      "videoCodec": "avc",
+      "audioCodec": "eac3",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "matroska",
+      "videoCodec": "avc",
+      "audioCodec": "dts",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "matroska",
+      "videoCodec": "avc",
+      "audioCodec": "pcm-s16",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "matroska",
+      "videoCodec": "avc",
+      "audioCodec": "pcm-s16be",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "matroska",
+      "videoCodec": "avc",
+      "audioCodec": "pcm-s24",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "matroska",
+      "videoCodec": "avc",
+      "audioCodec": "pcm-s24be",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "matroska",
+      "videoCodec": "avc",
+      "audioCodec": "pcm-s32",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "matroska",
+      "videoCodec": "avc",
+      "audioCodec": "pcm-s32be",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "matroska",
+      "videoCodec": "avc",
+      "audioCodec": "pcm-f32",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "matroska",
+      "videoCodec": "avc",
+      "audioCodec": "pcm-f32be",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "matroska",
+      "videoCodec": "avc",
+      "audioCodec": "pcm-f64",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "matroska",
+      "videoCodec": "avc",
+      "audioCodec": "pcm-f64be",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "matroska",
+      "videoCodec": "avc",
+      "audioCodec": "pcm-u8",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "matroska",
+      "videoCodec": "avc",
+      "audioCodec": "pcm-s8",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "matroska",
+      "videoCodec": "avc",
+      "audioCodec": "ulaw",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "matroska",
+      "videoCodec": "avc",
+      "audioCodec": "alaw",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "matroska",
+      "videoCodec": "avc",
+      "audioCodec": "other",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "matroska",
+      "videoCodec": "avc",
+      "audioCodec": null,
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mp4",
+      "videoCodec": "vp9",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mp4",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mp4",
+      "videoCodec": "vp9",
+      "audioCodec": null,
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mp4",
+      "videoCodec": null,
+      "audioCodec": "aac",
+      "plan": { "action": "unsupported", "reason": "The file has no video track." }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mp4",
+      "videoCodec": null,
+      "audioCodec": "opus",
+      "plan": { "action": "unsupported", "reason": "The file has no video track." }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mp4",
+      "videoCodec": null,
+      "audioCodec": null,
+      "plan": { "action": "unsupported", "reason": "The file has no video track." }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mov",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mov",
+      "videoCodec": "avc",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mov",
+      "videoCodec": "avc",
+      "audioCodec": null,
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": null,
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mov",
+      "videoCodec": null,
+      "audioCodec": "aac",
+      "plan": { "action": "unsupported", "reason": "The file has no video track." }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mov",
+      "videoCodec": null,
+      "audioCodec": "opus",
+      "plan": { "action": "unsupported", "reason": "The file has no video track." }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mov",
+      "videoCodec": null,
+      "audioCodec": null,
+      "plan": { "action": "unsupported", "reason": "The file has no video track." }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "matroska",
+      "videoCodec": "vp9",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "matroska",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "matroska",
+      "videoCodec": "vp9",
+      "audioCodec": null,
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "matroska",
+      "videoCodec": null,
+      "audioCodec": "aac",
+      "plan": { "action": "unsupported", "reason": "The file has no video track." }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "matroska",
+      "videoCodec": null,
+      "audioCodec": "opus",
+      "plan": { "action": "unsupported", "reason": "The file has no video track." }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "matroska",
+      "videoCodec": null,
+      "audioCodec": null,
+      "plan": { "action": "unsupported", "reason": "The file has no video track." }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "webm",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "webm",
+      "videoCodec": "avc",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "webm",
+      "videoCodec": "avc",
+      "audioCodec": null,
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "webm",
+      "videoCodec": "vp9",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "webm",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "webm",
+      "videoCodec": "vp9",
+      "audioCodec": null,
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "webm",
+      "videoCodec": null,
+      "audioCodec": "aac",
+      "plan": { "action": "unsupported", "reason": "The file has no video track." }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "webm",
+      "videoCodec": null,
+      "audioCodec": "opus",
+      "plan": { "action": "unsupported", "reason": "The file has no video track." }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "webm",
+      "videoCodec": null,
+      "audioCodec": null,
+      "plan": { "action": "unsupported", "reason": "The file has no video track." }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mpegts",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mpegts",
+      "videoCodec": "avc",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mpegts",
+      "videoCodec": "avc",
+      "audioCodec": null,
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mpegts",
+      "videoCodec": "vp9",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mpegts",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mpegts",
+      "videoCodec": "vp9",
+      "audioCodec": null,
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mpegts",
+      "videoCodec": null,
+      "audioCodec": "aac",
+      "plan": { "action": "unsupported", "reason": "The file has no video track." }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mpegts",
+      "videoCodec": null,
+      "audioCodec": "opus",
+      "plan": { "action": "unsupported", "reason": "The file has no video track." }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mpegts",
+      "videoCodec": null,
+      "audioCodec": null,
+      "plan": { "action": "unsupported", "reason": "The file has no video track." }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "avi",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "unsupported",
+        "reason": "The AVI container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "avi",
+      "videoCodec": "avc",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "unsupported",
+        "reason": "The AVI container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "avi",
+      "videoCodec": "avc",
+      "audioCodec": null,
+      "plan": {
+        "action": "unsupported",
+        "reason": "The AVI container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "avi",
+      "videoCodec": "vp9",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "unsupported",
+        "reason": "The AVI container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "avi",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "unsupported",
+        "reason": "The AVI container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "avi",
+      "videoCodec": "vp9",
+      "audioCodec": null,
+      "plan": {
+        "action": "unsupported",
+        "reason": "The AVI container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "avi",
+      "videoCodec": null,
+      "audioCodec": "aac",
+      "plan": {
+        "action": "unsupported",
+        "reason": "The AVI container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "avi",
+      "videoCodec": null,
+      "audioCodec": "opus",
+      "plan": {
+        "action": "unsupported",
+        "reason": "The AVI container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "avi",
+      "videoCodec": null,
+      "audioCodec": null,
+      "plan": {
+        "action": "unsupported",
+        "reason": "The AVI container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "flv",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "unsupported",
+        "reason": "The FLV container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "flv",
+      "videoCodec": "avc",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "unsupported",
+        "reason": "The FLV container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "flv",
+      "videoCodec": "avc",
+      "audioCodec": null,
+      "plan": {
+        "action": "unsupported",
+        "reason": "The FLV container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "flv",
+      "videoCodec": "vp9",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "unsupported",
+        "reason": "The FLV container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "flv",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "unsupported",
+        "reason": "The FLV container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "flv",
+      "videoCodec": "vp9",
+      "audioCodec": null,
+      "plan": {
+        "action": "unsupported",
+        "reason": "The FLV container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "flv",
+      "videoCodec": null,
+      "audioCodec": "aac",
+      "plan": {
+        "action": "unsupported",
+        "reason": "The FLV container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "flv",
+      "videoCodec": null,
+      "audioCodec": "opus",
+      "plan": {
+        "action": "unsupported",
+        "reason": "The FLV container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "flv",
+      "videoCodec": null,
+      "audioCodec": null,
+      "plan": {
+        "action": "unsupported",
+        "reason": "The FLV container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "asf",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "unsupported",
+        "reason": "The ASF container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "asf",
+      "videoCodec": "avc",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "unsupported",
+        "reason": "The ASF container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "asf",
+      "videoCodec": "avc",
+      "audioCodec": null,
+      "plan": {
+        "action": "unsupported",
+        "reason": "The ASF container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "asf",
+      "videoCodec": "vp9",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "unsupported",
+        "reason": "The ASF container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "asf",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "unsupported",
+        "reason": "The ASF container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "asf",
+      "videoCodec": "vp9",
+      "audioCodec": null,
+      "plan": {
+        "action": "unsupported",
+        "reason": "The ASF container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "asf",
+      "videoCodec": null,
+      "audioCodec": "aac",
+      "plan": {
+        "action": "unsupported",
+        "reason": "The ASF container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "asf",
+      "videoCodec": null,
+      "audioCodec": "opus",
+      "plan": {
+        "action": "unsupported",
+        "reason": "The ASF container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "asf",
+      "videoCodec": null,
+      "audioCodec": null,
+      "plan": {
+        "action": "unsupported",
+        "reason": "The ASF container cannot be read for conversion."
+      }
+    },
+    {
+      "fileName": "photo.jpg",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.jpg",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "photo.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "photo.JPG",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.JPG",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "photo.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "photo.jpeg",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.jpeg",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "photo.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "photo.JPEG",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.JPEG",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "photo.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "photo.Jpeg",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.Jpeg",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "photo.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "photo.png",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.png",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "photo.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "photo.PNG",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.PNG",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "photo.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "photo.webp",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.webp",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "photo.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "photo.bmp",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.bmp",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "photo.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "photo.BMP",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.BMP",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "photo.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "photo.gif",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.gif",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "photo.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "photo.GIF",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.GIF",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "photo.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "photo.avif",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.avif",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "photo.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "photo.AVIF",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.AVIF",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "photo.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.MP4",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": null
+    },
+    {
+      "fileName": "clip.MP4",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.Mp4",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": null
+    },
+    {
+      "fileName": "clip.Mp4",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "photo.heic",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.heic",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "photo.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "photo.tiff",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.tiff",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "photo.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "photo.svg",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.svg",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "photo.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "photo.jfif",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.jfif",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "photo.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "photo.jpe",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.jpe",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "photo.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.m4v",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "clip.mp4" }
+    },
+    {
+      "fileName": "clip.m4v",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mov",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "clip.mp4" }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.webm",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "clip.mp4" }
+    },
+    {
+      "fileName": "clip.webm",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "story.pdf",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "story.mp4" }
+    },
+    {
+      "fileName": "story.pdf",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "story.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "archive.zip",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "archive.mp4" }
+    },
+    {
+      "fileName": "archive.zip",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "archive.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "photo",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "photo.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "photo.",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "photo.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "photo..",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "photo..mp4" }
+    },
+    {
+      "fileName": "photo..",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "photo..mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": ".jpg",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": ".jpg.mp4" }
+    },
+    {
+      "fileName": ".jpg",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": ".jpg.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": ".avif",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": ".avif.mp4" }
+    },
+    {
+      "fileName": ".avif",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": ".avif.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": ".hidden.jpg",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": ".hidden.mp4" }
+    },
+    {
+      "fileName": ".hidden.jpg",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": ".hidden.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "..jpg",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "..mp4" }
+    },
+    {
+      "fileName": "..jpg",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "..mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "a.b.c.png",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "a.b.c.mp4" }
+    },
+    {
+      "fileName": "a.b.c.png",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "a.b.c.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "photo.jpg.mp4",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": null
+    },
+    {
+      "fileName": "photo.jpg.mp4",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "photo.jpg.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "archive.tar.gz",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "archive.tar.mp4" }
+    },
+    {
+      "fileName": "archive.tar.gz",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "archive.tar.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "photo.jpg.",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "photo.jpg.mp4" }
+    },
+    {
+      "fileName": "photo.jpg.",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "photo.jpg.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "dir.d/photo",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "dir.d/photo.mp4" }
+    },
+    {
+      "fileName": "dir.d/photo",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "dir.d/photo.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "dir.d\\photo",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "dir.d\\photo.mp4" }
+    },
+    {
+      "fileName": "dir.d\\photo",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "dir.d\\photo.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "dir.avif/photo",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "dir.avif/photo.mp4" }
+    },
+    {
+      "fileName": "dir.avif/photo",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "dir.avif/photo.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "dir/.jpg",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "dir/.jpg.mp4" }
+    },
+    {
+      "fileName": "dir/.jpg",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "dir/.jpg.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "dir\\.jpg",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "dir\\.jpg.mp4" }
+    },
+    {
+      "fileName": "dir\\.jpg",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "dir\\.jpg.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "photos/2024/",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "photos/2024/.mp4" }
+    },
+    {
+      "fileName": "photos/2024/",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "photos/2024/.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "photo.jpg/",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "photo.jpg/.mp4" }
+    },
+    {
+      "fileName": "photo.jpg/",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "photo.jpg/.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "photo.jpg\\",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "photo.jpg\\.mp4" }
+    },
+    {
+      "fileName": "photo.jpg\\",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "photo.jpg\\.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "/archive/2024/photo.png",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "/archive/2024/photo.mp4" }
+    },
+    {
+      "fileName": "/archive/2024/photo.png",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "/archive/2024/photo.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "C:\\Photos\\IMG_0001.JPG",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "C:\\Photos\\IMG_0001.mp4" }
+    },
+    {
+      "fileName": "C:\\Photos\\IMG_0001.JPG",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "C:\\Photos\\IMG_0001.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "C:\\Photos.d\\IMG_0001",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "C:\\Photos.d\\IMG_0001.mp4" }
+    },
+    {
+      "fileName": "C:\\Photos.d\\IMG_0001",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "C:\\Photos.d\\IMG_0001.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "\\\\server\\share\\clip.MOV",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "\\\\server\\share\\clip.mp4" }
+    },
+    {
+      "fileName": "\\\\server\\share\\clip.MOV",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "\\\\server\\share\\clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "a/b\\c.gif",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "a/b\\c.mp4" }
+    },
+    {
+      "fileName": "a/b\\c.gif",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "a/b\\c.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "photo .jpg",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "photo .mp4" }
+    },
+    {
+      "fileName": "photo .jpg",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "photo .mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "photo.jpg ",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.jpg ",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "photo.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "photo. jpg",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo. jpg",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "photo.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": " photo.png",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": " photo.mp4" }
+    },
+    {
+      "fileName": " photo.png",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": " photo.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "photo.jpg\u0000",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.jpg\u0000",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "photo.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "photo.jpg\u200b",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.jpg\u200b",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "photo.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "caf\u00e9.png",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "caf\u00e9.mp4" }
+    },
+    {
+      "fileName": "caf\u00e9.png",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "caf\u00e9.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "cafe\u0301.PNG",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "cafe\u0301.mp4" }
+    },
+    {
+      "fileName": "cafe\u0301.PNG",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "cafe\u0301.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "\u5199\u771f.JPG",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "\u5199\u771f.mp4" }
+    },
+    {
+      "fileName": "\u5199\u771f.JPG",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "\u5199\u771f.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "\ud83d\udcf7.webp",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "\ud83d\udcf7.mp4" }
+    },
+    {
+      "fileName": "\ud83d\udcf7.webp",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "\ud83d\udcf7.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "photo.\uff2a\uff30\uff27",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.\uff2a\uff30\uff27",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "photo.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "photo.G\u0130F",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.G\u0130F",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "photo.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "photo.\u03a3\u0391\u03a3",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.\u03a3\u0391\u03a3",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "photo.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.M\u212aV",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "clip.mp4" }
+    },
+    {
+      "fileName": "clip.M\u212aV",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "rename-mp4",
+        "fileName": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.mp4"
+      }
+    },
+    {
+      "fileName": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9.GIF",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "rename-mp4",
+        "fileName": "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9.mp4"
+      }
+    },
+    {
+      "fileName": "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9.GIF",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "photo.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": { "action": "rename-mp4", "fileName": "photo.mp4" }
+    },
+    {
+      "fileName": "photo.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "photo.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.jpeg",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "plan": {
+        "action": "rename-mp4",
+        "fileName": "a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.mp4"
+      }
+    },
+    {
+      "fileName": "a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.jpeg",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    }
+  ],
+  "reencode": [
+    {
+      "fileName": "clip.mkv",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "codec": "avc",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "codec": "hevc",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "hevc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "codec": "av1",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "av1" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.webm",
+      "container": "mp4",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "codec": "avc",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.webm",
+      "container": "mp4",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "codec": "hevc",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "hevc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.webm",
+      "container": "mp4",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "codec": "av1",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "av1" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mp4",
+      "videoCodec": null,
+      "audioCodec": "aac",
+      "codec": "avc",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mp4",
+      "videoCodec": null,
+      "audioCodec": "aac",
+      "codec": "hevc",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mp4",
+      "videoCodec": null,
+      "audioCodec": "aac",
+      "codec": "av1",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip",
+      "container": "mp4",
+      "videoCodec": "hevc",
+      "audioCodec": null,
+      "codec": "avc",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip",
+      "container": "mp4",
+      "videoCodec": "hevc",
+      "audioCodec": null,
+      "codec": "hevc",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "hevc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip",
+      "container": "mp4",
+      "videoCodec": "hevc",
+      "audioCodec": null,
+      "codec": "av1",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "av1" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "mov",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "codec": "avc",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "mov",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "codec": "hevc",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "hevc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "mov",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "codec": "av1",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "av1" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.webm",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "codec": "avc",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.webm",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "codec": "hevc",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "hevc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.webm",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "codec": "av1",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "av1" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mov",
+      "videoCodec": null,
+      "audioCodec": "aac",
+      "codec": "avc",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mov",
+      "videoCodec": null,
+      "audioCodec": "aac",
+      "codec": "hevc",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mov",
+      "videoCodec": null,
+      "audioCodec": "aac",
+      "codec": "av1",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip",
+      "container": "mov",
+      "videoCodec": "hevc",
+      "audioCodec": null,
+      "codec": "avc",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip",
+      "container": "mov",
+      "videoCodec": "hevc",
+      "audioCodec": null,
+      "codec": "hevc",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "hevc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip",
+      "container": "mov",
+      "videoCodec": "hevc",
+      "audioCodec": null,
+      "codec": "av1",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "av1" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "matroska",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "codec": "avc",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "matroska",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "codec": "hevc",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "hevc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "matroska",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "codec": "av1",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "av1" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.webm",
+      "container": "matroska",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "codec": "avc",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.webm",
+      "container": "matroska",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "codec": "hevc",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "hevc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.webm",
+      "container": "matroska",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "codec": "av1",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "av1" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "matroska",
+      "videoCodec": null,
+      "audioCodec": "aac",
+      "codec": "avc",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "matroska",
+      "videoCodec": null,
+      "audioCodec": "aac",
+      "codec": "hevc",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "matroska",
+      "videoCodec": null,
+      "audioCodec": "aac",
+      "codec": "av1",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip",
+      "container": "matroska",
+      "videoCodec": "hevc",
+      "audioCodec": null,
+      "codec": "avc",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip",
+      "container": "matroska",
+      "videoCodec": "hevc",
+      "audioCodec": null,
+      "codec": "hevc",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "hevc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip",
+      "container": "matroska",
+      "videoCodec": "hevc",
+      "audioCodec": null,
+      "codec": "av1",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "av1" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "webm",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "codec": "avc",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "webm",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "codec": "hevc",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "hevc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "webm",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "codec": "av1",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "av1" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.webm",
+      "container": "webm",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "codec": "avc",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.webm",
+      "container": "webm",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "codec": "hevc",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "hevc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.webm",
+      "container": "webm",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "codec": "av1",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "av1" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "webm",
+      "videoCodec": null,
+      "audioCodec": "aac",
+      "codec": "avc",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "webm",
+      "videoCodec": null,
+      "audioCodec": "aac",
+      "codec": "hevc",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "webm",
+      "videoCodec": null,
+      "audioCodec": "aac",
+      "codec": "av1",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip",
+      "container": "webm",
+      "videoCodec": "hevc",
+      "audioCodec": null,
+      "codec": "avc",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip",
+      "container": "webm",
+      "videoCodec": "hevc",
+      "audioCodec": null,
+      "codec": "hevc",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "hevc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip",
+      "container": "webm",
+      "videoCodec": "hevc",
+      "audioCodec": null,
+      "codec": "av1",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "av1" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "mpegts",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "codec": "avc",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "mpegts",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "codec": "hevc",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "hevc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "mpegts",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "codec": "av1",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "av1" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.webm",
+      "container": "mpegts",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "codec": "avc",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.webm",
+      "container": "mpegts",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "codec": "hevc",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "hevc" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.webm",
+      "container": "mpegts",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "codec": "av1",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "av1" },
+        "audio": { "action": "encode-aac" }
+      }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mpegts",
+      "videoCodec": null,
+      "audioCodec": "aac",
+      "codec": "avc",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mpegts",
+      "videoCodec": null,
+      "audioCodec": "aac",
+      "codec": "hevc",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "mpegts",
+      "videoCodec": null,
+      "audioCodec": "aac",
+      "codec": "av1",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip",
+      "container": "mpegts",
+      "videoCodec": "hevc",
+      "audioCodec": null,
+      "codec": "avc",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip",
+      "container": "mpegts",
+      "videoCodec": "hevc",
+      "audioCodec": null,
+      "codec": "hevc",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "hevc" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip",
+      "container": "mpegts",
+      "videoCodec": "hevc",
+      "audioCodec": null,
+      "codec": "av1",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "av1" },
+        "audio": { "action": "copy" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "avi",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "codec": "avc",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "avi",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "codec": "hevc",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "avi",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "codec": "av1",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip.webm",
+      "container": "avi",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "codec": "avc",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip.webm",
+      "container": "avi",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "codec": "hevc",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip.webm",
+      "container": "avi",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "codec": "av1",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "avi",
+      "videoCodec": null,
+      "audioCodec": "aac",
+      "codec": "avc",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "avi",
+      "videoCodec": null,
+      "audioCodec": "aac",
+      "codec": "hevc",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "avi",
+      "videoCodec": null,
+      "audioCodec": "aac",
+      "codec": "av1",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip",
+      "container": "avi",
+      "videoCodec": "hevc",
+      "audioCodec": null,
+      "codec": "avc",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip",
+      "container": "avi",
+      "videoCodec": "hevc",
+      "audioCodec": null,
+      "codec": "hevc",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip",
+      "container": "avi",
+      "videoCodec": "hevc",
+      "audioCodec": null,
+      "codec": "av1",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "flv",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "codec": "avc",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "flv",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "codec": "hevc",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "flv",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "codec": "av1",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip.webm",
+      "container": "flv",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "codec": "avc",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip.webm",
+      "container": "flv",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "codec": "hevc",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip.webm",
+      "container": "flv",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "codec": "av1",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "flv",
+      "videoCodec": null,
+      "audioCodec": "aac",
+      "codec": "avc",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "flv",
+      "videoCodec": null,
+      "audioCodec": "aac",
+      "codec": "hevc",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "flv",
+      "videoCodec": null,
+      "audioCodec": "aac",
+      "codec": "av1",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip",
+      "container": "flv",
+      "videoCodec": "hevc",
+      "audioCodec": null,
+      "codec": "avc",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip",
+      "container": "flv",
+      "videoCodec": "hevc",
+      "audioCodec": null,
+      "codec": "hevc",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip",
+      "container": "flv",
+      "videoCodec": "hevc",
+      "audioCodec": null,
+      "codec": "av1",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "asf",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "codec": "avc",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "asf",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "codec": "hevc",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "asf",
+      "videoCodec": "avc",
+      "audioCodec": "aac",
+      "codec": "av1",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip.webm",
+      "container": "asf",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "codec": "avc",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip.webm",
+      "container": "asf",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "codec": "hevc",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip.webm",
+      "container": "asf",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "codec": "av1",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "asf",
+      "videoCodec": null,
+      "audioCodec": "aac",
+      "codec": "avc",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "asf",
+      "videoCodec": null,
+      "audioCodec": "aac",
+      "codec": "hevc",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip.mp4",
+      "container": "asf",
+      "videoCodec": null,
+      "audioCodec": "aac",
+      "codec": "av1",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip",
+      "container": "asf",
+      "videoCodec": "hevc",
+      "audioCodec": null,
+      "codec": "avc",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip",
+      "container": "asf",
+      "videoCodec": "hevc",
+      "audioCodec": null,
+      "codec": "hevc",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    },
+    {
+      "fileName": "clip",
+      "container": "asf",
+      "videoCodec": "hevc",
+      "audioCodec": null,
+      "codec": "av1",
+      "plan": { "action": "unsupported", "reason": "This file cannot be re-encoded." }
+    }
+  ],
+  "stripAudio": [
+    {
+      "fileName": "clip.mkv",
+      "container": "mp4",
+      "videoCodec": "avc",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "drop" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "mp4",
+      "videoCodec": "hevc",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "drop" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "mp4",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "drop" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "mp4",
+      "videoCodec": "av1",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "drop" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "mp4",
+      "videoCodec": "vp8",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "drop" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "mp4",
+      "videoCodec": "prores",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "drop" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "mp4",
+      "videoCodec": "other",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "drop" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "mp4",
+      "videoCodec": null,
+      "audioCodec": "opus",
+      "plan": {
+        "action": "unsupported",
+        "reason": "This file cannot be rewritten without its audio."
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "mov",
+      "videoCodec": "avc",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "drop" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "mov",
+      "videoCodec": "hevc",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "drop" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "mov",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "drop" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "mov",
+      "videoCodec": "av1",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "drop" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "mov",
+      "videoCodec": "vp8",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "drop" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "mov",
+      "videoCodec": "prores",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "drop" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "mov",
+      "videoCodec": "other",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "drop" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "mov",
+      "videoCodec": null,
+      "audioCodec": "opus",
+      "plan": {
+        "action": "unsupported",
+        "reason": "This file cannot be rewritten without its audio."
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "matroska",
+      "videoCodec": "avc",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "drop" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "matroska",
+      "videoCodec": "hevc",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "drop" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "matroska",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "drop" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "matroska",
+      "videoCodec": "av1",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "drop" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "matroska",
+      "videoCodec": "vp8",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "drop" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "matroska",
+      "videoCodec": "prores",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "drop" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "matroska",
+      "videoCodec": "other",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "drop" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "matroska",
+      "videoCodec": null,
+      "audioCodec": "opus",
+      "plan": {
+        "action": "unsupported",
+        "reason": "This file cannot be rewritten without its audio."
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "webm",
+      "videoCodec": "avc",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "drop" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "webm",
+      "videoCodec": "hevc",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "drop" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "webm",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "drop" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "webm",
+      "videoCodec": "av1",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "drop" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "webm",
+      "videoCodec": "vp8",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "drop" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "webm",
+      "videoCodec": "prores",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "drop" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "webm",
+      "videoCodec": "other",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "drop" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "webm",
+      "videoCodec": null,
+      "audioCodec": "opus",
+      "plan": {
+        "action": "unsupported",
+        "reason": "This file cannot be rewritten without its audio."
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "mpegts",
+      "videoCodec": "avc",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "drop" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "mpegts",
+      "videoCodec": "hevc",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "drop" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "mpegts",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "drop" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "mpegts",
+      "videoCodec": "av1",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "copy" },
+        "audio": { "action": "drop" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "mpegts",
+      "videoCodec": "vp8",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "drop" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "mpegts",
+      "videoCodec": "prores",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "drop" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "mpegts",
+      "videoCodec": "other",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "convert-mp4",
+        "fileName": "clip.mp4",
+        "video": { "action": "encode", "codec": "avc" },
+        "audio": { "action": "drop" }
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "mpegts",
+      "videoCodec": null,
+      "audioCodec": "opus",
+      "plan": {
+        "action": "unsupported",
+        "reason": "This file cannot be rewritten without its audio."
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "avi",
+      "videoCodec": "avc",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "unsupported",
+        "reason": "This file cannot be rewritten without its audio."
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "avi",
+      "videoCodec": "hevc",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "unsupported",
+        "reason": "This file cannot be rewritten without its audio."
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "avi",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "unsupported",
+        "reason": "This file cannot be rewritten without its audio."
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "avi",
+      "videoCodec": "av1",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "unsupported",
+        "reason": "This file cannot be rewritten without its audio."
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "avi",
+      "videoCodec": "vp8",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "unsupported",
+        "reason": "This file cannot be rewritten without its audio."
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "avi",
+      "videoCodec": "prores",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "unsupported",
+        "reason": "This file cannot be rewritten without its audio."
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "avi",
+      "videoCodec": "other",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "unsupported",
+        "reason": "This file cannot be rewritten without its audio."
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "avi",
+      "videoCodec": null,
+      "audioCodec": "opus",
+      "plan": {
+        "action": "unsupported",
+        "reason": "This file cannot be rewritten without its audio."
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "flv",
+      "videoCodec": "avc",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "unsupported",
+        "reason": "This file cannot be rewritten without its audio."
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "flv",
+      "videoCodec": "hevc",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "unsupported",
+        "reason": "This file cannot be rewritten without its audio."
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "flv",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "unsupported",
+        "reason": "This file cannot be rewritten without its audio."
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "flv",
+      "videoCodec": "av1",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "unsupported",
+        "reason": "This file cannot be rewritten without its audio."
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "flv",
+      "videoCodec": "vp8",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "unsupported",
+        "reason": "This file cannot be rewritten without its audio."
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "flv",
+      "videoCodec": "prores",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "unsupported",
+        "reason": "This file cannot be rewritten without its audio."
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "flv",
+      "videoCodec": "other",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "unsupported",
+        "reason": "This file cannot be rewritten without its audio."
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "flv",
+      "videoCodec": null,
+      "audioCodec": "opus",
+      "plan": {
+        "action": "unsupported",
+        "reason": "This file cannot be rewritten without its audio."
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "asf",
+      "videoCodec": "avc",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "unsupported",
+        "reason": "This file cannot be rewritten without its audio."
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "asf",
+      "videoCodec": "hevc",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "unsupported",
+        "reason": "This file cannot be rewritten without its audio."
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "asf",
+      "videoCodec": "vp9",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "unsupported",
+        "reason": "This file cannot be rewritten without its audio."
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "asf",
+      "videoCodec": "av1",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "unsupported",
+        "reason": "This file cannot be rewritten without its audio."
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "asf",
+      "videoCodec": "vp8",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "unsupported",
+        "reason": "This file cannot be rewritten without its audio."
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "asf",
+      "videoCodec": "prores",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "unsupported",
+        "reason": "This file cannot be rewritten without its audio."
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "asf",
+      "videoCodec": "other",
+      "audioCodec": "opus",
+      "plan": {
+        "action": "unsupported",
+        "reason": "This file cannot be rewritten without its audio."
+      }
+    },
+    {
+      "fileName": "clip.mkv",
+      "container": "asf",
+      "videoCodec": null,
+      "audioCodec": "opus",
+      "plan": {
+        "action": "unsupported",
+        "reason": "This file cannot be rewritten without its audio."
+      }
+    }
+  ]
+}

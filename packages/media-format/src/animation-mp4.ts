@@ -4,7 +4,20 @@ const DEFAULT_FRAME_DURATION_MICROSECONDS = 100_000;
 
 const MINIMUM_FRAME_DURATION_MICROSECONDS = 10_000;
 
-const MP4_VIDEO_QUALITY = new Quality("high");
+/**
+ * What an animation becomes: H.264 at Mediabunny's "high" quality, its transparency flattened
+ * onto black, a key frame at least every 2 seconds, and the MP4's index written first. Exported
+ * for Oriel GPUI's conformance vectors (plan 063), so its port keeps the same settings.
+ */
+export const ANIMATION_MP4_SETTINGS = {
+  codec: "avc",
+  quality: "high",
+  alpha: "discard",
+  keyFrameIntervalSeconds: 2,
+  fastStart: "in-memory",
+} as const;
+
+const MP4_VIDEO_QUALITY = new Quality(ANIMATION_MP4_SETTINGS.quality);
 
 /**
  * An MP4 muxer already wired to a canvas. Naming this seam keeps the GIF conversion loop free of
@@ -31,15 +44,15 @@ export const mediabunnyMp4Encoder: Mp4Encoder = {
     const target = new BufferTarget();
 
     const output = new Output({
-      format: new Mp4OutputFormat({ fastStart: "in-memory" }),
+      format: new Mp4OutputFormat({ fastStart: ANIMATION_MP4_SETTINGS.fastStart }),
       target,
     });
 
     const source = new CanvasSource(canvas, {
-      codec: "avc",
+      codec: ANIMATION_MP4_SETTINGS.codec,
       quality: MP4_VIDEO_QUALITY,
-      alpha: "discard",
-      keyFrameInterval: 2,
+      alpha: ANIMATION_MP4_SETTINGS.alpha,
+      keyFrameInterval: ANIMATION_MP4_SETTINGS.keyFrameIntervalSeconds,
     });
 
     output.addVideoTrack(source);
