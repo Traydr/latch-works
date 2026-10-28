@@ -21,11 +21,11 @@
 
 ## Status
 
-- **Status**: IN PROGRESS. Phase 0 is done (2026-10-28, branch `agent/063-0-spike`); its report
-  is [docs/research/oriel-rs-phase0.md](../research/oriel-rs-phase0.md). Every STOP condition
-  passed, and the owner accepted the two differences and chose go (decisions 3 to 6 above).
-  Phase 1 is done too (2026-10-28; see "Phase 1 results"), and the owner settled what it raised
-  (decisions 7 to 10). Next: the LGPL libmpv build and an app bundle, then Phase 2.
+- **Status**: IN PROGRESS. Phases 0 and 1 are done (2026-10-28, branch `agent/063-0-spike`).
+  The reports start at [docs/research/oriel-rs/README.md](../research/oriel-rs/README.md). Every
+  STOP condition passed, and the owner accepted the two differences and chose go (decisions 3 to
+  6 below), then settled what Phase 1 raised (decisions 7 to 10). Next: the LGPL libmpv build and
+  an app bundle, then Phase 2.
 - **Priority**: P3 (an experiment the owner asked for)
 - **Effort**: XL several times over. About 24.8k lines of UI, 15k lines of core packages and the
   main-side services are rewritten in Rust. Phase 0, the gate, is L.
@@ -372,7 +372,7 @@ format. Phase 0 proves these paths on macOS before anything else is built.
     `420f`. The player asks AVFoundation for BT.601 `420f` frames until GPUI reads the buffer's
     colour tag.
   - AV1 from SVT-AV1's default encode seeks only to the keyframe before the target in
-    AVFoundation (Phase 0); see the Phase 0 report for the choices.
+    AVFoundation (Phase 0). libmpv, now the default engine, seeks it exactly (decision 7).
   - The window lifts GPUI's 30 fps cap on inactive windows, so video behind another window keeps
     its rate.
 - **Video AVPlayer cannot play.** MKV, WebM, AVI, FLV and ASF are the files Tidy converts to MP4.
@@ -437,7 +437,8 @@ Oriel.
 **Done when** the scorecard's Phase 0 rows have numbers for both apps and each port check has a
 result. Then stop and report; the owner decides go or no-go, and D1.
 
-**Done 2026-10-28**: [docs/research/oriel-rs-phase0.md](../research/oriel-rs-phase0.md). The
+**Done 2026-10-28**: [docs/research/oriel-rs/README.md](../research/oriel-rs/README.md), with
+the numbers in [phase-0-measurements.md](../research/oriel-rs/phase-0-measurements.md). The
 baseline lives in `e2e/scripts/frame-performance.ts`'s fixture mode (`FRAME_PERF_FIXTURE_ROOT`).
 
 **STOP** if any of these fail:
@@ -466,35 +467,9 @@ baseline lives in `e2e/scripts/frame-performance.ts`'s fixture mode (`FRAME_PERF
    vector freshness.
 
 **Phase 1 results (2026-10-28).** All six steps are done, plus `docs/runbooks/oriel-rs.md`, the
-`oriel-rs.yml` workflow and the libmpv video path the owner chose. 111 Rust tests pass.
-- **Rules.** `core-domain` now holds all of `media-domain` and `core-format` the policies of
-  `media-format`, each pinned by vectors from its package's Vitest suite. Beyond the 19 accepted
-  Han pairs there is no difference. Matching needed V8's `Math.log`, JavaScript's `toFixed`
-  rounding and its `trim` set in Rust. Paths are `&str`, so a Windows name holding a lone
-  surrogate is Phase 8's problem.
-- **Animation conversion is not "ffmpeg with the fallback's arguments".** Mediabunny and the
-  ffmpeg fallback differ on short GIF delays (ffmpeg makes under 20 ms into 100 ms; Mediabunny
-  raises under 10 ms to 10 ms), odd sizes (crop against pad), the key-frame interval (none against
-  every 2 s) and quality. `core-format` exposes Mediabunny's decisions for Phase 6 to hand
-  ffmpeg.
-- **Runtime.** `oriel-runtime` has jobs as GPUI entities (merged progress, one finish, panics as
-  failures, cancel by token or by dropping), a tokio thread whose tasks GPUI can await, and one
-  SQLite thread per catalog with Electron Oriel's pragmas and `user_version` migrations. It waits
-  5 s on a locked catalog where `node:sqlite` waits 0, since nothing else shares its files.
-- **Tools.** `oriel-tools` fetches the same ffmpeg and ffprobe as Electron Oriel
-  (`cargo run -p oriel-tools --bin fetch-media-tools`), refusing a hash mismatch; a test fails
-  if its pins and `media-tools.ts` differ. `ORIEL_RS_MEDIA_TOOLS` wins over the bundle and the
-  dev cache, and `PATH` is never searched. The runner ports `run-tool.ts`.
-- **libmpv.** Now the default (decision 7), mpv's OpenGL renderer draws into an IOSurface,
-  which VideoToolbox converts to BT.601 `420f` for `surface()`: hardware decode, no CPU copy,
-  colour within 1 level. On the 300 fixture videos every exact seek, AV1 included, lands on its
-  target (181–210 ms median), and MKV, WebM, FLV, AVI and ASF play. The cost against AVPlayer:
-  opens take 85–97 ms against 61–65, exact seeks on H.264 and HEVC are slower, and CPU is about
-  1.7–1.8 times AVPlayer's (four 1440p60 tiles: 69–75 % against 41 %). The spike loads IINA's
-  libmpv, a GPL build, which must never ship; an LGPL build (mpv `-Dgpl=false`, FFmpeg without
-  `--enable-gpl`) loses nothing playback needs.
-
-The owner answered Phase 1's two questions with decisions 7 and 8.
+`oriel-rs.yml` workflow and the libmpv video path the owner chose, and 111 Rust tests pass.
+[docs/research/oriel-rs/phase-1.md](../research/oriel-rs/phase-1.md) has the results, libmpv
+against AVPlayer among them. The owner answered Phase 1's two questions with decisions 7 and 8.
 
 ### Phase 2: the shell (M)
 
