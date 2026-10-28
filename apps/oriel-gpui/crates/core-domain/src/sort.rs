@@ -76,6 +76,12 @@ pub fn compare_by_name<T: NamedPath + ?Sized>(a: &T, b: &T) -> Ordering {
         .then_with(|| NAME_COLLATOR.compare(a.path(), b.path()))
 }
 
+/// Orders two names in natural order alone, as `localeCompare` with the same options does, which
+/// is how the gallery sorts folders.
+pub(crate) fn compare_names(a: &str, b: &str) -> Ordering {
+    NAME_COLLATOR.compare(a, b)
+}
+
 const FNV_OFFSET_BASIS: u32 = 2_166_136_261;
 const FNV_PRIME: u32 = 16_777_619;
 
