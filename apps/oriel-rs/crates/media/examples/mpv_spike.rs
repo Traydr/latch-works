@@ -11,8 +11,8 @@
 //! ```
 //!
 //! `ORIEL_RS_MPV_RENDER=sw` measures the software path, else the OpenGL one;
-//! `ORIEL_RS_LIBMPV` names a libmpv other than IINA's; `ORIEL_RS_MPV_LEAD_MS` sets how early
-//! frames are handed out.
+//! `ORIEL_RS_LIBMPV` names a libmpv other than the one `mpv/ffi.rs` finds;
+//! `ORIEL_RS_MPV_LEAD_MS` sets how early frames are handed out.
 //!
 //! `single` plays one file in View's capsule player, switched to libmpv, and drives it as
 //! `video_spike` does, keys included (through the window's own key dispatch): the open to the

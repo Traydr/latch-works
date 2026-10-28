@@ -20,10 +20,12 @@
 //! commands and reads the state the event thread keeps, so it never waits on mpv. [`pump_frames`]
 //! takes each finished frame at the window's next refresh, as `video::pump_frames` does.
 //!
-//! libmpv is loaded at run time and never linked: on this Mac it is IINA's build, read in place
-//! (`ORIEL_RS_LIBMPV` names another). IINA's build and its FFmpeg are GPL, which is fine for
-//! measuring here and not for shipping in an MIT app; an LGPL build (`-Dgpl=false`, with an
-//! FFmpeg built without `--enable-gpl`) loads the same way.
+//! libmpv is loaded at run time and never linked (`mpv/ffi.rs` has the order it looks in). It is
+//! Oriel RS's own LGPL build (mpv `-Dgpl=false`, FFmpeg without `--enable-gpl`), made by
+//! `scripts/libmpv/build-libmpv.ts`: from `Contents/Frameworks` in the app bundle, or from
+//! `apps/oriel-rs/.libmpv/current` while developing. `ORIEL_RS_LIBMPV` names another outside a
+//! bundle. Failing those, a development build falls back to IINA's libmpv, read in place; that
+//! build and its FFmpeg are GPL, fine for measuring here and never loaded by a bundled app.
 
 mod any;
 mod client;
@@ -50,8 +52,8 @@ use crate::video::{SeekMode, VideoError, VideoStatus};
 
 pub use any::{AnyPlayer, VideoEngine};
 
-/// Whether libmpv can be loaded on this Mac: from the app bundle, `ORIEL_RS_LIBMPV`, or IINA's
-/// copy while developing.
+/// Whether libmpv can be loaded on this Mac: from the app bundle, `ORIEL_RS_LIBMPV`, the
+/// development build, or IINA's copy outside a bundle. AVPlayer plays when it cannot.
 pub fn libmpv_available() -> bool {
     ffi::Libmpv::get().is_ok()
 }

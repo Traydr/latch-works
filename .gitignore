@@ -12,6 +12,8 @@ apps/*/.packaged-runtime/
 apps/*/.media-tools/
 # Oriel RS's Cargo build output (plan 063).
 apps/oriel-rs/target/
+# Oriel RS's LGPL libmpv sets, built by scripts/libmpv/build-libmpv.ts.
+apps/oriel-rs/.libmpv/
 *.tsbuildinfo
 .env
 .env.*

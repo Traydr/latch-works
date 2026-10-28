@@ -33,6 +33,12 @@ const OBSERVED: [(u64, &CStr, c_int); 11] = [
 const LOADFILE_REPLY: u64 = 1;
 /// How many of mpv's error lines are kept to explain a failure.
 const KEPT_ERRORS: usize = 4;
+/// `MPV_ERROR_OPTION_NOT_FOUND`.
+const ERROR_OPTION_NOT_FOUND: c_int = -5;
+/// Options that only switch off what a build may lack altogether: scripts (`load-scripts`, in
+/// builds with Lua, JavaScript or C plugins) and youtube-dl (`ytdl`, with Lua). Oriel RS's LGPL
+/// build has none of those, so mpv does not know these options, which is the same as off.
+const OFF_WHEN_ABSENT: [&str; 2] = ["load-scripts", "ytdl"];
 
 /// What the player reads of mpv's state, as of the newest event.
 #[derive(Default)]
@@ -116,7 +122,8 @@ impl Core {
             let status = unsafe {
                 (api.set_option_string)(handle.as_ptr(), name_c.as_ptr(), value_c.as_ptr())
             };
-            if status < 0 {
+            let absent = status == ERROR_OPTION_NOT_FOUND && OFF_WHEN_ABSENT.contains(name);
+            if status < 0 && !(absent && *value == "no") {
                 return Err(core.failure(status, &format!("option {name}={value}")));
             }
         }

@@ -4,12 +4,17 @@
 //!
 //! Nothing here is linked at build time. [`Libmpv::get`] opens the dylib once per process and
 //! keeps it for good: mpv runs threads of its own, so unloading it while any could still run
-//! would be unsound. On this Mac the library is IINA's, read in place from its app bundle. Its
-//! dependencies are named `@rpath/…` and carry no rpath of their own (IINA's executable supplies
-//! it), so each one dyld reports missing is loaded first from the same folder, by full path; dyld
-//! then matches the later `@rpath/` reference to the image already loaded under that name.
+//! would be unsound. [`choose`] decides which libmpv that is; see it for the order.
+//!
+//! Oriel RS's own set (`scripts/libmpv/build-libmpv.ts`) is LGPL, and each of its dylibs finds
+//! the others through `@loader_path`, so it loads from wherever it is copied. IINA's, used while
+//! developing, is GPL; its dependencies are named `@rpath/…` and carry no rpath of their own
+//! (IINA's executable supplies it), so each one dyld reports missing is loaded first from the same
+//! folder, by full path; dyld then matches the later `@rpath/` reference to the image already
+//! loaded under that name.
 
-use std::ffi::{CStr, c_char, c_double, c_int, c_ulong, c_void};
+use std::ffi::{CStr, OsString, c_char, c_double, c_int, c_ulong, c_void};
+use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
@@ -215,22 +220,142 @@ pub(super) struct Libmpv {
     _libraries: Vec<Library>,
 }
 
-/// IINA's own libmpv, in the place IINA installs to.
+/// IINA's own libmpv, in the place IINA installs to. GPL: for development only.
 const IINA_LIBMPV: &str = "/Applications/IINA.app/Contents/Frameworks/libmpv.2.dylib";
-/// Names a libmpv to load instead of IINA's.
+/// Names a libmpv to load when the app does not run from a bundle.
 pub(super) const LIBMPV_VARIABLE: &str = "ORIEL_RS_LIBMPV";
+/// The file name of client API 2's libmpv, preferred when a folder holds more than one.
+const LIBMPV_FILE: &str = "libmpv.2.dylib";
 
 static LIBMPV: OnceLock<Result<Libmpv, String>> = OnceLock::new();
 
+/// Where the libmpv that loaded came from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum LibmpvSource {
+    /// `Contents/Frameworks` of the app bundle this runs from: the LGPL set packed with it.
+    Bundle,
+    /// The file [`LIBMPV_VARIABLE`] names.
+    Override,
+    /// The LGPL set `scripts/libmpv/build-libmpv.ts` builds into `apps/oriel-rs/.libmpv/current`.
+    DevBuild,
+    /// IINA's GPL build, read in place: only outside a bundle, and only when nothing else is.
+    Iina,
+}
+
+impl fmt::Display for LibmpvSource {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Bundle => "the app bundle's LGPL build",
+            Self::Override => LIBMPV_VARIABLE,
+            Self::DevBuild => "the development LGPL build",
+            Self::Iina => "IINA's GPL build, for development only",
+        })
+    }
+}
+
+/// What [`choose`] looks at, so tests can stand in for the process's own.
+struct Places {
+    executable: Option<PathBuf>,
+    override_file: Option<OsString>,
+    dev_build: PathBuf,
+    iina: PathBuf,
+}
+
+impl Places {
+    fn of_this_process() -> Self {
+        Self {
+            executable: std::env::current_exe().ok(),
+            override_file: std::env::var_os(LIBMPV_VARIABLE).filter(|value| !value.is_empty()),
+            dev_build: dev_build(),
+            iina: PathBuf::from(IINA_LIBMPV),
+        }
+    }
+}
+
+/// `apps/oriel-rs/.libmpv/current`, where the build script points at the newest set; found from
+/// this crate's folder at compile time, as `oriel-tools` finds its development cache.
+fn dev_build() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .expect("crates/media sits two folders under the workspace")
+        .join(".libmpv")
+        .join("current")
+}
+
+/// `X.app/Contents` when `executable` is `X.app/Contents/MacOS/<name>`.
+fn bundle_contents(executable: &Path) -> Option<&Path> {
+    let macos = executable.parent()?;
+    let contents = macos.parent()?;
+    (macos.file_name()? == "MacOS" && contents.file_name()? == "Contents").then_some(contents)
+}
+
+/// The `libmpv*.dylib` in `folder`, `libmpv.2.dylib` first if there are several.
+fn libmpv_in(folder: &Path) -> Option<PathBuf> {
+    let mut names: Vec<String> = std::fs::read_dir(folder)
+        .ok()?
+        .filter_map(|entry| entry.ok()?.file_name().into_string().ok())
+        .filter(|name| name.starts_with("libmpv") && name.ends_with(".dylib"))
+        .collect();
+    names.sort_by(|a, b| (a != LIBMPV_FILE, a).cmp(&(b != LIBMPV_FILE, b)));
+    names
+        .into_iter()
+        .map(|name| folder.join(name))
+        .find(|path| path.is_file())
+}
+
+/// The libmpv to load, first match wins:
+///
+/// 1. the app bundle's `Contents/Frameworks/libmpv*.dylib`, when running from an `.app`;
+/// 2. the file [`LIBMPV_VARIABLE`] names, when it is set;
+/// 3. the development LGPL build in `apps/oriel-rs/.libmpv/current`, when it has been built;
+/// 4. IINA's copy, only when not running from an app bundle.
+///
+/// A bundled app never loads IINA's: that build is GPL, and the bundle carries its own LGPL one.
+/// Once a candidate is chosen, failing to load it is an error rather than a fall through, so a
+/// broken set shows instead of something else playing in its place.
+fn choose(places: &Places) -> Result<(PathBuf, LibmpvSource), String> {
+    let contents = places.executable.as_deref().and_then(bundle_contents);
+    if let Some(found) = contents.and_then(|contents| libmpv_in(&contents.join("Frameworks"))) {
+        return Ok((found, LibmpvSource::Bundle));
+    }
+    if let Some(file) = &places.override_file {
+        return Ok((PathBuf::from(file), LibmpvSource::Override));
+    }
+    if let Some(found) = libmpv_in(&places.dev_build) {
+        return Ok((found, LibmpvSource::DevBuild));
+    }
+    if contents.is_none() && places.iina.is_file() {
+        return Ok((places.iina.clone(), LibmpvSource::Iina));
+    }
+    Err(match contents {
+        Some(contents) => format!(
+            "no libmpv in {}; the app was packaged without it",
+            contents.join("Frameworks").display()
+        ),
+        None => format!(
+            "no libmpv: build one with `pnpm --filter @latch-works/oriel-rs libmpv`, or set \
+             {LIBMPV_VARIABLE} to one"
+        ),
+    })
+}
+
 impl Libmpv {
-    /// The process's libmpv, loaded on first use from `ORIEL_RS_LIBMPV` or IINA's bundle.
+    /// The process's libmpv, chosen by [`choose`] and loaded on first use.
     pub(super) fn get() -> Result<&'static Libmpv, String> {
         LIBMPV
             .get_or_init(|| {
-                let path = std::env::var_os(LIBMPV_VARIABLE)
-                    .map(PathBuf::from)
-                    .unwrap_or_else(|| PathBuf::from(IINA_LIBMPV));
-                Libmpv::load(&path)
+                let (path, source) = choose(&Places::of_this_process())?;
+                let loaded = Libmpv::load(&path);
+                match &loaded {
+                    Ok(api) => log::info!(
+                        "libmpv {} loaded from {} ({source})",
+                        api.client_api(),
+                        path.display()
+                    ),
+                    Err(error) => log::warn!("libmpv from {source} did not load: {error}"),
+                }
+                loaded
             })
             .as_ref()
             .map_err(Clone::clone)
@@ -329,8 +454,8 @@ fn open_with_dependencies(
 ) -> Result<Library, String> {
     let mut tried: Vec<String> = Vec::new();
     loop {
-        // SAFETY: loading a dylib runs its initialisers. IINA's libraries have no
-        // preconditions; their dependencies come first, from the same signed bundle.
+        // SAFETY: loading a dylib runs its initialisers. libmpv's and its dependencies' have
+        // no preconditions; the dependencies come first, from the same folder.
         let message = match unsafe { Library::new(path) } {
             Ok(library) => return Ok(library),
             Err(error) => error.to_string(),
@@ -357,7 +482,75 @@ fn missing_rpath_library(message: &str) -> Option<&str> {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use super::*;
+
+    fn scratch(test: &str) -> PathBuf {
+        let folder = std::env::temp_dir()
+            .join("oriel-media-libmpv-tests")
+            .join(format!("{test}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&folder);
+        fs::create_dir_all(&folder).unwrap();
+        folder
+    }
+
+    /// An empty file standing in for a dylib: [`choose`] only looks, it never loads.
+    fn put(file: &Path) -> PathBuf {
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(file, b"").unwrap();
+        file.to_owned()
+    }
+
+    fn places(root: &Path, executable: &Path, override_file: Option<&Path>) -> Places {
+        Places {
+            executable: Some(executable.to_owned()),
+            override_file: override_file.map(|file| file.as_os_str().to_owned()),
+            dev_build: root.join(".libmpv/current"),
+            iina: root.join("IINA.app/Contents/Frameworks/libmpv.2.dylib"),
+        }
+    }
+
+    /// The licence rule: a bundle loads its own LGPL set, and never IINA's GPL build, even with
+    /// nothing else to load.
+    #[test]
+    fn a_bundle_loads_its_own_libmpv_and_never_iinas() {
+        let root = scratch("bundle");
+        put(&root.join("IINA.app/Contents/Frameworks/libmpv.2.dylib"));
+        let contents = root.join("Oriel RS.app/Contents");
+        let executable = contents.join("MacOS/oriel-rs");
+
+        let error = choose(&places(&root, &executable, None)).unwrap_err();
+        assert!(error.contains("packaged without it"), "{error}");
+
+        put(&contents.join("Frameworks/libavcodec.63.dylib"));
+        let bundled = put(&contents.join("Frameworks/libmpv.2.dylib"));
+        let other = root.join("other/libmpv.2.dylib");
+        let chosen = choose(&places(&root, &executable, Some(&other))).unwrap();
+        assert_eq!(chosen, (bundled, LibmpvSource::Bundle));
+    }
+
+    #[test]
+    fn outside_a_bundle_the_override_then_the_dev_build_then_iina() {
+        let root = scratch("dev");
+        let executable = root.join("target/debug/oriel-rs");
+        let error = choose(&places(&root, &executable, None)).unwrap_err();
+        assert!(error.contains(LIBMPV_VARIABLE), "{error}");
+
+        let iina = put(&root.join("IINA.app/Contents/Frameworks/libmpv.2.dylib"));
+        let chosen = choose(&places(&root, &executable, None)).unwrap();
+        assert_eq!(chosen, (iina, LibmpvSource::Iina));
+
+        put(&root.join(".libmpv/current/libmpv.dylib"));
+        let dev = put(&root.join(".libmpv/current/libmpv.2.dylib"));
+        let chosen = choose(&places(&root, &executable, None)).unwrap();
+        assert_eq!(chosen, (dev, LibmpvSource::DevBuild));
+
+        // Named on purpose, so taken even before it exists: loading it then says it is missing.
+        let named = root.join("named/libmpv.2.dylib");
+        let chosen = choose(&places(&root, &executable, Some(&named))).unwrap();
+        assert_eq!(chosen, (named, LibmpvSource::Override));
+    }
 
     /// dyld names one missing dependency per failure; the loader retries after loading it.
     #[test]
