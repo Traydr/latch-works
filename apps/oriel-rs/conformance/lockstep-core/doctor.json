@@ -1,0 +1,81 @@
+{
+  "about": "Written by packages/lockstep-core/src/conformance.test.ts; ORIEL_RS_UPDATE_VECTORS=1 rewrites it.",
+  "cases": [
+    {
+      "name": "nothing configured",
+      "options": {},
+      "checks": [{ "label": "API URL", "ok": false }, { "label": "API token", "ok": false }],
+      "ok": false,
+      "summary": { "failed": 1, "message": "Some checks failed.", "status": "failed" }
+    },
+    {
+      "name": "a source folder alone",
+      "options": { "sourceRoot": "<root>/archive" },
+      "checks": [
+        { "detail": "<root>/archive", "label": "Source path", "ok": true },
+        { "label": "API URL", "ok": false },
+        { "label": "API token", "ok": false }
+      ],
+      "ok": false,
+      "summary": { "failed": 1, "message": "Some checks failed.", "status": "failed" }
+    },
+    {
+      "name": "a source that is a file",
+      "options": { "sourceRoot": "<root>/file.jpg" },
+      "checks": [
+        { "detail": "<root>/file.jpg", "label": "Source path", "ok": false },
+        { "label": "API URL", "ok": false },
+        { "label": "API token", "ok": false }
+      ],
+      "ok": false,
+      "summary": { "failed": 1, "message": "Some checks failed.", "status": "failed" }
+    },
+    {
+      "name": "a missing source",
+      "options": { "sourceRoot": "<root>/missing" },
+      "checks": [
+        {
+          "detail": "<root>/missing (ENOENT: no such file or directory, stat '<root>/missing')",
+          "label": "Source path",
+          "ok": false
+        },
+        { "label": "API URL", "ok": false },
+        { "label": "API token", "ok": false }
+      ],
+      "ok": false,
+      "summary": { "failed": 1, "message": "Some checks failed.", "status": "failed" }
+    },
+    {
+      "name": "a source under a file",
+      "options": { "sourceRoot": "<root>/file.jpg/inner" },
+      "checks": [
+        {
+          "detail": "<root>/file.jpg/inner (ENOTDIR: not a directory, stat '<root>/file.jpg/inner')",
+          "label": "Source path",
+          "ok": false
+        },
+        { "label": "API URL", "ok": false },
+        { "label": "API token", "ok": false }
+      ],
+      "ok": false,
+      "summary": { "failed": 1, "message": "Some checks failed.", "status": "failed" }
+    },
+    {
+      "name": "a URL without a token",
+      "options": { "apiUrl": "http://127.0.0.1:3100" },
+      "checks": [
+        { "detail": "http://127.0.0.1:3100", "label": "API URL", "ok": true },
+        { "label": "API token", "ok": false }
+      ],
+      "ok": false,
+      "summary": { "failed": 1, "message": "Some checks failed.", "status": "failed" }
+    },
+    {
+      "name": "a token without a URL",
+      "options": { "apiToken": "secret" },
+      "checks": [{ "label": "API URL", "ok": false }, { "label": "API token", "ok": true }],
+      "ok": false,
+      "summary": { "failed": 1, "message": "Some checks failed.", "status": "failed" }
+    }
+  ]
+}

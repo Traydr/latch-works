@@ -1,0 +1,95 @@
+{
+  "about": "Written by packages/lockstep-core/src/conformance.test.ts; ORIEL_RS_UPDATE_VECTORS=1 rewrites it.",
+  "contentTypes": [
+    { "extension": "jpg", "contentType": "image/jpeg" },
+    { "extension": "jpeg", "contentType": "image/jpeg" },
+    { "extension": "png", "contentType": "image/png" },
+    { "extension": "webp", "contentType": "image/webp" },
+    { "extension": "gif", "contentType": "image/gif" },
+    { "extension": "avif", "contentType": "image/avif" },
+    { "extension": "mp4", "contentType": "video/mp4" },
+    { "extension": "m4v", "contentType": "video/mp4" },
+    { "extension": "webm", "contentType": "video/webm" },
+    { "extension": "mov", "contentType": "video/quicktime" },
+    { "extension": "pdf", "contentType": "application/pdf" },
+    { "extension": "mkv", "contentType": "application/octet-stream" },
+    { "extension": "bmp", "contentType": "application/octet-stream" },
+    { "extension": "JPG", "contentType": "application/octet-stream" },
+    { "extension": "", "contentType": "application/octet-stream" }
+  ],
+  "registrations": [
+    {
+      "logicalPath": "a.jpg",
+      "filename": "a.jpg",
+      "extension": "jpg",
+      "contentType": "image/jpeg"
+    },
+    {
+      "logicalPath": "folder/Photo.JPEG",
+      "filename": "Photo.JPEG",
+      "extension": "jpg",
+      "contentType": "image/jpeg"
+    },
+    {
+      "logicalPath": "deep/er/clip.MP4",
+      "filename": "clip.MP4",
+      "extension": "mp4",
+      "contentType": "video/mp4"
+    },
+    {
+      "logicalPath": "x/no-extension",
+      "filename": "no-extension",
+      "extension": "",
+      "contentType": "application/octet-stream"
+    },
+    {
+      "logicalPath": "x/.hidden.png",
+      "filename": ".hidden.png",
+      "extension": "png",
+      "contentType": "image/png"
+    },
+    {
+      "logicalPath": "Caf\u00e9/r\u00e9sum\u00e9.webp",
+      "filename": "r\u00e9sum\u00e9.webp",
+      "extension": "webp",
+      "contentType": "image/webp"
+    },
+    {
+      "logicalPath": "trailing/",
+      "filename": "trailing",
+      "extension": "",
+      "contentType": "application/octet-stream"
+    }
+  ],
+  "uploadConcurrency": [
+    { "resolved": 3 },
+    { "value": 1, "resolved": 1 },
+    { "value": 3, "resolved": 3 },
+    { "value": 8, "resolved": 8 },
+    { "value": 0, "resolved": null },
+    { "value": 9, "resolved": null },
+    { "value": 2.5, "resolved": null },
+    { "value": -1, "resolved": null }
+  ],
+  "hashModes": [
+    { "resolved": "none" },
+    { "hashFiles": true, "resolved": "all" },
+    { "hashFiles": false, "resolved": "none" },
+    { "hashMode": "remote-aware", "resolved": "remote-aware" },
+    { "hashMode": "none", "hashFiles": true, "resolved": "none" },
+    { "defaultMode": "remote-aware", "resolved": "remote-aware" },
+    { "defaultMode": "all", "hashFiles": false, "resolved": "none" }
+  ],
+  "localPaths": [
+    { "archivePath": "a.jpg", "resolved": "/archive/root/a.jpg" },
+    { "archivePath": "folder/b.png", "resolved": "/archive/root/folder/b.png" },
+    { "archivePath": "a/./b.jpg", "resolved": "/archive/root/a/b.jpg" },
+    { "archivePath": "a/../b.jpg", "resolved": "/archive/root/b.jpg" },
+    { "archivePath": "../escape.jpg", "resolved": null },
+    { "archivePath": "a/../../escape.jpg", "resolved": null },
+    { "archivePath": "..cover.jpg", "resolved": "/archive/root/..cover.jpg" },
+    { "archivePath": "folder/..hidden/c.jpg", "resolved": "/archive/root/folder/..hidden/c.jpg" },
+    { "archivePath": "/absolute.jpg", "resolved": "/archive/root/absolute.jpg" },
+    { "archivePath": "", "resolved": "/archive/root" }
+  ]
+}
