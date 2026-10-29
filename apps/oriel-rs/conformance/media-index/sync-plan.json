@@ -1,0 +1,448 @@
+{
+  "about": "Made by packages/media-index/src/conformance.test.ts from sync-plan.ts; do not edit. Regenerate with ORIEL_RS_UPDATE_VECTORS=1 pnpm --filter @latch-works/media-index test. Non-ASCII characters are escaped.",
+  "cases": [
+    {
+      "name": "nothing on either side",
+      "local": [],
+      "remote": [],
+      "plan": { "counts": { "upload": 0, "update": 0, "keep": 0, "delete": 0 }, "items": [] }
+    },
+    {
+      "name": "a first push uploads everything",
+      "local": [
+        {
+          "id": "a.jpg",
+          "path": "a.jpg",
+          "parentPath": "",
+          "name": "a.jpg",
+          "extension": "jpg",
+          "mediaType": "image",
+          "size": 1,
+          "mtimeMs": 1767268800000
+        },
+        {
+          "id": "b/c.png",
+          "path": "b/c.png",
+          "parentPath": "b",
+          "name": "c.png",
+          "extension": "png",
+          "mediaType": "image",
+          "size": 2,
+          "mtimeMs": 1767268800000
+        }
+      ],
+      "remote": [],
+      "plan": {
+        "counts": { "upload": 2, "update": 0, "keep": 0, "delete": 0 },
+        "items": [
+          {
+            "action": "upload",
+            "path": "a.jpg",
+            "localPath": "a.jpg",
+            "localSize": 1,
+            "remotePath": null
+          },
+          {
+            "action": "upload",
+            "path": "b/c.png",
+            "localPath": "b/c.png",
+            "localSize": 2,
+            "remotePath": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "keeps, updates by size and updates by hash",
+      "local": [
+        {
+          "id": "h1",
+          "path": "a.jpg",
+          "parentPath": "",
+          "name": "a.jpg",
+          "extension": "jpg",
+          "mediaType": "image",
+          "size": 10,
+          "mtimeMs": 1767268800000,
+          "sha256": "h1"
+        },
+        {
+          "id": "b.jpg",
+          "path": "b.jpg",
+          "parentPath": "",
+          "name": "b.jpg",
+          "extension": "jpg",
+          "mediaType": "image",
+          "size": 20,
+          "mtimeMs": 1767268800000
+        },
+        {
+          "id": "h3",
+          "path": "c.jpg",
+          "parentPath": "",
+          "name": "c.jpg",
+          "extension": "jpg",
+          "mediaType": "image",
+          "size": 30,
+          "mtimeMs": 1767268800000,
+          "sha256": "h3"
+        }
+      ],
+      "remote": [
+        { "path": "a.jpg", "size": 10, "sha256": "h1" },
+        { "path": "b.jpg", "size": 21 },
+        { "path": "c.jpg", "size": 30, "sha256": "h4" }
+      ],
+      "plan": {
+        "counts": { "upload": 0, "update": 2, "keep": 1, "delete": 0 },
+        "items": [
+          {
+            "action": "keep",
+            "path": "a.jpg",
+            "localPath": "a.jpg",
+            "localSize": 10,
+            "remotePath": "a.jpg"
+          },
+          {
+            "action": "update",
+            "path": "b.jpg",
+            "localPath": "b.jpg",
+            "localSize": 20,
+            "remotePath": "b.jpg"
+          },
+          {
+            "action": "update",
+            "path": "c.jpg",
+            "localPath": "c.jpg",
+            "localSize": 30,
+            "remotePath": "c.jpg"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a hash known on one side only keeps",
+      "local": [
+        {
+          "id": "d.jpg",
+          "path": "d.jpg",
+          "parentPath": "",
+          "name": "d.jpg",
+          "extension": "jpg",
+          "mediaType": "image",
+          "size": 5,
+          "mtimeMs": 1767268800000
+        },
+        {
+          "id": "h5",
+          "path": "e.jpg",
+          "parentPath": "",
+          "name": "e.jpg",
+          "extension": "jpg",
+          "mediaType": "image",
+          "size": 5,
+          "mtimeMs": 1767268800000,
+          "sha256": "h5"
+        }
+      ],
+      "remote": [{ "path": "d.jpg", "size": 5, "sha256": "h4" }, { "path": "e.jpg", "size": 5 }],
+      "plan": {
+        "counts": { "upload": 0, "update": 0, "keep": 2, "delete": 0 },
+        "items": [
+          {
+            "action": "keep",
+            "path": "d.jpg",
+            "localPath": "d.jpg",
+            "localSize": 5,
+            "remotePath": "d.jpg"
+          },
+          {
+            "action": "keep",
+            "path": "e.jpg",
+            "localPath": "e.jpg",
+            "localSize": 5,
+            "remotePath": "e.jpg"
+          }
+        ]
+      }
+    },
+    {
+      "name": "remote entries gone locally are deleted",
+      "local": [],
+      "remote": [{ "path": "gone.jpg", "size": 1 }, { "path": "also/gone.png", "size": 2 }],
+      "plan": {
+        "counts": { "upload": 0, "update": 0, "keep": 0, "delete": 2 },
+        "items": [
+          {
+            "action": "delete",
+            "path": "gone.jpg",
+            "localPath": null,
+            "localSize": null,
+            "remotePath": "gone.jpg"
+          },
+          {
+            "action": "delete",
+            "path": "also/gone.png",
+            "localPath": null,
+            "localSize": null,
+            "remotePath": "also/gone.png"
+          }
+        ]
+      }
+    },
+    {
+      "name": "case, extension aliases and separators pair",
+      "local": [
+        {
+          "id": "Photos/IMG_1.JPG",
+          "path": "Photos/IMG_1.JPG",
+          "parentPath": "Photos",
+          "name": "IMG_1.JPG",
+          "extension": "jpg",
+          "mediaType": "image",
+          "size": 1,
+          "mtimeMs": 1767268800000
+        },
+        {
+          "id": "clips/Clip.MP4",
+          "path": "clips/Clip.MP4",
+          "parentPath": "clips",
+          "name": "Clip.MP4",
+          "extension": "mp4",
+          "mediaType": "video",
+          "size": 2,
+          "mtimeMs": 1767268800000
+        },
+        {
+          "id": "a.jpeg",
+          "path": "a.jpeg",
+          "parentPath": "",
+          "name": "a.jpeg",
+          "extension": "jpg",
+          "mediaType": "image",
+          "size": 3,
+          "mtimeMs": 1767268800000
+        }
+      ],
+      "remote": [
+        { "path": "photos/img_1.jpg", "size": 1 },
+        { "path": "Clips\\clip.mp4", "size": 2 },
+        { "path": "a.jpg", "size": 3 }
+      ],
+      "plan": {
+        "counts": { "upload": 0, "update": 0, "keep": 3, "delete": 0 },
+        "items": [
+          {
+            "action": "keep",
+            "path": "Photos/IMG_1.JPG",
+            "localPath": "Photos/IMG_1.JPG",
+            "localSize": 1,
+            "remotePath": "photos/img_1.jpg"
+          },
+          {
+            "action": "keep",
+            "path": "clips/Clip.MP4",
+            "localPath": "clips/Clip.MP4",
+            "localSize": 2,
+            "remotePath": "Clips\\clip.mp4"
+          },
+          {
+            "action": "keep",
+            "path": "a.jpeg",
+            "localPath": "a.jpeg",
+            "localSize": 3,
+            "remotePath": "a.jpg"
+          }
+        ]
+      }
+    },
+    {
+      "name": "composed and decomposed names pair",
+      "local": [
+        {
+          "id": "\u00dc.jpg",
+          "path": "\u00dc.jpg",
+          "parentPath": "",
+          "name": "\u00dc.jpg",
+          "extension": "jpg",
+          "mediaType": "image",
+          "size": 1,
+          "mtimeMs": 1767268800000
+        }
+      ],
+      "remote": [{ "path": "U\u0308.jpg", "size": 1 }],
+      "plan": {
+        "counts": { "upload": 0, "update": 0, "keep": 1, "delete": 0 },
+        "items": [
+          {
+            "action": "keep",
+            "path": "\u00dc.jpg",
+            "localPath": "\u00dc.jpg",
+            "localSize": 1,
+            "remotePath": "U\u0308.jpg"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a case twin left after its sibling paired is deleted",
+      "local": [
+        {
+          "id": "x.jpg",
+          "path": "x.jpg",
+          "parentPath": "",
+          "name": "x.jpg",
+          "extension": "jpg",
+          "mediaType": "image",
+          "size": 1,
+          "mtimeMs": 1767268800000
+        }
+      ],
+      "remote": [{ "path": "x.jpg", "size": 1 }, { "path": "X.JPG", "size": 1 }],
+      "plan": {
+        "counts": { "upload": 0, "update": 0, "keep": 1, "delete": 1 },
+        "items": [
+          {
+            "action": "keep",
+            "path": "x.jpg",
+            "localPath": "x.jpg",
+            "localSize": 1,
+            "remotePath": "x.jpg"
+          },
+          {
+            "action": "delete",
+            "path": "X.JPG",
+            "localPath": null,
+            "localSize": null,
+            "remotePath": "X.JPG"
+          }
+        ]
+      }
+    },
+    {
+      "name": "an exact path wins over an alias",
+      "local": [
+        {
+          "id": "p.jpg",
+          "path": "p.jpg",
+          "parentPath": "",
+          "name": "p.jpg",
+          "extension": "jpg",
+          "mediaType": "image",
+          "size": 1,
+          "mtimeMs": 1767268800000
+        },
+        {
+          "id": "p.jpeg",
+          "path": "p.jpeg",
+          "parentPath": "",
+          "name": "p.jpeg",
+          "extension": "jpg",
+          "mediaType": "image",
+          "size": 2,
+          "mtimeMs": 1767268800000
+        }
+      ],
+      "remote": [{ "path": "p.jpeg", "size": 2 }, { "path": "p.jpg", "size": 1 }],
+      "plan": {
+        "counts": { "upload": 0, "update": 0, "keep": 2, "delete": 0 },
+        "items": [
+          {
+            "action": "keep",
+            "path": "p.jpg",
+            "localPath": "p.jpg",
+            "localSize": 1,
+            "remotePath": "p.jpg"
+          },
+          {
+            "action": "keep",
+            "path": "p.jpeg",
+            "localPath": "p.jpeg",
+            "localSize": 2,
+            "remotePath": "p.jpeg"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a path listed twice locally",
+      "local": [
+        {
+          "id": "dup.jpg",
+          "path": "dup.jpg",
+          "parentPath": "",
+          "name": "dup.jpg",
+          "extension": "jpg",
+          "mediaType": "image",
+          "size": 1,
+          "mtimeMs": 1767268800000
+        },
+        {
+          "id": "dup.jpg",
+          "path": "dup.jpg",
+          "parentPath": "",
+          "name": "dup.jpg",
+          "extension": "jpg",
+          "mediaType": "image",
+          "size": 2,
+          "mtimeMs": 1767268800000
+        }
+      ],
+      "remote": [{ "path": "dup.jpg", "size": 2 }],
+      "plan": {
+        "counts": { "upload": 2, "update": 0, "keep": 0, "delete": 1 },
+        "items": [
+          {
+            "action": "upload",
+            "path": "dup.jpg",
+            "localPath": "dup.jpg",
+            "localSize": 1,
+            "remotePath": null
+          },
+          {
+            "action": "upload",
+            "path": "dup.jpg",
+            "localPath": "dup.jpg",
+            "localSize": 2,
+            "remotePath": null
+          },
+          {
+            "action": "delete",
+            "path": "dup.jpg",
+            "localPath": null,
+            "localSize": null,
+            "remotePath": "dup.jpg"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a trailing slash and a leading slash",
+      "local": [
+        {
+          "id": "folder/a.jpg",
+          "path": "folder/a.jpg",
+          "parentPath": "folder",
+          "name": "a.jpg",
+          "extension": "jpg",
+          "mediaType": "image",
+          "size": 1,
+          "mtimeMs": 1767268800000
+        }
+      ],
+      "remote": [{ "path": "/folder/a.jpg/", "size": 1 }],
+      "plan": {
+        "counts": { "upload": 0, "update": 0, "keep": 1, "delete": 0 },
+        "items": [
+          {
+            "action": "keep",
+            "path": "folder/a.jpg",
+            "localPath": "folder/a.jpg",
+            "localSize": 1,
+            "remotePath": "/folder/a.jpg/"
+          }
+        ]
+      }
+    }
+  ]
+}
