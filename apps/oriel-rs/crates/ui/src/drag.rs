@@ -5,7 +5,9 @@
 use gpui_kit::component::InteractiveElementExt as _;
 use gpui_kit::{
     AnyElement, App, Div, ElementId, InteractiveElement as _, IntoElement, MouseButton,
-    ParentElement, RenderOnce, StyleRefinement, Styled, Window, WindowControlArea, div,
+    ParentElement, RenderOnce, Role, SharedString, StatefulInteractiveElement as _,
+    StyleRefinement, Styled, TestSupportExt as _, Window, WindowControlArea, div,
+    prelude::FluentBuilder as _,
 };
 
 /// A region of the window's top strip. Children that are pressable stop the press from
@@ -14,6 +16,8 @@ use gpui_kit::{
 pub struct DragStrip {
     id: ElementId,
     base: Div,
+    role: Option<Role>,
+    label: Option<SharedString>,
     children: Vec<AnyElement>,
 }
 
@@ -26,8 +30,17 @@ impl DragStrip {
         Self {
             id: id.into(),
             base: div(),
+            role: None,
+            label: None,
             children: Vec::new(),
         }
+    }
+
+    /// The strip as assistive technology sees it, such as a mode's toolbar, by `label`.
+    pub fn accessible(mut self, role: Role, label: impl Into<SharedString>) -> Self {
+        self.role = Some(role);
+        self.label = Some(label.into());
+        self
     }
 }
 
@@ -50,6 +63,8 @@ impl RenderOnce for DragStrip {
 
         self.base
             .id(self.id)
+            .when_some(self.role, |this, role| this.role(role))
+            .when_some(self.label, |this, label| this.aria_label(label))
             .window_control_area(WindowControlArea::Drag)
             .on_double_click(|_, window, _| window.titlebar_double_click())
             .on_mouse_down(
@@ -70,5 +85,6 @@ impl RenderOnce for DragStrip {
                 }
             }))
             .children(self.children)
+            .test_support()
     }
 }

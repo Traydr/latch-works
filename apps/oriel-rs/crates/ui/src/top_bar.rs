@@ -1,5 +1,6 @@
 //! The 52 px bar at the top of a mode's content: the sidebar's compact toggle first, then the
-//! page's title, then the page's own controls.
+//! page's title, then the page's own controls. VoiceOver reads it as the page's toolbar, named
+//! after the page, with the title as its heading.
 
 use gpui_kit::component::{
     ActiveTheme as _, Icon, Sizable as _,
@@ -7,7 +8,8 @@ use gpui_kit::component::{
 };
 use gpui_kit::{
     AnyElement, App, Entity, FontWeight, InteractiveElement as _, IntoElement, MouseButton,
-    ParentElement, RenderOnce, SharedString, Styled, Window, div, px,
+    ParentElement, RenderOnce, Role, SharedString, StatefulInteractiveElement as _, Styled,
+    TestSupportExt as _, Window, div, px,
 };
 
 use crate::drag::DragStrip;
@@ -42,8 +44,14 @@ impl RenderOnce for TopBar {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let shell = self.shell.clone();
         let rail = self.shell.read(cx).rail();
+        let (toggle_label, toggle_tooltip) = if rail {
+            ("Show sidebar", "Show sidebar  ⌘\\")
+        } else {
+            ("Hide sidebar", "Hide sidebar  ⌘\\")
+        };
 
         DragStrip::new("top-bar")
+            .accessible(Role::Toolbar, self.title.clone())
             .flex()
             .flex_row()
             .items_center()
@@ -58,15 +66,17 @@ impl RenderOnce for TopBar {
                     .ghost()
                     .small()
                     .icon(Icon::new(gpui_kit::assets::IconName::PanelLeft))
-                    .tooltip(if rail {
-                        "Show sidebar  ⌘\\"
-                    } else {
-                        "Hide sidebar  ⌘\\"
-                    })
+                    .accessibility_label(toggle_label)
+                    .tooltip(toggle_tooltip)
                     .on_click(move |_, _, cx| shell.update(cx, |shell, cx| shell.toggle_rail(cx))),
             )
             .child(
                 div()
+                    .id("top-bar-title")
+                    .test_support()
+                    .role(Role::Heading)
+                    .aria_level(1)
+                    .aria_label(self.title.clone())
                     .flex_1()
                     .min_w_0()
                     .truncate()
