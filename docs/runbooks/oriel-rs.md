@@ -14,9 +14,10 @@ pnpm --filter @latch-works/oriel-rs bundle     # about 3 minutes the first time,
 open "apps/oriel-rs/target/release/bundle/Oriel RS.app"
 ```
 
-The bundle step builds the LGPL libmpv the first time, fetches the pinned ffmpeg and ffprobe,
-makes a release build, and leaves `Oriel RS.app` there; double-clicking it in Finder works too.
-What you will see:
+The bundle step builds the LGPL libmpv the first time, fetches the pinned libvips, libavif,
+ffmpeg and ffprobe, makes a release build, and leaves `Oriel RS.app` there; double-clicking it in
+Finder works too. The pnpm scripts only run `cargo run -p xtask -- <command>` in `apps/oriel-rs`,
+so the same commands work without pnpm. What you will see:
 
 - **View** opens empty, with an Open button at the top right. Pick a folder and it shows the
   folder's photos and videos as a gallery. Double-click one to open the viewer, where the arrows
@@ -35,7 +36,7 @@ What you will see:
 | Platform tools | Xcode, or its command-line tools (`xcode-select --install`) |
 | Node and pnpm | Node 24 and pnpm 12 (`pnpm install` at the root), for the conformance vectors and for sharp's libvips, which the fingerprint tests load |
 | ffmpeg | The app's own pinned ffmpeg and ffprobe, fetched once (below); Homebrew's `ffmpeg` only for the fixture script, which needs its encoders |
-| meson, ninja, pkgconf | `brew install meson ninja pkgconf`, to build the LGPL libmpv (below); nothing else from Homebrew is used or linked |
+| meson, ninja, pkgconf | `brew install meson ninja pkgconf`, to build the LGPL libmpv (below); nothing else from Homebrew is installed or linked (libavif's bottles are fetched by URL and relocated, below) |
 
 Windows and Linux are not supported yet (Windows is Phase 8).
 
@@ -62,6 +63,22 @@ Electron Oriel; it refuses Electron Oriel's folders. View opens a folder through
 or at start with `ORIEL_RS_OPEN=<folder>`.
 
 Measure release builds: `cargo build --release -p oriel-rs` in `apps/oriel-rs`.
+
+## Settings files and check variables
+
+The shell keeps Electron Oriel's window state in `shell/window-state.json` and the values Electron
+keeps in localStorage (`oriel.theme`, `oriel.sidebar`, `oriel.mode`, Tidy's `oriel.tidy.view`)
+in `shell/local-storage.json`. These variables set up a run for a check, since this Mac allows no
+scripted input:
+
+| Variable | Effect |
+| --- | --- |
+| `ORIEL_RS_DATA_DIR=<folder>` | The data root, as `--user-data-dir` is for Electron Oriel |
+| `ORIEL_RS_OPEN=<folder>` | View opens the folder at start |
+| `ORIEL_RS_SETTINGS=general` | Settings opens at that section (`general`, `view`, `tidy`, `sync`) |
+| `ORIEL_RS_ACTIVITY=tidy=0.4,sync=working` | Fakes mode activity; a faked progress makes ⌘Q wait, so press it twice |
+| `ORIEL_RS_SYNC_PLAN=1` | Sync plans the active profile at start |
+| `ORIEL_RS_VIDEO=avplayer` | Video through AVPlayer instead of libmpv |
 
 ## The sandbox
 
@@ -106,25 +123,34 @@ software.
 Oriel RS builds its own LGPL libmpv (decision 8) from pinned sources, in one command:
 
 ```sh
-pnpm --filter @latch-works/oriel-rs libmpv     # scripts/libmpv/build-libmpv.ts
+pnpm --filter @latch-works/oriel-rs libmpv     # cargo run -p xtask -- libmpv
 ```
+
+It is built from source because no prebuilt LGPL libmpv dylib exists: MPVKit's LGPL builds are
+static archives, and IINA's and mpv's own builds are GPL.
 
 - **What it builds.** mpv 0.41.0 (`-Dgpl=false`, libmpv only), FFmpeg 9.0.2 (no
   `--enable-gpl`, `--enable-nonfree` or `--enable-version3`; every demuxer, decoder and
   VideoToolbox, no encoders, muxers or network), libplacebo, dav1d (AV1 in software where
   VideoToolbox cannot), and libass with FreeType, FriBidi and HarfBuzz, which mpv requires. The
-  pins, hashes, licences and flags are in `scripts/libmpv/sources.ts`.
+  pins, hashes, licences and flags are in `crates/xtask/src/libmpv/sources.rs`.
 - **Where it goes.** `apps/oriel-rs/.libmpv/<id>/`, git-ignored, with `.libmpv/current` pointing
   at it: 13 dylibs, 26 MB, each named `@rpath/…` and finding the others through
   `@loader_path`, ad hoc signed, for macOS 13 and later. Beside them are `manifest.json`
   (versions, hashes, flags, toolchain, and what the libraries report: each FFmpeg library says
-  "LGPL version 2.1 or later"), `SHA256SUMS` and `licenses/`.
-- **How long.** 82 s from nothing on an M5 Pro, about 50 MB of downloads included. It is
-  resumable: rerun it after an interruption and it carries on from the step that did not
-  finish. The work tree is `apps/oriel-rs/target/libmpv/` (sources, builds, logs; deleted on
-  success unless `--keep-work`). It refuses a download whose SHA-256 differs from its pin,
-  builds with only meson, ninja, pkgconf and the system on `PATH`, and checks with `otool` that
-  nothing outside the set and the system is linked.
+  "LGPL version 2.1 or later"), `SHA256SUMS` and `licenses/`. `--out <dir>` builds the set
+  somewhere else, to compare two builds.
+- **How long.** 82 s from nothing on an M5 Pro, about 50 MB of downloads included; 78 s with the
+  downloads cached. It is resumable: rerun it after an interruption and it carries on from the
+  step that did not finish. The work tree is `apps/oriel-rs/target/libmpv/` (sources, builds,
+  logs; deleted on success unless `--keep-work`). It refuses a download whose SHA-256 differs
+  from its pin, builds with only meson, ninja, pkgconf and the system on `PATH`, and checks with
+  `otool` that nothing outside the set and the system is linked.
+- **The Rust port.** The command replaced a Node script (2026-10-29) and gives the same set: the
+  same id, the same manifest but for its date, the same `otool -L` for all 13 dylibs and the same
+  licence files. Ten dylibs are byte for byte the same; libass and libplacebo embed the
+  `git describe` of the checkout the build runs in, and libmpv a link UUID, so those three
+  differ between any two builds.
 
 The app looks for libmpv in this order, first found wins. It logs the one it loaded at the
 `log` crate's info level (the app installs no logger yet), and the spike's `single` mode prints
@@ -139,23 +165,63 @@ it:
 The bundle's libmpv is the LGPL set. IINA's build is GPL: it is for development only, and a
 bundled app never loads it, even with nothing else to load.
 
+## Vendored libraries
+
+libvips and libavif are not built here: they come prebuilt, each pinned by URL and SHA-256, and
+are checked before anything unpacks them (the owner's decision of 2026-10-29). One command fetches
+both, or the one named:
+
+```sh
+pnpm --filter @latch-works/oriel-rs vendor     # cargo run -p xtask -- vendor [libvips] [libavif]
+```
+
+Each lands in `apps/oriel-rs/.vendor/<name>/<id>/`, git-ignored, with `.vendor/<name>/current`
+pointing at it, beside its licences, `manifest.json` (URLs, hashes, how each hash was checked
+against its publisher, licences, every library's links and minimum macOS) and `SHA256SUMS`. 7 s
+from nothing, 21 MB of downloads (kept in `apps/oriel-rs/target/vendor/downloads/`); a rerun
+checks the hashes and does nothing. The pins are in `crates/xtask/src/vendor/pins.rs`.
+
+| Set | What | Size | macOS | Licence |
+| --- | --- | --- | --- | --- |
+| `libvips` | sharp's own build, `@img/sharp-libvips-darwin-arm64` 1.3.4 from npm (libvips 8.18.7, the one sharp 0.35.5 installs), its `lib/` as the package has it: one dylib that needs only the system | 18.2 MB | 11.0 | LGPL-3.0-or-later; the package's README lists each library inside |
+| `libavif` | libavif 1.4.2 with aom 3.15.2, libvmaf 3.2.1 (aom links it) and dav1d 1.5.4 (libavif links it for decoding): Homebrew's `arm64_sequoia` bottles from its registry, renamed `@rpath/…` with `@loader_path` as their rpath and signed ad hoc again; aom's PATENTS comes from its source release | 6.3 MB, 4 dylibs | 15.0 | BSD-2-Clause, BSD-2-Clause-Patent |
+
+- libavif publishes only command-line tools for macOS, and no other trusted prebuilt library
+  has aom without bringing its own C++ runtime (conda-forge's), so the set is Homebrew's.
+  Homebrew builds aom for macOS 15 and later only, so the set needs macOS 15.
+- The vendored libvips is byte for byte the one in `node_modules`. The app finds libvips in its
+  bundle's `Contents/Frameworks`, else the file `ORIEL_RS_LIBVIPS` names, else the vendored set,
+  else `node_modules` (`Vips::open_located` in `oriel-core-tidy`). The fingerprint tests still
+  load `node_modules`' copy unless `ORIEL_RS_LIBVIPS` names another.
+- `oriel-avif` loads libavif from the app bundle's `Contents/Frameworks`, else the file
+  `ORIEL_RS_LIBAVIF` names, else `.vendor/libavif/current`. Its tests skip, saying so, until the
+  set is vendored.
+
 ## Making the app
 
-`pnpm --filter @latch-works/oriel-rs bundle` (`scripts/bundle/make-app.ts`) makes
+`pnpm --filter @latch-works/oriel-rs bundle` (`cargo run -p xtask -- bundle`) makes
 `apps/oriel-rs/target/release/bundle/Oriel RS.app` with:
 
 | Part | Where | Size |
 | --- | --- | --- |
 | The release binary (`cargo build --release -p oriel-rs`, in `CARGO_TARGET_DIR` if set) | `Contents/MacOS/oriel-rs` | 23 MB |
-| The LGPL libmpv set, built first if it is not | `Contents/Frameworks/` | 25 MB |
-| The pinned ffmpeg and ffprobe, fetched first if they are not | `Contents/Resources/media-tools/` | 128 MB |
-| The set's licences and manifest | `Contents/Resources/licenses/libmpv/` | |
-| Electron Oriel's icon, `Info.plist` (`dev.traydr.latchworks.oriel-rs`, macOS 13 and later) | `Contents/` | |
+| The LGPL libmpv set, built first if it is not | `Contents/Frameworks/` | 26.1 MB, 13 dylibs |
+| The vendored libvips, fetched first if it is not | `Contents/Frameworks/` | 18.1 MB |
+| The vendored libavif, fetched first if it is not; libmpv's dav1d 1.5.4 serves it, under the same install name | `Contents/Frameworks/` | 5.5 MB, 3 dylibs |
+| The pinned ffmpeg and ffprobe, fetched first if they are not (`oriel-tools`' own code) | `Contents/Resources/media-tools/` | 126 MB |
+| Each set's licences and manifest | `Contents/Resources/licenses/<set>/` | |
+| Electron Oriel's icon, `Info.plist` (`dev.traydr.latchworks.oriel-rs`) | `Contents/` | |
 
-176 MB in all, against Electron Oriel's 503 MB. The whole is signed ad hoc
-(`codesign --force --deep -s -`), so it runs on the Mac that built it; signing and notarizing
-for other Macs is a follow-up. The app carries no data: it uses `~/.latch-works/oriel-rs/` as a
-development build does.
+197 MB in all, against Electron Oriel's 503 MB. `LSMinimumSystemVersion` is the newest macOS any
+part needs, so the libavif set makes the app's macOS 15 and later (Oriel RS's own floor is 13).
+The command checks that every library in `Contents/Frameworks` links only the system and the
+others there, signs the whole ad hoc (`codesign --force --deep -s -`), checks it with
+`codesign --verify --deep --strict`, and loads libmpv, libvips and libavif from the finished
+bundle. Ad hoc signing runs on the Mac that built it. `ORIEL_MACOS_SIGN_IDENTITY` names a
+Developer ID identity instead, signed with the hardened runtime and a timestamp as for Electron
+Oriel (not yet tried with a real identity); notarizing is a follow-up. 43 s with the libraries in
+place and a clean release build on an M5 Pro. The app carries no data: it uses
+`~/.latch-works/oriel-rs/` as a development build does.
 
 ## Measuring
 

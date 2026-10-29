@@ -11,6 +11,9 @@ on:
       - packages/media-domain/**
       - packages/media-format/**
       - packages/glazier-core/**
+      - packages/media-index/**
+      - packages/lockstep-core/**
+      - apps/oriel/src/modes/sync/main/**
       - .github/workflows/oriel-rs.yml
 
 permissions:
@@ -52,11 +55,16 @@ jobs:
         run: |
           pnpm --filter @latch-works/media-domain test
           pnpm --filter @latch-works/media-format test
-          pnpm --filter @latch-works/glazier-core exec vitest run src/similarity/fingerprint-vectors.test.ts
+          pnpm --filter @latch-works/media-index test
+          pnpm --filter @latch-works/lockstep-core test
+          pnpm --filter @latch-works/glazier-core test
+          pnpm --filter @latch-works/oriel exec vitest run tests/sync/main/secretStorage.conformance.test.ts
 
-      - name: Fetch the pinned ffmpeg and ffprobe
+      - name: Fetch the pinned ffmpeg and ffprobe, and the prebuilt libvips and libavif
         working-directory: apps/oriel-rs
-        run: cargo run -p oriel-tools --bin fetch-media-tools
+        run: |
+          cargo run -p oriel-tools --bin fetch-media-tools
+          cargo run -p xtask -- vendor
 
       - name: Format, lint and test the Rust workspace
         run: pnpm oriel-rs:check
