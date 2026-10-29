@@ -1,7 +1,7 @@
 /*
- * Asks a freshly built libmpv set what it is, for build-libmpv.ts to check and record: each
- * FFmpeg library's licence and configuration, mpv's client API, version and enabled features,
- * and whether the decoders, demuxers and hardware decoding playback needs are there.
+ * Asks a freshly built libmpv set what it is, for `cargo run -p xtask -- libmpv` to check and
+ * record: each FFmpeg library's licence and configuration, mpv's client API, version and enabled
+ * features, and whether the decoders, demuxers and hardware decoding playback needs are there.
  *
  * Prints one "key<TAB>value" line per answer, with any newline in a value turned into a space.
  */

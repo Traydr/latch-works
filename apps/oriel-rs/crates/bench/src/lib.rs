@@ -2,8 +2,8 @@
 //!
 //! - `scan-bench` walks an archive the way `glazier-core`'s `walkRoot` does and hashes it the way
 //!   its hash pass does, to compare files/s and MB/s with the TypeScript engine;
-//! - `avif-bench` (with `--features avif`) encodes stills through libavif at `media-format`'s
-//!   archive settings, to compare size and time with the wasm encoder.
+//! - `avif-bench` encodes stills through `oriel-avif` (the vendored libavif) at `media-format`'s
+//!   archive settings, to compare size, time and quality with the wasm encoder.
 //!
 //! None of it writes inside the archive it measures.
 

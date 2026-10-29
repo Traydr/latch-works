@@ -26,6 +26,7 @@
       "!tools/oxlint/anti-slop",
       "!apps/oriel-rs/target",
       "!apps/oriel-rs/.libmpv",
+      "!apps/oriel-rs/.vendor",
       "!apps/oriel-rs/crates"
     ]
   },

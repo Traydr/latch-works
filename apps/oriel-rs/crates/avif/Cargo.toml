@@ -1,0 +1,16 @@
+[package]
+name = "oriel-avif"
+description = "Stills to AVIF through the vendored libavif with aom, at media-format's archive settings."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+oriel-core-format.workspace = true
+# libavif is loaded at run time from the dylib the app ships (or the vendored set), never linked,
+# so a workspace build needs no C library.
+libloading = "0.8"
+
+[lints]
+workspace = true

@@ -1,5 +1,5 @@
-//! One AVIF encode per still through native libavif with aom, at `media-format`'s archive
-//! settings, for plan 063's Phase 0.
+//! One AVIF encode per still through `oriel-avif` (the vendored libavif with aom), at
+//! `media-format`'s archive settings, for plan 063's measurements against the wasm encoder.
 //!
 //! ```text
 //! avif-bench <dir> [--threads N] [--speed S] [--runs N]
@@ -8,130 +8,30 @@
 //! `<dir>` is what `bench-glazier.mts avif-prepare` leaves: `list.json` and the RGBA it decoded
 //! (`rgba/<name>.rgba`), so this encodes exactly the pixels the wasm encoder got. Writes
 //! `<dir>/rust-t<threads>/<name>.avif` and prints a JSON line per still with the median time.
+//! libavif is found as the app finds it: `ORIEL_RS_LIBAVIF`, else `.vendor/libavif/current`.
 
-use std::ffi::{CStr, c_char, c_int};
 use std::fs;
 use std::path::PathBuf;
 use std::time::Instant;
 
 use anyhow::{Context, Result, bail};
+use oriel_avif::{ARCHIVE_AVIF_OPTIONS, AvifEncodeOptions, Channels, Libavif, Samples, Still};
 use oriel_bench::median;
 use serde::Deserialize;
 use serde_json::json;
 
-/// `bench_avif_options` in `avif_shim.c`.
-#[repr(C)]
-struct AvifOptions {
-    quality: c_int,
-    quality_alpha: c_int,
-    tile_rows_log2: c_int,
-    tile_cols_log2: c_int,
-    speed: c_int,
-    subsample: c_int,
-    chroma_delta_q: c_int,
-    sharpness: c_int,
-    tune: c_int,
-    denoise_level: c_int,
-    enable_sharp_yuv: c_int,
-    max_threads: c_int,
-}
-
-unsafe extern "C" {
-    fn bench_avif_version() -> *const c_char;
-    fn bench_avif_codec_versions(out: *mut c_char, size: usize);
-    fn bench_avif_free(data: *mut u8);
-    fn bench_avif_encode(
-        rgba: *const u8,
-        width: u32,
-        height: u32,
-        options: *const AvifOptions,
-        out: *mut *mut u8,
-        out_size: *mut usize,
-    ) -> c_int;
-}
-
-/// `ARCHIVE_AVIF_OPTIONS`: quality 70, alpha as quality, no denoising, no tiles, speed 6,
-/// 4:2:0, no chroma delta-q, sharpness 0, plain (not sharp) YUV, tune auto, 8-bit.
-fn archive_options(speed: c_int, threads: c_int) -> AvifOptions {
-    AvifOptions {
-        quality: 70,
-        quality_alpha: -1,
-        tile_rows_log2: 0,
-        tile_cols_log2: 0,
-        speed,
-        subsample: 1,
-        chroma_delta_q: 0,
-        sharpness: 0,
-        tune: 0,
-        denoise_level: 0,
-        enable_sharp_yuv: 0,
-        max_threads: threads,
-    }
-}
-
-fn encode(rgba: &[u8], width: u32, height: u32, options: &AvifOptions) -> Result<Vec<u8>> {
-    if rgba.len() != width as usize * height as usize * 4 {
-        bail!("{} bytes is not {width}×{height} RGBA", rgba.len());
-    }
-
-    let mut out: *mut u8 = std::ptr::null_mut();
-    let mut out_size = 0usize;
-
-    // SAFETY: `rgba` holds width × height × 4 bytes, checked above; the shim only reads it and
-    // writes a malloc'd buffer and its length into the two out-parameters on success.
-    let status = unsafe {
-        bench_avif_encode(
-            rgba.as_ptr(),
-            width,
-            height,
-            options,
-            &mut out,
-            &mut out_size,
-        )
-    };
-
-    if status != 0 || out.is_null() {
-        bail!("libavif failed with result {status}");
-    }
-
-    // SAFETY: on success `out` points to `out_size` bytes the shim allocated, freed right after.
-    let bytes = unsafe { std::slice::from_raw_parts(out, out_size) }.to_vec();
-    // SAFETY: `out` came from the shim's malloc and is not used again.
-    unsafe { bench_avif_free(out) };
-
-    Ok(bytes)
-}
-
 #[derive(Deserialize)]
-struct Still {
+struct Listed {
     name: String,
     width: u32,
     height: u32,
 }
 
-fn versions() -> (String, String) {
-    let mut codecs = vec![0 as c_char; 256];
-
-    // SAFETY: libavif's version is a static C string; the codec buffer is 256 bytes, as
-    // `avifCodecVersions` requires, and the shim writes a terminated string into it.
-    unsafe {
-        bench_avif_codec_versions(codecs.as_mut_ptr(), codecs.len());
-        (
-            CStr::from_ptr(bench_avif_version())
-                .to_string_lossy()
-                .into_owned(),
-            CStr::from_ptr(codecs.as_ptr())
-                .to_string_lossy()
-                .into_owned(),
-        )
-    }
-}
-
 fn main() -> Result<()> {
     let mut arguments = std::env::args().skip(1);
     let dir = PathBuf::from(arguments.next().context("missing directory")?);
-    let mut threads: c_int = 1;
-    let mut speed: c_int = 6;
+    let mut threads: u32 = 1;
+    let mut speed = ARCHIVE_AVIF_OPTIONS.speed;
     let mut runs = 1;
 
     while let Some(flag) = arguments.next() {
@@ -147,39 +47,51 @@ fn main() -> Result<()> {
         }
     }
 
-    let (libavif, codecs) = versions();
+    let libavif = Libavif::get()?;
     println!(
         "{}",
-        json!({ "kind": "avif-rust-versions", "libavif": libavif, "codecs": codecs })
+        json!({
+            "kind": "avif-rust-versions", "libavif": libavif.version(),
+            "codecs": libavif.codec_versions(), "path": libavif.path(),
+        })
     );
 
-    let stills: Vec<Still> = serde_json::from_slice(&fs::read(dir.join("list.json"))?)?;
-    let suffix = if speed == 6 {
+    let stills: Vec<Listed> = serde_json::from_slice(&fs::read(dir.join("list.json"))?)?;
+    let suffix = if speed == ARCHIVE_AVIF_OPTIONS.speed {
         format!("rust-t{threads}")
     } else {
         format!("rust-t{threads}-s{speed}")
     };
     let out_dir = dir.join(suffix);
     fs::create_dir_all(&out_dir)?;
-    let options = archive_options(speed, threads);
+    let options = AvifEncodeOptions {
+        speed,
+        ..ARCHIVE_AVIF_OPTIONS
+    };
 
-    for still in &stills {
-        let rgba = fs::read(dir.join("rgba").join(format!("{}.rgba", still.name)))?;
+    for listed in &stills {
+        let rgba = fs::read(dir.join("rgba").join(format!("{}.rgba", listed.name)))?;
+        let still = Still {
+            width: listed.width,
+            height: listed.height,
+            channels: Channels::Rgba,
+            samples: Samples::Eight(&rgba),
+        };
         let mut times = Vec::new();
         let mut encoded = Vec::new();
 
         for _ in 0..runs {
             let started = Instant::now();
-            encoded = encode(&rgba, still.width, still.height, &options)?;
+            encoded = libavif.encode(&still, &options, threads)?;
             times.push(started.elapsed().as_secs_f64() * 1000.0);
         }
 
-        fs::write(out_dir.join(format!("{}.avif", still.name)), &encoded)?;
+        fs::write(out_dir.join(format!("{}.avif", listed.name)), &encoded)?;
         println!(
             "{}",
             json!({
-                "kind": "avif-rust", "name": still.name, "width": still.width,
-                "height": still.height, "threads": threads, "speed": speed,
+                "kind": "avif-rust", "name": listed.name, "width": listed.width,
+                "height": listed.height, "threads": threads, "speed": speed,
                 "bytes": encoded.len(), "ms": median(&times),
             })
         );

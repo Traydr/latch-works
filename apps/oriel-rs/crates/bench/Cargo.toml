@@ -10,24 +10,17 @@ publish.workspace = true
 name = "scan-bench"
 path = "src/bin/scan_bench.rs"
 
-# Links Homebrew's libavif, so it builds only when asked for: `--features avif`.
 [[bin]]
 name = "avif-bench"
 path = "src/bin/avif_bench.rs"
-required-features = ["avif"]
 
 [dependencies]
 anyhow.workspace = true
 libc = "0.2"
+oriel-avif.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2 = "0.11"
-
-[build-dependencies]
-cc = "1"
-
-[features]
-avif = []
 
 [lints]
 workspace = true
