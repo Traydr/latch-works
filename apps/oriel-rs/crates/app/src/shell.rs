@@ -18,7 +18,7 @@ use gpui_kit::{
 };
 use oriel_core_paths::DataRoot;
 use oriel_mode_sync::SyncMode;
-use oriel_mode_tidy::TidyMode;
+use oriel_mode_tidy::{NotYet, TidyMode};
 use oriel_mode_view::ViewMode;
 use oriel_ui::commands::shell_key_context;
 use oriel_ui::settings::SettingsFrame;
@@ -117,7 +117,11 @@ impl Shell {
         } else {
             cx.new(|cx| ViewMode::with_data(&state, &data, window, cx))
         };
-        let tidy = cx.new(|cx| TidyMode::new(&state, window, cx));
+        let tidy = if from_environment {
+            cx.new(|cx| TidyMode::new(&state, window, cx))
+        } else {
+            cx.new(|cx| TidyMode::with_data(&state, &data, Rc::new(NotYet), window, cx))
+        };
         let sync = cx.new(|cx| SyncMode::new(&state, window, cx));
         let quit = QuitGuard::install(&state, quit, cx);
 

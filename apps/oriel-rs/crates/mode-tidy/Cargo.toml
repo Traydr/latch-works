@@ -8,11 +8,24 @@ publish.workspace = true
 
 [dependencies]
 gpui-kit.workspace = true
+anyhow.workspace = true
+futures.workspace = true
+log.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 oriel-ui.workspace = true
 oriel-core-domain.workspace = true
+oriel-core-paths.workspace = true
+oriel-core-tidy.workspace = true
+oriel-media.workspace = true
+oriel-runtime.workspace = true
+oriel-tools.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 libc = "0.2"
+
+[dev-dependencies]
+gpui-kit = { workspace = true, features = ["test-support"] }
 
 [lints]
 workspace = true

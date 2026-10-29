@@ -23,7 +23,7 @@ use std::time::{Duration, Instant};
 use gpui_kit::component::table::ColumnSort;
 use gpui_kit::{Context, Window, point, px};
 
-use crate::library::{LibraryColumn, LibraryPage};
+use crate::synthetic::{LibraryColumn, SyntheticLibrary as LibraryPage};
 
 pub const ROWS_VARIABLE: &str = "ORIEL_RS_SPIKE_LIBRARY";
 const LOG_VARIABLE: &str = "ORIEL_RS_SPIKE_LOG";
