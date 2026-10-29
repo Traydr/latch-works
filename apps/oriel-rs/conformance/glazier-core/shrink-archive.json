@@ -1,0 +1,18 @@
+{
+  "about": "Made by packages/glazier-core/src/engine/differential.test.ts with ORIEL_RS_UPDATE_VECTORS=1; do not edit. The clips Shrink's scenario changes, with the dates a copy carries.",
+  "files": [
+    {
+      "path": "clips/busy.mp4",
+      "mtimeMs": 1793237018334
+    },
+    {
+      "path": "clips/lean.mp4",
+      "mtimeMs": 1793237018545
+    },
+    {
+      "path": "clips/tiny.mp4",
+      "mtimeMs": 1793237018596
+    }
+  ],
+  "emptyFolders": []
+}
