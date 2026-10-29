@@ -14,11 +14,24 @@ path = "src/main.rs"
 gpui-kit.workspace = true
 gpui-fps = { workspace = true, optional = true }
 anyhow.workspace = true
+futures.workspace = true
+log.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+# File URLs the system hands the app (Open With, a drop on the Dock icon) into paths.
+url = "2"
 oriel-core-paths.workspace = true
 oriel-ui.workspace = true
 oriel-mode-view.workspace = true
 oriel-mode-tidy.workspace = true
 oriel-mode-sync.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# The Dock icon's progress bar (`NSDockTile`) and the View menu's full-screen item, on the objc2
+# 0.6 line GPUI's macOS crates use.
+objc2 = "0.6"
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSGeometry", "NSString", "NSUserDefaults", "objc2-core-foundation"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSApplication", "NSBezierPath", "NSColor", "NSControl", "NSDockTile", "NSGraphics", "NSImage", "NSImageView", "NSResponder", "NSView", "objc2-core-foundation"] }
 
 [features]
 # Frame time, CPU, GPU and memory overlay for Phase 0's measurements.
@@ -30,3 +43,5 @@ workspace = true
 
 [dev-dependencies]
 gpui-kit = { workspace = true, features = ["test-support"] }
+# The View test writes small stills for the gallery to list.
+oriel-media.workspace = true
