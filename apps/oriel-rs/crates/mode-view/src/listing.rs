@@ -1,48 +1,25 @@
-//! A folder's media, listed recursively in the shared ordering rules: what the gallery shows and
-//! the viewer steps through.
+//! The items the gallery shows and the viewer steps through, made from View's scan
+//! ([`oriel_core_index::CatalogItem`]), and the extensions View lists.
 //!
-//! The rules are `media-domain`'s (`media.ts`, `system-files.ts`, `sort.ts`): the same image and
-//! video extensions, the same system folders and junk files skipped, and symlinks never followed,
-//! as View's scan in Electron Oriel does.
+//! The extension lists are Electron Oriel's settings (`media-domain`'s `ImageExtensions` and
+//! `VideoExtensions` by default), plus HEIC and HEIF stills, which ImageIO decodes. Listing them is
+//! an Oriel RS addition (the owner, 2026-10-29), kept here rather than in `oriel-core-domain`,
+//! so the shared rules and their vectors stay as the TypeScript has them, and out of the
+//! settings file, so Electron Oriel reads the same file it writes.
 
 use std::fs;
-use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::UNIX_EPOCH;
 
 use gpui_kit::SharedString;
-use oriel_core_domain::{NamedPath, compare_by_name};
+use oriel_core_domain::{ComicMediaItem, MediaType, NamedPath, SortableMediaItem, compare_by_name};
+use oriel_core_index::{CatalogFilters, CatalogItem, CatalogMediaType};
 
-/// `media-domain`'s `ImageExtensions`, `gif` included; `detectMediaType` calls `gif` its own type.
-const IMAGE_EXTENSIONS: [&str; 7] = ["jpg", "jpeg", "png", "webp", "gif", "bmp", "avif"];
+use crate::settings::FileFilterSettings;
 
-/// `media-domain`'s `VideoExtensions`.
-const VIDEO_EXTENSIONS: [&str; 5] = ["mp4", "webm", "mov", "mkv", "m4v"];
-
-/// `media-domain`'s `SYSTEM_JUNK_FILE_NAMES`, compared in lower case.
-const JUNK_FILE_NAMES: [&str; 5] = [
-    ".ds_store",
-    "desktop.ini",
-    "ehthumbs.db",
-    "ehthumbs_vista.db",
-    "thumbs.db",
-];
-
-/// `media-domain`'s `SYSTEM_JUNK_DIRECTORY_NAMES`, compared in lower case. `.latch-works` is
-/// where every Latch Works app keeps its data, Oriel RS's thumbnails included.
-const JUNK_DIRECTORY_NAMES: [&str; 10] = [
-    ".latch-works",
-    ".glazier-holding",
-    "$recycle.bin",
-    ".documentrevisions-v100",
-    ".fseventsd",
-    ".spotlight-v100",
-    ".temporaryitems",
-    ".trashes",
-    "__macosx",
-    "system volume information",
-];
+/// The stills View lists beyond the settings' extensions: an Oriel RS addition.
+pub const EXTRA_IMAGE_EXTENSIONS: [&str; 2] = ["heic", "heif"];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum MediaKind {
@@ -56,8 +33,10 @@ pub enum MediaKind {
 /// One file the gallery shows: where it is, what it is, and what its thumbnail is keyed by.
 #[derive(Clone, Debug, PartialEq)]
 pub struct MediaEntry {
+    id: SharedString,
     path: Arc<Path>,
     name: SharedString,
+    extension: SharedString,
     kind: MediaKind,
     size: u64,
     modified_ms: f64,
@@ -68,15 +47,41 @@ impl MediaEntry {
         let path = path.into();
         let name = path
             .file_name()
-            .map(|name| SharedString::from(name.to_string_lossy().into_owned()))
+            .map(|name| name.to_string_lossy().into_owned())
             .unwrap_or_default();
+        let extension = oriel_core_domain::get_extension(&name);
         Self {
+            id: format!("{}:{size}:{modified_ms}", path.display()).into(),
             path,
-            name,
+            name: name.into(),
+            extension: extension.into(),
             kind,
             size,
             modified_ms,
         }
+    }
+
+    /// The gallery's item for a file the scan found.
+    pub fn from_catalog(item: &CatalogItem) -> Self {
+        let kind = match item.media_type {
+            CatalogMediaType::Video => MediaKind::Video,
+            CatalogMediaType::Image if item.extension == "gif" => MediaKind::Gif,
+            CatalogMediaType::Image => MediaKind::Image,
+        };
+        Self {
+            id: item.id.clone().into(),
+            path: PathBuf::from(&item.path).into(),
+            name: item.name.clone().into(),
+            extension: item.extension.clone().into(),
+            kind,
+            size: item.size,
+            modified_ms: item.mtime_ms,
+        }
+    }
+
+    /// `path:size:mtimeMs`, which changes when the file does.
+    pub fn id(&self) -> &SharedString {
+        &self.id
     }
 
     pub fn path(&self) -> &Arc<Path> {
@@ -86,6 +91,11 @@ impl MediaEntry {
     /// The file's name, which the gallery sorts by and the viewer titles itself with.
     pub fn name(&self) -> &SharedString {
         &self.name
+    }
+
+    /// The canonical extension, lowercased (`jpeg` reads `jpg`).
+    pub fn extension(&self) -> &SharedString {
+        &self.extension
     }
 
     pub fn kind(&self) -> MediaKind {
@@ -108,27 +118,66 @@ impl MediaEntry {
     }
 }
 
-/// What a file name is to the gallery, by its extension as `detectMediaType` reads it.
+impl NamedPath for MediaEntry {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// The path as text, as the TypeScript compares it. macOS file names are UTF-8, so the
+    /// empty fallback is for a path no Mac volume makes.
+    fn path(&self) -> &str {
+        self.path.to_str().unwrap_or_default()
+    }
+}
+
+impl SortableMediaItem for MediaEntry {
+    fn mtime_ms(&self) -> f64 {
+        self.modified_ms
+    }
+}
+
+impl ComicMediaItem for MediaEntry {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// View's two kinds, as its `MediaItem` has them: a GIF is an image.
+    fn media_type(&self) -> MediaType {
+        match self.kind {
+            MediaKind::Video => MediaType::Video,
+            MediaKind::Image | MediaKind::Gif => MediaType::Image,
+        }
+    }
+}
+
+/// What a file name is to the gallery under the default lists, by its extension: for tests and
+/// callers without settings.
 pub fn media_kind(file_name: &str) -> Option<MediaKind> {
-    let (_, extension) = file_name.rsplit_once('.')?;
-    let extension = extension.to_ascii_lowercase();
+    let extension = oriel_core_domain::get_extension(file_name);
     if extension == "gif" {
         Some(MediaKind::Gif)
-    } else if IMAGE_EXTENSIONS.contains(&extension.as_str()) {
+    } else if oriel_core_domain::IMAGE_EXTENSIONS.contains(&extension.as_str())
+        || EXTRA_IMAGE_EXTENSIONS.contains(&extension.as_str())
+    {
         Some(MediaKind::Image)
-    } else if VIDEO_EXTENSIONS.contains(&extension.as_str()) {
+    } else if oriel_core_domain::VIDEO_EXTENSIONS.contains(&extension.as_str()) {
         Some(MediaKind::Video)
     } else {
         None
     }
 }
 
-fn is_junk_file(name: &str) -> bool {
-    name.starts_with("._") || JUNK_FILE_NAMES.contains(&name.to_lowercase().as_str())
-}
-
-fn is_junk_directory(name: &str) -> bool {
-    JUNK_DIRECTORY_NAMES.contains(&name.to_lowercase().as_str())
+/// The scan's filters for View's settings, with HEIC and HEIF added to the stills.
+pub fn scan_filters(filters: &FileFilterSettings) -> CatalogFilters {
+    let mut image_extensions: std::collections::HashSet<String> =
+        filters.image_extensions.iter().cloned().collect();
+    image_extensions.extend(EXTRA_IMAGE_EXTENSIONS.map(String::from));
+    CatalogFilters {
+        image_extensions,
+        video_extensions: filters.video_extensions.iter().cloned().collect(),
+        show_images: filters.show_images,
+        show_videos: filters.show_videos,
+    }
 }
 
 /// Node's `mtimeMs`: whole seconds in milliseconds plus the nanoseconds as a fraction, in that
@@ -142,125 +191,47 @@ pub fn modified_ms(metadata: &fs::Metadata) -> f64 {
         .unwrap_or(0.0)
 }
 
-/// Every media file under `root`, sorted by name. Blocks on the file system, so run it on the
-/// background executor. A folder that cannot be read is skipped, as Electron Oriel's scan skips
-/// it; only an unreadable `root` is an error.
-pub fn list_media(root: &Path) -> io::Result<Vec<MediaEntry>> {
-    let mut entries = Vec::new();
-    let mut folders: Vec<PathBuf> = vec![root.to_path_buf()];
-    let mut first = true;
-    while let Some(folder) = folders.pop() {
-        let reader = match fs::read_dir(&folder) {
-            Ok(reader) => reader,
-            Err(error) if first => return Err(error),
-            Err(_) => continue,
-        };
-        first = false;
-        for item in reader.flatten() {
-            // `DirEntry::file_type` does not follow a symlink, so a link is neither a file nor
-            // a folder here and is left out, as `media-index`'s scan leaves it.
-            let Ok(file_type) = item.file_type() else {
-                continue;
-            };
-            let name = item.file_name();
-            let name = name.to_string_lossy();
-            if file_type.is_dir() {
-                if !is_junk_directory(&name) {
-                    folders.push(item.path());
-                }
-            } else if file_type.is_file()
-                && !is_junk_file(&name)
-                && let Some(kind) = media_kind(&name)
-                && let Ok(metadata) = item.metadata()
-            {
-                entries.push(MediaEntry::new(
-                    item.path(),
-                    kind,
-                    metadata.len(),
-                    modified_ms(&metadata),
-                ));
-            }
-        }
-    }
-    sort_by_name(&mut entries);
-    Ok(entries)
-}
-
 /// `media-domain`'s `name-asc`, through `oriel-core-domain`: natural order by name (numeric, base
 /// strength, as `Intl.Collator` compares), then by path for names that tie.
 pub fn sort_by_name(entries: &mut [MediaEntry]) {
     entries.sort_by(compare_by_name::<MediaEntry>);
 }
 
-impl NamedPath for MediaEntry {
-    fn name(&self) -> &str {
-        &self.name
-    }
-
-    /// The path as text, as the TypeScript compares it. macOS file names are UTF-8, so the
-    /// empty fallback is for a path no Mac volume makes.
-    fn path(&self) -> &str {
-        self.path.to_str().unwrap_or_default()
-    }
+/// `resolveFolderPath`: the folder itself, or the folder a file is in, with symlinks resolved;
+/// `None` for a path that is not there.
+pub fn resolve_folder_path(candidate: &Path) -> Option<PathBuf> {
+    let metadata = fs::metadata(candidate).ok()?;
+    let folder = if metadata.is_dir() {
+        candidate.to_path_buf()
+    } else if metadata.is_file() {
+        candidate.parent()?.to_path_buf()
+    } else {
+        return None;
+    };
+    Some(fs::canonicalize(&folder).unwrap_or(folder))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn scratch(test: &str) -> PathBuf {
-        let folder = std::env::temp_dir()
-            .join("oriel-mode-view-listing-tests")
-            .join(format!("{test}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&folder);
-        fs::create_dir_all(&folder).unwrap();
-        folder
-    }
-
     #[test]
-    fn classifies_by_extension_as_media_domain_does() {
+    fn classifies_by_extension_with_heic_added() {
         assert_eq!(media_kind("a.AVIF"), Some(MediaKind::Image));
         assert_eq!(media_kind("a.jpeg"), Some(MediaKind::Image));
         assert_eq!(media_kind("a.gif"), Some(MediaKind::Gif));
         assert_eq!(media_kind("clip.M4V"), Some(MediaKind::Video));
+        assert_eq!(media_kind("photo.HEIC"), Some(MediaKind::Image));
         assert_eq!(media_kind("scan.pdf"), None);
-        assert_eq!(media_kind("photo.heic"), None);
         assert_eq!(media_kind("jpg"), None);
     }
 
     #[test]
-    fn lists_media_recursively_and_skips_junk_and_links() {
-        let root = scratch("recursive");
-        for file in [
-            "b.jpg",
-            "a.avif",
-            "notes.txt",
-            "._a.avif",
-            ".DS_Store",
-            "deep/c.png",
-            "deep/deeper/clip.mp4",
-            ".latch-works/view/thumb.webp",
-            "__MACOSX/d.jpg",
-        ] {
-            let path = root.join(file);
-            fs::create_dir_all(path.parent().unwrap()).unwrap();
-            fs::write(path, b"x").unwrap();
-        }
-        std::os::unix::fs::symlink(root.join("b.jpg"), root.join("link.jpg")).unwrap();
-        std::os::unix::fs::symlink(root.join("deep"), root.join("linked-folder")).unwrap();
-
-        let names: Vec<_> = list_media(&root)
-            .unwrap()
-            .iter()
-            .map(|entry| entry.path().strip_prefix(&root).unwrap().to_owned())
-            .collect();
-        assert_eq!(
-            names,
-            ["a.avif", "b.jpg", "deep/c.png", "deep/deeper/clip.mp4"]
-                .map(PathBuf::from)
-                .to_vec()
-        );
-        assert!(list_media(&root.join("missing")).is_err());
+    fn the_scan_lists_heic_beside_the_settings_extensions() {
+        let filters = scan_filters(&crate::settings::ViewSettings::default().filters);
+        assert!(filters.image_extensions.contains("heic"));
+        assert!(filters.image_extensions.contains("avif"));
+        assert!(filters.video_extensions.contains("m4v"));
     }
 
     #[test]
@@ -274,22 +245,27 @@ mod tests {
     }
 
     #[test]
-    fn names_tie_on_the_path() {
-        let mut entries = vec![
-            MediaEntry::new(Path::new("/r/z/same.jpg"), MediaKind::Image, 1, 0.0),
-            MediaEntry::new(Path::new("/r/a/same.jpg"), MediaKind::Image, 1, 0.0),
-            MediaEntry::new(Path::new("/r/m/other.jpg"), MediaKind::Image, 1, 0.0),
-        ];
-        sort_by_name(&mut entries);
-        let paths: Vec<_> = entries
-            .iter()
-            .map(|entry| entry.path().to_path_buf())
-            .collect();
+    fn ids_follow_the_catalogs() {
+        let item = CatalogItem::new(
+            "/r/a.gif".into(),
+            "a.gif".into(),
+            "gif".into(),
+            CatalogMediaType::Image,
+            12,
+            1_730_000_000_123.5,
+        );
+        let entry = MediaEntry::from_catalog(&item);
+        assert_eq!(entry.kind(), MediaKind::Gif);
+        assert_eq!(entry.id().as_ref(), item.id);
         assert_eq!(
-            paths,
-            ["/r/m/other.jpg", "/r/a/same.jpg", "/r/z/same.jpg"]
-                .map(PathBuf::from)
-                .to_vec()
+            MediaEntry::new(
+                Path::new("/r/a.gif"),
+                MediaKind::Gif,
+                12,
+                1_730_000_000_123.5
+            )
+            .id(),
+            entry.id()
         );
     }
 }

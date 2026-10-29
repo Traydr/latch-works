@@ -12,7 +12,7 @@ use objc2_core_graphics::{
 };
 use objc2_image_io::{CGImageDestination, kCGImagePropertyOrientation};
 
-use super::{Still, WebpSettings, decode};
+use super::{Still, WebpSettings, decode, decode_bytes};
 
 /// A folder of its own under the temp folder for one test.
 fn scratch(test: &str) -> PathBuf {
@@ -215,4 +215,23 @@ fn a_file_that_is_not_a_still_is_an_error() {
     std::fs::write(&path, b"not a picture").unwrap();
     assert!(decode(&path, 256).is_err());
     assert!(decode(&folder.join("missing.avif"), 256).is_err());
+}
+
+/// A frame ffmpeg writes to its stdout decodes from memory as a file does.
+#[test]
+fn decodes_an_image_held_in_memory() {
+    let folder = scratch("bytes");
+    let path = folder.join("frame.png");
+    write(
+        &path,
+        "public.png",
+        &cg_image(640, 360, &halves(640, 360, 255)),
+        None,
+    );
+    let bytes = std::fs::read(&path).unwrap();
+    let still = decode_bytes(&bytes, 320).unwrap();
+    assert_eq!((still.width(), still.height()), (320, 180));
+    assert!(is_red(pixel(&still, 40, 90)));
+    assert!(decode_bytes(b"not a picture", 320).is_err());
+    assert!(decode_bytes(&[], 320).is_err());
 }

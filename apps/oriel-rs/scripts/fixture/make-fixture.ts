@@ -29,7 +29,8 @@ import { writeComicPage, writeDerivedStill, writeOriginalStill, writeVideo } fro
 
 const SANDBOX = path.join(os.homedir(), ".latch-works", "oriel-rs", "sandbox");
 
-const DEFAULT_SEED = "oriel-rs-063";
+// The seed predates the rename to Oriel RS; changing it would make a different fixture.
+const DEFAULT_SEED = "oriel-gpui-063";
 
 const { values } = parseArgs({
   options: {

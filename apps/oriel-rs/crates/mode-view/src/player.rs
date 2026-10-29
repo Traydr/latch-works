@@ -2,8 +2,8 @@
 //! controls over it in one low capsule, as Electron Oriel's `VideoPlayerChrome`: back and
 //! forward 5 s, play or pause, the elapsed time, the scrubber, the length, and mute.
 //!
-//! Keys, while the player has focus: Space plays or pauses, ← and → skip 5 s, M mutes. A click
-//! on the picture plays or pauses. libmpv does the playing (`oriel_media::mpv`), or AVPlayer
+//! Keys, while the player has focus: Space or 2 plays or pauses, ← and → or 1 and 3 skip 5 s, M
+//! mutes. A click on the picture plays or pauses. libmpv does the playing (`oriel_media::mpv`), or AVPlayer
 //! (`oriel_media::video`) with `ORIEL_RS_VIDEO=avplayer` or where libmpv cannot be loaded; this
 //! view only draws its picture and sends it commands.
 //!
@@ -67,8 +67,11 @@ fn bind_keys(cx: &mut App) {
     cx.set_global(KeysBound);
     cx.bind_keys([
         KeyBinding::new("space", TogglePlayback, Some(KEY_CONTEXT)),
+        KeyBinding::new("2", TogglePlayback, Some(KEY_CONTEXT)),
         KeyBinding::new("left", SkipBack, Some(KEY_CONTEXT)),
+        KeyBinding::new("1", SkipBack, Some(KEY_CONTEXT)),
         KeyBinding::new("right", SkipForward, Some(KEY_CONTEXT)),
+        KeyBinding::new("3", SkipForward, Some(KEY_CONTEXT)),
         KeyBinding::new("m", ToggleMute, Some(KEY_CONTEXT)),
     ]);
 }
@@ -87,9 +90,20 @@ pub struct CapsulePlayer {
 impl CapsulePlayer {
     /// Opens `path` and starts playing it, with the player focused for its keys.
     pub fn new(path: PathBuf, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        Self::open(path, true, window, cx)
+    }
+
+    /// Opens `path`, playing it at once when `autoplay` is set (View's "Autoplay videos in
+    /// viewer"), with the player focused for its keys.
+    pub fn open(
+        path: PathBuf,
+        autoplay: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         bind_keys(cx);
         let mut video = AnyPlayer::open(&path);
-        if let Ok(video) = &mut video {
+        if autoplay && let Ok(video) = &mut video {
             video.play();
         }
         let scrubber = cx.new(|_| SliderState::new().min(0.).max(1.).step(SCRUB_STEP));
@@ -108,6 +122,16 @@ impl CapsulePlayer {
 
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    /// The video's length, once it is known.
+    pub fn duration(&self) -> Option<Duration> {
+        self.video.as_ref().ok().and_then(AnyPlayer::duration)
+    }
+
+    /// Whether the video is playing.
+    pub fn is_playing(&self) -> bool {
+        self.video.as_ref().is_ok_and(AnyPlayer::is_playing)
     }
 
     /// Why the video does not play, when it does not: the viewer shows this over the poster.

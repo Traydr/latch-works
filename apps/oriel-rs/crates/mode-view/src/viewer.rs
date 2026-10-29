@@ -1,5 +1,8 @@
 //! The viewer: one item over the whole window, stepped through in the gallery's order with the
-//! arrows (or `e` and `q`), and closed with Escape, as Electron Oriel's `ViewerModal` is.
+//! arrows (or `e` and `q`), and closed with Escape, as Electron Oriel's `ViewerModal` is. Its top
+//! bar has the name and the details (size, format, and a video's length, size and codec from
+//! ffprobe), then Copy path, Reveal in folder, Fullscreen and Close. Stepping wraps at the ends
+//! while "Loop viewer navigation" is on, and stops there otherwise.
 //!
 //! Stills decode through ImageIO at the size the window needs, and the neighbours either side
 //! decode ahead so a step shows its still at once. GIFs go to GPUI's own decoder, which animates
@@ -11,11 +14,11 @@ use std::time::{Duration, Instant};
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::{
-    Icon, Sizable as _,
+    Disableable as _, Icon, Sizable as _,
     button::{Button, ButtonVariants as _},
 };
 use gpui_kit::{
-    App, AppContext as _, Context, Entity, EventEmitter, FocusHandle, Focusable,
+    App, AppContext as _, ClipboardItem, Context, Entity, EventEmitter, FocusHandle, Focusable,
     InteractiveElement as _, IntoElement, KeyBinding, ObjectFit, ParentElement as _, Priority,
     Render, RenderImage, Role, SharedString, StatefulInteractiveElement as _, Styled as _,
     StyledImage as _, Subscription, Task, TestSupportExt as _, Window, actions, div, img,
@@ -24,13 +27,32 @@ use gpui_kit::{
 
 use crate::CapsulePlayer;
 use crate::listing::{MediaEntry, MediaKind};
+use crate::media_tools::{VideoProbe, ViewMediaTools};
+
+/// How the viewer behaves, from View's settings.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ViewerOptions {
+    /// Step from the last item to the first and back (`loopViewerNavigation`).
+    pub wrap: bool,
+    /// Start a video playing when it shows (`autoplayVideos`).
+    pub autoplay: bool,
+}
+
+impl Default for ViewerOptions {
+    fn default() -> Self {
+        Self {
+            wrap: true,
+            autoplay: true,
+        }
+    }
+}
 
 actions!(
     viewer,
     [
-        /// The next item, wrapping at the end (→ or `e`).
+        /// The next item (→ or `e`).
         NextItem,
-        /// The previous item, wrapping at the start (← or `q`).
+        /// The previous item (← or `q`).
         PreviousItem,
         /// Back to the gallery (Escape).
         CloseViewer
@@ -59,6 +81,8 @@ const AHEAD: usize = 2;
 pub enum ViewerEvent {
     /// The viewer closed on this item.
     Closed(usize),
+    /// The viewer stepped to this item, which the gallery selects.
+    Stepped(usize),
 }
 
 enum Decoded {
@@ -73,6 +97,10 @@ enum Decoded {
 pub struct Viewer {
     entries: Arc<[MediaEntry]>,
     index: usize,
+    options: ViewerOptions,
+    /// ffprobe's facts about the videos shown, by index.
+    probes: HashMap<usize, VideoProbe>,
+    _probe: Option<Task<()>>,
     focus_handle: FocusHandle,
     stills: HashMap<usize, Decoded>,
     /// The longer side stills decode at: the window's, in device pixels.
@@ -96,12 +124,16 @@ impl Viewer {
     pub fn new(
         entries: Arc<[MediaEntry]>,
         index: usize,
+        options: ViewerOptions,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
         let mut viewer = Self {
             entries,
             index,
+            options,
+            probes: HashMap::new(),
+            _probe: None,
             focus_handle: cx.focus_handle(),
             stills: HashMap::new(),
             decode_size: decode_size(window),
@@ -150,15 +182,108 @@ impl Viewer {
         }
     }
 
+    /// The capsule player of the video shown, when a video shows.
+    pub fn player(&self) -> Option<&Entity<CapsulePlayer>> {
+        self.player
+            .as_ref()
+            .filter(|(ix, _)| *ix == self.index)
+            .map(|(_, player)| player)
+    }
+
+    /// The options it was opened with.
+    pub fn options(&self) -> ViewerOptions {
+        self.options
+    }
+
+    /// Steps `delta` items: around the ends when wrapping, else no further than them
+    /// (`createShiftViewer`).
     pub fn step(&mut self, delta: isize, window: &mut Window, cx: &mut Context<Self>) {
         let len = self.entries.len() as isize;
         if len == 0 {
             return;
         }
-        self.index = (self.index as isize + delta).rem_euclid(len) as usize;
+        let raw = self.index as isize + delta;
+        let next = if self.options.wrap {
+            raw.rem_euclid(len)
+        } else {
+            raw.clamp(0, len - 1)
+        } as usize;
+        if !self.options.wrap && next == self.index {
+            return;
+        }
+        self.index = next;
         self.step_started = Some(Instant::now());
         self.show(window, cx);
+        cx.emit(ViewerEvent::Stepped(self.index));
         cx.notify();
+    }
+
+    /// Whether a step that way goes anywhere (the step arrows are disabled at an end when not
+    /// wrapping).
+    fn can_step(&self, delta: isize) -> bool {
+        self.options.wrap
+            || (delta < 0 && self.index > 0)
+            || (delta > 0 && self.index + 1 < self.entries.len())
+    }
+
+    /// The details under the name (`buildViewerDetails`): size, format, and for a video its
+    /// length (ffprobe's, or the player's), its size and its codec.
+    pub fn details(&self, cx: &App) -> String {
+        let entry = self.entry();
+        let mut details = vec![format_bytes(entry.size()), entry.extension().to_uppercase()];
+        if entry.is_video() {
+            let probe = self.probes.get(&self.index);
+            let duration_ms = probe
+                .and_then(|probe| probe.duration_ms)
+                .filter(|duration| *duration > 0)
+                .or_else(|| {
+                    self.player
+                        .as_ref()
+                        .filter(|(ix, _)| *ix == self.index)
+                        .and_then(|(_, player)| player.read(cx).duration())
+                        .map(|duration| duration.as_millis() as u64)
+                        .filter(|duration| *duration > 0)
+                });
+            if let Some(duration_ms) = duration_ms {
+                details.push(format_duration(duration_ms));
+            }
+            if let Some(probe) = probe {
+                if let (Some(width), Some(height)) = (probe.width, probe.height) {
+                    details.push(format!("{width}x{height}"));
+                }
+                if let Some(codec) = &probe.codec {
+                    details.push(codec.clone());
+                }
+            }
+        }
+        details.join(" · ")
+    }
+
+    /// Asks ffprobe about the video shown, once.
+    fn probe(&mut self, cx: &mut Context<Self>) {
+        let ix = self.index;
+        if self.probes.contains_key(&ix) {
+            return;
+        }
+        let entry = self.entry().clone();
+        self._probe = Some(cx.spawn(async move |this, cx| {
+            let probe = cx
+                .background_spawn(async move {
+                    ViewMediaTools::shared().probe_video(
+                        entry.path(),
+                        entry.modified_ms(),
+                        entry.size(),
+                    )
+                })
+                .await;
+            if let Some(probe) = probe {
+                this.update(cx, |this, cx| {
+                    this.probes.insert(ix, probe);
+                    cx.notify();
+                })
+                .ok();
+            }
+        }));
     }
 
     fn close(&mut self, cx: &mut Context<Self>) {
@@ -175,9 +300,11 @@ impl Viewer {
             MediaKind::Video => {
                 if self.player.as_ref().map(|(ix, _)| *ix) != Some(self.index) {
                     let path = entry.path().to_path_buf();
-                    let player = cx.new(|cx| CapsulePlayer::new(path, window, cx));
+                    let autoplay = self.options.autoplay;
+                    let player = cx.new(|cx| CapsulePlayer::open(path, autoplay, window, cx));
                     self.player = Some((self.index, player));
                 }
+                self.probe(cx);
             }
             MediaKind::Image | MediaKind::Gif => self.player = None,
         }
@@ -291,6 +418,12 @@ fn decode_size(window: &Window) -> u32 {
     (longer * window.scale_factor()).ceil().max(1.) as u32
 }
 
+/// `mm:ss`, as `formatDuration` writes a video's length in the viewer's details.
+fn format_duration(ms: u64) -> String {
+    let seconds = ms / 1000;
+    format!("{:02}:{:02}", seconds / 60, seconds % 60)
+}
+
 /// "12.3 MB": decimal units, as Electron Oriel writes sizes.
 fn format_bytes(bytes: u64) -> String {
     const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
@@ -311,7 +444,7 @@ fn format_bytes(bytes: u64) -> String {
 }
 
 impl Render for Viewer {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if self.is_current_ready()
             && let Some(started) = self.step_started.take()
         {
@@ -319,13 +452,11 @@ impl Render for Viewer {
         }
 
         let entry = self.entry().clone();
-        let extension = entry
-            .path()
-            .extension()
-            .map(|extension| extension.to_string_lossy().to_uppercase())
-            .unwrap_or_default();
-        let details = format!("{} · {extension}", format_bytes(entry.size()));
+        let details = self.details(cx);
         let label = SharedString::from(format!("Viewer for {}", entry.name()));
+        let fullscreen = window.is_fullscreen();
+        let copied_path = entry.path().to_string_lossy().into_owned();
+        let revealed = entry.path().clone();
 
         // The viewer is a dark room for the picture in either theme, as Electron Oriel's is, so
         // its ground and its text are black and white rather than the theme's surfaces.
@@ -392,10 +523,46 @@ impl Render for Viewer {
                             ),
                     )
                     .child(
+                        Button::new("viewer-copy-path")
+                            .ghost()
+                            .icon(Icon::new(IconName::Copy))
+                            .tooltip("Copy path")
+                            .accessibility_label("Copy path")
+                            .on_click(move |_, _, cx| {
+                                cx.write_to_clipboard(ClipboardItem::new_string(
+                                    copied_path.clone(),
+                                ));
+                            }),
+                    )
+                    .child(
+                        Button::new("viewer-reveal")
+                            .ghost()
+                            .icon(Icon::new(IconName::FolderOpen))
+                            .tooltip("Reveal in folder")
+                            .accessibility_label("Reveal in folder")
+                            .on_click(move |_, _, cx| cx.reveal_path(&revealed)),
+                    )
+                    .child(
+                        Button::new("viewer-fullscreen")
+                            .ghost()
+                            .icon(Icon::new(if fullscreen {
+                                IconName::Minimize
+                            } else {
+                                IconName::Maximize
+                            }))
+                            .tooltip(if fullscreen {
+                                "Exit fullscreen"
+                            } else {
+                                "Fullscreen"
+                            })
+                            .on_click(|_, window, _| window.toggle_fullscreen()),
+                    )
+                    .child(
                         Button::new("viewer-close")
                             .ghost()
                             .icon(Icon::new(IconName::Close))
                             .tooltip("Close")
+                            .accessibility_label("Close")
                             .on_click(cx.listener(|this, _, _, cx| this.close(cx))),
                     ),
             )
@@ -403,12 +570,14 @@ impl Render for Viewer {
                 "viewer-previous",
                 IconName::ChevronLeft,
                 "Previous item",
+                self.can_step(-1),
                 cx.listener(|this, _, window, cx| this.step(-1, window, cx)),
             ))
             .child(step_button(
                 "viewer-next",
                 IconName::ChevronRight,
                 "Next item",
+                self.can_step(1),
                 cx.listener(|this, _, window, cx| this.step(1, window, cx)),
             ))
     }
@@ -419,6 +588,7 @@ fn step_button(
     id: &'static str,
     icon: IconName,
     label: &'static str,
+    enabled: bool,
     on_click: impl Fn(&gpui_kit::ClickEvent, &mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
     let left = id == "viewer-previous";
@@ -436,18 +606,22 @@ fn step_button(
                 .large()
                 .icon(Icon::new(icon))
                 .tooltip(label)
+                .accessibility_label(label)
+                .disabled(!enabled)
                 .on_click(on_click),
         )
 }
 
 #[cfg(test)]
 mod tests {
-    use super::format_bytes;
+    use super::{format_bytes, format_duration};
 
     #[test]
-    fn writes_sizes_as_electron_oriel_does() {
+    fn writes_sizes_and_lengths_as_electron_oriel_does() {
         assert_eq!(format_bytes(999), "999 B");
         assert_eq!(format_bytes(12_345), "12.3 KB");
         assert_eq!(format_bytes(123_456_789), "123 MB");
+        assert_eq!(format_duration(4_000), "00:04");
+        assert_eq!(format_duration(3_725_000), "62:05");
     }
 }

@@ -1,21 +1,135 @@
-//! The gallery's cases from Electron Oriel's `e2e/tests/frame-view/gallery.spec.ts` that Phase 0
-//! has: opening a folder lists its media in order with a thumbnail for each, a double-click opens
-//! the viewer, the arrows and the step buttons walk the grid's order and wrap, and Escape returns
-//! to the gallery where it was.
+//! Electron Oriel's `e2e/tests/frame-view/gallery.spec.ts`, case by case, as GPUI Kit headless
+//! UI tests on a fixture archive shaped like the e2e suite's (`e2e/src/fixture.ts`): the same
+//! folders and names, and modified times in the same permuted order, so date order is neither
+//! name order nor the order the files were written.
+//!
+//! The tests open View alone in a window, with its Settings section drawn in place of the
+//! gallery when a case needs it, as the shell draws it. Videos are made with the pinned ffmpeg;
+//! the cases that need them say so and skip without it.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::{Duration, UNIX_EPOCH};
 
 use gpui_kit::test::TestWindowExt as _;
 use gpui_kit::{
-    AnyWindowHandle, AppContext as _, Bounds, ElementId, Entity, ImageSource, ScrollDelta,
-    TestAppContext, WindowBounds, WindowOptions, point, px, size,
+    AnyWindowHandle, AppContext as _, Bounds, Context, ElementId, Entity, ImageSource, IntoElement,
+    ParentElement as _, Render, ScrollDelta, Styled as _, TestAppContext, Window, WindowBounds,
+    WindowOptions, div, point, px, size,
 };
+use oriel_core_domain::{GallerySortMode, NamedPath, SortableMediaItem, compare_by_name};
 use oriel_core_paths::DataRoot;
 use oriel_media::still::{Still, WebpSettings};
+use oriel_mode_view::browser::Tile;
 use oriel_mode_view::thumbnails::Thumbnail;
 use oriel_mode_view::{Listing, ViewMode};
-use oriel_ui::{ModeId, ShellState};
+use oriel_ui::{ModeActivity, ModeId, ShellState};
+
+/// `FIXTURE_EPOCH_MS`: 2026-01-01T12:00:00Z.
+const FIXTURE_EPOCH_MS: u64 = 1_767_268_800_000;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Kind {
+    Image,
+    Gif,
+    Video,
+    Pdf,
+}
+
+#[derive(Clone, Debug)]
+struct FixtureItem {
+    path: String,
+    kind: Kind,
+    mtime_minutes: u64,
+}
+
+impl FixtureItem {
+    fn name(&self) -> &str {
+        self.path.rsplit('/').next().unwrap()
+    }
+
+    fn parent(&self) -> &str {
+        self.path.rsplit_once('/').map_or("", |(parent, _)| parent)
+    }
+
+    fn mtime_ms(&self) -> f64 {
+        (FIXTURE_EPOCH_MS + self.mtime_minutes * 60_000) as f64
+    }
+}
+
+/// The ordering rules compare names and paths; the fixture's own paths stand in for the
+/// absolute ones, which share their prefix.
+struct Named<'a>(&'a FixtureItem, String);
+
+impl NamedPath for Named<'_> {
+    fn name(&self) -> &str {
+        self.0.name()
+    }
+
+    fn path(&self) -> &str {
+        &self.1
+    }
+}
+
+impl SortableMediaItem for Named<'_> {
+    fn mtime_ms(&self) -> f64 {
+        self.0.mtime_ms()
+    }
+}
+
+/// `fixture.ts`'s manifest, less the folder the management spec deletes.
+fn fixture_items() -> Vec<FixtureItem> {
+    let mut ordered: Vec<(String, Kind)> = [
+        ("root-image.png", Kind::Image),
+        ("comics/alpha/1.jpg", Kind::Image),
+        ("comics/alpha/2.jpg", Kind::Image),
+        ("comics/alpha/10.jpg", Kind::Image),
+        ("comics/alpha/A.jpg", Kind::Image),
+        ("comics/alpha/b.jpg", Kind::Image),
+        ("comics/beta/page-1.png", Kind::Image),
+        ("comics/beta/page-2.png", Kind::Image),
+        ("comics/beta/page-3.png", Kind::Image),
+        ("comics/beta/anim.gif", Kind::Gif),
+        ("comics/nested/inner/inner-1.png", Kind::Image),
+        ("comics/nested/inner/inner-2.png", Kind::Image),
+        ("comics/nested/inner/inner-3.png", Kind::Image),
+        ("videos/clip-a.mp4", Kind::Video),
+        ("videos/clip-b.mp4", Kind::Video),
+        ("mixed/photo-1.jpg", Kind::Image),
+        ("mixed/photo-2.jpg", Kind::Image),
+        ("mixed/photo-3.jpg", Kind::Image),
+        ("mixed/reel.mp4", Kind::Video),
+        ("docs/guide.pdf", Kind::Pdf),
+        ("docs/100%_done_1.png", Kind::Image),
+        ("docs/100%_done_2.png", Kind::Image),
+        ("unicode/\u{dc}n\u{ef}code.jpg", Kind::Image),
+        ("unicode/zebra.jpg", Kind::Image),
+    ]
+    .map(|(path, kind)| (path.to_string(), kind))
+    .to_vec();
+    for ix in 1..=70 {
+        ordered.push((format!("bulk/bulk-{ix:03}.png"), Kind::Image));
+    }
+
+    // `mtimePermutation`: a fixed shuffle of the manifest's order.
+    let count = ordered.len();
+    let mut minutes: Vec<u64> = (0..count as u64).collect();
+    let mut state: u32 = 0x9e37_79b9;
+    for index in (1..count).rev() {
+        state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        let swap = (state % (index as u32 + 1)) as usize;
+        minutes.swap(index, swap);
+    }
+    ordered
+        .into_iter()
+        .zip(minutes)
+        .map(|((path, kind), mtime_minutes)| FixtureItem {
+            path,
+            kind,
+            mtime_minutes,
+        })
+        .collect()
+}
 
 /// A folder of its own under the temp folder, emptied first.
 fn scratch(test: &str) -> PathBuf {
@@ -27,55 +141,181 @@ fn scratch(test: &str) -> PathBuf {
     folder
 }
 
-/// A small WebP still of one color at `path`. ImageIO reads WebP, and libwebp writes it.
-fn write_still(path: &Path, shade: u8) {
+/// A small WebP still of one colour. ImageIO reads a file by its content, so it stands in for
+/// every still extension.
+fn still_bytes(shade: u8) -> Vec<u8> {
     let (width, height) = (64u32, 36u32);
     let bgra = [shade, 128, 255 - shade, 255].repeat((width * height) as usize);
-    let still = Still::from_bgra(width, height, bgra, true).unwrap();
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    std::fs::write(
-        path,
-        still.encode_webp(WebpSettings::lossy(80., 0)).unwrap(),
-    )
-    .unwrap();
+    Still::from_bgra(width, height, bgra, true)
+        .unwrap()
+        .encode_webp(WebpSettings::lossy(80., 0))
+        .unwrap()
 }
 
-/// A folder of `count` stills named `still-000.webp` on, the first few in a subfolder so the
-/// listing must recurse, and a file the gallery does not show.
-fn archive(test: &str, count: usize) -> (PathBuf, PathBuf) {
-    let root = scratch(test);
-    let archive = root.join("archive");
-    for ix in 0..count {
-        let folder = if ix < 2 {
-            archive.join("nested")
-        } else {
-            archive.clone()
-        };
-        write_still(
-            &folder.join(format!("still-{ix:03}.webp")),
-            (ix * 37 % 256) as u8,
-        );
+/// A 4 s clip from the pinned ffmpeg, or `None` without it.
+fn make_clip(path: &Path) -> Option<()> {
+    let tools = oriel_tools::MediaTools::locate().ok()?;
+    let output = std::process::Command::new(tools.ffmpeg())
+        .args([
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=320x180:rate=25",
+            "-t",
+            "4",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:v",
+            "libx264",
+            "-y",
+        ])
+        .arg(path)
+        .output()
+        .ok()?;
+    output.status.success().then_some(())
+}
+
+struct Fixture {
+    root: PathBuf,
+    archive: PathBuf,
+    items: Vec<FixtureItem>,
+    videos: bool,
+}
+
+impl Fixture {
+    fn new(test: &str) -> Self {
+        let root = scratch(test);
+        let archive = root.join("archive");
+        let items = fixture_items();
+        let mut videos = true;
+        for (ix, item) in items.iter().enumerate() {
+            let path = archive.join(&item.path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            match item.kind {
+                Kind::Image | Kind::Gif => {
+                    std::fs::write(&path, still_bytes((ix * 37 % 256) as u8)).unwrap();
+                }
+                Kind::Video => {
+                    if make_clip(&path).is_none() {
+                        videos = false;
+                        std::fs::write(&path, b"not a video").unwrap();
+                    }
+                }
+                Kind::Pdf => std::fs::write(&path, b"%PDF-1.4").unwrap(),
+            }
+            let modified = UNIX_EPOCH + Duration::from_millis(item.mtime_ms() as u64);
+            std::fs::File::options()
+                .write(true)
+                .open(&path)
+                .unwrap()
+                .set_modified(modified)
+                .unwrap();
+        }
+        // View resolves the folder it opens, and the temp folder is behind a symlink on macOS.
+        let archive = std::fs::canonicalize(archive).unwrap();
+        Self {
+            root,
+            archive,
+            items,
+            videos,
+        }
     }
-    std::fs::write(archive.join("notes.txt"), b"not media").unwrap();
-    (root, archive)
+
+    fn absolute(&self, path: &str) -> PathBuf {
+        if path.is_empty() {
+            self.archive.clone()
+        } else {
+            self.archive.join(path)
+        }
+    }
+
+    /// The items View lists (no PDFs), directly in `folder` or in its subtree.
+    fn in_scope(&self, folder: &str, recursive: bool) -> Vec<&FixtureItem> {
+        self.items
+            .iter()
+            .filter(|item| item.kind != Kind::Pdf)
+            .filter(|item| {
+                let parent = item.parent();
+                if recursive {
+                    folder.is_empty()
+                        || parent == folder
+                        || parent.starts_with(&format!("{folder}/"))
+                } else {
+                    parent == folder
+                }
+            })
+            .collect()
+    }
+
+    /// `sortFixtureItems`: the documented ordering rules, on the fixture's own records.
+    fn sorted(&self, folder: &str, mode: GallerySortMode) -> Vec<PathBuf> {
+        let mut items: Vec<Named<'_>> = self
+            .in_scope(folder, false)
+            .into_iter()
+            .map(|item| {
+                Named(
+                    item,
+                    self.absolute(&item.path).to_string_lossy().into_owned(),
+                )
+            })
+            .collect();
+        let by_date = |a: &Named<'_>, b: &Named<'_>| a.mtime_ms().total_cmp(&b.mtime_ms());
+        match mode {
+            GallerySortMode::NameAsc => items.sort_by(compare_by_name),
+            GallerySortMode::NameDesc => items.sort_by(|a, b| compare_by_name(b, a)),
+            GallerySortMode::DateNewest => {
+                items.sort_by(|a, b| by_date(b, a).then_with(|| compare_by_name(a, b)));
+            }
+            GallerySortMode::DateOldest => {
+                items.sort_by(|a, b| by_date(a, b).then_with(|| compare_by_name(a, b)));
+            }
+            GallerySortMode::Random => unreachable!("random has no fixed order"),
+        }
+        items
+            .iter()
+            .map(|item| self.absolute(&item.0.path))
+            .collect()
+    }
 }
 
-fn tile(archive: &Path, ix: usize) -> ElementId {
-    let folder = if ix < 2 {
-        archive.join("nested")
-    } else {
-        archive.to_path_buf()
-    };
-    ElementId::Path(Arc::from(folder.join(format!("still-{ix:03}.webp"))))
+/// View, with its Settings section drawn in place of the gallery while `settings` is set, as the
+/// shell draws the section on its Settings page.
+struct Harness {
+    view: Entity<ViewMode>,
+    settings: bool,
 }
 
-fn open_view(cx: &mut TestAppContext, root: &Path) -> (AnyWindowHandle, Entity<ViewMode>) {
+impl Render for Harness {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.settings {
+            let section = self
+                .view
+                .update(cx, |view, cx| view.settings_section(window, cx));
+            div().size_full().child(section).into_any_element()
+        } else {
+            self.view.clone().into_any_element()
+        }
+    }
+}
+
+struct Session {
+    handle: AnyWindowHandle,
+    harness: Entity<Harness>,
+    view: Entity<ViewMode>,
+    shell: Entity<ShellState>,
+}
+
+fn launch(cx: &mut TestAppContext, data: &Path) -> Session {
     cx.update(|cx| {
         gpui_kit::init(cx);
         oriel_ui::theme::init(cx);
     });
-    let data = DataRoot::at(root.join("data")).unwrap();
-    cx.update(|cx| {
+    let data = DataRoot::at(data.to_path_buf()).unwrap();
+    let mut parts = None;
+    let (handle, _) = cx.update(|cx| {
         gpui_kit::open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(Bounds::new(
@@ -87,89 +327,303 @@ fn open_view(cx: &mut TestAppContext, root: &Path) -> (AnyWindowHandle, Entity<V
             cx,
             |window, cx| {
                 let shell = cx.new(|_| ShellState::new(ModeId::View, false));
-                cx.new(|cx| ViewMode::with_data(&shell, &data, window, cx))
+                let view = cx.new(|cx| ViewMode::with_data(&shell, &data, window, cx));
+                let harness = cx.new(|_| Harness {
+                    view: view.clone(),
+                    settings: false,
+                });
+                parts = Some((harness.clone(), view, shell));
+                harness
             },
         )
         .expect("open the test window")
-    })
-}
-
-/// Opens `archive` through the Open button and the system's folder picker, and waits for the
-/// listing and its thumbnails.
-fn open_through_the_picker(cx: &mut TestAppContext, handle: AnyWindowHandle, archive: &Path) {
-    cx.update_window(handle, |_, window, cx| {
-        window.render_frame(cx);
-        assert_eq!(
-            window.find("gallery-message").label(),
-            Some("Open a folder to see its gallery.")
-        );
-        window.click("open-folder", cx);
-    })
-    .unwrap();
-    assert!(cx.did_prompt_for_paths());
-    let chosen = archive.to_path_buf();
-    cx.simulate_path_prompt_response(move |options| {
-        assert!(options.directories && !options.files);
-        Some(vec![chosen])
     });
-    settle(cx, handle);
+    let (harness, view, shell) = parts.unwrap();
+    Session {
+        handle,
+        harness,
+        view,
+        shell,
+    }
 }
 
-/// Lets the background work (listing, thumbnails, decodes) finish and draws the result.
-fn settle(cx: &mut TestAppContext, handle: AnyWindowHandle) {
-    for _ in 0..4 {
+/// Lets the background work (the scan, its batches, thumbnails, decodes) finish and draws the
+/// result.
+fn settle(cx: &mut TestAppContext, session: &Session) {
+    for _ in 0..8 {
         cx.run_until_parked();
-        cx.update_window(handle, |_, window, cx| window.render_frame(cx))
+        cx.update_window(session.handle, |_, window, cx| window.render_frame(cx))
             .unwrap();
     }
 }
 
-fn viewer_label(cx: &mut TestAppContext, handle: AnyWindowHandle) -> Option<String> {
-    cx.update_window(handle, |_, window, _| {
+fn click(cx: &mut TestAppContext, session: &Session, id: impl Into<ElementId>) {
+    let id = id.into();
+    cx.update_window(session.handle, |_, window, cx| window.click(id, cx))
+        .unwrap();
+    settle(cx, session);
+}
+
+fn double_click(cx: &mut TestAppContext, session: &Session, id: impl Into<ElementId>) {
+    let id = id.into();
+    cx.update_window(session.handle, |_, window, cx| window.double_click(id, cx))
+        .unwrap();
+    settle(cx, session);
+}
+
+fn press(cx: &mut TestAppContext, session: &Session, key: &'static str) {
+    cx.update_window(session.handle, |_, window, cx| window.press(key, cx))
+        .unwrap();
+    settle(cx, session);
+}
+
+/// The label of the element `id`, if it is on screen.
+fn label(cx: &mut TestAppContext, session: &Session, id: &'static str) -> Option<String> {
+    cx.update_window(session.handle, |_, window, _| {
         window
-            .try_find("viewer")
-            .and_then(|viewer| viewer.label().map(str::to_owned))
+            .try_find(id)
+            .and_then(|element| element.label().map(str::to_owned))
     })
     .unwrap()
 }
 
-#[gpui_kit::test]
-fn opens_a_folder_and_lists_its_media_with_thumbnails(cx: &mut TestAppContext) {
-    let (root, archive) = archive("lists", 6);
-    let (handle, view) = open_view(cx, &root);
-    open_through_the_picker(cx, handle, &archive);
-
-    let names: Vec<String> = cx.update(|cx| {
-        let gallery = view.read(cx).gallery().read(cx);
-        assert_eq!(*gallery.listing(), Listing::Listed);
-        gallery
-            .entries()
-            .iter()
-            .map(|entry| entry.name().to_string())
-            .collect()
-    });
-    let expected: Vec<String> = (0..6).map(|ix| format!("still-{ix:03}.webp")).collect();
-    assert_eq!(
-        names, expected,
-        "recursive, by name, the text file left out"
-    );
-
-    cx.update_window(handle, |_, window, _| {
-        assert_eq!(window.find("gallery-count").label(), Some("6 items"));
-        // Four 256 × 144 tiles to a row at this width, in the listing's order.
-        let first = window.find(tile(&archive, 0)).bounds();
-        let second = window.find(tile(&archive, 1)).bounds();
-        let fifth = window.find(tile(&archive, 4)).bounds();
-        assert_eq!((first.size.width, first.size.height), (px(256.), px(144.)));
-        assert_eq!(second.top(), first.top());
-        assert_eq!(second.left() - first.right(), px(10.));
-        assert_eq!(fifth.left(), first.left());
-        assert_eq!(fifth.top() - first.bottom(), px(10.));
+/// Opens `folder` through the toolbar's Open button and the system's folder picker, and waits
+/// for the scan.
+fn open_folder(cx: &mut TestAppContext, session: &Session, folder: &Path) {
+    cx.update_window(session.handle, |_, window, cx| {
+        window.render_frame(cx);
+        window.click("open-folder", cx);
     })
     .unwrap();
+    assert!(cx.did_prompt_for_paths());
+    let chosen = folder.to_path_buf();
+    cx.simulate_path_prompt_response(move |options| {
+        assert!(options.directories && !options.files);
+        Some(vec![chosen])
+    });
+    settle(cx, session);
+}
 
-    // Every tile's thumbnail is made, written under View's folder, and drawn.
-    let thumbnails = root.join("data/view/thumbnails");
+/// The paths of the gallery's tiles, in the order it shows them.
+fn tile_paths(cx: &mut TestAppContext, session: &Session) -> Vec<PathBuf> {
+    cx.update(|cx| {
+        session
+            .view
+            .read(cx)
+            .gallery()
+            .read(cx)
+            .tiles()
+            .iter()
+            .map(|tile| match tile {
+                Tile::Folder { path, .. } => path.to_path_buf(),
+                Tile::Comic { comic, .. } => comic.folder_path().to_path_buf(),
+                Tile::Media { media, .. } => media.path().to_path_buf(),
+            })
+            .collect()
+    })
+}
+
+fn tile_id(path: &Path) -> ElementId {
+    ElementId::Path(Arc::from(path))
+}
+
+fn viewer_label(cx: &mut TestAppContext, session: &Session) -> Option<String> {
+    label(cx, session, "viewer")
+}
+
+#[gpui_kit::test]
+fn opens_a_folder_lists_its_children_and_recurses_on_demand(cx: &mut TestAppContext) {
+    let fixture = Fixture::new("children");
+    let session = launch(cx, &fixture.root.join("data"));
+    open_folder(cx, &session, &fixture.archive);
+
+    // The six top-level folders, then the one item at the top.
+    assert_eq!(
+        label(cx, &session, "gallery-folders").as_deref(),
+        Some("6 folders")
+    );
+    assert_eq!(
+        label(cx, &session, "gallery-count").as_deref(),
+        Some("1 items")
+    );
+    let tiles = tile_paths(cx, &session);
+    assert_eq!(tiles.len(), 7);
+    assert_eq!(tiles.last(), Some(&fixture.absolute("root-image.png")));
+
+    click(cx, &session, "recursive");
+    let everything = fixture.in_scope("", true).len();
+    assert_eq!(
+        label(cx, &session, "gallery-count"),
+        Some(format!("{everything} items"))
+    );
+    assert_eq!(tile_paths(cx, &session).len(), everything);
+    assert_eq!(label(cx, &session, "gallery-folders"), None);
+}
+
+#[gpui_kit::test]
+fn excluding_a_root_child_drops_its_subtree_from_the_recursive_scan(cx: &mut TestAppContext) {
+    let fixture = Fixture::new("exclude");
+    let session = launch(cx, &fixture.root.join("data"));
+    open_folder(cx, &session, &fixture.archive);
+    click(cx, &session, "recursive");
+    let everything = fixture.in_scope("", true).len();
+    assert_eq!(
+        label(cx, &session, "gallery-count"),
+        Some(format!("{everything} items"))
+    );
+
+    click(cx, &session, "folders");
+    let bulk = fixture.absolute("bulk").to_string_lossy().into_owned();
+    let toggle = oriel_mode_view::folder_overlay::exclude_id(&bulk);
+    cx.update_window(session.handle, |_, window, _| {
+        assert_eq!(window.find(toggle.clone()).label(), Some("Included"));
+    })
+    .unwrap();
+    click(cx, &session, toggle.clone());
+    cx.update_window(session.handle, |_, window, _| {
+        assert_eq!(window.find(toggle.clone()).label(), Some("Excluded"));
+    })
+    .unwrap();
+    click(cx, &session, "close-folder-browser");
+
+    let without_bulk = fixture
+        .in_scope("", true)
+        .iter()
+        .filter(|item| !item.path.starts_with("bulk/"))
+        .count();
+    assert_eq!(
+        label(cx, &session, "gallery-count"),
+        Some(format!("{without_bulk} items"))
+    );
+    // The exclusion is the opened folder's, in the settings file.
+    cx.update(|cx| {
+        let settings = session.view.read(cx).settings();
+        let preferences = settings.root_preferences(Some(&fixture.archive.to_string_lossy()));
+        assert_eq!(
+            preferences.excluded_root_child_paths,
+            std::slice::from_ref(&bulk)
+        );
+    });
+    let file =
+        std::fs::read_to_string(fixture.root.join("data/view/frame-view-settings.json")).unwrap();
+    assert!(file.contains("\"excludedRootChildPaths\": [\n"), "{file}");
+}
+
+#[gpui_kit::test]
+fn filters_hide_videos_and_images(cx: &mut TestAppContext) {
+    let fixture = Fixture::new("filters");
+    let session = launch(cx, &fixture.root.join("data"));
+    open_folder(cx, &session, &fixture.absolute("mixed"));
+    let mixed = fixture.in_scope("mixed", false);
+    assert_eq!(tile_paths(cx, &session).len(), mixed.len());
+
+    let show_settings = |cx: &mut TestAppContext, settings: bool| {
+        cx.update(|cx| {
+            session.harness.update(cx, |harness, cx| {
+                harness.settings = settings;
+                cx.notify();
+            });
+        });
+        settle(cx, &session);
+    };
+    show_settings(cx, true);
+    click(cx, &session, "show-videos");
+    show_settings(cx, false);
+    let stills = mixed.iter().filter(|item| item.kind != Kind::Video).count();
+    assert_eq!(tile_paths(cx, &session).len(), stills);
+
+    show_settings(cx, true);
+    click(cx, &session, "show-videos");
+    click(cx, &session, "show-images");
+    show_settings(cx, false);
+    let videos = mixed.iter().filter(|item| item.kind == Kind::Video).count();
+    assert_eq!(tile_paths(cx, &session).len(), videos);
+    cx.update(|cx| {
+        let filters = &session.view.read(cx).settings().filters;
+        assert!(!filters.show_images && filters.show_videos);
+    });
+}
+
+#[gpui_kit::test]
+fn a_fresh_scan_lands_in_the_configured_sort_order(cx: &mut TestAppContext) {
+    let fixture = Fixture::new("fresh-order");
+    let session = launch(cx, &fixture.root.join("data"));
+    open_folder(cx, &session, &fixture.absolute("comics/alpha"));
+    assert_eq!(
+        tile_paths(cx, &session),
+        fixture.sorted("comics/alpha", GallerySortMode::NameAsc)
+    );
+}
+
+#[gpui_kit::test]
+fn each_sort_matches_the_shared_ordering_rules(cx: &mut TestAppContext) {
+    let fixture = Fixture::new("sorts");
+    let session = launch(cx, &fixture.root.join("data"));
+    open_folder(cx, &session, &fixture.absolute("comics/alpha"));
+    for (mode, id, label_text) in [
+        (GallerySortMode::NameDesc, "sort-name-desc", "Z-A"),
+        (GallerySortMode::DateNewest, "sort-date-newest", "Newest"),
+        (GallerySortMode::DateOldest, "sort-date-oldest", "Oldest"),
+        (GallerySortMode::NameAsc, "sort-name-asc", "A-Z"),
+    ] {
+        click(cx, &session, "sort");
+        assert!(label(cx, &session, "sort-menu").is_some(), "the menu opens");
+        click(cx, &session, "gallery");
+        assert_eq!(
+            label(cx, &session, "sort-menu"),
+            None,
+            "a press elsewhere closes it"
+        );
+        click(cx, &session, "sort");
+        click(cx, &session, id);
+        assert_eq!(label(cx, &session, "sort-menu"), None, "the menu closes");
+        assert_eq!(
+            tile_paths(cx, &session),
+            fixture.sorted("comics/alpha", mode),
+            "{label_text}"
+        );
+        cx.update(|cx| assert_eq!(session.view.read(cx).settings().sort_mode, mode));
+    }
+}
+
+#[gpui_kit::test]
+fn random_is_a_permutation_and_shuffle_changes_it(cx: &mut TestAppContext) {
+    let fixture = Fixture::new("random");
+    let session = launch(cx, &fixture.root.join("data"));
+    open_folder(cx, &session, &fixture.absolute("bulk"));
+    cx.update_window(session.handle, |_, window, _| {
+        assert!(
+            window.try_find("shuffle").is_none(),
+            "Shuffle shows only for Random"
+        );
+    })
+    .unwrap();
+    click(cx, &session, "sort");
+    click(cx, &session, "sort-random");
+
+    let first = tile_paths(cx, &session);
+    let mut expected: Vec<PathBuf> = fixture
+        .in_scope("bulk", false)
+        .iter()
+        .map(|item| fixture.absolute(&item.path))
+        .collect();
+    let mut sorted = first.clone();
+    sorted.sort();
+    expected.sort();
+    assert_eq!(sorted, expected, "a permutation of the folder");
+    assert_ne!(first, fixture.sorted("bulk", GallerySortMode::NameAsc));
+
+    click(cx, &session, "shuffle");
+    assert_ne!(tile_paths(cx, &session), first, "Shuffle changes the order");
+}
+
+#[gpui_kit::test]
+fn every_image_tile_renders_a_thumbnail(cx: &mut TestAppContext) {
+    let fixture = Fixture::new("thumbnails");
+    let session = launch(cx, &fixture.root.join("data"));
+    open_folder(cx, &session, &fixture.absolute("comics/alpha"));
+
+    let thumbnails = fixture.root.join("data/view/frame-view/thumbnails");
     let written = std::fs::read_dir(&thumbnails)
         .unwrap()
         .filter(|file| {
@@ -177,108 +631,386 @@ fn opens_a_folder_and_lists_its_media_with_thumbnails(cx: &mut TestAppContext) {
                 .is_ok_and(|file| file.path().extension().is_some_and(|ext| ext == "webp"))
         })
         .count();
-    assert_eq!(written, 6);
+    assert_eq!(written, 5);
     cx.update(|cx| {
-        let gallery = view.read(cx).gallery().read(cx);
-        assert_eq!(gallery.thumbnails().read(cx).stats().generated(), 6);
+        let gallery = session.view.read(cx).gallery().read(cx);
+        assert_eq!(gallery.thumbnails().read(cx).stats().generated(), 5);
         assert!(
             gallery.is_drawn_complete(),
             "a tile is still on its placeholder"
         );
     });
+    cx.update_window(session.handle, |_, window, _| {
+        // Four 256 × 144 tiles to a row at this width.
+        let first = window
+            .find(tile_id(&fixture.absolute("comics/alpha/1.jpg")))
+            .bounds();
+        assert_eq!((first.size.width, first.size.height), (px(256.), px(144.)));
+    })
+    .unwrap();
 }
 
 #[gpui_kit::test]
-fn double_click_opens_the_viewer_the_arrows_step_and_escape_returns(cx: &mut TestAppContext) {
-    let (root, archive) = archive("viewer", 5);
-    let (handle, view) = open_view(cx, &root);
-    open_through_the_picker(cx, handle, &archive);
+fn video_tiles_get_a_frame_from_ffmpeg(cx: &mut TestAppContext) {
+    let fixture = Fixture::new("video-thumbnails");
+    if !fixture.videos {
+        eprintln!("skipped: no pinned ffmpeg (cargo run -p oriel-tools --bin fetch-media-tools)");
+        return;
+    }
+    let session = launch(cx, &fixture.root.join("data"));
+    open_folder(cx, &session, &fixture.absolute("videos"));
+    cx.update(|cx| {
+        let gallery = session.view.read(cx).gallery().read(cx);
+        let thumbnails = gallery.thumbnails().read(cx);
+        for media in gallery.media().iter() {
+            assert!(
+                matches!(thumbnails.thumbnail(media), Thumbnail::Ready(_)),
+                "{} has no frame",
+                media.name()
+            );
+        }
+        assert_eq!(thumbnails.stats().video_failures(), 0);
+    });
+}
 
-    cx.update_window(handle, |_, window, cx| {
-        window.double_click(tile(&archive, 1), cx)
-    })
-    .unwrap();
-    settle(cx, handle);
+#[gpui_kit::test]
+fn double_click_opens_the_viewer_the_arrows_step_and_escape_closes(cx: &mut TestAppContext) {
+    let fixture = Fixture::new("viewer");
+    let session = launch(cx, &fixture.root.join("data"));
+    open_folder(cx, &session, &fixture.absolute("comics/alpha"));
+    let order: Vec<String> = tile_paths(cx, &session)
+        .iter()
+        .map(|path| path.file_name().unwrap().to_string_lossy().into_owned())
+        .collect();
+
+    double_click(
+        cx,
+        &session,
+        tile_id(&fixture.absolute("comics/alpha").join(&order[0])),
+    );
     assert_eq!(
-        viewer_label(cx, handle).as_deref(),
-        Some("Viewer for still-001.webp")
+        viewer_label(cx, &session),
+        Some(format!("Viewer for {}", order[0]))
     );
     cx.update(|cx| {
-        let viewer = view.read(cx).viewer().expect("the viewer is open").read(cx);
+        let viewer = session
+            .view
+            .read(cx)
+            .viewer()
+            .expect("the viewer is open")
+            .read(cx);
         assert!(viewer.is_current_ready(), "the still is decoded");
     });
-    cx.update_window(handle, |_, window, _| {
-        assert!(
-            window.try_find("gallery-count").is_none(),
-            "the viewer fills the window"
+    press(cx, &session, "right");
+    assert_eq!(
+        viewer_label(cx, &session),
+        Some(format!("Viewer for {}", order[1]))
+    );
+    click(cx, &session, "viewer-next");
+    assert_eq!(
+        viewer_label(cx, &session),
+        Some(format!("Viewer for {}", order[2]))
+    );
+    press(cx, &session, "left");
+    assert_eq!(
+        viewer_label(cx, &session),
+        Some(format!("Viewer for {}", order[1]))
+    );
+
+    // Stepping wraps, as `loopViewerNavigation` does by default.
+    press(cx, &session, "left");
+    press(cx, &session, "left");
+    assert_eq!(
+        viewer_label(cx, &session),
+        Some(format!("Viewer for {}", order[order.len() - 1]))
+    );
+    press(cx, &session, "e");
+    assert_eq!(
+        viewer_label(cx, &session),
+        Some(format!("Viewer for {}", order[0]))
+    );
+
+    let viewer = cx.update(|cx| session.view.read(cx).viewer().unwrap().downgrade());
+    press(cx, &session, "escape");
+    assert_eq!(viewer_label(cx, &session), None);
+    cx.run_until_parked();
+    assert!(viewer.upgrade().is_none(), "the closed viewer is released");
+    cx.update(|cx| assert_eq!(session.view.read(cx).gallery().read(cx).selected(), Some(0)));
+}
+
+#[gpui_kit::test]
+fn without_loop_navigation_the_viewer_stops_at_the_ends(cx: &mut TestAppContext) {
+    let fixture = Fixture::new("no-loop");
+    let session = launch(cx, &fixture.root.join("data"));
+    open_folder(cx, &session, &fixture.absolute("unicode"));
+    cx.update(|cx| {
+        session.harness.update(cx, |harness, cx| {
+            harness.settings = true;
+            cx.notify();
+        });
+    });
+    settle(cx, &session);
+    click(cx, &session, "loop-viewer-navigation");
+    cx.update(|cx| {
+        session.harness.update(cx, |harness, cx| {
+            harness.settings = false;
+            cx.notify();
+        });
+    });
+    settle(cx, &session);
+
+    let order = tile_paths(cx, &session);
+    double_click(cx, &session, tile_id(&order[1]));
+    press(cx, &session, "right");
+    let last = order[1].file_name().unwrap().to_string_lossy().into_owned();
+    assert_eq!(
+        viewer_label(cx, &session),
+        Some(format!("Viewer for {last}"))
+    );
+}
+
+#[gpui_kit::test]
+fn a_video_opens_in_the_capsule_player_without_autoplay(cx: &mut TestAppContext) {
+    let fixture = Fixture::new("player");
+    if !fixture.videos {
+        eprintln!("skipped: no pinned ffmpeg (cargo run -p oriel-tools --bin fetch-media-tools)");
+        return;
+    }
+    let session = launch(cx, &fixture.root.join("data"));
+    cx.update(|cx| {
+        session.harness.update(cx, |harness, cx| {
+            harness.settings = true;
+            cx.notify();
+        });
+    });
+    settle(cx, &session);
+    click(cx, &session, "autoplay-videos");
+    cx.update(|cx| {
+        assert!(!session.view.read(cx).settings().autoplay_videos);
+        session.harness.update(cx, |harness, cx| {
+            harness.settings = false;
+            cx.notify();
+        });
+    });
+    settle(cx, &session);
+
+    open_folder(cx, &session, &fixture.absolute("videos"));
+    double_click(
+        cx,
+        &session,
+        tile_id(&fixture.absolute("videos/clip-a.mp4")),
+    );
+    assert_eq!(
+        viewer_label(cx, &session).as_deref(),
+        Some("Viewer for clip-a.mp4")
+    );
+    cx.update(|cx| {
+        let viewer = session.view.read(cx).viewer().unwrap().read(cx);
+        assert!(!viewer.options().autoplay);
+        let player = viewer
+            .player()
+            .expect("the video plays in the capsule player");
+        assert!(!player.read(cx).is_playing(), "autoplay is off");
+        assert_eq!(
+            player.read(cx).path(),
+            fixture.absolute("videos/clip-a.mp4")
+        );
+    });
+    press(cx, &session, "escape");
+    assert_eq!(viewer_label(cx, &session), None);
+}
+
+#[gpui_kit::test]
+fn comic_mode_groups_leaf_folders_and_the_reader_opens_one(cx: &mut TestAppContext) {
+    let fixture = Fixture::new("comics");
+    let session = launch(cx, &fixture.root.join("data"));
+    open_folder(cx, &session, &fixture.absolute("comics"));
+    click(cx, &session, "comic");
+
+    assert_eq!(
+        label(cx, &session, "gallery-count").as_deref(),
+        Some("3 comics")
+    );
+    assert_eq!(
+        tile_paths(cx, &session),
+        ["comics/alpha", "comics/beta", "comics/nested/inner"].map(|path| fixture.absolute(path))
+    );
+    let alpha = format!("comic:{}", fixture.absolute("comics/alpha").display());
+    double_click(cx, &session, ElementId::Name(alpha.into()));
+    assert_eq!(
+        label(cx, &session, "comic-reader").as_deref(),
+        Some("Comic reader for alpha")
+    );
+    assert_eq!(
+        label(cx, &session, "comic-page-count").as_deref(),
+        Some("1/5 pages")
+    );
+    press(cx, &session, "right");
+    assert_eq!(
+        label(cx, &session, "comic-page-count").as_deref(),
+        Some("2/5 pages")
+    );
+    cx.update(|cx| {
+        let reader = session.view.read(cx).comic_reader().unwrap().read(cx);
+        assert!(reader.is_page_ready(1), "the page in view is decoded");
+    });
+    click(cx, &session, "comic-close");
+    assert_eq!(label(cx, &session, "comic-reader"), None);
+
+    // Comic mode is the folder's, kept across scans; turning Recursive off turns it off.
+    cx.update(|cx| assert!(session.view.read(cx).comic_mode(cx)));
+    click(cx, &session, "recursive");
+    cx.update(|cx| assert!(!session.view.read(cx).comic_mode(cx)));
+    assert_eq!(
+        label(cx, &session, "gallery-folders").as_deref(),
+        Some("3 folders")
+    );
+}
+
+#[gpui_kit::test]
+fn a_relaunch_restores_the_remembered_folder(cx: &mut TestAppContext) {
+    let fixture = Fixture::new("relaunch");
+    let data = fixture.root.join("data");
+    let session = launch(cx, &data);
+    open_folder(cx, &session, &fixture.absolute("unicode"));
+    assert_eq!(tile_paths(cx, &session).len(), 2);
+    cx.update_window(session.handle, |_, window, _| window.remove_window())
+        .unwrap();
+    cx.run_until_parked();
+
+    let session = launch(cx, &data);
+    settle(cx, &session);
+    let mut tiles = tile_paths(cx, &session);
+    tiles.sort();
+    let mut expected: Vec<PathBuf> = fixture
+        .in_scope("unicode", false)
+        .iter()
+        .map(|item| fixture.absolute(&item.path))
+        .collect();
+    expected.sort();
+    assert_eq!(tiles, expected);
+}
+
+#[gpui_kit::test]
+fn folders_open_from_their_tiles_and_step_back_up_to_the_opened_one(cx: &mut TestAppContext) {
+    let fixture = Fixture::new("steps");
+    let session = launch(cx, &fixture.root.join("data"));
+    open_folder(cx, &session, &fixture.absolute("comics"));
+    let nested = fixture.absolute("comics/nested");
+    double_click(
+        cx,
+        &session,
+        ElementId::Name(format!("folder:{}", nested.display()).into()),
+    );
+    cx.update(|cx| {
+        assert_eq!(
+            session.view.read(cx).folder(cx).as_deref(),
+            Some(nested.as_path())
+        )
+    });
+    assert_eq!(
+        label(cx, &session, "gallery-folders").as_deref(),
+        Some("1 folders")
+    );
+
+    // The next sibling folder, then up: the folder stepped out of is selected again.
+    click(cx, &session, "previous-folder");
+    let beta = fixture.absolute("comics/beta");
+    cx.update(|cx| {
+        assert_eq!(
+            session.view.read(cx).folder(cx).as_deref(),
+            Some(beta.as_path())
+        )
+    });
+    click(cx, &session, "parent-folder");
+    cx.update(|cx| {
+        let view = session.view.read(cx);
+        assert_eq!(
+            view.folder(cx).as_deref(),
+            Some(fixture.absolute("comics").as_path())
+        );
+        assert_eq!(
+            view.gallery()
+                .read(cx)
+                .selected_key()
+                .map(|key| key.to_string()),
+            Some(format!("folder:{}", beta.display()))
+        );
+    });
+    // The opened folder is the top: no parent above it.
+    cx.update(|cx| assert!(session.view.read(cx).gallery().read(cx).listing() == &Listing::Listed));
+    cx.update_window(session.handle, |_, window, _| {
+        let parent = window.find("parent-folder");
+        assert_eq!(
+            parent.disabled(),
+            Some(true),
+            "View does not step above the opened folder"
         );
     })
     .unwrap();
+}
 
-    let step =
-        |cx: &mut TestAppContext, key: Option<&'static str>, button: Option<&'static str>| {
-            cx.update_window(handle, move |_, window, cx| {
-                if let Some(key) = key {
-                    window.press(key, cx);
-                }
-                if let Some(button) = button {
-                    window.click(button, cx);
-                }
-            })
-            .unwrap();
-            settle(cx, handle);
-            viewer_label(cx, handle)
-        };
-    assert_eq!(
-        step(cx, Some("right"), None).as_deref(),
-        Some("Viewer for still-002.webp")
-    );
-    assert_eq!(
-        step(cx, None, Some("viewer-next")).as_deref(),
-        Some("Viewer for still-003.webp")
-    );
-    assert_eq!(
-        step(cx, Some("left"), None).as_deref(),
-        Some("Viewer for still-002.webp")
-    );
-    // Stepping wraps, as `loopViewerNavigation` does by default.
-    step(cx, Some("left"), None);
-    step(cx, Some("left"), None);
-    assert_eq!(
-        step(cx, None, Some("viewer-previous")).as_deref(),
-        Some("Viewer for still-004.webp")
-    );
-    assert_eq!(
-        step(cx, Some("e"), None).as_deref(),
-        Some("Viewer for still-000.webp")
-    );
+#[gpui_kit::test]
+fn the_index_records_each_scan_and_the_shell_sees_the_work(cx: &mut TestAppContext) {
+    let fixture = Fixture::new("index");
+    let session = launch(cx, &fixture.root.join("data"));
+    cx.update(|cx| {
+        session.view.update(cx, |view, cx| {
+            view.open_folder(fixture.absolute("mixed"), cx);
+        });
+        assert_eq!(
+            session.shell.read(cx).activity(ModeId::View),
+            Some(ModeActivity::Working),
+            "a running scan shows on the switcher"
+        );
+    });
+    settle(cx, &session);
+    cx.update(|cx| assert_eq!(session.shell.read(cx).activity(ModeId::View), None));
 
-    let viewer = cx.update(|cx| view.read(cx).viewer().unwrap().downgrade());
-    assert_eq!(step(cx, Some("escape"), None), None);
-    cx.run_until_parked();
-    // A closed viewer is released, and with it its decoded stills.
+    let index = futures::executor::block_on(oriel_core_index::MediaIndex::open_in(
+        &fixture.root.join("data/view"),
+    ))
+    .unwrap();
+    let rows = futures::executor::block_on(index.rows()).unwrap();
+    assert_eq!(rows.len(), fixture.in_scope("mixed", false).len());
     assert!(
-        viewer.upgrade().is_none(),
-        "the closed viewer is still alive"
+        rows.iter()
+            .all(|row| row.root_path == fixture.absolute("mixed").to_string_lossy())
     );
-    cx.update_window(handle, |_, window, _| {
-        assert_eq!(window.find("gallery-count").label(), Some("5 items"));
+}
+
+/// The shell hands View the paths the system opens with the app; a file opens in the viewer
+/// once its folder's scan has listed it (`links.spec.ts`' hand-over, View's side).
+#[gpui_kit::test]
+fn a_file_handed_to_view_opens_in_the_viewer_after_its_folder_scans(cx: &mut TestAppContext) {
+    let fixture = Fixture::new("hand-over");
+    let session = launch(cx, &fixture.root.join("data"));
+    let file = fixture.absolute("comics/alpha/10.jpg");
+    cx.update_window(session.handle, |_, window, cx| {
+        session
+            .view
+            .update(cx, |view, cx| view.open_path(file.clone(), window, cx));
     })
     .unwrap();
+    settle(cx, &session);
     cx.update(|cx| {
-        assert!(view.read(cx).viewer().is_none());
-        assert_eq!(view.read(cx).gallery().read(cx).selected(), Some(0));
+        assert_eq!(
+            session.view.read(cx).folder(cx).as_deref(),
+            Some(fixture.absolute("comics/alpha").as_path())
+        );
     });
+    assert_eq!(
+        viewer_label(cx, &session).as_deref(),
+        Some("Viewer for 10.jpg")
+    );
 }
 
 #[gpui_kit::test]
 fn escape_returns_to_the_same_scroll_position(cx: &mut TestAppContext) {
-    // Ninety stills: 23 rows of four, far taller than the window.
-    let (root, archive) = archive("scroll", 90);
-    let (handle, view) = open_view(cx, &root);
-    open_through_the_picker(cx, handle, &archive);
-
-    cx.update_window(handle, |_, window, cx| {
+    let fixture = Fixture::new("scroll");
+    let session = launch(cx, &fixture.root.join("data"));
+    open_folder(cx, &session, &fixture.absolute("bulk"));
+    cx.update_window(session.handle, |_, window, cx| {
         window.scroll(
             "gallery",
             ScrollDelta::Pixels(point(px(0.), px(-1000.))),
@@ -286,10 +1018,12 @@ fn escape_returns_to_the_same_scroll_position(cx: &mut TestAppContext) {
         );
     })
     .unwrap();
-    settle(cx, handle);
+    settle(cx, &session);
     let offset = |cx: &mut TestAppContext| {
         cx.update(|cx| {
-            view.read(cx)
+            session
+                .view
+                .read(cx)
                 .gallery()
                 .read(cx)
                 .scroll_handle()
@@ -306,29 +1040,18 @@ fn escape_returns_to_the_same_scroll_position(cx: &mut TestAppContext) {
     );
 
     // Row 8 (items 32 to 35) is in view 1000 px down.
-    cx.update_window(handle, |_, window, cx| {
-        window.double_click(tile(&archive, 33), cx)
-    })
-    .unwrap();
-    settle(cx, handle);
-    assert_eq!(
-        viewer_label(cx, handle).as_deref(),
-        Some("Viewer for still-033.webp")
-    );
-    cx.update_window(handle, |_, window, cx| {
-        window.press("right", cx);
-        window.press("escape", cx);
-    })
-    .unwrap();
-    settle(cx, handle);
-
-    assert_eq!(viewer_label(cx, handle), None);
+    let order = tile_paths(cx, &session);
+    double_click(cx, &session, tile_id(&order[33]));
+    press(cx, &session, "right");
+    press(cx, &session, "escape");
+    assert_eq!(viewer_label(cx, &session), None);
     assert_eq!(offset(cx), scrolled, "the grid is where it was");
-    cx.update(|cx| assert_eq!(view.read(cx).gallery().read(cx).selected(), Some(34)));
-    cx.update_window(handle, |_, window, _| {
-        assert!(window.find(tile(&archive, 34)).visible());
-    })
-    .unwrap();
+    cx.update(|cx| {
+        assert_eq!(
+            session.view.read(cx).gallery().read(cx).selected(),
+            Some(34)
+        )
+    });
 }
 
 /// The gallery's thumbnails go through its own bounded cache. An `img()` that misses it keeps
@@ -336,22 +1059,23 @@ fn escape_returns_to_the_same_scroll_position(cx: &mut TestAppContext) {
 /// held 11 GB.
 #[gpui_kit::test]
 fn scrolled_thumbnails_stay_out_of_the_apps_asset_cache(cx: &mut TestAppContext) {
-    let (root, archive) = archive("bounded", 90);
-    let (handle, view) = open_view(cx, &root);
-    open_through_the_picker(cx, handle, &archive);
+    let fixture = Fixture::new("bounded");
+    let session = launch(cx, &fixture.root.join("data"));
+    open_folder(cx, &session, &fixture.absolute("bulk"));
     for _ in 0..3 {
-        cx.update_window(handle, |_, window, cx| {
+        cx.update_window(session.handle, |_, window, cx| {
             window.scroll("gallery", ScrollDelta::Pixels(point(px(0.), px(-700.))), cx);
         })
         .unwrap();
-        settle(cx, handle);
+        settle(cx, &session);
     }
-
     cx.update(|cx| {
-        let gallery = view.read(cx).gallery().read(cx);
+        let gallery = session.view.read(cx).gallery().read(cx);
         let thumbnails = gallery.thumbnails().read(cx);
-        let ready: Vec<_> = (0..gallery.entries().len())
-            .filter_map(|ix| match thumbnails.thumbnail(ix) {
+        let ready: Vec<_> = gallery
+            .media()
+            .iter()
+            .filter_map(|media| match thumbnails.thumbnail(media) {
                 Thumbnail::Ready(path) => Some(path),
                 _ => None,
             })

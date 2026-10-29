@@ -97,5 +97,19 @@ pub fn decode(path: &Path, max_pixel_size: u32) -> Result<Still> {
     }
 }
 
+/// [`decode`] for an encoded image held in memory (PNG, JPEG and the rest), such as the frame
+/// ffmpeg writes for a video's thumbnail.
+pub fn decode_bytes(bytes: &[u8], max_pixel_size: u32) -> Result<Still> {
+    #[cfg(target_os = "macos")]
+    {
+        imageio::decode_bytes(bytes, max_pixel_size)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (bytes, max_pixel_size);
+        anyhow::bail!("stills decode through ImageIO, which is macOS only")
+    }
+}
+
 #[cfg(all(test, target_os = "macos"))]
 mod tests;

@@ -1,9 +1,11 @@
-//! The gallery: a folder's media as a virtual grid, `uniform_list` rows of tiles sized as
-//! Electron Oriel sizes them, each tile its thumbnail once made and a placeholder until then.
+//! The gallery: a folder's tiles (its subfolders, comics or media) as a virtual grid,
+//! `uniform_list` rows of tiles sized as Electron Oriel sizes them, each tile its thumbnail once
+//! made and a placeholder until then.
 //!
-//! The gallery owns the listing, the grid's scroll position and the selection. It says which
-//! rows it drew, and the thumbnail service makes those first. Opening an item is the owner's:
-//! a double-click emits [`GalleryEvent::Activated`].
+//! The gallery owns the grid's scroll position, the selection and the keys that move it
+//! (`useGalleryKeyboardNavigation`). It says which rows it drew, and the thumbnail service makes
+//! those first. What a tile opens is the owner's: a double-click, Enter or F emits
+//! [`GalleryEvent::Activated`], and the folder keys emit [`GalleryEvent::FolderStep`].
 
 mod images;
 pub mod metrics;
@@ -13,18 +15,21 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 
-use gpui_kit::component::ActiveTheme as _;
+use gpui_kit::assets::IconName;
+use gpui_kit::component::{ActiveTheme as _, Icon};
 use gpui_kit::{
-    AppContext as _, ClickEvent, Context, ElementId, Entity, EventEmitter, InteractiveElement as _,
-    IntoElement, ObjectFit, ParentElement as _, Render, Resource, Role, ScrollStrategy,
-    SharedString, StatefulInteractiveElement as _, Styled as _, StyledImage as _, Subscription,
-    Task, TestSupportExt as _, UniformListScrollHandle, Window, div, img, point,
+    App, AppContext as _, ClickEvent, Context, ElementId, Entity, EventEmitter, FocusHandle,
+    Focusable, InteractiveElement as _, IntoElement, KeyBinding, ObjectFit, ParentElement as _,
+    Render, Resource, Role, ScrollStrategy, SharedString, StatefulInteractiveElement as _,
+    Styled as _, StyledImage as _, Subscription, TestSupportExt as _, UniformListScrollHandle,
+    Window, actions, div, img, linear_color_stop, linear_gradient, point,
     prelude::FluentBuilder as _, px, uniform_list,
 };
 use oriel_ui::ShellState;
 use oriel_ui::layout::{RAIL_WIDTH, SIDEBAR_WIDTH};
 
-use crate::listing::{self, MediaEntry};
+use crate::browser::{Comic, Tile};
+use crate::listing::MediaEntry;
 use crate::thumbnails::{THUMBNAIL_SIZE, Thumbnail, ThumbnailService};
 use images::TileImages;
 use metrics::{GridMetrics, OVERSCAN_ROWS, TileAspect};
@@ -32,49 +37,125 @@ use metrics::{GridMetrics, OVERSCAN_ROWS, TileAspect};
 /// The id of the grid's scroll region.
 pub const GALLERY_ID: &str = "gallery";
 
+const KEY_CONTEXT: &str = "Gallery";
+
+actions!(
+    gallery,
+    [
+        /// The tile to the left (← or A).
+        SelectLeft,
+        /// The tile to the right (→ or D).
+        SelectRight,
+        /// The tile a row up (↑ or W).
+        SelectUp,
+        /// The tile a row down (↓ or S).
+        SelectDown,
+        /// Opens the selected tile (Return or F).
+        ActivateSelected,
+        /// Opens the selected folder (⇧S).
+        OpenSelectedFolder,
+        /// The parent folder (⇧W).
+        OpenParentFolder,
+        /// The previous sibling folder (⇧A).
+        OpenPreviousFolder,
+        /// The next sibling folder (⇧D).
+        OpenNextFolder
+    ]
+);
+
+/// The gallery's keys, as `hotkeys.ts` binds them. They reach the gallery only while it has
+/// focus, so never while the viewer, the reader or another mode shows.
+pub(crate) fn bind_keys(cx: &mut App) {
+    let context = Some(KEY_CONTEXT);
+    cx.bind_keys([
+        KeyBinding::new("left", SelectLeft, context),
+        KeyBinding::new("a", SelectLeft, context),
+        KeyBinding::new("right", SelectRight, context),
+        KeyBinding::new("d", SelectRight, context),
+        KeyBinding::new("up", SelectUp, context),
+        KeyBinding::new("w", SelectUp, context),
+        KeyBinding::new("down", SelectDown, context),
+        KeyBinding::new("s", SelectDown, context),
+        KeyBinding::new("enter", ActivateSelected, context),
+        KeyBinding::new("f", ActivateSelected, context),
+        KeyBinding::new("shift-s", OpenSelectedFolder, context),
+        KeyBinding::new("shift-w", OpenParentFolder, context),
+        KeyBinding::new("shift-a", OpenPreviousFolder, context),
+        KeyBinding::new("shift-d", OpenNextFolder, context),
+    ]);
+}
+
 /// What the gallery shows.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Listing {
     /// No folder yet.
     Empty,
-    /// The folder is being read.
+    /// The folder is being read; tiles found so far show.
     Loading,
-    /// The folder's media, possibly none.
+    /// The folder's tiles, possibly none.
     Listed,
     /// The folder could not be read.
     Failed(SharedString),
 }
 
+/// What opening a tile asks for.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Activation {
+    Folder(PathBuf),
+    Comic(Arc<Comic>),
+    /// The item at this index of the listing's media.
+    Media(usize),
+}
+
+/// The folder keys (⇧W, ⇧A, ⇧D), for the owner to act on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FolderStep {
+    Parent,
+    Previous,
+    Next,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum GalleryEvent {
-    /// A listing finished.
-    Listed,
-    /// An item was double-clicked.
-    Activated(usize),
+    Activated(Activation),
+    FolderStep(FolderStep),
+    /// The selection moved, for the header's position.
+    Selected,
 }
 
 pub struct Gallery {
     shell: Entity<ShellState>,
-    folder: Option<Arc<Path>>,
     listing: Listing,
-    entries: Arc<[MediaEntry]>,
+    /// Shown when there are no tiles.
+    empty_message: SharedString,
+    tiles: Arc<[Tile]>,
+    /// The listing's media, in order: what the viewer steps through.
+    media: Arc<[MediaEntry]>,
+    aspect: TileAspect,
+    thumbnail_size: f32,
     thumbnails: Entity<ThumbnailService>,
     images: Entity<TileImages>,
     scroll: UniformListScrollHandle,
-    selected: Option<usize>,
+    focus: FocusHandle,
+    selected: Option<SharedString>,
     /// The rows the list last drew, and whether a thumbnail request for them is due.
     drawn_rows: Range<usize>,
-    wanted_rows: Option<Range<usize>>,
+    wanted: Option<(Range<usize>, usize)>,
     request_due: bool,
     columns: usize,
     /// Whether every tile drawn last had its thumbnail on screen.
     drawn_complete: bool,
     autoscroll: Option<Autoscroll>,
-    _listing: Option<Task<()>>,
     _subscriptions: Vec<Subscription>,
 }
 
 impl EventEmitter<GalleryEvent> for Gallery {}
+
+impl Focusable for Gallery {
+    fn focus_handle(&self, _: &App) -> FocusHandle {
+        self.focus.clone()
+    }
+}
 
 impl Gallery {
     pub fn new(
@@ -83,7 +164,7 @@ impl Gallery {
         cx: &mut Context<Self>,
     ) -> Self {
         let size = crate::thumbnails::request_size(THUMBNAIL_SIZE);
-        let thumbnails = cx.new(|_| ThumbnailService::new(thumbnails_folder, size));
+        let thumbnails = cx.new(|cx| ThumbnailService::new(thumbnails_folder, size, cx));
         let images = TileImages::new(0, cx);
         let subscriptions = vec![
             cx.observe(shell, |_, _, cx| cx.notify()),
@@ -91,38 +172,57 @@ impl Gallery {
         ];
         Self {
             shell: shell.clone(),
-            folder: None,
             listing: Listing::Empty,
-            entries: Arc::from([]),
+            empty_message: "Drop a folder or click Open below".into(),
+            tiles: Arc::from([]),
+            media: Arc::from([]),
+            aspect: TileAspect::Wide,
+            thumbnail_size: THUMBNAIL_SIZE,
             thumbnails,
             images,
             scroll: UniformListScrollHandle::new(),
+            focus: cx.focus_handle(),
             selected: None,
             drawn_rows: 0..0,
-            wanted_rows: None,
+            wanted: None,
             request_due: false,
             columns: 1,
             drawn_complete: false,
             autoscroll: None,
-            _listing: None,
             _subscriptions: subscriptions,
         }
-    }
-
-    pub fn folder(&self) -> Option<&Path> {
-        self.folder.as_deref()
     }
 
     pub fn listing(&self) -> &Listing {
         &self.listing
     }
 
-    pub fn entries(&self) -> &Arc<[MediaEntry]> {
-        &self.entries
+    pub fn tiles(&self) -> &Arc<[Tile]> {
+        &self.tiles
     }
 
+    /// The listing's media in order, which the viewer steps through.
+    pub fn media(&self) -> &Arc<[MediaEntry]> {
+        &self.media
+    }
+
+    /// The selected tile's key.
+    pub fn selected_key(&self) -> Option<&SharedString> {
+        self.selected.as_ref()
+    }
+
+    /// The selected tile's position, for the header's `3/40`.
+    pub fn selected_index(&self) -> Option<usize> {
+        let key = self.selected.as_ref()?;
+        self.tiles.iter().position(|tile| tile.key() == key)
+    }
+
+    /// The selected media item's index in [`Self::media`], when a media tile is selected.
     pub fn selected(&self) -> Option<usize> {
-        self.selected
+        match self.tiles.get(self.selected_index()?)? {
+            Tile::Media { media_index, .. } => Some(*media_index),
+            _ => None,
+        }
     }
 
     pub fn thumbnails(&self) -> &Entity<ThumbnailService> {
@@ -131,6 +231,10 @@ impl Gallery {
 
     pub fn scroll_handle(&self) -> &UniformListScrollHandle {
         &self.scroll
+    }
+
+    pub fn thumbnail_size(&self) -> f32 {
+        self.thumbnail_size
     }
 
     /// The rows the list drew last frame.
@@ -142,6 +246,65 @@ impl Gallery {
     /// draw for a tile that has none).
     pub fn is_drawn_complete(&self) -> bool {
         self.drawn_complete
+    }
+
+    /// Shows `tiles`. The selection stays on the same tile when it is still listed, moves to
+    /// `prefer` when that is listed (a folder stepped up out of), and otherwise to the first
+    /// tile, as `useBrowserSelection` keeps it.
+    pub fn set_tiles(
+        &mut self,
+        tiles: Arc<[Tile]>,
+        media: Arc<[MediaEntry]>,
+        aspect: TileAspect,
+        prefer: Option<SharedString>,
+        cx: &mut Context<Self>,
+    ) {
+        let has = |key: &SharedString| tiles.iter().any(|tile| tile.key() == key);
+        let selected = prefer
+            .filter(|key| has(key))
+            .or_else(|| self.selected.clone().filter(|key| has(key)))
+            .or_else(|| tiles.first().map(|tile| tile.key().clone()));
+        if selected != self.selected {
+            self.selected = selected;
+            cx.emit(GalleryEvent::Selected);
+        }
+        self.tiles = tiles;
+        self.media = media;
+        self.aspect = aspect;
+        self.wanted = None;
+        cx.notify();
+    }
+
+    /// What shows without tiles, and whether a folder is being read.
+    pub fn set_listing(
+        &mut self,
+        listing: Listing,
+        empty_message: SharedString,
+        cx: &mut Context<Self>,
+    ) {
+        if self.listing != listing || self.empty_message != empty_message {
+            self.listing = listing;
+            self.empty_message = empty_message;
+            cx.notify();
+        }
+    }
+
+    /// Tiles of about `size` pixels, with thumbnails made at twice that.
+    pub fn set_thumbnail_size(&mut self, size: f32, cx: &mut Context<Self>) {
+        if self.thumbnail_size != size {
+            self.thumbnail_size = size;
+            let request = crate::thumbnails::request_size(size);
+            self.thumbnails
+                .update(cx, |thumbnails, cx| thumbnails.set_size(request, cx));
+            self.wanted = None;
+            cx.notify();
+        }
+    }
+
+    /// Back to the top, as a new folder opens.
+    pub fn scroll_to_top(&mut self, cx: &mut Context<Self>) {
+        self.scroll.scroll_to_item(0, ScrollStrategy::Top);
+        cx.notify();
     }
 
     /// Scrolls from where the grid is to its end at `speed` pixels a second, measured in wall
@@ -182,67 +345,82 @@ impl Gallery {
         window.request_animation_frame();
     }
 
-    /// Lists `folder` recursively on the background executor, then shows it from the top.
-    pub fn open(&mut self, folder: PathBuf, cx: &mut Context<Self>) {
-        let folder: Arc<Path> = folder.into();
-        self.folder = Some(folder.clone());
-        self.listing = Listing::Loading;
-        self.selected = None;
-        cx.notify();
-
-        let task = cx.spawn(async move |this, cx| {
-            let read = folder.clone();
-            let listed = cx
-                .background_spawn(async move { listing::list_media(&read) })
-                .await;
-            this.update(cx, |this, cx| {
-                if this.folder.as_ref() != Some(&folder) {
-                    return;
-                }
-                match listed {
-                    Ok(entries) => {
-                        this.entries = entries.into();
-                        this.listing = Listing::Listed;
-                    }
-                    Err(error) => {
-                        this.entries = Arc::from([]);
-                        this.listing = Listing::Failed(
-                            format!("{} could not be read: {error}", folder.display()).into(),
-                        );
-                    }
-                }
-                let entries = this.entries.clone();
-                this.thumbnails
-                    .update(cx, |thumbnails, cx| thumbnails.set_entries(entries, cx));
-                this.wanted_rows = None;
-                this.scroll.scroll_to_item(0, ScrollStrategy::Top);
-                cx.emit(GalleryEvent::Listed);
-                cx.notify();
-            })
-            .ok();
-        });
-        self._listing = Some(task);
+    /// Selects media item `ix` and scrolls its row into view if it is not, as after the viewer
+    /// closes on it; a row already in view does not move.
+    pub fn reveal(&mut self, ix: usize, cx: &mut Context<Self>) {
+        let Some(position) = self
+            .tiles
+            .iter()
+            .position(|tile| matches!(tile, Tile::Media { media_index, .. } if *media_index == ix))
+        else {
+            return;
+        };
+        self.select_position(position, cx);
     }
 
-    /// Selects `ix` and scrolls its row into view if it is not, as after the viewer closes on
-    /// it; a row already in view does not move.
-    pub fn reveal(&mut self, ix: usize, cx: &mut Context<Self>) {
-        if ix >= self.entries.len() {
+    /// Selects the tile with `key`, if it is listed.
+    pub fn select_key(&mut self, key: &str, cx: &mut Context<Self>) {
+        if let Some(position) = self
+            .tiles
+            .iter()
+            .position(|tile| tile.key().as_ref() == key)
+        {
+            self.select_position(position, cx);
+        }
+    }
+
+    fn select_position(&mut self, position: usize, cx: &mut Context<Self>) {
+        let Some(tile) = self.tiles.get(position) else {
+            return;
+        };
+        if self.selected.as_ref() != Some(tile.key()) {
+            self.selected = Some(tile.key().clone());
+            cx.emit(GalleryEvent::Selected);
+        }
+        self.scroll
+            .scroll_to_item(position / self.columns.max(1), ScrollStrategy::Nearest);
+        cx.notify();
+    }
+
+    /// Moves the selection by `delta` tiles, clamped to the ends.
+    fn move_selection(&mut self, delta: isize, cx: &mut Context<Self>) {
+        if self.tiles.is_empty() {
             return;
         }
-        self.selected = Some(ix);
-        self.scroll
-            .scroll_to_item(ix / self.columns.max(1), ScrollStrategy::Nearest);
-        cx.notify();
+        let current = self.selected_index().unwrap_or(0) as isize;
+        let next = (current + delta).clamp(0, self.tiles.len() as isize - 1) as usize;
+        self.select_position(next, cx);
     }
 
-    fn click_tile(&mut self, ix: usize, event: &ClickEvent, cx: &mut Context<Self>) {
-        if self.selected != Some(ix) {
-            self.selected = Some(ix);
+    fn activate(&mut self, position: usize, cx: &mut Context<Self>) {
+        let Some(tile) = self.tiles.get(position) else {
+            return;
+        };
+        let activation = match tile {
+            Tile::Folder { path, .. } => Activation::Folder(path.to_path_buf()),
+            Tile::Comic { comic, .. } => Activation::Comic(comic.clone()),
+            Tile::Media { media_index, .. } => Activation::Media(*media_index),
+        };
+        cx.emit(GalleryEvent::Activated(activation));
+    }
+
+    fn click_tile(
+        &mut self,
+        position: usize,
+        event: &ClickEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.focus.focus(window, cx);
+        if let Some(tile) = self.tiles.get(position)
+            && self.selected.as_ref() != Some(tile.key())
+        {
+            self.selected = Some(tile.key().clone());
+            cx.emit(GalleryEvent::Selected);
             cx.notify();
         }
         if event.click_count() >= 2 {
-            cx.emit(GalleryEvent::Activated(ix));
+            self.activate(position, cx);
         }
     }
 
@@ -255,7 +433,7 @@ impl Gallery {
             SIDEBAR_WIDTH
         };
         let width = f32::from(window.viewport_size().width) - sidebar;
-        GridMetrics::new(width, THUMBNAIL_SIZE, TileAspect::Wide)
+        GridMetrics::new(width, self.thumbnail_size, self.aspect)
     }
 
     /// The list drew `rows`: ask for their thumbnails once the frame is done. The list also
@@ -272,23 +450,32 @@ impl Gallery {
     fn request_thumbnails(&mut self, cx: &mut Context<Self>) {
         self.request_due = false;
         let rows = self.drawn_rows.clone();
-        if self.wanted_rows.as_ref() == Some(&rows) {
+        let wanted = (rows.clone(), self.tiles.len());
+        if self.wanted.as_ref() == Some(&wanted) {
             return;
         }
-        self.wanted_rows = Some(rows.clone());
+        self.wanted = Some(wanted);
         let columns = self.columns.max(1);
-        let len = self.entries.len();
+        let len = self.tiles.len();
         let row_count = len.div_ceil(columns);
         let nearby =
             rows.start.saturating_sub(OVERSCAN_ROWS)..(rows.end + OVERSCAN_ROWS).min(row_count);
         let visible = (rows.start * columns).min(len)..(rows.end * columns).min(len);
         let nearby = (nearby.start * columns).min(len)..(nearby.end * columns).min(len);
+        let sources = |range: Range<usize>| -> Vec<MediaEntry> {
+            self.tiles[range]
+                .iter()
+                .filter_map(|tile| tile.thumbnail_source().cloned())
+                .collect()
+        };
+        let (visible_sources, nearby_sources) = (sources(visible.clone()), sources(nearby.clone()));
         // Room for the drawn tiles, the overscan, and a screen's worth more for scrolling back.
         let capacity = nearby.len() + visible.len() * 2;
         self.images
             .update(cx, |images, _| images.set_capacity(capacity));
-        self.thumbnails
-            .update(cx, |thumbnails, cx| thumbnails.want(visible, nearby, cx));
+        self.thumbnails.update(cx, |thumbnails, cx| {
+            thumbnails.want(&visible_sources, &nearby_sources, cx)
+        });
     }
 
     fn render_rows(
@@ -302,10 +489,10 @@ impl Gallery {
         let mut complete = true;
         let mut elements = Vec::with_capacity(rows.len());
         for row in rows {
-            let items = metrics.items_in(row..row + 1, self.entries.len());
+            let items = metrics.items_in(row..row + 1, self.tiles.len());
             let mut tiles = Vec::with_capacity(items.len());
-            for ix in items {
-                let (tile, drawn) = self.render_tile(ix, metrics, cx);
+            for position in items {
+                let (tile, drawn) = self.render_tile(position, metrics, cx);
                 complete &= drawn;
                 tiles.push(tile);
             }
@@ -328,60 +515,111 @@ impl Gallery {
     /// One tile, and whether its thumbnail is drawn this frame (or it has none to draw).
     fn render_tile(
         &self,
-        ix: usize,
+        position: usize,
         metrics: GridMetrics,
         cx: &mut Context<Self>,
     ) -> (gpui_kit::AnyElement, bool) {
-        let entry = &self.entries[ix];
-        let thumbnail = self.thumbnails.read(cx).thumbnail(ix);
+        let tile = &self.tiles[position];
+        let thumbnail = tile
+            .thumbnail_source()
+            .map(|source| self.thumbnails.read(cx).thumbnail(source));
         let drawn = match &thumbnail {
-            Thumbnail::Ready(path) => self
+            Some(Thumbnail::Ready(path)) => self
                 .images
                 .read(cx)
                 .is_loaded(&Resource::Path(path.clone())),
-            Thumbnail::Unavailable => true,
-            Thumbnail::Pending => false,
+            Some(Thumbnail::Unavailable) | None => true,
+            Some(Thumbnail::Pending) => false,
         };
-        let selected = self.selected == Some(ix);
+        let selected = self.selected.as_ref() == Some(tile.key());
         let theme = cx.theme();
+        let picture = match thumbnail {
+            Some(Thumbnail::Ready(path)) => Some(path),
+            _ => None,
+        };
+        let id = match tile {
+            Tile::Media { media, .. } => ElementId::Path(media.path().clone()),
+            _ => ElementId::Name(tile.key().clone()),
+        };
 
-        let tile = div()
-            .id(ElementId::Path(entry.path().clone()))
+        let card = div()
+            .id(id)
             .role(Role::Button)
             .test_support()
-            .aria_label(entry.name().clone())
+            .aria_label(tile.name().clone())
             .relative()
             .flex_shrink_0()
             .w(px(metrics.card_width()))
             .h(px(metrics.card_height()))
             .rounded(theme.radius_lg)
             .overflow_hidden()
-            .bg(theme.muted)
-            .when_some(
-                match thumbnail {
-                    Thumbnail::Ready(path) => Some(path),
-                    _ => None,
-                },
-                |tile, path| {
-                    // The cache goes on each image, not on an `image_cache()` element around the
-                    // list: `uniform_list` lays its rows out in prepaint, where that element's
-                    // cache is not in force, and an `img()` without one keeps its image in the
-                    // App's asset cache for good. Scrolling 20,000 tiles held 11 GB that way.
-                    tile.child(
-                        img(path)
-                            .image_cache(&self.images)
-                            .size_full()
-                            .object_fit(ObjectFit::Cover),
-                    )
-                },
-            )
-            .when(entry.is_video(), |tile| tile.child(video_badge()))
-            .when(selected, |tile| tile.border_2().border_color(theme.ring))
-            .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
-                this.click_tile(ix, event, cx);
-            }))
-            .into_any_element();
-        (tile, drawn)
+            .on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
+                this.click_tile(position, event, window, cx);
+            }));
+
+        let card = match tile {
+            Tile::Folder { name, .. } => card
+                .flex()
+                .flex_col()
+                .justify_between()
+                .p_4()
+                .bg(theme.background)
+                .border_1()
+                .border_color(theme.border)
+                .child(
+                    div()
+                        .flex()
+                        .flex_row()
+                        .items_start()
+                        .justify_between()
+                        .child(
+                            Icon::new(IconName::Folder)
+                                .size(px(36.))
+                                .text_color(gpui_kit::rgb(0xf59e0b)),
+                        )
+                        .child(
+                            div()
+                                .px_2()
+                                .rounded_full()
+                                .bg(theme.muted)
+                                .text_xs()
+                                .text_color(theme.muted_foreground)
+                                .child("Folder"),
+                        ),
+                )
+                .child(
+                    div()
+                        .text_size(px(13.))
+                        .font_weight(gpui_kit::FontWeight::SEMIBOLD)
+                        .line_clamp(2)
+                        .child(name.clone()),
+                ),
+            Tile::Comic { comic, .. } => card
+                .bg(theme.muted)
+                .when_some(picture, |card, path| card.child(self.picture(path)))
+                .child(caption(
+                    comic.name().clone(),
+                    format!("{} pages", comic.pages().len()).into(),
+                )),
+            Tile::Media { media, .. } => card
+                .bg(theme.muted)
+                .when_some(picture, |card, path| card.child(self.picture(path)))
+                .when(media.is_video(), |card| card.child(video_badge())),
+        };
+        let card = card.when(selected, |card| card.border_2().border_color(theme.ring));
+        (card.into_any_element(), drawn)
+    }
+
+    /// A tile's thumbnail, through the gallery's own bounded cache. The cache goes on each
+    /// image, not on an `image_cache()` element around the list: `uniform_list` lays its rows
+    /// out in prepaint, where that element's cache is not in force, and an `img()` without one
+    /// keeps its image in the App's asset cache for good. Scrolling 20,000 tiles held 11 GB that
+    /// way.
+    fn picture(&self, path: Arc<Path>) -> impl IntoElement {
+        img(path)
+            .image_cache(&self.images)
+            .size_full()
+            .object_fit(ObjectFit::Cover)
     }
 }
 
@@ -409,26 +647,89 @@ fn video_badge() -> impl IntoElement {
         .child("VIDEO")
 }
 
+/// A comic's name and page count over the bottom of its cover, on a scrim.
+fn caption(title: SharedString, detail: SharedString) -> impl IntoElement {
+    div()
+        .absolute()
+        .inset_0()
+        .flex()
+        .flex_col()
+        .justify_end()
+        .px_3()
+        .pb_3()
+        .bg(linear_gradient(
+            0.,
+            linear_color_stop(gpui_kit::black().opacity(0.75), 0.),
+            linear_color_stop(gpui_kit::black().opacity(0.), 0.6),
+        ))
+        .child(
+            div()
+                .text_sm()
+                .font_weight(gpui_kit::FontWeight::SEMIBOLD)
+                .text_color(gpui_kit::white())
+                .line_clamp(2)
+                .child(title),
+        )
+        .child(
+            div()
+                .text_size(px(11.))
+                .text_color(gpui_kit::white().opacity(0.75))
+                .child(detail),
+        )
+}
+
 impl Render for Gallery {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
         let message = match &self.listing {
-            Listing::Empty => Some(SharedString::from("Open a folder to see its gallery.")),
-            Listing::Loading => Some(SharedString::from("Reading the folder…")),
             Listing::Failed(message) => Some(message.clone()),
-            Listing::Listed if self.entries.is_empty() => self
-                .folder
-                .as_ref()
-                .map(|folder| format!("No media found in {}.", display_name(folder)).into()),
-            Listing::Listed => None,
+            _ if self.tiles.is_empty() => Some(self.empty_message.clone()),
+            _ => None,
         };
+        let base = div()
+            .id(GALLERY_ID)
+            .test_support()
+            .key_context(KEY_CONTEXT)
+            .track_focus(&self.focus)
+            .on_action(cx.listener(|this, _: &SelectLeft, _, cx| this.move_selection(-1, cx)))
+            .on_action(cx.listener(|this, _: &SelectRight, _, cx| this.move_selection(1, cx)))
+            .on_action(cx.listener(|this, _: &SelectUp, _, cx| {
+                let columns = this.columns.max(1) as isize;
+                this.move_selection(-columns, cx);
+            }))
+            .on_action(cx.listener(|this, _: &SelectDown, _, cx| {
+                let columns = this.columns.max(1) as isize;
+                this.move_selection(columns, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ActivateSelected, _, cx| {
+                if let Some(position) = this.selected_index() {
+                    this.activate(position, cx);
+                }
+            }))
+            .on_action(cx.listener(|this, _: &OpenSelectedFolder, _, cx| {
+                if let Some(position) = this.selected_index()
+                    && matches!(this.tiles.get(position), Some(Tile::Folder { .. }))
+                {
+                    this.activate(position, cx);
+                }
+            }))
+            .on_action(cx.listener(|_, _: &OpenParentFolder, _, cx| {
+                cx.emit(GalleryEvent::FolderStep(FolderStep::Parent));
+            }))
+            .on_action(cx.listener(|_, _: &OpenPreviousFolder, _, cx| {
+                cx.emit(GalleryEvent::FolderStep(FolderStep::Previous));
+            }))
+            .on_action(cx.listener(|_, _: &OpenNextFolder, _, cx| {
+                cx.emit(GalleryEvent::FolderStep(FolderStep::Next));
+            }))
+            .flex_1()
+            .min_h_0()
+            .size_full();
+
         if let Some(message) = message {
             self.drawn_complete = true;
-            return div()
-                .id(GALLERY_ID)
+            return base
                 .flex()
-                .flex_1()
-                .min_h_0()
                 .items_center()
                 .justify_center()
                 .text_color(theme.muted_foreground)
@@ -438,6 +739,13 @@ impl Render for Gallery {
                         .role(Role::Status)
                         .test_support()
                         .aria_label(message.clone())
+                        .px_6()
+                        .py_4()
+                        .rounded(theme.radius_lg)
+                        .bg(theme.background)
+                        .border_1()
+                        .border_color(theme.border)
+                        .text_size(px(13.))
                         .child(message),
                 )
                 .into_any_element();
@@ -446,27 +754,23 @@ impl Render for Gallery {
         self.advance_autoscroll(window);
         let metrics = self.metrics(window, cx);
         self.columns = metrics.columns();
-        let rows = metrics.row_count(self.entries.len());
-        div()
-            .id(GALLERY_ID)
-            .test_support()
-            .flex_1()
-            .min_h_0()
-            .size_full()
-            .child(
-                uniform_list(
-                    "gallery-rows",
-                    rows,
-                    cx.processor(move |this, rows: Range<usize>, window, cx| {
-                        this.render_rows(rows, metrics, window, cx)
-                    }),
-                )
-                .track_scroll(&self.scroll)
-                .size_full()
-                .pt(px(metrics::TOP_INSET))
-                .px(px(metrics::HORIZONTAL_INSET)),
+        let rows = metrics.row_count(self.tiles.len());
+        base.child(
+            uniform_list(
+                "gallery-rows",
+                rows,
+                cx.processor(move |this, rows: Range<usize>, window, cx| {
+                    this.render_rows(rows, metrics, window, cx)
+                }),
             )
-            .into_any_element()
+            .track_scroll(&self.scroll)
+            .size_full()
+            .pt(px(metrics::TOP_INSET))
+            // Room under the last row for the floating toolbar (`pb-28`).
+            .pb(px(112.))
+            .px(px(metrics::HORIZONTAL_INSET)),
+        )
+        .into_any_element()
     }
 }
 

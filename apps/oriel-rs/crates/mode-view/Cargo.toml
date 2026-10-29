@@ -11,7 +11,13 @@ gpui-kit.workspace = true
 anyhow.workspace = true
 log.workspace = true
 oriel-core-domain.workspace = true
+oriel-core-index.workspace = true
 oriel-core-paths.workspace = true
+oriel-runtime.workspace = true
+oriel-tools.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 oriel-ui.workspace = true
 oriel-media.workspace = true
 # Electron Oriel keys its thumbnails by SHA-1; this is the crate already in the lockfile.

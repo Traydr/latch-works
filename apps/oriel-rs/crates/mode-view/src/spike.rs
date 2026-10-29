@@ -1,8 +1,8 @@
 //! Phase 0's measurements of View (plan 063, "Scorecard"), run by environment variables so a run
 //! repeats exactly without scripted input, which this Mac does not allow.
 //!
-//! With [`LOG_VARIABLE`] set and a folder opened through `ORIEL_RS_OPEN`, View writes one JSON
-//! line per event to that file:
+//! With [`LOG_VARIABLE`] set and a folder opened through `ORIEL_RS_OPEN`, View lists the folder
+//! recursively, as Phase 0's listing did, and writes one JSON line per event to that file:
 //!
 //! 1. `listed`: the folder's media are listed.
 //! 2. `first-thumbnails`: the first frame drawing every visible tile with its thumbnail, timed
@@ -128,16 +128,17 @@ impl Spike {
             Phase::Listing => {
                 let gallery = gallery.read(cx);
                 if *gallery.listing() == Listing::Listed {
-                    let count = gallery.entries().len();
+                    let count = gallery.media().len();
                     self.write(&format!(r#""event":"listed","items":{count}"#));
                     self.phase = Phase::FirstFrame;
                 }
             }
             Phase::FirstFrame => {
                 let state = gallery.read(cx);
-                let ready = !state.entries().is_empty() && state.is_drawn_complete();
+                let ready = !state.media().is_empty() && state.is_drawn_complete();
                 let rows = state.drawn_rows();
                 let thumbnails = state.thumbnails().clone();
+                let media = state.media().clone();
                 if ready {
                     let stats = thumbnails.read(cx).stats();
                     self.write(&format!(
@@ -149,7 +150,7 @@ impl Spike {
                         stats.from_disk(),
                     ));
                     if self.fill {
-                        thumbnails.update(cx, |thumbnails, cx| thumbnails.want_all(cx));
+                        thumbnails.update(cx, |thumbnails, cx| thumbnails.want(&media, &[], cx));
                         self.phase = Phase::Filling;
                     } else {
                         self.rest_then(window, cx, Self::after_rest);
@@ -254,7 +255,7 @@ impl Spike {
             return;
         }
         self.phase = Phase::Waiting;
-        let entries = view.gallery().read(cx).entries().clone();
+        let entries = view.gallery().read(cx).media().clone();
         let steps = self.steps;
         cx.spawn_in(window, async move |this, cx| {
             for (format, extensions) in [("avif", &["avif"][..]), ("jpeg", &["jpg", "jpeg"][..])] {

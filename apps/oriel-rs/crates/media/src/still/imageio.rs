@@ -6,7 +6,8 @@ use std::path::Path;
 
 use anyhow::{Context as _, Result, bail};
 use objc2_core_foundation::{
-    CFBoolean, CFDictionary, CFNumber, CFRetained, CFString, CFType, CFURL, CGPoint, CGRect, CGSize,
+    CFBoolean, CFData, CFDictionary, CFNumber, CFRetained, CFString, CFType, CFURL, CGPoint,
+    CGRect, CGSize,
 };
 use objc2_core_graphics::{
     CGBitmapContextCreate, CGColorSpace, CGContext, CGImage, CGImageAlphaInfo,
@@ -35,6 +36,22 @@ pub(super) fn decode(path: &Path, max_pixel_size: u32) -> Result<Still> {
     let image = thumbnail(&source, max_pixel_size)
         .with_context(|| format!("ImageIO cannot decode {}", path.display()))?;
     draw_bgra(&image).with_context(|| format!("{} could not be drawn", path.display()))
+}
+
+/// [`decode`] for an image held in memory, such as a frame ffmpeg wrote to its stdout.
+pub(super) fn decode_bytes(bytes: &[u8], max_pixel_size: u32) -> Result<Still> {
+    anyhow::ensure!(max_pixel_size > 0, "a still needs a size to decode at");
+    anyhow::ensure!(!bytes.is_empty(), "there is no image in no bytes");
+    let data = CFData::from_bytes(bytes);
+    // SAFETY: no options, so nothing of the wrong type.
+    let source = unsafe { CGImageSource::with_data(&data, None) }
+        .context("ImageIO cannot read the image")?;
+    // SAFETY: `source` is a valid image source.
+    if unsafe { source.count() } == 0 {
+        bail!("ImageIO finds no image in the bytes");
+    }
+    let image = thumbnail(&source, max_pixel_size).context("ImageIO cannot decode the image")?;
+    draw_bgra(&image).context("the image could not be drawn")
 }
 
 /// The primary image at most `max_pixel_size` on its longer side, made from the full image

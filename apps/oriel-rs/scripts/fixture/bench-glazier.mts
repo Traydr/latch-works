@@ -228,7 +228,7 @@ async function benchEngineScan(root: string): Promise<void> {
  * from the plan so the choice does not depend on the disk.
  */
 function avifSample(): string[] {
-  const plan = planFixture("full", "oriel-rs-063");
+  const plan = planFixture("full", "oriel-gpui-063");
   const jpegs = plan.stills.filter((still) => still.format === "jpeg" && !still.derived);
   const picked: string[] = [];
   const perSize = new Map<string, number>();

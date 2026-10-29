@@ -22,7 +22,7 @@
 //!
 //! libmpv is loaded at run time and never linked (`mpv/ffi.rs` has the order it looks in). It is
 //! Oriel RS's own LGPL build (mpv `-Dgpl=false`, FFmpeg without `--enable-gpl`), made by
-//! `scripts/libmpv/build-libmpv.ts`: from `Contents/Frameworks` in the app bundle, or from
+//! `cargo run -p xtask -- libmpv`: from `Contents/Frameworks` in the app bundle, or from
 //! `apps/oriel-rs/.libmpv/current` while developing. `ORIEL_RS_LIBMPV` names another outside a
 //! bundle. Failing those, a development build falls back to IINA's libmpv, read in place; that
 //! build and its FFmpeg are GPL, fine for measuring here and never loaded by a bundled app.

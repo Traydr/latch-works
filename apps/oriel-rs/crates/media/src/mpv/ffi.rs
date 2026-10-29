@@ -6,7 +6,7 @@
 //! keeps it for good: mpv runs threads of its own, so unloading it while any could still run
 //! would be unsound. [`choose`] decides which libmpv that is; see it for the order.
 //!
-//! Oriel RS's own set (`scripts/libmpv/build-libmpv.ts`) is LGPL, and each of its dylibs finds
+//! Oriel RS's own set (`cargo run -p xtask -- libmpv`) is LGPL, and each of its dylibs finds
 //! the others through `@loader_path`, so it loads from wherever it is copied. IINA's, used while
 //! developing, is GPL; its dependencies are named `@rpath/…` and carry no rpath of their own
 //! (IINA's executable supplies it), so each one dyld reports missing is loaded first from the same
@@ -236,7 +236,7 @@ pub(super) enum LibmpvSource {
     Bundle,
     /// The file [`LIBMPV_VARIABLE`] names.
     Override,
-    /// The LGPL set `scripts/libmpv/build-libmpv.ts` builds into `apps/oriel-rs/.libmpv/current`.
+    /// The LGPL set `cargo run -p xtask -- libmpv` builds into `apps/oriel-rs/.libmpv/current`.
     DevBuild,
     /// IINA's GPL build, read in place: only outside a bundle, and only when nothing else is.
     Iina,
