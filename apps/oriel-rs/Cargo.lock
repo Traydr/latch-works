@@ -5216,8 +5216,11 @@ dependencies = [
  "icu_collator",
  "image",
  "indexmap",
+ "libc",
  "libloading",
  "log",
+ "objc2-foundation 0.3.2",
+ "oriel-avif",
  "oriel-core-domain",
  "oriel-core-format",
  "oriel-core-paths",
@@ -5279,10 +5282,20 @@ dependencies = [
 name = "oriel-mode-tidy"
 version = "0.0.1"
 dependencies = [
+ "anyhow",
+ "futures",
  "gpui-kit",
  "libc",
+ "log",
  "oriel-core-domain",
+ "oriel-core-paths",
+ "oriel-core-tidy",
+ "oriel-media",
+ "oriel-runtime",
+ "oriel-tools",
  "oriel-ui",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

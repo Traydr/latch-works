@@ -1,6 +1,6 @@
 [package]
 name = "oriel-core-tidy"
-description = "Tidy's engine, ported from glazier-core: the catalog, the scan, the analysis passes, duplicate sets and similar groups."
+description = "Tidy's engine, ported from glazier-core: the catalog, the scan, the analysis passes, duplicate sets and similar groups, and the plans, executor and holding that change the archive."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -17,16 +17,25 @@ icu_collator.workspace = true
 indexmap = "2"
 # libvips is LGPL, so it is loaded at run time from the dylib the app ships, never linked in.
 libloading = "0.8"
+# Local time for holding's batch names, as JavaScript's Date reads it.
+libc = "0.2"
 log.workspace = true
 oriel-core-domain.workspace = true
 oriel-core-format.workspace = true
 oriel-core-paths.workspace = true
+# Convert's stills to AVIF, through the vendored libavif.
+oriel-avif.workspace = true
 oriel-runtime.workspace = true
 oriel-tools.workspace = true
 rusqlite.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
+
+# Emptying holding moves its batches to the Trash through NSFileManager, as Electron's
+# `shell.trashItem` does.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSError", "NSFileManager", "NSString", "NSURL"] }
 
 [dev-dependencies]
 gpui-kit = { workspace = true, features = ["test-support"] }

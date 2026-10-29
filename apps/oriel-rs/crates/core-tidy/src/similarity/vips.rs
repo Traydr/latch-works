@@ -124,6 +124,11 @@ struct Api {
     flip: IntOperation,
     cast: IntOperation,
     extract_band: IntOperation,
+    /// `vips_bandjoin_const1`: appends one constant band, as sharp's `EnsureAlpha` does.
+    bandjoin_const1:
+        unsafe extern "C" fn(*mut RawImage, *mut *mut RawImage, c_double, ...) -> c_int,
+    /// `vips_interpretation_max_alpha`: the opaque alpha value of an interpretation.
+    max_alpha: unsafe extern "C" fn(c_int) -> c_double,
     enums: Enums,
 }
 
@@ -584,6 +589,147 @@ impl Vips {
         Ok(pixels)
     }
 
+    /// A still as 8-bit sRGB RGBA, rows top to bottom, the way glazier-core's
+    /// `encodeStillToAvif` decodes it for the archive's AVIF encoder:
+    ///
+    /// ```text
+    /// sharp(path, { failOn: "none", limitInputPixels: false })
+    ///   .rotate().toColourspace("srgb").ensureAlpha().raw({ depth: "uchar" })
+    /// ```
+    ///
+    /// In sharp's pipeline order: the first page, an embedded ICC profile (or CMYK) to sRGB, the
+    /// EXIF turn and mirror, an alpha band if there is none, the 16-bit cast and the conversion
+    /// to sRGB, then 8 bits. Returns the width, the height and the samples.
+    pub fn rgba_pixels(&self, path: &Path) -> Result<(u32, u32, Vec<u8>)> {
+        let file = file_name(path)?;
+        let api = &self.api;
+        let enums = &api.enums;
+        let (mut image, _) = self.open_input(&file, -1)?;
+        let (rotation, flop) = exif_rotation(enums, image.int_field(c"orientation"));
+
+        let interpretation = image.interpretation();
+        let processing_profile = if interpretation == enums.rgb16 {
+            c"p3"
+        } else {
+            c"srgb"
+        };
+        let has_profile = image.type_of(c"icc-profile-data") == api.blob_type;
+        if has_profile && interpretation != enums.labs && interpretation != enums.grey16 {
+            let depth: c_int = if self.is_16_bit(interpretation) {
+                16
+            } else {
+                8
+            };
+            let transformed = self.apply(&image, |input, out| {
+                // SAFETY: `vips_icc_transform` with sharp's options, NULL-terminated.
+                unsafe {
+                    (api.icc_transform)(
+                        input,
+                        out,
+                        processing_profile.as_ptr(),
+                        c"embedded".as_ptr(),
+                        1 as c_int,
+                        c"depth".as_ptr(),
+                        depth,
+                        c"intent".as_ptr(),
+                        enums.intent_perceptual,
+                        ptr::null::<c_char>(),
+                    )
+                }
+            });
+            // sharp warns "Invalid embedded profile" and carries on with the pixels as they are.
+            if let Ok(transformed) = transformed {
+                image = transformed;
+            }
+        } else if interpretation == enums.cmyk {
+            image = self.apply(&image, |input, out| {
+                // SAFETY: `vips_icc_transform` with sharp's options, NULL-terminated.
+                unsafe {
+                    (api.icc_transform)(
+                        input,
+                        out,
+                        processing_profile.as_ptr(),
+                        c"input_profile".as_ptr(),
+                        c"cmyk".as_ptr(),
+                        c"intent".as_ptr(),
+                        enums.intent_perceptual,
+                        ptr::null::<c_char>(),
+                    )
+                }
+            })?;
+        }
+
+        // StaySequential: a turn reads out of order, so the pixels are made in memory first.
+        // SAFETY: a live image.
+        if rotation != enums.angle_d0 && unsafe { (api.is_sequential)(image.ptr()) } != 0 {
+            // SAFETY: a live image; the result is a new reference or NULL.
+            let in_memory = unsafe { (api.copy_memory)(image.ptr()) };
+            image = self.own(in_memory, "Could not hold the image in memory")?;
+            image = self.apply(&image, |input, out| {
+                // SAFETY: `vips_copy` with no options.
+                unsafe { (api.copy)(input, out, ptr::null::<c_char>()) }
+            })?;
+            // SAFETY: a live image this alone holds.
+            unsafe { (api.remove)(image.ptr(), c"vips-sequential".as_ptr()) };
+        }
+        if rotation != enums.angle_d0 {
+            image = self.int_operation(&image, api.rot, rotation)?;
+        }
+        if flop {
+            image = self.int_operation(&image, api.flip, enums.direction_horizontal)?;
+        }
+
+        // EnsureAlpha(image, 1): an opaque band at the interpretation's full alpha.
+        if !image.has_alpha() {
+            // SAFETY: plain call.
+            let opaque = unsafe { (api.max_alpha)(image.interpretation()) };
+            image = self.apply(&image, |input, out| {
+                // SAFETY: `vips_bandjoin_const1` with no options.
+                unsafe { (api.bandjoin_const1)(input, out, opaque, ptr::null::<c_char>()) }
+            })?;
+        }
+
+        // The output colour space, then 8 bits for `raw({ depth: "uchar" })`.
+        if self.is_16_bit(image.interpretation()) {
+            image = self.int_operation(&image, api.cast, enums.format_ushort)?;
+        }
+        let interpretation = image.interpretation();
+        if interpretation != enums.srgb {
+            image = self.apply(&image, |input, out| {
+                // SAFETY: `vips_colourspace` with sharp's options, NULL-terminated.
+                unsafe {
+                    (api.colourspace)(
+                        input,
+                        out,
+                        enums.srgb,
+                        c"source_space".as_ptr(),
+                        interpretation,
+                        ptr::null::<c_char>(),
+                    )
+                }
+            })?;
+        }
+        if image.format() != enums.format_uchar {
+            image = self.int_operation(&image, api.cast, enums.format_uchar)?;
+        }
+
+        let (width, height, bands) = (image.width(), image.height(), image.bands());
+        if bands != 4 {
+            return Err(VipsError(format!(
+                "Expected RGBA, got {bands} bands after the conversion."
+            )));
+        }
+        let pixels = self.write_to_memory(&image)?;
+        let expected = (width.unsigned_abs() as usize) * (height.unsigned_abs() as usize) * 4;
+        if pixels.len() != expected {
+            return Err(VipsError(format!(
+                "Expected {expected} RGBA bytes, got {}.",
+                pixels.len()
+            )));
+        }
+        Ok((width.unsigned_abs(), height.unsigned_abs(), pixels))
+    }
+
     /// Reads an image's header without decoding its pixels, as glazier-core's `probeImage` does
     /// through sharp's `metadata()`, which opens the file as the pipeline does.
     pub fn probe(&self, path: &Path) -> Result<ImageProbe> {
@@ -856,6 +1002,8 @@ impl Api {
                 flip: symbol(library, "vips_flip")?,
                 cast: symbol(library, "vips_cast")?,
                 extract_band: symbol(library, "vips_extract_band")?,
+                bandjoin_const1: symbol(library, "vips_bandjoin_const1")?,
+                max_alpha: symbol(library, "vips_interpretation_max_alpha")?,
                 enums,
             })
         }

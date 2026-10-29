@@ -171,7 +171,7 @@ fn hash_small_file(path: &Path) -> std::io::Result<String> {
     Ok(hex(&Sha256::digest(&bytes)))
 }
 
-enum HashError {
+pub(crate) enum HashError {
     Cancelled,
     Unreadable,
 }
@@ -179,7 +179,7 @@ enum HashError {
 /// A file's SHA-256, the duplicate content id. Fails when the file's size, mtime or ctime (in
 /// whole milliseconds) are not `expected` once it has been read, so a hash never describes bytes
 /// that changed underneath it.
-fn hash_whole_file(
+pub(crate) fn hash_whole_file(
     path: &Path,
     expected: (i64, f64, f64),
     progress: &dyn Progress,

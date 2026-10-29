@@ -1,5 +1,9 @@
 //! What Tidy reads from ffprobe and ffmpeg, from glazier-core's `media/video-probe.ts` and the
-//! loudness pass's `volumedetect`.
+//! loudness pass's `volumedetect`; and the conversions Convert and Shrink run, in [`transcode`]
+//! (ffmpeg) and [`still`] (libavif).
+
+pub mod still;
+pub mod transcode;
 
 use std::path::Path;
 use std::time::Duration;

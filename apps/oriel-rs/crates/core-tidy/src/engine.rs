@@ -1,6 +1,7 @@
 //! The engine the Tidy UI talks to, after glazier-core's `engine/engine.ts`: its roots and
-//! settings, the scan and the analysis as `oriel-runtime` jobs, and the queries behind Overview,
-//! the Library and Duplicates.
+//! settings, the scan and the analysis as `oriel-runtime` jobs, the queries behind Overview,
+//! the Library and Duplicates, and (in [`changes`]) every change to the archive with its history
+//! and holding.
 //!
 //! The work itself is synchronous and runs on a thread of its own, its passes on worker threads
 //! below it; the catalog's calls go to the catalog's SQLite thread. Jobs report their phase and
@@ -9,9 +10,16 @@
 //! time, as glazier-core's queue runs one job at a time, so a scan and an analysis of one root
 //! never interleave.
 
+mod changes;
+
+pub use changes::{
+    Applied, FollowUp, FollowUpReport, Performed, TidiedUp, Undone, still_concurrency,
+};
+
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 
 use anyhow::{Context as _, bail};
 use futures::channel::oneshot;
@@ -115,6 +123,12 @@ struct Inner {
     /// change is not kept.
     generation: AtomicU64,
     sets: Mutex<Option<SetCache>>,
+    /// Where each root's held files go.
+    places: crate::plans::holding::HoldingPlaces,
+    /// Whether the pinned ffmpeg has SVT-AV1, asked once.
+    svt_av1: OnceLock<bool>,
+    /// Convert's estimates per root and category, kept while the category holds the same files.
+    estimates: Mutex<HashMap<(RootId, crate::contract::OptimizeCategory), changes::CachedEstimate>>,
 }
 
 /// Tidy's engine. Clones share one catalog and one queue of work.
@@ -199,7 +213,20 @@ impl TidyEngine {
             std::fs::create_dir_all(folder)
                 .with_context(|| format!("creating {}", folder.display()))?;
         }
+        let data_dir = catalog_path
+            .parent()
+            .map_or_else(|| data.tidy(), Path::to_path_buf);
         let catalog = Catalog::open(catalog_path).await?;
+        // Held files keep their place when the data folder moves, and a change a crash stopped
+        // halfway is cancelled, its temp files removed, so its finished steps can be undone.
+        let followed = data_dir.clone();
+        catalog
+            .call(move |connection| {
+                crate::plans::holding::follow_data_folder(connection, &followed)?;
+                crate::plans::journal::recover_interrupted_plans(connection)?;
+                Ok(())
+            })
+            .await?;
         Ok(Self {
             inner: Arc::new(Inner {
                 catalog,
@@ -209,6 +236,9 @@ impl TidyEngine {
                 scan_counter: Mutex::new(now_ms()),
                 generation: AtomicU64::new(0),
                 sets: Mutex::new(None),
+                places: crate::plans::holding::HoldingPlaces::new(data_dir),
+                svt_av1: OnceLock::new(),
+                estimates: Mutex::new(HashMap::new()),
             }),
         })
     }

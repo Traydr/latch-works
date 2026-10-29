@@ -102,3 +102,129 @@ pub fn v8_log(x: f64) -> f64 {
         dk.mul_add(LN2_HI, -(s.mul_add(f - r, -(dk * LN2_LO)) - f))
     }
 }
+
+/// `value.toFixed(digits)` as the ECMAScript spec defines it, copied from `oriel-core-domain`
+/// (where it is private): the exact decimal value of the double, rounded to `digits` places
+/// with a tie going away from zero, where Rust's `{:.1}` sends a tie to the even digit. History's
+/// byte counts ("84.6 KB") are written with it.
+pub fn to_fixed(value: f64, digits: usize) -> String {
+    if value.is_nan() {
+        return "NaN".to_owned();
+    }
+    if value.is_infinite() {
+        return if value > 0.0 { "Infinity" } else { "-Infinity" }.to_owned();
+    }
+    if value.abs() >= 1e21 {
+        return format!("{value:e}").replacen('e', "e+", 1);
+    }
+    let sign = if value < 0.0 { "-" } else { "" };
+    let magnitude = value.abs();
+    let exact = format!("{magnitude:.*}", fraction_digits(magnitude).max(digits + 1));
+    let (whole, fraction) = exact.split_once('.').unwrap_or((exact.as_str(), ""));
+    let mut kept: Vec<u8> = whole.bytes().chain(fraction.bytes().take(digits)).collect();
+    if fraction
+        .as_bytes()
+        .get(digits)
+        .is_some_and(|&digit| digit >= b'5')
+    {
+        round_up(&mut kept);
+    }
+    let point = kept.len() - digits;
+    let mut text = String::with_capacity(sign.len() + kept.len() + 1);
+    text.push_str(sign);
+    text.extend(kept[..point].iter().map(|&digit| char::from(digit)));
+    if digits > 0 {
+        text.push('.');
+        text.extend(kept[point..].iter().map(|&digit| char::from(digit)));
+    }
+    text
+}
+
+/// How many decimal places the exact value of a finite double has.
+fn fraction_digits(value: f64) -> usize {
+    if value == 0.0 {
+        return 0;
+    }
+    let bits = value.to_bits();
+    let biased_exponent = ((bits >> 52) & 0x7ff) as i32;
+    let mantissa = bits & ((1 << 52) - 1);
+    let (significand, exponent) = if biased_exponent == 0 {
+        (mantissa, -1074)
+    } else {
+        (mantissa | (1 << 52), biased_exponent - 1075)
+    };
+    let lowest_bit = exponent + significand.trailing_zeros() as i32;
+    usize::try_from(-lowest_bit).unwrap_or(0)
+}
+
+/// Adds one to a run of ASCII digits, carrying, and growing it by a leading 1 when it was all 9s.
+fn round_up(digits: &mut Vec<u8>) {
+    for digit in digits.iter_mut().rev() {
+        if *digit == b'9' {
+            *digit = b'0';
+        } else {
+            *digit += 1;
+            return;
+        }
+    }
+    digits.insert(0, b'1');
+}
+
+/// Bytes in decimal units with one decimal, as glazier-core's `formatBytes` writes them:
+/// "84.6 KB", "512 B".
+pub fn format_bytes(bytes: f64) -> String {
+    const UNITS: [&str; 4] = ["B", "KB", "MB", "GB"];
+    let mut value = bytes;
+    let mut unit = 0;
+    while value >= 1000.0 && unit < UNITS.len() - 1 {
+        value /= 1000.0;
+        unit += 1;
+    }
+    if unit == 0 {
+        format!("{} B", js_round(value))
+    } else {
+        format!("{} {}", to_fixed(value, 1), UNITS[unit])
+    }
+}
+
+/// A count as `Intl.NumberFormat("en-US")` writes it: digits grouped by threes with commas.
+pub fn format_count(count: i64) -> String {
+    let digits = count.unsigned_abs().to_string();
+    let mut grouped = String::with_capacity(digits.len() + digits.len() / 3 + 1);
+    if count < 0 {
+        grouped.push('-');
+    }
+    for (index, digit) in digits.chars().enumerate() {
+        if index > 0 && (digits.len() - index).is_multiple_of(3) {
+            grouped.push(',');
+        }
+        grouped.push(digit);
+    }
+    grouped
+}
+
+/// "1 file", "206 files": a count with the noun that agrees with it, as `countOf` writes it.
+pub fn count_of(count: i64, one: &str, many: &str) -> String {
+    format!(
+        "{} {}",
+        format_count(count),
+        if count == 1 { one } else { many }
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bytes_and_counts_read_as_glazier_core_writes_them() {
+        assert_eq!(format_bytes(512.0), "512 B");
+        assert_eq!(format_bytes(1250.0), "1.3 KB");
+        assert_eq!(format_bytes(84_640.0), "84.6 KB");
+        assert_eq!(format_bytes(999_950.0), "1000.0 KB");
+        assert_eq!(format_bytes(5e12), "5000.0 GB");
+        assert_eq!(count_of(1, "file", "files"), "1 file");
+        assert_eq!(count_of(1206, "file", "files"), "1,206 files");
+        assert_eq!(format_count(1_234_567), "1,234,567");
+    }
+}

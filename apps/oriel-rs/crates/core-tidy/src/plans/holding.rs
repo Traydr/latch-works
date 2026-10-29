@@ -1,0 +1,546 @@
+//! Holding, from glazier-core's `plans/holding.ts`: where files a change takes out of a root wait
+//! until the owner empties them into the Trash, and how they come back.
+//!
+//! Holding is always outside the root, so nothing that syncs or indexes the root (Sync, View, a
+//! cloud drive) sees what is held. It is Tidy's data folder (`tidy/holding/<id>-<name>`), and
+//! holding a file there is a rename when the root shares the data folder's volume. glazier-core
+//! holds a root on another volume at the top of that volume instead
+//! (`<volume>/.latch-works/glazier/holding`); Oriel RS does not while Tidy's sandbox holds,
+//! since that folder is outside `~/.latch-works/oriel-rs`, so such a root holds in the data
+//! folder too, by copying across and checking the copy.
+
+use std::collections::HashMap;
+use std::fs;
+use std::io;
+use std::os::unix::fs::MetadataExt as _;
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, PoisonError};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use anyhow::{Context as _, bail};
+use rusqlite::{Connection, OptionalExtension as _, params};
+
+use crate::catalog::rows::to_absolute_path;
+use crate::catalog::{Catalog, now_ms};
+use crate::contract::{HoldingId, HoldingItem, HoldingList, HoldingRequest, PlanId, RootId};
+
+/// A root's own folder inside holding: `12-Photos`, readable when someone looks. Runs of
+/// characters that are not letters, digits, spaces, dots, underscores or hyphens become one `_`.
+/// (`char::is_alphabetic` stands in for the TypeScript's `\p{L}`; it also admits the few
+/// combining marks Unicode counts as alphabetic.)
+pub fn root_folder_name(root_id: RootId, root_path: &str) -> String {
+    let base = Path::new(root_path)
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let mut name = String::with_capacity(base.len());
+    let mut replacing = false;
+    for character in base.chars() {
+        let kept = character.is_alphabetic()
+            || character.is_numeric()
+            || matches!(character, ' ' | '.' | '_' | '-');
+        if kept {
+            name.push(character);
+            replacing = false;
+        } else if !replacing {
+            name.push('_');
+            replacing = true;
+        }
+    }
+    if name.is_empty() {
+        name.push_str("root");
+    }
+    format!("{root_id}-{name}")
+}
+
+/// Where each root's held files go: `<data>/holding/<id>-<name>`, chosen once per root.
+#[derive(Debug)]
+pub struct HoldingPlaces {
+    data_dir: PathBuf,
+    folders: Mutex<HashMap<RootId, PathBuf>>,
+}
+
+impl HoldingPlaces {
+    pub fn new(data_dir: impl Into<PathBuf>) -> Self {
+        Self {
+            data_dir: data_dir.into(),
+            folders: Mutex::new(HashMap::new()),
+        }
+    }
+
+    pub fn data_dir(&self) -> &Path {
+        &self.data_dir
+    }
+
+    /// The holding folder of a root, once the data folder exists.
+    pub fn folder_for(&self, root_id: RootId, root_path: &str) -> io::Result<PathBuf> {
+        let mut folders = self.folders.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(folder) = folders.get(&root_id) {
+            return Ok(folder.clone());
+        }
+        fs::create_dir_all(&self.data_dir)?;
+        let folder = self
+            .data_dir
+            .join("holding")
+            .join(root_folder_name(root_id, root_path));
+        folders.insert(root_id, folder.clone());
+        Ok(folder)
+    }
+
+    /// The folder a root's held files go to if it has been chosen already this run.
+    pub fn known_folder(&self, root_id: RootId) -> Option<PathBuf> {
+        self.folders
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(&root_id)
+            .cloned()
+    }
+}
+
+/// Local time's fields, from the C library, as JavaScript's `Date` getters read them.
+fn local_time(at: SystemTime) -> (i32, i32, i32, i32, i32, i32) {
+    let seconds = at
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_secs()) as libc::time_t;
+    // SAFETY: `tm` is plain data; `localtime_r` fills it from `seconds` and is thread-safe.
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    // SAFETY: both pointers are valid for the call.
+    let filled = unsafe { !libc::localtime_r(&seconds, &mut tm).is_null() };
+    if !filled {
+        return (1970, 1, 1, 0, 0, 0);
+    }
+    (
+        tm.tm_year + 1900,
+        tm.tm_mon + 1,
+        tm.tm_mday,
+        tm.tm_hour,
+        tm.tm_min,
+        tm.tm_sec,
+    )
+}
+
+/// One folder per plan run, named so the newest sort last: `2026-10-24_093012-plan-12`, in local
+/// time.
+pub fn holding_batch_name(plan_id: Option<PlanId>, now: SystemTime) -> String {
+    let (year, month, day, hour, minute, second) = local_time(now);
+    let stamp = format!("{year}-{month:02}-{day:02}_{hour:02}{minute:02}{second:02}");
+    match plan_id {
+        Some(plan_id) => format!("{stamp}-plan-{plan_id}"),
+        None => format!("{stamp}-manual"),
+    }
+}
+
+/// `SystemTime` of a file time in whole milliseconds, as Node's `utimes` with a `Date` sets it.
+fn whole_ms_time(time: SystemTime) -> SystemTime {
+    let since = time.duration_since(UNIX_EPOCH).unwrap_or_default();
+    UNIX_EPOCH + Duration::from_millis(since.as_millis() as u64)
+}
+
+/// Gives `path` the access and modification times of `like`, in whole milliseconds, as
+/// glazier-core's `utimes(path, stats.atime, stats.mtime)` does.
+pub fn copy_times(path: &Path, like: &fs::Metadata) -> io::Result<()> {
+    let times = fs::FileTimes::new()
+        .set_accessed(whole_ms_time(like.accessed()?))
+        .set_modified(whole_ms_time(like.modified()?));
+    fs::File::options().write(true).open(path)?.set_times(times)
+}
+
+/// Moves a file, by rename when source and target share a volume and otherwise by copying,
+/// checking the copy's size, giving it the original's times and deleting the original.
+pub fn move_file(source: &Path, target: &Path) -> io::Result<()> {
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    match fs::rename(source, target) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::CrossesDevices => {
+            let before = fs::metadata(source)?;
+            fs::copy(source, target)?;
+            if fs::metadata(target)?.len() != before.len() {
+                let _ = fs::remove_file(target);
+                return Err(io::Error::other(format!(
+                    "The copy of {} came out a different size.",
+                    source.display()
+                )));
+            }
+            copy_times(target, &before)?;
+            fs::remove_file(source)
+        }
+        Err(error) => Err(error),
+    }
+}
+
+/// Whether anything (a file, a folder, a broken link) sits at `target`.
+pub fn path_exists(target: &Path) -> bool {
+    fs::symlink_metadata(target).is_ok()
+}
+
+/// A free name for `target`: itself, or `name (2).ext`, `name (3).ext`, … beside it.
+pub fn free_path(target: &Path) -> PathBuf {
+    if !path_exists(target) {
+        return target.to_path_buf();
+    }
+    let parent = target.parent().unwrap_or(Path::new(""));
+    let stem = target
+        .file_stem()
+        .map(|stem| stem.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let extension = target
+        .extension()
+        .map(|extension| format!(".{}", extension.to_string_lossy()))
+        .unwrap_or_default();
+    (2..)
+        .map(|suffix| parent.join(format!("{stem} ({suffix}){extension}")))
+        .find(|candidate| !path_exists(candidate))
+        .expect("some suffix is free")
+}
+
+/// A path relative to `base`, with forward slashes.
+fn relative_slashes(base: &Path, path: &Path) -> String {
+    path.strip_prefix(base)
+        .unwrap_or(path)
+        .components()
+        .map(|part| part.as_os_str().to_string_lossy().into_owned())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+/// What to hold, from which root, and why.
+#[derive(Clone, Debug)]
+pub struct HoldRequest<'a> {
+    pub root_id: RootId,
+    pub root_path: &'a str,
+    pub rel_path: &'a str,
+    pub batch: &'a str,
+    pub plan_id: Option<PlanId>,
+    pub reason: &'a str,
+}
+
+/// The catalog and the places holding writes to.
+#[derive(Clone, Copy)]
+pub struct HoldingStore<'a> {
+    pub catalog: &'a Catalog,
+    pub places: &'a HoldingPlaces,
+}
+
+/// Moves a file into its root's holding folder, keeping its path inside the batch, and records
+/// where it went. Called from a worker thread.
+pub fn hold_file(store: HoldingStore<'_>, request: &HoldRequest<'_>) -> anyhow::Result<HoldingId> {
+    let source = to_absolute_path(request.root_path, request.rel_path);
+    let size = fs::metadata(&source)?.size() as i64;
+    let folder = store
+        .places
+        .folder_for(request.root_id, request.root_path)?;
+    let batch_path = folder.join(request.batch);
+    let target = free_path(&to_absolute_path(
+        &batch_path.to_string_lossy(),
+        request.rel_path,
+    ));
+    move_file(&source, &target)?;
+
+    let row = (
+        request.root_id,
+        request.rel_path.to_owned(),
+        relative_slashes(&folder, &target),
+        target.to_string_lossy().into_owned(),
+        request.batch.to_owned(),
+        batch_path.to_string_lossy().into_owned(),
+        size,
+        request.plan_id,
+        request.reason.to_owned(),
+    );
+    store.catalog.blocking(move |connection| {
+        connection.execute(
+            "INSERT INTO holding (root_id, original_rel, hold_rel, hold_path, batch, batch_path,
+          size, held_at, plan_id, reason)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            params![
+                row.0,
+                row.1,
+                row.2,
+                row.3,
+                row.4,
+                row.5,
+                row.6,
+                now_ms(),
+                row.7,
+                row.8
+            ],
+        )?;
+        Ok(connection.last_insert_rowid())
+    })
+}
+
+/// A holding row with its root's path.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HoldingRecord {
+    pub id: HoldingId,
+    pub root_id: RootId,
+    pub root_path: String,
+    pub original_rel: String,
+    pub hold_path: String,
+    pub batch: String,
+    pub batch_path: String,
+    pub size: i64,
+    pub held_at: i64,
+    pub plan_id: Option<PlanId>,
+    pub reason: String,
+    pub state: String,
+}
+
+const HOLDING_COLUMNS: &str = "h.id, h.root_id, r.path AS root_path, h.original_rel, \
+  h.hold_path, h.batch, h.batch_path, h.size, h.held_at, h.plan_id, h.reason, h.state";
+
+fn holding_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<HoldingRecord> {
+    Ok(HoldingRecord {
+        id: row.get(0)?,
+        root_id: row.get(1)?,
+        root_path: row.get(2)?,
+        original_rel: row.get(3)?,
+        hold_path: row.get(4)?,
+        batch: row.get(5)?,
+        batch_path: row.get(6)?,
+        size: row.get(7)?,
+        held_at: row.get(8)?,
+        plan_id: row.get(9)?,
+        reason: row.get(10)?,
+        state: row.get(11)?,
+    })
+}
+
+impl HoldingRecord {
+    pub fn to_item(&self) -> HoldingItem {
+        HoldingItem {
+            id: self.id,
+            root_id: self.root_id,
+            original_path: to_absolute_path(&self.root_path, &self.original_rel)
+                .to_string_lossy()
+                .into_owned(),
+            hold_path: self.hold_path.clone(),
+            size: self.size,
+            held_at: self.held_at,
+            plan_id: self.plan_id,
+            reason: self.reason.clone(),
+        }
+    }
+}
+
+/// A root's held files, newest first, with their count and bytes.
+pub fn list_holding(
+    connection: &Connection,
+    request: &HoldingRequest,
+) -> anyhow::Result<HoldingList> {
+    let (total, bytes): (i64, Option<i64>) = connection.query_row(
+        "SELECT COUNT(*) AS total, SUM(size) AS bytes FROM holding
+      WHERE root_id = ?1 AND state = 'held'",
+        [request.root_id],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
+    let mut statement = connection.prepare_cached(&format!(
+        "SELECT {HOLDING_COLUMNS} FROM holding h JOIN roots r ON r.id = h.root_id
+      WHERE h.root_id = ?1 AND h.state = 'held'
+      ORDER BY h.held_at DESC, h.id DESC LIMIT ?2 OFFSET ?3"
+    ))?;
+    let items = statement
+        .query_map(
+            params![request.root_id, request.limit, request.offset],
+            holding_record,
+        )?
+        .map(|record| record.map(|record| record.to_item()))
+        .collect::<rusqlite::Result<_>>()?;
+    Ok(HoldingList {
+        total_bytes: bytes.unwrap_or(0),
+        total,
+        items,
+    })
+}
+
+pub fn holding_record_by_id(
+    connection: &Connection,
+    id: HoldingId,
+) -> anyhow::Result<Option<HoldingRecord>> {
+    Ok(connection
+        .query_row(
+            &format!(
+                "SELECT {HOLDING_COLUMNS} FROM holding h JOIN roots r ON r.id = h.root_id
+          WHERE h.id = ?1"
+            ),
+            [id],
+            holding_record,
+        )
+        .optional()?)
+}
+
+/// A restore that would overwrite whatever now sits at the original path.
+#[derive(Debug)]
+pub struct RestoreConflict(pub String);
+
+impl std::fmt::Display for RestoreConflict {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for RestoreConflict {}
+
+/// Moves a held file back to where it came from. Refuses when something now sits at the
+/// original path, so a restore never overwrites. Called from a worker thread.
+pub fn restore_held(catalog: &Catalog, id: HoldingId) -> anyhow::Result<HoldingRecord> {
+    let record = catalog.blocking(move |connection| holding_record_by_id(connection, id))?;
+    let Some(record) = record.filter(|record| record.state == "held") else {
+        bail!("That item is no longer in holding.");
+    };
+    let original = to_absolute_path(&record.root_path, &record.original_rel);
+    if path_exists(&original) {
+        bail!(RestoreConflict(format!(
+            "Something already exists at {}.",
+            record.original_rel
+        )));
+    }
+    move_file(Path::new(&record.hold_path), &original)?;
+    catalog.blocking(move |connection| {
+        connection.execute("UPDATE holding SET state = 'restored' WHERE id = ?1", [id])?;
+        Ok(())
+    })?;
+    Ok(record)
+}
+
+/// The holding batch folders of a root that still hold something, as absolute paths.
+pub fn held_batch_paths(connection: &Connection, root_id: RootId) -> anyhow::Result<Vec<String>> {
+    let mut statement = connection.prepare_cached(
+        "SELECT DISTINCT batch_path FROM holding WHERE root_id = ?1 AND state = 'held'
+      ORDER BY batch_path",
+    )?;
+    let rows = statement.query_map([root_id], |row| row.get(0))?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
+}
+
+/// Records that whole batch folders went to the Trash: everything still marked held in them is
+/// gone (restored items had already left). Only folders this catalog handed out count, and the
+/// root's holding folder goes once its last batch has. Called from a worker thread.
+pub fn mark_batches_emptied(
+    catalog: &Catalog,
+    root_id: RootId,
+    batch_paths: &[String],
+) -> anyhow::Result<i64> {
+    let mut emptied = 0;
+    for batch_path in batch_paths {
+        let batch = batch_path.clone();
+        emptied += catalog.blocking(move |connection| {
+            Ok(connection.execute(
+                "UPDATE holding SET state = 'emptied'
+          WHERE root_id = ?1 AND batch_path = ?2 AND state = 'held'",
+                params![root_id, batch],
+            )? as i64)
+        })?;
+        if let Some(folder) = Path::new(batch_path).parent() {
+            let _ = fs::remove_dir(folder);
+        }
+    }
+    Ok(emptied)
+}
+
+/// Keeps held files findable when the data folder moves, since the catalog records each one's
+/// absolute place: the catalog notes the folder it was opened from, and opened from another one
+/// it rewrites every place under the old folder to the same place under the new.
+pub fn follow_data_folder(connection: &Connection, data_dir: &Path) -> anyhow::Result<()> {
+    let current = data_dir.to_string_lossy().into_owned();
+    let recorded: Option<String> = connection
+        .query_row(
+            "SELECT value FROM settings WHERE key = 'data_dir'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if let Some(recorded) = recorded.filter(|recorded| *recorded != current) {
+        let prefix = format!("{recorded}{}", std::path::MAIN_SEPARATOR);
+        let moved = |place: &str| match place.strip_prefix(&prefix) {
+            Some(rest) => Path::new(&current)
+                .join(rest)
+                .to_string_lossy()
+                .into_owned(),
+            None => place.to_owned(),
+        };
+        let placed: Vec<(i64, String, Option<String>)> = {
+            let mut statement = connection.prepare(
+                "SELECT id, hold_path, batch_path FROM holding WHERE hold_path IS NOT NULL",
+            )?;
+            let rows =
+                statement.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?;
+            rows.collect::<rusqlite::Result<_>>()?
+        };
+        for (id, hold_path, batch_path) in placed {
+            connection.execute(
+                "UPDATE holding SET hold_path = ?1, batch_path = ?2 WHERE id = ?3",
+                params![moved(&hold_path), batch_path.as_deref().map(moved), id],
+            )?;
+        }
+    }
+    connection.execute(
+        "INSERT INTO settings (key, value) VALUES ('data_dir', ?1)
+      ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+        [current],
+    )?;
+    Ok(())
+}
+
+/// Moves a file or folder to the Trash through `NSFileManager`, as Electron's `shell.trashItem`
+/// does on macOS. Emptying holding goes through here, so the owner can still take a batch back
+/// out of the Trash.
+#[cfg(target_os = "macos")]
+pub fn move_to_trash(path: &Path) -> anyhow::Result<()> {
+    use objc2_foundation::{NSFileManager, NSString, NSURL};
+
+    let text = path
+        .to_str()
+        .with_context(|| format!("{} is not a Unicode path", path.display()))?;
+    let url = NSURL::fileURLWithPath(&NSString::from_str(text));
+    let manager = NSFileManager::defaultManager();
+    manager
+        .trashItemAtURL_resultingItemURL_error(&url, None)
+        .map_err(|error| anyhow::anyhow!("{}", error.localizedDescription()))
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn move_to_trash(path: &Path) -> anyhow::Result<()> {
+    bail!(
+        "Moving {} to the Trash is not ported to this platform yet.",
+        path.display()
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_roots_holding_folder_is_named_after_it() {
+        assert_eq!(root_folder_name(12, "/a/Photos"), "12-Photos");
+        assert_eq!(root_folder_name(3, "/a/My: Pics?!"), "3-My_ Pics_");
+        assert_eq!(root_folder_name(4, "/"), "4-root");
+        assert_eq!(root_folder_name(5, "/a/Ünï 2024"), "5-Ünï 2024");
+    }
+
+    #[test]
+    fn batch_names_sort_by_local_time_and_name_their_plan() {
+        let name = holding_batch_name(Some(12), SystemTime::now());
+        assert!(name.ends_with("-plan-12"), "{name}");
+        assert_eq!(name.len(), "2026-10-24_093012-plan-12".len());
+        assert!(holding_batch_name(None, SystemTime::now()).ends_with("-manual"));
+    }
+
+    #[test]
+    fn a_taken_name_gets_a_number() {
+        let folder = std::env::temp_dir().join(format!("oriel-free-path-{}", std::process::id()));
+        fs::create_dir_all(&folder).unwrap();
+        let target = folder.join("a.tar.gz");
+        assert_eq!(free_path(&target), target);
+        fs::write(&target, b"x").unwrap();
+        fs::write(folder.join("a.tar (2).gz"), b"x").unwrap();
+        assert_eq!(free_path(&target), folder.join("a.tar (3).gz"));
+        let hidden = folder.join(".DS_Store");
+        fs::write(&hidden, b"x").unwrap();
+        assert_eq!(free_path(&hidden), folder.join(".DS_Store (2)"));
+        fs::remove_dir_all(&folder).unwrap();
+    }
+}

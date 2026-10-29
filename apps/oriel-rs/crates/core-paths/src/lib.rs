@@ -145,7 +145,11 @@ impl DataRoot {
         // The temp folder can sit behind a symlink (`/var` is `/private/var` on macOS), so both
         // spellings count.
         let temp_resolved = std::fs::canonicalize(&temp).unwrap_or_else(|_| temp.clone());
-        [self.sandbox(), temp, temp_resolved]
+        // So can the data root itself (`ORIEL_RS_DATA_DIR=/tmp/…`), and callers often hand over a
+        // canonical path.
+        let sandbox = self.sandbox();
+        let sandbox_resolved = std::fs::canonicalize(&sandbox).unwrap_or_else(|_| sandbox.clone());
+        [sandbox, sandbox_resolved, temp, temp_resolved]
             .iter()
             .any(|allowed| root.starts_with(allowed) && root != *allowed)
     }

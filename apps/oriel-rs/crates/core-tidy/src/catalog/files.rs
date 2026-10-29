@@ -297,7 +297,7 @@ fn in_list(params: &mut SqlParams, prefix: &str, values: &[&str]) -> String {
 }
 
 /// `String.prototype.trim`'s white space, which the search ignores at either end.
-fn js_trim(text: &str) -> &str {
+pub(crate) fn js_trim(text: &str) -> &str {
     text.trim_matches(|character: char| {
         (character.is_whitespace() && character != '\u{85}') || character == '\u{feff}'
     })
