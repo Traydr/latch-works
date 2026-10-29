@@ -1,6 +1,9 @@
 //! View's top bar, the one Tidy and Sync have (`GalleryHeader.tsx`): the folder's name and where
-//! it is; then the scan's status, what the folder holds, the selection's place, and the folder
-//! steps (Parent, Prev Folder, Next Folder).
+//! it is ("parent / folder", cut from the start when long so the folder's name stays); then the
+//! scan's status, what the folder holds, the selection's place, and the folder steps (Parent,
+//! Prev Folder, Next Folder).
+
+use std::path::Path;
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::{
@@ -38,6 +41,16 @@ fn pill(id: &'static str, text: SharedString, cx: &App) -> impl IntoElement {
         .child(text)
 }
 
+/// `currentFolderPathLabel`: the folder's parent and its name, "Pictures / 2024", or the name
+/// alone for a folder with no parent.
+pub(crate) fn folder_caption(folder: &Path) -> String {
+    let name = display_name(folder);
+    match folder.parent() {
+        Some(parent) => format!("{} / {name}", display_name(parent)),
+        None => name,
+    }
+}
+
 impl ViewMode {
     pub(crate) fn render_top_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let catalog = self.catalog.read(cx);
@@ -48,6 +61,9 @@ impl ViewMode {
             .map(display_name)
             .unwrap_or_else(|| "View".to_string());
         let mut bar = TopBar::new(&self.shell, title);
+        if let Some(root) = root.as_deref() {
+            bar = bar.meta(folder_caption(root));
+        }
 
         // The scan's status: while it runs, after an error, and for a while after it is done.
         let state = catalog.state();

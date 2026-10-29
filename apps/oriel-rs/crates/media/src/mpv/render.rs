@@ -9,7 +9,7 @@
 
 use std::collections::VecDeque;
 use std::ffi::{c_int, c_void};
-use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -169,6 +169,9 @@ pub(super) struct Shared {
     drawn: AtomicU64,
     /// When the newest frames' draws began, by number: mpv takes a frame then.
     begun: Mutex<VecDeque<(u64, Instant)>>,
+    /// The longest side frames are drawn at, in pixels, or 0 for the picture's own size: a
+    /// gallery tile's preview needs no more than the tile shows.
+    max_side: AtomicU32,
 }
 
 impl Shared {
@@ -183,7 +186,29 @@ impl Shared {
             lead_override_ns: lead_override.map_or(-1, |lead| lead.as_nanos() as i64),
             drawn: AtomicU64::new(0),
             begun: Mutex::new(VecDeque::with_capacity(BEGUN_KEPT)),
+            max_side: AtomicU32::new(0),
         })
+    }
+
+    /// Draws frames no larger than `max_side` on their longer side, or at the picture's own size
+    /// when `None`.
+    pub(super) fn set_max_side(&self, max_side: Option<u32>) {
+        self.max_side
+            .store(max_side.unwrap_or(0), Ordering::Relaxed);
+        self.notify();
+    }
+
+    /// The size to draw a picture of `size` at: its own, or scaled down to the longest side
+    /// allowed, keeping its shape, in even numbers as `420f` buffers want.
+    fn draw_size(&self, size: (u32, u32)) -> (u32, u32) {
+        let max_side = self.max_side.load(Ordering::Relaxed);
+        let longer = size.0.max(size.1);
+        if max_side == 0 || longer <= max_side {
+            return size;
+        }
+        let scale = f64::from(max_side) / f64::from(longer);
+        let even = |side: u32| ((f64::from(side) * scale / 2.).round() as u32 * 2).max(2);
+        (even(size.0), even(size.1))
     }
 
     /// The frame to show at the window's next refresh, which is at `shown`: the oldest one
@@ -328,7 +353,10 @@ fn run(core: &Core, shared: &Shared, backend: &mut impl Backend, context: *mut f
     while shared.wait() {
         // SAFETY: a live context, on its render thread.
         let flags = unsafe { (api.render_context_update)(context) };
-        let size = core.observed().picture_size();
+        let size = core
+            .observed()
+            .picture_size()
+            .map(|size| shared.draw_size(size));
         if flags & ffi::RENDER_UPDATE_FRAME == 0 {
             // No new frame, but the size heard since the last one: rendering with no frame
             // pending redraws mpv's current one. A paused file's only frame comes this way, as
@@ -487,6 +515,18 @@ fn nanoseconds_until(target_time: i64, now_ns: i64) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A preview's frames keep the picture's shape at the size allowed, never larger than the
+    /// picture itself.
+    #[test]
+    fn previews_draw_at_the_size_allowed() {
+        let shared = Shared::new(Duration::from_millis(8), None);
+        assert_eq!(shared.draw_size((3840, 2160)), (3840, 2160));
+        shared.set_max_side(Some(480));
+        assert_eq!(shared.draw_size((3840, 2160)), (480, 270));
+        assert_eq!(shared.draw_size((1080, 1920)), (270, 480));
+        assert_eq!(shared.draw_size((320, 180)), (320, 180));
+    }
 
     /// mpv v0.41.0 states the due time in nanoseconds; its header and older mpvs, in µs.
     #[test]

@@ -9,7 +9,7 @@ use gpui_kit::component::{
 use gpui_kit::{
     AnyElement, App, Entity, FontWeight, InteractiveElement as _, IntoElement, MouseButton,
     ParentElement, RenderOnce, Role, SharedString, StatefulInteractiveElement as _, Styled,
-    TestSupportExt as _, Window, div, px,
+    TestSupportExt as _, Window, div, prelude::FluentBuilder as _, px,
 };
 
 use crate::drag::DragStrip;
@@ -21,6 +21,7 @@ pub const TOP_BAR_HEIGHT: f32 = 52.;
 pub struct TopBar {
     shell: Entity<ShellState>,
     title: SharedString,
+    meta: Option<SharedString>,
     trailing: Vec<AnyElement>,
 }
 
@@ -29,8 +30,16 @@ impl TopBar {
         Self {
             shell: shell.clone(),
             title: title.into(),
+            meta: None,
             trailing: Vec::new(),
         }
+    }
+
+    /// A quieter line beside the title, such as where a folder is (`TopBar`'s `meta`); cut from
+    /// the start when long, so its end stays.
+    pub fn meta(mut self, meta: impl Into<SharedString>) -> Self {
+        self.meta = Some(meta.into());
+        self
     }
 
     /// A control at the bar's end, such as a page's toolbar.
@@ -72,17 +81,42 @@ impl RenderOnce for TopBar {
             )
             .child(
                 div()
-                    .id("top-bar-title")
-                    .test_support()
-                    .role(Role::Heading)
-                    .aria_level(1)
-                    .aria_label(self.title.clone())
+                    .flex()
+                    .flex_row()
+                    .items_baseline()
+                    .gap(px(10.))
                     .flex_1()
                     .min_w_0()
-                    .truncate()
-                    .text_size(px(15.))
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .child(self.title),
+                    .child(
+                        div()
+                            .id("top-bar-title")
+                            .test_support()
+                            .role(Role::Heading)
+                            .aria_level(1)
+                            .aria_label(self.title.clone())
+                            .flex_shrink_0()
+                            .max_w_full()
+                            .truncate()
+                            .text_size(px(15.))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child(self.title),
+                    )
+                    .when_some(self.meta, |this, meta| {
+                        this.child(
+                            div()
+                                .id("top-bar-meta")
+                                .role(Role::Label)
+                                .test_support()
+                                .aria_label(meta.clone())
+                                .min_w_0()
+                                .overflow_hidden()
+                                .whitespace_nowrap()
+                                .text_ellipsis_start()
+                                .text_size(px(13.))
+                                .text_color(cx.theme().muted_foreground)
+                                .child(meta),
+                        )
+                    }),
             )
             .child(
                 div()

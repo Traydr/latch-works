@@ -7,10 +7,13 @@
 //! gallery when a case needs it, as the shell draws it. Videos are made with the pinned ffmpeg;
 //! the cases that need them say so and skip without it.
 
+use std::cell::RefCell;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, UNIX_EPOCH};
 
+use gpui_kit::test::TestEventExt as _;
 use gpui_kit::test::TestWindowExt as _;
 use gpui_kit::{
     AnyWindowHandle, AppContext as _, Bounds, Context, ElementId, Entity, ImageSource, IntoElement,
@@ -21,9 +24,11 @@ use oriel_core_domain::{GallerySortMode, NamedPath, SortableMediaItem, compare_b
 use oriel_core_paths::DataRoot;
 use oriel_media::still::{Still, WebpSettings};
 use oriel_mode_view::browser::Tile;
+use oriel_mode_view::gallery::HOVER_DELAY;
+use oriel_mode_view::listing::MediaEntry;
 use oriel_mode_view::thumbnails::Thumbnail;
-use oriel_mode_view::{Listing, ViewMode};
-use oriel_ui::{ModeActivity, ModeId, ShellState};
+use oriel_mode_view::{CapsulePanel, CapsulePlayer, Listing, ViewEvent, ViewMode, viewer};
+use oriel_ui::{LocalStorage, ModeActivity, ModeId, ShellState};
 
 /// `FIXTURE_EPOCH_MS`: 2026-01-01T12:00:00Z.
 const FIXTURE_EPOCH_MS: u64 = 1_767_268_800_000;
@@ -769,30 +774,76 @@ fn without_loop_navigation_the_viewer_stops_at_the_ends(cx: &mut TestAppContext)
     );
 }
 
-#[gpui_kit::test]
-fn a_video_opens_in_the_capsule_player_without_autoplay(cx: &mut TestAppContext) {
-    let fixture = Fixture::new("player");
-    if !fixture.videos {
-        eprintln!("skipped: no pinned ffmpeg (cargo run -p oriel-tools --bin fetch-media-tools)");
-        return;
-    }
-    let session = launch(cx, &fixture.root.join("data"));
+/// Turns the switch `id` on View's Settings section over, as the e2e's `setToggle` does.
+fn flip_setting(cx: &mut TestAppContext, session: &Session, id: &'static str) {
     cx.update(|cx| {
         session.harness.update(cx, |harness, cx| {
             harness.settings = true;
             cx.notify();
         });
     });
-    settle(cx, &session);
-    click(cx, &session, "autoplay-videos");
+    settle(cx, session);
+    click(cx, session, id);
     cx.update(|cx| {
-        assert!(!session.view.read(cx).settings().autoplay_videos);
         session.harness.update(cx, |harness, cx| {
             harness.settings = false;
             cx.notify();
         });
     });
-    settle(cx, &session);
+    settle(cx, session);
+}
+
+/// Waits, in real time, for what a real video engine does on its own threads.
+fn wait_until(
+    cx: &mut TestAppContext,
+    session: &Session,
+    mut ready: impl FnMut(&mut TestAppContext) -> bool,
+) -> bool {
+    for _ in 0..250 {
+        if ready(cx) {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+        settle(cx, session);
+    }
+    ready(cx)
+}
+
+fn player(cx: &mut TestAppContext, session: &Session) -> Entity<CapsulePlayer> {
+    cx.update(|cx| {
+        session
+            .view
+            .read(cx)
+            .viewer()
+            .and_then(|viewer| viewer.read(cx).player().cloned())
+            .expect("the video plays in the capsule player")
+    })
+}
+
+fn read_player<T>(
+    cx: &mut TestAppContext,
+    session: &Session,
+    read: impl FnOnce(&CapsulePlayer) -> T,
+) -> T {
+    let player = player(cx, session);
+    cx.update(|cx| read(player.read(cx)))
+}
+
+/// `gallery.spec.ts`'s capsule case, with what its chrome has beyond it: a video opens in the
+/// capsule player, without autoplay; skip, back, mute from the volume panel, and play or pause.
+/// Then the level, the speed menu, 4 held for 2×, ← stepping to the next video with the volume
+/// and speed kept, and Show in Tidy. A real engine plays the clip; the test reads the player's
+/// own state, never a frame.
+#[gpui_kit::test]
+fn a_video_opens_in_the_capsule_player_seek_skip_mute_and_play_or_pause(cx: &mut TestAppContext) {
+    let fixture = Fixture::new("player");
+    if !fixture.videos {
+        eprintln!("skipped: no pinned ffmpeg (cargo run -p oriel-tools --bin fetch-media-tools)");
+        return;
+    }
+    let session = launch(cx, &fixture.root.join("data"));
+    flip_setting(cx, &session, "autoplay-videos");
+    cx.update(|cx| assert!(!session.view.read(cx).settings().autoplay_videos));
 
     open_folder(cx, &session, &fixture.absolute("videos"));
     double_click(
@@ -807,17 +858,321 @@ fn a_video_opens_in_the_capsule_player_without_autoplay(cx: &mut TestAppContext)
     cx.update(|cx| {
         let viewer = session.view.read(cx).viewer().unwrap().read(cx);
         assert!(!viewer.options().autoplay);
-        let player = viewer
-            .player()
-            .expect("the video plays in the capsule player");
-        assert!(!player.read(cx).is_playing(), "autoplay is off");
-        assert_eq!(
-            player.read(cx).path(),
-            fixture.absolute("videos/clip-a.mp4")
-        );
     });
+    assert!(
+        read_player(cx, &session, |player| !player.is_playing()),
+        "autoplay is off"
+    );
+    assert_eq!(
+        read_player(cx, &session, |player| player.path().to_path_buf()),
+        fixture.absolute("videos/clip-a.mp4")
+    );
+    let error = read_player(cx, &session, |player| {
+        player.error().map(ToString::to_string)
+    });
+    assert_eq!(error, None, "the clip plays here");
+    for (id, name) in [
+        ("skip-back", "Back 5 seconds"),
+        ("play-pause", "Play"),
+        ("skip-forward", "Forward 5 seconds"),
+        ("volume", "Volume"),
+        ("speed", "Playback speed"),
+    ] {
+        assert_eq!(label(cx, &session, id).as_deref(), Some(name));
+    }
+    assert!(
+        wait_until(cx, &session, |cx| read_player(cx, &session, |player| {
+            player.duration().is_some()
+        })),
+        "the engine reads the clip's length"
+    );
+
+    // The clips are 4 s long, so a 5 s skip lands just short of the end, and back 5 s at the
+    // start (`commitSeek`'s clamp).
+    let position = |cx: &mut TestAppContext| {
+        let player = player(cx, &session);
+        cx.update(|cx| player.read(cx).position())
+    };
+    press(cx, &session, "3");
+    assert!(
+        position(cx) >= Duration::from_millis(3500),
+        "{:?}",
+        position(cx)
+    );
+    assert!(
+        position(cx) < Duration::from_secs(4),
+        "short of the end, so it does not loop"
+    );
+    click(cx, &session, "skip-back");
+    assert!(
+        position(cx) < Duration::from_millis(500),
+        "{:?}",
+        position(cx)
+    );
+
+    // Mute and unmute from the volume panel, kept as Electron Oriel keeps them.
+    click(cx, &session, "volume");
+    assert_eq!(
+        read_player(cx, &session, CapsulePlayer::panel),
+        Some(CapsulePanel::Volume)
+    );
+    assert_eq!(label(cx, &session, "volume-level").as_deref(), Some("100%"));
+    assert_eq!(label(cx, &session, "mute").as_deref(), Some("Mute"));
+    click(cx, &session, "mute");
+    assert!(read_player(cx, &session, CapsulePlayer::is_muted));
+    assert_eq!(label(cx, &session, "mute").as_deref(), Some("Unmute"));
+    assert_eq!(label(cx, &session, "volume-level").as_deref(), Some("0%"));
+    cx.update(|cx| assert_eq!(LocalStorage::get(cx, viewer::MUTED_KEY), Some("1")));
+    click(cx, &session, "mute");
+    assert!(!read_player(cx, &session, CapsulePlayer::is_muted));
+
+    // A press a quarter of the way up the level sets it there.
+    let panel = cx
+        .update_window(session.handle, |_, window, _| {
+            window.find("volume-panel").bounds()
+        })
+        .unwrap();
+    let quarter = point(panel.size.width / 2., px(13. + 112. * 0.75));
+    cx.update_window(session.handle, |_, window, cx| {
+        window.click_at("volume-panel", quarter, cx);
+    })
+    .unwrap();
+    settle(cx, &session);
+    let volume = read_player(cx, &session, CapsulePlayer::volume);
+    assert!((volume - 0.25).abs() < 0.03, "the level is {volume}");
+    cx.update(|cx| {
+        let kept: f32 = LocalStorage::get(cx, viewer::VOLUME_KEY)
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert_eq!(kept, volume);
+    });
+
+    // Play and pause, from the capsule and the keys.
+    click(cx, &session, "play-pause");
+    assert!(read_player(cx, &session, CapsulePlayer::is_playing));
+    assert_eq!(label(cx, &session, "play-pause").as_deref(), Some("Pause"));
+    click(cx, &session, "play-pause");
+    assert!(!read_player(cx, &session, CapsulePlayer::is_playing));
+    press(cx, &session, "space");
+    assert!(read_player(cx, &session, CapsulePlayer::is_playing));
+    press(cx, &session, "2");
+    assert!(!read_player(cx, &session, CapsulePlayer::is_playing));
+
+    // The speed menu, fastest first; a pick closes it.
+    click(cx, &session, "speed");
+    assert_eq!(
+        read_player(cx, &session, CapsulePlayer::panel),
+        Some(CapsulePanel::Speed)
+    );
+    let speeds: Vec<String> = cx
+        .update_window(session.handle, |_, window, _| {
+            [
+                "speed-2",
+                "speed-1.5",
+                "speed-1.25",
+                "speed-1",
+                "speed-0.75",
+                "speed-0.5",
+            ]
+            .iter()
+            .map(|id| window.find(*id).label().unwrap().to_owned())
+            .collect()
+        })
+        .unwrap();
+    assert_eq!(speeds, ["2×", "1.5×", "1.25×", "1×", "0.75×", "0.5×"]);
+    click(cx, &session, "speed-1.5");
+    assert_eq!(read_player(cx, &session, CapsulePlayer::speed), 1.5);
+    assert_eq!(read_player(cx, &session, CapsulePlayer::panel), None);
+
+    // 4 held plays at 2×, and letting go goes back to the speed picked.
+    cx.update_window(session.handle, |_, window, cx| {
+        window.key_down("4", false, cx)
+    })
+    .unwrap();
+    settle(cx, &session);
+    cx.update_window(session.handle, |_, window, cx| {
+        window.key_down("4", true, cx)
+    })
+    .unwrap();
+    settle(cx, &session);
+    assert!(read_player(cx, &session, CapsulePlayer::is_holding_speed));
+    assert_eq!(read_player(cx, &session, CapsulePlayer::speed), 2.);
+    assert_eq!(
+        label(cx, &session, "held-speed").as_deref(),
+        Some("Playing at 2×")
+    );
+    cx.update_window(session.handle, |_, window, cx| window.key_up("4", cx))
+        .unwrap();
+    settle(cx, &session);
+    assert!(!read_player(cx, &session, CapsulePlayer::is_holding_speed));
+    assert_eq!(read_player(cx, &session, CapsulePlayer::speed), 1.5);
+    assert_eq!(label(cx, &session, "held-speed"), None);
+
+    // → steps to the next item, as in Electron Oriel's viewer, and the next video starts with
+    // the level and speed the last one had, and loops as "Loop videos" says.
+    press(cx, &session, "right");
+    assert_eq!(
+        viewer_label(cx, &session).as_deref(),
+        Some("Viewer for clip-b.mp4")
+    );
+    assert_eq!(read_player(cx, &session, CapsulePlayer::speed), 1.5);
+    assert_eq!(read_player(cx, &session, CapsulePlayer::volume), volume);
+    assert!(!read_player(cx, &session, CapsulePlayer::is_muted));
+    assert!(read_player(cx, &session, CapsulePlayer::is_looping));
+
+    // Show in Tidy asks the app to hand the file to Tidy.
+    let asked = Rc::new(RefCell::new(Vec::new()));
+    let _subscription = cx.update(|cx| {
+        let asked = asked.clone();
+        cx.subscribe(&session.view, move |_, event: &ViewEvent, _| {
+            asked.borrow_mut().push(event.clone());
+        })
+    });
+    click(cx, &session, "viewer-show-in-tidy");
+    assert_eq!(
+        *asked.borrow(),
+        [ViewEvent::ShowInTidy(fixture.absolute("videos/clip-b.mp4"))]
+    );
+
     press(cx, &session, "escape");
     assert_eq!(viewer_label(cx, &session), None);
+}
+
+/// `useViewerChromeIdle`: the viewer's controls fade after 2.5 s left alone and a key brings them
+/// back; a paused video keeps them.
+#[gpui_kit::test]
+fn the_viewer_controls_fade_when_left_alone_but_stay_over_a_paused_video(cx: &mut TestAppContext) {
+    let fixture = Fixture::new("chrome");
+    let session = launch(cx, &fixture.root.join("data"));
+    open_folder(cx, &session, &fixture.absolute("comics/alpha"));
+    let first = tile_paths(cx, &session)[0].clone();
+    double_click(cx, &session, tile_id(&first));
+    let chrome = |cx: &mut TestAppContext| {
+        cx.update(|cx| {
+            session
+                .view
+                .read(cx)
+                .viewer()
+                .unwrap()
+                .read(cx)
+                .is_chrome_visible()
+        })
+    };
+    assert!(chrome(cx));
+    assert!(label(cx, &session, "viewer-close").is_some());
+    cx.executor()
+        .advance_clock(viewer::CHROME_IDLE + Duration::from_millis(100));
+    settle(cx, &session);
+    assert!(!chrome(cx), "a still's controls fade");
+    assert_eq!(label(cx, &session, "viewer-close"), None);
+    press(cx, &session, "x");
+    assert!(chrome(cx), "a key brings them back");
+    press(cx, &session, "escape");
+
+    if !fixture.videos {
+        return;
+    }
+    flip_setting(cx, &session, "autoplay-videos");
+    open_folder(cx, &session, &fixture.absolute("videos"));
+    double_click(
+        cx,
+        &session,
+        tile_id(&fixture.absolute("videos/clip-a.mp4")),
+    );
+    cx.executor().advance_clock(viewer::CHROME_IDLE * 2);
+    settle(cx, &session);
+    assert!(chrome(cx), "a paused video keeps its controls");
+    assert!(label(cx, &session, "play-pause").is_some());
+}
+
+/// `MediaTile`'s hover: a video tile plays under the pointer, muted and looping by default, and
+/// stops when the pointer leaves; with "Autoplay video on hover" off it does not. The tile's
+/// caption has the video's picture size from ffprobe, and the header the folder's place.
+#[gpui_kit::test]
+fn a_video_tile_plays_under_the_pointer_and_stops_when_it_leaves(cx: &mut TestAppContext) {
+    let fixture = Fixture::new("hover");
+    if !fixture.videos {
+        eprintln!("skipped: no pinned ffmpeg (cargo run -p oriel-tools --bin fetch-media-tools)");
+        return;
+    }
+    let session = launch(cx, &fixture.root.join("data"));
+    open_folder(cx, &session, &fixture.absolute("videos"));
+    assert_eq!(
+        label(cx, &session, "top-bar-meta").as_deref(),
+        Some("archive / videos")
+    );
+    let clip = fixture.absolute("videos/clip-a.mp4");
+    let gallery = cx.update(|cx| session.view.read(cx).gallery().clone());
+    let probed = wait_until(cx, &session, |cx| {
+        cx.update(|cx| {
+            let gallery = gallery.read(cx);
+            gallery
+                .media()
+                .iter()
+                .find(|entry| MediaEntry::path(entry).as_ref() == clip.as_path())
+                .and_then(|entry| gallery.video_probe(entry))
+                .is_some_and(|probe| probe.width == Some(320) && probe.height == Some(180))
+        })
+    });
+    assert!(probed, "ffprobe reads the size the caption shows");
+
+    let preview = |cx: &mut TestAppContext| {
+        cx.update(|cx| {
+            gallery.read(cx).preview().map(|(path, preview)| {
+                let preview = preview.read(cx);
+                (path.to_path_buf(), preview.is_muted(), preview.is_looping())
+            })
+        })
+    };
+    cx.update_window(session.handle, |_, window, cx| {
+        window.hover(tile_id(&clip), cx)
+    })
+    .unwrap();
+    settle(cx, &session);
+    assert_eq!(preview(cx), None, "it waits for the pointer to rest");
+    cx.executor()
+        .advance_clock(HOVER_DELAY + Duration::from_millis(50));
+    settle(cx, &session);
+    assert_eq!(preview(cx), Some((clip.clone(), true, true)));
+
+    cx.update_window(session.handle, |_, window, cx| {
+        window.hover("open-folder", cx)
+    })
+    .unwrap();
+    settle(cx, &session);
+    assert_eq!(preview(cx), None, "the pointer left the tile");
+
+    // Sound on: the next preview plays with it.
+    flip_setting(cx, &session, "preview-audio");
+    cx.update_window(session.handle, |_, window, cx| {
+        window.hover(tile_id(&clip), cx)
+    })
+    .unwrap();
+    cx.executor()
+        .advance_clock(HOVER_DELAY + Duration::from_millis(50));
+    settle(cx, &session);
+    assert_eq!(preview(cx), Some((clip.clone(), false, true)));
+
+    // Opening the viewer stops it.
+    double_click(cx, &session, tile_id(&clip));
+    assert_eq!(preview(cx), None);
+    press(cx, &session, "escape");
+
+    flip_setting(cx, &session, "autoplay-on-hover");
+    cx.update_window(session.handle, |_, window, cx| {
+        window.hover("open-folder", cx)
+    })
+    .unwrap();
+    cx.update_window(session.handle, |_, window, cx| {
+        window.hover(tile_id(&clip), cx)
+    })
+    .unwrap();
+    cx.executor()
+        .advance_clock(HOVER_DELAY + Duration::from_millis(50));
+    settle(cx, &session);
+    assert_eq!(preview(cx), None, "autoplay on hover is off");
+    cx.update(|cx| assert_eq!(gallery.read(cx).hovered_video(), None));
 }
 
 #[gpui_kit::test]

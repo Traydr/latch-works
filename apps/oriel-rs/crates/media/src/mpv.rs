@@ -119,6 +119,8 @@ pub struct MpvPlayer {
     frame_position: Option<Duration>,
     /// Whether the player means to play, as [`crate::video::VideoPlayer::is_playing`].
     playing: bool,
+    /// Whether it plays again from the start at the end, rather than holding the last frame.
+    looping: bool,
     /// A pause state sent to mpv and not yet seen back, with when it was sent.
     pause_sent: Option<(bool, Instant)>,
     seek: Option<PendingSeek>,
@@ -222,6 +224,7 @@ impl MpvPlayer {
             frame: None,
             frame_position: None,
             playing: false,
+            looping: false,
             pause_sent: None,
             seek: None,
             awaiting_picture_since: None,
@@ -380,6 +383,25 @@ impl MpvPlayer {
         self.core.set_double(c"speed", f64::from(rate));
     }
 
+    /// Whether it plays again from the start at the end (View's "Loop videos").
+    pub fn is_looping(&self) -> bool {
+        self.looping
+    }
+
+    pub fn set_looping(&mut self, looping: bool) {
+        self.looping = looping;
+        // `loop-file` wins over `keep-open`, which holds the last frame only when not looping.
+        self.core
+            .command(0, &["set", "loop-file", if looping { "inf" } else { "no" }]);
+    }
+
+    /// Draws frames no larger than `max_side` pixels on their longer side, or at the picture's
+    /// own size when `None`: a gallery tile's preview needs no more than the tile shows, and a
+    /// 4K picture drawn at that size costs a sixtieth of the memory and the GPU time.
+    pub fn set_max_picture_side(&mut self, max_side: Option<u32>) {
+        self.shared.set_max_side(max_side);
+    }
+
     /// The picture's size in pixels as it is shown, once mpv knows it.
     pub fn picture_size(&self) -> Option<(f64, f64)> {
         self.core
@@ -434,17 +456,23 @@ impl MpvPlayer {
     /// The picture on screen, fitted inside its bounds and filling them; `None` before the
     /// first one.
     pub fn picture(&self) -> Option<AnyElement> {
+        self.picture_fitted(ObjectFit::Contain)
+    }
+
+    /// The picture on screen, filling its bounds as `fit` says: `Cover` crops it to a gallery
+    /// tile, as the tile's thumbnail is.
+    pub fn picture_fitted(&self, fit: ObjectFit) -> Option<AnyElement> {
         match &self.frame.as_ref()?.picture {
             Picture::Image(image) => Some(
                 img(image.clone())
-                    .object_fit(ObjectFit::Contain)
+                    .object_fit(fit)
                     .size_full()
                     .into_any_element(),
             ),
             #[cfg(target_os = "macos")]
             Picture::Buffer(buffer) => Some(
                 gpui_kit::surface(buffer.0.clone())
-                    .object_fit(ObjectFit::Contain)
+                    .object_fit(fit)
                     .size_full()
                     .into_any_element(),
             ),

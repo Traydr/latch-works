@@ -5,7 +5,7 @@
 use std::path::Path;
 use std::time::Duration;
 
-use gpui_kit::{AnyElement, IntoElement as _, Styled as _, Window};
+use gpui_kit::{AnyElement, IntoElement as _, ObjectFit, Styled as _, Window};
 
 use super::{MpvPlayer, Pumped};
 use crate::video::{SeekMode, VideoError, VideoPlayer};
@@ -45,6 +45,17 @@ impl AnyPlayer {
     /// Opens `path` with the engine `ORIEL_RS_VIDEO` names, paused at its start.
     pub fn open(path: &Path) -> Result<Self, VideoError> {
         Self::open_with(path, VideoEngine::from_env())
+    }
+
+    /// Opens `path` as a gallery tile's preview: libmpv draws its frames no larger than
+    /// `max_side` pixels on their longer side, as the tile needs no more. AVPlayer, the fallback,
+    /// draws at the picture's size.
+    pub fn open_preview(path: &Path, max_side: u32) -> Result<Self, VideoError> {
+        let mut player = Self::open(path)?;
+        if let Engine::Mpv(video) = &mut player.engine {
+            video.set_max_picture_side(Some(max_side));
+        }
+        Ok(player)
     }
 
     pub fn open_with(path: &Path, engine: VideoEngine) -> Result<Self, VideoError> {
@@ -177,13 +188,48 @@ impl AnyPlayer {
         }
     }
 
+    /// The speed playing runs at, 1 being normal.
+    pub fn rate(&self) -> f32 {
+        match &self.engine {
+            Engine::AvPlayer(video) => video.rate(),
+            Engine::Mpv(video) => video.rate(),
+        }
+    }
+
+    pub fn set_rate(&mut self, rate: f32) {
+        match &mut self.engine {
+            Engine::AvPlayer(video) => video.set_rate(rate),
+            Engine::Mpv(video) => video.set_rate(rate),
+        }
+    }
+
+    /// Whether it plays again from the start at the end.
+    pub fn is_looping(&self) -> bool {
+        match &self.engine {
+            Engine::AvPlayer(video) => video.is_looping(),
+            Engine::Mpv(video) => video.is_looping(),
+        }
+    }
+
+    pub fn set_looping(&mut self, looping: bool) {
+        match &mut self.engine {
+            Engine::AvPlayer(video) => video.set_looping(looping),
+            Engine::Mpv(video) => video.set_looping(looping),
+        }
+    }
+
     /// The picture on screen, fitted inside its bounds and filling them.
     pub fn picture(&self) -> Option<AnyElement> {
+        self.picture_fitted(ObjectFit::Contain)
+    }
+
+    /// The picture on screen, filling its bounds as `fit` says.
+    pub fn picture_fitted(&self, fit: ObjectFit) -> Option<AnyElement> {
         match &self.engine {
             Engine::AvPlayer(video) => video
-                .surface()
+                .surface_fitted(fit)
                 .map(|surface| surface.size_full().into_any_element()),
-            Engine::Mpv(video) => video.picture(),
+            Engine::Mpv(video) => video.picture_fitted(fit),
         }
     }
 }

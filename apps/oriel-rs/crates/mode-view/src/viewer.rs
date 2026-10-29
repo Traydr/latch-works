@@ -1,14 +1,20 @@
 //! The viewer: one item over the whole window, stepped through in the gallery's order with the
 //! arrows (or `e` and `q`), and closed with Escape, as Electron Oriel's `ViewerModal` is. Its top
 //! bar has the name and the details (size, format, and a video's length, size and codec from
-//! ffprobe), then Copy path, Reveal in folder, Fullscreen and Close. Stepping wraps at the ends
-//! while "Loop viewer navigation" is on, and stops there otherwise.
+//! ffprobe), then Copy path, Reveal in folder, Show in Tidy, Fullscreen and Close. Stepping wraps
+//! at the ends while "Loop viewer navigation" is on, and stops there otherwise.
+//!
+//! The controls fade away after 2.5 s without the pointer moving or a key, and come back with
+//! either (`useViewerChromeIdle`); a paused video keeps them. The pointer hides with them.
 //!
 //! Stills decode through ImageIO at the size the window needs, and the neighbours either side
 //! decode ahead so a step shows its still at once. GIFs go to GPUI's own decoder, which animates
-//! them, and videos to the capsule player.
+//! them, and videos to the capsule player, which gets the volume, mute and speed the last video
+//! had: the volume and mute from the shell's local storage, under Electron Oriel's keys, and the
+//! speed for as long as the viewer is open.
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -18,16 +24,30 @@ use gpui_kit::component::{
     button::{Button, ButtonVariants as _},
 };
 use gpui_kit::{
-    App, AppContext as _, ClipboardItem, Context, Entity, EventEmitter, FocusHandle, Focusable,
-    InteractiveElement as _, IntoElement, KeyBinding, ObjectFit, ParentElement as _, Priority,
-    Render, RenderImage, Role, SharedString, StatefulInteractiveElement as _, Styled as _,
-    StyledImage as _, Subscription, Task, TestSupportExt as _, Window, actions, div, img,
-    linear_color_stop, linear_gradient, prelude::FluentBuilder as _, px,
+    App, AppContext as _, ClipboardItem, Context, DispatchPhase, Entity, EventEmitter, FocusHandle,
+    Focusable, InteractiveElement as _, IntoElement, KeyBinding, KeyUpEvent, MouseMoveEvent,
+    ObjectFit, ParentElement as _, Priority, Render, RenderImage, Role, SharedString,
+    StatefulInteractiveElement as _, Styled as _, StyledImage as _, Subscription, Task,
+    TestSupportExt as _, Window, actions, canvas, div, img, linear_color_stop, linear_gradient,
+    prelude::FluentBuilder as _, px,
 };
+use oriel_core_domain::format_bytes;
+use oriel_ui::LocalStorage;
 
 use crate::CapsulePlayer;
 use crate::listing::{MediaEntry, MediaKind};
 use crate::media_tools::{VideoProbe, ViewMediaTools};
+use crate::player::{
+    self, CapsulePlayerEvent, HoldSpeed, PlayerOptions, SkipBack, SkipForward, ToggleMute,
+    TogglePlayback,
+};
+
+/// Where the viewer's volume and mute are kept: `localStorage`'s keys in Electron Oriel.
+pub const VOLUME_KEY: &str = "frameview.viewer.volume";
+pub const MUTED_KEY: &str = "frameview.viewer.muted";
+
+/// How long the controls stay without the pointer moving or a key (`CHROME_IDLE_MS`).
+pub const CHROME_IDLE: Duration = Duration::from_millis(2500);
 
 /// How the viewer behaves, from View's settings.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -36,6 +56,8 @@ pub struct ViewerOptions {
     pub wrap: bool,
     /// Start a video playing when it shows (`autoplayVideos`).
     pub autoplay: bool,
+    /// Play a video again from the start at its end (`loopVideos`).
+    pub loop_videos: bool,
 }
 
 impl Default for ViewerOptions {
@@ -43,6 +65,7 @@ impl Default for ViewerOptions {
         Self {
             wrap: true,
             autoplay: true,
+            loop_videos: true,
         }
     }
 }
@@ -62,6 +85,8 @@ actions!(
 const KEY_CONTEXT: &str = "Viewer";
 
 /// The viewer's keys, as `hotkeys.ts` binds them. They reach the viewer only while it has focus.
+/// The video keys are bound here too, so they reach the video shown wherever in the viewer focus
+/// is, as Electron Oriel's window-wide keys do.
 pub(crate) fn bind_keys(cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new("right", NextItem, Some(KEY_CONTEXT)),
@@ -70,6 +95,7 @@ pub(crate) fn bind_keys(cx: &mut App) {
         KeyBinding::new("q", PreviousItem, Some(KEY_CONTEXT)),
         KeyBinding::new("escape", CloseViewer, Some(KEY_CONTEXT)),
     ]);
+    cx.bind_keys(player::key_bindings(KEY_CONTEXT));
 }
 
 /// Neighbours decoded ahead: one behind and two ahead, so stepping on in either direction finds
@@ -83,6 +109,8 @@ pub enum ViewerEvent {
     Closed(usize),
     /// The viewer stepped to this item, which the gallery selects.
     Stepped(usize),
+    /// Show in Tidy, for this file: the app hands it to Tidy, as Electron Oriel's `handOff`.
+    ShowInTidy(PathBuf),
 }
 
 enum Decoded {
@@ -106,6 +134,19 @@ pub struct Viewer {
     /// The longer side stills decode at: the window's, in device pixels.
     decode_size: u32,
     player: Option<(usize, Entity<CapsulePlayer>)>,
+    /// The player's events and its state, dropped with it.
+    player_subscriptions: Vec<Subscription>,
+    /// What the next video starts with: the volume and mute kept across launches, and the speed
+    /// picked while the viewer is open.
+    player_options: PlayerOptions,
+    /// Whether the video shown plays, which keeps the controls from fading while it does not.
+    video_playing: bool,
+    /// Whether the controls show.
+    chrome_visible: bool,
+    /// When the pointer last moved or a key was pressed.
+    last_activity: Instant,
+    /// Hides the controls once they have been left alone for [`CHROME_IDLE`].
+    _idle: Option<Task<()>>,
     /// When the last step was asked for, until its still is drawn.
     step_started: Option<Instant>,
     step_times: Vec<Duration>,
@@ -128,6 +169,16 @@ impl Viewer {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        let player_options = PlayerOptions {
+            autoplay: options.autoplay,
+            looping: options.loop_videos,
+            volume: LocalStorage::get(cx, VOLUME_KEY)
+                .and_then(|volume| volume.parse::<f32>().ok())
+                .filter(|volume| volume.is_finite())
+                .map_or(1., |volume| volume.clamp(0., 1.)),
+            muted: LocalStorage::get(cx, MUTED_KEY) == Some("1"),
+            speed: 1.,
+        };
         let mut viewer = Self {
             entries,
             index,
@@ -138,6 +189,12 @@ impl Viewer {
             stills: HashMap::new(),
             decode_size: decode_size(window),
             player: None,
+            player_subscriptions: Vec::new(),
+            player_options,
+            video_playing: false,
+            chrome_visible: true,
+            last_activity: cx.background_executor().now(),
+            _idle: None,
             step_started: None,
             step_times: Vec::new(),
             // The decoded stills are in GPUI's sprite atlas until released there; dropping the
@@ -195,6 +252,124 @@ impl Viewer {
         self.options
     }
 
+    /// What the next video starts with.
+    pub fn player_options(&self) -> PlayerOptions {
+        self.player_options
+    }
+
+    /// Whether the controls show.
+    pub fn is_chrome_visible(&self) -> bool {
+        self.chrome_visible
+    }
+
+    /// The controls stay while a paused video shows, as Electron Oriel pins them.
+    fn chrome_pinned(&self) -> bool {
+        self.entry().is_video() && !self.video_playing
+    }
+
+    /// `revealChrome`: the controls show, and fade again once left alone.
+    pub fn reveal_chrome(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // The executor's clock, which a test can move on.
+        self.last_activity = cx.background_executor().now();
+        if !self.chrome_visible {
+            self.set_chrome_visible(true, cx);
+        }
+        if self._idle.is_none() && !self.chrome_pinned() {
+            self._idle = Some(cx.spawn_in(window, async move |this, cx| {
+                loop {
+                    let Ok(wait) = this.update(cx, |this, cx| {
+                        let idle = cx
+                            .background_executor()
+                            .now()
+                            .saturating_duration_since(this.last_activity);
+                        CHROME_IDLE.saturating_sub(idle)
+                    }) else {
+                        return;
+                    };
+                    if wait.is_zero() {
+                        break;
+                    }
+                    cx.background_executor().timer(wait).await;
+                }
+                this.update(cx, |this, cx| {
+                    this._idle = None;
+                    if !this.chrome_pinned() {
+                        this.set_chrome_visible(false, cx);
+                        oriel_media::video::hide_pointer_until_it_moves();
+                    }
+                })
+                .ok();
+            }));
+        }
+    }
+
+    fn set_chrome_visible(&mut self, visible: bool, cx: &mut Context<Self>) {
+        self.chrome_visible = visible;
+        if let Some((_, player)) = &self.player {
+            player.update(cx, |player, cx| player.set_chrome_visible(visible, cx));
+        }
+        cx.notify();
+    }
+
+    /// Runs `command` on the video shown, if one shows: the video keys when focus is elsewhere
+    /// in the viewer than on the player.
+    fn with_player(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        command: impl FnOnce(&mut CapsulePlayer, &mut Window, &mut Context<CapsulePlayer>),
+    ) {
+        if let Some(player) = self.player() {
+            player
+                .clone()
+                .update(cx, |player, cx| command(player, window, cx));
+        }
+    }
+
+    /// Opens the capsule player for the video at `ix`, with what the last video had, and keeps
+    /// what the owner changes in it for the next.
+    fn open_player(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let path = self.entries[ix].path().to_path_buf();
+        let options = self.player_options;
+        let player = cx.new(|cx| CapsulePlayer::open(path, options, window, cx));
+        player.update(cx, |player, cx| {
+            player.set_chrome_visible(self.chrome_visible, cx)
+        });
+        self.player_subscriptions = vec![
+            cx.subscribe(&player, |this, _, event, cx| match *event {
+                CapsulePlayerEvent::VolumeChanged { volume, muted } => {
+                    this.player_options.volume = volume;
+                    this.player_options.muted = muted;
+                    LocalStorage::set(cx, VOLUME_KEY, &volume.to_string());
+                    LocalStorage::set(cx, MUTED_KEY, if muted { "1" } else { "0" });
+                }
+                CapsulePlayerEvent::SpeedChanged(speed) => this.player_options.speed = speed,
+            }),
+            cx.observe_in(&player, window, |this, player, window, cx| {
+                let playing = player.read(cx).is_playing();
+                if playing != this.video_playing {
+                    this.video_playing = playing;
+                    this.chrome_pin_changed(window, cx);
+                }
+            }),
+        ];
+        self.video_playing = player.read(cx).is_playing();
+        self.player = Some((ix, player));
+    }
+
+    /// The video shown started or stopped, or the item changed: a paused video keeps the
+    /// controls, and anything else lets them fade.
+    fn chrome_pin_changed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.chrome_pinned() {
+            self._idle = None;
+            if !self.chrome_visible {
+                self.set_chrome_visible(true, cx);
+            }
+        } else {
+            self.reveal_chrome(window, cx);
+        }
+    }
+
     /// Steps `delta` items: around the ends when wrapping, else no further than them
     /// (`createShiftViewer`).
     pub fn step(&mut self, delta: isize, window: &mut Window, cx: &mut Context<Self>) {
@@ -230,7 +405,11 @@ impl Viewer {
     /// length (ffprobe's, or the player's), its size and its codec.
     pub fn details(&self, cx: &App) -> String {
         let entry = self.entry();
-        let mut details = vec![format_bytes(entry.size()), entry.extension().to_uppercase()];
+        // `formatBytes`, media-domain's: steps of 1024.
+        let mut details = vec![
+            format_bytes(entry.size() as f64),
+            entry.extension().to_uppercase(),
+        ];
         if entry.is_video() {
             let probe = self.probes.get(&self.index);
             let duration_ms = probe
@@ -299,15 +478,17 @@ impl Viewer {
         match entry.kind() {
             MediaKind::Video => {
                 if self.player.as_ref().map(|(ix, _)| *ix) != Some(self.index) {
-                    let path = entry.path().to_path_buf();
-                    let autoplay = self.options.autoplay;
-                    let player = cx.new(|cx| CapsulePlayer::open(path, autoplay, window, cx));
-                    self.player = Some((self.index, player));
+                    self.open_player(self.index, window, cx);
                 }
                 self.probe(cx);
             }
-            MediaKind::Image | MediaKind::Gif => self.player = None,
+            MediaKind::Image | MediaKind::Gif => {
+                self.player = None;
+                self.player_subscriptions.clear();
+                self.video_playing = false;
+            }
         }
+        self.chrome_pin_changed(window, cx);
 
         let wanted = self.neighbours();
         let stale: Vec<usize> = self
@@ -424,25 +605,6 @@ fn format_duration(ms: u64) -> String {
     format!("{:02}:{:02}", seconds / 60, seconds % 60)
 }
 
-/// "12.3 MB": decimal units, as Electron Oriel writes sizes.
-fn format_bytes(bytes: u64) -> String {
-    const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
-    if bytes < 1000 {
-        return format!("{bytes} B");
-    }
-    let mut value = bytes as f64;
-    let mut unit = 0;
-    while value >= 1000. && unit < UNITS.len() - 1 {
-        value /= 1000.;
-        unit += 1;
-    }
-    if value >= 100. {
-        format!("{value:.0} {}", UNITS[unit])
-    } else {
-        format!("{value:.1} {}", UNITS[unit])
-    }
-}
-
 impl Render for Viewer {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if self.is_current_ready()
@@ -460,6 +622,8 @@ impl Render for Viewer {
 
         // The viewer is a dark room for the picture in either theme, as Electron Oriel's is, so
         // its ground and its text are black and white rather than the theme's surfaces.
+        let viewer = cx.entity().downgrade();
+        let shown_file = entry.path().to_path_buf();
         div()
             .id("viewer")
             .role(Role::Dialog)
@@ -470,6 +634,38 @@ impl Render for Viewer {
             .on_action(cx.listener(|this, _: &NextItem, window, cx| this.step(1, window, cx)))
             .on_action(cx.listener(|this, _: &PreviousItem, window, cx| this.step(-1, window, cx)))
             .on_action(cx.listener(|this, _: &CloseViewer, _, cx| this.close(cx)))
+            .on_action(cx.listener(|this, action: &TogglePlayback, window, cx| {
+                this.with_player(window, cx, |player, window, cx| {
+                    player.toggle_playback(action, window, cx);
+                });
+            }))
+            .on_action(cx.listener(|this, action: &SkipBack, window, cx| {
+                this.with_player(window, cx, |player, window, cx| {
+                    player.skip_back(action, window, cx);
+                });
+            }))
+            .on_action(cx.listener(|this, action: &SkipForward, window, cx| {
+                this.with_player(window, cx, |player, window, cx| {
+                    player.skip_forward(action, window, cx);
+                });
+            }))
+            .on_action(cx.listener(|this, action: &ToggleMute, window, cx| {
+                this.with_player(window, cx, |player, window, cx| {
+                    player.toggle_mute(action, window, cx);
+                });
+            }))
+            .on_action(cx.listener(|this, action: &HoldSpeed, window, cx| {
+                this.with_player(window, cx, |player, window, cx| {
+                    player.hold_speed(action, window, cx);
+                });
+            }))
+            .on_key_up(cx.listener(|this, event: &KeyUpEvent, window, cx| {
+                this.with_player(window, cx, |player, window, cx| {
+                    player.on_key_up(event, window, cx);
+                });
+            }))
+            // Any key brings the controls back, as `useViewerKeyboardControls` does first.
+            .capture_key_down(cx.listener(|this, _, window, cx| this.reveal_chrome(window, cx)))
             .relative()
             .size_full()
             .bg(gpui_kit::black())
@@ -484,102 +680,133 @@ impl Render for Viewer {
                     .justify_center()
                     .child(self.render_media()),
             )
+            // The pointer moving anywhere over the viewer brings the controls back, over the
+            // capsule too, which keeps its presses from the picture behind it.
             .child(
-                // macOS draws the window buttons over the top left, so the title starts to
-                // their right, as `ViewerChrome` pads it.
-                div()
-                    .absolute()
-                    .top_0()
-                    .left_0()
-                    .right_0()
-                    .flex()
-                    .flex_row()
-                    .items_start()
-                    .gap_3()
-                    .pt_4()
-                    .pb_10()
-                    .pr_3()
-                    .pl(px(88.))
-                    // `.viewer-scrim-top`: black at 70% fading out, so the title reads over a
-                    // light picture.
-                    .bg(linear_gradient(
-                        180.,
-                        linear_color_stop(gpui_kit::black().opacity(0.7), 0.),
-                        linear_color_stop(gpui_kit::black().opacity(0.), 1.),
-                    ))
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .flex_1()
-                            .min_w_0()
-                            .child(div().truncate().text_sm().child(entry.name().clone()))
-                            .child(
-                                div()
-                                    .truncate()
-                                    .text_xs()
-                                    .text_color(gpui_kit::white().opacity(0.7))
-                                    .child(details),
-                            ),
-                    )
-                    .child(
-                        Button::new("viewer-copy-path")
-                            .ghost()
-                            .icon(Icon::new(IconName::Copy))
-                            .tooltip("Copy path")
-                            .accessibility_label("Copy path")
-                            .on_click(move |_, _, cx| {
-                                cx.write_to_clipboard(ClipboardItem::new_string(
-                                    copied_path.clone(),
-                                ));
-                            }),
-                    )
-                    .child(
-                        Button::new("viewer-reveal")
-                            .ghost()
-                            .icon(Icon::new(IconName::FolderOpen))
-                            .tooltip("Reveal in folder")
-                            .accessibility_label("Reveal in folder")
-                            .on_click(move |_, _, cx| cx.reveal_path(&revealed)),
-                    )
-                    .child(
-                        Button::new("viewer-fullscreen")
-                            .ghost()
-                            .icon(Icon::new(if fullscreen {
-                                IconName::Minimize
-                            } else {
-                                IconName::Maximize
-                            }))
-                            .tooltip(if fullscreen {
-                                "Exit fullscreen"
-                            } else {
-                                "Fullscreen"
-                            })
-                            .on_click(|_, window, _| window.toggle_fullscreen()),
-                    )
-                    .child(
-                        Button::new("viewer-close")
-                            .ghost()
-                            .icon(Icon::new(IconName::Close))
-                            .tooltip("Close")
-                            .accessibility_label("Close")
-                            .on_click(cx.listener(|this, _, _, cx| this.close(cx))),
-                    ),
+                canvas(
+                    |_, _, _| {},
+                    move |_, _, window, _| {
+                        let viewer = viewer.clone();
+                        window.on_mouse_event(move |_: &MouseMoveEvent, phase, window, cx| {
+                            if phase == DispatchPhase::Bubble {
+                                viewer
+                                    .update(cx, |viewer, cx| viewer.reveal_chrome(window, cx))
+                                    .ok();
+                            }
+                        });
+                    },
+                )
+                .absolute()
+                .size_full(),
             )
-            .child(step_button(
-                "viewer-previous",
-                IconName::ChevronLeft,
-                "Previous item",
-                self.can_step(-1),
-                cx.listener(|this, _, window, cx| this.step(-1, window, cx)),
-            ))
-            .child(step_button(
-                "viewer-next",
-                IconName::ChevronRight,
-                "Next item",
-                self.can_step(1),
-                cx.listener(|this, _, window, cx| this.step(1, window, cx)),
-            ))
+            .when(self.chrome_visible, |this| {
+                this.child(
+                    // macOS draws the window buttons over the top left, so the title starts to
+                    // their right, as `ViewerChrome` pads it; full screen has none.
+                    div()
+                        .absolute()
+                        .top_0()
+                        .left_0()
+                        .right_0()
+                        .flex()
+                        .flex_row()
+                        .items_start()
+                        .gap_3()
+                        .pt_4()
+                        .pb_10()
+                        .pr_3()
+                        .pl(px(if fullscreen { 12. } else { 88. }))
+                        // `.viewer-scrim-top`: black at 70% fading out, so the title reads over
+                        // a light picture.
+                        .bg(linear_gradient(
+                            180.,
+                            linear_color_stop(gpui_kit::black().opacity(0.7), 0.),
+                            linear_color_stop(gpui_kit::black().opacity(0.), 1.),
+                        ))
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .flex_1()
+                                .min_w_0()
+                                .child(div().truncate().text_sm().child(entry.name().clone()))
+                                .child(
+                                    div()
+                                        .truncate()
+                                        .text_xs()
+                                        .text_color(gpui_kit::white().opacity(0.7))
+                                        .child(details),
+                                ),
+                        )
+                        .child(
+                            Button::new("viewer-copy-path")
+                                .ghost()
+                                .icon(Icon::new(IconName::Copy))
+                                .tooltip("Copy path")
+                                .accessibility_label("Copy path")
+                                .on_click(move |_, _, cx| {
+                                    cx.write_to_clipboard(ClipboardItem::new_string(
+                                        copied_path.clone(),
+                                    ));
+                                }),
+                        )
+                        .child(
+                            Button::new("viewer-reveal")
+                                .ghost()
+                                .icon(Icon::new(IconName::FolderOpen))
+                                .tooltip("Reveal in folder")
+                                .accessibility_label("Reveal in folder")
+                                .on_click(move |_, _, cx| cx.reveal_path(&revealed)),
+                        )
+                        .child(
+                            Button::new("viewer-show-in-tidy")
+                                .ghost()
+                                .icon(Icon::new(IconName::WandSparkles))
+                                .tooltip("Show in Tidy")
+                                .accessibility_label("Show in Tidy")
+                                .on_click(cx.listener(move |_, _, _, cx| {
+                                    cx.emit(ViewerEvent::ShowInTidy(shown_file.clone()));
+                                })),
+                        )
+                        .child(
+                            Button::new("viewer-fullscreen")
+                                .ghost()
+                                .icon(Icon::new(if fullscreen {
+                                    IconName::Minimize
+                                } else {
+                                    IconName::Maximize
+                                }))
+                                .tooltip(if fullscreen {
+                                    "Exit fullscreen"
+                                } else {
+                                    "Fullscreen"
+                                })
+                                .on_click(|_, window, _| window.toggle_fullscreen()),
+                        )
+                        .child(
+                            Button::new("viewer-close")
+                                .ghost()
+                                .icon(Icon::new(IconName::Close))
+                                .tooltip("Close")
+                                .accessibility_label("Close")
+                                .on_click(cx.listener(|this, _, _, cx| this.close(cx))),
+                        ),
+                )
+                .child(step_button(
+                    "viewer-previous",
+                    IconName::ChevronLeft,
+                    "Previous item",
+                    self.can_step(-1),
+                    cx.listener(|this, _, window, cx| this.step(-1, window, cx)),
+                ))
+                .child(step_button(
+                    "viewer-next",
+                    IconName::ChevronRight,
+                    "Next item",
+                    self.can_step(1),
+                    cx.listener(|this, _, window, cx| this.step(1, window, cx)),
+                ))
+            })
     }
 }
 
@@ -614,13 +841,11 @@ fn step_button(
 
 #[cfg(test)]
 mod tests {
-    use super::{format_bytes, format_duration};
+    use super::format_duration;
 
+    /// A video's length reads as `formatDuration` writes it in the details: minutes past an hour.
     #[test]
-    fn writes_sizes_and_lengths_as_electron_oriel_does() {
-        assert_eq!(format_bytes(999), "999 B");
-        assert_eq!(format_bytes(12_345), "12.3 KB");
-        assert_eq!(format_bytes(123_456_789), "123 MB");
+    fn writes_lengths_as_electron_oriel_does() {
         assert_eq!(format_duration(4_000), "00:04");
         assert_eq!(format_duration(3_725_000), "62:05");
     }

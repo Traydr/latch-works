@@ -110,6 +110,8 @@ pub struct VideoPlayer {
     has_video: bool,
     frame: Option<Frame>,
     playing: bool,
+    /// Whether it plays again from the start at the end, rather than stopping there.
+    looping: bool,
     seeks: Seeks,
     awaiting_picture_since: Option<Instant>,
     pump_scheduled: bool,
@@ -149,6 +151,7 @@ impl VideoPlayer {
             has_video: false,
             frame: None,
             playing: false,
+            looping: false,
             seeks: Seeks::default(),
             awaiting_picture_since: None,
             pump_scheduled: false,
@@ -261,9 +264,7 @@ impl VideoPlayer {
         !self.playing
             && self.status == VideoStatus::Ready
             && self.seeks.in_flight.is_none()
-            && self.duration().is_some_and(|duration| {
-                self.av.current_time() + Duration::from_millis(1) >= duration
-            })
+            && self.at_end()
     }
 
     /// 0 to 1, as AVPlayer's volume.
@@ -295,6 +296,15 @@ impl VideoPlayer {
         }
     }
 
+    /// Whether it plays again from the start at the end (View's "Loop videos").
+    pub fn is_looping(&self) -> bool {
+        self.looping
+    }
+
+    pub fn set_looping(&mut self, looping: bool) {
+        self.looping = looping;
+    }
+
     /// The picture's size in pixels, once known, as the video asks to be shown.
     pub fn picture_size(&self) -> Option<(f64, f64)> {
         let (width, height) = self.av.presentation_size();
@@ -309,15 +319,20 @@ impl VideoPlayer {
     /// The picture on screen as a `surface()`, fitted inside its bounds; `None` before the first
     /// one. Size it as any element.
     pub fn surface(&self) -> Option<Surface> {
+        self.surface_fitted(ObjectFit::Contain)
+    }
+
+    /// The picture on screen as a `surface()` that fills its bounds as `fit` says.
+    pub fn surface_fitted(&self, fit: ObjectFit) -> Option<Surface> {
         #[cfg(target_os = "macos")]
         {
             self.frame
                 .as_ref()
-                .map(|frame| gpui_kit::surface(frame.buffer.clone()).object_fit(ObjectFit::Contain))
+                .map(|frame| gpui_kit::surface(frame.buffer.clone()).object_fit(fit))
         }
         #[cfg(not(target_os = "macos"))]
         {
-            let _ = ObjectFit::Contain;
+            let _ = fit;
             None
         }
     }
@@ -425,11 +440,23 @@ impl VideoPlayer {
         }
 
         let playing = self.av.rate() != 0.;
+        if self.looping && self.playing && !playing && self.at_end() {
+            // AVPlayer pauses at the end; a looping video goes back to the start and plays on.
+            self.seek(Duration::ZERO, SeekMode::Exact);
+            self.av.play();
+            return true;
+        }
         if playing != self.playing {
             self.playing = playing;
             changed = true;
         }
         changed
+    }
+
+    /// Whether AVPlayer's clock has reached the end of the video.
+    fn at_end(&self) -> bool {
+        self.duration()
+            .is_some_and(|duration| self.av.current_time() + Duration::from_millis(1) >= duration)
     }
 
     fn poll_status(&mut self) -> bool {
@@ -492,6 +519,21 @@ impl Drop for VideoPlayer {
         // AVPlayer keeps playing sound until it is deallocated, and something else (a pending
         // seek's block) may hold it a moment longer.
         self.av.pause();
+    }
+}
+
+/// Hides the pointer until it next moves (`NSCursor.setHiddenUntilMouseMoves`): the viewer does
+/// this as its controls fade over a playing video, as Electron Oriel's viewer turns the cursor
+/// off. Does nothing off macOS, or where AppKit is not loaded.
+pub fn hide_pointer_until_it_moves() {
+    #[cfg(target_os = "macos")]
+    if let Some(cursor) = objc2::runtime::AnyClass::get(c"NSCursor") {
+        // SAFETY: a class method of AppKit's NSCursor taking a BOOL, called on the main thread,
+        // where the viewer runs.
+        unsafe {
+            let _: () =
+                objc2::msg_send![cursor, setHiddenUntilMouseMoves: objc2::runtime::Bool::YES];
+        }
     }
 }
 

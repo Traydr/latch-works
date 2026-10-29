@@ -6,10 +6,17 @@
 //! (`useGalleryKeyboardNavigation`). It says which rows it drew, and the thumbnail service makes
 //! those first. What a tile opens is the owner's: a double-click, Enter or F emits
 //! [`GalleryEvent::Activated`], and the folder keys emit [`GalleryEvent::FolderStep`].
+//!
+//! A tile under the pointer shows its name and size over the picture (`MediaTile`'s hover
+//! caption), with a video's picture size once ffprobe has read it; the videos drawn are probed
+//! two at a time, as `useVideoMetadataQueue` does. A video tile plays under the pointer while
+//! "Autoplay video on hover" is on ([`preview`]).
 
 mod images;
 pub mod metrics;
+pub mod preview;
 
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -21,18 +28,26 @@ use gpui_kit::{
     App, AppContext as _, ClickEvent, Context, ElementId, Entity, EventEmitter, FocusHandle,
     Focusable, InteractiveElement as _, IntoElement, KeyBinding, ObjectFit, ParentElement as _,
     Render, Resource, Role, ScrollStrategy, SharedString, StatefulInteractiveElement as _,
-    Styled as _, StyledImage as _, Subscription, TestSupportExt as _, UniformListScrollHandle,
-    Window, actions, div, img, linear_color_stop, linear_gradient, point,
+    Styled as _, StyledImage as _, Subscription, Task, TestSupportExt as _,
+    UniformListScrollHandle, Window, actions, div, img, linear_color_stop, linear_gradient, point,
     prelude::FluentBuilder as _, px, uniform_list,
 };
+use oriel_core_domain::format_bytes;
 use oriel_ui::ShellState;
 use oriel_ui::layout::{RAIL_WIDTH, SIDEBAR_WIDTH};
 
 use crate::browser::{Comic, Tile};
 use crate::listing::MediaEntry;
+use crate::media_tools::{VideoProbe, ViewMediaTools};
 use crate::thumbnails::{THUMBNAIL_SIZE, Thumbnail, ThumbnailService};
 use images::TileImages;
 use metrics::{GridMetrics, OVERSCAN_ROWS, TileAspect};
+pub use preview::{HOVER_DELAY, PreviewSettings, TilePreview};
+
+/// The group a media tile's hover caption shows with.
+const TILE_GROUP: &str = "media-tile";
+/// How many videos ffprobe reads at once for their captions (`MAX_PROBE_CONCURRENCY`).
+const PROBES_AT_ONCE: usize = 2;
 
 /// The id of the grid's scroll region.
 pub const GALLERY_ID: &str = "gallery";
@@ -146,7 +161,35 @@ pub struct Gallery {
     /// Whether every tile drawn last had its thumbnail on screen.
     drawn_complete: bool,
     autoscroll: Option<Autoscroll>,
+    /// What video tiles do under the pointer.
+    preview_settings: PreviewSettings,
+    /// The video tile under the pointer, and its preview once that plays.
+    hover: Option<Hover>,
+    probes: VideoProbes,
     _subscriptions: Vec<Subscription>,
+}
+
+/// The video tile under the pointer.
+struct Hover {
+    path: Arc<Path>,
+    /// The tile's place in the grid, to tell when it scrolls away.
+    position: usize,
+    /// The preview, once the pointer has rested for [`HOVER_DELAY`] and it opened.
+    preview: Option<Entity<TilePreview>>,
+    /// Waits out [`HOVER_DELAY`]; dropping it cancels the start.
+    _start: Option<Task<()>>,
+}
+
+/// ffprobe's facts about the videos the grid draws, for their captions.
+#[derive(Default)]
+struct VideoProbes {
+    facts: HashMap<SharedString, VideoProbe>,
+    /// Asked for, queued or under way, by item id.
+    asked: HashSet<SharedString>,
+    queue: VecDeque<MediaEntry>,
+    in_flight: usize,
+    /// Bumped when the folder changes, so a probe of the last folder's video is dropped.
+    generation: u64,
 }
 
 impl EventEmitter<GalleryEvent> for Gallery {}
@@ -189,7 +232,180 @@ impl Gallery {
             columns: 1,
             drawn_complete: false,
             autoscroll: None,
+            preview_settings: PreviewSettings::default(),
+            hover: None,
+            probes: VideoProbes::default(),
             _subscriptions: subscriptions,
+        }
+    }
+
+    /// What video tiles do under the pointer, from View's settings. A preview playing stops when
+    /// they change, and the next hover plays as they now say.
+    pub fn set_preview_settings(&mut self, settings: PreviewSettings, cx: &mut Context<Self>) {
+        if self.preview_settings != settings {
+            self.preview_settings = settings;
+            self.stop_preview(cx);
+            cx.notify();
+        }
+    }
+
+    pub fn preview_settings(&self) -> PreviewSettings {
+        self.preview_settings
+    }
+
+    /// The hover preview playing, and the path of its video.
+    pub fn preview(&self) -> Option<(&Arc<Path>, &Entity<TilePreview>)> {
+        let hover = self.hover.as_ref()?;
+        Some((&hover.path, hover.preview.as_ref()?))
+    }
+
+    /// The video tile under the pointer, whether or not its preview plays yet.
+    pub fn hovered_video(&self) -> Option<&Arc<Path>> {
+        self.hover.as_ref().map(|hover| &hover.path)
+    }
+
+    /// Stops the hover preview: the viewer or the reader opened over the gallery, or View is
+    /// not on screen.
+    pub fn stop_preview(&mut self, cx: &mut Context<Self>) {
+        if self
+            .hover
+            .take()
+            .is_some_and(|hover| hover.preview.is_some())
+        {
+            cx.notify();
+        }
+    }
+
+    /// ffprobe's facts about a video tile drawn, once read.
+    pub fn video_probe(&self, entry: &MediaEntry) -> Option<&VideoProbe> {
+        self.probes.facts.get(entry.id())
+    }
+
+    /// A new folder: back to the top, and its thumbnails, probes and preview start over.
+    pub fn reset_folder(&mut self, cx: &mut Context<Self>) {
+        self.scroll_to_top(cx);
+        self.thumbnails
+            .update(cx, |thumbnails, cx| thumbnails.reset(cx));
+        let generation = self.probes.generation + 1;
+        self.probes = VideoProbes {
+            generation,
+            ..VideoProbes::default()
+        };
+        self.stop_preview(cx);
+    }
+
+    /// The pointer came onto (`hovered`) or left the video tile at `position`. Its preview starts
+    /// once the pointer has rested there for [`HOVER_DELAY`].
+    fn hover_video(
+        &mut self,
+        path: Arc<Path>,
+        position: usize,
+        hovered: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let current = self.hover.as_ref().is_some_and(|hover| hover.path == path);
+        if !hovered {
+            if current {
+                self.stop_preview(cx);
+            }
+            return;
+        }
+        if current || !self.preview_settings.autoplay {
+            return;
+        }
+        let metrics = self.metrics(window, cx);
+        let max_side =
+            (metrics.card_width().max(metrics.card_height()) * window.scale_factor()).ceil() as u32;
+        let settings = self.preview_settings;
+        let start = {
+            let path = path.clone();
+            cx.spawn(async move |this, cx| {
+                cx.background_executor().timer(HOVER_DELAY).await;
+                this.update(cx, |this, cx| {
+                    let Some(hover) = this.hover.as_mut().filter(|hover| hover.path == path) else {
+                        return;
+                    };
+                    hover._start = None;
+                    if let Some(preview) = TilePreview::start(&path, settings, max_side) {
+                        hover.preview = Some(cx.new(|_| preview));
+                        cx.notify();
+                    }
+                })
+                .ok();
+            })
+        };
+        let had_preview = self
+            .hover
+            .as_ref()
+            .is_some_and(|hover| hover.preview.is_some());
+        self.hover = Some(Hover {
+            path,
+            position,
+            preview: None,
+            _start: Some(start),
+        });
+        if had_preview {
+            cx.notify();
+        }
+    }
+
+    /// Asks ffprobe about the videos among `entries` not yet asked about, and forgets the queued
+    /// ones no longer drawn, so a fast scroll does not leave a long queue behind it.
+    fn want_probes(&mut self, entries: &[MediaEntry], cx: &mut Context<Self>) {
+        let wanted: HashSet<&SharedString> = entries
+            .iter()
+            .filter(|entry| entry.is_video())
+            .map(MediaEntry::id)
+            .collect();
+        let probes = &mut self.probes;
+        probes.queue.retain(|entry| {
+            let keep = wanted.contains(entry.id());
+            if !keep {
+                probes.asked.remove(entry.id());
+            }
+            keep
+        });
+        for entry in entries.iter().filter(|entry| entry.is_video()) {
+            if !probes.facts.contains_key(entry.id()) && probes.asked.insert(entry.id().clone()) {
+                probes.queue.push_back(entry.clone());
+            }
+        }
+        self.pump_probes(cx);
+    }
+
+    fn pump_probes(&mut self, cx: &mut Context<Self>) {
+        while self.probes.in_flight < PROBES_AT_ONCE {
+            let Some(entry) = self.probes.queue.pop_front() else {
+                return;
+            };
+            self.probes.in_flight += 1;
+            let generation = self.probes.generation;
+            cx.spawn(async move |this, cx| {
+                let id = entry.id().clone();
+                let probe = cx
+                    .background_spawn(async move {
+                        ViewMediaTools::shared().probe_video(
+                            entry.path(),
+                            entry.modified_ms(),
+                            entry.size(),
+                        )
+                    })
+                    .await;
+                this.update(cx, |this, cx| {
+                    if this.probes.generation != generation {
+                        return;
+                    }
+                    this.probes.in_flight -= 1;
+                    if let Some(probe) = probe {
+                        this.probes.facts.insert(id, probe);
+                        cx.notify();
+                    }
+                    this.pump_probes(cx);
+                })
+                .ok();
+            })
+            .detach();
         }
     }
 
@@ -272,6 +488,21 @@ impl Gallery {
         self.media = media;
         self.aspect = aspect;
         self.wanted = None;
+        // A preview follows its tile to wherever the new listing has it, or stops.
+        let moved = self.hover.as_ref().map(|hover| {
+            self.tiles.iter().position(
+                |tile| matches!(tile, Tile::Media { media, .. } if *media.path() == hover.path),
+            )
+        });
+        match moved {
+            Some(Some(position)) => {
+                if let Some(hover) = &mut self.hover {
+                    hover.position = position;
+                }
+            }
+            Some(None) => self.stop_preview(cx),
+            None => {}
+        }
         cx.notify();
     }
 
@@ -450,12 +681,18 @@ impl Gallery {
     fn request_thumbnails(&mut self, cx: &mut Context<Self>) {
         self.request_due = false;
         let rows = self.drawn_rows.clone();
+        let columns = self.columns.max(1);
+        // A tile scrolled out of the drawn rows has no hover to lose, so its preview stops here.
+        if let Some(hover) = &self.hover
+            && !(rows.start * columns..rows.end * columns).contains(&hover.position)
+        {
+            self.stop_preview(cx);
+        }
         let wanted = (rows.clone(), self.tiles.len());
         if self.wanted.as_ref() == Some(&wanted) {
             return;
         }
         self.wanted = Some(wanted);
-        let columns = self.columns.max(1);
         let len = self.tiles.len();
         let row_count = len.div_ceil(columns);
         let nearby =
@@ -476,6 +713,14 @@ impl Gallery {
         self.thumbnails.update(cx, |thumbnails, cx| {
             thumbnails.want(&visible_sources, &nearby_sources, cx)
         });
+        let nearby_media: Vec<MediaEntry> = self.tiles[nearby]
+            .iter()
+            .filter_map(|tile| match tile {
+                Tile::Media { media, .. } => Some(media.clone()),
+                _ => None,
+            })
+            .collect();
+        self.want_probes(&nearby_media, cx);
     }
 
     fn render_rows(
@@ -601,10 +846,26 @@ impl Gallery {
                     comic.name().clone(),
                     format!("{} pages", comic.pages().len()).into(),
                 )),
-            Tile::Media { media, .. } => card
-                .bg(theme.muted)
-                .when_some(picture, |card, path| card.child(self.picture(path)))
-                .when(media.is_video(), |card| card.child(video_badge())),
+            Tile::Media { media, .. } => {
+                let preview = self
+                    .hover
+                    .as_ref()
+                    .filter(|hover| hover.path == *media.path())
+                    .and_then(|hover| hover.preview.clone());
+                let hover_plays = media.is_video() && self.preview_settings.autoplay;
+                let path = media.path().clone();
+                card.group(TILE_GROUP)
+                    .bg(theme.muted)
+                    .when_some(picture, |card, path| card.child(self.picture(path)))
+                    .when_some(preview, |card, preview| card.child(preview))
+                    .child(hover_caption(media, self.probes.facts.get(media.id())))
+                    .when(media.is_video(), |card| card.child(video_badge()))
+                    .when(hover_plays, |card| {
+                        card.on_hover(cx.listener(move |this, hovered: &bool, window, cx| {
+                            this.hover_video(path.clone(), position, *hovered, window, cx);
+                        }))
+                    })
+            }
         };
         let card = card.when(selected, |card| card.border_2().border_color(theme.ring));
         (card.into_any_element(), drawn)
@@ -645,6 +906,44 @@ fn video_badge() -> impl IntoElement {
         .text_xs()
         .font_weight(gpui_kit::FontWeight::MEDIUM)
         .child("VIDEO")
+}
+
+/// A media tile's name and size, and a video's picture size once known, over the bottom of the
+/// picture while the pointer is on the tile (`MediaTile`'s caption).
+fn hover_caption(media: &MediaEntry, probe: Option<&VideoProbe>) -> impl IntoElement {
+    let mut detail = format_bytes(media.size() as f64);
+    if let Some((width, height)) = probe.and_then(|probe| probe.width.zip(probe.height)) {
+        detail.push_str(&format!(" · {width}×{height}"));
+    }
+    div()
+        .absolute()
+        .inset_0()
+        .flex()
+        .flex_col()
+        .justify_end()
+        .px_3()
+        .pb_3()
+        .bg(linear_gradient(
+            0.,
+            linear_color_stop(gpui_kit::black().opacity(0.7), 0.),
+            linear_color_stop(gpui_kit::black().opacity(0.), 0.5),
+        ))
+        .opacity(0.)
+        .group_hover(TILE_GROUP, |style| style.opacity(1.))
+        .child(
+            div()
+                .truncate()
+                .text_sm()
+                .font_weight(gpui_kit::FontWeight::SEMIBOLD)
+                .text_color(gpui_kit::white())
+                .child(media.name().clone()),
+        )
+        .child(
+            div()
+                .text_size(px(11.))
+                .text_color(gpui_kit::white().opacity(0.7))
+                .child(detail),
+        )
 }
 
 /// A comic's name and page count over the bottom of its cover, on a scrim.

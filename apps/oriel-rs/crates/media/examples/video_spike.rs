@@ -75,6 +75,9 @@ fn main() {
         eprintln!("usage: video_spike single|tiles|sweep|errors|still <file>...");
         std::process::exit(2);
     }
+    // The capsule player plays through libmpv by default; this spike measures AVPlayer.
+    // SAFETY: set before any thread starts; the capsule player reads it when it opens.
+    unsafe { std::env::set_var("ORIEL_RS_VIDEO", "avplayer") };
 
     gpui_kit::application()
         .with_assets(SpikeAssets)
@@ -387,8 +390,8 @@ async fn run_single(cx: &mut AsyncApp, window: AnyWindowHandle, root: &Entity<Sp
     let seeks: [(&str, Step); 6] = [
         ("exact to 10 s, playing", Step::Seek(10., SeekMode::Exact)),
         ("fast to 3 s, playing", Step::Seek(3., SeekMode::Fast)),
-        ("→ skip +5 s", Step::Key("right")),
-        ("← skip −5 s", Step::Key("left")),
+        ("3 skip +5 s", Step::Key("3")),
+        ("1 skip −5 s", Step::Key("1")),
         ("exact to 15 s, paused (Space first)", Step::PausedSeek(15.)),
         (
             "exact to 1 s, scrub release",

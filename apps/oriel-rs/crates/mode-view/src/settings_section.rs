@@ -174,13 +174,14 @@ const GALLERY_KEYS: [(&str, &str); 5] = [
     ),
 ];
 
-const VIEWER_KEYS: [(&str, &str); 6] = [
+const VIEWER_KEYS: [(&str, &str); 7] = [
     ("Close the viewer", "Escape"),
     ("Previous page or item", "ArrowLeft / q"),
     ("Next page or item", "ArrowRight / e"),
     ("Play or pause", "Space / 2"),
     ("Back or forward 5 seconds", "1 / 3"),
     ("Mute", "m"),
+    ("Play at 2× while held", "4"),
 ];
 
 impl ViewMode {

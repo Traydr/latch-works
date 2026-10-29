@@ -30,8 +30,8 @@ pub mod viewer;
 
 pub use comic_reader::{ComicReader, ComicReaderEvent};
 pub use folder_overlay::{FolderOverlay, FolderOverlayEvent};
-pub use gallery::{Activation, FolderStep, Gallery, GalleryEvent, Listing};
-pub use player::CapsulePlayer;
+pub use gallery::{Activation, FolderStep, Gallery, GalleryEvent, Listing, PreviewSettings};
+pub use player::{CapsulePanel, CapsulePlayer, CapsulePlayerEvent, PlayerOptions};
 pub use viewer::{Viewer, ViewerEvent};
 
 use std::collections::hash_map::RandomState;
@@ -41,8 +41,8 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use gpui_kit::{
-    AnyElement, App, AppContext as _, Context, Entity, ExternalPaths, FocusHandle, Focusable as _,
-    Global, InteractiveElement as _, IntoElement, MouseButton, ParentElement as _,
+    AnyElement, App, AppContext as _, Context, Entity, EventEmitter, ExternalPaths, FocusHandle,
+    Focusable as _, Global, InteractiveElement as _, IntoElement, MouseButton, ParentElement as _,
     PathPromptOptions, Render, SharedString, Styled as _, Subscription, Task, Window, div,
     prelude::FluentBuilder as _,
 };
@@ -74,6 +74,14 @@ pub fn init(cx: &mut App) {
     gallery::bind_keys(cx);
     comic_reader::bind_keys(cx);
     folder_overlay::bind_keys(cx);
+}
+
+/// What View asks of the rest of the app.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ViewEvent {
+    /// The viewer's Show in Tidy, for this file: the app shows it in Tidy, as Electron Oriel's
+    /// `handOff("tidy", { kind: "file", path })` does. View stays as it is underneath.
+    ShowInTidy(PathBuf),
 }
 
 /// A file handed to View, to open in the viewer once its folder's scan has listed it.
@@ -122,6 +130,8 @@ pub struct ViewMode {
     _subscriptions: Vec<Subscription>,
 }
 
+impl EventEmitter<ViewEvent> for ViewMode {}
+
 impl ViewMode {
     /// View for the shell, keeping its data in this run's data folder. Opens the folder
     /// [`OPEN_VARIABLE`] names, if it names one, and the remembered folder otherwise.
@@ -166,7 +176,14 @@ impl ViewMode {
         let gallery = cx.new(|cx| Gallery::new(shell, thumbnails, cx));
         let catalog = cx.new(|_| Catalog::new(folder));
         let subscriptions = vec![
-            cx.observe(shell, |_, _, cx| cx.notify()),
+            cx.observe(shell, |this, shell, cx| {
+                // Another mode on screen: a hover preview has no pointer left to stop it.
+                if shell.read(cx).mode() != ModeId::View {
+                    this.gallery
+                        .update(cx, |gallery, cx| gallery.stop_preview(cx));
+                }
+                cx.notify();
+            }),
             cx.observe(&catalog, |this, _, cx| this.catalog_changed(cx)),
             cx.subscribe(&catalog, Self::on_catalog_update),
             cx.observe(&gallery, |_, _, cx| cx.notify()),
@@ -430,11 +447,20 @@ impl ViewMode {
         }
     }
 
-    /// The thumbnail size and the order follow the settings.
+    /// The thumbnail size, the order and what video tiles do under the pointer follow the
+    /// settings.
     fn apply_display_settings(&mut self, cx: &mut Context<Self>) {
-        let size = self.settings.settings().thumbnail_size as f32;
-        self.gallery
-            .update(cx, |gallery, cx| gallery.set_thumbnail_size(size, cx));
+        let settings = self.settings.settings();
+        let size = settings.thumbnail_size as f32;
+        let preview = PreviewSettings {
+            autoplay: settings.autoplay_on_hover,
+            sound: settings.preview_audio_enabled,
+            looping: settings.loop_videos,
+        };
+        self.gallery.update(cx, |gallery, cx| {
+            gallery.set_thumbnail_size(size, cx);
+            gallery.set_preview_settings(preview, cx);
+        });
         self.rebuild_tiles(cx);
     }
 
@@ -456,12 +482,8 @@ impl ViewMode {
                 if root != self.thumbnails_root {
                     // A new folder: back to the top, and its thumbnails' queue starts over.
                     self.thumbnails_root = root;
-                    self.gallery.update(cx, |gallery, cx| {
-                        gallery.scroll_to_top(cx);
-                        gallery
-                            .thumbnails()
-                            .update(cx, |thumbnails, cx| thumbnails.reset(cx));
-                    });
+                    self.gallery
+                        .update(cx, |gallery, cx| gallery.reset_folder(cx));
                 }
             }
             CatalogUpdate::Done => {
@@ -795,10 +817,13 @@ impl ViewMode {
         if ix >= entries.len() {
             return;
         }
+        self.gallery
+            .update(cx, |gallery, cx| gallery.stop_preview(cx));
         let settings = self.settings.settings();
         let options = viewer::ViewerOptions {
             wrap: settings.loop_viewer_navigation,
             autoplay: settings.autoplay_videos,
+            loop_videos: settings.loop_videos,
         };
         let viewer = cx.new(|cx| Viewer::new(entries, ix, options, window, cx));
         let closed = cx.subscribe_in(&viewer, window, |this, _, event, window, cx| match event {
@@ -808,6 +833,7 @@ impl ViewMode {
                 this.gallery
                     .update(cx, |gallery, cx| gallery.reveal(ix, cx));
             }
+            ViewerEvent::ShowInTidy(path) => cx.emit(ViewEvent::ShowInTidy(path.clone())),
         });
         self.viewer_subscription = Some(closed);
         if self.focus_before_overlay.is_none() {
@@ -840,6 +866,8 @@ impl ViewMode {
     }
 
     fn open_comic(&mut self, comic: Arc<Comic>, window: &mut Window, cx: &mut Context<Self>) {
+        self.gallery
+            .update(cx, |gallery, cx| gallery.stop_preview(cx));
         let reader = cx.new(|cx| ComicReader::new(comic, window, cx));
         let subscription = cx.subscribe_in(&reader, window, |this, _, event, window, cx| {
             let ComicReaderEvent::Closed = event;
@@ -866,6 +894,8 @@ impl ViewMode {
         let Some(root) = self.catalog.read(cx).root().cloned() else {
             return;
         };
+        self.gallery
+            .update(cx, |gallery, cx| gallery.stop_preview(cx));
         let excluded = self.current_preferences(cx).excluded_root_child_paths;
         let overlay = cx.new(|cx| FolderOverlay::new(root, excluded, window, cx));
         let subscription = cx.subscribe_in(&overlay, window, |this, _, event, window, cx| {

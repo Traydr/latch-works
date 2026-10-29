@@ -24,7 +24,8 @@
 //! Homebrew's ffmpeg decodes around it, to show which frame it landed on. `colour` shows a
 //! flat-colour clip beside a GPUI swatch of the colour it was made from and prints the
 //! picture's mean colour as GPUI draws it; with `ORIEL_SPIKE_HOLD=<seconds>` the window stays
-//! for a screenshot.
+//! for a screenshot, with the capsule's volume or speed panel open under
+//! `ORIEL_SPIKE_PANEL=volume|speed`.
 
 // The capsule player lives in View's crate, which depends on this one, so the spike builds the
 // same file in here rather than depend on View.
@@ -44,7 +45,7 @@ use gpui_kit::{
 };
 use oriel_media::mpv::{MpvFrameSample, MpvPlayer, MpvRender, pump_frames};
 use oriel_media::video::{SeekMode, VideoStatus};
-use player::CapsulePlayer;
+use player::{CapsulePanel, CapsulePlayer, PlayerOptions};
 
 gpui_kit::assets::icon_assets!(PlayerIcons, [RotateCcw, Volume2, VolumeX]);
 
@@ -108,6 +109,36 @@ fn main() {
                     .ok()
                     .and_then(|seconds| seconds.parse().ok())
                 {
+                    // `ORIEL_SPIKE_PANEL=volume` or `speed` opens that capsule panel first, for
+                    // a screenshot of it.
+                    let panel = match std::env::var("ORIEL_SPIKE_PANEL").as_deref() {
+                        Ok("volume") => Some(CapsulePanel::Volume),
+                        Ok("speed") => Some(CapsulePanel::Speed),
+                        _ => None,
+                    };
+                    if let Some(panel) = panel {
+                        // `single` ends on a tile; the capsule comes back, paused, to show it.
+                        let file = cx.update(|cx| PathBuf::from(&root.read(cx).args[0]));
+                        window
+                            .update(cx, |_, window, cx| {
+                                let options = PlayerOptions {
+                                    autoplay: false,
+                                    ..PlayerOptions::default()
+                                };
+                                let capsule = cx.new(|cx| {
+                                    let mut capsule =
+                                        CapsulePlayer::open(file, options, window, cx);
+                                    capsule.toggle_panel(panel, cx);
+                                    capsule
+                                });
+                                root.update(cx, |root, cx| {
+                                    root.tiles.clear();
+                                    root.capsule = Some(capsule);
+                                    cx.notify();
+                                });
+                            })
+                            .ok();
+                    }
                     println!("holding the window {hold} s, pid {}", std::process::id());
                     wait(cx, Duration::from_secs(hold)).await;
                 }
@@ -383,8 +414,8 @@ async fn run_single(cx: &mut AsyncApp, window: AnyWindowHandle, root: &Entity<Sp
     let seeks: [(&str, Step); 6] = [
         ("exact to 10 s, playing", Step::Seek(10., SeekMode::Exact)),
         ("fast to 3 s, playing", Step::Seek(3., SeekMode::Fast)),
-        ("→ skip +5 s", Step::Key("right")),
-        ("← skip −5 s", Step::Key("left")),
+        ("3 skip +5 s", Step::Key("3")),
+        ("1 skip −5 s", Step::Key("1")),
         ("exact to 15 s, paused (Space first)", Step::PausedSeek(15.)),
         (
             "exact to 1 s, scrub release",
