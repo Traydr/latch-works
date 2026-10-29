@@ -79,6 +79,11 @@ scripted input:
 | `ORIEL_RS_ACTIVITY=tidy=0.4,sync=working` | Fakes mode activity; a faked progress makes ⌘Q wait, so press it twice |
 | `ORIEL_RS_SYNC_PLAN=1` | Sync plans the active profile at start |
 | `ORIEL_RS_VIDEO=avplayer` | Video through AVPlayer instead of libmpv |
+| `ORIEL_RS_TIDY_ROOT=<folder>` | Tidy opens on that root (it must be in the sandbox) |
+| `ORIEL_RS_TIDY_PAGE=<page>` | Tidy opens on that page (`overview`, `library`, `duplicates`, …) |
+| `ORIEL_RS_CHANGES_ONLY=<scenario>` | `core-tidy`'s changes test runs one differential scenario |
+| `ORIEL_RS_CHANGES_OUT=<file>` | `core-tidy`'s changes test writes Rust's report there |
+| `ORIEL_SPIKE_PANEL=volume\|speed` | `mpv_spike` opens the player's volume or speed panel, for screenshots |
 
 ## The sandbox
 
@@ -146,11 +151,10 @@ static archives, and IINA's and mpv's own builds are GPL.
   logs; deleted on success unless `--keep-work`). It refuses a download whose SHA-256 differs
   from its pin, builds with only meson, ninja, pkgconf and the system on `PATH`, and checks with
   `otool` that nothing outside the set and the system is linked.
-- **The Rust port.** The command replaced a Node script (2026-10-29) and gives the same set: the
-  same id, the same manifest but for its date, the same `otool -L` for all 13 dylibs and the same
-  licence files. Ten dylibs are byte for byte the same; libass and libplacebo embed the
-  `git describe` of the checkout the build runs in, and libmpv a link UUID, so those three
-  differ between any two builds.
+- **Reproducible.** The command replaced a Node script (2026-10-29). Since recipe revision 2
+  (set `mpv-0.41.0-ffmpeg-9.0.2-lgpl-83e766fd1f`) two builds are byte for byte the same in all 13
+  dylibs: the builds run with `GIT_CEILING_DIRECTORIES` at the work root, so libass and
+  libplacebo no longer embed the checkout's `git describe`, and with `ZERO_AR_DATE=1`.
 
 The app looks for libmpv in this order, first found wins. It logs the one it loaded at the
 `log` crate's info level (the app installs no logger yet), and the spike's `single` mode prints
@@ -230,7 +234,8 @@ The environment variables are documented at the top of each spike:
 
 - View (gallery, thumbnails, viewer): `crates/mode-view/src/spike.rs`.
 - The Library table: `crates/mode-tidy/src/spike.rs`.
-- Video: `cargo run --release -p oriel-media --example video_spike -- <single|tiles|sweep|errors>`,
+- Video through AVPlayer, which `video_spike` forces: `cargo run --release -p oriel-media --example
+  video_spike -- <single|tiles|sweep|errors>`,
   and the same through libmpv with `--example mpv_spike` (also `verify` and `colour`).
 - Electron Oriel on the same fixture: `FRAME_PERF_FIXTURE_ROOT=<fixture> pnpm --filter
   @latch-works/e2e exec tsx scripts/frame-performance.ts <label>`.
