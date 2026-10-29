@@ -15,14 +15,20 @@ use gpui_kit::{App, AppContext as _, Context, Entity, EventEmitter, SharedString
 
 use crate::cancel::{CancelToken, Cancelled};
 use crate::panic_message;
+use crate::pause::PauseToken;
 
 /// How far a job has got: `done` of `total` in the phase named `phase`. A total of 0 means the
-/// phase's size is not known yet.
+/// phase's size is not known yet. It also says whether the job is paused, waits for its turn, or
+/// runs in the background, which is how glazier-core's job card words a job's state ("Paused",
+/// "In the background", queued).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct JobProgress {
     phase: SharedString,
     done: u64,
     total: u64,
+    paused: bool,
+    waiting: bool,
+    background: bool,
 }
 
 impl JobProgress {
@@ -42,6 +48,24 @@ impl JobProgress {
     /// rather than fills.
     pub fn fraction(&self) -> Option<f32> {
         (self.total > 0).then(|| (self.done.min(self.total) as f64 / self.total as f64) as f32)
+    }
+
+    /// Whether the owner paused the job ([`Job::pause`]). The step in flight still finishes.
+    pub fn is_paused(&self) -> bool {
+        self.paused
+    }
+
+    /// Whether the job waits for its turn rather than working: queued behind other work, or
+    /// stepped aside for work the owner asked for. It goes on by itself; glazier-core shows it as
+    /// queued.
+    pub fn is_waiting(&self) -> bool {
+        self.waiting
+    }
+
+    /// Whether the job is background work, which runs only while nothing the owner asked for
+    /// waits; its card is drawn muted, "In the background".
+    pub fn is_background(&self) -> bool {
+        self.background
     }
 }
 
@@ -111,12 +135,15 @@ pub enum JobEvent {
 /// [`Job::start`]; observe it for progress, subscribe to it for [`JobEvent`]s.
 ///
 /// The owner holds the entity. Dropping the last handle cancels the job: the token is cancelled
-/// for work that checks it, and the work's future is dropped at its next await.
+/// for work that checks it, and the work's future is dropped at its next await. Pausing is
+/// cooperative too: the work waits at its own checkpoints ([`JobReporter::wait_while_paused`],
+/// [`JobReporter::resumed`]).
 pub struct Job<T> {
     name: SharedString,
     progress: JobProgress,
     status: JobStatus<T>,
     token: CancelToken,
+    pause: PauseToken,
     _task: Task<()>,
 }
 
@@ -131,10 +158,12 @@ impl<T: Send + 'static> Job<T> {
     {
         let name = name.into();
         let token = CancelToken::new();
+        let pause = PauseToken::new();
         let slot = Arc::new(ProgressSlot::default());
         let (wake, mut wakes) = mpsc::unbounded();
         let reporter = JobReporter {
             token: token.clone(),
+            pause: pause.clone(),
             slot: slot.clone(),
             wake,
         };
@@ -157,7 +186,10 @@ impl<T: Send + 'static> Job<T> {
                         Either::Right((Some(()), _)) => {
                             let progress = slot.take();
                             let shown = this.update(cx, |job: &mut Self, cx| {
-                                job.progress = progress;
+                                job.progress = JobProgress {
+                                    paused: job.pause.is_paused(),
+                                    ..progress
+                                };
                                 cx.notify();
                             });
                             if shown.is_err() {
@@ -177,6 +209,7 @@ impl<T: Send + 'static> Job<T> {
                 progress: JobProgress::default(),
                 status: JobStatus::Running,
                 token,
+                pause,
                 _task: task,
             }
         })
@@ -188,7 +221,12 @@ impl<T: Send + 'static> Job<T> {
         progress: JobProgress,
         cx: &mut Context<Self>,
     ) {
-        self.progress = progress;
+        // A finished job neither waits nor is paused, whatever its last report said.
+        self.progress = JobProgress {
+            paused: false,
+            waiting: false,
+            ..progress
+        };
         let event = match &result {
             Ok(_) => JobEvent::Succeeded,
             Err(error) => {
@@ -242,10 +280,36 @@ impl<T: 'static> Job<T> {
     }
 
     /// Asks the job to stop. It finishes as [`JobError::Cancelled`] once the work notices, or with
-    /// its value if the work completes first.
+    /// its value if the work completes first. A paused job stops too: the cancel ends its wait,
+    /// and it no longer reads as paused.
     pub fn cancel(&mut self, cx: &mut Context<Self>) {
         if self.is_running() && !self.token.is_cancelled() {
             self.token.cancel();
+            self.pause.resume();
+            self.progress.paused = false;
+            cx.notify();
+        }
+    }
+
+    /// Whether the owner paused the job and it has not finished.
+    pub fn is_paused(&self) -> bool {
+        self.is_running() && self.pause.is_paused()
+    }
+
+    /// Asks the job to wait at its next checkpoint, as glazier-core's `pauseJob` does. The step in
+    /// flight finishes first. Work that never checks for a pause runs on.
+    pub fn pause(&mut self, cx: &mut Context<Self>) {
+        self.set_paused(true, cx);
+    }
+
+    pub fn resume(&mut self, cx: &mut Context<Self>) {
+        self.set_paused(false, cx);
+    }
+
+    /// Pauses or resumes a running job; a finished or stopping one stays as it is.
+    pub fn set_paused(&mut self, paused: bool, cx: &mut Context<Self>) {
+        if self.is_running() && !self.token.is_cancelled() && self.pause.set_paused(paused) {
+            self.progress.paused = paused;
             cx.notify();
         }
     }
@@ -259,11 +323,12 @@ impl<T> Drop for Job<T> {
 
 impl<T: 'static> EventEmitter<JobEvent> for Job<T> {}
 
-/// The work's side of a [`Job`]: it reports progress and learns of cancellation. Clones report
-/// to the same job, so work spread over several threads can share it.
+/// The work's side of a [`Job`]: it reports progress and learns of cancellation and pauses.
+/// Clones report to the same job, so work spread over several threads can share it.
 #[derive(Clone)]
 pub struct JobReporter {
     token: CancelToken,
+    pause: PauseToken,
     slot: Arc<ProgressSlot>,
     wake: mpsc::UnboundedSender<()>,
 }
@@ -304,6 +369,39 @@ impl JobReporter {
     /// Resolves once the job is cancelled.
     pub fn cancelled(&self) -> impl Future<Output = ()> + Send + 'static {
         self.token.cancelled()
+    }
+
+    /// The token the owner pauses the job with, for code that waits on more than the pause.
+    pub fn pause_token(&self) -> &PauseToken {
+        &self.pause
+    }
+
+    pub fn is_paused(&self) -> bool {
+        self.pause.is_paused()
+    }
+
+    /// A checkpoint for work on a thread of its own: blocks while the job is paused, and returns
+    /// `Err(Cancelled)` once it is cancelled, paused or not.
+    pub fn wait_while_paused(&self) -> Result<(), Cancelled> {
+        self.pause.wait_blocking(&self.token)
+    }
+
+    /// The async checkpoint: resolves once the job is not paused, or with `Err(Cancelled)` once
+    /// it is cancelled.
+    pub fn resumed(&self) -> impl Future<Output = Result<(), Cancelled>> + Send + 'static {
+        self.pause.resumed(&self.token)
+    }
+
+    /// Says the job waits for its turn (true) or works again (false); see
+    /// [`JobProgress::is_waiting`].
+    pub fn set_waiting(&self, waiting: bool) {
+        self.report(|progress| progress.waiting = waiting);
+    }
+
+    /// Says the job is background work (true) or work the owner asked for (false); see
+    /// [`JobProgress::is_background`].
+    pub fn set_background(&self, background: bool) {
+        self.report(|progress| progress.background = background);
     }
 
     /// Updates the latest progress and wakes the UI side unless a wake is already pending, so a

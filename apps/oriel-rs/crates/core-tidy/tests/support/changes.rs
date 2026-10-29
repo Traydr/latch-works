@@ -45,7 +45,10 @@ impl Replay {
         ))
         .unwrap();
         let root = block_on(engine.add_root(archive)).unwrap();
-        engine.scan_blocking(root.id, &Quiet::new()).unwrap();
+        let scanned = engine.scan_blocking(root.id, &Quiet::new()).unwrap();
+        engine
+            .follow_up_blocking(&scanned.follow_up, &Quiet::new())
+            .unwrap();
         Self {
             engine,
             root,

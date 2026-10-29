@@ -6,15 +6,21 @@
 //! The work itself is synchronous and runs on a thread of its own, its passes on worker threads
 //! below it; the catalog's calls go to the catalog's SQLite thread. Jobs report their phase and
 //! how far it has got through [`Job`]'s progress, which is what the shell's "Working" dot
-//! follows: the UI forwards it, the engine never touches the shell. One piece of work runs at a
-//! time, as glazier-core's queue runs one job at a time, so a scan and an analysis of one root
-//! never interleave.
+//! follows: the UI forwards it, the engine never touches the shell.
+//!
+//! One piece of work runs at a time, as glazier-core's queue runs one job at a time (see
+//! [`schedule`]): scans, changes and analysis the owner asked for run in the order asked, and
+//! background analysis runs behind them, stepping aside when such work arrives and carrying on
+//! after. A job can be paused ([`Job::pause`]) and stopped; queries never wait for the queue.
 
 mod changes;
+mod schedule;
 
 pub use changes::{
     Applied, FollowUp, FollowUpReport, Performed, TidiedUp, Undone, still_concurrency,
 };
+
+use schedule::{Priority, Scheduler};
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -80,8 +86,12 @@ pub struct ScanReport {
     pub skipped_entries: usize,
     /// Files the catalog had that the walk did not see again.
     pub removed: usize,
-    /// The analysis that followed, when background analysis is on.
+    /// The background analysis that followed, when [`TidyEngine::start_scan`] ran it.
     pub analysis: Option<AnalysisReport>,
+    /// The background analysis glazier-core queues after a scan (background analysis on, and
+    /// files that need fingerprints or loudness), for the caller to start with
+    /// [`TidyEngine::start_background_analysis`]; empty when the job ran it.
+    pub follow_up: FollowUp,
 }
 
 /// What an analysis did.
@@ -112,17 +122,30 @@ struct SetCache {
     sets: Arc<Vec<ComputedSet>>,
 }
 
+/// Similar clusters as last computed for a root and level, kept while no fingerprint changed.
+struct ClusterCache {
+    fingerprints: u64,
+    clusters: Arc<Vec<SimilarCluster>>,
+}
+
 struct Inner {
     catalog: Catalog,
     data: DataRoot,
     media: Media,
-    /// One piece of work at a time.
-    work: Mutex<()>,
+    /// One piece of work at a time, asked-for work first.
+    scheduler: Scheduler,
     scan_counter: Mutex<i64>,
     /// Bumped whenever the engine changes the catalog, so a cached result computed across a
     /// change is not kept.
     generation: AtomicU64,
     sets: Mutex<Option<SetCache>>,
+    /// Bumped whenever fingerprints may have changed: a walk drops those of changed files, the
+    /// fingerprint pass writes them. Comparing fingerprints is the slow part of duplicate sets
+    /// (38 of 45 ms on the 21k fixture), and only fingerprints change the clusters, so they
+    /// survive every other change, as glazier-core's `clusterCache` does: a file resolved away
+    /// since simply drops out of its cluster when sets are built.
+    fingerprints: AtomicU64,
+    clusters: Mutex<HashMap<(Option<RootId>, SimilarityLevel), ClusterCache>>,
     /// Where each root's held files go.
     places: crate::plans::holding::HoldingPlaces,
     /// Whether the pinned ffmpeg has SVT-AV1, asked once.
@@ -232,10 +255,12 @@ impl TidyEngine {
                 catalog,
                 data,
                 media,
-                work: Mutex::new(()),
+                scheduler: Scheduler::default(),
                 scan_counter: Mutex::new(now_ms()),
                 generation: AtomicU64::new(0),
                 sets: Mutex::new(None),
+                fingerprints: AtomicU64::new(0),
+                clusters: Mutex::new(HashMap::new()),
                 places: crate::plans::holding::HoldingPlaces::new(data_dir),
                 svt_av1: OnceLock::new(),
                 estimates: Mutex::new(HashMap::new()),
@@ -286,15 +311,26 @@ impl TidyEngine {
         })
     }
 
-    /// Forgets a root and its catalog rows. Files on disk are untouched.
+    /// Forgets a root and its catalog rows. Files on disk are untouched. As glazier-core's
+    /// `removeRoot`, it is refused while a scan, a change or an asked-for analysis of the root
+    /// waits or runs ("Wait for this root's jobs to finish before removing it."); background
+    /// analysis of it is stopped first, since it is only worth finishing for a root that stays.
     pub fn remove_root(
         &self,
         root_id: RootId,
     ) -> impl Future<Output = anyhow::Result<Vec<Root>>> + Send + 'static {
-        self.query(move |inner, connection| {
-            remove_root(connection, root_id)?;
-            inner.changed();
-            list_roots(connection)
+        let inner = self.inner.clone();
+        // Not on the catalog's thread: stopping waits for the analysis to let go of its turn,
+        // and the item it has in flight may still write to the catalog.
+        on_thread("tidy remove root", move || {
+            inner.scheduler.stop_work_on(root_id)?;
+            let removed = inner.clone();
+            inner.catalog.blocking(move |connection| {
+                remove_root(connection, root_id)?;
+                removed.fingerprints_changed();
+                removed.changed();
+                list_roots(connection)
+            })
         })
     }
 
@@ -437,7 +473,12 @@ impl TidyEngine {
         root_id: Option<RootId>,
         level: SimilarityLevel,
     ) -> impl Future<Output = anyhow::Result<Vec<SimilarCluster>>> + Send + 'static {
-        self.query(move |_, connection| compute_similar_clusters(connection, root_id, level))
+        self.query(move |inner, connection| {
+            Ok(inner
+                .similar_clusters(connection, root_id, level)?
+                .as_ref()
+                .clone())
+        })
     }
 
     /// Marks files as not duplicates of each other, so a set made only of them stays hidden.
@@ -498,11 +539,13 @@ impl TidyEngine {
 
     // The work.
 
-    /// Scans a root on a job: walks it, identifies formats, reads media details and hashes what
-    /// could be a duplicate, then, with background analysis on, fingerprints, compares similar
-    /// stills for Spot variants and measures soundtracks. Cancelling the job stops it between
-    /// files and kills a running ffmpeg.
-    pub fn start_scan(&self, root_id: RootId, cx: &mut App) -> Entity<Job<ScanReport>> {
+    /// Scans a root on a job, as work the owner asked for: walks it, identifies formats, reads
+    /// media details and hashes what could be a duplicate. Background analysis is not part of it:
+    /// the report's `follow_up` says when it is due, for
+    /// [`TidyEngine::start_background_analysis`], so it runs as a job of its own, as
+    /// glazier-core queues it. Cancelling the job stops it between files and kills a running
+    /// ffprobe; pausing it waits between folders and files.
+    pub fn start_scan_only(&self, root_id: RootId, cx: &mut App) -> Entity<Job<ScanReport>> {
         let engine = self.clone();
         Job::start("Scanning", cx, move |reporter: JobReporter| {
             on_thread("tidy scan", move || {
@@ -511,19 +554,70 @@ impl TidyEngine {
         })
     }
 
-    /// Analyses a root on a job, as glazier-core's similar and sound jobs do: fingerprints, the
-    /// detail prints Spot variants needs, and loudness.
+    /// [`TidyEngine::start_scan_only`], then the background analysis it calls for, on the same
+    /// job: the analysis takes a background turn, so it steps aside for asked-for work, and the
+    /// job's progress says background meanwhile. Glazier-core's two jobs as one, for a caller
+    /// that tracks one job per scan; the report carries the analysis and no follow-up.
+    pub fn start_scan(&self, root_id: RootId, cx: &mut App) -> Entity<Job<ScanReport>> {
+        let engine = self.clone();
+        Job::start("Scanning", cx, move |reporter: JobReporter| {
+            on_thread("tidy scan", move || {
+                let mut report = engine.scan_blocking(root_id, &reporter)?;
+                for root_id in std::mem::take(&mut report.follow_up).analyze {
+                    report.analysis =
+                        Some(engine.analyze_in_background_blocking(root_id, &reporter)?);
+                }
+                Ok(report)
+            })
+        })
+    }
+
+    /// Analyses a root on a job as work the owner asked for ("Check now"), as glazier-core's
+    /// similar and sound jobs do: fingerprints, the detail prints Spot variants needs, and
+    /// loudness. Results are kept per file, so a stopped analysis goes on where it left off.
     pub fn start_analysis(&self, root_id: RootId, cx: &mut App) -> Entity<Job<AnalysisReport>> {
+        self.start_analysis_with(root_id, Priority::AskedFor, cx)
+    }
+
+    /// [`TidyEngine::start_analysis`] in the background, as glazier-core queues it after a scan,
+    /// a change or a settings change: it runs only while no asked-for work waits, steps aside
+    /// when some arrives (its progress says it waits), and goes on after.
+    pub fn start_background_analysis(
+        &self,
+        root_id: RootId,
+        cx: &mut App,
+    ) -> Entity<Job<AnalysisReport>> {
+        self.start_analysis_with(root_id, Priority::Background, cx)
+    }
+
+    fn start_analysis_with(
+        &self,
+        root_id: RootId,
+        priority: Priority,
+        cx: &mut App,
+    ) -> Entity<Job<AnalysisReport>> {
         let engine = self.clone();
         Job::start(
             "Finding similar versions",
             cx,
             move |reporter: JobReporter| {
                 on_thread("tidy analysis", move || {
-                    engine.analyze_blocking(root_id, &reporter)
+                    engine.analyze_with(root_id, priority, &reporter)
                 })
             },
         )
+    }
+
+    /// Makes background analysis of a root that waits, runs or stepped aside into asked-for
+    /// work, as "Check now" does while one is queued; says whether there was any. Its job carries
+    /// on as it was, now no longer stepping aside (its progress stops saying background).
+    pub fn promote_analysis(&self, root_id: RootId) -> bool {
+        self.inner.scheduler.promote(root_id)
+    }
+
+    /// How many jobs wait for their turn, for the job card's "2 more queued".
+    pub fn queued_jobs(&self) -> usize {
+        self.inner.scheduler.waiting()
     }
 
     /// [`TidyEngine::start_scan`]'s work, on the calling thread. Never call it from an executor.
@@ -533,10 +627,12 @@ impl TidyEngine {
         progress: &dyn Progress,
     ) -> anyhow::Result<ScanReport> {
         let inner = &self.inner;
-        let _work = inner.work.lock().unwrap_or_else(PoisonError::into_inner);
+        let turn = inner
+            .scheduler
+            .take_turn(Priority::AskedFor, vec![root_id], progress)?;
+        let progress: &dyn Progress = &turn;
         // However the scan ends, what was cached before it is stale.
         let _changed = ChangedOnDrop(inner);
-        progress.check()?;
         let root = inner
             .catalog
             .blocking(move |connection| find_root(connection, root_id))?
@@ -571,7 +667,7 @@ impl TidyEngine {
                 })
             },
             |files, _| progress.done(files as u64),
-            || progress.check(),
+            || progress.checkpoint(),
         )?;
         let empty = summary.empty_folders.clone();
         let removed = inner.catalog.blocking(move |connection| {
@@ -579,6 +675,8 @@ impl TidyEngine {
             replace_empty_folders(connection, root_id, &empty)?;
             Ok(removed)
         })?;
+        // A file whose bytes changed lost its fingerprint in the walk.
+        inner.fingerprints_changed();
         inner.changed();
 
         let pass = inner.pass_context(Some(root_id), progress);
@@ -591,20 +689,20 @@ impl TidyEngine {
             .blocking(move |connection| mark_scanned(connection, root_id))?;
         inner.changed();
 
-        let settings = inner
-            .catalog
-            .blocking(|connection| read_settings(connection))?;
-        let analysis = if settings.auto_analyze {
-            Some(self.analyze_locked(root_id, progress)?)
-        } else {
-            None
-        };
         Ok(ScanReport {
             files: summary.files,
             empty_folders: summary.empty_folders.len(),
             skipped_entries: summary.skipped_entries,
             removed,
-            analysis,
+            analysis: None,
+            follow_up: FollowUp {
+                rescan: Vec::new(),
+                analyze: if inner.analysis_due(root_id)? {
+                    vec![root_id]
+                } else {
+                    Vec::new()
+                },
+            },
         })
     }
 
@@ -615,13 +713,31 @@ impl TidyEngine {
         root_id: RootId,
         progress: &dyn Progress,
     ) -> anyhow::Result<AnalysisReport> {
-        let _work = self
+        self.analyze_with(root_id, Priority::AskedFor, progress)
+    }
+
+    /// [`TidyEngine::start_background_analysis`]'s work, on the calling thread.
+    pub fn analyze_in_background_blocking(
+        &self,
+        root_id: RootId,
+        progress: &dyn Progress,
+    ) -> anyhow::Result<AnalysisReport> {
+        self.analyze_with(root_id, Priority::Background, progress)
+    }
+
+    fn analyze_with(
+        &self,
+        root_id: RootId,
+        priority: Priority,
+        progress: &dyn Progress,
+    ) -> anyhow::Result<AnalysisReport> {
+        let turn = self
             .inner
-            .work
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        progress.check()?;
-        self.analyze_locked(root_id, progress)
+            .scheduler
+            .take_turn(priority, vec![root_id], progress)?;
+        // Paused while it waited for its turn, it waits before it starts.
+        turn.checkpoint()?;
+        self.analyze_locked(root_id, &turn)
     }
 
     fn analyze_locked(
@@ -639,6 +755,7 @@ impl TidyEngine {
         let pass = inner.pass_context(Some(root_id), progress);
         let outcome = (|| -> anyhow::Result<usize> {
             run_fingerprint_pass(&pass)?;
+            inner.fingerprints_changed();
             inner.changed();
             // Spot variants compares the stills of the sets those fingerprints made.
             let this = self.inner.clone();
@@ -662,6 +779,8 @@ impl TidyEngine {
             run_loudness_pass(&pass)?;
             Ok(stills.len())
         })();
+        // A stopped fingerprint pass wrote some too.
+        inner.fingerprints_changed();
         inner.changed();
         Ok(AnalysisReport {
             fingerprints,
@@ -683,6 +802,53 @@ impl Drop for ChangedOnDrop<'_> {
 impl Inner {
     fn changed(&self) {
         self.generation.fetch_add(1, Ordering::AcqRel);
+    }
+
+    fn fingerprints_changed(&self) {
+        self.fingerprints.fetch_add(1, Ordering::AcqRel);
+    }
+
+    /// Whether glazier-core's `queueAnalysis` would queue analysis of a root: background analysis
+    /// is on, and files need fingerprints, or loudness when ffmpeg is there to measure it.
+    fn analysis_due(&self, root_id: RootId) -> anyhow::Result<bool> {
+        let has_ffmpeg = self.media.ffmpeg.is_some();
+        self.catalog.blocking(move |connection| {
+            Ok(read_settings(connection)?.auto_analyze
+                && (pending_fingerprints(connection, root_id)? > 0
+                    || (has_ffmpeg && pending_loudness(connection, root_id)? > 0)))
+        })
+    }
+
+    /// The similar clusters under a root at a level, cached while no fingerprint changed.
+    fn similar_clusters(
+        &self,
+        connection: &Connection,
+        root_id: Option<RootId>,
+        level: SimilarityLevel,
+    ) -> anyhow::Result<Arc<Vec<SimilarCluster>>> {
+        let fingerprints = self.fingerprints.load(Ordering::Acquire);
+        let key = (root_id, level);
+        let mut cache = self.clusters.lock().unwrap_or_else(PoisonError::into_inner);
+        cache.retain(|_, cached| cached.fingerprints == fingerprints);
+        if let Some(cached) = cache.get(&key) {
+            return Ok(cached.clusters.clone());
+        }
+        drop(cache);
+        let clusters = Arc::new(compute_similar_clusters(connection, root_id, level)?);
+        // Fingerprints written while these were compared make them stale at once.
+        if self.fingerprints.load(Ordering::Acquire) == fingerprints {
+            self.clusters
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .insert(
+                    key,
+                    ClusterCache {
+                        fingerprints,
+                        clusters: clusters.clone(),
+                    },
+                );
+        }
+        Ok(clusters)
     }
 
     fn pass_context<'a>(
@@ -721,7 +887,7 @@ impl Inner {
             return Ok(cached.sets.clone());
         }
         let settings = read_settings(connection)?;
-        let clusters = compute_similar_clusters(connection, root_id, level)?;
+        let clusters = self.similar_clusters(connection, root_id, level)?;
         let sets = Arc::new(build_duplicate_sets(
             connection, root_id, &settings, &clusters,
         )?);

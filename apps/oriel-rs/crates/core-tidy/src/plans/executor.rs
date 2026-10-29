@@ -44,7 +44,7 @@ use crate::media::transcode::{TranscodeJob, transcode_with_ffmpeg};
 use crate::media::{ToolFailure, probe_video};
 use crate::number::format_bytes;
 use crate::passes::hash::{HashError, hash_whole_file};
-use crate::passes::{Media, Progress};
+use crate::passes::{Media, Progress, run_concurrently};
 use crate::scan::{extension_of, is_extension_mismatch, is_folder_system_file, whole_ms};
 
 /// A conversion is kept only when it saves at least this share of the original's bytes.
@@ -1046,13 +1046,13 @@ pub fn apply_plan(deps: &ExecutorDeps<'_>, plan_id: PlanId) -> anyhow::Result<Ap
             &stills,
             deps.still_concurrency,
             deps.progress,
-            &|step: &&StepRecord| run(step),
+            |step: &&StepRecord| run(step),
         )?;
         for step in steps
             .iter()
             .filter(|step| step.action != PlanStepAction::ConvertAvif)
         {
-            deps.progress.check()?;
+            deps.progress.checkpoint()?;
             run(step)?;
         }
         Ok(())
@@ -1072,55 +1072,6 @@ pub fn apply_plan(deps: &ExecutorDeps<'_>, plan_id: PlanId) -> anyhow::Result<Ap
     }
 }
 
-/// Runs `work` over `items`, at most `concurrency` at a time, stopping between items once the
-/// work is stopped or one fails.
-fn run_concurrently<T: Sync>(
-    items: &[T],
-    concurrency: usize,
-    progress: &dyn Progress,
-    work: &(dyn Fn(&T) -> anyhow::Result<()> + Sync),
-) -> anyhow::Result<()> {
-    if items.is_empty() {
-        return Ok(());
-    }
-    let next = AtomicUsize::new(0);
-    let failed = std::sync::atomic::AtomicBool::new(false);
-    let lanes = concurrency.clamp(1, items.len());
-    std::thread::scope(|scope| {
-        let handles: Vec<_> = (0..lanes)
-            .map(|_| {
-                scope.spawn(|| -> anyhow::Result<()> {
-                    loop {
-                        if failed.load(Ordering::Acquire) {
-                            return Ok(());
-                        }
-                        progress.check()?;
-                        let Some(item) = items.get(next.fetch_add(1, Ordering::AcqRel)) else {
-                            return Ok(());
-                        };
-                        if let Err(error) = work(item) {
-                            failed.store(true, Ordering::Release);
-                            return Err(error);
-                        }
-                    }
-                })
-            })
-            .collect();
-        let mut first = None;
-        for handle in handles {
-            let outcome = handle
-                .join()
-                .unwrap_or_else(|_| Err(anyhow!("a conversion worker panicked")));
-            if let Err(error) = outcome
-                && first.is_none()
-            {
-                first = Some(error);
-            }
-        }
-        first.map_or(Ok(()), Err)
-    })
-}
-
 /// Reverses a plan's finished steps, newest first: held files come back, moved files move back,
 /// a converted file goes to holding and its original returns. A step whose result changed since
 /// is left alone and noted. A step whose file another program has open is left to undo again:
@@ -1134,7 +1085,7 @@ pub fn undo_plan(deps: &ExecutorDeps<'_>, plan_id: PlanId) -> anyhow::Result<()>
     deps.progress.phase("Undoing", steps.len() as u64);
 
     for (index, step) in steps.iter().enumerate() {
-        deps.progress.check()?;
+        deps.progress.checkpoint()?;
         let id = step.id;
         match undo_step(deps, step, &batch) {
             Ok(()) => deps.catalog.blocking(move |connection| {

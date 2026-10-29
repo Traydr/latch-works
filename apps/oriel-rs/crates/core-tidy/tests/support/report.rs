@@ -275,7 +275,11 @@ pub fn run(archive: &Path, data: &Path, media: oriel_core_tidy::passes::Media) -
     ))
     .unwrap();
     let root = block_on(engine.add_root(archive)).unwrap();
-    engine.scan_blocking(root.id, &Quiet::new()).unwrap();
+    // The scan, then the background analysis it queues, as glazier-core's harness waits for both.
+    let scanned = engine.scan_blocking(root.id, &Quiet::new()).unwrap();
+    engine
+        .follow_up_blocking(&scanned.follow_up, &Quiet::new())
+        .unwrap();
     let off = report(&engine, root.id);
 
     let mut settings = block_on(engine.settings()).unwrap();

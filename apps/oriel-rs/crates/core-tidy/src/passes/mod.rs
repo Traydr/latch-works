@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 
-use oriel_runtime::{CancelToken, Cancelled, JobReporter};
+use oriel_runtime::{CancelToken, Cancelled, JobReporter, PauseToken};
 use rusqlite::{Connection, OptionalExtension as _};
 
 use crate::catalog::Catalog;
@@ -21,7 +21,7 @@ use crate::catalog::files::SqlParams;
 use crate::contract::{FileId, RootId};
 use crate::similarity::Vips;
 
-/// Where a pass reports how far it has got, and learns that it should stop.
+/// Where a pass reports how far it has got, and learns that it should wait or stop.
 pub trait Progress: Send + Sync {
     /// Starts a phase: names it and sets its total (0 when unknown), with nothing done yet.
     fn phase(&self, label: &str, total: u64);
@@ -29,9 +29,40 @@ pub trait Progress: Send + Sync {
     /// The token tool runs are killed by, when there is one.
     fn cancel_token(&self) -> Option<&CancelToken>;
 
-    /// `Err(Cancelled)` once the work should stop.
+    /// The token the owner pauses the work with, when there is one.
+    fn pause_token(&self) -> Option<&PauseToken> {
+        None
+    }
+
+    /// Says the work waits for its turn (queued behind other work, or stepped aside for work the
+    /// owner asked for), or works again.
+    fn waiting(&self, _waiting: bool) {}
+
+    /// Says the work runs in the background, behind work the owner asked for, or not.
+    fn background(&self, _background: bool) {}
+
+    /// `Err(Cancelled)` once the work should stop. It never waits, so it is safe anywhere, even
+    /// in the middle of an item.
     fn check(&self) -> Result<(), Cancelled> {
         self.cancel_token().map_or(Ok(()), CancelToken::check)
+    }
+
+    /// Whether the work should come to a [`Progress::checkpoint`] before its next item: it was
+    /// stopped, paused, or asked to step aside. Work on several items at once stops taking new
+    /// ones when this says so, lets those in flight finish, and then calls the checkpoint.
+    fn wants_checkpoint(&self) -> bool {
+        self.check().is_err() || self.pause_token().is_some_and(PauseToken::is_paused)
+    }
+
+    /// Between items, with nothing in flight: waits while the work is paused (and, in the
+    /// background, while work the owner asked for runs), and fails once it is cancelled, paused
+    /// or not. glazier-core's `checkpoint`.
+    fn checkpoint(&self) -> Result<(), Cancelled> {
+        match (self.pause_token(), self.cancel_token()) {
+            (Some(pause), Some(cancel)) => pause.wait_blocking(cancel),
+            (Some(pause), None) => pause.wait_blocking(&CancelToken::new()),
+            _ => self.check(),
+        }
     }
 }
 
@@ -47,12 +78,26 @@ impl Progress for JobReporter {
     fn cancel_token(&self) -> Option<&CancelToken> {
         Some(JobReporter::cancel_token(self))
     }
+
+    fn pause_token(&self) -> Option<&PauseToken> {
+        Some(JobReporter::pause_token(self))
+    }
+
+    fn waiting(&self, waiting: bool) {
+        self.set_waiting(waiting);
+    }
+
+    fn background(&self, background: bool) {
+        self.set_background(background);
+    }
 }
 
-/// Progress nobody watches, for tests and one-off runs; it stops when its token is cancelled.
+/// Progress nobody watches, for tests and one-off runs; it stops when its token is cancelled
+/// and waits while its pause token is paused.
 #[derive(Clone, Debug, Default)]
 pub struct Quiet {
     token: CancelToken,
+    pause: PauseToken,
 }
 
 impl Quiet {
@@ -63,6 +108,10 @@ impl Quiet {
     pub fn token(&self) -> &CancelToken {
         &self.token
     }
+
+    pub fn pause(&self) -> &PauseToken {
+        &self.pause
+    }
 }
 
 impl Progress for Quiet {
@@ -72,6 +121,10 @@ impl Progress for Quiet {
 
     fn cancel_token(&self) -> Option<&CancelToken> {
         Some(&self.token)
+    }
+
+    fn pause_token(&self) -> Option<&PauseToken> {
+        Some(&self.pause)
     }
 }
 
@@ -117,9 +170,8 @@ impl PassContext<'_> {
     }
 }
 
-/// Runs `work` over `items`, at most `concurrency` at a time on worker threads, checking for a
-/// stop between items and reporting each item done in `phase`. The first error stops every lane
-/// and is returned.
+/// Runs `work` over `items`, at most `concurrency` at a time on worker threads, reporting each
+/// item done in `phase`; see [`run_concurrently`].
 pub fn for_each_concurrent<T: Sync>(
     items: &[T],
     concurrency: usize,
@@ -128,10 +180,46 @@ pub fn for_each_concurrent<T: Sync>(
     work: impl Fn(&T) -> anyhow::Result<()> + Sync,
 ) -> anyhow::Result<()> {
     progress.phase(phase, items.len() as u64);
-    let next = AtomicUsize::new(0);
     let done = AtomicU64::new(0);
+    run_concurrently(items, concurrency, progress, |item| {
+        work(item)?;
+        progress.done(done.fetch_add(1, Ordering::AcqRel) + 1);
+        Ok(())
+    })
+}
+
+/// Runs `work` over `items`, at most `concurrency` at a time on worker threads, as glazier-core's
+/// `forEachConcurrent`. The first error stops every lane and is returned; a stop is checked
+/// between items. When the work is paused or asked to step aside, the lanes stop taking items,
+/// those in flight finish, and the checkpoint runs with none in flight, so whatever runs in it
+/// never overlaps them; then the lanes go on from where they were.
+pub fn run_concurrently<T: Sync>(
+    items: &[T],
+    concurrency: usize,
+    progress: &dyn Progress,
+    work: impl Fn(&T) -> anyhow::Result<()> + Sync,
+) -> anyhow::Result<()> {
+    let next = AtomicUsize::new(0);
     let failed = AtomicBool::new(false);
     let lanes = concurrency.max(1).min(items.len().max(1));
+    loop {
+        run_lanes(items, lanes, progress, &next, &failed, &work)?;
+        if next.load(Ordering::Acquire) >= items.len() {
+            return Ok(());
+        }
+        progress.checkpoint()?;
+    }
+}
+
+/// One round of lanes, until the items run out or the work wants a checkpoint.
+fn run_lanes<T: Sync>(
+    items: &[T],
+    lanes: usize,
+    progress: &dyn Progress,
+    next: &AtomicUsize,
+    failed: &AtomicBool,
+    work: &(impl Fn(&T) -> anyhow::Result<()> + Sync),
+) -> anyhow::Result<()> {
     std::thread::scope(|scope| {
         let handles: Vec<_> = (0..lanes)
             .map(|_| {
@@ -141,6 +229,9 @@ pub fn for_each_concurrent<T: Sync>(
                             return Ok(());
                         }
                         progress.check()?;
+                        if progress.wants_checkpoint() {
+                            return Ok(());
+                        }
                         let index = next.fetch_add(1, Ordering::AcqRel);
                         let Some(item) = items.get(index) else {
                             return Ok(());
@@ -149,7 +240,6 @@ pub fn for_each_concurrent<T: Sync>(
                             failed.store(true, Ordering::Release);
                             return Err(error);
                         }
-                        progress.done(done.fetch_add(1, Ordering::AcqRel) + 1);
                     }
                 })
             })
@@ -158,7 +248,7 @@ pub fn for_each_concurrent<T: Sync>(
         for handle in handles {
             let outcome = handle
                 .join()
-                .unwrap_or_else(|_| Err(anyhow::anyhow!("a pass's worker panicked")));
+                .unwrap_or_else(|_| Err(anyhow::anyhow!("a worker thread panicked")));
             if let Err(error) = outcome
                 && first_error.is_none()
             {

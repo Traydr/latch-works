@@ -26,6 +26,7 @@ use oriel_runtime::{Job, JobReporter};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
+use super::schedule::Priority;
 use super::{ChangedOnDrop, Inner, TidyEngine, on_thread};
 use crate::catalog::files::list_file_ids;
 use crate::catalog::roots::{find_root, list_roots, read_settings};
@@ -38,8 +39,6 @@ use crate::contract::{
 use crate::media::still::encode_still_to_avif;
 use crate::media::transcode::{TranscodeJob, has_svt_av1, transcode_with_ffmpeg};
 use crate::optimize::CandidateHolds;
-use crate::passes::fingerprint::pending_fingerprints;
-use crate::passes::loudness::pending_loudness;
 use crate::passes::{Progress, Quiet};
 use crate::plans::executor::{ExecutorDeps, apply_plan, undo_plan};
 use crate::plans::holding::{
@@ -164,6 +163,22 @@ fn root_or_error(connection: &Connection, root_id: RootId) -> anyhow::Result<Roo
 }
 
 impl Inner {
+    /// Every root the plans have a step in, which their change's turn holds against removal.
+    fn plan_roots(&self, plan_ids: &[PlanId]) -> anyhow::Result<Vec<RootId>> {
+        let plan_ids = plan_ids.to_vec();
+        self.catalog.blocking(move |connection| {
+            let mut roots = Vec::new();
+            for plan_id in plan_ids {
+                for root_id in plan_root_ids(connection, plan_id)? {
+                    if !roots.contains(&root_id) {
+                        roots.push(root_id);
+                    }
+                }
+            }
+            Ok(roots)
+        })
+    }
+
     /// What the planner reads for a request, holds included for the kinds Convert and Clean up
     /// leave files alone in.
     fn planner_context(
@@ -396,14 +411,17 @@ impl TidyEngine {
         progress: &dyn Progress,
     ) -> anyhow::Result<Applied> {
         let inner = &self.inner;
-        let _work = inner.work.lock().unwrap_or_else(PoisonError::into_inner);
+        let roots = inner.plan_roots(&[plan_id])?;
+        let turn = inner
+            .scheduler
+            .take_turn(Priority::AskedFor, roots, progress)?;
         if let Some(subject) = inner
             .catalog
             .blocking(move |connection| plan_subject(connection, plan_id))?
         {
-            progress.phase(&apply_label(&subject), 0);
+            turn.phase(&apply_label(&subject), 0);
         }
-        inner.apply_locked(plan_id, progress)
+        inner.apply_locked(plan_id, &turn)
     }
 
     /// [`TidyEngine::perform`]'s work, on the calling thread: drafts, then applies.
@@ -453,17 +471,20 @@ impl TidyEngine {
         progress: &dyn Progress,
     ) -> anyhow::Result<Undone> {
         let inner = &self.inner;
-        let _work = inner.work.lock().unwrap_or_else(PoisonError::into_inner);
+        let roots = inner.plan_roots(plan_ids)?;
+        let turn = inner
+            .scheduler
+            .take_turn(Priority::AskedFor, roots, progress)?;
         if let [plan_id] = plan_ids {
             let plan_id = *plan_id;
             if let Some(subject) = inner
                 .catalog
                 .blocking(move |connection| plan_subject(connection, plan_id))?
             {
-                progress.phase(&undo_label(&subject), 0);
+                turn.phase(&undo_label(&subject), 0);
             }
         }
-        inner.undo_locked(plan_ids, progress)
+        inner.undo_locked(plan_ids, &turn)
     }
 
     /// [`TidyEngine::start_undo`]'s work, on the calling thread.
@@ -726,7 +747,10 @@ impl TidyEngine {
         progress: &dyn Progress,
     ) -> anyhow::Result<TidiedUp> {
         let inner = &self.inner;
-        let _work = inner.work.lock().unwrap_or_else(PoisonError::into_inner);
+        let turn = inner
+            .scheduler
+            .take_turn(Priority::AskedFor, vec![root_id], progress)?;
+        let progress: &dyn Progress = &turn;
         let overview_inner = inner.clone();
         let tidy = inner
             .catalog
@@ -744,8 +768,8 @@ impl TidyEngine {
             (!categories.is_empty()).then_some(TidyStep::Convert),
         ];
         for step in steps.into_iter().flatten() {
-            // Stopped between steps: what ran stays, with its one Undo.
-            if progress.check().is_err() {
+            // Paused between steps, it waits here; stopped, what ran stays, with its one Undo.
+            if progress.checkpoint().is_err() {
                 tidied.notes.push("Stopped".to_owned());
                 break;
             }
@@ -813,7 +837,8 @@ impl TidyEngine {
     // Follow-ups.
 
     /// Starts what a change left for the engine to do (see [`FollowUp`]) on a job of its own,
-    /// or nothing when there is nothing to do.
+    /// or nothing when there is nothing to do: the scans as asked-for work, then the analysis in
+    /// the background, as glazier-core queues them.
     pub fn start_follow_up(
         &self,
         follow_up: FollowUp,
@@ -834,9 +859,9 @@ impl TidyEngine {
         ))
     }
 
-    /// [`TidyEngine::start_follow_up`]'s work, on the calling thread: the scans first (each
-    /// analyses after it, with background analysis on), then the analysis of the other roots
-    /// that need it.
+    /// [`TidyEngine::start_follow_up`]'s work, on the calling thread: the scans first, as
+    /// asked-for work, then in the background the analysis they and the change call for, of each
+    /// root whose files need it with background analysis on.
     pub fn follow_up_blocking(
         &self,
         follow_up: &FollowUp,
@@ -850,27 +875,25 @@ impl TidyEngine {
             .into_iter()
             .map(|root| root.id)
             .collect();
+        let mut analyze: Vec<RootId> = Vec::new();
         for &root_id in &follow_up.rescan {
             if roots.contains(&root_id) {
-                self.scan_blocking(root_id, progress)?;
+                let scanned = self.scan_blocking(root_id, progress)?;
                 report.scanned.push(root_id);
+                analyze.extend(scanned.follow_up.analyze);
             }
         }
-        let has_ffmpeg = self.inner.media.ffmpeg.is_some();
         for &root_id in &follow_up.analyze {
-            if !roots.contains(&root_id) || report.scanned.contains(&root_id) {
-                continue;
+            if roots.contains(&root_id)
+                && !report.scanned.contains(&root_id)
+                && self.inner.analysis_due(root_id)?
+            {
+                analyze.push(root_id);
             }
-            let (auto, fingerprints, soundtracks) =
-                self.inner.catalog.blocking(move |connection| {
-                    Ok((
-                        read_settings(connection)?.auto_analyze,
-                        pending_fingerprints(connection, root_id)?,
-                        pending_loudness(connection, root_id)?,
-                    ))
-                })?;
-            if auto && (fingerprints > 0 || (has_ffmpeg && soundtracks > 0)) {
-                self.analyze_blocking(root_id, progress)?;
+        }
+        for root_id in analyze {
+            if !report.analyzed.contains(&root_id) {
+                self.analyze_in_background_blocking(root_id, progress)?;
                 report.analyzed.push(root_id);
             }
         }

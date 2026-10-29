@@ -1,6 +1,7 @@
 //! Jobs as the UI sees them: progress reaches an observer while the work runs, the value or the
 //! error arrives once as an event, cancelling midway fails the job as cancelled, and dropping the
-//! last handle cancels the work.
+//! last handle cancels the work. A paused job finishes its step in flight, waits, and goes on
+//! when resumed; a paused job still stops when cancelled.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -29,6 +30,29 @@ fn start_gated(
                 reporter.advance(1);
             }
             Ok(steps * 10)
+        })
+    });
+    (job, permits)
+}
+
+/// Like [`start_gated`], but each step first waits while the job is paused, as glazier-core's
+/// checkpoint does between items.
+fn start_pausable(
+    cx: &mut TestAppContext,
+    steps: u64,
+) -> (Entity<Job<u64>>, mpsc::UnboundedSender<()>) {
+    let (permits, mut gate) = mpsc::unbounded::<()>();
+    let job = cx.update(|cx| {
+        Job::start("Count", cx, move |reporter| async move {
+            reporter.begin_phase("Counting", steps);
+            for _ in 0..steps {
+                reporter.resumed().await?;
+                let cancelled = std::pin::pin!(reporter.cancelled());
+                futures::future::select(gate.next(), cancelled).await;
+                reporter.check()?;
+                reporter.advance(1);
+            }
+            Ok(steps)
         })
     });
     (job, permits)
@@ -205,4 +229,102 @@ fn dropping_the_last_handle_cancels_the_job(cx: &mut TestAppContext) {
         dropped.load(Ordering::SeqCst),
         "work that awaits is dropped"
     );
+}
+
+#[gpui_kit::test]
+fn a_paused_job_finishes_its_step_waits_and_goes_on_when_resumed(cx: &mut TestAppContext) {
+    let (job, permits) = start_pausable(cx, 5);
+    let (seen, _subscriptions) = watch(cx, &job);
+    permit(&permits, 2);
+    cx.run_until_parked();
+    assert_eq!(cx.read(|cx| job.read(cx).progress().done()), 2);
+
+    job.update(cx, |job, cx| job.pause(cx));
+    cx.read(|cx| {
+        let job = job.read(cx);
+        assert!(job.is_paused());
+        assert!(job.progress().is_paused(), "the card says Paused at once");
+    });
+    // The third step was already waiting for its permit, so it finishes; the fourth waits.
+    permit(&permits, 3);
+    cx.run_until_parked();
+    cx.read(|cx| {
+        let job = job.read(cx);
+        assert!(job.is_running());
+        assert_eq!(job.progress().done(), 3);
+        assert!(
+            job.progress().is_paused(),
+            "a report while paused still reads as paused"
+        );
+    });
+
+    job.update(cx, |job, cx| job.resume(cx));
+    cx.run_until_parked();
+    cx.read(|cx| {
+        let job = job.read(cx);
+        assert!(matches!(job.status(), JobStatus::Succeeded(5)));
+        assert!(!job.progress().is_paused());
+    });
+    assert_eq!(seen.borrow().events, ["succeeded"]);
+}
+
+#[gpui_kit::test]
+fn a_paused_job_stops_when_cancelled(cx: &mut TestAppContext) {
+    let (job, permits) = start_pausable(cx, 5);
+    let (seen, _subscriptions) = watch(cx, &job);
+    permit(&permits, 1);
+    cx.run_until_parked();
+    job.update(cx, |job, cx| job.pause(cx));
+    permit(&permits, 1);
+    cx.run_until_parked();
+    assert_eq!(cx.read(|cx| job.read(cx).progress().done()), 2);
+    assert!(cx.read(|cx| job.read(cx).is_running()));
+
+    job.update(cx, |job, cx| job.cancel(cx));
+    assert!(
+        !cx.read(|cx| job.read(cx).is_paused()),
+        "a stopping job no longer reads as paused"
+    );
+    cx.run_until_parked();
+    cx.read(|cx| {
+        let job = job.read(cx);
+        assert!(job.error().is_some_and(JobError::is_cancelled));
+        assert_eq!(job.progress().done(), 2);
+    });
+    assert_eq!(seen.borrow().events, ["failed: Cancelled"]);
+    // Pausing a finished job does nothing.
+    job.update(cx, |job, cx| job.pause(cx));
+    assert!(!cx.read(|cx| job.read(cx).is_paused()));
+}
+
+#[gpui_kit::test]
+fn waiting_and_background_reach_the_progress(cx: &mut TestAppContext) {
+    let (permits, mut gate) = mpsc::unbounded::<()>();
+    let job = cx.update(|cx| {
+        Job::start("Analyse", cx, move |reporter| async move {
+            reporter.set_background(true);
+            reporter.set_waiting(true);
+            gate.next().await;
+            reporter.set_waiting(false);
+            reporter.begin_phase("Fingerprinting", 1);
+            gate.next().await;
+            Ok(1u64)
+        })
+    });
+    cx.run_until_parked();
+    cx.read(|cx| {
+        let progress = job.read(cx).progress();
+        assert!(progress.is_background() && progress.is_waiting());
+    });
+    permit(&permits, 1);
+    cx.run_until_parked();
+    cx.read(|cx| {
+        let progress = job.read(cx).progress();
+        assert!(progress.is_background(), "a new phase keeps the flags");
+        assert!(!progress.is_waiting());
+        assert_eq!(progress.phase().as_ref(), "Fingerprinting");
+    });
+    permit(&permits, 1);
+    cx.run_until_parked();
+    assert!(cx.read(|cx| job.read(cx).value() == Some(&1)));
 }
