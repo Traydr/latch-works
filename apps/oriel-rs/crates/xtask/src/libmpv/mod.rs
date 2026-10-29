@@ -205,6 +205,17 @@ fn build_env(work: &WorkTree, sdk: &str) -> Vec<(String, OsString)> {
             "PKG_CONFIG_LIBDIR".to_owned(),
             work.prefix.join("lib").join("pkgconfig").into(),
         ),
+        // The sources are release archives, not checkouts, but the work tree sits inside the
+        // latch-works checkout: without a ceiling, the `git describe` that libass's and
+        // libplacebo's builds run finds that checkout and writes its commit into the libraries.
+        // Git does not step up into the work tree's root, so it finds no repository at all.
+        (
+            "GIT_CEILING_DIRECTORIES".to_owned(),
+            work.root.clone().into(),
+        ),
+        // ld64 hashes a library's debug map, object files' times included, into its LC_UUID;
+        // this has it write those times as zero, so the UUID follows the content alone.
+        ("ZERO_AR_DATE".to_owned(), "1".into()),
     ];
     if let Some(developer_dir) = std::env::var_os("DEVELOPER_DIR") {
         env.push(("DEVELOPER_DIR".to_owned(), developer_dir));
@@ -930,11 +941,12 @@ pub fn command(args: &[String]) -> Result<()> {
 mod tests {
     use super::*;
 
-    /// The id the TypeScript gave these pins and flags, so a port that hashes them differently
-    /// would build a second copy of the same set.
+    /// The id hashes the recipe as the TypeScript this was ported from did (revision 1 gave
+    /// `adabfe19d7` in both), so a change to how it is hashed shows here rather than as a second
+    /// copy of the same set. Revision 2 is the first the TypeScript never built.
     #[test]
-    fn the_id_is_the_one_the_typescript_gave_these_pins() {
-        assert_eq!(set_id(), "mpv-0.41.0-ffmpeg-9.0.2-lgpl-adabfe19d7");
+    fn the_id_hashes_the_recipe_as_the_typescript_did() {
+        assert_eq!(set_id(), "mpv-0.41.0-ffmpeg-9.0.2-lgpl-83e766fd1f");
     }
 
     #[test]

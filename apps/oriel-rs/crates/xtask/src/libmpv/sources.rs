@@ -26,7 +26,10 @@ pub const DEPLOYMENT_TARGET: &str = deployment_target!();
 
 /// Bump when the build steps change in a way the pins and flags below do not show. Download
 /// URLs are not part of the set's id: the hashes are.
-pub const RECIPE_REVISION: u32 = 1;
+///
+/// 2: the builds no longer see the checkout they run in (`GIT_CEILING_DIRECTORIES`), so libass
+/// and libplacebo stop embedding its `git describe` and two builds give the same files.
+pub const RECIPE_REVISION: u32 = 2;
 
 /// A download and the SHA-256 it must hash to before anything unpacks it.
 #[derive(Serialize)]
