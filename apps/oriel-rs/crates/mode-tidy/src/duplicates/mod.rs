@@ -720,6 +720,12 @@ impl DuplicatesPage {
         cx.notify();
     }
 
+    /// Open in View, for one of the set's files (`useOpenInView`).
+    fn open_in_view(&mut self, file: String, cx: &mut Context<Self>) {
+        self.state
+            .update(cx, |state, cx| state.open_in_view(file, cx));
+    }
+
     fn open_loupe(&mut self, index: usize, cx: &mut Context<Self>) {
         self.focused_row = index;
         self.zoomed = false;
@@ -1233,6 +1239,7 @@ impl DuplicatesPage {
             )
         };
         let (look_file, reveal_path, play_file) = (index, file.abs_path.clone(), file.clone());
+        let shown_path = file.abs_path.clone();
         let facts_line: Vec<AnyElement> = facts
             .iter()
             .enumerate()
@@ -1366,9 +1373,20 @@ impl DuplicatesPage {
                                     }),
                             )
                             .child(
+                                Button::new(("open-version-in-view", file.id as u64))
+                                    .xsmall()
+                                    .icon(Icon::new(IconName::Images))
+                                    .accessibility_label("Open in View")
+                                    .tooltip("Open in View")
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        cx.stop_propagation();
+                                        this.open_in_view(shown_path.clone(), cx);
+                                    })),
+                            )
+                            .child(
                                 Button::new(("look-version", file.id as u64))
                                     .xsmall()
-                                    .icon(Icon::new(IconName::Maximize))
+                                    .icon(Icon::new(IconName::Maximize2))
                                     .accessibility_label("Look closer")
                                     .tooltip("Look closer  Space")
                                     .on_click(cx.listener(move |this, _, _, cx| {
@@ -1485,7 +1503,12 @@ impl DuplicatesPage {
             .map(|(index, row)| {
                 let file = &row.file;
                 let is_kept = kept.contains(&file.id);
-                let reveal = file.abs_path.clone();
+                let (reveal, shown) = (file.abs_path.clone(), file.abs_path.clone());
+                let place = if file.dir.is_empty() {
+                    "the top folder".to_string()
+                } else {
+                    file.dir.clone()
+                };
                 div()
                     .id(("version", file.id as u64))
                     .test_support()
@@ -1577,12 +1600,24 @@ impl DuplicatesPage {
                             .ghost()
                             .xsmall()
                             .icon(Icon::new(IconName::FolderOpen))
-                            .accessibility_label("Show in Finder")
+                            .accessibility_label(format!("Show the copy in {place} in Finder"))
                             .tooltip("Show in Finder  ⇧⌘R")
                             .on_click(move |_, _, cx| {
                                 cx.stop_propagation();
                                 cx.reveal_path(Path::new(&reveal));
                             }),
+                    )
+                    .child(
+                        Button::new(("open-version-in-view", file.id as u64))
+                            .ghost()
+                            .xsmall()
+                            .icon(Icon::new(IconName::Images))
+                            .accessibility_label(format!("Open the copy in {place} in View"))
+                            .tooltip("Open in View")
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                cx.stop_propagation();
+                                this.open_in_view(shown.clone(), cx);
+                            })),
                     )
                     .into_any_element()
             })
@@ -1703,6 +1738,32 @@ impl DuplicatesPage {
                                 .child(format!("Suggested: {suggested}")),
                         )
                     })
+                    .child(
+                        Button::new("loupe-reveal")
+                            .ghost()
+                            .xsmall()
+                            .icon(Icon::new(IconName::FolderOpen))
+                            .accessibility_label("Show in Finder")
+                            .tooltip("Show in Finder  ⇧⌘R")
+                            .on_click({
+                                let path = file.abs_path.clone();
+                                move |_, _, cx| cx.reveal_path(Path::new(&path))
+                            }),
+                    )
+                    .child(
+                        Button::new("loupe-open-in-view")
+                            .ghost()
+                            .xsmall()
+                            .icon(Icon::new(IconName::Images))
+                            .accessibility_label("Open in View")
+                            .tooltip("Open in View")
+                            .on_click({
+                                let path = file.abs_path.clone();
+                                cx.listener(move |this, _, _, cx| {
+                                    this.open_in_view(path.clone(), cx);
+                                })
+                            }),
+                    )
                     .child(
                         Button::new("loupe-close")
                             .ghost()

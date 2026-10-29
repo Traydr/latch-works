@@ -905,6 +905,17 @@ impl LibraryPage {
         cx.notify();
     }
 
+    /// Open in View, for a file of the Library's (`useOpenInView`).
+    fn open_in_view(&mut self, file: String, cx: &mut Context<Self>) {
+        self.state
+            .update(cx, |state, cx| state.open_in_view(file, cx));
+    }
+
+    /// The search the rows are filtered by, as the field shows it once drawn.
+    pub fn search(&self) -> &str {
+        &self.applied_search
+    }
+
     fn on_key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         let keys = &event.keystroke;
         let typing = window.has_focused_input(cx);
@@ -962,10 +973,19 @@ impl LibraryPage {
                 };
                 if let Some(row) = &single {
                     let (open, reveal) = (row.abs_path.clone(), row.abs_path.clone());
+                    let (shown, viewing) = (row.abs_path.clone(), page.clone());
                     menu = menu
                         .item(PopupMenuItem::new("Open").on_click(move |_, _, cx| {
                             cx.open_with_system(Path::new(&open));
                         }))
+                        .item(
+                            PopupMenuItem::new("Open in View").on_click(move |_, _, cx| {
+                                let file = shown.clone();
+                                viewing
+                                    .update(cx, |page, cx| page.open_in_view(file, cx))
+                                    .ok();
+                            }),
+                        )
                         .item(
                             PopupMenuItem::new("Show in Finder  ⇧⌘R")
                                 .on_click(move |_, _, cx| cx.reveal_path(Path::new(&reveal))),
@@ -1369,7 +1389,7 @@ impl LibraryPage {
                 Button::new("library-filter")
                     .outline()
                     .small()
-                    .icon(Icon::new(IconName::SlidersHorizontal))
+                    .icon(Icon::new(IconName::ListFilter))
                     .label(if active > 0 {
                         format!("Filter {}", format::count(active as i64))
                     } else {
@@ -1630,7 +1650,7 @@ impl LibraryPage {
                         .gap_2()
                         .pb(px(64.))
                         .child(
-                            Icon::new(IconName::File)
+                            Icon::new(IconName::MousePointerClick)
                                 .size(px(32.))
                                 .text_color(theme.muted_foreground),
                         )
@@ -1695,6 +1715,8 @@ impl LibraryPage {
         let reveal = single
             .clone()
             .or_else(|| self.sample.data().and_then(|rows| rows.first().cloned()));
+        let shown = reveal.clone();
+        let several = targets.len() > 1;
         panel = panel.child(
             div()
                 .mt_4()
@@ -1748,12 +1770,32 @@ impl LibraryPage {
                                 .outline()
                                 .icon(Icon::new(IconName::FolderOpen))
                                 .accessibility_label("Show in Finder")
-                                .tooltip("Show in Finder  ⇧⌘R")
+                                .tooltip(if several {
+                                    "Show the first file in Finder  ⇧⌘R"
+                                } else {
+                                    "Show in Finder  ⇧⌘R"
+                                })
                                 .on_click(move |_, _, cx| {
                                     if let Some(row) = &reveal {
                                         cx.reveal_path(Path::new(&row.abs_path));
                                     }
                                 }),
+                        )
+                        .child(
+                            Button::new("inspector-open-in-view")
+                                .outline()
+                                .icon(Icon::new(IconName::Images))
+                                .accessibility_label("Open in View")
+                                .tooltip(if several {
+                                    "Open the first file in View"
+                                } else {
+                                    "Open in View"
+                                })
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    if let Some(row) = &shown {
+                                        this.open_in_view(row.abs_path.clone(), cx);
+                                    }
+                                })),
                         ),
                 ),
         );

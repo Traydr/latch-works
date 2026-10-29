@@ -9,6 +9,9 @@
 //! As in Electron Oriel's `runService.ts`, one run goes at a time, a run holds the profile it
 //! started with, Plan compares sizes alone, Push plans again with hashes where they tell files
 //! apart, and Prune applies the deletes of the plan on screen once.
+//!
+//! The profile menu's Open in View and Tidy this folder go to the shell as [`SyncEvent`]s; a
+//! folder another mode hands Sync arrives through [`SyncMode::show_hand_off`].
 
 pub mod plan_tree;
 pub mod profiles;
@@ -24,9 +27,9 @@ use std::time::{Instant, SystemTime};
 use futures::StreamExt as _;
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::{
-    AnyElement, App, AppContext as _, Context, Entity, FocusHandle, Focusable, Global,
-    IntoElement as _, KeyBinding, PathPromptOptions, Render, Subscription, Task,
-    UniformListScrollHandle, Window, actions,
+    AnyElement, App, AppContext as _, Context, Entity, EventEmitter, FocusHandle, Focusable,
+    Global, IntoElement as _, KeyBinding, PathPromptOptions, Render, SharedString, Subscription,
+    Task, UniformListScrollHandle, Window, actions,
 };
 use oriel_core_index::SyncPlanAction;
 use oriel_core_paths::DataRoot;
@@ -36,7 +39,8 @@ use oriel_core_sync::{
     UnfinalizedSyncRun, cache_root, doctor, plan_sync, prune_deleted, push_changes,
 };
 use oriel_runtime::{CancelToken, Cancelled, TokioHandle, TokioRuntime};
-use oriel_ui::{ModeActivity, ModeId, ShellState};
+use oriel_ui::folders::closest_folder;
+use oriel_ui::{HandOff, ModeActivity, ModeId, ShellState};
 
 pub use plan_tree::{PlanFolder, PlanRow};
 pub use profiles::{Profile, ProfileInput, ProfilePatch, ProfileStore, TokenState};
@@ -83,6 +87,15 @@ fn http(cx: &mut App) -> TokioHandle {
         cx.set_global(runtime);
     }
     cx.global::<TokioRuntime>().handle()
+}
+
+/// What Sync asks of the rest of the app: the profile menu's links to the other modes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SyncEvent {
+    /// Open in View, for the profile's source folder.
+    OpenInView(PathBuf),
+    /// Tidy this folder, for the profile's source folder.
+    TidyFolder(PathBuf),
 }
 
 /// What the page shows.
@@ -180,8 +193,12 @@ pub struct SyncMode {
     confirmation: Option<String>,
     focus_handle: FocusHandle,
     scroll: UniformListScrollHandle,
+    /// What another mode handed Sync while a run held the profile on screen.
+    pending_hand_off: Option<HandOff>,
     _subscriptions: Vec<Subscription>,
 }
+
+impl EventEmitter<SyncEvent> for SyncMode {}
 
 impl SyncMode {
     /// Sync for the shell, keeping its profiles in this run's data folder.
@@ -268,8 +285,75 @@ impl SyncMode {
             confirmation: None,
             focus_handle: cx.focus_handle(),
             scroll: UniformListScrollHandle::new(),
+            pending_hand_off: None,
             _subscriptions: subscriptions,
         }
+    }
+
+    /// The folders Sync pushes, its profiles' sources, for the other modes to be offered.
+    pub fn source_roots(&self) -> Vec<PathBuf> {
+        self.store
+            .profiles()
+            .iter()
+            .filter(|profile| !profile.source_root.is_empty())
+            .map(|profile| PathBuf::from(&profile.source_root))
+            .collect()
+    }
+
+    /// Shows what another mode handed Sync (Sync this folder): the profile whose source holds
+    /// it, or a new profile's form with the folder and its name filled in (`useSyncHandOff`).
+    /// A run holds the profile it started with, so a hand-off during one waits for it to end.
+    pub fn show_hand_off(&mut self, target: HandOff, window: &mut Window, cx: &mut Context<Self>) {
+        if self.run.running {
+            self.pending_hand_off = Some(target);
+            return;
+        }
+        let folder = target.folder().to_path_buf();
+        let holder = closest_folder(self.store.profiles(), &folder, |profile| {
+            std::path::Path::new(&profile.source_root)
+        })
+        .map(|profile| profile.id.clone());
+        match holder {
+            Some(id) => self.select_profile(&id, window, cx),
+            None => self.start_create_profile_for(folder, window, cx),
+        }
+    }
+
+    /// The profile menu's Open in View and Tidy this folder, for the active profile's source.
+    pub(crate) fn hand_off_source(&mut self, to: ModeId, cx: &mut Context<Self>) {
+        let Some(profile) = self.store.active_profile() else {
+            return;
+        };
+        let folder = PathBuf::from(&profile.source_root);
+        match to {
+            ModeId::View => cx.emit(SyncEvent::OpenInView(folder)),
+            ModeId::Tidy => cx.emit(SyncEvent::TidyFolder(folder)),
+            ModeId::Sync => {}
+        }
+    }
+
+    /// Adds a profile in one step, as the first start's welcome sets Sync up: the profile, and
+    /// its token kept encrypted. Says why when it cannot.
+    pub fn add_profile(
+        &mut self,
+        input: ProfileInput,
+        cx: &mut Context<Self>,
+    ) -> Result<(), String> {
+        self.store
+            .create(input)
+            .map_err(|error| error.to_string())?;
+        cx.notify();
+        Ok(())
+    }
+
+    /// The new or edited profile's name, as its form shows it.
+    pub fn form_name(&self, cx: &App) -> SharedString {
+        self.form.name.read(cx).value()
+    }
+
+    /// The new or edited profile's source folder, as its form shows it.
+    pub fn form_source_root(&self, cx: &App) -> SharedString {
+        self.form.source_root.read(cx).value()
     }
 
     /// This mode's section of the one Settings page (⌘,): the profiles, each opening the form,
@@ -1255,6 +1339,14 @@ impl Render for SyncMode {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl gpui_kit::IntoElement {
+        // A hand-off that waited for a run is shown once the run has ended.
+        if !self.run.running && self.pending_hand_off.is_some() {
+            cx.defer_in(window, |this, window, cx| {
+                if let Some(target) = this.pending_hand_off.take() {
+                    this.show_hand_off(target, window, cx);
+                }
+            });
+        }
         self.render_mode(window, cx)
     }
 }

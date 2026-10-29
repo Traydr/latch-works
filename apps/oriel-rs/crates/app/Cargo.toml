@@ -21,6 +21,8 @@ serde_json.workspace = true
 # File URLs the system hands the app (Open With, a drop on the Dock icon) into paths.
 url = "2"
 oriel-core-paths.workspace = true
+# `toISOString`'s format, for the welcome's note that it was seen.
+oriel-core-sync.workspace = true
 oriel-ui.workspace = true
 oriel-mode-view.workspace = true
 oriel-mode-tidy.workspace = true

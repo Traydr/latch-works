@@ -33,8 +33,8 @@ use gpui_kit::{
     prelude::FluentBuilder as _, px, uniform_list,
 };
 use oriel_core_domain::format_bytes;
-use oriel_ui::ShellState;
 use oriel_ui::layout::{RAIL_WIDTH, SIDEBAR_WIDTH};
+use oriel_ui::{ModeId, OfferedFolders, ShellState};
 
 use crate::browser::{Comic, Tile};
 use crate::listing::MediaEntry;
@@ -136,6 +136,8 @@ pub enum GalleryEvent {
     FolderStep(FolderStep),
     /// The selection moved, for the header's position.
     Selected,
+    /// A folder another mode works on, chosen from the offer before View has a folder.
+    OpenOffered(PathBuf),
 }
 
 pub struct Gallery {
@@ -1027,8 +1029,24 @@ impl Render for Gallery {
 
         if let Some(message) = message {
             self.drawn_complete = true;
+            // Before View has a folder, the folders Tidy and Sync work on are offered.
+            let offered = (self.listing == Listing::Empty)
+                .then(|| self.shell.read(cx).offered_to(ModeId::View))
+                .filter(|folders| !folders.is_empty())
+                .map(|folders| {
+                    let gallery = cx.entity().downgrade();
+                    OfferedFolders::new("view-offered-folders", folders)
+                        .title("Or open one you already use")
+                        .on_choose(move |folder, _, cx| {
+                            let folder = folder.path().to_path_buf();
+                            gallery
+                                .update(cx, |_, cx| cx.emit(GalleryEvent::OpenOffered(folder)))
+                                .ok();
+                        })
+                });
             return base
                 .flex()
+                .flex_col()
                 .items_center()
                 .justify_center()
                 .text_color(theme.muted_foreground)
@@ -1047,6 +1065,7 @@ impl Render for Gallery {
                         .text_size(px(13.))
                         .child(message),
                 )
+                .children(offered)
                 .into_any_element();
         }
 

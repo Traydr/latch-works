@@ -20,7 +20,7 @@ use oriel_ui::layout::NavItem;
 
 use crate::format;
 use crate::pages::TidyPage;
-use crate::state::TidyState;
+use crate::state::{TidyState, Work};
 
 /// The files Convert would change, without the extension fixes Clean up makes.
 pub fn convert_count(tidy: &Tidy) -> i64 {
@@ -337,42 +337,45 @@ fn activity(state: &Entity<TidyState>, rail: bool, cx: &App) -> AnyElement {
     let current = state.read(cx);
     let theme = cx.theme();
     let page = current.page();
-    let work = if let Some(change) = &current.change {
-        let shown_by_page = change
-            .source
-            .as_deref()
-            .is_some_and(|source| source.split(':').next() == Some(page.key()));
-        (!shown_by_page).then(|| {
-            let progress = change.progress(cx);
-            let phase = progress.phase();
-            let label = if phase.is_empty() {
-                change.name(cx)
-            } else {
-                phase.clone()
-            };
-            (label, progress.done(), progress.total(), false)
-        })
-    } else if let Some(scan) = current.scan() {
-        let progress = scan.job.read(cx).progress().clone();
-        let label = if progress.phase().is_empty() {
-            scan.job.read(cx).name().clone()
+    let label_of = |progress: &oriel_runtime::JobProgress, name: SharedString| {
+        if progress.phase().is_empty() {
+            name
         } else {
             progress.phase().clone()
-        };
-        Some((label, progress.done(), progress.total(), false))
-    } else if let Some(analysis) = current.analysis() {
-        let progress = analysis.job.read(cx).progress().clone();
-        let label = if progress.phase().is_empty() {
-            analysis.job.read(cx).name().clone()
-        } else {
-            progress.phase().clone()
-        };
-        Some((label, progress.done(), progress.total(), true))
-    } else {
-        None
+        }
+    };
+    let work = match current.shown_work(cx) {
+        Some(Work::Change) => current.change.as_ref().and_then(|change| {
+            let shown_by_page = change
+                .source
+                .as_deref()
+                .is_some_and(|source| source.split(':').next() == Some(page.key()));
+            (!shown_by_page).then(|| {
+                let progress = change.progress(cx);
+                (label_of(&progress, change.name(cx)), progress)
+            })
+        }),
+        Some(Work::Scan) => current.scan().map(|scan| {
+            let job = scan.job.read(cx);
+            (
+                label_of(job.progress(), job.name().clone()),
+                job.progress().clone(),
+            )
+        }),
+        Some(Work::Analysis) => current.analysis().map(|analysis| {
+            let job = analysis.job.read(cx);
+            (
+                label_of(job.progress(), job.name().clone()),
+                job.progress().clone(),
+            )
+        }),
+        None => None,
     };
 
-    if let Some((label, done, total, background)) = work {
+    if let Some((label, progress)) = work {
+        let (done, total) = (progress.done(), progress.total());
+        let paused = progress.is_paused();
+        let queued = current.queued_work();
         let stopper = state.clone();
         let stop = Button::new("tidy-activity-stop")
             .ghost()
@@ -381,10 +384,21 @@ fn activity(state: &Entity<TidyState>, rail: bool, cx: &App) -> AnyElement {
             .accessibility_label("Stop")
             .tooltip("Stop (finished steps stay done and can be undone)")
             .on_click(move |_, _, cx| {
-                stopper.update(cx, |state, cx| {
-                    state.stop_change(cx);
-                    state.stop_work(cx);
-                });
+                stopper.update(cx, |state, cx| state.stop_shown_work(cx));
+            });
+        let pauser = state.clone();
+        let pause = Button::new("tidy-activity-pause")
+            .ghost()
+            .xsmall()
+            .icon(Icon::new(if paused {
+                IconName::Play
+            } else {
+                IconName::Pause
+            }))
+            .accessibility_label(if paused { "Resume" } else { "Pause" })
+            .tooltip(if paused { "Resume" } else { "Pause" })
+            .on_click(move |_, _, cx| {
+                pauser.update(cx, |state, cx| state.toggle_pause(cx));
             });
         let counts = (total > 0).then(|| {
             format!(
@@ -393,6 +407,15 @@ fn activity(state: &Entity<TidyState>, rail: bool, cx: &App) -> AnyElement {
                 format::count(total as i64)
             )
         });
+        let caption: SharedString = if paused {
+            "Paused".into()
+        } else if queued > 0 {
+            format!("{queued} more queued").into()
+        } else if progress.is_background() {
+            "In the background".into()
+        } else {
+            "Working…".into()
+        };
         if rail {
             return div()
                 .id("tidy-activity")
@@ -402,7 +425,13 @@ fn activity(state: &Entity<TidyState>, rail: bool, cx: &App) -> AnyElement {
                 .items_center()
                 .justify_center()
                 .size(px(48.))
-                .child(Spinner::new().small())
+                .child(if paused {
+                    Icon::new(IconName::Pause)
+                        .text_color(theme.muted_foreground)
+                        .into_any_element()
+                } else {
+                    Spinner::new().small().into_any_element()
+                })
                 .into_any_element();
         }
         return div()
@@ -450,8 +479,10 @@ fn activity(state: &Entity<TidyState>, rail: bool, cx: &App) -> AnyElement {
                         } else {
                             0.
                         })
-                        .loading(total == 0)
-                        .when(background, |this| this.color(theme.muted_foreground)),
+                        .loading(total == 0 && !paused)
+                        .when(progress.is_background(), |this| {
+                            this.color(theme.muted_foreground)
+                        }),
                 ),
             )
             .child(
@@ -468,12 +499,9 @@ fn activity(state: &Entity<TidyState>, rail: bool, cx: &App) -> AnyElement {
                             .truncate()
                             .text_xs()
                             .text_color(theme.muted_foreground)
-                            .child(if background {
-                                "In the background"
-                            } else {
-                                "Working…"
-                            }),
+                            .child(caption),
                     )
+                    .when(!progress.is_waiting() || paused, |this| this.child(pause))
                     .child(stop),
             )
             .into_any_element();

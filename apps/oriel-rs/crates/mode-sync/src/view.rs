@@ -26,7 +26,7 @@ use oriel_core_index::SyncPlanAction;
 use oriel_core_sync::{RunAction, format_count, parse_iso_timestamp};
 use oriel_ui::layout::NavItem;
 use oriel_ui::segmented::{Segmented, SegmentedItem};
-use oriel_ui::{ModeId, ModeLayout, SettingsGroup, SettingsRow, TopBar};
+use oriel_ui::{ModeId, ModeLayout, OfferedFolders, SettingsGroup, SettingsRow, TopBar};
 
 use crate::profiles::{Profile, TokenState};
 use crate::run::{self, ItemState, PruneAvailability, RunPhase};
@@ -511,6 +511,22 @@ impl SyncMode {
                                             this.start_create_profile(window, cx);
                                         })),
                                 ),
+                            )
+                            .child(
+                                OfferedFolders::new(
+                                    "sync-offered-folders",
+                                    self.shell.read(cx).offered_to(ModeId::Sync),
+                                )
+                                .title("Or sync one you already use")
+                                .on_choose({
+                                    let this = cx.entity();
+                                    move |folder, window, cx| {
+                                        let folder = folder.path().to_path_buf();
+                                        this.update(cx, |this, cx| {
+                                            this.start_create_profile_for(folder, window, cx);
+                                        });
+                                    }
+                                }),
                             ),
                     ),
             )
@@ -922,7 +938,7 @@ impl SyncMode {
             )
     }
 
-    /// The profile's own actions: edit, check, the run log, delete.
+    /// The profile's own actions: edit, check, the run log, its folder in View and Tidy, delete.
     fn render_profile_menu(&self, profile: &Profile, cx: &mut Context<Self>) -> impl IntoElement {
         let this = cx.entity();
         let id = profile.id.clone();
@@ -935,6 +951,7 @@ impl SyncMode {
             .dropdown_menu(move |menu, _, _| {
                 let (edit, check, log, delete) =
                     (this.clone(), this.clone(), this.clone(), this.clone());
+                let (viewed, tidied) = (this.clone(), this.clone());
                 let (edit_id, delete_id) = (id.clone(), id.clone());
                 menu.item(
                     PopupMenuItem::new("Edit profile…")
@@ -955,6 +972,17 @@ impl SyncMode {
                 .item(PopupMenuItem::new("Run log  ⌘L").on_click(move |_, _, cx| {
                     log.update(cx, |this, cx| this.toggle_run_log(cx));
                 }))
+                .separator()
+                .item(
+                    PopupMenuItem::new("Open in View").on_click(move |_, _, cx| {
+                        viewed.update(cx, |this, cx| this.hand_off_source(ModeId::View, cx));
+                    }),
+                )
+                .item(
+                    PopupMenuItem::new("Tidy this folder").on_click(move |_, _, cx| {
+                        tidied.update(cx, |this, cx| this.hand_off_source(ModeId::Tidy, cx));
+                    }),
+                )
                 .separator()
                 .item(
                     PopupMenuItem::new("Delete profile…")

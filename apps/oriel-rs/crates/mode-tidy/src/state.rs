@@ -8,7 +8,9 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
 
-use gpui_kit::{App, AppContext as _, Context, Entity, SharedString, Subscription, Task, Window};
+use gpui_kit::{
+    App, AppContext as _, Context, Entity, EventEmitter, SharedString, Subscription, Task, Window,
+};
 use oriel_core_paths::DataRoot;
 use oriel_core_tidy::contract::{
     AudioState, DuplicateScope, FileFlag, FileFormat, FileKind, OptimizeCategory, Root, RootId,
@@ -20,6 +22,7 @@ use oriel_ui::{LocalStorage, ModeActivity, ModeId, ShellState, Toast};
 
 use crate::actions::{RunningChange, UndoEntry};
 use crate::changes::{Changes, HoldingList, PlanSummary};
+use crate::links::TidyEvent;
 use crate::loaded::Loaded;
 use crate::pages::TidyPage;
 
@@ -122,6 +125,14 @@ pub struct Running<T> {
     _subscriptions: Vec<Subscription>,
 }
 
+/// Which job the sidebar's card shows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Work {
+    Change,
+    Scan,
+    Analysis,
+}
+
 /// A scan or analysis that failed, for the sidebar's card until it is dismissed.
 #[derive(Clone, Debug, PartialEq)]
 pub struct FailedWork {
@@ -167,6 +178,8 @@ pub struct TidyState {
     ratios: HashMap<String, Option<f64>>,
     pending_ratios: HashSet<String>,
 }
+
+impl EventEmitter<TidyEvent> for TidyState {}
 
 /// An estimate of a set of files' size after converting, or why there is none yet.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -425,6 +438,17 @@ impl TidyState {
         cx.notify();
     }
 
+    /// Open in View: a file in View's viewer, or a folder (`useOpenInView`). The shell takes it
+    /// from here.
+    pub fn open_in_view(&mut self, path: impl Into<PathBuf>, cx: &mut Context<Self>) {
+        cx.emit(TidyEvent::OpenInView(path.into()));
+    }
+
+    /// Sync this folder: Sync shows its profile for it, or starts one.
+    pub fn sync_folder(&mut self, folder: impl Into<PathBuf>, cx: &mut Context<Self>) {
+        cx.emit(TidyEvent::SyncFolder(folder.into()));
+    }
+
     /// ⌘F: the Library, with its search focused.
     pub fn request_search(&mut self, cx: &mut Context<Self>) {
         self.requests.search = true;
@@ -495,29 +519,47 @@ impl TidyState {
     /// Adds `folder` as a root, shows it on Overview and scans it. A folder outside the sandbox,
     /// or one that overlaps another root, is refused with a toast saying why.
     pub fn add_folder(&mut self, folder: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+        let added = self.add_root(folder, window, cx);
+        cx.spawn_in(window, async move |_, cx| {
+            if let Err(error) = added.await {
+                cx.update(|window, cx| {
+                    crate::widgets::show_toast(
+                        window,
+                        Toast::error("Tidy can't add that folder").detail(error),
+                        cx,
+                    );
+                })
+                .ok();
+            }
+        })
+        .detach();
+    }
+
+    /// Adds `folder` as a root, shows it on Overview and starts its scan, as [`Self::add_folder`]
+    /// does, leaving why it could not to the caller (the first start's welcome lists it).
+    pub fn add_root(
+        &mut self,
+        folder: PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Task<Result<RootId, SharedString>> {
         let Some(engine) = self.engine().cloned() else {
-            return;
+            return Task::ready(Err("Tidy is still starting.".into()));
         };
         cx.spawn_in(window, async move |this, cx| {
             let added = engine.add_root(&folder).await;
             let roots = crate::loaded::engine_call(engine.roots(), cx).await;
-            this.update_in(cx, |this, window, cx| match added {
-                Ok(root) => {
-                    if let Ok(roots) = roots {
-                        this.set_roots(roots, Some(root.id), cx);
-                    }
-                    this.go(TidyPage::Overview, cx);
-                    this.start_scan(root.id, window, cx);
+            let root = added.map_err(|error| SharedString::from(format!("{error:#}")))?;
+            this.update_in(cx, |this, window, cx| {
+                if let Ok(roots) = roots {
+                    this.set_roots(roots, Some(root.id), cx);
                 }
-                Err(error) => crate::widgets::show_toast(
-                    window,
-                    Toast::error("Tidy can't add that folder").detail(format!("{error:#}")),
-                    cx,
-                ),
+                this.go(TidyPage::Overview, cx);
+                this.start_scan(root.id, window, cx);
             })
-            .ok();
+            .map_err(|_| SharedString::from("Tidy closed."))?;
+            Ok(root.id)
         })
-        .detach();
     }
 
     /// Forgets a root and its catalog rows; the folder itself is untouched. What holding keeps for
@@ -569,7 +611,8 @@ impl TidyState {
 
     // Scans and analyses.
 
-    /// Scans a root on the engine's job, unless one already runs.
+    /// Scans a root on the engine's job, unless one already runs. The background analysis it
+    /// calls for follows as a job of its own, as glazier-core queues it.
     pub fn start_scan(&mut self, root_id: RootId, window: &mut Window, cx: &mut Context<Self>) {
         if self.scan.is_some() {
             return;
@@ -577,9 +620,22 @@ impl TidyState {
         let Some(engine) = self.engine().cloned() else {
             return;
         };
-        let job = engine.start_scan(root_id, cx);
+        let job = engine.start_scan_only(root_id, cx);
         self.failed = None;
-        let subscriptions = self.watch(&job, window, cx, |this| &mut this.scan);
+        // Registered before `watch`'s, whose handler drops these subscriptions with the slot.
+        let mut subscriptions =
+            vec![
+                cx.subscribe_in(&job, window, |this, job, event: &JobEvent, window, cx| {
+                    let analyze = match (event, job.read(cx).value()) {
+                        (JobEvent::Succeeded, Some(report)) => report.follow_up.analyze.clone(),
+                        _ => Vec::new(),
+                    };
+                    for root_id in analyze {
+                        this.start_background_analysis(root_id, window, cx);
+                    }
+                }),
+            ];
+        subscriptions.extend(self.watch(&job, window, cx, |this| &mut this.scan));
         self.scan = Some(Running {
             root_id,
             job,
@@ -589,16 +645,46 @@ impl TidyState {
         cx.notify();
     }
 
-    /// Fingerprints, detail prints and loudness for a root ("Check now"), unless an analysis
-    /// already runs.
+    /// Fingerprints, detail prints and loudness for a root ("Check now"). With an analysis of it
+    /// in the background already, that one runs as asked for from now on instead.
     pub fn start_analysis(&mut self, root_id: RootId, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(engine) = self.engine().cloned() else {
+            return;
+        };
+        if self.analysis.is_some() {
+            engine.promote_analysis(root_id);
+            return;
+        }
+        let job = engine.start_analysis(root_id, cx);
+        self.run_analysis(root_id, job, window, cx);
+    }
+
+    /// The analysis glazier-core queues after a scan, a change or a settings change: it runs only
+    /// while no asked-for work waits, and steps aside when some arrives. Skipped while an
+    /// analysis runs.
+    pub fn start_background_analysis(
+        &mut self,
+        root_id: RootId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if self.analysis.is_some() {
             return;
         }
         let Some(engine) = self.engine().cloned() else {
             return;
         };
-        let job = engine.start_analysis(root_id, cx);
+        let job = engine.start_background_analysis(root_id, cx);
+        self.run_analysis(root_id, job, window, cx);
+    }
+
+    fn run_analysis(
+        &mut self,
+        root_id: RootId,
+        job: Entity<Job<AnalysisReport>>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let subscriptions = self.watch(&job, window, cx, |this| &mut this.analysis);
         self.analysis = Some(Running {
             root_id,
@@ -640,6 +726,9 @@ impl TidyState {
                     });
                 }
                 this.report_activity(cx);
+                // What the job wrote after its last phase began shows now; an analysis no longer
+                // ends with its scan, whose new scan time used to re-read every page.
+                this.changed(cx);
                 this.reload_roots(cx);
             }),
         ]
@@ -654,11 +743,93 @@ impl TidyState {
         }
     }
 
+    /// The work the job card shows, as glazier-core's card picks it: the first that runs or is
+    /// paused, else the first that waits for its turn; a change before a scan before an analysis.
+    pub fn shown_work(&self, cx: &App) -> Option<Work> {
+        let mut active = Vec::new();
+        if let Some(change) = &self.change {
+            active.push((Work::Change, change.progress(cx)));
+        }
+        if let Some(scan) = &self.scan {
+            active.push((Work::Scan, scan.job.read(cx).progress().clone()));
+        }
+        if let Some(analysis) = &self.analysis {
+            active.push((Work::Analysis, analysis.job.read(cx).progress().clone()));
+        }
+        active
+            .iter()
+            .find(|(_, progress)| !progress.is_waiting())
+            .or(active.first())
+            .map(|(work, _)| *work)
+    }
+
+    /// How many jobs there are besides the one the card shows ("2 more queued").
+    pub fn queued_work(&self) -> usize {
+        let active = usize::from(self.change.is_some())
+            + usize::from(self.scan.is_some())
+            + usize::from(self.analysis.is_some());
+        active.saturating_sub(1)
+    }
+
+    /// Pauses or resumes the work the card shows (`pauseJob`); the step in flight finishes.
+    pub fn toggle_pause(&mut self, cx: &mut Context<Self>) {
+        fn toggle<T: 'static>(job: &Entity<Job<T>>, cx: &mut App) {
+            job.update(cx, |job, cx| {
+                let paused = job.is_paused();
+                job.set_paused(!paused, cx);
+            });
+        }
+        match self.shown_work(cx) {
+            Some(Work::Change) => {
+                if let Some(change) = &self.change {
+                    let paused = change.progress(cx).is_paused();
+                    change.set_paused(!paused, cx);
+                }
+            }
+            Some(Work::Scan) => {
+                if let Some(scan) = &self.scan {
+                    toggle(&scan.job, cx);
+                }
+            }
+            Some(Work::Analysis) => {
+                if let Some(analysis) = &self.analysis {
+                    toggle(&analysis.job, cx);
+                }
+            }
+            None => {}
+        }
+        self.report_activity(cx);
+    }
+
+    /// Stops the work the card shows (`cancelJob`); what it finished stays.
+    pub fn stop_shown_work(&mut self, cx: &mut Context<Self>) {
+        match self.shown_work(cx) {
+            Some(Work::Change) => self.stop_change(cx),
+            Some(Work::Scan) => {
+                if let Some(scan) = &self.scan {
+                    scan.job.update(cx, |job, cx| job.cancel(cx));
+                }
+            }
+            Some(Work::Analysis) => {
+                if let Some(analysis) = &self.analysis {
+                    analysis.job.update(cx, |job, cx| job.cancel(cx));
+                }
+            }
+            None => {}
+        }
+    }
+
     /// Tells the shell what Tidy is doing: a ring while a change runs, a dot while a scan or an
     /// analysis does (`jobActivity`).
     pub(crate) fn report_activity(&mut self, cx: &mut Context<Self>) {
         let activity = if let Some(change) = &self.change {
-            Some(ModeActivity::Progress(change.fraction(cx)))
+            // A paused change cannot finish (one job runs at a time), so it does not hold
+            // quitting, as Electron Oriel's `busy` has it: a dot, not the ring quitting waits on.
+            Some(if change.progress(cx).is_paused() {
+                ModeActivity::Working
+            } else {
+                ModeActivity::Progress(change.fraction(cx))
+            })
         } else if self.scan.is_some() || self.analysis.is_some() {
             Some(ModeActivity::Working)
         } else {
@@ -693,7 +864,7 @@ impl TidyState {
                     if update.analyze
                         && let Some(root_id) = this.root_id
                     {
-                        this.start_analysis(root_id, window, cx);
+                        this.start_background_analysis(root_id, window, cx);
                     }
                 }
                 Err(error) => crate::widgets::show_toast(

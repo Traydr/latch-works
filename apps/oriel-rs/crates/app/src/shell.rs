@@ -5,8 +5,14 @@
 //! window's title and the menu bar follow the mode; the mode, the sidebar's form and the window's
 //! bounds are remembered; the Dock shows running work; closing the window waits for it; and paths
 //! the system hands the app open in View.
+//!
+//! It also links the modes. Each mode says what it wants of another with an event (View's Show
+//! in Tidy, Tidy's Open in View and Sync this folder, Sync's Open in View and Tidy this folder),
+//! and the shell shows the other mode and hands the file or folder over (`handOff`). The folders
+//! each mode works on are gathered on the shell's state, for the others' empty states to offer.
+//! On the owner's first start the welcome sets one folder up for them all.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -14,15 +20,17 @@ use gpui_kit::component::WindowExt as _;
 use gpui_kit::{
     AppContext as _, Bounds, Context, Entity, FocusHandle, Focusable, InteractiveElement as _,
     IntoElement, ParentElement as _, Pixels, Render, Styled as _, Subscription, Task, Window,
-    WindowBounds, div,
+    WindowBounds, div, px,
 };
 use oriel_core_paths::DataRoot;
-use oriel_mode_sync::SyncMode;
-use oriel_mode_tidy::{NotYet, TidyMode};
-use oriel_mode_view::ViewMode;
+use oriel_mode_sync::{SyncEvent, SyncMode};
+use oriel_mode_tidy::{NotYet, TidyEvent, TidyMode};
+use oriel_mode_view::{ViewEvent, ViewMode};
 use oriel_ui::commands::shell_key_context;
 use oriel_ui::settings::SettingsFrame;
-use oriel_ui::{LocalStorage, ModeId, SettingsSection, ShellState};
+use oriel_ui::{
+    HandOff, KnownFolder, LocalStorage, ModeId, SettingsSection, ShellState, Toast, ToastExt as _,
+};
 
 use crate::actions::{
     About, CloseSettings, CloseWindow, Minimize, OpenSettings, SETTINGS_CONTEXT, ShowSync,
@@ -30,8 +38,9 @@ use crate::actions::{
 };
 use crate::general::GeneralSettings;
 use crate::quit::{QuitGuard, QuitPlatform, SystemQuit};
+use crate::welcome::{Welcome, WelcomeEvent, WelcomeModes};
 use crate::window_state::WindowState;
-use crate::{dock, menus};
+use crate::{dock, menus, welcome};
 
 /// Where the mode shown last is kept, Electron Oriel's `localStorage` key.
 pub const MODE_KEY: &str = "oriel.mode";
@@ -77,6 +86,11 @@ pub struct Shell {
     /// window keeps for when it is restored.
     normal_bounds: Option<Bounds<Pixels>>,
     save_window: Option<Task<()>>,
+    /// What the modes last said they work on: View's folder, Tidy's, Sync's. The known folders
+    /// are gathered again only when this changes, or when another mode comes on screen.
+    folder_sources: Option<[Vec<PathBuf>; 3]>,
+    /// The first start's welcome while it shows, and whether its dialog is open yet.
+    welcome: Option<(Entity<Welcome>, bool, Subscription)>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -84,8 +98,11 @@ impl Shell {
     /// The app's shell over `data`: the modes as the environment configures them (View opens
     /// `ORIEL_RS_OPEN`, the Phase 0 spikes run when asked), quitting for real.
     pub fn new(data: DataRoot, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let this = Self::build(data, Rc::new(SystemQuit), true, window, cx);
+        let mut this = Self::build(data, Rc::new(SystemQuit), true, window, cx);
         crate::check::apply_from_environment(&this.state, cx);
+        if welcome::allowed_from_environment() {
+            this.offer_welcome(window, cx);
+        }
         this
     }
 
@@ -122,8 +139,13 @@ impl Shell {
         } else {
             cx.new(|cx| TidyMode::with_data(&state, &data, Rc::new(NotYet), window, cx))
         };
-        let sync = cx.new(|cx| SyncMode::new(&state, window, cx));
+        let sync = if from_environment {
+            cx.new(|cx| SyncMode::new(&state, window, cx))
+        } else {
+            cx.new(|cx| SyncMode::with_data(&state, &data, window, cx))
+        };
         let quit = QuitGuard::install(&state, quit, cx);
+        let tidy_state = tidy.read(cx).state().clone();
 
         let subscriptions = vec![
             cx.observe_in(&state, window, |this, _, window, cx| {
@@ -147,6 +169,44 @@ impl Shell {
                 this.write_window_state();
                 async {}
             }),
+            // What the modes ask of each other.
+            cx.subscribe_in(
+                &view,
+                window,
+                |this, _, event: &ViewEvent, window, cx| match event {
+                    ViewEvent::ShowInTidy(file) => {
+                        this.hand_off(ModeId::Tidy, HandOff::File(file.clone()), window, cx);
+                    }
+                },
+            ),
+            cx.subscribe_in(
+                &tidy,
+                window,
+                |this, _, event: &TidyEvent, window, cx| match event {
+                    TidyEvent::OpenInView(path) => {
+                        this.hand_off(ModeId::View, HandOff::File(path.clone()), window, cx);
+                    }
+                    TidyEvent::SyncFolder(folder) => {
+                        this.hand_off(ModeId::Sync, HandOff::Folder(folder.clone()), window, cx);
+                    }
+                },
+            ),
+            cx.subscribe_in(
+                &sync,
+                window,
+                |this, _, event: &SyncEvent, window, cx| match event {
+                    SyncEvent::OpenInView(folder) => {
+                        this.hand_off(ModeId::View, HandOff::Folder(folder.clone()), window, cx);
+                    }
+                    SyncEvent::TidyFolder(folder) => {
+                        this.hand_off(ModeId::Tidy, HandOff::Folder(folder.clone()), window, cx);
+                    }
+                },
+            ),
+            // The folders each mode works on, for the others to offer.
+            cx.observe(&view, |this, _, cx| this.gather_folders(false, cx)),
+            cx.observe(&tidy_state, |this, _, cx| this.gather_folders(false, cx)),
+            cx.observe(&sync, |this, _, cx| this.gather_folders(false, cx)),
         ];
         let shell = cx.weak_entity();
         window.on_window_should_close(cx, move |window, cx| {
@@ -175,9 +235,12 @@ impl Shell {
             applied,
             window_state: None,
             save_window: None,
+            folder_sources: None,
+            welcome: None,
             _subscriptions: subscriptions,
         };
         this.show_mode(mode, window, cx);
+        this.gather_folders(true, cx);
         this
     }
 
@@ -218,6 +281,143 @@ impl Shell {
         self.show_window(window, cx);
     }
 
+    /// Shows `target` in mode `to`, as Electron Oriel's `handOff` does: View opens a file in its
+    /// viewer (once its folder is listed) or a folder; Tidy and Sync take it themselves. A path
+    /// that is no longer there is not shown, and a toast says so.
+    pub fn hand_off(
+        &mut self,
+        to: ModeId,
+        target: HandOff,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match to {
+            ModeId::View => {
+                let path = target.path().to_path_buf();
+                if path.exists() {
+                    self.open_in_view(&path, window, cx);
+                } else {
+                    window.show_toast(
+                        Toast::error("View could not open it").detail(path.display().to_string()),
+                        cx,
+                    );
+                }
+            }
+            ModeId::Tidy => {
+                self.go(ModeId::Tidy, cx);
+                self.tidy
+                    .update(cx, |tidy, cx| tidy.show_hand_off(target, window, cx));
+            }
+            ModeId::Sync => {
+                self.go(ModeId::Sync, cx);
+                self.sync
+                    .update(cx, |sync, cx| sync.show_hand_off(target, window, cx));
+            }
+        }
+    }
+
+    /// Shows the first start's welcome over the window, unless the owner has been through it
+    /// (`WelcomeGate`). The app offers it at launch; tests ask for it.
+    pub fn offer_welcome(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.welcome.is_some() || welcome::welcomed(&self.data) {
+            return;
+        }
+        let modes = WelcomeModes {
+            view: self.view.clone(),
+            tidy: self.tidy.clone(),
+            sync: self.sync.clone(),
+        };
+        let (state, data) = (self.state.clone(), self.data.clone());
+        let entity = cx.new(|cx| Welcome::new(&state, data, modes, window, cx));
+        let subscription = cx.subscribe_in(
+            &entity,
+            window,
+            |this, _, event: &WelcomeEvent, window, cx| match event {
+                WelcomeEvent::Finished => this.finish_welcome(window, cx),
+            },
+        );
+        self.welcome = Some((entity, false, subscription));
+        cx.notify();
+    }
+
+    /// The welcome on screen, while it shows.
+    pub fn welcome(&self) -> Option<&Entity<Welcome>> {
+        self.welcome.as_ref().map(|(welcome, _, _)| welcome)
+    }
+
+    /// The welcome is done: it shows no more, and View is on screen (`finish`).
+    fn finish_welcome(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.welcome.take().is_none() {
+            return;
+        }
+        welcome::mark_welcomed(&self.data);
+        window.close_dialog(cx);
+        self.go(ModeId::View, cx);
+    }
+
+    /// Opens the welcome's dialog once the window draws, since the window's root holds dialogs.
+    fn open_welcome_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some((welcome, opened, _)) = &mut self.welcome else {
+            return;
+        };
+        if *opened {
+            return;
+        }
+        *opened = true;
+        let welcome = welcome.clone();
+        cx.defer_in(window, move |_, window, cx| {
+            window.open_dialog(cx, move |dialog, _, _| {
+                dialog
+                    .w(px(520.))
+                    .centered()
+                    .close_button(false)
+                    .overlay_closable(false)
+                    .keyboard(false)
+                    .child(welcome.clone())
+            });
+        });
+    }
+
+    /// Gathers the folders the modes work on onto the shell's state (`knownFolders`), when what
+    /// the modes say changed, or always when `force`: a folder since moved or deleted is not
+    /// offered, so another look at the disk is due when a mode comes on screen.
+    fn gather_folders(&mut self, force: bool, cx: &mut Context<Self>) {
+        let sources = [
+            self.view.read(cx).opened_folder().into_iter().collect(),
+            self.tidy
+                .read(cx)
+                .state()
+                .read(cx)
+                .roots()
+                .iter()
+                .map(|root| PathBuf::from(&root.path))
+                .collect(),
+            self.sync.read(cx).source_roots(),
+        ];
+        if !force && self.folder_sources.as_ref() == Some(&sources) {
+            return;
+        }
+        // Symlinks resolved, so two spellings of one folder meet; one that is gone drops out.
+        let resolved: Vec<Vec<PathBuf>> = sources
+            .iter()
+            .map(|folders| {
+                folders
+                    .iter()
+                    .filter_map(|folder| std::fs::canonicalize(folder).ok())
+                    .filter(|folder| folder.is_dir())
+                    .collect()
+            })
+            .collect();
+        let known = KnownFolder::collect(
+            ModeId::ALL
+                .into_iter()
+                .zip(resolved.iter().map(Vec::as_slice)),
+        );
+        self.folder_sources = Some(sources);
+        self.state
+            .update(cx, |state, cx| state.set_known_folders(known, cx));
+    }
+
     /// Brings the window forward, which also calls off a quit waiting for work to end.
     pub fn show_window(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.quit.update(cx, |quit, cx| quit.cancel(cx));
@@ -253,6 +453,8 @@ impl Shell {
         if now.mode != before.mode {
             self.show_mode(now.mode, window, cx);
             LocalStorage::set(cx, MODE_KEY, now.mode.key());
+            // Read again each time a mode comes on screen: a folder may have gone meanwhile.
+            self.gather_folders(true, cx);
         }
         if now.rail != before.rail {
             LocalStorage::set(cx, SIDEBAR_KEY, if now.rail { "rail" } else { "full" });
@@ -400,6 +602,7 @@ impl Render for Shell {
         {
             self.hand_over_focus(before, drawn, window, cx);
         }
+        self.open_welcome_dialog(window, cx);
         let content = match settings {
             Some(section) => self.render_settings(section, window, cx).into_any_element(),
             None => match mode {

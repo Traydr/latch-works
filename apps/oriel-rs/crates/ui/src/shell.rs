@@ -1,8 +1,10 @@
 //! What every mode's window shares: which mode shows, whether the sidebar is the rail, the work
-//! each mode reports, and which section of Settings is open.
+//! each mode reports, which section of Settings is open, and the folders the modes work on.
 
 use gpui_kit::Context;
 use gpui_kit::assets::IconName;
+
+use crate::folders::KnownFolder;
 
 /// Oriel's three modes, in the switcher's order (⌘1–3).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -149,6 +151,7 @@ pub struct ShellState {
     rail: bool,
     activity: [Option<ModeActivity>; 3],
     settings: Option<SettingsSection>,
+    folders: Vec<KnownFolder>,
 }
 
 impl ShellState {
@@ -158,6 +161,30 @@ impl ShellState {
             rail,
             activity: [None; 3],
             settings: None,
+            folders: Vec::new(),
+        }
+    }
+
+    /// Every folder a mode works on that is still there, with the modes that use it.
+    pub fn known_folders(&self) -> &[KnownFolder] {
+        &self.folders
+    }
+
+    /// The folders the other modes work on and `mode` does not, for its empty state to offer
+    /// (`useOfferedFolders`). Each mode keeps its own folders; the shell only proposes them.
+    pub fn offered_to(&self, mode: ModeId) -> Vec<KnownFolder> {
+        self.folders
+            .iter()
+            .filter(|folder| !folder.is_used_by(mode))
+            .cloned()
+            .collect()
+    }
+
+    /// The shell gathers the modes' folders here whenever one of them may have changed.
+    pub fn set_known_folders(&mut self, folders: Vec<KnownFolder>, cx: &mut Context<Self>) {
+        if self.folders != folders {
+            self.folders = folders;
+            cx.notify();
         }
     }
 

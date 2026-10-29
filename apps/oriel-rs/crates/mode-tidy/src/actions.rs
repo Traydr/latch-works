@@ -117,6 +117,15 @@ impl RunningChange {
             None => {}
         }
     }
+
+    /// Pauses or resumes the change at its next step (`pauseJob`).
+    pub fn set_paused(&self, paused: bool, cx: &mut App) {
+        match &self.job {
+            Some(ChangeJob::Perform(job)) => job.update(cx, |job, cx| job.set_paused(paused, cx)),
+            Some(ChangeJob::Undo(job)) => job.update(cx, |job, cx| job.set_paused(paused, cx)),
+            None => {}
+        }
+    }
 }
 
 /// What a finished job left: its value, or why there is none.
@@ -301,7 +310,7 @@ impl TidyState {
         if let Some(root_id) = follow_up.rescan.first() {
             self.start_scan(*root_id, window, cx);
         } else if let Some(root_id) = follow_up.analyze.first() {
-            self.start_analysis(*root_id, window, cx);
+            self.start_background_analysis(*root_id, window, cx);
         }
     }
 

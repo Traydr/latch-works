@@ -6,7 +6,9 @@
 //! [`TidyMode`] is the mode's root: the sidebar, the page on screen, the shell's Tidy commands
 //! (Add Folder…, Rescan, Undo, Select All, Find, the pages on ⌥⌘1–7, the shortcut sheet) and the
 //! folder picker. What the pages share lives in [`TidyState`]; changes to files go through
-//! [`changes::TidyChanges`], whose implementation the app hands in.
+//! [`changes::TidyChanges`], whose implementation the app hands in. What Tidy hands the other
+//! modes, and takes from them, goes through the shell as [`TidyEvent`]s and
+//! [`TidyMode::show_hand_off`] ([`links`]).
 //!
 //! Tidy changes files only in a root under the sandbox (`DataRoot::sandbox()`) or the temp folder
 //! while Oriel RS is an experiment (plan 063), so its folder picker offers only those.
@@ -22,6 +24,7 @@ pub mod format;
 mod history;
 mod holding;
 pub mod library;
+pub mod links;
 mod loaded;
 mod overview;
 mod pages;
@@ -40,6 +43,7 @@ pub use changes::{Changes, EngineChanges, NotYet, TidyChanges};
 pub use duplicates::DuplicatesPage;
 pub use folder_picker::{FolderPicker, PickOptions};
 pub use library::LibraryPage;
+pub use links::TidyEvent;
 pub use overview::OverviewPage;
 pub use pages::TidyPage;
 pub use state::{LibraryPreset, TidyState};
@@ -54,12 +58,12 @@ use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _, WindowExt as _};
 use gpui_kit::{
-    AnyElement, AnyView, AppContext as _, Context, Entity, ExternalPaths, FocusHandle, Focusable,
-    FontWeight, InteractiveElement as _, IntoElement, KeyDownEvent, ParentElement as _, Render,
-    Styled as _, Subscription, Window, div, px,
+    AnyElement, AnyView, AppContext as _, Context, Entity, EventEmitter, ExternalPaths,
+    FocusHandle, Focusable, FontWeight, InteractiveElement as _, IntoElement, KeyDownEvent,
+    ParentElement as _, Render, Styled as _, Subscription, Window, div, px,
 };
 use oriel_core_paths::DataRoot;
-use oriel_ui::{ModeId, ModeLayout, ShellState, TopBar, commands};
+use oriel_ui::{HandOff, ModeId, ModeLayout, OfferedFolders, ShellState, TopBar, commands};
 
 use crate::cleanup::CleanupPage;
 use crate::convert::ConvertPage;
@@ -89,8 +93,12 @@ pub struct TidyMode {
     page: TidyPage,
     /// Tidy's own Settings section, which keeps a folder picker's answer.
     settings: Entity<settings::SettingsSection>,
+    /// What another mode handed Tidy before its engine had listed its folders.
+    pending_hand_off: Option<HandOff>,
     _subscriptions: Vec<Subscription>,
 }
+
+impl EventEmitter<TidyEvent> for TidyMode {}
 
 impl TidyMode {
     /// Tidy for the shell, keeping its catalog in this run's data folder (`ORIEL_RS_DATA_DIR`, or
@@ -142,6 +150,16 @@ impl TidyMode {
                 this.page = state.read(cx).page();
                 cx.notify();
             }),
+            // The pages' Open in View and Sync this folder go to the shell.
+            cx.subscribe(&state, |_, _, event: &TidyEvent, cx| cx.emit(event.clone())),
+            // A hand-off that came while the engine started is shown once its folders are in.
+            cx.observe_in(&state, window, |this, state, window, cx| {
+                if state.read(cx).is_ready()
+                    && let Some(target) = this.pending_hand_off.take()
+                {
+                    links::take(&state, target, window, cx);
+                }
+            }),
             // Tidy takes the keys when it comes on screen, so its commands and page keys reach it.
             cx.observe_in(shell, window, |this, shell, window, cx| {
                 let shell = shell.read(cx);
@@ -180,7 +198,20 @@ impl TidyMode {
             spike: None,
             page,
             settings,
+            pending_hand_off: None,
             _subscriptions: subscriptions,
+        }
+    }
+
+    /// Shows what another mode handed Tidy (Show in Tidy, Tidy this folder): the folder of
+    /// Tidy's that holds it, at the Library filtered to it; a folder none holds is added, once
+    /// the owner agrees for a file's (`useHandOff`, `showHandOff`). Waits for the engine to list
+    /// its folders first.
+    pub fn show_hand_off(&mut self, target: HandOff, window: &mut Window, cx: &mut Context<Self>) {
+        if self.state.read(cx).is_ready() {
+            links::take(&self.state, target, window, cx);
+        } else {
+            self.pending_hand_off = Some(target);
         }
     }
 
@@ -277,7 +308,7 @@ impl TidyMode {
 
     fn render_welcome(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = cx.theme();
-        let sandbox = self.state.read(cx).data().sandbox();
+        let rule = links::sandbox_rule(self.state.read(cx).data());
         div()
             .flex()
             .flex_1()
@@ -341,6 +372,7 @@ impl TidyMode {
                             })),
                     )
                     .child(widgets::caption("or drop a folder here", cx).mt_3())
+                    .children(self.render_offered(cx))
                     .child(
                         div()
                             .mt_6()
@@ -352,14 +384,36 @@ impl TidyMode {
                             .text_xs()
                             .text_color(theme.muted_foreground)
                             .child(Icon::new(IconName::Lock).size(px(14.)).flex_shrink_0())
-                            .child(div().flex_1().min_w_0().child(format!(
-                                "While Oriel RS is an experiment, Tidy works only on folders \
-                                 inside {} or the temp folder.",
-                                sandbox.display()
-                            ))),
+                            .child(div().flex_1().min_w_0().child(rule)),
                     ),
             )
             .into_any_element()
+    }
+
+    /// The folders View and Sync work on, offered while Tidy has none of its own. Tidy works only
+    /// inside the sandbox while Oriel RS is an experiment, so only folders there are offered; the
+    /// note under them says so.
+    fn render_offered(&self, cx: &gpui_kit::App) -> Option<OfferedFolders> {
+        let data = self.state.read(cx).data().clone();
+        let folders: Vec<_> = self
+            .shell
+            .read(cx)
+            .offered_to(ModeId::Tidy)
+            .into_iter()
+            .filter(|folder| data.admits_tidy_root(folder.path()))
+            .collect();
+        if folders.is_empty() {
+            return None;
+        }
+        let state = self.state.clone();
+        Some(
+            OfferedFolders::new("tidy-offered-folders", folders).on_choose(
+                move |folder, window, cx| {
+                    let folder = folder.path().to_path_buf();
+                    state.update(cx, |state, cx| state.add_folder(folder, window, cx));
+                },
+            ),
+        )
     }
 
     fn render_content(&self, cx: &mut Context<Self>) -> AnyElement {

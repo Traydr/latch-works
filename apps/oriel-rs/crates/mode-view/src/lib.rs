@@ -184,6 +184,18 @@ impl ViewMode {
                 }
                 cx.notify();
             }),
+            // Back on screen with the viewer or the reader open, View gives it the keys again,
+            // so Escape and the arrows reach it: another mode may have taken them meanwhile.
+            cx.observe_in(shell, window, {
+                let mut shown = shell.read(cx).mode() == ModeId::View;
+                move |this, shell, window, cx| {
+                    let now = shell.read(cx).mode() == ModeId::View;
+                    if now && !shown {
+                        this.focus_overlay(window, cx);
+                    }
+                    shown = now;
+                }
+            }),
             cx.observe(&catalog, |this, _, cx| this.catalog_changed(cx)),
             cx.subscribe(&catalog, Self::on_catalog_update),
             cx.observe(&gallery, |_, _, cx| cx.notify()),
@@ -231,6 +243,23 @@ impl ViewMode {
         &self.gallery
     }
 
+    /// Gives the keys to the overlay on top (the viewer, the comic reader or the folder
+    /// overlay), if one is open and does not have them.
+    fn focus_overlay(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let focus = if let Some(viewer) = &self.viewer {
+            viewer.focus_handle(cx)
+        } else if let Some((reader, _)) = &self.comic_reader {
+            reader.focus_handle(cx)
+        } else if let Some((overlay, _)) = &self.folder_overlay {
+            overlay.focus_handle(cx)
+        } else {
+            return;
+        };
+        if !focus.contains_focused(window, cx) {
+            cx.defer_in(window, move |_, window, cx| focus.focus(window, cx));
+        }
+    }
+
     pub fn catalog(&self) -> &Entity<Catalog> {
         &self.catalog
     }
@@ -270,6 +299,19 @@ impl ViewMode {
     /// The folder on screen.
     pub fn folder(&self, cx: &App) -> Option<Arc<Path>> {
         self.catalog.read(cx).root().cloned()
+    }
+
+    /// The folder View works on, as the other modes are offered it (`openedFolder`): the one the
+    /// owner opened while the last folder is inside it, else the last folder. `None` until View
+    /// has opened one, or while it remembers none.
+    pub fn opened_folder(&self) -> Option<PathBuf> {
+        let settings = self.settings.settings();
+        let last = settings.last_folder_path.as_deref()?;
+        let opened = settings
+            .last_opened_folder_path
+            .as_deref()
+            .filter(|opened| Path::new(last).starts_with(opened));
+        Some(PathBuf::from(opened.unwrap_or(last)))
     }
 
     fn current_preferences(&self, cx: &App) -> settings::RootGalleryPreferences {
@@ -627,6 +669,7 @@ impl ViewMode {
             GalleryEvent::FolderStep(FolderStep::Previous) => self.open_sibling_folder(-1, cx),
             GalleryEvent::FolderStep(FolderStep::Next) => self.open_sibling_folder(1, cx),
             GalleryEvent::Selected => cx.notify(),
+            GalleryEvent::OpenOffered(folder) => self.open_folder(folder.clone(), cx),
         }
     }
 

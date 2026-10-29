@@ -10,6 +10,7 @@ pub mod open_paths;
 pub mod quit;
 pub mod shell;
 mod terminate;
+pub mod welcome;
 pub mod window_state;
 
 pub use general::theme_button_id;

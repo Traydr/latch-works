@@ -375,6 +375,41 @@ impl OverviewPage {
                     }
                 });
             }));
+        // The folder on screen goes to the other modes: View shows it, Sync pushes it.
+        let links = state.root().map(|root| {
+            let (shown, synced) = (root.path.clone(), root.path.clone());
+            div()
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap_1()
+                .child(
+                    Button::new("overview-open-in-view")
+                        .ghost()
+                        .small()
+                        .icon(Icon::new(IconName::Images))
+                        .label("Open in View")
+                        .tooltip("Open this folder in View")
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            let folder = shown.clone();
+                            this.state
+                                .update(cx, |state, cx| state.open_in_view(folder, cx));
+                        })),
+                )
+                .child(
+                    Button::new("overview-sync-folder")
+                        .ghost()
+                        .small()
+                        .icon(Icon::new(IconName::FolderUp))
+                        .label("Sync this folder")
+                        .tooltip("Push this folder to Pane View with Sync")
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            let folder = synced.clone();
+                            this.state
+                                .update(cx, |state, cx| state.sync_folder(folder, cx));
+                        })),
+                )
+        });
         TopBar::new(&state.shell, "Overview")
             .when_some(meta, |bar, meta| {
                 bar.trailing(
@@ -387,6 +422,7 @@ impl OverviewPage {
                         .child(meta),
                 )
             })
+            .when_some(links, |bar, links| bar.trailing(links))
             .trailing(rescan)
     }
 

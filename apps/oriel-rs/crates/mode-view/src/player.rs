@@ -989,7 +989,7 @@ fn popup(trigger_width: f32, width: f32, trigger_height: f32) -> gpui_kit::Div {
         .shadow_2xl()
 }
 
-/// "2×" over the picture while 4 is held.
+/// "2×" over the picture, after the fast-forward mark, while 4 is held.
 fn held_badge() -> impl IntoElement {
     div()
         .absolute()
@@ -1007,6 +1007,10 @@ fn held_badge() -> impl IntoElement {
                     "Playing at {}",
                     format_speed(HELD_SPEED)
                 )))
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap(px(6.))
                 .px_3()
                 .py(px(6.))
                 .rounded_full()
@@ -1016,6 +1020,7 @@ fn held_badge() -> impl IntoElement {
                 .text_size(px(14.))
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(gpui_kit::white())
+                .child(Icon::new(IconName::FastForward).size(px(16.)))
                 .child(format_speed(HELD_SPEED)),
         )
 }
@@ -1057,11 +1062,12 @@ fn capsule_button(
         .child(icon)
 }
 
-/// `volumeIconFor`: crossed out at nothing, the speaker with waves above it. Lucide's one-wave
-/// `Volume1` below half is not among the app's icons yet, so the two-wave one stands in for it.
+/// `volumeIconFor`: crossed out at nothing, one wave below half, two waves from half up.
 fn volume_icon(level: f32) -> IconName {
     if level == 0. {
         IconName::VolumeX
+    } else if level < 0.5 {
+        IconName::Volume1
     } else {
         IconName::Volume2
     }
