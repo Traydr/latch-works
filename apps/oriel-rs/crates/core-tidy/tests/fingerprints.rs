@@ -7,8 +7,9 @@ mod support;
 use std::path::Path;
 
 use oriel_core_tidy::similarity::{
-    Fingerprint, Hash64, Vips, animation_frame_times, detail_of_still, fingerprint_animation,
-    fingerprint_still, fingerprint_video, is_variant, normalize_detail, perceptual_hash,
+    Fingerprint, Hash64, Vips, accepts_libvips_version, animation_frame_times, detail_of_still,
+    fingerprint_animation, fingerprint_still, fingerprint_video, is_variant, normalize_detail,
+    perceptual_hash,
 };
 use support::{
     ProbeVector, corpus_dir, from_hex, has_ffmpeg, libvips_path, vectors, write_large_png,
@@ -29,12 +30,14 @@ fn vips() -> Vips {
     let path = libvips_path();
     let vips = Vips::open(&path).unwrap_or_else(|error| panic!("{}: {error}", path.display()));
     let made_with = vectors().libvips;
-    assert_eq!(
-        vips.version(),
-        made_with,
-        "The vectors were made with libvips {made_with}, and {} is another build; fingerprints \
-         match only with the libvips sharp ships.",
-        path.display()
+    // Any 8.18 release prints the same (the owner's decision of 2026-10-29); the vectors say
+    // which one made them.
+    assert!(
+        accepts_libvips_version(&vips.version()) && accepts_libvips_version(&made_with),
+        "The vectors were made with libvips {made_with}, and {} is {}; fingerprints match only \
+         with sharp's 8.18 line.",
+        path.display(),
+        vips.version()
     );
     vips
 }

@@ -21,7 +21,7 @@ use std::{
     error::Error,
     ffi::{CStr, CString, c_char, c_double, c_int, c_void},
     fmt,
-    path::Path,
+    path::{Path, PathBuf},
     ptr::{self, NonNull},
     slice,
     sync::Mutex,
@@ -923,4 +923,227 @@ fn resolve_shrink(width: c_int, height: c_int, size: c_int) -> (f64, f64) {
         hshrink.min(f64::from(width)),
         vshrink.min(f64::from(height)),
     )
+}
+
+/// Names a libvips dylib to load instead of the vendored or installed one.
+pub const LIBVIPS_VARIABLE: &str = "ORIEL_RS_LIBVIPS";
+
+/// Fingerprints match glazier-core's only through sharp's libvips line: 8.18, any patch release
+/// (the owner's decision of 2026-10-29). 8.17 already prints CMYK differently.
+pub fn accepts_libvips_version(version: &str) -> bool {
+    version.starts_with("8.18.")
+}
+
+/// Where the libvips that loaded came from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LibvipsSource {
+    /// `Contents/Frameworks` of the app bundle this runs from.
+    Bundle,
+    /// The file [`LIBVIPS_VARIABLE`] names.
+    Override,
+    /// sharp's prebuilt libvips vendored at `apps/oriel-rs/.vendor/libvips/current/lib`.
+    Vendored,
+    /// The libvips sharp installed under the repository's `node_modules`.
+    NodeModules,
+}
+
+impl fmt::Display for LibvipsSource {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Bundle => "the app bundle",
+            Self::Override => LIBVIPS_VARIABLE,
+            Self::Vendored => "the vendored copy",
+            Self::NodeModules => "node_modules",
+        })
+    }
+}
+
+/// What [`choose_libvips`] looks at, so tests can stand in for the process's own.
+struct LibvipsPlaces {
+    executable: Option<PathBuf>,
+    override_file: Option<std::ffi::OsString>,
+    vendored: PathBuf,
+    node_store: PathBuf,
+}
+
+/// The libvips to load, first found wins:
+///
+/// 1. `Contents/Frameworks/libvips-cpp.*.dylib` in the app bundle this runs from;
+/// 2. the file [`LIBVIPS_VARIABLE`] names;
+/// 3. the vendored copy of sharp's prebuilt libvips, `apps/oriel-rs/.vendor/libvips/current/lib`,
+///    laid out as the npm `@img/sharp-libvips-darwin-arm64` package's `lib/`;
+/// 4. the copy sharp installed under the repository's `node_modules`.
+///
+/// A bundled app looks only in its bundle, so it never loads a development copy.
+pub fn locate_libvips() -> std::result::Result<(PathBuf, LibvipsSource), String> {
+    let workspace = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .expect("crates/core-tidy sits two folders under the workspace")
+        .to_path_buf();
+    choose_libvips(&LibvipsPlaces {
+        executable: std::env::current_exe().ok(),
+        override_file: std::env::var_os(LIBVIPS_VARIABLE).filter(|value| !value.is_empty()),
+        vendored: workspace.join(".vendor/libvips/current/lib"),
+        node_store: workspace.join("../../node_modules/.pnpm"),
+    })
+}
+
+fn choose_libvips(places: &LibvipsPlaces) -> std::result::Result<(PathBuf, LibvipsSource), String> {
+    let contents = places.executable.as_deref().and_then(|executable| {
+        let macos = executable.parent()?;
+        let contents = macos.parent()?;
+        (macos.file_name()? == "MacOS" && contents.file_name()? == "Contents").then_some(contents)
+    });
+    if let Some(contents) = contents {
+        let frameworks = contents.join("Frameworks");
+        return libvips_in(&frameworks)
+            .map(|found| (found, LibvipsSource::Bundle))
+            .ok_or_else(|| {
+                format!(
+                    "no libvips in {}; the app was packaged without it",
+                    frameworks.display()
+                )
+            });
+    }
+    if let Some(file) = &places.override_file {
+        return Ok((PathBuf::from(file), LibvipsSource::Override));
+    }
+    if let Some(found) = libvips_in(&places.vendored) {
+        return Ok((found, LibvipsSource::Vendored));
+    }
+    if let Some(found) = node_modules_libvips(&places.node_store) {
+        return Ok((found, LibvipsSource::NodeModules));
+    }
+    Err(format!(
+        "no libvips: vendor sharp's prebuilt libvips into {}, run `pnpm install` at the \
+         repository root, or set {LIBVIPS_VARIABLE} to a libvips dylib",
+        places.vendored.display()
+    ))
+}
+
+/// sharp's `libvips-cpp.<version>.dylib` in `folder`, the newest name first.
+fn libvips_in(folder: &Path) -> Option<PathBuf> {
+    let mut names: Vec<String> = std::fs::read_dir(folder)
+        .ok()?
+        .filter_map(|entry| entry.ok()?.file_name().into_string().ok())
+        .filter(|name| name.starts_with("libvips-cpp.") && name.ends_with(".dylib"))
+        .collect();
+    names.sort();
+    names
+        .into_iter()
+        .rev()
+        .map(|name| folder.join(name))
+        .find(|path| path.is_file())
+}
+
+/// The libvips in pnpm's store, under `@img+sharp-libvips-darwin-arm64@<version>`.
+fn node_modules_libvips(store: &Path) -> Option<PathBuf> {
+    let package = "sharp-libvips-darwin-arm64";
+    let mut folders: Vec<PathBuf> = std::fs::read_dir(store)
+        .ok()?
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            let name = entry.file_name().into_string().ok()?;
+            name.starts_with(&format!("@img+{package}@")).then(|| {
+                entry
+                    .path()
+                    .join("node_modules/@img")
+                    .join(package)
+                    .join("lib")
+            })
+        })
+        .collect();
+    folders.sort();
+    folders.iter().rev().find_map(|folder| libvips_in(folder))
+}
+
+impl Vips {
+    /// Finds libvips (see [`locate_libvips`]), loads it, and refuses a build outside sharp's
+    /// 8.18 line, whose fingerprints would not be glazier-core's.
+    pub fn open_located() -> Result<(Vips, PathBuf, LibvipsSource)> {
+        let (path, source) = locate_libvips().map_err(VipsError)?;
+        let vips = Vips::open(&path)?;
+        let version = vips.version();
+        if !accepts_libvips_version(&version) {
+            return Err(VipsError(format!(
+                "libvips {version} from {source} ({}) is not 8.18.x, so its fingerprints would \
+                 not be glazier-core's",
+                path.display()
+            )));
+        }
+        log::info!(
+            "libvips {version} loaded from {} ({source})",
+            path.display()
+        );
+        Ok((vips, path, source))
+    }
+}
+
+#[cfg(test)]
+mod locate_tests {
+    use super::*;
+
+    fn places(root: &Path) -> LibvipsPlaces {
+        LibvipsPlaces {
+            executable: None,
+            override_file: None,
+            vendored: root.join("vendor/lib"),
+            node_store: root.join("store"),
+        }
+    }
+
+    fn put(path: &Path) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, b"").unwrap();
+    }
+
+    #[test]
+    fn libvips_is_found_in_the_bundle_then_the_variable_then_vendored_then_node_modules() {
+        let root =
+            std::env::temp_dir().join(format!("oriel-libvips-places-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let mut places = places(&root);
+        assert!(choose_libvips(&places).is_err());
+
+        let store = root.join(
+            "store/@img+sharp-libvips-darwin-arm64@1.3.4/node_modules/@img/\
+             sharp-libvips-darwin-arm64/lib/libvips-cpp.8.18.7.dylib",
+        );
+        put(&store);
+        assert_eq!(
+            choose_libvips(&places).unwrap(),
+            (store.clone(), LibvipsSource::NodeModules)
+        );
+
+        let vendored = root.join("vendor/lib/libvips-cpp.8.18.8.dylib");
+        put(&vendored);
+        assert_eq!(
+            choose_libvips(&places).unwrap(),
+            (vendored, LibvipsSource::Vendored)
+        );
+
+        places.override_file = Some("/somewhere/libvips-cpp.dylib".into());
+        assert_eq!(choose_libvips(&places).unwrap().1, LibvipsSource::Override);
+
+        // A bundle looks only inside itself, so a bundle packed without libvips says so.
+        places.executable = Some(root.join("Oriel RS.app/Contents/MacOS/oriel-rs"));
+        assert!(choose_libvips(&places).is_err());
+        let bundled = root.join("Oriel RS.app/Contents/Frameworks/libvips-cpp.8.18.7.dylib");
+        put(&bundled);
+        assert_eq!(
+            choose_libvips(&places).unwrap(),
+            (bundled, LibvipsSource::Bundle)
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn any_8_18_release_is_accepted() {
+        assert!(accepts_libvips_version("8.18.7"));
+        assert!(accepts_libvips_version("8.18.0"));
+        assert!(!accepts_libvips_version("8.17.3"));
+        assert!(!accepts_libvips_version("8.19.0"));
+        assert!(!accepts_libvips_version("8.180.1"));
+    }
 }

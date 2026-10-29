@@ -1,18 +1,36 @@
 [package]
 name = "oriel-core-tidy"
-description = "Tidy's engine, ported from glazier-core. So far: the similarity prints Spot variants reads."
+description = "Tidy's engine, ported from glazier-core: the catalog, the scan, the analysis passes, duplicate sets and similar groups."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
 
 [dependencies]
+anyhow.workspace = true
+futures.workspace = true
+# Jobs are GPUI entities, so starting one takes the app.
+gpui-kit.workspace = true
+# The keeper rules' name order, as glazier-core's `Intl.Collator` gives it.
+icu_collator.workspace = true
+# glazier-core walks JavaScript Maps in insertion order; the ports keep that order.
+indexmap = "2"
 # libvips is LGPL, so it is loaded at run time from the dylib the app ships, never linked in.
 libloading = "0.8"
+log.workspace = true
+oriel-core-domain.workspace = true
+oriel-core-format.workspace = true
+oriel-core-paths.workspace = true
+oriel-runtime.workspace = true
+oriel-tools.workspace = true
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
 
 [dev-dependencies]
-serde = { workspace = true }
-serde_json = { workspace = true }
+gpui-kit = { workspace = true, features = ["test-support"] }
+serde_json = { workspace = true, features = ["float_roundtrip"] }
 # The pure-Rust pipeline the parity example measures against libvips, and the large test PNG.
 image = { version = "0.25", default-features = false, features = ["gif", "jpeg", "png", "webp"] }
 

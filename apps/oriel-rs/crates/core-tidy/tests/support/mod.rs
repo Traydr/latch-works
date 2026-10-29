@@ -10,9 +10,6 @@ use std::{
 
 use serde::Deserialize;
 
-/// Points the tests at a libvips other than the one sharp installed, to try another build.
-pub const LIBVIPS_VARIABLE: &str = "ORIEL_RS_LIBVIPS";
-
 pub fn conformance_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../conformance/fingerprints")
 }
@@ -21,50 +18,12 @@ pub fn corpus_dir() -> PathBuf {
     conformance_dir().join("corpus")
 }
 
-fn repo_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../..")
-}
-
-/// The libvips sharp installed under `node_modules` (`pnpm install` puts it there), or the one
-/// [`LIBVIPS_VARIABLE`] names.
+/// The libvips the app would load ([`oriel_core_tidy::similarity::locate_libvips`]): the
+/// variable's, the vendored copy of sharp's, or the one `pnpm install` put in `node_modules`.
 pub fn libvips_path() -> PathBuf {
-    if let Some(chosen) = env::var_os(LIBVIPS_VARIABLE).filter(|value| !value.is_empty()) {
-        return PathBuf::from(chosen);
-    }
-    let store = repo_root().join("node_modules/.pnpm");
-    let package = if cfg!(target_os = "windows") {
-        "sharp-libvips-win32-x64"
-    } else {
-        "sharp-libvips-darwin-arm64"
-    };
-    let found = fs::read_dir(&store).ok().and_then(|entries| {
-        entries
-            .flatten()
-            .filter(|entry| {
-                let name = entry.file_name();
-                name.to_string_lossy()
-                    .starts_with(&format!("@img+{package}@"))
-            })
-            .flat_map(|entry| {
-                let lib = entry
-                    .path()
-                    .join("node_modules/@img")
-                    .join(package)
-                    .join("lib");
-                fs::read_dir(lib).into_iter().flatten().flatten()
-            })
-            .map(|entry| entry.path())
-            .find(|path| {
-                let name = path.file_name().unwrap_or_default().to_string_lossy();
-                name.starts_with("libvips-cpp.") && name.ends_with(".dylib")
-            })
-    });
-    found.unwrap_or_else(|| {
-        panic!(
-            "No libvips: run `pnpm install` at the repository root so sharp's libvips is in \
-             node_modules, or set {LIBVIPS_VARIABLE} to a libvips dylib."
-        )
-    })
+    oriel_core_tidy::similarity::locate_libvips()
+        .map(|(path, _)| path)
+        .unwrap_or_else(|error| panic!("No libvips: {error}"))
 }
 
 #[derive(Debug, Deserialize)]

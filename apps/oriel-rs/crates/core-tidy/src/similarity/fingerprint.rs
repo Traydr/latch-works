@@ -1,7 +1,10 @@
 //! A file's fingerprint, as `glazier-core/src/similarity/fingerprint.ts` makes and stores it: a
 //! perceptual hash for a still, five frames' for anything that moves.
 
-use std::{error::Error, fmt, path::Path, process::Command};
+use std::{error::Error, fmt, path::Path, time::Duration};
+
+use oriel_runtime::CancelToken;
+use oriel_tools::ToolRun;
 
 use super::{
     phash::{Hash64, PHASH_INPUT_SIZE, perceptual_hash},
@@ -11,6 +14,9 @@ use super::{
 /// A video is sampled at these points of its duration; an animation at the same share of its
 /// frames' time.
 const SAMPLE_POSITIONS: [f64; 5] = [0.1, 0.3, 0.5, 0.7, 0.9];
+
+/// How long ffmpeg may take to hand back one frame, as glazier-core allows.
+const FRAME_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// A still's fingerprint, or five frames' for anything that moves.
 #[derive(Clone, Debug, PartialEq)]
@@ -72,6 +78,8 @@ impl Fingerprint {
 pub enum FingerprintError {
     Decode(VipsError),
     Video(String),
+    /// The pass was stopped while ffmpeg ran; nothing is recorded for the file.
+    Cancelled,
 }
 
 impl fmt::Display for FingerprintError {
@@ -79,6 +87,7 @@ impl fmt::Display for FingerprintError {
         match self {
             FingerprintError::Decode(error) => error.fmt(f),
             FingerprintError::Video(message) => f.write_str(message),
+            FingerprintError::Cancelled => f.write_str("cancelled"),
         }
     }
 }
@@ -144,18 +153,27 @@ pub fn fingerprint_animation(
 }
 
 /// Fingerprints a video from single frames ffmpeg decodes at the sample positions, with
-/// glazier-core's arguments. Unlike glazier-core this has no timeout yet; the tools crate will
-/// own running ffmpeg.
+/// glazier-core's arguments and its timeout for each frame.
 pub fn fingerprint_video(
     ffmpeg: &Path,
     path: &Path,
     duration_ms: f64,
 ) -> Result<Fingerprint, FingerprintError> {
+    fingerprint_video_with(ffmpeg, path, duration_ms, None)
+}
+
+/// [`fingerprint_video`], killing ffmpeg when `cancel` is cancelled.
+pub fn fingerprint_video_with(
+    ffmpeg: &Path,
+    path: &Path,
+    duration_ms: f64,
+    cancel: Option<&CancelToken>,
+) -> Result<Fingerprint, FingerprintError> {
     let expected = PHASH_INPUT_SIZE * PHASH_INPUT_SIZE;
     let mut frames = Vec::with_capacity(SAMPLE_POSITIONS.len());
     for position in SAMPLE_POSITIONS {
         let seconds = duration_ms * position / 1000.0;
-        let output = Command::new(ffmpeg)
+        let mut run = ToolRun::new(ffmpeg, FRAME_TIMEOUT)
             .args([
                 "-hide_banner",
                 "-loglevel",
@@ -169,12 +187,21 @@ pub fn fingerprint_video(
             .arg(format!(
                 "scale={PHASH_INPUT_SIZE}:{PHASH_INPUT_SIZE}:flags=area,format=gray"
             ))
-            .args(["-f", "rawvideo", "-pix_fmt", "gray", "pipe:1"])
-            .output()
-            .map_err(|error| FingerprintError::Video(format!("Could not run ffmpeg: {error}")))?;
-        if !output.status.success() || output.stdout.len() < expected {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            let last = stderr.trim().lines().last().unwrap_or("").to_owned();
+            .args(["-f", "rawvideo", "-pix_fmt", "gray", "pipe:1"]);
+        if let Some(token) = cancel {
+            run = run.cancel_on(token);
+        }
+        let output = match run.run() {
+            Ok(output) => output,
+            Err(error) if error.is_cancelled() => return Err(FingerprintError::Cancelled),
+            Err(error) => {
+                return Err(FingerprintError::Video(format!(
+                    "Could not run ffmpeg: {error}"
+                )));
+            }
+        };
+        if !output.success() || output.stdout.len() < expected {
+            let last = output.stderr.trim().lines().last().unwrap_or("").to_owned();
             return Err(FingerprintError::Video(if last.is_empty() {
                 "ffmpeg returned no frame.".to_owned()
             } else {
