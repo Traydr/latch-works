@@ -79,6 +79,7 @@ scripted input:
 | `ORIEL_RS_ACTIVITY=tidy=0.4,sync=working` | Fakes mode activity; a faked progress makes ⌘Q wait, so press it twice |
 | `ORIEL_RS_SYNC_PLAN=1` | Sync plans the active profile at start |
 | `ORIEL_RS_VIDEO=avplayer` | Video through AVPlayer instead of libmpv |
+| `ORIEL_RS_WELCOME=1` | Shows the first-run welcome under `ORIEL_RS_DATA_DIR` (it shows once otherwise, until `shell/welcomed` exists) |
 | `ORIEL_RS_TIDY_ROOT=<folder>` | Tidy opens on that root (it must be in the sandbox) |
 | `ORIEL_RS_TIDY_PAGE=<page>` | Tidy opens on that page (`overview`, `library`, `duplicates`, …) |
 | `ORIEL_RS_CHANGES_ONLY=<scenario>` | `core-tidy`'s changes test runs one differential scenario |
