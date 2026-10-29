@@ -1,0 +1,171 @@
+{
+  "about": "Made by packages/glazier-core/src/conformance.test.ts from media/video-probe.ts; do not edit. Regenerate with ORIEL_RS_UPDATE_VECTORS=1 pnpm --filter @latch-works/glazier-core exec vitest run src/conformance.test.ts. Non-ASCII characters are escaped.",
+  "cases": [
+    {
+      "name": "H.264 with AAC",
+      "output": {
+        "streams": [
+          {
+            "codec_type": "video",
+            "codec_name": "h264",
+            "width": 1920,
+            "height": 1080,
+            "duration": "12.345678"
+          },
+          { "codec_type": "audio", "codec_name": "aac", "duration": "12.4" }
+        ],
+        "format": { "duration": "12.400000", "bit_rate": "5123456" }
+      },
+      "stdout": "{\"streams\":[{\"codec_type\":\"video\",\"codec_name\":\"h264\",\"width\":1920,\"height\":1080,\"duration\":\"12.345678\"},{\"codec_type\":\"audio\",\"codec_name\":\"aac\",\"duration\":\"12.4\"}],\"format\":{\"duration\":\"12.400000\",\"bit_rate\":\"5123456\"}}",
+      "probe": {
+        "width": 1920,
+        "height": 1080,
+        "durationMs": 12346,
+        "videoCodec": "h264",
+        "audioCodec": "aac",
+        "audioStreams": 1,
+        "bitrate": 5123456
+      }
+    },
+    {
+      "name": "rotated by side data",
+      "output": {
+        "streams": [
+          {
+            "codec_type": "video",
+            "codec_name": "hevc",
+            "width": 1920,
+            "height": 1080,
+            "side_data_list": [{ "side_data_type": "Display Matrix" }, { "rotation": -90 }]
+          }
+        ],
+        "format": { "duration": "3.000000" }
+      },
+      "stdout": "{\"streams\":[{\"codec_type\":\"video\",\"codec_name\":\"hevc\",\"width\":1920,\"height\":1080,\"side_data_list\":[{\"side_data_type\":\"Display Matrix\"},{\"rotation\":-90}]}],\"format\":{\"duration\":\"3.000000\"}}",
+      "probe": {
+        "width": 1080,
+        "height": 1920,
+        "durationMs": 3000,
+        "videoCodec": "hevc",
+        "audioCodec": null,
+        "audioStreams": 0,
+        "bitrate": null
+      }
+    },
+    {
+      "name": "rotated by tag",
+      "output": {
+        "streams": [
+          {
+            "codec_type": "video",
+            "codec_name": "h264",
+            "width": 640,
+            "height": 480,
+            "tags": { "rotate": "270" }
+          }
+        ],
+        "format": { "duration": "N/A", "bit_rate": "N/A" }
+      },
+      "stdout": "{\"streams\":[{\"codec_type\":\"video\",\"codec_name\":\"h264\",\"width\":640,\"height\":480,\"tags\":{\"rotate\":\"270\"}}],\"format\":{\"duration\":\"N/A\",\"bit_rate\":\"N/A\"}}",
+      "probe": {
+        "width": 480,
+        "height": 640,
+        "durationMs": null,
+        "videoCodec": "h264",
+        "audioCodec": null,
+        "audioStreams": 0,
+        "bitrate": null
+      }
+    },
+    {
+      "name": "half a turn",
+      "output": {
+        "streams": [
+          {
+            "codec_type": "video",
+            "codec_name": "h264",
+            "width": 640,
+            "height": 480,
+            "tags": { "rotate": "180" }
+          }
+        ],
+        "format": { "duration": 2.5 }
+      },
+      "stdout": "{\"streams\":[{\"codec_type\":\"video\",\"codec_name\":\"h264\",\"width\":640,\"height\":480,\"tags\":{\"rotate\":\"180\"}}],\"format\":{\"duration\":2.5}}",
+      "probe": {
+        "width": 640,
+        "height": 480,
+        "durationMs": 2500,
+        "videoCodec": "h264",
+        "audioCodec": null,
+        "audioStreams": 0,
+        "bitrate": null
+      }
+    },
+    {
+      "name": "a cover picture then the video",
+      "output": {
+        "streams": [
+          {
+            "codec_type": "video",
+            "codec_name": "mjpeg",
+            "width": 600,
+            "height": 600,
+            "disposition": { "attached_pic": 1 }
+          },
+          {
+            "codec_type": "video",
+            "codec_name": "vp9",
+            "width": 1280,
+            "height": 720,
+            "disposition": { "attached_pic": 0 }
+          },
+          { "codec_type": "audio", "codec_name": "opus" },
+          { "codec_type": "audio", "codec_name": "aac" }
+        ],
+        "format": { "duration": "60.0005", "bit_rate": 900000 }
+      },
+      "stdout": "{\"streams\":[{\"codec_type\":\"video\",\"codec_name\":\"mjpeg\",\"width\":600,\"height\":600,\"disposition\":{\"attached_pic\":1}},{\"codec_type\":\"video\",\"codec_name\":\"vp9\",\"width\":1280,\"height\":720,\"disposition\":{\"attached_pic\":0}},{\"codec_type\":\"audio\",\"codec_name\":\"opus\"},{\"codec_type\":\"audio\",\"codec_name\":\"aac\"}],\"format\":{\"duration\":\"60.0005\",\"bit_rate\":900000}}",
+      "probe": {
+        "width": 1280,
+        "height": 720,
+        "durationMs": 60001,
+        "videoCodec": "vp9",
+        "audioCodec": "opus",
+        "audioStreams": 2,
+        "bitrate": 900000
+      }
+    },
+    {
+      "name": "audio only",
+      "output": {
+        "streams": [{ "codec_type": "audio", "codec_name": "mp3" }],
+        "format": { "duration": "180.5" }
+      },
+      "stdout": "{\"streams\":[{\"codec_type\":\"audio\",\"codec_name\":\"mp3\"}],\"format\":{\"duration\":\"180.5\"}}",
+      "probe": {
+        "width": null,
+        "height": null,
+        "durationMs": 180500,
+        "videoCodec": null,
+        "audioCodec": "mp3",
+        "audioStreams": 1,
+        "bitrate": null
+      }
+    },
+    {
+      "name": "nothing",
+      "output": {},
+      "stdout": "{}",
+      "probe": {
+        "width": null,
+        "height": null,
+        "durationMs": null,
+        "videoCodec": null,
+        "audioCodec": null,
+        "audioStreams": 0,
+        "bitrate": null
+      }
+    }
+  ]
+}
