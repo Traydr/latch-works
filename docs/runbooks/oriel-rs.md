@@ -66,8 +66,9 @@ Measure release builds: `cargo build --release -p oriel-rs` in `apps/oriel-rs`.
 
 ## Settings files and check variables
 
-The shell keeps Electron Oriel's window state in `shell/window-state.json` and the values Electron
-keeps in localStorage (`oriel.theme`, `oriel.sidebar`, `oriel.mode`, Tidy's `oriel.tidy.view`)
+The shell keeps Electron Oriel's window state in `shell/window-state.json`, in the same format and
+in coordinates across every display as Electron keeps them, so the window reopens on the display
+it was on. The values Electron keeps in localStorage (`oriel.theme`, `oriel.sidebar`, `oriel.mode`, Tidy's `oriel.tidy.view`)
 in `shell/local-storage.json`. These variables set up a run for a check, since this Mac allows no
 scripted input:
 
@@ -79,12 +80,16 @@ scripted input:
 | `ORIEL_RS_ACTIVITY=tidy=0.4,sync=working` | Fakes mode activity; a faked progress makes ⌘Q wait, so press it twice |
 | `ORIEL_RS_SYNC_PLAN=1` | Sync plans the active profile at start |
 | `ORIEL_RS_VIDEO=avplayer` | Video through AVPlayer instead of libmpv |
+| `ORIEL_RS_ABOUT=1` | Opens the About dialog at start, to see the version and the licences a bundle lists |
 | `ORIEL_RS_WELCOME=1` | Shows the first-run welcome under `ORIEL_RS_DATA_DIR` (it shows once otherwise, until `shell/welcomed` exists) |
 | `ORIEL_RS_TIDY_ROOT=<folder>` | Tidy opens on that root (it must be in the sandbox) |
 | `ORIEL_RS_TIDY_PAGE=<page>` | Tidy opens on that page (`overview`, `library`, `duplicates`, …) |
 | `ORIEL_RS_CHANGES_ONLY=<scenario>` | `core-tidy`'s changes test runs one differential scenario |
 | `ORIEL_RS_CHANGES_OUT=<file>` | `core-tidy`'s changes test writes Rust's report there |
 | `ORIEL_SPIKE_PANEL=volume\|speed` | `mpv_spike` opens the player's volume or speed panel, for screenshots |
+
+View's Debug logging setting prints each thumbnail event to the terminal as a `[thumbnails] …`
+line on stderr; Performance monitoring adds a Timings group to View's Diagnostics.
 
 ## The sandbox
 
@@ -209,15 +214,19 @@ checks the hashes and does nothing. The pins are in `crates/xtask/src/vendor/pin
 
 | Part | Where | Size |
 | --- | --- | --- |
-| The release binary (`cargo build --release -p oriel-rs`, in `CARGO_TARGET_DIR` if set) | `Contents/MacOS/oriel-rs` | 23 MB |
+| The release binary (`cargo build --release -p oriel-rs`, in `CARGO_TARGET_DIR` if set) | `Contents/MacOS/oriel-rs` | 43 MB |
 | The LGPL libmpv set, built first if it is not | `Contents/Frameworks/` | 26.1 MB, 13 dylibs |
 | The vendored libvips, fetched first if it is not | `Contents/Frameworks/` | 18.1 MB |
 | The vendored libavif, fetched first if it is not; libmpv's dav1d 1.5.4 serves it, under the same install name | `Contents/Frameworks/` | 5.5 MB, 3 dylibs |
 | The pinned ffmpeg and ffprobe, fetched first if they are not (`oriel-tools`' own code) | `Contents/Resources/media-tools/` | 126 MB |
 | Each set's licences and manifest | `Contents/Resources/licenses/<set>/` | |
+| The repository's licence | `Contents/Resources/licenses/oriel-rs/` | |
+| FFmpeg's `COPYING.GPLv3` and `LICENSE.md` from its pinned source release, and `NOTICE.txt`: download URLs and hashes, ffmpeg's configure flags, the licence those flags make it (GPL-3.0-or-later) and where its source is | `Contents/Resources/licenses/media-tools/` | |
+| The licence files of each of the 536 crates in the binary, listed in `README.txt` with each one's licence expression; the 62 that ship no licence file of their own point at shared MIT and Apache-2.0 texts | `Contents/Resources/licenses/rust-crates/` | |
+| `index.json`, one entry per folder, which the About dialog lists | `Contents/Resources/licenses/` | |
 | Electron Oriel's icon, `Info.plist` (`dev.traydr.latchworks.oriel-rs`) | `Contents/` | |
 
-197 MB in all, against Electron Oriel's 503 MB. `LSMinimumSystemVersion` is the newest macOS any
+223 MB in all, against Electron Oriel's 503 MB. `LSMinimumSystemVersion` is the newest macOS any
 part needs, so the libavif set makes the app's macOS 15 and later (Oriel RS's own floor is 13).
 The command checks that every library in `Contents/Frameworks` links only the system and the
 others there, signs the whole ad hoc (`codesign --force --deep -s -`), checks it with
