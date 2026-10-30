@@ -150,6 +150,78 @@ today's, the second relaunch of the same profile, started no thumbnail workers, 
 with 615 / 296 MB and 0.22 % CPU. The table uses the first relaunch, inside each round, which
 kept 11 processes as Phase 0's did.
 
+## After the first optimization round (2026-10-30)
+
+The owner chose to go on toward replacing Electron Oriel and asked for every workflow to be
+optimized (plan decisions 11 to 15). One round of agents worked on View, video, Tidy's engine,
+Tidy's pages, Sync and the shell. Their work is commits `93d17fa1` to `be4e2add`. Each change
+kept the formats, the orders and the outputs, and Tidy's full 21k differential still has 0
+differences.
+
+The table compares the bundle from `03dab588` ("before") with the bundle from `be4e2add`
+("after"). It was measured on a quiet machine with `cargo run -p xtask -- measure`, the two apps
+interleaved in each round. View, the Library and the idle rows ran 3 rounds; Tidy ran 2. Video
+compared each side's own `mpv_spike` on the same libmpv. Medians, with the spread in brackets.
+
+| Measure | Before | After | Change |
+|---|---:|---:|---:|
+| Cold start, launch to first thumbnails | 423 (405–520) ms | 290 (284–300) ms | −31 % |
+| All 20,000 stills listed, after View opens | 194 ms | 51 ms | −74 % |
+| Warm start, first screen on disk | 299 ms | 191 ms | −36 % |
+| Warm start after a full fill | 384 ms | 301 ms | −22 % |
+| Thumbnails made per second (full fill) | 284 | 494 | +74 % |
+| Memory 60 s after opening, footprint | 224 MB | 166 MB | −26 % |
+| Memory 60 s after scrolling, footprint | 324 MB | 302 MB | −7 % |
+| Gallery scroll, p95 / long frames | 8.53 ms / 1 | 8.52 ms / 1 | level |
+| Viewer step AVIF, p50 | 6.44 ms | 4.32 ms | −33 % |
+| Video open, H.264 / HEVC / AV1 | 99 / 80 / 83 ms | 63 / 46 / 53 ms | −36 to −43 % |
+| Video exact seek, H.264 / HEVC / AV1 | 176 / 200 / 334 ms | 166 / 193 / 330 ms | level |
+| Video fast seek, H.264 / HEVC / AV1 | 43 / 30 / 30 ms | 47 / 30 / 33 ms | +0 to +10 % |
+| Library 100k, sort by name, to the frame | 183 ms | 34 ms | −82 % |
+| Library 100k, sort by kind, format or duration | 164–192 ms | 15 ms | −91 to −92 % |
+| Library 100k, sort by size or modified | 13.1–13.4 ms | 15.0 ms | +12 to +15 % |
+| Tidy, launch to a finished Overview, 21k fixture | 328 s | 138 s | −58 % |
+| Tidy, footprint when the analysis is done | 939 MB | 179 MB | −81 % |
+| Tidy, CPU time to the finished Overview (app and ffmpeg) | 1,992 s | 2,276 s | +14 % |
+| At rest in Tidy with nothing open, footprint | 99.6 MB | 74.5 MB | −25 % |
+| Bundle size | 223 MB | 205 MB | −8 % |
+
+What made the difference:
+- **View.** It no longer waits on its SQLite index while it lists, which ends a run of 2–3 MB
+  blocks freed on every scan batch. It reads folders in bulk with `getattrlistbulk` and makes each
+  item's key once. A thumbnail already on disk shows at once. View uses all cores but two for
+  thumbnails, with the same WebP settings and cache keys.
+- **Video.** libmpv engines are kept warm and reused: a dropped player gives its engine back,
+  trimmed, for 30 s. The audio output is handed over between players. A preview with sound off
+  decodes no soundtrack, and hovering a video tile starts an engine ahead. Like Electron Oriel,
+  Oriel RS now draws no subtitles.
+- **Tidy's engine.** Fingerprints, detail prints and loudness run one file per core, and a
+  video's five frames run as five work items. Freed memory goes back to macOS after the analysis,
+  after a change, after Convert's estimate, and when a catalog thread goes quiet. Convert encodes
+  on all cores but two, within a memory budget.
+- **Tidy's pages.**
+  - A GPU texture leak in the thumbnail cache is fixed: 2.2 GB to 0.7 GB after a grid scroll.
+  - Duplicates decodes the pictures on screen first, with ffmpeg writing fast PNGs: the first 8
+    tiles of a 77-version set show in 0.8 s, against 11 s.
+  - Long lists sort by collation-key ranks, which give exactly the collator's order.
+- **Sync.**
+  - The hash cache and the snapshot are read straight into their entries.
+  - Uploads are read and hashed four chunks ahead.
+  - The plan tree keeps what it shows. Typing in its filter takes 4.3 ms a keystroke, against
+    23.2 ms.
+- **The shell.**
+  - The theme is applied without GPUI Kit's probe of every system font, 38 ms at launch.
+  - The bundle's binary is built with fat LTO over one codegen unit and stripped, 25 MB against
+    43 MB.
+
+What it cost:
+- **Tidy's analysis uses 14 % more CPU in all** for its 58 % shorter wall time. The cause is
+  libvips' locks across 18 lanes and the slower kind of core.
+- **Peak memory during the analysis** rose to about 3.3 GB, with 18 decodes at once.
+- **Fast seeks** are 3 to 4 ms slower in H.264 and AV1.
+- **The Library's sorts by size and date** are about 2 ms slower on 100k rows.
+- **A bundle build** takes about 3 minutes after any change.
+
 ## Lines of code
 
 Counted at `b5e8dd5f` with `git ls-files` piped to `wc -l`: every line of every tracked file,

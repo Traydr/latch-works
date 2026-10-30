@@ -3,8 +3,9 @@
 Oriel RS is Oriel ported to Rust on GPUI with GPUI Kit, as an experiment beside Electron Oriel
 ([plan 063](../../plans/063-oriel-rs.md)). On macOS the port is done: the shell, View, Tidy, Sync,
 the links between the modes and Settings, in a double-clickable `Oriel RS.app`
-([runbook](../../runbooks/oriel-rs.md)). Phase 9's scorecard has been run. What is left is the
-owner's decision, a few packaging steps and Windows.
+([runbook](../../runbooks/oriel-rs.md)). Phase 9's scorecard has been run, and the owner chose
+to go on toward replacing Electron Oriel. Optimizing every workflow comes first; a few packaging
+steps and Windows are left.
 
 ## What matters
 
@@ -12,40 +13,38 @@ owner's decision, a few packaging steps and Windows.
   Its 33 e2e cases are the plan's parity list: 32 pass as GPUI tests, and the migration case does
   not apply. What is left: a VoiceOver pass by a person, signing with a real identity, the DMG,
   the offer to move to Applications, a release workflow, and Windows.
-- **The whole app kept Phase 0's lead on everything but video.**
-  - It is 2.3 times smaller on disk and starts 2.7 times faster.
-  - At rest it uses 2.1 times less memory.
-  - It analyses the 21k fixture in glazier-core's time and pushes 1.7 times faster.
-  - Electron Oriel still opens video 2.6 to 3.8 times faster.
+- **Oriel RS leads on everything but video, and the first optimization round widened the
+  lead.** It is 2.4 times smaller on disk and starts 3.5 times faster, and at rest it uses 2.6
+  times less memory. Tidy analyses the 21k fixture 2.4 times faster than glazier-core. Electron
+  Oriel still opens video 1.4 to 2.2 times faster and seeks exactly 4 to 6 times faster.
 - **The two implementations agree.** On the 21k fixture, Tidy's engine finds the same sets as
   glazier-core, with 0 differences, and every e2e Tidy change runs differentially against it. A
   Rust Sync plan equals the Lockstep CLI's. The ordering, format and fingerprint rules are pinned
   by vectors that the TypeScript writes.
 - **Tidy changes files only in the sandbox.** Its changes run only on roots under
   `~/.latch-works/oriel-rs/sandbox` or the temp folder. Lifting that is the owner's call.
-- **Two numbers want a look.**
-  - View's memory grew with its index: 207 MB footprint at rest, against 141 MB at Phase 0.
-  - Tidy sits at 1.5 GB resident after analysing the 21k fixture. Neither has been profiled yet.
+- **Optimizing goes on, workflow by workflow.** `cargo run -p xtask -- measure` repeats the
+  scorecard's rows, so every change is measured A/B against the build before it.
 
 ## Against Electron Oriel
 
-Medians of 3 on the same Mac and fixture, both apps measured on 2026-10-30
-([scorecard](scorecard.md)).
+Oriel RS's numbers are from after the first optimization round (2026-10-30). Electron Oriel's
+are Phase 9's, from the same Mac and fixture. Both come from the [scorecard](scorecard.md), as
+medians of 3.
 
 | Measure | Oriel RS | Electron Oriel | Oriel RS is |
 |---|---:|---:|---|
-| Size on disk | 223 MB `.app` (97 MB without ffmpeg and ffprobe) | 502 MB | 2.3× smaller |
-| Cold start to first thumbnails | 383 ms | 1,022 ms | 2.7× faster |
-| All 20,000 stills listed | 151 ms | 1,430 ms | 9.5× faster |
-| Memory at rest (footprint) | 207 MB | 436 MB | 2.1× lighter |
-| Memory after a full scroll (footprint) | 367 MB | 1,469 MB | 4× lighter |
-| Gallery scroll, p95 / long frames | 8.5 ms / 2 | 9.2 ms / 17 | as smooth, fewer long frames |
-| Viewer step, AVIF / JPEG | 4.4 / 5.7 ms | 129 / 67 ms | 29× / 12× faster |
-| Video open to first frame | 78–97 ms | 21–33 ms | 2.6–3.8× slower |
-| Exact seek | 175–356 ms | 37–53 ms | 4–7× slower, but on target in every codec |
-| Tidy: scan to Overview, 21k fixture | 332.5 s | 336.5 s (glazier-core, headless) | the same |
+| Size on disk | 205 MB `.app` | 502 MB | 2.4× smaller |
+| Cold start to first thumbnails | 290 ms | 1,022 ms | 3.5× faster |
+| All 20,000 stills listed | 51 ms | 1,430 ms | 28× faster |
+| Memory at rest (footprint) | 166 MB | 436 MB | 2.6× lighter |
+| Memory after a full scroll (footprint) | 302 MB | 1,469 MB | 4.9× lighter |
+| Gallery scroll, p95 / long frames | 8.5 ms / 1 | 9.2 ms / 17 | as smooth, fewer long frames |
+| Viewer step, AVIF / JPEG | 4.3 / 5.3 ms | 129 / 67 ms | 30× / 13× faster |
+| Video open to first frame | 46–63 ms | 21–33 ms | 1.4–2.2× slower |
+| Exact seek | 166–330 ms | 37–53 ms | 4–6× slower, but on target in every codec |
+| Tidy: scan to Overview, 21k fixture | 138 s | 336.5 s (glazier-core, headless) | 2.4× faster |
 | Sync push, 247 files | 0.79 s | 1.32 s (Lockstep CLI) | 1.7× faster |
-| Lines of code (and tests) | 65.6k (15.6k) | 53.3k (6.9k) | 1.2× the code |
 
 ## Decided by the owner
 
@@ -61,29 +60,22 @@ Medians of 3 on the same Mac and fixture, both apps measured on 2026-10-30
   - a vendored libavif.
 - View lists HEIC stills as an Oriel RS addition.
 - One branch, `agent/063-0-spike`, for the whole plan, and the name Oriel RS.
+- On Phase 9 (decisions 11–15):
+  - go on toward replacing Electron Oriel, optimizing every workflow first;
+  - the sandbox stays, with no setting to lift it;
+  - macOS 15 and later is fine;
+  - the licence notices stand;
+  - no real signing identity, notarization or auto-update for now.
 
-## For the owner to decide
+## Still open
 
-- **Phase 9:**
-  - go on toward replacing Electron Oriel, which needs a plan for using Oriel's data and
-    retiring the Electron app;
-  - keep Oriel RS as an experiment;
-  - or stop.
-- **The sandbox:** whether to show the setting that lets Tidy change files outside the sandbox.
-- **macOS 15 and later:** Homebrew's prebuilt aom, which libavif links, sets this floor. Oriel
-  RS's own floor is 13. Lowering it means building aom ourselves or finding another prebuilt
-  build.
-- **The licence notices.**
-  - The GPL notice for ffmpeg and ffprobe points at the upstream sources rather than making a
-    written offer of our own.
-  - 62 Rust crates ship no licence file of their own and are covered by shared MIT and
-    Apache-2.0 texts.
-- **"Glazier" in two planner warnings:** the text is kept so the differential runs still match
+- **Optimization trade-offs** the first round left to the owner: wider hashing and upload queues
+  in Sync, a cap on Tidy's thumbnail memory, Shrink's encodes at once, Tidy's peak memory during
+  the analysis, a libvips with dav1d, and patched FFmpeg decoders for exact seeks.
+- **Using Oriel's data and retiring the Electron app** need a plan of their own.
+- **"Glazier" in two planner warnings** is kept so the differential runs still match
   glazier-core.
-- **Signing, notarization and auto-update** need a Developer ID certificate and somewhere to
-  publish updates.
-- **Windows (Phase 8)** was not started.
-- **On the next launch,** the first-run welcome shows once in the real data folder.
+- **Windows (Phase 8)** is not started.
 
 ## The detail pages
 
