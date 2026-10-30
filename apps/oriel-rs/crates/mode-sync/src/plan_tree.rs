@@ -22,6 +22,8 @@ pub struct PlanFile {
     pub path: String,
     /// The bytes it moves; a delete moves none.
     pub size: Option<u64>,
+    /// Its [`TreeInput::item`].
+    pub item: usize,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -60,6 +62,34 @@ pub struct TreeInput<'a> {
     pub action: SyncPlanAction,
     pub path: &'a str,
     pub size: Option<u64>,
+    /// Where the item came from, such as its place in the plan; the tree hands it back.
+    pub item: usize,
+    /// Where its file name falls in natural order among the names the tree may hold, from
+    /// [`name_order`]. A folder's files are sorted by it, which sorts them by name.
+    pub name_rank: u32,
+}
+
+/// The [`TreeInput::name_rank`] of each path, in order: where its file name falls in natural
+/// order, the same rank for names that compare equal. Worked out once for a plan, it sorts the
+/// plan's tree, of any subset of its changes, without the collator.
+pub fn name_order<'a>(paths: impl IntoIterator<Item = &'a str>) -> Vec<u32> {
+    let names: Vec<&str> = paths
+        .into_iter()
+        .map(|path| path.rsplit('/').next().unwrap_or(path))
+        .collect();
+    let count = u32::try_from(names.len()).expect("a plan's changes fit in u32");
+    let mut order: Vec<u32> = (0..count).collect();
+    let name = |at: u32| names[at as usize];
+    order.sort_by(|a, b| natural(name(*a), name(*b)));
+    let mut ranks = vec![0; names.len()];
+    let mut rank = 0;
+    for pair in order.windows(2) {
+        if natural(name(pair[0]), name(pair[1])) != std::cmp::Ordering::Equal {
+            rank += 1;
+        }
+        ranks[pair[1] as usize] = rank;
+    }
+    ranks
 }
 
 struct Label<'a>(&'a str);
@@ -83,7 +113,8 @@ fn natural(a: &str, b: &str) -> std::cmp::Ordering {
 struct Draft {
     order: Vec<String>,
     folders: HashMap<String, Draft>,
-    files: Vec<PlanFile>,
+    /// Each file with its name's rank.
+    files: Vec<(u32, PlanFile)>,
     name: String,
     path: String,
 }
@@ -117,16 +148,20 @@ pub fn build_plan_tree<'a>(items: impl IntoIterator<Item = TreeInput<'a>>) -> Pl
                 .get_mut(segment)
                 .expect("the folder was just added");
         }
-        folder.files.push(PlanFile {
-            action: item.action,
-            name,
-            path: item.path.to_owned(),
-            size: if item.action == SyncPlanAction::Delete {
-                None
-            } else {
-                item.size
+        folder.files.push((
+            item.name_rank,
+            PlanFile {
+                action: item.action,
+                name,
+                path: item.path.to_owned(),
+                size: if item.action == SyncPlanAction::Delete {
+                    None
+                } else {
+                    item.size
+                },
+                item: item.item,
             },
-        });
+        ));
     }
     finish(root)
 }
@@ -139,8 +174,10 @@ fn finish(mut draft: Draft) -> PlanFolder {
         .map(|child| collapse_chain(finish(child)))
         .collect();
     folders.sort_by(|a, b| natural(&a.label, &b.label));
+    // Stable, so names that rank equal keep their order, as a sort by `natural` keeps them.
     let mut files = draft.files;
-    files.sort_by(|a, b| natural(&a.name, &b.name));
+    files.sort_by_key(|(rank, _)| *rank);
+    let files: Vec<PlanFile> = files.into_iter().map(|(_, file)| file).collect();
     let size = files.iter().filter_map(|file| file.size).sum::<u64>()
         + folders.iter().map(|folder| folder.size).sum::<u64>();
     let item_count = files.len()
@@ -233,34 +270,45 @@ fn visit<'a>(
     }
 }
 
-/// Every file path in `folder` and below it.
-pub fn folder_paths(folder: &PlanFolder) -> Vec<&str> {
-    let mut paths: Vec<&str> = folder.files.iter().map(|file| file.path.as_str()).collect();
+/// The [`TreeInput::item`] of every file in `folder` and below it.
+pub fn folder_items(folder: &PlanFolder) -> Vec<usize> {
+    let mut items = Vec::with_capacity(folder.item_count);
+    collect_items(folder, &mut items);
+    items
+}
+
+fn collect_items(folder: &PlanFolder, items: &mut Vec<usize>) {
+    items.extend(folder.files.iter().map(|file| file.item));
     for child in &folder.folders {
-        paths.extend(folder_paths(child));
+        collect_items(child, items);
     }
-    paths
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn input(action: SyncPlanAction, path: &str, size: u64) -> TreeInput<'_> {
-        TreeInput {
-            action,
-            path,
-            size: Some(size),
-        }
+    /// The tree of `changes`, each ranked among them all as a plan ranks its changes.
+    fn tree_of(changes: &[(SyncPlanAction, &str, u64)]) -> PlanFolder {
+        let ranks = name_order(changes.iter().map(|(_, path, _)| *path));
+        build_plan_tree(changes.iter().zip(ranks).enumerate().map(
+            |(item, ((action, path, size), name_rank))| TreeInput {
+                action: *action,
+                path,
+                size: Some(*size),
+                item,
+                name_rank,
+            },
+        ))
     }
 
     #[test]
     fn groups_changes_into_sorted_folders_and_collapses_chains() {
-        let tree = build_plan_tree([
-            input(SyncPlanAction::Upload, "b/10.jpg", 10),
-            input(SyncPlanAction::Upload, "b/2.jpg", 2),
-            input(SyncPlanAction::Delete, "a/x/y/gone.jpg", 99),
-            input(SyncPlanAction::Update, "top.png", 5),
+        let tree = tree_of(&[
+            (SyncPlanAction::Upload, "b/10.jpg", 10),
+            (SyncPlanAction::Upload, "b/2.jpg", 2),
+            (SyncPlanAction::Delete, "a/x/y/gone.jpg", 99),
+            (SyncPlanAction::Update, "top.png", 5),
         ]);
         assert_eq!(tree.item_count, 4);
         assert_eq!(tree.size, 17, "a delete moves no bytes");
@@ -285,16 +333,21 @@ mod tests {
         ));
         assert!(matches!(rows[1], PlanRow::File { depth: 1, .. }));
         assert!(matches!(rows[5], PlanRow::File { depth: 0, file } if file.name == "top.png"));
+        assert_eq!(
+            folder_items(&tree.folders[1]),
+            [1, 0],
+            "in the order the tree lists them"
+        );
     }
 
     #[test]
     fn a_large_folder_lists_a_page_and_offers_the_rest() {
         let paths: Vec<String> = (0..250).map(|index| format!("big/{index}.jpg")).collect();
-        let tree = build_plan_tree(
-            paths
-                .iter()
-                .map(|path| input(SyncPlanAction::Upload, path, 1)),
-        );
+        let changes: Vec<(SyncPlanAction, &str, u64)> = paths
+            .iter()
+            .map(|path| (SyncPlanAction::Upload, path.as_str(), 1))
+            .collect();
+        let tree = tree_of(&changes);
         let mut overrides = HashMap::new();
         overrides.insert("big".to_owned(), true);
         let rows = flatten_plan_tree(&tree, &overrides, &HashSet::new());

@@ -157,7 +157,8 @@ pub(crate) enum RowModel {
         size: u64,
         item_count: usize,
         open: bool,
-        paths: Arc<Vec<String>>,
+        /// The plan's items in this folder and below it, by their place in the plan.
+        items: Arc<Vec<usize>>,
     },
     File {
         depth: usize,
@@ -174,6 +175,138 @@ pub(crate) enum RowModel {
     },
 }
 
+/// What the page needs of the plan on screen at each keystroke and frame, worked out once, off
+/// the main thread, when the plan arrives.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct PlanFacts {
+    /// Each item's path in lower case, for the path filter; empty for a keep, never listed.
+    lower_paths: Vec<String>,
+    /// Each item's [`plan_tree::TreeInput::name_rank`] among the changes; 0 for a keep.
+    name_ranks: Vec<u32>,
+    /// The bytes of the uploads, the updates and the deletes, as [`PlanFacts::bytes`] reads them.
+    bytes_by_action: [u64; 3],
+    /// [`LockstepPlan::push_bytes`].
+    pub(crate) push_bytes: u64,
+    /// How many items are not keeps.
+    pub(crate) changes: usize,
+    /// The changes by path, for the run's events, which name their items by path.
+    paths: PathIndex,
+}
+
+/// The plan's changes by path, without a copy of each path: each path's hash leads to the last
+/// change with that hash, and each change to the one before it with the same hash. A lookup walks
+/// the chain and keeps the changes whose path is the one asked for.
+#[derive(Clone, Debug, Default)]
+struct PathIndex {
+    hasher: std::hash::RandomState,
+    last: HashMap<u64, usize>,
+    previous: Vec<usize>,
+}
+
+impl PathIndex {
+    const END: usize = usize::MAX;
+
+    fn of(plan: &LockstepPlan, changes: &[usize]) -> Self {
+        let hasher = std::hash::RandomState::new();
+        let mut last = HashMap::with_capacity(changes.len());
+        let mut previous = vec![Self::END; plan.items.len()];
+        for &at in changes {
+            let hash = std::hash::BuildHasher::hash_one(&hasher, plan.items[at].path.as_str());
+            previous[at] = last.insert(hash, at).unwrap_or(Self::END);
+        }
+        Self {
+            hasher,
+            last,
+            previous,
+        }
+    }
+
+    /// The changes of `plan` at `path`.
+    fn find<'a>(
+        &'a self,
+        plan: &'a LockstepPlan,
+        path: &'a str,
+    ) -> impl Iterator<Item = usize> + 'a {
+        let hash = std::hash::BuildHasher::hash_one(&self.hasher, path);
+        let mut at = self.last.get(&hash).copied().unwrap_or(Self::END);
+        std::iter::from_fn(move || {
+            while at != Self::END {
+                let this = at;
+                at = self.previous[this];
+                if plan.items[this].path == path {
+                    return Some(this);
+                }
+            }
+            None
+        })
+    }
+}
+
+/// What the run made of one of the plan's items, as a frame counts it: still to come (or under
+/// way), done or skipped, or failed.
+pub(crate) const ITEM_REMAINING: u8 = 0;
+pub(crate) const ITEM_SETTLED: u8 = 1;
+pub(crate) const ITEM_FAILED: u8 = 2;
+
+fn item_code(state: Option<&ItemState>) -> u8 {
+    match state {
+        Some(state) if state.is_settled() => ITEM_SETTLED,
+        Some(ItemState::Failed(_)) => ITEM_FAILED,
+        _ => ITEM_REMAINING,
+    }
+}
+
+impl PlanFacts {
+    fn of(plan: &LockstepPlan) -> Self {
+        let changes: Vec<usize> = (0..plan.items.len())
+            .filter(|&at| plan.items[at].action != SyncPlanAction::Keep)
+            .collect();
+        let ranks = plan_tree::name_order(changes.iter().map(|&at| plan.items[at].path.as_str()));
+        let mut name_ranks = vec![0; plan.items.len()];
+        let mut lower_paths = vec![String::new(); plan.items.len()];
+        for (&at, rank) in changes.iter().zip(&ranks) {
+            name_ranks[at] = *rank;
+            lower_paths[at] = plan.items[at].path.to_lowercase();
+        }
+        let mut bytes_by_action = [0; 3];
+        for item in &plan.items {
+            if let Some(slot) = Self::slot(item.action) {
+                bytes_by_action[slot] += item_size(item).unwrap_or(0);
+            }
+        }
+        Self {
+            lower_paths,
+            name_ranks,
+            bytes_by_action,
+            push_bytes: plan.push_bytes(),
+            changes: changes.len(),
+            paths: PathIndex::of(plan, &changes),
+        }
+    }
+
+    fn slot(action: SyncPlanAction) -> Option<usize> {
+        match action {
+            SyncPlanAction::Upload => Some(0),
+            SyncPlanAction::Update => Some(1),
+            SyncPlanAction::Delete => Some(2),
+            SyncPlanAction::Keep => None,
+        }
+    }
+
+    /// The bytes of the plan's items of `action`: their local sizes, or the remote ones.
+    pub(crate) fn bytes(&self, action: SyncPlanAction) -> u64 {
+        Self::slot(action).map_or(0, |slot| self.bytes_by_action[slot])
+    }
+}
+
+/// The bytes an item moves or names: its local size, else its remote one.
+fn item_size(item: &oriel_core_index::SyncPlanItem) -> Option<u64> {
+    item.local
+        .as_ref()
+        .map(|local| local.size)
+        .or(item.remote.as_ref().map(|remote| remote.size))
+}
+
 pub struct SyncMode {
     shell: Entity<ShellState>,
     data: DataRoot,
@@ -183,6 +316,9 @@ pub struct SyncMode {
     session_token: Entity<InputState>,
     filter: Entity<InputState>,
     plan: Option<ReviewedPlan>,
+    plan_facts: PlanFacts,
+    /// Each plan item's [`item_code`] for the run's states, kept as the run reports them.
+    plan_states: Vec<u8>,
     rows: Vec<RowModel>,
     open_overrides: HashMap<String, bool>,
     show_all_files: HashSet<String>,
@@ -276,6 +412,8 @@ impl SyncMode {
             session_token,
             filter,
             plan: None,
+            plan_facts: PlanFacts::default(),
+            plan_states: Vec::new(),
             rows: Vec::new(),
             open_overrides: HashMap::new(),
             show_all_files: HashSet::new(),
@@ -763,6 +901,8 @@ impl SyncMode {
     /// Drops the plan and the doctor's result, which describe one profile's folder and server.
     fn clear_plan_state(&mut self, cx: &mut Context<Self>) {
         self.plan = None;
+        self.plan_facts = PlanFacts::default();
+        self.plan_states.clear();
         self.doctor_result = None;
         self.push_completed = false;
         self.action_filter.clear();
@@ -782,10 +922,67 @@ impl SyncMode {
             .update(cx, |input, cx| input.set_value("", window, cx));
         if !self.run.running {
             self.run = RunState::default();
+            self.refresh_plan_states();
         }
     }
 
     /* Plan tree */
+
+    /// Each plan item's code, read afresh from the run's states.
+    fn refresh_plan_states(&mut self) {
+        let Some(reviewed) = &self.plan else {
+            self.plan_states.clear();
+            return;
+        };
+        let states = &self.run.item_states;
+        self.plan_states = reviewed
+            .plan
+            .items
+            .iter()
+            .map(|item| {
+                if item.action == SyncPlanAction::Keep {
+                    ITEM_REMAINING
+                } else {
+                    item_code(states.get(&item.path))
+                }
+            })
+            .collect();
+    }
+
+    /// Folds an event into the plan items' codes, as [`RunState::apply`] folds it into the states.
+    fn note_item_state(&mut self, event: &RunEvent) {
+        let (path, code) = match event {
+            RunEvent::ItemsQueued { .. } => {
+                self.plan_states.fill(ITEM_REMAINING);
+                return;
+            }
+            RunEvent::ItemStart { path, .. } => (path, ITEM_REMAINING),
+            RunEvent::ItemSuccess { path, .. } | RunEvent::ItemSkipped { path, .. } => {
+                (path, ITEM_SETTLED)
+            }
+            RunEvent::ItemFailure { path, .. } => (path, ITEM_FAILED),
+            _ => return,
+        };
+        let Some(reviewed) = &self.plan else {
+            return;
+        };
+        for at in self.plan_facts.paths.find(&reviewed.plan, path) {
+            if let Some(slot) = self.plan_states.get_mut(at) {
+                *slot = code;
+            }
+        }
+    }
+
+    /// The plan's changes the run has settled and failed, by [`item_code`].
+    pub(crate) fn run_tally(&self) -> (usize, usize) {
+        self.plan_states
+            .iter()
+            .fold((0, 0), |(settled, failed), code| match *code {
+                ITEM_SETTLED => (settled + 1, failed),
+                ITEM_FAILED => (settled, failed + 1),
+                _ => (settled, failed),
+            })
+    }
 
     /// Rebuilds the list's rows from the plan, the filters and the folders opened.
     pub(crate) fn rebuild_rows(&mut self, cx: &mut Context<Self>) {
@@ -797,9 +994,10 @@ impl SyncMode {
         let query = self.filter.read(cx).value().trim().to_lowercase();
         let showing_run = self.shows_run_state();
         let states = &self.run.item_states;
-        let items = reviewed.plan.items.iter().filter(|item| {
+        let facts = &self.plan_facts;
+        let items = reviewed.plan.items.iter().enumerate().filter(|(at, item)| {
             item.action != SyncPlanAction::Keep
-                && (query.is_empty() || item.path.to_lowercase().contains(&query))
+                && (query.is_empty() || facts.lower_paths[*at].contains(&query))
                 && if showing_run {
                     let state = states.get(&item.path);
                     match self.run_filter {
@@ -814,16 +1012,12 @@ impl SyncMode {
                     self.action_filter.is_empty() || self.action_filter.contains(&item.action)
                 }
         });
-        let tree = plan_tree::build_plan_tree(items.map(|item| {
-            plan_tree::TreeInput {
-                action: item.action,
-                path: &item.path,
-                size: item
-                    .local
-                    .as_ref()
-                    .map(|local| local.size)
-                    .or(item.remote.as_ref().map(|remote| remote.size)),
-            }
+        let tree = plan_tree::build_plan_tree(items.map(|(at, item)| plan_tree::TreeInput {
+            action: item.action,
+            path: &item.path,
+            size: item_size(item),
+            item: at,
+            name_rank: facts.name_ranks[at],
         }));
         self.rows = plan_tree::flatten_plan_tree(&tree, &self.open_overrides, &self.show_all_files)
             .into_iter()
@@ -839,12 +1033,7 @@ impl SyncMode {
                     size: folder.size,
                     item_count: folder.item_count,
                     open,
-                    paths: Arc::new(
-                        plan_tree::folder_paths(folder)
-                            .into_iter()
-                            .map(str::to_owned)
-                            .collect(),
-                    ),
+                    items: Arc::new(plan_tree::folder_items(folder)),
                 },
                 PlanRow::File { depth, file } => RowModel::File {
                     depth,
@@ -977,13 +1166,16 @@ impl SyncMode {
             cx,
             move |observer, cancel| async move {
                 let client = PaneViewClient::new(target)?;
-                plan_sync(options, Some(&client), Some(&observer), &cancel).await
+                let plan = plan_sync(options, Some(&client), Some(&observer), &cancel).await?;
+                let facts = PlanFacts::of(&plan);
+                Ok((plan, facts))
             },
             move |this, result, cx| {
-                let plan = result?;
+                let (plan, facts) = result?;
                 let mut summary = RunSummary::now(RunAction::Plan, RunStatus::Completed);
                 summary.plan_counts = Some(plan.counts);
                 this.record_last_run(&profile.id, summary);
+                this.plan_facts = facts;
                 this.plan = Some(ReviewedPlan {
                     id: uuid::Uuid::new_v4().to_string(),
                     plan,
@@ -992,6 +1184,7 @@ impl SyncMode {
                     source_root: profile.source_root.clone(),
                     planned_at: SystemTime::now(),
                 });
+                this.refresh_plan_states();
                 this.push_completed = false;
                 this.action_filter.clear();
                 this.run_filter = RunFilter::All;
@@ -1256,6 +1449,7 @@ impl SyncMode {
     {
         self.error = None;
         self.run.begin(kind, label);
+        self.refresh_plan_states();
         self.dismissed_run = None;
         let cancel = CancelToken::new();
         self.cancel = Some(cancel.clone());
@@ -1279,6 +1473,7 @@ impl SyncMode {
                         .iter()
                         .any(|event| matches!(event, RunEvent::ItemsQueued { .. }));
                     for event in batch {
+                        this.note_item_state(&event);
                         this.run.apply(event);
                     }
                     this.report_activity(cx);

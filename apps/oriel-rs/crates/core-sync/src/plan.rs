@@ -21,7 +21,7 @@ use crate::events::{
     Observer, PlanCounts, RunAction, RunEvent, RunStatus, RunSummary, emit, status,
 };
 use crate::format::format_count;
-use crate::hash_cache::load_hash_cache;
+use crate::hash_cache::{HashCache, load_hash_cache};
 
 /// Which files a plan hashes, `HashMode`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -87,6 +87,17 @@ pub async fn plan_sync(
     observer: Option<&Observer>,
     cancel: &CancelToken,
 ) -> anyhow::Result<LockstepPlan> {
+    Ok(plan_with_cache(options, client, observer, cancel).await?.0)
+}
+
+/// [`plan_sync`], with the hash cache it saved when the plan used one, so a push that plans
+/// first need not read the file it was just written to.
+pub(crate) async fn plan_with_cache(
+    options: PlanOptions,
+    client: Option<&PaneViewClient>,
+    observer: Option<&Observer>,
+    cancel: &CancelToken,
+) -> anyhow::Result<(LockstepPlan, Option<HashCache>)> {
     cancel.check()?;
     let mut remote = Vec::new();
     if let Some(client) = client {
@@ -106,7 +117,7 @@ pub async fn plan_sync(
     let observer_for_scan = observer.cloned();
     let cancel_for_scan = cancel.clone();
     let remote_for_scan = remote.clone();
-    let (local, scan) = tokio::task::spawn_blocking(move || {
+    let (local, scan, cache) = tokio::task::spawn_blocking(move || {
         scan_and_hash(
             &options,
             &remote_for_scan,
@@ -132,7 +143,7 @@ pub async fn plan_sync(
     let mut summary = RunSummary::now(RunAction::Plan, RunStatus::Completed);
     summary.plan_counts = Some(counts);
     emit(observer, RunEvent::Complete(summary));
-    Ok(result)
+    Ok((result, cache))
 }
 
 struct ScanOutcome {
@@ -146,7 +157,7 @@ fn scan_and_hash(
     remote: &[RemoteEntrySnapshot],
     observer: Option<&Observer>,
     cancel: &CancelToken,
-) -> anyhow::Result<(Vec<MediaItem>, ScanOutcome)> {
+) -> anyhow::Result<(Vec<MediaItem>, ScanOutcome, Option<HashCache>)> {
     let coalescer = ProgressCoalescer::new(observer);
     let on_progress = |progress| coalescer.report(progress);
     let mut scan = ScanArchive::new(&options.source_root)
@@ -160,6 +171,7 @@ fn scan_and_hash(
     }
     let scanned = scan.run()?;
     let mut local = scanned.items;
+    let mut saved = None;
 
     if options.hash_mode != HashMode::None {
         let loaded = load_hash_cache(&scanned.source_root, &options.hash_cache_root);
@@ -191,12 +203,13 @@ fn scan_and_hash(
             local = hashing.run()?;
         }
         cache.update_from_items(&local, &scanned.fingerprints);
-        cache.retain(&local.iter().map(|item| item.path.clone()).collect());
-        if let Err(error) = cache.save() {
-            status(
+        cache.retain_items(&local);
+        match cache.save() {
+            Ok(()) => saved = Some(cache),
+            Err(error) => status(
                 observer,
                 format!("Warning: hash cache could not be saved: {error}"),
-            );
+            ),
         }
     }
     coalescer.flush();
@@ -208,6 +221,7 @@ fn scan_and_hash(
             skipped_entries: scanned.skipped_entries,
             source_root: scanned.source_root,
         },
+        saved,
     ))
 }
 

@@ -6,14 +6,17 @@
 //! `{ entries, sourceRoot, version: 1 }`, the entries sorted by path as `localeCompare` sorts
 //! them. Oriel RS keeps its own under `DataRoot::hash_cache()`, never Electron Oriel's.
 
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
+use std::fmt;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
 use oriel_core_domain::MediaItem;
 use oriel_core_index::{ArchiveFileFingerprint, fingerprints_match, locale_compare};
-use serde::Serialize;
+use serde::de::{self, Deserializer, IgnoredAny, MapAccess, Visitor};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest as _, Sha256};
 
@@ -77,8 +80,8 @@ impl HashCache {
         let mut cache = Self {
             file_path,
             source_root,
-            entries: Vec::new(),
-            index: HashMap::new(),
+            entries: Vec::with_capacity(entries.len()),
+            index: HashMap::with_capacity(entries.len()),
         };
         for entry in entries {
             cache.insert(entry);
@@ -171,15 +174,53 @@ impl HashCache {
             if let (Some(fingerprint), Some(sha256)) =
                 (fingerprints.get(&item.path), item.sha256.as_deref())
             {
+                // Most items come from the cache itself: an entry `set` would write again as it
+                // is keeps its place either way, so it is left alone rather than rebuilt.
+                if self.holds(&item.path, fingerprint, sha256) {
+                    continue;
+                }
                 // A scan's hashes are always well formed, so this cannot be refused.
                 let _ = self.set(&item.path, fingerprint, sha256);
             }
         }
     }
 
+    /// Whether the entry for `path` is already the one `set` would record.
+    fn holds(&self, path: &str, fingerprint: &ArchiveFileFingerprint, sha256: &str) -> bool {
+        self.index.get(path).is_some_and(|&at| {
+            let entry = &self.entries[at];
+            entry.size == fingerprint.size
+                && entry.mtime_ms == fingerprint.mtime_ms.trunc()
+                && entry.ctime_ms == fingerprint.ctime_ms
+                // Stored hashes are lower case, so this is `sha256.to_ascii_lowercase() == …`.
+                && entry.sha256.eq_ignore_ascii_case(sha256)
+        })
+    }
+
     /// Forgets every path not in `paths`.
     pub fn retain(&mut self, paths: &HashSet<String>) {
         self.entries.retain(|entry| paths.contains(&entry.path));
+        self.reindex();
+    }
+
+    /// Forgets every path that is not one of `items`', as [`retain`](Self::retain) does with
+    /// their paths, without collecting them first.
+    pub(crate) fn retain_items(&mut self, items: &[MediaItem]) {
+        let mut keep = vec![false; self.entries.len()];
+        for item in items {
+            if let Some(&at) = self.index.get(&item.path) {
+                keep[at] = true;
+            }
+        }
+        if keep.iter().all(|kept| *kept) {
+            return;
+        }
+        let mut kept = keep.into_iter();
+        self.entries.retain(|_| kept.next().unwrap_or(false));
+        self.reindex();
+    }
+
+    fn reindex(&mut self) {
         self.index = self
             .entries
             .iter()
@@ -308,7 +349,19 @@ fn rebuilt(reason: &str) -> String {
 }
 
 /// `PersistedHashCacheSchema` and the source check: the entries, or why the file is refused.
+///
+/// A cache holds an entry per file, so the usual, valid file is read straight into entries
+/// ([`read_valid`]); any file that does not read that way is read again as a JSON value, which
+/// says why it is refused.
 fn parse_persisted(raw: &str, canonical_root: &str) -> Result<Vec<HashCacheEntry>, String> {
+    match read_valid(raw, canonical_root) {
+        Some(entries) => Ok(entries),
+        None => parse_value(raw, canonical_root),
+    }
+}
+
+/// [`parse_persisted`] through a JSON value, naming what is wrong with a file it refuses.
+fn parse_value(raw: &str, canonical_root: &str) -> Result<Vec<HashCacheEntry>, String> {
     let document: Value = serde_json::from_str(raw).map_err(|error| error.to_string())?;
     let object = document.as_object().ok_or("the cache is not an object")?;
     if object.get("version").and_then(Value::as_f64) != Some(f64::from(CACHE_VERSION)) {
@@ -363,4 +416,194 @@ fn parse_entry(value: &Value) -> Result<HashCacheEntry, String> {
         sha256: sha256.to_ascii_lowercase(),
         size: size as u64,
     })
+}
+
+/// The entries of a cache file that `parse_persisted` accepts, read without building a JSON
+/// value first; `None` for any file it might refuse, which it then reads the slow way. So this
+/// is never more lenient: a top level or an entry that is not an object, a `null` or a string
+/// where a number goes, and every check `parse_entry` makes all give `None`. A key named twice
+/// keeps its last value, as a JSON value does.
+fn read_valid(raw: &str, canonical_root: &str) -> Option<Vec<HashCacheEntry>> {
+    let document: FastDocument = serde_json::from_str(raw).ok()?;
+    if document.version != Some(f64::from(CACHE_VERSION))
+        || canonical_source_root(Path::new(document.source_root?.as_ref())) != canonical_root
+    {
+        return None;
+    }
+    document
+        .entries?
+        .into_iter()
+        .map(|entry| {
+            let FastEntry {
+                ctime_ms,
+                mtime_ms,
+                path,
+                sha256,
+                size,
+            } = entry;
+            let finite = |number: f64| number.is_finite().then_some(number);
+            let ctime_ms = match ctime_ms {
+                None => None,
+                Some(number) => Some(finite(number)?),
+            };
+            let mtime_ms = finite(mtime_ms?)?;
+            let sha256 = sha256.filter(|sha256| is_sha256(sha256))?;
+            let size = finite(size?).filter(|size| *size >= 0.0 && size.fract() == 0.0)?;
+            Some(HashCacheEntry {
+                ctime_ms,
+                mtime_ms: mtime_ms.trunc(),
+                path: path?.into_owned(),
+                sha256: sha256.to_ascii_lowercase(),
+                size: size as u64,
+            })
+        })
+        .collect()
+}
+
+/// A cache file's top level, as [`read_valid`] reads it.
+struct FastDocument<'a> {
+    entries: Option<Vec<FastEntry<'a>>>,
+    source_root: Option<Cow<'a, str>>,
+    version: Option<f64>,
+}
+
+/// One entry, as [`read_valid`] reads it: each field as it was written, checked afterwards.
+struct FastEntry<'a> {
+    ctime_ms: Option<f64>,
+    mtime_ms: Option<f64>,
+    path: Option<Cow<'a, str>>,
+    sha256: Option<Cow<'a, str>>,
+    size: Option<f64>,
+}
+
+/// A string, borrowed from the file when it has no escapes.
+struct Text<'a>(Cow<'a, str>);
+
+impl<'de: 'a, 'a> Deserialize<'de> for Text<'a> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct TextVisitor;
+        impl<'de> Visitor<'de> for TextVisitor {
+            type Value = Text<'de>;
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a string")
+            }
+            fn visit_borrowed_str<E: de::Error>(self, value: &'de str) -> Result<Self::Value, E> {
+                Ok(Text(Cow::Borrowed(value)))
+            }
+            fn visit_str<E: de::Error>(self, value: &str) -> Result<Self::Value, E> {
+                Ok(Text(Cow::Owned(value.to_owned())))
+            }
+            fn visit_string<E: de::Error>(self, value: String) -> Result<Self::Value, E> {
+                Ok(Text(Cow::Owned(value)))
+            }
+        }
+        deserializer.deserialize_str(TextVisitor)
+    }
+}
+
+/// Reads only a JSON object, never an array, into the fields `F` names.
+macro_rules! object_visitor {
+    ($visitor:ident, $value:ident, $expecting:literal, { $($key:literal => $field:ident: $kind:ty),* $(,)? }) => {
+        struct $visitor;
+        impl<'de> Visitor<'de> for $visitor {
+            type Value = $value<'de>;
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str($expecting)
+            }
+            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+                $(let mut $field = None;)*
+                while let Some(key) = map.next_key::<Text<'de>>()? {
+                    match key.0.as_ref() {
+                        $($key => $field = Some(map.next_value::<$kind>()?.into()),)*
+                        _ => {
+                            map.next_value::<IgnoredAny>()?;
+                        }
+                    }
+                }
+                Ok($value { $($field),* })
+            }
+        }
+    };
+}
+
+object_visitor!(DocumentVisitor, FastDocument, "a hash cache", {
+    "entries" => entries: Vec<FastEntry<'de>>,
+    "sourceRoot" => source_root: Text<'de>,
+    "version" => version: f64,
+});
+
+object_visitor!(EntryVisitor, FastEntry, "a hash cache entry", {
+    "ctimeMs" => ctime_ms: f64,
+    "mtimeMs" => mtime_ms: f64,
+    "path" => path: Text<'de>,
+    "sha256" => sha256: Text<'de>,
+    "size" => size: f64,
+});
+
+impl<'a> From<Text<'a>> for Cow<'a, str> {
+    fn from(text: Text<'a>) -> Self {
+        text.0
+    }
+}
+
+impl<'de: 'a, 'a> Deserialize<'de> for FastDocument<'a> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserializer.deserialize_map(DocumentVisitor)
+    }
+}
+
+impl<'de: 'a, 'a> Deserialize<'de> for FastEntry<'a> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserializer.deserialize_map(EntryVisitor)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The direct read accepts a file only when the JSON value read accepts it, with the same
+    /// entries; anything else falls through to the value read and its reason.
+    #[test]
+    fn reads_a_valid_file_directly_and_nothing_the_value_read_refuses() {
+        let root = "/Volumes/Archive";
+        let sha = "AB".repeat(32);
+        let entry = |fields: &str| {
+            format!(r#"{{"entries":[{{{fields}}}],"sourceRoot":"{root}","version":1}}"#)
+        };
+        let valid = format!(r#""mtimeMs":5.9,"path":"a/b.jpg","sha256":"{sha}","size":3"#);
+        let documents = [
+            entry(&valid),
+            entry(&format!(r#""ctimeMs":7.25,{valid}"#)),
+            entry(&format!(r#"{valid},"extra":[1,{{"x":null}}]"#)),
+            entry(&format!(r#"{valid},"size":4"#)),
+            entry(&format!(r#""path":"a\u002fc.jpg",{valid}"#)),
+            entry(&format!(r#""ctimeMs":null,{valid}"#)),
+            entry(&format!(r#""ctimeMs":"7",{valid}"#)),
+            entry(&format!(r#"{valid},"size":-1"#)),
+            entry(&format!(r#"{valid},"size":1.5"#)),
+            entry(&format!(r#"{valid},"sha256":"abc""#)),
+            entry(r#""mtimeMs":5,"path":"a.jpg","size":3"#),
+            format!(r#"{{"entries":[[1,2,"a.jpg","{sha}",3]],"sourceRoot":"{root}","version":1}}"#),
+            format!(r#"[[],"{root}",1]"#),
+            format!(r#"{{"entries":[],"sourceRoot":"{root}","version":1.0}}"#),
+            format!(r#"{{"entries":[],"sourceRoot":"{root}","version":2}}"#),
+            format!(r#"{{"entries":[],"sourceRoot":"{root}","version":"1"}}"#),
+            r#"{"entries":[],"sourceRoot":"/elsewhere","version":1}"#.to_owned(),
+            r#"{"entries":[],"version":1}"#.to_owned(),
+            format!(r#"{{"entries":{{}},"sourceRoot":"{root}","version":1}}"#),
+            format!(r#"{{"entries":[1],"entries":[],"sourceRoot":"{root}","version":1}}"#),
+            "not json".to_owned(),
+        ];
+        let mut direct = 0;
+        for document in &documents {
+            let by_value = parse_value(document, root);
+            if let Some(entries) = read_valid(document, root) {
+                direct += 1;
+                assert_eq!(Ok(entries), by_value, "{document}");
+            }
+            assert_eq!(parse_persisted(document, root), by_value, "{document}");
+        }
+        assert_eq!(direct, 6, "the valid files read directly");
+    }
 }

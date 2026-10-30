@@ -1002,7 +1002,7 @@ impl SyncMode {
         };
         let counts = reviewed.plan.counts;
         let push_count = counts.to_push();
-        let push_bytes = reviewed.plan.push_bytes();
+        let push_bytes = self.plan_facts.push_bytes;
         let running = self.run.running;
         let pushed = self.push_completed;
         let prune = self.prune_availability();
@@ -1129,31 +1129,11 @@ impl SyncMode {
         };
         let plan = &reviewed.plan;
         let show_run_state = self.shows_run_state();
-        let mut bytes_by_action = std::collections::HashMap::new();
-        for item in &plan.items {
-            let size = item
-                .local
-                .as_ref()
-                .map(|local| local.size)
-                .or(item.remote.as_ref().map(|remote| remote.size))
-                .unwrap_or(0);
-            *bytes_by_action.entry(item.action).or_insert(0u64) += size;
-        }
         let changes = plan.counts.changes();
         let filters: AnyElement = if show_run_state {
-            let mut counts = [0usize; 4];
-            for item in plan
-                .items
-                .iter()
-                .filter(|item| item.action != SyncPlanAction::Keep)
-            {
-                counts[0] += 1;
-                match self.run.item_states.get(&item.path) {
-                    Some(state) if state.is_settled() => counts[2] += 1,
-                    Some(ItemState::Failed(_)) => counts[3] += 1,
-                    _ => counts[1] += 1,
-                }
-            }
+            let (settled, failed) = self.run_tally();
+            let all = self.plan_facts.changes;
+            let counts = [all, all - settled - failed, settled, failed];
             Segmented::new("sync-run-filter", "Run filter")
                 .items(
                     [
@@ -1202,9 +1182,8 @@ impl SyncMode {
                         let dimmed = !self.action_filter.is_empty() && !selected;
                         let text =
                             format!("{} to {}", format_count(count), plan_action_key(action));
-                        let detail = (action != SyncPlanAction::Delete).then(|| {
-                            format_bytes(*bytes_by_action.get(&action).unwrap_or(&0) as f64)
-                        });
+                        let detail = (action != SyncPlanAction::Delete)
+                            .then(|| format_bytes(self.plan_facts.bytes(action) as f64));
                         Button::new(SharedString::from(format!(
                             "plan-count-{}",
                             plan_action_key(action)
@@ -1395,13 +1374,13 @@ impl SyncMode {
                         size,
                         item_count,
                         open,
-                        paths,
+                        items,
                     } => {
                         let progress = show_state.then(|| {
-                            paths.iter().fold((0usize, 0usize), |(done, failed), path| {
-                                match self.run.item_states.get(path) {
-                                    Some(state) if state.is_settled() => (done + 1, failed),
-                                    Some(ItemState::Failed(_)) => (done, failed + 1),
+                            items.iter().fold((0usize, 0usize), |(done, failed), &at| {
+                                match self.plan_states.get(at).copied() {
+                                    Some(crate::ITEM_SETTLED) => (done + 1, failed),
+                                    Some(crate::ITEM_FAILED) => (done, failed + 1),
                                     _ => (done, failed),
                                 }
                             })

@@ -25,7 +25,7 @@ use crate::events::{
 use crate::format::format_push_error;
 use crate::hash_cache::{HashCache, load_hash_cache};
 use crate::plan::{
-    HashMode, LockstepPlan, PlanOptions, is_cancelled, plan_sync, select_changed_items,
+    HashMode, LockstepPlan, PlanOptions, is_cancelled, plan_with_cache, select_changed_items,
     select_upload_update_items,
 };
 use crate::rules::{
@@ -145,10 +145,10 @@ pub async fn push_changes(
     cancel.check()?;
     let upload_concurrency = resolve_upload_concurrency(options.upload_concurrency)?;
 
-    let plan = match options.plan {
-        Some(plan) => plan,
+    let (plan, planned_cache) = match options.plan {
+        Some(plan) => (plan, None),
         None => {
-            plan_sync(
+            plan_with_cache(
                 PlanOptions {
                     source_root: options.source_root.clone(),
                     hash_cache_root: options.hash_cache_root.clone(),
@@ -206,14 +206,22 @@ pub async fn push_changes(
         },
     );
 
-    let source_root = plan.source_root.clone();
-    let cache_root = options.hash_cache_root.clone();
-    let loaded =
-        tokio::task::spawn_blocking(move || load_hash_cache(&source_root, &cache_root)).await?;
-    if let Some(warning) = &loaded.warning {
-        status(observer, format!("Warning: {warning}"));
-    }
-    let cache = Arc::new(Mutex::new(loaded.cache));
+    // The plan just saved its cache, so reading the file again would give back the same entries.
+    let cache = match planned_cache {
+        Some(cache) => cache,
+        None => {
+            let source_root = plan.source_root.clone();
+            let cache_root = options.hash_cache_root.clone();
+            let loaded =
+                tokio::task::spawn_blocking(move || load_hash_cache(&source_root, &cache_root))
+                    .await?;
+            if let Some(warning) = &loaded.warning {
+                status(observer, format!("Warning: {warning}"));
+            }
+            loaded.cache
+        }
+    };
+    let cache = Arc::new(Mutex::new(cache));
 
     status(observer, "Creating sync run...");
     // A cancel does not abort creation (see `create_sync_run`); it skips every item and
@@ -291,7 +299,12 @@ pub async fn push_changes(
         })
         .await;
 
-    let to_save = cache.lock().unwrap_or_else(PoisonError::into_inner).clone();
+    // An item's hash still under way after a cancel may yet record itself; the run is over by
+    // then, so the cache is taken as it stands rather than copied.
+    let to_save = std::mem::replace(
+        &mut *cache.lock().unwrap_or_else(PoisonError::into_inner),
+        HashCache::new(PathBuf::new(), String::new(), Vec::new()),
+    );
     if let Err(error) = tokio::task::spawn_blocking(move || to_save.save()).await? {
         status(
             observer,
@@ -389,13 +402,13 @@ async fn push_item(
     );
 
     let outcome = async {
-        let local = resolve_push_item_hash(context, current, local).await?;
+        let (local, before) = prepare_item(context, current, local).await?;
         // Keep the existing library row when only case or the jpeg/jpg spelling differs.
         let logical_path = match (&item.action, &item.remote) {
             (SyncPlanAction::Update, Some(remote)) => remote.path.clone(),
             _ => local.path.clone(),
         };
-        push_media_item(context, current, &item.path, &local, &logical_path).await
+        push_media_item(context, current, &item.path, &local, before, &logical_path).await
     }
     .await;
 
@@ -441,9 +454,11 @@ pub(crate) fn action_name(action: SyncPlanAction) -> &'static str {
     }
 }
 
-/// The fingerprint `fs.stat` gives now, the change time as it is.
-async fn stat_fingerprint(path: &Path) -> anyhow::Result<(ArchiveFileFingerprint, f64)> {
-    let metadata = tokio::fs::metadata(path).await?;
+/// The fingerprint `fs.stat` gives now, the change time as it is, with the exact modified time.
+type Stat = (ArchiveFileFingerprint, f64);
+
+fn stat_fingerprint(path: &Path) -> std::io::Result<Stat> {
+    let metadata = std::fs::metadata(path)?;
     let mtime = modified_ms(&metadata);
     Ok((
         ArchiveFileFingerprint {
@@ -453,6 +468,11 @@ async fn stat_fingerprint(path: &Path) -> anyhow::Result<(ArchiveFileFingerprint
         },
         mtime,
     ))
+}
+
+async fn stat_fingerprint_async(path: &Path) -> anyhow::Result<Stat> {
+    let path = path.to_owned();
+    Ok(tokio::task::spawn_blocking(move || stat_fingerprint(&path)).await??)
 }
 
 #[cfg(unix)]
@@ -466,15 +486,50 @@ fn change_time_ms(_: &std::fs::Metadata) -> Option<f64> {
     None
 }
 
-/// `resolvePushItemHash`: the item with its SHA-256, from the cache when the file is unchanged,
-/// else hashed now. A file that differs from the plan, or changes while hashed, is refused.
-async fn resolve_push_item_hash(
+/// `resolvePushItemHash`, then `pushMediaItem`'s first look at the file: the item with its
+/// SHA-256, from the cache when the file is unchanged, else hashed now, and the file as it was
+/// just before it is registered. A file that differs from the plan, or changes while hashed, is
+/// refused. The file calls are lockstep-core's, in its order, made on one blocking thread
+/// rather than a thread each.
+async fn prepare_item(
     context: &ItemContext<'_>,
     current: usize,
     item: &MediaItem,
-) -> anyhow::Result<MediaItem> {
+) -> anyhow::Result<(MediaItem, Stat)> {
     let file_path = resolve_local_file_path(context.source_root, &item.path)?;
-    let (fingerprint, _) = stat_fingerprint(&file_path).await?;
+    let cache = context.cache.clone();
+    let observer = context.observer.cloned();
+    let cancel = context.cancel.clone();
+    let total = context.total;
+    let planned = item.clone();
+    let preparing = tokio::task::spawn_blocking(move || {
+        prepare_blocking(
+            &file_path,
+            &planned,
+            &cache,
+            observer.as_ref(),
+            &cancel,
+            current,
+            total,
+        )
+    });
+    let (sha256, before) = until_cancelled(Some(context.cancel), preparing).await???;
+    let mut item = item.clone();
+    item.id = sha256.clone();
+    item.sha256 = Some(sha256);
+    Ok((item, before))
+}
+
+fn prepare_blocking(
+    file_path: &Path,
+    item: &MediaItem,
+    cache: &Mutex<HashCache>,
+    observer: Option<&Observer>,
+    cancel: &CancelToken,
+    current: usize,
+    total: usize,
+) -> anyhow::Result<(String, Stat)> {
+    let (fingerprint, _) = stat_fingerprint(file_path)?;
     let changed = || {
         anyhow::anyhow!(
             "Local file changed after planning; rerun sync: {}",
@@ -485,8 +540,7 @@ async fn resolve_push_item_hash(
         return Err(changed());
     }
 
-    let cached = context
-        .cache
+    let cached = cache
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .get(&item.path, &fingerprint)
@@ -494,63 +548,51 @@ async fn resolve_push_item_hash(
     let sha256 = match cached {
         Some(sha256) => sha256,
         None => {
-            let total = context.total;
             status(
-                context.observer,
+                observer,
                 format!("[{current}/{total}] hashing {}", item.path),
             );
-            let sha256 = hash_in_background(context, current, &item.path, &file_path).await?;
-            let (after, _) = stat_fingerprint(&file_path).await?;
+            let sha256 = hash_reporting(file_path, &item.path, current, total, observer, cancel)?;
+            let (after, _) = stat_fingerprint(file_path)?;
             if !fingerprints_match(&fingerprint, &after) {
                 return Err(changed());
             }
-            context
-                .cache
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .set(&item.path, &fingerprint, &sha256)?;
+            cache.lock().unwrap_or_else(PoisonError::into_inner).set(
+                &item.path,
+                &fingerprint,
+                &sha256,
+            )?;
             sha256
         }
     };
-    let mut item = item.clone();
-    item.id = sha256.clone();
-    item.sha256 = Some(sha256);
-    Ok(item)
+    Ok((sha256, stat_fingerprint(file_path)?))
 }
 
-/// `hashLocalFile`: the file's SHA-256 on a blocking thread, reporting its bytes every 100 ms.
-async fn hash_in_background(
-    context: &ItemContext<'_>,
-    current: usize,
-    archive_path: &str,
+/// `hashLocalFile`: the file's SHA-256, reporting its bytes every 100 ms.
+fn hash_reporting(
     file_path: &Path,
+    archive_path: &str,
+    current: usize,
+    total: usize,
+    observer: Option<&Observer>,
+    cancel: &CancelToken,
 ) -> anyhow::Result<String> {
-    let observer = context.observer.cloned();
-    let cancel = context.cancel.clone();
-    let total = context.total;
-    let archive_path = archive_path.to_owned();
-    let file_path = file_path.to_owned();
-    let hashing = tokio::task::spawn_blocking(move || {
-        let size = std::fs::metadata(&file_path)?.len();
-        let last = Mutex::new(std::time::Instant::now());
-        let report = |bytes: u64| {
-            let mut last = last.lock().unwrap_or_else(PoisonError::into_inner);
-            if last.elapsed() >= PROGRESS_INTERVAL || bytes == size {
-                *last = std::time::Instant::now();
-                status(
-                    observer.as_ref(),
-                    format!(
-                        "[{current}/{total}] hashing {archive_path} ({} / {})",
-                        format_bytes(bytes as f64),
-                        format_bytes(size as f64)
-                    ),
-                );
-            }
-        };
-        hash_file_contents(&file_path, None, Some(&cancel), &report)
-    });
-    let sha256 = until_cancelled(Some(context.cancel), hashing).await???;
-    Ok(sha256)
+    let size = std::fs::metadata(file_path)?.len();
+    let last = std::cell::Cell::new(std::time::Instant::now());
+    let report = |bytes: u64| {
+        if last.get().elapsed() >= PROGRESS_INTERVAL || bytes == size {
+            last.set(std::time::Instant::now());
+            status(
+                observer,
+                format!(
+                    "[{current}/{total}] hashing {archive_path} ({} / {})",
+                    format_bytes(bytes as f64),
+                    format_bytes(size as f64)
+                ),
+            );
+        }
+    };
+    hash_file_contents(file_path, None, Some(cancel), &report)
 }
 
 /// `pushMediaItem`: registers, uploads and records one file under `logical_path`.
@@ -559,6 +601,7 @@ async fn push_media_item(
     current: usize,
     plan_path: &str,
     item: &MediaItem,
+    (before, before_mtime): Stat,
     logical_path: &str,
 ) -> anyhow::Result<()> {
     let observer = context.observer;
@@ -578,7 +621,6 @@ async fn push_media_item(
     let registration_name = get_base_name(logical_path);
     let registration_extension = get_extension(&registration_name);
     let content_type = content_type_for_extension(&registration_extension);
-    let (before, before_mtime) = stat_fingerprint(&file_path).await?;
     let sha256 = item
         .sha256
         .clone()
@@ -627,7 +669,7 @@ async fn push_media_item(
         None => stage("uploading", "skipped (storage not configured)"),
     }
 
-    let (after, after_mtime) = stat_fingerprint(&file_path).await?;
+    let (after, after_mtime) = stat_fingerprint_async(&file_path).await?;
     if after.size != before.size || after_mtime != before_mtime {
         anyhow::bail!("File changed during sync; retry this item.");
     }

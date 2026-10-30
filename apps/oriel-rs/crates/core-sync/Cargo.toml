@@ -18,7 +18,7 @@ sha2.workspace = true
 # Pane View's API over HTTP and HTTPS: JSON bodies, streamed uploads, and the system's TLS
 # (Security.framework on macOS), so no TLS library is built in.
 reqwest = { workspace = true, features = ["json", "stream", "native-tls"] }
-tokio = { workspace = true, features = ["rt", "fs", "io-util", "time"] }
+tokio = { workspace = true, features = ["rt", "fs", "io-util", "sync", "time"] }
 # The client's request and response types come from lockstep-core's zod schemas, written out as
 # JSON Schema (conformance/lockstep-core/api-schema.json) and built here at compile time.
 typify = "0.8"

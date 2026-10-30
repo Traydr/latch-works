@@ -203,6 +203,8 @@ pub async fn prune_deleted(
         );
 
         let outcome: anyhow::Result<bool> = async {
+            // Is the file still gone, and is the source folder still the one prune started
+            // with: both on one blocking thread, in that order.
             let absent = {
                 let (root, path, planned, index) = (
                     source_root.clone(),
@@ -212,17 +214,18 @@ pub async fn prune_deleted(
                 );
                 tokio::task::spawn_blocking(move || {
                     let mut index = index.lock().unwrap_or_else(PoisonError::into_inner);
-                    is_absent_locally(&root, &path, &planned, &mut index)
+                    if !is_absent_locally(&root, &path, &planned, &mut index)? {
+                        return Ok(false);
+                    }
+                    if root_identity(&root)? != identity {
+                        return Err(source_root_unavailable(&root));
+                    }
+                    Ok(true)
                 })
                 .await??
             };
             if !absent {
                 return Ok(false);
-            }
-            let root = source_root.clone();
-            let still = tokio::task::spawn_blocking(move || root_identity(&root)).await??;
-            if still != identity {
-                return Err(source_root_unavailable(&source_root));
             }
             status(observer, format!("[{current}/{total}] deleting {path}"));
             client
