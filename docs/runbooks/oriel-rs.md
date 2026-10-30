@@ -84,6 +84,8 @@ scripted input:
 | `ORIEL_RS_WELCOME=1` | Shows the first-run welcome under `ORIEL_RS_DATA_DIR` (it shows once otherwise, until `shell/welcomed` exists) |
 | `ORIEL_RS_TIDY_ROOT=<folder>` | Tidy opens on that root (it must be in the sandbox) |
 | `ORIEL_RS_TIDY_PAGE=<page>` | Tidy opens on that page (`overview`, `library`, `duplicates`, …) |
+| `ORIEL_RS_QUICK_LOOK=<file>` | Tidy shows the file in Quick Look once it is up |
+| `ORIEL_RS_TIDY_PICKER=1` | Tidy opens its folder picker (Add Folder…) once it is up |
 | `ORIEL_RS_CHANGES_ONLY=<scenario>` | `core-tidy`'s changes test runs one differential scenario |
 | `ORIEL_RS_CHANGES_OUT=<file>` | `core-tidy`'s changes test writes Rust's report there |
 | `ORIEL_SPIKE_PANEL=volume\|speed` | `mpv_spike` opens the player's volume or speed panel, for screenshots |
